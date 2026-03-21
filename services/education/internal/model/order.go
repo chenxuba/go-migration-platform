@@ -48,3 +48,35 @@ type BadDebtDTO struct {
 	OrderID string `json:"orderId"`
 	Remark  string `json:"remark"`
 }
+
+type CourseEnrollTypeDTO struct {
+	StudentID int64                       `json:"studentId"`
+	Courses   []CourseEnrollTypeCheckItem `json:"courses"`
+}
+
+type CourseEnrollTypeCheckItem struct {
+	CourseID   int64 `json:"courseId"`
+	IsAudition bool  `json:"isAudition"`
+}
+
+type CourseEnrollTypeVO struct {
+	CourseID   int64 `json:"courseId"`
+	EnrollType int   `json:"enrollType"`
+}
+
+type CheckQuoteDTO struct {
+	QuoteDetailList []CheckQuoteDetailDTO `json:"quoteDetailList"`
+}
+
+type CheckQuoteDetailDTO struct {
+	CourseID    int64   `json:"courseId"`
+	QuoteID     int64   `json:"quoteId"`
+	Price       float64 `json:"price"`
+	Quantity    *int    `json:"quantity"`
+	LessonModel *int    `json:"lessonModel"`
+}
+
+type CheckQuoteVO struct {
+	CourseID int64 `json:"courseId"`
+	Error    int   `json:"error"`
+}

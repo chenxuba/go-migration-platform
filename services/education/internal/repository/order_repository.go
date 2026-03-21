@@ -250,3 +250,82 @@ func (repo *Repository) CancelBadDebt(ctx context.Context, instID, orderID int64
 	`, orderID, instID)
 	return err
 }
+
+func (repo *Repository) StudentExistsInInstitution(ctx context.Context, instID, studentID int64) (bool, error) {
+	var count int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM inst_student
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, studentID, instID).Scan(&count)
+	return count > 0, err
+}
+
+func (repo *Repository) StudentHasCompletedOrders(ctx context.Context, instID, studentID int64) (bool, error) {
+	var count int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM sale_order
+		WHERE inst_id = ? AND student_id = ? AND order_status = 3 AND del_flag = 0
+	`, instID, studentID).Scan(&count)
+	return count > 0, err
+}
+
+func (repo *Repository) StudentHasCompletedOrderForCourse(ctx context.Context, instID, studentID, courseID int64) (bool, error) {
+	var count int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM sale_order so
+		INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+		WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = 3 AND so.del_flag = 0
+		  AND d.course_id = ?
+	`, instID, studentID, courseID).Scan(&count)
+	return count > 0, err
+}
+
+func (repo *Repository) StudentHasActiveCourseEnrollment(ctx context.Context, instID, studentID, courseID int64) (bool, error) {
+	var count int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM sale_order so
+		INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+		WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = 3 AND so.del_flag = 0
+		  AND d.course_id = ?
+		  AND (
+			IFNULL(d.has_valid_date, 0) = 0
+			OR d.end_date IS NULL
+			OR d.end_date >= CURDATE()
+		  )
+	`, instID, studentID, courseID).Scan(&count)
+	return count > 0, err
+}
+
+func (repo *Repository) GetCourseQuotationsByIDs(ctx context.Context, quoteIDs []int64) (map[int64]model.CourseQuotation, error) {
+	result := make(map[int64]model.CourseQuotation)
+	if len(quoteIDs) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, 0, len(quoteIDs))
+	args := make([]any, 0, len(quoteIDs))
+	for _, id := range quoteIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), course_id, lesson_model, IFNULL(name, ''), unit, quantity, IFNULL(price, 0), IFNULL(lesson_audition, 0), IFNULL(online_sale, 0), IFNULL(remark, '')
+		FROM inst_course_quotation
+		WHERE del_flag = 0 AND id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item model.CourseQuotation
+		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.CourseID, &item.LessonModel, &item.Name, &item.Unit, &item.Quantity, &item.Price, &item.LessonAudition, &item.OnlineSale, &item.Remark); err != nil {
+			return nil, err
+		}
+		result[item.ID] = item
+	}
+	return result, rows.Err()
+}

@@ -68,3 +68,111 @@ func (svc *Service) CancelBadDebt(userID int64, orderIDRaw string) error {
 	}
 	return svc.repo.CancelBadDebt(context.Background(), instID, orderID)
 }
+
+func (svc *Service) CalcCourseEnrollType(userID int64, dto model.CourseEnrollTypeDTO) ([]model.CourseEnrollTypeVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("no institution context")
+		}
+		return nil, err
+	}
+	if dto.StudentID <= 0 {
+		return nil, errors.New("学生ID不能为空")
+	}
+	if len(dto.Courses) == 0 {
+		return nil, errors.New("意向内容列表不能为空")
+	}
+	exists, err := svc.repo.StudentExistsInInstitution(context.Background(), instID, dto.StudentID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.New("学生不存在")
+	}
+
+	hasAnyPurchased, err := svc.repo.StudentHasCompletedOrders(context.Background(), instID, dto.StudentID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.CourseEnrollTypeVO, 0, len(dto.Courses))
+	for _, course := range dto.Courses {
+		item := model.CourseEnrollTypeVO{CourseID: course.CourseID}
+		switch {
+		case course.IsAudition:
+			item.EnrollType = 0
+		case !hasAnyPurchased:
+			item.EnrollType = 1
+		default:
+			active, err := svc.repo.StudentHasActiveCourseEnrollment(context.Background(), instID, dto.StudentID, course.CourseID)
+			if err != nil {
+				return nil, err
+			}
+			if active {
+				item.EnrollType = 2
+			} else {
+				purchased, err := svc.repo.StudentHasCompletedOrderForCourse(context.Background(), instID, dto.StudentID, course.CourseID)
+				if err != nil {
+					return nil, err
+				}
+				if !purchased {
+					item.EnrollType = 3
+				} else {
+					item.EnrollType = 1
+				}
+			}
+		}
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func (svc *Service) CheckQuoteInfo(userID int64, dto model.CheckQuoteDTO) ([]model.CheckQuoteVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("no institution context")
+		}
+		return nil, err
+	}
+	if len(dto.QuoteDetailList) == 0 {
+		return nil, errors.New("请选择办理内容")
+	}
+
+	_ = instID
+	quoteIDs := make([]int64, 0, len(dto.QuoteDetailList))
+	for _, item := range dto.QuoteDetailList {
+		if item.QuoteID > 0 {
+			quoteIDs = append(quoteIDs, item.QuoteID)
+		}
+	}
+	quotationMap, err := svc.repo.GetCourseQuotationsByIDs(context.Background(), quoteIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.CheckQuoteVO, 0)
+	for _, detail := range dto.QuoteDetailList {
+		quotation, ok := quotationMap[detail.QuoteID]
+		if !ok {
+			result = append(result, model.CheckQuoteVO{
+				CourseID: detail.CourseID,
+				Error:    1,
+			})
+			continue
+		}
+		priceMismatch := detail.Price != quotation.Price
+		quantityMismatch := (detail.Quantity == nil) != (quotation.Quantity == nil)
+		if !quantityMismatch && detail.Quantity != nil && quotation.Quantity != nil && *detail.Quantity != *quotation.Quantity {
+			quantityMismatch = true
+		}
+		if priceMismatch || quantityMismatch {
+			result = append(result, model.CheckQuoteVO{
+				CourseID: detail.CourseID,
+				Error:    1,
+			})
+		}
+	}
+	return result, nil
+}

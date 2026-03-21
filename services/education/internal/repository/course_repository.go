@@ -255,8 +255,16 @@ func (repo *Repository) PageCourses(ctx context.Context, instID int64, query mod
 		args = append(args, *query.QueryModel.CourseCategory)
 	}
 	if query.QueryModel.CourseAttribute != nil {
-		filters = append(filters, "c.course_attribute = ?")
-		args = append(args, *query.QueryModel.CourseAttribute)
+		filters = append(filters, "EXISTS (SELECT 1 FROM inst_course_property_result cpr INNER JOIN inst_course_property cp ON cp.id = cpr.course_property_id AND cp.del_flag = 0 WHERE cpr.course_id = c.id AND cpr.del_flag = 0 AND cp.inst_id = c.inst_id AND cp.name = ? AND cpr.course_property_value = ?)")
+		args = append(args, "课程属性", *query.QueryModel.CourseAttribute)
+	}
+	if query.QueryModel.Term != nil {
+		filters = append(filters, "EXISTS (SELECT 1 FROM inst_course_property_result cpr INNER JOIN inst_course_property cp ON cp.id = cpr.course_property_id AND cp.del_flag = 0 WHERE cpr.course_id = c.id AND cpr.del_flag = 0 AND cp.inst_id = c.inst_id AND cp.name = ? AND cpr.course_property_value = ?)")
+		args = append(args, "学季", *query.QueryModel.Term)
+	}
+	if query.QueryModel.SchoolYear != nil {
+		filters = append(filters, "EXISTS (SELECT 1 FROM inst_course_property_result cpr INNER JOIN inst_course_property cp ON cp.id = cpr.course_property_id AND cp.del_flag = 0 WHERE cpr.course_id = c.id AND cpr.del_flag = 0 AND cp.inst_id = c.inst_id AND cp.name = ? AND cpr.course_property_value = ?)")
+		args = append(args, "学年", *query.QueryModel.SchoolYear)
 	}
 	if len(query.QueryModel.CommonCourse) > 0 {
 		placeholders := make([]string, 0, len(query.QueryModel.CommonCourse))
@@ -386,6 +394,10 @@ func (repo *Repository) PageCourses(ctx context.Context, instID int64, query mod
 	if err != nil {
 		return model.PageResult[model.Course]{}, err
 	}
+	propertyMap, err := repo.getCourseListPropertyMap(ctx, instID, courseIDs)
+	if err != nil {
+		return model.PageResult[model.Course]{}, err
+	}
 	for idx := range items {
 		quotations := quotationMap[items[idx].ID]
 		items[idx].QuoteCount = len(quotations)
@@ -409,6 +421,7 @@ func (repo *Repository) PageCourses(ctx context.Context, instID int64, query mod
 			methods = append(methods, label)
 		}
 		items[idx].ChargeMethods = strings.Join(methods, "|")
+		items[idx].CourseProductProperties = propertyMap[items[idx].ID]
 	}
 
 	return model.PageResult[model.Course]{
@@ -1491,6 +1504,99 @@ func (repo *Repository) getCourseQuotationsMap(ctx context.Context, courseIDs []
 		result[item.CourseID] = append(result[item.CourseID], item)
 	}
 	return result, rows.Err()
+}
+
+func (repo *Repository) getCourseListPropertyMap(ctx context.Context, instID int64, courseIDs []int64) (map[int64][]model.CourseListProperty, error) {
+	result := make(map[int64][]model.CourseListProperty)
+	if len(courseIDs) == 0 {
+		return result, nil
+	}
+
+	properties, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(name, '')
+		FROM inst_course_property
+		WHERE inst_id = ? AND del_flag = 0
+		ORDER BY id ASC
+	`, instID)
+	if err != nil {
+		return nil, err
+	}
+	defer properties.Close()
+
+	type propertyDef struct {
+		id   int64
+		name string
+	}
+	propertyDefs := make([]propertyDef, 0, 16)
+	for properties.Next() {
+		var item propertyDef
+		if err := properties.Scan(&item.id, &item.name); err != nil {
+			return nil, err
+		}
+		propertyDefs = append(propertyDefs, item)
+	}
+	if err := properties.Err(); err != nil {
+		return nil, err
+	}
+
+	placeholders := make([]string, 0, len(courseIDs))
+	args := make([]any, 0, len(courseIDs))
+	for _, id := range courseIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT course_id, course_property_id, course_property_value, IFNULL(property_value_name, '')
+		FROM inst_course_property_result
+		WHERE del_flag = 0 AND course_id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	valueMap := make(map[int64]map[int64]model.CourseListProperty)
+	for rows.Next() {
+		var courseID int64
+		var propertyID int64
+		var optionID int64
+		var optionName string
+		if err := rows.Scan(&courseID, &propertyID, &optionID, &optionName); err != nil {
+			return nil, err
+		}
+		if _, ok := valueMap[courseID]; !ok {
+			valueMap[courseID] = make(map[int64]model.CourseListProperty)
+		}
+		valueMap[courseID][propertyID] = model.CourseListProperty{
+			CoursePropertyId:         propertyID,
+			CoursePropertyOptionId:   optionID,
+			CoursePropertyOptionName: optionName,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for _, courseID := range courseIDs {
+		items := make([]model.CourseListProperty, 0, len(propertyDefs))
+		for _, def := range propertyDefs {
+			item := model.CourseListProperty{
+				CoursePropertyId:   def.id,
+				CoursePropertyName: def.name,
+			}
+			if valueByProperty, ok := valueMap[courseID]; ok {
+				if selected, ok := valueByProperty[def.id]; ok {
+					item.CoursePropertyOptionId = selected.CoursePropertyOptionId
+					item.CoursePropertyOptionName = selected.CoursePropertyOptionName
+				}
+			}
+			items = append(items, item)
+		}
+		result[courseID] = items
+	}
+
+	return result, nil
 }
 
 func (repo *Repository) upsertCourseDetailTx(ctx context.Context, tx *sql.Tx, courseID, operatorID int64, input model.CourseProductSaveDTO) error {

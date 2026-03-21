@@ -22,24 +22,32 @@ type CourseCategoryMutation struct {
 }
 
 type Course struct {
-	ID                 int64     `json:"id"`
-	UUID               string    `json:"uuid,omitempty"`
-	Version            int64     `json:"version,omitempty"`
-	Name               string    `json:"name"`
-	CourseCategory     *int64    `json:"courseCategory,omitempty"`
-	CourseAttribute    *int      `json:"courseAttribute,omitempty"`
-	Type               *int      `json:"type,omitempty"`
-	CategoryName       string    `json:"categoryName,omitempty"`
-	CourseType         *int      `json:"courseType,omitempty"`
-	TeachMethod        *int      `json:"teachMethod,omitempty"`
-	SaleStatus         *int      `json:"saleStatus,omitempty"`
-	ChargeMethods      string    `json:"chargeMethods,omitempty"`
-	HasExperiencePrice bool      `json:"hasExperiencePrice"`
-	OnlineSale         bool      `json:"onlineSale"`
-	QuoteCount         int       `json:"quoteCount"`
-	SaleVolume         int       `json:"saleVolume"`
-	IsShowMicoSchool   bool      `json:"isShowMicoSchool"`
-	UpdateTime         time.Time `json:"updateTime"`
+	ID                      int64                `json:"id"`
+	UUID                    string               `json:"uuid,omitempty"`
+	Version                 int64                `json:"version,omitempty"`
+	Name                    string               `json:"name"`
+	CourseCategory          *int64               `json:"courseCategory,omitempty"`
+	CourseAttribute         *int                 `json:"courseAttribute,omitempty"`
+	Type                    *int                 `json:"type,omitempty"`
+	CategoryName            string               `json:"categoryName,omitempty"`
+	CourseType              *int                 `json:"courseType,omitempty"`
+	TeachMethod             *int                 `json:"teachMethod,omitempty"`
+	SaleStatus              *int                 `json:"saleStatus,omitempty"`
+	ChargeMethods           string               `json:"chargeMethods,omitempty"`
+	HasExperiencePrice      bool                 `json:"hasExperiencePrice"`
+	OnlineSale              bool                 `json:"onlineSale"`
+	QuoteCount              int                  `json:"quoteCount"`
+	SaleVolume              int                  `json:"saleVolume"`
+	IsShowMicoSchool        bool                 `json:"isShowMicoSchool"`
+	UpdateTime              time.Time            `json:"updateTime"`
+	CourseProductProperties []CourseListProperty `json:"courseProductProperties,omitempty"`
+}
+
+type CourseListProperty struct {
+	CoursePropertyId         int64  `json:"coursePropertyId"`
+	CoursePropertyName       string `json:"coursePropertyName"`
+	CoursePropertyOptionId   int64  `json:"coursePropertyOptionId,omitempty"`
+	CoursePropertyOptionName string `json:"coursePropertyOptionName,omitempty"`
 }
 
 type CourseIDName struct {
@@ -68,7 +76,9 @@ type CourseFilters struct {
 	SearchKey            string `json:"searchKey"`
 	CourseName           string `json:"courseName"`
 	CourseCategory       *int64 `json:"courseCategory"`
-	CourseAttribute      *int   `json:"courseAttribute"`
+	CourseAttribute      *int64 `json:"courseAttribute"`
+	Term                 *int64 `json:"term"`
+	SchoolYear           *int64 `json:"schoolYear"`
 	CommonCourse         []int  `json:"commonCourse"`
 	TeachMethod          *int   `json:"teachMethod"`
 	ChargeTypes          []int  `json:"chargeTypes"`
