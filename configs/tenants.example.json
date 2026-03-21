@@ -1,0 +1,32 @@
+[
+  {
+    "tenantId": "tenant-a",
+    "name": "A客户",
+    "edition": "enterprise",
+    "features": ["tenant-branding", "approval-flow", "subsidy-center", "qiniu-upload"],
+    "customFields": ["student.guardian_job", "student.assessment_tag"],
+    "workflowScheme": "government-approval-v1",
+    "rulePack": "subsidy-rules-a",
+    "integrations": ["wechat", "qiniu"]
+  },
+  {
+    "tenantId": "tenant-b",
+    "name": "B客户",
+    "edition": "professional",
+    "features": ["tenant-branding", "crm-channel", "lead-pool", "ai-report"],
+    "customFields": ["student.source_channel", "student.sales_owner"],
+    "workflowScheme": "sales-followup-v2",
+    "rulePack": "crm-rules-b",
+    "integrations": ["wechat", "spark"]
+  },
+  {
+    "tenantId": "tenant-c",
+    "name": "C客户",
+    "edition": "group",
+    "features": ["tenant-branding", "multi-branch", "approval-flow", "report-center"],
+    "customFields": ["student.school_name", "student.rehab_level", "student.external_code"],
+    "workflowScheme": "group-org-v1",
+    "rulePack": "branch-rules-c",
+    "integrations": ["qiniu", "es"]
+  }
+]

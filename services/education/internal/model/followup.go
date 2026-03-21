@@ -1,0 +1,88 @@
+package model
+
+import "time"
+
+type StudentFollowUpQueryDTO struct {
+	PageRequestModel PageRequestModel       `json:"pageRequestModel"`
+	QueryModel       StudentFollowUpFilters `json:"queryModel"`
+	SortModel        SortModel              `json:"sortModel"`
+}
+
+type StudentFollowUpFilters struct {
+	StudentID       *int64 `json:"studentId"`
+	FollowUpStaffID *int64 `json:"followUpStaffId"`
+	SalespersonID   *int64 `json:"salespersonId"`
+	SearchKey       string `json:"searchKey"`
+}
+
+type StudentFollowUpRecord struct {
+	ID               int64      `json:"id"`
+	StudentID        int64      `json:"studentId"`
+	StuName          string     `json:"stuName"`
+	Mobile           string     `json:"mobile"`
+	StudentStatus    int        `json:"studentStatus"`
+	SalesPersonID    *int64     `json:"salesPersonId,omitempty"`
+	SalesPersonName  string     `json:"salesPersonName,omitempty"`
+	ChannelID        *int64     `json:"channelId,omitempty"`
+	ChannelName      string     `json:"channelName,omitempty"`
+	CategoryID       *int64     `json:"categoryId,omitempty"`
+	CategoryName     string     `json:"categoryName,omitempty"`
+	CreateID         *int64     `json:"createId,omitempty"`
+	CreateName       string     `json:"createName,omitempty"`
+	CreateTime       time.Time  `json:"createTime"`
+	Content          string     `json:"content"`
+	FollowImages     string     `json:"followImages,omitempty"`
+	FollowMethod     *int       `json:"followMethod,omitempty"`
+	IntendedCourse   []int64    `json:"intendedCourse,omitempty"`
+	IntentionLevel   *int       `json:"intentionLevel,omitempty"`
+	FollowUpStatus   *int       `json:"followUpStatus,omitempty"`
+	VisitStatus      *bool      `json:"visitStatus,omitempty"`
+	FollowUpTime     *time.Time `json:"followUpTime,omitempty"`
+	NextFollowUpTime *time.Time `json:"nextFollowUpTime,omitempty"`
+}
+
+type CreateFollowUpDTO struct {
+	StudentID        int64      `json:"studentId"`
+	FollowMethod     *int       `json:"followMethod"`
+	IntentLevel      *int       `json:"intentLevel"`
+	NextFollowUpTime *time.Time `json:"nextFollowUpTime"`
+	FollowUpStatus   *int       `json:"followUpStatus"`
+	Content          string     `json:"content"`
+	FollowImages     string     `json:"followImages"`
+	IntentCourseIDs  string     `json:"intentCourseIds"`
+}
+
+type FollowUpCountDTO struct {
+	DeptID               *int64 `json:"deptId"`
+	QueryAllOrDepartment *int   `json:"queryAllOrDepartment"`
+}
+
+type FollowUpCountVO struct {
+	ToBeFollowedUpTodayCount         int `json:"toBeFollowedUpTodayCount"`
+	NewInquiriesAddedWeekCount       int `json:"newInquiriesAddedWeekCount"`
+	OverdueForFollowUpInterviewCount int `json:"overdueForFollowUpInterviewCount"`
+}
+
+type VisitStatusUpdateDTO struct {
+	ID          int64 `json:"id"`
+	VisitStatus *bool `json:"visitStatus"`
+}
+
+type UpdateFollowUpDTO struct {
+	ID               int64      `json:"id"`
+	UUID             string     `json:"uuid"`
+	Version          *int64     `json:"version"`
+	FollowMethod     *int       `json:"followMethod"`
+	IntentLevel      *int       `json:"intentLevel"`
+	NextFollowUpTime *time.Time `json:"nextFollowUpTime"`
+	FollowUpStatus   *int       `json:"followUpStatus"`
+	Content          string     `json:"content"`
+	FollowImages     string     `json:"followImages"`
+	IntentCourseIDs  string     `json:"intentCourseIds"`
+}
+
+type FollowVisitCountVO struct {
+	StudentCount      int `json:"studentCount"`
+	InterviewCount    int `json:"interviewCount"`
+	NotInterviewCount int `json:"notInterviewCount"`
+}
