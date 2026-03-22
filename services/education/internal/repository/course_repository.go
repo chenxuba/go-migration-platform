@@ -582,6 +582,35 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 	filters := []string{"s.del_flag = 0", "s.inst_id = ?", "s.student_status = 0"}
 	args := []any{instID}
 	q := query.QueryModel
+	if q.QuickFilter != nil {
+		switch *q.QuickFilter {
+		case 1:
+			filters = append(filters, `EXISTS (
+				SELECT 1 FROM follow_record fr
+				WHERE fr.student_id = s.id AND fr.inst_id = ? AND fr.del_flag = 0
+				  AND IFNULL(fr.visit_status, 0) = 0
+				  AND DATE(fr.next_follow_up_time) = CURDATE()
+			)`)
+			args = append(args, instID)
+		case 2:
+			now := time.Now()
+			weekday := int(now.Weekday())
+			if weekday == 0 {
+				weekday = 7
+			}
+			startOfWeek := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(weekday - 1))
+			filters = append(filters, "s.create_time >= ?")
+			args = append(args, startOfWeek)
+		case 3:
+			filters = append(filters, `EXISTS (
+				SELECT 1 FROM follow_record fr
+				WHERE fr.student_id = s.id AND fr.inst_id = ? AND fr.del_flag = 0
+				  AND IFNULL(fr.visit_status, 0) = 0
+				  AND fr.next_follow_up_time < NOW()
+			)`)
+			args = append(args, instID)
+		}
+	}
 	if strings.TrimSpace(q.StudentID) != "" {
 		filters = append(filters, "CAST(s.id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(q.StudentID))
@@ -589,6 +618,14 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 	if q.SalespersonID != nil {
 		filters = append(filters, "s.sale_person = ?")
 		args = append(args, *q.SalespersonID)
+	}
+	if q.CreateID != nil {
+		filters = append(filters, "s.create_id = ?")
+		args = append(args, *q.CreateID)
+	}
+	if q.RecommendStudentID != nil {
+		filters = append(filters, "s.recommend_student_id = ?")
+		args = append(args, *q.RecommendStudentID)
 	}
 	if q.CourseID != nil {
 		filters = append(filters, "FIND_IN_SET(?, s.intended_course)")
@@ -614,6 +651,174 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 		filters = append(filters, "s.interest LIKE ?")
 		args = append(args, "%"+strings.TrimSpace(q.InterestSearchKey)+"%")
 	}
+	if len(q.IntentionLevels) > 0 {
+		placeholders := make([]string, 0, len(q.IntentionLevels))
+		for _, item := range q.IntentionLevels {
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "s.intent_level IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if len(q.FollowUpStatuses) > 0 {
+		placeholders := make([]string, 0, len(q.FollowUpStatuses))
+		for _, item := range q.FollowUpStatuses {
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "s.follow_up_status IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if len(q.Sexes) > 0 {
+		placeholders := make([]string, 0, len(q.Sexes))
+		for _, item := range q.Sexes {
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "s.stu_sex IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if len(q.ChannelIDs) > 0 {
+		placeholders := make([]string, 0, len(q.ChannelIDs))
+		for _, item := range q.ChannelIDs {
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "s.channel_id IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if len(q.Grades) > 0 {
+		placeholders := make([]string, 0, len(q.Grades))
+		for _, item := range q.Grades {
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "s.grade IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if q.IsRecommend != nil {
+		if *q.IsRecommend {
+			filters = append(filters, "s.recommend_student_id IS NOT NULL")
+		} else {
+			filters = append(filters, "s.recommend_student_id IS NULL")
+		}
+	}
+	if q.IsHasSalePerson != nil {
+		if *q.IsHasSalePerson {
+			filters = append(filters, "s.sale_person IS NOT NULL")
+		} else {
+			filters = append(filters, "s.sale_person IS NULL")
+		}
+	}
+	if q.PurchasedAuditionProduct != nil {
+		if *q.PurchasedAuditionProduct {
+			filters = append(filters, `EXISTS (
+				SELECT 1
+				FROM sale_order so
+				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+				INNER JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
+				WHERE so.student_id = s.id AND so.inst_id = ? AND so.del_flag = 0
+				  AND so.order_status = 3 AND IFNULL(q.lesson_audition, 0) = 1
+			)`)
+			args = append(args, instID)
+		} else {
+			filters = append(filters, `NOT EXISTS (
+				SELECT 1
+				FROM sale_order so
+				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+				INNER JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
+				WHERE so.student_id = s.id AND so.inst_id = ? AND so.del_flag = 0
+				  AND so.order_status = 3 AND IFNULL(q.lesson_audition, 0) = 1
+			)`)
+			args = append(args, instID)
+		}
+	}
+	if q.NotFollowUpDay != nil && *q.NotFollowUpDay > 0 {
+		filters = append(filters, "(s.last_follow_up_time <= ? OR s.last_follow_up_time IS NULL)")
+		args = append(args, time.Now().AddDate(0, 0, -*q.NotFollowUpDay))
+	}
+	if q.AgeMin != nil && *q.AgeMin > 0 {
+		maxBirthday := time.Now().AddDate(-*q.AgeMin, 0, 0)
+		filters = append(filters, "s.birthday <= ?")
+		args = append(args, maxBirthday.Format("2006-01-02"))
+	}
+	if q.AgeMax != nil && *q.AgeMax > 0 {
+		minBirthday := time.Now().AddDate(-*q.AgeMax, 0, 0)
+		filters = append(filters, "s.birthday >= ?")
+		args = append(args, minBirthday.Format("2006-01-02"))
+	}
+	if begin := parseDateStart(q.CreateTimeBegin); begin != nil {
+		filters = append(filters, "s.create_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(q.CreateTimeEnd); end != nil {
+		filters = append(filters, "s.create_time <= ?")
+		args = append(args, *end)
+	}
+	if begin := parseDateStart(q.BirthDayBegin); begin != nil {
+		filters = append(filters, "s.birthday >= ?")
+		args = append(args, begin.Format("2006-01-02"))
+	}
+	if end := parseDateEnd(q.BirthDayEnd); end != nil {
+		filters = append(filters, "s.birthday <= ?")
+		args = append(args, end.Format("2006-01-02"))
+	}
+	if begin := parseDateStart(q.FollowUpTimeBegin); begin != nil {
+		filters = append(filters, "s.last_follow_up_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(q.FollowUpTimeEnd); end != nil {
+		filters = append(filters, "s.last_follow_up_time <= ?")
+		args = append(args, *end)
+	}
+	if begin := parseDateStart(q.NextFollowUpTimeBegin); begin != nil {
+		filters = append(filters, "s.next_follow_up_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(q.NextFollowUpTimeEnd); end != nil {
+		filters = append(filters, "s.next_follow_up_time <= ?")
+		args = append(args, *end)
+	}
+	if begin := parseDateStart(q.SalesAssignedTimeBegin); begin != nil {
+		filters = append(filters, "s.sale_assigned_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(q.SalesAssignedTimeEnd); end != nil {
+		filters = append(filters, "s.sale_assigned_time <= ?")
+		args = append(args, *end)
+	}
+	for _, custom := range q.CustomFieldSearchList {
+		fieldID := parseAnyToInt64Local(custom["studentCustomFieldId"])
+		if fieldID <= 0 {
+			continue
+		}
+		if searchOptions, ok := custom["searchOptions"].([]any); ok && len(searchOptions) > 0 {
+			holders := make([]string, 0, len(searchOptions))
+			optionArgs := make([]any, 0, len(searchOptions)+1)
+			optionArgs = append(optionArgs, fieldID)
+			for _, option := range searchOptions {
+				text := strings.TrimSpace(asStringLocal(option))
+				if text == "" {
+					continue
+				}
+				holders = append(holders, "?")
+				optionArgs = append(optionArgs, text)
+			}
+			if len(holders) > 0 {
+				filters = append(filters, `EXISTS (
+					SELECT 1 FROM inst_student_field_value fv
+					WHERE fv.student_id = s.id AND fv.del_flag = 0 AND fv.field_id = ?
+					  AND fv.field_value IN (`+strings.Join(holders, ",")+`)
+				)`)
+				args = append(args, optionArgs...)
+			}
+			continue
+		}
+		searchKey := strings.TrimSpace(asStringLocal(custom["searchKey"]))
+		if searchKey != "" {
+			filters = append(filters, `EXISTS (
+				SELECT 1 FROM inst_student_field_value fv
+				WHERE fv.student_id = s.id AND fv.del_flag = 0 AND fv.field_id = ?
+				  AND fv.field_value LIKE ?
+			)`)
+			args = append(args, fieldID, "%"+searchKey+"%")
+		}
+	}
 	whereClause := strings.Join(filters, " AND ")
 
 	var total int
@@ -631,13 +836,18 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.sale_person, IFNULL(iu.nick_name, ''), s.intent_level,
-		       IFNULL(s.intended_course, ''), s.channel_id, IFNULL(c.channel_name, ''), s.create_time, s.birthday,
+		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship,
+		       s.sale_person, IFNULL(sale.nick_name, ''), s.intent_level,
+		       IFNULL(s.intended_course, ''), s.channel_id, IFNULL(c.channel_name, ''), IFNULL(cc.category_name, ''), s.create_time, s.birthday,
 		       IFNULL(s.wechat_number, ''), IFNULL(s.study_school, ''), IFNULL(s.grade, ''), IFNULL(s.interest, ''), IFNULL(s.address, ''),
-		       s.follow_up_status, s.student_status, s.last_follow_up_time, s.next_follow_up_time, IFNULL(s.remark, '')
+		       s.follow_up_status, s.student_status, s.last_follow_up_time, s.next_follow_up_time, IFNULL(s.remark, ''),
+		       s.recommend_student_id, IFNULL(rs.stu_name, ''), s.sale_assigned_time, s.create_id, IFNULL(creator.nick_name, '')
 		FROM inst_student s
-		LEFT JOIN inst_user iu ON s.sale_person = iu.id
+		LEFT JOIN inst_user sale ON s.sale_person = sale.id
 		LEFT JOIN inst_channel c ON s.channel_id = c.id
+		LEFT JOIN inst_channel_category cc ON cc.id = c.category_id
+		LEFT JOIN inst_student rs ON rs.id = s.recommend_student_id
+		LEFT JOIN inst_user creator ON creator.id = s.create_id
 		WHERE `+whereClause+orderClause+`
 		LIMIT ? OFFSET ?`, append(args, size, offset)...)
 	if err != nil {
@@ -652,6 +862,7 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 		var birthDay sql.NullTime
 		var lastFollowUp sql.NullTime
 		var nextFollowUp sql.NullTime
+		var salesAssignedTime sql.NullTime
 		if err := rows.Scan(
 			&item.ID,
 			&item.InstID,
@@ -659,12 +870,14 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 			&item.AvatarURL,
 			&item.StuSex,
 			&item.Mobile,
+			&item.PhoneRelationship,
 			&item.SalePerson,
 			&item.SalePersonName,
 			&item.IntentLevel,
 			&intendedCourseRaw,
 			&item.ChannelID,
 			&item.ChannelName,
+			&item.ChannelCategoryName,
 			&item.CreateTime,
 			&birthDay,
 			&item.WeChatNumber,
@@ -677,6 +890,11 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 			&lastFollowUp,
 			&nextFollowUp,
 			&item.Remark,
+			&item.RecommendStudentID,
+			&item.RecommendStudentName,
+			&salesAssignedTime,
+			&item.CreateID,
+			&item.CreateName,
 		); err != nil {
 			return model.PageResult[model.IntentStudent]{}, err
 		}
@@ -693,7 +911,169 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 			t := nextFollowUp.Time
 			item.NextFollowUpTime = &t
 		}
+		if salesAssignedTime.Valid {
+			t := salesAssignedTime.Time
+			item.SalesAssignedTime = &t
+		}
+		item.IsRecommend = item.RecommendStudentID != nil
+		item.Lessons = []model.CourseIDName{}
+		item.CustomInfo = []model.CustomInfo{}
 		items = append(items, item)
+	}
+
+	courseIDs := make(map[int64]struct{})
+	for _, item := range items {
+		for _, courseID := range item.IntendedCourse {
+			if courseID > 0 {
+				courseIDs[courseID] = struct{}{}
+			}
+		}
+	}
+	if len(courseIDs) > 0 {
+		courseIDList := make([]int64, 0, len(courseIDs))
+		for courseID := range courseIDs {
+			courseIDList = append(courseIDList, courseID)
+		}
+		placeholders := strings.TrimRight(strings.Repeat("?,", len(courseIDList)), ",")
+		courseArgs := make([]any, 0, len(courseIDList))
+		for _, courseID := range courseIDList {
+			courseArgs = append(courseArgs, courseID)
+		}
+		courseRows, err := repo.db.QueryContext(ctx, `
+			SELECT id, IFNULL(name, '')
+			FROM inst_course
+			WHERE del_flag = 0 AND id IN (`+placeholders+`)
+		`, courseArgs...)
+		if err != nil {
+			return model.PageResult[model.IntentStudent]{}, err
+		}
+		courseMap := make(map[int64]string, len(courseIDList))
+		for courseRows.Next() {
+			var (
+				courseID int64
+				name     string
+			)
+			if err := courseRows.Scan(&courseID, &name); err != nil {
+				courseRows.Close()
+				return model.PageResult[model.IntentStudent]{}, err
+			}
+			courseMap[courseID] = name
+		}
+		courseRows.Close()
+		for idx := range items {
+			if len(items[idx].IntendedCourse) == 0 {
+				continue
+			}
+			lessons := make([]model.CourseIDName, 0, len(items[idx].IntendedCourse))
+			for _, courseID := range items[idx].IntendedCourse {
+				if name := strings.TrimSpace(courseMap[courseID]); name != "" {
+					lessons = append(lessons, model.CourseIDName{ID: courseID, Name: name})
+				}
+			}
+			items[idx].Lessons = lessons
+		}
+	}
+
+	studentIDs := make([]int64, 0, len(items))
+	for _, item := range items {
+		studentIDs = append(studentIDs, item.ID)
+	}
+	if len(studentIDs) > 0 {
+		holders := strings.TrimRight(strings.Repeat("?,", len(studentIDs)), ",")
+		fieldArgs := make([]any, 0, len(studentIDs))
+		for _, studentID := range studentIDs {
+			fieldArgs = append(fieldArgs, studentID)
+		}
+		fieldRows, err := repo.db.QueryContext(ctx, `
+			SELECT student_id, field_id, IFNULL(field_key, ''), IFNULL(field_value, '')
+			FROM inst_student_field_value
+			WHERE del_flag = 0 AND student_id IN (`+holders+`)
+			ORDER BY id ASC
+		`, fieldArgs...)
+		if err != nil {
+			return model.PageResult[model.IntentStudent]{}, err
+		}
+		customMap := make(map[int64][]model.CustomInfo)
+		for fieldRows.Next() {
+			var (
+				studentID int64
+				info      model.CustomInfo
+			)
+			if err := fieldRows.Scan(&studentID, &info.FieldID, &info.FieldName, &info.Value); err != nil {
+				fieldRows.Close()
+				return model.PageResult[model.IntentStudent]{}, err
+			}
+			customMap[studentID] = append(customMap[studentID], info)
+		}
+		fieldRows.Close()
+		auditionRows, err := repo.db.QueryContext(ctx, `
+			SELECT DISTINCT so.student_id
+			FROM sale_order so
+			INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+			INNER JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
+			WHERE so.inst_id = ? AND so.del_flag = 0 AND so.order_status = 3
+			  AND IFNULL(q.lesson_audition, 0) = 1
+			  AND so.student_id IN (`+holders+`)
+		`, append([]any{instID}, fieldArgs...)...)
+		if err != nil {
+			return model.PageResult[model.IntentStudent]{}, err
+		}
+		auditionSet := make(map[int64]struct{})
+		for auditionRows.Next() {
+			var studentID int64
+			if err := auditionRows.Scan(&studentID); err != nil {
+				auditionRows.Close()
+				return model.PageResult[model.IntentStudent]{}, err
+			}
+			auditionSet[studentID] = struct{}{}
+		}
+		auditionRows.Close()
+		var (
+			enablePublicPool bool
+			unfollowedTime   sql.NullInt64
+		)
+		_ = repo.db.QueryRowContext(ctx, `
+			SELECT IFNULL(enable_public_pool, 0), unfollowed_time
+			FROM inst_config
+			WHERE inst_id = ? AND del_flag = 0
+			LIMIT 1
+		`, instID).Scan(&enablePublicPool, &unfollowedTime)
+		now := time.Now()
+		for idx := range items {
+			if infos, ok := customMap[items[idx].ID]; ok {
+				items[idx].CustomInfo = infos
+			} else {
+				items[idx].CustomInfo = []model.CustomInfo{}
+			}
+			_, purchased := auditionSet[items[idx].ID]
+			items[idx].PurchasedAuditionProduct = purchased
+			if purchased {
+				items[idx].ExperienceClassPurchaseStatus = "已购买"
+			} else {
+				items[idx].ExperienceClassPurchaseStatus = "未购买"
+			}
+			if enablePublicPool && items[idx].SalePerson != nil && unfollowedTime.Valid && unfollowedTime.Int64 > 0 {
+				var baseTime *time.Time
+				if items[idx].LastFollowUpTime != nil && items[idx].SalesAssignedTime != nil {
+					if items[idx].LastFollowUpTime.After(*items[idx].SalesAssignedTime) {
+						baseTime = items[idx].LastFollowUpTime
+					} else {
+						baseTime = items[idx].SalesAssignedTime
+					}
+				} else if items[idx].LastFollowUpTime != nil {
+					baseTime = items[idx].LastFollowUpTime
+				} else if items[idx].SalesAssignedTime != nil {
+					baseTime = items[idx].SalesAssignedTime
+				}
+				if baseTime != nil {
+					days := int(baseTime.AddDate(0, 0, int(unfollowedTime.Int64)).Sub(now).Hours() / 24)
+					if days < 0 {
+						days = 0
+					}
+					items[idx].DaysUntilReturn = &days
+				}
+			}
+		}
 	}
 
 	return model.PageResult[model.IntentStudent]{
@@ -1776,6 +2156,41 @@ func joinIntCSV(values []int) string {
 
 func intPtr(value int) *int {
 	return &value
+}
+
+func parseAnyToInt64Local(value any) int64 {
+	switch typed := value.(type) {
+	case int64:
+		return typed
+	case int:
+		return int64(typed)
+	case float64:
+		return int64(typed)
+	case string:
+		text := strings.TrimSpace(typed)
+		if text == "" {
+			return 0
+		}
+		parsed, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			return 0
+		}
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func asStringLocal(value any) string {
+	if value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		return strings.TrimSpace(fmt.Sprintf("%v", typed))
+	}
 }
 
 func lessonModelLabel(value *int) string {

@@ -163,7 +163,15 @@ func (svc *Service) AddIntentStudent(userID int64, dto model.StudentSaveDTO) (in
 	if count > 0 {
 		return 0, errors.New(studentDuplicateMessage(rule))
 	}
-	return svc.repo.CreateIntentStudent(context.Background(), instID, dto)
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, errors.New("no institution user context")
+		}
+		return 0, err
+	}
+	dto.OperatorID = &instUserID
+	return svc.repo.CreateIntentStudent(context.Background(), instID, instUserID, dto)
 }
 
 func (svc *Service) UpdateIntentStudent(userID int64, dto model.StudentSaveDTO) error {
@@ -187,6 +195,14 @@ func (svc *Service) UpdateIntentStudent(userID int64, dto model.StudentSaveDTO) 
 	if count > 0 {
 		return errors.New(studentDuplicateMessage(rule))
 	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution user context")
+		}
+		return err
+	}
+	dto.OperatorID = &instUserID
 	before, err := svc.repo.GetStudentSnapshot(context.Background(), instID, *dto.StudentID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -197,7 +213,6 @@ func (svc *Service) UpdateIntentStudent(userID int64, dto model.StudentSaveDTO) 
 	if err := svc.repo.UpdateIntentStudent(context.Background(), instID, dto); err != nil {
 		return err
 	}
-	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
 	if err == nil {
 		if after, err := svc.repo.GetStudentSnapshot(context.Background(), instID, *dto.StudentID); err == nil {
 			_ = svc.repo.InsertStudentChangeRecord(context.Background(), instID, *dto.StudentID, instUserID, svc.buildStudentSnapshotChangeText(context.Background(), before, after))

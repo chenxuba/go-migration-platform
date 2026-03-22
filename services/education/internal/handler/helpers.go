@@ -42,6 +42,20 @@ func parseStudentSaveDTO(raw map[string]any) model.StudentSaveDTO {
 			dto.ChannelID = asInt64Ptr(list[len(list)-1])
 		}
 	}
+	if customList, ok := raw["customInfo"].([]any); ok {
+		dto.CustomInfo = make([]model.CustomInfo, 0, len(customList))
+		for _, item := range customList {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			dto.CustomInfo = append(dto.CustomInfo, model.CustomInfo{
+				FieldID:   derefInt64Value(asInt64Ptr(row["fieldId"])),
+				FieldName: asString(row["fieldName"]),
+				Value:     asString(row["value"]),
+			})
+		}
+	}
 	return dto
 }
 

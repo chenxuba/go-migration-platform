@@ -356,17 +356,23 @@ func (repo *Repository) ListStudentChangeRecords(ctx context.Context, instID, st
 	return items, rows.Err()
 }
 
-func (repo *Repository) CreateIntentStudent(ctx context.Context, instID int64, dto model.StudentSaveDTO) (int64, error) {
-	result, err := repo.db.ExecContext(ctx, `
+func (repo *Repository) CreateIntentStudent(ctx context.Context, instID, operatorID int64, dto model.StudentSaveDTO) (int64, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO inst_student
 		(inst_id, stu_name, stu_sex, birthday, mobile, phone_relationship, avatar_url, channel_id, sale_person,
 		 sale_assigned_time, follow_up_status, intent_level, student_status, wechat_number, grade, study_school,
 		 interest, address, recommend_student_id, collector_staff_id, phone_sell_staff_id, foreground_staff_id,
-		 vice_sell_staff_id, student_manager_id, advisor_id, remark, del_flag, create_time)
+		 vice_sell_staff_id, student_manager_id, advisor_id, remark, del_flag, create_id, create_time, update_id, update_time)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
 		        CASE WHEN ? IS NULL THEN NULL ELSE NOW() END, ?, ?, 0, ?, ?, ?,
 		        ?, ?, ?, ?, ?, ?,
-		        ?, ?, ?, ?, 0, NOW())
+		        ?, ?, ?, ?, 0, ?, NOW(), ?, NOW())
 	`,
 		instID,
 		strings.TrimSpace(dto.StuName),
@@ -393,23 +399,41 @@ func (repo *Repository) CreateIntentStudent(ctx context.Context, instID int64, d
 		dto.StudentManagerID,
 		dto.AdvisorID,
 		strings.TrimSpace(dto.Remark),
+		operatorID,
+		operatorID,
 	)
 	if err != nil {
 		return 0, err
 	}
-	return result.LastInsertId()
+	studentID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err := repo.replaceStudentCustomFieldValuesTx(ctx, tx, studentID, operatorID, dto.CustomInfo); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return studentID, nil
 }
 
 func (repo *Repository) UpdateIntentStudent(ctx context.Context, instID int64, dto model.StudentSaveDTO) error {
 	if dto.StudentID == nil {
 		return fmt.Errorf("studentId is required")
 	}
-	_, err := repo.db.ExecContext(ctx, `
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.ExecContext(ctx, `
 		UPDATE inst_student
 		SET stu_name = ?, stu_sex = ?, birthday = ?, mobile = ?, phone_relationship = ?, avatar_url = ?, channel_id = ?,
 		    sale_person = ?, wechat_number = ?, grade = ?, study_school = ?, interest = ?, address = ?,
 		    recommend_student_id = ?, collector_staff_id = ?, phone_sell_staff_id = ?, foreground_staff_id = ?,
-		    vice_sell_staff_id = ?, student_manager_id = ?, advisor_id = ?, remark = ?
+		    vice_sell_staff_id = ?, student_manager_id = ?, advisor_id = ?, remark = ?, update_id = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`,
 		strings.TrimSpace(dto.StuName),
@@ -433,8 +457,57 @@ func (repo *Repository) UpdateIntentStudent(ctx context.Context, instID int64, d
 		dto.StudentManagerID,
 		dto.AdvisorID,
 		strings.TrimSpace(dto.Remark),
+		dto.OperatorID,
 		*dto.StudentID,
 		instID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if err := repo.replaceStudentCustomFieldValuesTx(ctx, tx, *dto.StudentID, derefInt64ForCustom(dto.OperatorID), dto.CustomInfo); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (repo *Repository) replaceStudentCustomFieldValuesTx(ctx context.Context, tx *sql.Tx, studentID, operatorID int64, values []model.CustomInfo) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_student_field_value
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE student_id = ? AND del_flag = 0
+	`, operatorID, studentID); err != nil {
+		return err
+	}
+	for _, item := range values {
+		if item.FieldID <= 0 || strings.TrimSpace(item.Value) == "" {
+			continue
+		}
+		fieldKey := strings.TrimSpace(item.FieldName)
+		if fieldKey == "" {
+			_ = tx.QueryRowContext(ctx, `
+				SELECT IFNULL(field_key, '')
+				FROM inst_student_field_key
+				WHERE id = ? AND del_flag = 0
+				LIMIT 1
+			`, item.FieldID).Scan(&fieldKey)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO inst_student_field_value (
+				uuid, version, student_id, field_id, field_key, field_value,
+				create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
+			)
+		`, studentID, item.FieldID, fieldKey, strings.TrimSpace(item.Value), operatorID, operatorID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func derefInt64ForCustom(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
