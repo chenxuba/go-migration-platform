@@ -67,6 +67,22 @@ func (svc *Service) SetInstConfig(userID int64, payload map[string]any) error {
 	return svc.repo.UpdateInstConfig(context.Background(), instID, payload)
 }
 
+func (svc *Service) InitInstAllConfig(instID int64) error {
+	if instID <= 0 {
+		return errors.New("instId is required")
+	}
+	if err := svc.repo.InitInstStudentField(context.Background(), instID); err != nil {
+		return err
+	}
+	if err := svc.repo.InitInstCourseProperty(context.Background(), instID); err != nil {
+		return err
+	}
+	if err := svc.repo.CreateDefaultInstConfig(context.Background(), instID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (svc *Service) GetDefaultStudentFields(userID int64) ([]model.StudentFieldKey, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
@@ -163,6 +179,51 @@ func (svc *Service) UpdateCustomStudentField(userID int64, field model.StudentFi
 		return errors.New("当前信息已变更，请刷新后重试")
 	}
 	return svc.repo.UpdateStudentCustomField(context.Background(), field)
+}
+
+func (svc *Service) SortCustomStudentFields(userID int64, fields []model.StudentFieldKey) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	for _, field := range fields {
+		current, err := svc.repo.GetStudentFieldByID(context.Background(), field.ID)
+		if err != nil {
+			return err
+		}
+		if current.InstID != instID {
+			return errors.New("自定义字段不存在")
+		}
+	}
+	return svc.repo.SortStudentCustomFields(context.Background(), fields)
+}
+
+func (svc *Service) GetStudentFieldDetail(userID, id int64) (model.StudentFieldDetail, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.StudentFieldDetail{}, errors.New("no institution context")
+		}
+		return model.StudentFieldDetail{}, err
+	}
+	current, err := svc.repo.GetStudentFieldByID(context.Background(), id)
+	if err != nil {
+		return model.StudentFieldDetail{}, err
+	}
+	if current.InstID != instID {
+		return model.StudentFieldDetail{}, errors.New("自定义字段不存在")
+	}
+	return svc.repo.GetStudentFieldDetail(context.Background(), id)
+}
+
+func (svc *Service) InitInstStudentField(instID int64) error {
+	if instID <= 0 {
+		return errors.New("instId is required")
+	}
+	return svc.repo.InitInstStudentField(context.Background(), instID)
 }
 
 func (svc *Service) DeleteCustomStudentField(userID int64, field model.StudentFieldKey) error {

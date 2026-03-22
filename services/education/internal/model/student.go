@@ -347,3 +347,13 @@ type StudentFieldKey struct {
 	Sort        int    `json:"sort"`
 	Remark      string `json:"remark,omitempty"`
 }
+
+type StudentFieldDetail struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Type      int    `json:"type"`
+	IsDisplay bool   `json:"isDisplay"`
+	Required  bool   `json:"required"`
+	Searched  bool   `json:"searched"`
+	Sort      int    `json:"sort"`
+}

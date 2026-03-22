@@ -27,12 +27,16 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/orders", handler.orders)
 	mux.HandleFunc("/api/v1/inst-config", handler.getInstConfig)
 	mux.HandleFunc("/api/v1/inst-config/update", handler.setInstConfig)
+	mux.HandleFunc("/api/v1/inst-config/init-all", handler.initInstAllConfig)
 	mux.HandleFunc("/api/v1/approval-configs/page", handler.approvalConfigPaged)
 	mux.HandleFunc("/api/v1/approval-configs/save", handler.saveApprovalConfig)
 	mux.HandleFunc("/api/v1/approvals/approve", handler.approveApprovalRecord)
 	mux.HandleFunc("/api/v1/approvals/cancel", handler.cancelApprovalRecord)
 	mux.HandleFunc("/api/v1/student-field-keys/default", handler.defaultStudentFields)
 	mux.HandleFunc("/api/v1/student-field-keys/custom", handler.customStudentFields)
+	mux.HandleFunc("/api/v1/student-field-keys/detail", handler.studentFieldDetail)
+	mux.HandleFunc("/api/v1/student-field-keys/sort", handler.sortCustomStudentFields)
+	mux.HandleFunc("/api/v1/student-field-keys/init", handler.initInstStudentField)
 	mux.HandleFunc("/api/v1/student-field-keys/display-status", handler.updateStudentFieldDisplayStatus)
 	mux.HandleFunc("/api/v1/student-field-keys/create", handler.addCustomStudentField)
 	mux.HandleFunc("/api/v1/student-field-keys/update", handler.updateCustomStudentField)
@@ -51,6 +55,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/tuition-accounts/reading-list", handler.tuitionAccountReadingList)
 	mux.HandleFunc("/api/v1/course-properties", handler.coursePropertyList)
 	mux.HandleFunc("/api/v1/course-properties/update", handler.updateCourseProperty)
+	mux.HandleFunc("/api/v1/course-properties/init", handler.initInstCourseProperty)
 	mux.HandleFunc("/api/v1/course-property-options", handler.coursePropertyOptions)
 	mux.HandleFunc("/api/v1/course-property-options/create", handler.addCoursePropertyOption)
 	mux.HandleFunc("/api/v1/course-property-options/update", handler.updateCoursePropertyOption)
@@ -184,16 +189,20 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/instStudent/listStudentChangeInfo", handler.studentChangeRecords)
 	mux.HandleFunc("/instConfig/getInstConfig", handler.getInstConfig)
 	mux.HandleFunc("/instConfig/setInstConfig", handler.setInstConfig)
+	mux.HandleFunc("/instConfig/initInstAllConfig", handler.initInstAllConfig)
 	mux.HandleFunc("/instApprovalConfig/approvalConfigPaged", handler.approvalConfigPaged)
 	mux.HandleFunc("/instApprovalConfig/save", handler.saveApprovalConfig)
 	mux.HandleFunc("/approvalRecord/approve", handler.approveApprovalRecord)
 	mux.HandleFunc("/approvalRecord/cancel", handler.cancelApprovalRecord)
 	mux.HandleFunc("/instStudentFieldKey/getDefaultField", handler.defaultStudentFields)
 	mux.HandleFunc("/instStudentFieldKey/getCustomField", handler.customStudentFields)
+	mux.HandleFunc("/instStudentFieldKey/getDetail", handler.studentFieldDetail)
 	mux.HandleFunc("/instStudentFieldKey/updateDisplayStatus", handler.updateStudentFieldDisplayStatus)
 	mux.HandleFunc("/instStudentFieldKey/addCustomField", handler.addCustomStudentField)
 	mux.HandleFunc("/instStudentFieldKey/updateCustomField", handler.updateCustomStudentField)
 	mux.HandleFunc("/instStudentFieldKey/deleteCustomField", handler.deleteCustomStudentField)
+	mux.HandleFunc("/instStudentFieldKey/sortCustomField", handler.sortCustomStudentFields)
+	mux.HandleFunc("/instStudentFieldKey/initInstStudentField", handler.initInstStudentField)
 	mux.HandleFunc("/instUser/getUserList", handler.instUsersPage)
 	mux.HandleFunc("/instUser/getInstUserDetail", handler.instUserDetail)
 	mux.HandleFunc("/instUser/saveInstUser", handler.saveInstUser)
@@ -210,6 +219,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/instCourseProperty/updateCoursePropertyEnable", handler.updateCourseProperty)
 	mux.HandleFunc("/instCourseProperty/getCoursePropertyOptions", handler.coursePropertyOptions)
 	mux.HandleFunc("/instCourseProperty/addCoursePropertyOption", handler.addCoursePropertyOption)
+	mux.HandleFunc("/instCourseProperty/initInstCourseProperty", handler.initInstCourseProperty)
 	mux.HandleFunc("/instCoursePropertyOption/updateOption", handler.updateCoursePropertyOption)
 	mux.HandleFunc("/instCoursePropertyOption/deleteOption", handler.deleteCoursePropertyOption)
 	mux.HandleFunc("/instCoursePropertyOption/updateOptionSort", handler.updateCoursePropertyOptionSort)
@@ -264,6 +274,28 @@ func (handler *Handler) setInstConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := handler.service.SetInstConfig(claims.UserID, payload); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) initInstAllConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var payload map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	instID := derefInt64Value(asInt64Ptr(payload["id"]))
+	if instID <= 0 {
+		instID = derefInt64Value(asInt64Ptr(payload["instId"]))
+	}
+	if err := handler.service.InitInstAllConfig(instID); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
@@ -389,6 +421,87 @@ func (handler *Handler) deleteCustomStudentField(w http.ResponseWriter, r *http.
 		return
 	}
 	if err := handler.service.DeleteCustomStudentField(claims.UserID, input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) sortCustomStudentFields(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var fields []model.StudentFieldKey
+	if err := json.NewDecoder(r.Body).Decode(&fields); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.SortCustomStudentFields(claims.UserID, fields); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) studentFieldDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetStudentFieldDetail(claims.UserID, id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) initInstStudentField(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	instID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("instId")), 10, 64)
+	if err != nil || instID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid instId", ctx.RequestID)
+		return
+	}
+	if err := handler.service.InitInstStudentField(instID); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) initInstCourseProperty(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	instID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("instId")), 10, 64)
+	if err != nil || instID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid instId", ctx.RequestID)
+		return
+	}
+	if err := handler.service.InitInstCourseProperty(instID); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}

@@ -32,11 +32,12 @@ func (handler *Handler) intentStudentsPage(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var query model.IntentStudentQueryDTO
-	if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+	var raw map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
+	query := parseIntentStudentQueryDTO(raw)
 
 	result, err := handler.service.PageIntentStudents(claims.UserID, query)
 	if err != nil {

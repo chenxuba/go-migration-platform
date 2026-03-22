@@ -59,6 +59,68 @@ func parseStudentSaveDTO(raw map[string]any) model.StudentSaveDTO {
 	return dto
 }
 
+func parseIntentStudentQueryDTO(raw map[string]any) model.IntentStudentQueryDTO {
+	query := model.IntentStudentQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.ByCreatedTime = asInt(sortModel["byCreatedTime"], 0)
+		query.SortModel.ByFollowUpTime = asInt(sortModel["byFollowUpTime"], 0)
+		query.SortModel.ByNextFlowTime = asInt(sortModel["byNextFlowTime"], 0)
+		query.SortModel.ByDaysUntilReturn = asInt(sortModel["byDaysUntilReturn"], 0)
+		query.SortModel.BySalesAssignedTime = asInt(sortModel["bySalesAssignedTime"], 0)
+		query.SortModel.ByUpdateTime = asInt(sortModel["byUpdateTime"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.IntentStudentFilters{
+			QueryAllOrDepartment:     asIntPtr(qm["queryAllOrDepartment"]),
+			QuickFilter:              asIntPtr(qm["quickFilter"]),
+			StudentID:                asString(qm["studentId"]),
+			SalespersonID:            asInt64Ptr(qm["salespersonId"]),
+			CourseID:                 asInt64Ptr(qm["courseId"]),
+			SearchKey:                asString(qm["searchKey"]),
+			WechatNumber:             asString(qm["wechatNumber"]),
+			SchoolSearchKey:          asString(qm["schoolSearchKey"]),
+			AddressSearchKey:         asString(qm["addressSearchKey"]),
+			InterestSearchKey:        asString(qm["interestSearchKey"]),
+			IntentionLevels:          asIntSlice(qm["intentionLevels"]),
+			FollowUpStatuses:         asIntSlice(qm["followUpStatuses"]),
+			Sexes:                    asIntSlice(qm["sexes"]),
+			Grades:                   asStringSlice(qm["grades"]),
+			ChannelIDs:               asInt64Slice(qm["channelIds"]),
+			RecommendStudentID:       asInt64Ptr(qm["recommendStudentId"]),
+			CreateID:                 asInt64Ptr(qm["createId"]),
+			IsRecommend:              asBoolPtr(qm["isRecommend"]),
+			IsHasSalePerson:          asBoolPtr(qm["isHasSalePerson"]),
+			PurchasedAuditionProduct: asBoolPtr(qm["purchasedAuditionProduct"]),
+			NotFollowUpDay:           asIntPtr(qm["notFollowUpDay"]),
+			AgeMin:                   asIntPtr(qm["ageMin"]),
+			AgeMax:                   asIntPtr(qm["ageMax"]),
+			CreateTimeBegin:          asString(qm["createTimeBegin"]),
+			CreateTimeEnd:            asString(qm["createTimeEnd"]),
+			BirthDayBegin:            asString(qm["birthDayBegin"]),
+			BirthDayEnd:              asString(qm["birthDayEnd"]),
+			FollowUpTimeBegin:        asString(qm["followUpTimeBegin"]),
+			FollowUpTimeEnd:          asString(qm["followUpTimeEnd"]),
+			NextFollowUpTimeBegin:    asString(qm["nextFollowUpTimeBegin"]),
+			NextFollowUpTimeEnd:      asString(qm["nextFollowUpTimeEnd"]),
+			SalesAssignedTimeBegin:   asString(qm["salesAssignedTimeBegin"]),
+			SalesAssignedTimeEnd:     asString(qm["salesAssignedTimeEnd"]),
+		}
+		if list, ok := qm["customFieldSearchList"].([]any); ok {
+			query.QueryModel.CustomFieldSearchList = make([]map[string]any, 0, len(list))
+			for _, item := range list {
+				if row, ok := item.(map[string]any); ok {
+					query.QueryModel.CustomFieldSearchList = append(query.QueryModel.CustomFieldSearchList, row)
+				}
+			}
+		}
+	}
+	return query
+}
+
 func parseInstUserSaveDTO(raw map[string]any) model.InstUserSaveDTO {
 	return model.InstUserSaveDTO{
 		UserID:   asInt64Ptr(raw["userId"]),

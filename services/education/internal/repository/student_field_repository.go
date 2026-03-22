@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"go-migration-platform/services/education/internal/model"
@@ -139,4 +140,98 @@ func (repo *Repository) DeleteStudentCustomField(ctx context.Context, id int64) 
 		WHERE id = ? AND del_flag = 0
 	`, id)
 	return err
+}
+
+func (repo *Repository) SortStudentCustomFields(ctx context.Context, fields []model.StudentFieldKey) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, field := range fields {
+		if field.ID <= 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE inst_student_field_key
+			SET sort = ?, version = IFNULL(version, 0) + 1, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, field.Sort, field.ID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (repo *Repository) GetStudentFieldDetail(ctx context.Context, id int64) (model.StudentFieldDetail, error) {
+	field, err := repo.GetStudentFieldByID(ctx, id)
+	if err != nil {
+		return model.StudentFieldDetail{}, err
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		UPDATE inst_student_field_key
+		SET can_delete = 1, is_display = 1, update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, id)
+	if err != nil {
+		return model.StudentFieldDetail{}, err
+	}
+	return model.StudentFieldDetail{
+		ID:        field.ID,
+		Name:      field.FieldKey,
+		Type:      field.FieldType,
+		IsDisplay: true,
+		Required:  field.Required,
+		Searched:  field.Searched,
+		Sort:      field.Sort,
+	}, nil
+}
+
+func (repo *Repository) InitInstStudentField(ctx context.Context, instID int64) error {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT field_key, field_type, IFNULL(required, 0), IFNULL(searched, 0), IFNULL(options_json, ''),
+		       IFNULL(is_default, 0), IFNULL(is_display, 0), IFNULL(can_delete, 0), IFNULL(can_edit, 0), IFNULL(sort, 0), IFNULL(remark, '')
+		FROM inst_student_field_key
+		WHERE inst_id IS NULL AND is_default = 1 AND del_flag = 0
+		ORDER BY sort ASC, id ASC
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for rows.Next() {
+		var field model.StudentFieldKey
+		if err := rows.Scan(&field.FieldKey, &field.FieldType, &field.Required, &field.Searched, &field.OptionsJSON, &field.IsDefault, &field.IsDisplay, &field.CanDelete, &field.CanEdit, &field.Sort, &field.Remark); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO inst_student_field_key (
+				uuid, version, inst_id, field_key, field_type, required, searched, options_json,
+				is_default, is_display, can_delete, can_edit, sort, remark, del_flag, create_time
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW()
+			)
+		`, instID, field.FieldKey, field.FieldType, field.Required, field.Searched, field.OptionsJSON, field.IsDefault, field.IsDisplay, field.CanDelete, field.CanEdit, field.Sort, field.Remark); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func ensureFieldExists(field model.StudentFieldKey) error {
+	if strings.TrimSpace(field.FieldKey) == "" {
+		return fmt.Errorf("fieldKey is required")
+	}
+	if field.FieldType <= 0 {
+		return fmt.Errorf("fieldType is required")
+	}
+	return nil
 }

@@ -222,6 +222,13 @@ func (svc *Service) ListCourseProperties(userID int64) ([]model.CourseProperty, 
 	return svc.repo.ListCourseProperties(context.Background(), instID)
 }
 
+func (svc *Service) InitInstCourseProperty(instID int64) error {
+	if instID <= 0 {
+		return errors.New("instId is required")
+	}
+	return svc.repo.InitInstCourseProperty(context.Background(), instID)
+}
+
 func (svc *Service) UpdateCourseProperty(userID int64, dto model.CourseProperty) error {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

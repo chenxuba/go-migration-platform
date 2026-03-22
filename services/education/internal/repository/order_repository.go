@@ -462,7 +462,7 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 		FROM tuition_account ta
 		INNER JOIN inst_student s ON ta.student_id = s.id AND s.del_flag = 0
 		INNER JOIN inst_course ic ON ta.course_id = ic.id AND ic.del_flag = 0
-		LEFT JOIN inst_course_quotation icq ON ta.quote_id = icq.id AND icq.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON ta.quote_id = icq.id
 		LEFT JOIN inst_user u1 ON s.advisor_id = u1.id
 		LEFT JOIN inst_user u2 ON s.student_manager_id = u2.id
 		WHERE ` + strings.Join(whereParts, " AND ")
@@ -865,13 +865,17 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 	`, dto.OrderID, instID).Scan(&orderRealAmount, &orderStatus, &studentID, &applicantID); err != nil {
 		return err
 	}
-	if orderStatus != 1 {
+	if orderStatus != 1 && orderStatus != 3 {
 		return fmt.Errorf("订单状态异常")
 	}
 	if dto.PayAmount <= 0 {
 		return fmt.Errorf("支付金额不能小于0")
 	}
-	if dto.PayAmount > orderRealAmount {
+	paidBefore, err := repo.getOrderPaidAmount(ctx, dto.OrderID)
+	if err != nil {
+		return err
+	}
+	if paidBefore+dto.PayAmount > orderRealAmount {
 		return fmt.Errorf("支付金额不能大于订单金额")
 	}
 
@@ -899,19 +903,18 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 		}
 	}
 
-	newStatus := 1
-	if dto.PayAmount >= orderRealAmount {
+	newStatus := orderStatus
+	if orderStatus == 1 {
 		approved, err := repo.insertApprovalRecordTx(ctx, tx, instID, dto.OrderID, studentID, applicantID)
 		if err != nil {
 			return err
 		}
+		newStatus = 2
 		if approved {
 			newStatus = 3
 			if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, dto.OrderID, studentID); err != nil {
 				return err
 			}
-		} else {
-			newStatus = 2
 		}
 	}
 	_, err = tx.ExecContext(ctx, `

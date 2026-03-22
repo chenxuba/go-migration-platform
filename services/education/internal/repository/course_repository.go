@@ -1066,7 +1066,14 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 					baseTime = items[idx].SalesAssignedTime
 				}
 				if baseTime != nil {
-					days := int(baseTime.AddDate(0, 0, int(unfollowedTime.Int64)).Sub(now).Hours() / 24)
+					deadlineDate := time.Date(
+						baseTime.AddDate(0, 0, int(unfollowedTime.Int64)).Year(),
+						baseTime.AddDate(0, 0, int(unfollowedTime.Int64)).Month(),
+						baseTime.AddDate(0, 0, int(unfollowedTime.Int64)).Day(),
+						0, 0, 0, 0, now.Location(),
+					)
+					todayDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+					days := int(deadlineDate.Sub(todayDate).Hours() / 24)
 					if days < 0 {
 						days = 0
 					}
@@ -1444,6 +1451,47 @@ func (repo *Repository) ListCourseProperties(ctx context.Context, instID int64) 
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (repo *Repository) InitInstCourseProperty(ctx context.Context, instID int64) error {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(name, ''), IFNULL(enable, 0), IFNULL(enable_online_filter, 0)
+		FROM inst_course_property
+		WHERE inst_id IS NULL AND del_flag = 0
+		ORDER BY id ASC
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for rows.Next() {
+		var (
+			name               string
+			enable             bool
+			enableOnlineFilter bool
+		)
+		if err := rows.Scan(&name, &enable, &enableOnlineFilter); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO inst_course_property (
+				uuid, version, inst_id, name, enable, enable_online_filter, del_flag, create_time
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, 0, NOW()
+			)
+		`, instID, name, enable, enableOnlineFilter); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (repo *Repository) GetCoursePropertyByID(ctx context.Context, id int64) (model.CourseProperty, error) {

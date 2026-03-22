@@ -6,9 +6,14 @@ type PageRequestModel struct {
 }
 
 type SortModel struct {
-	ByUpdateTime  int `json:"byUpdateTime"`
-	ByTotalSales  int `json:"byTotalSales"`
-	OrderBySortNo int `json:"orderBySortNumber"`
+	ByUpdateTime        int `json:"byUpdateTime"`
+	ByTotalSales        int `json:"byTotalSales"`
+	OrderBySortNo       int `json:"orderBySortNumber"`
+	ByCreatedTime       int `json:"byCreatedTime"`
+	ByFollowUpTime      int `json:"byFollowUpTime"`
+	ByNextFlowTime      int `json:"byNextFlowTime"`
+	ByDaysUntilReturn   int `json:"byDaysUntilReturn"`
+	BySalesAssignedTime int `json:"bySalesAssignedTime"`
 }
 
 type PageResult[T any] struct {

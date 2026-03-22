@@ -52,7 +52,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			IFNULL(MAX(ta.has_grade_upgrade), 0) AS has_grade_upgrade
 		FROM tuition_account ta
 		INNER JOIN inst_course ic ON ta.course_id = ic.id AND ic.del_flag = 0
-		LEFT JOIN inst_course_quotation icq ON ta.quote_id = icq.id AND icq.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON ta.quote_id = icq.id
 		WHERE ta.del_flag = 0
 			AND ta.inst_id = ?
 			AND ta.student_id = ?
