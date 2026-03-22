@@ -60,6 +60,7 @@ func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (mo
 	if deptID.Valid {
 		value := deptID.Int64
 		info.DeptID = &value
+		info.DeptIDs = []int64{value}
 	}
 
 	roleIDs, roleNames, err := repo.getUserRoleSummary(ctx, userID, 1, 0)
@@ -111,6 +112,27 @@ func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64
 		&info.Admin,
 		&info.Disabled,
 	); err != nil {
+		return model.InstUserInfo{}, err
+	}
+
+	deptRows, err := repo.db.QueryContext(ctx, `
+		SELECT dept_id
+		FROM inst_user_dept
+		WHERE inst_user_id = ? AND del_flag = 0
+		ORDER BY id
+	`, info.InstUserID)
+	if err != nil {
+		return model.InstUserInfo{}, err
+	}
+	defer deptRows.Close()
+	for deptRows.Next() {
+		var did int64
+		if err := deptRows.Scan(&did); err != nil {
+			return model.InstUserInfo{}, err
+		}
+		info.DeptIDs = append(info.DeptIDs, did)
+	}
+	if err := deptRows.Err(); err != nil {
 		return model.InstUserInfo{}, err
 	}
 

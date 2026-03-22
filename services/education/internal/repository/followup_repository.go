@@ -144,6 +144,7 @@ func (repo *Repository) PageFollowUpRecords(ctx context.Context, instID int64, q
 		var intendedCourseRaw string
 		var followUpTime sql.NullTime
 		var nextFollowUpTime sql.NullTime
+		var visitStatus sql.NullBool
 		if err := rows.Scan(
 			&item.ID,
 			&item.StudentID,
@@ -168,11 +169,15 @@ func (repo *Repository) PageFollowUpRecords(ctx context.Context, instID int64, q
 			&intendedCourseRaw,
 			&item.IntentionLevel,
 			&item.FollowUpStatus,
-			&item.VisitStatus,
+			&visitStatus,
 			&followUpTime,
 			&nextFollowUpTime,
 		); err != nil {
 			return model.PageResult[model.StudentFollowUpRecord]{}, err
+		}
+		if visitStatus.Valid {
+			v := visitStatus.Bool
+			item.VisitStatus = &v
 		}
 		item.IntendedCourse = parseCSVInt64(intendedCourseRaw)
 		if followUpTime.Valid {
