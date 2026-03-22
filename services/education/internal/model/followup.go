@@ -27,6 +27,12 @@ type StudentFollowUpFilters struct {
 	StudentStatuses       []int   `json:"studentStatuses"`
 }
 
+// FollowUpIntentionLesson 跟进记录上的意向课程（给前端展示名称，与旧版 intentionLessonList 字段对齐）
+type FollowUpIntentionLesson struct {
+	LessonID   int64  `json:"lessonId"`
+	LessonName string `json:"lessonName"`
+}
+
 type StudentFollowUpRecord struct {
 	ID                int64      `json:"id"`
 	StudentID         int64      `json:"studentId"`
@@ -48,7 +54,9 @@ type StudentFollowUpRecord struct {
 	Content           string     `json:"content"`
 	FollowImages      string     `json:"followImages,omitempty"`
 	FollowMethod      *int       `json:"followMethod,omitempty"`
-	IntendedCourse    []int64    `json:"intendedCourse,omitempty"`
+	IntendedCourse      []int64                   `json:"intendedCourse,omitempty"`
+	IntendedCourseName  []string                  `json:"intendedCourseName,omitempty"`
+	IntentionLessonList []FollowUpIntentionLesson `json:"intentionLessonList,omitempty"`
 	IntentionLevel    *int       `json:"intentionLevel,omitempty"`
 	FollowUpStatus    *int       `json:"followUpStatus,omitempty"`
 	VisitStatus       *bool      `json:"visitStatus,omitempty"`

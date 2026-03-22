@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -186,7 +187,70 @@ func (repo *Repository) PageFollowUpRecords(ctx context.Context, instID int64, q
 		item.AvatarURL = normalizeStudentAvatarLocal(item.AvatarURL, item.StuSex)
 		items = append(items, item)
 	}
+	if err := attachFollowUpIntentionLessonNames(ctx, repo.db, instID, items); err != nil {
+		return model.PageResult[model.StudentFollowUpRecord]{}, err
+	}
 	return model.PageResult[model.StudentFollowUpRecord]{Items: items, Total: total, Current: current, Size: size}, rows.Err()
+}
+
+func attachFollowUpIntentionLessonNames(ctx context.Context, db *sql.DB, instID int64, items []model.StudentFollowUpRecord) error {
+	courseIDs := make(map[int64]struct{})
+	for i := range items {
+		for _, id := range items[i].IntendedCourse {
+			if id > 0 {
+				courseIDs[id] = struct{}{}
+			}
+		}
+	}
+	if len(courseIDs) == 0 {
+		return nil
+	}
+	idList := make([]int64, 0, len(courseIDs))
+	for id := range courseIDs {
+		idList = append(idList, id)
+	}
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(idList)), ",")
+	args := make([]any, 0, 1+len(idList))
+	args = append(args, instID)
+	for _, id := range idList {
+		args = append(args, id)
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, IFNULL(name, '')
+		FROM inst_course
+		WHERE del_flag = 0 AND inst_id = ? AND id IN (`+placeholders+`)
+	`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	nameByID := make(map[int64]string, len(idList))
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return err
+		}
+		nameByID[id] = strings.TrimSpace(name)
+	}
+	for i := range items {
+		if len(items[i].IntendedCourse) == 0 {
+			continue
+		}
+		list := make([]model.FollowUpIntentionLesson, 0, len(items[i].IntendedCourse))
+		names := make([]string, 0, len(items[i].IntendedCourse))
+		for _, cid := range items[i].IntendedCourse {
+			nm := nameByID[cid]
+			if nm == "" {
+				nm = fmt.Sprintf("未知课程(%d)", cid)
+			}
+			names = append(names, nm)
+			list = append(list, model.FollowUpIntentionLesson{LessonID: cid, LessonName: nm})
+		}
+		items[i].IntendedCourseName = names
+		items[i].IntentionLessonList = list
+	}
+	return rows.Err()
 }
 
 func (repo *Repository) CreateFollowUp(ctx context.Context, instID, instUserID int64, dto model.CreateFollowUpDTO) error {
@@ -377,14 +441,25 @@ func (repo *Repository) UpdateFollowUpRecord(ctx context.Context, instID int64, 
 		return err
 	}
 
+	// 学员主档意向课程与「该学员最新一条跟进」一致：按创建时间最新，其次 id 最大。
 	var latestID int64
+	var latestIntended string
 	err = tx.QueryRowContext(ctx, `
-		SELECT id
+		SELECT id, IFNULL(intended_course, '')
 		FROM follow_record
 		WHERE student_id = ? AND inst_id = ? AND del_flag = 0
-		ORDER BY id DESC
+		ORDER BY create_time DESC, id DESC
 		LIMIT 1
-	`, studentID, instID).Scan(&latestID)
+	`, studentID, instID).Scan(&latestID, &latestIntended)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE inst_student
+		SET intended_course = ?
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, latestIntended, studentID, instID)
 	if err != nil {
 		return err
 	}
@@ -395,10 +470,9 @@ func (repo *Repository) UpdateFollowUpRecord(ctx context.Context, instID int64, 
 			SET follow_up_status = COALESCE(?, follow_up_status),
 			    intent_level = COALESCE(?, intent_level),
 			    last_follow_up_time = NOW(),
-			    next_follow_up_time = ?,
-			    intended_course = ?
+			    next_follow_up_time = ?
 			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, dto.FollowUpStatus, dto.IntentLevel, dto.NextFollowUpTime, dto.IntentCourseIDs, studentID, instID)
+		`, dto.FollowUpStatus, dto.IntentLevel, dto.NextFollowUpTime, studentID, instID)
 		if err != nil {
 			return err
 		}
