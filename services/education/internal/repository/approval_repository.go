@@ -396,6 +396,82 @@ func (repo *Repository) ApproveApprovalRecord(ctx context.Context, instID, opera
 	return tx.Commit()
 }
 
+func (repo *Repository) CancelApprovalRecord(ctx context.Context, instID, operatorID int64, dto model.ApprovalOperateDTO) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var (
+		orderID         int64
+		approvalType    int
+		approvalStatus  int
+		applicant       int64
+		currentApprover string
+		currentStep     sql.NullInt64
+	)
+	err = tx.QueryRowContext(ctx, `
+		SELECT order_id, IFNULL(approval_type, 0), IFNULL(approval_status, 0),
+		       IFNULL(applicant, 0), IFNULL(current_approver, ''), current_step
+		FROM approval_record
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, dto.ID, instID).Scan(&orderID, &approvalType, &approvalStatus, &applicant, &currentApprover, &currentStep)
+	if err != nil {
+		return err
+	}
+	if approvalStatus != 0 {
+		return fmt.Errorf("当前审批状态不可处理")
+	}
+
+	allowed := operatorID == applicant
+	if !allowed {
+		for _, approverID := range splitCSV(currentApprover) {
+			if approverID == operatorID {
+				allowed = true
+				break
+			}
+		}
+	}
+	if !allowed {
+		return fmt.Errorf("当前用户无权作废审批")
+	}
+	if !currentStep.Valid {
+		return fmt.Errorf("当前审批步骤不存在")
+	}
+
+	now := time.Now()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO approval_history (
+			uuid, version, approval_id, step, approval_person, approval_time, approval_status,
+			create_id, create_time, update_id, update_time, del_flag, remark
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, 2, ?, ?, ?, ?, 0, ?
+		)
+	`, dto.ID, currentStep.Int64, operatorID, now, operatorID, now, operatorID, now, strings.TrimSpace(dto.Remark)); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE approval_record
+		SET approval_status = 2, finish_time = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, now, operatorID, dto.ID, instID); err != nil {
+		return err
+	}
+	if approvalType == 1 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE sale_order
+			SET order_status = 5, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, operatorID, orderID, instID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 type approvalConfigMeta struct {
 	ID            int64
 	Type          int

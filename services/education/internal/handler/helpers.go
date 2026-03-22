@@ -360,17 +360,27 @@ func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQue
 		query.SortModel.ByFinishTime = asInt(sortModel["byFinishTime"], 0)
 	}
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		applicationStartTime := asString(qm["applicationStartTime"])
+		applicationEndTime := asString(qm["applicationEndTime"])
+		if dateRange, ok := qm["applyTime"].([]any); ok && len(dateRange) >= 2 {
+			if applicationStartTime == "" {
+				applicationStartTime = asString(dateRange[0])
+			}
+			if applicationEndTime == "" {
+				applicationEndTime = asString(dateRange[1])
+			}
+		}
 		query.QueryModel = model.ApprovalConfigPageQueryFilters{
-			ApprovalNumber:       asString(qm["approvalNumber"]),
-			ApplicantID:          asInt64Ptr(qm["applicantId"]),
-			OrderNumber:          asString(qm["orderNumber"]),
+			ApprovalNumber:       coalesceString(qm["approvalNumber"], qm["approveNum"]),
+			ApplicantID:          firstInt64Ptr(qm["applicantId"], qm["createId"]),
+			OrderNumber:          coalesceString(qm["orderNumber"], qm["orderNum"]),
 			CurrentApproverID:    asInt64Ptr(qm["currentApproverId"]),
 			FinishStartTime:      asString(qm["finishStartTime"]),
 			FinishEndTime:        asString(qm["finishEndTime"]),
-			ApplicationStartTime: asString(qm["applicationStartTime"]),
-			ApplicationEndTime:   asString(qm["applicationEndTime"]),
+			ApplicationStartTime: applicationStartTime,
+			ApplicationEndTime:   applicationEndTime,
 			Statuses:             asIntSlice(qm["statuses"]),
-			StudentID:            asInt64Ptr(qm["studentId"]),
+			StudentID:            firstInt64Ptr(qm["studentId"], qm["stuId"]),
 		}
 	}
 	return query
@@ -396,6 +406,22 @@ func parseApprovalConfigSaveDTO(raw map[string]any) model.ApprovalConfigSaveDTO 
 		}
 	}
 	return dto
+}
+
+func parseApprovalOperateDTO(raw map[string]any) model.ApprovalOperateDTO {
+	return model.ApprovalOperateDTO{
+		ID:     derefInt64Value(firstInt64Ptr(raw["id"], raw["approvalId"])),
+		Remark: asString(raw["remark"]),
+	}
+}
+
+func firstInt64Ptr(values ...any) *int64 {
+	for _, value := range values {
+		if parsed := asInt64Ptr(value); parsed != nil {
+			return parsed
+		}
+	}
+	return nil
 }
 
 func formatIntentStudentDetail(item model.IntentStudent) map[string]any {
@@ -453,6 +479,48 @@ func formatCourseDetail(item model.CourseDetail) map[string]any {
 	}
 	if item.SaleStatus != nil {
 		result["saleStatus"] = *item.SaleStatus != 0
+	}
+	return result
+}
+
+func formatApprovalRecord(item model.ApprovalConfigRecord) map[string]any {
+	result := map[string]any{
+		"id":                item.ID,
+		"approvalId":        item.ID,
+		"approvalNumber":    item.ApprovalNumber,
+		"approveNum":        item.ApprovalNumber,
+		"approvalType":      item.ApprovalType,
+		"approveType":       item.ApprovalType,
+		"currentApprover":   item.CurrentApprover,
+		"currentApprovePeo": item.CurrentApprover,
+		"configVersion":     item.ConfigVersion,
+		"applicantName":     item.ApplicantName,
+		"createUser":        item.ApplicantName,
+		"studentName":       item.StudentName,
+		"name":              item.StudentName,
+		"studentId":         item.StudentID,
+		"studentAvatar":     item.StudentAvatar,
+		"avatar":            item.StudentAvatar,
+		"mobile":            item.Mobile,
+		"phone":             item.Mobile,
+		"approvalStatus":    item.ApprovalStatus,
+		"approveStatus":     item.ApprovalStatus,
+		"orderNumber":       item.OrderNumber,
+		"orderNum":          item.OrderNumber,
+		"orderId":           item.OrderID,
+		"orderType":         item.OrderType,
+		"approveFlows":      item.ApproveFlows,
+	}
+	if item.CurrentStep != nil {
+		result["currentStep"] = *item.CurrentStep
+	}
+	if item.ApprovalTime != nil {
+		result["approvalTime"] = *item.ApprovalTime
+		result["createTime"] = *item.ApprovalTime
+	}
+	if item.FinishTime != nil {
+		result["finishTime"] = *item.FinishTime
+		result["approveOverTime"] = *item.FinishTime
 	}
 	return result
 }
@@ -768,18 +836,27 @@ func normalizeJSONArrayString(value any) string {
 }
 
 func normalizeStudentAvatar(avatarURL string, sex *int) string {
-	if strings.TrimSpace(avatarURL) != "" {
-		return strings.TrimSpace(avatarURL)
+	const (
+		defaultMaleAvatar    = "https://pcsys.admin.ybc365.com/c04d0ea2-a8b0-4001-b19b-946a980cb726.png"
+		defaultFemaleAvatar  = "https://pcsys.admin.ybc365.com/d92afddc-ffac-40aa-aa61-bd97d91aa1ec.png"
+		defaultUnknownAvatar = "https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png"
+	)
+	normalized := strings.TrimSpace(avatarURL)
+	if normalized == defaultUnknownAvatar {
+		return defaultMaleAvatar
+	}
+	if normalized != "" {
+		return normalized
 	}
 	if sex != nil {
 		if *sex == 1 {
-			return "https://pcsys.admin.ybc365.com/c04d0ea2-a8b0-4001-b19b-946a980cb726.png"
+			return defaultMaleAvatar
 		}
 		if *sex == 0 {
-			return "https://pcsys.admin.ybc365.com/d92afddc-ffac-40aa-aa61-bd97d91aa1ec.png"
+			return defaultFemaleAvatar
 		}
 	}
-	return "https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png"
+	return defaultMaleAvatar
 }
 
 func maskPhone(value string) string {

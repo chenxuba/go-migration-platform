@@ -43,6 +43,9 @@ func (handler *Handler) intentStudentsPage(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
+	for idx := range result.Items {
+		result.Items[idx].AvatarURL = normalizeStudentAvatar(result.Items[idx].AvatarURL, result.Items[idx].StuSex)
+	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
