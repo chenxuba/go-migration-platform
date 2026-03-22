@@ -14,7 +14,7 @@ func (handler *Handler) approvalTemplatesList(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if r.Method != http.MethodPost {
+	if r.Method != http.MethodGet {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
