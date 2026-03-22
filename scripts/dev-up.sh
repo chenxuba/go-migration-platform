@@ -1,4 +1,5 @@
 #!/bin/zsh
+# 仅启动 Go；不检查 MQ/ES/Canal。完整流程（起中间件 + 预检 + 本脚本）请用 scripts/restart.sh
 set -e
 
 ROOT="${0:A:h}/.."

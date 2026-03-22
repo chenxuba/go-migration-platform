@@ -1,6 +1,6 @@
 #!/bin/zsh
-# 重启 = 先 dev-down（按 .pid 杀旧进程）再 dev-up（后台 go run 三个服务）。
-# 服务在后台跑，所以脚本会很快结束；下面会等端口起来，方便确认真的换了一轮进程。
+# 重启：ensure-dev-infra（按需起 MQ/ES/Canal，参考 Java start_all_services）→ preflight → dev-down → dev-up → 等 8081–8083。
+# 依赖未起时直接退出，不拉 Go（SKIP_PREFLIGHT=1 跳过预检；SKIP_ENSURE_INFRA=1 跳过自动起中间件）。
 #
 # 用法: ./scripts/restart.sh
 #   或: zsh /path/to/go-migration-platform/scripts/restart.sh
@@ -11,10 +11,22 @@ SCRIPT_DIR="${0:A:h}"
 cd "${SCRIPT_DIR:A}/.."
 cd "${PWD:A}"
 
-echo "==> 1/2 停止旧进程..."
+echo "==> 1/5 按需拉起本地中间件（RocketMQ / ES / Canal，见 scripts/ensure-dev-infra.sh）…"
+zsh "${SCRIPT_DIR}/ensure-dev-infra.sh" || {
+  echo "中间件未就绪，已中止。可检查 ROCKETMQ_HOME、CANAL_HOME，或 SKIP_ENSURE_INFRA=1 后自行启动。" >&2
+  exit 1
+}
+
+echo "==> 2/5 依赖预检（RocketMQ + ES + Canal）…"
+zsh "${SCRIPT_DIR}/preflight-dev-deps.sh" || {
+  echo "依赖未就绪，已中止（不启动 Go）。可 SKIP_PREFLIGHT=1 跳过检查。" >&2
+  exit 1
+}
+
+echo "==> 3/5 停止旧进程..."
 zsh "${SCRIPT_DIR}/dev-down.sh"
 
-echo "==> 2/2 启动新进程（后台，日志在 .runlogs/）..."
+echo "==> 4/5 启动新进程（后台，日志在 .runlogs/）..."
 zsh "${SCRIPT_DIR}/dev-up.sh"
 
 echo ""
@@ -25,7 +37,7 @@ for f in .runlogs/*.pid(N); do
 done
 
 echo ""
-echo "等待端口 8081(iam) / 8082(platform) / 8083(education) 监听…"
+echo "==> 5/5 等待端口 8081(iam) / 8082(platform) / 8083(education) 监听…"
 echo "（无实时编译百分比：go 输出在各自 .log 里；下面每 2 秒刷一次状态）"
 echo ""
 
