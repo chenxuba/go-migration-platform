@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -22,6 +23,17 @@ func (repo *Repository) PageFollowUpRecords(ctx context.Context, instID int64, q
 	filters := []string{"r.del_flag = 0", "r.inst_id = ?"}
 	args := []any{instID}
 	q := query.QueryModel
+	if q.QuickFilter != nil {
+		switch *q.QuickFilter {
+		case 1:
+			startOfDay := time.Now().Truncate(24 * time.Hour)
+			endOfDay := startOfDay.Add(24 * time.Hour)
+			filters = append(filters, "r.next_follow_up_time >= ?", "r.next_follow_up_time < ?")
+			args = append(args, startOfDay, endOfDay)
+		case 2:
+			filters = append(filters, "r.next_follow_up_time < NOW()", "IFNULL(r.visit_status, 0) = 0")
+		}
+	}
 	if q.StudentID != nil {
 		filters = append(filters, "r.student_id = ?")
 		args = append(args, *q.StudentID)
@@ -33,6 +45,62 @@ func (repo *Repository) PageFollowUpRecords(ctx context.Context, instID int64, q
 	if q.SalespersonID != nil {
 		filters = append(filters, "s.sale_person = ?")
 		args = append(args, *q.SalespersonID)
+	}
+	if len(q.Sexes) > 0 {
+		holders := make([]string, 0, len(q.Sexes))
+		for _, item := range q.Sexes {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "s.stu_sex IN ("+strings.Join(holders, ",")+")")
+	}
+	if begin := parseDateStart(q.FollowUpTimeBegin); begin != nil {
+		filters = append(filters, "r.create_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(q.FollowUpTimeEnd); end != nil {
+		filters = append(filters, "r.create_time <= ?")
+		args = append(args, *end)
+	}
+	if begin := parseDateStart(q.NextFollowUpTimeBegin); begin != nil {
+		filters = append(filters, "r.next_follow_up_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(q.NextFollowUpTimeEnd); end != nil {
+		filters = append(filters, "r.next_follow_up_time <= ?")
+		args = append(args, *end)
+	}
+	if len(q.FollowUpTypes) > 0 {
+		holders := make([]string, 0, len(q.FollowUpTypes))
+		for _, item := range q.FollowUpTypes {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "r.follow_method IN ("+strings.Join(holders, ",")+")")
+	}
+	if len(q.VisitStatuses) > 0 {
+		holders := make([]string, 0, len(q.VisitStatuses))
+		for _, item := range q.VisitStatuses {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "r.visit_status IN ("+strings.Join(holders, ",")+")", "r.next_follow_up_time IS NOT NULL")
+	}
+	if len(q.ChannelIDs) > 0 {
+		holders := make([]string, 0, len(q.ChannelIDs))
+		for _, item := range q.ChannelIDs {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "s.channel_id IN ("+strings.Join(holders, ",")+")")
+	}
+	if len(q.StudentStatuses) > 0 {
+		holders := make([]string, 0, len(q.StudentStatuses))
+		for _, item := range q.StudentStatuses {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "s.student_status IN ("+strings.Join(holders, ",")+")")
 	}
 	if strings.TrimSpace(q.SearchKey) != "" {
 		filters = append(filters, "(s.stu_name LIKE ? OR s.mobile LIKE ? OR r.content LIKE ?)")
@@ -51,7 +119,7 @@ func (repo *Repository) PageFollowUpRecords(ctx context.Context, instID int64, q
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT r.id, r.student_id, IFNULL(s.stu_name, ''), IFNULL(s.mobile, ''), IFNULL(s.student_status, 0),
+		SELECT r.id, r.student_id, IFNULL(s.stu_name, ''), s.stu_sex, IFNULL(s.avatar_url, ''), IFNULL(s.mobile, ''), s.phone_relationship, IFNULL(s.student_status, 0),
 		       s.sale_person, IFNULL(u.nick_name, ''), s.channel_id, IFNULL(c.channel_name, ''), c.category_id, IFNULL(cc.category_name, ''),
 		       r.create_id, IFNULL(u5.nick_name, ''), r.create_time, IFNULL(r.content, ''), IFNULL(r.follow_images, ''),
 		       r.follow_method, IFNULL(r.intended_course, ''), r.intention_level, r.follow_up_status, r.visit_status, r.follow_up_time, r.next_follow_up_time
@@ -62,7 +130,7 @@ func (repo *Repository) PageFollowUpRecords(ctx context.Context, instID int64, q
 		LEFT JOIN inst_user u ON u.id = s.sale_person
 		LEFT JOIN inst_user u5 ON u5.id = r.create_id
 		WHERE `+whereClause+`
-		ORDER BY r.create_time DESC
+		ORDER BY `+followUpOrderClause(query.SortModel)+`
 		LIMIT ? OFFSET ?`, append(args, size, offset)...)
 	if err != nil {
 		return model.PageResult[model.StudentFollowUpRecord]{}, err
@@ -79,7 +147,10 @@ func (repo *Repository) PageFollowUpRecords(ctx context.Context, instID int64, q
 			&item.ID,
 			&item.StudentID,
 			&item.StuName,
+			&item.StuSex,
+			&item.AvatarURL,
 			&item.Mobile,
+			&item.PhoneRelationship,
 			&item.StudentStatus,
 			&item.SalesPersonID,
 			&item.SalesPersonName,
@@ -111,6 +182,8 @@ func (repo *Repository) PageFollowUpRecords(ctx context.Context, instID int64, q
 			t := nextFollowUpTime.Time
 			item.NextFollowUpTime = &t
 		}
+		item.Mobile = maskPhoneLocal(item.Mobile)
+		item.AvatarURL = normalizeStudentAvatarLocal(item.AvatarURL, item.StuSex)
 		items = append(items, item)
 	}
 	return model.PageResult[model.StudentFollowUpRecord]{Items: items, Total: total, Current: current, Size: size}, rows.Err()
@@ -153,23 +226,55 @@ func (repo *Repository) GetFollowUpCount(ctx context.Context, instID int64) (mod
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT
 			COUNT(CASE WHEN DATE(r.next_follow_up_time) = CURDATE() THEN 1 END) AS to_be_followed_up_today_count,
-			COUNT(CASE
-			      WHEN s.create_time >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
-			       AND s.create_time < DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 7 DAY)
-			      THEN 1 END) AS new_inquiries_added_week_count,
+			0 AS new_inquiries_added_week_count,
 			COUNT(CASE WHEN r.next_follow_up_time < NOW() AND r.visit_status = 0 THEN 1 END) AS overdue_for_follow_up_interview_count
-		FROM inst_student s
-		LEFT JOIN (
-			SELECT DISTINCT student_id, next_follow_up_time, visit_status
-			FROM follow_record
-			WHERE del_flag = 0 AND inst_id = ?
-		) r ON r.student_id = s.id
-		WHERE s.inst_id = ? AND s.student_status = 0 AND s.del_flag = 0
-	`, instID, instID)
+		FROM follow_record r
+		WHERE r.inst_id = ? AND r.del_flag = 0
+	`, instID)
 
 	var result model.FollowUpCountVO
 	err := row.Scan(&result.ToBeFollowedUpTodayCount, &result.NewInquiriesAddedWeekCount, &result.OverdueForFollowUpInterviewCount)
 	return result, err
+}
+
+func followUpOrderClause(sort model.SortModel) string {
+	if sort.ByFollowUpTime != 0 {
+		if sort.ByFollowUpTime > 0 {
+			return "r.follow_up_time ASC"
+		}
+		return "r.follow_up_time DESC"
+	}
+	if sort.ByNextFlowTime != 0 {
+		if sort.ByNextFlowTime > 0 {
+			return "r.next_follow_up_time ASC"
+		}
+		return "r.next_follow_up_time DESC"
+	}
+	return "r.create_time DESC"
+}
+
+func normalizeStudentAvatarLocal(avatarURL string, sex *int) string {
+	const (
+		defaultMaleAvatar    = "https://pcsys.admin.ybc365.com/c04d0ea2-a8b0-4001-b19b-946a980cb726.png"
+		defaultFemaleAvatar  = "https://pcsys.admin.ybc365.com/d92afddc-ffac-40aa-aa61-bd97d91aa1ec.png"
+		defaultUnknownAvatar = "https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png"
+	)
+	normalized := strings.TrimSpace(avatarURL)
+	if normalized == defaultUnknownAvatar {
+		return defaultMaleAvatar
+	}
+	if normalized != "" {
+		return normalized
+	}
+	if sex != nil {
+		if *sex == 1 {
+			return defaultMaleAvatar
+		}
+		if *sex == 0 {
+			return defaultFemaleAvatar
+		}
+	}
+	return defaultMaleAvatar
 }
 
 func (repo *Repository) UpdateVisitStatus(ctx context.Context, instID int64, dto model.VisitStatusUpdateDTO) error {

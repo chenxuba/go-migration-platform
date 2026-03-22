@@ -262,6 +262,7 @@ func (repo *Repository) PageRecommenders(ctx context.Context, instID int64, quer
 		if err := rows.Scan(&item.ID, &item.StuName, &item.AvatarURL, &item.Mobile, &item.StudentStatus); err != nil {
 			return model.PageResult[model.RecommenderQueryVO]{}, err
 		}
+		item.Mobile = maskPhoneLocal(item.Mobile)
 		items = append(items, item)
 	}
 	return model.PageResult[model.RecommenderQueryVO]{Items: items, Total: total, Current: current, Size: size}, rows.Err()
@@ -510,4 +511,11 @@ func derefInt64ForCustom(value *int64) int64 {
 		return 0
 	}
 	return *value
+}
+
+func maskPhoneLocal(value string) string {
+	if len(value) == 11 {
+		return value[:3] + "****" + value[7:]
+	}
+	return value
 }

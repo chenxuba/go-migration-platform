@@ -1243,6 +1243,7 @@ func (repo *Repository) PageCurrentStudents(ctx context.Context, instID int64, q
 			t := birthDay.Time
 			item.BirthDay = &t
 		}
+		item.Mobile = maskPhoneLocal(item.Mobile)
 		items = append(items, item)
 	}
 	return model.PageResult[model.CurrentStudent]{Items: items, Total: total, Current: current, Size: size}, rows.Err()
@@ -1419,6 +1420,7 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 			t := firstEnrolledTime.Time
 			item.FirstEnrolledTime = &t
 		}
+		item.Mobile = maskPhoneLocal(item.Mobile)
 		items = append(items, item)
 	}
 

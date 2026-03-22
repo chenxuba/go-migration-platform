@@ -121,6 +121,53 @@ func parseIntentStudentQueryDTO(raw map[string]any) model.IntentStudentQueryDTO 
 	return query
 }
 
+func parseRecommenderQueryDTO(raw map[string]any) model.RecommenderQueryDTO {
+	query := model.RecommenderQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel.StudentID = asInt64Ptr(qm["studentId"])
+		query.QueryModel.SearchKey = asString(qm["searchKey"])
+		query.QueryModel.StudentStatus = asIntPtr(qm["studentStatus"])
+	}
+	return query
+}
+
+func parseFollowUpQueryDTO(raw map[string]any) model.StudentFollowUpQueryDTO {
+	query := model.StudentFollowUpQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.ByFollowUpTime = asInt(sortModel["byFollowUpTime"], 0)
+		query.SortModel.ByNextFlowTime = asInt(sortModel["byNextFlowTime"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.StudentFollowUpFilters{
+			QuickFilter:           asIntPtr(qm["quickFilter"]),
+			QueryAllOrDepartment:  asIntPtr(qm["queryAllOrDepartment"]),
+			DeptID:                asInt64Ptr(qm["deptId"]),
+			StudentID:             asInt64Ptr(qm["studentId"]),
+			FollowUpStaffID:       asInt64Ptr(qm["followUpStaffId"]),
+			SalespersonID:         asInt64Ptr(qm["salespersonId"]),
+			SearchKey:             asString(qm["searchKey"]),
+			Sexes:                 asIntSlice(qm["sexes"]),
+			FollowUpTimeBegin:     asString(qm["followUpTimeBegin"]),
+			FollowUpTimeEnd:       asString(qm["followUpTimeEnd"]),
+			NextFollowUpTimeBegin: asString(qm["nextFollowUpTimeBegin"]),
+			NextFollowUpTimeEnd:   asString(qm["nextFollowUpTimeEnd"]),
+			FollowUpTypes:         asIntSlice(qm["followUpTypes"]),
+			VisitStatuses:         asIntSlice(qm["visitStatuses"]),
+			ChannelIDs:            asInt64Slice(qm["channelIds"]),
+			StudentStatuses:       asIntSlice(qm["studentStatuses"]),
+		}
+	}
+	return query
+}
+
 func parseInstUserSaveDTO(raw map[string]any) model.InstUserSaveDTO {
 	return model.InstUserSaveDTO{
 		UserID:   asInt64Ptr(raw["userId"]),
@@ -173,6 +220,13 @@ func parseBatchCommonDTO(raw map[string]any) model.BatchCommonDTO {
 		SaleStatus:       asBoolPtr(raw["saleStatus"]),
 		IsShowMicoSchool: asBoolPtr(raw["isShowMicoSchool"]),
 		IsWork:           asBoolPtr(raw["isWork"]),
+	}
+}
+
+func parseChannelStatusMutation(raw map[string]any) model.ChannelStatusMutation {
+	return model.ChannelStatusMutation{
+		ID:         asInt64Ptr(raw["id"]),
+		IsDisabled: asBoolPtr(raw["isDisabled"]),
 	}
 }
 

@@ -151,11 +151,12 @@ func (handler *Handler) updateChannelStatus(w http.ResponseWriter, r *http.Reque
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	var input model.ChannelStatusMutation
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	var raw map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
+	input := parseChannelStatusMutation(raw)
 	if err := handler.service.UpdateChannelStatus(claims.UserID, input); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

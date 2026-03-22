@@ -327,11 +327,12 @@ func (handler *Handler) recommendersPage(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	var query model.RecommenderQueryDTO
-	if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+	var raw map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
+	query := parseRecommenderQueryDTO(raw)
 	result, err := handler.service.PageRecommenders(claims.UserID, query)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
