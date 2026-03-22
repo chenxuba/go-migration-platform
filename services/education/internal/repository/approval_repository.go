@@ -578,16 +578,10 @@ func (repo *Repository) ApproveApprovalRecord(ctx context.Context, instID, opera
 	}
 
 	now := time.Now()
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO approval_history (
-			uuid, version, approval_id, step, approval_person, approval_time, approval_status,
-			create_id, create_time, update_id, update_time, del_flag, remark
-		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, 1, ?, ?, ?, ?, 0, ?
-		)
-	`, dto.ID, currentStep.Int64, operatorID, now, operatorID, now, operatorID, now, strings.TrimSpace(dto.Remark)); err != nil {
+	if err := repo.insertApprovalHistoryTx(ctx, tx, dto.ID, int(currentStep.Int64), operatorID, 1, now, strings.TrimSpace(dto.Remark)); err != nil {
 		return err
 	}
+	approvedSet := map[int64]struct{}{operatorID: {}}
 
 	var configID int64
 	err = tx.QueryRowContext(ctx, `
@@ -601,6 +595,29 @@ func (repo *Repository) ApproveApprovalRecord(ctx context.Context, instID, opera
 		return err
 	}
 
+	historyRows, err := tx.QueryContext(ctx, `
+		SELECT approval_person
+		FROM approval_history
+		WHERE approval_id = ? AND del_flag = 0 AND approval_status = 1
+	`, dto.ID)
+	if err != nil {
+		return err
+	}
+	for historyRows.Next() {
+		var approvalPerson sql.NullInt64
+		if err := historyRows.Scan(&approvalPerson); err != nil {
+			historyRows.Close()
+			return err
+		}
+		if approvalPerson.Valid {
+			approvedSet[approvalPerson.Int64] = struct{}{}
+		}
+	}
+	historyRows.Close()
+	if err := historyRows.Err(); err != nil {
+		return err
+	}
+
 	rows, err := tx.QueryContext(ctx, `
 		SELECT step, IFNULL(staff_id, '')
 		FROM inst_approval_flow
@@ -611,45 +628,27 @@ func (repo *Repository) ApproveApprovalRecord(ctx context.Context, instID, opera
 		return err
 	}
 	defer rows.Close()
-	type nextFlow struct {
-		Step    int
-		StaffID string
-	}
-	var next *nextFlow
+	nextFlows := make([]approvalFlowStep, 0, 4)
 	for rows.Next() {
-		var flow nextFlow
-		if err := rows.Scan(&flow.Step, &flow.StaffID); err != nil {
+		var flow approvalFlowStep
+		if err := rows.Scan(&flow.Step, &flow.StaffIDRaw); err != nil {
 			return err
 		}
-		if strings.TrimSpace(flow.StaffID) == "" {
+		if strings.TrimSpace(flow.StaffIDRaw) == "" {
 			continue
 		}
-		next = &flow
-		break
+		flow.StaffIDs = splitCSV(flow.StaffIDRaw)
+		nextFlows = append(nextFlows, flow)
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 
-	if next != nil {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE approval_record
-			SET current_step = ?, current_approver = ?, update_id = ?, update_time = NOW()
-			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, next.Step, next.StaffID, operatorID, dto.ID, instID); err != nil {
-			return err
-		}
-		return tx.Commit()
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE approval_record
-		SET approval_status = 1, finish_time = ?, update_id = ?, update_time = NOW()
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, now, operatorID, dto.ID, instID); err != nil {
+	allApproved, err := repo.advanceApprovalRecordTx(ctx, tx, dto.ID, instID, operatorID, nextFlows, approvedSet, now)
+	if err != nil {
 		return err
 	}
-	if approvalType == 1 {
+	if allApproved && approvalType == 1 {
 		if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, orderID, studentID); err != nil {
 			return err
 		}
@@ -749,6 +748,12 @@ type approvalConfigMeta struct {
 type approvalFlowMeta struct {
 	Step     int
 	StaffIDs []int64
+}
+
+type approvalFlowStep struct {
+	Step       int
+	StaffIDRaw string
+	StaffIDs   []int64
 }
 
 type approvalHistoryMeta struct {
@@ -967,6 +972,57 @@ func (repo *Repository) getApprovalHistories(ctx context.Context, approvalIDs []
 		result[approvalID] = append(result[approvalID], item)
 	}
 	return result, rows.Err()
+}
+
+func firstMatchedApprovedStaff(staffIDs []int64, approvedSet map[int64]struct{}) (int64, bool) {
+	for _, staffID := range staffIDs {
+		if _, ok := approvedSet[staffID]; ok {
+			return staffID, true
+		}
+	}
+	return 0, false
+}
+
+func (repo *Repository) insertApprovalHistoryTx(ctx context.Context, tx *sql.Tx, approvalID int64, step int, approvalPerson int64, status int, now time.Time, remark string) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO approval_history (
+			uuid, version, approval_id, step, approval_person, approval_time, approval_status,
+			create_id, create_time, update_id, update_time, del_flag, remark
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?
+		)
+	`, approvalID, step, approvalPerson, now, status, approvalPerson, now, approvalPerson, now, strings.TrimSpace(remark))
+	return err
+}
+
+func (repo *Repository) advanceApprovalRecordTx(ctx context.Context, tx *sql.Tx, approvalID, instID, operatorID int64, flows []approvalFlowStep, approvedSet map[int64]struct{}, now time.Time) (bool, error) {
+	for _, flow := range flows {
+		if matchedID, ok := firstMatchedApprovedStaff(flow.StaffIDs, approvedSet); ok {
+			if err := repo.insertApprovalHistoryTx(ctx, tx, approvalID, flow.Step, matchedID, 1, now, "系统自动执行，原因：审批人此前已审批通过"); err != nil {
+				return false, err
+			}
+			approvedSet[matchedID] = struct{}{}
+			continue
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE approval_record
+			SET current_step = ?, current_approver = ?, approval_status = 0, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, flow.Step, flow.StaffIDRaw, operatorID, approvalID, instID); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE approval_record
+		SET approval_status = 1, finish_time = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, now, operatorID, approvalID, instID); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func buildApprovalFlowStages(flows []approvalFlowMeta, histories []approvalHistoryMeta, currentStep *int, userNames map[int64]string, userDisabled map[int64]bool) []model.ApprovalFlowStageVO {

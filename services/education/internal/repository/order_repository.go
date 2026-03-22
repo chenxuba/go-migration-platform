@@ -1309,17 +1309,14 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 	}
 	defer rows.Close()
 
-	type approvalFlow struct {
-		Step    int
-		StaffID string
-	}
-	flows := make([]approvalFlow, 0, 4)
+	flows := make([]approvalFlowStep, 0, 4)
 	for rows.Next() {
-		var flow approvalFlow
-		if err := rows.Scan(&flow.Step, &flow.StaffID); err != nil {
+		var flow approvalFlowStep
+		if err := rows.Scan(&flow.Step, &flow.StaffIDRaw); err != nil {
 			return false, err
 		}
-		if strings.TrimSpace(flow.StaffID) != "" {
+		if strings.TrimSpace(flow.StaffIDRaw) != "" {
+			flow.StaffIDs = splitCSV(flow.StaffIDRaw)
 			flows = append(flows, flow)
 		}
 	}
@@ -1347,56 +1344,33 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 		return false, err
 	}
 
-	allAutoApproved := true
+	approvedSet := make(map[int64]struct{})
+	remainingFlows := make([]approvalFlowStep, 0, len(flows))
 	for _, flow := range flows {
-		staffIDs := splitCSV(flow.StaffID)
-		autoApproved := false
-		var approvalPerson int64
-		remark := ""
-		for _, staffID := range staffIDs {
-			if staffID == applicantID {
-				autoApproved = true
-				approvalPerson = applicantID
-				remark = "系统自动执行，原因：与发起人相同"
-				break
-			}
-		}
-
-		if autoApproved {
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO approval_history (
-					uuid, version, approval_id, step, approval_person, approval_time, approval_status,
-					create_id, create_time, update_id, update_time, del_flag, remark
-				) VALUES (
-					UUID(), 0, ?, ?, ?, ?, 1, ?, ?, ?, ?, 0, ?
-				)
-			`, approvalID, flow.Step, approvalPerson, now, approvalPerson, now, approvalPerson, now, remark); err != nil {
+		if matchedID, ok := firstMatchedApprovedStaff(flow.StaffIDs, approvedSet); ok {
+			if err := repo.insertApprovalHistoryTx(ctx, tx, approvalID, flow.Step, matchedID, 1, now, "系统自动执行，原因：审批人此前已审批通过"); err != nil {
 				return false, err
 			}
 			continue
 		}
-
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE approval_record
-			SET current_step = ?, current_approver = ?, approval_status = 0, update_id = ?, update_time = ?
-			WHERE id = ?
-		`, flow.Step, flow.StaffID, applicantID, now, approvalID); err != nil {
-			return false, err
+		autoApproved := false
+		for _, staffID := range flow.StaffIDs {
+			if staffID == applicantID {
+				autoApproved = true
+				if err := repo.insertApprovalHistoryTx(ctx, tx, approvalID, flow.Step, applicantID, 1, now, "系统自动执行，原因：与发起人相同"); err != nil {
+					return false, err
+				}
+				approvedSet[applicantID] = struct{}{}
+				break
+			}
 		}
-		allAutoApproved = false
-		break
+		if autoApproved {
+			continue
+		}
+		remainingFlows = append(remainingFlows, flow)
 	}
 
-	if allAutoApproved {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE approval_record
-			SET approval_status = 1, finish_time = ?, update_id = ?, update_time = ?
-			WHERE id = ?
-		`, now, applicantID, now, approvalID); err != nil {
-			return false, err
-		}
-	}
-	return allAutoApproved, nil
+	return repo.advanceApprovalRecordTx(ctx, tx, approvalID, instID, applicantID, remainingFlows, approvedSet, now)
 }
 
 func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64) error {
