@@ -25,7 +25,7 @@ type ManageUserInfo struct {
 	Mobile       string   `json:"mobile"`
 	NickName     string   `json:"nickName"`
 	DeptID       *int64   `json:"deptId,omitempty"`
-	DeptIDs      []int64  `json:"deptIds,omitempty"`
+	DeptIDs      []int64  `json:"deptIds"`
 	DeptName     string   `json:"deptName,omitempty"`
 	IsAdmin      bool     `json:"isAdmin"`
 	MenuCodeList []string `json:"menuCodeList"`
@@ -46,7 +46,7 @@ type InstUserInfo struct {
 	Manage       bool     `json:"manage"`
 	Admin        bool     `json:"admin"`
 	Disabled     bool     `json:"disabled"`
-	DeptIDs      []int64  `json:"deptIds,omitempty"`
+	DeptIDs      []int64  `json:"deptIds"`
 	MenuCodeList []string `json:"menuCodeList"`
 }
 

@@ -78,6 +78,9 @@ func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (mo
 	if info.IsAdmin {
 		info.MenuCodeList = prependSuperAdmin(info.MenuCodeList)
 	}
+	if info.DeptIDs == nil {
+		info.DeptIDs = []int64{}
+	}
 
 	return info, nil
 }
@@ -136,11 +139,24 @@ func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64
 		return model.InstUserInfo{}, err
 	}
 
+	// 与 Java 侧对齐：部分账号只在 sso_user.dept_id 有部门，未落 inst_user_dept
+	var ssoDept sql.NullInt64
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT dept_id FROM sso_user WHERE id = ? AND del_flag = 0
+	`, userID).Scan(&ssoDept); err == nil && ssoDept.Valid && ssoDept.Int64 > 0 {
+		if !int64SliceContains(info.DeptIDs, ssoDept.Int64) {
+			info.DeptIDs = append([]int64{ssoDept.Int64}, info.DeptIDs...)
+		}
+	}
+
 	menuCodes, err := repo.GetUserMenuCodes(ctx, userID, info.InstID, 2, 2)
 	if err != nil {
 		return model.InstUserInfo{}, err
 	}
 	info.MenuCodeList = menuCodes
+	if info.DeptIDs == nil {
+		info.DeptIDs = []int64{}
+	}
 	return info, nil
 }
 
@@ -1020,6 +1036,15 @@ func (repo *Repository) getUserRoleSummary(ctx context.Context, userID, orgID in
 		return "", "", err
 	}
 	return roleIDs, roleNames, nil
+}
+
+func int64SliceContains(s []int64, v int64) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 func prependSuperAdmin(items []string) []string {
