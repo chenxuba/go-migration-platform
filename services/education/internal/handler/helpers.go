@@ -168,6 +168,39 @@ func parseFollowUpQueryDTO(raw map[string]any) model.StudentFollowUpQueryDTO {
 	return query
 }
 
+func parseOrderManageQueryDTO(raw map[string]any) model.OrderManageQueryDTO {
+	query := model.OrderManageQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.OrderQueryFilters{
+			Keyword:             asString(qm["keyword"]),
+			KeywordType:         asString(qm["keywordType"]),
+			OrderStatus:         asIntPtr(qm["orderStatus"]),
+			OrderStatusList:     asIntSlice(qm["orderStatusList"]),
+			OrderType:           asIntPtr(qm["orderType"]),
+			OrderTypeList:       asIntSlice(qm["orderTypeList"]),
+			OrderSourceList:     asIntSlice(qm["orderSourceList"]),
+			StudentID:           asString(qm["studentId"]),
+			StaffID:             asString(qm["staffId"]),
+			CreatorID:           asString(qm["creatorId"]),
+			SalePersonID:        asString(qm["salePersonId"]),
+			CourseIDs:           asStringSlice(qm["courseIds"]),
+			BillingModes:        asIntSlice(qm["billingModes"]),
+			IsArrears:           asBoolPtr(qm["isArrears"]),
+			CreatedTimeBegin:    asString(qm["createdTimeBegin"]),
+			CreatedTimeEnd:      asString(qm["createdTimeEnd"]),
+			DealDateBegin:       asString(qm["dealDateBegin"]),
+			DealDateEnd:         asString(qm["dealDateEnd"]),
+			LatestPaidTimeBegin: asString(qm["latestPaidTimeBegin"]),
+			LatestPaidTimeEnd:   asString(qm["latestPaidTimeEnd"]),
+		}
+	}
+	return query
+}
+
 func parseInstUserSaveDTO(raw map[string]any) model.InstUserSaveDTO {
 	return model.InstUserSaveDTO{
 		UserID:   asInt64Ptr(raw["userId"]),

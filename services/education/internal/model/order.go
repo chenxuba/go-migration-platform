@@ -8,10 +8,26 @@ type OrderManageQueryDTO struct {
 }
 
 type OrderQueryFilters struct {
-	Keyword     string `json:"keyword"`
-	OrderStatus *int   `json:"orderStatus"`
-	StudentID   string `json:"studentId"`
-	StaffID     string `json:"staffId"`
+	Keyword             string   `json:"keyword"`
+	KeywordType         string   `json:"keywordType"`
+	OrderStatus         *int     `json:"orderStatus"`
+	OrderStatusList     []int    `json:"orderStatusList"`
+	OrderType           *int     `json:"orderType"`
+	OrderTypeList       []int    `json:"orderTypeList"`
+	OrderSourceList     []int    `json:"orderSourceList"`
+	StudentID           string   `json:"studentId"`
+	StaffID             string   `json:"staffId"`
+	CreatorID           string   `json:"creatorId"`
+	SalePersonID        string   `json:"salePersonId"`
+	CourseIDs           []string `json:"courseIds"`
+	BillingModes        []int    `json:"billingModes"`
+	IsArrears           *bool    `json:"isArrears"`
+	CreatedTimeBegin    string   `json:"createdTimeBegin"`
+	CreatedTimeEnd      string   `json:"createdTimeEnd"`
+	DealDateBegin       string   `json:"dealDateBegin"`
+	DealDateEnd         string   `json:"dealDateEnd"`
+	LatestPaidTimeBegin string   `json:"latestPaidTimeBegin"`
+	LatestPaidTimeEnd   string   `json:"latestPaidTimeEnd"`
 }
 
 type OrderManageQueryVO struct {

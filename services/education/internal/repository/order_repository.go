@@ -40,22 +40,125 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	filters := []string{"so.del_flag = 0", "so.inst_id = ?"}
 	args := []any{instID}
 	q := query.QueryModel
+	paidAmountExpr := "(SELECT IFNULL(SUM(pd.pay_amount), 0) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
 	if strings.TrimSpace(q.Keyword) != "" {
-		filters = append(filters, "(so.order_number LIKE ? OR s.stu_name LIKE ? OR s.mobile LIKE ?)")
 		kw := "%" + strings.TrimSpace(q.Keyword) + "%"
-		args = append(args, kw, kw, kw)
+		switch strings.TrimSpace(q.KeywordType) {
+		case "orderNumber":
+			filters = append(filters, "so.order_number LIKE ?")
+			args = append(args, kw)
+		case "studentPhone":
+			filters = append(filters, "(s.stu_name LIKE ? OR s.mobile LIKE ?)")
+			args = append(args, kw, kw)
+		default:
+			filters = append(filters, "(so.order_number LIKE ? OR s.stu_name LIKE ? OR s.mobile LIKE ?)")
+			args = append(args, kw, kw, kw)
+		}
 	}
-	if q.OrderStatus != nil {
+	if len(q.OrderStatusList) > 0 {
+		placeholders := make([]string, 0, len(q.OrderStatusList))
+		for _, item := range q.OrderStatusList {
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "so.order_status IN ("+strings.Join(placeholders, ",")+")")
+	} else if q.OrderStatus != nil {
 		filters = append(filters, "so.order_status = ?")
 		args = append(args, *q.OrderStatus)
+	}
+	if len(q.OrderTypeList) > 0 {
+		placeholders := make([]string, 0, len(q.OrderTypeList))
+		for _, item := range q.OrderTypeList {
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "so.order_type IN ("+strings.Join(placeholders, ",")+")")
+	} else if q.OrderType != nil {
+		filters = append(filters, "so.order_type = ?")
+		args = append(args, *q.OrderType)
+	}
+	if len(q.OrderSourceList) > 0 {
+		placeholders := make([]string, 0, len(q.OrderSourceList))
+		for _, item := range q.OrderSourceList {
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "so.order_source IN ("+strings.Join(placeholders, ",")+")")
 	}
 	if strings.TrimSpace(q.StudentID) != "" {
 		filters = append(filters, "CAST(so.student_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(q.StudentID))
 	}
-	if strings.TrimSpace(q.StaffID) != "" {
-		filters = append(filters, "CAST(so.sale_person AS CHAR) = ?")
+	if strings.TrimSpace(q.CreatorID) != "" {
+		filters = append(filters, "CAST(so.create_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(q.CreatorID))
+	} else if strings.TrimSpace(q.StaffID) != "" {
+		filters = append(filters, "CAST(so.create_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(q.StaffID))
+	}
+	if strings.TrimSpace(q.SalePersonID) != "" {
+		filters = append(filters, "CAST(so.sale_person AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(q.SalePersonID))
+	}
+	if len(q.CourseIDs) > 0 {
+		placeholders := make([]string, 0, len(q.CourseIDs))
+		courseArgs := make([]any, 0, len(q.CourseIDs)+1)
+		courseArgs = append(courseArgs, instID)
+		for _, item := range q.CourseIDs {
+			placeholders = append(placeholders, "?")
+			courseArgs = append(courseArgs, strings.TrimSpace(item))
+		}
+		filters = append(filters, `EXISTS (
+			SELECT 1
+			FROM sale_order_course_detail d
+			INNER JOIN inst_course c ON c.id = d.course_id AND c.del_flag = 0 AND c.inst_id = ?
+			WHERE d.order_id = so.id AND d.del_flag = 0 AND CAST(d.course_id AS CHAR) IN (`+strings.Join(placeholders, ",")+`)
+		)`)
+		args = append(args, courseArgs...)
+	}
+	if len(q.BillingModes) > 0 {
+		placeholders := make([]string, 0, len(q.BillingModes))
+		for _, item := range q.BillingModes {
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, `EXISTS (
+			SELECT 1
+			FROM sale_order_course_detail d
+			INNER JOIN inst_course_quotation cq ON cq.id = d.quote_id AND cq.del_flag = 0
+			WHERE d.order_id = so.id AND d.del_flag = 0 AND cq.lesson_model IN (`+strings.Join(placeholders, ",")+`)
+		)`)
+	}
+	if q.IsArrears != nil {
+		if *q.IsArrears {
+			filters = append(filters, "IFNULL(so.order_real_amount, 0) > "+paidAmountExpr)
+		} else {
+			filters = append(filters, "IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr)
+		}
+	}
+	if begin := parseDateStart(q.CreatedTimeBegin); begin != nil {
+		filters = append(filters, "so.create_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(q.CreatedTimeEnd); end != nil {
+		filters = append(filters, "so.create_time <= ?")
+		args = append(args, *end)
+	}
+	if begin := parseDateStart(q.DealDateBegin); begin != nil {
+		filters = append(filters, "so.deal_date >= ?")
+		args = append(args, begin.Format("2006-01-02"))
+	}
+	if end := parseDateEnd(q.DealDateEnd); end != nil {
+		filters = append(filters, "so.deal_date <= ?")
+		args = append(args, end.Format("2006-01-02"))
+	}
+	if begin := parseDateStart(q.LatestPaidTimeBegin); begin != nil {
+		filters = append(filters, "(SELECT MAX(pd.create_time) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id) >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(q.LatestPaidTimeEnd); end != nil {
+		filters = append(filters, "(SELECT MAX(pd.create_time) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id) <= ?")
+		args = append(args, *end)
 	}
 	whereClause := strings.Join(filters, " AND ")
 

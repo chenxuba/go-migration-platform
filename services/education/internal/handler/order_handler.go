@@ -21,11 +21,12 @@ func (handler *Handler) orderList(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	var query model.OrderManageQueryDTO
-	if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+	var raw map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
+	query := parseOrderManageQueryDTO(raw)
 	result, err := handler.service.GetOrderList(claims.UserID, query)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
