@@ -176,3 +176,59 @@ func (svc *Service) CheckQuoteInfo(userID int64, dto model.CheckQuoteDTO) ([]mod
 	}
 	return result, nil
 }
+
+func (svc *Service) CreateOrder(userID int64, dto model.CreateOrderDTO) (int64, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, errors.New("no institution context")
+		}
+		return 0, err
+	}
+	if dto.StudentID <= 0 {
+		return 0, errors.New("请选择学员!")
+	}
+	if len(dto.OrderDetail.QuoteDetailList) == 0 {
+		return 0, errors.New("请选择办理内容!")
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, errors.New("no institution user context")
+		}
+		return 0, err
+	}
+	return svc.repo.CreateOrder(context.Background(), instID, instUserID, dto)
+}
+
+func (svc *Service) PayOrder(userID int64, dto model.PayOrderDTO) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	if dto.OrderID <= 0 {
+		return errors.New("订单ID不能为空")
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution user context")
+		}
+		return err
+	}
+	return svc.repo.PayOrder(context.Background(), instID, instUserID, dto)
+}
+
+func (svc *Service) GetRegistrationListPage(userID int64, query model.RegistrationListQueryDTO) (model.RegistrationListResultVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.RegistrationListResultVO{}, errors.New("no institution context")
+		}
+		return model.RegistrationListResultVO{}, err
+	}
+	return svc.repo.PageRegistrationList(context.Background(), instID, query)
+}

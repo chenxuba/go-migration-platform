@@ -232,6 +232,172 @@ func parseCourseProductSaveDTO(raw map[string]any) model.CourseProductSaveDTO {
 	return dto
 }
 
+func parseCreateOrderDTO(raw map[string]any) model.CreateOrderDTO {
+	dto := model.CreateOrderDTO{
+		StudentID: derefInt64Value(asInt64Ptr(raw["studentId"])),
+	}
+	if orderDetailRaw, ok := raw["orderDetail"].(map[string]any); ok {
+		detail := model.OrderDetailDTO{
+			OrderDiscountType:   asIntPtr(orderDetailRaw["orderDiscountType"]),
+			OrderDiscountNumber: asFloat64(orderDetailRaw["orderDiscountNumber"]),
+			OrderDiscountAmount: asString(orderDetailRaw["orderDiscountAmount"]),
+			OrderRealQuantity:   asFloat64(orderDetailRaw["orderRealQuantity"]),
+			OrderRealAmount:     asString(orderDetailRaw["orderRealAmount"]),
+			InternalRemark:      asString(orderDetailRaw["internalRemark"]),
+			ExternalRemark:      asString(orderDetailRaw["externalRemark"]),
+			DealDate:            asDateTimePtr(orderDetailRaw["dealDate"]),
+			SalePerson:          asInt64Ptr(orderDetailRaw["salePerson"]),
+			OrderTagIDs:         asInt64Slice(orderDetailRaw["orderTagIds"]),
+		}
+		if detailListRaw, ok := orderDetailRaw["quoteDetailList"].([]any); ok {
+			detail.QuoteDetailList = make([]model.QuoteDetailDTO, 0, len(detailListRaw))
+			for _, item := range detailListRaw {
+				row, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				detail.QuoteDetailList = append(detail.QuoteDetailList, model.QuoteDetailDTO{
+					HandleType:     asIntPtr(row["handleType"]),
+					CourseID:       derefInt64Value(asInt64Ptr(row["courseId"])),
+					CourseType:     asIntPtr(row["courseType"]),
+					QuoteID:        derefInt64Value(asInt64Ptr(row["quoteId"])),
+					LessonMode:     asIntPtr(row["lessonMode"]),
+					ClassID:        asInt64Ptr(row["classId"]),
+					Count:          asIntPtr(row["count"]),
+					Unit:           asIntPtr(row["unit"]),
+					FreeQuantity:   asFloat64(row["freeQuantity"]),
+					DiscountType:   asIntPtr(row["discountType"]),
+					DiscountNumber: asFloat64(row["discountNumber"]),
+					HasValidDate:   asBoolPtr(row["hasValidDate"]),
+					ValidDate:      asDateTimePtr(row["validDate"]),
+					EndDate:        asDateTimePtr(row["endDate"]),
+					ShareDiscount:  asString(row["shareDiscount"]),
+					Amount:         asString(row["amount"]),
+					Quantity:       asFloat64(row["quantity"]),
+					RealQuantity:   asFloat64(row["realQuantity"]),
+					RealAmount:     asString(row["realAmount"]),
+				})
+			}
+		}
+		dto.OrderDetail = detail
+	}
+	return dto
+}
+
+func parsePayOrderDTO(raw map[string]any) model.PayOrderDTO {
+	dto := model.PayOrderDTO{
+		OrderID:   derefInt64Value(asInt64Ptr(raw["orderId"])),
+		PayAmount: asFloat64(raw["payAmount"]),
+	}
+	if accountsRaw, ok := raw["payAccounts"].([]any); ok {
+		dto.PayAccounts = make([]model.PayAccountDTO, 0, len(accountsRaw))
+		for _, item := range accountsRaw {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			dto.PayAccounts = append(dto.PayAccounts, model.PayAccountDTO{
+				OrderID:        derefInt64Value(asInt64Ptr(row["orderId"])),
+				AmountID:       asInt64Ptr(row["amountId"]),
+				PayMethod:      asIntPtr(row["payMethod"]),
+				PayAmount:      asFloat64(row["payAmount"]),
+				PayTime:        asDateTimePtr(row["payTime"]),
+				PaymentVoucher: asString(row["paymentVoucher"]),
+			})
+		}
+	}
+	return dto
+}
+
+func parseRegistrationListQueryDTO(raw map[string]any) model.RegistrationListQueryDTO {
+	query := model.RegistrationListQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.ByUpdateTime = asInt(sortModel["byUpdateTime"], 0)
+		query.SortModel.ByTotalSales = asInt(sortModel["byTotalSales"], 0)
+		query.SortModel.OrderBySortNo = asInt(sortModel["orderBySortNumber"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.RegistrationListFilters{
+			FromExpireTime:             asString(qm["fromExpireTime"]),
+			ToExpireTime:               asString(qm["toExpireTime"]),
+			FromSuspendedTime:          asString(qm["fromSuspendedTime"]),
+			ToSuspendedTime:            asString(qm["toSuspendedTime"]),
+			FromClosedTime:             asString(qm["fromClosedTime"]),
+			ToClosedTime:               asString(qm["toClosedTime"]),
+			IsSetExpireTime:            asBoolPtr(qm["isSetExpireTime"]),
+			AssignedClass:              asBoolPtr(qm["assignedClass"]),
+			StudentID:                  asString(qm["studentId"]),
+			LessonType:                 asIntPtr(qm["lessonType"]),
+			RemainLessonChargingMode:   asIntPtr(qm["remainLessonChargingMode"]),
+			FromRemainQuantity:         asIntPtr(qm["fromRemainQuantity"]),
+			ToRemainQuantity:           asIntPtr(qm["toRemainQuantity"]),
+			LessonChargingList:         asIntSlice(qm["lessonChargingList"]),
+			StatusList:                 asIntSlice(qm["statusList"]),
+			ClassTeacherID:             asString(qm["classTeacherId"]),
+			SalespersonID:              asString(qm["salespersonId"]),
+			ClassIDs:                   asStringSlice(qm["classIds"]),
+			ProductIDs:                 asStringSlice(qm["productIds"]),
+			IsArrears:                  asBoolPtr(qm["isArrears"]),
+			LastestTeachingRecordStart: asString(qm["lastestTeachingRecordStartTime"]),
+			LastestTeachingRecordEnd:   asString(qm["lastestTeachingRecordEndTime"]),
+		}
+	}
+	return query
+}
+
+func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQueryDTO {
+	query := model.ApprovalConfigPageQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.ByInitiateTime = asInt(sortModel["byInitiateTime"], 0)
+		query.SortModel.ByFinishTime = asInt(sortModel["byFinishTime"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.ApprovalConfigPageQueryFilters{
+			ApprovalNumber:       asString(qm["approvalNumber"]),
+			ApplicantID:          asInt64Ptr(qm["applicantId"]),
+			OrderNumber:          asString(qm["orderNumber"]),
+			CurrentApproverID:    asInt64Ptr(qm["currentApproverId"]),
+			FinishStartTime:      asString(qm["finishStartTime"]),
+			FinishEndTime:        asString(qm["finishEndTime"]),
+			ApplicationStartTime: asString(qm["applicationStartTime"]),
+			ApplicationEndTime:   asString(qm["applicationEndTime"]),
+			Statuses:             asIntSlice(qm["statuses"]),
+			StudentID:            asInt64Ptr(qm["studentId"]),
+		}
+	}
+	return query
+}
+
+func parseApprovalConfigSaveDTO(raw map[string]any) model.ApprovalConfigSaveDTO {
+	dto := model.ApprovalConfigSaveDTO{
+		ID:       derefInt64Value(asInt64Ptr(raw["id"])),
+		Enable:   asBoolPtr(raw["enable"]),
+		RuleJSON: asString(raw["ruleJson"]),
+	}
+	if flows, ok := raw["staffFlowList"].([]any); ok {
+		dto.StaffFlowList = make([]model.ApprovalConfigStaffFlow, 0, len(flows))
+		for _, item := range flows {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			dto.StaffFlowList = append(dto.StaffFlowList, model.ApprovalConfigStaffFlow{
+				Step:     asInt(row["step"], 0),
+				StaffIDs: asInt64Slice(row["staffIds"]),
+			})
+		}
+	}
+	return dto
+}
+
 func formatIntentStudentDetail(item model.IntentStudent) map[string]any {
 	result := map[string]any{
 		"id":                item.ID,
@@ -442,6 +608,28 @@ func asIntSlice(value any) []int {
 		}
 	}
 	return result
+}
+
+func asStringSlice(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []any:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			text := asString(item)
+			if text != "" {
+				result = append(result, text)
+			}
+		}
+		return result
+	default:
+		text := asString(value)
+		if text == "" {
+			return nil
+		}
+		return []string{text}
+	}
 }
 
 func asBoolPtr(value any) *bool {
