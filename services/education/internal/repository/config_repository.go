@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+var instConfigBooleanFields = map[string]struct{}{
+	"enablePublicPool":      {},
+	"enableCollectorStaff":  {},
+	"enablePhoneSellStaff":  {},
+	"enableForeground":      {},
+	"enableViceSellStaff":   {},
+	"enableAdvisor":         {},
+	"enableStudentManager":  {},
+	"limitSameWeChat":       {},
+	"limitImportSameWeChat": {},
+}
+
 func (repo *Repository) GetInstConfig(ctx context.Context, instID int64) (map[string]any, error) {
 	rows, err := repo.db.QueryContext(ctx, "SELECT * FROM inst_config WHERE inst_id = ? AND del_flag = 0 LIMIT 1", instID)
 	if err != nil {
@@ -32,7 +44,23 @@ func (repo *Repository) GetInstConfig(ctx context.Context, instID int64) (map[st
 
 	result := make(map[string]any, len(columns))
 	for i, col := range columns {
-		result[snakeToCamel(col)] = normalizeDBValue(values[i])
+		key := snakeToCamel(col)
+		normalized := normalizeDBValue(values[i])
+		if _, ok := instConfigBooleanFields[key]; ok {
+			switch typed := normalized.(type) {
+			case int64:
+				normalized = typed != 0
+			case int32:
+				normalized = typed != 0
+			case int:
+				normalized = typed != 0
+			case uint8:
+				normalized = typed != 0
+			case string:
+				normalized = strings.TrimSpace(typed) == "1" || strings.EqualFold(strings.TrimSpace(typed), "true")
+			}
+		}
+		result[key] = normalized
 	}
 	return result, nil
 }
