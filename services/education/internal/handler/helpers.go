@@ -578,6 +578,55 @@ func parseApprovalOperateDTO(raw map[string]any) model.ApprovalOperateDTO {
 	}
 }
 
+func parseApprovalTemplateSaveRequest(raw map[string]any) model.ApprovalTemplateSaveRequest {
+	dto := model.ApprovalTemplateSaveRequest{}
+	if items, ok := raw["approveTemplateRequests"].([]any); ok {
+		dto.ApproveTemplateRequests = make([]model.ApprovalTemplateSaveItem, 0, len(items))
+		for _, item := range items {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			entry := model.ApprovalTemplateSaveItem{
+				ID:       derefInt64Value(asInt64Ptr(row["id"])),
+				Type:     asInt(row["type"], 0),
+				Enable:   derefBoolValue(asBoolPtr(row["enable"])),
+				RuleJSON: asString(row["ruleJson"]),
+			}
+			if flows, ok := row["flowRequestModels"].([]any); ok {
+				entry.FlowRequestModels = make([]model.ApprovalTemplateFlowSaveItem, 0, len(flows))
+				for _, flowItem := range flows {
+					flowRow, ok := flowItem.(map[string]any)
+					if !ok {
+						continue
+					}
+					entry.FlowRequestModels = append(entry.FlowRequestModels, model.ApprovalTemplateFlowSaveItem{
+						Step:     asInt(flowRow["step"], 0),
+						StaffIDs: asInt64Slice(flowRow["staffIds"]),
+					})
+				}
+			}
+			dto.ApproveTemplateRequests = append(dto.ApproveTemplateRequests, entry)
+		}
+	}
+	return dto
+}
+
+func parseStaffSummaryQueryDTO(raw map[string]any) model.StaffSummaryQueryDTO {
+	query := model.StaffSummaryQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 20)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.StaffSummaryQueryVOIn{
+			SchoolID:  asString(qm["schoolId"]),
+			SearchKey: asString(qm["searchKey"]),
+		}
+	}
+	return query
+}
+
 func firstInt64Ptr(values ...any) *int64 {
 	for _, value := range values {
 		if parsed := asInt64Ptr(value); parsed != nil {

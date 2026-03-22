@@ -12,6 +12,35 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
+var approvalTemplateTypeNames = map[int]string{
+	1: "报名续费",
+	2: "转课",
+	3: "退课",
+	4: "储值充值",
+	5: "储值退费",
+	6: "退学杂教材费",
+}
+
+var staffSummaryColors = []string{
+	"#0098BE",
+	"#009C66",
+	"#4E6DFF",
+	"#1FC0BE",
+	"#DDBA00",
+	"#6E93FF",
+	"#FF6767",
+	"#00C785",
+	"#EF4AA9",
+	"#97B527",
+	"#00BAF2",
+	"#FFAF00",
+	"#CA6CF8",
+	"#00C350",
+	"#0A86FF",
+	"#FC6B9C",
+	"#C77B2B",
+}
+
 func (repo *Repository) PageApprovalConfigs(ctx context.Context, instID int64, query model.ApprovalConfigPageQueryDTO) (model.ApprovalConfigPageResult, error) {
 	current := query.PageRequestModel.PageIndex
 	size := query.PageRequestModel.PageSize
@@ -210,6 +239,245 @@ func (repo *Repository) PageApprovalConfigs(ctx context.Context, instID int64, q
 		Current: current,
 		Size:    size,
 	}, nil
+}
+
+func (repo *Repository) ListApprovalTemplates(ctx context.Context, instID int64) ([]model.ApprovalTemplateVO, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT c.id, c.type, IFNULL(c.name, ''), IFNULL(c.enable, 0), IFNULL(c.rule_json, ''), IFNULL(c.config_version, 0),
+		       c.update_id, c.update_time, IFNULL(u.nick_name, '')
+		FROM inst_approval_config c
+		LEFT JOIN inst_user u ON u.id = c.update_id
+		WHERE c.del_flag = 0 AND c.inst_id = ?
+		ORDER BY c.type ASC, c.id ASC
+	`, instID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type configRow struct {
+		model.ApprovalTemplateVO
+		configVersion int
+	}
+	configs := make(map[int]configRow)
+	configIDs := make([]int64, 0, 8)
+	for rows.Next() {
+		var (
+			item        configRow
+			id          int64
+			updatedByID sql.NullInt64
+			updatedAt   sql.NullTime
+		)
+		if err := rows.Scan(&id, &item.Type, &item.Name, &item.Enable, &item.RuleJSON, &item.configVersion, &updatedByID, &updatedAt, &item.UpdatedStaffName); err != nil {
+			return nil, err
+		}
+		item.ID = strconv.FormatInt(id, 10)
+		if strings.TrimSpace(item.Name) == "" {
+			item.Name = approvalTemplateTypeNames[item.Type]
+		}
+		if updatedAt.Valid {
+			t := updatedAt.Time
+			item.UpdatedTime = &t
+		}
+		configs[item.Type] = item
+		configIDs = append(configIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	flowMap, err := repo.getApprovalTemplateFlows(ctx, configIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.ApprovalTemplateVO, 0, len(approvalTemplateTypeNames))
+	for typeID := 1; typeID <= 6; typeID++ {
+		if cfg, ok := configs[typeID]; ok {
+			configID, _ := strconv.ParseInt(cfg.ID, 10, 64)
+			cfg.FlowModels = flowMap[configID]
+			result = append(result, cfg.ApprovalTemplateVO)
+			continue
+		}
+		result = append(result, model.ApprovalTemplateVO{
+			ID:         "0",
+			Type:       typeID,
+			Name:       approvalTemplateTypeNames[typeID],
+			Enable:     false,
+			RuleJSON:   "",
+			FlowModels: []model.ApprovalTemplateFlowVO{},
+		})
+	}
+	return result, nil
+}
+
+func (repo *Repository) SaveApprovalTemplates(ctx context.Context, instID, operatorID int64, dto model.ApprovalTemplateSaveRequest) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	existingByType := make(map[int]struct {
+		ID            int64
+		ConfigVersion int
+	})
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, type, IFNULL(config_version, 0)
+		FROM inst_approval_config
+		WHERE inst_id = ? AND del_flag = 0
+	`, instID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id int64
+		var typeID int
+		var version int
+		if err := rows.Scan(&id, &typeID, &version); err != nil {
+			rows.Close()
+			return err
+		}
+		existingByType[typeID] = struct {
+			ID            int64
+			ConfigVersion int
+		}{ID: id, ConfigVersion: version}
+	}
+	rows.Close()
+
+	for _, item := range dto.ApproveTemplateRequests {
+		if _, ok := approvalTemplateTypeNames[item.Type]; !ok {
+			continue
+		}
+		configID := item.ID
+		currentVersion := 0
+		if existing, ok := existingByType[item.Type]; ok {
+			configID = existing.ID
+			currentVersion = existing.ConfigVersion
+		}
+
+		nextVersion := currentVersion + 1
+		if configID <= 0 {
+			result, err := tx.ExecContext(ctx, `
+				INSERT INTO inst_approval_config (
+					uuid, version, inst_id, name, type, enable, rule_json, config_version,
+					create_id, create_time, update_id, update_time, del_flag
+				) VALUES (
+					UUID(), 0, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
+				)
+			`, instID, approvalTemplateTypeNames[item.Type], item.Type, item.Enable, strings.TrimSpace(item.RuleJSON), nextVersion, operatorID, operatorID)
+			if err != nil {
+				return err
+			}
+			configID, err = result.LastInsertId()
+			if err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE inst_approval_flow
+				SET del_flag = 1, update_id = ?, update_time = NOW()
+				WHERE config_id = ? AND del_flag = 0
+			`, operatorID, configID); err != nil {
+				return err
+			}
+
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE inst_approval_config
+				SET enable = ?, rule_json = ?, config_version = ?, update_id = ?, update_time = NOW()
+				WHERE id = ? AND inst_id = ? AND del_flag = 0
+			`, item.Enable, strings.TrimSpace(item.RuleJSON), nextVersion, operatorID, configID, instID); err != nil {
+				return err
+			}
+		}
+
+		for _, flow := range item.FlowRequestModels {
+			if flow.Step <= 0 || len(flow.StaffIDs) == 0 {
+				continue
+			}
+			staffNames, err := repo.getApprovalStaffNamesTx(ctx, tx, flow.StaffIDs)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO inst_approval_flow (
+					uuid, version, config_id, config_version, staff_id, staff_name, step,
+					create_id, create_time, update_id, update_time, del_flag
+				) VALUES (
+					UUID(), 0, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
+				)
+			`, configID, nextVersion, joinInt64CSV(flow.StaffIDs), strings.Join(staffNames, ","), flow.Step, operatorID, operatorID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (repo *Repository) PageStaffSummaries(ctx context.Context, instID int64, query model.StaffSummaryQueryDTO) (model.StaffSummaryPageVO, error) {
+	current := query.PageRequestModel.PageIndex
+	size := query.PageRequestModel.PageSize
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+	offset := (current - 1) * size
+
+	filters := []string{"iu.del_flag = 0", "iu.inst_id = ?"}
+	args := []any{instID}
+	if strings.TrimSpace(query.QueryModel.SearchKey) != "" {
+		kw := "%" + strings.TrimSpace(query.QueryModel.SearchKey) + "%"
+		filters = append(filters, "(iu.nick_name LIKE ? OR iu.mobile LIKE ?)")
+		args = append(args, kw, kw)
+	}
+	whereSQL := strings.Join(filters, " AND ")
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM inst_user iu WHERE `+whereSQL, args...).Scan(&total); err != nil {
+		return model.StaffSummaryPageVO{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT iu.id, IFNULL(iu.nick_name, ''), IFNULL(iu.mobile, ''), IFNULL(iu.is_admin, 0), IFNULL(iu.avatar, ''),
+		       IFNULL(iu.disabled, 0), iu.create_time, IFNULL(iu.user_type, 0)
+		FROM inst_user iu
+		WHERE `+whereSQL+`
+		ORDER BY iu.create_time DESC, iu.id DESC
+		LIMIT ? OFFSET ?
+	`, append(args, size, offset)...)
+	if err != nil {
+		return model.StaffSummaryPageVO{}, err
+	}
+	defer rows.Close()
+
+	items := make([]model.StaffSummaryVO, 0, size)
+	for rows.Next() {
+		var (
+			item      model.StaffSummaryVO
+			id        int64
+			createdAt sql.NullTime
+			disabled  bool
+		)
+		if err := rows.Scan(&id, &item.Name, &item.Phone, &item.SuperAdmin, &item.Avatar, &disabled, &createdAt, &item.EmployeeType); err != nil {
+			return model.StaffSummaryPageVO{}, err
+		}
+		item.ID = strconv.FormatInt(id, 10)
+		item.Color = staffSummaryColors[int(id)%len(staffSummaryColors)]
+		if disabled {
+			item.Status = 2
+		} else {
+			item.Status = 1
+		}
+		if createdAt.Valid {
+			t := createdAt.Time
+			item.CreatedAt = &t
+		}
+		items = append(items, item)
+	}
+	return model.StaffSummaryPageVO{List: items, Total: total}, rows.Err()
 }
 
 func (repo *Repository) SaveApprovalConfig(ctx context.Context, instID, operatorID int64, dto model.ApprovalConfigSaveDTO) error {
@@ -579,6 +847,85 @@ func (repo *Repository) getApprovalFlowsByConfig(ctx context.Context, configsByT
 	return result, nil
 }
 
+func (repo *Repository) getApprovalTemplateFlows(ctx context.Context, configIDs []int64) (map[int64][]model.ApprovalTemplateFlowVO, error) {
+	result := make(map[int64][]model.ApprovalTemplateFlowVO)
+	if len(configIDs) == 0 {
+		return result, nil
+	}
+	holders := strings.TrimRight(strings.Repeat("?,", len(configIDs)), ",")
+	args := make([]any, 0, len(configIDs))
+	for _, id := range configIDs {
+		args = append(args, id)
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT f.config_id, f.step, IFNULL(f.staff_id, ''), IFNULL(f.staff_name, '')
+		FROM inst_approval_flow f
+		INNER JOIN (
+			SELECT config_id, MAX(config_version) AS config_version
+			FROM inst_approval_flow
+			WHERE del_flag = 0 AND config_id IN (`+holders+`)
+			GROUP BY config_id
+		) current_flow ON current_flow.config_id = f.config_id AND current_flow.config_version = f.config_version
+		WHERE f.del_flag = 0
+		ORDER BY f.config_id ASC, f.step ASC, f.id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			configID   int64
+			step       int
+			staffIDs   string
+			staffNames string
+		)
+		if err := rows.Scan(&configID, &step, &staffIDs, &staffNames); err != nil {
+			return nil, err
+		}
+		result[configID] = append(result[configID], model.ApprovalTemplateFlowVO{
+			Step:       step,
+			StaffIDs:   splitStringCSV(staffIDs),
+			StaffNames: splitStringCSV(staffNames),
+		})
+	}
+	return result, rows.Err()
+}
+
+func (repo *Repository) getApprovalStaffNamesTx(ctx context.Context, tx *sql.Tx, staffIDs []int64) ([]string, error) {
+	if len(staffIDs) == 0 {
+		return nil, nil
+	}
+	holders := strings.TrimRight(strings.Repeat("?,", len(staffIDs)), ",")
+	args := make([]any, 0, len(staffIDs))
+	for _, id := range staffIDs {
+		args = append(args, id)
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, IFNULL(nick_name, '')
+		FROM inst_user
+		WHERE id IN (`+holders+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	namesByID := make(map[int64]string, len(staffIDs))
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		namesByID[id] = name
+	}
+	names := make([]string, 0, len(staffIDs))
+	for _, id := range staffIDs {
+		names = append(names, namesByID[id])
+	}
+	return names, rows.Err()
+}
+
 func (repo *Repository) getApprovalHistories(ctx context.Context, approvalIDs []int64) (map[int64][]approvalHistoryMeta, error) {
 	result := make(map[int64][]approvalHistoryMeta)
 	if len(approvalIDs) == 0 {
@@ -686,4 +1033,17 @@ func maskApprovalPhone(phone string) string {
 		return phone
 	}
 	return phone[:3] + "****" + phone[len(phone)-4:]
+}
+
+func splitStringCSV(raw string) []string {
+	parts := strings.Split(strings.TrimSpace(raw), ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		result = append(result, part)
+	}
+	return result
 }

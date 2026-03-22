@@ -86,3 +86,64 @@ type ApprovalOperateDTO struct {
 	ID     int64  `json:"id"`
 	Remark string `json:"remark"`
 }
+
+type ApprovalTemplateFlowVO struct {
+	Step       int      `json:"step"`
+	StaffIDs   []string `json:"staffIds,omitempty"`
+	StaffNames []string `json:"staffNames,omitempty"`
+}
+
+type ApprovalTemplateVO struct {
+	ID               string                   `json:"id"`
+	Enable           bool                     `json:"enable"`
+	Type             int                      `json:"type"`
+	Name             string                   `json:"name"`
+	UpdatedStaffName string                   `json:"updatedStaffName,omitempty"`
+	UpdatedTime      *time.Time               `json:"updatedTime,omitempty"`
+	RuleJSON         string                   `json:"ruleJson"`
+	FlowModels       []ApprovalTemplateFlowVO `json:"flowModels,omitempty"`
+}
+
+type ApprovalTemplateSaveRequest struct {
+	ApproveTemplateRequests []ApprovalTemplateSaveItem `json:"approveTemplateRequests"`
+}
+
+type ApprovalTemplateSaveItem struct {
+	ID                int64                          `json:"id"`
+	Type              int                            `json:"type"`
+	Enable            bool                           `json:"enable"`
+	RuleJSON          string                         `json:"ruleJson"`
+	FlowRequestModels []ApprovalTemplateFlowSaveItem `json:"flowRequestModels"`
+}
+
+type ApprovalTemplateFlowSaveItem struct {
+	Step     int     `json:"step"`
+	StaffIDs []int64 `json:"staffIds"`
+}
+
+type StaffSummaryQueryDTO struct {
+	PageRequestModel PageRequestModel      `json:"pageRequestModel"`
+	QueryModel       StaffSummaryQueryVOIn `json:"queryModel"`
+}
+
+type StaffSummaryQueryVOIn struct {
+	SchoolID  string `json:"schoolId"`
+	SearchKey string `json:"searchKey"`
+}
+
+type StaffSummaryVO struct {
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Phone        string     `json:"phone"`
+	SuperAdmin   bool       `json:"superAdmin"`
+	Avatar       string     `json:"avatar"`
+	Color        string     `json:"color"`
+	Status       int        `json:"status"`
+	CreatedAt    *time.Time `json:"createdAt,omitempty"`
+	EmployeeType int        `json:"employeeType"`
+}
+
+type StaffSummaryPageVO struct {
+	List  []StaffSummaryVO `json:"list"`
+	Total int              `json:"total"`
+}
