@@ -65,7 +65,12 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT so.id, so.order_number, so.student_id, IFNULL(s.stu_name, ''), IFNULL(s.mobile, ''), so.create_time,
+		SELECT so.id, so.order_number, so.student_id, IFNULL(s.stu_name, ''),
+		       CASE
+		           WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
+		           ELSE IFNULL(s.mobile, '')
+		       END,
+		       so.create_time,
 		       IFNULL(so.order_real_amount, 0), so.order_status, so.order_type, so.order_source, so.create_id,
 		       IFNULL(u.nick_name, ''), so.deal_date, so.sale_person, IFNULL(sale.nick_name, ''), IFNULL(so.internal_remark, ''), IFNULL(so.external_remark, ''), so.update_time,
 		       s.stu_sex, IFNULL(s.avatar_url, '')
@@ -136,10 +141,16 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	return model.OrderManageResultVO{List: items, Total: total}, rows.Err()
 }
 
-func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int64) (model.OrderManageQueryVO, error) {
+func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int64) (model.OrderDetailVO, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT so.id, so.order_number, so.student_id, IFNULL(s.stu_name, ''), IFNULL(s.mobile, ''), so.create_time,
-		       IFNULL(so.order_real_amount, 0), so.order_status, so.order_type, so.order_source, so.create_id,
+		SELECT so.id, so.order_number, so.student_id, IFNULL(s.stu_name, ''),
+		       CASE
+		           WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
+		           ELSE IFNULL(s.mobile, '')
+		       END,
+		       so.create_time,
+		       IFNULL(so.order_real_amount, 0), IFNULL(so.order_discount_amount, 0), IFNULL(so.order_tag_ids, ''),
+		       so.order_status, so.order_type, so.order_source, so.create_id,
 		       IFNULL(u.nick_name, ''), so.deal_date, so.sale_person, IFNULL(sale.nick_name, ''), IFNULL(so.internal_remark, ''), IFNULL(so.external_remark, ''), so.update_time,
 		       s.stu_sex, IFNULL(s.avatar_url, '')
 		FROM sale_order so
@@ -149,7 +160,7 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 		WHERE so.del_flag = 0 AND so.inst_id = ? AND so.id = ?
 		LIMIT 1`, instID, orderID)
 
-	var item model.OrderManageQueryVO
+	var item model.OrderDetailVO
 	var oid int64
 	var studentID sql.NullInt64
 	var createID sql.NullInt64
@@ -157,11 +168,13 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 	var dealDate sql.NullTime
 	var updatedAt sql.NullTime
 	var sex sql.NullInt64
-	if err := row.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.CreatedTime, &item.Amount, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar); err != nil {
-		return model.OrderManageQueryVO{}, err
+	var orderTagIDs string
+	if err := row.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.CreatedTime, &item.Amount, &item.OrderDiscountAmount, &orderTagIDs, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar); err != nil {
+		return model.OrderDetailVO{}, err
 	}
 	item.OrderID = strconv.FormatInt(oid, 10)
 	item.SourceID = item.OrderID
+	item.TotalAmount = item.Amount
 	if studentID.Valid {
 		item.StudentID = strconv.FormatInt(studentID.Int64, 10)
 	}
@@ -197,6 +210,10 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 	if len(item.ProductItems) > 0 {
 		item.ProductItemsStr = strings.Join(item.ProductItems, ",")
 	}
+	item.OrderTagNames = buildOrderTagNames(orderTagIDs)
+	item.OrderItems, _ = repo.getOrderDetailItems(ctx, oid)
+	item.PaymentRecords, _ = repo.getOrderPaymentRecords(ctx, oid)
+	item.ApprovalInfo, _ = repo.getOrderApprovalInfo(ctx, oid)
 	return item, nil
 }
 
@@ -277,6 +294,233 @@ func (repo *Repository) getOrderCourseNames(ctx context.Context, orderID int64) 
 		}
 	}
 	return items, rows.Err()
+}
+
+func buildOrderTagNames(raw string) []string {
+	_ = raw
+	return nil
+}
+
+func (repo *Repository) getOrderDetailItems(ctx context.Context, orderID int64) ([]model.OrderCourseDetailVO, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT d.id, d.course_id, IFNULL(c.name, ''), d.quote_id, IFNULL(q.name, ''), c.teach_method, q.lesson_model,
+		       d.handle_type, IFNULL(d.count, 0), d.unit, IFNULL(q.quantity, 0), IFNULL(q.price, 0),
+		       IFNULL(d.free_quantity, 0), IFNULL(d.has_valid_date, 0), d.valid_date, d.end_date,
+		       d.discount_type, IFNULL(d.discount_number, 0), IFNULL(d.share_discount, 0), IFNULL(d.amount, 0), IFNULL(d.real_quantity, 0)
+		FROM sale_order_course_detail d
+		LEFT JOIN inst_course c ON d.course_id = c.id
+		LEFT JOIN inst_course_quotation q ON d.quote_id = q.id
+		WHERE d.order_id = ? AND d.del_flag = 0
+		ORDER BY d.id ASC
+	`, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.OrderCourseDetailVO, 0, 4)
+	for rows.Next() {
+		var (
+			item         model.OrderCourseDetailVO
+			detailID     int64
+			courseID     sql.NullInt64
+			quoteID      sql.NullInt64
+			lessonType   sql.NullInt64
+			chargingMode sql.NullInt64
+			handleType   sql.NullInt64
+			unit         sql.NullInt64
+			validDate    sql.NullTime
+			endDate      sql.NullTime
+			discountType sql.NullInt64
+			quotePrice   float64
+		)
+		if err := rows.Scan(&detailID, &courseID, &item.CourseName, &quoteID, &item.QuoteName, &lessonType, &chargingMode, &handleType, &item.Count, &unit, &item.QuoteQuantity, &quotePrice, &item.FreeQuantity, &item.HasValidDate, &validDate, &endDate, &discountType, &item.DiscountNumber, &item.ShareDiscount, &item.Amount, &item.RealQuantity); err != nil {
+			return nil, err
+		}
+		item.OrderCourseDetailID = strconv.FormatInt(detailID, 10)
+		item.QuotePrice = quotePrice
+		if courseID.Valid {
+			item.CourseID = strconv.FormatInt(courseID.Int64, 10)
+		}
+		if quoteID.Valid {
+			item.QuoteID = strconv.FormatInt(quoteID.Int64, 10)
+		}
+		if lessonType.Valid {
+			value := int(lessonType.Int64)
+			item.LessonType = &value
+		}
+		if chargingMode.Valid {
+			value := int(chargingMode.Int64)
+			item.ChargingMode = &value
+		}
+		if handleType.Valid {
+			value := int(handleType.Int64)
+			item.HandleType = &value
+		}
+		if unit.Valid {
+			value := int(unit.Int64)
+			item.Unit = &value
+		}
+		if validDate.Valid {
+			t := validDate.Time
+			item.ValidDate = &t
+		}
+		if endDate.Valid {
+			t := endDate.Time
+			item.EndDate = &t
+		}
+		if discountType.Valid {
+			value := int(discountType.Int64)
+			item.DiscountType = &value
+			switch value {
+			case 1:
+				item.SingleDiscountAmount = item.DiscountNumber
+			case 2:
+				baseAmount := quotePrice * item.Count
+				item.SingleDiscountAmount = baseAmount * (1 - item.DiscountNumber/10)
+			}
+		}
+		item.ReceivableAmount = item.Amount - item.ShareDiscount
+		if item.ReceivableAmount < 0 {
+			item.ReceivableAmount = 0
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) getOrderPaymentRecords(ctx context.Context, orderID int64) ([]model.OrderPaymentRecordVO, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT pd.id, pd.amount_id, pd.pay_method, IFNULL(pd.pay_amount, 0), pd.pay_time, pd.create_time,
+		       IFNULL(pd.payment_voucher, ''), IFNULL(pd.remark, ''), pd.create_id, IFNULL(u.nick_name, '')
+		FROM sale_order_pay_detail pd
+		LEFT JOIN inst_user u ON pd.create_id = u.id
+		WHERE pd.order_id = ? AND pd.del_flag = 0
+		ORDER BY pd.create_time ASC, pd.id ASC
+	`, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.OrderPaymentRecordVO, 0, 4)
+	for rows.Next() {
+		var (
+			item       model.OrderPaymentRecordVO
+			paymentID  int64
+			amountID   sql.NullInt64
+			payMethod  sql.NullInt64
+			payTime    sql.NullTime
+			createdAt  sql.NullTime
+			operatorID sql.NullInt64
+		)
+		if err := rows.Scan(&paymentID, &amountID, &payMethod, &item.PayAmount, &payTime, &createdAt, &item.PaymentVoucher, &item.Remark, &operatorID, &item.OperatorName); err != nil {
+			return nil, err
+		}
+		item.PaymentID = strconv.FormatInt(paymentID, 10)
+		if amountID.Valid {
+			item.AmountID = strconv.FormatInt(amountID.Int64, 10)
+			item.AccountName = "默认账户"
+		}
+		if payMethod.Valid {
+			value := int(payMethod.Int64)
+			item.PayMethod = &value
+		}
+		if payTime.Valid {
+			t := payTime.Time
+			item.PayTime = &t
+		}
+		if createdAt.Valid {
+			t := createdAt.Time
+			item.CreatedTime = &t
+		}
+		if operatorID.Valid {
+			item.OperatorID = strconv.FormatInt(operatorID.Int64, 10)
+		}
+		if strings.TrimSpace(item.AccountName) == "" {
+			item.AccountName = "默认账户"
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) getOrderApprovalInfo(ctx context.Context, orderID int64) (*model.OrderApprovalInfo, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT r.id, IFNULL(r.approval_number, ''), r.approval_status, r.current_step, IFNULL(r.current_approver, ''),
+		       r.applicant, IFNULL(u.nick_name, ''), r.approval_time, r.finish_time
+		FROM approval_record r
+		LEFT JOIN inst_user u ON r.applicant = u.id
+		WHERE r.order_id = ? AND r.del_flag = 0
+		ORDER BY r.id DESC
+		LIMIT 1
+	`, orderID)
+
+	var (
+		approvalID      int64
+		approvalNumber  string
+		approvalStatus  sql.NullInt64
+		currentStep     sql.NullInt64
+		currentApprover string
+		applicantID     sql.NullInt64
+		applicantName   string
+		approvalTime    sql.NullTime
+		finishTime      sql.NullTime
+	)
+	if err := row.Scan(&approvalID, &approvalNumber, &approvalStatus, &currentStep, &currentApprover, &applicantID, &applicantName, &approvalTime, &finishTime); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	info := &model.OrderApprovalInfo{
+		ApprovalID:     strconv.FormatInt(approvalID, 10),
+		ApprovalNumber: approvalNumber,
+		ApplicantName:  applicantName,
+	}
+	if approvalStatus.Valid {
+		value := int(approvalStatus.Int64)
+		info.ApprovalStatus = &value
+	}
+	if currentStep.Valid {
+		value := int(currentStep.Int64)
+		info.CurrentStep = &value
+	}
+	if applicantID.Valid {
+		info.ApplicantID = strconv.FormatInt(applicantID.Int64, 10)
+	}
+	if approvalTime.Valid {
+		t := approvalTime.Time
+		info.ApprovalTime = &t
+	}
+	if finishTime.Valid {
+		t := finishTime.Time
+		info.FinishTime = &t
+	}
+	info.CurrentApprover = repo.resolveStaffNamesCSV(ctx, currentApprover)
+	return info, nil
+}
+
+func (repo *Repository) resolveStaffNamesCSV(ctx context.Context, raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	ids := splitCSV(raw)
+	if len(ids) == 0 {
+		return raw
+	}
+	names := make([]string, 0, len(ids))
+	for _, id := range ids {
+		staffID := id
+		name := repo.GetStaffNameByID(ctx, &staffID)
+		if strings.TrimSpace(name) == "" || name == "-" {
+			continue
+		}
+		names = append(names, name)
+	}
+	return strings.Join(names, "、")
 }
 
 func (repo *Repository) SetBadDebt(ctx context.Context, instID, orderID, operatorID int64, remark string) error {

@@ -54,6 +54,68 @@ type OrderManageResultVO struct {
 	Total int                  `json:"total"`
 }
 
+type OrderApprovalInfo struct {
+	ApprovalID      string     `json:"approvalId,omitempty"`
+	ApprovalNumber  string     `json:"approvalNumber,omitempty"`
+	ApprovalStatus  *int       `json:"approvalStatus,omitempty"`
+	CurrentStep     *int       `json:"currentStep,omitempty"`
+	CurrentApprover string     `json:"currentApprover,omitempty"`
+	ApplicantID     string     `json:"applicantId,omitempty"`
+	ApplicantName   string     `json:"applicantName,omitempty"`
+	ApprovalTime    *time.Time `json:"approvalTime,omitempty"`
+	FinishTime      *time.Time `json:"finishTime,omitempty"`
+}
+
+type OrderCourseDetailVO struct {
+	OrderCourseDetailID  string     `json:"orderCourseDetailId"`
+	CourseID             string     `json:"courseId,omitempty"`
+	CourseName           string     `json:"courseName,omitempty"`
+	QuoteID              string     `json:"quoteId,omitempty"`
+	QuoteName            string     `json:"quoteName,omitempty"`
+	QuotePrice           float64    `json:"quotePrice"`
+	LessonType           *int       `json:"lessonType,omitempty"`
+	ChargingMode         *int       `json:"chargingMode,omitempty"`
+	HandleType           *int       `json:"handleType,omitempty"`
+	Count                float64    `json:"count"`
+	Unit                 *int       `json:"unit,omitempty"`
+	QuoteQuantity        float64    `json:"quoteQuantity"`
+	FreeQuantity         float64    `json:"freeQuantity"`
+	HasValidDate         bool       `json:"hasValidDate"`
+	ValidDate            *time.Time `json:"validDate,omitempty"`
+	EndDate              *time.Time `json:"endDate,omitempty"`
+	DiscountType         *int       `json:"discountType,omitempty"`
+	DiscountNumber       float64    `json:"discountNumber"`
+	SingleDiscountAmount float64    `json:"singleDiscountAmount"`
+	ShareDiscount        float64    `json:"shareDiscount"`
+	Amount               float64    `json:"amount"`
+	ReceivableAmount     float64    `json:"receivableAmount"`
+	RealQuantity         float64    `json:"realQuantity"`
+}
+
+type OrderPaymentRecordVO struct {
+	PaymentID      string     `json:"paymentId"`
+	AmountID       string     `json:"amountId,omitempty"`
+	AccountName    string     `json:"accountName,omitempty"`
+	PayMethod      *int       `json:"payMethod,omitempty"`
+	PayAmount      float64    `json:"payAmount"`
+	PayTime        *time.Time `json:"payTime,omitempty"`
+	CreatedTime    *time.Time `json:"createdTime,omitempty"`
+	PaymentVoucher string     `json:"paymentVoucher,omitempty"`
+	Remark         string     `json:"remark,omitempty"`
+	OperatorID     string     `json:"operatorId,omitempty"`
+	OperatorName   string     `json:"operatorName,omitempty"`
+}
+
+type OrderDetailVO struct {
+	OrderManageQueryVO
+	TotalAmount         float64                `json:"totalAmount"`
+	OrderDiscountAmount float64                `json:"orderDiscountAmount"`
+	OrderTagNames       []string               `json:"orderTagNames,omitempty"`
+	ApprovalInfo        *OrderApprovalInfo     `json:"approvalInfo,omitempty"`
+	OrderItems          []OrderCourseDetailVO  `json:"orderItems,omitempty"`
+	PaymentRecords      []OrderPaymentRecordVO `json:"paymentRecords,omitempty"`
+}
+
 type BadDebtDTO struct {
 	OrderID string `json:"orderId"`
 	Remark  string `json:"remark"`
