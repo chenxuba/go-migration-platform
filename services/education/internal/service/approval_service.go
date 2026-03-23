@@ -19,6 +19,25 @@ func (svc *Service) ApprovalConfigPaged(userID int64, query model.ApprovalConfig
 	return svc.repo.PageApprovalConfigs(context.Background(), instID, query)
 }
 
+func (svc *Service) ApprovalMyInitiatedPaged(userID int64, query model.ApprovalConfigPageQueryDTO) (model.ApprovalConfigPageResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ApprovalConfigPageResult{}, errors.New("no institution context")
+		}
+		return model.ApprovalConfigPageResult{}, err
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ApprovalConfigPageResult{}, errors.New("no institution user context")
+		}
+		return model.ApprovalConfigPageResult{}, err
+	}
+	query.QueryModel.ApplicantID = &instUserID
+	return svc.repo.PageApprovalConfigs(context.Background(), instID, query)
+}
+
 func (svc *Service) ListApprovalTemplates(userID int64) ([]model.ApprovalTemplateVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

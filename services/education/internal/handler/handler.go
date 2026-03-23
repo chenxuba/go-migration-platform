@@ -30,6 +30,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/inst-config/init-all", handler.initInstAllConfig)
 	mux.HandleFunc("/api/v1/approval-configs/save", handler.saveApprovalConfig)
 	mux.HandleFunc("/api/v1/approvals/all-paged-list", handler.approvalAllPagedList)
+	mux.HandleFunc("/api/v1/approvals/my-initiated-paged-list", handler.approvalMyInitiatedPagedList)
 	mux.HandleFunc("/api/v1/approvals/detail", handler.approvalDetail)
 	mux.HandleFunc("/api/v1/approval-templates/list", handler.approvalTemplatesList)
 	mux.HandleFunc("/api/v1/approval-templates/save", handler.saveApprovalTemplates)

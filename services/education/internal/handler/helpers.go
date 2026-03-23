@@ -534,7 +534,7 @@ func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQue
 			}
 		}
 		query.QueryModel = model.ApprovalConfigPageQueryFilters{
-			ApprovalNumber:       coalesceString(qm["approvalNumber"], qm["approveNum"]),
+			ApprovalNumber:       coalesceString(qm["approvalNumber"], qm["approveNumber"], qm["approveNum"]),
 			ApplicantID:          firstInt64Ptr(qm["applicantId"], qm["createId"], qm["initiateStaffId"]),
 			OrderNumber:          coalesceString(qm["orderNumber"], qm["orderNum"]),
 			CurrentApproverID:    firstInt64Ptr(qm["currentApproverId"], qm["currentApproveStaffId"]),
