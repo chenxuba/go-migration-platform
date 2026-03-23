@@ -32,6 +32,7 @@ type OrderQueryFilters struct {
 	OrderStatusList     []int    `json:"orderStatusList"`
 	OrderType           *int     `json:"orderType"`
 	OrderTypeList       []int    `json:"orderTypeList"`
+	OrderTagIDs         []string `json:"orderTagIds"`
 	OrderSourceList     []int    `json:"orderSourceList"`
 	StudentID           string   `json:"studentId"`
 	StaffID             string   `json:"staffId"`
@@ -40,6 +41,7 @@ type OrderQueryFilters struct {
 	CourseIDs           []string `json:"courseIds"`
 	BillingModes        []int    `json:"billingModes"`
 	IsArrears           *bool    `json:"isArrears"`
+	OrderArrearStatus   []int    `json:"orderArrearStatus"`
 	CreatedTimeBegin    string   `json:"createdTimeBegin"`
 	CreatedTimeEnd      string   `json:"createdTimeEnd"`
 	DealDateBegin       string   `json:"dealDateBegin"`

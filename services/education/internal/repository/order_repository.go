@@ -50,6 +50,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	args := []any{instID}
 	q := query.QueryModel
 	paidAmountExpr := "(SELECT IFNULL(SUM(pd.pay_amount), 0) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
+	payCountExpr := "(SELECT COUNT(*) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
 	if strings.TrimSpace(q.Keyword) != "" {
 		kw := "%" + strings.TrimSpace(q.Keyword) + "%"
 		switch strings.TrimSpace(q.KeywordType) {
@@ -85,6 +86,20 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	} else if q.OrderType != nil {
 		filters = append(filters, "so.order_type = ?")
 		args = append(args, *q.OrderType)
+	}
+	if len(q.OrderTagIDs) > 0 {
+		tagClauses := make([]string, 0, len(q.OrderTagIDs))
+		for _, item := range q.OrderTagIDs {
+			tagID := strings.TrimSpace(item)
+			if tagID == "" {
+				continue
+			}
+			tagClauses = append(tagClauses, "FIND_IN_SET(?, IFNULL(so.order_tag_ids, '')) > 0")
+			args = append(args, tagID)
+		}
+		if len(tagClauses) > 0 {
+			filters = append(filters, "("+strings.Join(tagClauses, " OR ")+")")
+		}
 	}
 	if len(q.OrderSourceList) > 0 {
 		placeholders := make([]string, 0, len(q.OrderSourceList))
@@ -143,6 +158,26 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 			filters = append(filters, "IFNULL(so.order_real_amount, 0) > "+paidAmountExpr)
 		} else {
 			filters = append(filters, "IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr)
+		}
+	}
+	if len(q.OrderArrearStatus) > 0 {
+		statusClauses := make([]string, 0, len(q.OrderArrearStatus))
+		for _, status := range q.OrderArrearStatus {
+			switch status {
+			case 1:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+			case 2:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+			case 3:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+			case 4:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 1)")
+			case 5:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+			}
+		}
+		if len(statusClauses) > 0 {
+			filters = append(filters, "("+strings.Join(statusClauses, " OR ")+")")
 		}
 	}
 	if begin := parseDateStart(q.CreatedTimeBegin); begin != nil {
