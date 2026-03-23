@@ -93,7 +93,14 @@ func (svc *Service) BatchDisabledInstUsers(userID int64, dto model.BatchCommonDT
 	if dto.IsWork != nil {
 		disabled = *dto.IsWork
 	}
-	return svc.repo.BatchSetInstUserDisabled(context.Background(), instID, dto.UserIDs, disabled)
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution user context")
+		}
+		return err
+	}
+	return svc.repo.BatchSetInstUserDisabled(context.Background(), instID, instUserID, dto.UserIDs, disabled)
 }
 
 func (svc *Service) BatchModifyInstUserDept(userID int64, dto model.BatchCommonDTO) error {

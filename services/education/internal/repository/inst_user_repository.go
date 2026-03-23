@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"go-migration-platform/services/education/internal/model"
@@ -373,24 +374,265 @@ func (repo *Repository) UpdateInstUser(ctx context.Context, instID int64, dto mo
 	return tx.Commit()
 }
 
-func (repo *Repository) BatchSetInstUserDisabled(ctx context.Context, instID int64, userIDs []int64, disabled bool) error {
+func (repo *Repository) BatchSetInstUserDisabled(ctx context.Context, instID, operatorID int64, userIDs []int64, disabled bool) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	placeholders := make([]string, 0, len(userIDs))
+	updateArgs := make([]any, 0, len(userIDs)+2)
+	updateArgs = append(updateArgs, disabled)
+	for _, id := range userIDs {
+		placeholders = append(placeholders, "?")
+		updateArgs = append(updateArgs, id)
+	}
+	updateArgs = append(updateArgs, instID)
+
+	if !disabled {
+		_, err := repo.db.ExecContext(ctx, `
+			UPDATE inst_user
+			SET disabled = ?, update_time = NOW()
+			WHERE id IN (`+strings.Join(placeholders, ",")+`) AND inst_id = ? AND del_flag = 0
+		`, updateArgs...)
+		return err
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := repo.validateAndCleanupApprovalFlowsForDisabledUsersTx(ctx, tx, instID, operatorID, userIDs); err != nil {
+		return err
+	}
+	if err := repo.clearIntentStudentSalesByUsersTx(ctx, tx, instID, operatorID, userIDs); err != nil {
+		return err
+	}
+	if err := repo.cleanupPendingApprovalCurrentApproversTx(ctx, tx, instID, operatorID, userIDs); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_user
+		SET disabled = ?, update_time = NOW()
+		WHERE id IN (`+strings.Join(placeholders, ",")+`) AND inst_id = ? AND del_flag = 0
+	`, updateArgs...); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (repo *Repository) validateAndCleanupApprovalFlowsForDisabledUsersTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, userIDs []int64) error {
+	userSet := make(map[int64]struct{}, len(userIDs))
+	for _, id := range userIDs {
+		userSet[id] = struct{}{}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, IFNULL(type, 0), IFNULL(config_version, 0)
+		FROM inst_approval_config
+		WHERE inst_id = ? AND del_flag = 0 AND enable = 1
+	`, instID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type configMeta struct {
+		ID            int64
+		Type          int
+		ConfigVersion int
+	}
+	configs := make([]configMeta, 0, 8)
+	for rows.Next() {
+		var item configMeta
+		if err := rows.Scan(&item.ID, &item.Type, &item.ConfigVersion); err != nil {
+			return err
+		}
+		configs = append(configs, item)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, config := range configs {
+		flowRows, err := tx.QueryContext(ctx, `
+			SELECT step, IFNULL(staff_id, '')
+			FROM inst_approval_flow
+			WHERE config_id = ? AND config_version = ? AND del_flag = 0
+			ORDER BY step ASC, id ASC
+		`, config.ID, config.ConfigVersion)
+		if err != nil {
+			return err
+		}
+
+		flows := make([]approvalFlowStep, 0, 4)
+		changed := false
+		for flowRows.Next() {
+			var flow approvalFlowStep
+			if err := flowRows.Scan(&flow.Step, &flow.StaffIDRaw); err != nil {
+				flowRows.Close()
+				return err
+			}
+			flow.StaffIDs = splitCSV(flow.StaffIDRaw)
+			remaining := make([]int64, 0, len(flow.StaffIDs))
+			removed := false
+			for _, staffID := range flow.StaffIDs {
+				if _, ok := userSet[staffID]; ok {
+					removed = true
+					continue
+				}
+				remaining = append(remaining, staffID)
+			}
+			if removed {
+				changed = true
+				flow.StaffIDs = remaining
+				flow.StaffIDRaw = joinInt64CSV(remaining)
+			}
+			flows = append(flows, flow)
+		}
+		flowRows.Close()
+		if err := flowRows.Err(); err != nil {
+			return err
+		}
+
+		if !changed {
+			continue
+		}
+
+		rebuiltFlows := make([]approvalFlowStep, 0, len(flows))
+		for _, flow := range flows {
+			if len(flow.StaffIDs) == 0 {
+				continue
+			}
+			flow.Step = len(rebuiltFlows) + 1
+			flow.StaffIDRaw = joinInt64CSV(flow.StaffIDs)
+			rebuiltFlows = append(rebuiltFlows, flow)
+		}
+		if len(rebuiltFlows) == 0 {
+			configName := approvalTemplateTypeNames[config.Type]
+			if strings.TrimSpace(configName) == "" {
+				configName = "当前"
+			}
+			return fmt.Errorf("%s审批流程里只有该员工，请先更改其他员工后再操作离职", configName)
+		}
+
+		nextVersion := config.ConfigVersion + 1
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE inst_approval_config
+			SET config_version = ?, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, nextVersion, operatorID, config.ID, instID); err != nil {
+			return err
+		}
+
+		for _, flow := range rebuiltFlows {
+			staffNames, err := repo.getApprovalStaffNamesTx(ctx, tx, flow.StaffIDs)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO inst_approval_flow (
+					uuid, version, config_id, config_version, staff_id, staff_name, step,
+					create_id, create_time, update_id, update_time, del_flag
+				) VALUES (
+					UUID(), 0, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
+				)
+			`, config.ID, nextVersion, flow.StaffIDRaw, strings.Join(staffNames, ","), flow.Step, operatorID, operatorID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (repo *Repository) clearIntentStudentSalesByUsersTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, userIDs []int64) error {
 	if len(userIDs) == 0 {
 		return nil
 	}
 	placeholders := make([]string, 0, len(userIDs))
 	args := make([]any, 0, len(userIDs)+2)
-	args = append(args, disabled)
 	for _, id := range userIDs {
 		placeholders = append(placeholders, "?")
 		args = append(args, id)
 	}
-	args = append(args, instID)
-	_, err := repo.db.ExecContext(ctx, `
-		UPDATE inst_user
-		SET disabled = ?, update_time = NOW()
-		WHERE id IN (`+strings.Join(placeholders, ",")+`) AND inst_id = ? AND del_flag = 0
+	args = append(args, operatorID, instID)
+	_, err := tx.ExecContext(ctx, `
+		UPDATE inst_student
+		SET sale_person = NULL, sale_assigned_time = NULL, update_id = ?, update_time = NOW()
+		WHERE sale_person IN (`+strings.Join(placeholders, ",")+`) AND inst_id = ? AND del_flag = 0 AND student_status = 0
 	`, args...)
 	return err
+}
+
+func (repo *Repository) cleanupPendingApprovalCurrentApproversTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, userIDs []int64) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	userSet := make(map[int64]struct{}, len(userIDs))
+	for _, id := range userIDs {
+		userSet[id] = struct{}{}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, IFNULL(approval_number, ''), IFNULL(current_approver, '')
+		FROM approval_record
+		WHERE inst_id = ? AND del_flag = 0 AND approval_status = 0 AND IFNULL(current_approver, '') <> ''
+	`, instID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type pendingApproval struct {
+		ID              int64
+		ApprovalNumber  string
+		CurrentApprover string
+	}
+	records := make([]pendingApproval, 0, 8)
+	for rows.Next() {
+		var item pendingApproval
+		if err := rows.Scan(&item.ID, &item.ApprovalNumber, &item.CurrentApprover); err != nil {
+			return err
+		}
+		records = append(records, item)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, record := range records {
+		currentIDs := splitCSV(record.CurrentApprover)
+		remaining := make([]int64, 0, len(currentIDs))
+		removed := false
+		for _, id := range currentIDs {
+			if _, ok := userSet[id]; ok {
+				removed = true
+				continue
+			}
+			remaining = append(remaining, id)
+		}
+		if !removed {
+			continue
+		}
+		if len(remaining) == 0 {
+			if strings.TrimSpace(record.ApprovalNumber) != "" {
+				return fmt.Errorf("审批单%s当前审批人仅为该员工，请先处理审批后再操作离职", record.ApprovalNumber)
+			}
+			return fmt.Errorf("存在审批中的审批单当前审批人仅为该员工，请先处理审批后再操作离职")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE approval_record
+			SET current_approver = ?, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, joinInt64CSV(remaining), operatorID, record.ID, instID); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (repo *Repository) BatchModifyInstUserDept(ctx context.Context, instID int64, userIDs, deptIDs []int64) error {

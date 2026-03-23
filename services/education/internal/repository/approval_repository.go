@@ -556,7 +556,15 @@ func (repo *Repository) ListApprovalTemplates(ctx context.Context, instID int64)
 		return nil, err
 	}
 
-	flowMap, err := repo.getApprovalTemplateFlows(ctx, configIDs)
+	configVersions := make(map[int64]int, len(configs))
+	configEnables := make(map[int64]bool, len(configs))
+	for _, cfg := range configs {
+		configID, _ := strconv.ParseInt(cfg.ID, 10, 64)
+		configVersions[configID] = cfg.configVersion
+		configEnables[configID] = cfg.Enable
+	}
+
+	flowMap, err := repo.getApprovalTemplateFlows(ctx, configVersions)
 	if err != nil {
 		return nil, err
 	}
@@ -565,7 +573,11 @@ func (repo *Repository) ListApprovalTemplates(ctx context.Context, instID int64)
 	for typeID := 1; typeID <= 6; typeID++ {
 		if cfg, ok := configs[typeID]; ok {
 			configID, _ := strconv.ParseInt(cfg.ID, 10, 64)
-			cfg.FlowModels = flowMap[configID]
+			if cfg.Enable {
+				cfg.FlowModels = flowMap[configID]
+			} else {
+				cfg.FlowModels = []model.ApprovalTemplateFlowVO{}
+			}
 			result = append(result, cfg.ApprovalTemplateVO)
 			continue
 		}
@@ -1281,26 +1293,21 @@ func (repo *Repository) getApprovalFlowsByConfig(ctx context.Context, configsByT
 	return result, nil
 }
 
-func (repo *Repository) getApprovalTemplateFlows(ctx context.Context, configIDs []int64) (map[int64][]model.ApprovalTemplateFlowVO, error) {
+func (repo *Repository) getApprovalTemplateFlows(ctx context.Context, configVersions map[int64]int) (map[int64][]model.ApprovalTemplateFlowVO, error) {
 	result := make(map[int64][]model.ApprovalTemplateFlowVO)
-	if len(configIDs) == 0 {
+	if len(configVersions) == 0 {
 		return result, nil
 	}
-	holders := strings.TrimRight(strings.Repeat("?,", len(configIDs)), ",")
-	args := make([]any, 0, len(configIDs))
-	for _, id := range configIDs {
-		args = append(args, id)
+	clauses := make([]string, 0, len(configVersions))
+	args := make([]any, 0, len(configVersions)*2)
+	for configID, version := range configVersions {
+		clauses = append(clauses, "(config_id = ? AND config_version = ?)")
+		args = append(args, configID, version)
 	}
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT f.config_id, f.step, IFNULL(f.staff_id, ''), IFNULL(f.staff_name, '')
 		FROM inst_approval_flow f
-		INNER JOIN (
-			SELECT config_id, MAX(config_version) AS config_version
-			FROM inst_approval_flow
-			WHERE del_flag = 0 AND config_id IN (`+holders+`)
-			GROUP BY config_id
-		) current_flow ON current_flow.config_id = f.config_id AND current_flow.config_version = f.config_version
-		WHERE f.del_flag = 0
+		WHERE f.del_flag = 0 AND (`+strings.Join(clauses, " OR ")+`)
 		ORDER BY f.config_id ASC, f.step ASC, f.id ASC
 	`, args...)
 	if err != nil {
