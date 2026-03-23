@@ -491,16 +491,8 @@ func (repo *Repository) SaveApprovalTemplates(ctx context.Context, instID, opera
 			}
 		} else {
 			if _, err := tx.ExecContext(ctx, `
-				UPDATE inst_approval_flow
-				SET del_flag = 1, update_id = ?, update_time = NOW()
-				WHERE config_id = ? AND del_flag = 0
-			`, operatorID, configID); err != nil {
-				return err
-			}
-
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE inst_approval_config
-				SET enable = ?, rule_json = ?, config_version = ?, update_id = ?, update_time = NOW()
+					UPDATE inst_approval_config
+					SET enable = ?, rule_json = ?, config_version = ?, update_id = ?, update_time = NOW()
 				WHERE id = ? AND inst_id = ? AND del_flag = 0
 			`, item.Enable, strings.TrimSpace(item.RuleJSON), nextVersion, operatorID, configID, instID); err != nil {
 				return err
@@ -611,14 +603,6 @@ func (repo *Repository) SaveApprovalConfig(ctx context.Context, instID, operator
 		LIMIT 1
 	`, dto.ID, instID).Scan(&configVersion)
 	if err != nil {
-		return err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE inst_approval_flow
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE config_id = ? AND config_version = ? AND del_flag = 0
-	`, operatorID, dto.ID, configVersion); err != nil {
 		return err
 	}
 
@@ -1104,7 +1088,7 @@ func (repo *Repository) getApprovalFlowsForConfigVersion(ctx context.Context, co
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT step, IFNULL(staff_id, '')
 		FROM inst_approval_flow
-		WHERE config_id = ? AND config_version = ? AND del_flag = 0
+		WHERE config_id = ? AND config_version = ?
 		ORDER BY step ASC, id ASC
 	`, configID, configVersion)
 	if err != nil {
