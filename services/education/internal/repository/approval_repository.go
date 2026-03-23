@@ -205,15 +205,35 @@ func (repo *Repository) PageApprovalConfigs(ctx context.Context, instID int64, q
 		return model.ApprovalConfigPageResult{}, err
 	}
 
-	userNames, userDisabled, err := repo.getApprovalUsers(ctx, userIDs)
-	if err != nil {
-		return model.ApprovalConfigPageResult{}, err
-	}
 	configsByType, err := repo.getApprovalConfigsByType(ctx, instID)
 	if err != nil {
 		return model.ApprovalConfigPageResult{}, err
 	}
-	flowsByConfig, err := repo.getApprovalFlowsByConfig(ctx, configsByType)
+	flowsByRecord := make(map[int64][]approvalFlowMeta, len(records))
+	flowCache := make(map[string][]approvalFlowMeta)
+	for idx := range records {
+		record := &records[idx]
+		config, ok := configsByType[record.ApprovalType]
+		if !ok {
+			continue
+		}
+		cacheKey := fmt.Sprintf("%d:%d", config.ID, record.ConfigVersion)
+		flows, ok := flowCache[cacheKey]
+		if !ok {
+			flows, err = repo.getApprovalFlowsForConfigVersion(ctx, config.ID, record.ConfigVersion)
+			if err != nil {
+				return model.ApprovalConfigPageResult{}, err
+			}
+			flowCache[cacheKey] = flows
+		}
+		flowsByRecord[record.ID] = flows
+		for _, flow := range flows {
+			for _, uid := range flow.StaffIDs {
+				userIDs[uid] = struct{}{}
+			}
+		}
+	}
+	userNames, userDisabled, err := repo.getApprovalUsers(ctx, userIDs)
 	if err != nil {
 		return model.ApprovalConfigPageResult{}, err
 	}
@@ -225,11 +245,7 @@ func (repo *Repository) PageApprovalConfigs(ctx context.Context, instID int64, q
 	for idx := range records {
 		record := &records[idx]
 		record.CurrentApprover = joinApprovalUserNames(splitCSV(record.CurrentApprover), userNames)
-		config, ok := configsByType[record.ApprovalType]
-		if !ok {
-			continue
-		}
-		flows := flowsByConfig[config.ID]
+		flows := flowsByRecord[record.ID]
 		histories := historyByApproval[record.ID]
 		record.ApproveFlows = buildApprovalFlowStages(flows, histories, record.CurrentStep, userNames, userDisabled)
 	}
