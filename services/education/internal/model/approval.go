@@ -54,6 +54,18 @@ type ApprovalConfigRecord struct {
 	ApproveFlows    []ApprovalFlowStageVO `json:"approveFlows,omitempty"`
 }
 
+type ApprovalDetailVO struct {
+	ID                int64                 `json:"id"`
+	ApprovalNumber    string                `json:"approvalNumber"`
+	ApprovalType      int                   `json:"approvalType"`
+	InitiateStaffName string                `json:"initiateStaffName"`
+	InitiateTime      *time.Time            `json:"initiateTime,omitempty"`
+	FinishTime        *time.Time            `json:"finishTime,omitempty"`
+	Status            *int                  `json:"status,omitempty"`
+	InitiateReason    string                `json:"initiateReason"`
+	ApproveFlows      []ApprovalFlowStageVO `json:"approveFlows,omitempty"`
+}
+
 type ApprovalFlowStageVO struct {
 	IsCurrentStage bool                  `json:"isCurrentStage"`
 	Status         *int                  `json:"status,omitempty"`

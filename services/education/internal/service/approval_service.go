@@ -30,6 +30,20 @@ func (svc *Service) ListApprovalTemplates(userID int64) ([]model.ApprovalTemplat
 	return svc.repo.ListApprovalTemplates(context.Background(), instID)
 }
 
+func (svc *Service) ApprovalDetail(userID, approvalID int64) (model.ApprovalDetailVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ApprovalDetailVO{}, errors.New("no institution context")
+		}
+		return model.ApprovalDetailVO{}, err
+	}
+	if approvalID <= 0 {
+		return model.ApprovalDetailVO{}, errors.New("id不能为空")
+	}
+	return svc.repo.GetApprovalDetail(context.Background(), instID, approvalID)
+}
+
 func (svc *Service) SaveApprovalTemplates(userID int64, dto model.ApprovalTemplateSaveRequest) error {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

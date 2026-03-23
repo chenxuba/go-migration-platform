@@ -1345,14 +1345,15 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 	}
 
 	now := time.Now()
+	initiateReason := buildApprovalInitiateReason(1, ruleJSON)
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO approval_record (
 			uuid, version, inst_id, order_id, student_id, approval_number, config_version, applicant,
-			approval_type, approval_status, approval_time, create_id, create_time, update_id, update_time, del_flag
+			approval_type, approval_status, approval_time, initiate_reason, create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, 0
 		)
-	`, instID, orderID, studentID, generateApprovalNumber(orderID, now), configVersion, applicantID, now, applicantID, now, applicantID, now)
+	`, instID, orderID, studentID, generateApprovalNumber(orderID, now), configVersion, applicantID, now, initiateReason, applicantID, now, applicantID, now)
 	if err != nil {
 		return false, err
 	}

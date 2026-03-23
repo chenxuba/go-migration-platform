@@ -54,6 +54,26 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
+	if err != nil {
+		return err
+	}
+	var exists int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'approval_record'
+		  AND COLUMN_NAME = 'initiate_reason'
+	`).Scan(&exists); err != nil {
+		return err
+	}
+	if exists > 0 {
+		return nil
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		ALTER TABLE approval_record
+		ADD COLUMN initiate_reason VARCHAR(1000) NULL DEFAULT NULL COMMENT '审批发起时的触发条件快照'
+	`)
 	return err
 }
 

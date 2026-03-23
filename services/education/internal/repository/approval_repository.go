@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -309,6 +310,105 @@ func (repo *Repository) ListApprovalTemplates(ctx context.Context, instID int64)
 		})
 	}
 	return result, nil
+}
+
+func (repo *Repository) GetApprovalDetail(ctx context.Context, instID, approvalID int64) (model.ApprovalDetailVO, error) {
+	var (
+		record         model.ApprovalDetailVO
+		configVersion  int
+		currentStep    sql.NullInt64
+		currentRaw     string
+		initiateTime   sql.NullTime
+		finishTime     sql.NullTime
+		status         sql.NullInt64
+		initiateReason string
+		ruleJSON       string
+		configID       int64
+	)
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT r.id, IFNULL(r.approval_number, ''), IFNULL(r.approval_type, 0), IFNULL(applicant.nick_name, ''),
+		       r.approval_time, r.finish_time, r.approval_status, IFNULL(r.config_version, 0),
+		       IFNULL(r.initiate_reason, ''),
+		       r.current_step, IFNULL(r.current_approver, ''), IFNULL(c.rule_json, ''), IFNULL(c.id, 0)
+		FROM approval_record r
+		LEFT JOIN inst_user applicant ON applicant.id = r.applicant
+		LEFT JOIN inst_approval_config c ON c.inst_id = r.inst_id AND c.type = r.approval_type AND c.del_flag = 0
+		WHERE r.id = ? AND r.inst_id = ? AND r.del_flag = 0
+		ORDER BY c.id DESC
+		LIMIT 1
+	`, approvalID, instID).Scan(
+		&record.ID,
+		&record.ApprovalNumber,
+		&record.ApprovalType,
+		&record.InitiateStaffName,
+		&initiateTime,
+		&finishTime,
+		&status,
+		&configVersion,
+		&initiateReason,
+		&currentStep,
+		&currentRaw,
+		&ruleJSON,
+		&configID,
+	)
+	if err != nil {
+		return model.ApprovalDetailVO{}, err
+	}
+
+	if initiateTime.Valid {
+		t := initiateTime.Time
+		record.InitiateTime = &t
+	}
+	if finishTime.Valid {
+		t := finishTime.Time
+		record.FinishTime = &t
+	}
+	if status.Valid {
+		value := int(status.Int64)
+		record.Status = &value
+	}
+	record.InitiateReason = strings.TrimSpace(initiateReason)
+	if record.InitiateReason == "" {
+		record.InitiateReason = buildApprovalInitiateReason(record.ApprovalType, ruleJSON)
+	}
+
+	if configID <= 0 {
+		return record, nil
+	}
+
+	flows, err := repo.getApprovalFlowsForConfigVersion(ctx, configID, configVersion)
+	if err != nil {
+		return model.ApprovalDetailVO{}, err
+	}
+	if len(flows) == 0 {
+		return record, nil
+	}
+
+	userIDs := make(map[int64]struct{})
+	for _, uid := range splitCSV(currentRaw) {
+		userIDs[uid] = struct{}{}
+	}
+	for _, flow := range flows {
+		for _, uid := range flow.StaffIDs {
+			userIDs[uid] = struct{}{}
+		}
+	}
+	userNames, userDisabled, err := repo.getApprovalUsers(ctx, userIDs)
+	if err != nil {
+		return model.ApprovalDetailVO{}, err
+	}
+	historyByApproval, err := repo.getApprovalHistories(ctx, []int64{approvalID})
+	if err != nil {
+		return model.ApprovalDetailVO{}, err
+	}
+
+	var currentStepValue *int
+	if currentStep.Valid {
+		value := int(currentStep.Int64)
+		currentStepValue = &value
+	}
+	record.ApproveFlows = buildApprovalFlowStages(flows, historyByApproval[approvalID], currentStepValue, userNames, userDisabled)
+	return record, nil
 }
 
 func (repo *Repository) SaveApprovalTemplates(ctx context.Context, instID, operatorID int64, dto model.ApprovalTemplateSaveRequest) error {
@@ -970,6 +1070,45 @@ func (repo *Repository) getApprovalTemplateFlows(ctx context.Context, configIDs 
 	return result, rows.Err()
 }
 
+func (repo *Repository) getApprovalFlowsForConfigVersion(ctx context.Context, configID int64, configVersion int) ([]approvalFlowMeta, error) {
+	if configID <= 0 {
+		return nil, nil
+	}
+	if configVersion <= 0 {
+		var currentVersion int
+		if err := repo.db.QueryRowContext(ctx, `
+			SELECT IFNULL(MAX(config_version), 0)
+			FROM inst_approval_flow
+			WHERE config_id = ? AND del_flag = 0
+		`, configID).Scan(&currentVersion); err != nil {
+			return nil, err
+		}
+		configVersion = currentVersion
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT step, IFNULL(staff_id, '')
+		FROM inst_approval_flow
+		WHERE config_id = ? AND config_version = ? AND del_flag = 0
+		ORDER BY step ASC, id ASC
+	`, configID, configVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	flows := make([]approvalFlowMeta, 0, 4)
+	for rows.Next() {
+		var step int
+		var staffID string
+		if err := rows.Scan(&step, &staffID); err != nil {
+			return nil, err
+		}
+		flows = append(flows, approvalFlowMeta{Step: step, StaffIDs: splitCSV(staffID)})
+	}
+	sort.Slice(flows, func(i, j int) bool { return flows[i].Step < flows[j].Step })
+	return flows, rows.Err()
+}
+
 func (repo *Repository) getApprovalStaffNamesTx(ctx context.Context, tx *sql.Tx, staffIDs []int64) ([]string, error) {
 	if len(staffIDs) == 0 {
 		return nil, nil
@@ -1147,6 +1286,47 @@ func joinApprovalUserNames(userIDs []int64, userNames map[int64]string) string {
 		}
 	}
 	return strings.Join(names, ",")
+}
+
+func buildApprovalInitiateReason(approvalType int, ruleJSON string) string {
+	raw := strings.TrimSpace(ruleJSON)
+	if raw == "" {
+		return "不限制，订单提交/支付后即生成审批"
+	}
+
+	switch approvalType {
+	case 1:
+		var rule approvalRegistrationRule
+		if err := json.Unmarshal([]byte(raw), &rule); err != nil {
+			return "不限制，订单提交/支付后即生成审批"
+		}
+		conditions := make([]string, 0, 5)
+		if rule.ClassTimeFreeQuantity > 0 {
+			conditions = append(conditions, fmt.Sprintf("赠送课时＞%s课时", formatApprovalThreshold(rule.ClassTimeFreeQuantity)))
+		}
+		if rule.PriceFreeQuantity > 0 {
+			conditions = append(conditions, fmt.Sprintf("赠送金额＞%s元", formatApprovalThreshold(rule.PriceFreeQuantity)))
+		}
+		if rule.DateFreeQuantity > 0 {
+			conditions = append(conditions, fmt.Sprintf("赠送天数＞%s天", formatApprovalThreshold(rule.DateFreeQuantity)))
+		}
+		if rule.Discount > 0 {
+			conditions = append(conditions, fmt.Sprintf("整单优惠折扣低于%s折", formatApprovalThreshold(rule.Discount)))
+		}
+		if rule.DiscountPrice > 0 {
+			conditions = append(conditions, fmt.Sprintf("整单优惠金额超过%s元", formatApprovalThreshold(rule.DiscountPrice)))
+		}
+		if len(conditions) == 0 {
+			return "不限制，订单提交/支付后即生成审批"
+		}
+		return "限制条件，" + strings.Join(conditions, "；") + "；满足任一条件即生成审批"
+	default:
+		return "不限制，订单提交/支付后即生成审批"
+	}
+}
+
+func formatApprovalThreshold(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
 func sortDirection(flag int) string {

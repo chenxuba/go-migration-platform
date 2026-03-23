@@ -794,6 +794,18 @@ func formatApprovalAllRecord(item model.ApprovalConfigRecord) map[string]any {
 	return result
 }
 
+func formatApprovalDetailRecord(item model.ApprovalDetailVO) map[string]any {
+	return map[string]any{
+		"approveNumber":     item.ApprovalNumber,
+		"status":            mapApprovalRecordStatus(item.Status),
+		"initiateStaffName": item.InitiateStaffName,
+		"finishTime":        formatZeroDateTime(item.FinishTime),
+		"initiateTime":      formatZeroDateTime(item.InitiateTime),
+		"initiateReason":    item.InitiateReason,
+		"approveFlows":      formatApprovalAllFlows(item.ApproveFlows),
+	}
+}
+
 func formatApprovalAllFlows(flows []model.ApprovalFlowStageVO) []map[string]any {
 	result := make([]map[string]any, 0, len(flows))
 	for _, flow := range flows {

@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"go-migration-platform/pkg/httpx"
 	"go-migration-platform/pkg/tenant"
@@ -102,6 +103,29 @@ func (handler *Handler) approvalAllPagedList(w http.ResponseWriter, r *http.Requ
 		"list":  items,
 		"total": result.Total,
 	}, ctx.RequestID)
+}
+
+func (handler *Handler) approvalDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	approvalID, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+	if err != nil || approvalID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.ApprovalDetail(claims.UserID, approvalID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, formatApprovalDetailRecord(result), ctx.RequestID)
 }
 
 func (handler *Handler) saveApprovalConfig(w http.ResponseWriter, r *http.Request) {
