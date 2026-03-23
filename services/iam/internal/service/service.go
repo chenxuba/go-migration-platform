@@ -62,7 +62,7 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 
 	token, err := svc.tokenManager.Generate(authx.Claims{
 		UserID:    user.ID,
-		Username:  user.Username,
+		Username:  firstNonEmpty(user.Username, user.Mobile),
 		LoginType: loginType,
 		TenantID:  ctx.TenantID,
 	}, 30*24*time.Hour)
@@ -87,7 +87,7 @@ func (svc *Service) ParseToken(token string) (authx.Claims, error) {
 }
 
 func (svc *Service) CurrentSession(ctx tenant.Context, claims authx.Claims) (model.SessionInfo, error) {
-	user, err := svc.repo.FindUserByUsernameOrMobile(context.Background(), claims.Username)
+	user, err := svc.repo.FindUserByID(context.Background(), claims.UserID)
 	if err != nil {
 		return model.SessionInfo{}, err
 	}
@@ -106,6 +106,15 @@ func (svc *Service) CurrentSession(ctx tenant.Context, claims authx.Claims) (mod
 		MenuCodeList: menus,
 		User:         userInfo,
 	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (svc *Service) ListManageUsers(current, size int, username, mobile string) (model.UserPage, error) {

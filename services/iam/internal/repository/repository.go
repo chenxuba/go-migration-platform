@@ -44,6 +44,31 @@ func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username
 	return user, nil
 }
 
+func (repo *Repository) FindUserByID(ctx context.Context, userID int64) (model.User, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT id, IFNULL(username, ''), IFNULL(password, ''), IFNULL(mobile, ''), IFNULL(nick_name, ''), user_type, dept_id, IFNULL(is_admin, 0)
+		FROM sso_user
+		WHERE del_flag = 0 AND id = ?
+		LIMIT 1
+	`, userID)
+
+	var user model.User
+	var userType sql.NullInt64
+	var deptID sql.NullInt64
+	if err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Mobile, &user.NickName, &userType, &deptID, &user.IsAdmin); err != nil {
+		return model.User{}, err
+	}
+	if userType.Valid {
+		value := int(userType.Int64)
+		user.UserType = &value
+	}
+	if deptID.Valid {
+		value := deptID.Int64
+		user.DeptID = &value
+	}
+	return user, nil
+}
+
 func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (model.ManageUserInfo, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT u.id, IFNULL(u.username, ''), IFNULL(u.mobile, ''), IFNULL(u.nick_name, ''), u.dept_id, IFNULL(d.depart_name, ''), IFNULL(u.is_admin, 0)
