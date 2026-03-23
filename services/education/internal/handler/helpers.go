@@ -562,8 +562,10 @@ func mapApprovalStatuses(statuses []int) []int {
 			mapped = 0
 		case 2:
 			mapped = 1
-		case 3, 4:
+		case 3:
 			mapped = 2
+		case 4:
+			mapped = 3
 		}
 		if _, ok := seen[mapped]; ok {
 			continue
@@ -827,6 +829,8 @@ func mapApprovalRecordStatus(status *int) int {
 		return 2
 	case 2:
 		return 3
+	case 3:
+		return 4
 	default:
 		return *status
 	}
@@ -847,6 +851,9 @@ func mapApprovalFlowStatus(flow model.ApprovalFlowStageVO) int {
 	}
 	if *flow.Status == 2 {
 		return 4
+	}
+	if *flow.Status == 3 {
+		return 5
 	}
 	return *flow.Status
 }

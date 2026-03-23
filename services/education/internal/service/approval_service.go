@@ -121,3 +121,24 @@ func (svc *Service) CancelApprovalRecord(userID int64, dto model.ApprovalOperate
 	}
 	return svc.repo.CancelApprovalRecord(context.Background(), instID, instUserID, dto)
 }
+
+func (svc *Service) RejectApprovalRecord(userID int64, dto model.ApprovalOperateDTO) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution user context")
+		}
+		return err
+	}
+	if dto.ID <= 0 {
+		return errors.New("id不能为空")
+	}
+	return svc.repo.RejectApprovalRecord(context.Background(), instID, instUserID, dto)
+}
