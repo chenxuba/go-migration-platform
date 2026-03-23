@@ -2,6 +2,24 @@ package model
 
 import "time"
 
+const (
+	OrderStatusPendingPayment = 1 // 待付款
+	OrderStatusApproving      = 2 // 审批中
+	OrderStatusCompleted      = 3 // 已完成
+	OrderStatusClosed         = 4 // 已关闭
+	OrderStatusVoided         = 5 // 已作废
+	OrderStatusPendingHandle  = 6 // 待处理
+	OrderStatusRefunding      = 7 // 退费中
+	OrderStatusRefunded       = 8 // 已退费
+)
+
+const (
+	OrderSourceMiniProgram   = 1 // 微校报名
+	OrderSourceOffline       = 2 // 线下办理
+	OrderSourceOfflineImport = 3 // 线下导入
+	OrderSourceRenewalOrder  = 4 // 续费订单
+)
+
 type OrderManageQueryDTO struct {
 	PageRequestModel PageRequestModel  `json:"pageRequestModel"`
 	QueryModel       OrderQueryFilters `json:"queryModel"`

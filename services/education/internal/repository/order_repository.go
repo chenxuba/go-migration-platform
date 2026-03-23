@@ -650,7 +650,7 @@ func (repo *Repository) SetBadDebt(ctx context.Context, instID, orderID, operato
 	if err != nil {
 		return err
 	}
-	if orderStatus != 3 {
+	if orderStatus != model.OrderStatusCompleted {
 		return fmt.Errorf("只有已完成的订单才能设为坏账")
 	}
 
@@ -1133,7 +1133,7 @@ func (repo *Repository) CreateOrder(ctx context.Context, instID, operatorID int6
 			order_discount_amount, order_discount_number, order_real_amount, order_tag_ids, internal_remark,
 			external_remark, order_type, order_status, order_source, create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, ?, NOW(), ?, NOW(), 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW(), ?, NOW(), 0
 		)
 	`,
 		instID,
@@ -1148,6 +1148,8 @@ func (repo *Repository) CreateOrder(ctx context.Context, instID, operatorID int6
 		orderTagIDs,
 		strings.TrimSpace(dto.OrderDetail.InternalRemark),
 		strings.TrimSpace(dto.OrderDetail.ExternalRemark),
+		1,
+		model.OrderStatusPendingPayment,
 		operatorID,
 		operatorID,
 	)
@@ -1221,7 +1223,7 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 	`, dto.OrderID, instID).Scan(&orderRealAmount, &orderStatus, &studentID, &applicantID); err != nil {
 		return err
 	}
-	if orderStatus != 1 && orderStatus != 3 {
+	if orderStatus != model.OrderStatusPendingPayment && orderStatus != model.OrderStatusCompleted {
 		return fmt.Errorf("订单状态异常")
 	}
 	if dto.PayAmount <= 0 {
@@ -1260,14 +1262,14 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 	}
 
 	newStatus := orderStatus
-	if orderStatus == 1 {
+	if orderStatus == model.OrderStatusPendingPayment {
 		approved, err := repo.insertApprovalRecordTx(ctx, tx, instID, dto.OrderID, studentID, applicantID)
 		if err != nil {
 			return err
 		}
-		newStatus = 2
+		newStatus = model.OrderStatusApproving
 		if approved {
-			newStatus = 3
+			newStatus = model.OrderStatusCompleted
 			if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, dto.OrderID, studentID); err != nil {
 				return err
 			}
@@ -1636,8 +1638,8 @@ func (repo *Repository) StudentHasCompletedOrders(ctx context.Context, instID, s
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM sale_order
-		WHERE inst_id = ? AND student_id = ? AND order_status = 3 AND del_flag = 0
-	`, instID, studentID).Scan(&count)
+		WHERE inst_id = ? AND student_id = ? AND order_status = ? AND del_flag = 0
+	`, instID, studentID, model.OrderStatusCompleted).Scan(&count)
 	return count > 0, err
 }
 
@@ -1647,9 +1649,9 @@ func (repo *Repository) StudentHasCompletedOrderForCourse(ctx context.Context, i
 		SELECT COUNT(*)
 		FROM sale_order so
 		INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
-		WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = 3 AND so.del_flag = 0
+		WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = ? AND so.del_flag = 0
 		  AND d.course_id = ?
-	`, instID, studentID, courseID).Scan(&count)
+	`, instID, studentID, model.OrderStatusCompleted, courseID).Scan(&count)
 	return count > 0, err
 }
 
@@ -1659,14 +1661,14 @@ func (repo *Repository) StudentHasActiveCourseEnrollment(ctx context.Context, in
 		SELECT COUNT(*)
 		FROM sale_order so
 		INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
-		WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = 3 AND so.del_flag = 0
+		WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = ? AND so.del_flag = 0
 		  AND d.course_id = ?
 		  AND (
 			IFNULL(d.has_valid_date, 0) = 0
 			OR d.end_date IS NULL
 			OR d.end_date >= CURDATE()
 		  )
-	`, instID, studentID, courseID).Scan(&count)
+	`, instID, studentID, model.OrderStatusCompleted, courseID).Scan(&count)
 	return count > 0, err
 }
 

@@ -1027,9 +1027,9 @@ func (repo *Repository) ApproveApprovalRecord(ctx context.Context, instID, opera
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE sale_order
-			SET order_status = 3, update_id = ?, update_time = NOW()
+			SET order_status = ?, update_id = ?, update_time = NOW()
 			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, operatorID, orderID, instID); err != nil {
+		`, model.OrderStatusCompleted, operatorID, orderID, instID); err != nil {
 			return err
 		}
 	}
@@ -1103,9 +1103,9 @@ func (repo *Repository) CancelApprovalRecord(ctx context.Context, instID, operat
 	if approvalType == 1 {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE sale_order
-			SET order_status = 5, update_id = ?, update_time = NOW()
+			SET order_status = ?, update_id = ?, update_time = NOW()
 			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, operatorID, orderID, instID); err != nil {
+		`, model.OrderStatusVoided, operatorID, orderID, instID); err != nil {
 			return err
 		}
 	}
@@ -1176,9 +1176,9 @@ func (repo *Repository) RejectApprovalRecord(ctx context.Context, instID, operat
 	if approvalType == 1 {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE sale_order
-			SET order_status = 5, update_id = ?, update_time = NOW()
+			SET order_status = ?, update_id = ?, update_time = NOW()
 			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, operatorID, orderID, instID); err != nil {
+		`, model.OrderStatusVoided, operatorID, orderID, instID); err != nil {
 			return err
 		}
 	}

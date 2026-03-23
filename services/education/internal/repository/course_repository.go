@@ -713,9 +713,9 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
 				INNER JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
 				WHERE so.student_id = s.id AND so.inst_id = ? AND so.del_flag = 0
-				  AND so.order_status = 3 AND IFNULL(q.lesson_audition, 0) = 1
+				  AND so.order_status = ? AND IFNULL(q.lesson_audition, 0) = 1
 			)`)
-			args = append(args, instID)
+			args = append(args, instID, model.OrderStatusCompleted)
 		} else {
 			filters = append(filters, `NOT EXISTS (
 				SELECT 1
@@ -723,9 +723,9 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
 				INNER JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
 				WHERE so.student_id = s.id AND so.inst_id = ? AND so.del_flag = 0
-				  AND so.order_status = 3 AND IFNULL(q.lesson_audition, 0) = 1
+				  AND so.order_status = ? AND IFNULL(q.lesson_audition, 0) = 1
 			)`)
-			args = append(args, instID)
+			args = append(args, instID, model.OrderStatusCompleted)
 		}
 	}
 	if q.NotFollowUpDay != nil && *q.NotFollowUpDay > 0 {
@@ -1011,10 +1011,10 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 			FROM sale_order so
 			INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
 			INNER JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
-			WHERE so.inst_id = ? AND so.del_flag = 0 AND so.order_status = 3
+			WHERE so.inst_id = ? AND so.del_flag = 0 AND so.order_status = ?
 			  AND IFNULL(q.lesson_audition, 0) = 1
 			  AND so.student_id IN (`+holders+`)
-		`, append([]any{instID}, fieldArgs...)...)
+		`, append([]any{instID, model.OrderStatusCompleted}, fieldArgs...)...)
 		if err != nil {
 			return model.PageResult[model.IntentStudent]{}, err
 		}
