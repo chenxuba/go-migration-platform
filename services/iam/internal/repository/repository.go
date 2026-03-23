@@ -20,7 +20,7 @@ func New(db *sql.DB) *Repository {
 
 func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username string) (model.User, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT id, username, password, mobile, nick_name, user_type, dept_id, IFNULL(is_admin, 0)
+		SELECT id, IFNULL(username, ''), IFNULL(password, ''), IFNULL(mobile, ''), IFNULL(nick_name, ''), user_type, dept_id, IFNULL(is_admin, 0)
 		FROM sso_user
 		WHERE del_flag = 0 AND (username = ? OR mobile = ?)
 		ORDER BY id
@@ -46,7 +46,7 @@ func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username
 
 func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (model.ManageUserInfo, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.mobile, u.nick_name, u.dept_id, IFNULL(d.depart_name, ''), IFNULL(u.is_admin, 0)
+		SELECT u.id, IFNULL(u.username, ''), IFNULL(u.mobile, ''), IFNULL(u.nick_name, ''), u.dept_id, IFNULL(d.depart_name, ''), IFNULL(u.is_admin, 0)
 		FROM sso_user u
 		LEFT JOIN sys_depart d ON u.dept_id = d.id
 		WHERE u.id = ? AND u.del_flag = 0

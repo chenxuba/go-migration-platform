@@ -337,7 +337,7 @@ func (handler *Handler) instMenuTree(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ownType, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("ownType")))
+	ownType, err := parseOwnType(r.URL.Query().Get("ownType"))
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid ownType", ctx.RequestID)
 		return
@@ -356,7 +356,7 @@ func (handler *Handler) instMenuCodes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ownType, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("ownType")))
+	ownType, err := parseOwnType(r.URL.Query().Get("ownType"))
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid ownType", ctx.RequestID)
 		return
@@ -367,6 +367,24 @@ func (handler *Handler) instMenuCodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func parseOwnType(raw string) (int, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return 0, fmt.Errorf("empty ownType")
+	}
+	if parsed, err := strconv.Atoi(value); err == nil {
+		return parsed, nil
+	}
+	switch strings.ToUpper(value) {
+	case "INSTITUTION":
+		return 2, nil
+	case "PLATFORM":
+		return 0, nil
+	default:
+		return 0, fmt.Errorf("invalid ownType")
+	}
 }
 
 func (handler *Handler) instRolePage(w http.ResponseWriter, r *http.Request) {
