@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,6 +25,14 @@ type orderCourseDetail struct {
 	HasValidDate bool
 	ValidDate    sql.NullTime
 	EndDate      sql.NullTime
+}
+
+type approvalRegistrationRule struct {
+	ClassTimeFreeQuantity float64 `json:"classTimeFreeQuantity"`
+	PriceFreeQuantity     float64 `json:"priceFreeQuantity"`
+	DateFreeQuantity      float64 `json:"dateFreeQuantity"`
+	Discount              float64 `json:"discount"`
+	DiscountPrice         float64 `json:"discountPrice"`
 }
 
 func (repo *Repository) PageOrders(ctx context.Context, instID int64, query model.OrderManageQueryDTO) (model.OrderManageResultVO, error) {
@@ -1280,14 +1289,15 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 		configID      int64
 		configVersion int
 		enable        bool
+		ruleJSON      string
 	)
 	err := tx.QueryRowContext(ctx, `
-		SELECT id, IFNULL(config_version, 0), IFNULL(enable, 0)
+		SELECT id, IFNULL(config_version, 0), IFNULL(enable, 0), IFNULL(rule_json, '')
 		FROM inst_approval_config
 		WHERE inst_id = ? AND type = 1 AND del_flag = 0
 		ORDER BY id DESC
 		LIMIT 1
-	`, instID).Scan(&configID, &configVersion, &enable)
+	`, instID).Scan(&configID, &configVersion, &enable, &ruleJSON)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return true, nil
@@ -1295,6 +1305,13 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 		return false, err
 	}
 	if !enable {
+		return true, nil
+	}
+	trigger, err := repo.shouldTriggerRegistrationApprovalTx(ctx, tx, orderID, ruleJSON)
+	if err != nil {
+		return false, err
+	}
+	if !trigger {
 		return true, nil
 	}
 
@@ -1438,6 +1455,86 @@ func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql
 		}
 	}
 	return nil
+}
+
+func (repo *Repository) shouldTriggerRegistrationApprovalTx(ctx context.Context, tx *sql.Tx, orderID int64, ruleJSON string) (bool, error) {
+	raw := strings.TrimSpace(ruleJSON)
+	if raw == "" {
+		return true, nil
+	}
+
+	var rule approvalRegistrationRule
+	if err := json.Unmarshal([]byte(raw), &rule); err != nil {
+		return false, fmt.Errorf("invalid approval rule_json: %w", err)
+	}
+
+	hasRule := rule.ClassTimeFreeQuantity > 0 || rule.PriceFreeQuantity > 0 || rule.DateFreeQuantity > 0 || rule.Discount > 0 || rule.DiscountPrice > 0
+	if !hasRule {
+		return true, nil
+	}
+
+	var (
+		orderDiscountType   sql.NullInt64
+		orderDiscountAmount float64
+		orderDiscountNumber float64
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT order_discount_type, IFNULL(order_discount_amount, 0), IFNULL(order_discount_number, 0)
+		FROM sale_order
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, orderID).Scan(&orderDiscountType, &orderDiscountAmount, &orderDiscountNumber); err != nil {
+		return false, err
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT IFNULL(q.lesson_model, 0), IFNULL(d.free_quantity, 0)
+		FROM sale_order_course_detail d
+		LEFT JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
+		WHERE d.order_id = ? AND d.del_flag = 0
+	`, orderID)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	var classTimeFree, priceFree, dateFree float64
+	for rows.Next() {
+		var lessonModel int
+		var freeQuantity float64
+		if err := rows.Scan(&lessonModel, &freeQuantity); err != nil {
+			return false, err
+		}
+		switch lessonModel {
+		case 1:
+			classTimeFree += freeQuantity
+		case 2:
+			dateFree += freeQuantity
+		case 3:
+			priceFree += freeQuantity
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+
+	if rule.ClassTimeFreeQuantity > 0 && classTimeFree > rule.ClassTimeFreeQuantity {
+		return true, nil
+	}
+	if rule.PriceFreeQuantity > 0 && priceFree > rule.PriceFreeQuantity {
+		return true, nil
+	}
+	if rule.DateFreeQuantity > 0 && dateFree > rule.DateFreeQuantity {
+		return true, nil
+	}
+	if rule.Discount > 0 && orderDiscountType.Valid && int(orderDiscountType.Int64) == 2 && orderDiscountNumber > 0 && orderDiscountNumber < rule.Discount {
+		return true, nil
+	}
+	if rule.DiscountPrice > 0 && orderDiscountAmount > rule.DiscountPrice {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64, detail orderCourseDetail, now time.Time) error {
