@@ -73,7 +73,7 @@ func (handler *Handler) staffSummaries(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
-func (handler *Handler) approvalConfigPaged(w http.ResponseWriter, r *http.Request) {
+func (handler *Handler) approvalAllPagedList(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
 	if !ok {
@@ -96,14 +96,11 @@ func (handler *Handler) approvalConfigPaged(w http.ResponseWriter, r *http.Reque
 	}
 	items := make([]map[string]any, 0, len(result.Records))
 	for _, record := range result.Records {
-		items = append(items, formatApprovalRecord(record))
+		items = append(items, formatApprovalAllRecord(record))
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"items":   items,
-		"records": items,
-		"total":   result.Total,
-		"current": result.Current,
-		"size":    result.Size,
+		"list":  items,
+		"total": result.Total,
 	}, ctx.RequestID)
 }
 

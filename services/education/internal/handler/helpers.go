@@ -519,12 +519,12 @@ func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQue
 		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
 	}
 	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
-		query.SortModel.ByInitiateTime = asInt(sortModel["byInitiateTime"], 0)
-		query.SortModel.ByFinishTime = asInt(sortModel["byFinishTime"], 0)
+		query.SortModel.ByInitiateTime = asInt(firstNonNil(sortModel["byInitiateTime"], sortModel["orderByInitiateTime"]), 0)
+		query.SortModel.ByFinishTime = asInt(firstNonNil(sortModel["byFinishTime"], sortModel["orderByFinishTime"]), 0)
 	}
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
-		applicationStartTime := asString(qm["applicationStartTime"])
-		applicationEndTime := asString(qm["applicationEndTime"])
+		applicationStartTime := coalesceString(qm["applicationStartTime"], qm["initiateStartTime"])
+		applicationEndTime := coalesceString(qm["applicationEndTime"], qm["initiateEndTime"])
 		if dateRange, ok := qm["applyTime"].([]any); ok && len(dateRange) >= 2 {
 			if applicationStartTime == "" {
 				applicationStartTime = asString(dateRange[0])
@@ -535,18 +535,52 @@ func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQue
 		}
 		query.QueryModel = model.ApprovalConfigPageQueryFilters{
 			ApprovalNumber:       coalesceString(qm["approvalNumber"], qm["approveNum"]),
-			ApplicantID:          firstInt64Ptr(qm["applicantId"], qm["createId"]),
+			ApplicantID:          firstInt64Ptr(qm["applicantId"], qm["createId"], qm["initiateStaffId"]),
 			OrderNumber:          coalesceString(qm["orderNumber"], qm["orderNum"]),
-			CurrentApproverID:    asInt64Ptr(qm["currentApproverId"]),
+			CurrentApproverID:    firstInt64Ptr(qm["currentApproverId"], qm["currentApproveStaffId"]),
 			FinishStartTime:      asString(qm["finishStartTime"]),
 			FinishEndTime:        asString(qm["finishEndTime"]),
 			ApplicationStartTime: applicationStartTime,
 			ApplicationEndTime:   applicationEndTime,
-			Statuses:             asIntSlice(qm["statuses"]),
+			Statuses:             mapApprovalStatuses(asIntSlice(qm["statuses"])),
 			StudentID:            firstInt64Ptr(qm["studentId"], qm["stuId"]),
 		}
 	}
 	return query
+}
+
+func mapApprovalStatuses(statuses []int) []int {
+	if len(statuses) == 0 {
+		return nil
+	}
+	result := make([]int, 0, len(statuses))
+	seen := make(map[int]struct{}, len(statuses))
+	for _, status := range statuses {
+		mapped := status
+		switch status {
+		case 1:
+			mapped = 0
+		case 2:
+			mapped = 1
+		case 3, 4:
+			mapped = 2
+		}
+		if _, ok := seen[mapped]; ok {
+			continue
+		}
+		seen[mapped] = struct{}{}
+		result = append(result, mapped)
+	}
+	return result
+}
+
+func firstNonNil(values ...any) any {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
 }
 
 func parseApprovalConfigSaveDTO(raw map[string]any) model.ApprovalConfigSaveDTO {
@@ -735,6 +769,93 @@ func formatApprovalRecord(item model.ApprovalConfigRecord) map[string]any {
 		result["approveOverTime"] = *item.FinishTime
 	}
 	return result
+}
+
+func formatApprovalAllRecord(item model.ApprovalConfigRecord) map[string]any {
+	result := map[string]any{
+		"id":                strconv.FormatInt(item.ID, 10),
+		"approveNumber":     item.ApprovalNumber,
+		"type":              item.ApprovalType,
+		"initiateStaffName": item.ApplicantName,
+		"studentName":       item.StudentName,
+		"studentId":         item.StudentID,
+		"studentAvatar":     item.StudentAvatar,
+		"studentPhone":      item.Mobile,
+		"finishTime":        formatZeroDateTime(item.FinishTime),
+		"initiateTime":      formatZeroDateTime(item.ApprovalTime),
+		"status":            mapApprovalRecordStatus(item.ApprovalStatus),
+		"orderNumber":       item.OrderNumber,
+		"orderId":           item.OrderID,
+		"orderType":         item.OrderType,
+		"approveFlows":      formatApprovalAllFlows(item.ApproveFlows),
+	}
+	return result
+}
+
+func formatApprovalAllFlows(flows []model.ApprovalFlowStageVO) []map[string]any {
+	result := make([]map[string]any, 0, len(flows))
+	for _, flow := range flows {
+		flowStaffs := make([]map[string]any, 0, len(flow.FlowStaffs))
+		for _, staff := range flow.FlowStaffs {
+			flowStaffs = append(flowStaffs, map[string]any{
+				"staffId":          staff.StaffID,
+				"staffName":        staff.StaffName,
+				"teacherStatus":    staff.TeacherStatus,
+				"isApproveOperate": staff.IsApproveOperate,
+			})
+		}
+		result = append(result, map[string]any{
+			"isCurrentStage": flow.IsCurrentStage,
+			"status":         mapApprovalFlowStatus(flow),
+			"remark":         flow.Remark,
+			"operateTime":    formatZeroDateTime(flow.OperateTime),
+			"step":           flow.Step,
+			"flowStaffs":     flowStaffs,
+		})
+	}
+	return result
+}
+
+func mapApprovalRecordStatus(status *int) int {
+	if status == nil {
+		return 1
+	}
+	switch *status {
+	case 0:
+		return 1
+	case 1:
+		return 2
+	case 2:
+		return 3
+	default:
+		return *status
+	}
+}
+
+func mapApprovalFlowStatus(flow model.ApprovalFlowStageVO) int {
+	if flow.Status == nil {
+		if flow.IsCurrentStage {
+			return 1
+		}
+		return 0
+	}
+	if *flow.Status == 1 {
+		if strings.Contains(flow.Remark, "系统自动执行") {
+			return 3
+		}
+		return 2
+	}
+	if *flow.Status == 2 {
+		return 4
+	}
+	return *flow.Status
+}
+
+func formatZeroDateTime(value *time.Time) string {
+	if value == nil || value.IsZero() {
+		return "0001-01-01T00:00:00"
+	}
+	return value.Format("2006-01-02T15:04:05")
 }
 
 func parseCreateFollowUpDTO(raw map[string]any) model.CreateFollowUpDTO {
