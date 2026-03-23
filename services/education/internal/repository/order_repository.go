@@ -1939,11 +1939,12 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 
 	approvedSet := make(map[int64]struct{})
 	remainingFlows := make([]approvalFlowStep, 0, len(flows))
-	for _, flow := range flows {
+	for idx, flow := range flows {
 		if matchedID, ok := firstMatchedApprovedStaff(flow.StaffIDs, approvedSet); ok {
 			if err := repo.insertApprovalHistoryTx(ctx, tx, approvalID, flow.Step, matchedID, 1, now, "系统自动执行，原因：审批人此前已审批通过"); err != nil {
 				return false, err
 			}
+			approvedSet[matchedID] = struct{}{}
 			continue
 		}
 		autoApproved := false
@@ -1960,7 +1961,8 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 		if autoApproved {
 			continue
 		}
-		remainingFlows = append(remainingFlows, flow)
+		remainingFlows = append(remainingFlows, flows[idx:]...)
+		break
 	}
 
 	return repo.advanceApprovalRecordTx(ctx, tx, approvalID, instID, applicantID, remainingFlows, approvedSet, now)
