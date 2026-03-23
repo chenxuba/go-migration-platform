@@ -544,6 +544,13 @@ func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQue
 			ApplicationEndTime:   applicationEndTime,
 			Statuses:             mapApprovalStatuses(asIntSlice(qm["statuses"])),
 			StudentID:            firstInt64Ptr(qm["studentId"], qm["stuId"]),
+			QuickFilter:          asInt(firstNonNil(qm["quickFilter"], qm["approveQuickFilter"]), 0),
+		}
+		if derefBoolValue(asBoolPtr(qm["truntoMyApprove"])) {
+			query.QueryModel.QuickFilter = 1
+		}
+		if derefBoolValue(asBoolPtr(qm["myHaveApproved"])) {
+			query.QueryModel.QuickFilter = 2
 		}
 	}
 	return query

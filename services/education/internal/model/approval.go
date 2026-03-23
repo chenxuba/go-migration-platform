@@ -19,6 +19,7 @@ type ApprovalConfigPageQueryFilters struct {
 	ApplicationEndTime   string `json:"applicationEndTime"`
 	Statuses             []int  `json:"statuses"`
 	StudentID            *int64 `json:"studentId"`
+	QuickFilter          int    `json:"quickFilter"`
 }
 
 type ApprovalConfigPageQuerySort struct {
@@ -64,6 +65,12 @@ type ApprovalDetailVO struct {
 	Status            *int                  `json:"status,omitempty"`
 	InitiateReason    string                `json:"initiateReason"`
 	ApproveFlows      []ApprovalFlowStageVO `json:"approveFlows,omitempty"`
+}
+
+type ApprovalMyStatisticsVO struct {
+	TruntoMyApproveCount int `json:"truntoMyApproveCount"`
+	MyHaveApprovedCount  int `json:"myHaveApprovedCount"`
+	InitiateApproveCount int `json:"initiateApproveCount"`
 }
 
 type ApprovalFlowStageVO struct {

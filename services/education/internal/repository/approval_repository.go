@@ -258,6 +258,279 @@ func (repo *Repository) PageApprovalConfigs(ctx context.Context, instID int64, q
 	}, nil
 }
 
+func (repo *Repository) PageMyApprovals(ctx context.Context, instID, instUserID int64, query model.ApprovalConfigPageQueryDTO) (model.ApprovalConfigPageResult, error) {
+	current := query.PageRequestModel.PageIndex
+	size := query.PageRequestModel.PageSize
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	offset := (current - 1) * size
+	currentApproverID := strconv.FormatInt(instUserID, 10)
+
+	baseMatch := `
+		(
+			(r.approval_status = 0 AND FIND_IN_SET(?, IFNULL(r.current_approver, '')) > 0)
+			OR EXISTS (
+				SELECT 1
+				FROM approval_history h
+				WHERE h.approval_id = r.id
+				  AND h.del_flag = 0
+				  AND h.approval_person = ?
+				  AND h.approval_status = 1
+			)
+		)
+	`
+	whereParts := []string{"r.inst_id = ?", "r.del_flag = 0", baseMatch}
+	args := []any{instID, currentApproverID, instUserID}
+	q := query.QueryModel
+	switch q.QuickFilter {
+	case 1:
+		whereParts = []string{"r.inst_id = ?", "r.del_flag = 0", "r.approval_status = 0", "FIND_IN_SET(?, IFNULL(r.current_approver, '')) > 0"}
+		args = []any{instID, currentApproverID}
+	case 2:
+		whereParts = []string{"r.inst_id = ?", "r.del_flag = 0", `EXISTS (
+			SELECT 1
+			FROM approval_history h
+			WHERE h.approval_id = r.id
+			  AND h.del_flag = 0
+			  AND h.approval_person = ?
+			  AND h.approval_status = 1
+		)`}
+		args = []any{instID, instUserID}
+	}
+	if strings.TrimSpace(q.ApprovalNumber) != "" {
+		whereParts = append(whereParts, "r.approval_number LIKE ?")
+		args = append(args, "%"+strings.TrimSpace(q.ApprovalNumber)+"%")
+	}
+	if strings.TrimSpace(q.OrderNumber) != "" {
+		whereParts = append(whereParts, "o.order_number LIKE ?")
+		args = append(args, "%"+strings.TrimSpace(q.OrderNumber)+"%")
+	}
+	if q.CurrentApproverID != nil {
+		whereParts = append(whereParts, "FIND_IN_SET(?, IFNULL(r.current_approver, '')) > 0")
+		args = append(args, strconv.FormatInt(*q.CurrentApproverID, 10))
+	}
+	if from := parseDateStart(q.FinishStartTime); from != nil {
+		whereParts = append(whereParts, "r.finish_time >= ?")
+		args = append(args, *from)
+	}
+	if to := parseDateEnd(q.FinishEndTime); to != nil {
+		whereParts = append(whereParts, "r.finish_time <= ?")
+		args = append(args, *to)
+	}
+	if from := parseDateStart(q.ApplicationStartTime); from != nil {
+		whereParts = append(whereParts, "r.approval_time >= ?")
+		args = append(args, *from)
+	}
+	if to := parseDateEnd(q.ApplicationEndTime); to != nil {
+		whereParts = append(whereParts, "r.approval_time <= ?")
+		args = append(args, *to)
+	}
+	if q.StudentID != nil {
+		whereParts = append(whereParts, "r.student_id = ?")
+		args = append(args, *q.StudentID)
+	}
+	if len(q.Statuses) > 0 {
+		holders := make([]string, 0, len(q.Statuses))
+		for _, item := range q.Statuses {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		whereParts = append(whereParts, "r.approval_status IN ("+strings.Join(holders, ",")+")")
+	}
+
+	whereSQL := strings.Join(whereParts, " AND ")
+	baseFrom := `
+		FROM approval_record r
+		LEFT JOIN sale_order o ON o.id = r.order_id AND o.del_flag = 0
+		LEFT JOIN inst_student s ON s.id = r.student_id AND s.del_flag = 0
+		LEFT JOIN inst_user applicant ON applicant.id = r.applicant
+		WHERE ` + whereSQL
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(*) `+baseFrom, args...).Scan(&total); err != nil {
+		return model.ApprovalConfigPageResult{}, err
+	}
+
+	orderBy := " ORDER BY r.create_time DESC"
+	if query.SortModel.ByInitiateTime != 0 {
+		orderBy = fmt.Sprintf(" ORDER BY r.create_time %s", sortDirection(query.SortModel.ByInitiateTime))
+	} else if query.SortModel.ByFinishTime != 0 {
+		orderBy = fmt.Sprintf(" ORDER BY r.finish_time %s", sortDirection(query.SortModel.ByFinishTime))
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT r.id, IFNULL(r.approval_number, ''), IFNULL(r.approval_type, 0), IFNULL(r.current_approver, ''),
+		       IFNULL(r.config_version, 0), r.current_step, IFNULL(applicant.nick_name, ''), IFNULL(s.stu_name, ''),
+		       r.student_id, IFNULL(s.avatar_url, ''), IFNULL(s.mobile, ''), r.approval_time, r.finish_time,
+		       r.approval_status, IFNULL(o.order_number, ''), r.order_id, o.order_type
+		`+baseFrom+orderBy+`
+		LIMIT ? OFFSET ?`, append(args, size, offset)...)
+	if err != nil {
+		return model.ApprovalConfigPageResult{}, err
+	}
+	defer rows.Close()
+
+	records := make([]model.ApprovalConfigRecord, 0, size)
+	recordIDs := make([]int64, 0, size)
+	userIDs := make(map[int64]struct{})
+	for rows.Next() {
+		var record model.ApprovalConfigRecord
+		var (
+			currentStep    sql.NullInt64
+			studentID      sql.NullInt64
+			approvalTime   sql.NullTime
+			finishTime     sql.NullTime
+			approvalStatus sql.NullInt64
+			orderID        sql.NullInt64
+			orderType      sql.NullInt64
+		)
+		if err := rows.Scan(
+			&record.ID,
+			&record.ApprovalNumber,
+			&record.ApprovalType,
+			&record.CurrentApprover,
+			&record.ConfigVersion,
+			&currentStep,
+			&record.ApplicantName,
+			&record.StudentName,
+			&studentID,
+			&record.StudentAvatar,
+			&record.Mobile,
+			&approvalTime,
+			&finishTime,
+			&approvalStatus,
+			&record.OrderNumber,
+			&orderID,
+			&orderType,
+		); err != nil {
+			return model.ApprovalConfigPageResult{}, err
+		}
+		if currentStep.Valid {
+			value := int(currentStep.Int64)
+			record.CurrentStep = &value
+		}
+		if studentID.Valid {
+			record.StudentID = strconv.FormatInt(studentID.Int64, 10)
+		}
+		if approvalTime.Valid {
+			t := approvalTime.Time
+			record.ApprovalTime = &t
+		}
+		if finishTime.Valid {
+			t := finishTime.Time
+			record.FinishTime = &t
+		}
+		if approvalStatus.Valid {
+			value := int(approvalStatus.Int64)
+			record.ApprovalStatus = &value
+		}
+		if orderID.Valid {
+			record.OrderID = strconv.FormatInt(orderID.Int64, 10)
+		}
+		if orderType.Valid {
+			value := int(orderType.Int64)
+			record.OrderType = &value
+		}
+		record.Mobile = maskApprovalPhone(record.Mobile)
+		for _, uid := range splitCSV(record.CurrentApprover) {
+			userIDs[uid] = struct{}{}
+		}
+		recordIDs = append(recordIDs, record.ID)
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return model.ApprovalConfigPageResult{}, err
+	}
+
+	configsByType, err := repo.getApprovalConfigsByType(ctx, instID)
+	if err != nil {
+		return model.ApprovalConfigPageResult{}, err
+	}
+	flowsByRecord := make(map[int64][]approvalFlowMeta, len(records))
+	flowCache := make(map[string][]approvalFlowMeta)
+	for idx := range records {
+		record := &records[idx]
+		config, ok := configsByType[record.ApprovalType]
+		if !ok {
+			continue
+		}
+		cacheKey := fmt.Sprintf("%d:%d", config.ID, record.ConfigVersion)
+		flows, ok := flowCache[cacheKey]
+		if !ok {
+			flows, err = repo.getApprovalFlowsForConfigVersion(ctx, config.ID, record.ConfigVersion)
+			if err != nil {
+				return model.ApprovalConfigPageResult{}, err
+			}
+			flowCache[cacheKey] = flows
+		}
+		flowsByRecord[record.ID] = flows
+		for _, flow := range flows {
+			for _, uid := range flow.StaffIDs {
+				userIDs[uid] = struct{}{}
+			}
+		}
+	}
+	userNames, userDisabled, err := repo.getApprovalUsers(ctx, userIDs)
+	if err != nil {
+		return model.ApprovalConfigPageResult{}, err
+	}
+	historyByApproval, err := repo.getApprovalHistories(ctx, recordIDs)
+	if err != nil {
+		return model.ApprovalConfigPageResult{}, err
+	}
+
+	for idx := range records {
+		record := &records[idx]
+		record.CurrentApprover = joinApprovalUserNames(splitCSV(record.CurrentApprover), userNames)
+		flows := flowsByRecord[record.ID]
+		histories := historyByApproval[record.ID]
+		record.ApproveFlows = buildApprovalFlowStages(flows, histories, record.CurrentStep, userNames, userDisabled)
+	}
+
+	return model.ApprovalConfigPageResult{
+		Records: records,
+		Total:   total,
+		Current: current,
+		Size:    size,
+	}, nil
+}
+
+func (repo *Repository) GetMyApprovalStatistics(ctx context.Context, instID, instUserID int64) (model.ApprovalMyStatisticsVO, error) {
+	currentApproverID := strconv.FormatInt(instUserID, 10)
+	var result model.ApprovalMyStatisticsVO
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM approval_record
+		WHERE inst_id = ? AND del_flag = 0 AND approval_status = 0
+		  AND FIND_IN_SET(?, IFNULL(current_approver, '')) > 0
+	`, instID, currentApproverID).Scan(&result.TruntoMyApproveCount); err != nil {
+		return model.ApprovalMyStatisticsVO{}, err
+	}
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT h.approval_id)
+		FROM approval_history h
+		INNER JOIN approval_record r ON r.id = h.approval_id
+		WHERE r.inst_id = ? AND r.del_flag = 0
+		  AND h.del_flag = 0
+		  AND h.approval_person = ?
+		  AND h.approval_status = 1
+	`, instID, instUserID).Scan(&result.MyHaveApprovedCount); err != nil {
+		return model.ApprovalMyStatisticsVO{}, err
+	}
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM approval_record
+		WHERE inst_id = ? AND del_flag = 0 AND applicant = ?
+	`, instID, instUserID).Scan(&result.InitiateApproveCount); err != nil {
+		return model.ApprovalMyStatisticsVO{}, err
+	}
+	return result, nil
+}
+
 func (repo *Repository) ListApprovalTemplates(ctx context.Context, instID int64) ([]model.ApprovalTemplateVO, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT c.id, c.type, IFNULL(c.name, ''), IFNULL(c.enable, 0), IFNULL(c.rule_json, ''), IFNULL(c.config_version, 0),

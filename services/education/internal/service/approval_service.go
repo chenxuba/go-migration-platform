@@ -19,6 +19,42 @@ func (svc *Service) ApprovalConfigPaged(userID int64, query model.ApprovalConfig
 	return svc.repo.PageApprovalConfigs(context.Background(), instID, query)
 }
 
+func (svc *Service) ApprovalMyPaged(userID int64, query model.ApprovalConfigPageQueryDTO) (model.ApprovalConfigPageResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ApprovalConfigPageResult{}, errors.New("no institution context")
+		}
+		return model.ApprovalConfigPageResult{}, err
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ApprovalConfigPageResult{}, errors.New("no institution user context")
+		}
+		return model.ApprovalConfigPageResult{}, err
+	}
+	return svc.repo.PageMyApprovals(context.Background(), instID, instUserID, query)
+}
+
+func (svc *Service) ApprovalMyStatistics(userID int64) (model.ApprovalMyStatisticsVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ApprovalMyStatisticsVO{}, errors.New("no institution context")
+		}
+		return model.ApprovalMyStatisticsVO{}, err
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ApprovalMyStatisticsVO{}, errors.New("no institution user context")
+		}
+		return model.ApprovalMyStatisticsVO{}, err
+	}
+	return svc.repo.GetMyApprovalStatistics(context.Background(), instID, instUserID)
+}
+
 func (svc *Service) ApprovalMyInitiatedPaged(userID int64, query model.ApprovalConfigPageQueryDTO) (model.ApprovalConfigPageResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

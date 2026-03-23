@@ -1318,9 +1318,9 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 	rows, err := tx.QueryContext(ctx, `
 		SELECT step, IFNULL(staff_id, '')
 		FROM inst_approval_flow
-		WHERE config_id = ? AND del_flag = 0
+		WHERE config_id = ? AND config_version = ? AND del_flag = 0
 		ORDER BY step ASC, id ASC
-	`, configID)
+	`, configID, configVersion)
 	if err != nil {
 		return false, err
 	}
