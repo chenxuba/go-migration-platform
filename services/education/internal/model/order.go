@@ -14,8 +14,8 @@ const (
 )
 
 const (
-	OrderSourceMiniProgram   = 1 // 微校报名
-	OrderSourceOffline       = 2 // 线下办理
+	OrderSourceOffline       = 1 // 线下办理
+	OrderSourceMiniProgram   = 2 // 微校报名
 	OrderSourceOfflineImport = 3 // 线下导入
 	OrderSourceRenewalOrder  = 4 // 续费订单
 )
@@ -87,8 +87,114 @@ type OrderManageQueryVO struct {
 }
 
 type OrderManageResultVO struct {
-	List  []OrderManageQueryVO `json:"list"`
-	Total int                  `json:"total"`
+	List         []OrderManageQueryVO `json:"list"`
+	Total        int                  `json:"total"`
+	TotalPaid    float64              `json:"totalPaid"`
+	TotalArrear  float64              `json:"totalArrear"`
+	TotalBadDebt float64              `json:"totalBadDebt"`
+}
+
+type OrderDetailListQueryDTO struct {
+	PageRequestModel PageRequestModel       `json:"pageRequestModel"`
+	QueryModel       OrderDetailListFilters `json:"queryModel"`
+	SortModel        map[string]any         `json:"sortModel"`
+}
+
+type OrderDetailListFilters struct {
+	OrderNumber       string   `json:"orderNumber"`
+	OrderTypeList     []int    `json:"orderTypeList"`
+	OrderTagIDs       []string `json:"orderTagIds"`
+	OrderSourceList   []int    `json:"orderSourceList"`
+	OrderStatusList   []int    `json:"orderStatusList"`
+	CourseIDs         []string `json:"courseIds"`
+	EnrollTypes       []int    `json:"enrollTypes"`
+	ProductTypes      []int    `json:"productTypes"`
+	CourseCategoryID  *int64   `json:"courseCategoryId"`
+	SalePersonID      string   `json:"salePersonId"`
+	CreatorID         string   `json:"creatorId"`
+	DealDateBegin     string   `json:"dealDateBegin"`
+	DealDateEnd       string   `json:"dealDateEnd"`
+	CreatedTimeBegin  string   `json:"createdTimeBegin"`
+	CreatedTimeEnd    string   `json:"createdTimeEnd"`
+	OrderArrearStatus []int    `json:"orderArrearStatus"`
+	StudentID         string   `json:"studentId"`
+}
+
+type OrderDetailListItemVO struct {
+	OrderID                          string     `json:"orderId"`
+	SourceID                         string     `json:"sourceId"`
+	OrderNumber                      string     `json:"orderNumber"`
+	StudentID                        string     `json:"studentId"`
+	StudentName                      string     `json:"studentName"`
+	StudentPhone                     string     `json:"studentPhone"`
+	StudentAvatar                    string     `json:"studentAvatar"`
+	Sex                              *int       `json:"sex,omitempty"`
+	CreatedTime                      *time.Time `json:"createdTime,omitempty"`
+	OrderSource                      *int       `json:"orderSource,omitempty"`
+	OrderStatus                      *int       `json:"orderStatus,omitempty"`
+	OrderType                        *int       `json:"orderType,omitempty"`
+	TranOrderType                    *int       `json:"tranOrderType,omitempty"`
+	StaffID                          string     `json:"staffId"`
+	StaffName                        string     `json:"staffName"`
+	IsAmountOwed                     bool       `json:"isAmountOwed"`
+	DealDate                         *time.Time `json:"dealDate,omitempty"`
+	ProductID                        string     `json:"productId"`
+	ProductName                      string     `json:"productName"`
+	QuoteName                        string     `json:"quoteName"`
+	EnrollType                       int        `json:"enrollType"`
+	OrderFlowProductID               string     `json:"orderFlowProductId"`
+	SkuID                            string     `json:"skuId"`
+	SkuName                          string     `json:"skuName"`
+	SkuCount                         float64    `json:"skuCount"`
+	SkuUnit                          *int       `json:"skuUnit,omitempty"`
+	FreeQuantity                     float64    `json:"freeQuantity"`
+	DiscountType                     *int       `json:"discountType,omitempty"`
+	DiscountNumber                   float64    `json:"discountNumber"`
+	ShareDiscount                    float64    `json:"shareDiscount"`
+	ShareCouponAmount                float64    `json:"shareCouponAmount"`
+	Tuition                          float64    `json:"tuition"`
+	Quantity                         float64    `json:"quantity"`
+	RealQuantity                     float64    `json:"realQuantity"`
+	ProductType                      *int       `json:"productType,omitempty"`
+	Remark                           string     `json:"remark"`
+	ChargingMode                     *int       `json:"chargingMode,omitempty"`
+	RealTuition                      float64    `json:"realTuition"`
+	SalePersonID                     string     `json:"salePersonId"`
+	SalePersonName                   string     `json:"salePersonName"`
+	CollectorStaffID                 string     `json:"collectorStaffId"`
+	CollectorStaffName               string     `json:"collectorStaffName"`
+	PhoneSellStaffID                 string     `json:"phoneSellStaffId"`
+	PhoneSellStaffName               string     `json:"phoneSellStaffName"`
+	ForegroundStaffID                string     `json:"foregroundStaffId"`
+	ForegroundStaffName              string     `json:"foregroundStaffName"`
+	ViceSellStaffStaffID             string     `json:"viceSellStaffStaffId"`
+	ViceSellStaffStaffName           string     `json:"viceSellStaffStaffName"`
+	ProductCategoryID                string     `json:"productCategoryId"`
+	ProductCategoryName              string     `json:"productCategoryName"`
+	TotalQuantity                    float64    `json:"totalQuantity"`
+	TagNames                         []string   `json:"tagNames,omitempty"`
+	ExternalRemark                   string     `json:"externalRemark"`
+	ClassID                          string     `json:"classId"`
+	ClassName                        string     `json:"className"`
+	ClassAssignStatus                int        `json:"classAssignStatus"`
+	CustomerRemark                   string     `json:"customerRemark"`
+	ActualPaidAmount                 float64    `json:"actualPaidAmount"`
+	ChargeAgainstAmount              float64    `json:"chargeAgainstAmount"`
+	ShareRechargeAccountAmount       float64    `json:"shareRechargeAccountAmount"`
+	ShareRechargeAccountGivingAmount float64    `json:"shareRechargeAccountGivingAmount"`
+	ShouldAmount                     float64    `json:"shouldAmount"`
+	IsBadDebt                        bool       `json:"isBadDebt"`
+	BadDebtAmount                    float64    `json:"badDebtAmount"`
+	ArrearAmount                     float64    `json:"arrearAmount"`
+	RechargeAccountID                string     `json:"rechargeAccountId"`
+	RechargeAccountAmount            float64    `json:"rechargeAccountAmount"`
+	ProductPackageID                 string     `json:"productPackageId"`
+	ProductPackageName               string     `json:"productPackageName"`
+}
+
+type OrderDetailListResultVO struct {
+	List  []OrderDetailListItemVO `json:"list"`
+	Total int                     `json:"total"`
 }
 
 type OrderApprovalInfo struct {

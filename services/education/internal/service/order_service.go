@@ -21,6 +21,17 @@ func (svc *Service) GetOrderList(userID int64, query model.OrderManageQueryDTO) 
 	return svc.repo.PageOrders(context.Background(), instID, query)
 }
 
+func (svc *Service) GetOrderDetailList(userID int64, query model.OrderDetailListQueryDTO) (model.OrderDetailListResultVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.OrderDetailListResultVO{}, errors.New("no institution context")
+		}
+		return model.OrderDetailListResultVO{}, err
+	}
+	return svc.repo.PageOrderDetails(context.Background(), instID, query)
+}
+
 func (svc *Service) GetOrderDetail(userID, orderID int64) (model.OrderDetailVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

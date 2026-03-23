@@ -105,6 +105,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/current-students/page", handler.currentStudentsPage)
 	mux.HandleFunc("/api/v1/enrolled-students/page", handler.enrolledStudentsPage)
 	mux.HandleFunc("/api/v1/orders/list", handler.orderList)
+	mux.HandleFunc("/api/v1/orders/detail-paged", handler.orderDetailPaged)
 	mux.HandleFunc("/api/v1/orders/detail", handler.orderDetail)
 	mux.HandleFunc("/api/v1/order-tags/list-paged", handler.orderTagListPaged)
 	mux.HandleFunc("/api/v1/order-tags/create", handler.createOrderTag)

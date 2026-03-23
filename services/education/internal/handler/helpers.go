@@ -203,6 +203,36 @@ func parseOrderManageQueryDTO(raw map[string]any) model.OrderManageQueryDTO {
 	return query
 }
 
+func parseOrderDetailListQueryDTO(raw map[string]any) model.OrderDetailListQueryDTO {
+	query := model.OrderDetailListQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.OrderDetailListFilters{
+			OrderNumber:       asString(qm["orderNumber"]),
+			OrderTypeList:     asIntSlice(firstNonNil(qm["orderTypeList"], qm["tranOrderTypes"])),
+			OrderTagIDs:       asStringSlice(qm["orderTagIds"]),
+			OrderSourceList:   asIntSlice(qm["orderSourceList"]),
+			OrderStatusList:   asIntSlice(firstNonNil(qm["orderStatusList"], qm["orderStatus"])),
+			CourseIDs:         asStringSlice(firstNonNil(qm["courseIds"], qm["productIdList"])),
+			EnrollTypes:       asIntSlice(qm["enrollTypes"]),
+			ProductTypes:      asIntSlice(firstNonNil(qm["productTypes"], qm["types"])),
+			CourseCategoryID:  firstInt64Ptr(qm["courseCategoryId"], qm["productCategoryId"]),
+			SalePersonID:      asString(qm["salePersonId"]),
+			CreatorID:         asString(firstNonNil(qm["creatorId"], qm["staffId"])),
+			DealDateBegin:     coalesceString(qm["dealDateBegin"], qm["startDealTime"]),
+			DealDateEnd:       coalesceString(qm["dealDateEnd"], qm["endDealTime"]),
+			CreatedTimeBegin:  coalesceString(qm["createdTimeBegin"], qm["startTime"]),
+			CreatedTimeEnd:    coalesceString(qm["createdTimeEnd"], qm["endTime"]),
+			OrderArrearStatus: asIntSlice(qm["orderArrearStatus"]),
+			StudentID:         asString(firstNonNil(qm["studentId"], firstString(qm["studentIdList"]))),
+		}
+	}
+	return query
+}
+
 func parseOrderTagPagedQueryDTO(raw map[string]any) model.OrderTagPagedQueryDTO {
 	query := model.OrderTagPagedQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
@@ -616,6 +646,16 @@ func firstNonNil(values ...any) any {
 		if value != nil {
 			return value
 		}
+	}
+	return nil
+}
+
+func firstString(value any) any {
+	if list, ok := value.([]any); ok && len(list) > 0 {
+		return list[0]
+	}
+	if list, ok := value.([]string); ok && len(list) > 0 {
+		return list[0]
 	}
 	return nil
 }

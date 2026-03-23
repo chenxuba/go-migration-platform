@@ -211,6 +211,32 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		return model.OrderManageResultVO{}, err
 	}
 
+	var (
+		totalPaid    float64
+		totalArrear  float64
+		totalBadDebt float64
+	)
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT
+			IFNULL(SUM(`+paidAmountExpr+`), 0),
+			IFNULL(SUM(CASE
+				WHEN IFNULL(so.is_bad_debt, 0) = 0
+				  AND so.order_status <> ?
+				  AND IFNULL(so.order_real_amount, 0) > `+paidAmountExpr+`
+				THEN IFNULL(so.order_real_amount, 0) - `+paidAmountExpr+`
+				ELSE 0
+			END), 0),
+			IFNULL(SUM(CASE
+				WHEN IFNULL(so.is_bad_debt, 0) = 1
+				THEN IFNULL(so.bad_debt_amount, 0)
+				ELSE 0
+			END), 0)
+		FROM sale_order so
+		LEFT JOIN inst_student s ON so.student_id = s.id
+		WHERE `+whereClause, append([]any{model.OrderStatusPendingPayment}, args...)...).Scan(&totalPaid, &totalArrear, &totalBadDebt); err != nil {
+		return model.OrderManageResultVO{}, err
+	}
+
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT so.id, so.order_number, so.student_id, IFNULL(s.stu_name, ''),
 		       CASE
@@ -276,7 +302,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 			item.FinishedTime = &t
 			item.BillFinishedTime = &t
 		}
-		if item.Amount > paidAmount {
+		if item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment && item.Amount > paidAmount {
 			item.ArrearAmount = item.Amount - paidAmount
 			item.IsAmountOwed = item.ArrearAmount > 0
 		}
@@ -287,7 +313,463 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		item.TagNames, _, _ = repo.getOrderTags(ctx, instID, orderTagIDs)
 		items = append(items, item)
 	}
-	return model.OrderManageResultVO{List: items, Total: total}, rows.Err()
+	return model.OrderManageResultVO{
+		List:         items,
+		Total:        total,
+		TotalPaid:    totalPaid,
+		TotalArrear:  totalArrear,
+		TotalBadDebt: totalBadDebt,
+	}, rows.Err()
+}
+
+func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, query model.OrderDetailListQueryDTO) (model.OrderDetailListResultVO, error) {
+	current := query.PageRequestModel.PageIndex
+	size := query.PageRequestModel.PageSize
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	offset := (current - 1) * size
+
+	filters := []string{"so.del_flag = 0", "so.inst_id = ?", "d.del_flag = 0"}
+	args := []any{instID}
+	q := query.QueryModel
+	paidAmountExpr := "(SELECT IFNULL(SUM(pd.pay_amount), 0) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
+	payCountExpr := "(SELECT COUNT(*) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
+
+	if strings.TrimSpace(q.OrderNumber) != "" {
+		filters = append(filters, "so.order_number LIKE ?")
+		args = append(args, "%"+strings.TrimSpace(q.OrderNumber)+"%")
+	}
+	if strings.TrimSpace(q.StudentID) != "" {
+		filters = append(filters, "CAST(so.student_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(q.StudentID))
+	}
+	if len(q.OrderTypeList) > 0 {
+		holders := make([]string, 0, len(q.OrderTypeList))
+		for _, item := range q.OrderTypeList {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "so.order_type IN ("+strings.Join(holders, ",")+")")
+	}
+	if len(q.OrderTagIDs) > 0 {
+		tagClauses := make([]string, 0, len(q.OrderTagIDs))
+		for _, item := range q.OrderTagIDs {
+			tagID := strings.TrimSpace(item)
+			if tagID == "" {
+				continue
+			}
+			tagClauses = append(tagClauses, "FIND_IN_SET(?, IFNULL(so.order_tag_ids, '')) > 0")
+			args = append(args, tagID)
+		}
+		if len(tagClauses) > 0 {
+			filters = append(filters, "("+strings.Join(tagClauses, " OR ")+")")
+		}
+	}
+	if len(q.OrderSourceList) > 0 {
+		holders := make([]string, 0, len(q.OrderSourceList))
+		for _, item := range q.OrderSourceList {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "so.order_source IN ("+strings.Join(holders, ",")+")")
+	}
+	if len(q.OrderStatusList) > 0 {
+		holders := make([]string, 0, len(q.OrderStatusList))
+		for _, item := range q.OrderStatusList {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "so.order_status IN ("+strings.Join(holders, ",")+")")
+	}
+	if len(q.CourseIDs) > 0 {
+		holders := make([]string, 0, len(q.CourseIDs))
+		for _, item := range q.CourseIDs {
+			holders = append(holders, "?")
+			args = append(args, strings.TrimSpace(item))
+		}
+		filters = append(filters, "CAST(d.course_id AS CHAR) IN ("+strings.Join(holders, ",")+")")
+	}
+	if len(q.EnrollTypes) > 0 {
+		holders := make([]string, 0, len(q.EnrollTypes))
+		for _, item := range q.EnrollTypes {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "IFNULL(d.handle_type, 0) IN ("+strings.Join(holders, ",")+")")
+	}
+	if len(q.ProductTypes) > 0 {
+		holders := make([]string, 0, len(q.ProductTypes))
+		for _, item := range q.ProductTypes {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "IFNULL(c.type, 1) IN ("+strings.Join(holders, ",")+")")
+	}
+	if q.CourseCategoryID != nil {
+		filters = append(filters, "c.course_category = ?")
+		args = append(args, *q.CourseCategoryID)
+	}
+	if strings.TrimSpace(q.SalePersonID) != "" {
+		filters = append(filters, "CAST(so.sale_person AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(q.SalePersonID))
+	}
+	if strings.TrimSpace(q.CreatorID) != "" {
+		filters = append(filters, "CAST(so.create_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(q.CreatorID))
+	}
+	if begin := parseDateStart(q.DealDateBegin); begin != nil {
+		filters = append(filters, "so.deal_date >= ?")
+		args = append(args, begin.Format("2006-01-02"))
+	}
+	if end := parseDateEnd(q.DealDateEnd); end != nil {
+		filters = append(filters, "so.deal_date <= ?")
+		args = append(args, end.Format("2006-01-02"))
+	}
+	if begin := parseDateStart(q.CreatedTimeBegin); begin != nil {
+		filters = append(filters, "so.create_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(q.CreatedTimeEnd); end != nil {
+		filters = append(filters, "so.create_time <= ?")
+		args = append(args, *end)
+	}
+	if len(q.OrderArrearStatus) > 0 {
+		statusClauses := make([]string, 0, len(q.OrderArrearStatus))
+		for _, status := range q.OrderArrearStatus {
+			switch status {
+			case 1:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+			case 2:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+			case 3:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+			case 4:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 1)")
+			case 5:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+			}
+		}
+		if len(statusClauses) > 0 {
+			filters = append(filters, "("+strings.Join(statusClauses, " OR ")+")")
+		}
+	}
+
+	whereClause := strings.Join(filters, " AND ")
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM sale_order so
+		INNER JOIN sale_order_course_detail d ON d.order_id = so.id
+		LEFT JOIN inst_course c ON c.id = d.course_id
+		WHERE `+whereClause, args...).Scan(&total); err != nil {
+		return model.OrderDetailListResultVO{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			so.id,
+			so.order_number,
+			so.student_id,
+			IFNULL(s.stu_name, ''),
+			CASE
+				WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
+				ELSE IFNULL(s.mobile, '')
+			END,
+			IFNULL(s.avatar_url, ''),
+			s.stu_sex,
+			so.create_time,
+			so.order_source,
+			so.order_status,
+			so.order_type,
+			so.order_type,
+			so.create_id,
+			IFNULL(u.nick_name, ''),
+			so.deal_date,
+			d.course_id,
+			IFNULL(c.name, ''),
+			IFNULL(d.handle_type, 0),
+			d.id,
+			d.quote_id,
+			IFNULL(q.name, ''),
+			IFNULL(d.count, 0),
+			d.unit,
+			IFNULL(d.free_quantity, 0),
+			d.discount_type,
+			IFNULL(d.discount_number, 0),
+			IFNULL(d.share_discount, 0),
+			IFNULL(q.price, 0),
+			IFNULL(q.quantity, 0),
+			IFNULL(d.real_quantity, 0),
+			IFNULL(c.type, 1),
+			IFNULL(so.internal_remark, ''),
+			q.lesson_model,
+			so.sale_person,
+			IFNULL(sale.nick_name, ''),
+			IFNULL(so.order_tag_ids, ''),
+			IFNULL(so.external_remark, ''),
+			IFNULL(so.remark, ''),
+			IFNULL(so.is_bad_debt, 0),
+			IFNULL(so.bad_debt_amount, 0),
+			IFNULL(c.course_category, 0),
+			IFNULL(cat.name, ''),
+			IFNULL(so.order_real_amount, 0),
+			`+paidAmountExpr+`
+		FROM sale_order so
+		INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+		LEFT JOIN inst_student s ON s.id = so.student_id
+		LEFT JOIN inst_user u ON u.id = so.create_id
+		LEFT JOIN inst_user sale ON sale.id = so.sale_person
+		LEFT JOIN inst_course c ON c.id = d.course_id
+		LEFT JOIN inst_course_category cat ON cat.id = c.course_category AND cat.del_flag = 0
+		LEFT JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
+		WHERE `+whereClause+`
+		ORDER BY so.create_time DESC, d.id DESC
+		LIMIT ? OFFSET ?
+	`, append(args, size, offset)...)
+	if err != nil {
+		return model.OrderDetailListResultVO{}, err
+	}
+	defer rows.Close()
+
+	list := make([]model.OrderDetailListItemVO, 0, size)
+	for rows.Next() {
+		var (
+			item            model.OrderDetailListItemVO
+			orderID         int64
+			studentID       sql.NullInt64
+			sex             sql.NullInt64
+			createdTime     sql.NullTime
+			orderSource     sql.NullInt64
+			orderStatus     sql.NullInt64
+			orderType       sql.NullInt64
+			tranOrderType   sql.NullInt64
+			createID        sql.NullInt64
+			dealDate        sql.NullTime
+			productID       sql.NullInt64
+			handleType      sql.NullInt64
+			orderFlowID     int64
+			skuID           sql.NullInt64
+			quoteName       string
+			skuCount        sql.NullFloat64
+			skuUnit         sql.NullInt64
+			freeQuantity    sql.NullFloat64
+			discountType    sql.NullInt64
+			discountNumber  sql.NullFloat64
+			shareDiscount   sql.NullFloat64
+			tuition         sql.NullFloat64
+			quantity        sql.NullFloat64
+			realQuantity    sql.NullFloat64
+			productType     sql.NullInt64
+			chargingMode    sql.NullInt64
+			salePersonID    sql.NullInt64
+			isBadDebt       bool
+			badDebtAmount   sql.NullFloat64
+			productCatID    sql.NullInt64
+			orderRealAmount sql.NullFloat64
+			paidAmount      sql.NullFloat64
+			orderTagIDs     string
+		)
+		if err := rows.Scan(
+			&orderID,
+			&item.OrderNumber,
+			&studentID,
+			&item.StudentName,
+			&item.StudentPhone,
+			&item.StudentAvatar,
+			&sex,
+			&createdTime,
+			&orderSource,
+			&orderStatus,
+			&orderType,
+			&tranOrderType,
+			&createID,
+			&item.StaffName,
+			&dealDate,
+			&productID,
+			&item.ProductName,
+			&handleType,
+			&orderFlowID,
+			&skuID,
+			&quoteName,
+			&skuCount,
+			&skuUnit,
+			&freeQuantity,
+			&discountType,
+			&discountNumber,
+			&shareDiscount,
+			&tuition,
+			&quantity,
+			&realQuantity,
+			&productType,
+			&item.Remark,
+			&chargingMode,
+			&salePersonID,
+			&item.SalePersonName,
+			&orderTagIDs,
+			&item.ExternalRemark,
+			&item.CustomerRemark,
+			&isBadDebt,
+			&badDebtAmount,
+			&productCatID,
+			&item.ProductCategoryName,
+			&orderRealAmount,
+			&paidAmount,
+		); err != nil {
+			return model.OrderDetailListResultVO{}, err
+		}
+		item.OrderID = strconv.FormatInt(orderID, 10)
+		item.SourceID = item.OrderID
+		if studentID.Valid {
+			item.StudentID = strconv.FormatInt(studentID.Int64, 10)
+		}
+		if createdTime.Valid {
+			t := createdTime.Time
+			item.CreatedTime = &t
+		}
+		if orderSource.Valid {
+			v := int(orderSource.Int64)
+			item.OrderSource = &v
+		}
+		if sex.Valid {
+			v := int(sex.Int64)
+			item.Sex = &v
+		}
+		if orderStatus.Valid {
+			v := int(orderStatus.Int64)
+			item.OrderStatus = &v
+		}
+		if orderType.Valid {
+			v := int(orderType.Int64)
+			item.OrderType = &v
+		}
+		if tranOrderType.Valid {
+			v := int(tranOrderType.Int64)
+			item.TranOrderType = &v
+		}
+		if createID.Valid {
+			item.StaffID = strconv.FormatInt(createID.Int64, 10)
+		}
+		if dealDate.Valid {
+			t := dealDate.Time
+			item.DealDate = &t
+		}
+		if productID.Valid {
+			item.ProductID = strconv.FormatInt(productID.Int64, 10)
+		}
+		if handleType.Valid {
+			item.EnrollType = int(handleType.Int64)
+		}
+		item.OrderFlowProductID = strconv.FormatInt(orderFlowID, 10)
+		if skuID.Valid {
+			item.SkuID = strconv.FormatInt(skuID.Int64, 10)
+		}
+		item.QuoteName = quoteName
+		item.SkuName = quoteName
+		if skuCount.Valid {
+			item.SkuCount = skuCount.Float64
+			item.TotalQuantity = skuCount.Float64
+		}
+		if skuUnit.Valid {
+			v := int(skuUnit.Int64)
+			item.SkuUnit = &v
+		}
+		if freeQuantity.Valid {
+			item.FreeQuantity = freeQuantity.Float64
+		}
+		if discountType.Valid {
+			v := int(discountType.Int64)
+			item.DiscountType = &v
+		}
+		if discountNumber.Valid {
+			item.DiscountNumber = discountNumber.Float64
+		}
+		if shareDiscount.Valid {
+			item.ShareDiscount = shareDiscount.Float64
+		}
+		item.ShareCouponAmount = 0
+		if tuition.Valid {
+			item.Tuition = tuition.Float64
+		}
+		if quantity.Valid {
+			item.Quantity = quantity.Float64
+		}
+		if realQuantity.Valid {
+			item.RealQuantity = realQuantity.Float64
+		}
+		if productType.Valid {
+			v := int(productType.Int64)
+			item.ProductType = &v
+		}
+		if chargingMode.Valid {
+			v := int(chargingMode.Int64)
+			item.ChargingMode = &v
+		}
+		if salePersonID.Valid {
+			item.SalePersonID = strconv.FormatInt(salePersonID.Int64, 10)
+		}
+		item.TagNames, _, _ = repo.getOrderTags(ctx, instID, orderTagIDs)
+		item.IsBadDebt = isBadDebt
+		if badDebtAmount.Valid {
+			item.BadDebtAmount = badDebtAmount.Float64
+		}
+		if productCatID.Valid && productCatID.Int64 > 0 {
+			item.ProductCategoryID = strconv.FormatInt(productCatID.Int64, 10)
+		}
+		item.ClassID = "0"
+		item.ClassName = ""
+		item.ClassAssignStatus = 0
+		item.RechargeAccountID = "0"
+		item.ShareRechargeAccountAmount = 0
+		item.ShareRechargeAccountGivingAmount = 0
+		item.ProductPackageID = "0"
+		item.ProductPackageName = ""
+		item.CollectorStaffID = "0"
+		item.PhoneSellStaffID = "0"
+		item.ForegroundStaffID = "0"
+		item.ViceSellStaffStaffID = "0"
+
+		shouldAmount := 0.0
+		if tuition.Valid && skuCount.Valid {
+			shouldAmount = tuition.Float64 * skuCount.Float64
+		}
+		if shareDiscount.Valid {
+			shouldAmount -= shareDiscount.Float64
+		}
+		if shouldAmount <= 0 && tuition.Valid {
+			shouldAmount = tuition.Float64
+		}
+		item.ShouldAmount = shouldAmount
+		item.RealTuition = shouldAmount
+
+		if orderRealAmount.Valid && orderRealAmount.Float64 > 0 && paidAmount.Valid && shouldAmount > 0 {
+			item.ActualPaidAmount = paidAmount.Float64 * (shouldAmount / orderRealAmount.Float64)
+		}
+		if item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment {
+			item.ArrearAmount = shouldAmount - item.ActualPaidAmount
+			if item.ArrearAmount < 0 {
+				item.ArrearAmount = 0
+			}
+			item.IsAmountOwed = item.ArrearAmount > 0
+		} else {
+			item.ArrearAmount = 0
+			item.IsAmountOwed = false
+		}
+
+		list = append(list, item)
+	}
+	if err := rows.Err(); err != nil {
+		return model.OrderDetailListResultVO{}, err
+	}
+
+	return model.OrderDetailListResultVO{
+		List:  list,
+		Total: total,
+	}, nil
 }
 
 func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int64) (model.OrderDetailVO, error) {
