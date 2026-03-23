@@ -57,6 +57,27 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	_, err = repo.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS inst_order_tag (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			uuid VARCHAR(64) NULL,
+			version BIGINT NOT NULL DEFAULT 0,
+			inst_id BIGINT NOT NULL,
+			name VARCHAR(100) NOT NULL,
+			enable TINYINT(1) NOT NULL DEFAULT 1,
+			org_order_tag_id BIGINT NOT NULL DEFAULT 0,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			KEY idx_inst_order_tag_inst (inst_id),
+			KEY idx_inst_order_tag_enable (enable)
+		)
+	`)
+	if err != nil {
+		return err
+	}
 	var exists int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)

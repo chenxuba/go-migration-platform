@@ -183,7 +183,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		           ELSE IFNULL(s.mobile, '')
 		       END,
 		       so.create_time,
-		       IFNULL(so.order_real_amount, 0), so.order_status, so.order_type, so.order_source, so.create_id,
+		       IFNULL(so.order_real_amount, 0), IFNULL(so.order_tag_ids, ''), so.order_status, so.order_type, so.order_source, so.create_id,
 		       IFNULL(u.nick_name, ''), so.deal_date, so.sale_person, IFNULL(sale.nick_name, ''), IFNULL(so.internal_remark, ''), IFNULL(so.external_remark, ''), so.update_time,
 		       s.stu_sex, IFNULL(s.avatar_url, '')
 		FROM sale_order so
@@ -208,7 +208,8 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		var dealDate sql.NullTime
 		var updatedAt sql.NullTime
 		var sex sql.NullInt64
-		if err := rows.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.CreatedTime, &item.Amount, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar); err != nil {
+		var orderTagIDs string
+		if err := rows.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.CreatedTime, &item.Amount, &orderTagIDs, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar); err != nil {
 			return model.OrderManageResultVO{}, err
 		}
 		item.OrderID = strconv.FormatInt(oid, 10)
@@ -248,6 +249,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		if len(item.ProductItems) > 0 {
 			item.ProductItemsStr = strings.Join(item.ProductItems, ",")
 		}
+		item.TagNames, _, _ = repo.getOrderTags(ctx, instID, orderTagIDs)
 		items = append(items, item)
 	}
 	return model.OrderManageResultVO{List: items, Total: total}, rows.Err()
@@ -322,7 +324,7 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 	if len(item.ProductItems) > 0 {
 		item.ProductItemsStr = strings.Join(item.ProductItems, ",")
 	}
-	item.OrderTagNames = buildOrderTagNames(orderTagIDs)
+	item.OrderTagNames, item.OrderTags, _ = repo.getOrderTags(ctx, instID, orderTagIDs)
 	item.OrderItems, _ = repo.getOrderDetailItems(ctx, oid)
 	item.PaymentRecords, _ = repo.getOrderPaymentRecords(ctx, oid)
 	item.ApprovalInfo, _ = repo.getOrderApprovalInfo(ctx, oid)
@@ -408,9 +410,54 @@ func (repo *Repository) getOrderCourseNames(ctx context.Context, orderID int64) 
 	return items, rows.Err()
 }
 
-func buildOrderTagNames(raw string) []string {
-	_ = raw
-	return nil
+func (repo *Repository) getOrderTags(ctx context.Context, instID int64, raw string) ([]string, []model.OrderTagVO, error) {
+	ids := splitCSV(raw)
+	if len(ids) == 0 {
+		return nil, nil, nil
+	}
+	holders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, instID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(name, '')
+		FROM inst_order_tag
+		WHERE inst_id = ? AND del_flag = 0 AND id IN (`+holders+`)
+	`, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	nameMap := make(map[int64]string, len(ids))
+	for rows.Next() {
+		var (
+			id   int64
+			name string
+		)
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, nil, err
+		}
+		nameMap[id] = strings.TrimSpace(name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	names := make([]string, 0, len(ids))
+	tags := make([]model.OrderTagVO, 0, len(ids))
+	for _, id := range ids {
+		if name := nameMap[id]; name != "" {
+			names = append(names, name)
+			tags = append(tags, model.OrderTagVO{
+				TagID:   strconv.FormatInt(id, 10),
+				TagName: name,
+			})
+		}
+	}
+	return names, tags, nil
 }
 
 func (repo *Repository) getOrderDetailItems(ctx context.Context, orderID int64) ([]model.OrderCourseDetailVO, error) {

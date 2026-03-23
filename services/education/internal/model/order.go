@@ -71,6 +71,7 @@ type OrderManageQueryVO struct {
 	ProductItems             []string   `json:"productItems,omitempty"`
 	ProductItemsStr          string     `json:"productItemsStr,omitempty"`
 	ArrearAmount             float64    `json:"arrearAmount"`
+	TagNames                 []string   `json:"tagNames,omitempty"`
 	IsAmountOwed             bool       `json:"isAmountOwed"`
 	Remark                   string     `json:"remark,omitempty"`
 	ExternalRemark           string     `json:"externalRemark,omitempty"`
@@ -140,11 +141,17 @@ type OrderPaymentRecordVO struct {
 	OperatorName   string     `json:"operatorName,omitempty"`
 }
 
+type OrderTagVO struct {
+	TagID   string `json:"tagId"`
+	TagName string `json:"tagName"`
+}
+
 type OrderDetailVO struct {
 	OrderManageQueryVO
 	TotalAmount         float64                `json:"totalAmount"`
 	OrderDiscountAmount float64                `json:"orderDiscountAmount"`
 	OrderTagNames       []string               `json:"orderTagNames,omitempty"`
+	OrderTags           []OrderTagVO           `json:"orderTags,omitempty"`
 	ApprovalInfo        *OrderApprovalInfo     `json:"approvalInfo,omitempty"`
 	OrderItems          []OrderCourseDetailVO  `json:"orderItems,omitempty"`
 	PaymentRecords      []OrderPaymentRecordVO `json:"paymentRecords,omitempty"`

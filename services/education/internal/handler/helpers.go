@@ -201,6 +201,32 @@ func parseOrderManageQueryDTO(raw map[string]any) model.OrderManageQueryDTO {
 	return query
 }
 
+func parseOrderTagPagedQueryDTO(raw map[string]any) model.OrderTagPagedQueryDTO {
+	query := model.OrderTagPagedQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 20)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel.Enable = asBoolPtr(qm["enable"])
+	}
+	return query
+}
+
+func parseCreateOrderTagDTO(raw map[string]any) model.CreateOrderTagDTO {
+	return model.CreateOrderTagDTO{
+		Name: asString(raw["name"]),
+	}
+}
+
+func parseUpdateOrderTagDTO(raw map[string]any) model.UpdateOrderTagDTO {
+	return model.UpdateOrderTagDTO{
+		ID:     derefInt64Value(asInt64Ptr(raw["id"])),
+		Name:   asString(raw["name"]),
+		Enable: asBoolPtr(raw["enable"]),
+	}
+}
+
 func parseInstUserSaveDTO(raw map[string]any) model.InstUserSaveDTO {
 	return model.InstUserSaveDTO{
 		UserID:   asInt64Ptr(raw["userId"]),
