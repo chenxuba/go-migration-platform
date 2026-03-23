@@ -22,26 +22,6 @@ var approvalTemplateTypeNames = map[int]string{
 	6: "退学杂教材费",
 }
 
-var staffSummaryColors = []string{
-	"#0098BE",
-	"#009C66",
-	"#4E6DFF",
-	"#1FC0BE",
-	"#DDBA00",
-	"#6E93FF",
-	"#FF6767",
-	"#00C785",
-	"#EF4AA9",
-	"#97B527",
-	"#00BAF2",
-	"#FFAF00",
-	"#CA6CF8",
-	"#00C350",
-	"#0A86FF",
-	"#FC6B9C",
-	"#C77B2B",
-}
-
 func (repo *Repository) PageApprovalConfigs(ctx context.Context, instID int64, query model.ApprovalConfigPageQueryDTO) (model.ApprovalConfigPageResult, error) {
 	current := query.PageRequestModel.PageIndex
 	size := query.PageRequestModel.PageSize
@@ -846,7 +826,9 @@ func (repo *Repository) PageStaffSummaries(ctx context.Context, instID int64, qu
 			return model.StaffSummaryPageVO{}, err
 		}
 		item.ID = strconv.FormatInt(id, 10)
-		item.Color = staffSummaryColors[int(id)%len(staffSummaryColors)]
+		if disabled && item.Name != "" && !strings.HasSuffix(item.Name, "（离职）") {
+			item.Name = item.Name + "（离职）"
+		}
 		if disabled {
 			item.Status = 2
 		} else {
@@ -917,6 +899,7 @@ func (repo *Repository) ApproveApprovalRecord(ctx context.Context, instID, opera
 	var (
 		orderID         int64
 		studentID       int64
+		applicant       int64
 		approvalType    int
 		approvalStatus  int
 		configVersion   int
@@ -924,12 +907,12 @@ func (repo *Repository) ApproveApprovalRecord(ctx context.Context, instID, opera
 		currentStep     sql.NullInt64
 	)
 	err = tx.QueryRowContext(ctx, `
-		SELECT order_id, student_id, IFNULL(approval_type, 0), IFNULL(approval_status, 0),
+		SELECT order_id, student_id, IFNULL(applicant, 0), IFNULL(approval_type, 0), IFNULL(approval_status, 0),
 		       IFNULL(config_version, 0), IFNULL(current_approver, ''), current_step
 		FROM approval_record
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 		LIMIT 1
-	`, dto.ID, instID).Scan(&orderID, &studentID, &approvalType, &approvalStatus, &configVersion, &currentApprover, &currentStep)
+	`, dto.ID, instID).Scan(&orderID, &studentID, &applicant, &approvalType, &approvalStatus, &configVersion, &currentApprover, &currentStep)
 	if err != nil {
 		return err
 	}
@@ -1017,7 +1000,7 @@ func (repo *Repository) ApproveApprovalRecord(ctx context.Context, instID, opera
 		return err
 	}
 
-	allApproved, err := repo.advanceApprovalRecordTx(ctx, tx, dto.ID, instID, operatorID, nextFlows, approvedSet, now)
+	allApproved, err := repo.advanceApprovalRecordTx(ctx, tx, dto.ID, instID, operatorID, applicant, nextFlows, approvedSet, now)
 	if err != nil {
 		return err
 	}
@@ -1480,13 +1463,28 @@ func (repo *Repository) insertApprovalHistoryTx(ctx context.Context, tx *sql.Tx,
 	return err
 }
 
-func (repo *Repository) advanceApprovalRecordTx(ctx context.Context, tx *sql.Tx, approvalID, instID, operatorID int64, flows []approvalFlowStep, approvedSet map[int64]struct{}, now time.Time) (bool, error) {
+func (repo *Repository) advanceApprovalRecordTx(ctx context.Context, tx *sql.Tx, approvalID, instID, operatorID, applicantID int64, flows []approvalFlowStep, approvedSet map[int64]struct{}, now time.Time) (bool, error) {
 	for _, flow := range flows {
 		if matchedID, ok := firstMatchedApprovedStaff(flow.StaffIDs, approvedSet); ok {
 			if err := repo.insertApprovalHistoryTx(ctx, tx, approvalID, flow.Step, matchedID, 1, now, "系统自动执行，原因：审批人此前已审批通过"); err != nil {
 				return false, err
 			}
 			approvedSet[matchedID] = struct{}{}
+			continue
+		}
+
+		autoApproved := false
+		for _, staffID := range flow.StaffIDs {
+			if staffID == applicantID {
+				autoApproved = true
+				if err := repo.insertApprovalHistoryTx(ctx, tx, approvalID, flow.Step, applicantID, 1, now, "系统自动执行，原因：与发起人相同"); err != nil {
+					return false, err
+				}
+				approvedSet[applicantID] = struct{}{}
+				break
+			}
+		}
+		if autoApproved {
 			continue
 		}
 

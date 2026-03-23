@@ -1965,7 +1965,7 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 		break
 	}
 
-	return repo.advanceApprovalRecordTx(ctx, tx, approvalID, instID, applicantID, remainingFlows, approvedSet, now)
+	return repo.advanceApprovalRecordTx(ctx, tx, approvalID, instID, applicantID, applicantID, remainingFlows, approvedSet, now)
 }
 
 func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64) error {

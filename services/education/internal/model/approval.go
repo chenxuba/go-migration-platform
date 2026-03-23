@@ -156,7 +156,6 @@ type StaffSummaryVO struct {
 	Phone        string     `json:"phone"`
 	SuperAdmin   bool       `json:"superAdmin"`
 	Avatar       string     `json:"avatar"`
-	Color        string     `json:"color"`
 	Status       int        `json:"status"`
 	CreatedAt    *time.Time `json:"createdAt,omitempty"`
 	EmployeeType int        `json:"employeeType"`

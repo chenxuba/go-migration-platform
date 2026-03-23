@@ -161,6 +161,9 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 		); err != nil {
 			return model.PageResult[model.InstUserQueryVO]{}, err
 		}
+		if item.Disabled && item.NickName != "" && !strings.HasSuffix(item.NickName, "（离职）") {
+			item.NickName = item.NickName + "（离职）"
+		}
 		item.RoleName = roleNamesRaw
 		item.RoleIDs = parseInt64CSV(roleIDsRaw)
 		item.RoleNum = len(item.RoleIDs)
