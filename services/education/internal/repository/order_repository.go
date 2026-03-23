@@ -302,7 +302,10 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 			item.FinishedTime = &t
 			item.BillFinishedTime = &t
 		}
-		if item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment && item.Amount > paidAmount {
+		if item.IsBadDebt {
+			item.ArrearAmount = 0
+			item.IsAmountOwed = false
+		} else if item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment && item.Amount > paidAmount {
 			item.ArrearAmount = item.Amount - paidAmount
 			item.IsAmountOwed = item.ArrearAmount > 0
 		}
@@ -749,7 +752,10 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 		if orderRealAmount.Valid && orderRealAmount.Float64 > 0 && paidAmount.Valid && shouldAmount > 0 {
 			item.ActualPaidAmount = paidAmount.Float64 * (shouldAmount / orderRealAmount.Float64)
 		}
-		if item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment {
+		if item.IsBadDebt {
+			item.ArrearAmount = 0
+			item.IsAmountOwed = false
+		} else if item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment {
 			item.ArrearAmount = shouldAmount - item.ActualPaidAmount
 			if item.ArrearAmount < 0 {
 				item.ArrearAmount = 0
@@ -833,7 +839,10 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 		item.FinishedTime = &t
 		item.BillFinishedTime = &t
 	}
-	if item.Amount > paidAmount {
+	if item.IsBadDebt {
+		item.ArrearAmount = 0
+		item.IsAmountOwed = false
+	} else if item.Amount > paidAmount {
 		item.ArrearAmount = item.Amount - paidAmount
 		item.IsAmountOwed = item.ArrearAmount > 0
 	}
