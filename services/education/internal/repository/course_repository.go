@@ -984,28 +984,10 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 		for _, studentID := range studentIDs {
 			fieldArgs = append(fieldArgs, studentID)
 		}
-		fieldRows, err := repo.db.QueryContext(ctx, `
-			SELECT student_id, field_id, IFNULL(field_key, ''), IFNULL(field_value, '')
-			FROM inst_student_field_value
-			WHERE del_flag = 0 AND student_id IN (`+holders+`)
-			ORDER BY id ASC
-		`, fieldArgs...)
+		customMap, err := repo.loadStudentCustomInfoMap(ctx, studentIDs)
 		if err != nil {
 			return model.PageResult[model.IntentStudent]{}, err
 		}
-		customMap := make(map[int64][]model.CustomInfo)
-		for fieldRows.Next() {
-			var (
-				studentID int64
-				info      model.CustomInfo
-			)
-			if err := fieldRows.Scan(&studentID, &info.FieldID, &info.FieldName, &info.Value); err != nil {
-				fieldRows.Close()
-				return model.PageResult[model.IntentStudent]{}, err
-			}
-			customMap[studentID] = append(customMap[studentID], info)
-		}
-		fieldRows.Close()
 		auditionRows, err := repo.db.QueryContext(ctx, `
 			SELECT DISTINCT so.student_id
 			FROM sale_order so
@@ -1150,6 +1132,15 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 	if nextFollowUp.Valid {
 		t := nextFollowUp.Time
 		item.NextFollowUpTime = &t
+	}
+	customMap, err := repo.loadStudentCustomInfoMap(ctx, []int64{studentID})
+	if err != nil {
+		return model.IntentStudent{}, err
+	}
+	if infos, ok := customMap[studentID]; ok {
+		item.CustomInfo = infos
+	} else {
+		item.CustomInfo = []model.CustomInfo{}
 	}
 	return item, nil
 }
@@ -1423,13 +1414,39 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 		item.Mobile = maskPhoneLocal(item.Mobile)
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return model.PageResult[model.EnrolledStudent]{}, err
+	}
+
+	studentIDs := make([]int64, 0, len(items))
+	for _, item := range items {
+		studentIDs = append(studentIDs, item.ID)
+	}
+	customMap, err := repo.loadStudentCustomInfoMap(ctx, studentIDs)
+	if err != nil {
+		return model.PageResult[model.EnrolledStudent]{}, err
+	}
+	for idx := range items {
+		if infos, ok := customMap[items[idx].ID]; ok {
+			items[idx].CustomInfo = make([]map[string]any, 0, len(infos))
+			for _, info := range infos {
+				items[idx].CustomInfo = append(items[idx].CustomInfo, map[string]any{
+					"fieldId":   info.FieldID,
+					"fieldName": info.FieldName,
+					"value":     info.Value,
+				})
+			}
+		} else {
+			items[idx].CustomInfo = []map[string]any{}
+		}
+	}
 
 	return model.PageResult[model.EnrolledStudent]{
 		Items:   items,
 		Total:   total,
 		Current: current,
 		Size:    size,
-	}, rows.Err()
+	}, nil
 }
 
 func (repo *Repository) ListCourseProperties(ctx context.Context, instID int64) ([]model.CourseProperty, error) {

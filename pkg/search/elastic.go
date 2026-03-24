@@ -210,3 +210,54 @@ func (client *ElasticClient) BulkIndex(index string, docs []map[string]any) erro
 	}
 	return nil
 }
+
+func (client *ElasticClient) DeleteIntentStudentsByInstID(index string, instID int64) (bool, error) {
+	exists, err := client.IndexExists(index)
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"query": map[string]any{
+			"term": map[string]any{
+				"instId": fmt.Sprintf("%d", instID),
+			},
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, client.baseURL+"/"+index+"/_delete_by_query?refresh=true", bytes.NewReader(payload))
+	if err != nil {
+		return false, err
+	}
+	req.SetBasicAuth(client.username, client.password)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= http.StatusBadRequest {
+		return false, fmt.Errorf("delete by query status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Deleted  int   `json:"deleted"`
+		Failures []any `json:"failures"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return false, err
+	}
+	if len(result.Failures) > 0 {
+		return false, fmt.Errorf("delete by query returned failures")
+	}
+	return result.Deleted > 0, nil
+}

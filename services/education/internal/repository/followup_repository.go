@@ -295,11 +295,16 @@ func (repo *Repository) GetFollowUpCount(ctx context.Context, instID int64) (mod
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT
 			COUNT(CASE WHEN DATE(r.next_follow_up_time) = CURDATE() THEN 1 END) AS to_be_followed_up_today_count,
-			0 AS new_inquiries_added_week_count,
+			(
+				SELECT COUNT(*)
+				FROM inst_student s
+				WHERE s.inst_id = ? AND s.del_flag = 0 AND s.student_status = 0
+				  AND YEARWEEK(s.create_time, 1) = YEARWEEK(CURDATE(), 1)
+			) AS new_inquiries_added_week_count,
 			COUNT(CASE WHEN r.next_follow_up_time < NOW() AND r.visit_status = 0 THEN 1 END) AS overdue_for_follow_up_interview_count
 		FROM follow_record r
 		WHERE r.inst_id = ? AND r.del_flag = 0
-	`, instID)
+	`, instID, instID)
 
 	var result model.FollowUpCountVO
 	err := row.Scan(&result.ToBeFollowedUpTodayCount, &result.NewInquiriesAddedWeekCount, &result.OverdueForFollowUpInterviewCount)

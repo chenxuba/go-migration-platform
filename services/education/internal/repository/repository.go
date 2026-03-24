@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"go-migration-platform/services/education/internal/model"
 )
 
 type Repository struct {
@@ -136,6 +138,45 @@ func (repo *Repository) FindInstUserIDByUserID(ctx context.Context, userID int64
 	return instUserID, err
 }
 
+func (repo *Repository) GetInstitutionName(ctx context.Context, instID int64) (string, error) {
+	var name string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(organ_name, '')
+		FROM org_institution
+		WHERE id = ?
+		LIMIT 1
+	`, instID).Scan(&name)
+	return name, err
+}
+
+func (repo *Repository) ListActiveStaffNames(ctx context.Context, instID int64) ([]string, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(nick_name, '') AS nick_name
+		FROM inst_user
+		WHERE inst_id = ? AND del_flag = 0 AND IFNULL(disabled, 0) = 0
+		GROUP BY IFNULL(nick_name, '')
+		ORDER BY MAX(create_time) DESC, MAX(id) DESC
+	`, instID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]string, 0, 32)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		items = append(items, name)
+	}
+	return items, rows.Err()
+}
+
 func (repo *Repository) GetStaffNameByID(ctx context.Context, staffID *int64) string {
 	if staffID == nil {
 		return "-"
@@ -228,6 +269,46 @@ func parseAnyToInt64(value any) (int64, bool) {
 		}
 	}
 	return 0, false
+}
+
+func (repo *Repository) loadStudentCustomInfoMap(ctx context.Context, studentIDs []int64) (map[int64][]model.CustomInfo, error) {
+	if len(studentIDs) == 0 {
+		return map[int64][]model.CustomInfo{}, nil
+	}
+
+	holders := strings.TrimRight(strings.Repeat("?,", len(studentIDs)), ",")
+	args := make([]any, 0, len(studentIDs))
+	for _, studentID := range studentIDs {
+		args = append(args, studentID)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT v.student_id, v.field_id, IFNULL(k.field_key, IFNULL(v.field_key, '')), IFNULL(v.field_value, '')
+		FROM inst_student_field_value v
+		LEFT JOIN inst_student_field_key k ON k.id = v.field_id AND k.del_flag = 0
+		WHERE v.del_flag = 0 AND v.student_id IN (`+holders+`)
+		ORDER BY v.id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	customMap := make(map[int64][]model.CustomInfo, len(studentIDs))
+	for rows.Next() {
+		var (
+			studentID int64
+			info      model.CustomInfo
+		)
+		if err := rows.Scan(&studentID, &info.FieldID, &info.FieldName, &info.Value); err != nil {
+			return nil, err
+		}
+		customMap[studentID] = append(customMap[studentID], info)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return customMap, nil
 }
 
 func camelToSnake(input string) string {

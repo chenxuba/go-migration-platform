@@ -773,6 +773,7 @@ func formatIntentStudentDetail(item model.IntentStudent) map[string]any {
 		"studentStatus":     item.StudentStatus,
 		"followUpTime":      formatNullableDateTime(item.LastFollowUpTime),
 		"nextFollowUpTime":  formatNullableDateTime(item.NextFollowUpTime),
+		"customInfo":        item.CustomInfo,
 		"remark":            item.Remark,
 	}
 	return result
