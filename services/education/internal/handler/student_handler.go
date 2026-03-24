@@ -338,6 +338,9 @@ func (handler *Handler) recommendersPage(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
+	for idx := range result.Items {
+		result.Items[idx].AvatarURL = normalizeStudentAvatar(result.Items[idx].AvatarURL, nil)
+	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 

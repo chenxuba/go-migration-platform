@@ -298,6 +298,23 @@ func (svc *Service) ClearIntentionStudentImportTasks(userID int64) error {
 	return svc.repo.ClearIntentionStudentImportTasks(context.Background(), instID)
 }
 
+func (svc *Service) DeleteIntentionStudentImportTask(userID int64, taskID string) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	if err := svc.repo.DeleteIntentionStudentImportTask(context.Background(), instID, taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("import task not found")
+		}
+		return err
+	}
+	return nil
+}
+
 type importOptionItem struct {
 	Label string
 	Value string
@@ -509,6 +526,9 @@ func buildStudentSaveDTOFromImportRow(row model.IntentionStudentImportRow, colum
 			}
 		}
 	}
+	if dto.Sex != nil {
+		dto.Avatar = defaultStudentAvatarBySex(*dto.Sex)
+	}
 	return dto, nil
 }
 
@@ -552,4 +572,15 @@ func resolveImportOptionInt64(cell model.IntentionStudentImportCell, options []i
 		}
 	}
 	return 0, false
+}
+
+func defaultStudentAvatarBySex(sex int) string {
+	switch sex {
+	case 0:
+		return "https://pcsys.admin.ybc365.com/d92afddc-ffac-40aa-aa61-bd97d91aa1ec.png"
+	case 1:
+		return "https://pcsys.admin.ybc365.com/c04d0ea2-a8b0-4001-b19b-946a980cb726.png"
+	default:
+		return "https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png"
+	}
 }

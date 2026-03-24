@@ -265,6 +265,37 @@ func (repo *Repository) ClearIntentionStudentImportTasks(ctx context.Context, in
 	return tx.Commit()
 }
 
+func (repo *Repository) DeleteIntentionStudentImportTask(ctx context.Context, instID int64, taskID string) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE intention_student_import_task_record r
+		INNER JOIN intention_student_import_task t ON t.id = r.task_id
+		SET r.del_flag = 1, r.update_time = NOW()
+		WHERE t.inst_id = ? AND t.id = ? AND t.del_flag = 0 AND r.del_flag = 0
+	`, instID, taskID); err != nil {
+		return err
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE intention_student_import_task
+		SET del_flag = 1, update_time = NOW()
+		WHERE inst_id = ? AND id = ? AND del_flag = 0
+	`, instID, taskID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err == nil && affected == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
 func ensureIntentionStudentImportTables(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS intention_student_import_task (
