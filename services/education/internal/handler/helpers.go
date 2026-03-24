@@ -1292,9 +1292,6 @@ func normalizeStudentAvatar(avatarURL string, sex *int) string {
 		defaultUnknownAvatar = "https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png"
 	)
 	normalized := strings.TrimSpace(avatarURL)
-	if normalized == defaultUnknownAvatar {
-		return defaultMaleAvatar
-	}
 	if normalized != "" {
 		return normalized
 	}
@@ -1306,7 +1303,7 @@ func normalizeStudentAvatar(avatarURL string, sex *int) string {
 			return defaultFemaleAvatar
 		}
 	}
-	return defaultMaleAvatar
+	return defaultUnknownAvatar
 }
 
 func maskPhone(value string) string {
