@@ -95,10 +95,11 @@ func (handler *Handler) getIntentionStudentImportTaskDetail(w http.ResponseWrite
 
 func (handler *Handler) listIntentionStudentImportTasks(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
-	result, err := handler.service.ListIntentionStudentImportTasks()
+	result, err := handler.service.ListIntentionStudentImportTasks(claims.UserID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -167,6 +168,23 @@ func (handler *Handler) startIntentionStudentImportTask(w http.ResponseWriter, r
 		return
 	}
 	if err := handler.service.StartIntentionStudentImportTask(claims.UserID, req.TaskID); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) clearIntentionStudentImportTasks(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	if err := handler.service.ClearIntentionStudentImportTasks(claims.UserID); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}

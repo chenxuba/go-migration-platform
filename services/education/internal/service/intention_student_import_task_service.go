@@ -81,52 +81,60 @@ func (svc *Service) SubmitIntentionStudentImportTask(userID int64, req model.Int
 		Columns: parseResult.Columns,
 		Rows:    parseResult.Rows,
 	}
-	_ = instID
-	saveIntentionStudentImportTask(task)
+	if err := svc.repo.CreateIntentionStudentImportTask(context.Background(), instID, task.Detail, task.Columns, task.Rows); err != nil {
+		return "", err
+	}
 	return taskID, nil
 }
 
-func (svc *Service) ListIntentionStudentImportTasks() (model.IntentionStudentImportTaskListResult, error) {
-	tasks := listIntentionStudentImportTasks()
-	sort.Slice(tasks, func(i, j int) bool {
-		left := tasks[i].Detail.CreatedTime
-		right := tasks[j].Detail.CreatedTime
-		if left == nil || right == nil {
-			return tasks[i].Detail.ID > tasks[j].Detail.ID
+func (svc *Service) ListIntentionStudentImportTasks(userID int64) (model.IntentionStudentImportTaskListResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.IntentionStudentImportTaskListResult{}, errors.New("no institution context")
 		}
-		return left.After(*right)
-	})
-	items := make([]model.IntentionStudentImportTaskDetail, 0, len(tasks))
-	for _, task := range tasks {
-		items = append(items, task.Detail)
+		return model.IntentionStudentImportTaskListResult{}, err
 	}
-	return model.IntentionStudentImportTaskListResult{
-		List:  items,
-		Total: len(items),
-	}, nil
+	return svc.repo.ListIntentionStudentImportTasks(context.Background(), instID)
 }
 
 func (svc *Service) GetIntentionStudentImportTaskDetail(taskID string) (model.IntentionStudentImportTaskDetail, error) {
-	task, ok := loadIntentionStudentImportTask(taskID)
-	if !ok {
-		return model.IntentionStudentImportTaskDetail{}, errors.New("import task not found")
+	task, err := svc.repo.GetIntentionStudentImportTask(context.Background(), taskID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.IntentionStudentImportTaskDetail{}, errors.New("import task not found")
+		}
+		return model.IntentionStudentImportTaskDetail{}, err
 	}
 	return task.Detail, nil
 }
 
 func (svc *Service) GetIntentionStudentImportTaskRecordList(taskID string, taskType int) (model.IntentionStudentImportTaskRecordListResult, error) {
-	task, ok := loadIntentionStudentImportTask(taskID)
-	if !ok {
-		return model.IntentionStudentImportTaskRecordListResult{}, errors.New("import task not found")
+	task, err := svc.repo.GetIntentionStudentImportTask(context.Background(), taskID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.IntentionStudentImportTaskRecordListResult{}, errors.New("import task not found")
+		}
+		return model.IntentionStudentImportTaskRecordListResult{}, err
 	}
 
 	items := make([]model.IntentionStudentImportRow, 0, len(task.Rows))
 	for _, row := range task.Rows {
-		if taskType == 0 && row.HasError {
+		if task.Detail.Status == 3 {
+			if taskType == 0 && row.HasError {
+				items = append(items, row)
+				continue
+			}
+			if taskType == 1 && !row.HasError {
+				items = append(items, row)
+			}
+			continue
+		}
+		if taskType == 0 && row.Status == 2 {
 			items = append(items, row)
 			continue
 		}
-		if taskType == 1 && !row.HasError {
+		if taskType == 1 && row.Status == 1 {
 			items = append(items, row)
 		}
 	}
@@ -138,9 +146,12 @@ func (svc *Service) GetIntentionStudentImportTaskRecordList(taskID string, taskT
 }
 
 func (svc *Service) BatchSaveIntentionStudentImportTaskRecords(userID int64, req model.IntentionStudentImportSaveTaskRecordRequest) ([]model.IntentionStudentImportRow, error) {
-	task, ok := loadIntentionStudentImportTask(req.TaskID)
-	if !ok {
-		return nil, errors.New("import task not found")
+	task, err := svc.repo.GetIntentionStudentImportTask(context.Background(), req.TaskID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("import task not found")
+		}
+		return nil, err
 	}
 	optionMap, err := svc.loadIntentionStudentImportOptionMap(userID)
 	if err != nil {
@@ -191,61 +202,100 @@ func (svc *Service) BatchSaveIntentionStudentImportTaskRecords(userID int64, req
 	sort.Slice(task.Rows, func(i, j int) bool { return task.Rows[i].RowNo < task.Rows[j].RowNo })
 	task.Detail.TotalRows = len(task.Rows)
 	task.Detail.ErrorRows = countImportTaskErrors(task.Rows)
-	if task.Detail.ErrorRows == 0 {
-		task.Detail.Status = 1
-	} else {
-		task.Detail.Status = 3
+	task.Detail.Status = 3
+	if err := svc.repo.UpdateIntentionStudentImportTask(context.Background(), task.Detail, task.Rows); err != nil {
+		return nil, err
 	}
-	saveIntentionStudentImportTask(task)
 	return updatedRows, nil
 }
 
 func (svc *Service) StartIntentionStudentImportTask(userID int64, taskID string) error {
-	task, ok := loadIntentionStudentImportTask(taskID)
-	if !ok {
-		return errors.New("import task not found")
+	task, err := svc.repo.GetIntentionStudentImportTask(context.Background(), taskID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("import task not found")
+		}
+		return err
 	}
 	if countImportTaskErrors(task.Rows) > 0 {
 		return errors.New("请先处理异常数据")
 	}
-	optionMap, err := svc.loadIntentionStudentImportOptionMap(userID)
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
 	if err != nil {
 		return err
+	}
+	executorName := svc.repo.GetStaffNameByID(context.Background(), &instUserID)
+	now := time.Now()
+	executorID := fmt.Sprintf("%d", instUserID)
+	task.Detail.ExecuteStaffID = &executorID
+	task.Detail.ExecuteStaffName = &executorName
+	task.Detail.ExecutedRows = 0
+	task.Detail.ErrorRows = 0
+	task.Detail.Status = 4
+	task.Detail.ConfirmTime = &now
+	task.Detail.CompleteTime = nil
+	for idx := range task.Rows {
+		task.Rows[idx].Status = 0
+		task.Rows[idx].Result = ""
+	}
+	if err := svc.repo.UpdateIntentionStudentImportTask(context.Background(), task.Detail, task.Rows); err != nil {
+		return err
+	}
+	go svc.runIntentionStudentImportTask(userID, taskID)
+	return nil
+}
+
+func (svc *Service) runIntentionStudentImportTask(userID int64, taskID string) {
+	task, err := svc.repo.GetIntentionStudentImportTask(context.Background(), taskID)
+	if err != nil {
+		return
 	}
 	columnMap := make(map[string]model.IntentionStudentImportColumn, len(task.Columns))
 	for _, column := range task.Columns {
 		columnMap[column.Key] = column
 	}
+	optionMap, err := svc.loadIntentionStudentImportOptionMap(userID)
+	if err != nil {
+		return
+	}
 	successCount := 0
+	failCount := 0
 	for idx := range task.Rows {
 		row := task.Rows[idx]
 		dto, err := buildStudentSaveDTOFromImportRow(row, columnMap, optionMap)
 		if err != nil {
 			task.Rows[idx].Status = 2
 			task.Rows[idx].Result = err.Error()
-			continue
-		}
-		if _, err := svc.AddIntentStudent(userID, dto); err != nil {
+			failCount++
+		} else if _, err := svc.AddIntentStudent(userID, dto); err != nil {
 			task.Rows[idx].Status = 2
 			task.Rows[idx].Result = err.Error()
-			continue
+			failCount++
+		} else {
+			task.Rows[idx].Status = 1
+			task.Rows[idx].Result = "导入成功"
+			successCount++
 		}
-		task.Rows[idx].Status = 1
-		task.Rows[idx].Result = "导入成功"
-		successCount++
+		task.Detail.ExecutedRows = successCount
+		task.Detail.ErrorRows = failCount
+		task.Detail.Status = 4
+		_ = svc.repo.UpdateIntentionStudentImportTask(context.Background(), task.Detail, task.Rows)
 	}
 	now := time.Now()
-	task.Detail.ExecutedRows = successCount
-	task.Detail.ErrorRows = countImportTaskImportFailures(task.Rows)
-	if task.Detail.ErrorRows > 0 {
-		task.Detail.Status = 2
-	} else {
-		task.Detail.Status = 1
-	}
-	task.Detail.ConfirmTime = &now
 	task.Detail.CompleteTime = &now
-	saveIntentionStudentImportTask(task)
-	return nil
+	task.Detail.Status = 1
+	_ = svc.repo.UpdateIntentionStudentImportTask(context.Background(), task.Detail, task.Rows)
+}
+
+func (svc *Service) ClearIntentionStudentImportTasks(userID int64) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	return svc.repo.ClearIntentionStudentImportTasks(context.Background(), instID)
 }
 
 type importOptionItem struct {
@@ -407,6 +457,8 @@ func countImportTaskImportFailures(rows []model.IntentionStudentImportRow) int {
 
 func buildStudentSaveDTOFromImportRow(row model.IntentionStudentImportRow, columns map[string]model.IntentionStudentImportColumn, optionMap map[string][]importOptionItem) (model.StudentSaveDTO, error) {
 	dto := model.StudentSaveDTO{}
+	defaultSex := 2
+	dto.Sex = &defaultSex
 	for _, cell := range row.Cells {
 		column := columns[cell.Key]
 		text := strings.TrimSpace(cell.Value)

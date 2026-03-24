@@ -145,6 +145,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/intent-students/import-tasks/records", handler.getIntentionStudentImportTaskRecordList)
 	mux.HandleFunc("/api/v1/intent-students/import-tasks/batch-save-records", handler.batchSaveIntentionStudentImportTaskRecords)
 	mux.HandleFunc("/api/v1/intent-students/import-tasks/start", handler.startIntentionStudentImportTask)
+	mux.HandleFunc("/api/v1/intent-students/import-tasks/clear", handler.clearIntentionStudentImportTasks)
 	mux.HandleFunc("/api/v1/recommenders/page", handler.recommendersPage)
 	mux.HandleFunc("/api/v1/birthday-students/page", handler.birthdayStudentsPage)
 	mux.HandleFunc("/api/v1/students/change-records", handler.studentChangeRecords)
