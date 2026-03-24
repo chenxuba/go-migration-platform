@@ -52,7 +52,7 @@ func (svc *Service) ConfirmLedger(userID int64, dto model.LedgerOperateDTO) erro
 		return errors.New("账单ID不能为空")
 	}
 	operatorName := svc.repo.GetStaffNameByID(context.Background(), &instUserID)
-	return svc.repo.ConfirmLedger(context.Background(), instID, ledgerID, instUserID, operatorName)
+	return svc.repo.ConfirmLedgerWithRemark(context.Background(), instID, ledgerID, instUserID, operatorName, dto.ConfirmRemark)
 }
 
 func (svc *Service) CancelConfirmLedger(userID int64, dto model.LedgerOperateDTO) error {

@@ -115,5 +115,6 @@ type LedgerStatisticsVO struct {
 }
 
 type LedgerOperateDTO struct {
-	ID string `json:"id"`
+	ID            string         `json:"id"`
+	ConfirmRemark LedgerRichText `json:"confirmRemark"`
 }

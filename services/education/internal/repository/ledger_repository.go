@@ -448,6 +448,10 @@ func (repo *Repository) GetLedgerStatistics(ctx context.Context, instID int64, q
 }
 
 func (repo *Repository) ConfirmLedger(ctx context.Context, instID, ledgerID, confirmStaffID int64, confirmStaffName string) error {
+	return repo.ConfirmLedgerWithRemark(ctx, instID, ledgerID, confirmStaffID, confirmStaffName, model.LedgerRichText{})
+}
+
+func (repo *Repository) ConfirmLedgerWithRemark(ctx context.Context, instID, ledgerID, confirmStaffID int64, confirmStaffName string, remark model.LedgerRichText) error {
 	var status int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT ledger_confirm_status
@@ -466,16 +470,22 @@ func (repo *Repository) ConfirmLedger(ctx context.Context, instID, ledgerID, con
 	if status != model.LedgerConfirmStatusPending {
 		return errors.New("当前账单状态不支持确认到账")
 	}
-	_, err := repo.db.ExecContext(ctx, `
+	imagesJSON, err := json.Marshal(normalizeLedgerImages(remark.Images))
+	if err != nil {
+		return err
+	}
+	_, err = repo.db.ExecContext(ctx, `
 		UPDATE inst_ledger
 		SET ledger_confirm_status = ?,
 			confirm_staff_id = ?,
 			confirm_staff_name = ?,
 			confirm_time = NOW(),
+			confirm_remark_text = ?,
+			confirm_remark_images = ?,
 			update_id = ?,
 			update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, model.LedgerConfirmStatusConfirmed, confirmStaffID, strings.TrimSpace(confirmStaffName), confirmStaffID, ledgerID, instID)
+	`, model.LedgerConfirmStatusConfirmed, confirmStaffID, strings.TrimSpace(confirmStaffName), strings.TrimSpace(remark.Text), string(imagesJSON), confirmStaffID, ledgerID, instID)
 	return err
 }
 
@@ -504,6 +514,8 @@ func (repo *Repository) CancelConfirmLedger(ctx context.Context, instID, ledgerI
 			confirm_staff_id = 0,
 			confirm_staff_name = '',
 			confirm_time = NULL,
+			confirm_remark_text = '',
+			confirm_remark_images = JSON_ARRAY(),
 			update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`, model.LedgerConfirmStatusPending, ledgerID, instID)
@@ -614,4 +626,19 @@ func parseJSONStringArray(raw string) []string {
 		return []string{}
 	}
 	return items
+}
+
+func normalizeLedgerImages(images []string) []string {
+	if len(images) == 0 {
+		return []string{}
+	}
+	result := make([]string, 0, len(images))
+	for _, item := range images {
+		value := strings.TrimSpace(item)
+		if value == "" {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
 }
