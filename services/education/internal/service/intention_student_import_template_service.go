@@ -1,17 +1,16 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"html"
 	"net/url"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/xuri/excelize/v2"
 	"go-migration-platform/services/education/internal/model"
 )
 
@@ -50,12 +49,15 @@ func (svc *Service) BuildIntentionStudentImportTemplate(userID int64) (string, e
 	}
 
 	columns := buildIntentionStudentImportColumns(defaultFields, customFields, channels, staffNames)
-	filename := sanitizeTemplateFileName(fmt.Sprintf("%s导入意向学员模板-%s.xls", orgName, time.Now().Format("20060102")))
-	content := buildIntentionStudentImportTemplateContent(orgName, columns)
+	filename := sanitizeTemplateFileName(fmt.Sprintf("%s导入意向学员模板-%s.xlsx", orgName, time.Now().Format("20060102")))
+	content, err := buildIntentionStudentImportTemplateWorkbook(orgName, columns)
+	if err != nil {
+		return "", err
+	}
 	ticket := saveTemplateDownloadFile(templateDownloadFile{
 		Filename:    filename,
-		ContentType: "application/vnd.ms-excel; charset=utf-8",
-		Data:        []byte(content),
+		ContentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		Data:        content,
 		ExpiresAt:   time.Now().Add(30 * time.Minute),
 	})
 	return "/api/v1/intent-students/import-template/file?ticket=" + url.QueryEscape(ticket), nil
@@ -161,56 +163,99 @@ func splitTemplateOptions(raw string) []string {
 	return result
 }
 
-func buildIntentionStudentImportTemplateContent(orgName string, columns []model.IntentionStudentImportTemplateColumn) string {
-	var buffer bytes.Buffer
-	buffer.WriteString(`<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8">`)
-	buffer.WriteString(`<style>
-table{border-collapse:collapse;font-size:12px;color:#222;font-family:'Microsoft YaHei','PingFang SC',sans-serif;}
-th,td{border:1px solid #d8dde8;height:26px;padding:0 6px;vertical-align:top;}
-th{height:30px;background:#dfe8f7;font-weight:700;font-size:12px;text-align:center;white-space:nowrap;border-color:#8f99ad;}
-td{background:#fff;}
-.required{color:#ff4d4f;font-weight:700;}
-.sheet-cell{min-width:78px;}
-.note-head{position:relative;}
-.note-head:before{content:'';position:absolute;left:0;top:0;width:0;height:0;border-top:10px solid #36b36b;border-right:10px solid transparent;}
-.note-wrap{min-width:560px;padding:10px 12px 14px;line-height:1.8;word-break:break-word;white-space:normal;}
-.note-p{margin:0 0 14px;}
-.note-title{margin:18px 0 8px;font-size:13px;font-weight:700;color:#111;}
-.note-item{margin:0 0 2px;}
-.note-red{color:#ff3b30;}
-</style></head><body><table>`)
-
-	buffer.WriteString("<tr>")
-	for _, column := range columns {
-		buffer.WriteString(`<th class="sheet-cell">`)
-		if column.Required {
-			buffer.WriteString(`<span class="required">*</span>`)
-		}
-		buffer.WriteString(html.EscapeString(column.Title))
-		buffer.WriteString("</th>")
-	}
-	buffer.WriteString(`<th class="note-head">填写说明</th></tr>`)
-
+func buildIntentionStudentImportTemplateWorkbook(orgName string, columns []model.IntentionStudentImportTemplateColumn) ([]byte, error) {
+	file := excelize.NewFile()
+	sheetName := file.GetSheetName(0)
 	const rowCount = 120
-	notes := buildIntentionStudentImportNotesHTML(orgName, columns)
-	for row := 0; row < rowCount; row++ {
-		buffer.WriteString("<tr>")
-		for range columns {
-			buffer.WriteString("<td></td>")
-		}
-		if row == 0 {
-			buffer.WriteString(`<td rowspan="120"><div class="note-wrap">`)
-			buffer.WriteString(notes)
-			buffer.WriteString(`</div></td>`)
-		}
-		buffer.WriteString("</tr>")
+
+	headerStyle, err := file.NewStyle(&excelize.Style{
+		Font: &excelize.Font{
+			Bold:   true,
+			Size:   12,
+			Family: "Microsoft YaHei",
+			Color:  "#222222",
+		},
+		Fill: excelize.Fill{
+			Type:    "pattern",
+			Pattern: 1,
+			Color:   []string{"#D8E5F7"},
+		},
+		Alignment: &excelize.Alignment{
+			Horizontal: "center",
+			Vertical:   "center",
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	buffer.WriteString("</table></body></html>")
-	return buffer.String()
+	noteStyle, err := file.NewStyle(&excelize.Style{
+		Font: &excelize.Font{
+			Size:   12,
+			Family: "Microsoft YaHei",
+			Color:  "#111111",
+		},
+		Alignment: &excelize.Alignment{
+			Horizontal: "left",
+			Vertical:   "top",
+			WrapText:   true,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for idx, column := range columns {
+		cell, _ := excelize.CoordinatesToCellName(idx+1, 1)
+		file.SetColWidth(sheetName, columnName(idx+1), columnName(idx+1), intentionStudentTemplateColumnWidth(column))
+		if err := file.SetCellRichText(sheetName, cell, buildHeaderRichText(column)); err != nil {
+			return nil, err
+		}
+		if err := file.SetCellStyle(sheetName, cell, cell, headerStyle); err != nil {
+			return nil, err
+		}
+	}
+
+	noteCol := len(columns) + 1
+	noteHeaderCell, _ := excelize.CoordinatesToCellName(noteCol, 1)
+	file.SetColWidth(sheetName, columnName(noteCol), columnName(noteCol), 56)
+	if err := file.SetCellValue(sheetName, noteHeaderCell, "填写说明"); err != nil {
+		return nil, err
+	}
+	if err := file.SetCellStyle(sheetName, noteHeaderCell, noteHeaderCell, headerStyle); err != nil {
+		return nil, err
+	}
+
+	for row := 1; row <= rowCount+1; row++ {
+		height := 26.0
+		if row == 1 {
+			height = 30
+		}
+		if err := file.SetRowHeight(sheetName, row, height); err != nil {
+			return nil, err
+		}
+	}
+
+	noteStartCell, _ := excelize.CoordinatesToCellName(noteCol, 2)
+	noteEndCell, _ := excelize.CoordinatesToCellName(noteCol, rowCount+1)
+	if err := file.MergeCell(sheetName, noteStartCell, noteEndCell); err != nil {
+		return nil, err
+	}
+	if err := file.SetCellRichText(sheetName, noteStartCell, buildIntentionStudentImportNotesRichText(orgName, columns)); err != nil {
+		return nil, err
+	}
+	if err := file.SetCellStyle(sheetName, noteStartCell, noteStartCell, noteStyle); err != nil {
+		return nil, err
+	}
+
+	buffer, err := file.WriteToBuffer()
+	if err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
 }
 
-func buildIntentionStudentImportNotesHTML(orgName string, columns []model.IntentionStudentImportTemplateColumn) string {
+func buildIntentionStudentImportNotesRichText(orgName string, columns []model.IntentionStudentImportTemplateColumn) []excelize.RichTextRun {
 	requiredFields := make([]string, 0, len(columns))
 	optionBlocks := make([]string, 0, len(columns))
 	for _, column := range columns {
@@ -222,42 +267,94 @@ func buildIntentionStudentImportNotesHTML(orgName string, columns []model.Intent
 		}
 	}
 
-	var builder strings.Builder
-	builder.WriteString(`<p class="note-p">你好，当前 excel 表格学员数据用于导入<span class="note-red">【`)
-	builder.WriteString(html.EscapeString(orgName))
-	builder.WriteString(`】</span>使用</p>`)
+	black := &excelize.Font{Size: 12, Family: "Microsoft YaHei", Color: "#111111"}
+	red := &excelize.Font{Size: 12, Family: "Microsoft YaHei", Color: "#FF3B30"}
+	title := &excelize.Font{Size: 12, Family: "Microsoft YaHei", Bold: true, Color: "#111111"}
 
-	builder.WriteString(`<div class="note-title">【导入提示】</div>`)
-	builder.WriteString(`<p class="note-p">「来源渠道」、「销售员」取的是系统内的预设信息，如填写信息不符合预设值，则导入会失败。</p>`)
-
-	builder.WriteString(`<div class="note-title">【填写规范】</div>`)
-	builder.WriteString(`<p class="note-item">1、请勿修改顶部字段标题及顺序</p>`)
-	if len(requiredFields) > 0 {
-		builder.WriteString(`2、<span class="note-red">标*字段，`)
-		builder.WriteString(html.EscapeString(strings.Join(requiredFields, "、")))
-		builder.WriteString(`</span>为必填项，`)
-	} else {
-		builder.WriteString(`2、请按字段要求补充完整内容，`)
+	runs := []excelize.RichTextRun{
+		{Text: "你好，当前 excel 表格学员数据用于导入", Font: black},
+		{Text: "【" + orgName + "】", Font: red},
+		{Text: "使用\n\n", Font: black},
+		{Text: "【导入提示】\n", Font: title},
+		{Text: "「来源渠道」、「销售员」取的是系统内的预设信息，如填写信息不符合预设值，则导入会失败。\n\n", Font: black},
+		{Text: "【填写规范】\n", Font: title},
+		{Text: "1、请勿修改顶部字段标题及顺序\n", Font: black},
 	}
-	builder.WriteString(`<span class="note-red">「来源渠道」、「销售员」、下拉选项字段</span>请按预设值填写</p>`)
-	builder.WriteString(`<p class="note-item">3、「手机号」必须为 1 开头的 11 位数字，不支持“-”和中间空格，<span class="note-red">支持样式 13311113333</span></p>`)
-	builder.WriteString(`<p class="note-item">4、「出生日期」的日期格式支持年月日输入，支持<span class="note-red">2021-01-21、2021/01/21、2021.01.21、20210121</span>四种样式</p>`)
-	builder.WriteString(`<p class="note-item">5、自定义添加的字段请按照对应的格式类型进行填写，如「数字」的格式类型，只支持输入阿拉伯数字，请勿携带单位“节”或“元”</p>`)
-	builder.WriteString(`<p class="note-item">6、如更新了自定义字段的字段名称、必填规则，则需重新下载模板，填写信息后再进行导入</p>`)
+
+	if len(requiredFields) > 0 {
+		runs = append(runs,
+			excelize.RichTextRun{Text: "2、标*字段，", Font: red},
+			excelize.RichTextRun{Text: strings.Join(requiredFields, "、"), Font: red},
+			excelize.RichTextRun{Text: "为必填项，", Font: black},
+			excelize.RichTextRun{Text: "「来源渠道」、「销售员」、下拉选项字段", Font: red},
+			excelize.RichTextRun{Text: "请按预设值填写\n", Font: black},
+		)
+	} else {
+		runs = append(runs, excelize.RichTextRun{Text: "2、请按字段要求补充完整内容\n", Font: black})
+	}
+
+	runs = append(runs,
+		excelize.RichTextRun{Text: "3、「手机号」必须为 1 开头的 11 位数字，不支持“-”和中间空格，", Font: black},
+		excelize.RichTextRun{Text: "支持样式 13311113333\n", Font: red},
+		excelize.RichTextRun{Text: "4、「出生日期」的日期格式支持年月日输入，支持", Font: black},
+		excelize.RichTextRun{Text: "2021-01-21、2021/01/21、2021.01.21、20210121", Font: red},
+		excelize.RichTextRun{Text: "四种样式\n", Font: black},
+		excelize.RichTextRun{Text: "5、自定义添加的字段请按照对应的格式类型进行填写，如「数字」的格式类型，只支持输入阿拉伯数字，请勿携带单位“节”或“元”\n", Font: black},
+		excelize.RichTextRun{Text: "6、如更新了自定义字段的字段名称、必填规则，则需重新下载模板，填写信息后再进行导入\n", Font: black},
+	)
 
 	if len(optionBlocks) > 0 {
-		builder.WriteString(`<div class="note-title">【选项说明】</div>`)
+		runs = append(runs, excelize.RichTextRun{Text: "\n【选项说明】\n", Font: title})
 		for _, block := range optionBlocks {
-			builder.WriteString(`<p class="note-item">`)
-			builder.WriteString(html.EscapeString(block))
-			builder.WriteString(`</p>`)
+			runs = append(runs, excelize.RichTextRun{Text: block + "\n", Font: black})
 		}
 	}
 
-	builder.WriteString(`<div class="note-title">【其他注意】</div>`)
-	builder.WriteString(`<p class="note-p">最多导入1000条数据，请控制导入数量。</p>`)
+	runs = append(runs,
+		excelize.RichTextRun{Text: "\n【其他注意】\n", Font: title},
+		excelize.RichTextRun{Text: "最多导入1000条数据，请控制导入数量。", Font: black},
+	)
+	return runs
+}
 
-	return builder.String()
+func intentionStudentTemplateColumnWidth(column model.IntentionStudentImportTemplateColumn) float64 {
+	title := strings.TrimSpace(column.Title)
+	switch title {
+	case "手机号", "手机号码":
+		return 13
+	case "手机号归属人":
+		return 15
+	case "渠道", "性别", "生日", "年级", "销售员":
+		return 11
+	case "微信号":
+		return 12
+	case "就读学校", "家庭住址", "兴趣爱好":
+		return 15
+	case "残疾证号", "身份证号":
+		return 14
+	default:
+		switch column.FieldType {
+		case 2, 3, 4:
+			return 12
+		default:
+			return 13
+		}
+	}
+}
+
+func buildHeaderRichText(column model.IntentionStudentImportTemplateColumn) []excelize.RichTextRun {
+	if !column.Required {
+		return []excelize.RichTextRun{{Text: column.Title, Font: &excelize.Font{Bold: true, Size: 12, Family: "Microsoft YaHei", Color: "#222222"}}}
+	}
+	return []excelize.RichTextRun{
+		{Text: "*", Font: &excelize.Font{Bold: true, Size: 12, Family: "Microsoft YaHei", Color: "#FF4D4F"}},
+		{Text: column.Title, Font: &excelize.Font{Bold: true, Size: 12, Family: "Microsoft YaHei", Color: "#222222"}},
+	}
+}
+
+func columnName(index int) string {
+	name, _ := excelize.ColumnNumberToName(index)
+	return name
 }
 
 func sanitizeTemplateFileName(name string) string {
