@@ -89,6 +89,7 @@ func buildIntentionStudentImportColumns(defaultFields, customFields []model.Stud
 	sort.Strings(channelOptions)
 
 	columns := []model.IntentionStudentImportTemplateColumn{
+		{Title: "学员姓名", Required: true, FieldType: 1},
 		{Title: "手机号", Required: true, FieldType: 1},
 		{Title: "手机号归属人", Required: true, FieldType: 4, Options: []string{"爸爸", "妈妈", "爷爷", "奶奶", "外公", "外婆", "其他"}},
 	}
@@ -170,8 +171,9 @@ func buildIntentionStudentImportTemplateWorkbook(orgName string, columns []model
 
 	headerStyle, err := file.NewStyle(&excelize.Style{
 		Font: &excelize.Font{
-			Bold:   true,
-			Size:   12,
+			Bold: true,
+			// Header font size for the first row of the template.
+			Size:   10,
 			Family: "Microsoft YaHei",
 			Color:  "#222222",
 		},
@@ -179,6 +181,21 @@ func buildIntentionStudentImportTemplateWorkbook(orgName string, columns []model
 			Type:    "pattern",
 			Pattern: 1,
 			Color:   []string{"#D8E5F7"},
+		},
+		Alignment: &excelize.Alignment{
+			Horizontal: "center",
+			Vertical:   "center",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	dataCellStyle, err := file.NewStyle(&excelize.Style{
+		Font: &excelize.Font{
+			Size:   11,
+			Family: "Microsoft YaHei",
+			Color:  "#222222",
 		},
 		Alignment: &excelize.Alignment{
 			Horizontal: "center",
@@ -207,12 +224,27 @@ func buildIntentionStudentImportTemplateWorkbook(orgName string, columns []model
 
 	for idx, column := range columns {
 		cell, _ := excelize.CoordinatesToCellName(idx+1, 1)
-		file.SetColWidth(sheetName, columnName(idx+1), columnName(idx+1), intentionStudentTemplateColumnWidth(column))
+		col := columnName(idx + 1)
+		file.SetColWidth(sheetName, col, col, intentionStudentTemplateColumnWidth(column))
 		if err := file.SetCellRichText(sheetName, cell, buildHeaderRichText(column)); err != nil {
 			return nil, err
 		}
 		if err := file.SetCellStyle(sheetName, cell, cell, headerStyle); err != nil {
 			return nil, err
+		}
+		dataStartCell := fmt.Sprintf("%s%d", col, 2)
+		dataEndCell := fmt.Sprintf("%s%d", col, rowCount+1)
+		if err := file.SetCellStyle(sheetName, dataStartCell, dataEndCell, dataCellStyle); err != nil {
+			return nil, err
+		}
+		if len(column.Options) > 0 {
+			if err := addTemplateDropdownValidation(file, sheetName, col, 2, rowCount+1, column.Options, !column.Required); err != nil {
+				return nil, err
+			}
+		} else if column.FieldType == 3 || strings.TrimSpace(column.Title) == "生日" {
+			if err := addTemplateDateValidation(file, sheetName, col, 2, rowCount+1, !column.Required); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -227,9 +259,11 @@ func buildIntentionStudentImportTemplateWorkbook(orgName string, columns []model
 	}
 
 	for row := 1; row <= rowCount+1; row++ {
-		height := 26.0
+		// Row height tuning:
+		// row 1 is the table header row, the rest are template data rows.
+		height := 22.0
 		if row == 1 {
-			height = 30
+			height = 20
 		}
 		if err := file.SetRowHeight(sheetName, row, height); err != nil {
 			return nil, err
@@ -297,7 +331,7 @@ func buildIntentionStudentImportNotesRichText(orgName string, columns []model.In
 		excelize.RichTextRun{Text: "3、「手机号」必须为 1 开头的 11 位数字，不支持“-”和中间空格，", Font: black},
 		excelize.RichTextRun{Text: "支持样式 13311113333\n", Font: red},
 		excelize.RichTextRun{Text: "4、「出生日期」的日期格式支持年月日输入，支持", Font: black},
-		excelize.RichTextRun{Text: "2021-01-21、2021/01/21、2021.01.21、20210121", Font: red},
+		excelize.RichTextRun{Text: "2021-01-21、2021/01/21", Font: red},
 		excelize.RichTextRun{Text: "四种样式\n", Font: black},
 		excelize.RichTextRun{Text: "5、自定义添加的字段请按照对应的格式类型进行填写，如「数字」的格式类型，只支持输入阿拉伯数字，请勿携带单位“节”或“元”\n", Font: black},
 		excelize.RichTextRun{Text: "6、如更新了自定义字段的字段名称、必填规则，则需重新下载模板，填写信息后再进行导入\n", Font: black},
@@ -317,44 +351,85 @@ func buildIntentionStudentImportNotesRichText(orgName string, columns []model.In
 	return runs
 }
 
+// intentionStudentTemplateColumnWidth controls the visible Excel column width
+// for each template field. The value is Excel's native column width unit,
+// not pixels. Increase the returned number to make a column wider.
 func intentionStudentTemplateColumnWidth(column model.IntentionStudentImportTemplateColumn) float64 {
 	title := strings.TrimSpace(column.Title)
 	switch title {
 	case "手机号", "手机号码":
-		return 13
+		// Common short text field: keep slightly wider for full phone display.
+		return 20
 	case "手机号归属人":
-		return 15
+		// Longer header text, otherwise the title looks crowded.
+		return 20
 	case "渠道", "性别", "生日", "年级", "销售员":
-		return 11
+		// Medium-width preset columns.
+		return 20
 	case "微信号":
-		return 12
+		return 20
 	case "就读学校", "家庭住址", "兴趣爱好":
-		return 15
+		// Longer business text columns should be wider than standard columns.
+		return 20
 	case "残疾证号", "身份证号":
-		return 14
+		return 20
 	default:
 		switch column.FieldType {
 		case 2, 3, 4:
-			return 12
+			// Numeric/date/select custom fields: medium width is usually enough.
+			return 20
 		default:
-			return 13
+			// Free-text custom fields: default a bit wider for readability.
+			return 20
 		}
 	}
 }
 
 func buildHeaderRichText(column model.IntentionStudentImportTemplateColumn) []excelize.RichTextRun {
 	if !column.Required {
-		return []excelize.RichTextRun{{Text: column.Title, Font: &excelize.Font{Bold: true, Size: 12, Family: "Microsoft YaHei", Color: "#222222"}}}
+		return []excelize.RichTextRun{{Text: column.Title, Font: &excelize.Font{Bold: true, Size: 10, Family: "Microsoft YaHei", Color: "#222222"}}}
 	}
 	return []excelize.RichTextRun{
-		{Text: "*", Font: &excelize.Font{Bold: true, Size: 12, Family: "Microsoft YaHei", Color: "#FF4D4F"}},
-		{Text: column.Title, Font: &excelize.Font{Bold: true, Size: 12, Family: "Microsoft YaHei", Color: "#222222"}},
+		{Text: "*", Font: &excelize.Font{Bold: true, Size: 10, Family: "Microsoft YaHei", Color: "#FF4D4F"}},
+		{Text: column.Title, Font: &excelize.Font{Bold: true, Size: 10, Family: "Microsoft YaHei", Color: "#222222"}},
 	}
 }
 
 func columnName(index int) string {
 	name, _ := excelize.ColumnNumberToName(index)
 	return name
+}
+
+func addTemplateDropdownValidation(file *excelize.File, sheetName, col string, startRow, endRow int, options []string) error {
+	if len(options) == 0 {
+		return nil
+	}
+	optionText := strings.Join(options, ",")
+	if len(optionText) > 255 {
+		// Excel inline list validation has a 255-char limit.
+		return nil
+	}
+	dv := excelize.NewDataValidation(true)
+	dv.Sqref = fmt.Sprintf("%s%d:%s%d", col, startRow, col, endRow)
+	if err := dv.SetDropList(options); err != nil {
+		return err
+	}
+	dv.ShowErrorMessage = true
+	dv.SetError(excelize.DataValidationErrorStyleStop, "填写有误", "请选择下拉选项中的预设值")
+	dv.ShowInputMessage = true
+	dv.SetInput("可选项", "请从下拉列表中选择")
+	return file.AddDataValidation(sheetName, dv)
+}
+
+func addTemplateDateValidation(file *excelize.File, sheetName, col string, startRow, endRow int) error {
+	dv := excelize.NewDataValidation(true)
+	dv.Sqref = fmt.Sprintf("%s%d:%s%d", col, startRow, col, endRow)
+	if err := dv.SetRange("DATE(1900,1,1)", "DATE(2999,12,31)", excelize.DataValidationTypeDate, excelize.DataValidationOperatorBetween); err != nil {
+		return err
+	}
+	dv.SetError(excelize.DataValidationErrorStyleStop, "日期格式不正确", "请输入有效日期，例如 2021-01-21")
+	dv.SetInput("日期输入", "请输入可识别的日期格式，例如 2021-01-21")
+	return file.AddDataValidation(sheetName, dv)
 }
 
 func sanitizeTemplateFileName(name string) string {
