@@ -18,6 +18,8 @@ type CampusDataClearSummary struct {
 	ApprovalHistories      int `json:"approvalHistories"`
 	TuitionAccounts        int `json:"tuitionAccounts"`
 	CourseSaleVolumesReset int `json:"courseSaleVolumesReset"`
+	ImportTasks            int `json:"importTasks"`
+	ImportTaskRecords      int `json:"importTaskRecords"`
 }
 
 type CampusDataClearResult struct {

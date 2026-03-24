@@ -88,6 +88,23 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 	}
 
 	if _, err := tx.ExecContext(ctx, `
+		UPDATE intention_student_import_task_record r
+		INNER JOIN intention_student_import_task t ON t.id = r.task_id
+		SET r.del_flag = 1, r.update_time = NOW()
+		WHERE t.inst_id = ? AND t.del_flag = 0 AND r.del_flag = 0
+	`, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE intention_student_import_task
+		SET del_flag = 1, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE sale_order
 		SET del_flag = 1, update_id = ?, update_time = NOW()
 		WHERE inst_id = ? AND del_flag = 0
@@ -193,6 +210,21 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 			target: &summary.TuitionAccounts,
 			query:  `SELECT COUNT(*) FROM tuition_account WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
+		},
+		{
+			target: &summary.ImportTasks,
+			query:  `SELECT COUNT(*) FROM intention_student_import_task WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.ImportTaskRecords,
+			query: `
+				SELECT COUNT(*)
+				FROM intention_student_import_task_record r
+				INNER JOIN intention_student_import_task t ON t.id = r.task_id
+				WHERE t.inst_id = ? AND t.del_flag = 0 AND r.del_flag = 0
+			`,
+			args: []any{instID},
 		},
 		{
 			target: &summary.CourseSaleVolumesReset,
