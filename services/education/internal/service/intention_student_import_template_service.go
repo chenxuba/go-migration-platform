@@ -357,30 +357,26 @@ func buildIntentionStudentImportNotesRichText(orgName string, columns []model.In
 func intentionStudentTemplateColumnWidth(column model.IntentionStudentImportTemplateColumn) float64 {
 	title := strings.TrimSpace(column.Title)
 	switch title {
+	case "学员姓名":
+		return 16
 	case "手机号", "手机号码":
-		// Common short text field: keep slightly wider for full phone display.
-		return 20
+		return 16
 	case "手机号归属人":
-		// Longer header text, otherwise the title looks crowded.
-		return 20
+		return 16
 	case "渠道", "性别", "生日", "年级", "销售员":
-		// Medium-width preset columns.
-		return 20
+		return 16
 	case "微信号":
-		return 20
+		return 16
 	case "就读学校", "家庭住址", "兴趣爱好":
-		// Longer business text columns should be wider than standard columns.
-		return 20
+		return 16
 	case "残疾证号", "身份证号":
-		return 20
+		return 16
 	default:
 		switch column.FieldType {
 		case 2, 3, 4:
-			// Numeric/date/select custom fields: medium width is usually enough.
-			return 20
+			return 16
 		default:
-			// Free-text custom fields: default a bit wider for readability.
-			return 20
+			return 16
 		}
 	}
 }
@@ -400,7 +396,7 @@ func columnName(index int) string {
 	return name
 }
 
-func addTemplateDropdownValidation(file *excelize.File, sheetName, col string, startRow, endRow int, options []string) error {
+func addTemplateDropdownValidation(file *excelize.File, sheetName, col string, startRow, endRow int, options []string, allowBlank bool) error {
 	if len(options) == 0 {
 		return nil
 	}
@@ -409,7 +405,7 @@ func addTemplateDropdownValidation(file *excelize.File, sheetName, col string, s
 		// Excel inline list validation has a 255-char limit.
 		return nil
 	}
-	dv := excelize.NewDataValidation(true)
+	dv := excelize.NewDataValidation(allowBlank)
 	dv.Sqref = fmt.Sprintf("%s%d:%s%d", col, startRow, col, endRow)
 	if err := dv.SetDropList(options); err != nil {
 		return err
@@ -417,18 +413,26 @@ func addTemplateDropdownValidation(file *excelize.File, sheetName, col string, s
 	dv.ShowErrorMessage = true
 	dv.SetError(excelize.DataValidationErrorStyleStop, "填写有误", "请选择下拉选项中的预设值")
 	dv.ShowInputMessage = true
-	dv.SetInput("可选项", "请从下拉列表中选择")
+	if allowBlank {
+		dv.SetInput("可选项", "请从下拉列表中选择")
+	} else {
+		dv.SetInput("必填项", "请从下拉列表中选择，不能为空")
+	}
 	return file.AddDataValidation(sheetName, dv)
 }
 
-func addTemplateDateValidation(file *excelize.File, sheetName, col string, startRow, endRow int) error {
-	dv := excelize.NewDataValidation(true)
+func addTemplateDateValidation(file *excelize.File, sheetName, col string, startRow, endRow int, allowBlank bool) error {
+	dv := excelize.NewDataValidation(allowBlank)
 	dv.Sqref = fmt.Sprintf("%s%d:%s%d", col, startRow, col, endRow)
 	if err := dv.SetRange("DATE(1900,1,1)", "DATE(2999,12,31)", excelize.DataValidationTypeDate, excelize.DataValidationOperatorBetween); err != nil {
 		return err
 	}
 	dv.SetError(excelize.DataValidationErrorStyleStop, "日期格式不正确", "请输入有效日期，例如 2021-01-21")
-	dv.SetInput("日期输入", "请输入可识别的日期格式，例如 2021-01-21")
+	if allowBlank {
+		dv.SetInput("日期输入", "请输入可识别的日期格式，例如 2021-01-21")
+	} else {
+		dv.SetInput("必填日期", "请输入可识别的日期格式，例如 2021-01-21，且不能为空")
+	}
 	return file.AddDataValidation(sheetName, dv)
 }
 
