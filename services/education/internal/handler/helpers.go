@@ -233,6 +233,34 @@ func parseOrderDetailListQueryDTO(raw map[string]any) model.OrderDetailListQuery
 	return query
 }
 
+func parseLedgerListQueryDTO(raw map[string]any) model.LedgerListQueryDTO {
+	query := model.LedgerListQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.LedgerQueryFilter{
+			AccountIDs:            asStringSlice(qm["accountIds"]),
+			LedgerConfirmStatuses: asIntSlice(qm["ledgerConfirmStatuses"]),
+			SourceTypes:           asIntSlice(qm["sourceTypes"]),
+			DealStaffID:           asString(qm["dealStaffId"]),
+			ConfirmStaffID:        asString(qm["confirmStaffId"]),
+			StudentID:             asString(qm["studentId"]),
+			OrderNumber:           asString(qm["orderNumber"]),
+			BankSlipNo:            asString(qm["bankSlipNo"]),
+			LedgerNumber:          asString(qm["ledgerNumber"]),
+			ConfirmStartTime:      asString(qm["confirmStartTime"]),
+			ConfirmEndTime:        asString(qm["confirmEndTime"]),
+			PayStartTime:          asString(firstNonNil(qm["payStartTime"], qm["dealStartTime"])),
+			PayEndTime:            asString(firstNonNil(qm["payEndTime"], qm["dealEndTime"])),
+			LedgerSubCategoryIDs:  asStringSlice(qm["ledgerSubCategoryIds"]),
+			OrderID:               asString(qm["orderId"]),
+		}
+	}
+	return query
+}
+
 func parseOrderTagPagedQueryDTO(raw map[string]any) model.OrderTagPagedQueryDTO {
 	query := model.OrderTagPagedQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {

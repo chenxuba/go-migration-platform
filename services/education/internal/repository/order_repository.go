@@ -1811,7 +1811,7 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 	}
 
 	for _, item := range dto.PayAccounts {
-		_, err := tx.ExecContext(ctx, `
+		result, err := tx.ExecContext(ctx, `
 			INSERT INTO sale_order_pay_detail (
 				uuid, version, inst_id, order_id, amount_id, pay_method, pay_amount, pay_time, payment_voucher,
 				create_id, create_time, update_id, update_time, del_flag
@@ -1830,6 +1830,13 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 			operatorID,
 		)
 		if err != nil {
+			return err
+		}
+		paymentDetailID, err := result.LastInsertId()
+		if err != nil {
+			return err
+		}
+		if err := repo.upsertOrderPaymentLedgerTx(ctx, tx, instID, paymentDetailID); err != nil {
 			return err
 		}
 	}
