@@ -96,16 +96,14 @@ func buildIntentionStudentImportColumns(defaultFields, customFields []model.Stud
 
 	appendDefaultColumn := func(title string, fieldType int, fallbackOptions []string) {
 		field, ok := displayedDefaults[title]
-		if !ok {
-			return
-		}
 		options := fallbackOptions
-		if len(options) == 0 && strings.TrimSpace(field.OptionsJSON) != "" {
+		if ok && len(options) == 0 && strings.TrimSpace(field.OptionsJSON) != "" {
 			options = splitTemplateOptions(field.OptionsJSON)
 		}
 		columns = append(columns, model.IntentionStudentImportTemplateColumn{
+			FieldID:   func() int64 { if ok { return field.ID }; return 0 }(),
 			Title:     title,
-			Required:  field.Required,
+			Required:  func() bool { if ok { return field.Required }; return false }(),
 			FieldType: fieldType,
 			Options:   options,
 		})
@@ -131,6 +129,7 @@ func buildIntentionStudentImportColumns(defaultFields, customFields []model.Stud
 			continue
 		}
 		column := model.IntentionStudentImportTemplateColumn{
+			FieldID:   field.ID,
 			Title:     strings.TrimSpace(field.FieldKey),
 			Required:  field.Required,
 			FieldType: field.FieldType,

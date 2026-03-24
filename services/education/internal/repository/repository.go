@@ -177,6 +177,40 @@ func (repo *Repository) ListActiveStaffNames(ctx context.Context, instID int64) 
 	return items, rows.Err()
 }
 
+func (repo *Repository) ListActiveStaffOptions(ctx context.Context, instID int64) ([]model.StaffSummaryVO, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(nick_name, ''), IFNULL(mobile, ''), IFNULL(is_admin, 0), IFNULL(avatar, ''), IFNULL(disabled, 0), create_time, IFNULL(user_type, 0)
+		FROM inst_user
+		WHERE inst_id = ? AND del_flag = 0 AND IFNULL(disabled, 0) = 0
+		ORDER BY create_time DESC, id DESC
+	`, instID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.StaffSummaryVO, 0, 32)
+	for rows.Next() {
+		var (
+			item      model.StaffSummaryVO
+			id        int64
+			createdAt sql.NullTime
+			disabled  bool
+		)
+		if err := rows.Scan(&id, &item.Name, &item.Phone, &item.SuperAdmin, &item.Avatar, &disabled, &createdAt, &item.EmployeeType); err != nil {
+			return nil, err
+		}
+		item.ID = strconv.FormatInt(id, 10)
+		item.Status = 1
+		if createdAt.Valid {
+			t := createdAt.Time
+			item.CreatedAt = &t
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (repo *Repository) GetStaffNameByID(ctx context.Context, staffID *int64) string {
 	if staffID == nil {
 		return "-"
