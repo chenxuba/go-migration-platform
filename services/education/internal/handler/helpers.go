@@ -273,6 +273,26 @@ func parseOrderTagPagedQueryDTO(raw map[string]any) model.OrderTagPagedQueryDTO 
 	return query
 }
 
+func parseTuitionAccountFlowRecordListQueryDTO(raw map[string]any) model.TuitionAccountFlowRecordListQueryDTO {
+	query := model.TuitionAccountFlowRecordListQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.TuitionAccountFlowRecordQueryModel{
+			ProductID:   asString(qm["productId"]),
+			SourceTypes: asIntSlice(qm["sourceTypes"]),
+			StartTime:   asString(qm["startTime"]),
+			EndTime:     asString(qm["endTime"]),
+		}
+	}
+	if sm, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.OrderByCreatedTime = asInt(sm["orderByCreatedTime"], 0)
+	}
+	return query
+}
+
 func parseCreateOrderTagDTO(raw map[string]any) model.CreateOrderTagDTO {
 	return model.CreateOrderTagDTO{
 		Name: asString(raw["name"]),

@@ -83,6 +83,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureLedgerTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensureTuitionAccountFlowTables(ctx, repo.db); err != nil {
+		return err
+	}
 	if err := ensureIntentionStudentImportTables(ctx, repo.db); err != nil {
 		return err
 	}
