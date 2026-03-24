@@ -282,6 +282,7 @@ func parseTuitionAccountFlowRecordListQueryDTO(raw map[string]any) model.Tuition
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
 		query.QueryModel = model.TuitionAccountFlowRecordQueryModel{
 			ProductID:   asString(qm["productId"]),
+			StudentID:   asString(qm["studentId"]),
 			SourceTypes: asIntSlice(qm["sourceTypes"]),
 			StartTime:   asString(qm["startTime"]),
 			EndTime:     asString(qm["endTime"]),

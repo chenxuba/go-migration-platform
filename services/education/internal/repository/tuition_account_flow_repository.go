@@ -97,6 +97,10 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 		whereParts = append(whereParts, "CAST(taf.product_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(query.QueryModel.ProductID))
 	}
+	if strings.TrimSpace(query.QueryModel.StudentID) != "" {
+		whereParts = append(whereParts, "CAST(taf.student_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(query.QueryModel.StudentID))
+	}
 	if len(query.QueryModel.SourceTypes) > 0 {
 		holders := make([]string, 0, len(query.QueryModel.SourceTypes))
 		for _, item := range query.QueryModel.SourceTypes {
