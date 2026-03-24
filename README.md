@@ -39,17 +39,85 @@ services/
 
 ## 启动
 
+推荐先用一键重启脚本，它会按顺序执行：
+
+- `scripts/ensure-dev-infra.sh`：按需拉起 Elasticsearch、RocketMQ、Canal
+- `scripts/preflight-dev-deps.sh`：检查中间件是否就绪
+- `scripts/dev-down.sh` / `scripts/dev-up.sh`：重启 3 个 Go 服务
+
+```bash
+cd /Users/chenrui/Desktop/go-migration-platform
+./scripts/restart.sh
+```
+
+如果你只想启动 Go 服务，不检查也不代起中间件：
+
+```bash
+./scripts/dev-up.sh
+```
+
+如果你想手动跳过中间件拉起，再执行完整重启：
+
+```bash
+export SKIP_ENSURE_INFRA=1
+./scripts/restart.sh
+```
+
+### 本地依赖
+
+默认依赖：
+
+- Elasticsearch：`https://127.0.0.1:9200`
+- RocketMQ NameServer：`127.0.0.1:9876`
+- RocketMQ Broker：`127.0.0.1:10911`
+- Canal：本地 `canal.deployer` 进程
+
+### Elasticsearch 启动方式
+
+可以任选下面两种方式，脚本都支持。
+
+#### 方式一：Homebrew 安装
+
+```bash
+brew tap elastic/tap
+brew install elastic/tap/elasticsearch-full
+brew services start elastic/tap/elasticsearch-full
+```
+
+#### 方式二：手工安装目录
+
+如果本机已经有类似 `/usr/local/elasticsearch-8.5.3` 这样的目录，`scripts/ensure-dev-infra.sh` 会自动探测并尝试执行：
+
+```bash
+/path/to/elasticsearch/bin/elasticsearch -d
+```
+
+也可以显式指定：
+
+```bash
+export ES_HOME=/usr/local/elasticsearch-8.5.3
+./scripts/restart.sh
+```
+
+### 常用环境变量
+
+- `ES_HOME`：手工安装版 Elasticsearch 根目录
+- `ES_URI`：默认 `https://127.0.0.1:9200`
+- `ES_USERNAME`：默认 `elastic`
+- `ES_PASSWORD`：默认见 `pkg/config/config.go`
+- `ROCKETMQ_HOME`：默认 `~/rocketmq`
+- `CANAL_HOME`：默认 `/usr/local/canal.deployer-1.1.8`
+- `ENSURE_INFRA_TIMEOUT`：中间件等待超时，默认 `120`
+- `SKIP_ENSURE_INFRA=1`：跳过自动拉起中间件
+- `SKIP_PREFLIGHT=1`：跳过依赖预检
+
+### 手动启动服务
+
 ```bash
 cd /Users/chenrui/Desktop/go-migration-platform
 go run ./services/iam/cmd/api
 go run ./services/platform/cmd/api
 go run ./services/education/cmd/api
-```
-
-或者：
-
-```bash
-./scripts/dev-up.sh
 ```
 
 默认端口：
