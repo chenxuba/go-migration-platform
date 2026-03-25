@@ -336,192 +336,92 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 	}
 	offset := (current - 1) * size
 
-	filters := []string{"so.del_flag = 0", "so.inst_id = ?", "d.del_flag = 0"}
-	args := []any{instID}
 	q := query.QueryModel
 	paidAmountExpr := "(SELECT IFNULL(SUM(pd.pay_amount), 0) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
 	payCountExpr := "(SELECT COUNT(*) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
-
-	if strings.TrimSpace(q.OrderNumber) != "" {
-		filters = append(filters, "so.order_number LIKE ?")
-		args = append(args, "%"+strings.TrimSpace(q.OrderNumber)+"%")
-	}
-	if strings.TrimSpace(q.StudentID) != "" {
-		filters = append(filters, "CAST(so.student_id AS CHAR) = ?")
-		args = append(args, strings.TrimSpace(q.StudentID))
-	}
-	if len(q.OrderTypeList) > 0 {
-		holders := make([]string, 0, len(q.OrderTypeList))
-		for _, item := range q.OrderTypeList {
-			holders = append(holders, "?")
-			args = append(args, item)
-		}
-		filters = append(filters, "so.order_type IN ("+strings.Join(holders, ",")+")")
-	}
-	if len(q.OrderTagIDs) > 0 {
-		tagClauses := make([]string, 0, len(q.OrderTagIDs))
-		for _, item := range q.OrderTagIDs {
-			tagID := strings.TrimSpace(item)
-			if tagID == "" {
-				continue
-			}
-			tagClauses = append(tagClauses, "FIND_IN_SET(?, IFNULL(so.order_tag_ids, '')) > 0")
-			args = append(args, tagID)
-		}
-		if len(tagClauses) > 0 {
-			filters = append(filters, "("+strings.Join(tagClauses, " OR ")+")")
-		}
-	}
-	if len(q.OrderSourceList) > 0 {
-		holders := make([]string, 0, len(q.OrderSourceList))
-		for _, item := range q.OrderSourceList {
-			holders = append(holders, "?")
-			args = append(args, item)
-		}
-		filters = append(filters, "so.order_source IN ("+strings.Join(holders, ",")+")")
-	}
-	if len(q.OrderStatusList) > 0 {
-		holders := make([]string, 0, len(q.OrderStatusList))
-		for _, item := range q.OrderStatusList {
-			holders = append(holders, "?")
-			args = append(args, item)
-		}
-		filters = append(filters, "so.order_status IN ("+strings.Join(holders, ",")+")")
-	}
+	courseArgs := []any{instID}
+	courseFilters := buildOrderDetailCommonFilters(q, &courseArgs, paidAmountExpr, payCountExpr)
+	courseFilters = append(courseFilters, "d.del_flag = 0")
 	if len(q.CourseIDs) > 0 {
 		holders := make([]string, 0, len(q.CourseIDs))
 		for _, item := range q.CourseIDs {
 			holders = append(holders, "?")
-			args = append(args, strings.TrimSpace(item))
+			courseArgs = append(courseArgs, strings.TrimSpace(item))
 		}
-		filters = append(filters, "CAST(d.course_id AS CHAR) IN ("+strings.Join(holders, ",")+")")
+		courseFilters = append(courseFilters, "CAST(d.course_id AS CHAR) IN ("+strings.Join(holders, ",")+")")
 	}
 	if len(q.EnrollTypes) > 0 {
 		holders := make([]string, 0, len(q.EnrollTypes))
 		for _, item := range q.EnrollTypes {
 			holders = append(holders, "?")
-			args = append(args, item)
+			courseArgs = append(courseArgs, item)
 		}
-		filters = append(filters, "IFNULL(d.handle_type, 0) IN ("+strings.Join(holders, ",")+")")
+		courseFilters = append(courseFilters, "IFNULL(d.handle_type, 0) IN ("+strings.Join(holders, ",")+")")
 	}
 	if len(q.ProductTypes) > 0 {
 		holders := make([]string, 0, len(q.ProductTypes))
 		for _, item := range q.ProductTypes {
 			holders = append(holders, "?")
-			args = append(args, item)
+			courseArgs = append(courseArgs, item)
 		}
-		filters = append(filters, "IFNULL(c.type, 1) IN ("+strings.Join(holders, ",")+")")
+		courseFilters = append(courseFilters, "IFNULL(c.type, 1) IN ("+strings.Join(holders, ",")+")")
 	}
 	if q.CourseCategoryID != nil {
-		filters = append(filters, "c.course_category = ?")
-		args = append(args, *q.CourseCategoryID)
-	}
-	if strings.TrimSpace(q.SalePersonID) != "" {
-		filters = append(filters, "CAST(so.sale_person AS CHAR) = ?")
-		args = append(args, strings.TrimSpace(q.SalePersonID))
-	}
-	if strings.TrimSpace(q.CreatorID) != "" {
-		filters = append(filters, "CAST(so.create_id AS CHAR) = ?")
-		args = append(args, strings.TrimSpace(q.CreatorID))
-	}
-	if begin := parseDateStart(q.DealDateBegin); begin != nil {
-		filters = append(filters, "so.deal_date >= ?")
-		args = append(args, begin.Format("2006-01-02"))
-	}
-	if end := parseDateEnd(q.DealDateEnd); end != nil {
-		filters = append(filters, "so.deal_date <= ?")
-		args = append(args, end.Format("2006-01-02"))
-	}
-	if begin := parseDateStart(q.CreatedTimeBegin); begin != nil {
-		filters = append(filters, "so.create_time >= ?")
-		args = append(args, *begin)
-	}
-	if end := parseDateEnd(q.CreatedTimeEnd); end != nil {
-		filters = append(filters, "so.create_time <= ?")
-		args = append(args, *end)
-	}
-	if len(q.OrderArrearStatus) > 0 {
-		statusClauses := make([]string, 0, len(q.OrderArrearStatus))
-		for _, status := range q.OrderArrearStatus {
-			switch status {
-			case 1:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
-			case 2:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
-			case 3:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
-			case 4:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 1)")
-			case 5:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
-			}
-		}
-		if len(statusClauses) > 0 {
-			filters = append(filters, "("+strings.Join(statusClauses, " OR ")+")")
-		}
+		courseFilters = append(courseFilters, "c.course_category = ?")
+		courseArgs = append(courseArgs, *q.CourseCategoryID)
 	}
 
-	whereClause := strings.Join(filters, " AND ")
-
-	var total int
-	if err := repo.db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM sale_order so
-		INNER JOIN sale_order_course_detail d ON d.order_id = so.id
-		LEFT JOIN inst_course c ON c.id = d.course_id
-		WHERE `+whereClause, args...).Scan(&total); err != nil {
-		return model.OrderDetailListResultVO{}, err
-	}
-
-	rows, err := repo.db.QueryContext(ctx, `
+	subqueries := []string{`
 		SELECT
-			so.id,
+			so.id AS order_id,
 			so.order_number,
 			so.student_id,
-			IFNULL(s.stu_name, ''),
+			IFNULL(s.stu_name, '') AS student_name,
 			CASE
 				WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
 				ELSE IFNULL(s.mobile, '')
-			END,
-			IFNULL(s.avatar_url, ''),
-			s.stu_sex,
-			so.create_time,
-			so.order_source,
-			so.order_status,
-			so.order_type,
-			so.order_type,
-			so.create_id,
-			IFNULL(u.nick_name, ''),
-			so.deal_date,
-			d.course_id,
-			IFNULL(c.name, ''),
-			IFNULL(d.handle_type, 0),
-			d.id,
-			d.quote_id,
-			IFNULL(q.name, ''),
-			IFNULL(d.count, 0),
-			d.unit,
-			IFNULL(d.free_quantity, 0),
-			d.discount_type,
-			IFNULL(d.discount_number, 0),
-			IFNULL(d.share_discount, 0),
-			IFNULL(q.price, 0),
-			IFNULL(q.quantity, 0),
-			IFNULL(d.real_quantity, 0),
-			IFNULL(c.type, 1),
-			IFNULL(so.internal_remark, ''),
-			q.lesson_model,
-			so.sale_person,
-			IFNULL(sale.nick_name, ''),
-			IFNULL(so.order_tag_ids, ''),
-			IFNULL(so.external_remark, ''),
-			IFNULL(so.remark, ''),
-			IFNULL(so.is_bad_debt, 0),
-			IFNULL(so.bad_debt_amount, 0),
-			IFNULL(c.course_category, 0),
-			IFNULL(cat.name, ''),
-			IFNULL(so.order_real_amount, 0),
-			`+paidAmountExpr+`
+			END AS student_phone,
+			IFNULL(s.avatar_url, '') AS student_avatar,
+			s.stu_sex AS sex,
+			so.create_time AS created_time,
+			so.order_source AS order_source,
+			so.order_status AS order_status,
+			so.order_type AS order_type,
+			so.order_type AS tran_order_type,
+			so.create_id AS create_id,
+			IFNULL(u.nick_name, '') AS staff_name,
+			so.deal_date AS deal_date,
+			d.course_id AS product_id,
+			IFNULL(c.name, '') AS product_name,
+			IFNULL(d.handle_type, 0) AS handle_type,
+			d.id AS order_flow_id,
+			d.quote_id AS sku_id,
+			IFNULL(q.name, '') AS quote_name,
+			IFNULL(d.count, 0) AS sku_count,
+			d.unit AS sku_unit,
+			IFNULL(d.free_quantity, 0) AS free_quantity,
+			d.discount_type AS discount_type,
+			IFNULL(d.discount_number, 0) AS discount_number,
+			IFNULL(d.share_discount, 0) AS share_discount,
+			IFNULL(q.price, 0) AS tuition,
+			IFNULL(q.quantity, 0) AS quantity,
+			IFNULL(d.real_quantity, 0) AS real_quantity,
+			IFNULL(c.type, 1) AS product_type,
+			IFNULL(so.internal_remark, '') AS remark,
+			q.lesson_model AS charging_mode,
+			so.sale_person AS sale_person_id,
+			IFNULL(sale.nick_name, '') AS sale_person_name,
+			IFNULL(so.order_tag_ids, '') AS order_tag_ids,
+			IFNULL(so.external_remark, '') AS external_remark,
+			IFNULL(so.remark, '') AS customer_remark,
+			IFNULL(so.is_bad_debt, 0) AS is_bad_debt,
+			IFNULL(so.bad_debt_amount, 0) AS bad_debt_amount,
+			IFNULL(c.course_category, 0) AS product_category_id,
+			IFNULL(cat.name, '') AS product_category_name,
+			IFNULL(so.order_real_amount, 0) AS order_real_amount,
+			` + paidAmountExpr + ` AS paid_amount,
+			CAST(0 AS SIGNED) AS recharge_account_id,
+			CAST(0 AS DECIMAL(18,2)) AS recharge_account_amount
 		FROM sale_order so
 		INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
 		LEFT JOIN inst_student s ON s.id = so.student_id
@@ -530,10 +430,136 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 		LEFT JOIN inst_course c ON c.id = d.course_id
 		LEFT JOIN inst_course_category cat ON cat.id = c.course_category AND cat.del_flag = 0
 		LEFT JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
-		WHERE `+whereClause+`
-		ORDER BY so.create_time DESC, d.id DESC
+		WHERE ` + strings.Join(courseFilters, " AND ")}
+	unionArgs := append([]any{}, courseArgs...)
+
+	if shouldIncludeRechargeOrderDetails(q) {
+		rechargeArgs := []any{instID}
+		rechargeFilters := buildOrderDetailCommonFilters(q, &rechargeArgs, paidAmountExpr, payCountExpr)
+		rechargeFilters = append(rechargeFilters, "rao.del_flag = 0")
+		subqueries = append(subqueries, `
+		SELECT
+			so.id AS order_id,
+			so.order_number,
+			so.student_id,
+			IFNULL(s.stu_name, '') AS student_name,
+			CASE
+				WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
+				ELSE IFNULL(s.mobile, '')
+			END AS student_phone,
+			IFNULL(s.avatar_url, '') AS student_avatar,
+			s.stu_sex AS sex,
+			so.create_time AS created_time,
+			so.order_source AS order_source,
+			so.order_status AS order_status,
+			so.order_type AS order_type,
+			so.order_type AS tran_order_type,
+			so.create_id AS create_id,
+			IFNULL(u.nick_name, '') AS staff_name,
+			so.deal_date AS deal_date,
+			rao.recharge_account_id AS product_id,
+			IFNULL(NULLIF(TRIM(ra.account_name), ''), CONCAT('RA-', so.student_id, '-', rao.recharge_account_id)) AS product_name,
+			0 AS handle_type,
+			rao.id AS order_flow_id,
+			NULL AS sku_id,
+			'' AS quote_name,
+			0 AS sku_count,
+			NULL AS sku_unit,
+			0 AS free_quantity,
+			NULL AS discount_type,
+			0 AS discount_number,
+			0 AS share_discount,
+			IFNULL(rao.amount, 0) AS tuition,
+			0 AS quantity,
+			0 AS real_quantity,
+			4 AS product_type,
+			IFNULL(so.internal_remark, '') AS remark,
+			NULL AS charging_mode,
+			so.sale_person AS sale_person_id,
+			IFNULL(sale.nick_name, '') AS sale_person_name,
+			IFNULL(so.order_tag_ids, '') AS order_tag_ids,
+			IFNULL(so.external_remark, '') AS external_remark,
+			IFNULL(so.remark, '') AS customer_remark,
+			IFNULL(so.is_bad_debt, 0) AS is_bad_debt,
+			IFNULL(so.bad_debt_amount, 0) AS bad_debt_amount,
+			0 AS product_category_id,
+			'' AS product_category_name,
+			IFNULL(so.order_real_amount, 0) AS order_real_amount,
+			`+paidAmountExpr+` AS paid_amount,
+			rao.recharge_account_id AS recharge_account_id,
+			IFNULL(rao.amount, 0) AS recharge_account_amount
+		FROM sale_order so
+		INNER JOIN recharge_account_order rao ON rao.sale_order_id = so.id AND rao.del_flag = 0
+		LEFT JOIN recharge_account ra ON ra.id = rao.recharge_account_id AND ra.del_flag = 0
+		LEFT JOIN inst_student s ON s.id = so.student_id
+		LEFT JOIN inst_user u ON u.id = so.create_id
+		LEFT JOIN inst_user sale ON sale.id = so.sale_person
+		WHERE `+strings.Join(rechargeFilters, " AND "))
+		unionArgs = append(unionArgs, rechargeArgs...)
+	}
+
+	unionQuery := strings.Join(subqueries, "\nUNION ALL\n")
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM (`+unionQuery+`) detail_rows
+	`, unionArgs...).Scan(&total); err != nil {
+		return model.OrderDetailListResultVO{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			order_id,
+			order_number,
+			student_id,
+			student_name,
+			student_phone,
+			student_avatar,
+			sex,
+			created_time,
+			order_source,
+			order_status,
+			order_type,
+			tran_order_type,
+			create_id,
+			staff_name,
+			deal_date,
+			product_id,
+			product_name,
+			handle_type,
+			order_flow_id,
+			sku_id,
+			quote_name,
+			sku_count,
+			sku_unit,
+			free_quantity,
+			discount_type,
+			discount_number,
+			share_discount,
+			tuition,
+			quantity,
+			real_quantity,
+			product_type,
+			remark,
+			charging_mode,
+			sale_person_id,
+			sale_person_name,
+			order_tag_ids,
+			external_remark,
+			customer_remark,
+			is_bad_debt,
+			bad_debt_amount,
+			product_category_id,
+			product_category_name,
+			order_real_amount,
+			paid_amount,
+			recharge_account_id,
+			recharge_account_amount
+		FROM (`+unionQuery+`) detail_rows
+		ORDER BY created_time DESC, order_flow_id DESC
 		LIMIT ? OFFSET ?
-	`, append(args, size, offset)...)
+	`, append(unionArgs, size, offset)...)
 	if err != nil {
 		return model.OrderDetailListResultVO{}, err
 	}
@@ -542,40 +568,42 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 	list := make([]model.OrderDetailListItemVO, 0, size)
 	for rows.Next() {
 		var (
-			item            model.OrderDetailListItemVO
-			orderID         int64
-			studentID       sql.NullInt64
-			sex             sql.NullInt64
-			createdTime     sql.NullTime
-			orderSource     sql.NullInt64
-			orderStatus     sql.NullInt64
-			orderType       sql.NullInt64
-			tranOrderType   sql.NullInt64
-			createID        sql.NullInt64
-			dealDate        sql.NullTime
-			productID       sql.NullInt64
-			handleType      sql.NullInt64
-			orderFlowID     int64
-			skuID           sql.NullInt64
-			quoteName       string
-			skuCount        sql.NullFloat64
-			skuUnit         sql.NullInt64
-			freeQuantity    sql.NullFloat64
-			discountType    sql.NullInt64
-			discountNumber  sql.NullFloat64
-			shareDiscount   sql.NullFloat64
-			tuition         sql.NullFloat64
-			quantity        sql.NullFloat64
-			realQuantity    sql.NullFloat64
-			productType     sql.NullInt64
-			chargingMode    sql.NullInt64
-			salePersonID    sql.NullInt64
-			isBadDebt       bool
-			badDebtAmount   sql.NullFloat64
-			productCatID    sql.NullInt64
-			orderRealAmount sql.NullFloat64
-			paidAmount      sql.NullFloat64
-			orderTagIDs     string
+			item                  model.OrderDetailListItemVO
+			orderID               int64
+			studentID             sql.NullInt64
+			sex                   sql.NullInt64
+			createdTime           sql.NullTime
+			orderSource           sql.NullInt64
+			orderStatus           sql.NullInt64
+			orderType             sql.NullInt64
+			tranOrderType         sql.NullInt64
+			createID              sql.NullInt64
+			dealDate              sql.NullTime
+			productID             sql.NullInt64
+			handleType            sql.NullInt64
+			orderFlowID           int64
+			skuID                 sql.NullInt64
+			quoteName             string
+			skuCount              sql.NullFloat64
+			skuUnit               sql.NullInt64
+			freeQuantity          sql.NullFloat64
+			discountType          sql.NullInt64
+			discountNumber        sql.NullFloat64
+			shareDiscount         sql.NullFloat64
+			tuition               sql.NullFloat64
+			quantity              sql.NullFloat64
+			realQuantity          sql.NullFloat64
+			productType           sql.NullInt64
+			chargingMode          sql.NullInt64
+			salePersonID          sql.NullInt64
+			isBadDebt             bool
+			badDebtAmount         sql.NullFloat64
+			productCatID          sql.NullInt64
+			orderRealAmount       sql.NullFloat64
+			paidAmount            sql.NullFloat64
+			rechargeAccountID     sql.NullInt64
+			rechargeAccountAmount sql.NullFloat64
+			orderTagIDs           string
 		)
 		if err := rows.Scan(
 			&orderID,
@@ -622,6 +650,8 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			&item.ProductCategoryName,
 			&orderRealAmount,
 			&paidAmount,
+			&rechargeAccountID,
+			&rechargeAccountAmount,
 		); err != nil {
 			return model.OrderDetailListResultVO{}, err
 		}
@@ -727,6 +757,7 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 		item.ClassName = ""
 		item.ClassAssignStatus = 0
 		item.RechargeAccountID = "0"
+		item.RechargeAccountAmount = 0
 		item.ShareRechargeAccountAmount = 0
 		item.ShareRechargeAccountGivingAmount = 0
 		item.ProductPackageID = "0"
@@ -735,6 +766,12 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 		item.PhoneSellStaffID = "0"
 		item.ForegroundStaffID = "0"
 		item.ViceSellStaffStaffID = "0"
+		if rechargeAccountID.Valid && rechargeAccountID.Int64 > 0 {
+			item.RechargeAccountID = strconv.FormatInt(rechargeAccountID.Int64, 10)
+		}
+		if rechargeAccountAmount.Valid {
+			item.RechargeAccountAmount = rechargeAccountAmount.Float64
+		}
 
 		shouldAmount := 0.0
 		if tuition.Valid && skuCount.Valid {
@@ -776,6 +813,127 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 		List:  list,
 		Total: total,
 	}, nil
+}
+
+func buildOrderDetailCommonFilters(q model.OrderDetailListFilters, args *[]any, paidAmountExpr, payCountExpr string) []string {
+	filters := []string{"so.del_flag = 0", "so.inst_id = ?"}
+
+	if strings.TrimSpace(q.OrderNumber) != "" {
+		filters = append(filters, "so.order_number LIKE ?")
+		*args = append(*args, "%"+strings.TrimSpace(q.OrderNumber)+"%")
+	}
+	if strings.TrimSpace(q.StudentID) != "" {
+		filters = append(filters, "CAST(so.student_id AS CHAR) = ?")
+		*args = append(*args, strings.TrimSpace(q.StudentID))
+	}
+	if len(q.OrderTypeList) > 0 {
+		holders := make([]string, 0, len(q.OrderTypeList))
+		for _, item := range q.OrderTypeList {
+			holders = append(holders, "?")
+			*args = append(*args, item)
+		}
+		filters = append(filters, "so.order_type IN ("+strings.Join(holders, ",")+")")
+	}
+	if len(q.OrderTagIDs) > 0 {
+		tagClauses := make([]string, 0, len(q.OrderTagIDs))
+		for _, item := range q.OrderTagIDs {
+			tagID := strings.TrimSpace(item)
+			if tagID == "" {
+				continue
+			}
+			tagClauses = append(tagClauses, "FIND_IN_SET(?, IFNULL(so.order_tag_ids, '')) > 0")
+			*args = append(*args, tagID)
+		}
+		if len(tagClauses) > 0 {
+			filters = append(filters, "("+strings.Join(tagClauses, " OR ")+")")
+		}
+	}
+	if len(q.OrderSourceList) > 0 {
+		holders := make([]string, 0, len(q.OrderSourceList))
+		for _, item := range q.OrderSourceList {
+			holders = append(holders, "?")
+			*args = append(*args, item)
+		}
+		filters = append(filters, "so.order_source IN ("+strings.Join(holders, ",")+")")
+	}
+	if len(q.OrderStatusList) > 0 {
+		holders := make([]string, 0, len(q.OrderStatusList))
+		for _, item := range q.OrderStatusList {
+			holders = append(holders, "?")
+			*args = append(*args, item)
+		}
+		filters = append(filters, "so.order_status IN ("+strings.Join(holders, ",")+")")
+	}
+	if strings.TrimSpace(q.SalePersonID) != "" {
+		filters = append(filters, "CAST(so.sale_person AS CHAR) = ?")
+		*args = append(*args, strings.TrimSpace(q.SalePersonID))
+	}
+	if strings.TrimSpace(q.CreatorID) != "" {
+		filters = append(filters, "CAST(so.create_id AS CHAR) = ?")
+		*args = append(*args, strings.TrimSpace(q.CreatorID))
+	}
+	if begin := parseDateStart(q.DealDateBegin); begin != nil {
+		filters = append(filters, "so.deal_date >= ?")
+		*args = append(*args, begin.Format("2006-01-02"))
+	}
+	if end := parseDateEnd(q.DealDateEnd); end != nil {
+		filters = append(filters, "so.deal_date <= ?")
+		*args = append(*args, end.Format("2006-01-02"))
+	}
+	if begin := parseDateStart(q.CreatedTimeBegin); begin != nil {
+		filters = append(filters, "so.create_time >= ?")
+		*args = append(*args, *begin)
+	}
+	if end := parseDateEnd(q.CreatedTimeEnd); end != nil {
+		filters = append(filters, "so.create_time <= ?")
+		*args = append(*args, *end)
+	}
+	if len(q.OrderArrearStatus) > 0 {
+		statusClauses := make([]string, 0, len(q.OrderArrearStatus))
+		for _, status := range q.OrderArrearStatus {
+			switch status {
+			case 1:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+			case 2:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+			case 3:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+			case 4:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 1)")
+			case 5:
+				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+			}
+		}
+		if len(statusClauses) > 0 {
+			filters = append(filters, "("+strings.Join(statusClauses, " OR ")+")")
+		}
+	}
+
+	return filters
+}
+
+func shouldIncludeRechargeOrderDetails(q model.OrderDetailListFilters) bool {
+	if len(q.CourseIDs) > 0 || q.CourseCategoryID != nil {
+		return false
+	}
+	if len(q.ProductTypes) > 0 && !containsInt(q.ProductTypes, 4) {
+		return false
+	}
+	if len(q.EnrollTypes) > 0 && !containsInt(q.EnrollTypes, 0, 4) {
+		return false
+	}
+	return true
+}
+
+func containsInt(values []int, targets ...int) bool {
+	for _, value := range values {
+		for _, target := range targets {
+			if value == target {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int64) (model.OrderDetailVO, error) {
