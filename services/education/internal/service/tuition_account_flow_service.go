@@ -18,3 +18,14 @@ func (svc *Service) GetTuitionAccountFlowRecordList(userID int64, query model.Tu
 	}
 	return svc.repo.GetTuitionAccountFlowRecordList(context.Background(), instID, query)
 }
+
+func (svc *Service) GetSubTuitionAccountFlowRecordList(userID int64, query model.SubTuitionAccountFlowRecordListQueryDTO) (model.SubTuitionAccountFlowRecordListResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.SubTuitionAccountFlowRecordListResult{}, errors.New("no institution context")
+		}
+		return model.SubTuitionAccountFlowRecordListResult{}, err
+	}
+	return svc.repo.GetSubTuitionAccountFlowRecordList(context.Background(), instID, query)
+}

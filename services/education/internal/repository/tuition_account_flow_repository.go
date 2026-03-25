@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -24,9 +25,12 @@ func ensureTuitionAccountFlowTables(ctx context.Context, db *sql.DB) error {
 			source_type INT NOT NULL,
 			source_id BIGINT NOT NULL DEFAULT 0,
 			teaching_record_id BIGINT NULL,
+			order_number VARCHAR(64) NOT NULL DEFAULT '',
 			created_time DATETIME NOT NULL,
 			quantity DECIMAL(18,2) NOT NULL DEFAULT 0,
 			tuition DECIMAL(18,2) NOT NULL DEFAULT 0,
+			balance_quantity DECIMAL(18,2) NOT NULL DEFAULT 0,
+			balance_tuition DECIMAL(18,2) NOT NULL DEFAULT 0,
 			create_id BIGINT NOT NULL DEFAULT 0,
 			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			update_id BIGINT NOT NULL DEFAULT 0,
@@ -39,7 +43,19 @@ func ensureTuitionAccountFlowTables(ctx context.Context, db *sql.DB) error {
 			KEY idx_tuition_account_flow_source (inst_id, source_type)
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	for _, statement := range []string{
+		"ALTER TABLE tuition_account_flow ADD COLUMN order_number VARCHAR(64) NOT NULL DEFAULT '' AFTER teaching_record_id",
+		"ALTER TABLE tuition_account_flow ADD COLUMN balance_quantity DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER tuition",
+		"ALTER TABLE tuition_account_flow ADD COLUMN balance_tuition DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER balance_quantity",
+	} {
+		if _, alterErr := db.ExecContext(ctx, statement); alterErr != nil && !strings.Contains(strings.ToLower(alterErr.Error()), "duplicate column") {
+			return alterErr
+		}
+	}
+	return nil
 }
 
 func (repo *Repository) ensureHistoricalTuitionAccountFlowRecords(ctx context.Context, instID int64) error {
@@ -53,24 +69,30 @@ func (repo *Repository) ensureHistoricalTuitionAccountFlowRecords(ctx context.Co
 	_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO tuition_account_flow (
 			uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
-			source_type, source_id, teaching_record_id, created_time, quantity, tuition,
+			source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
 			create_id, create_time, update_id, update_time, del_flag
 		)
 		SELECT
-			UUID(), 0, ta.inst_id, MIN(ta.id), ta.student_id, ta.course_id, MAX(ic.teach_method), MAX(icq.lesson_model),
-			?, ta.order_course_detail_id, NULL, MIN(ta.create_time),
+			UUID(), 0, ta.inst_id, ta.id, ta.student_id, ta.course_id, ic.teach_method, icq.lesson_model,
+			?, ta.order_course_detail_id, NULL, IFNULL(so.order_number, ''), ta.create_time,
 			CASE
-				WHEN IFNULL(MAX(icq.lesson_model), 0) = 3 THEN IFNULL(SUM(ta.total_tuition), 0)
-				ELSE IFNULL(SUM(ta.total_quantity), 0) + IFNULL(SUM(ta.free_quantity), 0)
+				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.total_tuition, 0)
+				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+				ELSE IFNULL(ta.free_quantity, 0)
 			END,
-			IFNULL(SUM(ta.total_tuition), 0),
-			MIN(IFNULL(ta.create_id, 0)), MIN(IFNULL(ta.create_time, NOW())),
-			MIN(IFNULL(ta.update_id, 0)), MAX(IFNULL(ta.update_time, NOW())), 0
+			IFNULL(ta.total_tuition, 0),
+			CASE
+				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.remaining_tuition, 0)
+				ELSE IFNULL(ta.remaining_quantity, 0)
+			END,
+			IFNULL(ta.remaining_tuition, 0),
+			IFNULL(ta.create_id, 0), IFNULL(ta.create_time, NOW()),
+			IFNULL(ta.update_id, 0), IFNULL(ta.update_time, NOW()), 0
 		FROM tuition_account ta
 		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
 		LEFT JOIN inst_course_quotation icq ON icq.id = ta.quote_id AND icq.del_flag = 0
+		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
 		WHERE ta.inst_id = ? AND ta.del_flag = 0
-		GROUP BY ta.inst_id, ta.student_id, ta.course_id, ta.order_course_detail_id
 	`, model.TuitionAccountFlowSourceRegistration, instID)
 	return err
 }
@@ -101,6 +123,10 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 		whereParts = append(whereParts, "CAST(taf.student_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(query.QueryModel.StudentID))
 	}
+	if strings.TrimSpace(query.QueryModel.OrderNumber) != "" {
+		whereParts = append(whereParts, "taf.order_number LIKE ?")
+		args = append(args, "%"+strings.TrimSpace(query.QueryModel.OrderNumber)+"%")
+	}
 	if len(query.QueryModel.SourceTypes) > 0 {
 		holders := make([]string, 0, len(query.QueryModel.SourceTypes))
 		for _, item := range query.QueryModel.SourceTypes {
@@ -119,44 +145,54 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 	}
 
 	whereSQL := strings.Join(whereParts, " AND ")
-	orderBy := "taf.created_time DESC, taf.id DESC"
+	orderBy := "MIN(taf.created_time) DESC, MIN(taf.id) DESC"
 	if query.SortModel.OrderByCreatedTime > 0 {
-		orderBy = "taf.created_time ASC, taf.id ASC"
+		orderBy = "MIN(taf.created_time) ASC, MIN(taf.id) ASC"
 	}
 
 	var total int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
-		FROM tuition_account_flow taf
-		WHERE `+whereSQL, args...).Scan(&total); err != nil {
+		FROM (
+			SELECT taf.source_type, taf.source_id
+			FROM tuition_account_flow taf
+			WHERE `+whereSQL+`
+			GROUP BY taf.source_type, taf.source_id
+		) flow_group
+	`, args...).Scan(&total); err != nil {
 		return model.TuitionAccountFlowRecordListResult{}, err
 	}
 
+	quantityExpr := `CASE
+		WHEN IFNULL(MAX(taf.lesson_charging_mode), 0) = 3 THEN IFNULL(SUM(taf.tuition), 0)
+		ELSE IFNULL(SUM(taf.quantity), 0)
+	END`
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
-			taf.id,
-			taf.tuition_account_id,
-			taf.student_id,
+			MIN(taf.id),
+			MIN(taf.tuition_account_id),
+			MIN(taf.student_id),
 			IFNULL(s.stu_name, ''),
 			CASE
 				WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
 				ELSE IFNULL(s.mobile, '')
 			END,
 			IFNULL(s.avatar_url, ''),
-			taf.product_id,
+			MIN(taf.product_id),
 			IFNULL(c.name, ''),
-			taf.lesson_type,
-			taf.lesson_charging_mode,
+			MAX(taf.lesson_type),
+			MAX(taf.lesson_charging_mode),
 			taf.source_type,
 			taf.source_id,
-			taf.teaching_record_id,
-			taf.created_time,
-			IFNULL(taf.quantity, 0),
-			IFNULL(taf.tuition, 0)
+			MAX(taf.teaching_record_id),
+			MIN(taf.created_time),
+			`+quantityExpr+`,
+			IFNULL(SUM(taf.tuition), 0)
 		FROM tuition_account_flow taf
 		LEFT JOIN inst_student s ON s.id = taf.student_id AND s.del_flag = 0
 		LEFT JOIN inst_course c ON c.id = taf.product_id AND c.del_flag = 0
 		WHERE `+whereSQL+`
+		GROUP BY taf.source_type, taf.source_id, s.stu_name, s.mobile, s.avatar_url, c.name
 		ORDER BY `+orderBy+`
 		LIMIT ? OFFSET ?
 	`, append(args, size, offset)...)
@@ -226,4 +262,189 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 		List:  items,
 		Total: total,
 	}, rows.Err()
+}
+
+func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, instID int64, query model.SubTuitionAccountFlowRecordListQueryDTO) (model.SubTuitionAccountFlowRecordListResult, error) {
+	if err := repo.ensureHistoricalTuitionAccountFlowRecords(ctx, instID); err != nil {
+		return model.SubTuitionAccountFlowRecordListResult{}, err
+	}
+
+	current := query.PageRequestModel.PageIndex
+	size := query.PageRequestModel.PageSize
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	offset := (current - 1) * size
+
+	whereParts := []string{"taf.inst_id = ?", "taf.del_flag = 0"}
+	args := []any{instID}
+
+	if strings.TrimSpace(query.QueryModel.ProductID) != "" {
+		whereParts = append(whereParts, "CAST(taf.product_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(query.QueryModel.ProductID))
+	}
+	if strings.TrimSpace(query.QueryModel.StudentID) != "" {
+		whereParts = append(whereParts, "CAST(taf.student_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(query.QueryModel.StudentID))
+	}
+	if strings.TrimSpace(query.QueryModel.OrderNumber) != "" {
+		whereParts = append(whereParts, "taf.order_number LIKE ?")
+		args = append(args, "%"+strings.TrimSpace(query.QueryModel.OrderNumber)+"%")
+	}
+	if len(query.QueryModel.SourceTypes) > 0 {
+		holders := make([]string, 0, len(query.QueryModel.SourceTypes))
+		for _, item := range query.QueryModel.SourceTypes {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		whereParts = append(whereParts, "taf.source_type IN ("+strings.Join(holders, ",")+")")
+	}
+	if begin := parseDateStart(query.QueryModel.StartTime); begin != nil {
+		whereParts = append(whereParts, "taf.created_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(query.QueryModel.EndTime); end != nil {
+		whereParts = append(whereParts, "taf.created_time <= ?")
+		args = append(args, *end)
+	}
+
+	whereSQL := strings.Join(whereParts, " AND ")
+	orderBy := "taf.created_time DESC, taf.id DESC"
+	if query.SortModel.OrderByCreatedTime > 0 {
+		orderBy = "taf.created_time ASC, taf.id ASC"
+	}
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM tuition_account_flow taf
+		WHERE `+whereSQL, args...).Scan(&total); err != nil {
+		return model.SubTuitionAccountFlowRecordListResult{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			taf.id,
+			taf.tuition_account_id,
+			taf.student_id,
+			IFNULL(s.stu_name, ''),
+			CASE
+				WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
+				ELSE IFNULL(s.mobile, '')
+			END,
+			IFNULL(s.avatar_url, ''),
+			taf.product_id,
+			IFNULL(c.name, ''),
+			taf.lesson_type,
+			taf.lesson_charging_mode,
+			taf.source_type,
+			taf.source_id,
+			taf.teaching_record_id,
+			taf.created_time,
+			IFNULL(taf.quantity, 0),
+			IFNULL(taf.tuition, 0),
+			IFNULL(taf.balance_quantity, 0),
+			IFNULL(taf.balance_tuition, 0),
+			IFNULL(taf.order_number, '')
+		FROM tuition_account_flow taf
+		LEFT JOIN inst_student s ON s.id = taf.student_id AND s.del_flag = 0
+		LEFT JOIN inst_course c ON c.id = taf.product_id AND c.del_flag = 0
+		WHERE `+whereSQL+`
+		ORDER BY `+orderBy+`
+		LIMIT ? OFFSET ?
+	`, append(args, size, offset)...)
+	if err != nil {
+		return model.SubTuitionAccountFlowRecordListResult{}, err
+	}
+	defer rows.Close()
+
+	items := make([]model.SubTuitionAccountFlowRecordItem, 0, size)
+	for rows.Next() {
+		var (
+			item               model.SubTuitionAccountFlowRecordItem
+			id                 int64
+			tuitionAccountID   int64
+			studentID          int64
+			productID          int64
+			sourceID           int64
+			lessonType         sql.NullInt64
+			lessonChargingMode sql.NullInt64
+			teachingRecordID   sql.NullInt64
+			createdTime        sql.NullTime
+		)
+		if err := rows.Scan(
+			&id,
+			&tuitionAccountID,
+			&studentID,
+			&item.StudentName,
+			&item.StudentPhone,
+			&item.StudentAvatar,
+			&productID,
+			&item.ProductName,
+			&lessonType,
+			&lessonChargingMode,
+			&item.SourceType,
+			&sourceID,
+			&teachingRecordID,
+			&createdTime,
+			&item.Quantity,
+			&item.Tuition,
+			&item.BalanceQuantity,
+			&item.BalanceTuition,
+			&item.OrderNumber,
+		); err != nil {
+			return model.SubTuitionAccountFlowRecordListResult{}, err
+		}
+		item.ID = strconv.FormatInt(id, 10)
+		item.TuitionAccountID = strconv.FormatInt(tuitionAccountID, 10)
+		item.StudentID = strconv.FormatInt(studentID, 10)
+		item.ProductID = strconv.FormatInt(productID, 10)
+		item.SourceID = strconv.FormatInt(sourceID, 10)
+		if lessonType.Valid {
+			value := int(lessonType.Int64)
+			item.LessonType = &value
+		}
+		if lessonChargingMode.Valid {
+			value := int(lessonChargingMode.Int64)
+			item.LessonChargingMode = &value
+		}
+		if teachingRecordID.Valid {
+			item.TeachingRecordID = strconv.FormatInt(teachingRecordID.Int64, 10)
+		}
+		if createdTime.Valid {
+			t := createdTime.Time
+			item.CreatedTime = &t
+		}
+		items = append(items, item)
+	}
+
+	return model.SubTuitionAccountFlowRecordListResult{
+		List:  items,
+		Total: total,
+	}, rows.Err()
+}
+
+func ensureColumnsOnTable(ctx context.Context, db *sql.DB, tableName string, columns map[string]string) error {
+	for columnName, definition := range columns {
+		var exists int
+		if err := db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM information_schema.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE()
+			  AND TABLE_NAME = ?
+			  AND COLUMN_NAME = ?
+		`, tableName, columnName).Scan(&exists); err != nil {
+			return err
+		}
+		if exists > 0 {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s", tableName, definition)); err != nil {
+			return err
+		}
+	}
+	return nil
 }

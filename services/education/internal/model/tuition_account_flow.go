@@ -38,6 +38,7 @@ type TuitionAccountFlowRecordListQueryDTO struct {
 type TuitionAccountFlowRecordQueryModel struct {
 	ProductID   string `json:"productId"`
 	StudentID   string `json:"studentId"`
+	OrderNumber string `json:"orderNumber"`
 	SourceTypes []int  `json:"sourceTypes"`
 	StartTime   string `json:"startTime"`
 	EndTime     string `json:"endTime"`
@@ -69,4 +70,37 @@ type TuitionAccountFlowRecordItem struct {
 type TuitionAccountFlowRecordListResult struct {
 	List  []TuitionAccountFlowRecordItem `json:"list"`
 	Total int                            `json:"total"`
+}
+
+type SubTuitionAccountFlowRecordListQueryDTO struct {
+	PageRequestModel PageRequestModel                   `json:"pageRequestModel"`
+	QueryModel       TuitionAccountFlowRecordQueryModel `json:"queryModel"`
+	SortModel        TuitionAccountFlowRecordSortModel  `json:"sortModel"`
+}
+
+type SubTuitionAccountFlowRecordItem struct {
+	ID                 string     `json:"id"`
+	TuitionAccountID   string     `json:"tuitionAccountId"`
+	StudentID          string     `json:"studentId"`
+	StudentName        string     `json:"studentName"`
+	StudentPhone       string     `json:"studentPhone"`
+	StudentAvatar      string     `json:"studentAvatar"`
+	ProductID          string     `json:"productId"`
+	ProductName        string     `json:"productName"`
+	LessonType         *int       `json:"lessonType,omitempty"`
+	LessonChargingMode *int       `json:"lessonChargingMode,omitempty"`
+	SourceType         int        `json:"sourceType"`
+	SourceID           string     `json:"sourceId"`
+	TeachingRecordID   string     `json:"teachingRecordId,omitempty"`
+	CreatedTime        *time.Time `json:"createdTime,omitempty"`
+	Quantity           float64    `json:"quantity"`
+	Tuition            float64    `json:"tuition"`
+	BalanceQuantity    float64    `json:"balanceQuantity"`
+	BalanceTuition     float64    `json:"balanceTuition"`
+	OrderNumber        string     `json:"orderNumber"`
+}
+
+type SubTuitionAccountFlowRecordListResult struct {
+	List  []SubTuitionAccountFlowRecordItem `json:"list"`
+	Total int                               `json:"total"`
 }
