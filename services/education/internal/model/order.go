@@ -20,6 +20,16 @@ const (
 	OrderSourceRenewalOrder  = 4 // 续费订单
 )
 
+const (
+	OrderTypeRegistrationRenewal   = 1 // 报名续费
+	OrderTypeRechargeAccount       = 2 // 储值账户充值
+	OrderTypeRefundCourse          = 3 // 退课
+	OrderTypeRechargeAccountRefund = 4 // 储值账户退费
+	OrderTypeTransferCourse        = 5 // 转课
+	OrderTypeRefundMaterialFee     = 6 // 退教材费
+	OrderTypeRefundMiscFee         = 7 // 退学杂费
+)
+
 type OrderManageQueryDTO struct {
 	PageRequestModel PageRequestModel  `json:"pageRequestModel"`
 	QueryModel       OrderQueryFilters `json:"queryModel"`

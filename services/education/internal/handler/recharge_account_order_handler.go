@@ -99,7 +99,7 @@ func (handler *Handler) rechargeAccountOrderDetail(w http.ResponseWriter, r *htt
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
-	result, err := handler.service.GetRechargeAccountOrderDetail(claims.UserID, dto.RechargeAccountOrderID)
+	result, err := handler.service.GetRechargeAccountOrderDetail(claims.UserID, dto)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

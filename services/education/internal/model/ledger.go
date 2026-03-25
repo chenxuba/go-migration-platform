@@ -24,10 +24,11 @@ const (
 )
 
 const (
-	LedgerCategoryOrderIncome      = "order-income"
-	LedgerSubCategoryRegistration  = "registration-renewal"
-	LedgerSubCategoryRefundCourse  = "refund-course"
-	LedgerSubCategoryTransferOrder = "transfer-course"
+	LedgerCategoryOrderIncome        = "order-income"
+	LedgerSubCategoryRegistration    = "registration-renewal"
+	LedgerSubCategoryRechargeAccount = "recharge-account"
+	LedgerSubCategoryRefundCourse    = "refund-course"
+	LedgerSubCategoryTransferOrder   = "transfer-course"
 )
 
 type LedgerListQueryDTO struct {

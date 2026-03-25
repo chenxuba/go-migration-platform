@@ -68,7 +68,7 @@ func (svc *Service) CreateRechargeAccountOrder(userID int64, dto model.CreateRec
 	}, nil
 }
 
-func (svc *Service) GetRechargeAccountOrderDetail(userID int64, orderIDRaw string) (model.RechargeAccountOrderDetail, error) {
+func (svc *Service) GetRechargeAccountOrderDetail(userID int64, query model.RechargeAccountOrderDetailQuery) (model.RechargeAccountOrderDetail, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -76,11 +76,12 @@ func (svc *Service) GetRechargeAccountOrderDetail(userID int64, orderIDRaw strin
 		}
 		return model.RechargeAccountOrderDetail{}, err
 	}
-	orderID, err := strconv.ParseInt(strings.TrimSpace(orderIDRaw), 10, 64)
-	if err != nil || orderID <= 0 {
-		return model.RechargeAccountOrderDetail{}, errors.New("rechargeAccountOrderId不能为空")
+	orderID, _ := strconv.ParseInt(strings.TrimSpace(query.RechargeAccountOrderID), 10, 64)
+	saleOrderID, _ := strconv.ParseInt(strings.TrimSpace(query.SaleOrderID), 10, 64)
+	if orderID <= 0 && saleOrderID <= 0 {
+		return model.RechargeAccountOrderDetail{}, errors.New("rechargeAccountOrderId或saleOrderId不能为空")
 	}
-	return svc.repo.GetRechargeAccountOrderDetail(context.Background(), instID, orderID)
+	return svc.repo.GetRechargeAccountOrderDetail(context.Background(), instID, orderID, saleOrderID)
 }
 
 func (svc *Service) PayOrderBySchoolPal(userID int64, dto model.PayOrderBySchoolPalDTO) (string, error) {

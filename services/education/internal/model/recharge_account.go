@@ -195,6 +195,7 @@ type RechargeAccountOrderBillDetail struct {
 type RechargeAccountOrderDetail struct {
 	ID                string                         `json:"id"`
 	RechargeAccountID string                         `json:"rechargeAccountId"`
+	SaleOrderID       string                         `json:"saleOrderId"`
 	OrderNumber       string                         `json:"orderNumber"`
 	Status            int                            `json:"status"`
 	Amount            float64                        `json:"amount"`
@@ -213,10 +214,15 @@ type RechargeAccountOrderDetail struct {
 
 type RechargeAccountOrderDetailQuery struct {
 	RechargeAccountOrderID string `json:"rechargeAccountOrderId"`
+	SaleOrderID            string `json:"saleOrderId"`
 }
 
 type PayOrderBySchoolPalDTO struct {
-	BillID string  `json:"billId"`
-	Amount float64 `json:"amount"`
-	Remark string  `json:"remark"`
+	BillID         string  `json:"billId"`
+	Amount         float64 `json:"amount"`
+	Remark         string  `json:"remark"`
+	PayMethod      *int    `json:"payMethod,omitempty"`
+	AmountID       *int64  `json:"amountId,omitempty"`
+	PayTime        string  `json:"payTime,omitempty"`
+	PaymentVoucher string  `json:"paymentVoucher,omitempty"`
 }

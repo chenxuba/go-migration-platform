@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ func ensureRechargeAccountOrderTables(ctx context.Context, db *sql.DB) error {
 			version BIGINT NOT NULL DEFAULT 0,
 			inst_id BIGINT NOT NULL,
 			recharge_account_id BIGINT NOT NULL,
+			sale_order_id BIGINT NOT NULL DEFAULT 0,
 			order_number VARCHAR(64) NOT NULL DEFAULT '',
 			status INT NOT NULL DEFAULT 1,
 			amount DECIMAL(18,2) NOT NULL DEFAULT 0,
@@ -48,6 +50,11 @@ func ensureRechargeAccountOrderTables(ctx context.Context, db *sql.DB) error {
 		)
 	`)
 	if err != nil {
+		return err
+	}
+	if err := ensureColumnsOnTable(ctx, db, "recharge_account_order", map[string]string{
+		"sale_order_id": "sale_order_id BIGINT NOT NULL DEFAULT 0 AFTER recharge_account_id",
+	}); err != nil {
 		return err
 	}
 	_, err = db.ExecContext(ctx, `
@@ -282,11 +289,11 @@ func (repo *Repository) CreateRechargeAccountOrder(ctx context.Context, instID, 
 	}
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO recharge_account_order (
-			uuid, version, inst_id, recharge_account_id, order_number, status, amount, giving_amount, residual_amount,
+			uuid, version, inst_id, recharge_account_id, sale_order_id, order_number, status, amount, giving_amount, residual_amount,
 			deal_date, sale_person_id, collector_staff_id, phone_sell_staff_id, foreground_staff_id, vice_sell_staff_staff_id,
 			remark, external_remark, student_id, create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, '', 1, ?, ?, ?,
+			UUID(), 0, ?, ?, 0, '', 1, ?, ?, ?,
 			?, ?, ?, ?, ?, ?,
 			?, ?, ?, ?, NOW(), ?, NOW(), 0
 		)
@@ -304,11 +311,42 @@ func (repo *Repository) CreateRechargeAccountOrder(ctx context.Context, instID, 
 		return 0, err
 	}
 	orderNumber := fmt.Sprintf("%s%06d", time.Now().Format("20060102150405"), orderID%1000000)
+	orderTagIDs := joinRechargeOrderTagIDs(dto.OrderTagIDs)
+	saleOrderResult, err := tx.ExecContext(ctx, `
+		INSERT INTO sale_order (
+			uuid, version, inst_id, student_id, order_number, sale_person, deal_date, order_discount_type,
+			order_discount_amount, order_discount_number, order_real_amount, order_tag_ids, internal_remark,
+			external_remark, order_type, order_status, order_source, create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, ?, NULL, 0, 0, ?, ?, ?, ?, ?, ?, 1, ?, NOW(), ?, NOW(), 0
+		)
+	`,
+		instID,
+		studentID,
+		orderNumber,
+		parseInt64String(dto.SalePersonID),
+		dealDate,
+		dto.Amount,
+		orderTagIDs,
+		strings.TrimSpace(dto.Remark),
+		strings.TrimSpace(dto.ExternalRemark),
+		model.OrderTypeRechargeAccount,
+		model.OrderStatusPendingPayment,
+		operatorID,
+		operatorID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	saleOrderID, err := saleOrderResult.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE recharge_account_order
-		SET order_number = ?, update_id = ?, update_time = NOW()
+		SET sale_order_id = ?, order_number = ?, update_id = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ?
-	`, orderNumber, operatorID, orderID, instID); err != nil {
+	`, saleOrderID, orderNumber, operatorID, orderID, instID); err != nil {
 		return 0, err
 	}
 	billResult, err := tx.ExecContext(ctx, `
@@ -358,10 +396,16 @@ func (repo *Repository) CreateRechargeAccountOrder(ctx context.Context, instID, 
 	return orderID, nil
 }
 
-func (repo *Repository) GetRechargeAccountOrderDetail(ctx context.Context, instID, orderID int64) (model.RechargeAccountOrderDetail, error) {
+func (repo *Repository) GetRechargeAccountOrderDetail(ctx context.Context, instID, orderID, saleOrderID int64) (model.RechargeAccountOrderDetail, error) {
+	whereClause := "rao.inst_id = ? AND rao.id = ? AND rao.del_flag = 0"
+	args := []any{instID, orderID}
+	if orderID <= 0 {
+		whereClause = "rao.inst_id = ? AND rao.sale_order_id = ? AND rao.del_flag = 0"
+		args = []any{instID, saleOrderID}
+	}
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT
-			rao.id, rao.recharge_account_id, IFNULL(rao.order_number, ''), IFNULL(rao.status, 0),
+			rao.id, rao.recharge_account_id, IFNULL(rao.sale_order_id, 0), IFNULL(rao.order_number, ''), IFNULL(rao.status, 0),
 			IFNULL(rao.amount, 0), IFNULL(rao.giving_amount, 0), IFNULL(rao.residual_amount, 0),
 			IFNULL(op.nick_name, ''), rao.create_time, IFNULL(rao.bill_id, 0),
 			IFNULL(rao.student_id, 0), IFNULL(stu.stu_name, ''), IFNULL(stu.mobile, ''),
@@ -370,23 +414,25 @@ func (repo *Repository) GetRechargeAccountOrderDetail(ctx context.Context, instI
 		LEFT JOIN inst_user op ON op.id = rao.create_id
 		LEFT JOIN recharge_account_bill rb ON rb.id = rao.bill_id AND rb.del_flag = 0
 		LEFT JOIN inst_student stu ON stu.id = rao.student_id AND stu.del_flag = 0
-		WHERE rao.inst_id = ? AND rao.id = ? AND rao.del_flag = 0
+		WHERE `+whereClause+`
 		LIMIT 1
-	`, instID, orderID)
+	`, args...)
 	var (
 		item              model.RechargeAccountOrderDetail
 		id                int64
 		rechargeAccountID int64
+		orderSaleOrderID  int64
 		billID            int64
 		studentID         int64
 		createdAt         sql.NullTime
 		billStatus        int
 	)
-	if err := row.Scan(&id, &rechargeAccountID, &item.OrderNumber, &item.Status, &item.Amount, &item.GivingAmount, &item.ResidualAmount, &item.OperatorName, &createdAt, &billID, &studentID, &item.StudentName, &item.StudentPhone, &billStatus); err != nil {
+	if err := row.Scan(&id, &rechargeAccountID, &orderSaleOrderID, &item.OrderNumber, &item.Status, &item.Amount, &item.GivingAmount, &item.ResidualAmount, &item.OperatorName, &createdAt, &billID, &studentID, &item.StudentName, &item.StudentPhone, &billStatus); err != nil {
 		return model.RechargeAccountOrderDetail{}, err
 	}
 	item.ID = strconv.FormatInt(id, 10)
 	item.RechargeAccountID = strconv.FormatInt(rechargeAccountID, 10)
+	item.SaleOrderID = strconv.FormatInt(orderSaleOrderID, 10)
 	item.StudentID = strconv.FormatInt(studentID, 10)
 	if createdAt.Valid {
 		t := createdAt.Time
@@ -420,6 +466,7 @@ func (repo *Repository) PayRechargeAccountOrderBySchoolPal(ctx context.Context, 
 	var (
 		orderID           int64
 		rechargeAccountID int64
+		saleOrderID       int64
 		studentID         int64
 		amount            float64
 		givingAmount      float64
@@ -428,16 +475,25 @@ func (repo *Repository) PayRechargeAccountOrderBySchoolPal(ctx context.Context, 
 		status            int
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT rao.id, rao.recharge_account_id, rao.student_id, IFNULL(rao.amount, 0), IFNULL(rao.giving_amount, 0), IFNULL(rao.residual_amount, 0), IFNULL(rao.order_number, ''), IFNULL(rao.status, 0)
+		SELECT rao.id, rao.recharge_account_id, IFNULL(rao.sale_order_id, 0), rao.student_id, IFNULL(rao.amount, 0), IFNULL(rao.giving_amount, 0), IFNULL(rao.residual_amount, 0), IFNULL(rao.order_number, ''), IFNULL(rao.status, 0)
 		FROM recharge_account_bill rb
 		INNER JOIN recharge_account_order rao ON rao.id = rb.recharge_account_order_id AND rao.del_flag = 0
 		WHERE rb.id = ? AND rb.inst_id = ? AND rb.del_flag = 0
 		LIMIT 1
-	`, billID, instID).Scan(&orderID, &rechargeAccountID, &studentID, &amount, &givingAmount, &residualAmount, &orderNumber, &status); err != nil {
+	`, billID, instID).Scan(&orderID, &rechargeAccountID, &saleOrderID, &studentID, &amount, &givingAmount, &residualAmount, &orderNumber, &status); err != nil {
 		return 0, err
 	}
 	if status != 1 {
 		return 0, errors.New("订单状态异常")
+	}
+	if saleOrderID <= 0 {
+		return 0, errors.New("系统订单不存在")
+	}
+	if dto.Amount <= 0 {
+		return 0, errors.New("支付金额不能小于0")
+	}
+	if math.Abs(dto.Amount-amount) > 0.000001 {
+		return 0, errors.New("支付金额必须等于订单金额")
 	}
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO recharge_account_bill_flow (
@@ -465,6 +521,37 @@ func (repo *Repository) PayRechargeAccountOrderBySchoolPal(ctx context.Context, 
 	`, operatorID, billID, instID); err != nil {
 		return 0, err
 	}
+	payTime := any(time.Now())
+	if parsed := parseDateStart(dto.PayTime); parsed != nil {
+		payTime = *parsed
+	}
+	payMethod := dto.PayMethod
+	if payMethod == nil {
+		defaultMethod := 4
+		payMethod = &defaultMethod
+	}
+	result, err = tx.ExecContext(ctx, `
+		INSERT INTO sale_order_pay_detail (
+			uuid, version, inst_id, order_id, amount_id, pay_method, pay_amount, pay_time, payment_voucher,
+			create_id, create_time, update_id, update_time, del_flag, remark
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, ?
+		)
+	`, instID, saleOrderID, dto.AmountID, *payMethod, dto.Amount, payTime, strings.TrimSpace(dto.PaymentVoucher), operatorID, operatorID, strings.TrimSpace(dto.Remark))
+	if err != nil {
+		return 0, err
+	}
+	paymentDetailID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sale_order
+		SET order_status = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, model.OrderStatusCompleted, operatorID, saleOrderID, instID); err != nil {
+		return 0, err
+	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE recharge_account
 		SET recharge_balance = IFNULL(recharge_balance, 0) + ?,
@@ -483,6 +570,9 @@ func (repo *Repository) PayRechargeAccountOrderBySchoolPal(ctx context.Context, 
 			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
 	`, instID, rechargeAccountID, studentID, orderNumber, model.RechargeAccountFlowTypeRecharge, amount, residualAmount, givingAmount, strings.TrimSpace(dto.Remark), operatorID, operatorID); err != nil {
+		return 0, err
+	}
+	if err := repo.upsertOrderPaymentLedgerTx(ctx, tx, instID, paymentDetailID); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -525,4 +615,16 @@ func parseInt64String(raw string) int64 {
 func mustInt64(raw string) int64 {
 	value, _ := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 	return value
+}
+
+func joinRechargeOrderTagIDs(tagIDs []string) string {
+	values := make([]string, 0, len(tagIDs))
+	for _, item := range tagIDs {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		values = append(values, item)
+	}
+	return strings.Join(values, ",")
 }

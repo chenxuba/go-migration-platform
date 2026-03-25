@@ -90,13 +90,15 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 			CONCAT(DATE_FORMAT(pd.create_time, '%Y%m%d%H%i%s'), LPAD(MOD(pd.id, 1000000), 6, '0')),
 			?, ?, 
 			CASE
-				WHEN IFNULL(so.order_type, 1) = 2 THEN ?
-				WHEN IFNULL(so.order_type, 1) = 3 THEN ?
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				ELSE ?
 			END,
 			CASE
-				WHEN IFNULL(so.order_type, 1) = 2 THEN '退课'
-				WHEN IFNULL(so.order_type, 1) = 3 THEN '转课'
+				WHEN IFNULL(so.order_type, 1) = ? THEN '储值账户充值'
+				WHEN IFNULL(so.order_type, 1) = ? THEN '退课'
+				WHEN IFNULL(so.order_type, 1) = ? THEN '转课'
 				ELSE '报名续费'
 			END,
 			'systemTallyBookType1',
@@ -155,9 +157,16 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 		model.LedgerTypeExpenditure,
 		model.LedgerCategoryOrderIncome,
 		"订单收入",
+		model.OrderTypeRechargeAccount,
+		model.LedgerSubCategoryRechargeAccount,
+		model.OrderTypeRefundCourse,
 		model.LedgerSubCategoryRefundCourse,
+		model.OrderTypeTransferCourse,
 		model.LedgerSubCategoryTransferOrder,
 		model.LedgerSubCategoryRegistration,
+		model.OrderTypeRechargeAccount,
+		model.OrderTypeRefundCourse,
+		model.OrderTypeTransferCourse,
 		model.LedgerConfirmStatusPending,
 		model.LedgerSourceSystem,
 		1,
@@ -184,13 +193,15 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 			CONCAT(DATE_FORMAT(pd.create_time, '%Y%m%d%H%i%s'), LPAD(MOD(pd.id, 1000000), 6, '0')),
 			?, ?, 
 			CASE
-				WHEN IFNULL(so.order_type, 1) = 2 THEN ?
-				WHEN IFNULL(so.order_type, 1) = 3 THEN ?
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				ELSE ?
 			END,
 			CASE
-				WHEN IFNULL(so.order_type, 1) = 2 THEN '退课'
-				WHEN IFNULL(so.order_type, 1) = 3 THEN '转课'
+				WHEN IFNULL(so.order_type, 1) = ? THEN '储值账户充值'
+				WHEN IFNULL(so.order_type, 1) = ? THEN '退课'
+				WHEN IFNULL(so.order_type, 1) = ? THEN '转课'
 				ELSE '报名续费'
 			END,
 			'systemTallyBookType1',
@@ -262,9 +273,16 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		model.LedgerTypeExpenditure,
 		model.LedgerCategoryOrderIncome,
 		"订单收入",
+		model.OrderTypeRechargeAccount,
+		model.LedgerSubCategoryRechargeAccount,
+		model.OrderTypeRefundCourse,
 		model.LedgerSubCategoryRefundCourse,
+		model.OrderTypeTransferCourse,
 		model.LedgerSubCategoryTransferOrder,
 		model.LedgerSubCategoryRegistration,
+		model.OrderTypeRechargeAccount,
+		model.OrderTypeRefundCourse,
+		model.OrderTypeTransferCourse,
 		model.LedgerConfirmStatusPending,
 		paymentDetailID,
 		instID,
