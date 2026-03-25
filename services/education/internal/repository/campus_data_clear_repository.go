@@ -88,6 +88,46 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 	}
 
 	if _, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account_flow
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_ledger
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account_flow
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account_student
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE intention_student_import_task_record r
 		INNER JOIN intention_student_import_task t ON t.id = r.task_id
 		SET r.del_flag = 1, r.update_time = NOW()
@@ -192,6 +232,11 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 			args: []any{instID},
 		},
 		{
+			target: &summary.Ledgers,
+			query:  `SELECT COUNT(*) FROM inst_ledger WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
 			target: &summary.ApprovalRecords,
 			query:  `SELECT COUNT(*) FROM approval_record WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
@@ -209,6 +254,26 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 		{
 			target: &summary.TuitionAccounts,
 			query:  `SELECT COUNT(*) FROM tuition_account WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TuitionAccountFlows,
+			query:  `SELECT COUNT(*) FROM tuition_account_flow WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RechargeAccounts,
+			query:  `SELECT COUNT(*) FROM recharge_account WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RechargeAccountStudents,
+			query:  `SELECT COUNT(*) FROM recharge_account_student WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RechargeAccountFlows,
+			query:  `SELECT COUNT(*) FROM recharge_account_flow WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
 		},
 		{

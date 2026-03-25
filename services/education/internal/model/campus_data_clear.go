@@ -7,19 +7,24 @@ type CampusDataClearRequest struct {
 }
 
 type CampusDataClearSummary struct {
-	Students               int `json:"students"`
-	StudentFieldValues     int `json:"studentFieldValues"`
-	StudentChangeRecords   int `json:"studentChangeRecords"`
-	FollowRecords          int `json:"followRecords"`
-	Orders                 int `json:"orders"`
-	OrderCourseDetails     int `json:"orderCourseDetails"`
-	OrderPaymentDetails    int `json:"orderPaymentDetails"`
-	ApprovalRecords        int `json:"approvalRecords"`
-	ApprovalHistories      int `json:"approvalHistories"`
-	TuitionAccounts        int `json:"tuitionAccounts"`
-	CourseSaleVolumesReset int `json:"courseSaleVolumesReset"`
-	ImportTasks            int `json:"importTasks"`
-	ImportTaskRecords      int `json:"importTaskRecords"`
+	Students                int `json:"students"`
+	StudentFieldValues      int `json:"studentFieldValues"`
+	StudentChangeRecords    int `json:"studentChangeRecords"`
+	FollowRecords           int `json:"followRecords"`
+	Orders                  int `json:"orders"`
+	OrderCourseDetails      int `json:"orderCourseDetails"`
+	OrderPaymentDetails     int `json:"orderPaymentDetails"`
+	Ledgers                 int `json:"ledgers"`
+	ApprovalRecords         int `json:"approvalRecords"`
+	ApprovalHistories       int `json:"approvalHistories"`
+	TuitionAccounts         int `json:"tuitionAccounts"`
+	TuitionAccountFlows     int `json:"tuitionAccountFlows"`
+	RechargeAccounts        int `json:"rechargeAccounts"`
+	RechargeAccountStudents int `json:"rechargeAccountStudents"`
+	RechargeAccountFlows    int `json:"rechargeAccountFlows"`
+	CourseSaleVolumesReset  int `json:"courseSaleVolumesReset"`
+	ImportTasks             int `json:"importTasks"`
+	ImportTaskRecords       int `json:"importTaskRecords"`
 }
 
 type CampusDataClearResult struct {

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -161,6 +162,8 @@ func (repo *Repository) PageRechargeAccountItems(ctx context.Context, instID int
 			t := updateTime.Time
 			item.UpdateTime = &t
 		}
+		item.RechargeAccountName = normalizeRechargeAccountName(item.RechargeAccountName, item.MainStudentID, item.RechargeAccountID)
+		item.Phone = maskRechargePhone(item.Phone)
 		items = append(items, item)
 		accountIDs = append(accountIDs, accountID)
 	}
@@ -179,17 +182,13 @@ func (repo *Repository) PageRechargeAccountItems(ctx context.Context, instID int
 			for _, stu := range items[i].RechargeAccountStudents {
 				if stu.IsMainStudent {
 					phone, _ := repo.getStudentRawPhoneByID(ctx, accountID, instID, stu.StudentID)
-					items[i].Phone = phone
+					items[i].Phone = maskRechargePhone(phone)
 					break
 				}
 			}
 		}
 		if strings.TrimSpace(items[i].RechargeAccountName) == "" {
-			if len(items[i].RechargeAccountStudents) > 0 {
-				items[i].RechargeAccountName = items[i].RechargeAccountStudents[0].StudentName + "账户"
-			} else {
-				items[i].RechargeAccountName = "默认账户"
-			}
+			items[i].RechargeAccountName = normalizeRechargeAccountName("", items[i].MainStudentID, items[i].RechargeAccountID)
 		}
 	}
 
@@ -259,13 +258,6 @@ func (repo *Repository) ensureRechargeAccountTx(ctx context.Context, tx *sql.Tx,
 		return err
 	}
 
-	accountName := strings.TrimSpace(studentName)
-	if accountName == "" {
-		accountName = "默认账户"
-	} else {
-		accountName += "账户"
-	}
-
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO recharge_account (
 			uuid, version, inst_id, account_name, main_student_id, phone,
@@ -276,12 +268,20 @@ func (repo *Repository) ensureRechargeAccountTx(ctx context.Context, tx *sql.Tx,
 			0, 0, 0,
 			?, NOW(), ?, NOW(), 0
 		)
-	`, instID, accountName, studentID, strings.TrimSpace(phone), operatorID, operatorID)
+	`, instID, "", studentID, strings.TrimSpace(phone), operatorID, operatorID)
 	if err != nil {
 		return err
 	}
 	rechargeAccountID, err := result.LastInsertId()
 	if err != nil {
+		return err
+	}
+	accountName := buildRechargeAccountName(studentID, rechargeAccountID)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account
+		SET account_name = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, accountName, operatorID, rechargeAccountID, instID); err != nil {
 		return err
 	}
 
@@ -348,4 +348,40 @@ func (repo *Repository) getStudentRawPhoneByID(ctx context.Context, rechargeAcco
 		LIMIT 1
 	`, instID, strings.TrimSpace(studentID)).Scan(&phone)
 	return phone, err
+}
+
+func normalizeRechargeAccountName(currentName, mainStudentID, rechargeAccountID string) string {
+	currentName = strings.TrimSpace(currentName)
+	expected := buildRechargeAccountNameByString(mainStudentID, rechargeAccountID)
+	if currentName == expected {
+		return currentName
+	}
+	return expected
+}
+
+func maskRechargePhone(phone string) string {
+	phone = strings.TrimSpace(phone)
+	if len(phone) < 7 {
+		return phone
+	}
+	if len(phone) == 11 {
+		return phone[:3] + "****" + phone[len(phone)-4:]
+	}
+	return phone
+}
+
+func buildRechargeAccountName(studentID, rechargeAccountID int64) string {
+	return fmt.Sprintf("RA-%d-%d", studentID, rechargeAccountID)
+}
+
+func buildRechargeAccountNameByString(studentID, rechargeAccountID string) string {
+	studentID = strings.TrimSpace(studentID)
+	rechargeAccountID = strings.TrimSpace(rechargeAccountID)
+	if studentID == "" {
+		studentID = "0"
+	}
+	if rechargeAccountID == "" {
+		rechargeAccountID = "0"
+	}
+	return "RA-" + studentID + "-" + rechargeAccountID
 }
