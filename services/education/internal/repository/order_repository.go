@@ -246,7 +246,10 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		       so.create_time,
 		       IFNULL(so.order_real_amount, 0), IFNULL(so.order_tag_ids, ''), so.order_status, so.order_type, so.order_source, so.create_id,
 		       IFNULL(u.nick_name, ''), so.deal_date, so.sale_person, IFNULL(sale.nick_name, ''), IFNULL(so.internal_remark, ''), IFNULL(so.external_remark, ''), so.update_time,
-		       s.stu_sex, IFNULL(s.avatar_url, '')
+		       s.stu_sex, IFNULL(s.avatar_url, ''),
+		       IFNULL((SELECT rao.amount FROM recharge_account_order rao WHERE rao.sale_order_id = so.id AND rao.del_flag = 0 ORDER BY rao.id DESC LIMIT 1), 0),
+		       IFNULL((SELECT rao.residual_amount FROM recharge_account_order rao WHERE rao.sale_order_id = so.id AND rao.del_flag = 0 ORDER BY rao.id DESC LIMIT 1), 0),
+		       IFNULL((SELECT rao.giving_amount FROM recharge_account_order rao WHERE rao.sale_order_id = so.id AND rao.del_flag = 0 ORDER BY rao.id DESC LIMIT 1), 0)
 		FROM sale_order so
 		LEFT JOIN inst_student s ON so.student_id = s.id
 		LEFT JOIN inst_user u ON so.create_id = u.id
@@ -270,7 +273,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		var updatedAt sql.NullTime
 		var sex sql.NullInt64
 		var orderTagIDs string
-		if err := rows.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.CreatedTime, &item.Amount, &orderTagIDs, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar); err != nil {
+		if err := rows.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.CreatedTime, &item.Amount, &orderTagIDs, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar, &item.RechargeAccountAmount, &item.RechargeAccountResidualAmount, &item.RechargeAccountGivingAmount); err != nil {
 			return model.OrderManageResultVO{}, err
 		}
 		item.OrderID = strconv.FormatInt(oid, 10)
@@ -309,7 +312,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 			item.ArrearAmount = item.Amount - paidAmount
 			item.IsAmountOwed = item.ArrearAmount > 0
 		}
-		item.ProductItems, _ = repo.getOrderCourseNames(ctx, oid)
+		item.ProductItems, _ = repo.getOrderDisplayItems(ctx, oid, item.OrderType)
 		if len(item.ProductItems) > 0 {
 			item.ProductItemsStr = strings.Join(item.ProductItems, ",")
 		}
@@ -463,7 +466,7 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			rao.id AS order_flow_id,
 			NULL AS sku_id,
 			'' AS quote_name,
-			0 AS sku_count,
+			1 AS sku_count,
 			NULL AS sku_unit,
 			0 AS free_quantity,
 			NULL AS discount_type,
@@ -1092,6 +1095,48 @@ func (repo *Repository) getOrderCourseNames(ctx context.Context, orderID int64) 
 		}
 	}
 	return items, rows.Err()
+}
+
+func (repo *Repository) getOrderDisplayItems(ctx context.Context, orderID int64, orderType *int) ([]string, error) {
+	courseNames, err := repo.getOrderCourseNames(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if len(courseNames) > 0 {
+		return courseNames, nil
+	}
+
+	if orderType == nil || (*orderType != model.OrderTypeRechargeAccount && *orderType != model.OrderTypeRechargeAccountRefund) {
+		return courseNames, nil
+	}
+
+	name, err := repo.getRechargeAccountNameBySaleOrderID(ctx, orderID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return []string{"储值账户"}, nil
+		}
+		return nil, err
+	}
+	if strings.TrimSpace(name) == "" {
+		name = "储值账户"
+	}
+	return []string{name}, nil
+}
+
+func (repo *Repository) getRechargeAccountNameBySaleOrderID(ctx context.Context, orderID int64) (string, error) {
+	var name sql.NullString
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(ra.account_name, '')
+		FROM recharge_account_order rao
+		LEFT JOIN recharge_account ra ON ra.id = rao.recharge_account_id AND ra.del_flag = 0
+		WHERE rao.sale_order_id = ? AND rao.del_flag = 0
+		ORDER BY rao.id DESC
+		LIMIT 1
+	`, orderID).Scan(&name)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(name.String), nil
 }
 
 func (repo *Repository) getOrderTags(ctx context.Context, instID int64, raw string) ([]string, []model.OrderTagVO, error) {
