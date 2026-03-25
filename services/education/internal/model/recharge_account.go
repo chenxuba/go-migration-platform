@@ -48,6 +48,11 @@ type RechargeAccountStatistics struct {
 	ResidualAmountTotal  float64 `json:"residualAmountTotal"`
 }
 
+type UpdateRechargeAccountDTO struct {
+	RechargeAccountID   string `json:"rechargeAccountId"`
+	RechargeAccountName string `json:"rechargeAccountName"`
+}
+
 const (
 	RechargeAccountFlowTypeRecharge           = 1
 	RechargeAccountFlowTypeRefund             = 2

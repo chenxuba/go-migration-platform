@@ -333,6 +333,13 @@ func parseRechargeAccountDetailQueryDTO(raw map[string]any) model.RechargeAccoun
 	return query
 }
 
+func parseUpdateRechargeAccountDTO(raw map[string]any) model.UpdateRechargeAccountDTO {
+	return model.UpdateRechargeAccountDTO{
+		RechargeAccountID:   asString(raw["rechargeAccountId"]),
+		RechargeAccountName: asString(raw["rechargeAccountName"]),
+	}
+}
+
 func parseSubTuitionAccountFlowRecordListQueryDTO(raw map[string]any) model.SubTuitionAccountFlowRecordListQueryDTO {
 	query := model.SubTuitionAccountFlowRecordListQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {

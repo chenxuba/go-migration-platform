@@ -394,6 +394,9 @@ func (svc *Service) loadIntentionStudentImportOptionMap(userID int64) (map[strin
 func normalizeImportedCellValue(target *model.IntentionStudentImportCell, incoming model.IntentionStudentImportCell, column model.IntentionStudentImportColumn, options []importOptionItem) {
 	target.SelectedID = normalizeImportSelectedID(incoming.SelectedID)
 	target.Value = strings.TrimSpace(incoming.Value)
+	if column.FieldType == 3 || strings.TrimSpace(column.Title) == "生日" {
+		target.Value = normalizeImportDateText(target.Value)
+	}
 	if len(options) == 0 {
 		return
 	}

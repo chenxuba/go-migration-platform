@@ -216,6 +216,34 @@ func (repo *Repository) GetRechargeAccountStatistics(ctx context.Context, instID
 	return result, err
 }
 
+func (repo *Repository) UpdateRechargeAccount(ctx context.Context, instID, operatorID int64, dto model.UpdateRechargeAccountDTO) error {
+	accountID, err := strconv.ParseInt(strings.TrimSpace(dto.RechargeAccountID), 10, 64)
+	if err != nil || accountID <= 0 {
+		return fmt.Errorf("rechargeAccountId无效")
+	}
+	accountName := strings.TrimSpace(dto.RechargeAccountName)
+	if accountName == "" {
+		return fmt.Errorf("rechargeAccountName不能为空")
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE recharge_account
+		SET account_name = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, accountName, operatorID, accountID, instID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("储值账户不存在")
+	}
+	return nil
+}
+
 func (repo *Repository) PageRechargeAccountDetails(ctx context.Context, instID int64, query model.RechargeAccountDetailQueryDTO) (model.RechargeAccountDetailPageResult, error) {
 	current := query.PageRequestModel.PageIndex
 	size := query.PageRequestModel.PageSize
@@ -273,9 +301,9 @@ func (repo *Repository) PageRechargeAccountDetails(ctx context.Context, instID i
 			raf.create_time,
 			raf.flow_type,
 			DATE_FORMAT(raf.create_time, '%Y-%m-%dT00:00:00'),
-			0,
+			IFNULL(so.id, 0),
 			IFNULL(raf.order_number, ''),
-			0,
+			IFNULL(so.order_type, 0),
 			raf.student_id,
 			IFNULL(s.stu_name, ''),
 			CASE
@@ -287,6 +315,7 @@ func (repo *Repository) PageRechargeAccountDetails(ctx context.Context, instID i
 		FROM recharge_account_flow raf
 		LEFT JOIN recharge_account ra ON ra.id = raf.recharge_account_id AND ra.del_flag = 0
 		LEFT JOIN inst_student s ON s.id = raf.student_id AND s.del_flag = 0
+		LEFT JOIN sale_order so ON so.order_number = raf.order_number AND so.inst_id = raf.inst_id AND so.del_flag = 0
 		WHERE `+whereSQL+`
 		ORDER BY `+orderBy+`
 		LIMIT ? OFFSET ?
@@ -546,11 +575,10 @@ func (repo *Repository) getStudentRawPhoneByID(ctx context.Context, rechargeAcco
 
 func normalizeRechargeAccountName(currentName, mainStudentID, rechargeAccountID string) string {
 	currentName = strings.TrimSpace(currentName)
-	expected := buildRechargeAccountNameByString(mainStudentID, rechargeAccountID)
-	if currentName == expected {
+	if currentName != "" {
 		return currentName
 	}
-	return expected
+	return buildRechargeAccountNameByString(mainStudentID, rechargeAccountID)
 }
 
 func maskRechargePhone(phone string) string {

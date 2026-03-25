@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,8 +18,13 @@ import (
 
 var supportedImportDateLayouts = []string{
 	"2006-01-02",
+	"2006-1-2",
 	"2006/01/02",
+	"2006/1/2",
 	"2006.01.02",
+	"2006.1.2",
+	"2006年01月02日",
+	"2006年1月2日",
 	"20060102",
 }
 
@@ -125,6 +131,17 @@ func (svc *Service) ParseIntentionStudentImportFile(userID int64, filename strin
 			if sourceIndex < len(rawRow) {
 				value = strings.TrimSpace(rawRow[sourceIndex])
 			}
+			if column.FieldType == 3 || strings.TrimSpace(column.Title) == "生日" {
+				if cellName, err := excelize.CoordinatesToCellName(sourceIndex+1, rowIdx+1); err == nil {
+					if rawValue, err := file.GetCellValue(sheetName, cellName, excelize.Options{RawCellValue: true}); err == nil {
+						rawValue = strings.TrimSpace(rawValue)
+						if rawValue != "" {
+							value = rawValue
+						}
+					}
+				}
+				value = normalizeImportDateText(value)
+			}
 			if value != "" {
 				hasValue = true
 			}
@@ -218,10 +235,44 @@ func isNumericImportValue(value string) bool {
 
 func parseImportDateValue(value string) (time.Time, bool) {
 	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+
+	normalized := strings.NewReplacer(
+		"年", "-",
+		"月", "-",
+		"日", "",
+		".", "-",
+		"/", "-",
+	).Replace(value)
+	normalized = strings.TrimSpace(normalized)
+
 	for _, layout := range supportedImportDateLayouts {
 		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
 			return parsed, true
 		}
+		if normalized != value {
+			normalizedLayout := strings.NewReplacer("/", "-", ".", "-", "年", "-", "月", "-", "日", "").Replace(layout)
+			if parsed, err := time.ParseInLocation(normalizedLayout, normalized, time.Local); err == nil {
+				return parsed, true
+			}
+		}
+	}
+
+	// Excel date serial number, e.g. 44268 -> 2021-03-12.
+	if serial, err := strconv.ParseFloat(value, 64); err == nil {
+		if serial > 20000 && serial < 100000 {
+			base := time.Date(1899, 12, 30, 0, 0, 0, 0, time.Local)
+			return base.AddDate(0, 0, int(serial)), true
+		}
 	}
 	return time.Time{}, false
+}
+
+func normalizeImportDateText(value string) string {
+	if parsed, ok := parseImportDateValue(value); ok {
+		return parsed.Format("2006-01-02")
+	}
+	return strings.TrimSpace(value)
 }
