@@ -117,6 +117,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/ledgers/cancel-confirm", handler.cancelConfirmLedger)
 	mux.HandleFunc("/api/v1/recharge-accounts/page", handler.rechargeAccountItemPage)
 	mux.HandleFunc("/api/v1/recharge-accounts/statistics", handler.rechargeAccountStatistics)
+	mux.HandleFunc("/api/v1/recharge-accounts/details/page", handler.rechargeAccountDetailPage)
+	mux.HandleFunc("/api/v1/recharge-accounts/expend-income", handler.rechargeAccountExpendIncome)
 	mux.HandleFunc("/api/v1/order-tags/list-paged", handler.orderTagListPaged)
 	mux.HandleFunc("/api/v1/order-tags/create", handler.createOrderTag)
 	mux.HandleFunc("/api/v1/order-tags/update", handler.updateOrderTag)

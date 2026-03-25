@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -205,12 +206,202 @@ func (repo *Repository) GetRechargeAccountStatistics(ctx context.Context, instID
 			IFNULL(SUM(IFNULL(recharge_balance, 0) + IFNULL(residual_balance, 0) + IFNULL(giving_balance, 0)), 0),
 			IFNULL(SUM(IFNULL(recharge_balance, 0) + IFNULL(residual_balance, 0)), 0),
 			IFNULL(SUM(IFNULL(giving_balance, 0)), 0),
-			IFNULL(SUM(IFNULL(recharge_balance, 0)), 0),
 			IFNULL(SUM(IFNULL(residual_balance, 0)), 0)
 		FROM recharge_account
 		WHERE inst_id = ? AND del_flag = 0
-	`, instID).Scan(&result.RechargeAccountTotal, &result.AmountTotal, &result.GivingAmountTotal, &result.RechargeAmountTotal, &result.ResidualAmountTotal)
+	`, instID).Scan(&result.RechargeAccountTotal, &result.AmountTotal, &result.GivingAmountTotal, &result.ResidualAmountTotal)
 	return result, err
+}
+
+func (repo *Repository) PageRechargeAccountDetails(ctx context.Context, instID int64, query model.RechargeAccountDetailQueryDTO) (model.RechargeAccountDetailPageResult, error) {
+	current := query.PageRequestModel.PageIndex
+	size := query.PageRequestModel.PageSize
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	offset := (current - 1) * size
+
+	whereParts := []string{"raf.inst_id = ?", "raf.del_flag = 0"}
+	args := []any{instID}
+	if strings.TrimSpace(query.QueryModel.StudentID) != "" {
+		whereParts = append(whereParts, "CAST(raf.student_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(query.QueryModel.StudentID))
+	}
+	if len(query.QueryModel.FlowTypes) > 0 {
+		holders := make([]string, 0, len(query.QueryModel.FlowTypes))
+		for _, item := range query.QueryModel.FlowTypes {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		whereParts = append(whereParts, "raf.flow_type IN ("+strings.Join(holders, ",")+")")
+	}
+	if begin := parseDateStart(query.QueryModel.StartTime); begin != nil {
+		whereParts = append(whereParts, "raf.create_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(query.QueryModel.EndTime); end != nil {
+		whereParts = append(whereParts, "raf.create_time <= ?")
+		args = append(args, *end)
+	}
+	whereSQL := strings.Join(whereParts, " AND ")
+	orderBy := "raf.create_time DESC, raf.id DESC"
+	if query.SortModel.OrderByCreatedTime > 0 {
+		orderBy = "raf.create_time ASC, raf.id ASC"
+	}
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM recharge_account_flow raf WHERE `+whereSQL, args...).Scan(&total); err != nil {
+		return model.RechargeAccountDetailPageResult{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			IFNULL(ra.phone, ''),
+			IFNULL(raf.amount, 0),
+			IFNULL(raf.giving_amount, 0),
+			IFNULL(raf.residual_amount, 0),
+			raf.recharge_account_id,
+			raf.id,
+			IFNULL(ra.account_name, ''),
+			IFNULL(raf.remark, ''),
+			raf.create_time,
+			raf.flow_type,
+			DATE_FORMAT(raf.create_time, '%Y-%m-%dT00:00:00'),
+			0,
+			IFNULL(raf.order_number, ''),
+			0,
+			raf.student_id,
+			IFNULL(s.stu_name, ''),
+			CASE
+				WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
+				ELSE IFNULL(s.mobile, '')
+			END,
+			IFNULL(s.avatar_url, ''),
+			IFNULL(raf.amount, 0) + IFNULL(raf.giving_amount, 0) + IFNULL(raf.residual_amount, 0)
+		FROM recharge_account_flow raf
+		LEFT JOIN recharge_account ra ON ra.id = raf.recharge_account_id AND ra.del_flag = 0
+		LEFT JOIN inst_student s ON s.id = raf.student_id AND s.del_flag = 0
+		WHERE `+whereSQL+`
+		ORDER BY `+orderBy+`
+		LIMIT ? OFFSET ?
+	`, append(args, size, offset)...)
+	if err != nil {
+		return model.RechargeAccountDetailPageResult{}, err
+	}
+	defer rows.Close()
+
+	items := make([]model.RechargeAccountDetailItem, 0, size)
+	accountIDs := make([]int64, 0, size)
+	for rows.Next() {
+		var (
+			item                  model.RechargeAccountDetailItem
+			rechargeAccountID     int64
+			rechargeAccountFlowID int64
+			studentID             int64
+			createTime            sql.NullTime
+			sourceID              int64
+			sourceOrderType       int
+		)
+		if err := rows.Scan(
+			&item.Phone,
+			&item.Amount,
+			&item.GivingAmount,
+			&item.ResidualAmount,
+			&rechargeAccountID,
+			&rechargeAccountFlowID,
+			&item.RechargeAccountName,
+			&item.Remark,
+			&createTime,
+			&item.RechargeAccountFlowSourceType,
+			&item.DealDate,
+			&sourceID,
+			&item.SourceOrderNumber,
+			&sourceOrderType,
+			&studentID,
+			&item.StudentName,
+			&item.StudentPhone,
+			&item.StudentAvatar,
+			&item.TotalAmount,
+		); err != nil {
+			return model.RechargeAccountDetailPageResult{}, err
+		}
+		item.RechargeAccountID = strconv.FormatInt(rechargeAccountID, 10)
+		item.RechargeAccountFlowID = strconv.FormatInt(rechargeAccountFlowID, 10)
+		item.StudentID = strconv.FormatInt(studentID, 10)
+		item.SourceID = strconv.FormatInt(sourceID, 10)
+		item.SourceOrderType = sourceOrderType
+		if createTime.Valid {
+			item.CreateTime = createTime.Time.Format(time.RFC3339)
+		}
+		item.RechargeAccountName = normalizeRechargeAccountName(item.RechargeAccountName, item.StudentID, item.RechargeAccountID)
+		item.Phone = maskRechargePhone(item.Phone)
+		items = append(items, item)
+		accountIDs = append(accountIDs, rechargeAccountID)
+	}
+	if err := rows.Err(); err != nil {
+		return model.RechargeAccountDetailPageResult{}, err
+	}
+	studentsMap, err := repo.listRechargeAccountStudents(ctx, instID, accountIDs)
+	if err != nil {
+		return model.RechargeAccountDetailPageResult{}, err
+	}
+	for i := range items {
+		accountID, _ := strconv.ParseInt(items[i].RechargeAccountID, 10, 64)
+		items[i].RechargeAccountStudents = studentsMap[accountID]
+	}
+	return model.RechargeAccountDetailPageResult{List: items, Total: total}, nil
+}
+
+func (repo *Repository) GetRechargeAccountExpendIncome(ctx context.Context, instID int64, query model.RechargeAccountDetailQuery) (model.RechargeAccountExpendIncome, error) {
+	whereParts := []string{"inst_id = ?", "del_flag = 0"}
+	args := []any{instID}
+	if strings.TrimSpace(query.StudentID) != "" {
+		whereParts = append(whereParts, "CAST(student_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(query.StudentID))
+	}
+	if begin := parseDateStart(query.StartTime); begin != nil {
+		whereParts = append(whereParts, "create_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(query.EndTime); end != nil {
+		whereParts = append(whereParts, "create_time <= ?")
+		args = append(args, *end)
+	}
+	whereSQL := strings.Join(whereParts, " AND ")
+
+	var result model.RechargeAccountExpendIncome
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT
+			IFNULL(SUM(CASE
+				WHEN (IFNULL(amount, 0) + IFNULL(giving_amount, 0) + IFNULL(residual_amount, 0)) < 0
+				THEN ABS(IFNULL(amount, 0) + IFNULL(giving_amount, 0) + IFNULL(residual_amount, 0))
+				ELSE 0
+			END), 0),
+			IFNULL(SUM(CASE
+				WHEN (IFNULL(amount, 0) + IFNULL(giving_amount, 0) + IFNULL(residual_amount, 0)) > 0
+				THEN IFNULL(amount, 0) + IFNULL(giving_amount, 0) + IFNULL(residual_amount, 0)
+				ELSE 0
+			END), 0)
+		FROM recharge_account_flow
+		WHERE `+whereSQL, args...).Scan(&result.Expend, &result.Income)
+	return result, err
+}
+
+func (repo *Repository) GetStudentRechargeAccountBalance(ctx context.Context, instID, studentID int64) (total, recharge, residual, giving float64, err error) {
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT
+			IFNULL(SUM(IFNULL(ra.recharge_balance, 0) + IFNULL(ra.residual_balance, 0) + IFNULL(ra.giving_balance, 0)), 0),
+			IFNULL(SUM(IFNULL(ra.recharge_balance, 0)), 0),
+			IFNULL(SUM(IFNULL(ra.residual_balance, 0)), 0),
+			IFNULL(SUM(IFNULL(ra.giving_balance, 0)), 0)
+		FROM recharge_account ra
+		INNER JOIN recharge_account_student ras ON ras.recharge_account_id = ra.id AND ras.del_flag = 0
+		WHERE ra.inst_id = ? AND ra.del_flag = 0 AND ras.student_id = ?
+	`, instID, studentID).Scan(&total, &recharge, &residual, &giving)
+	return
 }
 
 func (repo *Repository) EnsureRechargeAccount(ctx context.Context, instID, studentID, operatorID int64) error {

@@ -313,6 +313,26 @@ func parseRechargeAccountItemPageQueryDTO(raw map[string]any) model.RechargeAcco
 	return query
 }
 
+func parseRechargeAccountDetailQueryDTO(raw map[string]any) model.RechargeAccountDetailQueryDTO {
+	query := model.RechargeAccountDetailQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.RechargeAccountDetailQuery{
+			StudentID: asString(qm["studentId"]),
+			StartTime: asString(qm["startTime"]),
+			EndTime:   asString(qm["endTime"]),
+			FlowTypes: asIntSlice(qm["flowTypes"]),
+		}
+	}
+	if sm, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.OrderByCreatedTime = asInt(sm["orderByCreatedTime"], 0)
+	}
+	return query
+}
+
 func parseSubTuitionAccountFlowRecordListQueryDTO(raw map[string]any) model.SubTuitionAccountFlowRecordListQueryDTO {
 	query := model.SubTuitionAccountFlowRecordListQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
@@ -839,32 +859,36 @@ func firstInt64Ptr(values ...any) *int64 {
 
 func formatIntentStudentDetail(item model.IntentStudent) map[string]any {
 	result := map[string]any{
-		"id":                item.ID,
-		"instId":            item.InstID,
-		"stuName":           item.StuName,
-		"avatarUrl":         normalizeStudentAvatar(item.AvatarURL, item.StuSex),
-		"stuSex":            item.StuSex,
-		"mobile":            maskPhone(item.Mobile),
-		"phoneRelationship": item.PhoneRelationship,
-		"salePerson":        item.SalePerson,
-		"salePersonName":    item.SalePersonName,
-		"intentLevel":       item.IntentLevel,
-		"intendedCourse":    item.IntendedCourse,
-		"channelId":         item.ChannelID,
-		"channelName":       item.ChannelName,
-		"createTime":        formatDateTime(item.CreateTime),
-		"birthDay":          formatDate(item.BirthDay),
-		"weChatNumber":      item.WeChatNumber,
-		"studySchool":       item.StudySchool,
-		"grade":             item.Grade,
-		"interest":          item.Interest,
-		"address":           item.Address,
-		"followUpStatus":    item.FollowUpStatus,
-		"studentStatus":     item.StudentStatus,
-		"followUpTime":      formatNullableDateTime(item.LastFollowUpTime),
-		"nextFollowUpTime":  formatNullableDateTime(item.NextFollowUpTime),
-		"customInfo":        item.CustomInfo,
-		"remark":            item.Remark,
+		"id":                          item.ID,
+		"instId":                      item.InstID,
+		"stuName":                     item.StuName,
+		"avatarUrl":                   normalizeStudentAvatar(item.AvatarURL, item.StuSex),
+		"stuSex":                      item.StuSex,
+		"mobile":                      maskPhone(item.Mobile),
+		"phoneRelationship":           item.PhoneRelationship,
+		"salePerson":                  item.SalePerson,
+		"salePersonName":              item.SalePersonName,
+		"intentLevel":                 item.IntentLevel,
+		"intendedCourse":              item.IntendedCourse,
+		"channelId":                   item.ChannelID,
+		"channelName":                 item.ChannelName,
+		"createTime":                  formatDateTime(item.CreateTime),
+		"birthDay":                    formatDate(item.BirthDay),
+		"weChatNumber":                item.WeChatNumber,
+		"studySchool":                 item.StudySchool,
+		"grade":                       item.Grade,
+		"interest":                    item.Interest,
+		"address":                     item.Address,
+		"followUpStatus":              item.FollowUpStatus,
+		"studentStatus":               item.StudentStatus,
+		"followUpTime":                formatNullableDateTime(item.LastFollowUpTime),
+		"nextFollowUpTime":            formatNullableDateTime(item.NextFollowUpTime),
+		"rechargeAccountBalanceTotal": item.RechargeAccountBalanceTotal,
+		"rechargeAmountTotal":         item.RechargeAmountTotal,
+		"residualAmountTotal":         item.ResidualAmountTotal,
+		"givingAmountTotal":           item.GivingAmountTotal,
+		"customInfo":                  item.CustomInfo,
+		"remark":                      item.Remark,
 	}
 	return result
 }

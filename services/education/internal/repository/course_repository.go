@@ -1142,6 +1142,7 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 	} else {
 		item.CustomInfo = []model.CustomInfo{}
 	}
+	item.RechargeAccountBalanceTotal, item.RechargeAmountTotal, item.ResidualAmountTotal, item.GivingAmountTotal, _ = repo.GetStudentRechargeAccountBalance(ctx, instID, studentID)
 	return item, nil
 }
 

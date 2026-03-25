@@ -89,6 +89,10 @@ type IntentStudent struct {
 	PurchasedAuditionProduct      bool           `json:"purchasedAuditionProduct"`
 	ExperienceClassPurchaseStatus string         `json:"experienceClassPurchaseStatus"`
 	DaysUntilReturn               *int           `json:"daysUntilReturn,omitempty"`
+	RechargeAccountBalanceTotal   float64        `json:"rechargeAccountBalanceTotal"`
+	RechargeAmountTotal           float64        `json:"rechargeAmountTotal"`
+	ResidualAmountTotal           float64        `json:"residualAmountTotal"`
+	GivingAmountTotal             float64        `json:"givingAmountTotal"`
 	CustomInfo                    []CustomInfo   `json:"customInfo"`
 	Remark                        string         `json:"remark,omitempty"`
 }
