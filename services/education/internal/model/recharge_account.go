@@ -112,3 +112,111 @@ type RechargeAccountExpendIncome struct {
 	Expend float64 `json:"expend"`
 	Income float64 `json:"income"`
 }
+
+type StudentDetailView struct {
+	ID                     string     `json:"id"`
+	Name                   string     `json:"name"`
+	Phone                  string     `json:"phone"`
+	Avatar                 string     `json:"avatar"`
+	Sex                    int        `json:"sex"`
+	PhoneRelationship      int        `json:"phoneRelationship"`
+	SalespersonID          string     `json:"salespersonId"`
+	SalespersonName        string     `json:"salespersonName"`
+	CreatedTime            *time.Time `json:"createdTime,omitempty"`
+	FirstEnrolledTime      *time.Time `json:"firstEnrolledTime,omitempty"`
+	TurnedHistoryTime      *time.Time `json:"turnedHistoryTime,omitempty"`
+	CreatedStaffID         string     `json:"createdStaffId"`
+	CreatedStaffName       string     `json:"createdStaffName"`
+	CollectorStaffID       string     `json:"collectorStaffId"`
+	CollectorStaffName     string     `json:"collectorStaffName"`
+	PhoneSellStaffID       string     `json:"phoneSellStaffId"`
+	PhoneSellStaffName     string     `json:"phoneSellStaffName"`
+	ForegroundStaffID      string     `json:"foregroundStaffId"`
+	ForegroundStaffName    string     `json:"foregroundStaffName"`
+	ViceSellStaffStaffID   string     `json:"viceSellStaffStaffId"`
+	ViceSellStaffStaffName string     `json:"viceSellStaffStaffName"`
+	Status                 int        `json:"status"`
+}
+
+type RechargeAccountByStudentStudent struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Avatar        string `json:"avatar"`
+	Sex           int    `json:"sex"`
+	Phone         string `json:"phone"`
+	IsMainStudent bool   `json:"isMainStudent"`
+}
+
+type RechargeAccountByStudent struct {
+	ID              string                            `json:"id"`
+	AccountName     string                            `json:"accountName"`
+	Phone           string                            `json:"phone"`
+	MainStudentID   string                            `json:"mainStudentId"`
+	Balance         float64                           `json:"balance"`
+	GivingBalance   float64                           `json:"givingBalance"`
+	ResidualBalance float64                           `json:"residualBalance"`
+	CreatedAt       *time.Time                        `json:"createdAt,omitempty"`
+	Students        []RechargeAccountByStudentStudent `json:"students"`
+}
+
+type CreateRechargeAccountOrderDTO struct {
+	RechargeAccountID    string   `json:"rechargeAccountId"`
+	Amount               float64  `json:"amount"`
+	GivingAmount         float64  `json:"givingAmount"`
+	ResidualAmount       float64  `json:"residualAmount"`
+	DealDate             string   `json:"dealDate"`
+	SalePersonID         string   `json:"salePersonId"`
+	CollectorStaffID     string   `json:"collectorStaffId"`
+	PhoneSellStaffID     string   `json:"phoneSellStaffId"`
+	ForegroundStaffID    string   `json:"foregroundStaffId"`
+	ViceSellStaffStaffID string   `json:"viceSellStaffStaffId"`
+	Remark               string   `json:"remark"`
+	OrderTagIDs          []string `json:"orderTagIds"`
+	ExternalRemark       string   `json:"externalRemark"`
+	StudentID            string   `json:"studentId"`
+}
+
+type RechargeAccountOrderCreateResult struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type RechargeAccountOrderTag struct {
+	TagID   string `json:"tagId"`
+	TagName string `json:"tagName"`
+}
+
+type RechargeAccountOrderBillDetail struct {
+	ID        string `json:"id"`
+	Status    int    `json:"status"`
+	BillFlows []any  `json:"billFlows"`
+}
+
+type RechargeAccountOrderDetail struct {
+	ID                string                         `json:"id"`
+	RechargeAccountID string                         `json:"rechargeAccountId"`
+	OrderNumber       string                         `json:"orderNumber"`
+	Status            int                            `json:"status"`
+	Amount            float64                        `json:"amount"`
+	GivingAmount      float64                        `json:"givingAmount"`
+	ResidualAmount    float64                        `json:"residualAmount"`
+	OperatorName      string                         `json:"operatorName"`
+	CreatedAt         *time.Time                     `json:"createdAt,omitempty"`
+	Bill              RechargeAccountOrderBillDetail `json:"bill"`
+	ApproveID         *string                        `json:"approveId,omitempty"`
+	OrderTags         []RechargeAccountOrderTag      `json:"orderTags"`
+	StudentID         string                         `json:"studentId"`
+	StudentName       string                         `json:"studentName"`
+	StudentPhone      string                         `json:"studentPhone"`
+	OrderObsolete     any                            `json:"orderObsolete"`
+}
+
+type RechargeAccountOrderDetailQuery struct {
+	RechargeAccountOrderID string `json:"rechargeAccountOrderId"`
+}
+
+type PayOrderBySchoolPalDTO struct {
+	BillID string  `json:"billId"`
+	Amount float64 `json:"amount"`
+	Remark string  `json:"remark"`
+}

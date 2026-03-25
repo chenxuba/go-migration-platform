@@ -81,7 +81,10 @@ func ensureRechargeAccountTables(ctx context.Context, db *sql.DB) error {
 			KEY idx_recharge_account_flow_student (inst_id, student_id)
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	return ensureRechargeAccountOrderTables(ctx, db)
 }
 
 func (repo *Repository) PageRechargeAccountItems(ctx context.Context, instID int64, query model.RechargeAccountItemPageQueryDTO) (model.RechargeAccountItemPageResult, error) {
