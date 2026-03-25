@@ -413,6 +413,9 @@ func (repo *Repository) CreateIntentStudent(ctx context.Context, instID, operato
 	if err := repo.replaceStudentCustomFieldValuesTx(ctx, tx, studentID, operatorID, dto.CustomInfo); err != nil {
 		return 0, err
 	}
+	if err := repo.ensureRechargeAccountTx(ctx, tx, instID, studentID, operatorID); err != nil {
+		return 0, err
+	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}

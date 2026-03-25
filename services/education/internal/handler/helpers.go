@@ -295,6 +295,24 @@ func parseTuitionAccountFlowRecordListQueryDTO(raw map[string]any) model.Tuition
 	return query
 }
 
+func parseRechargeAccountItemPageQueryDTO(raw map[string]any) model.RechargeAccountItemPageQueryDTO {
+	query := model.RechargeAccountItemPageQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.RechargeAccountItemQueryModel{
+			StudentID:              asString(qm["studentId"]),
+			ShowZeroBalanceAccount: asBoolPtr(qm["showZeroBalanceAccount"]),
+		}
+	}
+	if sm, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.OrderByUpdatedTime = asInt(sm["orderByUpdatedTime"], 0)
+	}
+	return query
+}
+
 func parseSubTuitionAccountFlowRecordListQueryDTO(raw map[string]any) model.SubTuitionAccountFlowRecordListQueryDTO {
 	query := model.SubTuitionAccountFlowRecordListQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {

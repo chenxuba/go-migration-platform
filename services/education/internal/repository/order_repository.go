@@ -1984,6 +1984,9 @@ func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql
 	if err != nil {
 		return err
 	}
+	if err := repo.ensureRechargeAccountTx(ctx, tx, instID, studentID, operatorID); err != nil {
+		return err
+	}
 
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, course_id, quote_id, handle_type, count, unit,
