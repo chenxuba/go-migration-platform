@@ -43,6 +43,28 @@ func (svc *Service) GetRechargeAccountByStudent(userID int64, studentIDRaw strin
 	return svc.repo.GetRechargeAccountByStudent(context.Background(), instID, studentID, instUserID)
 }
 
+func (svc *Service) GetRechargeAccountByID(userID int64, rechargeAccountIDRaw string) (model.RechargeAccountByStudent, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.RechargeAccountByStudent{}, errors.New("no institution context")
+		}
+		return model.RechargeAccountByStudent{}, err
+	}
+	rechargeAccountID, err := strconv.ParseInt(strings.TrimSpace(rechargeAccountIDRaw), 10, 64)
+	if err != nil || rechargeAccountID <= 0 {
+		return model.RechargeAccountByStudent{}, errors.New("rechargeAccountId不能为空")
+	}
+	item, err := svc.repo.GetRechargeAccountByID(context.Background(), instID, rechargeAccountID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.RechargeAccountByStudent{}, errors.New("储值账户不存在")
+		}
+		return model.RechargeAccountByStudent{}, err
+	}
+	return item, nil
+}
+
 func (svc *Service) CreateRechargeAccountOrder(userID int64, dto model.CreateRechargeAccountOrderDTO) (model.RechargeAccountOrderCreateResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
@@ -59,6 +81,31 @@ func (svc *Service) CreateRechargeAccountOrder(userID int64, dto model.CreateRec
 		return model.RechargeAccountOrderCreateResult{}, err
 	}
 	orderID, err := svc.repo.CreateRechargeAccountOrder(context.Background(), instID, instUserID, dto)
+	if err != nil {
+		return model.RechargeAccountOrderCreateResult{}, err
+	}
+	return model.RechargeAccountOrderCreateResult{
+		ID:   strconv.FormatInt(orderID, 10),
+		Name: "",
+	}, nil
+}
+
+func (svc *Service) CreateRechargeAccountRefundOrder(userID int64, dto model.CreateRechargeAccountOrderDTO) (model.RechargeAccountOrderCreateResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.RechargeAccountOrderCreateResult{}, errors.New("no institution context")
+		}
+		return model.RechargeAccountOrderCreateResult{}, err
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.RechargeAccountOrderCreateResult{}, errors.New("no institution user context")
+		}
+		return model.RechargeAccountOrderCreateResult{}, err
+	}
+	orderID, err := svc.repo.CreateRechargeAccountRefundOrder(context.Background(), instID, instUserID, dto)
 	if err != nil {
 		return model.RechargeAccountOrderCreateResult{}, err
 	}

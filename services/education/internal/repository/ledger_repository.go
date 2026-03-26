@@ -86,10 +86,15 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 		)
 		SELECT
 			UUID(), 0, pd.inst_id, ?, ?, ?, pd.id,
-			CASE WHEN IFNULL(pd.pay_amount, 0) >= 0 THEN ? ELSE ? END,
+			CASE
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				WHEN IFNULL(pd.pay_amount, 0) >= 0 THEN ?
+				ELSE ?
+			END,
 			CONCAT(DATE_FORMAT(pd.create_time, '%Y%m%d%H%i%s'), LPAD(MOD(pd.id, 1000000), 6, '0')),
 			?, ?, 
 			CASE
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
@@ -99,6 +104,7 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 				WHEN IFNULL(so.order_type, 1) = ? THEN '储值账户充值'
 				WHEN IFNULL(so.order_type, 1) = ? THEN '退课'
 				WHEN IFNULL(so.order_type, 1) = ? THEN '转课'
+				WHEN IFNULL(so.order_type, 1) = ? THEN '储值账户退费'
 				ELSE '报名续费'
 			END,
 			'systemTallyBookType1',
@@ -153,6 +159,8 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 		model.LedgerSourceSystem,
 		model.LedgerSystemTypeOrderPayment,
 		1,
+		model.OrderTypeRechargeAccountRefund,
+		model.LedgerTypeExpenditure,
 		model.LedgerTypeIncome,
 		model.LedgerTypeExpenditure,
 		model.LedgerCategoryOrderIncome,
@@ -163,10 +171,13 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 		model.LedgerSubCategoryRefundCourse,
 		model.OrderTypeTransferCourse,
 		model.LedgerSubCategoryTransferOrder,
+		model.OrderTypeRechargeAccountRefund,
+		model.LedgerSubCategoryRechargeAccountRefund,
 		model.LedgerSubCategoryRegistration,
 		model.OrderTypeRechargeAccount,
 		model.OrderTypeRefundCourse,
 		model.OrderTypeTransferCourse,
+		model.OrderTypeRechargeAccountRefund,
 		model.LedgerConfirmStatusPending,
 		model.LedgerSourceSystem,
 		1,
@@ -189,10 +200,15 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		)
 		SELECT
 			UUID(), 0, pd.inst_id, ?, ?, ?, pd.id,
-			CASE WHEN IFNULL(pd.pay_amount, 0) >= 0 THEN ? ELSE ? END,
+			CASE
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				WHEN IFNULL(pd.pay_amount, 0) >= 0 THEN ?
+				ELSE ?
+			END,
 			CONCAT(DATE_FORMAT(pd.create_time, '%Y%m%d%H%i%s'), LPAD(MOD(pd.id, 1000000), 6, '0')),
 			?, ?, 
 			CASE
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
@@ -202,6 +218,7 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 				WHEN IFNULL(so.order_type, 1) = ? THEN '储值账户充值'
 				WHEN IFNULL(so.order_type, 1) = ? THEN '退课'
 				WHEN IFNULL(so.order_type, 1) = ? THEN '转课'
+				WHEN IFNULL(so.order_type, 1) = ? THEN '储值账户退费'
 				ELSE '报名续费'
 			END,
 			'systemTallyBookType1',
@@ -249,6 +266,9 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		WHERE pd.id = ? AND pd.inst_id = ?
 		ON DUPLICATE KEY UPDATE
 			amount = VALUES(amount),
+			type = VALUES(type),
+			ledger_sub_category_id = VALUES(ledger_sub_category_id),
+			ledger_sub_category_name = VALUES(ledger_sub_category_name),
 			deal_staff_id = VALUES(deal_staff_id),
 			deal_staff_name = VALUES(deal_staff_name),
 			pay_time = VALUES(pay_time),
@@ -269,6 +289,8 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		model.LedgerSourceSystem,
 		model.LedgerSystemTypeOrderPayment,
 		1,
+		model.OrderTypeRechargeAccountRefund,
+		model.LedgerTypeExpenditure,
 		model.LedgerTypeIncome,
 		model.LedgerTypeExpenditure,
 		model.LedgerCategoryOrderIncome,
@@ -279,10 +301,13 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		model.LedgerSubCategoryRefundCourse,
 		model.OrderTypeTransferCourse,
 		model.LedgerSubCategoryTransferOrder,
+		model.OrderTypeRechargeAccountRefund,
+		model.LedgerSubCategoryRechargeAccountRefund,
 		model.LedgerSubCategoryRegistration,
 		model.OrderTypeRechargeAccount,
 		model.OrderTypeRefundCourse,
 		model.OrderTypeTransferCourse,
+		model.OrderTypeRechargeAccountRefund,
 		model.LedgerConfirmStatusPending,
 		paymentDetailID,
 		instID,
@@ -406,7 +431,20 @@ func (repo *Repository) PageLedgers(ctx context.Context, instID int64, query mod
 			item.OrderID = strconv.FormatInt(orderID.Int64, 10)
 			products, ok := orderProducts[orderID.Int64]
 			if !ok {
-				products, _ = repo.getOrderCourseNames(ctx, orderID.Int64)
+				var orderType *int
+				switch item.LedgerSubCategoryID {
+				case model.LedgerSubCategoryRechargeAccount:
+					t := model.OrderTypeRechargeAccount
+					orderType = &t
+				case model.LedgerSubCategoryRechargeAccountRefund:
+					t := model.OrderTypeRechargeAccountRefund
+					orderType = &t
+				}
+				var err error
+				products, err = repo.getOrderDisplayItems(ctx, orderID.Int64, orderType)
+				if err != nil {
+					products = nil
+				}
 				orderProducts[orderID.Int64] = products
 			}
 			item.ProductItems = products

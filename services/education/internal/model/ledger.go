@@ -26,8 +26,9 @@ const (
 const (
 	LedgerCategoryOrderIncome        = "order-income"
 	LedgerSubCategoryRegistration    = "registration-renewal"
-	LedgerSubCategoryRechargeAccount = "recharge-account"
-	LedgerSubCategoryRefundCourse    = "refund-course"
+	LedgerSubCategoryRechargeAccount       = "recharge-account"
+	LedgerSubCategoryRechargeAccountRefund = "recharge-account-refund"
+	LedgerSubCategoryRefundCourse          = "refund-course"
 	LedgerSubCategoryTransferOrder   = "transfer-course"
 )
 

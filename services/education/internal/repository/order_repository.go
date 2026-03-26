@@ -206,6 +206,14 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	}
 	whereClause := strings.Join(filters, " AND ")
 
+	// 退费类订单的 pay_detail 多为正数存储，列表「实收总计」需按流出计为负向，与前端「实收/实退」展示一致
+	refundOrderTypes := fmt.Sprintf("%d,%d,%d,%d",
+		model.OrderTypeRefundCourse,
+		model.OrderTypeRechargeAccountRefund,
+		model.OrderTypeRefundMaterialFee,
+		model.OrderTypeRefundMiscFee,
+	)
+
 	var total int
 	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sale_order so LEFT JOIN inst_student s ON so.student_id = s.id WHERE `+whereClause, args...).Scan(&total); err != nil {
 		return model.OrderManageResultVO{}, err
@@ -218,7 +226,10 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	)
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT
-			IFNULL(SUM(`+paidAmountExpr+`), 0),
+			IFNULL(SUM(CASE
+				WHEN IFNULL(so.order_type, 0) IN (`+refundOrderTypes+`) THEN -ABS(`+paidAmountExpr+`)
+				ELSE `+paidAmountExpr+`
+			END), 0),
 			IFNULL(SUM(CASE
 				WHEN IFNULL(so.is_bad_debt, 0) = 0
 				  AND so.order_status <> ?
