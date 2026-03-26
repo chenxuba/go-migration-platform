@@ -96,7 +96,7 @@ const allColumns = ref([
     title: '储值账户',
     dataIndex: 'rechargeAccount',
     key: 'rechargeAccount',
-    width: 150,
+    width: 220,
   },
   {
     title: '关联学员',
