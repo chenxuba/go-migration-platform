@@ -72,6 +72,10 @@ func (svc *Service) LoadIntentionStudentImportTemplate(ticket string) (string, s
 }
 
 func buildIntentionStudentImportColumns(defaultFields, customFields []model.StudentFieldKey, channels []model.ChannelVO, staffNames []string) []model.IntentionStudentImportTemplateColumn {
+	return buildConfiguredStudentImportColumns(defaultFields, customFields, channels, staffNames, "销售员")
+}
+
+func buildConfiguredStudentImportColumns(defaultFields, customFields []model.StudentFieldKey, channels []model.ChannelVO, staffNames []string, salesTitle string) []model.IntentionStudentImportTemplateColumn {
 	displayedDefaults := make(map[string]model.StudentFieldKey, len(defaultFields))
 	for _, field := range defaultFields {
 		if field.IsDisplay {
@@ -101,9 +105,19 @@ func buildIntentionStudentImportColumns(defaultFields, customFields []model.Stud
 			options = splitTemplateOptions(field.OptionsJSON)
 		}
 		columns = append(columns, model.IntentionStudentImportTemplateColumn{
-			FieldID:   func() int64 { if ok { return field.ID }; return 0 }(),
-			Title:     title,
-			Required:  func() bool { if ok { return field.Required }; return false }(),
+			FieldID: func() int64 {
+				if ok {
+					return field.ID
+				}
+				return 0
+			}(),
+			Title: title,
+			Required: func() bool {
+				if ok {
+					return field.Required
+				}
+				return false
+			}(),
 			FieldType: fieldType,
 			Options:   options,
 		})
@@ -140,12 +154,14 @@ func buildIntentionStudentImportColumns(defaultFields, customFields []model.Stud
 		columns = append(columns, column)
 	}
 
-	columns = append(columns, model.IntentionStudentImportTemplateColumn{
-		Title:     "销售员",
-		Required:  false,
-		FieldType: 4,
-		Options:   staffNames,
-	})
+	if strings.TrimSpace(salesTitle) != "" {
+		columns = append(columns, model.IntentionStudentImportTemplateColumn{
+			Title:     strings.TrimSpace(salesTitle),
+			Required:  false,
+			FieldType: 4,
+			Options:   staffNames,
+		})
+	}
 
 	return columns
 }
