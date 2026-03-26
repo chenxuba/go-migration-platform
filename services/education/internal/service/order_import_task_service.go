@@ -567,11 +567,11 @@ func buildCreateAndPayOrderDTOFromImportRow(
 	if courseName == "" {
 		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, errors.New("报读课程不能为空")
 	}
-	purchaseCount, err := parseOrderImportInt(rowData["购买课时数"].Value, "购买课时数")
+	purchaseCount, err := parseOrderImportLessonHour(rowData["购买课时数"].Value, "购买课时数")
 	if err != nil {
 		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
 	}
-	giftCount, err := parseOrderImportFloat(rowData["赠送课时数"].Value, "赠送课时数")
+	giftCount, err := parseOrderImportFloatWithPrecision(rowData["赠送课时数"].Value, "赠送课时数", 2)
 	if err != nil {
 		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
 	}
@@ -634,7 +634,7 @@ func buildCreateAndPayOrderDTOFromImportRow(
 	courseID := quotation.CourseID
 	hasValidDate := endDate != nil
 	courseAmount := fmt.Sprintf("%.2f", orderAmount)
-	purchasedQuantity := float64(purchaseCount)
+	purchasedQuantity := purchaseCount
 	realQuantity := purchasedQuantity + giftCount
 
 	createDTO := model.CreateOrderDTO{
@@ -733,7 +733,7 @@ func quantityOrDefault(value *int) int {
 	return *value
 }
 
-func parseOrderImportInt(value string, title string) (int, error) {
+func parseOrderImportLessonHour(value string, title string) (float64, error) {
 	number, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 	if err != nil {
 		return 0, fmt.Errorf("%s格式错误", title)
@@ -741,10 +741,10 @@ func parseOrderImportInt(value string, title string) (int, error) {
 	if number <= 0 {
 		return 0, fmt.Errorf("%s必须大于0", title)
 	}
-	if number != float64(int(number)) {
-		return 0, fmt.Errorf("%s必须为整数", title)
+	if !isValidTwoDecimalNumber(value) {
+		return 0, fmt.Errorf("%s最多保留2位小数", title)
 	}
-	return int(number), nil
+	return number, nil
 }
 
 func parseOrderImportFloat(value string, title string) (float64, error) {
@@ -758,6 +758,20 @@ func parseOrderImportFloat(value string, title string) (float64, error) {
 	}
 	if number < 0 {
 		return 0, fmt.Errorf("%s不能小于0", title)
+	}
+	return number, nil
+}
+
+func parseOrderImportFloatWithPrecision(value string, title string, maxDecimals int) (float64, error) {
+	number, err := parseOrderImportFloat(value, title)
+	if err != nil {
+		return 0, err
+	}
+	if strings.TrimSpace(value) == "" {
+		return 0, nil
+	}
+	if maxDecimals == 2 && !isValidTwoDecimalNumber(value) {
+		return 0, fmt.Errorf("%s最多保留2位小数", title)
 	}
 	return number, nil
 }

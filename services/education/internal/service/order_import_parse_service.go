@@ -213,6 +213,9 @@ func validateOrderImportValue(column model.IntentionStudentImportColumn, value s
 	if column.Title == "手机号" && !phoneDigitsPattern.MatchString(value) {
 		return "手机号格式错误"
 	}
+	if requiresTwoDecimalPrecision(column.Title) && !isValidTwoDecimalNumber(value) {
+		return "最多保留2位小数"
+	}
 	switch column.FieldType {
 	case 2:
 		if !isNumericImportValue(value) {

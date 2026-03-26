@@ -29,6 +29,7 @@ var supportedImportDateLayouts = []string{
 }
 
 var phoneDigitsPattern = regexp.MustCompile(`^1\d{10}$`)
+var twoDecimalNumberPattern = regexp.MustCompile(`^\d+(\.\d{1,2})?$`)
 
 func (svc *Service) ParseIntentionStudentImportFile(userID int64, filename string, reader io.Reader) (model.IntentionStudentImportParseResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
@@ -212,6 +213,19 @@ func validateIntentionStudentImportValue(column model.IntentionStudentImportColu
 		}
 	}
 	return ""
+}
+
+func requiresTwoDecimalPrecision(title string) bool {
+	switch strings.TrimSpace(title) {
+	case "购买课时数", "赠送课时数", "已上课时数":
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidTwoDecimalNumber(value string) bool {
+	return twoDecimalNumberPattern.MatchString(strings.TrimSpace(value))
 }
 
 func containsImportOption(options []string, value string) bool {
