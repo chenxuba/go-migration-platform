@@ -2016,18 +2016,27 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 	if orderStatus != model.OrderStatusPendingPayment && orderStatus != model.OrderStatusCompleted {
 		return fmt.Errorf("订单状态异常")
 	}
-	if dto.PayAmount <= 0 {
+	positivePayAccounts := make([]model.PayAccountDTO, 0, len(dto.PayAccounts))
+	actualPayAmount := 0.0
+	for _, item := range dto.PayAccounts {
+		if item.PayAmount <= 0 {
+			continue
+		}
+		positivePayAccounts = append(positivePayAccounts, item)
+		actualPayAmount += item.PayAmount
+	}
+	if actualPayAmount <= 0 {
 		return fmt.Errorf("支付金额不能小于0")
 	}
 	paidBefore, err := repo.getOrderPaidAmount(ctx, dto.OrderID)
 	if err != nil {
 		return err
 	}
-	if paidBefore+dto.PayAmount > orderRealAmount {
+	if paidBefore+actualPayAmount > orderRealAmount {
 		return fmt.Errorf("支付金额不能大于订单金额")
 	}
 
-	for _, item := range dto.PayAccounts {
+	for _, item := range positivePayAccounts {
 		result, err := tx.ExecContext(ctx, `
 			INSERT INTO sale_order_pay_detail (
 				uuid, version, inst_id, order_id, amount_id, pay_method, pay_amount, pay_time, payment_voucher,

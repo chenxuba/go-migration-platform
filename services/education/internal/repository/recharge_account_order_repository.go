@@ -324,12 +324,123 @@ func (repo *Repository) GetRechargeAccountByID(ctx context.Context, instID, rech
 	return item, nil
 }
 
+func hasRechargeActualCashAmount(amount float64) bool {
+	return amount > 0.000001
+}
+
+func (repo *Repository) completeRechargeAccountOrderTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	instID, operatorID, orderID, billID, saleOrderID, rechargeAccountID, studentID int64,
+	amount, residualAmount, givingAmount float64,
+	orderNumber string,
+	orderType int,
+	remark string,
+) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account_order
+		SET status = 2, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, operatorID, orderID, instID); err != nil {
+		return err
+	}
+	if billID > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE recharge_account_bill
+			SET status = 2, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, operatorID, billID, instID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sale_order
+		SET order_status = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, model.OrderStatusCompleted, operatorID, saleOrderID, instID); err != nil {
+		return err
+	}
+
+	cleanRemark := strings.TrimSpace(remark)
+	if orderType == model.OrderTypeRechargeAccountRefund {
+		var rechBal, resBal, givingBal float64
+		if err := tx.QueryRowContext(ctx, `
+			SELECT IFNULL(recharge_balance, 0), IFNULL(residual_balance, 0), IFNULL(giving_balance, 0)
+			FROM recharge_account
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+			LIMIT 1
+			FOR UPDATE
+		`, rechargeAccountID, instID).Scan(&rechBal, &resBal, &givingBal); err != nil {
+			return err
+		}
+		if amount > rechBal+1e-9 {
+			return errors.New("充值余额不足")
+		}
+		if residualAmount > resBal+1e-9 {
+			return errors.New("残联余额不足")
+		}
+		if givingAmount > givingBal+1e-9 {
+			return errors.New("赠送余额不足")
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE recharge_account
+			SET recharge_balance = IFNULL(recharge_balance, 0) - ?,
+				residual_balance = IFNULL(residual_balance, 0) - ?,
+				giving_balance = IFNULL(giving_balance, 0) - ?,
+				update_id = ?,
+				update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, amount, residualAmount, givingAmount, operatorID, rechargeAccountID, instID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO recharge_account_flow (
+				inst_id, recharge_account_id, student_id, order_number, flow_type,
+				amount, residual_amount, giving_amount, remark,
+				create_id, create_time, update_id, update_time, del_flag
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
+		`, instID, rechargeAccountID, studentID, orderNumber, model.RechargeAccountFlowTypeRefund, -amount, -residualAmount, -givingAmount, cleanRemark, operatorID, operatorID); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account
+		SET recharge_balance = IFNULL(recharge_balance, 0) + ?,
+			residual_balance = IFNULL(residual_balance, 0) + ?,
+			giving_balance = IFNULL(giving_balance, 0) + ?,
+			update_id = ?,
+			update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, amount, residualAmount, givingAmount, operatorID, rechargeAccountID, instID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO recharge_account_flow (
+			inst_id, recharge_account_id, student_id, order_number, flow_type,
+			amount, residual_amount, giving_amount, remark,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
+	`, instID, rechargeAccountID, studentID, orderNumber, model.RechargeAccountFlowTypeRecharge, amount, residualAmount, givingAmount, cleanRemark, operatorID, operatorID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (repo *Repository) CreateRechargeAccountOrder(ctx context.Context, instID, operatorID int64, dto model.CreateRechargeAccountOrderDTO) (int64, error) {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
+
+	if dto.Amount < 0 || dto.ResidualAmount < 0 || dto.GivingAmount < 0 {
+		return 0, errors.New("金额不能小于0")
+	}
+	if dto.Amount <= 0 && dto.ResidualAmount <= 0 && dto.GivingAmount <= 0 {
+		return 0, errors.New("充值金额、残联金额或赠送金额至少填写一项")
+	}
 
 	rechargeAccountID, err := strconv.ParseInt(strings.TrimSpace(dto.RechargeAccountID), 10, 64)
 	if err != nil || rechargeAccountID <= 0 {
@@ -406,23 +517,43 @@ func (repo *Repository) CreateRechargeAccountOrder(ctx context.Context, instID, 
 	`, saleOrderID, orderNumber, operatorID, orderID, instID); err != nil {
 		return 0, err
 	}
-	billResult, err := tx.ExecContext(ctx, `
-		INSERT INTO recharge_account_bill (
-			inst_id, recharge_account_order_id, status, create_id, create_time, update_id, update_time, del_flag
-		) VALUES (?, ?, 1, ?, NOW(), ?, NOW(), 0)
-	`, instID, orderID, operatorID, operatorID)
-	if err != nil {
-		return 0, err
-	}
-	billID, err := billResult.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE recharge_account_order
-		SET bill_id = ?, update_id = ?, update_time = NOW()
-		WHERE id = ? AND inst_id = ?
-	`, billID, operatorID, orderID, instID); err != nil {
+	if hasRechargeActualCashAmount(dto.Amount) {
+		billResult, err := tx.ExecContext(ctx, `
+			INSERT INTO recharge_account_bill (
+				inst_id, recharge_account_order_id, status, create_id, create_time, update_id, update_time, del_flag
+			) VALUES (?, ?, 1, ?, NOW(), ?, NOW(), 0)
+		`, instID, orderID, operatorID, operatorID)
+		if err != nil {
+			return 0, err
+		}
+		billID, err := billResult.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE recharge_account_order
+			SET bill_id = ?, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ?
+		`, billID, operatorID, orderID, instID); err != nil {
+			return 0, err
+		}
+	} else if err := repo.completeRechargeAccountOrderTx(
+		ctx,
+		tx,
+		instID,
+		operatorID,
+		orderID,
+		0,
+		saleOrderID,
+		rechargeAccountID,
+		studentID,
+		dto.Amount,
+		dto.ResidualAmount,
+		dto.GivingAmount,
+		orderNumber,
+		model.OrderTypeRechargeAccount,
+		dto.Remark,
+	); err != nil {
 		return 0, err
 	}
 	for _, tagIDRaw := range dto.OrderTagIDs {
@@ -460,6 +591,10 @@ func (repo *Repository) CreateRechargeAccountRefundOrder(ctx context.Context, in
 		return 0, err
 	}
 	defer tx.Rollback()
+
+	if dto.Amount < 0 || dto.ResidualAmount < 0 || dto.GivingAmount < 0 {
+		return 0, errors.New("金额不能小于0")
+	}
 
 	rechargeAccountID, err := strconv.ParseInt(strings.TrimSpace(dto.RechargeAccountID), 10, 64)
 	if err != nil || rechargeAccountID <= 0 {
@@ -568,23 +703,43 @@ func (repo *Repository) CreateRechargeAccountRefundOrder(ctx context.Context, in
 	`, saleOrderID, orderNumber, operatorID, orderID, instID); err != nil {
 		return 0, err
 	}
-	billResult, err := tx.ExecContext(ctx, `
-		INSERT INTO recharge_account_bill (
-			inst_id, recharge_account_order_id, status, create_id, create_time, update_id, update_time, del_flag
-		) VALUES (?, ?, 1, ?, NOW(), ?, NOW(), 0)
-	`, instID, orderID, operatorID, operatorID)
-	if err != nil {
-		return 0, err
-	}
-	billID, err := billResult.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE recharge_account_order
-		SET bill_id = ?, update_id = ?, update_time = NOW()
-		WHERE id = ? AND inst_id = ?
-	`, billID, operatorID, orderID, instID); err != nil {
+	if hasRechargeActualCashAmount(dto.Amount) {
+		billResult, err := tx.ExecContext(ctx, `
+			INSERT INTO recharge_account_bill (
+				inst_id, recharge_account_order_id, status, create_id, create_time, update_id, update_time, del_flag
+			) VALUES (?, ?, 1, ?, NOW(), ?, NOW(), 0)
+		`, instID, orderID, operatorID, operatorID)
+		if err != nil {
+			return 0, err
+		}
+		billID, err := billResult.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE recharge_account_order
+			SET bill_id = ?, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ?
+		`, billID, operatorID, orderID, instID); err != nil {
+			return 0, err
+		}
+	} else if err := repo.completeRechargeAccountOrderTx(
+		ctx,
+		tx,
+		instID,
+		operatorID,
+		orderID,
+		0,
+		saleOrderID,
+		rechargeAccountID,
+		studentID,
+		dto.Amount,
+		residualRefund,
+		dto.GivingAmount,
+		orderNumber,
+		model.OrderTypeRechargeAccountRefund,
+		dto.Remark,
+	); err != nil {
 		return 0, err
 	}
 	for _, tagIDRaw := range dto.OrderTagIDs {
@@ -658,9 +813,11 @@ func (repo *Repository) GetRechargeAccountOrderDetail(ctx context.Context, instI
 		item.CreatedAt = &t
 	}
 	item.Bill = model.RechargeAccountOrderBillDetail{
-		ID:        strconv.FormatInt(billID, 10),
-		Status:    billStatus,
 		BillFlows: []any{},
+	}
+	if billID > 0 {
+		item.Bill.ID = strconv.FormatInt(billID, 10)
+		item.Bill.Status = billStatus
 	}
 	tags, err := repo.listRechargeAccountOrderTags(ctx, instID, id)
 	if err != nil {
@@ -711,136 +868,81 @@ func (repo *Repository) PayRechargeAccountOrderBySchoolPal(ctx context.Context, 
 		return 0, errors.New("系统订单不存在")
 	}
 	isRefund := orderType == model.OrderTypeRechargeAccountRefund
-	if !isRefund && dto.Amount <= 0 {
-		return 0, errors.New("支付金额不能小于0")
-	}
-	if isRefund && dto.Amount < 0 {
-		return 0, errors.New("支付金额不能小于0")
-	}
-	if math.Abs(dto.Amount-amount) > 0.000001 {
-		return 0, errors.New("支付金额必须等于订单金额")
-	}
-	result, err := tx.ExecContext(ctx, `
-		INSERT INTO recharge_account_bill_flow (
-			inst_id, bill_id, amount, remark, create_id, create_time, del_flag
-		) VALUES (?, ?, ?, ?, ?, NOW(), 0)
-	`, instID, billID, dto.Amount, strings.TrimSpace(dto.Remark), operatorID)
-	if err != nil {
-		return 0, err
-	}
-	billFlowID, err := result.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE recharge_account_order
-		SET status = 2, update_id = ?, update_time = NOW()
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, operatorID, orderID, instID); err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE recharge_account_bill
-		SET status = 2, update_id = ?, update_time = NOW()
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, operatorID, billID, instID); err != nil {
-		return 0, err
-	}
-	payTime := any(time.Now())
-	if parsed := parseDateStart(dto.PayTime); parsed != nil {
-		payTime = *parsed
-	}
-	payMethod := dto.PayMethod
-	if payMethod == nil {
-		defaultMethod := 4
-		payMethod = &defaultMethod
-	}
-	result, err = tx.ExecContext(ctx, `
-		INSERT INTO sale_order_pay_detail (
-			uuid, version, inst_id, order_id, amount_id, pay_method, pay_amount, pay_time, payment_voucher,
-			create_id, create_time, update_id, update_time, del_flag, remark
-		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, ?
-		)
-	`, instID, saleOrderID, dto.AmountID, *payMethod, dto.Amount, payTime, strings.TrimSpace(dto.PaymentVoucher), operatorID, operatorID, strings.TrimSpace(dto.Remark))
-	if err != nil {
-		return 0, err
-	}
-	paymentDetailID, err := result.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE sale_order
-		SET order_status = ?, update_id = ?, update_time = NOW()
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, model.OrderStatusCompleted, operatorID, saleOrderID, instID); err != nil {
-		return 0, err
-	}
-	if isRefund {
-		var rechBal, resBal, givingBal float64
-		if err := tx.QueryRowContext(ctx, `
-			SELECT IFNULL(recharge_balance, 0), IFNULL(residual_balance, 0), IFNULL(giving_balance, 0)
-			FROM recharge_account
-			WHERE id = ? AND inst_id = ? AND del_flag = 0
-			LIMIT 1
-			FOR UPDATE
-		`, rechargeAccountID, instID).Scan(&rechBal, &resBal, &givingBal); err != nil {
+	cashAmountRequired := hasRechargeActualCashAmount(amount)
+	var (
+		billFlowID      int64
+		paymentDetailID int64
+	)
+	if cashAmountRequired {
+		if !isRefund && dto.Amount <= 0 {
+			return 0, errors.New("支付金额不能小于0")
+		}
+		if isRefund && dto.Amount < 0 {
+			return 0, errors.New("支付金额不能小于0")
+		}
+		if math.Abs(dto.Amount-amount) > 0.000001 {
+			return 0, errors.New("支付金额必须等于订单金额")
+		}
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO recharge_account_bill_flow (
+				inst_id, bill_id, amount, remark, create_id, create_time, del_flag
+			) VALUES (?, ?, ?, ?, ?, NOW(), 0)
+		`, instID, billID, dto.Amount, strings.TrimSpace(dto.Remark), operatorID)
+		if err != nil {
 			return 0, err
 		}
-		if amount > rechBal+1e-9 {
-			return 0, errors.New("充值余额不足")
-		}
-		if residualAmount > resBal+1e-9 {
-			return 0, errors.New("残联余额不足")
-		}
-		if givingAmount > givingBal+1e-9 {
-			return 0, errors.New("赠送余额不足")
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE recharge_account
-			SET recharge_balance = IFNULL(recharge_balance, 0) - ?,
-				residual_balance = IFNULL(residual_balance, 0) - ?,
-				giving_balance = IFNULL(giving_balance, 0) - ?,
-				update_id = ?,
-				update_time = NOW()
-			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, amount, residualAmount, givingAmount, operatorID, rechargeAccountID, instID); err != nil {
+		billFlowID, err = result.LastInsertId()
+		if err != nil {
 			return 0, err
 		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO recharge_account_flow (
-				inst_id, recharge_account_id, student_id, order_number, flow_type,
-				amount, residual_amount, giving_amount, remark,
-				create_id, create_time, update_id, update_time, del_flag
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
-		`, instID, rechargeAccountID, studentID, orderNumber, model.RechargeAccountFlowTypeRefund, -amount, -residualAmount, -givingAmount, strings.TrimSpace(dto.Remark), operatorID, operatorID); err != nil {
+		payTime := any(time.Now())
+		if parsed := parseDateStart(dto.PayTime); parsed != nil {
+			payTime = *parsed
+		}
+		payMethod := dto.PayMethod
+		if payMethod == nil {
+			defaultMethod := 4
+			payMethod = &defaultMethod
+		}
+		result, err = tx.ExecContext(ctx, `
+			INSERT INTO sale_order_pay_detail (
+				uuid, version, inst_id, order_id, amount_id, pay_method, pay_amount, pay_time, payment_voucher,
+				create_id, create_time, update_id, update_time, del_flag, remark
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, ?
+			)
+		`, instID, saleOrderID, dto.AmountID, *payMethod, dto.Amount, payTime, strings.TrimSpace(dto.PaymentVoucher), operatorID, operatorID, strings.TrimSpace(dto.Remark))
+		if err != nil {
 			return 0, err
 		}
-	} else {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE recharge_account
-			SET recharge_balance = IFNULL(recharge_balance, 0) + ?,
-				residual_balance = IFNULL(residual_balance, 0) + ?,
-				giving_balance = IFNULL(giving_balance, 0) + ?,
-				update_id = ?,
-				update_time = NOW()
-			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, amount, residualAmount, givingAmount, operatorID, rechargeAccountID, instID); err != nil {
-			return 0, err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO recharge_account_flow (
-				inst_id, recharge_account_id, student_id, order_number, flow_type,
-				amount, residual_amount, giving_amount, remark,
-				create_id, create_time, update_id, update_time, del_flag
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
-		`, instID, rechargeAccountID, studentID, orderNumber, model.RechargeAccountFlowTypeRecharge, amount, residualAmount, givingAmount, strings.TrimSpace(dto.Remark), operatorID, operatorID); err != nil {
+		paymentDetailID, err = result.LastInsertId()
+		if err != nil {
 			return 0, err
 		}
 	}
-	if err := repo.upsertOrderPaymentLedgerTx(ctx, tx, instID, paymentDetailID); err != nil {
+	if err := repo.completeRechargeAccountOrderTx(
+		ctx,
+		tx,
+		instID,
+		operatorID,
+		orderID,
+		billID,
+		saleOrderID,
+		rechargeAccountID,
+		studentID,
+		amount,
+		residualAmount,
+		givingAmount,
+		orderNumber,
+		orderType,
+		dto.Remark,
+	); err != nil {
 		return 0, err
+	}
+	if cashAmountRequired {
+		if err := repo.upsertOrderPaymentLedgerTx(ctx, tx, instID, paymentDetailID); err != nil {
+			return 0, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err

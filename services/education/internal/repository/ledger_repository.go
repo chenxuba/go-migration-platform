@@ -154,7 +154,7 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 			AND l.source_biz_type = ?
 			AND l.source_biz_id = pd.id
 			AND l.del_flag = 0
-		WHERE pd.inst_id = ? AND pd.del_flag = 0 AND l.id IS NULL
+		WHERE pd.inst_id = ? AND pd.del_flag = 0 AND ABS(IFNULL(pd.pay_amount, 0)) > 0 AND l.id IS NULL
 	`,
 		model.LedgerSourceSystem,
 		model.LedgerSystemTypeOrderPayment,
@@ -263,7 +263,7 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		LEFT JOIN sale_order so ON so.id = pd.order_id AND so.del_flag = 0
 		LEFT JOIN inst_student stu ON stu.id = so.student_id AND stu.del_flag = 0
 		LEFT JOIN inst_user operator ON operator.id = pd.create_id
-		WHERE pd.id = ? AND pd.inst_id = ?
+		WHERE pd.id = ? AND pd.inst_id = ? AND ABS(IFNULL(pd.pay_amount, 0)) > 0
 		ON DUPLICATE KEY UPDATE
 			amount = VALUES(amount),
 			type = VALUES(type),
