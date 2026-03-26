@@ -1,0 +1,157 @@
+@import "./motion.css";
+html {
+  --text-color: rgba(0,0,0,.85);
+  --text-color-1: rgba(0,0,0,.45);
+  --text-color-2: rgba(0,0,0,.2);
+  --bg-color: #fff;
+  --hover-color:rgba(0,0,0,.025);
+  --bg-color-container: #f0f2f5;
+  --c-shadow: 2px 0 8px 0 rgba(29,35,41,.05);
+}
+
+html.dark{
+  --text-color: rgba(229, 224, 216, 0.85);
+  --text-color-1: rgba(229, 224, 216, 0.45);
+  --text-color-2: rgba(229, 224, 216, 0.45);
+  --bg-color: rgb(36, 37, 37);
+  --hover-color:rgb(42, 44, 55);
+  --bg-color-container: rgb(42, 44, 44);
+  --c-shadow: rgba(13, 13, 13, 0.65) 0 2px 8px 0;
+}
+
+body{
+  color: var(--text-color);
+  background-color: var(--bg-color);
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+#app, body, html{
+  height: 100%;
+}
+
+#app{
+  overflow-x: hidden;
+}
+*, :after, :before{
+  box-sizing: border-box;
+}
+.ant-modal-content{
+  padding: 0 !important;
+}
+.ant-modal-header{
+  padding: 12px 24px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.ant-modal-header .ant-modal-title{
+  font-size: 20px;
+}
+.ant-modal-body {
+  word-wrap: break-word;
+  font-size: 14px;
+  padding: 24px;
+}
+.ant-modal-footer {
+  background: transparent;
+  border-radius: 0 0 8px 8px;
+  border-top: 1px solid #eee;
+  padding: 10px 16px;
+  text-align: right;
+}
+.business-settings-modal .ant-modal-body {
+  padding: 0 !important;
+}
+.business-settings-modal .ant-modal-header {
+  margin: 0 !important;
+}
+.business-settings-modal .ant-modal-header{
+  padding-left: 16px !important;
+}
+
+/* 自定义镂空样式 */
+.custom-radio .ant-radio-wrapper:hover .ant-radio,
+.custom-radio .ant-radio:hover .ant-radio-inner,
+.custom-radio .ant-radio-input:focus + .ant-radio-inner {
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio .ant-radio-inner {
+  background-color: transparent;
+  border-color: #d9d9d9;
+}
+
+.custom-radio .ant-radio-checked .ant-radio-inner {
+  background-color: transparent;
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio .ant-radio-inner::after {
+  background-color: var(--pro-ant-color-primary);
+  transform: scale(0.5) !important;
+}
+
+.custom-radio .ant-radio-disabled  .ant-radio-inner{
+  border-color: #d9d9d9;
+}
+
+.custom-num-font-family{
+  font-family: "DIN alternate", sans-serif;
+}
+.ant-table .ant-table-tbody > tr > td {
+  color: rgba(0, 0, 0, 0.7); 
+}
+.ant-pagination-item-active{
+  background-color: #06f !important;
+  border-color: #06f !important;
+}
+
+.ant-pagination-item-active a{
+  color: #fff !important;
+}
+.ant-pagination-item-link{
+  border:1px solid #eee !important;
+}
+.ant-pagination-item{
+  margin: 0 4px !important;
+}
+.ant-pagination-item:hover{
+  border-color: #06f !important;
+  background-color: transparent !important;
+}
+.ant-pagination-item:hover a{
+  color: #06f !important;
+}
+.ant-pagination-item-active:hover{
+  background-color: #06f !important;
+  border-color: #06f !important;
+}
+.ant-pagination-item-active:hover a{
+  color: #fff !important;
+}
+.ant-pagination-item-link:hover{
+  border-color: #eee !important;
+  background-color: transparent !important;
+  color: #06f !important;
+
+}
+.ant-form-item-label >label{
+  color: #666 !important;
+}
+.ant-input, .ant-select-selector,.ant-picker{
+  border-color: #f0f0f0 !important;
+  color: #666 !important;
+}
+/* 输入框错误样式 */
+.ant-input-status-error:not(.ant-input-disabled), .ant-select-status-error:not(.ant-select-disabled):not(.ant-select-customize-input):not(.ant-pagination-size-changer) .ant-select-selector{
+  border-color: #f00 !important;
+}
+.ant-picker-status-error.ant-picker:not([disabled]) {
+  border-color: #f00 !important;
+}
+
+/* .searchKeyStuPhone .ant-select-selector{
+  border-color: #ddd !important;
+} */
+.ant-table-sticky-scroll {
+  display: none !important;
+}

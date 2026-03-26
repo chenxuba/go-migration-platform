@@ -1,0 +1,1 @@
+import{_ as e}from"./index-3jYClFkN.js";import{$ as o,a2 as t}from"./vue-DVTR9RGJ.js";import"./antd-DvZ7CuFl.js";const c={},r={class:"home"};function s(_,a){return t(),o("div",r," 监控页 ")}const m=e(c,[["render",s],["__scopeId","data-v-254e9832"]]);export{m as default};

@@ -1,0 +1,105 @@
+.ant-pro-sider .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.ant-pro-sider-fixed {
+  position: fixed!important;
+  top: 0;
+  left: 0;
+  height: 100%;
+  z-index: 100;
+  box-shadow: 2px 0 8px 0 rgba(29, 35, 41, 0.05);
+}
+.ant-pro-sider-menu {
+  position: relative;
+  z-index: 10;
+  min-height: 100%;
+  border-inline-end: none !important;
+}
+.ant-pro-sider-collapsed-button {
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+.ant-pro-sider-collapsed-button-inverted {
+  border-top: 1px solid rgba(143, 132, 117, 0.06);
+}
+.ant-pro-sider-light .ant-menu-light {
+  border-right-color: transparent;
+}
+.ant-pro-sider-logo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 16px 24px;
+  cursor: pointer;
+  transition: padding 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+.ant-pro-sider-logo > a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  width: 100%;
+}
+.ant-pro-sider-logo img {
+  display: inline-block;
+  height: 32px;
+  vertical-align: middle;
+}
+.ant-pro-sider-logo h1 {
+  display: inline-block;
+  height: 32px;
+  margin: 0 0 0 12px;
+  font-weight: 600;
+  font-size: 18px;
+  line-height: 32px;
+  vertical-align: middle;
+  animation: pro-layout-title-hide 0.3s;
+  width: calc(100% - 32px);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ant-pro-sider-logo-dark {
+  background: #001529;
+}
+.ant-pro-sider-logo-dark h1 {
+  color: rgba(255, 255, 255, 0.65);
+}
+.ant-pro-sider-collapsed {
+  padding: 16px 8px;
+}
+[data-theme='dark'] .ant-pro-sider-collapsed-button {
+  border-top: 1px solid rgba(143, 132, 117, 0.06);
+}
+[data-theme='dark'] .ant-pro-sider-fixed {
+  box-shadow: rgba(13, 13, 13, 0.65) 0 2px 8px 0;
+}
+@keyframes pro-layout-title-hide {
+  0% {
+    display: none;
+    opacity: 0;
+  }
+  80% {
+    display: none;
+    opacity: 0;
+  }
+  to {
+    display: unset;
+    opacity: 1;
+  }
+}
+.scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 10px;
+}
+.scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 5px;
+  -webkit-box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.2);
+  background: rgba(190, 190, 190, 0.2);
+}
+.scrollbar::-webkit-scrollbar-track {
+  -webkit-box-shadow: inset 0 0 5px rgba(227, 227, 227, 0.2);
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.1);
+}

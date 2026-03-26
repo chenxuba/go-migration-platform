@@ -1,0 +1,136 @@
+// GET /api/v1/inst-config
+export interface InstConfig {
+  actualStudentSourceTypeConfig: string
+  addImportStudentRule: number
+  addIntentionStudentRule: number
+  allowOriginalRefund: string
+  arriveClassDaysConfig: string
+  arriveClassSwitch: string
+  arriveClassTimesConfig: string
+  auditionRecordAutomate: string
+  autoAssignPerformance: string
+  autoSendBirthdayMessage: string
+  bookLessonLockedHours: string
+  bookLessonOpeningDays: string
+  bookLessonTime: string
+  bookLessonTimes: string
+  bookLessonTimesCycle: string
+  chargeByPriceDefaultPrice: string
+  classCommentParentFeedbackType: string
+  createTime: string
+  deductWhenLeave: string
+  deductWhenTruancy: string
+  defaultClassTime: string
+  defaultStudentClassTime: string
+  defaultTeacherClassTime: string
+  discountsMode: string
+  enableAdjustTuitionAccountOrder: string
+  enableAdvisor: boolean
+  enableArrearagedSendMessage: string
+  enableAuditionSmsRemind: string
+  enableAutoDeductStock: string
+  enableBookLessonTimes: string
+  enableByAutoTeaching: string
+  enableByDateLesson: string
+  enableByDateStudentAbsentRecord: string
+  enableByDateStudentTeachingRecord: string
+  enableByFaceAttendance: string
+  enableByVoiceTips: string
+  enableChargeByPrice: string
+  enableChargeByPriceStudentAbsentRecord: string
+  enableClassCommentParentFeedback: string
+  enableCollectorStaff: boolean
+  enableCompensationSendMessage: string
+  enableComposeLesson: string
+  enableCustomSku: string
+  enableFaceAttendanceCheckInNotice: string
+  enableFaceAttendanceCheckOutNotice: string
+  enableFaceAttendanceRelateTeaching: string
+  enableFilterHoliday: string
+  enableForeground: boolean
+  enableGeneralLesson: string
+  enableGoodsManagement: string
+  enableGradeUpgrade: string
+  enableLeaveApplyNumberLimit: string
+  enableLeaveApplyTimeLimit: string
+  enableLeaveDeductMoney: string
+  enableLeftClassTimeRemind: string
+  enableLiquidationRemindMessage: string
+  enableOrderTagRequired: string
+  enableOrgSendChildBindNoticeToAdmin: string
+  enableOrgSendFaceAttendNoticeToAdmin: string
+  enablePeerInfoAndServiceManagement: string
+  enablePhoneSellStaff: boolean
+  enablePointChangeRemindMessage: string
+  enablePublicPool: boolean
+  enableRechargeAccountChangeMessage: string
+  enableRefundZero: string
+  enableRenewClassNum: string
+  enableRenewPrice: string
+  enableRenewValidityDay: string
+  enableSendChildBindNoticeToAdmin: string
+  enableSendCouponRemindSms: string
+  enableSendFaceAttendNoticeToAdmin: string
+  enableSendFaceAttendNoticeToParent: string
+  enableShowArrearsInformation: string
+  enableShowLeftTuition: string
+  enableShowRechargeAccountBalance: string
+  enableShowSchoolOnOrderReceipt: string
+  enableSpaceBookingNotice: string
+  enableStudentManager: boolean
+  enableStudentParentTranscriptChart: string
+  enableSubject: string
+  enableSubjectOnlineSaleFilter: string
+  enableTeachingBillRemindSms: string
+  enableTimetableTimeConfig: string
+  enableTranOrderFinishedSendMessage: string
+  enableTruantDeductMoney: string
+  enableViceSellStaff: boolean
+  enabledArrearsRollcall: string
+  enabledBookLessonExcess: string
+  enabledClassConsumptionReminder: string
+  enabledClassReminder: string
+  enabledOne2one: string
+  enabledRenewReminder: string
+  enabledShowBookLessonStudentCount: string
+  faceAttendanceInterval: string
+  faceAttendanceRelateRule: string
+  faceAttendanceSplit: string
+  id: number
+  instId: number
+  leaveApplyCycleLimit: string
+  leaveApplyNumberLimit: string
+  leaveApplyTimeLimit: string
+  leaveApplyTypeLimit: string
+  limitImportSameWeChat: boolean
+  limitSameWeChat: boolean
+  maxMicroSchoolOnlineUserCount: string
+  maximumClassSizePolicy: string
+  microSchoolOrderExpireMinutes: string
+  renewClassNum: string
+  renewPrice: string
+  renewValidityDay: string
+  schoolHomeBanner: string
+  sendClassReminderMsgHour: string
+  sendClassReminderSmsHour: string
+  shouldStudentSourceTypeConfig: string
+  studentAbsentClassSwitch: string
+  studentAbsentClassValue: string
+  timeTableChangedSendToCSwitch: string
+  tuitionAccountPriority: string
+  unfollowedTime: number
+  updateTime: string
+  uuid: string
+  version: number
+}
+export function getInstConfigApi() {
+  return useGet<InstConfig>('/api/v1/inst-config')
+}
+// /instConfig/setInstConfig
+export function setInstConfigApi(data: InstConfig) {
+  return usePost<InstConfig>('/api/v1/inst-config/update', data)
+}
+// 解密学员手机号
+export function getStudentPhoneNumberApi(data: { studentId: number }) {
+  return useGet<string>('/api/v1/intent-students/phone', data)
+}

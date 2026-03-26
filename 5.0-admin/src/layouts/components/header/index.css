@@ -1,0 +1,10 @@
+.ant-pro-fixed-header {
+  position: fixed;
+  top: 0;
+}
+.ant-pro-fixed-header-inverted {
+  --hover-color: #2a2c37;
+}
+.ant-pro-fixed-header-action {
+  transition: width 0.3s ease;
+}

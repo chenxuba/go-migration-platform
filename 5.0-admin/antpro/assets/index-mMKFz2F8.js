@@ -1,0 +1,1 @@
+import{_ as e}from"./index-3jYClFkN.js";import{$ as o,a2 as t}from"./vue-DVTR9RGJ.js";import"./antd-DvZ7CuFl.js";const c={},r={class:"home"};function s(a,_){return t(),o("div",r," 基础表单 ")}const m=e(c,[["render",s],["__scopeId","data-v-005ae510"]]);export{m as default};

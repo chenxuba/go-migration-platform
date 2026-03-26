@@ -1,0 +1,1 @@
+import{_ as e}from"./index-3jYClFkN.js";import{$ as c,a2 as o}from"./vue-DVTR9RGJ.js";import"./antd-DvZ7CuFl.js";const t={},r={class:"home"};function s(_,a){return o(),c("div",r," 首页 ")}const i=e(t,[["render",s],["__scopeId","data-v-c9cf4e88"]]);export{i as default};

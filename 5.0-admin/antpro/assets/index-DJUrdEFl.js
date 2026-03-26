@@ -1,0 +1,1 @@
+import{_ as e}from"./index-3jYClFkN.js";import{$ as o,a2 as c}from"./vue-DVTR9RGJ.js";import"./antd-DvZ7CuFl.js";const t={},r={class:"home"};function s(a,_){return c(),o("div",r," 工作台 ")}const m=e(t,[["render",s],["__scopeId","data-v-cba89e16"]]);export{m as default};
