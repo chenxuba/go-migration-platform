@@ -349,6 +349,7 @@ type OrderDetailDTO struct {
 	DealDate            *time.Time       `json:"dealDate"`
 	SalePerson          *int64           `json:"salePerson"`
 	OrderTagIDs         []int64          `json:"orderTagIds"`
+	OrderSource         *int             `json:"orderSource"`
 }
 
 type CreateOrderDTO struct {

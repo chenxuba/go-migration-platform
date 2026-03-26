@@ -47,3 +47,8 @@ type IntentionStudentImportTaskListResult struct {
 	List  []IntentionStudentImportTaskDetail `json:"list"`
 	Total int                                `json:"total"`
 }
+
+type OrderImportStartResult struct {
+	SuccessCount int `json:"successCount"`
+	FailCount    int `json:"failCount"`
+}

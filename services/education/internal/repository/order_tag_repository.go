@@ -155,3 +155,33 @@ func (repo *Repository) ListEnabledOrderTagNames(ctx context.Context, instID int
 	}
 	return items, rows.Err()
 }
+
+func (repo *Repository) ListEnabledOrderTagNameIDMap(ctx context.Context, instID int64) (map[string]int64, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(name, '')
+		FROM inst_order_tag
+		WHERE inst_id = ? AND del_flag = 0 AND IFNULL(enable, 0) = 1
+		ORDER BY update_time DESC, id DESC
+	`, instID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]int64)
+	for rows.Next() {
+		var (
+			id   int64
+			name string
+		)
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		result[name] = id
+	}
+	return result, rows.Err()
+}

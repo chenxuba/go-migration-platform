@@ -1923,7 +1923,7 @@ func (repo *Repository) CreateOrder(ctx context.Context, instID, operatorID int6
 			order_discount_amount, order_discount_number, order_real_amount, order_tag_ids, internal_remark,
 			external_remark, order_type, order_status, order_source, create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NOW(), ?, NOW(), 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
 		)
 	`,
 		instID,
@@ -1940,6 +1940,12 @@ func (repo *Repository) CreateOrder(ctx context.Context, instID, operatorID int6
 		strings.TrimSpace(dto.OrderDetail.ExternalRemark),
 		1,
 		model.OrderStatusPendingPayment,
+		func() int {
+			if dto.OrderDetail.OrderSource != nil && *dto.OrderDetail.OrderSource > 0 {
+				return *dto.OrderDetail.OrderSource
+			}
+			return model.OrderSourceOffline
+		}(),
 		operatorID,
 		operatorID,
 	)

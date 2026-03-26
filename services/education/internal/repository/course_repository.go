@@ -512,6 +512,59 @@ func (repo *Repository) ListCourseNames(ctx context.Context, instID int64) ([]st
 	return items, rows.Err()
 }
 
+func (repo *Repository) ListCourseQuotationsByNamesAndLessonModel(ctx context.Context, instID int64, courseNames []string, lessonModel int) (map[string][]model.CourseQuotation, error) {
+	result := make(map[string][]model.CourseQuotation)
+	if len(courseNames) == 0 {
+		return result, nil
+	}
+
+	holders := make([]string, 0, len(courseNames))
+	args := make([]any, 0, len(courseNames)+2)
+	args = append(args, instID, lessonModel)
+	for _, name := range courseNames {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		holders = append(holders, "?")
+		args = append(args, name)
+	}
+	if len(holders) == 0 {
+		return result, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(c.name, ''),
+		       q.id, IFNULL(q.uuid, ''), IFNULL(q.version, 0), q.course_id, q.lesson_model,
+		       IFNULL(q.name, ''), q.unit, q.quantity, IFNULL(q.price, 0), IFNULL(q.lesson_audition, 0),
+		       IFNULL(q.online_sale, 0), IFNULL(q.remark, '')
+		FROM inst_course c
+		INNER JOIN inst_course_quotation q ON q.course_id = c.id AND q.del_flag = 0
+		WHERE c.inst_id = ? AND c.del_flag = 0 AND q.lesson_model = ? AND c.name IN (`+strings.Join(holders, ",")+`)
+		ORDER BY c.id ASC, q.id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			courseName string
+			item       model.CourseQuotation
+		)
+		if err := rows.Scan(&courseName, &item.ID, &item.UUID, &item.Version, &item.CourseID, &item.LessonModel, &item.Name, &item.Unit, &item.Quantity, &item.Price, &item.LessonAudition, &item.OnlineSale, &item.Remark); err != nil {
+			return nil, err
+		}
+		courseName = strings.TrimSpace(courseName)
+		if courseName == "" {
+			continue
+		}
+		result[courseName] = append(result[courseName], item)
+	}
+	return result, rows.Err()
+}
+
 func (repo *Repository) CountStudents(ctx context.Context, instID *int64) (int, error) {
 	query := "SELECT COUNT(*) FROM inst_student WHERE del_flag = 0"
 	args := make([]any, 0, 1)

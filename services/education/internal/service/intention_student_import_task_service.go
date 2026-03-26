@@ -515,7 +515,7 @@ func buildStudentSaveDTOFromImportRow(row model.IntentionStudentImportRow, colum
 			dto.Address = text
 		case "兴趣爱好":
 			dto.Interest = text
-		case "销售员":
+		case "销售员", "销售":
 			if value, ok := resolveImportOptionInt64(cell, optionMap[column.Title]); ok {
 				dto.SalespersonID = &value
 			}

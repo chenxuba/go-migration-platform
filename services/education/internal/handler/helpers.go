@@ -587,6 +587,7 @@ func parseCreateOrderDTO(raw map[string]any) model.CreateOrderDTO {
 			DealDate:            asDateTimePtr(orderDetailRaw["dealDate"]),
 			SalePerson:          asInt64Ptr(orderDetailRaw["salePerson"]),
 			OrderTagIDs:         asInt64Slice(orderDetailRaw["orderTagIds"]),
+			OrderSource:         asIntPtr(orderDetailRaw["orderSource"]),
 		}
 		if detailListRaw, ok := orderDetailRaw["quoteDetailList"].([]any); ok {
 			detail.QuoteDetailList = make([]model.QuoteDetailDTO, 0, len(detailListRaw))

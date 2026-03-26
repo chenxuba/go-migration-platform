@@ -173,6 +173,45 @@ func (repo *Repository) GetAddIntentionStudentRule(ctx context.Context, instID i
 	return int(rule.Int64), nil
 }
 
+func (repo *Repository) GetAddImportStudentRule(ctx context.Context, instID int64) (int, error) {
+	var rule sql.NullInt64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT add_import_student_rule
+		FROM inst_config
+		WHERE inst_id = ? AND del_flag = 0
+		ORDER BY id DESC
+		LIMIT 1
+	`, instID).Scan(&rule)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 1, nil
+		}
+		return 0, err
+	}
+	if !rule.Valid || rule.Int64 < 1 || rule.Int64 > 3 {
+		return 1, nil
+	}
+	return int(rule.Int64), nil
+}
+
+func (repo *Repository) GetLimitImportSameWeChat(ctx context.Context, instID int64) (bool, error) {
+	var value sql.NullBool
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(limit_import_same_weChat, 0)
+		FROM inst_config
+		WHERE inst_id = ? AND del_flag = 0
+		ORDER BY id DESC
+		LIMIT 1
+	`, instID).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return value.Valid && value.Bool, nil
+}
+
 func (repo *Repository) CountStudentDuplicatesByRule(ctx context.Context, instID, rule int64, stuName, mobile string, excludeID *int64) (int, error) {
 	filters := []string{"inst_id = ?", "del_flag = 0"}
 	args := []any{instID}
@@ -199,6 +238,37 @@ func (repo *Repository) CountStudentDuplicatesByRule(ctx context.Context, instID
 	var count int
 	err := repo.db.QueryRowContext(ctx, query, args...).Scan(&count)
 	return count, err
+}
+
+func (repo *Repository) FindStudentIDByNameMobile(ctx context.Context, instID int64, stuName, mobile string) (int64, error) {
+	var studentID int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM inst_student
+		WHERE inst_id = ? AND del_flag = 0 AND stu_name = ? AND mobile = ?
+		ORDER BY id ASC
+		LIMIT 1
+	`, instID, strings.TrimSpace(stuName), strings.TrimSpace(mobile)).Scan(&studentID)
+	return studentID, err
+}
+
+func (repo *Repository) CountStudentByWeChat(ctx context.Context, instID int64, weChat string) (int, error) {
+	var count int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM inst_student
+		WHERE inst_id = ? AND del_flag = 0 AND wechat_number = ?
+	`, instID, strings.TrimSpace(weChat)).Scan(&count)
+	return count, err
+}
+
+func (repo *Repository) UpdateStudentStatusValue(ctx context.Context, instID, studentID int64, status int) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_student
+		SET student_status = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, status, studentID, instID)
+	return err
 }
 
 func (repo *Repository) GetStudentPhone(ctx context.Context, instID, studentID int64) (string, error) {
