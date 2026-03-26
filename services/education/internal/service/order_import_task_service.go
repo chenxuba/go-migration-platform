@@ -480,7 +480,17 @@ func (svc *Service) importOrderRow(
 		return err
 	}
 
-	createDTO, payDTO, hasPayment, err := buildCreateAndPayOrderDTOFromImportRow(decision.StudentID, importMode, row, columns, optionMap, orderTagMap, quotationMap)
+	courseName := strings.TrimSpace(cellValueByTitle(row, "报读课程"))
+	quotation, err := pickOrderImportAnchorQuotation(quotationMap[courseName], isTrial, importMode)
+	if err != nil {
+		return err
+	}
+	handleType, err := svc.detectOrderImportHandleType(context.Background(), instID, decision.StudentID, quotation.CourseID)
+	if err != nil {
+		return err
+	}
+
+	createDTO, payDTO, hasPayment, err := buildCreateAndPayOrderDTOFromImportRow(decision.StudentID, importMode, handleType, row, columns, optionMap, orderTagMap, quotationMap)
 	if err != nil {
 		return err
 	}
@@ -507,6 +517,33 @@ func (svc *Service) importOrderRow(
 		}
 	}
 	return nil
+}
+
+func (svc *Service) detectOrderImportHandleType(ctx context.Context, instID, studentID, courseID int64) (int, error) {
+	active, err := svc.repo.StudentHasActiveCourseEnrollment(ctx, instID, studentID, courseID)
+	if err != nil {
+		return 0, err
+	}
+	if active {
+		return 2, nil
+	}
+
+	purchased, err := svc.repo.StudentHasCompletedOrderForCourse(ctx, instID, studentID, courseID)
+	if err != nil {
+		return 0, err
+	}
+	if purchased {
+		return 2, nil
+	}
+
+	hasAnyPurchased, err := svc.repo.StudentHasCompletedOrders(ctx, instID, studentID)
+	if err != nil {
+		return 0, err
+	}
+	if hasAnyPurchased {
+		return 3, nil
+	}
+	return 1, nil
 }
 
 func (svc *Service) resolveOrderImportStudent(userID, instID int64, dto model.StudentSaveDTO) (orderImportStudentDecision, error) {
@@ -565,6 +602,7 @@ func (svc *Service) resolveOrderImportStudent(userID, instID int64, dto model.St
 func buildCreateAndPayOrderDTOFromImportRow(
 	studentID int64,
 	importMode orderImportMode,
+	handleType int,
 	row model.IntentionStudentImportRow,
 	columns map[string]model.IntentionStudentImportColumn,
 	optionMap map[string][]importOptionItem,
@@ -616,7 +654,6 @@ func buildCreateAndPayOrderDTOFromImportRow(
 	}
 
 	orderTagIDs := resolveOrderImportTagIDs(rowData["订单标签"], orderTagMap)
-	handleType := 0
 	quotation, err := pickOrderImportAnchorQuotation(quotationMap[courseName], isTrial, importMode)
 	if err != nil {
 		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err

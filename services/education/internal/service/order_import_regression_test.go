@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"database/sql/driver"
 	"strings"
 	"testing"
@@ -328,6 +329,7 @@ func TestBuildCreateAndPayOrderDTOFromImportRow_UsesCustomQuoteForImportedOrder(
 	createDTO, payDTO, hasPayment, err := buildCreateAndPayOrderDTOFromImportRow(
 		1001,
 		orderImportModeLessonHour,
+		1,
 		row,
 		map[string]model.IntentionStudentImportColumn{},
 		map[string][]importOptionItem{
@@ -406,6 +408,7 @@ func TestBuildCreateAndPayOrderDTOFromImportRow_SupportsTimeSlotImport(t *testin
 	createDTO, payDTO, hasPayment, err := buildCreateAndPayOrderDTOFromImportRow(
 		1002,
 		orderImportModeTimeSlot,
+		1,
 		row,
 		map[string]model.IntentionStudentImportColumn{},
 		map[string][]importOptionItem{
@@ -485,6 +488,202 @@ func TestResolveOrderImportStudent_ReusesExistingStudentOnExactNameAndMobile(t *
 	}
 }
 
+func TestDetectOrderImportHandleType_ReturnsNewWhenCourseNotPurchased(t *testing.T) {
+	instID := int64(601)
+	studentID := int64(701)
+	courseID := int64(801)
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM sale_order so
+				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+				WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = ? AND so.del_flag = 0
+				  AND d.course_id = ?
+				  AND (
+					IFNULL(d.has_valid_date, 0) = 0
+					OR d.end_date IS NULL
+					OR d.end_date >= CURDATE()
+				  )
+			`,
+			args:    []any{instID, studentID, model.OrderStatusCompleted, courseID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM sale_order so
+				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+				WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = ? AND so.del_flag = 0
+				  AND d.course_id = ?
+			`,
+			args:    []any{instID, studentID, model.OrderStatusCompleted, courseID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM sale_order
+				WHERE inst_id = ? AND student_id = ? AND order_status = ? AND del_flag = 0
+			`,
+			args:    []any{instID, studentID, model.OrderStatusCompleted},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+	})
+	defer cleanup()
+
+	handleType, err := svc.detectOrderImportHandleType(context.Background(), instID, studentID, courseID)
+	if err != nil {
+		t.Fatalf("detect handle type: %v", err)
+	}
+	if handleType != 1 {
+		t.Fatalf("expected new enroll type 1, got %d", handleType)
+	}
+}
+
+func TestDetectOrderImportHandleType_ReturnsRenewWhenCourseActive(t *testing.T) {
+	instID := int64(602)
+	studentID := int64(702)
+	courseID := int64(802)
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM sale_order so
+				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+				WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = ? AND so.del_flag = 0
+				  AND d.course_id = ?
+				  AND (
+					IFNULL(d.has_valid_date, 0) = 0
+					OR d.end_date IS NULL
+					OR d.end_date >= CURDATE()
+				  )
+			`,
+			args:    []any{instID, studentID, model.OrderStatusCompleted, courseID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(1)}},
+		},
+	})
+	defer cleanup()
+
+	handleType, err := svc.detectOrderImportHandleType(context.Background(), instID, studentID, courseID)
+	if err != nil {
+		t.Fatalf("detect handle type: %v", err)
+	}
+	if handleType != 2 {
+		t.Fatalf("expected renew enroll type 2, got %d", handleType)
+	}
+}
+
+func TestDetectOrderImportHandleType_ReturnsRenewWhenCoursePurchasedBefore(t *testing.T) {
+	instID := int64(603)
+	studentID := int64(703)
+	courseID := int64(803)
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM sale_order so
+				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+				WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = ? AND so.del_flag = 0
+				  AND d.course_id = ?
+				  AND (
+					IFNULL(d.has_valid_date, 0) = 0
+					OR d.end_date IS NULL
+					OR d.end_date >= CURDATE()
+				  )
+			`,
+			args:    []any{instID, studentID, model.OrderStatusCompleted, courseID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM sale_order so
+				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+				WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = ? AND so.del_flag = 0
+				  AND d.course_id = ?
+			`,
+			args:    []any{instID, studentID, model.OrderStatusCompleted, courseID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(1)}},
+		},
+	})
+	defer cleanup()
+
+	handleType, err := svc.detectOrderImportHandleType(context.Background(), instID, studentID, courseID)
+	if err != nil {
+		t.Fatalf("detect handle type: %v", err)
+	}
+	if handleType != 2 {
+		t.Fatalf("expected renew enroll type 2, got %d", handleType)
+	}
+}
+
+func TestDetectOrderImportHandleType_ReturnsExpandWhenOtherCoursePurchased(t *testing.T) {
+	instID := int64(604)
+	studentID := int64(704)
+	courseID := int64(804)
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM sale_order so
+				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+				WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = ? AND so.del_flag = 0
+				  AND d.course_id = ?
+				  AND (
+					IFNULL(d.has_valid_date, 0) = 0
+					OR d.end_date IS NULL
+					OR d.end_date >= CURDATE()
+				  )
+			`,
+			args:    []any{instID, studentID, model.OrderStatusCompleted, courseID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM sale_order so
+				INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+				WHERE so.inst_id = ? AND so.student_id = ? AND so.order_status = ? AND so.del_flag = 0
+				  AND d.course_id = ?
+			`,
+			args:    []any{instID, studentID, model.OrderStatusCompleted, courseID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM sale_order
+				WHERE inst_id = ? AND student_id = ? AND order_status = ? AND del_flag = 0
+			`,
+			args:    []any{instID, studentID, model.OrderStatusCompleted},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(2)}},
+		},
+	})
+	defer cleanup()
+
+	handleType, err := svc.detectOrderImportHandleType(context.Background(), instID, studentID, courseID)
+	if err != nil {
+		t.Fatalf("detect handle type: %v", err)
+	}
+	if handleType != 3 {
+		t.Fatalf("expected expand enroll type 3, got %d", handleType)
+	}
+}
+
 func TestValidateOrderImportValue_RejectsOldOtherPayMethodAlias(t *testing.T) {
 	column := model.IntentionStudentImportColumn{
 		Title:     "收款方式",
@@ -500,6 +699,7 @@ func TestBuildCreateAndPayOrderDTOFromImportRow_RequiresCourseName(t *testing.T)
 	_, _, _, err := buildCreateAndPayOrderDTOFromImportRow(
 		1001,
 		orderImportModeLessonHour,
+		1,
 		model.IntentionStudentImportRow{
 			Cells: []model.IntentionStudentImportCell{
 				{Title: "购买课时数", Value: "2"},

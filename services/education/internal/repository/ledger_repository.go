@@ -114,10 +114,7 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 			pd.pay_time,
 			pd.pay_method,
 			IFNULL(pd.amount_id, 0),
-			CASE
-				WHEN IFNULL(pd.amount_id, 0) = 0 THEN '默认账户'
-				ELSE CONCAT('账户', pd.amount_id)
-			END,
+			'默认账户',
 			'',
 			'',
 			IFNULL(so.id, 0),
@@ -183,7 +180,10 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 		1,
 		instID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return repo.normalizeSystemLedgerAccountNames(ctx, instID)
 }
 
 func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.Tx, instID, paymentDetailID int64) error {
@@ -228,10 +228,7 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 			pd.pay_time,
 			pd.pay_method,
 			IFNULL(pd.amount_id, 0),
-			CASE
-				WHEN IFNULL(pd.amount_id, 0) = 0 THEN '默认账户'
-				ELSE CONCAT('账户', pd.amount_id)
-			END,
+			'默认账户',
 			'',
 			'',
 			IFNULL(so.id, 0),
@@ -312,6 +309,22 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		paymentDetailID,
 		instID,
 	)
+	if err != nil {
+		return err
+	}
+	return repo.normalizeSystemLedgerAccountNames(ctx, instID)
+}
+
+func (repo *Repository) normalizeSystemLedgerAccountNames(ctx context.Context, instID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_ledger
+		SET account_name = '默认账户', update_time = NOW()
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND source_type = ?
+		  AND system_type = ?
+		  AND (account_name = '' OR account_name LIKE '账户%')
+	`, instID, model.LedgerSourceSystem, model.LedgerSystemTypeOrderPayment)
 	return err
 }
 

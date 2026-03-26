@@ -128,8 +128,8 @@ const chargingModeMap = {
 }
 
 const handleTypeMap = {
-  0: '试听',
-  1: '报读',
+  0: '无',
+  1: '新报',
   2: '续费',
   3: '转课',
 }
@@ -627,13 +627,15 @@ function getGiftLabel(mode) {
 }
 
 function getOrderDetailColumns(item) {
-  return [
+  const isTimeSlot = Number(item?.chargingMode || 0) === 2
+  const columns = [
     {
       title: '报价单',
       dataIndex: 'priceList',
       key: 'priceList',
       width: 260,
       align: 'center',
+      ellipsis: true,
     },
     {
       title: '购买份数',
@@ -647,13 +649,6 @@ function getOrderDetailColumns(item) {
       dataIndex: 'freeHours',
       key: 'freeHours',
       width: 120,
-      align: 'center',
-    },
-    {
-      title: '有效期至',
-      dataIndex: 'validUntil',
-      key: 'validUntil',
-      width: 140,
       align: 'center',
     },
     {
@@ -677,7 +672,85 @@ function getOrderDetailColumns(item) {
       width: 140,
       align: 'center',
     },
+    {
+      title: '分摊优惠券（元）',
+      dataIndex: 'shareCouponAmount',
+      key: 'shareCouponAmount',
+      width: 150,
+      align: 'center',
+    },
+    {
+      title: '分摊储值账户充值余额（元）',
+      dataIndex: 'shareRechargeAccountAmount',
+      key: 'shareRechargeAccountAmount',
+      width: 200,
+      align: 'center',
+    },
+    {
+      title: '分摊储值账户赠送余额（元）',
+      dataIndex: 'shareRechargeAccountGivingAmount',
+      key: 'shareRechargeAccountGivingAmount',
+      width: 200,
+      align: 'center',
+    },
+    {
+      title: '平账抵扣（元）',
+      dataIndex: 'chargeAgainstAmount',
+      key: 'chargeAgainstAmount',
+      width: 140,
+      align: 'center',
+    },
+    {
+      title: '分摊欠费金额（元）',
+      dataIndex: 'arrearAmount',
+      key: 'arrearAmount',
+      width: 160,
+      align: 'center',
+    },
+    {
+      title: '实付金额（元）',
+      dataIndex: 'actualPaidAmount',
+      key: 'actualPaidAmount',
+      width: 150,
+      align: 'center',
+    },
   ]
+
+  if (isTimeSlot) {
+    columns.splice(3, 0,
+      {
+        title: '开始时间',
+        dataIndex: 'startTime',
+        key: 'startTime',
+        width: 180,
+        align: 'center',
+      },
+      {
+        title: '结束时间',
+        dataIndex: 'endTime',
+        key: 'endTime',
+        width: 180,
+        align: 'center',
+      },
+      {
+        title: '总天数（含赠）',
+        dataIndex: 'totalDays',
+        key: 'totalDays',
+        width: 150,
+        align: 'center',
+      },
+    )
+    return columns
+  }
+
+  columns.splice(3, 0, {
+    title: '有效期至',
+    dataIndex: 'validUntil',
+    key: 'validUntil',
+    width: 140,
+    align: 'center',
+  })
+  return columns
 }
 
 function formatQuoteDisplay(item) {
@@ -702,25 +775,97 @@ function formatValidUntil(item) {
   return item.hasValidDate ? '长期有效' : '-'
 }
 
+function formatDateWithWeekday(dateStr) {
+  if (isPlaceholderDate(dateStr))
+    return '-'
+  const value = dayjs(dateStr)
+  if (!value.isValid())
+    return '-'
+  const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return `${value.format('YYYY-MM-DD')}（${weekDays[value.day()]}）`
+}
+
 function formatSingleDiscount(item) {
   if (!item?.discountType || !Number(item.singleDiscountAmount || 0))
     return '-'
   if (item.discountType === 2 && Number(item.discountNumber || 0) > 0) {
     return `${item.discountNumber}折`
   }
-  return `-${formatMoney(item.singleDiscountAmount)}`
+  return `-${formatMoneyPlain(item.singleDiscountAmount)}`
+}
+
+function getOrderItemAllocationBase() {
+  const total = orderItems.value.reduce((sum, current) => sum + Number(current?.receivableAmount || 0), 0)
+  if (total > 0) {
+    return total
+  }
+  return Number(orderTotalAmount.value || 0)
+}
+
+function getOrderItemShareRatio(item) {
+  const base = getOrderItemAllocationBase()
+  if (base <= 0) {
+    return 0
+  }
+  return Number(item?.receivableAmount || 0) / base
+}
+
+function allocateOrderAmount(item, totalAmount) {
+  return Number(totalAmount || 0) * getOrderItemShareRatio(item)
+}
+
+function formatDeductionAmount(value) {
+  return `-${formatMoneyPlain(Math.abs(Number(value || 0)))}`
+}
+
+function formatNumericAmount(value) {
+  return formatMoneyPlain(Number(value || 0))
+}
+
+function formatCount(value, suffix = '') {
+  const amount = Number(value || 0)
+  const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
+  return `${text}${suffix}`
+}
+
+function getOrderDetailTableScrollX(item) {
+  return getOrderDetailColumns(item).reduce((total, column) => total + Number(column.width || 0), 0)
 }
 
 function toOrderDetailRow(item) {
+  const actualPaidAmount = allocateOrderAmount(item, detail.value?.paidAmount)
+  const shareCouponAmount = 0
+  const shareRechargeAccountAmount = allocateOrderAmount(item, detail.value?.rechargeAccountAmount)
+  const shareRechargeAccountGivingAmount = allocateOrderAmount(item, detail.value?.rechargeAccountGivingAmount)
+  const chargeAgainstAmount = allocateOrderAmount(item, detail.value?.totalChargeAgainstAmount)
+  const arrearAmount = Math.max(
+    Number(item?.receivableAmount || 0)
+      - actualPaidAmount
+      - shareRechargeAccountAmount
+      - shareRechargeAccountGivingAmount
+      - chargeAgainstAmount
+      - shareCouponAmount,
+    0,
+  )
+
   return [{
     key: item.orderCourseDetailId,
     priceList: formatQuoteDisplay(item),
-    quantity: `${Number(item.count || 0)}份`,
+    quantity: formatCount(item.count, '份'),
     freeHours: formatQuantity(item.freeQuantity, item.chargingMode),
     validUntil: formatValidUntil(item),
+    startTime: formatDateWithWeekday(item.validDate),
+    endTime: formatDateWithWeekday(item.endDate),
+    totalDays: formatCount(item.realQuantity, '天'),
     singleDiscount: formatSingleDiscount(item),
-    shareDiscount: `-${formatMoney(item.shareDiscount)}`,
-    receivableAmount: formatMoney(item.receivableAmount),
+    shareDiscount: formatDeductionAmount(item.shareDiscount),
+    receivableAmount: formatNumericAmount(item.receivableAmount),
+    shareCouponAmount: formatDeductionAmount(shareCouponAmount),
+    shareRechargeAccountAmount: formatDeductionAmount(shareRechargeAccountAmount),
+    shareRechargeAccountGivingAmount: formatDeductionAmount(shareRechargeAccountGivingAmount),
+    chargeAgainstAmount: formatNumericAmount(chargeAgainstAmount),
+    arrearAmount: formatNumericAmount(arrearAmount),
+    actualPaidAmount: formatNumericAmount(actualPaidAmount),
   }]
 }
 
@@ -1292,6 +1437,7 @@ function isHandledApprovalFlow(flow) {
                   :data-source="toOrderDetailRow(item)"
                   :columns="getOrderDetailColumns(item)"
                   :pagination="false"
+                  :scroll="{ x: getOrderDetailTableScrollX(item) }"
                   size="small"
                   bordered
                 />
