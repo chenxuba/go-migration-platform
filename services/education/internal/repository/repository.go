@@ -92,6 +92,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureIntentionStudentImportTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensureOrderImportTables(ctx, repo.db); err != nil {
+		return err
+	}
 	var exists int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)

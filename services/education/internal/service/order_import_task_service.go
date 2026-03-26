@@ -69,50 +69,62 @@ func (svc *Service) SubmitOrderImportTask(userID int64, req model.IntentionStude
 
 	now := time.Now()
 	taskID := parseResult.ImportID
-	task := orderImportTask{
-		InstID: instID,
-		Detail: model.IntentionStudentImportTaskDetail{
-			ID:              taskID,
-			FileName:        strings.TrimSpace(req.FileName),
-			UploadStaffID:   fmt.Sprintf("%d", instUserID),
-			UploadStaffName: uploadStaffName,
-			TotalRows:       len(parseResult.Rows),
-			ExecutedRows:    0,
-			DeletedRows:     0,
-			ErrorRows:       parseResult.AbnormalCount,
-			CreatedTime:     &now,
-			Status:          3,
-			InstName:        parseResult.InstName,
-		},
-		Columns: parseResult.Columns,
-		Rows:    parseResult.Rows,
+	task := model.IntentionStudentImportTaskDetail{
+		ID:              taskID,
+		FileName:        strings.TrimSpace(req.FileName),
+		UploadStaffID:   fmt.Sprintf("%d", instUserID),
+		UploadStaffName: uploadStaffName,
+		TotalRows:       len(parseResult.Rows),
+		ExecutedRows:    0,
+		DeletedRows:     0,
+		ErrorRows:       parseResult.AbnormalCount,
+		CreatedTime:     &now,
+		Status:          3,
+		InstName:        parseResult.InstName,
 	}
-	saveOrderImportTask(task)
-	_ = instID
+	if err := svc.repo.CreateOrderImportTask(context.Background(), instID, task, parseResult.Columns, parseResult.Rows); err != nil {
+		return "", err
+	}
 	return taskID, nil
 }
 
 func (svc *Service) GetOrderImportTaskDetail(taskID string) (model.IntentionStudentImportTaskDetail, error) {
-	task, ok := loadOrderImportTask(taskID)
-	if !ok {
-		return model.IntentionStudentImportTaskDetail{}, errors.New("import task not found")
+	task, err := svc.repo.GetOrderImportTask(context.Background(), taskID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.IntentionStudentImportTaskDetail{}, errors.New("import task not found")
+		}
+		return model.IntentionStudentImportTaskDetail{}, err
 	}
 	return task.Detail, nil
 }
 
 func (svc *Service) GetOrderImportTaskRecordList(taskID string, taskType int) (model.IntentionStudentImportTaskRecordListResult, error) {
-	task, ok := loadOrderImportTask(taskID)
-	if !ok {
-		return model.IntentionStudentImportTaskRecordListResult{}, errors.New("import task not found")
+	task, err := svc.repo.GetOrderImportTask(context.Background(), taskID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.IntentionStudentImportTaskRecordListResult{}, errors.New("import task not found")
+		}
+		return model.IntentionStudentImportTaskRecordListResult{}, err
 	}
 
 	items := make([]model.IntentionStudentImportRow, 0, len(task.Rows))
 	for _, row := range task.Rows {
-		if taskType == 0 && row.HasError {
+		if task.Detail.Status == 3 {
+			if taskType == 0 && row.HasError {
+				items = append(items, row)
+				continue
+			}
+			if taskType == 1 && !row.HasError {
+				items = append(items, row)
+			}
+			continue
+		}
+		if taskType == 0 && row.Status == 2 {
 			items = append(items, row)
 			continue
 		}
-		if taskType == 1 && !row.HasError {
+		if taskType == 1 && row.Status == 1 {
 			items = append(items, row)
 		}
 	}
@@ -124,9 +136,12 @@ func (svc *Service) GetOrderImportTaskRecordList(taskID string, taskType int) (m
 }
 
 func (svc *Service) BatchSaveOrderImportTaskRecords(userID int64, req model.IntentionStudentImportSaveTaskRecordRequest) ([]model.IntentionStudentImportRow, error) {
-	task, ok := loadOrderImportTask(req.TaskID)
-	if !ok {
-		return nil, errors.New("import task not found")
+	task, err := svc.repo.GetOrderImportTask(context.Background(), req.TaskID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("import task not found")
+		}
+		return nil, err
 	}
 	optionMap, err := svc.loadOrderImportOptionMap(userID)
 	if err != nil {
@@ -193,22 +208,37 @@ func (svc *Service) BatchSaveOrderImportTaskRecords(userID int64, req model.Inte
 	sort.Slice(task.Rows, func(i, j int) bool { return task.Rows[i].RowNo < task.Rows[j].RowNo })
 	task.Detail.TotalRows = len(task.Rows)
 	task.Detail.ErrorRows = countImportTaskErrors(task.Rows)
-	saveOrderImportTask(task)
+	task.Detail.Status = 3
+	if err := svc.repo.UpdateOrderImportTask(context.Background(), task.Detail, task.Rows); err != nil {
+		return nil, err
+	}
 	return updatedRows, nil
 }
 
-func (svc *Service) DeleteOrderImportTask(taskID string) error {
-	if _, ok := loadOrderImportTask(taskID); !ok {
-		return errors.New("import task not found")
+func (svc *Service) DeleteOrderImportTask(userID int64, taskID string) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
 	}
-	deleteOrderImportTask(taskID)
+	if err := svc.repo.DeleteOrderImportTask(context.Background(), instID, taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("import task not found")
+		}
+		return err
+	}
 	return nil
 }
 
 func (svc *Service) StartOrderImportTask(userID int64, taskID string) (model.OrderImportStartResult, error) {
-	task, ok := loadOrderImportTask(taskID)
-	if !ok {
-		return model.OrderImportStartResult{}, errors.New("import task not found")
+	task, err := svc.repo.GetOrderImportTask(context.Background(), taskID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.OrderImportStartResult{}, errors.New("import task not found")
+		}
+		return model.OrderImportStartResult{}, err
 	}
 	if countImportTaskErrors(task.Rows) > 0 {
 		return model.OrderImportStartResult{}, errors.New("请先处理异常数据")
@@ -236,14 +266,16 @@ func (svc *Service) StartOrderImportTask(userID int64, taskID string) (model.Ord
 		task.Rows[idx].Status = 0
 		task.Rows[idx].Result = ""
 	}
-	saveOrderImportTask(task)
+	if err := svc.repo.UpdateOrderImportTask(context.Background(), task.Detail, task.Rows); err != nil {
+		return model.OrderImportStartResult{}, err
+	}
 	go svc.runOrderImportTask(userID, taskID)
 	return model.OrderImportStartResult{}, nil
 }
 
 func (svc *Service) runOrderImportTask(userID int64, taskID string) {
-	task, ok := loadOrderImportTask(taskID)
-	if !ok {
+	task, err := svc.repo.GetOrderImportTask(context.Background(), taskID)
+	if err != nil {
 		return
 	}
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
@@ -290,13 +322,13 @@ func (svc *Service) runOrderImportTask(userID int64, taskID string) {
 		}
 		task.Detail.ExecutedRows = successCount
 		task.Detail.ErrorRows = failCount
-		saveOrderImportTask(task)
+		_ = svc.repo.UpdateOrderImportTask(context.Background(), task.Detail, task.Rows)
 	}
 
 	completeAt := time.Now()
 	task.Detail.CompleteTime = &completeAt
 	task.Detail.Status = 1
-	saveOrderImportTask(task)
+	_ = svc.repo.UpdateOrderImportTask(context.Background(), task.Detail, task.Rows)
 }
 
 func (svc *Service) ListOrderImportTasks(userID int64) (model.IntentionStudentImportTaskListResult, error) {
@@ -307,20 +339,7 @@ func (svc *Service) ListOrderImportTasks(userID int64) (model.IntentionStudentIm
 		}
 		return model.IntentionStudentImportTaskListResult{}, err
 	}
-	tasks := listOrderImportTasks(instID)
-	sort.Slice(tasks, func(i, j int) bool {
-		left := tasks[i].Detail.CreatedTime
-		right := tasks[j].Detail.CreatedTime
-		if left == nil || right == nil {
-			return tasks[i].Detail.ID > tasks[j].Detail.ID
-		}
-		return left.After(*right)
-	})
-	items := make([]model.IntentionStudentImportTaskDetail, 0, len(tasks))
-	for _, task := range tasks {
-		items = append(items, task.Detail)
-	}
-	return model.IntentionStudentImportTaskListResult{List: items, Total: len(items)}, nil
+	return svc.repo.ListOrderImportTasks(context.Background(), instID)
 }
 
 func (svc *Service) ClearOrderImportTasks(userID int64) error {
@@ -331,8 +350,7 @@ func (svc *Service) ClearOrderImportTasks(userID int64) error {
 		}
 		return err
 	}
-	clearOrderImportTasks(instID)
-	return nil
+	return svc.repo.ClearOrderImportTasks(context.Background(), instID)
 }
 
 func (svc *Service) loadOrderImportOptionMap(userID int64) (map[string][]importOptionItem, error) {

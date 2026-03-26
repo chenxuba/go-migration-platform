@@ -3,11 +3,36 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"go-migration-platform/services/education/internal/model"
 )
 
 func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID int64, studentID string) (model.TuitionAccountReadingListResult, error) {
+	arrearTuitionExpr := fmt.Sprintf(`
+			SUM(CASE
+				WHEN IFNULL(ta.total_tuition, 0) <= 0 THEN 0
+				WHEN IFNULL(so.is_bad_debt, 0) = 1 THEN 0
+				WHEN IFNULL(so.order_status, 0) = %d THEN 0
+				WHEN IFNULL(so.order_real_amount, 0) <= 0 THEN 0
+				ELSE GREATEST(
+					(CASE
+						WHEN sod.id IS NOT NULL THEN GREATEST(IFNULL(sod.amount, 0) - IFNULL(sod.share_discount, 0), 0)
+						ELSE IFNULL(ta.total_tuition, 0)
+					END)
+					- (
+						IFNULL(pay.paid_amount, 0) * (
+							(CASE
+								WHEN sod.id IS NOT NULL THEN GREATEST(IFNULL(sod.amount, 0) - IFNULL(sod.share_discount, 0), 0)
+								ELSE IFNULL(ta.total_tuition, 0)
+							END) / IFNULL(so.order_real_amount, 0)
+						)
+					),
+					0
+				)
+			END) AS arrear_tuition
+	`, model.OrderStatusPendingPayment)
+
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT 
 			CAST(MIN(ta.id) AS CHAR) AS id,
@@ -27,7 +52,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 				ELSE 0 
 			END) AS total_free_quantity,
 			SUM(ta.total_tuition) AS total_tuition,
-			0 AS arrear_tuition,
+			`+arrearTuitionExpr+`,
 			SUM(CASE 
 				WHEN icq.lesson_model = 3 THEN ta.remaining_tuition
 				WHEN ta.total_quantity > 0 THEN ta.remaining_quantity 
@@ -53,6 +78,14 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 		FROM tuition_account ta
 		INNER JOIN inst_course ic ON ta.course_id = ic.id AND ic.del_flag = 0
 		LEFT JOIN inst_course_quotation icq ON ta.quote_id = icq.id
+		LEFT JOIN sale_order so ON ta.order_id = so.id AND so.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON ta.order_course_detail_id = sod.id AND sod.del_flag = 0
+		LEFT JOIN (
+			SELECT order_id, SUM(pay_amount) AS paid_amount
+			FROM sale_order_pay_detail
+			WHERE del_flag = 0
+			GROUP BY order_id
+		) pay ON pay.order_id = ta.order_id
 		WHERE ta.del_flag = 0
 			AND ta.inst_id = ?
 			AND ta.student_id = ?

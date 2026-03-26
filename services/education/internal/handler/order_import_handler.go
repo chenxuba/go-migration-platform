@@ -153,7 +153,7 @@ func (handler *Handler) batchSaveOrderImportTaskRecords(w http.ResponseWriter, r
 
 func (handler *Handler) deleteOrderImportTask(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	_, ok := handler.requireAuth(w, r, ctx)
+	claims, ok := handler.requireAuth(w, r, ctx)
 	if !ok {
 		return
 	}
@@ -168,7 +168,7 @@ func (handler *Handler) deleteOrderImportTask(w http.ResponseWriter, r *http.Req
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
-	if err := handler.service.DeleteOrderImportTask(payload.TaskID); err != nil {
+	if err := handler.service.DeleteOrderImportTask(claims.UserID, payload.TaskID); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
