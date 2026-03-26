@@ -158,7 +158,7 @@ func appendCommonOrderColumns(columns []model.IntentionStudentImportTemplateColu
 		model.IntentionStudentImportTemplateColumn{Title: "实收金额", Required: true, FieldType: 2},
 		model.IntentionStudentImportTemplateColumn{Title: "欠费金额", FieldType: 2},
 		model.IntentionStudentImportTemplateColumn{Title: "经办日期", FieldType: 3},
-		model.IntentionStudentImportTemplateColumn{Title: "收款方式", FieldType: 4, Options: []string{"微信", "支付宝", "银行转账", "POS机", "现金", "其他"}},
+		model.IntentionStudentImportTemplateColumn{Title: "收款方式", FieldType: 4, Options: []string{"微信", "支付宝", "银行转账", "POS机", "现金", "其他方式"}},
 		model.IntentionStudentImportTemplateColumn{Title: "收款账户", FieldType: 4, Options: []string{"默认账户"}},
 		model.IntentionStudentImportTemplateColumn{Title: "支付单号", FieldType: 1},
 		model.IntentionStudentImportTemplateColumn{Title: "对方账户", FieldType: 1},

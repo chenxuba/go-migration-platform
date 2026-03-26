@@ -155,6 +155,9 @@ func (svc *Service) ParseLessonHourOrderImportFile(userID int64, filename string
 					value = defaultBusinessDate
 				}
 			case "收款方式":
+				if strings.TrimSpace(value) == "其他" {
+					value = "其他方式"
+				}
 				if strings.TrimSpace(value) == "" {
 					value = "其他方式"
 				}

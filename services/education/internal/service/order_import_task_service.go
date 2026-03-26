@@ -149,6 +149,10 @@ func (svc *Service) BatchSaveOrderImportTaskRecords(userID int64, req model.Inte
 			if cell, ok := cellMap[incomingCell.Key]; ok {
 				column := columnMap[incomingCell.Key]
 				normalizeImportedCellValue(cell, incomingCell, column, optionMap[column.Title])
+				if column.Title == "收款方式" && strings.TrimSpace(cell.Value) == "其他" {
+					cell.Value = "其他方式"
+					cell.SelectedID = "6"
+				}
 				if strings.TrimSpace(cell.Value) == "" {
 					switch column.Title {
 					case "经办日期":
