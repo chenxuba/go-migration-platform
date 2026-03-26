@@ -353,6 +353,7 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 	q := query.QueryModel
 	paidAmountExpr := "(SELECT IFNULL(SUM(pd.pay_amount), 0) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
 	payCountExpr := "(SELECT COUNT(*) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
+	importOrderSource := strconv.Itoa(model.OrderSourceOfflineImport)
 	courseArgs := []any{instID}
 	courseFilters := buildOrderDetailCommonFilters(q, &courseArgs, paidAmountExpr, payCountExpr)
 	courseFilters = append(courseFilters, "d.del_flag = 0")
@@ -410,15 +411,15 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			IFNULL(d.handle_type, 0) AS handle_type,
 			d.id AS order_flow_id,
 			d.quote_id AS sku_id,
-			IFNULL(q.name, '') AS quote_name,
-			IFNULL(d.count, 0) AS sku_count,
+			CASE WHEN so.order_source = ` + importOrderSource + ` THEN '自定义' ELSE IFNULL(q.name, '') END AS quote_name,
+			CASE WHEN so.order_source = ` + importOrderSource + ` THEN 1 ELSE IFNULL(d.count, 0) END AS sku_count,
 			d.unit AS sku_unit,
 			IFNULL(d.free_quantity, 0) AS free_quantity,
 			d.discount_type AS discount_type,
 			IFNULL(d.discount_number, 0) AS discount_number,
 			IFNULL(d.share_discount, 0) AS share_discount,
-			IFNULL(q.price, 0) AS tuition,
-			IFNULL(q.quantity, 0) AS quantity,
+			CASE WHEN so.order_source = ` + importOrderSource + ` THEN IFNULL(d.amount, 0) ELSE IFNULL(q.price, 0) END AS tuition,
+			CASE WHEN so.order_source = ` + importOrderSource + ` THEN GREATEST(IFNULL(d.real_quantity, 0) - IFNULL(d.free_quantity, 0), 0) ELSE IFNULL(q.quantity, 0) END AS quantity,
 			IFNULL(d.real_quantity, 0) AS real_quantity,
 			IFNULL(c.type, 1) AS product_type,
 			IFNULL(so.internal_remark, '') AS remark,
@@ -1204,12 +1205,18 @@ func (repo *Repository) getOrderTags(ctx context.Context, instID int64, raw stri
 }
 
 func (repo *Repository) getOrderDetailItems(ctx context.Context, orderID int64) ([]model.OrderCourseDetailVO, error) {
+	importOrderSource := strconv.Itoa(model.OrderSourceOfflineImport)
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT d.id, d.course_id, IFNULL(c.name, ''), d.quote_id, IFNULL(q.name, ''), c.teach_method, q.lesson_model,
-		       d.handle_type, IFNULL(d.count, 0), d.unit, IFNULL(q.quantity, 0), IFNULL(q.price, 0),
+		SELECT d.id, d.course_id, IFNULL(c.name, ''), d.quote_id,
+		       CASE WHEN so.order_source = `+importOrderSource+` THEN '自定义' ELSE IFNULL(q.name, '') END,
+		       c.teach_method, q.lesson_model,
+		       d.handle_type, IFNULL(d.count, 0), d.unit,
+		       CASE WHEN so.order_source = `+importOrderSource+` THEN GREATEST(IFNULL(d.real_quantity, 0) - IFNULL(d.free_quantity, 0), 0) ELSE IFNULL(q.quantity, 0) END,
+		       CASE WHEN so.order_source = `+importOrderSource+` THEN IFNULL(d.amount, 0) ELSE IFNULL(q.price, 0) END,
 		       IFNULL(d.free_quantity, 0), IFNULL(d.has_valid_date, 0), d.valid_date, d.end_date,
 		       d.discount_type, IFNULL(d.discount_number, 0), IFNULL(d.share_discount, 0), IFNULL(d.amount, 0), IFNULL(d.real_quantity, 0)
 		FROM sale_order_course_detail d
+		INNER JOIN sale_order so ON so.id = d.order_id AND so.del_flag = 0
 		LEFT JOIN inst_course c ON d.course_id = c.id
 		LEFT JOIN inst_course_quotation q ON d.quote_id = q.id
 		WHERE d.order_id = ? AND d.del_flag = 0

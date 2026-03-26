@@ -571,7 +571,7 @@ func buildCreateAndPayOrderDTOFromImportRow(
 	}
 
 	isTrial := strings.TrimSpace(rowData["是否为体验价"].Value) == "是"
-	quotation, count, err := pickLessonHourQuotation(quotationMap[courseName], purchaseCount, isTrial)
+	quotation, err := pickLessonHourAnchorQuotation(quotationMap[courseName], isTrial)
 	if err != nil {
 		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
 	}
@@ -611,12 +611,13 @@ func buildCreateAndPayOrderDTOFromImportRow(
 		lessonMode = *quotation.LessonModel
 	}
 
-	countValue := count
+	countValue := 1
 	quoteID := quotation.ID
 	courseID := quotation.CourseID
 	hasValidDate := endDate != nil
 	courseAmount := fmt.Sprintf("%.2f", orderAmount)
-	realQuantity := float64(purchaseCount) + giftCount
+	purchasedQuantity := float64(purchaseCount)
+	realQuantity := purchasedQuantity + giftCount
 
 	createDTO := model.CreateOrderDTO{
 		StudentID: studentID,
@@ -633,7 +634,7 @@ func buildCreateAndPayOrderDTOFromImportRow(
 					HasValidDate: &hasValidDate,
 					EndDate:      endDate,
 					Amount:       courseAmount,
-					Quantity:     float64(quantityOrDefault(quotation.Quantity)),
+					Quantity:     purchasedQuantity,
 					RealQuantity: realQuantity,
 					RealAmount:   courseAmount,
 				},
@@ -691,9 +692,9 @@ func collectOrderImportColumnValues(rows []model.IntentionStudentImportRow, colu
 	return result
 }
 
-func pickLessonHourQuotation(items []model.CourseQuotation, purchaseCount int, isTrial bool) (model.CourseQuotation, int, error) {
+func pickLessonHourAnchorQuotation(items []model.CourseQuotation, isTrial bool) (model.CourseQuotation, error) {
 	if len(items) == 0 {
-		return model.CourseQuotation{}, 0, errors.New("报读课程未找到匹配的课时报价单")
+		return model.CourseQuotation{}, errors.New("报读课程未配置可用的课时报价单")
 	}
 	filtered := make([]model.CourseQuotation, 0, len(items))
 	for _, item := range items {
@@ -704,26 +705,7 @@ func pickLessonHourQuotation(items []model.CourseQuotation, purchaseCount int, i
 	if len(filtered) == 0 {
 		filtered = items
 	}
-
-	bestIdx := -1
-	bestQty := 0
-	bestCount := 0
-	for idx, item := range filtered {
-		qty := quantityOrDefault(item.Quantity)
-		if qty <= 0 || purchaseCount%qty != 0 {
-			continue
-		}
-		count := purchaseCount / qty
-		if qty > bestQty || (qty == bestQty && (bestIdx == -1 || count < bestCount)) {
-			bestIdx = idx
-			bestQty = qty
-			bestCount = count
-		}
-	}
-	if bestIdx == -1 {
-		return model.CourseQuotation{}, 0, errors.New("购买课时数无法匹配当前课程的报价单规格")
-	}
-	return filtered[bestIdx], bestCount, nil
+	return filtered[0], nil
 }
 
 func quantityOrDefault(value *int) int {
