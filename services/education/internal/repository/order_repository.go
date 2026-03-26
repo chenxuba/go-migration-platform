@@ -2215,18 +2215,6 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 }
 
 func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64) error {
-	_, err := tx.ExecContext(ctx, `
-		UPDATE inst_student
-		SET student_status = 1, update_id = ?, update_time = NOW()
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, operatorID, studentID, instID)
-	if err != nil {
-		return err
-	}
-	if err := repo.ensureRechargeAccountTx(ctx, tx, instID, studentID, operatorID); err != nil {
-		return err
-	}
-
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, course_id, quote_id, handle_type, count, unit,
 		       IFNULL(free_quantity, 0), IFNULL(amount, 0), IFNULL(real_quantity, 0),
@@ -2263,6 +2251,22 @@ func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	quotationMap, err := repo.getCourseQuotationsByIDsTx(ctx, tx, collectOrderDetailQuoteIDs(details))
+	if err != nil {
+		return err
+	}
+	if shouldConvertStudentToReading(details, quotationMap) {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE inst_student
+			SET student_status = 1, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, operatorID, studentID, instID); err != nil {
+			return err
+		}
+	}
+	if err := repo.ensureRechargeAccountTx(ctx, tx, instID, studentID, operatorID); err != nil {
+		return err
+	}
 
 	now := time.Now()
 	for _, detail := range details {
@@ -2282,6 +2286,71 @@ func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql
 		}
 	}
 	return nil
+}
+
+func collectOrderDetailQuoteIDs(details []orderCourseDetail) []int64 {
+	seen := make(map[int64]struct{}, len(details))
+	quoteIDs := make([]int64, 0, len(details))
+	for _, detail := range details {
+		if !detail.QuoteID.Valid {
+			continue
+		}
+		if _, ok := seen[detail.QuoteID.Int64]; ok {
+			continue
+		}
+		seen[detail.QuoteID.Int64] = struct{}{}
+		quoteIDs = append(quoteIDs, detail.QuoteID.Int64)
+	}
+	return quoteIDs
+}
+
+func shouldConvertStudentToReading(details []orderCourseDetail, quotationMap map[int64]model.CourseQuotation) bool {
+	if len(details) == 0 {
+		return true
+	}
+	for _, detail := range details {
+		if !detail.QuoteID.Valid {
+			return true
+		}
+		quotation, ok := quotationMap[detail.QuoteID.Int64]
+		if !ok || !quotation.LessonAudition {
+			return true
+		}
+	}
+	return false
+}
+
+func (repo *Repository) getCourseQuotationsByIDsTx(ctx context.Context, tx *sql.Tx, quoteIDs []int64) (map[int64]model.CourseQuotation, error) {
+	result := make(map[int64]model.CourseQuotation)
+	if len(quoteIDs) == 0 {
+		return result, nil
+	}
+
+	placeholders := make([]string, 0, len(quoteIDs))
+	args := make([]any, 0, len(quoteIDs))
+	for _, id := range quoteIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), course_id, lesson_model, IFNULL(name, ''), unit, quantity, IFNULL(price, 0), IFNULL(lesson_audition, 0), IFNULL(online_sale, 0), IFNULL(remark, '')
+		FROM inst_course_quotation
+		WHERE del_flag = 0 AND id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item model.CourseQuotation
+		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.CourseID, &item.LessonModel, &item.Name, &item.Unit, &item.Quantity, &item.Price, &item.LessonAudition, &item.OnlineSale, &item.Remark); err != nil {
+			return nil, err
+		}
+		result[item.ID] = item
+	}
+	return result, rows.Err()
 }
 
 func (repo *Repository) shouldTriggerRegistrationApprovalTx(ctx context.Context, tx *sql.Tx, orderID int64, ruleJSON string) (bool, error) {

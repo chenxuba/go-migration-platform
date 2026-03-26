@@ -14,7 +14,7 @@ import { useUserStore } from '@/stores/user'
 import messageService from '~@/utils/messageService'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import { calculateAge } from '@/utils/date'
-import { ParentRelationshipLabel, IntentionLevel, IntentionLevelLabel, IntentionLevelStyle, FollowUpStatus, FollowUpStatusLabel, FollowUpStatusStyle, Sex, SexLabel } from '@/enums'
+import { ParentRelationshipLabel, IntentionLevel, IntentionLevelLabel, IntentionLevelStyle, FollowUpStatus, FollowUpStatusLabel, FollowUpStatusStyle, Sex, SexLabel, StudentStatus, StudentStatusLabel } from '@/enums'
 import dayjs from 'dayjs'
 import { Empty } from 'ant-design-vue'
 const props = defineProps({
@@ -251,6 +251,11 @@ const registerCourseCount = computed(() => {
 
   return 0
 })
+
+const isIntentionStudent = computed(() => Number(studentDetail.value?.studentStatus) === StudentStatus.Intention)
+const primaryCourseTabLabel = computed(() => (isIntentionStudent.value ? '体验课程' : '报读课程'))
+const primaryCourseEmptyText = computed(() => (isIntentionStudent.value ? '没有体验课程' : '没有报读课程'))
+const studentStatusText = computed(() => StudentStatusLabel[Number(studentDetail.value?.studentStatus)] || '-')
 
 // 处理分配销售
 function handleAssignSales() {
@@ -749,9 +754,9 @@ async function handlePhoneToggle() {
         }">
           <a-tab-pane
             key="0"
-            :tab="`报读课程（${registerCourseCount}）`"
+            :tab="`${primaryCourseTabLabel}（${registerCourseCount}）`"
           >
-            <register-for-courses ref="registerForCoursesRef" />
+            <register-for-courses ref="registerForCoursesRef" :empty-text="primaryCourseEmptyText" />
           </a-tab-pane>
           <a-tab-pane key="1" tab="上课记录">
             <class-record />
@@ -815,7 +820,7 @@ async function handlePhoneToggle() {
           </a-spin>
         </a-descriptions-item>
         <a-descriptions-item label="学员状态">
-          在读学员
+          {{ studentStatusText }}
         </a-descriptions-item>
         <a-descriptions-item label="微信号">
           {{ studentDetail.weChatNumber || '-' }}

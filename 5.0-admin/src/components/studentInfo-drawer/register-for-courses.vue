@@ -22,6 +22,13 @@ import remainingDetailsModal from './remainingDetailsModal.vue'
 // 一对一模态框
 import oneToOneModal from './oneToOneModal.vue'
 
+const props = defineProps({
+  emptyText: {
+    type: String,
+    default: '没有报读课程',
+  },
+})
+
 const studentStore = useStudentStore()
 const transferClassDrawerOpen = ref(false)
 const dropTheClassDrawerOpen = ref(false)
@@ -213,7 +220,7 @@ onMounted(() => {
           alt="暂无数据"
           style="width: 120px; height: 120px; margin-bottom: 16px;"
         >
-        <div class="text-#999 text-4  text-sm mt--15px">没有报读课程</div>
+        <div class="text-#999 text-4  text-sm mt--15px">{{ props.emptyText }}</div>
       </div>
       
       <!-- 列表数据 -->
