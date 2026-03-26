@@ -1,6 +1,6 @@
 <script setup>
 import Icon, { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed } from 'vue'
 import dayjs from 'dayjs'
 import { useStudentStore } from '@/stores/student'
 import { getTuitionAccountReadingListApi } from '@/api/edu-center/tuition-account'
@@ -40,9 +40,15 @@ const remainingDetailsModalOpen = ref(false)
 const oneToOneModalOpen = ref(false)
 const loading = ref(false)
 const tuitionAccountList = ref([])
+const listLoaded = ref(false)
 
 function handleOneToOne() {
   oneToOneModalOpen.value = true
+}
+
+function resetListState() {
+  tuitionAccountList.value = []
+  listLoaded.value = false
 }
 
 // 获取报读列表
@@ -53,6 +59,7 @@ async function getTuitionAccountList() {
   }
 
   loading.value = true
+  listLoaded.value = false
   try {
     const res = await getTuitionAccountReadingListApi({
       sortModel: {},
@@ -73,6 +80,7 @@ async function getTuitionAccountList() {
         ?? res.result.list
         ?? []
       tuitionAccountList.value = Array.isArray(accounts) ? accounts : []
+      listLoaded.value = true
     } else {
       tuitionAccountList.value = []
       messageService.error(res.message || '获取报读列表失败')
@@ -203,10 +211,8 @@ function formatRemainQuantityText(item) {
 defineExpose({
   getTuitionAccountList,
   tuitionAccountList,
-})
-
-onMounted(() => {
-  getTuitionAccountList()
+  listLoaded,
+  resetListState,
 })
 </script>
 

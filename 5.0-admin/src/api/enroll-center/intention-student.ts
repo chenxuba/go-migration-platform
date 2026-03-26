@@ -18,6 +18,8 @@ export interface StudentInfo {
   id?: number
   uuid?: string
   version?: number
+  studentStatus?: number
+  primaryCourseCount?: number
   stuName: string
   mobile: string
   avatar: string

@@ -8,6 +8,27 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
+func (repo *Repository) CountStudentPrimaryCourseItems(ctx context.Context, instID, studentID int64) (int, error) {
+	var count int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM (
+			SELECT 1
+			FROM tuition_account ta
+			INNER JOIN inst_course ic ON ta.course_id = ic.id AND ic.del_flag = 0
+			LEFT JOIN inst_course_quotation icq ON ta.quote_id = icq.id
+			WHERE ta.del_flag = 0
+				AND ta.inst_id = ?
+				AND ta.student_id = ?
+			GROUP BY ic.id, ic.teach_method, icq.lesson_model, ic.course_type
+		) course_items
+	`, instID, studentID).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID int64, studentID string) (model.TuitionAccountReadingListResult, error) {
 	arrearTuitionExpr := fmt.Sprintf(`
 			SUM(CASE

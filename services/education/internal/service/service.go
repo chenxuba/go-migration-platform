@@ -93,6 +93,10 @@ func (svc *Service) GetIntentStudentDetail(userID, studentID int64) (model.Inten
 		}
 		return model.IntentStudent{}, err
 	}
+	item.PrimaryCourseCount, err = svc.repo.CountStudentPrimaryCourseItems(context.Background(), instID, studentID)
+	if err != nil {
+		return model.IntentStudent{}, err
+	}
 	return item, nil
 }
 

@@ -119,11 +119,19 @@ async function getIntentStudentDetail(flag = true) {
     console.log(error)
   }
 }
+
+function refreshPrimaryCourseList() {
+  nextTick(() => {
+    registerForCoursesRef.value?.getTuitionAccountList()
+  })
+}
+
 watch(() => props.open, (newVal) => {
   if (!newVal) {
     studentStore.clearStudentId()
     // 关闭抽屉时重置activeKey为默认值
     activeKey.value = props.defaultActiveKey
+    registerForCoursesRef.value?.resetListState?.()
     // 关闭抽屉时刷新学员列表，确保数据准确性
     emitter.emit(EVENTS.REFRESH_STUDENT_LIST)
     // 清理下拉框状态
@@ -140,11 +148,8 @@ watch(() => props.open, (newVal) => {
 watch(() => openDrawer.value, (newVal) => {
   if (newVal) {
     getIntentStudentDetail()
-    // 如果当前是报读课程tab，刷新报读列表
     if (activeKey.value === '0') {
-      nextTick(() => {
-        registerForCoursesRef.value?.getTuitionAccountList()
-      })
+      refreshPrimaryCourseList()
     }
   }
 })
@@ -152,9 +157,7 @@ watch(() => openDrawer.value, (newVal) => {
 // 监听 activeKey 变化，切换到报读课程时刷新数据
 watch(() => activeKey.value, (newVal) => {
   if (newVal === '0' && openDrawer.value) {
-    nextTick(() => {
-      registerForCoursesRef.value?.getTuitionAccountList()
-    })
+    refreshPrimaryCourseList()
   }
 })
 
@@ -235,9 +238,12 @@ async function handleUpdateStudent(data) {
 
 // 报读课程数量（根据子组件暴露的 tuitionAccountList 实时计算）
 const registerCourseCount = computed(() => {
+  const detailCount = Number(studentDetail.value?.primaryCourseCount || 0)
+  const listLoaded = registerForCoursesRef.value?.listLoaded
   const exposed = registerForCoursesRef.value?.tuitionAccountList
-  if (!exposed) {
-    return 0
+  const hasLoadedList = listLoaded === true || listLoaded?.value === true
+  if (!hasLoadedList) {
+    return detailCount
   }
 
   // 情况 1：子组件暴露的是响应式 ref([])，这里拿到的是 ref
@@ -249,7 +255,7 @@ const registerCourseCount = computed(() => {
     return exposed.value.length
   }
 
-  return 0
+  return detailCount
 })
 
 const isIntentionStudent = computed(() => Number(studentDetail.value?.studentStatus) === StudentStatus.Intention)
