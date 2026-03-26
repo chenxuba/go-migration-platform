@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DownOutlined } from '@ant-design/icons-vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { getRechargeAccountItemPageApi, getRechargeAccountStatisticsApi } from '@/api/finance-center/recharge-account'
@@ -26,6 +26,13 @@ const statistics = ref({
   amountTotal: 0,
   givingAmountTotal: 0,
 })
+const animatedSummary = ref({
+  rechargeAccountTotal: 0,
+  residualAmountTotal: 0,
+  rechargeBalanceTotal: 0,
+  givingAmountTotal: 0,
+})
+const summaryAnimationFrameId = ref(0)
 const pagination = ref({
   current: 1,
   pageSize: 20,
@@ -195,6 +202,7 @@ async function fetchRechargeAccountStatistics() {
       amountTotal: Number(result?.amountTotal || 0),
       givingAmountTotal: Number(result?.givingAmountTotal || 0),
     }
+    animateSummaryValues()
   }
   catch (error) {
     console.error('获取储值账户统计失败:', error)
@@ -211,6 +219,57 @@ function formatMoney(value) {
   return Number(value || 0).toFixed(2)
 }
 
+function stopSummaryAnimation() {
+  if (summaryAnimationFrameId.value) {
+    cancelAnimationFrame(summaryAnimationFrameId.value)
+    summaryAnimationFrameId.value = 0
+  }
+}
+
+function animateSummaryValues() {
+  stopSummaryAnimation()
+
+  const targets = {
+    rechargeAccountTotal: Number(statistics.value.rechargeAccountTotal || 0),
+    residualAmountTotal: Number(statistics.value.residualAmountTotal || 0),
+    rechargeBalanceTotal: Math.max(0, Number(statistics.value.amountTotal || 0) - Number(statistics.value.residualAmountTotal || 0)),
+    givingAmountTotal: Number(statistics.value.givingAmountTotal || 0),
+  }
+
+  animatedSummary.value = {
+    rechargeAccountTotal: 0,
+    residualAmountTotal: 0,
+    rechargeBalanceTotal: 0,
+    givingAmountTotal: 0,
+  }
+
+  const duration = 1200
+  const startTime = performance.now()
+  const easeOutCubic = progress => 1 - (1 - progress) ** 3
+
+  const step = (currentTime) => {
+    const progress = Math.min((currentTime - startTime) / duration, 1)
+    const eased = easeOutCubic(progress)
+
+    animatedSummary.value = {
+      rechargeAccountTotal: targets.rechargeAccountTotal * eased,
+      residualAmountTotal: targets.residualAmountTotal * eased,
+      rechargeBalanceTotal: targets.rechargeBalanceTotal * eased,
+      givingAmountTotal: targets.givingAmountTotal * eased,
+    }
+
+    if (progress < 1) {
+      summaryAnimationFrameId.value = requestAnimationFrame(step)
+      return
+    }
+
+    animatedSummary.value = { ...targets }
+    summaryAnimationFrameId.value = 0
+  }
+
+  summaryAnimationFrameId.value = requestAnimationFrame(step)
+}
+
 function handleTableChange(pag) {
   pagination.value.current = pag.current
   pagination.value.pageSize = pag.pageSize
@@ -219,6 +278,10 @@ function handleTableChange(pag) {
 
 onMounted(async () => {
   await Promise.all([fetchRechargeAccountList(), fetchRechargeAccountStatistics()])
+})
+
+onBeforeUnmount(() => {
+  stopSummaryAnimation()
 })
 </script>
 
@@ -233,7 +296,7 @@ onMounted(async () => {
                 机构总账户余额（元）
               </div>
               <div class="contentMainRight font-900 mt1 mr-4 text-#06f">
-                {{ formatMoney(statistics.rechargeAccountTotal) }}
+                {{ formatMoney(animatedSummary.rechargeAccountTotal) }}
               </div>
             </div>
             <div class="contentSub">
@@ -248,7 +311,7 @@ onMounted(async () => {
                 残联余额（元）
               </div>
               <div class="contentMainRight font-900 mt1 mr-4 text-#222">
-                {{ formatMoney(statistics.residualAmountTotal) }}
+                {{ formatMoney(animatedSummary.residualAmountTotal) }}
               </div>
             </div>
             <div class="contentSub">
@@ -263,7 +326,7 @@ onMounted(async () => {
                 充值余额（元）
               </div>
               <div class="contentMainRight font-900 mt1 mr-4 text-#222">
-                {{ formatMoney(statistics.amountTotal - statistics.residualAmountTotal) }}
+                {{ formatMoney(animatedSummary.rechargeBalanceTotal) }}
               </div>
             </div>
             <div class="contentSub">
@@ -278,7 +341,7 @@ onMounted(async () => {
                 赠送余额（元）
               </div>
               <div class="contentMainRight font-900 mt1 mr-4 text-#222">
-                {{ formatMoney(statistics.givingAmountTotal) }}
+                {{ formatMoney(animatedSummary.givingAmountTotal) }}
               </div>
             </div>
             <div class="contentSub">
