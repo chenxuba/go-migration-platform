@@ -476,6 +476,9 @@ func validateImportedCell(column model.IntentionStudentImportColumn, cell model.
 	if column.Title == "手机号" && !phoneDigitsPattern.MatchString(text) {
 		return "手机号格式错误"
 	}
+	if requiresIntegerPrecision(column.Title) && !isValidIntegerNumber(text) {
+		return "请输入整数"
+	}
 	if requiresTwoDecimalPrecision(column.Title) && !isValidTwoDecimalNumber(text) {
 		return "最多保留2位小数"
 	}

@@ -69,7 +69,7 @@ func (svc *Service) buildOrderImportTemplate(userID int64, mode string, columnBu
 	if err != nil {
 		return "", err
 	}
-	courseNames, err := svc.repo.ListCourseNames(context.Background(), instID)
+	courseNames, err := svc.loadOrderImportCourseNames(context.Background(), instID, mode)
 	if err != nil {
 		return "", err
 	}
@@ -103,6 +103,19 @@ func (svc *Service) buildOrderImportTemplate(userID int64, mode string, columnBu
 		return "/api/v1/orders/import-template/amount/file?ticket=" + url.QueryEscape(ticket), nil
 	default:
 		return "/api/v1/orders/import-template/lesson-hour/file?ticket=" + url.QueryEscape(ticket), nil
+	}
+}
+
+func (svc *Service) loadOrderImportCourseNames(ctx context.Context, instID int64, mode string) ([]string, error) {
+	switch strings.TrimSpace(mode) {
+	case "按课时":
+		return svc.repo.ListCourseNamesByLessonModel(ctx, instID, 1)
+	case "按时段":
+		return svc.repo.ListCourseNamesByLessonModel(ctx, instID, 2)
+	case "按金额":
+		return svc.repo.ListCourseNamesByLessonModel(ctx, instID, 3)
+	default:
+		return svc.repo.ListCourseNamesByLessonModel(ctx, instID, 1)
 	}
 }
 

@@ -90,8 +90,16 @@ function isTwoDecimalRestrictedField(title) {
   return ['购买课时数', '赠送课时数', '已上课时数'].includes(`${title || ''}`.trim())
 }
 
+function isIntegerRestrictedField(title) {
+  return ['赠送天数', '已上天数'].includes(`${title || ''}`.trim())
+}
+
 function isValidTwoDecimalNumber(value) {
   return /^\d+(\.\d{1,2})?$/.test(`${value || ''}`.trim())
+}
+
+function isValidIntegerNumber(value) {
+  return /^\d+$/.test(`${value || ''}`.trim())
 }
 
 function getColumnWidth(title) {
@@ -192,6 +200,8 @@ function validateCell(column, value) {
     return '手机号格式错误'
   if (isTwoDecimalRestrictedField(column.title) && !isValidTwoDecimalNumber(text))
     return '最多保留2位小数'
+  if (isIntegerRestrictedField(column.title) && !isValidIntegerNumber(text))
+    return '请输入整数'
   if (column.fieldType === 2 && Number.isNaN(Number(text)))
     return '请输入数字'
   if (column.fieldType === 3) {
@@ -311,6 +321,19 @@ const editFieldRules = computed(() => {
       trigger: ['change', 'blur'],
     })
   }
+  if (isIntegerRestrictedField(column.title)) {
+    rules.push({
+      validator: async () => {
+        const nextValue = `${editModalState.value || ''}`.trim()
+        if (!nextValue)
+          return Promise.resolve()
+        if (!isValidIntegerNumber(nextValue))
+          return Promise.reject(new Error('请输入整数'))
+        return Promise.resolve()
+      },
+      trigger: ['change', 'blur'],
+    })
+  }
   return rules
 })
 
@@ -386,7 +409,7 @@ function handleStartImport() {
     return
   }
   startOrderImportTaskApi({ taskId: importId.value }).then(async ({ result, data }) => {
-    messageService.success('开始导入成功')
+    messageService.success('开始导入，请稍后')
     router.push('/import-center/import-order/record')
   }).catch((error) => {
     console.error('start order import failed', error)
@@ -684,6 +707,16 @@ onMounted(() => {
                         style="width: 100%"
                         @update:value="value => handleCellChange(row, cell, session.columns.find(col => col.key === cell.key), value)"
                       />
+                      <a-input-number
+                        v-else-if="isIntegerRestrictedField(cell.title)"
+                        :value="cell.value"
+                        string-mode
+                        :precision="0"
+                        :min="0"
+                        placeholder="请输入"
+                        style="width: 100%"
+                        @update:value="value => handleCellChange(row, cell, session.columns.find(col => col.key === cell.key), value)"
+                      />
                       <a-input
                         v-else
                         :value="cell.value"
@@ -765,6 +798,16 @@ onMounted(() => {
               v-model:value="editModalState.value"
               string-mode
               :precision="2"
+              :min="0"
+              placeholder="请输入"
+              style="width: 100%"
+            />
+          </template>
+          <template v-else-if="isIntegerRestrictedField(editModalState.title)">
+            <a-input-number
+              v-model:value="editModalState.value"
+              string-mode
+              :precision="0"
               :min="0"
               placeholder="请输入"
               style="width: 100%"

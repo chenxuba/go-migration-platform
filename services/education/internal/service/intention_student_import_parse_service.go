@@ -224,8 +224,30 @@ func requiresTwoDecimalPrecision(title string) bool {
 	}
 }
 
+func requiresIntegerPrecision(title string) bool {
+	switch strings.TrimSpace(title) {
+	case "赠送天数", "已上天数":
+		return true
+	default:
+		return false
+	}
+}
+
 func isValidTwoDecimalNumber(value string) bool {
 	return twoDecimalNumberPattern.MatchString(strings.TrimSpace(value))
+}
+
+func isValidIntegerNumber(value string) bool {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return false
+	}
+	for _, ch := range text {
+		if ch < '0' || ch > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func containsImportOption(options []string, value string) bool {

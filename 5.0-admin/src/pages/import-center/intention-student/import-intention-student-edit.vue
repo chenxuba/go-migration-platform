@@ -309,7 +309,7 @@ function handleStartImport() {
     return
   }
   startIntentionStudentImportTaskApi({ taskId: importId.value }).then(() => {
-    messageService.success('开始导入成功')
+    messageService.success('开始导入，请稍后')
     router.push('/import-center/import-intention-student/record')
   }).catch((error) => {
     console.error('start intention student import failed', error)

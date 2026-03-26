@@ -62,7 +62,7 @@ func (svc *Service) SubmitOrderImportTask(userID int64, req model.IntentionStude
 	if err != nil {
 		return "", err
 	}
-	parseResult, err := svc.ParseLessonHourOrderImportFile(userID, req.FileName, readerFromBytes(fileBytes))
+	parseResult, err := svc.ParseOrderImportFile(userID, req.FileName, readerFromBytes(fileBytes))
 	if err != nil {
 		return "", err
 	}
@@ -143,7 +143,8 @@ func (svc *Service) BatchSaveOrderImportTaskRecords(userID int64, req model.Inte
 		}
 		return nil, err
 	}
-	optionMap, err := svc.loadOrderImportOptionMap(userID)
+	importMode := detectOrderImportModeByColumns(task.Columns)
+	optionMap, err := svc.loadOrderImportOptionMap(userID, importMode)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +191,13 @@ func (svc *Service) BatchSaveOrderImportTaskRecords(userID int64, req model.Inte
 				cell.Error = validateImportedCell(column, *cell, optionMap[column.Title])
 			}
 		}
+		clearOrderImportRowErrors(&current)
+		for idx := range current.Cells {
+			column := columnMap[current.Cells[idx].Key]
+			current.Cells[idx].Error = validateImportedCell(column, current.Cells[idx], optionMap[column.Title])
+		}
 		current.HasError = false
+		applyOrderImportRowValidation(importMode, current.Cells, &current.HasError)
 		for _, cell := range current.Cells {
 			if strings.TrimSpace(cell.Error) != "" {
 				current.HasError = true
@@ -282,7 +289,11 @@ func (svc *Service) runOrderImportTask(userID int64, taskID string) {
 	if err != nil {
 		return
 	}
-	optionMap, err := svc.loadOrderImportOptionMap(userID)
+	importMode := detectOrderImportModeByColumns(task.Columns)
+	if importMode == orderImportModeUnknown || importMode == orderImportModeAmount {
+		return
+	}
+	optionMap, err := svc.loadOrderImportOptionMap(userID, importMode)
 	if err != nil {
 		return
 	}
@@ -291,7 +302,7 @@ func (svc *Service) runOrderImportTask(userID int64, taskID string) {
 		return
 	}
 	courseNames := collectOrderImportColumnValues(task.Rows, task.Columns, "报读课程")
-	quotationMap, err := svc.repo.ListCourseQuotationsByNamesAndLessonModel(context.Background(), instID, courseNames, 1)
+	quotationMap, err := svc.repo.ListCourseQuotationsByNamesAndLessonModel(context.Background(), instID, courseNames, lessonModelByOrderImportMode(importMode))
 	if err != nil {
 		return
 	}
@@ -306,7 +317,7 @@ func (svc *Service) runOrderImportTask(userID int64, taskID string) {
 	for idx := range task.Rows {
 		row := task.Rows[idx]
 		resultText := "导入成功"
-		if err := svc.importOrderRow(userID, instID, row, columnMap, optionMap, orderTagMap, quotationMap); err != nil {
+		if err := svc.importOrderRow(userID, instID, importMode, row, columnMap, optionMap, orderTagMap, quotationMap); err != nil {
 			task.Rows[idx].Status = 2
 			task.Rows[idx].Result = err.Error()
 			task.Rows[idx].HasError = true
@@ -353,7 +364,7 @@ func (svc *Service) ClearOrderImportTasks(userID int64) error {
 	return svc.repo.ClearOrderImportTasks(context.Background(), instID)
 }
 
-func (svc *Service) loadOrderImportOptionMap(userID int64) (map[string][]importOptionItem, error) {
+func (svc *Service) loadOrderImportOptionMap(userID int64, importMode orderImportMode) (map[string][]importOptionItem, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		return nil, err
@@ -374,7 +385,7 @@ func (svc *Service) loadOrderImportOptionMap(userID int64) (map[string][]importO
 	if err != nil {
 		return nil, err
 	}
-	courseNames, err := svc.repo.ListCourseNames(context.Background(), instID)
+	courseNames, err := svc.loadOrderImportCourseNames(context.Background(), instID, orderImportModeLabel(importMode))
 	if err != nil {
 		return nil, err
 	}
@@ -452,6 +463,7 @@ func (svc *Service) loadOrderImportOptionMap(userID int64) (map[string][]importO
 func (svc *Service) importOrderRow(
 	userID int64,
 	instID int64,
+	importMode orderImportMode,
 	row model.IntentionStudentImportRow,
 	columns map[string]model.IntentionStudentImportColumn,
 	optionMap map[string][]importOptionItem,
@@ -468,7 +480,7 @@ func (svc *Service) importOrderRow(
 		return err
 	}
 
-	createDTO, payDTO, hasPayment, err := buildCreateAndPayOrderDTOFromImportRow(decision.StudentID, row, columns, optionMap, orderTagMap, quotationMap)
+	createDTO, payDTO, hasPayment, err := buildCreateAndPayOrderDTOFromImportRow(decision.StudentID, importMode, row, columns, optionMap, orderTagMap, quotationMap)
 	if err != nil {
 		return err
 	}
@@ -552,6 +564,7 @@ func (svc *Service) resolveOrderImportStudent(userID, instID int64, dto model.St
 
 func buildCreateAndPayOrderDTOFromImportRow(
 	studentID int64,
+	importMode orderImportMode,
 	row model.IntentionStudentImportRow,
 	columns map[string]model.IntentionStudentImportColumn,
 	optionMap map[string][]importOptionItem,
@@ -567,14 +580,6 @@ func buildCreateAndPayOrderDTOFromImportRow(
 	if courseName == "" {
 		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, errors.New("报读课程不能为空")
 	}
-	purchaseCount, err := parseOrderImportLessonHour(rowData["购买课时数"].Value, "购买课时数")
-	if err != nil {
-		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
-	}
-	giftCount, err := parseOrderImportFloatWithPrecision(rowData["赠送课时数"].Value, "赠送课时数", 2)
-	if err != nil {
-		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
-	}
 	totalAmount, err := parseOrderImportFloat(rowData["实收金额"].Value, "实收金额")
 	if err != nil {
 		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
@@ -589,13 +594,10 @@ func buildCreateAndPayOrderDTOFromImportRow(
 	}
 
 	isTrial := strings.TrimSpace(rowData["是否为体验价"].Value) == "是"
-	quotation, err := pickLessonHourAnchorQuotation(quotationMap[courseName], isTrial)
-	if err != nil {
-		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
-	}
 
 	var (
 		dealDate   *time.Time
+		validDate  *time.Time
 		endDate    *time.Time
 		salePerson *int64
 		payTime    *time.Time
@@ -604,11 +606,6 @@ func buildCreateAndPayOrderDTOFromImportRow(
 		if parsed, ok := parseImportDateValue(value); ok {
 			dealDate = &parsed
 			payTime = &parsed
-		}
-	}
-	if value := strings.TrimSpace(rowData["有效期至"].Value); value != "" {
-		if parsed, ok := parseImportDateValue(value); ok {
-			endDate = &parsed
 		}
 	}
 
@@ -620,11 +617,15 @@ func buildCreateAndPayOrderDTOFromImportRow(
 
 	orderTagIDs := resolveOrderImportTagIDs(rowData["订单标签"], orderTagMap)
 	handleType := 0
+	quotation, err := pickOrderImportAnchorQuotation(quotationMap[courseName], isTrial, importMode)
+	if err != nil {
+		return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
+	}
 	unit := 1
 	if quotation.Unit != nil {
 		unit = *quotation.Unit
 	}
-	lessonMode := 1
+	lessonMode := lessonModelByOrderImportMode(importMode)
 	if quotation.LessonModel != nil {
 		lessonMode = *quotation.LessonModel
 	}
@@ -632,10 +633,58 @@ func buildCreateAndPayOrderDTOFromImportRow(
 	countValue := 1
 	quoteID := quotation.ID
 	courseID := quotation.CourseID
-	hasValidDate := endDate != nil
 	courseAmount := fmt.Sprintf("%.2f", orderAmount)
-	purchasedQuantity := purchaseCount
-	realQuantity := purchasedQuantity + giftCount
+	hasValidDate := false
+	purchasedQuantity := 0.0
+	giftCount := 0.0
+	realQuantity := 0.0
+
+	switch importMode {
+	case orderImportModeTimeSlot:
+		if value := strings.TrimSpace(rowData["有效开始日期"].Value); value != "" {
+			if parsed, ok := parseImportDateValue(value); ok {
+				validDate = &parsed
+			}
+		}
+		if value := strings.TrimSpace(rowData["有效结束日期(含赠送天数)"].Value); value != "" {
+			if parsed, ok := parseImportDateValue(value); ok {
+				endDate = &parsed
+			}
+		}
+		if validDate == nil || endDate == nil {
+			return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, errors.New("有效开始日期和有效结束日期不能为空")
+		}
+		if endDate.Before(*validDate) {
+			return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, errors.New("有效结束日期不能早于有效开始日期")
+		}
+		giftCount, err = parseOrderImportIntWithDefault(rowData["赠送天数"].Value, "赠送天数")
+		if err != nil {
+			return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
+		}
+		totalDays := int(endDate.Sub(*validDate).Hours()/24) + 1
+		purchasedQuantity = float64(totalDays) - giftCount
+		if purchasedQuantity <= 0 {
+			return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, errors.New("有效时段需大于赠送天数")
+		}
+		realQuantity = purchasedQuantity + giftCount
+		hasValidDate = true
+	default:
+		if value := strings.TrimSpace(rowData["有效期至"].Value); value != "" {
+			if parsed, ok := parseImportDateValue(value); ok {
+				endDate = &parsed
+			}
+		}
+		purchasedQuantity, err = parseOrderImportLessonHour(rowData["购买课时数"].Value, "购买课时数")
+		if err != nil {
+			return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
+		}
+		giftCount, err = parseOrderImportFloatWithPrecision(rowData["赠送课时数"].Value, "赠送课时数", 2)
+		if err != nil {
+			return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
+		}
+		realQuantity = purchasedQuantity + giftCount
+		hasValidDate = endDate != nil
+	}
 
 	createDTO := model.CreateOrderDTO{
 		StudentID: studentID,
@@ -650,6 +699,7 @@ func buildCreateAndPayOrderDTOFromImportRow(
 					Unit:         &unit,
 					FreeQuantity: giftCount,
 					HasValidDate: &hasValidDate,
+					ValidDate:    validDate,
 					EndDate:      endDate,
 					Amount:       courseAmount,
 					Quantity:     purchasedQuantity,
@@ -683,6 +733,27 @@ func buildCreateAndPayOrderDTOFromImportRow(
 	return createDTO, payDTO, totalAmount > 0, nil
 }
 
+func pickOrderImportAnchorQuotation(items []model.CourseQuotation, isTrial bool, importMode orderImportMode) (model.CourseQuotation, error) {
+	if len(items) == 0 {
+		switch importMode {
+		case orderImportModeTimeSlot:
+			return model.CourseQuotation{}, errors.New("报读课程未配置可用的按时段报价单")
+		default:
+			return model.CourseQuotation{}, errors.New("报读课程未配置可用的课时报价单")
+		}
+	}
+	filtered := make([]model.CourseQuotation, 0, len(items))
+	for _, item := range items {
+		if item.LessonAudition == isTrial {
+			filtered = append(filtered, item)
+		}
+	}
+	if len(filtered) == 0 {
+		filtered = items
+	}
+	return filtered[0], nil
+}
+
 func collectOrderImportColumnValues(rows []model.IntentionStudentImportRow, columns []model.IntentionStudentImportColumn, title string) []string {
 	keySet := make(map[string]struct{})
 	for _, column := range columns {
@@ -708,22 +779,6 @@ func collectOrderImportColumnValues(rows []model.IntentionStudentImportRow, colu
 	}
 	sort.Strings(result)
 	return result
-}
-
-func pickLessonHourAnchorQuotation(items []model.CourseQuotation, isTrial bool) (model.CourseQuotation, error) {
-	if len(items) == 0 {
-		return model.CourseQuotation{}, errors.New("报读课程未配置可用的课时报价单")
-	}
-	filtered := make([]model.CourseQuotation, 0, len(items))
-	for _, item := range items {
-		if item.LessonAudition == isTrial {
-			filtered = append(filtered, item)
-		}
-	}
-	if len(filtered) == 0 {
-		filtered = items
-	}
-	return filtered[0], nil
 }
 
 func quantityOrDefault(value *int) int {
@@ -760,6 +815,24 @@ func parseOrderImportFloat(value string, title string) (float64, error) {
 		return 0, fmt.Errorf("%s不能小于0", title)
 	}
 	return number, nil
+}
+
+func parseOrderImportIntWithDefault(value string, title string) (float64, error) {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return 0, nil
+	}
+	if !isValidIntegerNumber(text) {
+		return 0, fmt.Errorf("%s请输入整数", title)
+	}
+	number, err := strconv.Atoi(text)
+	if err != nil {
+		return 0, fmt.Errorf("%s格式错误", title)
+	}
+	if number < 0 {
+		return 0, fmt.Errorf("%s不能小于0", title)
+	}
+	return float64(number), nil
 }
 
 func parseOrderImportFloatWithPrecision(value string, title string, maxDecimals int) (float64, error) {

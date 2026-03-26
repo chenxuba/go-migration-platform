@@ -512,6 +512,39 @@ func (repo *Repository) ListCourseNames(ctx context.Context, instID int64) ([]st
 	return items, rows.Err()
 }
 
+func (repo *Repository) ListCourseNamesByLessonModel(ctx context.Context, instID int64, lessonModel int) ([]string, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(c.name, '')
+		FROM inst_course c
+		WHERE c.inst_id = ? AND c.del_flag = 0
+		  AND EXISTS (
+			SELECT 1
+			FROM inst_course_quotation q
+			WHERE q.course_id = c.id AND q.del_flag = 0 AND q.lesson_model = ?
+		  )
+		GROUP BY IFNULL(c.name, '')
+		ORDER BY MAX(c.update_time) DESC, MAX(c.id) DESC
+	`, instID, lessonModel)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]string, 0, 64)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		items = append(items, name)
+	}
+	return items, rows.Err()
+}
+
 func (repo *Repository) ListCourseQuotationsByNamesAndLessonModel(ctx context.Context, instID int64, courseNames []string, lessonModel int) (map[string][]model.CourseQuotation, error) {
 	result := make(map[string][]model.CourseQuotation)
 	if len(courseNames) == 0 {

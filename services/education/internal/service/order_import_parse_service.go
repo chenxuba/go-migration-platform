@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,10 @@ import (
 )
 
 func (svc *Service) ParseLessonHourOrderImportFile(userID int64, filename string, reader io.Reader) (model.IntentionStudentImportParseResult, error) {
+	return svc.ParseOrderImportFile(userID, filename, reader)
+}
+
+func (svc *Service) ParseOrderImportFile(userID int64, filename string, reader io.Reader) (model.IntentionStudentImportParseResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -43,10 +48,6 @@ func (svc *Service) ParseLessonHourOrderImportFile(userID int64, filename string
 	if err != nil {
 		return model.IntentionStudentImportParseResult{}, err
 	}
-	courseNames, err := svc.repo.ListCourseNames(context.Background(), instID)
-	if err != nil {
-		return model.IntentionStudentImportParseResult{}, err
-	}
 	staffNames, err := svc.repo.ListActiveStaffNames(context.Background(), instID)
 	if err != nil {
 		return model.IntentionStudentImportParseResult{}, err
@@ -54,12 +55,6 @@ func (svc *Service) ParseLessonHourOrderImportFile(userID int64, filename string
 	orderTagNames, err := svc.repo.ListEnabledOrderTagNames(context.Background(), instID)
 	if err != nil {
 		return model.IntentionStudentImportParseResult{}, err
-	}
-
-	templateColumns := buildLessonHourOrderImportColumns(defaultFields, customFields, channels, courseNames, staffNames, orderTagNames)
-	columnMap := make(map[string]model.IntentionStudentImportTemplateColumn, len(templateColumns))
-	for _, column := range templateColumns {
-		columnMap[strings.TrimSpace(column.Title)] = column
 	}
 
 	raw, err := io.ReadAll(reader)
@@ -82,6 +77,32 @@ func (svc *Service) ParseLessonHourOrderImportFile(userID int64, filename string
 	}
 
 	headerRow := rows[0]
+	importMode := detectOrderImportModeByTitles(headerRow)
+	switch importMode {
+	case orderImportModeUnknown:
+		return model.IntentionStudentImportParseResult{}, errors.New("未识别到可导入字段，请使用最新模板")
+	case orderImportModeAmount:
+		return model.IntentionStudentImportParseResult{}, errors.New("当前仅支持按课时、按时段订单模板导入")
+	}
+
+	courseNames, err := svc.loadOrderImportCourseNames(context.Background(), instID, orderImportModeLabel(importMode))
+	if err != nil {
+		return model.IntentionStudentImportParseResult{}, err
+	}
+
+	var templateColumns []model.IntentionStudentImportTemplateColumn
+	switch importMode {
+	case orderImportModeTimeSlot:
+		templateColumns = buildTimeSlotOrderImportColumns(defaultFields, customFields, channels, courseNames, staffNames, orderTagNames)
+	default:
+		templateColumns = buildLessonHourOrderImportColumns(defaultFields, customFields, channels, courseNames, staffNames, orderTagNames)
+	}
+
+	columnMap := make(map[string]model.IntentionStudentImportTemplateColumn, len(templateColumns))
+	for _, column := range templateColumns {
+		columnMap[strings.TrimSpace(column.Title)] = column
+	}
+
 	columns := make([]model.IntentionStudentImportColumn, 0, len(headerRow))
 	headerIndexes := make([]int, 0, len(headerRow))
 	for idx, item := range headerRow {
@@ -102,17 +123,6 @@ func (svc *Service) ParseLessonHourOrderImportFile(userID int64, filename string
 	}
 	if len(columns) == 0 {
 		return model.IntentionStudentImportParseResult{}, errors.New("未识别到可导入字段，请使用最新模板")
-	}
-
-	hasLessonHourColumn := false
-	for _, column := range columns {
-		if column.Title == "购买课时数" {
-			hasLessonHourColumn = true
-			break
-		}
-	}
-	if !hasLessonHourColumn {
-		return model.IntentionStudentImportParseResult{}, errors.New("当前仅支持按课时订单模板导入")
 	}
 
 	result := model.IntentionStudentImportParseResult{
@@ -180,6 +190,7 @@ func (svc *Service) ParseLessonHourOrderImportFile(userID int64, filename string
 		if !hasRawValue {
 			continue
 		}
+		applyOrderImportRowValidation(importMode, cells, &hasError)
 		result.Rows = append(result.Rows, model.IntentionStudentImportRow{
 			ID:       fmt.Sprintf("%s_%d", result.ImportID, rowIdx+1),
 			RowNo:    rowIdx + 1,
@@ -200,6 +211,51 @@ func (svc *Service) ParseLessonHourOrderImportFile(userID int64, filename string
 	return result, nil
 }
 
+func applyOrderImportRowValidation(mode orderImportMode, cells []model.IntentionStudentImportCell, hasError *bool) {
+	if len(cells) == 0 {
+		return
+	}
+	rowData := make(map[string]*model.IntentionStudentImportCell, len(cells))
+	for idx := range cells {
+		rowData[cells[idx].Title] = &cells[idx]
+	}
+
+	switch mode {
+	case orderImportModeTimeSlot:
+		startCell, hasStart := rowData["有效开始日期"]
+		endCell, hasEnd := rowData["有效结束日期(含赠送天数)"]
+		if !hasStart || !hasEnd {
+			return
+		}
+		startDate, startOK := parseImportDateValue(startCell.Value)
+		endDate, endOK := parseImportDateValue(endCell.Value)
+		if !startOK || !endOK {
+			return
+		}
+		if endDate.Before(startDate) {
+			endCell.Error = "结束日期不能早于开始日期"
+			*hasError = true
+			return
+		}
+
+		giftDays := int64(0)
+		if giftCell, ok := rowData["赠送天数"]; ok {
+			text := strings.TrimSpace(giftCell.Value)
+			if text != "" {
+				parsed, err := strconv.ParseInt(text, 10, 64)
+				if err == nil && parsed >= 0 {
+					giftDays = parsed
+				}
+			}
+		}
+		totalDays := int64(endDate.Sub(startDate).Hours()/24) + 1
+		if totalDays-giftDays <= 0 {
+			endCell.Error = "有效时段需大于赠送天数"
+			*hasError = true
+		}
+	}
+}
+
 func validateOrderImportValue(column model.IntentionStudentImportColumn, value string) string {
 	if column.Required && strings.TrimSpace(value) == "" {
 		return "请填写"
@@ -212,6 +268,9 @@ func validateOrderImportValue(column model.IntentionStudentImportColumn, value s
 	}
 	if column.Title == "手机号" && !phoneDigitsPattern.MatchString(value) {
 		return "手机号格式错误"
+	}
+	if requiresIntegerPrecision(column.Title) && !isValidIntegerNumber(value) {
+		return "请输入整数"
 	}
 	if requiresTwoDecimalPrecision(column.Title) && !isValidTwoDecimalNumber(value) {
 		return "最多保留2位小数"
