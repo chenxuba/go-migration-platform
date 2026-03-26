@@ -21,6 +21,18 @@ func (svc *Service) studentDuplicateCheck(ctx context.Context, instID int64, stu
 	return rule, count, nil
 }
 
+func (svc *Service) studentImportDuplicateCheck(ctx context.Context, instID int64, stuName, mobile string, excludeID *int64) (int, int, error) {
+	rule, err := svc.repo.GetAddImportStudentRule(ctx, instID)
+	if err != nil {
+		return 0, 0, err
+	}
+	count, err := svc.repo.CountStudentDuplicatesByRule(ctx, instID, int64(rule), stuName, mobile, excludeID)
+	if err != nil {
+		return 0, 0, err
+	}
+	return rule, count, nil
+}
+
 func studentDuplicateMessage(rule int) string {
 	switch rule {
 	case 2:
@@ -30,6 +42,10 @@ func studentDuplicateMessage(rule int) string {
 	default:
 		return "当前机构已存在姓名和手机号同时相同的学员"
 	}
+}
+
+func studentWeChatDuplicateMessage() string {
+	return "当前机构已存在微信号相同的学员"
 }
 
 func (svc *Service) buildStudentSnapshotChangeText(ctx context.Context, before, after repository.StudentSnapshot) string {

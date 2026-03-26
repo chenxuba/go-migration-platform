@@ -194,8 +194,26 @@ func (repo *Repository) GetAddImportStudentRule(ctx context.Context, instID int6
 	return int(rule.Int64), nil
 }
 
+func (repo *Repository) GetLimitSameWeChat(ctx context.Context, instID int64) (bool, error) {
+	var value sql.NullInt64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(limit_same_weChat, 0)
+		FROM inst_config
+		WHERE inst_id = ? AND del_flag = 0
+		ORDER BY id DESC
+		LIMIT 1
+	`, instID).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return value.Valid && value.Int64 != 0, nil
+}
+
 func (repo *Repository) GetLimitImportSameWeChat(ctx context.Context, instID int64) (bool, error) {
-	var value sql.NullBool
+	var value sql.NullInt64
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT IFNULL(limit_import_same_weChat, 0)
 		FROM inst_config
@@ -209,7 +227,7 @@ func (repo *Repository) GetLimitImportSameWeChat(ctx context.Context, instID int
 		}
 		return false, err
 	}
-	return value.Valid && value.Bool, nil
+	return value.Valid && value.Int64 != 0, nil
 }
 
 func (repo *Repository) CountStudentDuplicatesByRule(ctx context.Context, instID, rule int64, stuName, mobile string, excludeID *int64) (int, error) {
@@ -252,13 +270,20 @@ func (repo *Repository) FindStudentIDByNameMobile(ctx context.Context, instID in
 	return studentID, err
 }
 
-func (repo *Repository) CountStudentByWeChat(ctx context.Context, instID int64, weChat string) (int, error) {
+func (repo *Repository) CountStudentByWeChat(ctx context.Context, instID int64, weChat string, excludeID *int64) (int, error) {
+	filters := []string{"inst_id = ?", "del_flag = 0", "wechat_number = ?"}
+	args := []any{instID, strings.TrimSpace(weChat)}
+	if excludeID != nil {
+		filters = append(filters, "id <> ?")
+		args = append(args, *excludeID)
+	}
 	var count int
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM inst_student
-		WHERE inst_id = ? AND del_flag = 0 AND wechat_number = ?
-	`, instID, strings.TrimSpace(weChat)).Scan(&count)
+		WHERE `+strings.Join(filters, " AND "),
+		args...,
+	).Scan(&count)
 	return count, err
 }
 

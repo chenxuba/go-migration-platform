@@ -163,6 +163,23 @@ func (svc *Service) AddIntentStudent(userID int64, dto model.StudentSaveDTO) (in
 	if count > 0 {
 		return 0, errors.New(studentDuplicateMessage(rule))
 	}
+	limitSameWeChat, err := svc.repo.GetLimitSameWeChat(context.Background(), instID)
+	if err != nil {
+		return 0, err
+	}
+	if limitSameWeChat && strings.TrimSpace(dto.WeChatNumber) != "" {
+		count, err := svc.repo.CountStudentByWeChat(context.Background(), instID, dto.WeChatNumber, nil)
+		if err != nil {
+			return 0, err
+		}
+		if count > 0 {
+			return 0, errors.New(studentWeChatDuplicateMessage())
+		}
+	}
+	return svc.createIntentStudentRecord(userID, instID, dto)
+}
+
+func (svc *Service) createIntentStudentRecord(userID int64, instID int64, dto model.StudentSaveDTO) (int64, error) {
 	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -194,6 +211,19 @@ func (svc *Service) UpdateIntentStudent(userID int64, dto model.StudentSaveDTO) 
 	}
 	if count > 0 {
 		return errors.New(studentDuplicateMessage(rule))
+	}
+	limitSameWeChat, err := svc.repo.GetLimitSameWeChat(context.Background(), instID)
+	if err != nil {
+		return err
+	}
+	if limitSameWeChat && strings.TrimSpace(dto.WeChatNumber) != "" {
+		count, err := svc.repo.CountStudentByWeChat(context.Background(), instID, dto.WeChatNumber, dto.StudentID)
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New(studentWeChatDuplicateMessage())
+		}
 	}
 	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
 	if err != nil {

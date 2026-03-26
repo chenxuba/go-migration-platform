@@ -267,7 +267,7 @@ func (svc *Service) runIntentionStudentImportTask(userID int64, taskID string) {
 			task.Rows[idx].Status = 2
 			task.Rows[idx].Result = err.Error()
 			failCount++
-		} else if _, err := svc.AddIntentStudent(userID, dto); err != nil {
+		} else if _, err := svc.AddIntentStudentByImport(userID, dto); err != nil {
 			task.Rows[idx].Status = 2
 			task.Rows[idx].Result = err.Error()
 			failCount++
@@ -285,6 +285,40 @@ func (svc *Service) runIntentionStudentImportTask(userID int64, taskID string) {
 	task.Detail.CompleteTime = &now
 	task.Detail.Status = 1
 	_ = svc.repo.UpdateIntentionStudentImportTask(context.Background(), task.Detail, task.Rows)
+}
+
+func (svc *Service) AddIntentStudentByImport(userID int64, dto model.StudentSaveDTO) (int64, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, errors.New("no institution context")
+		}
+		return 0, err
+	}
+	if strings.TrimSpace(dto.StuName) == "" || strings.TrimSpace(dto.Mobile) == "" {
+		return 0, errors.New("stuName and mobile are required")
+	}
+	rule, count, err := svc.studentImportDuplicateCheck(context.Background(), instID, dto.StuName, dto.Mobile, nil)
+	if err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		return 0, errors.New(studentDuplicateMessage(rule))
+	}
+	limitSameWeChat, err := svc.repo.GetLimitImportSameWeChat(context.Background(), instID)
+	if err != nil {
+		return 0, err
+	}
+	if limitSameWeChat && strings.TrimSpace(dto.WeChatNumber) != "" {
+		count, err := svc.repo.CountStudentByWeChat(context.Background(), instID, dto.WeChatNumber, nil)
+		if err != nil {
+			return 0, err
+		}
+		if count > 0 {
+			return 0, errors.New(studentWeChatDuplicateMessage())
+		}
+	}
+	return svc.createIntentStudentRecord(userID, instID, dto)
 }
 
 func (svc *Service) ClearIntentionStudentImportTasks(userID int64) error {

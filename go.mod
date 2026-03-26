@@ -4,6 +4,7 @@ go 1.26.1
 
 require (
 	github.com/apache/rocketmq-client-go/v2 v2.1.2
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/qiniu/go-sdk/v7 v7.26.5
 	golang.org/x/crypto v0.43.0

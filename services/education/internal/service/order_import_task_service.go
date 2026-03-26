@@ -516,7 +516,7 @@ func (svc *Service) resolveOrderImportStudent(userID, instID int64, dto model.St
 		return orderImportStudentDecision{}, err
 	}
 	if limitImportSameWeChat && strings.TrimSpace(dto.WeChatNumber) != "" {
-		count, err := svc.repo.CountStudentByWeChat(context.Background(), instID, dto.WeChatNumber)
+		count, err := svc.repo.CountStudentByWeChat(context.Background(), instID, dto.WeChatNumber, nil)
 		if err != nil {
 			return orderImportStudentDecision{}, err
 		}
@@ -525,7 +525,7 @@ func (svc *Service) resolveOrderImportStudent(userID, instID int64, dto model.St
 		}
 	}
 
-	studentID, err := svc.AddIntentStudent(userID, dto)
+	studentID, err := svc.createIntentStudentRecord(userID, instID, dto)
 	if err != nil {
 		return orderImportStudentDecision{}, err
 	}
