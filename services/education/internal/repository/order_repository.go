@@ -1862,7 +1862,7 @@ func parseDateStart(value string) *time.Time {
 	if text == "" {
 		return nil
 	}
-	layouts := []string{"2006-01-02", "2006-01-02T15:04:05", time.RFC3339}
+	layouts := []string{"2006-01-02 15:04:05", "2006-01-02T15:04:05", time.RFC3339, "2006-01-02"}
 	for _, layout := range layouts {
 		if parsed, err := time.ParseInLocation(layout, text, time.Local); err == nil {
 			return &parsed
