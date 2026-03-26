@@ -261,6 +261,10 @@ func (repo *Repository) PageRechargeAccountDetails(ctx context.Context, instID i
 		whereParts = append(whereParts, "CAST(raf.student_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(query.QueryModel.StudentID))
 	}
+	if strings.TrimSpace(query.QueryModel.RechargeAccountID) != "" {
+		whereParts = append(whereParts, "CAST(raf.recharge_account_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(query.QueryModel.RechargeAccountID))
+	}
 	if len(query.QueryModel.FlowTypes) > 0 {
 		holders := make([]string, 0, len(query.QueryModel.FlowTypes))
 		for _, item := range query.QueryModel.FlowTypes {

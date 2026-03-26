@@ -484,6 +484,34 @@ func (repo *Repository) PageCourseIDNames(ctx context.Context, instID int64, que
 	}, rows.Err()
 }
 
+func (repo *Repository) ListCourseNames(ctx context.Context, instID int64) ([]string, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(name, '')
+		FROM inst_course
+		WHERE inst_id = ? AND del_flag = 0
+		GROUP BY IFNULL(name, '')
+		ORDER BY MAX(update_time) DESC, MAX(id) DESC
+	`, instID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]string, 0, 64)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		items = append(items, name)
+	}
+	return items, rows.Err()
+}
+
 func (repo *Repository) CountStudents(ctx context.Context, instID *int64) (int, error) {
 	query := "SELECT COUNT(*) FROM inst_student WHERE del_flag = 0"
 	args := make([]any, 0, 1)

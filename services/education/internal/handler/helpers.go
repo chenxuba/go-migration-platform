@@ -321,10 +321,11 @@ func parseRechargeAccountDetailQueryDTO(raw map[string]any) model.RechargeAccoun
 	}
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
 		query.QueryModel = model.RechargeAccountDetailQuery{
-			StudentID: asString(qm["studentId"]),
-			StartTime: asString(qm["startTime"]),
-			EndTime:   asString(qm["endTime"]),
-			FlowTypes: asIntSlice(qm["flowTypes"]),
+			StudentID:         asString(qm["studentId"]),
+			RechargeAccountID: asString(qm["rechargeAccountId"]),
+			StartTime:         asString(qm["startTime"]),
+			EndTime:           asString(qm["endTime"]),
+			FlowTypes:         asIntSlice(qm["flowTypes"]),
 		}
 	}
 	if sm, ok := raw["sortModel"].(map[string]any); ok {

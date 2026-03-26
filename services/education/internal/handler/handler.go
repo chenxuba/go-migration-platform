@@ -112,6 +112,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/orders/list", handler.orderList)
 	mux.HandleFunc("/api/v1/orders/detail-paged", handler.orderDetailPaged)
 	mux.HandleFunc("/api/v1/orders/detail", handler.orderDetail)
+	mux.HandleFunc("/api/v1/orders/import-template/lesson-hour", handler.buildLessonHourOrderImportTemplate)
+	mux.HandleFunc("/api/v1/orders/import-template/lesson-hour/file", handler.downloadLessonHourOrderImportTemplate)
 	mux.HandleFunc("/api/v1/ledgers/list", handler.ledgerList)
 	mux.HandleFunc("/api/v1/ledgers/statistics", handler.ledgerStatistics)
 	mux.HandleFunc("/api/v1/ledgers/confirm", handler.confirmLedger)

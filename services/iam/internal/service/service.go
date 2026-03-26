@@ -555,6 +555,9 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 			}
 			return nil, nil, nil, nil, nil, err
 		}
+		if err := svc.repo.MarkInstitutionUserActivated(context.Background(), info.InstUserID); err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
 		roleList, err := svc.repo.GetUserRoleIDs(context.Background(), user.ID, info.InstID, 2)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err

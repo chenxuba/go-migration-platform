@@ -185,6 +185,19 @@ func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64
 	return info, nil
 }
 
+func (repo *Repository) MarkInstitutionUserActivated(ctx context.Context, instUserID int64) error {
+	if instUserID <= 0 {
+		return nil
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_user
+		SET activated_status = 1,
+			update_time = NOW()
+		WHERE id = ? AND del_flag = 0 AND IFNULL(activated_status, 0) = 0
+	`, instUserID)
+	return err
+}
+
 func (repo *Repository) GetUserRoleIDs(ctx context.Context, userID, orgID int64, roleType int) ([]string, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT DISTINCT CAST(r.id AS CHAR)

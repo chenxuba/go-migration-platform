@@ -128,3 +128,30 @@ func (repo *Repository) UpdateOrderTag(ctx context.Context, instID, operatorID i
 	`, args...)
 	return err
 }
+
+func (repo *Repository) ListEnabledOrderTagNames(ctx context.Context, instID int64) ([]string, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(name, '')
+		FROM inst_order_tag
+		WHERE inst_id = ? AND del_flag = 0 AND IFNULL(enable, 0) = 1
+		ORDER BY update_time DESC, id DESC
+	`, instID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]string, 0, 16)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		items = append(items, name)
+	}
+	return items, rows.Err()
+}

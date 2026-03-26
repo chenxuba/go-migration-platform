@@ -75,10 +75,11 @@ type RechargeAccountDetailQueryDTO struct {
 }
 
 type RechargeAccountDetailQuery struct {
-	StudentID string `json:"studentId"`
-	StartTime string `json:"startTime"`
-	EndTime   string `json:"endTime"`
-	FlowTypes []int  `json:"flowTypes"`
+	StudentID         string `json:"studentId"`
+	RechargeAccountID string `json:"rechargeAccountId"`
+	StartTime         string `json:"startTime"`
+	EndTime           string `json:"endTime"`
+	FlowTypes         []int  `json:"flowTypes"`
 }
 
 type RechargeAccountDetailSortModel struct {
