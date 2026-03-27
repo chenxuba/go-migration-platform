@@ -2442,6 +2442,25 @@ func minTime(a, b time.Time) time.Time {
 	return b
 }
 
+func almostEqualFloat(a, b float64) bool {
+	return math.Abs(a-b) < 0.00001
+}
+
+func timeSlotSourceIDByDate(value time.Time) int64 {
+	sourceID, _ := strconv.ParseInt(value.Format("20060102"), 10, 64)
+	return sourceID
+}
+
+func cumulativeTimeSlotTuition(totalTuition, totalDays float64, consumedDays int) float64 {
+	if totalDays <= 0 || consumedDays <= 0 {
+		return 0
+	}
+	if float64(consumedDays) >= totalDays {
+		return roundMoney(totalTuition)
+	}
+	return roundMoney(totalTuition * float64(consumedDays) / totalDays)
+}
+
 func (repo *Repository) initializeTimeSlotIncomeTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -2470,22 +2489,29 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 	}
 
 	var (
-		paidAccountID    int64
-		paidCourseID     int64
-		paidTotalDays    float64
-		paidTotalTuition float64
-		orderNumber      string
-		lessonType       sql.NullInt64
+		paidAccountID           int64
+		paidCourseID            int64
+		paidTotalDays           float64
+		paidTotalTuition        float64
+		usedQuantity            float64
+		remainQuantity          float64
+		usedTuition             float64
+		remainTuition           float64
+		confirmedTuitionCurrent float64
+		orderNumber             string
+		lessonType              sql.NullInt64
 	)
 	err := tx.QueryRowContext(ctx, `
-		SELECT ta.id, ta.course_id, IFNULL(ta.total_quantity, 0), IFNULL(ta.total_tuition, 0), IFNULL(so.order_number, ''), c.teach_method
+		SELECT ta.id, ta.course_id, IFNULL(ta.total_quantity, 0), IFNULL(ta.total_tuition, 0),
+		       IFNULL(ta.used_quantity, 0), IFNULL(ta.remaining_quantity, 0), IFNULL(ta.used_tuition, 0), IFNULL(ta.remaining_tuition, 0), IFNULL(ta.confirmed_tuition, 0),
+		       IFNULL(so.order_number, ''), c.teach_method
 		FROM tuition_account ta
 		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
 		LEFT JOIN inst_course c ON c.id = ta.course_id AND c.del_flag = 0
 		WHERE ta.inst_id = ? AND ta.order_id = ? AND ta.order_course_detail_id = ? AND ta.del_flag = 0 AND IFNULL(ta.total_tuition, 0) > 0
 		ORDER BY ta.id ASC
 		LIMIT 1
-	`, instID, orderID, detail.ID).Scan(&paidAccountID, &paidCourseID, &paidTotalDays, &paidTotalTuition, &orderNumber, &lessonType)
+	`, instID, orderID, detail.ID).Scan(&paidAccountID, &paidCourseID, &paidTotalDays, &paidTotalTuition, &usedQuantity, &remainQuantity, &usedTuition, &remainTuition, &confirmedTuitionCurrent, &orderNumber, &lessonType)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil
@@ -2508,32 +2534,50 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 	remainingDays := math.Max(paidTotalDays-consumedPaidDays, 0)
 	remainingTuition := roundMoney(math.Max(paidTotalTuition-confirmedTuition, 0))
 
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE tuition_account
-		SET used_quantity = ?, remaining_quantity = ?, used_tuition = ?, remaining_tuition = ?, confirmed_tuition = ?, update_id = ?, update_time = NOW()
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, consumedPaidDays, remainingDays, confirmedTuition, remainingTuition, confirmedTuition, operatorID, paidAccountID, instID); err != nil {
-		return err
+	paidChanged := !almostEqualFloat(usedQuantity, consumedPaidDays)
+	paidChanged = paidChanged || !almostEqualFloat(remainQuantity, remainingDays)
+	paidChanged = paidChanged || !almostEqualFloat(usedTuition, confirmedTuition)
+	paidChanged = paidChanged || !almostEqualFloat(remainTuition, remainingTuition)
+	paidChanged = paidChanged || !almostEqualFloat(confirmedTuitionCurrent, confirmedTuition)
+
+	if paidChanged {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE tuition_account
+			SET used_quantity = ?, remaining_quantity = ?, used_tuition = ?, remaining_tuition = ?, confirmed_tuition = ?, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, consumedPaidDays, remainingDays, confirmedTuition, remainingTuition, confirmedTuition, operatorID, paidAccountID, instID); err != nil {
+			return err
+		}
 	}
 
+	freeChanged := false
 	if detail.FreeQuantity > 0 && float64(elapsedDays) > paidTotalDays {
 		consumedFreeDays := math.Min(float64(elapsedDays)-paidTotalDays, detail.FreeQuantity)
 		if consumedFreeDays > 0 {
-			var freeAccountID int64
+			var (
+				freeAccountID       int64
+				freeUsedQuantity    float64
+				freeRemainQuantity  float64
+				freeTotalFreeAmount float64
+			)
 			if err := tx.QueryRowContext(ctx, `
-				SELECT id
+				SELECT id, IFNULL(used_quantity, 0), IFNULL(remaining_quantity, 0), IFNULL(free_quantity, 0)
 				FROM tuition_account
 				WHERE inst_id = ? AND order_id = ? AND order_course_detail_id = ? AND del_flag = 0
 				  AND IFNULL(total_tuition, 0) = 0 AND IFNULL(free_quantity, 0) > 0
 				ORDER BY id ASC
 				LIMIT 1
-			`, instID, orderID, detail.ID).Scan(&freeAccountID); err == nil {
-				if _, execErr := tx.ExecContext(ctx, `
-					UPDATE tuition_account
-					SET used_quantity = ?, remaining_quantity = ?, update_id = ?, update_time = NOW()
-					WHERE id = ? AND inst_id = ? AND del_flag = 0
-				`, consumedFreeDays, math.Max(detail.FreeQuantity-consumedFreeDays, 0), operatorID, freeAccountID, instID); execErr != nil {
-					return execErr
+			`, instID, orderID, detail.ID).Scan(&freeAccountID, &freeUsedQuantity, &freeRemainQuantity, &freeTotalFreeAmount); err == nil {
+				targetFreeRemain := math.Max(freeTotalFreeAmount-consumedFreeDays, 0)
+				freeChanged = !almostEqualFloat(freeUsedQuantity, consumedFreeDays) || !almostEqualFloat(freeRemainQuantity, targetFreeRemain)
+				if freeChanged {
+					if _, execErr := tx.ExecContext(ctx, `
+						UPDATE tuition_account
+						SET used_quantity = ?, remaining_quantity = ?, update_id = ?, update_time = NOW()
+						WHERE id = ? AND inst_id = ? AND del_flag = 0
+					`, consumedFreeDays, targetFreeRemain, operatorID, freeAccountID, instID); execErr != nil {
+						return execErr
+					}
 				}
 			} else if err != sql.ErrNoRows {
 				return err
@@ -2546,48 +2590,250 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 		lessonTypeValue = lessonType.Int64
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO tuition_account_flow (
-			uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
-			source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
-			create_id, create_time, update_id, update_time, del_flag
-		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?,
-			?, ?, NULL, ?, ?, ?, ?, ?, ?,
-			?, NOW(), ?, NOW(), 0
-		)
-		ON DUPLICATE KEY UPDATE
-			quantity = VALUES(quantity),
-			tuition = VALUES(tuition),
-			balance_quantity = VALUES(balance_quantity),
-			balance_tuition = VALUES(balance_tuition),
-			order_number = VALUES(order_number),
-			created_time = VALUES(created_time),
-			update_id = VALUES(update_id),
-			update_time = VALUES(update_time),
-			del_flag = VALUES(del_flag)
-	`,
-		instID,
-		paidAccountID,
-		studentID,
-		paidCourseID,
-		lessonTypeValue,
-		2,
-		model.TuitionAccountFlowSourceAutoConsume,
-		detail.ID,
-		orderNumber,
-		now,
-		consumedPaidDays,
-		confirmedTuition,
-		remainingDays,
-		remainingTuition,
-		operatorID,
-		operatorID,
-	); err != nil {
+	var (
+		bootstrapQuantity float64
+		bootstrapTuition  float64
+	)
+	bootstrapExists := true
+	if err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(quantity, 0), IFNULL(tuition, 0)
+		FROM tuition_account_flow
+		WHERE inst_id = ? AND tuition_account_id = ? AND source_type = ? AND source_id = ? AND del_flag = 0
+		LIMIT 1
+	`, instID, paidAccountID, model.TuitionAccountFlowSourceAutoConsume, detail.ID).Scan(&bootstrapQuantity, &bootstrapTuition); err != nil {
+		if err == sql.ErrNoRows {
+			bootstrapExists = false
+		} else {
+			return err
+		}
+	}
+
+	generatedFlow := false
+	if !bootstrapExists && operatorID != 0 {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO tuition_account_flow (
+				uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
+				source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
+				create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, ?, ?,
+				?, ?, NULL, ?, ?, ?, ?, ?, ?,
+				?, NOW(), ?, NOW(), 0
+			)
+		`,
+			instID,
+			paidAccountID,
+			studentID,
+			paidCourseID,
+			lessonTypeValue,
+			2,
+			model.TuitionAccountFlowSourceAutoConsume,
+			detail.ID,
+			orderNumber,
+			now,
+			consumedPaidDays,
+			confirmedTuition,
+			remainingDays,
+			remainingTuition,
+			operatorID,
+			operatorID,
+		); err != nil {
+			return err
+		}
+		bootstrapExists = true
+		bootstrapQuantity = consumedPaidDays
+		bootstrapTuition = confirmedTuition
+		generatedFlow = true
+	}
+
+	existingDailyFlows := make(map[int64]struct{})
+	rows, err := tx.QueryContext(ctx, `
+		SELECT source_id
+		FROM tuition_account_flow
+		WHERE inst_id = ? AND tuition_account_id = ? AND source_type = ? AND del_flag = 0 AND source_id <> ?
+	`, instID, paidAccountID, model.TuitionAccountFlowSourceAutoConsume, detail.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var sourceID int64
+		if err := rows.Scan(&sourceID); err != nil {
+			return err
+		}
+		existingDailyFlows[sourceID] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
 		return err
 	}
 
+	bootstrapCoveredDays := 0
+	if bootstrapExists {
+		bootstrapCoveredDays = int(math.Round(bootstrapQuantity))
+	}
+
+	targetPaidDays := int(math.Floor(consumedPaidDays + 0.00001))
+	for paidDayIndex := 1; paidDayIndex <= targetPaidDays; paidDayIndex++ {
+		if bootstrapExists && paidDayIndex <= bootstrapCoveredDays {
+			continue
+		}
+
+		consumeDate := startDate.AddDate(0, 0, paidDayIndex-1)
+		sourceID := timeSlotSourceIDByDate(consumeDate)
+		if _, exists := existingDailyFlows[sourceID]; exists {
+			continue
+		}
+
+		prevTuition := cumulativeTimeSlotTuition(paidTotalTuition, paidTotalDays, paidDayIndex-1)
+		currTuition := cumulativeTimeSlotTuition(paidTotalTuition, paidTotalDays, paidDayIndex)
+		rowTuition := roundMoney(currTuition - prevTuition)
+		rowCreatedTime := time.Date(consumeDate.Year(), consumeDate.Month(), consumeDate.Day(), 0, 0, 0, 0, consumeDate.Location())
+		if consumeDate.Equal(today) {
+			rowCreatedTime = now
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO tuition_account_flow (
+				uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
+				source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
+				create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, ?, ?,
+				?, ?, NULL, ?, ?, ?, ?, ?, ?,
+				?, NOW(), ?, NOW(), 0
+			)
+			ON DUPLICATE KEY UPDATE
+				quantity = VALUES(quantity),
+				tuition = VALUES(tuition),
+				balance_quantity = VALUES(balance_quantity),
+				balance_tuition = VALUES(balance_tuition),
+				order_number = VALUES(order_number),
+				created_time = VALUES(created_time),
+				update_id = VALUES(update_id),
+				update_time = VALUES(update_time),
+				del_flag = VALUES(del_flag)
+		`,
+			instID,
+			paidAccountID,
+			studentID,
+			paidCourseID,
+			lessonTypeValue,
+			2,
+			model.TuitionAccountFlowSourceAutoConsume,
+			sourceID,
+			orderNumber,
+			rowCreatedTime,
+			1,
+			rowTuition,
+			math.Max(paidTotalDays-float64(paidDayIndex), 0),
+			roundMoney(math.Max(paidTotalTuition-currTuition, 0)),
+			operatorID,
+			operatorID,
+		); err != nil {
+			return err
+		}
+		generatedFlow = true
+	}
+
+	if !paidChanged && !freeChanged && !generatedFlow {
+		return nil
+	}
+
 	return nil
+}
+
+func (repo *Repository) SyncTimeSlotAutoIncome(ctx context.Context, now time.Time) (int, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			so.inst_id,
+			so.id,
+			so.student_id,
+			d.id,
+			d.course_id,
+			d.quote_id,
+			d.handle_type,
+			d.count,
+			d.unit,
+			IFNULL(d.free_quantity, 0),
+			IFNULL(d.amount, 0),
+			IFNULL(d.real_quantity, 0),
+			IFNULL(d.has_valid_date, 0),
+			d.valid_date,
+			d.end_date,
+			IFNULL(q.lesson_model, 0)
+		FROM sale_order so
+		INNER JOIN sale_order_course_detail d ON d.order_id = so.id AND d.del_flag = 0
+		LEFT JOIN inst_course_quotation q ON q.id = d.quote_id AND q.del_flag = 0
+		WHERE so.del_flag = 0
+		  AND so.order_status = ?
+		  AND IFNULL(q.lesson_model, 0) = 2
+		  AND d.valid_date IS NOT NULL
+		  AND d.end_date IS NOT NULL
+	`, model.OrderStatusCompleted)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	type timeSlotSyncItem struct {
+		instID      int64
+		orderID     int64
+		studentID   int64
+		detail      orderCourseDetail
+		lessonModel int
+	}
+
+	items := make([]timeSlotSyncItem, 0, 32)
+	for rows.Next() {
+		var item timeSlotSyncItem
+		if err := rows.Scan(
+			&item.instID,
+			&item.orderID,
+			&item.studentID,
+			&item.detail.ID,
+			&item.detail.CourseID,
+			&item.detail.QuoteID,
+			&item.detail.HandleType,
+			&item.detail.Count,
+			&item.detail.Unit,
+			&item.detail.FreeQuantity,
+			&item.detail.Amount,
+			&item.detail.RealQuantity,
+			&item.detail.HasValidDate,
+			&item.detail.ValidDate,
+			&item.detail.EndDate,
+			&item.lessonModel,
+		); err != nil {
+			return 0, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	syncedCount := 0
+	for _, item := range items {
+		quotation := model.CourseQuotation{
+			LessonModel: &item.lessonModel,
+		}
+		if err := repo.initializeTimeSlotIncomeTx(ctx, tx, item.instID, 0, item.orderID, item.studentID, item.detail, quotation, now); err != nil {
+			return 0, err
+		}
+		syncedCount++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return syncedCount, nil
 }
 
 func collectOrderDetailQuoteIDs(details []orderCourseDetail) []int64 {

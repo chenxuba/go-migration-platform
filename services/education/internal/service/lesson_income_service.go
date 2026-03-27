@@ -9,6 +9,7 @@ import (
 )
 
 func (svc *Service) GetLessonIncomePagedList(userID int64, query model.LessonIncomeQueryDTO) (model.LessonIncomePagedResult, error) {
+	svc.SyncTimeSlotAutoIncomeOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -20,6 +21,7 @@ func (svc *Service) GetLessonIncomePagedList(userID int64, query model.LessonInc
 }
 
 func (svc *Service) GetLessonIncomeStatistics(userID int64, query model.LessonIncomeQueryDTO) (model.LessonIncomeStatistics, error) {
+	svc.SyncTimeSlotAutoIncomeOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

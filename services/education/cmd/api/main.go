@@ -61,6 +61,7 @@ func main() {
 		mqClient = nil
 	}
 	svc := service.New(store, repo, tokenManager, esClient, mqClient, qiniuClient)
+	svc.StartBackgroundJobs(context.Background())
 	h := handler.New(svc)
 
 	if consumerClient, err := messaging.NewRocketMQConsumer(cfg.RocketMQNameSrv, "go_migration_platform_education_consumer", cfg.AppEnv); err != nil {
