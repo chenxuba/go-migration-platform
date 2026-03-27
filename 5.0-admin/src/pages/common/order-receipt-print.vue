@@ -314,7 +314,6 @@ const settlementMetaList = computed<ReceiptKvItem[]>(() => [
 ])
 
 const noteMetaList = computed<ReceiptKvItem[]>(() => [
-  { label: '对内备注', value: detail.value?.remark || '-' },
   { label: '对外备注', value: detail.value?.externalRemark || '-' },
   { label: '票据说明', value: '此票据为系统业务凭证，用于学员留存与内部对账。' },
 ])
@@ -626,11 +625,9 @@ watch(
           <table class="receipt-sheet-table">
             <tbody>
               <tr>
-                <th>对内备注</th>
                 <th>对外备注</th>
               </tr>
               <tr>
-                <td>{{ detail.remark || '-' }}</td>
                 <td>{{ detail.externalRemark || '-' }}</td>
               </tr>
             </tbody>
@@ -640,7 +637,7 @@ watch(
         <footer class="receipt-signature receipt-signature--sheet">
           <div>经办人：{{ detail.staffName || printedBy }}</div>
           <div>复核人：________________</div>
-          <div>付款人/家长签字：________________</div>
+          <div>家长签字：________________</div>
         </footer>
       </section>
 
@@ -1035,7 +1032,7 @@ watch(
 .receipt-sheet-table th,
 .receipt-sheet-table td {
   border: 1px solid #808a98;
-  padding: 7px 9px;
+  padding: 9px 10px;
   vertical-align: middle;
   line-height: 1.4;
   word-break: break-word;
@@ -1278,6 +1275,11 @@ watch(
 }
 
 @media print {
+  @page {
+    size: A4;
+    margin: 10mm 10mm 12mm;
+  }
+
   .print-hidden {
     display: none !important;
   }
@@ -1304,5 +1306,6 @@ watch(
     width: 100%;
     min-height: 0;
   }
+
 }
 </style>
