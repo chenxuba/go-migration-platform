@@ -650,17 +650,17 @@ function closeDrawer() {
             <template v-if="column.key === 'rechargeAccountFlowSourceType'">
               <span
                 class="flow-tag"
-                :class="{ 'flow-tag--refund': Number(record.rechargeAccountFlowSourceType) === 2 }"
+                :class="{ 'flow-tag--refund': [2, 3].includes(Number(record.rechargeAccountFlowSourceType)) }"
               >{{ FLOW_TYPE_LABEL_MAP[record.rechargeAccountFlowSourceType] || '-' }}</span>
             </template>
             <template v-if="column.key === 'amount'">
-              {{ formatTableMoney(record.amount) }}
+              <span :class="{ 'text-#ff4d4f': Number(record.amount || 0) < 0 }">{{ formatTableMoney(record.amount) }}</span>
             </template>
             <template v-if="column.key === 'givingAmount'">
-              {{ formatTableMoney(record.givingAmount) }}
+              <span :class="{ 'text-#ff4d4f': Number(record.givingAmount || 0) < 0 }">{{ formatTableMoney(record.givingAmount) }}</span>
             </template>
             <template v-if="column.key === 'residualAmount'">
-              {{ formatTableMoney(record.residualAmount) }}
+              <span :class="{ 'text-#ff4d4f': Number(record.residualAmount || 0) < 0 }">{{ formatTableMoney(record.residualAmount) }}</span>
             </template>
             <template v-if="column.key === 'sourceOrderNumber'">
               <a
@@ -688,7 +688,7 @@ function closeDrawer() {
               {{ record.remark || '-' }}
             </template>
             <template v-if="column.key === 'totalAmount'">
-              <div class="flex justify-end font-800">
+              <div class="flex justify-end font-800" :class="{ 'text-#ff4d4f': Number(record.totalAmount || 0) < 0 }">
                 {{ formatTableMoney(record.totalAmount) }}
               </div>
             </template>
