@@ -33,6 +33,14 @@ function statusText(status) {
   return status === 3 ? '待处理' : '已完成'
 }
 
+function statusClass(status) {
+  if (status === 4)
+    return 'status-chip status-chip--running'
+  if (status === 3)
+    return 'status-chip status-chip--pending'
+  return 'status-chip status-chip--completed'
+}
+
 async function loadRecords() {
   loading.value = true
   try {
@@ -155,8 +163,10 @@ onUnmounted(() => {
           <a-table-column title="文件名称" data-index="fileName" key="fileName" />
           <a-table-column title="状态" key="status">
             <template #default="{ record }">
-              <span class="status-dot" />
-              {{ statusText(record.status) }}
+              <span :class="statusClass(record.status)">
+                <span class="status-dot" />
+                {{ statusText(record.status) }}
+              </span>
             </template>
           </a-table-column>
           <a-table-column title="导入时间" key="createdTime">
@@ -257,12 +267,51 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-.status-dot {
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-width: 72px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 28px;
+}
+
+.status-chip .status-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 6px;
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
   border-radius: 50%;
+}
+
+.status-chip--running {
+  color: #d48806;
+  background: #fff7e6;
+}
+
+.status-chip--running .status-dot {
+  background: #faad14;
+  box-shadow: 0 0 0 3px rgba(250, 173, 20, 0.16);
+}
+
+.status-chip--pending {
+  color: #8c8c8c;
+  background: #f5f5f5;
+}
+
+.status-chip--pending .status-dot {
+  background: #bfbfbf;
+}
+
+.status-chip--completed {
+  color: #1677ff;
+  background: #edf5ff;
+}
+
+.status-chip--completed .status-dot {
   background: #1677ff;
 }
 

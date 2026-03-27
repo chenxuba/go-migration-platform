@@ -59,3 +59,15 @@ func TestShouldConvertStudentToReading(t *testing.T) {
 		}
 	})
 }
+
+func TestShouldSkipRegistrationApproval(t *testing.T) {
+	if !shouldSkipRegistrationApproval(model.OrderSourceOfflineImport) {
+		t.Fatalf("expected imported orders to skip approval")
+	}
+	if shouldSkipRegistrationApproval(model.OrderSourceOffline) {
+		t.Fatalf("expected manual offline orders to keep approval")
+	}
+	if shouldSkipRegistrationApproval(model.OrderSourceMiniProgram) {
+		t.Fatalf("expected mini program orders to keep approval")
+	}
+}

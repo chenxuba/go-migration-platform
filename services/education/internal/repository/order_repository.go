@@ -2016,14 +2016,15 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 
 	var orderRealAmount float64
 	var orderStatus int
+	var orderSource int
 	var studentID int64
 	var applicantID int64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT IFNULL(order_real_amount, 0), order_status, student_id, IFNULL(create_id, 0)
+		SELECT IFNULL(order_real_amount, 0), order_status, IFNULL(order_source, 0), student_id, IFNULL(create_id, 0)
 		FROM sale_order
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 		LIMIT 1
-	`, dto.OrderID, instID).Scan(&orderRealAmount, &orderStatus, &studentID, &applicantID); err != nil {
+	`, dto.OrderID, instID).Scan(&orderRealAmount, &orderStatus, &orderSource, &studentID, &applicantID); err != nil {
 		return err
 	}
 	if orderStatus != model.OrderStatusPendingPayment && orderStatus != model.OrderStatusCompleted {
@@ -2082,11 +2083,14 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 
 	newStatus := orderStatus
 	if orderStatus == model.OrderStatusPendingPayment {
-		approved, err := repo.insertApprovalRecordTx(ctx, tx, instID, dto.OrderID, studentID, applicantID)
-		if err != nil {
-			return err
+		approved := shouldSkipRegistrationApproval(orderSource)
+		if !approved {
+			approved, err = repo.insertApprovalRecordTx(ctx, tx, instID, dto.OrderID, studentID, applicantID)
+			if err != nil {
+				return err
+			}
+			newStatus = model.OrderStatusApproving
 		}
-		newStatus = model.OrderStatusApproving
 		if approved {
 			newStatus = model.OrderStatusCompleted
 			if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, dto.OrderID, studentID); err != nil {
@@ -2103,6 +2107,10 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 		return err
 	}
 	return tx.Commit()
+}
+
+func shouldSkipRegistrationApproval(orderSource int) bool {
+	return orderSource == model.OrderSourceOfflineImport
 }
 
 func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, instID, orderID, studentID, applicantID int64) (bool, error) {
