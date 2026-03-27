@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
-import { DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, ExclamationCircleOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { getEnrolledStudentListApi } from '~@/api/edu-center/enrolled-student'
 import { useStudentFields } from '@/composables/useStudentFields'
@@ -30,6 +30,80 @@ const dataSource = ref([])
 const loading = ref(false)
 const selectedRows = ref([])
 const selectedRowKeys = ref([])
+const exportModalVisible = ref(false)
+const exportRecordModalVisible = ref(false)
+const exportMode = ref('all')
+const exportReportType = ref('student')
+const exportFileType = ref('excel')
+const exportConditionItems = ref([])
+
+const exportPreviewColumns = [
+  { title: '学员姓名', dataIndex: 'stuName', key: 'stuName' },
+  { title: '学员年龄', dataIndex: 'age', key: 'age' },
+  { title: '学员生日', dataIndex: 'birthDay', key: 'birthDay' },
+  { title: '学员性别', dataIndex: 'sex', key: 'sex' },
+  { title: '学员电话', dataIndex: 'mobile', key: 'mobile' },
+  { title: '电话关系', dataIndex: 'relation', key: 'relation' },
+  { title: '备用手机号', dataIndex: 'backupPhone', key: 'backupPhone' },
+  { title: '微信', dataIndex: 'wechat', key: 'wechat' },
+  { title: '学员备注', dataIndex: 'remark', key: 'remark' },
+  { title: '家校通关注状态', dataIndex: 'bindStatus', key: 'bindStatus' },
+  { title: '人脸采集状态', dataIndex: 'faceStatus', key: 'faceStatus' },
+  { title: '学员状态', dataIndex: 'studentStatusLabel', key: 'studentStatusLabel' },
+  { title: '创建人', dataIndex: 'creator', key: 'creator' },
+  { title: '创建日期', dataIndex: 'createdAt', key: 'createdAt' },
+  { title: '首次报读时间', dataIndex: 'firstEnrollAt', key: 'firstEnrollAt' },
+  { title: '渠道', dataIndex: 'channel', key: 'channel' },
+  { title: '转介绍推荐人', dataIndex: 'recommender', key: 'recommender' },
+  { title: '销售员', dataIndex: 'salesperson', key: 'salesperson' },
+  { title: '最新跟进时间', dataIndex: 'latestFollowAt', key: 'latestFollowAt' },
+  { title: '关联储值账户余额', dataIndex: 'balance', key: 'balance' },
+  { title: '关联储值账户赠送余额', dataIndex: 'giftBalance', key: 'giftBalance' },
+  { title: '订单欠费金额', dataIndex: 'arrearAmount', key: 'arrearAmount' },
+  { title: '剩余积分数量', dataIndex: 'points', key: 'points' },
+  { title: '家庭住宅', dataIndex: 'residence', key: 'residence' },
+]
+const exportPreviewRows = [
+  {
+    stuName: '王小明',
+    age: '18周岁',
+    birthDay: '2010-01-01',
+    sex: '男',
+    mobile: '18818888888',
+    relation: '母亲',
+    backupPhone: '13800138000',
+    wechat: '18818888888',
+    remark: '测试学员',
+    bindStatus: '已采集',
+    faceStatus: '已关注',
+    studentStatusLabel: '在读',
+    creator: '李晨',
+    createdAt: '2022-10-18 14:46:50',
+    firstEnrollAt: '2024-11-21 12:00:00',
+    channel: '转介绍',
+    recommender: '李晨',
+    salesperson: '孙勇',
+    latestFollowAt: '2023-02-14 10:36:35',
+    balance: '10000',
+    giftBalance: '1000',
+    arrearAmount: '0',
+    points: '980',
+    residence: 'xxx',
+  },
+]
+const exportFieldCount = computed(() => exportPreviewColumns.length)
+const exportQuerySummary = computed(() => {
+  if (exportConditionItems.value.length === 0) {
+    return ['全部导出']
+  }
+  return exportConditionItems.value.map(item => `${item.label}：${item.value}`)
+})
+const exportRecordConditions = computed(() => {
+  if (exportConditionItems.value.length === 0) {
+    return [{ label: '查询条件', value: '全部' }]
+  }
+  return exportConditionItems.value
+})
 
 // 计算年级选项数据
 const gradeOptionsData = computed(() => {
@@ -533,6 +607,7 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
   })
 
 function handleImportExportAction({ key }) {
+  syncExportConditions()
   switch (key) {
     case '1':
       router.push('/import-center/starter/order')
@@ -541,9 +616,40 @@ function handleImportExportAction({ key }) {
       router.push('/import-center/starter/intentionStudent')
       break
     case '3':
+      exportModalVisible.value = true
+      break
     case '4':
+      exportRecordModalVisible.value = true
       break
   }
+}
+
+function syncExportConditions() {
+  const conditions = allFilterRef.value?.getOrderedConditions?.() || []
+  exportConditionItems.value = conditions.map((item) => {
+    const values = Array.isArray(item.values) ? item.values : []
+    const displayValue = values.length > 0
+      ? values.map(valueItem => `${valueItem?.value || ''}`.replace(' 至 ', ' ~ ')).filter(Boolean).join('、')
+      : '全部'
+    return {
+      label: item.label,
+      value: displayValue || '全部',
+    }
+  })
+}
+
+function handleViewExportRecord() {
+  exportModalVisible.value = false
+  exportRecordModalVisible.value = true
+}
+
+function handleSubmitExport() {
+  exportModalVisible.value = false
+  messageService.success('批量导出静态页面已展示')
+}
+
+function handleDownloadExportRecord() {
+  messageService.info('导出记录下载功能待接入')
 }
 
 function formatTime(time) {
@@ -822,6 +928,134 @@ defineExpose({
       </div>
     </div>
     <student-info-drawer v-model:open="openDrawer" />
+
+    <a-modal
+      v-model:open="exportModalVisible"
+      title="批量导出"
+      :footer="null"
+      :width="820"
+      class="student-export-modal"
+      destroy-on-close
+    >
+      <div class="export-tip-bar">
+        <InfoCircleOutlined class="export-tip-icon" />
+        <span>当前列表最多支持导出 10000 条数据。若超出，请前往【数据中心-报表管理-明细表】导出</span>
+      </div>
+
+      <div class="export-modal-content">
+        <div class="export-row">
+          <div class="export-label">
+            查询条件：
+          </div>
+          <div class="export-query-box">
+            <div v-for="item in exportQuerySummary" :key="item" class="export-query-line">
+              {{ item }}
+            </div>
+          </div>
+        </div>
+
+        <div class="export-row export-row--compact">
+          <div class="export-label">
+            导出方式：
+          </div>
+          <a-radio-group v-model:value="exportMode" class="custom-radio export-radio-group">
+            <a-radio value="all">
+              全部导出
+            </a-radio>
+          </a-radio-group>
+        </div>
+
+        <div class="export-row export-row--compact">
+          <div class="export-label">
+            报表类型：
+          </div>
+          <a-radio-group v-model:value="exportReportType" class="custom-radio export-radio-group">
+            <a-radio value="student">
+              学员维度
+            </a-radio>
+          </a-radio-group>
+        </div>
+
+        <div class="export-row export-row--stacked">
+          <div class="export-label">
+            导出范例：
+          </div>
+          <div class="export-preview-title">
+            共{{ exportFieldCount }}个字段
+          </div>
+          <div class="export-preview-card">
+            <div class="export-preview-scroll">
+              <a-table
+                :data-source="exportPreviewRows"
+                :columns="exportPreviewColumns"
+                :pagination="false"
+                size="small"
+                :scroll="{ x: 3200 }"
+                row-key="stuName"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="export-row export-row--compact">
+          <div class="export-label">
+            生成类型：
+          </div>
+          <a-radio-group v-model:value="exportFileType" class="custom-radio export-radio-group">
+            <a-radio value="excel">
+              EXCEL格式文件
+            </a-radio>
+          </a-radio-group>
+        </div>
+      </div>
+
+      <div class="export-modal-footer">
+        <a-button @click="handleViewExportRecord">
+          查看导出记录
+        </a-button>
+        <a-button type="primary" class="ml-3" @click="handleSubmitExport">
+          导出
+        </a-button>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="exportRecordModalVisible"
+      title="导出记录"
+      :footer="null"
+      :width="800"
+      class="student-export-record-modal"
+      destroy-on-close
+    >
+      <div class="export-record-card">
+        <div class="export-record-header">
+          <div class="export-record-meta">
+            <span>报表生成时间：2026-03-27 11:34:06</span>
+            <span class="ml-6">导出人：陈瑞</span>
+          </div>
+          <a-button @click="handleDownloadExportRecord">
+            下载
+          </a-button>
+        </div>
+
+        <div class="export-record-body">
+          <div class="export-record-top">
+            <div class="export-record-title">
+              查询条件
+            </div>
+            <div class="export-record-expire">
+              请在一周内下载，过期将失效
+            </div>
+          </div>
+          <div class="export-record-grid">
+            <div v-for="item in exportRecordConditions" :key="`${item.label}-${item.value}`" class="export-record-item">
+              <span class="export-record-item-label">{{ item.label }}：</span>
+              <span>{{ item.value }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -877,6 +1111,203 @@ defineExpose({
   a {
     color: var(--pro-ant-color-primary);
   }
+}
+
+:deep(.student-export-modal .ant-modal-body),
+:deep(.student-export-record-modal .ant-modal-body) {
+  padding-top: 0;
+}
+
+.export-tip-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -24px;
+  padding: 12px 20px;
+  background: #eaf3ff;
+  color: #1668dc;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.export-tip-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.export-modal-content {
+  padding-top: 22px;
+}
+
+.export-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.export-row--compact {
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.export-row--block {
+  display: flex;
+  align-items: center;
+}
+
+.export-row--stacked {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  row-gap: 12px;
+  align-items: start;
+}
+
+.export-label {
+  flex-shrink: 0;
+  width: 88px;
+  color: #595959;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.export-query-box {
+  flex: 1;
+  min-height: 56px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #f5f7fb;
+  color: #262626;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.export-query-line + .export-query-line {
+  margin-top: 6px;
+}
+
+.export-radio-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.export-radio-group :deep(.ant-radio-wrapper) {
+  margin-right: 24px;
+  color: #262626;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.export-preview-title {
+  flex: 1;
+  color: #262626;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.export-preview-card {
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid #edf0f5;
+  border-radius: 12px;
+  margin-top: 0;
+}
+
+.export-row--stacked .export-preview-card {
+  grid-column: 2;
+}
+
+.export-preview-scroll {
+  overflow-x: auto;
+}
+
+.export-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.export-record-card {
+  border: 1px solid #edf0f5;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.export-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.export-record-meta {
+  color: #262626;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.export-record-body {
+  padding: 18px 24px 20px;
+}
+
+.export-record-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.export-record-title {
+  color: #262626;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.export-record-expire {
+  color: #1668dc;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.export-record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 40px;
+}
+
+.export-record-item {
+  color: #262626;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.export-record-item-label {
+  color: #595959;
+}
+
+.custom-radio ::v-deep(.ant-radio-wrapper:hover .ant-radio),
+.custom-radio ::v-deep(.ant-radio:hover .ant-radio-inner),
+.custom-radio ::v-deep(.ant-radio-input:focus + .ant-radio-inner) {
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio ::v-deep(.ant-radio-inner) {
+  background-color: transparent;
+  border-color: #d9d9d9;
+}
+
+.custom-radio ::v-deep(.ant-radio-checked .ant-radio-inner) {
+  background-color: transparent;
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio ::v-deep(.ant-radio-inner::after) {
+  background-color: var(--pro-ant-color-primary);
+  transform: scale(0.5);
 }
 
 .upNew {

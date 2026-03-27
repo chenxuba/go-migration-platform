@@ -4910,6 +4910,7 @@ watch(shouldLoadDepartmentData, (needLoad) => {
 defineExpose({
   clearQuickFilter,
   updateStaffSearchData,
+  getOrderedConditions: () => orderedConditions.value,
   // 新增：暴露部门数据获取方法
   getDepartmentList,
   // 新增：重置部门数据方法
