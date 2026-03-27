@@ -57,6 +57,15 @@ function handleHandleOverUpdate(value, formData) {
 
 function handleSubmitOrder(data) {
   orderData.value = data // 存储订单数据
+  if (data?.autoComplete) {
+    paymentData.value = data.paymentData || {
+      orderId: data.orderId,
+      payAmount: 0,
+      paymentMethods: [],
+    }
+    current.value = 2
+    return
+  }
   current.value++
 }
 

@@ -15,7 +15,7 @@ import { getRechargeAccountByStudentApi } from '@/api/finance-center/recharge-ac
 import { useUserStore } from '@/stores/user'
 import { addIntendedStudentApi, getRecommenderPageApi } from '~@/api/enroll-center/intention-student'
 import { getOrderTagListPagedApi } from '@/api/finance-center/order-tag'
-import { getCalcCourseEnrollTypeApi, getCheckQuoteInfoApi, postCreateOrderApi } from '~@/api/edu-center/registr-renewal'
+import { getCalcCourseEnrollTypeApi, getCheckQuoteInfoApi, postCreateOrderApi, postPayOrderApi } from '~@/api/edu-center/registr-renewal'
 import messageService from '~@/utils/messageService'
 
 // 获取路由信息
@@ -1130,6 +1130,27 @@ async function submitOrder() {
     if (res.code === 200) {
       messageService.success('创建订单成功')
       orderData.orderId = res.result
+      if (Number(totalAmount.value || 0) <= 0) {
+        const payRes = await postPayOrderApi({
+          orderId: res.result,
+          payAmount: 0,
+          payAccounts: [],
+        })
+        if (payRes.code !== 200) {
+          messageService.error(payRes.message || '订单自动完成失败')
+          return
+        }
+        emit('submit-order', {
+          ...orderData,
+          autoComplete: true,
+          paymentData: {
+            orderId: res.result,
+            payAmount: 0,
+            paymentMethods: [],
+          },
+        })
+        return
+      }
       emit('submit-order', orderData)
     } else {
       messageService.error(res.message)

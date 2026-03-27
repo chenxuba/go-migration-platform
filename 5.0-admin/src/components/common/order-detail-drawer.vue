@@ -205,15 +205,28 @@ const actualPaymentAmount = computed(() => Math.abs(Number(
 const showOrderPaymentRecordsBlock = computed(() => {
   if (!detail.value)
     return false
-  if (isRechargeOrderDetail.value || isRefundOrderPaymentSection.value)
-    return actualPaymentAmount.value > 0
-  return true
+  return actualPaymentAmount.value > 0 && paymentRecords.value.length > 0
 })
 const showRechargeAccountSection = computed(
   () => isRechargeOrderDetail.value || isRefundRechargeOrderDetail.value,
 )
 const rechargeOrderTotalAmount = computed(() => Number(detail.value?.totalAmount ?? detail.value?.amount ?? 0))
 const orderTotalAmount = computed(() => Number(detail.value?.totalAmount ?? detail.value?.amount ?? 0))
+const orderRechargeDeductionSummary = computed(() => {
+  const recharge = Number(detail.value?.rechargeAccountAmount || 0)
+  const residual = Number(detail.value?.rechargeAccountResidualAmount || 0)
+  const giving = Number(detail.value?.rechargeAccountGivingAmount || 0)
+  const studentPhone = detail.value?.studentPhone || ''
+  if (recharge <= 0 && residual <= 0 && giving <= 0) {
+    return null
+  }
+  return {
+    title: `储值账户（${studentPhone || '-'}）`,
+    recharge,
+    residual,
+    giving,
+  }
+})
 const refundOrderTotalAmount = computed(() => {
   if (!isRefundRechargeOrderDetail.value) {
     return 0
@@ -1407,6 +1420,15 @@ function isHandledApprovalFlow(flow) {
                   </div>
                 </a-descriptions-item>
               </a-descriptions>
+              <div v-if="orderRechargeDeductionSummary" class="order-recharge-summary-row">
+                <span class="storage-deduction-summary__title">储值账户抵扣：</span>
+                <div class="storage-deduction-summary">
+                  <span>{{ orderRechargeDeductionSummary.title }}</span>
+                  <span class="storage-deduction-summary__value">充值余额 <span class="storage-deduction-summary__value-value">¥{{ formatDeductionAmount(orderRechargeDeductionSummary.recharge) }}</span></span>
+                  <span class="storage-deduction-summary__value">残联余额 <span class="storage-deduction-summary__value-value">¥{{ formatDeductionAmount(orderRechargeDeductionSummary.residual) }}</span></span>
+                  <span class="storage-deduction-summary__value">赠送余额 <span class="storage-deduction-summary__value-value">¥{{ formatDeductionAmount(orderRechargeDeductionSummary.giving) }}</span></span>
+                </div>
+              </div>
             </template>
 
             <a-empty
@@ -1415,7 +1437,7 @@ function isHandledApprovalFlow(flow) {
             />
 
             <template v-if="!isRechargeOrderDetail && !isRefundRechargeOrderDetail">
-              <div v-for="item in orderItems" :key="item.orderCourseDetailId" class="list mb-4 last:mb-0">
+              <div v-for="item in orderItems" :key="item.orderCourseDetailId" class="list mt-4 mb-4 last:mb-0">
                 <a-row class="bg-#005ce60f px6 py4 border border-solid border-#eee border-b-none">
                   <a-col :span="24" class="flex justify-between">
                     <div class="flex flex-items-center">
@@ -1887,6 +1909,32 @@ span.dot {
   line-height: 1;
   font-weight: 700;
   font-family: DINAlternate-Bold, DINAlternate, sans-serif;
+}
+
+.storage-deduction-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.order-recharge-summary-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 30px;
+}
+
+.storage-deduction-summary__title {
+  color: #333;
+  white-space: nowrap;
+}
+
+.storage-deduction-summary__value {
+  color: #333;
+}
+
+.storage-deduction-summary__value-value {
+  color: #ff4d4f;
 }
 
 .recharge-detail-card {
