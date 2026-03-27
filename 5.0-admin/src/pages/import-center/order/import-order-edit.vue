@@ -88,7 +88,7 @@ const trialPriceOptions = [
 ]
 
 function isTwoDecimalRestrictedField(title) {
-  return ['购买课时数', '赠送课时数', '已上课时数'].includes(`${title || ''}`.trim())
+  return ['购买课时数', '赠送课时数', '已上课时数', '购买金额', '赠送金额', '已上金额'].includes(`${title || ''}`.trim())
 }
 
 function isIntegerRestrictedField(title) {

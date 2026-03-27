@@ -299,6 +299,137 @@ func TestParseOrderImportFile_SupportsTimeSlotTemplate(t *testing.T) {
 	}
 }
 
+func TestParseOrderImportFile_SupportsAmountTemplate(t *testing.T) {
+	userID := int64(402)
+	instID := int64(502)
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		findInstIDExpectation(userID, instID),
+		{
+			query: `
+				SELECT IFNULL(organ_name, '')
+				FROM org_institution
+				WHERE id = ?
+				LIMIT 1
+			`,
+			args:    []any{instID},
+			columns: []string{"organ_name"},
+			rows:    [][]driver.Value{{"测试校区"}},
+		},
+		{
+			query: `
+				SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(channel_name, ''), IFNULL(introduction, ''), IFNULL(category_id, 0), IFNULL(is_disabled, 0), IFNULL(remark, '')
+				FROM inst_channel
+				WHERE del_flag = 0 AND (inst_id = ? OR inst_id IS NULL)
+				ORDER BY inst_id IS NULL DESC, id DESC
+			`,
+			args:    []any{instID},
+			columns: []string{"id", "uuid", "version", "channel_name", "introduction", "category_id", "is_disabled", "remark"},
+			rows:    [][]driver.Value{},
+		},
+		{
+			query: `
+				SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), inst_id, field_key, field_type,
+				       IFNULL(required, 0), IFNULL(searched, 0), IFNULL(options_json, ''),
+				       IFNULL(is_default, 0), IFNULL(is_display, 0), IFNULL(can_delete, 0),
+				       IFNULL(can_edit, 0), IFNULL(sort, 0), IFNULL(remark, '')
+				FROM inst_student_field_key
+				WHERE inst_id = ? AND is_default = ? AND del_flag = 0
+				ORDER BY sort ASC, id ASC
+			`,
+			args:    []any{instID, true},
+			columns: []string{"id", "uuid", "version", "inst_id", "field_key", "field_type", "required", "searched", "options_json", "is_default", "is_display", "can_delete", "can_edit", "sort", "remark"},
+			rows: [][]driver.Value{
+				{int64(1), "", int64(0), instID, "渠道", int64(4), int64(0), int64(0), "", int64(1), int64(1), int64(0), int64(1), int64(1), ""},
+				{int64(2), "", int64(0), instID, "性别", int64(4), int64(0), int64(0), "", int64(1), int64(1), int64(0), int64(1), int64(2), ""},
+			},
+		},
+		{
+			query: `
+				SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), inst_id, field_key, field_type,
+				       IFNULL(required, 0), IFNULL(searched, 0), IFNULL(options_json, ''),
+				       IFNULL(is_default, 0), IFNULL(is_display, 0), IFNULL(can_delete, 0),
+				       IFNULL(can_edit, 0), IFNULL(sort, 0), IFNULL(remark, '')
+				FROM inst_student_field_key
+				WHERE inst_id = ? AND is_default = ? AND del_flag = 0
+				ORDER BY sort ASC, id ASC
+			`,
+			args:    []any{instID, false},
+			columns: []string{"id", "uuid", "version", "inst_id", "field_key", "field_type", "required", "searched", "options_json", "is_default", "is_display", "can_delete", "can_edit", "sort", "remark"},
+			rows:    [][]driver.Value{},
+		},
+		{
+			query: `
+				SELECT IFNULL(nick_name, '') AS nick_name
+				FROM inst_user
+				WHERE inst_id = ? AND del_flag = 0 AND IFNULL(disabled, 0) = 0
+				GROUP BY IFNULL(nick_name, '')
+				ORDER BY MAX(create_time) DESC, MAX(id) DESC
+			`,
+			args:    []any{instID},
+			columns: []string{"nick_name"},
+			rows:    [][]driver.Value{{"销售甲"}},
+		},
+		{
+			query: `
+				SELECT IFNULL(name, '')
+				FROM inst_order_tag
+				WHERE inst_id = ? AND del_flag = 0 AND IFNULL(enable, 0) = 1
+				ORDER BY update_time DESC, id DESC
+			`,
+			args:    []any{instID},
+			columns: []string{"name"},
+			rows:    [][]driver.Value{},
+		},
+		{
+			query: `
+				SELECT IFNULL(c.name, '')
+				FROM inst_course c
+				WHERE c.inst_id = ? AND c.del_flag = 0
+				  AND EXISTS (
+					SELECT 1
+					FROM inst_course_quotation q
+					WHERE q.course_id = c.id AND q.del_flag = 0 AND q.lesson_model = ?
+				  )
+				GROUP BY IFNULL(c.name, '')
+				ORDER BY MAX(c.update_time) DESC, MAX(c.id) DESC
+			`,
+			args:    []any{instID, 3},
+			columns: []string{"name"},
+			rows:    [][]driver.Value{{"托管费"}},
+		},
+	})
+	defer cleanup()
+
+	file := excelize.NewFile()
+	sheet := file.GetSheetName(0)
+	headers := []string{"*学员姓名", "*手机号", "*手机号归属人", "*报读课程", "*购买金额", "赠送金额", "*实收金额", "欠费金额", "有效期至"}
+	for idx, header := range headers {
+		cell, _ := excelize.CoordinatesToCellName(idx+1, 1)
+		file.SetCellValue(sheet, cell, header)
+	}
+	values := []string{"陈瑞瑞", "19822223333", "爸爸", "托管费", "5000", "300", "4500", "0", "2026-12-31"}
+	for idx, value := range values {
+		cell, _ := excelize.CoordinatesToCellName(idx+1, 2)
+		file.SetCellValue(sheet, cell, value)
+	}
+	buffer, err := file.WriteToBuffer()
+	if err != nil {
+		t.Fatalf("write workbook: %v", err)
+	}
+
+	result, err := svc.ParseOrderImportFile(userID, "按金额导入.xlsx", bytes.NewReader(buffer.Bytes()))
+	if err != nil {
+		t.Fatalf("parse amount import: %v", err)
+	}
+	if len(result.Rows) != 1 {
+		t.Fatalf("expected 1 parsed row, got %d", len(result.Rows))
+	}
+	if result.Rows[0].HasError {
+		t.Fatalf("expected normal row, got error row: %+v", result.Rows[0])
+	}
+}
+
 func TestBuildCreateAndPayOrderDTOFromImportRow_UsesCustomQuoteForImportedOrder(t *testing.T) {
 	row := model.IntentionStudentImportRow{
 		Cells: []model.IntentionStudentImportCell{
@@ -373,6 +504,81 @@ func TestBuildCreateAndPayOrderDTOFromImportRow_UsesCustomQuoteForImportedOrder(
 	}
 	if len(payDTO.PayAccounts) != 1 || payDTO.PayAccounts[0].PayMethod == nil || *payDTO.PayAccounts[0].PayMethod != 6 {
 		t.Fatalf("expected pay method 6, got %+v", payDTO.PayAccounts)
+	}
+}
+
+func TestBuildCreateAndPayOrderDTOFromImportRow_SupportsAmountImport(t *testing.T) {
+	row := model.IntentionStudentImportRow{
+		Cells: []model.IntentionStudentImportCell{
+			{Title: "报读课程", Value: "托管费"},
+			{Title: "购买金额", Value: "5000"},
+			{Title: "赠送金额", Value: "300"},
+			{Title: "有效期至", Value: "2026-12-31"},
+			{Title: "实收金额", Value: "4500"},
+			{Title: "欠费金额", Value: "0"},
+			{Title: "收款方式", Value: "其他方式"},
+			{Title: "订单备注", Value: "测试按金额导入"},
+			{Title: "是否为体验价", Value: "否"},
+		},
+	}
+	quotationMap := map[string][]model.CourseQuotation{
+		"托管费": {
+			{
+				ID:             31,
+				CourseID:       41,
+				LessonModel:    intPtr(3),
+				Unit:           intPtr(1),
+				Quantity:       intPtr(1),
+				Price:          5000,
+				LessonAudition: false,
+			},
+		},
+	}
+
+	createDTO, payDTO, hasPayment, err := buildCreateAndPayOrderDTOFromImportRow(
+		1003,
+		orderImportModeAmount,
+		1,
+		row,
+		map[string]model.IntentionStudentImportColumn{},
+		map[string][]importOptionItem{
+			"收款方式": {
+				{Label: "其他方式", Value: "6"},
+			},
+		},
+		map[string]int64{},
+		quotationMap,
+	)
+	if err != nil {
+		t.Fatalf("build amount create/pay dto: %v", err)
+	}
+	if !hasPayment {
+		t.Fatalf("expected payment to exist")
+	}
+	detail := createDTO.OrderDetail.QuoteDetailList[0]
+	if detail.LessonMode == nil || *detail.LessonMode != 3 {
+		t.Fatalf("expected lesson mode 3, got %+v", detail.LessonMode)
+	}
+	if detail.Quantity != 5000 {
+		t.Fatalf("expected purchased amount quantity 5000, got %.2f", detail.Quantity)
+	}
+	if detail.FreeQuantity != 300 {
+		t.Fatalf("expected free amount 300, got %.2f", detail.FreeQuantity)
+	}
+	if detail.RealQuantity != 5300 {
+		t.Fatalf("expected real quantity 5300, got %.2f", detail.RealQuantity)
+	}
+	if detail.Amount != "5000.00" {
+		t.Fatalf("expected amount 5000.00, got %s", detail.Amount)
+	}
+	if detail.EndDate == nil || detail.EndDate.Format("2006-01-02") != "2026-12-31" {
+		t.Fatalf("unexpected end date: %+v", detail.EndDate)
+	}
+	if createDTO.OrderDetail.OrderRealAmount != "4500.00" {
+		t.Fatalf("expected order real amount 4500.00, got %s", createDTO.OrderDetail.OrderRealAmount)
+	}
+	if payDTO.PayAmount != 4500 {
+		t.Fatalf("expected pay amount 4500, got %.2f", payDTO.PayAmount)
 	}
 }
 

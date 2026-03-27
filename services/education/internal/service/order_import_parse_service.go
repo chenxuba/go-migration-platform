@@ -81,8 +81,6 @@ func (svc *Service) ParseOrderImportFile(userID int64, filename string, reader i
 	switch importMode {
 	case orderImportModeUnknown:
 		return model.IntentionStudentImportParseResult{}, errors.New("未识别到可导入字段，请使用最新模板")
-	case orderImportModeAmount:
-		return model.IntentionStudentImportParseResult{}, errors.New("当前仅支持按课时、按时段订单模板导入")
 	}
 
 	courseNames, err := svc.loadOrderImportCourseNames(context.Background(), instID, orderImportModeLabel(importMode))
@@ -94,6 +92,8 @@ func (svc *Service) ParseOrderImportFile(userID int64, filename string, reader i
 	switch importMode {
 	case orderImportModeTimeSlot:
 		templateColumns = buildTimeSlotOrderImportColumns(defaultFields, customFields, channels, courseNames, staffNames, orderTagNames)
+	case orderImportModeAmount:
+		templateColumns = buildAmountOrderImportColumns(defaultFields, customFields, channels, courseNames, staffNames, orderTagNames)
 	default:
 		templateColumns = buildLessonHourOrderImportColumns(defaultFields, customFields, channels, courseNames, staffNames, orderTagNames)
 	}

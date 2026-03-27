@@ -304,7 +304,7 @@ func (svc *Service) runOrderImportTask(userID int64, taskID string) {
 		return
 	}
 	importMode := detectOrderImportModeByColumns(task.Columns)
-	if importMode == orderImportModeUnknown || importMode == orderImportModeAmount {
+	if importMode == orderImportModeUnknown {
 		svc.finishOrderImportTaskWithFatalError(&task.Detail, task.Rows, "当前导入模板暂不支持执行导入")
 		return
 	}
@@ -740,6 +740,23 @@ func buildCreateAndPayOrderDTOFromImportRow(
 		}
 		realQuantity = purchasedQuantity + giftCount
 		hasValidDate = true
+	case orderImportModeAmount:
+		if value := strings.TrimSpace(rowData["有效期至"].Value); value != "" {
+			if parsed, ok := parseImportDateValue(value); ok {
+				endDate = &parsed
+			}
+		}
+		purchasedQuantity, err = parseOrderImportPositiveFloat(rowData["购买金额"].Value, "购买金额")
+		if err != nil {
+			return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
+		}
+		giftCount, err = parseOrderImportFloatWithPrecision(rowData["赠送金额"].Value, "赠送金额", 2)
+		if err != nil {
+			return model.CreateOrderDTO{}, model.PayOrderDTO{}, false, err
+		}
+		realQuantity = purchasedQuantity + giftCount
+		hasValidDate = endDate != nil
+		courseAmount = fmt.Sprintf("%.2f", purchasedQuantity)
 	default:
 		if value := strings.TrimSpace(rowData["有效期至"].Value); value != "" {
 			if parsed, ok := parseImportDateValue(value); ok {
@@ -810,6 +827,8 @@ func pickOrderImportAnchorQuotation(items []model.CourseQuotation, isTrial bool,
 		switch importMode {
 		case orderImportModeTimeSlot:
 			return model.CourseQuotation{}, errors.New("报读课程未配置可用的按时段报价单")
+		case orderImportModeAmount:
+			return model.CourseQuotation{}, errors.New("报读课程未配置可用的按金额报价单")
 		default:
 			return model.CourseQuotation{}, errors.New("报读课程未配置可用的课时报价单")
 		}
@@ -870,6 +889,17 @@ func parseOrderImportLessonHour(value string, title string) (float64, error) {
 	}
 	if !isValidTwoDecimalNumber(value) {
 		return 0, fmt.Errorf("%s最多保留2位小数", title)
+	}
+	return number, nil
+}
+
+func parseOrderImportPositiveFloat(value string, title string) (float64, error) {
+	number, err := parseOrderImportFloatWithPrecision(value, title, 2)
+	if err != nil {
+		return 0, err
+	}
+	if number <= 0 {
+		return 0, fmt.Errorf("%s必须大于0", title)
 	}
 	return number, nil
 }

@@ -217,7 +217,7 @@ func validateIntentionStudentImportValue(column model.IntentionStudentImportColu
 
 func requiresTwoDecimalPrecision(title string) bool {
 	switch strings.TrimSpace(title) {
-	case "购买课时数", "赠送课时数", "已上课时数":
+	case "购买课时数", "赠送课时数", "已上课时数", "购买金额", "赠送金额", "已上金额":
 		return true
 	default:
 		return false
