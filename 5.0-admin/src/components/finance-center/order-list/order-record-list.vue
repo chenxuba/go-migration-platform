@@ -276,17 +276,24 @@ function normalizeOrderItem(item) {
   };
 }
 
-/** 储值账户充值(2) 为正；储值账户退费(4) 为负（红色展示） */
+/** 储值账户变动：
+ *  - 储值账户充值(2) 为正
+ *  - 其余使用/扣减场景（报名续费等）为负
+ *  - 储值账户退费(4) 为负
+ */
 function formatRechargeChangeAmount(record, fieldKey) {
   const n = Number(record[fieldKey] || 0);
   const abs = Math.abs(n).toFixed(2);
-  if (Number(record?.orderType) === 4) return `-${abs}`;
-  return `+${abs}`;
+  if (Number(record?.orderType) === 2) return `+${abs}`;
+  return `-${abs}`;
 }
 
 function shouldShowRechargeAccountChange(record) {
-  const t = Number(record?.orderType || 0);
-  return t === 2 || t === 4;
+  return (
+    Number(record?.rechargeAccountAmount || 0) > 0 ||
+    Number(record?.rechargeAccountResidualAmount || 0) > 0 ||
+    Number(record?.rechargeAccountGivingAmount || 0) > 0
+  );
 }
 
 /** 退费类订单：列表「应收/应退、实收/实退」展示负号与红色 */
@@ -926,11 +933,10 @@ defineExpose({
                 <div
                   v-if="shouldShowRechargeAccountChange(record)"
                   class="text-3.2 leading-tight"
-                  :class="Number(record.orderType) === 4 ? 'text-#ff3333' : ''"
                 >
                   <div class="flex justify-between gap-2">
                     <span>充值金额</span>
-                    <span class="font-600 tabular-nums">{{
+                    <span class="font-600 tabular-nums" :class="Number(record.orderType) === 2 ? '' : 'text-#ff3333'">{{
                       formatRechargeChangeAmount(
                         record,
                         "rechargeAccountAmount"
@@ -939,7 +945,7 @@ defineExpose({
                   </div>
                   <div class="flex justify-between gap-2">
                     <span>残联金额</span>
-                    <span class="font-600 tabular-nums">{{
+                    <span class="font-600 tabular-nums" :class="Number(record.orderType) === 2 ? '' : 'text-#ff3333'">{{
                       formatRechargeChangeAmount(
                         record,
                         "rechargeAccountResidualAmount"
@@ -948,7 +954,7 @@ defineExpose({
                   </div>
                   <div class="flex justify-between gap-2">
                     <span>赠送金额</span>
-                    <span class="font-600 tabular-nums">{{
+                    <span class="font-600 tabular-nums" :class="Number(record.orderType) === 2 ? '' : 'text-#ff3333'">{{
                       formatRechargeChangeAmount(
                         record,
                         "rechargeAccountGivingAmount"
