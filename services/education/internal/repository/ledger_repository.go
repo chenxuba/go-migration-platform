@@ -309,10 +309,9 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		paymentDetailID,
 		instID,
 	)
-	if err != nil {
-		return err
-	}
-	return repo.normalizeSystemLedgerAccountNames(ctx, instID)
+	// Avoid cross-connection cleanup inside the payment transaction.
+	// The normalization pass is maintenance work and can wait for non-transactional paths.
+	return err
 }
 
 func (repo *Repository) normalizeSystemLedgerAccountNames(ctx context.Context, instID int64) error {

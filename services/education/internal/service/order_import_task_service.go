@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go-migration-platform/services/education/internal/model"
+	"go-migration-platform/services/education/internal/repository"
 )
 
 type orderImportStudentDecision struct {
@@ -247,6 +248,15 @@ func (svc *Service) StartOrderImportTask(userID int64, taskID string) (model.Ord
 		}
 		return model.OrderImportStartResult{}, err
 	}
+	switch task.Detail.Status {
+	case 4:
+		return model.OrderImportStartResult{}, errors.New("导入任务正在执行，请勿重复操作")
+	case 1:
+		return model.OrderImportStartResult{}, errors.New("导入任务已完成")
+	case 3:
+	default:
+		return model.OrderImportStartResult{}, errors.New("当前导入任务状态不允许开始导入")
+	}
 	if countImportTaskErrors(task.Rows) > 0 {
 		return model.OrderImportStartResult{}, errors.New("请先处理异常数据")
 	}
@@ -273,7 +283,10 @@ func (svc *Service) StartOrderImportTask(userID int64, taskID string) (model.Ord
 		task.Rows[idx].Status = 0
 		task.Rows[idx].Result = ""
 	}
-	if err := svc.repo.UpdateOrderImportTask(context.Background(), task.Detail, task.Rows); err != nil {
+	if err := svc.repo.MarkOrderImportTaskRunning(context.Background(), task.Detail, task.Rows); err != nil {
+		if errors.Is(err, repository.ErrOrderImportTaskStartConflict) {
+			return model.OrderImportStartResult{}, errors.New("导入任务正在执行，请勿重复操作")
+		}
 		return model.OrderImportStartResult{}, err
 	}
 	go svc.runOrderImportTask(userID, taskID)
@@ -287,23 +300,37 @@ func (svc *Service) runOrderImportTask(userID int64, taskID string) {
 	}
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
+		svc.finishOrderImportTaskWithFatalError(&task.Detail, task.Rows, fmt.Sprintf("获取机构信息失败：%v", err))
 		return
 	}
 	importMode := detectOrderImportModeByColumns(task.Columns)
 	if importMode == orderImportModeUnknown || importMode == orderImportModeAmount {
+		svc.finishOrderImportTaskWithFatalError(&task.Detail, task.Rows, "当前导入模板暂不支持执行导入")
 		return
 	}
 	optionMap, err := svc.loadOrderImportOptionMap(userID, importMode)
 	if err != nil {
+		svc.finishOrderImportTaskWithFatalError(&task.Detail, task.Rows, fmt.Sprintf("加载导入配置失败：%v", err))
 		return
 	}
 	orderTagMap, err := svc.repo.ListEnabledOrderTagNameIDMap(context.Background(), instID)
 	if err != nil {
+		svc.finishOrderImportTaskWithFatalError(&task.Detail, task.Rows, fmt.Sprintf("加载订单标签失败：%v", err))
 		return
 	}
 	courseNames := collectOrderImportColumnValues(task.Rows, task.Columns, "报读课程")
 	quotationMap, err := svc.repo.ListCourseQuotationsByNamesAndLessonModel(context.Background(), instID, courseNames, lessonModelByOrderImportMode(importMode))
 	if err != nil {
+		svc.finishOrderImportTaskWithFatalError(&task.Detail, task.Rows, fmt.Sprintf("加载课程报价失败：%v", err))
+		return
+	}
+	if len(task.Rows) == 0 {
+		completeAt := time.Now()
+		task.Detail.CompleteTime = &completeAt
+		task.Detail.Status = 1
+		_ = retryOrderImportTaskWrite(func() error {
+			return svc.repo.UpdateOrderImportTask(context.Background(), task.Detail, task.Rows)
+		})
 		return
 	}
 
@@ -333,13 +360,21 @@ func (svc *Service) runOrderImportTask(userID int64, taskID string) {
 		}
 		task.Detail.ExecutedRows = successCount
 		task.Detail.ErrorRows = failCount
-		_ = svc.repo.UpdateOrderImportTask(context.Background(), task.Detail, task.Rows)
+		if idx == len(task.Rows)-1 {
+			completeAt := time.Now()
+			task.Detail.CompleteTime = &completeAt
+			task.Detail.Status = 1
+		} else {
+			task.Detail.CompleteTime = nil
+			task.Detail.Status = 4
+		}
+		if err := retryOrderImportTaskWrite(func() error {
+			return svc.repo.UpdateOrderImportTaskProgress(context.Background(), task.Detail, task.Rows[idx])
+		}); err != nil {
+			svc.finishOrderImportTaskWithFatalError(&task.Detail, task.Rows, fmt.Sprintf("保存导入进度失败：%v", err))
+			return
+		}
 	}
-
-	completeAt := time.Now()
-	task.Detail.CompleteTime = &completeAt
-	task.Detail.Status = 1
-	_ = svc.repo.UpdateOrderImportTask(context.Background(), task.Detail, task.Rows)
 }
 
 func (svc *Service) ListOrderImportTasks(userID int64) (model.IntentionStudentImportTaskListResult, error) {
@@ -929,6 +964,67 @@ func resolvePayMethod(text string) int {
 	default:
 		return 6
 	}
+}
+
+func summarizeOrderImportRows(rows []model.IntentionStudentImportRow) (int, int) {
+	successCount := 0
+	failCount := 0
+	for _, row := range rows {
+		switch row.Status {
+		case 1:
+			successCount++
+		case 2:
+			failCount++
+		}
+	}
+	return successCount, failCount
+}
+
+func retryOrderImportTaskWrite(fn func() error) error {
+	const maxAttempts = 3
+	var err error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err = fn()
+		if err == nil {
+			return nil
+		}
+		if !isRetryableOrderImportTaskWriteError(err) || attempt == maxAttempts {
+			return err
+		}
+		time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+	}
+	return err
+}
+
+func isRetryableOrderImportTaskWriteError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "lock wait timeout exceeded") || strings.Contains(message, "deadlock found")
+}
+
+func (svc *Service) finishOrderImportTaskWithFatalError(detail *model.IntentionStudentImportTaskDetail, rows []model.IntentionStudentImportRow, message string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "导入任务执行失败"
+	}
+	for idx := range rows {
+		if rows[idx].Status != 0 {
+			continue
+		}
+		rows[idx].Status = 2
+		rows[idx].Result = message
+		rows[idx].HasError = true
+		attachOrderImportRowError(&rows[idx], message)
+	}
+	detail.ExecutedRows, detail.ErrorRows = summarizeOrderImportRows(rows)
+	now := time.Now()
+	detail.CompleteTime = &now
+	detail.Status = 1
+	_ = retryOrderImportTaskWrite(func() error {
+		return svc.repo.UpdateOrderImportTask(context.Background(), *detail, rows)
+	})
 }
 
 func clearOrderImportRowErrors(row *model.IntentionStudentImportRow) {

@@ -210,32 +210,105 @@ func (repo *Repository) UpdateOrderImportTask(ctx context.Context, detail model.
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE order_import_task
-		SET executed_rows = ?, deleted_rows = ?, error_rows = ?, confirm_time = ?, complete_time = ?, status = ?,
-		    execute_staff_id = ?, execute_staff_name = ?, update_time = NOW()
-		WHERE id = ? AND del_flag = 0
-	`, detail.ExecutedRows, detail.DeletedRows, detail.ErrorRows, detail.ConfirmTime, detail.CompleteTime, detail.Status,
-		detail.ExecuteStaffID, detail.ExecuteStaffName, detail.ID,
-	); err != nil {
+	if _, err := repo.updateOrderImportTaskDetailTx(ctx, tx, detail, nil); err != nil {
 		return err
 	}
 
 	for _, row := range rows {
-		cellsRaw, err := json.Marshal(row.Cells)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE order_import_task_record
-			SET has_error = ?, status = ?, result = ?, cells_json = ?, update_time = NOW()
-			WHERE id = ? AND task_id = ? AND del_flag = 0
-		`, row.HasError, row.Status, row.Result, string(cellsRaw), row.ID, detail.ID); err != nil {
+		if err := repo.updateOrderImportTaskRowTx(ctx, tx, detail.ID, row); err != nil {
 			return err
 		}
 	}
 
 	return tx.Commit()
+}
+
+func (repo *Repository) MarkOrderImportTaskRunning(ctx context.Context, detail model.IntentionStudentImportTaskDetail, rows []model.IntentionStudentImportRow) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	expectedStatus := 3
+	affected, err := repo.updateOrderImportTaskDetailTx(ctx, tx, detail, &expectedStatus)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrOrderImportTaskStartConflict
+	}
+
+	for _, row := range rows {
+		if err := repo.updateOrderImportTaskRowTx(ctx, tx, detail.ID, row); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (repo *Repository) UpdateOrderImportTaskProgress(ctx context.Context, detail model.IntentionStudentImportTaskDetail, row model.IntentionStudentImportRow) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := repo.updateOrderImportTaskDetailTx(ctx, tx, detail, nil); err != nil {
+		return err
+	}
+	if err := repo.updateOrderImportTaskRowTx(ctx, tx, detail.ID, row); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (repo *Repository) updateOrderImportTaskDetailTx(ctx context.Context, tx *sql.Tx, detail model.IntentionStudentImportTaskDetail, expectedStatus *int) (int64, error) {
+	query := `
+		UPDATE order_import_task
+		SET executed_rows = ?, deleted_rows = ?, error_rows = ?, confirm_time = ?, complete_time = ?, status = ?,
+		    execute_staff_id = ?, execute_staff_name = ?, update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`
+	args := []any{
+		detail.ExecutedRows,
+		detail.DeletedRows,
+		detail.ErrorRows,
+		detail.ConfirmTime,
+		detail.CompleteTime,
+		detail.Status,
+		detail.ExecuteStaffID,
+		detail.ExecuteStaffName,
+		detail.ID,
+	}
+	if expectedStatus != nil {
+		query += " AND status = ?"
+		args = append(args, *expectedStatus)
+	}
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return affected, nil
+}
+
+func (repo *Repository) updateOrderImportTaskRowTx(ctx context.Context, tx *sql.Tx, taskID string, row model.IntentionStudentImportRow) error {
+	cellsRaw, err := json.Marshal(row.Cells)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE order_import_task_record
+		SET has_error = ?, status = ?, result = ?, cells_json = ?, update_time = NOW()
+		WHERE id = ? AND task_id = ? AND del_flag = 0
+	`, row.HasError, row.Status, row.Result, string(cellsRaw), row.ID, taskID)
+	return err
 }
 
 func (repo *Repository) ClearOrderImportTasks(ctx context.Context, instID int64) error {
@@ -345,3 +418,4 @@ func ensureOrderImportTables(ctx context.Context, db *sql.DB) error {
 }
 
 var errOrderImportTaskNotFound = errors.New("order import task not found")
+var ErrOrderImportTaskStartConflict = errors.New("order import task start conflict")

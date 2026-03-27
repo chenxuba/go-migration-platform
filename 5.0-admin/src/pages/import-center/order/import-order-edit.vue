@@ -37,6 +37,7 @@ const optionMap = ref({})
 const hasAbnormalRows = computed(() => session.abnormalCount > 0)
 const taskLoading = ref(true)
 const deletingTask = ref(false)
+const startingImport = ref(false)
 const editModalOpen = ref(false)
 const savingSingleCell = ref(false)
 const editFormRef = ref()
@@ -402,18 +403,23 @@ function handleSave() {
 }
 
 function handleStartImport() {
+  if (startingImport.value)
+    return
   recomputeSummary()
   if (session.abnormalCount > 0) {
     messageService.warning('请先处理异常数据')
     activeTab.value = 'abnormal'
     return
   }
+  startingImport.value = true
   startOrderImportTaskApi({ taskId: importId.value }).then(async ({ result, data }) => {
     messageService.success('开始导入，请稍后')
     router.push('/import-center/import-order/record')
   }).catch((error) => {
     console.error('start order import failed', error)
     messageService.error(error?.message || '开始导入失败')
+  }).finally(() => {
+    startingImport.value = false
   })
 }
 
@@ -615,7 +621,13 @@ onMounted(() => {
             <a-button :loading="deletingTask" @click="handleCancel">
               取消导入并返回
             </a-button>
-            <a-button type="primary" class="ml-12px" @click="handleStartImport">
+            <a-button
+              type="primary"
+              class="ml-12px"
+              :loading="startingImport"
+              :disabled="taskLoading || startingImport"
+              @click="handleStartImport"
+            >
               开始导入
             </a-button>
           </div>
