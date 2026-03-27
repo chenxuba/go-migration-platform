@@ -517,6 +517,10 @@ function normalizeUsageValue(currentKey) {
   }
 }
 
+function applyFullUsage(currentKey) {
+  settingForm[currentKey] = Number(getUsageMax(currentKey).toFixed(2))
+}
+
 watch(
   () => [
     discountedTotalAmount.value,
@@ -2067,92 +2071,108 @@ function handleUpdateDateSubmit(formState) {
         <custom-title class="mb-5" title="订单设置" font-size="20px" font-weight="500" />
         <a-form v-if="handleOver && formState.studentId && activeCourseOver" ref="settingOrderForm" :model="settingForm"
           label-align="left">
-          <div class="flex flex-items-center justify-between flex-wrap">
-            <a-form-item class="custom-label" label="整单优惠设置：">
-              <div class="flex flex-items-center">
-                <a-radio-group v-model:value="settingForm.orderDiscountType" class="custom-radio whitespace-nowrap">
-                  <a-radio value="0">
-                    无
-                  </a-radio>
-                  <a-radio value="1">
-                    金额
-                  </a-radio>
-                  <a-radio value="2">
-                    折扣
-                  </a-radio>
-                </a-radio-group>
+          <div class="order-settings-layout">
+            <div class="order-settings-left">
+              <a-form-item class="custom-label" label="整单优惠设置：">
+                <div class="flex flex-items-center">
+                  <a-radio-group v-model:value="settingForm.orderDiscountType" class="custom-radio whitespace-nowrap">
+                    <a-radio value="0">
+                      无
+                    </a-radio>
+                    <a-radio value="1">
+                      金额
+                    </a-radio>
+                    <a-radio value="2">
+                      折扣
+                    </a-radio>
+                  </a-radio-group>
 
-                <template v-if="settingForm.orderDiscountType === '1'">
-                  <a-form-item name="zdiscountNumber" :rules="zdiscountNumberRules()" class="ml-2 mgnone">
-                    <div class="flex flex-center ">
-                      <a-input-number v-model:value="settingForm.zdiscountNumber" style="width: 100px" :precision="2"
-                        :min="0.01" placeholder="输入金额" />
-                      <span class="ml-1">元</span>
-                      <span class="ml-5 text-12px text-#f03 " />
-                    </div>
-                  </a-form-item>
-                </template>
+                  <template v-if="settingForm.orderDiscountType === '1'">
+                    <a-form-item name="zdiscountNumber" :rules="zdiscountNumberRules()" class="ml-2 mgnone">
+                      <div class="flex flex-center ">
+                        <a-input-number v-model:value="settingForm.zdiscountNumber" style="width: 100px" :precision="2"
+                          :min="0.01" placeholder="输入金额" />
+                        <span class="ml-1">元</span>
+                        <span class="ml-5 text-12px text-#f03 " />
+                      </div>
+                    </a-form-item>
+                  </template>
 
-                <template v-if="settingForm.orderDiscountType === '2'">
-                  <a-form-item name="zdiscountRate" :rules="zdiscountRateRules()" class="ml-2 mgnone">
-                    <div class="flex flex-center styleCss relative">
-                      <a-input-number v-model:value="settingForm.zdiscountRate" style="width: 100px" :precision="1"
-                        :min="0.1" :max="9.9" placeholder="输入折扣" />
-                      <span class="ml-1">折</span>
-                      <span class="ml-5 text-12px text-#f03 absolute left--18px bottom--18px">
-                        <template v-if="currentDiscountAmount > 0">
-                          减 ¥{{ currentDiscountAmount.toFixed(2) }}
-                        </template>
-                      </span>
-                    </div>
-                  </a-form-item>
-                </template>
+                  <template v-if="settingForm.orderDiscountType === '2'">
+                    <a-form-item name="zdiscountRate" :rules="zdiscountRateRules()" class="ml-2 mgnone">
+                      <div class="flex flex-center styleCss relative">
+                        <a-input-number v-model:value="settingForm.zdiscountRate" style="width: 100px" :precision="1"
+                          :min="0.1" :max="9.9" placeholder="输入折扣" />
+                        <span class="ml-1">折</span>
+                        <span class="ml-5 text-12px text-#f03 absolute left--18px bottom--18px">
+                          <template v-if="currentDiscountAmount > 0">
+                            减 ¥{{ currentDiscountAmount.toFixed(2) }}
+                          </template>
+                        </span>
+                      </div>
+                    </a-form-item>
+                  </template>
+                </div>
+              </a-form-item>
+              <a-form-item class="custom-label mt--2" label="经办日期：">
+                <a-date-picker v-model:value="settingForm.dealDate" class="w-80" :disabled-date="disabledDate"
+                  value-format="YYYY-MM-DD" format="YYYY-MM-DD" @change="handleDateChange" />
+              </a-form-item>
+              <div class="order-settings-right-spacer" />
+            </div>
+
+            <div class="order-settings-right">
+              <div class="storage-account-panel">
+                <div class="storage-account-panel__label">储值账户抵扣</div>
+                <div class="storage-account-panel__content">
+                  <div class="storage-account-inline">
+                    <span class="storage-account-inline__title">充值余额</span>
+                    <a-input-number v-model:value="settingForm.useBalance" :precision="2" :min="0"
+                      :max="getUsageMax('useBalance')" class="storage-account-input" placeholder="请输入"
+                      @change="normalizeUsageValue('useBalance')">
+                      <template #addonAfter>
+                        元
+                      </template>
+                    </a-input-number>
+                  </div>
+                  <div class="storage-account-inline">
+                    <span class="storage-account-inline__title">残联余额</span>
+                    <a-input-number v-model:value="settingForm.useResidualBalance" :precision="2" :min="0"
+                      :max="getUsageMax('useResidualBalance')" class="storage-account-input" placeholder="请输入"
+                      @change="normalizeUsageValue('useResidualBalance')">
+                      <template #addonAfter>
+                        元
+                      </template>
+                    </a-input-number>
+                  </div>
+                  <div class="storage-account-inline">
+                    <span class="storage-account-inline__title">赠送余额</span>
+                    <a-input-number v-model:value="settingForm.useGiftBalance" :precision="2" :min="0"
+                      :max="getUsageMax('useGiftBalance')" class="storage-account-input" placeholder="请输入"
+                      @change="normalizeUsageValue('useGiftBalance')">
+                      <template #addonAfter>
+                        元
+                      </template>
+                    </a-input-number>
+                  </div>
+                </div>
+                <div class="storage-account-panel__hint-row">
+                  <div class="storage-account-hint-item">
+                    <span>可用 ¥ {{ availableRechargeBalance.toFixed(2) }}</span>
+                    <span v-if="getUsageMax('useBalance') > 0" class="storage-account-link" @click.stop="applyFullUsage('useBalance')">全部使用</span>
+                  </div>
+                  <div class="storage-account-hint-item">
+                    <span>可用 ¥ {{ availableResidualBalance.toFixed(2) }}</span>
+                    <span v-if="getUsageMax('useResidualBalance') > 0" class="storage-account-link" @click.stop="applyFullUsage('useResidualBalance')">全部使用</span>
+                  </div>
+                  <div class="storage-account-hint-item">
+                    <span>可用 ¥ {{ availableGiftBalance.toFixed(2) }}</span>
+                    <span v-if="getUsageMax('useGiftBalance') > 0" class="storage-account-link" @click.stop="applyFullUsage('useGiftBalance')">全部使用</span>
+                  </div>
+                </div>
               </div>
-            </a-form-item>
-            <a-form-item class="custom-label" label="使用储值账户：">
-              <a-space :size="12" class="flex flex-items-center">
-                <div class="flex flex-items-center relative">
-                  <span class="mr-2 text-#666 whitespace-nowrap">本次使用充值余额</span>
-                  <a-input-number v-model:value="settingForm.useBalance" :precision="2" :min="0"
-                    :max="getUsageMax('useBalance')" style="width: 120px" placeholder="请输入"
-                    @change="normalizeUsageValue('useBalance')">
-                    <template #addonAfter>
-                      元
-                    </template>
-                  </a-input-number>
-                  <span class="ml-2 text-12px text-#666 absolute left--7px bottom--24px whitespace-nowrap">可用充值余额：¥
-                    {{ availableRechargeBalance.toFixed(2) }}</span>
-                </div>
-                <div class="flex flex-items-center relative">
-                  <span class="mr-2 text-#666 whitespace-nowrap">使用残联余额</span>
-                  <a-input-number v-model:value="settingForm.useResidualBalance" :precision="2" :min="0"
-                    :max="getUsageMax('useResidualBalance')" style="width: 120px" placeholder="请输入"
-                    @change="normalizeUsageValue('useResidualBalance')">
-                    <template #addonAfter>
-                      元
-                    </template>
-                  </a-input-number>
-                  <span class="ml-2 text-12px text-#666 absolute left--7px bottom--24px whitespace-nowrap">可用残联余额：¥
-                    {{ availableResidualBalance.toFixed(2) }}</span>
-                </div>
-                <div class="flex flex-items-center relative">
-                  <span class="mr-2 text-#666 whitespace-nowrap">使用赠送余额</span>
-                  <a-input-number v-model:value="settingForm.useGiftBalance" :precision="2" :min="0"
-                    :max="getUsageMax('useGiftBalance')" style="width: 120px" placeholder="请输入"
-                    @change="normalizeUsageValue('useGiftBalance')">
-                    <template #addonAfter>
-                      元
-                    </template>
-                  </a-input-number>
-                  <span class="ml-2 text-12px text-#666 absolute left--7px bottom--24px whitespace-nowrap">可用赠送余额：¥ {{ availableGiftBalance.toFixed(2) }}</span>
-                </div>
-              </a-space>
-            </a-form-item>
+            </div>
           </div>
-          <a-form-item class="custom-label mt--2" label="经办日期：">
-            <a-date-picker v-model:value="settingForm.dealDate" class="w-80" :disabled-date="disabledDate"
-              value-format="YYYY-MM-DD" format="YYYY-MM-DD" @change="handleDateChange" />
-          </a-form-item>
           <a-form-item class="custom-label" label="优惠券：">
             <a-button class="w-35" ghost type="primary" @click="handleOpenCouponModal">
               输入优惠券码
@@ -2247,6 +2267,145 @@ function handleUpdateDateSubmit(formState) {
   label {
     color: #333 !important;
     font-weight: 500 !important;
+  }
+}
+
+.order-settings-layout {
+  position: relative;
+}
+
+.order-settings-left {
+  min-width: 0;
+  padding-right: 736px;
+}
+
+.order-settings-right-spacer {
+  height: 4px;
+}
+
+.order-settings-right {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 716px;
+  z-index: 3;
+}
+
+.storage-account-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 12px 14px 10px;
+  border: 1px solid #edf2ff;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fcfdff 0%, #f7f9ff 100%);
+  box-sizing: border-box;
+  position: relative;
+  z-index: 3;
+}
+
+.storage-account-panel__label {
+  color: #333;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  margin-bottom: 10px;
+}
+
+.storage-account-panel__content {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+}
+
+.storage-account-inline {
+  min-width: 0;
+}
+
+.storage-account-inline__title {
+  color: #666;
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+
+.storage-account-input {
+  width: 100%;
+}
+
+:deep(.storage-account-input .ant-input-number-group-addon) {
+  min-width: 34px;
+  padding: 0 8px;
+}
+
+.storage-account-panel__hint-row {
+  color: #666;
+  display: grid;
+  font-size: 11px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  line-height: 16px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.storage-account-hint-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+
+.storage-account-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: #1677ff;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.storage-account-link:hover {
+  background: rgba(22, 119, 255, 0.08);
+  color: #0958d9;
+}
+
+@media (max-width: 1480px) {
+  .order-settings-left {
+    padding-right: 676px;
+  }
+  .order-settings-right {
+    width: 656px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .order-settings-layout {
+    min-height: unset;
+  }
+
+  .order-settings-left {
+    padding-right: 0;
+  }
+
+  .order-settings-right {
+    position: static;
+    width: 640px;
+    margin-left: auto;
+    margin-top: 8px;
+  }
+
+  .storage-account-panel__content,
+  .storage-account-panel__hint-row {
+    grid-template-columns: 1fr;
   }
 }
 
