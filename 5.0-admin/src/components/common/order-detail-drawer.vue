@@ -1,13 +1,14 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, createVNode, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import { CloseOutlined, DownOutlined, ExclamationCircleFilled, EyeInvisibleOutlined, EyeOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import { useWindowSize } from '@vueuse/core'
 import { useUserStore } from '@/stores/user'
 import { getStudentPhoneNumberApi } from '~/api/common/config'
 import { approveApprovalApi, getApprovalDetailApi, refuseApprovalApi } from '~/api/finance-center/approval-manage'
-import { getOrderDetailApi } from '~/api/finance-center/order-manage'
+import { closeOrderApi, getOrderDetailApi } from '~/api/finance-center/order-manage'
 import { getRechargeAccountByStudentApi } from '~/api/finance-center/recharge-account'
 import messageService from '~/utils/messageService'
 import RechargeAccountDetailDrawer from './recharge-account-detail-drawer.vue'
@@ -886,7 +887,33 @@ function toOrderDetailRow(item) {
 }
 
 function handleCloseOrder() {
-  messageService.info('关闭订单功能开发中')
+  if (!detail.value?.orderId) {
+    return
+  }
+  Modal.confirm({
+    title: '确定关闭订单？',
+    icon: createVNode(ExclamationCircleFilled),
+    centered: true,
+    okText: '确定',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        const res = await closeOrderApi({ orderId: detail.value.orderId })
+        if (res.code === 200) {
+          messageService.success('订单已关闭')
+          await fetchOrderDetail(detail.value.orderId)
+          emit('updated')
+          return
+        }
+        return Promise.reject(new Error(res.message || '关闭订单失败'))
+      }
+      catch (error) {
+        console.error('close order failed', error)
+        messageService.error(error?.message || '关闭订单失败')
+        return Promise.reject(error)
+      }
+    },
+  })
 }
 
 function handlePrintReceipt() {

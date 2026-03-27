@@ -288,3 +288,7 @@ export function setBadDebtApi(data: { orderId: string; remark?: string }) {
 export function cancelBadDebtApi(data: { orderId: string }) {
   return usePost<void>('/api/v1/orders/cancel-bad-debt', data)
 }
+
+export function closeOrderApi(data: { orderId: string }) {
+  return usePost<void>('/api/v1/orders/close', data)
+}

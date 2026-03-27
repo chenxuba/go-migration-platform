@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -1105,6 +1106,70 @@ func (repo *Repository) getBadDebtInfo(ctx context.Context, orderID int64) (bool
 		resultRemark = remark.String
 	}
 	return isBadDebt, resultAmount, resultRemark, nil
+}
+
+func (repo *Repository) CloseOrder(ctx context.Context, instID, operatorID, orderID int64) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var (
+		orderStatus int
+		paidAmount  float64
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT order_status, IFNULL((SELECT SUM(pay_amount) FROM sale_order_pay_detail WHERE del_flag = 0 AND order_id = so.id), 0)
+		FROM sale_order so
+		WHERE so.id = ? AND so.inst_id = ? AND so.del_flag = 0
+		LIMIT 1
+	`, orderID, instID).Scan(&orderStatus, &paidAmount); err != nil {
+		return err
+	}
+	if orderStatus != model.OrderStatusPendingPayment {
+		return errors.New("仅待付款订单可关闭")
+	}
+	if paidAmount > 0.000001 {
+		return errors.New("订单已有支付记录，无法关闭")
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sale_order
+		SET order_status = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, model.OrderStatusClosed, operatorID, orderID, instID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account_bill_flow bf
+		INNER JOIN recharge_account_bill b ON b.id = bf.bill_id AND b.del_flag = 0
+		INNER JOIN recharge_account_order rao ON rao.id = b.recharge_account_order_id AND rao.del_flag = 0
+		SET bf.del_flag = 1
+		WHERE rao.inst_id = ? AND rao.sale_order_id = ? AND rao.status = 1 AND bf.del_flag = 0
+	`, instID, orderID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account_bill b
+		INNER JOIN recharge_account_order rao ON rao.id = b.recharge_account_order_id AND rao.del_flag = 0
+		SET b.del_flag = 1, b.update_id = ?, b.update_time = NOW()
+		WHERE rao.inst_id = ? AND rao.sale_order_id = ? AND rao.status = 1 AND b.del_flag = 0
+	`, operatorID, instID, orderID); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account_order
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND sale_order_id = ? AND status = 1 AND del_flag = 0
+	`, operatorID, instID, orderID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (repo *Repository) getOrderCourseNames(ctx context.Context, orderID int64) ([]string, error) {

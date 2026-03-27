@@ -1,12 +1,14 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, createVNode, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { debounce } from "lodash-es";
-import { DownOutlined, InfoCircleOutlined } from "@ant-design/icons-vue";
+import { DownOutlined, ExclamationCircleOutlined, InfoCircleOutlined } from "@ant-design/icons-vue";
+import { Modal } from "ant-design-vue";
 import dayjs from "dayjs";
 import { useTableColumns } from "@/composables/useTableColumns";
 import { useStudentListRefresh } from "@/composables/useStudentListRefresh";
 import {
+  closeOrderApi,
   getOrderListApi,
   setBadDebtApi,
   cancelBadDebtApi,
@@ -561,8 +563,28 @@ function handleSendSms(orderId) {
 
 // 关闭订单
 function handleCloseOrder(orderId) {
-  console.log("关闭订单:", orderId);
-  messageService.info("关闭订单功能开发中");
+  Modal.confirm({
+    title: "确定关闭订单？",
+    icon: createVNode(ExclamationCircleOutlined),
+    centered: true,
+    okText: "确定",
+    cancelText: "取消",
+    async onOk() {
+      try {
+        const res = await closeOrderApi({ orderId });
+        if (res.code === 200) {
+          messageService.success("订单已关闭");
+          fetchOrderList();
+          return;
+        }
+        return Promise.reject(new Error(res.message || "关闭订单失败"));
+      } catch (error) {
+        console.error("close order failed", error);
+        messageService.error(error?.message || "关闭订单失败");
+        return Promise.reject(error);
+      }
+    },
+  });
 }
 
 // 获取订单列表
