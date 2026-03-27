@@ -161,6 +161,12 @@ type EnrolledStudentFilter struct {
 	Grades            []string `json:"grades"`
 	ChannelIDs        []int64  `json:"channelIds"`
 	WechatNumber      string   `json:"wechatNumber"`
+	CreateTimeBegin   string   `json:"createTimeBegin"`
+	CreateTimeEnd     string   `json:"createTimeEnd"`
+	BirthDayBegin     string   `json:"birthDayBegin"`
+	BirthDayEnd       string   `json:"birthDayEnd"`
+	AgeMin            *int     `json:"ageMin"`
+	AgeMax            *int     `json:"ageMax"`
 	StudySchool       string   `json:"studySchool"`
 	SchoolSearchKey   string   `json:"schoolSearchKey"`
 	Address           string   `json:"address"`

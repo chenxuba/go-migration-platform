@@ -1417,6 +1417,30 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 		filters = append(filters, "s.wechat_number LIKE ?")
 		args = append(args, "%"+strings.TrimSpace(q.WechatNumber)+"%")
 	}
+	if from := parseDateStart(q.CreateTimeBegin); from != nil {
+		filters = append(filters, "s.create_time >= ?")
+		args = append(args, *from)
+	}
+	if to := parseDateEnd(q.CreateTimeEnd); to != nil {
+		filters = append(filters, "s.create_time <= ?")
+		args = append(args, *to)
+	}
+	if from := parseDateStart(q.BirthDayBegin); from != nil {
+		filters = append(filters, "s.birthday >= ?")
+		args = append(args, *from)
+	}
+	if to := parseDateEnd(q.BirthDayEnd); to != nil {
+		filters = append(filters, "s.birthday <= ?")
+		args = append(args, *to)
+	}
+	if q.AgeMin != nil {
+		filters = append(filters, "s.birthday IS NOT NULL AND TIMESTAMPDIFF(YEAR, s.birthday, CURDATE()) >= ?")
+		args = append(args, *q.AgeMin)
+	}
+	if q.AgeMax != nil {
+		filters = append(filters, "s.birthday IS NOT NULL AND TIMESTAMPDIFF(YEAR, s.birthday, CURDATE()) <= ?")
+		args = append(args, *q.AgeMax)
+	}
 	if strings.TrimSpace(q.StudySchool) != "" {
 		filters = append(filters, "s.study_school LIKE ?")
 		args = append(args, "%"+strings.TrimSpace(q.StudySchool)+"%")
@@ -1458,7 +1482,7 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT s.id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''),
-		       s.phone_relationship, s.student_status, s.create_time, s.channel_id, IFNULL(c.channel_name, ''),
+		       s.phone_relationship, IFNULL(s.is_collect, 0), IFNULL(s.is_bind_child, 0), s.student_status, s.create_time, s.channel_id, IFNULL(c.channel_name, ''),
 		       s.advisor_id, IFNULL(u1.nick_name, ''), s.student_manager_id, IFNULL(u2.nick_name, ''),
 		       s.last_follow_up_time, s.birthday, IFNULL(s.wechat_number, ''), IFNULL(s.study_school, ''),
 		       IFNULL(s.grade, ''), IFNULL(s.interest, ''), IFNULL(s.address, ''), s.recommend_student_id,
@@ -1492,7 +1516,7 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 		var createTime, followUpTime, birthDay, salesAssignedTime, firstEnrolledTime sql.NullTime
 		if err := rows.Scan(
 			&item.ID, &item.StuName, &item.AvatarURL, &item.StuSex, &item.Mobile,
-			&item.PhoneRelationship, &item.StudentStatus, &createTime, &item.ChannelID, &item.ChannelName,
+			&item.PhoneRelationship, &item.IsCollect, &item.IsBindChild, &item.StudentStatus, &createTime, &item.ChannelID, &item.ChannelName,
 			&item.AdvisorID, &item.AdvisorName, &item.StudentManagerID, &item.StudentManagerName,
 			&followUpTime, &birthDay, &item.WeChatNumber, &item.StudySchool,
 			&item.Grade, &item.Interest, &item.Address, &item.RecommendStudentID,
@@ -1503,8 +1527,6 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 		); err != nil {
 			return model.PageResult[model.EnrolledStudent]{}, err
 		}
-		item.IsCollect = false
-		item.IsBindChild = false
 		item.IsCrossSchoolStudent = false
 		if createTime.Valid {
 			t := createTime.Time

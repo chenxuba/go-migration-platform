@@ -1,3 +1,6 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
+
 export interface EnrolledStudentInfo {
   id?: string
   stuName?: string
@@ -71,4 +74,47 @@ export interface EnrolledStudentQueryParams {
 // 获取在读学员列表
 export function getEnrolledStudentListApi(data: EnrolledStudentQueryParams) {
   return usePost<EnrolledStudentInfo>('/api/v1/enrolled-students/page', data)
+}
+
+export interface ExportConditionItem {
+  label: string
+  value: string
+}
+
+export interface EnrolledStudentExportRecord {
+  id: number
+  fileName: string
+  exporterName: string
+  totalRows: number
+  queryConditions: ExportConditionItem[]
+  createdTime?: string
+  expiresAt?: string
+  downloadUrl?: string
+}
+
+export interface EnrolledStudentExportRequest {
+  queryModel: Record<string, any>
+  queryConditions: ExportConditionItem[]
+}
+
+export function exportEnrolledStudentsApi(data: EnrolledStudentExportRequest) {
+  return usePost<EnrolledStudentExportRecord>('/api/v1/enrolled-students/export', data)
+}
+
+export function getEnrolledStudentExportRecordsApi() {
+  return useGet<EnrolledStudentExportRecord[]>('/api/v1/enrolled-students/export-records')
+}
+
+export async function downloadEnrolledStudentExportRecordApi(recordId: number | string) {
+  const token = useAuthorization()
+  const response = await axios.get(`/api/v1/enrolled-students/export-records/download`, {
+    params: { recordId },
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+  return response
 }

@@ -3,7 +3,12 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import { DownOutlined, ExclamationCircleOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { getEnrolledStudentListApi } from '~@/api/edu-center/enrolled-student'
+import {
+  downloadEnrolledStudentExportRecordApi,
+  exportEnrolledStudentsApi,
+  getEnrolledStudentExportRecordsApi,
+  getEnrolledStudentListApi,
+} from '~@/api/edu-center/enrolled-student'
 import { useStudentFields } from '@/composables/useStudentFields'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { useRouter } from 'vue-router'
@@ -36,6 +41,9 @@ const exportMode = ref('all')
 const exportReportType = ref('student')
 const exportFileType = ref('excel')
 const exportConditionItems = ref([])
+const exportSubmitting = ref(false)
+const exportRecordsLoading = ref(false)
+const exportRecords = ref([])
 
 const exportPreviewColumns = [
   { title: '学员姓名', dataIndex: 'stuName', key: 'stuName' },
@@ -44,7 +52,6 @@ const exportPreviewColumns = [
   { title: '学员性别', dataIndex: 'sex', key: 'sex' },
   { title: '学员电话', dataIndex: 'mobile', key: 'mobile' },
   { title: '电话关系', dataIndex: 'relation', key: 'relation' },
-  { title: '备用手机号', dataIndex: 'backupPhone', key: 'backupPhone' },
   { title: '微信', dataIndex: 'wechat', key: 'wechat' },
   { title: '学员备注', dataIndex: 'remark', key: 'remark' },
   { title: '家校通关注状态', dataIndex: 'bindStatus', key: 'bindStatus' },
@@ -71,7 +78,6 @@ const exportPreviewRows = [
     sex: '男',
     mobile: '18818888888',
     relation: '母亲',
-    backupPhone: '13800138000',
     wechat: '18818888888',
     remark: '测试学员',
     bindStatus: '已采集',
@@ -607,7 +613,6 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
   })
 
 function handleImportExportAction({ key }) {
-  syncExportConditions()
   switch (key) {
     case '1':
       router.push('/import-center/starter/order')
@@ -616,17 +621,17 @@ function handleImportExportAction({ key }) {
       router.push('/import-center/starter/intentionStudent')
       break
     case '3':
-      exportModalVisible.value = true
+      openExportModal()
       break
     case '4':
-      exportRecordModalVisible.value = true
+      openExportRecordModal()
       break
   }
 }
 
 function syncExportConditions() {
   const conditions = allFilterRef.value?.getOrderedConditions?.() || []
-  exportConditionItems.value = conditions.map((item) => {
+  const mappedConditions = conditions.map((item) => {
     const values = Array.isArray(item.values) ? item.values : []
     const displayValue = values.length > 0
       ? values.map(valueItem => `${valueItem?.value || ''}`.replace(' 至 ', ' ~ ')).filter(Boolean).join('、')
@@ -636,20 +641,133 @@ function syncExportConditions() {
       value: displayValue || '全部',
     }
   })
+  const conditionMap = new Map(mappedConditions.map(item => [item.label, item.value]))
+  const fixedConditions = [
+    { label: '学员状态', value: conditionMap.get('学员状态') || (props.currentType === 1 ? '在读学员' : props.currentType === 2 ? '历史学员' : '全部') },
+    { label: '家校通', value: conditionMap.get('家校通') || '全部' },
+    { label: '人脸采集', value: conditionMap.get('人脸采集') || '全部' },
+    { label: '性别', value: conditionMap.get('性别') || '全部' },
+    { label: '创建时间', value: conditionMap.get('创建时间') || '-' },
+  ]
+  const extraConditions = mappedConditions.filter(item => !fixedConditions.some(fixed => fixed.label === item.label))
+  exportConditionItems.value = [...fixedConditions, ...extraConditions]
 }
 
-function handleViewExportRecord() {
-  exportModalVisible.value = false
+function buildExportQueryModel() {
+  const dateRangeMappings = {
+    createTime: {
+      begin: 'createTimeBegin',
+      end: 'createTimeEnd',
+    },
+    birthday: {
+      begin: 'birthDayBegin',
+      end: 'birthDayEnd',
+    },
+    lastFollowTime: {
+      begin: 'followUpTimeBegin',
+      end: 'followUpTimeEnd',
+    },
+    age: {
+      begin: 'ageMin',
+      end: 'ageMax',
+    },
+  }
+  const normalizedQuery = handleDateRangeParams({ ...queryState.value }, dateRangeMappings)
+  return Object.fromEntries(
+    Object.entries(normalizedQuery)
+      .filter(([, value]) => value !== undefined && value !== null && value !== '' && (!Array.isArray(value) || value.length > 0)),
+  )
+}
+
+async function openExportModal() {
+  syncExportConditions()
+  exportModalVisible.value = true
+}
+
+async function openExportRecordModal() {
+  syncExportConditions()
   exportRecordModalVisible.value = true
+  await loadExportRecords()
 }
 
-function handleSubmitExport() {
+async function loadExportRecords() {
+  exportRecordsLoading.value = true
+  try {
+    const res = await getEnrolledStudentExportRecordsApi()
+    exportRecords.value = res.result || res.data || []
+  }
+  catch (error) {
+    console.error('load export records failed', error)
+    messageService.error('获取导出记录失败')
+  }
+  finally {
+    exportRecordsLoading.value = false
+  }
+}
+
+async function downloadExportRecord(record) {
+  try {
+    const response = await downloadEnrolledStudentExportRecordApi(record.id)
+    triggerBlobDownload(response)
+  }
+  catch (error) {
+    console.error('download export record failed', error)
+    messageService.error('下载失败，请稍后重试')
+  }
+}
+
+function triggerBlobDownload(response) {
+  const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/octet-stream' })
+  const disposition = response.headers['content-disposition'] || ''
+  const matched = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  const fileName = matched ? decodeURIComponent(matched[1]) : `学员批量导出-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+async function handleViewExportRecord() {
   exportModalVisible.value = false
-  messageService.success('批量导出静态页面已展示')
+  await openExportRecordModal()
+}
+
+async function handleSubmitExport() {
+  if (pagination.value.total === 0 || dataSource.value.length === 0) {
+    messageService.error('没有符合条件的报读列表可以导出')
+    return
+  }
+  exportSubmitting.value = true
+  try {
+    syncExportConditions()
+    const res = await exportEnrolledStudentsApi({
+      queryModel: buildExportQueryModel(),
+      queryConditions: exportConditionItems.value,
+    })
+    const record = res.result || res.data
+    if (!record?.id) {
+      throw new Error(res.message || '导出失败')
+    }
+    const response = await downloadEnrolledStudentExportRecordApi(record.id)
+    triggerBlobDownload(response)
+    exportModalVisible.value = false
+    await openExportRecordModal()
+  }
+  catch (error) {
+    console.error('export enrolled students failed', error)
+    messageService.error(error?.message || '导出失败，请稍后重试')
+  }
+  finally {
+    exportSubmitting.value = false
+  }
 }
 
 function handleDownloadExportRecord() {
-  messageService.info('导出记录下载功能待接入')
+  messageService.info('请选择具体导出记录下载')
 }
 
 function formatTime(time) {
@@ -1013,7 +1131,7 @@ defineExpose({
         <a-button @click="handleViewExportRecord">
           查看导出记录
         </a-button>
-        <a-button type="primary" class="ml-3" @click="handleSubmitExport">
+        <a-button type="primary" class="ml-3" :loading="exportSubmitting" @click="handleSubmitExport">
           导出
         </a-button>
       </div>
@@ -1027,34 +1145,39 @@ defineExpose({
       class="student-export-record-modal"
       destroy-on-close
     >
-      <div class="export-record-card">
-        <div class="export-record-header">
-          <div class="export-record-meta">
-            <span>报表生成时间：2026-03-27 11:34:06</span>
-            <span class="ml-6">导出人：陈瑞</span>
-          </div>
-          <a-button @click="handleDownloadExportRecord">
-            下载
-          </a-button>
-        </div>
+      <a-spin :spinning="exportRecordsLoading">
+        <div class="export-record-list" v-if="exportRecords.length > 0">
+          <div v-for="record in exportRecords" :key="record.id" class="export-record-card">
+            <div class="export-record-header">
+              <div class="export-record-meta">
+                <span>报表生成时间：{{ record.createdTime ? dayjs(record.createdTime).format('YYYY-MM-DD HH:mm:ss') : '-' }}</span>
+                <span class="ml-6">导出人：{{ record.exporterName || '-' }}</span>
+              </div>
+              <a-button @click="downloadExportRecord(record)">
+                下载
+              </a-button>
+            </div>
 
-        <div class="export-record-body">
-          <div class="export-record-top">
-            <div class="export-record-title">
-              查询条件
-            </div>
-            <div class="export-record-expire">
-              请在一周内下载，过期将失效
-            </div>
-          </div>
-          <div class="export-record-grid">
-            <div v-for="item in exportRecordConditions" :key="`${item.label}-${item.value}`" class="export-record-item">
-              <span class="export-record-item-label">{{ item.label }}：</span>
-              <span>{{ item.value }}</span>
+            <div class="export-record-body">
+              <div class="export-record-top">
+                <div class="export-record-title">
+                  查询条件
+                </div>
+                <div class="export-record-expire">
+                  请在一周内下载，过期将失效
+                </div>
+              </div>
+              <div class="export-record-grid">
+                <div v-for="item in (record.queryConditions?.length ? record.queryConditions : [{ label: '查询条件', value: '全部' }])" :key="`${record.id}-${item.label}-${item.value}`" class="export-record-item">
+                  <span class="export-record-item-label">{{ item.label }}：</span>
+                  <span>{{ item.value }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+        <a-empty v-else-if="!exportRecordsLoading" :image="null" description="暂无导出记录" />
+      </a-spin>
     </a-modal>
   </div>
 </template>
@@ -1228,11 +1351,18 @@ defineExpose({
   border-top: 1px solid #f0f0f0;
 }
 
+.export-record-list {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 .export-record-card {
   border: 1px solid #edf0f5;
   border-radius: 12px;
   overflow: hidden;
   background: #fff;
+  margin-bottom: 16px;
 }
 
 .export-record-header {
