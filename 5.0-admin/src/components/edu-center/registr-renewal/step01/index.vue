@@ -937,6 +937,7 @@ async function submitOrder() {
           const selectedSku = course.productSku?.find(sku => sku.id === course.productSkuId)
           const courseTotal = calculateCourseTotal(course)
           const distributedDiscount = getCourseDistributedDiscount(formData.indexOf(course))
+          const realQuantity = calculateCourseRealQuantity(course, selectedSku)
 
           return {
             handleType: course.handleType || 0,
@@ -956,7 +957,7 @@ async function submitOrder() {
             shareDiscount: distributedDiscount.toFixed(2),
             amount: courseTotal.toFixed(2),
             quantity: selectedSku?.quantity || 1,
-            realQuantity: (course.skuCount * selectedSku?.quantity) + (course.freeQuantity || 0),
+            realQuantity,
             realAmount: (courseTotal - distributedDiscount).toFixed(2)
           }
         }),
@@ -964,7 +965,8 @@ async function submitOrder() {
         orderDiscountNumber: settingForm.orderDiscountType === '1' ? settingForm.zdiscountNumber : settingForm.zdiscountRate,
         orderDiscountAmount: (totalDiscountAmount.value).toFixed(2),
         orderRealQuantity: formData.reduce((total, course) => {
-          return total + (course.skuCount || 1) + (course.freeQuantity || 0)
+          const selectedSku = course.productSku?.find(sku => sku.id === course.productSkuId)
+          return total + calculateCourseRealQuantity(course, selectedSku)
         }, 0),
         orderRealAmount: (totalAmount.value).toFixed(2),
         internalRemark: settingForm.internalRemark || '',
@@ -1295,6 +1297,32 @@ function calculateTotalDays(courseItem) {
   }
 
   courseItem.totalDays = totalDays
+}
+
+function calculateCourseRealQuantity(courseItem, selectedSku) {
+  if (!selectedSku) {
+    return 0
+  }
+
+  const purchaseQuantity = (selectedSku.quantity || 1) * (courseItem.skuCount || 1)
+  const freeQuantity = courseItem.freeQuantity || 0
+
+  if (selectedSku.lessonModel === 2) {
+    const totalDays = Number(courseItem.totalDays || 0)
+    if (totalDays > 0) {
+      return totalDays
+    }
+
+    if (courseItem.validDate && courseItem.endDate) {
+      const startDate = dayjs(courseItem.validDate)
+      const endDate = dayjs(courseItem.endDate)
+      if (startDate.isValid() && endDate.isValid()) {
+        return Math.max(0, endDate.diff(startDate, 'day') + 1)
+      }
+    }
+  }
+
+  return purchaseQuantity + freeQuantity
 }
 
 // 计算结束时间

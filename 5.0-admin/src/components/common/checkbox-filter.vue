@@ -484,6 +484,9 @@ function handleScroll(e) {
               {{ item.value ?? item.name }}
             </div>
           </a-menu-item>
+          <div v-if="options.length == 0" class="flex justify-center">
+            <a-empty :image-style="{ width: '80px' }" :image="simpleImage" />
+          </div>
         </div>
         <div v-if="category == 'stu'" ref="scrollContainer" class="max-h-70 overflow-auto scrollbar"
           @scroll="handleScroll">

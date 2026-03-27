@@ -1017,7 +1017,7 @@ func (repo *Repository) ApproveApprovalRecord(ctx context.Context, instID, opera
 		return err
 	}
 	if allApproved && approvalType == 1 {
-		if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, orderID, studentID); err != nil {
+		if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, orderID, studentID, 0); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `

@@ -295,11 +295,33 @@ function isRefundDisplayOrder(record) {
   return [3, 4, 6, 7].includes(Number(record?.orderType || 0))
 }
 
-function getQuantityText(value, unit, record) {
+function getTimeSlotTotalDays(record) {
+  if (Number(record?.chargingMode || 0) !== 2 || !record?.validDate || !record?.endDate) {
+    return null
+  }
+  const startDate = dayjs(record.validDate)
+  const endDate = dayjs(record.endDate)
+  if (!startDate.isValid() || !endDate.isValid()) {
+    return null
+  }
+  return Math.max(endDate.diff(startDate, 'day') + 1, 0)
+}
+
+function getQuantityText(value, unit, record, type = 'purchase') {
   if (isRechargeAccountOrder(record))
     return '-'
   if (value === undefined || value === null)
     return '-'
+  if (Number(record?.chargingMode || 0) === 2) {
+    const totalDays = getTimeSlotTotalDays(record)
+    const freeDays = Number(record?.freeQuantity || 0)
+    if (totalDays !== null) {
+      if (type === 'gift') {
+        return `${freeDays}天`
+      }
+      return `${Math.max(totalDays - freeDays, 0)}天`
+    }
+  }
   return `${value}${unitMap[unit] || ''}`
 }
 
@@ -530,10 +552,10 @@ defineExpose({
                 {{ getSkuCountText(record) }}
               </template>
               <template v-else-if="column.key === 'quantity'">
-                {{ getQuantityText(record.quantity, record.skuUnit, record) }}
+                {{ getQuantityText(record.quantity, record.skuUnit, record, 'purchase') }}
               </template>
               <template v-else-if="column.key === 'freeQuantity'">
-                {{ getQuantityText(record.freeQuantity, record.skuUnit, record) }}
+                {{ getQuantityText(record.freeQuantity, record.skuUnit, record, 'gift') }}
               </template>
               <template v-else-if="column.key === 'discountName'">
                 -

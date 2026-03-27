@@ -107,6 +107,14 @@ function formatMoney(amount) {
   return num.toFixed(2)
 }
 
+function formatCount(value) {
+  const num = Number(value || 0)
+  if (Number.isInteger(num)) {
+    return String(num)
+  }
+  return num.toFixed(2)
+}
+
 function hasArrearTuition(item) {
   return Number(item?.arrearTuition || 0) > 0
 }
@@ -169,8 +177,10 @@ function getLessonScopeText(scope) {
 // 格式化剩余数量显示文本
 function formatRemainQuantityText(item) {
   const mode = item.lessonChargingMode
-  const remainQty = item.remainQuantity || 0
-  const remainFreeQty = item.remainFreeQuantity || 0
+  const remainQty = Number(item.remainQuantity || 0)
+  const remainFreeQty = Number(item.remainFreeQuantity || 0)
+  const totalQty = Number(item.totalQuantity || 0)
+  const totalFreeQty = Number(item.totalFreeQuantity || 0)
   
   // 获取单位和标签
   let unit = '课时'
@@ -185,24 +195,26 @@ function formatRemainQuantityText(item) {
     prefix = '¥'
   }
   
-  // 计算总计（剩余购买 + 剩余赠送）
-  const total = remainQty + remainFreeQty
+  // 当前剩余 = 剩余购买 + 剩余赠送
+  const remainTotal = remainQty + remainFreeQty
+  // 总计 = 总购买 + 总赠送
+  const total = totalQty + totalFreeQty
   
   if (remainFreeQty > 0) {
-    // 有赠送：剩余课时：7（含赠 2 课时）|（总计 7 课时）
-    // 按金额：剩余金额：¥41000（含¥11400）|（总¥41000）
+    // 有赠送：剩余课时：29（含赠 2 课时）|（总计 31 课时）
+    // 按金额：剩余金额：¥41000（含¥11400）|（总¥51000）
     if (mode === 3) {
-      return `${label}：${prefix}${total}（含${prefix}${remainFreeQty}）|（总${prefix}${total}）`
+      return `${label}：${prefix}${formatCount(remainTotal)}（含${prefix}${formatCount(remainFreeQty)}）|（总${prefix}${formatCount(total)}）`
     } else {
-      return `${label}：${total}（含赠 ${remainFreeQty} ${unit}）|（总计 ${total} ${unit}）`
+      return `${label}：${formatCount(remainTotal)}（含赠 ${formatCount(remainFreeQty)} ${unit}）|（总计 ${formatCount(total)} ${unit}）`
     }
   } else {
-    // 没有赠送：剩余课时：5（总计 5 课时）
-    // 按金额：剩余金额：¥960（总¥960）
+    // 没有赠送：剩余课时：29（总计 31 课时）
+    // 按金额：剩余金额：¥960（总¥1000）
     if (mode === 3) {
-      return `${label}：${prefix}${remainQty}（总${prefix}${remainQty}）`
+      return `${label}：${prefix}${formatCount(remainQty)}（总${prefix}${formatCount(total)}）`
     } else {
-      return `${label}：${remainQty}（总计 ${remainQty} ${unit}）`
+      return `${label}：${formatCount(remainQty)}（总计 ${formatCount(total)} ${unit}）`
     }
   }
 }

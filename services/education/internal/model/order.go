@@ -168,6 +168,8 @@ type OrderDetailListItemVO struct {
 	Tuition                          float64    `json:"tuition"`
 	Quantity                         float64    `json:"quantity"`
 	RealQuantity                     float64    `json:"realQuantity"`
+	ValidDate                        *time.Time `json:"validDate,omitempty"`
+	EndDate                          *time.Time `json:"endDate,omitempty"`
 	ProductType                      *int       `json:"productType,omitempty"`
 	Remark                           string     `json:"remark"`
 	ChargingMode                     *int       `json:"chargingMode,omitempty"`

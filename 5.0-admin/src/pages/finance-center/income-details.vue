@@ -3,9 +3,9 @@ import { CloseOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { debounce } from 'lodash-es'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import StudentSelect from '@/components/common/student-select.vue'
 import { getCourseCategoryPageApi } from '@/api/edu-center/course-list'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { getRecommenderPageApi } from '@/api/enroll-center/intention-student'
 import { getLessonIncomePagedListApi, getLessonIncomeStatisticsApi } from '@/api/finance-center/lesson-income'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useTableColumns } from '@/composables/useTableColumns'
@@ -85,9 +85,6 @@ const courseFinished = ref(false)
 const teacherOptions = ref([])
 const teacherFinished = ref(false)
 const teacherSearchKey = ref('')
-const studentOptions = ref([])
-const studentFinished = ref(false)
-const studentSearchKeyword = ref('')
 const courseCategoryOptions = ref([])
 const classOptions = ref([])
 
@@ -96,15 +93,6 @@ const teacherPagination = ref({
   pageSize: 20,
   total: 0,
 })
-
-const studentPagination = ref({
-  current: 1,
-  pageSize: 10,
-  total: 0,
-})
-
-const studentLoading = ref(false)
-const studentSearchKeyModel = ref(undefined)
 const selectedStudentOption = ref(null)
 
 function handleRef(el, key) {
@@ -208,7 +196,7 @@ const selectedFilterList = computed(() => {
     list.push({
       key: 'studentId',
       label: '学员/电话',
-      value: selectedStudentOption.value?.stuName || findOptionLabel(studentOptions.value, filterState.studentId),
+      value: selectedStudentOption.value?.stuName || String(filterState.studentId),
     })
   }
   if (filterState.lessonId) {
@@ -451,95 +439,17 @@ function loadMoreTeacher() {
   loadTeacherOptions(teacherSearchKey.value)
 }
 
-async function getStudentSearchPage(params = { key: undefined, studentStatus: 1 }) {
-  try {
-    studentSearchKeyword.value = params.key || ''
-    if (studentFinished.value && studentPagination.value.current !== 1) {
-      return
-    }
-    studentLoading.value = true
-    const res = await getRecommenderPageApi({
-      pageRequestModel: {
-        needTotal: true,
-        pageSize: studentPagination.value.pageSize,
-        pageIndex: studentPagination.value.current,
-        skipCount: 0,
-      },
-      queryModel: {
-        searchKey: params.key,
-        studentStatus: params.studentStatus,
-      },
-      sortModel: {},
-    })
-    if (res.code === 200) {
-      const resultData = Array.isArray(res.result)
-        ? res.result.map(item => ({
-            ...item,
-            avatarUrl: item.avatarUrl || item.avatar,
-          }))
-        : []
-      if (studentPagination.value.current === 1) {
-        studentOptions.value = resultData
-      }
-      else {
-        studentOptions.value = [...studentOptions.value, ...resultData]
-      }
-      studentPagination.value.total = res.total || 0
-      studentFinished.value = studentOptions.value.length >= studentPagination.value.total
-    }
-  }
-  catch (error) {
-    console.error('加载学员/电话搜索数据失败:', error)
-    if (studentPagination.value.current > 1) {
-      studentPagination.value.current -= 1
-    }
-  }
-  finally {
-    studentLoading.value = false
-  }
-}
-
-function onStudentDropdownVisibleChange(open) {
-  if (!open) {
-    return
-  }
-  studentPagination.value.current = 1
-  studentOptions.value = []
-  studentFinished.value = false
-  studentSearchKeyword.value = ''
-  getStudentSearchPage({ studentStatus: 1 })
-}
-
-const debouncedStudentSearch = debounce((value) => {
-  studentPagination.value.current = 1
-  studentOptions.value = []
-  studentFinished.value = false
-  getStudentSearchPage({ key: value, studentStatus: 1 })
-}, 300)
-
-function handleStudentPopupScroll(event) {
-  const { target } = event
-  const { scrollTop, scrollHeight, clientHeight } = target
-  if (scrollHeight - scrollTop - clientHeight < 1) {
-    if (!studentLoading.value && studentPagination.value.current * studentPagination.value.pageSize < studentPagination.value.total) {
-      studentPagination.value.current += 1
-      getStudentSearchPage({ key: studentSearchKeyword.value, studentStatus: 1 })
-    }
-  }
-}
-
 function handleStudentChange(value) {
-  const id = typeof value === 'object' && value !== null ? value.value : value
-  if (id) {
-    selectedStudentOption.value = studentOptions.value.find(user => String(user.id) === String(id)) || null
-  }
-  else {
+  if (!value) {
     selectedStudentOption.value = null
   }
   nextTick(() => {
-    filterState.studentId = id || undefined
     debouncedRefresh()
   })
+}
+
+function handleStudentSelect(student) {
+  selectedStudentOption.value = student || null
 }
 
 function clearFilter(key) {
@@ -553,7 +463,6 @@ function clearFilter(key) {
       break
     case 'studentId':
       filterState.studentId = undefined
-      studentSearchKeyModel.value = undefined
       selectedStudentOption.value = null
       break
     default:
@@ -566,7 +475,6 @@ function clearSelectableFilters() {
   const fixedConformIncomeTime = [...filterState.conformIncomeTime]
   Object.assign(filterState, createEmptyFilters())
   filterState.conformIncomeTime = fixedConformIncomeTime
-  studentSearchKeyModel.value = undefined
   selectedStudentOption.value = null
   debouncedRefresh()
 }
@@ -613,7 +521,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   debouncedRefresh.cancel()
-  debouncedStudentSearch.cancel()
 })
 </script>
 
@@ -699,58 +606,15 @@ onUnmounted(() => {
             <div class="label">
               学员/电话
             </div>
-            <a-select
-              v-model:value="studentSearchKeyModel"
+            <StudentSelect
+              v-model="filterState.studentId"
               allow-clear
-              show-search
               placeholder="搜索姓名/手机号"
-              :filter-option="false"
-              style="width: 240px"
-              option-label-prop="label"
-              :label-in-value="true"
+              width="240px"
+              :student-status="1"
               @change="handleStudentChange"
-              @dropdown-visible-change="onStudentDropdownVisibleChange"
-              @search="debouncedStudentSearch"
-              @popup-scroll="handleStudentPopupScroll"
-            >
-              <a-select-option
-                v-for="item in studentOptions"
-                :key="item.id"
-                :value="item.id"
-                :label="item.stuName"
-              >
-                <div class="flex flex-center mb-1">
-                  <div>
-                    <img v-if="item.avatarUrl" class="w-10 rounded-10" :src="item.avatarUrl" alt="">
-                    <div v-else class="avatar-fallback">
-                      {{ item.stuName?.slice(0, 1) || '?' }}
-                    </div>
-                  </div>
-                  <div class="ml-2 mr-3">
-                    <div class="text-sm text-#666 leading-7">
-                      {{ item.stuName }}
-                    </div>
-                    <div class="text-xs text-#888">
-                      {{ item.mobile }}
-                    </div>
-                  </div>
-                  <div>
-                    <a-tag v-if="item.studentStatus === 1" :bordered="false" color="processing">
-                      在读学员
-                    </a-tag>
-                    <a-tag v-else-if="item.studentStatus === 0" :bordered="false" color="orange">
-                      意向学员
-                    </a-tag>
-                    <a-tag v-else-if="item.studentStatus === 2" :bordered="false">
-                      历史学员
-                    </a-tag>
-                  </div>
-                </div>
-              </a-select-option>
-              <a-select-option v-if="studentLoading" key="loading" disabled>
-                <a-spin class="flex justify-center" />
-              </a-select-option>
-            </a-select>
+              @select="handleStudentSelect"
+            />
           </div>
         </div>
       </div>

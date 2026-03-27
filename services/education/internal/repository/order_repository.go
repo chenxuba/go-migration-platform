@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -421,6 +422,8 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			CASE WHEN so.order_source = ` + importOrderSource + ` THEN IFNULL(d.amount, 0) ELSE IFNULL(q.price, 0) END AS tuition,
 			CASE WHEN so.order_source = ` + importOrderSource + ` THEN GREATEST(IFNULL(d.real_quantity, 0) - IFNULL(d.free_quantity, 0), 0) ELSE IFNULL(q.quantity, 0) END AS quantity,
 			IFNULL(d.real_quantity, 0) AS real_quantity,
+			d.valid_date AS valid_date,
+			d.end_date AS end_date,
 			IFNULL(c.type, 1) AS product_type,
 			IFNULL(so.internal_remark, '') AS remark,
 			q.lesson_model AS charging_mode,
@@ -487,6 +490,8 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			IFNULL(rao.amount, 0) AS tuition,
 			0 AS quantity,
 			0 AS real_quantity,
+			NULL AS valid_date,
+			NULL AS end_date,
 			4 AS product_type,
 			IFNULL(so.internal_remark, '') AS remark,
 			NULL AS charging_mode,
@@ -555,6 +560,8 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			tuition,
 			quantity,
 			real_quantity,
+			valid_date,
+			end_date,
 			product_type,
 			remark,
 			charging_mode,
@@ -608,6 +615,8 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			tuition               sql.NullFloat64
 			quantity              sql.NullFloat64
 			realQuantity          sql.NullFloat64
+			validDate             sql.NullTime
+			endDate               sql.NullTime
 			productType           sql.NullInt64
 			chargingMode          sql.NullInt64
 			salePersonID          sql.NullInt64
@@ -651,6 +660,8 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			&tuition,
 			&quantity,
 			&realQuantity,
+			&validDate,
+			&endDate,
 			&productType,
 			&item.Remark,
 			&chargingMode,
@@ -748,6 +759,14 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 		}
 		if realQuantity.Valid {
 			item.RealQuantity = realQuantity.Float64
+		}
+		if validDate.Valid {
+			t := validDate.Time
+			item.ValidDate = &t
+		}
+		if endDate.Valid {
+			t := endDate.Time
+			item.EndDate = &t
 		}
 		if productType.Valid {
 			v := int(productType.Int64)
@@ -2093,7 +2112,7 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 		}
 		if approved {
 			newStatus = model.OrderStatusCompleted
-			if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, dto.OrderID, studentID); err != nil {
+			if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, dto.OrderID, studentID, orderSource); err != nil {
 				return err
 			}
 		}
@@ -2222,7 +2241,7 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 	return repo.advanceApprovalRecordTx(ctx, tx, approvalID, instID, applicantID, applicantID, remainingFlows, approvedSet, now)
 }
 
-func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64) error {
+func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64, orderSource int) error {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, course_id, quote_id, handle_type, count, unit,
 		       IFNULL(free_quantity, 0), IFNULL(amount, 0), IFNULL(real_quantity, 0),
@@ -2289,10 +2308,178 @@ func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql
 		`, count, operatorID, detail.CourseID); err != nil {
 			return err
 		}
-		if err := repo.createTuitionAccountsTx(ctx, tx, instID, operatorID, orderID, studentID, detail, now); err != nil {
+		if err := repo.createTuitionAccountsTx(ctx, tx, instID, operatorID, orderID, studentID, detail, quotationMap[detail.QuoteID.Int64], now); err != nil {
 			return err
 		}
+		if quotation, ok := quotationMap[detail.QuoteID.Int64]; ok {
+			if err := repo.initializeTimeSlotIncomeTx(ctx, tx, instID, operatorID, orderID, studentID, detail, quotation, now); err != nil {
+				return err
+			}
+		}
 	}
+	return nil
+}
+
+func roundMoney(value float64) float64 {
+	return math.Round(value*100) / 100
+}
+
+func startOfDayTime(value time.Time) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, value.Location())
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+func (repo *Repository) initializeTimeSlotIncomeTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	instID, operatorID, orderID, studentID int64,
+	detail orderCourseDetail,
+	quotation model.CourseQuotation,
+	now time.Time,
+) error {
+	if quotation.LessonModel == nil || *quotation.LessonModel != 2 {
+		return nil
+	}
+	if !detail.ValidDate.Valid || !detail.EndDate.Valid {
+		return nil
+	}
+
+	startDate := startOfDayTime(detail.ValidDate.Time)
+	endDate := startOfDayTime(detail.EndDate.Time)
+	today := startOfDayTime(now)
+	if today.Before(startDate) {
+		return nil
+	}
+
+	elapsedDays := int(minTime(today, endDate).Sub(startDate).Hours()/24) + 1
+	if elapsedDays <= 0 {
+		return nil
+	}
+
+	var (
+		paidAccountID    int64
+		paidCourseID     int64
+		paidTotalDays    float64
+		paidTotalTuition float64
+		orderNumber      string
+		lessonType       sql.NullInt64
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT ta.id, ta.course_id, IFNULL(ta.total_quantity, 0), IFNULL(ta.total_tuition, 0), IFNULL(so.order_number, ''), c.teach_method
+		FROM tuition_account ta
+		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
+		LEFT JOIN inst_course c ON c.id = ta.course_id AND c.del_flag = 0
+		WHERE ta.inst_id = ? AND ta.order_id = ? AND ta.order_course_detail_id = ? AND ta.del_flag = 0 AND IFNULL(ta.total_tuition, 0) > 0
+		ORDER BY ta.id ASC
+		LIMIT 1
+	`, instID, orderID, detail.ID).Scan(&paidAccountID, &paidCourseID, &paidTotalDays, &paidTotalTuition, &orderNumber, &lessonType)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+
+	consumedPaidDays := math.Min(float64(elapsedDays), paidTotalDays)
+	if consumedPaidDays <= 0 {
+		return nil
+	}
+
+	confirmedTuition := paidTotalTuition
+	if paidTotalDays > 0 {
+		confirmedTuition = roundMoney(paidTotalTuition * consumedPaidDays / paidTotalDays)
+		if consumedPaidDays >= paidTotalDays {
+			confirmedTuition = roundMoney(paidTotalTuition)
+		}
+	}
+	remainingDays := math.Max(paidTotalDays-consumedPaidDays, 0)
+	remainingTuition := roundMoney(math.Max(paidTotalTuition-confirmedTuition, 0))
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account
+		SET used_quantity = ?, remaining_quantity = ?, used_tuition = ?, remaining_tuition = ?, confirmed_tuition = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, consumedPaidDays, remainingDays, confirmedTuition, remainingTuition, confirmedTuition, operatorID, paidAccountID, instID); err != nil {
+		return err
+	}
+
+	if detail.FreeQuantity > 0 && float64(elapsedDays) > paidTotalDays {
+		consumedFreeDays := math.Min(float64(elapsedDays)-paidTotalDays, detail.FreeQuantity)
+		if consumedFreeDays > 0 {
+			var freeAccountID int64
+			if err := tx.QueryRowContext(ctx, `
+				SELECT id
+				FROM tuition_account
+				WHERE inst_id = ? AND order_id = ? AND order_course_detail_id = ? AND del_flag = 0
+				  AND IFNULL(total_tuition, 0) = 0 AND IFNULL(free_quantity, 0) > 0
+				ORDER BY id ASC
+				LIMIT 1
+			`, instID, orderID, detail.ID).Scan(&freeAccountID); err == nil {
+				if _, execErr := tx.ExecContext(ctx, `
+					UPDATE tuition_account
+					SET used_quantity = ?, remaining_quantity = ?, update_id = ?, update_time = NOW()
+					WHERE id = ? AND inst_id = ? AND del_flag = 0
+				`, consumedFreeDays, math.Max(detail.FreeQuantity-consumedFreeDays, 0), operatorID, freeAccountID, instID); execErr != nil {
+					return execErr
+				}
+			} else if err != sql.ErrNoRows {
+				return err
+			}
+		}
+	}
+
+	var lessonTypeValue any
+	if lessonType.Valid {
+		lessonTypeValue = lessonType.Int64
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO tuition_account_flow (
+			uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
+			source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, ?, ?,
+			?, ?, NULL, ?, ?, ?, ?, ?, ?,
+			?, NOW(), ?, NOW(), 0
+		)
+		ON DUPLICATE KEY UPDATE
+			quantity = VALUES(quantity),
+			tuition = VALUES(tuition),
+			balance_quantity = VALUES(balance_quantity),
+			balance_tuition = VALUES(balance_tuition),
+			order_number = VALUES(order_number),
+			created_time = VALUES(created_time),
+			update_id = VALUES(update_id),
+			update_time = VALUES(update_time),
+			del_flag = VALUES(del_flag)
+	`,
+		instID,
+		paidAccountID,
+		studentID,
+		paidCourseID,
+		lessonTypeValue,
+		2,
+		model.TuitionAccountFlowSourceAutoConsume,
+		detail.ID,
+		orderNumber,
+		now,
+		consumedPaidDays,
+		confirmedTuition,
+		remainingDays,
+		remainingTuition,
+		operatorID,
+		operatorID,
+	); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -2441,10 +2628,20 @@ func (repo *Repository) shouldTriggerRegistrationApprovalTx(ctx context.Context,
 	return false, nil
 }
 
-func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64, detail orderCourseDetail, now time.Time) error {
+func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64, detail orderCourseDetail, quotation model.CourseQuotation, now time.Time) error {
 	purchasedQty := detail.RealQuantity - detail.FreeQuantity
 	if purchasedQty < 0 {
 		purchasedQty = 0
+	}
+	if quotation.LessonModel != nil && *quotation.LessonModel == 2 && detail.ValidDate.Valid && detail.EndDate.Valid {
+		totalDays := int(startOfDayTime(detail.EndDate.Time).Sub(startOfDayTime(detail.ValidDate.Time)).Hours()/24) + 1
+		if totalDays < 0 {
+			totalDays = 0
+		}
+		purchasedQty = float64(totalDays) - detail.FreeQuantity
+		if purchasedQty < 0 {
+			purchasedQty = 0
+		}
 	}
 	var validDatePtr any
 	var endDatePtr any

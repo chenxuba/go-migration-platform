@@ -191,6 +191,8 @@ export interface OrderDetailListItem {
   tuition?: number
   quantity?: number
   realQuantity?: number
+  validDate?: string
+  endDate?: string
   productType?: number
   remark?: string
   chargingMode?: number
