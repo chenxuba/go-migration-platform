@@ -44,6 +44,9 @@ const detailTypeOptions = Object.entries(DETAIL_TYPE_MAP).map(([id, value]) => (
   value,
 }))
 
+const currentMonthStart = dayjs().startOf('month').format('YYYY-MM-DD')
+const today = dayjs().format('YYYY-MM-DD')
+
 function createEmptyFilters() {
   return {
     createTime: [],
@@ -54,7 +57,7 @@ function createEmptyFilters() {
     sourceTypes: [],
     staffId: undefined,
     lessonDay: [],
-    conformIncomeTime: [],
+    conformIncomeTime: [currentMonthStart, today],
   }
 }
 
@@ -192,15 +195,15 @@ function findOptionLabel(options, id) {
 }
 
 const selectedFilterList = computed(() => {
-  const list = []
-
-  if (filterState.conformIncomeTime.length === 2) {
-    list.push({
+  const list = [
+    {
       key: 'conformIncomeTime',
       label: '确认收入时间',
-      value: `${filterState.conformIncomeTime[0]} ~ ${filterState.conformIncomeTime[1]}`,
-    })
-  }
+      value: `${filterState.conformIncomeTime[0]}~${filterState.conformIncomeTime[1]}`,
+      fixed: true,
+    },
+  ]
+
   if (filterState.studentId) {
     list.push({
       key: 'studentId',
@@ -541,7 +544,6 @@ function handleStudentChange(value) {
 
 function clearFilter(key) {
   switch (key) {
-    case 'conformIncomeTime':
     case 'lessonDay':
     case 'createTime':
       filterState[key] = []
@@ -560,8 +562,10 @@ function clearFilter(key) {
   debouncedRefresh()
 }
 
-function clearAllFilters() {
+function clearSelectableFilters() {
+  const fixedConformIncomeTime = [...filterState.conformIncomeTime]
   Object.assign(filterState, createEmptyFilters())
+  filterState.conformIncomeTime = fixedConformIncomeTime
   studentSearchKeyModel.value = undefined
   selectedStudentOption.value = null
   debouncedRefresh()
@@ -730,6 +734,17 @@ onUnmounted(() => {
                       {{ item.mobile }}
                     </div>
                   </div>
+                  <div>
+                    <a-tag v-if="item.studentStatus === 1" :bordered="false" color="processing">
+                      在读学员
+                    </a-tag>
+                    <a-tag v-else-if="item.studentStatus === 0" :bordered="false" color="orange">
+                      意向学员
+                    </a-tag>
+                    <a-tag v-else-if="item.studentStatus === 2" :bordered="false">
+                      历史学员
+                    </a-tag>
+                  </div>
                 </div>
               </a-select-option>
               <a-select-option v-if="studentLoading" key="loading" disabled>
@@ -743,13 +758,21 @@ onUnmounted(() => {
       <div v-if="hasSelectedFilters" class="selected-conditions">
         <span class="section-title text-#222">已选条件：</span>
         <div class="condition-tags">
-          <a-popconfirm title="确定要清空所有条件吗？" @confirm="clearAllFilters">
+          <a-popconfirm title="确定要清空所有条件吗？" @confirm="clearSelectableFilters">
             <a-tag color="red" class="clear-all mb-2">
               清空已选
               <DeleteOutlined class="text-3 ml-4px mt-0.6px" />
             </a-tag>
           </a-popconfirm>
-          <a-tag v-for="item in selectedFilterList" :key="item.key" color="blue" class="condition-tag mb-2">
+          <a-tag color="blue" class="condition-tag mb-2">
+            <div class="tag-content">
+              <span class="condition-label">确认收入时间：</span>
+              <div class="condition-values">
+                <span class="value-item">{{ filterState.conformIncomeTime[0] }}~{{ filterState.conformIncomeTime[1] }}</span>
+              </div>
+            </div>
+          </a-tag>
+          <a-tag v-for="item in selectedFilterList.filter(tag => !tag.fixed)" :key="item.key" color="blue" class="condition-tag mb-2">
             <div class="tag-content">
               <span class="condition-label">{{ item.label }}：</span>
               <div class="condition-values">
