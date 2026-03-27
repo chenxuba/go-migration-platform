@@ -737,7 +737,7 @@ watch(
         <div class="dot-footer">
           <span>经办人：{{ detail.staffName || printedBy }}</span>
           <span>打印人：{{ printedBy }}</span>
-          <span>签字：____________</span>
+          <span>家长签字：____________</span>
         </div>
       </section>
 
@@ -969,7 +969,7 @@ watch(
 .receipt-paper--a4 {
   width: 210mm;
   min-height: 297mm;
-  padding: 9mm 10mm 8mm;
+  padding: 18mm 16mm 8mm;
   box-sizing: border-box;
 }
 
@@ -1277,7 +1277,7 @@ watch(
 @media print {
   @page {
     size: A4;
-    margin: 10mm 10mm 12mm;
+    margin: 0mm !important;
   }
 
   .print-hidden {
