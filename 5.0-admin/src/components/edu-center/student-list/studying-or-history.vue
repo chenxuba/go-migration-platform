@@ -532,12 +532,16 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
     defaultSelectedKeys: ['mobile', 'isBindChild', 'isCollect', 'studentStatus', 'createName', 'createTime', 'firstEnrolledTime', 'channelName', 'birthDay', 'salePersonName', 'followUpTime'],
   })
 
-function handleExport({ key }) {
+function handleImportExportAction({ key }) {
   switch (key) {
     case '1':
-      router.push('/import-center/starter/intentionStudent')
+      router.push('/import-center/starter/order')
       break
     case '2':
+      router.push('/import-center/starter/intentionStudent')
+      break
+    case '3':
+    case '4':
       break
   }
 }
@@ -621,22 +625,25 @@ defineExpose({
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
             </a-dropdown>
-            <a-dropdown class="mr-2">
+            <a-dropdown class="mr-2" overlay-class-name="student-import-export-dropdown">
               <template #overlay>
-                <a-menu @click="handleExport">
+                <a-menu @click="handleImportExportAction">
                   <a-menu-item key="1">
-                    导入在读学员
+                    导入学员订单
                   </a-menu-item>
                   <a-menu-item key="2">
-                    批量导出
+                    导入意向学员
                   </a-menu-item>
                   <a-menu-item key="3">
+                    批量导出
+                  </a-menu-item>
+                  <a-menu-item key="4">
                     导出记录
                   </a-menu-item>
                 </a-menu>
               </template>
               <a-button>
-                导出/导入学员
+                导入/导出学员
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
             </a-dropdown>
@@ -886,6 +893,25 @@ defineExpose({
     background-size: contain;
     content: "";
   }
+}
+
+:deep(.student-import-export-dropdown .ant-dropdown-menu) {
+  min-width: 156px;
+  padding: 8px 0;
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+}
+
+:deep(.student-import-export-dropdown .ant-dropdown-menu-item) {
+  height: 34px;
+  padding: 0 16px;
+  color: #262626;
+  font-size: 14px;
+  line-height: 34px;
+}
+
+:deep(.student-import-export-dropdown .ant-dropdown-menu-item:hover) {
+  background: #f5f8ff;
 }
 
 /* 添加旋转动画 */
