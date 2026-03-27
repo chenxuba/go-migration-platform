@@ -271,10 +271,14 @@ async function fetchLessonIncomeList() {
     const list = Array.isArray(result?.list) ? result.list : []
     dataSource.value = list
     pagination.value.total = result?.total || 0
-    mergeOptions(classOptions, list, item => ({
-      id: item.classId || '0',
-      value: item.className || '未分班',
-    }))
+    mergeOptions(
+      classOptions,
+      list.filter(item => item.classId && item.className),
+      item => ({
+        id: item.classId,
+        value: item.className,
+      }),
+    )
   }
   catch (error) {
     console.error('获取确认收入列表失败:', error)
