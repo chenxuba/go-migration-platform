@@ -25,6 +25,7 @@ type CampusDataClearSummary struct {
 	CourseSaleVolumesReset  int `json:"courseSaleVolumesReset"`
 	ImportTasks             int `json:"importTasks"`
 	ImportTaskRecords       int `json:"importTaskRecords"`
+	ExportRecords           int `json:"exportRecords"`
 }
 
 type CampusDataClearResult struct {

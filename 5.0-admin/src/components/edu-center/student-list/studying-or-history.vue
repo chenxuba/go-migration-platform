@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import { DownOutlined, ExclamationCircleOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { Empty } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import {
   downloadEnrolledStudentExportRecordApi,
@@ -26,6 +27,8 @@ const props = defineProps({
   },
 })
 
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
+
 const router = useRouter()
 const openDrawer = ref(false)
 const activeKey = ref('1')
@@ -40,6 +43,7 @@ const exportRecordModalVisible = ref(false)
 const exportMode = ref('all')
 const exportReportType = ref('student')
 const exportFileType = ref('excel')
+const exportModalConditionItems = ref([])
 const exportConditionItems = ref([])
 const exportSubmitting = ref(false)
 const exportRecordsLoading = ref(false)
@@ -99,16 +103,10 @@ const exportPreviewRows = [
 ]
 const exportFieldCount = computed(() => exportPreviewColumns.length)
 const exportQuerySummary = computed(() => {
-  if (exportConditionItems.value.length === 0) {
+  if (exportModalConditionItems.value.length === 0) {
     return ['全部导出']
   }
-  return exportConditionItems.value.map(item => `${item.label}：${item.value}`)
-})
-const exportRecordConditions = computed(() => {
-  if (exportConditionItems.value.length === 0) {
-    return [{ label: '查询条件', value: '全部' }]
-  }
-  return exportConditionItems.value
+  return exportModalConditionItems.value.map(item => `${item.label}：${item.value}`)
 })
 
 // 计算年级选项数据
@@ -629,6 +627,20 @@ function handleImportExportAction({ key }) {
   }
 }
 
+function getDefaultStudentStatusLabel() {
+  return props.currentType === 1 ? '在读学员' : props.currentType === 2 ? '历史学员' : '全部'
+}
+
+function buildFixedExportConditions(conditionMap = new Map()) {
+  return [
+    { label: '学员状态', value: conditionMap.get('学员状态') || getDefaultStudentStatusLabel() },
+    { label: '家校通', value: conditionMap.get('家校通') || '全部' },
+    { label: '人脸采集', value: conditionMap.get('人脸采集') || '全部' },
+    { label: '性别', value: conditionMap.get('性别') || '全部' },
+    { label: '创建时间', value: conditionMap.get('创建时间') || '-' },
+  ]
+}
+
 function syncExportConditions() {
   const conditions = allFilterRef.value?.getOrderedConditions?.() || []
   const mappedConditions = conditions.map((item) => {
@@ -642,15 +654,19 @@ function syncExportConditions() {
     }
   })
   const conditionMap = new Map(mappedConditions.map(item => [item.label, item.value]))
-  const fixedConditions = [
-    { label: '学员状态', value: conditionMap.get('学员状态') || (props.currentType === 1 ? '在读学员' : props.currentType === 2 ? '历史学员' : '全部') },
-    { label: '家校通', value: conditionMap.get('家校通') || '全部' },
-    { label: '人脸采集', value: conditionMap.get('人脸采集') || '全部' },
-    { label: '性别', value: conditionMap.get('性别') || '全部' },
-    { label: '创建时间', value: conditionMap.get('创建时间') || '-' },
-  ]
+  const fixedConditions = buildFixedExportConditions(conditionMap)
   const extraConditions = mappedConditions.filter(item => !fixedConditions.some(fixed => fixed.label === item.label))
+  exportModalConditionItems.value = [
+    { label: '学员状态', value: conditionMap.get('学员状态') || getDefaultStudentStatusLabel() },
+    ...mappedConditions.filter(item => item.label !== '学员状态'),
+  ]
   exportConditionItems.value = [...fixedConditions, ...extraConditions]
+}
+
+function getExportRecordDisplayConditions(record) {
+  const recordConditions = Array.isArray(record?.queryConditions) ? record.queryConditions : []
+  const conditionMap = new Map(recordConditions.map(item => [item.label, item.value]))
+  return buildFixedExportConditions(conditionMap)
 }
 
 function buildExportQueryModel() {
@@ -1168,7 +1184,7 @@ defineExpose({
                 </div>
               </div>
               <div class="export-record-grid">
-                <div v-for="item in (record.queryConditions?.length ? record.queryConditions : [{ label: '查询条件', value: '全部' }])" :key="`${record.id}-${item.label}-${item.value}`" class="export-record-item">
+                <div v-for="item in getExportRecordDisplayConditions(record)" :key="`${record.id}-${item.label}-${item.value}`" class="export-record-item">
                   <span class="export-record-item-label">{{ item.label }}：</span>
                   <span>{{ item.value }}</span>
                 </div>
@@ -1176,7 +1192,9 @@ defineExpose({
             </div>
           </div>
         </div>
-        <a-empty v-else-if="!exportRecordsLoading" :image="null" description="暂无导出记录" />
+        <div v-else-if="!exportRecordsLoading" class="export-record-empty">
+          <a-empty :image="simpleImage" description="暂无数据" />
+        </div>
       </a-spin>
     </a-modal>
   </div>
@@ -1357,6 +1375,13 @@ defineExpose({
   padding-right: 4px;
 }
 
+.export-record-empty {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .export-record-card {
   border: 1px solid #edf0f5;
   border-radius: 12px;
@@ -1376,7 +1401,6 @@ defineExpose({
 .export-record-meta {
   color: #262626;
   font-size: 15px;
-  font-weight: 600;
   line-height: 24px;
 }
 
@@ -1400,7 +1424,6 @@ defineExpose({
 .export-record-expire {
   color: #1668dc;
   font-size: 14px;
-  font-weight: 500;
 }
 
 .export-record-grid {

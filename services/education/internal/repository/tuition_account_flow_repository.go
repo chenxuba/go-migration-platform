@@ -59,13 +59,6 @@ func ensureTuitionAccountFlowTables(ctx context.Context, db *sql.DB) error {
 }
 
 func (repo *Repository) ensureHistoricalTuitionAccountFlowRecords(ctx context.Context, instID int64) error {
-	if _, err := repo.db.ExecContext(ctx, `
-		DELETE FROM tuition_account_flow
-		WHERE inst_id = ? AND source_type = ? AND teaching_record_id IS NULL
-	`, instID, model.TuitionAccountFlowSourceRegistration); err != nil {
-		return err
-	}
-
 	_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO tuition_account_flow (
 			uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
@@ -93,6 +86,21 @@ func (repo *Repository) ensureHistoricalTuitionAccountFlowRecords(ctx context.Co
 		LEFT JOIN inst_course_quotation icq ON icq.id = ta.quote_id AND icq.del_flag = 0
 		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
 		WHERE ta.inst_id = ? AND ta.del_flag = 0
+		ON DUPLICATE KEY UPDATE
+			student_id = VALUES(student_id),
+			product_id = VALUES(product_id),
+			lesson_type = VALUES(lesson_type),
+			lesson_charging_mode = VALUES(lesson_charging_mode),
+			teaching_record_id = VALUES(teaching_record_id),
+			order_number = VALUES(order_number),
+			created_time = VALUES(created_time),
+			quantity = VALUES(quantity),
+			tuition = VALUES(tuition),
+			balance_quantity = VALUES(balance_quantity),
+			balance_tuition = VALUES(balance_tuition),
+			update_id = VALUES(update_id),
+			update_time = VALUES(update_time),
+			del_flag = VALUES(del_flag)
 	`, model.TuitionAccountFlowSourceRegistration, instID)
 	return err
 }

@@ -295,6 +295,41 @@ func parseTuitionAccountFlowRecordListQueryDTO(raw map[string]any) model.Tuition
 	return query
 }
 
+func parseLessonIncomeQueryDTO(raw map[string]any) model.LessonIncomeQueryDTO {
+	query := model.LessonIncomeQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	} else {
+		query.PageRequestModel.PageIndex = 1
+		query.PageRequestModel.PageSize = 10
+	}
+
+	queryModelRaw := raw
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		queryModelRaw = qm
+	}
+	query.QueryModel = model.LessonIncomeQueryVO{
+		StartDate:                  asString(queryModelRaw["startDate"]),
+		EndDate:                    asString(queryModelRaw["endDate"]),
+		SourceTypes:                asIntSlice(queryModelRaw["sourceTypes"]),
+		StudentID:                  asString(queryModelRaw["studentId"]),
+		StaffID:                    asString(firstNonNil(queryModelRaw["staffId"], queryModelRaw["teacherId"])),
+		LessonID:                   asString(firstNonNil(queryModelRaw["lessonId"], queryModelRaw["productId"])),
+		LessonDayStartDate:         asString(queryModelRaw["lessonDayStartDate"]),
+		LessonDayEndDate:           asString(queryModelRaw["lessonDayEndDate"]),
+		ClassID:                    asString(queryModelRaw["classId"]),
+		ProductCategoryID:          asString(firstNonNil(queryModelRaw["productCategoryId"], queryModelRaw["courseCategoryId"])),
+		ConformIncomeTimeStartDate: asString(firstNonNil(queryModelRaw["conformIncomeTimeStartDate"], queryModelRaw["confirmIncomeTimeStartDate"])),
+		ConformIncomeTimeEndDate:   asString(firstNonNil(queryModelRaw["conformIncomeTimeEndDate"], queryModelRaw["confirmIncomeTimeEndDate"])),
+	}
+
+	if sm, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.OrderByCreatedTime = asInt(sm["orderByCreatedTime"], 0)
+	}
+	return query
+}
+
 func parseRechargeAccountItemPageQueryDTO(raw map[string]any) model.RechargeAccountItemPageQueryDTO {
 	query := model.RechargeAccountItemPageQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
