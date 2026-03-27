@@ -82,6 +82,29 @@ export default [
     },
   },
   {
+    path: '/import-center/starter/recharge-account',
+    name: 'ImportCenterStarterRechargeAccount',
+    component: () => import('~/pages/import-center/recharge-account/import-recharge-account.vue'),
+    meta: {
+      title: '导入储值账户',
+    },
+  },
+  {
+    path: '/pc/import-center/starter/recharge-account',
+    redirect: '/import-center/starter/recharge-account',
+    meta: {
+      title: '导入储值账户',
+    },
+  },
+  {
+    path: '/import-center/import-recharge-account-starter',
+    name: 'ImportRechargeAccountStarter',
+    component: () => import('~/pages/import-center/recharge-account/import-recharge-account-starter.vue'),
+    meta: {
+      title: '导入储值账户',
+    },
+  },
+  {
     path: '/import-center/import-order/edit/:id',
     name: 'ImportOrderEdit',
     component: () => import('~/pages/import-center/order/import-order-edit.vue'),

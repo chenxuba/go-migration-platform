@@ -1,12 +1,14 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DownOutlined } from '@ant-design/icons-vue'
+import { useRouter } from 'vue-router'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { getRechargeAccountItemPageApi, getRechargeAccountStatisticsApi } from '@/api/finance-center/recharge-account'
 import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
 import OrderDetailDrawer from '@/components/common/order-detail-drawer.vue'
 
+const router = useRouter()
 const dataSource = ref([])
 const openDrawer = ref(false)
 const openAccountDrawer = ref(false)
@@ -54,6 +56,16 @@ function handleSeeStuData(studentId) {
 function handleAccount() {
   stuId.value = undefined
   openAccountDrawer.value = true
+}
+
+function handleImportExportClick({ key }) {
+  if (key === '1') {
+    router.push('/import-center/starter/recharge-account')
+    return
+  }
+  if (key === '2') {
+    messageService.info('导出储值账户待接入')
+  }
 }
 
 function handleOpenAccountDetail(record) {
@@ -380,7 +392,7 @@ onBeforeUnmount(() => {
           </a-button>
           <a-dropdown>
             <template #overlay>
-              <a-menu>
+              <a-menu @click="handleImportExportClick">
                 <a-menu-item key="1">
                   导入储值账户
                 </a-menu-item>

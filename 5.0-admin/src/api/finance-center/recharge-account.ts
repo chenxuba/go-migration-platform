@@ -214,6 +214,14 @@ export function getRechargeAccountStatisticsApi() {
   return useGet<RechargeAccountStatistics>('/api/v1/recharge-accounts/statistics')
 }
 
+export function buildRechargeAccountImportByStudentTemplateApi() {
+  return useGet<string>('/api/v1/recharge-accounts/import-template/by-student')
+}
+
+export function buildRechargeAccountImportByAccountTemplateApi() {
+  return useGet<string>('/api/v1/recharge-accounts/import-template/by-account')
+}
+
 export function getRechargeAccountDetailPageApi(data: RechargeAccountDetailPageQueryParams) {
   return usePost<RechargeAccountDetailPageResult>('/api/v1/recharge-accounts/details/page', data)
 }
