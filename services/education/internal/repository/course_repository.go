@@ -449,6 +449,16 @@ func (repo *Repository) PageCourseIDNames(ctx context.Context, instID int64, que
 		filters = append(filters, "name LIKE ?")
 		args = append(args, "%"+strings.TrimSpace(query.QueryModel.SearchKey)+"%")
 	}
+	if len(query.QueryModel.ChargeTypes) > 0 {
+		placeholders := make([]string, 0, len(query.QueryModel.ChargeTypes))
+		existsArgs := make([]any, 0, len(query.QueryModel.ChargeTypes))
+		for _, item := range query.QueryModel.ChargeTypes {
+			placeholders = append(placeholders, "?")
+			existsArgs = append(existsArgs, item)
+		}
+		filters = append(filters, "EXISTS (SELECT 1 FROM inst_course_quotation cq WHERE cq.course_id = inst_course.id AND cq.del_flag = 0 AND cq.lesson_model IN ("+strings.Join(placeholders, ",")+"))")
+		args = append(args, existsArgs...)
+	}
 	whereClause := strings.Join(filters, " AND ")
 
 	var total int

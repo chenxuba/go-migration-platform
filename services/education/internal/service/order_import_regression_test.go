@@ -408,7 +408,7 @@ func TestParseOrderImportFile_SupportsAmountTemplate(t *testing.T) {
 		cell, _ := excelize.CoordinatesToCellName(idx+1, 1)
 		file.SetCellValue(sheet, cell, header)
 	}
-	values := []string{"陈瑞瑞", "19822223333", "爸爸", "托管费", "5000", "300", "4500", "0", "2026-12-31"}
+	values := []string{"陈瑞瑞", "19822223333", "爸爸", "托管费", "5000", "300", "4500", "500", "2026-12-31"}
 	for idx, value := range values {
 		cell, _ := excelize.CoordinatesToCellName(idx+1, 2)
 		file.SetCellValue(sheet, cell, value)
@@ -574,11 +574,55 @@ func TestBuildCreateAndPayOrderDTOFromImportRow_SupportsAmountImport(t *testing.
 	if detail.EndDate == nil || detail.EndDate.Format("2006-01-02") != "2026-12-31" {
 		t.Fatalf("unexpected end date: %+v", detail.EndDate)
 	}
-	if createDTO.OrderDetail.OrderRealAmount != "4500.00" {
-		t.Fatalf("expected order real amount 4500.00, got %s", createDTO.OrderDetail.OrderRealAmount)
+	if createDTO.OrderDetail.OrderRealAmount != "5000.00" {
+		t.Fatalf("expected order real amount 5000.00, got %s", createDTO.OrderDetail.OrderRealAmount)
 	}
 	if payDTO.PayAmount != 4500 {
 		t.Fatalf("expected pay amount 4500, got %.2f", payDTO.PayAmount)
+	}
+}
+
+func TestApplyOrderImportRowValidation_FlagsAmountMismatch(t *testing.T) {
+	row := []model.IntentionStudentImportCell{
+		{Title: "购买金额", Value: "2000"},
+		{Title: "赠送金额", Value: "1000"},
+		{Title: "实收金额", Value: "2001"},
+		{Title: "欠费金额", Value: ""},
+	}
+
+	hasError := false
+	applyOrderImportRowValidation(orderImportModeAmount, row, &hasError)
+	if !hasError {
+		t.Fatalf("expected row to be marked invalid")
+	}
+	if got := cellByTitle(model.IntentionStudentImportRow{Cells: row}, "购买金额").Error; got != orderImportAmountRelationError {
+		t.Fatalf("expected purchase amount error %q, got %q", orderImportAmountRelationError, got)
+	}
+	if got := cellByTitle(model.IntentionStudentImportRow{Cells: row}, "实收金额").Error; got != orderImportAmountRelationError {
+		t.Fatalf("expected paid amount error %q, got %q", orderImportAmountRelationError, got)
+	}
+	if got := cellByTitle(model.IntentionStudentImportRow{Cells: row}, "欠费金额").Error; got != orderImportAmountRelationError {
+		t.Fatalf("expected arrear amount error %q, got %q", orderImportAmountRelationError, got)
+	}
+}
+
+func TestApplyOrderImportRowValidation_AllowsMatchedAmountImport(t *testing.T) {
+	row := []model.IntentionStudentImportCell{
+		{Title: "购买金额", Value: "2000"},
+		{Title: "赠送金额", Value: "1000"},
+		{Title: "实收金额", Value: "2000"},
+		{Title: "欠费金额", Value: ""},
+	}
+
+	hasError := false
+	applyOrderImportRowValidation(orderImportModeAmount, row, &hasError)
+	if hasError {
+		t.Fatalf("expected row to stay valid")
+	}
+	for _, title := range []string{"购买金额", "实收金额", "欠费金额"} {
+		if got := cellByTitle(model.IntentionStudentImportRow{Cells: row}, title).Error; got != "" {
+			t.Fatalf("expected %s to have no error, got %q", title, got)
+		}
 	}
 }
 

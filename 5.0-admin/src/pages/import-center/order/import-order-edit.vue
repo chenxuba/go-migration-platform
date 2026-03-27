@@ -35,6 +35,7 @@ const session = reactive({
 const activeTab = ref('abnormal')
 const optionMap = ref({})
 const hasAbnormalRows = computed(() => session.abnormalCount > 0)
+const hasPendingChanges = ref(false)
 const taskLoading = ref(true)
 const deletingTask = ref(false)
 const startingImport = ref(false)
@@ -87,6 +88,25 @@ const trialPriceOptions = [
   { label: '否', value: '否' },
 ]
 
+function detectImportLessonModel(columns = []) {
+  const titleSet = new Set(
+    (columns || [])
+      .map(column => `${column?.title || ''}`.replace(/^\*/, '').trim())
+      .filter(Boolean),
+  )
+
+  if (titleSet.has('购买课时数')) {
+    return 1
+  }
+  if (titleSet.has('有效开始日期') || titleSet.has('有效结束日期(含赠送天数)')) {
+    return 2
+  }
+  if (titleSet.has('购买金额')) {
+    return 3
+  }
+  return undefined
+}
+
 function isTwoDecimalRestrictedField(title) {
   return ['购买课时数', '赠送课时数', '已上课时数', '购买金额', '赠送金额', '已上金额'].includes(`${title || ''}`.trim())
 }
@@ -101,6 +121,65 @@ function isValidTwoDecimalNumber(value) {
 
 function isValidIntegerNumber(value) {
   return /^\d+$/.test(`${value || ''}`.trim())
+}
+
+const amountImportRelationError = '购买金额需=实付金额+欠费'
+
+function parseAmountValidationNumber(value) {
+  const text = `${value ?? ''}`.trim()
+  if (!text) {
+    return { valid: true, value: 0 }
+  }
+  if (!isValidTwoDecimalNumber(text)) {
+    return { valid: false, value: 0 }
+  }
+  const number = Number(text)
+  if (Number.isNaN(number) || number < 0) {
+    return { valid: false, value: 0 }
+  }
+  return { valid: true, value: number }
+}
+
+function applyAmountImportRowValidation(row) {
+  const purchaseCell = row.cells.find(cell => cell.title === '购买金额')
+  const paidCell = row.cells.find(cell => cell.title === '实收金额')
+  const arrearCell = row.cells.find(cell => cell.title === '欠费金额')
+  if (!purchaseCell || !paidCell || !arrearCell) {
+    return
+  }
+
+  const purchaseText = `${purchaseCell.value || ''}`.trim()
+  const paidText = `${paidCell.value || ''}`.trim()
+  if (!purchaseText || !paidText) {
+    return
+  }
+
+  const purchase = parseAmountValidationNumber(purchaseCell.value)
+  const paid = parseAmountValidationNumber(paidCell.value)
+  const arrear = parseAmountValidationNumber(arrearCell.value)
+  if (!purchase.valid || !paid.valid || !arrear.valid) {
+    return
+  }
+
+  if (Math.abs(purchase.value - (paid.value + arrear.value)) > 0.000001) {
+    purchaseCell.error = amountImportRelationError
+    paidCell.error = amountImportRelationError
+    arrearCell.error = amountImportRelationError
+  }
+}
+
+function revalidateRow(row) {
+  row.cells.forEach((item) => {
+    const column = session.columns.find(col => col.key === item.key)
+    if (!column) {
+      item.error = ''
+      return
+    }
+    item.error = validateCell(column, item.value)
+  })
+  applyAmountImportRowValidation(row)
+  row.hasError = row.cells.some(item => item.error)
+  recomputeSummary()
 }
 
 function getColumnWidth(title) {
@@ -169,9 +248,7 @@ const displayedRows = computed(() => {
 function recomputeSummary() {
   session.normalCount = session.rows.filter(row => !row.hasError).length
   session.abnormalCount = session.rows.filter(row => row.hasError).length
-  if (session.abnormalCount === 0)
-    activeTab.value = 'normal'
-  else if (activeTab.value !== 'normal' && activeTab.value !== 'abnormal')
+  if (activeTab.value !== 'normal' && activeTab.value !== 'abnormal')
     activeTab.value = 'abnormal'
 }
 
@@ -227,13 +304,14 @@ function applyCellDraft(row, cell, column, value, validateNow = false) {
   cell.selectedId = matched ? matched.value : undefined
   cell.error = validateCell(column, value)
   if (validateNow) {
-    row.hasError = row.cells.some(item => item.error)
-    recomputeSummary()
+    revalidateRow(row)
   }
 }
 
 function handleCellChange(row, cell, column, value) {
   applyCellDraft(row, cell, column, value, false)
+  revalidateRow(row)
+  hasPendingChanges.value = true
 }
 
 function findRowAndCell(rowId, cellKey) {
@@ -352,6 +430,7 @@ async function handleConfirmEditModal() {
 
   const nextValue = currentEditingOptions.value.length > 0 ? editModalState.selectedId : editModalState.value
   applyCellDraft(row, cell, column, nextValue, false)
+  revalidateRow(row)
 
   savingSingleCell.value = true
   try {
@@ -379,6 +458,7 @@ async function handleConfirmEditModal() {
 function handleDeleteRow(rowNo) {
   session.rows = session.rows.filter(row => row.rowNo !== rowNo)
   recomputeSummary()
+  hasPendingChanges.value = true
 }
 
 function handleBack() {
@@ -395,6 +475,7 @@ function handleSave() {
     session.rows = session.rows.map(row => rowMap.get(row.id) || row)
     recomputeSummary()
     refreshRowOptionSelections()
+    hasPendingChanges.value = false
     messageService.success('已保存修改')
   }).catch((error) => {
     console.error('save order import task records failed', error)
@@ -406,6 +487,11 @@ function handleStartImport() {
   if (startingImport.value)
     return
   recomputeSummary()
+  if (hasPendingChanges.value) {
+    messageService.warning('请先保存修改')
+    activeTab.value = 'abnormal'
+    return
+  }
   if (session.abnormalCount > 0) {
     messageService.warning('请先处理异常数据')
     activeTab.value = 'abnormal'
@@ -486,6 +572,7 @@ async function loadTaskData() {
   session.instName = detail?.instName || '总机构'
   session.columns = abnormal?.columns?.length ? abnormal.columns : (normal?.columns || [])
   session.rows = [...(abnormal?.list || []), ...(normal?.list || [])]
+  hasPendingChanges.value = false
   recomputeSummary()
   refreshRowOptionSelections()
 }
@@ -518,6 +605,7 @@ function buildOptionsByTitle({ defaultFields = [], customFields = [], channels =
 }
 
 async function loadOptionSources() {
+  const chargeType = detectImportLessonModel(session.columns)
   const [defaultRes, customRes, channelRes, staffRes, orderTagRes, courseRes] = await Promise.all([
     getStuDefaultFieldApi(),
     getStuCustomFieldApi(),
@@ -540,7 +628,9 @@ async function loadOptionSources() {
       pageRequestModel: { needTotal: true, pageSize: 1000, pageIndex: 1, skipCount: 0 },
     }),
     getOrderImportCourseOptionsApi({
-      queryModel: {},
+      queryModel: {
+        chargeTypes: chargeType ? [chargeType] : undefined,
+      },
       sortModel: {},
       pageRequestModel: { needTotal: true, pageSize: 1000, pageIndex: 1, skipCount: 0 },
     }),
@@ -586,7 +676,9 @@ async function loadOptionSources() {
 
 onMounted(() => {
   taskLoading.value = true
-  Promise.all([loadTaskData(), loadOptionSources()]).catch((error) => {
+  loadTaskData()
+    .then(() => loadOptionSources())
+    .catch((error) => {
     console.error('load order import task failed', error)
     messageService.error('导入任务加载失败')
     router.replace('/import-center/import-order-starter')
@@ -658,7 +750,7 @@ onMounted(() => {
               <span :class="['tab', { active: activeTab === 'normal' }]" @click="activeTab = 'normal'">正常({{ session.normalCount || 0 }})</span>
               <span :class="['tab', { active: activeTab === 'abnormal' }]" @click="activeTab = 'abnormal'">异常({{ session.abnormalCount || 0 }})</span>
             </div>
-            <a-button v-if="hasAbnormalRows" type="primary" ghost @click="handleSave">
+            <a-button v-if="activeTab === 'abnormal' && (hasAbnormalRows || hasPendingChanges)" type="primary" ghost @click="handleSave">
               保存修改
             </a-button>
           </div>

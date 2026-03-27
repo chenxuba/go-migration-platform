@@ -131,6 +131,7 @@ export function getOrderImportCourseOptionsApi(data: {
   }
   queryModel?: {
     searchKey?: string
+    chargeTypes?: number[]
   }
   sortModel?: Record<string, any>
 }) {

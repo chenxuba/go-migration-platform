@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -211,6 +212,8 @@ func (svc *Service) ParseOrderImportFile(userID int64, filename string, reader i
 	return result, nil
 }
 
+const orderImportAmountRelationError = "购买金额需=实付金额+欠费"
+
 func applyOrderImportRowValidation(mode orderImportMode, cells []model.IntentionStudentImportCell, hasError *bool) {
 	if len(cells) == 0 {
 		return
@@ -253,7 +256,53 @@ func applyOrderImportRowValidation(mode orderImportMode, cells []model.Intention
 			endCell.Error = "有效时段需大于赠送天数"
 			*hasError = true
 		}
+	case orderImportModeAmount:
+		validateAmountOrderImportAmounts(rowData, hasError)
 	}
+}
+
+func validateAmountOrderImportAmounts(rowData map[string]*model.IntentionStudentImportCell, hasError *bool) {
+	purchaseCell, hasPurchase := rowData["购买金额"]
+	paidCell, hasPaid := rowData["实收金额"]
+	arrearCell, hasArrear := rowData["欠费金额"]
+	if !hasPurchase || !hasPaid || !hasArrear {
+		return
+	}
+
+	purchaseText := strings.TrimSpace(purchaseCell.Value)
+	paidText := strings.TrimSpace(paidCell.Value)
+	if purchaseText == "" || paidText == "" {
+		return
+	}
+
+	purchaseAmount, purchaseOK := parseOrderImportValidationFloat(purchaseText)
+	paidAmount, paidOK := parseOrderImportValidationFloat(paidText)
+	arrearAmount, arrearOK := parseOrderImportValidationFloat(strings.TrimSpace(arrearCell.Value))
+	if !purchaseOK || !paidOK || !arrearOK {
+		return
+	}
+
+	if math.Abs(purchaseAmount-(paidAmount+arrearAmount)) > 0.000001 {
+		purchaseCell.Error = orderImportAmountRelationError
+		paidCell.Error = orderImportAmountRelationError
+		arrearCell.Error = orderImportAmountRelationError
+		*hasError = true
+	}
+}
+
+func parseOrderImportValidationFloat(text string) (float64, bool) {
+	value := strings.TrimSpace(text)
+	if value == "" {
+		return 0, true
+	}
+	if !isValidTwoDecimalNumber(value) {
+		return 0, false
+	}
+	number, err := strconv.ParseFloat(value, 64)
+	if err != nil || number < 0 {
+		return 0, false
+	}
+	return number, true
 }
 
 func validateOrderImportValue(column model.IntentionStudentImportColumn, value string) string {

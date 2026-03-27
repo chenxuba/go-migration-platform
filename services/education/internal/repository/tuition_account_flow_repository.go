@@ -75,10 +75,12 @@ func (repo *Repository) ensureHistoricalTuitionAccountFlowRecords(ctx context.Co
 			END,
 			IFNULL(ta.total_tuition, 0),
 			CASE
-				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.remaining_tuition, 0)
-				ELSE IFNULL(ta.remaining_quantity, 0)
+				WHEN IFNULL(icq.lesson_model, 0) = 3 AND IFNULL(ta.total_tuition, 0) > 0 THEN IFNULL(ta.total_tuition, 0)
+				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
+				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+				ELSE IFNULL(ta.free_quantity, 0)
 			END,
-			IFNULL(ta.remaining_tuition, 0),
+			IFNULL(ta.total_tuition, 0),
 			IFNULL(ta.create_id, 0), IFNULL(ta.create_time, NOW()),
 			IFNULL(ta.update_id, 0), IFNULL(ta.update_time, NOW()), 0
 		FROM tuition_account ta
@@ -153,9 +155,9 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 	}
 
 	whereSQL := strings.Join(whereParts, " AND ")
-	orderBy := "MIN(taf.created_time) DESC, MIN(taf.id) DESC"
+	orderBy := "MIN(taf.created_time) DESC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24) THEN 0 ELSE 1 END ASC, MIN(taf.id) DESC"
 	if query.SortModel.OrderByCreatedTime > 0 {
-		orderBy = "MIN(taf.created_time) ASC, MIN(taf.id) ASC"
+		orderBy = "MIN(taf.created_time) ASC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24) THEN 0 ELSE 1 END ASC, MIN(taf.id) ASC"
 	}
 
 	var total int
@@ -320,9 +322,9 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 	}
 
 	whereSQL := strings.Join(whereParts, " AND ")
-	orderBy := "taf.created_time DESC, taf.id DESC"
+	orderBy := "taf.created_time DESC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24) THEN 0 ELSE 1 END ASC, taf.id DESC"
 	if query.SortModel.OrderByCreatedTime > 0 {
-		orderBy = "taf.created_time ASC, taf.id ASC"
+		orderBy = "taf.created_time ASC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24) THEN 0 ELSE 1 END ASC, taf.id ASC"
 	}
 
 	var total int

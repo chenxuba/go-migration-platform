@@ -32,6 +32,33 @@ const sourceTypeLabelMap = FLOW_TYPE_GROUPS.reduce((acc, group) => {
   return acc
 }, {})
 
+const sourceTypeDirectionMap = {
+  1: 'in',
+  2: 'in',
+  3: 'in',
+  4: 'in',
+  5: 'in',
+  6: 'in',
+  7: 'in',
+  8: 'in',
+  9: 'in',
+  10: 'in',
+  11: 'in',
+  12: 'out',
+  13: 'out',
+  14: 'out',
+  15: 'out',
+  16: 'out',
+  17: 'out',
+  18: 'out',
+  19: 'out',
+  20: 'out',
+  21: 'out',
+  22: 'out',
+  23: 'out',
+  24: 'out',
+}
+
 const filterState = ref({
   productId: '',
   studentId: '',
@@ -124,15 +151,34 @@ function formatDate(dateStr) {
   return String(dateStr).replace('T', ' ').slice(0, 16)
 }
 
-function formatValue(value, mode) {
+function formatChangeValue(value, sourceType, mode) {
+  const direction = sourceTypeDirectionMap[sourceType]
+  const prefix = direction === 'out' ? '-' : '+'
   const num = Number(value || 0)
   const unit = LESSON_CHARGING_UNIT_MAP[mode] || ''
-  return `${num >= 0 ? '+' : ''}${num}${unit}`
+  return `${prefix}${num}${unit}`
 }
 
-function formatMoney(value) {
+function formatChangeMoney(value, sourceType) {
+  const direction = sourceTypeDirectionMap[sourceType]
+  const prefix = direction === 'out' ? '-' : '+'
   const num = Number(value || 0)
-  return `${num >= 0 ? '+' : ''}${num.toFixed(2)}`
+  return `${prefix}${num.toFixed(2)}`
+}
+
+function formatBalanceValue(value, mode) {
+  const num = Number(value || 0)
+  const unit = LESSON_CHARGING_UNIT_MAP[mode] || ''
+  return `${num}${unit}`
+}
+
+function formatBalanceMoney(value) {
+  const num = Number(value || 0)
+  return `${num.toFixed(2)}`
+}
+
+function getChangeValueClass(sourceType) {
+  return sourceTypeDirectionMap[sourceType] === 'out' ? 'change-out' : 'change-in'
 }
 
 function getSourceTypeText(sourceType) {
@@ -490,16 +536,20 @@ onMounted(async () => {
                 {{ getSourceTypeText(record.sourceType) }}
               </template>
               <template v-if="column.key === 'quantity'">
-                {{ formatValue(record.quantity, record.lessonChargingMode) }}
+                <span :class="getChangeValueClass(record.sourceType)">
+                  {{ formatChangeValue(record.quantity, record.sourceType, record.lessonChargingMode) }}
+                </span>
               </template>
               <template v-if="column.key === 'tuition'">
-                {{ formatMoney(record.tuition) }}
+                <span :class="getChangeValueClass(record.sourceType)">
+                  {{ formatChangeMoney(record.tuition, record.sourceType) }}
+                </span>
               </template>
               <template v-if="column.key === 'balanceQuantity'">
-                {{ formatValue(record.balanceQuantity, record.lessonChargingMode) }}
+                {{ formatBalanceValue(record.balanceQuantity, record.lessonChargingMode) }}
               </template>
               <template v-if="column.key === 'balanceTuition'">
-                {{ formatMoney(record.balanceTuition) }}
+                {{ formatBalanceMoney(record.balanceTuition) }}
               </template>
               <template v-if="column.key === 'orderNumber'">
                 {{ record.orderNumber || '-' }}
@@ -631,5 +681,15 @@ onMounted(async () => {
   cursor: pointer;
   display: flex;
   align-items: center;
+}
+
+.change-in {
+  color: inherit;
+  font-weight: inherit;
+}
+
+.change-out {
+  color: #ff4d4f;
+  font-weight: 500;
 }
 </style>

@@ -755,7 +755,7 @@ onMounted(async () => {
 }
 
 .change-out {
-  color: inherit;
-  font-weight: inherit;
+  color: #ff4d4f;
+  font-weight: 500;
 }
 </style>
