@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
-import { getOrderDetailApi } from '@/api/finance-center/order-manage'
+import { downloadOrderReceiptPdfApi, getOrderDetailApi } from '@/api/finance-center/order-manage'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 
@@ -40,8 +40,10 @@ const userStore = useUserStore()
 const orderId = computed(() => String(route.query.orderId || route.params.orderId || ''))
 const templateMode = ref<ReceiptTemplateMode>(resolveTemplateMode(route.query.template))
 const loading = ref(false)
+const downloading = ref(false)
 const detail = ref<any>(null)
 const hasAutoPrinted = ref(false)
+const hasAutoDownloaded = ref(false)
 const printedAt = ref(dayjs().format('YYYY-MM-DD HH:mm:ss'))
 
 const orgName = computed(() => userStore.userInfo?.orgName || '总校区')
@@ -434,12 +436,45 @@ function printPage() {
   window.print()
 }
 
-function downloadPage() {
-  window.print()
+function triggerBlobDownload(response: any) {
+  const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/pdf' })
+  const disposition = response.headers['content-disposition'] || ''
+  const matched = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  const fileName = matched ? decodeURIComponent(matched[1]) : `订单收据-${dayjs().format('YYYYMMDDHHmmss')}.pdf`
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+async function downloadPage() {
+  if (!orderId.value || downloading.value) {
+    return
+  }
+  try {
+    downloading.value = true
+    const response = await downloadOrderReceiptPdfApi({
+      orderId: orderId.value,
+      template: templateMode.value,
+    })
+    triggerBlobDownload(response)
+  }
+  catch (error) {
+    console.error('download order receipt pdf failed', error)
+    messageService.error('下载PDF失败，请稍后重试')
+  }
+  finally {
+    downloading.value = false
+  }
 }
 
 watch(orderId, () => {
   hasAutoPrinted.value = false
+  hasAutoDownloaded.value = false
   printedAt.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
   loadOrderDetail()
 }, { immediate: true })
@@ -456,6 +491,18 @@ watch(
     hasAutoPrinted.value = true
     await nextTick()
     setTimeout(() => window.print(), 200)
+  },
+  { immediate: true },
+)
+
+watch(
+  [loading, detail, () => route.query.autoDownload],
+  async ([currentLoading, currentDetail, autoDownload]) => {
+    if (hasAutoDownloaded.value || currentLoading || !currentDetail || autoDownload !== '1') {
+      return
+    }
+    hasAutoDownloaded.value = true
+    await downloadPage()
   },
   { immediate: true },
 )

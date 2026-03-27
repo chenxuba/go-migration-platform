@@ -559,7 +559,7 @@ function handleDownloadReceipt(orderId) {
     messageService.warning("订单不存在");
     return;
   }
-  openOrderReceiptPage(orderId, { template: "a4", autoPrint: true });
+  openOrderReceiptPage(orderId, { template: "a4", autoDownload: true });
 }
 
 // 发送短信

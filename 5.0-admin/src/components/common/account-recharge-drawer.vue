@@ -430,7 +430,7 @@ function handleDownloadReceipt() {
     message.warning('暂无关联系统订单，无法下载收据')
     return
   }
-  openOrderReceiptPage(id, { template: 'a4', autoPrint: true })
+  openOrderReceiptPage(id, { template: 'a4', autoDownload: true })
 }
 
 // 创建学员相关

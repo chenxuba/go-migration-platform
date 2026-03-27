@@ -930,7 +930,7 @@ function handleDownloadReceipt() {
     messageService.warning('订单不存在')
     return
   }
-  openOrderReceiptPage(detail.value.orderId, { template: 'a4', autoPrint: true })
+  openOrderReceiptPage(detail.value.orderId, { template: 'a4', autoDownload: true })
 }
 
 function handleSendSms() {

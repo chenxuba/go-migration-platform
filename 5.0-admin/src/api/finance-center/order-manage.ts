@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { usePost } from '~/utils/request'
 
 // 订单项信息
@@ -291,4 +293,17 @@ export function cancelBadDebtApi(data: { orderId: string }) {
 
 export function closeOrderApi(data: { orderId: string }) {
   return usePost<void>('/api/v1/orders/close', data)
+}
+
+export async function downloadOrderReceiptPdfApi(data: { orderId: string | number, template?: 'a4' | 'dot' | 'receipt' }) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/orders/receipt-pdf/download', {
+    params: data,
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
 }

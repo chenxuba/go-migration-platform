@@ -87,7 +87,7 @@ function handleDownloadReceipt() {
     messageService.warning('订单不存在')
     return
   }
-  openOrderReceiptPage(orderId.value, { template: 'a4', autoPrint: true })
+  openOrderReceiptPage(orderId.value, { template: 'a4', autoDownload: true })
 }
 
 function formatDateTime(value) {
