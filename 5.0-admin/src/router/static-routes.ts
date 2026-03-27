@@ -27,6 +27,22 @@ export default [
     },
   },
   {
+    path: '/print/order-receipt',
+    name: 'OrderReceiptPrint',
+    component: () => import('~/pages/common/order-receipt-print.vue'),
+    meta: {
+      title: '打印收据',
+    },
+  },
+  {
+    path: '/pc/print',
+    name: 'OrderReceiptPrintLegacy',
+    component: () => import('~/pages/common/order-receipt-print.vue'),
+    meta: {
+      title: '打印收据',
+    },
+  },
+  {
     path: '/pc/face',
     name: 'Face',
     component: () => import('~/pages/edu-center/face.vue'),

@@ -17,6 +17,7 @@ import {
   getStudentDetailApi,
   payOrderBySchoolPalApi,
 } from '@/api/finance-center/recharge-account'
+import { openOrderReceiptPage } from '@/utils/order-receipt'
 import StaffSelect from './staff-select.vue'
 import StudentSelect from './student-select.vue'
 import CreateStudent from './create-student.vue'
@@ -412,6 +413,24 @@ function openRechargeSaleOrderDetailDrawer() {
   }
   orderDetailDrawerOrderId.value = id
   openOrderDetailDrawer.value = true
+}
+
+function handlePrintReceipt() {
+  const id = String(currentRechargeOrderDetail.value?.saleOrderId ?? '').trim()
+  if (!id) {
+    message.warning('暂无关联系统订单，无法打印收据')
+    return
+  }
+  openOrderReceiptPage(id, { template: 'a4' })
+}
+
+function handleDownloadReceipt() {
+  const id = String(currentRechargeOrderDetail.value?.saleOrderId ?? '').trim()
+  if (!id) {
+    message.warning('暂无关联系统订单，无法下载收据')
+    return
+  }
+  openOrderReceiptPage(id, { template: 'a4', autoPrint: true })
 }
 
 // 创建学员相关
@@ -893,10 +912,10 @@ watch(() => confirmFormState.payDate, () => {
             <a-dropdown>
               <template #overlay>
                 <a-menu>
-                  <a-menu-item key="0">
+                  <a-menu-item key="0" @click="handlePrintReceipt">
                     打印收据
                   </a-menu-item>
-                  <a-menu-item key="1">
+                  <a-menu-item key="1" @click="handleDownloadReceipt">
                     下载收据
                   </a-menu-item>
                   <a-menu-item key="3">

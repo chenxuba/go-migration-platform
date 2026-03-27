@@ -4,10 +4,12 @@ import {
   ExclamationCircleFilled,
   LeftOutlined,
   RightOutlined,
+  DownOutlined,
 } from '@ant-design/icons-vue'
 import { getApprovalTemplatesApi } from '@/api/finance-center/approval-manage'
 import { getOrderDetailApi } from '@/api/finance-center/order-manage'
 import messageService from '@/utils/messageService'
+import { openOrderReceiptPage } from '@/utils/order-receipt'
 
 // Props
 const props = defineProps({
@@ -70,6 +72,22 @@ function viewOrderDetail() {
     return
   }
   openOrderDetailDrawer.value = true
+}
+
+function handlePrintReceipt() {
+  if (!orderId.value) {
+    messageService.warning('订单不存在')
+    return
+  }
+  openOrderReceiptPage(orderId.value, { template: 'a4' })
+}
+
+function handleDownloadReceipt() {
+  if (!orderId.value) {
+    messageService.warning('订单不存在')
+    return
+  }
+  openOrderReceiptPage(orderId.value, { template: 'a4', autoPrint: true })
 }
 
 function formatDateTime(value) {
@@ -192,6 +210,22 @@ watch(() => props.paymentData?.orderId, () => {
         <a-button @click="viewOrderDetail">
           查看订单详情
         </a-button>
+        <a-dropdown v-if="orderId">
+          <template #overlay>
+            <a-menu>
+              <a-menu-item key="print" @click="handlePrintReceipt">
+                打印收据
+              </a-menu-item>
+              <a-menu-item key="download" @click="handleDownloadReceipt">
+                下载收据
+              </a-menu-item>
+            </a-menu>
+          </template>
+          <a-button class="ml4">
+            查看收据
+            <DownOutlined :style="{ fontSize: '10px' }" />
+          </a-button>
+        </a-dropdown>
       </div>
       <div class="detailInfo">
         <a-form>

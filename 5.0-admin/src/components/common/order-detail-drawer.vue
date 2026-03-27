@@ -11,6 +11,7 @@ import { approveApprovalApi, getApprovalDetailApi, refuseApprovalApi } from '~/a
 import { closeOrderApi, getOrderDetailApi } from '~/api/finance-center/order-manage'
 import { getRechargeAccountByStudentApi } from '~/api/finance-center/recharge-account'
 import messageService from '~/utils/messageService'
+import { openOrderReceiptPage } from '~/utils/order-receipt'
 import RechargeAccountDetailDrawer from './recharge-account-detail-drawer.vue'
 
 const props = defineProps({
@@ -917,11 +918,19 @@ function handleCloseOrder() {
 }
 
 function handlePrintReceipt() {
-  messageService.info('打印收据功能开发中')
+  if (!detail.value?.orderId) {
+    messageService.warning('订单不存在')
+    return
+  }
+  openOrderReceiptPage(detail.value.orderId, { template: 'a4' })
 }
 
 function handleDownloadReceipt() {
-  messageService.info('下载收据功能开发中')
+  if (!detail.value?.orderId) {
+    messageService.warning('订单不存在')
+    return
+  }
+  openOrderReceiptPage(detail.value.orderId, { template: 'a4', autoPrint: true })
 }
 
 function handleSendSms() {

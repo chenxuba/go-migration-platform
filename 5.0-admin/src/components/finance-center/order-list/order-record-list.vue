@@ -14,6 +14,7 @@ import {
   cancelBadDebtApi,
 } from "@/api/finance-center/order-manage";
 import messageService from "@/utils/messageService";
+import { openOrderReceiptPage } from "@/utils/order-receipt";
 import AllFilter from "@/components/common/all-filter.vue";
 const router = useRouter();
 const allFilterRef = ref(null);
@@ -545,14 +546,20 @@ async function confirmCancelBadDebt() {
 
 // 打印收据
 function handlePrintReceipt(orderId) {
-  console.log("打印收据:", orderId);
-  messageService.info("打印收据功能开发中");
+  if (!orderId) {
+    messageService.warning("订单不存在");
+    return;
+  }
+  openOrderReceiptPage(orderId, { template: "a4" });
 }
 
 // 下载收据
 function handleDownloadReceipt(orderId) {
-  console.log("下载收据:", orderId);
-  messageService.info("下载收据功能开发中");
+  if (!orderId) {
+    messageService.warning("订单不存在");
+    return;
+  }
+  openOrderReceiptPage(orderId, { template: "a4", autoPrint: true });
 }
 
 // 发送短信
