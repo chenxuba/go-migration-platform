@@ -69,7 +69,8 @@ func (repo *Repository) ensureHistoricalTuitionAccountFlowRecords(ctx context.Co
 			UUID(), 0, ta.inst_id, ta.id, ta.student_id, ta.course_id, ic.teach_method, icq.lesson_model,
 			?, ta.order_course_detail_id, NULL, IFNULL(so.order_number, ''), ta.create_time,
 			CASE
-				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.total_tuition, 0)
+				WHEN IFNULL(icq.lesson_model, 0) = 3 AND IFNULL(ta.total_tuition, 0) > 0 THEN IFNULL(ta.total_tuition, 0)
+				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
 				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
 				ELSE IFNULL(ta.free_quantity, 0)
 			END,
@@ -173,10 +174,6 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 		return model.TuitionAccountFlowRecordListResult{}, err
 	}
 
-	quantityExpr := `CASE
-		WHEN IFNULL(MAX(taf.lesson_charging_mode), 0) = 3 THEN IFNULL(SUM(taf.tuition), 0)
-		ELSE IFNULL(SUM(taf.quantity), 0)
-	END`
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
 			MIN(taf.id),
@@ -196,7 +193,18 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 			taf.source_id,
 			MAX(taf.teaching_record_id),
 			MIN(taf.created_time),
-			`+quantityExpr+`,
+			IFNULL(SUM(
+				CASE
+					WHEN taf.source_type = 1
+					 AND IFNULL(taf.lesson_charging_mode, 0) = 3
+					 AND IFNULL(taf.quantity, 0) = 0
+					 AND IFNULL(taf.tuition, 0) = 0
+					 AND IFNULL(taf.balance_tuition, 0) = 0
+					 AND IFNULL(taf.balance_quantity, 0) > 0
+					THEN IFNULL(taf.balance_quantity, 0)
+					ELSE IFNULL(taf.quantity, 0)
+				END
+			), 0),
 			IFNULL(SUM(taf.tuition), 0)
 		FROM tuition_account_flow taf
 		LEFT JOIN inst_student s ON s.id = taf.student_id AND s.del_flag = 0
@@ -354,7 +362,16 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 			taf.source_id,
 			taf.teaching_record_id,
 			taf.created_time,
-			IFNULL(taf.quantity, 0),
+			CASE
+				WHEN taf.source_type = 1
+				 AND IFNULL(taf.lesson_charging_mode, 0) = 3
+				 AND IFNULL(taf.quantity, 0) = 0
+				 AND IFNULL(taf.tuition, 0) = 0
+				 AND IFNULL(taf.balance_tuition, 0) = 0
+				 AND IFNULL(taf.balance_quantity, 0) > 0
+				THEN IFNULL(taf.balance_quantity, 0)
+				ELSE IFNULL(taf.quantity, 0)
+			END,
 			IFNULL(taf.tuition, 0),
 			IFNULL(taf.balance_quantity, 0),
 			IFNULL(taf.balance_tuition, 0),

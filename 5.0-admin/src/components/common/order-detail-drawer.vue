@@ -756,6 +756,9 @@ function getOrderDetailColumns(item) {
 function formatQuoteDisplay(item) {
   const quantity = Number(item?.quoteQuantity || 0)
   const price = Number(item?.quotePrice || 0)
+  if (Number(item?.chargingMode || 0) === 3 && item?.quoteName === '自定义') {
+    return `充值金额${price.toFixed(2)}元（自定义）`
+  }
   const unitText = getChargingUnitText(item?.chargingMode)
   const prefix = quantity > 0 && unitText
     ? `${Number.isInteger(quantity) ? quantity : quantity.toFixed(2)}${unitText}/${price.toFixed(2)}元`

@@ -163,7 +163,7 @@ function formatChangeMoney(value, sourceType) {
   const direction = sourceTypeDirectionMap[sourceType]
   const prefix = direction === 'out' ? '-' : '+'
   const num = Number(value || 0)
-  return `${prefix}${num.toFixed(2)}`
+  return `${prefix}¥${num.toFixed(2)}`
 }
 
 function formatBalanceValue(value, mode) {
@@ -174,7 +174,7 @@ function formatBalanceValue(value, mode) {
 
 function formatBalanceMoney(value) {
   const num = Number(value || 0)
-  return `${num.toFixed(2)}`
+  return `¥${num.toFixed(2)}`
 }
 
 function getChangeValueClass(sourceType) {

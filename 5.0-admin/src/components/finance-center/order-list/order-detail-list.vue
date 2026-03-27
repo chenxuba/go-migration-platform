@@ -328,6 +328,9 @@ function getQuantityText(value, unit, record, type = 'purchase') {
 function getQuoteDisplay(record) {
   if (isRechargeAccountOrder(record))
     return '-'
+  if (Number(record?.chargingMode || 0) === 3 && record?.quoteName === '自定义') {
+    return `充值金额${Number(record.tuition || 0).toFixed(2)}元`
+  }
   const quantity = Number(record.quantity || 0)
   const tuition = Number(record.tuition || 0)
   const unitText = unitMap[record.skuUnit] || ''

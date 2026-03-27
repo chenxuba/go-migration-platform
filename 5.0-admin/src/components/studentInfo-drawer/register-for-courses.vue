@@ -204,7 +204,7 @@ function formatRemainQuantityText(item) {
     // 有赠送：剩余课时：29（含赠 2 课时）|（总计 31 课时）
     // 按金额：剩余金额：¥41000（含¥11400）|（总¥51000）
     if (mode === 3) {
-      return `${label}：${prefix}${formatCount(remainTotal)}（含${prefix}${formatCount(remainFreeQty)}）|（总${prefix}${formatCount(total)}）`
+      return `${label}：${prefix}${formatCount(remainTotal)}（含赠${prefix}${formatCount(remainFreeQty)}）|（总计${prefix}${formatCount(totalQty)}）`
     } else {
       return `${label}：${formatCount(remainTotal)}（含赠 ${formatCount(remainFreeQty)} ${unit}）|（总计 ${formatCount(total)} ${unit}）`
     }
