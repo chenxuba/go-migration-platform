@@ -186,8 +186,6 @@ function revalidateRow(row) {
     item.error = validateCell(column, item.value)
   })
   applyAmountImportRowValidation(row)
-  row.hasError = row.cells.some(item => item.error)
-  recomputeSummary()
 }
 
 function getColumnWidth(title) {
@@ -452,6 +450,9 @@ async function handleConfirmEditModal() {
     const rowMap = new Map(rows.map(item => [item.id, item]))
     session.rows = session.rows.map(item => rowMap.get(item.id) || item)
     recomputeSummary()
+    if (session.abnormalCount === 0) {
+      activeTab.value = 'normal'
+    }
     refreshRowOptionSelections()
     editModalOpen.value = false
     messageService.success('保存成功')
@@ -485,6 +486,9 @@ function handleSave() {
     const rowMap = new Map(rows.map(item => [item.id, item]))
     session.rows = session.rows.map(row => rowMap.get(row.id) || row)
     recomputeSummary()
+    if (session.abnormalCount === 0) {
+      activeTab.value = 'normal'
+    }
     refreshRowOptionSelections()
     hasPendingChanges.value = false
     messageService.success('已保存修改')

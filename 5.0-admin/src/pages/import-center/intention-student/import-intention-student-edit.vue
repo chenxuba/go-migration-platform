@@ -111,9 +111,7 @@ const displayedRows = computed(() => {
 function recomputeSummary() {
   session.normalCount = session.rows.filter(row => !row.hasError).length
   session.abnormalCount = session.rows.filter(row => row.hasError).length
-  if (session.abnormalCount === 0)
-    activeTab.value = 'normal'
-  else if (activeTab.value !== 'normal' && activeTab.value !== 'abnormal')
+  if (activeTab.value !== 'normal' && activeTab.value !== 'abnormal')
     activeTab.value = 'abnormal'
 }
 
@@ -262,6 +260,9 @@ async function handleConfirmEditModal() {
     const rowMap = new Map(rows.map(item => [item.id, item]))
     session.rows = session.rows.map(item => rowMap.get(item.id) || item)
     recomputeSummary()
+    if (session.abnormalCount === 0) {
+      activeTab.value = 'normal'
+    }
     refreshRowOptionSelections()
     editModalOpen.value = false
     messageService.success('保存成功')
@@ -293,6 +294,9 @@ function handleSave() {
     const rowMap = new Map(rows.map(item => [item.id, item]))
     session.rows = session.rows.map(row => rowMap.get(row.id) || row)
     recomputeSummary()
+    if (session.abnormalCount === 0) {
+      activeTab.value = 'normal'
+    }
     refreshRowOptionSelections()
     messageService.success('已保存修改')
   }).catch((error) => {
