@@ -279,6 +279,26 @@ const paymentSummaryText = computed(() => {
     .join('；')
 })
 
+const printSettingTip = computed(() => {
+  if (templateMode.value === 'dot') {
+    return '针式打印前，请在浏览器打印预览中将“边距”设为“无”，并关闭页眉页脚。'
+  }
+  if (templateMode.value === 'receipt') {
+    return '小票打印前，建议在打印预览中将“边距”设为“无”，并关闭页眉页脚。'
+  }
+  return '打印前建议在打印预览中将“边距”设为“无”，并关闭页眉页脚。'
+})
+
+const printPreviewSizeTip = computed(() => {
+  if (templateMode.value === 'dot') {
+    return '建议预览尺寸：自定义 210mm × 150mm'
+  }
+  if (templateMode.value === 'receipt') {
+    return '建议预览尺寸：自定义 80mm × 200mm'
+  }
+  return '建议预览尺寸：A4 210mm × 297mm'
+})
+
 const studentMetaList = computed<ReceiptKvItem[]>(() => [
   { label: '学员姓名', value: detail.value?.studentName || '-' },
   { label: '手机号', value: detail.value?.studentPhone || '-' },
@@ -459,6 +479,12 @@ watch(
           </button>
         </div>
       </div>
+    </div>
+
+    <div class="receipt-print-tip print-hidden">
+      <span>{{ printSettingTip }}</span>
+      <span class="receipt-print-tip__divider">|</span>
+      <span>{{ printPreviewSizeTip }}</span>
     </div>
 
     <div v-if="loading" class="receipt-loading">
@@ -953,6 +979,21 @@ watch(
   font-size: 16px;
 }
 
+.receipt-print-tip {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 24px 0;
+  color: #a15c00;
+  font-size: 13px;
+}
+
+.receipt-print-tip__divider {
+  color: #d1a15a;
+}
+
 .receipt-preview-wrap {
   display: flex;
   justify-content: center;
@@ -1106,8 +1147,8 @@ watch(
 }
 
 .receipt-paper--dot {
-  width: 190mm;
-  min-height: 140mm;
+  width: 210mm;
+  min-height: 150mm;
   padding: 14mm 12mm;
   font-family: 'Courier New', monospace;
   border-radius: 16px;
@@ -1219,7 +1260,7 @@ watch(
 
 .receipt-paper--receipt {
   width: 80mm;
-  min-height: 180mm;
+  min-height: 210mm;
   padding: 8mm 6mm 9mm;
   font-family: 'Courier New', monospace;
   border-radius: 14px;
