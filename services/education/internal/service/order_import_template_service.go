@@ -148,7 +148,6 @@ func buildTimeSlotOrderImportColumns(defaultFields, customFields []model.Student
 		model.IntentionStudentImportTemplateColumn{Title: "有效开始日期", Required: true, FieldType: 3},
 		model.IntentionStudentImportTemplateColumn{Title: "有效结束日期(含赠送天数)", Required: true, FieldType: 3},
 		model.IntentionStudentImportTemplateColumn{Title: "赠送天数", FieldType: 2},
-		model.IntentionStudentImportTemplateColumn{Title: "已上天数", FieldType: 2},
 	)
 	return appendCommonOrderColumns(columns, staffNames, orderTagNames)
 }
@@ -360,7 +359,7 @@ func buildTimeSlotOrderImportNotesRichText(orgName string, columns []model.Inten
 			"4、「生日」、「经办日期」、「有效开始日期」、「有效结束日期(含赠送天数)」支持 2021-01-21、2021/01/21 等可识别日期格式。",
 			"5、「有效开始日期」与「有效结束日期(含赠送天数)」需同时填写，且结束日期不能早于开始日期。",
 			"6、「报读课程」请从下拉框选择当前机构内已创建的课程名称。",
-			"7、「赠送天数」、「已上天数」请填写数字。",
+			"7、「赠送天数」请填写数字。",
 			"8、「收款方式」、「收款账户」、「支付单号」、「对方账户」仅在存在实收金额时填写。",
 			"9、「订单标签」、「销售」、「订单销售员」如需填写，请使用系统中已存在的名称。",
 			"10、「是否为体验价」请填写“是”或“否”。",

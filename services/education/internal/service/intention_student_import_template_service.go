@@ -100,23 +100,20 @@ func buildConfiguredStudentImportColumns(defaultFields, customFields []model.Stu
 
 	appendDefaultColumn := func(title string, fieldType int, fallbackOptions []string) {
 		field, ok := displayedDefaults[title]
+		if !ok {
+			return
+		}
 		options := fallbackOptions
 		if ok && len(options) == 0 && strings.TrimSpace(field.OptionsJSON) != "" {
 			options = splitTemplateOptions(field.OptionsJSON)
 		}
 		columns = append(columns, model.IntentionStudentImportTemplateColumn{
 			FieldID: func() int64 {
-				if ok {
-					return field.ID
-				}
-				return 0
+				return field.ID
 			}(),
 			Title: title,
 			Required: func() bool {
-				if ok {
-					return field.Required
-				}
-				return false
+				return field.Required
 			}(),
 			FieldType: fieldType,
 			Options:   options,
