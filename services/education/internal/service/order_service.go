@@ -94,12 +94,12 @@ func (svc *Service) CalcCourseEnrollType(userID int64, dto model.CourseEnrollTyp
 	if len(dto.Courses) == 0 {
 		return nil, errors.New("意向内容列表不能为空")
 	}
-	exists, err := svc.repo.StudentExistsInInstitution(context.Background(), instID, dto.StudentID)
+	studentSnapshot, err := svc.repo.GetStudentSnapshot(context.Background(), instID, dto.StudentID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("学生不存在")
+		}
 		return nil, err
-	}
-	if !exists {
-		return nil, errors.New("学生不存在")
 	}
 
 	hasAnyPurchased, err := svc.repo.StudentHasCompletedOrders(context.Background(), instID, dto.StudentID)
@@ -113,6 +113,8 @@ func (svc *Service) CalcCourseEnrollType(userID int64, dto model.CourseEnrollTyp
 		switch {
 		case course.IsAudition:
 			item.EnrollType = 0
+		case studentSnapshot.StudentStatus == 0:
+			item.EnrollType = 1
 		case !hasAnyPurchased:
 			item.EnrollType = 1
 		default:

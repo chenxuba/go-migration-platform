@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { InfoCircleOutlined, FormOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
@@ -11,6 +11,7 @@ import CouponInputModal from './coupon-input-modal.vue'
 import CreateStudent from '@/components/common/create-student.vue'
 import StaffSelect from '@/components/common/staff-select.vue'
 import StudentSelect from '@/components/common/student-select.vue'
+import { getRechargeAccountByStudentApi } from '@/api/finance-center/recharge-account'
 import { useUserStore } from '@/stores/user'
 import { addIntendedStudentApi, getRecommenderPageApi } from '~@/api/enroll-center/intention-student'
 import { getOrderTagListPagedApi } from '@/api/finance-center/order-tag'
@@ -60,6 +61,7 @@ const settingForm = reactive({
   internalRemark: '',
   externalRemark: '',
   useBalance: 0, // 使用充值余额
+  useResidualBalance: 0, // 使用残联余额
   useGiftBalance: 0, // 使用赠送余额
 })
 
@@ -214,14 +216,54 @@ const currentSelectedStudent = ref(null)
 
 function handleStudentChange(value) {
   // 更新formState中的学员ID
+  if (!value) {
+    currentSelectedStudent.value = null
+    settingForm.useBalance = 0
+    settingForm.useResidualBalance = 0
+    settingForm.useGiftBalance = 0
+  }
   emit('update:formState', { ...props.formState, studentId: value, selectedStudentInfo: value ? props.formState.selectedStudentInfo : undefined })
 }
 
-function handleStudentSelect(studentInfo) {
+async function enrichStudentRechargeInfo(studentInfo) {
+  if (!studentInfo?.id) {
+    return studentInfo
+  }
+  try {
+    const { result: rechargeAccount } = await getRechargeAccountByStudentApi({ studentId: studentInfo.id })
+    const residualBalance = Number(rechargeAccount?.residualBalance || 0)
+    const accountBalance = Number(rechargeAccount?.balance || 0)
+    return {
+      ...studentInfo,
+      rechargeAccountId: rechargeAccount?.id || '',
+      rechargeAccountName: rechargeAccount?.accountName || rechargeAccount?.rechargeAccountName || '',
+      rechargeBalance: Math.max(0, accountBalance - residualBalance),
+      residualBalance,
+      giftBalance: Number(rechargeAccount?.givingBalance || 0),
+    }
+  }
+  catch (error) {
+    console.error('加载学员储值余额失败:', error)
+    return {
+      ...studentInfo,
+      rechargeAccountId: '',
+      rechargeAccountName: '',
+      rechargeBalance: 0,
+      residualBalance: 0,
+      giftBalance: 0,
+    }
+  }
+}
+
+async function handleStudentSelect(studentInfo) {
   // 保存选中的学员信息
-  currentSelectedStudent.value = studentInfo
-  emit('update:formState', { ...props.formState, studentId: studentInfo?.id, selectedStudentInfo: studentInfo })
-  console.log('选中的学员信息:', studentInfo)
+  const enrichedStudent = await enrichStudentRechargeInfo(studentInfo)
+  currentSelectedStudent.value = enrichedStudent
+  settingForm.useBalance = 0
+  settingForm.useResidualBalance = 0
+  settingForm.useGiftBalance = 0
+  emit('update:formState', { ...props.formState, studentId: enrichedStudent?.id, selectedStudentInfo: enrichedStudent })
+  console.log('选中的学员信息:', enrichedStudent)
 }
 
 
@@ -234,11 +276,12 @@ async function checkRouteAndLoadStudent() {
       // 使用StudentSelect组件的方法加载学生信息
       const student = await studentSelectRef.value.loadStudentById(studentId)
       if (student) {
+        const enrichedStudent = await enrichStudentRechargeInfo(student)
         // 保存学员信息
-        currentSelectedStudent.value = student
+        currentSelectedStudent.value = enrichedStudent
         // 更新formState中的studentId
-        emit('update:formState', { ...props.formState, studentId: student.id, selectedStudentInfo: student })
-        console.log('通过路由参数加载的学员信息:', student)
+        emit('update:formState', { ...props.formState, studentId: enrichedStudent.id, selectedStudentInfo: enrichedStudent })
+        console.log('通过路由参数加载的学员信息:', enrichedStudent)
       } else {
         console.warn('未找到指定ID的学员信息:', studentId)
       }
@@ -415,7 +458,7 @@ function calculateCourseTotal(courseItem) {
 }
 
 // 计算总合计金额
-const totalAmount = computed(() => {
+const discountedTotalAmount = computed(() => {
   // 先计算所有课程的小计总和
   const subtotal = formData.reduce((total, item) => {
     return total + calculateCourseTotal(item)
@@ -434,6 +477,63 @@ const totalAmount = computed(() => {
 
   return Math.max(0, finalAmount) // 确保不为负数
 })
+
+const totalStoragePayment = computed(() => {
+  return Number(settingForm.useBalance || 0) + Number(settingForm.useResidualBalance || 0) + Number(settingForm.useGiftBalance || 0)
+})
+
+const totalAmount = computed(() => {
+  return Math.max(0, discountedTotalAmount.value - totalStoragePayment.value)
+})
+
+const availableRechargeBalance = computed(() => Number(selectedStudent.value?.rechargeBalance || 0))
+const availableResidualBalance = computed(() => Number(selectedStudent.value?.residualBalance || 0))
+const availableGiftBalance = computed(() => Number(selectedStudent.value?.giftBalance || 0))
+
+function getUsageMax(currentKey) {
+  const baseAmount = discountedTotalAmount.value
+  const otherUsage = [
+    currentKey === 'useBalance' ? 0 : Number(settingForm.useBalance || 0),
+    currentKey === 'useResidualBalance' ? 0 : Number(settingForm.useResidualBalance || 0),
+    currentKey === 'useGiftBalance' ? 0 : Number(settingForm.useGiftBalance || 0),
+  ].reduce((sum, value) => sum + value, 0)
+
+  const remaining = Math.max(0, baseAmount - otherUsage)
+  const availableMap = {
+    useBalance: availableRechargeBalance.value,
+    useResidualBalance: availableResidualBalance.value,
+    useGiftBalance: availableGiftBalance.value,
+  }
+  return Math.max(0, Math.min(availableMap[currentKey] || 0, remaining))
+}
+
+function normalizeUsageValue(currentKey) {
+  const max = getUsageMax(currentKey)
+  const currentValue = Number(settingForm[currentKey] || 0)
+  if (currentValue > max) {
+    settingForm[currentKey] = Number(max.toFixed(2))
+  } else if (currentValue < 0) {
+    settingForm[currentKey] = 0
+  }
+}
+
+watch(
+  () => [
+    discountedTotalAmount.value,
+    availableRechargeBalance.value,
+    availableResidualBalance.value,
+    availableGiftBalance.value,
+    settingForm.useBalance,
+    settingForm.useResidualBalance,
+    settingForm.useGiftBalance,
+  ],
+  () => {
+    normalizeUsageValue('useBalance')
+    normalizeUsageValue('useResidualBalance')
+    normalizeUsageValue('useGiftBalance')
+  },
+  { deep: true },
+)
 
 // 创建响应式的课程合计计算
 const courseTotals = computed(() => {
@@ -835,6 +935,7 @@ function resetSettingForm() {
   settingForm.internalRemark = ''
   settingForm.externalRemark = ''
   settingForm.useBalance = 0
+  settingForm.useResidualBalance = 0
   settingForm.useGiftBalance = 0
 }
 
@@ -857,6 +958,9 @@ function confirm(e) {
 
   // 清空当前选中的学员信息
   currentSelectedStudent.value = null
+  settingForm.useBalance = 0
+  settingForm.useResidualBalance = 0
+  settingForm.useGiftBalance = 0
 
   // 重置学生选择组件
   if (studentSelectRef.value) {
@@ -969,6 +1073,10 @@ async function submitOrder() {
           return total + calculateCourseRealQuantity(course, selectedSku)
         }, 0),
         orderRealAmount: (totalAmount.value).toFixed(2),
+        rechargeAccountId: selectedStudent.value?.rechargeAccountId || '',
+        useBalance: Number(settingForm.useBalance || 0),
+        useResidualBalance: Number(settingForm.useResidualBalance || 0),
+        useGiftBalance: Number(settingForm.useGiftBalance || 0),
         internalRemark: settingForm.internalRemark || '',
         externalRemark: settingForm.externalRemark || '',
         dealDate: settingForm.dealDate,
@@ -2005,24 +2113,38 @@ function handleUpdateDateSubmit(formState) {
               <a-space :size="12" class="flex flex-items-center">
                 <div class="flex flex-items-center relative">
                   <span class="mr-2 text-#666 whitespace-nowrap">本次使用充值余额</span>
-                  <a-input-number v-model:value="settingForm.useBalance" :precision="2" :min="0" style="width: 120px"
-                    placeholder="请输入">
+                  <a-input-number v-model:value="settingForm.useBalance" :precision="2" :min="0"
+                    :max="getUsageMax('useBalance')" style="width: 120px" placeholder="请输入"
+                    @change="normalizeUsageValue('useBalance')">
                     <template #addonAfter>
                       元
                     </template>
                   </a-input-number>
                   <span class="ml-2 text-12px text-#666 absolute left--7px bottom--24px whitespace-nowrap">可用充值余额：¥
-                    0.00</span>
+                    {{ availableRechargeBalance.toFixed(2) }}</span>
                 </div>
                 <div class="flex flex-items-center relative">
-                  <span class="mr-2 text-#666 whitespace-nowrap">使用赠送余额</span>
-                  <a-input-number v-model:value="settingForm.useGiftBalance" :precision="2" :min="0"
-                    style="width: 120px" placeholder="请输入">
+                  <span class="mr-2 text-#666 whitespace-nowrap">使用残联余额</span>
+                  <a-input-number v-model:value="settingForm.useResidualBalance" :precision="2" :min="0"
+                    :max="getUsageMax('useResidualBalance')" style="width: 120px" placeholder="请输入"
+                    @change="normalizeUsageValue('useResidualBalance')">
                     <template #addonAfter>
                       元
                     </template>
                   </a-input-number>
-                  <span class="ml-2 text-12px text-#666 absolute left--7px bottom--24px">可用赠送余额：¥ 0.00</span>
+                  <span class="ml-2 text-12px text-#666 absolute left--7px bottom--24px whitespace-nowrap">可用残联余额：¥
+                    {{ availableResidualBalance.toFixed(2) }}</span>
+                </div>
+                <div class="flex flex-items-center relative">
+                  <span class="mr-2 text-#666 whitespace-nowrap">使用赠送余额</span>
+                  <a-input-number v-model:value="settingForm.useGiftBalance" :precision="2" :min="0"
+                    :max="getUsageMax('useGiftBalance')" style="width: 120px" placeholder="请输入"
+                    @change="normalizeUsageValue('useGiftBalance')">
+                    <template #addonAfter>
+                      元
+                    </template>
+                  </a-input-number>
+                  <span class="ml-2 text-12px text-#666 absolute left--7px bottom--24px whitespace-nowrap">可用赠送余额：¥ {{ availableGiftBalance.toFixed(2) }}</span>
                 </div>
               </a-space>
             </a-form-item>

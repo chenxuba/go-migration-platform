@@ -428,6 +428,120 @@ func (repo *Repository) completeRechargeAccountOrderTx(
 	return nil
 }
 
+func (repo *Repository) createLinkedRechargeAccountOrderExpendTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	instID, operatorID, saleOrderID, rechargeAccountID, studentID int64,
+	amount, residualAmount, givingAmount float64,
+	orderNumber string,
+	dealDate any,
+	salePersonID int64,
+	remark, externalRemark string,
+) error {
+	if amount <= 0 && residualAmount <= 0 && givingAmount <= 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO recharge_account_order (
+			uuid, version, inst_id, recharge_account_id, sale_order_id, order_number, status, amount, giving_amount, residual_amount,
+			deal_date, sale_person_id, collector_staff_id, phone_sell_staff_id, foreground_staff_id, vice_sell_staff_staff_id,
+			remark, external_remark, student_id, create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, 1, ?, ?, ?,
+			?, ?, 0, 0, 0, 0,
+			?, ?, ?, ?, NOW(), ?, NOW(), 0
+		)
+	`,
+		instID, rechargeAccountID, saleOrderID, orderNumber, amount, givingAmount, residualAmount,
+		dealDate, salePersonID, strings.TrimSpace(remark), strings.TrimSpace(externalRemark), studentID, operatorID, operatorID,
+	)
+	return err
+}
+
+func (repo *Repository) hasPendingRechargeAccountOrderExpendTx(ctx context.Context, tx *sql.Tx, instID, saleOrderID int64) (bool, error) {
+	var count int
+	err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM recharge_account_order
+		WHERE inst_id = ? AND sale_order_id = ? AND status = 1 AND del_flag = 0
+	`, instID, saleOrderID).Scan(&count)
+	return count > 0, err
+}
+
+func (repo *Repository) completeLinkedRechargeAccountOrderExpendTx(ctx context.Context, tx *sql.Tx, instID, operatorID, saleOrderID int64) error {
+	var (
+		orderID           int64
+		rechargeAccountID int64
+		studentID         int64
+		orderNumber       string
+		amount            float64
+		givingAmount      float64
+		residualAmount    float64
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT id, recharge_account_id, student_id, IFNULL(order_number, ''), IFNULL(amount, 0), IFNULL(giving_amount, 0), IFNULL(residual_amount, 0)
+		FROM recharge_account_order
+		WHERE inst_id = ? AND sale_order_id = ? AND status = 1 AND del_flag = 0
+		ORDER BY id DESC
+		LIMIT 1
+	`, instID, saleOrderID).Scan(&orderID, &rechargeAccountID, &studentID, &orderNumber, &amount, &givingAmount, &residualAmount)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+
+	var rechBal, resBal, givingBal float64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(recharge_balance, 0), IFNULL(residual_balance, 0), IFNULL(giving_balance, 0)
+		FROM recharge_account
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+		FOR UPDATE
+	`, rechargeAccountID, instID).Scan(&rechBal, &resBal, &givingBal); err != nil {
+		return err
+	}
+	if amount > rechBal+1e-9 {
+		return errors.New("充值余额不足")
+	}
+	if residualAmount > resBal+1e-9 {
+		return errors.New("残联余额不足")
+	}
+	if givingAmount > givingBal+1e-9 {
+		return errors.New("赠送余额不足")
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account_order
+		SET status = 2, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, operatorID, orderID, instID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE recharge_account
+		SET recharge_balance = IFNULL(recharge_balance, 0) - ?,
+			residual_balance = IFNULL(residual_balance, 0) - ?,
+			giving_balance = IFNULL(giving_balance, 0) - ?,
+			update_id = ?,
+			update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, amount, residualAmount, givingAmount, operatorID, rechargeAccountID, instID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO recharge_account_flow (
+			inst_id, recharge_account_id, student_id, order_number, flow_type,
+			amount, residual_amount, giving_amount, remark,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
+	`, instID, rechargeAccountID, studentID, orderNumber, model.RechargeAccountFlowTypeOrderExpend, -amount, -residualAmount, -givingAmount, "报名订单支出", operatorID, operatorID); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (repo *Repository) CreateRechargeAccountOrder(ctx context.Context, instID, operatorID int64, dto model.CreateRechargeAccountOrderDTO) (int64, error) {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {

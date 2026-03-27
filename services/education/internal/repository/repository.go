@@ -22,6 +22,7 @@ type StudentSnapshot struct {
 	InstID             int64
 	StuName            string
 	Mobile             string
+	StudentStatus      int
 	PhoneRelationship  *int
 	SalePerson         *int64
 	ChannelID          *int64

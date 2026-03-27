@@ -346,6 +346,10 @@ type OrderDetailDTO struct {
 	OrderDiscountAmount string           `json:"orderDiscountAmount"`
 	OrderRealQuantity   float64          `json:"orderRealQuantity"`
 	OrderRealAmount     string           `json:"orderRealAmount"`
+	RechargeAccountID   string           `json:"rechargeAccountId"`
+	UseBalance          float64          `json:"useBalance"`
+	UseResidualBalance  float64          `json:"useResidualBalance"`
+	UseGiftBalance      float64          `json:"useGiftBalance"`
 	InternalRemark      string           `json:"internalRemark"`
 	ExternalRemark      string           `json:"externalRemark"`
 	DealDate            *time.Time       `json:"dealDate"`

@@ -11,7 +11,7 @@ import (
 
 func (repo *Repository) GetStudentSnapshot(ctx context.Context, instID, studentID int64) (StudentSnapshot, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT id, inst_id, IFNULL(stu_name, ''), IFNULL(mobile, ''), phone_relationship, sale_person, channel_id,
+		SELECT id, inst_id, IFNULL(stu_name, ''), IFNULL(mobile, ''), IFNULL(student_status, 0), phone_relationship, sale_person, channel_id,
 		       collector_staff_id, phone_sell_staff_id, foreground_staff_id, vice_sell_staff_Id,
 		       student_manager_id, advisor_id, recommend_student_id, IFNULL(wechat_number, ''), IFNULL(grade, ''),
 		       IFNULL(study_school, ''), IFNULL(interest, ''), IFNULL(address, ''), IFNULL(remark, ''),
@@ -26,6 +26,7 @@ func (repo *Repository) GetStudentSnapshot(ctx context.Context, instID, studentI
 		&item.InstID,
 		&item.StuName,
 		&item.Mobile,
+		&item.StudentStatus,
 		&item.PhoneRelationship,
 		&item.SalePerson,
 		&item.ChannelID,

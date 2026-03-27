@@ -462,7 +462,7 @@ function handleAmountChange(item) {
           </div>
           <a-button
             class="h-11 w-35 text-5 font-600"
-            :disabled="payAmount <= 0 || submitLoading"
+            :disabled="(receivableAmount > 0 && payAmount <= 0) || submitLoading"
             :loading="submitLoading"
             type="primary"
             @click="validateForms"

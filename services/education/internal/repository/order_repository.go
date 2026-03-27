@@ -1942,6 +1942,10 @@ func (repo *Repository) CreateOrder(ctx context.Context, instID, operatorID int6
 	orderDiscountAmount, _ := strconv.ParseFloat(strings.TrimSpace(dto.OrderDetail.OrderDiscountAmount), 64)
 	orderRealAmount, _ := strconv.ParseFloat(strings.TrimSpace(dto.OrderDetail.OrderRealAmount), 64)
 	orderTagIDs := joinInt64CSV(dto.OrderDetail.OrderTagIDs)
+	useRechargeBalance := dto.OrderDetail.UseBalance
+	useResidualBalance := dto.OrderDetail.UseResidualBalance
+	useGiftBalance := dto.OrderDetail.UseGiftBalance
+	rechargeAccountID := parseInt64String(dto.OrderDetail.RechargeAccountID)
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO sale_order (
@@ -2020,6 +2024,37 @@ func (repo *Repository) CreateOrder(ctx context.Context, instID, operatorID int6
 		_ = realAmount
 	}
 
+	if rechargeAccountID > 0 && (useRechargeBalance > 0 || useResidualBalance > 0 || useGiftBalance > 0) {
+		var dealDate any
+		if dto.OrderDetail.DealDate != nil {
+			dealDate = dto.OrderDetail.DealDate.Format("2006-01-02")
+		}
+		if err := repo.createLinkedRechargeAccountOrderExpendTx(
+			ctx,
+			tx,
+			instID,
+			operatorID,
+			orderID,
+			rechargeAccountID,
+			dto.StudentID,
+			useRechargeBalance,
+			useResidualBalance,
+			useGiftBalance,
+			orderNumber,
+			dealDate,
+			func() int64 {
+				if dto.OrderDetail.SalePerson == nil {
+					return 0
+				}
+				return *dto.OrderDetail.SalePerson
+			}(),
+			dto.OrderDetail.InternalRemark,
+			dto.OrderDetail.ExternalRemark,
+		); err != nil {
+			return 0, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
@@ -2058,12 +2093,16 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 		positivePayAccounts = append(positivePayAccounts, item)
 		actualPayAmount += item.PayAmount
 	}
-	if actualPayAmount <= 0 {
-		return fmt.Errorf("支付金额不能小于0")
-	}
 	paidBefore, err := repo.getOrderPaidAmount(ctx, dto.OrderID)
 	if err != nil {
 		return err
+	}
+	hasRechargeExpend, err := repo.hasPendingRechargeAccountOrderExpendTx(ctx, tx, instID, dto.OrderID)
+	if err != nil {
+		return err
+	}
+	if actualPayAmount <= 0 && !(orderRealAmount <= paidBefore+1e-9 && hasRechargeExpend) {
+		return fmt.Errorf("支付金额不能小于0")
 	}
 	if paidBefore+actualPayAmount > orderRealAmount {
 		return fmt.Errorf("支付金额不能大于订单金额")
@@ -2111,6 +2150,9 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 			newStatus = model.OrderStatusApproving
 		}
 		if approved {
+			if err := repo.completeLinkedRechargeAccountOrderExpendTx(ctx, tx, instID, operatorID, dto.OrderID); err != nil {
+				return err
+			}
 			newStatus = model.OrderStatusCompleted
 			if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, dto.OrderID, studentID, orderSource); err != nil {
 				return err
