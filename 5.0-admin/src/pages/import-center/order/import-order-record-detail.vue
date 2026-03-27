@@ -6,11 +6,17 @@ import {
   getOrderImportTaskDetailApi,
   getOrderImportTaskRecordListApi,
 } from '~@/api/finance-center/order-import'
+import {
+  getRechargeAccountImportTaskDetailApi,
+  getRechargeAccountImportTaskRecordListApi,
+} from '@/api/finance-center/recharge-account'
 import messageService from '~@/utils/messageService'
 
 const router = useRouter()
 const route = useRoute()
 const taskId = computed(() => String(route.params.id || ''))
+const isRechargeImport = computed(() => route.path.includes('/import-recharge-account'))
+const pageTitle = computed(() => isRechargeImport.value ? '储值账户导入明细' : '导入明细')
 const detail = reactive({
   fileName: '',
   uploadStaffName: '',
@@ -56,6 +62,7 @@ function getColumnWidth(title) {
     case '赠送天数':
     case '已上天数':
     case '购买金额':
+    case '残联金额':
     case '赠送金额':
     case '已上金额':
     case '实收金额':
@@ -82,7 +89,7 @@ const tableMinWidth = computed(() => {
 })
 
 function goBack() {
-  router.replace('/import-center/import-order/record')
+  router.replace(isRechargeImport.value ? '/import-center/import-recharge-account/record' : '/import-center/import-order/record')
 }
 
 function resultText(row) {
@@ -97,13 +104,13 @@ function getCellDisplayText(cell) {
 async function loadDetail() {
   try {
     const [detailRes, abnormalRes, normalRes] = await Promise.all([
-      getOrderImportTaskDetailApi({ taskId: taskId.value }),
-      getOrderImportTaskRecordListApi({
+      (isRechargeImport.value ? getRechargeAccountImportTaskDetailApi : getOrderImportTaskDetailApi)({ taskId: taskId.value }),
+      (isRechargeImport.value ? getRechargeAccountImportTaskRecordListApi : getOrderImportTaskRecordListApi)({
         queryModel: { taskId: taskId.value, type: 0 },
         sortModel: '',
         pageRequestModel: { needTotal: true, pageSize: 1000, pageIndex: 1, skipCount: 0 },
       }),
-      getOrderImportTaskRecordListApi({
+      (isRechargeImport.value ? getRechargeAccountImportTaskRecordListApi : getOrderImportTaskRecordListApi)({
         queryModel: { taskId: taskId.value, type: 1 },
         sortModel: '',
         pageRequestModel: { needTotal: true, pageSize: 1000, pageIndex: 1, skipCount: 0 },
@@ -161,7 +168,7 @@ onUnmounted(() => {
 
         <div class="summary-strip">
           <div class="summary-title">
-            导入明细
+            {{ pageTitle }}
           </div>
           <div class="summary-items">
             <span class="summary-item">

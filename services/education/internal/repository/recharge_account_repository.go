@@ -611,3 +611,26 @@ func buildRechargeAccountNameByString(studentID, rechargeAccountID string) strin
 	}
 	return "RA-" + studentID + "-" + rechargeAccountID
 }
+
+func (repo *Repository) FindRechargeAccountImportTargetByName(ctx context.Context, instID int64, accountName string) (int64, int64, error) {
+	accountName = strings.TrimSpace(accountName)
+	var (
+		accountID     int64
+		mainStudentID int64
+	)
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id, main_student_id
+		FROM recharge_account
+		WHERE inst_id = ? AND del_flag = 0
+		  AND (
+			account_name = ?
+			OR CONCAT('RA-', CAST(main_student_id AS CHAR), '-', CAST(id AS CHAR)) = ?
+		  )
+		ORDER BY id ASC
+		LIMIT 1
+	`, instID, accountName, accountName).Scan(&accountID, &mainStudentID)
+	if err != nil {
+		return 0, 0, err
+	}
+	return accountID, mainStudentID, nil
+}

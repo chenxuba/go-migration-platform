@@ -105,6 +105,30 @@ export default [
     },
   },
   {
+    path: '/import-center/import-recharge-account/edit/:id',
+    name: 'ImportRechargeAccountEdit',
+    component: () => import('~/pages/import-center/order/import-order-edit.vue'),
+    meta: {
+      title: '导入储值账户编辑',
+    },
+  },
+  {
+    path: '/import-center/import-recharge-account/record',
+    name: 'ImportRechargeAccountRecord',
+    component: () => import('~/pages/import-center/order/import-order-record.vue'),
+    meta: {
+      title: '储值账户导入记录',
+    },
+  },
+  {
+    path: '/import-center/import-recharge-account/record/:id',
+    name: 'ImportRechargeAccountRecordDetail',
+    component: () => import('~/pages/import-center/order/import-order-record-detail.vue'),
+    meta: {
+      title: '储值账户导入记录详情',
+    },
+  },
+  {
     path: '/import-center/import-order/edit/:id',
     name: 'ImportOrderEdit',
     component: () => import('~/pages/import-center/order/import-order-edit.vue'),

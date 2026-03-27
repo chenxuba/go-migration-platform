@@ -7,6 +7,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { getStuCustomFieldApi, getStuDefaultFieldApi } from '@/api/edu-center/student-list'
 import { getStaffSummariesApi } from '@/api/finance-center/approval-manage'
 import { getOrderTagListPagedApi } from '@/api/finance-center/order-tag'
+import {
+  batchSaveRechargeAccountImportTaskRecordsApi,
+  deleteRechargeAccountImportTaskApi,
+  getRechargeAccountImportTaskDetailApi,
+  getRechargeAccountImportTaskRecordListApi,
+  startRechargeAccountImportTaskApi,
+} from '@/api/finance-center/recharge-account'
 import { getChannelTreeApi } from '~@/api/enroll-center/intention-student'
 import {
   batchSaveOrderImportTaskRecordsApi,
@@ -22,6 +29,7 @@ import messageService from '~@/utils/messageService'
 const router = useRouter()
 const route = useRoute()
 const importId = computed(() => String(route.params.id || ''))
+const isRechargeImport = computed(() => route.path.includes('/import-recharge-account'))
 const session = reactive({
   importId: importId.value,
   fileName: '',
@@ -32,7 +40,7 @@ const session = reactive({
   abnormalCount: 0,
 })
 
-const activeTab = ref('abnormal')
+const activeTab = ref('normal')
 const optionMap = ref({})
 const hasAbnormalRows = computed(() => session.abnormalCount > 0)
 const hasPendingChanges = ref(false)
@@ -108,7 +116,7 @@ function detectImportLessonModel(columns = []) {
 }
 
 function isTwoDecimalRestrictedField(title) {
-  return ['购买课时数', '赠送课时数', '已上课时数', '购买金额', '赠送金额', '已上金额'].includes(`${title || ''}`.trim())
+  return ['购买课时数', '赠送课时数', '已上课时数', '购买金额', '残联金额', '赠送金额', '已上金额', '充值金额'].includes(`${title || ''}`.trim())
 }
 
 function isIntegerRestrictedField(title) {
@@ -214,6 +222,7 @@ function getColumnWidth(title) {
     case '赠送天数':
     case '已上天数':
     case '购买金额':
+    case '残联金额':
     case '赠送金额':
     case '已上金额':
     case '实收金额':
@@ -434,7 +443,8 @@ async function handleConfirmEditModal() {
 
   savingSingleCell.value = true
   try {
-    const { result, data } = await batchSaveOrderImportTaskRecordsApi({
+    const request = isRechargeImport.value ? batchSaveRechargeAccountImportTaskRecordsApi : batchSaveOrderImportTaskRecordsApi
+    const { result, data } = await request({
       taskId: importId.value,
       records: [row],
     })
@@ -462,11 +472,12 @@ function handleDeleteRow(rowNo) {
 }
 
 function handleBack() {
-  router.replace('/import-center/import-order-starter')
+  router.replace(isRechargeImport.value ? '/import-center/import-recharge-account-starter' : '/import-center/import-order-starter')
 }
 
 function handleSave() {
-  batchSaveOrderImportTaskRecordsApi({
+  const request = isRechargeImport.value ? batchSaveRechargeAccountImportTaskRecordsApi : batchSaveOrderImportTaskRecordsApi
+  request({
     taskId: importId.value,
     records: session.rows,
   }).then(({ result, data }) => {
@@ -498,9 +509,10 @@ function handleStartImport() {
     return
   }
   startingImport.value = true
-  startOrderImportTaskApi({ taskId: importId.value }).then(async ({ result, data }) => {
+  const request = isRechargeImport.value ? startRechargeAccountImportTaskApi : startOrderImportTaskApi
+  request({ taskId: importId.value }).then(async ({ result, data }) => {
     messageService.success('开始导入，请稍后')
-    router.push('/import-center/import-order/record')
+    router.push(isRechargeImport.value ? '/import-center/import-recharge-account/record' : '/import-center/import-order/record')
   }).catch((error) => {
     console.error('start order import failed', error)
     messageService.error(error?.message || '开始导入失败')
@@ -525,10 +537,12 @@ function handleCancel() {
       }
       deletingTask.value = true
       try {
-        const res = await deleteOrderImportTaskApi({ taskId: importId.value })
+        const res = isRechargeImport.value
+          ? await deleteRechargeAccountImportTaskApi({ taskId: importId.value })
+          : await deleteOrderImportTaskApi({ taskId: importId.value })
         if (res.code === 200) {
           messageService.success('已取消导入并删除记录')
-          router.replace('/import-center/import-order-starter')
+          router.replace(isRechargeImport.value ? '/import-center/import-recharge-account-starter' : '/import-center/import-order-starter')
           return
         }
         return Promise.reject(new Error(res.message || '删除失败'))
@@ -547,13 +561,13 @@ function handleCancel() {
 
 async function loadTaskData() {
   const [detailRes, abnormalRes, normalRes] = await Promise.all([
-    getOrderImportTaskDetailApi({ taskId: importId.value }),
-    getOrderImportTaskRecordListApi({
+    (isRechargeImport.value ? getRechargeAccountImportTaskDetailApi : getOrderImportTaskDetailApi)({ taskId: importId.value }),
+    (isRechargeImport.value ? getRechargeAccountImportTaskRecordListApi : getOrderImportTaskRecordListApi)({
       queryModel: { taskId: importId.value, type: 0 },
       sortModel: '',
       pageRequestModel: { needTotal: true, pageSize: 1000, pageIndex: 1, skipCount: 0 },
     }),
-    getOrderImportTaskRecordListApi({
+    (isRechargeImport.value ? getRechargeAccountImportTaskRecordListApi : getOrderImportTaskRecordListApi)({
       queryModel: { taskId: importId.value, type: 1 },
       sortModel: '',
       pageRequestModel: { needTotal: true, pageSize: 1000, pageIndex: 1, skipCount: 0 },
@@ -572,6 +586,7 @@ async function loadTaskData() {
   session.instName = detail?.instName || '总机构'
   session.columns = abnormal?.columns?.length ? abnormal.columns : (normal?.columns || [])
   session.rows = [...(abnormal?.list || []), ...(normal?.list || [])]
+  activeTab.value = (abnormal?.list || []).length > 0 ? 'abnormal' : 'normal'
   hasPendingChanges.value = false
   recomputeSummary()
   refreshRowOptionSelections()
@@ -627,13 +642,15 @@ async function loadOptionSources() {
       sortModel: {},
       pageRequestModel: { needTotal: true, pageSize: 1000, pageIndex: 1, skipCount: 0 },
     }),
-    getOrderImportCourseOptionsApi({
-      queryModel: {
-        chargeTypes: chargeType ? [chargeType] : undefined,
-      },
-      sortModel: {},
-      pageRequestModel: { needTotal: true, pageSize: 1000, pageIndex: 1, skipCount: 0 },
-    }),
+    isRechargeImport.value
+      ? Promise.resolve({ result: [] })
+      : getOrderImportCourseOptionsApi({
+          queryModel: {
+            chargeTypes: chargeType ? [chargeType] : undefined,
+          },
+          sortModel: {},
+          pageRequestModel: { needTotal: true, pageSize: 1000, pageIndex: 1, skipCount: 0 },
+        }),
   ])
 
   const channels = []

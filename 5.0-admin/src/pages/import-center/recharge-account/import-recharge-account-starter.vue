@@ -4,10 +4,14 @@ import { computed, ref } from 'vue'
 import {
   buildRechargeAccountImportByAccountTemplateApi,
   buildRechargeAccountImportByStudentTemplateApi,
+  submitRechargeAccountImportTaskApi,
+  uploadRechargeAccountImportApi,
 } from '@/api/finance-center/recharge-account'
 import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const userStore = useUserStore()
 
 const schoolName = computed(() => userStore.userInfo?.orgName || '总机构')
@@ -24,7 +28,7 @@ function goBack() {
 }
 
 function handleImportRecord() {
-  messageService.info('储值账户导入记录待接入')
+  router.push('/import-center/import-recharge-account/record')
 }
 
 async function handleDownloadTemplate(type) {
@@ -48,14 +52,39 @@ async function handleDownloadTemplate(type) {
   }
 }
 
-async function handleCustomUpload({ onError }) {
+async function handleCustomUpload({ file, onSuccess, onError }) {
   if (uploadLoading.value) {
     return
   }
   uploadLoading.value = true
   try {
-    messageService.info('储值账户导入解析流程待接入')
-    onError?.(new Error('储值账户导入解析流程待接入'))
+    if (!file) {
+      throw new Error('请选择文件')
+    }
+    const formData = new FormData()
+    formData.append('file', file)
+    const uploadRes = await uploadRechargeAccountImportApi(formData)
+    const uploadResult = uploadRes.result || uploadRes.data
+    if (!uploadResult?.fileUrl) {
+      throw new Error(uploadRes.message || '导入文件上传失败')
+    }
+    const submitRes = await submitRechargeAccountImportTaskApi({
+      fileUrl: uploadResult.fileUrl,
+      fileName: uploadResult.fileName || file.name,
+    })
+    const taskId = submitRes.result || submitRes.data
+    if (!taskId) {
+      throw new Error(submitRes.message || '导入任务创建失败')
+    }
+
+    fileList.value = [file]
+    onSuccess?.({ taskId })
+    router.push(`/import-center/import-recharge-account/edit/${taskId}`)
+  }
+  catch (error) {
+    console.error('parse recharge account import failed', error)
+    messageService.error(error?.message || '导入文件解析失败')
+    onError?.(error)
   }
   finally {
     uploadLoading.value = false

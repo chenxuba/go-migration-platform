@@ -222,6 +222,115 @@ export function buildRechargeAccountImportByAccountTemplateApi() {
   return useGet<string>('/api/v1/recharge-accounts/import-template/by-account')
 }
 
+export interface RechargeAccountImportColumn {
+  key: string
+  title: string
+  required: boolean
+  fieldType: number
+  fieldId?: number
+  options?: string[]
+}
+
+export interface RechargeAccountImportCell {
+  key: string
+  title: string
+  value: string
+  selectedId?: any
+  error?: string
+}
+
+export interface RechargeAccountImportRow {
+  id: string
+  rowNo: number
+  hasError: boolean
+  cells: RechargeAccountImportCell[]
+  status?: number
+  result?: string
+}
+
+export interface RechargeAccountImportTaskDetail {
+  id: string
+  fileName: string
+  uploadStaffId: string
+  uploadStaffName: string
+  executeStaffId?: string
+  executeStaffName?: string
+  totalRows: number
+  executedRows: number
+  deletedRows: number
+  errorRows: number
+  createdTime?: string
+  confirmTime?: string
+  completeTime?: string
+  status: number
+  instName: string
+}
+
+export interface RechargeAccountImportTaskRecordListResult {
+  list: RechargeAccountImportRow[]
+  total: number
+  columns: RechargeAccountImportColumn[]
+}
+
+export interface RechargeAccountImportUploadResult {
+  fileUrl: string
+  fileName: string
+}
+
+export interface RechargeAccountImportTaskListResult {
+  list: RechargeAccountImportTaskDetail[]
+  total: number
+}
+
+export interface RechargeAccountImportStartResult {
+  successCount: number
+  failCount: number
+}
+
+export function uploadRechargeAccountImportApi(data: FormData) {
+  return usePost<RechargeAccountImportUploadResult, FormData>('/api/v1/recharge-accounts/import-upload', data, {
+    headers: {
+      'Content-Type': 'multipart/form-data;charset=UTF-8',
+    },
+  })
+}
+
+export function submitRechargeAccountImportTaskApi(data: { fileUrl: string, fileName: string }) {
+  return usePost<string>('/api/v1/recharge-accounts/import-tasks/submit', data)
+}
+
+export function getRechargeAccountImportTaskDetailApi(params: { taskId: string }) {
+  return useGet<RechargeAccountImportTaskDetail>('/api/v1/recharge-accounts/import-tasks/detail', params)
+}
+
+export function getRechargeAccountImportTaskRecordListApi(data: {
+  queryModel: { taskId: string, type: number }
+  sortModel?: string
+  pageRequestModel?: { needTotal?: boolean, pageSize?: number, pageIndex?: number, skipCount?: number }
+}) {
+  return usePost<RechargeAccountImportTaskRecordListResult>('/api/v1/recharge-accounts/import-tasks/records', data)
+}
+
+export function batchSaveRechargeAccountImportTaskRecordsApi(data: { taskId: string, records: RechargeAccountImportRow[] }) {
+  return usePost<RechargeAccountImportRow[]>('/api/v1/recharge-accounts/import-tasks/batch-save-records', data)
+}
+
+export function startRechargeAccountImportTaskApi(data: { taskId: string }) {
+  return usePost<RechargeAccountImportStartResult>('/api/v1/recharge-accounts/import-tasks/start', data)
+}
+
+export function getRechargeAccountImportTaskListApi() {
+  return useGet<RechargeAccountImportTaskListResult>('/api/v1/recharge-accounts/import-tasks/list')
+}
+
+export function clearRechargeAccountImportTaskListApi() {
+  return usePost<boolean>('/api/v1/recharge-accounts/import-tasks/clear')
+}
+
+export function deleteRechargeAccountImportTaskApi(data: { taskId: string }) {
+  return usePost<boolean>('/api/v1/recharge-accounts/import-tasks/delete', data)
+}
+
 export function getRechargeAccountDetailPageApi(data: RechargeAccountDetailPageQueryParams) {
   return usePost<RechargeAccountDetailPageResult>('/api/v1/recharge-accounts/details/page', data)
 }

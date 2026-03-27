@@ -184,6 +184,7 @@ func buildRechargeAccountImportByStudentColumns(defaultFields []model.StudentFie
 	columns = append(columns, model.IntentionStudentImportTemplateColumn{Title: "学员备注", FieldType: 1})
 	columns = append(columns,
 		model.IntentionStudentImportTemplateColumn{Title: "充值金额", FieldType: 2},
+		model.IntentionStudentImportTemplateColumn{Title: "残联金额", FieldType: 2},
 		model.IntentionStudentImportTemplateColumn{Title: "赠送金额", FieldType: 2},
 		model.IntentionStudentImportTemplateColumn{Title: "经办日期", FieldType: 3},
 		model.IntentionStudentImportTemplateColumn{Title: "订单销售员", FieldType: 4, Options: staffNames},
@@ -204,6 +205,7 @@ func buildRechargeAccountImportByAccountColumns(_ []model.StudentFieldKey, _ []m
 	return []model.IntentionStudentImportTemplateColumn{
 		{Title: "储值账户号", Required: true, FieldType: 1},
 		{Title: "充值金额", FieldType: 2},
+		{Title: "残联金额", FieldType: 2},
 		{Title: "赠送金额", FieldType: 2},
 		{Title: "经办日期", FieldType: 3},
 		{Title: "订单销售员", FieldType: 4, Options: staffNames},
@@ -228,7 +230,7 @@ func buildRechargeAccountImportByStudentNotesRichText(orgName string, columns []
 			"3、「学员姓名」支持最多 20 个字。",
 			"4、「手机号」必须为 1 开头的 11 位数字，不支持“-”和中间空格，例如 13311113333。",
 			"5、「手机号归属人」、「渠道」、「性别」、「销售员」、「订单销售员」、「收款方式」、「收款账户」为下拉选择项。",
-			"6、「充值金额」、「赠送金额」只支持输入两位小数，请勿携带单位“元”或“￥”。",
+			"6、「充值金额」、「残联金额」、「赠送金额」只支持输入两位小数，请勿携带单位“元”或“￥”。",
 			"7、「经办日期」、「支付日期」支持财年、月份、日期等常见日期格式，例如 2021-01-21、2021/01/21、2021.01.21、20210121。",
 			"8、「订单标签」如需填写，请使用系统中已存在的标签名称，多个标签用英文（,）分隔。",
 			"9、如更新了自定义字段的字段名称或选项，请重新下载模板后填写。",
@@ -247,7 +249,7 @@ func buildRechargeAccountImportByAccountNotesRichText(orgName string, columns []
 		"按储值账户",
 		columns,
 		[]string{
-			"3、「充值金额」、「赠送金额」只支持输入两位小数，请勿携带单位“元”或“￥”。",
+			"3、「充值金额」、「残联金额」、「赠送金额」只支持输入两位小数，请勿携带单位“元”或“￥”。",
 			"4、「经办日期」、「支付日期」支持财年、月份、日期等常见日期格式，例如 2021-01-21、2021/01/21、2021.01.21、20210121。",
 			"5、「订单销售员」、「收款方式」、「收款账户」为下拉选择项。",
 			"6、「订单标签」如需填写，请使用系统中已存在的标签名称，多个标签用英文（,）分隔。",

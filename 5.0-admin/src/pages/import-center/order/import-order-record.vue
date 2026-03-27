@@ -9,22 +9,31 @@ import {
   deleteOrderImportTaskApi,
   getOrderImportTaskListApi,
 } from '~@/api/finance-center/order-import'
+import {
+  clearRechargeAccountImportTaskListApi,
+  deleteRechargeAccountImportTaskApi,
+  getRechargeAccountImportTaskListApi,
+} from '@/api/finance-center/recharge-account'
 import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
 
 const router = useRouter()
 const userStore = useUserStore()
 const schoolName = computed(() => userStore.userInfo?.orgName || '总机构')
+const isRechargeImport = computed(() => router.currentRoute.value.path.includes('/import-recharge-account'))
+const pageTitle = computed(() => isRechargeImport.value ? '储值账户导入记录' : '学员订单导入记录')
 const loading = ref(false)
 const records = ref([])
 let pollingTimer = null
 
 function goBack() {
-  router.replace('/import-center/import-order-starter')
+  router.replace(isRechargeImport.value ? '/import-center/import-recharge-account-starter' : '/import-center/import-order-starter')
 }
 
 function viewDetail(record) {
-  router.push(`/import-center/import-order/record/${record.id}`)
+  router.push(isRechargeImport.value
+    ? `/import-center/import-recharge-account/record/${record.id}`
+    : `/import-center/import-order/record/${record.id}`)
 }
 
 function statusText(status) {
@@ -44,7 +53,9 @@ function statusClass(status) {
 async function loadRecords() {
   loading.value = true
   try {
-    const { result, data } = await getOrderImportTaskListApi()
+    const { result, data } = isRechargeImport.value
+      ? await getRechargeAccountImportTaskListApi()
+      : await getOrderImportTaskListApi()
     records.value = result?.list || data?.list || []
   }
   catch (error) {
@@ -64,10 +75,12 @@ function handleClearRecords() {
     okText: '确认清空',
     okType: 'danger',
     cancelText: '取消',
-    content: '将清空当前机构的全部学员订单导入记录，该操作不可恢复。',
+    content: `将清空当前机构的全部${isRechargeImport.value ? '储值账户' : '学员订单'}导入记录，该操作不可恢复。`,
     async onOk() {
       try {
-        const res = await clearOrderImportTaskListApi()
+        const res = isRechargeImport.value
+          ? await clearRechargeAccountImportTaskListApi()
+          : await clearOrderImportTaskListApi()
         if (res.code === 200) {
           messageService.success('导入记录已清空')
           await loadRecords()
@@ -95,7 +108,9 @@ function handleDeleteRecord(record) {
     content: '删除后将无法恢复该待处理导入任务。',
     async onOk() {
       try {
-        const res = await deleteOrderImportTaskApi({ taskId: record.id })
+        const res = isRechargeImport.value
+          ? await deleteRechargeAccountImportTaskApi({ taskId: record.id })
+          : await deleteOrderImportTaskApi({ taskId: record.id })
         if (res.code === 200) {
           messageService.success('导入记录已删除')
           await loadRecords()
@@ -145,8 +160,8 @@ onUnmounted(() => {
     <div class="work-main">
       <div class="work-main-card">
         <div class="record-header">
-          <div class="record-title">
-            学员订单导入记录
+        <div class="record-title">
+            {{ pageTitle }}
           </div>
           <a-button danger ghost @click="handleClearRecords">
             清空记录
