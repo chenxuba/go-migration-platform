@@ -9,7 +9,7 @@ import {
 import { getApprovalTemplatesApi } from '@/api/finance-center/approval-manage'
 import { getOrderDetailApi } from '@/api/finance-center/order-manage'
 import messageService from '@/utils/messageService'
-import { openOrderReceiptPage } from '@/utils/order-receipt'
+import { downloadOrderReceiptPdf, openOrderReceiptPage } from '@/utils/order-receipt'
 
 // Props
 const props = defineProps({
@@ -82,12 +82,18 @@ function handlePrintReceipt() {
   openOrderReceiptPage(orderId.value, { template: 'a4' })
 }
 
-function handleDownloadReceipt() {
+async function handleDownloadReceipt() {
   if (!orderId.value) {
     messageService.warning('订单不存在')
     return
   }
-  openOrderReceiptPage(orderId.value, { template: 'a4', autoDownload: true })
+  try {
+    await downloadOrderReceiptPdf(orderId.value, { template: 'a4' })
+  }
+  catch (error) {
+    console.error('download receipt failed', error)
+    messageService.error('下载收据失败')
+  }
 }
 
 function formatDateTime(value) {

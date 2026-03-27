@@ -11,7 +11,7 @@ import { approveApprovalApi, getApprovalDetailApi, refuseApprovalApi } from '~/a
 import { closeOrderApi, getOrderDetailApi } from '~/api/finance-center/order-manage'
 import { getRechargeAccountByStudentApi } from '~/api/finance-center/recharge-account'
 import messageService from '~/utils/messageService'
-import { openOrderReceiptPage } from '~/utils/order-receipt'
+import { downloadOrderReceiptPdf, openOrderReceiptPage } from '~/utils/order-receipt'
 import RechargeAccountDetailDrawer from './recharge-account-detail-drawer.vue'
 
 const props = defineProps({
@@ -925,12 +925,18 @@ function handlePrintReceipt() {
   openOrderReceiptPage(detail.value.orderId, { template: 'a4' })
 }
 
-function handleDownloadReceipt() {
+async function handleDownloadReceipt() {
   if (!detail.value?.orderId) {
     messageService.warning('订单不存在')
     return
   }
-  openOrderReceiptPage(detail.value.orderId, { template: 'a4', autoDownload: true })
+  try {
+    await downloadOrderReceiptPdf(detail.value.orderId, { template: 'a4' })
+  }
+  catch (error) {
+    console.error('download receipt failed', error)
+    messageService.error('下载收据失败')
+  }
 }
 
 function handleSendSms() {

@@ -14,7 +14,7 @@ import {
   cancelBadDebtApi,
 } from "@/api/finance-center/order-manage";
 import messageService from "@/utils/messageService";
-import { openOrderReceiptPage } from "@/utils/order-receipt";
+import { downloadOrderReceiptPdf, openOrderReceiptPage } from "@/utils/order-receipt";
 import AllFilter from "@/components/common/all-filter.vue";
 const router = useRouter();
 const allFilterRef = ref(null);
@@ -554,12 +554,17 @@ function handlePrintReceipt(orderId) {
 }
 
 // 下载收据
-function handleDownloadReceipt(orderId) {
+async function handleDownloadReceipt(orderId) {
   if (!orderId) {
     messageService.warning("订单不存在");
     return;
   }
-  openOrderReceiptPage(orderId, { template: "a4", autoDownload: true });
+  try {
+    await downloadOrderReceiptPdf(orderId, { template: "a4" });
+  } catch (error) {
+    console.error("download receipt failed", error);
+    messageService.error("下载收据失败");
+  }
 }
 
 // 发送短信

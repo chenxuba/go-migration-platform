@@ -17,7 +17,7 @@ import {
   getStudentDetailApi,
   payOrderBySchoolPalApi,
 } from '@/api/finance-center/recharge-account'
-import { openOrderReceiptPage } from '@/utils/order-receipt'
+import { downloadOrderReceiptPdf, openOrderReceiptPage } from '@/utils/order-receipt'
 import StaffSelect from './staff-select.vue'
 import StudentSelect from './student-select.vue'
 import CreateStudent from './create-student.vue'
@@ -424,13 +424,19 @@ function handlePrintReceipt() {
   openOrderReceiptPage(id, { template: 'a4' })
 }
 
-function handleDownloadReceipt() {
+async function handleDownloadReceipt() {
   const id = String(currentRechargeOrderDetail.value?.saleOrderId ?? '').trim()
   if (!id) {
     message.warning('暂无关联系统订单，无法下载收据')
     return
   }
-  openOrderReceiptPage(id, { template: 'a4', autoDownload: true })
+  try {
+    await downloadOrderReceiptPdf(id, { template: 'a4' })
+  }
+  catch (error) {
+    console.error('download receipt failed', error)
+    message.error('下载收据失败')
+  }
 }
 
 // 创建学员相关
