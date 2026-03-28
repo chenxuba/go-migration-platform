@@ -649,9 +649,11 @@ const handleSearchInput = debounce((value, id, type) => {
 
 <template>
   <div class="tab-content">
-    <all-filter ref="allFilterRef" :display-array="displayArray" :is-show-search-input="true" search-label="课程名称" search-placeholder="请输入课程名称"
-      :render-class-list-options="false"  :course-attribute-list="enabledCourseProperties"
-      v-on="filterUpdateHandlers" @searchInputFun="handleSearchInput" />
+    <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-tl-0 rounded-tr-0">
+      <all-filter ref="allFilterRef" :display-array="displayArray" :is-show-search-input="true" search-label="课程名称" search-placeholder="请输入课程名称"
+        :render-class-list-options="false" :course-attribute-list="enabledCourseProperties"
+        v-on="filterUpdateHandlers" @searchInputFun="handleSearchInput" />
+    </div>
     <div class="tab-table">
       <div class="table-title flex justify-between items-center">
         <div class="total whitespace-nowrap">
