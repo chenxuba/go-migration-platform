@@ -45,7 +45,7 @@ const productType = ref(1)
 const selectItems = ref([
   { title: '课程商品', productType: 1 },
   { title: '学杂费', productType: 2 },
-  { title: '教材商品', productType: 3 },
+  { title: '教材用品', productType: 3 },
 ])
 const searchKey = ref(null)
 // 原始课程列表数据
@@ -206,17 +206,12 @@ function resetPagination() {
 }
 
 // 监听搜索关键词变化
-watch(searchKey, (newValue, oldValue) => {
-  // 只有在商品类型为1（课程商品）时才进行搜索
-  if (productType.value === 1) {
-    // 防抖处理：延迟500ms执行搜索
-    clearTimeout(searchTimeout.value)
-    searchTimeout.value = setTimeout(() => {
-      resetPagination()
-      console.log('searchKey', searchKey.value)
-      getProcessContentPage(true)
-    }, 500)
-  }
+watch(searchKey, () => {
+  clearTimeout(searchTimeout.value)
+  searchTimeout.value = setTimeout(() => {
+    resetPagination()
+    getProcessContentPage(true)
+  }, 500)
 })
 
 // 搜索防抖定时器
@@ -269,29 +264,9 @@ watch(openModal, (newValue, oldValue) => {
 })
 
 function getCourseList(type) {
-  console.log('getCourseList', type)
-  
   // 重置分页状态
   resetPagination()
-  
-  switch (type) {
-    case 1:
-      // 课程商品
-      getProcessContentPage(true)
-      break
-    case 2:
-      // 学杂费 - 暂时显示空数据，后续可以调用对应的API
-      allCourseList.value = []
-      pagination.value.hasMore = false
-      break
-    case 3:
-      // 教材商品 - 暂时显示空数据，后续可以调用对应的API
-      allCourseList.value = []
-      pagination.value.hasMore = false
-      break
-    default:
-      break
-  }
+  getProcessContentPage(true)
 }
 
 // 获取课程列表
@@ -347,11 +322,6 @@ async function getProcessContentPage(isRefresh = false) {
         pagination.value.pageIndex++
       }
       
-      console.log('获取课程列表成功:', {
-        current: allCourseList.value.length,
-        total,
-        hasMore: pagination.value.hasMore
-      })
     }
   } catch (error) {
     console.error('获取课程列表失败:', error)
@@ -376,7 +346,6 @@ function handleScroll(event) {
 function loadMore() {
   if (!pagination.value.hasMore || loading.value || loadingMore.value) return
   
-  console.log('触发加载更多')
   getProcessContentPage(false)
 }
 
@@ -418,7 +387,6 @@ function handleOk() {
     }
   })
 
-  console.log('Selected courses:', allSelectedCourses)
   emit('confirm', allSelectedCourses)
   emit('update:open', false)
 }
@@ -471,9 +439,9 @@ defineExpose({
 </script>
 
 <template>
-  <!-- 选择课程/学杂费/教材商品 -->
+  <!-- 选择课程/学杂费/教材用品 -->
   <a-modal :open="openModal" centered wrap-class-name="modal" width="1000px" :body-style="{ padding: 0 }"
-    title="选择课程/学杂费/教材商品" @ok="handleOk" @cancel="handleCancel" @update:open="$emit('update:open', $event)">
+    title="选择课程/学杂费/教材用品" @ok="handleOk" @cancel="handleCancel" @update:open="$emit('update:open', $event)">
     <div class="modal-wrap">
       <div class="modal-left">
         <a-list>
@@ -504,7 +472,7 @@ defineExpose({
           </a-input>
         </div>
         <div v-if="productType === 3" class="m-r-t m-r-t-2">
-          <a-input v-model:value="searchKey" placeholder="搜索教材商品">
+          <a-input v-model:value="searchKey" placeholder="搜索教材用品">
             <template #prefix>
               <SearchOutlined />
             </template>
@@ -711,5 +679,3 @@ defineExpose({
   }
 }
 </style>
-
-
