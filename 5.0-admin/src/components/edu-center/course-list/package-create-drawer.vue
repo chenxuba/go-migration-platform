@@ -749,27 +749,31 @@ watch(openDrawer, async (value) => {
             <a-form
               ref="propertyFormRef"
               :model="formState"
-              :label-col="responsiveLabelCol"
-              :wrapper-col="responsiveWrapperCol"
+              layout="vertical"
+              class="package-property-form"
             >
-              <a-form-item v-for="property in enabledCourseProperties" :key="property.id" :label="`${property.name}:`">
-                <a-select
-                  v-model:value="formState.productPackageProperties[property.id]"
-                  :mode="property.name === '科目' ? 'multiple' : undefined"
-                  allow-clear
-                  show-search
-                  :placeholder="`搜索${property.name}`"
-                  class="field-width"
-                >
-                  <a-select-option
-                    v-for="option in propertyMap[property.id] || []"
-                    :key="option.id"
-                    :value="option.id"
-                  >
-                    {{ option.name }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
+              <div class="package-property-grid">
+                <div v-for="property in enabledCourseProperties" :key="property.id" class="package-property-cell">
+                  <a-form-item :label="property.name" class="package-property-item">
+                    <a-select
+                      v-model:value="formState.productPackageProperties[property.id]"
+                      :mode="property.name === '科目' ? 'multiple' : undefined"
+                      allow-clear
+                      show-search
+                      :placeholder="`搜索${property.name}`"
+                      class="package-property-select"
+                    >
+                      <a-select-option
+                        v-for="option in propertyMap[property.id] || []"
+                        :key="option.id"
+                        :value="option.id"
+                      >
+                        {{ option.name }}
+                      </a-select-option>
+                    </a-select>
+                  </a-form-item>
+                </div>
+              </div>
             </a-form>
           </div>
 
@@ -997,6 +1001,35 @@ watch(openDrawer, async (value) => {
 
 .entry-tip {
   color: #666;
+}
+
+.package-property-form {
+  margin-top: 4px;
+  padding-left: 50px;
+
+  :deep(.ant-form-item) {
+    margin-bottom: 0;
+  }
+}
+
+.package-property-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px 20px;
+}
+
+.package-property-cell {
+  min-width: 0;
+}
+
+.package-property-item {
+  :deep(.ant-form-item-label) {
+    padding-bottom: 10px;
+  }
+}
+
+.package-property-select {
+  width: 100%;
 }
 
 .container-box {
@@ -1236,7 +1269,7 @@ watch(openDrawer, async (value) => {
 }
 
 .micro-setting-label {
-  width: 16.666667%;
+  width: 11%;
   color: rgba(0, 0, 0, 0.88);
   text-align: right;
 }
@@ -1304,7 +1337,7 @@ watch(openDrawer, async (value) => {
     width: 100%;
   }
 
-  .selected-card__grid {
+  .package-property-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1336,6 +1369,11 @@ watch(openDrawer, async (value) => {
   .footer-btn,
   .micro-field-width {
     width: 100%;
+  }
+
+  .package-property-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
   }
 
   .allow-course-select,
