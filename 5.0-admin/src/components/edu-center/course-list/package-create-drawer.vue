@@ -1247,6 +1247,18 @@ watch(openDrawer, async (value) => {
   }
 }
 
+.upload-list-inline {
+  :deep(.ant-upload.ant-upload-select) {
+    width: 160px !important;
+    height: 107px !important;
+  }
+
+  :deep(.ant-upload-list-item-container) {
+    width: 160px !important;
+    height: 107px !important;
+  }
+}
+
 .custom-radio2 {
   :deep(.ant-radio-wrapper) {
     min-width: 145px;
