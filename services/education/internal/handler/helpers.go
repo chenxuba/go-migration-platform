@@ -617,22 +617,22 @@ func parseCourseProductSaveDTO(raw map[string]any) model.CourseProductSaveDTO {
 		UUID:             asString(raw["uuid"]),
 		Version:          asInt64Ptr(raw["version"]),
 		Name:             asString(raw["name"]),
-		CourseCategory:   asInt64Ptr(raw["courseCategory"]),
+		CourseCategory:   asInt64Ptr(firstNonNil(raw["courseCategory"], raw["courseCategoryId"])),
 		CourseAttribute:  asIntPtr(raw["courseAttribute"]),
 		Type:             asIntPtr(raw["type"]),
 		Title:            asString(raw["title"]),
 		Images:           asString(raw["images"]),
 		Description:      asString(raw["description"]),
-		CourseType:       asIntPtr(raw["courseType"]),
-		TeachMethod:      asIntPtr(raw["teachMethod"]),
-		AllowedLessonIDs: asInt64Slice(raw["allowedLessonIds"]),
+		CourseType:       asIntPtr(firstNonNil(raw["courseType"], raw["lessonScope"])),
+		TeachMethod:      asIntPtr(firstNonNil(raw["teachMethod"], raw["lessonType"])),
+		AllowedLessonIDs: asInt64Slice(firstNonNil(raw["allowedLessonIds"], raw["courseScope"])),
 		SubjectIDs:       asInt64Slice(raw["subjectIds"]),
-		CourseScope:      asInt64Slice(raw["courseScope"]),
+		CourseScope:      asInt64Slice(firstNonNil(raw["courseScope"], raw["allowedLessonIds"])),
 	}
 	if show := asBoolPtr(raw["isShowMicoSchool"]); show != nil {
 		dto.IsShowMicoSchool = *show
 	}
-	dto.SaleStatus = asBoolPtr(raw["saleStatus"])
+	dto.SaleStatus = asBoolPtr(firstNonNil(raw["saleStatus"], raw["status"]))
 	if dto.SaleStatus == nil {
 		defaultSale := true
 		dto.SaleStatus = &defaultSale
@@ -659,7 +659,7 @@ func parseCourseProductSaveDTO(raw map[string]any) model.CourseProductSaveDTO {
 				ID:             derefInt64Value(asInt64Ptr(skuRaw["id"])),
 				UUID:           asString(skuRaw["uuid"]),
 				Version:        derefInt64Value(asInt64Ptr(skuRaw["version"])),
-				LessonModel:    asIntPtr(skuRaw["lessonModel"]),
+				LessonModel:    normalizeLessonModelPtr(firstNonNil(skuRaw["lessonModel"], skuRaw["lessonMode"])),
 				Name:           asString(skuRaw["name"]),
 				Unit:           asIntPtr(skuRaw["unit"]),
 				Quantity:       asIntPtr(skuRaw["quantity"]),
@@ -670,7 +670,7 @@ func parseCourseProductSaveDTO(raw map[string]any) model.CourseProductSaveDTO {
 			})
 		}
 	}
-	if propertyList, ok := raw["courseProductProperties"].([]any); ok {
+	if propertyList, ok := firstNonNil(raw["courseProductProperties"], raw["lessonProductProperties"]).([]any); ok {
 		dto.CourseProductProperties = make([]model.CoursePropertyBinding, 0, len(propertyList))
 		for _, item := range propertyList {
 			propertyRaw, ok := item.(map[string]any)
@@ -678,14 +678,26 @@ func parseCourseProductSaveDTO(raw map[string]any) model.CourseProductSaveDTO {
 				continue
 			}
 			dto.CourseProductProperties = append(dto.CourseProductProperties, model.CoursePropertyBinding{
-				CoursePropertyID:    derefInt64Value(asInt64Ptr(propertyRaw["coursePropertyId"])),
-				PropertyIDName:      coalesceString(propertyRaw["propertyIdName"], propertyRaw["propertyName"]),
-				CoursePropertyValue: derefInt64Value(asInt64Ptr(propertyRaw["coursePropertyValue"])),
+				CoursePropertyID:    derefInt64Value(asInt64Ptr(firstNonNil(propertyRaw["coursePropertyId"], propertyRaw["lessonPropertyId"]))),
+				PropertyIDName:      coalesceString(propertyRaw["propertyIdName"], propertyRaw["propertyName"], propertyRaw["lessonPropertyName"]),
+				CoursePropertyValue: derefInt64Value(asInt64Ptr(firstNonNil(propertyRaw["coursePropertyValue"], propertyRaw["lessonPropertyValue"]))),
 				PropertyValueName:   asString(propertyRaw["propertyValueName"]),
 			})
 		}
 	}
 	return dto
+}
+
+func normalizeLessonModelPtr(value any) *int {
+	result := asIntPtr(value)
+	if result == nil {
+		return nil
+	}
+	if *result == 4 {
+		normalized := 3
+		return &normalized
+	}
+	return result
 }
 
 func parseCreateOrderDTO(raw map[string]any) model.CreateOrderDTO {

@@ -1,9 +1,10 @@
 <script setup>
-import { CloseOutlined, ExclamationCircleOutlined, FileWordOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, ExclamationCircleOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { Upload } from 'ant-design-vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import * as qiniu from 'qiniu-js'
+import DescriptionBlockEditor from './description-block-editor.vue'
 import SelectCourseRangeModal from './selectCourseRangeModal.vue'
 import MicroSchoolSettingsFields from './micro-school-settings-fields.vue'
 import CustomTitle from '@/components/common/custom-title.vue'
@@ -241,7 +242,7 @@ const settingFormRef = ref(null)
 const settingFormState = reactive({
   title: undefined,
   images: [],
-  description: [],
+  descriptionBlocks: [],
   isShow: true,
   buyLimit: false,
   oldBuy: true,
@@ -465,6 +466,7 @@ function resetForm() {
   formState.value.courseType = 1
   formState.value.courseScope = []
   formState.value.teachMethod = 1
+  allCommonTypeSelection.value = 'all-class'
   formState.value.type = 1
   formState.value.productSku = []
 
@@ -481,7 +483,7 @@ function resetForm() {
   // 重置微校设置表单 settingFormState
   settingFormState.title = undefined
   settingFormState.images = []
-  settingFormState.description = []
+  settingFormState.descriptionBlocks = []
   settingFormState.isShow = true
   settingFormState.buyLimit = false
   settingFormState.oldBuy = true
@@ -564,6 +566,9 @@ async function getCourseDetail(id) {
       formState.value.saleStatus = courseData.saleStatus
       formState.value.courseType = courseData.courseType || 1
       formState.value.teachMethod = courseData.teachMethod || 1
+      allCommonTypeSelection.value = courseData.courseType === 4
+        ? 'all-course'
+        : ((courseData.teachMethod || 1) === 2 ? 'all-1v1' : 'all-class')
       formState.value.type = courseData.type || 1
 
       // 回显课程范围选择（使用 courseScopeInfo 字段进行回显）
@@ -911,57 +916,10 @@ function _handleSubmit() {
   console.log('保存')
   formRef.value.validate().then(async () => {
     console.log('表单验证通过')
-    // 调用后端接口保存
-    // const res = await saveCourse();
-    // console.log('保存成功', res);
-    // 处理数据 把amountPrice、regularPrice、timeBasedPrice  push到productSku里
-    formState.value.productSku = [...formState.value.amountPrice, ...formState.value.regularPrice, ...formState.value.timeBasedPrice]
-    // 处理数据 把 学年、学季 年级、班型 课程属性 push到 courseProductProperties里
-    formState.value.courseProductProperties = []
-    formState.value.subjectIds = []
-    enabledCourseProperties.value.forEach((property) => {
-      const propertyData = formState.value[property.name]
-      if (propertyData && propertyData.coursePropertyValue) {
-        if (property.name === '科目') {
-          // 科目单独处理到subjectIds
-          if (Array.isArray(propertyData.coursePropertyValue)) {
-            formState.value.subjectIds = [...propertyData.coursePropertyValue]
-          }
-          else {
-            formState.value.subjectIds = [propertyData.coursePropertyValue]
-          }
-        }
-        else {
-          // 其他属性push到courseProductProperties
-          formState.value.courseProductProperties.push({
-            coursePropertyId: propertyData.coursePropertyId,
-            propertyName: propertyData.propertyName,
-            coursePropertyValue: propertyData.coursePropertyValue,
-            propertyValueName: propertyData.propertyValueName,
-          })
-        }
-      }
-    })
-    if (!formState.value.title) {
-      formState.value.title = formState.value.name
-    }
-    // 如果通用课程不为1  授课方式都重置为1
-    if (formState.value.courseType !== 1) {
-      formState.value.teachMethod = 1
-    }
-    formState.value.isShowMicoSchool = settingFormState.isShow
-    formState.value.images = buildCourseImagePayload()
-    formState.value.description = `${settingFormState.description}`
-    formState.value.buyRule.enableBuyLimit = settingFormState.buyLimit
-    formState.value.buyRule.allowType = settingFormState.allowType
-    formState.value.buyRule.isAllowFreshmanStudent = settingFormState.newBuy
-    formState.value.buyRule.isAllowReturningStudent = settingFormState.oldBuy
-    formState.value.buyRule.limitOnePer = settingFormState.buyOne
-    formState.value.buyRule.relateProductIds = settingFormState.courseListIds
-    formState.value.buyRule.studentStatuses = settingFormState.studentStatuses
-    console.log(formState.value)
+    const payload = buildCourseSubmitPayload()
+    console.log(payload)
     btnLoading.value = true
-    emit('handleSubmit', formState.value)
+    emit('handleSubmit', payload)
   }).catch((err) => {
     console.log('表单验证失败', err)
     btnLoading.value = false
@@ -979,6 +937,7 @@ const openModal = ref(false)
 const selectCourseRangeModalOpen = ref(false)
 // 已选择的课程
 const selectedCourses = ref([])
+const allCommonTypeSelection = ref('all-class')
 
 // 计算课程名称字符串
 const courseNames = computed(() => {
@@ -993,6 +952,30 @@ const courseNames = computed(() => {
     const firstThree = names.slice(0, 3).join('、')
     return `${firstThree}等${names.length}门课程`
   }
+})
+
+const isCommonCourse = computed({
+  get: () => formState.value.courseType !== 1,
+  set(value) {
+    if (!value) {
+      formState.value.courseType = 1
+      return
+    }
+    if (formState.value.courseType === 1) {
+      formState.value.courseType = allCommonTypeSelection.value === 'all-course' ? 4 : 2
+    }
+  },
+})
+
+const commonCourseMode = computed({
+  get: () => formState.value.courseType === 3 ? 'partial' : 'all',
+  set(value) {
+    if (value === 'partial') {
+      formState.value.courseType = 3
+    } else {
+      formState.value.courseType = allCommonTypeSelection.value === 'all-course' ? 4 : 2
+    }
+  },
 })
 
 function selectCourseRange(index) {
@@ -1028,6 +1011,76 @@ function handlePropertyChange(propertyId, value, propertyName) {
     formState.value[propertyName] = undefined
   }
   console.log(`Property ${propertyName} changed:`, formState.value[propertyName])
+}
+
+function normalizeSubmitLessonMode(value) {
+  return value === 3 ? 4 : value
+}
+
+function buildCourseSubmitPayload() {
+  const lessonProductProperties = []
+  formState.value.subjectIds = []
+
+  enabledCourseProperties.value.forEach((property) => {
+    const propertyData = formState.value[property.name]
+    if (propertyData && propertyData.coursePropertyValue) {
+      if (property.name === '科目') {
+        if (Array.isArray(propertyData.coursePropertyValue)) {
+          formState.value.subjectIds = [...propertyData.coursePropertyValue]
+        } else {
+          formState.value.subjectIds = [propertyData.coursePropertyValue]
+        }
+      } else {
+        lessonProductProperties.push({
+          lessonPropertyId: propertyData.coursePropertyId,
+          lessonPropertyName: propertyData.propertyName,
+          lessonPropertyValue: propertyData.coursePropertyValue,
+          propertyValueName: propertyData.propertyValueName,
+        })
+      }
+    }
+  })
+
+  return {
+    id: formState.value.id,
+    uuid: formState.value.uuid,
+    version: formState.value.version,
+    name: formState.value.name,
+    courseCategory: formState.value.courseCategory,
+    type: formState.value.type,
+    title: formState.value.title || formState.value.name,
+    images: buildCourseImagePayload(),
+    description: JSON.stringify(settingFormState.descriptionBlocks || []),
+    isShowMicoSchool: settingFormState.isShow,
+    buyRule: {
+      enableBuyLimit: settingFormState.buyLimit,
+      allowType: settingFormState.allowType,
+      isAllowFreshmanStudent: settingFormState.newBuy,
+      isAllowReturningStudent: settingFormState.oldBuy,
+      limitOnePer: settingFormState.buyOne,
+      relateProductIds: settingFormState.courseListIds,
+      studentStatuses: settingFormState.studentStatuses,
+    },
+    status: formState.value.saleStatus,
+    productSku: [...formState.value.amountPrice, ...formState.value.regularPrice, ...formState.value.timeBasedPrice].map(item => ({
+      id: item.id,
+      uuid: item.uuid,
+      version: item.version,
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      price: item.price,
+      onlineSale: item.onlineSale,
+      lessonAudition: item.lessonAudition,
+      lessonMode: normalizeSubmitLessonMode(item.lessonModel),
+      remark: item.remark,
+    })),
+    lessonType: formState.value.teachMethod,
+    lessonScope: formState.value.courseType,
+    allowedLessonIds: formState.value.courseScope,
+    subjectIds: formState.value.subjectIds,
+    lessonProductProperties,
+  }
 }
 </script>
 
@@ -1092,67 +1145,66 @@ function handlePropertyChange(propertyId, value, propertyName) {
                 </a-radio-group>
               </a-form-item>
 
-              <a-form-item label="通用课程:" name="courseType" :rules="[{ required: true, message: '请选择通用课程' }]">
-                <!-- 编辑模式下只显示文本 -->
-                <template v-if="props.modalType === 'edit'">
-                  <span>
-                    {{ formState.courseType === 1 ? '不是通用课'
-                      : formState.courseType === 2 ? '全部班课通用'
-                        : formState.courseType === 3 ? '部分班课通用'
-                          : formState.courseType === 4 ? '混合课程通用' : '未知类型' }}
-                  </span>
-                </template>
-                <!-- 创建模式下显示选择器 -->
-                <a-radio-group v-else v-model:value="formState.courseType"
-                  class="custom-radio custom-radio2 flex flex-nowrap">
-                  <a-radio :value="1">
-                    不是通用课
-                  </a-radio>
-                  <a-radio :value="2">
-                    全部班课通用
-                  </a-radio>
-                  <a-radio :value="3">
-                    部分班课通用
-                  </a-radio>
-                  <!-- <a-radio :value="4">混合课程通用</a-radio> -->
-                </a-radio-group>
-              </a-form-item>
+                <a-form-item label="授课方式:" name="teachMethod" :rules="[{ required: true, message: '请选择授课方式' }]">
+                  <a-radio-group v-model:value="formState.teachMethod" class="custom-radio custom-radio2">
+                    <a-radio :value="1">
+                      班级授课
+                    </a-radio>
+                    <a-radio :value="2">
+                      1v1授课
+                    </a-radio>
+                  </a-radio-group>
+                </a-form-item>
 
-              <a-form-item v-if="formState.courseType === 1" label="授课方式:" name="teachMethod"
-                :rules="[{ required: true, message: '请选择授课方式' }]">
-                <!-- 编辑模式下只显示文本 -->
-                <template v-if="props.modalType === 'edit'">
-                  <span>
-                    {{ formState.teachMethod === 1 ? '班级授课'
-                      : formState.teachMethod === 2 ? '1v1 授课' : '未知方式' }}
-                  </span>
-                </template>
-                <!-- 创建模式下显示选择器 -->
-                <a-radio-group v-else v-model:value="formState.teachMethod" class="custom-radio custom-radio2">
-                  <a-radio :value="1">
-                    班级授课
-                  </a-radio>
-                  <a-radio :value="2">
-                    1v1 授课
-                  </a-radio>
-                </a-radio-group>
-              </a-form-item>
-              <!-- 课程范围 -->
-              <a-form-item v-if="formState.courseType === 3 || formState.courseType === 4" label="课程范围:"
-                name="courseScope" :rules="[{ required: true, message: '请选择课程范围' }]">
-                <div class="course-range-container">
-                  <!-- 选择/编辑按钮 -->
-                  <a-button type="primary" ghost class="w-full sm:w-auto mb-2"
-                    @click="selectCourseRange(formState.teachMethod)">
-                    {{ selectedCourses.length === 0 ? '选择课程' : '编辑已选' }}
-                  </a-button>
+                <a-form-item label="是否通用课程:" name="isCommonCourse">
+                  <a-radio-group v-model:value="isCommonCourse" class="custom-radio custom-radio2">
+                    <a-radio :value="false">
+                      否
+                    </a-radio>
+                    <a-radio :value="true">
+                      是
+                    </a-radio>
+                  </a-radio-group>
+                </a-form-item>
 
-                  <!-- 已选课程展示 -->
-                  <div v-if="selectedCourses.length > 0" class="selected-courses-display">
-                    已选择{{ selectedCourses.length }}门：{{ courseNames }}
+                <a-form-item v-if="isCommonCourse" label="通用课程类型:" name="commonCourseMode">
+                  <a-radio-group v-model:value="commonCourseMode" class="custom-radio custom-radio2">
+                    <a-radio value="all">
+                      全部通用
+                    </a-radio>
+                    <a-radio value="partial">
+                      部分通用
+                    </a-radio>
+                  </a-radio-group>
+                </a-form-item>
+
+                <a-form-item v-if="isCommonCourse && commonCourseMode === 'all'" label="全部通用类型:" name="allCommonType">
+                  <a-radio-group v-model:value="allCommonTypeSelection" class="custom-radio common-type-radio-group">
+                    <a-radio value="all-course">
+                      全部课程
+                    </a-radio>
+                    <a-radio value="all-class">
+                      全部班课
+                    </a-radio>
+                    <a-radio value="all-1v1">
+                      全部1对1
+                    </a-radio>
+                  </a-radio-group>
+                </a-form-item>
+
+                <a-form-item v-if="commonCourseMode === 'partial'" label="课程范围:"
+                  name="courseScope" :rules="[{ required: true, message: '请选择课程范围' }]">
+                  <div class="course-range-container">
+                    <a-button type="primary" ghost class="w-full sm:w-auto"
+                      @click="selectCourseRange(formState.teachMethod)">
+                      {{ selectedCourses.length === 0 ? '选择课程' : '编辑已选' }}
+                    </a-button>
+
+                    <div v-if="selectedCourses.length > 0" class="selected-courses-display">
+                      已选择{{ selectedCourses.length }}门：{{ courseNames }}
+                    </div>
                   </div>
-                </div>
-              </a-form-item>
+                </a-form-item>
 
               <a-form-item name="productSku" :rules="[
                 {
@@ -1522,20 +1574,10 @@ function handlePropertyChange(propertyId, value, propertyName) {
             </a-form-item>
             <!-- 详情介绍 -->
             <a-form-item label="详情介绍：" name="description">
-              <a-space :size="16">
-                <a-button type="primary" ghost>
-                  <template #icon>
-                    <PictureOutlined />
-                  </template>
-                  添加图片
-                </a-button>
-                <a-button type="primary" ghost>
-                  <template #icon>
-                    <FileWordOutlined />
-                  </template>
-                  添加文字
-                </a-button>
-              </a-space>
+              <description-block-editor
+                v-model="settingFormState.descriptionBlocks"
+                upload-folder="course/detail"
+              />
             </a-form-item>
             <micro-school-settings-fields
               :setting-form-state="settingFormState"
@@ -1612,6 +1654,18 @@ function handlePropertyChange(propertyId, value, propertyName) {
 .setting-form {
   :deep(.ant-form-item) {
     margin-bottom: 10px;
+  }
+}
+
+
+
+.common-type-radio-group {
+  display: flex;
+  gap: 8px 24px;
+  flex-wrap: wrap;
+
+  :deep(.ant-radio-wrapper) {
+    min-width: 120px;
   }
 }
 
