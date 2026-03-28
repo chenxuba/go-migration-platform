@@ -22,10 +22,13 @@ const activeKey = ref('1')
         <a-tab-pane key="3" tab="教学用品">
           <school-supplies />
         </a-tab-pane>
-        <a-tab-pane key="4" tab="课程类别">
+        <a-tab-pane key="4" tab="套餐">
+          <package-list-record />
+        </a-tab-pane>
+        <a-tab-pane key="5" tab="课程类别">
           <course-category />
         </a-tab-pane>
-        <a-tab-pane key="5" tab="课程设置">
+        <a-tab-pane key="6" tab="课程设置">
           <course-setting />
         </a-tab-pane>
       </a-tabs>

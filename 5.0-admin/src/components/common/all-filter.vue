@@ -237,7 +237,7 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:hobbiesFilter', 'update:orderNumberFilter', 'update:gradeFilter', 'update:stuPhoneSearchFilter', 'update:tuiJianUserFilter',
   'update:recommendedFilter', 'update:followMethodFilter', 'update:visitStatusFilter', 'update:payrollStatusFilter',
   'update:stuStatusFilter', 'update:followTimeFilter', 'update:courseCategoryFilter', 'update:isCommonCourseFilter',
-  'update:teachingMethodFilter', 'update:chargingMethodFilter', 'update:hasTrialPriceFilter',
+  'update:teachingMethodFilter', 'update:sellStatusFilter', 'update:chargingMethodFilter', 'update:hasTrialPriceFilter',
   'update:trialPurchaseStatusFilter',
   'update:isMicroSchoolSaleFilter', 'update:isMicroSchoolDisplayFilter',
   'update:lastEditedTimeFilter', 'update:channelPositionRoleFilter', 'update:channelUserType',
@@ -1504,6 +1504,7 @@ function handleTeachingMethodChange(e) {
 function handleSellStatusChange(e) {
   nextTick(() => {
     console.log('售卖状态:', e)
+    emit('update:sellStatusFilter', e)
   })
 }
 function handleSalesPersonChange(e) {
@@ -3408,6 +3409,7 @@ const clearAll = debounce(() => {
     emit('update:stuPhoneSearchFilter', [], true)
     emit('update:courseCategoryFilter', undefined, true)
     emit('update:teachingMethodFilter', undefined, true)
+    emit('update:sellStatusFilter', undefined, true)
     emit('update:chargingMethodFilter', [], true)
     emit('update:hasTrialPriceFilter', undefined, true)
     emit('update:isMicroSchoolSaleFilter', undefined, true)
@@ -3943,7 +3945,7 @@ function removeCondition(type, id) {
       break
     case 'sellStatus': // 新增售卖状态移除逻辑
       sellStatusVals.value = null
-      // 报读列表暂未使用该筛选，先不向父组件发事件
+      emit('update:sellStatusFilter', undefined, false, id, type)
       break
     case 'hasTrialPrice': // 新增是否有体验价移除逻辑
       // hasTrialPriceVals.value = null;

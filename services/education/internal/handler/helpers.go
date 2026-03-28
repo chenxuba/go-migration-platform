@@ -330,6 +330,88 @@ func parseLessonIncomeQueryDTO(raw map[string]any) model.LessonIncomeQueryDTO {
 	return query
 }
 
+func parseProductPackageQueryDTO(raw map[string]any) model.ProductPackageQueryDTO {
+	query := model.ProductPackageQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	} else {
+		query.PageRequestModel.PageIndex = 1
+		query.PageRequestModel.PageSize = 10
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel.Name = asString(firstNonNil(qm["name"], qm["searchKey"]))
+		query.QueryModel.SearchKey = asString(qm["searchKey"])
+		query.QueryModel.OnlineSale = asBoolPtr(qm["onlineSale"])
+		query.QueryModel.IsOnlineSaleMicoSchool = asBoolPtr(firstNonNil(qm["isOnlineSaleMicoSchool"], qm["isOpenMicroSchoolBuy"]))
+		query.QueryModel.IsShowMicoSchool = asBoolPtr(qm["isShowMicoSchool"])
+		if list, ok := qm["productPackageProperties"].([]any); ok {
+			query.QueryModel.ProductPackageProperties = make([]model.ProductPackagePropertyRef, 0, len(list))
+			for _, item := range list {
+				row, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				query.QueryModel.ProductPackageProperties = append(query.QueryModel.ProductPackageProperties, model.ProductPackagePropertyRef{
+					ProductPackagePropertyID:    asString(firstNonNil(row["productPackagePropertyId"], row["coursePropertyId"])),
+					ProductPackagePropertyValue: asString(firstNonNil(row["productPackagePropertyValue"], row["coursePropertyValue"])),
+				})
+			}
+		}
+	}
+	return query
+}
+
+func parseProductPackageMutation(raw map[string]any) model.ProductPackageMutation {
+	dto := model.ProductPackageMutation{
+		ID:                     asString(raw["id"]),
+		Name:                   asString(raw["name"]),
+		OnlineSale:             derefBoolValue(asBoolPtr(raw["onlineSale"])),
+		IsAllowEditWhenEnroll:  derefBoolValue(asBoolPtr(raw["isAllowEditWhenEnroll"])),
+		Title:                  asString(raw["title"]),
+		Images:                 asString(raw["images"]),
+		Description:            asString(raw["description"]),
+		IsShowMicoSchool:       derefBoolValue(asBoolPtr(raw["isShowMicoSchool"])),
+		IsOnlineSaleMicoSchool: derefBoolValue(asBoolPtr(raw["isOnlineSaleMicoSchool"])),
+		BuyRule:                map[string]any{},
+		SubjectIDs:             asInt64Slice(raw["subjectIds"]),
+	}
+	if buyRule, ok := raw["buyRule"].(map[string]any); ok {
+		dto.BuyRule = buyRule
+	}
+	if list, ok := raw["items"].([]any); ok {
+		dto.Items = make([]model.ProductPackageItemMutation, 0, len(list))
+		for _, item := range list {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			dto.Items = append(dto.Items, model.ProductPackageItemMutation{
+				ProductID:      asString(row["productId"]),
+				SkuID:          asString(row["skuId"]),
+				SkuCount:       asFloat64(row["skuCount"]),
+				FreeQuantity:   asFloat64(row["freeQuantity"]),
+				DiscountType:   asIntPtr(row["discountType"]),
+				DiscountNumber: asFloat64(row["discountNumber"]),
+			})
+		}
+	}
+	if list, ok := raw["productPackageProperties"].([]any); ok {
+		dto.ProductPackageProperties = make([]model.ProductPackagePropertyRef, 0, len(list))
+		for _, item := range list {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			dto.ProductPackageProperties = append(dto.ProductPackageProperties, model.ProductPackagePropertyRef{
+				ProductPackagePropertyID:    asString(firstNonNil(row["productPackagePropertyId"], row["coursePropertyId"])),
+				ProductPackagePropertyValue: asString(firstNonNil(row["productPackagePropertyValue"], row["coursePropertyValue"])),
+			})
+		}
+	}
+	return dto
+}
+
 func parseRechargeAccountItemPageQueryDTO(raw map[string]any) model.RechargeAccountItemPageQueryDTO {
 	query := model.RechargeAccountItemPageQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {

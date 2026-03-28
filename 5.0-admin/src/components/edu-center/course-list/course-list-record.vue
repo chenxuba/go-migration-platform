@@ -812,7 +812,7 @@ const handleSearchInput = debounce((value, id, type) => {
 
 <style lang="less" scoped>
 .tab-content {
-  margin: 8px 0;
+  margin:  0;
 
   .tab-table {
     background: #fff;
