@@ -1,28 +1,19 @@
 <script setup>
-import { CloseOutlined, DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
+import { DownOutlined } from '@ant-design/icons-vue'
 import { computed, ref } from 'vue'
 import { debounce } from 'lodash-es'
 import dayjs from 'dayjs'
-import { batchSaleStatusApi, getCoursePropertyOptionsApi } from '~@/api/edu-center/course-list'
+import { batchSaleStatusApi } from '~@/api/edu-center/course-list'
 import { getProductPackagePagedListApi, getProductPackageStatisticsApi } from '@/api/edu-center/product-package'
 import { useCourseAttribute } from '@/composables/useCourseAttribute'
 import { useTableColumns } from '@/composables/useTableColumns'
 import messageService from '@/utils/messageService'
 
-const saleStatusOptions = [
-  { id: 1, value: '在售' },
-  { id: 0, value: '停售' },
-]
-
-const yesNoOptions = [
-  { id: 1, value: '是' },
-  { id: 0, value: '否' },
-]
-
 const propertyNameOrder = ['科目', '学季', '学年', '年级', '班型']
 
+const displayArray = ref(['sellStatus', 'isMicroSchoolSale', 'isMicroSchoolDisplay', 'courseAttribute'])
+
 const { enabledCourseProperties, getEnabledCourseProperties } = useCourseAttribute()
-const propertyOptionsMap = ref({})
 const loading = ref(false)
 const dataSource = ref([])
 const selectedRowKeys = ref([])
@@ -64,14 +55,20 @@ const baseColumns = [
   { title: '最近更新时间', dataIndex: 'updatedTime', key: 'updatedTime', width: 180 },
 ]
 
-const dynamicColumns = computed(() => {
-  const ordered = [...enabledCourseProperties.value].sort((a, b) => {
+function sortCourseProperties(list) {
+  return [...list].sort((a, b) => {
     const aIndex = propertyNameOrder.includes(a.name) ? propertyNameOrder.indexOf(a.name) : propertyNameOrder.length + 1
     const bIndex = propertyNameOrder.includes(b.name) ? propertyNameOrder.indexOf(b.name) : propertyNameOrder.length + 1
     if (aIndex !== bIndex)
       return aIndex - bIndex
     return a.id - b.id
   })
+}
+
+const orderedCourseAttributes = computed(() => sortCourseProperties(enabledCourseProperties.value))
+
+const dynamicColumns = computed(() => {
+  const ordered = sortCourseProperties(enabledCourseProperties.value)
   return ordered.map(item => ({
     title: item.name,
     dataIndex: `property_${item.id}`,
@@ -126,50 +123,6 @@ function getPropertyDisplay(record, propertyId) {
   const row = (record.extendProperties || []).find(item => String(item.productPackagePropertyId) === String(propertyId))
   return row?.productPackagePropertyValueName || '-'
 }
-
-const selectedFilterList = computed(() => {
-  const list = []
-  if (filterState.value.onlineSale !== undefined) {
-    list.push({
-      key: 'onlineSale',
-      label: '售卖状态',
-      value: filterState.value.onlineSale ? '在售' : '停售',
-    })
-  }
-  if (filterState.value.isOnlineSaleMicoSchool !== undefined) {
-    list.push({
-      key: 'isOnlineSaleMicoSchool',
-      label: '是否开启微校售卖',
-      value: filterState.value.isOnlineSaleMicoSchool ? '是' : '否',
-    })
-  }
-  if (filterState.value.isShowMicoSchool !== undefined) {
-    list.push({
-      key: 'isShowMicoSchool',
-      label: '是否开启微校展示',
-      value: filterState.value.isShowMicoSchool ? '是' : '否',
-    })
-  }
-  if (filterState.value.packageName.trim()) {
-    list.push({
-      key: 'packageName',
-      label: '套餐名称',
-      value: filterState.value.packageName.trim(),
-    })
-  }
-  enabledCourseProperties.value.forEach((property) => {
-    const current = filterState.value.propertyFilters[property.id]
-    if (!current)
-      return
-    const option = (propertyOptionsMap.value[property.id] || []).find(item => String(item.id) === String(current))
-    list.push({
-      key: `property_${property.id}`,
-      label: property.name,
-      value: option?.name || String(current),
-    })
-  })
-  return list
-})
 
 function buildPropertyQueryRows() {
   return Object.entries(filterState.value.propertyFilters)
@@ -235,44 +188,51 @@ async function refreshList() {
   ])
 }
 
-const debouncedRefresh = debounce(() => {
+const handleFilterUpdate = debounce((updates, isClearAll = false) => {
+  if (isClearAll) {
+    filterState.value.onlineSale = undefined
+    filterState.value.isOnlineSaleMicoSchool = undefined
+    filterState.value.isShowMicoSchool = undefined
+    filterState.value.packageName = ''
+    filterState.value.propertyFilters = {}
+  }
+  else {
+    Object.entries(updates).forEach(([key, value]) => {
+      filterState.value[key] = value
+    })
+  }
   pagination.value.current = 1
   refreshList()
-}, 300)
+}, 300, { leading: true, trailing: false })
 
-async function loadPropertyOptions() {
-  await getEnabledCourseProperties()
-  await Promise.all(enabledCourseProperties.value.map(async (property) => {
-    const res = await getCoursePropertyOptionsApi({ propertyId: property.id })
-    if (res.code === 200) {
-      propertyOptionsMap.value[property.id] = res.result || []
+const filterUpdateHandlers = computed(() => ({
+  'update:sellStatusFilter': (val, isClearAll) => handleFilterUpdate({ onlineSale: val }, isClearAll),
+  'update:isMicroSchoolSaleFilter': (val, isClearAll) => handleFilterUpdate({ isOnlineSaleMicoSchool: val }, isClearAll),
+  'update:isMicroSchoolDisplayFilter': (val, isClearAll) => handleFilterUpdate({ isShowMicoSchool: val }, isClearAll),
+  'update:courseAttributeFilter': (payload) => {
+    const pid = payload?.itemId
+    const next = { ...filterState.value.propertyFilters }
+    if (payload?.value === undefined || payload?.value === null || payload?.value === '') {
+      delete next[pid]
     }
-  }))
-}
-
-function clearFilter(key) {
-  if (key === 'onlineSale' || key === 'isOnlineSaleMicoSchool' || key === 'isShowMicoSchool' || key === 'packageName') {
-    filterState.value[key] = key === 'packageName' ? '' : undefined
-  }
-  if (key.startsWith('property_')) {
-    const propertyId = key.replace('property_', '')
-    delete filterState.value.propertyFilters[propertyId]
-  }
-  debouncedRefresh()
-}
-
-function clearAllFilters() {
-  filterState.value.onlineSale = undefined
-  filterState.value.isOnlineSaleMicoSchool = undefined
-  filterState.value.isShowMicoSchool = undefined
-  filterState.value.packageName = ''
-  filterState.value.propertyFilters = {}
-  debouncedRefresh()
-}
+    else {
+      next[pid] = payload.value
+    }
+    filterState.value.propertyFilters = next
+    pagination.value.current = 1
+    refreshList()
+  },
+}))
 
 function handleSearchInput(value) {
   filterState.value.packageName = value || ''
-  debouncedRefresh()
+  pagination.value.current = 1
+  refreshList()
+}
+
+async function init() {
+  await getEnabledCourseProperties()
+  await refreshList()
 }
 
 function handleTableChange(pag) {
@@ -321,68 +281,21 @@ const rowSelection = computed(() => ({
   },
 }))
 
-loadPropertyOptions().then(() => refreshList())
+init()
 </script>
 
 <template>
   <div class="tab-content">
-    <div class="filter-wrap bg-white rounded-4 px-4 py-3">
-      <div class="filter-section">
-        <div class="standard-filters">
-          <span class="section-title">筛选条件：</span>
-          <checkbox-filter v-model:checked-values="filterState.onlineSale" :options="saleStatusOptions" label="售卖状态" type="radio" category="noSearchRadio" @radio-change="debouncedRefresh" />
-          <checkbox-filter v-model:checked-values="filterState.isOnlineSaleMicoSchool" :options="yesNoOptions" label="是否开启微校售卖" type="radio" category="noSearchRadio" @radio-change="debouncedRefresh" />
-          <checkbox-filter v-model:checked-values="filterState.isShowMicoSchool" :options="yesNoOptions" label="是否开启微校展示" type="radio" category="noSearchRadio" @radio-change="debouncedRefresh" />
-          <checkbox-filter
-            v-for="property in [...enabledCourseProperties].sort((a, b) => {
-              const aIndex = propertyNameOrder.includes(a.name) ? propertyNameOrder.indexOf(a.name) : propertyNameOrder.length + 1
-              const bIndex = propertyNameOrder.includes(b.name) ? propertyNameOrder.indexOf(b.name) : propertyNameOrder.length + 1
-              if (aIndex !== bIndex) return aIndex - bIndex
-              return a.id - b.id
-            })"
-            :key="property.id"
-            v-model:checked-values="filterState.propertyFilters[property.id]"
-            :options="(propertyOptionsMap[property.id] || []).map(item => ({ id: item.id, value: item.name }))"
-            :label="property.name"
-            type="radio"
-            category="noSearchRadio"
-            @radio-change="debouncedRefresh"
-          />
-        </div>
-        <div class="search-wrap">
-          <div class="label">
-            套餐名称
-          </div>
-          <a-input
-            v-model:value="filterState.packageName"
-            placeholder="请输入套餐名称"
-            class="search-input"
-            allow-clear
-            @input="handleSearchInput($event.target.value)"
-          />
-        </div>
-      </div>
-      <div v-if="selectedFilterList.length > 0" class="selected-conditions">
-        <span class="section-title">已选条件：</span>
-        <div class="condition-tags">
-          <a-popconfirm title="确定要清空所有条件吗？" @confirm="clearAllFilters">
-            <a-tag color="red" class="clear-all mb-2">
-              清空已选
-              <DeleteOutlined class="text-3 ml-4px mt-0.6px" />
-            </a-tag>
-          </a-popconfirm>
-          <a-tag v-for="item in selectedFilterList" :key="item.key" color="blue" class="condition-tag mb-2">
-            <div class="tag-content">
-              <span class="condition-label">{{ item.label }}：</span>
-              <span class="value-item">
-                {{ item.value }}
-                <CloseOutlined class="close-icon" @click.stop="clearFilter(item.key)" />
-              </span>
-            </div>
-          </a-tag>
-        </div>
-      </div>
-    </div>
+    <all-filter
+      :display-array="displayArray"
+      :is-show-search-input="true"
+      search-label="套餐名称"
+      search-placeholder="请输入..."
+      :render-class-list-options="false"
+      :course-attribute-list="orderedCourseAttributes"
+      v-on="filterUpdateHandlers"
+      @searchInputFun="handleSearchInput"
+    />
 
     <div class="tab-table mt-3 bg-white rounded-4 px-4 py-3">
       <div class="table-title flex justify-between items-center">
@@ -480,110 +393,28 @@ loadPropertyOptions().then(() => refreshList())
 </template>
 
 <style scoped lang="less">
-.filter-wrap {
-  .filter-section {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-  }
+.tab-content {
+  margin: 0;
 
-  .standard-filters {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
+  .tab-table {
+    .total {
+      position: relative;
+      padding-left: 10px;
+      color: #222;
+      display: flex;
+      align-items: center;
 
-  .section-title {
-    white-space: nowrap;
-    color: #222;
-    margin-right: 12px;
-    padding-top: 4px;
-  }
-}
-
-.search-wrap {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-
-  .label {
-    border: 1px solid #f0f0f0;
-    border-right: 0;
-    border-radius: 8px 0 0 8px;
-    height: 32px;
-    line-height: 32px;
-    padding: 0 14px;
-    white-space: nowrap;
-  }
-
-  .search-input {
-    width: 320px;
-  }
-}
-
-:deep(.search-input .ant-input) {
-  border-radius: 0 8px 8px 0 !important;
-}
-
-.selected-conditions {
-  display: flex;
-  align-items: flex-start;
-  margin-top: 8px;
-}
-
-.condition-tags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.clear-all {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-}
-
-.condition-tag {
-  border-radius: 4px;
-}
-
-.tag-content {
-  display: flex;
-  align-items: center;
-}
-
-.condition-label {
-  color: #4b5563;
-}
-
-.value-item {
-  display: inline-flex;
-  align-items: center;
-}
-
-.close-icon {
-  margin-left: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  color: rgba(92, 92, 92, 0.45);
-}
-
-.total {
-  position: relative;
-  padding-left: 10px;
-  color: #222;
-  display: flex;
-  align-items: center;
-
-  &::before {
-    display: inline-block;
-    background: var(--pro-ant-color-primary);
-    border-radius: 2px;
-    content: "";
-    height: 12px;
-    left: 0;
-    position: absolute;
-    width: 4px;
+      &::before {
+        display: inline-block;
+        background: var(--pro-ant-color-primary);
+        border-radius: 2px;
+        content: "";
+        height: 12px;
+        left: 0;
+        position: absolute;
+        width: 4px;
+      }
+    }
   }
 }
 
