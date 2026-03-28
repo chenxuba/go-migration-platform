@@ -1,9 +1,10 @@
 <script setup>
-import { CloseOutlined, DeleteOutlined, FileWordOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, DeleteOutlined, FileWordOutlined, HolderOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { Upload } from 'ant-design-vue'
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import * as qiniu from 'qiniu-js'
+import Sortable from 'sortablejs'
 import ActiveCourseModal from '@/components/edu-center/registr-renewal/step01/active-course-modal.vue'
 import MicroSchoolSettingsFields from './micro-school-settings-fields.vue'
 import PackageItemCard from './package-item-card.vue'
@@ -50,6 +51,8 @@ const courseListPagination = ref({
   hasMore: true,
 })
 const courseSearchKey = ref('')
+const descriptionBlockListRef = ref(null)
+let descriptionSortable = null
 
 function checkScreenSize() {
   isMobile.value = window.innerWidth < 768
@@ -63,6 +66,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkScreenSize)
+  destroyDescriptionSortable()
 })
 
 const drawerWidth = computed(() => {
@@ -138,6 +142,11 @@ watch(() => formState.name, (value) => {
 watch(microSchoolSettingModalOpen, (value) => {
   if (value && !settingFormState.title) {
     settingFormState.title = formState.name || ''
+  }
+  if (value) {
+    nextTick(() => initDescriptionSortable())
+  } else {
+    destroyDescriptionSortable()
   }
 })
 
@@ -483,14 +492,43 @@ function createDescriptionBlock(type, payload = {}) {
   }
 }
 
+function initDescriptionSortable() {
+  if (!descriptionBlockListRef.value || settingFormState.descriptionBlocks.length <= 1) return
+  destroyDescriptionSortable()
+  descriptionSortable = Sortable.create(descriptionBlockListRef.value, {
+    animation: 180,
+    handle: '.description-block-drag',
+    ghostClass: 'description-block-ghost',
+    onEnd(evt) {
+      const { oldIndex, newIndex } = evt
+      if (oldIndex == null || newIndex == null || oldIndex === newIndex) return
+      const moved = settingFormState.descriptionBlocks.splice(oldIndex, 1)[0]
+      settingFormState.descriptionBlocks.splice(newIndex, 0, moved)
+    },
+  })
+}
+
+function destroyDescriptionSortable() {
+  if (descriptionSortable) {
+    descriptionSortable.destroy()
+    descriptionSortable = null
+  }
+}
+
 function addTextBlock() {
   settingFormState.descriptionBlocks.push(
     createDescriptionBlock('text', { text: '' }),
   )
+  nextTick(() => initDescriptionSortable())
 }
 
 function removeDescriptionBlock(index) {
   settingFormState.descriptionBlocks.splice(index, 1)
+  if (settingFormState.descriptionBlocks.length <= 1) {
+    destroyDescriptionSortable()
+  } else {
+    nextTick(() => initDescriptionSortable())
+  }
 }
 
 function getDescriptionImageName(block) {
@@ -546,6 +584,7 @@ function handleDescriptionImageUpload(options) {
               name: rawFile.name,
             }),
           )
+          nextTick(() => initDescriptionSortable())
           onSuccess?.({ url: fileUrl }, file)
         },
       })
@@ -968,8 +1007,8 @@ watch(openDrawer, async (value) => {
             </a-form-item>
 
             <a-form-item label="详情介绍：" name="description">
-              <div class="package-description-builder">
-                <div v-if="settingFormState.descriptionBlocks.length" class="description-block-list">
+              <div class="package-description-builder" :class="{ 'package-description-builder--empty': !settingFormState.descriptionBlocks.length }">
+                <div v-if="settingFormState.descriptionBlocks.length" ref="descriptionBlockListRef" class="description-block-list">
                   <div
                     v-for="(block, index) in settingFormState.descriptionBlocks"
                     :key="block.id"
@@ -996,10 +1035,17 @@ watch(openDrawer, async (value) => {
                         </div>
                       </template>
                     </div>
+                    <button type="button" class="description-block-drag" title="拖拽排序">
+                      <HolderOutlined />
+                    </button>
                     <a-button type="text" class="description-block-delete" @click="removeDescriptionBlock(index)">
                       <DeleteOutlined />
                     </a-button>
                   </div>
+                </div>
+
+                <div v-if="settingFormState.descriptionBlocks.length" class="description-sort-tip">
+                  鼠标拖拽可以变动以上文字和图片的排列顺序
                 </div>
 
                 <div class="description-toolbar">
@@ -1315,9 +1361,6 @@ watch(openDrawer, async (value) => {
   width: 100%;
 }
 
-.description-toolbar {
-  margin-top: 16px;
-}
 
 .detail-image-list {
   display: flex;
@@ -1435,6 +1478,10 @@ watch(openDrawer, async (value) => {
   width: 100%;
 }
 
+.package-description-builder--empty {
+  padding-top: 6px;
+}
+
 .description-block-list {
   display: flex;
   flex-direction: column;
@@ -1445,6 +1492,11 @@ watch(openDrawer, async (value) => {
 .description-block {
   position: relative;
   padding-right: 56px;
+}
+
+.description-block-ghost .description-block-card {
+  border-color: #9ec5ff;
+  background: #f7fbff;
 }
 
 .description-block-card {
@@ -1497,9 +1549,34 @@ watch(openDrawer, async (value) => {
 
 .description-block-delete {
   position: absolute;
-  right:5px;
-  top: 32px;
+  right: 5px;
+  top: 20px;
   color: #8b95a7;
+}
+
+.description-block-drag {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: #a0a9b8;
+  cursor: grab;
+}
+
+.description-block-drag:active {
+  cursor: grabbing;
+}
+
+.description-sort-tip {
+  margin-bottom: 14px;
+  color: #8b95a7;
+  font-size: 13px;
 }
 
 .description-toolbar {
