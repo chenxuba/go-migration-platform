@@ -47,6 +47,14 @@ type ProductPackageMutation struct {
 	ProductPackageProperties []ProductPackagePropertyRef  `json:"productPackageProperties"`
 }
 
+type ProductPackageOperateMutation struct {
+	ID                      string `json:"id"`
+	OnlineSale              *bool  `json:"onlineSale,omitempty"`
+	IsShowMicoSchool        *bool  `json:"isShowMicoSchool,omitempty"`
+	IsOnlineSaleMicoSchool  *bool  `json:"isOnlineSaleMicoSchool,omitempty"`
+	IsAllowEditWhenEnroll   *bool  `json:"isAllowEditWhenEnroll,omitempty"`
+}
+
 type ProductPackagePropertyVO struct {
 	ProductPackagePropertyID        string `json:"productPackagePropertyId"`
 	ProductPackagePropertyName      string `json:"productPackagePropertyName,omitempty"`

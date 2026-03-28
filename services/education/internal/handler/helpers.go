@@ -412,6 +412,16 @@ func parseProductPackageMutation(raw map[string]any) model.ProductPackageMutatio
 	return dto
 }
 
+func parseProductPackageOperateMutation(raw map[string]any) model.ProductPackageOperateMutation {
+	return model.ProductPackageOperateMutation{
+		ID:                     asString(firstNonNil(raw["id"], raw["productPackageId"])),
+		OnlineSale:             asBoolPtr(raw["onlineSale"]),
+		IsShowMicoSchool:       asBoolPtr(raw["isShowMicoSchool"]),
+		IsOnlineSaleMicoSchool: asBoolPtr(raw["isOnlineSaleMicoSchool"]),
+		IsAllowEditWhenEnroll:  asBoolPtr(raw["isAllowEditWhenEnroll"]),
+	}
+}
+
 func parseRechargeAccountItemPageQueryDTO(raw map[string]any) model.RechargeAccountItemPageQueryDTO {
 	query := model.RechargeAccountItemPageQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {

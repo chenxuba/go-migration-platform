@@ -100,6 +100,14 @@ export interface ProductPackageCreateParams {
   productPackageProperties: ProductPackagePropertyRef[]
 }
 
+export interface ProductPackageOperateParams {
+  id: string
+  onlineSale?: boolean
+  isShowMicoSchool?: boolean
+  isOnlineSaleMicoSchool?: boolean
+  isAllowEditWhenEnroll?: boolean
+}
+
 export function getProductPackagePagedListApi(data: ProductPackageQueryParams) {
   return usePost<ProductPackagePagedResult>('/api/v1/product-packages/page', data)
 }
@@ -110,4 +118,20 @@ export function getProductPackageStatisticsApi(data: ProductPackageQueryModel) {
 
 export function createProductPackageApi(data: ProductPackageCreateParams) {
   return usePost<string>('/api/v1/product-packages/create', data)
+}
+
+export function updateProductPackageSaleStatusApi(data: ProductPackageOperateParams) {
+  return usePost<{ success: boolean }>('/api/v1/product-packages/sale-status', data)
+}
+
+export function updateProductPackageMicroSchoolRulesApi(data: ProductPackageOperateParams) {
+  return usePost<{ success: boolean }>('/api/v1/product-packages/micro-school-rules', data)
+}
+
+export function updateProductPackageEnrollEditApi(data: ProductPackageOperateParams) {
+  return usePost<{ success: boolean }>('/api/v1/product-packages/enroll-edit', data)
+}
+
+export function deleteProductPackageApi(data: { id: string }) {
+  return usePost<{ success: boolean }>('/api/v1/product-packages/delete', data)
 }

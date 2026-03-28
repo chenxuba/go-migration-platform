@@ -600,3 +600,39 @@ func (repo *Repository) CreateProductPackage(ctx context.Context, instID, operat
 	}
 	return packageID, nil
 }
+
+func (repo *Repository) UpdateProductPackageSaleStatus(ctx context.Context, instID int64, id string, onlineSale bool) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE product_package
+		SET online_sale = ?, update_time = NOW()
+		WHERE CAST(id AS CHAR) = ? AND inst_id = ? AND del_flag = 0
+	`, onlineSale, strings.TrimSpace(id), instID)
+	return err
+}
+
+func (repo *Repository) UpdateProductPackageMicroSchoolRules(ctx context.Context, instID int64, id string, isShow, isSale bool) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE product_package
+		SET is_show_mico_school = ?, is_online_sale_mico_school = ?, update_time = NOW()
+		WHERE CAST(id AS CHAR) = ? AND inst_id = ? AND del_flag = 0
+	`, isShow, isSale, strings.TrimSpace(id), instID)
+	return err
+}
+
+func (repo *Repository) UpdateProductPackageAllowEditWhenEnroll(ctx context.Context, instID int64, id string, allow bool) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE product_package
+		SET is_allow_edit_when_enroll = ?, update_time = NOW()
+		WHERE CAST(id AS CHAR) = ? AND inst_id = ? AND del_flag = 0
+	`, allow, strings.TrimSpace(id), instID)
+	return err
+}
+
+func (repo *Repository) DeleteProductPackage(ctx context.Context, instID int64, id string) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE product_package
+		SET del_flag = 1, update_time = NOW()
+		WHERE CAST(id AS CHAR) = ? AND inst_id = ? AND del_flag = 0
+	`, strings.TrimSpace(id), instID)
+	return err
+}

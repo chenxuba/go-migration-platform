@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -55,4 +56,60 @@ func (svc *Service) CreateProductPackage(userID int64, dto model.ProductPackageM
 		return 0, errors.New("套餐内商品不能为空")
 	}
 	return svc.repo.CreateProductPackage(context.Background(), instID, instUserID, dto)
+}
+
+func (svc *Service) UpdateProductPackageSaleStatus(userID int64, dto model.ProductPackageOperateMutation) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	if strings.TrimSpace(dto.ID) == "" || dto.OnlineSale == nil {
+		return errors.New("id and onlineSale are required")
+	}
+	return svc.repo.UpdateProductPackageSaleStatus(context.Background(), instID, dto.ID, *dto.OnlineSale)
+}
+
+func (svc *Service) UpdateProductPackageMicroSchoolRules(userID int64, dto model.ProductPackageOperateMutation) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	if strings.TrimSpace(dto.ID) == "" || dto.IsShowMicoSchool == nil || dto.IsOnlineSaleMicoSchool == nil {
+		return errors.New("id, isShowMicoSchool and isOnlineSaleMicoSchool are required")
+	}
+	return svc.repo.UpdateProductPackageMicroSchoolRules(context.Background(), instID, dto.ID, *dto.IsShowMicoSchool, *dto.IsOnlineSaleMicoSchool)
+}
+
+func (svc *Service) UpdateProductPackageAllowEditWhenEnroll(userID int64, dto model.ProductPackageOperateMutation) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	if strings.TrimSpace(dto.ID) == "" || dto.IsAllowEditWhenEnroll == nil {
+		return errors.New("id and isAllowEditWhenEnroll are required")
+	}
+	return svc.repo.UpdateProductPackageAllowEditWhenEnroll(context.Background(), instID, dto.ID, *dto.IsAllowEditWhenEnroll)
+}
+
+func (svc *Service) DeleteProductPackage(userID int64, dto model.ProductPackageOperateMutation) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	if strings.TrimSpace(dto.ID) == "" {
+		return errors.New("id is required")
+	}
+	return svc.repo.DeleteProductPackage(context.Background(), instID, dto.ID)
 }

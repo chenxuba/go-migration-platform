@@ -1,7 +1,11 @@
 export interface CourseListInfo {
+  id?: number | string
+  uuid?: string
+  version?: number
   name: string
-  courseCategory: number
-  courseAttribute: number
+  courseCategory?: number | string
+  courseCategoryId?: number | string
+  courseAttribute?: number | string
   type: number
   title: string
   images: string
@@ -10,17 +14,48 @@ export interface CourseListInfo {
   buyRule: {
     enableBuyLimit: boolean
     isAllowReturningStudent: boolean
-    relateProductIds: number[]
+    relateProductIds: Array<number | string>
     studentStatuses: number[]
+    isAllowFreshmanStudent?: boolean
+    limitOnePer?: boolean
+    allowType?: number
   }
-  courseProductProperties: {
-    coursePropertyId: number
-    propertyIdName: string
-    coursePropertyValue: number
+  status?: boolean
+  saleStatus?: boolean
+  lessonType?: number
+  teachMethod?: number
+  lessonScope?: number
+  courseType?: number
+  lessonProductProperties?: {
+    lessonPropertyId: number | string
+    lessonPropertyName?: string
+    lessonPropertyValue: number | string
+    propertyValueName?: string
+  }[]
+  courseProductProperties?: {
+    coursePropertyId: number | string
+    propertyIdName?: string
+    propertyName?: string
+    coursePropertyValue: number | string
     propertyValueName: string
   }[]
-  courseScope: string
-  allowedLessonIds: number[]
+  courseScope?: Array<number | string> | string
+  allowedLessonIds?: Array<number | string>
+  subjectIds?: Array<number | string>
+  productSku?: {
+    id?: number | string
+    uuid?: string
+    version?: number
+    name: string
+    quantity: number | string
+    unit: number
+    price: number
+    onlineSale: boolean
+    lessonAudition: boolean
+    lessonMode?: number
+    lessonModel?: number
+    remark?: string
+  }[]
 }
 
 // 课程属性 获取课程属性列表

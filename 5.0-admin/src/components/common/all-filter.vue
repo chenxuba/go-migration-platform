@@ -3952,11 +3952,11 @@ function removeCondition(type, id) {
       emit('update:hasTrialPriceFilter', undefined, false, id, type)
       break
     case 'isMicroSchoolSale': // 新增是否开启微校售卖移除逻辑
-      // isMicroSchoolSaleVals.value = null;
+      isMicroSchoolSaleVals.value = null
       emit('update:isMicroSchoolSaleFilter', undefined, false, id, type)
       break
     case 'isMicroSchoolDisplay': // 新增是否开启微校展示移除逻辑
-      // isMicroSchoolDisplayVals.value = null;
+      isMicroSchoolDisplayVals.value = null
       emit('update:isMicroSchoolDisplayFilter', undefined, false, id, type)
       break
     case 'performanceAllocationStatus':

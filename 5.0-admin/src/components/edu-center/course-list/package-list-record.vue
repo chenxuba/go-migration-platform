@@ -1,10 +1,17 @@
 <script setup>
-import { DownOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { computed, ref } from 'vue'
 import { debounce } from 'lodash-es'
 import dayjs from 'dayjs'
 import { batchSaleStatusApi } from '~@/api/edu-center/course-list'
-import { getProductPackagePagedListApi, getProductPackageStatisticsApi } from '@/api/edu-center/product-package'
+import {
+  deleteProductPackageApi,
+  getProductPackagePagedListApi,
+  getProductPackageStatisticsApi,
+  updateProductPackageEnrollEditApi,
+  updateProductPackageMicroSchoolRulesApi,
+  updateProductPackageSaleStatusApi,
+} from '@/api/edu-center/product-package'
 import { useCourseAttribute } from '@/composables/useCourseAttribute'
 import { useTableColumns } from '@/composables/useTableColumns'
 import messageService from '@/utils/messageService'
@@ -22,6 +29,19 @@ const createDrawerOpen = ref(false)
 const afterCreateModalVisible = ref(false)
 const afterCreateStopSale = ref(false)
 const createdPackageProductIds = ref([])
+const batchSaleStatusModalOpen = ref(false)
+const batchMicroSchoolModalOpen = ref(false)
+const batchEnrollEditModalOpen = ref(false)
+const batchDeleteModalOpen = ref(false)
+const batchRunningModalOpen = ref(false)
+const batchRunning = ref(false)
+const batchProgressCurrent = ref(0)
+const batchProgressTotal = ref(0)
+const batchProgressTitle = ref('')
+const batchSaleStatusValue = ref(true)
+const batchMicroSchoolShow = ref(false)
+const batchMicroSchoolSale = ref(false)
+const batchAllowEditWhenEnroll = ref(false)
 
 const filterState = ref({
   onlineSale: undefined,
@@ -273,6 +293,151 @@ function handleAction(action) {
   messageService.info(`${action}功能待实现`)
 }
 
+const batchProgressPercent = computed(() => {
+  if (!batchProgressTotal.value) return 0
+  return Math.min(100, Math.round((batchProgressCurrent.value / batchProgressTotal.value) * 100))
+})
+
+function getSelectedPackageIds() {
+  return selectedRows.value.map(row => String(row.id)).filter(Boolean)
+}
+
+function ensurePackageSelected(actionLabel) {
+  if (selectedRows.value.length === 0) {
+    messageService.warning(`请选择要${actionLabel}的套餐`)
+    return false
+  }
+  return true
+}
+
+function resetSelection() {
+  selectedRows.value = []
+  selectedRowKeys.value = []
+}
+
+function openBatchSaleStatusModal() {
+  if (!ensurePackageSelected('批量设置售卖状态'))
+    return
+  batchSaleStatusValue.value = true
+  batchSaleStatusModalOpen.value = true
+}
+
+function openBatchMicroSchoolModal() {
+  if (!ensurePackageSelected('批量设置微校售卖规则'))
+    return
+  batchMicroSchoolShow.value = false
+  batchMicroSchoolSale.value = false
+  batchMicroSchoolModalOpen.value = true
+}
+
+function openBatchEnrollEditModal() {
+  if (!ensurePackageSelected('批量设置报名时修改办理内容'))
+    return
+  batchAllowEditWhenEnroll.value = false
+  batchEnrollEditModalOpen.value = true
+}
+
+function openBatchDeleteModal() {
+  if (!ensurePackageSelected('批量删除'))
+    return
+  batchDeleteModalOpen.value = true
+}
+
+async function runSingleBatchAction(actionTitle, ids, worker) {
+  batchProgressTitle.value = actionTitle
+  batchProgressCurrent.value = 0
+  batchProgressTotal.value = ids.length
+  batchRunning.value = true
+  batchRunningModalOpen.value = true
+
+  const failedIds = []
+
+  for (let index = 0; index < ids.length; index += 1) {
+    const id = ids[index]
+    try {
+      await worker(id)
+    }
+    catch (error) {
+      console.error(`${actionTitle}失败:`, error)
+      failedIds.push(id)
+    }
+    finally {
+      batchProgressCurrent.value = index + 1
+    }
+  }
+
+  batchRunning.value = false
+  batchRunningModalOpen.value = false
+
+  if (failedIds.length === 0) {
+    messageService.success(`${actionTitle}成功`)
+  } else if (failedIds.length === ids.length) {
+    messageService.error(`${actionTitle}失败`)
+  } else {
+    messageService.warning(`${actionTitle}部分成功，失败 ${failedIds.length} 个`)
+  }
+
+  resetSelection()
+  await refreshList()
+}
+
+async function confirmBatchSaleStatus() {
+  batchSaleStatusModalOpen.value = false
+  const ids = getSelectedPackageIds()
+  await runSingleBatchAction('批量设置售卖状态', ids, id =>
+    updateProductPackageSaleStatusApi({
+      id,
+      onlineSale: batchSaleStatusValue.value,
+    }))
+}
+
+async function confirmBatchMicroSchoolRules() {
+  batchMicroSchoolModalOpen.value = false
+  const ids = getSelectedPackageIds()
+  await runSingleBatchAction('批量设置微校售卖规则', ids, id =>
+    updateProductPackageMicroSchoolRulesApi({
+      id,
+      isShowMicoSchool: batchMicroSchoolShow.value,
+      isOnlineSaleMicoSchool: batchMicroSchoolSale.value,
+    }))
+}
+
+async function confirmBatchEnrollEdit() {
+  batchEnrollEditModalOpen.value = false
+  const ids = getSelectedPackageIds()
+  await runSingleBatchAction('批量设置报名时修改办理内容', ids, id =>
+    updateProductPackageEnrollEditApi({
+      id,
+      isAllowEditWhenEnroll: batchAllowEditWhenEnroll.value,
+    }))
+}
+
+async function confirmBatchDelete() {
+  batchDeleteModalOpen.value = false
+  const ids = getSelectedPackageIds()
+  await runSingleBatchAction('批量删除套餐', ids, id =>
+    deleteProductPackageApi({ id }))
+}
+
+function onBatchActionClick({ key }) {
+  switch (String(key)) {
+    case 'sale-status':
+      openBatchSaleStatusModal()
+      break
+    case 'micro-school-rules':
+      openBatchMicroSchoolModal()
+      break
+    case 'enroll-edit':
+      openBatchEnrollEditModal()
+      break
+    case 'delete':
+      openBatchDeleteModal()
+      break
+    default:
+      break
+  }
+}
+
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
   onChange: (keys, rows) => {
@@ -305,10 +470,28 @@ init()
           当前 {{ stats.totalCount }} 个套餐，{{ stats.onSaleCount }} 个在售
         </div>
         <div class="edit ml10px flex overflow-x-auto">
-          <a-button class="mr-2">
-            批量操作
-            <DownOutlined :style="{ fontSize: '10px' }" />
-          </a-button>
+          <a-dropdown class="mr-2">
+            <template #overlay>
+              <a-menu @click="onBatchActionClick">
+                <a-menu-item key="sale-status">
+                  批量设置售卖状态
+                </a-menu-item>
+                <a-menu-item key="micro-school-rules">
+                  批量设置微校售卖规则
+                </a-menu-item>
+                <a-menu-item key="enroll-edit">
+                  设置报名时修改办理内容
+                </a-menu-item>
+                <a-menu-item key="delete">
+                  批量删除
+                </a-menu-item>
+              </a-menu>
+            </template>
+            <a-button class="mr-2">
+              批量操作
+              <DownOutlined :style="{ fontSize: '10px' }" />
+            </a-button>
+          </a-dropdown>
           <a-button type="primary" class="mr-2" @click="createDrawerOpen = true">
             创建套餐
           </a-button>
@@ -391,6 +574,121 @@ init()
         </div>
       </div>
     </a-modal>
+
+    <a-modal
+      v-model:open="batchSaleStatusModalOpen"
+      centered
+      title="批量设置售卖状态"
+      :width="520"
+      :closable="false"
+      :mask-closable="false"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="confirmBatchSaleStatus"
+      @cancel="batchSaleStatusModalOpen = false"
+    >
+      <div class="batch-modal-body">
+        <a-radio-group v-model:value="batchSaleStatusValue" class="batch-radio-group custom-radio">
+          <a-radio :value="true">
+            售卖
+          </a-radio>
+          <a-radio :value="false">
+            停售
+          </a-radio>
+        </a-radio-group>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="batchMicroSchoolModalOpen"
+      centered
+      title="批量设置微校售卖规则"
+      :width="620"
+      :closable="false"
+      :mask-closable="false"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="confirmBatchMicroSchoolRules"
+      @cancel="batchMicroSchoolModalOpen = false"
+    >
+      <div class="batch-micro-body">
+        <div class="batch-switch-row">
+          <span class="batch-switch-row__label">微校展示：</span>
+          <a-switch v-model:checked="batchMicroSchoolShow" />
+          <a-popover content="关闭后，套餐将不在微校展示" title="微校展示">
+            <ExclamationCircleOutlined class="batch-switch-row__icon" />
+          </a-popover>
+        </div>
+        <div class="batch-switch-row">
+          <span class="batch-switch-row__label">微校售卖：</span>
+          <a-switch v-model:checked="batchMicroSchoolSale" />
+          <a-popover content="开启后，套餐可在微校售卖" title="微校售卖">
+            <ExclamationCircleOutlined class="batch-switch-row__icon" />
+          </a-popover>
+        </div>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="batchEnrollEditModalOpen"
+      centered
+      title="批量设置报名时修改办理内容"
+      :width="560"
+      :closable="false"
+      :mask-closable="false"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="confirmBatchEnrollEdit"
+      @cancel="batchEnrollEditModalOpen = false"
+    >
+      <div class="batch-modal-body">
+        <a-radio-group v-model:value="batchAllowEditWhenEnroll" class="batch-radio-group custom-radio">
+          <a-radio :value="true">
+            允许修改
+          </a-radio>
+          <a-radio :value="false">
+            禁止修改
+          </a-radio>
+        </a-radio-group>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="batchDeleteModalOpen"
+      centered
+      title="确定批量删除？"
+      :width="560"
+      :closable="false"
+      :mask-closable="false"
+      :footer="null"
+      @cancel="batchDeleteModalOpen = false"
+    >
+      <div class="batch-delete-modal">
+        <div class="batch-delete-modal__desc">
+          套餐被删除后将无法恢复，是否确认删除套餐？
+        </div>
+        <div class="batch-delete-modal__footer">
+          <a-button danger ghost @click="confirmBatchDelete">删除</a-button>
+          <a-button type="primary" ghost @click="batchDeleteModalOpen = false">取消</a-button>
+        </div>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="batchRunningModalOpen"
+      centered
+      :closable="false"
+      :mask-closable="false"
+      :keyboard="false"
+      :footer="null"
+      :width="560"
+    >
+      <div class="batch-progress-modal">
+        <div class="batch-progress-modal__title">{{ batchProgressTitle }}</div>
+        <div class="batch-progress-modal__desc">正在处理 {{ batchProgressCurrent }} / {{ batchProgressTotal }}</div>
+        <a-progress :percent="batchProgressPercent" status="active" />
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -470,5 +768,94 @@ init()
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.batch-modal-body {
+  padding: 8px 0 4px;
+}
+
+.batch-radio-group {
+  display: flex;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+
+.batch-micro-body {
+  padding: 8px 0 4px;
+}
+
+.batch-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 48px;
+
+}
+
+.batch-switch-row__label {
+  min-width: 96px;
+  color: #222;
+  font-size: 15px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.batch-switch-row__icon {
+  color: #6b7280;
+  font-size: 18px;
+}
+
+.batch-delete-modal {
+  padding: 4px 0 0;
+}
+
+.batch-delete-modal__desc {
+  margin: 8px 0 28px;
+  color: #666;
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.batch-delete-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.batch-progress-modal {
+  padding: 8px 4px;
+}
+
+.batch-progress-modal__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #222;
+  margin-bottom: 10px;
+}
+
+.batch-progress-modal__desc {
+  color: #666;
+  margin-bottom: 16px;
+}
+
+.custom-radio ::v-deep(.ant-radio-wrapper:hover .ant-radio),
+.custom-radio ::v-deep(.ant-radio:hover .ant-radio-inner),
+.custom-radio ::v-deep(.ant-radio-input:focus + .ant-radio-inner) {
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio ::v-deep(.ant-radio-inner) {
+  background-color: transparent;
+  border-color: #d9d9d9;
+}
+
+.custom-radio ::v-deep(.ant-radio-checked .ant-radio-inner) {
+  background-color: transparent;
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio ::v-deep(.ant-radio-inner::after) {
+  background-color: var(--pro-ant-color-primary);
+  transform: scale(0.5);
 }
 </style>
