@@ -1,13 +1,17 @@
 <script setup>
-import { CloseOutlined, DeleteOutlined, ExclamationCircleOutlined, FileWordOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, DeleteOutlined, FileWordOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { Upload } from 'ant-design-vue'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
+import * as qiniu from 'qiniu-js'
 import ActiveCourseModal from '@/components/edu-center/registr-renewal/step01/active-course-modal.vue'
+import MicroSchoolSettingsFields from './micro-school-settings-fields.vue'
 import PackageItemCard from './package-item-card.vue'
 import CustomTitle from '@/components/common/custom-title.vue'
 import { getCoursePropertyOptionsApi } from '~@/api/edu-center/course-list'
 import { getProcessContentPageApi } from '~@/api/edu-center/registr-renewal'
 import { createProductPackageApi } from '@/api/edu-center/product-package'
+import { getQiniuToken } from '@/api/qiniu'
 import { useCourseAttribute } from '@/composables/useCourseAttribute'
 import messageService from '@/utils/messageService'
 
@@ -36,9 +40,16 @@ const itemCardRefs = ref([])
 const formRef = ref()
 const propertyFormRef = ref()
 const settingFormRef = ref()
-const descriptionTextareaRef = ref()
 const propertyMap = ref({})
-const courseOptions = ref([])
+const courseListOptions = ref([])
+const courseListLoading = ref(false)
+const courseListPagination = ref({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+  hasMore: true,
+})
+const courseSearchKey = ref('')
 
 function checkScreenSize() {
   isMobile.value = window.innerWidth < 768
@@ -74,6 +85,18 @@ const responsiveWrapperCol = computed(() => {
   return { span: 20 }
 })
 
+const settingResponsiveLabelCol = computed(() => {
+  if (isMobile.value)
+    return { span: 24 }
+  return { span: 3 }
+})
+
+const settingResponsiveWrapperCol = computed(() => {
+  if (isMobile.value)
+    return { span: 24 }
+  return { span: 21 }
+})
+
 const openDrawer = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
@@ -92,8 +115,7 @@ const formState = reactive({
 const settingFormState = reactive({
   title: '',
   images: [],
-  descriptionText: '',
-  detailImages: [],
+  description: [],
   isShow: false,
   isOnlineSale: false,
   buyLimit: false,
@@ -128,8 +150,7 @@ function resetForm() {
 
   settingFormState.title = ''
   settingFormState.images = []
-  settingFormState.descriptionText = ''
-  settingFormState.detailImages = []
+  settingFormState.description = []
   settingFormState.isShow = false
   settingFormState.isOnlineSale = false
   settingFormState.buyLimit = false
@@ -144,6 +165,14 @@ function resetForm() {
   previewVisible.value = false
   previewImage.value = ''
   previewTitle.value = ''
+  courseListOptions.value = []
+  courseSearchKey.value = ''
+  courseListPagination.value = {
+    current: 1,
+    pageSize: 20,
+    total: 0,
+    hasMore: true,
+  }
   formRef.value?.clearValidate?.()
   propertyFormRef.value?.clearValidate?.()
   settingFormRef.value?.clearValidate?.()
@@ -168,15 +197,18 @@ async function loadPropertyOptions() {
   }
 }
 
-async function loadCourseOptions(searchKey = '') {
-  productLoading.value = true
+async function loadCourseOptions(searchKey = '', isLoadMore = false) {
+  if (courseListLoading.value) return
+
+  courseListLoading.value = true
   try {
+    const pageIndex = isLoadMore ? courseListPagination.value.current + 1 : 1
     const res = await getProcessContentPageApi({
       pageRequestModel: {
         needTotal: true,
-        pageSize: 200,
-        pageIndex: 1,
-        skipCount: 0,
+        pageSize: courseListPagination.value.pageSize,
+        pageIndex,
+        skipCount: (pageIndex - 1) * courseListPagination.value.pageSize,
       },
       queryModel: {
         delFlag: false,
@@ -187,20 +219,49 @@ async function loadCourseOptions(searchKey = '') {
       sortModel: {},
     })
     if (res.code === 200) {
-      courseOptions.value = Array.isArray(res.result) ? res.result : []
+      const newData = Array.isArray(res.result) ? res.result : []
+      if (isLoadMore) {
+        courseListOptions.value = [...courseListOptions.value, ...newData]
+        courseListPagination.value.current = pageIndex
+      } else {
+        courseListOptions.value = newData
+        courseListPagination.value.current = 1
+      }
+      courseListPagination.value.total = res.total || 0
+      courseListPagination.value.hasMore = courseListOptions.value.length < courseListPagination.value.total
     }
   }
   catch (error) {
     console.error('加载课程选项失败:', error)
   }
   finally {
-    productLoading.value = false
+    courseListLoading.value = false
   }
 }
 
 const searchCourse = debounce((value) => {
-  loadCourseOptions(value)
+  courseSearchKey.value = value
+  loadCourseOptions(value, false)
 }, 400)
+
+function loadMoreCourses() {
+  if (!courseListLoading.value && courseListPagination.value.hasMore) {
+    loadCourseOptions(courseSearchKey.value, true)
+  }
+}
+
+function handleCourseSelectPopupScroll(e) {
+  const { target } = e
+  if (target.scrollTop + target.offsetHeight === target.scrollHeight) {
+    loadMoreCourses()
+  }
+}
+
+function handleCourseSelectionChange(value) {
+  const filteredValue = value.filter(id => !['load-more', 'loading-more', 'no-more'].includes(id))
+  settingFormState.courseListIds = filteredValue
+  showSettingCourseError.value = false
+}
 
 function generateSkuLabel(sku) {
   const { unit, quantity, price } = sku
@@ -308,12 +369,6 @@ function calculateItemTotal(item) {
   return Math.max(0, subtotal)
 }
 
-function focusDescription() {
-  nextTick(() => {
-    descriptionTextareaRef.value?.focus?.()
-  })
-}
-
 function getBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -335,58 +390,101 @@ async function normalizeUploadFile(file) {
   }
 }
 
-async function handleMainImageBeforeUpload(file) {
-  settingFormState.images = [await normalizeUploadFile(file)]
-  return false
-}
-
-async function handleDetailImageBeforeUpload(file) {
-  if (settingFormState.detailImages.length >= 9) {
-    messageService.warning('详情图片最多上传 9 张')
-    return false
+function beforePackageImageUpload(file) {
+  const isImage = ['image/jpeg', 'image/png', 'image/bmp', 'image/webp'].includes(file.type)
+  if (!isImage) {
+    messageService.error('只能上传 BMP、JPG、JPEG、PNG、WEBP 格式的图片')
+    return Upload.LIST_IGNORE
   }
-  settingFormState.detailImages.push(await normalizeUploadFile(file))
-  return false
+  const isLt4M = file.size / 1024 / 1024 < 4
+  if (!isLt4M) {
+    messageService.error('图片大小不能超过 4MB')
+    return Upload.LIST_IGNORE
+  }
+  return true
 }
 
-function removeMainImage() {
-  settingFormState.images = []
-}
+function handlePackageImageUpload(options) {
+  const { file, onSuccess, onError, onProgress } = options
+  const rawFile = file.originFileObj || file
 
-function removeDetailImage(index) {
-  settingFormState.detailImages.splice(index, 1)
+  if (!beforePackageImageUpload(rawFile)) {
+    onError?.(new Error('文件校验未通过'))
+    return
+  }
+
+  ;(async () => {
+    try {
+      const tokenRes = await getQiniuToken()
+      const { token, uuid, buckethostname } = tokenRes.result
+
+      const ext = rawFile.name?.includes('.')
+        ? rawFile.name.substring(rawFile.name.lastIndexOf('.'))
+        : (rawFile.type === 'image/png' ? '.png' : '.jpg')
+      const key = `product-package/${uuid}${ext}`
+
+      const config = {
+        useCdnDomain: true,
+        region: qiniu.region.z0,
+      }
+      const putExtra = {
+        fname: rawFile.name,
+        mimeType: rawFile.type,
+      }
+
+      const observable = qiniu.upload(rawFile, key, token, putExtra, config)
+
+      observable.subscribe({
+        next(res) {
+          onProgress?.({ percent: Math.floor(res.total.percent) })
+        },
+        error(err) {
+          console.error('套餐主图上传失败:', err)
+          messageService.error(`上传失败: ${err?.message || '未知错误'}`)
+          onError?.(err)
+        },
+        complete(res) {
+          const fileUrl = buckethostname + res.key
+          onSuccess?.({ url: fileUrl }, file)
+        },
+      })
+    }
+    catch (error) {
+      console.error('获取七牛 token 失败:', error)
+      messageService.error('获取上传凭证失败')
+      onError?.(error)
+    }
+  })()
 }
 
 async function handlePreview(file) {
-  if (!file.url && !file.preview && file.originFileObj) {
+  const fileUrl = file.url || file.response?.url || file.thumbUrl
+  if (!fileUrl && !file.preview) {
     file.preview = await getBase64(file.originFileObj)
   }
-  previewImage.value = file.url || file.preview || ''
+  previewImage.value = fileUrl || file.preview || ''
   previewVisible.value = true
   previewTitle.value = file.name || '图片预览'
+}
+
+function handlePackageImageChange(info) {
+  settingFormState.images = (info.fileList || []).filter(file => file.status !== 'error')
+}
+
+function handlePackageImageRemove(file) {
+  settingFormState.images = (settingFormState.images || []).filter(item => item.uid !== file.uid)
 }
 
 function buildImagesPayload() {
   return JSON.stringify(
     (settingFormState.images || [])
-      .map(item => item.url || item.thumbUrl)
+      .map(item => item.url || item.thumbUrl || item.response?.url)
       .filter(Boolean),
   )
 }
 
 function buildDescriptionPayload() {
-  const blocks = []
-  const text = `${settingFormState.descriptionText || ''}`.trim()
-  if (text) {
-    blocks.push({ type: 'text', text })
-  }
-  ;(settingFormState.detailImages || []).forEach((item) => {
-    const url = item.url || item.thumbUrl
-    if (url) {
-      blocks.push({ type: 'image', url })
-    }
-  })
-  return JSON.stringify(blocks)
+  return JSON.stringify(settingFormState.description || [])
 }
 
 function buildPropertyPayload() {
@@ -744,234 +842,63 @@ watch(openDrawer, async (value) => {
           ref="settingFormRef"
           :model="settingFormState"
           class="setting-form"
-          :label-col="responsiveLabelCol"
-          :wrapper-col="responsiveWrapperCol"
+          :label-col="settingResponsiveLabelCol"
+          :wrapper-col="settingResponsiveWrapperCol"
         >
-          <div class="setting-body">
+          <div class="px-24px py-16px">
             <CustomTitle title="套餐基本信息" font-size="16px" font-weight="500" class="mb-24px" />
 
             <a-form-item label="商品名称：" name="title" :rules="[{ required: true, message: '请输入商品名称' }]">
-              <a-input v-model:value="settingFormState.title" class="micro-field-width" placeholder="请输入" />
+              <a-input v-model:value="settingFormState.title" class="w-300px" placeholder="请输入" />
             </a-form-item>
 
             <a-form-item label="商品主图：" name="images">
-              <div class="micro-image-layout">
-                <div class="cover-card">
-                  <div
-                    v-if="settingFormState.images.length"
-                    class="cover-preview"
-                    @click="handlePreview(settingFormState.images[0])"
-                  >
-                    <img :src="settingFormState.images[0].url || settingFormState.images[0].thumbUrl" alt="商品主图">
-                  </div>
-                  <div v-else class="cover-empty">
-                    <PlusOutlined />
-                  </div>
+              <a-upload v-model:file-list="settingFormState.images" class="upload-list-inline"
+                list-type="picture-card" :custom-request="handlePackageImageUpload" :before-upload="beforePackageImageUpload"
+                @preview="handlePreview" @change="handlePackageImageChange" @remove="handlePackageImageRemove">
+                <div v-if="settingFormState.images.length < 2">
+                  <PlusOutlined class="text-16px" />
                 </div>
-
-                <div class="cover-actions">
-                  <a-upload
-                    :show-upload-list="false"
-                    accept=".jpg,.jpeg,.png,.webp"
-                    :before-upload="handleMainImageBeforeUpload"
-                  >
-                    <a-button type="primary" ghost class="action-outline-btn">
-                      <template #icon>
-                        <PictureOutlined />
-                      </template>
-                      {{ settingFormState.images.length ? '重新上传主图' : '上传主图' }}
-                    </a-button>
-                  </a-upload>
-                  <a-button
-                    v-if="settingFormState.images.length"
-                    type="link"
-                    danger
-                    class="remove-cover-btn"
-                    @click="removeMainImage"
-                  >
-                    删除图片
-                  </a-button>
-                  <div class="cover-hint">
-                    建议比例 4:3
-                  </div>
-                </div>
+              </a-upload>
+              <div class="text-12px text-#888">
+                建议比例 4:3
               </div>
             </a-form-item>
 
-            <a-form-item label="详情介绍：" name="descriptionText">
-              <div class="description-editor">
-                <a-textarea
-                  ref="descriptionTextareaRef"
-                  v-model:value="settingFormState.descriptionText"
-                  :rows="5"
-                  :maxlength="500"
-                  show-count
-                  placeholder="请输入，最多 500 字"
-                />
-                <a-space :size="16" class="description-toolbar">
-                  <a-upload
-                    :show-upload-list="false"
-                    accept=".jpg,.jpeg,.png,.webp"
-                    :before-upload="handleDetailImageBeforeUpload"
-                  >
-                    <a-button type="primary" ghost class="action-outline-btn">
-                      <template #icon>
-                        <PictureOutlined />
-                      </template>
-                      添加图片
-                    </a-button>
-                  </a-upload>
-                  <a-button type="primary" ghost class="action-outline-btn" @click="focusDescription">
-                    <template #icon>
-                      <FileWordOutlined />
-                    </template>
-                    添加文字
-                  </a-button>
-                </a-space>
-
-                <div v-if="settingFormState.detailImages.length" class="detail-image-list">
-                  <div
-                    v-for="(image, index) in settingFormState.detailImages"
-                    :key="image.uid || index"
-                    class="detail-image-card"
-                  >
-                    <img
-                      :src="image.url || image.thumbUrl"
-                      alt="详情图片"
-                      @click="handlePreview(image)"
-                    >
-                    <a-button type="text" danger class="detail-image-remove" @click="removeDetailImage(index)">
-                      <DeleteOutlined />
-                    </a-button>
-                  </div>
-                </div>
-              </div>
-            </a-form-item>
-
-            <CustomTitle title="微校套餐设置" font-size="16px" font-weight="500" class="mb-24px mt-24px" />
-
-            <a-form-item label="微校展示：" name="isShow">
-              <div class="switch-line">
-                <a-switch v-model:checked="settingFormState.isShow" />
-                <a-popover content="关闭后，学员将无法在微校看到此套餐，但仍可通过分享购买" title="微校展示">
-                  <ExclamationCircleOutlined class="switch-tip-icon" />
-                </a-popover>
-              </div>
-            </a-form-item>
-
-            <a-form-item label="微校售卖：" name="isOnlineSale">
-              <div class="switch-line">
-                <a-switch v-model:checked="settingFormState.isOnlineSale" />
-                <a-popover title="微校售卖">
-                  <template #content>
-                    开启后，学员能够在微校中查看并购买此套餐，或通过分享链接购买此套餐
+            <a-form-item label="详情介绍：" name="description">
+              <a-space :size="16">
+                <a-button type="primary" ghost>
+                  <template #icon>
+                    <PictureOutlined />
                   </template>
-                  <ExclamationCircleOutlined class="switch-tip-icon" />
-                </a-popover>
-              </div>
+                  添加图片
+                </a-button>
+                <a-button type="primary" ghost>
+                  <template #icon>
+                    <FileWordOutlined />
+                  </template>
+                  添加文字
+                </a-button>
+              </a-space>
             </a-form-item>
 
-            <a-form-item label="购买限制：" name="buyLimit">
-              <a-switch v-model:checked="settingFormState.buyLimit" />
-            </a-form-item>
-
-            <div v-if="settingFormState.buyLimit">
-              <a-form-item label="允许老生购买：" name="oldBuy">
-                <div class="switch-line">
-                  <a-switch v-model:checked="settingFormState.oldBuy" />
-                  <a-popover title="允许老生购买">
-                    <template #content>
-                      <div class="w-440px">
-                        <div>老生：在读、历史学员。</div>
-                        <div>如果选择任意课程的在读学员，则机构所有在读学员均可购买此套餐。</div>
-                        <div>如果选择部分课程，则只有购买过这些课程的学员可购买此套餐。</div>
-                      </div>
-                    </template>
-                    <ExclamationCircleOutlined class="switch-tip-icon" />
-                  </a-popover>
-                </div>
-              </a-form-item>
-
-              <a-form-item v-if="settingFormState.oldBuy" label="允许：" name="allowType">
-                <div class="allow-range-wrap">
-                  <a-form-item-rest>
-                    <a-radio-group v-model:value="settingFormState.allowType" class="custom-radio whitespace-nowrap">
-                      <a-radio :value="1">
-                        任意课程
-                      </a-radio>
-                      <a-radio :value="2">
-                        部分课程
-                      </a-radio>
-                    </a-radio-group>
-                  </a-form-item-rest>
-
-                  <div class="allow-range-line">
-                    <a-tag v-if="settingFormState.allowType === 1" class="allow-range-tag">
-                      任意课程
-                    </a-tag>
-                    <template v-else>
-                      <a-select
-                        v-model:value="settingFormState.courseListIds"
-                        mode="multiple"
-                        :status="showSettingCourseError ? 'error' : ''"
-                        class="allow-course-select"
-                        placeholder="请选择课程（可多选）"
-                        :max-tag-count="2"
-                        :filter-option="false"
-                        show-search
-                        @search="searchCourse"
-                        @change="showSettingCourseError = false"
-                      >
-                        <a-select-option v-for="course in courseOptions" :key="course.id" :value="course.id">
-                          {{ course.name }}
-                        </a-select-option>
-                      </a-select>
-                      <span class="allow-range-text">的</span>
-                      <a-select
-                        v-model:value="settingFormState.studentStatuses"
-                        mode="multiple"
-                        class="allow-status-select"
-                        placeholder="请选择学员状态"
-                      >
-                        <a-select-option :value="1">
-                          在读学员
-                        </a-select-option>
-                        <a-select-option :value="2">
-                          历史学员
-                        </a-select-option>
-                      </a-select>
-                      <span class="allow-range-text">购买</span>
-                    </template>
-                  </div>
-                </div>
-              </a-form-item>
-
-              <a-form-item label="允许新生购买：" name="newBuy">
-                <div class="switch-line">
-                  <a-switch v-model:checked="settingFormState.newBuy" />
-                  <a-popover title="允许新生购买">
-                    <template #content>
-                      新生：意向学员（未录入的学员）
-                    </template>
-                    <ExclamationCircleOutlined class="switch-tip-icon" />
-                  </a-popover>
-                </div>
-              </a-form-item>
-
-              <a-form-item label="限购 1 单：" name="buyOne">
-                <div class="switch-line">
-                  <a-switch v-model:checked="settingFormState.buyOne" />
-                  <a-popover title="限购 1 单">
-                    <template #content>
-                      <div class="w-300px">
-                        开启后，每个学员仅允许在微校购买此套餐一次，购买完成后不能重复购买。
-                      </div>
-                    </template>
-                    <ExclamationCircleOutlined class="switch-tip-icon" />
-                  </a-popover>
-                </div>
-              </a-form-item>
-            </div>
+            <micro-school-settings-fields
+              :setting-form-state="settingFormState"
+              settings-title="微校套餐设置"
+              :show-micro-sale="true"
+              micro-show-popover="关闭后，学员将无法在微校看到此套餐，但仍可通过分享购买"
+              micro-sale-popover="开启后，学员能够在微校中查看并购买此套餐，或通过分享链接购买此套餐"
+              purchase-target-label="套餐"
+              :show-error="showSettingCourseError"
+              :course-list-options="courseListOptions"
+              :course-list-loading="courseListLoading"
+              :course-list-pagination="courseListPagination"
+              @search-course="searchCourse"
+              @course-dropdown-visible-change="(open) => open && loadCourseOptions()"
+              @course-popup-scroll="handleCourseSelectPopupScroll"
+              @course-selection-change="handleCourseSelectionChange"
+              @load-more-courses="loadMoreCourses"
+            />
           </div>
         </a-form>
       </div>
