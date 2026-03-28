@@ -832,6 +832,35 @@ func parseRegistrationListQueryDTO(raw map[string]any) model.RegistrationListQue
 	return query
 }
 
+func parseOneToOneListQueryDTO(raw map[string]any) model.OneToOneListQueryDTO {
+	query := model.OneToOneListQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.OneToOneListQueryModel{
+			StudentID:          asString(qm["studentId"]),
+			LessonIDs:          coalesceStringSlice(qm["lessonIds"], qm["lessonId"]),
+			ClassTeacherID:     asString(qm["classTeacherId"]),
+			DefaultTeacherID:   coalesceString(qm["defaultTeacherId"], qm["teacherId"]),
+			HasClassTeacher:    firstBoolPtr(qm["hasClassTeacher"], qm["isHaveTeacher"]),
+			IsScheduled:        asBoolPtr(qm["isScheduled"]),
+			Status:             asIntSlice(qm["status"]),
+			ClassStudentStatus: asIntSlice(qm["classStudentStatus"]),
+			StartDate:          asString(qm["startDate"]),
+			EndDate:            asString(qm["endDate"]),
+		}
+		if query.QueryModel.StudentID == "" {
+			studentIDs := asStringSlice(qm["studentIds"])
+			if len(studentIDs) > 0 {
+				query.QueryModel.StudentID = studentIDs[0]
+			}
+		}
+	}
+	return query
+}
+
 func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQueryDTO {
 	query := model.ApprovalConfigPageQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
@@ -1634,4 +1663,23 @@ func coalesceString(values ...any) string {
 		}
 	}
 	return ""
+}
+
+func coalesceStringSlice(values ...any) []string {
+	for _, value := range values {
+		list := asStringSlice(value)
+		if len(list) > 0 {
+			return list
+		}
+	}
+	return nil
+}
+
+func firstBoolPtr(values ...any) *bool {
+	for _, value := range values {
+		if parsed := asBoolPtr(value); parsed != nil {
+			return parsed
+		}
+	}
+	return nil
 }

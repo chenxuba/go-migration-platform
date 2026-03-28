@@ -2389,6 +2389,10 @@ func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql
 	if err != nil {
 		return err
 	}
+	teachMethodMap, err := repo.getCourseTeachMethodMapTx(ctx, tx, collectOrderDetailCourseIDs(details))
+	if err != nil {
+		return err
+	}
 	if shouldConvertStudentToReading(details, quotationMap) {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE inst_student
@@ -2415,8 +2419,18 @@ func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql
 		`, count, operatorID, detail.CourseID); err != nil {
 			return err
 		}
-		if err := repo.createTuitionAccountsTx(ctx, tx, instID, operatorID, orderID, studentID, detail, quotationMap[detail.QuoteID.Int64], now); err != nil {
+		primaryTuitionAccountID, err := repo.createTuitionAccountsTx(ctx, tx, instID, operatorID, orderID, studentID, detail, quotationMap[detail.QuoteID.Int64], now)
+		if err != nil {
 			return err
+		}
+		if teachMethodMap[detail.CourseID] == model.TeachingClassTypeOneToOne {
+			quoteID := int64(0)
+			if detail.QuoteID.Valid {
+				quoteID = detail.QuoteID.Int64
+			}
+			if err := repo.upsertOneToOneTeachingClassTx(ctx, tx, instID, operatorID, orderID, studentID, detail.CourseID, quoteID, detail.ID, primaryTuitionAccountID, now); err != nil {
+				return err
+			}
 		}
 		if quotation, ok := quotationMap[detail.QuoteID.Int64]; ok {
 			if err := repo.initializeTimeSlotIncomeTx(ctx, tx, instID, operatorID, orderID, studentID, detail, quotation, now); err != nil {
@@ -2981,7 +2995,18 @@ func (repo *Repository) shouldTriggerRegistrationApprovalTx(ctx context.Context,
 	return false, nil
 }
 
-func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64, detail orderCourseDetail, quotation model.CourseQuotation, now time.Time) error {
+func collectOrderDetailCourseIDs(details []orderCourseDetail) []int64 {
+	result := make([]int64, 0, len(details))
+	for _, detail := range details {
+		if detail.CourseID <= 0 {
+			continue
+		}
+		result = append(result, detail.CourseID)
+	}
+	return result
+}
+
+func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64, detail orderCourseDetail, quotation model.CourseQuotation, now time.Time) (int64, error) {
 	purchasedQty := detail.RealQuantity - detail.FreeQuantity
 	if purchasedQty < 0 {
 		purchasedQty = 0
@@ -3016,9 +3041,10 @@ func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx,
 	if detail.QuoteID.Valid {
 		quoteID = detail.QuoteID.Int64
 	}
+	primaryTuitionAccountID := int64(0)
 
 	if purchasedQty > 0 || detail.Amount > 0 {
-		if _, err := tx.ExecContext(ctx, `
+		result, err := tx.ExecContext(ctx, `
 			INSERT INTO tuition_account (
 				uuid, version, inst_id, student_id, order_id, order_course_detail_id, course_id, quote_id,
 				total_quantity, free_quantity, used_quantity, remaining_quantity,
@@ -3040,13 +3066,20 @@ func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx,
 			detail.Amount, detail.Amount, detail.Amount,
 			handleType, detail.HasValidDate, expireTimePtr, validDatePtr, endDatePtr,
 			now, operatorID, now, operatorID, now,
-		); err != nil {
-			return err
+		)
+		if err != nil {
+			return 0, err
+		}
+		if primaryTuitionAccountID == 0 {
+			primaryTuitionAccountID, err = result.LastInsertId()
+			if err != nil {
+				return 0, err
+			}
 		}
 	}
 
 	if detail.FreeQuantity > 0 {
-		if _, err := tx.ExecContext(ctx, `
+		result, err := tx.ExecContext(ctx, `
 			INSERT INTO tuition_account (
 				uuid, version, inst_id, student_id, order_id, order_course_detail_id, course_id, quote_id,
 				total_quantity, free_quantity, used_quantity, remaining_quantity,
@@ -3067,11 +3100,18 @@ func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx,
 			detail.FreeQuantity, detail.FreeQuantity,
 			handleType, detail.HasValidDate, expireTimePtr, validDatePtr, endDatePtr,
 			now, operatorID, now, operatorID, now,
-		); err != nil {
-			return err
+		)
+		if err != nil {
+			return 0, err
+		}
+		if primaryTuitionAccountID == 0 {
+			primaryTuitionAccountID, err = result.LastInsertId()
+			if err != nil {
+				return 0, err
+			}
 		}
 	}
-	return nil
+	return primaryTuitionAccountID, nil
 }
 
 func (repo *Repository) StudentExistsInInstitution(ctx context.Context, instID, studentID int64) (bool, error) {

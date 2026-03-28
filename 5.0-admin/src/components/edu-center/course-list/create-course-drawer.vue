@@ -402,17 +402,85 @@ function handleCancelImg() {
 }
 
 function handleCourseImageChange(info) {
-  settingFormState.images = (info.fileList || []).filter(file => file.status !== 'error')
+  settingFormState.images = normalizeUploadFileList(info.fileList || [])
 }
 
 function handleCourseImageRemove(file) {
   settingFormState.images = (settingFormState.images || []).filter(item => item.uid !== file.uid)
 }
 
+function getUploadedImageUrl(item) {
+  if (!item)
+    return ''
+
+  if (typeof item === 'string') {
+    const text = item.trim()
+    if (!text || text.startsWith('data:'))
+      return ''
+    return text
+  }
+
+  const candidates = [
+    item.url,
+    item.response?.url,
+  ]
+  const match = candidates.find(url => typeof url === 'string' && url.trim() && !url.startsWith('data:'))
+  return match ? match.trim() : ''
+}
+
+function normalizeUploadImageList(imageList) {
+  if (!Array.isArray(imageList))
+    return []
+
+  return imageList
+    .map((item, index) => {
+      if (item && typeof item === 'object' && item.uid) {
+        return item
+      }
+      const url = getUploadedImageUrl(item)
+      if (!url)
+        return null
+      return {
+        uid: `course-image-${index}`,
+        name: url.split('/').pop() || `image-${index + 1}`,
+        status: 'done',
+        url,
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeUploadFileList(fileList) {
+  return (fileList || [])
+    .filter(file => file?.status !== 'error')
+    .map((item, index) => {
+      const url = getUploadedImageUrl(item)
+      if (!url)
+        return item
+
+      return {
+        ...item,
+        uid: item.uid || `course-image-${index}`,
+        name: item.name || url.split('/').pop() || `image-${index + 1}`,
+        status: 'done',
+        url,
+        thumbUrl: url,
+        response: {
+          ...(item.response || {}),
+          url,
+        },
+      }
+    })
+}
+
+function hasPendingCourseImages() {
+  return (settingFormState.images || []).some(item => item?.status && item.status !== 'done')
+}
+
 function buildCourseImagePayload() {
   return JSON.stringify(
     (settingFormState.images || [])
-      .map(item => item.url || item.thumbUrl || item.response?.url)
+      .map(item => getUploadedImageUrl(item))
       .filter(Boolean),
   )
 }
@@ -718,7 +786,7 @@ async function getCourseDetail(id) {
           const imageList = typeof courseData.images === 'string'
             ? JSON.parse(courseData.images)
             : courseData.images
-          settingFormState.images = Array.isArray(imageList) ? imageList : []
+          settingFormState.images = normalizeUploadImageList(imageList)
         }
         catch (e) {
           settingFormState.images = []
@@ -731,10 +799,10 @@ async function getCourseDetail(id) {
           const descList = typeof courseData.description === 'string'
             ? JSON.parse(courseData.description)
             : courseData.description
-          settingFormState.description = Array.isArray(descList) ? descList : []
+          settingFormState.descriptionBlocks = Array.isArray(descList) ? descList : []
         }
         catch (e) {
-          settingFormState.description = []
+          settingFormState.descriptionBlocks = []
         }
       }
 
@@ -884,20 +952,16 @@ function deletePriceItem(type, record) {
 const microSchoolSettingFlag = ref(false)
 // 提交微校modal
 function submitMicroSchoolSettingModal() {
-  console.log('提交微校modal')
   if (settingFormState.courseListIds.length === 0 && settingFormState.allowType == 2) {
     showError.value = true
     messageService.error('请选择课程')
     return
   }
   settingFormRef.value.validate().then(async () => {
-    console.log('表单验证通过')
     microSchoolSettingFlag.value = true
     // 关闭modal
     microSchoolSettingModalOpen.value = false
-  }).catch((err) => {
-    console.log('表单验证失败', err)
-  })
+  }).catch(() => {})
 }
 
 function cancelMicroSchoolSettingModal() {
@@ -913,15 +977,15 @@ function cancelMicroSchoolSettingModal() {
 
 // 原始提交函数
 function _handleSubmit() {
-  console.log('保存')
   formRef.value.validate().then(async () => {
-    console.log('表单验证通过')
+    if (hasPendingCourseImages()) {
+      messageService.warning('请等待商品主图上传完成后再保存')
+      return
+    }
     const payload = buildCourseSubmitPayload()
-    console.log(payload)
     btnLoading.value = true
     emit('handleSubmit', payload)
-  }).catch((err) => {
-    console.log('表单验证失败', err)
+  }).catch(() => {
     btnLoading.value = false
   })
 }

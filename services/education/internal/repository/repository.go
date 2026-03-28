@@ -105,6 +105,12 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureProductPackageTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensureCourseSchema(ctx, repo.db); err != nil {
+		return err
+	}
+	if err := ensureTeachingClassTables(ctx, repo.db); err != nil {
+		return err
+	}
 	var exists int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)

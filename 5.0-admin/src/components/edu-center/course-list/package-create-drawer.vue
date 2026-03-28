@@ -470,17 +470,63 @@ async function handlePreview(file) {
 }
 
 function handlePackageImageChange(info) {
-  settingFormState.images = (info.fileList || []).filter(file => file.status !== 'error')
+  settingFormState.images = normalizeUploadFileList(info.fileList || [])
 }
 
 function handlePackageImageRemove(file) {
   settingFormState.images = (settingFormState.images || []).filter(item => item.uid !== file.uid)
 }
 
+function getUploadedImageUrl(item) {
+  if (!item)
+    return ''
+
+  if (typeof item === 'string') {
+    const text = item.trim()
+    if (!text || text.startsWith('data:'))
+      return ''
+    return text
+  }
+
+  const candidates = [
+    item.url,
+    item.response?.url,
+  ]
+  const match = candidates.find(url => typeof url === 'string' && url.trim() && !url.startsWith('data:'))
+  return match ? match.trim() : ''
+}
+
+function normalizeUploadFileList(fileList) {
+  return (fileList || [])
+    .filter(file => file?.status !== 'error')
+    .map((item, index) => {
+      const url = getUploadedImageUrl(item)
+      if (!url)
+        return item
+
+      return {
+        ...item,
+        uid: item.uid || `package-image-${index}`,
+        name: item.name || url.split('/').pop() || `image-${index + 1}`,
+        status: 'done',
+        url,
+        thumbUrl: url,
+        response: {
+          ...(item.response || {}),
+          url,
+        },
+      }
+    })
+}
+
+function hasPendingPackageImages() {
+  return (settingFormState.images || []).some(item => item?.status && item.status !== 'done')
+}
+
 function buildImagesPayload() {
   return JSON.stringify(
     (settingFormState.images || [])
-      .map(item => item.url || item.thumbUrl || item.response?.url)
+      .map(item => getUploadedImageUrl(item))
       .filter(Boolean),
   )
 }
@@ -580,6 +626,10 @@ async function handleSubmit() {
 
   if (!validateMicroSchoolSettings(true)) {
     microSchoolSettingModalOpen.value = true
+    return
+  }
+  if (hasPendingPackageImages()) {
+    messageService.warning('请等待商品主图上传完成后再保存')
     return
   }
 

@@ -63,25 +63,15 @@ export function useTableColumns(options) {
 
   // 处理后的列配置
   const filteredColumns = computed(() => {
-    const requiredColumns = allColumns.value.filter(col => col.required)
-    const excludedColumns = allColumns.value.filter(col =>
-      excludeKeys.includes(col.key),
-    )
-
-    const optionalColumns = allColumns.value.filter(
-      col =>
-        selectedValues.value.includes(col.key)
-        && !col.required
-        && !excludeKeys.includes(col.key),
-    )
-
-    // 合并逻辑（保持顺序）
-    return [
-      ...requiredColumns.filter(col => col.fixed === 'left'),
-      ...optionalColumns,
-      ...requiredColumns.filter(col => col.fixed === 'right'),
-      ...excludedColumns.filter(col => col.fixed === 'right'),
-    ]
+    return allColumns.value.filter((col) => {
+      if (excludeKeys.includes(col.key)) {
+        return true
+      }
+      if (col.required) {
+        return true
+      }
+      return selectedValues.value.includes(col.key)
+    })
   })
 
   // 监听选中值变化，确保必选字段始终被选中

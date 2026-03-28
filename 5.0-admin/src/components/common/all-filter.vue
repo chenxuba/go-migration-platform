@@ -139,6 +139,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  oneToOneMode: {
+    type: Boolean,
+    default: false,
+  },
   isShowSearchInput: {
     type: Boolean,
     default: false,
@@ -204,6 +208,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  oneToOneQuickCounts: {
+    type: Object,
+    default: () => ({}),
+  },
   // 隐藏指定的快捷筛选项（传入id数组）
   hideQuickFilters: {
     type: Array,
@@ -251,7 +259,8 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:isSetExpirationDateFilter', 'update:classEndingTimeFilter', 'update:classStopTimeFilter',
   'update:expiryDateFilter', 'update:classNameFilter', 'update:enrolledCourseFilter', 
   'update:validityPeriodFilter', 'update:classTeacherFilter', 'update:isArrearsFilter', 
-  'update:lastClassTimeFilter', 'update:remainingFilter', 'update:billingModeFilter',])
+  'update:lastClassTimeFilter', 'update:remainingFilter', 'update:billingModeFilter',
+  'update:openClassStatusFilter', 'update:doYouScheduleFilter',])
 const spinning = ref(false)
 
 // 用户store
@@ -1198,18 +1207,35 @@ const orderSourceVals = ref([])
 const dealDateVals = ref([])
 const latestPaidTimeVals = ref([])
 // 当前状态选项
-const currentStatusOptions = ref([
-  { id: 3, value: '已结课' },
-  { id: 2, value: '已停课' },
-  { id: 1, value: '正常' },
-])
+const currentStatusOptions = computed(() => {
+  if (props.oneToOneMode) {
+    return [
+      { id: 1, value: '开课中' },
+      { id: 2, value: '已停课' },
+      { id: 3, value: '已结课' },
+    ]
+  }
+  return [
+    { id: 3, value: '已结课' },
+    { id: 2, value: '已停课' },
+    { id: 1, value: '正常' },
+  ]
+})
 const selectCurrentStatusVals = ref([])
 
 // 是否分班
-const orNotFenClassOptions = ref([
-  { id: 0, value: '未分班' },
-  { id: 1, value: '已分班' },
-])
+const orNotFenClassOptions = computed(() => {
+  if (props.oneToOneMode) {
+    return [
+      { id: 0, value: '未分配' },
+      { id: 1, value: '已分配' },
+    ]
+  }
+  return [
+    { id: 0, value: '未分班' },
+    { id: 1, value: '已分班' },
+  ]
+})
 const selectOrNotFenClassVals = ref([])
 
 // 收费方式选项
@@ -1283,6 +1309,10 @@ const quickOneToOneFilters = ref([
   { id: 1, name: '未分配班主任学员', count: 1, selected: false },
   { id: 2, name: '待排课学员', count: 0, selected: false },
 ])
+watch(() => props.oneToOneQuickCounts, (newVal) => {
+  quickOneToOneFilters.value[0].count = newVal.unassignedTeacherCount || 0
+  quickOneToOneFilters.value[1].count = newVal.unscheduledCount || 0
+}, { immediate: true, deep: true })
 const quickApproveFilters = ref([
   { id: 1, name: '待我审批', count: 1, selected: false },
   { id: 2, name: '我已审批', count: 10, selected: false },
@@ -1320,10 +1350,8 @@ function selectQuickFilter(selectedFilter, type) {
       filter.selected
         = filter.id === selectedFilter.id ? !filter.selected : false
     })
-    console.log(
-      '当前快捷筛选:',
-      quickOneToOneFilters.value.find(q => q.selected)?.name,
-    )
+    const selectedQuickFilter = quickOneToOneFilters.value.find(q => q.selected)
+    emit('update:quickFilter', selectedQuickFilter?.id)
   }
   else if (type == 3) {
     quickApproveFilters.value.forEach((filter) => {
@@ -2026,11 +2054,13 @@ function handleIsSetExpirationDateChange(e) {
 function handleOpenClassStatusChange(e) {
   nextTick(() => {
     console.log('开班状态:', e)
+    emit('update:openClassStatusFilter', e)
   })
 }
 function handleDoYouScheduleChange(e) {
   nextTick(() => {
     console.log('是否排课:', e)
+    emit('update:doYouScheduleFilter', e)
   })
 }
 function handleRecommendedChange() {
@@ -2420,7 +2450,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'enrolledCourse',
-      label: '报读课程',
+      label: props.oneToOneMode ? '上课课程' : '报读课程',
       show: props.displayArray.includes('enrolledCourse'),
       values: courseListOptions.value.filter(opt => enrolledCourseVals.value.includes(opt.id)),
     },
@@ -2890,7 +2920,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'currentStatus',
-      label: '当前状态',
+      label: props.oneToOneMode ? '开课状态' : '当前状态',
       show: props.displayArray.includes('currentStatus'),
       values: currentStatusOptions.value.filter(opt =>
         selectCurrentStatusVals.value.includes(opt.id),
@@ -2898,7 +2928,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'orNotFenClass',
-      label: '是否分班',
+      label: props.oneToOneMode ? '班主任分配状态' : '是否分班',
       show: props.displayArray.includes('orNotFenClass'),
       values: orNotFenClassOptions.value.filter(opt =>
         selectOrNotFenClassVals.value.includes(opt.id),
@@ -3434,6 +3464,8 @@ const clearAll = debounce(() => {
     emit('update:latestPaidTimeFilter', undefined, true)
     emit('update:handleContentFilter', undefined, true)
     emit('update:intentionCourseFilter', undefined, true)
+    emit('update:openClassStatusFilter', undefined, true)
+    emit('update:doYouScheduleFilter', undefined, true)
   })
 
   resetNotFollowDays()
@@ -3792,11 +3824,7 @@ function removeCondition(type, id) {
       }
       break
     case 'quickOneToOne':
-      const filterOneToOne = quickOneToOneFilters.value.find(
-        q => q.id === id,
-      )
-      if (filterOneToOne)
-        filterOneToOne.selected = false
+      emit('update:quickFilter', undefined, false, id, type)
       break
     case 'quickApprove':
       const filterApprove = quickApproveFilters.value.find(q => q.id === id)
@@ -3909,10 +3937,10 @@ function removeCondition(type, id) {
       emit('update:isSetExpirationDateFilter', undefined, false, id, type)
       break
     case 'openClassStatus':
-      selectOpenClassStatusVals.value = null
+      emit('update:openClassStatusFilter', undefined, false, id, type)
       break
     case 'doYouSchedule':
-      selectDoYouScheduleVals.value = null
+      emit('update:doYouScheduleFilter', undefined, false, id, type)
       break
     case 'remaining':
       // 清空剩余数量区间
@@ -4029,6 +4057,11 @@ function clearQuickFilter(id, type) {
       const filter = quickFilters.value.find(q => q.id === id)
       if (filter)
         filter.selected = false
+      break
+    case 'quickOneToOne':
+      const filterOneToOne = quickOneToOneFilters.value.find(q => q.id === id)
+      if (filterOneToOne)
+        filterOneToOne.selected = false
       break
     case 'intention':
       selectedValues.value = []
@@ -4265,6 +4298,12 @@ function clearQuickFilter(id, type) {
     case 'billingMode':
       selectBillingModeVals.value = []
       break
+    case 'openClassStatus':
+      selectOpenClassStatusVals.value = null
+      break
+    case 'doYouSchedule':
+      selectDoYouScheduleVals.value = null
+      break
     case 'hasTrialPrice': // 新增是否有体验价移除逻辑
       hasTrialPriceVals.value = null
       break
@@ -4343,13 +4382,15 @@ function dropdownVisibleChangeFun(type, event) {
     return
   stuPhoneSearchPagination.value.current = 1
   stuPhoneSearchOptions.value = []
+  const fallbackStudentStatus = type == 'isShowSearchStuPhone' ? 0 : 1
+  const searchStudentStatus = props.studentStatus ?? fallbackStudentStatus
   if (type == 'isShowSearchStuPhone') {
-    currentSearchStudentStatus.value = 0
-    getStuPhoneSearchPage({ studentStatus: 0 })
+    currentSearchStudentStatus.value = searchStudentStatus
+    getStuPhoneSearchPage({ studentStatus: searchStudentStatus })
   }
   else if (type == 'isShowSearchStuPhonefilter') {
-    currentSearchStudentStatus.value = 1
-    getStuPhoneSearchPage({ studentStatus: 1 })
+    currentSearchStudentStatus.value = searchStudentStatus
+    getStuPhoneSearchPage({ studentStatus: searchStudentStatus })
   }
 }
 // 创建防抖的搜索函数
@@ -5126,8 +5167,8 @@ defineExpose({
 
               <!-- 报读课程（多选）- 复用意向课程的数据源 -->
               <checkbox-filter v-if="filterType === 'enrolledCourse'" :ref="(el) => handleRef(el, 'enrolledCourse')"
-                v-model:checked-values="enrolledCourseVals" category="course" placeholder="请输入报读课程"
-                :options="courseListOptions" label="报读课程" show-search type="checkbox" :finished="courseListFinished"
+                v-model:checked-values="enrolledCourseVals" category="course" :placeholder="props.oneToOneMode ? '请输入上课课程' : '请输入报读课程'"
+                :options="courseListOptions" :label="props.oneToOneMode ? '上课课程' : '报读课程'" show-search type="checkbox" :finished="courseListFinished"
                 @change="handleEnrolledCourseChange" @on-dropdown-visible-change="onCourseListDropdownVisibleChange"
                 @on-search="onSearchCourseListFun" @load-more="loadMoreCourseList" />
 
@@ -5324,11 +5365,11 @@ defineExpose({
               <!-- 当前状态 -->
               <checkbox-filter v-if="filterType === 'currentStatus'" :ref="(el) => handleRef(el, 'currentStatus')"
                 v-model:checked-values="selectCurrentStatusVals" category="course" placeholder="选择状态"
-                :options="currentStatusOptions" label="当前状态" type="checkbox" @change="handleCurrentStatusChange" />
+                :options="currentStatusOptions" :label="props.oneToOneMode ? '开课状态' : '当前状态'" type="checkbox" @change="handleCurrentStatusChange" />
 
               <!-- 是否分班 -->
               <checkbox-filter v-if="filterType === 'orNotFenClass'" :ref="(el) => handleRef(el, 'orNotFenClass')"
-                v-model:checked-values="selectOrNotFenClassVals" :options="orNotFenClassOptions" label="是否分班"
+                v-model:checked-values="selectOrNotFenClassVals" :options="orNotFenClassOptions" :label="props.oneToOneMode ? '班主任分配状态' : '是否分班'"
                 type="checkbox" @change="handleOrNotFenClassChange" />
 
               <!-- 渠道分类 -->
