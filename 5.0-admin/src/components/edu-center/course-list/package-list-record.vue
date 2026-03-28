@@ -286,16 +286,18 @@ init()
 
 <template>
   <div class="tab-content">
-    <all-filter
-      :display-array="displayArray"
-      :is-show-search-input="true"
-      search-label="套餐名称"
-      search-placeholder="请输入..."
-      :render-class-list-options="false"
-      :course-attribute-list="orderedCourseAttributes"
-      v-on="filterUpdateHandlers"
-      @searchInputFun="handleSearchInput"
-    />
+    <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-tl-0 rounded-tr-0">
+      <all-filter
+        :display-array="displayArray"
+        :is-show-search-input="true"
+        search-label="套餐名称"
+        search-placeholder="请输入..."
+        :render-class-list-options="false"
+        :course-attribute-list="orderedCourseAttributes"
+        v-on="filterUpdateHandlers"
+        @searchInputFun="handleSearchInput"
+      />
+    </div>
 
     <div class="tab-table mt-3 bg-white rounded-4 px-4 py-3">
       <div class="table-title flex justify-between items-center">
