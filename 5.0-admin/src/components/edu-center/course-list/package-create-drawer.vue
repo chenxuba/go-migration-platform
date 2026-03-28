@@ -1,7 +1,7 @@
 <script setup>
 import { CloseOutlined, DeleteOutlined, FileWordOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { Upload } from 'ant-design-vue'
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import * as qiniu from 'qiniu-js'
 import ActiveCourseModal from '@/components/edu-center/registr-renewal/step01/active-course-modal.vue'
@@ -115,7 +115,7 @@ const formState = reactive({
 const settingFormState = reactive({
   title: '',
   images: [],
-  description: [],
+  descriptionBlocks: [],
   isShow: false,
   isOnlineSale: false,
   buyLimit: false,
@@ -150,7 +150,7 @@ function resetForm() {
 
   settingFormState.title = ''
   settingFormState.images = []
-  settingFormState.description = []
+  settingFormState.descriptionBlocks = []
   settingFormState.isShow = false
   settingFormState.isOnlineSale = false
   settingFormState.buyLimit = false
@@ -475,6 +475,89 @@ function handlePackageImageRemove(file) {
   settingFormState.images = (settingFormState.images || []).filter(item => item.uid !== file.uid)
 }
 
+function createDescriptionBlock(type, payload = {}) {
+  return {
+    id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    ...payload,
+  }
+}
+
+function addTextBlock() {
+  settingFormState.descriptionBlocks.push(
+    createDescriptionBlock('text', { text: '' }),
+  )
+}
+
+function removeDescriptionBlock(index) {
+  settingFormState.descriptionBlocks.splice(index, 1)
+}
+
+function getDescriptionImageName(block) {
+  if (block.name) return block.name
+  const url = `${block.url || ''}`
+  return url.split('/').pop() || '图片'
+}
+
+function handleDescriptionImageUpload(options) {
+  const { file, onSuccess, onError, onProgress } = options
+  const rawFile = file.originFileObj || file
+
+  if (beforePackageImageUpload(rawFile) !== true) {
+    onError?.(new Error('文件校验未通过'))
+    return
+  }
+
+  ;(async () => {
+    try {
+      const tokenRes = await getQiniuToken()
+      const { token, uuid, buckethostname } = tokenRes.result
+
+      const ext = rawFile.name?.includes('.')
+        ? rawFile.name.substring(rawFile.name.lastIndexOf('.'))
+        : (rawFile.type === 'image/png' ? '.png' : '.jpg')
+      const key = `product-package/detail/${uuid}${ext}`
+
+      const config = {
+        useCdnDomain: true,
+        region: qiniu.region.z0,
+      }
+      const putExtra = {
+        fname: rawFile.name,
+        mimeType: rawFile.type,
+      }
+
+      const observable = qiniu.upload(rawFile, key, token, putExtra, config)
+
+      observable.subscribe({
+        next(res) {
+          onProgress?.({ percent: Math.floor(res.total.percent) })
+        },
+        error(err) {
+          console.error('套餐详情图片上传失败:', err)
+          messageService.error(`上传失败: ${err?.message || '未知错误'}`)
+          onError?.(err)
+        },
+        complete(res) {
+          const fileUrl = buckethostname + res.key
+          settingFormState.descriptionBlocks.push(
+            createDescriptionBlock('image', {
+              url: fileUrl,
+              name: rawFile.name,
+            }),
+          )
+          onSuccess?.({ url: fileUrl }, file)
+        },
+      })
+    }
+    catch (error) {
+      console.error('获取七牛 token 失败:', error)
+      messageService.error('获取上传凭证失败')
+      onError?.(error)
+    }
+  })()
+}
+
 function buildImagesPayload() {
   return JSON.stringify(
     (settingFormState.images || [])
@@ -484,7 +567,22 @@ function buildImagesPayload() {
 }
 
 function buildDescriptionPayload() {
-  return JSON.stringify(settingFormState.description || [])
+  const blocks = (settingFormState.descriptionBlocks || [])
+    .map((block) => {
+      if (block.type === 'text') {
+        const text = `${block.text || ''}`.trim()
+        if (!text) return null
+        return { type: 'text', text }
+      }
+      if (block.type === 'image') {
+        const url = `${block.url || ''}`.trim()
+        if (!url) return null
+        return { type: 'image', url, name: block.name || '' }
+      }
+      return null
+    })
+    .filter(Boolean)
+  return JSON.stringify(blocks)
 }
 
 function buildPropertyPayload() {
@@ -853,7 +951,7 @@ watch(openDrawer, async (value) => {
             <CustomTitle title="套餐基本信息" font-size="16px" font-weight="500" class="mb-24px" />
 
             <a-form-item label="商品名称：" name="title" :rules="[{ required: true, message: '请输入商品名称' }]">
-              <a-input v-model:value="settingFormState.title" class="w-300px" placeholder="请输入" />
+              <a-input v-model:value="settingFormState.title" class="w-400px" placeholder="请输入" />
             </a-form-item>
 
             <a-form-item label="商品主图：" name="images">
@@ -870,20 +968,61 @@ watch(openDrawer, async (value) => {
             </a-form-item>
 
             <a-form-item label="详情介绍：" name="description">
-              <a-space :size="16">
-                <a-button type="primary" ghost>
-                  <template #icon>
-                    <PictureOutlined />
-                  </template>
-                  添加图片
-                </a-button>
-                <a-button type="primary" ghost>
-                  <template #icon>
-                    <FileWordOutlined />
-                  </template>
-                  添加文字
-                </a-button>
-              </a-space>
+              <div class="package-description-builder">
+                <div v-if="settingFormState.descriptionBlocks.length" class="description-block-list">
+                  <div
+                    v-for="(block, index) in settingFormState.descriptionBlocks"
+                    :key="block.id"
+                    class="description-block"
+                  >
+                    <div
+                      class="description-block-card"
+                      :class="block.type === 'image' ? 'description-block-card--image' : 'description-block-card--text'"
+                    >
+                      <template v-if="block.type === 'text'">
+                        <a-textarea
+                          v-model:value="block.text"
+                          :maxlength="500"
+                          :auto-size="{ minRows: 4, maxRows: 6 }"
+                          placeholder="请输入，最多 500 字"
+                        />
+                      </template>
+                      <template v-else>
+                        <div class="description-image-row">
+                          <img :src="block.url" alt="详情图片">
+                          <div class="description-image-name">
+                            {{ getDescriptionImageName(block) }}
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                    <a-button type="text" class="description-block-delete" @click="removeDescriptionBlock(index)">
+                      <DeleteOutlined />
+                    </a-button>
+                  </div>
+                </div>
+
+                <div class="description-toolbar">
+                  <a-upload
+                    :show-upload-list="false"
+                    :custom-request="handleDescriptionImageUpload"
+                    :before-upload="beforePackageImageUpload"
+                  >
+                    <a-button type="primary" ghost>
+                      <template #icon>
+                        <PictureOutlined />
+                      </template>
+                      添加图片
+                    </a-button>
+                  </a-upload>
+                  <a-button type="primary" ghost @click="addTextBlock">
+                    <template #icon>
+                      <FileWordOutlined />
+                    </template>
+                    添加文字
+                  </a-button>
+                </div>
+              </div>
             </a-form-item>
 
             <micro-school-settings-fields
@@ -1290,6 +1429,83 @@ watch(openDrawer, async (value) => {
     width: 160px !important;
     height: 107px !important;
   }
+}
+
+.package-description-builder {
+  width: 100%;
+}
+
+.description-block-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.description-block {
+  position: relative;
+  padding-right: 56px;
+}
+
+.description-block-card {
+  border: 1px solid #e7ebf0;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.description-block-card--text {
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 0;
+  border: none;
+}
+
+.description-block-card--text :deep(.ant-input-textarea) {
+  display: block;
+}
+
+
+.description-block-card--image {
+  display: flex;
+  align-items: center;
+  padding: 14px;
+  min-height: 108px;
+}
+
+.description-image-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.description-image-row img {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.description-image-name {
+  min-width: 0;
+  color: #2b2f36;
+  font-size: 15px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.description-block-delete {
+  position: absolute;
+  right:5px;
+  top: 32px;
+  color: #8b95a7;
+}
+
+.description-toolbar {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .custom-radio2 {

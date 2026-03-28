@@ -1,11 +1,14 @@
 <script setup>
 import { CloseOutlined, ExclamationCircleOutlined, FileWordOutlined, PictureOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { Upload } from 'ant-design-vue'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
+import * as qiniu from 'qiniu-js'
 import SelectCourseRangeModal from './selectCourseRangeModal.vue'
 import MicroSchoolSettingsFields from './micro-school-settings-fields.vue'
 import CustomTitle from '@/components/common/custom-title.vue'
 import { getCourseCategoryPageApi, getCourseDetailApi, getCoursePropertyOptionsApi, getCoursePageApi } from '~@/api/edu-center/course-list'
+import { getQiniuToken } from '@/api/qiniu'
 import { useCourseAttribute } from '@/composables/useCourseAttribute'
 import messageService from '~@/utils/messageService'
 
@@ -315,17 +318,102 @@ function getBase64(file) {
   })
 }
 
+function beforeCourseImageUpload(file) {
+  const isImage = ['image/jpeg', 'image/png', 'image/bmp', 'image/webp'].includes(file.type)
+  if (!isImage) {
+    messageService.error('只能上传 BMP、JPG、JPEG、PNG、WEBP 格式的图片')
+    return Upload.LIST_IGNORE
+  }
+  const isLt4M = file.size / 1024 / 1024 < 4
+  if (!isLt4M) {
+    messageService.error('图片大小不能超过 4MB')
+    return Upload.LIST_IGNORE
+  }
+  return true
+}
+
+function handleCourseImageUpload(options) {
+  const { file, onSuccess, onError, onProgress } = options
+  const rawFile = file.originFileObj || file
+
+  if (!beforeCourseImageUpload(rawFile)) {
+    onError?.(new Error('文件校验未通过'))
+    return
+  }
+
+  ;(async () => {
+    try {
+      const tokenRes = await getQiniuToken()
+      const { token, uuid, buckethostname } = tokenRes.result
+
+      const ext = rawFile.name?.includes('.')
+        ? rawFile.name.substring(rawFile.name.lastIndexOf('.'))
+        : (rawFile.type === 'image/png' ? '.png' : '.jpg')
+      const key = `course-micro/${uuid}${ext}`
+
+      const config = {
+        useCdnDomain: true,
+        region: qiniu.region.z0,
+      }
+      const putExtra = {
+        fname: rawFile.name,
+        mimeType: rawFile.type,
+      }
+
+      const observable = qiniu.upload(rawFile, key, token, putExtra, config)
+
+      observable.subscribe({
+        next(res) {
+          onProgress?.({ percent: Math.floor(res.total.percent) })
+        },
+        error(err) {
+          console.error('课程主图上传失败:', err)
+          messageService.error(`上传失败: ${err?.message || '未知错误'}`)
+          onError?.(err)
+        },
+        complete(res) {
+          const fileUrl = buckethostname + res.key
+          onSuccess?.({ url: fileUrl }, file)
+        },
+      })
+    }
+    catch (error) {
+      console.error('获取七牛 token 失败:', error)
+      messageService.error('获取上传凭证失败')
+      onError?.(error)
+    }
+  })()
+}
+
 async function handlePreview(file) {
-  if (!file.url && !file.preview) {
+  const fileUrl = file.url || file.response?.url || file.thumbUrl
+  if (!fileUrl && !file.preview) {
     file.preview = await getBase64(file.originFileObj)
   }
-  previewImage.value = file.url || file.preview
+  previewImage.value = fileUrl || file.preview
   previewVisible.value = true
-  previewTitle.value = file.name || file.url.substring(file.url.lastIndexOf('/') + 1)
+  const urlStr = typeof fileUrl === 'string' ? fileUrl : ''
+  previewTitle.value = file.name || (urlStr ? urlStr.substring(urlStr.lastIndexOf('/') + 1) : 'preview')
 }
 function handleCancelImg() {
   previewVisible.value = false
   previewTitle.value = ''
+}
+
+function handleCourseImageChange(info) {
+  settingFormState.images = (info.fileList || []).filter(file => file.status !== 'error')
+}
+
+function handleCourseImageRemove(file) {
+  settingFormState.images = (settingFormState.images || []).filter(item => item.uid !== file.uid)
+}
+
+function buildCourseImagePayload() {
+  return JSON.stringify(
+    (settingFormState.images || [])
+      .map(item => item.url || item.thumbUrl || item.response?.url)
+      .filter(Boolean),
+  )
 }
 
 // 课程属性选项
@@ -862,7 +950,7 @@ function _handleSubmit() {
       formState.value.teachMethod = 1
     }
     formState.value.isShowMicoSchool = settingFormState.isShow
-    formState.value.images = `${settingFormState.images}`
+    formState.value.images = buildCourseImagePayload()
     formState.value.description = `${settingFormState.description}`
     formState.value.buyRule.enableBuyLimit = settingFormState.buyLimit
     formState.value.buyRule.allowType = settingFormState.allowType
@@ -1422,8 +1510,8 @@ function handlePropertyChange(propertyId, value, propertyName) {
             <!-- 商品主图 -->
             <a-form-item label="商品主图：" name="images">
               <a-upload v-model:file-list="settingFormState.images" class="upload-list-inline"
-                action="https://www.mocky.io/v2/5cc8019d300000980a055e76" list-type="picture-card"
-                @preview="handlePreview">
+                list-type="picture-card" :custom-request="handleCourseImageUpload" :before-upload="beforeCourseImageUpload"
+                @preview="handlePreview" @change="handleCourseImageChange" @remove="handleCourseImageRemove">
                 <div v-if="settingFormState.images.length < 2">
                   <PlusOutlined class="text-16px" />
                 </div>
