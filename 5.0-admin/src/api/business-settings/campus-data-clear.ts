@@ -16,8 +16,22 @@ export interface CampusDataClearResult {
     approvalRecords: number
     approvalHistories: number
     tuitionAccounts: number
+    tuitionAccountFlows: number
+    rechargeAccounts: number
+    rechargeAccountStudents: number
+    rechargeAccountFlows: number
+    courses: number
+    courseDetails: number
+    courseQuotations: number
+    coursePropertyResults: number
+    productPackages: number
+    productPackageItems: number
+    productPackageProperties: number
     importTasks: number
     importTaskRecords: number
+    orderImportTasks: number
+    orderImportTaskRecords: number
+    exportRecords: number
     courseSaleVolumesReset: number
   }
   preserved: string[]

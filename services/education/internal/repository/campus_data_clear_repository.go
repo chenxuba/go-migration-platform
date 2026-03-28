@@ -186,9 +186,62 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 	}
 
 	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_course_property_result cpr
+		INNER JOIN inst_course c ON c.id = cpr.course_id
+		SET cpr.del_flag = 1, cpr.update_id = ?, cpr.update_time = NOW()
+		WHERE c.inst_id = ? AND c.del_flag = 0 AND cpr.del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_course_quotation cq
+		INNER JOIN inst_course c ON c.id = cq.course_id
+		SET cq.del_flag = 1, cq.update_id = ?, cq.update_time = NOW()
+		WHERE c.inst_id = ? AND c.del_flag = 0 AND cq.del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_course_detail cd
+		INNER JOIN inst_course c ON c.id = cd.course_id
+		SET cd.del_flag = 1, cd.update_id = ?, cd.update_time = NOW()
+		WHERE c.inst_id = ? AND c.del_flag = 0 AND cd.del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE product_package_property_result ppr
+		INNER JOIN product_package pp ON pp.id = ppr.product_package_id
+		SET ppr.del_flag = 1, ppr.update_id = ?, ppr.update_time = NOW()
+		WHERE pp.inst_id = ? AND pp.del_flag = 0 AND ppr.del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE product_package_item ppi
+		INNER JOIN product_package pp ON pp.id = ppi.product_package_id
+		SET ppi.del_flag = 1, ppi.update_id = ?, ppi.update_time = NOW()
+		WHERE pp.inst_id = ? AND pp.del_flag = 0 AND ppi.del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE product_package
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE inst_course
-		SET sale_volume = 0, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0 AND IFNULL(sale_volume, 0) <> 0
+		SET del_flag = 1, sale_volume = 0, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
 	`, operatorID, instID); err != nil {
 		return model.CampusDataClearSummary{}, err
 	}
@@ -333,6 +386,66 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 				FROM order_import_task_record r
 				INNER JOIN order_import_task t ON t.id = r.task_id
 				WHERE t.inst_id = ? AND t.del_flag = 0 AND r.del_flag = 0
+			`,
+			args: []any{instID},
+		},
+		{
+			target: &summary.Courses,
+			query:  `SELECT COUNT(*) FROM inst_course WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.CourseDetails,
+			query: `
+				SELECT COUNT(*)
+				FROM inst_course_detail cd
+				INNER JOIN inst_course c ON c.id = cd.course_id
+				WHERE c.inst_id = ? AND c.del_flag = 0 AND cd.del_flag = 0
+			`,
+			args: []any{instID},
+		},
+		{
+			target: &summary.CourseQuotations,
+			query: `
+				SELECT COUNT(*)
+				FROM inst_course_quotation cq
+				INNER JOIN inst_course c ON c.id = cq.course_id
+				WHERE c.inst_id = ? AND c.del_flag = 0 AND cq.del_flag = 0
+			`,
+			args: []any{instID},
+		},
+		{
+			target: &summary.CoursePropertyResults,
+			query: `
+				SELECT COUNT(*)
+				FROM inst_course_property_result cpr
+				INNER JOIN inst_course c ON c.id = cpr.course_id
+				WHERE c.inst_id = ? AND c.del_flag = 0 AND cpr.del_flag = 0
+			`,
+			args: []any{instID},
+		},
+		{
+			target: &summary.ProductPackages,
+			query:  `SELECT COUNT(*) FROM product_package WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.ProductPackageItems,
+			query: `
+				SELECT COUNT(*)
+				FROM product_package_item ppi
+				INNER JOIN product_package pp ON pp.id = ppi.product_package_id
+				WHERE pp.inst_id = ? AND pp.del_flag = 0 AND ppi.del_flag = 0
+			`,
+			args: []any{instID},
+		},
+		{
+			target: &summary.ProductPackageProperties,
+			query: `
+				SELECT COUNT(*)
+				FROM product_package_property_result ppr
+				INNER JOIN product_package pp ON pp.id = ppr.product_package_id
+				WHERE pp.inst_id = ? AND pp.del_flag = 0 AND ppr.del_flag = 0
 			`,
 			args: []any{instID},
 		},

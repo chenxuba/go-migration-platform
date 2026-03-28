@@ -22,6 +22,13 @@ type CampusDataClearSummary struct {
 	RechargeAccounts        int `json:"rechargeAccounts"`
 	RechargeAccountStudents int `json:"rechargeAccountStudents"`
 	RechargeAccountFlows    int `json:"rechargeAccountFlows"`
+	Courses                 int `json:"courses"`
+	CourseDetails           int `json:"courseDetails"`
+	CourseQuotations        int `json:"courseQuotations"`
+	CoursePropertyResults   int `json:"coursePropertyResults"`
+	ProductPackages         int `json:"productPackages"`
+	ProductPackageItems     int `json:"productPackageItems"`
+	ProductPackageProperties int `json:"productPackageProperties"`
 	CourseSaleVolumesReset  int `json:"courseSaleVolumesReset"`
 	ImportTasks             int `json:"importTasks"`
 	ImportTaskRecords       int `json:"importTaskRecords"`

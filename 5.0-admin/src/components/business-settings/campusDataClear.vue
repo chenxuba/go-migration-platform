@@ -16,6 +16,8 @@ const recommendedScope = {
     '学员主档数据',
     '学员自定义字段值与学员变更记录',
     '跟进记录',
+    '课程、课程详情、课程报价、课程属性结果',
+    '套餐、套餐内商品、套餐属性结果',
     '订单、订单明细、支付记录',
     '审批记录与审批历史',
     '学费账户',
@@ -26,7 +28,7 @@ const recommendedScope = {
     '员工、角色、部门',
     '机构业务设置',
     '渠道与渠道分类',
-    '课程、课程分类、课程属性、课程报价',
+    '课程分类、课程属性、课程属性选项',
     '订单标签',
     '学员自定义字段定义',
     '审批模板与审批流配置',
@@ -46,7 +48,7 @@ function buildSuccessMessage(result) {
   if (!cleared)
     return result?.intentStudentIndexMessage || '机构业务数据已清空'
 
-  const summary = `已清空学员 ${cleared.students || 0} 条、跟进 ${cleared.followRecords || 0} 条、订单 ${cleared.orders || 0} 条、导入记录 ${cleared.importTasks || 0} 条`
+  const summary = `已清空学员 ${cleared.students || 0} 条、课程 ${cleared.courses || 0} 条、套餐 ${cleared.productPackages || 0} 条、订单 ${cleared.orders || 0} 条`
   return result?.intentStudentIndexMessage ? `${summary}，${result.intentStudentIndexMessage}` : summary
 }
 
