@@ -1939,6 +1939,14 @@ func (repo *Repository) PageProcessContent(ctx context.Context, instID int64, qu
 		filters = append(filters, "c.course_category = ?")
 		args = append(args, *query.QueryModel.CourseCategory)
 	}
+	if query.QueryModel.SaleStatus != nil {
+		saleStatus := 0
+		if *query.QueryModel.SaleStatus {
+			saleStatus = 1
+		}
+		filters = append(filters, "c.sale_status = ?")
+		args = append(args, saleStatus)
+	}
 	if strings.TrimSpace(query.QueryModel.SearchKey) != "" {
 		filters = append(filters, "c.name LIKE ?")
 		args = append(args, "%"+strings.TrimSpace(query.QueryModel.SearchKey)+"%")

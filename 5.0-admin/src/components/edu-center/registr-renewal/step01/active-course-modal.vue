@@ -301,16 +301,16 @@ async function getProcessContentPage(isRefresh = false) {
     }
 
     const res = await getProcessContentPageApi(params)
-    
+
     if (res.code === 200) {
       const { result = [], total = 0 } = res || {}
       
       if (isRefresh) {
         // 刷新时替换数据
-        allCourseList.value = result
+        allCourseList.value = Array.isArray(result) ? result : []
       } else {
         // 加载更多时追加数据
-        allCourseList.value.push(...result)
+        allCourseList.value.push(...(Array.isArray(result) ? result : []))
       }
       
       // 更新分页信息

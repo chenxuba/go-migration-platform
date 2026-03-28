@@ -617,7 +617,7 @@ watch(openDrawer, async (value) => {
                 </a-radio-group>
               </a-form-item>
 
-              <a-form-item name="items" :rules="[{ validator: async () => {
+              <a-form-item :colon="false" name="items" :rules="[{ validator: async () => {
                 if (!formState.items.length)
                   throw new Error('请添加套餐商品')
               } }]">
@@ -682,7 +682,7 @@ watch(openDrawer, async (value) => {
               <div class="micro-setting-label">
                 套餐详情:
               </div>
-              <a-button type="primary" ghost class="action-outline-btn" @click="microSchoolSettingModalOpen = true">
+              <a-button type="primary" ghost @click="microSchoolSettingModalOpen = true">
                 编辑微校套餐详情
               </a-button>
             </div>
