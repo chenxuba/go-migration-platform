@@ -189,14 +189,15 @@ type ProcessContentQueryVO struct {
 }
 
 type CourseProperty struct {
-	ID                 int64  `json:"id"`
-	UUID               string `json:"uuid,omitempty"`
-	Version            int64  `json:"version,omitempty"`
-	InstID             int64  `json:"instId,omitempty"`
-	Name               string `json:"name"`
-	Enable             bool   `json:"enable"`
-	EnableOnlineFilter bool   `json:"enableOnlineFilter"`
-	Remark             string `json:"remark,omitempty"`
+	ID                 int64                  `json:"id"`
+	UUID               string                 `json:"uuid,omitempty"`
+	Version            int64                  `json:"version,omitempty"`
+	InstID             int64                  `json:"instId,omitempty"`
+	Name               string                 `json:"name"`
+	Enable             bool                   `json:"enable"`
+	EnableOnlineFilter bool                   `json:"enableOnlineFilter"`
+	Remark             string                 `json:"remark,omitempty"`
+	Options            []CoursePropertyOption `json:"options,omitempty"`
 }
 
 type CoursePropertyOption struct {

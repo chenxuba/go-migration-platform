@@ -219,7 +219,30 @@ func (svc *Service) ListCourseProperties(userID int64) ([]model.CourseProperty, 
 		}
 		return nil, err
 	}
-	return svc.repo.ListCourseProperties(context.Background(), instID)
+	ctx := context.Background()
+	items, err := svc.repo.ListCourseProperties(ctx, instID)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return items, nil
+	}
+	ids := make([]int64, len(items))
+	for i := range items {
+		ids[i] = items[i].ID
+	}
+	byProp, err := svc.repo.ListCoursePropertyOptionsByPropertyIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if opts, ok := byProp[items[i].ID]; ok {
+			items[i].Options = opts
+		} else {
+			items[i].Options = []model.CoursePropertyOption{}
+		}
+	}
+	return items, nil
 }
 
 func (svc *Service) InitInstCourseProperty(instID int64) error {

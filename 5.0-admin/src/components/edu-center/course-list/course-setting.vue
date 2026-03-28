@@ -1,6 +1,6 @@
 <script setup>
 import { FormOutlined } from '@ant-design/icons-vue'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { getCoursePropertyListApi, updateCoursePropertyEnableApi } from '~@/api/edu-center/course-list'
 
@@ -94,23 +94,40 @@ onMounted(() => {
     <div class="setting" :class="loading ? '' : 'pb3'">
       <custom-title title="课程属性" font-size="18px" font-weight="800" />
       <div class="table-wrap mt-3 mb-3">
-        <a-space wrap :size="14">
+        <div class="property-grid">
           <div
-            v-for="(item, index) in propertyList" :key="index"
-            class="bg-#f6f7f8 h-10 w-61 flex flex-items-center justify-between px3 rounded-2"
+            v-for="item in propertyList"
+            :key="item.id"
+            class="property-card"
           >
-            <span class="flex">{{ item.name }}
-              <FormOutlined class="text-#06f cursor-pointer text-16px ml-6px " @click="editProperty(item)" />
-            </span>
-            <a-switch
-              v-model:checked="item.enable" :loading="switchLoading"
-              @change="updateCoursePropertyEnable(item)"
-            />
+            <div class="property-card-head">
+              <span class="property-card-title">{{ item.name }}
+                <FormOutlined class="property-card-edit" @click="editProperty(item)" />
+              </span>
+              <a-switch
+                v-model:checked="item.enable" :loading="switchLoading"
+                class="shrink-0"
+                @change="updateCoursePropertyEnable(item)"
+              />
+            </div>
+            <div v-if="(item.options || []).length" class="property-card-body">
+              <a-tag
+                v-for="opt in item.options"
+                :key="opt.id"
+                class="option-tag"
+                :title="opt.name"
+              >
+                {{ opt.name }}
+              </a-tag>
+            </div>
+            <div v-else class="property-card-body property-card-body--empty">
+              暂无选项，点击图标编辑添加
+            </div>
           </div>
           <template v-if="loading">
-            <div v-for="i in 5" :key="i" class="item bg-#f6f7f8 w-61 h-10 rounded-1.5 skeleton-item" />
+            <div v-for="i in 5" :key="`sk-${i}`" class="property-card property-card--skeleton skeleton-item" />
           </template>
-        </a-space>
+        </div>
       </div>
     </div>
   </div>
@@ -139,5 +156,81 @@ onMounted(() => {
   border-top-right-radius: 0;
   border-top-left-radius: 0;
   padding: 12px 20px;
+}
+
+.property-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+.property-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+  height: 100%;
+  padding: 12px 14px;
+  background: #f6f7f8;
+  border: 1px solid #ebebeb;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.property-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.property-card-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #222;
+}
+
+.property-card-edit {
+  margin-left: 6px;
+  color: #06f;
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.property-card-body {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e8e8e8;
+  min-height: 0;
+}
+
+.property-card-body--empty {
+  font-size: 12px;
+  color: #999;
+  line-height: 1.5;
+  align-content: flex-start;
+}
+
+.property-card--skeleton {
+  min-height: 120px;
+}
+
+:deep(.option-tag) {
+  max-width: min(100%, 200px);
+  margin: 0 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 </style>

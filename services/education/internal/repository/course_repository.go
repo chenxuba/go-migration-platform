@@ -1619,6 +1619,39 @@ func (repo *Repository) ListCourseProperties(ctx context.Context, instID int64) 
 	return items, rows.Err()
 }
 
+// ListCoursePropertyOptionsByPropertyIDs returns options grouped by property_id for the given property IDs (same sort as ListCoursePropertyOptions per property).
+func (repo *Repository) ListCoursePropertyOptionsByPropertyIDs(ctx context.Context, propertyIDs []int64) (map[int64][]model.CoursePropertyOption, error) {
+	out := make(map[int64][]model.CoursePropertyOption)
+	if len(propertyIDs) == 0 {
+		return out, nil
+	}
+	placeholders := make([]string, len(propertyIDs))
+	args := make([]any, len(propertyIDs))
+	for i, id := range propertyIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	q := fmt.Sprintf(`
+		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), property_id, IFNULL(name, ''), IFNULL(sort, 0), IFNULL(remark, '')
+		FROM inst_course_property_option
+		WHERE del_flag = 0 AND property_id IN (%s)
+		ORDER BY property_id ASC, sort ASC, id ASC
+	`, strings.Join(placeholders, ","))
+	rows, err := repo.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item model.CoursePropertyOption
+		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.PropertyID, &item.Name, &item.Sort, &item.Remark); err != nil {
+			return nil, err
+		}
+		out[item.PropertyID] = append(out[item.PropertyID], item)
+	}
+	return out, rows.Err()
+}
+
 func (repo *Repository) InitInstCourseProperty(ctx context.Context, instID int64) error {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT IFNULL(name, ''), IFNULL(enable, 0), IFNULL(enable_online_filter, 0)
