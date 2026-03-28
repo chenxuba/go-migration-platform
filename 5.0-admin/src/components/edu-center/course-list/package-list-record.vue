@@ -1,5 +1,5 @@
 <script setup>
-import { DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { CheckOutlined, CloseOutlined, DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { computed, ref } from 'vue'
 import { debounce } from 'lodash-es'
 import dayjs from 'dayjs'
@@ -38,6 +38,8 @@ const batchRunning = ref(false)
 const batchProgressCurrent = ref(0)
 const batchProgressTotal = ref(0)
 const batchProgressTitle = ref('')
+const batchSuccessCount = ref(0)
+const batchFailCount = ref(0)
 const batchSaleStatusValue = ref(true)
 const batchMicroSchoolShow = ref(false)
 const batchMicroSchoolSale = ref(false)
@@ -347,6 +349,8 @@ async function runSingleBatchAction(actionTitle, ids, worker) {
   batchProgressTitle.value = actionTitle
   batchProgressCurrent.value = 0
   batchProgressTotal.value = ids.length
+  batchSuccessCount.value = 0
+  batchFailCount.value = 0
   batchRunning.value = true
   batchRunningModalOpen.value = true
 
@@ -356,10 +360,12 @@ async function runSingleBatchAction(actionTitle, ids, worker) {
     const id = ids[index]
     try {
       await worker(id)
+      batchSuccessCount.value += 1
     }
     catch (error) {
       console.error(`${actionTitle}失败:`, error)
       failedIds.push(id)
+      batchFailCount.value += 1
     }
     finally {
       batchProgressCurrent.value = index + 1
@@ -367,7 +373,6 @@ async function runSingleBatchAction(actionTitle, ids, worker) {
   }
 
   batchRunning.value = false
-  batchRunningModalOpen.value = false
 
   if (failedIds.length === 0) {
     messageService.success(`${actionTitle}成功`)
@@ -379,6 +384,11 @@ async function runSingleBatchAction(actionTitle, ids, worker) {
 
   resetSelection()
   await refreshList()
+}
+
+function closeBatchProgressModal() {
+  if (batchRunning.value) return
+  batchRunningModalOpen.value = false
 }
 
 async function confirmBatchSaleStatus() {
@@ -681,12 +691,35 @@ init()
       :mask-closable="false"
       :keyboard="false"
       :footer="null"
-      :width="560"
+      :width="520"
     >
       <div class="batch-progress-modal">
-        <div class="batch-progress-modal__title">{{ batchProgressTitle }}</div>
-        <div class="batch-progress-modal__desc">正在处理 {{ batchProgressCurrent }} / {{ batchProgressTotal }}</div>
-        <a-progress :percent="batchProgressPercent" status="active" />
+        <a-button v-if="!batchRunning" type="text" class="batch-progress-modal__close" @click="closeBatchProgressModal">
+          <template #icon>
+            <CloseOutlined />
+          </template>
+        </a-button>
+
+        <template v-if="batchRunning">
+          <div class="batch-progress-modal__title">{{ batchProgressTitle }}</div>
+          <div class="batch-progress-modal__desc">正在处理 {{ batchProgressCurrent }} / {{ batchProgressTotal }}</div>
+          <a-progress :percent="batchProgressPercent" status="active" />
+        </template>
+
+        <template v-else>
+          <div class="batch-progress-result">
+            <div class="batch-progress-result__icon">
+              <CheckOutlined />
+            </div>
+            <div class="batch-progress-result__title">处理完成！</div>
+            <div class="batch-progress-result__desc">
+              <span class="batch-progress-result__count">{{ batchSuccessCount }}</span> 项任务成功
+            </div>
+            <div v-if="batchFailCount > 0" class="batch-progress-result__extra">
+              {{ batchFailCount }} 项任务失败
+            </div>
+          </div>
+        </template>
       </div>
     </a-modal>
   </div>
@@ -823,7 +856,9 @@ init()
 }
 
 .batch-progress-modal {
-  padding: 8px 4px;
+  position: relative;
+  padding: 12px 8px 16px;
+  min-height: 240px;
 }
 
 .batch-progress-modal__title {
@@ -836,6 +871,59 @@ init()
 .batch-progress-modal__desc {
   color: #666;
   margin-bottom: 16px;
+}
+
+.batch-progress-modal__close {
+  position: absolute;
+  right: 0;
+  top: 0;
+  color: #8b95a7;
+}
+
+.batch-progress-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.batch-progress-result__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border: 6px solid #10c63a;
+  border-radius: 50%;
+  color: #10c63a;
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 20px;
+}
+
+.batch-progress-result__title {
+  font-size: 24px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 12px;
+}
+
+.batch-progress-result__desc {
+  color: #6b7280;
+  font-size: 16px;
+}
+
+.batch-progress-result__count {
+  color: var(--pro-ant-color-primary);
+  font-weight: 600;
+}
+
+.batch-progress-result__extra {
+  margin-top: 10px;
+  color: #ff4d4f;
+  font-size: 15px;
 }
 
 .custom-radio ::v-deep(.ant-radio-wrapper:hover .ant-radio),
