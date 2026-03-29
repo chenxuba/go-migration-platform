@@ -108,13 +108,15 @@ func (svc *Service) UpdateOneToOne(userID int64, dto model.OneToOneUpdateDTO) er
 		dto.DefaultClassTimeRecordMode = 1
 	}
 
-	excludeID, _ := strconv.ParseInt(strings.TrimSpace(dto.ID), 10, 64)
-	count, err := svc.repo.CountTeachingClassByName(context.Background(), instID, model.TeachingClassTypeOneToOne, dto.Name, &excludeID)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return errors.New("1对1名称已存在")
+	if !dto.AllowDuplicateName {
+		excludeID, _ := strconv.ParseInt(strings.TrimSpace(dto.ID), 10, 64)
+		count, err := svc.repo.CountTeachingClassByName(context.Background(), instID, model.TeachingClassTypeOneToOne, dto.Name, &excludeID)
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("1对1名称已存在")
+		}
 	}
 
 	return svc.repo.UpdateOneToOne(context.Background(), instID, operatorID, dto)

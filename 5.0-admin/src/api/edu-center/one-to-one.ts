@@ -187,6 +187,8 @@ export interface OneToOneUpdateParams {
   defaultClassTimeRecordMode: number
   remark?: string
   classProperties: Array<Record<string, any>>
+  /** 为 true 时在名称与其他班级重复时仍保存（须先经前端二次确认） */
+  allowDuplicateName?: boolean
 }
 
 /** 学员在某课程下的学费账户（对齐后端 / 竞品 GetStudentAllTuitionAccountByLessonId） */

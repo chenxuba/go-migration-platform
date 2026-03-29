@@ -201,6 +201,8 @@ type OneToOneUpdateDTO struct {
 	DefaultClassTimeRecordMode int                  `json:"defaultClassTimeRecordMode"`
 	Remark                     string               `json:"remark"`
 	ClassProperties            []OneToOnePropertyVO `json:"classProperties"`
+	// AllowDuplicateName 为 true 时跳过「1对1名称唯一」校验（前端已二次确认同名）
+	AllowDuplicateName bool `json:"allowDuplicateName,omitempty"`
 }
 
 type StudentLessonTuitionAccountsQueryDTO struct {

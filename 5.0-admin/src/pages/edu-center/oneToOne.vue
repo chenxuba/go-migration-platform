@@ -805,6 +805,36 @@ function buildEditTeacherIds() {
   return teacherIds
 }
 
+function buildOneToOneUpdatePayload() {
+  const teacherIds = buildEditTeacherIds()
+  return {
+    id: editForm.id,
+    studentId: editForm.studentId,
+    lessonId: editForm.lessonId,
+    name: editForm.name.trim(),
+    teacherId: teacherIds.map(id => String(id)),
+    defaultTeacherId: editForm.defaultTeacherId ? String(editForm.defaultTeacherId) : '',
+    defaultStudentClassTime: Number(editForm.defaultStudentClassTime || 0),
+    defaultTeacherClassTime: Number(editForm.defaultTeacherClassTime || 0),
+    defaultClassTimeRecordMode: Number(editForm.defaultClassTimeRecordMode || 1),
+    remark: editForm.remark.trim(),
+    classProperties: Array.isArray(editForm.classProperties) ? editForm.classProperties : [],
+  }
+}
+
+async function runOneToOneUpdate(allowDuplicateName = false) {
+  const updateRes = await updateOneToOneApi({
+    ...buildOneToOneUpdatePayload(),
+    ...(allowDuplicateName ? { allowDuplicateName: true } : {}),
+  })
+  if (updateRes.code !== 200) {
+    throw new Error(updateRes.message || '更新1对1失败')
+  }
+  messageService.success('编辑1对1成功')
+  editModalOpen.value = false
+  await getOneToOneList()
+}
+
 async function submitEditModal() {
   if (!editForm.name.trim()) {
     messageService.warning('请输入1对1名称')
@@ -821,31 +851,28 @@ async function submitEditModal() {
       throw new Error(checkRes.message || '校验1对1名称失败')
     }
     if (checkRes.result) {
-      messageService.error('1对1名称已存在')
+      Modal.confirm({
+        title: '确定保存？',
+        centered: true,
+        icon: createVNode(ExclamationCircleOutlined),
+        content: '已存在同名班级',
+        okText: '确定',
+        cancelText: '取消',
+        async onOk() {
+          try {
+            await runOneToOneUpdate(true)
+          }
+          catch (err) {
+            console.error(err)
+            messageService.error(err?.message || '编辑1对1失败')
+            throw err
+          }
+        },
+      })
       return
     }
 
-    const teacherIds = buildEditTeacherIds()
-    const updateRes = await updateOneToOneApi({
-      id: editForm.id,
-      studentId: editForm.studentId,
-      lessonId: editForm.lessonId,
-      name: editForm.name.trim(),
-      teacherId: teacherIds.map(id => String(id)),
-      defaultTeacherId: editForm.defaultTeacherId ? String(editForm.defaultTeacherId) : '',
-      defaultStudentClassTime: Number(editForm.defaultStudentClassTime || 0),
-      defaultTeacherClassTime: Number(editForm.defaultTeacherClassTime || 0),
-      defaultClassTimeRecordMode: Number(editForm.defaultClassTimeRecordMode || 1),
-      remark: editForm.remark.trim(),
-      classProperties: Array.isArray(editForm.classProperties) ? editForm.classProperties : [],
-    })
-    if (updateRes.code !== 200) {
-      throw new Error(updateRes.message || '更新1对1失败')
-    }
-
-    messageService.success('编辑1对1成功')
-    editModalOpen.value = false
-    await getOneToOneList()
+    await runOneToOneUpdate(false)
   } catch (error) {
     console.error('update one to one failed', error)
     messageService.error(error?.message || '编辑1对1失败')
