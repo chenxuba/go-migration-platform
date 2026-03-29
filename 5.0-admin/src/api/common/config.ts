@@ -48,7 +48,6 @@ export interface InstConfig {
   enableFaceAttendanceRelateTeaching: string
   enableFilterHoliday: string
   enableForeground: boolean
-  enableGeneralLesson: string
   enableGoodsManagement: string
   enableGradeUpgrade: string
   enableLeaveApplyNumberLimit: string

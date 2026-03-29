@@ -303,7 +303,6 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 		item.AssignedClass = assignedClassRaw != 0
 		item.Status = taStatus
 		item.IsTuitionAccountActive = taStatus == 1
-		item.GeneralLessonIDList = []string{}
 		if suspendedTime.Valid && suspendedTime.Time.Year() > 1 {
 			item.Suspended = true
 			t := suspendedTime.Time
@@ -323,9 +322,9 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 	return out, rows.Err()
 }
 
-// oneToOneLessonListPolicy 决定 1 对 1 可选课程列表策略（已下线「通用课」后简化）：
+// oneToOneLessonListPolicy 决定 1 对 1 可选课程列表策略：
 // 学员已有任一开班中 1 对 1 → 展示机构内全部 1v1 课程目录；否则仅展示其学费账户上的 1v1 课程。
-func (repo *Repository) oneToOneLessonListPolicy(ctx context.Context, instID, studentID int64, _ []int) (restrictNonGeneral, useInstitutionCatalog bool, err error) {
+func (repo *Repository) oneToOneLessonListPolicy(ctx context.Context, instID, studentID int64) (useInstitutionCatalog bool, err error) {
 	const qAny = `
 SELECT EXISTS (
 	SELECT 1
@@ -340,17 +339,17 @@ SELECT EXISTS (
 )`
 	var hasAny bool
 	if err := repo.db.QueryRowContext(ctx, qAny, instID, studentID, model.TeachingClassTypeOneToOne, model.TeachingClassStatusActive).Scan(&hasAny); err != nil {
-		return false, false, err
+		return false, err
 	}
 	if hasAny {
-		return false, true, nil
+		return true, nil
 	}
-	return true, false, nil
+	return false, nil
 }
 
 // ListOneToOneLessonOptionsByStudent 学员在指定学费账户状态下、可用于 1 对 1 的课程（去重）。teach_method=2 为 1v1。
 func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) ([]model.OneToOneLessonOptionVO, error) {
-	_, useInstitutionCatalog, err := repo.oneToOneLessonListPolicy(ctx, instID, studentID, tuitionAccountStatus)
+	useInstitutionCatalog, err := repo.oneToOneLessonListPolicy(ctx, instID, studentID)
 	if err != nil {
 		return nil, err
 	}

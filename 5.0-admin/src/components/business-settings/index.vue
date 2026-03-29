@@ -25,7 +25,7 @@ const navigation = ref({
 const settingsList = ref([
   {
     title: '课程与课消设置',
-    description: '授课方式、收款方式、通用课、课消规则等相关设置',
+    description: '授课方式、收款方式、课消规则等相关设置',
     path: '/course-settings',
   },
   {

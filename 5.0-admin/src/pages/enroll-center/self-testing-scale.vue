@@ -46,7 +46,6 @@ const displayArray = ref([
   'stuPhoneSearch', // 学员/电话
   'recommend', // 推荐人
   'followTime', // 跟进时间
-  'isCommonCourse', // 是否是通用课
   'teachingMethod', // 授课方式
   'sellStatus', // 售卖状态
   'hasTrialPrice', // 是否有体验价

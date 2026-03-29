@@ -62,7 +62,6 @@ func ensureProductPackageTables(ctx context.Context, db *sql.DB) error {
 			free_quantity DECIMAL(18,2) NOT NULL DEFAULT 0,
 			discount_type INT NULL,
 			discount_number DECIMAL(18,2) NOT NULL DEFAULT 0,
-			lesson_scope INT NOT NULL DEFAULT 0,
 			lesson_type INT NOT NULL DEFAULT 0,
 			lesson_mode INT NOT NULL DEFAULT 0,
 			lesson_audition TINYINT(1) NOT NULL DEFAULT 0,
@@ -94,6 +93,9 @@ func ensureProductPackageTables(ctx context.Context, db *sql.DB) error {
 			KEY idx_product_package_property_filter (property_id, property_value, del_flag)
 		)
 	`); err != nil {
+		return err
+	}
+	if err := dropColumnIfExists(ctx, db, "product_package_item", "lesson_scope"); err != nil {
 		return err
 	}
 	return nil
@@ -251,7 +253,7 @@ func (repo *Repository) attachProductPackageItems(ctx context.Context, packageID
 			id, product_package_id, IFNULL(product_type, 1),
 			CAST(IFNULL(product_id, 0) AS CHAR), IFNULL(product_name, ''),
 			CAST(IFNULL(sku_id, 0) AS CHAR), IFNULL(sku_name, ''),
-			IFNULL(lesson_scope, 0), IFNULL(lesson_type, 0), IFNULL(lesson_mode, 0), IFNULL(lesson_audition, 0)
+			IFNULL(lesson_type, 0), IFNULL(lesson_mode, 0), IFNULL(lesson_audition, 0)
 		FROM product_package_item
 		WHERE del_flag = 0 AND product_package_id IN (`+strings.Join(holders, ",")+`)
 		ORDER BY id ASC
@@ -263,10 +265,9 @@ func (repo *Repository) attachProductPackageItems(ctx context.Context, packageID
 
 	for rows.Next() {
 		var (
-			item         model.ProductPackageItemVO
-			id           int64
-			packageID    int64
-			lessonScopeX int
+			item      model.ProductPackageItemVO
+			id        int64
+			packageID int64
 		)
 		if err := rows.Scan(
 			&id,
@@ -276,7 +277,6 @@ func (repo *Repository) attachProductPackageItems(ctx context.Context, packageID
 			&item.ProductName,
 			&item.SkuID,
 			&item.SkuName,
-			&lessonScopeX,
 			&item.LessonType,
 			&item.LessonMode,
 			&item.LessonAudition,
@@ -545,10 +545,10 @@ func (repo *Repository) CreateProductPackage(ctx context.Context, instID, operat
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO product_package_item (
 				uuid, version, product_package_id, product_type, product_id, product_name, sku_id, sku_name,
-				sku_count, free_quantity, discount_type, discount_number, lesson_scope, lesson_type, lesson_mode, lesson_audition,
+				sku_count, free_quantity, discount_type, discount_number, lesson_type, lesson_mode, lesson_audition,
 				create_id, create_time, update_id, update_time, del_flag
 			) VALUES (
-				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
+				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
 			)
 		`,
 			packageID,
@@ -561,7 +561,6 @@ func (repo *Repository) CreateProductPackage(ctx context.Context, instID, operat
 			item.FreeQuantity,
 			item.DiscountType,
 			item.DiscountNumber,
-			1,
 			snapshot.TeachMethod,
 			snapshot.LessonModel,
 			snapshot.LessonAudition,

@@ -320,7 +320,6 @@ type CheckQuoteVO struct {
 type QuoteDetailDTO struct {
 	HandleType     *int       `json:"handleType"`
 	CourseID       int64      `json:"courseId"`
-	CourseType     *int       `json:"courseType"`
 	QuoteID        int64      `json:"quoteId"`
 	LessonMode     *int       `json:"lessonMode"`
 	ClassID        *int64     `json:"classId"`

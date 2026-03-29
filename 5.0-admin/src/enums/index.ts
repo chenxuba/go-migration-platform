@@ -154,21 +154,6 @@ export const StudentStatusLabel: Record<StudentStatus, string> = {
 }
 
 /**
- * 是否是通用课枚举 不通用 全部通用 部分通用
- */
-export enum IsCommonCourse {
-  NotCommon = 0,
-  AllCommon = 1,
-  PartCommon = 2,
-}
-
-export const IsCommonCourseLabel: Record<IsCommonCourse, string> = {
-  [IsCommonCourse.NotCommon]: '不通用',
-  [IsCommonCourse.AllCommon]: '全部通用',
-  [IsCommonCourse.PartCommon]: '部分通用',
-}
-
-/**
  * 授课方式枚举 班级授课 1v1授课
  */
 export enum TeachingMethod {

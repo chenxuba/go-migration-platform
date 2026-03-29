@@ -13,8 +13,6 @@ import {
   FollowUpStatusLabel,
   IntentionLevel,
   IntentionLevelLabel,
-  IsCommonCourse,
-  IsCommonCourseLabel,
   IsCommonYesNo,
   IsCommonYesNoLabel,
   SellStatus,
@@ -244,7 +242,7 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:notFollowDaysFilter', 'update:wxChatFilter', 'update:schoolFilter', 'update:addressFilter',
   'update:hobbiesFilter', 'update:orderNumberFilter', 'update:gradeFilter', 'update:stuPhoneSearchFilter', 'update:tuiJianUserFilter',
   'update:recommendedFilter', 'update:followMethodFilter', 'update:visitStatusFilter', 'update:payrollStatusFilter',
-  'update:stuStatusFilter', 'update:followTimeFilter', 'update:courseCategoryFilter', 'update:isCommonCourseFilter',
+  'update:stuStatusFilter', 'update:followTimeFilter', 'update:courseCategoryFilter',
   'update:teachingMethodFilter', 'update:sellStatusFilter', 'update:chargingMethodFilter', 'update:hasTrialPriceFilter',
   'update:trialPurchaseStatusFilter',
   'update:isMicroSchoolSaleFilter', 'update:isMicroSchoolDisplayFilter',
@@ -436,14 +434,6 @@ const sexOptions = ref([
   { id: Sex.Unknown, value: SexLabel[Sex.Unknown] },
 ])
 const sexVals = ref([])
-
-// 是否是通用课选项
-const isCommonCourseOptions = ref([
-  { id: IsCommonCourse.NotCommon, value: IsCommonCourseLabel[IsCommonCourse.NotCommon] },
-  { id: IsCommonCourse.AllCommon, value: IsCommonCourseLabel[IsCommonCourse.AllCommon] },
-  { id: IsCommonCourse.PartCommon, value: IsCommonCourseLabel[IsCommonCourse.PartCommon] },
-])
-const isCommonCourseVals = ref([])
 
 // 跟进方式选项
 const followMethodOptions = ref([
@@ -1480,13 +1470,6 @@ function handleSexChange() {
   })
 }
 
-function handleIsCommonCourseChange() {
-  nextTick(() => {
-    console.log(`是否是通用课：${isCommonCourseVals.value}`)
-    debouncedEmit('isCommonCourseFilter', isCommonCourseVals.value)
-  })
-}
-
 function handleFollowMethodChange() {
   nextTick(() => {
     debouncedEmit('followMethodFilter', followMethodVals.value)
@@ -2321,12 +2304,6 @@ const selectedConditions = computed(() => {
       label: '性别',
       show: props.displayArray.includes('sex'),
       values: sexOptions.value.filter(opt => sexVals.value.includes(opt.id)),
-    },
-    {
-      type: 'isCommonCourse',
-      label: '是否是通用课',
-      show: props.displayArray.includes('isCommonCourse'),
-      values: isCommonCourseOptions.value.filter(opt => isCommonCourseVals.value.includes(opt.id)),
     },
     {
       type: 'followMethod',
@@ -3313,8 +3290,6 @@ watch(
   () => (lastUpdated.openClassStatus = Date.now()),
 )
 watch(selectDoYouScheduleVals, () => (lastUpdated.doYouSchedule = Date.now()))
-watch(isCommonCourseVals, () => (lastUpdated.isCommonCourse = Date.now()))
-watch(teachingMethodVals, () => (lastUpdated.teachingMethod = Date.now()))
 watch(sellStatusVals, () => (lastUpdated.sellStatus = Date.now()))
 watch(hasTrialPriceVals, () => (lastUpdated.hasTrialPrice = Date.now()))
 watch(isMicroSchoolSaleVals, () => (lastUpdated.isMicroSchoolSale = Date.now()))
@@ -3359,7 +3334,6 @@ const clearAll = debounce(() => {
     hasSalesPersonVals,
     followStatusVals,
     sexVals,
-    isCommonCourseVals,
     followMethodVals,
     visitStatusVals,
     payrollStatusVals,
@@ -3418,7 +3392,6 @@ const clearAll = debounce(() => {
     emit('update:lastFollowTimeFilter', undefined, true)
     emit('update:followTimeFilter', undefined, true)
     emit('update:sexFilter', [], true)
-    emit('update:isCommonCourseFilter', [], true)
     emit('update:ageFilter', undefined, true)
     emit('update:channelFilter', undefined, true)
     emit('update:notFollowDaysFilter', undefined, true)
@@ -3692,10 +3665,6 @@ function removeCondition(type, id) {
     case 'sex':
       // sexVals.value = [];
       emit('update:sexFilter', [], false, id, type)
-      break
-    case 'isCommonCourse':
-      // isCommonCourseVals.value = [];
-      emit('update:isCommonCourseFilter', [], false, id, type)
       break
     case 'followMethod':
       // followMethodVals.value = [];
@@ -4282,9 +4251,6 @@ function clearQuickFilter(id, type) {
       if (childRefs.value.yiXiangcourse && childRefs.value.yiXiangcourse.closeDropdown) {
         childRefs.value.yiXiangcourse.resetSearch()
       }
-      break
-    case 'isCommonCourse':
-      isCommonCourseVals.value = []
       break
     case 'sex':
       sexVals.value = []
@@ -5099,9 +5065,6 @@ defineExpose({
               <checkbox-filter v-if="filterType === 'sex'" v-model:checked-values="sexVals" :options="sexOptions"
                 label="性别" type="checkbox" @change="handleSexChange" />
 
-              <!-- 是否是通用课 -->
-              <checkbox-filter v-if="filterType === 'isCommonCourse'" v-model:checked-values="isCommonCourseVals"
-                :options="isCommonCourseOptions" label="是否是通用课" type="checkbox" @change="handleIsCommonCourseChange" />
 
               <!-- 跟进方式 -->
               <checkbox-filter v-if="filterType === 'followMethod'" v-model:checked-values="followMethodVals"

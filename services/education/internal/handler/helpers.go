@@ -738,7 +738,6 @@ func parseCreateOrderDTO(raw map[string]any) model.CreateOrderDTO {
 				detail.QuoteDetailList = append(detail.QuoteDetailList, model.QuoteDetailDTO{
 					HandleType:     asIntPtr(row["handleType"]),
 					CourseID:       derefInt64Value(asInt64Ptr(row["courseId"])),
-					CourseType:     asIntPtr(row["courseType"]),
 					QuoteID:        derefInt64Value(asInt64Ptr(row["quoteId"])),
 					LessonMode:     asIntPtr(row["lessonMode"]),
 					ClassID:        asInt64Ptr(row["classId"]),

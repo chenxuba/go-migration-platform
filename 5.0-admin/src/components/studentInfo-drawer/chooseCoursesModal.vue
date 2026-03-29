@@ -72,9 +72,6 @@ function handleOk() {
                   {{ item.name }}
                 </div>
                 <div>
-                  <a-tag v-if="index === 0 || index === 2" color="#0066ff" style="color:#fff;border-radius: 10px;">
-                    通用课
-                  </a-tag>
                   <a-tag color="#e6f0ff" style="color:#0066ff;border-radius: 10px;">
                     全部课程
                   </a-tag>

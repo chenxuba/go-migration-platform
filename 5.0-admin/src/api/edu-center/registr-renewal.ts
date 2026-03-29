@@ -96,7 +96,6 @@ export interface CheckQuoteInfoParams {
 export interface QuoteDetail {
   handleType: number
   courseId: number
-  courseType: number
   quoteId: number
   lessonMode: number
   classId: number | null

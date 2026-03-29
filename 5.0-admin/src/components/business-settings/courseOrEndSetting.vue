@@ -11,7 +11,6 @@ const toggleValue3 = ref(true)
 const toggleValue4 = ref(false)
 const toggleValue5 = ref(false)
 const toggleValue6 = ref(true)
-const toggleValue7 = ref(true)
 const toggleValue8 = ref(true)
 const toggleValue9 = ref(true)
 const toggleValue10 = ref(true)
@@ -219,23 +218,6 @@ const toggleValue10 = ref(true)
       </div>
       <div class="text-#666 text-12px mt-2px px-16px">
         当前：先进先出
-      </div>
-    </div>
-    <!-- 通用课 -->
-    <div class="flex justify-between items-center px-16px mt-12px">
-      <span class="text-#666 text-12px">通用课</span>
-    </div>
-    <div class="bg-white settings-item mt-10px">
-      <div class="item-content">
-        <div class="item-title" style="font-size: 16px;">
-          通用课
-        </div>
-        <div class="item-description line-height-16px mt-4px">
-          开启后机构可开设通用课程，允许报读学员在设置的课程范围内上多门课
-        </div>
-      </div>
-      <div class="item-status ml-20px">
-        <a-switch v-model:checked="toggleValue7" @click.stop />
       </div>
     </div>
     <!-- 一班多课 -->

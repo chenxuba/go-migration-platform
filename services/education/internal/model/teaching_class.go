@@ -252,8 +252,7 @@ type StudentLessonTuitionAccountItem struct {
 	StartTime              time.Time  `json:"startTime"`
 	EnableExpireTime       bool       `json:"enableExpireTime"`
 	ExpireTime             time.Time  `json:"expireTime"`
-	AssignedClass       bool     `json:"assignedClass"`
-	GeneralLessonIDList []string `json:"generalLessonIdList"`
+	AssignedClass          bool       `json:"assignedClass"`
 	LatestStartTime        time.Time  `json:"latestStartTime"`
 	LessonType             int        `json:"lessonType"`
 	IsTuitionAccountActive bool       `json:"isTuitionAccountActive"`

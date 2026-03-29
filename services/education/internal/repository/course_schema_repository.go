@@ -14,7 +14,7 @@ func ensureCourseSchema(ctx context.Context, db *sql.DB) error {
 	if err := ensureLongTextColumnType(ctx, db, "inst_course_detail", "description"); err != nil {
 		return err
 	}
-	// 下线「通用课」：移除 inst_course 上 lessonScope / 部分通用范围存储列
+	// 移除已废弃的 inst_course 列（历史数据由启动时 ALTER 清理）
 	if err := dropColumnIfExists(ctx, db, "inst_course", "course_type"); err != nil {
 		return err
 	}

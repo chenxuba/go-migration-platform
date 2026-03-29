@@ -210,7 +210,6 @@ export interface StudentLessonTuitionAccountItem {
   enableExpireTime?: boolean
   expireTime?: string
   assignedClass?: boolean
-  generalLessonIdList?: string[]
   latestStartTime?: string
   lessonType?: number
   isTuitionAccountActive?: boolean
