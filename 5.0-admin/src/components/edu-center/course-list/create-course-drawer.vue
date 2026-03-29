@@ -534,7 +534,7 @@ function resetForm() {
   formState.value.courseType = 1
   formState.value.courseScope = []
   formState.value.teachMethod = 1
-  allCommonTypeSelection.value = 'all-class'
+  allCommonTypeSelection.value = 'all-course'
   formState.value.type = 1
   formState.value.productSku = []
 
@@ -1001,7 +1001,7 @@ const openModal = ref(false)
 const selectCourseRangeModalOpen = ref(false)
 // 已选择的课程
 const selectedCourses = ref([])
-const allCommonTypeSelection = ref('all-class')
+const allCommonTypeSelection = ref('all-course')
 
 // 计算课程名称字符串
 const courseNames = computed(() => {
