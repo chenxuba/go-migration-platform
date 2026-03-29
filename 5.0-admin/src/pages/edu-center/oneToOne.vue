@@ -550,8 +550,9 @@ function openBatchAction(action) {
   if (action === 'classTime') {
     const current = actionRows.value[0]
     classTimeForm.classTimeRecordMode = Number(current?.defaultClassTimeRecordMode || 1)
-    classTimeForm.studentClassTime = Number(current?.studentClassTime ?? 1)
-    classTimeForm.teacherClassTime = Number(current?.teacherClassTime ?? 0)
+    // 每次打开弹窗：学员默认 1、教师默认 0（不沿用列表当前行数值）
+    classTimeForm.studentClassTime = 1
+    classTimeForm.teacherClassTime = 0
     classTimeModalOpen.value = true
     return
   }
