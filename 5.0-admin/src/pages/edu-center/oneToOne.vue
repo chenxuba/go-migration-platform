@@ -404,9 +404,24 @@ function handleFinishCourse(record) {
       '是否确认对1对1进行结班且结课，结班后会同步删除相关的日程，被删除的日程不可恢复，请谨慎操作',
     okText: '结班并结课',
     cancelText: '仅结班',
-    onOk() {
-      finishCourseRecord.value = record
-      finishCourseModalOpen.value = true
+    async onOk() {
+      try {
+        const res = await closeOneToOneApi({ id: String(id) })
+        if (res.code !== 200) {
+          messageService.error(res.message || '结班失败')
+          return Promise.reject(new Error(res.message || '结班失败'))
+        }
+        messageService.success('结班成功')
+        await getOneToOneList()
+        const updated = dataSource.value.find(r => String(r.id) === String(id)) || record
+        finishCourseRecord.value = updated
+        finishCourseModalOpen.value = true
+      }
+      catch (err) {
+        console.error(err)
+        messageService.error('结班失败')
+        return Promise.reject(err)
+      }
     },
     async onCancel() {
       try {
