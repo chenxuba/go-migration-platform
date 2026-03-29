@@ -942,6 +942,20 @@ func (repo *Repository) ReopenOneToOneOnly(ctx context.Context, instID, operator
 	if currentStatus != model.TeachingClassStatusClosed {
 		return errors.New("班级状态不允许恢复开班")
 	}
+	var courseClosedCount int
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM teaching_class_student tcs
+		WHERE tcs.teaching_class_id = ? AND tcs.inst_id = ? AND tcs.del_flag = 0
+		  AND IFNULL(tcs.primary_tuition_account_id, 0) > 0
+		  AND tcs.class_student_status = ?
+	`, classID, instID, model.TeachingClassStudentStatusClosed).Scan(&courseClosedCount)
+	if err != nil {
+		return err
+	}
+	if courseClosedCount > 0 {
+		return errors.New("该1对1默认账户的课程已结课，无法恢复开班")
+	}
 	res, err := repo.db.ExecContext(ctx, `
 		UPDATE teaching_class
 		SET status = ?, update_id = ?, update_time = NOW()
