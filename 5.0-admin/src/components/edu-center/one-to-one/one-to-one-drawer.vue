@@ -100,7 +100,7 @@ function handleEdit() {
           </div>
         </div>
       </div>
-      <div class="ml-4">
+      <div v-if="!isClassClosed" class="ml-4">
         <a-button type="primary" @click="handleEdit">
           编辑
         </a-button>

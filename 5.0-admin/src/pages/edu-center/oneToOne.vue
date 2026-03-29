@@ -657,7 +657,6 @@ async function openDrawer(record) {
 }
 
 function handleDrawerEdit(record) {
-  drawerOpen.value = false
   openEditModal(record || currentRecord.value)
 }
 
