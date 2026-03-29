@@ -9,6 +9,27 @@ import { useTableColumns } from '@/composables/useTableColumns'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import messageService from '~@/utils/messageService'
 
+/**
+ * 与创建课程一致：courseType 1 非通用；3 部分通用；4 全部课程通用；
+ * 2 为「全部班课/全部1对1」通用，需结合 teachMethod 区分。
+ */
+function formatCourseGeneralTypeLabel(record) {
+  const ct = Number(record?.courseType)
+  const tm = Number(record?.teachMethod)
+  if (ct === 1)
+    return '不是通用课'
+  if (ct === 3)
+    return '部分课程通用'
+  if (ct === 4)
+    return '全部课程通用'
+  if (ct === 2) {
+    if (tm === 2)
+      return '全部1对1通用'
+    return '全部班课通用'
+  }
+  return '-'
+}
+
 const displayArray = ref(['courseCategory', 'teachingMethod', 'billingMode', 'saleStatus', 'hasTrialPrice', 'isMicroSchoolSale', 'isMicroSchoolDisplay', 'courseAttribute'])
 
 const assignSalesVisible = ref(false)
@@ -35,7 +56,7 @@ const allColumns = ref([
     title: '是否是通用课',
     key: 'courseType',
     dataIndex: 'courseType',
-    width: 120,
+    width: 140,
   },
   {
     title: '授课方式',
@@ -725,10 +746,7 @@ const handleSearchInput = debounce((value, id, type) => {
               {{ record.categoryName || '-' }}
             </template>
             <template v-if="column.key === 'courseType'">
-              <span v-if="record.courseType === 1">不通用</span>
-              <span v-if="record.courseType === 2">全部通用</span>
-              <span v-if="record.courseType === 3">部分通用</span>
-              <span v-if="record.courseType === 4">混合课程通用</span>
+              {{ formatCourseGeneralTypeLabel(record) }}
             </template>
             <template v-if="column.key === 'teachingMethod'">
               <span v-if="record.teachMethod === 1">班级授课</span>
