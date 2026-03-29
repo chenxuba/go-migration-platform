@@ -107,6 +107,7 @@ type OneToOneItemVO struct {
 	TeacherClassTime           float64                  `json:"teacherClassTime"`
 	LessonID                   string                   `json:"lessonId"`
 	LessonName                 string                   `json:"lessonName"`
+	OrderCourseDetailID        string                   `json:"orderCourseDetailId,omitempty"`
 	TuitionAccountID           string                   `json:"tuitionAccountId"`
 	DefaultTeacherID           string                   `json:"defaultTeacherId"`
 	DefaultTeacherName         string                   `json:"defaultTeacherName"`
@@ -140,6 +141,7 @@ type OneToOneDetailVO struct {
 	LessonPrice                float64                  `json:"lessonPrice"`
 	ClassroomID                string                   `json:"classroomId"`
 	ClassroomName              *string                  `json:"classroomName"`
+	OrderCourseDetailID        string                   `json:"orderCourseDetailId,omitempty"`
 	TuitionAccountID           string                   `json:"tuitionAccountId"`
 	ClassTime                  float64                  `json:"classTime"`
 	IsScheduled                bool                     `json:"isScheduled"`
@@ -202,8 +204,9 @@ type OneToOneUpdateDTO struct {
 }
 
 type StudentLessonTuitionAccountsQueryDTO struct {
-	StudentID string `json:"studentId"`
-	LessonID  string `json:"lessonId"`
+	StudentID           string `json:"studentId"`
+	LessonID            string `json:"lessonId"`
+	OrderCourseDetailID string `json:"orderCourseDetailId,omitempty"`
 }
 
 // StudentLessonTuitionAccountItem 单条学费账户（含竞品常用字段名 quantity/tuition 表示剩余）

@@ -189,8 +189,14 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 	}, rows.Err()
 }
 
-// ListStudentTuitionAccountsByStudentAndLesson 学员在某课程下的全部学费账户（原始账户行，未按订单明细聚合）
-func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context.Context, instID, studentID, courseID int64) ([]model.StudentLessonTuitionAccountItem, error) {
+// ListStudentTuitionAccountsByStudentAndLesson 学员在某课程下的学费账户（原始账户行）。orderCourseDetailID>0 时仅返回该订单明细下的账户，供 1 对 1 详情报读明细等与当前报读对齐。
+func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context.Context, instID, studentID, courseID int64, orderCourseDetailID int64) ([]model.StudentLessonTuitionAccountItem, error) {
+	orderDetailSQL := ""
+	args := []any{instID, studentID, courseID}
+	if orderCourseDetailID > 0 {
+		orderDetailSQL = " AND ta.order_course_detail_id = ?"
+		args = append(args, orderCourseDetailID)
+	}
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
 			CAST(ta.id AS CHAR),
@@ -247,8 +253,9 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 			AND ta.del_flag = 0
 			AND ta.student_id = ?
 			AND ta.course_id = ?
+		`+orderDetailSQL+`
 		ORDER BY ta.create_time DESC, ta.id DESC
-	`, instID, studentID, courseID)
+	`, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -257,6 +257,11 @@ export function reopenOneToOneApi(data: OneToOneCloseParams) {
   return usePost<boolean>('/api/v1/one-to-ones/reopen', data)
 }
 
-export function listTuitionAccountsByStudentAndLessonApi(data: { studentId: string, lessonId: string }) {
+export function listTuitionAccountsByStudentAndLessonApi(data: {
+  studentId: string
+  lessonId: string
+  /** 有值且非 0 时只查该订单明细下的学费账户（1 对 1 详情报读明细） */
+  orderCourseDetailId?: string
+}) {
   return usePost<StudentLessonTuitionAccountsResult>('/api/v1/tuition-accounts/by-student-and-lesson', data)
 }

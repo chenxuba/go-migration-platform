@@ -15,7 +15,7 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-  /** 学员在该课程下的全部学费账户（接口 listTuitionAccountsByStudentAndLesson） */
+  /** 当前 1 对 1 报读对应的学费账户（按 orderCourseDetailId 过滤后的列表） */
   tuitionAccounts: {
     type: Array,
     default: () => [],
@@ -45,6 +45,8 @@ function formatCreatedTime(value) {
 function getStatusText(status) {
   return status === 2 ? '已结班' : '开班中'
 }
+
+const isClassClosed = computed(() => Number(props.record?.status) === 2)
 
 function handleEdit() {
   emit('edit', props.record)
@@ -80,10 +82,16 @@ function handleEdit() {
         </div>
         <div class="info flex flex-1 ml-4 flex-col">
           <div class="top flex flex-items-center flex-wrap">
-            <div class="name text-20px font-800 mr-3">
+            <div
+              class="name text-20px font-800 mr-3"
+              :class="{ 'name--closed': isClassClosed }"
+            >
               {{ record?.name || '柳一一一-感统课' }}
             </div>
-            <span class="status-chip">
+            <span
+              class="status-chip"
+              :class="{ 'status-chip--closed': isClassClosed }"
+            >
               {{ getStatusText(record?.status) }}
             </span>
           </div>
@@ -209,6 +217,17 @@ function handleEdit() {
   background: #e9f2ff;
   color: #1f6fff;
   font-size: 12px;
+}
+
+.status-chip--closed {
+  background: #fff1f0;
+  color: #cf1322;
+  border: 1px solid #ffccc7;
+}
+
+.name--closed {
+  opacity: 0.55;
+  color: #595959;
 }
 
 .tabs {

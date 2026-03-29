@@ -641,9 +641,11 @@ async function openDrawer(record) {
     const sid = currentRecord.value?.studentId
     const lid = currentRecord.value?.lessonId
     if (sid && lid) {
+      const oid = currentRecord.value?.orderCourseDetailId
       const accRes = await listTuitionAccountsByStudentAndLessonApi({
         studentId: String(sid),
         lessonId: String(lid),
+        ...(oid && String(oid) !== '0' ? { orderCourseDetailId: String(oid) } : {}),
       })
       if (accRes.code === 200 && Array.isArray(accRes.result?.list))
         drawerTuitionAccounts.value = accRes.result.list

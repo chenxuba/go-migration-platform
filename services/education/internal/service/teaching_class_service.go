@@ -52,7 +52,13 @@ func (svc *Service) ListStudentTuitionAccountsByStudentAndLesson(userID int64, d
 	if err != nil || courseID <= 0 {
 		return model.StudentLessonTuitionAccountsResult{}, errors.New("lessonId 不能为空")
 	}
-	list, err := svc.repo.ListStudentTuitionAccountsByStudentAndLesson(context.Background(), instID, studentID, courseID)
+	var orderCourseDetailID int64
+	if s := strings.TrimSpace(dto.OrderCourseDetailID); s != "" && s != "0" {
+		if v, perr := strconv.ParseInt(s, 10, 64); perr == nil && v > 0 {
+			orderCourseDetailID = v
+		}
+	}
+	list, err := svc.repo.ListStudentTuitionAccountsByStudentAndLesson(context.Background(), instID, studentID, courseID, orderCourseDetailID)
 	if err != nil {
 		return model.StudentLessonTuitionAccountsResult{}, err
 	}
