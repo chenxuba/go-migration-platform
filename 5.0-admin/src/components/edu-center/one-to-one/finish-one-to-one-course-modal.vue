@@ -1,6 +1,7 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
-import { CloseOutlined } from '@ant-design/icons-vue'
+import { computed, createVNode, reactive, ref, watch } from 'vue'
+import { CloseOutlined, QuestionCircleFilled } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 
 const props = defineProps({
@@ -211,10 +212,27 @@ watch(
 async function handleSubmit() {
   try {
     await formRef.value?.validate?.()
-    emit('confirm', {
+    const payload = {
       recordId: recordId.value,
       endDate: endDateValue.value,
       remark: formState.remark?.trim() || '',
+    }
+    Modal.confirm({
+      title: '确定结课?',
+      centered: true,
+      closable: false,
+      maskClosable: false,
+      keyboard: false,
+      icon: createVNode(QuestionCircleFilled, { style: { color: '#ff4d4f', fontSize: '22px' } }),
+      content:
+        '结课后，学员报读课程的剩余课时将全部扣除，机构获得相应课消收入。',
+      okText: '确定结课',
+      cancelText: '再想想',
+      okButtonProps: { danger: true, ghost: true },
+      wrapClassName: 'end-course-pre-confirm-modal',
+      onOk() {
+        emit('confirm', payload)
+      },
     })
   }
   catch {
@@ -331,3 +349,10 @@ function closeFun() {
     </template>
   </a-modal>
 </template>
+
+<style>
+.end-course-pre-confirm-modal .ant-modal-content {
+  border-radius: 20px;
+  overflow: hidden;
+}
+</style>

@@ -387,7 +387,8 @@ function handleReopenClass(record) {
   })
 }
 
-function handleFinishCourse(record) {
+/** 二次确认后再弹出：结班并结课 / 仅结班 */
+function openOneToOneCloseClassConfirm(record) {
   const id = record?.id
   if (!id) {
     messageService.error('缺少1对1班级ID')
@@ -439,6 +440,10 @@ function handleFinishCourse(record) {
       }
     },
   })
+}
+
+function handleFinishCourse(record) {
+  openOneToOneCloseClassConfirm(record)
 }
 
 function handleFinishCourseModalConfirm(payload) {
