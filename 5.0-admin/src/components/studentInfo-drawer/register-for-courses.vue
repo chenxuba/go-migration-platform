@@ -139,6 +139,16 @@ function isTuitionAccountCourseEnded(item) {
   return remainQty <= 0.0001 && remainTuition <= 0.0001
 }
 
+function onEndedMenuRenew() {
+  messageService.info('续费功能开发中')
+}
+function onEndedMenuRevokeGraduate() {
+  messageService.info('撤销结课功能开发中')
+}
+function onEndedMenuCloseRecord() {
+  messageService.info('结课记录功能开发中')
+}
+
 // 格式化有效期文本
 function formatValidityText(item) {
   const enableExpireTime = item.enableExpireTime
@@ -275,6 +285,7 @@ defineExpose({
             </a>
             <template #overlay>
               <a-space direction="vertical" :size="1">
+                <template v-if="!isTuitionAccountCourseEnded(item)">
                 <div class="flex items-center gap-2" @click="transferClassDrawerOpen = true">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
@@ -421,6 +432,76 @@ defineExpose({
                   <span class="image-wrapper suspendResumen" />
                   <span class="font-size-14px text-#666 w-90px">停/复课记录</span>
                 </div>
+                </template>
+                <template v-else>
+                <div class="flex items-center gap-2" @click="onEndedMenuRenew">
+                  <div>
+                    <Icon :style="{ color: 'hotpink' }">
+                      <template #component>
+                        <svg
+                          width="14px" height="14px" viewBox="0 0 14 14" version="1.1"
+                          xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+                        >
+                          <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+                            <g transform="translate(-466.000000, -466.000000)">
+                              <g transform="translate(466.000000, 466.000000)">
+                                <circle fill="#00CC33" cx="7" cy="7" r="7" />
+                                <g transform="translate(3.000000, 3.000000)" fill="#FFFFFF" fill-rule="nonzero">
+                                  <path
+                                    d="M5.81333333,0.693333333 C5.87224371,0.614786169 5.98367506,0.598867404 6.06222222,0.657777778 L7.36592593,1.63555556 C7.46039185,1.74965828 7.44447309,1.86108963 7.36592593,1.92 L6.06222222,2.89777778 C5.99402137,2.93333333 5.8573716,2.93333333 5.77777778,2.75555556 L5.77744444,2.22221176 L2.66666667,2.22222222 C1.97360345,2.22222222 1.40404562,2.75101163 1.33943696,3.42714666 L1.33333333,3.55555556 L1.33333333,5.33333333 C1.33333333,6.02639655 1.86212274,6.59595438 2.53825777,6.66056304 L2.66666667,6.66666667 L5.33333333,6.66666667 C6.02639655,6.66666667 6.59595438,6.13787726 6.66056304,5.46174223 L6.66666667,5.33333333 L6.66666667,4.44444444 C6.66666667,4.19898456 6.86565122,4 7.11111111,4 C7.32929768,4 7.510763,4.15722236 7.54839496,4.36455499 L7.55555556,4.44444444 L7.55555556,5.33333333 C7.55555556,6.5115408 6.63863472,7.47558993 5.47944506,7.55082873 L5.33333333,7.55555556 L2.66666667,7.55555556 C1.4884592,7.55555556 0.524410069,6.63863472 0.449171271,5.47944506 L0.444444444,5.33333333 L0.444444444,3.55555556 C0.444444444,2.37734809 1.36136528,1.41329896 2.52055494,1.33806016 L2.66666667,1.33333333 L5.77744444,1.33321176 L5.77777778,0.8 C5.77777778,0.774356123 5.7833227,0.749173409 5.79385768,0.72611643 Z"
+                                  />
+                                </g>
+                              </g>
+                            </g>
+                          </g>
+                        </svg>
+                      </template>
+                    </Icon>
+                  </div>
+                  <span class="font-size-14px text-#666 w-90px">续费</span>
+                </div>
+                <div class="flex items-center gap-2" @click="onEndedMenuRevokeGraduate">
+                  <div>
+                    <Icon :style="{ color: 'hotpink' }">
+                      <template #component>
+                        <svg width="14px" height="14px" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">
+                          <circle fill="#666666" cx="7" cy="7" r="7" />
+                          <path
+                            fill="#FFFFFF"
+                            fill-rule="nonzero"
+                            d="M9.7570082,6.46593375 L7.49232985,4.2012554 C7.31545958,4.02438512 7.02874679,4.02438512 6.85187651,4.2012554 L4.58719816,6.46593375 C4.41032789,6.64280403 4.41032789,6.92951682 4.58719816,7.10638709 C4.76406844,7.28325737 5.05078123,7.28325737 5.22765151,7.10638709 L6.71917543,5.61486317 L6.71917543,9.95670747 C6.71917543,10.2069556 6.92186824,10.4096484 7.17211638,10.4096484 C7.42236451,10.4096484 7.62505732,10.2069556 7.62505732,9.95670747 L7.62505732,5.61486317 L9.11658124,7.10638709 C9.20490205,7.19471669 9.32085718,7.23909697 9.43681231,7.23909697 C9.55276745,7.23909697 9.66871379,7.19493657 9.75704338,7.10638709 C9.93391366,6.92951682 9.93391366,6.64280403 9.75704338,6.46593375 Z"
+                            transform="translate(7.172121, 7.239126) scale(-1, -1) rotate(-90.000000) translate(-7.172121, -7.239126)"
+                          />
+                        </svg>
+                      </template>
+                    </Icon>
+                  </div>
+                  <span class="font-size-14px text-#666 w-90px">撤销结课</span>
+                </div>
+                <div class="flex items-center gap-2" @click="feeChangeDrawerOpen = true">
+                  <span class="image-wrapper" />
+                  <span class="font-size-14px text-#666 w-90px">学费变动记录</span>
+                </div>
+                <div class="flex items-center gap-2" @click="suspensionResumeDrawerOpen = true">
+                  <span class="image-wrapper suspendResumen" />
+                  <span class="font-size-14px text-#666 w-90px">停/复课记录</span>
+                </div>
+                <div class="flex items-center gap-2" @click="onEndedMenuCloseRecord">
+                  <div>
+                    <Icon :style="{ color: 'hotpink' }">
+                      <template #component>
+                        <svg width="14px" height="14px" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">
+                          <circle fill="#666666" cx="7" cy="7" r="7" />
+                          <rect fill="#FFFFFF" x="4.2" y="3.8" width="5.6" height="6.4" rx="0.6" />
+                          <rect fill="#666666" x="5.1" y="5.2" width="3.8" height="0.55" rx="0.2" />
+                          <rect fill="#666666" x="5.1" y="6.35" width="2.8" height="0.55" rx="0.2" />
+                        </svg>
+                      </template>
+                    </Icon>
+                  </div>
+                  <span class="font-size-14px text-#666 w-90px">结课记录</span>
+                </div>
+                </template>
               </a-space>
             </template>
           </a-dropdown>
@@ -591,4 +672,5 @@ defineExpose({
 .course-ended-faded {
   opacity: 0.4;
 }
+
 </style>
