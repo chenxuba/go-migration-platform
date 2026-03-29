@@ -28,6 +28,96 @@ LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
 	 ORDER BY qmin.id ASC LIMIT 1)
 ) AND icq.del_flag = 0`
 
+// oneToOneTuitionAccountAggSubquery 按 teaching_class 汇总本班全部班员绑定的学费账户课时/金额（与多笔报名续费共用同一 1 对 1 时的累加一致）。
+// 每条班员：有效账户 = COALESCE(primary_tuition_account_id, 按 order_course_detail_id 匹配的账户)，同一账户多行先按 (班, 账户) 去重再 SUM。
+func oneToOneTuitionAccountAggSubquery() string {
+	return `
+			SELECT
+				tcs_keys.teaching_class_id,
+				MIN(ta.id) AS primary_tuition_account_id,
+				SUM(IFNULL(ta.total_tuition, 0)) AS total_tuition,
+				SUM(IFNULL(ta.remaining_tuition, 0)) AS remain_tuition,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.total_tuition, 0)
+					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+					ELSE 0
+				END) AS total_quantity,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
+					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
+					ELSE 0
+				END) AS total_free_quantity,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.remaining_tuition, 0)
+					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+					ELSE 0
+				END) AS remain_quantity,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
+					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+					ELSE 0
+				END) AS remain_free_quantity,
+				MAX(
+					CASE
+						WHEN IFNULL(icq.lesson_model, 0) > 0 THEN icq.lesson_model
+						WHEN IFNULL(ta.enable_expire_time, 0) = 1 AND IFNULL(ta.total_quantity, 0) > 0 THEN 2
+						ELSE 0
+					END
+				) AS lesson_charging_mode,
+				MAX(IFNULL(ta.status, 0)) AS status,
+				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
+				MAX(ta.expire_time) AS expire_time,
+				MAX(ta.status_change_time) AS change_status_time,
+				MAX(ta.suspended_time) AS suspended_time,
+				MAX(ta.class_ending_time) AS class_ending_time,
+				IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
+				IFNULL(MAX(ta.has_grade_upgrade), 0) AS has_grade_upgrade
+			FROM (
+				SELECT d.teaching_class_id, d.inst_id, d.effective_ta_id
+				FROM (
+					SELECT
+						tcs1.teaching_class_id,
+						tcs1.inst_id,
+						COALESCE(
+							NULLIF(tcs1.primary_tuition_account_id, 0),
+							(SELECT MIN(ta0.id) FROM tuition_account ta0
+							 WHERE ta0.order_course_detail_id = tcs1.order_course_detail_id
+							   AND ta0.inst_id = tcs1.inst_id AND ta0.del_flag = 0)
+						) AS effective_ta_id
+					FROM teaching_class_student tcs1
+					WHERE tcs1.inst_id = ? AND tcs1.del_flag = 0
+				) d
+				WHERE d.effective_ta_id IS NOT NULL AND d.effective_ta_id > 0
+				GROUP BY d.teaching_class_id, d.inst_id, d.effective_ta_id
+			) tcs_keys
+			INNER JOIN tuition_account ta ON ta.id = tcs_keys.effective_ta_id AND ta.inst_id = tcs_keys.inst_id AND ta.del_flag = 0
+			LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+			` + tuitionAccountQuotationJoinForTa + `
+			GROUP BY tcs_keys.teaching_class_id`
+}
+
+// oneToOneTuitionAccountDeductionJoinSQL 列表/详情「当前课程账户」展示：取列表可见班员行（tcs_pick）的扣费账户；课时/余额等见 ts 全班汇总。
+const oneToOneTuitionAccountDeductionJoinSQL = `
+LEFT JOIN tuition_account ta_ded ON ta_ded.id = COALESCE(
+	NULLIF(tcs.primary_tuition_account_id, 0),
+	(SELECT MIN(ta0.id) FROM tuition_account ta0
+	 WHERE ta0.order_course_detail_id = tcs.order_course_detail_id
+	   AND ta0.inst_id = tcs.inst_id AND ta0.del_flag = 0)
+) AND ta_ded.inst_id = tcs.inst_id AND ta_ded.del_flag = 0
+LEFT JOIN inst_course ic_ded ON ic_ded.id = ta_ded.course_id AND ic_ded.del_flag = 0`
+
+// oneToOneListableJoinSQL 与 PageOneToOneList 主查询一致：仅统计/展示仍有有效班员、且学员与上课课程均未删除的 1 对 1（避免清空校区后残留 teaching_class 导致条数虚高、同名误判）。
+const oneToOneListableJoinSQL = `
+INNER JOIN (
+	SELECT teaching_class_id, MIN(id) AS id
+	FROM teaching_class_student
+	WHERE inst_id = ? AND del_flag = 0
+	GROUP BY teaching_class_id
+) tcs_pick ON tcs_pick.teaching_class_id = tc.id
+INNER JOIN teaching_class_student tcs ON tcs.id = tcs_pick.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+INNER JOIN inst_student s ON s.id = tcs.student_id AND s.del_flag = 0
+INNER JOIN inst_course c ON c.id = tc.course_id AND c.del_flag = 0`
+
 func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS teaching_class (
@@ -85,7 +175,7 @@ func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 			update_id BIGINT NOT NULL DEFAULT 0,
 			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			del_flag TINYINT(1) NOT NULL DEFAULT 0,
-			UNIQUE KEY uk_teaching_class_student_order_detail (inst_id, order_course_detail_id),
+			UNIQUE KEY uk_tcs_inst_class_ocd (inst_id, teaching_class_id, order_course_detail_id),
 			KEY idx_teaching_class_student_class (inst_id, teaching_class_id),
 			KEY idx_teaching_class_student_student (inst_id, student_id),
 			KEY idx_teaching_class_student_tuition (inst_id, primary_tuition_account_id)
@@ -120,26 +210,65 @@ func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 	}); err != nil {
 		return err
 	}
-	return ensureColumnsOnTable(ctx, db, "teaching_class_student", map[string]string{
+	if err := ensureColumnsOnTable(ctx, db, "teaching_class_student", map[string]string{
 		"class_properties_json":  "class_properties_json TEXT NULL AFTER last_finished_lesson_day",
 		"class_time_record_mode": "class_time_record_mode INT NOT NULL DEFAULT 1 AFTER teacher_class_time",
-	})
+	}); err != nil {
+		return err
+	}
+	return ensureTeachingClassStudentOCUniqueMigration(ctx, db)
 }
 
-// CountTeachingClassByName 按名称统计班级。1 对 1 仅与「开班中」班级判重：已结班同名不占用，与竞品一致。
+// ensureTeachingClassStudentOCUniqueMigration 将 (inst, 订单明细) 全局唯一改为 (inst, 班级, 订单明细) 唯一，允许同一报读账户绑定多个 1 对 1 班级。
+func ensureTeachingClassStudentOCUniqueMigration(ctx context.Context, db *sql.DB) error {
+	var n int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM information_schema.statistics
+		WHERE table_schema = DATABASE() AND table_name = 'teaching_class_student' AND index_name = 'uk_tcs_inst_class_ocd'
+	`).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	var oldN int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM information_schema.statistics
+		WHERE table_schema = DATABASE() AND table_name = 'teaching_class_student' AND index_name = 'uk_teaching_class_student_order_detail'
+	`).Scan(&oldN); err != nil {
+		return err
+	}
+	if oldN > 0 {
+		if _, err := db.ExecContext(ctx, `ALTER TABLE teaching_class_student DROP INDEX uk_teaching_class_student_order_detail`); err != nil {
+			return err
+		}
+	}
+	_, err := db.ExecContext(ctx, `ALTER TABLE teaching_class_student ADD UNIQUE KEY uk_tcs_inst_class_ocd (inst_id, teaching_class_id, order_course_detail_id)`)
+	return err
+}
+
+// CountTeachingClassByName 按名称统计班级。1 对 1 仅与「开班中」且列表可见（有效班员+学员+课程未删）的班级判重；已结班、已删班级、无有效关联的不参与。
 func (repo *Repository) CountTeachingClassByName(ctx context.Context, instID int64, classType int, name string, excludeID *int64) (int, error) {
 	query := `
 		SELECT COUNT(*)
-		FROM teaching_class
-		WHERE inst_id = ? AND class_type = ? AND name = ? AND del_flag = 0
+		FROM teaching_class tc
+		WHERE tc.inst_id = ? AND tc.class_type = ? AND tc.name = ? AND tc.del_flag = 0
 	`
 	args := []any{instID, classType, strings.TrimSpace(name)}
 	if classType == model.TeachingClassTypeOneToOne {
-		query += ` AND status = ?`
+		query += ` AND tc.status = ?`
 		args = append(args, model.TeachingClassStatusActive)
+		query += `
+			AND EXISTS (
+				SELECT 1
+				FROM teaching_class_student tcs
+				INNER JOIN inst_student s ON s.id = tcs.student_id AND s.del_flag = 0
+				INNER JOIN inst_course c ON c.id = tc.course_id AND c.del_flag = 0
+				WHERE tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+			)`
 	}
 	if excludeID != nil {
-		query += " AND id <> ?"
+		query += " AND tc.id <> ?"
 		args = append(args, *excludeID)
 	}
 	var count int
@@ -154,6 +283,8 @@ func (repo *Repository) ExistsActiveOneToOneForStudentCourse(ctx context.Context
 		SELECT 1
 		FROM teaching_class tc
 		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+		INNER JOIN inst_student s ON s.id = tcs.student_id AND s.del_flag = 0
+		INNER JOIN inst_course c ON c.id = tc.course_id AND c.del_flag = 0
 		WHERE tc.inst_id = ?
 			AND tc.course_id = ?
 			AND tc.class_type = ?
@@ -209,6 +340,7 @@ func (repo *Repository) upsertOneToOneTeachingClassTx(ctx context.Context, tx *s
 		FROM teaching_class_student tcs
 		INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id AND tc.del_flag = 0
 		WHERE tcs.inst_id = ? AND tcs.order_course_detail_id = ? AND tcs.del_flag = 0 AND tc.class_type = ?
+		ORDER BY tcs.id ASC
 		LIMIT 1
 	`, instID, orderCourseDetailID, model.TeachingClassTypeOneToOne).Scan(&existingClassID)
 	if err != nil && err != sql.ErrNoRows {
@@ -249,6 +381,36 @@ func (repo *Repository) upsertOneToOneTeachingClassTx(ctx context.Context, tx *s
 		return err
 	}
 
+	// 学员在该课程下已有「开班中」1 对 1 时复用同一班级，只新增班员绑定；列表按班级汇总多条订单的课时/学费。
+	var reuseClassID int64
+	switch err = tx.QueryRowContext(ctx, `
+		SELECT tc.id
+		FROM teaching_class tc
+		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+		WHERE tc.inst_id = ? AND tc.class_type = ? AND tc.course_id = ? AND tc.del_flag = 0 AND tc.status = ?
+			AND tcs.student_id = ?
+		ORDER BY tc.id ASC
+		LIMIT 1
+	`, instID, model.TeachingClassTypeOneToOne, courseID, model.TeachingClassStatusActive, studentID).Scan(&reuseClassID); {
+	case errors.Is(err, sql.ErrNoRows):
+		reuseClassID = 0
+	case err != nil:
+		return err
+	}
+
+	if reuseClassID > 0 {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO teaching_class_student (
+				uuid, version, inst_id, teaching_class_id, student_id, order_id, order_course_detail_id, quote_id,
+				primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
+				last_finished_lesson_day, class_properties_json, create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, NULL, NULL, ?, ?, ?, ?, 0
+			)
+		`, instID, reuseClassID, studentID, orderID, orderCourseDetailID, quoteID, primaryTuitionAccountID, operatorID, now, operatorID, now)
+		return err
+	}
+
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO teaching_class (
 			uuid, version, inst_id, class_type, course_id, name, advisor_id, default_teacher_id, status,
@@ -271,9 +433,9 @@ func (repo *Repository) upsertOneToOneTeachingClassTx(ctx context.Context, tx *s
 			primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
 			last_finished_lesson_day, class_properties_json, create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, 0, NULL, NULL, ?, ?, ?, ?, 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, NULL, NULL, ?, ?, ?, ?, 0
 		)
-	`, instID, classID, studentID, orderID, orderCourseDetailID, quoteID, primaryTuitionAccountID, model.TeachingClassStudentStatusStudying, operatorID, now, operatorID, now)
+	`, instID, classID, studentID, orderID, orderCourseDetailID, quoteID, primaryTuitionAccountID, operatorID, now, operatorID, now)
 	return err
 }
 
@@ -290,14 +452,13 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 
 	whereSQL, args := buildOneToOneWhere(instID, query.QueryModel, false)
 
+	countArgs := append([]any{instID}, args...)
 	var total int
 	if err := repo.db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
+		SELECT COUNT(DISTINCT tc.id)
 		FROM teaching_class tc
-		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
-		INNER JOIN inst_student s ON s.id = tcs.student_id AND s.del_flag = 0
-		INNER JOIN inst_course c ON c.id = tc.course_id AND c.del_flag = 0
-		WHERE `+whereSQL, args...).Scan(&total); err != nil {
+		`+oneToOneListableJoinSQL+`
+		WHERE `+whereSQL, countArgs...).Scan(&total); err != nil {
 		return model.OneToOneListResultVO{}, err
 	}
 
@@ -305,14 +466,14 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT tcs.student_id)
 		FROM teaching_class tc
-		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
-		INNER JOIN inst_student s ON s.id = tcs.student_id AND s.del_flag = 0
-		INNER JOIN inst_course c ON c.id = tc.course_id AND c.del_flag = 0
-		WHERE `+whereSQL, args...).Scan(&studentCount); err != nil {
+		`+oneToOneListableJoinSQL+`
+		WHERE `+whereSQL, countArgs...).Scan(&studentCount); err != nil {
 		return model.OneToOneListResultVO{}, err
 	}
 
-	queryArgs := append([]any{instID}, args...)
+	queryArgs := make([]any, 0, 2+len(args)+2)
+	queryArgs = append(queryArgs, instID, instID)
+	queryArgs = append(queryArgs, args...)
 	queryArgs = append(queryArgs, size, offset)
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
@@ -337,6 +498,9 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			IFNULL(tcs.teacher_class_time, 0),
 			tc.course_id,
 			IFNULL(c.name, ''),
+			IFNULL(ic_ded.name, ''),
+			IFNULL(ta_ded.course_id, 0),
+			IFNULL(ic_ded.teach_method, 0),
 			IFNULL(ts.primary_tuition_account_id, IFNULL(tcs.primary_tuition_account_id, 0)),
 			CAST(IFNULL(tcs.order_course_detail_id, 0) AS CHAR) AS order_course_detail_id,
 			IFNULL(tc.default_teacher_id, 0),
@@ -365,58 +529,11 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			ts.class_ending_time,
 			IFNULL(ts.assigned_class, 0)
 		FROM teaching_class tc
-		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
-		INNER JOIN inst_student s ON s.id = tcs.student_id AND s.del_flag = 0
-		INNER JOIN inst_course c ON c.id = tc.course_id AND c.del_flag = 0
+		`+oneToOneListableJoinSQL+`
+		`+oneToOneTuitionAccountDeductionJoinSQL+`
 		LEFT JOIN inst_user advisor ON advisor.id = tc.advisor_id
 		LEFT JOIN inst_user default_teacher ON default_teacher.id = tc.default_teacher_id
-		LEFT JOIN (
-			SELECT
-				ta.order_course_detail_id,
-				MIN(ta.id) AS primary_tuition_account_id,
-				SUM(IFNULL(ta.total_tuition, 0)) AS total_tuition,
-				SUM(IFNULL(ta.remaining_tuition, 0)) AS remain_tuition,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.total_tuition, 0)
-					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
-					ELSE 0
-				END) AS total_quantity,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
-					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
-					ELSE 0
-				END) AS total_free_quantity,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.remaining_tuition, 0)
-					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
-					ELSE 0
-				END) AS remain_quantity,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
-					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
-					ELSE 0
-				END) AS remain_free_quantity,
-				MAX(
-					CASE
-						WHEN IFNULL(icq.lesson_model, 0) > 0 THEN icq.lesson_model
-						WHEN IFNULL(ta.enable_expire_time, 0) = 1 AND IFNULL(ta.total_quantity, 0) > 0 THEN 2
-						ELSE 0
-					END
-				) AS lesson_charging_mode,
-				MAX(IFNULL(ta.status, 0)) AS status,
-				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
-				MAX(ta.expire_time) AS expire_time,
-				MAX(ta.status_change_time) AS change_status_time,
-				MAX(ta.suspended_time) AS suspended_time,
-				MAX(ta.class_ending_time) AS class_ending_time,
-				IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
-				IFNULL(MAX(ta.has_grade_upgrade), 0) AS has_grade_upgrade
-			FROM tuition_account ta
-			LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
-			` + tuitionAccountQuotationJoinForTa + `
-			WHERE ta.inst_id = ? AND ta.del_flag = 0
-			GROUP BY ta.order_course_detail_id
-		) ts ON ts.order_course_detail_id = tcs.order_course_detail_id
+		LEFT JOIN (` + oneToOneTuitionAccountAggSubquery() + `) ts ON ts.teaching_class_id = tc.id
 		WHERE `+whereSQL+`
 		ORDER BY tc.create_time DESC, tc.id DESC
 		LIMIT ? OFFSET ?
@@ -448,6 +565,9 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			suspendedTime         sql.NullTime
 			classEndingTime       sql.NullTime
 			createdTime           sql.NullTime
+			deductLessonName      string
+			deductCourseID        int64
+			deductTeachMethod     int
 		)
 		if err := rows.Scan(
 			&classID,
@@ -468,6 +588,9 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			&item.TeacherClassTime,
 			&courseID,
 			&item.LessonName,
+			&deductLessonName,
+			&deductCourseID,
+			&deductTeachMethod,
 			&primaryTuitionAccount,
 			&item.OrderCourseDetailID,
 			&defaultTeacherID,
@@ -510,9 +633,17 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 		item.TuitionAccountID = strconv.FormatInt(primaryTuitionAccount, 10)
 		item.TuitionAccount.ID = item.TuitionAccountID
 		item.TuitionAccount.StudentID = item.StudentID
-		item.TuitionAccount.LessonID = item.LessonID
-		item.TuitionAccount.LessonType = model.TeachingClassTypeOneToOne
-		item.TuitionAccount.ProductName = item.LessonName
+		item.TuitionAccount.LessonID = strconv.FormatInt(deductCourseID, 10)
+		if deductTeachMethod == model.TeachingClassTypeNormal || deductTeachMethod == model.TeachingClassTypeOneToOne {
+			item.TuitionAccount.LessonType = deductTeachMethod
+		} else {
+			item.TuitionAccount.LessonType = model.TeachingClassTypeOneToOne
+		}
+		if strings.TrimSpace(deductLessonName) != "" {
+			item.TuitionAccount.ProductName = strings.TrimSpace(deductLessonName)
+		} else {
+			item.TuitionAccount.ProductName = item.LessonName
+		}
 		item.TuitionAccount.AssignedClass = item.TuitionAccount.AssignedClass
 		item.DefaultTeacherID = strconv.FormatInt(defaultTeacherID, 10)
 		if defaultTeacherID <= 0 {
@@ -582,6 +713,9 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 			IFNULL(s.stu_sex, 2),
 			tc.course_id,
 			IFNULL(c.name, ''),
+			IFNULL(ic_ded.name, ''),
+			IFNULL(ta_ded.course_id, 0),
+			IFNULL(ic_ded.teach_method, 0),
 			IFNULL(icq.price, 0),
 			IFNULL(tc.class_room_id, 0),
 			tc.class_room_name,
@@ -620,9 +754,15 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 			ts.class_ending_time,
 			IFNULL(ts.assigned_class, 0)
 		FROM teaching_class tc
-		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+		INNER JOIN (
+			SELECT MIN(id) AS id
+			FROM teaching_class_student
+			WHERE teaching_class_id = ? AND inst_id = ? AND del_flag = 0
+		) tcs_pick ON 1 = 1
+		INNER JOIN teaching_class_student tcs ON tcs.id = tcs_pick.id AND tcs.teaching_class_id = tc.id AND tcs.del_flag = 0
 		INNER JOIN inst_student s ON s.id = tcs.student_id AND s.del_flag = 0
 		INNER JOIN inst_course c ON c.id = tc.course_id AND c.del_flag = 0
+		`+oneToOneTuitionAccountDeductionJoinSQL+`
 		LEFT JOIN inst_course_quotation icq ON icq.id = tcs.quote_id AND icq.del_flag = 0
 		LEFT JOIN inst_user advisor ON advisor.id = tc.advisor_id
 		LEFT JOIN inst_user default_teacher ON default_teacher.id = tc.default_teacher_id
@@ -632,56 +772,10 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 			AND default_teacher_rel.inst_id = tc.inst_id
 			AND default_teacher_rel.teacher_id = tc.default_teacher_id
 			AND default_teacher_rel.del_flag = 0
-		LEFT JOIN (
-			SELECT
-				ta.order_course_detail_id,
-				MIN(ta.id) AS primary_tuition_account_id,
-				SUM(IFNULL(ta.total_tuition, 0)) AS total_tuition,
-				SUM(IFNULL(ta.remaining_tuition, 0)) AS remain_tuition,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.total_tuition, 0)
-					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
-					ELSE 0
-				END) AS total_quantity,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
-					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
-					ELSE 0
-				END) AS total_free_quantity,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.remaining_tuition, 0)
-					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
-					ELSE 0
-				END) AS remain_quantity,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
-					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
-					ELSE 0
-				END) AS remain_free_quantity,
-				MAX(
-					CASE
-						WHEN IFNULL(icq.lesson_model, 0) > 0 THEN icq.lesson_model
-						WHEN IFNULL(ta.enable_expire_time, 0) = 1 AND IFNULL(ta.total_quantity, 0) > 0 THEN 2
-						ELSE 0
-					END
-				) AS lesson_charging_mode,
-				MAX(IFNULL(ta.status, 0)) AS status,
-				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
-				MAX(ta.expire_time) AS expire_time,
-				MAX(ta.status_change_time) AS change_status_time,
-				MAX(ta.suspended_time) AS suspended_time,
-				MAX(ta.class_ending_time) AS class_ending_time,
-				IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
-				IFNULL(MAX(ta.has_grade_upgrade), 0) AS has_grade_upgrade
-			FROM tuition_account ta
-			LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
-			` + tuitionAccountQuotationJoinForTa + `
-			WHERE ta.inst_id = ? AND ta.del_flag = 0
-			GROUP BY ta.order_course_detail_id
-		) ts ON ts.order_course_detail_id = tcs.order_course_detail_id
+		LEFT JOIN (` + oneToOneTuitionAccountAggSubquery() + `) ts ON ts.teaching_class_id = tc.id
 		WHERE tc.inst_id = ? AND tc.id = ? AND tc.class_type = ? AND tc.del_flag = 0
 		LIMIT 1
-	`, instID, instID, classID, model.TeachingClassTypeOneToOne)
+	`, classID, instID, instID, instID, classID, model.TeachingClassTypeOneToOne)
 
 	var (
 		detail              model.OneToOneDetailVO
@@ -701,6 +795,9 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 		classEndingTime     sql.NullTime
 		classPropertiesJSON string
 		advisorName         string
+		deductLessonName    string
+		deductCourseID      int64
+		deductTeachMethod   int
 	)
 
 	if err := row.Scan(
@@ -712,6 +809,9 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 		&detail.StudentGender,
 		&courseID,
 		&detail.LessonName,
+		&deductLessonName,
+		&deductCourseID,
+		&deductTeachMethod,
 		&detail.LessonPrice,
 		&classRoomID,
 		&classroomName,
@@ -785,9 +885,17 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 	detail.TeacherList = []model.OneToOneTeacherVO{}
 	detail.TuitionAccount.ID = detail.TuitionAccountID
 	detail.TuitionAccount.StudentID = detail.StudentID
-	detail.TuitionAccount.LessonID = detail.LessonID
-	detail.TuitionAccount.ProductName = detail.LessonName
-	detail.TuitionAccount.LessonType = model.TeachingClassTypeOneToOne
+	detail.TuitionAccount.LessonID = strconv.FormatInt(deductCourseID, 10)
+	if deductTeachMethod == model.TeachingClassTypeNormal || deductTeachMethod == model.TeachingClassTypeOneToOne {
+		detail.TuitionAccount.LessonType = deductTeachMethod
+	} else {
+		detail.TuitionAccount.LessonType = model.TeachingClassTypeOneToOne
+	}
+	if strings.TrimSpace(deductLessonName) != "" {
+		detail.TuitionAccount.ProductName = strings.TrimSpace(deductLessonName)
+	} else {
+		detail.TuitionAccount.ProductName = detail.LessonName
+	}
 	detail.TuitionAccount.LastSuspendedTime = zeroTimeFromNull(suspendedTime)
 	detail.TuitionAccount.ExpireTime = zeroTimeFromNull(expireTime)
 	detail.TuitionAccount.ChangeStatusTime = zeroTimeFromNull(changeStatusTime)
@@ -922,7 +1030,57 @@ func (repo *Repository) UpdateOneToOne(ctx context.Context, instID, operatorID i
 	return tx.Commit()
 }
 
-// CreateOneToOne 手动创建 1 对 1：强制绑定 tuitionAccountId（学员名下在读 1v1 报读账户，可与上课课程不同）
+type oneToOneDeductBind struct {
+	taID    int64
+	orderID int64
+	ocdID   int64
+	quoteID int64
+}
+
+func (repo *Repository) loadOneToOneDeductBindTx(ctx context.Context, tx *sql.Tx, instID, studentID, taID int64) (oneToOneDeductBind, error) {
+	var orderID, ocdID, quoteID sql.NullInt64
+	var taStudentID int64
+	var taStatus int
+	var deductCourseTeachMethod int
+	err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(ta.order_id, 0), IFNULL(ta.order_course_detail_id, 0), IFNULL(ta.quote_id, 0),
+			ta.student_id, IFNULL(ta.status, 0),
+			IFNULL(ic.teach_method, 0)
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		WHERE ta.id = ? AND ta.inst_id = ? AND ta.del_flag = 0
+		LIMIT 1
+	`, taID, instID).Scan(&orderID, &ocdID, &quoteID, &taStudentID, &taStatus, &deductCourseTeachMethod)
+	if errors.Is(err, sql.ErrNoRows) {
+		return oneToOneDeductBind{}, errors.New("学费账户不存在")
+	}
+	if err != nil {
+		return oneToOneDeductBind{}, err
+	}
+	if taStudentID != studentID {
+		return oneToOneDeductBind{}, errors.New("学费账户不属于所选学员")
+	}
+	if taStatus != 1 {
+		return oneToOneDeductBind{}, errors.New("学费账户须为在读状态方可创建1对1")
+	}
+	if deductCourseTeachMethod != 1 && deductCourseTeachMethod != 2 {
+		return oneToOneDeductBind{}, errors.New("扣费学费账户须为班级授课或1对1课程的报读账户")
+	}
+	var b oneToOneDeductBind
+	b.taID = taID
+	if orderID.Valid {
+		b.orderID = orderID.Int64
+	}
+	if ocdID.Valid {
+		b.ocdID = ocdID.Int64
+	}
+	if quoteID.Valid {
+		b.quoteID = quoteID.Int64
+	}
+	return b, nil
+}
+
+// CreateOneToOne 手动创建 1 对 1：tuitionAccountId 为数字 id 或 agg:{扣费课程id}（按课程汇总时多笔账户各写一条班员，列表课时与下拉一致）
 func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID int64, dto model.OneToOneCreateDTO) (int64, error) {
 	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
 	if err != nil || studentID <= 0 {
@@ -932,8 +1090,8 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 	if err != nil || courseID <= 0 {
 		return 0, errors.New("课程ID不能为空")
 	}
-	taID, err := strconv.ParseInt(strings.TrimSpace(dto.TuitionAccountID), 10, 64)
-	if err != nil || taID <= 0 {
+	tuitionKey := strings.TrimSpace(dto.TuitionAccountID)
+	if tuitionKey == "" {
 		return 0, errors.New("请选择扣费学费账户")
 	}
 	name := strings.TrimSpace(dto.Name)
@@ -994,59 +1152,36 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 		return 0, errors.New("所选课程不是1对1授课，无法创建1对1")
 	}
 
-	var orderID, ocdID, quoteID sql.NullInt64
-	var taStudentID int64
-	var taStatus int
-	var deductCourseTeachMethod int
-	err = tx.QueryRowContext(ctx, `
-		SELECT IFNULL(ta.order_id, 0), IFNULL(ta.order_course_detail_id, 0), IFNULL(ta.quote_id, 0),
-			ta.student_id, IFNULL(ta.status, 0),
-			IFNULL(ic.teach_method, 0)
-		FROM tuition_account ta
-		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
-		WHERE ta.id = ? AND ta.inst_id = ? AND ta.del_flag = 0
-		LIMIT 1
-	`, taID, instID).Scan(&orderID, &ocdID, &quoteID, &taStudentID, &taStatus, &deductCourseTeachMethod)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, errors.New("学费账户不存在")
-	}
-	if err != nil {
-		return 0, err
-	}
-	if taStudentID != studentID {
-		return 0, errors.New("学费账户不属于所选学员")
-	}
-	if taStatus != 1 {
-		return 0, errors.New("学费账户须为在读状态方可创建1对1")
-	}
-	if deductCourseTeachMethod != 1 && deductCourseTeachMethod != 2 {
-		return 0, errors.New("扣费学费账户须为班级授课或1对1课程的报读账户")
-	}
-
-	orderIDVal := int64(0)
-	if orderID.Valid {
-		orderIDVal = orderID.Int64
-	}
-	ocdIDVal := int64(0)
-	if ocdID.Valid {
-		ocdIDVal = ocdID.Int64
-	}
-	quoteIDVal := int64(0)
-	if quoteID.Valid {
-		quoteIDVal = quoteID.Int64
-	}
-
-	var ocdUsed int
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM teaching_class_student tcs
-		INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id AND tc.inst_id = tcs.inst_id AND tc.del_flag = 0 AND tc.class_type = ?
-		WHERE tcs.inst_id = ? AND tcs.del_flag = 0 AND tcs.order_course_detail_id = ?
-	`, model.TeachingClassTypeOneToOne, instID, ocdIDVal).Scan(&ocdUsed); err != nil {
-		return 0, err
-	}
-	if ocdUsed > 0 {
-		return 0, errors.New("该学费账户对应的报读明细已绑定其他1对1班级")
+	var binds []oneToOneDeductBind
+	if strings.HasPrefix(strings.ToLower(tuitionKey), "agg:") {
+		deductCourseID, perr := strconv.ParseInt(strings.TrimSpace(tuitionKey[4:]), 10, 64)
+		if perr != nil || deductCourseID <= 0 {
+			return 0, errors.New("请选择扣费学费账户")
+		}
+		taIDs, qerr := repo.ListTuitionAccountIDsForStudentCourse(ctx, tx, instID, studentID, deductCourseID)
+		if qerr != nil {
+			return 0, qerr
+		}
+		if len(taIDs) == 0 {
+			return 0, errors.New("所选扣费课程下暂无在读学费账户")
+		}
+		for _, tid := range taIDs {
+			b, verr := repo.loadOneToOneDeductBindTx(ctx, tx, instID, studentID, tid)
+			if verr != nil {
+				return 0, verr
+			}
+			binds = append(binds, b)
+		}
+	} else {
+		taID, perr := strconv.ParseInt(tuitionKey, 10, 64)
+		if perr != nil || taID <= 0 {
+			return 0, errors.New("请选择扣费学费账户")
+		}
+		b, verr := repo.loadOneToOneDeductBindTx(ctx, tx, instID, studentID, taID)
+		if verr != nil {
+			return 0, verr
+		}
+		binds = append(binds, b)
 	}
 
 	teacherIDs := normalizeTeacherIDs(dto.TeacherID, defaultTeacherID)
@@ -1062,7 +1197,7 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 			scheduled_lesson_count, finished_lesson_count, class_room_id, class_room_name, classroom_enabled, remark,
 			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, '', NULL, ?, NOW(), ?, NOW(), 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, '', NULL, ?, ?, NOW(), ?, NOW(), 0
 		)
 	`, instID, model.TeachingClassTypeOneToOne, courseID, name, advisorID, defaultTeacherID, model.TeachingClassStatusActive,
 		strings.TrimSpace(dto.Remark), operatorID, operatorID)
@@ -1074,21 +1209,22 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 		return 0, err
 	}
 
-	_, err = tx.ExecContext(ctx, `
+	for _, b := range binds {
+		if _, err = tx.ExecContext(ctx, `
 		INSERT INTO teaching_class_student (
 			uuid, version, inst_id, teaching_class_id, student_id, order_id, order_course_detail_id, quote_id,
 			primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
 			class_time_record_mode, last_finished_lesson_day, class_properties_json,
 			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL, ?, NOW(), ?, NOW(), 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL, ?, ?, NOW(), ?, NOW(), 0
 		)
-	`, instID, classID, studentID, orderIDVal, ocdIDVal, quoteIDVal, taID,
-		stuClassTime, stuClassTime, teacherClassTime, recordMode,
-		string(classPropertiesJSON),
-		operatorID, operatorID)
-	if err != nil {
-		return 0, err
+	`, instID, classID, studentID, b.orderID, b.ocdID, b.quoteID, b.taID,
+			stuClassTime, stuClassTime, teacherClassTime, recordMode,
+			string(classPropertiesJSON),
+			operatorID, operatorID); err != nil {
+			return 0, err
+		}
 	}
 
 	for _, tid := range teacherIDs {
@@ -1269,7 +1405,11 @@ func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, exclud
 	args := []any{instID, model.TeachingClassTypeOneToOne}
 
 	if strings.TrimSpace(query.StudentID) != "" {
-		whereParts = append(whereParts, "CAST(tcs.student_id AS CHAR) = ?")
+		whereParts = append(whereParts, `EXISTS (
+			SELECT 1 FROM teaching_class_student tcs_w
+			WHERE tcs_w.teaching_class_id = tc.id AND tcs_w.inst_id = tc.inst_id AND tcs_w.del_flag = 0
+				AND CAST(tcs_w.student_id AS CHAR) = ?
+		)`)
 		args = append(args, strings.TrimSpace(query.StudentID))
 	}
 	if len(query.LessonIDs) > 0 {
@@ -1341,7 +1481,11 @@ func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, exclud
 			placeholders = append(placeholders, "?")
 			args = append(args, item)
 		}
-		whereParts = append(whereParts, "tcs.class_student_status IN ("+strings.Join(placeholders, ",")+")")
+		whereParts = append(whereParts, `EXISTS (
+			SELECT 1 FROM teaching_class_student tcs_w
+			WHERE tcs_w.teaching_class_id = tc.id AND tcs_w.inst_id = tc.inst_id AND tcs_w.del_flag = 0
+				AND tcs_w.class_student_status IN (`+strings.Join(placeholders, ",")+`)
+		)`)
 	}
 	if start := parseDateStart(query.StartDate); start != nil {
 		whereParts = append(whereParts, "tc.create_time >= ?")

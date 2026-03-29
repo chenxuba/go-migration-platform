@@ -35,6 +35,9 @@ type CampusDataClearSummary struct {
 	OrderImportTasks        int `json:"orderImportTasks"`
 	OrderImportTaskRecords  int `json:"orderImportTaskRecords"`
 	ExportRecords           int `json:"exportRecords"`
+	TeachingClasses         int `json:"teachingClasses"`
+	TeachingClassStudents   int `json:"teachingClassStudents"`
+	TeachingClassTeachers   int `json:"teachingClassTeachers"`
 }
 
 type CampusDataClearResult struct {

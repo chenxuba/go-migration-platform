@@ -33,6 +33,8 @@ export interface OneToOneTuitionAccount {
   suspendedTime?: string
   classEndingTime?: string
   assignedClass?: boolean
+  /** 为 true 时 id 为 agg:{courseId}，多笔在读账户已合并展示 */
+  isAggregate?: boolean
 }
 
 export interface OneToOneItem {

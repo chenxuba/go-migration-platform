@@ -831,6 +831,16 @@ function getChargingModeText(mode) {
   return modeMap[mode] || '-'
 }
 
+/** 列表「当前课程账户」副标题：与扣费学费账户 inst_course.teach_method 一致（班级授课 / 1对1授课） */
+function accountDeductTeachMethodText(lessonType) {
+  const t = Number(lessonType)
+  if (t === 1)
+    return '班级授课'
+  if (t === 2)
+    return '1对1授课'
+  return '1对1授课'
+}
+
 function getQuantityUnit(mode) {
   if (mode === 1)
     return '课时'
@@ -1387,9 +1397,9 @@ onMounted(() => {
                 <div>{{ record.lessonName || '-' }}</div>
               </template>
               <template v-if="column.key === 'account'">
-                <div>{{ record.tuitionAccount?.productName || record.lessonName || '-' }}</div>
+                <div>{{ record.tuitionAccount?.productName || '-' }}</div>
                 <div class="text-3 text-#888">
-                  1对1授课｜{{ getChargingModeText(effectiveListLessonChargingMode(record)) }}
+                  {{ accountDeductTeachMethodText(record.tuitionAccount?.lessonType) }}｜{{ getChargingModeText(effectiveListLessonChargingMode(record)) }}
                 </div>
               </template>
               <template v-if="column.key === 'totalQuantity'">

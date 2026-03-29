@@ -228,7 +228,7 @@ type OneToOneUpdateDTO struct {
 	AllowDuplicateName bool `json:"allowDuplicateName,omitempty"`
 }
 
-// OneToOneCreateDTO 手动创建 1 对 1；必须绑定有效学费账户（primary_tuition_account_id）
+// OneToOneCreateDTO 手动创建 1 对 1。TuitionAccountID 为学费账户数字 id，或 agg:{扣费课程id}（与下拉汇总行一致，服务端按该课程下每笔账户各写一条班员）。
 type OneToOneCreateDTO struct {
 	StudentID                  string               `json:"studentId"`
 	LessonID                   string               `json:"lessonId"`
@@ -284,6 +284,8 @@ type StudentLessonTuitionAccountItem struct {
 	LessonType             int        `json:"lessonType"`
 	IsTuitionAccountActive bool       `json:"isTuitionAccountActive"`
 	Status                 int        `json:"status"`
+	// IsAggregate 为 true 时 id 形如 agg:{courseId}，表示该课程下多笔在读账户的汇总；创建 1 对 1 时会为该课程下每笔账户各写一条班员绑定。
+	IsAggregate bool `json:"isAggregate,omitempty"`
 }
 
 type StudentLessonTuitionAccountsResult struct {

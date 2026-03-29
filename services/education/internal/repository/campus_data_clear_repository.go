@@ -177,6 +177,29 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 		return model.CampusDataClearSummary{}, err
 	}
 
+	// 班级与 1 对 1（含班员、任课/班主任关联），原清空逻辑未覆盖，会导致列表残留与同名误判
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_teacher
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_student
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, operatorID, instID); err != nil {
+		return model.CampusDataClearSummary{}, err
+	}
+
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE inst_student
 		SET del_flag = 1, update_id = ?, update_time = NOW()
@@ -452,6 +475,21 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 		{
 			target: &summary.CourseSaleVolumesReset,
 			query:  `SELECT COUNT(*) FROM inst_course WHERE inst_id = ? AND del_flag = 0 AND IFNULL(sale_volume, 0) <> 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TeachingClasses,
+			query:  `SELECT COUNT(*) FROM teaching_class WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TeachingClassStudents,
+			query:  `SELECT COUNT(*) FROM teaching_class_student WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TeachingClassTeachers,
+			query:  `SELECT COUNT(*) FROM teaching_class_teacher WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
 		},
 	}

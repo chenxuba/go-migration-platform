@@ -324,66 +324,90 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 	return out, rows.Err()
 }
 
-// ListStudentOneToOneDeductionTuitionAccounts 学员名下全部「在读 + 班级授课或 1v1」课程的学费账户，供创建 1 对 1 时选扣费账户（可与上课课程不同）
+// ListStudentOneToOneDeductionTuitionAccounts 学员名下「在读 + 班级授课或 1v1」扣费账户，按课程汇总一行（多笔订单课时/余额相加）。
+// id 为 agg:{courseId}；创建 1 对 1 时服务端会为该课程下每笔 tuition_account 各插入一条 teaching_class_student，列表汇总与下拉一致。
 func (repo *Repository) ListStudentOneToOneDeductionTuitionAccounts(ctx context.Context, instID, studentID int64) ([]model.StudentLessonTuitionAccountItem, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
-			CAST(ta.id AS CHAR),
-			CAST(ta.student_id AS CHAR),
-			CAST(ta.course_id AS CHAR),
-			IFNULL(ic.name, '') AS lesson_name,
-			IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, '')) AS product_name,
-			IFNULL(icq.lesson_model, 0) AS lesson_charging_mode,
-			CASE
-				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.total_tuition, 0)
-				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
-				ELSE 0
-			END AS total_quantity_display,
-			CASE
-				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.free_quantity, 0)
-				WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
-				ELSE 0
-			END AS total_free_quantity_display,
-			IFNULL(ta.total_tuition, 0),
-			CASE
-				WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
-				ELSE 0
-			END AS remain_free_quantity,
-			CASE
-				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.remaining_tuition, 0)
-				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
-				ELSE 0
-			END AS remain_quantity_display,
-			IFNULL(ta.remaining_tuition, 0),
-			ta.suspended_time,
-			IFNULL(ta.create_time, NOW()) AS start_time,
-			IFNULL(ta.enable_expire_time, 0) AS enable_expire,
-			ta.expire_time,
-			IFNULL(ta.assigned_class, 0) AS assigned_class,
-			ta.valid_date,
-			IFNULL(ic.teach_method, 0) AS teach_method,
-			IFNULL(ta.status, 0) AS ta_status
-		FROM tuition_account ta
-		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
-		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
-		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
-			NULLIF(ta.quote_id, 0),
-			NULLIF(sod.quote_id, 0),
-			(SELECT qx.id FROM inst_course_quotation qx
-			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
-			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
-			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
-			 ORDER BY qx.id DESC LIMIT 1),
-			(SELECT qmin.id FROM inst_course_quotation qmin
-			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
-			 ORDER BY qmin.id ASC LIMIT 1)
-		) AND icq.del_flag = 0
-		WHERE ta.inst_id = ?
-			AND ta.del_flag = 0
-			AND ta.student_id = ?
-			AND IFNULL(ta.status, 0) = 1
-			AND ic.teach_method IN (1, 2)
-		ORDER BY IFNULL(ic.name, ''), ta.create_time DESC, ta.id DESC
+			CONCAT('agg:', CAST(agg.course_id AS CHAR)),
+			CAST(agg.student_id AS CHAR),
+			CAST(agg.course_id AS CHAR),
+			IFNULL(agg.lesson_name, ''),
+			IFNULL(agg.product_name, ''),
+			IFNULL(agg.lesson_charging_mode, 0),
+			IFNULL(agg.total_quantity_display, 0),
+			IFNULL(agg.total_free_quantity_display, 0),
+			IFNULL(agg.sum_total_tuition, 0),
+			IFNULL(agg.remain_free_sum, 0),
+			IFNULL(agg.remain_quantity_display, 0),
+			IFNULL(agg.sum_remaining_tuition, 0),
+			agg.suspended_time,
+			agg.first_start_time,
+			IFNULL(agg.enable_expire_max, 0),
+			agg.expire_time_max,
+			IFNULL(agg.assigned_class_max, 0),
+			agg.valid_date_max,
+			IFNULL(agg.teach_method, 0),
+			1 AS ta_status
+		FROM (
+			SELECT
+				ta.inst_id,
+				ta.student_id,
+				ta.course_id,
+				MAX(IFNULL(ic.name, '')) AS lesson_name,
+				MAX(IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, ''))) AS product_name,
+				MAX(IFNULL(icq.lesson_model, 0)) AS lesson_charging_mode,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.total_tuition, 0)
+					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+					ELSE 0
+				END) AS total_quantity_display,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.free_quantity, 0)
+					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
+					ELSE 0
+				END) AS total_free_quantity_display,
+				SUM(IFNULL(ta.total_tuition, 0)) AS sum_total_tuition,
+				SUM(CASE
+					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+					ELSE 0
+				END) AS remain_free_sum,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.remaining_tuition, 0)
+					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+					ELSE 0
+				END) AS remain_quantity_display,
+				SUM(IFNULL(ta.remaining_tuition, 0)) AS sum_remaining_tuition,
+				MAX(ta.suspended_time) AS suspended_time,
+				MIN(IFNULL(ta.create_time, NOW())) AS first_start_time,
+				MAX(IFNULL(ta.enable_expire_time, 0)) AS enable_expire_max,
+				MAX(ta.expire_time) AS expire_time_max,
+				MAX(IFNULL(ta.assigned_class, 0)) AS assigned_class_max,
+				MAX(ta.valid_date) AS valid_date_max,
+				MAX(IFNULL(ic.teach_method, 0)) AS teach_method
+			FROM tuition_account ta
+			INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+			LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+			LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+				NULLIF(ta.quote_id, 0),
+				NULLIF(sod.quote_id, 0),
+				(SELECT qx.id FROM inst_course_quotation qx
+				 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+				   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+				   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+				 ORDER BY qx.id DESC LIMIT 1),
+				(SELECT qmin.id FROM inst_course_quotation qmin
+				 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+				 ORDER BY qmin.id ASC LIMIT 1)
+			) AND icq.del_flag = 0
+			WHERE ta.inst_id = ?
+				AND ta.del_flag = 0
+				AND ta.student_id = ?
+				AND IFNULL(ta.status, 0) = 1
+				AND ic.teach_method IN (1, 2)
+			GROUP BY ta.inst_id, ta.student_id, ta.course_id
+		) agg
+		ORDER BY IFNULL(agg.lesson_name, ''), agg.course_id
 	`, instID, studentID)
 	if err != nil {
 		return nil, err
@@ -435,6 +459,7 @@ func (repo *Repository) ListStudentOneToOneDeductionTuitionAccounts(ctx context.
 		item.AssignedClass = assignedClassRaw != 0
 		item.Status = taStatus
 		item.IsTuitionAccountActive = taStatus == 1
+		item.IsAggregate = true
 		if suspendedTime.Valid && suspendedTime.Time.Year() > 1 {
 			item.Suspended = true
 			t := suspendedTime.Time
@@ -452,6 +477,38 @@ func (repo *Repository) ListStudentOneToOneDeductionTuitionAccounts(ctx context.
 		out = append(out, item)
 	}
 	return out, rows.Err()
+}
+
+// ListTuitionAccountIDsForStudentCourse 学员某课程下全部在读、且班级/1v1 授课的学费账户 id（按创建时间、id 升序，与扣费 FIFO 一致）。
+func (repo *Repository) ListTuitionAccountIDsForStudentCourse(ctx context.Context, tx *sql.Tx, instID, studentID, courseID int64) ([]int64, error) {
+	q := `
+		SELECT ta.id
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		WHERE ta.inst_id = ? AND ta.del_flag = 0 AND ta.student_id = ? AND ta.course_id = ?
+			AND IFNULL(ta.status, 0) = 1 AND ic.teach_method IN (1, 2)
+		ORDER BY ta.create_time ASC, ta.id ASC
+	`
+	var rows *sql.Rows
+	var err error
+	if tx != nil {
+		rows, err = tx.QueryContext(ctx, q, instID, studentID, courseID)
+	} else {
+		rows, err = repo.db.QueryContext(ctx, q, instID, studentID, courseID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // ListOneToOneLessonOptionsByStudent 机构内全部 1v1 课程（teach_method=2），供创建/选择 1 对 1 上课课程。

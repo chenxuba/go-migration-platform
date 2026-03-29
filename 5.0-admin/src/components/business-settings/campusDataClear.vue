@@ -23,6 +23,7 @@ const recommendedScope = {
     '学费账户',
     '意向学员导入记录',
     '课程销量统计归零',
+    '班级与 1 对 1（含班员、教师关联）',
   ],
   excludes: [
     '员工、角色、部门',
@@ -48,7 +49,7 @@ function buildSuccessMessage(result) {
   if (!cleared)
     return result?.intentStudentIndexMessage || '机构业务数据已清空'
 
-  const summary = `已清空学员 ${cleared.students || 0} 条、课程 ${cleared.courses || 0} 条、套餐 ${cleared.productPackages || 0} 条、订单 ${cleared.orders || 0} 条`
+  const summary = `已清空学员 ${cleared.students || 0} 条、课程 ${cleared.courses || 0} 条、套餐 ${cleared.productPackages || 0} 条、订单 ${cleared.orders || 0} 条、1对1/班级 ${cleared.teachingClasses || 0} 条`
   return result?.intentStudentIndexMessage ? `${summary}，${result.intentStudentIndexMessage}` : summary
 }
 

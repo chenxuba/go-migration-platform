@@ -33,6 +33,9 @@ export interface CampusDataClearResult {
     orderImportTaskRecords: number
     exportRecords: number
     courseSaleVolumesReset: number
+    teachingClasses: number
+    teachingClassStudents: number
+    teachingClassTeachers: number
   }
   preserved: string[]
   intentStudentIndexCleared: boolean
