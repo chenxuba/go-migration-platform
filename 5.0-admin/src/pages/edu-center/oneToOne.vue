@@ -1745,7 +1745,7 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-/* 创建 1 对 1：课程下拉行内，右侧「通用/非通用」「已报名」标签 */
+/* 创建 1 对 1：课程下拉行内，右侧「已报名」标签 */
 .one-to-one-lesson-option-row {
   display: flex;
   align-items: center;
