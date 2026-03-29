@@ -1394,6 +1394,7 @@ onMounted(() => {
       <div class="stu-content scrollbar">
         <a-spin :spinning="editLoading">
           <a-form
+            class="one-to-one-edit-modal-form"
             layout="horizontal"
             :label-col="{ span: 5 }"
             :wrapper-col="{ span: 16 }"
@@ -1766,7 +1767,27 @@ onMounted(() => {
 
 /* 有 ExistOne2One 错误时收紧与下一行「1对1名称」的间距 */
 :deep(.create-one-to-one-lesson-item--error.ant-form-item) {
-  margin-bottom: 0;
+  margin-bottom: 2px;
+}
+
+/* 创建/编辑弹窗内：去掉校验错误说明的显隐动画（show-help / show-help-item + collapseMotion） */
+.one-to-one-edit-modal-form {
+  :deep(.ant-form-show-help) {
+    transition: none !important;
+  }
+
+  /* TransitionGroup 子节点会带 ant-form-show-help-item-* 过渡类 */
+  :deep(.ant-form-show-help > div) {
+    transition: none !important;
+    transform: none !important;
+    animation: none !important;
+  }
+
+  :deep([class*='ant-form-show-help-item']) {
+    transition: none !important;
+    transform: none !important;
+    animation: none !important;
+  }
 }
 </style>
 
