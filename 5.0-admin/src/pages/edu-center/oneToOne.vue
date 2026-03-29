@@ -90,6 +90,16 @@ const editForm = reactive({
   classProperties: [],
 })
 
+const editClassTimeUnitLabel = computed(() =>
+  Number(editForm.defaultClassTimeRecordMode) === 2 ? '课时/小时' : '课时',
+)
+
+const editClassTimeHint = computed(() =>
+  Number(editForm.defaultClassTimeRecordMode) === 2
+    ? '每次点名，学员和上课教师记录的课时会根据日程时长自动计算课时（点名时支持调整）'
+    : '每次点名，学员和上课教师记录的课时数默认为此数值（点名时支持调整）',
+)
+
 const displayArray = ref([
   'createTime',
   'enrolledCourse',
@@ -990,16 +1000,20 @@ onMounted(() => {
           </a-form-item>
 
           <a-form-item label="默认记录课时" required>
-            <a-space align="center" :size="12" wrap>
-              <span>学员</span>
-              <a-input-number v-model:value="editForm.defaultStudentClassTime" :min="0" :precision="2" style="width: 120px" />
-              <span>课时</span>
-              <span>上课教师课时</span>
-              <a-input-number v-model:value="editForm.defaultTeacherClassTime" :min="0" :precision="2" style="width: 120px" />
-              <span>课时</span>
-            </a-space>
-            <div style="margin-top: 8px; color: #888; font-size: 13px;">
-              每次点名，学员和上课教师记录的课时数默认为此数值（点名时支持调整）
+            <div class="one-to-one-class-time-inputs">
+              <span class="one-to-one-ct-group">
+                <span>学员</span>
+                <a-input-number v-model:value="editForm.defaultStudentClassTime" :min="0" :precision="2" style="width: 100px" />
+                <span class="one-to-one-ct-unit">{{ editClassTimeUnitLabel }}</span>
+              </span>
+              <span class="one-to-one-ct-group">
+                <span>上课教师课时</span>
+                <a-input-number v-model:value="editForm.defaultTeacherClassTime" :min="0" :precision="2" style="width: 100px" />
+                <span class="one-to-one-ct-unit">{{ editClassTimeUnitLabel }}</span>
+              </span>
+            </div>
+            <div style="margin-top: 8px; color: #888; font-size: 13px;white-space: nowrap;">
+              {{ editClassTimeHint }}
             </div>
           </a-form-item>
 
@@ -1021,7 +1035,7 @@ onMounted(() => {
     <a-modal
       v-model:open="classTimeModalOpen"
       title="批量修改记录课时"
-      width="560px"
+      width="640px"
       :confirm-loading="classTimeSubmitting"
       ok-text="确定"
       cancel-text="取消"
@@ -1050,23 +1064,27 @@ onMounted(() => {
           <template #label>
             <span><span class="batch-class-time-required">*</span> 默认记录学员</span>
           </template>
-          <a-space align="center" :size="8" wrap>
-            <a-input-number
-              v-model:value="classTimeForm.studentClassTime"
-              :min="0"
-              :precision="2"
-              style="width: 120px"
-            />
-            <span>{{ classTimeBatchUnitLabel }}</span>
-            <span>，上课教师课时</span>
-            <a-input-number
-              v-model:value="classTimeForm.teacherClassTime"
-              :min="0"
-              :precision="2"
-              style="width: 120px"
-            />
-            <span>{{ classTimeBatchUnitLabel }}</span>
-          </a-space>
+          <div class="one-to-one-class-time-inputs">
+            <span class="one-to-one-ct-group">
+              <a-input-number
+                v-model:value="classTimeForm.studentClassTime"
+                :min="0"
+                :precision="2"
+                style="width: 120px"
+              />
+              <span class="one-to-one-ct-unit">{{ classTimeBatchUnitLabel }}</span>
+            </span>
+            <span class="one-to-one-ct-group">
+              <span class="one-to-one-ct-sep">，上课教师课时</span>
+              <a-input-number
+                v-model:value="classTimeForm.teacherClassTime"
+                :min="0"
+                :precision="2"
+                style="width: 120px"
+              />
+              <span class="one-to-one-ct-unit">{{ classTimeBatchUnitLabel }}</span>
+            </span>
+          </div>
           <div class="batch-class-time-hint">
             {{ classTimeBatchHint }}
           </div>
@@ -1180,6 +1198,31 @@ onMounted(() => {
   color: #888;
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* 学员 + 教师两段同一行；组内输入与单位不换行。窄屏可横向滚动，避免第二段整体掉到下一行 */
+.one-to-one-class-time-inputs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: 12px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.one-to-one-ct-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.one-to-one-ct-unit,
+.one-to-one-ct-sep {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 </style>
 
