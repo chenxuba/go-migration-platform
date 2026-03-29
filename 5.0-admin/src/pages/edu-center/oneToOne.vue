@@ -5,6 +5,7 @@ import { CloseOutlined, DownOutlined, QuestionCircleOutlined } from '@ant-design
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
 import StaffSelect from '@/components/common/staff-select.vue'
+import oneToOneDrawer from '@/components/edu-center/one-to-one/one-to-one-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { handleDateRangeParams } from '@/utils/dateRangeParams'
 import messageService from '@/utils/messageService'
@@ -456,6 +457,11 @@ function openDrawer(record) {
   drawerOpen.value = true
 }
 
+function handleDrawerEdit(record) {
+  drawerOpen.value = false
+  openEditModal(record || currentRecord.value)
+}
+
 function ensureSelectedRows() {
   if (selectedRows.value.length > 0)
     return true
@@ -886,70 +892,11 @@ onMounted(() => {
       </div>
     </div>
 
-    <a-drawer
+    <one-to-one-drawer
       v-model:open="drawerOpen"
-      :closable="false"
-      width="780px"
-      placement="right"
-      :body-style="{ background: '#f7f7fd' }"
-    >
-      <template #title>
-        <div class="flex justify-between items-center">
-          <span>1对1详情</span>
-          <a-button type="text" @click="drawerOpen = false">
-            关闭
-          </a-button>
-        </div>
-      </template>
-
-      <div v-if="currentRecord" class="bg-white rounded-4 p-6">
-        <div class="flex items-center">
-          <student-avatar
-            :id="currentRecord.studentId"
-            :name="currentRecord.studentName || '-'"
-            :gender="getGenderText(currentRecord.sex)"
-            :avatar-url="currentRecord.avatar"
-            :show-age="false"
-            default-active-key="0"
-          />
-          <div class="ml-4">
-            <div class="text-5 font-600">
-              {{ currentRecord.name || '-' }}
-            </div>
-            <div class="text-#888 mt-1">
-              创建于 {{ formatDateTime(currentRecord.createdTime) }}
-            </div>
-          </div>
-        </div>
-
-        <a-descriptions class="mt-6" :column="2" size="small">
-          <a-descriptions-item label="上课课程">
-            {{ currentRecord.lessonName || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="当前课程账户">
-            {{ currentRecord.tuitionAccount?.productName || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="班主任">
-            {{ currentRecord.classTeacherName || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="默认上课教师">
-            {{ currentRecord.defaultTeacherName || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="是否排课">
-            {{ currentRecord.isScheduled ? '已排课' : '未排课' }}
-          </a-descriptions-item>
-          <a-descriptions-item label="已上/排课">
-            {{ currentRecord.one2OneLessonDayInfo?.completeLessonDayCount || 0 }}/{{ currentRecord.one2OneLessonDayInfo?.lessonDayCount || 0 }}节
-          </a-descriptions-item>
-          <a-descriptions-item label="总学费">
-            {{ formatMoney(currentRecord.tuitionAccount?.totalTuition) }}
-          </a-descriptions-item>
-          <a-descriptions-item label="剩余学费金额">
-            {{ formatMoney(currentRecord.tuitionAccount?.remainTuition) }}
-          </a-descriptions-item>
-        </a-descriptions>
-      </div>
-    </a-drawer>
+      :record="currentRecord"
+      @edit="handleDrawerEdit"
+    />
 
     <a-modal v-model:open="advisorModalOpen" :title="advisorModalTitle" @ok="submitAdvisorBatch" :confirm-loading="advisorSubmitting">
       <a-form layout="vertical">
