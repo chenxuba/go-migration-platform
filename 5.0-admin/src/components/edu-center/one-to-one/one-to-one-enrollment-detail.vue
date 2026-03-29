@@ -1,110 +1,179 @@
 <script setup>
+import dayjs from 'dayjs'
+import { computed } from 'vue'
+
 const props = defineProps({
   record: {
     type: Object,
     default: () => ({}),
   },
 })
+
+function isZeroDateValue(value) {
+  if (!value)
+    return true
+  if (typeof value === 'string' && value.startsWith('0001-01-01'))
+    return true
+  const parsed = dayjs(value)
+  return !parsed.isValid() || parsed.year() <= 1
+}
+
+function formatDate(value) {
+  if (isZeroDateValue(value))
+    return '-'
+  return dayjs(value).format('YYYY-MM-DD')
+}
+
+function formatMoney(value) {
+  return `¥ ${Number(value || 0).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+function getQuantityUnit(mode) {
+  if (mode === 1)
+    return '课时'
+  if (mode === 2)
+    return '天'
+  if (mode === 3)
+    return '元'
+  return ''
+}
+
+function calcUsedQuantity(record) {
+  const ta = record.tuitionAccount
+  const total = Number(ta?.totalQuantity || 0) + Number(ta?.totalFreeQuantity || 0)
+  const remain = Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
+  return Math.max(total - remain, 0)
+}
+
+function calcRemainQuantity(record) {
+  const ta = record.tuitionAccount
+  return Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
+}
+
+function calcUsedTuition(record) {
+  const ta = record.tuitionAccount
+  return Math.max(Number(ta?.totalTuition || 0) - Number(ta?.remainTuition || 0), 0)
+}
+
+function classStudentStatusLabel(status) {
+  if (status === 3)
+    return '已结课'
+  if (status === 2)
+    return '已开课'
+  return '正常'
+}
+
+function formatQuantityAmount(n, mode) {
+  const u = getQuantityUnit(mode)
+  if (mode === 1)
+    return `${Number(n).toFixed(2)} ${u}`.trim()
+  return `${n}${u}`
+}
+
+const lessonChargingMode = computed(() => props.record?.tuitionAccount?.lessonChargingMode)
+
+const enrollmentTitle = computed(() =>
+  props.record?.tuitionAccount?.productName || props.record?.lessonName || props.record?.name || '-',
+)
+
+const expireText = computed(() => {
+  const ta = props.record?.tuitionAccount
+  if (!ta?.enableExpireTime)
+    return '不限制'
+  return formatDate(ta.expireTime)
+})
+
+const purchaseQuantityText = computed(() => {
+  const ta = props.record?.tuitionAccount
+  const q = Number(ta?.totalQuantity || 0)
+  const u = getQuantityUnit(lessonChargingMode.value)
+  return `购 ${q} ${u}`.trim()
+})
+
+const usedQuantityText = computed(() =>
+  formatQuantityAmount(calcUsedQuantity(props.record), lessonChargingMode.value),
+)
+
+const remainQuantityText = computed(() =>
+  formatQuantityAmount(calcRemainQuantity(props.record), lessonChargingMode.value),
+)
+
+const quantityTagLabel = computed(() => getQuantityUnit(lessonChargingMode.value) || '课时')
+
+/** 与「选择课程/学杂费/教材用品」弹窗（active-course-modal）中课程行标签一致 */
+function getTagStyle(type = 'normal') {
+  const baseStyle = {
+    borderRadius: '20px',
+    marginRight: '0',
+    height: '20px',
+  }
+  if (type === 'primary') {
+    return {
+      ...baseStyle,
+      color: '#fff',
+    }
+  }
+  return {
+    ...baseStyle,
+    color: '#0066ff',
+  }
+}
 </script>
 
 <template>
   <div class="m-12px">
-    <div class="bg-#fff pt-18px px-20px pb-18px rounded-10px">
-      <div class="text-#222 text-5 font-600 mb-18px">
-        通用1v1
-      </div>
-      <div class="flex flex-wrap gap-10px mb-18px">
-        <span class="tag-pill tag-pill--primary">通用课</span>
-        <span class="tag-pill">全部课程通用</span>
-        <span class="tag-pill">1对1授课</span>
-        <span class="tag-pill">课时</span>
-      </div>
-
-      <div class="detail-grid">
-        <div class="detail-column">
-          <div class="detail-line">
-            <span class="detail-label">当前状态：</span>
-            <span>在读</span>
+    <div class="bg-white pt-18px px-20px pb-18px rounded-10px">
+      <a-space direction="vertical" size="middle" class="w-full">
+        <div>
+          <div class="text-4 text-#222 font-500 mb-1">
+            {{ enrollmentTitle }}
           </div>
-          <div class="detail-line">
-            <span class="detail-label">已用数量：</span>
-            <span>4.00 课时</span>
-          </div>
-          <div class="detail-line">
-            <span class="detail-label">已用学费金额：</span>
-            <span>￥ 400.00</span>
-          </div>
+          <a-space :size="5" class="w-100% flex flex-wrap">
+            <a-tag :style="getTagStyle('primary')" color="#0066ff">
+              通用课
+            </a-tag>
+            <a-tag :style="getTagStyle('normal')" color="#e6f0ff">
+              全部课程通用
+            </a-tag>
+            <a-tag :style="getTagStyle('normal')" color="#e6f0ff">
+              1对1授课
+            </a-tag>
+            <a-tag :style="getTagStyle('normal')" color="#e6f0ff">
+              {{ quantityTagLabel }}
+            </a-tag>
+          </a-space>
         </div>
 
-        <div class="detail-column">
-          <div class="detail-line">
-            <span class="detail-label">报读数量：</span>
-            <span>购 11 课时</span>
-          </div>
-          <div class="detail-line">
-            <span class="detail-label">剩余数量：</span>
-            <span>7.00 课时</span>
-          </div>
-          <div class="detail-line">
-            <span class="detail-label">剩余学费金额：</span>
-            <span>￥ 700</span>
-          </div>
-        </div>
-
-        <div class="detail-column">
-          <div class="detail-line">
-            <span class="detail-label">有效期至：</span>
-            <span>不限制</span>
-          </div>
-          <div class="detail-line">
-            <span class="detail-label">总学费：</span>
-            <span>￥1100</span>
-          </div>
-        </div>
-      </div>
+        <a-descriptions :column="3" size="small">
+          <a-descriptions-item label="当前状态">
+            {{ classStudentStatusLabel(record.classStudentStatus) }}
+          </a-descriptions-item>
+          <a-descriptions-item label="报读数量">
+            {{ purchaseQuantityText }}
+          </a-descriptions-item>
+          <a-descriptions-item label="有效期至">
+            {{ expireText }}
+          </a-descriptions-item>
+          <a-descriptions-item label="已用数量">
+            {{ usedQuantityText }}
+          </a-descriptions-item>
+          <a-descriptions-item label="剩余数量">
+            {{ remainQuantityText }}
+          </a-descriptions-item>
+          <a-descriptions-item label="总学费">
+            {{ formatMoney(record.tuitionAccount?.totalTuition) }}
+          </a-descriptions-item>
+          <a-descriptions-item label="已用学费金额">
+            {{ formatMoney(calcUsedTuition(record)) }}
+          </a-descriptions-item>
+          <a-descriptions-item label="剩余学费金额">
+            {{ formatMoney(record.tuitionAccount?.remainTuition) }}
+          </a-descriptions-item>
+        </a-descriptions>
+      </a-space>
     </div>
   </div>
 </template>
-
-<style lang="less" scoped>
-.tag-pill {
-  display: inline-flex;
-  align-items: center;
-  height: 34px;
-  padding: 0 16px;
-  border-radius: 999px;
-  background: #edf3ff;
-  color: #2b6de5;
-  font-size: 14px;
-  font-weight: 500;
-
-  &--primary {
-    background: #1f6fff;
-    color: #fff;
-  }
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 32px;
-}
-
-.detail-column {
-  min-width: 0;
-}
-
-.detail-line {
-  display: flex;
-  align-items: baseline;
-  margin-bottom: 20px;
-  color: #555;
-  font-size: 16px;
-}
-
-.detail-label {
-  color: #222;
-  font-weight: 500;
-  margin-right: 10px;
-}
-</style>
