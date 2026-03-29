@@ -148,6 +148,33 @@ func (handler *Handler) closeOneToOne(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, true, ctx.RequestID)
 }
 
+// reopenOneToOne POST {"id":"..."} 恢复开班（与 close 对称）
+func (handler *Handler) reopenOneToOne(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var dto model.OneToOneCloseDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.ReopenOneToOneOnly(claims.UserID, dto.ID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			httpx.WriteError(w, http.StatusBadRequest, "1对1不存在", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, true, ctx.RequestID)
+}
+
 func (handler *Handler) batchAssignOneToOneClassTeacher(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

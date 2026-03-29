@@ -15,6 +15,7 @@ import {
   batchUpdateOneToOneClassTimeApi,
   checkOneToOneNameApi,
   closeOneToOneApi,
+  reopenOneToOneApi,
   getOneToOneByIdApi,
   getOneToOneListApi,
   listTuitionAccountsByStudentAndLessonApi,
@@ -352,6 +353,35 @@ function handleCreateOneToOne() {
   messageService.info('创建1对1功能暂未实现')
 }
 
+function handleReopenClass(record) {
+  const id = record?.id
+  if (!id) {
+    messageService.error('缺少1对1班级ID')
+    return
+  }
+  Modal.confirm({
+    title: '恢复开班',
+    centered: true,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: '确定将该1对1恢复为开班中吗？',
+    async onOk() {
+      try {
+        const res = await reopenOneToOneApi({ id: String(id) })
+        if (res.code === 200) {
+          messageService.success('已恢复开班')
+          getOneToOneList()
+          return
+        }
+        messageService.error(res.message || '恢复开班失败')
+      }
+      catch (err) {
+        console.error(err)
+        messageService.error('恢复开班失败')
+      }
+    },
+  })
+}
+
 function handleFinishCourse(record) {
   const id = record?.id
   if (!id) {
@@ -519,6 +549,10 @@ function getOpenClassStatus(status) {
   if (status === 2)
     return { text: '已结班', className: 'text-#888 bg-#f5f5f5' }
   return { text: '开班中', className: 'text-#06f bg-#e6f0ff' }
+}
+
+function isOneToOneClassClosed(record) {
+  return Number(record?.status) === 2
 }
 
 function getClassStudentStatus(status) {
@@ -941,10 +975,16 @@ onMounted(() => {
               </template>
               <template v-if="column.key === 'action'">
                 <a-space :size="12">
-                  <a @click="handleSchedule(record)">排课</a>
-                  <a @click="handleFinishCourse(record)">结课</a>
-                  <a @click="openEditModal(record)">编辑</a>
-                  <a @click="openDrawer(record)">详情</a>
+                  <template v-if="isOneToOneClassClosed(record)">
+                    <a @click="handleReopenClass(record)">恢复开班</a>
+                    <a @click="openDrawer(record)">详情</a>
+                  </template>
+                  <template v-else>
+                    <a @click="handleSchedule(record)">排课</a>
+                    <a @click="handleFinishCourse(record)">结课</a>
+                    <a @click="openEditModal(record)">编辑</a>
+                    <a @click="openDrawer(record)">详情</a>
+                  </template>
                 </a-space>
               </template>
             </template>

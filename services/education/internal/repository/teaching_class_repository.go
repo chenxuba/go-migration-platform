@@ -925,6 +925,41 @@ func (repo *Repository) CloseOneToOneOnly(ctx context.Context, instID, operatorI
 	return nil
 }
 
+// ReopenOneToOneOnly 将已结班的 1 对 1 恢复为开班中
+func (repo *Repository) ReopenOneToOneOnly(ctx context.Context, instID, operatorID, classID int64) error {
+	var currentStatus int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT tc.status
+		FROM teaching_class tc
+		WHERE tc.id = ? AND tc.inst_id = ? AND tc.class_type = ? AND tc.del_flag = 0
+	`, classID, instID, model.TeachingClassTypeOneToOne).Scan(&currentStatus)
+	if err != nil {
+		return err
+	}
+	if currentStatus == model.TeachingClassStatusActive {
+		return nil
+	}
+	if currentStatus != model.TeachingClassStatusClosed {
+		return errors.New("班级状态不允许恢复开班")
+	}
+	res, err := repo.db.ExecContext(ctx, `
+		UPDATE teaching_class
+		SET status = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0 AND status = ?
+	`, model.TeachingClassStatusActive, operatorID, classID, instID, model.TeachingClassTypeOneToOne, model.TeachingClassStatusClosed)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func normalizeTeacherIDs(ids []string, defaultTeacherID int64) []int64 {
 	result := make([]int64, 0, len(ids)+1)
 	seen := make(map[int64]struct{}, len(ids)+1)

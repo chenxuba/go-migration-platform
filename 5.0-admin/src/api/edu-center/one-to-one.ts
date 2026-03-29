@@ -236,6 +236,11 @@ export function closeOneToOneApi(data: OneToOneCloseParams) {
   return usePost<boolean>('/api/v1/one-to-ones/close', data)
 }
 
+/** 恢复开班，请求体与结班相同：{ id } */
+export function reopenOneToOneApi(data: OneToOneCloseParams) {
+  return usePost<boolean>('/api/v1/one-to-ones/reopen', data)
+}
+
 export function listTuitionAccountsByStudentAndLessonApi(data: { studentId: string, lessonId: string }) {
   return usePost<StudentLessonTuitionAccountsResult>('/api/v1/tuition-accounts/by-student-and-lesson', data)
 }
