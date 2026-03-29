@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, createVNode, onMounted, reactive, ref } from 'vue'
 import { debounce } from 'lodash-es'
-import { CloseOutlined, DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, DownOutlined, ExclamationCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
 import StaffSelect from '@/components/common/staff-select.vue'
@@ -350,8 +351,21 @@ function handleCreateOneToOne() {
   messageService.info('创建1对1功能暂未实现')
 }
 
-function handleFinishCourse() {
-  messageService.info('结课功能暂未实现')
+function handleFinishCourse(_record) {
+  Modal.confirm({
+    title: '1对1结班',
+    centered: true,
+    icon: createVNode(ExclamationCircleOutlined),
+    content:
+      '是否确认对1对1进行结班且结课，结班后会同步删除相关的日程，被删除的日程不可恢复，请谨慎操作',
+    okText: '结班并结课',
+    cancelText: '仅结班',
+    async onOk() {
+      // 结班并结课 — 接口待接入
+    },
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    onCancel() {},
+  })
 }
 
 function closeEditModal() {
