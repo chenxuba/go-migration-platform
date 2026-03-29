@@ -172,6 +172,37 @@ export interface OneToOneUpdateParams {
   classProperties: Array<Record<string, any>>
 }
 
+/** 学员在某课程下的学费账户（对齐后端 / 竞品 GetStudentAllTuitionAccountByLessonId） */
+export interface StudentLessonTuitionAccountItem {
+  id?: string
+  studentId?: string
+  lessonId?: string
+  productName?: string
+  lessonChargingMode?: number
+  totalQuantity?: number
+  totalFreeQuantity?: number
+  totalTuition?: number
+  freeQuantity?: number
+  quantity?: number
+  tuition?: number
+  suspended?: boolean
+  suspendedTime?: string
+  startTime?: string
+  enableExpireTime?: boolean
+  expireTime?: string
+  assignedClass?: boolean
+  lessonScope?: number
+  generalLessonIdList?: string[]
+  latestStartTime?: string
+  lessonType?: number
+  isTuitionAccountActive?: boolean
+  status?: number
+}
+
+export interface StudentLessonTuitionAccountsResult {
+  list?: StudentLessonTuitionAccountItem[]
+}
+
 export function getOneToOneListApi(data: OneToOneListParams) {
   return usePost<OneToOneListResult>('/api/v1/one-to-ones/page', data)
 }
@@ -198,4 +229,8 @@ export function checkOneToOneNameApi(data: OneToOneCheckNameParams) {
 
 export function updateOneToOneApi(data: OneToOneUpdateParams) {
   return usePost<boolean>('/api/v1/one-to-ones/update', data)
+}
+
+export function listTuitionAccountsByStudentAndLessonApi(data: { studentId: string, lessonId: string }) {
+  return usePost<StudentLessonTuitionAccountsResult>('/api/v1/tuition-accounts/by-student-and-lesson', data)
 }

@@ -188,3 +188,121 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 		Total: len(items),
 	}, rows.Err()
 }
+
+// ListStudentTuitionAccountsByStudentAndLesson 学员在某课程下的全部学费账户（原始账户行，未按订单明细聚合）
+func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context.Context, instID, studentID, courseID int64) ([]model.StudentLessonTuitionAccountItem, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			CAST(ta.id AS CHAR),
+			CAST(ta.student_id AS CHAR),
+			CAST(ta.course_id AS CHAR),
+			IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, '')) AS product_name,
+			IFNULL(icq.lesson_model, 0) AS lesson_charging_mode,
+			CASE
+				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.total_tuition, 0)
+				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+				ELSE 0
+			END AS total_quantity_display,
+			CASE
+				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
+				WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
+				ELSE 0
+			END AS total_free_quantity_display,
+			IFNULL(ta.total_tuition, 0),
+			CASE
+				WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+				ELSE 0
+			END AS remain_free_quantity,
+			CASE
+				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.remaining_tuition, 0)
+				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+				ELSE 0
+			END AS remain_quantity_display,
+			IFNULL(ta.remaining_tuition, 0),
+			ta.suspended_time,
+			IFNULL(ta.create_time, NOW()) AS start_time,
+			IFNULL(ta.enable_expire_time, 0) AS enable_expire,
+			ta.expire_time,
+			IFNULL(ta.assigned_class, 0) AS assigned_class,
+			IFNULL(ic.course_type, 0) AS lesson_scope,
+			ta.valid_date,
+			IFNULL(ic.teach_method, 0) AS teach_method,
+			IFNULL(ta.status, 0) AS ta_status
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = ta.quote_id AND icq.del_flag = 0
+		WHERE ta.inst_id = ?
+			AND ta.del_flag = 0
+			AND ta.student_id = ?
+			AND ta.course_id = ?
+		ORDER BY ta.create_time DESC, ta.id DESC
+	`, instID, studentID, courseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.StudentLessonTuitionAccountItem, 0, 8)
+	for rows.Next() {
+		var (
+			item                                               model.StudentLessonTuitionAccountItem
+			suspendedTime                                      sql.NullTime
+			expireTime                                         sql.NullTime
+			validDate                                          sql.NullTime
+			startTime                                          sql.NullTime
+			enableExpireRaw                                    int64
+			assignedClassRaw                                   int64
+			totalQtyDisp, totalFreeDisp, remainFree, remainQty float64
+			taStatus                                           int
+		)
+		if err := rows.Scan(
+			&item.ID,
+			&item.StudentID,
+			&item.LessonID,
+			&item.ProductName,
+			&item.LessonChargingMode,
+			&totalQtyDisp,
+			&totalFreeDisp,
+			&item.TotalTuition,
+			&remainFree,
+			&remainQty,
+			&item.Tuition,
+			&suspendedTime,
+			&startTime,
+			&enableExpireRaw,
+			&expireTime,
+			&assignedClassRaw,
+			&item.LessonScope,
+			&validDate,
+			&item.LessonType,
+			&taStatus,
+		); err != nil {
+			return nil, err
+		}
+		item.TotalQuantity = totalQtyDisp
+		item.TotalFreeQuantity = totalFreeDisp
+		item.FreeQuantity = remainFree
+		item.Quantity = remainQty
+		item.EnableExpireTime = enableExpireRaw != 0
+		item.AssignedClass = assignedClassRaw != 0
+		item.Status = taStatus
+		item.IsTuitionAccountActive = taStatus == 1
+		item.GeneralLessonIDList = []string{}
+		if suspendedTime.Valid && suspendedTime.Time.Year() > 1 {
+			item.Suspended = true
+			t := suspendedTime.Time
+			item.SuspendedTime = &t
+		}
+		if startTime.Valid {
+			item.StartTime = startTime.Time
+		}
+		if expireTime.Valid {
+			item.ExpireTime = expireTime.Time
+		}
+		if validDate.Valid {
+			item.LatestStartTime = validDate.Time
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}

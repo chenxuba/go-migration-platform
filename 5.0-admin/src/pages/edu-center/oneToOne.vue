@@ -16,6 +16,7 @@ import {
   checkOneToOneNameApi,
   getOneToOneByIdApi,
   getOneToOneListApi,
+  listTuitionAccountsByStudentAndLessonApi,
   updateOneToOneApi,
 } from '@/api/edu-center/one-to-one'
 import { Sex, SexLabel } from '@/enums'
@@ -28,6 +29,7 @@ const selectedRows = ref([])
 const selectedRowKeys = ref([])
 const actionRows = ref([])
 const currentRecord = ref(null)
+const drawerTuitionAccounts = ref([])
 const drawerOpen = ref(false)
 const totalStudentCount = ref(0)
 const quickCounts = ref({
@@ -452,9 +454,29 @@ function getClassStudentStatus(status) {
   return { text: '正常', className: 'text-#0c3 bg-#e6ffec' }
 }
 
-function openDrawer(record) {
+async function openDrawer(record) {
   currentRecord.value = record
+  drawerTuitionAccounts.value = []
   drawerOpen.value = true
+  try {
+    const detailRes = await getOneToOneByIdApi(record?.id)
+    if (detailRes.code === 200 && detailRes.result)
+      currentRecord.value = { ...record, ...detailRes.result }
+
+    const sid = currentRecord.value?.studentId
+    const lid = currentRecord.value?.lessonId
+    if (sid && lid) {
+      const accRes = await listTuitionAccountsByStudentAndLessonApi({
+        studentId: String(sid),
+        lessonId: String(lid),
+      })
+      if (accRes.code === 200 && Array.isArray(accRes.result?.list))
+        drawerTuitionAccounts.value = accRes.result.list
+    }
+  }
+  catch (error) {
+    console.error('open one-to-one drawer failed', error)
+  }
 }
 
 function handleDrawerEdit(record) {
@@ -799,14 +821,11 @@ onMounted(() => {
               </template>
               <template v-if="column.key === 'lesson'">
                 <div>{{ record.lessonName || '-' }}</div>
-                <div class="text-3 text-#888">
-                  1对1授课
-                </div>
               </template>
               <template v-if="column.key === 'account'">
                 <div>{{ record.tuitionAccount?.productName || record.lessonName || '-' }}</div>
                 <div class="text-3 text-#888">
-                  {{ getChargingModeText(record.tuitionAccount?.lessonChargingMode) }}
+                  1对1授课｜{{ getChargingModeText(record.tuitionAccount?.lessonChargingMode) }}
                 </div>
               </template>
               <template v-if="column.key === 'totalQuantity'">
@@ -895,6 +914,7 @@ onMounted(() => {
     <one-to-one-drawer
       v-model:open="drawerOpen"
       :record="currentRecord"
+      :tuition-accounts="drawerTuitionAccounts"
       @edit="handleDrawerEdit"
     />
 

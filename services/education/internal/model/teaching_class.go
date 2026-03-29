@@ -199,3 +199,40 @@ type OneToOneUpdateDTO struct {
 	Remark                     string               `json:"remark"`
 	ClassProperties            []OneToOnePropertyVO `json:"classProperties"`
 }
+
+// StudentLessonTuitionAccountsQueryDTO 按学员+课程查询学费账户（对齐竞品 GetStudentAllTuitionAccountByLessonId）
+type StudentLessonTuitionAccountsQueryDTO struct {
+	StudentID string `json:"studentId"`
+	LessonID  string `json:"lessonId"`
+}
+
+// StudentLessonTuitionAccountItem 单条学费账户（含竞品常用字段名 quantity/tuition 表示剩余）
+type StudentLessonTuitionAccountItem struct {
+	ID                     string     `json:"id"`
+	StudentID              string     `json:"studentId"`
+	LessonID               string     `json:"lessonId"`
+	ProductName            string     `json:"productName"`
+	LessonChargingMode     int        `json:"lessonChargingMode"`
+	TotalQuantity          float64    `json:"totalQuantity"`
+	TotalFreeQuantity      float64    `json:"totalFreeQuantity"`
+	TotalTuition           float64    `json:"totalTuition"`
+	FreeQuantity           float64    `json:"freeQuantity"`
+	Quantity               float64    `json:"quantity"`
+	Tuition                float64    `json:"tuition"`
+	Suspended              bool       `json:"suspended"`
+	SuspendedTime          *time.Time `json:"suspendedTime,omitempty"`
+	StartTime              time.Time  `json:"startTime"`
+	EnableExpireTime       bool       `json:"enableExpireTime"`
+	ExpireTime             time.Time  `json:"expireTime"`
+	AssignedClass          bool       `json:"assignedClass"`
+	LessonScope            int        `json:"lessonScope"`
+	GeneralLessonIDList    []string   `json:"generalLessonIdList"`
+	LatestStartTime        time.Time  `json:"latestStartTime"`
+	LessonType             int        `json:"lessonType"`
+	IsTuitionAccountActive bool       `json:"isTuitionAccountActive"`
+	Status                 int        `json:"status"`
+}
+
+type StudentLessonTuitionAccountsResult struct {
+	List []StudentLessonTuitionAccountItem `json:"list"`
+}

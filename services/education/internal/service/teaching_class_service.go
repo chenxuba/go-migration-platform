@@ -36,6 +36,32 @@ func (svc *Service) GetOneToOneDetail(userID int64, id string) (model.OneToOneDe
 	return svc.repo.GetOneToOneDetail(context.Background(), instID, classID)
 }
 
+func (svc *Service) ListStudentTuitionAccountsByStudentAndLesson(userID int64, dto model.StudentLessonTuitionAccountsQueryDTO) (model.StudentLessonTuitionAccountsResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.StudentLessonTuitionAccountsResult{}, errors.New("no institution context")
+		}
+		return model.StudentLessonTuitionAccountsResult{}, err
+	}
+	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
+	if err != nil || studentID <= 0 {
+		return model.StudentLessonTuitionAccountsResult{}, errors.New("studentId 不能为空")
+	}
+	courseID, err := strconv.ParseInt(strings.TrimSpace(dto.LessonID), 10, 64)
+	if err != nil || courseID <= 0 {
+		return model.StudentLessonTuitionAccountsResult{}, errors.New("lessonId 不能为空")
+	}
+	list, err := svc.repo.ListStudentTuitionAccountsByStudentAndLesson(context.Background(), instID, studentID, courseID)
+	if err != nil {
+		return model.StudentLessonTuitionAccountsResult{}, err
+	}
+	if list == nil {
+		list = []model.StudentLessonTuitionAccountItem{}
+	}
+	return model.StudentLessonTuitionAccountsResult{List: list}, nil
+}
+
 func (svc *Service) CheckOneToOneName(userID int64, dto model.OneToOneCheckNameDTO) (bool, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

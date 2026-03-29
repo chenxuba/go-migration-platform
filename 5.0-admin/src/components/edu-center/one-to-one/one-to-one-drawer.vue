@@ -15,6 +15,11 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  /** 学员在该课程下的全部学费账户（接口 listTuitionAccountsByStudentAndLesson） */
+  tuitionAccounts: {
+    type: Array,
+    default: () => [],
+  },
 })
 const emit = defineEmits(['update:open', 'edit'])
 const activeKey = ref('0')
@@ -140,7 +145,7 @@ function handleEdit() {
         }"
       >
         <a-tab-pane key="0" tab="报读明细">
-          <enrollment-detail :record="record" />
+          <enrollment-detail :record="record" :accounts="tuitionAccounts" />
         </a-tab-pane>
         <a-tab-pane key="1" tab="日程">
           <schedule />
