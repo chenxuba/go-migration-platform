@@ -12,91 +12,34 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
-// tuitionAccountQuotationJoinForTa 与学费账户列表一致，解析报价单（quote_id / 订单明细 / 量价匹配 / 课程首条报价）
-const tuitionAccountQuotationJoinForTa = `
-LEFT JOIN sale_order_course_detail sod_ta ON sod_ta.id = ta.order_course_detail_id AND sod_ta.del_flag = 0
-LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
-	NULLIF(ta.quote_id, 0),
-	NULLIF(sod_ta.quote_id, 0),
+// tuitionAccountQuotationJoinForTaDed 与学费账户列表一致：解析报价单（quote_id / 订单明细 / 量价匹配 / 课程首条报价），别名 ta_ded/icq_ded。
+const tuitionAccountQuotationJoinForTaDed = `
+LEFT JOIN sale_order_course_detail sod_ta_ded ON sod_ta_ded.id = ta_ded.order_course_detail_id AND sod_ta_ded.del_flag = 0
+LEFT JOIN inst_course_quotation icq_ded ON icq_ded.id = COALESCE(
+	NULLIF(ta_ded.quote_id, 0),
+	NULLIF(sod_ta_ded.quote_id, 0),
 	(SELECT qx.id FROM inst_course_quotation qx
-	 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
-	   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
-	   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+	 WHERE qx.course_id = ta_ded.course_id AND qx.del_flag = 0
+	   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta_ded.total_quantity, 0)) < 0.000001
+	   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta_ded.total_tuition, 0)) < 0.000001
 	 ORDER BY qx.id DESC LIMIT 1),
 	(SELECT qmin.id FROM inst_course_quotation qmin
-	 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+	 WHERE qmin.course_id = ta_ded.course_id AND qmin.del_flag = 0
 	 ORDER BY qmin.id ASC LIMIT 1)
-) AND icq.del_flag = 0`
+) AND icq_ded.del_flag = 0`
 
-// oneToOneTuitionAccountAggSubquery 按 teaching_class 汇总本班全部班员绑定的学费账户课时/金额（与多笔报名续费共用同一 1 对 1 时的累加一致）。
-// 每条班员：有效账户 = COALESCE(primary_tuition_account_id, 按 order_course_detail_id 匹配的账户)，同一账户多行先按 (班, 账户) 去重再 SUM。
-func oneToOneTuitionAccountAggSubquery() string {
-	return `
-			SELECT
-				tcs_keys.teaching_class_id,
-				MIN(ta.id) AS primary_tuition_account_id,
-				SUM(IFNULL(ta.total_tuition, 0)) AS total_tuition,
-				SUM(IFNULL(ta.remaining_tuition, 0)) AS remain_tuition,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.total_tuition, 0)
-					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
-					ELSE 0
-				END) AS total_quantity,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
-					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
-					ELSE 0
-				END) AS total_free_quantity,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.remaining_tuition, 0)
-					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
-					ELSE 0
-				END) AS remain_quantity,
-				SUM(CASE
-					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
-					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
-					ELSE 0
-				END) AS remain_free_quantity,
-				MAX(
-					CASE
-						WHEN IFNULL(icq.lesson_model, 0) > 0 THEN icq.lesson_model
-						WHEN IFNULL(ta.enable_expire_time, 0) = 1 AND IFNULL(ta.total_quantity, 0) > 0 THEN 2
-						ELSE 0
-					END
-				) AS lesson_charging_mode,
-				MAX(IFNULL(ta.status, 0)) AS status,
-				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
-				MAX(ta.expire_time) AS expire_time,
-				MAX(ta.status_change_time) AS change_status_time,
-				MAX(ta.suspended_time) AS suspended_time,
-				MAX(ta.class_ending_time) AS class_ending_time,
-				IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
-				IFNULL(MAX(ta.has_grade_upgrade), 0) AS has_grade_upgrade
-			FROM (
-				SELECT d.teaching_class_id, d.inst_id, d.effective_ta_id
-				FROM (
-					SELECT
-						tcs1.teaching_class_id,
-						tcs1.inst_id,
-						COALESCE(
-							NULLIF(tcs1.primary_tuition_account_id, 0),
-							(SELECT MIN(ta0.id) FROM tuition_account ta0
-							 WHERE ta0.order_course_detail_id = tcs1.order_course_detail_id
-							   AND ta0.inst_id = tcs1.inst_id AND ta0.del_flag = 0)
-						) AS effective_ta_id
-					FROM teaching_class_student tcs1
-					WHERE tcs1.inst_id = ? AND tcs1.del_flag = 0
-				) d
-				WHERE d.effective_ta_id IS NOT NULL AND d.effective_ta_id > 0
-				GROUP BY d.teaching_class_id, d.inst_id, d.effective_ta_id
-			) tcs_keys
-			INNER JOIN tuition_account ta ON ta.id = tcs_keys.effective_ta_id AND ta.inst_id = tcs_keys.inst_id AND ta.del_flag = 0
-			LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
-			` + tuitionAccountQuotationJoinForTa + `
-			GROUP BY tcs_keys.teaching_class_id`
-}
+// oneToOneReadingListBucketFrom 与 GetTuitionAccountReadingList 分桶一致：按课程 id、授课方式、学费账户自身 quote_id 对应的 lesson_model（仅 ta.quote_id→icq，与报读列表 SQL 相同）。
+const oneToOneReadingListBucketFrom = `
+FROM tuition_account ta2
+INNER JOIN inst_course ic2 ON ic2.id = ta2.course_id AND ic2.del_flag = 0
+LEFT JOIN inst_course_quotation icq2 ON icq2.id = ta2.quote_id AND icq2.del_flag = 0
+WHERE ta2.del_flag = 0
+  AND ta2.inst_id = tcs.inst_id AND ta2.student_id = tcs.student_id
+  AND ta2.course_id = ta_ded.course_id
+  AND IFNULL(ic2.teach_method, 0) = IFNULL(ic_ded.teach_method, 0)
+  AND IFNULL(icq2.lesson_model, -99999) = IFNULL(icq_read.lesson_model, -99999)`
 
-// oneToOneTuitionAccountDeductionJoinSQL 列表/详情「当前课程账户」展示：取列表可见班员行（tcs_pick）的扣费账户；课时/余额等见 ts 全班汇总。
+// oneToOneTuitionAccountDeductionJoinSQL 列表/详情「当前课程账户」：tuitionAccountId 取扣费账户 ta_ded；展示用课时/学费按报读列表同桶 SUM（多条账户累加），与学员报读列表一致。
 const oneToOneTuitionAccountDeductionJoinSQL = `
 LEFT JOIN tuition_account ta_ded ON ta_ded.id = COALESCE(
 	NULLIF(tcs.primary_tuition_account_id, 0),
@@ -104,7 +47,8 @@ LEFT JOIN tuition_account ta_ded ON ta_ded.id = COALESCE(
 	 WHERE ta0.order_course_detail_id = tcs.order_course_detail_id
 	   AND ta0.inst_id = tcs.inst_id AND ta0.del_flag = 0)
 ) AND ta_ded.inst_id = tcs.inst_id AND ta_ded.del_flag = 0
-LEFT JOIN inst_course ic_ded ON ic_ded.id = ta_ded.course_id AND ic_ded.del_flag = 0`
+LEFT JOIN inst_course ic_ded ON ic_ded.id = ta_ded.course_id AND ic_ded.del_flag = 0` + tuitionAccountQuotationJoinForTaDed + `
+LEFT JOIN inst_course_quotation icq_read ON icq_read.id = ta_ded.quote_id AND icq_read.del_flag = 0`
 
 // oneToOneListableJoinSQL 与 PageOneToOneList 主查询一致：仅统计/展示仍有有效班员、且学员与上课课程均未删除的 1 对 1（避免清空校区后残留 teaching_class 导致条数虚高、同名误判）。
 const oneToOneListableJoinSQL = `
@@ -471,8 +415,8 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 		return model.OneToOneListResultVO{}, err
 	}
 
-	queryArgs := make([]any, 0, 2+len(args)+2)
-	queryArgs = append(queryArgs, instID, instID)
+	queryArgs := make([]any, 0, 1+len(args)+2)
+	queryArgs = append(queryArgs, instID)
 	queryArgs = append(queryArgs, args...)
 	queryArgs = append(queryArgs, size, offset)
 	rows, err := repo.db.QueryContext(ctx, `
@@ -501,12 +445,12 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			IFNULL(ic_ded.name, ''),
 			IFNULL(ta_ded.course_id, 0),
 			IFNULL(ic_ded.teach_method, 0),
-			IFNULL(ts.primary_tuition_account_id, IFNULL(tcs.primary_tuition_account_id, 0)),
+			IFNULL(ta_ded.id, IFNULL(tcs.primary_tuition_account_id, 0)),
 			CAST(IFNULL(tcs.order_course_detail_id, 0) AS CHAR) AS order_course_detail_id,
 			IFNULL(tc.default_teacher_id, 0),
 			IFNULL(default_teacher.nick_name, ''),
 			IFNULL(tcs.class_time_record_mode, 1),
-			IFNULL(ts.has_grade_upgrade, 0),
+			IFNULL(ta_ded.has_grade_upgrade, 0),
 			tcs.last_finished_lesson_day,
 			IFNULL(tcs.class_properties_json, '[]'),
 			IFNULL(tc.advisor_id, 0),
@@ -514,26 +458,73 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			IFNULL(tc.remark, ''),
 			CASE WHEN IFNULL(tc.scheduled_lesson_count, 0) > 0 THEN 1 ELSE 0 END,
 			IFNULL(tc.finished_lesson_count, 0),
-			IFNULL(ts.total_tuition, 0),
-			IFNULL(ts.remain_tuition, 0),
-			IFNULL(ts.total_quantity, 0),
-			IFNULL(ts.total_free_quantity, 0),
-			IFNULL(ts.remain_quantity, 0),
-			IFNULL(ts.remain_free_quantity, 0),
-			IFNULL(ts.lesson_charging_mode, 0),
-			IFNULL(ts.status, 0),
-			IFNULL(ts.enable_expire_time, 0),
-			ts.expire_time,
-			ts.change_status_time,
-			ts.suspended_time,
-			ts.class_ending_time,
-			IFNULL(ts.assigned_class, 0)
+			IFNULL((
+				SELECT SUM(IFNULL(ta2.total_tuition, 0)) `+oneToOneReadingListBucketFrom+`
+			), IFNULL(ta_ded.total_tuition, 0)),
+			IFNULL((
+				SELECT SUM(IFNULL(ta2.remaining_tuition, 0)) `+oneToOneReadingListBucketFrom+`
+			), IFNULL(ta_ded.remaining_tuition, 0)),
+			IFNULL((
+				SELECT SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) = 3 THEN IFNULL(ta2.total_tuition, 0)
+					WHEN IFNULL(ta2.total_quantity, 0) > 0 THEN IFNULL(ta2.total_quantity, 0)
+					ELSE 0
+				END) `+oneToOneReadingListBucketFrom+`
+			), CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) = 3 THEN IFNULL(ta_ded.total_tuition, 0)
+				WHEN IFNULL(ta_ded.total_quantity, 0) > 0 THEN IFNULL(ta_ded.total_quantity, 0)
+				ELSE 0
+			END),
+			IFNULL((
+				SELECT SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) = 3 THEN IFNULL(ta2.free_quantity, 0)
+					WHEN IFNULL(ta2.total_quantity, 0) = 0 AND IFNULL(ta2.free_quantity, 0) > 0 THEN IFNULL(ta2.free_quantity, 0)
+					ELSE 0
+				END) `+oneToOneReadingListBucketFrom+`
+			), CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) = 3 THEN IFNULL(ta_ded.free_quantity, 0)
+				WHEN IFNULL(ta_ded.total_quantity, 0) = 0 AND IFNULL(ta_ded.free_quantity, 0) > 0 THEN IFNULL(ta_ded.free_quantity, 0)
+				ELSE 0
+			END),
+			IFNULL((
+				SELECT SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) = 3 THEN IFNULL(ta2.remaining_tuition, 0)
+					WHEN IFNULL(ta2.total_quantity, 0) > 0 THEN IFNULL(ta2.remaining_quantity, 0)
+					ELSE 0
+				END) `+oneToOneReadingListBucketFrom+`
+			), CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) = 3 THEN IFNULL(ta_ded.remaining_tuition, 0)
+				WHEN IFNULL(ta_ded.total_quantity, 0) > 0 THEN IFNULL(ta_ded.remaining_quantity, 0)
+				ELSE 0
+			END),
+			IFNULL((
+				SELECT SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) = 3 THEN IFNULL(ta2.free_quantity, 0)
+					WHEN IFNULL(ta2.total_quantity, 0) = 0 AND IFNULL(ta2.free_quantity, 0) > 0 THEN IFNULL(ta2.remaining_quantity, 0)
+					ELSE 0
+				END) `+oneToOneReadingListBucketFrom+`
+			), CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) = 3 THEN IFNULL(ta_ded.free_quantity, 0)
+				WHEN IFNULL(ta_ded.total_quantity, 0) = 0 AND IFNULL(ta_ded.free_quantity, 0) > 0 THEN IFNULL(ta_ded.remaining_quantity, 0)
+				ELSE 0
+			END),
+			CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) > 0 THEN icq_ded.lesson_model
+				WHEN IFNULL(ta_ded.enable_expire_time, 0) = 1 AND IFNULL(ta_ded.total_quantity, 0) > 0 THEN 2
+				ELSE 0
+			END,
+			IFNULL(ta_ded.status, 0),
+			IFNULL(ta_ded.enable_expire_time, 0),
+			ta_ded.expire_time,
+			ta_ded.status_change_time,
+			ta_ded.suspended_time,
+			ta_ded.class_ending_time,
+			IFNULL(ta_ded.assigned_class, 0)
 		FROM teaching_class tc
 		`+oneToOneListableJoinSQL+`
 		`+oneToOneTuitionAccountDeductionJoinSQL+`
 		LEFT JOIN inst_user advisor ON advisor.id = tc.advisor_id
 		LEFT JOIN inst_user default_teacher ON default_teacher.id = tc.default_teacher_id
-		LEFT JOIN (` + oneToOneTuitionAccountAggSubquery() + `) ts ON ts.teaching_class_id = tc.id
 		WHERE `+whereSQL+`
 		ORDER BY tc.create_time DESC, tc.id DESC
 		LIMIT ? OFFSET ?
@@ -644,7 +635,6 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 		} else {
 			item.TuitionAccount.ProductName = item.LessonName
 		}
-		item.TuitionAccount.AssignedClass = item.TuitionAccount.AssignedClass
 		item.DefaultTeacherID = strconv.FormatInt(defaultTeacherID, 10)
 		if defaultTeacherID <= 0 {
 			item.DefaultTeacherID = "0"
@@ -720,7 +710,7 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 			IFNULL(tc.class_room_id, 0),
 			tc.class_room_name,
 			tc.classroom_enabled,
-			IFNULL(ts.primary_tuition_account_id, IFNULL(tcs.primary_tuition_account_id, 0)),
+			IFNULL(ta_ded.id, IFNULL(tcs.primary_tuition_account_id, 0)),
 			CAST(IFNULL(tcs.order_course_detail_id, 0) AS CHAR) AS order_course_detail_id,
 			IFNULL(tcs.class_time, 0),
 			CASE WHEN IFNULL(tc.scheduled_lesson_count, 0) > 0 THEN 1 ELSE 0 END,
@@ -733,26 +723,74 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 			IFNULL(advisor.nick_name, ''),
 			IFNULL(tc.default_teacher_id, 0),
 			IFNULL(default_teacher.nick_name, ''),
-			IFNULL(ts.has_grade_upgrade, 0),
+			IFNULL(ta_ded.has_grade_upgrade, 0),
 			IFNULL(tc.remark, ''),
 			IFNULL(tc.create_id, 0),
 			IFNULL(created_staff.nick_name, ''),
 			IFNULL(default_teacher_rel.status, 0),
 			IFNULL(tcs.class_properties_json, '[]'),
-			IFNULL(ts.total_tuition, 0),
-			IFNULL(ts.remain_tuition, 0),
-			IFNULL(ts.total_quantity, 0),
-			IFNULL(ts.total_free_quantity, 0),
-			IFNULL(ts.remain_quantity, 0),
-			IFNULL(ts.remain_free_quantity, 0),
-			IFNULL(ts.lesson_charging_mode, 0),
-			IFNULL(ts.status, 0),
-			IFNULL(ts.enable_expire_time, 0),
-			ts.expire_time,
-			ts.change_status_time,
-			ts.suspended_time,
-			ts.class_ending_time,
-			IFNULL(ts.assigned_class, 0)
+			IFNULL((
+				SELECT SUM(IFNULL(ta2.total_tuition, 0)) `+oneToOneReadingListBucketFrom+`
+			), IFNULL(ta_ded.total_tuition, 0)),
+			IFNULL((
+				SELECT SUM(IFNULL(ta2.remaining_tuition, 0)) `+oneToOneReadingListBucketFrom+`
+			), IFNULL(ta_ded.remaining_tuition, 0)),
+			IFNULL((
+				SELECT SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) = 3 THEN IFNULL(ta2.total_tuition, 0)
+					WHEN IFNULL(ta2.total_quantity, 0) > 0 THEN IFNULL(ta2.total_quantity, 0)
+					ELSE 0
+				END) `+oneToOneReadingListBucketFrom+`
+			), CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) = 3 THEN IFNULL(ta_ded.total_tuition, 0)
+				WHEN IFNULL(ta_ded.total_quantity, 0) > 0 THEN IFNULL(ta_ded.total_quantity, 0)
+				ELSE 0
+			END),
+			IFNULL((
+				SELECT SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) = 3 THEN IFNULL(ta2.free_quantity, 0)
+					WHEN IFNULL(ta2.total_quantity, 0) = 0 AND IFNULL(ta2.free_quantity, 0) > 0 THEN IFNULL(ta2.free_quantity, 0)
+					ELSE 0
+				END) `+oneToOneReadingListBucketFrom+`
+			), CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) = 3 THEN IFNULL(ta_ded.free_quantity, 0)
+				WHEN IFNULL(ta_ded.total_quantity, 0) = 0 AND IFNULL(ta_ded.free_quantity, 0) > 0 THEN IFNULL(ta_ded.free_quantity, 0)
+				ELSE 0
+			END),
+			IFNULL((
+				SELECT SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) = 3 THEN IFNULL(ta2.remaining_tuition, 0)
+					WHEN IFNULL(ta2.total_quantity, 0) > 0 THEN IFNULL(ta2.remaining_quantity, 0)
+					ELSE 0
+				END) `+oneToOneReadingListBucketFrom+`
+			), CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) = 3 THEN IFNULL(ta_ded.remaining_tuition, 0)
+				WHEN IFNULL(ta_ded.total_quantity, 0) > 0 THEN IFNULL(ta_ded.remaining_quantity, 0)
+				ELSE 0
+			END),
+			IFNULL((
+				SELECT SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) = 3 THEN IFNULL(ta2.free_quantity, 0)
+					WHEN IFNULL(ta2.total_quantity, 0) = 0 AND IFNULL(ta2.free_quantity, 0) > 0 THEN IFNULL(ta2.remaining_quantity, 0)
+					ELSE 0
+				END) `+oneToOneReadingListBucketFrom+`
+			), CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) = 3 THEN IFNULL(ta_ded.free_quantity, 0)
+				WHEN IFNULL(ta_ded.total_quantity, 0) = 0 AND IFNULL(ta_ded.free_quantity, 0) > 0 THEN IFNULL(ta_ded.remaining_quantity, 0)
+				ELSE 0
+			END),
+			CASE
+				WHEN IFNULL(icq_ded.lesson_model, 0) > 0 THEN icq_ded.lesson_model
+				WHEN IFNULL(ta_ded.enable_expire_time, 0) = 1 AND IFNULL(ta_ded.total_quantity, 0) > 0 THEN 2
+				ELSE 0
+			END,
+			IFNULL(ta_ded.status, 0),
+			IFNULL(ta_ded.enable_expire_time, 0),
+			ta_ded.expire_time,
+			ta_ded.status_change_time,
+			ta_ded.suspended_time,
+			ta_ded.class_ending_time,
+			IFNULL(ta_ded.assigned_class, 0)
 		FROM teaching_class tc
 		INNER JOIN (
 			SELECT MIN(id) AS id
@@ -772,10 +810,9 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 			AND default_teacher_rel.inst_id = tc.inst_id
 			AND default_teacher_rel.teacher_id = tc.default_teacher_id
 			AND default_teacher_rel.del_flag = 0
-		LEFT JOIN (` + oneToOneTuitionAccountAggSubquery() + `) ts ON ts.teaching_class_id = tc.id
 		WHERE tc.inst_id = ? AND tc.id = ? AND tc.class_type = ? AND tc.del_flag = 0
 		LIMIT 1
-	`, classID, instID, instID, instID, classID, model.TeachingClassTypeOneToOne)
+	`, classID, instID, instID, classID, model.TeachingClassTypeOneToOne)
 
 	var (
 		detail              model.OneToOneDetailVO
