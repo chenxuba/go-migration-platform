@@ -317,7 +317,11 @@ async function getOneToOneList(newQueryParams = {}, id, type) {
       pagination.value.total = res.result.total || 0
       totalStudentCount.value = res.result.studentCount || 0
       quickCounts.value = {
-        unassignedTeacherCount: dataSource.value.filter(item => !item.classTeacherId || item.classTeacherId === '0').length,
+        unassignedTeacherCount: dataSource.value.filter((item) => {
+          const hasAdvisor = item.classTeacherId && item.classTeacherId !== '0'
+          const hasClassTeachers = Array.isArray(item.teacherList) && item.teacherList.length > 0
+          return !hasAdvisor && !hasClassTeachers
+        }).length,
         unscheduledCount: dataSource.value.filter(item => !item.isScheduled).length,
       }
       allFilterRef.value?.clearQuickFilter(id, type)
@@ -408,6 +412,17 @@ function formatMoney(value) {
   })}`
 }
 
+/** 列表行学费账户：lessonChargingMode 为 0 时按有效期+数量推断按时段（与后端聚合一致） */
+function effectiveListLessonChargingMode(record) {
+  const ta = record?.tuitionAccount
+  const m = Number(ta?.lessonChargingMode)
+  if (m > 0)
+    return m
+  if (ta?.enableExpireTime && Number(ta?.totalQuantity || 0) > 0)
+    return 2
+  return m || 0
+}
+
 function getChargingModeText(mode) {
   const modeMap = {
     1: '按课时',
@@ -448,7 +463,12 @@ function shouldShowSchedulePlaceholder(record) {
 function formatClassTime(record) {
   if (shouldShowSchedulePlaceholder(record))
     return '-'
-  return Number(record.classTime || 0) > 0 ? `${record.classTime}课时/次` : '-'
+  const ct = Number(record.classTime || 0)
+  if (ct <= 0)
+    return '-'
+  const mode = effectiveListLessonChargingMode(record)
+  const unit = mode === 2 ? '天' : '课时'
+  return `${ct}${unit}/次`
 }
 
 function formatLessonDaySummary(record) {
@@ -810,17 +830,17 @@ onMounted(() => {
               <template v-if="column.key === 'account'">
                 <div>{{ record.tuitionAccount?.productName || record.lessonName || '-' }}</div>
                 <div class="text-3 text-#888">
-                  1对1授课｜{{ getChargingModeText(record.tuitionAccount?.lessonChargingMode) }}
+                  1对1授课｜{{ getChargingModeText(effectiveListLessonChargingMode(record)) }}
                 </div>
               </template>
               <template v-if="column.key === 'totalQuantity'">
                 <div>
-                  {{ Number(record.tuitionAccount?.totalQuantity || 0) + Number(record.tuitionAccount?.totalFreeQuantity || 0) }}{{ getQuantityUnit(record.tuitionAccount?.lessonChargingMode) }}
+                  {{ Number(record.tuitionAccount?.totalQuantity || 0) + Number(record.tuitionAccount?.totalFreeQuantity || 0) }}{{ getQuantityUnit(effectiveListLessonChargingMode(record)) }}
                 </div>
                 <div class="text-3 text-#888">
-                  购{{ record.tuitionAccount?.totalQuantity || 0 }}{{ getQuantityUnit(record.tuitionAccount?.lessonChargingMode) }}
+                  购{{ record.tuitionAccount?.totalQuantity || 0 }}{{ getQuantityUnit(effectiveListLessonChargingMode(record)) }}
                   <span v-if="Number(record.tuitionAccount?.totalFreeQuantity || 0) > 0">
-                    +赠{{ record.tuitionAccount?.totalFreeQuantity || 0 }}{{ getQuantityUnit(record.tuitionAccount?.lessonChargingMode) }}
+                    +赠{{ record.tuitionAccount?.totalFreeQuantity || 0 }}{{ getQuantityUnit(effectiveListLessonChargingMode(record)) }}
                   </span>
                 </div>
               </template>
@@ -834,10 +854,10 @@ onMounted(() => {
                 {{ formatDate(record.tuitionAccount?.classEndingTime) }}
               </template>
               <template v-if="column.key === 'usedQuantity'">
-                {{ calcUsedQuantity(record) }}{{ getQuantityUnit(record.tuitionAccount?.lessonChargingMode) }}
+                {{ calcUsedQuantity(record) }}{{ getQuantityUnit(effectiveListLessonChargingMode(record)) }}
               </template>
               <template v-if="column.key === 'remainQuantity'">
-                {{ calcRemainQuantity(record) }}{{ getQuantityUnit(record.tuitionAccount?.lessonChargingMode) }}
+                {{ calcRemainQuantity(record) }}{{ getQuantityUnit(effectiveListLessonChargingMode(record)) }}
               </template>
               <template v-if="column.key === 'usedTuition'">
                 {{ formatMoney(calcUsedTuition(record)) }}

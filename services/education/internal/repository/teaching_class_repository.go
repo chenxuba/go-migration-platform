@@ -12,6 +12,22 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
+// tuitionAccountQuotationJoinForTa 与学费账户列表一致，解析报价单（quote_id / 订单明细 / 量价匹配 / 课程首条报价）
+const tuitionAccountQuotationJoinForTa = `
+LEFT JOIN sale_order_course_detail sod_ta ON sod_ta.id = ta.order_course_detail_id AND sod_ta.del_flag = 0
+LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+	NULLIF(ta.quote_id, 0),
+	NULLIF(sod_ta.quote_id, 0),
+	(SELECT qx.id FROM inst_course_quotation qx
+	 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+	   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+	   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+	 ORDER BY qx.id DESC LIMIT 1),
+	(SELECT qmin.id FROM inst_course_quotation qmin
+	 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+	 ORDER BY qmin.id ASC LIMIT 1)
+) AND icq.del_flag = 0`
+
 func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS teaching_class (
@@ -351,7 +367,13 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
 					ELSE 0
 				END) AS remain_free_quantity,
-				MAX(IFNULL(icq.lesson_model, 0)) AS lesson_charging_mode,
+				MAX(
+					CASE
+						WHEN IFNULL(icq.lesson_model, 0) > 0 THEN icq.lesson_model
+						WHEN IFNULL(ta.enable_expire_time, 0) = 1 AND IFNULL(ta.total_quantity, 0) > 0 THEN 2
+						ELSE 0
+					END
+				) AS lesson_charging_mode,
 				MAX(IFNULL(ic.course_type, 0)) AS lesson_scope_model,
 				MAX(IFNULL(ta.status, 0)) AS status,
 				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
@@ -362,8 +384,8 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 				IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
 				IFNULL(MAX(ta.has_grade_upgrade), 0) AS has_grade_upgrade
 			FROM tuition_account ta
-			LEFT JOIN inst_course_quotation icq ON icq.id = ta.quote_id AND icq.del_flag = 0
 			LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+			` + tuitionAccountQuotationJoinForTa + `
 			WHERE ta.inst_id = ? AND ta.del_flag = 0
 			GROUP BY ta.order_course_detail_id
 		) ts ON ts.order_course_detail_id = tcs.order_course_detail_id
@@ -511,6 +533,7 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 	for idx := range items {
 		classID, _ := strconv.ParseInt(items[idx].ID, 10, 64)
 		items[idx].TeacherList = teacherMap[classID]
+		items[idx].ClassTeacherName = classTeacherNamesFromTeacherList(items[idx].TeacherList, strings.TrimSpace(items[idx].ClassTeacherName))
 	}
 
 	return model.OneToOneListResultVO{
@@ -605,7 +628,13 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
 					ELSE 0
 				END) AS remain_free_quantity,
-				MAX(IFNULL(icq.lesson_model, 0)) AS lesson_charging_mode,
+				MAX(
+					CASE
+						WHEN IFNULL(icq.lesson_model, 0) > 0 THEN icq.lesson_model
+						WHEN IFNULL(ta.enable_expire_time, 0) = 1 AND IFNULL(ta.total_quantity, 0) > 0 THEN 2
+						ELSE 0
+					END
+				) AS lesson_charging_mode,
 				MAX(IFNULL(ic.course_type, 0)) AS lesson_scope_model,
 				MAX(IFNULL(ta.status, 0)) AS status,
 				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
@@ -616,8 +645,8 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 				IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
 				IFNULL(MAX(ta.has_grade_upgrade), 0) AS has_grade_upgrade
 			FROM tuition_account ta
-			LEFT JOIN inst_course_quotation icq ON icq.id = ta.quote_id AND icq.del_flag = 0
 			LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+			` + tuitionAccountQuotationJoinForTa + `
 			WHERE ta.inst_id = ? AND ta.del_flag = 0
 			GROUP BY ta.order_course_detail_id
 		) ts ON ts.order_course_detail_id = tcs.order_course_detail_id
@@ -890,6 +919,48 @@ func boolToTinyInt(value bool) int {
 	return 0
 }
 
+// classTeacherNamesFromTeacherList 列表「班主任」列：优先展示 is_default=0（批量班主任，不含为合并默认教师单独插入的 is_default=1 行）；
+// 若仅有默认教师行则回退为全部关联教师去重；再回退 advisor 姓名。
+func classTeacherNamesFromTeacherList(list []model.OneToOneTeacherVO, advisorFallback string) string {
+	if len(list) == 0 {
+		return advisorFallback
+	}
+	names := make([]string, 0)
+	seen := make(map[string]struct{})
+	add := func(name, id string) {
+		n := strings.TrimSpace(name)
+		if n == "" {
+			return
+		}
+		key := strings.TrimSpace(id)
+		if key == "" {
+			key = n
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		names = append(names, n)
+	}
+	for _, t := range list {
+		if !t.IsDefault {
+			add(t.Name, t.TeacherID)
+		}
+	}
+	if len(names) > 0 {
+		return strings.Join(names, "、")
+	}
+	seen = make(map[string]struct{})
+	names = names[:0]
+	for _, t := range list {
+		add(t.Name, t.TeacherID)
+	}
+	if len(names) > 0 {
+		return strings.Join(names, "、")
+	}
+	return advisorFallback
+}
+
 func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, excludeQuickFilters bool) (string, []any) {
 	whereParts := []string{
 		"tc.inst_id = ?",
@@ -916,9 +987,16 @@ func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, exclud
 			whereParts = append(whereParts, "CAST(tc.course_id AS CHAR) IN ("+strings.Join(placeholders, ",")+")")
 		}
 	}
-	if strings.TrimSpace(query.ClassTeacherID) != "" {
-		whereParts = append(whereParts, "CAST(tc.advisor_id AS CHAR) = ?")
-		args = append(args, strings.TrimSpace(query.ClassTeacherID))
+	if tid := strings.TrimSpace(query.ClassTeacherID); tid != "" {
+		whereParts = append(whereParts, `(
+			CAST(tc.advisor_id AS CHAR) = ?
+			OR EXISTS (
+				SELECT 1 FROM teaching_class_teacher tct
+				WHERE tct.teaching_class_id = tc.id AND tct.inst_id = tc.inst_id AND tct.del_flag = 0
+					AND CAST(tct.teacher_id AS CHAR) = ?
+			)
+		)`)
+		args = append(args, tid, tid)
 	}
 	if strings.TrimSpace(query.DefaultTeacherID) != "" {
 		whereParts = append(whereParts, "CAST(tc.default_teacher_id AS CHAR) = ?")
@@ -926,9 +1004,21 @@ func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, exclud
 	}
 	if !excludeQuickFilters && query.HasClassTeacher != nil {
 		if boolValue(query.HasClassTeacher) {
-			whereParts = append(whereParts, "IFNULL(tc.advisor_id, 0) > 0")
+			whereParts = append(whereParts, `(
+				IFNULL(tc.advisor_id, 0) > 0
+				OR EXISTS (
+					SELECT 1 FROM teaching_class_teacher tct
+					WHERE tct.teaching_class_id = tc.id AND tct.inst_id = tc.inst_id AND tct.del_flag = 0
+				)
+			)`)
 		} else {
-			whereParts = append(whereParts, "IFNULL(tc.advisor_id, 0) = 0")
+			whereParts = append(whereParts, `(
+				IFNULL(tc.advisor_id, 0) = 0
+				AND NOT EXISTS (
+					SELECT 1 FROM teaching_class_teacher tct
+					WHERE tct.teaching_class_id = tc.id AND tct.inst_id = tc.inst_id AND tct.del_flag = 0
+				)
+			)`)
 		}
 	}
 	if !excludeQuickFilters && query.IsScheduled != nil {
@@ -990,11 +1080,11 @@ func (repo *Repository) listTeachingClassTeachers(ctx context.Context, instID in
 		args = append(args, id)
 	}
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT t.teaching_class_id, t.teacher_id, IFNULL(u.nick_name, ''), IFNULL(t.status, 1)
+		SELECT t.teaching_class_id, t.teacher_id, IFNULL(u.nick_name, ''), IFNULL(t.status, 1), IFNULL(t.is_default, 0)
 		FROM teaching_class_teacher t
 		LEFT JOIN inst_user u ON u.id = t.teacher_id
 		WHERE t.inst_id = ? AND t.del_flag = 0 AND t.teaching_class_id IN (`+strings.Join(placeholders, ",")+`)
-		ORDER BY t.is_default DESC, t.id ASC
+		ORDER BY t.is_default ASC, t.id ASC
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -1005,10 +1095,12 @@ func (repo *Repository) listTeachingClassTeachers(ctx context.Context, instID in
 			classID   int64
 			teacherID int64
 			item      model.OneToOneTeacherVO
+			isDef     int64
 		)
-		if err := rows.Scan(&classID, &teacherID, &item.Name, &item.Status); err != nil {
+		if err := rows.Scan(&classID, &teacherID, &item.Name, &item.Status, &isDef); err != nil {
 			return nil, err
 		}
+		item.IsDefault = isDef != 0
 		item.ClassID = strconv.FormatInt(classID, 10)
 		item.TeacherID = strconv.FormatInt(teacherID, 10)
 		result[classID] = append(result[classID], item)

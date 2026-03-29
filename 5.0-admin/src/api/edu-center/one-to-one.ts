@@ -3,6 +3,8 @@ export interface OneToOneTeacher {
   name?: string
   status?: number
   classId?: string
+  /** 是否为默认上课教师对应行（合并进 teaching_class_teacher） */
+  isDefault?: boolean
 }
 
 export interface OneToOneLessonDayInfo {

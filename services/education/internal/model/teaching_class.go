@@ -52,6 +52,7 @@ type OneToOneTeacherVO struct {
 	Name      string `json:"name"`
 	Status    int    `json:"status"`
 	ClassID   string `json:"classId"`
+	IsDefault bool   `json:"isDefault,omitempty"`
 }
 
 type OneToOneTuitionAccountVO struct {
