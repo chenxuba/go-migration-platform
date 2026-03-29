@@ -114,6 +114,26 @@ func (svc *Service) CheckOneToOneName(userID int64, dto model.OneToOneCheckNameD
 	return count > 0, nil
 }
 
+// ExistOneToOneForStudentLesson 对标 ExistOne2One：data=true 表示已存在开班中的 1 对 1，不应再创建
+func (svc *Service) ExistOneToOneForStudentLesson(userID int64, dto model.OneToOneExistDTO) (bool, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, errors.New("no institution context")
+		}
+		return false, err
+	}
+	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
+	if err != nil || studentID <= 0 {
+		return false, errors.New("studentId 不能为空")
+	}
+	courseID, err := strconv.ParseInt(strings.TrimSpace(dto.LessonID), 10, 64)
+	if err != nil || courseID <= 0 {
+		return false, errors.New("lessonId 不能为空")
+	}
+	return svc.repo.ExistsActiveOneToOneForStudentCourse(context.Background(), instID, studentID, courseID)
+}
+
 func (svc *Service) UpdateOneToOne(userID int64, dto model.OneToOneUpdateDTO) error {
 	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
 	if err != nil {

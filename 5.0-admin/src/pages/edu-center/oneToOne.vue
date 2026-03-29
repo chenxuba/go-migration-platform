@@ -19,6 +19,7 @@ import {
   addCloseTuitionAccountOrderApi,
   closeOneToOneApi,
   reopenOneToOneApi,
+  existOneToOneApi,
   getOneToOneByIdApi,
   getOneToOneListApi,
   listOneToOneLessonsByStudentApi,
@@ -86,6 +87,51 @@ const currentEditRecord = ref(null)
 const createLessonOptions = ref([])
 const createStudentSelectRef = ref(null)
 const createLessonSearchLoading = ref(false)
+/** 当前学员的「按学员查 1 对 1 课程」接口已成功返回后才允许选课程 */
+const createLessonOptionsReady = ref(false)
+/** 对标 ExistOne2One：已存在开班中 1 对 1 时的表单项错误文案 */
+const createExistOneToOneError = ref('')
+const scheduleCreateExistOneToOneCheck = debounce(() => {
+  void checkCreateExistOneToOneNow()
+}, 300, { leading: false, trailing: true })
+
+const CREATE_DUP_ONE_TO_ONE_MSG = '学员已存在所选上课课程的1对1，无需重复创建'
+
+async function checkCreateExistOneToOneNow() {
+  if (!editModalIsCreate.value) {
+    createExistOneToOneError.value = ''
+    return false
+  }
+  const sid = editForm.studentId
+  const lid = editForm.lessonId
+  const hasStudent = sid !== undefined && sid !== null && String(sid).trim() !== ''
+  const hasLesson = lid !== undefined && lid !== null && String(lid).trim() !== ''
+  if (!hasStudent || !hasLesson || !createLessonOptionsReady.value) {
+    createExistOneToOneError.value = ''
+    return false
+  }
+  try {
+    const res = await existOneToOneApi({
+      studentId: String(sid),
+      lessonId: String(lid),
+    })
+    if (res.code !== 200) {
+      createExistOneToOneError.value = res.message || '检测失败'
+      return true
+    }
+    if (res.result === true) {
+      createExistOneToOneError.value = CREATE_DUP_ONE_TO_ONE_MSG
+      return true
+    }
+    createExistOneToOneError.value = ''
+    return false
+  }
+  catch (e) {
+    console.error('exist one-to-one check failed', e)
+    createExistOneToOneError.value = '检测失败，请稍后重试'
+    return true
+  }
+}
 const createNameTouched = ref(false)
 const editForm = reactive({
   id: '',
@@ -115,6 +161,26 @@ const editClassTimeHint = computed(() =>
     ? '每次点名，学员和上课教师记录的课时会根据日程时长自动计算课时（点名时支持调整）'
     : '每次点名，学员和上课教师记录的课时数默认为此数值（点名时支持调整）',
 )
+
+const createLessonSelectPlaceholder = computed(() => {
+  const sid = editForm.studentId
+  const hasStudent = sid !== undefined && sid !== null && String(sid).trim() !== ''
+  if (!hasStudent)
+    return '请先选择学员'
+  if (createLessonSearchLoading.value)
+    return '正在加载课程...'
+  if (!createLessonOptionsReady.value)
+    return '课程列表加载失败，请重新选择学员'
+  return '请选择1对1课程'
+})
+
+const createLessonSelectDisabled = computed(() => {
+  const sid = editForm.studentId
+  const hasStudent = sid !== undefined && sid !== null && String(sid).trim() !== ''
+  if (!hasStudent)
+    return true
+  return createLessonSearchLoading.value || !createLessonOptionsReady.value
+})
 
 const displayArray = ref([
   'createTime',
@@ -367,6 +433,8 @@ function handleEnroll() {
 async function onCreateStudentSelected(student) {
   if (!editModalIsCreate.value || !student)
     return
+  scheduleCreateExistOneToOneCheck.cancel()
+  createExistOneToOneError.value = ''
   editForm.studentName = student.stuName || student.name || ''
   editForm.lessonId = undefined
   editForm.lessonName = ''
@@ -381,9 +449,11 @@ async function fetchOneToOneLessonsByStudent(studentId) {
   const sid = String(studentId || '').trim()
   if (!sid) {
     createLessonOptions.value = []
+    createLessonOptionsReady.value = false
     return
   }
   createLessonSearchLoading.value = true
+  createLessonOptionsReady.value = false
   try {
     const res = await listOneToOneLessonsByStudentApi({
       studentId: sid,
@@ -397,14 +467,19 @@ async function fetchOneToOneLessonsByStudent(studentId) {
         label: c.name || String(c.id),
         alreadyEnrolled: Boolean(c.alreadyEnrolled),
       }))
+      createLessonOptionsReady.value = true
     }
     else {
       createLessonOptions.value = []
+      createLessonOptionsReady.value = false
+      messageService.error(res.message || '获取课程列表失败')
     }
   }
   catch (e) {
     console.error('fetch one-to-one lessons by student failed', e)
     createLessonOptions.value = []
+    createLessonOptionsReady.value = false
+    messageService.error('获取课程列表失败')
   }
   finally {
     createLessonSearchLoading.value = false
@@ -420,6 +495,8 @@ function filterCreateLessonOption(input, option) {
 
 function onCreateLessonPick() {
   if (!editForm.lessonId) {
+    scheduleCreateExistOneToOneCheck.cancel()
+    createExistOneToOneError.value = ''
     editForm.lessonName = ''
     syncCreateDefaultName()
     return
@@ -427,6 +504,7 @@ function onCreateLessonPick() {
   const o = createLessonOptions.value.find(x => x.value === String(editForm.lessonId))
   editForm.lessonName = o?.label || ''
   syncCreateDefaultName()
+  scheduleCreateExistOneToOneCheck()
 }
 
 function syncCreateDefaultName() {
@@ -450,7 +528,6 @@ function handleCreateOneToOne() {
   editModalIsCreate.value = true
   currentEditRecord.value = null
   createNameTouched.value = false
-  createLessonOptions.value = []
   resetEditForm()
   editModalOpen.value = true
   nextTick(() => {
@@ -607,6 +684,11 @@ function resetEditForm() {
   editForm.defaultClassTimeRecordMode = 1
   editForm.remark = ''
   editForm.classProperties = []
+  createLessonOptions.value = []
+  createLessonOptionsReady.value = false
+  createLessonSearchLoading.value = false
+  scheduleCreateExistOneToOneCheck.cancel()
+  createExistOneToOneError.value = ''
 }
 
 function getCurrentActionRows() {
@@ -950,6 +1032,12 @@ async function submitCreateOneToOneModal() {
     messageService.warning('请输入1对1名称')
     return
   }
+  scheduleCreateExistOneToOneCheck.cancel()
+  const blockedByExist = await checkCreateExistOneToOneNow()
+  if (blockedByExist) {
+    messageService.warning(createExistOneToOneError.value || CREATE_DUP_ONE_TO_ONE_MSG)
+    return
+  }
   editSubmitting.value = true
   try {
     const checkRes = await checkOneToOneNameApi({
@@ -1047,6 +1135,10 @@ watch(
     editForm.lessonId = undefined
     editForm.lessonName = ''
     createLessonOptions.value = []
+    createLessonOptionsReady.value = false
+    createLessonSearchLoading.value = false
+    scheduleCreateExistOneToOneCheck.cancel()
+    createExistOneToOneError.value = ''
     syncCreateDefaultName()
   },
 )
@@ -1322,17 +1414,24 @@ onMounted(() => {
             <span>{{ editForm.studentName || '-' }}</span>
           </a-form-item>
 
-          <a-form-item v-if="editModalIsCreate" label="选择课程" required>
+          <a-form-item
+            v-if="editModalIsCreate"
+            label="选择课程"
+            required
+            :validate-status="createExistOneToOneError ? 'error' : ''"
+            :help="createExistOneToOneError || undefined"
+          >
             <a-select
               v-model:value="editForm.lessonId"
               show-search
               option-filter-prop="label"
               :filter-option="filterCreateLessonOption"
-              :disabled="!editForm.studentId"
+              :disabled="createLessonSelectDisabled"
               :loading="createLessonSearchLoading"
-              :placeholder="editForm.studentId ? '请选择1对1课程' : '请先选择学员'"
+              :placeholder="createLessonSelectPlaceholder"
               style="width: 100%"
               allow-clear
+              :status="createExistOneToOneError ? 'error' : ''"
               @change="onCreateLessonPick"
             >
               <a-select-option

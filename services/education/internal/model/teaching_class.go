@@ -185,6 +185,12 @@ type OneToOneCheckNameDTO struct {
 	IsOne2One bool   `json:"isOne2One"`
 }
 
+// OneToOneExistDTO 对标 SchoolPal ExistOne2One：检测学员是否已有该课程的「开班中」1 对 1
+type OneToOneExistDTO struct {
+	StudentID string `json:"studentId"`
+	LessonID  string `json:"lessonId"`
+}
+
 // OneToOneLessonsByStudentQueryDTO 对标 QueryOne2OneLessonByStudentId：学员已有学费账户、且课程为 1v1 授课的可选课程
 type OneToOneLessonsByStudentQueryDTO struct {
 	StudentID            string `json:"studentId"`

@@ -142,6 +142,30 @@ func (repo *Repository) CountTeachingClassByName(ctx context.Context, instID int
 	return count, err
 }
 
+// ExistsActiveOneToOneForStudentCourse 是否存在学员在该课程下、状态为开班中的 1 对 1（对标 ExistOne2One）
+func (repo *Repository) ExistsActiveOneToOneForStudentCourse(ctx context.Context, instID, studentID, courseID int64) (bool, error) {
+	var one int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT 1
+		FROM teaching_class tc
+		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+		WHERE tc.inst_id = ?
+			AND tc.course_id = ?
+			AND tc.class_type = ?
+			AND tc.del_flag = 0
+			AND tc.status = ?
+			AND tcs.student_id = ?
+		LIMIT 1
+	`, instID, courseID, model.TeachingClassTypeOneToOne, model.TeachingClassStatusActive, studentID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (repo *Repository) getCourseTeachMethodMapTx(ctx context.Context, tx *sql.Tx, courseIDs []int64) (map[int64]int, error) {
 	result := make(map[int64]int, len(courseIDs))
 	if len(courseIDs) == 0 {

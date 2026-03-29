@@ -263,6 +263,11 @@ export function checkOneToOneNameApi(data: OneToOneCheckNameParams) {
   return usePost<boolean>('/api/v1/one-to-ones/check-name', data)
 }
 
+/** 对标 SchoolPal ExistOne2One：result/data 为 true 表示该学员在该课程下已有开班中的 1 对 1 */
+export function existOneToOneApi(data: { studentId: string; lessonId: string }) {
+  return usePost<boolean>('/api/v1/one-to-ones/exist', data)
+}
+
 export function updateOneToOneApi(data: OneToOneUpdateParams) {
   return usePost<boolean>('/api/v1/one-to-ones/update', data)
 }
