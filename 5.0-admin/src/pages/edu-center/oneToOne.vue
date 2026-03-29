@@ -1418,6 +1418,7 @@ onMounted(() => {
             v-if="editModalIsCreate"
             label="选择课程"
             required
+            :class="{ 'create-one-to-one-lesson-item--error': !!createExistOneToOneError }"
             :validate-status="createExistOneToOneError ? 'error' : ''"
             :help="createExistOneToOneError || undefined"
           >
@@ -1761,6 +1762,11 @@ onMounted(() => {
 
 .one-to-one-lesson-option-tag {
   margin-inline-end: 0;
+}
+
+/* 有 ExistOne2One 错误时收紧与下一行「1对1名称」的间距 */
+:deep(.create-one-to-one-lesson-item--error.ant-form-item) {
+  margin-bottom: 0;
 }
 </style>
 
