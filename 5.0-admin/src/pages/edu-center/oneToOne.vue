@@ -13,6 +13,7 @@ import {
   batchUpdateOneToOneAttributesApi,
   batchUpdateOneToOneClassTimeApi,
   checkOneToOneNameApi,
+  getOneToOneByIdApi,
   getOneToOneListApi,
   updateOneToOneApi,
 } from '@/api/edu-center/one-to-one'
@@ -56,6 +57,7 @@ const attributeForm = reactive({
   classStudentStatus: undefined,
 })
 const editModalOpen = ref(false)
+const editLoading = ref(false)
 const editSubmitting = ref(false)
 const currentEditRecord = ref(null)
 const editForm = reactive({
@@ -580,31 +582,45 @@ function resetSelection() {
   selectedRowKeys.value = []
 }
 
-function openEditModal(record) {
+async function openEditModal(record) {
   currentEditRecord.value = record
   resetEditForm()
-  editForm.id = record?.id || ''
-  editForm.studentId = record?.studentId || ''
-  editForm.lessonId = record?.lessonId || ''
-  editForm.studentName = record?.studentName || ''
-  editForm.lessonName = record?.lessonName || ''
-  editForm.name = record?.name || ''
-  editForm.teacherIds = Array.isArray(record?.teacherList)
-    ? record.teacherList.map(item => Number(item.teacherId)).filter(Boolean)
-    : []
-  editForm.defaultTeacherId = record?.defaultTeacherId && record.defaultTeacherId !== '0'
-    ? Number(record.defaultTeacherId)
-    : undefined
-  editForm.classRoomId = record?.classRoomId && record.classRoomId !== '0'
-    ? Number(record.classRoomId)
-    : undefined
-  editForm.classRoomName = record?.classRoomName || ''
-  editForm.defaultStudentClassTime = Number(record?.studentClassTime || 1)
-  editForm.defaultTeacherClassTime = Number(record?.teacherClassTime || 0)
-  editForm.defaultClassTimeRecordMode = Number(record?.defaultClassTimeRecordMode || 1)
-  editForm.remark = record?.remark || ''
-  editForm.classProperties = Array.isArray(record?.classProperties) ? [...record.classProperties] : []
   editModalOpen.value = true
+  editLoading.value = true
+  try {
+    const res = await getOneToOneByIdApi(record?.id)
+    if (res.code !== 200 || !res.result) {
+      throw new Error(res.message || '获取1对1详情失败')
+    }
+    const detail = res.result
+    editForm.id = detail.id || ''
+    editForm.studentId = detail.studentId || ''
+    editForm.lessonId = detail.lessonId || ''
+    editForm.studentName = detail.studentName || ''
+    editForm.lessonName = detail.lessonName || ''
+    editForm.name = detail.name || ''
+    editForm.teacherIds = Array.isArray(detail.teacherList)
+      ? detail.teacherList.map(item => Number(item.teacherId)).filter(Boolean)
+      : []
+    editForm.defaultTeacherId = detail.defaultTeacherId && detail.defaultTeacherId !== '0'
+      ? Number(detail.defaultTeacherId)
+      : undefined
+    editForm.classRoomId = detail.classroomId && detail.classroomId !== '0'
+      ? Number(detail.classroomId)
+      : undefined
+    editForm.classRoomName = detail.classroomName || ''
+    editForm.defaultStudentClassTime = Number(detail.defaultStudentClassTime || 1)
+    editForm.defaultTeacherClassTime = Number(detail.defaultTeacherClassTime || 0)
+    editForm.defaultClassTimeRecordMode = Number(detail.defaultClassTimeRecordMode || 1)
+    editForm.remark = detail.remark || ''
+    editForm.classProperties = Array.isArray(detail.classProperties) ? [...detail.classProperties] : []
+  } catch (error) {
+    console.error('get one to one detail failed', error)
+    messageService.error(error?.message || '获取1对1详情失败')
+    editModalOpen.value = false
+  } finally {
+    editLoading.value = false
+  }
 }
 
 function buildEditTeacherIds() {
@@ -968,12 +984,13 @@ onMounted(() => {
         </div>
       </template>
       <div class="stu-content scrollbar">
-        <a-form
-          layout="horizontal"
-          :label-col="{ span: 5 }"
-          :wrapper-col="{ span: 16 }"
-          label-align="right"
-        >
+        <a-spin :spinning="editLoading">
+          <a-form
+            layout="horizontal"
+            :label-col="{ span: 5 }"
+            :wrapper-col="{ span: 16 }"
+            label-align="right"
+          >
           <a-form-item label="学员名称">
             <span>{{ editForm.studentName || '-' }}</span>
           </a-form-item>
@@ -1060,7 +1077,8 @@ onMounted(() => {
               style="width: 100%"
             />
           </a-form-item>
-        </a-form>
+          </a-form>
+        </a-spin>
       </div>
     </a-modal>
 

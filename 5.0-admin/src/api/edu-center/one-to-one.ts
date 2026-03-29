@@ -71,6 +71,41 @@ export interface OneToOneItem {
   remark?: string
 }
 
+export interface OneToOneDetail {
+  id?: string
+  studentId?: string
+  schoolId?: string
+  name?: string
+  studentName?: string
+  studentAvatar?: string
+  studentGender?: number
+  lessonId?: string
+  lessonName?: string
+  lessonPrice?: number
+  classroomId?: string
+  classroomName?: string | null
+  tuitionAccountId?: string
+  classTime?: number
+  isScheduled?: boolean
+  classroomEnabled?: boolean | null
+  status?: number
+  classStudentStatus?: number
+  createdTime?: string
+  defaultStudentClassTime?: number
+  defaultTeacherClassTime?: number
+  defaultClassTimeRecordMode?: number
+  defaultTeacherId?: string
+  defaultTeacherName?: string
+  isGradeUpgrade?: boolean
+  remark?: string
+  teacherList?: OneToOneTeacher[]
+  tuitionAccount?: OneToOneTuitionAccount
+  createdStaffId?: string
+  createdStaffName?: string
+  classProperties?: Array<Record<string, any>>
+  defaultTeacherStatus?: number
+}
+
 export interface OneToOneListResult {
   total?: number
   studentCount?: number
@@ -139,6 +174,10 @@ export interface OneToOneUpdateParams {
 
 export function getOneToOneListApi(data: OneToOneListParams) {
   return usePost<OneToOneListResult>('/api/v1/one-to-ones/page', data)
+}
+
+export function getOneToOneByIdApi(id: string | number) {
+  return useGet<OneToOneDetail>('/api/v1/one-to-ones/detail', { id })
 }
 
 export function batchAssignOneToOneClassTeacherApi(data: OneToOneBatchAssignTeacherParams) {

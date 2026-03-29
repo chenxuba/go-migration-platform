@@ -301,7 +301,7 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			IFNULL(tc.advisor_id, 0),
 			IFNULL(advisor.nick_name, ''),
 			IFNULL(tc.remark, ''),
-			IFNULL(tc.scheduled_lesson_count, 0),
+			CASE WHEN IFNULL(tc.scheduled_lesson_count, 0) > 0 THEN 1 ELSE 0 END,
 			IFNULL(tc.finished_lesson_count, 0),
 			IFNULL(ts.total_tuition, 0),
 			IFNULL(ts.remain_tuition, 0),
@@ -517,6 +517,234 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 		StudentCount: studentCount,
 		List:         items,
 	}, nil
+}
+
+func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID int64) (model.OneToOneDetailVO, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT
+			tc.id,
+			tcs.student_id,
+			IFNULL(tc.name, ''),
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.avatar_url, ''),
+			IFNULL(s.stu_sex, 2),
+			tc.course_id,
+			IFNULL(c.name, ''),
+			IFNULL(icq.price, 0),
+			IFNULL(tc.class_room_id, 0),
+			tc.class_room_name,
+			tc.classroom_enabled,
+			IFNULL(ts.primary_tuition_account_id, IFNULL(tcs.primary_tuition_account_id, 0)),
+			IFNULL(tcs.class_time, 0),
+			CASE WHEN IFNULL(tc.scheduled_lesson_count, 0) > 0 THEN 1 ELSE 0 END,
+			IFNULL(tc.status, 1),
+			IFNULL(tcs.class_student_status, 1),
+			tc.create_time,
+			IFNULL(tcs.student_class_time, 0),
+			IFNULL(tcs.teacher_class_time, 0),
+			IFNULL(tcs.class_time_record_mode, 1),
+			IFNULL(tc.default_teacher_id, 0),
+			IFNULL(default_teacher.nick_name, ''),
+			IFNULL(ts.has_grade_upgrade, 0),
+			IFNULL(tc.remark, ''),
+			IFNULL(tc.create_id, 0),
+			IFNULL(created_staff.nick_name, ''),
+			IFNULL(default_teacher_rel.status, 0),
+			IFNULL(tcs.class_properties_json, '[]'),
+			IFNULL(ts.total_tuition, 0),
+			IFNULL(ts.remain_tuition, 0),
+			IFNULL(ts.total_quantity, 0),
+			IFNULL(ts.total_free_quantity, 0),
+			IFNULL(ts.remain_quantity, 0),
+			IFNULL(ts.remain_free_quantity, 0),
+			IFNULL(ts.lesson_charging_mode, 0),
+			IFNULL(ts.lesson_scope_model, 0),
+			IFNULL(ts.status, 0),
+			IFNULL(ts.enable_expire_time, 0),
+			ts.expire_time,
+			ts.change_status_time,
+			ts.suspended_time,
+			ts.class_ending_time,
+			IFNULL(ts.assigned_class, 0)
+		FROM teaching_class tc
+		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+		INNER JOIN inst_student s ON s.id = tcs.student_id AND s.del_flag = 0
+		INNER JOIN inst_course c ON c.id = tc.course_id AND c.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = tcs.quote_id AND icq.del_flag = 0
+		LEFT JOIN inst_user default_teacher ON default_teacher.id = tc.default_teacher_id
+		LEFT JOIN inst_user created_staff ON created_staff.id = tc.create_id
+		LEFT JOIN teaching_class_teacher default_teacher_rel
+			ON default_teacher_rel.teaching_class_id = tc.id
+			AND default_teacher_rel.inst_id = tc.inst_id
+			AND default_teacher_rel.teacher_id = tc.default_teacher_id
+			AND default_teacher_rel.del_flag = 0
+		LEFT JOIN (
+			SELECT
+				ta.order_course_detail_id,
+				MIN(ta.id) AS primary_tuition_account_id,
+				SUM(IFNULL(ta.total_tuition, 0)) AS total_tuition,
+				SUM(IFNULL(ta.remaining_tuition, 0)) AS remain_tuition,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.total_tuition, 0)
+					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+					ELSE 0
+				END) AS total_quantity,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
+					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
+					ELSE 0
+				END) AS total_free_quantity,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.remaining_tuition, 0)
+					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+					ELSE 0
+				END) AS remain_quantity,
+				SUM(CASE
+					WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
+					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+					ELSE 0
+				END) AS remain_free_quantity,
+				MAX(IFNULL(icq.lesson_model, 0)) AS lesson_charging_mode,
+				MAX(IFNULL(ic.course_type, 0)) AS lesson_scope_model,
+				MAX(IFNULL(ta.status, 0)) AS status,
+				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
+				MAX(ta.expire_time) AS expire_time,
+				MAX(ta.status_change_time) AS change_status_time,
+				MAX(ta.suspended_time) AS suspended_time,
+				MAX(ta.class_ending_time) AS class_ending_time,
+				IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
+				IFNULL(MAX(ta.has_grade_upgrade), 0) AS has_grade_upgrade
+			FROM tuition_account ta
+			LEFT JOIN inst_course_quotation icq ON icq.id = ta.quote_id AND icq.del_flag = 0
+			LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+			WHERE ta.inst_id = ? AND ta.del_flag = 0
+			GROUP BY ta.order_course_detail_id
+		) ts ON ts.order_course_detail_id = tcs.order_course_detail_id
+		WHERE tc.inst_id = ? AND tc.id = ? AND tc.class_type = ? AND tc.del_flag = 0
+		LIMIT 1
+	`, instID, instID, classID, model.TeachingClassTypeOneToOne)
+
+	var (
+		detail              model.OneToOneDetailVO
+		classIDValue        int64
+		studentID           int64
+		courseID            int64
+		classRoomID         int64
+		tuitionAccountID    int64
+		defaultTeacherID    int64
+		createdStaffID      int64
+		classroomName       sql.NullString
+		classroomEnabled    sql.NullBool
+		isScheduled         bool
+		expireTime          sql.NullTime
+		changeStatusTime    sql.NullTime
+		suspendedTime       sql.NullTime
+		classEndingTime     sql.NullTime
+		classPropertiesJSON string
+	)
+
+	if err := row.Scan(
+		&classIDValue,
+		&studentID,
+		&detail.Name,
+		&detail.StudentName,
+		&detail.StudentAvatar,
+		&detail.StudentGender,
+		&courseID,
+		&detail.LessonName,
+		&detail.LessonPrice,
+		&classRoomID,
+		&classroomName,
+		&classroomEnabled,
+		&tuitionAccountID,
+		&detail.ClassTime,
+		&isScheduled,
+		&detail.Status,
+		&detail.ClassStudentStatus,
+		&detail.CreatedTime,
+		&detail.DefaultStudentClassTime,
+		&detail.DefaultTeacherClassTime,
+		&detail.DefaultClassTimeRecordMode,
+		&defaultTeacherID,
+		&detail.DefaultTeacherName,
+		&detail.IsGradeUpgrade,
+		&detail.Remark,
+		&createdStaffID,
+		&detail.CreatedStaffName,
+		&detail.DefaultTeacherStatus,
+		&classPropertiesJSON,
+		&detail.TuitionAccount.TotalTuition,
+		&detail.TuitionAccount.RemainTuition,
+		&detail.TuitionAccount.TotalQuantity,
+		&detail.TuitionAccount.TotalFreeQuantity,
+		&detail.TuitionAccount.RemainQuantity,
+		&detail.TuitionAccount.RemainFreeQuantity,
+		&detail.TuitionAccount.LessonChargingMode,
+		&detail.TuitionAccount.LessonScopeModel,
+		&detail.TuitionAccount.Status,
+		&detail.TuitionAccount.EnableExpireTime,
+		&expireTime,
+		&changeStatusTime,
+		&suspendedTime,
+		&classEndingTime,
+		&detail.TuitionAccount.AssignedClass,
+	); err != nil {
+		return model.OneToOneDetailVO{}, err
+	}
+
+	detail.ID = strconv.FormatInt(classIDValue, 10)
+	detail.StudentID = strconv.FormatInt(studentID, 10)
+	detail.SchoolID = strconv.FormatInt(instID, 10)
+	detail.IsScheduled = isScheduled
+	detail.LessonID = strconv.FormatInt(courseID, 10)
+	detail.ClassroomID = strconv.FormatInt(classRoomID, 10)
+	detail.TuitionAccountID = strconv.FormatInt(tuitionAccountID, 10)
+	detail.DefaultTeacherID = strconv.FormatInt(defaultTeacherID, 10)
+	detail.CreatedStaffID = strconv.FormatInt(createdStaffID, 10)
+	if defaultTeacherID <= 0 {
+		detail.DefaultTeacherID = "0"
+	}
+	if classroomName.Valid {
+		value := classroomName.String
+		detail.ClassroomName = &value
+	}
+	if classroomEnabled.Valid {
+		value := classroomEnabled.Bool
+		detail.ClassroomEnabled = &value
+	}
+	if strings.TrimSpace(classPropertiesJSON) != "" {
+		_ = json.Unmarshal([]byte(classPropertiesJSON), &detail.ClassProperties)
+	}
+	if detail.ClassProperties == nil {
+		detail.ClassProperties = []model.OneToOnePropertyVO{}
+	}
+	if detail.DefaultTeacherStatus <= 0 && defaultTeacherID > 0 {
+		detail.DefaultTeacherStatus = 1
+	}
+	detail.TeacherList = []model.OneToOneTeacherVO{}
+	detail.TuitionAccount.ID = detail.TuitionAccountID
+	detail.TuitionAccount.StudentID = detail.StudentID
+	detail.TuitionAccount.LessonID = detail.LessonID
+	detail.TuitionAccount.ProductName = detail.LessonName
+	detail.TuitionAccount.LessonType = model.TeachingClassTypeOneToOne
+	detail.TuitionAccount.LastSuspendedTime = zeroTimeFromNull(suspendedTime)
+	detail.TuitionAccount.ExpireTime = zeroTimeFromNull(expireTime)
+	detail.TuitionAccount.ChangeStatusTime = zeroTimeFromNull(changeStatusTime)
+	if suspendedTime.Valid {
+		t := suspendedTime.Time
+		detail.TuitionAccount.SuspendedTime = &t
+	}
+	if classEndingTime.Valid {
+		t := classEndingTime.Time
+		detail.TuitionAccount.ClassEndingTime = &t
+	}
+
+	teacherMap, err := repo.listTeachingClassTeachers(ctx, instID, []int64{classIDValue})
+	if err != nil {
+		return model.OneToOneDetailVO{}, err
+	}
+	detail.TeacherList = teacherMap[classIDValue]
+	return detail, nil
 }
 
 func (repo *Repository) UpdateOneToOne(ctx context.Context, instID, operatorID int64, dto model.OneToOneUpdateDTO) error {

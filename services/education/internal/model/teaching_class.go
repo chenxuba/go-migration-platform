@@ -126,6 +126,41 @@ type OneToOneListResultVO struct {
 	List         []OneToOneItemVO `json:"list"`
 }
 
+type OneToOneDetailVO struct {
+	ID                         string                   `json:"id"`
+	StudentID                  string                   `json:"studentId"`
+	SchoolID                   string                   `json:"schoolId"`
+	Name                       string                   `json:"name"`
+	StudentName                string                   `json:"studentName"`
+	StudentAvatar              string                   `json:"studentAvatar"`
+	StudentGender              int                      `json:"studentGender"`
+	LessonID                   string                   `json:"lessonId"`
+	LessonName                 string                   `json:"lessonName"`
+	LessonPrice                float64                  `json:"lessonPrice"`
+	ClassroomID                string                   `json:"classroomId"`
+	ClassroomName              *string                  `json:"classroomName"`
+	TuitionAccountID           string                   `json:"tuitionAccountId"`
+	ClassTime                  float64                  `json:"classTime"`
+	IsScheduled                bool                     `json:"isScheduled"`
+	ClassroomEnabled           *bool                    `json:"classroomEnabled"`
+	Status                     int                      `json:"status"`
+	ClassStudentStatus         int                      `json:"classStudentStatus"`
+	CreatedTime                time.Time                `json:"createdTime"`
+	DefaultStudentClassTime    float64                  `json:"defaultStudentClassTime"`
+	DefaultTeacherClassTime    float64                  `json:"defaultTeacherClassTime"`
+	DefaultClassTimeRecordMode int                      `json:"defaultClassTimeRecordMode"`
+	DefaultTeacherID           string                   `json:"defaultTeacherId"`
+	DefaultTeacherName         string                   `json:"defaultTeacherName"`
+	IsGradeUpgrade             bool                     `json:"isGradeUpgrade"`
+	Remark                     string                   `json:"remark"`
+	TeacherList                []OneToOneTeacherVO      `json:"teacherList"`
+	TuitionAccount             OneToOneTuitionAccountVO `json:"tuitionAccount"`
+	CreatedStaffID             string                   `json:"createdStaffId"`
+	CreatedStaffName           string                   `json:"createdStaffName"`
+	ClassProperties            []OneToOnePropertyVO     `json:"classProperties"`
+	DefaultTeacherStatus       int                      `json:"defaultTeacherStatus"`
+}
+
 type OneToOneBatchAssignTeacherDTO struct {
 	IDs            []string `json:"ids"`
 	ClassTeacherID string   `json:"classTeacherId"`

@@ -180,6 +180,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/orders/pay", handler.payOrder)
 	mux.HandleFunc("/api/v1/orders/registration-list", handler.registrationListPage)
 	mux.HandleFunc("/api/v1/one-to-ones/page", handler.oneToOnePage)
+	mux.HandleFunc("/api/v1/one-to-ones/detail", handler.oneToOneDetail)
 	mux.HandleFunc("/api/v1/one-to-ones/check-name", handler.checkOneToOneName)
 	mux.HandleFunc("/api/v1/one-to-ones/update", handler.updateOneToOne)
 	mux.HandleFunc("/api/v1/one-to-ones/batch-assign-class-teacher", handler.batchAssignOneToOneClassTeacher)

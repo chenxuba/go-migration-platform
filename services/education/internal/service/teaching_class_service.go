@@ -21,6 +21,21 @@ func (svc *Service) GetOneToOneListPage(userID int64, query model.OneToOneListQu
 	return svc.repo.PageOneToOneList(context.Background(), instID, query)
 }
 
+func (svc *Service) GetOneToOneDetail(userID int64, id string) (model.OneToOneDetailVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.OneToOneDetailVO{}, errors.New("no institution context")
+		}
+		return model.OneToOneDetailVO{}, err
+	}
+	classID, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
+	if err != nil || classID <= 0 {
+		return model.OneToOneDetailVO{}, errors.New("1对1ID不能为空")
+	}
+	return svc.repo.GetOneToOneDetail(context.Background(), instID, classID)
+}
+
 func (svc *Service) CheckOneToOneName(userID int64, dto model.OneToOneCheckNameDTO) (bool, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
