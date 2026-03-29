@@ -262,7 +262,10 @@ defineExpose({
         <a-space class="flex flex-wrap">
         <div v-for="(item, index) in tuitionAccountList" :key="item.id || index" class=" bg-white w-92.5 pb-2 rounded-2">
           <div class="t flex justify-between p4 pb0 flex-items-center">
-            <span class="text-4 text-#222 font-500 flex-1 line-clamp-1 mr-10">{{ item.lessonName || '-' }}</span>
+            <span
+              class="text-4 text-#222 font-500 flex-1 line-clamp-1 mr-10"
+              :class="{ 'course-ended-faded': isTuitionAccountCourseEnded(item) }"
+            >{{ item.lessonName || '-' }}</span>
           <a-dropdown placement="bottom" :arrow="{ pointAtCenter: true }">
             <a class="ant-dropdown-link rounded-10 hover:bg-#e6f0ff w-24px h-24px" @click.prevent>
               <img
@@ -424,7 +427,7 @@ defineExpose({
         </div>
         <div class="course-card-body">
           <div class="course-card-main min-w-0 flex-1">
-            <div class="tag px3 mt1">
+            <div class="tag px3 mt1" :class="{ 'course-ended-faded': isTuitionAccountCourseEnded(item) }">
               <a-space>
                 <span v-if="item.lessonScope" class="bg-#06f text-#fff text-3 rounded-10 px3 py1">{{ getLessonScopeText(item.lessonScope) }}</span>
                 <span v-if="item.lessonType" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">{{ getLessonTypeText(item.lessonType) }}</span>
@@ -583,5 +586,9 @@ defineExpose({
   height: 88px;
   object-fit: contain;
   opacity: 0.95;
+}
+
+.course-ended-faded {
+  opacity: 0.4;
 }
 </style>
