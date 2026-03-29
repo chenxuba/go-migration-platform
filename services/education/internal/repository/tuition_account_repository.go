@@ -333,6 +333,7 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 		SELECT
 			CAST(ic.id AS CHAR),
 			IFNULL(ic.name, ''),
+			IFNULL(MAX(ic.course_type), 0),
 			MAX(IFNULL(ta.assigned_class, 0)),
 			MAX(CASE WHEN EXISTS (
 				SELECT 1
@@ -378,12 +379,14 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 	for rows.Next() {
 		var (
 			item         model.OneToOneLessonOptionVO
+			courseType   int64
 			maxAssigned  int64
 			hasOneToOneO int64
 		)
-		if err := rows.Scan(&item.ID, &item.Name, &maxAssigned, &hasOneToOneO); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &courseType, &maxAssigned, &hasOneToOneO); err != nil {
 			return nil, err
 		}
+		item.CourseType = int(courseType)
 		item.AlreadyEnrolled = maxAssigned != 0 || hasOneToOneO != 0
 		out = append(out, item)
 	}
