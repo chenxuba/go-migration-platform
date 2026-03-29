@@ -279,28 +279,45 @@ function blockKey(block, idx) {
 
         <a-descriptions :column="3" size="small">
           <a-descriptions-item label="当前状态">
-            {{ classStudentStatusLabel(block.classStudentStatus) }}
+            <span class="text-#666666">
+              {{ classStudentStatusLabel(block.classStudentStatus) }}
+            </span>
           </a-descriptions-item>
           <a-descriptions-item label="报读数量">
-            {{ purchaseQuantityTextOf(block) }}
+            <span class="text-#666666">
+              {{ purchaseQuantityTextOf(block) }}
+            </span>
           </a-descriptions-item>
           <a-descriptions-item label="有效期至">
-            {{ expireTextOf(block) }}
+            <span class="text-#666666">
+              {{ expireTextOf(block) }}
+            </span>
           </a-descriptions-item>
           <a-descriptions-item label="已用数量">
-            {{ usedQuantityTextOf(block) }}
+            <span class="text-#666666">
+              {{ usedQuantityTextOf(block) }}
+            </span>
           </a-descriptions-item>
           <a-descriptions-item label="剩余数量">
-            {{ remainQuantityTextOf(block) }}
+            <span class="text-#666666">
+              {{ remainQuantityTextOf(block) }}
+            </span>
           </a-descriptions-item>
           <a-descriptions-item label="总学费">
-            {{ formatMoney(block.tuitionAccount?.totalTuition) }}
+            <span class="text-#666666">
+              {{ formatMoney(block.tuitionAccount?.totalTuition) }}
+            </span>
           </a-descriptions-item>
           <a-descriptions-item label="已用学费金额">
-            {{ formatMoney(calcUsedTuition(block)) }}
+            <!-- 颜色#666666 -->
+            <span class="text-#666666">
+              {{ formatMoney(calcUsedTuition(block)) }}
+            </span>
           </a-descriptions-item>
           <a-descriptions-item label="剩余学费金额">
-            {{ formatMoney(block.tuitionAccount?.remainTuition) }}
+            <span class="text-#666666">
+              {{ formatMoney(block.tuitionAccount?.remainTuition) }}
+            </span>
           </a-descriptions-item>
         </a-descriptions>
       </a-space>
