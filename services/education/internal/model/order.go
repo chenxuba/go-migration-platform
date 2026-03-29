@@ -456,7 +456,6 @@ type RegistrationListItem struct {
 	TransferredTuition        float64                   `json:"transferredTuition"`
 	PaidRemaining             float64                   `json:"paidRemaining"`
 	HasGradeUpgrade           bool                      `json:"hasGradeUpgrade"`
-	LessonScope               *int                      `json:"lessonScope,omitempty"`
 	LastestTeachingRecordTime *time.Time                `json:"lastestTeachingRecordTime,omitempty"`
 	ValidDate                 *time.Time                `json:"validDate,omitempty"`
 	EndDate                   *time.Time                `json:"endDate,omitempty"`

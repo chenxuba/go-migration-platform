@@ -9,31 +9,6 @@ import { useTableColumns } from '@/composables/useTableColumns'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import messageService from '~@/utils/messageService'
 
-/**
- * 与创建课程一致：1 非通用；3 部分；4 全部课程；5 全部班课；6 全部1对1；
- * 2 为历史数据，需结合 teachMethod 区分班课/1对1。
- */
-function formatCourseGeneralTypeLabel(record) {
-  const ct = Number(record?.courseType)
-  const tm = Number(record?.teachMethod)
-  if (ct === 1)
-    return '不是通用课'
-  if (ct === 3)
-    return '部分课程通用'
-  if (ct === 4)
-    return '全部课程通用'
-  if (ct === 5)
-    return '全部班课通用'
-  if (ct === 6)
-    return '全部1对1通用'
-  if (ct === 2) {
-    if (tm === 2)
-      return '全部1对1通用'
-    return '全部班课通用'
-  }
-  return '-'
-}
-
 const displayArray = ref(['courseCategory', 'teachingMethod', 'billingMode', 'saleStatus', 'hasTrialPrice', 'isMicroSchoolSale', 'isMicroSchoolDisplay', 'courseAttribute'])
 
 const assignSalesVisible = ref(false)
@@ -55,12 +30,6 @@ const allColumns = ref([
     key: 'categoryName',
     dataIndex: 'categoryName',
     width: 120,
-  },
-  {
-    title: '是否是通用课',
-    key: 'courseType',
-    dataIndex: 'courseType',
-    width: 140,
   },
   {
     title: '授课方式',
@@ -227,7 +196,7 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
     storageKey: 'course-list-record', // 本地存储键名
     allColumns, // 原始列配置
     excludeKeys: ['action'], // 需要排除的列键
-    defaultSelectedKeys: ['name', 'categoryName', 'courseType', 'teachingMethod', 'chargingMethod', 'saleStatus', 'isShowMicoSchool', 'hasExperiencePrice', 'onlineSale', 'quoteCount', 'saleVolume', 'updateTime'],
+    defaultSelectedKeys: ['name', 'categoryName', 'teachingMethod', 'chargingMethod', 'saleStatus', 'isShowMicoSchool', 'hasExperiencePrice', 'onlineSale', 'quoteCount', 'saleVolume', 'updateTime'],
   })
 
 const rowSelection = computed(() => ({
@@ -246,7 +215,6 @@ const loading = ref(false)
 const queryState = ref({
   'delFlag': false,
   'courseCategory': undefined,
-  'commonCourse': undefined,
   'teachMethod': undefined,
   'chargeTypes': undefined,
   'saleStatus': undefined,
@@ -748,9 +716,6 @@ const handleSearchInput = debounce((value, id, type) => {
             </template>
             <template v-if="column.key === 'categoryName'">
               {{ record.categoryName || '-' }}
-            </template>
-            <template v-if="column.key === 'courseType'">
-              {{ formatCourseGeneralTypeLabel(record) }}
             </template>
             <template v-if="column.key === 'teachingMethod'">
               <span v-if="record.teachMethod === 1">班级授课</span>

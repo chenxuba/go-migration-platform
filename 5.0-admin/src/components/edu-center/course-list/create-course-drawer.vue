@@ -5,7 +5,6 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import * as qiniu from 'qiniu-js'
 import DescriptionBlockEditor from './description-block-editor.vue'
-import SelectCourseRangeModal from './selectCourseRangeModal.vue'
 import MicroSchoolSettingsFields from './micro-school-settings-fields.vue'
 import CustomTitle from '@/components/common/custom-title.vue'
 import { getCourseCategoryPageApi, getCourseDetailApi, getCoursePropertyOptionsApi, getCoursePageApi } from '~@/api/edu-center/course-list'
@@ -267,8 +266,6 @@ const formState = ref({
   courseProductProperties: [], // 课程属性  学季/学年/年级/班型/课程属性
   subjectIds: [], // 科目
   saleStatus: true, // 售卖状态
-  courseType: 1, // lessonScope：1 非通用；3 部分；4 全部课程；5 全部班课；6 全部1对1；2 历史兼容
-  courseScope: [], // 课程范围
   teachMethod: 1, // 授课方式 1 班级授课 2 一对一授课
   type: 1, // 课程类型
   productSku: [
@@ -531,10 +528,7 @@ function resetForm() {
   formState.value.courseProductProperties = []
   formState.value.subjectIds = []
   formState.value.saleStatus = true
-  formState.value.courseType = 1
-  formState.value.courseScope = []
   formState.value.teachMethod = 1
-  allCommonTypeSelection.value = 'all-course'
   formState.value.type = 1
   formState.value.productSku = []
 
@@ -575,9 +569,6 @@ function resetForm() {
     total: 0,
     hasMore: true
   }
-
-  // 重置选中的课程
-  selectedCourses.value = []
 
   // 强制更新组件以确保视图刷新
   forceUpdateKey.value++
@@ -632,36 +623,8 @@ async function getCourseDetail(id) {
 
       formState.value.courseCategory = courseData.courseCategory
       formState.value.saleStatus = courseData.saleStatus
-      const detailCt = courseData.courseType || 1
-      formState.value.courseType = detailCt
       formState.value.teachMethod = courseData.teachMethod || 1
-      if (detailCt === 4)
-        allCommonTypeSelection.value = 'all-course'
-      else if (detailCt === 5)
-        allCommonTypeSelection.value = 'all-class'
-      else if (detailCt === 6)
-        allCommonTypeSelection.value = 'all-1v1'
-      else if (detailCt === 2)
-        allCommonTypeSelection.value = (courseData.teachMethod || 1) === 2 ? 'all-1v1' : 'all-class'
-      else
-        allCommonTypeSelection.value = 'all-course'
       formState.value.type = courseData.type || 1
-
-      // 回显课程范围选择（使用 courseScopeInfo 字段进行回显）
-      if (courseData.courseScopeInfo && courseData.courseScopeInfo.length > 0) {
-        // 使用 courseScopeInfo 字段，直接包含了课程的 id 和 name 信息
-        selectedCourses.value = courseData.courseScopeInfo.map(course => ({
-          id: course.id,
-          key: course.id.toString(),
-          title: course.name,
-          name: course.name,
-        }))
-        // 同时设置 courseScope 字段为课程ID数组，用于编辑已选
-        formState.value.courseScope = courseData.courseScopeInfo.map(course => course.id)
-      } else {
-        selectedCourses.value = []
-        formState.value.courseScope = []
-      }
 
       // 回显课程属性
       if (courseData.courseProductProperties && Array.isArray(courseData.courseProductProperties)) {
@@ -1004,88 +967,11 @@ const handleSubmit = debounce(_handleSubmit, 500, {
   trailing: false,
 })
 
-const openModal = ref(false)
-// 选择课程弹出modal
-const selectCourseRangeModalOpen = ref(false)
-// 已选择的课程
-const selectedCourses = ref([])
-const allCommonTypeSelection = ref('all-course')
-
-/** 编辑课程时授课方式、是否通用课程不可改（与创建/复制区分） */
+/** 编辑课程时授课方式不可改（与创建/复制区分） */
 const isEditCourseMode = computed(() => props.modalType === 'edit')
 const teachMethodReadonlyLabel = computed(() =>
   Number(formState.value.teachMethod) === 2 ? '1v1授课' : '班级授课',
 )
-
-// 计算课程名称字符串
-const courseNames = computed(() => {
-  if (selectedCourses.value.length === 0) return ''
-
-  // 获取课程名称，优先使用title，其次name
-  const names = selectedCourses.value.map(course => course.title || course.name || '未知课程')
-
-  if (names.length <= 3) {
-    return names.join('、')
-  } else {
-    const firstThree = names.slice(0, 3).join('、')
-    return `${firstThree}等${names.length}门课程`
-  }
-})
-
-const isCommonCourse = computed({
-  get: () => formState.value.courseType !== 1,
-  set(value) {
-    if (!value) {
-      formState.value.courseType = 1
-      return
-    }
-    if (formState.value.courseType === 1) {
-      formState.value.courseType = allCommonTypeSelection.value === 'all-course'
-        ? 4
-        : allCommonTypeSelection.value === 'all-class'
-          ? 5
-          : 6
-    }
-  },
-})
-
-const commonCourseMode = computed({
-  get: () => formState.value.courseType === 3 ? 'partial' : 'all',
-  set(value) {
-    if (value === 'partial') {
-      formState.value.courseType = 3
-    } else {
-      formState.value.courseType = allCommonTypeSelection.value === 'all-course'
-        ? 4
-        : allCommonTypeSelection.value === 'all-class'
-          ? 5
-          : 6
-    }
-  },
-})
-
-// 全部课程→4；全部班课→5；全部1对1→6（与授课方式 teachMethod / 提交 lessonType 无关）
-watch(allCommonTypeSelection, (val) => {
-  const ct = formState.value.courseType
-  if (ct !== 2 && ct !== 4 && ct !== 5 && ct !== 6)
-    return
-
-  const next = val === 'all-course' ? 4 : val === 'all-class' ? 5 : 6
-  if (formState.value.courseType !== next)
-    formState.value.courseType = next
-})
-
-function selectCourseRange(index) {
-  selectCourseRangeModalOpen.value = true
-}
-
-// 处理课程确认选择
-function handleCourseConfirm(courses) {
-  selectedCourses.value = [...courses]
-  // 将选中的课程ID存储到表单数据中
-  formState.value.courseScope = courses.map(course => course.id)
-  console.log('父组件接收到选中的课程:', courses)
-}
 
 function handlePropertyChange(propertyId, value, propertyName) {
   if (value) {
@@ -1173,8 +1059,6 @@ function buildCourseSubmitPayload() {
       remark: item.remark,
     })),
     lessonType: Number(formState.value.teachMethod) || 1,
-    lessonScope: formState.value.courseType,
-    allowedLessonIds: formState.value.courseScope,
     subjectIds: formState.value.subjectIds,
     lessonProductProperties,
   }
@@ -1261,69 +1145,6 @@ function buildCourseSubmitPayload() {
                       </a-radio>
                     </a-radio-group>
                     <span class="course-form-bind-debug">lessonType: {{ formState.teachMethod }}</span>
-                  </div>
-                </a-form-item>
-
-                <a-form-item label="是否通用课程:" name="isCommonCourse">
-                  <div class="course-form-row-with-debug">
-                    <a-radio-group
-                      v-model:value="isCommonCourse"
-                      class="custom-radio custom-radio2"
-                      :disabled="isEditCourseMode"
-                    >
-                      <a-radio :value="false">
-                        否
-                      </a-radio>
-                      <a-radio :value="true">
-                        是
-                      </a-radio>
-                    </a-radio-group>
-                    <span class="course-form-bind-debug">提交 lessonScope: {{ formState.courseType }}（1=否；是时 3/4/5/6 见下方选项）</span>
-                  </div>
-                </a-form-item>
-
-                <a-form-item v-if="isCommonCourse" label="通用课程类型:" name="commonCourseMode">
-                  <div class="course-form-row-with-debug">
-                    <a-radio-group v-model:value="commonCourseMode" class="custom-radio custom-radio2">
-                      <a-radio value="all">
-                        全部通用
-                      </a-radio>
-                      <a-radio value="partial">
-                        部分通用
-                      </a-radio>
-                    </a-radio-group>
-                    <span class="course-form-bind-debug">commonCourseMode: {{ commonCourseMode }}</span>
-                  </div>
-                </a-form-item>
-
-                <a-form-item v-if="isCommonCourse && commonCourseMode === 'all'" label="全部通用类型:" name="allCommonType">
-                  <div class="course-form-row-with-debug">
-                    <a-radio-group v-model:value="allCommonTypeSelection" class="custom-radio common-type-radio-group">
-                      <a-radio value="all-course">
-                        全部课程
-                      </a-radio>
-                      <a-radio value="all-class">
-                        全部班课
-                      </a-radio>
-                      <a-radio value="all-1v1">
-                        全部1对1
-                      </a-radio>
-                    </a-radio-group>
-                    <span class="course-form-bind-debug">allCommonType: {{ allCommonTypeSelection }}</span>
-                  </div>
-                </a-form-item>
-
-                <a-form-item v-if="commonCourseMode === 'partial'" label="课程范围:"
-                  name="courseScope" :rules="[{ required: true, message: '请选择课程范围' }]">
-                  <div class="course-range-container">
-                    <a-button type="primary" ghost class="w-full sm:w-auto"
-                      @click="selectCourseRange(formState.teachMethod)">
-                      {{ selectedCourses.length === 0 ? '选择课程' : '编辑已选' }}
-                    </a-button>
-
-                    <div v-if="selectedCourses.length > 0" class="selected-courses-display">
-                      已选择{{ selectedCourses.length }}门：{{ courseNames }}
-                    </div>
                   </div>
                 </a-form-item>
 
@@ -1654,8 +1475,6 @@ function buildCourseSubmitPayload() {
         </div>
       </template>
     </a-drawer>
-    <SelectCourseRangeModal v-model:open="selectCourseRangeModalOpen" :selected-courses="selectedCourses"
-      @confirm="handleCourseConfirm" />
     <!-- 微校设置modal -->
     <a-modal v-model:open="microSchoolSettingModalOpen" centered wrap-class-name="microSchoolSettingModal"
       :keyboard="false" :closable="false" :mask-closable="false" :width="800" :body-style="{ padding: 0 }"
@@ -1797,32 +1616,6 @@ function buildCourseSubmitPayload() {
 .setting-form {
   :deep(.ant-form-item) {
     margin-bottom: 10px;
-  }
-}
-
-
-
-.common-type-radio-group {
-  display: flex;
-  gap: 8px 24px;
-  flex-wrap: wrap;
-
-  :deep(.ant-radio-wrapper) {
-    min-width: 120px;
-  }
-}
-
-// 课程范围选择样式
-.course-range-container {
-  .selected-courses-display {
-    padding: 8px 12px;
-    background: #e6f7ff;
-    border: 1px solid #91d5ff;
-    border-radius: 4px;
-    color: #002766;
-    font-size: 14px;
-    line-height: 1.5;
-    margin-top: 8px;
   }
 }
 

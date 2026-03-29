@@ -14,7 +14,33 @@ func ensureCourseSchema(ctx context.Context, db *sql.DB) error {
 	if err := ensureLongTextColumnType(ctx, db, "inst_course_detail", "description"); err != nil {
 		return err
 	}
+	// 下线「通用课」：移除 inst_course 上 lessonScope / 部分通用范围存储列
+	if err := dropColumnIfExists(ctx, db, "inst_course", "course_type"); err != nil {
+		return err
+	}
+	if err := dropColumnIfExists(ctx, db, "inst_course", "course_scope"); err != nil {
+		return err
+	}
 	return nil
+}
+
+func dropColumnIfExists(ctx context.Context, db *sql.DB, table, column string) error {
+	var n int
+	err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = ?
+		  AND COLUMN_NAME = ?
+	`, table, column).Scan(&n)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return nil
+	}
+	_, err = db.ExecContext(ctx, "ALTER TABLE `"+table+"` DROP COLUMN `"+column+"`")
+	return err
 }
 
 func ensureLongTextColumnType(ctx context.Context, db *sql.DB, tableName, columnName string) error {

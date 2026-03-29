@@ -33,7 +33,6 @@ type TuitionAccountReadingItem struct {
 	Status             *int       `json:"status,omitempty"`
 	ChangeStatusTime   *time.Time `json:"changeStatusTime,omitempty"`
 	LessonChargingMode *int       `json:"lessonChargingMode,omitempty"`
-	LessonScope        *int       `json:"lessonScope,omitempty"`
 	PlanSuspendTime    *time.Time `json:"planSuspendTime,omitempty"`
 	PlanResumeTime     *time.Time `json:"planResumeTime,omitempty"`
 	HasGradeUpgrade    bool       `json:"hasGradeUpgrade"`

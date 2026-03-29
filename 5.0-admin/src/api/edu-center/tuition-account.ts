@@ -20,7 +20,6 @@ export interface TuitionAccountReadingItem {
   status?: number
   changeStatusTime?: string
   lessonChargingMode?: number
-  lessonScope?: number
   planSuspendTime?: string
   planResumeTime?: string
   hasGradeUpgrade?: boolean

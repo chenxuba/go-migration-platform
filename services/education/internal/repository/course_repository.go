@@ -34,10 +34,10 @@ func (repo *Repository) CreateCourse(ctx context.Context, instID, operatorID int
 	saleStatus := input.SaleStatus != nil && *input.SaleStatus
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO inst_course (
-			uuid, version, inst_id, type, name, course_category, course_attribute, course_type, sale_status,
-			teach_method, course_scope, sale_volume, subject_ids, create_id, create_time, update_id, update_time, del_flag
+			uuid, version, inst_id, type, name, course_category, course_attribute, sale_status,
+			teach_method, sale_volume, subject_ids, create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NOW(), ?, NOW(), 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NOW(), ?, NOW(), 0
 		)
 	`,
 		instID,
@@ -45,10 +45,8 @@ func (repo *Repository) CreateCourse(ctx context.Context, instID, operatorID int
 		strings.TrimSpace(input.Name),
 		input.CourseCategory,
 		input.CourseAttribute,
-		input.CourseType,
 		saleStatus,
 		input.TeachMethod,
-		joinInt64CSV(input.CourseScope),
 		joinInt64CSV(input.SubjectIDs),
 		operatorID,
 		operatorID,
@@ -86,18 +84,16 @@ func (repo *Repository) UpdateCourse(ctx context.Context, instID, operatorID int
 	saleStatus := input.SaleStatus != nil && *input.SaleStatus
 	_, err = tx.ExecContext(ctx, `
 		UPDATE inst_course
-		SET type = ?, name = ?, course_category = ?, course_attribute = ?, course_type = ?, sale_status = ?,
-		    teach_method = ?, course_scope = ?, subject_ids = ?, update_id = ?, update_time = NOW()
+		SET type = ?, name = ?, course_category = ?, course_attribute = ?, sale_status = ?,
+		    teach_method = ?, subject_ids = ?, update_id = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`,
 		input.Type,
 		strings.TrimSpace(input.Name),
 		input.CourseCategory,
 		input.CourseAttribute,
-		input.CourseType,
 		saleStatus,
 		input.TeachMethod,
-		joinInt64CSV(input.CourseScope),
 		joinInt64CSV(input.SubjectIDs),
 		operatorID,
 		*input.ID,
@@ -266,14 +262,6 @@ func (repo *Repository) PageCourses(ctx context.Context, instID int64, query mod
 		filters = append(filters, "EXISTS (SELECT 1 FROM inst_course_property_result cpr INNER JOIN inst_course_property cp ON cp.id = cpr.course_property_id AND cp.del_flag = 0 WHERE cpr.course_id = c.id AND cpr.del_flag = 0 AND cp.inst_id = c.inst_id AND cp.name = ? AND cpr.course_property_value = ?)")
 		args = append(args, "学年", *query.QueryModel.SchoolYear)
 	}
-	if len(query.QueryModel.CommonCourse) > 0 {
-		placeholders := make([]string, 0, len(query.QueryModel.CommonCourse))
-		for _, item := range query.QueryModel.CommonCourse {
-			placeholders = append(placeholders, "?")
-			args = append(args, item)
-		}
-		filters = append(filters, "c.course_type IN ("+strings.Join(placeholders, ",")+")")
-	}
 	if query.QueryModel.TeachMethod != nil {
 		filters = append(filters, "c.teach_method = ?")
 		args = append(args, *query.QueryModel.TeachMethod)
@@ -365,7 +353,7 @@ func (repo *Repository) PageCourses(ctx context.Context, instID int64, query mod
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT c.id, IFNULL(c.uuid, ''), IFNULL(c.version, 0), IFNULL(c.name, ''), c.course_category, c.course_attribute, c.type, IFNULL(ca.name, ''),
-		       c.course_type, c.teach_method, c.sale_status, IFNULL(c.sale_volume, 0), IFNULL(cd.is_show_mico_school, 0), c.update_time
+		       c.teach_method, c.sale_status, IFNULL(c.sale_volume, 0), IFNULL(cd.is_show_mico_school, 0), c.update_time
 		FROM inst_course c
 		LEFT JOIN inst_course_category ca ON ca.id = c.course_category
 		LEFT JOIN inst_course_detail cd ON cd.course_id = c.id
@@ -380,7 +368,7 @@ func (repo *Repository) PageCourses(ctx context.Context, instID int64, query mod
 	courseIDs := make([]int64, 0, size)
 	for rows.Next() {
 		var item model.Course
-		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.Name, &item.CourseCategory, &item.CourseAttribute, &item.Type, &item.CategoryName, &item.CourseType, &item.TeachMethod, &item.SaleStatus, &item.SaleVolume, &item.IsShowMicoSchool, &item.UpdateTime); err != nil {
+		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.Name, &item.CourseCategory, &item.CourseAttribute, &item.Type, &item.CategoryName, &item.TeachMethod, &item.SaleStatus, &item.SaleVolume, &item.IsShowMicoSchool, &item.UpdateTime); err != nil {
 			return model.PageResult[model.Course]{}, err
 		}
 		items = append(items, item)
@@ -1817,27 +1805,19 @@ func parseCSVInt64(raw string) []int64 {
 
 func (repo *Repository) GetCourseDetail(ctx context.Context, instID, courseID int64) (model.CourseDetail, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(name, ''), course_category, course_attribute, type, course_type, teach_method, sale_status,
-		       IFNULL(course_scope, ''), IFNULL(subject_ids, '')
+		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(name, ''), course_category, course_attribute, type, teach_method, sale_status,
+		       IFNULL(subject_ids, '')
 		FROM inst_course
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 		LIMIT 1
 	`, courseID, instID)
 
 	var detail model.CourseDetail
-	var courseScopeRaw string
 	var subjectIDsRaw string
-	if err := row.Scan(&detail.ID, &detail.UUID, &detail.Version, &detail.Name, &detail.CourseCategory, &detail.CourseAttribute, &detail.Type, &detail.CourseType, &detail.TeachMethod, &detail.SaleStatus, &courseScopeRaw, &subjectIDsRaw); err != nil {
+	if err := row.Scan(&detail.ID, &detail.UUID, &detail.Version, &detail.Name, &detail.CourseCategory, &detail.CourseAttribute, &detail.Type, &detail.TeachMethod, &detail.SaleStatus, &subjectIDsRaw); err != nil {
 		return model.CourseDetail{}, err
 	}
-	detail.CourseScope = parseCSVInt64(courseScopeRaw)
 	detail.SubjectIDs = parseCSVInt64(subjectIDsRaw)
-	if len(detail.CourseScope) > 0 {
-		scopeInfos, err := repo.getCourseEntryInfos(ctx, instID, detail.CourseScope)
-		if err == nil {
-			detail.CourseScopeInfo = scopeInfos
-		}
-	}
 
 	detailRow := repo.db.QueryRowContext(ctx, `
 		SELECT IFNULL(title, ''), IFNULL(images, ''), IFNULL(description, ''), IFNULL(is_show_mico_school, 0),
@@ -1965,7 +1945,7 @@ func (repo *Repository) PageProcessContent(ctx context.Context, instID int64, qu
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT c.id, IFNULL(c.uuid, ''), IFNULL(c.version, 0), IFNULL(c.name, ''), c.course_category, IFNULL(ca.name, ''),
-		       c.course_type, c.teach_method, c.sale_status
+		       c.teach_method, c.sale_status
 		FROM inst_course c
 		LEFT JOIN inst_course_category ca ON ca.id = c.course_category
 		LEFT JOIN inst_course_detail cd ON cd.course_id = c.id
@@ -1981,7 +1961,7 @@ func (repo *Repository) PageProcessContent(ctx context.Context, instID int64, qu
 	courseIDs := make([]int64, 0, size)
 	for rows.Next() {
 		var item model.ProcessContentQueryVO
-		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.Name, &item.CourseCategory, &item.CategoryName, &item.CourseType, &item.TeachMethod, &item.SaleStatus); err != nil {
+		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.Name, &item.CourseCategory, &item.CategoryName, &item.TeachMethod, &item.SaleStatus); err != nil {
 			return model.PageResult[model.ProcessContentQueryVO]{}, err
 		}
 		items = append(items, item)

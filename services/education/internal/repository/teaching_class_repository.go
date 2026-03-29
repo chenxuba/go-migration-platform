@@ -357,7 +357,6 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			IFNULL(ts.remain_quantity, 0),
 			IFNULL(ts.remain_free_quantity, 0),
 			IFNULL(ts.lesson_charging_mode, 0),
-			IFNULL(ts.lesson_scope_model, 0),
 			IFNULL(ts.status, 0),
 			IFNULL(ts.enable_expire_time, 0),
 			ts.expire_time,
@@ -404,7 +403,6 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 						ELSE 0
 					END
 				) AS lesson_charging_mode,
-				MAX(IFNULL(ic.course_type, 0)) AS lesson_scope_model,
 				MAX(IFNULL(ta.status, 0)) AS status,
 				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
 				MAX(ta.expire_time) AS expire_time,
@@ -490,7 +488,6 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			&item.TuitionAccount.RemainQuantity,
 			&item.TuitionAccount.RemainFreeQuantity,
 			&item.TuitionAccount.LessonChargingMode,
-			&item.TuitionAccount.LessonScopeModel,
 			&item.TuitionAccount.Status,
 			&item.TuitionAccount.EnableExpireTime,
 			&expireTime,
@@ -615,7 +612,6 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 			IFNULL(ts.remain_quantity, 0),
 			IFNULL(ts.remain_free_quantity, 0),
 			IFNULL(ts.lesson_charging_mode, 0),
-			IFNULL(ts.lesson_scope_model, 0),
 			IFNULL(ts.status, 0),
 			IFNULL(ts.enable_expire_time, 0),
 			ts.expire_time,
@@ -669,7 +665,6 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 						ELSE 0
 					END
 				) AS lesson_charging_mode,
-				MAX(IFNULL(ic.course_type, 0)) AS lesson_scope_model,
 				MAX(IFNULL(ta.status, 0)) AS status,
 				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
 				MAX(ta.expire_time) AS expire_time,
@@ -747,7 +742,6 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 		&detail.TuitionAccount.RemainQuantity,
 		&detail.TuitionAccount.RemainFreeQuantity,
 		&detail.TuitionAccount.LessonChargingMode,
-		&detail.TuitionAccount.LessonScopeModel,
 		&detail.TuitionAccount.Status,
 		&detail.TuitionAccount.EnableExpireTime,
 		&expireTime,

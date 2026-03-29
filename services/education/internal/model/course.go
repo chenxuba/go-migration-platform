@@ -30,7 +30,6 @@ type Course struct {
 	CourseAttribute         *int                 `json:"courseAttribute,omitempty"`
 	Type                    *int                 `json:"type,omitempty"`
 	CategoryName            string               `json:"categoryName,omitempty"`
-	CourseType              *int                 `json:"courseType,omitempty"`
 	TeachMethod             *int                 `json:"teachMethod,omitempty"`
 	SaleStatus              *int                 `json:"saleStatus,omitempty"`
 	ChargeMethods           string               `json:"chargeMethods,omitempty"`
@@ -79,7 +78,6 @@ type CourseFilters struct {
 	CourseAttribute      *int64 `json:"courseAttribute"`
 	Term                 *int64 `json:"term"`
 	SchoolYear           *int64 `json:"schoolYear"`
-	CommonCourse         []int  `json:"commonCourse"`
 	TeachMethod          *int   `json:"teachMethod"`
 	ChargeTypes          []int  `json:"chargeTypes"`
 	SaleStatus           *bool  `json:"saleStatus"`
@@ -142,10 +140,7 @@ type CourseProductSaveDTO struct {
 	BuyRule                 CourseBuyRule           `json:"buyRule"`
 	SaleStatus              *bool                   `json:"saleStatus"`
 	ProductSku              []CourseQuotation       `json:"productSku"`
-	CourseType              *int                    `json:"courseType"`
-	CourseScope             []int64                 `json:"courseScope"`
 	TeachMethod             *int                    `json:"teachMethod"`
-	AllowedLessonIDs        []int64                 `json:"allowedLessonIds"`
 	SubjectIDs              []int64                 `json:"subjectIds"`
 	CourseProductProperties []CoursePropertyBinding `json:"courseProductProperties"`
 }
@@ -158,15 +153,12 @@ type CourseDetail struct {
 	CourseCategory          *int64                  `json:"courseCategory,omitempty"`
 	CourseAttribute         *int                    `json:"courseAttribute,omitempty"`
 	Type                    *int                    `json:"type,omitempty"`
-	CourseType              *int                    `json:"courseType,omitempty"`
 	TeachMethod             *int                    `json:"teachMethod,omitempty"`
 	SaleStatus              *int                    `json:"saleStatus,omitempty"`
 	Title                   string                  `json:"title,omitempty"`
 	Images                  string                  `json:"images,omitempty"`
 	Description             string                  `json:"description,omitempty"`
 	IsShowMicoSchool        bool                    `json:"isShowMicoSchool"`
-	CourseScope             []int64                 `json:"courseScope,omitempty"`
-	CourseScopeInfo         []CourseEntryInfo       `json:"courseScopeInfo,omitempty"`
 	SubjectIDs              []int64                 `json:"subjectIds,omitempty"`
 	ProductSku              []CourseQuotation       `json:"productSku,omitempty"`
 	BuyRule                 CourseBuyRule           `json:"buyRule,omitempty"`
@@ -180,7 +172,6 @@ type ProcessContentQueryVO struct {
 	Name               string            `json:"name"`
 	CourseCategory     *int64            `json:"courseCategory,omitempty"`
 	CategoryName       string            `json:"categoryName,omitempty"`
-	CourseType         *int              `json:"courseType,omitempty"`
 	TeachMethod        *int              `json:"teachMethod,omitempty"`
 	ChargeMethods      string            `json:"chargeMethods,omitempty"`
 	HasExperiencePrice bool              `json:"hasExperiencePrice"`

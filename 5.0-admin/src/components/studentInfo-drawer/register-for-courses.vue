@@ -192,19 +192,6 @@ function getChargingModeText(mode) {
   return modeMap[mode] || '-'
 }
 
-/**
- * 报读卡片「通用课」蓝标：仅 course_type 为通用类时展示（与课程编辑 lessonScope 一致）
- * 1 非通用；2 历史全部通用；3 部分；4 全部课程；5 全部班课；6 全部1对1
- */
-function getLessonScopePrimaryTag(scope) {
-  const s = Number(scope)
-  if (Number.isNaN(s) || s <= 0 || s === 1)
-    return ''
-  if ([2, 3, 4, 5, 6].includes(s))
-    return '通用课'
-  return ''
-}
-
 // 格式化剩余数量显示文本
 function formatRemainQuantityText(item) {
   const mode = item.lessonChargingMode
@@ -515,7 +502,6 @@ defineExpose({
           <div class="course-card-main min-w-0 flex-1">
             <div class="tag px3 mt1" :class="{ 'course-ended-faded': isTuitionAccountCourseEnded(item) }">
               <a-space>
-                <span v-if="getLessonScopePrimaryTag(item.lessonScope)" class="bg-#06f text-#fff text-3 rounded-10 px3 py1">{{ getLessonScopePrimaryTag(item.lessonScope) }}</span>
                 <span v-if="item.lessonType" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">{{ getLessonTypeText(item.lessonType) }}</span>
                 <span v-if="item.lessonChargingMode" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">{{ getChargingModeText(item.lessonChargingMode) }}</span>
               </a-space>

@@ -63,9 +63,8 @@ type OneToOneTuitionAccountVO struct {
 	TotalFreeQuantity  float64    `json:"totalFreeQuantity"`
 	RemainQuantity     float64    `json:"remainQuantity"`
 	RemainFreeQuantity float64    `json:"remainFreeQuantity"`
-	LessonChargingMode int        `json:"lessonChargingMode"`
-	LessonScopeModel   int        `json:"lessonScopeModel"`
-	ProductName        string     `json:"productName"`
+	LessonChargingMode int    `json:"lessonChargingMode"`
+	ProductName        string `json:"productName"`
 	Status             int        `json:"status"`
 	EnableExpireTime   bool       `json:"enableExpireTime"`
 	LastSuspendedTime  time.Time  `json:"lastSuspendedTime"`
@@ -198,10 +197,8 @@ type OneToOneLessonsByStudentQueryDTO struct {
 }
 
 type OneToOneLessonOptionVO struct {
-	ID string `json:"id"`
+	ID   string `json:"id"`
 	Name string `json:"name"`
-	// CourseType inst_course.course_type：1 非通用；2–6 为通用类（与创建课程 lessonScope 一致）
-	CourseType int `json:"courseType"`
 	// AlreadyEnrolled 已报名：学费账户已分班，或已存在开班中的 1 对 1 班级（下拉右侧展示「已报名」）
 	AlreadyEnrolled bool `json:"alreadyEnrolled"`
 }
@@ -255,9 +252,8 @@ type StudentLessonTuitionAccountItem struct {
 	StartTime              time.Time  `json:"startTime"`
 	EnableExpireTime       bool       `json:"enableExpireTime"`
 	ExpireTime             time.Time  `json:"expireTime"`
-	AssignedClass          bool       `json:"assignedClass"`
-	LessonScope            int        `json:"lessonScope"`
-	GeneralLessonIDList    []string   `json:"generalLessonIdList"`
+	AssignedClass       bool     `json:"assignedClass"`
+	GeneralLessonIDList []string `json:"generalLessonIdList"`
 	LatestStartTime        time.Time  `json:"latestStartTime"`
 	LessonType             int        `json:"lessonType"`
 	IsTuitionAccountActive bool       `json:"isTuitionAccountActive"`

@@ -24,8 +24,6 @@ export interface Course {
   name: string
   courseCategory: string | null
   categoryName: string | null
-  courseType: number
-  commonCourseList: any | null
   teachMethod: number
   teachMethodName: string | null
   chargeMethods: string
@@ -49,7 +47,6 @@ export interface ProcessContentPageParams {
     saleStatus?: boolean // 销售状态
     courseCategory?: string // 课程分类
     teachMethod?: number // 授课方式
-    courseType?: number // 课程范围
     [key: string]: any
   }
   sortModel: Record<string, any>

@@ -21,7 +21,7 @@ func (repo *Repository) CountStudentPrimaryCourseItems(ctx context.Context, inst
 			WHERE ta.del_flag = 0
 				AND ta.inst_id = ?
 				AND ta.student_id = ?
-			GROUP BY ic.id, ic.teach_method, icq.lesson_model, ic.course_type
+			GROUP BY ic.id, ic.teach_method, icq.lesson_model
 		) course_items
 	`, instID, studentID).Scan(&count)
 	if err != nil {
@@ -62,7 +62,6 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			IFNULL(ic.name, '') AS lesson_name,
 			ic.teach_method AS lesson_type,
 			icq.lesson_model AS lesson_charging_mode,
-			ic.course_type AS lesson_scope,
 			SUM(CASE 
 				WHEN icq.lesson_model = 3 THEN ta.total_tuition
 				WHEN ta.total_quantity > 0 THEN ta.total_quantity 
@@ -111,7 +110,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 		WHERE ta.del_flag = 0
 			AND ta.inst_id = ?
 			AND ta.student_id = ?
-		GROUP BY ic.id, ic.name, ic.teach_method, icq.lesson_model, ic.course_type
+		GROUP BY ic.id, ic.name, ic.teach_method, icq.lesson_model
 		ORDER BY MAX(ta.create_time) DESC
 	`, instID, studentID)
 	if err != nil {
@@ -129,7 +128,6 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			&item.LessonName,
 			&item.LessonType,
 			&item.LessonChargingMode,
-			&item.LessonScope,
 			&item.TotalQuantity,
 			&item.TotalFreeQuantity,
 			&item.TotalTuition,
@@ -231,7 +229,6 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 			IFNULL(ta.enable_expire_time, 0) AS enable_expire,
 			ta.expire_time,
 			IFNULL(ta.assigned_class, 0) AS assigned_class,
-			IFNULL(ic.course_type, 0) AS lesson_scope,
 			ta.valid_date,
 			IFNULL(ic.teach_method, 0) AS teach_method,
 			IFNULL(ta.status, 0) AS ta_status
@@ -292,7 +289,6 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 			&enableExpireRaw,
 			&expireTime,
 			&assignedClassRaw,
-			&item.LessonScope,
 			&validDate,
 			&item.LessonType,
 			&taStatus,
@@ -327,71 +323,9 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 	return out, rows.Err()
 }
 
-// studentHasTuitionOnGeneralCourse 学员是否存在挂在「通用类」课程上的有效学费账户（course_type 2–6，含全部课程通用=4）；不限授课方式（班课/1v1 均算）。
-// 与竞品一致：只要报读过任一类通用课，1 对 1 可选课应拉机构内全部 1v1 课程（不仅限于已有学费账户的课程）。
-func (repo *Repository) studentHasTuitionOnGeneralCourse(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) (bool, error) {
-	q := `
-SELECT EXISTS (
-	SELECT 1
-	FROM tuition_account ta
-	INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
-	WHERE ta.inst_id = ?
-		AND ta.student_id = ?
-		AND ta.del_flag = 0
-		AND IFNULL(ic.course_type, 0) IN (2, 3, 4, 5, 6)
-`
-	args := []any{instID, studentID}
-	if len(tuitionAccountStatus) > 0 {
-		placeholders := make([]string, 0, len(tuitionAccountStatus))
-		for _, st := range tuitionAccountStatus {
-			placeholders = append(placeholders, "?")
-			args = append(args, st)
-		}
-		q += ` AND ta.status IN (` + strings.Join(placeholders, ",") + `)`
-	}
-	q += `
-	LIMIT 1
-)`
-	var ok bool
-	if err := repo.db.QueryRowContext(ctx, q, args...).Scan(&ok); err != nil {
-		return false, err
-	}
-	return ok, nil
-}
-
-// oneToOneLessonListPolicy 决定 1 对 1 可选课程列表策略（与竞品一致）。
-// restrictNonGeneral：仅保留非通用课且仅来自学员学费账户（仅有非通用类开班中 1 对 1 时）。
-// useInstitutionCatalog：从机构全部 1v1 课程（inst_course）出表，仍用学员学费账户算已分班、用班级算已报名
-//（有通用类开班中 1 对 1，或存在挂在通用类课程 course_type 2–6 上的有效学费账户时）。
-func (repo *Repository) oneToOneLessonListPolicy(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) (restrictNonGeneral, useInstitutionCatalog bool, err error) {
-	const qGeneral = `
-SELECT EXISTS (
-	SELECT 1
-	FROM teaching_class tc
-	INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
-	INNER JOIN inst_course ic ON ic.id = tc.course_id AND ic.del_flag = 0
-	WHERE tc.inst_id = ?
-		AND tcs.student_id = ?
-		AND tc.class_type = ?
-		AND tc.del_flag = 0
-		AND tc.status = ?
-		AND IFNULL(ic.course_type, 0) IN (2, 3, 4, 5, 6)
-	LIMIT 1
-)`
-	var hasGeneral bool
-	if err := repo.db.QueryRowContext(ctx, qGeneral, instID, studentID, model.TeachingClassTypeOneToOne, model.TeachingClassStatusActive).Scan(&hasGeneral); err != nil {
-		return false, false, err
-	}
-	if hasGeneral {
-		return false, true, nil
-	}
-	hasGeneralTuition, err := repo.studentHasTuitionOnGeneralCourse(ctx, instID, studentID, tuitionAccountStatus)
-	if err != nil {
-		return false, false, err
-	}
-	if hasGeneralTuition {
-		return false, true, nil
-	}
+// oneToOneLessonListPolicy 决定 1 对 1 可选课程列表策略（已下线「通用课」后简化）：
+// 学员已有任一开班中 1 对 1 → 展示机构内全部 1v1 课程目录；否则仅展示其学费账户上的 1v1 课程。
+func (repo *Repository) oneToOneLessonListPolicy(ctx context.Context, instID, studentID int64, _ []int) (restrictNonGeneral, useInstitutionCatalog bool, err error) {
 	const qAny = `
 SELECT EXISTS (
 	SELECT 1
@@ -408,15 +342,15 @@ SELECT EXISTS (
 	if err := repo.db.QueryRowContext(ctx, qAny, instID, studentID, model.TeachingClassTypeOneToOne, model.TeachingClassStatusActive).Scan(&hasAny); err != nil {
 		return false, false, err
 	}
-	if !hasAny {
-		return false, false, nil
+	if hasAny {
+		return false, true, nil
 	}
 	return true, false, nil
 }
 
 // ListOneToOneLessonOptionsByStudent 学员在指定学费账户状态下、可用于 1 对 1 的课程（去重）。teach_method=2 为 1v1。
 func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) ([]model.OneToOneLessonOptionVO, error) {
-	restrictNonGeneral, useInstitutionCatalog, err := repo.oneToOneLessonListPolicy(ctx, instID, studentID, tuitionAccountStatus)
+	_, useInstitutionCatalog, err := repo.oneToOneLessonListPolicy(ctx, instID, studentID, tuitionAccountStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +364,6 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 		SELECT
 			CAST(ic.id AS CHAR),
 			IFNULL(ic.name, ''),
-			IFNULL(MAX(ic.course_type), 0),
 			IFNULL(MAX(IFNULL(ta.assigned_class, 0)), 0),
 			MAX(CASE WHEN EXISTS (
 				SELECT 1
@@ -472,7 +405,6 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 		SELECT
 			CAST(ic.id AS CHAR),
 			IFNULL(ic.name, ''),
-			IFNULL(MAX(ic.course_type), 0),
 			MAX(IFNULL(ta.assigned_class, 0)),
 			MAX(CASE WHEN EXISTS (
 				SELECT 1
@@ -498,9 +430,6 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 			instID,
 			studentID,
 		}
-		if restrictNonGeneral {
-			sqlStr += ` AND IFNULL(ic.course_type, 0) NOT IN (2, 3, 4, 5, 6)`
-		}
 		if len(tuitionAccountStatus) > 0 {
 			placeholders := make([]string, 0, len(tuitionAccountStatus))
 			for _, st := range tuitionAccountStatus {
@@ -522,14 +451,12 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 	for rows.Next() {
 		var (
 			item         model.OneToOneLessonOptionVO
-			courseType   int64
 			maxAssigned  int64
 			hasOneToOneO int64
 		)
-		if err := rows.Scan(&item.ID, &item.Name, &courseType, &maxAssigned, &hasOneToOneO); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &maxAssigned, &hasOneToOneO); err != nil {
 			return nil, err
 		}
-		item.CourseType = int(courseType)
 		item.AlreadyEnrolled = maxAssigned != 0 || hasOneToOneO != 0
 		out = append(out, item)
 	}

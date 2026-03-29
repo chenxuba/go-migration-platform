@@ -42,7 +42,6 @@ export interface RegisterReadInfo {
   transferredTuition?: number
   paidRemaining?: number
   hasGradeUpgrade?: boolean
-  lessonScope?: number
   lastestTeachingRecordTime?: string
 }
 

@@ -263,9 +263,10 @@ func (repo *Repository) attachProductPackageItems(ctx context.Context, packageID
 
 	for rows.Next() {
 		var (
-			item      model.ProductPackageItemVO
-			id        int64
-			packageID int64
+			item         model.ProductPackageItemVO
+			id           int64
+			packageID    int64
+			lessonScopeX int
 		)
 		if err := rows.Scan(
 			&id,
@@ -275,7 +276,7 @@ func (repo *Repository) attachProductPackageItems(ctx context.Context, packageID
 			&item.ProductName,
 			&item.SkuID,
 			&item.SkuName,
-			&item.LessonScope,
+			&lessonScopeX,
 			&item.LessonType,
 			&item.LessonMode,
 			&item.LessonAudition,
@@ -365,7 +366,6 @@ func (repo *Repository) GetProductPackageStatistics(ctx context.Context, instID 
 type productPackageSkuSnapshot struct {
 	CourseID       int64
 	CourseName     string
-	CourseType     int
 	TeachMethod    int
 	QuotationID    int64
 	QuotationName  string
@@ -435,7 +435,7 @@ func (repo *Repository) loadProductPackageSkuSnapshots(ctx context.Context, item
 	}
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
-			c.id, IFNULL(c.name, ''), IFNULL(c.course_type, 0), IFNULL(c.teach_method, 0),
+			c.id, IFNULL(c.name, ''), IFNULL(c.teach_method, 0),
 			q.id, IFNULL(q.name, ''), IFNULL(q.lesson_model, 0), IFNULL(q.lesson_audition, 0), IFNULL(q.price, 0)
 		FROM inst_course_quotation q
 		INNER JOIN inst_course c ON c.id = q.course_id AND c.del_flag = 0
@@ -453,7 +453,6 @@ func (repo *Repository) loadProductPackageSkuSnapshots(ctx context.Context, item
 		if err := rows.Scan(
 			&item.CourseID,
 			&item.CourseName,
-			&item.CourseType,
 			&item.TeachMethod,
 			&skuID,
 			&item.QuotationName,
@@ -562,7 +561,7 @@ func (repo *Repository) CreateProductPackage(ctx context.Context, instID, operat
 			item.FreeQuantity,
 			item.DiscountType,
 			item.DiscountNumber,
-			snapshot.CourseType,
+			1,
 			snapshot.TeachMethod,
 			snapshot.LessonModel,
 			snapshot.LessonAudition,

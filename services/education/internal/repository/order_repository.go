@@ -1704,7 +1704,7 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 		LEFT JOIN inst_user u2 ON s.student_manager_id = u2.id
 		WHERE ` + strings.Join(whereParts, " AND ")
 	groupBy := `
-		GROUP BY s.id, ic.id, ic.teach_method, icq.lesson_model, s.advisor_id, u1.nick_name, s.student_manager_id, u2.nick_name, ic.course_type, s.stu_name, s.avatar_url, s.stu_sex, s.mobile, ic.name`
+		GROUP BY s.id, ic.id, ic.teach_method, icq.lesson_model, s.advisor_id, u1.nick_name, s.student_manager_id, u2.nick_name, s.stu_name, s.avatar_url, s.stu_sex, s.mobile, ic.name`
 	havingSQL := ""
 	if len(havingParts) > 0 {
 		havingSQL = " HAVING " + strings.Join(havingParts, " AND ")
@@ -1764,7 +1764,6 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			0 AS transferred_tuition,
 			SUM(ta.remaining_tuition) AS paid_remaining,
 			IFNULL(MAX(ta.has_grade_upgrade), 0) AS has_grade_upgrade,
-			ic.course_type AS lesson_scope,
 			NULL AS lastest_teaching_record_time,
 			MIN(ta.valid_date) AS valid_date,
 			MAX(ta.end_date) AS end_date
@@ -1791,7 +1790,6 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			advisorStaffID        sql.NullInt64
 			studentManagerID      sql.NullInt64
 			hasGradeUpgrade       bool
-			lessonScope           sql.NullInt64
 			expireTime            sql.NullTime
 			planSuspendTime       sql.NullTime
 			planResumeTime        sql.NullTime
@@ -1844,7 +1842,6 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			&item.TransferredTuition,
 			&item.PaidRemaining,
 			&hasGradeUpgrade,
-			&lessonScope,
 			&lastestTeachingRecord,
 			&validDate,
 			&endDate,
@@ -1878,10 +1875,6 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 		if studentManagerID.Valid {
 			value := studentManagerID.Int64
 			item.StudentManagerID = &value
-		}
-		if lessonScope.Valid {
-			value := int(lessonScope.Int64)
-			item.LessonScope = &value
 		}
 		item.AssignedClass = assignedClass
 		item.EnableExpireTime = enableExpireTime

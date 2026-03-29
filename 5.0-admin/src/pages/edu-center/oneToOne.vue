@@ -465,7 +465,6 @@ async function fetchOneToOneLessonsByStudent(studentId) {
       createLessonOptions.value = list.map(c => ({
         value: String(c.id),
         label: c.name || String(c.id),
-        courseType: Number(c.courseType ?? 0),
         alreadyEnrolled: Boolean(c.alreadyEnrolled),
       }))
       createLessonOptionsReady.value = true
@@ -492,12 +491,6 @@ function filterCreateLessonOption(input, option) {
     return true
   const opt = createLessonOptions.value.find(o => o.value === String(option?.value))
   return (opt?.label || '').toLowerCase().includes(String(input).trim().toLowerCase())
-}
-
-/** inst_course.course_type：1 非通用；2–6 通用类（与创建课程 / 报读展示一致） */
-function isInstCourseGeneralType(courseType) {
-  const n = Number(courseType)
-  return !Number.isNaN(n) && n >= 2 && n <= 6
 }
 
 function onCreateLessonPick() {
@@ -1452,13 +1445,6 @@ onMounted(() => {
                 <div class="one-to-one-lesson-option-row">
                   <span class="one-to-one-lesson-option-name">{{ opt.label }}</span>
                   <div class="one-to-one-lesson-option-tags">
-                    <a-tag
-                      :bordered="false"
-                      :color="isInstCourseGeneralType(opt.courseType) ? 'blue' : 'default'"
-                      class="one-to-one-lesson-option-tag shrink-0"
-                    >
-                      {{ isInstCourseGeneralType(opt.courseType) ? '通用课' : '非通用课' }}
-                    </a-tag>
                     <a-tag
                       v-if="opt.alreadyEnrolled"
                       :bordered="false"

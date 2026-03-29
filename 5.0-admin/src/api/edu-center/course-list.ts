@@ -24,8 +24,6 @@ export interface CourseListInfo {
   saleStatus?: boolean
   lessonType?: number
   teachMethod?: number
-  lessonScope?: number
-  courseType?: number
   lessonProductProperties?: {
     lessonPropertyId: number | string
     lessonPropertyName?: string
@@ -39,8 +37,6 @@ export interface CourseListInfo {
     coursePropertyValue: number | string
     propertyValueName: string
   }[]
-  courseScope?: Array<number | string> | string
-  allowedLessonIds?: Array<number | string>
   subjectIds?: Array<number | string>
   productSku?: {
     id?: number | string

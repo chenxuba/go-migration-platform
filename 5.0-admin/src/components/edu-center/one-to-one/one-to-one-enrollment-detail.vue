@@ -26,7 +26,6 @@ function mapApiAccountToTuitionVO(item) {
     remainQuantity: item.quantity,
     remainFreeQuantity: item.freeQuantity,
     lessonChargingMode: item.lessonChargingMode,
-    lessonScopeModel: item.lessonScope,
     productName: item.productName,
     status: item.status,
     enableExpireTime: item.enableExpireTime,
@@ -186,52 +185,17 @@ function remainQuantityTextOf(block) {
   return formatQuantityAmount(calcRemainQuantity(block), effectiveLessonChargingMode(block))
 }
 
-/**
- * 按课程属性生成标签（与创建课程：授课方式 / 是否通用 / 通用类型 一致）
- * lessonScope = inst_course.course_type：1 不通用；2 历史全部通用；3 部分；4 全部课程；5 全部班课；6 全部1对1
- * lessonType = inst_course.teach_method：1 班级授课 2 1v1
- */
-function isGeneralCourseScope(scope) {
-  const s = Number(scope)
-  return !Number.isNaN(s) && [2, 3, 4, 5, 6].includes(s)
-}
-
 function getEnrollmentTags(block) {
   const ta = block.tuitionAccount
-  const scope = Number(ta?.lessonScopeModel ?? ta?.lessonScope ?? 0)
   const teach = Number(ta?.lessonType ?? 0)
   const mode = effectiveLessonChargingMode(block)
 
   const tags = []
 
-  if (isGeneralCourseScope(scope))
-    tags.push({ text: '通用课', type: 'primary' })
-
   if (teach === 1)
     tags.push({ text: '班级授课', type: 'normal' })
   else if (teach === 2)
     tags.push({ text: '1对1授课', type: 'normal' })
-
-  if (scope === 4) {
-    tags.push({ text: '全部课程', type: 'normal' })
-  }
-  else if (scope === 5) {
-    tags.push({ text: '全部班课', type: 'normal' })
-  }
-  else if (scope === 6) {
-    tags.push({ text: '全部1对1', type: 'normal' })
-  }
-  else if (scope === 2) {
-    if (teach === 1)
-      tags.push({ text: '全部班课', type: 'normal' })
-    else if (teach === 2)
-      tags.push({ text: '全部1对1', type: 'normal' })
-    else
-      tags.push({ text: '全部通用', type: 'normal' })
-  }
-  else if (scope === 3) {
-    tags.push({ text: '部分课程', type: 'normal' })
-  }
 
   const chargingTag = getChargingTagText(mode)
   if (chargingTag)

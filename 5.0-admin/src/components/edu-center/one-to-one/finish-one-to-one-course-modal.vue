@@ -99,44 +99,16 @@ function calcRemainQuantity(block) {
   return Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
 }
 
-function isGeneralCourseScope(scope) {
-  const s = Number(scope)
-  return !Number.isNaN(s) && [2, 3, 4, 5, 6].includes(s)
-}
-
-/** 与 one-to-one-enrollment-detail 一致；scope 4 文案对齐设计稿「全部课程通用」 */
 function getEnrollmentTags(block) {
   const ta = block?.tuitionAccount
-  const scope = Number(ta?.lessonScopeModel ?? ta?.lessonScope ?? 0)
   const teach = Number(ta?.lessonType ?? 0)
   const mode = effectiveLessonChargingMode(block)
   const tags = []
-
-  if (isGeneralCourseScope(scope))
-    tags.push({ text: '通用课', type: 'primary' })
 
   if (teach === 1)
     tags.push({ text: '班级授课', type: 'normal' })
   else if (teach === 2)
     tags.push({ text: '1对1授课', type: 'normal' })
-
-  if (scope === 4)
-    tags.push({ text: '全部课程通用', type: 'normal' })
-  else if (scope === 5)
-    tags.push({ text: '全部班课', type: 'normal' })
-  else if (scope === 6)
-    tags.push({ text: '全部1对1', type: 'normal' })
-  else if (scope === 2) {
-    if (teach === 1)
-      tags.push({ text: '全部班课', type: 'normal' })
-    else if (teach === 2)
-      tags.push({ text: '全部1对1', type: 'normal' })
-    else
-      tags.push({ text: '全部通用', type: 'normal' })
-  }
-  else if (scope === 3) {
-    tags.push({ text: '部分课程', type: 'normal' })
-  }
 
   const chargingTag = getChargingTagText(mode)
   if (chargingTag)

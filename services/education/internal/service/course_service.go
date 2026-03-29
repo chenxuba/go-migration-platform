@@ -412,14 +412,8 @@ func validateCourseProduct(input model.CourseProductSaveDTO) error {
 	if input.SaleStatus == nil {
 		return errors.New("课程售卖状态不能为空")
 	}
-	if input.CourseType == nil {
-		return errors.New("通用课程不能为空")
-	}
-	if *input.CourseType == 1 && input.TeachMethod == nil {
+	if input.TeachMethod == nil {
 		return errors.New("授课方式不能为空")
-	}
-	if *input.CourseType == 3 && len(input.CourseScope) == 0 {
-		return errors.New("课程范围不能为空")
 	}
 	if len(input.ProductSku) == 0 {
 		return errors.New("报价单不能为空")

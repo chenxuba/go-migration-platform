@@ -68,9 +68,8 @@ type ProductPackageItemVO struct {
 	ProductID      string `json:"productId"`
 	ProductName    string `json:"productName"`
 	SkuID          string `json:"skuId"`
-	SkuName        string `json:"skuName"`
-	LessonScope    int    `json:"lessonScope"`
-	LessonType     int    `json:"lessonType"`
+	SkuName    string `json:"skuName"`
+	LessonType int    `json:"lessonType"`
 	LessonMode     int    `json:"lessonMode"`
 	LessonAudition bool   `json:"lessonAudition"`
 }

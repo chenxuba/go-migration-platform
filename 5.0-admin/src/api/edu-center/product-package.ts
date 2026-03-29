@@ -21,7 +21,6 @@ export interface ProductPackageItem {
   productName: string
   skuId: string
   skuName: string
-  lessonScope: number
   lessonType: number
   lessonMode: number
   lessonAudition: boolean

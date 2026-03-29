@@ -609,7 +609,6 @@ func parseCourseQueryDTO(raw map[string]any) model.CourseQueryDTO {
 		query.QueryModel.CourseAttribute = asInt64Ptr(qm["courseAttribute"])
 		query.QueryModel.Term = asInt64Ptr(qm["term"])
 		query.QueryModel.SchoolYear = asInt64Ptr(qm["schoolYear"])
-		query.QueryModel.CommonCourse = asIntSlice(qm["commonCourse"])
 		query.QueryModel.TeachMethod = asIntPtr(qm["teachMethod"])
 		query.QueryModel.ChargeTypes = asIntSlice(qm["chargeTypes"])
 		query.QueryModel.SaleStatus = asBoolPtr(qm["saleStatus"])
@@ -633,11 +632,8 @@ func parseCourseProductSaveDTO(raw map[string]any) model.CourseProductSaveDTO {
 		Title:            asString(raw["title"]),
 		Images:           asString(raw["images"]),
 		Description:      asString(raw["description"]),
-		CourseType:       asIntPtr(firstNonNil(raw["courseType"], raw["lessonScope"])),
-		TeachMethod:      asIntPtr(firstNonNil(raw["teachMethod"], raw["lessonType"])),
-		AllowedLessonIDs: asInt64Slice(firstNonNil(raw["allowedLessonIds"], raw["courseScope"])),
-		SubjectIDs:       asInt64Slice(raw["subjectIds"]),
-		CourseScope:      asInt64Slice(firstNonNil(raw["courseScope"], raw["allowedLessonIds"])),
+		TeachMethod: asIntPtr(firstNonNil(raw["teachMethod"], raw["lessonType"])),
+		SubjectIDs:  asInt64Slice(raw["subjectIds"]),
 	}
 	if show := asBoolPtr(raw["isShowMicoSchool"]); show != nil {
 		dto.IsShowMicoSchool = *show
@@ -1084,14 +1080,11 @@ func formatCourseDetail(item model.CourseDetail) map[string]any {
 		"courseCategory":          item.CourseCategory,
 		"courseAttribute":         item.CourseAttribute,
 		"type":                    item.Type,
-		"courseType":              item.CourseType,
 		"teachMethod":             item.TeachMethod,
 		"title":                   item.Title,
 		"images":                  item.Images,
 		"description":             item.Description,
 		"isShowMicoSchool":        item.IsShowMicoSchool,
-		"courseScope":             item.CourseScope,
-		"courseScopeInfo":         item.CourseScopeInfo,
 		"subjectIds":              item.SubjectIDs,
 		"productSku":              item.ProductSku,
 		"buyRule":                 item.BuyRule,
