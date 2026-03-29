@@ -133,7 +133,7 @@ const handleTypeMap = {
   0: '无',
   1: '新报',
   2: '续费',
-  3: '转课',
+  3: '扩科',
 }
 
 const approvalInfo = computed(() => detail.value?.approvalInfo || null)
