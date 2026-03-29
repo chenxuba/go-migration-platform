@@ -1042,6 +1042,15 @@ const commonCourseMode = computed({
   },
 })
 
+// 仅改「全部课程 / 全部班课 / 全部1对1」时，v-model 只动 allCommonTypeSelection，不会改 courseType，导致保存仍为 2、重开被回显成全部1对1
+watch(allCommonTypeSelection, (val) => {
+  if (formState.value.courseType !== 2 && formState.value.courseType !== 4)
+    return
+  const next = val === 'all-course' ? 4 : 2
+  if (formState.value.courseType !== next)
+    formState.value.courseType = next
+})
+
 function selectCourseRange(index) {
   selectCourseRangeModalOpen.value = true
 }

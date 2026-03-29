@@ -147,8 +147,49 @@ function remainQuantityTextOf(block) {
   return formatQuantityAmount(calcRemainQuantity(block), lessonChargingModeOf(block))
 }
 
-function quantityTagLabelOf(block) {
-  return getQuantityUnit(lessonChargingModeOf(block)) || '课时'
+/**
+ * 按课程属性生成标签（与创建课程：授课方式 / 是否通用 / 通用类型 一致）
+ * lessonScope = inst_course.course_type：1 不通用 2 全部通用 3 部分通用 4 全部课程
+ * lessonType = inst_course.teach_method：1 班级授课 2 1v1
+ */
+function getEnrollmentTags(block) {
+  const ta = block.tuitionAccount
+  const scope = Number(ta?.lessonScopeModel ?? ta?.lessonScope ?? 0)
+  const teach = Number(ta?.lessonType ?? 0)
+  const mode = Number(ta?.lessonChargingMode ?? 0)
+
+  const tags = []
+
+  if (scope === 2 || scope === 3 || scope === 4)
+    tags.push({ text: '通用课', type: 'primary' })
+
+  if (teach === 1)
+    tags.push({ text: '班级授课', type: 'normal' })
+  else if (teach === 2)
+    tags.push({ text: '1对1授课', type: 'normal' })
+
+  if (scope === 4) {
+    tags.push({ text: '全部课程', type: 'normal' })
+  }
+  else if (scope === 2) {
+    if (teach === 1)
+      tags.push({ text: '全部班课', type: 'normal' })
+    else if (teach === 2)
+      tags.push({ text: '全部1对1', type: 'normal' })
+    else
+      tags.push({ text: '全部通用', type: 'normal' })
+  }
+  else if (scope === 3) {
+    tags.push({ text: '部分课程', type: 'normal' })
+  }
+
+  const unit = getQuantityUnit(mode)
+  if (unit)
+    tags.push({ text: unit, type: 'normal' })
+  else if (mode === 3)
+    tags.push({ text: '按金额', type: 'normal' })
+
+  return tags
 }
 
 /** 与「选择课程/学杂费/教材用品」弹窗（active-course-modal）中课程行标签一致 */
@@ -188,17 +229,13 @@ function blockKey(block, idx) {
             {{ enrollmentTitleOf(block) }}
           </div>
           <a-space :size="5" class="w-100% flex flex-wrap">
-            <a-tag :style="getTagStyle('primary')" color="#0066ff">
-              通用课
-            </a-tag>
-            <a-tag :style="getTagStyle('normal')" color="#e6f0ff">
-              全部课程通用
-            </a-tag>
-            <a-tag :style="getTagStyle('normal')" color="#e6f0ff">
-              1对1授课
-            </a-tag>
-            <a-tag :style="getTagStyle('normal')" color="#e6f0ff">
-              {{ quantityTagLabelOf(block) }}
+            <a-tag
+              v-for="(tag, tIdx) in getEnrollmentTags(block)"
+              :key="`${blockKey(block, idx)}-tag-${tIdx}`"
+              :style="getTagStyle(tag.type)"
+              :color="tag.type === 'primary' ? '#0066ff' : '#e6f0ff'"
+            >
+              {{ tag.text }}
             </a-tag>
           </a-space>
         </div>
