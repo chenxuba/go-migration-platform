@@ -131,7 +131,8 @@ const queryState = ref({
   defaultTeacherId: undefined,
   hasClassTeacher: undefined,
   isScheduled: undefined,
-  status: undefined,
+  /** 默认仅看开班中（与 all-filter 开班状态 id=1 一致） */
+  status: [1],
   classStudentStatus: undefined,
   startDate: undefined,
   endDate: undefined,
@@ -812,6 +813,7 @@ onMounted(() => {
         :is-quick-one-to-one-show="true"
         :is-show-search-stu-phone="true"
         :student-status="1"
+        :default-open-class-status="1"
         :create-user-label="'默认上课教师'"
         :one-to-one-mode="true"
         :one-to-one-quick-counts="quickCounts"
