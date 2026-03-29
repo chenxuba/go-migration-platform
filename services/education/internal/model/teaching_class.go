@@ -84,38 +84,40 @@ type OneToOnePropertyVO struct {
 }
 
 type OneToOneItemVO struct {
-	ID                    string                   `json:"id"`
-	Name                  string                   `json:"name"`
-	StudentName           string                   `json:"studentName"`
-	StudentID             string                   `json:"studentId"`
-	Sex                   int                      `json:"sex"`
-	Avatar                string                   `json:"avatar"`
-	Phone                 string                   `json:"phone"`
-	SchoolID              string                   `json:"schoolId"`
-	One2OneLessonTimes    []OneToOneLessonTimeVO   `json:"one2OneLessonTimes"`
-	IsScheduled           bool                     `json:"isScheduled"`
-	Status                int                      `json:"status"`
-	ClassStudentStatus    int                      `json:"classStudentStatus"`
-	One2OneLessonDayInfo  OneToOneLessonDayInfoVO  `json:"one2OneLessonDayInfo"`
-	CreatedTime           time.Time                `json:"createdTime"`
-	ClassRoomID           string                   `json:"classRoomId"`
-	ClassRoomName         string                   `json:"classRoomName"`
-	ClassroomEnabled      *bool                    `json:"classroomEnabled"`
-	ClassTime             float64                  `json:"classTime"`
-	StudentClassTime      float64                  `json:"studentClassTime"`
-	TeacherClassTime      float64                  `json:"teacherClassTime"`
-	LessonID              string                   `json:"lessonId"`
-	LessonName            string                   `json:"lessonName"`
-	TuitionAccountID      string                   `json:"tuitionAccountId"`
-	DefaultTeacherID      string                   `json:"defaultTeacherId"`
-	DefaultTeacherName    string                   `json:"defaultTeacherName"`
-	IsGradeUpgrade        bool                     `json:"isGradeUpgrade"`
-	LastFinishedLessonDay time.Time                `json:"lastFinishedLessonDay"`
-	TeacherList           []OneToOneTeacherVO      `json:"teacherList"`
-	TuitionAccount        OneToOneTuitionAccountVO `json:"tuitionAccount"`
-	ClassProperties       []OneToOnePropertyVO     `json:"classProperties"`
-	ClassTeacherID        string                   `json:"classTeacherId,omitempty"`
-	ClassTeacherName      string                   `json:"classTeacherName,omitempty"`
+	ID                         string                   `json:"id"`
+	Name                       string                   `json:"name"`
+	StudentName                string                   `json:"studentName"`
+	StudentID                  string                   `json:"studentId"`
+	Sex                        int                      `json:"sex"`
+	Avatar                     string                   `json:"avatar"`
+	Phone                      string                   `json:"phone"`
+	SchoolID                   string                   `json:"schoolId"`
+	One2OneLessonTimes         []OneToOneLessonTimeVO   `json:"one2OneLessonTimes"`
+	IsScheduled                bool                     `json:"isScheduled"`
+	Status                     int                      `json:"status"`
+	ClassStudentStatus         int                      `json:"classStudentStatus"`
+	One2OneLessonDayInfo       OneToOneLessonDayInfoVO  `json:"one2OneLessonDayInfo"`
+	CreatedTime                time.Time                `json:"createdTime"`
+	ClassRoomID                string                   `json:"classRoomId"`
+	ClassRoomName              string                   `json:"classRoomName"`
+	ClassroomEnabled           *bool                    `json:"classroomEnabled"`
+	ClassTime                  float64                  `json:"classTime"`
+	StudentClassTime           float64                  `json:"studentClassTime"`
+	TeacherClassTime           float64                  `json:"teacherClassTime"`
+	LessonID                   string                   `json:"lessonId"`
+	LessonName                 string                   `json:"lessonName"`
+	TuitionAccountID           string                   `json:"tuitionAccountId"`
+	DefaultTeacherID           string                   `json:"defaultTeacherId"`
+	DefaultTeacherName         string                   `json:"defaultTeacherName"`
+	DefaultClassTimeRecordMode int                      `json:"defaultClassTimeRecordMode"`
+	IsGradeUpgrade             bool                     `json:"isGradeUpgrade"`
+	LastFinishedLessonDay      time.Time                `json:"lastFinishedLessonDay"`
+	TeacherList                []OneToOneTeacherVO      `json:"teacherList"`
+	TuitionAccount             OneToOneTuitionAccountVO `json:"tuitionAccount"`
+	ClassProperties            []OneToOnePropertyVO     `json:"classProperties"`
+	ClassTeacherID             string                   `json:"classTeacherId,omitempty"`
+	ClassTeacherName           string                   `json:"classTeacherName,omitempty"`
+	Remark                     string                   `json:"remark,omitempty"`
 }
 
 type OneToOneListResultVO struct {
@@ -141,4 +143,24 @@ type OneToOneBatchAttributeDTO struct {
 	DefaultTeacherID   string   `json:"defaultTeacherId"`
 	Status             *int     `json:"status"`
 	ClassStudentStatus *int     `json:"classStudentStatus"`
+}
+
+type OneToOneCheckNameDTO struct {
+	Name      string `json:"name"`
+	ExceptID  string `json:"exceptId"`
+	IsOne2One bool   `json:"isOne2One"`
+}
+
+type OneToOneUpdateDTO struct {
+	ID                         string               `json:"id"`
+	StudentID                  string               `json:"studentId"`
+	LessonID                   string               `json:"lessonId"`
+	Name                       string               `json:"name"`
+	TeacherID                  []string             `json:"teacherId"`
+	DefaultTeacherID           string               `json:"defaultTeacherId"`
+	DefaultStudentClassTime    float64              `json:"defaultStudentClassTime"`
+	DefaultTeacherClassTime    float64              `json:"defaultTeacherClassTime"`
+	DefaultClassTimeRecordMode int                  `json:"defaultClassTimeRecordMode"`
+	Remark                     string               `json:"remark"`
+	ClassProperties            []OneToOnePropertyVO `json:"classProperties"`
 }

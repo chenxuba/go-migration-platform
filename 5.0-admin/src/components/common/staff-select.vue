@@ -101,6 +101,7 @@ import { debounce } from 'lodash-es'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { getStaffSummariesApi } from '@/api/finance-center/approval-manage'
 import { useUserStore } from '@/stores/user'
+import { findCachedStaff, getCachedInitialStaffList, mergeCachedStaff } from '@/composables/staff-select-cache'
 const userStore = useUserStore()
 const userInfo = computed(() => {
   return userStore.userInfo
@@ -163,6 +164,17 @@ const hasLoadedList = ref(false) // 是否已经加载过员工列表
 // 当前选中员工的显示信息
 const selectedStaffDisplay = ref(null)
 
+function normalizeStaffItems(res) {
+  return props.fetchType === 'approval'
+    ? (res.result?.list || []).map(item => ({
+        id: item.id,
+        nickName: item.name,
+        mobile: item.phone,
+        status: item.status,
+      }))
+    : (res.result || [])
+}
+
 // 搜索防抖函数
 const debouncedSearch = debounce((value) => {
   pagination.value.current = 1
@@ -184,21 +196,28 @@ async function getStaffList(params = { searchKey: undefined }) {
     if (finished.value) return
 
     let res
-    if (props.fetchType === 'approval') {
-      res = await getStaffSummariesApi({
-        queryModel: {
-          searchKey: params.searchKey,
-        },
-        pageRequestModel: {
-          needTotal: true,
-          pageSize: pagination.value.pageSize,
-          pageIndex: pagination.value.current,
-          skipCount: 0,
-        },
-      })
-    }
-    else {
-      const requestParams = {
+    const searchKey = `${params.searchKey || ''}`.trim()
+    const loadStaffPage = async () => {
+      if (props.fetchType === 'approval') {
+        const response = await getStaffSummariesApi({
+          queryModel: {
+            searchKey,
+          },
+          pageRequestModel: {
+            needTotal: true,
+            pageSize: pagination.value.pageSize,
+            pageIndex: pagination.value.current,
+            skipCount: 0,
+          },
+        })
+        return {
+          res: response,
+          items: normalizeStaffItems(response),
+          total: response.result?.total || 0,
+        }
+      }
+
+      const response = await getUserListApi({
         pageRequestModel: {
           needTotal: true,
           pageSize: pagination.value.pageSize,
@@ -207,21 +226,44 @@ async function getStaffList(params = { searchKey: undefined }) {
         },
         queryModel: {
           status: props.status,
-          searchKey: params.searchKey,
+          searchKey,
         },
+      })
+      return {
+        res: response,
+        items: normalizeStaffItems(response),
+        total: response.total || 0,
       }
-      res = await getUserListApi(requestParams)
+    }
+
+    let resultItems = []
+    let total = 0
+    if (!searchKey && pagination.value.current === 1) {
+      const cached = await getCachedInitialStaffList(
+        props.fetchType,
+        props.status,
+        async () => {
+          const loaded = await loadStaffPage()
+          return {
+            items: loaded.items,
+            total: loaded.total,
+          }
+        },
+      )
+      resultItems = cached.items
+      total = cached.total
+      res = { code: 200 }
+    } else {
+      const loaded = await loadStaffPage()
+      res = loaded.res
+      resultItems = loaded.items
+      total = loaded.total
+      if (!searchKey && pagination.value.current === 1) {
+        mergeCachedStaff(props.fetchType, props.status, resultItems, total)
+      }
     }
 
     if (res.code === 200) {
-      const resultItems = props.fetchType === 'approval'
-        ? (res.result?.list || []).map(item => ({
-            id: item.id,
-            nickName: item.name,
-            mobile: item.phone,
-            status: item.status,
-          }))
-        : (res.result || [])
       hasLoadedList.value = true // 标记已加载过员工列表
       
       // 保留首次加载的清空逻辑
@@ -239,7 +281,7 @@ async function getStaffList(params = { searchKey: undefined }) {
         const uniqueNewItems = newItems.filter(item => !existingIds.has(item.id))
         staffOptions.value = [...staffOptions.value, ...uniqueNewItems]
       }
-      pagination.value.total = props.fetchType === 'approval' ? (res.result?.total || 0) : (res.total || 0)
+      pagination.value.total = total
       if (staffOptions.value.length >= pagination.value.total) {
         finished.value = true
       }
@@ -311,6 +353,57 @@ function handleDropdownVisibleChange(visible) {
 // 根据员工ID获取员工信息（用于初始化显示）
 async function getStaffById(staffId) {
   if (!staffId) return null
+
+  const cachedStaff = findCachedStaff(props.fetchType, props.status, staffId)
+  if (cachedStaff) {
+    return cachedStaff
+  }
+
+  try {
+    const cached = await getCachedInitialStaffList(
+      props.fetchType,
+      props.status,
+      async () => {
+        if (props.fetchType === 'approval') {
+          const response = await getStaffSummariesApi({
+            queryModel: {},
+            pageRequestModel: {
+              needTotal: true,
+              pageSize: 100,
+              pageIndex: 1,
+              skipCount: 0,
+            },
+          })
+          return {
+            items: normalizeStaffItems(response),
+            total: response.result?.total || 0,
+          }
+        }
+
+        const response = await getUserListApi({
+          pageRequestModel: {
+            needTotal: true,
+            pageSize: 20,
+            pageIndex: 1,
+            skipCount: 0,
+          },
+          queryModel: {
+            status: props.status,
+          },
+        })
+        return {
+          items: normalizeStaffItems(response),
+          total: response.total || 0,
+        }
+      },
+    )
+    const sharedMatched = cached.items.find(item => `${item.id}` === `${staffId}`)
+    if (sharedMatched) {
+      return sharedMatched
+    }
+  } catch (error) {
+    console.error('从共享缓存获取员工失败:', error)
+  }
   
   try {
     let res
@@ -340,16 +433,10 @@ async function getStaffById(staffId) {
     }
 
     if (res.code === 200) {
-      const sourceList = props.fetchType === 'approval'
-        ? (res.result?.list || []).map(item => ({
-            id: item.id,
-            nickName: item.name,
-            mobile: item.phone,
-            status: item.status,
-          }))
-        : (res.result || [])
+      const sourceList = normalizeStaffItems(res)
       const staff = sourceList.find(item => item.id === staffId)
       if (staff) {
+        mergeCachedStaff(props.fetchType, props.status, [staff])
         return staff
       }
     }
@@ -382,13 +469,29 @@ function handleSearch(value) {
 // 监听 modelValue 变化，初始化显示
 watch(() => props.modelValue, async (newValue) => {
   if (props.multiple && Array.isArray(newValue)) {
-    // 多选模式：处理每个选中的值
-    for (const value of newValue) {
-      if (value && !staffOptions.value.find(item => item.id === value)) {
-        const staffInfo = await getStaffById(value)
-        if (staffInfo && !hasLoadedList.value && !staffOptions.value.find(item => item.id === staffInfo.id)) {
-          staffOptions.value = [staffInfo, ...staffOptions.value]
-        }
+    const targetIds = newValue.filter(Boolean)
+    if (targetIds.length === 0) {
+      return
+    }
+
+    const missingIds = targetIds.filter(value => !staffOptions.value.find(item => item.id === value))
+    if (missingIds.length === 0) {
+      return
+    }
+
+    // 多选模式下避免按已选人数逐个请求，先拉一页员工列表再本地匹配
+    if (!hasLoadedList.value && !initialLoading.value && !scrollLoading.value) {
+      initialLoading.value = true
+      finished.value = false
+      pagination.value.current = 1
+      await getStaffList()
+    }
+
+    const stillMissingIds = targetIds.filter(value => !staffOptions.value.find(item => item.id === value))
+    for (const value of stillMissingIds) {
+      const staffInfo = await getStaffById(value)
+      if (staffInfo && !staffOptions.value.find(item => item.id === staffInfo.id)) {
+        staffOptions.value = [staffInfo, ...staffOptions.value]
       }
     }
   } else if (newValue && !props.multiple) {
@@ -403,8 +506,6 @@ watch(() => props.modelValue, async (newValue) => {
       
       // 尝试获取员工信息
       const staffInfo = await getStaffById(newValue)
-      console.log(staffInfo);
-      
       if (staffInfo) {
         selectedStaffDisplay.value = staffInfo
         // 只在还没有加载员工列表时才添加到选项中

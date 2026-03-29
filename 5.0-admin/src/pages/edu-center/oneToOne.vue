@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { debounce } from 'lodash-es'
-import { DownOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
 import StaffSelect from '@/components/common/staff-select.vue'
@@ -12,7 +12,9 @@ import {
   batchAssignOneToOneClassTeacherApi,
   batchUpdateOneToOneAttributesApi,
   batchUpdateOneToOneClassTimeApi,
+  checkOneToOneNameApi,
   getOneToOneListApi,
+  updateOneToOneApi,
 } from '@/api/edu-center/one-to-one'
 import { Sex, SexLabel } from '@/enums'
 
@@ -22,6 +24,7 @@ const loading = ref(false)
 const dataSource = ref([])
 const selectedRows = ref([])
 const selectedRowKeys = ref([])
+const actionRows = ref([])
 const currentRecord = ref(null)
 const drawerOpen = ref(false)
 const totalStudentCount = ref(0)
@@ -51,6 +54,26 @@ const attributeForm = reactive({
   defaultTeacherId: undefined,
   status: undefined,
   classStudentStatus: undefined,
+})
+const editModalOpen = ref(false)
+const editSubmitting = ref(false)
+const currentEditRecord = ref(null)
+const editForm = reactive({
+  id: '',
+  studentId: '',
+  lessonId: '',
+  studentName: '',
+  lessonName: '',
+  name: '',
+  teacherIds: [],
+  defaultTeacherId: undefined,
+  classRoomId: undefined,
+  classRoomName: '',
+  defaultStudentClassTime: 1,
+  defaultTeacherClassTime: 0,
+  defaultClassTimeRecordMode: 1,
+  remark: '',
+  classProperties: [],
 })
 
 const displayArray = ref([
@@ -211,7 +234,7 @@ const allColumns = ref([
   { title: '创建时间', dataIndex: 'createdTime', key: 'createdTime', width: 160 },
   { title: '开班状态', dataIndex: 'status', key: 'status', width: 110 },
   { title: '开课状态', dataIndex: 'classStudentStatus', key: 'classStudentStatus', width: 110 },
-  { title: '操作', dataIndex: 'action', key: 'action', fixed: 'right', width: 90 },
+  { title: '操作', dataIndex: 'action', key: 'action', fixed: 'right', width: 180 },
 ])
 
 const { selectedValues, columnOptions, filteredColumns, totalWidth } = useTableColumns({
@@ -295,18 +318,61 @@ function handleEnroll() {
   router.push('/edu-center/registr-renewal')
 }
 
+function handleCreateOneToOne() {
+  messageService.info('创建1对1功能暂未实现')
+}
+
+function handleFinishCourse() {
+  messageService.info('结课功能暂未实现')
+}
+
+function closeEditModal() {
+  editModalOpen.value = false
+}
+
+function resetEditForm() {
+  editForm.id = ''
+  editForm.studentId = ''
+  editForm.lessonId = ''
+  editForm.studentName = ''
+  editForm.lessonName = ''
+  editForm.name = ''
+  editForm.teacherIds = []
+  editForm.defaultTeacherId = undefined
+  editForm.classRoomId = undefined
+  editForm.classRoomName = ''
+  editForm.defaultStudentClassTime = 1
+  editForm.defaultTeacherClassTime = 0
+  editForm.defaultClassTimeRecordMode = 1
+  editForm.remark = ''
+  editForm.classProperties = []
+}
+
+function getCurrentActionRows() {
+  return actionRows.value.length > 0 ? actionRows.value : selectedRows.value
+}
+
 function getGenderText(sex) {
   return SexLabel[sex] || SexLabel[Sex.Unknown]
 }
 
+function isZeroDateValue(value) {
+  if (!value)
+    return true
+  if (typeof value === 'string' && value.startsWith('0001-01-01'))
+    return true
+  const parsed = dayjs(value)
+  return !parsed.isValid() || parsed.year() <= 1
+}
+
 function formatDateTime(value) {
-  if (!value || value === '0001-01-01T00:00:00')
+  if (isZeroDateValue(value))
     return '-'
   return dayjs(value).format('YYYY-MM-DD HH:mm')
 }
 
 function formatDate(value) {
-  if (!value || value === '0001-01-01T00:00:00')
+  if (isZeroDateValue(value))
     return '-'
   return dayjs(value).format('YYYY-MM-DD')
 }
@@ -351,6 +417,24 @@ function calcUsedTuition(record) {
   return Math.max(Number(record.tuitionAccount?.totalTuition || 0) - Number(record.tuitionAccount?.remainTuition || 0), 0)
 }
 
+function shouldShowSchedulePlaceholder(record) {
+  return !record.isScheduled || Number(record.one2OneLessonDayInfo?.lessonDayCount || 0) <= 0
+}
+
+function formatClassTime(record) {
+  if (shouldShowSchedulePlaceholder(record))
+    return '-'
+  return Number(record.classTime || 0) > 0 ? `${record.classTime}课时/次` : '-'
+}
+
+function formatLessonDaySummary(record) {
+  const total = Number(record.one2OneLessonDayInfo?.lessonDayCount || 0)
+  const completed = Number(record.one2OneLessonDayInfo?.completeLessonDayCount || 0)
+  if (total <= 0)
+    return '-'
+  return `${completed}/${total}节`
+}
+
 function getOpenClassStatus(status) {
   if (status === 2)
     return { text: '已结班', className: 'text-#888 bg-#f5f5f5' }
@@ -359,10 +443,10 @@ function getOpenClassStatus(status) {
 
 function getClassStudentStatus(status) {
   if (status === 2)
-    return { text: '已停课', className: 'text-#f90 bg-#fff5e6' }
+    return { text: '已开课', className: 'text-#f90 bg-#fff5e6' }
   if (status === 3)
     return { text: '已结课', className: 'text-#888 bg-#f5f5f5' }
-  return { text: '开课中', className: 'text-#0c3 bg-#e6ffec' }
+  return { text: '正常', className: 'text-#0c3 bg-#e6ffec' }
 }
 
 function openDrawer(record) {
@@ -380,6 +464,7 @@ function ensureSelectedRows() {
 function openBatchAction(action) {
   if (!ensureSelectedRows())
     return
+  actionRows.value = [...selectedRows.value]
 
   if (action === 'assign') {
     advisorModalTitle.value = '批量分配班主任'
@@ -394,7 +479,7 @@ function openBatchAction(action) {
     return
   }
   if (action === 'classTime') {
-    const current = selectedRows.value[0]
+    const current = actionRows.value[0]
     classTimeForm.classTime = Number(current?.classTime || 1)
     classTimeForm.studentClassTime = Number(current?.studentClassTime || 1)
     classTimeForm.teacherClassTime = Number(current?.teacherClassTime || 0)
@@ -402,7 +487,7 @@ function openBatchAction(action) {
     return
   }
   if (action === 'attribute') {
-    const current = selectedRows.value[0]
+    const current = actionRows.value[0]
     attributeForm.defaultTeacherId = current?.defaultTeacherId && current.defaultTeacherId !== '0'
       ? Number(current.defaultTeacherId)
       : undefined
@@ -417,10 +502,11 @@ async function submitAdvisorBatch() {
     messageService.warning('请选择班主任')
     return
   }
+  const rows = getCurrentActionRows()
   advisorSubmitting.value = true
   try {
     const res = await batchAssignOneToOneClassTeacherApi({
-      ids: selectedRows.value.map(item => item.id),
+      ids: rows.map(item => item.id),
       classTeacherId: String(advisorForm.classTeacherId),
     })
     if (res.code !== 200)
@@ -437,10 +523,11 @@ async function submitAdvisorBatch() {
 }
 
 async function submitClassTimeBatch() {
+  const rows = getCurrentActionRows()
   classTimeSubmitting.value = true
   try {
     const res = await batchUpdateOneToOneClassTimeApi({
-      ids: selectedRows.value.map(item => item.id),
+      ids: rows.map(item => item.id),
       classTime: Number(classTimeForm.classTime || 0),
       studentClassTime: Number(classTimeForm.studentClassTime || 0),
       teacherClassTime: Number(classTimeForm.teacherClassTime || 0),
@@ -463,10 +550,11 @@ async function submitAttributeBatch() {
     messageService.warning('请至少修改一项属性')
     return
   }
+  const rows = getCurrentActionRows()
   attributeSubmitting.value = true
   try {
     const payload = {
-      ids: selectedRows.value.map(item => item.id),
+      ids: rows.map(item => item.id),
       status: attributeForm.status,
       classStudentStatus: attributeForm.classStudentStatus,
     }
@@ -490,6 +578,101 @@ async function submitAttributeBatch() {
 function resetSelection() {
   selectedRows.value = []
   selectedRowKeys.value = []
+}
+
+function openEditModal(record) {
+  currentEditRecord.value = record
+  resetEditForm()
+  editForm.id = record?.id || ''
+  editForm.studentId = record?.studentId || ''
+  editForm.lessonId = record?.lessonId || ''
+  editForm.studentName = record?.studentName || ''
+  editForm.lessonName = record?.lessonName || ''
+  editForm.name = record?.name || ''
+  editForm.teacherIds = Array.isArray(record?.teacherList)
+    ? record.teacherList.map(item => Number(item.teacherId)).filter(Boolean)
+    : []
+  editForm.defaultTeacherId = record?.defaultTeacherId && record.defaultTeacherId !== '0'
+    ? Number(record.defaultTeacherId)
+    : undefined
+  editForm.classRoomId = record?.classRoomId && record.classRoomId !== '0'
+    ? Number(record.classRoomId)
+    : undefined
+  editForm.classRoomName = record?.classRoomName || ''
+  editForm.defaultStudentClassTime = Number(record?.studentClassTime || 1)
+  editForm.defaultTeacherClassTime = Number(record?.teacherClassTime || 0)
+  editForm.defaultClassTimeRecordMode = Number(record?.defaultClassTimeRecordMode || 1)
+  editForm.remark = record?.remark || ''
+  editForm.classProperties = Array.isArray(record?.classProperties) ? [...record.classProperties] : []
+  editModalOpen.value = true
+}
+
+function buildEditTeacherIds() {
+  const teacherIds = Array.isArray(editForm.teacherIds) ? [...editForm.teacherIds] : []
+  if (editForm.defaultTeacherId && !teacherIds.includes(editForm.defaultTeacherId)) {
+    teacherIds.push(editForm.defaultTeacherId)
+  }
+  return teacherIds
+}
+
+async function submitEditModal() {
+  if (!editForm.name.trim()) {
+    messageService.warning('请输入1对1名称')
+    return
+  }
+  editSubmitting.value = true
+  try {
+    const checkRes = await checkOneToOneNameApi({
+      name: editForm.name.trim(),
+      exceptId: editForm.id,
+      isOne2One: true,
+    })
+    if (checkRes.code !== 200) {
+      throw new Error(checkRes.message || '校验1对1名称失败')
+    }
+    if (checkRes.result) {
+      messageService.error('1对1名称已存在')
+      return
+    }
+
+    const teacherIds = buildEditTeacherIds()
+    const updateRes = await updateOneToOneApi({
+      id: editForm.id,
+      studentId: editForm.studentId,
+      lessonId: editForm.lessonId,
+      name: editForm.name.trim(),
+      teacherId: teacherIds.map(id => String(id)),
+      defaultTeacherId: editForm.defaultTeacherId ? String(editForm.defaultTeacherId) : '',
+      defaultStudentClassTime: Number(editForm.defaultStudentClassTime || 0),
+      defaultTeacherClassTime: Number(editForm.defaultTeacherClassTime || 0),
+      defaultClassTimeRecordMode: Number(editForm.defaultClassTimeRecordMode || 1),
+      remark: editForm.remark.trim(),
+      classProperties: Array.isArray(editForm.classProperties) ? editForm.classProperties : [],
+    })
+    if (updateRes.code !== 200) {
+      throw new Error(updateRes.message || '更新1对1失败')
+    }
+
+    messageService.success('编辑1对1成功')
+    editModalOpen.value = false
+    await getOneToOneList()
+  } catch (error) {
+    console.error('update one to one failed', error)
+    messageService.error(error?.message || '编辑1对1失败')
+  } finally {
+    editSubmitting.value = false
+  }
+}
+
+function handleSchedule(record) {
+  router.push({
+    path: '/edu-center/timetable',
+    query: {
+      mode: 'one-to-one',
+      oneToOneId: record.id,
+      studentId: record.studentId,
+    },
+  })
 }
 
 onMounted(() => {
@@ -548,8 +731,11 @@ onMounted(() => {
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
             </a-dropdown>
-            <a-button type="primary" class="mr-2 w-25" @click="handleEnroll">
+            <a-button type="primary" class="mr-2 w-25 whitespace-nowrap" @click="handleEnroll">
               报名
+            </a-button>
+            <a-button type="primary" class="mr-2 w-30 whitespace-nowrap" @click="handleCreateOneToOne">
+              创建1对1
             </a-button>
             <customize-code
               v-model:checked-values="selectedValues"
@@ -643,18 +829,19 @@ onMounted(() => {
                 {{ record.defaultTeacherName || '-' }}
               </template>
               <template v-if="column.key === 'classTime'">
-                {{ Number(record.classTime || 0) > 0 ? `${record.classTime}课时/次` : '-' }}
+                {{ formatClassTime(record) }}
               </template>
               <template v-if="column.key === 'lastFinishedLessonDay'">
-                {{ formatDateTime(record.lastFinishedLessonDay) }}
+                {{ shouldShowSchedulePlaceholder(record) ? '-' : formatDateTime(record.lastFinishedLessonDay) }}
               </template>
               <template v-if="column.key === 'isScheduled'">
-                <span :class="record.isScheduled ? 'text-#0c3' : 'text-#999'">
+                <span class="status-indicator" :class="record.isScheduled ? 'text-#0c3' : 'text-#666'">
+                  <span class="status-dot" :class="record.isScheduled ? 'status-dot--success' : 'status-dot--warning'" />
                   {{ record.isScheduled ? '已排课' : '未排课' }}
                 </span>
               </template>
               <template v-if="column.key === 'lessonDayCount'">
-                {{ record.one2OneLessonDayInfo?.completeLessonDayCount || 0 }}/{{ record.one2OneLessonDayInfo?.lessonDayCount || 0 }}节
+                {{ formatLessonDaySummary(record) }}
               </template>
               <template v-if="column.key === 'createdTime'">
                 {{ formatDateTime(record.createdTime) }}
@@ -670,7 +857,12 @@ onMounted(() => {
                 </span>
               </template>
               <template v-if="column.key === 'action'">
-                <a @click="openDrawer(record)">查看</a>
+                <a-space :size="12">
+                  <a @click="handleSchedule(record)">排课</a>
+                  <a @click="handleFinishCourse(record)">结课</a>
+                  <a @click="openEditModal(record)">编辑</a>
+                  <a @click="openDrawer(record)">详情</a>
+                </a-space>
               </template>
             </template>
           </a-table>
@@ -751,6 +943,127 @@ onMounted(() => {
       </a-form>
     </a-modal>
 
+    <a-modal
+      v-model:open="editModalOpen"
+      centered
+      class="createStu-modal-content-box"
+      :keyboard="false"
+      :closable="false"
+      :mask-closable="false"
+      :width="800"
+      :confirm-loading="editSubmitting"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="submitEditModal"
+      @cancel="closeEditModal"
+    >
+      <template #title>
+        <div class="text-5 flex justify-between flex-center">
+          <span>编辑1对1</span>
+          <a-button type="text" class="close-btn" @click="closeEditModal">
+            <template #icon>
+              <CloseOutlined class="text-5 close-icon" />
+            </template>
+          </a-button>
+        </div>
+      </template>
+      <div class="stu-content scrollbar">
+        <a-form
+          layout="horizontal"
+          :label-col="{ span: 5 }"
+          :wrapper-col="{ span: 16 }"
+          label-align="right"
+        >
+          <a-form-item label="学员名称">
+            <span>{{ editForm.studentName || '-' }}</span>
+          </a-form-item>
+
+          <a-form-item label="上课课程">
+            <span>{{ editForm.lessonName || '-' }}</span>
+          </a-form-item>
+
+          <a-form-item label="1对1名称" required>
+            <a-input v-model:value="editForm.name" :maxlength="100" placeholder="请输入1对1名称" style="width: 100%" />
+          </a-form-item>
+
+          <a-form-item label="班主任">
+            <StaffSelect
+              v-model="editForm.teacherIds"
+              placeholder="请选择班主任"
+              width="100%"
+              :status="0"
+              :multiple="true"
+            />
+          </a-form-item>
+
+          <a-form-item>
+            <template #label>
+              <span>默认上课教师</span>
+              <a-tooltip title="当课程未单独指定教师时，系统默认负责该班级日常教学的教师。">
+                <QuestionCircleOutlined style="margin-left: 4px; color: #999" />
+              </a-tooltip>
+            </template>
+            <StaffSelect
+              v-model="editForm.defaultTeacherId"
+              placeholder="请选择默认上课教师"
+              width="100%"
+              :status="0"
+            />
+          </a-form-item>
+
+          <a-form-item label="上课教室">
+            <a-select
+              v-model:value="editForm.classRoomId"
+              placeholder="请选择"
+              style="width: 100%"
+              :disabled="true"
+              allow-clear
+            >
+              <a-select-option v-if="editForm.classRoomId" :value="editForm.classRoomId">
+                {{ editForm.classRoomName }}
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+
+          <a-form-item label="课时记录方式" required>
+            <a-radio-group v-model:value="editForm.defaultClassTimeRecordMode" class="custom-radio">
+              <a-radio :value="1">
+                按固定课时记录
+              </a-radio>
+              <a-radio :value="2">
+                按上课时长记录
+              </a-radio>
+            </a-radio-group>
+          </a-form-item>
+
+          <a-form-item label="默认记录课时" required>
+            <a-space align="center" :size="12" wrap>
+              <span>学员</span>
+              <a-input-number v-model:value="editForm.defaultStudentClassTime" :min="0" :precision="2" style="width: 120px" />
+              <span>课时</span>
+              <span>上课教师课时</span>
+              <a-input-number v-model:value="editForm.defaultTeacherClassTime" :min="0" :precision="2" style="width: 120px" />
+              <span>课时</span>
+            </a-space>
+            <div style="margin-top: 8px; color: #888; font-size: 13px;">
+              每次点名，学员和上课教师记录的课时数默认为此数值（点名时支持调整）
+            </div>
+          </a-form-item>
+
+          <a-form-item label="备注">
+            <a-textarea
+              v-model:value="editForm.remark"
+              :maxlength="150"
+              :rows="1"
+              placeholder="请输入"
+              show-count
+              style="width: 100%"
+            />
+          </a-form-item>
+        </a-form>
+      </div>
+    </a-modal>
+
     <a-modal v-model:open="classTimeModalOpen" title="修改记录课时" @ok="submitClassTimeBatch" :confirm-loading="classTimeSubmitting">
       <a-form layout="vertical">
         <a-form-item label="上课时间">
@@ -783,10 +1096,10 @@ onMounted(() => {
         <a-form-item label="开课状态">
           <a-select v-model:value="attributeForm.classStudentStatus" allow-clear placeholder="请选择开课状态">
             <a-select-option :value="1">
-              开课中
+              正常
             </a-select-option>
             <a-select-option :value="2">
-              已停课
+              已开课
             </a-select-option>
             <a-select-option :value="3">
               已结课
@@ -816,5 +1129,65 @@ onMounted(() => {
     position: absolute;
     width: 4px;
   }
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.status-dot--warning {
+  background: #fa8c16;
+}
+
+.status-dot--success {
+  background: #52c41a;
+}
+
+@keyframes icon-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+.createStu-modal-content-box {
+  .stu-content {
+    max-height: calc(100vh - 155px);
+    padding: 24px 40px 0 !important;
+    overflow: auto;
+  }
+}
+
+.close-btn {
+  &:hover {
+    background: transparent;
+
+    .close-icon {
+      animation: icon-rotate 0.3s linear;
+    }
+  }
+}
+</style>
+
+<style>
+.createStu-modal-content-box .ant-modal-header {
+  padding: 10px 16px !important;
+  margin-bottom: 0;
+}
+
+.createStu-modal-content-box .ant-modal-body {
+  padding: 0 !important;
 }
 </style>

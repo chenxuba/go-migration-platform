@@ -21,6 +21,58 @@ func (svc *Service) GetOneToOneListPage(userID int64, query model.OneToOneListQu
 	return svc.repo.PageOneToOneList(context.Background(), instID, query)
 }
 
+func (svc *Service) CheckOneToOneName(userID int64, dto model.OneToOneCheckNameDTO) (bool, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, errors.New("no institution context")
+		}
+		return false, err
+	}
+	var excludeID *int64
+	if value, err := strconv.ParseInt(strings.TrimSpace(dto.ExceptID), 10, 64); err == nil && value > 0 {
+		excludeID = &value
+	}
+	count, err := svc.repo.CountTeachingClassByName(context.Background(), instID, model.TeachingClassTypeOneToOne, dto.Name, excludeID)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (svc *Service) UpdateOneToOne(userID int64, dto model.OneToOneUpdateDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(dto.ID) == "" {
+		return errors.New("1对1ID不能为空")
+	}
+	if strings.TrimSpace(dto.StudentID) == "" {
+		return errors.New("学员ID不能为空")
+	}
+	if strings.TrimSpace(dto.LessonID) == "" {
+		return errors.New("课程ID不能为空")
+	}
+	if strings.TrimSpace(dto.Name) == "" {
+		return errors.New("1对1名称不能为空")
+	}
+	if dto.DefaultClassTimeRecordMode <= 0 {
+		dto.DefaultClassTimeRecordMode = 1
+	}
+
+	excludeID, _ := strconv.ParseInt(strings.TrimSpace(dto.ID), 10, 64)
+	count, err := svc.repo.CountTeachingClassByName(context.Background(), instID, model.TeachingClassTypeOneToOne, dto.Name, &excludeID)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("1对1名称已存在")
+	}
+
+	return svc.repo.UpdateOneToOne(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) BatchAssignOneToOneClassTeacher(userID int64, dto model.OneToOneBatchAssignTeacherDTO) error {
 	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
 	if err != nil {

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 			class_room_id BIGINT NOT NULL DEFAULT 0,
 			class_room_name VARCHAR(255) NOT NULL DEFAULT '',
 			classroom_enabled TINYINT(1) NULL DEFAULT NULL,
+			remark VARCHAR(150) NOT NULL DEFAULT '',
 			create_id BIGINT NOT NULL DEFAULT 0,
 			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			update_id BIGINT NOT NULL DEFAULT 0,
@@ -58,6 +60,7 @@ func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 			class_time DECIMAL(18,2) NOT NULL DEFAULT 1,
 			student_class_time DECIMAL(18,2) NOT NULL DEFAULT 1,
 			teacher_class_time DECIMAL(18,2) NOT NULL DEFAULT 0,
+			class_time_record_mode INT NOT NULL DEFAULT 1,
 			last_finished_lesson_day DATETIME NULL DEFAULT NULL,
 			class_properties_json TEXT NULL,
 			create_id BIGINT NOT NULL DEFAULT 0,
@@ -95,9 +98,31 @@ func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 	`); err != nil {
 		return err
 	}
+	if err := ensureColumnsOnTable(ctx, db, "teaching_class", map[string]string{
+		"remark": "remark VARCHAR(150) NOT NULL DEFAULT '' AFTER classroom_enabled",
+	}); err != nil {
+		return err
+	}
 	return ensureColumnsOnTable(ctx, db, "teaching_class_student", map[string]string{
-		"class_properties_json": "class_properties_json TEXT NULL AFTER last_finished_lesson_day",
+		"class_properties_json":  "class_properties_json TEXT NULL AFTER last_finished_lesson_day",
+		"class_time_record_mode": "class_time_record_mode INT NOT NULL DEFAULT 1 AFTER teacher_class_time",
 	})
+}
+
+func (repo *Repository) CountTeachingClassByName(ctx context.Context, instID int64, classType int, name string, excludeID *int64) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM teaching_class
+		WHERE inst_id = ? AND class_type = ? AND name = ? AND del_flag = 0
+	`
+	args := []any{instID, classType, strings.TrimSpace(name)}
+	if excludeID != nil {
+		query += " AND id <> ?"
+		args = append(args, *excludeID)
+	}
+	var count int
+	err := repo.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	return count, err
 }
 
 func (repo *Repository) getCourseTeachMethodMapTx(ctx context.Context, tx *sql.Tx, courseIDs []int64) (map[int64]int, error) {
@@ -269,10 +294,13 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			IFNULL(ts.primary_tuition_account_id, IFNULL(tcs.primary_tuition_account_id, 0)),
 			IFNULL(tc.default_teacher_id, 0),
 			IFNULL(default_teacher.nick_name, ''),
+			IFNULL(tcs.class_time_record_mode, 1),
 			IFNULL(ts.has_grade_upgrade, 0),
 			tcs.last_finished_lesson_day,
+			IFNULL(tcs.class_properties_json, '[]'),
 			IFNULL(tc.advisor_id, 0),
 			IFNULL(advisor.nick_name, ''),
+			IFNULL(tc.remark, ''),
 			IFNULL(tc.scheduled_lesson_count, 0),
 			IFNULL(tc.finished_lesson_count, 0),
 			IFNULL(ts.total_tuition, 0),
@@ -362,6 +390,7 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			classTeacherID        int64
 			classRoomID           int64
 			classroomEnabled      sql.NullBool
+			classPropertiesJSON   string
 			lastFinishedLessonDay sql.NullTime
 			expireTime            sql.NullTime
 			changeStatusTime      sql.NullTime
@@ -391,10 +420,13 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			&primaryTuitionAccount,
 			&defaultTeacherID,
 			&item.DefaultTeacherName,
+			&item.DefaultClassTimeRecordMode,
 			&item.IsGradeUpgrade,
 			&lastFinishedLessonDay,
+			&classPropertiesJSON,
 			&classTeacherID,
 			&item.ClassTeacherName,
+			&item.Remark,
 			&item.One2OneLessonDayInfo.LessonDayCount,
 			&item.One2OneLessonDayInfo.CompleteLessonDayCount,
 			&item.TuitionAccount.TotalTuition,
@@ -462,6 +494,9 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 		}
 		item.One2OneLessonTimes = []model.OneToOneLessonTimeVO{}
 		item.ClassProperties = []model.OneToOnePropertyVO{}
+		if strings.TrimSpace(classPropertiesJSON) != "" {
+			_ = json.Unmarshal([]byte(classPropertiesJSON), &item.ClassProperties)
+		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -482,6 +517,148 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 		StudentCount: studentCount,
 		List:         items,
 	}, nil
+}
+
+func (repo *Repository) UpdateOneToOne(ctx context.Context, instID, operatorID int64, dto model.OneToOneUpdateDTO) error {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.ID), 10, 64)
+	if err != nil || classID <= 0 {
+		return sql.ErrNoRows
+	}
+	studentID, _ := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
+	lessonID, _ := strconv.ParseInt(strings.TrimSpace(dto.LessonID), 10, 64)
+	defaultTeacherID, _ := strconv.ParseInt(strings.TrimSpace(dto.DefaultTeacherID), 10, 64)
+	teacherIDs := normalizeTeacherIDs(dto.TeacherID, defaultTeacherID)
+	classProperties := dto.ClassProperties
+	if classProperties == nil {
+		classProperties = []model.OneToOnePropertyVO{}
+	}
+	classPropertiesJSON, err := json.Marshal(classProperties)
+	if err != nil {
+		return err
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var exists int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM teaching_class tc
+		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+		WHERE tc.id = ? AND tc.inst_id = ? AND tc.class_type = ? AND tc.del_flag = 0
+	`, classID, instID, model.TeachingClassTypeOneToOne).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
+		return sql.ErrNoRows
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class
+		SET name = ?, course_id = ?, default_teacher_id = ?, remark = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0
+	`,
+		strings.TrimSpace(dto.Name),
+		lessonID,
+		defaultTeacherID,
+		strings.TrimSpace(dto.Remark),
+		operatorID,
+		classID,
+		instID,
+		model.TeachingClassTypeOneToOne,
+	); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_student
+		SET student_id = ?, class_time = ?, student_class_time = ?, teacher_class_time = ?, class_time_record_mode = ?,
+		    class_properties_json = ?, update_id = ?, update_time = NOW()
+		WHERE teaching_class_id = ? AND inst_id = ? AND del_flag = 0
+	`,
+		studentID,
+		dto.DefaultStudentClassTime,
+		dto.DefaultStudentClassTime,
+		dto.DefaultTeacherClassTime,
+		dto.DefaultClassTimeRecordMode,
+		string(classPropertiesJSON),
+		operatorID,
+		classID,
+		instID,
+	); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_teacher
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND teaching_class_id = ? AND del_flag = 0
+	`, operatorID, instID, classID); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	for _, teacherID := range teacherIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO teaching_class_teacher (
+				uuid, version, inst_id, teaching_class_id, teacher_id, status, is_default,
+				create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, 0
+			)
+			ON DUPLICATE KEY UPDATE
+				status = VALUES(status),
+				is_default = VALUES(is_default),
+				del_flag = 0,
+				update_id = VALUES(update_id),
+				update_time = VALUES(update_time)
+		`,
+			instID,
+			classID,
+			teacherID,
+			boolToTinyInt(teacherID == defaultTeacherID),
+			operatorID,
+			now,
+			operatorID,
+			now,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func normalizeTeacherIDs(ids []string, defaultTeacherID int64) []int64 {
+	result := make([]int64, 0, len(ids)+1)
+	seen := make(map[int64]struct{}, len(ids)+1)
+	for _, raw := range ids {
+		value, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	if defaultTeacherID > 0 {
+		if _, ok := seen[defaultTeacherID]; !ok {
+			result = append(result, defaultTeacherID)
+		}
+	}
+	return result
+}
+
+func boolToTinyInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, excludeQuickFilters bool) (string, []any) {

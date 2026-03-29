@@ -60,6 +60,7 @@ export interface OneToOneItem {
   tuitionAccountId?: string
   defaultTeacherId?: string
   defaultTeacherName?: string
+  defaultClassTimeRecordMode?: number
   isGradeUpgrade?: boolean
   lastFinishedLessonDay?: string
   teacherList?: OneToOneTeacher[]
@@ -67,6 +68,7 @@ export interface OneToOneItem {
   classProperties?: Array<Record<string, any>>
   classTeacherId?: string
   classTeacherName?: string
+  remark?: string
 }
 
 export interface OneToOneListResult {
@@ -115,6 +117,26 @@ export interface OneToOneBatchAttributeParams {
   classStudentStatus?: number
 }
 
+export interface OneToOneCheckNameParams {
+  name: string
+  exceptId?: string
+  isOne2One: boolean
+}
+
+export interface OneToOneUpdateParams {
+  id: string
+  studentId: string
+  lessonId: string
+  name: string
+  teacherId: string[]
+  defaultTeacherId?: string
+  defaultStudentClassTime: number
+  defaultTeacherClassTime: number
+  defaultClassTimeRecordMode: number
+  remark?: string
+  classProperties: Array<Record<string, any>>
+}
+
 export function getOneToOneListApi(data: OneToOneListParams) {
   return usePost<OneToOneListResult>('/api/v1/one-to-ones/page', data)
 }
@@ -129,4 +151,12 @@ export function batchUpdateOneToOneClassTimeApi(data: OneToOneBatchClassTimePara
 
 export function batchUpdateOneToOneAttributesApi(data: OneToOneBatchAttributeParams) {
   return usePost('/api/v1/one-to-ones/batch-update-attributes', data)
+}
+
+export function checkOneToOneNameApi(data: OneToOneCheckNameParams) {
+  return usePost<boolean>('/api/v1/one-to-ones/check-name', data)
+}
+
+export function updateOneToOneApi(data: OneToOneUpdateParams) {
+  return usePost<boolean>('/api/v1/one-to-ones/update', data)
 }
