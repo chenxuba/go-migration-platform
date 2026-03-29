@@ -14,6 +14,14 @@ const props = defineProps({
   },
 })
 
+const emit = defineEmits(['switchDefaultAccount'])
+
+const canSwitchDefaultAccount = computed(() => Number(props.record?.status) !== 2)
+
+function onSwitchDefaultAccount(block, idx) {
+  emit('switchDefaultAccount', { block, index: idx, record: props.record })
+}
+
 function mapApiAccountToTuitionVO(item) {
   if (!item)
     return null
@@ -236,20 +244,30 @@ function blockKey(block, idx) {
       class="bg-white pt-18px px-20px pb-18px rounded-10px mb-12px last:mb-0"
     >
       <a-space direction="vertical" size="middle" class="w-full">
-        <div>
-          <div class="text-4 text-#222 font-500 mb-1">
-            {{ enrollmentTitleOf(block) }}
+        <div class="enrollment-detail-block-header">
+          <div class="enrollment-detail-block-header-main">
+            <div class="text-4 text-#222 font-500 mb-1">
+              {{ enrollmentTitleOf(block) }}
+            </div>
+            <a-space :size="5" class="w-100% flex flex-wrap">
+              <a-tag
+                v-for="(tag, tIdx) in getEnrollmentTags(block)"
+                :key="`${blockKey(block, idx)}-tag-${tIdx}`"
+                :style="getTagStyle(tag.type)"
+                :color="tag.type === 'primary' ? '#0066ff' : '#e6f0ff'"
+              >
+                {{ tag.text }}
+              </a-tag>
+            </a-space>
           </div>
-          <a-space :size="5" class="w-100% flex flex-wrap">
-            <a-tag
-              v-for="(tag, tIdx) in getEnrollmentTags(block)"
-              :key="`${blockKey(block, idx)}-tag-${tIdx}`"
-              :style="getTagStyle(tag.type)"
-              :color="tag.type === 'primary' ? '#0066ff' : '#e6f0ff'"
-            >
-              {{ tag.text }}
-            </a-tag>
-          </a-space>
+          <a-button
+            v-if="canSwitchDefaultAccount"
+            type="link"
+            class="enrollment-switch-default-account"
+            @click="onSwitchDefaultAccount(block, idx)"
+          >
+            切换默认账户
+          </a-button>
         </div>
 
         <a-descriptions :column="3" size="small">
@@ -299,3 +317,26 @@ function blockKey(block, idx) {
     </div>
   </div>
 </template>
+
+<style lang="less" scoped>
+.enrollment-detail-block-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.enrollment-detail-block-header-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.enrollment-switch-default-account {
+  flex-shrink: 0;
+  padding: 0;
+  height: auto;
+  line-height: 22px;
+  font-size: 14px;
+}
+</style>

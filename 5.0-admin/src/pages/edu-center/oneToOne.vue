@@ -937,6 +937,12 @@ function handleDrawerEdit(record) {
   openEditModal(record || currentRecord.value)
 }
 
+/** 报读明细内「切换默认账户」：关闭抽屉后打开编辑（与顶部编辑一致，便于后续扩展扣费账户） */
+function handleDrawerSwitchDefaultAccount() {
+  drawerOpen.value = false
+  openEditModal(currentRecord.value)
+}
+
 function ensureSelectedRows() {
   if (selectedRows.value.length > 0)
     return true
@@ -1496,6 +1502,7 @@ onMounted(() => {
       :record="currentRecord"
       :tuition-accounts="drawerTuitionAccounts"
       @edit="handleDrawerEdit"
+      @switch-default-account="handleDrawerSwitchDefaultAccount"
     />
 
     <FinishOneToOneCourseModal

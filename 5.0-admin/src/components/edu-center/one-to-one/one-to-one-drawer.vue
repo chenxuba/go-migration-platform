@@ -21,7 +21,7 @@ const props = defineProps({
     default: () => [],
   },
 })
-const emit = defineEmits(['update:open', 'edit'])
+const emit = defineEmits(['update:open', 'edit', 'switchDefaultAccount'])
 const activeKey = ref('0')
 
 const openDrawer = computed({
@@ -50,6 +50,10 @@ const isClassClosed = computed(() => Number(props.record?.status) === 2)
 
 function handleEdit() {
   emit('edit', props.record)
+}
+
+function onEnrollmentSwitchDefaultAccount(payload) {
+  emit('switchDefaultAccount', payload)
 }
 </script>
 
@@ -153,7 +157,11 @@ function handleEdit() {
         }"
       >
         <a-tab-pane key="0" tab="报读明细">
-          <enrollment-detail :record="record" :accounts="tuitionAccounts" />
+          <enrollment-detail
+            :record="record"
+            :accounts="tuitionAccounts"
+            @switch-default-account="onEnrollmentSwitchDefaultAccount"
+          />
         </a-tab-pane>
         <a-tab-pane key="1" tab="日程">
           <schedule />
