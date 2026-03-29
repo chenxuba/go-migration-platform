@@ -2,6 +2,13 @@ package model
 
 import "time"
 
+// inst_student.student_status（与前台「在读学员 / 历史学员」等一致）
+const (
+	InstStudentStatusIntent   = 0 // 意向
+	InstStudentStatusEnrolled = 1 // 在读
+	InstStudentStatusHistory  = 2 // 历史学员
+)
+
 type StudentSyncStatus struct {
 	IndexName      string         `json:"indexName"`
 	ES             map[string]any `json:"es"`

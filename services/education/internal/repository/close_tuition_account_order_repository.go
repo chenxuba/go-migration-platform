@@ -219,6 +219,24 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 		WHERE inst_id = ? AND primary_tuition_account_id = ? AND del_flag = 0
 	`, model.TeachingClassStudentStatusClosed, operatorID, instID, tuitionAccountID)
 
+	// 全部学费账户已无剩余数量与剩余学费时，将在读学员标为历史学员
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_student s
+		SET s.student_status = ?,
+		    s.update_id = ?,
+		    s.update_time = NOW()
+		WHERE s.id = ? AND s.inst_id = ? AND s.del_flag = 0
+		  AND s.student_status = ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM tuition_account ta
+			WHERE ta.del_flag = 0 AND ta.inst_id = s.inst_id AND ta.student_id = s.id
+			  AND (IFNULL(ta.remaining_quantity, 0) > 0.02 OR IFNULL(ta.remaining_tuition, 0) > 0.02)
+			LIMIT 1
+		  )
+	`, model.InstStudentStatusHistory, operatorID, studentID, instID, model.InstStudentStatusEnrolled); err != nil {
+		return 0, err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
