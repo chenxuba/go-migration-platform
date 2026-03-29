@@ -36,6 +36,28 @@ func (svc *Service) GetOneToOneDetail(userID int64, id string) (model.OneToOneDe
 	return svc.repo.GetOneToOneDetail(context.Background(), instID, classID)
 }
 
+func (svc *Service) ListStudentOneToOneDeductionTuitionAccounts(userID int64, dto model.StudentOneToOneDeductionAccountsQueryDTO) (model.StudentLessonTuitionAccountsResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.StudentLessonTuitionAccountsResult{}, errors.New("no institution context")
+		}
+		return model.StudentLessonTuitionAccountsResult{}, err
+	}
+	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
+	if err != nil || studentID <= 0 {
+		return model.StudentLessonTuitionAccountsResult{}, errors.New("studentId 不能为空")
+	}
+	list, err := svc.repo.ListStudentOneToOneDeductionTuitionAccounts(context.Background(), instID, studentID)
+	if err != nil {
+		return model.StudentLessonTuitionAccountsResult{}, err
+	}
+	if list == nil {
+		list = []model.StudentLessonTuitionAccountItem{}
+	}
+	return model.StudentLessonTuitionAccountsResult{List: list}, nil
+}
+
 func (svc *Service) ListStudentTuitionAccountsByStudentAndLesson(userID int64, dto model.StudentLessonTuitionAccountsQueryDTO) (model.StudentLessonTuitionAccountsResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
@@ -132,6 +154,44 @@ func (svc *Service) ExistOneToOneForStudentLesson(userID int64, dto model.OneToO
 		return false, errors.New("lessonId 不能为空")
 	}
 	return svc.repo.ExistsActiveOneToOneForStudentCourse(context.Background(), instID, studentID, courseID)
+}
+
+func (svc *Service) CreateOneToOne(userID int64, dto model.OneToOneCreateDTO) (model.OneToOneCreateResult, error) {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return model.OneToOneCreateResult{}, err
+	}
+	if strings.TrimSpace(dto.StudentID) == "" {
+		return model.OneToOneCreateResult{}, errors.New("学员ID不能为空")
+	}
+	if strings.TrimSpace(dto.LessonID) == "" {
+		return model.OneToOneCreateResult{}, errors.New("课程ID不能为空")
+	}
+	if strings.TrimSpace(dto.TuitionAccountID) == "" {
+		return model.OneToOneCreateResult{}, errors.New("请选择扣费学费账户")
+	}
+	if strings.TrimSpace(dto.Name) == "" {
+		return model.OneToOneCreateResult{}, errors.New("1对1名称不能为空")
+	}
+	if dto.DefaultClassTimeRecordMode <= 0 {
+		dto.DefaultClassTimeRecordMode = 1
+	}
+
+	if !dto.AllowDuplicateName {
+		count, err := svc.repo.CountTeachingClassByName(context.Background(), instID, model.TeachingClassTypeOneToOne, dto.Name, nil)
+		if err != nil {
+			return model.OneToOneCreateResult{}, err
+		}
+		if count > 0 {
+			return model.OneToOneCreateResult{}, errors.New("1对1名称已存在")
+		}
+	}
+
+	classID, err := svc.repo.CreateOneToOne(context.Background(), instID, operatorID, dto)
+	if err != nil {
+		return model.OneToOneCreateResult{}, err
+	}
+	return model.OneToOneCreateResult{ID: strconv.FormatInt(classID, 10)}, nil
 }
 
 func (svc *Service) UpdateOneToOne(userID int64, dto model.OneToOneUpdateDTO) error {

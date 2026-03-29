@@ -228,10 +228,36 @@ type OneToOneUpdateDTO struct {
 	AllowDuplicateName bool `json:"allowDuplicateName,omitempty"`
 }
 
+// OneToOneCreateDTO 手动创建 1 对 1；必须绑定有效学费账户（primary_tuition_account_id）
+type OneToOneCreateDTO struct {
+	StudentID                  string               `json:"studentId"`
+	LessonID                   string               `json:"lessonId"`
+	TuitionAccountID           string               `json:"tuitionAccountId"`
+	Name                       string               `json:"name"`
+	TeacherID                  []string             `json:"teacherId"`
+	DefaultTeacherID           string               `json:"defaultTeacherId"`
+	DefaultStudentClassTime    float64              `json:"defaultStudentClassTime"`
+	DefaultTeacherClassTime    float64              `json:"defaultTeacherClassTime"`
+	DefaultClassTimeRecordMode int                  `json:"defaultClassTimeRecordMode"`
+	Remark                     string               `json:"remark"`
+	ClassProperties            []OneToOnePropertyVO `json:"classProperties"`
+	AllowDuplicateName         bool                 `json:"allowDuplicateName,omitempty"`
+}
+
+// OneToOneCreateResult 创建成功返回班级 ID
+type OneToOneCreateResult struct {
+	ID string `json:"id"`
+}
+
 type StudentLessonTuitionAccountsQueryDTO struct {
 	StudentID           string `json:"studentId"`
 	LessonID            string `json:"lessonId"`
 	OrderCourseDetailID string `json:"orderCourseDetailId,omitempty"`
+}
+
+// StudentOneToOneDeductionAccountsQueryDTO 创建 1 对 1 时选扣费账户：按学员查全部在读的报读账户（班级授课或 1v1，不限上课课程）
+type StudentOneToOneDeductionAccountsQueryDTO struct {
+	StudentID string `json:"studentId"`
 }
 
 // StudentLessonTuitionAccountItem 单条学费账户（含竞品常用字段名 quantity/tuition 表示剩余）
@@ -239,6 +265,7 @@ type StudentLessonTuitionAccountItem struct {
 	ID                     string     `json:"id"`
 	StudentID              string     `json:"studentId"`
 	LessonID               string     `json:"lessonId"`
+	LessonName             string     `json:"lessonName,omitempty"`
 	ProductName            string     `json:"productName"`
 	LessonChargingMode     int        `json:"lessonChargingMode"`
 	TotalQuantity          float64    `json:"totalQuantity"`

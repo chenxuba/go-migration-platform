@@ -191,11 +191,33 @@ export interface OneToOneUpdateParams {
   allowDuplicateName?: boolean
 }
 
+/** 手动创建 1 对 1，须指定在读学费账户（与上课课程一致） */
+export interface OneToOneCreateParams {
+  studentId: string
+  lessonId: string
+  tuitionAccountId: string
+  name: string
+  teacherId: string[]
+  defaultTeacherId?: string
+  defaultStudentClassTime: number
+  defaultTeacherClassTime: number
+  defaultClassTimeRecordMode: number
+  remark?: string
+  classProperties: Array<Record<string, any>>
+  allowDuplicateName?: boolean
+}
+
+export interface OneToOneCreateResult {
+  id: string
+}
+
 /** 学员在某课程下的学费账户（对齐后端 / 竞品 GetStudentAllTuitionAccountByLessonId） */
 export interface StudentLessonTuitionAccountItem {
   id?: string
   studentId?: string
   lessonId?: string
+  /** 账户所属课程名称（创建 1 对 1 扣费下拉用） */
+  lessonName?: string
   productName?: string
   lessonChargingMode?: number
   totalQuantity?: number
@@ -269,6 +291,10 @@ export function updateOneToOneApi(data: OneToOneUpdateParams) {
   return usePost<boolean>('/api/v1/one-to-ones/update', data)
 }
 
+export function createOneToOneApi(data: OneToOneCreateParams) {
+  return usePost<OneToOneCreateResult>('/api/v1/one-to-ones/create', data)
+}
+
 export function closeOneToOneApi(data: OneToOneCloseParams) {
   return usePost<boolean>('/api/v1/one-to-ones/close', data)
 }
@@ -289,4 +315,9 @@ export function listTuitionAccountsByStudentAndLessonApi(data: {
   orderCourseDetailId?: string
 }) {
   return usePost<StudentLessonTuitionAccountsResult>('/api/v1/tuition-accounts/by-student-and-lesson', data)
+}
+
+/** 创建 1 对 1 选扣费账户：学员名下全部在读报读账户（班级授课或 1v1，不限当前所选上课课程） */
+export function listTuitionAccountsForOneToOneDeductionApi(data: { studentId: string }) {
+  return usePost<StudentLessonTuitionAccountsResult>('/api/v1/tuition-accounts/for-one-to-one-deduction', data)
 }

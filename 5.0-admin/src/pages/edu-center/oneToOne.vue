@@ -18,15 +18,17 @@ import {
   checkOneToOneNameApi,
   addCloseTuitionAccountOrderApi,
   closeOneToOneApi,
+  createOneToOneApi,
   reopenOneToOneApi,
   existOneToOneApi,
   getOneToOneByIdApi,
   getOneToOneListApi,
   listOneToOneLessonsByStudentApi,
   listTuitionAccountsByStudentAndLessonApi,
+  listTuitionAccountsForOneToOneDeductionApi,
   updateOneToOneApi,
 } from '@/api/edu-center/one-to-one'
-import { Sex, SexLabel } from '@/enums'
+import { Sex, SexLabel, TeachingMethod, TeachingMethodLabel } from '@/enums'
 
 const router = useRouter()
 const allFilterRef = ref()
@@ -133,11 +135,17 @@ async function checkCreateExistOneToOneNow() {
   }
 }
 const createNameTouched = ref(false)
+/** 创建用：学员在读报读账户选项（班级授课或 1v1） */
+const createTuitionAccountOptions = ref([])
+const createTuitionAccountLoading = ref(false)
+const createTuitionAccountError = ref('')
 const editForm = reactive({
   id: '',
   /** 创建模式下须为 undefined，Select 才显示 placeholder（空字符串会被当成已选值） */
   studentId: undefined,
   lessonId: undefined,
+  /** 创建必填：扣费绑定的学费账户 id */
+  tuitionAccountId: undefined,
   studentName: '',
   lessonName: '',
   name: '',
@@ -442,6 +450,7 @@ async function onCreateStudentSelected(student) {
   syncCreateDefaultName()
   await fetchOneToOneLessonsByStudent(String(student.id))
   syncCreateDefaultName()
+  await fetchCreateTuitionAccounts()
 }
 
 /** 对标 QueryOne2OneLessonByStudentId：选学员后拉取可开 1 对 1 的课程（学费账户 status=1） */
@@ -493,7 +502,7 @@ function filterCreateLessonOption(input, option) {
   return (opt?.label || '').toLowerCase().includes(String(input).trim().toLowerCase())
 }
 
-function onCreateLessonPick() {
+async function onCreateLessonPick() {
   if (!editForm.lessonId) {
     scheduleCreateExistOneToOneCheck.cancel()
     createExistOneToOneError.value = ''
@@ -505,6 +514,77 @@ function onCreateLessonPick() {
   editForm.lessonName = o?.label || ''
   syncCreateDefaultName()
   scheduleCreateExistOneToOneCheck()
+}
+
+/** 创建 1 对 1：拉取学员名下全部在读报读账户（班级授课或 1v1，可与「上课课程」不同） */
+async function fetchCreateTuitionAccounts() {
+  if (!editModalIsCreate.value)
+    return
+  const sid = editForm.studentId
+  const hasStudent = sid !== undefined && sid !== null && String(sid).trim() !== ''
+  if (!hasStudent) {
+    createTuitionAccountOptions.value = []
+    createTuitionAccountError.value = ''
+    editForm.tuitionAccountId = undefined
+    return
+  }
+  createTuitionAccountLoading.value = true
+  createTuitionAccountError.value = ''
+  try {
+    const res = await listTuitionAccountsForOneToOneDeductionApi({
+      studentId: String(sid),
+    })
+    if (res.code !== 200) {
+      createTuitionAccountOptions.value = []
+      editForm.tuitionAccountId = undefined
+      createTuitionAccountError.value = res.message || '加载学费账户失败'
+      return
+    }
+    const raw = res.result?.list ?? res.data?.list
+    const list = Array.isArray(raw) ? raw : []
+    const active = list.filter(a => Number(a.status) === 1 && !a.suspended)
+    createTuitionAccountOptions.value = active
+    if (active.length === 0) {
+      editForm.tuitionAccountId = undefined
+      createTuitionAccountError.value = '该学员暂无可用的在读学费账户，请先在「报名续费」中报名'
+    }
+    else if (active.length === 1) {
+      editForm.tuitionAccountId = active[0].id
+    }
+    else {
+      const cur = editForm.tuitionAccountId
+      if (!cur || !active.some(a => String(a.id) === String(cur)))
+        editForm.tuitionAccountId = undefined
+    }
+  }
+  catch (e) {
+    console.error('fetch create tuition accounts failed', e)
+    createTuitionAccountOptions.value = []
+    editForm.tuitionAccountId = undefined
+    createTuitionAccountError.value = '加载学费账户失败'
+  }
+  finally {
+    createTuitionAccountLoading.value = false
+  }
+}
+
+function formatCreateTuitionAccountLabel(acc) {
+  const mode = Number(acc?.lessonChargingMode)
+  const unit = getQuantityUnit(mode)
+  const modeText = getChargingModeText(mode)
+  const title = (acc?.lessonName || acc?.productName || '-').trim()
+  const tm = Number(acc?.lessonType)
+  const teachText = (tm === TeachingMethod.Class || tm === TeachingMethod.OneToOne)
+    ? TeachingMethodLabel[tm]
+    : ''
+  const mid = teachText ? `${teachText}｜${modeText}` : modeText
+  if (mode === 3) {
+    const remain = Number(acc?.tuition ?? 0)
+    return `【${title}】｜${mid}｜剩余¥${remain.toFixed(2)}`
+  }
+  const rq = Number(acc?.quantity || 0)
+  const fq = Number(acc?.freeQuantity || 0)
+  return `【${title}】｜${mid}｜剩余${rq + fq}${unit || ''}`
 }
 
 function syncCreateDefaultName() {
@@ -672,6 +752,7 @@ function resetEditForm() {
   editForm.id = ''
   editForm.studentId = undefined
   editForm.lessonId = undefined
+  editForm.tuitionAccountId = undefined
   editForm.studentName = ''
   editForm.lessonName = ''
   editForm.name = ''
@@ -687,6 +768,9 @@ function resetEditForm() {
   createLessonOptions.value = []
   createLessonOptionsReady.value = false
   createLessonSearchLoading.value = false
+  createTuitionAccountOptions.value = []
+  createTuitionAccountLoading.value = false
+  createTuitionAccountError.value = ''
   scheduleCreateExistOneToOneCheck.cancel()
   createExistOneToOneError.value = ''
 }
@@ -1006,6 +1090,33 @@ function buildOneToOneUpdatePayload() {
   }
 }
 
+function buildOneToOneCreatePayload(allowDuplicateName = false) {
+  const teacherIds = buildEditTeacherIds()
+  return {
+    studentId: String(editForm.studentId),
+    lessonId: String(editForm.lessonId),
+    tuitionAccountId: String(editForm.tuitionAccountId),
+    name: editForm.name.trim(),
+    teacherId: teacherIds.map(id => String(id)),
+    defaultTeacherId: editForm.defaultTeacherId ? String(editForm.defaultTeacherId) : '',
+    defaultStudentClassTime: Number(editForm.defaultStudentClassTime || 0),
+    defaultTeacherClassTime: Number(editForm.defaultTeacherClassTime || 0),
+    defaultClassTimeRecordMode: Number(editForm.defaultClassTimeRecordMode || 1),
+    remark: editForm.remark.trim(),
+    classProperties: Array.isArray(editForm.classProperties) ? editForm.classProperties : [],
+    ...(allowDuplicateName ? { allowDuplicateName: true } : {}),
+  }
+}
+
+async function runOneToOneCreate(allowDuplicateName = false) {
+  const res = await createOneToOneApi(buildOneToOneCreatePayload(allowDuplicateName))
+  if (res.code !== 200)
+    throw new Error(res.message || '创建1对1失败')
+  messageService.success('创建1对1成功')
+  closeEditModal()
+  await getOneToOneList()
+}
+
 async function runOneToOneUpdate(allowDuplicateName = false) {
   const updateRes = await updateOneToOneApi({
     ...buildOneToOneUpdatePayload(),
@@ -1028,6 +1139,18 @@ async function submitCreateOneToOneModal() {
     messageService.warning('请选择课程')
     return
   }
+  if (createTuitionAccountLoading.value) {
+    messageService.warning('学费账户加载中，请稍候')
+    return
+  }
+  if (createTuitionAccountError.value || createTuitionAccountOptions.value.length === 0) {
+    messageService.warning(createTuitionAccountError.value || '该学员暂无可用的在读学费账户，请先在「报名续费」中报名')
+    return
+  }
+  if (editForm.tuitionAccountId === undefined || editForm.tuitionAccountId === null || String(editForm.tuitionAccountId).trim() === '') {
+    messageService.warning('请选择扣费学费账户')
+    return
+  }
   if (!editForm.name.trim()) {
     messageService.warning('请输入1对1名称')
     return
@@ -1048,11 +1171,27 @@ async function submitCreateOneToOneModal() {
     if (checkRes.code !== 200)
       throw new Error(checkRes.message || '校验1对1名称失败')
     if (checkRes.result) {
-      messageService.warning('已存在同名1对1，请修改名称')
+      Modal.confirm({
+        title: '确定创建？',
+        centered: true,
+        icon: createVNode(ExclamationCircleOutlined),
+        content: '已存在同名1对1班级，是否仍要创建？',
+        okText: '确定',
+        cancelText: '取消',
+        async onOk() {
+          try {
+            await runOneToOneCreate(true)
+          }
+          catch (err) {
+            console.error(err)
+            messageService.error(err?.message || '创建1对1失败')
+            throw err
+          }
+        },
+      })
       return
     }
-    messageService.info('1对1班级将在学员完成「报名续费」后由系统自动创建，请点击页面上方「报名续费」操作。')
-    closeEditModal()
+    await runOneToOneCreate(false)
   }
   catch (error) {
     console.error('create one-to-one modal submit failed', error)
@@ -1134,9 +1273,12 @@ watch(
     editForm.studentName = ''
     editForm.lessonId = undefined
     editForm.lessonName = ''
+    editForm.tuitionAccountId = undefined
     createLessonOptions.value = []
     createLessonOptionsReady.value = false
     createLessonSearchLoading.value = false
+    createTuitionAccountOptions.value = []
+    createTuitionAccountError.value = ''
     scheduleCreateExistOneToOneCheck.cancel()
     createExistOneToOneError.value = ''
     syncCreateDefaultName()
@@ -1462,6 +1604,31 @@ onMounted(() => {
             <span>{{ editForm.lessonName || '-' }}</span>
           </a-form-item>
 
+          <a-form-item
+            v-if="editModalIsCreate"
+            label="扣费学费账户"
+            required
+            :validate-status="createTuitionAccountError ? 'error' : ''"
+            :help="createTuitionAccountError || '须绑定在读学费账户，课消从该账户扣除；无账户时请先「报名续费」'"
+          >
+            <a-select
+              v-model:value="editForm.tuitionAccountId"
+              :disabled="!editForm.studentId || createTuitionAccountLoading || createTuitionAccountOptions.length === 0"
+              :loading="createTuitionAccountLoading"
+              :placeholder="!editForm.studentId ? '请先选择学员' : (createTuitionAccountOptions.length === 0 ? '无在读学费账户' : '请选择扣费账户')"
+              style="width: 100%"
+              allow-clear
+            >
+              <a-select-option
+                v-for="acc in createTuitionAccountOptions"
+                :key="acc.id"
+                :value="acc.id"
+              >
+                {{ formatCreateTuitionAccountLabel(acc) }}
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+
           <a-form-item label="1对1名称" required>
             <a-input
               v-model:value="editForm.name"
@@ -1535,7 +1702,7 @@ onMounted(() => {
                 <span class="one-to-one-ct-unit">{{ editClassTimeUnitLabel }}</span>
               </span>
             </div>
-            <div style="margin-top: 8px; color: #888; font-size: 13px;white-space: nowrap;">
+            <div style="color: #888; font-size: 13px;white-space: nowrap;">
               {{ editClassTimeHint }}
             </div>
           </a-form-item>

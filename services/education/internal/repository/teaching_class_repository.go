@@ -922,6 +922,202 @@ func (repo *Repository) UpdateOneToOne(ctx context.Context, instID, operatorID i
 	return tx.Commit()
 }
 
+// CreateOneToOne 手动创建 1 对 1：强制绑定 tuitionAccountId（学员名下在读 1v1 报读账户，可与上课课程不同）
+func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID int64, dto model.OneToOneCreateDTO) (int64, error) {
+	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
+	if err != nil || studentID <= 0 {
+		return 0, errors.New("学员ID不能为空")
+	}
+	courseID, err := strconv.ParseInt(strings.TrimSpace(dto.LessonID), 10, 64)
+	if err != nil || courseID <= 0 {
+		return 0, errors.New("课程ID不能为空")
+	}
+	taID, err := strconv.ParseInt(strings.TrimSpace(dto.TuitionAccountID), 10, 64)
+	if err != nil || taID <= 0 {
+		return 0, errors.New("请选择扣费学费账户")
+	}
+	name := strings.TrimSpace(dto.Name)
+	if name == "" {
+		return 0, errors.New("1对1名称不能为空")
+	}
+	defaultTeacherID, _ := strconv.ParseInt(strings.TrimSpace(dto.DefaultTeacherID), 10, 64)
+	recordMode := dto.DefaultClassTimeRecordMode
+	if recordMode <= 0 {
+		recordMode = 1
+	}
+	stuClassTime := dto.DefaultStudentClassTime
+	if stuClassTime <= 0 {
+		stuClassTime = 1
+	}
+	teacherClassTime := dto.DefaultTeacherClassTime
+	if teacherClassTime < 0 {
+		teacherClassTime = 0
+	}
+
+	classProperties := dto.ClassProperties
+	if classProperties == nil {
+		classProperties = []model.OneToOnePropertyVO{}
+	}
+	classPropertiesJSON, err := json.Marshal(classProperties)
+	if err != nil {
+		return 0, err
+	}
+
+	exists, err := repo.ExistsActiveOneToOneForStudentCourse(ctx, instID, studentID, courseID)
+	if err != nil {
+		return 0, err
+	}
+	if exists {
+		return 0, errors.New("该学员在此课程下已有开班中的1对1")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var teachMethod int
+	err = tx.QueryRowContext(ctx, `
+		SELECT IFNULL(teach_method, 0)
+		FROM inst_course
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, courseID, instID).Scan(&teachMethod)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, errors.New("课程不存在")
+	}
+	if err != nil {
+		return 0, err
+	}
+	if teachMethod != 2 {
+		return 0, errors.New("所选课程不是1对1授课，无法创建1对1")
+	}
+
+	var orderID, ocdID, quoteID sql.NullInt64
+	var taStudentID int64
+	var taStatus int
+	var deductCourseTeachMethod int
+	err = tx.QueryRowContext(ctx, `
+		SELECT IFNULL(ta.order_id, 0), IFNULL(ta.order_course_detail_id, 0), IFNULL(ta.quote_id, 0),
+			ta.student_id, IFNULL(ta.status, 0),
+			IFNULL(ic.teach_method, 0)
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		WHERE ta.id = ? AND ta.inst_id = ? AND ta.del_flag = 0
+		LIMIT 1
+	`, taID, instID).Scan(&orderID, &ocdID, &quoteID, &taStudentID, &taStatus, &deductCourseTeachMethod)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, errors.New("学费账户不存在")
+	}
+	if err != nil {
+		return 0, err
+	}
+	if taStudentID != studentID {
+		return 0, errors.New("学费账户不属于所选学员")
+	}
+	if taStatus != 1 {
+		return 0, errors.New("学费账户须为在读状态方可创建1对1")
+	}
+	if deductCourseTeachMethod != 1 && deductCourseTeachMethod != 2 {
+		return 0, errors.New("扣费学费账户须为班级授课或1对1课程的报读账户")
+	}
+
+	orderIDVal := int64(0)
+	if orderID.Valid {
+		orderIDVal = orderID.Int64
+	}
+	ocdIDVal := int64(0)
+	if ocdID.Valid {
+		ocdIDVal = ocdID.Int64
+	}
+	quoteIDVal := int64(0)
+	if quoteID.Valid {
+		quoteIDVal = quoteID.Int64
+	}
+
+	var ocdUsed int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM teaching_class_student tcs
+		INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id AND tc.inst_id = tcs.inst_id AND tc.del_flag = 0 AND tc.class_type = ?
+		WHERE tcs.inst_id = ? AND tcs.del_flag = 0 AND tcs.order_course_detail_id = ?
+	`, model.TeachingClassTypeOneToOne, instID, ocdIDVal).Scan(&ocdUsed); err != nil {
+		return 0, err
+	}
+	if ocdUsed > 0 {
+		return 0, errors.New("该学费账户对应的报读明细已绑定其他1对1班级")
+	}
+
+	teacherIDs := normalizeTeacherIDs(dto.TeacherID, defaultTeacherID)
+	advisorID := int64(0)
+	if len(teacherIDs) > 0 {
+		advisorID = teacherIDs[0]
+	}
+
+	now := time.Now()
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO teaching_class (
+			uuid, version, inst_id, class_type, course_id, name, advisor_id, default_teacher_id, status,
+			scheduled_lesson_count, finished_lesson_count, class_room_id, class_room_name, classroom_enabled, remark,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, '', NULL, ?, NOW(), ?, NOW(), 0
+		)
+	`, instID, model.TeachingClassTypeOneToOne, courseID, name, advisorID, defaultTeacherID, model.TeachingClassStatusActive,
+		strings.TrimSpace(dto.Remark), operatorID, operatorID)
+	if err != nil {
+		return 0, err
+	}
+	classID, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO teaching_class_student (
+			uuid, version, inst_id, teaching_class_id, student_id, order_id, order_course_detail_id, quote_id,
+			primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
+			class_time_record_mode, last_finished_lesson_day, class_properties_json,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL, ?, NOW(), ?, NOW(), 0
+		)
+	`, instID, classID, studentID, orderIDVal, ocdIDVal, quoteIDVal, taID,
+		stuClassTime, stuClassTime, teacherClassTime, recordMode,
+		string(classPropertiesJSON),
+		operatorID, operatorID)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, tid := range teacherIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO teaching_class_teacher (
+				uuid, version, inst_id, teaching_class_id, teacher_id, status, is_default,
+				create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, 0
+			)
+			ON DUPLICATE KEY UPDATE
+				status = VALUES(status),
+				is_default = VALUES(is_default),
+				del_flag = 0,
+				update_id = VALUES(update_id),
+				update_time = VALUES(update_time)
+		`,
+			instID, classID, tid, boolToTinyInt(tid == defaultTeacherID), operatorID, now, operatorID, now,
+		); err != nil {
+			return 0, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return classID, nil
+}
+
 // CloseOneToOneOnly 将 1 对 1 班级标记为已结班（不结课、不删日程）
 func (repo *Repository) CloseOneToOneOnly(ctx context.Context, instID, operatorID, classID int64) error {
 	var currentStatus int
