@@ -126,6 +126,7 @@ func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 	})
 }
 
+// CountTeachingClassByName 按名称统计班级。1 对 1 仅与「开班中」班级判重：已结班同名不占用，与竞品一致。
 func (repo *Repository) CountTeachingClassByName(ctx context.Context, instID int64, classType int, name string, excludeID *int64) (int, error) {
 	query := `
 		SELECT COUNT(*)
@@ -133,6 +134,10 @@ func (repo *Repository) CountTeachingClassByName(ctx context.Context, instID int
 		WHERE inst_id = ? AND class_type = ? AND name = ? AND del_flag = 0
 	`
 	args := []any{instID, classType, strings.TrimSpace(name)}
+	if classType == model.TeachingClassTypeOneToOne {
+		query += ` AND status = ?`
+		args = append(args, model.TeachingClassStatusActive)
+	}
 	if excludeID != nil {
 		query += " AND id <> ?"
 		args = append(args, *excludeID)
