@@ -6,6 +6,7 @@ import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
 import StaffSelect from '@/components/common/staff-select.vue'
+import FinishOneToOneCourseModal from '@/components/edu-center/one-to-one/finish-one-to-one-course-modal.vue'
 import oneToOneDrawer from '@/components/edu-center/one-to-one/one-to-one-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { handleDateRangeParams } from '@/utils/dateRangeParams'
@@ -70,6 +71,9 @@ const classTimeBatchSelectionSummary = computed(() => {
   const names = rows.map(r => r.name).filter(Boolean).join('，')
   return { n, names }
 })
+
+const finishCourseModalOpen = ref(false)
+const finishCourseRecord = ref(null)
 
 const editModalOpen = ref(false)
 const editLoading = ref(false)
@@ -400,8 +404,9 @@ function handleFinishCourse(record) {
       '是否确认对1对1进行结班且结课，结班后会同步删除相关的日程，被删除的日程不可恢复，请谨慎操作',
     okText: '结班并结课',
     cancelText: '仅结班',
-    async onOk() {
-      // 结班并结课 — 接口待接入
+    onOk() {
+      finishCourseRecord.value = record
+      finishCourseModalOpen.value = true
     },
     async onCancel() {
       try {
@@ -419,6 +424,12 @@ function handleFinishCourse(record) {
       }
     },
   })
+}
+
+function handleFinishCourseModalConfirm(payload) {
+  // TODO: 接入结班并结课接口后使用 payload.recordId 等字段调用接口，成功后 getOneToOneList()
+  messageService.info('结班并结课接口待接入')
+  finishCourseModalOpen.value = false
 }
 
 function closeEditModal() {
@@ -1000,6 +1011,13 @@ onMounted(() => {
       :record="currentRecord"
       :tuition-accounts="drawerTuitionAccounts"
       @edit="handleDrawerEdit"
+    />
+
+    <FinishOneToOneCourseModal
+      v-model:open="finishCourseModalOpen"
+      title="结班并结课"
+      :record="finishCourseRecord"
+      @confirm="handleFinishCourseModalConfirm"
     />
 
     <a-modal v-model:open="advisorModalOpen" :title="advisorModalTitle" @ok="submitAdvisorBatch" :confirm-loading="advisorSubmitting">
