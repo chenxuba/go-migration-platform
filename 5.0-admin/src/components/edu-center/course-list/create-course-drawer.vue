@@ -1232,14 +1232,17 @@ function buildCourseSubmitPayload() {
               </a-form-item>
 
               <a-form-item label="售卖状态:" name="saleStatus" :rules="[{ required: true, message: '请选择售卖状态' }]">
-                <a-radio-group v-model:value="formState.saleStatus" class="custom-radio custom-radio2">
-                  <a-radio :value="true">
-                    在售
-                  </a-radio>
-                  <a-radio :value="false">
-                    停售
-                  </a-radio>
-                </a-radio-group>
+                <div class="course-form-row-with-debug">
+                  <a-radio-group v-model:value="formState.saleStatus" class="custom-radio custom-radio2">
+                    <a-radio :value="true">
+                      在售
+                    </a-radio>
+                    <a-radio :value="false">
+                      停售
+                    </a-radio>
+                  </a-radio-group>
+                  <span class="course-form-bind-debug">status: {{ formState.saleStatus }}</span>
+                </div>
               </a-form-item>
 
                 <a-form-item
@@ -1247,55 +1250,67 @@ function buildCourseSubmitPayload() {
                   name="teachMethod"
                   :rules="isEditCourseMode ? [] : [{ required: true, message: '请选择授课方式' }]"
                 >
-                  <span v-if="isEditCourseMode" class="course-core-readonly-text">{{ teachMethodReadonlyLabel }}</span>
-                  <a-radio-group v-else v-model:value="formState.teachMethod" class="custom-radio custom-radio2">
-                    <a-radio :value="1">
-                      班级授课
-                    </a-radio>
-                    <a-radio :value="2">
-                      1v1授课
-                    </a-radio>
-                  </a-radio-group>
+                  <div class="course-form-row-with-debug">
+                    <span v-if="isEditCourseMode" class="course-core-readonly-text">{{ teachMethodReadonlyLabel }}</span>
+                    <a-radio-group v-else v-model:value="formState.teachMethod" class="custom-radio custom-radio2">
+                      <a-radio :value="1">
+                        班级授课
+                      </a-radio>
+                      <a-radio :value="2">
+                        1v1授课
+                      </a-radio>
+                    </a-radio-group>
+                    <span class="course-form-bind-debug">lessonType: {{ formState.teachMethod }}</span>
+                  </div>
                 </a-form-item>
 
                 <a-form-item label="是否通用课程:" name="isCommonCourse">
-                  <a-radio-group
-                    v-model:value="isCommonCourse"
-                    class="custom-radio custom-radio2"
-                    :disabled="isEditCourseMode"
-                  >
-                    <a-radio :value="false">
-                      否
-                    </a-radio>
-                    <a-radio :value="true">
-                      是
-                    </a-radio>
-                  </a-radio-group>
+                  <div class="course-form-row-with-debug">
+                    <a-radio-group
+                      v-model:value="isCommonCourse"
+                      class="custom-radio custom-radio2"
+                      :disabled="isEditCourseMode"
+                    >
+                      <a-radio :value="false">
+                        否
+                      </a-radio>
+                      <a-radio :value="true">
+                        是
+                      </a-radio>
+                    </a-radio-group>
+                    <span class="course-form-bind-debug">提交 lessonScope: {{ formState.courseType }}（1=否；是时 3/4/5/6 见下方选项）</span>
+                  </div>
                 </a-form-item>
 
                 <a-form-item v-if="isCommonCourse" label="通用课程类型:" name="commonCourseMode">
-                  <a-radio-group v-model:value="commonCourseMode" class="custom-radio custom-radio2">
-                    <a-radio value="all">
-                      全部通用
-                    </a-radio>
-                    <a-radio value="partial">
-                      部分通用
-                    </a-radio>
-                  </a-radio-group>
+                  <div class="course-form-row-with-debug">
+                    <a-radio-group v-model:value="commonCourseMode" class="custom-radio custom-radio2">
+                      <a-radio value="all">
+                        全部通用
+                      </a-radio>
+                      <a-radio value="partial">
+                        部分通用
+                      </a-radio>
+                    </a-radio-group>
+                    <span class="course-form-bind-debug">commonCourseMode: {{ commonCourseMode }}</span>
+                  </div>
                 </a-form-item>
 
                 <a-form-item v-if="isCommonCourse && commonCourseMode === 'all'" label="全部通用类型:" name="allCommonType">
-                  <a-radio-group v-model:value="allCommonTypeSelection" class="custom-radio common-type-radio-group">
-                    <a-radio value="all-course">
-                      全部课程
-                    </a-radio>
-                    <a-radio value="all-class">
-                      全部班课
-                    </a-radio>
-                    <a-radio value="all-1v1">
-                      全部1对1
-                    </a-radio>
-                  </a-radio-group>
+                  <div class="course-form-row-with-debug">
+                    <a-radio-group v-model:value="allCommonTypeSelection" class="custom-radio common-type-radio-group">
+                      <a-radio value="all-course">
+                        全部课程
+                      </a-radio>
+                      <a-radio value="all-class">
+                        全部班课
+                      </a-radio>
+                      <a-radio value="all-1v1">
+                        全部1对1
+                      </a-radio>
+                    </a-radio-group>
+                    <span class="course-form-bind-debug">allCommonType: {{ allCommonTypeSelection }}</span>
+                  </div>
                 </a-form-item>
 
                 <a-form-item v-if="commonCourseMode === 'partial'" label="课程范围:"
@@ -1738,6 +1753,21 @@ function buildCourseSubmitPayload() {
   font-size: 14px;
   line-height: 32px;
   display: inline-block;
+}
+
+/* 临时：表单绑定值调试（上线前可删） */
+.course-form-row-with-debug {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.course-form-bind-debug {
+  color: #f5222d;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 // 水平对齐radio选项
