@@ -68,9 +68,11 @@ es="${ES_URI:-https://127.0.0.1:9200}"
 read -r es_host es_port <<<"$(parse_http_host_port "$es" 9200)"
 wait_tcp "Elasticsearch（HTTP 端口）" "$es_host" "$es_port" || exit 1
 
-# --- Canal：与 Java 脚本一致，以 canal.deployer 进程为准；可选再验管理/健康 URL 端口 ---
+# --- Canal：与 ensure-dev-infra 一致，多模式匹配进程；可选再验 CANAL_HEALTH_URL ---
 canal_ok() {
-  pgrep -f 'canal.deployer' >/dev/null 2>&1 && return 0
+  pgrep -f 'canal\.deployer' >/dev/null 2>&1 && return 0
+  pgrep -f 'com\.alibaba\.otter\.canal\.deployer' >/dev/null 2>&1 && return 0
+  pgrep -f 'CanalLauncher' >/dev/null 2>&1 && return 0
   if [[ -n "${CANAL_HEALTH_URL:-}" ]]; then
     local ch cp
     read -r ch cp <<<"$(parse_http_host_port "$CANAL_HEALTH_URL" 8089)"

@@ -4,7 +4,7 @@
 #
 #   SKIP_ENSURE_INFRA=1     跳过本脚本（CI / 仅检查时用）
 #   ROCKETMQ_HOME           默认 ~/rocketmq
-#   CANAL_HOME              默认 /usr/local/canal.deployer-1.1.8
+#   CANAL_HOME              默认 /usr/local/canal.deployer-1.1.8；若目录不存在会尝试探测 ~/canal.deployer* 等
 #   ROCKETMQ_NAMESRV        与 config 一致，默认 127.0.0.1:9876（Broker 启动用 -n）
 #   ROCKETMQ_BROKER_HOST    默认 127.0.0.1（仅做 TCP 探活）
 #   ROCKETMQ_BROKER_PORT    默认 10911
@@ -56,12 +56,16 @@ wait_tcp() {
 }
 
 canal_process_running() {
-  pgrep -f 'canal.deployer' >/dev/null 2>&1
+  # 不同安装方式命令行可能不含字面量 canal.deployer，多模式匹配
+  pgrep -f 'canal\.deployer' >/dev/null 2>&1 && return 0
+  pgrep -f 'com\.alibaba\.otter\.canal\.deployer' >/dev/null 2>&1 && return 0
+  pgrep -f 'CanalLauncher' >/dev/null 2>&1 && return 0
+  return 1
 }
 
 wait_canal_process() {
   typeset -i t=0
-  echo "  [ensure-dev-infra] 等待 Canal 进程（canal.deployer）…"
+  echo "  [ensure-dev-infra] 等待 Canal 进程（已尝试启动，匹配 deployer / CanalLauncher）…"
   while (( t < TIMEOUT )); do
     canal_process_running && {
       echo "  [ensure-dev-infra] Canal 进程已存在"
@@ -72,6 +76,25 @@ wait_canal_process() {
     t=$((t + 1))
   done
   echo "  [ensure-dev-infra] 错误: ${TIMEOUT}s 内 Canal 进程仍未出现" >&2
+  return 1
+}
+
+find_local_canal_home() {
+  local candidate
+  for candidate in \
+    "${CANAL_HOME:-}" \
+    "$HOME"/canal.deployer-*(N) \
+    "$HOME"/canal(N) \
+    /usr/local/canal.deployer-*(N) \
+    /usr/local/canal(N) \
+    /opt/homebrew/canal.deployer-*(N) \
+    /opt/homebrew/canal(N); do
+    [[ -n "$candidate" ]] || continue
+    [[ -d "$candidate" ]] || continue
+    [[ -f "$candidate/bin/startup.sh" ]] || continue
+    print -r -- "$candidate"
+    return 0
+  done
   return 1
 }
 
@@ -112,6 +135,13 @@ es="${ES_URI:-https://127.0.0.1:9200}"
 read -r es_host es_port <<<"$(parse_http_host_port "$es" 9200)"
 
 echo "==> ensure-dev-infra：按需启动 ES / RocketMQ / Canal（超时每项 ${TIMEOUT}s）"
+
+if [[ ! -d "$CANAL_HOME" || ! -f "$CANAL_HOME/bin/startup.sh" ]]; then
+  if ch="$(find_local_canal_home)"; then
+    CANAL_HOME="$ch"
+    echo "  [ensure-dev-infra] 已自动探测 CANAL_HOME=$CANAL_HOME"
+  fi
+fi
 
 # --- Elasticsearch ---
 if ! tcp_open "$es_host" "$es_port"; then
@@ -208,14 +238,31 @@ fi
 if canal_process_running; then
   echo "  [ensure-dev-infra] Canal 进程已在运行"
 else
-  if [[ ! -d "$CANAL_HOME" ]]; then
-    echo "  [ensure-dev-infra] Canal 目录不存在: $CANAL_HOME（请安装或设置 CANAL_HOME）" >&2
+  if [[ ! -d "$CANAL_HOME" || ! -f "$CANAL_HOME/bin/startup.sh" ]]; then
+    echo "  [ensure-dev-infra] 未找到 Canal 安装目录或 bin/startup.sh。" >&2
+    echo "  [ensure-dev-infra] 请解压 canal.deployer 后设置: export CANAL_HOME=/path/to/canal.deployer" >&2
+    echo "  [ensure-dev-infra] 或放到常见路径: ~/canal.deployer-*、/usr/local/canal.deployer-*" >&2
+    echo "  [ensure-dev-infra] 不需要 Canal 时: export SKIP_ENSURE_INFRA=1 或 PREFLIGHT_SKIP_CANAL=1" >&2
     exit 1
   fi
-  echo "  [ensure-dev-infra] 启动 Canal …"
-  sh "$CANAL_HOME/bin/startup.sh"
-  sleep 5
-  canal_process_running || wait_canal_process || exit 1
+  echo "  [ensure-dev-infra] 自动启动 Canal（CANAL_HOME=$CANAL_HOME）…"
+  mkdir -p "$CANAL_HOME/logs"
+  typeset -i canal_start_rc=0
+  if command -v bash >/dev/null 2>&1; then
+    bash "$CANAL_HOME/bin/startup.sh" >>"$CANAL_HOME/logs/ensure-dev-infra-canal.log" 2>&1 || canal_start_rc=$?
+  else
+    sh "$CANAL_HOME/bin/startup.sh" >>"$CANAL_HOME/logs/ensure-dev-infra-canal.log" 2>&1 || canal_start_rc=$?
+  fi
+  if (( canal_start_rc != 0 )); then
+    echo "  [ensure-dev-infra] 警告: startup.sh 退出码 ${canal_start_rc}，日志: $CANAL_HOME/logs/ensure-dev-infra-canal.log" >&2
+    echo "  [ensure-dev-infra] 若需查看 Canal 自身日志: ls $CANAL_HOME/logs/" >&2
+  fi
+  sleep 3
+  if canal_process_running; then
+    echo "  [ensure-dev-infra] Canal 进程已出现"
+  else
+    wait_canal_process || exit 1
+  fi
 fi
 
 echo "==> ensure-dev-infra 完成"

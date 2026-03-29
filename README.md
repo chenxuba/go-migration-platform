@@ -106,7 +106,7 @@ export ES_HOME=/usr/local/elasticsearch-8.5.3
 - `ES_USERNAME`：默认 `elastic`
 - `ES_PASSWORD`：默认见 `pkg/config/config.go`
 - `ROCKETMQ_HOME`：默认 `~/rocketmq`
-- `CANAL_HOME`：默认 `/usr/local/canal.deployer-1.1.8`
+- `CANAL_HOME`：默认 `/usr/local/canal.deployer-1.1.8`；若不存在会尝试探测 `~/canal.deployer-*` 等路径。未安装时脚本会报错并提示设置环境变量；不需要 Canal 时可 `SKIP_ENSURE_INFRA=1` 或 `PREFLIGHT_SKIP_CANAL=1`。
 - `ENSURE_INFRA_TIMEOUT`：中间件等待超时，默认 `120`
 - `SKIP_ENSURE_INFRA=1`：跳过自动拉起中间件
 - `SKIP_PREFLIGHT=1`：跳过依赖预检
