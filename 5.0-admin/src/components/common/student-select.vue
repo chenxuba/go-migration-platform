@@ -166,18 +166,33 @@ function handleSearch(value) {
 function handleChange(value) {
   emit('update:modelValue', value)
   emit('change', value)
-  
-  // 如果选择了学员，可以获取选中学员的完整信息
-  if (value) {
-    const selectedStudent = stuListOptions.value.find(item => item.id === value)
-    emit('select', selectedStudent)
+
+  if (value === undefined || value === null || value === '') {
+    emit('select', null)
+    return
   }
+  const selectedStudent = stuListOptions.value.find(item => String(item.id) === String(value))
+  emit('select', selectedStudent || null)
+}
+
+/** 列表展示脱敏手机号，与 PC 端「搜索姓名/手机号」下拉一致 */
+function maskMobileDisplay(mobile) {
+  if (mobile === undefined || mobile === null)
+    return ''
+  const s = String(mobile).trim()
+  if (!s || s.includes('*'))
+    return s
+  const digits = s.replace(/\D/g, '')
+  if (digits.length === 11)
+    return `${digits.slice(0, 3)}****${digits.slice(7)}`
+  return s
 }
 
 // 获取当前选中的学员信息
 const selectedStudent = computed(() => {
-  if (!props.modelValue) return null
-  return stuListOptions.value.find(item => item.id === props.modelValue)
+  if (props.modelValue === undefined || props.modelValue === null || props.modelValue === '')
+    return null
+  return stuListOptions.value.find(item => String(item.id) === String(props.modelValue))
 })
 
 // 根据学生ID查询学生信息（用于外部调用）
@@ -241,12 +256,12 @@ defineExpose({
     :filter-option="false"
     :disabled="disabled"
     :allow-clear="allowClear"
+    :loading="isLoading"
     show-search
     :placeholder="placeholder"
     :style="{ width }"
     option-label-prop="label"
     @update:value="handleChange"
-    @change="handleChange"
     @dropdown-visible-change="handleDropdownVisibleChange"
     @popup-scroll="handlePopupScroll"
     @search="handleSearch"
@@ -272,7 +287,7 @@ defineExpose({
               {{ item.stuName }}
             </div>
             <div class="text-xs text-#888">
-              {{ item.mobile }}
+              {{ maskMobileDisplay(item.mobile) }}
             </div>
           </div>
         </div>
@@ -290,27 +305,15 @@ defineExpose({
       </div>
     </a-select-option>
     
-    <!-- 没有更多了 -->
-    <a-select-option 
-      v-if="finished && stuListOptions.length > 0" 
-      key="no-more" 
-      :value="-1"
-      :label="undefined"
+    <a-select-option
+      v-if="finished && stuListOptions.length > 0"
+      key="__stu_select_no_more__"
+      value="__stu_select_no_more__"
+      disabled
+      class="stu-select-no-more-option"
     >
-      <div class="text-center text-#999 text-3">
-        ～没有更多了～
-      </div>
-    </a-select-option>
-    
-    <!-- 加载中 -->
-    <a-select-option 
-      v-if="isLoading" 
-      key="loading" 
-      :value="-2" 
-      :label="undefined"
-    >
-      <div class="text-center text-#999 text-3">
-        <a-spin />
+      <div class="text-center text-#999 text-xs py-1">
+        没有更多了
       </div>
     </a-select-option>
   </a-select>

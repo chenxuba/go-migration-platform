@@ -223,6 +223,24 @@ export interface StudentLessonTuitionAccountsResult {
   list?: StudentLessonTuitionAccountItem[]
 }
 
+/** 对标 QueryOne2OneLessonByStudentId：学员可开 1 对 1 的课程（有学费账户且为 1v1 课程） */
+export interface OneToOneLessonOption {
+  id?: string
+  name?: string
+}
+
+export interface OneToOneLessonsByStudentResult {
+  list?: OneToOneLessonOption[]
+}
+
+export function listOneToOneLessonsByStudentApi(data: {
+  studentId: string
+  /** 不传时后端默认按 status=1（在读/有效） */
+  tuitionAccountStatus?: number[]
+}) {
+  return usePost<OneToOneLessonsByStudentResult>('/api/v1/one-to-ones/lessons-by-student', data)
+}
+
 export function getOneToOneListApi(data: OneToOneListParams) {
   return usePost<OneToOneListResult>('/api/v1/one-to-ones/page', data)
 }

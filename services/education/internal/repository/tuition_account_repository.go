@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -320,6 +321,45 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 		}
 		if validDate.Valid {
 			item.LatestStartTime = validDate.Time
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// ListOneToOneLessonOptionsByStudent 学员在指定学费账户状态下、可用于 1 对 1 的课程（去重）。teach_method=2 为 1v1。
+func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) ([]model.OneToOneLessonOptionVO, error) {
+	sqlStr := `
+		SELECT CAST(ic.id AS CHAR), IFNULL(ic.name, '')
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		WHERE ta.inst_id = ?
+			AND ta.student_id = ?
+			AND ta.del_flag = 0
+			AND ic.teach_method = 2`
+	args := []any{instID, studentID}
+	if len(tuitionAccountStatus) > 0 {
+		placeholders := make([]string, 0, len(tuitionAccountStatus))
+		for _, st := range tuitionAccountStatus {
+			placeholders = append(placeholders, "?")
+			args = append(args, st)
+		}
+		sqlStr += ` AND ta.status IN (` + strings.Join(placeholders, ",") + `)`
+	}
+	// 用 GROUP BY 去重；避免 SELECT DISTINCT + ORDER BY 非 SELECT 表达式在 ONLY_FULL_GROUP_BY 下报错 3065
+	sqlStr += ` GROUP BY ic.id, ic.name ORDER BY ic.name ASC, ic.id ASC`
+
+	rows, err := repo.db.QueryContext(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.OneToOneLessonOptionVO, 0, 8)
+	for rows.Next() {
+		var item model.OneToOneLessonOptionVO
+		if err := rows.Scan(&item.ID, &item.Name); err != nil {
+			return nil, err
 		}
 		out = append(out, item)
 	}

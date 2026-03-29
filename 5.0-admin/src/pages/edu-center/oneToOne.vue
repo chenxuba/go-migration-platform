@@ -1,11 +1,12 @@
 <script setup>
-import { computed, createVNode, onMounted, reactive, ref } from 'vue'
+import { computed, createVNode, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import { CloseOutlined, DownOutlined, ExclamationCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
 import StaffSelect from '@/components/common/staff-select.vue'
+import StudentSelect from '@/components/common/student-select.vue'
 import FinishOneToOneCourseModal from '@/components/edu-center/one-to-one/finish-one-to-one-course-modal.vue'
 import oneToOneDrawer from '@/components/edu-center/one-to-one/one-to-one-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
@@ -20,6 +21,7 @@ import {
   reopenOneToOneApi,
   getOneToOneByIdApi,
   getOneToOneListApi,
+  listOneToOneLessonsByStudentApi,
   listTuitionAccountsByStudentAndLessonApi,
   updateOneToOneApi,
 } from '@/api/edu-center/one-to-one'
@@ -77,13 +79,19 @@ const finishCourseModalOpen = ref(false)
 const finishCourseRecord = ref(null)
 
 const editModalOpen = ref(false)
+const editModalIsCreate = ref(false)
 const editLoading = ref(false)
 const editSubmitting = ref(false)
 const currentEditRecord = ref(null)
+const createLessonOptions = ref([])
+const createStudentSelectRef = ref(null)
+const createLessonSearchLoading = ref(false)
+const createNameTouched = ref(false)
 const editForm = reactive({
   id: '',
-  studentId: '',
-  lessonId: '',
+  /** 创建模式下须为 undefined，Select 才显示 placeholder（空字符串会被当成已选值） */
+  studentId: undefined,
+  lessonId: undefined,
   studentName: '',
   lessonName: '',
   name: '',
@@ -355,8 +363,98 @@ function handleEnroll() {
   router.push('/edu-center/registr-renewal')
 }
 
+/** 学员下拉选中后：拉取可开 1 对 1 的课程（学费账户 status=1） */
+async function onCreateStudentSelected(student) {
+  if (!editModalIsCreate.value || !student)
+    return
+  editForm.studentName = student.stuName || student.name || ''
+  editForm.lessonId = undefined
+  editForm.lessonName = ''
+  createLessonOptions.value = []
+  syncCreateDefaultName()
+  await fetchOneToOneLessonsByStudent(String(student.id))
+  syncCreateDefaultName()
+}
+
+/** 对标 QueryOne2OneLessonByStudentId：选学员后拉取可开 1 对 1 的课程（学费账户 status=1） */
+async function fetchOneToOneLessonsByStudent(studentId) {
+  const sid = String(studentId || '').trim()
+  if (!sid) {
+    createLessonOptions.value = []
+    return
+  }
+  createLessonSearchLoading.value = true
+  try {
+    const res = await listOneToOneLessonsByStudentApi({
+      studentId: sid,
+      tuitionAccountStatus: [1],
+    })
+    if (res.code === 200) {
+      const raw = res.result?.list ?? res.data?.list
+      const list = Array.isArray(raw) ? raw : []
+      createLessonOptions.value = list.map(c => ({
+        value: String(c.id),
+        label: c.name || String(c.id),
+      }))
+    }
+    else {
+      createLessonOptions.value = []
+    }
+  }
+  catch (e) {
+    console.error('fetch one-to-one lessons by student failed', e)
+    createLessonOptions.value = []
+  }
+  finally {
+    createLessonSearchLoading.value = false
+  }
+}
+
+function filterCreateLessonOption(input, option) {
+  if (!input)
+    return true
+  const opt = createLessonOptions.value.find(o => o.value === String(option?.value))
+  return (opt?.label || '').toLowerCase().includes(String(input).trim().toLowerCase())
+}
+
+function onCreateLessonPick() {
+  if (!editForm.lessonId) {
+    editForm.lessonName = ''
+    syncCreateDefaultName()
+    return
+  }
+  const o = createLessonOptions.value.find(x => x.value === String(editForm.lessonId))
+  editForm.lessonName = o?.label || ''
+  syncCreateDefaultName()
+}
+
+function syncCreateDefaultName() {
+  if (createNameTouched.value)
+    return
+  if (editForm.studentName && editForm.lessonName)
+    editForm.name = `${editForm.studentName}-${editForm.lessonName}`
+  else
+    editForm.name = ''
+}
+
+function onEditFormNameUpdate(val) {
+  if (!editModalIsCreate.value)
+    return
+  const auto = editForm.studentName && editForm.lessonName ? `${editForm.studentName}-${editForm.lessonName}` : ''
+  if (val !== auto)
+    createNameTouched.value = true
+}
+
 function handleCreateOneToOne() {
-  messageService.info('创建1对1功能暂未实现')
+  editModalIsCreate.value = true
+  currentEditRecord.value = null
+  createNameTouched.value = false
+  createLessonOptions.value = []
+  resetEditForm()
+  editModalOpen.value = true
+  nextTick(() => {
+    createStudentSelectRef.value?.reset()
+  })
 }
 
 function handleReopenClass(record) {
@@ -488,12 +586,14 @@ async function handleFinishCourseModalConfirm(payload) {
 
 function closeEditModal() {
   editModalOpen.value = false
+  editModalIsCreate.value = false
+  createNameTouched.value = false
 }
 
 function resetEditForm() {
   editForm.id = ''
-  editForm.studentId = ''
-  editForm.lessonId = ''
+  editForm.studentId = undefined
+  editForm.lessonId = undefined
   editForm.studentName = ''
   editForm.lessonName = ''
   editForm.name = ''
@@ -757,6 +857,7 @@ function resetSelection() {
 }
 
 async function openEditModal(record) {
+  editModalIsCreate.value = false
   currentEditRecord.value = record
   resetEditForm()
   editModalOpen.value = true
@@ -835,7 +936,49 @@ async function runOneToOneUpdate(allowDuplicateName = false) {
   await getOneToOneList()
 }
 
+async function submitCreateOneToOneModal() {
+  if (!editForm.studentId) {
+    messageService.warning('请选择学员')
+    return
+  }
+  if (!editForm.lessonId) {
+    messageService.warning('请选择课程')
+    return
+  }
+  if (!editForm.name.trim()) {
+    messageService.warning('请输入1对1名称')
+    return
+  }
+  editSubmitting.value = true
+  try {
+    const checkRes = await checkOneToOneNameApi({
+      name: editForm.name.trim(),
+      exceptId: '',
+      isOne2One: true,
+    })
+    if (checkRes.code !== 200)
+      throw new Error(checkRes.message || '校验1对1名称失败')
+    if (checkRes.result) {
+      messageService.warning('已存在同名1对1，请修改名称')
+      return
+    }
+    messageService.info('1对1班级将在学员完成「报名续费」后由系统自动创建，请点击页面上方「报名续费」操作。')
+    closeEditModal()
+  }
+  catch (error) {
+    console.error('create one-to-one modal submit failed', error)
+    messageService.error(error?.message || '操作失败')
+  }
+  finally {
+    editSubmitting.value = false
+  }
+}
+
 async function submitEditModal() {
+  if (editModalIsCreate.value) {
+    await submitCreateOneToOneModal()
+    return
+  }
   if (!editForm.name.trim()) {
     messageService.warning('请输入1对1名称')
     return
@@ -891,6 +1034,21 @@ function handleSchedule(record) {
     },
   })
 }
+
+watch(
+  () => editForm.studentId,
+  (val) => {
+    if (!editModalIsCreate.value)
+      return
+    if (val !== undefined && val !== null && val !== '')
+      return
+    editForm.studentName = ''
+    editForm.lessonId = undefined
+    editForm.lessonName = ''
+    createLessonOptions.value = []
+    syncCreateDefaultName()
+  },
+)
 
 onMounted(() => {
   getOneToOneList()
@@ -1132,7 +1290,7 @@ onMounted(() => {
     >
       <template #title>
         <div class="text-5 flex justify-between flex-center">
-          <span>编辑1对1</span>
+          <span>{{ editModalIsCreate ? '创建1对1' : '编辑1对1' }}</span>
           <a-button type="text" class="close-btn" @click="closeEditModal">
             <template #icon>
               <CloseOutlined class="text-5 close-icon" />
@@ -1148,16 +1306,56 @@ onMounted(() => {
             :wrapper-col="{ span: 16 }"
             label-align="right"
           >
-          <a-form-item label="学员名称">
+          <a-form-item v-if="editModalIsCreate" label="学员名称" required>
+            <StudentSelect
+              ref="createStudentSelectRef"
+              v-model="editForm.studentId"
+              :student-status="1"
+              allow-clear
+              width="100%"
+              placeholder="搜索姓名/手机号"
+              @select="onCreateStudentSelected"
+            />
+          </a-form-item>
+          <a-form-item v-else label="学员名称">
             <span>{{ editForm.studentName || '-' }}</span>
           </a-form-item>
 
-          <a-form-item label="上课课程">
+          <a-form-item v-if="editModalIsCreate" label="选择课程" required>
+            <a-select
+              v-model:value="editForm.lessonId"
+              show-search
+              option-filter-prop="label"
+              :filter-option="filterCreateLessonOption"
+              :disabled="!editForm.studentId"
+              :loading="createLessonSearchLoading"
+              :placeholder="editForm.studentId ? '请选择1对1课程' : '请先选择学员'"
+              style="width: 100%"
+              allow-clear
+              @change="onCreateLessonPick"
+            >
+              <a-select-option
+                v-for="opt in createLessonOptions"
+                :key="opt.value"
+                :value="opt.value"
+                :label="opt.label"
+              >
+                {{ opt.label }}
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item v-else label="上课课程">
             <span>{{ editForm.lessonName || '-' }}</span>
           </a-form-item>
 
           <a-form-item label="1对1名称" required>
-            <a-input v-model:value="editForm.name" :maxlength="100" placeholder="请输入1对1名称" style="width: 100%" />
+            <a-input
+              v-model:value="editForm.name"
+              :maxlength="100"
+              placeholder="请输入1对1名称"
+              style="width: 100%"
+              @update:value="onEditFormNameUpdate"
+            />
           </a-form-item>
 
           <a-form-item label="班主任">
@@ -1229,12 +1427,9 @@ onMounted(() => {
           </a-form-item>
 
           <a-form-item label="备注">
-            <a-textarea
+            <a-input
               v-model:value="editForm.remark"
-              :maxlength="150"
-              :rows="1"
               placeholder="请输入"
-              show-count
               style="width: 100%"
             />
           </a-form-item>

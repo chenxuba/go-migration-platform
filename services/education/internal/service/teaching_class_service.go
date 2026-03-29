@@ -68,6 +68,33 @@ func (svc *Service) ListStudentTuitionAccountsByStudentAndLesson(userID int64, d
 	return model.StudentLessonTuitionAccountsResult{List: list}, nil
 }
 
+// ListOneToOneLessonsByStudent 对标 QueryOne2OneLessonByStudentId：按学员查可建 1 对 1 的课程列表
+func (svc *Service) ListOneToOneLessonsByStudent(userID int64, dto model.OneToOneLessonsByStudentQueryDTO) (model.OneToOneLessonsByStudentResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.OneToOneLessonsByStudentResult{}, errors.New("no institution context")
+		}
+		return model.OneToOneLessonsByStudentResult{}, err
+	}
+	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
+	if err != nil || studentID <= 0 {
+		return model.OneToOneLessonsByStudentResult{}, errors.New("studentId 不能为空")
+	}
+	statusFilter := dto.TuitionAccountStatus
+	if len(statusFilter) == 0 {
+		statusFilter = []int{1}
+	}
+	list, err := svc.repo.ListOneToOneLessonOptionsByStudent(context.Background(), instID, studentID, statusFilter)
+	if err != nil {
+		return model.OneToOneLessonsByStudentResult{}, err
+	}
+	if list == nil {
+		list = []model.OneToOneLessonOptionVO{}
+	}
+	return model.OneToOneLessonsByStudentResult{List: list}, nil
+}
+
 func (svc *Service) CheckOneToOneName(userID int64, dto model.OneToOneCheckNameDTO) (bool, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

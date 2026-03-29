@@ -185,6 +185,21 @@ type OneToOneCheckNameDTO struct {
 	IsOne2One bool   `json:"isOne2One"`
 }
 
+// OneToOneLessonsByStudentQueryDTO 对标 QueryOne2OneLessonByStudentId：学员已有学费账户、且课程为 1v1 授课的可选课程
+type OneToOneLessonsByStudentQueryDTO struct {
+	StudentID            string `json:"studentId"`
+	TuitionAccountStatus []int  `json:"tuitionAccountStatus"`
+}
+
+type OneToOneLessonOptionVO struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type OneToOneLessonsByStudentResult struct {
+	List []OneToOneLessonOptionVO `json:"list"`
+}
+
 // OneToOneCloseDTO 仅结班（
 type OneToOneCloseDTO struct {
 	ID string `json:"id"`
