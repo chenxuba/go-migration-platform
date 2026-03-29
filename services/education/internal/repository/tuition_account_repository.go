@@ -330,14 +330,34 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 // ListOneToOneLessonOptionsByStudent 学员在指定学费账户状态下、可用于 1 对 1 的课程（去重）。teach_method=2 为 1v1。
 func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) ([]model.OneToOneLessonOptionVO, error) {
 	sqlStr := `
-		SELECT CAST(ic.id AS CHAR), IFNULL(ic.name, '')
+		SELECT
+			CAST(ic.id AS CHAR),
+			IFNULL(ic.name, ''),
+			MAX(IFNULL(ta.assigned_class, 0)),
+			MAX(CASE WHEN EXISTS (
+				SELECT 1
+				FROM teaching_class tc
+				INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+				WHERE tc.inst_id = ta.inst_id
+					AND tc.course_id = ic.id
+					AND tc.class_type = ?
+					AND tc.del_flag = 0
+					AND tc.status = ?
+					AND tcs.student_id = ta.student_id
+				LIMIT 1
+			) THEN 1 ELSE 0 END)
 		FROM tuition_account ta
 		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
 		WHERE ta.inst_id = ?
 			AND ta.student_id = ?
 			AND ta.del_flag = 0
 			AND ic.teach_method = 2`
-	args := []any{instID, studentID}
+	args := []any{
+		model.TeachingClassTypeOneToOne,
+		model.TeachingClassStatusActive,
+		instID,
+		studentID,
+	}
 	if len(tuitionAccountStatus) > 0 {
 		placeholders := make([]string, 0, len(tuitionAccountStatus))
 		for _, st := range tuitionAccountStatus {
@@ -346,7 +366,6 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 		}
 		sqlStr += ` AND ta.status IN (` + strings.Join(placeholders, ",") + `)`
 	}
-	// 用 GROUP BY 去重；避免 SELECT DISTINCT + ORDER BY 非 SELECT 表达式在 ONLY_FULL_GROUP_BY 下报错 3065
 	sqlStr += ` GROUP BY ic.id, ic.name ORDER BY ic.name ASC, ic.id ASC`
 
 	rows, err := repo.db.QueryContext(ctx, sqlStr, args...)
@@ -357,10 +376,15 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 
 	out := make([]model.OneToOneLessonOptionVO, 0, 8)
 	for rows.Next() {
-		var item model.OneToOneLessonOptionVO
-		if err := rows.Scan(&item.ID, &item.Name); err != nil {
+		var (
+			item         model.OneToOneLessonOptionVO
+			maxAssigned  int64
+			hasOneToOneO int64
+		)
+		if err := rows.Scan(&item.ID, &item.Name, &maxAssigned, &hasOneToOneO); err != nil {
 			return nil, err
 		}
+		item.AlreadyEnrolled = maxAssigned != 0 || hasOneToOneO != 0
 		out = append(out, item)
 	}
 	return out, rows.Err()

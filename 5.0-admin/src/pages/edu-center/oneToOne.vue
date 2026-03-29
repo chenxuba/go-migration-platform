@@ -395,6 +395,7 @@ async function fetchOneToOneLessonsByStudent(studentId) {
       createLessonOptions.value = list.map(c => ({
         value: String(c.id),
         label: c.name || String(c.id),
+        alreadyEnrolled: Boolean(c.alreadyEnrolled),
       }))
     }
     else {
@@ -1340,7 +1341,17 @@ onMounted(() => {
                 :value="opt.value"
                 :label="opt.label"
               >
-                {{ opt.label }}
+                <div class="one-to-one-lesson-option-row">
+                  <span class="one-to-one-lesson-option-name">{{ opt.label }}</span>
+                  <a-tag
+                    v-if="opt.alreadyEnrolled"
+                    :bordered="false"
+                    color="processing"
+                    class="one-to-one-lesson-option-tag shrink-0"
+                  >
+                    已报名
+                  </a-tag>
+                </div>
               </a-select-option>
             </a-select>
           </a-form-item>
@@ -1629,6 +1640,28 @@ onMounted(() => {
 .one-to-one-ct-sep {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* 创建 1 对 1：课程下拉行内，右侧「已报名」标签 */
+.one-to-one-lesson-option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.one-to-one-lesson-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.one-to-one-lesson-option-tag {
+  margin-inline-end: 0;
 }
 </style>
 

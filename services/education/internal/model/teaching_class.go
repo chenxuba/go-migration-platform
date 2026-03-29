@@ -192,8 +192,10 @@ type OneToOneLessonsByStudentQueryDTO struct {
 }
 
 type OneToOneLessonOptionVO struct {
-	ID   string `json:"id"`
+	ID string `json:"id"`
 	Name string `json:"name"`
+	// AlreadyEnrolled 已报名：学费账户已分班，或已存在开班中的 1 对 1 班级（下拉右侧展示「已报名」）
+	AlreadyEnrolled bool `json:"alreadyEnrolled"`
 }
 
 type OneToOneLessonsByStudentResult struct {

@@ -99,6 +99,11 @@ function calcRemainQuantity(block) {
   return Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
 }
 
+function isGeneralCourseScope(scope) {
+  const s = Number(scope)
+  return !Number.isNaN(s) && [2, 3, 4, 5, 6].includes(s)
+}
+
 /** 与 one-to-one-enrollment-detail 一致；scope 4 文案对齐设计稿「全部课程通用」 */
 function getEnrollmentTags(block) {
   const ta = block?.tuitionAccount
@@ -107,7 +112,7 @@ function getEnrollmentTags(block) {
   const mode = effectiveLessonChargingMode(block)
   const tags = []
 
-  if (scope === 2 || scope === 3 || scope === 4)
+  if (isGeneralCourseScope(scope))
     tags.push({ text: '通用课', type: 'primary' })
 
   if (teach === 1)
@@ -117,6 +122,10 @@ function getEnrollmentTags(block) {
 
   if (scope === 4)
     tags.push({ text: '全部课程通用', type: 'normal' })
+  else if (scope === 5)
+    tags.push({ text: '全部班课', type: 'normal' })
+  else if (scope === 6)
+    tags.push({ text: '全部1对1', type: 'normal' })
   else if (scope === 2) {
     if (teach === 1)
       tags.push({ text: '全部班课', type: 'normal' })

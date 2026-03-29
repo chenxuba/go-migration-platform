@@ -227,6 +227,8 @@ export interface StudentLessonTuitionAccountsResult {
 export interface OneToOneLessonOption {
   id?: string
   name?: string
+  /** 已分班或已有开班中 1 对 1，下拉展示「已报名」 */
+  alreadyEnrolled?: boolean
 }
 
 export interface OneToOneLessonsByStudentResult {
