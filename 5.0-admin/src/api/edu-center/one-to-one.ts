@@ -158,6 +158,11 @@ export interface OneToOneCheckNameParams {
   isOne2One: boolean
 }
 
+/** 仅结班（对齐竞品 One2One/Close） */
+export interface OneToOneCloseParams {
+  id: string
+}
+
 export interface OneToOneUpdateParams {
   id: string
   studentId: string
@@ -225,6 +230,10 @@ export function checkOneToOneNameApi(data: OneToOneCheckNameParams) {
 
 export function updateOneToOneApi(data: OneToOneUpdateParams) {
   return usePost<boolean>('/api/v1/one-to-ones/update', data)
+}
+
+export function closeOneToOneApi(data: OneToOneCloseParams) {
+  return usePost<boolean>('/api/v1/one-to-ones/close', data)
 }
 
 export function listTuitionAccountsByStudentAndLessonApi(data: { studentId: string, lessonId: string }) {

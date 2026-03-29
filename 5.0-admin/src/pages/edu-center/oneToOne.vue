@@ -14,6 +14,7 @@ import {
   batchAssignOneToOneClassTeacherApi,
   batchUpdateOneToOneClassTimeApi,
   checkOneToOneNameApi,
+  closeOneToOneApi,
   getOneToOneByIdApi,
   getOneToOneListApi,
   listTuitionAccountsByStudentAndLessonApi,
@@ -351,10 +352,18 @@ function handleCreateOneToOne() {
   messageService.info('创建1对1功能暂未实现')
 }
 
-function handleFinishCourse(_record) {
+function handleFinishCourse(record) {
+  const id = record?.id
+  if (!id) {
+    messageService.error('缺少1对1班级ID')
+    return
+  }
   Modal.confirm({
     title: '1对1结班',
     centered: true,
+    closable: false,
+    maskClosable: false,
+    keyboard: false,
     icon: createVNode(ExclamationCircleOutlined),
     content:
       '是否确认对1对1进行结班且结课，结班后会同步删除相关的日程，被删除的日程不可恢复，请谨慎操作',
@@ -363,8 +372,21 @@ function handleFinishCourse(_record) {
     async onOk() {
       // 结班并结课 — 接口待接入
     },
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    onCancel() {},
+    async onCancel() {
+      try {
+        const res = await closeOneToOneApi({ id: String(id) })
+        if (res.code === 200) {
+          messageService.success('结班成功')
+          getOneToOneList()
+          return
+        }
+        messageService.error(res.message || '结班失败')
+      }
+      catch (err) {
+        console.error(err)
+        messageService.error('结班失败')
+      }
+    },
   })
 }
 

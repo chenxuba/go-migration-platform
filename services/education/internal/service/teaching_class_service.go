@@ -150,6 +150,22 @@ func (svc *Service) BatchUpdateOneToOneClassTime(userID int64, dto model.OneToOn
 	return svc.repo.BatchUpdateOneToOneClassTime(context.Background(), instID, operatorID, ids, dto)
 }
 
+// CloseOneToOneOnly 仅结班（更新班级开班状态为已结班，不处理结课与日程）
+func (svc *Service) CloseOneToOneOnly(userID int64, id string) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(id) == "" {
+		return errors.New("1对1ID不能为空")
+	}
+	classID, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
+	if err != nil || classID <= 0 {
+		return errors.New("1对1ID无效")
+	}
+	return svc.repo.CloseOneToOneOnly(context.Background(), instID, operatorID, classID)
+}
+
 func (svc *Service) resolveTeachingClassOperator(userID int64) (int64, int64, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

@@ -184,6 +184,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/tuition-accounts/by-student-and-lesson", handler.listTuitionAccountsByStudentAndLesson)
 	mux.HandleFunc("/api/v1/one-to-ones/check-name", handler.checkOneToOneName)
 	mux.HandleFunc("/api/v1/one-to-ones/update", handler.updateOneToOne)
+	mux.HandleFunc("/api/v1/one-to-ones/close", handler.closeOneToOne)
 	mux.HandleFunc("/api/v1/one-to-ones/batch-assign-class-teacher", handler.batchAssignOneToOneClassTeacher)
 	mux.HandleFunc("/api/v1/one-to-ones/batch-update-class-time", handler.batchUpdateOneToOneClassTime)
 	mux.HandleFunc("/api/v1/orders/set-bad-debt", handler.setBadDebt)

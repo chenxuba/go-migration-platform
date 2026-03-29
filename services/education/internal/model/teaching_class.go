@@ -182,6 +182,11 @@ type OneToOneCheckNameDTO struct {
 	IsOne2One bool   `json:"isOne2One"`
 }
 
+// OneToOneCloseDTO 仅结班（对齐竞品 One2One/Close：POST {"id":"..."}）
+type OneToOneCloseDTO struct {
+	ID string `json:"id"`
+}
+
 type OneToOneUpdateDTO struct {
 	ID                         string               `json:"id"`
 	StudentID                  string               `json:"studentId"`
