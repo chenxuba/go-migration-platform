@@ -88,12 +88,11 @@ const (
 	LessonIncomeSourceExpireRollback     = 11
 	LessonIncomeSourceVoidReturn         = 12
 	LessonIncomeSourceRevokeRefundFee    = 13
-	LessonIncomeSourceManualCloseCourse  = 14
 )
 
 var lessonIncomeSourceTypeToInternal = map[int][]int{
 	LessonIncomeSourceLessonConsume:      {TuitionAccountFlowSourceConsume},
-	LessonIncomeSourceManualGraduate:     {TuitionAccountFlowSourceGraduate},
+	LessonIncomeSourceManualGraduate:     {TuitionAccountFlowSourceGraduate, TuitionAccountFlowSourceManualCloseCourse},
 	LessonIncomeSourceExpireGraduate:     {TuitionAccountFlowSourceExpireGraduate},
 	LessonIncomeSourceImportConsume:      {TuitionAccountFlowSourceImportConsume},
 	LessonIncomeSourceConsumeReturn:      {TuitionAccountFlowSourceConsumeReturn},
@@ -103,9 +102,8 @@ var lessonIncomeSourceTypeToInternal = map[int][]int{
 	LessonIncomeSourceRefundFee:          {TuitionAccountFlowSourceRefund},
 	LessonIncomeSourceRevokeGraduate:     {TuitionAccountFlowSourceRevokeGraduate},
 	LessonIncomeSourceExpireRollback:     {TuitionAccountFlowSourceExpireRollback},
-	LessonIncomeSourceVoidReturn:         {TuitionAccountFlowSourceOrderVoid},
-	LessonIncomeSourceRevokeRefundFee:    {TuitionAccountFlowSourceRevokeRefundOrder},
-	LessonIncomeSourceManualCloseCourse:  {TuitionAccountFlowSourceManualCloseCourse},
+	LessonIncomeSourceVoidReturn:      {TuitionAccountFlowSourceOrderVoid},
+	LessonIncomeSourceRevokeRefundFee: {TuitionAccountFlowSourceRevokeRefundOrder},
 }
 
 var lessonIncomeInternalToSourceType = map[int]int{
@@ -122,7 +120,7 @@ var lessonIncomeInternalToSourceType = map[int]int{
 	TuitionAccountFlowSourceExpireRollback:           LessonIncomeSourceExpireRollback,
 	TuitionAccountFlowSourceOrderVoid:                LessonIncomeSourceVoidReturn,
 	TuitionAccountFlowSourceRevokeRefundOrder:        LessonIncomeSourceRevokeRefundFee,
-	TuitionAccountFlowSourceManualCloseCourse:        LessonIncomeSourceManualCloseCourse,
+	TuitionAccountFlowSourceManualCloseCourse:        LessonIncomeSourceManualGraduate,
 }
 
 func ExpandLessonIncomeSourceTypes(sourceTypes []int) []int {
@@ -137,6 +135,9 @@ func ExpandLessonIncomeSourceTypes(sourceTypes []int) []int {
 	result := make([]int, 0, len(sourceTypes))
 	seen := make(map[int]struct{})
 	for _, sourceType := range sourceTypes {
+		if sourceType == 14 {
+			sourceType = LessonIncomeSourceManualGraduate
+		}
 		internalList, ok := lessonIncomeSourceTypeToInternal[sourceType]
 		if !ok {
 			internalList = []int{sourceType}

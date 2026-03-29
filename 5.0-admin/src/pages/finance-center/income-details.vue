@@ -37,7 +37,6 @@ const DETAIL_TYPE_MAP = {
   11: '过期撤回返还',
   12: '作废返还',
   13: '撤销退课手续费',
-  14: '手动结课',
 }
 
 const detailTypeOptions = Object.entries(DETAIL_TYPE_MAP).map(([id, value]) => ({
