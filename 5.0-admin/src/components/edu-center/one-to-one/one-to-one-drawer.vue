@@ -126,7 +126,7 @@ function handleEdit() {
           0课时
         </a-descriptions-item>
         <a-descriptions-item label="班主任">
-          -
+          {{ (record?.classTeacherName || '').trim() || '-' }}
         </a-descriptions-item>
         <a-descriptions-item label="关联课程">
           {{ record?.lessonName || '感统课' }}
@@ -135,7 +135,7 @@ function handleEdit() {
           未升期
         </a-descriptions-item>
         <a-descriptions-item label="默认上课教师">
-          -
+          {{ (record?.defaultTeacherName || '').trim() || '-' }}
         </a-descriptions-item>
         <a-descriptions-item label="备注">
           -

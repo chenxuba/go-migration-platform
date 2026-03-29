@@ -98,6 +98,7 @@ export interface OneToOneDetail {
   defaultClassTimeRecordMode?: number
   defaultTeacherId?: string
   defaultTeacherName?: string
+  classTeacherName?: string
   isGradeUpgrade?: boolean
   remark?: string
   teacherList?: OneToOneTeacher[]

@@ -570,6 +570,7 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 			IFNULL(tcs.student_class_time, 0),
 			IFNULL(tcs.teacher_class_time, 0),
 			IFNULL(tcs.class_time_record_mode, 1),
+			IFNULL(advisor.nick_name, ''),
 			IFNULL(tc.default_teacher_id, 0),
 			IFNULL(default_teacher.nick_name, ''),
 			IFNULL(ts.has_grade_upgrade, 0),
@@ -598,6 +599,7 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 		INNER JOIN inst_student s ON s.id = tcs.student_id AND s.del_flag = 0
 		INNER JOIN inst_course c ON c.id = tc.course_id AND c.del_flag = 0
 		LEFT JOIN inst_course_quotation icq ON icq.id = tcs.quote_id AND icq.del_flag = 0
+		LEFT JOIN inst_user advisor ON advisor.id = tc.advisor_id
 		LEFT JOIN inst_user default_teacher ON default_teacher.id = tc.default_teacher_id
 		LEFT JOIN inst_user created_staff ON created_staff.id = tc.create_id
 		LEFT JOIN teaching_class_teacher default_teacher_rel
@@ -674,6 +676,7 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 		suspendedTime       sql.NullTime
 		classEndingTime     sql.NullTime
 		classPropertiesJSON string
+		advisorName         string
 	)
 
 	if err := row.Scan(
@@ -699,6 +702,7 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 		&detail.DefaultStudentClassTime,
 		&detail.DefaultTeacherClassTime,
 		&detail.DefaultClassTimeRecordMode,
+		&advisorName,
 		&defaultTeacherID,
 		&detail.DefaultTeacherName,
 		&detail.IsGradeUpgrade,
@@ -778,6 +782,7 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 		return model.OneToOneDetailVO{}, err
 	}
 	detail.TeacherList = teacherMap[classIDValue]
+	detail.ClassTeacherName = classTeacherNamesFromTeacherList(detail.TeacherList, strings.TrimSpace(advisorName))
 	return detail, nil
 }
 
@@ -1007,41 +1012,28 @@ func boolToTinyInt(value bool) int {
 	return 0
 }
 
-// classTeacherNamesFromTeacherList 列表「班主任」列：优先展示 is_default=0（批量班主任，不含为合并默认教师单独插入的 is_default=1 行）；
-// 若仅有默认教师行则回退为全部关联教师去重；再回退 advisor 姓名。
+// classTeacherNamesFromTeacherList 列表/详情「班主任」：展示本班 teaching_class_teacher 全部关联教师（按 teacher_id 去重）。
+// 默认上课教师在库中常为 is_default=1，若只展示 is_default=0 会漏掉与班主任重复的默认教师（如 王明+汪洋 只显示一人）。
 func classTeacherNamesFromTeacherList(list []model.OneToOneTeacherVO, advisorFallback string) string {
 	if len(list) == 0 {
 		return advisorFallback
 	}
 	names := make([]string, 0)
 	seen := make(map[string]struct{})
-	add := func(name, id string) {
-		n := strings.TrimSpace(name)
+	for _, t := range list {
+		n := strings.TrimSpace(t.Name)
 		if n == "" {
-			return
+			continue
 		}
-		key := strings.TrimSpace(id)
+		key := strings.TrimSpace(t.TeacherID)
 		if key == "" {
 			key = n
 		}
 		if _, ok := seen[key]; ok {
-			return
+			continue
 		}
 		seen[key] = struct{}{}
 		names = append(names, n)
-	}
-	for _, t := range list {
-		if !t.IsDefault {
-			add(t.Name, t.TeacherID)
-		}
-	}
-	if len(names) > 0 {
-		return strings.Join(names, "、")
-	}
-	seen = make(map[string]struct{})
-	names = names[:0]
-	for _, t := range list {
-		add(t.Name, t.TeacherID)
 	}
 	if len(names) > 0 {
 		return strings.Join(names, "、")

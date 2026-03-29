@@ -154,6 +154,7 @@ type OneToOneDetailVO struct {
 	DefaultClassTimeRecordMode int                      `json:"defaultClassTimeRecordMode"`
 	DefaultTeacherID           string                   `json:"defaultTeacherId"`
 	DefaultTeacherName         string                   `json:"defaultTeacherName"`
+	ClassTeacherName           string                   `json:"classTeacherName,omitempty"`
 	IsGradeUpgrade             bool                     `json:"isGradeUpgrade"`
 	Remark                     string                   `json:"remark"`
 	TeacherList                []OneToOneTeacherVO      `json:"teacherList"`
