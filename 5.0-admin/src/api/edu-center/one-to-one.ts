@@ -143,6 +143,8 @@ export interface OneToOneBatchClassTimeParams {
   classTime: number
   studentClassTime: number
   teacherClassTime: number
+  /** 1 按固定课时记录 2 按上课时长记录 */
+  classTimeRecordMode?: number
 }
 
 export interface OneToOneCheckNameParams {

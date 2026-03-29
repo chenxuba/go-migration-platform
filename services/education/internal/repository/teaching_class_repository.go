@@ -1039,9 +1039,13 @@ func (repo *Repository) BatchUpdateOneToOneClassTime(ctx context.Context, instID
 	if len(ids) == 0 {
 		return nil
 	}
+	recordMode := dto.ClassTimeRecordMode
+	if recordMode <= 0 {
+		recordMode = 1
+	}
 	placeholders := make([]string, 0, len(ids))
-	args := make([]any, 0, len(ids)+5)
-	args = append(args, dto.ClassTime, dto.StudentClassTime, dto.TeacherClassTime, operatorID)
+	args := make([]any, 0, len(ids)+7)
+	args = append(args, dto.ClassTime, dto.StudentClassTime, dto.TeacherClassTime, recordMode, operatorID)
 	for _, id := range ids {
 		placeholders = append(placeholders, "?")
 		args = append(args, id)
@@ -1050,7 +1054,7 @@ func (repo *Repository) BatchUpdateOneToOneClassTime(ctx context.Context, instID
 	_, err := repo.db.ExecContext(ctx, `
 		UPDATE teaching_class_student tcs
 		INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id AND tc.inst_id = tcs.inst_id AND tc.del_flag = 0
-		SET tcs.class_time = ?, tcs.student_class_time = ?, tcs.teacher_class_time = ?, tcs.update_id = ?, tcs.update_time = NOW()
+		SET tcs.class_time = ?, tcs.student_class_time = ?, tcs.teacher_class_time = ?, tcs.class_time_record_mode = ?, tcs.update_id = ?, tcs.update_time = NOW()
 		WHERE tc.id IN (`+strings.Join(placeholders, ",")+`) AND tc.inst_id = ? AND tc.class_type = ? AND tcs.del_flag = 0
 	`, args...)
 	return err

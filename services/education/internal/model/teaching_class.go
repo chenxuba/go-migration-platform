@@ -167,10 +167,11 @@ type OneToOneBatchAssignTeacherDTO struct {
 }
 
 type OneToOneBatchClassTimeDTO struct {
-	IDs              []string `json:"ids"`
-	ClassTime        float64  `json:"classTime"`
-	StudentClassTime float64  `json:"studentClassTime"`
-	TeacherClassTime float64  `json:"teacherClassTime"`
+	IDs                  []string `json:"ids"`
+	ClassTime            float64  `json:"classTime"`
+	StudentClassTime     float64  `json:"studentClassTime"`
+	TeacherClassTime     float64  `json:"teacherClassTime"`
+	ClassTimeRecordMode  int      `json:"classTimeRecordMode"` // 1 按固定课时 2 按上课时长
 }
 
 type OneToOneCheckNameDTO struct {

@@ -139,6 +139,9 @@ func (svc *Service) BatchUpdateOneToOneClassTime(userID int64, dto model.OneToOn
 	if len(ids) == 0 {
 		return errors.New("请选择1对1记录")
 	}
+	if dto.ClassTimeRecordMode <= 0 {
+		dto.ClassTimeRecordMode = 1
+	}
 	return svc.repo.BatchUpdateOneToOneClassTime(context.Background(), instID, operatorID, ids, dto)
 }
 

@@ -46,9 +46,26 @@ const advisorForm = reactive({
 const classTimeModalOpen = ref(false)
 const classTimeSubmitting = ref(false)
 const classTimeForm = reactive({
-  classTime: 1,
+  classTimeRecordMode: 1,
   studentClassTime: 1,
   teacherClassTime: 0,
+})
+
+const classTimeBatchUnitLabel = computed(() =>
+  Number(classTimeForm.classTimeRecordMode) === 2 ? '课时/小时' : '课时',
+)
+
+const classTimeBatchHint = computed(() =>
+  Number(classTimeForm.classTimeRecordMode) === 2
+    ? '每次点名，学员和上课教师记录的课时会根据日程时长自动计算课时（点名时支持调整）'
+    : '每次点名，学员和上课教师记录的课时数默认为此数值（点名时支持调整）',
+)
+
+const classTimeBatchSelectionSummary = computed(() => {
+  const rows = actionRows.value
+  const n = rows.length
+  const names = rows.map(r => r.name).filter(Boolean).join('，')
+  return { n, names }
 })
 
 const editModalOpen = ref(false)
@@ -502,9 +519,9 @@ function openBatchAction(action) {
   }
   if (action === 'classTime') {
     const current = actionRows.value[0]
-    classTimeForm.classTime = Number(current?.classTime || 1)
-    classTimeForm.studentClassTime = Number(current?.studentClassTime || 1)
-    classTimeForm.teacherClassTime = Number(current?.teacherClassTime || 0)
+    classTimeForm.classTimeRecordMode = Number(current?.defaultClassTimeRecordMode || 1)
+    classTimeForm.studentClassTime = Number(current?.studentClassTime ?? 1)
+    classTimeForm.teacherClassTime = Number(current?.teacherClassTime ?? 0)
     classTimeModalOpen.value = true
     return
   }
@@ -539,11 +556,13 @@ async function submitClassTimeBatch() {
   const rows = getCurrentActionRows()
   classTimeSubmitting.value = true
   try {
+    const studentCt = Number(classTimeForm.studentClassTime || 0)
     const res = await batchUpdateOneToOneClassTimeApi({
       ids: rows.map(item => item.id),
-      classTime: Number(classTimeForm.classTime || 0),
-      studentClassTime: Number(classTimeForm.studentClassTime || 0),
+      classTime: studentCt,
+      studentClassTime: studentCt,
       teacherClassTime: Number(classTimeForm.teacherClassTime || 0),
+      classTimeRecordMode: Number(classTimeForm.classTimeRecordMode || 1),
     })
     if (res.code !== 200)
       throw new Error(res.message || '修改记录课时失败')
@@ -716,7 +735,7 @@ onMounted(() => {
                     批量替换班主任
                   </a-menu-item>
                   <a-menu-item key="classTime">
-                    修改记录课时
+                    批量修改记录课时
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -999,16 +1018,58 @@ onMounted(() => {
       </div>
     </a-modal>
 
-    <a-modal v-model:open="classTimeModalOpen" title="修改记录课时" @ok="submitClassTimeBatch" :confirm-loading="classTimeSubmitting">
-      <a-form layout="vertical">
-        <a-form-item label="上课时间">
-          <a-input-number v-model:value="classTimeForm.classTime" :min="0" :precision="2" style="width: 100%" />
+    <a-modal
+      v-model:open="classTimeModalOpen"
+      title="批量修改记录课时"
+      width="560px"
+      :confirm-loading="classTimeSubmitting"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="submitClassTimeBatch"
+    >
+      <div v-if="classTimeBatchSelectionSummary.n" class="batch-class-time-summary">
+        <div class="batch-class-time-summary-line">
+          已选 <strong>{{ classTimeBatchSelectionSummary.n }}</strong> 个 <strong>1对1</strong> 记录课时
+        </div>
+        <div class="batch-class-time-summary-names">
+          共 {{ classTimeBatchSelectionSummary.n }} 个，{{ classTimeBatchSelectionSummary.names || '—' }}
+        </div>
+      </div>
+      <a-form layout="vertical" class="batch-class-time-form">
+        <a-form-item label="课时记录方式" required>
+          <a-radio-group v-model:value="classTimeForm.classTimeRecordMode" class="custom-radio">
+            <a-radio :value="1">
+              按固定课时记录
+            </a-radio>
+            <a-radio :value="2">
+              按上课时长记录
+            </a-radio>
+          </a-radio-group>
         </a-form-item>
-        <a-form-item label="学员记录课时">
-          <a-input-number v-model:value="classTimeForm.studentClassTime" :min="0" :precision="2" style="width: 100%" />
-        </a-form-item>
-        <a-form-item label="老师授课课时">
-          <a-input-number v-model:value="classTimeForm.teacherClassTime" :min="0" :precision="2" style="width: 100%" />
+        <a-form-item>
+          <template #label>
+            <span><span class="batch-class-time-required">*</span> 默认记录学员</span>
+          </template>
+          <a-space align="center" :size="8" wrap>
+            <a-input-number
+              v-model:value="classTimeForm.studentClassTime"
+              :min="0"
+              :precision="2"
+              style="width: 120px"
+            />
+            <span>{{ classTimeBatchUnitLabel }}</span>
+            <span>，上课教师课时</span>
+            <a-input-number
+              v-model:value="classTimeForm.teacherClassTime"
+              :min="0"
+              :precision="2"
+              style="width: 120px"
+            />
+            <span>{{ classTimeBatchUnitLabel }}</span>
+          </a-space>
+          <div class="batch-class-time-hint">
+            {{ classTimeBatchHint }}
+          </div>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -1082,6 +1143,43 @@ onMounted(() => {
       animation: icon-rotate 0.3s linear;
     }
   }
+}
+
+.batch-class-time-summary {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: #e6f4ff;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.batch-class-time-summary-line {
+  margin-bottom: 4px;
+}
+
+.batch-class-time-summary-names {
+  color: rgba(0, 0, 0, 0.65);
+  word-break: break-all;
+}
+
+.batch-class-time-form {
+  :deep(.ant-form-item) {
+    margin-bottom: 16px;
+  }
+}
+
+.batch-class-time-required {
+  color: #ff4d4f;
+  margin-right: 2px;
+}
+
+.batch-class-time-hint {
+  margin-top: 8px;
+  color: #888;
+  font-size: 13px;
+  line-height: 1.5;
 }
 </style>
 
