@@ -267,7 +267,7 @@ const formState = ref({
   courseProductProperties: [], // 课程属性  学季/学年/年级/班型/课程属性
   subjectIds: [], // 科目
   saleStatus: true, // 售卖状态
-  courseType: 1, // 创建时在 resetForm 中改为 4（通用·全部课程）；1 非通用；3 部分；4 全部课程；5 全部班课；6 全部1对1；2 历史兼容
+  courseType: 1, // lessonScope：1 非通用；3 部分；4 全部课程；5 全部班课；6 全部1对1；2 历史兼容
   courseScope: [], // 课程范围
   teachMethod: 1, // 授课方式 1 班级授课 2 一对一授课
   type: 1, // 课程类型
@@ -531,7 +531,7 @@ function resetForm() {
   formState.value.courseProductProperties = []
   formState.value.subjectIds = []
   formState.value.saleStatus = true
-  formState.value.courseType = props.modalType === 'create' ? 4 : 1
+  formState.value.courseType = 1
   formState.value.courseScope = []
   formState.value.teachMethod = 1
   allCommonTypeSelection.value = 'all-course'
