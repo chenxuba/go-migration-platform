@@ -40,7 +40,7 @@ const advisorModalOpen = ref(false)
 const advisorModalTitle = ref('批量分配班主任')
 const advisorSubmitting = ref(false)
 const advisorForm = reactive({
-  classTeacherId: undefined,
+  classTeacherIds: [],
 })
 
 const classTimeModalOpen = ref(false)
@@ -517,13 +517,13 @@ function openBatchAction(action) {
 
   if (action === 'assign') {
     advisorModalTitle.value = '批量分配班主任'
-    advisorForm.classTeacherId = undefined
+    advisorForm.classTeacherIds = []
     advisorModalOpen.value = true
     return
   }
   if (action === 'replace') {
     advisorModalTitle.value = '批量替换班主任'
-    advisorForm.classTeacherId = undefined
+    advisorForm.classTeacherIds = []
     advisorModalOpen.value = true
     return
   }
@@ -538,7 +538,10 @@ function openBatchAction(action) {
 }
 
 async function submitAdvisorBatch() {
-  if (!advisorForm.classTeacherId) {
+  const teacherIds = Array.isArray(advisorForm.classTeacherIds)
+    ? advisorForm.classTeacherIds.filter(id => id !== undefined && id !== null && `${id}` !== '')
+    : []
+  if (teacherIds.length === 0) {
     messageService.warning('请选择班主任')
     return
   }
@@ -547,12 +550,13 @@ async function submitAdvisorBatch() {
   try {
     const res = await batchAssignOneToOneClassTeacherApi({
       ids: rows.map(item => item.id),
-      classTeacherId: String(advisorForm.classTeacherId),
+      classTeacherIds: teacherIds.map(id => String(id)),
     })
     if (res.code !== 200)
       throw new Error(res.message || '批量更新班主任失败')
     advisorModalOpen.value = false
     messageService.success(`${advisorModalTitle.value}成功`)
+    resetSelection()
     await getOneToOneList()
   } catch (error) {
     console.error('batch assign advisor failed', error)
@@ -578,6 +582,7 @@ async function submitClassTimeBatch() {
       throw new Error(res.message || '修改记录课时失败')
     classTimeModalOpen.value = false
     messageService.success('修改记录课时成功')
+    resetSelection()
     await getOneToOneList()
   } catch (error) {
     console.error('batch update class time failed', error)
@@ -590,6 +595,7 @@ async function submitClassTimeBatch() {
 function resetSelection() {
   selectedRows.value = []
   selectedRowKeys.value = []
+  actionRows.value = []
 }
 
 async function openEditModal(record) {
@@ -900,7 +906,13 @@ onMounted(() => {
     <a-modal v-model:open="advisorModalOpen" :title="advisorModalTitle" @ok="submitAdvisorBatch" :confirm-loading="advisorSubmitting">
       <a-form layout="vertical">
         <a-form-item label="班主任" required>
-          <StaffSelect v-model="advisorForm.classTeacherId" placeholder="请选择班主任" width="100%" :status="0" />
+          <StaffSelect
+            v-model="advisorForm.classTeacherIds"
+            placeholder="请选择班主任（可多选）"
+            width="100%"
+            :status="0"
+            :multiple="true"
+          />
         </a-form-item>
       </a-form>
     </a-modal>

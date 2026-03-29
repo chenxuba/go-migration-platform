@@ -123,11 +123,16 @@ func (svc *Service) BatchAssignOneToOneClassTeacher(userID int64, dto model.OneT
 	if len(ids) == 0 {
 		return errors.New("请选择1对1记录")
 	}
-	classTeacherID, err := parseRequiredInt64String(dto.ClassTeacherID, "班主任")
-	if err != nil {
-		return err
+	classTeacherIDs := parseTeachingClassIDs(dto.ClassTeacherIDs)
+	if len(classTeacherIDs) == 0 && strings.TrimSpace(dto.ClassTeacherID) != "" {
+		if v, e := strconv.ParseInt(strings.TrimSpace(dto.ClassTeacherID), 10, 64); e == nil && v > 0 {
+			classTeacherIDs = []int64{v}
+		}
 	}
-	return svc.repo.BatchAssignOneToOneClassTeacher(context.Background(), instID, operatorID, classTeacherID, ids)
+	if len(classTeacherIDs) == 0 {
+		return errors.New("请选择班主任")
+	}
+	return svc.repo.BatchAssignOneToOneClassTeacher(context.Background(), instID, operatorID, classTeacherIDs, ids)
 }
 
 func (svc *Service) BatchUpdateOneToOneClassTime(userID int64, dto model.OneToOneBatchClassTimeDTO) error {

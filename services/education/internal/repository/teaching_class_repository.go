@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -1015,24 +1016,108 @@ func (repo *Repository) listTeachingClassTeachers(ctx context.Context, instID in
 	return result, rows.Err()
 }
 
-func (repo *Repository) BatchAssignOneToOneClassTeacher(ctx context.Context, instID, operatorID, classTeacherID int64, ids []int64) error {
-	if len(ids) == 0 {
+func mergeAdvisorTeachersWithDefault(selected []int64, defaultTeacherID int64) []int64 {
+	seen := make(map[int64]struct{}, len(selected)+1)
+	out := make([]int64, 0, len(selected)+1)
+	for _, id := range selected {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	if defaultTeacherID > 0 {
+		if _, ok := seen[defaultTeacherID]; !ok {
+			out = append(out, defaultTeacherID)
+		}
+	}
+	return out
+}
+
+// BatchAssignOneToOneClassTeacher 批量设置班主任：列表主班主任取所选第一位；与单条编辑一致写入 teaching_class_teacher，并合并各校区的默认上课教师。
+func (repo *Repository) BatchAssignOneToOneClassTeacher(ctx context.Context, instID, operatorID int64, classTeacherIDs []int64, teachingClassIDs []int64) error {
+	if len(teachingClassIDs) == 0 {
 		return nil
 	}
-	placeholders := make([]string, 0, len(ids))
-	args := make([]any, 0, len(ids)+3)
-	args = append(args, classTeacherID, operatorID)
-	for _, id := range ids {
-		placeholders = append(placeholders, "?")
+	if len(classTeacherIDs) == 0 {
+		return errors.New("请选择班主任")
+	}
+	firstAdvisor := classTeacherIDs[0]
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	ph := make([]string, 0, len(teachingClassIDs))
+	args := make([]any, 0, len(teachingClassIDs)+5)
+	args = append(args, firstAdvisor, operatorID)
+	for _, id := range teachingClassIDs {
+		ph = append(ph, "?")
 		args = append(args, id)
 	}
 	args = append(args, instID, model.TeachingClassTypeOneToOne)
-	_, err := repo.db.ExecContext(ctx, `
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE teaching_class
 		SET advisor_id = ?, update_id = ?, update_time = NOW()
-		WHERE id IN (`+strings.Join(placeholders, ",")+`) AND inst_id = ? AND class_type = ? AND del_flag = 0
-	`, args...)
-	return err
+		WHERE id IN (`+strings.Join(ph, ",")+`) AND inst_id = ? AND class_type = ? AND del_flag = 0
+	`, args...); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	for _, classID := range teachingClassIDs {
+		var defaultTeacherID int64
+		if err := tx.QueryRowContext(ctx, `
+			SELECT IFNULL(default_teacher_id, 0) FROM teaching_class
+			WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0
+		`, classID, instID, model.TeachingClassTypeOneToOne).Scan(&defaultTeacherID); err != nil {
+			return err
+		}
+		merged := mergeAdvisorTeachersWithDefault(classTeacherIDs, defaultTeacherID)
+
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_class_teacher
+			SET del_flag = 1, update_id = ?, update_time = NOW()
+			WHERE inst_id = ? AND teaching_class_id = ? AND del_flag = 0
+		`, operatorID, instID, classID); err != nil {
+			return err
+		}
+
+		for _, teacherID := range merged {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO teaching_class_teacher (
+					uuid, version, inst_id, teaching_class_id, teacher_id, status, is_default,
+					create_id, create_time, update_id, update_time, del_flag
+				) VALUES (
+					UUID(), 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, 0
+				)
+				ON DUPLICATE KEY UPDATE
+					status = VALUES(status),
+					is_default = VALUES(is_default),
+					del_flag = 0,
+					update_id = VALUES(update_id),
+					update_time = VALUES(update_time)
+			`,
+				instID,
+				classID,
+				teacherID,
+				boolToTinyInt(teacherID == defaultTeacherID),
+				operatorID,
+				now,
+				operatorID,
+				now,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (repo *Repository) BatchUpdateOneToOneClassTime(ctx context.Context, instID, operatorID int64, ids []int64, dto model.OneToOneBatchClassTimeDTO) error {

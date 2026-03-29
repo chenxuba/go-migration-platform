@@ -162,8 +162,9 @@ type OneToOneDetailVO struct {
 }
 
 type OneToOneBatchAssignTeacherDTO struct {
-	IDs            []string `json:"ids"`
-	ClassTeacherID string   `json:"classTeacherId"`
+	IDs              []string `json:"ids"`
+	ClassTeacherID   string   `json:"classTeacherId"`   // 兼容旧版单选
+	ClassTeacherIDs  []string `json:"classTeacherIds"`  // 多选班主任
 }
 
 type OneToOneBatchClassTimeDTO struct {

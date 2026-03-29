@@ -135,7 +135,10 @@ export interface OneToOneListParams {
 
 export interface OneToOneBatchAssignTeacherParams {
   ids: string[]
-  classTeacherId: string
+  /** 多选班主任（优先） */
+  classTeacherIds?: string[]
+  /** 兼容旧版单选 */
+  classTeacherId?: string
 }
 
 export interface OneToOneBatchClassTimeParams {
