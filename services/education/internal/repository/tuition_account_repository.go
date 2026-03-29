@@ -327,9 +327,148 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 	return out, rows.Err()
 }
 
+// studentHasTuitionOnGeneralCourse 学员是否存在挂在「通用类」课程上的有效学费账户（course_type 2–6，含全部课程通用=4）；不限授课方式（班课/1v1 均算）。
+// 与竞品一致：只要报读过任一类通用课，1 对 1 可选课应拉机构内全部 1v1 课程（不仅限于已有学费账户的课程）。
+func (repo *Repository) studentHasTuitionOnGeneralCourse(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) (bool, error) {
+	q := `
+SELECT EXISTS (
+	SELECT 1
+	FROM tuition_account ta
+	INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+	WHERE ta.inst_id = ?
+		AND ta.student_id = ?
+		AND ta.del_flag = 0
+		AND IFNULL(ic.course_type, 0) IN (2, 3, 4, 5, 6)
+`
+	args := []any{instID, studentID}
+	if len(tuitionAccountStatus) > 0 {
+		placeholders := make([]string, 0, len(tuitionAccountStatus))
+		for _, st := range tuitionAccountStatus {
+			placeholders = append(placeholders, "?")
+			args = append(args, st)
+		}
+		q += ` AND ta.status IN (` + strings.Join(placeholders, ",") + `)`
+	}
+	q += `
+	LIMIT 1
+)`
+	var ok bool
+	if err := repo.db.QueryRowContext(ctx, q, args...).Scan(&ok); err != nil {
+		return false, err
+	}
+	return ok, nil
+}
+
+// oneToOneLessonListPolicy 决定 1 对 1 可选课程列表策略（与竞品一致）。
+// restrictNonGeneral：仅保留非通用课且仅来自学员学费账户（仅有非通用类开班中 1 对 1 时）。
+// useInstitutionCatalog：从机构全部 1v1 课程（inst_course）出表，仍用学员学费账户算已分班、用班级算已报名
+//（有通用类开班中 1 对 1，或存在挂在通用类课程 course_type 2–6 上的有效学费账户时）。
+func (repo *Repository) oneToOneLessonListPolicy(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) (restrictNonGeneral, useInstitutionCatalog bool, err error) {
+	const qGeneral = `
+SELECT EXISTS (
+	SELECT 1
+	FROM teaching_class tc
+	INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+	INNER JOIN inst_course ic ON ic.id = tc.course_id AND ic.del_flag = 0
+	WHERE tc.inst_id = ?
+		AND tcs.student_id = ?
+		AND tc.class_type = ?
+		AND tc.del_flag = 0
+		AND tc.status = ?
+		AND IFNULL(ic.course_type, 0) IN (2, 3, 4, 5, 6)
+	LIMIT 1
+)`
+	var hasGeneral bool
+	if err := repo.db.QueryRowContext(ctx, qGeneral, instID, studentID, model.TeachingClassTypeOneToOne, model.TeachingClassStatusActive).Scan(&hasGeneral); err != nil {
+		return false, false, err
+	}
+	if hasGeneral {
+		return false, true, nil
+	}
+	hasGeneralTuition, err := repo.studentHasTuitionOnGeneralCourse(ctx, instID, studentID, tuitionAccountStatus)
+	if err != nil {
+		return false, false, err
+	}
+	if hasGeneralTuition {
+		return false, true, nil
+	}
+	const qAny = `
+SELECT EXISTS (
+	SELECT 1
+	FROM teaching_class tc
+	INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+	WHERE tc.inst_id = ?
+		AND tcs.student_id = ?
+		AND tc.class_type = ?
+		AND tc.del_flag = 0
+		AND tc.status = ?
+	LIMIT 1
+)`
+	var hasAny bool
+	if err := repo.db.QueryRowContext(ctx, qAny, instID, studentID, model.TeachingClassTypeOneToOne, model.TeachingClassStatusActive).Scan(&hasAny); err != nil {
+		return false, false, err
+	}
+	if !hasAny {
+		return false, false, nil
+	}
+	return true, false, nil
+}
+
 // ListOneToOneLessonOptionsByStudent 学员在指定学费账户状态下、可用于 1 对 1 的课程（去重）。teach_method=2 为 1v1。
 func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) ([]model.OneToOneLessonOptionVO, error) {
-	sqlStr := `
+	restrictNonGeneral, useInstitutionCatalog, err := repo.oneToOneLessonListPolicy(ctx, instID, studentID, tuitionAccountStatus)
+	if err != nil {
+		return nil, err
+	}
+
+	var sqlStr string
+	var args []any
+
+	if useInstitutionCatalog {
+		// 机构内全部 1v1 课程；LEFT JOIN 学员学费账户仅用于 assigned_class；已报名仍看是否存在开班中 1 对 1
+		sqlStr = `
+		SELECT
+			CAST(ic.id AS CHAR),
+			IFNULL(ic.name, ''),
+			IFNULL(MAX(ic.course_type), 0),
+			IFNULL(MAX(IFNULL(ta.assigned_class, 0)), 0),
+			MAX(CASE WHEN EXISTS (
+				SELECT 1
+				FROM teaching_class tc
+				INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+				WHERE tc.inst_id = ?
+					AND tc.course_id = ic.id
+					AND tc.class_type = ?
+					AND tc.del_flag = 0
+					AND tc.status = ?
+					AND tcs.student_id = ?
+				LIMIT 1
+			) THEN 1 ELSE 0 END)
+		FROM inst_course ic
+		LEFT JOIN tuition_account ta ON ta.course_id = ic.id AND ta.inst_id = ic.inst_id AND ta.student_id = ? AND ta.del_flag = 0`
+		args = []any{
+			instID,
+			model.TeachingClassTypeOneToOne,
+			model.TeachingClassStatusActive,
+			studentID,
+			studentID,
+		}
+		if len(tuitionAccountStatus) > 0 {
+			placeholders := make([]string, 0, len(tuitionAccountStatus))
+			for _, st := range tuitionAccountStatus {
+				placeholders = append(placeholders, "?")
+				args = append(args, st)
+			}
+			sqlStr += ` AND ta.status IN (` + strings.Join(placeholders, ",") + `)`
+		}
+		sqlStr += `
+		WHERE ic.inst_id = ?
+			AND ic.del_flag = 0
+			AND ic.teach_method = 2`
+		args = append(args, instID)
+		sqlStr += ` GROUP BY ic.id, ic.name ORDER BY ic.name ASC, ic.id ASC`
+	} else {
+		sqlStr = `
 		SELECT
 			CAST(ic.id AS CHAR),
 			IFNULL(ic.name, ''),
@@ -353,21 +492,25 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 			AND ta.student_id = ?
 			AND ta.del_flag = 0
 			AND ic.teach_method = 2`
-	args := []any{
-		model.TeachingClassTypeOneToOne,
-		model.TeachingClassStatusActive,
-		instID,
-		studentID,
-	}
-	if len(tuitionAccountStatus) > 0 {
-		placeholders := make([]string, 0, len(tuitionAccountStatus))
-		for _, st := range tuitionAccountStatus {
-			placeholders = append(placeholders, "?")
-			args = append(args, st)
+		args = []any{
+			model.TeachingClassTypeOneToOne,
+			model.TeachingClassStatusActive,
+			instID,
+			studentID,
 		}
-		sqlStr += ` AND ta.status IN (` + strings.Join(placeholders, ",") + `)`
+		if restrictNonGeneral {
+			sqlStr += ` AND IFNULL(ic.course_type, 0) NOT IN (2, 3, 4, 5, 6)`
+		}
+		if len(tuitionAccountStatus) > 0 {
+			placeholders := make([]string, 0, len(tuitionAccountStatus))
+			for _, st := range tuitionAccountStatus {
+				placeholders = append(placeholders, "?")
+				args = append(args, st)
+			}
+			sqlStr += ` AND ta.status IN (` + strings.Join(placeholders, ",") + `)`
+		}
+		sqlStr += ` GROUP BY ic.id, ic.name ORDER BY ic.name ASC, ic.id ASC`
 	}
-	sqlStr += ` GROUP BY ic.id, ic.name ORDER BY ic.name ASC, ic.id ASC`
 
 	rows, err := repo.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
