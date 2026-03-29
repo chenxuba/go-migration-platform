@@ -64,6 +64,7 @@ const FLOW_TYPE_GROUPS = [
     children: [
       { id: 20, label: '结课', direction: 'out' },
       { id: 21, label: '到期结算', direction: 'out' },
+      { id: 25, label: '手动结课', direction: 'out' },
     ],
   },
   {
@@ -230,7 +231,7 @@ function formatDate(dateStr) {
 function formatChangeValue(value, sourceType, mode) {
   const direction = sourceTypeDirectionMap[sourceType]
   const prefix = direction === 'out' ? '-' : '+'
-  const num = Number(value || 0)
+  const num = Math.abs(Number(value || 0))
   const unit = LESSON_CHARGING_UNIT_MAP[mode] || ''
   return `${prefix}${num}${unit}`
 }
@@ -238,7 +239,7 @@ function formatChangeValue(value, sourceType, mode) {
 function formatChangeTuition(value, sourceType) {
   const direction = sourceTypeDirectionMap[sourceType]
   const prefix = direction === 'out' ? '-' : '+'
-  return `${prefix}${Number(value || 0).toFixed(2)}`
+  return `${prefix}${Math.abs(Number(value || 0)).toFixed(2)}`
 }
 
 function getChangeValueClass(sourceType) {

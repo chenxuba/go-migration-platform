@@ -187,9 +187,9 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 	}
 
 	whereSQL := strings.Join(whereParts, " AND ")
-	outerOrderBy := `g.min_created_time DESC, CASE WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24) THEN 0 ELSE 1 END ASC, g.flow_id DESC`
+	outerOrderBy := `g.min_created_time DESC, CASE WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0 ELSE 1 END ASC, g.flow_id DESC`
 	if query.SortModel.OrderByCreatedTime > 0 {
-		outerOrderBy = `g.min_created_time ASC, CASE WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24) THEN 0 ELSE 1 END ASC, g.flow_id ASC`
+		outerOrderBy = `g.min_created_time ASC, CASE WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0 ELSE 1 END ASC, g.flow_id ASC`
 	}
 
 	flowListInnerSQL := `
@@ -385,9 +385,9 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 	}
 
 	whereSQL := strings.Join(whereParts, " AND ")
-	orderBy := "taf.created_time DESC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24) THEN 0 ELSE 1 END ASC, taf.id DESC"
+	orderBy := "taf.created_time DESC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0 ELSE 1 END ASC, taf.id DESC"
 	if query.SortModel.OrderByCreatedTime > 0 {
-		orderBy = "taf.created_time ASC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24) THEN 0 ELSE 1 END ASC, taf.id ASC"
+		orderBy = "taf.created_time ASC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0 ELSE 1 END ASC, taf.id ASC"
 	}
 
 	var total int

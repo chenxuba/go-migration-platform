@@ -52,7 +52,6 @@ func (handler *Handler) oneToOneDetail(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
-// listTuitionAccountsByStudentAndLesson POST {"studentId","lessonId"} 对齐竞品 GetStudentAllTuitionAccountByLessonId
 func (handler *Handler) listTuitionAccountsByStudentAndLesson(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -121,7 +120,6 @@ func (handler *Handler) updateOneToOne(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, true, ctx.RequestID)
 }
 
-// closeOneToOne POST {"id":"..."} 仅结班，对齐竞品 One2One/Close
 func (handler *Handler) closeOneToOne(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -173,6 +171,29 @@ func (handler *Handler) reopenOneToOne(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, true, ctx.RequestID)
+}
+
+func (handler *Handler) addCloseTuitionAccountOrder(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var dto model.CloseTuitionAccountOrderDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.AddCloseTuitionAccountOrder(claims.UserID, dto)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
 func (handler *Handler) batchAssignOneToOneClassTeacher(w http.ResponseWriter, r *http.Request) {

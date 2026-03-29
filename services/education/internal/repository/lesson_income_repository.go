@@ -32,22 +32,23 @@ type lessonIncomeSchema struct {
 }
 
 type lessonIncomeQueryFragments struct {
-	joins             []string
-	whereParts        []string
-	args              []any
-	orderBy           string
-	lessonDayExpr     string
-	startMinutesExpr  string
-	endMinutesExpr    string
-	teachingTimeExpr  string
-	rollCallTimeExpr  string
-	teacherIDExpr     string
-	teacherNameExpr   string
-	assistantIDExpr   string
-	assistantNameExpr string
-	classIDExpr       string
-	classNameExpr     string
-	conformIncomeExpr string
+	joins                  []string
+	whereParts             []string
+	args                   []any
+	orderBy                string
+	lessonDayExpr          string
+	startMinutesExpr       string
+	endMinutesExpr         string
+	teachingTimeExpr       string
+	rollCallTimeExpr       string
+	teacherIDExpr          string
+	teacherNameExpr        string
+	assistantIDExpr        string
+	assistantNameExpr      string
+	classIDExpr            string
+	classNameExpr          string
+	conformIncomeExpr      string
+	lessonChargingModeExpr string
 }
 
 func (repo *Repository) tableExists(ctx context.Context, tableName string) (bool, error) {
@@ -195,20 +196,21 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 			"taf.inst_id = ?",
 			"taf.del_flag = 0",
 		},
-		args:              []any{instID},
-		orderBy:           "taf.created_time DESC, taf.id DESC",
-		lessonDayExpr:     "NULL",
-		startMinutesExpr:  "0",
-		endMinutesExpr:    "0",
-		teachingTimeExpr:  "NULL",
-		rollCallTimeExpr:  "NULL",
-		teacherIDExpr:     "''",
-		teacherNameExpr:   "''",
-		assistantIDExpr:   "''",
-		assistantNameExpr: "''",
-		classIDExpr:       "'0'",
-		classNameExpr:     "''",
-		conformIncomeExpr: "taf." + schema.conformIncomeColumn,
+		args:                   []any{instID},
+		orderBy:                "taf.created_time DESC, taf.id DESC",
+		lessonDayExpr:          "NULL",
+		startMinutesExpr:       "0",
+		endMinutesExpr:         "0",
+		teachingTimeExpr:       "NULL",
+		rollCallTimeExpr:       "NULL",
+		teacherIDExpr:          "''",
+		teacherNameExpr:        "''",
+		assistantIDExpr:        "''",
+		assistantNameExpr:      "''",
+		classIDExpr:            "'0'",
+		classNameExpr:          "''",
+		conformIncomeExpr:      "taf." + schema.conformIncomeColumn,
+		lessonChargingModeExpr: "IFNULL(taf.lesson_charging_mode, 0)",
 	}
 
 	var classIDRawExpr string
@@ -220,6 +222,8 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 		if schema.detailTable != "" {
 			fragments.joins = append(fragments.joins, "LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0")
 		}
+		fragments.joins = append(fragments.joins, strings.TrimSpace(tuitionAccountQuotationJoinSQL))
+		fragments.lessonChargingModeExpr = resolvedLessonChargingModeExpr("taf.lesson_charging_mode", "icq_taf.lesson_model")
 	}
 
 	if schema.teachingTable != "" {
@@ -410,7 +414,7 @@ func (repo *Repository) GetLessonIncomePagedList(ctx context.Context, instID int
 			`+fragments.teachingTimeExpr+`,
 			`+fragments.rollCallTimeExpr+`,
 			IFNULL(taf.quantity, 0),
-			taf.lesson_charging_mode,
+			`+fragments.lessonChargingModeExpr+`,
 			IFNULL(taf.tuition, 0),
 			taf.created_time,
 			`+fragments.teacherIDExpr+`,

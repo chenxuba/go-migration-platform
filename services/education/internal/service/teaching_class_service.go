@@ -166,6 +166,26 @@ func (svc *Service) CloseOneToOneOnly(userID int64, id string) error {
 	return svc.repo.CloseOneToOneOnly(context.Background(), instID, operatorID, classID)
 }
 
+// AddCloseTuitionAccountOrder 手动结课下单（扣减账户、写流水，联动课消/学费变动/确认收入）
+func (svc *Service) AddCloseTuitionAccountOrder(userID int64, dto model.CloseTuitionAccountOrderDTO) (model.CloseTuitionAccountOrderResult, error) {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return model.CloseTuitionAccountOrderResult{}, err
+	}
+	taID, err := strconv.ParseInt(strings.TrimSpace(dto.TuitionAccountID), 10, 64)
+	if err != nil || taID <= 0 {
+		return model.CloseTuitionAccountOrderResult{}, errors.New("tuitionAccountId 无效")
+	}
+	flowID, err := svc.repo.AddCloseTuitionAccountOrder(context.Background(), instID, operatorID, taID, dto.Quantity, dto.FreeQuantity, dto.Tuition, dto.Remark)
+	if err != nil {
+		return model.CloseTuitionAccountOrderResult{}, err
+	}
+	return model.CloseTuitionAccountOrderResult{
+		ID:   strconv.FormatInt(flowID, 10),
+		Name: "",
+	}, nil
+}
+
 // ReopenOneToOneOnly 恢复开班（已结班 → 开班中）
 func (svc *Service) ReopenOneToOneOnly(userID int64, id string) error {
 	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)

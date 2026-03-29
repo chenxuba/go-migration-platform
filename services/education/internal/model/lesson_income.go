@@ -88,6 +88,7 @@ const (
 	LessonIncomeSourceExpireRollback     = 11
 	LessonIncomeSourceVoidReturn         = 12
 	LessonIncomeSourceRevokeRefundFee    = 13
+	LessonIncomeSourceManualCloseCourse  = 14
 )
 
 var lessonIncomeSourceTypeToInternal = map[int][]int{
@@ -104,6 +105,7 @@ var lessonIncomeSourceTypeToInternal = map[int][]int{
 	LessonIncomeSourceExpireRollback:     {TuitionAccountFlowSourceExpireRollback},
 	LessonIncomeSourceVoidReturn:         {TuitionAccountFlowSourceOrderVoid},
 	LessonIncomeSourceRevokeRefundFee:    {TuitionAccountFlowSourceRevokeRefundOrder},
+	LessonIncomeSourceManualCloseCourse:  {TuitionAccountFlowSourceManualCloseCourse},
 }
 
 var lessonIncomeInternalToSourceType = map[int]int{
@@ -120,6 +122,7 @@ var lessonIncomeInternalToSourceType = map[int]int{
 	TuitionAccountFlowSourceExpireRollback:           LessonIncomeSourceExpireRollback,
 	TuitionAccountFlowSourceOrderVoid:                LessonIncomeSourceVoidReturn,
 	TuitionAccountFlowSourceRevokeRefundOrder:        LessonIncomeSourceRevokeRefundFee,
+	TuitionAccountFlowSourceManualCloseCourse:        LessonIncomeSourceManualCloseCourse,
 }
 
 func ExpandLessonIncomeSourceTypes(sourceTypes []int) []int {

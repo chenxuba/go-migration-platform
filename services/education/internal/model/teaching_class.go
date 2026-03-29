@@ -182,7 +182,7 @@ type OneToOneCheckNameDTO struct {
 	IsOne2One bool   `json:"isOne2One"`
 }
 
-// OneToOneCloseDTO 仅结班（对齐竞品 One2One/Close：POST {"id":"..."}）
+// OneToOneCloseDTO 仅结班（
 type OneToOneCloseDTO struct {
 	ID string `json:"id"`
 }
@@ -201,7 +201,6 @@ type OneToOneUpdateDTO struct {
 	ClassProperties            []OneToOnePropertyVO `json:"classProperties"`
 }
 
-// StudentLessonTuitionAccountsQueryDTO 按学员+课程查询学费账户（对齐竞品 GetStudentAllTuitionAccountByLessonId）
 type StudentLessonTuitionAccountsQueryDTO struct {
 	StudentID string `json:"studentId"`
 	LessonID  string `json:"lessonId"`
@@ -236,4 +235,18 @@ type StudentLessonTuitionAccountItem struct {
 
 type StudentLessonTuitionAccountsResult struct {
 	List []StudentLessonTuitionAccountItem `json:"list"`
+}
+
+type CloseTuitionAccountOrderDTO struct {
+	TuitionAccountID string  `json:"tuitionAccountId"`
+	Quantity         float64 `json:"quantity"`
+	FreeQuantity     float64 `json:"freeQuantity"`
+	Tuition          float64 `json:"tuition"`
+	Remark           string  `json:"remark"`
+}
+
+// CloseTuitionAccountOrderResult 返回生成的流水/订单 id，供前端展示
+type CloseTuitionAccountOrderResult struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }

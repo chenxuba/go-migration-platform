@@ -15,6 +15,7 @@ import {
   batchAssignOneToOneClassTeacherApi,
   batchUpdateOneToOneClassTimeApi,
   checkOneToOneNameApi,
+  addCloseTuitionAccountOrderApi,
   closeOneToOneApi,
   reopenOneToOneApi,
   getOneToOneByIdApi,
@@ -446,10 +447,41 @@ function handleFinishCourse(record) {
   openOneToOneCloseClassConfirm(record)
 }
 
-function handleFinishCourseModalConfirm(payload) {
-  // TODO: 接入结班并结课接口后使用 payload.recordId 等字段调用接口，成功后 getOneToOneList()
-  messageService.info('结班并结课接口待接入')
-  finishCourseModalOpen.value = false
+async function handleFinishCourseModalConfirm(payload) {
+  const r = finishCourseRecord.value
+  const ta = r?.tuitionAccount
+  const tuitionAccountId = ta?.id || r?.tuitionAccountId
+  if (!tuitionAccountId) {
+    messageService.error('缺少学费账户ID')
+    return
+  }
+  const quantity = Number(ta?.remainQuantity || 0)
+  const freeQuantity = Number(ta?.remainFreeQuantity || 0)
+  const tuition = Number(ta?.remainTuition ?? 0)
+  if (quantity + freeQuantity <= 0 && tuition <= 0) {
+    messageService.error('当前无可结课的剩余课时或学费')
+    return
+  }
+  try {
+    const res = await addCloseTuitionAccountOrderApi({
+      tuitionAccountId: String(tuitionAccountId),
+      quantity,
+      freeQuantity,
+      tuition,
+      remark: payload?.remark || '',
+    })
+    if (res.code === 200) {
+      messageService.success('结课成功')
+      finishCourseModalOpen.value = false
+      getOneToOneList()
+      return
+    }
+    messageService.error(res.message || '结课失败')
+  }
+  catch (err) {
+    console.error(err)
+    messageService.error('结课失败')
+  }
 }
 
 function closeEditModal() {

@@ -14,7 +14,7 @@ const FLOW_TYPE_GROUPS = [
   { id: 'return', name: '返还学费', label: '返还学费', channelList: [{ id: 5, name: '课消退还' }, { id: 6, name: '撤销结课' }, { id: 7, name: '过期撤回返还' }, { id: 8, name: '撤回退课订单' }, { id: 9, name: '撤销转出' }, { id: 10, name: '撤回导入课消' }, { id: 11, name: '撤回每日自动课消' }] },
   { id: 'consume', name: '课消学费', label: '课消学费', channelList: [{ id: 12, name: '课消' }, { id: 13, name: '导入课消' }, { id: 14, name: '课消补扣' }, { id: 15, name: '每日自动课消' }, { id: 16, name: '课消欠费清算' }] },
   { id: 'transferOut', name: '转出学费', label: '转出学费', channelList: [{ id: 17, name: '转出' }, { id: 18, name: '跨校转出' }, { id: 19, name: '跨校上课转出' }] },
-  { id: 'graduate', name: '结课学费', label: '结课学费', channelList: [{ id: 20, name: '结课' }, { id: 21, name: '到期结算' }] },
+  { id: 'graduate', name: '结课学费', label: '结课学费', channelList: [{ id: 20, name: '结课' }, { id: 21, name: '到期结算' }, { id: 25, name: '手动结课' }] },
   { id: 'refund', name: '退费学费', label: '退费学费', channelList: [{ id: 22, name: '退费' }] },
   { id: 'void', name: '作废学费', label: '作废学费', channelList: [{ id: 23, name: '订单作废' }, { id: 24, name: '作废跨校转入' }] },
 ]
@@ -57,6 +57,7 @@ const sourceTypeDirectionMap = {
   22: 'out',
   23: 'out',
   24: 'out',
+  25: 'out',
 }
 
 const filterState = ref({
@@ -154,7 +155,8 @@ function formatDate(dateStr) {
 function formatChangeValue(value, sourceType, mode) {
   const direction = sourceTypeDirectionMap[sourceType]
   const prefix = direction === 'out' ? '-' : '+'
-  const num = Number(value || 0)
+  // 接口可能已存负数（扣减），避免与 prefix 叠加成「--29」
+  const num = Math.abs(Number(value || 0))
   const unit = LESSON_CHARGING_UNIT_MAP[mode] || ''
   return `${prefix}${num}${unit}`
 }
@@ -162,7 +164,7 @@ function formatChangeValue(value, sourceType, mode) {
 function formatChangeMoney(value, sourceType) {
   const direction = sourceTypeDirectionMap[sourceType]
   const prefix = direction === 'out' ? '-' : '+'
-  const num = Number(value || 0)
+  const num = Math.abs(Number(value || 0))
   return `${prefix}¥${num.toFixed(2)}`
 }
 

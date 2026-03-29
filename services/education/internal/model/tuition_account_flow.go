@@ -27,6 +27,7 @@ const (
 	TuitionAccountFlowSourceRefund                    = 22
 	TuitionAccountFlowSourceOrderVoid                 = 23
 	TuitionAccountFlowSourceVoidCrossCampusTransferIn = 24
+	TuitionAccountFlowSourceManualCloseCourse = 25
 )
 
 type TuitionAccountFlowRecordListQueryDTO struct {
