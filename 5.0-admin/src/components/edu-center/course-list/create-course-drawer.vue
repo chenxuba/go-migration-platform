@@ -267,7 +267,7 @@ const formState = ref({
   courseProductProperties: [], // 课程属性  学季/学年/年级/班型/课程属性
   subjectIds: [], // 科目
   saleStatus: true, // 售卖状态
-  courseType: 1, // 通用课程
+  courseType: 1, // lessonScope：1 非通用；3 部分；4 全部课程；5 全部班课；6 全部1对1；2 历史兼容
   courseScope: [], // 课程范围
   teachMethod: 1, // 授课方式 1 班级授课 2 一对一授课
   type: 1, // 课程类型
@@ -632,11 +632,19 @@ async function getCourseDetail(id) {
 
       formState.value.courseCategory = courseData.courseCategory
       formState.value.saleStatus = courseData.saleStatus
-      formState.value.courseType = courseData.courseType || 1
+      const detailCt = courseData.courseType || 1
+      formState.value.courseType = detailCt
       formState.value.teachMethod = courseData.teachMethod || 1
-      allCommonTypeSelection.value = courseData.courseType === 4
-        ? 'all-course'
-        : ((courseData.teachMethod || 1) === 2 ? 'all-1v1' : 'all-class')
+      if (detailCt === 4)
+        allCommonTypeSelection.value = 'all-course'
+      else if (detailCt === 5)
+        allCommonTypeSelection.value = 'all-class'
+      else if (detailCt === 6)
+        allCommonTypeSelection.value = 'all-1v1'
+      else if (detailCt === 2)
+        allCommonTypeSelection.value = (courseData.teachMethod || 1) === 2 ? 'all-1v1' : 'all-class'
+      else
+        allCommonTypeSelection.value = 'all-course'
       formState.value.type = courseData.type || 1
 
       // 回显课程范围选择（使用 courseScopeInfo 字段进行回显）
@@ -1003,6 +1011,12 @@ const selectCourseRangeModalOpen = ref(false)
 const selectedCourses = ref([])
 const allCommonTypeSelection = ref('all-course')
 
+/** 编辑课程时授课方式、是否通用课程不可改（与创建/复制区分） */
+const isEditCourseMode = computed(() => props.modalType === 'edit')
+const teachMethodReadonlyLabel = computed(() =>
+  Number(formState.value.teachMethod) === 2 ? '1v1授课' : '班级授课',
+)
+
 // 计算课程名称字符串
 const courseNames = computed(() => {
   if (selectedCourses.value.length === 0) return ''
@@ -1026,7 +1040,11 @@ const isCommonCourse = computed({
       return
     }
     if (formState.value.courseType === 1) {
-      formState.value.courseType = allCommonTypeSelection.value === 'all-course' ? 4 : 2
+      formState.value.courseType = allCommonTypeSelection.value === 'all-course'
+        ? 4
+        : allCommonTypeSelection.value === 'all-class'
+          ? 5
+          : 6
     }
   },
 })
@@ -1037,16 +1055,22 @@ const commonCourseMode = computed({
     if (value === 'partial') {
       formState.value.courseType = 3
     } else {
-      formState.value.courseType = allCommonTypeSelection.value === 'all-course' ? 4 : 2
+      formState.value.courseType = allCommonTypeSelection.value === 'all-course'
+        ? 4
+        : allCommonTypeSelection.value === 'all-class'
+          ? 5
+          : 6
     }
   },
 })
 
-// 仅改「全部课程 / 全部班课 / 全部1对1」时，v-model 只动 allCommonTypeSelection，不会改 courseType，导致保存仍为 2、重开被回显成全部1对1
+// 全部课程→4；全部班课→5；全部1对1→6（与授课方式 teachMethod / 提交 lessonType 无关）
 watch(allCommonTypeSelection, (val) => {
-  if (formState.value.courseType !== 2 && formState.value.courseType !== 4)
+  const ct = formState.value.courseType
+  if (ct !== 2 && ct !== 4 && ct !== 5 && ct !== 6)
     return
-  const next = val === 'all-course' ? 4 : 2
+
+  const next = val === 'all-course' ? 4 : val === 'all-class' ? 5 : 6
   if (formState.value.courseType !== next)
     formState.value.courseType = next
 })
@@ -1148,7 +1172,7 @@ function buildCourseSubmitPayload() {
       lessonMode: normalizeSubmitLessonMode(item.lessonModel),
       remark: item.remark,
     })),
-    lessonType: formState.value.teachMethod,
+    lessonType: Number(formState.value.teachMethod) || 1,
     lessonScope: formState.value.courseType,
     allowedLessonIds: formState.value.courseScope,
     subjectIds: formState.value.subjectIds,
@@ -1218,8 +1242,13 @@ function buildCourseSubmitPayload() {
                 </a-radio-group>
               </a-form-item>
 
-                <a-form-item label="授课方式:" name="teachMethod" :rules="[{ required: true, message: '请选择授课方式' }]">
-                  <a-radio-group v-model:value="formState.teachMethod" class="custom-radio custom-radio2">
+                <a-form-item
+                  label="授课方式:"
+                  name="teachMethod"
+                  :rules="isEditCourseMode ? [] : [{ required: true, message: '请选择授课方式' }]"
+                >
+                  <span v-if="isEditCourseMode" class="course-core-readonly-text">{{ teachMethodReadonlyLabel }}</span>
+                  <a-radio-group v-else v-model:value="formState.teachMethod" class="custom-radio custom-radio2">
                     <a-radio :value="1">
                       班级授课
                     </a-radio>
@@ -1230,7 +1259,11 @@ function buildCourseSubmitPayload() {
                 </a-form-item>
 
                 <a-form-item label="是否通用课程:" name="isCommonCourse">
-                  <a-radio-group v-model:value="isCommonCourse" class="custom-radio custom-radio2">
+                  <a-radio-group
+                    v-model:value="isCommonCourse"
+                    class="custom-radio custom-radio2"
+                    :disabled="isEditCourseMode"
+                  >
                     <a-radio :value="false">
                       否
                     </a-radio>
@@ -1698,6 +1731,13 @@ function buildCourseSubmitPayload() {
       animation: icon-rotate 0.3s linear;
     }
   }
+}
+
+.course-core-readonly-text {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+  line-height: 32px;
+  display: inline-block;
 }
 
 // 水平对齐radio选项

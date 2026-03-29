@@ -81,7 +81,7 @@ function getCourseTagList(item) {
   const tags = []
 
   // 通用课标签（蓝色背景）
-  if (item.courseType === 2 || item.courseType === 3) {
+  if ([2, 3, 4, 5, 6].includes(item.courseType)) {
     tags.push({
       text: '通用课',
       color: '#0066ff',
@@ -91,7 +91,7 @@ function getCourseTagList(item) {
   }
 
   // 授课类型标签
-  if (item.teachMethod === 1) {
+  if (item.teachMethod === 1 && ![2, 3, 4, 5, 6].includes(item.courseType)) {
     tags.push({
       text: '班级授课',
       color: '#e6f0ff',
@@ -112,7 +112,34 @@ function getCourseTagList(item) {
   // 课程范围标签
   if (item.courseType === 2) {
     tags.push({
+      text: item.teachMethod === 2 ? '全部1对1' : '全部班课',
+      color: '#e6f0ff',
+      textColor: '#0066ff',
+      type: 'normal',
+    })
+  }
+
+  if (item.courseType === 4) {
+    tags.push({
       text: '全部课程',
+      color: '#e6f0ff',
+      textColor: '#0066ff',
+      type: 'normal',
+    })
+  }
+
+  if (item.courseType === 5) {
+    tags.push({
+      text: '全部班课',
+      color: '#e6f0ff',
+      textColor: '#0066ff',
+      type: 'normal',
+    })
+  }
+
+  if (item.courseType === 6) {
+    tags.push({
+      text: '全部1对1',
       color: '#e6f0ff',
       textColor: '#0066ff',
       type: 'normal',
