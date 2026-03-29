@@ -173,13 +173,6 @@ type OneToOneBatchClassTimeDTO struct {
 	TeacherClassTime float64  `json:"teacherClassTime"`
 }
 
-type OneToOneBatchAttributeDTO struct {
-	IDs                []string `json:"ids"`
-	DefaultTeacherID   string   `json:"defaultTeacherId"`
-	Status             *int     `json:"status"`
-	ClassStudentStatus *int     `json:"classStudentStatus"`
-}
-
 type OneToOneCheckNameDTO struct {
 	Name      string `json:"name"`
 	ExceptID  string `json:"exceptId"`

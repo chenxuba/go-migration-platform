@@ -74,13 +74,34 @@ function formatMoney(value) {
   })}`
 }
 
+/** 创建课程提交时「按金额」报价单 lessonModel 3 会写成 4 */
+function normalizeChargingMode(mode) {
+  const m = Number(mode)
+  if (m === 4)
+    return 3
+  return m
+}
+
 function getQuantityUnit(mode) {
-  if (mode === 1)
+  const m = normalizeChargingMode(mode)
+  if (m === 1)
     return '课时'
-  if (mode === 2)
+  if (m === 2)
     return '天'
-  if (mode === 3)
+  if (m === 3)
     return '元'
+  return ''
+}
+
+/** 标签文案：按时段显示「时段」，与列表「按时段」一致 */
+function getChargingTagText(mode) {
+  const m = normalizeChargingMode(mode)
+  if (m === 1)
+    return '课时'
+  if (m === 2)
+    return '时段'
+  if (m === 3)
+    return '按金额'
   return ''
 }
 
@@ -110,14 +131,32 @@ function classStudentStatusLabel(status) {
 }
 
 function formatQuantityAmount(n, mode) {
+  const m = normalizeChargingMode(mode)
   const u = getQuantityUnit(mode)
-  if (mode === 1)
+  if (!u)
+    return `${Number(n)}`
+  if (m === 1)
     return `${Number(n).toFixed(2)} ${u}`.trim()
-  return `${n}${u}`
+  return `${Number(n)} ${u}`.trim()
 }
 
 function lessonChargingModeOf(block) {
   return block.tuitionAccount?.lessonChargingMode
+}
+
+/** 接口 lessonChargingMode 为 0 时兜底：有购买数量、总价且开启有效期时，多为按时段/天（与后端报价解析失败时的展示一致） */
+function effectiveLessonChargingMode(block) {
+  const raw = Number(lessonChargingModeOf(block) ?? 0)
+  if (raw !== 0)
+    return raw
+  const ta = block.tuitionAccount
+  if (!ta)
+    return 0
+  const q = Number(ta.totalQuantity || 0)
+  const total = Number(ta.totalTuition || 0)
+  if (q > 0 && total > 0 && ta.enableExpireTime)
+    return 2
+  return 0
 }
 
 function enrollmentTitleOf(block) {
@@ -135,16 +174,16 @@ function expireTextOf(block) {
 function purchaseQuantityTextOf(block) {
   const ta = block.tuitionAccount
   const q = Number(ta?.totalQuantity || 0)
-  const u = getQuantityUnit(lessonChargingModeOf(block))
-  return `购 ${q} ${u}`.trim()
+  const u = getQuantityUnit(effectiveLessonChargingMode(block))
+  return u ? `购 ${q} ${u}` : `购 ${q}`
 }
 
 function usedQuantityTextOf(block) {
-  return formatQuantityAmount(calcUsedQuantity(block), lessonChargingModeOf(block))
+  return formatQuantityAmount(calcUsedQuantity(block), effectiveLessonChargingMode(block))
 }
 
 function remainQuantityTextOf(block) {
-  return formatQuantityAmount(calcRemainQuantity(block), lessonChargingModeOf(block))
+  return formatQuantityAmount(calcRemainQuantity(block), effectiveLessonChargingMode(block))
 }
 
 /**
@@ -156,7 +195,7 @@ function getEnrollmentTags(block) {
   const ta = block.tuitionAccount
   const scope = Number(ta?.lessonScopeModel ?? ta?.lessonScope ?? 0)
   const teach = Number(ta?.lessonType ?? 0)
-  const mode = Number(ta?.lessonChargingMode ?? 0)
+  const mode = effectiveLessonChargingMode(block)
 
   const tags = []
 
@@ -183,11 +222,9 @@ function getEnrollmentTags(block) {
     tags.push({ text: '部分课程', type: 'normal' })
   }
 
-  const unit = getQuantityUnit(mode)
-  if (unit)
-    tags.push({ text: unit, type: 'normal' })
-  else if (mode === 3)
-    tags.push({ text: '按金额', type: 'normal' })
+  const chargingTag = getChargingTagText(mode)
+  if (chargingTag)
+    tags.push({ text: chargingTag, type: 'normal' })
 
   return tags
 }

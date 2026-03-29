@@ -11,7 +11,6 @@ import { handleDateRangeParams } from '@/utils/dateRangeParams'
 import messageService from '@/utils/messageService'
 import {
   batchAssignOneToOneClassTeacherApi,
-  batchUpdateOneToOneAttributesApi,
   batchUpdateOneToOneClassTimeApi,
   checkOneToOneNameApi,
   getOneToOneByIdApi,
@@ -52,13 +51,6 @@ const classTimeForm = reactive({
   teacherClassTime: 0,
 })
 
-const attributeModalOpen = ref(false)
-const attributeSubmitting = ref(false)
-const attributeForm = reactive({
-  defaultTeacherId: undefined,
-  status: undefined,
-  classStudentStatus: undefined,
-})
 const editModalOpen = ref(false)
 const editLoading = ref(false)
 const editSubmitting = ref(false)
@@ -516,15 +508,6 @@ function openBatchAction(action) {
     classTimeModalOpen.value = true
     return
   }
-  if (action === 'attribute') {
-    const current = actionRows.value[0]
-    attributeForm.defaultTeacherId = current?.defaultTeacherId && current.defaultTeacherId !== '0'
-      ? Number(current.defaultTeacherId)
-      : undefined
-    attributeForm.status = current?.status
-    attributeForm.classStudentStatus = current?.classStudentStatus
-    attributeModalOpen.value = true
-  }
 }
 
 async function submitAdvisorBatch() {
@@ -572,36 +555,6 @@ async function submitClassTimeBatch() {
     messageService.error(error?.message || '修改记录课时失败')
   } finally {
     classTimeSubmitting.value = false
-  }
-}
-
-async function submitAttributeBatch() {
-  if (!attributeForm.defaultTeacherId && !attributeForm.status && !attributeForm.classStudentStatus) {
-    messageService.warning('请至少修改一项属性')
-    return
-  }
-  const rows = getCurrentActionRows()
-  attributeSubmitting.value = true
-  try {
-    const payload = {
-      ids: rows.map(item => item.id),
-      status: attributeForm.status,
-      classStudentStatus: attributeForm.classStudentStatus,
-    }
-    if (attributeForm.defaultTeacherId) {
-      payload.defaultTeacherId = String(attributeForm.defaultTeacherId)
-    }
-    const res = await batchUpdateOneToOneAttributesApi(payload)
-    if (res.code !== 200)
-      throw new Error(res.message || '修改1对1属性失败')
-    attributeModalOpen.value = false
-    messageService.success('修改1对1属性成功')
-    await getOneToOneList()
-  } catch (error) {
-    console.error('batch update attributes failed', error)
-    messageService.error(error?.message || '修改1对1属性失败')
-  } finally {
-    attributeSubmitting.value = false
   }
 }
 
@@ -764,9 +717,6 @@ onMounted(() => {
                   </a-menu-item>
                   <a-menu-item key="classTime">
                     修改记录课时
-                  </a-menu-item>
-                  <a-menu-item key="attribute">
-                    修改1对1属性
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -1059,37 +1009,6 @@ onMounted(() => {
         </a-form-item>
         <a-form-item label="老师授课课时">
           <a-input-number v-model:value="classTimeForm.teacherClassTime" :min="0" :precision="2" style="width: 100%" />
-        </a-form-item>
-      </a-form>
-    </a-modal>
-
-    <a-modal v-model:open="attributeModalOpen" title="修改1对1属性" @ok="submitAttributeBatch" :confirm-loading="attributeSubmitting">
-      <a-form layout="vertical">
-        <a-form-item label="默认上课教师">
-          <StaffSelect v-model="attributeForm.defaultTeacherId" placeholder="请选择默认上课教师" width="100%" :status="0" />
-        </a-form-item>
-        <a-form-item label="开班状态">
-          <a-select v-model:value="attributeForm.status" allow-clear placeholder="请选择开班状态">
-            <a-select-option :value="1">
-              开班中
-            </a-select-option>
-            <a-select-option :value="2">
-              已结班
-            </a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="开课状态">
-          <a-select v-model:value="attributeForm.classStudentStatus" allow-clear placeholder="请选择开课状态">
-            <a-select-option :value="1">
-              正常
-            </a-select-option>
-            <a-select-option :value="2">
-              已开课
-            </a-select-option>
-            <a-select-option :value="3">
-              已结课
-            </a-select-option>
-          </a-select>
         </a-form-item>
       </a-form>
     </a-modal>

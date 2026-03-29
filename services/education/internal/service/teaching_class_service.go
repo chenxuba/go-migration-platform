@@ -142,21 +142,6 @@ func (svc *Service) BatchUpdateOneToOneClassTime(userID int64, dto model.OneToOn
 	return svc.repo.BatchUpdateOneToOneClassTime(context.Background(), instID, operatorID, ids, dto)
 }
 
-func (svc *Service) BatchUpdateOneToOneAttributes(userID int64, dto model.OneToOneBatchAttributeDTO) error {
-	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
-	if err != nil {
-		return err
-	}
-	ids := parseTeachingClassIDs(dto.IDs)
-	if len(ids) == 0 {
-		return errors.New("请选择1对1记录")
-	}
-	if strings.TrimSpace(dto.DefaultTeacherID) == "" && dto.Status == nil && dto.ClassStudentStatus == nil {
-		return errors.New("请至少修改一项1对1属性")
-	}
-	return svc.repo.BatchUpdateOneToOneAttributes(context.Background(), instID, operatorID, ids, dto)
-}
-
 func (svc *Service) resolveTeachingClassOperator(userID int64) (int64, int64, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

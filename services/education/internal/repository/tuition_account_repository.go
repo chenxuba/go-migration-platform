@@ -199,12 +199,12 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 			IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, '')) AS product_name,
 			IFNULL(icq.lesson_model, 0) AS lesson_charging_mode,
 			CASE
-				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.total_tuition, 0)
+				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.total_tuition, 0)
 				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
 				ELSE 0
 			END AS total_quantity_display,
 			CASE
-				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.free_quantity, 0)
+				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.free_quantity, 0)
 				WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
 				ELSE 0
 			END AS total_free_quantity_display,
@@ -214,7 +214,7 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 				ELSE 0
 			END AS remain_free_quantity,
 			CASE
-				WHEN IFNULL(icq.lesson_model, 0) = 3 THEN IFNULL(ta.remaining_tuition, 0)
+				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.remaining_tuition, 0)
 				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
 				ELSE 0
 			END AS remain_quantity_display,
@@ -230,7 +230,19 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 			IFNULL(ta.status, 0) AS ta_status
 		FROM tuition_account ta
 		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
-		LEFT JOIN inst_course_quotation icq ON icq.id = ta.quote_id AND icq.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(ta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
 		WHERE ta.inst_id = ?
 			AND ta.del_flag = 0
 			AND ta.student_id = ?

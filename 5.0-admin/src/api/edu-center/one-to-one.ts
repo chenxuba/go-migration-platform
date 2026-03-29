@@ -145,13 +145,6 @@ export interface OneToOneBatchClassTimeParams {
   teacherClassTime: number
 }
 
-export interface OneToOneBatchAttributeParams {
-  ids: string[]
-  defaultTeacherId?: string
-  status?: number
-  classStudentStatus?: number
-}
-
 export interface OneToOneCheckNameParams {
   name: string
   exceptId?: string
@@ -217,10 +210,6 @@ export function batchAssignOneToOneClassTeacherApi(data: OneToOneBatchAssignTeac
 
 export function batchUpdateOneToOneClassTimeApi(data: OneToOneBatchClassTimeParams) {
   return usePost('/api/v1/one-to-ones/batch-update-class-time', data)
-}
-
-export function batchUpdateOneToOneAttributesApi(data: OneToOneBatchAttributeParams) {
-  return usePost('/api/v1/one-to-ones/batch-update-attributes', data)
 }
 
 export function checkOneToOneNameApi(data: OneToOneCheckNameParams) {
