@@ -382,6 +382,8 @@ function handleReopenClass(record) {
       }
       catch (err) {
         console.error(err)
+        if (err?.response)
+          return
         messageService.error('恢复开班失败')
       }
     },

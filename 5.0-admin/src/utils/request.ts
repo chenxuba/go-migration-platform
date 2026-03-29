@@ -7,6 +7,7 @@ import { AxiosLoading } from './loading'
 import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { ContentTypeEnum, RequestEnum } from '~#/http-enum'
 import router from '~/router'
+import messageService from '~/utils/messageService'
 
 export interface ResponseBody<T = any> {
   code: number
@@ -236,7 +237,10 @@ function errorHandler(error: AxiosError): Promise<any> {
         duration: 3,
       })
     }
-    else if (status === 400 || status === 404 || status === 422) {
+    else if (status === 400) {
+      messageService.error(data?.message || statusText || '请求失败')
+    }
+    else if (status === 404 || status === 422) {
       notification?.error({
         message: `${status}`,
         description: data?.message || statusText,
