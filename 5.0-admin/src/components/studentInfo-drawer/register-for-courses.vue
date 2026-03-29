@@ -22,6 +22,8 @@ import remainingDetailsModal from './remainingDetailsModal.vue'
 // 一对一模态框
 import oneToOneModal from './oneToOneModal.vue'
 
+const STATUS_END_STAMP_SRC = 'https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/14983/static/svg/status-end-D4a6u7st.svg'
+
 const props = defineProps({
   emptyText: {
     type: String,
@@ -121,6 +123,20 @@ function hasArrearTuition(item) {
 
 function getArrearTuitionTooltip(item) {
   return `欠费学费金额：¥ ${formatMoney(item?.arrearTuition || 0)}`
+}
+
+/** 报读列表按课程聚合：剩余数量与剩余学费均为 0、曾有报读且无欠费时视为已结课（含手动结课扣完） */
+function isTuitionAccountCourseEnded(item) {
+  const totalTuition = Number(item?.totalTuition || 0)
+  const totalQty = Number(item?.totalQuantity || 0)
+  const totalFree = Number(item?.totalFreeQuantity || 0)
+  if (totalTuition <= 0 && totalQty + totalFree <= 0)
+    return false
+  if (Number(item?.arrearTuition || 0) > 0.01)
+    return false
+  const remainQty = Number(item?.remainQuantity || 0) + Number(item?.remainFreeQuantity || 0)
+  const remainTuition = Number(item?.tuition || 0)
+  return remainQty <= 0.0001 && remainTuition <= 0.0001
 }
 
 // 格式化有效期文本
@@ -406,51 +422,63 @@ defineExpose({
             </template>
           </a-dropdown>
         </div>
-        <div class="tag px3 mt1">
-          <a-space>
-            <span v-if="item.lessonScope" class="bg-#06f text-#fff text-3 rounded-10 px3 py1">{{ getLessonScopeText(item.lessonScope) }}</span>
-            <span v-if="item.lessonType" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">{{ getLessonTypeText(item.lessonType) }}</span>
-            <span v-if="item.lessonChargingMode" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">{{ getChargingModeText(item.lessonChargingMode) }}</span>
-          </a-space>
-        </div>
-        <div class="remaining-class-hours px3 text-3 text-#888 mt-5 flex justify-between">
-          <span>{{ formatRemainQuantityText(item) }}</span>
-          
-        </div>
-        <div class="remaining-tuition px3 text-#888 flex justify-start flex-items-center mt-1">
-          <span class="text-3">
-            剩余学费：¥ {{ formatMoney(item.tuition) }}（总计 ¥ {{ formatMoney(item.totalTuition) }}
-            <a-tooltip v-if="hasArrearTuition(item)" placement="top">
-              <template #title>
-                {{ getArrearTuitionTooltip(item) }}
-              </template>
-              <span class="arrear-badge ml-1">欠</span>
-            </a-tooltip>
-            ）
-          </span>
-        </div>
-        <!-- 时段模式显示有效时段，非时段模式显示有效期至 -->
-        <div v-if="item.lessonChargingMode === 2" class="valid-period px3 text-#888 flex justify-start flex-items-center mt-1">
-          <span class="text-3">{{ formatValidPeriodText(item) }}</span>
-        </div>
-        <div v-else class="validity px3 text-#888 flex justify-start flex-items-center mt-1">
-          <span class="text-3">{{ formatValidityText(item) }}</span>
-          <a-popover>
-            <template #title>
-              <div style="border-bottom:1px solid #eee;padding-bottom: 6px;">
-                字段说明
-              </div>
-            </template>
-            <template #content>
-              <div class="text-#666">
-                此有效期展示为历史报名订单中，最长的有效期。
-              </div>
-              <div class="text-#666">
-                具体每次报名有效期，请点击剩余详情进行查看。
-              </div>
-            </template>
-            <QuestionCircleOutlined class="ml-2 mb-0.5" />
-          </a-popover>
+        <div class="course-card-body">
+          <div class="course-card-main min-w-0 flex-1">
+            <div class="tag px3 mt1">
+              <a-space>
+                <span v-if="item.lessonScope" class="bg-#06f text-#fff text-3 rounded-10 px3 py1">{{ getLessonScopeText(item.lessonScope) }}</span>
+                <span v-if="item.lessonType" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">{{ getLessonTypeText(item.lessonType) }}</span>
+                <span v-if="item.lessonChargingMode" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">{{ getChargingModeText(item.lessonChargingMode) }}</span>
+              </a-space>
+            </div>
+            <div class="remaining-class-hours px3 text-3 text-#888 mt-5 flex justify-between">
+              <span>{{ formatRemainQuantityText(item) }}</span>
+            </div>
+            <div class="remaining-tuition px3 text-#888 flex justify-start flex-items-center mt-1">
+              <span class="text-3">
+                剩余学费：¥ {{ formatMoney(item.tuition) }}（总计 ¥ {{ formatMoney(item.totalTuition) }}
+                <a-tooltip v-if="hasArrearTuition(item)" placement="top">
+                  <template #title>
+                    {{ getArrearTuitionTooltip(item) }}
+                  </template>
+                  <span class="arrear-badge ml-1">欠</span>
+                </a-tooltip>
+                ）
+              </span>
+            </div>
+            <!-- 时段模式显示有效时段，非时段模式显示有效期至 -->
+            <div v-if="item.lessonChargingMode === 2" class="valid-period px3 text-#888 flex justify-start flex-items-center mt-1">
+              <span class="text-3">{{ formatValidPeriodText(item) }}</span>
+            </div>
+            <div v-else class="validity px3 text-#888 flex justify-start flex-items-center mt-1">
+              <span class="text-3">{{ formatValidityText(item) }}</span>
+              <a-popover>
+                <template #title>
+                  <div style="border-bottom:1px solid #eee;padding-bottom: 6px;">
+                    字段说明
+                  </div>
+                </template>
+                <template #content>
+                  <div class="text-#666">
+                    此有效期展示为历史报名订单中，最长的有效期。
+                  </div>
+                  <div class="text-#666">
+                    具体每次报名有效期，请点击剩余详情进行查看。
+                  </div>
+                </template>
+                <QuestionCircleOutlined class="ml-2 mb-0.5" />
+              </a-popover>
+            </div>
+          </div>
+          <div v-if="isTuitionAccountCourseEnded(item)" class="course-ended-stamp-wrap">
+            <img
+              class="course-ended-stamp"
+              :src="STATUS_END_STAMP_SRC"
+              alt="已结课"
+              width="88"
+              height="88"
+            >
+          </div>
         </div>
         <div class="line w-100% h-0.25 bg-#eee mt2" />
         <div class="btn mt2 flex justify-end pr3">
@@ -533,5 +561,27 @@ defineExpose({
   font-size: 12px;
   line-height: 16px;
   cursor: pointer;
+}
+
+.course-card-body {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.course-ended-stamp-wrap {
+  flex-shrink: 0;
+  align-self: center;
+  padding-right: 12px;
+  padding-top: 8px;
+  pointer-events: none;
+}
+
+.course-ended-stamp {
+  display: block;
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  opacity: 0.95;
 }
 </style>
