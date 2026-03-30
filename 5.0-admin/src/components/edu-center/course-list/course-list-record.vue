@@ -650,7 +650,7 @@ const handleSearchInput = debounce((value, id, type) => {
     <div class="tab-table">
       <div class="table-title flex justify-between items-center">
         <div class="total whitespace-nowrap">
-          总计 {{ dataSource.length }} 条课程，5 条在售卖
+          总计 {{ dataSource.length }} 条课程
         </div>
         <!-- 隐藏滚动条 -->
         <div class="edit ml10px flex overflow-x-auto">

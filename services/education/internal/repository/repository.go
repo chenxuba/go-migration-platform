@@ -90,6 +90,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureTuitionAccountFlowTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensureCloseTuitionAccountOrderTables(ctx, repo.db); err != nil {
+		return err
+	}
 	if err := fixManualCloseTuitionFlowNegativeAmounts(ctx, repo.db); err != nil {
 		return err
 	}

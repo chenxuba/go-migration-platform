@@ -1,6 +1,6 @@
 <script setup>
 import Icon, { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { ref, computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { useStudentStore } from '@/stores/student'
 import { getTuitionAccountReadingListApi } from '@/api/edu-center/tuition-account'
@@ -22,6 +22,7 @@ import feeChangeModal from './feeChangeModal.vue'
 import remainingDetailsModal from './remainingDetailsModal.vue'
 // 一对一模态框
 import oneToOneModal from './oneToOneModal.vue'
+import closeCourseRecordModal from './close-course-record-modal.vue'
 
 const STATUS_END_STAMP_SRC = 'https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/14983/static/svg/status-end-D4a6u7st.svg'
 
@@ -38,6 +39,7 @@ const dropTheClassDrawerOpen = ref(false)
 const stopTheClassDrawerOpen = ref(false)
 const endTheClassDrawerOpen = ref(false)
 const revokeCloseCourseModalOpen = ref(false)
+const closeCourseRecordModalOpen = ref(false)
 const suspensionResumeDrawerOpen = ref(false)
 const feeChangeDrawerOpen = ref(false)
 const remainingDetailsModalOpen = ref(false)
@@ -46,6 +48,8 @@ const loading = ref(false)
 const tuitionAccountList = ref([])
 const listLoaded = ref(false)
 const currentRevokeCourseRecord = ref(null)
+const currentCloseRecordCourse = ref(null)
+const currentEndCourseRecord = ref(null)
 
 function handleOneToOne() {
   oneToOneModalOpen.value = true
@@ -173,8 +177,31 @@ function onEndedMenuRevokeGraduate(item) {
   currentRevokeCourseRecord.value = item || null
   revokeCloseCourseModalOpen.value = true
 }
-function onEndedMenuCloseRecord() {
-  messageService.info('结课记录功能开发中')
+
+async function handleRevokeCloseCourseSuccess() {
+  revokeCloseCourseModalOpen.value = false
+  currentRevokeCourseRecord.value = null
+  await getTuitionAccountList()
+}
+
+async function handleCloseCourseSuccess() {
+  endTheClassDrawerOpen.value = false
+  currentEndCourseRecord.value = null
+  await getTuitionAccountList()
+}
+
+async function handleCloseCourseRecordSuccess() {
+  await getTuitionAccountList()
+}
+
+function onMenuCloseCourse(item) {
+  currentEndCourseRecord.value = item || null
+  endTheClassDrawerOpen.value = true
+}
+
+function onEndedMenuCloseRecord(item) {
+  currentCloseRecordCourse.value = item || null
+  closeCourseRecordModalOpen.value = true
 }
 
 // 格式化有效期文本
@@ -271,6 +298,11 @@ defineExpose({
   tuitionAccountList,
   listLoaded,
   resetListState,
+})
+
+watch(endTheClassDrawerOpen, (value) => {
+  if (!value)
+    currentEndCourseRecord.value = null
 })
 </script>
 
@@ -388,7 +420,7 @@ defineExpose({
                   </div>
                   <span class="font-size-14px text-#666 w-90px">停课</span>
                 </div>
-                <div class="flex items-center gap-2" @click="endTheClassDrawerOpen = true">
+                <div class="flex items-center gap-2" @click="onMenuCloseCourse(item)">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -506,7 +538,7 @@ defineExpose({
                   <span class="image-wrapper suspendResumen" />
                   <span class="font-size-14px text-#666 w-90px">停/复课记录</span>
                 </div>
-                <div class="flex items-center gap-2" @click="onEndedMenuCloseRecord">
+                <div class="flex items-center gap-2" @click="onEndedMenuCloseRecord(item)">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -599,11 +631,11 @@ defineExpose({
             > 剩余详情</span>
           </a-tooltip>
           <a-button
-            v-if="item.lessonType === 2"
+            v-if="item.lessonType === 2 && !isTuitionAccountCourseEnded(item)"
             size="small" class=" text-#666" style="font-size: 12px;border-radius: 10px;padding: 0 10px;"
             @click="handleOneToOne"
           >
-            查看一对一
+            查看分班
           </a-button>
         </div>
         </div>
@@ -613,8 +645,21 @@ defineExpose({
     <transferClassDrawer v-model:open="transferClassDrawerOpen" />
     <dropTheClassDrawer v-model:open="dropTheClassDrawerOpen" />
     <stopTheClassModal v-model:open="stopTheClassDrawerOpen" />
-    <endTheClassModal v-model:open="endTheClassDrawerOpen" />
-    <revokeCloseCourseModal v-model:open="revokeCloseCourseModalOpen" :record="currentRevokeCourseRecord" />
+    <endTheClassModal
+      v-model:open="endTheClassDrawerOpen"
+      :record="currentEndCourseRecord"
+      @success="handleCloseCourseSuccess"
+    />
+    <revokeCloseCourseModal
+      v-model:open="revokeCloseCourseModalOpen"
+      :record="currentRevokeCourseRecord"
+      @success="handleRevokeCloseCourseSuccess"
+    />
+    <closeCourseRecordModal
+      v-model:open="closeCourseRecordModalOpen"
+      :record="currentCloseRecordCourse"
+      @success="handleCloseCourseRecordSuccess"
+    />
     <suspensionResumeModal v-model:open="suspensionResumeDrawerOpen" />
     <feeChangeModal v-model:open="feeChangeDrawerOpen" />
     <remainingDetailsModal v-model:open="remainingDetailsModalOpen" />

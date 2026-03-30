@@ -632,6 +632,52 @@ func (repo *Repository) ListTuitionAccountIDsForStudentCourseBucket(ctx context.
 	return ids, rows.Err()
 }
 
+// ListTuitionAccountIDsForStudentCourseBucketAllStatuses 学员某课程下、指定授课方式/计费模式桶内的全部学费账户 id（含已结课/停课，FIFO）。
+func (repo *Repository) ListTuitionAccountIDsForStudentCourseBucketAllStatuses(ctx context.Context, tx *sql.Tx, instID, studentID, courseID int64, teachMethod, lessonChargingMode int) ([]int64, error) {
+	q := `
+		SELECT ta.id
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(ta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
+		WHERE ta.inst_id = ? AND ta.del_flag = 0 AND ta.student_id = ? AND ta.course_id = ?
+			AND IFNULL(ic.teach_method, 0) = ?
+			AND IFNULL(icq.lesson_model, 0) = ?
+		ORDER BY ta.create_time ASC, ta.id ASC
+	`
+	var rows *sql.Rows
+	var err error
+	if tx != nil {
+		rows, err = tx.QueryContext(ctx, q, instID, studentID, courseID, teachMethod, lessonChargingMode)
+	} else {
+		rows, err = repo.db.QueryContext(ctx, q, instID, studentID, courseID, teachMethod, lessonChargingMode)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // ListOneToOneLessonOptionsByStudent 机构内全部 1v1 课程（teach_method=2），供创建/选择 1 对 1 上课课程。
 // LEFT JOIN 学员学费账户仅用于 assigned_class；「已报名」仍看是否存在该学员在该课下的开班中 1 对 1。
 func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, instID, studentID int64, tuitionAccountStatus []int) ([]model.OneToOneLessonOptionVO, error) {

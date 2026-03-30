@@ -1,6 +1,12 @@
 <script setup>
 import { CloseOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
+import {
+  getRevertCloseTuitionAccountPreviewApi,
+  getTuitionAccountSubAccountDateInfoApi,
+  revertCloseTuitionAccountApi,
+} from '@/api/edu-center/tuition-account'
+import messageService from '@/utils/messageService'
 
 const props = defineProps({
   open: {
@@ -13,9 +19,13 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:open', 'confirm'])
+const emit = defineEmits(['update:open', 'success'])
 
 const formRef = ref()
+const loading = ref(false)
+const submitLoading = ref(false)
+const previewData = ref(null)
+const subAccountList = ref([])
 
 const openModal = computed({
   get: () => props.open,
@@ -23,15 +33,18 @@ const openModal = computed({
 })
 
 const formState = reactive({
-  currentValidStartDate: undefined,
+  currentValidEndDate: undefined,
 })
+
+const tuitionAccountId = computed(() => String(props.record?.id || props.record?.tuitionAccountId || ''))
 
 watch(
   () => props.open,
-  (value) => {
-    if (value) {
-      formState.currentValidStartDate = undefined
-    }
+  async (value) => {
+    if (!value)
+      return
+    formState.currentValidEndDate = undefined
+    await loadPreviewData()
   },
 )
 
@@ -63,6 +76,12 @@ function formatCount(value) {
   return num.toFixed(2)
 }
 
+function disabledPastDate(current) {
+  if (!current)
+    return false
+  return current.endOf('day').isBefore(dayjs().startOf('day'))
+}
+
 function getLessonTypeText(type) {
   const typeMap = {
     1: '班级授课',
@@ -89,68 +108,164 @@ function getQuantityUnit(mode) {
   return unitMap[mode] || '天'
 }
 
+async function loadPreviewData() {
+  if (!tuitionAccountId.value) {
+    previewData.value = null
+    subAccountList.value = []
+    return
+  }
+  loading.value = true
+  try {
+    const [previewRes, subAccountRes] = await Promise.all([
+      getRevertCloseTuitionAccountPreviewApi({ tuitionAccountId: tuitionAccountId.value }),
+      getTuitionAccountSubAccountDateInfoApi({ tuitionAccountId: tuitionAccountId.value }),
+    ])
+    if (previewRes.code !== 200)
+      throw new Error(previewRes.message || '加载撤销结课预览失败')
+    if (subAccountRes.code !== 200)
+      throw new Error(subAccountRes.message || '加载账期明细失败')
+
+    previewData.value = previewRes.result || null
+    subAccountList.value = Array.isArray(subAccountRes.result?.list) ? subAccountRes.result.list : []
+
+    const periods = Array.isArray(previewRes.result?.subTuitionAccounts) ? previewRes.result.subTuitionAccounts : []
+    const lastPeriod = periods[periods.length - 1]
+    const lastSubAccount = subAccountList.value?.[subAccountList.value.length - 1]
+    const defaultEndDate = lastPeriod?.endDate
+      || previewRes.result?.expireDate
+      || lastSubAccount?.endDate
+      || props.record?.endDate
+      || props.record?.expireTime
+    formState.currentValidEndDate = defaultEndDate ? dayjs(defaultEndDate).format('YYYY-MM-DD') : undefined
+  }
+  catch (error) {
+    previewData.value = null
+    subAccountList.value = []
+    messageService.error(error?.message || '加载撤销结课预览失败')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+const lessonChargingMode = computed(() =>
+  Number(previewData.value?.lessonChargingMode || props.record?.lessonChargingMode || 0),
+)
+
+const currentValidEndDateRules = computed(() => (
+  lessonChargingMode.value === 2 ? [{ required: true, message: '请选择日期' }] : []
+))
+
+const restoredDayCount = computed(() => {
+  const total = Number(previewData.value?.quantity || 0) + Number(previewData.value?.freeQuantity || 0)
+  return Math.max(Math.round(total), 0)
+})
+
 const courseName = computed(() =>
-  props.record?.lessonName || props.record?.productName || '时段课时',
+  previewData.value?.lessonName || props.record?.lessonName || props.record?.productName || '时段课时',
 )
 
 const remainQuantityLabel = computed(() => {
-  const mode = Number(props.record?.lessonChargingMode || 2)
-  if (mode === 2)
+  if (lessonChargingMode.value === 2)
     return '剩余天数'
-  if (mode === 3)
+  if (lessonChargingMode.value === 3)
     return '剩余金额'
   return '剩余课时'
 })
 
 const remainQuantityText = computed(() => {
-  const mode = Number(props.record?.lessonChargingMode || 2)
-  if (props.record?.remainQuantity !== undefined && props.record?.remainQuantity !== null) {
-    const unit = getQuantityUnit(mode)
-    return unit ? `${formatCount(props.record.remainQuantity)} ${unit}` : formatCount(props.record.remainQuantity)
+  if (previewData.value) {
+    const totalQuantity = Number(previewData.value?.quantity || 0) + Number(previewData.value?.freeQuantity || 0)
+    const unit = getQuantityUnit(lessonChargingMode.value)
+    return unit ? `${formatCount(totalQuantity)} ${unit}` : formatCount(totalQuantity)
   }
-  return '9 天'
+  return '-'
 })
 
 const remainTuitionText = computed(() => {
-  if (props.record?.tuition !== undefined && props.record?.tuition !== null)
-    return `¥${formatMoney(props.record.tuition)}`
-  return '¥1800.00'
+  if (previewData.value?.tuition !== undefined && previewData.value?.tuition !== null)
+    return `¥${formatMoney(previewData.value.tuition)}`
+  return '-'
 })
 
+const validityLabel = computed(() => (
+  lessonChargingMode.value === 2 ? '有效时段' : '有效期至'
+))
+
 const validPeriodText = computed(() => {
-  const start = formatDate(props.record?.validDate || props.record?.activedAt)
-  const end = formatDate(props.record?.endDate || props.record?.expireTime)
+  if (lessonChargingMode.value === 1)
+    return '无'
+  const periods = Array.isArray(previewData.value?.subTuitionAccounts) ? previewData.value.subTuitionAccounts : []
+  const first = periods[0]
+  const last = periods[periods.length - 1]
+  const start = formatDate(first?.startDate || subAccountList.value?.[0]?.startDate || subAccountList.value?.[0]?.activedAt || props.record?.validDate || props.record?.activedAt)
+  const end = formatDate(last?.endDate || subAccountList.value?.[subAccountList.value.length - 1]?.endDate || props.record?.endDate || props.record?.expireTime)
   if (start !== '-' && end !== '-')
     return `${start} ~ ${end}`
-  return '2026-03-29 ~ 2026-03-29'
+  return '-'
 })
 
 const closeDateText = computed(() => {
-  const date = formatDate(props.record?.classEndingTime)
-  return date !== '-' ? date : '2026-03-30'
+  const date = formatDate(previewData.value?.closeTime || props.record?.classEndingTime)
+  return date !== '-' ? date : '-'
 })
 
 const closeRemarkText = computed(() => {
-  const text = String(props.record?.closeRemark || props.record?.remark || '').trim()
+  const text = String(previewData.value?.remark || props.record?.closeRemark || props.record?.remark || '').trim()
   return text || '-'
 })
 
 const summaryTags = computed(() => [
-  { text: getLessonTypeText(props.record?.lessonType), type: 'soft' },
-  { text: getChargingModeText(props.record?.lessonChargingMode), type: 'soft' },
+  { text: getLessonTypeText(previewData.value?.lessonType || props.record?.lessonType), color: '#e6f0ff', textColor: '#0066ff' },
+  { text: getChargingModeText(lessonChargingMode.value), color: '#e6f0ff', textColor: '#0066ff' },
 ])
 
 async function handleSubmit() {
   try {
     await formRef.value?.validate?.()
-    emit('confirm', {
-      currentValidStartDate: formState.currentValidStartDate,
+    if (!tuitionAccountId.value) {
+      messageService.error('缺少学费账户ID')
+      return
+    }
+    if (!previewData.value?.closeTuitionAccountOrderId) {
+      messageService.error('缺少结课记录ID')
+      return
+    }
+
+    let currentValidStartDate
+    if (lessonChargingMode.value === 2) {
+      const selectedEndDate = dayjs(formState.currentValidEndDate)
+      currentValidStartDate = selectedEndDate
+        .subtract(Math.max(restoredDayCount.value - 1, 0), 'day')
+        .format('YYYY-MM-DD')
+    }
+
+    submitLoading.value = true
+    const res = await revertCloseTuitionAccountApi({
+      tuitionAccountId: tuitionAccountId.value,
+      closeTuitionAccountOrderId: String(previewData.value.closeTuitionAccountOrderId),
+      expireDate: formState.currentValidEndDate,
+      currentValidStartDate,
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '撤销结课失败')
+
+    messageService.success('撤销结课成功')
+    emit('success', {
+      tuitionAccountId: tuitionAccountId.value,
+      closeTuitionAccountOrderId: String(previewData.value.closeTuitionAccountOrderId),
+      result: res.result,
       record: props.record,
     })
     openModal.value = false
   }
   catch (error) {
-    console.log('验证失败:', error)
+    if (error?.errorFields)
+      return
+    messageService.error(error?.message || '撤销结课失败')
+  }
+  finally {
+    submitLoading.value = false
   }
 }
 </script>
@@ -180,76 +295,79 @@ async function handleSubmit() {
       message="撤销结课后，学员报读课程将恢复计费，并可为其进行点名操作。"
       show-icon
       type="info"
-      class="border-none rounded-none text-#06f bg-#e6f0ff"
+      class="border-none rounded-none text-#06f bg-#e6f0ff mt--8px"
     />
 
-    <div class="m-24px rounded-12px bg-#fafafa overflow-hidden">
-      <div class="px-24px pt-28px pb-22px">
-        <div class="text-22px leading-7 text-#1f1f1f font-700">
-          {{ courseName }}
+    <a-spin :spinning="loading">
+      <div class="m-24px rounded-12px bg-#fafafa overflow-hidden">
+        <div class="px-24px pt-28px pb-22px">
+          <div class="text-22px leading-7 text-#1f1f1f font-700">
+            {{ courseName }}
+          </div>
+          <a-space :size="[8, 8]" wrap class="mt-6px">
+            <a-tag
+              v-for="tag in summaryTags"
+              :key="tag.text"
+              :bordered="false"
+              :color="tag.color"
+              :style="{ color: tag.textColor, borderRadius: '999px', marginRight: '0' }"
+            >
+              {{ tag.text }}
+            </a-tag>
+          </a-space>
+
+          <a-descriptions
+            class="mt-24px"
+            :column="2"
+            size="small"
+            :label-style="{ color: '#555' }"
+            :content-style="{ color: '#666' }"
+          >
+            <a-descriptions-item :label="remainQuantityLabel">
+              {{ remainQuantityText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="剩余学费">
+              {{ remainTuitionText }}
+            </a-descriptions-item>
+            <a-descriptions-item :label="validityLabel">
+              {{ validPeriodText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="结课日期">
+              {{ closeDateText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="结课备注" :span="2">
+              {{ closeRemarkText }}
+            </a-descriptions-item>
+          </a-descriptions>
         </div>
-        <a-space :size="[8, 8]" wrap class="mt-6px">
-          <a-tag
-            v-for="tag in summaryTags"
-            :key="tag.text"
-            :bordered="false"
-            :color="tag.type === 'primary' ? '#0066ff' : '#e6f0ff'"
-            :style="{ color: tag.type === 'primary' ? '#fff' : '#0066ff', borderRadius: '999px', marginRight: '0' }"
-          >
-            {{ tag.text }}
-          </a-tag>
-        </a-space>
 
-        <a-descriptions
-          class="mt-24px"
-          :column="2"
-          size="small"
-          :label-style="{ color: '#555'}"
-          :content-style="{ color: '#666' }"
-        >
-          <a-descriptions-item :label="remainQuantityLabel">
-            {{ remainQuantityText }}
-          </a-descriptions-item>
-          <a-descriptions-item label="剩余学费">
-            {{ remainTuitionText }}
-          </a-descriptions-item>
-          <a-descriptions-item label="有效时段">
-            {{ validPeriodText }}
-          </a-descriptions-item>
-          <a-descriptions-item label="结课日期">
-            {{ closeDateText }}
-          </a-descriptions-item>
-          <a-descriptions-item label="结课备注" :span="2">
-            {{ closeRemarkText }}
-          </a-descriptions-item>
-        </a-descriptions>
+        <a-divider class="my-0" />
+
+        <div class="px-24px pt-26px pb-8px">
+          <a-form ref="formRef" :model="formState" :wrapper-col="{ span: 17 }">
+            <a-form-item
+              label="现有效期至"
+              name="currentValidEndDate"
+              :rules="currentValidEndDateRules"
+            >
+              <a-date-picker
+                v-model:value="formState.currentValidEndDate"
+                value-format="YYYY-MM-DD"
+                placeholder="请选择日期"
+                class="!w-240px"
+                :disabled-date="disabledPastDate"
+              />
+            </a-form-item>
+          </a-form>
+        </div>
       </div>
-
-      <a-divider class="my-0" />
-
-      <div class="px-24px pt-26px pb-8px">
-        <a-form ref="formRef" :model="formState"  :wrapper-col="{ span: 17 }">
-          <a-form-item
-            label="现有效开始时间"
-            name="currentValidStartDate"
-            :rules="[{ required: true, message: '请选择日期' }]"
-          >
-            <a-date-picker
-              v-model:value="formState.currentValidStartDate"
-              value-format="YYYY-MM-DD"
-              placeholder="请选择日期"
-              class="!w-240px"
-            />
-          </a-form-item>
-        </a-form>
-      </div>
-    </div>
+    </a-spin>
 
     <template #footer>
       <a-button @click="closeFun">
         关闭
       </a-button>
-      <a-button type="primary" @click="handleSubmit">
+      <a-button type="primary" :loading="submitLoading" @click="handleSubmit">
         确定
       </a-button>
     </template>

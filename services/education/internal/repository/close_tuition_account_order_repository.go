@@ -186,8 +186,7 @@ func (repo *Repository) loadCloseTuitionAccountBucketSnapshotsTx(ctx context.Con
 	return out, nil
 }
 
-func (repo *Repository) closeTuitionAccountSnapshotTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, snap closeTuitionAccountSnapshot, sourceID int64) (int64, error) {
-	now := time.Now()
+func (repo *Repository) closeTuitionAccountSnapshotTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, snap closeTuitionAccountSnapshot, sourceID int64, now time.Time) (int64, error) {
 	deductQty := closeOrderRoundMoney(snap.remQty)
 	tuition := closeOrderRoundMoney(snap.remTuition)
 	newUsedQty := closeOrderRoundMoney(snap.usedQty + snap.remQty)
@@ -383,13 +382,14 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 	}
 
 	now := time.Now()
-	baseSourceID := now.UnixNano()
-	if baseSourceID < 0 {
-		baseSourceID = -baseSourceID
-	}
 	flowID := int64(0)
+	closeOrderID, err := repo.createCloseTuitionAccountOrderTx(ctx, tx, instID, operatorID, selectedSnap, quantity, freeQuantity, tuition, remark, now)
+	if err != nil {
+		return 0, err
+	}
 	for idx, snap := range targetSnapshots {
-		insertedFlowID, closeErr := repo.closeTuitionAccountSnapshotTx(ctx, tx, instID, operatorID, snap, baseSourceID+int64(idx))
+		_ = idx
+		insertedFlowID, closeErr := repo.closeTuitionAccountSnapshotTx(ctx, tx, instID, operatorID, snap, closeOrderID, now)
 		if closeErr != nil {
 			return 0, closeErr
 		}
@@ -423,7 +423,7 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
-	return flowID, nil
+	return closeOrderID, nil
 }
 
 // fixManualCloseTuitionFlowNegativeAmounts 修正早期手动结课流水误存的负数，与课消/确认收入列表 SUM 口径一致（正数表示本次确认量与金额）。

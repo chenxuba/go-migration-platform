@@ -13,7 +13,6 @@ import { useTableColumns } from '@/composables/useTableColumns'
 import { handleDateRangeParams } from '@/utils/dateRangeParams'
 import messageService from '@/utils/messageService'
 import {
-  addCloseTuitionAccountOrderApi,
   batchAssignOneToOneClassTeacherApi,
   batchUpdateOneToOneClassTimeApi,
   checkOneToOneNameApi,
@@ -29,6 +28,7 @@ import {
   switchOneToOneDefaultTuitionAccountApi,
   updateOneToOneApi,
 } from '@/api/edu-center/one-to-one'
+import { addCloseTuitionAccountOrderApi } from '@/api/edu-center/tuition-account'
 import { Sex, SexLabel, TeachingMethod, TeachingMethodLabel } from '@/enums'
 
 const router = useRouter()
