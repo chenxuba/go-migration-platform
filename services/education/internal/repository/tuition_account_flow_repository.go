@@ -26,12 +26,17 @@ LEFT JOIN inst_course_quotation icq_taf ON icq_taf.id = COALESCE(
 	 ORDER BY qmin.id ASC LIMIT 1)
 ) AND icq_taf.del_flag = 0`
 
-// resolvedLessonChargingModeExpr: prefer stored flow mode, else quotation lesson_model, else 按时段 heuristic from tuition_account.
+// resolvedLessonChargingModeExpr:
+// 1. Prefer stored flow mode.
+// 2. Fallback to quotation lesson_model.
+// 3. Infer mode from tuition_account for legacy rows that have no quotation bound.
 func resolvedLessonChargingModeExpr(storedModeCol, quotationModelCol string) string {
 	return `CASE
 		WHEN IFNULL(` + storedModeCol + `, 0) > 0 THEN ` + storedModeCol + `
 		WHEN IFNULL(` + quotationModelCol + `, 0) > 0 THEN ` + quotationModelCol + `
 		WHEN IFNULL(ta.enable_expire_time, 0) = 1 AND IFNULL(ta.total_quantity, 0) > 0 THEN 2
+		WHEN IFNULL(ta.total_quantity, 0) > 0 THEN 1
+		WHEN IFNULL(ta.total_tuition, 0) > 0 THEN 3
 		ELSE 0
 	END`
 }
@@ -96,6 +101,8 @@ func (repo *Repository) ensureHistoricalTuitionAccountFlowRecords(ctx context.Co
 			CASE
 				WHEN IFNULL(icq_taf.lesson_model, 0) > 0 THEN icq_taf.lesson_model
 				WHEN IFNULL(ta.enable_expire_time, 0) = 1 AND IFNULL(ta.total_quantity, 0) > 0 THEN 2
+				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN 1
+				WHEN IFNULL(ta.total_tuition, 0) > 0 THEN 3
 				ELSE 0
 			END,
 			?, ta.order_course_detail_id, NULL, IFNULL(so.order_number, ''), ta.create_time,

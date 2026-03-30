@@ -167,6 +167,10 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 	flowChargingMode := lessonModel
 	if flowChargingMode <= 0 && enableExpire == 1 && totalQty > 0.0001 {
 		flowChargingMode = 2 // 与 tuition_account_flow 回填逻辑一致：按时段/天账户
+	} else if flowChargingMode <= 0 && totalQty > 0.0001 {
+		flowChargingMode = 1 // 课时账户
+	} else if flowChargingMode <= 0 && totalTuition > 0.0001 {
+		flowChargingMode = 3 // 金额账户
 	}
 
 	// 与课消类流水一致：quantity/tuition 存正数，供「确认收入」SUM/列表展示为机构收入；

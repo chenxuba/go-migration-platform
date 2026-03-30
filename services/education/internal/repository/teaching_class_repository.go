@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -1401,6 +1402,304 @@ func parseOneToOneDeductionAggregateKey(raw string) (oneToOneDeductionAggregateK
 	return keyDTO, nil
 }
 
+func (repo *Repository) loadOrderCourseDetailTx(ctx context.Context, tx *sql.Tx, orderCourseDetailID int64) (orderCourseDetail, error) {
+	var detail orderCourseDetail
+	err := tx.QueryRowContext(ctx, `
+		SELECT id, course_id, quote_id, handle_type, count, unit,
+		       IFNULL(free_quantity, 0), IFNULL(amount, 0), IFNULL(real_quantity, 0),
+		       IFNULL(has_valid_date, 0), valid_date, end_date
+		FROM sale_order_course_detail
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, orderCourseDetailID).Scan(
+		&detail.ID,
+		&detail.CourseID,
+		&detail.QuoteID,
+		&detail.HandleType,
+		&detail.Count,
+		&detail.Unit,
+		&detail.FreeQuantity,
+		&detail.Amount,
+		&detail.RealQuantity,
+		&detail.HasValidDate,
+		&detail.ValidDate,
+		&detail.EndDate,
+	)
+	if err != nil {
+		return orderCourseDetail{}, err
+	}
+	return detail, nil
+}
+
+func (repo *Repository) syncOneToOneTimeSlotAutoConsumeTx(ctx context.Context, tx *sql.Tx, instID, operatorID, classID, studentID int64, binds []oneToOneDeductBind, now time.Time) error {
+	if len(binds) == 0 {
+		return nil
+	}
+
+	orderByDetail := make(map[int64]int64, len(binds))
+	detailOrder := make([]int64, 0, len(binds))
+	for _, bind := range binds {
+		if bind.orderID <= 0 || bind.ocdID <= 0 {
+			continue
+		}
+		if _, exists := orderByDetail[bind.ocdID]; exists {
+			continue
+		}
+		orderByDetail[bind.ocdID] = bind.orderID
+		detailOrder = append(detailOrder, bind.ocdID)
+	}
+	if len(detailOrder) == 0 {
+		return nil
+	}
+
+	details := make([]orderCourseDetail, 0, len(detailOrder))
+	for _, detailID := range detailOrder {
+		detail, err := repo.loadOrderCourseDetailTx(ctx, tx, detailID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return err
+		}
+		details = append(details, detail)
+	}
+	if len(details) == 0 {
+		return nil
+	}
+
+	quotationMap, err := repo.getCourseQuotationsByIDsTx(ctx, tx, collectOrderDetailQuoteIDs(details))
+	if err != nil {
+		return err
+	}
+
+	for _, detail := range details {
+		quotation, ok := quotationMap[detail.QuoteID.Int64]
+		if !ok {
+			continue
+		}
+		orderID := orderByDetail[detail.ID]
+		if orderID <= 0 {
+			continue
+		}
+		if err := repo.consumeOneTimeSlotDayForOneToOneCreateTx(ctx, tx, instID, operatorID, classID, orderID, studentID, detail, quotation, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) consumeOneTimeSlotDayForOneToOneCreateTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	instID, operatorID, classID, orderID, studentID int64,
+	detail orderCourseDetail,
+	quotation model.CourseQuotation,
+	now time.Time,
+) error {
+	if quotation.LessonModel == nil || *quotation.LessonModel != 2 {
+		return nil
+	}
+	if !detail.ValidDate.Valid || !detail.EndDate.Valid {
+		return nil
+	}
+
+	startDate := startOfDayTime(detail.ValidDate.Time)
+	if startOfDayTime(now).Before(startDate) {
+		return nil
+	}
+
+	var (
+		paidAccountID           int64
+		paidCourseID            int64
+		paidTotalDays           float64
+		paidTotalTuition        float64
+		usedQuantity            float64
+		remainQuantity          float64
+		usedTuition             float64
+		remainTuition           float64
+		confirmedTuitionCurrent float64
+		orderNumber             string
+		lessonType              sql.NullInt64
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT ta.id, ta.course_id, IFNULL(ta.total_quantity, 0), IFNULL(ta.total_tuition, 0),
+		       IFNULL(ta.used_quantity, 0), IFNULL(ta.remaining_quantity, 0), IFNULL(ta.used_tuition, 0), IFNULL(ta.remaining_tuition, 0), IFNULL(ta.confirmed_tuition, 0),
+		       IFNULL(so.order_number, ''), c.teach_method
+		FROM tuition_account ta
+		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
+		LEFT JOIN inst_course c ON c.id = ta.course_id AND c.del_flag = 0
+		WHERE ta.inst_id = ? AND ta.order_id = ? AND ta.order_course_detail_id = ? AND ta.del_flag = 0 AND IFNULL(ta.total_tuition, 0) > 0
+		ORDER BY ta.id ASC
+		LIMIT 1
+	`, instID, orderID, detail.ID).Scan(&paidAccountID, &paidCourseID, &paidTotalDays, &paidTotalTuition, &usedQuantity, &remainQuantity, &usedTuition, &remainTuition, &confirmedTuitionCurrent, &orderNumber, &lessonType)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+
+	sourceID := -classID
+	if sourceID >= 0 {
+		sourceID = -(detail.ID + 1000000000)
+	}
+
+	var paidFlowExists int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM tuition_account_flow
+		WHERE inst_id = ? AND tuition_account_id = ? AND source_type = ? AND source_id = ? AND del_flag = 0
+	`, instID, paidAccountID, model.TuitionAccountFlowSourceAutoConsume, sourceID).Scan(&paidFlowExists); err != nil {
+		return err
+	}
+	if paidFlowExists > 0 {
+		return nil
+	}
+	targetPaidDays := math.Min(usedQuantity+1, paidTotalDays)
+	paidDelta := roundMoney(targetPaidDays - usedQuantity)
+	if paidDelta > 0.00001 {
+		prevConfirmed := confirmedTuitionCurrent
+		if prevConfirmed <= 0 {
+			prevConfirmed = usedTuition
+		}
+		targetConfirmed := cumulativeTimeSlotTuition(paidTotalTuition, paidTotalDays, int(math.Round(targetPaidDays)))
+		targetRemainDays := math.Max(paidTotalDays-targetPaidDays, 0)
+		targetRemainTuition := roundMoney(math.Max(paidTotalTuition-targetConfirmed, 0))
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE tuition_account
+			SET used_quantity = ?, remaining_quantity = ?, used_tuition = ?, remaining_tuition = ?, confirmed_tuition = ?, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, targetPaidDays, targetRemainDays, targetConfirmed, targetRemainTuition, targetConfirmed, operatorID, paidAccountID, instID); err != nil {
+			return err
+		}
+
+		var lessonTypeValue any
+		if lessonType.Valid {
+			lessonTypeValue = lessonType.Int64
+		}
+		rowTuition := roundMoney(targetConfirmed - prevConfirmed)
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO tuition_account_flow (
+				uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
+				source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
+				create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, ?, ?,
+				?, ?, NULL, ?, ?, ?, ?, ?, ?,
+				?, NOW(), ?, NOW(), 0
+			)
+		`,
+			instID,
+			paidAccountID,
+			studentID,
+			paidCourseID,
+			lessonTypeValue,
+			2,
+			model.TuitionAccountFlowSourceAutoConsume,
+			sourceID,
+			orderNumber,
+			now,
+			paidDelta,
+			rowTuition,
+			targetRemainDays,
+			targetRemainTuition,
+			operatorID,
+			operatorID,
+		); err != nil {
+			if !strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if detail.FreeQuantity <= 0 {
+		return nil
+	}
+	var (
+		freeAccountID       int64
+		freeCourseID        int64
+		freeUsedQuantity    float64
+		freeRemainQuantity  float64
+		freeTotalFreeAmount float64
+	)
+	err = tx.QueryRowContext(ctx, `
+		SELECT ta.id, ta.course_id, IFNULL(ta.used_quantity, 0), IFNULL(ta.remaining_quantity, 0), IFNULL(ta.free_quantity, 0)
+		FROM tuition_account ta
+		WHERE ta.inst_id = ? AND ta.order_id = ? AND ta.order_course_detail_id = ? AND ta.del_flag = 0
+		  AND IFNULL(ta.total_tuition, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0
+		ORDER BY ta.id ASC
+		LIMIT 1
+	`, instID, orderID, detail.ID).Scan(&freeAccountID, &freeCourseID, &freeUsedQuantity, &freeRemainQuantity, &freeTotalFreeAmount)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	var freeFlowExists int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM tuition_account_flow
+		WHERE inst_id = ? AND tuition_account_id = ? AND source_type = ? AND source_id = ? AND del_flag = 0
+	`, instID, freeAccountID, model.TuitionAccountFlowSourceAutoConsume, sourceID).Scan(&freeFlowExists); err != nil {
+		return err
+	}
+	if freeFlowExists > 0 {
+		return nil
+	}
+	targetFreeDays := math.Min(freeUsedQuantity+1, freeTotalFreeAmount)
+	freeDelta := roundMoney(targetFreeDays - freeUsedQuantity)
+	if freeDelta <= 0.00001 {
+		return nil
+	}
+	targetFreeRemain := math.Max(freeTotalFreeAmount-targetFreeDays, 0)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account
+		SET used_quantity = ?, remaining_quantity = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, targetFreeDays, targetFreeRemain, operatorID, freeAccountID, instID); err != nil {
+		return err
+	}
+	var lessonTypeValue any
+	if lessonType.Valid {
+		lessonTypeValue = lessonType.Int64
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO tuition_account_flow (
+			uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
+			source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, ?, ?,
+			?, ?, NULL, ?, ?, ?, ?, ?, ?,
+			?, NOW(), ?, NOW(), 0
+			)
+		`,
+		instID,
+		freeAccountID,
+		studentID,
+		freeCourseID,
+		lessonTypeValue,
+		2,
+		model.TuitionAccountFlowSourceAutoConsume,
+		sourceID,
+		orderNumber,
+		now,
+		freeDelta,
+		0,
+		targetFreeRemain,
+		0,
+		operatorID,
+		operatorID,
+	); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			return err
+		}
+	}
+	return nil
+}
+
 // CreateOneToOne 手动创建 1 对 1：tuitionAccountId 为数字 id 或 agg:{扣费课程id}:{授课方式}:{计费模式}（按计费桶汇总时多笔账户各写一条班员，列表课时与下拉一致）
 func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID int64, dto model.OneToOneCreateDTO) (int64, error) {
 	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
@@ -1513,6 +1812,25 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 		binds = append(binds, b)
 	}
 
+	// 同一报名明细下可能存在「付费账户 + 赠送账户」两条 tuition_account。
+	// 创建 1 对 1 时 teaching_class_student 仍应只保留一条绑定，沿用主账户（通常为较早创建的付费账户）。
+	if len(binds) > 1 {
+		deduped := make([]oneToOneDeductBind, 0, len(binds))
+		seen := make(map[string]struct{}, len(binds))
+		for _, bind := range binds {
+			key := strconv.FormatInt(bind.ocdID, 10)
+			if bind.ocdID <= 0 {
+				key = "ta:" + strconv.FormatInt(bind.taID, 10)
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			deduped = append(deduped, bind)
+		}
+		binds = deduped
+	}
+
 	teacherIDs := normalizeTeacherIDs(dto.TeacherID, defaultTeacherID)
 	advisorID := int64(0)
 	if len(teacherIDs) > 0 {
@@ -1554,6 +1872,10 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 			operatorID, operatorID); err != nil {
 			return 0, err
 		}
+	}
+
+	if err := repo.syncOneToOneTimeSlotAutoConsumeTx(ctx, tx, instID, operatorID, classID, studentID, binds, now); err != nil {
+		return 0, err
 	}
 
 	for _, tid := range teacherIDs {

@@ -2530,6 +2530,17 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 	if consumedPaidDays <= 0 {
 		return nil
 	}
+	var extraPaidDays float64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(SUM(quantity), 0)
+		FROM tuition_account_flow
+		WHERE inst_id = ? AND tuition_account_id = ? AND source_type = ? AND source_id < 0 AND del_flag = 0
+	`, instID, paidAccountID, model.TuitionAccountFlowSourceAutoConsume).Scan(&extraPaidDays); err != nil {
+		return err
+	}
+	if extraPaidDays > 0 {
+		consumedPaidDays = math.Min(consumedPaidDays+extraPaidDays, paidTotalDays)
+	}
 
 	confirmedTuition := paidTotalTuition
 	if paidTotalDays > 0 {
@@ -2575,6 +2586,17 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 				ORDER BY id ASC
 				LIMIT 1
 			`, instID, orderID, detail.ID).Scan(&freeAccountID, &freeUsedQuantity, &freeRemainQuantity, &freeTotalFreeAmount); err == nil {
+				var extraFreeDays float64
+				if err := tx.QueryRowContext(ctx, `
+					SELECT IFNULL(SUM(quantity), 0)
+					FROM tuition_account_flow
+					WHERE inst_id = ? AND tuition_account_id = ? AND source_type = ? AND source_id < 0 AND del_flag = 0
+				`, instID, freeAccountID, model.TuitionAccountFlowSourceAutoConsume).Scan(&extraFreeDays); err != nil {
+					return err
+				}
+				if extraFreeDays > 0 {
+					consumedFreeDays = math.Min(consumedFreeDays+extraFreeDays, detail.FreeQuantity)
+				}
 				targetFreeRemain := math.Max(freeTotalFreeAmount-consumedFreeDays, 0)
 				freeChanged = !almostEqualFloat(freeUsedQuantity, consumedFreeDays) || !almostEqualFloat(freeRemainQuantity, targetFreeRemain)
 				if freeChanged {
