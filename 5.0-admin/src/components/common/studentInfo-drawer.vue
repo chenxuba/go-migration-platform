@@ -7,6 +7,7 @@ import { debounce } from 'lodash-es'
 import DeleteConfirmModal from './DeleteConfirmModal.vue'
 import AssignSalesModal from './assign-sales-modal.vue'
 import CreateStudent from './create-student.vue'
+import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { batchAssignSalespersonApi, batchDeleteIntendedStudentApi, batchTransferToPublicPoolApi, getIntentStudentDetailApi, listStudentChangeInfoApi, updateIntendedStudentApi, updateStatusApi } from '@/api/enroll-center/intention-student'
 import { getStudentPhoneNumberApi } from '@/api/common/config'
 import { useStudentStore } from '@/stores/student'
@@ -76,6 +77,7 @@ const studentStore = useStudentStore()
 const userStore = useUserStore()
 const studentId = computed(() => studentStore.studentId)
 const studentDetail = ref({})
+const oneToOneClassTeacherNames = ref([])
 const router = useRouter()
 
 // 判断是否是自己的学员
@@ -120,6 +122,42 @@ async function getIntentStudentDetail(flag = true) {
   }
 }
 
+async function getOneToOneClassTeachers() {
+  if (!studentId.value) {
+    oneToOneClassTeacherNames.value = []
+    return
+  }
+  try {
+    const res = await getOneToOneListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: 100,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+      queryModel: {
+        studentId: String(studentId.value),
+      },
+    })
+    if (res.code !== 200) {
+      oneToOneClassTeacherNames.value = []
+      return
+    }
+    const names = (Array.isArray(res.result?.list) ? res.result.list : [])
+      .flatMap((item) => {
+        const raw = String(item?.classTeacherName || '').trim()
+        if (!raw)
+          return []
+        return raw.split('、').map(name => name.trim()).filter(Boolean)
+      })
+    oneToOneClassTeacherNames.value = Array.from(new Set(names))
+  }
+  catch (error) {
+    console.log(error)
+    oneToOneClassTeacherNames.value = []
+  }
+}
+
 function refreshPrimaryCourseList() {
   nextTick(() => {
     registerForCoursesRef.value?.getTuitionAccountList()
@@ -129,6 +167,7 @@ function refreshPrimaryCourseList() {
 watch(() => props.open, (newVal) => {
   if (!newVal) {
     studentStore.clearStudentId()
+    oneToOneClassTeacherNames.value = []
     // 关闭抽屉时重置activeKey为默认值
     activeKey.value = props.defaultActiveKey
     registerForCoursesRef.value?.resetListState?.()
@@ -148,6 +187,7 @@ watch(() => props.open, (newVal) => {
 watch(() => openDrawer.value, (newVal) => {
   if (newVal) {
     getIntentStudentDetail()
+    getOneToOneClassTeachers()
     if (activeKey.value === '0') {
       refreshPrimaryCourseList()
     }
@@ -262,6 +302,16 @@ const isIntentionStudent = computed(() => Number(studentDetail.value?.studentSta
 const primaryCourseTabLabel = computed(() => (isIntentionStudent.value ? '体验课程' : '报读课程'))
 const primaryCourseEmptyText = computed(() => (isIntentionStudent.value ? '没有体验课程' : '没有报读课程'))
 const studentStatusText = computed(() => StudentStatusLabel[Number(studentDetail.value?.studentStatus)] || '-')
+const classTeacherNames = computed(() => {
+  if (oneToOneClassTeacherNames.value.length)
+    return oneToOneClassTeacherNames.value
+  const fallback = String(studentDetail.value?.teacherName || '').trim()
+  return fallback ? [fallback] : []
+})
+const classTeacherSummary = computed(() => (
+  classTeacherNames.value.length ? `${classTeacherNames.value.length}位` : '-'
+))
+const classTeacherTooltipTitle = computed(() => classTeacherNames.value.join('、'))
 
 // 处理分配销售
 function handleAssignSales() {
@@ -333,6 +383,7 @@ watch(() => openModal.value, (newVal) => {
 // 提供给子组件的刷新回调函数
 function handleRefreshStudentDetail() {
   getIntentStudentDetail()
+  getOneToOneClassTeachers()
 }
 
 const studentChangeInfo = ref([])
@@ -685,7 +736,10 @@ async function handlePhoneToggle() {
             {{ studentDetail.salePersonName || '-' }}
           </a-descriptions-item>
           <a-descriptions-item label="班主任">
-            {{ studentDetail.teacherName || '-' }}
+            <a-tooltip v-if="classTeacherNames.length" :title="classTeacherTooltipTitle" placement="topLeft">
+              <span class="cursor-pointer">{{ classTeacherSummary }}</span>
+            </a-tooltip>
+            <span v-else>-</span>
           </a-descriptions-item>
           <a-descriptions-item label="意向度">
             <div style="cursor: pointer;">
@@ -804,7 +858,10 @@ async function handlePhoneToggle() {
           {{ studentDetail.salePersonName || '-' }}
         </a-descriptions-item>
         <a-descriptions-item label="班主任">
-          {{ studentDetail.teacherName || '-' }}
+          <a-tooltip v-if="classTeacherNames.length" :title="classTeacherTooltipTitle" placement="topLeft">
+            <span class="cursor-pointer">{{ classTeacherSummary }}</span>
+          </a-tooltip>
+          <span v-else>-</span>
         </a-descriptions-item>
       </a-descriptions>
       <a-divider class="my-5px" />
