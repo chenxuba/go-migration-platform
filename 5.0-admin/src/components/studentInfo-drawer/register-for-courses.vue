@@ -26,6 +26,7 @@ import closeCourseRecordModal from './close-course-record-modal.vue'
 
 const STATUS_END_STAMP_SRC = 'https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/14983/static/svg/status-end-D4a6u7st.svg'
 const STATUS_SUSPEND_STAMP_SRC = 'https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/14983/static/svg/status-suspend-C7VTrkvF.svg'
+const RESUME_MENU_ICON_SRC = 'data:image/svg+xml,%3c?xml%20version=%271.0%27%20encoding=%27UTF-8%27?%3e%3csvg%20width=%2714px%27%20height=%2714px%27%20viewBox=%270%200%2014%2014%27%20version=%271.1%27%20xmlns=%27http://www.w3.org/2000/svg%27%20xmlns:xlink=%27http://www.w3.org/1999/xlink%27%3e%3ctitle%3e%E7%BC%96%E7%BB%84%2019%E5%A4%87%E4%BB%BD%3c/title%3e%3cg%20id=%27%E9%A1%B5%E9%9D%A2-2%27%20stroke=%27none%27%20stroke-width=%271%27%20fill=%27none%27%20fill-rule=%27evenodd%27%3e%3cg%20id=%27%E7%94%BB%E6%9D%BF%E5%A4%87%E4%BB%BD-25%27%20transform=%27translate(-1411.000000,%20-823.000000)%27%3e%3cg%20id=%27%E7%BC%96%E7%BB%84-19%E5%A4%87%E4%BB%BD%27%20transform=%27translate(1411.000000,%20823.000000)%27%3e%3ccircle%20id=%27%E6%A4%AD%E5%9C%86%E5%BD%A2%27%20fill=%27%2300CC33%27%20cx=%277%27%20cy=%277%27%20r=%277%27%3e%3c/circle%3e%3crect%20id=%27%E7%9F%A9%E5%BD%A2%E5%A4%87%E4%BB%BD-2%27%20fill=%27%23FFFFFF%27%20x=%274.45454545%27%20y=%276.36363636%27%20width=%275.09090909%27%20height=%271.27272727%27%20rx=%270.636363636%27%3e%3c/rect%3e%3crect%20id=%27%E7%9F%A9%E5%BD%A2%E5%A4%87%E4%BB%BD-8%27%20fill=%27%23FFFFFF%27%20transform=%27translate(7.000000,%207.000000)%20rotate(-270.000000)%20translate(-7.000000,%20-7.000000)%20%27%20x=%274.45454545%27%20y=%276.36363636%27%20width=%275.09090909%27%20height=%271.27272727%27%20rx=%270.636363636%27%3e%3c/rect%3e%3c/g%3e%3c/g%3e%3c/g%3e%3c/svg%3e'
 
 const props = defineProps({
   emptyText: {
@@ -223,6 +224,10 @@ function onMenuCloseCourse(item) {
 function onMenuStopCourse(item) {
   currentStopCourseRecord.value = item || null
   stopTheClassDrawerOpen.value = true
+}
+
+function onMenuResumeCourse() {
+  messageService.info('复课功能开发中')
 }
 
 function onEndedMenuCloseRecord(item) {
@@ -440,8 +445,14 @@ watch(endTheClassDrawerOpen, (value) => {
                   </div>
                   <span class="font-size-14px text-#666  w-90px ">退课</span>
                 </div>
-                <div class="flex items-center gap-2" @click="onMenuStopCourse(item)">
-                  <div>
+                <div
+                  class="flex items-center gap-2"
+                  @click="isTuitionAccountSuspended(item) ? onMenuResumeCourse(item) : onMenuStopCourse(item)"
+                >
+                  <div v-if="isTuitionAccountSuspended(item)">
+                    <img :src="RESUME_MENU_ICON_SRC" alt="复课" class="w-14px h-14px">
+                  </div>
+                  <div v-else>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
                         <svg
@@ -464,7 +475,7 @@ watch(endTheClassDrawerOpen, (value) => {
                       </template>
                     </Icon>
                   </div>
-                  <span class="font-size-14px text-#666 w-90px">停课</span>
+                  <span class="font-size-14px text-#666 w-90px">{{ isTuitionAccountSuspended(item) ? '复课' : '停课' }}</span>
                 </div>
                 <div class="flex items-center gap-2" @click="onMenuCloseCourse(item)">
                   <div>

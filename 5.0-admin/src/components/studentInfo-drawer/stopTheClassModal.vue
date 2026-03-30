@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { CloseOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { addSuspendResumeTuitionAccountOrderApi } from '@/api/edu-center/tuition-account'
+import { addSuspendResumeTuitionAccountOrderApi, getTuitionAccountSubAccountDateInfoApi } from '@/api/edu-center/tuition-account'
 import messageService from '@/utils/messageService'
 
 const props = defineProps({
@@ -20,6 +20,8 @@ const emit = defineEmits(['update:open', 'success'])
 
 const formRef = ref()
 const submitLoading = ref(false)
+const infoLoading = ref(false)
+const subAccountList = ref([])
 
 const openModal = computed({
   get: () => props.open,
@@ -34,12 +36,13 @@ const formState = reactive({
 
 watch(
   () => props.open,
-  (value) => {
+  async (value) => {
     if (!value)
       return
     formState.plannedSuspensionDate = undefined
     formState.plannedResumptionDate = undefined
     formState.remark = ''
+    await loadSubAccountInfo()
   },
 )
 
@@ -79,9 +82,23 @@ const summaryTags = computed(() => {
 const remainQuantityText = computed(() => {
   const remainQuantity = Number(props.record?.remainQuantity || 0)
   const remainFreeQuantity = Number(props.record?.remainFreeQuantity || 0)
+  if (lessonChargingMode.value === 2) {
+    const paidDays = subAccountList.value
+      .filter(item => !item?.isFree)
+      .reduce((sum, item) => sum + Number(item?.remainDays || 0), 0)
+    const freeDays = subAccountList.value
+      .filter(item => item?.isFree)
+      .reduce((sum, item) => sum + Number(item?.remainDays || 0), 0)
+    if (paidDays > 0 || freeDays > 0) {
+      if (paidDays > 0 && freeDays > 0)
+        return `${formatCount(paidDays)}天 + 赠${formatCount(freeDays)}天`
+      if (paidDays > 0)
+        return `${formatCount(paidDays)}天`
+      return `赠${formatCount(freeDays)}天`
+    }
+    return `${formatCount(remainQuantity + remainFreeQuantity)}天`
+  }
   const total = remainQuantity + remainFreeQuantity
-  if (lessonChargingMode.value === 2)
-    return `${formatCount(total)}天`
   if (lessonChargingMode.value === 3)
     return `${formatCount(total)}元`
   return `${formatCount(total)}课时`
@@ -91,6 +108,19 @@ const remainTuitionText = computed(() => `¥ ${formatMoney(props.record?.tuition
 
 const validityText = computed(() => {
   if (lessonChargingMode.value === 2) {
+    const lines = subAccountList.value
+      .filter(item => Number(item?.remainDays || 0) > 0)
+      .map((item) => {
+        const start = formatDate(item?.startDate || item?.activedAt)
+        const end = formatDate(item?.endDate)
+        if (start === '-' || end === '-')
+          return ''
+        return `${start} ~ ${end}`
+      })
+      .filter(Boolean)
+    const uniqueLines = Array.from(new Set(lines))
+    if (uniqueLines.length)
+      return uniqueLines.join('，')
     const start = formatDate(props.record?.validDate || props.record?.activedAt)
     const end = formatDate(props.record?.endDate || props.record?.expireTime)
     if (start === '-' || end === '-')
@@ -101,6 +131,28 @@ const validityText = computed(() => {
     return '不限制'
   return formatDate(props.record?.expireTime)
 })
+
+async function loadSubAccountInfo() {
+  const tuitionAccountId = String(props.record?.id || props.record?.tuitionAccountId || '')
+  if (!tuitionAccountId) {
+    subAccountList.value = []
+    return
+  }
+  infoLoading.value = true
+  try {
+    const res = await getTuitionAccountSubAccountDateInfoApi({ tuitionAccountId })
+    if (res.code !== 200)
+      throw new Error(res.message || '加载账期明细失败')
+    subAccountList.value = Array.isArray(res.result?.list) ? res.result.list : []
+  }
+  catch (error) {
+    subAccountList.value = []
+    messageService.error(error?.message || '加载账期明细失败')
+  }
+  finally {
+    infoLoading.value = false
+  }
+}
 
 function formatDate(value) {
   if (!value || `${value}`.startsWith('0001-01-01'))
@@ -225,6 +277,7 @@ async function handleSubmit() {
     </template>
     <a-alert message="停课后，学员报读课程将停止计费，且无法进行点名操作。" show-icon type="info" class="text-#06f border-none bg-#e6f0ff" />
     <div class="contenter scrollbar">
+      <a-spin :spinning="infoLoading">
       <a-form ref="formRef" :model="formState" :label-col="{ span: 4 }" :wrapper-col="{ span: 18 }">
         <div class="text-20px font-800 mb-4px">
           {{ courseName }}
@@ -270,6 +323,7 @@ async function handleSubmit() {
           />
         </a-form-item>
       </a-form>
+      </a-spin>
     </div>
     <template #footer>
       <a-button danger ghost @click="closeFun">
