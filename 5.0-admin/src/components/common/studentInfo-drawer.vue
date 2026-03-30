@@ -8,6 +8,7 @@ import DeleteConfirmModal from './DeleteConfirmModal.vue'
 import AssignSalesModal from './assign-sales-modal.vue'
 import CreateStudent from './create-student.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
+import { useStudentFields } from '@/composables/useStudentFields'
 import { batchAssignSalespersonApi, batchDeleteIntendedStudentApi, batchTransferToPublicPoolApi, getIntentStudentDetailApi, listStudentChangeInfoApi, updateIntendedStudentApi, updateStatusApi } from '@/api/enroll-center/intention-student'
 import { getStudentPhoneNumberApi } from '@/api/common/config'
 import { useStudentStore } from '@/stores/student'
@@ -75,6 +76,7 @@ async function handleSubmitDelete() {
 
 const studentStore = useStudentStore()
 const userStore = useUserStore()
+const { systemDefaultIsDisplayList, getAllStuFields } = useStudentFields()
 const studentId = computed(() => studentStore.studentId)
 const studentDetail = ref({})
 const oneToOneClassTeacherNames = ref([])
@@ -158,6 +160,10 @@ async function getOneToOneClassTeachers() {
   }
 }
 
+function isSystemFieldVisible(fieldKey) {
+  return systemDefaultIsDisplayList.value.some(item => item.fieldKey === fieldKey)
+}
+
 function refreshPrimaryCourseList() {
   nextTick(() => {
     registerForCoursesRef.value?.getTuitionAccountList()
@@ -188,6 +194,7 @@ watch(() => openDrawer.value, (newVal) => {
   if (newVal) {
     getIntentStudentDetail()
     getOneToOneClassTeachers()
+    getAllStuFields({ filter: 3 })
     if (activeKey.value === '0') {
       refreshPrimaryCourseList()
     }
@@ -797,10 +804,10 @@ async function handlePhoneToggle() {
               </a-dropdown>
             </div>
           </a-descriptions-item>
-          <a-descriptions-item label="微信号">
+          <a-descriptions-item v-if="isSystemFieldVisible('微信号')" label="微信号">
             {{ studentDetail.weChatNumber || '-' }}
           </a-descriptions-item>
-          <a-descriptions-item label="年级">
+          <a-descriptions-item v-if="isSystemFieldVisible('年级')" label="年级">
             {{ studentDetail.grade || '-' }}
           </a-descriptions-item>
           <a-descriptions-item>
@@ -885,10 +892,10 @@ async function handlePhoneToggle() {
         <a-descriptions-item label="学员状态">
           {{ studentStatusText }}
         </a-descriptions-item>
-        <a-descriptions-item label="微信号">
+        <a-descriptions-item v-if="isSystemFieldVisible('微信号')" label="微信号">
           {{ studentDetail.weChatNumber || '-' }}
         </a-descriptions-item>
-        <a-descriptions-item label="家庭住址">
+        <a-descriptions-item v-if="isSystemFieldVisible('家庭住址')" label="家庭住址">
           <a-tooltip v-if="studentDetail.address" :title="studentDetail.address" placement="topLeft">
             <div class="address-text">
               {{ studentDetail.address }}
