@@ -938,7 +938,7 @@ function formatLessonDaySummary(record) {
 
 function getOpenClassStatus(status) {
   if (status === 2)
-    return { text: '已结班', className: 'text-#888 bg-#f5f5f5' }
+    return { text: '已结班', className: ' bg-#f5f5f5' }
   return { text: '开班中', className: 'text-#06f bg-#e6f0ff' }
 }
 
@@ -950,7 +950,7 @@ function getClassStudentStatus(status) {
   if (status === 2)
     return { text: '已开课', className: 'text-#f90 bg-#fff5e6' }
   if (status === 3)
-    return { text: '已结课', className: 'text-#888 bg-#f5f5f5' }
+    return { text: '已结课', className: ' bg-#f5f5f5' }
   return { text: '正常', className: 'text-#0c3 bg-#e6ffec' }
 }
 
@@ -1564,10 +1564,10 @@ onMounted(() => {
               </template>
               <template v-if="column.key === 'account'">
                 <div>{{ record.tuitionAccount?.productName || '-' }}</div>
-                <div class="text-3 text-#888">
+                <div class="text-3 ">
                   {{ accountDeductTeachMethodText(record.tuitionAccount?.lessonType) }}｜{{ getChargingModeText(effectiveListLessonChargingMode(record)) }}
                 </div>
-                <div class="text-3 text-#888">
+                <div class="text-3 ">
                   账户{{ Number(record.tuitionAccountCount || 0) }}个
                 </div>
               </template>
@@ -1575,7 +1575,7 @@ onMounted(() => {
                 <div>
                   {{ Number(record.tuitionAccount?.totalQuantity || 0) + Number(record.tuitionAccount?.totalFreeQuantity || 0) }}{{ getQuantityUnit(effectiveListLessonChargingMode(record)) }}
                 </div>
-                <div class="text-3 text-#888">
+                <div class="text-3 ">
                   购{{ record.tuitionAccount?.totalQuantity || 0 }}{{ getQuantityUnit(effectiveListLessonChargingMode(record)) }}
                   <span v-if="Number(record.tuitionAccount?.totalFreeQuantity || 0) > 0">
                     +赠{{ record.tuitionAccount?.totalFreeQuantity || 0 }}{{ getQuantityUnit(effectiveListLessonChargingMode(record)) }}
@@ -1619,7 +1619,7 @@ onMounted(() => {
                 {{ shouldShowSchedulePlaceholder(record) ? '-' : formatDateTime(record.lastFinishedLessonDay) }}
               </template>
               <template v-if="column.key === 'isScheduled'">
-                <span class="status-indicator" :class="record.isScheduled ? 'text-#0c3' : 'text-#666'">
+                <span class="status-indicator" :class="record.isScheduled ? 'text-#0c3' : ''">
                   <span class="status-dot" :class="record.isScheduled ? 'status-dot--success' : 'status-dot--warning'" />
                   {{ record.isScheduled ? '已排课' : '未排课' }}
                 </span>
