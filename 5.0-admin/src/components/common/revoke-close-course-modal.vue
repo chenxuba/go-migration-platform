@@ -175,8 +175,15 @@ const remainQuantityLabel = computed(() => {
 
 const remainQuantityText = computed(() => {
   if (previewData.value) {
-    const totalQuantity = Number(previewData.value?.quantity || 0) + Number(previewData.value?.freeQuantity || 0)
+    const quantity = Number(previewData.value?.quantity || 0)
+    const freeQuantity = Number(previewData.value?.freeQuantity || 0)
+    const totalQuantity = quantity + freeQuantity
     const unit = getQuantityUnit(lessonChargingMode.value)
+    if (lessonChargingMode.value === 2 && freeQuantity > 0) {
+      if (quantity > 0)
+        return `${formatCount(quantity)}${unit} + 赠${formatCount(freeQuantity)}${unit}`
+      return `赠${formatCount(freeQuantity)}${unit}`
+    }
     return unit ? `${formatCount(totalQuantity)} ${unit}` : formatCount(totalQuantity)
   }
   return '-'
@@ -192,17 +199,43 @@ const validityLabel = computed(() => (
   lessonChargingMode.value === 2 ? '有效时段' : '有效期至'
 ))
 
-const validPeriodText = computed(() => {
+const validPeriodLines = computed(() => {
   if (lessonChargingMode.value === 1)
-    return '无'
-  const periods = Array.isArray(previewData.value?.subTuitionAccounts) ? previewData.value.subTuitionAccounts : []
-  const first = periods[0]
-  const last = periods[periods.length - 1]
-  const start = formatDate(first?.startDate || subAccountList.value?.[0]?.startDate || subAccountList.value?.[0]?.activedAt || props.record?.validDate || props.record?.activedAt)
-  const end = formatDate(last?.endDate || subAccountList.value?.[subAccountList.value.length - 1]?.endDate || props.record?.endDate || props.record?.expireTime)
-  if (start !== '-' && end !== '-')
-    return `${start} ~ ${end}`
-  return '-'
+    return ['无']
+
+  const previewPeriods = Array.isArray(previewData.value?.subTuitionAccounts) ? previewData.value.subTuitionAccounts : []
+  const lines = previewPeriods
+    .map((period) => {
+      const start = formatDate(period?.startDate)
+      const end = formatDate(period?.endDate)
+      if (start === '-' && end === '-')
+        return ''
+      return `${start} ~ ${end}`
+    })
+    .filter(Boolean)
+
+  if (lines.length)
+    return lines
+
+  const fallbackLines = (Array.isArray(subAccountList.value) ? subAccountList.value : [])
+    .map((item) => {
+      const start = formatDate(item?.startDate || item?.activedAt)
+      const end = formatDate(item?.endDate)
+      if (start === '-' && end === '-')
+        return ''
+      return `${start} ~ ${end}`
+    })
+    .filter(Boolean)
+
+  if (fallbackLines.length)
+    return fallbackLines
+
+  const start = formatDate(props.record?.validDate || props.record?.activedAt)
+  const end = formatDate(props.record?.endDate || props.record?.expireTime)
+  if (start !== '-' || end !== '-')
+    return [`${start} ~ ${end}`]
+
+  return ['-']
 })
 
 const closeDateText = computed(() => {
@@ -330,7 +363,11 @@ async function handleSubmit() {
               {{ remainTuitionText }}
             </a-descriptions-item>
             <a-descriptions-item :label="validityLabel">
-              {{ validPeriodText }}
+              <div class="flex flex-col gap-4px">
+                <span v-for="(line, index) in validPeriodLines" :key="`period-${index}`">
+                  {{ line }}
+                </span>
+              </div>
             </a-descriptions-item>
             <a-descriptions-item label="结课日期">
               {{ closeDateText }}

@@ -124,7 +124,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			AND ta.inst_id = ?
 			AND ta.student_id = ?
 		GROUP BY ic.id, ic.name, ic.teach_method, icq.lesson_model
-		ORDER BY MAX(ta.create_time) DESC
+		ORDER BY (`+effectiveTuitionAccountStatusSQL+` = 3) ASC, MAX(ta.create_time) DESC
 	`, instID, studentID)
 	if err != nil {
 		return model.TuitionAccountReadingListResult{}, err

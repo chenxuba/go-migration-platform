@@ -484,6 +484,21 @@ watch(endTheClassDrawerOpen, (value) => {
                   <span class="image-wrapper suspendResumen" />
                   <span class="font-size-14px text-#666 w-90px">停/复课记录</span>
                 </div>
+                <div class="flex items-center gap-2" @click="onEndedMenuCloseRecord(item)">
+                  <div>
+                    <Icon :style="{ color: 'hotpink' }">
+                      <template #component>
+                        <svg width="14px" height="14px" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">
+                          <circle fill="#666666" cx="7" cy="7" r="7" />
+                          <rect fill="#FFFFFF" x="4.2" y="3.8" width="5.6" height="6.4" rx="0.6" />
+                          <rect fill="#666666" x="5.1" y="5.2" width="3.8" height="0.55" rx="0.2" />
+                          <rect fill="#666666" x="5.1" y="6.35" width="2.8" height="0.55" rx="0.2" />
+                        </svg>
+                      </template>
+                    </Icon>
+                  </div>
+                  <span class="font-size-14px text-#666 w-90px">结课记录</span>
+                </div>
                 </template>
                 <template v-else>
                 <div class="flex items-center gap-2" @click="onEndedMenuRenew">
