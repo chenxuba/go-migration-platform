@@ -1,8 +1,8 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { CloseOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { getTuitionAccountSubAccountDateInfoApi } from '@/api/edu-center/tuition-account'
+import { addSuspendResumeTuitionAccountOrderApi, getTuitionAccountSubAccountDateInfoApi } from '@/api/edu-center/tuition-account'
 import messageService from '@/utils/messageService'
 
 const props = defineProps({
@@ -16,9 +16,11 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:open'])
+const emit = defineEmits(['update:open', 'success'])
 
+const formRef = ref()
 const infoLoading = ref(false)
+const submitLoading = ref(false)
 const subAccountList = ref([])
 
 const openModal = computed({
@@ -26,11 +28,24 @@ const openModal = computed({
   set: value => emit('update:open', value),
 })
 
+const ZERO_TIME = '0001-01-01T00:00:00'
+
+const formState = reactive({
+  resumeDate: undefined,
+  expireType: 2,
+  expireTime: undefined,
+  remark: '',
+})
+
 watch(
   () => props.open,
   async (value) => {
     if (!value)
       return
+    formState.resumeDate = props.record?.planResumeTime ? dayjs(props.record.planResumeTime).format('YYYY-MM-DD') : undefined
+    formState.expireType = props.record?.enableExpireTime ? 2 : 3
+    formState.expireTime = props.record?.expireTime ? dayjs(props.record.expireTime).format('YYYY-MM-DD') : undefined
+    formState.remark = ''
     await loadSubAccountInfo()
   },
 )
@@ -103,6 +118,18 @@ const suspendDateText = computed(() => {
 })
 
 const suspendRemarkText = computed(() => '-')
+const alreadySetResumeDateText = computed(() => {
+  const date = formatDate(formState.resumeDate || props.record?.planResumeTime)
+  return date !== '-' ? `已设置复课日期： ${date}` : ''
+})
+
+const shouldShowExpireOptions = computed(() => lessonChargingMode.value === 2 || !!props.record?.enableExpireTime)
+
+const resumeDateRules = computed(() => [{ required: true, message: '请选择日期' }])
+
+const expireTimeRules = computed(() => (
+  Number(formState.expireType) === 1 ? [{ required: true, message: '请选择日期' }] : []
+))
 
 async function loadSubAccountInfo() {
   const tuitionAccountId = String(props.record?.id || props.record?.tuitionAccountId || '')
@@ -149,7 +176,82 @@ function formatCount(value) {
   return num.toFixed(2)
 }
 
+function disabledResumeDate(current) {
+  if (!current)
+    return false
+  if (current.endOf('day').isBefore(dayjs().startOf('day')))
+    return true
+  const suspendDate = props.record?.changeStatusTime || props.record?.suspendedTime || props.record?.planSuspendTime
+  if (!suspendDate)
+    return false
+  return current.endOf('day').isBefore(dayjs(suspendDate).startOf('day'))
+}
+
+function disabledExpireDate(current) {
+  if (!current)
+    return false
+  if (current.endOf('day').isBefore(dayjs().startOf('day')))
+    return true
+  if (!formState.resumeDate)
+    return false
+  return current.endOf('day').isBefore(dayjs(formState.resumeDate).startOf('day'))
+}
+
+function toPayloadDateTime(value) {
+  if (!value)
+    return ZERO_TIME
+  const parsed = dayjs(value).startOf('day')
+  if (!parsed.isValid())
+    return ZERO_TIME
+  return parsed.format('YYYY-MM-DDTHH:mm:ssZ')
+}
+
+function resolveExpireTimePayload() {
+  if (Number(formState.expireType) === 1) {
+    return formState.expireTime || ZERO_TIME
+  }
+  return ZERO_TIME
+}
+
+async function handleSubmit() {
+  try {
+    await formRef.value?.validate?.()
+    const tuitionAccountId = String(props.record?.id || props.record?.tuitionAccountId || '')
+    if (!tuitionAccountId) {
+      messageService.error('缺少学费账户ID')
+      return
+    }
+    submitLoading.value = true
+    const res = await addSuspendResumeTuitionAccountOrderApi({
+      tuitionAccountId,
+      type: 2,
+      expireTime: resolveExpireTimePayload(),
+      expireType: Number(formState.expireType),
+      remark: formState.remark?.trim() || '',
+      suspendDate: ZERO_TIME,
+      resumeDate: toPayloadDateTime(formState.resumeDate),
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '复课失败')
+    messageService.success('复课设置成功')
+    emit('success', {
+      result: res.result,
+      record: props.record,
+    })
+    closeFun()
+  }
+  catch (error) {
+    if (error?.errorFields)
+      return
+    messageService.error(error?.message || '复课失败')
+  }
+  finally {
+    submitLoading.value = false
+  }
+}
+
 function closeFun() {
+  formRef.value?.resetFields?.()
   openModal.value = false
 }
 </script>
@@ -208,12 +310,58 @@ function closeFun() {
             </a-descriptions-item>
           </a-descriptions>
           <a-divider class="my-16px" />
-          <a-form :label-col="{ span: 4 }" :wrapper-col="{ span: 18 }">
-            <a-form-item label="复课日期" required>
-              <a-date-picker value-format="YYYY-MM-DD" class="w-200px" placeholder="请选择日期" />
+          <a-form ref="formRef" :model="formState" :label-col="{ span: 4 }" :wrapper-col="{ span: 18 }">
+            <a-form-item label="复课日期" name="resumeDate" :rules="resumeDateRules" required>
+              <div class="flex items-center gap-16px">
+                <a-date-picker
+                  v-model:value="formState.resumeDate"
+                  value-format="YYYY-MM-DD"
+                  class="w-200px"
+                  placeholder="请选择日期"
+                  :disabled-date="disabledResumeDate"
+                />
+                <span v-if="alreadySetResumeDateText" class="text-#f90 text-13px">
+                  {{ alreadySetResumeDateText }}
+                </span>
+              </div>
+            </a-form-item>
+            <a-form-item v-if="shouldShowExpireOptions" label="现有效期至" required>
+              <a-radio-group v-model:value="formState.expireType">
+                <a-radio :value="3">
+                  不限制
+                </a-radio>
+                <a-radio :value="1">
+                  设置有效期至
+                </a-radio>
+                <a-radio :value="2">
+                  自动顺延
+                </a-radio>
+              </a-radio-group>
+              <a-tooltip placement="top">
+                <template #title>
+                  <div>现有效期至 = 原有效期 + 已停课时间</div>
+                  <div>如：现有效期至（2023-11-14）= 原有效期至（2023-11-11）+ 已停课 3 天</div>
+                </template>
+                <span class="ml-8px inline-flex w-18px h-18px rounded-full border border-#1677ff text-#1677ff items-center justify-center text-12px cursor-pointer">?</span>
+              </a-tooltip>
+            </a-form-item>
+            <a-form-item
+              v-if="Number(formState.expireType) === 1"
+              label=""
+              name="expireTime"
+              :rules="expireTimeRules"
+              :colon="false"
+            >
+              <a-date-picker
+                v-model:value="formState.expireTime"
+                value-format="YYYY-MM-DD"
+                class="w-200px"
+                placeholder="请选择日期"
+                :disabled-date="disabledExpireDate"
+              />
             </a-form-item>
             <a-form-item label="复课备注">
-              <a-input placeholder="请输入" />
+              <a-input v-model:value="formState.remark" placeholder="请输入" />
             </a-form-item>
           </a-form>
         </div>
@@ -223,7 +371,7 @@ function closeFun() {
       <a-button @click="closeFun">
         关闭
       </a-button>
-      <a-button type="primary">
+      <a-button type="primary" :loading="submitLoading" @click="handleSubmit">
         确定
       </a-button>
     </template>

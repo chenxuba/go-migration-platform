@@ -215,6 +215,12 @@ async function handleStopCourseSuccess() {
   await getTuitionAccountList()
 }
 
+async function handleResumeCourseSuccess() {
+  resumeTheClassDrawerOpen.value = false
+  currentResumeCourseRecord.value = null
+  await getTuitionAccountList()
+}
+
 async function handleCloseCourseRecordSuccess() {
   await getTuitionAccountList()
 }
@@ -753,6 +759,7 @@ watch(endTheClassDrawerOpen, (value) => {
     <resumeTheClassModal
       v-model:open="resumeTheClassDrawerOpen"
       :record="currentResumeCourseRecord"
+      @success="handleResumeCourseSuccess"
     />
     <endTheClassModal
       v-model:open="endTheClassDrawerOpen"

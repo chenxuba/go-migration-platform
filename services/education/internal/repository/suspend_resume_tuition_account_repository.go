@@ -45,6 +45,7 @@ func parseFlexibleDateTime(value string) (time.Time, error) {
 	}
 	layouts := []string{
 		time.RFC3339,
+		"2006-01-02T15:04:05",
 		"2006-01-02 15:04:05",
 		"2006-01-02",
 	}
@@ -58,7 +59,7 @@ func parseFlexibleDateTime(value string) (time.Time, error) {
 
 func parseOptionalDateTime(value string) (time.Time, bool, error) {
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
+	if trimmed == "" || strings.HasPrefix(trimmed, "0001-01-01") {
 		return time.Time{}, false, nil
 	}
 	parsed, err := parseFlexibleDateTime(trimmed)
@@ -68,16 +69,20 @@ func parseOptionalDateTime(value string) (time.Time, bool, error) {
 	return parsed, true, nil
 }
 
+func endOfDayTime(value time.Time) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 23, 59, 59, 0, value.Location())
+}
+
 func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context, instID, operatorID int64, dto model.SuspendResumeTuitionAccountOrderDTO) (model.SuspendResumeTuitionAccountOrderResult, error) {
 	taID, err := strconv.ParseInt(strings.TrimSpace(dto.TuitionAccountID), 10, 64)
 	if err != nil || taID <= 0 {
 		return model.SuspendResumeTuitionAccountOrderResult{}, errors.New("tuitionAccountId 无效")
 	}
-	if dto.Type != 1 {
-		return model.SuspendResumeTuitionAccountOrderResult{}, errors.New("暂只支持停课")
+	if dto.Type != 1 && dto.Type != 2 {
+		return model.SuspendResumeTuitionAccountOrderResult{}, errors.New("type 无效")
 	}
 
-	suspendDate, err := parseFlexibleDateTime(dto.SuspendDate)
+	suspendDate, hasSuspendDate, err := parseOptionalDateTime(dto.SuspendDate)
 	if err != nil {
 		return model.SuspendResumeTuitionAccountOrderResult{}, err
 	}
@@ -85,7 +90,13 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 	if err != nil {
 		return model.SuspendResumeTuitionAccountOrderResult{}, err
 	}
-	if hasResumeDate && resumeDate.Before(suspendDate) {
+	if dto.Type == 1 && !hasSuspendDate {
+		return model.SuspendResumeTuitionAccountOrderResult{}, errors.New("计划停课日期不能为空")
+	}
+	if dto.Type == 2 && !hasResumeDate {
+		return model.SuspendResumeTuitionAccountOrderResult{}, errors.New("复课日期不能为空")
+	}
+	if hasResumeDate && hasSuspendDate && resumeDate.Before(suspendDate) {
 		return model.SuspendResumeTuitionAccountOrderResult{}, errors.New("计划复课日期不能早于计划停课日期")
 	}
 	expireTime, hasExpireTime, err := parseOptionalDateTime(dto.ExpireTime)
@@ -107,7 +118,12 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 	if err != nil {
 		return model.SuspendResumeTuitionAccountOrderResult{}, err
 	}
-	accountIDs, err := repo.ListTuitionAccountIDsForStudentCourseBucket(ctx, tx, instID, selected.studentID, selected.courseID, bucket.teachMethod, bucket.lessonModelCode)
+	var accountIDs []int64
+	if dto.Type == 2 {
+		accountIDs, err = repo.ListTuitionAccountIDsForStudentCourseBucketAllStatuses(ctx, tx, instID, selected.studentID, selected.courseID, bucket.teachMethod, bucket.lessonModelCode)
+	} else {
+		accountIDs, err = repo.ListTuitionAccountIDsForStudentCourseBucket(ctx, tx, instID, selected.studentID, selected.courseID, bucket.teachMethod, bucket.lessonModelCode)
+	}
 	if err != nil {
 		return model.SuspendResumeTuitionAccountOrderResult{}, err
 	}
@@ -117,9 +133,13 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 
 	primaryAccountID := accountIDs[0]
 	now := time.Now()
-	isImmediateSuspend := !suspendDate.After(now)
+	isImmediateSuspend := dto.Type == 1 && !suspendDate.After(now)
+	isImmediateResume := dto.Type == 2 && !resumeDate.After(now)
 
-	var suspendDateArg any = suspendDate
+	var suspendDateArg any
+	if hasSuspendDate {
+		suspendDateArg = suspendDate
+	}
 	var resumeDateArg any
 	if hasResumeDate {
 		resumeDateArg = resumeDate
@@ -148,15 +168,85 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 		return model.SuspendResumeTuitionAccountOrderResult{}, err
 	}
 
-	args := make([]any, 0, len(accountIDs)+7)
-	args = append(args, suspendDateArg, resumeDateArg, operatorID)
+	args := make([]any, 0, len(accountIDs)+16)
 	statusSQL := ""
-	if isImmediateSuspend {
-		statusSQL = `,
-			status = ?,
-			suspended_time = ?,
-			status_change_time = ?`
-		args = append(args, model.TuitionAccountStatusSuspended, suspendDateArg, now)
+	updateExpireSQL := ""
+	switch dto.Type {
+	case 1:
+		args = append(args, suspendDateArg, resumeDateArg, operatorID)
+		if isImmediateSuspend {
+			statusSQL = `,
+				status = ?,
+				suspended_time = ?,
+				status_change_time = ?`
+			args = append(args, model.TuitionAccountStatusSuspended, suspendDateArg, now)
+		}
+	case 2:
+		resumePlanArg := resumeDateArg
+		if isImmediateResume {
+			resumePlanArg = nil
+		}
+		args = append(args, nil, resumePlanArg, operatorID)
+		pausedDays := 0
+		if hasResumeDate {
+			baseSuspendDate := suspendDate
+			if !hasSuspendDate {
+				var suspendedTime sql.NullTime
+				if err := tx.QueryRowContext(ctx, `
+					SELECT MAX(COALESCE(suspended_time, plan_suspend_time, status_change_time))
+					FROM tuition_account
+					WHERE id IN (`+buildPlaceholders(len(accountIDs))+`)
+					  AND inst_id = ?
+					  AND del_flag = 0
+				`, append(int64SliceToAny(accountIDs), instID)...).Scan(&suspendedTime); err != nil {
+					return model.SuspendResumeTuitionAccountOrderResult{}, err
+				}
+				if suspendedTime.Valid {
+					baseSuspendDate = suspendedTime.Time
+					hasSuspendDate = true
+				}
+			}
+			if hasSuspendDate {
+				pausedDays = int(startOfDayTime(resumeDate).Sub(startOfDayTime(baseSuspendDate)).Hours() / 24)
+				if pausedDays < 0 {
+					pausedDays = 0
+				}
+			}
+		}
+		var expireType1Arg any = nil
+		var expireType1Enabled int = 1
+		if dto.ExpireType == 1 {
+			if !hasExpireTime {
+				return model.SuspendResumeTuitionAccountOrderResult{}, errors.New("请选择现有效期至")
+			}
+			expireType1Arg = endOfDayTime(expireTime)
+			updateExpireSQL = `,
+				enable_expire_time = ?,
+				expire_time = ?`
+			args = append(args, expireType1Enabled, expireType1Arg)
+		} else if dto.ExpireType == 3 {
+			updateExpireSQL = `,
+				enable_expire_time = ?,
+				expire_time = NULL,
+				valid_date = NULL,
+				end_date = NULL`
+			args = append(args, 0)
+		} else if dto.ExpireType == 2 {
+			updateExpireSQL = `,
+				expire_time = CASE WHEN expire_time IS NULL THEN NULL ELSE DATE_ADD(expire_time, INTERVAL ? DAY) END,
+				valid_date = CASE WHEN valid_date IS NULL THEN NULL ELSE DATE_ADD(valid_date, INTERVAL ? DAY) END,
+				end_date = CASE WHEN end_date IS NULL THEN NULL ELSE DATE_ADD(end_date, INTERVAL ? DAY) END`
+			args = append(args, pausedDays, pausedDays, pausedDays)
+		}
+		if isImmediateResume {
+			statusSQL = `,
+				status = ?,
+				suspended_time = NULL,
+				status_change_time = ?,
+				plan_suspend_time = NULL,
+				plan_resume_time = NULL`
+			args = append(args, model.TuitionAccountStatusActive, now)
+		}
 	}
 	for _, id := range accountIDs {
 		args = append(args, id)
@@ -168,7 +258,7 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 		SET plan_suspend_time = ?,
 		    plan_resume_time = ?,
 		    update_id = ?,
-		    update_time = NOW()`+statusSQL+`
+		    update_time = NOW()`+updateExpireSQL+statusSQL+`
 		WHERE id IN (`+buildPlaceholders(len(accountIDs))+`)
 		  AND inst_id = ?
 		  AND del_flag = 0
