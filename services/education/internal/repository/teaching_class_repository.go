@@ -1293,6 +1293,13 @@ type oneToOneTuitionBucket struct {
 	lessonModelCode int
 }
 
+type oneToOneDeductionAggregateKey struct {
+	courseID            int64
+	teachMethod         int
+	lessonChargingMode  int
+	hasBucketConstraint bool
+}
+
 func (repo *Repository) loadOneToOneDeductBindTx(ctx context.Context, tx *sql.Tx, instID, studentID, taID int64) (oneToOneDeductBind, error) {
 	var orderID, ocdID, quoteID sql.NullInt64
 	var taStudentID int64
@@ -1367,7 +1374,34 @@ func (repo *Repository) loadOneToOneTuitionBucketTx(ctx context.Context, tx *sql
 	return bucket, nil
 }
 
-// CreateOneToOne 手动创建 1 对 1：tuitionAccountId 为数字 id 或 agg:{扣费课程id}（按课程汇总时多笔账户各写一条班员，列表课时与下拉一致）
+func parseOneToOneDeductionAggregateKey(raw string) (oneToOneDeductionAggregateKey, error) {
+	key := strings.TrimSpace(strings.ToLower(raw))
+	if !strings.HasPrefix(key, "agg:") {
+		return oneToOneDeductionAggregateKey{}, errors.New("请选择扣费学费账户")
+	}
+	parts := strings.Split(strings.TrimSpace(raw[4:]), ":")
+	if len(parts) <= 0 {
+		return oneToOneDeductionAggregateKey{}, errors.New("请选择扣费学费账户")
+	}
+	courseID, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+	if err != nil || courseID <= 0 {
+		return oneToOneDeductionAggregateKey{}, errors.New("请选择扣费学费账户")
+	}
+	keyDTO := oneToOneDeductionAggregateKey{courseID: courseID}
+	if len(parts) >= 3 {
+		teachMethod, terr := strconv.Atoi(strings.TrimSpace(parts[1]))
+		lessonModel, merr := strconv.Atoi(strings.TrimSpace(parts[2]))
+		if terr != nil || merr != nil {
+			return oneToOneDeductionAggregateKey{}, errors.New("请选择扣费学费账户")
+		}
+		keyDTO.teachMethod = teachMethod
+		keyDTO.lessonChargingMode = lessonModel
+		keyDTO.hasBucketConstraint = true
+	}
+	return keyDTO, nil
+}
+
+// CreateOneToOne 手动创建 1 对 1：tuitionAccountId 为数字 id 或 agg:{扣费课程id}:{授课方式}:{计费模式}（按计费桶汇总时多笔账户各写一条班员，列表课时与下拉一致）
 func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID int64, dto model.OneToOneCreateDTO) (int64, error) {
 	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
 	if err != nil || studentID <= 0 {
@@ -1441,16 +1475,24 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 
 	var binds []oneToOneDeductBind
 	if strings.HasPrefix(strings.ToLower(tuitionKey), "agg:") {
-		deductCourseID, perr := strconv.ParseInt(strings.TrimSpace(tuitionKey[4:]), 10, 64)
-		if perr != nil || deductCourseID <= 0 {
-			return 0, errors.New("请选择扣费学费账户")
+		aggKey, perr := parseOneToOneDeductionAggregateKey(tuitionKey)
+		if perr != nil {
+			return 0, perr
 		}
-		taIDs, qerr := repo.ListTuitionAccountIDsForStudentCourse(ctx, tx, instID, studentID, deductCourseID)
+		var (
+			taIDs []int64
+			qerr  error
+		)
+		if aggKey.hasBucketConstraint {
+			taIDs, qerr = repo.ListTuitionAccountIDsForStudentCourseBucket(ctx, tx, instID, studentID, aggKey.courseID, aggKey.teachMethod, aggKey.lessonChargingMode)
+		} else {
+			taIDs, qerr = repo.ListTuitionAccountIDsForStudentCourse(ctx, tx, instID, studentID, aggKey.courseID)
+		}
 		if qerr != nil {
 			return 0, qerr
 		}
 		if len(taIDs) == 0 {
-			return 0, errors.New("所选扣费课程下暂无在读学费账户")
+			return 0, errors.New("所选扣费账户下暂无在读学费账户")
 		}
 		for _, tid := range taIDs {
 			b, verr := repo.loadOneToOneDeductBindTx(ctx, tx, instID, studentID, tid)

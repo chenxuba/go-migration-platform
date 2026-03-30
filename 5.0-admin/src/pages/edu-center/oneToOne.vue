@@ -575,7 +575,7 @@ async function fetchCreateTuitionAccounts() {
 }
 
 function formatCreateTuitionAccountLabel(acc) {
-  const mode = Number(acc?.lessonChargingMode)
+  const mode = effectiveAccountChargingMode(acc)
   const unit = getQuantityUnit(mode)
   const modeText = getChargingModeText(mode)
   const title = (acc?.lessonName || acc?.productName || '-').trim()
@@ -824,12 +824,27 @@ function normalizeAccountChargingMode(mode) {
   return m
 }
 
+function effectiveAccountChargingMode(acc) {
+  const m = normalizeAccountChargingMode(acc?.lessonChargingMode)
+  if (m > 0)
+    return m
+  const totalQty = Number(acc?.totalQuantity || 0) + Number(acc?.totalFreeQuantity || 0)
+  const remainQty = Number(acc?.quantity || 0) + Number(acc?.freeQuantity || 0)
+  if ((totalQty > 0 || remainQty > 0) && acc?.enableExpireTime)
+    return 2
+  if (totalQty > 0 || remainQty > 0)
+    return 1
+  if (Number(acc?.totalTuition || 0) > 0 || Number(acc?.tuition || 0) > 0)
+    return 3
+  return 0
+}
+
 function switchAccountQuantityUnit(acc) {
-  return getQuantityUnit(normalizeAccountChargingMode(acc?.lessonChargingMode))
+  return getQuantityUnit(effectiveAccountChargingMode(acc))
 }
 
 function switchAccountRemainText(acc) {
-  const mode = normalizeAccountChargingMode(acc?.lessonChargingMode)
+  const mode = effectiveAccountChargingMode(acc)
   if (mode === 3)
     return `剩余金额：${formatMoney(acc?.tuition)}`
   return `剩余课时：${Number(acc?.quantity || 0) + Number(acc?.freeQuantity || 0)}${switchAccountQuantityUnit(acc)}`
@@ -1682,7 +1697,7 @@ onMounted(() => {
                     {{ accountDeductTeachMethodText(acc.lessonType) }}
                   </a-tag>
                   <a-tag color="#eef3ff" :bordered="false">
-                    {{ getChargingModeText(normalizeAccountChargingMode(acc.lessonChargingMode)) }}
+                    {{ getChargingModeText(effectiveAccountChargingMode(acc)) }}
                   </a-tag>
                 </div>
               </div>

@@ -375,12 +375,18 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 	return out, rows.Err()
 }
 
-// ListStudentOneToOneDeductionTuitionAccounts 学员名下「在读 + 班级授课或 1v1」扣费账户，按课程汇总一行（多笔订单课时/余额相加）。
-// id 为 agg:{courseId}；创建 1 对 1 时服务端会为该课程下每笔 tuition_account 各插入一条 teaching_class_student，列表汇总与下拉一致。
+// ListStudentOneToOneDeductionTuitionAccounts 学员名下「在读 + 班级授课或 1v1」扣费账户，
+// 按课程 + 授课方式 + 计费模式聚合一行（多笔订单课时/余额相加）。
+// id 为 agg:{courseId}:{teachMethod}:{lessonModel}；创建 1 对 1 时服务端仅绑定该聚合桶下的 tuition_account。
 func (repo *Repository) ListStudentOneToOneDeductionTuitionAccounts(ctx context.Context, instID, studentID int64) ([]model.StudentLessonTuitionAccountItem, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
-			CONCAT('agg:', CAST(agg.course_id AS CHAR)),
+			CONCAT(
+				'agg:',
+				CAST(agg.course_id AS CHAR), ':',
+				CAST(agg.teach_method AS CHAR), ':',
+				CAST(agg.lesson_charging_mode_key AS CHAR)
+			),
 			CAST(agg.student_id AS CHAR),
 			CAST(agg.course_id AS CHAR),
 			IFNULL(agg.lesson_name, ''),
@@ -405,6 +411,8 @@ func (repo *Repository) ListStudentOneToOneDeductionTuitionAccounts(ctx context.
 				ta.inst_id,
 				ta.student_id,
 				ta.course_id,
+				IFNULL(ic.teach_method, 0) AS teach_method,
+				IFNULL(icq.lesson_model, 0) AS lesson_charging_mode_key,
 				MAX(IFNULL(ic.name, '')) AS lesson_name,
 				MAX(IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, ''))) AS product_name,
 				MAX(IFNULL(icq.lesson_model, 0)) AS lesson_charging_mode,
@@ -434,8 +442,7 @@ func (repo *Repository) ListStudentOneToOneDeductionTuitionAccounts(ctx context.
 				MAX(IFNULL(ta.enable_expire_time, 0)) AS enable_expire_max,
 				MAX(ta.expire_time) AS expire_time_max,
 				MAX(IFNULL(ta.assigned_class, 0)) AS assigned_class_max,
-				MAX(ta.valid_date) AS valid_date_max,
-				MAX(IFNULL(ic.teach_method, 0)) AS teach_method
+				MAX(ta.valid_date) AS valid_date_max
 			FROM tuition_account ta
 			INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
 			LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
@@ -456,9 +463,9 @@ func (repo *Repository) ListStudentOneToOneDeductionTuitionAccounts(ctx context.
 				AND ta.student_id = ?
 				AND IFNULL(ta.status, 0) = 1
 				AND ic.teach_method IN (1, 2)
-			GROUP BY ta.inst_id, ta.student_id, ta.course_id
+			GROUP BY ta.inst_id, ta.student_id, ta.course_id, IFNULL(ic.teach_method, 0), IFNULL(icq.lesson_model, 0)
 		) agg
-		ORDER BY IFNULL(agg.lesson_name, ''), agg.course_id
+		ORDER BY IFNULL(agg.lesson_name, ''), agg.course_id, agg.teach_method, agg.lesson_charging_mode_key
 	`, instID, studentID)
 	if err != nil {
 		return nil, err
@@ -546,6 +553,53 @@ func (repo *Repository) ListTuitionAccountIDsForStudentCourse(ctx context.Contex
 		rows, err = tx.QueryContext(ctx, q, instID, studentID, courseID)
 	} else {
 		rows, err = repo.db.QueryContext(ctx, q, instID, studentID, courseID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ListTuitionAccountIDsForStudentCourseBucket 学员某课程下、指定授课方式/计费模式桶内的全部在读学费账户 id（FIFO）。
+func (repo *Repository) ListTuitionAccountIDsForStudentCourseBucket(ctx context.Context, tx *sql.Tx, instID, studentID, courseID int64, teachMethod, lessonChargingMode int) ([]int64, error) {
+	q := `
+		SELECT ta.id
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(ta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
+		WHERE ta.inst_id = ? AND ta.del_flag = 0 AND ta.student_id = ? AND ta.course_id = ?
+			AND IFNULL(ta.status, 0) = 1
+			AND IFNULL(ic.teach_method, 0) = ?
+			AND IFNULL(icq.lesson_model, 0) = ?
+		ORDER BY ta.create_time ASC, ta.id ASC
+	`
+	var rows *sql.Rows
+	var err error
+	if tx != nil {
+		rows, err = tx.QueryContext(ctx, q, instID, studentID, courseID, teachMethod, lessonChargingMode)
+	} else {
+		rows, err = repo.db.QueryContext(ctx, q, instID, studentID, courseID, teachMethod, lessonChargingMode)
 	}
 	if err != nil {
 		return nil, err
