@@ -38,6 +38,8 @@ type LessonIncomeItem struct {
 	StudentName         string                `json:"studentName"`
 	StudentPhone        string                `json:"studentPhone,omitempty"`
 	StudentAvatar       string                `json:"studentAvatar,omitempty"`
+	TeachingCourseID    string                `json:"teachingCourseId,omitempty"`
+	TeachingCourseName  string                `json:"teachingCourseName,omitempty"`
 	LessonID            string                `json:"lessonId"`
 	LessonName          string                `json:"lessonName"`
 	LessonType          *int                  `json:"lessonType,omitempty"`

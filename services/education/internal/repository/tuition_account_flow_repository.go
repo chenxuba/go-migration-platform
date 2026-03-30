@@ -308,29 +308,28 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 
 	whereSQL := strings.Join(whereParts, " AND ")
 	outerOrderBy := `
-		DATE_FORMAT(g.min_created_time, '%Y-%m-%d %H:%i') DESC,
+		g.event_created_time DESC,
 		CASE
 			WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0
-			WHEN g.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(g.sum_tuition, 0) > 0 THEN 1
-			WHEN g.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(g.sum_quantity, 0) > 0 THEN 2
-			ELSE 3
+			WHEN g.source_type = 1 THEN 1
+			ELSE 2
 		END ASC,
-		g.flow_id DESC`
+		g.sort_flow_id DESC`
 	if query.SortModel.OrderByCreatedTime > 0 {
 		outerOrderBy = `
-			DATE_FORMAT(g.min_created_time, '%Y-%m-%d %H:%i') ASC,
+			g.event_created_time ASC,
 			CASE
-				WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0
-				WHEN g.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(g.sum_tuition, 0) > 0 THEN 1
-				WHEN g.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(g.sum_quantity, 0) > 0 THEN 2
-				ELSE 3
+				WHEN g.source_type = 1 THEN 0
+				WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 1
+				ELSE 2
 			END ASC,
-			g.flow_id ASC`
+			g.sort_flow_id ASC`
 	}
 
 	flowListInnerSQL := `
 		SELECT
 			MIN(taf.id) AS flow_id,
+			MAX(taf.id) AS sort_flow_id,
 			MIN(taf.inst_id) AS inst_id,
 			MIN(taf.tuition_account_id) AS tuition_account_id,
 			MIN(taf.student_id) AS student_id,
@@ -347,7 +346,7 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 			taf.source_type AS source_type,
 			taf.source_id AS source_id,
 			MAX(taf.teaching_record_id) AS agg_teaching_record_id,
-			MIN(taf.created_time) AS min_created_time,
+			MAX(taf.created_time) AS event_created_time,
 			IFNULL(SUM(
 				CASE
 					WHEN taf.source_type = 1
@@ -384,7 +383,7 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 			g.source_type,
 			g.source_id,
 			g.agg_teaching_record_id,
-			g.min_created_time,
+			g.event_created_time,
 			g.sum_quantity,
 			g.sum_tuition
 		FROM (` + flowListInnerSQL + `) g
@@ -553,22 +552,20 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 
 	whereSQL := strings.Join(whereParts, " AND ")
 	orderBy := `
-		DATE_FORMAT(taf.created_time, '%Y-%m-%d %H:%i') DESC,
+		taf.created_time DESC,
 		CASE
-			WHEN taf.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(taf.quantity, 0) > 0 AND IFNULL(taf.tuition, 0) = 0 THEN 0
-			WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 1
-			WHEN taf.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(taf.tuition, 0) > 0 THEN 2
-			ELSE 3
+			WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0
+			WHEN taf.source_type = 1 THEN 1
+			ELSE 2
 		END ASC,
 		taf.id DESC`
 	if query.SortModel.OrderByCreatedTime > 0 {
 		orderBy = `
-			DATE_FORMAT(taf.created_time, '%Y-%m-%d %H:%i') ASC,
+			taf.created_time ASC,
 			CASE
-				WHEN taf.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(taf.quantity, 0) > 0 AND IFNULL(taf.tuition, 0) = 0 THEN 0
+				WHEN taf.source_type = 1 THEN 0
 				WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 1
-				WHEN taf.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(taf.tuition, 0) > 0 THEN 2
-				ELSE 3
+				ELSE 2
 			END ASC,
 			taf.id ASC`
 	}

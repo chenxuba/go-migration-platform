@@ -202,7 +202,7 @@ const selectedFilterList = computed(() => {
   if (filterState.lessonId) {
     list.push({
       key: 'lessonId',
-      label: '课程名称',
+      label: '扣费课程账户',
       value: findOptionLabel(courseOptions.value, filterState.lessonId),
     })
   }
@@ -496,7 +496,8 @@ function handleExport() {
 const allColumns = ref([
   { title: '确认收入创建时间', dataIndex: 'createdTime', key: 'createdTime', fixed: 'left', width: 180, required: true },
   { title: '学员', dataIndex: 'studentName', key: 'studentName', fixed: 'left', width: 180, required: true },
-  { title: '课程名称', dataIndex: 'lessonName', key: 'lessonName', width: 160 },
+  { title: '上课课程', dataIndex: 'teachingCourseName', key: 'teachingCourseName', width: 160 },
+  { title: '扣费课程账户', dataIndex: 'lessonName', key: 'lessonName', width: 180 },
   { title: '课程类别', dataIndex: 'productCategoryName', key: 'productCategoryName', width: 140 },
   { title: '授课方式', dataIndex: 'teachingMethod', key: 'teachingMethod', width: 120 },
   { title: '明细类型', dataIndex: 'sourceType', key: 'sourceType', width: 140 },
@@ -510,7 +511,7 @@ const allColumns = ref([
 ])
 
 const { selectedValues, columnOptions, filteredColumns, totalWidth } = useTableColumns({
-  storageKey: 'income-details',
+  storageKey: 'income-details-v2',
   allColumns,
   excludeKeys: [],
 })
@@ -544,10 +545,10 @@ onUnmounted(() => {
             <checkbox-filter
               v-model:checked-values="filterState.lessonId"
               :options="courseOptions"
-              label="课程名称"
+              label="扣费课程账户"
               type="radio"
               category="course"
-              placeholder="请输入课程名称"
+              placeholder="请输入扣费课程账户"
               :finished="courseFinished"
               @radio-change="debouncedRefresh"
               @on-search="loadCourseOptions"
@@ -698,6 +699,9 @@ onUnmounted(() => {
                   :show-age="false"
                   default-active-key="0"
                 />
+              </template>
+              <template v-if="column.key === 'teachingCourseName'">
+                {{ record.teachingCourseName || '-' }}
               </template>
               <template v-if="column.key === 'lessonName'">
                 {{ record.lessonName || '-' }}

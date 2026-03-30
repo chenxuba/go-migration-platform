@@ -11,6 +11,8 @@ export interface LessonIncomeItem {
   studentName: string
   studentPhone?: string
   studentAvatar?: string
+  teachingCourseId?: string
+  teachingCourseName?: string
   lessonId: string
   lessonName: string
   lessonType?: number

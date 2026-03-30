@@ -36,6 +36,8 @@ type lessonIncomeQueryFragments struct {
 	whereParts             []string
 	args                   []any
 	orderBy                string
+	teachingCourseIDExpr   string
+	teachingCourseNameExpr string
 	lessonDayExpr          string
 	startMinutesExpr       string
 	endMinutesExpr         string
@@ -198,6 +200,8 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 		},
 		args:                   []any{instID},
 		orderBy:                "taf.created_time DESC, taf.id DESC",
+		teachingCourseIDExpr:   "''",
+		teachingCourseNameExpr: "''",
 		lessonDayExpr:          "NULL",
 		startMinutesExpr:       "0",
 		endMinutesExpr:         "0",
@@ -225,6 +229,23 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 		fragments.joins = append(fragments.joins, strings.TrimSpace(tuitionAccountQuotationJoinSQL))
 		fragments.lessonChargingModeExpr = resolvedLessonChargingModeExpr("taf.lesson_charging_mode", "icq_taf.lesson_model")
 	}
+
+	teachingCourseJoins, teachingCourseIDExpr, teachingCourseNameExpr, err := repo.buildTuitionAccountFlowTeachingCourseFragments(
+		ctx,
+		"taf",
+		"taf.inst_id",
+		"taf.source_type",
+		"taf.source_id",
+		"taf.teaching_record_id",
+		"taf.product_id",
+		"IFNULL(c.name, '')",
+	)
+	if err != nil {
+		return lessonIncomeQueryFragments{}, err
+	}
+	fragments.joins = append(fragments.joins, teachingCourseJoins...)
+	fragments.teachingCourseIDExpr = teachingCourseIDExpr
+	fragments.teachingCourseNameExpr = teachingCourseNameExpr
 
 	if schema.teachingTable != "" {
 		fragments.joins = append(fragments.joins, fmt.Sprintf("LEFT JOIN %s tr ON tr.id = taf.teaching_record_id", schema.teachingTable))
@@ -404,6 +425,8 @@ func (repo *Repository) GetLessonIncomePagedList(ctx context.Context, instID int
 				ELSE IFNULL(s.mobile, '')
 			END,
 			IFNULL(s.avatar_url, ''),
+			`+fragments.teachingCourseIDExpr+`,
+			`+fragments.teachingCourseNameExpr+`,
 			CAST(taf.product_id AS CHAR),
 			IFNULL(c.name, ''),
 			COALESCE(taf.lesson_type, c.teach_method),
@@ -441,6 +464,8 @@ func (repo *Repository) GetLessonIncomePagedList(ctx context.Context, instID int
 	for rows.Next() {
 		var (
 			item               model.LessonIncomeItem
+			teachingCourseID   sql.NullString
+			teachingCourseName sql.NullString
 			lessonType         sql.NullInt64
 			internalSourceType int
 			lessonDay          sql.NullTime
@@ -460,6 +485,8 @@ func (repo *Repository) GetLessonIncomePagedList(ctx context.Context, instID int
 			&item.StudentName,
 			&item.StudentPhone,
 			&item.StudentAvatar,
+			&teachingCourseID,
+			&teachingCourseName,
 			&item.LessonID,
 			&item.LessonName,
 			&lessonType,
@@ -485,6 +512,12 @@ func (repo *Repository) GetLessonIncomePagedList(ctx context.Context, instID int
 			&item.TeachingRecordID,
 		); err != nil {
 			return model.LessonIncomePagedResult{}, err
+		}
+		if teachingCourseID.Valid {
+			item.TeachingCourseID = strings.TrimSpace(teachingCourseID.String)
+		}
+		if teachingCourseName.Valid {
+			item.TeachingCourseName = strings.TrimSpace(teachingCourseName.String)
 		}
 		if lessonType.Valid {
 			value := int(lessonType.Int64)
