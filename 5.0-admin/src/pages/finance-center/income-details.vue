@@ -497,7 +497,7 @@ const allColumns = ref([
   { title: '确认收入创建时间', dataIndex: 'createdTime', key: 'createdTime', fixed: 'left', width: 180, required: true },
   { title: '学员', dataIndex: 'studentName', key: 'studentName', fixed: 'left', width: 180, required: true },
   { title: '上课课程', dataIndex: 'teachingCourseName', key: 'teachingCourseName', width: 160 },
-  { title: '扣费课程账户', dataIndex: 'lessonName', key: 'lessonName', width: 180 },
+  { title: '扣费账户/课程账户', dataIndex: 'lessonName', key: 'lessonName', width: 180 },
   { title: '课程类别', dataIndex: 'productCategoryName', key: 'productCategoryName', width: 140 },
   { title: '授课方式', dataIndex: 'teachingMethod', key: 'teachingMethod', width: 120 },
   { title: '明细类型', dataIndex: 'sourceType', key: 'sourceType', width: 140 },
