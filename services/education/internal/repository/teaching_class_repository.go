@@ -50,6 +50,62 @@ LEFT JOIN tuition_account ta_ded ON ta_ded.id = COALESCE(
 LEFT JOIN inst_course ic_ded ON ic_ded.id = ta_ded.course_id AND ic_ded.del_flag = 0` + tuitionAccountQuotationJoinForTaDed + `
 LEFT JOIN inst_course_quotation icq_read ON icq_read.id = ta_ded.quote_id AND icq_read.del_flag = 0`
 
+// oneToOneTuitionAccountCountSQL 统计当前 1 对 1 相关账户数量：
+// 当前课程自身账户 + 当前班级已绑定的扣费账户，最终按「课程 + 授课方式 + 计费模式」聚合计数，
+// 避免同一账户桶下多笔原始 tuition_account 被重复计入。
+const oneToOneTuitionAccountCountSQL = `
+IFNULL((
+	SELECT COUNT(DISTINCT CONCAT(
+		CAST(ta_cnt.course_id AS CHAR), '#',
+		CAST(IFNULL(ic_cnt.teach_method, 0) AS CHAR), '#',
+		CAST(IFNULL(icq_cnt.lesson_model, -99999) AS CHAR)
+	))
+	FROM (
+		SELECT ta_key.id AS account_id
+		FROM tuition_account ta_key
+		WHERE ta_key.inst_id = tc.inst_id
+			AND ta_key.del_flag = 0
+			AND ta_key.student_id = tcs.student_id
+			AND ta_key.course_id = tc.course_id
+		UNION ALL
+		SELECT COALESCE(
+			NULLIF(tcs_cnt.primary_tuition_account_id, 0),
+			(SELECT MIN(ta0.id)
+			 FROM tuition_account ta0
+			 WHERE ta0.order_course_detail_id = tcs_cnt.order_course_detail_id
+			   AND ta0.inst_id = tcs_cnt.inst_id
+			   AND ta0.del_flag = 0)
+		) AS account_id
+		FROM teaching_class_student tcs_cnt
+		WHERE tcs_cnt.inst_id = tc.inst_id
+			AND tcs_cnt.del_flag = 0
+			AND tcs_cnt.teaching_class_id = tc.id
+	) account_candidates
+	INNER JOIN tuition_account ta_cnt
+		ON ta_cnt.id = account_candidates.account_id
+		AND ta_cnt.inst_id = tc.inst_id
+		AND ta_cnt.del_flag = 0
+	INNER JOIN inst_course ic_cnt
+		ON ic_cnt.id = ta_cnt.course_id
+		AND ic_cnt.del_flag = 0
+	LEFT JOIN sale_order_course_detail sod_cnt
+		ON sod_cnt.id = ta_cnt.order_course_detail_id
+		AND sod_cnt.del_flag = 0
+	LEFT JOIN inst_course_quotation icq_cnt ON icq_cnt.id = COALESCE(
+		NULLIF(ta_cnt.quote_id, 0),
+		NULLIF(sod_cnt.quote_id, 0),
+		(SELECT qx.id FROM inst_course_quotation qx
+		 WHERE qx.course_id = ta_cnt.course_id AND qx.del_flag = 0
+		   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta_cnt.total_quantity, 0)) < 0.000001
+		   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta_cnt.total_tuition, 0)) < 0.000001
+		 ORDER BY qx.id DESC LIMIT 1),
+		(SELECT qmin.id FROM inst_course_quotation qmin
+		 WHERE qmin.course_id = ta_cnt.course_id AND qmin.del_flag = 0
+		 ORDER BY qmin.id ASC LIMIT 1)
+	) AND icq_cnt.del_flag = 0
+	WHERE account_candidates.account_id IS NOT NULL AND account_candidates.account_id > 0
+), 0)`
+
 // oneToOneListableJoinSQL 与 PageOneToOneList 主查询一致：仅统计/展示仍有有效班员、且学员与上课课程均未删除的 1 对 1（避免清空校区后残留 teaching_class 导致条数虚高、同名误判）。
 const oneToOneListableJoinSQL = `
 INNER JOIN (
@@ -458,6 +514,7 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			IFNULL(tc.remark, ''),
 			CASE WHEN IFNULL(tc.scheduled_lesson_count, 0) > 0 THEN 1 ELSE 0 END,
 			IFNULL(tc.finished_lesson_count, 0),
+			`+oneToOneTuitionAccountCountSQL+`,
 			IFNULL((
 				SELECT SUM(IFNULL(ta2.total_tuition, 0)) `+oneToOneReadingListBucketFrom+`
 			), IFNULL(ta_ded.total_tuition, 0)),
@@ -595,6 +652,7 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 			&item.Remark,
 			&item.One2OneLessonDayInfo.LessonDayCount,
 			&item.One2OneLessonDayInfo.CompleteLessonDayCount,
+			&item.TuitionAccountCount,
 			&item.TuitionAccount.TotalTuition,
 			&item.TuitionAccount.RemainTuition,
 			&item.TuitionAccount.TotalQuantity,
@@ -729,6 +787,7 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 			IFNULL(created_staff.nick_name, ''),
 			IFNULL(default_teacher_rel.status, 0),
 			IFNULL(tcs.class_properties_json, '[]'),
+			`+oneToOneTuitionAccountCountSQL+`,
 			IFNULL((
 				SELECT SUM(IFNULL(ta2.total_tuition, 0)) `+oneToOneReadingListBucketFrom+`
 			), IFNULL(ta_ded.total_tuition, 0)),
@@ -872,6 +931,7 @@ func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID i
 		&detail.CreatedStaffName,
 		&detail.DefaultTeacherStatus,
 		&classPropertiesJSON,
+		&detail.TuitionAccountCount,
 		&detail.TuitionAccount.TotalTuition,
 		&detail.TuitionAccount.RemainTuition,
 		&detail.TuitionAccount.TotalQuantity,
@@ -1067,11 +1127,170 @@ func (repo *Repository) UpdateOneToOne(ctx context.Context, instID, operatorID i
 	return tx.Commit()
 }
 
+func (repo *Repository) SwitchOneToOneDefaultTuitionAccount(ctx context.Context, instID, operatorID int64, dto model.OneToOneSwitchDefaultTuitionAccountDTO) error {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.ID), 10, 64)
+	if err != nil || classID <= 0 {
+		return errors.New("1对1ID无效")
+	}
+	taID, err := strconv.ParseInt(strings.TrimSpace(dto.TuitionAccountID), 10, 64)
+	if err != nil || taID <= 0 {
+		return errors.New("tuitionAccountId无效")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var (
+		exists    int
+		studentID int64
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*), IFNULL(MIN(tcs.student_id), 0)
+		FROM teaching_class tc
+		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+		WHERE tc.id = ? AND tc.inst_id = ? AND tc.class_type = ? AND tc.del_flag = 0
+	`, classID, instID, model.TeachingClassTypeOneToOne).Scan(&exists, &studentID); err != nil {
+		return err
+	}
+	if exists == 0 || studentID <= 0 {
+		return sql.ErrNoRows
+	}
+
+	selectedBind, err := repo.loadOneToOneDeductBindTx(ctx, tx, instID, studentID, taID)
+	if err != nil {
+		return err
+	}
+	selectedBucket, err := repo.loadOneToOneTuitionBucketTx(ctx, tx, instID, taID)
+	if err != nil {
+		return err
+	}
+
+	var (
+		pickRowID     int64
+		pickOrderID   int64
+		pickOCDID     int64
+		pickQuoteID   int64
+		pickPrimaryTA int64
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id, IFNULL(order_id, 0), IFNULL(order_course_detail_id, 0), IFNULL(quote_id, 0), IFNULL(primary_tuition_account_id, 0)
+		FROM teaching_class_student
+		WHERE inst_id = ? AND teaching_class_id = ? AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, instID, classID).Scan(&pickRowID, &pickOrderID, &pickOCDID, &pickQuoteID, &pickPrimaryTA); err != nil {
+		return err
+	}
+	if pickPrimaryTA == taID {
+		return nil
+	}
+
+	var (
+		targetRowID     int64
+		targetOrderID   int64
+		targetOCDID     int64
+		targetQuoteID   int64
+		targetPrimaryTA int64
+	)
+	switch err := tx.QueryRowContext(ctx, `
+		SELECT
+			tcs.id,
+			IFNULL(tcs.order_id, 0),
+			IFNULL(tcs.order_course_detail_id, 0),
+			IFNULL(tcs.quote_id, 0),
+			IFNULL(tcs.primary_tuition_account_id, 0)
+		FROM teaching_class_student tcs
+		LEFT JOIN tuition_account ta_eff ON ta_eff.id = COALESCE(
+			NULLIF(tcs.primary_tuition_account_id, 0),
+			(SELECT MIN(ta0.id) FROM tuition_account ta0
+			 WHERE ta0.order_course_detail_id = tcs.order_course_detail_id
+			   AND ta0.inst_id = tcs.inst_id AND ta0.del_flag = 0)
+		) AND ta_eff.inst_id = tcs.inst_id AND ta_eff.del_flag = 0
+		INNER JOIN inst_course ic_eff ON ic_eff.id = ta_eff.course_id AND ic_eff.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod_eff ON sod_eff.id = ta_eff.order_course_detail_id AND sod_eff.del_flag = 0
+		LEFT JOIN inst_course_quotation icq_eff ON icq_eff.id = COALESCE(
+			NULLIF(ta_eff.quote_id, 0),
+			NULLIF(sod_eff.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta_eff.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta_eff.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta_eff.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta_eff.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq_eff.del_flag = 0
+		WHERE tcs.inst_id = ? AND tcs.teaching_class_id = ? AND tcs.del_flag = 0
+			AND ta_eff.id IS NOT NULL
+			AND ta_eff.course_id = ?
+			AND IFNULL(ic_eff.teach_method, 0) = ?
+			AND IFNULL(icq_eff.lesson_model, -99999) = ?
+		ORDER BY tcs.id ASC
+		LIMIT 1
+	`, instID, classID, selectedBucket.courseID, selectedBucket.teachMethod, selectedBucket.lessonModelCode).Scan(&targetRowID, &targetOrderID, &targetOCDID, &targetQuoteID, &targetPrimaryTA); {
+	case errors.Is(err, sql.ErrNoRows):
+		targetRowID = 0
+	case err != nil:
+		return err
+	}
+
+	now := time.Now()
+	if targetRowID == pickRowID {
+		return nil
+	}
+	if targetRowID > 0 && targetRowID != pickRowID {
+		tempOCDID := -pickRowID
+		if tempOCDID == pickOCDID || tempOCDID == targetOCDID {
+			tempOCDID = -(pickRowID + targetRowID + 1)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_class_student
+			SET order_course_detail_id = ?, update_id = ?, update_time = ?
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, tempOCDID, operatorID, now, pickRowID, instID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_class_student
+			SET order_id = ?, order_course_detail_id = ?, quote_id = ?, primary_tuition_account_id = ?, update_id = ?, update_time = ?
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, pickOrderID, pickOCDID, pickQuoteID, pickPrimaryTA, operatorID, now, targetRowID, instID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_class_student
+			SET order_id = ?, order_course_detail_id = ?, quote_id = ?, primary_tuition_account_id = ?, update_id = ?, update_time = ?
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, targetOrderID, targetOCDID, targetQuoteID, targetPrimaryTA, operatorID, now, pickRowID, instID); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_class_student
+			SET order_id = ?, order_course_detail_id = ?, quote_id = ?, primary_tuition_account_id = ?, update_id = ?, update_time = ?
+			WHERE id = ? AND inst_id = ? AND del_flag = 0
+		`, selectedBind.orderID, selectedBind.ocdID, selectedBind.quoteID, selectedBind.taID, operatorID, now, pickRowID, instID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 type oneToOneDeductBind struct {
 	taID    int64
 	orderID int64
 	ocdID   int64
 	quoteID int64
+}
+
+type oneToOneTuitionBucket struct {
+	courseID        int64
+	teachMethod     int
+	lessonModelCode int
 }
 
 func (repo *Repository) loadOneToOneDeductBindTx(ctx context.Context, tx *sql.Tx, instID, studentID, taID int64) (oneToOneDeductBind, error) {
@@ -1115,6 +1334,37 @@ func (repo *Repository) loadOneToOneDeductBindTx(ctx context.Context, tx *sql.Tx
 		b.quoteID = quoteID.Int64
 	}
 	return b, nil
+}
+
+func (repo *Repository) loadOneToOneTuitionBucketTx(ctx context.Context, tx *sql.Tx, instID, taID int64) (oneToOneTuitionBucket, error) {
+	var bucket oneToOneTuitionBucket
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			ta.course_id,
+			IFNULL(ic.teach_method, 0),
+			IFNULL(icq.lesson_model, -99999)
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(ta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
+		WHERE ta.id = ? AND ta.inst_id = ? AND ta.del_flag = 0
+		LIMIT 1
+	`, taID, instID).Scan(&bucket.courseID, &bucket.teachMethod, &bucket.lessonModelCode)
+	if err != nil {
+		return oneToOneTuitionBucket{}, err
+	}
+	return bucket, nil
 }
 
 // CreateOneToOne 手动创建 1 对 1：tuitionAccountId 为数字 id 或 agg:{扣费课程id}（按课程汇总时多笔账户各写一条班员，列表课时与下拉一致）

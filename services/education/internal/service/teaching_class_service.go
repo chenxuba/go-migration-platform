@@ -74,13 +74,19 @@ func (svc *Service) ListStudentTuitionAccountsByStudentAndLesson(userID int64, d
 	if err != nil || courseID <= 0 {
 		return model.StudentLessonTuitionAccountsResult{}, errors.New("lessonId 不能为空")
 	}
+	var teachingClassID int64
+	if s := strings.TrimSpace(dto.TeachingClassID); s != "" && s != "0" {
+		if v, perr := strconv.ParseInt(s, 10, 64); perr == nil && v > 0 {
+			teachingClassID = v
+		}
+	}
 	var orderCourseDetailID int64
 	if s := strings.TrimSpace(dto.OrderCourseDetailID); s != "" && s != "0" {
 		if v, perr := strconv.ParseInt(s, 10, 64); perr == nil && v > 0 {
 			orderCourseDetailID = v
 		}
 	}
-	list, err := svc.repo.ListStudentTuitionAccountsByStudentAndLesson(context.Background(), instID, studentID, courseID, orderCourseDetailID)
+	list, err := svc.repo.ListStudentTuitionAccountsByStudentAndLesson(context.Background(), instID, studentID, courseID, teachingClassID, orderCourseDetailID)
 	if err != nil {
 		return model.StudentLessonTuitionAccountsResult{}, err
 	}
@@ -227,6 +233,20 @@ func (svc *Service) UpdateOneToOne(userID int64, dto model.OneToOneUpdateDTO) er
 	}
 
 	return svc.repo.UpdateOneToOne(context.Background(), instID, operatorID, dto)
+}
+
+func (svc *Service) SwitchOneToOneDefaultTuitionAccount(userID int64, dto model.OneToOneSwitchDefaultTuitionAccountDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(dto.ID) == "" {
+		return errors.New("1对1ID不能为空")
+	}
+	if strings.TrimSpace(dto.TuitionAccountID) == "" {
+		return errors.New("tuitionAccountId不能为空")
+	}
+	return svc.repo.SwitchOneToOneDefaultTuitionAccount(context.Background(), instID, operatorID, dto)
 }
 
 func (svc *Service) BatchAssignOneToOneClassTeacher(userID int64, dto model.OneToOneBatchAssignTeacherDTO) error {

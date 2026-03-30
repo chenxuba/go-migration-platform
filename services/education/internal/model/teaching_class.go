@@ -63,8 +63,8 @@ type OneToOneTuitionAccountVO struct {
 	TotalFreeQuantity  float64    `json:"totalFreeQuantity"`
 	RemainQuantity     float64    `json:"remainQuantity"`
 	RemainFreeQuantity float64    `json:"remainFreeQuantity"`
-	LessonChargingMode int    `json:"lessonChargingMode"`
-	ProductName        string `json:"productName"`
+	LessonChargingMode int        `json:"lessonChargingMode"`
+	ProductName        string     `json:"productName"`
 	Status             int        `json:"status"`
 	EnableExpireTime   bool       `json:"enableExpireTime"`
 	LastSuspendedTime  time.Time  `json:"lastSuspendedTime"`
@@ -107,6 +107,7 @@ type OneToOneItemVO struct {
 	LessonID                   string                   `json:"lessonId"`
 	LessonName                 string                   `json:"lessonName"`
 	OrderCourseDetailID        string                   `json:"orderCourseDetailId,omitempty"`
+	TuitionAccountCount        int                      `json:"tuitionAccountCount"`
 	TuitionAccountID           string                   `json:"tuitionAccountId"`
 	DefaultTeacherID           string                   `json:"defaultTeacherId"`
 	DefaultTeacherName         string                   `json:"defaultTeacherName"`
@@ -141,6 +142,7 @@ type OneToOneDetailVO struct {
 	ClassroomID                string                   `json:"classroomId"`
 	ClassroomName              *string                  `json:"classroomName"`
 	OrderCourseDetailID        string                   `json:"orderCourseDetailId,omitempty"`
+	TuitionAccountCount        int                      `json:"tuitionAccountCount"`
 	TuitionAccountID           string                   `json:"tuitionAccountId"`
 	ClassTime                  float64                  `json:"classTime"`
 	IsScheduled                bool                     `json:"isScheduled"`
@@ -165,17 +167,17 @@ type OneToOneDetailVO struct {
 }
 
 type OneToOneBatchAssignTeacherDTO struct {
-	IDs              []string `json:"ids"`
-	ClassTeacherID   string   `json:"classTeacherId"`   // 兼容旧版单选
-	ClassTeacherIDs  []string `json:"classTeacherIds"`  // 多选班主任
+	IDs             []string `json:"ids"`
+	ClassTeacherID  string   `json:"classTeacherId"`  // 兼容旧版单选
+	ClassTeacherIDs []string `json:"classTeacherIds"` // 多选班主任
 }
 
 type OneToOneBatchClassTimeDTO struct {
-	IDs                  []string `json:"ids"`
-	ClassTime            float64  `json:"classTime"`
-	StudentClassTime     float64  `json:"studentClassTime"`
-	TeacherClassTime     float64  `json:"teacherClassTime"`
-	ClassTimeRecordMode  int      `json:"classTimeRecordMode"` // 1 按固定课时 2 按上课时长
+	IDs                 []string `json:"ids"`
+	ClassTime           float64  `json:"classTime"`
+	StudentClassTime    float64  `json:"studentClassTime"`
+	TeacherClassTime    float64  `json:"teacherClassTime"`
+	ClassTimeRecordMode int      `json:"classTimeRecordMode"` // 1 按固定课时 2 按上课时长
 }
 
 type OneToOneCheckNameDTO struct {
@@ -249,9 +251,15 @@ type OneToOneCreateResult struct {
 	ID string `json:"id"`
 }
 
+type OneToOneSwitchDefaultTuitionAccountDTO struct {
+	ID               string `json:"id"`
+	TuitionAccountID string `json:"tuitionAccountId"`
+}
+
 type StudentLessonTuitionAccountsQueryDTO struct {
 	StudentID           string `json:"studentId"`
 	LessonID            string `json:"lessonId"`
+	TeachingClassID     string `json:"teachingClassId,omitempty"`
 	OrderCourseDetailID string `json:"orderCourseDetailId,omitempty"`
 }
 

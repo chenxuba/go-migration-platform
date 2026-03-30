@@ -188,52 +188,105 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 	}, rows.Err()
 }
 
-// ListStudentTuitionAccountsByStudentAndLesson 学员在某课程下的学费账户（原始账户行）。orderCourseDetailID>0 时仅返回该订单明细下的账户，供 1 对 1 详情报读明细等与当前报读对齐。
-func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context.Context, instID, studentID, courseID int64, orderCourseDetailID int64) ([]model.StudentLessonTuitionAccountItem, error) {
-	orderDetailSQL := ""
-	args := []any{instID, studentID, courseID}
+// ListStudentTuitionAccountsByStudentAndLesson 返回某 1 对 1 课程下聚合后的学费账户明细：
+// 1. 当前课程本身的学费账户；
+// 2. 已绑定到该课程 1 对 1 班级上的扣费账户（例如手动创建时绑定的通用 1v1 账户）。
+// 最终按「课程 + 授课方式 + 计费模式」聚合，避免同一账户桶下多笔原始 tuition_account 被重复计数。
+// teachingClassID>0 时仅纳入该班级已绑定的扣费账户，避免同学员同课程历史班级串数；
+// orderCourseDetailID>0 时兼容旧行为，只收窄到指定报读明细。
+func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context.Context, instID, studentID, courseID, teachingClassID, orderCourseDetailID int64) ([]model.StudentLessonTuitionAccountItem, error) {
+	directArgs := []any{instID, studentID, courseID}
+	directWhere := ""
+	bindWhere := ""
+	if teachingClassID > 0 {
+		bindWhere += " AND tcs2.teaching_class_id = ?"
+	}
 	if orderCourseDetailID > 0 {
-		orderDetailSQL = " AND ta.order_course_detail_id = ?"
-		args = append(args, orderCourseDetailID)
+		directWhere += " AND ta0.order_course_detail_id = ?"
+		bindWhere += " AND tcs2.order_course_detail_id = ?"
+		directArgs = append(directArgs, orderCourseDetailID)
+	}
+	bindArgs := []any{instID, studentID, model.TeachingClassTypeOneToOne, courseID}
+	if teachingClassID > 0 {
+		bindArgs = append(bindArgs, teachingClassID)
+	}
+	if orderCourseDetailID > 0 {
+		bindArgs = append(bindArgs, orderCourseDetailID)
 	}
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
-			CAST(ta.id AS CHAR),
-			CAST(ta.student_id AS CHAR),
+			CAST(MIN(ta.id) AS CHAR),
+			CAST(MIN(ta.student_id) AS CHAR),
 			CAST(ta.course_id AS CHAR),
-			IFNULL(ic.name, '') AS lesson_name,
-			IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, '')) AS product_name,
-			IFNULL(icq.lesson_model, 0) AS lesson_charging_mode,
-			CASE
+			IFNULL(MAX(ic.name), '') AS lesson_name,
+			MAX(IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, ''))) AS product_name,
+			IFNULL(MAX(icq.lesson_model), 0) AS lesson_charging_mode,
+			SUM(CASE
 				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.total_tuition, 0)
 				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
 				ELSE 0
-			END AS total_quantity_display,
-			CASE
+			END) AS total_quantity_display,
+			SUM(CASE
 				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.free_quantity, 0)
 				WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
 				ELSE 0
-			END AS total_free_quantity_display,
-			IFNULL(ta.total_tuition, 0),
-			CASE
+			END) AS total_free_quantity_display,
+			SUM(IFNULL(ta.total_tuition, 0)),
+			SUM(CASE
 				WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
 				ELSE 0
-			END AS remain_free_quantity,
-			CASE
+			END) AS remain_free_quantity,
+			SUM(CASE
 				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.remaining_tuition, 0)
 				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
 				ELSE 0
-			END AS remain_quantity_display,
-			IFNULL(ta.remaining_tuition, 0),
-			ta.suspended_time,
-			IFNULL(ta.create_time, NOW()) AS start_time,
-			IFNULL(ta.enable_expire_time, 0) AS enable_expire,
-			ta.expire_time,
-			IFNULL(ta.assigned_class, 0) AS assigned_class,
-			ta.valid_date,
-			IFNULL(ic.teach_method, 0) AS teach_method,
-			IFNULL(ta.status, 0) AS ta_status
+			END) AS remain_quantity_display,
+			SUM(IFNULL(ta.remaining_tuition, 0)),
+			MAX(ta.suspended_time),
+			MIN(IFNULL(ta.create_time, NOW())) AS start_time,
+			IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire,
+			MAX(ta.expire_time),
+			IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
+			MAX(ta.valid_date),
+			IFNULL(MAX(ic.teach_method), 0) AS teach_method,
+			CASE
+				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 1 THEN 1 ELSE 0 END) > 0 THEN 1
+				ELSE IFNULL(MAX(ta.status), 0)
+			END AS ta_status
 		FROM tuition_account ta
+		INNER JOIN (
+			SELECT DISTINCT account_id
+			FROM (
+				SELECT ta0.id AS account_id
+				FROM tuition_account ta0
+				WHERE ta0.inst_id = ?
+					AND ta0.del_flag = 0
+					AND ta0.student_id = ?
+					AND ta0.course_id = ?
+					`+directWhere+`
+				UNION ALL
+				SELECT COALESCE(
+					NULLIF(tcs2.primary_tuition_account_id, 0),
+					(SELECT MIN(ta1.id)
+					 FROM tuition_account ta1
+					 WHERE ta1.order_course_detail_id = tcs2.order_course_detail_id
+					   AND ta1.inst_id = tcs2.inst_id
+					   AND ta1.del_flag = 0)
+				) AS account_id
+				FROM teaching_class_student tcs2
+				INNER JOIN teaching_class tc2
+					ON tc2.id = tcs2.teaching_class_id
+					AND tc2.inst_id = tcs2.inst_id
+					AND tc2.del_flag = 0
+				WHERE tcs2.inst_id = ?
+					AND tcs2.del_flag = 0
+					AND tcs2.student_id = ?
+					AND tc2.class_type = ?
+					AND tc2.course_id = ?
+					`+bindWhere+`
+			) candidates
+			WHERE account_id IS NOT NULL AND account_id > 0
+		) matched ON matched.account_id = ta.id
 		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
 		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
 		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
@@ -250,11 +303,9 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 		) AND icq.del_flag = 0
 		WHERE ta.inst_id = ?
 			AND ta.del_flag = 0
-			AND ta.student_id = ?
-			AND ta.course_id = ?
-		`+orderDetailSQL+`
-		ORDER BY ta.create_time DESC, ta.id DESC
-	`, args...)
+		GROUP BY ta.course_id, IFNULL(ic.teach_method, 0), IFNULL(icq.lesson_model, -99999)
+		ORDER BY MIN(IFNULL(ta.create_time, NOW())) DESC, MIN(ta.id) DESC
+	`, append(append(directArgs, bindArgs...), instID)...)
 	if err != nil {
 		return nil, err
 	}

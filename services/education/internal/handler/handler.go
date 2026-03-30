@@ -188,6 +188,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/one-to-ones/exist", handler.existOneToOne)
 	mux.HandleFunc("/api/v1/one-to-ones/create", handler.createOneToOne)
 	mux.HandleFunc("/api/v1/one-to-ones/update", handler.updateOneToOne)
+	mux.HandleFunc("/api/v1/one-to-ones/switch-default-tuition-account", handler.switchOneToOneDefaultTuitionAccount)
 	mux.HandleFunc("/api/v1/one-to-ones/close", handler.closeOneToOne)
 	mux.HandleFunc("/api/v1/tuition-accounts/close-order", handler.addCloseTuitionAccountOrder)
 	mux.HandleFunc("/api/v1/one-to-ones/reopen", handler.reopenOneToOne)

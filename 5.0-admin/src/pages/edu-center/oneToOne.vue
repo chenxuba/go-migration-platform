@@ -13,19 +13,20 @@ import { useTableColumns } from '@/composables/useTableColumns'
 import { handleDateRangeParams } from '@/utils/dateRangeParams'
 import messageService from '@/utils/messageService'
 import {
+  addCloseTuitionAccountOrderApi,
   batchAssignOneToOneClassTeacherApi,
   batchUpdateOneToOneClassTimeApi,
   checkOneToOneNameApi,
-  addCloseTuitionAccountOrderApi,
   closeOneToOneApi,
   createOneToOneApi,
-  reopenOneToOneApi,
   existOneToOneApi,
   getOneToOneByIdApi,
   getOneToOneListApi,
   listOneToOneLessonsByStudentApi,
   listTuitionAccountsByStudentAndLessonApi,
   listTuitionAccountsForOneToOneDeductionApi,
+  reopenOneToOneApi,
+  switchOneToOneDefaultTuitionAccountApi,
   updateOneToOneApi,
 } from '@/api/edu-center/one-to-one'
 import { Sex, SexLabel, TeachingMethod, TeachingMethodLabel } from '@/enums'
@@ -40,6 +41,11 @@ const actionRows = ref([])
 const currentRecord = ref(null)
 const drawerTuitionAccounts = ref([])
 const drawerOpen = ref(false)
+const switchAccountModalOpen = ref(false)
+const switchAccountLoading = ref(false)
+const switchAccountSubmitting = ref(false)
+const switchAccountOptions = ref([])
+const switchAccountSelectedId = ref(undefined)
 const totalStudentCount = ref(0)
 const quickCounts = ref({
   unassignedTeacherCount: 0,
@@ -811,6 +817,28 @@ function formatMoney(value) {
   })}`
 }
 
+function normalizeAccountChargingMode(mode) {
+  const m = Number(mode)
+  if (m === 4)
+    return 3
+  return m
+}
+
+function switchAccountQuantityUnit(acc) {
+  return getQuantityUnit(normalizeAccountChargingMode(acc?.lessonChargingMode))
+}
+
+function switchAccountRemainText(acc) {
+  const mode = normalizeAccountChargingMode(acc?.lessonChargingMode)
+  if (mode === 3)
+    return `剩余金额：${formatMoney(acc?.tuition)}`
+  return `剩余课时：${Number(acc?.quantity || 0) + Number(acc?.freeQuantity || 0)}${switchAccountQuantityUnit(acc)}`
+}
+
+function switchAccountExpireText(acc) {
+  return acc?.enableExpireTime ? formatDate(acc?.expireTime) : '不限制'
+}
+
 /** 列表行学费账户：lessonChargingMode 为 0 时按有效期+数量推断按时段（与后端聚合一致） */
 function effectiveListLessonChargingMode(record) {
   const ta = record?.tuitionAccount
@@ -914,19 +942,6 @@ async function openDrawer(record) {
     const detailRes = await getOneToOneByIdApi(record?.id)
     if (detailRes.code === 200 && detailRes.result)
       currentRecord.value = { ...record, ...detailRes.result }
-
-    const sid = currentRecord.value?.studentId
-    const lid = currentRecord.value?.lessonId
-    if (sid && lid) {
-      const oid = currentRecord.value?.orderCourseDetailId
-      const accRes = await listTuitionAccountsByStudentAndLessonApi({
-        studentId: String(sid),
-        lessonId: String(lid),
-        ...(oid && String(oid) !== '0' ? { orderCourseDetailId: String(oid) } : {}),
-      })
-      if (accRes.code === 200 && Array.isArray(accRes.result?.list))
-        drawerTuitionAccounts.value = accRes.result.list
-    }
   }
   catch (error) {
     console.error('open one-to-one drawer failed', error)
@@ -937,10 +952,112 @@ function handleDrawerEdit(record) {
   openEditModal(record || currentRecord.value)
 }
 
-/** 报读明细内「切换默认账户」：关闭抽屉后打开编辑（与顶部编辑一致，便于后续扩展扣费账户） */
-function handleDrawerSwitchDefaultAccount() {
-  drawerOpen.value = false
-  openEditModal(currentRecord.value)
+function switchAccountBucketKeyOf(acc) {
+  return [
+    String(acc?.lessonId || ''),
+    String(acc?.lessonType || ''),
+    String(acc?.lessonChargingMode || ''),
+  ].join('#')
+}
+
+function currentTuitionBucketKey(record) {
+  return [
+    String(record?.tuitionAccount?.lessonId || ''),
+    String(record?.tuitionAccount?.lessonType || ''),
+    String(record?.tuitionAccount?.lessonChargingMode || ''),
+  ].join('#')
+}
+
+function pickSwitchAccountSelectedId(list, record) {
+  const currentId = String(record?.tuitionAccount?.id || record?.tuitionAccountId || '')
+  const direct = list.find(acc => String(acc?.id || '') === currentId)
+  if (direct?.id)
+    return direct.id
+  const bucketKey = currentTuitionBucketKey(record)
+  const sameBucket = list.find(acc => switchAccountBucketKeyOf(acc) === bucketKey)
+  if (sameBucket?.id)
+    return sameBucket.id
+  return list[0]?.id
+}
+
+async function loadSwitchAccountOptions(record) {
+  if (!record?.id || !record?.studentId || !record?.lessonId) {
+    switchAccountOptions.value = []
+    return []
+  }
+  switchAccountLoading.value = true
+  try {
+    const res = await listTuitionAccountsByStudentAndLessonApi({
+      studentId: String(record.studentId),
+      lessonId: String(record.lessonId),
+      teachingClassId: String(record.id),
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '加载扣费课程账户失败')
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    switchAccountOptions.value = list
+    return list
+  }
+  finally {
+    switchAccountLoading.value = false
+  }
+}
+
+async function handleDrawerSwitchDefaultAccount(payload) {
+  const record = payload?.record || currentRecord.value
+  if (Number(record?.tuitionAccountCount || 0) <= 1)
+    return
+  try {
+    const list = await loadSwitchAccountOptions(record)
+    if (list.length <= 1)
+      return
+    switchAccountSelectedId.value = pickSwitchAccountSelectedId(list, record)
+    switchAccountModalOpen.value = true
+  }
+  catch (error) {
+    console.error('load switch tuition accounts failed', error)
+    messageService.error(error?.message || '加载扣费课程账户失败')
+  }
+}
+
+async function submitSwitchDefaultAccount() {
+  const record = currentRecord.value
+  if (!record?.id) {
+    messageService.error('缺少1对1班级ID')
+    return
+  }
+  if (!switchAccountSelectedId.value) {
+    messageService.warning('请选择扣费课程账户')
+    return
+  }
+  switchAccountSubmitting.value = true
+  try {
+    const res = await switchOneToOneDefaultTuitionAccountApi({
+      id: String(record.id),
+      tuitionAccountId: String(switchAccountSelectedId.value),
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '切换默认账户失败')
+    messageService.success('切换默认账户成功')
+    switchAccountModalOpen.value = false
+    await getOneToOneList()
+    const updated = dataSource.value.find(item => String(item.id) === String(record.id)) || record
+    currentRecord.value = updated
+    const detailRes = await getOneToOneByIdApi(record.id)
+    if (detailRes.code === 200 && detailRes.result)
+      currentRecord.value = { ...updated, ...detailRes.result }
+  } catch (error) {
+    console.error('switch default tuition account failed', error)
+    messageService.error(error?.message || '切换默认账户失败')
+  } finally {
+    switchAccountSubmitting.value = false
+  }
+}
+
+function closeSwitchAccountModal() {
+  switchAccountModalOpen.value = false
+  switchAccountSelectedId.value = undefined
+  switchAccountOptions.value = []
 }
 
 function ensureSelectedRows() {
@@ -1407,6 +1524,9 @@ onMounted(() => {
                 <div class="text-3 text-#888">
                   {{ accountDeductTeachMethodText(record.tuitionAccount?.lessonType) }}｜{{ getChargingModeText(effectiveListLessonChargingMode(record)) }}
                 </div>
+                <div class="text-3 text-#888">
+                  账户{{ Number(record.tuitionAccountCount || 0) }}个
+                </div>
               </template>
               <template v-if="column.key === 'totalQuantity'">
                 <div>
@@ -1504,6 +1624,52 @@ onMounted(() => {
       @edit="handleDrawerEdit"
       @switch-default-account="handleDrawerSwitchDefaultAccount"
     />
+
+    <a-modal
+      v-model:open="switchAccountModalOpen"
+      title="选择扣费课程账户"
+      :confirm-loading="switchAccountSubmitting"
+      ok-text="确定"
+      cancel-text="取消"
+      width="700"
+      @ok="submitSwitchDefaultAccount"
+      @cancel="closeSwitchAccountModal"
+    >
+      <div class="mb-4 rounded-8px bg-#eef5ff px-4 py-3 text-#3f6fdc text-13px">
+        以下为当前相关课程的扣费课程账户
+      </div>
+      <a-spin :spinning="switchAccountLoading">
+        <a-radio-group v-model:value="switchAccountSelectedId" class="w-full">
+          <div
+            v-for="acc in switchAccountOptions"
+            :key="acc.id"
+            class="mb-3 flex items-center rounded-10px border border-solid border-#edf0f5 px-4 py-4 last:mb-0"
+            :class="{ 'bg-#f7fbff border-#bcd6ff': String(switchAccountSelectedId) === String(acc.id) }"
+          >
+            <a-radio :value="acc.id" />
+            <div class="ml-3 min-w-0 flex-1">
+              <div class="text-15px text-#222 font-600">
+                {{ acc.productName || acc.lessonName || '-' }}
+              </div>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <a-tag color="#e6f0ff" :bordered="false">
+                  {{ accountDeductTeachMethodText(acc.lessonType) }}
+                </a-tag>
+                <a-tag color="#eef2ff" :bordered="false">
+                  {{ getChargingModeText(normalizeAccountChargingMode(acc.lessonChargingMode)) }}
+                </a-tag>
+              </div>
+            </div>
+            <div class="ml-6 w-180px text-#666 text-13px">
+              <div>{{ switchAccountRemainText(acc) }}</div>
+              <div class="mt-2">
+                有效期至：{{ switchAccountExpireText(acc) }}
+              </div>
+            </div>
+          </div>
+        </a-radio-group>
+      </a-spin>
+    </a-modal>
 
     <FinishOneToOneCourseModal
       v-model:open="finishCourseModalOpen"

@@ -15,7 +15,7 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-  /** 当前 1 对 1 报读对应的学费账户（按 orderCourseDetailId 过滤后的列表） */
+  /** 报读明细额外账户列表；默认留空，仅展示当前扣费账户 */
   tuitionAccounts: {
     type: Array,
     default: () => [],

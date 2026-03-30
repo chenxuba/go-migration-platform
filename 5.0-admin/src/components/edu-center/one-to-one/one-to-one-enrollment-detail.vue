@@ -7,7 +7,7 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-  /** 接口返回的学费账户列表；为空时用 record.tuitionAccount 兜底 */
+  /** 为空时仅展示当前扣费账户 record.tuitionAccount */
   accounts: {
     type: Array,
     default: () => [],
@@ -16,7 +16,15 @@ const props = defineProps({
 
 const emit = defineEmits(['switchDefaultAccount'])
 
-const canSwitchDefaultAccount = computed(() => Number(props.record?.status) !== 2)
+const canSwitchDefaultAccount = computed(() => {
+  if (Number(props.record?.status) === 2)
+    return false
+  const optionCount = Math.max(
+    Number(props.record?.tuitionAccountCount || 0),
+    Array.isArray(props.accounts) ? props.accounts.length : 0,
+  )
+  return optionCount > 1
+})
 
 function onSwitchDefaultAccount(block, idx) {
   emit('switchDefaultAccount', { block, index: idx, record: props.record })

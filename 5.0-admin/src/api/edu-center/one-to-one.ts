@@ -60,6 +60,7 @@ export interface OneToOneItem {
   teacherClassTime?: number
   lessonId?: string
   lessonName?: string
+  tuitionAccountCount?: number
   tuitionAccountId?: string
   defaultTeacherId?: string
   defaultTeacherName?: string
@@ -87,6 +88,7 @@ export interface OneToOneDetail {
   lessonPrice?: number
   classroomId?: string
   classroomName?: string | null
+  tuitionAccountCount?: number
   tuitionAccountId?: string
   classTime?: number
   isScheduled?: boolean
@@ -162,6 +164,11 @@ export interface OneToOneCheckNameParams {
 
 export interface OneToOneCloseParams {
   id: string
+}
+
+export interface OneToOneSwitchDefaultTuitionAccountParams {
+  id: string
+  tuitionAccountId: string
 }
 
 export interface CloseTuitionAccountOrderParams {
@@ -285,12 +292,16 @@ export function checkOneToOneNameApi(data: OneToOneCheckNameParams) {
 }
 
 /** 对标 SchoolPal ExistOne2One：result/data 为 true 表示该学员在该课程下已有开班中的 1 对 1 */
-export function existOneToOneApi(data: { studentId: string; lessonId: string }) {
+export function existOneToOneApi(data: { studentId: string, lessonId: string }) {
   return usePost<boolean>('/api/v1/one-to-ones/exist', data)
 }
 
 export function updateOneToOneApi(data: OneToOneUpdateParams) {
   return usePost<boolean>('/api/v1/one-to-ones/update', data)
+}
+
+export function switchOneToOneDefaultTuitionAccountApi(data: OneToOneSwitchDefaultTuitionAccountParams) {
+  return usePost<boolean>('/api/v1/one-to-ones/switch-default-tuition-account', data)
 }
 
 export function createOneToOneApi(data: OneToOneCreateParams) {
@@ -313,6 +324,8 @@ export function reopenOneToOneApi(data: OneToOneCloseParams) {
 export function listTuitionAccountsByStudentAndLessonApi(data: {
   studentId: string
   lessonId: string
+  /** 传当前 1 对 1 班级 id 时，补齐该班级已绑定的扣费账户，避免同学员历史班级串数 */
+  teachingClassId?: string
   /** 有值且非 0 时只查该订单明细下的学费账户（1 对 1 详情报读明细） */
   orderCourseDetailId?: string
 }) {
