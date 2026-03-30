@@ -622,18 +622,18 @@ func parseCourseQueryDTO(raw map[string]any) model.CourseQueryDTO {
 
 func parseCourseProductSaveDTO(raw map[string]any) model.CourseProductSaveDTO {
 	dto := model.CourseProductSaveDTO{
-		ID:               asInt64Ptr(raw["id"]),
-		UUID:             asString(raw["uuid"]),
-		Version:          asInt64Ptr(raw["version"]),
-		Name:             asString(raw["name"]),
-		CourseCategory:   asInt64Ptr(firstNonNil(raw["courseCategory"], raw["courseCategoryId"])),
-		CourseAttribute:  asIntPtr(raw["courseAttribute"]),
-		Type:             asIntPtr(raw["type"]),
-		Title:            asString(raw["title"]),
-		Images:           asString(raw["images"]),
-		Description:      asString(raw["description"]),
-		TeachMethod: asIntPtr(firstNonNil(raw["teachMethod"], raw["lessonType"])),
-		SubjectIDs:  asInt64Slice(raw["subjectIds"]),
+		ID:              asInt64Ptr(raw["id"]),
+		UUID:            asString(raw["uuid"]),
+		Version:         asInt64Ptr(raw["version"]),
+		Name:            asString(raw["name"]),
+		CourseCategory:  asInt64Ptr(firstNonNil(raw["courseCategory"], raw["courseCategoryId"])),
+		CourseAttribute: asIntPtr(raw["courseAttribute"]),
+		Type:            asIntPtr(raw["type"]),
+		Title:           asString(raw["title"]),
+		Images:          asString(raw["images"]),
+		Description:     asString(raw["description"]),
+		TeachMethod:     asIntPtr(firstNonNil(raw["teachMethod"], raw["lessonType"])),
+		SubjectIDs:      asInt64Slice(raw["subjectIds"]),
 	}
 	if show := asBoolPtr(raw["isShowMicoSchool"]); show != nil {
 		dto.IsShowMicoSchool = *show
@@ -1059,6 +1059,11 @@ func formatIntentStudentDetail(item model.IntentStudent) map[string]any {
 		"studentStatus":               item.StudentStatus,
 		"followUpTime":                formatNullableDateTime(item.LastFollowUpTime),
 		"nextFollowUpTime":            formatNullableDateTime(item.NextFollowUpTime),
+		"salesAssignedTime":           formatNullableDateTime(item.SalesAssignedTime),
+		"createName":                  item.CreateName,
+		"channelCategoryName":         item.ChannelCategoryName,
+		"firstEnrolledTime":           formatNullableDateTime(item.FirstEnrolledTime),
+		"turnedHistoryTime":           formatNullableDateTime(item.TurnedHistoryTime),
 		"rechargeAccountBalanceTotal": item.RechargeAccountBalanceTotal,
 		"rechargeAmountTotal":         item.RechargeAmountTotal,
 		"residualAmountTotal":         item.ResidualAmountTotal,

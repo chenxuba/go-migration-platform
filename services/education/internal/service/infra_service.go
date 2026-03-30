@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"go-migration-platform/pkg/logx"
 	"go-migration-platform/pkg/messaging"
 	"go-migration-platform/services/education/internal/model"
 )
+
+const mqPublishTimeout = 800 * time.Millisecond
 
 func (svc *Service) StudentSyncStatus(instID *int64) (model.StudentSyncStatus, error) {
 	totalStudents, err := svc.repo.CountStudents(context.Background(), instID)
@@ -70,7 +73,9 @@ func (svc *Service) publishMQ(topic, tag string, payload any) error {
 	if svc.mqClient == nil {
 		return nil
 	}
-	if err := svc.mqClient.Publish(context.Background(), messaging.RocketMQEvent{
+	publishCtx, cancel := context.WithTimeout(context.Background(), mqPublishTimeout)
+	defer cancel()
+	if err := svc.mqClient.Publish(publishCtx, messaging.RocketMQEvent{
 		Topic: topic,
 		Tag:   tag,
 		Body:  payload,

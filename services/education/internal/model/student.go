@@ -92,6 +92,8 @@ type IntentStudent struct {
 	SalesAssignedTime             *time.Time     `json:"salesAssignedTime,omitempty"`
 	CreateID                      *int64         `json:"createId,omitempty"`
 	CreateName                    string         `json:"createName"`
+	FirstEnrolledTime             *time.Time     `json:"firstEnrolledTime,omitempty"`
+	TurnedHistoryTime             *time.Time     `json:"turnedHistoryTime,omitempty"`
 	IsRecommend                   bool           `json:"isRecommend"`
 	PurchasedAuditionProduct      bool           `json:"purchasedAuditionProduct"`
 	ExperienceClassPurchaseStatus string         `json:"experienceClassPurchaseStatus"`

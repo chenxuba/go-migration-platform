@@ -1188,21 +1188,29 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, studentID int64) (model.IntentStudent, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship, s.sale_person, IFNULL(iu.nick_name, ''), s.intent_level,
-		       IFNULL(s.intended_course, ''), s.channel_id, IFNULL(c.channel_name, ''), s.create_time, s.birthday,
+		       IFNULL(s.intended_course, ''), s.channel_id, IFNULL(c.channel_name, ''), IFNULL(cc.category_name, ''), s.create_time, s.birthday,
 		       IFNULL(s.wechat_number, ''), IFNULL(s.study_school, ''), IFNULL(s.grade, ''), IFNULL(s.interest, ''), IFNULL(s.address, ''),
-		       s.follow_up_status, s.student_status, s.last_follow_up_time, s.next_follow_up_time, IFNULL(s.remark, '')
+		       s.follow_up_status, s.student_status, s.last_follow_up_time, s.next_follow_up_time, IFNULL(s.remark, ''),
+		       s.sale_assigned_time, s.create_id, IFNULL(creator.nick_name, ''),
+		       (SELECT MIN(so.create_time) FROM sale_order so WHERE so.student_id = s.id AND so.del_flag = 0),
+		       CASE WHEN s.student_status = ? THEN s.update_time ELSE NULL END
 		FROM inst_student s
 		LEFT JOIN inst_user iu ON s.sale_person = iu.id
 		LEFT JOIN inst_channel c ON s.channel_id = c.id
+		LEFT JOIN inst_channel_category cc ON cc.id = c.category_id
+		LEFT JOIN inst_user creator ON creator.id = s.create_id
 		WHERE s.del_flag = 0 AND s.inst_id = ? AND s.id = ?
 		LIMIT 1
-	`, instID, studentID)
+	`, model.InstStudentStatusHistory, instID, studentID)
 
 	var item model.IntentStudent
 	var intendedCourseRaw string
 	var birthDay sql.NullTime
 	var lastFollowUp sql.NullTime
 	var nextFollowUp sql.NullTime
+	var salesAssignedTime sql.NullTime
+	var firstEnrolledTime sql.NullTime
+	var turnedHistoryTime sql.NullTime
 	if err := row.Scan(
 		&item.ID,
 		&item.InstID,
@@ -1217,6 +1225,7 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 		&intendedCourseRaw,
 		&item.ChannelID,
 		&item.ChannelName,
+		&item.ChannelCategoryName,
 		&item.CreateTime,
 		&birthDay,
 		&item.WeChatNumber,
@@ -1229,6 +1238,11 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 		&lastFollowUp,
 		&nextFollowUp,
 		&item.Remark,
+		&salesAssignedTime,
+		&item.CreateID,
+		&item.CreateName,
+		&firstEnrolledTime,
+		&turnedHistoryTime,
 	); err != nil {
 		return model.IntentStudent{}, err
 	}
@@ -1244,6 +1258,18 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 	if nextFollowUp.Valid {
 		t := nextFollowUp.Time
 		item.NextFollowUpTime = &t
+	}
+	if salesAssignedTime.Valid {
+		t := salesAssignedTime.Time
+		item.SalesAssignedTime = &t
+	}
+	if firstEnrolledTime.Valid {
+		t := firstEnrolledTime.Time
+		item.FirstEnrolledTime = &t
+	}
+	if turnedHistoryTime.Valid {
+		t := turnedHistoryTime.Time
+		item.TurnedHistoryTime = &t
 	}
 	customMap, err := repo.loadStudentCustomInfoMap(ctx, []int64{studentID})
 	if err != nil {
