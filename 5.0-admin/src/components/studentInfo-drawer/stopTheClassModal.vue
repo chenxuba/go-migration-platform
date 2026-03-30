@@ -109,7 +109,6 @@ const remainTuitionText = computed(() => `¥ ${formatMoney(props.record?.tuition
 const validityText = computed(() => {
   if (lessonChargingMode.value === 2) {
     const lines = subAccountList.value
-      .filter(item => Number(item?.remainDays || 0) > 0)
       .map((item) => {
         const start = formatDate(item?.startDate || item?.activedAt)
         const end = formatDate(item?.endDate)

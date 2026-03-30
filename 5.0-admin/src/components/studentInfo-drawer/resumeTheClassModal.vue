@@ -102,8 +102,8 @@ const remainTuitionText = computed(() => `¥ ${formatMoney(props.record?.tuition
 const originalValidityText = computed(() => {
   if (lessonChargingMode.value !== 2)
     return formatDate(props.record?.expireTime)
+  // 原有效时段只与日期区间有关，不能按 remainDays 过滤：停课后子账户剩余天数可能为 0，但时段并未被业务清空
   const lines = subAccountList.value
-    .filter(item => Number(item?.remainDays || 0) > 0)
     .map((item) => {
       const start = formatDate(item?.startDate || item?.activedAt)
       const end = formatDate(item?.endDate)
@@ -112,7 +112,14 @@ const originalValidityText = computed(() => {
       return `${start} ~ ${end}`
     })
     .filter(Boolean)
-  return Array.from(new Set(lines)).join('，') || '-'
+  const uniqueLines = Array.from(new Set(lines))
+  if (uniqueLines.length)
+    return uniqueLines.join('，')
+  const start = formatDate(props.record?.validDate || props.record?.activedAt)
+  const end = formatDate(props.record?.endDate || props.record?.expireTime)
+  if (start === '-' || end === '-')
+    return '-'
+  return `${start} ~ ${end}`
 })
 
 const suspendDateText = computed(() => {
@@ -376,7 +383,7 @@ function closeFun() {
                           </div>
                           <div class="resume-expire-tooltip-inner__divider" />
                           <div>现有效期至 = 原有效期 + 已停课时间</div>
-                          <div>如：现有效期至（2026-12-14）= 原有效期至（2026-12-12）+ 已停课 3 天</div>
+                          <div>如：现有效期至（2026-12-15）= 原有效期至（2026-12-12）+ 已停课 3 天</div>
                         </div>
                       </template>
                       <span class="resume-expire-help-icon">?</span>
