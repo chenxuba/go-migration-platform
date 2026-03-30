@@ -1627,48 +1627,80 @@ onMounted(() => {
 
     <a-modal
       v-model:open="switchAccountModalOpen"
-      title="选择扣费课程账户"
+      class="switch-account-modal"
       :confirm-loading="switchAccountSubmitting"
       ok-text="确定"
       cancel-text="取消"
-      width="700"
+      :closable="false"
+      width="680px"
       @ok="submitSwitchDefaultAccount"
       @cancel="closeSwitchAccountModal"
     >
-      <div class="mb-4 rounded-8px bg-#eef5ff px-4 py-3 text-#3f6fdc text-13px">
-        以下为当前相关课程的扣费课程账户
+      <template #title>
+        <div class="switch-account-modal__title">
+          <span>选择扣费课程账户</span>
+          <a-button type="text" class="close-btn" @click="closeSwitchAccountModal">
+            <template #icon>
+              <CloseOutlined class="text-5 close-icon" />
+            </template>
+          </a-button>
+        </div>
+      </template>
+
+      <div class="switch-account-modal__notice">
+        <ExclamationCircleOutlined class="switch-account-modal__notice-icon" />
+        <span>以下为当前相关课程的扣费课程账户</span>
       </div>
-      <a-spin :spinning="switchAccountLoading">
-        <a-radio-group v-model:value="switchAccountSelectedId" class="w-full">
-          <div
-            v-for="acc in switchAccountOptions"
-            :key="acc.id"
-            class="mb-3 flex items-center rounded-10px border border-solid border-#edf0f5 px-4 py-4 last:mb-0"
-            :class="{ 'bg-#f7fbff border-#bcd6ff': String(switchAccountSelectedId) === String(acc.id) }"
-          >
-            <a-radio :value="acc.id" />
-            <div class="ml-3 min-w-0 flex-1">
-              <div class="text-15px text-#222 font-600">
-                {{ acc.productName || acc.lessonName || '-' }}
-              </div>
-              <div class="mt-2 flex flex-wrap gap-2">
-                <a-tag color="#e6f0ff" :bordered="false">
-                  {{ accountDeductTeachMethodText(acc.lessonType) }}
-                </a-tag>
-                <a-tag color="#eef2ff" :bordered="false">
-                  {{ getChargingModeText(normalizeAccountChargingMode(acc.lessonChargingMode)) }}
-                </a-tag>
-              </div>
-            </div>
-            <div class="ml-6 w-180px text-#666 text-13px">
-              <div>{{ switchAccountRemainText(acc) }}</div>
-              <div class="mt-2">
-                有效期至：{{ switchAccountExpireText(acc) }}
-              </div>
-            </div>
+
+      <div class="switch-account-modal__table">
+        <div class="switch-account-modal__thead">
+          <div class="switch-account-modal__col switch-account-modal__col--account">
+            课程账户
           </div>
-        </a-radio-group>
-      </a-spin>
+          <div class="switch-account-modal__col switch-account-modal__col--remain">
+            剩余数量
+          </div>
+          <div class="switch-account-modal__col switch-account-modal__col--expire">
+            有效日期/有效时段
+          </div>
+        </div>
+        <a-spin :spinning="switchAccountLoading">
+          <a-radio-group v-model:value="switchAccountSelectedId" class="switch-account-modal__group custom-radio">
+            <label
+              v-for="acc in switchAccountOptions"
+              :key="acc.id"
+              class="switch-account-modal__row"
+              :class="{ 'is-active': String(switchAccountSelectedId) === String(acc.id) }"
+            >
+              <a-radio :value="acc.id" class="switch-account-modal__radio" />
+              <div class="switch-account-modal__col switch-account-modal__col--account">
+                <div class="switch-account-modal__account-name">
+                  {{ acc.productName || acc.lessonName || '-' }}
+                </div>
+                <div class="switch-account-modal__tags">
+                  <a-tag color="#e9f2ff" :bordered="false">
+                    {{ accountDeductTeachMethodText(acc.lessonType) }}
+                  </a-tag>
+                  <a-tag color="#eef3ff" :bordered="false">
+                    {{ getChargingModeText(normalizeAccountChargingMode(acc.lessonChargingMode)) }}
+                  </a-tag>
+                </div>
+              </div>
+              <div class="switch-account-modal__col switch-account-modal__col--remain">
+                {{ switchAccountRemainText(acc) }}
+              </div>
+              <div class="switch-account-modal__col switch-account-modal__col--expire">
+                {{ switchAccountExpireText(acc) }}
+              </div>
+            </label>
+            <a-empty
+              v-if="!switchAccountLoading && switchAccountOptions.length === 0"
+              class="switch-account-modal__empty"
+              description="暂无可切换账户"
+            />
+          </a-radio-group>
+        </a-spin>
+      </div>
     </a-modal>
 
     <FinishOneToOneCourseModal
@@ -2070,6 +2102,161 @@ onMounted(() => {
   line-height: 1.5;
 }
 
+.switch-account-modal__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f1f1f;
+}
+
+.switch-account-modal__notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: #edf4ff;
+  color: #3f6fdc;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.switch-account-modal__notice-icon {
+  font-size: 14px;
+}
+
+.switch-account-modal__table {
+  overflow: hidden;
+  border: 1px solid #edf0f5;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.switch-account-modal__thead {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) 132px 132px;
+  align-items: center;
+  padding: 14px 18px 14px 50px;
+  background: #f7f9fc;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.switch-account-modal__col {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.switch-account-modal__thead .switch-account-modal__col {
+  color: #667085;
+  font-weight: 600;
+}
+
+.switch-account-modal__group {
+  display: block;
+}
+
+.switch-account-modal__row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1.7fr) 132px 132px;
+  align-items: center;
+  column-gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #f0f2f5;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.switch-account-modal__row:last-child {
+  border-bottom: 0;
+}
+
+.switch-account-modal__row:hover {
+  background: #fafcff;
+}
+
+.switch-account-modal__row.is-active {
+  background: #eaf3ff;
+}
+
+.switch-account-modal__radio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.switch-account-modal__account-name {
+  color: #1f1f1f;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.switch-account-modal__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.switch-account-modal__tags :deep(.ant-tag) {
+  margin-inline-end: 0;
+  border-radius: 999px;
+  padding-inline: 10px;
+  color: #4a67c7;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.switch-account-modal__col--remain,
+.switch-account-modal__col--expire {
+  color: #4b5565;
+  line-height: 22px;
+}
+
+.switch-account-modal__empty {
+  padding: 40px 0 36px;
+}
+
+.switch-account-modal :deep(.ant-radio-wrapper) {
+  margin-inline-end: 0;
+}
+
+.switch-account-modal :deep(.ant-radio) {
+  top: 0;
+}
+
+.switch-account-modal :deep(.ant-radio-inner) {
+  width: 18px;
+  height: 18px;
+}
+
+.switch-account-modal :deep(.ant-radio-checked .ant-radio-inner) {
+  box-shadow: 0 0 0 4px rgba(76, 132, 255, 0.12);
+}
+
+.switch-account-modal :deep(.ant-radio-input:focus + .ant-radio-inner) {
+  box-shadow: 0 0 0 4px rgba(76, 132, 255, 0.12);
+}
+
+@media (max-width: 900px) {
+  .switch-account-modal__thead {
+    grid-template-columns: minmax(0, 1.3fr) 112px 112px;
+    padding-right: 14px;
+    padding-left: 44px;
+  }
+
+  .switch-account-modal__row {
+    grid-template-columns: 18px minmax(0, 1.3fr) 112px 112px;
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+}
+
 /* 学员 + 教师两段同一行；组内输入与单位不换行。窄屏可横向滚动，避免第二段整体掉到下一行 */
 .one-to-one-class-time-inputs {
   display: flex;
@@ -2160,5 +2347,20 @@ onMounted(() => {
 
 .createStu-modal-content-box .ant-modal-body {
   padding: 0 !important;
+}
+
+.switch-account-modal .ant-modal-header {
+  padding: 18px 24px 14px !important;
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.switch-account-modal .ant-modal-body {
+  padding: 6px 24px 8px !important;
+}
+
+.switch-account-modal .ant-modal-footer {
+  padding: 16px 24px 20px !important;
+  border-top-color: #f0f2f5;
 }
 </style>
