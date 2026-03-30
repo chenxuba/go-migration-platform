@@ -251,6 +251,7 @@ func (svc *Service) DeleteCustomStudentField(userID int64, field model.StudentFi
 }
 
 func (svc *Service) GetTuitionAccountReadingList(userID int64, query model.TuitionAccountReadingListQueryDTO) (model.TuitionAccountReadingListResult, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
 	svc.SyncTimeSlotAutoIncomeOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

@@ -633,6 +633,27 @@ func nullableDateKey(value *time.Time) string {
 	return value.Format("2006-01-02")
 }
 
+// minCloseFlowValidDate 结课流水对应账户在结课前合约首日（多子账户取最早 valid_date）。
+func minCloseFlowValidDate(flows []closeTuitionAccountFlowRow) (time.Time, bool) {
+	var out time.Time
+	var ok bool
+	for _, f := range flows {
+		if !f.validDate.Valid {
+			continue
+		}
+		t := startOfDayTime(f.validDate.Time)
+		if !ok || t.Before(out) {
+			out = t
+			ok = true
+		}
+	}
+	return out, ok
+}
+
+func isSameCalendarDay(a, b time.Time) bool {
+	return startOfDayTime(a).Equal(startOfDayTime(b))
+}
+
 func parseRequiredDate(value string) (time.Time, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -951,6 +972,8 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 	now := time.Now()
 	cursorDate := startDate
 	firstRevokeFlowID := int64(0)
+	origContractStart, hasOrigContractStart := minCloseFlowValidDate(flows)
+	bonusConsumedFirstDay := false
 
 	for _, flow := range flows {
 		newUsedQty := math.Max(closeOrderRoundMoney(flow.usedQuantity-flow.quantity), 0)
@@ -965,6 +988,12 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 		if orderRow.lessonChargingMode == 2 {
 			restoreDays := int(math.Round(flow.quantity))
 			if restoreDays > 0 {
+				// 现有效开始日若与结课前合约首日同一天，第一段要把「当日已课消」计回时段长度（剩余+1 日）；
+				// 若从次日等起算且无该情形，则仍按剩余天数铺区间。
+				if hasOrigContractStart && !bonusConsumedFirstDay && isSameCalendarDay(cursorDate, origContractStart) {
+					restoreDays++
+					bonusConsumedFirstDay = true
+				}
 				validDate := cursorDate
 				endDate := cursorDate.AddDate(0, 0, restoreDays-1)
 				validDateArg = validDate

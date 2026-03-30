@@ -258,6 +258,7 @@ func (svc *Service) PayOrder(userID int64, dto model.PayOrderDTO) error {
 }
 
 func (svc *Service) GetRegistrationListPage(userID int64, query model.RegistrationListQueryDTO) (model.RegistrationListResultVO, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

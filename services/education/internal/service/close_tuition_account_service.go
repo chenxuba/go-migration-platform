@@ -10,6 +10,7 @@ import (
 )
 
 func (svc *Service) GetTuitionAccountSubAccountDateInfo(userID int64, dto model.TuitionAccountSubAccountDateInfoQueryDTO) (model.TuitionAccountSubAccountDateInfoResult, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

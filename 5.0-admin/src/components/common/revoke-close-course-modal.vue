@@ -194,6 +194,19 @@ const previewPeriods = computed(() =>
   Array.isArray(previewData.value?.subTuitionAccounts) ? previewData.value.subTuitionAccounts : [],
 )
 
+/** 结课前合约首日（多段取最早 startDate），与后端 minCloseFlowValidDate 一致 */
+function minOriginalPeriodStart(periods) {
+  let min = null
+  for (const p of periods) {
+    const d = dayjs(p?.startDate)
+    if (!d.isValid())
+      continue
+    if (min === null || d.isBefore(min, 'day'))
+      min = d
+  }
+  return min
+}
+
 const recomputedValidPeriodLines = computed(() => {
   if (lessonChargingMode.value !== 2 || !formState.startDate)
     return []
@@ -202,11 +215,14 @@ const recomputedValidPeriodLines = computed(() => {
   if (!start.isValid())
     return []
 
+  const origStart = minOriginalPeriodStart(previewPeriods.value)
   let cursor = start
   const lines = []
+  let bonusApplied = false
 
   previewPeriods.value.forEach((period) => {
     let days = Math.round(Number(period?.quantity || 0))
+    const fromFlowQuantity = days > 0
     if (days <= 0) {
       const rawStart = dayjs(period?.startDate)
       const rawEnd = dayjs(period?.endDate)
@@ -215,6 +231,11 @@ const recomputedValidPeriodLines = computed(() => {
     }
     if (days <= 0)
       return
+
+    if (fromFlowQuantity && !bonusApplied && origStart && cursor.isSame(origStart, 'day')) {
+      days += 1
+      bonusApplied = true
+    }
 
     const end = cursor.add(days - 1, 'day')
     lines.push(`${cursor.format('YYYY-MM-DD')} ~ ${end.format('YYYY-MM-DD')}`)

@@ -11,6 +11,7 @@ import (
 )
 
 func (svc *Service) GetOneToOneListPage(userID int64, query model.OneToOneListQueryDTO) (model.OneToOneListResultVO, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -22,6 +23,7 @@ func (svc *Service) GetOneToOneListPage(userID int64, query model.OneToOneListQu
 }
 
 func (svc *Service) GetOneToOneDetail(userID int64, id string) (model.OneToOneDetailVO, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -37,6 +39,7 @@ func (svc *Service) GetOneToOneDetail(userID int64, id string) (model.OneToOneDe
 }
 
 func (svc *Service) ListStudentOneToOneDeductionTuitionAccounts(userID int64, dto model.StudentOneToOneDeductionAccountsQueryDTO) (model.StudentLessonTuitionAccountsResult, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -59,6 +62,7 @@ func (svc *Service) ListStudentOneToOneDeductionTuitionAccounts(userID int64, dt
 }
 
 func (svc *Service) ListStudentTuitionAccountsByStudentAndLesson(userID int64, dto model.StudentLessonTuitionAccountsQueryDTO) (model.StudentLessonTuitionAccountsResult, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -98,6 +102,7 @@ func (svc *Service) ListStudentTuitionAccountsByStudentAndLesson(userID int64, d
 
 // ListOneToOneLessonsByStudent 对标 QueryOne2OneLessonByStudentId：按学员查可建 1 对 1 的课程列表
 func (svc *Service) ListOneToOneLessonsByStudent(userID int64, dto model.OneToOneLessonsByStudentQueryDTO) (model.OneToOneLessonsByStudentResult, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

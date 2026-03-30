@@ -73,6 +73,147 @@ func endOfDayTime(value time.Time) time.Time {
 	return time.Date(value.Year(), value.Month(), value.Day(), 23, 59, 59, 0, value.Location())
 }
 
+func (repo *Repository) SyncScheduledSuspendResumeTuitionAccounts(ctx context.Context, now time.Time) (int, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	suspendIDs, err := repo.listDueScheduledSuspendTuitionAccountIDsTx(ctx, tx, now)
+	if err != nil {
+		return 0, err
+	}
+	if err := repo.applyScheduledSuspendTuitionAccountsTx(ctx, tx, suspendIDs, now); err != nil {
+		return 0, err
+	}
+	if err := syncOneToOneClassStudentStatusForAccountIDsTx(ctx, tx, 0, suspendIDs, model.TeachingClassStudentStatusStopped); err != nil {
+		return 0, err
+	}
+
+	resumeIDs, err := repo.listDueScheduledResumeTuitionAccountIDsTx(ctx, tx, now)
+	if err != nil {
+		return 0, err
+	}
+	if err := repo.applyScheduledResumeTuitionAccountsTx(ctx, tx, resumeIDs, now); err != nil {
+		return 0, err
+	}
+	if err := syncOneToOneClassStudentStatusForAccountIDsTx(ctx, tx, 0, resumeIDs, model.TeachingClassStudentStatusStudying); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(suspendIDs) + len(resumeIDs), nil
+}
+
+func (repo *Repository) listDueScheduledSuspendTuitionAccountIDsTx(ctx context.Context, tx *sql.Tx, now time.Time) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id
+		FROM tuition_account
+		WHERE del_flag = 0
+		  AND IFNULL(status, 0) = ?
+		  AND plan_suspend_time IS NOT NULL
+		  AND plan_suspend_time <= ?
+		  AND (plan_resume_time IS NULL OR plan_resume_time > ?)
+		ORDER BY id ASC
+	`, model.TuitionAccountStatusActive, now, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0, 8)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func (repo *Repository) applyScheduledSuspendTuitionAccountsTx(ctx context.Context, tx *sql.Tx, accountIDs []int64, now time.Time) error {
+	if len(accountIDs) == 0 {
+		return nil
+	}
+	args := []any{
+		model.TuitionAccountStatusSuspended,
+		now,
+		now,
+	}
+	args = append(args, int64SliceToAny(accountIDs)...)
+	_, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account
+		SET status = ?,
+		    suspended_time = COALESCE(plan_suspend_time, ?),
+		    status_change_time = COALESCE(plan_suspend_time, ?),
+		    update_id = 0,
+		    update_time = NOW()
+		WHERE id IN (`+buildPlaceholders(len(accountIDs))+`)
+		  AND del_flag = 0
+	`, args...)
+	return err
+}
+
+func (repo *Repository) listDueScheduledResumeTuitionAccountIDsTx(ctx context.Context, tx *sql.Tx, now time.Time) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id
+		FROM tuition_account
+		WHERE del_flag = 0
+		  AND IFNULL(status, 0) = ?
+		  AND plan_resume_time IS NOT NULL
+		  AND plan_resume_time <= ?
+		ORDER BY id ASC
+	`, model.TuitionAccountStatusSuspended, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0, 8)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+func (repo *Repository) applyScheduledResumeTuitionAccountsTx(ctx context.Context, tx *sql.Tx, accountIDs []int64, now time.Time) error {
+	if len(accountIDs) == 0 {
+		return nil
+	}
+	args := []any{
+		model.TuitionAccountStatusActive,
+		now,
+	}
+	args = append(args, int64SliceToAny(accountIDs)...)
+	_, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account
+		SET status = ?,
+		    suspended_time = NULL,
+		    status_change_time = COALESCE(plan_resume_time, ?),
+		    plan_suspend_time = NULL,
+		    plan_resume_time = NULL,
+		    update_id = 0,
+		    update_time = NOW()
+		WHERE id IN (`+buildPlaceholders(len(accountIDs))+`)
+		  AND del_flag = 0
+	`, args...)
+	return err
+}
+
 func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context, instID, operatorID int64, dto model.SuspendResumeTuitionAccountOrderDTO) (model.SuspendResumeTuitionAccountOrderResult, error) {
 	taID, err := strconv.ParseInt(strings.TrimSpace(dto.TuitionAccountID), 10, 64)
 	if err != nil || taID <= 0 {
@@ -295,15 +436,17 @@ func syncOneToOneClassStudentStatusForTuitionAccountsTx(ctx context.Context, tx 
 	}
 	ph := buildPlaceholders(len(accountIDs))
 	args := []any{targetStatus, operatorID, instID, studentID, courseID, model.TeachingClassTypeOneToOne}
-	args = append(args, int64SliceToAny(accountIDs)...)
 	extraWhere := ""
+	extraArgs := make([]any, 0, 1)
 	if targetStatus == model.TeachingClassStudentStatusStudying {
 		extraWhere = ` AND tcs.class_student_status = ? `
-		args = append(args, model.TeachingClassStudentStatusStopped)
+		extraArgs = append(extraArgs, model.TeachingClassStudentStatusStopped)
 	} else if targetStatus == model.TeachingClassStudentStatusStopped {
 		extraWhere = ` AND tcs.class_student_status <> ? `
-		args = append(args, model.TeachingClassStudentStatusClosed)
+		extraArgs = append(extraArgs, model.TeachingClassStudentStatusClosed)
 	}
+	args = append(args, int64SliceToAny(accountIDs)...)
+	args = append(args, extraArgs...)
 	_, err := tx.ExecContext(ctx, `
 		UPDATE teaching_class_student tcs
 		INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id AND tc.inst_id = tcs.inst_id AND tc.del_flag = 0
@@ -314,6 +457,36 @@ func syncOneToOneClassStudentStatusForTuitionAccountsTx(ctx context.Context, tx 
 		  AND tcs.del_flag = 0
 		  AND tcs.student_id = ?
 		  AND tc.course_id = ?
+		  AND tc.class_type = ?
+		  AND tcs.primary_tuition_account_id IN (`+ph+`)
+	`+extraWhere, args...)
+	return err
+}
+
+func syncOneToOneClassStudentStatusForAccountIDsTx(ctx context.Context, tx *sql.Tx, operatorID int64, accountIDs []int64, targetStatus int) error {
+	if len(accountIDs) == 0 {
+		return nil
+	}
+	ph := buildPlaceholders(len(accountIDs))
+	args := []any{targetStatus, operatorID, model.TeachingClassTypeOneToOne}
+	extraWhere := ""
+	extraArgs := make([]any, 0, 1)
+	if targetStatus == model.TeachingClassStudentStatusStudying {
+		extraWhere = ` AND tcs.class_student_status = ? `
+		extraArgs = append(extraArgs, model.TeachingClassStudentStatusStopped)
+	} else if targetStatus == model.TeachingClassStudentStatusStopped {
+		extraWhere = ` AND tcs.class_student_status <> ? `
+		extraArgs = append(extraArgs, model.TeachingClassStudentStatusClosed)
+	}
+	args = append(args, int64SliceToAny(accountIDs)...)
+	args = append(args, extraArgs...)
+	_, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_student tcs
+		INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id AND tc.inst_id = tcs.inst_id AND tc.del_flag = 0
+		SET tcs.class_student_status = ?,
+		    tcs.update_id = ?,
+		    tcs.update_time = NOW()
+		WHERE tcs.del_flag = 0
 		  AND tc.class_type = ?
 		  AND tcs.primary_tuition_account_id IN (`+ph+`)
 	`+extraWhere, args...)
