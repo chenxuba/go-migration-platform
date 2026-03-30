@@ -1145,15 +1145,16 @@ func (repo *Repository) SwitchOneToOneDefaultTuitionAccount(ctx context.Context,
 	defer tx.Rollback()
 
 	var (
-		exists    int
-		studentID int64
+		exists      int
+		studentID   int64
+		classStatus int
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*), IFNULL(MIN(tcs.student_id), 0)
+		SELECT COUNT(*), IFNULL(MIN(tcs.student_id), 0), IFNULL(MIN(tc.status), ?)
 		FROM teaching_class tc
 		INNER JOIN teaching_class_student tcs ON tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
 		WHERE tc.id = ? AND tc.inst_id = ? AND tc.class_type = ? AND tc.del_flag = 0
-	`, classID, instID, model.TeachingClassTypeOneToOne).Scan(&exists, &studentID); err != nil {
+	`, model.TeachingClassStatusActive, classID, instID, model.TeachingClassTypeOneToOne).Scan(&exists, &studentID, &classStatus); err != nil {
 		return err
 	}
 	if exists == 0 || studentID <= 0 {
@@ -1170,19 +1171,33 @@ func (repo *Repository) SwitchOneToOneDefaultTuitionAccount(ctx context.Context,
 	}
 
 	var (
-		pickRowID     int64
-		pickOrderID   int64
-		pickOCDID     int64
-		pickQuoteID   int64
-		pickPrimaryTA int64
+		pickRowID              int64
+		pickOrderID            int64
+		pickOCDID              int64
+		pickQuoteID            int64
+		pickPrimaryTA          int64
+		pickClassStudentStatus int
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT id, IFNULL(order_id, 0), IFNULL(order_course_detail_id, 0), IFNULL(quote_id, 0), IFNULL(primary_tuition_account_id, 0)
+		SELECT
+			id,
+			IFNULL(order_id, 0),
+			IFNULL(order_course_detail_id, 0),
+			IFNULL(quote_id, 0),
+			IFNULL(primary_tuition_account_id, 0),
+			IFNULL(class_student_status, ?)
 		FROM teaching_class_student
 		WHERE inst_id = ? AND teaching_class_id = ? AND del_flag = 0
 		ORDER BY id ASC
 		LIMIT 1
-	`, instID, classID).Scan(&pickRowID, &pickOrderID, &pickOCDID, &pickQuoteID, &pickPrimaryTA); err != nil {
+	`, model.TeachingClassStudentStatusStudying, instID, classID).Scan(
+		&pickRowID,
+		&pickOrderID,
+		&pickOCDID,
+		&pickQuoteID,
+		&pickPrimaryTA,
+		&pickClassStudentStatus,
+	); err != nil {
 		return err
 	}
 	if pickPrimaryTA == taID {
@@ -1190,11 +1205,12 @@ func (repo *Repository) SwitchOneToOneDefaultTuitionAccount(ctx context.Context,
 	}
 
 	var (
-		targetRowID     int64
-		targetOrderID   int64
-		targetOCDID     int64
-		targetQuoteID   int64
-		targetPrimaryTA int64
+		targetRowID              int64
+		targetOrderID            int64
+		targetOCDID              int64
+		targetQuoteID            int64
+		targetPrimaryTA          int64
+		targetClassStudentStatus int
 	)
 	switch err := tx.QueryRowContext(ctx, `
 		SELECT
@@ -1202,7 +1218,8 @@ func (repo *Repository) SwitchOneToOneDefaultTuitionAccount(ctx context.Context,
 			IFNULL(tcs.order_id, 0),
 			IFNULL(tcs.order_course_detail_id, 0),
 			IFNULL(tcs.quote_id, 0),
-			IFNULL(tcs.primary_tuition_account_id, 0)
+			IFNULL(tcs.primary_tuition_account_id, 0),
+			IFNULL(tcs.class_student_status, ?)
 		FROM teaching_class_student tcs
 		LEFT JOIN tuition_account ta_eff ON ta_eff.id = COALESCE(
 			NULLIF(tcs.primary_tuition_account_id, 0),
@@ -1231,17 +1248,34 @@ func (repo *Repository) SwitchOneToOneDefaultTuitionAccount(ctx context.Context,
 			AND IFNULL(icq_eff.lesson_model, -99999) = ?
 		ORDER BY tcs.id ASC
 		LIMIT 1
-	`, instID, classID, selectedBucket.courseID, selectedBucket.teachMethod, selectedBucket.lessonModelCode).Scan(&targetRowID, &targetOrderID, &targetOCDID, &targetQuoteID, &targetPrimaryTA); {
+	`, model.TeachingClassStudentStatusStudying, instID, classID, selectedBucket.courseID, selectedBucket.teachMethod, selectedBucket.lessonModelCode).Scan(
+		&targetRowID,
+		&targetOrderID,
+		&targetOCDID,
+		&targetQuoteID,
+		&targetPrimaryTA,
+		&targetClassStudentStatus,
+	); {
 	case errors.Is(err, sql.ErrNoRows):
 		targetRowID = 0
 	case err != nil:
 		return err
 	}
 
-	now := time.Now()
-	if targetRowID == pickRowID {
-		return nil
+	nextPickClassStudentStatus := pickClassStudentStatus
+	if targetRowID > 0 {
+		nextPickClassStudentStatus = targetClassStudentStatus
 	}
+	if nextPickClassStudentStatus == model.TeachingClassStudentStatusClosed {
+		nextPickClassStudentStatus = model.TeachingClassStudentStatusStudying
+	}
+
+	autoReopenClass := classStatus == model.TeachingClassStatusClosed
+	if pickClassStudentStatus != model.TeachingClassStudentStatusClosed || nextPickClassStudentStatus == model.TeachingClassStudentStatusClosed {
+		autoReopenClass = false
+	}
+
+	now := time.Now()
 	if targetRowID > 0 && targetRowID != pickRowID {
 		tempOCDID := -pickRowID
 		if tempOCDID == pickOCDID || tempOCDID == targetOCDID {
@@ -1256,24 +1290,34 @@ func (repo *Repository) SwitchOneToOneDefaultTuitionAccount(ctx context.Context,
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE teaching_class_student
-			SET order_id = ?, order_course_detail_id = ?, quote_id = ?, primary_tuition_account_id = ?, update_id = ?, update_time = ?
+			SET order_id = ?, order_course_detail_id = ?, quote_id = ?, primary_tuition_account_id = ?, class_student_status = ?, update_id = ?, update_time = ?
 			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, pickOrderID, pickOCDID, pickQuoteID, pickPrimaryTA, operatorID, now, targetRowID, instID); err != nil {
+		`, pickOrderID, pickOCDID, pickQuoteID, pickPrimaryTA, pickClassStudentStatus, operatorID, now, targetRowID, instID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE teaching_class_student
-			SET order_id = ?, order_course_detail_id = ?, quote_id = ?, primary_tuition_account_id = ?, update_id = ?, update_time = ?
+			SET order_id = ?, order_course_detail_id = ?, quote_id = ?, primary_tuition_account_id = ?, class_student_status = ?, update_id = ?, update_time = ?
 			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, targetOrderID, targetOCDID, targetQuoteID, targetPrimaryTA, operatorID, now, pickRowID, instID); err != nil {
+		`, targetOrderID, targetOCDID, targetQuoteID, targetPrimaryTA, nextPickClassStudentStatus, operatorID, now, pickRowID, instID); err != nil {
 			return err
 		}
 	} else {
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE teaching_class_student
-			SET order_id = ?, order_course_detail_id = ?, quote_id = ?, primary_tuition_account_id = ?, update_id = ?, update_time = ?
+			SET order_id = ?, order_course_detail_id = ?, quote_id = ?, primary_tuition_account_id = ?, class_student_status = ?, update_id = ?, update_time = ?
 			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, selectedBind.orderID, selectedBind.ocdID, selectedBind.quoteID, selectedBind.taID, operatorID, now, pickRowID, instID); err != nil {
+		`, selectedBind.orderID, selectedBind.ocdID, selectedBind.quoteID, selectedBind.taID, nextPickClassStudentStatus, operatorID, now, pickRowID, instID); err != nil {
+			return err
+		}
+	}
+
+	if autoReopenClass {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_class
+			SET status = ?, update_id = ?, update_time = ?
+			WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0 AND status = ?
+		`, model.TeachingClassStatusActive, operatorID, now, classID, instID, model.TeachingClassTypeOneToOne, model.TeachingClassStatusClosed); err != nil {
 			return err
 		}
 	}
@@ -1974,17 +2018,18 @@ func (repo *Repository) ReopenOneToOneOnly(ctx context.Context, instID, operator
 	if currentStatus != model.TeachingClassStatusClosed {
 		return errors.New("班级状态不允许恢复开班")
 	}
-	var courseClosedCount int
+	var currentClassStudentStatus int
 	err = repo.db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
+		SELECT IFNULL(tcs.class_student_status, ?)
 		FROM teaching_class_student tcs
 		WHERE tcs.teaching_class_id = ? AND tcs.inst_id = ? AND tcs.del_flag = 0
-		  AND tcs.class_student_status = ?
-	`, classID, instID, model.TeachingClassStudentStatusClosed).Scan(&courseClosedCount)
+		ORDER BY tcs.id ASC
+		LIMIT 1
+	`, model.TeachingClassStudentStatusStudying, classID, instID).Scan(&currentClassStudentStatus)
 	if err != nil {
 		return err
 	}
-	if courseClosedCount > 0 {
+	if currentClassStudentStatus == model.TeachingClassStudentStatusClosed {
 		return errors.New("该1对1默认账户的课程已结课，无法恢复开班")
 	}
 	res, err := repo.db.ExecContext(ctx, `

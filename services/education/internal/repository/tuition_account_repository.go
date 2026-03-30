@@ -318,6 +318,7 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 		) AND icq.del_flag = 0
 		WHERE ta.inst_id = ?
 			AND ta.del_flag = 0
+			AND IFNULL(ta.status, 0) <> 3
 		GROUP BY ta.course_id, IFNULL(ic.teach_method, 0), IFNULL(icq.lesson_model, -99999)
 		ORDER BY MIN(IFNULL(ta.create_time, NOW())) DESC, MIN(ta.id) DESC
 	`, append(append(directArgs, bindArgs...), instID)...)

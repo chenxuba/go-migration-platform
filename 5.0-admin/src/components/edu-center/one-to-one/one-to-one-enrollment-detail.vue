@@ -16,14 +16,21 @@ const props = defineProps({
 
 const emit = defineEmits(['switchDefaultAccount'])
 
+const normalizedAccounts = computed(() =>
+  Array.isArray(props.accounts) ? props.accounts.filter(Boolean) : [],
+)
+
+const currentTuitionAccountId = computed(() =>
+  String(props.record?.tuitionAccount?.id || props.record?.tuitionAccountId || ''),
+)
+
 const canSwitchDefaultAccount = computed(() => {
-  if (Number(props.record?.status) === 2)
+  const list = normalizedAccounts.value
+  if (list.length === 0)
     return false
-  const optionCount = Math.max(
-    Number(props.record?.tuitionAccountCount || 0),
-    Array.isArray(props.accounts) ? props.accounts.length : 0,
-  )
-  return optionCount > 1
+  if (list.length === 1)
+    return String(list[0]?.id || '') !== currentTuitionAccountId.value
+  return true
 })
 
 function onSwitchDefaultAccount(block, idx) {
@@ -55,8 +62,8 @@ function mapApiAccountToTuitionVO(item) {
 
 const blocks = computed(() => {
   const status = props.record?.classStudentStatus
-  if (Array.isArray(props.accounts) && props.accounts.length > 0) {
-    return props.accounts.map(acc => ({
+  if (normalizedAccounts.value.length > 0) {
+    return normalizedAccounts.value.map(acc => ({
       classStudentStatus: status,
       tuitionAccount: mapApiAccountToTuitionVO(acc),
     }))

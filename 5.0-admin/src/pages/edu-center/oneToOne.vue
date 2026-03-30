@@ -954,17 +954,51 @@ function getClassStudentStatus(status) {
   return { text: '正常', className: 'text-#0c3 bg-#e6ffec' }
 }
 
+function shouldShowSwitchDefaultAccountByList(list, record) {
+  const accounts = Array.isArray(list) ? list.filter(Boolean) : []
+  if (accounts.length === 0)
+    return false
+  const currentId = String(record?.tuitionAccount?.id || record?.tuitionAccountId || '')
+  if (accounts.length === 1)
+    return String(accounts[0]?.id || '') !== currentId
+  return true
+}
+
+async function fetchRelatedTuitionAccounts(record) {
+  if (!record?.id || !record?.studentId || !record?.lessonId)
+    return []
+  const res = await listTuitionAccountsByStudentAndLessonApi({
+    studentId: String(record.studentId),
+    lessonId: String(record.lessonId),
+    teachingClassId: String(record.id),
+  })
+  if (res.code !== 200)
+    throw new Error(res.message || '加载扣费课程账户失败')
+  return Array.isArray(res.result?.list) ? res.result.list : []
+}
+
 async function openDrawer(record) {
   currentRecord.value = record
   drawerTuitionAccounts.value = []
   drawerOpen.value = true
-  try {
-    const detailRes = await getOneToOneByIdApi(record?.id)
+  const [detailResult, accountsResult] = await Promise.allSettled([
+    getOneToOneByIdApi(record?.id),
+    fetchRelatedTuitionAccounts(record),
+  ])
+
+  if (detailResult.status === 'fulfilled') {
+    const detailRes = detailResult.value
     if (detailRes.code === 200 && detailRes.result)
       currentRecord.value = { ...record, ...detailRes.result }
+  } else {
+    console.error('open one-to-one drawer failed', detailResult.reason)
   }
-  catch (error) {
-    console.error('open one-to-one drawer failed', error)
+
+  if (accountsResult.status === 'fulfilled') {
+    drawerTuitionAccounts.value = accountsResult.value
+  } else {
+    drawerTuitionAccounts.value = []
+    console.error('load drawer tuition accounts failed', accountsResult.reason)
   }
 }
 
@@ -1001,20 +1035,9 @@ function pickSwitchAccountSelectedId(list, record) {
 }
 
 async function loadSwitchAccountOptions(record) {
-  if (!record?.id || !record?.studentId || !record?.lessonId) {
-    switchAccountOptions.value = []
-    return []
-  }
   switchAccountLoading.value = true
   try {
-    const res = await listTuitionAccountsByStudentAndLessonApi({
-      studentId: String(record.studentId),
-      lessonId: String(record.lessonId),
-      teachingClassId: String(record.id),
-    })
-    if (res.code !== 200)
-      throw new Error(res.message || '加载扣费课程账户失败')
-    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    const list = await fetchRelatedTuitionAccounts(record)
     switchAccountOptions.value = list
     return list
   }
@@ -1025,11 +1048,9 @@ async function loadSwitchAccountOptions(record) {
 
 async function handleDrawerSwitchDefaultAccount(payload) {
   const record = payload?.record || currentRecord.value
-  if (Number(record?.tuitionAccountCount || 0) <= 1)
-    return
   try {
     const list = await loadSwitchAccountOptions(record)
-    if (list.length <= 1)
+    if (!shouldShowSwitchDefaultAccountByList(list, record))
       return
     switchAccountSelectedId.value = pickSwitchAccountSelectedId(list, record)
     switchAccountModalOpen.value = true
@@ -1058,14 +1079,16 @@ async function submitSwitchDefaultAccount() {
     })
     if (res.code !== 200)
       throw new Error(res.message || '切换默认账户失败')
-    messageService.success('切换默认账户成功')
     switchAccountModalOpen.value = false
+    const wasClosed = Number(record?.status) === 2
     await getOneToOneList()
     const updated = dataSource.value.find(item => String(item.id) === String(record.id)) || record
     currentRecord.value = updated
     const detailRes = await getOneToOneByIdApi(record.id)
     if (detailRes.code === 200 && detailRes.result)
       currentRecord.value = { ...updated, ...detailRes.result }
+    const hasReopened = wasClosed && Number(currentRecord.value?.status) !== 2
+    messageService.success(hasReopened ? '切换默认账户成功，已恢复开班' : '切换默认账户成功')
   } catch (error) {
     console.error('switch default tuition account failed', error)
     messageService.error(error?.message || '切换默认账户失败')
