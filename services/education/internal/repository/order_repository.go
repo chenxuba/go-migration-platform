@@ -421,7 +421,11 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			IFNULL(d.discount_number, 0) AS discount_number,
 			IFNULL(d.share_discount, 0) AS share_discount,
 			CASE WHEN so.order_source = ` + importOrderSource + ` THEN IFNULL(d.amount, 0) ELSE IFNULL(q.price, 0) END AS tuition,
-			CASE WHEN so.order_source = ` + importOrderSource + ` THEN GREATEST(IFNULL(d.real_quantity, 0) - IFNULL(d.free_quantity, 0), 0) ELSE IFNULL(q.quantity, 0) END AS quantity,
+			CASE
+				WHEN so.order_source = ` + importOrderSource + ` THEN GREATEST(IFNULL(d.real_quantity, 0) - IFNULL(d.free_quantity, 0), 0)
+				WHEN IFNULL(d.real_quantity, 0) > 0 THEN GREATEST(IFNULL(d.real_quantity, 0) - IFNULL(d.free_quantity, 0), 0)
+				ELSE GREATEST(IFNULL(q.quantity, 0) * IFNULL(d.count, 0), 0)
+			END AS quantity,
 			IFNULL(d.real_quantity, 0) AS real_quantity,
 			d.valid_date AS valid_date,
 			d.end_date AS end_date,
@@ -1295,7 +1299,11 @@ func (repo *Repository) getOrderDetailItems(ctx context.Context, orderID int64) 
 		       CASE WHEN so.order_source = `+importOrderSource+` THEN '自定义' ELSE IFNULL(q.name, '') END,
 		       c.teach_method, q.lesson_model,
 		       d.handle_type, IFNULL(d.count, 0), d.unit,
-		       CASE WHEN so.order_source = `+importOrderSource+` THEN GREATEST(IFNULL(d.real_quantity, 0) - IFNULL(d.free_quantity, 0), 0) ELSE IFNULL(q.quantity, 0) END,
+		       CASE
+				WHEN so.order_source = `+importOrderSource+` THEN GREATEST(IFNULL(d.real_quantity, 0) - IFNULL(d.free_quantity, 0), 0)
+				WHEN IFNULL(d.real_quantity, 0) > 0 THEN GREATEST(IFNULL(d.real_quantity, 0) - IFNULL(d.free_quantity, 0), 0)
+				ELSE GREATEST(IFNULL(q.quantity, 0) * IFNULL(d.count, 0), 0)
+			END,
 		       CASE WHEN so.order_source = `+importOrderSource+` THEN IFNULL(d.amount, 0) ELSE IFNULL(q.price, 0) END,
 		       IFNULL(d.free_quantity, 0), IFNULL(d.has_valid_date, 0), d.valid_date, d.end_date,
 		       d.discount_type, IFNULL(d.discount_number, 0), IFNULL(d.share_discount, 0), IFNULL(d.amount, 0), IFNULL(d.real_quantity, 0)
