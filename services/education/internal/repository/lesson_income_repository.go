@@ -53,6 +53,38 @@ type lessonIncomeQueryFragments struct {
 	lessonChargingModeExpr string
 }
 
+func buildLessonIncomeFlowFromSQL(schema lessonIncomeSchema) string {
+	extraColumns := ""
+	if schema.conformIncomeColumn != "" && schema.conformIncomeColumn != "created_time" {
+		extraColumns = fmt.Sprintf(",\n\t\t\tMIN(taf0.%s) AS %s", schema.conformIncomeColumn, schema.conformIncomeColumn)
+	}
+	return fmt.Sprintf(`FROM (
+		SELECT
+			MIN(taf0.id) AS id,
+			taf0.inst_id,
+			MIN(taf0.tuition_account_id) AS tuition_account_id,
+			MIN(taf0.student_id) AS student_id,
+			MIN(taf0.product_id) AS product_id,
+			MAX(taf0.lesson_type) AS lesson_type,
+			MAX(taf0.source_type) AS source_type,
+			MIN(taf0.source_id) AS source_id,
+			MIN(taf0.teaching_record_id) AS teaching_record_id,
+			MIN(taf0.order_number) AS order_number,
+			MIN(taf0.created_time) AS created_time,
+			SUM(IFNULL(taf0.quantity, 0)) AS quantity,
+			MAX(IFNULL(taf0.lesson_charging_mode, 0)) AS lesson_charging_mode,
+			SUM(IFNULL(taf0.tuition, 0)) AS tuition,
+			MIN(taf0.del_flag) AS del_flag%s
+		FROM tuition_account_flow taf0
+		GROUP BY
+			taf0.inst_id,
+			CASE
+				WHEN taf0.source_type = %d AND IFNULL(taf0.source_id, 0) > 0 THEN CONCAT('manual_close:', CAST(taf0.source_id AS CHAR))
+				ELSE CONCAT('row:', CAST(taf0.id AS CHAR))
+			END
+	) taf`, extraColumns, model.TuitionAccountFlowSourceManualCloseCourse)
+}
+
 func (repo *Repository) tableExists(ctx context.Context, tableName string) (bool, error) {
 	var count int
 	if err := repo.db.QueryRowContext(ctx, `
@@ -189,7 +221,7 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 
 	fragments := lessonIncomeQueryFragments{
 		joins: []string{
-			"FROM tuition_account_flow taf",
+			buildLessonIncomeFlowFromSQL(schema),
 			"LEFT JOIN inst_student s ON s.id = taf.student_id AND s.del_flag = 0",
 			"LEFT JOIN inst_course c ON c.id = taf.product_id AND c.del_flag = 0",
 			"LEFT JOIN inst_course_category cat ON cat.id = c.course_category AND cat.del_flag = 0",
