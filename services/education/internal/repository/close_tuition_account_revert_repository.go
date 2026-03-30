@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -578,6 +579,7 @@ func convertSubAccountDateInfoRows(rows []tuitionAccountSubAccountRow) []model.T
 
 func buildPreviewSubPeriods(rows []tuitionAccountSubAccountRow) []model.RevertCloseTuitionAccountSubPeriod {
 	out := make([]model.RevertCloseTuitionAccountSubPeriod, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
 		period := model.RevertCloseTuitionAccountSubPeriod{}
 		if row.validDate.Valid {
@@ -591,9 +593,47 @@ func buildPreviewSubPeriods(rows []tuitionAccountSubAccountRow) []model.RevertCl
 		if period.StartDate == nil && period.EndDate == nil {
 			continue
 		}
+		key := fmt.Sprintf("%s|%s", nullableDateKey(period.StartDate), nullableDateKey(period.EndDate))
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
 		out = append(out, period)
 	}
 	return out
+}
+
+func buildPreviewSubPeriodsFromCloseFlows(rows []closeTuitionAccountFlowRow) []model.RevertCloseTuitionAccountSubPeriod {
+	out := make([]model.RevertCloseTuitionAccountSubPeriod, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		period := model.RevertCloseTuitionAccountSubPeriod{}
+		if row.validDate.Valid {
+			t := row.validDate.Time
+			period.StartDate = &t
+		}
+		if row.endDate.Valid {
+			t := row.endDate.Time
+			period.EndDate = &t
+		}
+		if period.StartDate == nil && period.EndDate == nil {
+			continue
+		}
+		key := fmt.Sprintf("%s|%s", nullableDateKey(period.StartDate), nullableDateKey(period.EndDate))
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, period)
+	}
+	return out
+}
+
+func nullableDateKey(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.Format("2006-01-02")
 }
 
 func parseRequiredDate(value string) (time.Time, error) {
@@ -732,6 +772,10 @@ func (repo *Repository) GetRevertCloseTuitionAccountPreview(ctx context.Context,
 		}
 		return model.RevertCloseTuitionAccountPreview{}, err
 	}
+	closeFlows, err := repo.listCloseFlowsByOrderTx(ctx, tx, instID, orderRow.flowSourceID)
+	if err != nil {
+		return model.RevertCloseTuitionAccountPreview{}, err
+	}
 	subRows, err := repo.loadSubAccountDateInfoRowsTx(ctx, tx, instID, accountIDs)
 	if err != nil {
 		return model.RevertCloseTuitionAccountPreview{}, err
@@ -754,7 +798,10 @@ func (repo *Repository) GetRevertCloseTuitionAccountPreview(ctx context.Context,
 		BadDebtAmountTotal:         closeOrderRoundMoney(orderRow.badDebtAmountTotal),
 		OrderID:                    strconv.FormatInt(orderRow.orderID, 10),
 		OrderType:                  orderRow.orderType,
-		SubTuitionAccounts:         buildPreviewSubPeriods(subRows),
+		SubTuitionAccounts:         buildPreviewSubPeriodsFromCloseFlows(closeFlows),
+	}
+	if len(preview.SubTuitionAccounts) == 0 {
+		preview.SubTuitionAccounts = buildPreviewSubPeriods(subRows)
 	}
 	if preview.LessonType == 0 && selected.teachMethod.Valid {
 		preview.LessonType = int(selected.teachMethod.Int64)
@@ -879,10 +926,16 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 	if err != nil {
 		return 0, err
 	}
+	startDateFromPayload, hasStartDate, err := parseOptionalDate(dto.StartDate)
+	if err != nil {
+		return 0, err
+	}
 
 	var startDate time.Time
 	if orderRow.lessonChargingMode == 2 {
-		if hasExpireDate {
+		if hasStartDate {
+			startDate = startDateFromPayload
+		} else if hasExpireDate {
 			totalRestoreDays := 0
 			for _, flow := range flows {
 				totalRestoreDays += int(math.Round(flow.quantity))

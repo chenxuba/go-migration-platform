@@ -71,6 +71,7 @@ type RevertCloseTuitionAccountPreview struct {
 type RevertCloseTuitionAccountDTO struct {
 	TuitionAccountID           string `json:"tuitionAccountId"`
 	CloseTuitionAccountOrderID string `json:"closeTuitionAccountOrderId"`
+	StartDate                  string `json:"startDate"`
 	ExpireDate                 string `json:"expireDate"`
 	CurrentValidStartDate      string `json:"currentValidStartDate"`
 }

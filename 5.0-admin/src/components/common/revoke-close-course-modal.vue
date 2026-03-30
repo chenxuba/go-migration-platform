@@ -33,7 +33,7 @@ const openModal = computed({
 })
 
 const formState = reactive({
-  currentValidEndDate: undefined,
+  startDate: undefined,
 })
 
 const tuitionAccountId = computed(() => String(props.record?.id || props.record?.tuitionAccountId || ''))
@@ -43,7 +43,7 @@ watch(
   async (value) => {
     if (!value)
       return
-    formState.currentValidEndDate = undefined
+    formState.startDate = undefined
     await loadPreviewData()
   },
 )
@@ -128,15 +128,7 @@ async function loadPreviewData() {
     previewData.value = previewRes.result || null
     subAccountList.value = Array.isArray(subAccountRes.result?.list) ? subAccountRes.result.list : []
 
-    const periods = Array.isArray(previewRes.result?.subTuitionAccounts) ? previewRes.result.subTuitionAccounts : []
-    const lastPeriod = periods[periods.length - 1]
-    const lastSubAccount = subAccountList.value?.[subAccountList.value.length - 1]
-    const defaultEndDate = lastPeriod?.endDate
-      || previewRes.result?.expireDate
-      || lastSubAccount?.endDate
-      || props.record?.endDate
-      || props.record?.expireTime
-    formState.currentValidEndDate = defaultEndDate ? dayjs(defaultEndDate).format('YYYY-MM-DD') : undefined
+    formState.startDate = undefined
   }
   catch (error) {
     previewData.value = null
@@ -152,14 +144,9 @@ const lessonChargingMode = computed(() =>
   Number(previewData.value?.lessonChargingMode || props.record?.lessonChargingMode || 0),
 )
 
-const currentValidEndDateRules = computed(() => (
+const startDateRules = computed(() => (
   lessonChargingMode.value === 2 ? [{ required: true, message: '请选择日期' }] : []
 ))
-
-const restoredDayCount = computed(() => {
-  const total = Number(previewData.value?.quantity || 0) + Number(previewData.value?.freeQuantity || 0)
-  return Math.max(Math.round(total), 0)
-})
 
 const courseName = computed(() =>
   previewData.value?.lessonName || props.record?.lessonName || props.record?.productName || '时段课时',
@@ -197,6 +184,10 @@ const remainTuitionText = computed(() => {
 
 const validityLabel = computed(() => (
   lessonChargingMode.value === 2 ? '有效时段' : '有效期至'
+))
+
+const currentValidFieldLabel = computed(() => (
+  lessonChargingMode.value === 2 ? '现有效开始时间' : '现有效期至'
 ))
 
 const validPeriodLines = computed(() => {
@@ -265,20 +256,16 @@ async function handleSubmit() {
       return
     }
 
-    let currentValidStartDate
+    let startDate
     if (lessonChargingMode.value === 2) {
-      const selectedEndDate = dayjs(formState.currentValidEndDate)
-      currentValidStartDate = selectedEndDate
-        .subtract(Math.max(restoredDayCount.value - 1, 0), 'day')
-        .format('YYYY-MM-DD')
+      startDate = formState.startDate
     }
 
     submitLoading.value = true
     const res = await revertCloseTuitionAccountApi({
       tuitionAccountId: tuitionAccountId.value,
       closeTuitionAccountOrderId: String(previewData.value.closeTuitionAccountOrderId),
-      expireDate: formState.currentValidEndDate,
-      currentValidStartDate,
+      startDate,
     })
     if (res.code !== 200)
       throw new Error(res.message || '撤销结课失败')
@@ -383,12 +370,12 @@ async function handleSubmit() {
         <div class="px-24px pt-26px pb-8px">
           <a-form ref="formRef" :model="formState" :wrapper-col="{ span: 17 }">
             <a-form-item
-              label="现有效期至"
-              name="currentValidEndDate"
-              :rules="currentValidEndDateRules"
+              :label="currentValidFieldLabel"
+              name="startDate"
+              :rules="startDateRules"
             >
               <a-date-picker
-                v-model:value="formState.currentValidEndDate"
+                v-model:value="formState.startDate"
                 value-format="YYYY-MM-DD"
                 placeholder="请选择日期"
                 class="!w-240px"

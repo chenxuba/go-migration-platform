@@ -100,6 +100,7 @@ export interface RevertCloseTuitionAccountPreview {
 export interface RevertCloseTuitionAccountParams {
   tuitionAccountId: string
   closeTuitionAccountOrderId: string
+  startDate?: string
   expireDate?: string
   currentValidStartDate?: string
 }
