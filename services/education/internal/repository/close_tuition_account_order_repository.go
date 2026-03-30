@@ -35,6 +35,88 @@ LEFT JOIN inst_course_quotation icq_ta ON icq_ta.id = COALESCE(
 	 ORDER BY qmin.id ASC LIMIT 1)
 ) AND icq_ta.del_flag = 0`
 
+func (repo *Repository) closeRelatedOneToOneClassesByDeductCourseTx(ctx context.Context, tx *sql.Tx, instID, operatorID, studentID, courseID int64) error {
+	if studentID <= 0 || courseID <= 0 {
+		return nil
+	}
+
+	studentStatusArgs := []any{
+		model.TeachingClassTypeOneToOne,
+		model.TeachingClassStudentStatusClosed,
+		operatorID,
+		instID,
+		studentID,
+		courseID,
+		model.TeachingClassStudentStatusClosed,
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_student tcs
+		INNER JOIN teaching_class tc
+			ON tc.id = tcs.teaching_class_id
+			AND tc.inst_id = tcs.inst_id
+			AND tc.class_type = ?
+			AND tc.del_flag = 0
+		LEFT JOIN tuition_account ta_eff ON ta_eff.id = COALESCE(
+			NULLIF(tcs.primary_tuition_account_id, 0),
+			(SELECT MIN(ta0.id)
+			 FROM tuition_account ta0
+			 WHERE ta0.order_course_detail_id = tcs.order_course_detail_id
+			   AND ta0.inst_id = tcs.inst_id
+			   AND ta0.del_flag = 0)
+		) AND ta_eff.inst_id = tcs.inst_id AND ta_eff.del_flag = 0
+		SET tcs.class_student_status = ?,
+		    tcs.update_id = ?,
+		    tcs.update_time = NOW()
+		WHERE tcs.inst_id = ?
+		  AND tcs.del_flag = 0
+		  AND tcs.student_id = ?
+		  AND ta_eff.course_id = ?
+		  AND tcs.class_student_status <> ?
+	`, studentStatusArgs...); err != nil {
+		return err
+	}
+
+	classStatusArgs := []any{
+		model.TeachingClassStatusClosed,
+		operatorID,
+		model.TeachingClassTypeOneToOne,
+		instID,
+		studentID,
+		courseID,
+		instID,
+		model.TeachingClassStatusClosed,
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class tc
+		INNER JOIN teaching_class_student tcs
+			ON tcs.teaching_class_id = tc.id
+			AND tcs.inst_id = tc.inst_id
+			AND tcs.del_flag = 0
+		LEFT JOIN tuition_account ta_eff ON ta_eff.id = COALESCE(
+			NULLIF(tcs.primary_tuition_account_id, 0),
+			(SELECT MIN(ta0.id)
+			 FROM tuition_account ta0
+			 WHERE ta0.order_course_detail_id = tcs.order_course_detail_id
+			   AND ta0.inst_id = tcs.inst_id
+			   AND ta0.del_flag = 0)
+		) AND ta_eff.inst_id = tcs.inst_id AND ta_eff.del_flag = 0
+		SET tc.status = ?,
+		    tc.update_id = ?,
+		    tc.update_time = NOW()
+		WHERE tc.class_type = ?
+		  AND tc.del_flag = 0
+		  AND tcs.inst_id = ?
+		  AND tcs.student_id = ?
+		  AND ta_eff.course_id = ?
+		  AND tc.inst_id = ?
+		  AND tc.status <> ?
+	`, classStatusArgs...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // AddCloseTuitionAccountOrder 手动结课：扣减学费账户剩余、写入 tuition_account_flow（联动课消明细 / 学费变动 / 确认收入列表）
 func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID, operatorID, tuitionAccountID int64, quantity, freeQuantity, tuition float64, remark string) (int64, error) {
 	if tuitionAccountID <= 0 {
@@ -125,6 +207,7 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 	newUsedQty := closeOrderRoundMoney(usedQty + deductQty)
 	newUsedTuition := closeOrderRoundMoney(usedTuition + tuition)
 	newConfirmed := closeOrderRoundMoney(confirmedTuition + tuition)
+	now := time.Now()
 
 	_, err = tx.ExecContext(ctx, `
 		UPDATE tuition_account
@@ -133,15 +216,16 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 		    used_quantity = ?,
 		    used_tuition = ?,
 		    confirmed_tuition = ?,
+		    status = ?,
+		    status_change_time = ?,
+		    class_ending_time = ?,
 		    update_id = ?,
 		    update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, newRemQty, newRemTuition, newUsedQty, newUsedTuition, newConfirmed, operatorID, tuitionAccountID, instID)
+	`, newRemQty, newRemTuition, newUsedQty, newUsedTuition, newConfirmed, model.TuitionAccountStatusClosed, now, now, operatorID, tuitionAccountID, instID)
 	if err != nil {
 		return 0, err
 	}
-
-	now := time.Now()
 	sourceID := now.UnixNano()
 	if sourceID < 0 {
 		sourceID = -sourceID
@@ -217,11 +301,9 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 		return 0, err
 	}
 
-	_, _ = tx.ExecContext(ctx, `
-		UPDATE teaching_class_student
-		SET class_student_status = ?, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND primary_tuition_account_id = ? AND del_flag = 0
-	`, model.TeachingClassStudentStatusClosed, operatorID, instID, tuitionAccountID)
+	if err := repo.closeRelatedOneToOneClassesByDeductCourseTx(ctx, tx, instID, operatorID, studentID, courseID); err != nil {
+		return 0, err
+	}
 
 	// 全部学费账户已无剩余数量与剩余学费时，将在读学员标为历史学员
 	if _, err := tx.ExecContext(ctx, `

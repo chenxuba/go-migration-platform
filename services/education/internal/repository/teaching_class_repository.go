@@ -1962,7 +1962,6 @@ func (repo *Repository) ReopenOneToOneOnly(ctx context.Context, instID, operator
 		SELECT COUNT(*)
 		FROM teaching_class_student tcs
 		WHERE tcs.teaching_class_id = ? AND tcs.inst_id = ? AND tcs.del_flag = 0
-		  AND IFNULL(tcs.primary_tuition_account_id, 0) > 0
 		  AND tcs.class_student_status = ?
 	`, classID, instID, model.TeachingClassStudentStatusClosed).Scan(&courseClosedCount)
 	if err != nil {

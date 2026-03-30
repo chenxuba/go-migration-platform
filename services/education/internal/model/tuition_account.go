@@ -2,6 +2,12 @@ package model
 
 import "time"
 
+const (
+	TuitionAccountStatusActive    = 1
+	TuitionAccountStatusSuspended = 2
+	TuitionAccountStatusClosed    = 3
+)
+
 type TuitionAccountReadingListQueryDTO struct {
 	PageRequestModel PageRequestModel                `json:"pageRequestModel"`
 	QueryModel       TuitionAccountReadingQueryModel `json:"queryModel"`

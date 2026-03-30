@@ -9,6 +9,14 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
+const effectiveTuitionAccountStatusSQL = `
+			CASE
+				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 1 THEN 1 ELSE 0 END) > 0 THEN 1
+				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 2 THEN 1 ELSE 0 END) > 0 THEN 2
+				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 3 THEN 1 ELSE 0 END) > 0 THEN 3
+				ELSE IFNULL(MAX(ta.status), 0)
+			END`
+
 func (repo *Repository) CountStudentPrimaryCourseItems(ctx context.Context, instID, studentID int64) (int, error) {
 	var count int
 	err := repo.db.QueryRowContext(ctx, `
@@ -75,12 +83,17 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			SUM(ta.total_tuition) AS total_tuition,
 			`+arrearTuitionExpr+`,
 			SUM(CASE 
+				WHEN IFNULL(ta.status, 0) = 3 THEN 0
 				WHEN icq.lesson_model = 3 THEN ta.remaining_tuition
 				WHEN ta.total_quantity > 0 THEN ta.remaining_quantity 
 				ELSE 0 
 			END) AS remain_quantity,
-			SUM(ta.remaining_tuition) AS tuition,
+			SUM(CASE
+				WHEN IFNULL(ta.status, 0) = 3 THEN 0
+				ELSE IFNULL(ta.remaining_tuition, 0)
+			END) AS tuition,
 			SUM(CASE 
+				WHEN IFNULL(ta.status, 0) = 3 THEN 0
 				WHEN icq.lesson_model = 3 THEN ta.free_quantity
 				WHEN ta.total_quantity = 0 AND ta.free_quantity > 0 THEN ta.remaining_quantity 
 				ELSE 0 
@@ -91,7 +104,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			MAX(ta.end_date) AS end_date,
 			MAX(ta.create_time) AS actived_at,
 			IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
-			MAX(ta.status) AS status,
+			`+effectiveTuitionAccountStatusSQL+` AS status,
 			MAX(ta.status_change_time) AS change_status_time,
 			MAX(ta.plan_suspend_time) AS plan_suspend_time,
 			MAX(ta.plan_resume_time) AS plan_resume_time,
@@ -233,15 +246,20 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 			END) AS total_free_quantity_display,
 			SUM(IFNULL(ta.total_tuition, 0)),
 			SUM(CASE
+				WHEN IFNULL(ta.status, 0) = 3 THEN 0
 				WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
 				ELSE 0
 			END) AS remain_free_quantity,
 			SUM(CASE
+				WHEN IFNULL(ta.status, 0) = 3 THEN 0
 				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.remaining_tuition, 0)
 				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
 				ELSE 0
 			END) AS remain_quantity_display,
-			SUM(IFNULL(ta.remaining_tuition, 0)),
+			SUM(CASE
+				WHEN IFNULL(ta.status, 0) = 3 THEN 0
+				ELSE IFNULL(ta.remaining_tuition, 0)
+			END),
 			MAX(ta.suspended_time),
 			MIN(IFNULL(ta.create_time, NOW())) AS start_time,
 			IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire,
@@ -249,10 +267,7 @@ func (repo *Repository) ListStudentTuitionAccountsByStudentAndLesson(ctx context
 			IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
 			MAX(ta.valid_date),
 			IFNULL(MAX(ic.teach_method), 0) AS teach_method,
-			CASE
-				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 1 THEN 1 ELSE 0 END) > 0 THEN 1
-				ELSE IFNULL(MAX(ta.status), 0)
-			END AS ta_status
+			`+effectiveTuitionAccountStatusSQL+` AS ta_status
 		FROM tuition_account ta
 		INNER JOIN (
 			SELECT DISTINCT account_id

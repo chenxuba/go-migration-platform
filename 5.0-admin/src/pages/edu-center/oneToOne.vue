@@ -662,7 +662,7 @@ function openOneToOneCloseClassConfirm(record) {
   Modal.confirm({
     title: '1对1结班',
     centered: true,
-    closable: false,
+    closable: true,
     maskClosable: false,
     keyboard: false,
     icon: createVNode(ExclamationCircleOutlined),
@@ -689,12 +689,16 @@ function openOneToOneCloseClassConfirm(record) {
         return Promise.reject(err)
       }
     },
-    async onCancel() {
+    async onCancel(close, event) {
+      if (event) {
+        return
+      }
       try {
         const res = await closeOneToOneApi({ id: String(id) })
         if (res.code === 200) {
           messageService.success('结班成功')
           getOneToOneList()
+          close?.()
           return
         }
         messageService.error(res.message || '结班失败')

@@ -125,6 +125,28 @@ function getArrearTuitionTooltip(item) {
   return `欠费学费金额：¥ ${formatMoney(item?.arrearTuition || 0)}`
 }
 
+function isTuitionAccountClosedByStatus(item) {
+  return Number(item?.status || 0) === 3
+}
+
+function getDisplayedRemainQuantity(item) {
+  if (isTuitionAccountClosedByStatus(item))
+    return 0
+  return Number(item?.remainQuantity || 0)
+}
+
+function getDisplayedRemainFreeQuantity(item) {
+  if (isTuitionAccountClosedByStatus(item))
+    return 0
+  return Number(item?.remainFreeQuantity || 0)
+}
+
+function getDisplayedRemainTuition(item) {
+  if (isTuitionAccountClosedByStatus(item))
+    return 0
+  return Number(item?.tuition || 0)
+}
+
 /** 报读列表按课程聚合：剩余数量与剩余学费均为 0、曾有报读且无欠费时视为已结课（含手动结课扣完） */
 function isTuitionAccountCourseEnded(item) {
   const totalTuition = Number(item?.totalTuition || 0)
@@ -134,8 +156,10 @@ function isTuitionAccountCourseEnded(item) {
     return false
   if (Number(item?.arrearTuition || 0) > 0.01)
     return false
-  const remainQty = Number(item?.remainQuantity || 0) + Number(item?.remainFreeQuantity || 0)
-  const remainTuition = Number(item?.tuition || 0)
+  if (isTuitionAccountClosedByStatus(item))
+    return true
+  const remainQty = getDisplayedRemainQuantity(item) + getDisplayedRemainFreeQuantity(item)
+  const remainTuition = getDisplayedRemainTuition(item)
   return remainQty <= 0.0001 && remainTuition <= 0.0001
 }
 
@@ -195,8 +219,8 @@ function getChargingModeText(mode) {
 // 格式化剩余数量显示文本
 function formatRemainQuantityText(item) {
   const mode = item.lessonChargingMode
-  const remainQty = Number(item.remainQuantity || 0)
-  const remainFreeQty = Number(item.remainFreeQuantity || 0)
+  const remainQty = getDisplayedRemainQuantity(item)
+  const remainFreeQty = getDisplayedRemainFreeQuantity(item)
   const totalQty = Number(item.totalQuantity || 0)
   const totalFreeQty = Number(item.totalFreeQuantity || 0)
   
@@ -511,7 +535,7 @@ defineExpose({
             </div>
             <div class="remaining-tuition px3 text-#888 flex justify-start flex-items-center mt-1">
               <span class="text-3">
-                剩余学费：¥ {{ formatMoney(item.tuition) }}（总计 ¥ {{ formatMoney(item.totalTuition) }}
+                剩余学费：¥ {{ formatMoney(getDisplayedRemainTuition(item)) }}（总计 ¥ {{ formatMoney(item.totalTuition) }}
                 <a-tooltip v-if="hasArrearTuition(item)" placement="top">
                   <template #title>
                     {{ getArrearTuitionTooltip(item) }}
