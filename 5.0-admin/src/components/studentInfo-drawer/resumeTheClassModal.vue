@@ -326,39 +326,55 @@ function closeFun() {
               </div>
             </a-form-item>
             <a-form-item v-if="shouldShowExpireOptions" label="现有效期至" required>
-              <a-radio-group v-model:value="formState.expireType">
-                <a-radio :value="3">
-                  不限制
-                </a-radio>
-                <a-radio :value="1">
-                  设置有效期至
-                </a-radio>
-                <a-radio :value="2">
-                  自动顺延
-                </a-radio>
-              </a-radio-group>
-              <a-tooltip placement="top">
-                <template #title>
-                  <div>现有效期至 = 原有效期 + 已停课时间</div>
-                  <div>如：现有效期至（2023-11-14）= 原有效期至（2023-11-11）+ 已停课 3 天</div>
-                </template>
-                <span class="ml-8px inline-flex w-18px h-18px rounded-full border border-#1677ff text-#1677ff items-center justify-center text-12px cursor-pointer">?</span>
-              </a-tooltip>
-            </a-form-item>
-            <a-form-item
-              v-if="Number(formState.expireType) === 1"
-              label=""
-              name="expireTime"
-              :rules="expireTimeRules"
-              :colon="false"
-            >
-              <a-date-picker
-                v-model:value="formState.expireTime"
-                value-format="YYYY-MM-DD"
-                class="w-200px"
-                placeholder="请选择日期"
-                :disabled-date="disabledExpireDate"
-              />
+              <div class="resume-expire-row">
+                <a-radio-group v-model:value="formState.expireType" class="custom-radio resume-expire-radio-group">
+                  <a-radio :value="3">
+                    不限制
+                  </a-radio>
+                  <span class="resume-expire-inline">
+                    <a-radio :value="1">
+                      设置有效期至
+                    </a-radio>
+                    <a-form-item
+                      v-if="Number(formState.expireType) === 1"
+                      name="expireTime"
+                      :rules="expireTimeRules"
+                      :no-style="true"
+                      class="resume-expire-time-item"
+                    >
+                      <a-date-picker
+                        v-model:value="formState.expireTime"
+                        value-format="YYYY-MM-DD"
+                        class="resume-expire-date-picker w-130px"
+                        placeholder="请选择日期"
+                        :disabled-date="disabledExpireDate"
+                      />
+                    </a-form-item>
+                  </span>
+                  <span class="resume-expire-inline resume-expire-inline--auto">
+                    <a-radio :value="2">
+                      自动顺延
+                    </a-radio>
+                    <a-tooltip
+                      placement="top"
+                      color="#ffffff"
+                      overlay-class-name="resume-expire-tooltip-wrap"
+                    >
+                      <template #title>
+                        <div class="resume-expire-tooltip-inner">
+                          <div class="resume-expire-tooltip-inner__title">
+                            自动顺延
+                          </div>
+                          <div class="resume-expire-tooltip-inner__divider" />
+                          <div>现有效期至 = 原有效期 + 已停课时间</div>
+                          <div>如：现有效期至（2026-12-14）= 原有效期至（2026-12-12）+ 已停课 3 天</div>
+                        </div>
+                      </template>
+                      <span class="resume-expire-help-icon">?</span>
+                    </a-tooltip>
+                  </span>
+                </a-radio-group>
+              </div>
             </a-form-item>
             <a-form-item label="复课备注">
               <a-input v-model:value="formState.remark" placeholder="请输入" />
@@ -411,6 +427,75 @@ function closeFun() {
   border-radius: 14px;
   background: #fff;
 }
+
+.resume-expire-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+}
+
+.resume-expire-radio-group.ant-radio-group {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0 16px;
+  max-width: 100%;
+}
+
+.resume-expire-inline {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+
+
+.resume-expire-time-item {
+  margin-bottom: 0 !important;
+}
+
+.resume-expire-date-picker {
+  flex-shrink: 0;
+}
+
+.resume-expire-help-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  cursor: help;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  color: #8c8c8c;
+}
+
+/* 镂空单选（选中为空心圆环 + 中心点） */
+.custom-radio :deep(.ant-radio-wrapper:hover .ant-radio),
+.custom-radio :deep(.ant-radio:hover .ant-radio-inner),
+.custom-radio :deep(.ant-radio-input:focus + .ant-radio-inner) {
+  border-color: var(--pro-ant-color-primary, #1677ff);
+}
+
+.custom-radio :deep(.ant-radio-inner) {
+  background-color: transparent;
+  border-color: #d9d9d9;
+}
+
+.custom-radio :deep(.ant-radio-checked .ant-radio-inner) {
+  background-color: transparent;
+  border-color: var(--pro-ant-color-primary, #1677ff);
+}
+
+.custom-radio :deep(.ant-radio-inner::after) {
+  background-color: var(--pro-ant-color-primary, #1677ff);
+  transform: scale(0.5);
+}
 </style>
 
 <style>
@@ -421,5 +506,31 @@ function closeFun() {
 
 .modal-content-box .ant-modal-body {
   padding: 0 !important;
+}
+
+.resume-expire-tooltip-wrap .ant-tooltip-inner {
+  color: rgba(0, 0, 0, 0.88) !important;
+  text-align: left;
+  padding: 12px 14px;
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+}
+
+.resume-expire-tooltip-inner {
+  max-width: 320px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.resume-expire-tooltip-inner__title {
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+  margin-bottom: 8px;
+}
+
+.resume-expire-tooltip-inner__divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.06);
+  margin-bottom: 8px;
 }
 </style>
