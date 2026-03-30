@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import { useStudentStore } from '@/stores/student'
 import { getTuitionAccountReadingListApi } from '@/api/edu-center/tuition-account'
 import messageService from '~@/utils/messageService'
+import revokeCloseCourseModal from '@/components/common/revoke-close-course-modal.vue'
 // 转课抽屉
 import transferClassDrawer from './transferClassDrawer.vue'
 // 退课抽屉
@@ -36,6 +37,7 @@ const transferClassDrawerOpen = ref(false)
 const dropTheClassDrawerOpen = ref(false)
 const stopTheClassDrawerOpen = ref(false)
 const endTheClassDrawerOpen = ref(false)
+const revokeCloseCourseModalOpen = ref(false)
 const suspensionResumeDrawerOpen = ref(false)
 const feeChangeDrawerOpen = ref(false)
 const remainingDetailsModalOpen = ref(false)
@@ -43,6 +45,7 @@ const oneToOneModalOpen = ref(false)
 const loading = ref(false)
 const tuitionAccountList = ref([])
 const listLoaded = ref(false)
+const currentRevokeCourseRecord = ref(null)
 
 function handleOneToOne() {
   oneToOneModalOpen.value = true
@@ -166,8 +169,9 @@ function isTuitionAccountCourseEnded(item) {
 function onEndedMenuRenew() {
   messageService.info('续费功能开发中')
 }
-function onEndedMenuRevokeGraduate() {
-  messageService.info('撤销结课功能开发中')
+function onEndedMenuRevokeGraduate(item) {
+  currentRevokeCourseRecord.value = item || null
+  revokeCloseCourseModalOpen.value = true
 }
 function onEndedMenuCloseRecord() {
   messageService.info('结课记录功能开发中')
@@ -476,7 +480,7 @@ defineExpose({
                   </div>
                   <span class="font-size-14px text-#666 w-90px">续费</span>
                 </div>
-                <div class="flex items-center gap-2" @click="onEndedMenuRevokeGraduate">
+                <div class="flex items-center gap-2" @click="onEndedMenuRevokeGraduate(item)">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -610,6 +614,7 @@ defineExpose({
     <dropTheClassDrawer v-model:open="dropTheClassDrawerOpen" />
     <stopTheClassModal v-model:open="stopTheClassDrawerOpen" />
     <endTheClassModal v-model:open="endTheClassDrawerOpen" />
+    <revokeCloseCourseModal v-model:open="revokeCloseCourseModalOpen" :record="currentRevokeCourseRecord" />
     <suspensionResumeModal v-model:open="suspensionResumeDrawerOpen" />
     <feeChangeModal v-model:open="feeChangeDrawerOpen" />
     <remainingDetailsModal v-model:open="remainingDetailsModalOpen" />
