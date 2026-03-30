@@ -7,7 +7,7 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-  /** 为空时仅展示当前扣费账户 record.tuitionAccount */
+  /** 仅用于「切换默认账户」按钮显隐与弹窗候选，不参与报读明细主卡片渲染 */
   accounts: {
     type: Array,
     default: () => [],
@@ -37,39 +37,9 @@ function onSwitchDefaultAccount(block, idx) {
   emit('switchDefaultAccount', { block, index: idx, record: props.record })
 }
 
-function mapApiAccountToTuitionVO(item) {
-  if (!item)
-    return null
-  return {
-    id: item.id,
-    totalTuition: item.totalTuition,
-    remainTuition: item.tuition,
-    totalQuantity: item.totalQuantity,
-    totalFreeQuantity: item.totalFreeQuantity,
-    remainQuantity: item.quantity,
-    remainFreeQuantity: item.freeQuantity,
-    lessonChargingMode: item.lessonChargingMode,
-    productName: item.productName,
-    status: item.status,
-    enableExpireTime: item.enableExpireTime,
-    expireTime: item.expireTime,
-    studentId: item.studentId,
-    lessonId: item.lessonId,
-    lessonType: item.lessonType,
-    assignedClass: item.assignedClass,
-  }
-}
-
 const blocks = computed(() => {
-  const status = props.record?.classStudentStatus
-  if (normalizedAccounts.value.length > 0) {
-    return normalizedAccounts.value.map(acc => ({
-      classStudentStatus: status,
-      tuitionAccount: mapApiAccountToTuitionVO(acc),
-    }))
-  }
   return [{
-    classStudentStatus: status,
+    classStudentStatus: props.record?.classStudentStatus,
     tuitionAccount: props.record?.tuitionAccount,
   }]
 })
