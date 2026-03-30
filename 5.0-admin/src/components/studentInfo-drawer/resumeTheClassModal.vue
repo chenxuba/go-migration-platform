@@ -43,8 +43,15 @@ watch(
     if (!value)
       return
     formState.resumeDate = props.record?.planResumeTime ? dayjs(props.record.planResumeTime).format('YYYY-MM-DD') : undefined
-    formState.expireType = props.record?.enableExpireTime ? 2 : 3
-    formState.expireTime = props.record?.expireTime ? dayjs(props.record.expireTime).format('YYYY-MM-DD') : undefined
+    const mode = Number(props.record?.lessonChargingMode || 0)
+    if (mode === 1) {
+      formState.expireType = props.record?.enableExpireTime ? 2 : 3
+      formState.expireTime = props.record?.expireTime ? dayjs(props.record.expireTime).format('YYYY-MM-DD') : undefined
+    }
+    else {
+      formState.expireType = 0
+      formState.expireTime = undefined
+    }
     formState.remark = ''
     await loadSubAccountInfo()
   },
@@ -123,7 +130,8 @@ const alreadySetResumeDateText = computed(() => {
   return date !== '-' ? `已设置复课日期： ${date}` : ''
 })
 
-const shouldShowExpireOptions = computed(() => lessonChargingMode.value === 2 || !!props.record?.enableExpireTime)
+/** 仅「按课时」复课需选择现有效期至；按时段/按金额等不走该逻辑 */
+const shouldShowExpireOptions = computed(() => lessonChargingMode.value === 1)
 
 const resumeDateRules = computed(() => [{ required: true, message: '请选择日期' }])
 
@@ -222,11 +230,12 @@ async function handleSubmit() {
       return
     }
     submitLoading.value = true
+    const useExpireOptions = lessonChargingMode.value === 1
     const res = await addSuspendResumeTuitionAccountOrderApi({
       tuitionAccountId,
       type: 2,
-      expireTime: resolveExpireTimePayload(),
-      expireType: Number(formState.expireType),
+      expireTime: useExpireOptions ? resolveExpireTimePayload() : ZERO_TIME,
+      expireType: useExpireOptions ? Number(formState.expireType) : 0,
       remark: formState.remark?.trim() || '',
       suspendDate: ZERO_TIME,
       resumeDate: toPayloadDateTime(formState.resumeDate),
