@@ -35,6 +35,233 @@ LEFT JOIN inst_course_quotation icq_ta ON icq_ta.id = COALESCE(
 	 ORDER BY qmin.id ASC LIMIT 1)
 ) AND icq_ta.del_flag = 0`
 
+type closeTuitionAccountSnapshot struct {
+	id               int64
+	studentID        int64
+	courseID         int64
+	totalQty         float64
+	freeQty          float64
+	usedQty          float64
+	remQty           float64
+	totalTuition     float64
+	usedTuition      float64
+	remTuition       float64
+	confirmedTuition float64
+	lessonModel      int
+	enableExpire     int
+	teachMethod      sql.NullInt64
+	orderNumber      string
+}
+
+func (snap closeTuitionAccountSnapshot) flowChargingMode() int {
+	if snap.lessonModel > 0 {
+		return snap.lessonModel
+	}
+	if snap.enableExpire == 1 && snap.totalQty > 0.0001 {
+		return 2
+	}
+	if snap.totalQty > 0.0001 {
+		return 1
+	}
+	if snap.totalTuition > 0.0001 {
+		return 3
+	}
+	return 0
+}
+
+func (snap closeTuitionAccountSnapshot) lessonTypeValue() any {
+	if snap.teachMethod.Valid {
+		return snap.teachMethod.Int64
+	}
+	return nil
+}
+
+func closeOrderMatchesSubmitted(deductQty, tuition float64, lessonModel int, currentRemQty, currentRemTuition float64) bool {
+	if !closeOrderAlmostEqual(tuition, currentRemTuition) {
+		return false
+	}
+	if lessonModel == 3 || lessonModel == 4 {
+		if currentRemQty > 0.0001 && !closeOrderAlmostEqual(deductQty, currentRemQty) {
+			return false
+		}
+		return true
+	}
+	return closeOrderAlmostEqual(deductQty, currentRemQty)
+}
+
+func closeOrderMismatchError(deductQty, tuition float64, lessonModel int, currentRemQty, currentRemTuition float64) error {
+	if !closeOrderAlmostEqual(tuition, currentRemTuition) {
+		return fmt.Errorf("剩余学费与提交不一致（当前 ¥%.2f）", currentRemTuition)
+	}
+	if lessonModel == 3 || lessonModel == 4 {
+		if currentRemQty > 0.0001 && !closeOrderAlmostEqual(deductQty, currentRemQty) {
+			return fmt.Errorf("剩余数量与提交不一致（当前 %.2f）", currentRemQty)
+		}
+		return nil
+	}
+	if !closeOrderAlmostEqual(deductQty, currentRemQty) {
+		return fmt.Errorf("剩余课时与提交不一致（当前 %.2f）", currentRemQty)
+	}
+	return nil
+}
+
+func sumCloseTuitionAccountSnapshots(snaps []closeTuitionAccountSnapshot) (float64, float64) {
+	var remQty float64
+	var remTuition float64
+	for _, snap := range snaps {
+		remQty += snap.remQty
+		remTuition += snap.remTuition
+	}
+	return closeOrderRoundMoney(remQty), closeOrderRoundMoney(remTuition)
+}
+
+func (repo *Repository) loadCloseTuitionAccountSnapshotTx(ctx context.Context, tx *sql.Tx, instID, tuitionAccountID int64) (closeTuitionAccountSnapshot, error) {
+	var snap closeTuitionAccountSnapshot
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			ta.id,
+			ta.student_id,
+			ta.course_id,
+			IFNULL(ta.total_quantity, 0),
+			IFNULL(ta.free_quantity, 0),
+			IFNULL(ta.used_quantity, 0),
+			IFNULL(ta.remaining_quantity, 0),
+			IFNULL(ta.total_tuition, 0),
+			IFNULL(ta.used_tuition, 0),
+			IFNULL(ta.remaining_tuition, 0),
+			IFNULL(ta.confirmed_tuition, 0),
+			IFNULL(icq_ta.lesson_model, 0),
+			IFNULL(ta.enable_expire_time, 0),
+			ic.teach_method,
+			IFNULL(so.order_number, '')
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		`+closeTuitionAccountICQJoin+`
+		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
+		WHERE ta.id = ? AND ta.inst_id = ? AND ta.del_flag = 0
+		FOR UPDATE
+	`, tuitionAccountID, instID).Scan(
+		&snap.id,
+		&snap.studentID,
+		&snap.courseID,
+		&snap.totalQty,
+		&snap.freeQty,
+		&snap.usedQty,
+		&snap.remQty,
+		&snap.totalTuition,
+		&snap.usedTuition,
+		&snap.remTuition,
+		&snap.confirmedTuition,
+		&snap.lessonModel,
+		&snap.enableExpire,
+		&snap.teachMethod,
+		&snap.orderNumber,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return closeTuitionAccountSnapshot{}, errors.New("学费账户不存在")
+		}
+		return closeTuitionAccountSnapshot{}, err
+	}
+	return snap, nil
+}
+
+func (repo *Repository) loadCloseTuitionAccountBucketSnapshotsTx(ctx context.Context, tx *sql.Tx, instID int64, selected closeTuitionAccountSnapshot) ([]closeTuitionAccountSnapshot, error) {
+	teachMethod := 0
+	if selected.teachMethod.Valid {
+		teachMethod = int(selected.teachMethod.Int64)
+	}
+	ids, err := repo.ListTuitionAccountIDsForStudentCourseBucket(ctx, tx, instID, selected.studentID, selected.courseID, teachMethod, selected.lessonModel)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]closeTuitionAccountSnapshot, 0, len(ids))
+	for _, id := range ids {
+		snap, snapErr := repo.loadCloseTuitionAccountSnapshotTx(ctx, tx, instID, id)
+		if snapErr != nil {
+			return nil, snapErr
+		}
+		out = append(out, snap)
+	}
+	return out, nil
+}
+
+func (repo *Repository) closeTuitionAccountSnapshotTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, snap closeTuitionAccountSnapshot, sourceID int64) (int64, error) {
+	now := time.Now()
+	deductQty := closeOrderRoundMoney(snap.remQty)
+	tuition := closeOrderRoundMoney(snap.remTuition)
+	newUsedQty := closeOrderRoundMoney(snap.usedQty + snap.remQty)
+	newUsedTuition := closeOrderRoundMoney(snap.usedTuition + snap.remTuition)
+	newConfirmed := closeOrderRoundMoney(snap.confirmedTuition + snap.remTuition)
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account
+		SET remaining_quantity = 0,
+		    remaining_tuition = 0,
+		    used_quantity = ?,
+		    used_tuition = ?,
+		    confirmed_tuition = ?,
+		    status = ?,
+		    status_change_time = ?,
+		    class_ending_time = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, newUsedQty, newUsedTuition, newConfirmed, model.TuitionAccountStatusClosed, now, now, operatorID, snap.id, instID); err != nil {
+		return 0, err
+	}
+
+	if deductQty < 0.0001 && tuition < 0.0001 {
+		return 0, nil
+	}
+
+	flowOrderNumber := strings.TrimSpace(snap.orderNumber)
+	if flowOrderNumber == "" {
+		flowOrderNumber = "-"
+	}
+	if len(flowOrderNumber) > 64 {
+		flowOrderNumber = flowOrderNumber[:64]
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO tuition_account_flow (
+			uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
+			source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, ?, ?,
+			?, ?, NULL, ?, ?, ?, ?, 0, 0,
+			?, NOW(), ?, NOW(), 0
+		)
+	`,
+		instID,
+		snap.id,
+		snap.studentID,
+		snap.courseID,
+		snap.lessonTypeValue(),
+		snap.flowChargingMode(),
+		model.TuitionAccountFlowSourceManualCloseCourse,
+		sourceID,
+		flowOrderNumber,
+		now,
+		deductQty,
+		tuition,
+		operatorID,
+		operatorID,
+	)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			return 0, errors.New("请勿重复提交结课")
+		}
+		return 0, err
+	}
+	flowID, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return flowID, nil
+}
+
 func (repo *Repository) closeRelatedOneToOneClassesByDeductCourseTx(ctx context.Context, tx *sql.Tx, instID, operatorID, studentID, courseID int64) error {
 	if studentID <= 0 || courseID <= 0 {
 		return nil
@@ -136,172 +363,42 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 	}
 	defer tx.Rollback()
 
-	var (
-		studentID, courseID                   int64
-		totalQty, freeQty, usedQty, remQty    float64
-		totalTuition, usedTuition, remTuition float64
-		confirmedTuition                      float64
-		lessonModel                           int
-		enableExpire                          int
-		teachMethod                           sql.NullInt64
-		orderNumber                           string
-	)
-	err = tx.QueryRowContext(ctx, `
-		SELECT
-			ta.student_id,
-			ta.course_id,
-			IFNULL(ta.total_quantity, 0),
-			IFNULL(ta.free_quantity, 0),
-			IFNULL(ta.used_quantity, 0),
-			IFNULL(ta.remaining_quantity, 0),
-			IFNULL(ta.total_tuition, 0),
-			IFNULL(ta.used_tuition, 0),
-			IFNULL(ta.remaining_tuition, 0),
-			IFNULL(ta.confirmed_tuition, 0),
-			IFNULL(icq_ta.lesson_model, 0),
-			IFNULL(ta.enable_expire_time, 0),
-			ic.teach_method,
-			IFNULL(so.order_number, '')
-		FROM tuition_account ta
-		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
-		`+closeTuitionAccountICQJoin+`
-		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
-		WHERE ta.id = ? AND ta.inst_id = ? AND ta.del_flag = 0
-		FOR UPDATE
-	`, tuitionAccountID, instID).Scan(
-		&studentID, &courseID, &totalQty, &freeQty, &usedQty, &remQty,
-		&totalTuition, &usedTuition, &remTuition, &confirmedTuition,
-		&lessonModel, &enableExpire, &teachMethod, &orderNumber,
-	)
+	selectedSnap, err := repo.loadCloseTuitionAccountSnapshotTx(ctx, tx, instID, tuitionAccountID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, errors.New("学费账户不存在")
-		}
 		return 0, err
 	}
 
-	if !closeOrderAlmostEqual(tuition, remTuition) {
-		return 0, fmt.Errorf("剩余学费与提交不一致（当前 ¥%.2f）", remTuition)
-	}
-	if lessonModel == 3 || lessonModel == 4 {
-		if remQty > 0.0001 && !closeOrderAlmostEqual(deductQty, remQty) {
-			return 0, fmt.Errorf("剩余数量与提交不一致（当前 %.2f）", remQty)
+	targetSnapshots := []closeTuitionAccountSnapshot{selectedSnap}
+	if !closeOrderMatchesSubmitted(deductQty, tuition, selectedSnap.lessonModel, selectedSnap.remQty, selectedSnap.remTuition) {
+		bucketSnapshots, bucketErr := repo.loadCloseTuitionAccountBucketSnapshotsTx(ctx, tx, instID, selectedSnap)
+		if bucketErr != nil {
+			return 0, bucketErr
 		}
-	} else {
-		if !closeOrderAlmostEqual(deductQty, remQty) {
-			return 0, fmt.Errorf("剩余课时与提交不一致（当前 %.2f）", remQty)
+		bucketRemQty, bucketRemTuition := sumCloseTuitionAccountSnapshots(bucketSnapshots)
+		if len(bucketSnapshots) > 1 && closeOrderMatchesSubmitted(deductQty, tuition, selectedSnap.lessonModel, bucketRemQty, bucketRemTuition) {
+			targetSnapshots = bucketSnapshots
+		} else {
+			return 0, closeOrderMismatchError(deductQty, tuition, selectedSnap.lessonModel, selectedSnap.remQty, selectedSnap.remTuition)
 		}
 	}
 
-	newRemQty := closeOrderRoundMoney(remQty - deductQty)
-	newRemTuition := closeOrderRoundMoney(remTuition - tuition)
-	if newRemQty < -0.03 || newRemTuition < -0.03 {
-		return 0, errors.New("扣减后余额异常，请刷新后重试")
-	}
-	if newRemQty < 0 {
-		newRemQty = 0
-	}
-	if newRemTuition < 0 {
-		newRemTuition = 0
-	}
-	newUsedQty := closeOrderRoundMoney(usedQty + deductQty)
-	newUsedTuition := closeOrderRoundMoney(usedTuition + tuition)
-	newConfirmed := closeOrderRoundMoney(confirmedTuition + tuition)
 	now := time.Now()
-
-	_, err = tx.ExecContext(ctx, `
-		UPDATE tuition_account
-		SET remaining_quantity = ?,
-		    remaining_tuition = ?,
-		    used_quantity = ?,
-		    used_tuition = ?,
-		    confirmed_tuition = ?,
-		    status = ?,
-		    status_change_time = ?,
-		    class_ending_time = ?,
-		    update_id = ?,
-		    update_time = NOW()
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, newRemQty, newRemTuition, newUsedQty, newUsedTuition, newConfirmed, model.TuitionAccountStatusClosed, now, now, operatorID, tuitionAccountID, instID)
-	if err != nil {
-		return 0, err
+	baseSourceID := now.UnixNano()
+	if baseSourceID < 0 {
+		baseSourceID = -baseSourceID
 	}
-	sourceID := now.UnixNano()
-	if sourceID < 0 {
-		sourceID = -sourceID
-	}
-
-	_ = remark // API 保留备注；流水表暂无备注列，结课说明由 source_type=25 体现
-	// order_number：与其它学费流水一致，存 tuition_account 关联的 sale_order.order_number（不再用「结课」占位）。
-	flowOrderNumber := strings.TrimSpace(orderNumber)
-	if flowOrderNumber == "" {
-		flowOrderNumber = "-"
-	}
-	if len(flowOrderNumber) > 64 {
-		flowOrderNumber = flowOrderNumber[:64]
-	}
-
-	var lessonTypeVal any
-	if teachMethod.Valid {
-		lessonTypeVal = teachMethod.Int64
-	} else {
-		lessonTypeVal = nil
-	}
-
-	flowChargingMode := lessonModel
-	if flowChargingMode <= 0 && enableExpire == 1 && totalQty > 0.0001 {
-		flowChargingMode = 2 // 与 tuition_account_flow 回填逻辑一致：按时段/天账户
-	} else if flowChargingMode <= 0 && totalQty > 0.0001 {
-		flowChargingMode = 1 // 课时账户
-	} else if flowChargingMode <= 0 && totalTuition > 0.0001 {
-		flowChargingMode = 3 // 金额账户
-	}
-
-	// 与课消类流水一致：quantity/tuition 存正数，供「确认收入」SUM/列表展示为机构收入；
-	// 学费变动列表用 sourceType=25 + direction=out 展示为「-」扣减。
-	flowQty := deductQty
-	flowTuition := tuition
-
-	res, err := tx.ExecContext(ctx, `
-		INSERT INTO tuition_account_flow (
-			uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
-			source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
-			create_id, create_time, update_id, update_time, del_flag
-		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?,
-			?, ?, NULL, ?, ?, ?, ?, ?, ?,
-			?, NOW(), ?, NOW(), 0
-		)
-	`,
-		instID,
-		tuitionAccountID,
-		studentID,
-		courseID,
-		lessonTypeVal,
-		flowChargingMode,
-		model.TuitionAccountFlowSourceManualCloseCourse,
-		sourceID,
-		flowOrderNumber,
-		now,
-		flowQty,
-		flowTuition,
-		newRemQty,
-		newRemTuition,
-		operatorID,
-		operatorID,
-	)
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return 0, errors.New("请勿重复提交结课")
+	flowID := int64(0)
+	for idx, snap := range targetSnapshots {
+		insertedFlowID, closeErr := repo.closeTuitionAccountSnapshotTx(ctx, tx, instID, operatorID, snap, baseSourceID+int64(idx))
+		if closeErr != nil {
+			return 0, closeErr
 		}
-		return 0, err
-	}
-	flowID, err := res.LastInsertId()
-	if err != nil {
-		return 0, err
+		if flowID == 0 && insertedFlowID > 0 {
+			flowID = insertedFlowID
+		}
 	}
 
-	if err := repo.closeRelatedOneToOneClassesByDeductCourseTx(ctx, tx, instID, operatorID, studentID, courseID); err != nil {
+	if err := repo.closeRelatedOneToOneClassesByDeductCourseTx(ctx, tx, instID, operatorID, selectedSnap.studentID, selectedSnap.courseID); err != nil {
 		return 0, err
 	}
 
@@ -319,7 +416,7 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 			  AND (IFNULL(ta.remaining_quantity, 0) > 0.02 OR IFNULL(ta.remaining_tuition, 0) > 0.02)
 			LIMIT 1
 		  )
-	`, model.InstStudentStatusHistory, operatorID, studentID, instID, model.InstStudentStatusEnrolled); err != nil {
+	`, model.InstStudentStatusHistory, operatorID, selectedSnap.studentID, instID, model.InstStudentStatusEnrolled); err != nil {
 		return 0, err
 	}
 

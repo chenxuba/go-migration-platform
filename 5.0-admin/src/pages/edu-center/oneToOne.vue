@@ -698,14 +698,15 @@ function openOneToOneCloseClassConfirm(record) {
         if (res.code === 200) {
           messageService.success('结班成功')
           getOneToOneList()
-          close?.()
           return
         }
         messageService.error(res.message || '结班失败')
+        return Promise.reject(new Error(res.message || '结班失败'))
       }
       catch (err) {
         console.error(err)
         messageService.error('结班失败')
+        return Promise.reject(err)
       }
     },
   })
