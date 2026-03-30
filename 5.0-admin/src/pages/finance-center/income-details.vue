@@ -171,6 +171,8 @@ function getDetailTypeText(sourceType) {
 }
 
 function getDetailTypeDotClass(record) {
+  if (Number(record?.sourceType) === 7)
+    return 'dot-primary'
   return isNegativeIncome(record) ? 'dot-negative' : 'dot-positive'
 }
 
@@ -912,6 +914,10 @@ span.dot {
 
 .dot-positive {
   background: #52c41a;
+}
+
+.dot-primary {
+  background: #06f;
 }
 
 .dot-negative {
