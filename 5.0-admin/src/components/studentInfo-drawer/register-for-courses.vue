@@ -12,6 +12,7 @@ import transferClassDrawer from './transferClassDrawer.vue'
 import dropTheClassDrawer from './dropTheClassDrawer.vue'
 // 停课抽屉
 import stopTheClassModal from './stopTheClassModal.vue'
+import resumeTheClassModal from './resumeTheClassModal.vue'
 // 结课抽屉
 import endTheClassModal from './endTheClassModal.vue'
 // 停/复课记录抽屉
@@ -39,6 +40,7 @@ const studentStore = useStudentStore()
 const transferClassDrawerOpen = ref(false)
 const dropTheClassDrawerOpen = ref(false)
 const stopTheClassDrawerOpen = ref(false)
+const resumeTheClassDrawerOpen = ref(false)
 const endTheClassDrawerOpen = ref(false)
 const revokeCloseCourseModalOpen = ref(false)
 const closeCourseRecordModalOpen = ref(false)
@@ -53,6 +55,7 @@ const currentRevokeCourseRecord = ref(null)
 const currentCloseRecordCourse = ref(null)
 const currentEndCourseRecord = ref(null)
 const currentStopCourseRecord = ref(null)
+const currentResumeCourseRecord = ref(null)
 
 function handleOneToOne() {
   oneToOneModalOpen.value = true
@@ -226,8 +229,9 @@ function onMenuStopCourse(item) {
   stopTheClassDrawerOpen.value = true
 }
 
-function onMenuResumeCourse() {
-  messageService.info('复课功能开发中')
+function onMenuResumeCourse(item) {
+  currentResumeCourseRecord.value = item || null
+  resumeTheClassDrawerOpen.value = true
 }
 
 function onEndedMenuCloseRecord(item) {
@@ -745,6 +749,10 @@ watch(endTheClassDrawerOpen, (value) => {
       v-model:open="stopTheClassDrawerOpen"
       :record="currentStopCourseRecord"
       @success="handleStopCourseSuccess"
+    />
+    <resumeTheClassModal
+      v-model:open="resumeTheClassDrawerOpen"
+      :record="currentResumeCourseRecord"
     />
     <endTheClassModal
       v-model:open="endTheClassDrawerOpen"
