@@ -1431,7 +1431,7 @@ func (repo *Repository) loadOrderCourseDetailTx(ctx context.Context, tx *sql.Tx,
 	return detail, nil
 }
 
-func (repo *Repository) syncOneToOneTimeSlotAutoConsumeTx(ctx context.Context, tx *sql.Tx, instID, operatorID, classID, studentID int64, binds []oneToOneDeductBind, now time.Time) error {
+func (repo *Repository) syncOneToOneTimeSlotAutoConsumeTx(ctx context.Context, tx *sql.Tx, instID, operatorID, teachingCourseID, studentID int64, binds []oneToOneDeductBind, now time.Time) error {
 	if len(binds) == 0 {
 		return nil
 	}
@@ -1481,17 +1481,26 @@ func (repo *Repository) syncOneToOneTimeSlotAutoConsumeTx(ctx context.Context, t
 		if orderID <= 0 {
 			continue
 		}
-		if err := repo.consumeOneTimeSlotDayForOneToOneCreateTx(ctx, tx, instID, operatorID, classID, orderID, studentID, detail, quotation, now); err != nil {
+		if err := repo.consumeOneTimeSlotDayForOneToOneCreateTx(ctx, tx, instID, operatorID, teachingCourseID, orderID, studentID, detail, quotation, now); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+func oneToOneTimeSlotAutoConsumeSourceID(teachingCourseID int64, consumeDate time.Time) int64 {
+	coursePart := teachingCourseID
+	if coursePart <= 0 {
+		coursePart = 1
+	}
+	datePart := timeSlotSourceIDByDate(startOfDayTime(consumeDate))
+	return -((coursePart * 100000000) + datePart)
+}
+
 func (repo *Repository) consumeOneTimeSlotDayForOneToOneCreateTx(
 	ctx context.Context,
 	tx *sql.Tx,
-	instID, operatorID, classID, orderID, studentID int64,
+	instID, operatorID, teachingCourseID, orderID, studentID int64,
 	detail orderCourseDetail,
 	quotation model.CourseQuotation,
 	now time.Time,
@@ -1501,6 +1510,12 @@ func (repo *Repository) consumeOneTimeSlotDayForOneToOneCreateTx(
 	}
 	if !detail.ValidDate.Valid || !detail.EndDate.Valid {
 		return nil
+	}
+
+	// 仅按「上课课程 + 同一天」去重：
+	// 同一上课课程同一天不重复课消；不同上课课程仍允许各自正常课消。
+	if teachingCourseID == detail.CourseID {
+		return repo.initializeTimeSlotIncomeTx(ctx, tx, instID, operatorID, orderID, studentID, detail, quotation, now)
 	}
 
 	startDate := startOfDayTime(detail.ValidDate.Time)
@@ -1514,16 +1529,14 @@ func (repo *Repository) consumeOneTimeSlotDayForOneToOneCreateTx(
 		paidTotalDays           float64
 		paidTotalTuition        float64
 		usedQuantity            float64
-		remainQuantity          float64
 		usedTuition             float64
-		remainTuition           float64
 		confirmedTuitionCurrent float64
 		orderNumber             string
 		lessonType              sql.NullInt64
 	)
 	err := tx.QueryRowContext(ctx, `
 		SELECT ta.id, ta.course_id, IFNULL(ta.total_quantity, 0), IFNULL(ta.total_tuition, 0),
-		       IFNULL(ta.used_quantity, 0), IFNULL(ta.remaining_quantity, 0), IFNULL(ta.used_tuition, 0), IFNULL(ta.remaining_tuition, 0), IFNULL(ta.confirmed_tuition, 0),
+		       IFNULL(ta.used_quantity, 0), IFNULL(ta.used_tuition, 0), IFNULL(ta.confirmed_tuition, 0),
 		       IFNULL(so.order_number, ''), c.teach_method
 		FROM tuition_account ta
 		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
@@ -1531,7 +1544,7 @@ func (repo *Repository) consumeOneTimeSlotDayForOneToOneCreateTx(
 		WHERE ta.inst_id = ? AND ta.order_id = ? AND ta.order_course_detail_id = ? AND ta.del_flag = 0 AND IFNULL(ta.total_tuition, 0) > 0
 		ORDER BY ta.id ASC
 		LIMIT 1
-	`, instID, orderID, detail.ID).Scan(&paidAccountID, &paidCourseID, &paidTotalDays, &paidTotalTuition, &usedQuantity, &remainQuantity, &usedTuition, &remainTuition, &confirmedTuitionCurrent, &orderNumber, &lessonType)
+	`, instID, orderID, detail.ID).Scan(&paidAccountID, &paidCourseID, &paidTotalDays, &paidTotalTuition, &usedQuantity, &usedTuition, &confirmedTuitionCurrent, &orderNumber, &lessonType)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -1539,10 +1552,15 @@ func (repo *Repository) consumeOneTimeSlotDayForOneToOneCreateTx(
 		return err
 	}
 
-	sourceID := -classID
-	if sourceID >= 0 {
-		sourceID = -(detail.ID + 1000000000)
+	consumedByOther, err := repo.hasOtherTeachingCourseAutoConsumeOnDateTx(ctx, tx, instID, studentID, teachingCourseID, paidAccountID, now)
+	if err != nil {
+		return err
 	}
+	if consumedByOther {
+		return nil
+	}
+
+	sourceID := oneToOneTimeSlotAutoConsumeSourceID(teachingCourseID, now)
 
 	var paidFlowExists int
 	if err := tx.QueryRowContext(ctx, `
@@ -1620,17 +1638,16 @@ func (repo *Repository) consumeOneTimeSlotDayForOneToOneCreateTx(
 		freeAccountID       int64
 		freeCourseID        int64
 		freeUsedQuantity    float64
-		freeRemainQuantity  float64
 		freeTotalFreeAmount float64
 	)
 	err = tx.QueryRowContext(ctx, `
-		SELECT ta.id, ta.course_id, IFNULL(ta.used_quantity, 0), IFNULL(ta.remaining_quantity, 0), IFNULL(ta.free_quantity, 0)
+		SELECT ta.id, ta.course_id, IFNULL(ta.used_quantity, 0), IFNULL(ta.free_quantity, 0)
 		FROM tuition_account ta
 		WHERE ta.inst_id = ? AND ta.order_id = ? AND ta.order_course_detail_id = ? AND ta.del_flag = 0
 		  AND IFNULL(ta.total_tuition, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0
 		ORDER BY ta.id ASC
 		LIMIT 1
-	`, instID, orderID, detail.ID).Scan(&freeAccountID, &freeCourseID, &freeUsedQuantity, &freeRemainQuantity, &freeTotalFreeAmount)
+	`, instID, orderID, detail.ID).Scan(&freeAccountID, &freeCourseID, &freeUsedQuantity, &freeTotalFreeAmount)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -1674,8 +1691,8 @@ func (repo *Repository) consumeOneTimeSlotDayForOneToOneCreateTx(
 			UUID(), 0, ?, ?, ?, ?, ?, ?,
 			?, ?, NULL, ?, ?, ?, ?, ?, ?,
 			?, NOW(), ?, NOW(), 0
-			)
-		`,
+		)
+	`,
 		instID,
 		freeAccountID,
 		studentID,
@@ -1874,7 +1891,7 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 		}
 	}
 
-	if err := repo.syncOneToOneTimeSlotAutoConsumeTx(ctx, tx, instID, operatorID, classID, studentID, binds, now); err != nil {
+	if err := repo.syncOneToOneTimeSlotAutoConsumeTx(ctx, tx, instID, operatorID, courseID, studentID, binds, now); err != nil {
 		return 0, err
 	}
 

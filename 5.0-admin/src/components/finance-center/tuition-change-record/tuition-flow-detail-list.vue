@@ -94,6 +94,7 @@ const pagination = ref({
 const allColumns = ref([
   { title: '变动时间', dataIndex: 'createdTime', key: 'createdTime', fixed: 'left', width: 160, required: true },
   { title: '学员/电话', dataIndex: 'studentName', key: 'studentName', fixed: 'left', width: 180, required: true },
+  { title: '上课课程', dataIndex: 'teachingCourseName', key: 'teachingCourseName', width: 140 },
   { title: '扣费课程账户', dataIndex: 'productName', key: 'productName', width: 160 },
   { title: '变动类型', dataIndex: 'sourceType', key: 'sourceType', width: 140 },
   { title: '变动数量', dataIndex: 'quantity', key: 'quantity', width: 150 },
@@ -533,6 +534,9 @@ onMounted(async () => {
               </template>
               <template v-if="column.key === 'productName'">
                 {{ record.productName || '-' }}
+              </template>
+              <template v-if="column.key === 'teachingCourseName'">
+                {{ record.teachingCourseName || '-' }}
               </template>
               <template v-if="column.key === 'sourceType'">
                 {{ getSourceTypeText(record.sourceType) }}

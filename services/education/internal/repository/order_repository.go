@@ -2476,6 +2476,45 @@ func cumulativeTimeSlotTuition(totalTuition, totalDays float64, consumedDays int
 	return roundMoney(totalTuition * float64(consumedDays) / totalDays)
 }
 
+func (repo *Repository) hasOtherTeachingCourseAutoConsumeOnDateTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	instID, studentID, teachingCourseID, currentTuitionAccountID int64,
+	consumeDate time.Time,
+) (bool, error) {
+	if studentID <= 0 || teachingCourseID <= 0 {
+		return false, nil
+	}
+	dayStart := startOfDayTime(consumeDate)
+	dayEnd := dayStart.AddDate(0, 0, 1)
+	var count int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM tuition_account_flow taf
+		LEFT JOIN teaching_class tc_legacy
+			ON taf.source_id < 0
+			AND ABS(taf.source_id) < 100000000
+			AND tc_legacy.id = ABS(taf.source_id)
+			AND tc_legacy.inst_id = taf.inst_id
+			AND tc_legacy.del_flag = 0
+		WHERE taf.inst_id = ?
+		  AND taf.student_id = ?
+		  AND taf.source_type = ?
+		  AND taf.del_flag = 0
+		  AND taf.tuition_account_id <> ?
+		  AND taf.created_time >= ?
+		  AND taf.created_time < ?
+		  AND CASE
+			WHEN taf.source_id < 0 AND ABS(taf.source_id) >= 100000000 THEN FLOOR(ABS(taf.source_id) / 100000000)
+			WHEN taf.source_id < 0 AND ABS(taf.source_id) < 100000000 THEN IFNULL(tc_legacy.course_id, 0)
+			ELSE IFNULL(taf.product_id, 0)
+		  END = ?
+	`, instID, studentID, model.TuitionAccountFlowSourceAutoConsume, currentTuitionAccountID, dayStart, dayEnd, teachingCourseID).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (repo *Repository) initializeTimeSlotIncomeTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -2534,7 +2573,19 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 		return err
 	}
 
-	baseConsumedPaidDays := math.Min(float64(elapsedDays), paidTotalDays)
+	todayConsumedByOther, err := repo.hasOtherTeachingCourseAutoConsumeOnDateTx(ctx, tx, instID, studentID, detail.CourseID, paidAccountID, today)
+	if err != nil {
+		return err
+	}
+	effectiveElapsedDays := elapsedDays
+	if todayConsumedByOther && !today.Before(startDate) && !today.After(endDate) {
+		effectiveElapsedDays--
+	}
+	if effectiveElapsedDays < 0 {
+		effectiveElapsedDays = 0
+	}
+
+	baseConsumedPaidDays := math.Min(float64(effectiveElapsedDays), paidTotalDays)
 	if baseConsumedPaidDays <= 0 {
 		return nil
 	}
@@ -2578,8 +2629,8 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 	}
 
 	freeChanged := false
-	if detail.FreeQuantity > 0 && float64(elapsedDays) > paidTotalDays {
-		consumedFreeDays := math.Min(float64(elapsedDays)-paidTotalDays, detail.FreeQuantity)
+	if detail.FreeQuantity > 0 && float64(effectiveElapsedDays) > paidTotalDays {
+		consumedFreeDays := math.Min(float64(effectiveElapsedDays)-paidTotalDays, detail.FreeQuantity)
 		if consumedFreeDays > 0 {
 			var (
 				freeAccountID       int64

@@ -7,6 +7,8 @@ export interface TuitionAccountFlowRecordItem {
   studentName: string
   studentPhone: string
   studentAvatar?: string
+  teachingCourseId?: string
+  teachingCourseName?: string
   productId: string
   productName: string
   lessonType?: number
@@ -31,6 +33,8 @@ export interface SubTuitionAccountFlowRecordItem {
   studentName: string
   studentPhone: string
   studentAvatar?: string
+  teachingCourseId?: string
+  teachingCourseName?: string
   productId: string
   productName: string
   lessonType?: number

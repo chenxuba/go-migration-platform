@@ -209,33 +209,6 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE inst_course_property_result cpr
-		INNER JOIN inst_course c ON c.id = cpr.course_id
-		SET cpr.del_flag = 1, cpr.update_id = ?, cpr.update_time = NOW()
-		WHERE c.inst_id = ? AND c.del_flag = 0 AND cpr.del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE inst_course_quotation cq
-		INNER JOIN inst_course c ON c.id = cq.course_id
-		SET cq.del_flag = 1, cq.update_id = ?, cq.update_time = NOW()
-		WHERE c.inst_id = ? AND c.del_flag = 0 AND cq.del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE inst_course_detail cd
-		INNER JOIN inst_course c ON c.id = cd.course_id
-		SET cd.del_flag = 1, cd.update_id = ?, cd.update_time = NOW()
-		WHERE c.inst_id = ? AND c.del_flag = 0 AND cd.del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
 		UPDATE product_package_property_result ppr
 		INNER JOIN product_package pp ON pp.id = ppr.product_package_id
 		SET ppr.del_flag = 1, ppr.update_id = ?, ppr.update_time = NOW()
@@ -261,13 +234,12 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 		return model.CampusDataClearSummary{}, err
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE inst_course
-		SET del_flag = 1, sale_volume = 0, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
+	// 保留课程主档与其配置（详情/报价/属性结果/销量），避免清空校区数据后课程基础资料丢失。
+	summary.Courses = 0
+	summary.CourseDetails = 0
+	summary.CourseQuotations = 0
+	summary.CoursePropertyResults = 0
+	summary.CourseSaleVolumesReset = 0
 
 	if err := tx.Commit(); err != nil {
 		return model.CampusDataClearSummary{}, err

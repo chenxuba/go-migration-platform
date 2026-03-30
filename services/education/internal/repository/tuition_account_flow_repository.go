@@ -41,6 +41,102 @@ func resolvedLessonChargingModeExpr(storedModeCol, quotationModelCol string) str
 	END`
 }
 
+func (repo *Repository) buildTuitionAccountFlowTeachingCourseFragments(
+	ctx context.Context,
+	flowAlias string,
+	instIDExpr string,
+	sourceTypeExpr string,
+	sourceIDExpr string,
+	teachingRecordIDExpr string,
+	productIDExpr string,
+	productNameExpr string,
+) ([]string, string, string, error) {
+	joins := make([]string, 0, 4)
+	teachingCourseIDExpr := "''"
+	teachingCourseNameExpr := "''"
+
+	schema, err := repo.loadLessonIncomeSchema(ctx)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	recordCourseIDExpr := "0"
+	recordCourseNameExpr := "''"
+	if schema.teachingTable != "" && schema.teachingClassIDColumn != "" {
+		recordAlias := flowAlias + "_teach_record"
+		recordClassAlias := flowAlias + "_teach_class"
+		recordCourseAlias := flowAlias + "_teach_course"
+		joins = append(joins,
+			fmt.Sprintf("LEFT JOIN %s %s ON %s.id = %s", schema.teachingTable, recordAlias, recordAlias, teachingRecordIDExpr),
+			fmt.Sprintf("LEFT JOIN teaching_class %s ON %s.id = %s.%s AND %s.inst_id = %s AND %s.del_flag = 0",
+				recordClassAlias, recordClassAlias, recordAlias, schema.teachingClassIDColumn, recordClassAlias, instIDExpr, recordClassAlias),
+			fmt.Sprintf("LEFT JOIN inst_course %s ON %s.id = %s.course_id AND %s.del_flag = 0",
+				recordCourseAlias, recordCourseAlias, recordClassAlias, recordCourseAlias),
+		)
+		recordCourseIDExpr = fmt.Sprintf("IFNULL(%s.course_id, 0)", recordClassAlias)
+		recordCourseNameExpr = fmt.Sprintf("IFNULL(%s.name, '')", recordCourseAlias)
+	}
+
+	sourceClassAlias := flowAlias + "_source_class"
+	sourceCourseAlias := flowAlias + "_source_course"
+	encodedCourseIDExpr := fmt.Sprintf("CASE WHEN %s < 0 AND ABS(%s) >= 100000000 THEN FLOOR(ABS(%s) / 100000000) ELSE 0 END", sourceIDExpr, sourceIDExpr, sourceIDExpr)
+	legacyClassIDExpr := fmt.Sprintf("CASE WHEN %s < 0 AND ABS(%s) < 100000000 THEN ABS(%s) ELSE 0 END", sourceIDExpr, sourceIDExpr, sourceIDExpr)
+	sourceCourseIDExpr := fmt.Sprintf("CASE WHEN %s > 0 THEN %s ELSE IFNULL(%s.course_id, 0) END", encodedCourseIDExpr, encodedCourseIDExpr, sourceClassAlias)
+	joins = append(joins,
+		fmt.Sprintf("LEFT JOIN teaching_class %s ON %s.id = %s AND %s.inst_id = %s AND %s.del_flag = 0",
+			sourceClassAlias, sourceClassAlias, legacyClassIDExpr, sourceClassAlias, instIDExpr, sourceClassAlias),
+		fmt.Sprintf("LEFT JOIN inst_course %s ON %s.id = %s AND %s.del_flag = 0",
+			sourceCourseAlias, sourceCourseAlias, sourceCourseIDExpr, sourceCourseAlias),
+	)
+
+	teachingCourseIDExpr = fmt.Sprintf(`CASE
+		WHEN %s = %d THEN
+			CASE
+				WHEN %s > 0 THEN CAST(%s AS CHAR)
+				WHEN IFNULL(%s, 0) > 0 THEN CAST(%s AS CHAR)
+				WHEN IFNULL(%s, 0) > 0 THEN CAST(%s AS CHAR)
+				ELSE ''
+			END
+		WHEN IFNULL(%s, 0) > 0 THEN CAST(%s AS CHAR)
+		ELSE ''
+	END`,
+		sourceTypeExpr,
+		model.TuitionAccountFlowSourceAutoConsume,
+		encodedCourseIDExpr,
+		encodedCourseIDExpr,
+		sourceCourseIDExpr,
+		sourceCourseIDExpr,
+		productIDExpr,
+		productIDExpr,
+		recordCourseIDExpr,
+		recordCourseIDExpr,
+	)
+	teachingCourseNameExpr = fmt.Sprintf(`CASE
+		WHEN %s = %d THEN
+			CASE
+				WHEN %s > 0 THEN IFNULL(%s.name, '')
+				WHEN IFNULL(%s, 0) > 0 THEN IFNULL(%s.name, '')
+				WHEN IFNULL(%s, 0) > 0 THEN IFNULL(%s, '')
+				ELSE ''
+			END
+		WHEN IFNULL(%s, 0) > 0 THEN %s
+		ELSE ''
+	END`,
+		sourceTypeExpr,
+		model.TuitionAccountFlowSourceAutoConsume,
+		encodedCourseIDExpr,
+		sourceCourseAlias,
+		sourceCourseIDExpr,
+		sourceCourseAlias,
+		productIDExpr,
+		productNameExpr,
+		recordCourseIDExpr,
+		recordCourseNameExpr,
+	)
+
+	return joins, teachingCourseIDExpr, teachingCourseNameExpr, nil
+}
+
 func ensureTuitionAccountFlowTables(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS tuition_account_flow (
@@ -150,6 +246,19 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 	if err := repo.ensureHistoricalTuitionAccountFlowRecords(ctx, instID); err != nil {
 		return model.TuitionAccountFlowRecordListResult{}, err
 	}
+	teachingCourseJoins, teachingCourseIDExpr, teachingCourseNameExpr, err := repo.buildTuitionAccountFlowTeachingCourseFragments(
+		ctx,
+		"g",
+		"g.inst_id",
+		"g.source_type",
+		"g.source_id",
+		"g.agg_teaching_record_id",
+		"g.product_id",
+		"g.course_name",
+	)
+	if err != nil {
+		return model.TuitionAccountFlowRecordListResult{}, err
+	}
 
 	current := query.PageRequestModel.PageIndex
 	size := query.PageRequestModel.PageSize
@@ -222,6 +331,7 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 	flowListInnerSQL := `
 		SELECT
 			MIN(taf.id) AS flow_id,
+			MIN(taf.inst_id) AS inst_id,
 			MIN(taf.tuition_account_id) AS tuition_account_id,
 			MIN(taf.student_id) AS student_id,
 			IFNULL(s.stu_name, '') AS stu_name,
@@ -265,6 +375,8 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 			g.stu_name,
 			g.stu_phone,
 			g.stu_avatar,
+			` + teachingCourseIDExpr + ` AS teaching_course_id,
+			` + teachingCourseNameExpr + ` AS teaching_course_name,
 			g.product_id,
 			g.course_name,
 			g.agg_lesson_type,
@@ -278,6 +390,7 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 		FROM (` + flowListInnerSQL + `) g
 		LEFT JOIN tuition_account ta ON ta.id = g.tuition_account_id AND ta.inst_id = ? AND ta.del_flag = 0
 		` + tuitionAccountQuotationJoinSQL + `
+		` + strings.Join(teachingCourseJoins, "\n\t\t") + `
 		ORDER BY ` + outerOrderBy + `
 		LIMIT ? OFFSET ?`
 
@@ -308,6 +421,8 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 			flowID             int64
 			tuitionAccountID   int64
 			studentID          int64
+			teachingCourseID   sql.NullString
+			teachingCourseName sql.NullString
 			productID          int64
 			sourceID           int64
 			lessonType         sql.NullInt64
@@ -322,6 +437,8 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 			&item.StudentName,
 			&item.StudentPhone,
 			&item.StudentAvatar,
+			&teachingCourseID,
+			&teachingCourseName,
 			&productID,
 			&item.ProductName,
 			&lessonType,
@@ -338,6 +455,12 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 		item.TuitionAccountFlowID = strconv.FormatInt(flowID, 10)
 		item.TuitionAccountID = strconv.FormatInt(tuitionAccountID, 10)
 		item.StudentID = strconv.FormatInt(studentID, 10)
+		if teachingCourseID.Valid {
+			item.TeachingCourseID = strings.TrimSpace(teachingCourseID.String)
+		}
+		if teachingCourseName.Valid {
+			item.TeachingCourseName = strings.TrimSpace(teachingCourseName.String)
+		}
 		item.ProductID = strconv.FormatInt(productID, 10)
 		item.SourceID = strconv.FormatInt(sourceID, 10)
 		if lessonType.Valid {
@@ -366,6 +489,19 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 
 func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, instID int64, query model.SubTuitionAccountFlowRecordListQueryDTO) (model.SubTuitionAccountFlowRecordListResult, error) {
 	if err := repo.ensureHistoricalTuitionAccountFlowRecords(ctx, instID); err != nil {
+		return model.SubTuitionAccountFlowRecordListResult{}, err
+	}
+	teachingCourseJoins, teachingCourseIDExpr, teachingCourseNameExpr, err := repo.buildTuitionAccountFlowTeachingCourseFragments(
+		ctx,
+		"taf",
+		"taf.inst_id",
+		"taf.source_type",
+		"taf.source_id",
+		"taf.teaching_record_id",
+		"taf.product_id",
+		"IFNULL(c.name, '')",
+	)
+	if err != nil {
 		return model.SubTuitionAccountFlowRecordListResult{}, err
 	}
 
@@ -456,6 +592,8 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 				ELSE IFNULL(s.mobile, '')
 			END,
 			IFNULL(s.avatar_url, ''),
+			`+teachingCourseIDExpr+`,
+			`+teachingCourseNameExpr+`,
 			taf.product_id,
 			IFNULL(c.name, ''),
 			taf.lesson_type,
@@ -483,6 +621,7 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 		LEFT JOIN inst_course c ON c.id = taf.product_id AND c.del_flag = 0
 		LEFT JOIN tuition_account ta ON ta.id = taf.tuition_account_id AND ta.inst_id = taf.inst_id AND ta.del_flag = 0
 		`+tuitionAccountQuotationJoinSQL+`
+		`+strings.Join(teachingCourseJoins, "\n\t\t")+`
 		WHERE `+whereSQL+`
 		ORDER BY `+orderBy+`
 		LIMIT ? OFFSET ?
@@ -499,6 +638,8 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 			id                 int64
 			tuitionAccountID   int64
 			studentID          int64
+			teachingCourseID   sql.NullString
+			teachingCourseName sql.NullString
 			productID          int64
 			sourceID           int64
 			lessonType         sql.NullInt64
@@ -513,6 +654,8 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 			&item.StudentName,
 			&item.StudentPhone,
 			&item.StudentAvatar,
+			&teachingCourseID,
+			&teachingCourseName,
 			&productID,
 			&item.ProductName,
 			&lessonType,
@@ -532,6 +675,12 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 		item.ID = strconv.FormatInt(id, 10)
 		item.TuitionAccountID = strconv.FormatInt(tuitionAccountID, 10)
 		item.StudentID = strconv.FormatInt(studentID, 10)
+		if teachingCourseID.Valid {
+			item.TeachingCourseID = strings.TrimSpace(teachingCourseID.String)
+		}
+		if teachingCourseName.Valid {
+			item.TeachingCourseName = strings.TrimSpace(teachingCourseName.String)
+		}
 		item.ProductID = strconv.FormatInt(productID, 10)
 		item.SourceID = strconv.FormatInt(sourceID, 10)
 		if lessonType.Valid {

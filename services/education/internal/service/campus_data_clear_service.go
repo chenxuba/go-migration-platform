@@ -47,6 +47,7 @@ func (svc *Service) ClearCampusData(userID int64, req model.CampusDataClearReque
 			"员工与角色",
 			"校区业务设置",
 			"渠道与渠道分类",
+			"课程与课程配置（详情、报价、属性结果、销量）",
 			"课程分类、课程属性与课程属性选项",
 			"订单标签",
 			"学员自定义字段",

@@ -27,7 +27,7 @@ const (
 	TuitionAccountFlowSourceRefund                    = 22
 	TuitionAccountFlowSourceOrderVoid                 = 23
 	TuitionAccountFlowSourceVoidCrossCampusTransferIn = 24
-	TuitionAccountFlowSourceManualCloseCourse = 25
+	TuitionAccountFlowSourceManualCloseCourse         = 25
 )
 
 type TuitionAccountFlowRecordListQueryDTO struct {
@@ -56,6 +56,8 @@ type TuitionAccountFlowRecordItem struct {
 	StudentName          string     `json:"studentName"`
 	StudentPhone         string     `json:"studentPhone"`
 	StudentAvatar        string     `json:"studentAvatar"`
+	TeachingCourseID     string     `json:"teachingCourseId,omitempty"`
+	TeachingCourseName   string     `json:"teachingCourseName,omitempty"`
 	ProductID            string     `json:"productId"`
 	ProductName          string     `json:"productName"`
 	LessonType           *int       `json:"lessonType,omitempty"`
@@ -86,6 +88,8 @@ type SubTuitionAccountFlowRecordItem struct {
 	StudentName        string     `json:"studentName"`
 	StudentPhone       string     `json:"studentPhone"`
 	StudentAvatar      string     `json:"studentAvatar"`
+	TeachingCourseID   string     `json:"teachingCourseId,omitempty"`
+	TeachingCourseName string     `json:"teachingCourseName,omitempty"`
 	ProductID          string     `json:"productId"`
 	ProductName        string     `json:"productName"`
 	LessonType         *int       `json:"lessonType,omitempty"`
