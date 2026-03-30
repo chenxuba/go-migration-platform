@@ -49,6 +49,18 @@ func (repo *Repository) GetStudentSnapshot(ctx context.Context, instID, studentI
 	return item, err
 }
 
+func (repo *Repository) GetStudentStatusSnapshot(ctx context.Context, instID, studentID int64) (StudentStatusSnapshot, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT follow_up_status, intent_level
+		FROM inst_student
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, studentID, instID)
+	var item StudentStatusSnapshot
+	err := row.Scan(&item.FollowUpStatus, &item.IntentLevel)
+	return item, err
+}
+
 func (repo *Repository) GetStudentNameByID(ctx context.Context, studentID *int64) string {
 	if studentID == nil {
 		return "-"

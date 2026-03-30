@@ -24,26 +24,19 @@ func (svc *Service) UpdateStudentStatus(userID int64, dto model.StudentStatusUpd
 	if dto.FollowUpStatus == nil && dto.IntentLevel == nil {
 		return errors.New("followUpStatus or intentLevel is required")
 	}
-	before, err := svc.repo.GetStudentSnapshot(context.Background(), instID, dto.ID)
-	if err != nil {
-		return err
-	}
 	if err := svc.repo.UpdateStudentStatus(context.Background(), instID, dto); err != nil {
 		return err
 	}
-	after, err := svc.repo.GetStudentSnapshot(context.Background(), instID, dto.ID)
-	if err == nil {
-		instUserID, _ := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
-		_ = svc.repo.InsertStudentChangeRecord(context.Background(), instID, dto.ID, instUserID, svc.buildStudentSnapshotChangeText(context.Background(), before, after))
-	}
-	if svc.mqClient != nil {
-		_ = svc.publishMQ("student_intent", "status_changed", map[string]any{
-			"instId":         instID,
-			"studentId":      dto.ID,
-			"followUpStatus": dto.FollowUpStatus,
-			"intentLevel":    dto.IntentLevel,
-		})
-	}
+	go func(instID, studentID int64, dto model.StudentStatusUpdateDTO) {
+		if svc.mqClient != nil {
+			_ = svc.publishMQ("student_intent", "status_changed", map[string]any{
+				"instId":         instID,
+				"studentId":      studentID,
+				"followUpStatus": dto.FollowUpStatus,
+				"intentLevel":    dto.IntentLevel,
+			})
+		}
+	}(instID, dto.ID, dto)
 	return nil
 }
 

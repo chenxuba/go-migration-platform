@@ -48,6 +48,33 @@ func studentWeChatDuplicateMessage() string {
 	return "当前机构已存在微信号相同的学员"
 }
 
+func buildStudentStatusSnapshotAfter(before repository.StudentSnapshot, dtoIntentionLevel, dtoFollowUpStatus *int) repository.StudentSnapshot {
+	after := before
+	if dtoIntentionLevel != nil {
+		value := *dtoIntentionLevel
+		after.IntentLevel = &value
+	}
+	if dtoFollowUpStatus != nil {
+		value := *dtoFollowUpStatus
+		after.FollowUpStatus = &value
+	}
+	return after
+}
+
+func buildStudentStatusChangeText(before, after repository.StudentSnapshot) string {
+	changes := make([]string, 0, 2)
+	if studentIntentLevelLabel(before.IntentLevel) != studentIntentLevelLabel(after.IntentLevel) {
+		changes = append(changes, fmt.Sprintf(`意向度从"%s"修改为"%s"`, studentIntentLevelLabel(before.IntentLevel), studentIntentLevelLabel(after.IntentLevel)))
+	}
+	if studentFollowUpStatusLabel(before.FollowUpStatus) != studentFollowUpStatusLabel(after.FollowUpStatus) {
+		changes = append(changes, fmt.Sprintf(`跟进状态从"%s"修改为"%s"`, studentFollowUpStatusLabel(before.FollowUpStatus), studentFollowUpStatusLabel(after.FollowUpStatus)))
+	}
+	if len(changes) == 0 {
+		return ""
+	}
+	return strings.Join(changes, ";") + ";"
+}
+
 func (svc *Service) buildStudentSnapshotChangeText(ctx context.Context, before, after repository.StudentSnapshot) string {
 	changes := make([]string, 0, 12)
 

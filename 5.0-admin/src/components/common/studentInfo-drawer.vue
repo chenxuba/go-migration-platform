@@ -547,6 +547,12 @@ const getStatusConfig = computed(() => (status) => {
 
 // 使用防抖包装状态变更处理函数
 const debouncedStatusChange = debounce(async (status) => {
+  const previousStatus = studentDetail.value.followUpStatus
+  studentDetail.value = {
+    ...studentDetail.value,
+    followUpStatus: status,
+  }
+  openStatusDropdown.value = false
   btnLoading.value = true
   try {
     const res = await updateStatusApi({
@@ -557,11 +563,15 @@ const debouncedStatusChange = debounce(async (status) => {
     })
     if (res.code === 200) {
       messageService.success('更新状态成功')
-      openStatusDropdown.value = false
-      // 刷新学员详情
-      getIntentStudentDetail(false)
+      return
     }
+    throw new Error(res.message || '更新状态失败')
   } catch (error) {
+    studentDetail.value = {
+      ...studentDetail.value,
+      followUpStatus: previousStatus,
+    }
+    openStatusDropdown.value = false
     messageService.error('更新状态失败')
     console.error('更新状态失败:', error)
   } finally {
@@ -580,6 +590,12 @@ async function handleStatusChange(status) {
 
 // 使用防抖包装意向度变更处理函数
 const debouncedIntentionChange = debounce(async (intentLevel) => {
+  const previousIntentLevel = studentDetail.value.intentLevel
+  studentDetail.value = {
+    ...studentDetail.value,
+    intentLevel,
+  }
+  openIntentionDropdown.value = false
   btnLoading.value = true
   try {
     const res = await updateStatusApi({
@@ -590,11 +606,15 @@ const debouncedIntentionChange = debounce(async (intentLevel) => {
     })
     if (res.code === 200) {
       messageService.success('更新意向度成功')
-      openIntentionDropdown.value = false
-      // 刷新学员详情
-      getIntentStudentDetail(false)
+      return
     }
+    throw new Error(res.message || '更新意向度失败')
   } catch (error) {
+    studentDetail.value = {
+      ...studentDetail.value,
+      intentLevel: previousIntentLevel,
+    }
+    openIntentionDropdown.value = false
     messageService.error('更新意向度失败')
     console.error('更新意向度失败:', error)
   } finally {
