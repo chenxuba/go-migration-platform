@@ -605,9 +605,11 @@ func buildPreviewSubPeriods(rows []tuitionAccountSubAccountRow) []model.RevertCl
 
 func buildPreviewSubPeriodsFromCloseFlows(rows []closeTuitionAccountFlowRow) []model.RevertCloseTuitionAccountSubPeriod {
 	out := make([]model.RevertCloseTuitionAccountSubPeriod, 0, len(rows))
-	seen := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
-		period := model.RevertCloseTuitionAccountSubPeriod{}
+		period := model.RevertCloseTuitionAccountSubPeriod{
+			Quantity: closeOrderRoundMoney(row.quantity),
+			IsFree:   closeOrderAlmostEqual(row.tuition, 0),
+		}
 		if row.validDate.Valid {
 			t := row.validDate.Time
 			period.StartDate = &t
@@ -619,11 +621,6 @@ func buildPreviewSubPeriodsFromCloseFlows(rows []closeTuitionAccountFlowRow) []m
 		if period.StartDate == nil && period.EndDate == nil {
 			continue
 		}
-		key := fmt.Sprintf("%s|%s", nullableDateKey(period.StartDate), nullableDateKey(period.EndDate))
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
 		out = append(out, period)
 	}
 	return out

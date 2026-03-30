@@ -79,10 +79,10 @@ func buildLessonIncomeFlowFromSQL(schema lessonIncomeSchema) string {
 		GROUP BY
 			taf0.inst_id,
 			CASE
-				WHEN taf0.source_type = %d AND IFNULL(taf0.source_id, 0) > 0 THEN CONCAT('manual_close:', CAST(taf0.source_id AS CHAR))
+				WHEN taf0.source_type IN (%d, %d) AND IFNULL(taf0.source_id, 0) > 0 THEN CONCAT('close_group:', CAST(taf0.source_type AS CHAR), ':', CAST(taf0.source_id AS CHAR))
 				ELSE CONCAT('row:', CAST(taf0.id AS CHAR))
 			END
-	) taf`, extraColumns, model.TuitionAccountFlowSourceManualCloseCourse)
+	) taf`, extraColumns, model.TuitionAccountFlowSourceManualCloseCourse, model.TuitionAccountFlowSourceRevokeGraduate)
 }
 
 func (repo *Repository) tableExists(ctx context.Context, tableName string) (bool, error) {

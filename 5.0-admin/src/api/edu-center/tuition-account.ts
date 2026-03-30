@@ -74,6 +74,8 @@ export interface TuitionAccountSubAccountDateInfoResult {
 }
 
 export interface RevertCloseTuitionAccountPreviewSubPeriod {
+  quantity?: number
+  isFree?: boolean
   startDate?: string
   endDate?: string
 }

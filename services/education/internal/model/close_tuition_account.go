@@ -45,6 +45,8 @@ type RevertCloseTuitionAccountPreviewQueryDTO struct {
 }
 
 type RevertCloseTuitionAccountSubPeriod struct {
+	Quantity  float64    `json:"quantity"`
+	IsFree    bool       `json:"isFree"`
 	StartDate *time.Time `json:"startDate,omitempty"`
 	EndDate   *time.Time `json:"endDate,omitempty"`
 }

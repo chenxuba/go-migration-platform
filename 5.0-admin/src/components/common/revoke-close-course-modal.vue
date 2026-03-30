@@ -190,12 +190,48 @@ const currentValidFieldLabel = computed(() => (
   lessonChargingMode.value === 2 ? '现有效开始时间' : '现有效期至'
 ))
 
+const previewPeriods = computed(() =>
+  Array.isArray(previewData.value?.subTuitionAccounts) ? previewData.value.subTuitionAccounts : [],
+)
+
+const recomputedValidPeriodLines = computed(() => {
+  if (lessonChargingMode.value !== 2 || !formState.startDate)
+    return []
+
+  const start = dayjs(formState.startDate)
+  if (!start.isValid())
+    return []
+
+  let cursor = start
+  const lines = []
+
+  previewPeriods.value.forEach((period) => {
+    let days = Math.round(Number(period?.quantity || 0))
+    if (days <= 0) {
+      const rawStart = dayjs(period?.startDate)
+      const rawEnd = dayjs(period?.endDate)
+      if (rawStart.isValid() && rawEnd.isValid())
+        days = rawEnd.diff(rawStart, 'day') + 1
+    }
+    if (days <= 0)
+      return
+
+    const end = cursor.add(days - 1, 'day')
+    lines.push(`${cursor.format('YYYY-MM-DD')} ~ ${end.format('YYYY-MM-DD')}`)
+    cursor = end.add(1, 'day')
+  })
+
+  return lines
+})
+
 const validPeriodLines = computed(() => {
   if (lessonChargingMode.value === 1)
     return ['无']
 
-  const previewPeriods = Array.isArray(previewData.value?.subTuitionAccounts) ? previewData.value.subTuitionAccounts : []
-  const lines = previewPeriods
+  if (recomputedValidPeriodLines.value.length)
+    return recomputedValidPeriodLines.value
+
+  const lines = previewPeriods.value
     .map((period) => {
       const start = formatDate(period?.startDate)
       const end = formatDate(period?.endDate)
@@ -205,8 +241,10 @@ const validPeriodLines = computed(() => {
     })
     .filter(Boolean)
 
-  if (lines.length)
-    return lines
+  const uniqueLines = Array.from(new Set(lines))
+
+  if (uniqueLines.length)
+    return uniqueLines
 
   const fallbackLines = (Array.isArray(subAccountList.value) ? subAccountList.value : [])
     .map((item) => {
