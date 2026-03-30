@@ -397,6 +397,7 @@ onMounted(async () => {
             <checkbox-filter
               v-model:checked-values="filterState.sourceTypePaths"
               :options="FLOW_TYPE_GROUPS"
+              cascader-expand-trigger="hover"
               label="变动类型"
               type="cascader"
               placeholder="搜索变动类型"

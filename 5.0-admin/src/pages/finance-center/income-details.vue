@@ -155,12 +155,27 @@ function hasMeaningfulTimeRange(record) {
   return Number(record.startMinutes || 0) > 0 || Number(record.endMinutes || 0) > 0
 }
 
+function isNegativeIncome(record) {
+  return Number(record?.tuition || 0) < 0
+}
+
 function formatCourseConsumption(record) {
-  return `${Number(record.quantity || 0)}${CHARGING_MODE_UNIT_MAP[record.lessonChargingMode] || ''}`
+  const quantity = Math.abs(Number(record?.quantity || 0))
+  const unit = CHARGING_MODE_UNIT_MAP[record?.lessonChargingMode] || ''
+  const prefix = isNegativeIncome(record) ? '-' : ''
+  return `${prefix}${quantity}${unit ? ` ${unit}` : ''}`
 }
 
 function getDetailTypeText(sourceType) {
   return DETAIL_TYPE_MAP[sourceType] || `类型${sourceType}`
+}
+
+function getDetailTypeDotClass(record) {
+  return isNegativeIncome(record) ? 'dot-negative' : 'dot-positive'
+}
+
+function getIncomeValueClass(record) {
+  return isNegativeIncome(record) ? 'value-negative' : 'value-normal'
 }
 
 function getTeacherText(record) {
@@ -714,7 +729,7 @@ onUnmounted(() => {
               </template>
               <template v-if="column.key === 'sourceType'">
                 <div class="detail-type-cell">
-                  <span class="dot" />
+                  <span class="dot" :class="getDetailTypeDotClass(record)" />
                   <span>{{ getDetailTypeText(record.sourceType) }}</span>
                 </div>
               </template>
@@ -739,10 +754,10 @@ onUnmounted(() => {
                 {{ formatDateTime(record.rollCallTime) }}
               </template>
               <template v-if="column.key === 'quantity'">
-                {{ formatCourseConsumption(record) }}
+                <span :class="getIncomeValueClass(record)">{{ formatCourseConsumption(record) }}</span>
               </template>
               <template v-if="column.key === 'tuition'">
-                {{ formatMoney(record.tuition) }}
+                <span :class="getIncomeValueClass(record)">{{ formatMoney(record.tuition) }}</span>
               </template>
             </template>
           </a-table>
@@ -893,6 +908,21 @@ span.dot {
   height: 6px;
   margin-right: 4px;
   width: 6px;
-  background: #06f;
+}
+
+.dot-positive {
+  background: #52c41a;
+}
+
+.dot-negative {
+  background: #faad14;
+}
+
+.value-normal {
+  color: #262626;
+}
+
+.value-negative {
+  color: #ff4d4f;
 }
 </style>

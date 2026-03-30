@@ -47,6 +47,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  cascaderExpandTrigger: {
+    type: String,
+    default: 'click',
+  },
 })
 
 const emit = defineEmits(['update:checkedValues', 'change', 'radioChange', 'datePickerChange', 'inputChange', 'dropdownVisibleChange', 'onDropdownVisibleChange', 'onSearch', 'loadMore'])
@@ -641,6 +645,7 @@ function handleScroll(e) {
     <template #overlay>
       <a-menu>
         <a-cascader v-model:value="checkedValues" :field-names="{ children: 'channelList', label: 'name', value: 'id' }"
+          :expand-trigger="cascaderExpandTrigger"
           :show-search="{ filter }" :show-checked-strategy="Cascader.SHOW_CHILD" multiple max-tag-count="responsive"
           :options="options" :placeholder="placeholder || '搜索渠道'" @change="handleChange"
           @dropdown-visible-change="handleDropdownVisibleChange" />
