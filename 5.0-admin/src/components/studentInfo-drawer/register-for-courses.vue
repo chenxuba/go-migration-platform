@@ -25,6 +25,7 @@ import oneToOneModal from './oneToOneModal.vue'
 import closeCourseRecordModal from './close-course-record-modal.vue'
 
 const STATUS_END_STAMP_SRC = 'https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/14983/static/svg/status-end-D4a6u7st.svg'
+const STATUS_SUSPEND_STAMP_SRC = 'https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/14983/static/svg/status-suspend-C7VTrkvF.svg'
 
 const props = defineProps({
   emptyText: {
@@ -50,6 +51,7 @@ const listLoaded = ref(false)
 const currentRevokeCourseRecord = ref(null)
 const currentCloseRecordCourse = ref(null)
 const currentEndCourseRecord = ref(null)
+const currentStopCourseRecord = ref(null)
 
 function handleOneToOne() {
   oneToOneModalOpen.value = true
@@ -136,6 +138,19 @@ function isTuitionAccountClosedByStatus(item) {
   return Number(item?.status || 0) === 3
 }
 
+function isTuitionAccountSuspended(item) {
+  return Number(item?.status || 0) === 2
+}
+
+function hasPlannedSuspend(item) {
+  if (isTuitionAccountSuspended(item))
+    return false
+  if (!item?.planSuspendTime)
+    return false
+  const parsed = dayjs(item.planSuspendTime)
+  return parsed.isValid() && parsed.isAfter(dayjs(), 'day')
+}
+
 function getDisplayedRemainQuantity(item) {
   if (isTuitionAccountClosedByStatus(item))
     return 0
@@ -190,6 +205,12 @@ async function handleCloseCourseSuccess() {
   await getTuitionAccountList()
 }
 
+async function handleStopCourseSuccess() {
+  stopTheClassDrawerOpen.value = false
+  currentStopCourseRecord.value = null
+  await getTuitionAccountList()
+}
+
 async function handleCloseCourseRecordSuccess() {
   await getTuitionAccountList()
 }
@@ -197,6 +218,11 @@ async function handleCloseCourseRecordSuccess() {
 function onMenuCloseCourse(item) {
   currentEndCourseRecord.value = item || null
   endTheClassDrawerOpen.value = true
+}
+
+function onMenuStopCourse(item) {
+  currentStopCourseRecord.value = item || null
+  stopTheClassDrawerOpen.value = true
 }
 
 function onEndedMenuCloseRecord(item) {
@@ -226,6 +252,26 @@ function formatValidPeriodText(item) {
   }
   
   return `有效时段：${validDate} ~ ${endDate}`
+}
+
+function getSuspendStatusText(item) {
+  if (isTuitionAccountSuspended(item)) {
+    const resumeDate = formatDate(item?.planResumeTime)
+    return resumeDate !== '-' ? `有效期至：将于${resumeDate}复课` : '有效期至：停课中'
+  }
+  if (hasPlannedSuspend(item)) {
+    const suspendDate = formatDate(item?.planSuspendTime)
+    return suspendDate !== '-' ? `有效期至：将于${suspendDate}停课` : ''
+  }
+  return ''
+}
+
+function getSuspendStatusClass(item) {
+  if (isTuitionAccountSuspended(item))
+    return 'text-#f90'
+  if (hasPlannedSuspend(item))
+    return 'text-#ff4d4f'
+  return 'text-#888'
 }
 
 // 获取授课方式文本
@@ -394,7 +440,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   </div>
                   <span class="font-size-14px text-#666  w-90px ">退课</span>
                 </div>
-                <div class="flex items-center gap-2" @click="stopTheClassDrawerOpen = true">
+                <div class="flex items-center gap-2" @click="onMenuStopCourse(item)">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -596,8 +642,24 @@ watch(endTheClassDrawerOpen, (value) => {
                 ）
               </span>
             </div>
+            <div v-if="getSuspendStatusText(item)" class="validity px3 flex justify-start flex-items-center mt-1">
+              <span class="text-3" :class="getSuspendStatusClass(item)">{{ getSuspendStatusText(item) }}</span>
+              <a-popover>
+                <template #title>
+                  <div style="border-bottom:1px solid #eee;padding-bottom: 6px;">
+                    字段说明
+                  </div>
+                </template>
+                <template #content>
+                  <div class="text-#666">
+                    停课后学员将暂停计费，并在计划复课日恢复。
+                  </div>
+                </template>
+                <QuestionCircleOutlined class="ml-2 mb-0.5" />
+              </a-popover>
+            </div>
             <!-- 时段模式显示有效时段，非时段模式显示有效期至 -->
-            <div v-if="item.lessonChargingMode === 2" class="valid-period px3 text-#888 flex justify-start flex-items-center mt-1">
+            <div v-else-if="item.lessonChargingMode === 2" class="valid-period px3 text-#888 flex justify-start flex-items-center mt-1">
               <span class="text-3">{{ formatValidPeriodText(item) }}</span>
             </div>
             <div v-else class="validity px3 text-#888 flex justify-start flex-items-center mt-1">
@@ -627,6 +689,15 @@ watch(endTheClassDrawerOpen, (value) => {
               alt="已结课"
               width="88"
               height="88"
+            >
+          </div>
+          <div v-else-if="isTuitionAccountSuspended(item)" class="course-ended-stamp-wrap">
+            <img
+              class="course-ended-stamp"
+              :src="STATUS_SUSPEND_STAMP_SRC"
+              alt="停课中"
+              width="120"
+              height="120"
             >
           </div>
         </div>
@@ -659,7 +730,11 @@ watch(endTheClassDrawerOpen, (value) => {
     </a-spin>
     <transferClassDrawer v-model:open="transferClassDrawerOpen" />
     <dropTheClassDrawer v-model:open="dropTheClassDrawerOpen" />
-    <stopTheClassModal v-model:open="stopTheClassDrawerOpen" />
+    <stopTheClassModal
+      v-model:open="stopTheClassDrawerOpen"
+      :record="currentStopCourseRecord"
+      @success="handleStopCourseSuccess"
+    />
     <endTheClassModal
       v-model:open="endTheClassDrawerOpen"
       :record="currentEndCourseRecord"
