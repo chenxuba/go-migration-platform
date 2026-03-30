@@ -2526,8 +2526,8 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 		return err
 	}
 
-	consumedPaidDays := math.Min(float64(elapsedDays), paidTotalDays)
-	if consumedPaidDays <= 0 {
+	baseConsumedPaidDays := math.Min(float64(elapsedDays), paidTotalDays)
+	if baseConsumedPaidDays <= 0 {
 		return nil
 	}
 	var extraPaidDays float64
@@ -2538,8 +2538,9 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 	`, instID, paidAccountID, model.TuitionAccountFlowSourceAutoConsume).Scan(&extraPaidDays); err != nil {
 		return err
 	}
+	consumedPaidDays := baseConsumedPaidDays
 	if extraPaidDays > 0 {
-		consumedPaidDays = math.Min(consumedPaidDays+extraPaidDays, paidTotalDays)
+		consumedPaidDays = math.Min(baseConsumedPaidDays+extraPaidDays, paidTotalDays)
 	}
 
 	confirmedTuition := paidTotalTuition
@@ -2639,6 +2640,15 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 
 	generatedFlow := false
 	if !bootstrapExists && operatorID != 0 {
+		baseConfirmedTuition := paidTotalTuition
+		if paidTotalDays > 0 {
+			baseConfirmedTuition = roundMoney(paidTotalTuition * baseConsumedPaidDays / paidTotalDays)
+			if baseConsumedPaidDays >= paidTotalDays {
+				baseConfirmedTuition = roundMoney(paidTotalTuition)
+			}
+		}
+		baseRemainingDays := math.Max(paidTotalDays-baseConsumedPaidDays, 0)
+		baseRemainingTuition := roundMoney(math.Max(paidTotalTuition-baseConfirmedTuition, 0))
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO tuition_account_flow (
 				uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
@@ -2660,18 +2670,18 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 			detail.ID,
 			orderNumber,
 			now,
-			consumedPaidDays,
-			confirmedTuition,
-			remainingDays,
-			remainingTuition,
+			baseConsumedPaidDays,
+			baseConfirmedTuition,
+			baseRemainingDays,
+			baseRemainingTuition,
 			operatorID,
 			operatorID,
 		); err != nil {
 			return err
 		}
 		bootstrapExists = true
-		bootstrapQuantity = consumedPaidDays
-		bootstrapTuition = confirmedTuition
+		bootstrapQuantity = baseConsumedPaidDays
+		bootstrapTuition = baseConfirmedTuition
 		generatedFlow = true
 	}
 
@@ -2702,7 +2712,24 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 		bootstrapCoveredDays = int(math.Round(bootstrapQuantity))
 	}
 
-	targetPaidDays := int(math.Floor(consumedPaidDays + 0.00001))
+	// 逐日明细只展开到“今天按日期应自动消”的天数，不把额外补扣（例如创建1对1即时消1天）写成未来日期流水。
+	targetPaidDays := int(math.Floor(baseConsumedPaidDays + 0.00001))
+	maxAllowedSourceID := int64(0)
+	if targetPaidDays > 0 {
+		maxAllowedSourceID = timeSlotSourceIDByDate(startDate.AddDate(0, 0, targetPaidDays-1))
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account_flow
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND tuition_account_id = ? AND source_type = ? AND source_id >= 20000101
+		  AND (
+			(? > 0 AND source_id > ?)
+			OR (? <= 0)
+		  )
+		  AND del_flag = 0
+	`, operatorID, instID, paidAccountID, model.TuitionAccountFlowSourceAutoConsume, maxAllowedSourceID, maxAllowedSourceID, maxAllowedSourceID); err != nil {
+		return err
+	}
 	for paidDayIndex := 1; paidDayIndex <= targetPaidDays; paidDayIndex++ {
 		if bootstrapExists && paidDayIndex <= bootstrapCoveredDays {
 			continue

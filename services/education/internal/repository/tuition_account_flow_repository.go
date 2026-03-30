@@ -161,7 +161,11 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 	}
 	offset := (current - 1) * size
 
-	whereParts := []string{"taf.inst_id = ?", "taf.del_flag = 0"}
+	whereParts := []string{
+		"taf.inst_id = ?",
+		"taf.del_flag = 0",
+		"NOT (taf.source_type = 15 AND taf.source_id >= 20000101 AND taf.source_id > CAST(DATE_FORMAT(NOW(), '%Y%m%d') AS UNSIGNED))",
+	}
 	args := []any{instID}
 
 	if strings.TrimSpace(query.QueryModel.ProductID) != "" {
@@ -194,9 +198,25 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 	}
 
 	whereSQL := strings.Join(whereParts, " AND ")
-	outerOrderBy := `g.min_created_time DESC, CASE WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0 ELSE 1 END ASC, g.flow_id DESC`
+	outerOrderBy := `
+		DATE_FORMAT(g.min_created_time, '%Y-%m-%d %H:%i') DESC,
+		CASE
+			WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0
+			WHEN g.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(g.sum_tuition, 0) > 0 THEN 1
+			WHEN g.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(g.sum_quantity, 0) > 0 THEN 2
+			ELSE 3
+		END ASC,
+		g.flow_id DESC`
 	if query.SortModel.OrderByCreatedTime > 0 {
-		outerOrderBy = `g.min_created_time ASC, CASE WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0 ELSE 1 END ASC, g.flow_id ASC`
+		outerOrderBy = `
+			DATE_FORMAT(g.min_created_time, '%Y-%m-%d %H:%i') ASC,
+			CASE
+				WHEN g.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0
+				WHEN g.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(g.sum_tuition, 0) > 0 THEN 1
+				WHEN g.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(g.sum_quantity, 0) > 0 THEN 2
+				ELSE 3
+			END ASC,
+			g.flow_id ASC`
 	}
 
 	flowListInnerSQL := `
@@ -359,7 +379,11 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 	}
 	offset := (current - 1) * size
 
-	whereParts := []string{"taf.inst_id = ?", "taf.del_flag = 0"}
+	whereParts := []string{
+		"taf.inst_id = ?",
+		"taf.del_flag = 0",
+		"NOT (taf.source_type = 15 AND taf.source_id >= 20000101 AND taf.source_id > CAST(DATE_FORMAT(NOW(), '%Y%m%d') AS UNSIGNED))",
+	}
 	args := []any{instID}
 
 	if strings.TrimSpace(query.QueryModel.ProductID) != "" {
@@ -392,9 +416,25 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 	}
 
 	whereSQL := strings.Join(whereParts, " AND ")
-	orderBy := "taf.created_time DESC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0 ELSE 1 END ASC, taf.id DESC"
+	orderBy := `
+		DATE_FORMAT(taf.created_time, '%Y-%m-%d %H:%i') DESC,
+		CASE
+			WHEN taf.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(taf.quantity, 0) > 0 AND IFNULL(taf.tuition, 0) = 0 THEN 0
+			WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 1
+			WHEN taf.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(taf.tuition, 0) > 0 THEN 2
+			ELSE 3
+		END ASC,
+		taf.id DESC`
 	if query.SortModel.OrderByCreatedTime > 0 {
-		orderBy = "taf.created_time ASC, CASE WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 0 ELSE 1 END ASC, taf.id ASC"
+		orderBy = `
+			DATE_FORMAT(taf.created_time, '%Y-%m-%d %H:%i') ASC,
+			CASE
+				WHEN taf.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(taf.quantity, 0) > 0 AND IFNULL(taf.tuition, 0) = 0 THEN 0
+				WHEN taf.source_type IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) THEN 1
+				WHEN taf.source_type NOT IN (12,13,14,15,16,17,18,19,20,21,22,23,24,25) AND IFNULL(taf.tuition, 0) > 0 THEN 2
+				ELSE 3
+			END ASC,
+			taf.id ASC`
 	}
 
 	var total int
