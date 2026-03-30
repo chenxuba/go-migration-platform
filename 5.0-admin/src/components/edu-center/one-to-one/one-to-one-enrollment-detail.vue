@@ -114,11 +114,13 @@ function calcUsedTuition(block) {
   return Math.max(Number(ta?.totalTuition || 0) - Number(ta?.remainTuition || 0), 0)
 }
 
-function classStudentStatusLabel(status) {
+function classStudentStatusLabel(block) {
+  const status = Number(block?.classStudentStatus)
+  const tuitionSuspended = Number(block?.tuitionAccount?.status) === 2
   if (status === 3)
     return '已结课'
-  if (status === 2)
-    return '已开课'
+  if (status === 2 || tuitionSuspended)
+    return '已停课'
   return '正常'
 }
 
@@ -258,7 +260,7 @@ function blockKey(block, idx) {
         <a-descriptions :column="3" size="small">
           <a-descriptions-item label="当前状态">
             <span class="text-#666666">
-              {{ classStudentStatusLabel(block.classStudentStatus) }}
+              {{ classStudentStatusLabel(block) }}
             </span>
           </a-descriptions-item>
           <a-descriptions-item label="报读数量">

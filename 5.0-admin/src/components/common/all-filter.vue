@@ -1201,7 +1201,7 @@ const currentStatusOptions = computed(() => {
   if (props.oneToOneMode) {
     return [
       { id: 1, value: '正常' },
-      { id: 2, value: '已开课' },
+      { id: 2, value: '已停课' },
       { id: 3, value: '已结课' },
     ]
   }

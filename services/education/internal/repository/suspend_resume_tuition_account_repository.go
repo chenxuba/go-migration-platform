@@ -266,6 +266,17 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 		return model.SuspendResumeTuitionAccountOrderResult{}, err
 	}
 
+	if dto.Type == 1 && isImmediateSuspend {
+		if err := syncOneToOneClassStudentStatusForTuitionAccountsTx(ctx, tx, instID, operatorID, selected.studentID, selected.courseID, accountIDs, model.TeachingClassStudentStatusStopped); err != nil {
+			return model.SuspendResumeTuitionAccountOrderResult{}, err
+		}
+	}
+	if dto.Type == 2 && isImmediateResume {
+		if err := syncOneToOneClassStudentStatusForTuitionAccountsTx(ctx, tx, instID, operatorID, selected.studentID, selected.courseID, accountIDs, model.TeachingClassStudentStatusStudying); err != nil {
+			return model.SuspendResumeTuitionAccountOrderResult{}, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return model.SuspendResumeTuitionAccountOrderResult{}, err
 	}
@@ -275,4 +286,36 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 		StudentID: strconv.FormatInt(selected.studentID, 10),
 		LessonID:  strconv.FormatInt(selected.courseID, 10),
 	}, nil
+}
+
+// syncOneToOneClassStudentStatusForTuitionAccountsTx 学费账户停课/复课生效时，同步对应 1 对 1 班员的「开课状态」，与 tuition_account.status 一致。
+func syncOneToOneClassStudentStatusForTuitionAccountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID, studentID, courseID int64, accountIDs []int64, targetStatus int) error {
+	if len(accountIDs) == 0 {
+		return nil
+	}
+	ph := buildPlaceholders(len(accountIDs))
+	args := []any{targetStatus, operatorID, instID, studentID, courseID, model.TeachingClassTypeOneToOne}
+	args = append(args, int64SliceToAny(accountIDs)...)
+	extraWhere := ""
+	if targetStatus == model.TeachingClassStudentStatusStudying {
+		extraWhere = ` AND tcs.class_student_status = ? `
+		args = append(args, model.TeachingClassStudentStatusStopped)
+	} else if targetStatus == model.TeachingClassStudentStatusStopped {
+		extraWhere = ` AND tcs.class_student_status <> ? `
+		args = append(args, model.TeachingClassStudentStatusClosed)
+	}
+	_, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_student tcs
+		INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id AND tc.inst_id = tcs.inst_id AND tc.del_flag = 0
+		SET tcs.class_student_status = ?,
+		    tcs.update_id = ?,
+		    tcs.update_time = NOW()
+		WHERE tcs.inst_id = ?
+		  AND tcs.del_flag = 0
+		  AND tcs.student_id = ?
+		  AND tc.course_id = ?
+		  AND tc.class_type = ?
+		  AND tcs.primary_tuition_account_id IN (`+ph+`)
+	`+extraWhere, args...)
+	return err
 }

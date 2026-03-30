@@ -946,11 +946,13 @@ function isOneToOneClassClosed(record) {
   return Number(record?.status) === 2
 }
 
-function getClassStudentStatus(status) {
-  if (status === 2)
-    return { text: '已开课', className: 'text-#f90 bg-#fff5e6' }
+function getClassStudentStatus(record) {
+  const status = Number(record?.classStudentStatus)
+  const tuitionSuspended = Number(record?.tuitionAccount?.status) === 2
   if (status === 3)
     return { text: '已结课', className: ' bg-#f5f5f5' }
+  if (status === 2 || tuitionSuspended)
+    return { text: '已停课', className: 'text-#f90 bg-#fff5e6' }
   return { text: '正常', className: 'text-#0c3 bg-#e6ffec' }
 }
 
@@ -1636,8 +1638,8 @@ onMounted(() => {
                 </span>
               </template>
               <template v-if="column.key === 'classStudentStatus'">
-                <span :class="`${getClassStudentStatus(record.classStudentStatus).className} rounded-2.5 inline-block text-3 pt-0.5 pb-0.5 pl-2 pr-2`">
-                  {{ getClassStudentStatus(record.classStudentStatus).text }}
+                <span :class="`${getClassStudentStatus(record).className} rounded-2.5 inline-block text-3 pt-0.5 pb-0.5 pl-2 pr-2`">
+                  {{ getClassStudentStatus(record).text }}
                 </span>
               </template>
               <template v-if="column.key === 'action'">

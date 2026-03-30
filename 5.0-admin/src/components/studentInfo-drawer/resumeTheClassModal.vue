@@ -469,7 +469,7 @@ function closeFun() {
   justify-content: center;
   font-size: 12px;
   line-height: 1;
-  cursor: help;
+  cursor: pointer;
   background: #fff;
   border: 1px solid #d9d9d9;
   color: #8c8c8c;
