@@ -10,6 +10,7 @@ import CreateClassModal from '@/components/common/create-class-modal.vue'
 import ClassAddStudentModal from '@/components/edu-center/class-list/class-add-student-modal.vue'
 import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
+import { openCloseClassConfirm } from '@/utils/closeClassConfirm'
 import messageService from '@/utils/messageService'
 
 const defaultOpenClassStatus = 1
@@ -407,6 +408,16 @@ function teacherNames(teachers) {
   return teachers.map(item => item.name).filter(Boolean).join('、')
 }
 
+/** 学员数：有最大学员数时展示 N/maxCount，否则仅 N */
+function formatStudentCountDisplay(record) {
+  const n = Number(record?.studentCount)
+  const max = Number(record?.maxCount)
+  const safeN = Number.isFinite(n) ? n : 0
+  if (Number.isFinite(max) && max > 0)
+    return `${safeN}/${max}`
+  return String(safeN)
+}
+
 function createClass() {
   editClassRecord.value = null
   createClassModal.value = true
@@ -424,10 +435,18 @@ function openAddStudentModal(record) {
   addStudentModalOpen.value = true
 }
 
+function openGroupClassCloseConfirm() {
+  openCloseClassConfirm()
+}
+
 function onClassRowMenuClick({ key }, record) {
   if (key === '3') {
     editClassRecord.value = record
     createClassModal.value = true
+    return
+  }
+  if (key === '4') {
+    openGroupClassCloseConfirm()
     return
   }
   console.log(key, record)
@@ -646,7 +665,7 @@ onMounted(async () => {
                 </div>
               </template>
               <template v-else-if="column.key === 'studentNum'">
-                {{ record.studentCount ?? 0 }}
+                {{ formatStudentCountDisplay(record) }}
               </template>
               <template v-else-if="column.key === 'headTeacher'">
                 {{ teacherNames(record.teachers) }}

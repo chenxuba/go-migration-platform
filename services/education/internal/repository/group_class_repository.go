@@ -1043,16 +1043,25 @@ func (repo *Repository) loadGroupClassTeachers(ctx context.Context, instID int64
 }
 
 // AggregateGroupClassStatistics 对标 QueryClassStatisticsInfo
+// 在读学员 = 满足筛选的班级下、在读/停课班员的去重学员数；在读人次 = 班员条数合计（同人多班计多次）。
 func (repo *Repository) AggregateGroupClassStatistics(ctx context.Context, instID int64, q model.GroupClassListQueryModel) (model.GroupClassStatisticsVO, error) {
 	var vo model.GroupClassStatisticsVO
 	where, whereArgs := buildGroupClassFilters(instID, q)
+	whereTc2 := strings.ReplaceAll(where, "tc.", "tc2.")
 	studying := model.TeachingClassStudentStatusStudying
 	stopped := model.TeachingClassStudentStatusStopped
 	qry := `
 		SELECT
 			COUNT(*),
 			COALESCE(SUM(CASE WHEN tc.status = ? THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(sc.cnt), 0),
+			COALESCE((
+				SELECT COUNT(DISTINCT tcs2.student_id)
+				FROM teaching_class_student tcs2
+				INNER JOIN teaching_class tc2
+					ON tc2.id = tcs2.teaching_class_id AND tc2.inst_id = tcs2.inst_id AND tc2.del_flag = 0
+				WHERE tcs2.inst_id = ? AND tcs2.del_flag = 0 AND tcs2.class_student_status IN (?, ?)
+					AND (` + whereTc2 + `)
+			), 0),
 			COALESCE(SUM(sc.cnt), 0)
 		FROM teaching_class tc
 		LEFT JOIN (
@@ -1062,7 +1071,13 @@ func (repo *Repository) AggregateGroupClassStatistics(ctx context.Context, instI
 			GROUP BY teaching_class_id
 		) sc ON sc.teaching_class_id = tc.id
 		WHERE ` + where
-	allArgs := append([]any{model.TeachingClassStatusActive, instID, studying, stopped}, whereArgs...)
+	// 占位顺序：CASE ?；子查询(tcs2.inst, status×2, whereTc2)；JOIN 子查询(inst, status×2)；外层 WHERE(where)
+	allArgs := make([]any, 0, 1+3+len(whereArgs)+3+len(whereArgs))
+	allArgs = append(allArgs, model.TeachingClassStatusActive)
+	allArgs = append(allArgs, instID, studying, stopped)
+	allArgs = append(allArgs, whereArgs...)
+	allArgs = append(allArgs, instID, studying, stopped)
+	allArgs = append(allArgs, whereArgs...)
 	err := repo.db.QueryRowContext(ctx, qry, allArgs...).Scan(
 		&vo.ClassCount, &vo.OpenClassCount, &vo.StudentCount, &vo.StudentPersonTime,
 	)

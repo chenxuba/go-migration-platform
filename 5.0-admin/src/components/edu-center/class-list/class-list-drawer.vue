@@ -4,6 +4,7 @@ import ClassStudentList from './class-student-list.vue'
 import classRecord from './class-record.vue'
 import schedule from './class-list-schedule.vue'
 import waitingRollCallSchedule from './waiting-roll-call-schedule.vue'
+import { openCloseClassConfirm } from '@/utils/closeClassConfirm'
 
 const props = defineProps({
   open: {
@@ -41,6 +42,10 @@ function handleEditClassInfo() {
 const editRollNameModal = ref(false)
 function handleEditRollName() {
   editRollNameModal.value = true
+}
+
+function handleCloseClass() {
+  openCloseClassConfirm()
 }
 </script>
 
@@ -81,7 +86,7 @@ function handleEditRollName() {
             <a-space>
               <a-button>快捷升班</a-button>
               <a-button>导出点名表</a-button>
-              <a-button>结班</a-button>
+              <a-button @click="handleCloseClass">结班</a-button>
               <a-button type="primary">
                 编辑班级
               </a-button>

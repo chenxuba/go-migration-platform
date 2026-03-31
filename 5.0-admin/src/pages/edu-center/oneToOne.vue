@@ -10,6 +10,7 @@ import StudentSelect from '@/components/common/student-select.vue'
 import FinishOneToOneCourseModal from '@/components/edu-center/one-to-one/finish-one-to-one-course-modal.vue'
 import oneToOneDrawer from '@/components/edu-center/one-to-one/one-to-one-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
+import { openCloseClassConfirm } from '@/utils/closeClassConfirm'
 import { handleDateRangeParams } from '@/utils/dateRangeParams'
 import messageService from '@/utils/messageService'
 import {
@@ -659,13 +660,8 @@ function openOneToOneCloseClassConfirm(record) {
     messageService.error('缺少1对1班级ID')
     return
   }
-  Modal.confirm({
+  openCloseClassConfirm({
     title: '1对1结班',
-    centered: true,
-    closable: true,
-    maskClosable: false,
-    keyboard: false,
-    icon: createVNode(ExclamationCircleOutlined),
     content:
       '是否确认对1对1进行结班且结课，结班后会同步删除相关的日程，被删除的日程不可恢复，请谨慎操作',
     okText: '结班并结课',
@@ -689,10 +685,7 @@ function openOneToOneCloseClassConfirm(record) {
         return Promise.reject(err)
       }
     },
-    async onCancel(close, event) {
-      if (event) {
-        return
-      }
+    async onCancel() {
       try {
         const res = await closeOneToOneApi({ id: String(id) })
         if (res.code === 200) {
