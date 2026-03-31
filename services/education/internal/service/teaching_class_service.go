@@ -484,6 +484,31 @@ func (svc *Service) ListGroupClassStudentsByClassIDs(userID int64, dto model.Gro
 	return svc.repo.ListGroupClassStudentsByClassIDs(context.Background(), instID, dto.ClassIDs)
 }
 
+// BatchAssignGroupClassStudents 对标 Class/BatchAssignStudents
+func (svc *Service) BatchAssignGroupClassStudents(userID int64, dto model.BatchAssignGroupClassStudentsRequest) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	classIDs := make([]int64, 0, len(dto.ClassIDs))
+	seenC := make(map[int64]struct{})
+	for _, raw := range dto.ClassIDs {
+		id, perr := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if perr != nil || id <= 0 {
+			return errors.New("classId 无效")
+		}
+		if _, ok := seenC[id]; ok {
+			continue
+		}
+		seenC[id] = struct{}{}
+		classIDs = append(classIDs, id)
+	}
+	if len(classIDs) == 0 {
+		return errors.New("classIds 不能为空")
+	}
+	return svc.repo.BatchAssignGroupClassStudents(context.Background(), instID, operatorID, classIDs, dto.Students, dto.EnforceClassAssign)
+}
+
 // PageTuitionAccountsByLessonID 对标 TuitionAccount/GetTuitionAccountListByLessonId（集体班添加学员）
 func (svc *Service) PageTuitionAccountsByLessonID(userID int64, body model.TuitionAccountListByLessonIDBody) (model.TuitionAccountListByLessonIDResult, error) {
 	var zero model.TuitionAccountListByLessonIDResult
@@ -522,7 +547,12 @@ func (svc *Service) PageTuitionAccountsByLessonID(userID int64, body model.Tuiti
 	if size <= 0 {
 		size = 20
 	}
-	list, total, err := svc.repo.PageTuitionAccountsByLessonForGroupAdd(context.Background(), instID, courseIDs, curClassID, stuIDs, page, size)
+	fil := body.QueryModel.TuitionAccountLessonPageFilters
+	fil.StudentName = strings.TrimSpace(fil.StudentName)
+	if fil.AgeMin != nil && fil.AgeMax != nil && *fil.AgeMin > *fil.AgeMax {
+		fil.AgeMin, fil.AgeMax = fil.AgeMax, fil.AgeMin
+	}
+	list, total, err := svc.repo.PageTuitionAccountsByLessonForGroupAdd(context.Background(), instID, courseIDs, curClassID, stuIDs, page, size, fil)
 	if err != nil {
 		return zero, err
 	}

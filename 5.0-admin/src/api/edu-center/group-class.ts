@@ -154,3 +154,14 @@ export interface GroupClassStudentInClassItem {
 export function listGroupClassStudentsByClassIdsApi(data: { classIds: string[] }) {
   return usePost<GroupClassStudentInClassBucket[]>('/api/v1/group-classes/students-by-class-ids', data)
 }
+
+/** 对标 Class/BatchAssignStudents：批量将学员编入集体班 */
+export function batchAssignGroupClassStudentsApi(data: {
+  classIds: string[]
+  students: { studentId: string; tuitionAccountId: string }[]
+  enforceClassAssign?: boolean
+}) {
+  return usePost<{ success: boolean }>('/api/v1/group-classes/batch-assign-students', data, {
+    validateStatus: status => (status >= 200 && status < 300) || status === 400,
+  })
+}

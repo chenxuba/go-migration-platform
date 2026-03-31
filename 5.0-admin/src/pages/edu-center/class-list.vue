@@ -742,6 +742,7 @@ onMounted(async () => {
       :lesson-name="addStudentModalLessonName"
       :class-id="addStudentModalClassId"
       :lesson-id="addStudentModalLessonId"
+      @success="afterClassModalSave"
     />
   </div>
 </template>

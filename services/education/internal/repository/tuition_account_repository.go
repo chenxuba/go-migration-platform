@@ -751,8 +751,36 @@ func tuitionRemainQuantityForDisplay(lessonModel int, remQty, remTui float64) fl
 	return remQty
 }
 
+func appendTuitionAccountLessonStudentFilters(baseFrom string, argsBase []any, f model.TuitionAccountLessonPageFilters) (string, []any) {
+	if len(f.Sex) > 0 {
+		ph := sqlPlaceholders(len(f.Sex))
+		baseFrom += ` AND IFNULL(s.stu_sex, 0) IN (` + ph + `)`
+		for _, v := range f.Sex {
+			argsBase = append(argsBase, v)
+		}
+	}
+	if f.AgeMin != nil || f.AgeMax != nil {
+		baseFrom += ` AND s.birthday IS NOT NULL AND YEAR(s.birthday) > 1900`
+		if f.AgeMin != nil && f.AgeMax != nil {
+			baseFrom += ` AND TIMESTAMPDIFF(YEAR, s.birthday, CURDATE()) BETWEEN ? AND ?`
+			argsBase = append(argsBase, *f.AgeMin, *f.AgeMax)
+		} else if f.AgeMin != nil {
+			baseFrom += ` AND TIMESTAMPDIFF(YEAR, s.birthday, CURDATE()) >= ?`
+			argsBase = append(argsBase, *f.AgeMin)
+		} else {
+			baseFrom += ` AND TIMESTAMPDIFF(YEAR, s.birthday, CURDATE()) <= ?`
+			argsBase = append(argsBase, *f.AgeMax)
+		}
+	}
+	if sn := strings.TrimSpace(f.StudentName); sn != "" {
+		baseFrom += ` AND IFNULL(s.stu_name, '') LIKE ?`
+		argsBase = append(argsBase, "%"+sn+"%")
+	}
+	return baseFrom, argsBase
+}
+
 // PageTuitionAccountsByLessonForGroupAdd 对标 TuitionAccount/GetTuitionAccountListByLessonId：班课在读账户，供集体班添加学员列表。
-func (repo *Repository) PageTuitionAccountsByLessonForGroupAdd(ctx context.Context, instID int64, courseIDs []int64, currentClassID int64, studentIDs []int64, pageIndex, pageSize int) (list []model.TuitionAccountByLessonRowVO, total int, err error) {
+func (repo *Repository) PageTuitionAccountsByLessonForGroupAdd(ctx context.Context, instID int64, courseIDs []int64, currentClassID int64, studentIDs []int64, pageIndex, pageSize int, filters model.TuitionAccountLessonPageFilters) (list []model.TuitionAccountByLessonRowVO, total int, err error) {
 	if len(courseIDs) == 0 {
 		return nil, 0, nil
 	}
@@ -792,6 +820,7 @@ func (repo *Repository) PageTuitionAccountsByLessonForGroupAdd(ctx context.Conte
 			argsBase = append(argsBase, sid)
 		}
 	}
+	baseFrom, argsBase = appendTuitionAccountLessonStudentFilters(baseFrom, argsBase, filters)
 
 	countQ := `SELECT COUNT(1) ` + baseFrom
 	if err := repo.db.QueryRowContext(ctx, countQ, argsBase...).Scan(&total); err != nil {

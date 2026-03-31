@@ -1,7 +1,8 @@
 <script setup>
 import { CloseOutlined, FilterFilled, SearchOutlined } from '@ant-design/icons-vue'
+import { debounce } from 'lodash-es'
 import dayjs from 'dayjs'
-import { listGroupClassStudentsByClassIdsApi } from '@/api/edu-center/group-class'
+import { batchAssignGroupClassStudentsApi, listGroupClassStudentsByClassIdsApi } from '@/api/edu-center/group-class'
 import { pageTuitionAccountsByLessonIdApi } from '@/api/edu-center/tuition-account'
 import messageService from '@/utils/messageService'
 
@@ -32,7 +33,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:open'])
+const emit = defineEmits(['update:open', 'success'])
 
 const openModal = computed({
   get: () => props.open,
@@ -46,6 +47,45 @@ const bannerName = computed(() => {
 
 const userName = ref('')
 const listLoading = ref(false)
+const submitLoading = ref(false)
+
+/** 本班学员 id，与接口返回的 assignedClass 一起用于禁用勾选 */
+const inClassStudentIds = ref(new Set())
+
+const paginationState = reactive({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+})
+
+/** 性别表头筛选，与后端 stu_sex 一致：1 男 2 女 0 未知 */
+const sexFilter = ref([])
+
+/** 已生效的年龄区间（岁），服务端 TIMESTAMPDIFF YEAR */
+const appliedAgeMin = ref(null)
+const appliedAgeMax = ref(null)
+
+/** 避免打开弹窗时清空姓名触发 debounce 与首屏 load 重复请求 */
+const allowNameTriggeredFetch = ref(false)
+
+const genderFilteredValue = computed(() =>
+  sexFilter.value.length ? sexFilter.value.map(String) : null,
+)
+
+const tablePagination = computed(() => {
+  const cid = String(props.classId || '').trim()
+  const lid = String(props.lessonId || '').trim()
+  if (!cid || !lid)
+    return false
+  return {
+    current: paginationState.current,
+    pageSize: paginationState.pageSize,
+    total: paginationState.total,
+    showSizeChanger: true,
+    showTotal: t => `共 ${t} 条`,
+    pageSizeOptions: ['10', '20', '50', '100'],
+  }
+})
 
 /** 无班级/课程上下文时的演示数据 */
 function staticRows() {
@@ -98,43 +138,106 @@ function formatRemainQuantity(quantity, lessonChargingMode) {
   return `${q}课时`
 }
 
+function mapTuitionRows(list, inClass) {
+  return list.map((item) => {
+    const sid = String(item.studentId || '')
+    const inThis = item.assignedClass === true || inClass.has(sid)
+    const { label: ageLabel, years: ageYears } = ageLabelFromBirthday(item.birthday)
+    return {
+      id: `${sid}-${item.tuitionAccountId}`,
+      studentId: sid,
+      tuitionAccountId: String(item.tuitionAccountId || ''),
+      displayName: item.studentName || '-',
+      phone: item.phone || '-',
+      avatarUrl: item.avatar || '',
+      courseAccount: item.productName || '-',
+      age: ageLabel,
+      ageYears,
+      gender: sexToGenderKey(item.sex),
+      remainingQuantity: formatRemainQuantity(item.quantity, item.lessonChargingMode),
+      lessonChargingMode: item.lessonChargingMode,
+      classStatus: inThis ? '已分班' : '未分班',
+      classStatusType: inThis ? 1 : 2,
+      disabled: inThis,
+    }
+  })
+}
+
+/** 组装 queryModel；姓名走服务端模糊匹配字段 studentName（与竞品一致） */
+function buildTuitionQueryModel(cid, lid) {
+  const q = {
+    lessonId: lid,
+    studentIds: [],
+    classId: cid,
+  }
+  if (sexFilter.value.length)
+    q.sex = [...sexFilter.value]
+  if (appliedAgeMin.value != null)
+    q.ageMin = appliedAgeMin.value
+  if (appliedAgeMax.value != null)
+    q.ageMax = appliedAgeMax.value
+  const nm = userName.value.trim()
+  if (nm)
+    q.studentName = nm
+  return q
+}
+
+async function fetchTuitionAccountsPage() {
+  const cid = String(props.classId || '').trim()
+  const lid = String(props.lessonId || '').trim()
+  if (!cid || !lid)
+    return
+  listLoading.value = true
+  try {
+    const accRes = await pageTuitionAccountsByLessonIdApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: paginationState.pageSize,
+        pageIndex: paginationState.current,
+        skipCount: (paginationState.current - 1) * paginationState.pageSize,
+      },
+      queryModel: buildTuitionQueryModel(cid, lid),
+    })
+    if (accRes.code !== 200) {
+      messageService.error(accRes.message || '获取可添加学员失败')
+      data.value = []
+      paginationState.total = 0
+      return
+    }
+    const list = Array.isArray(accRes.result?.list) ? accRes.result.list : []
+    paginationState.total = Number(accRes.result?.total) || 0
+    const inClass = inClassStudentIds.value
+    data.value = mapTuitionRows(list, inClass)
+  }
+  catch (e) {
+    console.error(e)
+    messageService.error('加载学员列表失败')
+    data.value = []
+    paginationState.total = 0
+  }
+  finally {
+    listLoading.value = false
+  }
+}
+
 async function loadTableData() {
   const cid = String(props.classId || '').trim()
   const lid = String(props.lessonId || '').trim()
   if (!cid || !lid) {
     const rows = staticRows()
     data.value = [...rows]
-    originalData.value = [...rows]
+    inClassStudentIds.value = new Set()
+    paginationState.total = 0
     return
   }
   listLoading.value = true
   try {
-    const [stuRes, accRes] = await Promise.all([
-      listGroupClassStudentsByClassIdsApi({ classIds: [cid] }),
-      pageTuitionAccountsByLessonIdApi({
-        pageRequestModel: {
-          needTotal: true,
-          pageSize: 500,
-          pageIndex: 1,
-          skipCount: 0,
-        },
-        queryModel: {
-          lessonId: lid,
-          studentIds: [],
-          classId: cid,
-        },
-      }),
-    ])
+    const stuRes = await listGroupClassStudentsByClassIdsApi({ classIds: [cid] })
     if (stuRes.code !== 200) {
       messageService.error(stuRes.message || '获取本班学员失败')
       data.value = []
-      originalData.value = []
-      return
-    }
-    if (accRes.code !== 200) {
-      messageService.error(accRes.message || '获取可添加学员失败')
-      data.value = []
-      originalData.value = []
+      inClassStudentIds.value = new Set()
+      paginationState.total = 0
       return
     }
     const inClass = new Set()
@@ -145,44 +248,22 @@ async function loadTableData() {
       for (const s of b.students || [])
         inClass.add(String(s.id))
     }
-    const list = Array.isArray(accRes.result?.list) ? accRes.result.list : []
-    const rows = list.map((item) => {
-      const sid = String(item.studentId || '')
-      const inThis = item.assignedClass === true || inClass.has(sid)
-      const { label: ageLabel, years: ageYears } = ageLabelFromBirthday(item.birthday)
-      return {
-        id: `${sid}-${item.tuitionAccountId}`,
-        studentId: sid,
-        tuitionAccountId: String(item.tuitionAccountId || ''),
-        displayName: item.studentName || '-',
-        phone: item.phone || '-',
-        avatarUrl: item.avatar || '',
-        courseAccount: item.productName || '-',
-        age: ageLabel,
-        ageYears,
-        gender: sexToGenderKey(item.sex),
-        remainingQuantity: formatRemainQuantity(item.quantity, item.lessonChargingMode),
-        lessonChargingMode: item.lessonChargingMode,
-        classStatus: inThis ? '已分班' : '未分班',
-        classStatusType: inThis ? 1 : 2,
-        disabled: inThis,
-      }
-    })
-    data.value = rows
-    originalData.value = [...rows]
+    inClassStudentIds.value = inClass
+    await fetchTuitionAccountsPage()
   }
   catch (e) {
     console.error(e)
     messageService.error('加载学员列表失败')
     data.value = []
-    originalData.value = []
+    inClassStudentIds.value = new Set()
+    paginationState.total = 0
   }
   finally {
     listLoading.value = false
   }
 }
 
-const columns = [
+const columns = computed(() => [
   {
     title: '学员姓名',
     dataIndex: 'name',
@@ -211,7 +292,7 @@ const columns = [
       { text: '女', value: '2' },
       { text: '未知', value: '0' },
     ],
-    onFilter: (value, record) => record.gender === value,
+    filteredValue: genderFilteredValue.value,
   },
   {
     title: '剩余数量',
@@ -225,10 +306,9 @@ const columns = [
     key: 'classStatus',
     width: 140,
   },
-]
+])
 
 const data = ref([])
-const originalData = ref([])
 
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
@@ -247,36 +327,28 @@ const maxAge = ref(null)
 const ageDropdownVisible = ref(false)
 const isAgeFiltered = ref(false)
 
-function resetAge() {
+function resetAgeStateOnly() {
   minAge.value = null
   maxAge.value = null
+  appliedAgeMin.value = null
+  appliedAgeMax.value = null
+  isAgeFiltered.value = false
 }
 
-function filterDataByAge() {
-  if (minAge.value === null && maxAge.value === null) {
-    data.value = [...originalData.value]
-    return
-  }
-  data.value = originalData.value.filter((item) => {
-    const y = item.ageYears
-    if (y == null || Number.isNaN(Number(y)))
-      return false
-    const ageInYears = Number(y)
-    if (minAge.value != null && maxAge.value != null)
-      return ageInYears >= minAge.value && ageInYears <= maxAge.value
-    if (minAge.value != null)
-      return ageInYears >= minAge.value
-    if (maxAge.value != null)
-      return ageInYears <= maxAge.value
-    return true
-  })
+function resetAge() {
+  resetAgeStateOnly()
+  paginationState.current = 1
+  fetchTuitionAccountsPage()
 }
 
 function handleAgeConfirm() {
   if (minAge.value == null && maxAge.value == null) {
-    data.value = [...originalData.value]
-    ageDropdownVisible.value = false
+    appliedAgeMin.value = null
+    appliedAgeMax.value = null
     isAgeFiltered.value = false
+    ageDropdownVisible.value = false
+    paginationState.current = 1
+    fetchTuitionAccountsPage()
     return
   }
   let min = minAge.value
@@ -286,22 +358,123 @@ function handleAgeConfirm() {
     minAge.value = min
     maxAge.value = max
   }
-  filterDataByAge()
+  appliedAgeMin.value = min
+  appliedAgeMax.value = max
   isAgeFiltered.value = true
+  paginationState.current = 1
+  fetchTuitionAccountsPage()
   ageDropdownVisible.value = false
 }
 
-function handleSubmit() {
-  // 静态阶段仅占位
-  console.log('selected', toRaw(selectedRows.value))
+function onTableChange(pag, filters) {
+  let needFetch = false
+  if (pag) {
+    if (pag.current !== paginationState.current || pag.pageSize !== paginationState.pageSize) {
+      paginationState.current = pag.current
+      paginationState.pageSize = pag.pageSize
+      needFetch = true
+    }
+  }
+  if (filters && Object.prototype.hasOwnProperty.call(filters, 'gender')) {
+    const g = filters.gender
+    const next = Array.isArray(g)
+      ? g.map(v => parseInt(String(v), 10)).filter(n => !Number.isNaN(n))
+      : []
+    const same = next.length === sexFilter.value.length && next.every((v, i) => v === sexFilter.value[i])
+    if (!same) {
+      sexFilter.value = next
+      paginationState.current = 1
+      needFetch = true
+    }
+  }
+  if (needFetch)
+    fetchTuitionAccountsPage()
+}
+
+const debouncedRefetchTuition = debounce(() => {
+  paginationState.current = 1
+  fetchTuitionAccountsPage()
+}, 300)
+
+/** 回车立即按 queryModel.studentName 搜索（不等 debounce） */
+function onStudentNameSearchEnter() {
+  if (!openModal.value)
+    return
+  const cid = String(props.classId || '').trim()
+  const lid = String(props.lessonId || '').trim()
+  if (!cid || !lid)
+    return
+  debouncedRefetchTuition.cancel()
+  paginationState.current = 1
+  fetchTuitionAccountsPage()
+}
+
+watch(userName, () => {
+  if (!openModal.value || !allowNameTriggeredFetch.value)
+    return
+  const cid = String(props.classId || '').trim()
+  const lid = String(props.lessonId || '').trim()
+  if (!cid || !lid)
+    return
+  debouncedRefetchTuition()
+})
+
+onBeforeUnmount(() => {
+  debouncedRefetchTuition.cancel()
+})
+
+async function handleSubmit() {
+  const cid = String(props.classId || '').trim()
+  const lid = String(props.lessonId || '').trim()
+  if (!cid || !lid) {
+    messageService.warning('缺少班级或课程信息')
+    return
+  }
+  const rows = selectedRows.value.filter(r => r && !r.disabled)
+  if (rows.length === 0) {
+    messageService.warning('请选择可添加的学员')
+    return
+  }
+  submitLoading.value = true
+  try {
+    const res = await batchAssignGroupClassStudentsApi({
+      classIds: [cid],
+      students: rows.map(r => ({
+        studentId: String(r.studentId || ''),
+        tuitionAccountId: String(r.tuitionAccountId || ''),
+      })),
+      enforceClassAssign: true,
+    })
+    const ok = res.code === 200 && (res.result?.success === true || res.data?.success === true)
+    if (ok) {
+      messageService.success('添加学员成功')
+      emit('success')
+      closeFun()
+      return
+    }
+    if (res.code !== 500)
+      messageService.error(res.message || '添加学员失败')
+  }
+  catch (e) {
+    const msg = e?.response?.data?.message || e?.message || '添加学员失败'
+    messageService.error(msg)
+  }
+  finally {
+    submitLoading.value = false
+  }
 }
 
 function closeFun() {
   openModal.value = false
+  allowNameTriggeredFetch.value = false
   selectedRowKeys.value = []
   selectedRows.value = []
-  resetAge()
-  isAgeFiltered.value = false
+  debouncedRefetchTuition.cancel()
+  resetAgeStateOnly()
+  sexFilter.value = []
+  paginationState.current = 1
+  paginationState.pageSize = 20
+  paginationState.total = 0
 }
 
 watch(
@@ -309,23 +482,20 @@ watch(
   async (v) => {
     if (!v)
       return
+    allowNameTriggeredFetch.value = false
+    debouncedRefetchTuition.cancel()
     userName.value = ''
     selectedRowKeys.value = []
     selectedRows.value = []
-    resetAge()
-    isAgeFiltered.value = false
+    resetAgeStateOnly()
+    sexFilter.value = []
+    paginationState.current = 1
+    paginationState.pageSize = 20
     await loadTableData()
+    await nextTick()
+    allowNameTriggeredFetch.value = true
   },
 )
-
-const filteredTableData = computed(() => {
-  const q = userName.value.trim()
-  if (!q)
-    return data.value
-  return data.value.filter(
-    row => String(row.displayName || '').includes(q),
-  )
-})
 
 function isRemainingZero(v) {
   if (v === 0 || v === '0')
@@ -372,8 +542,9 @@ function isRemainingZero(v) {
       <a-input
         v-model:value="userName"
         allow-clear
-        placeholder="请输入学员姓名"
+        placeholder="请输入学员姓名（模糊搜索）"
         class="student-search-input"
+        @press-enter="onStudentNameSearchEnter"
       >
         <template #prefix>
           <SearchOutlined class="text-#bfbfbf" />
@@ -383,13 +554,14 @@ function isRemainingZero(v) {
       <div class="table-wrap mt-3">
         <a-table
           :columns="columns"
-          :data-source="filteredTableData"
+          :data-source="data"
           row-key="id"
-          :pagination="false"
+          :pagination="tablePagination"
           :loading="listLoading"
           :row-selection="rowSelection"
           :scroll="{ x: 840 }"
           size="middle"
+          @change="onTableChange"
         >
           <template #headerCell="{ column }">
             <template v-if="column.dataIndex === 'age'">
@@ -516,7 +688,12 @@ function isRemainingZero(v) {
         <a-button @click="closeFun">
           取消
         </a-button>
-        <a-button type="primary" :disabled="selectedRowKeys.length === 0" @click="handleSubmit">
+        <a-button
+          type="primary"
+          :loading="submitLoading"
+          :disabled="selectedRowKeys.length === 0"
+          @click="handleSubmit"
+        >
           确定
         </a-button>
       </a-space>

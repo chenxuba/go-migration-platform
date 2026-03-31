@@ -474,6 +474,18 @@ type GroupClassStudentListByClassIDsRequest struct {
 	ClassIDs []string `json:"classIds"`
 }
 
+// BatchAssignGroupClassStudentsRequest 对标 ToB/PC/Class/BatchAssignStudents
+type BatchAssignGroupClassStudentsRequest struct {
+	ClassIDs           []string                           `json:"classIds"`
+	Students           []BatchAssignGroupClassStudentItem `json:"students"`
+	EnforceClassAssign bool                               `json:"enforceClassAssign"`
+}
+
+type BatchAssignGroupClassStudentItem struct {
+	StudentID        string `json:"studentId"`
+	TuitionAccountID string `json:"tuitionAccountId"`
+}
+
 type GroupClassStudentTuitionSnapVO struct {
 	TuitionAccountID       string    `json:"tuitionAccountId"`
 	ProductName            string    `json:"productName"`
@@ -492,21 +504,21 @@ type GroupClassStudentTuitionSnapVO struct {
 }
 
 type GroupClassStudentInClassItemVO struct {
-	ID                             string                        `json:"id"`
-	Name                           string                        `json:"name"`
-	Avatar                         string                        `json:"avatar"`
-	IsBind                         bool                          `json:"isBind"`
-	ClassID                        string                        `json:"classId"`
-	Phone                          string                        `json:"phone"`
-	Sex                            int                           `json:"sex"`
-	TuitionAccountID               string                        `json:"tuitionAccountId"`
-	Birthday                       time.Time                     `json:"birthday"`
-	JoinTime                       time.Time                     `json:"joinTime"`
+	ID                             string                          `json:"id"`
+	Name                           string                          `json:"name"`
+	Avatar                         string                          `json:"avatar"`
+	IsBind                         bool                            `json:"isBind"`
+	ClassID                        string                          `json:"classId"`
+	Phone                          string                          `json:"phone"`
+	Sex                            int                             `json:"sex"`
+	TuitionAccountID               string                          `json:"tuitionAccountId"`
+	Birthday                       time.Time                       `json:"birthday"`
+	JoinTime                       time.Time                       `json:"joinTime"`
 	ClassStudentTuitionAccountInfo *GroupClassStudentTuitionSnapVO `json:"classStudentTuitionAccountInfo"`
 }
 
 type GroupClassStudentListBucketVO struct {
-	ClassID  string                         `json:"classId"`
+	ClassID  string                           `json:"classId"`
 	Students []GroupClassStudentInClassItemVO `json:"students"`
 }
 
@@ -515,11 +527,20 @@ type TuitionAccountListByLessonIDBody struct {
 	QueryModel       TuitionAccountListByLessonQuery `json:"queryModel"`
 }
 
+// TuitionAccountLessonPageFilters 对标竞品 GetTuitionAccountListByLessonId 的 queryModel 筛选（性别、年龄区间、姓名模糊）。
+type TuitionAccountLessonPageFilters struct {
+	Sex         []int  `json:"sex,omitempty"`
+	AgeMin      *int   `json:"ageMin,omitempty"`
+	AgeMax      *int   `json:"ageMax,omitempty"`
+	StudentName string `json:"studentName,omitempty"`
+}
+
 type TuitionAccountListByLessonQuery struct {
 	LessonID   string   `json:"lessonId"`
 	StudentIDs []string `json:"studentIds"`
 	/** 当前集体班 id：用于标记本班已有学员（assignedClass），与前端勾选禁用一致 */
 	ClassID string `json:"classId,omitempty"`
+	TuitionAccountLessonPageFilters
 }
 
 type TuitionAccountByLessonRowVO struct {

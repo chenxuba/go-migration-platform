@@ -1071,3 +1071,154 @@ func (repo *Repository) AggregateGroupClassStatistics(ctx context.Context, instI
 	}
 	return vo, nil
 }
+
+type batchAssignPair struct {
+	studentID        int64
+	tuitionAccountID int64
+	orderID          int64
+	ocdID            int64
+	quoteID          int64
+	courseID         int64
+}
+
+// BatchAssignGroupClassStudents 对标 Class/BatchAssignStudents：按学费账户将学员编入集体班。
+func (repo *Repository) BatchAssignGroupClassStudents(ctx context.Context, instID, operatorID int64, classIDs []int64, students []model.BatchAssignGroupClassStudentItem, enforceClassAssign bool) error {
+	if len(classIDs) == 0 {
+		return errors.New("classIds 不能为空")
+	}
+	if len(students) == 0 {
+		return errors.New("students 不能为空")
+	}
+	seen := make(map[string]struct{})
+	pairs := make([]batchAssignPair, 0, len(students))
+	for _, s := range students {
+		sid, err := strconv.ParseInt(strings.TrimSpace(s.StudentID), 10, 64)
+		if err != nil || sid <= 0 {
+			return errors.New("studentId 无效")
+		}
+		tid, err := strconv.ParseInt(strings.TrimSpace(s.TuitionAccountID), 10, 64)
+		if err != nil || tid <= 0 {
+			return errors.New("tuitionAccountId 无效")
+		}
+		key := fmt.Sprintf("%d:%d", sid, tid)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		var p batchAssignPair
+		err = repo.db.QueryRowContext(ctx, `
+			SELECT ta.student_id, IFNULL(ta.order_id, 0), IFNULL(ta.order_course_detail_id, 0), IFNULL(ta.quote_id, 0), ta.course_id
+			FROM tuition_account ta
+			INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.inst_id = ta.inst_id AND ic.del_flag = 0
+			WHERE ta.id = ? AND ta.inst_id = ? AND ta.del_flag = 0 AND IFNULL(ta.status, 0) = 1
+				AND ic.teach_method = 1
+		`, tid, instID).Scan(&p.studentID, &p.orderID, &p.ocdID, &p.quoteID, &p.courseID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("学费账户无效或不可用: tuitionAccountId=%d", tid)
+		}
+		if err != nil {
+			return err
+		}
+		if p.studentID != sid {
+			return fmt.Errorf("学费账户与学员不匹配: studentId=%d tuitionAccountId=%d", sid, tid)
+		}
+		p.tuitionAccountID = tid
+		pairs = append(pairs, p)
+	}
+	if len(pairs) == 0 {
+		return errors.New("students 不能为空")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, classID := range classIDs {
+		if classID <= 0 {
+			return errors.New("classId 无效")
+		}
+		var maxCount, courseID, composeID, status int64
+		var defStuTime, defTeachTime float64
+		var recordMode int
+		err := tx.QueryRowContext(ctx, `
+			SELECT tc.max_count, tc.status, tc.course_id, tc.compose_lesson_id,
+				IFNULL(tc.default_student_class_time, 1), IFNULL(tc.default_teacher_class_time, 0), IFNULL(tc.default_class_time_record_mode, 1)
+			FROM teaching_class tc
+			WHERE tc.id = ? AND tc.inst_id = ? AND tc.class_type = ? AND tc.del_flag = 0
+			LIMIT 1
+		`, classID, instID, model.TeachingClassTypeNormal).Scan(&maxCount, &status, &courseID, &composeID, &defStuTime, &defTeachTime, &recordMode)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("班级不存在或不是集体班: %d", classID)
+		}
+		if err != nil {
+			return err
+		}
+		if status != model.TeachingClassStatusActive {
+			return errors.New("班级非开班中状态，无法添加学员")
+		}
+
+		lid := courseID
+		if composeID > 0 {
+			lid = composeID
+		}
+		lessonIDStr := strconv.FormatInt(lid, 10)
+		courseScope, _, err := repo.ResolveGroupClassLessonCourseScope(ctx, instID, lessonIDStr)
+		if err != nil {
+			return err
+		}
+		allowed := make(map[int64]struct{}, len(courseScope))
+		for _, cid := range courseScope {
+			allowed[cid] = struct{}{}
+		}
+
+		var currentCnt int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM teaching_class_student
+			WHERE inst_id = ? AND teaching_class_id = ? AND del_flag = 0
+		`, instID, classID).Scan(&currentCnt); err != nil {
+			return err
+		}
+
+		toInsert := make([]batchAssignPair, 0, len(pairs))
+		for _, p := range pairs {
+			if _, ok := allowed[p.courseID]; !ok {
+				return errors.New("所选报读与班级关联课程不一致")
+			}
+			var exists int
+			if err := tx.QueryRowContext(ctx, `
+				SELECT COUNT(*) FROM teaching_class_student
+				WHERE inst_id = ? AND teaching_class_id = ? AND student_id = ? AND order_course_detail_id = ? AND del_flag = 0
+			`, instID, classID, p.studentID, p.ocdID).Scan(&exists); err != nil {
+				return err
+			}
+			if exists > 0 {
+				continue
+			}
+			toInsert = append(toInsert, p)
+		}
+
+		if !enforceClassAssign && maxCount > 0 && int64(currentCnt+len(toInsert)) > maxCount {
+			return fmt.Errorf("超出班级最大学员数（maxCount=%d）", maxCount)
+		}
+
+		for _, p := range toInsert {
+			_, err := tx.ExecContext(ctx, `
+				INSERT INTO teaching_class_student (
+					uuid, version, inst_id, teaching_class_id, student_id, order_id, order_course_detail_id, quote_id,
+					primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
+					class_time_record_mode,
+					last_finished_lesson_day, class_properties_json, create_id, create_time, update_id, update_time, del_flag
+				) VALUES (
+					UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NOW(), ?, NOW(), 0
+				)
+			`, instID, classID, p.studentID, p.orderID, p.ocdID, p.quoteID, p.tuitionAccountID, model.TeachingClassStudentStatusStudying,
+				defStuTime, defStuTime, defTeachTime, recordMode, operatorID, operatorID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
+}

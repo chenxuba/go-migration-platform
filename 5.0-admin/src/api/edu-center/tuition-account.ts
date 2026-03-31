@@ -236,6 +236,12 @@ export interface PageTuitionAccountsByLessonIdBody {
     studentIds: string[]
     /** 当前集体班 id，用于本班已入班标记与勾选禁用 */
     classId?: string
+    /** 服务端筛选：1 男 2 女 0 未知，与竞品 GetTuitionAccountListByLessonId 一致 */
+    sex?: number[]
+    ageMin?: number
+    ageMax?: number
+    /** 学员姓名模糊 */
+    studentName?: string
   }
 }
 
