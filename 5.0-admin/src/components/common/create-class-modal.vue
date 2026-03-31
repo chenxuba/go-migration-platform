@@ -6,6 +6,7 @@ import { pageComposeLessonsForPcApi } from "~/api/edu-center/compose-lesson";
 import {
   checkGroupClassNameApi,
   createGroupClassApi,
+  updateGroupClassApi,
 } from "~/api/edu-center/group-class";
 import CreateCombinedCourseModal from "./create-combined-course-modal.vue";
 import StaffSelect from "./staff-select.vue";
@@ -16,8 +17,13 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  /** 列表行数据，有值时表示编辑模式 */
+  editRecord: {
+    type: Object,
+    default: null,
+  },
 });
-const emit = defineEmits(["update:open", "created"]);
+const emit = defineEmits(["update:open", "created", "updated"]);
 const formRef = ref();
 const combinedCourseModalOpen = ref(false);
 const composeLessonOptions = ref([]);
@@ -293,6 +299,42 @@ const submitting = ref(false);
 const skipAutoDefaultTeacher = ref(false);
 const syncingDefaultFromTeacher = ref(false);
 
+const isEdit = computed(() => !!props.editRecord?.id);
+
+function applyEditRecord(rec) {
+  syncingDefaultFromTeacher.value = true;
+  skipAutoDefaultTeacher.value = true;
+  formState.mode = rec.isMultiProduct ? "2" : "1";
+  formState.course = rec.isMultiProduct ? undefined : rec.lessonId;
+  formState.totalCourse = rec.isMultiProduct ? rec.lessonId : undefined;
+  formState.className = rec.name;
+  formState.maxNum = rec.maxCount ?? undefined;
+  formState.teacher = (rec.teachers || []).map((t) => t.id);
+  const dt
+    = rec.defaultTeacherId && rec.defaultTeacherId !== "0"
+      ? rec.defaultTeacherId
+      : undefined;
+  formState.defaultTeacher = dt;
+  skipAutoDefaultTeacher.value = !dt;
+  formState.defaultStudentClassTime = rec.defaultStudentClassTime ?? 1;
+  formState.defaultTeacherClassTime = rec.defaultTeacherClassTime ?? 0;
+  formState.defaultClassTimeRecordMode = rec.defaultClassTimeRecordMode ?? 1;
+  formState.remark = rec.remark || "";
+  nextTick(() => {
+    syncingDefaultFromTeacher.value = false;
+  });
+}
+
+watch(
+  () => [props.open, props.editRecord],
+  () => {
+    if (!props.open || !props.editRecord?.id)
+      return;
+    applyEditRecord(props.editRecord);
+  },
+  { flush: "post" },
+);
+
 watch(
   () => formState.teacher,
   (ids) => {
@@ -335,7 +377,7 @@ watch(
 watch(
   () => props.open,
   (open) => {
-    if (open)
+    if (open && !props.editRecord?.id)
       skipAutoDefaultTeacher.value = false;
   },
 );
@@ -374,10 +416,14 @@ async function handleSubmit() {
   submitting.value = true;
   try {
     const className = String(formState.className || "").trim();
-    const checkRes = await checkGroupClassNameApi({
+    const checkNamePayload = {
       name: className,
       isOne2One: false,
-    });
+    };
+    if (props.editRecord?.id)
+      checkNamePayload.exceptId = String(props.editRecord.id);
+
+    const checkRes = await checkGroupClassNameApi(checkNamePayload);
     if (checkRes.code !== 200) {
       messageService.error(checkRes.message || "校验班级名称失败");
       return;
@@ -387,12 +433,12 @@ async function handleSubmit() {
       return;
     }
 
-    const res = await createGroupClassApi({
+    const commonBody = {
       name: className,
       lessonId: String(lessonId),
       maxCount: formState.maxNum != null ? Number(formState.maxNum) : 0,
       teacherIds,
-      defaultTeacherId,
+      defaultTeacherId: defaultTeacherId || "0",
       defaultStudentClassTime: Number(formState.defaultStudentClassTime) || 1,
       defaultTeacherClassTime: Number(formState.defaultTeacherClassTime) || 0,
       defaultClassTimeRecordMode: Number(formState.defaultClassTimeRecordMode) || 1,
@@ -401,6 +447,30 @@ async function handleSubmit() {
       isCopyTimetable: false,
       classProperties: [],
       remark: String(formState.remark || "").trim(),
+    };
+
+    if (props.editRecord?.id) {
+      const classId = String(props.editRecord.id);
+      const res = await updateGroupClassApi({
+        ...commonBody,
+        id: classId,
+        copyFromClassId: classId,
+      });
+      const updated = res.result ?? res.data;
+      if (res.code === 200 && updated?.id) {
+        messageService.success("保存成功");
+        emit("updated", updated);
+        closeFun();
+        return;
+      }
+      if (res.code !== 500)
+        messageService.error(res.message || "保存失败");
+      return;
+    }
+
+    const res = await createGroupClassApi({
+      ...commonBody,
+      defaultTeacherId: defaultTeacherId || "",
     });
     const created = res.result ?? res.data;
     if (res.code === 200 && created?.id) {
@@ -409,7 +479,6 @@ async function handleSubmit() {
       closeFun();
       return;
     }
-    // code 500 时 request 层已对业务失败弹过「温馨提示」，避免重复 toast
     if (res.code !== 500)
       messageService.error(res.message || "创建班级失败");
   }
@@ -446,7 +515,7 @@ function closeFun() {
   >
     <template #title>
       <div class="text-5 flex justify-between flex-center">
-        <span>创建班级</span>
+        <span>{{ isEdit ? "编辑班级" : "创建班级" }}</span>
         <a-button type="text" class="close-btn" @click="closeFun">
           <template #icon>
             <CloseOutlined class="text-5 close-icon" />
@@ -650,7 +719,6 @@ function closeFun() {
         <a-form-item
           label="默认上课老师"
           name="defaultTeacher"
-          extra="选择班主任后会自动带出第一位；清空后不再自动带出，可不填。"
         >
           <StaffSelect
             v-model="formState.defaultTeacher"

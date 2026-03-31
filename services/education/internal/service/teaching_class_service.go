@@ -419,6 +419,14 @@ func (svc *Service) CreateGroupClass(userID int64, dto model.GroupClassCreateDTO
 	return model.GroupClassCreateResult{ID: strconv.FormatInt(id, 10), Name: ""}, nil
 }
 
+func (svc *Service) UpdateGroupClass(userID int64, dto model.GroupClassUpdateDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	return svc.repo.UpdateGroupClass(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) PageGroupClasses(userID int64, body model.GroupClassListBody) (model.GroupClassListPageResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

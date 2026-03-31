@@ -17,6 +17,7 @@ const defaultOpenClassStatus = 1
 
 const allFilterRef = ref()
 const createClassModal = ref(false)
+const editClassRecord = ref(null)
 const classListDrawerFlag = ref(false)
 const listLoading = ref(false)
 const dataSource = ref([])
@@ -448,6 +449,7 @@ function teacherNames(teachers) {
 }
 
 function createClass() {
+  editClassRecord.value = null
   createClassModal.value = true
 }
 
@@ -455,9 +457,23 @@ function openClassListDrawer() {
   classListDrawerFlag.value = true
 }
 
-function onClickMenu({ key }) {
-  console.log(key)
+function onClassRowMenuClick({ key }, record) {
+  if (key === '3') {
+    editClassRecord.value = record
+    createClassModal.value = true
+    return
+  }
+  console.log(key, record)
 }
+
+function afterClassModalSave() {
+  getClassList(queryState.value)
+}
+
+watch(createClassModal, (open) => {
+  if (!open)
+    editClassRecord.value = null
+})
 
 const allColumns = ref([
   {
@@ -726,7 +742,7 @@ onMounted(async () => {
                         </div>
                       </a>
                       <template #overlay>
-                        <a-menu style="text-align: center;width: 120px;" @click="onClickMenu">
+                        <a-menu style="text-align: center;width: 120px;" @click="(e) => onClassRowMenuClick(e, record)">
                           <a-menu-item key="1">
                             上课点名
                           </a-menu-item>
@@ -750,7 +766,12 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-    <CreateClassModal v-model:open="createClassModal" @created="() => getClassList(queryState.value)" />
+    <CreateClassModal
+      v-model:open="createClassModal"
+      :edit-record="editClassRecord"
+      @created="afterClassModalSave"
+      @updated="afterClassModalSave"
+    />
     <ClassListDrawer v-model:open="classListDrawerFlag" />
   </div>
 </template>

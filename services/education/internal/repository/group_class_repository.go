@@ -181,11 +181,9 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 	}
 
 	advisorID := teacherIDs[0]
-	var defaultTeacherArg any
+	defaultTeacherIDVal := int64(0)
 	if defTID > 0 {
-		defaultTeacherArg = defTID
-	} else {
-		defaultTeacherArg = nil
+		defaultTeacherIDVal = defTID
 	}
 	now := time.Now()
 	res, err := tx.ExecContext(ctx, `
@@ -200,7 +198,7 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 			?, ?, ?,
 			?, NOW(), ?, NOW(), 0
 		)
-	`, instID, model.TeachingClassTypeNormal, courseID, composeID, name, advisorID, defaultTeacherArg, model.TeachingClassStatusActive,
+	`, instID, model.TeachingClassTypeNormal, courseID, composeID, name, advisorID, defaultTeacherIDVal, model.TeachingClassStatusActive,
 		maxCount, strings.TrimSpace(dto.Remark),
 		stuTime, teacherTime, recordMode,
 		operatorID, operatorID)
@@ -235,6 +233,155 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 		return 0, err
 	}
 	return classID, nil
+}
+
+// UpdateGroupClass 更新集体班（对标 Class/Update）
+func (repo *Repository) UpdateGroupClass(ctx context.Context, instID, operatorID int64, dto model.GroupClassUpdateDTO) error {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.ID), 10, 64)
+	if err != nil || classID <= 0 {
+		return errors.New("id 无效")
+	}
+	if dto.IsCopyStudent {
+		return errors.New("暂不支持复制学员")
+	}
+	if dto.IsCopyTimetable {
+		return errors.New("暂不支持复制课表")
+	}
+
+	name := strings.TrimSpace(dto.Name)
+	if name == "" {
+		return errors.New("班级名称不能为空")
+	}
+	if strings.TrimSpace(dto.LessonID) == "" {
+		return errors.New("lessonId 不能为空")
+	}
+	recordMode := dto.DefaultClassTimeRecordMode
+	if recordMode <= 0 {
+		recordMode = 1
+	}
+	stuTime := dto.DefaultStudentClassTime
+	if stuTime <= 0 {
+		stuTime = 1
+	}
+	teacherTime := dto.DefaultTeacherClassTime
+	if teacherTime < 0 {
+		teacherTime = 0
+	}
+	maxCount := dto.MaxCount
+	if maxCount < 0 {
+		maxCount = 0
+	}
+
+	defTID, _ := strconv.ParseInt(strings.TrimSpace(dto.DefaultTeacherID), 10, 64)
+	teacherIDs := normalizeTeacherIDs(dto.TeacherIDs, defTID)
+	if len(teacherIDs) == 0 {
+		return errors.New("teacherIds 不能为空")
+	}
+	if defTID > 0 {
+		found := false
+		for _, tid := range teacherIDs {
+			if tid == defTID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return errors.New("defaultTeacherId 须在 teacherIds 中")
+		}
+	}
+
+	nStaff, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs)
+	if err != nil {
+		return err
+	}
+	if nStaff != len(teacherIDs) {
+		return errors.New("存在无效的教师")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var classType int
+	var delFlag int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT class_type, del_flag FROM teaching_class
+		WHERE id = ? AND inst_id = ? LIMIT 1
+	`, classID, instID).Scan(&classType, &delFlag); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("班级不存在")
+		}
+		return err
+	}
+	if classType != model.TeachingClassTypeNormal || delFlag != 0 {
+		return errors.New("班级不存在或无权操作")
+	}
+
+	courseID, composeID, err := repo.resolveGroupClassLessonTx(ctx, tx, instID, dto.LessonID)
+	if err != nil {
+		return err
+	}
+
+	cnt, err := repo.CountActiveGroupClassByName(ctx, instID, name, &classID)
+	if err != nil {
+		return err
+	}
+	if cnt > 0 {
+		return errors.New("班级名称已存在")
+	}
+
+	advisorID := teacherIDs[0]
+	defaultTeacherIDVal := int64(0)
+	if defTID > 0 {
+		defaultTeacherIDVal = defTID
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class SET
+			name = ?, course_id = ?, compose_lesson_id = ?, advisor_id = ?, default_teacher_id = ?,
+			max_count = ?, remark = ?,
+			default_student_class_time = ?, default_teacher_class_time = ?, default_class_time_record_mode = ?,
+			update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0
+	`, name, courseID, composeID, advisorID, defaultTeacherIDVal,
+		maxCount, strings.TrimSpace(dto.Remark),
+		stuTime, teacherTime, recordMode,
+		operatorID,
+		classID, instID, model.TeachingClassTypeNormal); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_teacher
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND teaching_class_id = ? AND del_flag = 0
+	`, operatorID, instID, classID); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	for _, tid := range teacherIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO teaching_class_teacher (
+				uuid, version, inst_id, teaching_class_id, teacher_id, status, is_default,
+				create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, 0
+			)
+			ON DUPLICATE KEY UPDATE
+				status = VALUES(status),
+				is_default = VALUES(is_default),
+				del_flag = 0,
+				update_id = VALUES(update_id),
+				update_time = VALUES(update_time)
+		`, instID, classID, tid, boolToTinyInt(defTID > 0 && tid == defTID), operatorID, now, operatorID, now); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func buildGroupClassFilters(instID int64, q model.GroupClassListQueryModel) (string, []any) {
@@ -374,6 +521,7 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 				WHERE tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
 				  AND tcs.class_student_status IN (?, ?)
 			), 0),
+			tc.default_student_class_time, tc.default_teacher_class_time, tc.default_class_time_record_mode,
 			tc.closed_time
 		FROM teaching_class tc
 		LEFT JOIN inst_course ic ON ic.id = tc.course_id AND ic.del_flag = 0
@@ -397,16 +545,18 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 	defer rows.Close()
 
 	type rowRec struct {
-		id, courseID, composeID, maxCount, status       int64
-		sched, finished                                 int
-		classRoom, remark, lessonName, createdStaff     string
-		defTID                                          int64
-		name                                            string
-		created                                         time.Time
-		defTName                                        string
-		classTimeSum                                    float64
-		stuCnt                                          int
-		closed                                          sql.NullTime
+		id, courseID, composeID, maxCount, status   int64
+		sched, finished                             int
+		classRoom, remark, lessonName, createdStaff string
+		defTID                                      int64
+		name                                        string
+		created                                     time.Time
+		defTName                                    string
+		classTimeSum                                float64
+		stuCnt                                      int
+		defaultStuTime, defaultTeachTime            float64
+		recordMode                                  int
+		closed                                      sql.NullTime
 	}
 	var ids []int64
 	var recs []rowRec
@@ -415,7 +565,8 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 		if err := rows.Scan(
 			&r.id, &r.name, &r.courseID, &r.composeID, &r.maxCount, &r.status,
 			&r.sched, &r.finished, &r.classRoom, &r.defTID, &r.remark, &r.created,
-			&r.createdStaff, &r.lessonName, &r.defTName, &r.classTimeSum, &r.stuCnt, &r.closed,
+			&r.createdStaff, &r.lessonName, &r.defTName, &r.classTimeSum, &r.stuCnt,
+			&r.defaultStuTime, &r.defaultTeachTime, &r.recordMode, &r.closed,
 		); err != nil {
 			return out, err
 		}
@@ -465,19 +616,22 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 				}
 				return ""
 			}(),
-			ClassRoomName:   r.classRoom,
+			ClassRoomName:    r.classRoom,
 			ClassLessonTimes: []any{},
-			IsScheduled:     r.sched > 0,
+			IsScheduled:      r.sched > 0,
 			ClassLessonDayInfos: model.GroupClassLessonDayInfoVO{
 				LessonDayCount:         r.sched,
 				CompleteLessonDayCount: r.finished,
 			},
-			Status:           int(r.status),
-			ClosedTime:       closedT,
-			CreatedTime:      r.created,
-			CreatedStaffName: r.createdStaff,
-			Remark:           r.remark,
-			ClassProperties:  []any{},
+			Status:                     int(r.status),
+			ClosedTime:                 closedT,
+			CreatedTime:                r.created,
+			CreatedStaffName:           r.createdStaff,
+			Remark:                     r.remark,
+			ClassProperties:            []any{},
+			DefaultStudentClassTime:    r.defaultStuTime,
+			DefaultTeacherClassTime:    r.defaultTeachTime,
+			DefaultClassTimeRecordMode: r.recordMode,
 		}
 		out.List = append(out.List, item)
 	}

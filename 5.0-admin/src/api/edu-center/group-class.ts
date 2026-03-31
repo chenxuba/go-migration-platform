@@ -4,6 +4,7 @@ import { usePost } from '~/utils/request'
 export function checkGroupClassNameApi(data: {
   name: string
   isOne2One: boolean
+  /** 编辑班级时传入当前班级 id，排除自身重名 */
   exceptId?: string
 }) {
   return usePost<boolean>('/api/v1/group-classes/check-name', data)
@@ -27,6 +28,29 @@ export function createGroupClassApi(data: {
 }) {
   // 业务错误用 HTTP 400，需当作「有 body 的成功响应」解析，否则会进 reject 且看不到 message
   return usePost<{ id: string; name: string }>('/api/v1/group-classes/create', data, {
+    validateStatus: status => (status >= 200 && status < 300) || status === 400,
+  })
+}
+
+/** 对标 Class/Update */
+export function updateGroupClassApi(data: {
+  id: string
+  name: string
+  lessonId: string
+  maxCount: number
+  teacherIds: string[]
+  defaultTeacherId: string
+  defaultStudentClassTime: number
+  defaultTeacherClassTime: number
+  defaultClassTimeRecordMode: number
+  copyFromClassId?: string
+  isCopyStudent?: boolean
+  copiedStudents?: unknown[]
+  isCopyTimetable?: boolean
+  classProperties?: unknown[]
+  remark?: string
+}) {
+  return usePost<{ id: string; name: string }>('/api/v1/group-classes/update', data, {
     validateStatus: status => (status >= 200 && status < 300) || status === 400,
   })
 }
@@ -87,4 +111,7 @@ export interface GroupClassRow {
   createdStaffName: string
   remark: string
   classProperties: unknown[]
+  defaultStudentClassTime: number
+  defaultTeacherClassTime: number
+  defaultClassTimeRecordMode: number
 }

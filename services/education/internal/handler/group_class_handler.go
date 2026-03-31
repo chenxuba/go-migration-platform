@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"go-migration-platform/pkg/httpx"
 	"go-migration-platform/pkg/tenant"
@@ -53,6 +54,28 @@ func (handler *Handler) createGroupClass(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, res, ctx.RequestID)
+}
+
+func (handler *Handler) updateGroupClass(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var dto model.GroupClassUpdateDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.UpdateGroupClass(claims.UserID, dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, model.GroupClassCreateResult{ID: strings.TrimSpace(dto.ID), Name: strings.TrimSpace(dto.Name)}, ctx.RequestID)
 }
 
 func (handler *Handler) pageGroupClasses(w http.ResponseWriter, r *http.Request) {

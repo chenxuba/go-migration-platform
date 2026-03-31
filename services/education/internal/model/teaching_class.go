@@ -319,25 +319,32 @@ type CloseTuitionAccountOrderResult struct {
 // --- 班级授课（集体班）对标 CheckClassName / Create / QueryClassList / QueryClassStatisticsInfo ---
 
 type GroupClassCheckNameDTO struct {
-	Name       string `json:"name"`
-	IsOne2One  bool   `json:"isOne2One"`
-	ExceptID   string `json:"exceptId"`
+	Name      string `json:"name"`
+	IsOne2One bool   `json:"isOne2One"`
+	ExceptID  string `json:"exceptId"`
 }
 
 type GroupClassCreateDTO struct {
-	Name                       string  `json:"name"`
-	LessonID                   string  `json:"lessonId"`
-	MaxCount                   int     `json:"maxCount"`
+	Name                       string   `json:"name"`
+	LessonID                   string   `json:"lessonId"`
+	MaxCount                   int      `json:"maxCount"`
 	TeacherIDs                 []string `json:"teacherIds"`
-	DefaultTeacherID           string  `json:"defaultTeacherId"`
-	DefaultStudentClassTime    float64 `json:"defaultStudentClassTime"`
-	DefaultTeacherClassTime    float64 `json:"defaultTeacherClassTime"`
-	DefaultClassTimeRecordMode int     `json:"defaultClassTimeRecordMode"`
-	IsCopyStudent              bool    `json:"isCopyStudent"`
-	CopiedStudents             []any   `json:"copiedStudents"`
-	IsCopyTimetable            bool    `json:"isCopyTimetable"`
-	ClassProperties            []any   `json:"classProperties"`
-	Remark                     string  `json:"remark"`
+	DefaultTeacherID           string   `json:"defaultTeacherId"`
+	DefaultStudentClassTime    float64  `json:"defaultStudentClassTime"`
+	DefaultTeacherClassTime    float64  `json:"defaultTeacherClassTime"`
+	DefaultClassTimeRecordMode int      `json:"defaultClassTimeRecordMode"`
+	IsCopyStudent              bool     `json:"isCopyStudent"`
+	CopiedStudents             []any    `json:"copiedStudents"`
+	IsCopyTimetable            bool     `json:"isCopyTimetable"`
+	ClassProperties            []any    `json:"classProperties"`
+	Remark                     string   `json:"remark"`
+}
+
+// GroupClassUpdateDTO 对标 Class/Update，内嵌字段与创建一致，另含 id、copyFromClassId
+type GroupClassUpdateDTO struct {
+	GroupClassCreateDTO
+	ID              string `json:"id"`
+	CopyFromClassID string `json:"copyFromClassId"`
 }
 
 type GroupClassCreateResult struct {
@@ -388,28 +395,31 @@ type GroupClassLessonDayInfoVO struct {
 }
 
 type GroupClassListItemVO struct {
-	ID                   string                    `json:"id"`
-	Name                 string                    `json:"name"`
-	ClassTime            float64                   `json:"classTime"`
-	LessonID             string                    `json:"lessonId"`
-	LessonName           string                    `json:"lessonName"`
-	IsMultiProduct       bool                      `json:"isMultiProduct"`
-	StudentCount         int                       `json:"studentCount"`
-	LockStudentCount     int                       `json:"lockStudentCount"`
-	MaxCount             int                       `json:"maxCount"`
-	Teachers             []GroupClassListTeacherVO `json:"teachers"`
-	DefaultTeacherID     string                    `json:"defaultTeacherId"`
-	DefaultTeacherName   string                    `json:"defaultTeacherName"`
-	ClassRoomName        string                    `json:"classRoomName"`
-	ClassLessonTimes     []any                     `json:"classLessonTimes"`
-	IsScheduled          bool                      `json:"isScheduled"`
-	ClassLessonDayInfos  GroupClassLessonDayInfoVO `json:"classLessonDayInfos"`
-	Status               int                       `json:"status"`
-	ClosedTime           time.Time                 `json:"closedTime"`
-	CreatedTime          time.Time                 `json:"createdTime"`
-	CreatedStaffName     string                    `json:"createdStaffName"`
-	Remark               string                    `json:"remark"`
-	ClassProperties      []any                     `json:"classProperties"`
+	ID                         string                    `json:"id"`
+	Name                       string                    `json:"name"`
+	ClassTime                  float64                   `json:"classTime"`
+	LessonID                   string                    `json:"lessonId"`
+	LessonName                 string                    `json:"lessonName"`
+	IsMultiProduct             bool                      `json:"isMultiProduct"`
+	StudentCount               int                       `json:"studentCount"`
+	LockStudentCount           int                       `json:"lockStudentCount"`
+	MaxCount                   int                       `json:"maxCount"`
+	Teachers                   []GroupClassListTeacherVO `json:"teachers"`
+	DefaultTeacherID           string                    `json:"defaultTeacherId"`
+	DefaultTeacherName         string                    `json:"defaultTeacherName"`
+	ClassRoomName              string                    `json:"classRoomName"`
+	ClassLessonTimes           []any                     `json:"classLessonTimes"`
+	IsScheduled                bool                      `json:"isScheduled"`
+	ClassLessonDayInfos        GroupClassLessonDayInfoVO `json:"classLessonDayInfos"`
+	Status                     int                       `json:"status"`
+	ClosedTime                 time.Time                 `json:"closedTime"`
+	CreatedTime                time.Time                 `json:"createdTime"`
+	CreatedStaffName           string                    `json:"createdStaffName"`
+	Remark                     string                    `json:"remark"`
+	ClassProperties            []any                     `json:"classProperties"`
+	DefaultStudentClassTime    float64                   `json:"defaultStudentClassTime"`
+	DefaultTeacherClassTime    float64                   `json:"defaultTeacherClassTime"`
+	DefaultClassTimeRecordMode int                       `json:"defaultClassTimeRecordMode"`
 }
 
 type GroupClassListPageResult struct {
@@ -418,8 +428,8 @@ type GroupClassListPageResult struct {
 }
 
 type GroupClassStatisticsVO struct {
-	ClassCount         int `json:"classCount"`
-	OpenClassCount     int `json:"openClassCount"`
-	StudentCount       int `json:"studentCount"`
-	StudentPersonTime  int `json:"studentPersonTime"`
+	ClassCount        int `json:"classCount"`
+	OpenClassCount    int `json:"openClassCount"`
+	StudentCount      int `json:"studentCount"`
+	StudentPersonTime int `json:"studentPersonTime"`
 }
