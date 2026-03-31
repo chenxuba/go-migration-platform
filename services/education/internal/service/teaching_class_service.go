@@ -471,3 +471,60 @@ func (svc *Service) AggregateGroupClassStatistics(userID int64, q model.GroupCla
 	}
 	return svc.repo.AggregateGroupClassStatistics(context.Background(), instID, q)
 }
+
+// ListGroupClassStudentsByClassIDs 对标 Class/GetStudentListByClassIds
+func (svc *Service) ListGroupClassStudentsByClassIDs(userID int64, dto model.GroupClassStudentListByClassIDsRequest) ([]model.GroupClassStudentListBucketVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("no institution context")
+		}
+		return nil, err
+	}
+	return svc.repo.ListGroupClassStudentsByClassIDs(context.Background(), instID, dto.ClassIDs)
+}
+
+// PageTuitionAccountsByLessonID 对标 TuitionAccount/GetTuitionAccountListByLessonId（集体班添加学员）
+func (svc *Service) PageTuitionAccountsByLessonID(userID int64, body model.TuitionAccountListByLessonIDBody) (model.TuitionAccountListByLessonIDResult, error) {
+	var zero model.TuitionAccountListByLessonIDResult
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return zero, errors.New("no institution context")
+		}
+		return zero, err
+	}
+	lessonID := strings.TrimSpace(body.QueryModel.LessonID)
+	if lessonID == "" {
+		return zero, errors.New("lessonId 不能为空")
+	}
+	courseIDs, _, err := svc.repo.ResolveGroupClassLessonCourseScope(context.Background(), instID, lessonID)
+	if err != nil {
+		return zero, err
+	}
+	var curClassID int64
+	if s := strings.TrimSpace(body.QueryModel.ClassID); s != "" {
+		if v, perr := strconv.ParseInt(s, 10, 64); perr == nil && v > 0 {
+			curClassID = v
+		}
+	}
+	stuIDs := make([]int64, 0, len(body.QueryModel.StudentIDs))
+	for _, raw := range body.QueryModel.StudentIDs {
+		if v, perr := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); perr == nil && v > 0 {
+			stuIDs = append(stuIDs, v)
+		}
+	}
+	page := body.PageRequestModel.PageIndex
+	size := body.PageRequestModel.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+	list, total, err := svc.repo.PageTuitionAccountsByLessonForGroupAdd(context.Background(), instID, courseIDs, curClassID, stuIDs, page, size)
+	if err != nil {
+		return zero, err
+	}
+	return model.TuitionAccountListByLessonIDResult{List: list, Total: total}, nil
+}

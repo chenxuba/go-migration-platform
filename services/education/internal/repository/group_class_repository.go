@@ -109,6 +109,230 @@ func (repo *Repository) resolveGroupClassLessonTx(ctx context.Context, tx *sql.T
 	return cid, 0, nil
 }
 
+// ResolveGroupClassLessonCourseScope 解析集体班 lessonId 对应的全部课程 id（单课一条，组合课多条），用于按课查学费账户。
+func (repo *Repository) ResolveGroupClassLessonCourseScope(ctx context.Context, instID int64, lessonIDStr string) (courseIDs []int64, composeLessonID int64, err error) {
+	lid, err := strconv.ParseInt(strings.TrimSpace(lessonIDStr), 10, 64)
+	if err != nil || lid <= 0 {
+		return nil, 0, errors.New("lessonId 无效")
+	}
+	var composeID int64
+	qerr := repo.db.QueryRowContext(ctx, `
+		SELECT id FROM inst_compose_lesson
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, lid, instID).Scan(&composeID)
+	if qerr == nil && composeID > 0 {
+		rows, qerr2 := repo.db.QueryContext(ctx, `
+			SELECT course_id FROM inst_compose_lesson_product
+			WHERE compose_lesson_id = ? AND inst_id = ?
+			ORDER BY sort_order ASC, id ASC
+		`, composeID, instID)
+		if qerr2 != nil {
+			return nil, 0, qerr2
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var cid int64
+			if err := rows.Scan(&cid); err != nil {
+				return nil, 0, err
+			}
+			if cid > 0 {
+				courseIDs = append(courseIDs, cid)
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, 0, err
+		}
+		if len(courseIDs) == 0 {
+			return nil, 0, errors.New("组合课程下没有关联课程")
+		}
+		return courseIDs, composeID, nil
+	}
+	if !errors.Is(qerr, sql.ErrNoRows) && qerr != nil {
+		return nil, 0, qerr
+	}
+	var cid int64
+	var tm sql.NullInt64
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT id, teach_method FROM inst_course
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, lid, instID).Scan(&cid, &tm)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, 0, errors.New("课程或组合课不存在")
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	if tm.Valid && tm.Int64 != 1 {
+		return nil, 0, errors.New("所选课程不是班级授课（班课）")
+	}
+	return []int64{cid}, 0, nil
+}
+
+func maskPhoneDisplay(mobile string) string {
+	s := strings.TrimSpace(mobile)
+	if len(s) < 8 {
+		return s
+	}
+	if len(s) == 11 && s[0] == '1' {
+		return s[:3] + "****" + s[7:]
+	}
+	r := []rune(s)
+	if len(r) <= 7 {
+		return s
+	}
+	return string(r[:3]) + "****" + string(r[len(r)-4:])
+}
+
+// ListGroupClassStudentsByClassIDs 对标 Class/GetStudentListByClassIds：返回各班已在班学员（集体班）。
+func (repo *Repository) ListGroupClassStudentsByClassIDs(ctx context.Context, instID int64, classIDStrs []string) ([]model.GroupClassStudentListBucketVO, error) {
+	ids := make([]int64, 0, len(classIDStrs))
+	seen := make(map[int64]struct{})
+	for _, raw := range classIDStrs {
+		id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return []model.GroupClassStudentListBucketVO{}, nil
+	}
+	ph := sqlPlaceholders(len(ids))
+	q := `
+		SELECT CAST(tcs.teaching_class_id AS CHAR), CAST(s.id AS CHAR), IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''),
+			IFNULL(s.mobile, ''), IFNULL(s.stu_sex, 0), s.birthday,
+			CAST(IFNULL(tcs.primary_tuition_account_id, 0) AS CHAR), tcs.create_time,
+			IFNULL(ta.remaining_quantity, 0), IFNULL(ta.remaining_tuition, 0), IFNULL(ta.total_quantity, 0), IFNULL(ta.total_tuition, 0),
+			IFNULL(ta.free_quantity, 0), IFNULL(ta.enable_expire_time, 0), ta.expire_time, IFNULL(ta.status, 0),
+			IFNULL(icq.lesson_model, 0), IFNULL(ic.name, ''), IFNULL(icq.name, ''), CAST(IFNULL(icq.id, 0) AS CHAR)
+		FROM teaching_class_student tcs
+		INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id AND tc.inst_id = tcs.inst_id AND tc.del_flag = 0 AND tc.class_type = ?
+		INNER JOIN inst_student s ON s.id = tcs.student_id AND s.inst_id = tcs.inst_id AND s.del_flag = 0
+		LEFT JOIN tuition_account ta ON ta.id = tcs.primary_tuition_account_id AND ta.inst_id = tcs.inst_id AND ta.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.inst_id = ta.inst_id AND ic.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(ta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
+		WHERE tcs.inst_id = ? AND tcs.del_flag = 0 AND tcs.teaching_class_id IN (` + ph + `)
+		ORDER BY tcs.teaching_class_id ASC, tcs.id ASC
+	`
+	args := make([]any, 0, 2+len(ids))
+	args = append(args, model.TeachingClassTypeNormal, instID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byClass := make(map[string][]model.GroupClassStudentInClassItemVO)
+	order := make([]string, 0, len(ids))
+	for _, id := range ids {
+		order = append(order, strconv.FormatInt(id, 10))
+		byClass[strconv.FormatInt(id, 10)] = []model.GroupClassStudentInClassItemVO{}
+	}
+
+	for rows.Next() {
+		var classIDStr, sid, taID, qid string
+		var name, avatar, mobile string
+		var sex int
+		var birthday sql.NullTime
+		var joinTime sql.NullTime
+		var remQty, remTui, totQty, totTui, freeQty float64
+		var enableExp int
+		var exp sql.NullTime
+		var taStatus int
+		var lessonModel int
+		var icName, icqName string
+		if err := rows.Scan(&classIDStr, &sid, &name, &avatar, &mobile, &sex, &birthday, &taID, &joinTime,
+			&remQty, &remTui, &totQty, &totTui, &freeQty, &enableExp, &exp, &taStatus,
+			&lessonModel, &icName, &icqName, &qid); err != nil {
+			return nil, err
+		}
+		pn := strings.TrimSpace(icName)
+		if pn == "" {
+			pn = strings.TrimSpace(icqName)
+		}
+		bt := time.Time{}
+		if birthday.Valid && birthday.Time.Year() > 1 {
+			bt = birthday.Time
+		}
+		jt := time.Time{}
+		if joinTime.Valid {
+			jt = joinTime.Time
+		}
+		expT := time.Time{}
+		if exp.Valid {
+			expT = exp.Time
+		}
+		snap := &model.GroupClassStudentTuitionSnapVO{
+			TuitionAccountID:       taID,
+			ProductName:            pn,
+			ProductID:              qid,
+			RemainQuantity:         remQty,
+			RemainFreeQuantity:     freeQty,
+			RemainTuition:          remTui,
+			LessonChargingMode:     lessonModel,
+			EnableExpireTime:       enableExp != 0,
+			StartTime:              time.Time{},
+			ExpireTime:             expT,
+			IsTuitionAccountActive: taStatus == 1,
+			TotalQuantity:          totQty,
+			TotalFreeQuantity:      freeQty,
+			TotalTuition:           totTui,
+		}
+		item := model.GroupClassStudentInClassItemVO{
+			ID:                             sid,
+			Name:                           name,
+			Avatar:                         strings.TrimSpace(avatar),
+			IsBind:                         false,
+			ClassID:                        classIDStr,
+			Phone:                          maskPhoneDisplay(mobile),
+			Sex:                            sex,
+			TuitionAccountID:               taID,
+			Birthday:                       bt,
+			JoinTime:                       jt,
+			ClassStudentTuitionAccountInfo: snap,
+		}
+		byClass[classIDStr] = append(byClass[classIDStr], item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]model.GroupClassStudentListBucketVO, 0, len(order))
+	for _, cid := range order {
+		list := byClass[cid]
+		if list == nil {
+			list = []model.GroupClassStudentInClassItemVO{}
+		}
+		out = append(out, model.GroupClassStudentListBucketVO{
+			ClassID:  cid,
+			Students: list,
+		})
+	}
+	return out, nil
+}
+
 // CreateGroupClass 创建集体班（无班员）
 func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID int64, dto model.GroupClassCreateDTO) (int64, error) {
 	name := strings.TrimSpace(dto.Name)

@@ -134,3 +134,23 @@ export interface GroupClassDetailVO extends GroupClassRow {
 export function getGroupClassDetailApi(params: { id: string }) {
   return useGet<GroupClassDetailVO>('/api/v1/group-classes/detail', params)
 }
+
+/** 对标 Class/GetStudentListByClassIds：各班已在班学员 */
+export interface GroupClassStudentInClassBucket {
+  classId: string
+  students: GroupClassStudentInClassItem[]
+}
+
+export interface GroupClassStudentInClassItem {
+  id: string
+  name: string
+  avatar?: string
+  phone?: string
+  sex?: number
+  tuitionAccountId?: string
+  classId?: string
+}
+
+export function listGroupClassStudentsByClassIdsApi(data: { classIds: string[] }) {
+  return usePost<GroupClassStudentInClassBucket[]>('/api/v1/group-classes/students-by-class-ids', data)
+}

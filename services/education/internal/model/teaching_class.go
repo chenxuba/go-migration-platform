@@ -467,3 +467,81 @@ type GroupClassStatisticsVO struct {
 	StudentCount      int `json:"studentCount"`
 	StudentPersonTime int `json:"studentPersonTime"`
 }
+
+// --- 集体班添加学员：对标 Class/GetStudentListByClassIds + TuitionAccount/GetTuitionAccountListByLessonId ---
+
+type GroupClassStudentListByClassIDsRequest struct {
+	ClassIDs []string `json:"classIds"`
+}
+
+type GroupClassStudentTuitionSnapVO struct {
+	TuitionAccountID       string    `json:"tuitionAccountId"`
+	ProductName            string    `json:"productName"`
+	ProductID              string    `json:"productId"`
+	RemainQuantity         float64   `json:"remainQuantity"`
+	RemainFreeQuantity     float64   `json:"remainFreeQuantity"`
+	RemainTuition          float64   `json:"remainTuition"`
+	LessonChargingMode     int       `json:"lessonChargingMode"`
+	EnableExpireTime       bool      `json:"enableExpireTime"`
+	StartTime              time.Time `json:"startTime"`
+	ExpireTime             time.Time `json:"expireTime"`
+	IsTuitionAccountActive bool      `json:"isTuitionAccountActive"`
+	TotalQuantity          float64   `json:"totalQuantity"`
+	TotalFreeQuantity      float64   `json:"totalFreeQuantity"`
+	TotalTuition           float64   `json:"totalTuition"`
+}
+
+type GroupClassStudentInClassItemVO struct {
+	ID                             string                        `json:"id"`
+	Name                           string                        `json:"name"`
+	Avatar                         string                        `json:"avatar"`
+	IsBind                         bool                          `json:"isBind"`
+	ClassID                        string                        `json:"classId"`
+	Phone                          string                        `json:"phone"`
+	Sex                            int                           `json:"sex"`
+	TuitionAccountID               string                        `json:"tuitionAccountId"`
+	Birthday                       time.Time                     `json:"birthday"`
+	JoinTime                       time.Time                     `json:"joinTime"`
+	ClassStudentTuitionAccountInfo *GroupClassStudentTuitionSnapVO `json:"classStudentTuitionAccountInfo"`
+}
+
+type GroupClassStudentListBucketVO struct {
+	ClassID  string                         `json:"classId"`
+	Students []GroupClassStudentInClassItemVO `json:"students"`
+}
+
+type TuitionAccountListByLessonIDBody struct {
+	PageRequestModel GroupClassPageRequestModel      `json:"pageRequestModel"`
+	QueryModel       TuitionAccountListByLessonQuery `json:"queryModel"`
+}
+
+type TuitionAccountListByLessonQuery struct {
+	LessonID   string   `json:"lessonId"`
+	StudentIDs []string `json:"studentIds"`
+	/** 当前集体班 id：用于标记本班已有学员（assignedClass），与前端勾选禁用一致 */
+	ClassID string `json:"classId,omitempty"`
+}
+
+type TuitionAccountByLessonRowVO struct {
+	StudentID              string    `json:"studentId"`
+	TuitionAccountID       string    `json:"tuitionAccountId"`
+	StudentName            string    `json:"studentName"`
+	AssignedClass          bool      `json:"assignedClass"`
+	Quantity               float64   `json:"quantity"`
+	Avatar                 *string   `json:"avatar"`
+	Phone                  string    `json:"phone"`
+	LessonChargingMode     int       `json:"lessonChargingMode"`
+	LessonScope            int       `json:"lessonScope"`
+	IsTuitionAccountActive bool      `json:"isTuitionAccountActive"`
+	StartTime              time.Time `json:"startTime"`
+	IsCrossSchoolStudent   bool      `json:"isCrossSchoolStudent"`
+	Sex                    int       `json:"sex"`
+	Birthday               time.Time `json:"birthday"`
+	ProductID              string    `json:"productId"`
+	ProductName            string    `json:"productName"`
+}
+
+type TuitionAccountListByLessonIDResult struct {
+	List  []TuitionAccountByLessonRowVO `json:"list"`
+	Total int                           `json:"total"`
+}

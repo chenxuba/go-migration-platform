@@ -21,6 +21,8 @@ const classListDrawerFlag = ref(false)
 const addStudentModalOpen = ref(false)
 const addStudentModalTitle = ref('')
 const addStudentModalLessonName = ref('')
+const addStudentModalClassId = ref('')
+const addStudentModalLessonId = ref('')
 const listLoading = ref(false)
 const dataSource = ref([])
 const selectedRowKeys = ref([])
@@ -417,6 +419,8 @@ function openClassListDrawer() {
 function openAddStudentModal(record) {
   addStudentModalTitle.value = String(record?.name || '').trim() || '班级'
   addStudentModalLessonName.value = String(record?.lessonName || '').trim()
+  addStudentModalClassId.value = String(record?.id ?? '').trim()
+  addStudentModalLessonId.value = String(record?.lessonId ?? '').trim()
   addStudentModalOpen.value = true
 }
 
@@ -736,6 +740,8 @@ onMounted(async () => {
       v-model:open="addStudentModalOpen"
       :title="addStudentModalTitle"
       :lesson-name="addStudentModalLessonName"
+      :class-id="addStudentModalClassId"
+      :lesson-id="addStudentModalLessonId"
     />
   </div>
 </template>

@@ -743,3 +743,156 @@ func (repo *Repository) ListOneToOneLessonOptionsByStudent(ctx context.Context, 
 	}
 	return out, rows.Err()
 }
+
+func tuitionRemainQuantityForDisplay(lessonModel int, remQty, remTui float64) float64 {
+	if lessonModel == 3 || lessonModel == 4 {
+		return remTui
+	}
+	return remQty
+}
+
+// PageTuitionAccountsByLessonForGroupAdd 对标 TuitionAccount/GetTuitionAccountListByLessonId：班课在读账户，供集体班添加学员列表。
+func (repo *Repository) PageTuitionAccountsByLessonForGroupAdd(ctx context.Context, instID int64, courseIDs []int64, currentClassID int64, studentIDs []int64, pageIndex, pageSize int) (list []model.TuitionAccountByLessonRowVO, total int, err error) {
+	if len(courseIDs) == 0 {
+		return nil, 0, nil
+	}
+	phCourses := sqlPlaceholders(len(courseIDs))
+	baseFrom := `
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.inst_id = ta.inst_id AND ic.del_flag = 0
+		INNER JOIN inst_student s ON s.id = ta.student_id AND s.inst_id = ta.inst_id AND s.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(ta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
+		WHERE ta.inst_id = ?
+			AND ta.del_flag = 0
+			AND IFNULL(ta.status, 0) = 1
+			AND ic.teach_method = 1
+			AND ta.course_id IN (` + phCourses + `)
+	`
+	argsBase := make([]any, 0, 1+len(courseIDs))
+	argsBase = append(argsBase, instID)
+	for _, cid := range courseIDs {
+		argsBase = append(argsBase, cid)
+	}
+	if len(studentIDs) > 0 {
+		phStu := sqlPlaceholders(len(studentIDs))
+		baseFrom += ` AND ta.student_id IN (` + phStu + `)`
+		for _, sid := range studentIDs {
+			argsBase = append(argsBase, sid)
+		}
+	}
+
+	countQ := `SELECT COUNT(1) ` + baseFrom
+	if err := repo.db.QueryRowContext(ctx, countQ, argsBase...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return []model.TuitionAccountByLessonRowVO{}, 0, nil
+	}
+	if pageIndex <= 0 {
+		pageIndex = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	offset := (pageIndex - 1) * pageSize
+
+	dataQ := `
+		SELECT
+			CAST(ta.id AS CHAR),
+			CAST(ta.student_id AS CHAR),
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.avatar_url, ''),
+			IFNULL(s.mobile, ''),
+			IFNULL(s.stu_sex, 0),
+			s.birthday,
+			IFNULL(icq.lesson_model, 0),
+			IFNULL(ta.remaining_quantity, 0),
+			IFNULL(ta.remaining_tuition, 0),
+			IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, '')) AS product_name,
+			CAST(IFNULL(icq.id, 0) AS CHAR),
+			IFNULL(ta.create_time, NOW()),
+			CASE WHEN IFNULL(ta.status, 0) = 1 THEN 1 ELSE 0 END,
+			CASE WHEN ? > 0 AND EXISTS (
+				SELECT 1 FROM teaching_class_student tcs
+				WHERE tcs.inst_id = ta.inst_id AND tcs.teaching_class_id = ? AND tcs.student_id = ta.student_id AND tcs.del_flag = 0
+			) THEN 1 ELSE 0 END
+	` + baseFrom + `
+		ORDER BY ta.id DESC
+		LIMIT ? OFFSET ?
+	`
+	dataArgs := make([]any, 0, 2+len(argsBase)+2)
+	dataArgs = append(dataArgs, currentClassID, currentClassID)
+	dataArgs = append(dataArgs, argsBase...)
+	dataArgs = append(dataArgs, pageSize, offset)
+
+	rows, err := repo.db.QueryContext(ctx, dataQ, dataArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	list = make([]model.TuitionAccountByLessonRowVO, 0, pageSize)
+	for rows.Next() {
+		var row model.TuitionAccountByLessonRowVO
+		var avatar sql.NullString
+		var birthday sql.NullTime
+		var lm int
+		var remQty, remTui float64
+		var productName string
+		var productID string
+		var startT sql.NullTime
+		var activeRaw, assignedRaw int
+		if err := rows.Scan(
+			&row.TuitionAccountID,
+			&row.StudentID,
+			&row.StudentName,
+			&avatar,
+			&row.Phone,
+			&row.Sex,
+			&birthday,
+			&lm,
+			&remQty,
+			&remTui,
+			&productName,
+			&productID,
+			&startT,
+			&activeRaw,
+			&assignedRaw,
+		); err != nil {
+			return nil, 0, err
+		}
+		row.LessonChargingMode = lm
+		row.LessonScope = 2
+		row.Quantity = tuitionRemainQuantityForDisplay(lm, remQty, remTui)
+		row.ProductName = strings.TrimSpace(productName)
+		row.ProductID = productID
+		row.Phone = maskPhoneDisplay(row.Phone)
+		row.IsTuitionAccountActive = activeRaw != 0
+		row.AssignedClass = assignedRaw != 0
+		row.IsCrossSchoolStudent = false
+		if avatar.Valid && strings.TrimSpace(avatar.String) != "" {
+			a := strings.TrimSpace(avatar.String)
+			row.Avatar = &a
+		}
+		if birthday.Valid && birthday.Time.Year() > 1 {
+			row.Birthday = birthday.Time
+		}
+		if startT.Valid {
+			row.StartTime = startT.Time
+		}
+		list = append(list, row)
+	}
+	return list, total, rows.Err()
+}

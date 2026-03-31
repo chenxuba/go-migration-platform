@@ -1,5 +1,9 @@
 <script setup>
 import { CloseOutlined, FilterFilled, SearchOutlined } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
+import { listGroupClassStudentsByClassIdsApi } from '@/api/edu-center/group-class'
+import { pageTuitionAccountsByLessonIdApi } from '@/api/edu-center/tuition-account'
+import messageService from '@/utils/messageService'
 
 const props = defineProps({
   open: {
@@ -13,6 +17,16 @@ const props = defineProps({
   },
   /** 顶部提示条中的课程/报读名称，默认同 title */
   lessonName: {
+    type: String,
+    default: '',
+  },
+  /** 当前集体班 id，与 lessonId 同时有值时拉接口 */
+  classId: {
+    type: String,
+    default: '',
+  },
+  /** 列表行上的 lessonId（单课 id 或组合课 id） */
+  lessonId: {
     type: String,
     default: '',
   },
@@ -31,23 +45,141 @@ const bannerName = computed(() => {
 })
 
 const userName = ref('')
+const listLoading = ref(false)
 
-/** 静态示例数据（后续接接口替换） */
+/** 无班级/课程上下文时的演示数据 */
 function staticRows() {
   return [
     {
       id: 'static-1',
       displayName: '陈瑞',
       phone: '176****1111',
+      avatarUrl: '',
       courseAccount: '时段课程',
       age: '-',
-      gender: '2',
+      ageYears: null,
+      gender: '0',
       remainingQuantity: '8天',
       classStatus: '未分班',
       classStatusType: 2,
       disabled: false,
     },
   ]
+}
+
+function sexToGenderKey(sex) {
+  if (sex === 1)
+    return '1'
+  if (sex === 2)
+    return '2'
+  return '0'
+}
+
+function ageLabelFromBirthday(birthday) {
+  if (birthday == null || birthday === '')
+    return { label: '-', years: null }
+  const d = dayjs(birthday)
+  if (!d.isValid() || d.year() <= 1)
+    return { label: '-', years: null }
+  const y = dayjs().diff(d, 'year')
+  if (y < 0 || y > 120)
+    return { label: '-', years: null }
+  return { label: String(y), years: y }
+}
+
+function formatRemainQuantity(quantity, lessonChargingMode) {
+  const q = Number(quantity)
+  if (Number.isNaN(q))
+    return '-'
+  if (lessonChargingMode === 2)
+    return `${Math.floor(q)}天`
+  if (lessonChargingMode === 3 || lessonChargingMode === 4)
+    return `${q}`
+  return `${q}课时`
+}
+
+async function loadTableData() {
+  const cid = String(props.classId || '').trim()
+  const lid = String(props.lessonId || '').trim()
+  if (!cid || !lid) {
+    const rows = staticRows()
+    data.value = [...rows]
+    originalData.value = [...rows]
+    return
+  }
+  listLoading.value = true
+  try {
+    const [stuRes, accRes] = await Promise.all([
+      listGroupClassStudentsByClassIdsApi({ classIds: [cid] }),
+      pageTuitionAccountsByLessonIdApi({
+        pageRequestModel: {
+          needTotal: true,
+          pageSize: 500,
+          pageIndex: 1,
+          skipCount: 0,
+        },
+        queryModel: {
+          lessonId: lid,
+          studentIds: [],
+          classId: cid,
+        },
+      }),
+    ])
+    if (stuRes.code !== 200) {
+      messageService.error(stuRes.message || '获取本班学员失败')
+      data.value = []
+      originalData.value = []
+      return
+    }
+    if (accRes.code !== 200) {
+      messageService.error(accRes.message || '获取可添加学员失败')
+      data.value = []
+      originalData.value = []
+      return
+    }
+    const inClass = new Set()
+    const buckets = Array.isArray(stuRes.result) ? stuRes.result : []
+    for (const b of buckets) {
+      if (String(b.classId) !== cid)
+        continue
+      for (const s of b.students || [])
+        inClass.add(String(s.id))
+    }
+    const list = Array.isArray(accRes.result?.list) ? accRes.result.list : []
+    const rows = list.map((item) => {
+      const sid = String(item.studentId || '')
+      const inThis = item.assignedClass === true || inClass.has(sid)
+      const { label: ageLabel, years: ageYears } = ageLabelFromBirthday(item.birthday)
+      return {
+        id: `${sid}-${item.tuitionAccountId}`,
+        studentId: sid,
+        tuitionAccountId: String(item.tuitionAccountId || ''),
+        displayName: item.studentName || '-',
+        phone: item.phone || '-',
+        avatarUrl: item.avatar || '',
+        courseAccount: item.productName || '-',
+        age: ageLabel,
+        ageYears,
+        gender: sexToGenderKey(item.sex),
+        remainingQuantity: formatRemainQuantity(item.quantity, item.lessonChargingMode),
+        lessonChargingMode: item.lessonChargingMode,
+        classStatus: inThis ? '已分班' : '未分班',
+        classStatusType: inThis ? 1 : 2,
+        disabled: inThis,
+      }
+    })
+    data.value = rows
+    originalData.value = [...rows]
+  }
+  catch (e) {
+    console.error(e)
+    messageService.error('加载学员列表失败')
+    data.value = []
+    originalData.value = []
+  }
+  finally {
+    listLoading.value = false
+  }
 }
 
 const columns = [
@@ -76,8 +208,8 @@ const columns = [
     width: 100,
     filters: [
       { text: '男', value: '1' },
-      { text: '女', value: '0' },
-      { text: '未知', value: '2' },
+      { text: '女', value: '2' },
+      { text: '未知', value: '0' },
     ],
     onFilter: (value, record) => record.gender === value,
   },
@@ -126,12 +258,10 @@ function filterDataByAge() {
     return
   }
   data.value = originalData.value.filter((item) => {
-    if (item.age === '-' || item.age == null || item.age === '')
+    const y = item.ageYears
+    if (y == null || Number.isNaN(Number(y)))
       return false
-    const ageNum = Number.parseInt(String(item.age), 10)
-    if (Number.isNaN(ageNum))
-      return false
-    const ageInYears = ageNum / 12
+    const ageInYears = Number(y)
     if (minAge.value != null && maxAge.value != null)
       return ageInYears >= minAge.value && ageInYears <= maxAge.value
     if (minAge.value != null)
@@ -176,17 +306,15 @@ function closeFun() {
 
 watch(
   () => props.open,
-  (v) => {
+  async (v) => {
     if (!v)
       return
-    const rows = staticRows()
-    data.value = [...rows]
-    originalData.value = [...rows]
     userName.value = ''
     selectedRowKeys.value = []
     selectedRows.value = []
     resetAge()
     isAgeFiltered.value = false
+    await loadTableData()
   },
 )
 
@@ -258,8 +386,10 @@ function isRemainingZero(v) {
           :data-source="filteredTableData"
           row-key="id"
           :pagination="false"
+          :loading="listLoading"
           :row-selection="rowSelection"
           :scroll="{ x: 840 }"
+          size="middle"
         >
           <template #headerCell="{ column }">
             <template v-if="column.dataIndex === 'age'">
@@ -326,6 +456,13 @@ function isRemainingZero(v) {
             <template v-if="column.dataIndex === 'name'">
               <div class="flex items-center gap-3">
                 <a-avatar
+                  v-if="record.avatarUrl"
+                  class="shrink-0"
+                  :size="36"
+                  :src="record.avatarUrl"
+                />
+                <a-avatar
+                  v-else
                   class="shrink-0 !bg-#1677ff"
                   :size="36"
                 >
@@ -342,10 +479,10 @@ function isRemainingZero(v) {
               </div>
             </template>
             <template v-else-if="column.dataIndex === 'age'">
-              {{ record.age === '-' ? '-' : `${record.age} 个月` }}
+              {{ record.age === '-' ? '-' : `${record.age} 岁` }}
             </template>
             <template v-else-if="column.dataIndex === 'gender'">
-              {{ record.gender === '1' ? '男' : record.gender === '0' ? '女' : '未知' }}
+              {{ record.gender === '1' ? '男' : record.gender === '2' ? '女' : '未知' }}
             </template>
             <template v-else-if="column.dataIndex === 'remainingQuantity'">
               <span

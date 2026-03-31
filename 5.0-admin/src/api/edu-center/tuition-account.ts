@@ -205,3 +205,45 @@ export function addCloseTuitionAccountOrderApi(data: CloseTuitionAccountOrderPar
 export function getCloseTuitionAccountOrderListApi(data: { tuitionAccountId: string }) {
   return usePost<CloseTuitionAccountOrderRecordResult>('/api/v1/tuition-accounts/close-orders/list', data)
 }
+
+/** 对标 TuitionAccount/GetTuitionAccountListByLessonId（集体班添加学员） */
+export interface TuitionAccountByLessonRow {
+  studentId: string
+  tuitionAccountId: string
+  studentName: string
+  assignedClass: boolean
+  quantity: number
+  avatar?: string | null
+  phone: string
+  lessonChargingMode: number
+  lessonScope?: number
+  isTuitionAccountActive?: boolean
+  sex?: number
+  birthday?: string
+  productId?: string
+  productName?: string
+}
+
+export interface PageTuitionAccountsByLessonIdBody {
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+  queryModel: {
+    lessonId: string
+    studentIds: string[]
+    /** 当前集体班 id，用于本班已入班标记与勾选禁用 */
+    classId?: string
+  }
+}
+
+export interface PageTuitionAccountsByLessonIdResult {
+  list: TuitionAccountByLessonRow[]
+  total: number
+}
+
+export function pageTuitionAccountsByLessonIdApi(data: PageTuitionAccountsByLessonIdBody) {
+  return usePost<PageTuitionAccountsByLessonIdResult>('/api/v1/tuition-accounts/page-by-lesson-id', data)
+}
