@@ -211,6 +211,18 @@ func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 	}); err != nil {
 		return err
 	}
+	for _, cols := range []map[string]string{
+		{"compose_lesson_id": "compose_lesson_id BIGINT NOT NULL DEFAULT 0"},
+		{"max_count": "max_count INT NOT NULL DEFAULT 0"},
+		{"closed_time": "closed_time DATETIME NULL DEFAULT NULL"},
+		{"default_student_class_time": "default_student_class_time DECIMAL(18,2) NOT NULL DEFAULT 1.00"},
+		{"default_teacher_class_time": "default_teacher_class_time DECIMAL(18,2) NOT NULL DEFAULT 0.00"},
+		{"default_class_time_record_mode": "default_class_time_record_mode INT NOT NULL DEFAULT 1"},
+	} {
+		if err := ensureColumnsOnTable(ctx, db, "teaching_class", cols); err != nil {
+			return err
+		}
+	}
 	if err := ensureColumnsOnTable(ctx, db, "teaching_class_student", map[string]string{
 		"class_properties_json":  "class_properties_json TEXT NULL AFTER last_finished_lesson_day",
 		"class_time_record_mode": "class_time_record_mode INT NOT NULL DEFAULT 1 AFTER teacher_class_time",

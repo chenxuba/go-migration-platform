@@ -379,3 +379,64 @@ func parseRequiredInt64String(raw, field string) (int64, error) {
 	}
 	return value, nil
 }
+
+// CheckClassName 对标 CheckClassName：返回 true 表示名称已存在（不可用）
+func (svc *Service) CheckClassName(userID int64, dto model.GroupClassCheckNameDTO) (bool, error) {
+	if dto.IsOne2One {
+		return svc.CheckOneToOneName(userID, model.OneToOneCheckNameDTO{
+			Name:      dto.Name,
+			ExceptID:  dto.ExceptID,
+			IsOne2One: true,
+		})
+	}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, errors.New("no institution context")
+		}
+		return false, err
+	}
+	var excludeID *int64
+	if value, err := strconv.ParseInt(strings.TrimSpace(dto.ExceptID), 10, 64); err == nil && value > 0 {
+		excludeID = &value
+	}
+	n, err := svc.repo.CountActiveGroupClassByName(context.Background(), instID, dto.Name, excludeID)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+func (svc *Service) CreateGroupClass(userID int64, dto model.GroupClassCreateDTO) (model.GroupClassCreateResult, error) {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return model.GroupClassCreateResult{}, err
+	}
+	id, err := svc.repo.CreateGroupClass(context.Background(), instID, operatorID, dto)
+	if err != nil {
+		return model.GroupClassCreateResult{}, err
+	}
+	return model.GroupClassCreateResult{ID: strconv.FormatInt(id, 10), Name: ""}, nil
+}
+
+func (svc *Service) PageGroupClasses(userID int64, body model.GroupClassListBody) (model.GroupClassListPageResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GroupClassListPageResult{}, errors.New("no institution context")
+		}
+		return model.GroupClassListPageResult{}, err
+	}
+	return svc.repo.PageGroupClassList(context.Background(), instID, body.QueryModel, body.PageRequestModel)
+}
+
+func (svc *Service) AggregateGroupClassStatistics(userID int64, q model.GroupClassListQueryModel) (model.GroupClassStatisticsVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GroupClassStatisticsVO{}, errors.New("no institution context")
+		}
+		return model.GroupClassStatisticsVO{}, err
+	}
+	return svc.repo.AggregateGroupClassStatistics(context.Background(), instID, q)
+}

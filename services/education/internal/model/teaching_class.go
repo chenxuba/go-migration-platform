@@ -315,3 +315,109 @@ type CloseTuitionAccountOrderResult struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
+
+// --- 班级授课（集体班）对标 CheckClassName / Create / QueryClassList / QueryClassStatisticsInfo ---
+
+type GroupClassCheckNameDTO struct {
+	Name       string `json:"name"`
+	IsOne2One  bool   `json:"isOne2One"`
+	ExceptID   string `json:"exceptId"`
+}
+
+type GroupClassCreateDTO struct {
+	Name                       string  `json:"name"`
+	LessonID                   string  `json:"lessonId"`
+	MaxCount                   int     `json:"maxCount"`
+	TeacherIDs                 []string `json:"teacherIds"`
+	DefaultTeacherID           string  `json:"defaultTeacherId"`
+	DefaultStudentClassTime    float64 `json:"defaultStudentClassTime"`
+	DefaultTeacherClassTime    float64 `json:"defaultTeacherClassTime"`
+	DefaultClassTimeRecordMode int     `json:"defaultClassTimeRecordMode"`
+	IsCopyStudent              bool    `json:"isCopyStudent"`
+	CopiedStudents             []any   `json:"copiedStudents"`
+	IsCopyTimetable            bool    `json:"isCopyTimetable"`
+	ClassProperties            []any   `json:"classProperties"`
+	Remark                     string  `json:"remark"`
+}
+
+type GroupClassCreateResult struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type GroupClassPageRequestModel struct {
+	NeedTotal bool `json:"needTotal"`
+	PageSize  int  `json:"pageSize"`
+	PageIndex int  `json:"pageIndex"`
+	SkipCount int  `json:"skipCount"`
+}
+
+type GroupClassListQueryModel struct {
+	ClassIDs         []string `json:"classIds"`
+	Statues          []int    `json:"statues"`
+	LessonIDs        []string `json:"lessonIds"`
+	TeacherID        string   `json:"teacherId"`
+	DefaultTeacherID string   `json:"defaultTeacherId"`
+	IsMultiProduct   *bool    `json:"isMultiProduct"`
+	IsScheduled      *bool    `json:"isScheduled"`
+	CreatedStaffIDs  []string `json:"createdStaffIds"`
+	CreatedStartTime string   `json:"createdStartTime"`
+	CreatedEndTime   string   `json:"createdEndTime"`
+	ClosedStartDate  string   `json:"closedStartDate"`
+	ClosedEndDate    string   `json:"closedEndDate"`
+	ClassProperties  []any    `json:"classProperties"`
+}
+
+type GroupClassListBody struct {
+	QueryModel       GroupClassListQueryModel   `json:"queryModel"`
+	PageRequestModel GroupClassPageRequestModel `json:"pageRequestModel"`
+}
+
+type GroupClassListTeacherVO struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status int    `json:"status"`
+	Avatar string `json:"avatar"`
+}
+
+type GroupClassLessonDayInfoVO struct {
+	LessonDayCount         int `json:"lessonDayCount"`
+	CompleteLessonDayCount int `json:"completeLessonDayCount"`
+}
+
+type GroupClassListItemVO struct {
+	ID                   string                    `json:"id"`
+	Name                 string                    `json:"name"`
+	ClassTime            float64                   `json:"classTime"`
+	LessonID             string                    `json:"lessonId"`
+	LessonName           string                    `json:"lessonName"`
+	IsMultiProduct       bool                      `json:"isMultiProduct"`
+	StudentCount         int                       `json:"studentCount"`
+	LockStudentCount     int                       `json:"lockStudentCount"`
+	MaxCount             int                       `json:"maxCount"`
+	Teachers             []GroupClassListTeacherVO `json:"teachers"`
+	DefaultTeacherID     string                    `json:"defaultTeacherId"`
+	DefaultTeacherName   string                    `json:"defaultTeacherName"`
+	ClassRoomName        string                    `json:"classRoomName"`
+	ClassLessonTimes     []any                     `json:"classLessonTimes"`
+	IsScheduled          bool                      `json:"isScheduled"`
+	ClassLessonDayInfos  GroupClassLessonDayInfoVO `json:"classLessonDayInfos"`
+	Status               int                       `json:"status"`
+	ClosedTime           time.Time                 `json:"closedTime"`
+	CreatedTime          time.Time                 `json:"createdTime"`
+	CreatedStaffName     string                    `json:"createdStaffName"`
+	Remark               string                    `json:"remark"`
+	ClassProperties      []any                     `json:"classProperties"`
+}
+
+type GroupClassListPageResult struct {
+	List  []GroupClassListItemVO `json:"list"`
+	Total int                    `json:"total"`
+}
+
+type GroupClassStatisticsVO struct {
+	ClassCount         int `json:"classCount"`
+	OpenClassCount     int `json:"openClassCount"`
+	StudentCount       int `json:"studentCount"`
+	StudentPersonTime  int `json:"studentPersonTime"`
+}

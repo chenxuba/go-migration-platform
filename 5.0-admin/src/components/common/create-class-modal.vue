@@ -3,6 +3,7 @@ import { CloseOutlined, QuestionCircleOutlined } from "@ant-design/icons-vue";
 import { debounce } from "lodash-es";
 import { getCoursePageApi } from "~/api/edu-center/course-list";
 import { pageComposeLessonsForPcApi } from "~/api/edu-center/compose-lesson";
+import { createGroupClassApi } from "~/api/edu-center/group-class";
 import CreateCombinedCourseModal from "./create-combined-course-modal.vue";
 import StaffSelect from "./staff-select.vue";
 import messageService from "~/utils/messageService";
@@ -13,7 +14,7 @@ const props = defineProps({
     default: false,
   },
 });
-const emit = defineEmits(["update:open"]);
+const emit = defineEmits(["update:open", "created"]);
 const formRef = ref();
 const combinedCourseModalOpen = ref(false);
 const composeLessonOptions = ref([]);
@@ -283,13 +284,66 @@ const classTimeHint = computed(() =>
     ? "每次点名，学员和上课教师记录的课时会根据日程时长自动计算课时（点名时支持调整）"
     : "每次点名，学员和上课教师记录的课时数默认为此数值（点名时支持调整）",
 );
-// 手动触发验证
+const submitting = ref(false);
+
 async function handleSubmit() {
   try {
-    await formRef.value.validate(); // 关键3：通过引用调用验证方法
-    console.log("验证通过，提交数据:", formState);
-  } catch (error) {
-    console.log("验证失败:", error);
+    await formRef.value.validate();
+  }
+  catch {
+    return;
+  }
+  const lessonId
+    = formState.mode === "1" ? formState.course : formState.totalCourse;
+  if (!lessonId) {
+    messageService.error(
+      formState.mode === "1" ? "请选择课程" : "请选择组合课程",
+    );
+    return;
+  }
+  const teacherIds = (formState.teacher || []).map((id) => String(id));
+  if (teacherIds.length === 0) {
+    messageService.error("请选择班主任");
+    return;
+  }
+  submitting.value = true;
+  try {
+    const res = await createGroupClassApi({
+      name: String(formState.className || "").trim(),
+      lessonId: String(lessonId),
+      maxCount: formState.maxNum != null ? Number(formState.maxNum) : 0,
+      teacherIds,
+      defaultTeacherId: teacherIds[0],
+      defaultStudentClassTime: Number(formState.defaultStudentClassTime) || 1,
+      defaultTeacherClassTime: Number(formState.defaultTeacherClassTime) || 0,
+      defaultClassTimeRecordMode: Number(formState.defaultClassTimeRecordMode) || 1,
+      isCopyStudent: false,
+      copiedStudents: [],
+      isCopyTimetable: false,
+      classProperties: [],
+      remark: String(formState.remark || "").trim(),
+    });
+    const created = res.result ?? res.data;
+    if (res.code === 200 && created?.id) {
+      messageService.success("创建班级成功");
+      emit("created", created);
+      closeFun();
+      return;
+    }
+    // code 500 时 request 层已对业务失败弹过「温馨提示」，避免重复 toast
+    if (res.code !== 500)
+      messageService.error(res.message || "创建班级失败");
+  }
+  catch (e) {
+    const msg =
+      e?.response?.data?.message
+      || e?.response?.data?.Message
+      || e?.message
+      || "创建班级失败";
+    messageService.error(msg);
+  }
+  finally {
+    submitting.value = false;
   }
 }
 function closeFun() {
@@ -489,7 +543,18 @@ function closeFun() {
             class="w-160px"
           />
         </a-form-item>
-        <a-form-item label="班主任" name="teacher">
+        <a-form-item
+          label="班主任"
+          name="teacher"
+          :rules="[
+            {
+              required: true,
+              type: 'array',
+              min: 1,
+              message: '请选择班主任',
+            },
+          ]"
+        >
           <StaffSelect
             v-model="formState.teacher"
             placeholder="请选择班主任"
@@ -579,7 +644,9 @@ function closeFun() {
       <a-button @click="closeFun"> 关闭 </a-button>
       <!-- 警告 -->
       <a-button @click="closeFun"> 保存并下一个 </a-button>
-      <a-button type="primary" @click="handleSubmit"> 确定 </a-button>
+      <a-button type="primary" :loading="submitting" @click="handleSubmit">
+        确定
+      </a-button>
     </template>
   </a-modal>
 

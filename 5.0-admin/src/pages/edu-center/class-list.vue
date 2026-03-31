@@ -1,11 +1,113 @@
 <script setup>
 import { CaretDownOutlined, DownOutlined } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
 import CreateClassModal from '@/components/common/create-class-modal.vue'
 import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
+import {
+  groupClassStatisticsApi,
+  pageGroupClassesApi,
+} from '@/api/edu-center/group-class'
 
 const displayArray = ref(['openClassStatus', 'doYouSchedule', 'billingMode', 'createUser', 'createTime', 'intentionCourse', 'reference', 'classEndingTime', 'classStopTime'])
-const dataSource = ref([{}, {}])
+const dataSource = ref([])
+const listLoading = ref(false)
+const stats = ref({
+  classCount: 0,
+  openClassCount: 0,
+  studentCount: 0,
+  studentPersonTime: 0,
+})
+const pagination = reactive({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+  showSizeChanger: true,
+  showTotal: (t) => `共 ${t} 条`,
+})
+
+async function loadStatistics() {
+  try {
+    const res = await groupClassStatisticsApi({})
+    if (res.code === 200 && res.result) {
+      stats.value = {
+        classCount: res.result.classCount ?? 0,
+        openClassCount: res.result.openClassCount ?? 0,
+        studentCount: res.result.studentCount ?? 0,
+        studentPersonTime: res.result.studentPersonTime ?? 0,
+      }
+    }
+  }
+  catch {
+    /* 列表仍可展示 */
+  }
+}
+
+async function loadList() {
+  listLoading.value = true
+  try {
+    const res = await pageGroupClassesApi({
+      queryModel: {},
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: pagination.pageSize,
+        pageIndex: pagination.current,
+        skipCount: 0,
+      },
+    })
+    if (res.code === 200 && res.result) {
+      dataSource.value = res.result.list || []
+      pagination.total = res.result.total ?? 0
+    }
+    else {
+      dataSource.value = []
+    }
+    await loadStatistics()
+  }
+  finally {
+    listLoading.value = false
+  }
+}
+
+function onTableChange(pag) {
+  pagination.current = pag.current
+  pagination.pageSize = pag.pageSize
+  loadList()
+}
+
+function formatDt(v) {
+  if (v == null || v === '')
+    return '-'
+  const d = dayjs(v)
+  return d.isValid() ? d.format('YYYY-MM-DD HH:mm') : '-'
+}
+
+function formatClosed(v) {
+  if (v == null || v === '')
+    return '-'
+  const d = dayjs(v)
+  if (!d.isValid() || d.year() < 1900)
+    return '-'
+  return d.format('YYYY-MM-DD')
+}
+
+function statusLabel(status) {
+  if (status === 1)
+    return '开班中'
+  if (status === 2)
+    return '已结班'
+  return `状态${status}`
+}
+
+function teacherNames(teachers) {
+  if (!Array.isArray(teachers) || teachers.length === 0)
+    return '-'
+  return teachers.map((t) => t.name).filter(Boolean).join('、')
+}
+
+onMounted(() => {
+  loadList()
+})
 const allColumns = ref([
   {
     title: '班级名称',
@@ -33,6 +135,12 @@ const allColumns = ref([
     dataIndex: 'headTeacher',
     width: 110,
 
+  },
+  {
+    title: '默认上课教师',
+    key: 'defaultTeacher',
+    dataIndex: 'defaultTeacher',
+    width: 120,
   },
   {
     title: '上课教室',
@@ -140,7 +248,7 @@ function openClassListDrawer() {
       <div class="tab-table">
         <div class="table-title flex justify-between">
           <div class="total">
-            总计{{ dataSource.length }}个班级 ，2 个开班中，在读学员 4 人，在读人次 5 人
+            总计 {{ stats.classCount }} 个班级，{{ stats.openClassCount }} 个开班中，在读学员 {{ stats.studentCount }} 人，在读人次 {{ stats.studentPersonTime }} 人
           </div>
           <div class="edit flex">
             <a-button class="mr-2">
@@ -177,60 +285,74 @@ function openClassListDrawer() {
         </div>
         <div class="table-content mt-2">
           <a-table
-            :data-source="dataSource" :pagination="dataSource.length > 10" :columns="filteredColumns"
-            :row-selection="rowSelection" :scroll="{ x: totalWidth }" size="small"
+            :data-source="dataSource"
+            :loading="listLoading"
+            :pagination="pagination"
+            :columns="filteredColumns"
+            :row-selection="rowSelection"
+            :scroll="{ x: totalWidth }"
+            row-key="id"
+            size="small"
+            @change="onTableChange"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'name'">
                 <a-button type="link" class="text-#222" @click="openClassListDrawer">
-                  视知觉康复班级
+                  {{ record.name || '-' }}
                 </a-button>
               </template>
               <template v-if="column.key === 'linkCourse'">
                 <div class="text-#222">
-                  奥夫音乐课{{ record.a }}
+                  {{ record.lessonName || '-' }}
                 </div>
                 <div class="text-3 text-#888 flex flex-items-center">
-                  课程
+                  {{ record.isMultiProduct ? '组合课程' : '课程' }}
                 </div>
               </template>
               <template v-if="column.key === 'studentNum'">
-                0
+                {{ record.studentCount ?? 0 }}
               </template>
               <template v-if="column.key === 'headTeacher'">
-                张晨
+                {{ teacherNames(record.teachers) }}
+              </template>
+              <template v-if="column.key === 'defaultTeacher'">
+                {{ record.defaultTeacherName || '-' }}
               </template>
               <template v-if="column.key === 'classRoom'">
-                -
+                {{ record.classRoomName || '-' }}
               </template>
               <template v-if="column.key === 'classTime'">
-                隔天 10:00 ～ 10:30
+                <span v-if="record.classLessonTimes?.length">日程</span>
+                <span v-else>-</span>
               </template>
               <template v-if="column.key === 'doYouSchedule'">
                 <div class="studentStatus">
                   <span class="dot" />
-                  <span>已排课</span>
+                  <span>{{ record.isScheduled ? '已排课' : '未排课' }}</span>
                 </div>
               </template>
               <template v-if="column.key === 'alreadyOnOrtotal'">
-                0/4节
+                {{ record.classLessonDayInfos?.completeLessonDayCount ?? 0 }}/{{ record.classLessonDayInfos?.lessonDayCount ?? 0 }}
               </template>
               <template v-if="column.key === 'openClassStatus'">
-                <div class="text-#06f bg-#e6f0ff rounded-2.5 inline-block text-3 pt-0.5 pb-0.5 pl-2 pr-2">
-                  开班中
+                <div
+                  class="rounded-2.5 inline-block text-3 pt-0.5 pb-0.5 pl-2 pr-2"
+                  :class="record.status === 1 ? 'text-#06f bg-#e6f0ff' : 'text-#666 bg-#f5f5f5'"
+                >
+                  {{ statusLabel(record.status) }}
                 </div>
               </template>
               <template v-if="column.key === 'createTime'">
-                2025-03-24 08:01
+                {{ formatDt(record.createdTime) }}
               </template>
               <template v-if="column.key === 'createUser'">
-                龙钊
+                {{ record.createdStaffName || '-' }}
               </template>
               <template v-if="column.key === 'remark'">
-                -
+                {{ record.remark || '-' }}
               </template>
               <template v-if="column.key === 'classEndingTime'">
-                2023-12-12
+                {{ formatClosed(record.closedTime) }}
               </template>
               <template v-else-if="column.key === 'action'">
                 <span class="flex action">
@@ -270,7 +392,7 @@ function openClassListDrawer() {
         </div>
       </div>
     </div>
-    <CreateClassModal v-model:open="createClassModal" />
+    <CreateClassModal v-model:open="createClassModal" @created="loadList" />
     <ClassListDrawer v-model:open="classListDrawerFlag" />
   </div>
 </template>
