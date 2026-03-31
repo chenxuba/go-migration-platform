@@ -587,6 +587,7 @@ const rowSelection = computed(() => ({
 }))
 
 onMounted(async () => {
+  // 与「创建/编辑班级」弹窗无关：仅为本页筛选条拉「关联课程/组合课」选项、从班级列表里收集教室名
   await Promise.all([
     loadCourseFilterOptions(),
     loadClassroomFilterOptions(),

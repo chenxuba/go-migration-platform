@@ -385,6 +385,7 @@ type GroupClassListBody struct {
 type GroupClassListTeacherVO struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
+	Mobile string `json:"mobile,omitempty"`
 	Status int    `json:"status"`
 	Avatar string `json:"avatar"`
 }
@@ -425,6 +426,39 @@ type GroupClassListItemVO struct {
 type GroupClassListPageResult struct {
 	List  []GroupClassListItemVO `json:"list"`
 	Total int                    `json:"total"`
+}
+
+// GroupClassDetailVO 对标 ToB/PC/Class/Get，供编辑弹窗拉取完整班级信息
+type GroupClassDetailVO struct {
+	ID                         string                    `json:"id"`
+	Name                       string                    `json:"name"`
+	Status                     int                       `json:"status"`
+	LessonID                   string                    `json:"lessonId"`
+	LessonName                 string                    `json:"lessonName"`
+	StudentCount               int                       `json:"studentCount"`
+	LockStudentCount           int                       `json:"lockStudentCount"`
+	MaxCount                   int                       `json:"maxCount"`
+	ClassroomID                string                    `json:"classroomId"`
+	ClassroomName              string                    `json:"classroomName"`
+	ClassroomEnabled           bool                      `json:"classroomEnabled"`
+	ClassroomAddressCharge     int                       `json:"classroomAddressCharge"`
+	Teachers                   []GroupClassListTeacherVO `json:"teachers"`
+	TeacherCount               int                       `json:"teacherCount"`
+	ClassTime                  float64                   `json:"classTime"`
+	DefaultStudentClassTime    float64                   `json:"defaultStudentClassTime"`
+	DefaultTeacherClassTime    float64                   `json:"defaultTeacherClassTime"`
+	DefaultClassTimeRecordMode int                       `json:"defaultClassTimeRecordMode"`
+	DefaultTeacherID           string                    `json:"defaultTeacherId"`
+	DefaultTeacherStatus       int                       `json:"defaultTeacherStatus"`
+	DefaultTeacherName         string                    `json:"defaultTeacherName"`
+	LessonType                 int                       `json:"lessonType"`
+	LessonScope                int                       `json:"lessonScope"`
+	CreatedTime                time.Time                 `json:"createdTime"`
+	ClosedTime                 time.Time                 `json:"closedTime"`
+	LessonPrice                float64                   `json:"lessonPrice"`
+	IsMultiProduct             bool                      `json:"isMultiProduct"`
+	Remark                     string                    `json:"remark"`
+	ClassProperties            []any                     `json:"classProperties"`
 }
 
 type GroupClassStatisticsVO struct {

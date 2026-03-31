@@ -1,4 +1,4 @@
-import { usePost } from '~/utils/request'
+import { useGet, usePost } from '~/utils/request'
 
 /** 对标 CheckClassName：true = 名称已存在 */
 export function checkGroupClassNameApi(data: {
@@ -81,6 +81,8 @@ export function groupClassStatisticsApi(queryModel: Record<string, unknown>) {
 export interface GroupClassTeacher {
   id: string
   name: string
+  /** 机构员工手机号，与 StaffSelect 右侧展示一致 */
+  mobile?: string
   status: number
   avatar?: string
 }
@@ -114,4 +116,21 @@ export interface GroupClassRow {
   defaultStudentClassTime: number
   defaultTeacherClassTime: number
   defaultClassTimeRecordMode: number
+}
+
+/** 对标 Class/Get，编辑弹窗拉详情 */
+export interface GroupClassDetailVO extends GroupClassRow {
+  classroomId: string
+  classroomName: string
+  classroomEnabled: boolean
+  classroomAddressCharge: number
+  teacherCount: number
+  lessonType: number
+  lessonScope: number
+  lessonPrice: number
+  defaultTeacherStatus: number
+}
+
+export function getGroupClassDetailApi(params: { id: string }) {
+  return useGet<GroupClassDetailVO>('/api/v1/group-classes/detail', params)
 }

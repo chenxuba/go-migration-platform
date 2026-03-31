@@ -6,6 +6,7 @@ import { pageComposeLessonsForPcApi } from "~/api/edu-center/compose-lesson";
 import {
   checkGroupClassNameApi,
   createGroupClassApi,
+  getGroupClassDetailApi,
   updateGroupClassApi,
 } from "~/api/edu-center/group-class";
 import CreateCombinedCourseModal from "./create-combined-course-modal.vue";
@@ -301,6 +302,12 @@ const syncingDefaultFromTeacher = ref(false);
 
 const isEdit = computed(() => !!props.editRecord?.id);
 
+const editDetailLoading = ref(false);
+let editDetailReqSeq = 0;
+
+/** 传给班主任 StaffSelect，用班级接口里的 teachers 直接显示姓名 */
+const teacherPresetForSelect = ref([]);
+
 function applyEditRecord(rec) {
   syncingDefaultFromTeacher.value = true;
   skipAutoDefaultTeacher.value = true;
@@ -320,6 +327,18 @@ function applyEditRecord(rec) {
   formState.defaultTeacherClassTime = rec.defaultTeacherClassTime ?? 0;
   formState.defaultClassTimeRecordMode = rec.defaultClassTimeRecordMode ?? 1;
   formState.remark = rec.remark || "";
+  const roomRaw = rec.classroomId ?? rec.classRoomId;
+  formState.classRoom
+    = roomRaw != null && String(roomRaw) !== "" && String(roomRaw) !== "0"
+      ? String(roomRaw)
+      : undefined;
+  teacherPresetForSelect.value = (rec.teachers || []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    nickName: t.nickName,
+    mobile: t.mobile,
+    status: t.status,
+  }));
   nextTick(() => {
     syncingDefaultFromTeacher.value = false;
   });
@@ -328,11 +347,43 @@ function applyEditRecord(rec) {
 watch(
   () => [props.open, props.editRecord],
   () => {
-    if (!props.open || !props.editRecord?.id)
+    if (!props.open) {
+      editDetailLoading.value = false;
+      teacherPresetForSelect.value = [];
       return;
+    }
+    if (!props.editRecord?.id) {
+      editDetailLoading.value = false;
+      teacherPresetForSelect.value = [];
+      return;
+    }
     applyEditRecord(props.editRecord);
+    const classId = String(props.editRecord.id);
+    const seq = ++editDetailReqSeq;
+    editDetailLoading.value = true;
+    getGroupClassDetailApi({ id: classId })
+      .then((res) => {
+        if (seq !== editDetailReqSeq)
+          return;
+        const row = res.result ?? res.data;
+        if (res.code === 200 && row && typeof row === "object")
+          applyEditRecord(row);
+        else if (res.message)
+          messageService.error(res.message || "加载班级详情失败");
+      })
+      .catch((e) => {
+        if (seq !== editDetailReqSeq)
+          return;
+        messageService.error(
+          e?.response?.data?.message || e?.message || "加载班级详情失败",
+        );
+      })
+      .finally(() => {
+        if (seq === editDetailReqSeq)
+          editDetailLoading.value = false;
+      });
   },
-  { flush: "post" },
+  { flush: "sync", immediate: true },
 );
 
 watch(
@@ -521,6 +572,7 @@ function closeFun() {
       </div>
     </template>
     <div class="contenter scrollbar">
+      <a-spin :spinning="editDetailLoading && isEdit" tip="加载班级信息…">
       <a-form
         ref="formRef"
         :model="formState"
@@ -711,6 +763,7 @@ function closeFun() {
             :multiple="true"
             :status="0"
             :allow-clear="true"
+            :preset-staff="teacherPresetForSelect"
           />
         </a-form-item>
         <a-form-item
@@ -801,6 +854,7 @@ function closeFun() {
           />
         </a-form-item>
       </a-form>
+      </a-spin>
     </div>
     <template #footer>
       <a-button @click="closeFun"> 关闭 </a-button>

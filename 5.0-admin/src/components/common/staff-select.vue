@@ -44,7 +44,7 @@
     
     <!-- 当前选中但不在选项中的员工 -->
     <a-select-option
-      v-if="selectedStaffDisplay && !staffOptions.find(item => item.id === selectedStaffDisplay.id)"
+      v-if="selectedStaffDisplay && !staffOptions.find(item => sameStaffId(item.id, selectedStaffDisplay.id))"
       :key="selectedStaffDisplay.id"
       :value="selectedStaffDisplay.id"
       :data="selectedStaffDisplay"
@@ -106,11 +106,21 @@ const userStore = useUserStore()
 const userInfo = computed(() => {
   return userStore.userInfo
 })
+
+function sameStaffId(a, b) {
+  return a != null && b != null && String(a) === String(b)
+}
+
 // Props
 const props = defineProps({
   modelValue: {
     type: [String, Number, Array],
     default: undefined,
+  },
+  /** 外部已知的员工展示信息（如班级详情 teachers），用于多选标签立刻显示姓名、避免仅显示 ID */
+  presetStaff: {
+    type: Array,
+    default: () => [],
   },
   placeholder: {
     type: String,
@@ -190,6 +200,21 @@ const debouncedSearch = debounce((value) => {
   getStaffList({ searchKey: value })
 }, 300)
 
+/** 预设/班级接口只有姓名无手机号时，用员工分页里的同 id 记录补齐 mobile */
+function mergeMobileFromApiIntoOptions(apiItems) {
+  if (!apiItems?.length)
+    return
+  const byId = new Map(apiItems.map(item => [String(item.id), item]))
+  staffOptions.value = staffOptions.value.map((opt) => {
+    const src = byId.get(String(opt.id))
+    const srcM = src && String(src.mobile ?? '').trim()
+    const optM = String(opt.mobile ?? '').trim()
+    if (srcM && !optM)
+      return { ...opt, mobile: srcM }
+    return opt
+  })
+}
+
 // 获取员工列表
 async function getStaffList(params = { searchKey: undefined }) {
   try {
@@ -268,18 +293,40 @@ async function getStaffList(params = { searchKey: undefined }) {
       
       // 保留首次加载的清空逻辑
       if (pagination.value.current === 1) {
-        const existingSelected = selectedStaffDisplay.value && props.modelValue === selectedStaffDisplay.value.id ? [selectedStaffDisplay.value] : []
+        let existingSelected = []
+        if (props.multiple && Array.isArray(props.modelValue)) {
+          existingSelected = props.modelValue
+            .map(v => staffOptions.value.find(item => sameStaffId(item.id, v)))
+            .filter(Boolean)
+          for (const v of props.modelValue) {
+            if (existingSelected.some(item => sameStaffId(item.id, v)))
+              continue
+            const p = props.presetStaff?.find(x => sameStaffId(x.id, v))
+            if (p && (p.nickName || p.name)) {
+              existingSelected.push({
+                id: p.id,
+                nickName: p.nickName || p.name || '',
+                mobile: p.mobile || '',
+              })
+            }
+          }
+        }
+        else if (selectedStaffDisplay.value && sameStaffId(props.modelValue, selectedStaffDisplay.value.id)) {
+          existingSelected = [selectedStaffDisplay.value]
+        }
         const newItems = resultItems
         // 合并已选中的员工和新加载的员工，去重
-        const existingIds = new Set(existingSelected.map(item => item.id))
-        const uniqueNewItems = newItems.filter(item => !existingIds.has(item.id))
+        const existingIds = new Set(existingSelected.map(item => String(item.id)))
+        const uniqueNewItems = newItems.filter(item => !existingIds.has(String(item.id)))
         staffOptions.value = [...existingSelected, ...uniqueNewItems]
+        mergeMobileFromApiIntoOptions(newItems)
       } else {
         // 合并数据时去重，避免重复的 key
         const newItems = resultItems
-        const existingIds = new Set(staffOptions.value.map(item => item.id))
-        const uniqueNewItems = newItems.filter(item => !existingIds.has(item.id))
+        const existingIds = new Set(staffOptions.value.map(item => String(item.id)))
+        const uniqueNewItems = newItems.filter(item => !existingIds.has(String(item.id)))
         staffOptions.value = [...staffOptions.value, ...uniqueNewItems]
+        mergeMobileFromApiIntoOptions(newItems)
       }
       pagination.value.total = total
       if (staffOptions.value.length >= pagination.value.total) {
@@ -305,7 +352,7 @@ function handleValueChange(value) {
     // 多选模式：过滤掉特殊值
     const filteredValue = value.filter(v => v !== -1 && v !== -2 && v !== -3 && v !== -4)
     emit('update:modelValue', filteredValue)
-    const selectedStaffs = filteredValue.map(v => staffOptions.value.find(item => item.id === v)).filter(Boolean)
+    const selectedStaffs = filteredValue.map(v => staffOptions.value.find(item => sameStaffId(item.id, v))).filter(Boolean)
     emit('change', filteredValue, selectedStaffs)
   } else {
     // 单选模式：过滤掉特殊值
@@ -313,7 +360,7 @@ function handleValueChange(value) {
       return
     }
     emit('update:modelValue', value)
-    emit('change', value, staffOptions.value.find(item => item.id === value))
+    emit('change', value, staffOptions.value.find(item => sameStaffId(item.id, value)))
   }
 }
 
@@ -334,18 +381,42 @@ function handleDropdownVisibleChange(visible) {
     }
   } else {
     setTimeout(() => {
-      // 关闭下拉框时强制刷新组件
-      // 重置所有状态
-      staffOptions.value = []
+      // 多选：必须保留当前选中项在 options 里，否则标签会退回显示原始 value（ID）
+      let preserved = []
+      if (props.multiple && Array.isArray(props.modelValue) && props.modelValue.length) {
+        const mv = props.modelValue.filter(Boolean)
+        const seen = new Set()
+        for (const v of mv) {
+          let row = staffOptions.value.find(item => sameStaffId(item.id, v))
+          if (!row && props.presetStaff?.length) {
+            const p = props.presetStaff.find(x => sameStaffId(x.id, v))
+            if (p && (p.nickName || p.name)) {
+              row = {
+                id: p.id,
+                nickName: p.nickName || p.name || '',
+                mobile: p.mobile || '',
+              }
+            }
+          }
+          if (row) {
+            const k = String(row.id)
+            if (!seen.has(k)) {
+              seen.add(k)
+              preserved.push(row)
+            }
+          }
+        }
+      }
+      else if (selectedStaffDisplay.value && sameStaffId(props.modelValue, selectedStaffDisplay.value.id)) {
+        preserved = [selectedStaffDisplay.value]
+      }
+
       pagination.value.current = 1
       initialLoading.value = false
       scrollLoading.value = false
       finished.value = false
       hasLoadedList.value = false
-      // 保留当前选中的员工信息用于显示
-      if (selectedStaffDisplay.value && props.modelValue === selectedStaffDisplay.value.id) {
-        staffOptions.value = [selectedStaffDisplay.value]
-      }
+      staffOptions.value = preserved
     }, 300)
   }
 }
@@ -434,7 +505,7 @@ async function getStaffById(staffId) {
 
     if (res.code === 200) {
       const sourceList = normalizeStaffItems(res)
-      const staff = sourceList.find(item => item.id === staffId)
+      const staff = sourceList.find(item => sameStaffId(item.id, staffId))
       if (staff) {
         mergeCachedStaff(props.fetchType, props.status, [staff])
         return staff
@@ -466,15 +537,37 @@ function handleSearch(value) {
   debouncedSearch(value)
 }
 
-// 监听 modelValue 变化，初始化显示
-watch(() => props.modelValue, async (newValue) => {
+function applyPresetStaffToOptions() {
+  if (!props.multiple || !Array.isArray(props.modelValue) || !props.presetStaff?.length)
+    return
+  const added = []
+  for (const v of props.modelValue) {
+    if (!v || staffOptions.value.find(item => sameStaffId(item.id, v)))
+      continue
+    const p = props.presetStaff.find(x => sameStaffId(x.id, v))
+    if (p && (p.nickName || p.name)) {
+      added.push({
+        id: p.id,
+        nickName: p.nickName || p.name || '',
+        mobile: p.mobile || '',
+      })
+    }
+  }
+  if (added.length)
+    staffOptions.value = [...added, ...staffOptions.value]
+}
+
+// 监听 modelValue / 预设，初始化显示
+watch(() => [props.modelValue, props.presetStaff], async ([newValue]) => {
   if (props.multiple && Array.isArray(newValue)) {
+    applyPresetStaffToOptions()
+
     const targetIds = newValue.filter(Boolean)
     if (targetIds.length === 0) {
       return
     }
 
-    const missingIds = targetIds.filter(value => !staffOptions.value.find(item => item.id === value))
+    const missingIds = targetIds.filter(value => !staffOptions.value.find(item => sameStaffId(item.id, value)))
     if (missingIds.length === 0) {
       return
     }
@@ -487,16 +580,16 @@ watch(() => props.modelValue, async (newValue) => {
       await getStaffList()
     }
 
-    const stillMissingIds = targetIds.filter(value => !staffOptions.value.find(item => item.id === value))
+    const stillMissingIds = targetIds.filter(value => !staffOptions.value.find(item => sameStaffId(item.id, value)))
     for (const value of stillMissingIds) {
       const staffInfo = await getStaffById(value)
-      if (staffInfo && !staffOptions.value.find(item => item.id === staffInfo.id)) {
+      if (staffInfo && !staffOptions.value.find(item => sameStaffId(item.id, staffInfo.id))) {
         staffOptions.value = [staffInfo, ...staffOptions.value]
       }
     }
   } else if (newValue && !props.multiple) {
     // 单选模式：保留原有逻辑
-    if (!staffOptions.value.find(item => item.id === newValue)) {
+    if (!staffOptions.value.find(item => sameStaffId(item.id, newValue))) {
       // 如果有值但找不到对应的员工信息，先设置一个占位符
       selectedStaffDisplay.value = {
         id: newValue,
@@ -509,7 +602,7 @@ watch(() => props.modelValue, async (newValue) => {
       if (staffInfo) {
         selectedStaffDisplay.value = staffInfo
         // 只在还没有加载员工列表时才添加到选项中
-        if (!hasLoadedList.value && !staffOptions.value.find(item => item.id === staffInfo.id)) {
+        if (!hasLoadedList.value && !staffOptions.value.find(item => sameStaffId(item.id, staffInfo.id))) {
           staffOptions.value = [staffInfo, ...staffOptions.value]
         }
       } else {
@@ -522,7 +615,7 @@ watch(() => props.modelValue, async (newValue) => {
       }
     } else {
       // 如果在现有选项中找到了，更新显示
-      const found = staffOptions.value.find(item => item.id === newValue)
+      const found = staffOptions.value.find(item => sameStaffId(item.id, newValue))
       if (found) {
         selectedStaffDisplay.value = found
       }
@@ -545,9 +638,11 @@ defineExpose({
   },
   getSelectedStaff: () => {
     if (props.multiple && Array.isArray(props.modelValue)) {
-      return staffOptions.value.filter(item => props.modelValue.includes(item.id))
+      return staffOptions.value.filter(item =>
+        props.modelValue.some(v => sameStaffId(item.id, v)),
+      )
     }
-    return staffOptions.value.find(item => item.id === props.modelValue) || selectedStaffDisplay.value
+    return staffOptions.value.find(item => sameStaffId(item.id, props.modelValue)) || selectedStaffDisplay.value
   },
 })
 </script>

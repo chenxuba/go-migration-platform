@@ -438,6 +438,29 @@ func (svc *Service) PageGroupClasses(userID int64, body model.GroupClassListBody
 	return svc.repo.PageGroupClassList(context.Background(), instID, body.QueryModel, body.PageRequestModel)
 }
 
+func (svc *Service) GetGroupClassDetail(userID int64, classIDStr string) (model.GroupClassDetailVO, error) {
+	var zero model.GroupClassDetailVO
+	classID, err := strconv.ParseInt(strings.TrimSpace(classIDStr), 10, 64)
+	if err != nil || classID <= 0 {
+		return zero, errors.New("id 无效")
+	}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return zero, errors.New("no institution context")
+		}
+		return zero, err
+	}
+	vo, err := svc.repo.GetGroupClassByID(context.Background(), instID, classID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return zero, errors.New("班级不存在")
+		}
+		return zero, err
+	}
+	return vo, nil
+}
+
 func (svc *Service) AggregateGroupClassStatistics(userID int64, q model.GroupClassListQueryModel) (model.GroupClassStatisticsVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

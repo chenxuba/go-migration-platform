@@ -119,6 +119,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/group-classes/create", handler.createGroupClass)
 	mux.HandleFunc("/api/v1/group-classes/update", handler.updateGroupClass)
 	mux.HandleFunc("/api/v1/group-classes/page", handler.pageGroupClasses)
+	mux.HandleFunc("/api/v1/group-classes/detail", handler.getGroupClassDetail)
 	mux.HandleFunc("/api/v1/group-classes/statistics", handler.groupClassStatistics)
 	mux.HandleFunc("/api/v1/infrastructure/status", handler.infrastructureStatus)
 	mux.HandleFunc("/api/v1/mq/event-logs", handler.mqEventLogs)

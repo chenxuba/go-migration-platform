@@ -638,6 +638,141 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 	return out, nil
 }
 
+// GetGroupClassByID 对标 Class/Get：单条集体班详情（机构隔离）
+func (repo *Repository) GetGroupClassByID(ctx context.Context, instID, classID int64) (model.GroupClassDetailVO, error) {
+	var zero model.GroupClassDetailVO
+	studying := model.TeachingClassStudentStatusStudying
+	stopped := model.TeachingClassStudentStatusStopped
+
+	q := `
+		SELECT
+			tc.id, tc.name, tc.course_id, tc.compose_lesson_id, tc.max_count, tc.status,
+			IFNULL(tc.class_room_id, 0), IFNULL(tc.class_room_name, ''),
+			IFNULL(tc.classroom_enabled, 0),
+			tc.default_teacher_id, tc.remark, tc.create_time,
+			COALESCE(NULLIF(icl.name, ''), NULLIF(ic.name, ''), '') AS lesson_display_name,
+			IFNULL(dt.nick_name, ''),
+			IFNULL((
+				SELECT SUM(IFNULL(tcs.class_time, 0))
+				FROM teaching_class_student tcs
+				WHERE tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+			), 0),
+			IFNULL((
+				SELECT COUNT(*)
+				FROM teaching_class_student tcs
+				WHERE tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+				  AND tcs.class_student_status IN (?, ?)
+			), 0),
+			tc.default_student_class_time, tc.default_teacher_class_time, tc.default_class_time_record_mode,
+			tc.closed_time
+		FROM teaching_class tc
+		LEFT JOIN inst_course ic ON ic.id = tc.course_id AND ic.del_flag = 0
+		LEFT JOIN inst_compose_lesson icl ON icl.id = tc.compose_lesson_id AND icl.del_flag = 0
+		LEFT JOIN inst_user dt ON dt.id = tc.default_teacher_id AND dt.del_flag = 0
+		WHERE tc.id = ? AND tc.inst_id = ? AND tc.class_type = ? AND tc.del_flag = 0
+		LIMIT 1
+	`
+	args := []any{studying, stopped, classID, instID, model.TeachingClassTypeNormal}
+
+	type rowRec struct {
+		id, courseID, composeID, maxCount, status int64
+		classRoomID                               int64
+		classRoomName                             string
+		classroomEnabled                          int
+		defTID                                    int64
+		name, remark, lessonName, defTName        string
+		created                                   time.Time
+		classTimeSum                              float64
+		stuCnt                                    int
+		defaultStuTime, defaultTeachTime            float64
+		recordMode                                int
+		closed                                    sql.NullTime
+	}
+	var r rowRec
+	err := repo.db.QueryRowContext(ctx, q, args...).Scan(
+		&r.id, &r.name, &r.courseID, &r.composeID, &r.maxCount, &r.status,
+		&r.classRoomID, &r.classRoomName, &r.classroomEnabled,
+		&r.defTID, &r.remark, &r.created,
+		&r.lessonName, &r.defTName, &r.classTimeSum, &r.stuCnt,
+		&r.defaultStuTime, &r.defaultTeachTime, &r.recordMode, &r.closed,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return zero, sql.ErrNoRows
+		}
+		return zero, err
+	}
+
+	tmap, err := repo.loadGroupClassTeachers(ctx, instID, []int64{r.id})
+	if err != nil {
+		return zero, err
+	}
+	teachers := tmap[r.id]
+	if teachers == nil {
+		teachers = []model.GroupClassListTeacherVO{}
+	}
+
+	lid := r.courseID
+	if r.composeID > 0 {
+		lid = r.composeID
+	}
+	lessonIDStr := strconv.FormatInt(lid, 10)
+	isMulti := r.composeID > 0
+	lessonType := 1
+	if isMulti {
+		lessonType = 2
+	}
+	closedT := time.Time{}
+	if r.closed.Valid {
+		closedT = r.closed.Time
+	}
+	defIDStr := strconv.FormatInt(r.defTID, 10)
+	if r.defTID == 0 {
+		defIDStr = "0"
+	}
+	defStatus := 0
+	if r.defTID > 0 {
+		defStatus = 1
+	}
+	classroomIDStr := strconv.FormatInt(r.classRoomID, 10)
+	if r.classRoomID == 0 {
+		classroomIDStr = "0"
+	}
+
+	vo := model.GroupClassDetailVO{
+		ID:                         strconv.FormatInt(r.id, 10),
+		Name:                       r.name,
+		Status:                     int(r.status),
+		LessonID:                   lessonIDStr,
+		LessonName:                 r.lessonName,
+		StudentCount:               r.stuCnt,
+		LockStudentCount:           0,
+		MaxCount:                   int(r.maxCount),
+		ClassroomID:                classroomIDStr,
+		ClassroomName:              r.classRoomName,
+		ClassroomEnabled:           r.classroomEnabled != 0,
+		ClassroomAddressCharge:     0,
+		Teachers:                   teachers,
+		TeacherCount:               len(teachers),
+		ClassTime:                  r.classTimeSum,
+		DefaultStudentClassTime:    r.defaultStuTime,
+		DefaultTeacherClassTime:    r.defaultTeachTime,
+		DefaultClassTimeRecordMode: r.recordMode,
+		DefaultTeacherID:           defIDStr,
+		DefaultTeacherStatus:       defStatus,
+		DefaultTeacherName:         r.defTName,
+		LessonType:                 lessonType,
+		LessonScope:                0,
+		CreatedTime:                r.created,
+		ClosedTime:                 closedT,
+		LessonPrice:                0,
+		IsMultiProduct:             isMulti,
+		Remark:                     r.remark,
+		ClassProperties:            []any{},
+	}
+	return vo, nil
+}
+
 func (repo *Repository) loadGroupClassTeachers(ctx context.Context, instID int64, classIDs []int64) (map[int64][]model.GroupClassListTeacherVO, error) {
 	out := make(map[int64][]model.GroupClassListTeacherVO)
 	if len(classIDs) == 0 {
@@ -650,7 +785,7 @@ func (repo *Repository) loadGroupClassTeachers(ctx context.Context, instID int64
 		args = append(args, id)
 	}
 	q := `
-		SELECT t.teaching_class_id, t.teacher_id, IFNULL(u.nick_name, ''), IFNULL(t.status, 1)
+		SELECT t.teaching_class_id, t.teacher_id, IFNULL(u.nick_name, ''), IFNULL(u.mobile, ''), IFNULL(t.status, 1)
 		FROM teaching_class_teacher t
 		LEFT JOIN inst_user u ON u.id = t.teacher_id AND u.del_flag = 0
 		WHERE t.inst_id = ? AND t.del_flag = 0 AND t.teaching_class_id IN (` + ph + `)
@@ -663,14 +798,15 @@ func (repo *Repository) loadGroupClassTeachers(ctx context.Context, instID int64
 	defer rows.Close()
 	for rows.Next() {
 		var cid, tid int64
-		var name string
+		var name, mobile string
 		var st int
-		if err := rows.Scan(&cid, &tid, &name, &st); err != nil {
+		if err := rows.Scan(&cid, &tid, &name, &mobile, &st); err != nil {
 			return nil, err
 		}
 		out[cid] = append(out[cid], model.GroupClassListTeacherVO{
 			ID:     strconv.FormatInt(tid, 10),
 			Name:   name,
+			Mobile: mobile,
 			Status: st,
 			Avatar: "",
 		})

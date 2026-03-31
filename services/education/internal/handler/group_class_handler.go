@@ -101,6 +101,29 @@ func (handler *Handler) pageGroupClasses(w http.ResponseWriter, r *http.Request)
 	httpx.WriteJSON(w, http.StatusOK, res, ctx.RequestID)
 }
 
+func (handler *Handler) getGroupClassDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "id 不能为空", ctx.RequestID)
+		return
+	}
+	res, err := handler.service.GetGroupClassDetail(claims.UserID, id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, res, ctx.RequestID)
+}
+
 func (handler *Handler) groupClassStatistics(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
