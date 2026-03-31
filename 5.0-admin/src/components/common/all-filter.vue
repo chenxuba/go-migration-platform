@@ -4434,7 +4434,7 @@ async function getStaffSearchData(params = { searchKey: '' }) {
         needTotal: true,
         pageSize: searchFilterPagination.value.pageSize,
         pageIndex: searchFilterPagination.value.current,
-        skipCount: 1,
+        skipCount: 0,
       }
     })
   } catch (error) {

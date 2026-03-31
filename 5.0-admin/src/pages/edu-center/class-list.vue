@@ -13,6 +13,8 @@ import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawe
 import { useTableColumns } from '@/composables/useTableColumns'
 import messageService from '@/utils/messageService'
 
+const defaultOpenClassStatus = 1
+
 const allFilterRef = ref()
 const createClassModal = ref(false)
 const classListDrawerFlag = ref(false)
@@ -79,7 +81,7 @@ const queryState = ref({
   classRoomName: undefined,
   courseType: undefined,
   isScheduled: undefined,
-  statues: undefined,
+  statues: [defaultOpenClassStatus],
   className: undefined,
   createdStaffIds: undefined,
   createdTime: undefined,
@@ -592,6 +594,7 @@ onMounted(async () => {
         create-user-placeholder="请输入默认上课教师"
         sales-person-label="创建人"
         sales-person-placeholder="请输入创建人"
+        :default-open-class-status="defaultOpenClassStatus"
         @staff-search="handleClassSearch"
         v-on="filterUpdateHandlers"
       />
