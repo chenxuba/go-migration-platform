@@ -137,9 +137,6 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 
 	defTID, _ := strconv.ParseInt(strings.TrimSpace(dto.DefaultTeacherID), 10, 64)
 	teacherIDs := normalizeTeacherIDs(dto.TeacherIDs, defTID)
-	if len(teacherIDs) == 0 {
-		return 0, errors.New("teacherIds 不能为空")
-	}
 	if defTID > 0 {
 		found := false
 		for _, tid := range teacherIDs {
@@ -153,12 +150,14 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 		}
 	}
 
-	nStaff, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs)
-	if err != nil {
-		return 0, err
-	}
-	if nStaff != len(teacherIDs) {
-		return 0, errors.New("存在无效的教师")
+	if len(teacherIDs) > 0 {
+		nStaff, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs)
+		if err != nil {
+			return 0, err
+		}
+		if nStaff != len(teacherIDs) {
+			return 0, errors.New("存在无效的教师")
+		}
 	}
 
 	tx, err := repo.db.BeginTx(ctx, nil)
@@ -180,7 +179,10 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 		return 0, errors.New("班级名称已存在")
 	}
 
-	advisorID := teacherIDs[0]
+	advisorID := int64(0)
+	if len(teacherIDs) > 0 {
+		advisorID = teacherIDs[0]
+	}
 	defaultTeacherIDVal := int64(0)
 	if defTID > 0 {
 		defaultTeacherIDVal = defTID
@@ -194,7 +196,7 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 			default_student_class_time, default_teacher_class_time, default_class_time_record_mode,
 			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, '', NULL, ?,
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, '', NULL, ?,
 			?, ?, ?,
 			?, NOW(), ?, NOW(), 0
 		)
@@ -274,9 +276,6 @@ func (repo *Repository) UpdateGroupClass(ctx context.Context, instID, operatorID
 
 	defTID, _ := strconv.ParseInt(strings.TrimSpace(dto.DefaultTeacherID), 10, 64)
 	teacherIDs := normalizeTeacherIDs(dto.TeacherIDs, defTID)
-	if len(teacherIDs) == 0 {
-		return errors.New("teacherIds 不能为空")
-	}
 	if defTID > 0 {
 		found := false
 		for _, tid := range teacherIDs {
@@ -290,12 +289,14 @@ func (repo *Repository) UpdateGroupClass(ctx context.Context, instID, operatorID
 		}
 	}
 
-	nStaff, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs)
-	if err != nil {
-		return err
-	}
-	if nStaff != len(teacherIDs) {
-		return errors.New("存在无效的教师")
+	if len(teacherIDs) > 0 {
+		nStaff, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs)
+		if err != nil {
+			return err
+		}
+		if nStaff != len(teacherIDs) {
+			return errors.New("存在无效的教师")
+		}
 	}
 
 	tx, err := repo.db.BeginTx(ctx, nil)
@@ -332,7 +333,10 @@ func (repo *Repository) UpdateGroupClass(ctx context.Context, instID, operatorID
 		return errors.New("班级名称已存在")
 	}
 
-	advisorID := teacherIDs[0]
+	advisorID := int64(0)
+	if len(teacherIDs) > 0 {
+		advisorID = teacherIDs[0]
+	}
 	defaultTeacherIDVal := int64(0)
 	if defTID > 0 {
 		defaultTeacherIDVal = defTID

@@ -555,16 +555,13 @@ async function handleSubmit() {
     return;
   }
   const teacherIds = (formState.teacher || []).map((id) => String(id));
-  if (teacherIds.length === 0) {
-    messageService.error("请选择班主任");
-    return;
-  }
   const defaultTeacherId =
     formState.defaultTeacher != null && formState.defaultTeacher !== ""
       ? String(formState.defaultTeacher)
       : "";
   if (
-    defaultTeacherId
+    teacherIds.length > 0
+    && defaultTeacherId
     && !teacherIds.includes(defaultTeacherId)
   ) {
     messageService.error("默认上课教师须在所选班主任中");
@@ -851,18 +848,7 @@ function closeFun() {
             @update:value="syncMaxNumInput"
           />
         </a-form-item>
-        <a-form-item
-          label="班主任"
-          name="teacher"
-          :rules="[
-            {
-              required: true,
-              type: 'array',
-              min: 1,
-              message: '请选择班主任',
-            },
-          ]"
-        >
+        <a-form-item label="班主任" name="teacher">
           <StaffSelect
             :key="`${staffSelectInstanceKey}-teacher`"
             v-model="formState.teacher"

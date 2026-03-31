@@ -418,9 +418,9 @@ func (repo *Repository) upsertOneToOneTeachingClassTx(ctx context.Context, tx *s
 				primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
 				last_finished_lesson_day, class_properties_json, create_id, create_time, update_id, update_time, del_flag
 			) VALUES (
-				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, NULL, NULL, ?, ?, ?, ?, 0
+				UUID(), 0, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, NULL, NULL, ?, NOW(), ?, NOW(), 0
 			)
-		`, instID, reuseClassID, studentID, orderID, orderCourseDetailID, quoteID, primaryTuitionAccountID, operatorID, now, operatorID, now)
+		`, instID, reuseClassID, studentID, orderID, orderCourseDetailID, quoteID, primaryTuitionAccountID, operatorID, operatorID)
 		return err
 	}
 
@@ -446,9 +446,9 @@ func (repo *Repository) upsertOneToOneTeachingClassTx(ctx context.Context, tx *s
 			primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
 			last_finished_lesson_day, class_properties_json, create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, NULL, NULL, ?, ?, ?, ?, 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, NULL, NULL, ?, NOW(), ?, NOW(), 0
 		)
-	`, instID, classID, studentID, orderID, orderCourseDetailID, quoteID, primaryTuitionAccountID, operatorID, now, operatorID, now)
+	`, instID, classID, studentID, orderID, orderCourseDetailID, quoteID, primaryTuitionAccountID, operatorID, operatorID)
 	return err
 }
 
@@ -1937,7 +1937,7 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 			class_time_record_mode, last_finished_lesson_day, class_properties_json,
 			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL, ?, ?, NOW(), ?, NOW(), 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, NULL, ?, ?, NOW(), ?, NOW(), 0
 		)
 	`, instID, classID, studentID, b.orderID, b.ocdID, b.quoteID, b.taID,
 			stuClassTime, stuClassTime, teacherClassTime, recordMode,
