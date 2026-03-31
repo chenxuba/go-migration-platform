@@ -305,6 +305,14 @@ function getCreateFormDefaults() {
 
 const formState = reactive(getCreateFormDefaults());
 
+/** 满班人数：0 或未填表示不限，用空值回显以展示 placeholder「不限」 */
+function syncMaxNumInput(v) {
+  if (v == null || v === "" || Number(v) <= 0)
+    formState.maxNum = undefined;
+  else
+    formState.maxNum = Number(v);
+}
+
 const classTimeUnitLabel = computed(() =>
   Number(formState.defaultClassTimeRecordMode) === 2 ? "课时/小时" : "课时",
 );
@@ -393,7 +401,11 @@ function applyEditRecord(rec) {
   formState.course = rec.isMultiProduct ? undefined : lessonIdStr;
   formState.totalCourse = rec.isMultiProduct ? lessonIdStr : undefined;
   formState.className = rec.name;
-  formState.maxNum = rec.maxCount ?? undefined;
+  {
+    const mc = rec.maxCount;
+    formState.maxNum
+      = mc != null && Number(mc) > 0 ? Number(mc) : undefined;
+  }
   formState.teacher = (rec.teachers || []).map((t) => t.id);
   const dtRaw
     = rec.defaultTeacherId && rec.defaultTeacherId !== "0"
@@ -831,11 +843,12 @@ function closeFun() {
         <!-- 满班人数 数字选择器 -->
         <a-form-item label="满班人数" name="maxNum">
           <a-input-number
-            v-model:value="formState.maxNum"
+            :value="formState.maxNum"
             placeholder="不限"
             :min="0"
             :precision="0"
             class="w-160px"
+            @update:value="syncMaxNumInput"
           />
         </a-form-item>
         <a-form-item
