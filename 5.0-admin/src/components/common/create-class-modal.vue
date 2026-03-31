@@ -290,6 +290,56 @@ const classTimeHint = computed(() =>
 );
 const submitting = ref(false);
 
+const skipAutoDefaultTeacher = ref(false);
+const syncingDefaultFromTeacher = ref(false);
+
+watch(
+  () => formState.teacher,
+  (ids) => {
+    const list = Array.isArray(ids) ? [...ids] : [];
+    if (list.length === 0) {
+      formState.defaultTeacher = undefined;
+      skipAutoDefaultTeacher.value = false;
+      return;
+    }
+    const idSet = new Set(list.map((id) => String(id)));
+    const cur = formState.defaultTeacher;
+    if (cur != null && cur !== "" && !idSet.has(String(cur))) {
+      formState.defaultTeacher = undefined;
+    }
+    if (skipAutoDefaultTeacher.value)
+      return;
+    if (formState.defaultTeacher == null || formState.defaultTeacher === "") {
+      syncingDefaultFromTeacher.value = true;
+      formState.defaultTeacher = list[0];
+      nextTick(() => {
+        syncingDefaultFromTeacher.value = false;
+      });
+    }
+  },
+  { deep: true },
+);
+
+watch(
+  () => formState.defaultTeacher,
+  (v, ov) => {
+    if (syncingDefaultFromTeacher.value)
+      return;
+    const had = ov != null && ov !== "";
+    const empty = v == null || v === "";
+    if (had && empty)
+      skipAutoDefaultTeacher.value = true;
+  },
+);
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open)
+      skipAutoDefaultTeacher.value = false;
+  },
+);
+
 async function handleSubmit() {
   try {
     await formRef.value.validate();
@@ -313,7 +363,14 @@ async function handleSubmit() {
   const defaultTeacherId =
     formState.defaultTeacher != null && formState.defaultTeacher !== ""
       ? String(formState.defaultTeacher)
-      : teacherIds[0];
+      : "";
+  if (
+    defaultTeacherId
+    && !teacherIds.includes(defaultTeacherId)
+  ) {
+    messageService.error("默认上课教师须在所选班主任中");
+    return;
+  }
   submitting.value = true;
   try {
     const className = String(formState.className || "").trim();
@@ -369,7 +426,9 @@ async function handleSubmit() {
   }
 }
 function closeFun() {
-  formRef.value.resetFields();
+  skipAutoDefaultTeacher.value = false;
+  syncingDefaultFromTeacher.value = false;
+  formRef.value?.resetFields();
   openModal.value = false;
 }
 </script>
@@ -588,10 +647,14 @@ function closeFun() {
             :allow-clear="true"
           />
         </a-form-item>
-        <a-form-item label="默认上课老师" name="defaultTeacher">
+        <a-form-item
+          label="默认上课老师"
+          name="defaultTeacher"
+          extra="选择班主任后会自动带出第一位；清空后不再自动带出，可不填。"
+        >
           <StaffSelect
             v-model="formState.defaultTeacher"
-            placeholder="请选择默认上课老师"
+            placeholder="可选，清空后不再自动带出"
             :width="'100%'"
             :multiple="false"
             :status="0"

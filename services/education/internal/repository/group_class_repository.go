@@ -137,25 +137,20 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 
 	defTID, _ := strconv.ParseInt(strings.TrimSpace(dto.DefaultTeacherID), 10, 64)
 	teacherIDs := normalizeTeacherIDs(dto.TeacherIDs, defTID)
-	if defTID <= 0 && len(teacherIDs) > 0 {
-		defTID = teacherIDs[0]
-	}
-	if defTID <= 0 {
-		return 0, errors.New("请选择默认上课教师")
-	}
-	teacherIDs = normalizeTeacherIDs(dto.TeacherIDs, defTID)
 	if len(teacherIDs) == 0 {
 		return 0, errors.New("teacherIds 不能为空")
 	}
-	found := false
-	for _, tid := range teacherIDs {
-		if tid == defTID {
-			found = true
-			break
+	if defTID > 0 {
+		found := false
+		for _, tid := range teacherIDs {
+			if tid == defTID {
+				found = true
+				break
+			}
 		}
-	}
-	if !found {
-		return 0, errors.New("defaultTeacherId 须在 teacherIds 中")
+		if !found {
+			return 0, errors.New("defaultTeacherId 须在 teacherIds 中")
+		}
 	}
 
 	nStaff, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs)
@@ -186,6 +181,12 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 	}
 
 	advisorID := teacherIDs[0]
+	var defaultTeacherArg any
+	if defTID > 0 {
+		defaultTeacherArg = defTID
+	} else {
+		defaultTeacherArg = nil
+	}
 	now := time.Now()
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO teaching_class (
@@ -199,7 +200,7 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 			?, ?, ?,
 			?, NOW(), ?, NOW(), 0
 		)
-	`, instID, model.TeachingClassTypeNormal, courseID, composeID, name, advisorID, defTID, model.TeachingClassStatusActive,
+	`, instID, model.TeachingClassTypeNormal, courseID, composeID, name, advisorID, defaultTeacherArg, model.TeachingClassStatusActive,
 		maxCount, strings.TrimSpace(dto.Remark),
 		stuTime, teacherTime, recordMode,
 		operatorID, operatorID)
@@ -225,7 +226,7 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 				del_flag = 0,
 				update_id = VALUES(update_id),
 				update_time = VALUES(update_time)
-		`, instID, classID, tid, boolToTinyInt(tid == defTID), operatorID, now, operatorID, now); err != nil {
+		`, instID, classID, tid, boolToTinyInt(defTID > 0 && tid == defTID), operatorID, now, operatorID, now); err != nil {
 			return 0, err
 		}
 	}
