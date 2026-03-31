@@ -779,7 +779,7 @@ function handleScroll(e) {
           <a-spin :spinning="spinning">
             <a-menu-item v-for="item in options" :key="item.id"
               :class="checkedValues == item.id ? 'menu-item active' : 'menu-item'" :value="item.id"
-              @click="handleRadioChange(item.value ?? item)">
+              @click="handleRadioChange(item.id)">
               <div class="text-sm text-#666  leading-7">
                 {{ item.value ?? item.name }}
               </div>

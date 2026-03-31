@@ -356,8 +356,10 @@ type GroupClassListQueryModel struct {
 	ClassIDs         []string `json:"classIds"`
 	Statues          []int    `json:"statues"`
 	LessonIDs        []string `json:"lessonIds"`
+	ClassName        string   `json:"className"`
 	TeacherID        string   `json:"teacherId"`
 	DefaultTeacherID string   `json:"defaultTeacherId"`
+	ClassRoomName    string   `json:"classRoomName"`
 	IsMultiProduct   *bool    `json:"isMultiProduct"`
 	IsScheduled      *bool    `json:"isScheduled"`
 	CreatedStaffIDs  []string `json:"createdStaffIds"`

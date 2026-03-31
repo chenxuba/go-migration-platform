@@ -1,94 +1,434 @@
 <script setup>
 import { CaretDownOutlined, DownOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import CreateClassModal from '@/components/common/create-class-modal.vue'
-import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawer.vue'
-import { useTableColumns } from '@/composables/useTableColumns'
+import { debounce } from 'lodash-es'
+import { pageComposeLessonsForPcApi } from '@/api/edu-center/compose-lesson'
+import { getCoursePageApi } from '@/api/edu-center/course-list'
 import {
   groupClassStatisticsApi,
   pageGroupClassesApi,
 } from '@/api/edu-center/group-class'
+import CreateClassModal from '@/components/common/create-class-modal.vue'
+import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawer.vue'
+import { useTableColumns } from '@/composables/useTableColumns'
+import messageService from '@/utils/messageService'
 
-const displayArray = ref(['openClassStatus', 'doYouSchedule', 'billingMode', 'createUser', 'createTime', 'intentionCourse', 'reference', 'classEndingTime', 'classStopTime'])
-const dataSource = ref([])
+const allFilterRef = ref()
+const createClassModal = ref(false)
+const classListDrawerFlag = ref(false)
 const listLoading = ref(false)
+const dataSource = ref([])
+const selectedRowKeys = ref([])
+const selectedRows = ref([])
+
+const displayArray = ref([
+  'customSearch',
+  'classTeacher',
+  'createUser',
+  'doYouSchedule',
+  'openClassStatus',
+  'classEndingTime',
+  'createTime',
+  'salesPerson',
+])
+
+const customSearchFilters = ref([
+  {
+    id: 'lessonKey',
+    fieldKey: '关联课程',
+    fieldType: 4,
+    optionsList: [],
+  },
+  {
+    id: 'classRoomName',
+    fieldKey: '上课教室',
+    fieldType: 4,
+    optionsList: [],
+  },
+  {
+    id: 'courseType',
+    fieldKey: '关联课程类型',
+    fieldType: 4,
+    optionsList: [
+      { id: 'single', value: '课程' },
+      { id: 'compose', value: '组合课' },
+    ],
+  },
+])
+
 const stats = ref({
   classCount: 0,
   openClassCount: 0,
   studentCount: 0,
   studentPersonTime: 0,
 })
+
 const pagination = reactive({
   current: 1,
   pageSize: 20,
   total: 0,
   showSizeChanger: true,
-  showTotal: (t) => `共 ${t} 条`,
+  showTotal: total => `共 ${total} 条`,
 })
 
-async function loadStatistics() {
-  try {
-    const res = await groupClassStatisticsApi({})
-    if (res.code === 200 && res.result) {
-      stats.value = {
-        classCount: res.result.classCount ?? 0,
-        openClassCount: res.result.openClassCount ?? 0,
-        studentCount: res.result.studentCount ?? 0,
-        studentPersonTime: res.result.studentPersonTime ?? 0,
-      }
-    }
+const queryState = ref({
+  classIds: undefined,
+  lessonKey: undefined,
+  teacherId: undefined,
+  defaultTeacherId: undefined,
+  classRoomName: undefined,
+  courseType: undefined,
+  isScheduled: undefined,
+  statues: undefined,
+  className: undefined,
+  createdStaffIds: undefined,
+  createdTime: undefined,
+  closedTime: undefined,
+})
+
+function resetQueryState() {
+  Object.keys(queryState.value).forEach((key) => {
+    queryState.value[key] = undefined
+  })
+}
+
+function updateCustomSearchOptions(id, optionsList) {
+  customSearchFilters.value = customSearchFilters.value.map(item => item.id === id
+    ? { ...item, optionsList }
+    : item)
+}
+
+async function loadCourseFilterOptions() {
+  const [courseRes, composeRes] = await Promise.all([
+    getCoursePageApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: 100,
+        pageIndex: 1,
+      },
+      sortModel: {
+        byTotalSales: 0,
+        byUpdateTime: 0,
+      },
+      queryModel: {
+        searchKey: '',
+        delFlag: false,
+        saleStatus: 1,
+        teachMethod: 1,
+        courseType: 1,
+      },
+    }),
+    pageComposeLessonsForPcApi({
+      queryModel: { searchKey: '' },
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: 100,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+    }),
+  ])
+
+  const options = []
+  if (courseRes.code === 200) {
+    const list = Array.isArray(courseRes.result) ? courseRes.result : []
+    list.forEach((item) => {
+      options.push({
+        id: `single:${item.id}`,
+        value: item.name || item.title || String(item.id),
+      })
+    })
   }
-  catch {
-    /* 列表仍可展示 */
+
+  if (composeRes.code === 200) {
+    const list = Array.isArray(composeRes.result?.list) ? composeRes.result.list : []
+    list.forEach((item) => {
+      options.push({
+        id: `compose:${item.id}`,
+        value: item.name || String(item.id),
+      })
+    })
+  }
+
+  updateCustomSearchOptions('lessonKey', options)
+}
+
+async function loadClassroomFilterOptions() {
+  const res = await pageGroupClassesApi({
+    queryModel: {},
+    pageRequestModel: {
+      needTotal: true,
+      pageSize: 200,
+      pageIndex: 1,
+      skipCount: 0,
+    },
+  })
+
+  if (res.code !== 200)
+    return
+
+  const list = Array.isArray(res.result?.list) ? res.result.list : []
+  const roomMap = new Map()
+  list.forEach((item) => {
+    const roomName = String(item.classRoomName || '').trim()
+    if (!roomName || roomMap.has(roomName))
+      return
+    roomMap.set(roomName, {
+      id: roomName,
+      value: roomName,
+    })
+  })
+  updateCustomSearchOptions('classRoomName', Array.from(roomMap.values()))
+}
+
+const handleFilterUpdate = debounce((updates = {}, isClearAll = false, id, type) => {
+  if (isClearAll) {
+    resetQueryState()
+  }
+  else {
+    Object.entries(updates).forEach(([key, value]) => {
+      queryState.value[key] = value
+    })
+  }
+
+  pagination.current = 1
+  selectedRows.value = []
+  selectedRowKeys.value = []
+  getClassList(queryState.value, id, type)
+}, 200, { leading: true, trailing: false })
+
+const filterUpdateHandlers = computed(() => ({
+  'update:customSearchInputFilter': (payload, isClearAll, id, type) => {
+    if (isClearAll) {
+      handleFilterUpdate({}, true, id, type)
+      return
+    }
+
+    const fieldId = id || payload?.item?.id
+    const value = payload?.value
+    if (fieldId === 'lessonKey') {
+      handleFilterUpdate({ lessonKey: value || undefined }, false, id, type)
+      return
+    }
+    if (fieldId === 'classRoomName') {
+      handleFilterUpdate({ classRoomName: value || undefined }, false, id, type)
+      return
+    }
+    if (fieldId === 'courseType') {
+      handleFilterUpdate({ courseType: value || undefined }, false, id, type)
+    }
+  },
+  'update:classTeacherFilter': (val, isClearAll, id, type) => {
+    handleFilterUpdate({ teacherId: val || undefined }, isClearAll, id, type)
+  },
+  'update:stuPhoneSearchFilter': (val, isClearAll, id, type) => {
+    handleFilterUpdate({ classIds: val ? [String(val)] : undefined }, isClearAll, id, type)
+  },
+  'update:createUserFilter': (val, isClearAll, id, type) => {
+    handleFilterUpdate({ defaultTeacherId: val || undefined }, isClearAll, id, type)
+  },
+  'update:salesPersonFilter': (val, isClearAll, id, type) => {
+    handleFilterUpdate({ createdStaffIds: val ? [String(val)] : undefined }, isClearAll, id, type)
+  },
+  'update:doYouScheduleFilter': (val, isClearAll, id, type) => {
+    if (val === 1) {
+      handleFilterUpdate({ isScheduled: true }, isClearAll, id, type)
+      return
+    }
+    if (val === 2) {
+      handleFilterUpdate({ isScheduled: false }, isClearAll, id, type)
+      return
+    }
+    handleFilterUpdate({ isScheduled: undefined }, isClearAll, id, type)
+  },
+  'update:openClassStatusFilter': (val, isClearAll, id, type) => {
+    handleFilterUpdate({ statues: val ? [val] : undefined }, isClearAll, id, type)
+  },
+  'update:createTimeFilter': (val, isClearAll, id, type) => {
+    handleFilterUpdate({ createdTime: Array.isArray(val) && val.length ? val : undefined }, isClearAll, id, type)
+  },
+  'update:classEndingTimeFilter': (val, isClearAll, id, type) => {
+    handleFilterUpdate({ closedTime: Array.isArray(val) && val.length ? val : undefined }, isClearAll, id, type)
+  },
+}))
+
+async function handleClassSearch(searchParams) {
+  try {
+    const res = await pageGroupClassesApi({
+      pageRequestModel: searchParams.pageRequestModel || {
+        needTotal: true,
+        pageSize: 10,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+      queryModel: {
+        className: searchParams.searchKey || undefined,
+      },
+    })
+    if (res.code !== 200) {
+      messageService.error(res.message || '搜索班级失败')
+      return
+    }
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    allFilterRef.value?.updateStaffSearchData?.({
+      result: list.map(item => ({
+        id: item.id,
+        name: item.name,
+      })),
+      total: Number(res.result?.total || 0),
+    })
+  }
+  catch (error) {
+    console.error('search class failed', error)
+    messageService.error('搜索班级失败')
   }
 }
 
-async function loadList() {
+function buildQueryModel(source = {}) {
+  const queryModel = {}
+
+  if (source.className) {
+    queryModel.className = String(source.className).trim()
+  }
+  if (Array.isArray(source.classIds) && source.classIds.length > 0) {
+    queryModel.classIds = source.classIds
+  }
+  if (source.teacherId) {
+    queryModel.teacherId = String(source.teacherId)
+  }
+  if (source.defaultTeacherId) {
+    queryModel.defaultTeacherId = String(source.defaultTeacherId)
+  }
+  if (source.classRoomName) {
+    queryModel.classRoomName = String(source.classRoomName).trim()
+  }
+  if (Array.isArray(source.statues) && source.statues.length > 0) {
+    queryModel.statues = source.statues
+  }
+  if (Array.isArray(source.createdStaffIds) && source.createdStaffIds.length > 0) {
+    queryModel.createdStaffIds = source.createdStaffIds
+  }
+  if (typeof source.isScheduled === 'boolean') {
+    queryModel.isScheduled = source.isScheduled
+  }
+  if (source.courseType === 'single') {
+    queryModel.isMultiProduct = false
+  }
+  else if (source.courseType === 'compose') {
+    queryModel.isMultiProduct = true
+  }
+  if (source.lessonKey) {
+    const raw = String(source.lessonKey)
+    const split = raw.split(':')
+    queryModel.lessonIds = [split.length > 1 ? split[1] : raw]
+  }
+  if (Array.isArray(source.createdTime) && source.createdTime.length === 2) {
+    queryModel.createdStartTime = source.createdTime[0]
+    queryModel.createdEndTime = source.createdTime[1]
+  }
+  if (Array.isArray(source.closedTime) && source.closedTime.length === 2) {
+    queryModel.closedStartDate = source.closedTime[0]
+    queryModel.closedEndDate = source.closedTime[1]
+  }
+
+  return queryModel
+}
+
+async function getClassList(newQueryParams = {}, id, type) {
   listLoading.value = true
   try {
-    const res = await pageGroupClassesApi({
-      queryModel: {},
-      pageRequestModel: {
-        needTotal: true,
-        pageSize: pagination.pageSize,
-        pageIndex: pagination.current,
-        skipCount: 0,
-      },
-    })
-    if (res.code === 200 && res.result) {
-      dataSource.value = res.result.list || []
-      pagination.total = res.result.total ?? 0
+    const queryModel = buildQueryModel(newQueryParams)
+    const [listRes, statsRes] = await Promise.all([
+      pageGroupClassesApi({
+        queryModel,
+        pageRequestModel: {
+          needTotal: true,
+          pageSize: pagination.pageSize,
+          pageIndex: pagination.current,
+          skipCount: 0,
+        },
+      }),
+      groupClassStatisticsApi(queryModel),
+    ])
+
+    if (listRes.code === 200 && listRes.result) {
+      dataSource.value = Array.isArray(listRes.result.list) ? listRes.result.list : []
+      pagination.total = Number(listRes.result.total || 0)
+      allFilterRef.value?.clearQuickFilter?.(id, type)
     }
     else {
       dataSource.value = []
+      pagination.total = 0
+      messageService.error(listRes.message || '获取班级列表失败')
     }
-    await loadStatistics()
+
+    if (statsRes.code === 200 && statsRes.result) {
+      stats.value = {
+        classCount: Number(statsRes.result.classCount || 0),
+        openClassCount: Number(statsRes.result.openClassCount || 0),
+        studentCount: Number(statsRes.result.studentCount || 0),
+        studentPersonTime: Number(statsRes.result.studentPersonTime || 0),
+      }
+    }
+    else {
+      stats.value = {
+        classCount: 0,
+        openClassCount: 0,
+        studentCount: 0,
+        studentPersonTime: 0,
+      }
+    }
+  }
+  catch (error) {
+    console.error('get class list failed', error)
+    dataSource.value = []
+    pagination.total = 0
+    stats.value = {
+      classCount: 0,
+      openClassCount: 0,
+      studentCount: 0,
+      studentPersonTime: 0,
+    }
+    messageService.error('获取班级列表失败')
   }
   finally {
     listLoading.value = false
   }
 }
 
-function onTableChange(pag) {
-  pagination.current = pag.current
-  pagination.pageSize = pag.pageSize
-  loadList()
+function onTableChange(pageInfo) {
+  pagination.current = pageInfo.current
+  pagination.pageSize = pageInfo.pageSize
+  getClassList(queryState.value)
 }
 
-function formatDt(v) {
-  if (v == null || v === '')
+function formatDt(value) {
+  if (value == null || value === '')
     return '-'
-  const d = dayjs(v)
-  return d.isValid() ? d.format('YYYY-MM-DD HH:mm') : '-'
+  const date = dayjs(value)
+  return date.isValid() ? date.format('YYYY-MM-DD HH:mm') : '-'
 }
 
-function formatClosed(v) {
-  if (v == null || v === '')
+function formatClosed(value) {
+  if (value == null || value === '')
     return '-'
-  const d = dayjs(v)
-  if (!d.isValid() || d.year() < 1900)
+  const date = dayjs(value)
+  if (!date.isValid() || date.year() < 1900)
     return '-'
-  return d.format('YYYY-MM-DD')
+  return date.format('YYYY-MM-DD')
+}
+
+function formatClassTime(times) {
+  if (!Array.isArray(times) || times.length === 0)
+    return '-'
+
+  return times.map((item) => {
+    const startTime = item?.startTime ? dayjs(item.startTime).format('MM-DD HH:mm') : ''
+    const endTime = item?.endTime ? dayjs(item.endTime).format('HH:mm') : ''
+    if (startTime && endTime)
+      return `${startTime}-${endTime}`
+    return item?.name || '日程'
+  }).join('；')
 }
 
 function statusLabel(status) {
@@ -102,12 +442,21 @@ function statusLabel(status) {
 function teacherNames(teachers) {
   if (!Array.isArray(teachers) || teachers.length === 0)
     return '-'
-  return teachers.map((t) => t.name).filter(Boolean).join('、')
+  return teachers.map(item => item.name).filter(Boolean).join('、')
 }
 
-onMounted(() => {
-  loadList()
-})
+function createClass() {
+  createClassModal.value = true
+}
+
+function openClassListDrawer() {
+  classListDrawerFlag.value = true
+}
+
+function onClickMenu({ key }) {
+  console.log(key)
+}
+
 const allColumns = ref([
   {
     title: '班级名称',
@@ -115,13 +464,13 @@ const allColumns = ref([
     key: 'name',
     fixed: 'left',
     width: 200,
-    required: true, // 新增必选标识
+    required: true,
   },
   {
     title: '关联课程',
     key: 'linkCourse',
     dataIndex: 'linkCourse',
-    width: 140,
+    width: 160,
   },
   {
     title: '学员数',
@@ -133,26 +482,25 @@ const allColumns = ref([
     title: '班主任',
     key: 'headTeacher',
     dataIndex: 'headTeacher',
-    width: 110,
-
+    width: 140,
   },
   {
     title: '默认上课教师',
     key: 'defaultTeacher',
     dataIndex: 'defaultTeacher',
-    width: 120,
+    width: 140,
   },
   {
     title: '上课教室',
     dataIndex: 'classRoom',
     key: 'classRoom',
-    width: 120,
+    width: 140,
   },
   {
     title: '上课时间',
     dataIndex: 'classTime',
     key: 'classTime',
-    width: 300,
+    width: 220,
   },
   {
     title: '是否排课',
@@ -171,36 +519,31 @@ const allColumns = ref([
     dataIndex: 'openClassStatus',
     key: 'openClassStatus',
     width: 120,
-
   },
   {
     title: '创建时间',
     dataIndex: 'createTime',
     key: 'createTime',
     width: 180,
-
   },
   {
     title: '创建人',
     key: 'createUser',
     dataIndex: 'createUser',
-    width: 100,
+    width: 120,
   },
-  // 备注
   {
     title: '备注',
     key: 'remark',
     dataIndex: 'remark',
-    width: 120,
+    width: 160,
   },
-  // 结班日期
   {
     title: '结班日期',
     key: 'classEndingTime',
     dataIndex: 'classEndingTime',
     width: 120,
   },
-
   {
     title: '操作',
     dataIndex: 'action',
@@ -208,42 +551,52 @@ const allColumns = ref([
     fixed: 'right',
     width: 220,
   },
-
 ])
-const rowSelection = {
-  onChange: (selectedRowKeys, selectedRows) => {
-    console.log(`selectedRowKeys: ${selectedRowKeys}`, 'selectedRows: ', selectedRows)
-  },
-}
-const defaultOpenClassStatus = ref(1)
+
 const { selectedValues, columnOptions, filteredColumns, totalWidth }
   = useTableColumns({
-    storageKey: 'class-list', // 本地存储键名
-    allColumns, // 原始列配置
-    excludeKeys: ['action'], // 需要排除的列键
+    storageKey: 'class-list',
+    allColumns,
+    excludeKeys: ['action'],
   })
-const createClassModal = ref(false)
-function createClass() {
-  createClassModal.value = true
-}
-function onClickMenu(key) {
-  console.log(key)
-}
-const classListDrawerFlag = ref(false)
-function openClassListDrawer() {
-  classListDrawerFlag.value = true
-}
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys, rows) => {
+    selectedRowKeys.value = keys
+    selectedRows.value = rows
+  },
+}))
+
+onMounted(async () => {
+  await Promise.all([
+    loadCourseFilterOptions(),
+    loadClassroomFilterOptions(),
+  ])
+  await getClassList(queryState.value)
+})
 </script>
 
 <template>
   <div>
-    <!-- 学员筛选条件 -->
-    <div class="filter-wrap  bg-white  pl-3 pr-3 rounded-4">
+    <div class="filter-wrap bg-white pl-3 pr-3 rounded-4">
       <all-filter
-        :default-open-class-status="defaultOpenClassStatus"
-        :display-array="displayArray" :is-quick-show="false" :is-show-search-stu-phone="false" :is-show-clsss-or-course-search="true" search-label="班级名称"
+        ref="allFilterRef"
+        :display-array="displayArray"
+        :is-quick-show="false"
+        :is-show-clsss-or-course-search="true"
+        :custom-is-display-list="customSearchFilters"
+        search-label="班级名称"
+        search-placeholder="请选择班级名称"
+        create-user-label="默认上课教师"
+        create-user-placeholder="请输入默认上课教师"
+        sales-person-label="创建人"
+        sales-person-placeholder="请输入创建人"
+        @staff-search="handleClassSearch"
+        v-on="filterUpdateHandlers"
       />
     </div>
+
     <div class="student-list mt-2 pt-3 pb-3 pl-6 pr-6 bg-white rounded-4">
       <div class="tab-table">
         <div class="table-title flex justify-between">
@@ -276,9 +629,10 @@ function openClassListDrawer() {
             <a-button type="primary" class="mr-2" @click="createClass">
               创建班级
             </a-button>
-            <!-- 自定义字段 -->
             <customize-code
-              v-model:checked-values="selectedValues" :options="columnOptions" :total="allColumns.length - 1"
+              v-model:checked-values="selectedValues"
+              :options="columnOptions"
+              :total="allColumns.length - 1"
               :num="selectedValues.length - 1"
             />
           </div>
@@ -301,7 +655,7 @@ function openClassListDrawer() {
                   {{ record.name || '-' }}
                 </a-button>
               </template>
-              <template v-if="column.key === 'linkCourse'">
+              <template v-else-if="column.key === 'linkCourse'">
                 <div class="text-#222">
                   {{ record.lessonName || '-' }}
                 </div>
@@ -309,32 +663,31 @@ function openClassListDrawer() {
                   {{ record.isMultiProduct ? '组合课程' : '课程' }}
                 </div>
               </template>
-              <template v-if="column.key === 'studentNum'">
+              <template v-else-if="column.key === 'studentNum'">
                 {{ record.studentCount ?? 0 }}
               </template>
-              <template v-if="column.key === 'headTeacher'">
+              <template v-else-if="column.key === 'headTeacher'">
                 {{ teacherNames(record.teachers) }}
               </template>
-              <template v-if="column.key === 'defaultTeacher'">
+              <template v-else-if="column.key === 'defaultTeacher'">
                 {{ record.defaultTeacherName || '-' }}
               </template>
-              <template v-if="column.key === 'classRoom'">
+              <template v-else-if="column.key === 'classRoom'">
                 {{ record.classRoomName || '-' }}
               </template>
-              <template v-if="column.key === 'classTime'">
-                <span v-if="record.classLessonTimes?.length">日程</span>
-                <span v-else>-</span>
+              <template v-else-if="column.key === 'classTime'">
+                {{ formatClassTime(record.classLessonTimes) }}
               </template>
-              <template v-if="column.key === 'doYouSchedule'">
+              <template v-else-if="column.key === 'doYouSchedule'">
                 <div class="studentStatus">
                   <span class="dot" />
                   <span>{{ record.isScheduled ? '已排课' : '未排课' }}</span>
                 </div>
               </template>
-              <template v-if="column.key === 'alreadyOnOrtotal'">
+              <template v-else-if="column.key === 'alreadyOnOrtotal'">
                 {{ record.classLessonDayInfos?.completeLessonDayCount ?? 0 }}/{{ record.classLessonDayInfos?.lessonDayCount ?? 0 }}
               </template>
-              <template v-if="column.key === 'openClassStatus'">
+              <template v-else-if="column.key === 'openClassStatus'">
                 <div
                   class="rounded-2.5 inline-block text-3 pt-0.5 pb-0.5 pl-2 pr-2"
                   :class="record.status === 1 ? 'text-#06f bg-#e6f0ff' : 'text-#666 bg-#f5f5f5'"
@@ -342,16 +695,16 @@ function openClassListDrawer() {
                   {{ statusLabel(record.status) }}
                 </div>
               </template>
-              <template v-if="column.key === 'createTime'">
+              <template v-else-if="column.key === 'createTime'">
                 {{ formatDt(record.createdTime) }}
               </template>
-              <template v-if="column.key === 'createUser'">
+              <template v-else-if="column.key === 'createUser'">
                 {{ record.createdStaffName || '-' }}
               </template>
-              <template v-if="column.key === 'remark'">
+              <template v-else-if="column.key === 'remark'">
                 {{ record.remark || '-' }}
               </template>
-              <template v-if="column.key === 'classEndingTime'">
+              <template v-else-if="column.key === 'classEndingTime'">
                 {{ formatClosed(record.closedTime) }}
               </template>
               <template v-else-if="column.key === 'action'">
@@ -361,10 +714,12 @@ function openClassListDrawer() {
                   <div style="cursor: pointer;">
                     <a-dropdown :trigger="['click']" placement="bottom">
                       <a @click.prevent>
-                        <div class="intention">更多<CaretDownOutlined
-                          class=" text-#1677ff"
-                          :style="{ 'font-size': '12px' }"
-                        />
+                        <div class="intention">
+                          更多
+                          <CaretDownOutlined
+                            class="text-#1677ff"
+                            :style="{ fontSize: '12px' }"
+                          />
                         </div>
                       </a>
                       <template #overlay>
@@ -392,7 +747,7 @@ function openClassListDrawer() {
         </div>
       </div>
     </div>
-    <CreateClassModal v-model:open="createClassModal" @created="loadList" />
+    <CreateClassModal v-model:open="createClassModal" @created="() => getClassList(queryState.value)" />
     <ClassListDrawer v-model:open="classListDrawerFlag" />
   </div>
 </template>
@@ -409,7 +764,7 @@ function openClassListDrawer() {
     display: inline-block;
     background: var(--pro-ant-color-primary);
     border-radius: 2px;
-    content: "";
+    content: '';
     height: 12px;
     left: 0;
     position: absolute;
@@ -420,6 +775,7 @@ function openClassListDrawer() {
 .studentStatus {
   display: flex;
   align-items: center;
+
   span.dot {
     border-radius: 50%;
     display: inline-block;

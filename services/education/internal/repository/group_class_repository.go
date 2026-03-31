@@ -262,6 +262,10 @@ func buildGroupClassFilters(instID int64, q model.GroupClassListQueryModel) (str
 			args = append(args, id)
 		}
 	}
+	if s := strings.TrimSpace(q.ClassName); s != "" {
+		cond += " AND tc.name LIKE ?"
+		args = append(args, "%"+s+"%")
+	}
 	if tid := strings.TrimSpace(q.TeacherID); tid != "" {
 		if v, err := strconv.ParseInt(tid, 10, 64); err == nil && v > 0 {
 			cond += ` AND EXISTS (
@@ -276,6 +280,10 @@ func buildGroupClassFilters(instID int64, q model.GroupClassListQueryModel) (str
 			cond += " AND tc.default_teacher_id = ?"
 			args = append(args, v)
 		}
+	}
+	if s := strings.TrimSpace(q.ClassRoomName); s != "" {
+		cond += " AND tc.class_room_name LIKE ?"
+		args = append(args, "%"+s+"%")
 	}
 	if q.IsMultiProduct != nil {
 		if *q.IsMultiProduct {

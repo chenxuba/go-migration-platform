@@ -3,7 +3,10 @@ import { CloseOutlined, QuestionCircleOutlined } from "@ant-design/icons-vue";
 import { debounce } from "lodash-es";
 import { getCoursePageApi } from "~/api/edu-center/course-list";
 import { pageComposeLessonsForPcApi } from "~/api/edu-center/compose-lesson";
-import { createGroupClassApi } from "~/api/edu-center/group-class";
+import {
+  checkGroupClassNameApi,
+  createGroupClassApi,
+} from "~/api/edu-center/group-class";
 import CreateCombinedCourseModal from "./create-combined-course-modal.vue";
 import StaffSelect from "./staff-select.vue";
 import messageService from "~/utils/messageService";
@@ -308,8 +311,22 @@ async function handleSubmit() {
   }
   submitting.value = true;
   try {
+    const className = String(formState.className || "").trim();
+    const checkRes = await checkGroupClassNameApi({
+      name: className,
+      isOne2One: false,
+    });
+    if (checkRes.code !== 200) {
+      messageService.error(checkRes.message || "校验班级名称失败");
+      return;
+    }
+    if (checkRes.result) {
+      messageService.error("班级名称已存在");
+      return;
+    }
+
     const res = await createGroupClassApi({
-      name: String(formState.className || "").trim(),
+      name: className,
       lessonId: String(lessonId),
       maxCount: formState.maxNum != null ? Number(formState.maxNum) : 0,
       teacherIds,

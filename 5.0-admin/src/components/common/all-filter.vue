@@ -3011,6 +3011,12 @@ const selectedConditions = computed(() => {
           // 日期类型，格式化为范围显示
           return [{ id: item.id, value: `${value[0]} 至 ${value[1]}` }]
         }
+        else if (item.fieldType === 4 && Array.isArray(item.optionsList)) {
+          const option = item.optionsList.find(opt => opt.id === value || opt.value === value)
+          if (option) {
+            return [{ id: item.id, value: option.value }]
+          }
+        }
         else if (value) {
           // 其他类型（文本、数字）
           return [{ id: item.id, value }]
@@ -3547,6 +3553,11 @@ const clearAll = debounce(() => {
 
   // 清空所有自定义搜索字段
   searchInputVals.value = {}
+  if (props.customIsDisplayList && props.customIsDisplayList.length > 0) {
+    props.customIsDisplayList.forEach((item) => {
+      emit('update:customSearchInputFilter', null, true, item.id, 'clear')
+    })
+  }
 
   // 单独处理自定义搜索字段的子组件重置
   if (props.customIsDisplayList && props.customIsDisplayList.length > 0) {
@@ -3584,7 +3595,7 @@ function removeCondition(type, id) {
   // 处理自定义搜索字段
   if (type.startsWith('customSearch_')) {
     const itemId = type.split('_')[1]
-    // searchInputVals.value[itemId] = ''
+    searchInputVals.value[itemId] = ''
     // 移除子组件input框内的值
     const childRef = childRefs.value[`customSearchInput_${itemId}`]
     if (childRef && childRef.resetSearch) {
@@ -3847,9 +3858,11 @@ function removeCondition(type, id) {
       break
     case 'classEndingTime': // 新增创建时间移除逻辑
       classEndingTimeVals.value = []
+      emit('update:classEndingTimeFilter', [], false, id, type)
       break
     case 'classStopTime': // 新增创建时间移除逻辑
       classStopTimeVals.value = []
+      emit('update:classStopTimeFilter', [], false, id, type)
       break
     case 'intentionCourse': // 新增意向课程移除逻辑
       // selectCourseValues.value = null
@@ -4438,7 +4451,7 @@ function updateStaffSearchData(data) {
   const formattedResults = (data.result || []).map((item) => {
     return {
       id: item.id,
-      value: item.nickName || item.roleName,
+      value: item.nickName || item.roleName || item.name || item.value || String(item.id),
     }
   })
 
