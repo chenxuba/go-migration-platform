@@ -7,6 +7,7 @@ import {
   pageGroupClassesApi,
 } from '@/api/edu-center/group-class'
 import CreateClassModal from '@/components/common/create-class-modal.vue'
+import ClassAddStudentModal from '@/components/edu-center/class-list/class-add-student-modal.vue'
 import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import messageService from '@/utils/messageService'
@@ -17,6 +18,9 @@ const allFilterRef = ref()
 const createClassModal = ref(false)
 const editClassRecord = ref(null)
 const classListDrawerFlag = ref(false)
+const addStudentModalOpen = ref(false)
+const addStudentModalTitle = ref('')
+const addStudentModalLessonName = ref('')
 const listLoading = ref(false)
 const dataSource = ref([])
 const selectedRowKeys = ref([])
@@ -410,6 +414,12 @@ function openClassListDrawer() {
   classListDrawerFlag.value = true
 }
 
+function openAddStudentModal(record) {
+  addStudentModalTitle.value = String(record?.name || '').trim() || '班级'
+  addStudentModalLessonName.value = String(record?.lessonName || '').trim()
+  addStudentModalOpen.value = true
+}
+
 function onClassRowMenuClick({ key }, record) {
   if (key === '3') {
     editClassRecord.value = record
@@ -678,7 +688,7 @@ onMounted(async () => {
               <template v-else-if="column.key === 'action'">
                 <span class="flex action">
                   <a class="mr-3">排课</a>
-                  <a class="mr-3">添加学员</a>
+                  <a class="mr-3" @click.prevent="openAddStudentModal(record)">添加学员</a>
                   <div style="cursor: pointer;">
                     <a-dropdown :trigger="['click']" placement="bottom">
                       <a @click.prevent>
@@ -722,6 +732,11 @@ onMounted(async () => {
       @updated="afterClassModalSave"
     />
     <ClassListDrawer v-model:open="classListDrawerFlag" />
+    <ClassAddStudentModal
+      v-model:open="addStudentModalOpen"
+      :title="addStudentModalTitle"
+      :lesson-name="addStudentModalLessonName"
+    />
   </div>
 </template>
 

@@ -1,5 +1,6 @@
 <script setup>
 import { DownOutlined } from '@ant-design/icons-vue'
+import ClassAddStudentModal from './class-add-student-modal.vue'
 
 const displayArray = ref(['classEndingTime'])
 const checked = ref(false)
@@ -214,7 +215,7 @@ function addStudent() {
         </template>
       </a-table>
     </div>
-    <class-add-student-modal v-model:open="addStudentVisible" title="视知觉康复班级" />
+    <ClassAddStudentModal v-model:open="addStudentVisible" title="视知觉康复班级" />
   </div>
 </template>
 
