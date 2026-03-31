@@ -968,8 +968,6 @@ function closeFun() {
     </div>
     <template #footer>
       <a-button @click="closeFun"> 关闭 </a-button>
-      <!-- 警告 -->
-      <a-button @click="closeFun"> 保存并下一个 </a-button>
       <a-button type="primary" :loading="submitting" @click="handleSubmit">
         确定
       </a-button>
