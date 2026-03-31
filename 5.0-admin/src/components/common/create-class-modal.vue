@@ -1,6 +1,11 @@
 <script setup>
 import { CloseOutlined, QuestionCircleOutlined } from "@ant-design/icons-vue";
+import { debounce } from "lodash-es";
+import { getCoursePageApi } from "~/api/edu-center/course-list";
+import { pageComposeLessonsForPcApi } from "~/api/edu-center/compose-lesson";
 import CreateCombinedCourseModal from "./create-combined-course-modal.vue";
+import StaffSelect from "./staff-select.vue";
+import messageService from "~/utils/messageService";
 
 const props = defineProps({
   open: {
@@ -11,6 +16,245 @@ const props = defineProps({
 const emit = defineEmits(["update:open"]);
 const formRef = ref();
 const combinedCourseModalOpen = ref(false);
+const composeLessonOptions = ref([]);
+const composeListLoading = ref(false);
+const composeMoreLoading = ref(false);
+const composeSearchKeyword = ref("");
+const composePagination = ref({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+});
+const composeFinished = ref(false);
+
+function mapComposeListItem(it) {
+  return {
+    label:
+      it.productCount != null
+        ? `${it.name}（${it.productCount}门课）`
+        : it.name,
+    value: String(it.id),
+  };
+}
+
+async function getComposeLessonListPage() {
+  if (composeListLoading.value || composeMoreLoading.value)
+    return;
+
+  const pageIdx = composePagination.value.current;
+  const isFirst = pageIdx === 1;
+
+  if (isFirst)
+    composeListLoading.value = true;
+  else
+    composeMoreLoading.value = true;
+
+  try {
+    const res = await pageComposeLessonsForPcApi({
+      queryModel: { searchKey: composeSearchKeyword.value || "" },
+      pageRequestModel: {
+        needTotal: true,
+        skipCount: 0,
+        pageSize: composePagination.value.pageSize,
+        pageIndex: pageIdx,
+      },
+    });
+    if (res.code === 200 && Array.isArray(res.result?.list)) {
+      const list = res.result.list;
+      const mapped = list.map(mapComposeListItem);
+      if (isFirst) {
+        composeLessonOptions.value = mapped;
+      }
+      else {
+        const existing = new Set(composeLessonOptions.value.map((o) => o.value));
+        const extra = mapped.filter((o) => !existing.has(o.value));
+        composeLessonOptions.value = [...composeLessonOptions.value, ...extra];
+      }
+      composePagination.value.total = Number(res.result.total ?? 0);
+      const reachedEndByTotal =
+        composePagination.value.total > 0
+        && composeLessonOptions.value.length >= composePagination.value.total;
+      const reachedEndByPage = list.length < composePagination.value.pageSize;
+      composeFinished.value =
+        composePagination.value.total === 0 || reachedEndByTotal || reachedEndByPage;
+    }
+    else {
+      composeLessonOptions.value = [];
+      composeFinished.value = true;
+      if (res.code !== 200 && res.message)
+        messageService.error(res.message);
+    }
+  }
+  catch (e) {
+    if (pageIdx > 1)
+      composePagination.value.current -= 1;
+    else
+      composeLessonOptions.value = [];
+    messageService.error(e?.message || "加载组合课程失败");
+  }
+  finally {
+    composeListLoading.value = false;
+    composeMoreLoading.value = false;
+  }
+}
+
+const debouncedFetchComposeList = debounce(() => {
+  composePagination.value.current = 1;
+  composeFinished.value = false;
+  if (composeSearchKeyword.value?.trim()) {
+    composeLessonOptions.value = [];
+  }
+  getComposeLessonListPage();
+}, 400);
+
+function onComposeDropdownVisible(open) {
+  if (open) {
+    composePagination.value.current = 1;
+    composeFinished.value = false;
+    getComposeLessonListPage();
+  }
+}
+
+function onComposeSearch(value) {
+  composeSearchKeyword.value = value;
+  debouncedFetchComposeList();
+}
+
+function onComposePopupScroll(event) {
+  const { target } = event;
+  const { scrollTop, scrollHeight, clientHeight } = target;
+  if (scrollHeight - scrollTop - clientHeight >= 12)
+    return;
+  if (composeListLoading.value || composeMoreLoading.value || composeFinished.value)
+    return;
+  composePagination.value.current += 1;
+  getComposeLessonListPage();
+}
+
+function onComposeLessonCreated() {
+  composePagination.value.current = 1;
+  composeFinished.value = false;
+  getComposeLessonListPage();
+}
+
+/** 班级授课（班课）课程下拉，与选择课程范围弹窗 queryModel 一致；分页 + 滚动加载 */
+const singleCourseOptions = ref([]);
+const singleCourseLoading = ref(false);
+const singleCourseMoreLoading = ref(false);
+const singleCourseSearchKeyword = ref("");
+const singleCoursePagination = ref({
+  current: 1,
+  pageSize: 30,
+  total: 0,
+});
+const singleCourseFinished = ref(false);
+
+async function getSingleCourseListPage() {
+  if (singleCourseLoading.value || singleCourseMoreLoading.value)
+    return;
+
+  const pageIdx = singleCoursePagination.value.current;
+  const isFirst = pageIdx === 1;
+
+  if (isFirst)
+    singleCourseLoading.value = true;
+  else
+    singleCourseMoreLoading.value = true;
+
+  try {
+    const res = await getCoursePageApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: singleCoursePagination.value.pageSize,
+        pageIndex: pageIdx,
+      },
+      sortModel: {
+        byTotalSales: 0,
+        byUpdateTime: 0,
+      },
+      queryModel: {
+        searchKey: singleCourseSearchKeyword.value || "",
+        delFlag: false,
+        saleStatus: 1,
+        teachMethod: 1,
+        courseType: 1,
+      },
+    });
+    if (res.code === 200) {
+      const list = res.result || [];
+      const mapped = list.map((item) => ({
+        label: item.name || item.title || String(item.id),
+        value: String(item.id),
+      }));
+      if (isFirst) {
+        singleCourseOptions.value = mapped;
+      }
+      else {
+        const existing = new Set(singleCourseOptions.value.map((o) => o.value));
+        const extra = mapped.filter((o) => !existing.has(o.value));
+        singleCourseOptions.value = [...singleCourseOptions.value, ...extra];
+      }
+      singleCoursePagination.value.total = Number(res.total || 0);
+      const reachedEndByTotal =
+        singleCoursePagination.value.total > 0
+        && singleCourseOptions.value.length >= singleCoursePagination.value.total;
+      const reachedEndByPage = list.length < singleCoursePagination.value.pageSize;
+      singleCourseFinished.value =
+        singleCoursePagination.value.total === 0 || reachedEndByTotal || reachedEndByPage;
+    }
+    else {
+      singleCourseOptions.value = [];
+      singleCourseFinished.value = true;
+      if (res.message)
+        messageService.error(res.message);
+    }
+  }
+  catch (e) {
+    if (pageIdx > 1)
+      singleCoursePagination.value.current -= 1;
+    else
+      singleCourseOptions.value = [];
+    messageService.error(e?.message || "加载课程失败");
+  }
+  finally {
+    singleCourseLoading.value = false;
+    singleCourseMoreLoading.value = false;
+  }
+}
+
+const debouncedFetchSingleCourseList = debounce(() => {
+  singleCoursePagination.value.current = 1;
+  singleCourseFinished.value = false;
+  if (singleCourseSearchKeyword.value?.trim()) {
+    singleCourseOptions.value = [];
+  }
+  getSingleCourseListPage();
+}, 400);
+
+function onSingleCourseDropdownVisible(open) {
+  if (open) {
+    singleCoursePagination.value.current = 1;
+    singleCourseFinished.value = false;
+    getSingleCourseListPage();
+  }
+}
+
+function onSingleCourseSearch(value) {
+  singleCourseSearchKeyword.value = value;
+  debouncedFetchSingleCourseList();
+}
+
+function onSingleCoursePopupScroll(event) {
+  const { target } = event;
+  const { scrollTop, scrollHeight, clientHeight } = target;
+  if (scrollHeight - scrollTop - clientHeight >= 12)
+    return;
+  if (singleCourseLoading.value || singleCourseMoreLoading.value || singleCourseFinished.value)
+    return;
+  singleCoursePagination.value.current += 1;
+  getSingleCourseListPage();
+}
+
 // 处理双向绑定
 const openModal = computed({
   get: () => props.open,
@@ -25,7 +269,7 @@ const formState = reactive({
   defaultStudentClassTime: 1,
   defaultTeacherClassTime: 0,
   maxNum: undefined,
-  teacher: undefined,
+  teacher: [],
   classRoom: undefined,
   remark: "",
 });
@@ -123,9 +367,42 @@ function closeFun() {
           name="course"
           :rules="[{ required: true, message: '请选择课程' }]"
         >
-          <a-select v-model:value="formState.course" placeholder="请选择课程">
-            <a-select-option value="1"> 课程1 </a-select-option>
-            <a-select-option value="2"> 课程2 </a-select-option>
+          <a-select
+            v-model:value="formState.course"
+            show-search
+            :filter-option="false"
+            :loading="singleCourseLoading"
+            placeholder="请选择课程"
+            option-filter-prop="label"
+            @dropdown-visible-change="onSingleCourseDropdownVisible"
+            @search="onSingleCourseSearch"
+            @popup-scroll="onSingleCoursePopupScroll"
+          >
+            <a-select-option
+              v-for="opt in singleCourseOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </a-select-option>
+            <a-select-option
+              v-if="singleCourseMoreLoading"
+              key="__single_course_loading_more__"
+              disabled
+            >
+              <div class="text-center text-#999 text-12px py-1">
+                加载中…
+              </div>
+            </a-select-option>
+            <a-select-option
+              v-else-if="singleCourseFinished && singleCourseOptions.length > 0"
+              key="__single_course_no_more__"
+              disabled
+            >
+              <div class="text-center text-#999 text-12px py-1">
+                没有更多了
+              </div>
+            </a-select-option>
           </a-select>
         </a-form-item>
         <!-- 选择组合课程 -->
@@ -138,10 +415,41 @@ function closeFun() {
           <div class="flex-items-center flex w-420px">
             <a-select
               v-model:value="formState.totalCourse"
+              class="flex-1 min-w-0"
+              show-search
+              :filter-option="false"
+              :loading="composeListLoading"
               placeholder="请选择组合课程"
+              option-filter-prop="label"
+              @dropdown-visible-change="onComposeDropdownVisible"
+              @search="onComposeSearch"
+              @popup-scroll="onComposePopupScroll"
             >
-              <a-select-option value="1"> 组合课程1 </a-select-option>
-              <a-select-option value="2"> 组合课程2 </a-select-option>
+              <a-select-option
+                v-for="opt in composeLessonOptions"
+                :key="opt.value"
+                :value="opt.value"
+              >
+                {{ opt.label }}
+              </a-select-option>
+              <a-select-option
+                v-if="composeMoreLoading"
+                key="__compose_loading_more__"
+                disabled
+              >
+                <div class="text-center text-#999 text-12px py-1">
+                  加载中…
+                </div>
+              </a-select-option>
+              <a-select-option
+                v-else-if="composeFinished && composeLessonOptions.length > 0"
+                key="__compose_no_more__"
+                disabled
+              >
+                <div class="text-center text-#999 text-12px py-1">
+                  没有更多了
+                </div>
+              </a-select-option>
             </a-select>
             <span class="whitespace-nowrap">
               <a-button
@@ -181,15 +489,15 @@ function closeFun() {
             class="w-160px"
           />
         </a-form-item>
-        <!-- 班主任 -->
         <a-form-item label="班主任" name="teacher">
-          <a-select
-            v-model:value="formState.teacher"
+          <StaffSelect
+            v-model="formState.teacher"
             placeholder="请选择班主任"
-          >
-            <a-select-option value="1"> 班主任1 </a-select-option>
-            <a-select-option value="2"> 班主任2 </a-select-option>
-          </a-select>
+            :width="'100%'"
+            :multiple="true"
+            :status="0"
+            :allow-clear="true"
+          />
         </a-form-item>
         <!-- 上课教室 -->
         <a-form-item label="上课教室" name="classRoom">
@@ -275,7 +583,10 @@ function closeFun() {
     </template>
   </a-modal>
 
-  <CreateCombinedCourseModal v-model:open="combinedCourseModalOpen" />
+  <CreateCombinedCourseModal
+    v-model:open="combinedCourseModalOpen"
+    @created="onComposeLessonCreated"
+  />
   </div>
 </template>
 

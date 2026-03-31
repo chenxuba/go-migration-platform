@@ -1,7 +1,9 @@
 <script setup>
 import { MenuOutlined } from "@ant-design/icons-vue";
 import Sortable from "sortablejs";
+import { createComposeLessonApi } from "~/api/edu-center/compose-lesson";
 import SelectCourseRangeModal from "~/components/edu-center/course-list/selectCourseRangeModal.vue";
+import messageService from "~/utils/messageService";
 
 const props = defineProps({
   open: {
@@ -10,7 +12,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["update:open"]);
+const emit = defineEmits(["update:open", "created"]);
 
 const openModel = computed({
   get: () => props.open,
@@ -28,6 +30,8 @@ const formState = reactive({
   name: "",
   courseIds: [],
 });
+
+const submitLoading = ref(false);
 
 function syncCourseIds() {
   formState.courseIds = selectedCourseRows.value
@@ -129,10 +133,37 @@ function close() {
 async function handleOk() {
   try {
     await formRef.value?.validate();
-    close();
   }
   catch {
-    /* 校验失败保留在弹窗 */
+    return;
+  }
+  const productIds = selectedCourseRows.value
+    .map((r) => String(r.id ?? "").trim())
+    .filter(Boolean);
+  if (!productIds.length) {
+    messageService.error("请选择课程");
+    return;
+  }
+  submitLoading.value = true;
+  try {
+    const res = await createComposeLessonApi({
+      lessonName: formState.name.trim(),
+      productIds,
+    });
+    if (res.code === 200 && res.result) {
+      messageService.success("创建成功");
+      emit("created", res.result);
+      close();
+    }
+    else {
+      messageService.error(res.message || "创建失败");
+    }
+  }
+  catch (e) {
+    messageService.error(e?.message || "创建失败");
+  }
+  finally {
+    submitLoading.value = false;
   }
 }
 
@@ -149,6 +180,7 @@ function handleCancel() {
       title="创建组合课程"
       class="modal-content-box create-combined-course-modal"
       :width="800"
+      :confirm-loading="submitLoading"
       destroy-on-close
       ok-text="确定"
       cancel-text="取消"

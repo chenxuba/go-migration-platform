@@ -128,6 +128,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureTeachingClassTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensureComposeLessonTables(ctx, repo.db); err != nil {
+		return err
+	}
 	var exists int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)

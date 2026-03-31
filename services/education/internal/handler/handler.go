@@ -113,6 +113,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/courses/delete-restore", handler.batchDeleteOrRestoreCourses)
 	mux.HandleFunc("/api/v1/courses/sale-status", handler.batchSaleStatus)
 	mux.HandleFunc("/api/v1/courses/micro-school-show", handler.batchOpenMicroSchoolShow)
+	mux.HandleFunc("/api/v1/compose-lessons/create", handler.createComposeLesson)
+	mux.HandleFunc("/api/v1/compose-lessons/page", handler.pageComposeLessonsForPC)
 	mux.HandleFunc("/api/v1/infrastructure/status", handler.infrastructureStatus)
 	mux.HandleFunc("/api/v1/mq/event-logs", handler.mqEventLogs)
 	mux.HandleFunc("/api/v1/es-sync/intent-student/sync", handler.syncIntentStudents)
