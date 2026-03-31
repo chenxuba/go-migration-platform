@@ -96,16 +96,11 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { getStaffSummariesApi } from '@/api/finance-center/approval-manage'
-import { useUserStore } from '@/stores/user'
 import { findCachedStaff, getCachedInitialStaffList, mergeCachedStaff } from '@/composables/staff-select-cache'
-const userStore = useUserStore()
-const userInfo = computed(() => {
-  return userStore.userInfo
-})
 
 function sameStaffId(a, b) {
   return a != null && b != null && String(a) === String(b)
@@ -408,7 +403,12 @@ function handleDropdownVisibleChange(visible) {
         }
       }
       else if (selectedStaffDisplay.value && sameStaffId(props.modelValue, selectedStaffDisplay.value.id)) {
-        preserved = [selectedStaffDisplay.value]
+        const sd = selectedStaffDisplay.value
+        // 勿把「加载中」占位写回 options，否则与 value 同 id 永远匹配到占位，真实姓名永远出不来
+        if (String(sd.nickName || "") === "加载中...")
+          preserved = []
+        else
+          preserved = [sd]
       }
 
       pagination.value.current = 1
@@ -588,36 +588,61 @@ watch(() => [props.modelValue, props.presetStaff], async ([newValue]) => {
       }
     }
   } else if (newValue && !props.multiple) {
-    // 单选模式：保留原有逻辑
-    if (!staffOptions.value.find(item => sameStaffId(item.id, newValue))) {
-      // 如果有值但找不到对应的员工信息，先设置一个占位符
+    function rowFromPresetOrOptions() {
+      let row = staffOptions.value.find(item => sameStaffId(item.id, newValue))
+      if (row && String(row.nickName || "") !== "加载中...")
+        return row
+      if (row && String(row.nickName || "") === "加载中...")
+        row = null
+      const preset = props.presetStaff?.find(x => sameStaffId(x.id, newValue))
+      if (preset && (preset.nickName || preset.name)) {
+        const built = {
+          id: preset.id,
+          nickName: preset.nickName || preset.name || "",
+          mobile: preset.mobile || "",
+        }
+        staffOptions.value = [
+          built,
+          ...staffOptions.value.filter(item => !sameStaffId(item.id, built.id)),
+        ]
+        return built
+      }
+      return row
+    }
+
+    const existing = rowFromPresetOrOptions()
+    if (existing) {
+      selectedStaffDisplay.value = existing
+    }
+    else {
       selectedStaffDisplay.value = {
         id: newValue,
-        nickName: '加载中...',
-        mobile: ''
+        nickName: "加载中...",
+        mobile: "",
       }
-      
-      // 尝试获取员工信息
-      const staffInfo = await getStaffById(newValue)
-      if (staffInfo) {
-        selectedStaffDisplay.value = staffInfo
-        // 只在还没有加载员工列表时才添加到选项中
-        if (!hasLoadedList.value && !staffOptions.value.find(item => sameStaffId(item.id, staffInfo.id))) {
-          staffOptions.value = [staffInfo, ...staffOptions.value]
+      try {
+        const staffInfo = await getStaffById(newValue)
+        if (staffInfo) {
+          selectedStaffDisplay.value = staffInfo
+          staffOptions.value = [
+            staffInfo,
+            ...staffOptions.value.filter(item => !sameStaffId(item.id, staffInfo.id)),
+          ]
         }
-      } else {
-        // 如果获取失败，显示ID
+        else {
+          selectedStaffDisplay.value = {
+            id: newValue,
+            nickName: String(newValue),
+            mobile: "",
+          }
+        }
+      }
+      catch {
         selectedStaffDisplay.value = {
           id: newValue,
-          nickName: userInfo.value.nickName,
-          mobile: userInfo.value.mobile
+          nickName: String(newValue),
+          mobile: "",
         }
-      }
-    } else {
-      // 如果在现有选项中找到了，更新显示
-      const found = staffOptions.value.find(item => sameStaffId(item.id, newValue))
-      if (found) {
-        selectedStaffDisplay.value = found
       }
     }
   } else if (!newValue) {

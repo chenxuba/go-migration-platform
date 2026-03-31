@@ -331,6 +331,8 @@ let editDetailReqSeq = 0;
 
 /** 传给班主任 StaffSelect，用班级接口里的 teachers 直接显示姓名 */
 const teacherPresetForSelect = ref([]);
+/** 默认上课老师：用 defaultTeacherName / teachers 匹配，避免单选卡在「加载中」 */
+const defaultTeacherPresetForSelect = ref([]);
 
 /** 编辑时当前 value 可能不在分页首屏，补一条 option 才能显示课程名而非纯 ID */
 function mergeLessonOptionFromRecord(rec) {
@@ -373,6 +375,8 @@ function resetFormToCreateDefaults() {
     else
       formState[k] = d[k];
   });
+  teacherPresetForSelect.value = [];
+  defaultTeacherPresetForSelect.value = [];
   nextTick(() => {
     formRef.value?.clearValidate?.();
   });
@@ -391,12 +395,25 @@ function applyEditRecord(rec) {
   formState.className = rec.name;
   formState.maxNum = rec.maxCount ?? undefined;
   formState.teacher = (rec.teachers || []).map((t) => t.id);
-  const dt
+  const dtRaw
     = rec.defaultTeacherId && rec.defaultTeacherId !== "0"
       ? rec.defaultTeacherId
       : undefined;
+  const dt = dtRaw != null ? String(dtRaw) : undefined;
   formState.defaultTeacher = dt;
   skipAutoDefaultTeacher.value = !dt;
+  defaultTeacherPresetForSelect.value = [];
+  if (dt) {
+    const nm = String(rec.defaultTeacherName || "").trim();
+    const fromT = (rec.teachers || []).find(t => String(t.id) === String(dt));
+    const nick = nm || (fromT?.name ? String(fromT.name) : "");
+    defaultTeacherPresetForSelect.value = [{
+      id: dt,
+      name: nick || dt,
+      nickName: nick || dt,
+      mobile: fromT?.mobile ?? "",
+    }];
+  }
   formState.defaultStudentClassTime = rec.defaultStudentClassTime ?? 1;
   formState.defaultTeacherClassTime = rec.defaultTeacherClassTime ?? 0;
   formState.defaultClassTimeRecordMode = rec.defaultClassTimeRecordMode ?? 1;
@@ -425,14 +442,12 @@ watch(
     if (!props.open) {
       editDetailReqSeq += 1;
       editDetailLoading.value = false;
-      teacherPresetForSelect.value = [];
       resetFormToCreateDefaults();
       return;
     }
     if (!props.editRecord?.id) {
       editDetailReqSeq += 1;
       editDetailLoading.value = false;
-      teacherPresetForSelect.value = [];
       resetFormToCreateDefaults();
       return;
     }
@@ -858,6 +873,7 @@ function closeFun() {
             :multiple="false"
             :status="0"
             :allow-clear="true"
+            :preset-staff="defaultTeacherPresetForSelect"
           />
         </a-form-item>
         <!-- 上课教室 -->
