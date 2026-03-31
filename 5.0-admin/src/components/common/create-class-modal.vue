@@ -468,10 +468,7 @@ async function handleSubmit() {
       return;
     }
 
-    const res = await createGroupClassApi({
-      ...commonBody,
-      defaultTeacherId: defaultTeacherId || "",
-    });
+    const res = await createGroupClassApi(commonBody);
     const created = res.result ?? res.data;
     if (res.code === 200 && created?.id) {
       messageService.success("创建班级成功");

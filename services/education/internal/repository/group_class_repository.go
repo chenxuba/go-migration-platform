@@ -194,7 +194,7 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 			default_student_class_time, default_teacher_class_time, default_class_time_record_mode,
 			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, '', NULL, ?,
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, '', NULL, ?,
 			?, ?, ?,
 			?, NOW(), ?, NOW(), 0
 		)
