@@ -1,5 +1,6 @@
 <script setup>
 import { CloseOutlined, QuestionCircleOutlined } from "@ant-design/icons-vue";
+import CreateCombinedCourseModal from "./create-combined-course-modal.vue";
 
 const props = defineProps({
   open: {
@@ -9,6 +10,7 @@ const props = defineProps({
 });
 const emit = defineEmits(["update:open"]);
 const formRef = ref();
+const combinedCourseModalOpen = ref(false);
 // 处理双向绑定
 const openModal = computed({
   get: () => props.open,
@@ -18,12 +20,25 @@ const formState = reactive({
   mode: "1",
   course: undefined,
   totalCourse: undefined,
-  defaultRecordStudent: 1,
-  teacherRecord: 0,
+  className: undefined,
+  defaultClassTimeRecordMode: 1,
+  defaultStudentClassTime: 1,
+  defaultTeacherClassTime: 0,
   maxNum: undefined,
   teacher: undefined,
   classRoom: undefined,
+  remark: "",
 });
+
+const classTimeUnitLabel = computed(() =>
+  Number(formState.defaultClassTimeRecordMode) === 2 ? "课时/小时" : "课时",
+);
+
+const classTimeHint = computed(() =>
+  Number(formState.defaultClassTimeRecordMode) === 2
+    ? "每次点名，学员和上课教师记录的课时会根据日程时长自动计算课时（点名时支持调整）"
+    : "每次点名，学员和上课教师记录的课时数默认为此数值（点名时支持调整）",
+);
 // 手动触发验证
 async function handleSubmit() {
   try {
@@ -40,6 +55,7 @@ function closeFun() {
 </script>
 
 <template>
+  <div class="create-class-modals-root">
   <a-modal
     v-model:open="openModal"
     centered
@@ -128,7 +144,13 @@ function closeFun() {
               <a-select-option value="2"> 组合课程2 </a-select-option>
             </a-select>
             <span class="whitespace-nowrap">
-              <a-button type="link" class="text-3.5"> 设置组合课 </a-button>
+              <a-button
+                type="link"
+                class="text-3.5"
+                @click="combinedCourseModalOpen = true"
+              >
+                设置组合课
+              </a-button>
             </span>
           </div>
         </a-form-item>
@@ -179,42 +201,69 @@ function closeFun() {
             <a-select-option value="2"> 教室2 </a-select-option>
           </a-select>
         </a-form-item>
-        <!-- 默认记录学员: 1.00 课时，上课教师: 0.00 课时  并排展示 -->
-        <a-form-item label="默认记录学员">
-          <div class="flex-items-center flex whitespace-nowrap w-120%">
-            <a-form-item
-              name="defaultRecordStudent"
-              class="mb-0"
-              style="display: inline-block"
-              :rules="[{ required: true, message: '请输入学员课时' }]"
-            >
-              <a-input-number
-                v-model:value="formState.defaultRecordStudent"
-                placeholder="请输入"
-                :min="0"
-                :precision="2"
-              />
-            </a-form-item>
-            <span class="ml-5px">课时</span><i class="mx-5px">,</i
-            ><span>上课教师：</span>
-            <a-form-item
-              name="teacherRecord"
-              class="mb-0"
-              style="display: inline-block"
-              :rules="[{ required: true, message: '请输入教师课时' }]"
-            >
-              <a-input-number
-                v-model:value="formState.teacherRecord"
-                placeholder="请输入"
-                :min="0"
-                :precision="2"
-              />
-            </a-form-item>
-            <span class="ml-5px">课时</span>
+        <!-- 与一对一编辑弹窗一致的课时记录方式、默认记录课时 -->
+        <a-form-item
+          label="课时记录方式"
+          name="defaultClassTimeRecordMode"
+          :rules="[{ required: true, message: '请选择课时记录方式' }]"
+        >
+          <a-radio-group
+            v-model:value="formState.defaultClassTimeRecordMode"
+            class="custom-radio"
+          >
+            <a-radio :value="1"> 按固定课时记录 </a-radio>
+            <a-radio :value="2"> 按上课时长记录 </a-radio>
+          </a-radio-group>
+        </a-form-item>
+        <a-form-item
+          label="默认记录课时"
+          required
+          :wrapper-col="{ span: 20 }"
+        >
+          <div class="one-to-one-class-time-inputs">
+            <span class="one-to-one-ct-group">
+              <span>学员</span>
+              <a-form-item
+                name="defaultStudentClassTime"
+                class="mb-0 create-class-nested-fi"
+                :rules="[{ required: true, message: '请输入学员课时' }]"
+              >
+                <a-input-number
+                  v-model:value="formState.defaultStudentClassTime"
+                  :min="0"
+                  :precision="2"
+                  style="width: 100px"
+                />
+              </a-form-item>
+              <span class="one-to-one-ct-unit">{{ classTimeUnitLabel }}</span>
+            </span>
+            <span class="one-to-one-ct-group">
+              <span>上课教师课时</span>
+              <a-form-item
+                name="defaultTeacherClassTime"
+                class="mb-0 create-class-nested-fi"
+                :rules="[{ required: true, message: '请输入教师课时' }]"
+              >
+                <a-input-number
+                  v-model:value="formState.defaultTeacherClassTime"
+                  :min="0"
+                  :precision="2"
+                  style="width: 100px"
+                />
+              </a-form-item>
+              <span class="one-to-one-ct-unit">{{ classTimeUnitLabel }}</span>
+            </span>
           </div>
-          <div class="tip text-3 text-gray-500 whitespace-nowrap w-120% mt-5px">
-            每次点名，学员和上课教师记录的课时数默认为此数值（点名时支持调整）
+          <div class="create-class-class-time-hint">
+            {{ classTimeHint }}
           </div>
+        </a-form-item>
+        <a-form-item label="备注" name="remark">
+          <a-input
+            v-model:value="formState.remark"
+            placeholder="请输入"
+            class="w-450px"
+          />
         </a-form-item>
       </a-form>
     </div>
@@ -225,9 +274,16 @@ function closeFun() {
       <a-button type="primary" @click="handleSubmit"> 确定 </a-button>
     </template>
   </a-modal>
+
+  <CreateCombinedCourseModal v-model:open="combinedCourseModalOpen" />
+  </div>
 </template>
 
 <style lang="less" scoped>
+.create-class-modals-root {
+  display: contents;
+}
+
 /* 添加旋转动画 */
 @keyframes icon-rotate {
   from {
@@ -295,6 +351,43 @@ function closeFun() {
   &::after {
     opacity: 0;
   }
+}
+
+/* 默认记录课时：单行横排，与加宽的 wrapper-col 一起撑开 */
+.one-to-one-class-time-inputs {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  column-gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.one-to-one-ct-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.one-to-one-ct-unit {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.create-class-nested-fi :deep(.ant-form-item-row) {
+  display: inline-flex;
+  margin-bottom: 0;
+}
+
+.create-class-class-time-hint {
+  color: #888;
+  font-size: 13px;
+  margin-top: 6px;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
 }
 </style>
 

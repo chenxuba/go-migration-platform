@@ -1,5 +1,8 @@
 <script setup>
 import { QuestionCircleOutlined, RightOutlined } from '@ant-design/icons-vue'
+import CreateCombinedCourseModal from '~/components/common/create-combined-course-modal.vue'
+
+const combinedCourseModalOpen = ref(false)
 
 const activeKey = ref('')
 const activeKey2 = ref('')
@@ -237,6 +240,23 @@ const toggleValue10 = ref(true)
         <a-switch v-model:checked="toggleValue8" @click.stop />
       </div>
     </div>
+    <!-- 业务设置内：创建组合课程（与创建班级弹窗中「设置组合课」共用组件） -->
+    <div
+      class="settings-item bg-white cursor-pointer"
+      @click="combinedCourseModalOpen = true"
+    >
+      <div class="item-content">
+        <div class="item-title">
+          创建组合课程
+        </div>
+        <div class="item-description line-height-16px mt-4px">
+          设置组合课程名称并添加包含的课程，供创建班级时关联
+        </div>
+      </div>
+      <div class="item-arrow">
+        <RightOutlined />
+      </div>
+    </div>
     <!-- 查看组合课程列表 -->
     <div class="settings-item bg-white">
       <div class="item-content">
@@ -248,6 +268,8 @@ const toggleValue10 = ref(true)
         <RightOutlined />
       </div>
     </div>
+
+    <CreateCombinedCourseModal v-model:open="combinedCourseModalOpen" />
     <!-- 节假日设置 -->
     <div class="flex justify-between items-center px-16px mt-12px">
       <span class="text-#666 text-12px">节假日设置</span>

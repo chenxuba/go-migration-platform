@@ -13,6 +13,11 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  /** 为 true 时回显课程不可在右侧删除（默认）；创建组合课程等场景可设为 true 允许删除 */
+  echoCoursesDeletable: {
+    type: Boolean,
+    default: false,
+  },
 })
 const emit = defineEmits(['update:open', 'confirm'])
 const formRef = ref()
@@ -71,27 +76,27 @@ function setSelectedCourses() {
     // 根据传入的课程数据设置targetKeys
     const selectedKeys = props.selectedCourses.map(course => course.id ? course.id.toString() : course.key)
     targetKeys.value = [...selectedKeys]
-    
+
+    const lockEcho = !props.echoCoursesDeletable
+
     // 如果传入的课程数据中有课程不在当前列表中，需要添加到courseList中
     props.selectedCourses.forEach(course => {
       const courseKey = course.id ? course.id.toString() : course.key
       const existsInList = courseList.value.some(item => item.key === courseKey)
-      
+
       if (!existsInList) {
-        // 添加到课程列表中，确保右侧能正常显示，并标记为禁用状态
         const courseData = {
+          ...course,
           id: course.id || course.key,
           key: courseKey,
           title: course.name || course.title,
-          disabled: true, // 回显的课程设置为禁用状态
-          ...course,
         }
+        courseData.disabled = lockEcho
         courseList.value.unshift(courseData)
       } else {
-        // 如果课程已存在于列表中，也要标记为禁用状态
         const existingCourse = courseList.value.find(item => item.key === courseKey)
         if (existingCourse) {
-          existingCourse.disabled = true
+          existingCourse.disabled = lockEcho
         }
       }
     })
@@ -474,7 +479,7 @@ function closeFun() {
   :deep(.ant-transfer) {
     .ant-transfer-list {
       width: 336px;
-      height: calc(100vh - 200px);
+      height: min(560px, calc(100vh - 200px));
       border: 1px solid #ddd;
       border-radius: 16px;
       overflow: hidden;
@@ -510,7 +515,7 @@ function closeFun() {
 
     .course-list {
       background: #fff;
-      max-height: calc(100vh - 300px);
+      max-height: min(460px, calc(100vh - 280px));
       overflow-y: auto;
       overflow-x: hidden;
     }
