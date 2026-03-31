@@ -701,7 +701,7 @@ onMounted(async () => {
                           <a-menu-item key="3">
                             编辑班级
                           </a-menu-item>
-                          <a-menu-item key="4">
+                          <a-menu-item key="4" danger>
                             结班
                           </a-menu-item>
                         </a-menu>
