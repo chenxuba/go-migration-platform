@@ -281,6 +281,10 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 		whereParts = append(whereParts, "CAST(taf.product_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(query.QueryModel.ProductID))
 	}
+	if strings.TrimSpace(query.QueryModel.TuitionAccountID) != "" {
+		whereParts = append(whereParts, "CAST(taf.tuition_account_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(query.QueryModel.TuitionAccountID))
+	}
 	if strings.TrimSpace(query.QueryModel.StudentID) != "" {
 		whereParts = append(whereParts, "CAST(taf.student_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(query.QueryModel.StudentID))
@@ -524,6 +528,10 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 	if strings.TrimSpace(query.QueryModel.ProductID) != "" {
 		whereParts = append(whereParts, "CAST(taf.product_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(query.QueryModel.ProductID))
+	}
+	if strings.TrimSpace(query.QueryModel.TuitionAccountID) != "" {
+		whereParts = append(whereParts, "CAST(taf.tuition_account_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(query.QueryModel.TuitionAccountID))
 	}
 	if strings.TrimSpace(query.QueryModel.StudentID) != "" {
 		whereParts = append(whereParts, "CAST(taf.student_id AS CHAR) = ?")

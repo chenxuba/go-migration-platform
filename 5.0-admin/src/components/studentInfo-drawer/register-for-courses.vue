@@ -56,6 +56,7 @@ const currentCloseRecordCourse = ref(null)
 const currentEndCourseRecord = ref(null)
 const currentStopCourseRecord = ref(null)
 const currentResumeCourseRecord = ref(null)
+const currentRemainingDetailsRecord = ref(null)
 
 function handleOneToOne() {
   oneToOneModalOpen.value = true
@@ -238,6 +239,11 @@ function onMenuStopCourse(item) {
 function onMenuResumeCourse(item) {
   currentResumeCourseRecord.value = item || null
   resumeTheClassDrawerOpen.value = true
+}
+
+function onMenuRemainingDetails(item) {
+  currentRemainingDetailsRecord.value = item || null
+  remainingDetailsModalOpen.value = true
 }
 
 function onEndedMenuCloseRecord(item) {
@@ -730,7 +736,7 @@ watch(endTheClassDrawerOpen, (value) => {
             </template>
             <span
               class="bg-#e6f0ff mr-3 text-#06f text-3 rounded-10 px2 py0.5 pb0 flex-center cursor-pointer"
-              @click="remainingDetailsModalOpen = true"
+              @click="onMenuRemainingDetails(item)"
             ><img
               class="mt--0.6"
               src="https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/12087/static/left-detail.8a056096.svg"
@@ -778,7 +784,7 @@ watch(endTheClassDrawerOpen, (value) => {
     />
     <suspensionResumeModal v-model:open="suspensionResumeDrawerOpen" />
     <feeChangeModal v-model:open="feeChangeDrawerOpen" />
-    <remainingDetailsModal v-model:open="remainingDetailsModalOpen" />
+    <remainingDetailsModal v-model:open="remainingDetailsModalOpen" :record="currentRemainingDetailsRecord" />
     <oneToOneModal v-model:open="oneToOneModalOpen" />
   </div>
 </template>

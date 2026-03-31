@@ -37,12 +37,13 @@ type TuitionAccountFlowRecordListQueryDTO struct {
 }
 
 type TuitionAccountFlowRecordQueryModel struct {
-	ProductID   string `json:"productId"`
-	StudentID   string `json:"studentId"`
-	OrderNumber string `json:"orderNumber"`
-	SourceTypes []int  `json:"sourceTypes"`
-	StartTime   string `json:"startTime"`
-	EndTime     string `json:"endTime"`
+	TuitionAccountID string `json:"tuitionAccountId"`
+	ProductID        string `json:"productId"`
+	StudentID        string `json:"studentId"`
+	OrderNumber      string `json:"orderNumber"`
+	SourceTypes      []int  `json:"sourceTypes"`
+	StartTime        string `json:"startTime"`
+	EndTime          string `json:"endTime"`
 }
 
 type TuitionAccountFlowRecordSortModel struct {

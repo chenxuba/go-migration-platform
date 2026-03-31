@@ -2466,6 +2466,25 @@ func timeSlotSourceIDByDate(value time.Time) int64 {
 	return sourceID
 }
 
+func (repo *Repository) loadCurrentTimeSlotRangeTx(ctx context.Context, tx *sql.Tx, instID, orderID, orderCourseDetailID int64) (sql.NullTime, sql.NullTime, error) {
+	var validDate sql.NullTime
+	var endDate sql.NullTime
+	err := tx.QueryRowContext(ctx, `
+		SELECT MIN(valid_date), MAX(end_date)
+		FROM tuition_account
+		WHERE inst_id = ? AND order_id = ? AND order_course_detail_id = ? AND del_flag = 0
+		  AND valid_date IS NOT NULL AND end_date IS NOT NULL
+	`, instID, orderID, orderCourseDetailID).Scan(&validDate, &endDate)
+	if err != nil {
+		return sql.NullTime{}, sql.NullTime{}, err
+	}
+	return validDate, endDate, nil
+}
+
+func allowTimeSlotAutoIncomeForStatus(status int) bool {
+	return status == model.TuitionAccountStatusActive
+}
+
 func cumulativeTimeSlotTuition(totalTuition, totalDays float64, consumedDays int) float64 {
 	if totalDays <= 0 || consumedDays <= 0 {
 		return 0
@@ -2529,6 +2548,16 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 	if !detail.ValidDate.Valid || !detail.EndDate.Valid {
 		return nil
 	}
+	if currentValidDate, currentEndDate, err := repo.loadCurrentTimeSlotRangeTx(ctx, tx, instID, orderID, detail.ID); err != nil {
+		return err
+	} else {
+		if currentValidDate.Valid {
+			detail.ValidDate = currentValidDate
+		}
+		if currentEndDate.Valid {
+			detail.EndDate = currentEndDate
+		}
+	}
 
 	startDate := startOfDayTime(detail.ValidDate.Time)
 	endDate := startOfDayTime(detail.EndDate.Time)
@@ -2545,6 +2574,7 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 	var (
 		paidAccountID           int64
 		paidCourseID            int64
+		paidAccountStatus       int
 		paidTotalDays           float64
 		paidTotalTuition        float64
 		usedQuantity            float64
@@ -2556,7 +2586,7 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 		lessonType              sql.NullInt64
 	)
 	err := tx.QueryRowContext(ctx, `
-		SELECT ta.id, ta.course_id, IFNULL(ta.total_quantity, 0), IFNULL(ta.total_tuition, 0),
+		SELECT ta.id, ta.course_id, IFNULL(ta.status, 0), IFNULL(ta.total_quantity, 0), IFNULL(ta.total_tuition, 0),
 		       IFNULL(ta.used_quantity, 0), IFNULL(ta.remaining_quantity, 0), IFNULL(ta.used_tuition, 0), IFNULL(ta.remaining_tuition, 0), IFNULL(ta.confirmed_tuition, 0),
 		       IFNULL(so.order_number, ''), c.teach_method
 		FROM tuition_account ta
@@ -2565,12 +2595,15 @@ func (repo *Repository) initializeTimeSlotIncomeTx(
 		WHERE ta.inst_id = ? AND ta.order_id = ? AND ta.order_course_detail_id = ? AND ta.del_flag = 0 AND IFNULL(ta.total_tuition, 0) > 0
 		ORDER BY ta.id ASC
 		LIMIT 1
-	`, instID, orderID, detail.ID).Scan(&paidAccountID, &paidCourseID, &paidTotalDays, &paidTotalTuition, &usedQuantity, &remainQuantity, &usedTuition, &remainTuition, &confirmedTuitionCurrent, &orderNumber, &lessonType)
+	`, instID, orderID, detail.ID).Scan(&paidAccountID, &paidCourseID, &paidAccountStatus, &paidTotalDays, &paidTotalTuition, &usedQuantity, &remainQuantity, &usedTuition, &remainTuition, &confirmedTuitionCurrent, &orderNumber, &lessonType)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil
 		}
 		return err
+	}
+	if !allowTimeSlotAutoIncomeForStatus(paidAccountStatus) {
+		return nil
 	}
 
 	todayConsumedByOther, err := repo.hasOtherTeachingCourseAutoConsumeOnDateTx(ctx, tx, instID, studentID, detail.CourseID, paidAccountID, today)

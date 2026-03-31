@@ -64,6 +64,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/tuition-accounts/reading-list", handler.tuitionAccountReadingList)
 	mux.HandleFunc("/api/v1/tuition-accounts/suspend-resume-orders/create", handler.addSuspendResumeTuitionAccountOrder)
 	mux.HandleFunc("/api/v1/tuition-accounts/sub-account-date-info", handler.tuitionAccountSubAccountDateInfo)
+	mux.HandleFunc("/api/v1/tuition-accounts/sub-account-priority-configs/list", handler.subTuitionAccountPriorityConfigList)
 	mux.HandleFunc("/api/v1/tuition-accounts/revert-close-preview", handler.revertCloseTuitionAccountPreview)
 	mux.HandleFunc("/api/v1/tuition-accounts/revert-close", handler.revertCloseTuitionAccount)
 	mux.HandleFunc("/api/v1/tuition-accounts/close-orders/list", handler.closeTuitionAccountOrderList)

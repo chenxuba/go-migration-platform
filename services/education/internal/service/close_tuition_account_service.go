@@ -21,6 +21,17 @@ func (svc *Service) GetTuitionAccountSubAccountDateInfo(userID int64, dto model.
 	return svc.repo.GetTuitionAccountSubAccountDateInfo(context.Background(), instID, dto)
 }
 
+func (svc *Service) ListSubTuitionAccountPriorityConfigs(userID int64) (model.SubTuitionAccountPriorityConfigResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.SubTuitionAccountPriorityConfigResult{}, errors.New("no institution context")
+		}
+		return model.SubTuitionAccountPriorityConfigResult{}, err
+	}
+	return svc.repo.ListSubTuitionAccountPriorityConfigs(context.Background(), instID)
+}
+
 func (svc *Service) GetRevertCloseTuitionAccountPreview(userID int64, dto model.RevertCloseTuitionAccountPreviewQueryDTO) (model.RevertCloseTuitionAccountPreview, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

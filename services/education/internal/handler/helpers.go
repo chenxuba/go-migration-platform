@@ -281,12 +281,13 @@ func parseTuitionAccountFlowRecordListQueryDTO(raw map[string]any) model.Tuition
 	}
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
 		query.QueryModel = model.TuitionAccountFlowRecordQueryModel{
-			ProductID:   asString(qm["productId"]),
-			StudentID:   asString(qm["studentId"]),
-			OrderNumber: asString(qm["orderNumber"]),
-			SourceTypes: asIntSlice(qm["sourceTypes"]),
-			StartTime:   asString(qm["startTime"]),
-			EndTime:     asString(qm["endTime"]),
+			TuitionAccountID: asString(qm["tuitionAccountId"]),
+			ProductID:        asString(qm["productId"]),
+			StudentID:        asString(qm["studentId"]),
+			OrderNumber:      asString(qm["orderNumber"]),
+			SourceTypes:      asIntSlice(qm["sourceTypes"]),
+			StartTime:        asString(qm["startTime"]),
+			EndTime:          asString(qm["endTime"]),
 		}
 	}
 	if sm, ok := raw["sortModel"].(map[string]any); ok {
@@ -476,12 +477,13 @@ func parseSubTuitionAccountFlowRecordListQueryDTO(raw map[string]any) model.SubT
 	}
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
 		query.QueryModel = model.TuitionAccountFlowRecordQueryModel{
-			ProductID:   asString(qm["productId"]),
-			StudentID:   asString(qm["studentId"]),
-			OrderNumber: asString(qm["orderNumber"]),
-			SourceTypes: asIntSlice(qm["sourceTypes"]),
-			StartTime:   asString(qm["startTime"]),
-			EndTime:     asString(qm["endTime"]),
+			TuitionAccountID: asString(qm["tuitionAccountId"]),
+			ProductID:        asString(qm["productId"]),
+			StudentID:        asString(qm["studentId"]),
+			OrderNumber:      asString(qm["orderNumber"]),
+			SourceTypes:      asIntSlice(qm["sourceTypes"]),
+			StartTime:        asString(qm["startTime"]),
+			EndTime:          asString(qm["endTime"]),
 		}
 	}
 	if sm, ok := raw["sortModel"].(map[string]any); ok {

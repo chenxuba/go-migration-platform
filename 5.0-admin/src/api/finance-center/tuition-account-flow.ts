@@ -57,6 +57,7 @@ export interface SubTuitionAccountFlowRecordListResult {
 
 export interface TuitionAccountFlowRecordListQueryParams {
   queryModel?: {
+    tuitionAccountId?: string
     productId?: string
     studentId?: string
     orderNumber?: string

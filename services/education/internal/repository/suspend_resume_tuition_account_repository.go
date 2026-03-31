@@ -73,6 +73,14 @@ func endOfDayTime(value time.Time) time.Time {
 	return time.Date(value.Year(), value.Month(), value.Day(), 23, 59, 59, 0, value.Location())
 }
 
+func normalizeResumeExpireMutation(lessonModelCode int, expireType int, hasExpireTime bool, expireTimeArg any) (int, bool, any) {
+	// 仅按课时复课允许处理有效期；按时段/按金额等场景忽略客户端误传的有效期字段。
+	if lessonModelCode != 1 {
+		return 0, false, nil
+	}
+	return expireType, hasExpireTime, expireTimeArg
+}
+
 func (repo *Repository) SyncScheduledSuspendResumeTuitionAccounts(ctx context.Context, now time.Time) (int, error) {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -289,6 +297,10 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 	if hasExpireTime {
 		expireTimeArg = expireTime
 	}
+	effectiveExpireType := dto.ExpireType
+	if dto.Type == 2 {
+		effectiveExpireType, hasExpireTime, expireTimeArg = normalizeResumeExpireMutation(bucket.lessonModelCode, dto.ExpireType, hasExpireTime, expireTimeArg)
+	}
 
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO suspend_resume_tuition_account_order (
@@ -300,7 +312,7 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 			?, ?, ?, ?, ?,
 			?, NOW(), ?, NOW(), 0
 		)
-	`, instID, primaryAccountID, selected.studentID, selected.courseID, dto.Type, expireTimeArg, dto.ExpireType, strings.TrimSpace(dto.Remark), suspendDateArg, resumeDateArg, operatorID, operatorID)
+	`, instID, primaryAccountID, selected.studentID, selected.courseID, dto.Type, expireTimeArg, effectiveExpireType, strings.TrimSpace(dto.Remark), suspendDateArg, resumeDateArg, operatorID, operatorID)
 	if err != nil {
 		return model.SuspendResumeTuitionAccountOrderResult{}, err
 	}
@@ -356,7 +368,7 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 		}
 		var expireType1Arg any = nil
 		var expireType1Enabled int = 1
-		if dto.ExpireType == 1 {
+		if effectiveExpireType == 1 {
 			if !hasExpireTime {
 				return model.SuspendResumeTuitionAccountOrderResult{}, errors.New("请选择现有效期至")
 			}
@@ -365,14 +377,14 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 				enable_expire_time = ?,
 				expire_time = ?`
 			args = append(args, expireType1Enabled, expireType1Arg)
-		} else if dto.ExpireType == 3 {
+		} else if effectiveExpireType == 3 {
 			updateExpireSQL = `,
 				enable_expire_time = ?,
 				expire_time = NULL,
 				valid_date = NULL,
 				end_date = NULL`
 			args = append(args, 0)
-		} else if dto.ExpireType == 2 {
+		} else if effectiveExpireType == 2 {
 			updateExpireSQL = `,
 				expire_time = CASE WHEN expire_time IS NULL THEN NULL ELSE DATE_ADD(expire_time, INTERVAL ? DAY) END,
 				valid_date = CASE WHEN valid_date IS NULL THEN NULL ELSE DATE_ADD(valid_date, INTERVAL ? DAY) END,

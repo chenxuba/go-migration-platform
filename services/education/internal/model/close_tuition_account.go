@@ -12,32 +12,49 @@ type TuitionAccountSubAccountDateInfoQueryDTO struct {
 }
 
 type TuitionAccountSubAccountDateInfoItem struct {
-	ID                   string     `json:"id"`
-	CreatedTime          *time.Time `json:"createdTime,omitempty"`
-	ActivedAt            *time.Time `json:"activedAt,omitempty"`
-	RemainDays           float64    `json:"remainDays"`
-	RawStatus            int        `json:"rawStatus"`
-	Status               int        `json:"status"`
-	IsFree               bool       `json:"isFree"`
-	TotalDays            float64    `json:"totalDays"`
-	Tuition              float64    `json:"tuition"`
-	TotalTuition         float64    `json:"totalTuition"`
-	EndDate              *time.Time `json:"endDate,omitempty"`
-	SourceType           int        `json:"sourceType"`
-	OrderID              string     `json:"orderId"`
-	UnitPrice            float64    `json:"unitPrice"`
-	PaidTuition          float64    `json:"paidTuition"`
-	ShouldTuition        float64    `json:"shouldTuition"`
-	ArrearTuition        float64    `json:"arrearTuition"`
-	ChargeAgainstTuition float64    `json:"chargeAgainstTuition"`
-	TransferredTuition   float64    `json:"transferredTuition"`
-	PaidRemaining        float64    `json:"paidRemaining"`
-	UsedTuition          float64    `json:"usedTuition"`
-	StartDate            *time.Time `json:"startDate,omitempty"`
+	ID                     string     `json:"id"`
+	Quantity               float64    `json:"quantity"`
+	CreatedTime            *time.Time `json:"createdTime,omitempty"`
+	StartTime              *time.Time `json:"startTime,omitempty"`
+	ActivedAt              *time.Time `json:"activedAt,omitempty"`
+	RemainDays             float64    `json:"remainDays"`
+	RawStatus              int        `json:"rawStatus"`
+	Status                 int        `json:"status"`
+	IsFree                 bool       `json:"isFree"`
+	TotalDays              float64    `json:"totalDays"`
+	Tuition                float64    `json:"tuition"`
+	TotalTuition           float64    `json:"totalTuition"`
+	EndDate                *time.Time `json:"endDate,omitempty"`
+	SourceType             int        `json:"sourceType"`
+	AccountSourceType      int        `json:"accountSourceType"`
+	OrderID                string     `json:"orderId"`
+	SourceID               string     `json:"sourceId"`
+	UnitPrice              float64    `json:"unitPrice"`
+	PaidTuition            float64    `json:"paidTuition"`
+	ShouldTuition          float64    `json:"shouldTuition"`
+	ArrearTuition          float64    `json:"arrearTuition"`
+	ChargeAgainstTuition   float64    `json:"chargeAgainstTuition"`
+	TransferredTuition     float64    `json:"transferredTuition"`
+	PaidRemaining          float64    `json:"paidRemaining"`
+	UsedTuition            float64    `json:"usedTuition"`
+	StartDate              *time.Time `json:"startDate,omitempty"`
+	ExpiredToClearQuantity bool       `json:"expiredToClearQuantity"`
+	ExpireDate             *time.Time `json:"expireDate,omitempty"`
 }
 
 type TuitionAccountSubAccountDateInfoResult struct {
 	List []TuitionAccountSubAccountDateInfoItem `json:"list"`
+}
+
+type SubTuitionAccountPriorityConfigItem struct {
+	PriorityType  int  `json:"priorityType"`
+	SortDirection int  `json:"sortDirection"`
+	SortWeight    int  `json:"sortWeight"`
+	IsEnabled     bool `json:"isEnabled"`
+}
+
+type SubTuitionAccountPriorityConfigResult struct {
+	List []SubTuitionAccountPriorityConfigItem `json:"list"`
 }
 
 type RevertCloseTuitionAccountPreviewQueryDTO struct {

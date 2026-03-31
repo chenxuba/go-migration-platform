@@ -36,24 +36,33 @@ type closeTuitionAccountOrderRow struct {
 }
 
 type closeTuitionAccountFlowRow struct {
-	flowID             int64
-	tuitionAccountID   int64
-	studentID          int64
-	courseID           int64
-	lessonType         sql.NullInt64
-	lessonChargingMode int
-	orderNumber        string
-	quantity           float64
-	tuition            float64
-	usedQuantity       float64
-	remainQuantity     float64
-	usedTuition        float64
-	remainTuition      float64
-	confirmedTuition   float64
-	enableExpireTime   int
-	validDate          sql.NullTime
-	endDate            sql.NullTime
-	createTime         sql.NullTime
+	flowID              int64
+	tuitionAccountID    int64
+	studentID           int64
+	courseID            int64
+	orderID             int64
+	orderCourseDetailID int64
+	lessonType          sql.NullInt64
+	lessonChargingMode  int
+	orderNumber         string
+	quantity            float64
+	tuition             float64
+	usedQuantity        float64
+	remainQuantity      float64
+	usedTuition         float64
+	remainTuition       float64
+	confirmedTuition    float64
+	enableExpireTime    int
+	validDate           sql.NullTime
+	endDate             sql.NullTime
+	createTime          sql.NullTime
+}
+
+type restoredTimeSlotOrderDetailRange struct {
+	orderID             int64
+	orderCourseDetailID int64
+	validDate           time.Time
+	endDate             time.Time
 }
 
 type tuitionAccountSubAccountRow struct {
@@ -367,6 +376,8 @@ func (repo *Repository) listCloseFlowsByOrderTx(ctx context.Context, tx *sql.Tx,
 			taf.tuition_account_id,
 			taf.student_id,
 			taf.product_id,
+			IFNULL(ta.order_id, 0),
+			IFNULL(ta.order_course_detail_id, 0),
 			taf.lesson_type,
 			IFNULL(taf.lesson_charging_mode, 0),
 			IFNULL(taf.order_number, ''),
@@ -406,6 +417,8 @@ func (repo *Repository) listCloseFlowsByOrderTx(ctx context.Context, tx *sql.Tx,
 			&item.tuitionAccountID,
 			&item.studentID,
 			&item.courseID,
+			&item.orderID,
+			&item.orderCourseDetailID,
 			&item.lessonType,
 			&item.lessonChargingMode,
 			&item.orderNumber,
@@ -426,6 +439,87 @@ func (repo *Repository) listCloseFlowsByOrderTx(ctx context.Context, tx *sql.Tx,
 		list = append(list, item)
 	}
 	return list, rows.Err()
+}
+
+func mergeRestoredTimeSlotOrderDetailRange(detailOrder []int64, detailRanges map[int64]*restoredTimeSlotOrderDetailRange, orderID, detailID int64, validDate, endDate time.Time) []int64 {
+	if detailID <= 0 || orderID <= 0 {
+		return detailOrder
+	}
+	if current, ok := detailRanges[detailID]; ok {
+		if validDate.Before(current.validDate) {
+			current.validDate = validDate
+		}
+		if endDate.After(current.endDate) {
+			current.endDate = endDate
+		}
+		return detailOrder
+	}
+	detailRanges[detailID] = &restoredTimeSlotOrderDetailRange{
+		orderID:             orderID,
+		orderCourseDetailID: detailID,
+		validDate:           validDate,
+		endDate:             endDate,
+	}
+	return append(detailOrder, detailID)
+}
+
+func (repo *Repository) updateRestoredTimeSlotOrderDetailsTx(ctx context.Context, tx *sql.Tx, operatorID int64, detailOrder []int64, detailRanges map[int64]*restoredTimeSlotOrderDetailRange) error {
+	for _, detailID := range detailOrder {
+		rng := detailRanges[detailID]
+		if rng == nil {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE sale_order_course_detail
+			SET has_valid_date = 1,
+			    valid_date = ?,
+			    end_date = ?,
+			    update_id = ?,
+			    update_time = NOW()
+			WHERE id = ? AND order_id = ? AND del_flag = 0
+		`, rng.validDate, rng.endDate, operatorID, rng.orderCourseDetailID, rng.orderID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) syncRestoredTimeSlotAutoIncomeTx(ctx context.Context, tx *sql.Tx, instID, operatorID, studentID int64, detailOrder []int64, detailRanges map[int64]*restoredTimeSlotOrderDetailRange, now time.Time) error {
+	if len(detailOrder) == 0 {
+		return nil
+	}
+	details := make([]orderCourseDetail, 0, len(detailOrder))
+	detailByID := make(map[int64]orderCourseDetail, len(detailOrder))
+	for _, detailID := range detailOrder {
+		detail, err := repo.loadOrderCourseDetailTx(ctx, tx, detailID)
+		if err != nil {
+			return err
+		}
+		details = append(details, detail)
+		detailByID[detailID] = detail
+	}
+	quotationMap, err := repo.getCourseQuotationsByIDsTx(ctx, tx, collectOrderDetailQuoteIDs(details))
+	if err != nil {
+		return err
+	}
+	for _, detailID := range detailOrder {
+		rng := detailRanges[detailID]
+		if rng == nil {
+			continue
+		}
+		detail, ok := detailByID[detailID]
+		if !ok || !detail.QuoteID.Valid {
+			continue
+		}
+		quotation, ok := quotationMap[detail.QuoteID.Int64]
+		if !ok {
+			continue
+		}
+		if err := repo.initializeTimeSlotIncomeTx(ctx, tx, instID, operatorID, rng.orderID, studentID, detail, quotation, now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (repo *Repository) loadSubAccountDateInfoRowsTx(ctx context.Context, tx *sql.Tx, instID int64, accountIDs []int64) ([]tuitionAccountSubAccountRow, error) {
@@ -540,24 +634,28 @@ func convertSubAccountDateInfoRows(rows []tuitionAccountSubAccountRow) []model.T
 	out := make([]model.TuitionAccountSubAccountDateInfoItem, 0, len(rows))
 	for _, row := range rows {
 		item := model.TuitionAccountSubAccountDateInfoItem{
-			ID:                   strconv.FormatInt(row.id, 10),
-			RemainDays:           closeOrderRoundMoney(row.remainQuantity),
-			RawStatus:            row.rawStatus,
-			Status:               row.rawStatus,
-			IsFree:               closeOrderAlmostEqual(row.totalTuition, 0),
-			TotalDays:            closeOrderRoundMoney(row.totalQuantity),
-			Tuition:              closeOrderRoundMoney(row.tuition),
-			TotalTuition:         closeOrderRoundMoney(row.totalTuition),
-			SourceType:           row.orderType,
-			OrderID:              strconv.FormatInt(row.orderID, 10),
-			UnitPrice:            closeOrderRoundMoney(row.unitPrice),
-			PaidTuition:          closeOrderRoundMoney(row.paidTuition),
-			ShouldTuition:        closeOrderRoundMoney(row.shouldTuition),
-			ArrearTuition:        closeOrderRoundMoney(row.arrearTuition),
-			ChargeAgainstTuition: closeOrderRoundMoney(row.chargeAgainstTuition),
-			TransferredTuition:   closeOrderRoundMoney(row.transferredTuition),
-			PaidRemaining:        closeOrderRoundMoney(row.paidRemaining),
-			UsedTuition:          closeOrderRoundMoney(row.usedTuition),
+			ID:                     strconv.FormatInt(row.id, 10),
+			Quantity:               closeOrderRoundMoney(row.remainQuantity),
+			RemainDays:             closeOrderRoundMoney(row.remainQuantity),
+			RawStatus:              row.rawStatus,
+			Status:                 row.rawStatus,
+			IsFree:                 closeOrderAlmostEqual(row.totalTuition, 0),
+			TotalDays:              closeOrderRoundMoney(row.totalQuantity),
+			Tuition:                closeOrderRoundMoney(row.tuition),
+			TotalTuition:           closeOrderRoundMoney(row.totalTuition),
+			SourceType:             row.orderType,
+			AccountSourceType:      row.orderType,
+			OrderID:                strconv.FormatInt(row.orderID, 10),
+			SourceID:               strconv.FormatInt(row.orderID, 10),
+			UnitPrice:              closeOrderRoundMoney(row.unitPrice),
+			PaidTuition:            closeOrderRoundMoney(row.paidTuition),
+			ShouldTuition:          closeOrderRoundMoney(row.shouldTuition),
+			ArrearTuition:          closeOrderRoundMoney(row.arrearTuition),
+			ChargeAgainstTuition:   closeOrderRoundMoney(row.chargeAgainstTuition),
+			TransferredTuition:     closeOrderRoundMoney(row.transferredTuition),
+			PaidRemaining:          closeOrderRoundMoney(row.paidRemaining),
+			UsedTuition:            closeOrderRoundMoney(row.usedTuition),
+			ExpiredToClearQuantity: false,
 		}
 		if row.createdTime.Valid {
 			t := row.createdTime.Time
@@ -566,11 +664,13 @@ func convertSubAccountDateInfoRows(rows []tuitionAccountSubAccountRow) []model.T
 		if row.activedAt.Valid {
 			t := row.activedAt.Time
 			item.ActivedAt = &t
+			item.StartTime = &t
 			item.StartDate = &t
 		}
 		if row.endDate.Valid {
 			t := row.endDate.Time
 			item.EndDate = &t
+			item.ExpireDate = &t
 		}
 		out = append(out, item)
 	}
@@ -974,6 +1074,8 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 	firstRevokeFlowID := int64(0)
 	origContractStart, hasOrigContractStart := minCloseFlowValidDate(flows)
 	bonusConsumedFirstDay := false
+	restoredDetailOrder := make([]int64, 0, 4)
+	restoredDetailRanges := make(map[int64]*restoredTimeSlotOrderDetailRange)
 
 	for _, flow := range flows {
 		newUsedQty := math.Max(closeOrderRoundMoney(flow.usedQuantity-flow.quantity), 0)
@@ -985,6 +1087,9 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 		var validDateArg any = nil
 		var endDateArg any = nil
 		var expireDateArg any = nil
+		var restoredValidDate time.Time
+		var restoredEndDate time.Time
+		hasRestoredRange := false
 		if orderRow.lessonChargingMode == 2 {
 			restoreDays := int(math.Round(flow.quantity))
 			if restoreDays > 0 {
@@ -998,6 +1103,9 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 				endDate := cursorDate.AddDate(0, 0, restoreDays-1)
 				validDateArg = validDate
 				endDateArg = endDate
+				restoredValidDate = validDate
+				restoredEndDate = endDate
+				hasRestoredRange = true
 				cursorDate = endDate.AddDate(0, 0, 1)
 			}
 		}
@@ -1070,6 +1178,25 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 		}
 		if firstRevokeFlowID == 0 {
 			firstRevokeFlowID = revokeFlowID
+		}
+		if hasRestoredRange {
+			restoredDetailOrder = mergeRestoredTimeSlotOrderDetailRange(
+				restoredDetailOrder,
+				restoredDetailRanges,
+				flow.orderID,
+				flow.orderCourseDetailID,
+				restoredValidDate,
+				restoredEndDate,
+			)
+		}
+	}
+
+	if orderRow.lessonChargingMode == 2 {
+		if err := repo.updateRestoredTimeSlotOrderDetailsTx(ctx, tx, operatorID, restoredDetailOrder, restoredDetailRanges); err != nil {
+			return 0, err
+		}
+		if err := repo.syncRestoredTimeSlotAutoIncomeTx(ctx, tx, instID, operatorID, selected.studentID, restoredDetailOrder, restoredDetailRanges, now); err != nil {
+			return 0, err
 		}
 	}
 

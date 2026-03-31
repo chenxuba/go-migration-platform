@@ -32,6 +32,24 @@ func (handler *Handler) tuitionAccountSubAccountDateInfo(w http.ResponseWriter, 
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) subTuitionAccountPriorityConfigList(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.ListSubTuitionAccountPriorityConfigs(claims.UserID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) revertCloseTuitionAccountPreview(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

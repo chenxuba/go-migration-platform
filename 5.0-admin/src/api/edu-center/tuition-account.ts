@@ -46,7 +46,9 @@ export interface TuitionAccountReadingListResult {
 
 export interface TuitionAccountSubAccountDateInfoItem {
   id?: string
+  quantity?: number
   createdTime?: string
+  startTime?: string
   activedAt?: string
   remainDays?: number
   rawStatus?: number
@@ -57,7 +59,9 @@ export interface TuitionAccountSubAccountDateInfoItem {
   totalTuition?: number
   endDate?: string
   sourceType?: number
+  accountSourceType?: number
   orderId?: string
+  sourceId?: string
   unitPrice?: number
   paidTuition?: number
   shouldTuition?: number
@@ -67,10 +71,23 @@ export interface TuitionAccountSubAccountDateInfoItem {
   paidRemaining?: number
   usedTuition?: number
   startDate?: string
+  expiredToClearQuantity?: boolean
+  expireDate?: string
 }
 
 export interface TuitionAccountSubAccountDateInfoResult {
   list?: TuitionAccountSubAccountDateInfoItem[]
+}
+
+export interface SubTuitionAccountPriorityConfigItem {
+  priorityType?: number
+  sortDirection?: number
+  sortWeight?: number
+  isEnabled?: boolean
+}
+
+export interface SubTuitionAccountPriorityConfigResult {
+  list?: SubTuitionAccountPriorityConfigItem[]
 }
 
 export interface RevertCloseTuitionAccountPreviewSubPeriod {
@@ -163,6 +180,10 @@ export function getTuitionAccountReadingListApi(data: TuitionAccountReadingListQ
 
 export function getTuitionAccountSubAccountDateInfoApi(data: { tuitionAccountId: string }) {
   return usePost<TuitionAccountSubAccountDateInfoResult>('/api/v1/tuition-accounts/sub-account-date-info', data)
+}
+
+export function getSubTuitionAccountPriorityConfigListApi() {
+  return usePost<SubTuitionAccountPriorityConfigResult>('/api/v1/tuition-accounts/sub-account-priority-configs/list', {})
 }
 
 export function getRevertCloseTuitionAccountPreviewApi(data: { tuitionAccountId: string }) {
