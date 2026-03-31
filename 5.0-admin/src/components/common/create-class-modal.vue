@@ -274,6 +274,7 @@ const formState = reactive({
   defaultTeacherClassTime: 0,
   maxNum: undefined,
   teacher: [],
+  defaultTeacher: undefined,
   classRoom: undefined,
   remark: "",
 });
@@ -309,6 +310,10 @@ async function handleSubmit() {
     messageService.error("请选择班主任");
     return;
   }
+  const defaultTeacherId =
+    formState.defaultTeacher != null && formState.defaultTeacher !== ""
+      ? String(formState.defaultTeacher)
+      : teacherIds[0];
   submitting.value = true;
   try {
     const className = String(formState.className || "").trim();
@@ -330,7 +335,7 @@ async function handleSubmit() {
       lessonId: String(lessonId),
       maxCount: formState.maxNum != null ? Number(formState.maxNum) : 0,
       teacherIds,
-      defaultTeacherId: teacherIds[0],
+      defaultTeacherId,
       defaultStudentClassTime: Number(formState.defaultStudentClassTime) || 1,
       defaultTeacherClassTime: Number(formState.defaultTeacherClassTime) || 0,
       defaultClassTimeRecordMode: Number(formState.defaultClassTimeRecordMode) || 1,
@@ -395,7 +400,7 @@ function closeFun() {
         ref="formRef"
         :model="formState"
         :label-col="{ span: 4 }"
-        :wrapper-col="{ span: 10 }"
+        :wrapper-col="{ span: 13 }"
       >
         <!-- 设置模式  单选框  课程 组合课程 -->
         <a-form-item
@@ -557,6 +562,8 @@ function closeFun() {
           <a-input-number
             v-model:value="formState.maxNum"
             placeholder="不限"
+            :min="0"
+            :precision="0"
             class="w-160px"
           />
         </a-form-item>
@@ -577,6 +584,16 @@ function closeFun() {
             placeholder="请选择班主任"
             :width="'100%'"
             :multiple="true"
+            :status="0"
+            :allow-clear="true"
+          />
+        </a-form-item>
+        <a-form-item label="默认上课老师" name="defaultTeacher">
+          <StaffSelect
+            v-model="formState.defaultTeacher"
+            placeholder="请选择默认上课老师"
+            :width="'100%'"
+            :multiple="false"
             :status="0"
             :allow-clear="true"
           />
