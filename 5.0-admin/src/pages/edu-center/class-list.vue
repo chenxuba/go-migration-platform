@@ -2,8 +2,6 @@
 import { CaretDownOutlined, DownOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { debounce } from 'lodash-es'
-import { pageComposeLessonsForPcApi } from '@/api/edu-center/compose-lesson'
-import { getCoursePageApi } from '@/api/edu-center/course-list'
 import {
   groupClassStatisticsApi,
   pageGroupClassesApi,
@@ -101,86 +99,40 @@ function updateCustomSearchOptions(id, optionsList) {
     : item)
 }
 
-async function loadCourseFilterOptions() {
-  const [courseRes, composeRes] = await Promise.all([
-    getCoursePageApi({
-      pageRequestModel: {
-        needTotal: true,
-        pageSize: 100,
-        pageIndex: 1,
-      },
-      sortModel: {
-        byTotalSales: 0,
-        byUpdateTime: 0,
-      },
-      queryModel: {
-        searchKey: '',
-        delFlag: false,
-        saleStatus: 1,
-        teachMethod: 1,
-        courseType: 1,
-      },
-    }),
-    pageComposeLessonsForPcApi({
-      queryModel: { searchKey: '' },
-      pageRequestModel: {
-        needTotal: true,
-        pageSize: 100,
-        pageIndex: 1,
-        skipCount: 0,
-      },
-    }),
-  ])
-
-  const options = []
-  if (courseRes.code === 200) {
-    const list = Array.isArray(courseRes.result) ? courseRes.result : []
-    list.forEach((item) => {
-      options.push({
-        id: `single:${item.id}`,
-        value: item.name || item.title || String(item.id),
-      })
-    })
-  }
-
-  if (composeRes.code === 200) {
-    const list = Array.isArray(composeRes.result?.list) ? composeRes.result.list : []
-    list.forEach((item) => {
-      options.push({
-        id: `compose:${item.id}`,
-        value: item.name || String(item.id),
-      })
-    })
-  }
-
-  updateCustomSearchOptions('lessonKey', options)
-}
-
-async function loadClassroomFilterOptions() {
-  const res = await pageGroupClassesApi({
-    queryModel: {},
-    pageRequestModel: {
-      needTotal: true,
-      pageSize: 200,
-      pageIndex: 1,
-      skipCount: 0,
-    },
-  })
-
-  if (res.code !== 200)
+/**
+ * 不再单独请求课程/组合课/额外班级 page：从当前列表结果合并筛选项，随翻页、换筛选累积。
+ * （未出现在已加载班级里的课程/教室不会出现在下拉里，若需要全量可后续做懒加载或独立轻量接口。）
+ */
+function mergeCustomFilterOptionsFromClassList(list) {
+  if (!Array.isArray(list) || list.length === 0)
     return
 
-  const list = Array.isArray(res.result?.list) ? res.result.list : []
-  const roomMap = new Map()
-  list.forEach((item) => {
+  const lessonItem = customSearchFilters.value.find(f => f.id === 'lessonKey')
+  const roomItem = customSearchFilters.value.find(f => f.id === 'classRoomName')
+  const lessonMap = new Map((lessonItem?.optionsList || []).map(o => [o.id, o]))
+  const roomMap = new Map((roomItem?.optionsList || []).map(o => [o.id, o]))
+
+  for (const item of list) {
     const roomName = String(item.classRoomName || '').trim()
-    if (!roomName || roomMap.has(roomName))
-      return
-    roomMap.set(roomName, {
-      id: roomName,
-      value: roomName,
-    })
-  })
+    if (roomName && !roomMap.has(roomName)) {
+      roomMap.set(roomName, {
+        id: roomName,
+        value: roomName,
+      })
+    }
+    const lid = String(item.lessonId ?? '').trim()
+    if (lid) {
+      const optId = item.isMultiProduct ? `compose:${lid}` : `single:${lid}`
+      if (!lessonMap.has(optId)) {
+        lessonMap.set(optId, {
+          id: optId,
+          value: item.lessonName || lid,
+        })
+      }
+    }
+  }
+
+  updateCustomSearchOptions('lessonKey', Array.from(lessonMap.values()))
   updateCustomSearchOptions('classRoomName', Array.from(roomMap.values()))
 }
 
@@ -357,6 +309,7 @@ async function getClassList(newQueryParams = {}, id, type) {
     if (listRes.code === 200 && listRes.result) {
       dataSource.value = Array.isArray(listRes.result.list) ? listRes.result.list : []
       pagination.total = Number(listRes.result.total || 0)
+      mergeCustomFilterOptionsFromClassList(dataSource.value)
       allFilterRef.value?.clearQuickFilter?.(id, type)
     }
     else {
@@ -587,11 +540,6 @@ const rowSelection = computed(() => ({
 }))
 
 onMounted(async () => {
-  // 与「创建/编辑班级」弹窗无关：仅为本页筛选条拉「关联课程/组合课」选项、从班级列表里收集教室名
-  await Promise.all([
-    loadCourseFilterOptions(),
-    loadClassroomFilterOptions(),
-  ])
   await getClassList(queryState.value)
 })
 </script>

@@ -38,12 +38,27 @@ const composePagination = ref({
 });
 const composeFinished = ref(false);
 
+/** 组合课展示、回显不带「（N门课）」后缀 */
+function stripComposeLessonCountSuffix(text) {
+  if (text == null)
+    return "";
+  return String(text)
+    .replace(/[（(]\s*\d+\s*门课\s*[）)]\s*$/u, "")
+    .trim();
+}
+
 function mapComposeListItem(it) {
+  const rawName = it.name != null ? String(it.name) : "";
+  const short
+    = stripComposeLessonCountSuffix(rawName) || rawName || String(it.id);
+  const n = it.productCount;
+  const listLabel
+    = n != null && n !== "" && Number.isFinite(Number(n))
+      ? `${short}（${n}门课）`
+      : short;
   return {
-    label:
-      it.productCount != null
-        ? `${it.name}（${it.productCount}门课）`
-        : it.name,
+    label: short,
+    listLabel,
     value: String(it.id),
   };
 }
@@ -271,20 +286,24 @@ const openModal = computed({
   get: () => props.open,
   set: (value) => emit("update:open", value),
 });
-const formState = reactive({
-  mode: "1",
-  course: undefined,
-  totalCourse: undefined,
-  className: undefined,
-  defaultClassTimeRecordMode: 1,
-  defaultStudentClassTime: 1,
-  defaultTeacherClassTime: 0,
-  maxNum: undefined,
-  teacher: [],
-  defaultTeacher: undefined,
-  classRoom: undefined,
-  remark: "",
-});
+function getCreateFormDefaults() {
+  return {
+    mode: "1",
+    course: undefined,
+    totalCourse: undefined,
+    className: undefined,
+    defaultClassTimeRecordMode: 1,
+    defaultStudentClassTime: 1,
+    defaultTeacherClassTime: 0,
+    maxNum: undefined,
+    teacher: [],
+    defaultTeacher: undefined,
+    classRoom: undefined,
+    remark: "",
+  };
+}
+
+const formState = reactive(getCreateFormDefaults());
 
 const classTimeUnitLabel = computed(() =>
   Number(formState.defaultClassTimeRecordMode) === 2 ? "课时/小时" : "课时",
@@ -302,18 +321,73 @@ const syncingDefaultFromTeacher = ref(false);
 
 const isEdit = computed(() => !!props.editRecord?.id);
 
+/** 切换创建/编辑或不同班级时重挂 StaffSelect，避免内部 options/加载态残留（如默认老师一直「加载中」） */
+const staffSelectInstanceKey = computed(() =>
+  props.editRecord?.id ? `e-${props.editRecord.id}` : "c",
+);
+
 const editDetailLoading = ref(false);
 let editDetailReqSeq = 0;
 
 /** 传给班主任 StaffSelect，用班级接口里的 teachers 直接显示姓名 */
 const teacherPresetForSelect = ref([]);
 
+/** 编辑时当前 value 可能不在分页首屏，补一条 option 才能显示课程名而非纯 ID */
+function mergeLessonOptionFromRecord(rec) {
+  const lid = rec?.lessonId != null && String(rec.lessonId).trim() !== ""
+    ? String(rec.lessonId).trim()
+    : "";
+  if (!lid)
+    return;
+  const name = String(rec.lessonName || "").trim();
+  if (rec.isMultiProduct) {
+    const short = stripComposeLessonCountSuffix(name) || name || lid;
+    const m = name.match(/[（(]\s*(\d+)\s*门课\s*[）)]/u);
+    const listLabel = m ? `${short}（${m[1]}门课）` : short;
+    if (!composeLessonOptions.value.some((o) => String(o.value) === lid)) {
+      composeLessonOptions.value = [
+        { label: short, listLabel, value: lid },
+        ...composeLessonOptions.value,
+      ];
+    }
+  }
+  else {
+    const label = name || lid;
+    if (!singleCourseOptions.value.some((o) => String(o.value) === lid)) {
+      singleCourseOptions.value = [
+        { label, value: lid },
+        ...singleCourseOptions.value,
+      ];
+    }
+  }
+}
+
+/** 创建模式 / 关弹窗时恢复空白表单（避免编辑残留进「创建班级」） */
+function resetFormToCreateDefaults() {
+  skipAutoDefaultTeacher.value = false;
+  syncingDefaultFromTeacher.value = false;
+  const d = getCreateFormDefaults();
+  Object.keys(d).forEach((k) => {
+    if (k === "teacher")
+      formState.teacher = [];
+    else
+      formState[k] = d[k];
+  });
+  nextTick(() => {
+    formRef.value?.clearValidate?.();
+  });
+}
+
 function applyEditRecord(rec) {
   syncingDefaultFromTeacher.value = true;
   skipAutoDefaultTeacher.value = true;
   formState.mode = rec.isMultiProduct ? "2" : "1";
-  formState.course = rec.isMultiProduct ? undefined : rec.lessonId;
-  formState.totalCourse = rec.isMultiProduct ? rec.lessonId : undefined;
+  const lessonIdStr
+    = rec.lessonId != null && String(rec.lessonId).trim() !== ""
+      ? String(rec.lessonId).trim()
+      : undefined;
+  formState.course = rec.isMultiProduct ? undefined : lessonIdStr;
+  formState.totalCourse = rec.isMultiProduct ? lessonIdStr : undefined;
   formState.className = rec.name;
   formState.maxNum = rec.maxCount ?? undefined;
   formState.teacher = (rec.teachers || []).map((t) => t.id);
@@ -339,6 +413,7 @@ function applyEditRecord(rec) {
     mobile: t.mobile,
     status: t.status,
   }));
+  mergeLessonOptionFromRecord(rec);
   nextTick(() => {
     syncingDefaultFromTeacher.value = false;
   });
@@ -348,13 +423,17 @@ watch(
   () => [props.open, props.editRecord],
   () => {
     if (!props.open) {
+      editDetailReqSeq += 1;
       editDetailLoading.value = false;
       teacherPresetForSelect.value = [];
+      resetFormToCreateDefaults();
       return;
     }
     if (!props.editRecord?.id) {
+      editDetailReqSeq += 1;
       editDetailLoading.value = false;
       teacherPresetForSelect.value = [];
+      resetFormToCreateDefaults();
       return;
     }
     applyEditRecord(props.editRecord);
@@ -543,9 +622,7 @@ async function handleSubmit() {
   }
 }
 function closeFun() {
-  skipAutoDefaultTeacher.value = false;
-  syncingDefaultFromTeacher.value = false;
-  formRef.value?.resetFields();
+  resetFormToCreateDefaults();
   openModal.value = false;
 }
 </script>
@@ -674,6 +751,7 @@ function closeFun() {
               :loading="composeListLoading"
               placeholder="请选择组合课程"
               option-filter-prop="label"
+              option-label-prop="label"
               @dropdown-visible-change="onComposeDropdownVisible"
               @search="onComposeSearch"
               @popup-scroll="onComposePopupScroll"
@@ -682,8 +760,9 @@ function closeFun() {
                 v-for="opt in composeLessonOptions"
                 :key="opt.value"
                 :value="opt.value"
+                :label="opt.label"
               >
-                {{ opt.label }}
+                {{ opt.listLabel ?? opt.label }}
               </a-select-option>
               <a-select-option
                 v-if="composeMoreLoading"
@@ -757,6 +836,7 @@ function closeFun() {
           ]"
         >
           <StaffSelect
+            :key="`${staffSelectInstanceKey}-teacher`"
             v-model="formState.teacher"
             placeholder="请选择班主任"
             :width="'100%'"
@@ -771,6 +851,7 @@ function closeFun() {
           name="defaultTeacher"
         >
           <StaffSelect
+            :key="`${staffSelectInstanceKey}-default`"
             v-model="formState.defaultTeacher"
             placeholder="可选，清空后不再自动带出"
             :width="'100%'"
