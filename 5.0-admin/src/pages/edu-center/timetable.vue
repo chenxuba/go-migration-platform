@@ -29,6 +29,9 @@ const activeKey = ref('1')
         <a-tab-pane key="5" tab="冲突日程">
           <conflict-schedule />
         </a-tab-pane>
+        <a-tab-pane key="6" tab="智慧课表">
+          <smart-timetable />
+        </a-tab-pane>
       </a-tabs>
       <div class="absolute right-6 top-1.5 bg-#f6f7f8 h-8 px-4 flex-center rounded-4 text-#222 cursor-pointer font-500">
         <SettingFilled class="mr1 text-#06f" />课表展示配置
