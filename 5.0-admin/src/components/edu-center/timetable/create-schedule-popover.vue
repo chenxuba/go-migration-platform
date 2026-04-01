@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import addSchedulePopoverBg from '../../../assets/images/timetable/add-schedule-pop-bg.png'
 import scheduleClassIcon from '../../../assets/images/timetable/schedule-class.png'
 import scheduleFreeIcon from '../../../assets/images/timetable/schedule-free.png'
 import scheduleOneToOneIcon from '../../../assets/images/timetable/schedule-one2one.png'
+import OneToOneScheduleModal from './one-to-one-schedule-modal.vue'
 
 type ScheduleType = 'class' | 'oneToOne' | 'trial'
 
@@ -39,7 +41,12 @@ const overlayInnerStyle = {
   padding: '0px',
 }
 
+const oneToOneModalOpen = ref(false)
+
 function handleSelect(type: ScheduleType) {
+  if (type === 'oneToOne') {
+    oneToOneModalOpen.value = true
+  }
   emit('select', type)
 }
 </script>
@@ -88,6 +95,8 @@ function handleSelect(type: ScheduleType) {
       </a-button>
     </slot>
   </a-popover>
+
+  <one-to-one-schedule-modal v-model:open="oneToOneModalOpen" />
 </template>
 
 <style scoped lang="less">
