@@ -2,6 +2,7 @@
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import CreateSchedulePopover from './create-schedule-popover.vue'
 
 const displayArray = ref([
   'intentionCourse', // 意向课程
@@ -2385,9 +2386,7 @@ extraDaysB.forEach((date) => {
           </a-radio-group>
         </div>
         <a-space>
-          <a-button type="primary">
-            创建日程
-          </a-button>
+          <create-schedule-popover />
           <a-button>导出课表</a-button>
         </a-space>
       </div>

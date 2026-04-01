@@ -1,218 +1,880 @@
 <script setup>
-// 引入icon
-import { DownOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-
-import { watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import CreateSchedulePopover from './create-schedule-popover.vue'
 
 const displayArray = ref([
-  'intentionCourse', // 意向课程
-  'reference', // 推荐人
-  'department', // 所属部门（仅在 type='dpt' 时显示）
-  'channelCategory', // 渠道
-  'channelStatus', // 渠道状态
-  'channelType', // 渠道类型
-  'subject', // 科目
+  'intentionCourse',
+  'reference',
+  'department',
+  'channelCategory',
+  'channelStatus',
+  'channelType',
+  'subject',
 ])
 
-// 模式选项
-const modeOptions = {
-  1: '标准模式',
-  2: '纵向平铺',
-  3: '横向平铺',
-}
-// 当前选中的模式
-const currentMode = ref('1')
-
-// 处理模式切换
-function handleMenuClick({ key }) {
-  currentMode.value = key
-}
-
-// 时间维度选项
 const timeOptions = [
   { key: 'day', label: '日' },
   { key: 'week', label: '周' },
-  { key: 'month', label: '月' },
 ]
-// 当前选中的时间维度
+
 const currentTime = ref('week')
+const currentDate = ref(dayjs())
+const selectedDayKey = ref('')
 
-// 当前的日期区间 - 默认设置为本周
-const currentWeek = ref(dayjs())
+const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+const timelineStart = 8 * 60
+const timelineEnd = 21 * 60
+const hourRowHeight = 88
 
-// 监听时间维度变化
+const scheduleLegend = [
+  {
+    key: 'unsigned',
+    label: '未点名（教师/课程）',
+    type: 'bar',
+    color: 'linear-gradient(90deg, #39b8ff 0%, #6c5cff 50%, #74d87f 100%)',
+  },
+  {
+    key: 'signed',
+    label: '已点名',
+    type: 'bar',
+    color: '#b7bec8',
+  },
+  {
+    key: 'trial',
+    label: '含试听学员',
+    type: 'icon',
+  },
+  {
+    key: 'conflict',
+    label: '日程冲突',
+    type: 'icon-danger',
+  },
+]
+
+function getWeekStart(value = dayjs()) {
+  const current = dayjs(value)
+  const diff = current.day() === 0 ? -6 : 1 - current.day()
+  return current.add(diff, 'day').startOf('day')
+}
+
 watch(currentTime, () => {
-  // 切换时始终使用当前时间
-  currentWeek.value = dayjs()
+  currentDate.value = dayjs()
 })
 
-// 格式化日期显示
+watch(
+  currentDate,
+  (value) => {
+    selectedDayKey.value = value.format('YYYY-MM-DD')
+  },
+  { immediate: true },
+)
+
 function formatDateRange(value) {
   if (!value)
     return ''
 
-  switch (currentTime.value) {
-    case 'day':
-      return value.format('YYYY年MM月DD日')
-    case 'week':
-      const start = value.startOf('week')
-      const end = value.endOf('week')
+  if (currentTime.value === 'day')
+    return value.format('YYYY年MM月DD日')
 
-      if (start.year() === end.year() && start.month() === end.month()) {
-        return `${start.format('YYYY年MM月DD日')} ~ ${end.format('DD日')}`
-      }
-      else if (start.year() === end.year()) {
-        return `${start.format('YYYY年MM月DD日')} ~ ${end.format('MM月DD日')}`
-      }
-      else {
-        return `${start.format('YYYY年MM月DD日')} ~ ${end.format('YYYY年MM月DD日')}`
-      }
-    case 'month':
-      return value.format('YYYY年MM月')
-    default:
-      return ''
-  }
+  const start = getWeekStart(value)
+  const end = start.add(6, 'day')
+
+  if (start.year() === end.year() && start.month() === end.month())
+    return `${start.format('YYYY年MM月DD日')} ~ ${end.format('DD日')}`
+  if (start.year() === end.year())
+    return `${start.format('YYYY年MM月DD日')} ~ ${end.format('MM月DD日')}`
+  return `${start.format('YYYY年MM月DD日')} ~ ${end.format('YYYY年MM月DD日')}`
 }
 
-// 处理前一个时间段
 function handlePrev() {
-  switch (currentTime.value) {
-    case 'day':
-      currentWeek.value = currentWeek.value.subtract(1, 'day')
-      break
-    case 'week':
-      currentWeek.value = currentWeek.value.subtract(1, 'week')
-      break
-    case 'month':
-      currentWeek.value = currentWeek.value.subtract(1, 'month')
-      break
+  currentDate.value = currentTime.value === 'day'
+    ? currentDate.value.subtract(1, 'day')
+    : currentDate.value.subtract(1, 'week')
+}
+
+function handleNext() {
+  currentDate.value = currentTime.value === 'day'
+    ? currentDate.value.add(1, 'day')
+    : currentDate.value.add(1, 'week')
+}
+
+function buildDateTime(date, hour, minute) {
+  return dayjs(date).hour(hour).minute(minute).second(0).millisecond(0)
+}
+
+function formatClock(minutes) {
+  const hour = String(Math.floor(minutes / 60)).padStart(2, '0')
+  const minute = String(minutes % 60).padStart(2, '0')
+  return `${hour}:${minute}`
+}
+
+const displayDates = computed(() => {
+  if (currentTime.value === 'day')
+    return [dayjs(currentDate.value).startOf('day')]
+  const start = getWeekStart(currentDate.value)
+  return Array.from({ length: 7 }, (_, index) => start.add(index, 'day'))
+})
+
+const mockSchedules = computed(() => {
+  const dates = displayDates.value
+  const first = dates[0]
+  const second = dates[Math.min(1, dates.length - 1)]
+  const third = dates[Math.min(2, dates.length - 1)]
+  const fourth = dates[Math.min(3, dates.length - 1)]
+  const fifth = dates[Math.min(4, dates.length - 1)]
+  const sixth = dates[Math.min(5, dates.length - 1)]
+
+  return [
+    {
+      id: 'evt-1',
+      dateKey: second.format('YYYY-MM-DD'),
+      title: '感统启航班',
+      course: '感觉统合',
+      teacher: '陈老师',
+      classroom: '感统教室A',
+      studentText: '6名学员',
+      startAt: buildDateTime(second, 8, 40),
+      endAt: buildDateTime(second, 9, 35),
+      status: 'unsigned',
+      hasTrial: false,
+      conflict: false,
+    },
+    {
+      id: 'evt-2',
+      dateKey: second.format('YYYY-MM-DD'),
+      title: '王小明',
+      course: '语言理解',
+      teacher: '李老师',
+      classroom: '个训室2',
+      studentText: '1对1',
+      startAt: buildDateTime(second, 10, 10),
+      endAt: buildDateTime(second, 10, 55),
+      status: 'signed',
+      hasTrial: false,
+      conflict: false,
+    },
+    {
+      id: 'evt-3',
+      dateKey: third.format('YYYY-MM-DD'),
+      title: '语言表达班',
+      course: '口肌训练',
+      teacher: '黄老师',
+      classroom: '语言教室1',
+      studentText: '含试听',
+      startAt: buildDateTime(third, 9, 30),
+      endAt: buildDateTime(third, 10, 20),
+      status: 'unsigned',
+      hasTrial: true,
+      conflict: false,
+    },
+    {
+      id: 'evt-4',
+      dateKey: fourth.format('YYYY-MM-DD'),
+      title: '赵子涵',
+      course: '认知理解',
+      teacher: '周老师',
+      classroom: '认知教室',
+      studentText: '1对1',
+      startAt: buildDateTime(fourth, 13, 30),
+      endAt: buildDateTime(fourth, 14, 20),
+      status: 'unsigned',
+      hasTrial: false,
+      conflict: true,
+    },
+    {
+      id: 'evt-5',
+      dateKey: fifth.format('YYYY-MM-DD'),
+      title: '精细动作班',
+      course: '作业训练',
+      teacher: '张老师',
+      classroom: 'OT教室',
+      studentText: '4名学员',
+      startAt: buildDateTime(fifth, 15, 10),
+      endAt: buildDateTime(fifth, 16, 0),
+      status: 'signed',
+      hasTrial: false,
+      conflict: false,
+    },
+    {
+      id: 'evt-6',
+      dateKey: sixth.format('YYYY-MM-DD'),
+      title: '社交小组课',
+      course: '团体互动',
+      teacher: '吴老师',
+      classroom: '团体教室',
+      studentText: '5名学员',
+      startAt: buildDateTime(sixth, 10, 0),
+      endAt: buildDateTime(sixth, 11, 0),
+      status: 'unsigned',
+      hasTrial: false,
+      conflict: false,
+    },
+  ].filter(item => displayDates.value.some(date => date.format('YYYY-MM-DD') === item.dateKey))
+})
+
+const headerSummaries = computed(() =>
+  displayDates.value.map((date) => {
+    const key = date.format('YYYY-MM-DD')
+    const count = mockSchedules.value.filter(item => item.dateKey === key).length
+    return {
+      key,
+      date,
+      count,
+    }
+  }),
+)
+
+const gridTemplateStyle = computed(() => ({
+  gridTemplateColumns: `84px repeat(${headerSummaries.value.length}, minmax(0, 1fr))`,
+}))
+
+const unsignedCount = computed(() => mockSchedules.value.filter(item => item.status === 'unsigned').length)
+
+const hourMarks = computed(() =>
+  Array.from({ length: timelineEnd / 60 - timelineStart / 60 + 1 }, (_, index) => timelineStart + index * 60),
+)
+
+const timelineHeight = computed(() => (hourMarks.value.length - 1) * hourRowHeight)
+
+function minuteOffset(minutes) {
+  return ((minutes - timelineStart) / 60) * hourRowHeight
+}
+
+function buildDayLayouts(items = []) {
+  const sorted = [...items].sort((a, b) => a.startAt.valueOf() - b.startAt.valueOf())
+  const columns = []
+
+  return sorted.map((item) => {
+    const startMinutes = item.startAt.hour() * 60 + item.startAt.minute()
+    const endMinutes = item.endAt.hour() * 60 + item.endAt.minute()
+
+    let columnIndex = columns.findIndex(endValue => endValue <= startMinutes)
+    if (columnIndex === -1) {
+      columnIndex = columns.length
+      columns.push(endMinutes)
+    }
+    else {
+      columns[columnIndex] = endMinutes
+    }
+
+    return {
+      ...item,
+      startMinutes,
+      endMinutes,
+      columnIndex,
+      columnCount: columns.length,
+    }
+  }).map((item) => {
+    const overlapItems = sorted.filter((other) => {
+      const otherStart = other.startAt.hour() * 60 + other.startAt.minute()
+      const otherEnd = other.endAt.hour() * 60 + other.endAt.minute()
+      return !(otherEnd <= item.startMinutes || otherStart >= item.endMinutes)
+    })
+    const overlapCount = Math.max(...overlapItems.map((other) => {
+      const target = sorted.findIndex(x => x.id === other.id)
+      return target >= 0 ? 1 : 1
+    }), 1)
+
+    return {
+      ...item,
+      columnCount: Math.max(item.columnCount, overlapCount),
+    }
+  })
+}
+
+const layoutsByDate = computed(() => {
+  const map = new Map()
+  headerSummaries.value.forEach((item) => {
+    const list = mockSchedules.value.filter(schedule => schedule.dateKey === item.key)
+    map.set(item.key, buildDayLayouts(list))
+  })
+  return map
+})
+
+function eventStyle(item) {
+  const widthPercent = 100 / Math.max(item.columnCount || 1, 1)
+  const leftPercent = widthPercent * item.columnIndex
+  return {
+    top: `${minuteOffset(item.startMinutes)}px`,
+    height: `${Math.max(64, ((item.endMinutes - item.startMinutes) / 60) * hourRowHeight)}px`,
+    left: `calc(${leftPercent}% + 6px)`,
+    width: `calc(${widthPercent}% - 12px)`,
   }
 }
 
-// 处理后一个时间段
-function handleNext() {
-  switch (currentTime.value) {
-    case 'day':
-      currentWeek.value = currentWeek.value.add(1, 'day')
-      break
-    case 'week':
-      currentWeek.value = currentWeek.value.add(1, 'week')
-      break
-    case 'month':
-      currentWeek.value = currentWeek.value.add(1, 'month')
-      break
+function eventClass(item) {
+  return {
+    'schedule-event': true,
+    'schedule-event--unsigned': item.status === 'unsigned',
+    'schedule-event--signed': item.status === 'signed',
+    'schedule-event--conflict': item.conflict,
   }
+}
+
+function isActiveColumn(dateKey) {
+  return selectedDayKey.value === dateKey
 }
 </script>
 
 <template>
-  <div class="filter-wrap  bg-white  pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
+  <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
     <all-filter :display-array="displayArray" :is-show-search-stu-phonefilter="true" />
   </div>
-  <div class="time-template mt2 bg-white  py3 px5 rounded-4">
-    <div class="top-filter flex justify-between flex-items-center">
-      <div>
-        <a-dropdown>
-          <template #overlay>
-            <a-menu @click="handleMenuClick">
-              <a-menu-item key="1">
-                标准模式
-              </a-menu-item>
-              <a-menu-item key="2">
-                纵向平铺
-              </a-menu-item>
-              <a-menu-item key="3">
-                横向平铺
-              </a-menu-item>
-            </a-menu>
-          </template>
-          <a-button type="primary" class="font-800">
-            {{ modeOptions[currentMode] }}
-            <DownOutlined class="text-3" />
-          </a-button>
-        </a-dropdown>
-      </div>
-      <div class="time-selector flex-center">
-        <a-radio-group v-model:value="currentTime" button-style="solid" size="small">
-          <a-radio-button v-for="opt in timeOptions" :key="opt.key" :value="opt.key">
-            {{ opt.label }}
-          </a-radio-button>
-        </a-radio-group>
-        <div class="ml3 text-#0061ff font-800 text-5 flex-center">
-          <a-popover trigger="hover">
-            <template #content>
-              {{ currentTime === 'day' ? '前一天' : currentTime === 'week' ? '上一周' : '上个月' }}
-            </template>
-            <span
-              class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
-              @click="handlePrev"
-            >
-              <LeftOutlined />
-            </span>
-          </a-popover>
-          <span class="mx-2">
-            <div class="relative cursor-pointer">{{ formatDateRange(currentWeek) }}
-              <a-date-picker
-                v-if="currentTime === 'day'"
-                v-model:value="currentWeek"
-                class="absolute top-0 left-0 right-0 bottom-0 z-10 opacity-0"
-                :allow-clear="false"
-                :bordered="false"
-                :format="formatDateRange"
-                style="cursor:pointer;"
-              />
-              <a-date-picker
-                v-else-if="currentTime === 'week'"
-                v-model:value="currentWeek"
-                class="absolute top-0 left-0 right-0 bottom-0 z-10 opacity-0"
-                picker="week"
-                :allow-clear="false"
-                :bordered="false"
-                :format="formatDateRange"
-                style="cursor:pointer;"
-              />
-              <a-date-picker
-                v-else
-                v-model:value="currentWeek"
-                class="absolute top-0 left-0 right-0 bottom-0 z-10 opacity-0"
-                picker="month"
-                :allow-clear="false"
-                :bordered="false"
-                :format="formatDateRange"
-                style="cursor:pointer;"
-              />
-            </div>
+
+  <div class="time-page mt2">
+    <div class="toolbar-card">
+      <div class="toolbar-main">
+        <div class="toolbar-group">
+          <a-radio-group v-model:value="currentTime" button-style="solid" size="small">
+            <a-radio-button v-for="opt in timeOptions" :key="opt.key" :value="opt.key">
+              {{ opt.label }}
+            </a-radio-button>
+          </a-radio-group>
+        </div>
+
+        <div class="toolbar-date">
+          <span class="nav-btn" @click="handlePrev">
+            <LeftOutlined />
           </span>
-          <a-popover trigger="hover">
-            <template #content>
-              {{ currentTime === 'day' ? '后一天' : currentTime === 'week' ? '下一周' : '下个月' }}
-            </template>
-            <span
-              class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
-              @click="handleNext"
-            >
-              <RightOutlined />
+          <div class="toolbar-date__label">
+            {{ formatDateRange(currentDate) }}
+            <a-date-picker
+              v-if="currentTime === 'day'"
+              v-model:value="currentDate"
+              class="date-picker-mask"
+              :allow-clear="false"
+              :bordered="false"
+              :format="formatDateRange"
+            />
+            <a-date-picker
+              v-else
+              v-model:value="currentDate"
+              class="date-picker-mask"
+              picker="week"
+              :allow-clear="false"
+              :bordered="false"
+              :format="formatDateRange"
+            />
+          </div>
+          <span class="nav-btn" @click="handleNext">
+            <RightOutlined />
+          </span>
+        </div>
+
+        <a-space>
+          <create-schedule-popover />
+          <a-button>导出课表</a-button>
+        </a-space>
+      </div>
+    </div>
+
+    <div class="schedule-card">
+      <div class="schedule-sticky-shell">
+        <div class="schedule-summary">
+          <div class="schedule-summary__left">
+            <span class="summary-accent" />
+            <span>共 {{ mockSchedules.length }} 个日程（未点名 {{ unsignedCount }} 个日程）</span>
+          </div>
+          <div class="schedule-summary__right">
+            <span v-for="item in scheduleLegend" :key="item.key" class="legend-item">
+              <span
+                v-if="item.type === 'bar'"
+                class="legend-item__bar"
+                :style="{ background: item.color }"
+              />
+              <span v-else-if="item.type === 'icon'" class="legend-item__icon legend-item__icon--trial" />
+              <span v-else class="legend-item__icon legend-item__icon--danger" />
+              {{ item.label }}
             </span>
-          </a-popover>
+          </div>
+        </div>
+
+        <div class="schedule-header-scroll">
+          <div class="schedule-header-grid" :style="gridTemplateStyle">
+            <div class="schedule-time-header" />
+
+            <div
+              v-for="item in headerSummaries"
+              :key="item.key"
+              class="schedule-column-header"
+              :class="{ 'schedule-column-header--active': isActiveColumn(item.key) }"
+            >
+              <div class="schedule-column-header__title">
+                {{ currentTime === 'day' ? '当日' : weekdayLabels[item.date.day() === 0 ? 6 : item.date.day() - 1] }}
+                <span class="schedule-column-header__date">（{{ item.date.format('M-D') }}）</span>
+              </div>
+              <div class="schedule-column-header__count">
+                {{ item.count }}个
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <a-space>
-        <a-button type="primary">
-          创建日程
-        </a-button>
-        <a-button>导出课表</a-button>
-      </a-space>
+
+      <div class="schedule-board">
+        <div class="schedule-grid" :style="gridTemplateStyle">
+          <div class="schedule-time-axis">
+            <div
+              v-for="(mark, index) in hourMarks"
+              :key="mark"
+              class="schedule-time-axis__label"
+              :class="{ 'schedule-time-axis__label--first': index === 0 }"
+              :style="{ top: `${minuteOffset(mark)}px` }"
+            >
+              <span class="schedule-time-axis__text">{{ formatClock(mark) }}</span>
+            </div>
+          </div>
+
+          <div
+            v-for="item in headerSummaries"
+            :key="`${item.key}-body`"
+            class="schedule-column"
+            :class="{ 'schedule-column--active': isActiveColumn(item.key) }"
+          >
+            <div class="schedule-column__body" :style="{ height: `${timelineHeight}px` }">
+              <div
+                v-for="mark in hourMarks"
+                :key="`${item.key}-${mark}`"
+                class="schedule-column__line"
+                :style="{ top: `${minuteOffset(mark)}px` }"
+              />
+
+              <div
+                v-for="event in layoutsByDate.get(item.key) || []"
+                :key="event.id"
+                :class="eventClass(event)"
+                :style="eventStyle(event)"
+              >
+                <div class="schedule-event__top">
+                  <span class="schedule-event__time">
+                    {{ event.startAt.format('HH:mm') }} - {{ event.endAt.format('HH:mm') }}
+                  </span>
+                  <span v-if="event.hasTrial" class="schedule-event__badge">
+                    试听
+                  </span>
+                </div>
+                <div class="schedule-event__title">
+                  {{ event.title }}
+                </div>
+                <div class="schedule-event__meta">
+                  {{ event.course }}
+                </div>
+                <div class="schedule-event__meta">
+                  {{ event.teacher }} · {{ event.classroom }}
+                </div>
+                <div class="schedule-event__footer">
+                  {{ event.studentText }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped lang="less">
+.time-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.toolbar-card,
+.schedule-card {
+  border: 1px solid #e5ebf3;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 4%);
+}
+
+.toolbar-card {
+  padding: 14px 18px;
+}
+
+.toolbar-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar-date {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toolbar-date__label {
+  position: relative;
+  min-width: 260px;
+  padding: 8px 14px;
+  border: 1px solid #dbe5f0;
+  border-radius: 999px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.date-picker-mask {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-btn:hover {
+  background: #e8f3ff;
+  color: #1677ff;
+}
+
+.schedule-card {
+  overflow: visible;
+}
+
+.schedule-sticky-shell {
+  position: sticky;
+  top: 8px;
+  z-index: 40;
+  background: #fff;
+  box-shadow: 0 10px 22px rgb(15 23 42 / 6%);
+}
+
+.schedule-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid #edf2f7;
+  background: rgb(255 255 255 / 98%);
+  backdrop-filter: blur(12px);
+}
+
+.schedule-summary__left,
+.schedule-summary__right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.schedule-summary__left {
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.summary-accent {
+  width: 4px;
+  height: 16px;
+  border-radius: 999px;
+  background: #1677ff;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.legend-item__bar {
+  display: inline-block;
+  width: 18px;
+  height: 4px;
+  border-radius: 999px;
+}
+
+.legend-item__icon {
+  position: relative;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+}
+
+.legend-item__icon--trial::after {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 6px;
+  height: 6px;
+  background: #b5bfcf;
+  border-radius: 1px;
+  content: "";
+}
+
+.legend-item__icon--danger {
+  border-color: #ff7875;
+}
+
+.legend-item__icon--danger::after {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 50%;
+  height: 2px;
+  background: #ff4d4f;
+  transform: translateY(-50%);
+  content: "";
+}
+
+.schedule-header-scroll {
+  background: #fff;
+}
+
+.schedule-header-grid {
+  display: grid;
+  width: 100%;
+}
+
+.schedule-board {
+  overflow: visible;
+  background: #fff;
+}
+
+.schedule-grid {
+  display: grid;
+  width: 100%;
+}
+
+.schedule-time-header,
+.schedule-column-header {
+  height: 48px;
+  border-right: 1px solid #dde5f0;
+  border-bottom: 1px solid #dde5f0;
+  background: #eff4fb;
+}
+
+.schedule-time-header {
+  background: #fff;
+}
+
+.schedule-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.schedule-column-header--active {
+  color: #1677ff;
+  box-shadow: inset 0 3px 0 #1677ff;
+}
+
+.schedule-column-header__date {
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.schedule-column-header__count {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.schedule-time-axis {
+  position: relative;
+  border-right: 1px solid #dde5f0;
+  background: #fff;
+  z-index: 5;
+}
+
+.schedule-time-axis__label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  color: #1f2937;
+  font-size: 14px;
+  text-align: center;
+  z-index: 6;
+}
+
+.schedule-time-axis__label::before {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid #dde5f0;
+  content: "";
+  z-index: 0;
+}
+
+.schedule-time-axis__label--first {
+  transform: translateY(0);
+}
+
+.schedule-time-axis__text {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  padding: 0 10px;
+  background: #fff;
+}
+
+.schedule-column {
+  position: relative;
+  border-right: 1px solid #dde5f0;
+  background: #fff;
+}
+
+.schedule-column--active {
+  background: linear-gradient(180deg, rgb(24 119 255 / 2%) 0%, #fff 24%);
+}
+
+.schedule-column__body {
+  position: relative;
+}
+
+.schedule-column__line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #dde5f0;
+}
+
+.schedule-event {
+  position: absolute;
+  z-index: 2;
+  padding: 4px 10px 4px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgb(15 23 42 / 8%);
+}
+
+.schedule-event--unsigned {
+  background: linear-gradient(180deg, #f5f8ff 0%, #ffffff 100%);
+  border-color: #dbeafe;
+}
+
+.schedule-event--signed {
+  background: linear-gradient(180deg, #f5f7fa 0%, #fff 100%);
+  border-color: #d7dbe2;
+}
+
+.schedule-event--unsigned::before,
+.schedule-event--signed::before {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  content: "";
+}
+
+.schedule-event--unsigned::before {
+  background: linear-gradient(180deg, #39b8ff 0%, #6c5cff 52%, #74d87f 100%);
+}
+
+.schedule-event--signed::before {
+  background: #b7bec8;
+}
+
+.schedule-event--conflict {
+  box-shadow: 0 0 0 1px rgb(255 77 79 / 35%), 0 8px 20px rgb(255 77 79 / 10%);
+}
+
+.schedule-event__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.schedule-event__time {
+  color: #3b82f6;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.schedule-event__badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.schedule-event__title {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.schedule-event__meta {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.schedule-event__footer {
+  margin-top: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .time-selector {
   font-family: DINAlternate-Bold, DINAlternate;
+}
 
-  .ant-radio-button-wrapper {
-    padding: 0 16px;
+.toolbar-card :deep(.ant-radio-button-wrapper) {
+  padding: 0 16px;
+}
+
+@media (max-width: 1200px) {
+  .toolbar-main {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .toolbar-date__label {
+    min-width: 220px;
+  }
+}
+
+@media (max-width: 768px) {
+  .schedule-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .toolbar-date__label {
+    min-width: 180px;
   }
 }
 </style>
