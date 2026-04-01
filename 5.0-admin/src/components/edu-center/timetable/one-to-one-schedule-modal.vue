@@ -499,6 +499,17 @@ const formState = ref({
   roomMode: roomModeCards[0].key,
 })
 
+const aiPromptText = ref('')
+const aiGenerating = ref(false)
+const aiLoadingStep = ref(0)
+const aiInsightText = ref('')
+const aiSteps = [
+  '正在分析学员历史排课偏好...',
+  '正在调用约束求解器计算时间资源...',
+  '正在匹配最优教师与教室...',
+  '正在生成人类可读的排课报告...',
+]
+
 const scheduleRange = ref<[Dayjs, Dayjs]>([
   dayjs().add(5, 'day').startOf('day'),
   dayjs().add(32, 'day').startOf('day'),
@@ -702,6 +713,52 @@ function toggleDeferRule(key: string) {
     ? selectedDeferRules.value.filter(item => item !== key)
     : [...selectedDeferRules.value, key]
 }
+
+function handleAIParseRemark() {
+  if (!selectedOneToOne.value?.remark) return
+
+  aiGenerating.value = true
+  aiLoadingStep.value = 0
+
+  const stepInterval = setInterval(() => {
+    aiLoadingStep.value = (aiLoadingStep.value + 1) % aiSteps.length
+  }, 600)
+
+  setTimeout(() => {
+    clearInterval(stepInterval)
+    aiGenerating.value = false
+
+    // Simulate AI parsing result
+    selectedWeekdays.value = ['周一', '周三', '周五']
+    selectedRecommendation.value = 'stable'
+    formState.value.teacherMode = 'fixed'
+
+    aiInsightText.value = '已根据备注为您自动勾选“周一、周三、周五”，并启用了“老师稳定优先”策略。节假日将按顺延处理，确保家长体验最优。'
+  }, 2500)
+}
+
+function handleAIGenerate() {
+  if (!aiPromptText.value.trim()) return
+
+  aiGenerating.value = true
+  aiLoadingStep.value = 0
+
+  const stepInterval = setInterval(() => {
+    aiLoadingStep.value = (aiLoadingStep.value + 1) % aiSteps.length
+  }, 800)
+
+  setTimeout(() => {
+    clearInterval(stepInterval)
+    aiGenerating.value = false
+
+    // Simulate AI generation result based on prompt
+    selectedRecommendation.value = 'efficient'
+    formState.value.teacherMode = 'smart'
+
+    aiInsightText.value = `已为您应用自然语言排课：“${aiPromptText.value}”。系统切换为【方案C：排满优先】，优先填补早盘空档，预计比原计划提早一周消课完毕。`
+    aiPromptText.value = ''
+  }, 3200)
+}
 </script>
 
 <template>
@@ -739,6 +796,17 @@ function toggleDeferRule(key: string) {
     </template>
 
     <div class="batch-modal-body">
+      <!-- AI Loading Overlay -->
+      <div v-if="aiGenerating" class="ai-loading-overlay">
+        <div class="ai-loading-content">
+          <div class="ai-loading-spinner"></div>
+          <div class="ai-loading-text">
+            <span class="ai-icon-sparkle">✨</span>
+            {{ aiSteps[aiLoadingStep] }}
+          </div>
+        </div>
+      </div>
+
       <section class="batch-overview">
         <div class="batch-overview__top">
           <div class="batch-overview__content">
@@ -1096,8 +1164,23 @@ function toggleDeferRule(key: string) {
                   <InfoCircleOutlined />
                   1对1备注
                 </span>
-                <div class="batch-existing-remark">
-                  {{ selectedOneToOne?.remark || '暂无备注' }}
+                <div class="batch-existing-remark" :class="{ 'batch-existing-remark--has-content': selectedOneToOne?.remark }">
+                  <div class="batch-existing-remark__content">
+                    {{ selectedOneToOne?.remark || '暂无备注' }}
+                  </div>
+                  <a-button
+                    v-if="selectedOneToOne?.remark"
+                    type="primary"
+                    size="small"
+                    class="ai-parse-btn"
+                    :loading="aiGenerating"
+                    @click="handleAIParseRemark"
+                  >
+                    <template #icon>
+                      <span class="ai-icon-sparkle">✨</span>
+                    </template>
+                    AI 智能提取偏好
+                  </a-button>
                 </div>
               </label>
             </div>
@@ -1226,6 +1309,19 @@ function toggleDeferRule(key: string) {
               </div>
             </div>
 
+            <transition name="ai-fade">
+              <div v-if="aiInsightText" class="ai-insight-box">
+                <span class="ai-insight-box__icon">✨</span>
+                <div class="ai-insight-box__content">
+                  <div class="ai-insight-box__title">AI 排课洞察</div>
+                  <div class="ai-insight-box__text">{{ aiInsightText }}</div>
+                </div>
+                <a-button type="text" size="small" class="ai-insight-box__close" @click="aiInsightText = ''">
+                  <CloseOutlined />
+                </a-button>
+              </div>
+            </transition>
+
             <div class="batch-insight-list">
               <div v-for="item in smartInsightList" :key="item.label" class="batch-insight-item">
                 <div>
@@ -1252,8 +1348,22 @@ function toggleDeferRule(key: string) {
       </div>
 
       <div class="batch-modal-footer">
-        <div class="batch-modal-footer__note">
-          当前是静态样式稿，后续可继续接入“自动避让冲突”“老师忙闲”“教室占用”逻辑。
+        <div class="batch-modal-footer__ai-prompt">
+          <a-input-group compact class="ai-prompt-group">
+            <a-input
+              v-model:value="aiPromptText"
+              placeholder="✨ 例如：将下周二的课都尽量挪到上午..."
+              :disabled="aiGenerating"
+              @pressEnter="handleAIGenerate"
+            >
+              <template #prefix>
+                <span class="ai-icon-sparkle">✨</span>
+              </template>
+            </a-input>
+            <a-button type="primary" :loading="aiGenerating" @click="handleAIGenerate">
+              AI 调整
+            </a-button>
+          </a-input-group>
         </div>
 
         <div class="batch-modal-footer__actions">
@@ -1323,6 +1433,195 @@ function toggleDeferRule(key: string) {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  position: relative;
+}
+
+/* AI Elements Styles */
+.ai-icon-sparkle {
+  color: #1f6dff;
+  font-size: 14px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0.6; transform: scale(0.9); }
+}
+
+.ai-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  border-radius: 22px;
+}
+
+.ai-loading-content {
+  position: sticky;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #eef5ff;
+  border-top-color: #1f6dff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.ai-loading-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2329;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(90deg, #1f6dff, #8b5cf6, #1f6dff);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 3s linear infinite;
+}
+
+@keyframes shimmer {
+  to { background-position: 200% center; }
+}
+
+.batch-existing-remark {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #556070;
+  font-size: 13px;
+  line-height: 1.5;
+  transition: all 0.3s ease;
+}
+
+.batch-existing-remark--has-content {
+  background: #f4f7fb;
+  border: 1px dashed #dbe3ee;
+}
+
+.batch-existing-remark__content {
+  flex: 1;
+}
+
+.ai-parse-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #1f6dff 0%, #0056f7 100%);
+  border: none;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+.ai-parse-btn:hover {
+  background: linear-gradient(135deg, #3a87ff 0%, #1f6dff 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(31, 109, 255, 0.2);
+}
+
+.ai-insight-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #f0f7ff 0%, #eef3fc 100%);
+  border: 1px solid #d3e2ff;
+  border-radius: 14px;
+  box-shadow: 0 4px 16px rgba(31, 109, 255, 0.06);
+  position: relative;
+}
+
+.ai-insight-box__icon {
+  font-size: 18px;
+  margin-top: 2px;
+}
+
+.ai-insight-box__content {
+  flex: 1;
+}
+
+.ai-insight-box__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1f6dff;
+  margin-bottom: 4px;
+}
+
+.ai-insight-box__text {
+  font-size: 12px;
+  color: #3b4b68;
+  line-height: 1.6;
+}
+
+.ai-insight-box__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: #8b95a7;
+}
+
+.ai-fade-enter-active,
+.ai-fade-leave-active {
+  transition: all 0.4s ease;
+}
+
+.ai-fade-enter-from,
+.ai-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.batch-modal-footer__ai-prompt {
+  flex: 1;
+  max-width: 480px;
+}
+
+.ai-prompt-group {
+  display: flex !important;
+}
+
+:deep(.ai-prompt-group .ant-input) {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-color: #dbe3ee;
+}
+
+:deep(.ai-prompt-group .ant-input:focus) {
+  border-color: #1f6dff;
+  box-shadow: 0 0 0 2px rgba(31, 109, 255, 0.1);
+}
+
+:deep(.ai-prompt-group .ant-btn) {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  height: 44px;
+  font-weight: 600;
+  background: linear-gradient(135deg, #1f6dff 0%, #3a87ff 100%);
+  border: none;
 }
 
 .batch-overview {
