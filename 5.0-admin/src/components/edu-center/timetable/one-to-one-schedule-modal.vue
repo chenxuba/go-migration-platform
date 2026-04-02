@@ -312,8 +312,9 @@ const selectedClassroom = ref(oneToOneRecords[0]?.classRoomName || '')
 const selectedStudentLessonPath = ref<string[] | undefined>(undefined)
 const previewModalOpen = ref(false)
 const scheduleStartDate = ref(dayjs().add(5, 'day').startOf('day'))
-const freeScheduleDate = ref(dayjs().add(5, 'day').startOf('day'))
-/** 计划生成的课节总数（不含仅日历日；多课表节次时同一天计多节），用于推算结束日期 */
+const freeSelectedDates = ref<Dayjs[]>([dayjs().add(5, 'day').startOf('day')])
+const freeCalendarPanelDate = ref(dayjs().add(5, 'day').startOf('month'))
+const freeCalendarOpen = ref(false)
 const plannedClassCount = ref(1)
 const customTimeRanges = ref<CustomTimeRangeRow[]>([
   {
@@ -403,6 +404,8 @@ watch(
       },
     ]
     selectedSchoolTimeSlots.value = ['slot-d', 'slot-e']
+    freeSelectedDates.value = [dayjs().add(5, 'day').startOf('day')]
+    freeCalendarPanelDate.value = freeSelectedDates.value[0].startOf('month')
   },
   { immediate: true },
 )
@@ -540,14 +543,28 @@ const scheduleSessionMinutesText = computed(() => {
 })
 
 const selectedWeekdaysText = computed(() => selectedWeekdays.value.join(' / '))
-/** 按手输「计划上课次数」推算结束日期与预览行数（不与剩余额度挂钩；单日不超过当天课表节次数） */
+const freeSelectedDatesSorted = computed(() =>
+  [...freeSelectedDates.value].sort((a, b) => a.valueOf() - b.valueOf()),
+)
+
+const freeSelectedDateKeys = computed(() =>
+  new Set(freeSelectedDatesSorted.value.map(item => item.format('YYYY-MM-DD'))),
+)
+
+const freeSelectedDatesText = computed(() => {
+  const dates = freeSelectedDatesSorted.value.map(item => item.format('YYYY-MM-DD'))
+  if (dates.length === 0)
+    return '请选择上课日期'
+  return dates.join('、')
+})
+
 const scheduleTargetCount = computed(() => {
+  const slots = Math.max(activeTimeBlocks.value.length, 1)
+  if (schedulingMode.value === 'free')
+    return freeSelectedDatesSorted.value.length * slots
   const planned = Math.max(0, Math.floor(Number(plannedClassCount.value) || 0))
   if (planned < 1)
     return 0
-  const slots = Math.max(activeTimeBlocks.value.length, 1)
-  if (schedulingMode.value === 'free')
-    return Math.min(planned, slots)
   if (repeatRule.value === 'none')
     return Math.min(planned, slots)
   if (schedulingMode.value === 'repeat')
@@ -566,7 +583,7 @@ const repeatRuleText = computed(() => {
 
 const dateSettingText = computed(() => {
   if (schedulingMode.value === 'free')
-    return freeScheduleDate.value.format('YYYY-MM-DD')
+    return freeSelectedDatesText.value
   return rangeText.value
 })
 
@@ -602,8 +619,10 @@ const overviewItems = computed<SummaryItem[]>(() => [
   { label: '排课方式', value: schedulingMode.value === 'repeat' ? '重复排课' : '自由排课' },
   { label: '日期设置', value: dateSettingText.value },
   {
-    label: '计划上课次数',
-    value: `${Math.floor(Number(plannedClassCount.value) || 0)} 节（手填；剩余可排约 ${remainSessionCap.value || 0} 节）`,
+    label: schedulingMode.value === 'free' ? '已选日期' : '计划上课次数',
+    value: schedulingMode.value === 'free'
+      ? `${freeSelectedDatesSorted.value.length} 天，共 ${scheduleTargetCount.value} 节`
+      : `${Math.floor(Number(plannedClassCount.value) || 0)} 节（手填；剩余可排约 ${remainSessionCap.value || 0} 节）`,
   },
   { label: '重复规则', value: repeatRuleText.value },
   { label: '上课时间', value: timeModeText.value },
@@ -613,9 +632,20 @@ const overviewItems = computed<SummaryItem[]>(() => [
 ])
 
 /** 侧边「创建摘要」里 value 会被单行省略，这些行悬停展示全文 */
-const overviewTooltipLabels = new Set(['重复规则', '计划上课次数', '上课时间', '上课教室'])
+const overviewTooltipLabels = new Set(['重复规则', '计划上课次数', '已选日期', '上课时间', '上课教室'])
 
 const planExceedsRemainHint = computed(() => {
+  if (schedulingMode.value === 'free') {
+    const cap = remainSessionCap.value
+    const planned = scheduleTargetCount.value
+    if (planned < 1)
+      return ''
+    if (cap <= 0)
+      return '当前剩余可排为 0，已选日期仅用于预估；正式创建前请处理账户。'
+    if (planned > cap)
+      return `当前已选 ${planned} 节，多于剩余可排 ${cap} 节；正式创建时请核对账户或减少日期。`
+    return ''
+  }
   const cap = remainSessionCap.value
   const planned = Math.floor(Number(plannedClassCount.value) || 0)
   if (planned < 1)
@@ -644,8 +674,10 @@ const blockedReason = computed(() => {
     return '当前学员已结课，暂不可创建新日程。'
   if (!selectedTeacher.value)
     return '请先选择上课教师。'
+  if (schedulingMode.value === 'free' && freeSelectedDatesSorted.value.length === 0)
+    return '请至少选择一个上课日期。'
   const planned = Math.floor(Number(plannedClassCount.value) || 0)
-  if (planned < 1)
+  if (schedulingMode.value !== 'free' && planned < 1)
     return '请填写计划上课次数（至少为 1）。'
   if (timeMode.value === 'school' && selectedSchoolTimeSlots.value.length === 0)
     return '请至少选择一节课表节次。'
@@ -674,7 +706,7 @@ function isHoliday(date: Dayjs) {
 
 const rawPlannedDates = computed(() => {
   if (schedulingMode.value === 'free')
-    return [freeScheduleDate.value.startOf('day')]
+    return freeSelectedDatesSorted.value.map(item => item.startOf('day'))
 
   const start = scheduleStartDate.value
   if (!start)
@@ -731,7 +763,7 @@ const plannedDates = computed(() => {
 
 const autoScheduleEndDate = computed(() => {
   if (schedulingMode.value === 'free')
-    return freeScheduleDate.value
+    return freeSelectedDatesSorted.value[freeSelectedDatesSorted.value.length - 1] || scheduleStartDate.value
   return plannedDates.value[plannedDates.value.length - 1] || scheduleStartDate.value
 })
 
@@ -825,6 +857,22 @@ function handleStudentLessonChange(value: string[]) {
   selectedStudentLessonPath.value = value?.length ? value : undefined
   if (value?.length >= 2)
     selectedOneToOneId.value = value[1]
+}
+
+function toggleFreeScheduleDate(date: Dayjs) {
+  const key = date.startOf('day').format('YYYY-MM-DD')
+  const exists = freeSelectedDates.value.some(item => item.startOf('day').format('YYYY-MM-DD') === key)
+  freeSelectedDates.value = exists
+    ? freeSelectedDates.value.filter(item => item.startOf('day').format('YYYY-MM-DD') !== key)
+    : [...freeSelectedDates.value, date.startOf('day')]
+}
+
+function handleFreeCalendarPanelChange(date: Dayjs) {
+  freeCalendarPanelDate.value = date.startOf('month')
+}
+
+function clearFreeSelectedDates() {
+  freeSelectedDates.value = []
 }
 
 function toggleWeekday(day: string) {
@@ -1190,30 +1238,51 @@ function removeCustomTimeRow(index: number) {
                     class="planner-date-plan-row planner-date-plan-row--free"
                   >
                     <label class="planner-field planner-date-plan-row__cell planner-date-plan-row__cell--start">
-                      <span class="planner-label planner-label--required">
-                        <CalendarOutlined />
-                        上课日期
-                      </span>
-                      <a-date-picker
-                        v-model:value="freeScheduleDate"
-                        size="large"
-                        class="planner-control"
-                        :allow-clear="false"
-                      />
+                      <div class="planner-field__label-row">
+                        <span class="planner-label planner-label--required">
+                          <CalendarOutlined />
+                          上课日期
+                        </span>
+                        <a-button
+                          type="link"
+                          size="small"
+                          :disabled="freeSelectedDatesSorted.length === 0"
+                          @click.stop.prevent="clearFreeSelectedDates"
+                        >
+                          一键清空
+                        </a-button>
+                      </div>
+                      <a-popover
+                        v-model:open="freeCalendarOpen"
+                        trigger="click"
+                        placement="bottomLeft"
+                        overlay-class-name="planner-free-calendar-popover"
+                      >
+                        <template #content>
+                          <div class="planner-free-calendar">
+                            <a-calendar
+                              :fullscreen="false"
+                              :value="freeCalendarPanelDate"
+                              @panelChange="handleFreeCalendarPanelChange"
+                              @select="toggleFreeScheduleDate"
+                            >
+                              <template #dateFullCellRender="{ current }">
+                                <div
+                                  class="planner-free-calendar__cell"
+                                  :class="{ 'planner-free-calendar__cell--selected': freeSelectedDateKeys.has(current.format('YYYY-MM-DD')) }"
+                                >
+                                  {{ current.date() }}
+                                </div>
+                              </template>
+                            </a-calendar>
+                          </div>
+                        </template>
+
+                        <div class="planner-static-field planner-static-field--compact planner-static-field--free-trigger">
+                          <strong :title="freeSelectedDatesText">{{ freeSelectedDatesText }}</strong>
+                        </div>
+                      </a-popover>
                     </label>
-                    <label class="planner-field planner-date-plan-row__cell planner-date-plan-row__cell--count">
-                      <span class="planner-label planner-label--required">
-                        计划上课次数
-                      </span>
-                      <a-input-number
-                        v-model:value="plannedClassCount"
-                        :min="1"
-                        :precision="0"
-                        size="large"
-                        class="planner-control"
-                      />
-                    </label>
-                    <span class="planner-field__hint planner-date-plan-row__hint">可自由填写；所选日当天每节课表节次各计 1 次，且不超过当天已选节次数。参考剩余可排 {{ remainSessionCap }} 节。</span>
                   </div>
 
                   <div v-if="schedulingMode === 'repeat'" class="planner-field planner-field--full">
@@ -2131,9 +2200,58 @@ button.planner-choice.planner-choice--type .planner-choice__title {
 }
 
 .planner-date-plan-row--free {
-  grid-template-columns: minmax(148px, 200px) minmax(100px, 132px);
+  grid-template-columns: minmax(0, 1fr);
   column-gap: 14px;
   row-gap: 10px;
+}
+
+.planner-date-plan-row--free .planner-date-plan-row__cell--start {
+  max-width: none;
+}
+
+.planner-date-plan-row--free .planner-date-plan-row__cell--start .planner-control {
+  max-width: none;
+}
+
+:deep(.planner-date-plan-row--free .planner-date-plan-row__cell--start .ant-picker) {
+  max-width: none !important;
+}
+
+.planner-static-field--free-trigger {
+  cursor: pointer;
+}
+
+.planner-static-field--free-trigger strong {
+  display: block;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-static-field--free-trigger span {
+  font-size: 11px;
+}
+
+.planner-free-calendar {
+  width: 300px;
+}
+
+.planner-free-calendar__cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 34px;
+  border-radius: 10px;
+  color: #1f2329;
+  transition: all 0.18s ease;
+}
+
+.planner-free-calendar__cell--selected {
+  background: #1677ff;
+  color: #fff;
+  font-weight: 600;
 }
 
 /* 与左侧列「图标 + gap」同宽，使「各时段课长」与「上课助教」文案纵列对齐 */
@@ -2165,6 +2283,13 @@ button.planner-choice.planner-choice--type .planner-choice__title {
 
 .planner-field--major {
   align-self: start;
+}
+
+.planner-field__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .planner-time-range {
