@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, ref, watch } from 'vue'
+import StaffSelect from '@/components/common/staff-select.vue'
 import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import messageService from '@/utils/messageService'
 
@@ -65,6 +66,14 @@ interface TimeBlock {
 interface CustomTimeRangeRow {
   start: Dayjs | null
   end: Dayjs | null
+}
+
+interface StaffOptionItem {
+  id: string | number
+  name?: string
+  nickName?: string
+  mobile?: string
+  status?: number
 }
 
 const props = defineProps<{
@@ -182,11 +191,10 @@ const schoolTimeSlotOptions: SchoolTimeSlot[] = [
 ]
 
 const schoolHolidaySet = new Set(['2026-05-01', '2026-05-02', '2026-05-03'])
-const assistantPool = ['王助教', '刘助教', '陈助教']
 const sharedClassrooms = ['个训室 03', '个训室 05', '言语室 02', '感统室 01']
 const oneToOneRecords = ref<OneToOneItem[]>([])
 const oneToOneLoading = ref(false)
-const selectedOneToOneId = ref('')
+const selectedOneToOneId = ref<string | undefined>(undefined)
 const scheduleType = ref<ScheduleType>('oneToOne')
 const schedulingMode = ref<SchedulingMode>('repeat')
 const repeatRule = ref<RepeatRule>('weekly')
@@ -195,9 +203,11 @@ const timeMode = ref<TimeMode>('school')
 const selectedWeekdays = ref(['周一', '周三', '周五'])
 /** 同一选课可多次勾选（例如上午一节 + 下午一节），每个上课日按所选时段各生成一节 */
 const selectedSchoolTimeSlots = ref<string[]>(['slot-d', 'slot-e'])
-const selectedTeacher = ref('')
-const selectedAssistant = ref<string[] | undefined>(undefined)
-const selectedClassroom = ref('')
+const selectedTeacher = ref<string | number | undefined>(undefined)
+const selectedTeacherDisplay = ref<StaffOptionItem | null>(null)
+const selectedAssistant = ref<Array<string | number>>([])
+const selectedAssistantDisplays = ref<StaffOptionItem[]>([])
+const selectedClassroom = ref<string | undefined>(undefined)
 const selectedStudentLessonPath = ref<string[] | undefined>(undefined)
 const previewModalOpen = ref(false)
 const scheduleStartDate = ref(dayjs().add(5, 'day').startOf('day'))
@@ -217,7 +227,7 @@ const customTimeRanges = ref<CustomTimeRangeRow[]>([
 ])
 
 const selectedOneToOne = computed(() =>
-  oneToOneRecords.value.find(item => item.id === selectedOneToOneId.value) || oneToOneRecords.value[0],
+  oneToOneRecords.value.find(item => item.id === selectedOneToOneId.value),
 )
 
 const oneToOneSelectOptions = computed(() =>
@@ -250,20 +260,41 @@ const studentLessonCascaderOptions = computed(() => {
   return [...grouped.values()]
 })
 
-const selectedTeacherOptions = computed(() => {
-  const teacherSet = new Set<string>()
-  selectedOneToOne.value?.teacherList?.forEach((item) => {
-    if (item?.name)
-      teacherSet.add(item.name)
-  })
-  if (selectedOneToOne.value?.defaultTeacherName)
-    teacherSet.add(selectedOneToOne.value.defaultTeacherName)
-  return [...teacherSet]
+function isValidStaffId(value: unknown) {
+  const text = String(value ?? '').trim()
+  return text !== '' && text !== '0' && text !== 'undefined' && text !== 'null'
+}
+
+function sameStaffId(a: unknown, b: unknown) {
+  return isValidStaffId(a) && isValidStaffId(b) && String(a) === String(b)
+}
+
+function displayStaffName(staff?: StaffOptionItem | null) {
+  return staff?.nickName || staff?.name || ''
+}
+
+const teacherPresetStaff = computed<StaffOptionItem[]>(() => {
+  const records: StaffOptionItem[] = []
+  const added = new Set<string>()
+  const append = (id: unknown, name?: string) => {
+    if (!isValidStaffId(id))
+      return
+    const label = String(name || '').trim()
+    if (!label)
+      return
+    const key = String(id)
+    if (added.has(key))
+      return
+    added.add(key)
+    records.push({ id: key, name: label, nickName: label })
+  }
+
+  selectedOneToOne.value?.teacherList?.forEach(item => append(item.teacherId, item.name))
+  append(selectedOneToOne.value?.defaultTeacherId, selectedOneToOne.value?.defaultTeacherName)
+  return records
 })
 
-const assistantOptions = computed(() =>
-  assistantPool.map(item => ({ value: item, label: item })),
-)
+const scheduleStaffSelectKey = computed(() => selectedOneToOne.value?.id || 'empty')
 
 const classroomOptions = computed(() => {
   const classroomSet = new Set<string>()
@@ -278,14 +309,16 @@ const recordSessionMinutes = computed(() => Math.max(Number(selectedOneToOne.val
 watch(
   selectedOneToOne,
   (value) => {
-    const teacherNames = selectedTeacherOptions.value
-    selectedTeacher.value = value?.defaultTeacherName && teacherNames.includes(value.defaultTeacherName)
-      ? value.defaultTeacherName
-      : (teacherNames[0] || '')
+    const defaultTeacherId = isValidStaffId(value?.defaultTeacherId)
+      ? value?.defaultTeacherId
+      : teacherPresetStaff.value[0]?.id
+    selectedTeacher.value = defaultTeacherId
+    selectedTeacherDisplay.value = teacherPresetStaff.value.find(item => sameStaffId(item.id, defaultTeacherId)) || null
     selectedClassroom.value = value
-      ? (value.classRoomName || classroomOptions.value[0]?.value || '')
-      : ''
-    selectedAssistant.value = undefined
+      ? (value.classRoomName || undefined)
+      : undefined
+    selectedAssistant.value = []
+    selectedAssistantDisplays.value = []
     const s = dayjs().hour(10).minute(30).second(0)
     customTimeRanges.value = [
       { start: s, end: s.add(recordSessionMinutes.value, 'minute') },
@@ -305,6 +338,7 @@ watch(selectedOneToOneId, (value) => {
   const current = oneToOneRecords.value.find(item => item.id === value)
   if (!current?.studentId || !current?.id) {
     selectedStudentLessonPath.value = undefined
+    plannedClassCount.value = 1
     return
   }
   selectedStudentLessonPath.value = [current.studentId, current.id]
@@ -314,8 +348,11 @@ watch(selectedOneToOneId, (value) => {
 }, { immediate: true })
 
 watch(modalOpen, async (value) => {
-  if (value)
+  if (value) {
+    selectedOneToOneId.value = undefined
+    selectedStudentLessonPath.value = undefined
     await fetchOneToOneRecords()
+  }
   if (!value)
     previewModalOpen.value = false
 })
@@ -365,11 +402,31 @@ function formatBalanceValue(value: number) {
 
 const recordClassroomText = computed(() => selectedOneToOne.value?.classRoomName || '-')
 const scheduledClassroomText = computed(() => selectedClassroom.value || '-')
+const selectedTeacherText = computed(() => {
+  if (!isValidStaffId(selectedTeacher.value))
+    return '-'
+  const current = selectedTeacherDisplay.value
+  if (displayStaffName(current))
+    return displayStaffName(current)
+  const preset = teacherPresetStaff.value.find(item => sameStaffId(item.id, selectedTeacher.value))
+  if (displayStaffName(preset))
+    return displayStaffName(preset)
+  return String(selectedTeacher.value)
+})
 const selectedAssistantText = computed(() =>
-  selectedAssistant.value?.length ? selectedAssistant.value.join('、') : '未安排',
+  selectedAssistant.value.length
+    ? selectedAssistant.value.map((id) => {
+        const current = selectedAssistantDisplays.value.find(item => sameStaffId(item.id, id))
+        if (displayStaffName(current))
+          return displayStaffName(current)
+        return String(id)
+      }).filter(Boolean).join('、')
+    : '未安排',
 )
 
 const usedQuantityValue = computed(() => {
+  if (!selectedOneToOne.value?.id)
+    return Number.NaN
   const ta = selectedOneToOne.value?.tuitionAccount
   const total = Number(ta?.totalQuantity || 0) + Number(ta?.totalFreeQuantity || 0)
   const remain = Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
@@ -377,6 +434,8 @@ const usedQuantityValue = computed(() => {
 })
 
 const remainQuantityValue = computed(() => {
+  if (!selectedOneToOne.value?.id)
+    return Number.NaN
   const ta = selectedOneToOne.value?.tuitionAccount
   return Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
 })
@@ -537,15 +596,17 @@ const recordQuickTags = computed<QuickTag[]>(() => [
 const blockedReason = computed(() => {
   if (oneToOneLoading.value)
     return '1对1数据加载中，请稍候。'
-  if (!selectedOneToOne.value?.id)
+  if (!oneToOneRecords.value.length)
     return '暂无可用的1对1档案，请先创建1对1后再排课。'
+  if (!selectedOneToOne.value?.id)
+    return '请选择1对1后继续排课。'
   if (Number(selectedOneToOne.value?.status) === 2)
     return '当前 1 对 1 已结班，暂不可创建新日程。'
   if (Number(selectedOneToOne.value?.classStudentStatus) === 2)
     return '当前学员处于停课中，恢复后再创建日程。'
   if (Number(selectedOneToOne.value?.classStudentStatus) === 3)
     return '当前学员已结课，暂不可创建新日程。'
-  if (!selectedTeacher.value)
+  if (!isValidStaffId(selectedTeacher.value))
     return '请先选择上课教师。'
   if (schedulingMode.value === 'free' && freeSelectedDatesSorted.value.length === 0)
     return '请至少选择一个上课日期。'
@@ -666,7 +727,7 @@ const overviewItems = computed<SummaryItem[]>(() => [
   { label: '日期设置', value: dateSettingText.value },
   { label: '重复规则', value: repeatRuleText.value },
   { label: '上课时间', value: timeModeText.value },
-  { label: '上课老师', value: selectedTeacher.value || '-' },
+  { label: '上课老师', value: selectedTeacherText.value },
   { label: '上课助教', value: selectedAssistantText.value },
   { label: '上课教室', value: scheduledClassroomText.value },
 ])
@@ -690,7 +751,7 @@ const previewPlans = computed<PreviewItem[]>(() => {
       week: weekDisplayMap[date.day()] || '-',
       rule: previewRuleText.value,
       time: block.rangeText,
-      teacher: selectedTeacher.value || selectedOneToOne.value?.defaultTeacherName || '-',
+      teacher: selectedTeacherText.value,
       classroom: scheduledClassroomText.value,
       tone,
     })),
@@ -770,19 +831,19 @@ async function fetchOneToOneRecords() {
     oneToOneRecords.value = allRecords
 
     if (!allRecords.length) {
-      selectedOneToOneId.value = ''
+      selectedOneToOneId.value = undefined
       selectedStudentLessonPath.value = undefined
       plannedClassCount.value = 1
       return
     }
 
     const preserved = allRecords.find(item => item.id === selectedOneToOneId.value)
-    selectedOneToOneId.value = preserved?.id || allRecords[0]?.id || ''
+    selectedOneToOneId.value = preserved?.id
   }
   catch (error: any) {
     console.error('fetch one to one records failed', error)
     oneToOneRecords.value = []
-    selectedOneToOneId.value = ''
+    selectedOneToOneId.value = undefined
     selectedStudentLessonPath.value = undefined
     messageService.error(error?.message || '获取1对1列表失败')
   }
@@ -811,10 +872,20 @@ function confirmBatchCreate() {
   modalOpen.value = false
 }
 
-function handleStudentLessonChange(value: string[]) {
+function handleTeacherChange(_value: string | number | undefined, staff?: StaffOptionItem | null) {
+  selectedTeacherDisplay.value = staff || null
+}
+
+function handleAssistantChange(_value: Array<string | number>, staffs?: StaffOptionItem[]) {
+  selectedAssistantDisplays.value = Array.isArray(staffs) ? staffs : []
+}
+
+function handleStudentLessonChange(value?: string[]) {
   selectedStudentLessonPath.value = value?.length ? value : undefined
   if (value?.length >= 2)
     selectedOneToOneId.value = value[1]
+  else
+    selectedOneToOneId.value = undefined
 }
 
 function toggleFreeScheduleDate(date: Dayjs) {
@@ -1014,7 +1085,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                 option-filter-prop="label"
                 option-label-prop="label"
                 popup-class-name="planner-record-select-dropdown"
-                :allow-clear="false"
+                allow-clear
                 :loading="oneToOneLoading"
                 :disabled="oneToOneLoading || !oneToOneSelectOptions.length"
                 :not-found-content="oneToOneLoading ? '正在加载1对1数据...' : '暂无1对1数据'"
@@ -1041,6 +1112,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                 v-else
                 v-model:value="selectedStudentLessonPath"
                 :options="studentLessonCascaderOptions"
+                allow-clear
                 :disabled="oneToOneLoading || !studentLessonCascaderOptions.length"
                 :placeholder="oneToOneLoading ? '正在加载1对1数据...' : '请选择学员和课程'"
                 class="planner-control planner-control--record"
@@ -1064,7 +1136,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
           </div>
         </section>
 
-        <div class="planner-layout">
+        <div v-if="selectedOneToOne?.id" class="planner-layout">
           <aside class="planner-aside">
             <section class="planner-card planner-card--summary">
               <div class="planner-card__head">
@@ -1471,16 +1543,19 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                       <UserOutlined />
                       上课教师
                     </span>
-                    <a-select
-                      v-model:value="selectedTeacher"
+                    <StaffSelect
+                      :key="`${scheduleStaffSelectKey}-teacher`"
+                      v-model="selectedTeacher"
                       size="large"
+                      placeholder="请选择上课教师"
+                      width="100%"
+                      :multiple="false"
+                      :status="0"
                       :allow-clear="false"
+                      :preset-staff="teacherPresetStaff"
                       class="planner-control"
-                    >
-                      <a-select-option v-for="item in selectedTeacherOptions" :key="item" :value="item">
-                        {{ item }}
-                      </a-select-option>
-                    </a-select>
+                      @change="handleTeacherChange"
+                    />
                   </label>
 
                   <label class="planner-field">
@@ -1503,15 +1578,18 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                       <TeamOutlined />
                       上课助教
                     </span>
-                    <a-select
-                      v-model:value="selectedAssistant"
-                      mode="multiple"
+                    <StaffSelect
+                      :key="`${scheduleStaffSelectKey}-assistant`"
+                      v-model="selectedAssistant"
                       size="large"
-                      allow-clear
                       placeholder="可不选"
-                      max-tag-count="responsive"
-                      :options="assistantOptions"
+                      width="100%"
+                      :multiple="true"
+                      :status="0"
+                      :allow-clear="true"
+                      :preset-staff="selectedAssistantDisplays"
                       class="planner-control planner-multi-slot-select"
+                      @change="handleAssistantChange"
                     />
                   </label>
                 </div>
@@ -1519,6 +1597,12 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
             </section>
           </main>
         </div>
+
+        <section v-else class="planner-card planner-card--empty-state">
+          <a-empty
+            :description="oneToOneLoading ? '正在加载1对1数据...' : '请选择1对1后查看档案并继续排课'"
+          />
+        </section>
       </div>
     </a-modal>
 
@@ -1972,6 +2056,14 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   display: flex;
   flex: 1;
   flex-direction: column;
+}
+
+.planner-card--empty-state {
+  display: flex;
+  min-height: 460px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
 }
 
 .planner-card__head {
@@ -2696,6 +2788,23 @@ button.planner-chip.planner-chip--active {
   border-radius: 12px !important;
   box-shadow: none !important;
   min-height: 42px;
+}
+
+:deep(.planner-control.ant-select-single .ant-select-selector) {
+  display: flex;
+  align-items: center;
+}
+
+:deep(.planner-control.ant-select-single .ant-select-selection-item),
+:deep(.planner-control.ant-select-single .ant-select-selection-placeholder),
+:deep(.planner-control.ant-select-single .ant-select-selection-search) {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+:deep(.planner-control.ant-select-single .ant-select-selection-search-input) {
+  height: 40px !important;
 }
 
 :deep(.planner-multi-slot-select.ant-select) {
