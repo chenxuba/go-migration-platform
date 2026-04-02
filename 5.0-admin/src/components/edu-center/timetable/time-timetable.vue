@@ -679,7 +679,7 @@ function isMutedTimeLabel(mark) {
 }
 
 .schedule-time-axis__label--muted .schedule-time-axis__text {
-  opacity: 0.28;
+  color: rgb(31 41 55 / 22%);
 }
 
 .schedule-time-axis__text {
