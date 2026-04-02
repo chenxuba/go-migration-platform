@@ -1807,7 +1807,7 @@ button.planner-choice.planner-choice--type .planner-choice__title {
 }
 
 .planner-section__title {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   color: #1f2329;
   font-size: 15px;
   font-weight: 600;

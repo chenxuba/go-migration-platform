@@ -21,7 +21,7 @@ const timeOptions = [
 
 const currentTime = ref('week')
 const currentDate = ref(dayjs())
-const selectedDayKey = ref('')
+const todayKey = dayjs().format('YYYY-MM-DD')
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const timelineStart = 8 * 60
@@ -62,14 +62,6 @@ function getWeekStart(value = dayjs()) {
 watch(currentTime, () => {
   currentDate.value = dayjs()
 })
-
-watch(
-  currentDate,
-  (value) => {
-    selectedDayKey.value = value.format('YYYY-MM-DD')
-  },
-  { immediate: true },
-)
 
 function formatDateRange(value) {
   if (!value)
@@ -314,7 +306,7 @@ function eventClass(item) {
 }
 
 function isActiveColumn(dateKey) {
-  return selectedDayKey.value === dateKey
+  return dateKey === todayKey
 }
 </script>
 
