@@ -8,6 +8,12 @@ import OneToOneScheduleModal from './one-to-one-schedule-modal.vue'
 
 type ScheduleType = 'class' | 'oneToOne' | 'trial'
 
+const props = withDefaults(defineProps<{
+  trigger?: 'hover' | 'click'
+}>(), {
+  trigger: 'hover',
+})
+
 const emit = defineEmits<{
   (e: 'select', type: ScheduleType): void
 }>()
@@ -41,9 +47,11 @@ const overlayInnerStyle = {
   padding: '0px',
 }
 
+const popoverOpen = ref(false)
 const oneToOneModalOpen = ref(false)
 
 function handleSelect(type: ScheduleType) {
+  popoverOpen.value = false
   if (type === 'oneToOne') {
     oneToOneModalOpen.value = true
   }
@@ -53,7 +61,8 @@ function handleSelect(type: ScheduleType) {
 
 <template>
   <a-popover
-    trigger="hover"
+    v-model:open="popoverOpen"
+    :trigger="props.trigger"
     placement="bottom"
     overlay-class-name="create-schedule-popover-overlay"
     :overlay-inner-style="overlayInnerStyle"

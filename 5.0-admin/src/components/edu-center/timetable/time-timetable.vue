@@ -25,7 +25,7 @@ const now = ref(dayjs())
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const timelineStart = 8 * 60
-const timelineEnd = 21 * 60
+const timelineEnd = 22 * 60
 const hourRowHeight = 88
 const timelineBottomPadding = 28
 
@@ -154,6 +154,14 @@ const hourMarks = computed(() =>
   Array.from({ length: timelineEnd / 60 - timelineStart / 60 + 1 }, (_, index) => timelineStart + index * 60),
 )
 
+const hoverSlots = computed(() =>
+  hourMarks.value.slice(0, -1).map((startMinutes, index) => ({
+    key: `slot-${startMinutes}`,
+    startMinutes,
+    endMinutes: hourMarks.value[index + 1],
+  })),
+)
+
 const timelineHeight = computed(() => (hourMarks.value.length - 1) * hourRowHeight + timelineBottomPadding)
 
 function minuteOffset(minutes) {
@@ -239,6 +247,38 @@ function isMutedTimeLabel(mark) {
   if (!showCurrentTimeLine.value)
     return false
   return Math.abs(mark - currentTimeMinutes.value) <= 20
+}
+
+function isFutureDateKey(dateKey) {
+  const current = dayjs(dateKey)
+  const today = now.value.startOf('day')
+  if (current.isAfter(today, 'day'))
+    return true
+  if (current.isBefore(today, 'day'))
+    return false
+  return true
+}
+
+function isFutureSlot(dateKey, startMinutes, endMinutes) {
+  if (!isFutureDateKey(dateKey))
+    return false
+  const current = dayjs(dateKey)
+  const today = now.value.startOf('day')
+  if (current.isAfter(today, 'day'))
+    return true
+  return endMinutes > currentTimeMinutes.value
+}
+
+function hasEventInSlot(dateKey, startMinutes, endMinutes) {
+  const list = layoutsByDate.value.get(dateKey) || []
+  return list.some(event => !(event.endMinutes <= startMinutes || event.startMinutes >= endMinutes))
+}
+
+function createSlotStyle(startMinutes, endMinutes) {
+  return {
+    top: `${minuteOffset(startMinutes)}px`,
+    height: `${((endMinutes - startMinutes) / 60) * hourRowHeight}px`,
+  }
 }
 </script>
 
@@ -376,6 +416,19 @@ function isMutedTimeLabel(mark) {
                 class="schedule-column__line"
                 :style="{ top: `${minuteOffset(mark)}px` }"
               />
+              <template v-for="slot in hoverSlots" :key="`${item.key}-${slot.key}`">
+                <div
+                  v-if="isFutureSlot(item.key, slot.startMinutes, slot.endMinutes) && !hasEventInSlot(item.key, slot.startMinutes, slot.endMinutes)"
+                  class="schedule-create-slot"
+                  :style="createSlotStyle(slot.startMinutes, slot.endMinutes)"
+                >
+                  <create-schedule-popover trigger="click">
+                    <button type="button" class="schedule-create-slot__trigger">
+                      点击创建排课日程
+                    </button>
+                  </create-schedule-popover>
+                </div>
+              </template>
               <div
                 v-if="showCurrentTimeLine"
                 class="schedule-now-line"
@@ -721,8 +774,8 @@ function isMutedTimeLabel(mark) {
 
 .schedule-now-axis__text {
   position: absolute;
-  top: -6px;
-  left: 4px;
+  top: -7px;
+  left: -3px;
   right: -4px;
   color: #ff4d4f;
   font-size: 12px;
@@ -749,6 +802,37 @@ function isMutedTimeLabel(mark) {
   border-top: 1px solid #ffb3b3;
   z-index: 1;
   pointer-events: none;
+}
+
+.schedule-create-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+}
+
+.schedule-create-slot__trigger {
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  margin: 6px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.schedule-create-slot__trigger:hover {
+  border-color: #cfe0ff;
+  background: rgb(24 119 255 / 4%);
+  color: #1677ff;
 }
 
 .schedule-event {
