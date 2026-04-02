@@ -203,7 +203,7 @@ const oneToOneRecords: OneToOneItem[] = [
       remainFreeQuantity: 0,
       lessonChargingMode: 1,
     },
-    remark: '家长希望固定周一 / 周三 / 周五放学后安排课程。',
+    remark: '',
     teacherList: [
       { teacherId: 'teacher-001', name: '李老师', status: 1, classId: '10001', isDefault: true },
       { teacherId: 'teacher-002', name: '周老师', status: 1, classId: '10001' },
