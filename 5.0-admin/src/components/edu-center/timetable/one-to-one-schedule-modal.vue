@@ -123,7 +123,7 @@ const holidayPolicyOptions: OptionItem<HolidayPolicy>[] = [
 ]
 
 const timeModeOptions: OptionItem<TimeMode>[] = [
-  { value: 'school', label: '学校统一时段', desc: '使用统一时段配置，排课更稳定' },
+  { value: 'school', label: '课表节次', desc: '按学校课表「第N节课」时间段排课' },
   { value: 'custom', label: '自定义时段', desc: '自定义开始时间和结束时间' },
 ]
 
@@ -138,42 +138,42 @@ const repeatRuleLabelMap: Record<RepeatRule, string> = {
 const schoolTimeSlotOptions: SchoolTimeSlot[] = [
   {
     value: 'slot-a',
-    label: 'A时段',
+    label: '第1节课',
     desc: '第1节课',
     start: '08:00',
     end: '08:45',
   },
   {
     value: 'slot-b',
-    label: 'B时段',
+    label: '第2节课',
     desc: '第2节课',
     start: '08:55',
     end: '09:40',
   },
   {
     value: 'slot-c',
-    label: 'C时段',
+    label: '第3节课',
     desc: '第3节课',
     start: '09:50',
     end: '10:35',
   },
   {
     value: 'slot-d',
-    label: 'D时段',
+    label: '第4节课',
     desc: '第4节课',
     start: '10:45',
     end: '11:30',
   },
   {
     value: 'slot-e',
-    label: 'E时段',
+    label: '第5节课',
     desc: '第5节课',
     start: '14:00',
     end: '14:45',
   },
   {
     value: 'slot-f',
-    label: 'F时段',
+    label: '第6节课',
     desc: '第6节课',
     start: '14:55',
     end: '15:40',
@@ -495,7 +495,7 @@ const activeTimeBlocks = computed<TimeBlock[]>(() => {
         continue
       rows.push({
         key: slot.value,
-        rangeText: `${slot.label} · ${slot.start}-${slot.end}`,
+        rangeText: `${slot.desc} · ${slot.start}-${slot.end}`,
         minutes: slotDurationMinutes(slot.start, slot.end),
         sortKey: slot.start,
       })
@@ -562,10 +562,16 @@ const dateSettingText = computed(() => {
 const timeModeText = computed(() => {
   const blocks = activeTimeBlocks.value
   if (!blocks.length)
-    return timeMode.value === 'school' ? '请选择统一时段' : '请配置自定义时段'
-  if (timeMode.value === 'school')
-    return `学校统一时段 · ${blocks.map(b => b.rangeText).join('；')}`
-  return `自定义时段 · ${blocks.map(b => b.rangeText).join('；')}`
+    return timeMode.value === 'school' ? '请选择课表节次' : '请配置自定义时段'
+  const blocksDesc = blocks.map(b => b.rangeText).join('；')
+  if (timeMode.value === 'school') {
+    const n = blocks.length
+    const head = n > 1 ? `课表节次（共 ${n} 节）` : '课表节次'
+    return `${head} · ${blocksDesc}`
+  }
+  const n = blocks.length
+  const head = n > 1 ? `自定义时段（共 ${n} 节）` : '自定义时段'
+  return `${head} · ${blocksDesc}`
 })
 
 const selectedOneToOneSummary = computed<SummaryItem[]>(() => [
@@ -591,6 +597,9 @@ const overviewItems = computed<SummaryItem[]>(() => [
   { label: '上课教室', value: scheduledClassroomText.value },
 ])
 
+/** 侧边「创建摘要」里 value 会被单行省略，这些行悬停展示全文 */
+const overviewTooltipLabels = new Set(['重复规则', '上课时间', '上课教室'])
+
 const recordQuickTags = computed<QuickTag[]>(() => [
   { text: oneToOneStatusText.value, tone: 'primary' },
   {
@@ -615,7 +624,7 @@ const blockedReason = computed(() => {
   if (schedulingMode.value === 'repeat' && scheduleTargetCount.value <= 0)
     return '当前剩余数量不足，暂不可继续排课。'
   if (timeMode.value === 'school' && selectedSchoolTimeSlots.value.length === 0)
-    return '请至少选择一个学校统一时段。'
+    return '请至少选择一节课表节次。'
   if (timeMode.value === 'custom') {
     if (customTimeRanges.value.length === 0)
       return '请至少添加一行自定义时段。'
@@ -1048,8 +1057,10 @@ function removeCustomTimeRow(index: number) {
                   class="planner-summary-list__row"
                 >
                   <span>{{ item.label }}</span>
-                  <a-tooltip v-if="item.label === '重复规则'" :title="item.value">
-                    <strong class="planner-summary-list__value">{{ item.value }}</strong>
+                  <a-tooltip v-if="overviewTooltipLabels.has(item.label)" :title="item.value">
+                    <span class="planner-summary-list__value-wrap">
+                      <strong class="planner-summary-list__value">{{ item.value }}</strong>
+                    </span>
                   </a-tooltip>
                   <strong v-else class="planner-summary-list__value">{{ item.value }}</strong>
                 </div>
@@ -1237,9 +1248,9 @@ function removeCustomTimeRow(index: number) {
                   <label v-if="timeMode === 'school'" class="planner-field planner-field--major planner-field--full">
                     <span class="planner-label planner-label--required">
                       <ClockCircleOutlined />
-                      统一时段（可多选）
+                      课表节次（可多选）
                     </span>
-                    <a-tooltip title="同一上课日内将按所选时段各生成一节；重复排课时每个上课日都会生成这些节，总节数仍受剩余课时/额度约束。">
+                    <a-tooltip title="同一上课日内按所选「第几节课」各生成一节日程；重复排课时每个上课日都会生成这些节，总节数仍受剩余课时/额度约束。">
                       <span class="planner-control-tooltip-wrap">
                         <a-select
                           v-model:value="selectedSchoolTimeSlots"
@@ -1248,7 +1259,7 @@ function removeCustomTimeRow(index: number) {
                           allow-clear
                           placeholder="同一天内可勾选多节，例如上午 + 下午"
                           max-tag-count="responsive"
-                          :max-tag-text-length="10"
+                          :max-tag-text-length="14"
                           :max-tag-placeholder="schoolSlotMaxTagPlaceholder"
                           class="planner-control planner-control--major planner-multi-slot-select"
                         >
@@ -1914,6 +1925,14 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   font-size: 13px;
 }
 
+.planner-summary-list__value-wrap {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  text-align: right;
+  cursor: default;
+}
+
 .planner-summary-list__value {
   display: block;
   min-width: 0;
@@ -1926,6 +1945,11 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.planner-summary-list__value-wrap .planner-summary-list__value {
+  flex: none;
+  width: 100%;
 }
 
 .planner-note,
