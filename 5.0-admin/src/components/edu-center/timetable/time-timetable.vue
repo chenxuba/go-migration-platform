@@ -1,7 +1,7 @@
 <script setup>
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 
 const displayArray = ref([
@@ -21,12 +21,13 @@ const timeOptions = [
 
 const currentTime = ref('week')
 const currentDate = ref(dayjs())
-const todayKey = dayjs().format('YYYY-MM-DD')
+const now = ref(dayjs())
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const timelineStart = 8 * 60
 const timelineEnd = 21 * 60
 const hourRowHeight = 88
+const timelineBottomPadding = 28
 
 const scheduleLegend = [
   {
@@ -58,6 +59,21 @@ function getWeekStart(value = dayjs()) {
   const diff = current.day() === 0 ? -6 : 1 - current.day()
   return current.add(diff, 'day').startOf('day')
 }
+
+let nowTimer = null
+
+onMounted(() => {
+  nowTimer = setInterval(() => {
+    now.value = dayjs()
+  }, 30 * 1000)
+})
+
+onUnmounted(() => {
+  if (nowTimer) {
+    clearInterval(nowTimer)
+    nowTimer = null
+  }
+})
 
 watch(currentTime, () => {
   currentDate.value = dayjs()
@@ -105,6 +121,15 @@ const displayDates = computed(() => {
   return Array.from({ length: 7 }, (_, index) => start.add(index, 'day'))
 })
 
+const todayKey = computed(() => now.value.format('YYYY-MM-DD'))
+const currentTimeMinutes = computed(() => now.value.hour() * 60 + now.value.minute())
+const currentTimeLabel = computed(() => now.value.format('HH:mm'))
+const showCurrentTimeLine = computed(() => {
+  if (currentTimeMinutes.value < timelineStart || currentTimeMinutes.value > timelineEnd)
+    return false
+  return displayDates.value.some(date => date.format('YYYY-MM-DD') === todayKey.value)
+})
+
 const mockSchedules = computed(() => [])
 
 const headerSummaries = computed(() =>
@@ -129,7 +154,7 @@ const hourMarks = computed(() =>
   Array.from({ length: timelineEnd / 60 - timelineStart / 60 + 1 }, (_, index) => timelineStart + index * 60),
 )
 
-const timelineHeight = computed(() => (hourMarks.value.length - 1) * hourRowHeight)
+const timelineHeight = computed(() => (hourMarks.value.length - 1) * hourRowHeight + timelineBottomPadding)
 
 function minuteOffset(minutes) {
   return ((minutes - timelineStart) / 60) * hourRowHeight
@@ -207,11 +232,18 @@ function eventClass(item) {
 }
 
 function isActiveColumn(dateKey) {
-  return dateKey === todayKey
+  return dateKey === todayKey.value
+}
+
+function isMutedTimeLabel(mark) {
+  if (!showCurrentTimeLine.value)
+    return false
+  return Math.abs(mark - currentTimeMinutes.value) <= 20
 }
 </script>
 
 <template>
+<div>
   <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
     <all-filter :display-array="displayArray" :is-show-search-stu-phonefilter="true" />
   </div>
@@ -313,10 +345,21 @@ function isActiveColumn(dateKey) {
               v-for="(mark, index) in hourMarks"
               :key="mark"
               class="schedule-time-axis__label"
-              :class="{ 'schedule-time-axis__label--first': index === 0 }"
+              :class="{
+                'schedule-time-axis__label--first': index === 0,
+                'schedule-time-axis__label--muted': isMutedTimeLabel(mark),
+              }"
               :style="{ top: `${minuteOffset(mark)}px` }"
             >
               <span class="schedule-time-axis__text">{{ formatClock(mark) }}</span>
+            </div>
+            <div
+              v-if="showCurrentTimeLine"
+              class="schedule-now-axis"
+              :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
+            >
+              <span class="schedule-now-axis__text">{{ currentTimeLabel }}</span>
+              <span class="schedule-now-axis__dot" />
             </div>
           </div>
 
@@ -332,6 +375,11 @@ function isActiveColumn(dateKey) {
                 :key="`${item.key}-${mark}`"
                 class="schedule-column__line"
                 :style="{ top: `${minuteOffset(mark)}px` }"
+              />
+              <div
+                v-if="showCurrentTimeLine"
+                class="schedule-now-line"
+                :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
               />
 
               <div
@@ -360,6 +408,7 @@ function isActiveColumn(dateKey) {
                 <div class="schedule-event__footer">
                   {{ event.studentText }}
                 </div>
+              </div>
               </div>
             </div>
           </div>
@@ -556,6 +605,7 @@ function isActiveColumn(dateKey) {
 .schedule-grid {
   display: grid;
   width: 100%;
+  position: relative;
 }
 
 .schedule-time-header,
@@ -628,6 +678,10 @@ function isActiveColumn(dateKey) {
   transform: translateY(0);
 }
 
+.schedule-time-axis__label--muted .schedule-time-axis__text {
+  opacity: 0.28;
+}
+
 .schedule-time-axis__text {
   position: relative;
   z-index: 1;
@@ -643,7 +697,7 @@ function isActiveColumn(dateKey) {
 }
 
 .schedule-column--active {
-  background: linear-gradient(180deg, rgb(24 119 255 / 2%) 0%, #fff 24%);
+  background: #f3f9ff;
 }
 
 .schedule-column__body {
@@ -655,6 +709,46 @@ function isActiveColumn(dateKey) {
   left: 0;
   right: 0;
   border-top: 1px solid #dde5f0;
+}
+
+.schedule-now-axis {
+  position: absolute;
+  z-index: 8;
+  pointer-events: none;
+  left: 0;
+  right: 0;
+}
+
+.schedule-now-axis__text {
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  color: #ff4d4f;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.schedule-now-axis__dot {
+  position: absolute;
+  top: -3px;
+  left: 81px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ff4d4f;
+}
+
+.schedule-now-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #ffb3b3;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .schedule-event {
