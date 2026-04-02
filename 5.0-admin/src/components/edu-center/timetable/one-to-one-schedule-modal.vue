@@ -1525,6 +1525,21 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
 
                   <label class="planner-field">
                     <span class="planner-label">
+                      <EnvironmentOutlined />
+                      上课教室
+                    </span>
+                    <a-select
+                      v-model:value="selectedClassroom"
+                      size="large"
+                      allow-clear
+                      placeholder="可不选"
+                      :options="classroomOptions"
+                      class="planner-control"
+                    />
+                  </label>
+
+                  <label class="planner-field planner-field--full">
+                    <span class="planner-label">
                       <TeamOutlined />
                       上课助教
                     </span>
@@ -1536,21 +1551,6 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                       placeholder="可不选"
                       max-tag-count="responsive"
                       :options="assistantOptions"
-                      class="planner-control"
-                    />
-                  </label>
-
-                  <label class="planner-field">
-                    <span class="planner-label">
-                      <EnvironmentOutlined />
-                      上课教室
-                    </span>
-                    <a-select
-                      v-model:value="selectedClassroom"
-                      size="large"
-                      allow-clear
-                      placeholder="可不选"
-                      :options="classroomOptions"
                       class="planner-control"
                     />
                   </label>
