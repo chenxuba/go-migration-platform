@@ -2648,7 +2648,6 @@ button.planner-chip.planner-chip--active {
 
 .planner-table-wrap {
   overflow: auto;
-  padding-top: 14px;
 }
 
 .planner-table-wrap--modal {
@@ -2663,6 +2662,9 @@ button.planner-chip.planner-chip--active {
 }
 
 .planner-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 12px 14px;
   border-bottom: 1px solid #f0f0f0;
   background: #fafafa;

@@ -92,10 +92,6 @@ function handleNext() {
     : currentDate.value.add(1, 'week')
 }
 
-function buildDateTime(date, hour, minute) {
-  return dayjs(date).hour(hour).minute(minute).second(0).millisecond(0)
-}
-
 function formatClock(minutes) {
   const hour = String(Math.floor(minutes / 60)).padStart(2, '0')
   const minute = String(minutes % 60).padStart(2, '0')
@@ -109,102 +105,7 @@ const displayDates = computed(() => {
   return Array.from({ length: 7 }, (_, index) => start.add(index, 'day'))
 })
 
-const mockSchedules = computed(() => {
-  const dates = displayDates.value
-  const first = dates[0]
-  const second = dates[Math.min(1, dates.length - 1)]
-  const third = dates[Math.min(2, dates.length - 1)]
-  const fourth = dates[Math.min(3, dates.length - 1)]
-  const fifth = dates[Math.min(4, dates.length - 1)]
-  const sixth = dates[Math.min(5, dates.length - 1)]
-
-  return [
-    {
-      id: 'evt-1',
-      dateKey: second.format('YYYY-MM-DD'),
-      title: '感统启航班',
-      course: '感觉统合',
-      teacher: '陈老师',
-      classroom: '感统教室A',
-      studentText: '6名学员',
-      startAt: buildDateTime(second, 8, 40),
-      endAt: buildDateTime(second, 9, 35),
-      status: 'unsigned',
-      hasTrial: false,
-      conflict: false,
-    },
-    {
-      id: 'evt-2',
-      dateKey: second.format('YYYY-MM-DD'),
-      title: '王小明',
-      course: '语言理解',
-      teacher: '李老师',
-      classroom: '个训室2',
-      studentText: '1对1',
-      startAt: buildDateTime(second, 10, 10),
-      endAt: buildDateTime(second, 10, 55),
-      status: 'signed',
-      hasTrial: false,
-      conflict: false,
-    },
-    {
-      id: 'evt-3',
-      dateKey: third.format('YYYY-MM-DD'),
-      title: '语言表达班',
-      course: '口肌训练',
-      teacher: '黄老师',
-      classroom: '语言教室1',
-      studentText: '含试听',
-      startAt: buildDateTime(third, 9, 30),
-      endAt: buildDateTime(third, 10, 20),
-      status: 'unsigned',
-      hasTrial: true,
-      conflict: false,
-    },
-    {
-      id: 'evt-4',
-      dateKey: fourth.format('YYYY-MM-DD'),
-      title: '赵子涵',
-      course: '认知理解',
-      teacher: '周老师',
-      classroom: '认知教室',
-      studentText: '1对1',
-      startAt: buildDateTime(fourth, 13, 30),
-      endAt: buildDateTime(fourth, 14, 20),
-      status: 'unsigned',
-      hasTrial: false,
-      conflict: true,
-    },
-    {
-      id: 'evt-5',
-      dateKey: fifth.format('YYYY-MM-DD'),
-      title: '精细动作班',
-      course: '作业训练',
-      teacher: '张老师',
-      classroom: 'OT教室',
-      studentText: '4名学员',
-      startAt: buildDateTime(fifth, 15, 10),
-      endAt: buildDateTime(fifth, 16, 0),
-      status: 'signed',
-      hasTrial: false,
-      conflict: false,
-    },
-    {
-      id: 'evt-6',
-      dateKey: sixth.format('YYYY-MM-DD'),
-      title: '社交小组课',
-      course: '团体互动',
-      teacher: '吴老师',
-      classroom: '团体教室',
-      studentText: '5名学员',
-      startAt: buildDateTime(sixth, 10, 0),
-      endAt: buildDateTime(sixth, 11, 0),
-      status: 'unsigned',
-      hasTrial: false,
-      conflict: false,
-    },
-  ].filter(item => displayDates.value.some(date => date.format('YYYY-MM-DD') === item.dateKey))
-})
+const mockSchedules = computed(() => [])
 
 const headerSummaries = computed(() =>
   displayDates.value.map((date) => {
