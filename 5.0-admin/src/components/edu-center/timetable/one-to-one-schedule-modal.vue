@@ -5,6 +5,7 @@ import {
   ClockCircleOutlined,
   CloseOutlined,
   EnvironmentOutlined,
+  PlusOutlined,
   QuestionCircleOutlined,
   TeamOutlined,
   UserOutlined,
@@ -52,6 +53,17 @@ interface SchoolTimeSlot {
   desc: string
   start: string
   end: string
+}
+
+interface TimeBlock {
+  key: string
+  rangeText: string
+  minutes: number
+}
+
+interface CustomTimeRangeRow {
+  start: Dayjs | null
+  end: Dayjs | null
 }
 
 const props = defineProps<{
@@ -290,9 +302,10 @@ const scheduleType = ref<ScheduleType>('oneToOne')
 const schedulingMode = ref<SchedulingMode>('repeat')
 const repeatRule = ref<RepeatRule>('weekly')
 const holidayPolicy = ref<HolidayPolicy>('filter')
-const timeMode = ref<TimeMode>('custom')
+const timeMode = ref<TimeMode>('school')
 const selectedWeekdays = ref(['周一', '周三', '周五'])
-const selectedSchoolTimeSlot = ref('slot-a')
+/** 同一选课可多次勾选（例如上午一节 + 下午一节），每个上课日按所选时段各生成一节 */
+const selectedSchoolTimeSlots = ref<string[]>(['slot-d', 'slot-e'])
 const selectedTeacher = ref(oneToOneRecords[0]?.defaultTeacherName || '')
 const selectedAssistant = ref<string[] | undefined>(undefined)
 const selectedClassroom = ref(oneToOneRecords[0]?.classRoomName || '')
@@ -300,8 +313,16 @@ const selectedStudentLessonPath = ref<string[] | undefined>(undefined)
 const previewModalOpen = ref(false)
 const scheduleStartDate = ref(dayjs().add(5, 'day').startOf('day'))
 const freeScheduleDate = ref(dayjs().add(5, 'day').startOf('day'))
-const customStartTime = ref<Dayjs | null>(dayjs().hour(16).minute(0).second(0))
-const customEndTime = ref<Dayjs | null>(dayjs().hour(16).minute(45).second(0))
+const customTimeRanges = ref<CustomTimeRangeRow[]>([
+  {
+    start: dayjs().hour(10).minute(30).second(0),
+    end: dayjs().hour(11).minute(15).second(0),
+  },
+  {
+    start: dayjs().hour(14).minute(0).second(0),
+    end: dayjs().hour(14).minute(45).second(0),
+  },
+])
 
 const selectedOneToOne = computed(() =>
   oneToOneRecords.find(item => item.id === selectedOneToOneId.value) || oneToOneRecords[0],
@@ -371,8 +392,15 @@ watch(
       : (teacherNames[0] || '')
     selectedClassroom.value = value?.classRoomName || classroomOptions.value[0]?.value || ''
     selectedAssistant.value = undefined
-    customStartTime.value = dayjs().hour(16).minute(0).second(0)
-    customEndTime.value = customStartTime.value.add(recordSessionMinutes.value, 'minute')
+    const s = dayjs().hour(10).minute(30).second(0)
+    customTimeRanges.value = [
+      { start: s, end: s.add(recordSessionMinutes.value, 'minute') },
+      {
+        start: dayjs().hour(14).minute(0).second(0),
+        end: dayjs().hour(14).minute(45).second(0),
+      },
+    ]
+    selectedSchoolTimeSlots.value = ['slot-d', 'slot-e']
   },
   { immediate: true },
 )
@@ -452,49 +480,68 @@ const remainQuantityValue = computed(() => {
   return Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
 })
 
-const selectedTimeSlot = computed(() =>
-  schoolTimeSlotOptions.find(item => item.value === selectedSchoolTimeSlot.value) || schoolTimeSlotOptions[0],
-)
+function slotDurationMinutes(start: string, end: string) {
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  return Math.max(0, eh * 60 + em - (sh * 60 + sm))
+}
 
-const resolvedStartTime = computed(() => {
+const activeTimeBlocks = computed<TimeBlock[]>(() => {
   if (timeMode.value === 'school') {
-    const [hour, minute] = (selectedTimeSlot.value?.start || '16:00').split(':').map(Number)
-    return dayjs().hour(hour).minute(minute).second(0)
+    const rows: (TimeBlock & { sortKey: string })[] = []
+    for (const id of selectedSchoolTimeSlots.value) {
+      const slot = schoolTimeSlotOptions.find(s => s.value === id)
+      if (!slot)
+        continue
+      rows.push({
+        key: slot.value,
+        rangeText: `${slot.label} · ${slot.start}-${slot.end}`,
+        minutes: slotDurationMinutes(slot.start, slot.end),
+        sortKey: slot.start,
+      })
+    }
+    return rows
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+      .map(({ sortKey: _s, ...r }) => r)
   }
-  return customStartTime.value
+  const rows: (TimeBlock & { sortKey: string })[] = []
+  customTimeRanges.value.forEach((row, index) => {
+    if (!row.start || !row.end || !row.end.isAfter(row.start))
+      return
+    rows.push({
+      key: `custom-${index}-${row.start.valueOf()}`,
+      rangeText: `${row.start.format('HH:mm')} - ${row.end.format('HH:mm')}`,
+      minutes: row.end.diff(row.start, 'minute'),
+      sortKey: row.start.format('HH:mm'),
+    })
+  })
+  return rows
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+    .map(({ sortKey: _s, ...r }) => r)
 })
 
-const resolvedEndTime = computed(() => {
-  if (timeMode.value === 'school') {
-    const [hour, minute] = (selectedTimeSlot.value?.end || '16:45').split(':').map(Number)
-    return dayjs().hour(hour).minute(minute).second(0)
-  }
-  return customEndTime.value
-})
-
-const scheduleSessionMinutes = computed(() => {
-  if (!resolvedStartTime.value || !resolvedEndTime.value)
-    return 0
-  const diff = resolvedEndTime.value.diff(resolvedStartTime.value, 'minute')
-  return diff > 0 ? diff : 0
-})
-
-const timeRangeText = computed(() => {
-  if (!resolvedStartTime.value || !resolvedEndTime.value)
+const scheduleSessionMinutesText = computed(() => {
+  const blocks = activeTimeBlocks.value
+  if (!blocks.length)
     return '--'
-  const start = resolvedStartTime.value.format('HH:mm')
-  const end = resolvedEndTime.value.format('HH:mm')
-  return `${start} - ${end}`
+  const uniq = [...new Set(blocks.map(b => `${b.minutes} 分钟`))]
+  return uniq.join('、')
 })
 
 const selectedWeekdaysText = computed(() => selectedWeekdays.value.join(' / '))
+/** 本次操作最多创建的课节数（含同一天多个时段） */
 const scheduleTargetCount = computed(() => {
-  if (schedulingMode.value !== 'repeat')
-    return 1
-  if (repeatRule.value === 'none')
-    return 1
   const remain = remainQuantityValue.value
-  return remain > 0 ? Math.ceil(remain) : 0
+  const r = remain > 0 ? Math.ceil(remain) : 0
+  if (schedulingMode.value === 'free')
+    return r
+  if (repeatRule.value === 'none') {
+    if (r <= 0)
+      return 0
+    const n = Math.max(activeTimeBlocks.value.length, 1)
+    return Math.min(n, r)
+  }
+  return r
 })
 
 const repeatRuleText = computed(() => {
@@ -512,11 +559,14 @@ const dateSettingText = computed(() => {
   return rangeText.value
 })
 
-const timeModeText = computed(() =>
-  timeMode.value === 'school'
-    ? `${selectedTimeSlot.value?.desc || '-'} · ${selectedTimeSlot.value?.start || '-'} - ${selectedTimeSlot.value?.end || '-'}`
-    : `自定义时段 · ${timeRangeText.value}`,
-)
+const timeModeText = computed(() => {
+  const blocks = activeTimeBlocks.value
+  if (!blocks.length)
+    return timeMode.value === 'school' ? '请选择统一时段' : '请配置自定义时段'
+  if (timeMode.value === 'school')
+    return `学校统一时段 · ${blocks.map(b => b.rangeText).join('；')}`
+  return `自定义时段 · ${blocks.map(b => b.rangeText).join('；')}`
+})
 
 const selectedOneToOneSummary = computed<SummaryItem[]>(() => [
   { label: '学员', value: selectedOneToOne.value?.studentName || '-' },
@@ -524,7 +574,8 @@ const selectedOneToOneSummary = computed<SummaryItem[]>(() => [
   { label: '默认老师', value: selectedOneToOne.value?.defaultTeacherName || '-' },
   { label: '班主任', value: selectedOneToOne.value?.classTeacherName || '-' },
   { label: '默认教室', value: recordClassroomText.value },
-  { label: '单次课时', value: `${recordSessionMinutes.value} 分钟` },
+  { label: '档案节课时长', value: `${recordSessionMinutes.value} 分钟` },
+  { label: '本次时段', value: scheduleSessionMinutesText.value },
   { label: '记录方式', value: recordModeText.value },
   { label: '学费账户', value: `${selectedOneToOne.value?.tuitionAccountCount ?? 0} 个` },
 ])
@@ -559,14 +610,24 @@ const blockedReason = computed(() => {
     return '请先选择上课教师。'
   if (!selectedClassroom.value)
     return '请先选择上课教室。'
+  if (schedulingMode.value === 'free' && scheduleTargetCount.value <= 0)
+    return '当前剩余数量不足，暂不可创建日程。'
   if (schedulingMode.value === 'repeat' && scheduleTargetCount.value <= 0)
     return '当前剩余数量不足，暂不可继续排课。'
-  if (timeMode.value === 'custom' && !customStartTime.value)
-    return '请选择开始时间。'
-  if (timeMode.value === 'custom' && !customEndTime.value)
-    return '请选择结束时间。'
-  if (timeMode.value === 'custom' && scheduleSessionMinutes.value <= 0)
-    return '结束时间需晚于开始时间。'
+  if (timeMode.value === 'school' && selectedSchoolTimeSlots.value.length === 0)
+    return '请至少选择一个学校统一时段。'
+  if (timeMode.value === 'custom') {
+    if (customTimeRanges.value.length === 0)
+      return '请至少添加一行自定义时段。'
+    for (const row of customTimeRanges.value) {
+      if (!row.start || !row.end)
+        return '请补全每一行自定义时段的开始与结束时间。'
+      if (!row.end.isAfter(row.start))
+        return '每一行自定义时段的结束时间需晚于开始时间。'
+    }
+  }
+  if (!activeTimeBlocks.value.length)
+    return '当前没有可用的上课时段，请检查时间配置。'
   if (schedulingMode.value === 'repeat' && (repeatRule.value === 'weekly' || repeatRule.value === 'biweekly') && selectedWeekdays.value.length === 0)
     return '请至少选择一个每周上课日。'
   return ''
@@ -587,17 +648,20 @@ const rawPlannedDates = computed(() => {
     return []
 
   const rangeStart = start.startOf('day')
-  const targetCount = scheduleTargetCount.value
-  if (targetCount <= 0)
+  const sessionCap = scheduleTargetCount.value
+  if (sessionCap <= 0)
     return []
   if (repeatRule.value === 'none')
     return [rangeStart]
+
+  const slotsPerDay = Math.max(activeTimeBlocks.value.length, 1)
+  const dateTarget = Math.max(1, Math.ceil(sessionCap / slotsPerDay))
 
   const result: Dayjs[] = []
   let cursor = rangeStart
   let guard = 0
 
-  while (result.length < targetCount && guard < 5000) {
+  while (result.length < dateTarget && guard < 5000) {
     if (repeatRule.value === 'daily') {
       result.push(cursor)
     }
@@ -650,17 +714,27 @@ const previewRuleText = computed(() => {
   return repeatRuleLabelMap[repeatRule.value]
 })
 
-const previewPlans = computed<PreviewItem[]>(() =>
-  plannedDates.value.map(date => ({
-    date: date.format('YYYY-MM-DD'),
-    week: weekDisplayMap[date.day()] || '-',
-    rule: previewRuleText.value,
-    time: timeRangeText.value,
-    teacher: selectedTeacher.value || selectedOneToOne.value?.defaultTeacherName || '-',
-    classroom: scheduledClassroomText.value,
-    tone: isSchedulable.value ? 'pending' : 'blocked',
-  })),
-)
+const previewPlans = computed<PreviewItem[]>(() => {
+  const blocks = activeTimeBlocks.value
+  if (!blocks.length)
+    return []
+  const tone: PreviewTone = isSchedulable.value ? 'pending' : 'blocked'
+  const unclipped = plannedDates.value.flatMap(date =>
+    blocks.map(block => ({
+      date: date.format('YYYY-MM-DD'),
+      week: weekDisplayMap[date.day()] || '-',
+      rule: previewRuleText.value,
+      time: block.rangeText,
+      teacher: selectedTeacher.value || selectedOneToOne.value?.defaultTeacherName || '-',
+      classroom: scheduledClassroomText.value,
+      tone,
+    })),
+  )
+  const cap = scheduleTargetCount.value
+  if (cap <= 0)
+    return []
+  return unclipped.slice(0, cap)
+})
 
 const estimatedCount = computed(() => previewPlans.value.length)
 
@@ -687,6 +761,12 @@ const actionButtonText = computed(() => {
     return estimatedCount.value > 0 ? '创建单次日程' : '创建日程'
   return estimatedCount.value > 0 ? `批量创建 ${estimatedCount.value} 节` : '批量创建日程'
 })
+
+/** 多选时段超出可视区域时展示 +N（配合 maxTagCount=responsive） */
+function schoolSlotMaxTagPlaceholder(omittedValues: { label?: unknown, value?: unknown }[]) {
+  const n = omittedValues?.length ?? 0
+  return n > 0 ? `+${n}` : ''
+}
 
 function closeModal() {
   previewModalOpen.value = false
@@ -736,25 +816,16 @@ function invertWeekdays() {
 }
 
 watch(timeMode, (value) => {
-  if (value === 'custom' && scheduleSessionMinutes.value <= 0) {
-    if (!customStartTime.value)
-      customStartTime.value = dayjs().hour(16).minute(0).second(0)
-    customEndTime.value = customStartTime.value.add(recordSessionMinutes.value, 'minute')
+  if (value === 'custom' && customTimeRanges.value.length === 0) {
+    const s = dayjs().hour(10).minute(30).second(0)
+    customTimeRanges.value = [
+      { start: s, end: s.add(recordSessionMinutes.value, 'minute') },
+    ]
   }
 })
 
-watch(customStartTime, (value) => {
-  if (!value) {
-    customEndTime.value = null
-    return
-  }
-  if (!customEndTime.value || !customEndTime.value.isAfter(value)) {
-    customEndTime.value = value.add(30, 'minute')
-  }
-})
-
-function disabledCustomEndTime() {
-  if (!customStartTime.value) {
+function disabledCustomEndTime(start: Dayjs | null) {
+  if (!start) {
     return {
       disabledHours: () => [],
       disabledMinutes: () => [],
@@ -762,8 +833,8 @@ function disabledCustomEndTime() {
     }
   }
 
-  const startHour = customStartTime.value.hour()
-  const startMinute = customStartTime.value.minute()
+  const startHour = start.hour()
+  const startMinute = start.minute()
 
   return {
     disabledHours: () => Array.from({ length: startHour }, (_, index) => index),
@@ -774,6 +845,26 @@ function disabledCustomEndTime() {
     },
     disabledSeconds: () => [],
   }
+}
+
+function addCustomTimeRow() {
+  const last = customTimeRanges.value[customTimeRanges.value.length - 1]
+  const base = last?.end?.isValid()
+    ? last.end!
+    : dayjs().hour(14).minute(0).second(0)
+  customTimeRanges.value = [
+    ...customTimeRanges.value,
+    {
+      start: base,
+      end: base.add(recordSessionMinutes.value, 'minute'),
+    },
+  ]
+}
+
+function removeCustomTimeRow(index: number) {
+  if (customTimeRanges.value.length <= 1)
+    return
+  customTimeRanges.value = customTimeRanges.value.filter((_, i) => i !== index)
 }
 </script>
 
@@ -1143,69 +1234,100 @@ function disabledCustomEndTime() {
                     </div>
                   </div>
 
-                  <label v-if="timeMode === 'school'" class="planner-field planner-field--major">
+                  <label v-if="timeMode === 'school'" class="planner-field planner-field--major planner-field--full">
                     <span class="planner-label planner-label--required">
                       <ClockCircleOutlined />
-                      统一时段
+                      统一时段（可多选）
                     </span>
-                    <a-select
-                      v-model:value="selectedSchoolTimeSlot"
-                      size="large"
-                      :allow-clear="false"
-                      class="planner-control planner-control--major"
-                    >
-                      <a-select-option
-                        v-for="item in schoolTimeSlotOptions"
-                        :key="item.value"
-                        :value="item.value"
-                        :label="`${item.desc} · ${item.start} - ${item.end}`"
-                      >
-                        <div class="planner-option planner-option--inline">
-                          <div class="planner-option__title">{{ item.desc }} · {{ item.start }} - {{ item.end }}</div>
-                        </div>
-                      </a-select-option>
-                    </a-select>
+                    <a-tooltip title="同一上课日内将按所选时段各生成一节；重复排课时每个上课日都会生成这些节，总节数仍受剩余课时/额度约束。">
+                      <span class="planner-control-tooltip-wrap">
+                        <a-select
+                          v-model:value="selectedSchoolTimeSlots"
+                          mode="multiple"
+                          size="large"
+                          allow-clear
+                          placeholder="同一天内可勾选多节，例如上午 + 下午"
+                          max-tag-count="responsive"
+                          :max-tag-text-length="10"
+                          :max-tag-placeholder="schoolSlotMaxTagPlaceholder"
+                          class="planner-control planner-control--major planner-multi-slot-select"
+                        >
+                          <a-select-option
+                            v-for="item in schoolTimeSlotOptions"
+                            :key="item.value"
+                            :value="item.value"
+                            :label="`${item.desc} · ${item.start} - ${item.end}`"
+                          >
+                            <div class="planner-option planner-option--inline">
+                              <div class="planner-option__title">{{ item.desc }} · {{ item.start }} - {{ item.end }}</div>
+                            </div>
+                          </a-select-option>
+                        </a-select>
+                      </span>
+                    </a-tooltip>
                   </label>
 
-                <label v-else class="planner-field planner-field--major">
-                  <span class="planner-label planner-label--required">
-                    <ClockCircleOutlined />
-                    自定义时段
-                  </span>
-                  <div class="planner-time-range">
-                    <a-time-picker
-                      v-model:value="customStartTime"
-                      size="large"
-                      format="HH:mm"
-                      class="planner-control"
-                      allow-clear
-                      placeholder="开始时间"
-                      :minute-step="5"
-                    />
-                    <span class="planner-time-range__sep">至</span>
-                    <a-time-picker
-                      v-model:value="customEndTime"
-                      size="large"
-                      format="HH:mm"
-                      class="planner-control"
-                      allow-clear
-                      placeholder="结束时间"
-                      :disabled="!customStartTime"
-                      :disabled-time="disabledCustomEndTime"
-                      :minute-step="5"
-                    />
+                  <div v-else class="planner-field planner-field--major planner-field--full">
+                    <span class="planner-label planner-label--required">
+                      <ClockCircleOutlined />
+                      自定义时段（可多行）
+                    </span>
+                    <div class="planner-custom-time-list">
+                      <div
+                        v-for="(row, rowIndex) in customTimeRanges"
+                        :key="rowIndex"
+                        class="planner-time-range planner-time-range--stacked"
+                      >
+                        <a-time-picker
+                          v-model:value="row.start"
+                          size="large"
+                          format="HH:mm"
+                          class="planner-control"
+                          allow-clear
+                          placeholder="开始"
+                          :minute-step="5"
+                        />
+                        <span class="planner-time-range__sep">至</span>
+                        <a-time-picker
+                          v-model:value="row.end"
+                          size="large"
+                          format="HH:mm"
+                          class="planner-control"
+                          allow-clear
+                          placeholder="结束"
+                          :disabled="!row.start"
+                          :disabled-time="() => disabledCustomEndTime(row.start)"
+                          :minute-step="5"
+                        />
+                        <a-button
+                          v-if="customTimeRanges.length > 1"
+                          type="link"
+                          danger
+                          size="small"
+                          class="planner-time-range__remove"
+                          @click="removeCustomTimeRow(rowIndex)"
+                        >
+                          删除
+                        </a-button>
+                      </div>
+                      <a-button type="dashed" block class="planner-custom-time-add" @click="addCustomTimeRow">
+                        <template #icon>
+                          <PlusOutlined />
+                        </template>
+                        添加时段
+                      </a-button>
+                    </div>
                   </div>
-                </label>
 
-                <div class="planner-field planner-field--major">
-                  <span class="planner-label">
-                    单次课时
-                  </span>
-                  <div class="planner-static-field planner-static-field--major planner-static-field--inline">
-                    <strong>{{ scheduleSessionMinutes ? `${scheduleSessionMinutes} 分钟` : '--' }}</strong>
-                    <span>按开始/结束时间自动计算</span>
+                  <div class="planner-field planner-field--major">
+                    <span class="planner-label">
+                      各时段课长
+                    </span>
+                    <div class="planner-static-field planner-static-field--major planner-static-field--inline">
+                      <strong>{{ scheduleSessionMinutesText }}</strong>
+                      <span>按每行开始/结束时间分别计算</span>
+                    </div>
                   </div>
-                </div>
 
                   <label class="planner-field">
                     <span class="planner-label planner-label--required">
@@ -1319,8 +1441,8 @@ function disabledCustomEndTime() {
               </tr>
               <template v-else>
                 <tr
-                  v-for="item in previewPlans"
-                  :key="`${item.date}-${item.week}-${item.time}`"
+                  v-for="(item, planIdx) in previewPlans"
+                  :key="`${item.date}-${item.time}-${planIdx}`"
                   :class="{ 'planner-table__row--blocked': item.tone === 'blocked' }"
                 >
                   <td>{{ item.date }}</td>
@@ -1875,6 +1997,40 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   white-space: nowrap;
 }
 
+.planner-control-tooltip-wrap {
+  display: block;
+  width: 100%;
+  /* 避免 grid/flex 子项 min-width:0 把多选压成一条竖线 */
+  min-width: 320px;
+}
+
+.planner-custom-time-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.planner-time-range--stacked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.planner-time-range--stacked .planner-control {
+  flex: 1 1 120px;
+  min-width: 100px;
+}
+
+.planner-time-range__remove {
+  flex-shrink: 0;
+}
+
+.planner-custom-time-add {
+  margin-top: 2px;
+}
+
 .planner-chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -2185,12 +2341,33 @@ button.planner-chip.planner-chip--active {
   min-height: 42px;
 }
 
+:deep(.planner-multi-slot-select.ant-select) {
+  width: 100% !important;
+  min-width: 320px !important;
+}
+
+:deep(.planner-multi-slot-select .ant-select-selector) {
+  width: 100% !important;
+  min-width: 0;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+}
+
+:deep(.planner-multi-slot-select .ant-select-selection-overflow) {
+  flex-wrap: nowrap !important;
+}
+
 :deep(.planner-control--major.ant-picker),
 :deep(.planner-control--major .ant-select-selector) {
   height: var(--planner-major-height) !important;
   min-height: var(--planner-major-height) !important;
   padding-inline: 12px !important;
   border-radius: 12px !important;
+}
+
+:deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selector) {
+  height: auto !important;
+  min-height: var(--planner-major-height) !important;
 }
 
 :deep(.planner-control--major.ant-picker .ant-picker-input) {
@@ -2205,12 +2382,16 @@ button.planner-chip.planner-chip--active {
 
 :deep(.planner-control--major .ant-select-selection-item) {
   display: flex;
-  min-height: 40px;
   align-items: center;
   font-size: 14px;
   font-weight: 400;
   line-height: 1.45;
   white-space: normal;
+}
+
+:deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-item) {
+  flex-shrink: 0;
+  white-space: nowrap !important;
 }
 
 :deep(.planner-control--major .ant-select-arrow),
