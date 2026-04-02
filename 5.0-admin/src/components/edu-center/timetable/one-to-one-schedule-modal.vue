@@ -9,9 +9,9 @@ import {
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
-import type { OneToOneItem } from '../../../api/edu-center/one-to-one'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, ref, watch } from 'vue'
+import type { OneToOneItem } from '../../../api/edu-center/one-to-one'
 
 type PreviewTone = 'pending' | 'blocked'
 type ScheduleType = 'oneToOne' | 'studentLesson'
@@ -584,538 +584,548 @@ function toggleWeekday(day: string) {
 </script>
 
 <template>
-  <a-modal
-    v-model:open="modalOpen"
-    centered
-    class="one-to-one-schedule-modal"
-    :footer="null"
-    :width="1140"
-    :keyboard="false"
-    :closable="false"
-    :mask-closable="true"
-    @cancel="closeModal"
-  >
-    <template #title>
-      <div class="planner-head">
-        <div class="planner-head__main">
-          <div class="planner-head__title">
-            创建1对1日程
+  <div class="one-to-one-schedule-modal-root">
+    <a-modal
+      v-model:open="modalOpen"
+      centered
+      class="one-to-one-schedule-modal"
+      :footer="null"
+      :width="1140"
+      :keyboard="false"
+      :closable="false"
+      :mask-closable="true"
+      @cancel="closeModal"
+    >
+      <template #title>
+        <div class="planner-head">
+          <div class="planner-head__main">
+            <div class="planner-head__title">
+              创建1对1日程
+            </div>
+            <div class="planner-head__subtitle">
+              参考当前1对1档案快速生成日程，先把规则配置清楚，再确认创建。
+            </div>
           </div>
-          <div class="planner-head__subtitle">
-            参考当前1对1档案快速生成日程，先把规则配置清楚，再确认创建。
+
+          <div class="planner-head__stats">
+            <div class="planner-stat">
+              <strong>{{ estimatedCount }}</strong>
+              <span>节预计生成</span>
+            </div>
+            <div v-if="excludedHolidayCount" class="planner-stat planner-stat--subtle">
+              <strong>{{ excludedHolidayCount }}</strong>
+              <span>节已过滤</span>
+            </div>
           </div>
+
+          <a-button type="text" class="planner-head__close" @click="closeModal">
+            <template #icon>
+              <CloseOutlined />
+            </template>
+          </a-button>
         </div>
+      </template>
 
-        <div class="planner-head__stats">
-          <div class="planner-stat">
-            <strong>{{ estimatedCount }}</strong>
-            <span>节预计生成</span>
-          </div>
-          <div v-if="excludedHolidayCount" class="planner-stat planner-stat--subtle">
-            <strong>{{ excludedHolidayCount }}</strong>
-            <span>节已过滤</span>
-          </div>
-        </div>
-
-        <a-button type="text" class="planner-head__close" @click="closeModal">
-          <template #icon>
-            <CloseOutlined />
-          </template>
-        </a-button>
-      </div>
-    </template>
-
-    <div class="planner-shell">
-      <section class="planner-strip planner-strip--top">
-        <div class="planner-inline planner-inline--top">
-          <div class="planner-inline__group planner-inline__group--type">
-            <span class="planner-label planner-label--inline">排课类型</span>
-            <div class="planner-choice-row planner-choice-row--type-inline">
-              <button
-                v-for="item in scheduleTypeOptions"
-                :key="item.value"
-                type="button"
-                class="planner-choice planner-choice--type"
-                :class="{ 'planner-choice--active': scheduleType === item.value }"
-                @click="scheduleType = item.value"
-              >
-                <span class="planner-choice__title">{{ item.label }}</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="planner-inline__group planner-inline__group--record">
-            <span class="planner-label planner-label--inline">
-              <BookOutlined />
-              {{ scheduleType === 'oneToOne' ? '选择1对1' : '选择学员和课程' }}
-            </span>
-            <a-select
-              v-model:value="selectedOneToOneId"
-              size="large"
-              show-search
-              option-filter-prop="label"
-              option-label-prop="label"
-              popup-class-name="planner-record-select-dropdown"
-              :allow-clear="false"
-              class="planner-control planner-control--record"
-            >
-              <a-select-option
-                v-for="item in oneToOneSelectOptions"
-                :key="item.value"
-                :value="item.value"
-                :label="item.label"
-              >
-                <div class="planner-option">
-                  <div class="planner-option__title">{{ item.label }}</div>
-                  <div class="planner-option__desc">{{ item.desc }}</div>
-                </div>
-              </a-select-option>
-            </a-select>
-          </div>
-
-          <div class="planner-inline__group planner-inline__group--status">
-            <span class="planner-label planner-label--inline">当前状态</span>
-            <div class="planner-tag-list">
-              <span
-                v-for="item in recordQuickTags"
-                :key="item.text"
-                class="planner-tag"
-                :class="{
-                  'planner-tag--primary': item.tone === 'primary',
-                  'planner-tag--warning': item.tone === 'warning',
-                }"
-              >
-                {{ item.text }}
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <div class="planner-layout">
-        <aside class="planner-aside">
-          <section class="planner-card planner-card--summary">
-            <div class="planner-card__head">
-              <div class="planner-card__title">
-                当前档案
-              </div>
-              <div class="planner-card__desc">
-                来自当前1对1记录的基础信息与创建摘要。
-              </div>
-            </div>
-
-            <div class="planner-profile">
-              <div class="planner-profile__name">
-                {{ selectedOneToOne?.name || '-' }}
-              </div>
-              <div class="planner-profile__meta">
-                {{ selectedOneToOne?.studentName || '-' }} · {{ selectedOneToOne?.lessonName || '-' }}
-              </div>
-            </div>
-
-            <div class="planner-summary-list">
-              <div
-                v-for="item in selectedOneToOneSummary"
-                :key="item.label"
-                class="planner-summary-list__row"
-              >
-                <span>{{ item.label }}</span>
-                <strong>{{ item.value }}</strong>
-              </div>
-            </div>
-
-            <div class="planner-card__subhead">
-              创建摘要
-            </div>
-
-            <div class="planner-summary-list planner-summary-list--secondary">
-              <div
-                v-for="item in overviewItems"
-                :key="item.label"
-                class="planner-summary-list__row"
-              >
-                <span>{{ item.label }}</span>
-                <strong>{{ item.value }}</strong>
-              </div>
-            </div>
-
-            <div v-if="selectedOneToOne?.remark" class="planner-note">
-              {{ selectedOneToOne.remark }}
-            </div>
-
-            <div v-if="blockedReason" class="planner-alert">
-              {{ blockedReason }}
-            </div>
-          </section>
-        </aside>
-
-        <main class="planner-main">
-          <section class="planner-card planner-card--form">
-            <div class="planner-card__head">
-              <div class="planner-card__title">
-                排课设置
-              </div>
-              <div class="planner-card__desc">
-                按顺序完成排课方式、日期规则和时间资源。
-              </div>
-            </div>
-
-            <div class="planner-section">
-              <div class="planner-section__title">
-                排课方式
-              </div>
-
-              <div class="planner-choice-row">
+      <div class="planner-shell">
+        <section class="planner-strip planner-strip--top">
+          <div class="planner-inline planner-inline--top">
+            <div class="planner-inline__group planner-inline__group--type">
+              <span class="planner-label planner-label--inline">排课类型</span>
+              <div class="planner-choice-row planner-choice-row--type-inline">
                 <button
-                  v-for="item in schedulingModeOptions"
+                  v-for="item in scheduleTypeOptions"
                   :key="item.value"
                   type="button"
-                  class="planner-choice"
-                  :class="{ 'planner-choice--active': schedulingMode === item.value }"
-                  @click="schedulingMode = item.value"
+                  class="planner-choice planner-choice--type"
+                  :class="{ 'planner-choice--active': scheduleType === item.value }"
+                  @click="scheduleType = item.value"
                 >
                   <span class="planner-choice__title">{{ item.label }}</span>
-                  <span class="planner-choice__desc">{{ item.desc }}</span>
                 </button>
               </div>
             </div>
 
-            <div class="planner-section">
-              <div class="planner-section__title">
-                日期规则
-              </div>
-
-              <div class="planner-form-grid">
-                <label v-if="schedulingMode === 'repeat'" class="planner-field planner-field--full">
-                  <span class="planner-label planner-label--required">
-                    <CalendarOutlined />
-                    排课周期
-                  </span>
-                  <a-range-picker
-                    v-model:value="scheduleRange"
-                    size="large"
-                    class="planner-control"
-                    :allow-clear="false"
-                  />
-                </label>
-
-                <label v-else class="planner-field planner-field--full">
-                  <span class="planner-label planner-label--required">
-                    <CalendarOutlined />
-                    上课日期
-                  </span>
-                  <a-date-picker
-                    v-model:value="freeScheduleDate"
-                    size="large"
-                    class="planner-control"
-                    :allow-clear="false"
-                  />
-                </label>
-
-                <div v-if="schedulingMode === 'repeat'" class="planner-field planner-field--full">
-                  <span class="planner-label planner-label--required">
-                    重复规则
-                  </span>
-                  <div class="planner-chip-row">
-                    <button
-                      v-for="item in repeatRuleOptions"
-                      :key="item.value"
-                      type="button"
-                      class="planner-chip"
-                      :class="{ 'planner-chip--active': repeatRule === item.value }"
-                      @click="repeatRule = item.value"
-                    >
-                      {{ item.label }}
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  v-if="schedulingMode === 'repeat' && (repeatRule === 'weekly' || repeatRule === 'biweekly')"
-                  class="planner-field planner-field--full"
+            <div class="planner-inline__group planner-inline__group--record">
+              <span class="planner-label planner-label--inline">
+                <BookOutlined />
+                {{ scheduleType === 'oneToOne' ? '选择1对1' : '选择学员和课程' }}
+              </span>
+              <a-select
+                v-model:value="selectedOneToOneId"
+                size="large"
+                show-search
+                option-filter-prop="label"
+                option-label-prop="label"
+                popup-class-name="planner-record-select-dropdown"
+                :allow-clear="false"
+                class="planner-control planner-control--record"
+              >
+                <a-select-option
+                  v-for="item in oneToOneSelectOptions"
+                  :key="item.value"
+                  :value="item.value"
+                  :label="item.label"
                 >
-                  <span class="planner-label planner-label--required">
-                    每周上课日
-                  </span>
-                  <div class="planner-chip-row">
-                    <button
-                      v-for="item in weekDayOptions"
-                      :key="item"
-                      type="button"
-                      class="planner-chip"
-                      :class="{ 'planner-chip--active': selectedWeekdays.includes(item) }"
-                      @click="toggleWeekday(item)"
-                    >
-                      {{ item }}
-                    </button>
-                  </div>
-                </div>
-
-                <div class="planner-field planner-field--full">
-                  <span class="planner-label planner-label--required">
-                    节假日
-                    <a-tooltip title="当前示例会按学校节假日配置过滤 2026-05-01 至 2026-05-03。">
-                      <QuestionCircleOutlined class="planner-label__tip" />
-                    </a-tooltip>
-                  </span>
-                  <div class="planner-chip-row">
-                    <button
-                      v-for="item in holidayPolicyOptions"
-                      :key="item.value"
-                      type="button"
-                      class="planner-chip"
-                      :class="{ 'planner-chip--active': holidayPolicy === item.value }"
-                      @click="holidayPolicy = item.value"
-                    >
+                  <div class="planner-option">
+                    <div class="planner-option__title">
                       {{ item.label }}
-                    </button>
+                    </div>
+                    <div class="planner-option__desc">
+                      {{ item.desc }}
+                    </div>
                   </div>
-                </div>
-              </div>
+                </a-select-option>
+              </a-select>
             </div>
 
-            <div class="planner-section">
-              <div class="planner-section__title">
-                时间与资源
-              </div>
-
-              <div class="planner-form-grid">
-                <div class="planner-field planner-field--full">
-                  <span class="planner-label planner-label--required">
-                    上课时间
-                  </span>
-                  <div class="planner-choice-row">
-                    <button
-                      v-for="item in timeModeOptions"
-                      :key="item.value"
-                      type="button"
-                      class="planner-choice"
-                      :class="{ 'planner-choice--active': timeMode === item.value }"
-                      @click="timeMode = item.value"
-                    >
-                      <span class="planner-choice__title">{{ item.label }}</span>
-                      <span class="planner-choice__desc">{{ item.desc }}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <label v-if="timeMode === 'school'" class="planner-field planner-field--major">
-                  <span class="planner-label planner-label--required">
-                    <ClockCircleOutlined />
-                    统一时段
-                  </span>
-                  <a-select
-                    v-model:value="selectedSchoolTimeSlot"
-                    size="large"
-                    :allow-clear="false"
-                    class="planner-control planner-control--major"
-                  >
-                    <a-select-option
-                      v-for="item in schoolTimeSlotOptions"
-                      :key="item.value"
-                      :value="item.value"
-                      :label="`${item.desc} · ${item.start} - ${item.end}`"
-                    >
-                      <div class="planner-option planner-option--inline">
-                        <div class="planner-option__title">{{ item.desc }} · {{ item.start }} - {{ item.end }}</div>
-                      </div>
-                    </a-select-option>
-                  </a-select>
-                </label>
-
-                <label v-else class="planner-field planner-field--major">
-                  <span class="planner-label planner-label--required">
-                    <ClockCircleOutlined />
-                    自定义时段
-                  </span>
-                  <a-time-picker
-                    v-model:value="customStartTime"
-                    size="large"
-                    format="HH:mm"
-                    class="planner-control planner-control--major"
-                    :allow-clear="false"
-                    :minute-step="5"
-                  />
-                </label>
-
-                <div class="planner-field planner-field--major">
-                  <span class="planner-label">
-                    单次课时
-                  </span>
-                  <div class="planner-static-field planner-static-field--major planner-static-field--inline">
-                    <strong>{{ sessionMinutes }} 分钟</strong>
-                    <span>{{ recordModeText }}</span>
-                  </div>
-                </div>
-
-                <label class="planner-field">
-                  <span class="planner-label planner-label--required">
-                    <UserOutlined />
-                    上课教师
-                  </span>
-                  <a-select
-                    v-model:value="selectedTeacher"
-                    size="large"
-                    :allow-clear="false"
-                    class="planner-control"
-                  >
-                    <a-select-option v-for="item in selectedTeacherOptions" :key="item" :value="item">
-                      {{ item }}
-                    </a-select-option>
-                  </a-select>
-                </label>
-
-                <label class="planner-field">
-                  <span class="planner-label">
-                    <TeamOutlined />
-                    上课助教
-                  </span>
-                  <a-select
-                    v-model:value="selectedAssistant"
-                    mode="multiple"
-                    size="large"
-                    allow-clear
-                    placeholder="可不选"
-                    max-tag-count="responsive"
-                    :options="assistantOptions"
-                    class="planner-control"
-                  />
-                </label>
-
-                <label class="planner-field planner-field--full">
-                  <span class="planner-label planner-label--required">
-                    <EnvironmentOutlined />
-                    上课教室
-                  </span>
-                  <a-select
-                    v-model:value="selectedClassroom"
-                    size="large"
-                    :allow-clear="false"
-                    :options="classroomOptions"
-                    class="planner-control"
-                  />
-                </label>
-              </div>
-            </div>
-          </section>
-        </main>
-      </div>
-
-      <div class="planner-footer">
-        <div class="planner-footer__tip">
-          {{ footerTipText }}
-        </div>
-
-        <div class="planner-footer__actions">
-          <a-button @click="closeModal">
-            取消
-          </a-button>
-          <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0" @click="openPreviewModal">
-            {{ actionButtonText }}
-          </a-button>
-        </div>
-      </div>
-    </div>
-  </a-modal>
-
-  <a-modal
-    v-model:open="previewModalOpen"
-    centered
-    class="planner-review-modal"
-    :footer="null"
-    :width="980"
-    :keyboard="false"
-    :mask-closable="false"
-    @cancel="closePreviewModal"
-  >
-    <template #title>
-      <div class="planner-review__head">
-        <div>
-          <div class="planner-review__title">
-            预计排课清单
-          </div>
-          <div class="planner-review__subtitle">
-            先确认本次将创建的日程，再执行批量创建。
-          </div>
-        </div>
-        <div class="planner-review__count">
-          共 {{ estimatedCount }} 节
-        </div>
-      </div>
-    </template>
-
-    <div class="planner-review">
-      <div
-        class="planner-review__tip"
-        :class="{ 'planner-review__tip--warning': !isSchedulable }"
-      >
-        {{ previewHelperText }}
-      </div>
-
-      <div class="planner-table-wrap planner-table-wrap--modal">
-        <table class="planner-table">
-          <thead>
-            <tr>
-              <th>日期</th>
-              <th>星期</th>
-              <th>规则</th>
-              <th>时间</th>
-              <th>老师</th>
-              <th>教室</th>
-              <th>状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!previewPlans.length">
-              <td colspan="7" class="planner-table__empty">
-                暂无预计日程
-              </td>
-            </tr>
-
-            <tr
-              v-for="item in previewPlans"
-              v-else
-              :key="`${item.date}-${item.week}-${item.time}`"
-              :class="{ 'planner-table__row--blocked': item.tone === 'blocked' }"
-            >
-              <td>{{ item.date }}</td>
-              <td>{{ item.week }}</td>
-              <td>{{ item.rule }}</td>
-              <td>{{ item.time }}</td>
-              <td>{{ item.teacher }}</td>
-              <td>{{ item.classroom }}</td>
-              <td>
+            <div class="planner-inline__group planner-inline__group--status">
+              <span class="planner-label planner-label--inline">当前状态</span>
+              <div class="planner-tag-list">
                 <span
-                  class="planner-tag planner-tag--table"
-                  :class="{ 'planner-tag--warning': item.tone === 'blocked' }"
+                  v-for="item in recordQuickTags"
+                  :key="item.text"
+                  class="planner-tag"
+                  :class="{
+                    'planner-tag--primary': item.tone === 'primary',
+                    'planner-tag--warning': item.tone === 'warning',
+                  }"
                 >
-                  {{ item.tone === 'blocked' ? '不可创建' : '待校验' }}
+                  {{ item.text }}
                 </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <div class="planner-review__footer">
-        <div class="planner-footer__tip">
-          {{ footerTipText }}
+        <div class="planner-layout">
+          <aside class="planner-aside">
+            <section class="planner-card planner-card--summary">
+              <div class="planner-card__head">
+                <div class="planner-card__title">
+                  当前档案
+                </div>
+                <div class="planner-card__desc">
+                  来自当前1对1记录的基础信息与创建摘要。
+                </div>
+              </div>
+
+              <div class="planner-profile">
+                <div class="planner-profile__name">
+                  {{ selectedOneToOne?.name || '-' }}
+                </div>
+                <div class="planner-profile__meta">
+                  {{ selectedOneToOne?.studentName || '-' }} · {{ selectedOneToOne?.lessonName || '-' }}
+                </div>
+              </div>
+
+              <div class="planner-summary-list">
+                <div
+                  v-for="item in selectedOneToOneSummary"
+                  :key="item.label"
+                  class="planner-summary-list__row"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+
+              <div class="planner-card__subhead">
+                创建摘要
+              </div>
+
+              <div class="planner-summary-list planner-summary-list--secondary">
+                <div
+                  v-for="item in overviewItems"
+                  :key="item.label"
+                  class="planner-summary-list__row"
+                >
+                  <span>{{ item.label }}</span>
+                  <strong>{{ item.value }}</strong>
+                </div>
+              </div>
+
+              <div v-if="selectedOneToOne?.remark" class="planner-note">
+                {{ selectedOneToOne.remark }}
+              </div>
+
+              <div v-if="blockedReason" class="planner-alert">
+                {{ blockedReason }}
+              </div>
+            </section>
+          </aside>
+
+          <main class="planner-main">
+            <section class="planner-card planner-card--form">
+              <div class="planner-card__head">
+                <div class="planner-card__title">
+                  排课设置
+                </div>
+                <div class="planner-card__desc">
+                  按顺序完成排课方式、日期规则和时间资源。
+                </div>
+              </div>
+
+              <div class="planner-section">
+                <div class="planner-section__title">
+                  排课方式
+                </div>
+
+                <div class="planner-choice-row">
+                  <button
+                    v-for="item in schedulingModeOptions"
+                    :key="item.value"
+                    type="button"
+                    class="planner-choice"
+                    :class="{ 'planner-choice--active': schedulingMode === item.value }"
+                    @click="schedulingMode = item.value"
+                  >
+                    <span class="planner-choice__title">{{ item.label }}</span>
+                    <span class="planner-choice__desc">{{ item.desc }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="planner-section">
+                <div class="planner-section__title">
+                  日期规则
+                </div>
+
+                <div class="planner-form-grid">
+                  <label v-if="schedulingMode === 'repeat'" class="planner-field planner-field--full">
+                    <span class="planner-label planner-label--required">
+                      <CalendarOutlined />
+                      排课周期
+                    </span>
+                    <a-range-picker
+                      v-model:value="scheduleRange"
+                      size="large"
+                      class="planner-control"
+                      :allow-clear="false"
+                    />
+                  </label>
+
+                  <label v-else class="planner-field planner-field--full">
+                    <span class="planner-label planner-label--required">
+                      <CalendarOutlined />
+                      上课日期
+                    </span>
+                    <a-date-picker
+                      v-model:value="freeScheduleDate"
+                      size="large"
+                      class="planner-control"
+                      :allow-clear="false"
+                    />
+                  </label>
+
+                  <div v-if="schedulingMode === 'repeat'" class="planner-field planner-field--full">
+                    <span class="planner-label planner-label--required">
+                      重复规则
+                    </span>
+                    <div class="planner-chip-row">
+                      <button
+                        v-for="item in repeatRuleOptions"
+                        :key="item.value"
+                        type="button"
+                        class="planner-chip"
+                        :class="{ 'planner-chip--active': repeatRule === item.value }"
+                        @click="repeatRule = item.value"
+                      >
+                        {{ item.label }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="schedulingMode === 'repeat' && (repeatRule === 'weekly' || repeatRule === 'biweekly')"
+                    class="planner-field planner-field--full"
+                  >
+                    <span class="planner-label planner-label--required">
+                      每周上课日
+                    </span>
+                    <div class="planner-chip-row">
+                      <button
+                        v-for="item in weekDayOptions"
+                        :key="item"
+                        type="button"
+                        class="planner-chip"
+                        :class="{ 'planner-chip--active': selectedWeekdays.includes(item) }"
+                        @click="toggleWeekday(item)"
+                      >
+                        {{ item }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="planner-field planner-field--full">
+                    <span class="planner-label planner-label--required">
+                      节假日
+                      <a-tooltip title="当前示例会按学校节假日配置过滤 2026-05-01 至 2026-05-03。">
+                        <QuestionCircleOutlined class="planner-label__tip" />
+                      </a-tooltip>
+                    </span>
+                    <div class="planner-chip-row">
+                      <button
+                        v-for="item in holidayPolicyOptions"
+                        :key="item.value"
+                        type="button"
+                        class="planner-chip"
+                        :class="{ 'planner-chip--active': holidayPolicy === item.value }"
+                        @click="holidayPolicy = item.value"
+                      >
+                        {{ item.label }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="planner-section">
+                <div class="planner-section__title">
+                  时间与资源
+                </div>
+
+                <div class="planner-form-grid">
+                  <div class="planner-field planner-field--full">
+                    <span class="planner-label planner-label--required">
+                      上课时间
+                    </span>
+                    <div class="planner-choice-row">
+                      <button
+                        v-for="item in timeModeOptions"
+                        :key="item.value"
+                        type="button"
+                        class="planner-choice"
+                        :class="{ 'planner-choice--active': timeMode === item.value }"
+                        @click="timeMode = item.value"
+                      >
+                        <span class="planner-choice__title">{{ item.label }}</span>
+                        <span class="planner-choice__desc">{{ item.desc }}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <label v-if="timeMode === 'school'" class="planner-field planner-field--major">
+                    <span class="planner-label planner-label--required">
+                      <ClockCircleOutlined />
+                      统一时段
+                    </span>
+                    <a-select
+                      v-model:value="selectedSchoolTimeSlot"
+                      size="large"
+                      :allow-clear="false"
+                      class="planner-control planner-control--major"
+                    >
+                      <a-select-option
+                        v-for="item in schoolTimeSlotOptions"
+                        :key="item.value"
+                        :value="item.value"
+                        :label="`${item.desc} · ${item.start} - ${item.end}`"
+                      >
+                        <div class="planner-option planner-option--inline">
+                          <div class="planner-option__title">{{ item.desc }} · {{ item.start }} - {{ item.end }}</div>
+                        </div>
+                      </a-select-option>
+                    </a-select>
+                  </label>
+
+                  <label v-else class="planner-field planner-field--major">
+                    <span class="planner-label planner-label--required">
+                      <ClockCircleOutlined />
+                      自定义时段
+                    </span>
+                    <a-time-picker
+                      v-model:value="customStartTime"
+                      size="large"
+                      format="HH:mm"
+                      class="planner-control planner-control--major"
+                      :allow-clear="false"
+                      :minute-step="5"
+                    />
+                  </label>
+
+                  <div class="planner-field planner-field--major">
+                    <span class="planner-label">
+                      单次课时
+                    </span>
+                    <div class="planner-static-field planner-static-field--major planner-static-field--inline">
+                      <strong>{{ sessionMinutes }} 分钟</strong>
+                      <span>{{ recordModeText }}</span>
+                    </div>
+                  </div>
+
+                  <label class="planner-field">
+                    <span class="planner-label planner-label--required">
+                      <UserOutlined />
+                      上课教师
+                    </span>
+                    <a-select
+                      v-model:value="selectedTeacher"
+                      size="large"
+                      :allow-clear="false"
+                      class="planner-control"
+                    >
+                      <a-select-option v-for="item in selectedTeacherOptions" :key="item" :value="item">
+                        {{ item }}
+                      </a-select-option>
+                    </a-select>
+                  </label>
+
+                  <label class="planner-field">
+                    <span class="planner-label">
+                      <TeamOutlined />
+                      上课助教
+                    </span>
+                    <a-select
+                      v-model:value="selectedAssistant"
+                      mode="multiple"
+                      size="large"
+                      allow-clear
+                      placeholder="可不选"
+                      max-tag-count="responsive"
+                      :options="assistantOptions"
+                      class="planner-control"
+                    />
+                  </label>
+
+                  <label class="planner-field planner-field--full">
+                    <span class="planner-label planner-label--required">
+                      <EnvironmentOutlined />
+                      上课教室
+                    </span>
+                    <a-select
+                      v-model:value="selectedClassroom"
+                      size="large"
+                      :allow-clear="false"
+                      :options="classroomOptions"
+                      class="planner-control"
+                    />
+                  </label>
+                </div>
+              </div>
+            </section>
+          </main>
         </div>
 
-        <div class="planner-footer__actions">
-          <a-button @click="closePreviewModal">
-            返回修改
-          </a-button>
-          <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0" @click="confirmBatchCreate">
-            {{ actionButtonText }}
-          </a-button>
+        <div class="planner-footer">
+          <div class="planner-footer__tip">
+            {{ footerTipText }}
+          </div>
+
+          <div class="planner-footer__actions">
+            <a-button @click="closeModal">
+              取消
+            </a-button>
+            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0" @click="openPreviewModal">
+              {{ actionButtonText }}
+            </a-button>
+          </div>
         </div>
       </div>
-    </div>
-  </a-modal>
+    </a-modal>
+
+    <a-modal
+      v-model:open="previewModalOpen"
+      centered
+      class="planner-review-modal"
+      :footer="null"
+      :width="980"
+      :keyboard="false"
+      :mask-closable="false"
+      @cancel="closePreviewModal"
+    >
+      <template #title>
+        <div class="planner-review__head">
+          <div>
+            <div class="planner-review__title">
+              预计排课清单
+            </div>
+            <div class="planner-review__subtitle">
+              先确认本次将创建的日程，再执行批量创建。
+            </div>
+          </div>
+          <div class="planner-review__count">
+            共 {{ estimatedCount }} 节
+          </div>
+        </div>
+      </template>
+
+      <div class="planner-review">
+        <div
+          class="planner-review__tip"
+          :class="{ 'planner-review__tip--warning': !isSchedulable }"
+        >
+          {{ previewHelperText }}
+        </div>
+
+        <div class="planner-table-wrap planner-table-wrap--modal">
+          <table class="planner-table">
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>星期</th>
+                <th>规则</th>
+                <th>时间</th>
+                <th>老师</th>
+                <th>教室</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!previewPlans.length">
+                <td colspan="7" class="planner-table__empty">
+                  暂无预计日程
+                </td>
+              </tr>
+              <template v-else>
+                <tr
+                  v-for="item in previewPlans"
+                  :key="`${item.date}-${item.week}-${item.time}`"
+                  :class="{ 'planner-table__row--blocked': item.tone === 'blocked' }"
+                >
+                  <td>{{ item.date }}</td>
+                  <td>{{ item.week }}</td>
+                  <td>{{ item.rule }}</td>
+                  <td>{{ item.time }}</td>
+                  <td>{{ item.teacher }}</td>
+                  <td>{{ item.classroom }}</td>
+                  <td>
+                    <span
+                      class="planner-tag planner-tag--table"
+                      :class="{ 'planner-tag--warning': item.tone === 'blocked' }"
+                    >
+                      {{ item.tone === 'blocked' ? '不可创建' : '待校验' }}
+                    </span>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="planner-review__footer">
+          <div class="planner-footer__tip">
+            {{ footerTipText }}
+          </div>
+
+          <div class="planner-footer__actions">
+            <a-button @click="closePreviewModal">
+              返回修改
+            </a-button>
+            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0" @click="confirmBatchCreate">
+              {{ actionButtonText }}
+            </a-button>
+          </div>
+        </div>
+      </div>
+    </a-modal>
+  </div>
 </template>
 
 <style scoped lang="less">
+.one-to-one-schedule-modal-root {
+  display: contents;
+}
+
 .planner-head {
   display: flex;
   align-items: flex-start;

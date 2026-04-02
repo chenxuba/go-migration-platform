@@ -10,6 +10,8 @@ export default antfu({
   ],
 }, {
   rules: {
+    // Vue 3 / Ant Design Vue：允许 v-model:open 等带参数的 v-model
+    'vue/no-v-model-argument': 'off',
     'no-console': 0,
     'style/quote-props': 0,
     'unused-imports/no-unused-vars': 0,
