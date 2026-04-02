@@ -644,8 +644,6 @@ const blockedReason = computed(() => {
     return '当前学员已结课，暂不可创建新日程。'
   if (!selectedTeacher.value)
     return '请先选择上课教师。'
-  if (!selectedClassroom.value)
-    return '请先选择上课教室。'
   const planned = Math.floor(Number(plannedClassCount.value) || 0)
   if (planned < 1)
     return '请填写计划上课次数（至少为 1）。'
@@ -1444,14 +1442,15 @@ function removeCustomTimeRow(index: number) {
                   </label>
 
                   <label class="planner-field">
-                    <span class="planner-label planner-label--required">
+                    <span class="planner-label">
                       <EnvironmentOutlined />
                       上课教室
                     </span>
                     <a-select
                       v-model:value="selectedClassroom"
                       size="large"
-                      :allow-clear="false"
+                      allow-clear
+                      placeholder="可不选"
                       :options="classroomOptions"
                       class="planner-control"
                     />
