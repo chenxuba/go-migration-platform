@@ -234,7 +234,6 @@ const oneToOneSelectOptions = computed(() =>
   oneToOneRecords.value.map(item => ({
     value: item.id || '',
     label: `${item.name || '-'} · 课程：${item.lessonName || '-'}`,
-    desc: `${item.defaultTeacherName || '-'} · ${item.classRoomName || '-'} · ${item.tuitionAccountCount ?? 0} 个账户`,
   })),
 )
 
@@ -1102,9 +1101,6 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                     <div class="planner-option__title">
                       {{ item.label }}
                     </div>
-                    <div class="planner-option__desc">
-                      {{ item.desc }}
-                    </div>
                   </div>
                 </a-select-option>
               </a-select>
@@ -1287,7 +1283,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                     v-else
                     class="planner-date-plan-row planner-date-plan-row--free"
                   >
-                    <label class="planner-field planner-date-plan-row__cell planner-date-plan-row__cell--start">
+                    <div class="planner-field planner-date-plan-row__cell planner-date-plan-row__cell--start">
                       <div class="planner-field__label-row">
                         <span class="planner-label planner-label--required">
                           <CalendarOutlined />
@@ -1337,7 +1333,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                           <strong :title="freeSelectedDatesText">{{ freeSelectedDatesText }}</strong>
                         </div>
                       </a-popover>
-                    </label>
+                    </div>
                   </div>
 
                   <div v-if="schedulingMode === 'repeat'" class="planner-field planner-field--full">
