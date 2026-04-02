@@ -889,7 +889,7 @@ function toggleWeekday(day: string) {
                     <span class="planner-label planner-label--required">
                       上课时间
                     </span>
-                    <div class="planner-choice-row">
+                    <div class="planner-choice-row planner-choice-row--time-mode">
                       <button
                         v-for="item in timeModeOptions"
                         :key="item.value"
@@ -1323,6 +1323,22 @@ function toggleWeekday(day: string) {
   display: flex;
   flex-wrap: nowrap;
   gap: 8px;
+}
+
+/* 上课时间：双卡片略压低高度，与其它大块表单项区分 */
+.planner-choice-row--time-mode button.planner-choice {
+  min-height: 54px;
+  padding: 8px 12px;
+  gap: 4px;
+}
+
+.planner-choice-row--time-mode .planner-choice__title {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.planner-choice-row--time-mode .planner-choice__desc {
+  line-height: 1.45;
 }
 
 button.planner-choice {
