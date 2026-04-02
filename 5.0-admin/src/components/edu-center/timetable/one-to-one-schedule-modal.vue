@@ -748,6 +748,16 @@ const excludedHolidayCount = computed(() => {
   return rawPlannedDates.value.filter(date => isHoliday(date)).length
 })
 
+const filteredHolidayDates = computed(() => {
+  if (holidayPolicy.value !== 'filter')
+    return []
+  return rawPlannedDates.value.filter(date => isHoliday(date))
+})
+
+const filteredHolidayDateLabels = computed(() =>
+  filteredHolidayDates.value.map(item => item.format('YYYY-MM-DD')),
+)
+
 const plannedDates = computed(() => {
   if (holidayPolicy.value !== 'filter')
     return rawPlannedDates.value
@@ -1363,6 +1373,21 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                       >
                         {{ item.label }}
                       </button>
+                      <div
+                        v-if="holidayPolicy === 'filter' && filteredHolidayDateLabels.length > 0"
+                        class="planner-holiday-inline"
+                      >
+                        <span class="planner-holiday-inline__label">已过滤日期</span>
+                        <div class="planner-holiday-inline__list">
+                          <span
+                            v-for="item in filteredHolidayDateLabels"
+                            :key="item"
+                            class="planner-holiday-inline__item"
+                          >
+                            {{ item }}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2370,6 +2395,7 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
 }
 
 .planner-chip-row--weekday {
@@ -2385,6 +2411,44 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   margin-left: 6px;
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+.planner-holiday-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding: 3px 10px;
+  border: 1px dashed #ffd591;
+  border-radius: 12px;
+  background: #fffaf0;
+  flex-wrap: nowrap;
+}
+
+.planner-holiday-inline__label {
+  flex-shrink: 0;
+  color: #d46b08;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.planner-holiday-inline__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.planner-holiday-inline__item {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fff5e6;
+  color: #d46b08;
+  font-size: 12px;
+  line-height: 1;
 }
 
 button.planner-chip {
