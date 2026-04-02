@@ -1,0 +1,193 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+
+	"go-migration-platform/services/education/internal/model"
+)
+
+func ensureClassroomTables(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS inst_classroom (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			uuid VARCHAR(64) NULL,
+			version BIGINT NOT NULL DEFAULT 0,
+			inst_id BIGINT NOT NULL,
+			name VARCHAR(100) NOT NULL,
+			address VARCHAR(255) NOT NULL DEFAULT '',
+			capacity INT NOT NULL DEFAULT 0,
+			enabled TINYINT(1) NOT NULL DEFAULT 1,
+			remark VARCHAR(255) NOT NULL DEFAULT '',
+			sort INT NOT NULL DEFAULT 0,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			KEY idx_inst_classroom_inst (inst_id),
+			KEY idx_inst_classroom_name (name),
+			KEY idx_inst_classroom_enabled (enabled)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	return ensureColumnsOnTable(ctx, db, "inst_classroom", map[string]string{
+		"address":   "address VARCHAR(255) NOT NULL DEFAULT '' AFTER name",
+		"capacity":  "capacity INT NOT NULL DEFAULT 0 AFTER address",
+		"enabled":   "enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER capacity",
+		"remark":    "remark VARCHAR(255) NOT NULL DEFAULT '' AFTER enabled",
+		"sort":      "sort INT NOT NULL DEFAULT 0 AFTER remark",
+		"create_id": "create_id BIGINT NOT NULL DEFAULT 0 AFTER sort",
+		"update_id": "update_id BIGINT NOT NULL DEFAULT 0 AFTER create_time",
+	})
+}
+
+func (repo *Repository) ListClassrooms(ctx context.Context, instID int64, query model.ClassroomQueryDTO) ([]model.ClassroomVO, error) {
+	filters := []string{"inst_id = ?", "del_flag = 0"}
+	args := []any{instID}
+
+	if query.EnabledOnly != nil {
+		filters = append(filters, "enabled = ?")
+		args = append(args, *query.EnabledOnly)
+	}
+	if keyword := strings.TrimSpace(query.SearchKey); keyword != "" {
+		filters = append(filters, "(name LIKE ? OR address LIKE ? OR remark LIKE ?)")
+		like := "%" + keyword + "%"
+		args = append(args, like, like, like)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), inst_id, IFNULL(name, ''), IFNULL(address, ''),
+		       IFNULL(capacity, 0), IFNULL(enabled, 0), IFNULL(remark, ''), IFNULL(sort, 0), create_time, update_time
+		FROM inst_classroom
+		WHERE `+strings.Join(filters, " AND ")+`
+		ORDER BY enabled DESC, sort ASC, create_time DESC, id DESC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.ClassroomVO, 0, 32)
+	for rows.Next() {
+		var item model.ClassroomVO
+		var createTime sql.NullTime
+		var updateTime sql.NullTime
+		if err := rows.Scan(
+			&item.ID,
+			&item.UUID,
+			&item.Version,
+			&item.InstID,
+			&item.Name,
+			&item.Address,
+			&item.Capacity,
+			&item.Enabled,
+			&item.Remark,
+			&item.Sort,
+			&createTime,
+			&updateTime,
+		); err != nil {
+			return nil, err
+		}
+		if createTime.Valid {
+			t := createTime.Time
+			item.CreateTime = &t
+		}
+		if updateTime.Valid {
+			t := updateTime.Time
+			item.UpdateTime = &t
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) CountClassroomsByName(ctx context.Context, instID int64, name string, excludeID *int64) (int, error) {
+	query := "SELECT COUNT(*) FROM inst_classroom WHERE inst_id = ? AND name = ? AND del_flag = 0"
+	args := []any{instID, strings.TrimSpace(name)}
+	if excludeID != nil && *excludeID > 0 {
+		query += " AND id <> ?"
+		args = append(args, *excludeID)
+	}
+	var count int
+	err := repo.db.QueryRowContext(ctx, query, args...).Scan(&count)
+	return count, err
+}
+
+func (repo *Repository) CreateClassroom(ctx context.Context, instID, operatorID int64, input model.ClassroomMutation) (int64, error) {
+	result, err := repo.db.ExecContext(ctx, `
+		INSERT INTO inst_classroom (
+			inst_id, name, address, capacity, enabled, remark, sort,
+			create_id, create_time, update_id, update_time, del_flag, version
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, 0)
+	`,
+		instID,
+		strings.TrimSpace(input.Name),
+		strings.TrimSpace(input.Address),
+		input.Capacity,
+		boolValueWithFallback(input.Enabled, true),
+		strings.TrimSpace(input.Remark),
+		input.Sort,
+		operatorID,
+		operatorID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (repo *Repository) UpdateClassroom(ctx context.Context, instID, operatorID int64, input model.ClassroomMutation) error {
+	if input.ID == nil || *input.ID <= 0 {
+		return fmt.Errorf("id is required")
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_classroom
+		SET name = ?, address = ?, capacity = ?, enabled = ?, remark = ?, sort = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`,
+		strings.TrimSpace(input.Name),
+		strings.TrimSpace(input.Address),
+		input.Capacity,
+		boolValueWithFallback(input.Enabled, true),
+		strings.TrimSpace(input.Remark),
+		input.Sort,
+		operatorID,
+		*input.ID,
+		instID,
+	)
+	return err
+}
+
+func (repo *Repository) UpdateClassroomStatus(ctx context.Context, instID, operatorID int64, input model.ClassroomStatusMutation) error {
+	if input.ID == nil || *input.ID <= 0 || input.Enabled == nil {
+		return fmt.Errorf("id and enabled are required")
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_classroom
+		SET enabled = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, *input.Enabled, operatorID, *input.ID, instID)
+	return err
+}
+
+func (repo *Repository) DeleteClassroom(ctx context.Context, instID, operatorID, classroomID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_classroom
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, operatorID, classroomID, instID)
+	return err
+}
+
+func boolValueWithFallback(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}

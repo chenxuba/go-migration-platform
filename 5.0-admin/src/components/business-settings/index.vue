@@ -9,6 +9,7 @@ import StudentAttributeSettings from './studentAttributeSettings.vue'
 import LeadSettings from './leadSettings.vue'
 import channelSettings from './lead-settings/channel-settings.vue'
 import CampusDataClear from './campusDataClear.vue'
+import ClassroomSettings from './classroomSettings.vue'
 
 import { useModalStore } from '~/stores/modal'
 
@@ -122,7 +123,7 @@ const settingsList = ref([
   },
   {
     title: '机构数据清空',
-    path: '/campus-data-clear', 
+    path: '/campus-data-clear',
   },
   {
     title: '分配业绩',
@@ -158,6 +159,7 @@ function getLevel2Component(path) {
     case '/registration-settings': return RegistrationSettings // 报名/退课设置
     case '/lead-settings': return LeadSettings // 线索设置
     case '/student-attribute-settings' : return StudentAttributeSettings // 学员属性设置
+    case '/classroom-settings': return ClassroomSettings // 教室设置
     case '/campus-data-clear': return CampusDataClear // 机构数据清空
     // ... 其他二级页面
     default: return null

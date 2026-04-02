@@ -1,6 +1,7 @@
 <script setup>
 import { CloseOutlined, QuestionCircleOutlined } from "@ant-design/icons-vue";
 import { debounce } from "lodash-es";
+import { listClassroomsApi } from "@/api/business-settings/classroom";
 import { getCoursePageApi } from "~/api/edu-center/course-list";
 import { pageComposeLessonsForPcApi } from "~/api/edu-center/compose-lesson";
 import {
@@ -37,6 +38,8 @@ const composePagination = ref({
   total: 0,
 });
 const composeFinished = ref(false);
+const classroomOptions = ref([]);
+const classroomLoading = ref(false);
 
 /** 组合课展示、回显不带「（N门课）」后缀 */
 function stripComposeLessonCountSuffix(text) {
@@ -161,6 +164,28 @@ function onComposeLessonCreated() {
   composePagination.value.current = 1;
   composeFinished.value = false;
   getComposeLessonListPage();
+}
+
+async function loadClassroomOptions() {
+  classroomLoading.value = true;
+  try {
+    const res = await listClassroomsApi({ enabledOnly: true });
+    if (res.code === 200) {
+      classroomOptions.value = (Array.isArray(res.result) ? res.result : []).map(item => ({
+        label: item.name || String(item.id),
+        value: String(item.id),
+      }));
+      return;
+    }
+    messageService.error(res.message || "加载教室列表失败");
+  }
+  catch (e) {
+    console.error("load classrooms failed", e);
+    messageService.error(e?.message || "加载教室列表失败");
+  }
+  finally {
+    classroomLoading.value = false;
+  }
 }
 
 /** 班级授课（班课）课程下拉，与选择课程范围弹窗 queryModel 一致；分页 + 滚动加载 */
@@ -372,6 +397,20 @@ function mergeLessonOptionFromRecord(rec) {
   }
 }
 
+function mergeClassroomOptionFromRecord(rec) {
+  const roomIdRaw = rec?.classroomId ?? rec?.classRoomId;
+  const roomNameRaw = rec?.classroomName ?? rec?.classRoomName;
+  const roomId = roomIdRaw != null && String(roomIdRaw).trim() !== "" && String(roomIdRaw) !== "0"
+    ? String(roomIdRaw)
+    : "";
+  const roomName = String(roomNameRaw || "").trim();
+  if (!roomId || !roomName)
+    return;
+  if (classroomOptions.value.some(item => String(item.value) === roomId))
+    return;
+  classroomOptions.value = [{ label: roomName, value: roomId }, ...classroomOptions.value];
+}
+
 /** 创建模式 / 关弹窗时恢复空白表单（避免编辑残留进「创建班级」） */
 function resetFormToCreateDefaults() {
   skipAutoDefaultTeacher.value = false;
@@ -435,6 +474,7 @@ function applyEditRecord(rec) {
     = roomRaw != null && String(roomRaw) !== "" && String(roomRaw) !== "0"
       ? String(roomRaw)
       : undefined;
+  mergeClassroomOptionFromRecord(rec);
   teacherPresetForSelect.value = (rec.teachers || []).map((t) => ({
     id: t.id,
     name: t.name,
@@ -457,6 +497,7 @@ watch(
       resetFormToCreateDefaults();
       return;
     }
+    loadClassroomOptions();
     if (!props.editRecord?.id) {
       editDetailReqSeq += 1;
       editDetailLoading.value = false;
@@ -879,10 +920,17 @@ function closeFun() {
         <a-form-item label="上课教室" name="classRoom">
           <a-select
             v-model:value="formState.classRoom"
+            :loading="classroomLoading"
             placeholder="请选择上课教室"
+            allow-clear
           >
-            <a-select-option value="1"> 教室1 </a-select-option>
-            <a-select-option value="2"> 教室2 </a-select-option>
+            <a-select-option
+              v-for="item in classroomOptions"
+              :key="item.value"
+              :value="item.value"
+            >
+              {{ item.label }}
+            </a-select-option>
           </a-select>
         </a-form-item>
         <!-- 与一对一编辑弹窗一致的课时记录方式、默认记录课时 -->

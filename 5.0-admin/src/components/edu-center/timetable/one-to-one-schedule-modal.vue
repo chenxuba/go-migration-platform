@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, ref, watch } from 'vue'
+import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import messageService from '@/utils/messageService'
@@ -191,7 +192,7 @@ const schoolTimeSlotOptions: SchoolTimeSlot[] = [
 ]
 
 const schoolHolidaySet = new Set(['2026-05-01', '2026-05-02', '2026-05-03'])
-const sharedClassrooms = ['个训室 03', '个训室 05', '言语室 02', '感统室 01']
+const classroomList = ref<ClassroomItem[]>([])
 const oneToOneRecords = ref<OneToOneItem[]>([])
 const oneToOneLoading = ref(false)
 const selectedOneToOneId = ref<string | undefined>(undefined)
@@ -296,11 +297,16 @@ const teacherPresetStaff = computed<StaffOptionItem[]>(() => {
 const scheduleStaffSelectKey = computed(() => selectedOneToOne.value?.id || 'empty')
 
 const classroomOptions = computed(() => {
-  const classroomSet = new Set<string>()
-  if (selectedOneToOne.value?.classRoomName)
-    classroomSet.add(selectedOneToOne.value.classRoomName)
-  sharedClassrooms.forEach(item => classroomSet.add(item))
-  return [...classroomSet].map(item => ({ value: item, label: item }))
+  const classroomSet = new Map<string, { value: string, label: string }>()
+  const append = (name?: string) => {
+    const key = String(name || '').trim()
+    if (!key || classroomSet.has(key))
+      return
+    classroomSet.set(key, { value: key, label: key })
+  }
+  append(selectedOneToOne.value?.classRoomName)
+  classroomList.value.forEach(item => append(item.name))
+  return [...classroomSet.values()]
 })
 
 const recordSessionMinutes = computed(() => Math.max(Number(selectedOneToOne.value?.classTime || 45), 1))
@@ -350,7 +356,10 @@ watch(modalOpen, async (value) => {
   if (value) {
     selectedOneToOneId.value = undefined
     selectedStudentLessonPath.value = undefined
-    await fetchOneToOneRecords()
+    await Promise.all([
+      fetchOneToOneRecords(),
+      fetchClassroomList(),
+    ])
   }
   if (!value)
     previewModalOpen.value = false
@@ -848,6 +857,21 @@ async function fetchOneToOneRecords() {
   }
   finally {
     oneToOneLoading.value = false
+  }
+}
+
+async function fetchClassroomList() {
+  try {
+    const res = await listClassroomsApi({ enabledOnly: true })
+    if (res.code !== 200) {
+      messageService.error(res.message || '获取教室列表失败')
+      return
+    }
+    classroomList.value = Array.isArray(res.result) ? res.result : []
+  }
+  catch (error: any) {
+    console.error('fetch classroom list failed', error)
+    messageService.error(error?.message || '获取教室列表失败')
   }
 }
 
