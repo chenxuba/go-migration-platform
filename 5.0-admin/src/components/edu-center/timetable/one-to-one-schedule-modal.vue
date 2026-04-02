@@ -1551,7 +1551,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                       placeholder="可不选"
                       max-tag-count="responsive"
                       :options="assistantOptions"
-                      class="planner-control"
+                      class="planner-control planner-multi-slot-select"
                     />
                   </label>
                 </div>
