@@ -313,6 +313,8 @@ const selectedStudentLessonPath = ref<string[] | undefined>(undefined)
 const previewModalOpen = ref(false)
 const scheduleStartDate = ref(dayjs().add(5, 'day').startOf('day'))
 const freeScheduleDate = ref(dayjs().add(5, 'day').startOf('day'))
+/** 计划生成的课节总数（不含仅日历日；多课表节次时同一天计多节），用于推算结束日期 */
+const plannedClassCount = ref(1)
 const customTimeRanges = ref<CustomTimeRangeRow[]>([
   {
     start: dayjs().hour(10).minute(30).second(0),
@@ -412,6 +414,9 @@ watch(selectedOneToOneId, (value) => {
     return
   }
   selectedStudentLessonPath.value = [current.studentId, current.id]
+  const ta = current?.tuitionAccount
+  const remain = Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
+  plannedClassCount.value = remain > 0 ? Math.max(1, Math.ceil(remain)) : 1
 }, { immediate: true })
 
 watch(modalOpen, (value) => {
@@ -480,6 +485,12 @@ const remainQuantityValue = computed(() => {
   return Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
 })
 
+/** 剩余可排课节数上限（与学费账户粒度一致，向上取整） */
+const remainSessionCap = computed(() => {
+  const r = remainQuantityValue.value
+  return r > 0 ? Math.ceil(r) : 0
+})
+
 function slotDurationMinutes(start: string, end: string) {
   const [sh, sm] = start.split(':').map(Number)
   const [eh, em] = end.split(':').map(Number)
@@ -529,19 +540,19 @@ const scheduleSessionMinutesText = computed(() => {
 })
 
 const selectedWeekdaysText = computed(() => selectedWeekdays.value.join(' / '))
-/** 本次操作最多创建的课节数（含同一天多个时段） */
+/** 按手输「计划上课次数」推算结束日期与预览行数（不与剩余额度挂钩；单日不超过当天课表节次数） */
 const scheduleTargetCount = computed(() => {
-  const remain = remainQuantityValue.value
-  const r = remain > 0 ? Math.ceil(remain) : 0
+  const planned = Math.max(0, Math.floor(Number(plannedClassCount.value) || 0))
+  if (planned < 1)
+    return 0
+  const slots = Math.max(activeTimeBlocks.value.length, 1)
   if (schedulingMode.value === 'free')
-    return r
-  if (repeatRule.value === 'none') {
-    if (r <= 0)
-      return 0
-    const n = Math.max(activeTimeBlocks.value.length, 1)
-    return Math.min(n, r)
-  }
-  return r
+    return Math.min(planned, slots)
+  if (repeatRule.value === 'none')
+    return Math.min(planned, slots)
+  if (schedulingMode.value === 'repeat')
+    return planned
+  return 0
 })
 
 const repeatRuleText = computed(() => {
@@ -590,6 +601,10 @@ const overviewItems = computed<SummaryItem[]>(() => [
   { label: '排课类型', value: scheduleType.value === 'oneToOne' ? '按1对1' : '按学员和课程' },
   { label: '排课方式', value: schedulingMode.value === 'repeat' ? '重复排课' : '自由排课' },
   { label: '日期设置', value: dateSettingText.value },
+  {
+    label: '计划上课次数',
+    value: `${Math.floor(Number(plannedClassCount.value) || 0)} 节（手填；剩余可排约 ${remainSessionCap.value || 0} 节）`,
+  },
   { label: '重复规则', value: repeatRuleText.value },
   { label: '上课时间', value: timeModeText.value },
   { label: '上课老师', value: selectedTeacher.value || '-' },
@@ -598,7 +613,19 @@ const overviewItems = computed<SummaryItem[]>(() => [
 ])
 
 /** 侧边「创建摘要」里 value 会被单行省略，这些行悬停展示全文 */
-const overviewTooltipLabels = new Set(['重复规则', '上课时间', '上课教室'])
+const overviewTooltipLabels = new Set(['重复规则', '计划上课次数', '上课时间', '上课教室'])
+
+const planExceedsRemainHint = computed(() => {
+  const cap = remainSessionCap.value
+  const planned = Math.floor(Number(plannedClassCount.value) || 0)
+  if (planned < 1)
+    return ''
+  if (cap <= 0)
+    return '当前剩余可排为 0，仍可按手填节数推算结束日期；正式创建前请处理账户。'
+  if (planned > cap)
+    return `当前手填 ${planned} 节，多于剩余可排 ${cap} 节；结束日期仍按手填次数推算，正式创建时请核对账户/是否截断。`
+  return ''
+})
 
 const recordQuickTags = computed<QuickTag[]>(() => [
   { text: oneToOneStatusText.value, tone: 'primary' },
@@ -619,10 +646,9 @@ const blockedReason = computed(() => {
     return '请先选择上课教师。'
   if (!selectedClassroom.value)
     return '请先选择上课教室。'
-  if (schedulingMode.value === 'free' && scheduleTargetCount.value <= 0)
-    return '当前剩余数量不足，暂不可创建日程。'
-  if (schedulingMode.value === 'repeat' && scheduleTargetCount.value <= 0)
-    return '当前剩余数量不足，暂不可继续排课。'
+  const planned = Math.floor(Number(plannedClassCount.value) || 0)
+  if (planned < 1)
+    return '请填写计划上课次数（至少为 1）。'
   if (timeMode.value === 'school' && selectedSchoolTimeSlots.value.length === 0)
     return '请至少选择一节课表节次。'
   if (timeMode.value === 'custom') {
@@ -1070,6 +1096,10 @@ function removeCustomTimeRow(index: number) {
                 {{ selectedOneToOne.remark }}
               </div>
 
+              <div v-if="planExceedsRemainHint" class="planner-alert planner-alert--soft">
+                {{ planExceedsRemainHint }}
+              </div>
+
               <div v-if="blockedReason" class="planner-alert">
                 {{ blockedReason }}
               </div>
@@ -1113,42 +1143,80 @@ function removeCustomTimeRow(index: number) {
                 </div>
 
                 <div class="planner-form-grid">
-                  <label v-if="schedulingMode === 'repeat'" class="planner-field">
-                    <span class="planner-label planner-label--required">
-                      <CalendarOutlined />
-                      开始日期
-                    </span>
-                    <a-date-picker
-                      v-model:value="scheduleStartDate"
-                      size="large"
-                      class="planner-control"
-                      :allow-clear="false"
-                    />
-                  </label>
+                  <div
+                    v-if="schedulingMode === 'repeat'"
+                    class="planner-date-plan-row"
+                  >
+                    <label class="planner-field planner-date-plan-row__cell planner-date-plan-row__cell--start">
+                      <span class="planner-label planner-label--required">
+                        <CalendarOutlined />
+                        开始日期
+                      </span>
+                      <a-date-picker
+                        v-model:value="scheduleStartDate"
+                        size="large"
+                        class="planner-control"
+                        :allow-clear="false"
+                      />
+                    </label>
 
-                  <div v-if="schedulingMode === 'repeat'" class="planner-field">
-                    <span class="planner-label">
-                      <CalendarOutlined />
-                      结束日期
-                    </span>
-                    <div class="planner-static-field planner-static-field--compact planner-static-field--inline-hint">
-                      <strong>{{ autoScheduleEndDate.format('YYYY-MM-DD') }}</strong>
-                      <span>根据开始日期与剩余数量自动计算</span>
+                    <label class="planner-field planner-date-plan-row__cell planner-date-plan-row__cell--count">
+                      <span class="planner-label planner-label--required">
+                        计划上课次数
+                      </span>
+                      <a-input-number
+                        v-model:value="plannedClassCount"
+                        :min="1"
+                        :precision="0"
+                        size="large"
+                        class="planner-control"
+                      />
+                    </label>
+
+                    <div class="planner-field planner-date-plan-row__cell">
+                      <span class="planner-label">
+                        <CalendarOutlined />
+                        结束日期
+                      </span>
+                      <div class="planner-static-field planner-static-field--compact planner-static-field--inline-hint">
+                        <strong>{{ autoScheduleEndDate.format('YYYY-MM-DD') }}</strong>
+                        <span>根据计划上课次数与重复规则自动推算</span>
+                      </div>
                     </div>
+
+                    <span class="planner-field__hint planner-date-plan-row__hint">可自由填写节数；结束日期由开始日期、重复规则与本次数推算。参考剩余可排 {{ remainSessionCap }} 节。</span>
                   </div>
 
-                  <label v-else class="planner-field planner-field--full">
-                    <span class="planner-label planner-label--required">
-                      <CalendarOutlined />
-                      上课日期
-                    </span>
-                    <a-date-picker
-                      v-model:value="freeScheduleDate"
-                      size="large"
-                      class="planner-control"
-                      :allow-clear="false"
-                    />
-                  </label>
+                  <div
+                    v-else
+                    class="planner-date-plan-row planner-date-plan-row--free"
+                  >
+                    <label class="planner-field planner-date-plan-row__cell planner-date-plan-row__cell--start">
+                      <span class="planner-label planner-label--required">
+                        <CalendarOutlined />
+                        上课日期
+                      </span>
+                      <a-date-picker
+                        v-model:value="freeScheduleDate"
+                        size="large"
+                        class="planner-control"
+                        :allow-clear="false"
+                      />
+                    </label>
+                    <label class="planner-field planner-date-plan-row__cell planner-date-plan-row__cell--count">
+                      <span class="planner-label planner-label--required">
+                        计划上课次数
+                      </span>
+                      <a-input-number
+                        v-model:value="plannedClassCount"
+                        :min="1"
+                        :precision="0"
+                        size="large"
+                        class="planner-control"
+                      />
+                    </label>
+                    <span class="planner-field__hint planner-date-plan-row__hint">可自由填写；所选日当天每节课表节次各计 1 次，且不超过当天已选节次数。参考剩余可排 {{ remainSessionCap }} 节。</span>
+                  </div>
 
                   <div v-if="schedulingMode === 'repeat'" class="planner-field planner-field--full">
                     <span class="planner-label planner-label--required">
@@ -1332,6 +1400,7 @@ function removeCustomTimeRow(index: number) {
 
                   <div class="planner-field planner-field--major">
                     <span class="planner-label">
+                      <span class="planner-label__lead-spacer" aria-hidden="true" />
                       各时段课长
                     </span>
                     <div class="planner-static-field planner-static-field--major planner-static-field--inline">
@@ -1374,7 +1443,7 @@ function removeCustomTimeRow(index: number) {
                     />
                   </label>
 
-                  <label class="planner-field planner-field--full">
+                  <label class="planner-field">
                     <span class="planner-label planner-label--required">
                       <EnvironmentOutlined />
                       上课教室
@@ -1971,6 +2040,19 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   color: #d46b08;
 }
 
+.planner-alert--soft {
+  background: #e8f4ff;
+  color: #1664c0;
+}
+
+.planner-field__hint {
+  display: block;
+  margin-top: 6px;
+  color: #86909c;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .planner-section {
   padding: 16px 18px 18px;
 }
@@ -1991,6 +2073,84 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 16px;
+}
+
+.planner-form-grid > .planner-field .planner-control {
+  width: 100%;
+}
+
+:deep(.planner-form-grid > .planner-field .ant-select) {
+  width: 100% !important;
+}
+
+.planner-date-plan-row {
+  grid-column: 1 / -1;
+  display: grid;
+  /* 开始日期固定舒适宽度，结束日期列仍用 1fr 吃剩余空间 */
+  grid-template-columns: minmax(148px, 200px) minmax(100px, 132px) minmax(0, 1fr);
+  column-gap: 14px;
+  row-gap: 10px;
+  align-items: start;
+}
+
+.planner-date-plan-row__cell {
+  min-width: 0;
+}
+
+.planner-date-plan-row__cell--start {
+  width: 100%;
+  max-width: 200px;
+}
+
+.planner-date-plan-row__cell--start .planner-control {
+  width: 100%;
+  max-width: 200px;
+}
+
+:deep(.planner-date-plan-row__cell--start .ant-picker) {
+  width: 100% !important;
+  max-width: 200px !important;
+}
+
+/* 计划次数输入撑满中间列，避免单元格内右侧留白导致与结束日期间距「看起来」不对称 */
+.planner-date-plan-row__cell--count {
+  width: 100%;
+  min-width: 0;
+}
+
+.planner-date-plan-row__cell--count .planner-control {
+  width: 100%;
+}
+
+:deep(.planner-date-plan-row__cell--count .ant-input-number) {
+  width: 100% !important;
+}
+
+.planner-date-plan-row__hint {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+.planner-date-plan-row--free {
+  grid-template-columns: minmax(148px, 200px) minmax(100px, 132px);
+  column-gap: 14px;
+  row-gap: 10px;
+}
+
+/* 与左侧列「图标 + gap」同宽，使「各时段课长」与「上课助教」文案纵列对齐 */
+.planner-label__lead-spacer {
+  display: inline-block;
+  width: calc(14px + 6px);
+  flex-shrink: 0;
+}
+
+.planner-date-plan-row__cell .planner-static-field--inline-hint span {
+  white-space: normal;
+}
+
+.planner-date-plan-row__cell .planner-static-field--inline-hint strong {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .planner-field {
@@ -2584,6 +2744,19 @@ button.planner-chip.planner-chip--active {
   .planner-choice-row,
   .planner-form-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .planner-date-plan-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .planner-date-plan-row__cell--start,
+  .planner-date-plan-row__cell--start .planner-control {
+    max-width: none;
+  }
+
+  :deep(.planner-date-plan-row__cell--start .ant-picker) {
+    max-width: none !important;
   }
 
   .planner-time-range {
