@@ -721,9 +721,9 @@ function isMutedTimeLabel(mark) {
 
 .schedule-now-axis__text {
   position: absolute;
-  top: -10px;
-  left: 0;
-  right: 0;
+  top: -6px;
+  left: 4px;
+  right: -4px;
   color: #ff4d4f;
   font-size: 12px;
   font-weight: 600;
