@@ -298,10 +298,7 @@ const selectedAssistant = ref<string[] | undefined>(undefined)
 const selectedClassroom = ref(oneToOneRecords[0]?.classRoomName || '')
 const selectedStudentLessonPath = ref<string[] | undefined>(undefined)
 const previewModalOpen = ref(false)
-const scheduleRange = ref<[Dayjs, Dayjs]>([
-  dayjs().add(5, 'day').startOf('day'),
-  dayjs().add(32, 'day').startOf('day'),
-])
+const scheduleStartDate = ref(dayjs().add(5, 'day').startOf('day'))
 const freeScheduleDate = ref(dayjs().add(5, 'day').startOf('day'))
 const customStartTime = ref<Dayjs | null>(dayjs().hour(16).minute(0).second(0))
 const customEndTime = ref<Dayjs | null>(dayjs().hour(16).minute(45).second(0))
@@ -491,9 +488,14 @@ const timeRangeText = computed(() => {
 })
 
 const selectedWeekdaysText = computed(() => selectedWeekdays.value.join(' / '))
-const rangeText = computed(() =>
-  `${scheduleRange.value[0].format('YYYY-MM-DD')} 至 ${scheduleRange.value[1].format('YYYY-MM-DD')}`,
-)
+const scheduleTargetCount = computed(() => {
+  if (schedulingMode.value !== 'repeat')
+    return 1
+  if (repeatRule.value === 'none')
+    return 1
+  const remain = remainQuantityValue.value
+  return remain > 0 ? Math.ceil(remain) : 0
+})
 
 const repeatRuleText = computed(() => {
   if (schedulingMode.value === 'free')
@@ -507,8 +509,6 @@ const repeatRuleText = computed(() => {
 const dateSettingText = computed(() => {
   if (schedulingMode.value === 'free')
     return freeScheduleDate.value.format('YYYY-MM-DD')
-  if (repeatRule.value === 'none')
-    return scheduleRange.value[0].format('YYYY-MM-DD')
   return rangeText.value
 })
 
@@ -559,6 +559,8 @@ const blockedReason = computed(() => {
     return '请先选择上课教师。'
   if (!selectedClassroom.value)
     return '请先选择上课教室。'
+  if (schedulingMode.value === 'repeat' && scheduleTargetCount.value <= 0)
+    return '当前剩余数量不足，暂不可继续排课。'
   if (timeMode.value === 'custom' && !customStartTime.value)
     return '请选择开始时间。'
   if (timeMode.value === 'custom' && !customEndTime.value)
@@ -580,19 +582,22 @@ const rawPlannedDates = computed(() => {
   if (schedulingMode.value === 'free')
     return [freeScheduleDate.value.startOf('day')]
 
-  const [start, end] = scheduleRange.value || []
-  if (!start || !end)
+  const start = scheduleStartDate.value
+  if (!start)
     return []
 
   const rangeStart = start.startOf('day')
-  const rangeEnd = end.startOf('day')
+  const targetCount = scheduleTargetCount.value
+  if (targetCount <= 0)
+    return []
   if (repeatRule.value === 'none')
     return [rangeStart]
 
   const result: Dayjs[] = []
   let cursor = rangeStart
+  let guard = 0
 
-  while (cursor.isBefore(rangeEnd, 'day') || cursor.isSame(rangeEnd, 'day')) {
+  while (result.length < targetCount && guard < 5000) {
     if (repeatRule.value === 'daily') {
       result.push(cursor)
     }
@@ -609,6 +614,7 @@ const rawPlannedDates = computed(() => {
         result.push(cursor)
     }
     cursor = cursor.add(1, 'day')
+    guard += 1
   }
 
   return result
@@ -625,6 +631,16 @@ const plannedDates = computed(() => {
     return rawPlannedDates.value
   return rawPlannedDates.value.filter(date => !isHoliday(date))
 })
+
+const autoScheduleEndDate = computed(() => {
+  if (schedulingMode.value === 'free')
+    return freeScheduleDate.value
+  return plannedDates.value[plannedDates.value.length - 1] || scheduleStartDate.value
+})
+
+const rangeText = computed(() =>
+  `${scheduleStartDate.value.format('YYYY-MM-DD')} 至 ${autoScheduleEndDate.value.format('YYYY-MM-DD')}`,
+)
 
 const previewRuleText = computed(() => {
   if (schedulingMode.value === 'free')
@@ -995,18 +1011,29 @@ function disabledCustomEndTime() {
                 </div>
 
                 <div class="planner-form-grid">
-                  <label v-if="schedulingMode === 'repeat'" class="planner-field planner-field--full">
+                  <label v-if="schedulingMode === 'repeat'" class="planner-field">
                     <span class="planner-label planner-label--required">
                       <CalendarOutlined />
-                      排课周期
+                      开始日期
                     </span>
-                    <a-range-picker
-                      v-model:value="scheduleRange"
+                    <a-date-picker
+                      v-model:value="scheduleStartDate"
                       size="large"
                       class="planner-control"
                       :allow-clear="false"
                     />
                   </label>
+
+                  <div v-if="schedulingMode === 'repeat'" class="planner-field">
+                    <span class="planner-label">
+                      <CalendarOutlined />
+                      结束日期
+                    </span>
+                    <div class="planner-static-field planner-static-field--compact planner-static-field--inline-hint">
+                      <strong>{{ autoScheduleEndDate.format('YYYY-MM-DD') }}</strong>
+                      <span>根据开始日期与剩余数量自动计算</span>
+                    </div>
+                  </div>
 
                   <label v-else class="planner-field planner-field--full">
                     <span class="planner-label planner-label--required">
@@ -1928,6 +1955,36 @@ button.planner-chip.planner-chip--active {
   color: #86909c;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.planner-static-field--compact {
+  min-height: 42px;
+  justify-content: center;
+  padding: 9px 12px;
+}
+
+.planner-static-field--compact strong {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.planner-static-field--compact span {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.planner-static-field--inline-hint {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planner-static-field--inline-hint span {
+  margin-top: 0;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .planner-static-field--major {
