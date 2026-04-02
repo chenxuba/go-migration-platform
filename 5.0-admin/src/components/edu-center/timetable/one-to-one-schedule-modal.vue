@@ -12,7 +12,8 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, ref, watch } from 'vue'
-import type { OneToOneItem } from '../../../api/edu-center/one-to-one'
+import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
+import messageService from '@/utils/messageService'
 
 type PreviewTone = 'pending' | 'blocked'
 type ScheduleType = 'oneToOne' | 'studentLesson'
@@ -183,121 +184,9 @@ const schoolTimeSlotOptions: SchoolTimeSlot[] = [
 const schoolHolidaySet = new Set(['2026-05-01', '2026-05-02', '2026-05-03'])
 const assistantPool = ['王助教', '刘助教', '陈助教']
 const sharedClassrooms = ['个训室 03', '个训室 05', '言语室 02', '感统室 01']
-
-const oneToOneRecords: OneToOneItem[] = [
-  {
-    id: '10001',
-    name: '王小明-语言表达1对1',
-    studentName: '王小明',
-    studentId: 'stu-001',
-    lessonId: 'lesson-001',
-    lessonName: '语言表达提升',
-    classRoomId: 'room-03',
-    classRoomName: '个训室 03',
-    defaultTeacherId: 'teacher-001',
-    defaultTeacherName: '李老师',
-    classTeacherId: 'advisor-001',
-    classTeacherName: '陈老师',
-    status: 1,
-    classStudentStatus: 1,
-    isScheduled: true,
-    classTime: 45,
-    studentClassTime: 1,
-    teacherClassTime: 0,
-    defaultClassTimeRecordMode: 1,
-    createdTime: '2026-03-20 16:20:00',
-    tuitionAccountCount: 1,
-    tuitionAccount: {
-      id: 'ta-10001',
-      totalQuantity: 12,
-      totalFreeQuantity: 0,
-      remainQuantity: 8,
-      remainFreeQuantity: 0,
-      lessonChargingMode: 1,
-    },
-    remark: '',
-    teacherList: [
-      { teacherId: 'teacher-001', name: '李老师', status: 1, classId: '10001', isDefault: true },
-      { teacherId: 'teacher-002', name: '周老师', status: 1, classId: '10001' },
-      { teacherId: 'teacher-003', name: '孙老师', status: 1, classId: '10001' },
-    ],
-  },
-  {
-    id: '10002',
-    name: '李欣然-认知理解1对1',
-    studentName: '李欣然',
-    studentId: 'stu-002',
-    lessonId: 'lesson-002',
-    lessonName: '认知理解训练',
-    classRoomId: 'room-05',
-    classRoomName: '个训室 05',
-    defaultTeacherId: 'teacher-001',
-    defaultTeacherName: '李老师',
-    classTeacherId: 'advisor-002',
-    classTeacherName: '黄老师',
-    status: 1,
-    classStudentStatus: 1,
-    isScheduled: true,
-    classTime: 45,
-    studentClassTime: 1,
-    teacherClassTime: 0,
-    defaultClassTimeRecordMode: 1,
-    createdTime: '2026-03-18 11:05:00',
-    tuitionAccountCount: 2,
-    tuitionAccount: {
-      id: 'ta-10002',
-      totalQuantity: 10,
-      totalFreeQuantity: 0,
-      remainQuantity: 6,
-      remainFreeQuantity: 0,
-      lessonChargingMode: 2,
-    },
-    remark: '优先稳定老师，家长可接受节假日顺延。',
-    teacherList: [
-      { teacherId: 'teacher-001', name: '李老师', status: 1, classId: '10002', isDefault: true },
-      { teacherId: 'teacher-003', name: '黄老师', status: 1, classId: '10002' },
-    ],
-  },
-  {
-    id: '10003',
-    name: '周可心-精细动作1对1',
-    studentName: '周可心',
-    studentId: 'stu-003',
-    lessonId: 'lesson-003',
-    lessonName: '精细动作干预',
-    classRoomId: 'room-07',
-    classRoomName: '感统室 01',
-    defaultTeacherId: 'teacher-002',
-    defaultTeacherName: '周老师',
-    classTeacherId: '',
-    classTeacherName: '',
-    status: 1,
-    classStudentStatus: 2,
-    isScheduled: false,
-    classTime: 45,
-    studentClassTime: 1,
-    teacherClassTime: 0,
-    defaultClassTimeRecordMode: 2,
-    createdTime: '2026-03-12 09:40:00',
-    tuitionAccountCount: 1,
-    tuitionAccount: {
-      id: 'ta-10003',
-      totalQuantity: 20,
-      totalFreeQuantity: 2,
-      remainQuantity: 11,
-      remainFreeQuantity: 1,
-      lessonChargingMode: 1,
-      status: 2,
-    },
-    remark: '当前处于停课中，恢复后再排课。',
-    teacherList: [
-      { teacherId: 'teacher-001', name: '李老师', status: 1, classId: '10003' },
-      { teacherId: 'teacher-002', name: '周老师', status: 1, classId: '10003', isDefault: true },
-    ],
-  },
-]
-
-const selectedOneToOneId = ref(oneToOneRecords[0]?.id || '')
+const oneToOneRecords = ref<OneToOneItem[]>([])
+const oneToOneLoading = ref(false)
+const selectedOneToOneId = ref('')
 const scheduleType = ref<ScheduleType>('oneToOne')
 const schedulingMode = ref<SchedulingMode>('repeat')
 const repeatRule = ref<RepeatRule>('weekly')
@@ -306,9 +195,9 @@ const timeMode = ref<TimeMode>('school')
 const selectedWeekdays = ref(['周一', '周三', '周五'])
 /** 同一选课可多次勾选（例如上午一节 + 下午一节），每个上课日按所选时段各生成一节 */
 const selectedSchoolTimeSlots = ref<string[]>(['slot-d', 'slot-e'])
-const selectedTeacher = ref(oneToOneRecords[0]?.defaultTeacherName || '')
+const selectedTeacher = ref('')
 const selectedAssistant = ref<string[] | undefined>(undefined)
-const selectedClassroom = ref(oneToOneRecords[0]?.classRoomName || '')
+const selectedClassroom = ref('')
 const selectedStudentLessonPath = ref<string[] | undefined>(undefined)
 const previewModalOpen = ref(false)
 const scheduleStartDate = ref(dayjs().add(5, 'day').startOf('day'))
@@ -328,11 +217,11 @@ const customTimeRanges = ref<CustomTimeRangeRow[]>([
 ])
 
 const selectedOneToOne = computed(() =>
-  oneToOneRecords.find(item => item.id === selectedOneToOneId.value) || oneToOneRecords[0],
+  oneToOneRecords.value.find(item => item.id === selectedOneToOneId.value) || oneToOneRecords.value[0],
 )
 
 const oneToOneSelectOptions = computed(() =>
-  oneToOneRecords.map(item => ({
+  oneToOneRecords.value.map(item => ({
     value: item.id || '',
     label: `${item.name || '-'} · 课程：${item.lessonName || '-'}`,
     desc: `${item.defaultTeacherName || '-'} · ${item.classRoomName || '-'} · ${item.tuitionAccountCount ?? 0} 个账户`,
@@ -342,7 +231,7 @@ const oneToOneSelectOptions = computed(() =>
 const studentLessonCascaderOptions = computed(() => {
   const grouped = new Map<string, { value: string, label: string, children: { value: string, label: string }[] }>()
 
-  oneToOneRecords.forEach((item) => {
+  oneToOneRecords.value.forEach((item) => {
     const studentValue = item.studentId || `student-${item.id || item.name || Math.random()}`
     if (!grouped.has(studentValue)) {
       grouped.set(studentValue, {
@@ -393,7 +282,9 @@ watch(
     selectedTeacher.value = value?.defaultTeacherName && teacherNames.includes(value.defaultTeacherName)
       ? value.defaultTeacherName
       : (teacherNames[0] || '')
-    selectedClassroom.value = value?.classRoomName || classroomOptions.value[0]?.value || ''
+    selectedClassroom.value = value
+      ? (value.classRoomName || classroomOptions.value[0]?.value || '')
+      : ''
     selectedAssistant.value = undefined
     const s = dayjs().hour(10).minute(30).second(0)
     customTimeRanges.value = [
@@ -411,7 +302,7 @@ watch(
 )
 
 watch(selectedOneToOneId, (value) => {
-  const current = oneToOneRecords.find(item => item.id === value)
+  const current = oneToOneRecords.value.find(item => item.id === value)
   if (!current?.studentId || !current?.id) {
     selectedStudentLessonPath.value = undefined
     return
@@ -422,7 +313,9 @@ watch(selectedOneToOneId, (value) => {
   plannedClassCount.value = remain > 0 ? Math.max(1, Math.ceil(remain)) : 1
 }, { immediate: true })
 
-watch(modalOpen, (value) => {
+watch(modalOpen, async (value) => {
+  if (value)
+    await fetchOneToOneRecords()
   if (!value)
     previewModalOpen.value = false
 })
@@ -581,12 +474,6 @@ const repeatRuleText = computed(() => {
   return base
 })
 
-const dateSettingText = computed(() => {
-  if (schedulingMode.value === 'free')
-    return freeSelectedDatesText.value
-  return rangeText.value
-})
-
 const timeModeText = computed(() => {
   const blocks = activeTimeBlocks.value
   if (!blocks.length)
@@ -611,17 +498,6 @@ const selectedOneToOneSummary = computed<SummaryItem[]>(() => [
   { label: '本次时段', value: scheduleSessionMinutesText.value },
   { label: '记录方式', value: recordModeText.value },
   { label: '学费账户', value: `${selectedOneToOne.value?.tuitionAccountCount ?? 0} 个` },
-])
-
-const overviewItems = computed<SummaryItem[]>(() => [
-  { label: '排课类型', value: scheduleType.value === 'oneToOne' ? '按1对1' : '按学员和课程' },
-  { label: '排课方式', value: schedulingMode.value === 'repeat' ? '重复排课' : '自由排课' },
-  { label: '日期设置', value: dateSettingText.value },
-  { label: '重复规则', value: repeatRuleText.value },
-  { label: '上课时间', value: timeModeText.value },
-  { label: '上课老师', value: selectedTeacher.value || '-' },
-  { label: '上课助教', value: selectedAssistantText.value },
-  { label: '上课教室', value: scheduledClassroomText.value },
 ])
 
 /** 侧边「创建摘要」里 value 会被单行省略，这些行悬停展示全文 */
@@ -659,6 +535,10 @@ const recordQuickTags = computed<QuickTag[]>(() => [
 ])
 
 const blockedReason = computed(() => {
+  if (oneToOneLoading.value)
+    return '1对1数据加载中，请稍候。'
+  if (!selectedOneToOne.value?.id)
+    return '暂无可用的1对1档案，请先创建1对1后再排课。'
   if (Number(selectedOneToOne.value?.status) === 2)
     return '当前 1 对 1 已结班，暂不可创建新日程。'
   if (Number(selectedOneToOne.value?.classStudentStatus) === 2)
@@ -774,6 +654,23 @@ const rangeText = computed(() =>
   `${scheduleStartDate.value.format('YYYY-MM-DD')} 至 ${autoScheduleEndDate.value.format('YYYY-MM-DD')}`,
 )
 
+const dateSettingText = computed(() => {
+  if (schedulingMode.value === 'free')
+    return freeSelectedDatesText.value
+  return rangeText.value
+})
+
+const overviewItems = computed<SummaryItem[]>(() => [
+  { label: '排课类型', value: scheduleType.value === 'oneToOne' ? '按1对1' : '按学员和课程' },
+  { label: '排课方式', value: schedulingMode.value === 'repeat' ? '重复排课' : '自由排课' },
+  { label: '日期设置', value: dateSettingText.value },
+  { label: '重复规则', value: repeatRuleText.value },
+  { label: '上课时间', value: timeModeText.value },
+  { label: '上课老师', value: selectedTeacher.value || '-' },
+  { label: '上课助教', value: selectedAssistantText.value },
+  { label: '上课教室', value: scheduledClassroomText.value },
+])
+
 const previewRuleText = computed(() => {
   if (schedulingMode.value === 'free')
     return '单次日程'
@@ -834,6 +731,64 @@ const actionButtonText = computed(() => {
 function schoolSlotMaxTagPlaceholder(omittedValues: { label?: unknown, value?: unknown }[]) {
   const n = omittedValues?.length ?? 0
   return n > 0 ? `+${n}` : ''
+}
+
+async function fetchOneToOneRecords() {
+  if (oneToOneLoading.value)
+    return
+
+  oneToOneLoading.value = true
+  try {
+    const pageSize = 200
+    let pageIndex = 1
+    let total = 0
+    const allRecords: OneToOneItem[] = []
+
+    do {
+      const res = await getOneToOneListApi({
+        pageRequestModel: {
+          needTotal: true,
+          pageSize,
+          pageIndex,
+          skipCount: (pageIndex - 1) * pageSize,
+        },
+        queryModel: {},
+      })
+
+      if (res.code !== 200)
+        throw new Error(res.message || '获取1对1列表失败')
+
+      const pageList = Array.isArray(res.result?.list) ? res.result.list : []
+      total = Number(res.result?.total || 0)
+      allRecords.push(...pageList)
+
+      if (!pageList.length)
+        break
+      pageIndex += 1
+    } while (allRecords.length < total)
+
+    oneToOneRecords.value = allRecords
+
+    if (!allRecords.length) {
+      selectedOneToOneId.value = ''
+      selectedStudentLessonPath.value = undefined
+      plannedClassCount.value = 1
+      return
+    }
+
+    const preserved = allRecords.find(item => item.id === selectedOneToOneId.value)
+    selectedOneToOneId.value = preserved?.id || allRecords[0]?.id || ''
+  }
+  catch (error: any) {
+    console.error('fetch one to one records failed', error)
+    oneToOneRecords.value = []
+    selectedOneToOneId.value = ''
+    selectedStudentLessonPath.value = undefined
+    messageService.error(error?.message || '获取1对1列表失败')
+  }
+  finally {
+    oneToOneLoading.value = false
+  }
 }
 
 function closeModal() {
@@ -1060,6 +1015,10 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                 option-label-prop="label"
                 popup-class-name="planner-record-select-dropdown"
                 :allow-clear="false"
+                :loading="oneToOneLoading"
+                :disabled="oneToOneLoading || !oneToOneSelectOptions.length"
+                :not-found-content="oneToOneLoading ? '正在加载1对1数据...' : '暂无1对1数据'"
+                :placeholder="oneToOneLoading ? '正在加载1对1数据...' : '请选择1对1'"
                 class="planner-control planner-control--record"
               >
                 <a-select-option
@@ -1082,7 +1041,8 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                 v-else
                 v-model:value="selectedStudentLessonPath"
                 :options="studentLessonCascaderOptions"
-                placeholder="请选择学员和课程"
+                :disabled="oneToOneLoading || !studentLessonCascaderOptions.length"
+                :placeholder="oneToOneLoading ? '正在加载1对1数据...' : '请选择学员和课程'"
                 class="planner-control planner-control--record"
                 @change="handleStudentLessonChange"
               />
@@ -1281,7 +1241,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                             <a-calendar
                               :fullscreen="false"
                               :value="freeCalendarPanelDate"
-                              @panelChange="handleFreeCalendarPanelChange"
+                              @panel-change="handleFreeCalendarPanelChange"
                               @select="toggleFreeScheduleDate"
                             >
                               <template #dateFullCellRender="{ current }">
@@ -1326,34 +1286,34 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                     </div>
                   </div>
 
-                <div
-                  v-if="schedulingMode === 'repeat' && (repeatRule === 'weekly' || repeatRule === 'biweekly')"
-                  class="planner-field planner-field--full"
-                >
-                  <span class="planner-label planner-label--required">
-                    每周上课日
-                  </span>
-                  <div class="planner-chip-row planner-chip-row--weekday">
-                    <button
-                      v-for="item in weekDayOptions"
-                      :key="item"
-                      type="button"
-                      class="planner-chip"
+                  <div
+                    v-if="schedulingMode === 'repeat' && (repeatRule === 'weekly' || repeatRule === 'biweekly')"
+                    class="planner-field planner-field--full"
+                  >
+                    <span class="planner-label planner-label--required">
+                      每周上课日
+                    </span>
+                    <div class="planner-chip-row planner-chip-row--weekday">
+                      <button
+                        v-for="item in weekDayOptions"
+                        :key="item"
+                        type="button"
+                        class="planner-chip"
                         :class="{ 'planner-chip--active': selectedWeekdays.includes(item) }"
                         @click="toggleWeekday(item)"
-                    >
-                      {{ item }}
-                    </button>
-                    <div class="planner-chip-actions">
-                      <a-button type="link" size="small" @click="toggleAllWeekdays">
-                        {{ isAllWeekdaysSelected ? '取消全选' : '全选' }}
-                      </a-button>
-                      <a-button type="link" size="small" @click="invertWeekdays">
-                        反选
-                      </a-button>
+                      >
+                        {{ item }}
+                      </button>
+                      <div class="planner-chip-actions">
+                        <a-button type="link" size="small" @click="toggleAllWeekdays">
+                          {{ isAllWeekdaysSelected ? '取消全选' : '全选' }}
+                        </a-button>
+                        <a-button type="link" size="small" @click="invertWeekdays">
+                          反选
+                        </a-button>
+                      </div>
                     </div>
                   </div>
-                </div>
 
                   <div class="planner-field planner-field--full">
                     <span class="planner-label planner-label--required">
@@ -1559,7 +1519,6 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
             </section>
           </main>
         </div>
-
       </div>
     </a-modal>
 
@@ -2721,9 +2680,6 @@ button.planner-chip.planner-chip--active {
   background: #fff;
 }
 
-
-
-
 :deep(.planner-review-modal .ant-modal-header) {
   margin-bottom: 0;
   padding: 18px 24px 14px;
@@ -3042,7 +2998,6 @@ button.planner-chip.planner-chip--active {
 .planner-record-select-dropdown {
   padding: 8px;
 }
-
 
 .planner-record-select-dropdown .ant-select-item {
   padding: 0;
