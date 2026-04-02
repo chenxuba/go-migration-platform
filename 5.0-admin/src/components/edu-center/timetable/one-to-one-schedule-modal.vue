@@ -195,6 +195,14 @@ const oneToOneRecords: OneToOneItem[] = [
     defaultClassTimeRecordMode: 1,
     createdTime: '2026-03-20 16:20:00',
     tuitionAccountCount: 1,
+    tuitionAccount: {
+      id: 'ta-10001',
+      totalQuantity: 12,
+      totalFreeQuantity: 0,
+      remainQuantity: 8,
+      remainFreeQuantity: 0,
+      lessonChargingMode: 1,
+    },
     remark: '家长希望固定周一 / 周三 / 周五放学后安排课程。',
     teacherList: [
       { teacherId: 'teacher-001', name: '李老师', status: 1, classId: '10001', isDefault: true },
@@ -224,6 +232,14 @@ const oneToOneRecords: OneToOneItem[] = [
     defaultClassTimeRecordMode: 1,
     createdTime: '2026-03-18 11:05:00',
     tuitionAccountCount: 2,
+    tuitionAccount: {
+      id: 'ta-10002',
+      totalQuantity: 10,
+      totalFreeQuantity: 0,
+      remainQuantity: 6,
+      remainFreeQuantity: 0,
+      lessonChargingMode: 2,
+    },
     remark: '优先稳定老师，家长可接受节假日顺延。',
     teacherList: [
       { teacherId: 'teacher-001', name: '李老师', status: 1, classId: '10002', isDefault: true },
@@ -252,6 +268,15 @@ const oneToOneRecords: OneToOneItem[] = [
     defaultClassTimeRecordMode: 2,
     createdTime: '2026-03-12 09:40:00',
     tuitionAccountCount: 1,
+    tuitionAccount: {
+      id: 'ta-10003',
+      totalQuantity: 20,
+      totalFreeQuantity: 2,
+      remainQuantity: 11,
+      remainFreeQuantity: 1,
+      lessonChargingMode: 1,
+      status: 2,
+    },
     remark: '当前处于停课中，恢复后再排课。',
     teacherList: [
       { teacherId: 'teacher-001', name: '李老师', status: 1, classId: '10003' },
@@ -386,11 +411,49 @@ const recordModeText = computed(() =>
   Number(selectedOneToOne.value?.defaultClassTimeRecordMode) === 2 ? '按上课时长记录' : '按固定课时记录',
 )
 
+const effectiveLessonChargingMode = computed(() => {
+  const ta = selectedOneToOne.value?.tuitionAccount
+  const mode = Number(ta?.lessonChargingMode || 0)
+  if (mode > 0)
+    return mode
+  if (ta?.enableExpireTime && Number(ta?.totalQuantity || 0) > 0)
+    return 2
+  return mode || 0
+})
+
+const quantityUnit = computed(() => {
+  if (effectiveLessonChargingMode.value === 1)
+    return '课时'
+  if (effectiveLessonChargingMode.value === 2)
+    return '天'
+  if (effectiveLessonChargingMode.value === 3)
+    return '元'
+  return ''
+})
+
+function formatBalanceValue(value: number) {
+  if (!Number.isFinite(value))
+    return '--'
+  return `${value.toFixed(2)}${quantityUnit.value ? ` ${quantityUnit.value}` : ''}`
+}
+
 const recordClassroomText = computed(() => selectedOneToOne.value?.classRoomName || '-')
 const scheduledClassroomText = computed(() => selectedClassroom.value || '-')
 const selectedAssistantText = computed(() =>
   selectedAssistant.value?.length ? selectedAssistant.value.join('、') : '未安排',
 )
+
+const usedQuantityValue = computed(() => {
+  const ta = selectedOneToOne.value?.tuitionAccount
+  const total = Number(ta?.totalQuantity || 0) + Number(ta?.totalFreeQuantity || 0)
+  const remain = Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
+  return Math.max(total - remain, 0)
+})
+
+const remainQuantityValue = computed(() => {
+  const ta = selectedOneToOne.value?.tuitionAccount
+  return Number(ta?.remainQuantity || 0) + Number(ta?.remainFreeQuantity || 0)
+})
 
 const selectedTimeSlot = computed(() =>
   schoolTimeSlotOptions.find(item => item.value === selectedSchoolTimeSlot.value) || schoolTimeSlotOptions[0],
@@ -451,7 +514,7 @@ const dateSettingText = computed(() => {
 
 const timeModeText = computed(() =>
   timeMode.value === 'school'
-    ? `${selectedTimeSlot.value?.label || '-'} · ${selectedTimeSlot.value?.start || '-'} - ${selectedTimeSlot.value?.end || '-'}`
+    ? `${selectedTimeSlot.value?.desc || '-'} · ${selectedTimeSlot.value?.start || '-'} - ${selectedTimeSlot.value?.end || '-'}`
     : `自定义时段 · ${timeRangeText.value}`,
 )
 
@@ -645,6 +708,17 @@ function toggleWeekday(day: string) {
     : [...selectedWeekdays.value, day]
 }
 
+const isAllWeekdaysSelected = computed(() => selectedWeekdays.value.length === weekDayOptions.length)
+
+function toggleAllWeekdays() {
+  selectedWeekdays.value = isAllWeekdaysSelected.value ? [] : [...weekDayOptions]
+}
+
+function invertWeekdays() {
+  const inverted = weekDayOptions.filter(item => !selectedWeekdays.value.includes(item))
+  selectedWeekdays.value = inverted
+}
+
 watch(timeMode, (value) => {
   if (value === 'custom' && scheduleSessionMinutes.value <= 0) {
     if (!customStartTime.value)
@@ -658,8 +732,9 @@ watch(customStartTime, (value) => {
     customEndTime.value = null
     return
   }
-  if (customEndTime.value && !customEndTime.value.isAfter(value))
-    customEndTime.value = null
+  if (!customEndTime.value || !customEndTime.value.isAfter(value)) {
+    customEndTime.value = value.add(30, 'minute')
+  }
 })
 
 function disabledCustomEndTime() {
@@ -692,8 +767,8 @@ function disabledCustomEndTime() {
       v-model:open="modalOpen"
       centered
       class="one-to-one-schedule-modal"
-      :footer="null"
       :width="1140"
+      :body-style="{ padding: '0' }"
       :keyboard="false"
       :closable="false"
       :mask-closable="true"
@@ -729,6 +804,23 @@ function disabledCustomEndTime() {
         </div>
       </template>
 
+      <template #footer>
+        <div class="planner-footer">
+          <div class="planner-footer__tip">
+            {{ footerTipText }}
+          </div>
+
+          <div class="planner-footer__actions">
+            <a-button @click="closeModal">
+              取消
+            </a-button>
+            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0" @click="openPreviewModal">
+              {{ actionButtonText }}
+            </a-button>
+          </div>
+        </div>
+      </template>
+
       <div class="planner-shell">
         <section class="planner-strip planner-strip--top">
           <div class="planner-inline planner-inline--top">
@@ -748,18 +840,18 @@ function disabledCustomEndTime() {
               </div>
             </div>
 
-          <div class="planner-inline__group planner-inline__group--record">
-            <span class="planner-label planner-label--inline">
-              <BookOutlined />
-              {{ scheduleType === 'oneToOne' ? '选择1对1' : '选择学员和课程' }}
-            </span>
-            <a-select
-              v-if="scheduleType === 'oneToOne'"
-              v-model:value="selectedOneToOneId"
-              size="large"
-              show-search
-              option-filter-prop="label"
-              option-label-prop="label"
+            <div class="planner-inline__group planner-inline__group--record">
+              <span class="planner-label planner-label--inline">
+                <BookOutlined />
+                {{ scheduleType === 'oneToOne' ? '选择1对1' : '选择学员和课程' }}
+              </span>
+              <a-select
+                v-if="scheduleType === 'oneToOne'"
+                v-model:value="selectedOneToOneId"
+                size="large"
+                show-search
+                option-filter-prop="label"
+                option-label-prop="label"
                 popup-class-name="planner-record-select-dropdown"
                 :allow-clear="false"
                 class="planner-control planner-control--record"
@@ -777,33 +869,30 @@ function disabledCustomEndTime() {
                     <div class="planner-option__desc">
                       {{ item.desc }}
                     </div>
-                </div>
-              </a-select-option>
-            </a-select>
-            <a-cascader
-              v-else
-              v-model:value="selectedStudentLessonPath"
-              :options="studentLessonCascaderOptions"
-              placeholder="请选择学员和课程"
-              class="planner-control planner-control--record"
-              @change="handleStudentLessonChange"
-            />
-          </div>
+                  </div>
+                </a-select-option>
+              </a-select>
+              <a-cascader
+                v-else
+                v-model:value="selectedStudentLessonPath"
+                :options="studentLessonCascaderOptions"
+                placeholder="请选择学员和课程"
+                class="planner-control planner-control--record"
+                @change="handleStudentLessonChange"
+              />
+            </div>
 
             <div class="planner-inline__group planner-inline__group--status">
-              <span class="planner-label planner-label--inline">当前状态</span>
-              <div class="planner-tag-list">
-                <span
-                  v-for="item in recordQuickTags"
-                  :key="item.text"
-                  class="planner-tag"
-                  :class="{
-                    'planner-tag--primary': item.tone === 'primary',
-                    'planner-tag--warning': item.tone === 'warning',
-                  }"
-                >
-                  {{ item.text }}
-                </span>
+              <span class="planner-label planner-label--inline">账户余额</span>
+              <div class="planner-balance">
+                <div class="planner-balance__item">
+                  <span>已用数量</span>
+                  <strong>{{ formatBalanceValue(usedQuantityValue) }}</strong>
+                </div>
+                <div class="planner-balance__item">
+                  <span>剩余数量</span>
+                  <strong>{{ formatBalanceValue(remainQuantityValue) }}</strong>
+                </div>
               </div>
             </div>
           </div>
@@ -837,7 +926,7 @@ function disabledCustomEndTime() {
                   class="planner-summary-list__row"
                 >
                   <span>{{ item.label }}</span>
-                  <strong>{{ item.value }}</strong>
+                  <strong class="planner-summary-list__value">{{ item.value }}</strong>
                 </div>
               </div>
 
@@ -852,7 +941,10 @@ function disabledCustomEndTime() {
                   class="planner-summary-list__row"
                 >
                   <span>{{ item.label }}</span>
-                  <strong>{{ item.value }}</strong>
+                  <a-tooltip v-if="item.label === '重复规则'" :title="item.value">
+                    <strong class="planner-summary-list__value">{{ item.value }}</strong>
+                  </a-tooltip>
+                  <strong v-else class="planner-summary-list__value">{{ item.value }}</strong>
                 </div>
               </div>
 
@@ -947,26 +1039,34 @@ function disabledCustomEndTime() {
                     </div>
                   </div>
 
-                  <div
-                    v-if="schedulingMode === 'repeat' && (repeatRule === 'weekly' || repeatRule === 'biweekly')"
-                    class="planner-field planner-field--full"
-                  >
-                    <span class="planner-label planner-label--required">
-                      每周上课日
-                    </span>
-                    <div class="planner-chip-row">
-                      <button
-                        v-for="item in weekDayOptions"
-                        :key="item"
-                        type="button"
-                        class="planner-chip"
+                <div
+                  v-if="schedulingMode === 'repeat' && (repeatRule === 'weekly' || repeatRule === 'biweekly')"
+                  class="planner-field planner-field--full"
+                >
+                  <span class="planner-label planner-label--required">
+                    每周上课日
+                  </span>
+                  <div class="planner-chip-row planner-chip-row--weekday">
+                    <button
+                      v-for="item in weekDayOptions"
+                      :key="item"
+                      type="button"
+                      class="planner-chip"
                         :class="{ 'planner-chip--active': selectedWeekdays.includes(item) }"
                         @click="toggleWeekday(item)"
-                      >
-                        {{ item }}
-                      </button>
+                    >
+                      {{ item }}
+                    </button>
+                    <div class="planner-chip-actions">
+                      <a-button type="link" size="small" @click="toggleAllWeekdays">
+                        {{ isAllWeekdaysSelected ? '取消全选' : '全选' }}
+                      </a-button>
+                      <a-button type="link" size="small" @click="invertWeekdays">
+                        反选
+                      </a-button>
                     </div>
                   </div>
+                </div>
 
                   <div class="planner-field planner-field--full">
                     <span class="planner-label planner-label--required">
@@ -1133,20 +1233,6 @@ function disabledCustomEndTime() {
           </main>
         </div>
 
-        <div class="planner-footer">
-          <div class="planner-footer__tip">
-            {{ footerTipText }}
-          </div>
-
-          <div class="planner-footer__actions">
-            <a-button @click="closeModal">
-              取消
-            </a-button>
-            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0" @click="openPreviewModal">
-              {{ actionButtonText }}
-            </a-button>
-          </div>
-        </div>
       </div>
     </a-modal>
 
@@ -1156,6 +1242,7 @@ function disabledCustomEndTime() {
       class="planner-review-modal"
       :footer="null"
       :width="980"
+      :body-style="{ padding: '0 24px 16px' }"
       :keyboard="false"
       :mask-closable="false"
       @cancel="closePreviewModal"
@@ -1256,7 +1343,7 @@ function disabledCustomEndTime() {
 .planner-head {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 12px;
 }
 
 .planner-head__main {
@@ -1266,22 +1353,22 @@ function disabledCustomEndTime() {
 
 .planner-head__title {
   color: #1f2329;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.25;
 }
 
 .planner-head__subtitle {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #86909c;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .planner-head__stats {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .planner-head__close {
@@ -1290,8 +1377,8 @@ function disabledCustomEndTime() {
 
 .planner-stat {
   min-width: 108px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  padding: 8px 10px;
+  border-radius: 12px;
   background: linear-gradient(180deg, #f6fbff 0%, #edf6ff 100%);
   text-align: right;
 }
@@ -1299,16 +1386,16 @@ function disabledCustomEndTime() {
 .planner-stat strong {
   display: block;
   color: #1677ff;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
   line-height: 1;
 }
 
 .planner-stat span {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: #6b7785;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
 }
 
@@ -1325,9 +1412,9 @@ function disabledCustomEndTime() {
   display: flex;
   max-height: calc(100vh - 170px);
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   overflow: auto;
-  padding: 18px 20px 20px;
+  padding: 10px 14px 10px;
   background: #f6f8fb;
 }
 
@@ -1410,6 +1497,35 @@ function disabledCustomEndTime() {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-start;
+}
+
+.planner-balance {
+  display: flex;
+  gap: 6px;
+}
+
+.planner-balance__item {
+  min-width: 100px;
+  padding: 6px 10px;
+  border: 1px solid #f90;
+  border-radius: 10px;
+  background: #fff5e6;
+}
+
+.planner-balance__item span {
+  display: block;
+  color: #86909c;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.planner-balance__item strong {
+  display: block;
+  margin-top: 2px;
+  color: #1f2329;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .planner-tag {
@@ -1643,16 +1759,24 @@ button.planner-choice.planner-choice--type .planner-choice__title {
 }
 
 .planner-summary-list__row span {
+  flex-shrink: 0;
+  width: 72px;
   color: #86909c;
   font-size: 13px;
 }
 
-.planner-summary-list__row strong {
+.planner-summary-list__value {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
   color: #1f2329;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.6;
   text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .planner-note,
@@ -1728,6 +1852,21 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.planner-chip-row--weekday {
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.planner-chip-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 button.planner-chip {
@@ -1954,13 +2093,22 @@ button.planner-chip.planner-chip--active {
 
 :deep(.one-to-one-schedule-modal .ant-modal-header) {
   margin-bottom: 0;
-  padding: 18px 24px 14px;
+  padding: 14px 20px 10px;
   border-bottom: none;
 }
 
 :deep(.one-to-one-schedule-modal .ant-modal-body) {
   padding: 0;
 }
+
+:deep(.one-to-one-schedule-modal .ant-modal-footer) {
+  padding: 14px 20px 16px;
+  border-top: 1px solid #eef2f6;
+  background: #fff;
+}
+
+
+
 
 :deep(.planner-review-modal .ant-modal-header) {
   margin-bottom: 0;
@@ -1969,7 +2117,7 @@ button.planner-chip.planner-chip--active {
 }
 
 :deep(.planner-review-modal .ant-modal-body) {
-  padding: 0 24px 24px;
+  padding: 0 24px 16px;
 }
 
 :deep(.planner-control.ant-picker),
@@ -2145,6 +2293,10 @@ button.planner-chip.planner-chip--active {
     justify-content: flex-start;
   }
 
+  .planner-balance {
+    flex-wrap: wrap;
+  }
+
   .planner-choice-row--type-inline {
     flex-wrap: wrap;
   }
@@ -2196,6 +2348,7 @@ button.planner-chip.planner-chip--active {
 .planner-record-select-dropdown {
   padding: 8px;
 }
+
 
 .planner-record-select-dropdown .ant-select-item {
   padding: 0;
