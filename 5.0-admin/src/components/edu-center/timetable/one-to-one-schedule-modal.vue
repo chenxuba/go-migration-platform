@@ -608,7 +608,6 @@ const selectedOneToOneSummary = computed<SummaryItem[]>(() => [
   { label: '默认老师', value: selectedOneToOne.value?.defaultTeacherName || '-' },
   { label: '班主任', value: selectedOneToOne.value?.classTeacherName || '-' },
   { label: '默认教室', value: recordClassroomText.value },
-  { label: '档案节课时长', value: `${recordSessionMinutes.value} 分钟` },
   { label: '本次时段', value: scheduleSessionMinutesText.value },
   { label: '记录方式', value: recordModeText.value },
   { label: '学费账户', value: `${selectedOneToOne.value?.tuitionAccountCount ?? 0} 个` },
@@ -618,12 +617,6 @@ const overviewItems = computed<SummaryItem[]>(() => [
   { label: '排课类型', value: scheduleType.value === 'oneToOne' ? '按1对1' : '按学员和课程' },
   { label: '排课方式', value: schedulingMode.value === 'repeat' ? '重复排课' : '自由排课' },
   { label: '日期设置', value: dateSettingText.value },
-  {
-    label: schedulingMode.value === 'free' ? '已选日期' : '计划上课次数',
-    value: schedulingMode.value === 'free'
-      ? `${freeSelectedDatesSorted.value.length} 天，共 ${scheduleTargetCount.value} 节`
-      : `${Math.floor(Number(plannedClassCount.value) || 0)} 节（手填；剩余可排约 ${remainSessionCap.value || 0} 节）`,
-  },
   { label: '重复规则', value: repeatRuleText.value },
   { label: '上课时间', value: timeModeText.value },
   { label: '上课老师', value: selectedTeacher.value || '-' },
@@ -871,6 +864,15 @@ function handleFreeCalendarPanelChange(date: Dayjs) {
   freeCalendarPanelDate.value = date.startOf('month')
 }
 
+function jumpFreeCalendarToday() {
+  const today = dayjs().startOf('day')
+  freeCalendarPanelDate.value = today.startOf('month')
+  const todayKey = today.format('YYYY-MM-DD')
+  const exists = freeSelectedDates.value.some(item => item.startOf('day').format('YYYY-MM-DD') === todayKey)
+  if (!exists)
+    freeSelectedDates.value = [...freeSelectedDates.value, today]
+}
+
 function clearFreeSelectedDates() {
   freeSelectedDates.value = []
 }
@@ -946,6 +948,12 @@ function removeCustomTimeRow(index: number) {
   if (customTimeRanges.value.length <= 1)
     return
   customTimeRanges.value = customTimeRanges.value.filter((_, i) => i !== index)
+}
+
+function customTimeRangeDurationText(row: CustomTimeRangeRow) {
+  if (!row.start || !row.end || !row.end.isAfter(row.start))
+    return '--'
+  return `${row.end.diff(row.start, 'minute')}分钟`
 }
 </script>
 
@@ -1275,6 +1283,11 @@ function removeCustomTimeRow(index: number) {
                                 </div>
                               </template>
                             </a-calendar>
+                            <div class="planner-free-calendar__footer">
+                              <a-button type="link" size="small" @click="jumpFreeCalendarToday">
+                                今天
+                              </a-button>
+                            </div>
                           </div>
                         </template>
 
@@ -1445,12 +1458,15 @@ function removeCustomTimeRow(index: number) {
                           :disabled-time="() => disabledCustomEndTime(row.start)"
                           :minute-step="5"
                         />
+                        <span class="planner-time-range__duration">
+                          {{ customTimeRangeDurationText(row) }}
+                        </span>
                         <a-button
-                          v-if="customTimeRanges.length > 1"
                           type="link"
                           danger
                           size="small"
                           class="planner-time-range__remove"
+                          :disabled="customTimeRanges.length <= 1"
                           @click="removeCustomTimeRow(rowIndex)"
                         >
                           删除
@@ -1462,17 +1478,6 @@ function removeCustomTimeRow(index: number) {
                         </template>
                         添加时段
                       </a-button>
-                    </div>
-                  </div>
-
-                  <div class="planner-field planner-field--major">
-                    <span class="planner-label">
-                      <span class="planner-label__lead-spacer" aria-hidden="true" />
-                      各时段课长
-                    </span>
-                    <div class="planner-static-field planner-static-field--major planner-static-field--inline">
-                      <strong>{{ scheduleSessionMinutesText }}</strong>
-                      <span>按每行开始/结束时间分别计算</span>
                     </div>
                   </div>
 
@@ -2237,6 +2242,13 @@ button.planner-choice.planner-choice--type .planner-choice__title {
   width: 300px;
 }
 
+.planner-free-calendar__footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
 .planner-free-calendar__cell {
   display: flex;
   align-items: center;
@@ -2333,6 +2345,21 @@ button.planner-choice.planner-choice--type .planner-choice__title {
 
 .planner-time-range__remove {
   flex-shrink: 0;
+}
+
+.planner-time-range__duration {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 84px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: #eef6ff;
+  color: #1677ff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .planner-custom-time-add {
@@ -2700,6 +2727,48 @@ button.planner-chip.planner-chip--active {
 :deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-item) {
   flex-shrink: 0;
   white-space: nowrap !important;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  padding: 0 10px 0 12px;
+  border: 1px solid #bfd8ff;
+  border-radius: 8px;
+  background: #eef6ff;
+  color: #1677ff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+:deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-item-content) {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+:deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-item-remove) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border-radius: 6px;
+  color: #6da7ff;
+  transition: all 0.2s ease;
+}
+
+:deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-item-remove:hover) {
+  background: rgb(22 119 255 / 10%);
+  color: #1677ff;
+}
+
+:deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-overflow-item-rest .ant-select-selection-item) {
+  border-color: #d7dfe9;
+  border-radius: 8px;
+  background: #f7f8fa;
+  color: #5f6b7c;
 }
 
 :deep(.planner-control--major .ant-select-arrow),
