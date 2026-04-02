@@ -175,6 +175,8 @@ async function loadClassroomOptions() {
         label: item.name || String(item.id),
         value: String(item.id),
       }));
+      if (props.editRecord)
+        mergeClassroomOptionFromRecord(props.editRecord);
       return;
     }
     messageService.error(res.message || "加载教室列表失败");
@@ -631,6 +633,7 @@ async function handleSubmit() {
     const commonBody = {
       name: className,
       lessonId: String(lessonId),
+      classroomId: formState.classRoom ? String(formState.classRoom) : '',
       maxCount: formState.maxNum != null ? Number(formState.maxNum) : 0,
       teacherIds,
       defaultTeacherId: defaultTeacherId || "0",

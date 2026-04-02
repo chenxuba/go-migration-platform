@@ -1051,6 +1051,11 @@ func (repo *Repository) UpdateOneToOne(ctx context.Context, instID, operatorID i
 	}
 	defer tx.Rollback()
 
+	classroomID, classroomName, classroomEnabled, err := repo.resolveClassroomByIDTx(ctx, tx, instID, dto.ClassroomID)
+	if err != nil {
+		return err
+	}
+
 	var exists int
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*)
@@ -1066,11 +1071,15 @@ func (repo *Repository) UpdateOneToOne(ctx context.Context, instID, operatorID i
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE teaching_class
-		SET name = ?, course_id = ?, default_teacher_id = ?, remark = ?, update_id = ?, update_time = NOW()
+		SET name = ?, course_id = ?, class_room_id = ?, class_room_name = ?, classroom_enabled = ?,
+		    default_teacher_id = ?, remark = ?, update_id = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0
 	`,
 		strings.TrimSpace(dto.Name),
 		lessonID,
+		classroomID,
+		classroomName,
+		classroomEnabled,
 		defaultTeacherID,
 		strings.TrimSpace(dto.Remark),
 		operatorID,
@@ -1909,6 +1918,10 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 	if len(teacherIDs) > 0 {
 		advisorID = teacherIDs[0]
 	}
+	classroomID, classroomName, classroomEnabled, err := repo.resolveClassroomByIDTx(ctx, tx, instID, dto.ClassroomID)
+	if err != nil {
+		return 0, err
+	}
 
 	now := time.Now()
 	res, err := tx.ExecContext(ctx, `
@@ -1917,10 +1930,10 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 			scheduled_lesson_count, finished_lesson_count, class_room_id, class_room_name, classroom_enabled, remark,
 			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, '', NULL, ?, ?, NOW(), ?, NOW(), 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
 		)
 	`, instID, model.TeachingClassTypeOneToOne, courseID, name, advisorID, defaultTeacherID, model.TeachingClassStatusActive,
-		strings.TrimSpace(dto.Remark), operatorID, operatorID)
+		classroomID, classroomName, classroomEnabled, strings.TrimSpace(dto.Remark), operatorID, operatorID)
 	if err != nil {
 		return 0, err
 	}

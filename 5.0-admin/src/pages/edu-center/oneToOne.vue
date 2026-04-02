@@ -7,6 +7,7 @@ import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
 import StaffSelect from '@/components/common/staff-select.vue'
 import StudentSelect from '@/components/common/student-select.vue'
+import { listClassroomsApi } from '@/api/business-settings/classroom'
 import FinishOneToOneCourseModal from '@/components/edu-center/one-to-one/finish-one-to-one-course-modal.vue'
 import oneToOneDrawer from '@/components/edu-center/one-to-one/one-to-one-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
@@ -105,6 +106,76 @@ const scheduleCreateExistOneToOneCheck = debounce(() => {
 }, 300, { leading: false, trailing: true })
 
 const CREATE_DUP_ONE_TO_ONE_MSG = '学员已存在所选上课课程的1对1，无需重复创建'
+const createNameTouched = ref(false)
+/** 创建用：学员在读报读账户选项（班级授课或 1v1） */
+const createTuitionAccountOptions = ref([])
+const createTuitionAccountLoading = ref(false)
+const createTuitionAccountError = ref('')
+const classroomOptions = ref([])
+const classroomLoading = ref(false)
+const editForm = reactive({
+  id: '',
+  /** 创建模式下须为 undefined，Select 才显示 placeholder（空字符串会被当成已选值） */
+  studentId: undefined,
+  lessonId: undefined,
+  /** 创建必填：扣费绑定的学费账户 id */
+  tuitionAccountId: undefined,
+  studentName: '',
+  lessonName: '',
+  name: '',
+  teacherIds: [],
+  defaultTeacherId: undefined,
+  classRoomId: undefined,
+  classRoomName: '',
+  defaultStudentClassTime: 1,
+  defaultTeacherClassTime: 0,
+  defaultClassTimeRecordMode: 1,
+  remark: '',
+  classProperties: [],
+})
+
+async function loadClassroomOptions() {
+  classroomLoading.value = true
+  try {
+    const res = await listClassroomsApi({ enabledOnly: true })
+    if (res.code === 200) {
+      classroomOptions.value = (Array.isArray(res.result) ? res.result : []).map(item => ({
+        label: item.name || String(item.id),
+        value: Number(item.id),
+      }))
+      mergeCurrentClassroomOption()
+      return
+    }
+    messageService.error(res.message || '获取教室列表失败')
+  }
+  catch (error) {
+    console.error('load classroom list failed', error)
+    messageService.error(error?.message || '获取教室列表失败')
+  }
+  finally {
+    classroomLoading.value = false
+  }
+}
+
+function mergeCurrentClassroomOption() {
+  if (!editForm.classRoomId || !editForm.classRoomName)
+    return
+  if (classroomOptions.value.some(item => Number(item.value) === Number(editForm.classRoomId)))
+    return
+  classroomOptions.value = [
+    {
+      label: editForm.classRoomName,
+      value: Number(editForm.classRoomId),
+    },
+    ...classroomOptions.value,
+  ]
+}
+
+function handleClassroomChange(value) {
+  editForm.classRoomId = value
+  const current = classroomOptions.value.find(item => Number(item.value) === Number(value))
+  editForm.classRoomName = current?.label || ''
+}
 
 async function checkCreateExistOneToOneNow() {
   if (!editModalIsCreate.value) {
@@ -141,31 +212,6 @@ async function checkCreateExistOneToOneNow() {
     return true
   }
 }
-const createNameTouched = ref(false)
-/** 创建用：学员在读报读账户选项（班级授课或 1v1） */
-const createTuitionAccountOptions = ref([])
-const createTuitionAccountLoading = ref(false)
-const createTuitionAccountError = ref('')
-const editForm = reactive({
-  id: '',
-  /** 创建模式下须为 undefined，Select 才显示 placeholder（空字符串会被当成已选值） */
-  studentId: undefined,
-  lessonId: undefined,
-  /** 创建必填：扣费绑定的学费账户 id */
-  tuitionAccountId: undefined,
-  studentName: '',
-  lessonName: '',
-  name: '',
-  teacherIds: [],
-  defaultTeacherId: undefined,
-  classRoomId: undefined,
-  classRoomName: '',
-  defaultStudentClassTime: 1,
-  defaultTeacherClassTime: 0,
-  defaultClassTimeRecordMode: 1,
-  remark: '',
-  classProperties: [],
-})
 
 const editClassTimeUnitLabel = computed(() =>
   Number(editForm.defaultClassTimeRecordMode) === 2 ? '课时/小时' : '课时',
@@ -616,6 +662,7 @@ function handleCreateOneToOne() {
   currentEditRecord.value = null
   createNameTouched.value = false
   resetEditForm()
+  loadClassroomOptions()
   editModalOpen.value = true
   nextTick(() => {
     createStudentSelectRef.value?.reset()
@@ -775,6 +822,8 @@ function resetEditForm() {
   createTuitionAccountOptions.value = []
   createTuitionAccountLoading.value = false
   createTuitionAccountError.value = ''
+  classroomOptions.value = []
+  classroomLoading.value = false
   scheduleCreateExistOneToOneCheck.cancel()
   createExistOneToOneError.value = ''
 }
@@ -1201,6 +1250,7 @@ async function openEditModal(record) {
   editModalOpen.value = true
   editLoading.value = true
   try {
+    await loadClassroomOptions()
     const res = await getOneToOneByIdApi(record?.id)
     if (res.code !== 200 || !res.result) {
       throw new Error(res.message || '获取1对1详情失败')
@@ -1222,6 +1272,7 @@ async function openEditModal(record) {
       ? Number(detail.classroomId)
       : undefined
     editForm.classRoomName = detail.classroomName || ''
+    mergeCurrentClassroomOption()
     editForm.defaultStudentClassTime = Number(detail.defaultStudentClassTime || 1)
     editForm.defaultTeacherClassTime = Number(detail.defaultTeacherClassTime || 0)
     editForm.defaultClassTimeRecordMode = Number(detail.defaultClassTimeRecordMode || 1)
@@ -1250,6 +1301,7 @@ function buildOneToOneUpdatePayload() {
     id: editForm.id,
     studentId: editForm.studentId,
     lessonId: editForm.lessonId,
+    classroomId: editForm.classRoomId ? String(editForm.classRoomId) : '',
     name: editForm.name.trim(),
     teacherId: teacherIds.map(id => String(id)),
     defaultTeacherId: editForm.defaultTeacherId ? String(editForm.defaultTeacherId) : '',
@@ -1266,6 +1318,7 @@ function buildOneToOneCreatePayload(allowDuplicateName = false) {
   return {
     studentId: String(editForm.studentId),
     lessonId: String(editForm.lessonId),
+    classroomId: editForm.classRoomId ? String(editForm.classRoomId) : '',
     tuitionAccountId: String(editForm.tuitionAccountId),
     name: editForm.name.trim(),
     teacherId: teacherIds.map(id => String(id)),
@@ -1920,15 +1973,13 @@ onMounted(() => {
           <a-form-item label="上课教室">
             <a-select
               v-model:value="editForm.classRoomId"
+              :options="classroomOptions"
+              :loading="classroomLoading"
               placeholder="请选择"
               style="width: 100%"
-              :disabled="true"
               allow-clear
-            >
-              <a-select-option v-if="editForm.classRoomId" :value="editForm.classRoomId">
-                {{ editForm.classRoomName }}
-              </a-select-option>
-            </a-select>
+              @change="handleClassroomChange"
+            />
           </a-form-item>
 
           <a-form-item label="课时记录方式" required>

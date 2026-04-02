@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"go-migration-platform/services/education/internal/model"
@@ -183,6 +184,32 @@ func (repo *Repository) DeleteClassroom(ctx context.Context, instID, operatorID,
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`, operatorID, classroomID, instID)
 	return err
+}
+
+func (repo *Repository) resolveClassroomByIDTx(ctx context.Context, tx *sql.Tx, instID int64, rawID string) (int64, string, any, error) {
+	classroomID, err := strconv.ParseInt(strings.TrimSpace(rawID), 10, 64)
+	if strings.TrimSpace(rawID) == "" || strings.TrimSpace(rawID) == "0" {
+		return 0, "", nil, nil
+	}
+	if err != nil || classroomID <= 0 {
+		return 0, "", nil, fmt.Errorf("classroomId 无效")
+	}
+	var (
+		name    string
+		enabled bool
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(name, ''), IFNULL(enabled, 0)
+		FROM inst_classroom
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, classroomID, instID).Scan(&name, &enabled); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, "", nil, fmt.Errorf("教室不存在")
+		}
+		return 0, "", nil, err
+	}
+	return classroomID, strings.TrimSpace(name), enabled, nil
 }
 
 func boolValueWithFallback(value *bool, fallback bool) bool {

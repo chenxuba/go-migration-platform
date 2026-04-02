@@ -218,6 +218,7 @@ type OneToOneUpdateDTO struct {
 	ID                         string               `json:"id"`
 	StudentID                  string               `json:"studentId"`
 	LessonID                   string               `json:"lessonId"`
+	ClassroomID                string               `json:"classroomId"`
 	Name                       string               `json:"name"`
 	TeacherID                  []string             `json:"teacherId"`
 	DefaultTeacherID           string               `json:"defaultTeacherId"`
@@ -235,6 +236,7 @@ type OneToOneUpdateDTO struct {
 type OneToOneCreateDTO struct {
 	StudentID                  string               `json:"studentId"`
 	LessonID                   string               `json:"lessonId"`
+	ClassroomID                string               `json:"classroomId"`
 	TuitionAccountID           string               `json:"tuitionAccountId"`
 	Name                       string               `json:"name"`
 	TeacherID                  []string             `json:"teacherId"`
@@ -327,6 +329,7 @@ type GroupClassCheckNameDTO struct {
 type GroupClassCreateDTO struct {
 	Name                       string   `json:"name"`
 	LessonID                   string   `json:"lessonId"`
+	ClassroomID                string   `json:"classroomId"`
 	MaxCount                   int      `json:"maxCount"`
 	TeacherIDs                 []string `json:"teacherIds"`
 	DefaultTeacherID           string   `json:"defaultTeacherId"`

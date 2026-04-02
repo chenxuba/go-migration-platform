@@ -411,6 +411,10 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 	if defTID > 0 {
 		defaultTeacherIDVal = defTID
 	}
+	classroomID, classroomName, classroomEnabled, err := repo.resolveClassroomByIDTx(ctx, tx, instID, dto.ClassroomID)
+	if err != nil {
+		return 0, err
+	}
 	now := time.Now()
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO teaching_class (
@@ -420,12 +424,12 @@ func (repo *Repository) CreateGroupClass(ctx context.Context, instID, operatorID
 			default_student_class_time, default_teacher_class_time, default_class_time_record_mode,
 			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, '', NULL, ?,
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?,
 			?, ?, ?,
 			?, NOW(), ?, NOW(), 0
 		)
 	`, instID, model.TeachingClassTypeNormal, courseID, composeID, name, advisorID, defaultTeacherIDVal, model.TeachingClassStatusActive,
-		maxCount, strings.TrimSpace(dto.Remark),
+		maxCount, classroomID, classroomName, classroomEnabled, strings.TrimSpace(dto.Remark),
 		stuTime, teacherTime, recordMode,
 		operatorID, operatorID)
 	if err != nil {
@@ -565,16 +569,20 @@ func (repo *Repository) UpdateGroupClass(ctx context.Context, instID, operatorID
 	if defTID > 0 {
 		defaultTeacherIDVal = defTID
 	}
+	classroomID, classroomName, classroomEnabled, err := repo.resolveClassroomByIDTx(ctx, tx, instID, dto.ClassroomID)
+	if err != nil {
+		return err
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE teaching_class SET
 			name = ?, course_id = ?, compose_lesson_id = ?, advisor_id = ?, default_teacher_id = ?,
-			max_count = ?, remark = ?,
+			max_count = ?, class_room_id = ?, class_room_name = ?, classroom_enabled = ?, remark = ?,
 			default_student_class_time = ?, default_teacher_class_time = ?, default_class_time_record_mode = ?,
 			update_id = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0
 	`, name, courseID, composeID, advisorID, defaultTeacherIDVal,
-		maxCount, strings.TrimSpace(dto.Remark),
+		maxCount, classroomID, classroomName, classroomEnabled, strings.TrimSpace(dto.Remark),
 		stuTime, teacherTime, recordMode,
 		operatorID,
 		classID, instID, model.TeachingClassTypeNormal); err != nil {
@@ -912,7 +920,7 @@ func (repo *Repository) GetGroupClassByID(ctx context.Context, instID, classID i
 		created                                   time.Time
 		classTimeSum                              float64
 		stuCnt                                    int
-		defaultStuTime, defaultTeachTime            float64
+		defaultStuTime, defaultTeachTime          float64
 		recordMode                                int
 		closed                                    sql.NullTime
 	}

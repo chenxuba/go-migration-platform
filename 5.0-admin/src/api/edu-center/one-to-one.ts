@@ -175,6 +175,7 @@ export interface OneToOneUpdateParams {
   id: string
   studentId: string
   lessonId: string
+  classroomId?: string
   name: string
   teacherId: string[]
   defaultTeacherId?: string
@@ -191,6 +192,7 @@ export interface OneToOneUpdateParams {
 export interface OneToOneCreateParams {
   studentId: string
   lessonId: string
+  classroomId?: string
   tuitionAccountId: string
   name: string
   teacherId: string[]

@@ -14,6 +14,7 @@ export function checkGroupClassNameApi(data: {
 export function createGroupClassApi(data: {
   name: string
   lessonId: string
+  classroomId?: string
   maxCount: number
   teacherIds: string[]
   defaultTeacherId: string
@@ -27,7 +28,7 @@ export function createGroupClassApi(data: {
   remark?: string
 }) {
   // 业务错误用 HTTP 400，需当作「有 body 的成功响应」解析，否则会进 reject 且看不到 message
-  return usePost<{ id: string; name: string }>('/api/v1/group-classes/create', data, {
+  return usePost<{ id: string, name: string }>('/api/v1/group-classes/create', data, {
     validateStatus: status => (status >= 200 && status < 300) || status === 400,
   })
 }
@@ -37,6 +38,7 @@ export function updateGroupClassApi(data: {
   id: string
   name: string
   lessonId: string
+  classroomId?: string
   maxCount: number
   teacherIds: string[]
   defaultTeacherId: string
@@ -50,7 +52,7 @@ export function updateGroupClassApi(data: {
   classProperties?: unknown[]
   remark?: string
 }) {
-  return usePost<{ id: string; name: string }>('/api/v1/group-classes/update', data, {
+  return usePost<{ id: string, name: string }>('/api/v1/group-classes/update', data, {
     validateStatus: status => (status >= 200 && status < 300) || status === 400,
   })
 }
@@ -65,7 +67,7 @@ export function pageGroupClassesApi(data: {
     skipCount?: number
   }
 }) {
-  return usePost<{ list: GroupClassRow[]; total: number }>('/api/v1/group-classes/page', data)
+  return usePost<{ list: GroupClassRow[], total: number }>('/api/v1/group-classes/page', data)
 }
 
 /** 对标 QueryClassStatisticsInfo（请求体与 queryModel 字段一致） */
@@ -158,7 +160,7 @@ export function listGroupClassStudentsByClassIdsApi(data: { classIds: string[] }
 /** 对标 Class/BatchAssignStudents：批量将学员编入集体班 */
 export function batchAssignGroupClassStudentsApi(data: {
   classIds: string[]
-  students: { studentId: string; tuitionAccountId: string }[]
+  students: { studentId: string, tuitionAccountId: string }[]
   enforceClassAssign?: boolean
 }) {
   return usePost<{ success: boolean }>('/api/v1/group-classes/batch-assign-students', data, {
