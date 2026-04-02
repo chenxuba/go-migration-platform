@@ -112,7 +112,7 @@ const holidayPolicyOptions: OptionItem<HolidayPolicy>[] = [
 
 const timeModeOptions: OptionItem<TimeMode>[] = [
   { value: 'school', label: '学校统一时段', desc: '使用统一时段配置，排课更稳定' },
-  { value: 'custom', label: '自定义时段', desc: '按当前学员习惯单独设定开始时间' },
+  { value: 'custom', label: '自定义时段', desc: '自定义开始时间和结束时间' },
 ]
 
 const repeatRuleLabelMap: Record<RepeatRule, string> = {
@@ -271,13 +271,15 @@ const selectedSchoolTimeSlot = ref('slot-a')
 const selectedTeacher = ref(oneToOneRecords[0]?.defaultTeacherName || '')
 const selectedAssistant = ref<string[] | undefined>(undefined)
 const selectedClassroom = ref(oneToOneRecords[0]?.classRoomName || '')
+const selectedStudentLessonPath = ref<string[] | undefined>(undefined)
 const previewModalOpen = ref(false)
 const scheduleRange = ref<[Dayjs, Dayjs]>([
   dayjs().add(5, 'day').startOf('day'),
   dayjs().add(32, 'day').startOf('day'),
 ])
 const freeScheduleDate = ref(dayjs().add(5, 'day').startOf('day'))
-const customStartTime = ref(dayjs().hour(16).minute(0).second(0))
+const customStartTime = ref<Dayjs | null>(dayjs().hour(16).minute(0).second(0))
+const customEndTime = ref<Dayjs | null>(dayjs().hour(16).minute(45).second(0))
 
 const selectedOneToOne = computed(() =>
   oneToOneRecords.find(item => item.id === selectedOneToOneId.value) || oneToOneRecords[0],
@@ -286,12 +288,32 @@ const selectedOneToOne = computed(() =>
 const oneToOneSelectOptions = computed(() =>
   oneToOneRecords.map(item => ({
     value: item.id || '',
-    label: scheduleType.value === 'studentLesson'
-      ? `${item.studentName || '-'} · ${item.lessonName || '-'}`
-      : `${item.name || '-'} · ${item.studentName || '-'} · ${item.lessonName || '-'}`,
+    label: `${item.name || '-'} · 课程：${item.lessonName || '-'}`,
     desc: `${item.defaultTeacherName || '-'} · ${item.classRoomName || '-'} · ${item.tuitionAccountCount ?? 0} 个账户`,
   })),
 )
+
+const studentLessonCascaderOptions = computed(() => {
+  const grouped = new Map<string, { value: string, label: string, children: { value: string, label: string }[] }>()
+
+  oneToOneRecords.forEach((item) => {
+    const studentValue = item.studentId || `student-${item.id || item.name || Math.random()}`
+    if (!grouped.has(studentValue)) {
+      grouped.set(studentValue, {
+        value: studentValue,
+        label: item.studentName || '-',
+        children: [],
+      })
+    }
+
+    grouped.get(studentValue)?.children.push({
+      value: item.id || '',
+      label: `课程：${item.lessonName || '-'}`,
+    })
+  })
+
+  return [...grouped.values()]
+})
 
 const selectedTeacherOptions = computed(() => {
   const teacherSet = new Set<string>()
@@ -316,6 +338,8 @@ const classroomOptions = computed(() => {
   return [...classroomSet].map(item => ({ value: item, label: item }))
 })
 
+const recordSessionMinutes = computed(() => Math.max(Number(selectedOneToOne.value?.classTime || 45), 1))
+
 watch(
   selectedOneToOne,
   (value) => {
@@ -325,9 +349,20 @@ watch(
       : (teacherNames[0] || '')
     selectedClassroom.value = value?.classRoomName || classroomOptions.value[0]?.value || ''
     selectedAssistant.value = undefined
+    customStartTime.value = dayjs().hour(16).minute(0).second(0)
+    customEndTime.value = customStartTime.value.add(recordSessionMinutes.value, 'minute')
   },
   { immediate: true },
 )
+
+watch(selectedOneToOneId, (value) => {
+  const current = oneToOneRecords.find(item => item.id === value)
+  if (!current?.studentId || !current?.id) {
+    selectedStudentLessonPath.value = undefined
+    return
+  }
+  selectedStudentLessonPath.value = [current.studentId, current.id]
+}, { immediate: true })
 
 watch(modalOpen, (value) => {
   if (!value)
@@ -351,7 +386,6 @@ const recordModeText = computed(() =>
   Number(selectedOneToOne.value?.defaultClassTimeRecordMode) === 2 ? '按上课时长记录' : '按固定课时记录',
 )
 
-const sessionMinutes = computed(() => Math.max(Number(selectedOneToOne.value?.classTime || 45), 1))
 const recordClassroomText = computed(() => selectedOneToOne.value?.classRoomName || '-')
 const scheduledClassroomText = computed(() => selectedClassroom.value || '-')
 const selectedAssistantText = computed(() =>
@@ -370,9 +404,26 @@ const resolvedStartTime = computed(() => {
   return customStartTime.value
 })
 
+const resolvedEndTime = computed(() => {
+  if (timeMode.value === 'school') {
+    const [hour, minute] = (selectedTimeSlot.value?.end || '16:45').split(':').map(Number)
+    return dayjs().hour(hour).minute(minute).second(0)
+  }
+  return customEndTime.value
+})
+
+const scheduleSessionMinutes = computed(() => {
+  if (!resolvedStartTime.value || !resolvedEndTime.value)
+    return 0
+  const diff = resolvedEndTime.value.diff(resolvedStartTime.value, 'minute')
+  return diff > 0 ? diff : 0
+})
+
 const timeRangeText = computed(() => {
+  if (!resolvedStartTime.value || !resolvedEndTime.value)
+    return '--'
   const start = resolvedStartTime.value.format('HH:mm')
-  const end = resolvedStartTime.value.add(sessionMinutes.value, 'minute').format('HH:mm')
+  const end = resolvedEndTime.value.format('HH:mm')
   return `${start} - ${end}`
 })
 
@@ -410,7 +461,7 @@ const selectedOneToOneSummary = computed<SummaryItem[]>(() => [
   { label: '默认老师', value: selectedOneToOne.value?.defaultTeacherName || '-' },
   { label: '班主任', value: selectedOneToOne.value?.classTeacherName || '-' },
   { label: '默认教室', value: recordClassroomText.value },
-  { label: '单次课时', value: `${sessionMinutes.value} 分钟` },
+  { label: '单次课时', value: `${recordSessionMinutes.value} 分钟` },
   { label: '记录方式', value: recordModeText.value },
   { label: '学费账户', value: `${selectedOneToOne.value?.tuitionAccountCount ?? 0} 个` },
 ])
@@ -445,6 +496,12 @@ const blockedReason = computed(() => {
     return '请先选择上课教师。'
   if (!selectedClassroom.value)
     return '请先选择上课教室。'
+  if (timeMode.value === 'custom' && !customStartTime.value)
+    return '请选择开始时间。'
+  if (timeMode.value === 'custom' && !customEndTime.value)
+    return '请选择结束时间。'
+  if (timeMode.value === 'custom' && scheduleSessionMinutes.value <= 0)
+    return '结束时间需晚于开始时间。'
   if (schedulingMode.value === 'repeat' && (repeatRule.value === 'weekly' || repeatRule.value === 'biweekly') && selectedWeekdays.value.length === 0)
     return '请至少选择一个每周上课日。'
   return ''
@@ -572,6 +629,12 @@ function confirmBatchCreate() {
   modalOpen.value = false
 }
 
+function handleStudentLessonChange(value: string[]) {
+  selectedStudentLessonPath.value = value?.length ? value : undefined
+  if (value?.length >= 2)
+    selectedOneToOneId.value = value[1]
+}
+
 function toggleWeekday(day: string) {
   const active = selectedWeekdays.value.includes(day)
   if (active && selectedWeekdays.value.length === 1)
@@ -580,6 +643,46 @@ function toggleWeekday(day: string) {
   selectedWeekdays.value = active
     ? selectedWeekdays.value.filter(item => item !== day)
     : [...selectedWeekdays.value, day]
+}
+
+watch(timeMode, (value) => {
+  if (value === 'custom' && scheduleSessionMinutes.value <= 0) {
+    if (!customStartTime.value)
+      customStartTime.value = dayjs().hour(16).minute(0).second(0)
+    customEndTime.value = customStartTime.value.add(recordSessionMinutes.value, 'minute')
+  }
+})
+
+watch(customStartTime, (value) => {
+  if (!value) {
+    customEndTime.value = null
+    return
+  }
+  if (customEndTime.value && !customEndTime.value.isAfter(value))
+    customEndTime.value = null
+})
+
+function disabledCustomEndTime() {
+  if (!customStartTime.value) {
+    return {
+      disabledHours: () => [],
+      disabledMinutes: () => [],
+      disabledSeconds: () => [],
+    }
+  }
+
+  const startHour = customStartTime.value.hour()
+  const startMinute = customStartTime.value.minute()
+
+  return {
+    disabledHours: () => Array.from({ length: startHour }, (_, index) => index),
+    disabledMinutes: (selectedHour: number) => {
+      if (selectedHour === startHour)
+        return Array.from({ length: startMinute + 1 }, (_, index) => index)
+      return []
+    },
+    disabledSeconds: () => [],
+  }
 }
 </script>
 
@@ -645,17 +748,18 @@ function toggleWeekday(day: string) {
               </div>
             </div>
 
-            <div class="planner-inline__group planner-inline__group--record">
-              <span class="planner-label planner-label--inline">
-                <BookOutlined />
-                {{ scheduleType === 'oneToOne' ? '选择1对1' : '选择学员和课程' }}
-              </span>
-              <a-select
-                v-model:value="selectedOneToOneId"
-                size="large"
-                show-search
-                option-filter-prop="label"
-                option-label-prop="label"
+          <div class="planner-inline__group planner-inline__group--record">
+            <span class="planner-label planner-label--inline">
+              <BookOutlined />
+              {{ scheduleType === 'oneToOne' ? '选择1对1' : '选择学员和课程' }}
+            </span>
+            <a-select
+              v-if="scheduleType === 'oneToOne'"
+              v-model:value="selectedOneToOneId"
+              size="large"
+              show-search
+              option-filter-prop="label"
+              option-label-prop="label"
                 popup-class-name="planner-record-select-dropdown"
                 :allow-clear="false"
                 class="planner-control planner-control--record"
@@ -673,10 +777,18 @@ function toggleWeekday(day: string) {
                     <div class="planner-option__desc">
                       {{ item.desc }}
                     </div>
-                  </div>
-                </a-select-option>
-              </a-select>
-            </div>
+                </div>
+              </a-select-option>
+            </a-select>
+            <a-cascader
+              v-else
+              v-model:value="selectedStudentLessonPath"
+              :options="studentLessonCascaderOptions"
+              placeholder="请选择学员和课程"
+              class="planner-control planner-control--record"
+              @change="handleStudentLessonChange"
+            />
+          </div>
 
             <div class="planner-inline__group planner-inline__group--status">
               <span class="planner-label planner-label--inline">当前状态</span>
@@ -928,30 +1040,45 @@ function toggleWeekday(day: string) {
                     </a-select>
                   </label>
 
-                  <label v-else class="planner-field planner-field--major">
-                    <span class="planner-label planner-label--required">
-                      <ClockCircleOutlined />
-                      自定义时段
-                    </span>
+                <label v-else class="planner-field planner-field--major">
+                  <span class="planner-label planner-label--required">
+                    <ClockCircleOutlined />
+                    自定义时段
+                  </span>
+                  <div class="planner-time-range">
                     <a-time-picker
                       v-model:value="customStartTime"
                       size="large"
                       format="HH:mm"
-                      class="planner-control planner-control--major"
-                      :allow-clear="false"
+                      class="planner-control"
+                      allow-clear
+                      placeholder="开始时间"
                       :minute-step="5"
                     />
-                  </label>
-
-                  <div class="planner-field planner-field--major">
-                    <span class="planner-label">
-                      单次课时
-                    </span>
-                    <div class="planner-static-field planner-static-field--major planner-static-field--inline">
-                      <strong>{{ sessionMinutes }} 分钟</strong>
-                      <span>{{ recordModeText }}</span>
-                    </div>
+                    <span class="planner-time-range__sep">至</span>
+                    <a-time-picker
+                      v-model:value="customEndTime"
+                      size="large"
+                      format="HH:mm"
+                      class="planner-control"
+                      allow-clear
+                      placeholder="结束时间"
+                      :disabled="!customStartTime"
+                      :disabled-time="disabledCustomEndTime"
+                      :minute-step="5"
+                    />
                   </div>
+                </label>
+
+                <div class="planner-field planner-field--major">
+                  <span class="planner-label">
+                    单次课时
+                  </span>
+                  <div class="planner-static-field planner-static-field--major planner-static-field--inline">
+                    <strong>{{ scheduleSessionMinutes ? `${scheduleSessionMinutes} 分钟` : '--' }}</strong>
+                    <span>按开始/结束时间自动计算</span>
+                  </div>
+                </div>
 
                   <label class="planner-field">
                     <span class="planner-label planner-label--required">
@@ -1344,11 +1471,11 @@ function toggleWeekday(day: string) {
 button.planner-choice {
   display: flex;
   width: 100%;
-  min-height: 68px;
+  min-height: 58px;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
-  padding: 12px 14px;
+  gap: 4px;
+  padding: 10px 12px;
   border: 1px solid #d8e1eb;
   border-radius: 14px;
   background: #fff;
@@ -1375,15 +1502,15 @@ button.planner-choice.planner-choice--active {
 
 .planner-choice__title {
   color: #1f2329;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.5;
 }
 
 .planner-choice__desc {
   color: #7d8898;
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 button.planner-choice.planner-choice--active .planner-choice__title {
@@ -1582,6 +1709,19 @@ button.planner-choice.planner-choice--type .planner-choice__title {
 
 .planner-field--major {
   align-self: start;
+}
+
+.planner-time-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.planner-time-range__sep {
+  color: #98a2b3;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .planner-chip-row {
@@ -1883,6 +2023,20 @@ button.planner-chip.planner-chip--active {
   font-weight: 400 !important;
 }
 
+:deep(.planner-control--record .ant-select-selector),
+:deep(.planner-control--record .ant-cascader-picker),
+:deep(.planner-control--record .ant-cascader-picker-label),
+:deep(.planner-control--record .ant-cascader-input) {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+}
+
+:deep(.planner-control--record .ant-cascader-picker-label) {
+  inset: 0 40px 0 12px;
+  line-height: 42px;
+}
+
 :deep(.ant-select-selection-item) {
   font-size: 14px !important;
 }
@@ -2016,6 +2170,14 @@ button.planner-chip.planner-chip--active {
   .planner-choice-row,
   .planner-form-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .planner-time-range {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .planner-time-range__sep {
+    display: none;
   }
 
   .planner-inline__group {
