@@ -25,6 +25,10 @@ type TeachingScheduleListQueryDTO struct {
 	StartDate string `json:"startDate"`
 	EndDate   string `json:"endDate"`
 	ClassType *int   `json:"classType,omitempty"`
+	// Matrix API（by-teacher-matrix）可选：日期展示维度，1=周一…7=周日，空=不限制
+	MatrixWeekdays []int `json:"matrixWeekdays,omitempty"`
+	// Matrix API 可选：教师列筛选，all | has_class | no_class，空等价于 all
+	MatrixTeacherFilter string `json:"matrixTeacherFilter,omitempty"`
 }
 
 type TeachingScheduleBatchUpdateDTO struct {

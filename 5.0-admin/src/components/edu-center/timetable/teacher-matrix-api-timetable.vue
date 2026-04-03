@@ -5,10 +5,13 @@ import type {
   TeachingScheduleMatrixDay,
   TeachingScheduleMatrixLegacyItem,
 } from '@/api/edu-center/teaching-schedule'
-import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { LeftOutlined, RightOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import {
+  listTeachingSchedulesByTeacherMatrixApi,
+  type MatrixTeacherFilterParam,
+} from '@/api/edu-center/teaching-schedule'
 import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
 
 const currentDate = ref(dayjs())
@@ -143,8 +146,90 @@ function floatingPillStyle(dateKey: string): Record<string, string> {
 const timelineStart = 8 * 60
 const timelineEnd = 22 * 60
 const timelineTopPadding = 18
-const hourRowHeight = 96
 const timelineBottomPadding = 28
+
+const TM_DISPLAY_STORAGE_KEY = 'teacher-matrix-display-v1'
+type MatrixSlotPreset = 30 | 40 | 50
+
+interface MatrixDisplayPreferences {
+  weekdays: number[]
+  teacherFilter: MatrixTeacherFilterParam
+  slotHeight: MatrixSlotPreset
+}
+
+function defaultMatrixDisplay(): MatrixDisplayPreferences {
+  return {
+    weekdays: [1, 2, 3, 4, 5, 6, 7],
+    teacherFilter: 'all',
+    slotHeight: 40,
+  }
+}
+
+function loadMatrixDisplayFromStorage(): MatrixDisplayPreferences {
+  try {
+    const raw = localStorage.getItem(TM_DISPLAY_STORAGE_KEY)
+    if (!raw)
+      return defaultMatrixDisplay()
+    const o = JSON.parse(raw) as Partial<MatrixDisplayPreferences>
+    const wd = Array.isArray(o.weekdays) && o.weekdays.length
+      ? o.weekdays.filter(n => n >= 1 && n <= 7)
+      : defaultMatrixDisplay().weekdays
+    const tf = o.teacherFilter === 'has_class' || o.teacherFilter === 'no_class'
+      ? o.teacherFilter
+      : 'all'
+    const sh = o.slotHeight === 30 || o.slotHeight === 50 ? o.slotHeight : 40
+    return { weekdays: wd, teacherFilter: tf, slotHeight: sh }
+  }
+  catch {
+    return defaultMatrixDisplay()
+  }
+}
+
+const matrixDisplay = ref<MatrixDisplayPreferences>(loadMatrixDisplayFromStorage())
+const displayConfigOpen = ref(false)
+const tempMatrixDisplay = ref<MatrixDisplayPreferences>({ ...loadMatrixDisplayFromStorage() })
+
+const weekdayOptions = [
+  { value: 1, label: '周一' },
+  { value: 2, label: '周二' },
+  { value: 3, label: '周三' },
+  { value: 4, label: '周四' },
+  { value: 5, label: '周五' },
+  { value: 6, label: '周六' },
+  { value: 7, label: '周日' },
+]
+
+const hourRowHeightPx = computed(() => {
+  const m: Record<MatrixSlotPreset, number> = { 30: 72, 40: 96, 50: 120 }
+  return m[matrixDisplay.value.slotHeight]
+})
+
+function openMatrixDisplayConfig() {
+  tempMatrixDisplay.value = {
+    weekdays: [...matrixDisplay.value.weekdays],
+    teacherFilter: matrixDisplay.value.teacherFilter,
+    slotHeight: matrixDisplay.value.slotHeight,
+  }
+  displayConfigOpen.value = true
+}
+
+function applyMatrixDisplayConfig() {
+  let wd = tempMatrixDisplay.value.weekdays.filter(n => n >= 1 && n <= 7)
+  if (!wd.length)
+    wd = [...defaultMatrixDisplay().weekdays]
+  wd = [...new Set(wd)].sort((a, b) => a - b)
+  matrixDisplay.value = {
+    weekdays: wd,
+    teacherFilter: tempMatrixDisplay.value.teacherFilter,
+    slotHeight: tempMatrixDisplay.value.slotHeight,
+  }
+  try {
+    localStorage.setItem(TM_DISPLAY_STORAGE_KEY, JSON.stringify(matrixDisplay.value))
+  }
+  catch {}
+  displayConfigOpen.value = false
+  loadMatrix()
+}
 const timeColWidth = 84
 const teacherColWidth = 168
 const scheduleCardMinWidth = 152
@@ -197,13 +282,29 @@ function handleThisWeek() {
   currentDate.value = dayjs()
 }
 
+function buildMatrixQueryParams() {
+  const prefs = matrixDisplay.value
+  const fullWeek = [1, 2, 3, 4, 5, 6, 7]
+  const sorted = [...prefs.weekdays].sort((a, b) => a - b)
+  const weekdaysStr
+    = sorted.length === fullWeek.length && sorted.every((v, i) => v === fullWeek[i])
+      ? undefined
+      : sorted.join(',')
+  const teacherFilter
+    = prefs.teacherFilter === 'all' ? undefined : prefs.teacherFilter
+  return { weekdaysStr, teacherFilter }
+}
+
 async function loadMatrix() {
   loading.value = true
   try {
+    const { weekdaysStr, teacherFilter } = buildMatrixQueryParams()
     const res = await listTeachingSchedulesByTeacherMatrixApi({
       startDate: queryRange.value.startDate,
       endDate: queryRange.value.endDate,
       classType: 2,
+      ...(weekdaysStr ? { weekdays: weekdaysStr } : {}),
+      ...(teacherFilter ? { teacherFilter } : {}),
     })
     if (res.code === 200 && Array.isArray(res.result))
       matrixDays.value = res.result
@@ -413,12 +514,12 @@ const hourMarks = computed(() =>
 const timelineHeight = computed(
   () =>
     timelineTopPadding
-    + (hourMarks.value.length - 1) * hourRowHeight
+    + (hourMarks.value.length - 1) * hourRowHeightPx.value
     + timelineBottomPadding,
 )
 
 function minuteOffset(minutes: number) {
-  return timelineTopPadding + ((minutes - timelineStart) / 60) * hourRowHeight
+  return timelineTopPadding + ((minutes - timelineStart) / 60) * hourRowHeightPx.value
 }
 
 function computeOverlapPeak(items: { startMinutes: number, endMinutes: number }[]) {
@@ -560,7 +661,7 @@ function eventStyle(event: CellSchedule, col: { dateKey: string, teacherKey: str
     top: `${minuteOffset(event.startMinutes)}px`,
     height: `${Math.max(
       82,
-      ((event.endMinutes - event.startMinutes) / 60) * hourRowHeight,
+      ((event.endMinutes - event.startMinutes) / 60) * hourRowHeightPx.value,
     )}px`,
     left: `${leftOffset}px`,
     width: `${Math.min(scheduleCardMinWidth, colWidth - scheduleColumnHorizontalInset * 2)}px`,
@@ -603,54 +704,129 @@ const totalLessons = computed(() => internalSchedules.value.length)
 <template>
   <div class="tm-api-root">
     <div class="tm-api-toolbar">
-      <div class="tm-api-toolbar__nav time-selector text-#0061ff font-800 text-5 flex-center">
-        <a-popover trigger="hover">
-          <template #content>
-            上一周
-          </template>
-          <span
-            class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
-            @click="handlePrevWeek"
-          >
-            <LeftOutlined />
-          </span>
-        </a-popover>
-        <span class="mx-2">
-          <div class="relative cursor-pointer">
-            {{ formatWeekRange(currentDate) }}
+      <div class="tm-api-toolbar__side tm-api-toolbar__side--left" aria-hidden="true" />
+
+      <div class="tm-api-toolbar__center">
+        <div class="tm-week-picker">
+          <a-popover trigger="hover">
+            <template #content>
+              上一周
+            </template>
+            <button
+              type="button"
+              class="tm-week-picker__icon-btn"
+              aria-label="上一周"
+              @click="handlePrevWeek"
+            >
+              <LeftOutlined />
+            </button>
+          </a-popover>
+          <div class="tm-week-picker__range-wrap">
+            <span class="tm-week-picker__range">{{ formatWeekRange(currentDate) }}</span>
             <a-date-picker
               v-model:value="currentDate"
-              class="absolute left-0 top-0 right-0 bottom-0 z-10 opacity-0"
+              class="tm-week-picker__input"
               picker="week"
               :allow-clear="false"
               :bordered="false"
               :format="formatWeekRange"
-              style="cursor: pointer"
             />
           </div>
-        </span>
-        <a-popover trigger="hover">
-          <template #content>
-            下一周
-          </template>
-          <span
-            class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
-            @click="handleNextWeek"
-          >
-            <RightOutlined />
-          </span>
-        </a-popover>
+          <a-popover trigger="hover">
+            <template #content>
+              下一周
+            </template>
+            <button
+              type="button"
+              class="tm-week-picker__icon-btn"
+              aria-label="下一周"
+              @click="handleNextWeek"
+            >
+              <RightOutlined />
+            </button>
+          </a-popover>
+        </div>
+      </div>
+
+      <div class="tm-api-toolbar__side tm-api-toolbar__side--right">
         <a-button
           type="default"
           size="small"
-          class="ml2"
           :disabled="isThisWeek"
           @click="handleThisWeek"
         >
           本周
         </a-button>
+        <a-button
+          type="default"
+          size="small"
+          @click="openMatrixDisplayConfig"
+        >
+          <template #icon>
+            <SettingOutlined />
+          </template>
+          展示配置
+        </a-button>
       </div>
     </div>
+
+    <a-modal
+      v-model:open="displayConfigOpen"
+      title="课表展示配置"
+      width="620px"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="applyMatrixDisplayConfig"
+    >
+      <div class="tm-display-config">
+        <div class="tm-dc-row">
+          <div class="tm-dc-head">
+            <span class="tm-dc-title">日期展示维度</span>
+          </div>
+          <a-select
+            v-model:value="tempMatrixDisplay.weekdays"
+            mode="multiple"
+            placeholder="选择星期"
+            style="width: 100%"
+            :options="weekdayOptions"
+          />
+        </div>
+        <div class="tm-dc-row">
+          <div class="tm-dc-head">
+            <span class="tm-dc-title">筛选老师</span>
+            <span class="tm-dc-hint">按日当天日程筛列，接口与旧版总课表逻辑一致</span>
+          </div>
+          <a-radio-group v-model:value="tempMatrixDisplay.teacherFilter">
+            <a-radio value="all">
+              全部老师
+            </a-radio>
+            <a-radio value="has_class">
+              仅有课老师
+            </a-radio>
+            <a-radio value="no_class">
+              仅无课老师
+            </a-radio>
+          </a-radio-group>
+        </div>
+        <div class="tm-dc-row">
+          <div class="tm-dc-head">
+            <span class="tm-dc-title">时间格高度</span>
+            <span class="tm-dc-hint">对应旧版 15 分钟一格的像素高度，仅影响本页纵向密度</span>
+          </div>
+          <a-radio-group v-model:value="tempMatrixDisplay.slotHeight">
+            <a-radio-button :value="30">
+              紧凑 30
+            </a-radio-button>
+            <a-radio-button :value="40">
+              标准 40
+            </a-radio-button>
+            <a-radio-button :value="50">
+              宽松 50
+            </a-radio-button>
+          </a-radio-group>
+        </div>
+      </div>
+    </a-modal>
 
     <div class="tm-api-card">
       <a-spin :spinning="loading" :delay="120" size="small" class="tm-api-spin">
@@ -861,11 +1037,160 @@ const totalLessons = computed(() => internalSchedules.value.length)
 }
 
 .tm-api-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px 16px;
+  margin-bottom: 14px;
+  min-height: 40px;
+}
+
+.tm-api-toolbar__side--left {
+  min-width: 0;
+}
+
+.tm-api-toolbar__center {
+  display: flex;
+  justify-content: center;
+  justify-self: center;
+}
+
+.tm-api-toolbar__side--right {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tm-week-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid #dde5f0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+.tm-week-picker__icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: #eef2f7;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    background: #e0e9f4;
+    color: #1677ff;
+  }
+}
+
+.tm-week-picker__range-wrap {
+  position: relative;
+  min-width: min(100vw - 200px, 320px);
+  max-width: 420px;
+  padding: 0 12px;
+}
+
+.tm-week-picker__range {
+  display: block;
+  color: #0958d9;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 32px;
+  letter-spacing: -0.02em;
+  text-align: center;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tm-week-picker__input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100% !important;
+  height: 100% !important;
+  cursor: pointer;
+  opacity: 0;
+}
+
+@media (max-width: 768px) {
+  .tm-api-toolbar {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .tm-api-toolbar__center {
+    justify-self: stretch;
+    order: -1;
+  }
+
+  .tm-week-picker {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .tm-week-picker__range-wrap {
+    min-width: 0;
+    flex: 1;
+    max-width: none;
+  }
+
+  .tm-api-toolbar__side--right {
+    justify-content: center;
+  }
+
+  .tm-api-toolbar__side--left {
+    display: none;
+  }
+}
+
+.tm-display-config {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 4px 0 8px;
+}
+
+.tm-dc-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tm-dc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tm-dc-title {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tm-dc-hint {
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .tm-api-card {

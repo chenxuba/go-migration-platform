@@ -81,8 +81,16 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 		keyed[k] = append(keyed[k], s)
 	}
 
+	matrixTeacherFilter := normalizeMatrixTeacherFilter(query.MatrixTeacherFilter)
 	out := make([]model.TeachingScheduleMatrixDayVO, 0, len(days))
 	for _, d := range days {
+		if len(query.MatrixWeekdays) > 0 {
+			wd := dateWeekdayMonToSun(d)
+			if wd == 0 || !intSliceContains(query.MatrixWeekdays, wd) {
+				continue
+			}
+		}
+
 		cols := make([]model.TeachingScheduleMatrixTeacher, 0, len(teacherOrder))
 		for _, tid := range teacherOrder {
 			k := d + "\t" + strconv.FormatInt(tid, 10)
@@ -91,20 +99,68 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 			for _, item := range raw {
 				legacy = append(legacy, mapTeachingScheduleToLegacyVO(item, instID))
 			}
+			n := len(legacy)
+			switch matrixTeacherFilter {
+			case "has_class":
+				if n == 0 {
+					continue
+				}
+			case "no_class":
+				if n > 0 {
+					continue
+				}
+			}
 			cols = append(cols, model.TeachingScheduleMatrixTeacher{
 				TeacherName:        teacherNames[tid],
 				TeacherID:          tid,
 				ScheduleInfoVoList: legacy,
 			})
 		}
+
+		if len(cols) == 0 && (matrixTeacherFilter == "has_class" || matrixTeacherFilter == "no_class") {
+			continue
+		}
+
 		out = append(out, model.TeachingScheduleMatrixDayVO{
 			ScheduleDate:       d,
-			Width:              len(teacherOrder),
+			Width:              len(cols),
 			ScheduleInfoVoList: nil, // 输出 JSON null
 			ScheduleListVoList: cols,
 		})
 	}
 	return out, nil
+}
+
+func normalizeMatrixTeacherFilter(raw string) string {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "has_class", "has-class", "hasclass":
+		return "has_class"
+	case "no_class", "no-class", "noclass":
+		return "no_class"
+	default:
+		return ""
+	}
+}
+
+func dateWeekdayMonToSun(dateISO string) int {
+	t, err := time.ParseInLocation("2006-01-02", dateISO, time.Local)
+	if err != nil {
+		return 0
+	}
+	w := int(t.Weekday())
+	if w == 0 {
+		return 7
+	}
+	return w
+}
+
+func intSliceContains(slice []int, v int) bool {
+	for _, x := range slice {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 func expandInclusiveDates(startStr, endStr string) ([]string, error) {

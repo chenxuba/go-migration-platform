@@ -95,12 +95,26 @@ func (handler *Handler) teachingSchedulesByTeacherMatrix(w http.ResponseWriter, 
 		return
 	}
 	query := model.TeachingScheduleListQueryDTO{
-		StartDate: strings.TrimSpace(r.URL.Query().Get("startDate")),
-		EndDate:   strings.TrimSpace(r.URL.Query().Get("endDate")),
+		StartDate:           strings.TrimSpace(r.URL.Query().Get("startDate")),
+		EndDate:             strings.TrimSpace(r.URL.Query().Get("endDate")),
+		MatrixTeacherFilter: strings.TrimSpace(strings.ToLower(r.URL.Query().Get("teacherFilter"))),
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("classType")); raw != "" {
 		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
 			query.ClassType = &value
+		}
+	}
+	if w := strings.TrimSpace(r.URL.Query().Get("weekdays")); w != "" {
+		for _, p := range strings.Split(w, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			v, err := strconv.Atoi(p)
+			if err != nil || v < 1 || v > 7 {
+				continue
+			}
+			query.MatrixWeekdays = append(query.MatrixWeekdays, v)
 		}
 	}
 	result, err := handler.service.ListTeachingSchedulesByTeacherMatrix(claims.UserID, query)

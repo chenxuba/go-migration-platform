@@ -131,10 +131,16 @@ export interface TeachingScheduleMatrixDay {
   scheduleListVoList: TeachingScheduleMatrixTeacherColumn[]
 }
 
+export type MatrixTeacherFilterParam = 'all' | 'has_class' | 'no_class'
+
 export function listTeachingSchedulesByTeacherMatrixApi(params: {
   startDate: string
   endDate: string
   classType?: number
+  /** 逗号分隔 1–7（周一…周日），省略或全开则不传以缩短 URL */
+  weekdays?: string
+  /** 教师列：仅有课 / 仅无课，与旧版课表展示配置一致 */
+  teacherFilter?: Exclude<MatrixTeacherFilterParam, 'all'>
 }) {
   return useGet<TeachingScheduleMatrixDay[]>(
     '/api/v1/teaching-schedules/by-teacher-matrix',
