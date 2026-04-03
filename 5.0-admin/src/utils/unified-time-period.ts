@@ -19,8 +19,8 @@ export interface UnifiedTimePeriodConfig {
   groups: UnifiedPeriodGroup[]
 }
 
-/** 默认：A/B 各 12 节（与设置页示例「共12节课」一致） */
-function twelveHourlyFrom8(): UnifiedPeriodSlot[] {
+/** 从 8:00 起连续 12 节整点（8–9 … 19–20），供默认配置与设置页「快捷生成」 */
+export function buildQuickHourlySlots(): UnifiedPeriodSlot[] {
   return Array.from({ length: 12 }, (_, i) => {
     const h = 8 + i
     const sh = String(h).padStart(2, '0')
@@ -32,8 +32,8 @@ function twelveHourlyFrom8(): UnifiedPeriodSlot[] {
 export const DEFAULT_UNIFIED_TIME_PERIOD_CONFIG: UnifiedTimePeriodConfig = {
   version: 1,
   groups: [
-    { id: 'group-a', name: 'A时段', sort: 0, slots: twelveHourlyFrom8() },
-    { id: 'group-b', name: 'B时段', sort: 1, slots: twelveHourlyFrom8() },
+    { id: 'group-a', name: 'A时段', sort: 0, slots: buildQuickHourlySlots() },
+    { id: 'group-b', name: 'B时段', sort: 1, slots: buildQuickHourlySlots() },
   ],
 }
 

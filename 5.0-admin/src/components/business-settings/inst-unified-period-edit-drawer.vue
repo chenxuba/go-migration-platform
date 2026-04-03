@@ -5,6 +5,7 @@
 import { CloseOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
+  buildQuickHourlySlots,
   type UnifiedPeriodGroup,
   type UnifiedPeriodSlot,
   type UnifiedTimePeriodConfig,
@@ -108,6 +109,13 @@ function removeGroup(id: string) {
 
 function onEnabledChange(s: UnifiedPeriodSlot, v: boolean) {
   s.enabled = v
+}
+
+/** 保留已有时段组与名称，每组节次重置为 8:00–19:00 共 12 节整点 */
+function quickGenerate() {
+  for (const g of draft.value.groups)
+    g.slots = buildQuickHourlySlots().map(s => ({ ...s }))
+  messageService.success('已为各时段组生成整点节次（8:00–19:00，共 12 节）')
 }
 
 /** 解析「HH:mm」 */
@@ -226,9 +234,11 @@ async function handleSave() {
       </div>
 
       <div class="unified-period-drawer__body">
-        <p class="unified-period-drawer__tip">
-          此处配置各时段组及节次时间；「快捷选择学校统一时段」开关在上一页。
-        </p>
+        <div class="unified-period-drawer__quick">
+          <a-button type="primary" @click="quickGenerate">
+            快捷生成
+          </a-button>
+        </div>
 
         <section
           v-for="(g, gi) in sortGroups(draft.groups)"
@@ -365,12 +375,9 @@ async function handleSave() {
   padding: 12px 16px 24px;
 }
 
-.unified-period-drawer__tip {
-  margin: 0 0 12px;
-  padding: 0;
-  font-size: 12px;
-  color: #8c8c8c;
-  line-height: 1.5;
+.unified-period-drawer__quick {
+  display: flex;
+  margin-bottom: 12px;
 }
 
 .unified-period-drawer__footer {
