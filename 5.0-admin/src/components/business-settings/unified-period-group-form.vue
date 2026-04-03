@@ -4,11 +4,12 @@
  */
 import { DeleteOutlined } from '@ant-design/icons-vue'
 import {
-  buildQuickHourlySlots,
+  generateSlotsSmartFill,
   slotCountActive,
   type UnifiedPeriodGroup,
   type UnifiedPeriodSlot,
 } from '@/utils/unified-time-period'
+import messageService from '@/utils/messageService'
 
 const props = withDefaults(
   defineProps<{
@@ -53,8 +54,41 @@ function onEnabledChange(s: UnifiedPeriodSlot, v: boolean) {
   s.enabled = v
 }
 
-function quickGenerateThisGroup() {
-  props.group.slots = buildQuickHourlySlots().map(s => ({ ...s }))
+const smartModalOpen = ref(false)
+const smartFirstStart = ref<string>('08:00')
+const smartLessonMins = ref<number>(40)
+const smartBreakMins = ref<number>(10)
+const smartLunchMins = ref<number>(60)
+const smartMaxSlots = ref<number>(14)
+
+function openSmartFillModal() {
+  smartModalOpen.value = true
+}
+
+function applyPresetHourly() {
+  smartFirstStart.value = '08:00'
+  smartLessonMins.value = 60
+  smartBreakMins.value = 0
+  smartLunchMins.value = 0
+  smartMaxSlots.value = 12
+  messageService.info('已填入整点一小时模板，点「生成」替换节次')
+}
+
+function applySmartFill() {
+  const slots = generateSlotsSmartFill({
+    firstStart: smartFirstStart.value || '08:00',
+    lessonMinutes: smartLessonMins.value,
+    breakBetweenMinutes: smartBreakMins.value,
+    lunchBreakMinutes: smartLunchMins.value,
+    maxSlots: smartMaxSlots.value,
+  })
+  if (!slots.length) {
+    messageService.error('请检查最早上课时间是否有效')
+    return
+  }
+  props.group.slots = slots
+  smartModalOpen.value = false
+  messageService.success(`已生成 ${slots.length} 节课`)
 }
 
 function parseHHmm(str: string): { h: number, m: number } | null {
@@ -150,10 +184,66 @@ defineExpose({ validateGroup })
     </div>
 
     <div class="up-group-form__toolbar">
-      <a-button type="primary" size="small" @click="quickGenerateThisGroup">
-        本组填充满整点（8:00–19:00）
+      <a-button type="primary" size="small" @click="openSmartFillModal">
+        智能生成节次
       </a-button>
     </div>
+
+    <a-modal
+      v-model:open="smartModalOpen"
+      title="按规则生成节次"
+      :width="440"
+      :mask-closable="false"
+      destroy-on-close
+      class="up-group-smart-modal"
+      :footer="null"
+    >
+      <p class="up-group-smart-modal__hint">
+        一节结束后，先经过「课间休息」分钟，再开始下一节；午休从当天 <strong>12:00</strong> 起连续休息对应时长（填 0 表示不插午休）。
+      </p>
+      <a-form layout="vertical" class="up-group-smart-modal__form">
+        <a-form-item label="最早上课时间">
+          <a-time-picker
+            v-model:value="smartFirstStart"
+            value-format="HH:mm"
+            format="HH:mm"
+            :minute-step="5"
+            style="width: 100%"
+          />
+        </a-form-item>
+        <a-form-item label="每节课时长（分钟）">
+          <a-input-number v-model:value="smartLessonMins" :min="5" :max="180" style="width: 100%" />
+        </a-form-item>
+        <a-form-item
+          label="课间休息（分钟）"
+          extra="上一节课下课至下一节上课之间的间隔"
+        >
+          <a-input-number v-model:value="smartBreakMins" :min="0" :max="120" style="width: 100%" />
+        </a-form-item>
+        <a-form-item
+          label="午休时长（分钟）"
+          extra="自 12:00 起，填 0 表示不设午休空档"
+        >
+          <a-input-number v-model:value="smartLunchMins" :min="0" :max="240" style="width: 100%" />
+        </a-form-item>
+        <a-form-item label="最多生成几节课">
+          <a-input-number v-model:value="smartMaxSlots" :min="1" :max="32" style="width: 100%" />
+        </a-form-item>
+      </a-form>
+      <div class="up-group-smart-modal__preset">
+        <a-button type="link" size="small" @click="applyPresetHourly">
+          填入整点 1 小时模板（同原 8:00–19:00 共 12 节）
+        </a-button>
+      </div>
+      <div class="up-group-smart-modal__footer-btns">
+        <a-button @click="smartModalOpen = false">
+          取消
+        </a-button>
+        <a-button type="primary" @click="applySmartFill">
+          生成并替换
+        </a-button>
+      </div>
+    </a-modal>
 
     <div class="up-group-form__field">
       <span class="up-group-form__label">时段名称</span>
@@ -282,6 +372,32 @@ defineExpose({ validateGroup })
 
 .up-group-form__toolbar {
   margin-bottom: 12px;
+}
+
+.up-group-smart-modal__hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #595959;
+}
+
+.up-group-smart-modal__form {
+  margin-bottom: 0;
+}
+
+.up-group-smart-modal__preset {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #f0f0f0;
+}
+
+.up-group-smart-modal__footer-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
 }
 
 .up-group-form__field {
