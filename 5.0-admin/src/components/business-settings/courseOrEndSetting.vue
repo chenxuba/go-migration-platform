@@ -81,10 +81,7 @@ const toggleValue10 = ref(true)
 </script>
 
 <template>
-  <div
-    class="business-settings-course-or-end-setting"
-    :class="{ 'business-settings-course-or-end-setting--drawer-open': unifiedPeriodEditOpen }"
-  >
+  <div class="business-settings-course-or-end-setting">
     <div class="flex justify-between items-center px-16px">
       <span class="text-#666 text-12px">授课方式</span>
       <span>
@@ -442,10 +439,6 @@ const toggleValue10 = ref(true)
   position: relative;
   padding: 12px 0px;
   background-color: #f6f7f8;
-
-  &--drawer-open {
-    overflow: hidden !important;
-  }
 
   :deep(.ant-collapse-header) {
     padding: 0 !important;

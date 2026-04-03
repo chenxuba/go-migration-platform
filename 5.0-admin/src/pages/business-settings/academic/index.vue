@@ -4,6 +4,7 @@ import CourseCategory from '~/components/edu-center/course-list/course-category.
 import CourseSetting from '~/components/edu-center/course-list/course-setting.vue'
 import CallNameSetting from '~/components/business-settings/callNameSetting.vue'
 import ClassroomSettings from '~/components/business-settings/classroomSettings.vue'
+import TimePeriodSettings from '~/components/business-settings/timePeriodSettings.vue'
 
 const activeKey = ref('course')
 
@@ -48,6 +49,11 @@ function onTabChange(key: string) {
       <a-tab-pane key="classroom" tab="教室设置">
         <div class="academic-settings-page__pane academic-settings-page__pane--classroom">
           <ClassroomSettings />
+        </div>
+      </a-tab-pane>
+      <a-tab-pane key="time-period" tab="时段设置">
+        <div class="academic-settings-page__pane academic-settings-page__pane--period">
+          <TimePeriodSettings />
         </div>
       </a-tab-pane>
     </a-tabs>
@@ -115,6 +121,12 @@ function onTabChange(key: string) {
 }
 
 .academic-settings-page__pane--classroom {
+  min-height: calc(100vh - 200px);
+  border-radius: 0 0 16px 16px;
+  overflow: hidden;
+}
+
+.academic-settings-page__pane--period {
   min-height: calc(100vh - 200px);
   border-radius: 0 0 16px 16px;
   overflow: hidden;
