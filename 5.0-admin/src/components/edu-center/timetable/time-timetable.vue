@@ -41,7 +41,10 @@ const hourRowHeight = 96
 const timelineBottomPadding = 28
 const scheduleCardMinWidth = 170
 const scheduleCardGap = 5
-const baseDateColumnWidth = scheduleCardMinWidth + scheduleCardGap
+/** 列宽 = 左 6px + 卡片 + 右 6px；与 eventStyle 里 +6 对齐，避免只左边留白、右边贴线 */
+const scheduleColumnHorizontalInset = 6
+const baseDateColumnWidth
+  = scheduleCardMinWidth + scheduleColumnHorizontalInset * 2
 const overlapExtraWidth = scheduleCardMinWidth + scheduleCardGap
 
 const scheduleLegend = [
@@ -127,6 +130,16 @@ function handleNext() {
       ? currentDate.value.add(1, 'day')
       : currentDate.value.add(1, 'week')
 }
+
+function handleGoThisWeek() {
+  currentDate.value = dayjs()
+}
+
+const isViewingTodayOrThisWeek = computed(() => {
+  if (currentTime.value === 'day')
+    return currentDate.value.isSame(now.value, 'day')
+  return getWeekStart(currentDate.value).isSame(getWeekStart(now.value), 'day')
+})
 
 function formatClock(minutes) {
   const hour = String(Math.floor(minutes / 60)).padStart(2, '0')
@@ -307,16 +320,20 @@ const dateColumnWidths = computed(() => {
   return map
 })
 
-const gridTemplateStyle = computed(() => ({
-  gridTemplateColumns: `84px ${headerSummaries.value
-    .map(
-      item =>
-        `${dateColumnWidths.value.get(item.key) || baseDateColumnWidth}px`,
-    )
-    .join(' ')}`,
-  width: 'max-content',
-  minWidth: '100%',
-}))
+const gridTemplateStyle = computed(() => {
+  const isDaySingleColumn
+    = currentTime.value === 'day' && headerSummaries.value.length === 1
+  const dateCols = headerSummaries.value.map((item) => {
+    const w = dateColumnWidths.value.get(item.key) || baseDateColumnWidth
+    // 日视图仅一列：用 1fr 撑满剩余宽度，避免右侧大片留白
+    return isDaySingleColumn ? `minmax(${w}px, 1fr)` : `${w}px`
+  })
+  return {
+    gridTemplateColumns: `84px ${dateCols.join(' ')}`,
+    width: isDaySingleColumn ? '100%' : 'max-content',
+    minWidth: '100%',
+  }
+})
 
 function buildClusterLayouts(clusterItems = []) {
   const columns = []
@@ -397,7 +414,7 @@ const layoutsByDate = computed(() => {
 function eventStyle(item) {
   const leftOffset
     = (item.displayColumnIndex || 0) * (scheduleCardMinWidth + scheduleCardGap)
-      + 6
+      + scheduleColumnHorizontalInset
   return {
     top: `${minuteOffset(item.startMinutes)}px`,
     height: `${Math.max(
@@ -521,33 +538,67 @@ function handleBoardScroll(event) {
             </a-radio-group>
           </div>
 
-          <div class="toolbar-date">
-            <span class="nav-btn" @click="handlePrev">
-              <LeftOutlined />
+          <div class="toolbar-date time-selector ml3 text-#0061ff font-800 text-5 flex-center">
+            <a-popover trigger="hover">
+              <template #content>
+                {{ currentTime === 'day' ? '前一天' : '上一周' }}
+              </template>
+              <span
+                class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
+                @click="handlePrev"
+              >
+                <LeftOutlined />
+              </span>
+            </a-popover>
+            <span class="mx-2">
+              <div class="relative cursor-pointer">
+                {{ formatDateRange(currentDate) }}
+                <a-date-picker
+                  v-if="currentTime === 'day'"
+                  v-model:value="currentDate"
+                  class="absolute left-0 top-0 right-0 bottom-0 z-10 opacity-0"
+                  :allow-clear="false"
+                  :bordered="false"
+                  :format="formatDateRange"
+                  style="cursor: pointer"
+                />
+                <a-date-picker
+                  v-else
+                  v-model:value="currentDate"
+                  class="absolute left-0 top-0 right-0 bottom-0 z-10 opacity-0"
+                  picker="week"
+                  :allow-clear="false"
+                  :bordered="false"
+                  :format="formatDateRange"
+                  style="cursor: pointer"
+                />
+              </div>
             </span>
-            <div class="toolbar-date__label">
-              {{ formatDateRange(currentDate) }}
-              <a-date-picker
-                v-if="currentTime === 'day'"
-                v-model:value="currentDate"
-                class="date-picker-mask"
-                :allow-clear="false"
-                :bordered="false"
-                :format="formatDateRange"
-              />
-              <a-date-picker
-                v-else
-                v-model:value="currentDate"
-                class="date-picker-mask"
-                picker="week"
-                :allow-clear="false"
-                :bordered="false"
-                :format="formatDateRange"
-              />
-            </div>
-            <span class="nav-btn" @click="handleNext">
-              <RightOutlined />
-            </span>
+            <a-popover trigger="hover">
+              <template #content>
+                {{ currentTime === 'day' ? '后一天' : '下一周' }}
+              </template>
+              <span
+                class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
+                @click="handleNext"
+              >
+                <RightOutlined />
+              </span>
+            </a-popover>
+            <a-popover trigger="hover">
+              <template #content>
+                {{ currentTime === 'day' ? '回到今天' : '回到本周' }}
+              </template>
+              <a-button
+                type="default"
+                size="small"
+                class="toolbar-today-week-btn ml2"
+                :disabled="isViewingTodayOrThisWeek"
+                @click="handleGoThisWeek"
+              >
+                {{ currentTime === 'day' ? '今天' : '本周' }}
+              </a-button>
+            </a-popover>
           </div>
 
           <a-space>
@@ -557,7 +608,13 @@ function handleBoardScroll(event) {
         </div>
       </div>
 
-      <div v-loading="scheduleLoading" class="schedule-card">
+      <div class="schedule-card">
+        <a-spin
+          :spinning="scheduleLoading"
+          :delay="120"
+          size="small"
+          class="schedule-area-spin"
+        >
         <div class="schedule-sticky-shell">
           <div class="schedule-summary">
             <div class="schedule-summary__left">
@@ -754,6 +811,7 @@ function handleBoardScroll(event) {
             </div>
           </div>
         </div>
+        </a-spin>
       </div>
     </div>
     <ScheduleBatchEditModal
@@ -799,48 +857,37 @@ function handleBoardScroll(event) {
 .toolbar-date {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.toolbar-date__label {
-  position: relative;
-  min-width: 260px;
-  padding: 8px 14px;
-  border: 1px solid #dbe5f0;
-  border-radius: 999px;
-  color: #0f172a;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: center;
-}
-
-.date-picker-mask {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.nav-btn {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: #f1f5f9;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.nav-btn:hover {
-  background: #e8f3ff;
-  color: #1677ff;
+  flex: 1;
+  min-width: 0;
 }
 
 .schedule-card {
   overflow: visible;
+}
+
+/* 课表区域轻量 loading（替代 v-loading 黑色半透明蒙层） */
+.schedule-area-spin {
+  display: block;
+  width: 100%;
+
+  :deep(.ant-spin-nested-loading) {
+    width: 100%;
+  }
+
+  :deep(.ant-spin-blur) {
+    opacity: 0.72;
+    filter: none;
+    -webkit-filter: none;
+  }
+
+  :deep(.ant-spin) {
+    max-height: none;
+  }
+
+  :deep(.ant-spin-dot) {
+    font-size: 14px;
+  }
 }
 
 .schedule-sticky-shell {
@@ -952,6 +999,33 @@ function handleBoardScroll(event) {
   background: #fff;
 }
 
+/* 表头与正文横向滚动条样式一致（两处 scrollLeft 会同步） */
+.schedule-header-scroll,
+.schedule-board {
+  scrollbar-width: thin;
+  scrollbar-color: #b8c9de #eef2f8;
+
+  &::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    margin: 0 4px;
+    border-radius: 999px;
+    background: #eef2f8;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: linear-gradient(180deg, #c5d4ea 0%, #a8bad4 100%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+
+    &:hover {
+      background: linear-gradient(180deg, #a8bad4 0%, #8fa3bd 100%);
+    }
+  }
+}
+
 .schedule-grid {
   display: grid;
   width: max-content;
@@ -968,7 +1042,11 @@ function handleBoardScroll(event) {
 }
 
 .schedule-time-header {
+  position: sticky;
+  left: 0;
+  z-index: 20;
   background: #fff;
+  box-shadow: 4px 0 14px -6px rgb(15 23 42 / 12%);
 }
 
 .schedule-column-header {
@@ -998,10 +1076,12 @@ function handleBoardScroll(event) {
 }
 
 .schedule-time-axis {
-  position: relative;
+  position: sticky;
+  left: 0;
+  z-index: 20;
   border-right: 1px solid #dde5f0;
   background: #fff;
-  z-index: 5;
+  box-shadow: 4px 0 14px -6px rgb(15 23 42 / 12%);
 }
 
 .schedule-time-axis__label {
@@ -1256,20 +1336,12 @@ function handleBoardScroll(event) {
     flex-wrap: wrap;
     justify-content: flex-start;
   }
-
-  .toolbar-date__label {
-    min-width: 220px;
-  }
 }
 
 @media (max-width: 768px) {
   .schedule-summary {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .toolbar-date__label {
-    min-width: 180px;
   }
 }
 </style>
