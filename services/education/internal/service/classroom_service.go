@@ -28,9 +28,6 @@ func (svc *Service) CreateClassroom(userID int64, input model.ClassroomMutation)
 	if strings.TrimSpace(input.Name) == "" {
 		return 0, errors.New("教室名称不能为空")
 	}
-	if input.Capacity < 0 {
-		return 0, errors.New("容纳人数不能小于0")
-	}
 	count, err := svc.repo.CountClassroomsByName(context.Background(), instID, input.Name, nil)
 	if err != nil {
 		return 0, err
@@ -51,9 +48,6 @@ func (svc *Service) UpdateClassroom(userID int64, input model.ClassroomMutation)
 	}
 	if strings.TrimSpace(input.Name) == "" {
 		return errors.New("教室名称不能为空")
-	}
-	if input.Capacity < 0 {
-		return errors.New("容纳人数不能小于0")
 	}
 	count, err := svc.repo.CountClassroomsByName(context.Background(), instID, input.Name, input.ID)
 	if err != nil {

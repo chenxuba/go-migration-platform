@@ -19,10 +19,7 @@ func ensureClassroomTables(ctx context.Context, db *sql.DB) error {
 			inst_id BIGINT NOT NULL,
 			name VARCHAR(100) NOT NULL,
 			address VARCHAR(255) NOT NULL DEFAULT '',
-			capacity INT NOT NULL DEFAULT 0,
 			enabled TINYINT(1) NOT NULL DEFAULT 1,
-			remark VARCHAR(255) NOT NULL DEFAULT '',
-			sort INT NOT NULL DEFAULT 0,
 			create_id BIGINT NOT NULL DEFAULT 0,
 			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			update_id BIGINT NOT NULL DEFAULT 0,
@@ -36,15 +33,20 @@ func ensureClassroomTables(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	return ensureColumnsOnTable(ctx, db, "inst_classroom", map[string]string{
+	if err := ensureColumnsOnTable(ctx, db, "inst_classroom", map[string]string{
 		"address":   "address VARCHAR(255) NOT NULL DEFAULT '' AFTER name",
-		"capacity":  "capacity INT NOT NULL DEFAULT 0 AFTER address",
-		"enabled":   "enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER capacity",
-		"remark":    "remark VARCHAR(255) NOT NULL DEFAULT '' AFTER enabled",
-		"sort":      "sort INT NOT NULL DEFAULT 0 AFTER remark",
-		"create_id": "create_id BIGINT NOT NULL DEFAULT 0 AFTER sort",
+		"enabled":   "enabled TINYINT(1) NOT NULL DEFAULT 1 AFTER address",
+		"create_id": "create_id BIGINT NOT NULL DEFAULT 0 AFTER enabled",
 		"update_id": "update_id BIGINT NOT NULL DEFAULT 0 AFTER create_time",
-	})
+	}); err != nil {
+		return err
+	}
+	for _, col := range []string{"capacity", "remark", "sort"} {
+		if err := dropColumnIfExists(ctx, db, "inst_classroom", col); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (repo *Repository) ListClassrooms(ctx context.Context, instID int64, query model.ClassroomQueryDTO) ([]model.ClassroomVO, error) {
@@ -56,17 +58,17 @@ func (repo *Repository) ListClassrooms(ctx context.Context, instID int64, query 
 		args = append(args, *query.EnabledOnly)
 	}
 	if keyword := strings.TrimSpace(query.SearchKey); keyword != "" {
-		filters = append(filters, "(name LIKE ? OR address LIKE ? OR remark LIKE ?)")
+		filters = append(filters, "(name LIKE ? OR address LIKE ?)")
 		like := "%" + keyword + "%"
-		args = append(args, like, like, like)
+		args = append(args, like, like)
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), inst_id, IFNULL(name, ''), IFNULL(address, ''),
-		       IFNULL(capacity, 0), IFNULL(enabled, 0), IFNULL(remark, ''), IFNULL(sort, 0), create_time, update_time
+		       IFNULL(enabled, 0), create_time, update_time
 		FROM inst_classroom
 		WHERE `+strings.Join(filters, " AND ")+`
-		ORDER BY enabled DESC, sort ASC, create_time DESC, id DESC
+		ORDER BY enabled DESC, create_time DESC, id DESC
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -85,10 +87,7 @@ func (repo *Repository) ListClassrooms(ctx context.Context, instID int64, query 
 			&item.InstID,
 			&item.Name,
 			&item.Address,
-			&item.Capacity,
 			&item.Enabled,
-			&item.Remark,
-			&item.Sort,
 			&createTime,
 			&updateTime,
 		); err != nil {
@@ -122,18 +121,15 @@ func (repo *Repository) CountClassroomsByName(ctx context.Context, instID int64,
 func (repo *Repository) CreateClassroom(ctx context.Context, instID, operatorID int64, input model.ClassroomMutation) (int64, error) {
 	result, err := repo.db.ExecContext(ctx, `
 		INSERT INTO inst_classroom (
-			inst_id, name, address, capacity, enabled, remark, sort,
+			inst_id, name, address, enabled,
 			create_id, create_time, update_id, update_time, del_flag, version
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, 0)
+		VALUES (?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, 0)
 	`,
 		instID,
 		strings.TrimSpace(input.Name),
 		strings.TrimSpace(input.Address),
-		input.Capacity,
 		boolValueWithFallback(input.Enabled, true),
-		strings.TrimSpace(input.Remark),
-		input.Sort,
 		operatorID,
 		operatorID,
 	)
@@ -149,15 +145,12 @@ func (repo *Repository) UpdateClassroom(ctx context.Context, instID, operatorID 
 	}
 	_, err := repo.db.ExecContext(ctx, `
 		UPDATE inst_classroom
-		SET name = ?, address = ?, capacity = ?, enabled = ?, remark = ?, sort = ?, update_id = ?, update_time = NOW()
+		SET name = ?, address = ?, enabled = ?, update_id = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`,
 		strings.TrimSpace(input.Name),
 		strings.TrimSpace(input.Address),
-		input.Capacity,
 		boolValueWithFallback(input.Enabled, true),
-		strings.TrimSpace(input.Remark),
-		input.Sort,
 		operatorID,
 		*input.ID,
 		instID,

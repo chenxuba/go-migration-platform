@@ -537,14 +537,48 @@ export default [
           title: '角色管理',
         },
       },
+    ],
+  },
+  {
+    path: '/business-settings',
+    redirect: '/business-settings/enrollment',
+    name: 'BusinessSettingsRoot',
+    meta: {
+      title: '业务设置',
+      icon: 'SettingOutlined',
+    },
+    component: basicRouteMap.RouteView,
+    children: [
       {
-        path: '/internal-manage/businessSettings',
-        name: 'BusinessSettings',
-        component: () => import('~/pages/exception/403.vue'),
+        path: '/business-settings/enrollment',
+        name: 'BusinessSettingsEnrollment',
+        component: () => import('~/pages/business-settings/placeholder.vue'),
         meta: {
-          title: '业务设置',
-          isModal: true,
-          noHighlight: true,
+          title: '招生设置',
+        },
+      },
+      {
+        path: '/business-settings/academic',
+        name: 'BusinessSettingsAcademic',
+        component: () => import('~/pages/business-settings/academic/index.vue'),
+        meta: {
+          title: '教务设置',
+        },
+      },
+      {
+        path: '/business-settings/home-school',
+        name: 'BusinessSettingsHomeSchool',
+        component: () => import('~/pages/business-settings/placeholder.vue'),
+        meta: {
+          title: '家校设置',
+        },
+      },
+      {
+        path: '/business-settings/financial',
+        name: 'BusinessSettingsFinancial',
+        component: () => import('~/pages/business-settings/placeholder.vue'),
+        meta: {
+          title: '财务设置',
         },
       },
     ],

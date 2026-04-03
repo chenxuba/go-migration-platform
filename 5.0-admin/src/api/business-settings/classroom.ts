@@ -7,10 +7,7 @@ export interface ClassroomItem {
   instId?: number
   name: string
   address?: string
-  capacity?: number
   enabled: boolean
-  remark?: string
-  sort?: number
   createTime?: string
   updateTime?: string
 }
@@ -21,10 +18,7 @@ export interface ClassroomMutation {
   version?: number
   name: string
   address?: string
-  capacity: number
   enabled?: boolean
-  remark?: string
-  sort?: number
 }
 
 export function listClassroomsApi(params?: {
