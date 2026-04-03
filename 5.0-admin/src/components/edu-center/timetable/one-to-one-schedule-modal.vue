@@ -11,7 +11,7 @@ import {
   UserOutlined,
 } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
 import StaffSelect from '@/components/common/staff-select.vue'
@@ -225,6 +225,13 @@ const previewValidationMessage = ref('')
 const previewHasConflict = ref(false)
 const conflictModalOpen = ref(false)
 const previewValidationResult = ref<TeachingScheduleValidationResult | null>(null)
+const plannerShellRef = ref<HTMLElement | null>(null)
+
+function scrollPlannerShellToTop() {
+  const el = plannerShellRef.value
+  if (el)
+    el.scrollTop = 0
+}
 const scheduleStartDate = ref(dayjs().add(5, 'day').startOf('day'))
 const freeSelectedDates = ref<Dayjs[]>([dayjs().add(5, 'day').startOf('day')])
 const freeCalendarPanelDate = ref(dayjs().add(5, 'day').startOf('month'))
@@ -371,10 +378,15 @@ watch(modalOpen, async (value) => {
   if (value) {
     selectedOneToOneId.value = undefined
     selectedStudentLessonPath.value = undefined
+    await nextTick()
+    scrollPlannerShellToTop()
     await Promise.all([
       fetchOneToOneRecords(),
       fetchClassroomList(),
     ])
+    await nextTick()
+    scrollPlannerShellToTop()
+    requestAnimationFrame(() => scrollPlannerShellToTop())
   }
   if (!value)
     previewModalOpen.value = false
@@ -796,6 +808,63 @@ const previewPlans = computed<PreviewItem[]>(() => {
 
 const estimatedCount = computed(() => previewPlans.value.length)
 
+type ScheduleConflictRow = NonNullable<
+  TeachingScheduleValidationResult['currentSchedules']
+>[number]
+
+function normalizeHm(t: string) {
+  const m = String(t || '').trim().match(/^(\d{1,2}):(\d{2})/)
+  if (!m)
+    return String(t || '').trim().slice(0, 5)
+  const h = Number.parseInt(m[1], 10)
+  return `${String(h).padStart(2, '0')}:${m[2]}`
+}
+
+function parseScheduleTimeText(timeText: string) {
+  const m = String(timeText).match(/^(\d{1,2}:\d{2})[~～](\d{1,2}:\d{2})$/)
+  if (!m)
+    return null
+  return { start: normalizeHm(m[1]), end: normalizeHm(m[2]) }
+}
+
+function previewPlanMatchesSchedule(plan: PreviewItem, schedule: ScheduleConflictRow) {
+  if (plan.date !== schedule.date)
+    return false
+  const parsed = parseScheduleTimeText(schedule.timeText)
+  if (!parsed)
+    return false
+  return (
+    normalizeHm(plan.startTime) === parsed.start
+    && normalizeHm(plan.endTime) === parsed.end
+  )
+}
+
+/** 预检结果与清单行对齐，用于标红老师/教室列、状态标签 */
+const previewPlanConflictMap = computed(() => {
+  const val = previewValidationResult.value
+  const plans = previewPlans.value
+  const map = new Map<string, string[]>()
+  if (!val?.currentSchedules?.length || !plans.length)
+    return map
+  for (const plan of plans) {
+    const found = val.currentSchedules.find(s => previewPlanMatchesSchedule(plan, s))
+    if (found?.conflictTypes?.length)
+      map.set(`${plan.date}|${plan.startTime}|${plan.endTime}`, [...found.conflictTypes])
+  }
+  return map
+})
+
+function previewRowConflictTypes(plan: PreviewItem) {
+  return previewPlanConflictMap.value.get(
+    `${plan.date}|${plan.startTime}|${plan.endTime}`,
+  ) || []
+}
+
+function openConflictDetailModal() {
+  if (previewValidationResult.value)
+    conflictModalOpen.value = true
+}
+
 const previewHelperText = computed(() => {
   if (blockedReason.value)
     return blockedReason.value
@@ -1170,7 +1239,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
         </div>
       </template>
 
-      <div class="planner-shell">
+      <div ref="plannerShellRef" class="planner-shell">
         <section class="planner-strip planner-strip--top">
           <div class="planner-inline planner-inline--top">
             <div class="planner-inline__group planner-inline__group--type">
@@ -1752,7 +1821,16 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
           class="planner-review__tip"
           :class="{ 'planner-review__tip--warning': !isSchedulable || previewHasConflict }"
         >
-          {{ previewHelperText }}
+          <span class="planner-review__tip-text">{{ previewHelperText }}</span>
+          <a-button
+            v-if="previewHasConflict && previewValidationResult"
+            type="link"
+            size="small"
+            class="planner-review__conflict-link"
+            @click="openConflictDetailModal"
+          >
+            查看冲突详情
+          </a-button>
         </div>
 
         <div class="planner-table-wrap planner-table-wrap--modal">
@@ -1784,14 +1862,42 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
                   <td>{{ item.week }}</td>
                   <td>{{ item.rule }}</td>
                   <td>{{ item.time }}</td>
-                  <td>{{ item.teacher }}</td>
-                  <td>{{ item.classroom }}</td>
+                  <td
+                    :class="{
+                      'planner-table__cell--danger': previewRowConflictTypes(item).includes('老师'),
+                    }"
+                  >
+                    {{ item.teacher }}
+                  </td>
+                  <td
+                    :class="{
+                      'planner-table__cell--danger': previewRowConflictTypes(item).includes('教室'),
+                    }"
+                  >
+                    {{ item.classroom }}
+                  </td>
                   <td>
+                    <template v-if="item.tone === 'blocked'">
+                      <span class="planner-tag planner-tag--table planner-tag--warning">
+                        不可创建
+                      </span>
+                    </template>
+                    <template v-else-if="previewRowConflictTypes(item).length">
+                      <a-tag
+                        v-for="tag in previewRowConflictTypes(item)"
+                        :key="`${planIdx}-${tag}`"
+                        color="error"
+                        class="planner-review__conflict-tag"
+                        :bordered="false"
+                      >
+                        {{ tag }}冲突
+                      </a-tag>
+                    </template>
                     <span
+                      v-else
                       class="planner-tag planner-tag--table"
-                      :class="{ 'planner-tag--warning': item.tone === 'blocked' }"
                     >
-                      {{ item.tone === 'blocked' ? '不可创建' : '待校验' }}
+                      待校验
                     </span>
                   </td>
                 </tr>
@@ -2794,6 +2900,10 @@ button.planner-chip.planner-chip--active {
 }
 
 .planner-review__tip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   padding: 12px 14px;
   border-radius: 12px;
   background: #f6f8fa;
@@ -2802,9 +2912,30 @@ button.planner-chip.planner-chip--active {
   line-height: 1.6;
 }
 
+.planner-review__tip-text {
+  flex: 1;
+  min-width: 200px;
+}
+
+.planner-review__conflict-link {
+  flex-shrink: 0;
+  padding: 0;
+  height: auto;
+  font-weight: 600;
+}
+
 .planner-review__tip--warning {
   background: #fff7e6;
   color: #d46b08;
+}
+
+.planner-review__conflict-tag {
+  margin-inline-end: 0;
+}
+
+.planner-table__cell--danger {
+  color: #ff4d4f;
+  font-weight: 700;
 }
 
 .planner-review__footer {

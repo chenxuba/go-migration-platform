@@ -18,6 +18,10 @@ const modalOpen = computed({
 
 const currentSchedules = computed(() => props.validation?.currentSchedules || [])
 const existingSchedules = computed(() => props.validation?.existingSchedules || [])
+
+function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
+  return (item.conflictTypes || []).includes(type)
+}
 </script>
 
 <template>
@@ -66,11 +70,19 @@ const existingSchedules = computed(() => props.validation?.existingSchedules || 
             :key="`${item.date}-${item.timeText}-${index}`"
             class="schedule-conflict__row"
           >
-            <span class="schedule-conflict__name">{{ item.name }}</span>
+            <span>{{ item.name }}</span>
             <span>{{ item.classTypeText }}</span>
             <span>{{ item.date }} {{ item.timeText }}</span>
-            <span>{{ item.teacherName || '-' }}</span>
-            <span>{{ item.classroomName || '-' }}</span>
+            <span
+              :class="{
+                'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
+              }"
+            >{{ item.teacherName || '-' }}</span>
+            <span
+              :class="{
+                'schedule-conflict__cell--danger': hasConflictType(item, '教室'),
+              }"
+            >{{ item.classroomName || '-' }}</span>
             <span class="schedule-conflict__tags">
               <a-tag
                 v-for="tag in item.conflictTypes || []"
@@ -103,11 +115,19 @@ const existingSchedules = computed(() => props.validation?.existingSchedules || 
             :key="`${item.date}-${item.timeText}-${index}`"
             class="schedule-conflict__row"
           >
-            <span class="schedule-conflict__name">{{ item.name }}</span>
+            <span>{{ item.name }}</span>
             <span>{{ item.classTypeText }}</span>
             <span>{{ item.date }} {{ item.timeText }}</span>
-            <span>{{ item.teacherName || '-' }}</span>
-            <span>{{ item.classroomName || '-' }}</span>
+            <span
+              :class="{
+                'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
+              }"
+            >{{ item.teacherName || '-' }}</span>
+            <span
+              :class="{
+                'schedule-conflict__cell--danger': hasConflictType(item, '教室'),
+              }"
+            >{{ item.classroomName || '-' }}</span>
             <span>{{ (item.studentNames || []).join('、') || '-' }}</span>
           </div>
         </div>
@@ -197,7 +217,7 @@ const existingSchedules = computed(() => props.validation?.existingSchedules || 
   line-height: 1.6;
 }
 
-.schedule-conflict__name {
+.schedule-conflict__cell--danger {
   color: #ff4d4f;
   font-weight: 700;
 }
