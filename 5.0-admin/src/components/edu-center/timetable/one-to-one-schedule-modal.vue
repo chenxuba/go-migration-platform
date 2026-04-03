@@ -12,10 +12,14 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, ref, watch } from 'vue'
+import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
+import type { TeachingScheduleValidationResult } from '@/api/edu-center/teaching-schedule'
+import { createOneToOneSchedulesApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
+import emitter, { EVENTS } from '@/utils/eventBus'
 
 type PreviewTone = 'pending' | 'blocked'
 type ScheduleType = 'oneToOne' | 'studentLesson'
@@ -29,6 +33,8 @@ interface PreviewItem {
   week: string
   rule: string
   time: string
+  startTime: string
+  endTime: string
   teacher: string
   classroom: string
   tone: PreviewTone
@@ -61,6 +67,8 @@ interface SchoolTimeSlot {
 interface TimeBlock {
   key: string
   rangeText: string
+  startTime: string
+  endTime: string
   minutes: number
 }
 
@@ -211,6 +219,12 @@ const selectedAssistantDisplays = ref<StaffOptionItem[]>([])
 const selectedClassroom = ref<string | undefined>(undefined)
 const selectedStudentLessonPath = ref<string[] | undefined>(undefined)
 const previewModalOpen = ref(false)
+const creatingSchedules = ref(false)
+const previewValidating = ref(false)
+const previewValidationMessage = ref('')
+const previewHasConflict = ref(false)
+const conflictModalOpen = ref(false)
+const previewValidationResult = ref<TeachingScheduleValidationResult | null>(null)
 const scheduleStartDate = ref(dayjs().add(5, 'day').startOf('day'))
 const freeSelectedDates = ref<Dayjs[]>([dayjs().add(5, 'day').startOf('day')])
 const freeCalendarPanelDate = ref(dayjs().add(5, 'day').startOf('month'))
@@ -298,14 +312,15 @@ const scheduleStaffSelectKey = computed(() => selectedOneToOne.value?.id || 'emp
 
 const classroomOptions = computed(() => {
   const classroomSet = new Map<string, { value: string, label: string }>()
-  const append = (name?: string) => {
-    const key = String(name || '').trim()
-    if (!key || classroomSet.has(key))
+  const append = (id?: string | number, name?: string) => {
+    const key = String(id || '').trim()
+    const label = String(name || '').trim()
+    if (!key || !label || classroomSet.has(key))
       return
-    classroomSet.set(key, { value: key, label: key })
+    classroomSet.set(key, { value: key, label })
   }
-  append(selectedOneToOne.value?.classRoomName)
-  classroomList.value.forEach(item => append(item.name))
+  append(selectedOneToOne.value?.classRoomId, selectedOneToOne.value?.classRoomName)
+  classroomList.value.forEach(item => append(item.id, item.name))
   return [...classroomSet.values()]
 })
 
@@ -320,7 +335,7 @@ watch(
     selectedTeacher.value = defaultTeacherId
     selectedTeacherDisplay.value = teacherPresetStaff.value.find(item => sameStaffId(item.id, defaultTeacherId)) || null
     selectedClassroom.value = value
-      ? (value.classRoomName || undefined)
+      ? (value.classRoomId || undefined)
       : undefined
     selectedAssistant.value = []
     selectedAssistantDisplays.value = []
@@ -409,7 +424,10 @@ function formatBalanceValue(value: number) {
 }
 
 const recordClassroomText = computed(() => selectedOneToOne.value?.classRoomName || '-')
-const scheduledClassroomText = computed(() => selectedClassroom.value || '-')
+const scheduledClassroomText = computed(() => {
+  const current = classroomOptions.value.find(item => item.value === selectedClassroom.value)
+  return current?.label || '-'
+})
 const selectedTeacherText = computed(() => {
   if (!isValidStaffId(selectedTeacher.value))
     return '-'
@@ -470,6 +488,8 @@ const activeTimeBlocks = computed<TimeBlock[]>(() => {
       rows.push({
         key: slot.value,
         rangeText: `${slot.desc} · ${slot.start}-${slot.end}`,
+        startTime: slot.start,
+        endTime: slot.end,
         minutes: slotDurationMinutes(slot.start, slot.end),
         sortKey: slot.start,
       })
@@ -485,6 +505,8 @@ const activeTimeBlocks = computed<TimeBlock[]>(() => {
     rows.push({
       key: `custom-${index}-${row.start.valueOf()}`,
       rangeText: `${row.start.format('HH:mm')} - ${row.end.format('HH:mm')}`,
+      startTime: row.start.format('HH:mm'),
+      endTime: row.end.format('HH:mm'),
       minutes: row.end.diff(row.start, 'minute'),
       sortKey: row.start.format('HH:mm'),
     })
@@ -759,6 +781,8 @@ const previewPlans = computed<PreviewItem[]>(() => {
       week: weekDisplayMap[date.day()] || '-',
       rule: previewRuleText.value,
       time: block.rangeText,
+      startTime: block.startTime,
+      endTime: block.endTime,
       teacher: selectedTeacherText.value,
       classroom: scheduledClassroomText.value,
       tone,
@@ -775,13 +799,17 @@ const estimatedCount = computed(() => previewPlans.value.length)
 const previewHelperText = computed(() => {
   if (blockedReason.value)
     return blockedReason.value
+  if (previewValidating.value)
+    return '正在校验老师、教室与时间冲突，请稍候。'
+  if (previewHasConflict.value)
+    return previewValidationMessage.value || '当前排课方案存在冲突，请返回修改后再尝试创建。'
   if (!estimatedCount.value && excludedHolidayCount.value > 0)
     return '当前日期都命中节假日且已被过滤，请调整日期或关闭节假日过滤。'
   if (!estimatedCount.value)
     return '请先选择有效的排课日期。'
   if (excludedHolidayCount.value > 0)
     return `已根据节假日规则过滤 ${excludedHolidayCount.value} 节，剩余 ${estimatedCount.value} 节待创建。`
-  return '正式创建前会再做一次资源校验，确认老师、教室和时间可用。'
+  return '已完成预检，可确认创建。正式创建时服务端仍会再校验一次。'
 })
 
 const footerTipText = computed(() => {
@@ -880,19 +908,85 @@ function closeModal() {
   modalOpen.value = false
 }
 
-function openPreviewModal() {
+function buildScheduleCreatePayload() {
+  return {
+    oneToOneId: String(selectedOneToOne.value?.id || ''),
+    teacherId: String(selectedTeacher.value || ''),
+    assistantIds: selectedAssistant.value.map(id => String(id)),
+    classroomId: selectedClassroom.value || '',
+    schedules: previewPlans.value.map(item => ({
+      lessonDate: item.date,
+      startTime: item.startTime,
+      endTime: item.endTime,
+    })),
+  }
+}
+
+async function validatePreviewSchedules() {
+  if (!selectedOneToOne.value?.id || previewPlans.value.length === 0)
+    return
+  previewValidating.value = true
+  previewHasConflict.value = false
+  previewValidationMessage.value = ''
+  previewValidationResult.value = null
+  try {
+    const res = await validateOneToOneSchedulesApi(buildScheduleCreatePayload())
+    if (res.code !== 200 || !res.result) {
+      previewHasConflict.value = true
+      previewValidationMessage.value = res.message || '预检失败，请稍后重试。'
+      return
+    }
+    previewHasConflict.value = res.result.valid === false
+    previewValidationMessage.value = res.result.message || ''
+    previewValidationResult.value = res.result
+    if (previewHasConflict.value)
+      conflictModalOpen.value = true
+  }
+  catch (error: any) {
+    console.error('validate preview schedules failed', error)
+    previewHasConflict.value = true
+    previewValidationMessage.value = error?.response?.data?.message || error?.message || '预检失败，请稍后重试。'
+  }
+  finally {
+    previewValidating.value = false
+  }
+}
+
+async function openPreviewModal() {
   if (!isSchedulable.value || estimatedCount.value === 0)
     return
   previewModalOpen.value = true
+  await validatePreviewSchedules()
 }
 
 function closePreviewModal() {
   previewModalOpen.value = false
 }
 
-function confirmBatchCreate() {
-  previewModalOpen.value = false
-  modalOpen.value = false
+async function confirmBatchCreate() {
+  if (!selectedOneToOne.value?.id)
+    return
+  creatingSchedules.value = true
+  try {
+    const res = await createOneToOneSchedulesApi(buildScheduleCreatePayload())
+    if (res.code !== 200)
+      throw new Error(res.message || '创建1对1日程失败')
+    messageService.success(`已创建 ${res.result?.count || previewPlans.value.length} 节1对1日程`)
+    emitter.emit(EVENTS.REFRESH_DATA)
+    previewModalOpen.value = false
+    modalOpen.value = false
+  }
+  catch (error: any) {
+    console.error('create one-to-one schedules failed', error)
+    previewHasConflict.value = true
+    previewValidationMessage.value = error?.response?.data?.message || error?.message || '创建1对1日程失败'
+    if (previewValidationResult.value)
+      conflictModalOpen.value = true
+    messageService.error(previewValidationMessage.value)
+  }
+  finally {
+    creatingSchedules.value = false
+  }
 }
 
 function handleTeacherChange(_value: string | number | undefined, staff?: StaffOptionItem | null) {
@@ -1069,7 +1163,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
             <a-button @click="closeModal">
               取消
             </a-button>
-            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0" @click="openPreviewModal">
+            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0" :loading="creatingSchedules" @click="openPreviewModal">
               {{ actionButtonText }}
             </a-button>
           </div>
@@ -1656,7 +1750,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
       <div class="planner-review">
         <div
           class="planner-review__tip"
-          :class="{ 'planner-review__tip--warning': !isSchedulable }"
+          :class="{ 'planner-review__tip--warning': !isSchedulable || previewHasConflict }"
         >
           {{ previewHelperText }}
         </div>
@@ -1715,7 +1809,7 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
             <a-button @click="closePreviewModal">
               返回修改
             </a-button>
-            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0" @click="confirmBatchCreate">
+            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0 || previewValidating || previewHasConflict" :loading="creatingSchedules" @click="confirmBatchCreate">
               {{ actionButtonText }}
             </a-button>
           </div>
@@ -1723,6 +1817,11 @@ function customTimeRangeDurationText(row: CustomTimeRangeRow) {
       </div>
     </a-modal>
   </div>
+
+  <ScheduleConflictModal
+    v-model:open="conflictModalOpen"
+    :validation="previewValidationResult"
+  />
 </template>
 
 <style scoped lang="less">

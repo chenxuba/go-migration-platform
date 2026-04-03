@@ -3,6 +3,9 @@ import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
+import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
+import { listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import emitter, { EVENTS } from '@/utils/eventBus'
 
 const displayArray = ref([
   'intentionCourse',
@@ -22,12 +25,24 @@ const timeOptions = [
 const currentTime = ref('week')
 const currentDate = ref(dayjs())
 const now = ref(dayjs())
+const scheduleLoading = ref(false)
+const scheduleRows = ref([])
+const scheduleEditOpen = ref(false)
+const currentSchedule = ref(null)
+const headerScrollRef = ref(null)
+const boardScrollRef = ref(null)
+let syncingScroll = false
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const timelineStart = 8 * 60
 const timelineEnd = 22 * 60
-const hourRowHeight = 88
+const timelineTopPadding = 18
+const hourRowHeight = 96
 const timelineBottomPadding = 28
+const scheduleCardMinWidth = 170
+const scheduleCardGap = 5
+const baseDateColumnWidth = scheduleCardMinWidth + scheduleCardGap
+const overlapExtraWidth = scheduleCardMinWidth + scheduleCardGap
 
 const scheduleLegend = [
   {
@@ -66,6 +81,8 @@ onMounted(() => {
   nowTimer = setInterval(() => {
     now.value = dayjs()
   }, 30 * 1000)
+  loadSchedules()
+  emitter.on(EVENTS.REFRESH_DATA, loadSchedules)
 })
 
 onUnmounted(() => {
@@ -73,6 +90,7 @@ onUnmounted(() => {
     clearInterval(nowTimer)
     nowTimer = null
   }
+  emitter.off(EVENTS.REFRESH_DATA, loadSchedules)
 })
 
 watch(currentTime, () => {
@@ -97,15 +115,17 @@ function formatDateRange(value) {
 }
 
 function handlePrev() {
-  currentDate.value = currentTime.value === 'day'
-    ? currentDate.value.subtract(1, 'day')
-    : currentDate.value.subtract(1, 'week')
+  currentDate.value
+    = currentTime.value === 'day'
+      ? currentDate.value.subtract(1, 'day')
+      : currentDate.value.subtract(1, 'week')
 }
 
 function handleNext() {
-  currentDate.value = currentTime.value === 'day'
-    ? currentDate.value.add(1, 'day')
-    : currentDate.value.add(1, 'week')
+  currentDate.value
+    = currentTime.value === 'day'
+      ? currentDate.value.add(1, 'day')
+      : currentDate.value.add(1, 'week')
 }
 
 function formatClock(minutes) {
@@ -122,20 +142,90 @@ const displayDates = computed(() => {
 })
 
 const todayKey = computed(() => now.value.format('YYYY-MM-DD'))
-const currentTimeMinutes = computed(() => now.value.hour() * 60 + now.value.minute())
+const currentTimeMinutes = computed(
+  () => now.value.hour() * 60 + now.value.minute(),
+)
 const currentTimeLabel = computed(() => now.value.format('HH:mm'))
 const showCurrentTimeLine = computed(() => {
-  if (currentTimeMinutes.value < timelineStart || currentTimeMinutes.value > timelineEnd)
+  if (
+    currentTimeMinutes.value < timelineStart
+    || currentTimeMinutes.value > timelineEnd
+  ) {
     return false
-  return displayDates.value.some(date => date.format('YYYY-MM-DD') === todayKey.value)
+  }
+  return displayDates.value.some(
+    date => date.format('YYYY-MM-DD') === todayKey.value,
+  )
 })
 
-const mockSchedules = computed(() => [])
+const queryDateRange = computed(() => {
+  const dates = displayDates.value
+  return {
+    startDate: dates[0]?.format('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD'),
+    endDate:
+      dates[dates.length - 1]?.format('YYYY-MM-DD')
+      || dayjs().format('YYYY-MM-DD'),
+  }
+})
+
+async function loadSchedules() {
+  scheduleLoading.value = true
+  try {
+    const res = await listTeachingSchedulesApi({
+      startDate: queryDateRange.value.startDate,
+      endDate: queryDateRange.value.endDate,
+      classType: 2,
+    })
+    if (res.code === 200) {
+      scheduleRows.value = Array.isArray(res.result) ? res.result : []
+      return
+    }
+    scheduleRows.value = []
+  }
+  catch (error) {
+    console.error('load schedules failed', error)
+    scheduleRows.value = []
+  }
+  finally {
+    scheduleLoading.value = false
+  }
+}
+
+watch(
+  queryDateRange,
+  () => {
+    loadSchedules()
+  },
+  { deep: true },
+)
+
+const mockSchedules = computed(() =>
+  scheduleRows.value.map(item => ({
+    id: item.id,
+    batchNo: item.batchNo,
+    batchSize: item.batchSize || 1,
+    classType: item.classType,
+    dateKey: dayjs(item.startAt).format('YYYY-MM-DD'),
+    startAt: dayjs(item.startAt),
+    endAt: dayjs(item.endAt),
+    title: item.teachingClassName || item.studentName || '1对1日程',
+    course: item.lessonName || '-',
+    teacher: item.teacherName || '-',
+    classroom: item.classroomName || '-',
+    studentText: item.studentName ? `学员：${item.studentName}` : '-',
+    status: 'unsigned',
+    conflict: false,
+    hasTrial: false,
+    raw: item,
+  })),
+)
 
 const headerSummaries = computed(() =>
   displayDates.value.map((date) => {
     const key = date.format('YYYY-MM-DD')
-    const count = mockSchedules.value.filter(item => item.dateKey === key).length
+    const count = mockSchedules.value.filter(
+      item => item.dateKey === key,
+    ).length
     return {
       key,
       date,
@@ -144,14 +234,15 @@ const headerSummaries = computed(() =>
   }),
 )
 
-const gridTemplateStyle = computed(() => ({
-  gridTemplateColumns: `84px repeat(${headerSummaries.value.length}, minmax(0, 1fr))`,
-}))
-
-const unsignedCount = computed(() => mockSchedules.value.filter(item => item.status === 'unsigned').length)
+const unsignedCount = computed(
+  () => mockSchedules.value.filter(item => item.status === 'unsigned').length,
+)
 
 const hourMarks = computed(() =>
-  Array.from({ length: timelineEnd / 60 - timelineStart / 60 + 1 }, (_, index) => timelineStart + index * 60),
+  Array.from(
+    { length: timelineEnd / 60 - timelineStart / 60 + 1 },
+    (_, index) => timelineStart + index * 60,
+  ),
 )
 
 const hoverSlots = computed(() =>
@@ -162,71 +253,159 @@ const hoverSlots = computed(() =>
   })),
 )
 
-const timelineHeight = computed(() => (hourMarks.value.length - 1) * hourRowHeight + timelineBottomPadding)
+const timelineHeight = computed(
+  () =>
+    timelineTopPadding
+    + (hourMarks.value.length - 1) * hourRowHeight
+    + timelineBottomPadding,
+)
 
 function minuteOffset(minutes) {
-  return ((minutes - timelineStart) / 60) * hourRowHeight
+  return timelineTopPadding + ((minutes - timelineStart) / 60) * hourRowHeight
+}
+
+function normalizeScheduleItem(item) {
+  return {
+    ...item,
+    startMinutes: item.startAt.hour() * 60 + item.startAt.minute(),
+    endMinutes: item.endAt.hour() * 60 + item.endAt.minute(),
+  }
+}
+
+function computeOverlapPeak(items = []) {
+  const columns = []
+  let peak = 1
+  items.forEach((item) => {
+    let columnIndex = columns.findIndex(
+      endValue => endValue <= item.startMinutes,
+    )
+    if (columnIndex === -1) {
+      columnIndex = columns.length
+      columns.push(item.endMinutes)
+    }
+    else {
+      columns[columnIndex] = item.endMinutes
+    }
+    peak = Math.max(peak, columns.length)
+  })
+  return peak
+}
+
+const dateColumnWidths = computed(() => {
+  const map = new Map()
+  headerSummaries.value.forEach((item) => {
+    const list = mockSchedules.value
+      .filter(schedule => schedule.dateKey === item.key)
+      .map(normalizeScheduleItem)
+      .sort((a, b) => a.startAt.valueOf() - b.startAt.valueOf())
+    const peak = computeOverlapPeak(list)
+    map.set(
+      item.key,
+      baseDateColumnWidth + Math.max(0, peak - 1) * overlapExtraWidth,
+    )
+  })
+  return map
+})
+
+const gridTemplateStyle = computed(() => ({
+  gridTemplateColumns: `84px ${headerSummaries.value
+    .map(
+      item =>
+        `${dateColumnWidths.value.get(item.key) || baseDateColumnWidth}px`,
+    )
+    .join(' ')}`,
+  width: 'max-content',
+  minWidth: '100%',
+}))
+
+function buildClusterLayouts(clusterItems = []) {
+  const columns = []
+  let peakColumns = 0
+
+  const assigned = clusterItems.map((item) => {
+    let columnIndex = columns.findIndex(
+      endValue => endValue <= item.startMinutes,
+    )
+    if (columnIndex === -1) {
+      columnIndex = columns.length
+      columns.push(item.endMinutes)
+    }
+    else {
+      columns[columnIndex] = item.endMinutes
+    }
+    peakColumns = Math.max(peakColumns, columns.length)
+    return {
+      ...item,
+      columnIndex,
+      timeText: `${item.startAt.format('HH:mm')} - ${item.endAt.format(
+        'HH:mm',
+      )}`,
+    }
+  })
+
+  return assigned.map(item => ({
+    ...item,
+    displayColumnIndex: item.columnIndex,
+    displayColumnCount: peakColumns,
+  }))
 }
 
 function buildDayLayouts(items = []) {
-  const sorted = [...items].sort((a, b) => a.startAt.valueOf() - b.startAt.valueOf())
-  const columns = []
+  const sorted = [...items]
+    .map(normalizeScheduleItem)
+    .sort((a, b) => a.startAt.valueOf() - b.startAt.valueOf())
 
-  return sorted.map((item) => {
-    const startMinutes = item.startAt.hour() * 60 + item.startAt.minute()
-    const endMinutes = item.endAt.hour() * 60 + item.endAt.minute()
+  const clusters = []
+  let currentCluster = []
+  let currentEnd = -1
 
-    let columnIndex = columns.findIndex(endValue => endValue <= startMinutes)
-    if (columnIndex === -1) {
-      columnIndex = columns.length
-      columns.push(endMinutes)
-    }
-    else {
-      columns[columnIndex] = endMinutes
+  sorted.forEach((item) => {
+    if (currentCluster.length === 0) {
+      currentCluster = [item]
+      currentEnd = item.endMinutes
+      return
     }
 
-    return {
-      ...item,
-      startMinutes,
-      endMinutes,
-      columnIndex,
-      columnCount: columns.length,
+    if (item.startMinutes < currentEnd) {
+      currentCluster.push(item)
+      currentEnd = Math.max(currentEnd, item.endMinutes)
+      return
     }
-  }).map((item) => {
-    const overlapItems = sorted.filter((other) => {
-      const otherStart = other.startAt.hour() * 60 + other.startAt.minute()
-      const otherEnd = other.endAt.hour() * 60 + other.endAt.minute()
-      return !(otherEnd <= item.startMinutes || otherStart >= item.endMinutes)
-    })
-    const overlapCount = Math.max(...overlapItems.map((other) => {
-      const target = sorted.findIndex(x => x.id === other.id)
-      return target >= 0 ? 1 : 1
-    }), 1)
 
-    return {
-      ...item,
-      columnCount: Math.max(item.columnCount, overlapCount),
-    }
+    clusters.push(currentCluster)
+    currentCluster = [item]
+    currentEnd = item.endMinutes
   })
+
+  if (currentCluster.length)
+    clusters.push(currentCluster)
+
+  return clusters.flatMap(cluster => buildClusterLayouts(cluster))
 }
 
 const layoutsByDate = computed(() => {
   const map = new Map()
   headerSummaries.value.forEach((item) => {
-    const list = mockSchedules.value.filter(schedule => schedule.dateKey === item.key)
+    const list = mockSchedules.value.filter(
+      schedule => schedule.dateKey === item.key,
+    )
     map.set(item.key, buildDayLayouts(list))
   })
   return map
 })
 
 function eventStyle(item) {
-  const widthPercent = 100 / Math.max(item.columnCount || 1, 1)
-  const leftPercent = widthPercent * item.columnIndex
+  const leftOffset
+    = (item.displayColumnIndex || 0) * (scheduleCardMinWidth + scheduleCardGap)
+      + 6
   return {
     top: `${minuteOffset(item.startMinutes)}px`,
-    height: `${Math.max(64, ((item.endMinutes - item.startMinutes) / 60) * hourRowHeight)}px`,
-    left: `calc(${leftPercent}% + 6px)`,
-    width: `calc(${widthPercent}% - 12px)`,
+    height: `${Math.max(
+      82,
+      ((item.endMinutes - item.startMinutes) / 60) * hourRowHeight,
+    )}px`,
+    left: `${leftOffset}px`,
+    width: `${scheduleCardMinWidth}px`,
   }
 }
 
@@ -237,6 +416,15 @@ function eventClass(item) {
     'schedule-event--signed': item.status === 'signed',
     'schedule-event--conflict': item.conflict,
   }
+}
+
+function openScheduleEdit(item) {
+  currentSchedule.value = item?.raw || null
+  scheduleEditOpen.value = true
+}
+
+function handleScheduleUpdated() {
+  loadSchedules()
 }
 
 function isActiveColumn(dateKey) {
@@ -271,7 +459,10 @@ function isFutureSlot(dateKey, startMinutes, endMinutes) {
 
 function hasEventInSlot(dateKey, startMinutes, endMinutes) {
   const list = layoutsByDate.value.get(dateKey) || []
-  return list.some(event => !(event.endMinutes <= startMinutes || event.startMinutes >= endMinutes))
+  return list.some(
+    event =>
+      !(event.endMinutes <= startMinutes || event.startMinutes >= endMinutes),
+  )
 }
 
 function createSlotStyle(startMinutes, endMinutes) {
@@ -280,194 +471,296 @@ function createSlotStyle(startMinutes, endMinutes) {
     height: `${((endMinutes - startMinutes) / 60) * hourRowHeight}px`,
   }
 }
+
+function syncScroll(source, target) {
+  if (!source || !target || syncingScroll)
+    return
+  syncingScroll = true
+  target.scrollLeft = source.scrollLeft
+  requestAnimationFrame(() => {
+    syncingScroll = false
+  })
+}
+
+function handleHeaderScroll(event) {
+  syncScroll(event.target, boardScrollRef.value)
+}
+
+function handleBoardScroll(event) {
+  syncScroll(event.target, headerScrollRef.value)
+}
 </script>
 
 <template>
-<div>
-  <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
-    <all-filter :display-array="displayArray" :is-show-search-stu-phonefilter="true" />
-  </div>
-
-  <div class="time-page mt2">
-    <div class="toolbar-card">
-      <div class="toolbar-main">
-        <div class="toolbar-group">
-          <a-radio-group v-model:value="currentTime" button-style="solid" size="small">
-            <a-radio-button v-for="opt in timeOptions" :key="opt.key" :value="opt.key">
-              {{ opt.label }}
-            </a-radio-button>
-          </a-radio-group>
-        </div>
-
-        <div class="toolbar-date">
-          <span class="nav-btn" @click="handlePrev">
-            <LeftOutlined />
-          </span>
-          <div class="toolbar-date__label">
-            {{ formatDateRange(currentDate) }}
-            <a-date-picker
-              v-if="currentTime === 'day'"
-              v-model:value="currentDate"
-              class="date-picker-mask"
-              :allow-clear="false"
-              :bordered="false"
-              :format="formatDateRange"
-            />
-            <a-date-picker
-              v-else
-              v-model:value="currentDate"
-              class="date-picker-mask"
-              picker="week"
-              :allow-clear="false"
-              :bordered="false"
-              :format="formatDateRange"
-            />
-          </div>
-          <span class="nav-btn" @click="handleNext">
-            <RightOutlined />
-          </span>
-        </div>
-
-        <a-space>
-          <create-schedule-popover />
-          <a-button>导出课表</a-button>
-        </a-space>
-      </div>
+  <div>
+    <div
+      class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0"
+    >
+      <all-filter
+        :display-array="displayArray"
+        :is-show-search-stu-phonefilter="true"
+      />
     </div>
 
-    <div class="schedule-card">
-      <div class="schedule-sticky-shell">
-        <div class="schedule-summary">
-          <div class="schedule-summary__left">
-            <span class="summary-accent" />
-            <span>共 {{ mockSchedules.length }} 个日程（未点名 {{ unsignedCount }} 个日程）</span>
+    <div class="time-page mt2">
+      <div class="toolbar-card">
+        <div class="toolbar-main">
+          <div class="toolbar-group">
+            <a-radio-group
+              v-model:value="currentTime"
+              button-style="solid"
+              size="small"
+            >
+              <a-radio-button
+                v-for="opt in timeOptions"
+                :key="opt.key"
+                :value="opt.key"
+              >
+                {{ opt.label }}
+              </a-radio-button>
+            </a-radio-group>
           </div>
-          <div class="schedule-summary__right">
-            <span v-for="item in scheduleLegend" :key="item.key" class="legend-item">
-              <span
-                v-if="item.type === 'bar'"
-                class="legend-item__bar"
-                :style="{ background: item.color }"
+
+          <div class="toolbar-date">
+            <span class="nav-btn" @click="handlePrev">
+              <LeftOutlined />
+            </span>
+            <div class="toolbar-date__label">
+              {{ formatDateRange(currentDate) }}
+              <a-date-picker
+                v-if="currentTime === 'day'"
+                v-model:value="currentDate"
+                class="date-picker-mask"
+                :allow-clear="false"
+                :bordered="false"
+                :format="formatDateRange"
               />
-              <span v-else-if="item.type === 'icon'" class="legend-item__icon legend-item__icon--trial" />
-              <span v-else class="legend-item__icon legend-item__icon--danger" />
-              {{ item.label }}
+              <a-date-picker
+                v-else
+                v-model:value="currentDate"
+                class="date-picker-mask"
+                picker="week"
+                :allow-clear="false"
+                :bordered="false"
+                :format="formatDateRange"
+              />
+            </div>
+            <span class="nav-btn" @click="handleNext">
+              <RightOutlined />
             </span>
           </div>
-        </div>
 
-        <div class="schedule-header-scroll">
-          <div class="schedule-header-grid" :style="gridTemplateStyle">
-            <div class="schedule-time-header" />
-
-            <div
-              v-for="item in headerSummaries"
-              :key="item.key"
-              class="schedule-column-header"
-              :class="{ 'schedule-column-header--active': isActiveColumn(item.key) }"
-            >
-              <div class="schedule-column-header__title">
-                {{ currentTime === 'day' ? '当日' : weekdayLabels[item.date.day() === 0 ? 6 : item.date.day() - 1] }}
-                <span class="schedule-column-header__date">（{{ item.date.format('M-D') }}）</span>
-              </div>
-              <div class="schedule-column-header__count">
-                {{ item.count }}个
-              </div>
-            </div>
-          </div>
+          <a-space>
+            <CreateSchedulePopover />
+            <a-button>导出课表</a-button>
+          </a-space>
         </div>
       </div>
 
-      <div class="schedule-board">
-        <div class="schedule-grid" :style="gridTemplateStyle">
-          <div class="schedule-time-axis">
-            <div
-              v-for="(mark, index) in hourMarks"
-              :key="mark"
-              class="schedule-time-axis__label"
-              :class="{
-                'schedule-time-axis__label--first': index === 0,
-                'schedule-time-axis__label--muted': isMutedTimeLabel(mark),
-              }"
-              :style="{ top: `${minuteOffset(mark)}px` }"
-            >
-              <span class="schedule-time-axis__text">{{ formatClock(mark) }}</span>
+      <div v-loading="scheduleLoading" class="schedule-card">
+        <div class="schedule-sticky-shell">
+          <div class="schedule-summary">
+            <div class="schedule-summary__left">
+              <span class="summary-accent" />
+              <span>共 {{ mockSchedules.length }} 个日程（未点名
+                {{ unsignedCount }} 个日程）</span>
             </div>
-            <div
-              v-if="showCurrentTimeLine"
-              class="schedule-now-axis"
-              :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-            >
-              <span class="schedule-now-axis__text">{{ currentTimeLabel }}</span>
-              <span class="schedule-now-axis__dot" />
+            <div class="schedule-summary__right">
+              <span
+                v-for="item in scheduleLegend"
+                :key="item.key"
+                class="legend-item"
+              >
+                <span
+                  v-if="item.type === 'bar'"
+                  class="legend-item__bar"
+                  :style="{ background: item.color }"
+                />
+                <span
+                  v-else-if="item.type === 'icon'"
+                  class="legend-item__icon legend-item__icon--trial"
+                />
+                <span
+                  v-else
+                  class="legend-item__icon legend-item__icon--danger"
+                />
+                {{ item.label }}
+              </span>
             </div>
           </div>
 
           <div
-            v-for="item in headerSummaries"
-            :key="`${item.key}-body`"
-            class="schedule-column"
-            :class="{ 'schedule-column--active': isActiveColumn(item.key) }"
+            ref="headerScrollRef"
+            class="schedule-header-scroll"
+            @scroll="handleHeaderScroll"
           >
-            <div class="schedule-column__body" :style="{ height: `${timelineHeight}px` }">
-              <div
-                v-for="mark in hourMarks"
-                :key="`${item.key}-${mark}`"
-                class="schedule-column__line"
-                :style="{ top: `${minuteOffset(mark)}px` }"
-              />
-              <template v-for="slot in hoverSlots" :key="`${item.key}-${slot.key}`">
-                <div
-                  v-if="isFutureSlot(item.key, slot.startMinutes, slot.endMinutes) && !hasEventInSlot(item.key, slot.startMinutes, slot.endMinutes)"
-                  class="schedule-create-slot"
-                  :style="createSlotStyle(slot.startMinutes, slot.endMinutes)"
-                >
-                  <create-schedule-popover trigger="click">
-                    <button type="button" class="schedule-create-slot__trigger">
-                      点击创建排课日程
-                    </button>
-                  </create-schedule-popover>
-                </div>
-              </template>
-              <div
-                v-if="showCurrentTimeLine"
-                class="schedule-now-line"
-                :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-              />
+            <div class="schedule-header-grid" :style="gridTemplateStyle">
+              <div class="schedule-time-header" />
 
               <div
-                v-for="event in layoutsByDate.get(item.key) || []"
-                :key="event.id"
-                :class="eventClass(event)"
-                :style="eventStyle(event)"
+                v-for="item in headerSummaries"
+                :key="item.key"
+                class="schedule-column-header"
+                :class="{
+                  'schedule-column-header--active': isActiveColumn(item.key),
+                }"
               >
-                <div class="schedule-event__top">
-                  <span class="schedule-event__time">
-                    {{ event.startAt.format('HH:mm') }} - {{ event.endAt.format('HH:mm') }}
-                  </span>
-                  <span v-if="event.hasTrial" class="schedule-event__badge">
-                    试听
-                  </span>
+                <div class="schedule-column-header__title">
+                  {{
+                    currentTime === "day"
+                      ? "当日"
+                      : weekdayLabels[
+                        item.date.day() === 0 ? 6 : item.date.day() - 1
+                      ]
+                  }}
+                  <span class="schedule-column-header__date">（{{ item.date.format("M-D") }}）</span>
                 </div>
-                <div class="schedule-event__title">
-                  {{ event.title }}
-                </div>
-                <div class="schedule-event__meta">
-                  {{ event.course }}
-                </div>
-                <div class="schedule-event__meta">
-                  {{ event.teacher }} · {{ event.classroom }}
-                </div>
-                <div class="schedule-event__footer">
-                  {{ event.studentText }}
+                <div class="schedule-column-header__count">
+                  {{ item.count }}个
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          ref="boardScrollRef"
+          class="schedule-board"
+          @scroll="handleBoardScroll"
+        >
+          <div class="schedule-grid" :style="gridTemplateStyle">
+            <div class="schedule-time-axis">
+              <div
+                v-for="(mark, index) in hourMarks"
+                :key="mark"
+                class="schedule-time-axis__label"
+                :class="{
+                  'schedule-time-axis__label--first': index === 0,
+                  'schedule-time-axis__label--muted': isMutedTimeLabel(mark),
+                }"
+                :style="{ top: `${minuteOffset(mark)}px` }"
+              >
+                <span class="schedule-time-axis__text">{{
+                  formatClock(mark)
+                }}</span>
+              </div>
+              <div
+                v-if="showCurrentTimeLine"
+                class="schedule-now-axis"
+                :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
+              >
+                <span class="schedule-now-axis__text">{{
+                  currentTimeLabel
+                }}</span>
+                <span class="schedule-now-axis__dot" />
+              </div>
+            </div>
+
+            <div
+              v-for="item in headerSummaries"
+              :key="`${item.key}-body`"
+              class="schedule-column"
+              :class="{ 'schedule-column--active': isActiveColumn(item.key) }"
+            >
+              <div
+                class="schedule-column__body"
+                :style="{ height: `${timelineHeight}px` }"
+              >
+                <div
+                  v-for="mark in hourMarks"
+                  :key="`${item.key}-${mark}`"
+                  class="schedule-column__line"
+                  :style="{ top: `${minuteOffset(mark)}px` }"
+                />
+                <template
+                  v-for="slot in hoverSlots"
+                  :key="`${item.key}-${slot.key}`"
+                >
+                  <div
+                    v-if="
+                      isFutureSlot(
+                        item.key,
+                        slot.startMinutes,
+                        slot.endMinutes,
+                      )
+                        && !hasEventInSlot(
+                          item.key,
+                          slot.startMinutes,
+                          slot.endMinutes,
+                        )
+                    "
+                    class="schedule-create-slot"
+                    :style="createSlotStyle(slot.startMinutes, slot.endMinutes)"
+                  >
+                    <CreateSchedulePopover trigger="click">
+                      <button
+                        type="button"
+                        class="schedule-create-slot__trigger"
+                      >
+                        点击创建排课日程
+                      </button>
+                    </CreateSchedulePopover>
+                  </div>
+                </template>
+                <div
+                  v-if="showCurrentTimeLine"
+                  class="schedule-now-line"
+                  :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
+                />
+
+                <div
+                  v-for="event in layoutsByDate.get(item.key) || []"
+                  :key="event.id"
+                  :class="eventClass(event)"
+                  :style="eventStyle(event)"
+                  @click="openScheduleEdit(event)"
+                >
+                  <div class="schedule-event__top">
+                    <div class="schedule-event__time">
+                      {{ event.timeText }}
+                    </div>
+                    <div class="schedule-event__badges">
+                      <span
+                        v-if="event.classType === 2"
+                        class="schedule-event__badge schedule-event__badge--one-to-one"
+                      >
+                        1v1
+                      </span>
+                      <span v-if="event.hasTrial" class="schedule-event__badge">
+                        试听
+                      </span>
+                    </div>
+                  </div>
+                  <div class="schedule-event__body">
+                    <div class="schedule-event__title">
+                      {{ event.title }}
+                    </div>
+                    <div class="schedule-event__meta schedule-event__meta__course">
+                      {{ event.course }}
+                    </div>
+                    <div
+                      class="schedule-event__meta schedule-event__meta--muted"
+                    >
+                      {{ event.teacher }}
+                      <template
+                        v-if="event.classroom && event.classroom !== '-'"
+                      >
+                        · {{ event.classroom }}
+                      </template>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
+    <ScheduleBatchEditModal
+      v-model:open="scheduleEditOpen"
+      :schedule="currentSchedule"
+      @updated="handleScheduleUpdated"
+    />
   </div>
 </template>
 
@@ -642,22 +935,27 @@ function createSlotStyle(startMinutes, endMinutes) {
 }
 
 .schedule-header-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
   background: #fff;
 }
 
 .schedule-header-grid {
   display: grid;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
 }
 
 .schedule-board {
-  overflow: visible;
+  overflow-x: auto;
+  overflow-y: visible;
   background: #fff;
 }
 
 .schedule-grid {
   display: grid;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   position: relative;
 }
 
@@ -728,7 +1026,7 @@ function createSlotStyle(startMinutes, endMinutes) {
 }
 
 .schedule-time-axis__label--first {
-  transform: translateY(0);
+  transform: translateY(-50%);
 }
 
 .schedule-time-axis__label--muted .schedule-time-axis__text {
@@ -823,9 +1121,7 @@ function createSlotStyle(startMinutes, endMinutes) {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition:
-    color 0.18s ease,
-    border-color 0.18s ease,
+  transition: color 0.18s ease, border-color 0.18s ease,
     background-color 0.18s ease;
 }
 
@@ -838,43 +1134,25 @@ function createSlotStyle(startMinutes, endMinutes) {
 .schedule-event {
   position: absolute;
   z-index: 2;
-  padding: 4px 10px 4px;
-  border-radius: 8px;
-  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-radius: 4px;
+  background: #ffffff;
   overflow: hidden;
-  box-shadow: 0 8px 20px rgb(15 23 42 / 8%);
+  box-shadow: 0 6px 16px rgb(22 119 255 / 10%);
 }
 
 .schedule-event--unsigned {
-  background: linear-gradient(180deg, #f5f8ff 0%, #ffffff 100%);
-  border-color: #dbeafe;
+  background: #ffffff;
 }
 
 .schedule-event--signed {
-  background: linear-gradient(180deg, #f5f7fa 0%, #fff 100%);
-  border-color: #d7dbe2;
-}
-
-.schedule-event--unsigned::before,
-.schedule-event--signed::before {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  content: "";
-}
-
-.schedule-event--unsigned::before {
-  background: linear-gradient(180deg, #39b8ff 0%, #6c5cff 52%, #74d87f 100%);
-}
-
-.schedule-event--signed::before {
-  background: #b7bec8;
+  background: #f5f7fa;
 }
 
 .schedule-event--conflict {
-  box-shadow: 0 0 0 1px rgb(255 77 79 / 35%), 0 8px 20px rgb(255 77 79 / 10%);
+  box-shadow: 0 0 0 2px rgb(255 77 79 / 28%), 0 16px 32px rgb(255 77 79 / 16%);
 }
 
 .schedule-event__top {
@@ -882,40 +1160,86 @@ function createSlotStyle(startMinutes, endMinutes) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-height: 24px;
+  padding: 3px 4px 3px 10px;
+  background: #1677ff;
+}
+
+.schedule-event--signed .schedule-event__top {
+  background: #98a2b3;
 }
 
 .schedule-event__time {
-  color: #3b82f6;
-  font-size: 11px;
-  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.schedule-event__badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .schedule-event__badge {
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: #eef2f7;
-  color: #64748b;
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: rgb(9 61 149 / 24%);
+  color: #fff;
+  font-size: 10px;
   font-weight: 700;
+  line-height: 1;
+  border: none;
+}
+
+.schedule-event__badge--one-to-one {
+  background: rgb(9 61 149 / 24%);
+  color: #fff;
+}
+
+.schedule-event__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 0 10px;
 }
 
 .schedule-event__title {
   color: #0f172a;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
 }
 
 .schedule-event__meta {
   color: #64748b;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.schedule-event__meta__course{
+  margin: 4px 0;
 }
 
-.schedule-event__footer {
-  margin-top: 6px;
+.schedule-event__meta--muted {
   color: #334155;
-  font-size: 12px;
   font-weight: 600;
 }
 
