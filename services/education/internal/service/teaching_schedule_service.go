@@ -309,6 +309,15 @@ func (svc *Service) BatchUpdateTeachingSchedules(userID int64, dto model.Teachin
 	return svc.repo.BatchUpdateTeachingSchedules(context.Background(), instID, operatorID, dto)
 }
 
+// CopyTeachingSchedulesWeek 将源周课表复制到目标周（按日历天对齐）；源 batch 在目标周生成新 batch_no，batch_size 与复制条数一致。
+func (svc *Service) CopyTeachingSchedulesWeek(userID int64, dto model.TeachingScheduleCopyWeekDTO) (model.TeachingScheduleCopyWeekResult, error) {
+	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.TeachingScheduleCopyWeekResult{}, err
+	}
+	return svc.repo.CopyTeachingSchedulesWeek(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) resolveTeachingScheduleOperator(userID int64) (int64, int64, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

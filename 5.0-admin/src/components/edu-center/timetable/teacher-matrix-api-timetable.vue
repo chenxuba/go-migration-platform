@@ -5,10 +5,13 @@ import type {
   TeachingScheduleMatrixDay,
   TeachingScheduleMatrixLegacyItem,
 } from '@/api/edu-center/teaching-schedule'
-import { LeftOutlined, RightOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { CopyOutlined, DownloadOutlined, LeftOutlined, RightOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
+  copyTeachingSchedulesWeekApi,
+  downloadTeachingSchedulesTeacherMatrixExcelApi,
   listTeachingSchedulesByTeacherMatrixApi,
   type MatrixTeacherFilterParam,
 } from '@/api/edu-center/teaching-schedule'
@@ -189,6 +192,11 @@ const matrixDisplay = ref<MatrixDisplayPreferences>(loadMatrixDisplayFromStorage
 const displayConfigOpen = ref(false)
 const tempMatrixDisplay = ref<MatrixDisplayPreferences>({ ...loadMatrixDisplayFromStorage() })
 
+/** 复制周课表：目标周（周选择器值） */
+const copyWeekModalOpen = ref(false)
+const copyTargetWeek = ref(dayjs())
+const copyWeekSubmitting = ref(false)
+
 const weekdayOptions = [
   { value: 1, label: '周一' },
   { value: 2, label: '周二' },
@@ -293,6 +301,116 @@ function buildMatrixQueryParams() {
   const teacherFilter
     = prefs.teacherFilter === 'all' ? undefined : prefs.teacherFilter
   return { weekdaysStr, teacherFilter }
+}
+
+/** 解析下载响应里的文件名：优先 RFC5987 的 filename*=UTF-8''（与后端 url.QueryEscape 一致） */
+function parseAttachmentFilenameFromHeader(cd: string | undefined): string | undefined {
+  if (!cd)
+    return undefined
+  const star = /filename\*=(?:UTF-8'')?([^;\n]+)/i.exec(cd)
+  if (star?.[1]) {
+    const raw = star[1].trim().replace(/^["']|["']$/g, '')
+    try {
+      return decodeURIComponent(raw.replace(/\+/g, ' '))
+    }
+    catch {
+      return raw
+    }
+  }
+  const quoted = /filename="([^"]*)"/i.exec(cd)
+  if (quoted?.[1])
+    return quoted[1]
+  return undefined
+}
+
+function openCopyWeekModal() {
+  copyTargetWeek.value = getWeekStart(currentDate.value).add(1, 'week')
+  copyWeekModalOpen.value = true
+}
+
+/**
+ * 将当前 queryRange 对应周的 1 对 1 课表复制到目标周（与后端 copy-week 一致）。
+ * 返回 rejected Promise 时可阻止弹窗关闭（Ant Design Vue Modal async ok）。
+ */
+async function handleCopyWeekConfirm() {
+  const srcStart = queryRange.value.startDate
+  const srcEnd = queryRange.value.endDate
+  const tStart = getWeekStart(copyTargetWeek.value).format('YYYY-MM-DD')
+  const tEnd = getWeekStart(copyTargetWeek.value).add(6, 'day').format('YYYY-MM-DD')
+  if (srcStart === tStart && srcEnd === tEnd) {
+    message.warning('目标周不能与当前周相同')
+    return Promise.reject(new Error('same week'))
+  }
+  copyWeekSubmitting.value = true
+  try {
+    const res = await copyTeachingSchedulesWeekApi({
+      sourceStartDate: srcStart,
+      sourceEndDate: srcEnd,
+      targetStartDate: tStart,
+      targetEndDate: tEnd,
+      classType: 2,
+    })
+    const raw = res.data ?? res.result
+    const created = typeof raw === 'object' && raw && 'created' in raw
+      ? Number((raw as { created: number }).created)
+      : 0
+    message.success(
+      created > 0
+        ? `已复制 ${created} 节日程到 ${formatWeekRange(copyTargetWeek.value)}`
+        : '未新增日程（当周可能没有可复制的课，或目标周存在冲突）',
+    )
+    copyWeekModalOpen.value = false
+    currentDate.value = getWeekStart(copyTargetWeek.value)
+    await loadMatrix()
+  }
+  catch {
+    return Promise.reject(new Error('copy week failed'))
+  }
+  finally {
+    copyWeekSubmitting.value = false
+  }
+}
+
+async function exportTeacherMatrixExcel() {
+  try {
+    const { weekdaysStr, teacherFilter } = buildMatrixQueryParams()
+    const res = await downloadTeachingSchedulesTeacherMatrixExcelApi({
+      startDate: queryRange.value.startDate,
+      endDate: queryRange.value.endDate,
+      classType: 2,
+      ...(weekdaysStr ? { weekdays: weekdaysStr } : {}),
+      ...(teacherFilter ? { teacherFilter } : {}),
+    })
+    const ct = String(res.headers['content-type'] || '')
+    if (ct.includes('application/json')) {
+      const text = await (res.data as Blob).text()
+      try {
+        const j = JSON.parse(text) as { message?: string }
+        message.error(j.message || '导出失败')
+      }
+      catch {
+        message.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data as BlobPart], {
+      type: ct || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const cd = res.headers['content-disposition']
+    const filename = parseAttachmentFilenameFromHeader(cd)
+      ?? `课表导出_${queryRange.value.startDate}_${queryRange.value.endDate}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    message.success('已导出课表')
+  }
+  catch (e) {
+    console.error('export teacher matrix failed', e)
+    message.error('导出失败')
+  }
 }
 
 async function loadMatrix() {
@@ -760,6 +878,26 @@ const totalLessons = computed(() => internalSchedules.value.length)
         <a-button
           type="default"
           size="small"
+          @click="openCopyWeekModal"
+        >
+          <template #icon>
+            <CopyOutlined />
+          </template>
+          复制周课表
+        </a-button>
+        <a-button
+          type="default"
+          size="small"
+          @click="exportTeacherMatrixExcel"
+        >
+          <template #icon>
+            <DownloadOutlined />
+          </template>
+          导出课表
+        </a-button>
+        <a-button
+          type="default"
+          size="small"
           @click="openMatrixDisplayConfig"
         >
           <template #icon>
@@ -825,6 +963,29 @@ const totalLessons = computed(() => internalSchedules.value.length)
             </a-radio-button>
           </a-radio-group>
         </div>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="copyWeekModalOpen"
+      title="复制周课表"
+      ok-text="开始复制"
+      cancel-text="取消"
+      :confirm-loading="copyWeekSubmitting"
+      @ok="handleCopyWeekConfirm"
+    >
+      <p class="tm-copy-week-hint">
+        将当前周 <strong>{{ formatWeekRange(currentDate) }}</strong> 的 <strong>1 对 1</strong> 课表按星期对齐复制到目标周（批量排课会保持新的批量关系）。
+      </p>
+      <div class="tm-copy-week-picker">
+        <span class="tm-copy-week-label">复制到</span>
+        <a-date-picker
+          v-model:value="copyTargetWeek"
+          picker="week"
+          :allow-clear="false"
+          style="width: 100%"
+          :format="formatWeekRange"
+        />
       </div>
     </a-modal>
 
@@ -1166,6 +1327,26 @@ const totalLessons = computed(() => internalSchedules.value.length)
   flex-direction: column;
   gap: 20px;
   padding: 4px 0 8px;
+}
+
+.tm-copy-week-hint {
+  margin: 0 0 16px;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.tm-copy-week-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tm-copy-week-label {
+  flex-shrink: 0;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .tm-dc-row {

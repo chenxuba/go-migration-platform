@@ -1,7 +1,7 @@
 <script setup>
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
 import { listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
@@ -32,6 +32,12 @@ const currentSchedule = ref(null)
 const headerScrollRef = ref(null)
 const boardScrollRef = ref(null)
 let syncingScroll = false
+
+/** 与教师矩阵课表一致：日期条横向滚动时「钉」在可视区中心的浮动芯片 */
+const timeHeaderTimeColWidth = 84
+const floatingDatePillWidth = 156
+const floatingDateStyles = ref({})
+let headerDatesResizeObserver = null
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const timelineStart = 8 * 60
@@ -94,6 +100,10 @@ onUnmounted(() => {
     nowTimer = null
   }
   emitter.off(EVENTS.REFRESH_DATA, loadSchedules)
+  if (headerDatesResizeObserver) {
+    headerDatesResizeObserver.disconnect()
+    headerDatesResizeObserver = null
+  }
 })
 
 watch(currentTime, () => {
@@ -201,6 +211,8 @@ async function loadSchedules() {
   }
   finally {
     scheduleLoading.value = false
+    await nextTick()
+    updateFloatingDatePositions(boardScrollRef.value?.scrollLeft ?? headerScrollRef.value?.scrollLeft ?? 0)
   }
 }
 
@@ -319,6 +331,98 @@ const dateColumnWidths = computed(() => {
   })
   return map
 })
+
+function getDayColumnLeftAndWidth(dayIndex) {
+  const items = headerSummaries.value
+  if (dayIndex < 0 || dayIndex >= items.length)
+    return { left: 0, width: 0 }
+  let left = timeHeaderTimeColWidth
+  for (let i = 0; i < dayIndex; i++) {
+    const w = dateColumnWidths.value.get(items[i].key) || baseDateColumnWidth
+    left += w
+  }
+  const key = items[dayIndex].key
+  const width = dateColumnWidths.value.get(key) || baseDateColumnWidth
+  return { left, width }
+}
+
+/** 以表体 scrollLeft 参与计算；可视宽度取表头滚动容器（与教师矩阵一致）。 */
+function updateFloatingDatePositions(scrollLeftOverride) {
+  const headerEl = headerScrollRef.value
+  const boardEl = boardScrollRef.value
+  const items = headerSummaries.value
+  if (!headerEl || !items.length) {
+    floatingDateStyles.value = {}
+    return
+  }
+  const scrollLeft = scrollLeftOverride ?? boardEl?.scrollLeft ?? headerEl.scrollLeft
+  const containerWidth
+    = headerEl.clientWidth > 0
+      ? headerEl.clientWidth
+      : Math.max(300, (boardEl?.clientWidth ?? 800) - 100)
+  const pillW = floatingDatePillWidth
+  const next = {}
+
+  items.forEach((item, index) => {
+    const { left: leftOffset, width: dayColumnWidth } = getDayColumnLeftAndWidth(index)
+    const rightOffset = leftOffset + dayColumnWidth
+    const expandedScrollLeft = Math.max(0, scrollLeft - 200)
+    const expandedScrollRight = scrollLeft + containerWidth + 200
+    const inPlay = rightOffset > expandedScrollLeft && leftOffset < expandedScrollRight
+
+    if (!inPlay || dayColumnWidth <= 0) {
+      next[item.key] = {
+        left: `${leftOffset}px`,
+        opacity: '0',
+        visibility: 'hidden',
+      }
+      return
+    }
+
+    let finalPosition = leftOffset + (dayColumnWidth - pillW) / 2
+    if (leftOffset >= scrollLeft && rightOffset <= scrollLeft + containerWidth) {
+      finalPosition = leftOffset + (dayColumnWidth - pillW) / 2
+    }
+    else {
+      const visibleLeft = Math.max(leftOffset, scrollLeft)
+      const visibleRight = Math.min(rightOffset, scrollLeft + containerWidth)
+      const visibleWidth = visibleRight - visibleLeft
+      if (visibleWidth >= pillW)
+        finalPosition = visibleLeft + (visibleWidth - pillW) / 2
+      else
+        finalPosition = visibleLeft
+    }
+    if (finalPosition < leftOffset)
+      finalPosition = leftOffset
+    if (finalPosition + pillW > rightOffset)
+      finalPosition = rightOffset - pillW
+
+    next[item.key] = {
+      left: `${finalPosition}px`,
+      opacity: '1',
+      visibility: 'visible',
+    }
+  })
+  floatingDateStyles.value = next
+}
+
+function getFloatingStyle(dateKey) {
+  return floatingDateStyles.value[dateKey] ?? {
+    left: '0',
+    opacity: '0',
+    visibility: 'hidden',
+  }
+}
+
+function floatingPillStyle(dateKey) {
+  const s = getFloatingStyle(dateKey)
+  return {
+    width: `${floatingDatePillWidth}px`,
+    left: s.left,
+    opacity: s.opacity,
+    visibility: s.visibility,
+  }
+}
 
 const gridTemplateStyle = computed(() => {
   const isDaySingleColumn
@@ -501,11 +605,32 @@ function syncScroll(source, target) {
 
 function handleHeaderScroll(event) {
   syncScroll(event.target, boardScrollRef.value)
+  updateFloatingDatePositions(
+    boardScrollRef.value?.scrollLeft ?? event.target.scrollLeft,
+  )
 }
 
 function handleBoardScroll(event) {
   syncScroll(event.target, headerScrollRef.value)
+  updateFloatingDatePositions(event.target.scrollLeft)
 }
+
+watch(
+  () => headerScrollRef.value,
+  (el) => {
+    if (headerDatesResizeObserver) {
+      headerDatesResizeObserver.disconnect()
+      headerDatesResizeObserver = null
+    }
+    if (!el || typeof ResizeObserver === 'undefined')
+      return
+    headerDatesResizeObserver = new ResizeObserver(() => updateFloatingDatePositions())
+    headerDatesResizeObserver.observe(el)
+    nextTick(() => updateFloatingDatePositions())
+  },
+)
+
+watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 </script>
 
 <template>
@@ -651,29 +776,52 @@ function handleBoardScroll(event) {
             class="schedule-header-scroll"
             @scroll="handleHeaderScroll"
           >
-            <div class="schedule-header-grid" :style="gridTemplateStyle">
-              <div class="schedule-time-header" />
-
-              <div
-                v-for="item in headerSummaries"
-                :key="item.key"
-                class="schedule-column-header"
-                :class="{
-                  'schedule-column-header--active': isActiveColumn(item.key),
-                }"
-              >
-                <div class="schedule-column-header__title">
-                  {{
-                    currentTime === "day"
-                      ? "当日"
-                      : weekdayLabels[
-                        item.date.day() === 0 ? 6 : item.date.day() - 1
-                      ]
-                  }}
-                  <span class="schedule-column-header__date">（{{ item.date.format("M-D") }}）</span>
+            <div class="schedule-header-track">
+              <div class="schedule-floating-date-layer">
+                <div
+                  v-for="item in headerSummaries"
+                  :key="`float-${item.key}`"
+                  class="schedule-floating-chip"
+                  :class="{ 'schedule-floating-chip--today': isActiveColumn(item.key) }"
+                  :style="floatingPillStyle(item.key)"
+                >
+                  <div class="schedule-floating-chip__line">
+                    <span class="schedule-floating-chip__date">{{ item.date.format("M/D") }}</span>
+                    <span class="schedule-floating-chip__week">{{
+                      ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][item.date.day()]
+                    }}</span>
+                  </div>
+                  <div class="schedule-floating-chip__meta">
+                    共 <strong>{{ item.count }}</strong> 个
+                  </div>
                 </div>
-                <div class="schedule-column-header__count">
-                  {{ item.count }}个
+              </div>
+              <div class="schedule-header-grid" :style="gridTemplateStyle">
+                <div class="schedule-time-header" />
+
+                <div
+                  v-for="(item, di) in headerSummaries"
+                  :key="item.key"
+                  class="schedule-column-header"
+                  :class="{
+                    'schedule-column-header--active': isActiveColumn(item.key),
+                    'schedule-column-header--day-divider':
+                      di < headerSummaries.length - 1,
+                  }"
+                >
+                  <div class="schedule-column-header__title schedule-column-header__title--ghost" aria-hidden="true">
+                    {{
+                      currentTime === "day"
+                        ? "当日"
+                        : weekdayLabels[
+                          item.date.day() === 0 ? 6 : item.date.day() - 1
+                        ]
+                    }}
+                    <span class="schedule-column-header__date">（{{ item.date.format("M-D") }}）</span>
+                  </div>
+                  <div class="schedule-column-header__count schedule-column-header__count--ghost" aria-hidden="true">
+                    {{ item.count }}个
+                  </div>
                 </div>
               </div>
             </div>
@@ -714,10 +862,14 @@ function handleBoardScroll(event) {
             </div>
 
             <div
-              v-for="item in headerSummaries"
+              v-for="(item, di) in headerSummaries"
               :key="`${item.key}-body`"
               class="schedule-column"
-              :class="{ 'schedule-column--active': isActiveColumn(item.key) }"
+              :class="{
+                'schedule-column--active': isActiveColumn(item.key),
+                'schedule-column--day-divider':
+                  di < headerSummaries.length - 1,
+              }"
             >
               <div
                 class="schedule-column__body"
@@ -987,6 +1139,124 @@ function handleBoardScroll(event) {
   background: #fff;
 }
 
+.schedule-header-track {
+  position: relative;
+  width: max-content;
+  min-width: 100%;
+}
+
+.schedule-floating-date-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  pointer-events: none;
+}
+
+.schedule-floating-chip {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 44px;
+  padding: 6px 12px 7px;
+  border: 1px solid #cdd9ea;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 6%),
+    0 0 0 1px rgb(255 255 255 / 80%) inset;
+  text-align: center;
+  isolation: isolate;
+  transform: translateY(-50%);
+}
+
+.schedule-floating-chip__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1.15;
+}
+
+.schedule-floating-chip__date {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.schedule-floating-chip__week {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.schedule-floating-chip__meta {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+
+.schedule-floating-chip__meta strong {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.schedule-floating-chip--today {
+  border-color: #91caff;
+  background: #f5f9ff;
+  box-shadow:
+    0 1px 3px rgb(22 119 255 / 12%),
+    inset 0 0 0 1px rgb(255 255 255 / 90%);
+}
+
+.schedule-floating-chip--today::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 34px;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+  background: #1677ff;
+  transform: translateX(-50%);
+}
+
+.schedule-floating-chip--today .schedule-floating-chip__date {
+  color: #0958d9;
+}
+
+.schedule-floating-chip--today .schedule-floating-chip__week {
+  color: #1677ff;
+}
+
+.schedule-floating-chip--today .schedule-floating-chip__meta,
+.schedule-floating-chip--today .schedule-floating-chip__meta strong {
+  color: #1677ff;
+}
+
+.schedule-floating-chip--today .schedule-floating-chip__meta {
+  opacity: 0.9;
+}
+
+.schedule-column-header__title--ghost,
+.schedule-column-header__count--ghost {
+  visibility: hidden;
+}
+
 .schedule-header-grid {
   display: grid;
   width: max-content;
@@ -1064,6 +1334,11 @@ function handleBoardScroll(event) {
   box-shadow: inset 0 3px 0 #1677ff;
 }
 
+.schedule-column-header--day-divider {
+  border-right-width: 2px;
+  border-right-color: #a8b8cc;
+}
+
 .schedule-column-header__date {
   color: #6b7280;
   font-weight: 600;
@@ -1129,6 +1404,11 @@ function handleBoardScroll(event) {
 
 .schedule-column--active {
   background: #f3f9ff;
+}
+
+.schedule-column--day-divider {
+  border-right-width: 2px;
+  border-right-color: #a8b8cc;
 }
 
 .schedule-column__body {

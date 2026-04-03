@@ -41,6 +41,20 @@ type TeachingScheduleBatchUpdateDTO struct {
 	EndTime      string   `json:"endTime"`
 }
 
+// TeachingScheduleCopyWeekDTO 将源日期区间内的课表按「星期对齐」复制到目标区间（两区间须同为连续日历天且天数一致）。
+type TeachingScheduleCopyWeekDTO struct {
+	SourceStartDate string `json:"sourceStartDate"`
+	SourceEndDate   string `json:"sourceEndDate"`
+	TargetStartDate string `json:"targetStartDate"`
+	TargetEndDate   string `json:"targetEndDate"`
+	// ClassType 可选；省略时仅复制 1 对 1（与矩阵课表一致）。传入其它值可复制对应类型。
+	ClassType *int `json:"classType,omitempty"`
+}
+
+type TeachingScheduleCopyWeekResult struct {
+	Created int `json:"created"`
+}
+
 type TeachingScheduleVO struct {
 	ID                string    `json:"id"`
 	BatchNo           string    `json:"batchNo,omitempty"`

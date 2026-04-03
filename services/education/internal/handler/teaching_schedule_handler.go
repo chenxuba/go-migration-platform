@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,33 @@ import (
 	"go-migration-platform/pkg/tenant"
 	"go-migration-platform/services/education/internal/model"
 )
+
+func parseTeacherMatrixQuery(r *http.Request) model.TeachingScheduleListQueryDTO {
+	query := model.TeachingScheduleListQueryDTO{
+		StartDate:           strings.TrimSpace(r.URL.Query().Get("startDate")),
+		EndDate:             strings.TrimSpace(r.URL.Query().Get("endDate")),
+		MatrixTeacherFilter: strings.TrimSpace(strings.ToLower(r.URL.Query().Get("teacherFilter"))),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("classType")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+			query.ClassType = &value
+		}
+	}
+	if w := strings.TrimSpace(r.URL.Query().Get("weekdays")); w != "" {
+		for _, p := range strings.Split(w, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			v, err := strconv.Atoi(p)
+			if err != nil || v < 1 || v > 7 {
+				continue
+			}
+			query.MatrixWeekdays = append(query.MatrixWeekdays, v)
+		}
+	}
+	return query
+}
 
 func (handler *Handler) createOneToOneSchedules(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
@@ -94,35 +122,36 @@ func (handler *Handler) teachingSchedulesByTeacherMatrix(w http.ResponseWriter, 
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	query := model.TeachingScheduleListQueryDTO{
-		StartDate:           strings.TrimSpace(r.URL.Query().Get("startDate")),
-		EndDate:             strings.TrimSpace(r.URL.Query().Get("endDate")),
-		MatrixTeacherFilter: strings.TrimSpace(strings.ToLower(r.URL.Query().Get("teacherFilter"))),
-	}
-	if raw := strings.TrimSpace(r.URL.Query().Get("classType")); raw != "" {
-		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
-			query.ClassType = &value
-		}
-	}
-	if w := strings.TrimSpace(r.URL.Query().Get("weekdays")); w != "" {
-		for _, p := range strings.Split(w, ",") {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			v, err := strconv.Atoi(p)
-			if err != nil || v < 1 || v > 7 {
-				continue
-			}
-			query.MatrixWeekdays = append(query.MatrixWeekdays, v)
-		}
-	}
+	query := parseTeacherMatrixQuery(r)
 	result, err := handler.service.ListTeachingSchedulesByTeacherMatrix(claims.UserID, query)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) teachingSchedulesTeacherMatrixExport(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query := parseTeacherMatrixQuery(r)
+	buf, filename, err := handler.service.ExportTeachingSchedulesTeacherMatrixExcel(claims.UserID, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	// RFC 5987：UTF-8 文件名必须用 filename*，否则许多客户端会把中文当 Latin-1 显示成乱码
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf)
 }
 
 func (handler *Handler) batchUpdateTeachingSchedules(w http.ResponseWriter, r *http.Request) {
@@ -145,4 +174,27 @@ func (handler *Handler) batchUpdateTeachingSchedules(w http.ResponseWriter, r *h
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) copyTeachingSchedulesWeek(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var dto model.TeachingScheduleCopyWeekDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.CopyTeachingSchedulesWeek(claims.UserID, dto)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }

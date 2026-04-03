@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { useGet, usePost } from '~/utils/request'
 
 export interface TeachingScheduleItem {
@@ -148,6 +150,26 @@ export function listTeachingSchedulesByTeacherMatrixApi(params: {
   )
 }
 
+/** 导出教师矩阵课表 Excel（每位教师一个 Sheet），查询参数与矩阵列表一致 */
+export async function downloadTeachingSchedulesTeacherMatrixExcelApi(params: {
+  startDate: string
+  endDate: string
+  classType?: number
+  weekdays?: string
+  teacherFilter?: Exclude<MatrixTeacherFilterParam, 'all'>
+}) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/teaching-schedules/by-teacher-matrix/export', {
+    params,
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 export function batchUpdateTeachingSchedulesApi(data: {
   batchNo?: string
   ids?: string[]
@@ -158,4 +180,16 @@ export function batchUpdateTeachingSchedulesApi(data: {
   endTime: string
 }) {
   return usePost<boolean>('/api/v1/teaching-schedules/batch-update', data)
+}
+
+/** 将源周课表按天对齐复制到目标周；源 batch 在目标周使用新 batchNo，batchSize 与复制条数一致 */
+export function copyTeachingSchedulesWeekApi(data: {
+  sourceStartDate: string
+  sourceEndDate: string
+  targetStartDate: string
+  targetEndDate: string
+  /** 省略时后端默认仅复制 1 对 1（classType=2） */
+  classType?: number
+}) {
+  return usePost<{ created: number }>('/api/v1/teaching-schedules/copy-week', data)
 }
