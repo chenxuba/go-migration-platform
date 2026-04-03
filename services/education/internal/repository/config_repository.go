@@ -2,19 +2,28 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 )
 
 var instConfigBooleanFields = map[string]struct{}{
-	"enablePublicPool":      {},
-	"enableCollectorStaff":  {},
-	"enablePhoneSellStaff":  {},
-	"enableForeground":      {},
-	"enableViceSellStaff":   {},
-	"enableAdvisor":         {},
-	"enableStudentManager":  {},
-	"limitSameWeChat":       {},
-	"limitImportSameWeChat": {},
+	"enablePublicPool":         {},
+	"enableCollectorStaff":     {},
+	"enablePhoneSellStaff":     {},
+	"enableForeground":         {},
+	"enableViceSellStaff":      {},
+	"enableAdvisor":            {},
+	"enableStudentManager":     {},
+	"limitSameWeChat":          {},
+	"limitImportSameWeChat":    {},
+	"enableQuickUnifiedPeriod": {},
+}
+
+func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) error {
+	return ensureColumnsOnTable(ctx, db, "inst_config", map[string]string{
+		"enable_quick_unified_period": "enable_quick_unified_period TINYINT(1) NOT NULL DEFAULT 0",
+		"unified_time_period_json":    "unified_time_period_json LONGTEXT NULL",
+	})
 }
 
 func (repo *Repository) GetInstConfig(ctx context.Context, instID int64) (map[string]any, error) {
@@ -101,8 +110,10 @@ func (repo *Repository) UpdateInstConfig(ctx context.Context, instID int64, payl
 		"enableViceSellStaff":     "enable_vice_sell_staff",
 		"enableAdvisor":           "enable_advisor",
 		"enableStudentManager":    "enable_student_manager",
-		"limitSameWeChat":         "limit_same_weChat",
-		"limitImportSameWeChat":   "limit_import_same_weChat",
+		"limitSameWeChat":           "limit_same_weChat",
+		"limitImportSameWeChat":     "limit_import_same_weChat",
+		"enableQuickUnifiedPeriod":  "enable_quick_unified_period",
+		"unifiedTimePeriodJson":     "unified_time_period_json",
 	}
 
 	setClauses := make([]string, 0, len(payload)+1)

@@ -137,6 +137,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureComposeLessonTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := EnsureInstConfigUnifiedTimePeriodColumns(ctx, repo.db); err != nil {
+		return err
+	}
 	var exists int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)

@@ -1,13 +1,74 @@
 <script setup>
 import { QuestionCircleOutlined, RightOutlined } from '@ant-design/icons-vue'
 import CreateCombinedCourseModal from '~/components/common/create-combined-course-modal.vue'
+import InstUnifiedPeriodEditDrawer from '@/components/business-settings/inst-unified-period-edit-drawer.vue'
+import { useUserStore } from '@/stores/user'
+import { setInstConfigApi } from '@/api/common/config'
+import {
+  DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
+  parseUnifiedTimePeriodConfig,
+  slotCountActive,
+  configGroupsSorted,
+} from '@/utils/unified-time-period'
+import messageService from '@/utils/messageService'
 
 const combinedCourseModalOpen = ref(false)
+const userStore = useUserStore()
+const unifiedPeriodEditOpen = ref(false)
+
+const unifiedPeriodDisplay = computed(() => {
+  const parsed = parseUnifiedTimePeriodConfig(userStore.instConfig?.unifiedTimePeriodJson)
+  const cfg = parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG
+  return configGroupsSorted(cfg)
+})
+
+function sortSlotsForDisplay(slots) {
+  return [...slots].sort((a, b) => a.index - b.index)
+}
+
+function groupLeadingLetter(g) {
+  return (g.name || '').trim().charAt(0) || '—'
+}
+
+async function persistQuickUnified(checked) {
+  toggleValue10.value = checked
+  try {
+    await setInstConfigApi({
+      ...userStore.instConfig,
+      enableQuickUnifiedPeriod: checked,
+    })
+    await userStore.getInstConfig()
+  }
+  catch (e) {
+    console.error(e)
+    messageService.error('保存失败')
+    toggleValue10.value = !checked
+  }
+}
+
+onMounted(async () => {
+  try {
+    if (!userStore.instConfig)
+      await userStore.getInstConfig()
+    toggleValue10.value = Boolean(userStore.instConfig?.enableQuickUnifiedPeriod)
+  }
+  catch (e) {
+    console.warn('getInstConfig', e)
+  }
+})
+
+watch(
+  () => userStore.instConfig?.enableQuickUnifiedPeriod,
+  (v) => {
+    if (userStore.instConfig && typeof v !== 'undefined')
+      toggleValue10.value = Boolean(v)
+  },
+)
 
 const activeKey = ref('')
 const activeKey2 = ref('')
 const activeKey3 = ref('')
-const activeKey4 = ref('')
+const activeKey4 = ref([])
 const toggleValue = ref(false)
 const toggleValue2 = ref(false)
 const toggleValue3 = ref(true)
@@ -20,7 +81,10 @@ const toggleValue10 = ref(true)
 </script>
 
 <template>
-  <div class="business-settings-course-or-end-setting">
+  <div
+    class="business-settings-course-or-end-setting"
+    :class="{ 'business-settings-course-or-end-setting--drawer-open': unifiedPeriodEditOpen }"
+  >
     <div class="flex justify-between items-center px-16px">
       <span class="text-#666 text-12px">授课方式</span>
       <span>
@@ -301,7 +365,11 @@ const toggleValue10 = ref(true)
         </div>
       </div>
       <div class="item-status ml-12px">
-        <a-switch v-model:checked="toggleValue10" @click.stop />
+        <a-switch
+          :checked="toggleValue10"
+          @update:checked="persistQuickUnified"
+          @click.stop
+        />
       </div>
     </div>
     <!-- 学校统一上课时间段 -->
@@ -312,64 +380,72 @@ const toggleValue10 = ref(true)
         </div>
       </div>
       <div class="item-arrow">
-        <span class="text-#06f text-13px cursor-pointer">编辑</span>
+        <span
+          class="text-#06f text-13px cursor-pointer"
+          @click.stop="unifiedPeriodEditOpen = true"
+        >编辑</span>
       </div>
     </div>
-    <!-- 时段列表 -->
-    <a-collapse v-model:active-key="activeKey4" ghost
-      class="schedule-collapse bg-white border-t-1px border-b-0 border-l-0 border-r-0 border-#eee border-solid">
-      <a-collapse-panel key="1" class="schedule-panel">
+    <!-- 时段列表（数据来自 inst_config，样式类名保持与原静态稿一致） -->
+    <a-collapse
+      v-model:active-key="activeKey4"
+      ghost
+      class="schedule-collapse bg-white border-t-1px border-b-0 border-l-0 border-r-0 border-#eee border-solid"
+    >
+      <a-collapse-panel
+        v-for="(g, gi) in unifiedPeriodDisplay"
+        :key="g.id"
+        class="schedule-panel"
+      >
         <template #header>
           <div class="schedule-header">
-            <div class="schedule-badge schedule-badge-a">A</div>
+            <div
+              class="schedule-badge"
+              :class="gi % 2 === 0 ? 'schedule-badge-a' : 'schedule-badge-b'"
+            >
+              {{ groupLeadingLetter(g) }}
+            </div>
             <div class="schedule-info">
-              <span class="schedule-title">A时段</span>
-              <span class="schedule-count">共12节课</span>
+              <span class="schedule-title">{{ g.name }}</span>
+              <span class="schedule-count">共{{ slotCountActive(g) }}节课</span>
             </div>
           </div>
         </template>
         <div class="schedule-content">
           <div class="schedule-grid">
-            <div class="schedule-item" v-for="(item, index) in 12" :key="index">
-              <div class="schedule-number">{{ index + 1 }}</div>
-              <div class="schedule-time">
-                {{ String(8 + index).padStart(2, '0') }}:00-{{ String(9 + index).padStart(2, '0') }}:00
+            <div
+              v-for="s in sortSlotsForDisplay(g.slots).filter((x) => x.enabled !== false)"
+              :key="s.index"
+              class="schedule-item"
+            >
+              <div class="schedule-number">
+                {{ s.index }}
               </div>
-              <div class="schedule-indicator"></div>
-            </div>
-          </div>
-        </div>
-      </a-collapse-panel>
-      <a-collapse-panel key="2" class="schedule-panel">
-        <template #header>
-          <div class="schedule-header">
-            <div class="schedule-badge schedule-badge-b">B</div>
-            <div class="schedule-info">
-              <span class="schedule-title">B时段</span>
-              <span class="schedule-count">共12节课</span>
-            </div>
-          </div>
-        </template>
-        <div class="schedule-content">
-          <div class="schedule-grid">
-            <div class="schedule-item" v-for="(item, index) in 12" :key="index">
-              <div class="schedule-number">{{ index + 1 }}</div>
               <div class="schedule-time">
-                {{ String(8 + index).padStart(2, '0') }}:00-{{ String(9 + index).padStart(2, '0') }}:00
+                {{ s.start }}-{{ s.end }}
               </div>
-              <div class="schedule-indicator"></div>
+              <div class="schedule-indicator" />
             </div>
           </div>
         </div>
       </a-collapse-panel>
     </a-collapse>
+
+    <InstUnifiedPeriodEditDrawer
+      v-model:open="unifiedPeriodEditOpen"
+    />
   </div>
 </template>
 
 <style lang="less" scoped>
 .business-settings-course-or-end-setting {
+  position: relative;
   padding: 12px 0px;
   background-color: #f6f7f8;
+
+  &--drawer-open {
+    overflow: hidden !important;
+  }
 
   :deep(.ant-collapse-header) {
     padding: 0 !important;
