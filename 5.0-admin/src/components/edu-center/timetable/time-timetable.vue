@@ -1570,7 +1570,6 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 .schedule-event__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   padding: 4px 0 0 10px;
 }
 

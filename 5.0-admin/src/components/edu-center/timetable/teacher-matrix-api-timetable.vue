@@ -934,7 +934,10 @@ const totalLessons = computed(() => internalSchedules.value.length)
             <span class="tm-dc-title">筛选老师</span>
             <span class="tm-dc-hint">按日当天日程筛列，接口与旧版总课表逻辑一致</span>
           </div>
-          <a-radio-group v-model:value="tempMatrixDisplay.teacherFilter">
+          <a-radio-group
+            v-model:value="tempMatrixDisplay.teacherFilter"
+            class="tm-dc-teacher-filter"
+          >
             <a-radio value="all">
               全部老师
             </a-radio>
@@ -1372,6 +1375,34 @@ const totalLessons = computed(() => internalSchedules.value.length)
   color: #94a3b8;
   font-size: 12px;
   font-weight: 500;
+}
+
+/* 筛选老师：选中态为空心圆环（白底 + 蓝色描边），与实心圆点区分 */
+.tm-dc-teacher-filter {
+  :deep(.ant-radio-checked .ant-radio-inner) {
+    background-color: #fff;
+    border-color: #1677ff;
+  }
+
+  :deep(.ant-radio-checked .ant-radio-inner::after) {
+    box-sizing: border-box;
+    background-color: transparent;
+    border: 2px solid #1677ff;
+    width: 10px;
+    height: 10px;
+    margin-block-start: -5px;
+    margin-inline-start: -5px;
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  :deep(.ant-radio-disabled.ant-radio-checked .ant-radio-inner) {
+    border-color: rgb(0 0 0 / 25%);
+  }
+
+  :deep(.ant-radio-disabled.ant-radio-checked .ant-radio-inner::after) {
+    border-color: rgb(0 0 0 / 25%);
+  }
 }
 
 .tm-api-card {
@@ -1906,7 +1937,6 @@ const totalLessons = computed(() => internalSchedules.value.length)
 .tm-event__body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   padding: 4px 0 0 10px;
 }
 

@@ -31,7 +31,8 @@ type matrixCourseSlot struct {
 func buildTeacherMatrixGridWorkbook(matrix []model.TeachingScheduleMatrixDayVO, query model.TeachingScheduleListQueryDTO) ([]byte, string, error) {
 	weekNum := legacyWeekNumberFromDate(query.StartDate)
 	selectedWD := normalizeMatrixWeekdays(query.MatrixWeekdays)
-	labels := buildWeekdayDateLabels(matrix)
+	// 表头日期按查询区间推算，避免「仅有课/仅无课」过滤掉无列的日期后 matrix 缺天导致周几无月日
+	labels := buildWeekdayDateLabelsFromRange(query.StartDate, query.EndDate, selectedWD)
 
 	order, names := teacherColumnOrder(matrix)
 	slotsByTeacher := collectTeacherWeekSlots(matrix, order)
@@ -82,7 +83,7 @@ func buildTeacherMatrixGridWorkbook(matrix []model.TeachingScheduleMatrixDayVO, 
 	}
 	courseCellStyle, err := f.NewStyle(&excelize.Style{
 		Font:      &excelize.Font{Size: 10, Family: "Microsoft YaHei", Color: "#222222"},
-		Alignment: &excelize.Alignment{Horizontal: "left", Vertical: "top", WrapText: true},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
 		Border: []excelize.Border{
 			{Type: "left", Color: "#000000", Style: 1},
 			{Type: "right", Color: "#000000", Style: 1},
@@ -350,17 +351,27 @@ func weekdayCn(w int) string {
 	return names[w-1]
 }
 
-func buildWeekdayDateLabels(matrix []model.TeachingScheduleMatrixDayVO) map[int]string {
+// buildWeekdayDateLabelsFromRange 根据 startDate～endDate 内实际出现的日历天，映射到「周一=1…周日=7」的月/日，
+// 与列表接口是否因仅有课/仅无课省略某天无关。
+func buildWeekdayDateLabelsFromRange(startDate, endDate string, selectedWD []int) map[int]string {
 	out := make(map[int]string)
-	for _, d := range matrix {
-		t, err := time.ParseInLocation("2006-01-02", d.ScheduleDate, time.Local)
+	days, err := expandInclusiveDates(startDate, endDate)
+	if err != nil {
+		return out
+	}
+	for _, d := range days {
+		t, err := time.ParseInLocation("2006-01-02", d, time.Local)
 		if err != nil {
 			continue
 		}
 		w := weekdayMonToSun(t)
-		if _, ok := out[w]; !ok {
-			out[w] = fmt.Sprintf("%d/%d", int(t.Month()), t.Day())
+		if len(selectedWD) > 0 && !intSliceContains(selectedWD, w) {
+			continue
 		}
+		if _, ok := out[w]; ok {
+			continue
+		}
+		out[w] = fmt.Sprintf("%d/%d", int(t.Month()), t.Day())
 	}
 	return out
 }
