@@ -84,6 +84,33 @@ func (handler *Handler) teachingSchedules(w http.ResponseWriter, r *http.Request
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) teachingSchedulesByTeacherMatrix(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query := model.TeachingScheduleListQueryDTO{
+		StartDate: strings.TrimSpace(r.URL.Query().Get("startDate")),
+		EndDate:   strings.TrimSpace(r.URL.Query().Get("endDate")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("classType")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+			query.ClassType = &value
+		}
+	}
+	result, err := handler.service.ListTeachingSchedulesByTeacherMatrix(claims.UserID, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) batchUpdateTeachingSchedules(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

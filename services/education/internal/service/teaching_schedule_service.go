@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -40,6 +43,206 @@ func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingSche
 		return nil, err
 	}
 	return svc.repo.ListTeachingSchedules(context.Background(), instID, query)
+}
+
+// ListTeachingSchedulesByTeacherMatrix 按「日期 × 教师」矩阵返回课表（结构对齐旧版机构总课表 scheduleListVoList）
+func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleMatrixDayVO, error) {
+	if strings.TrimSpace(query.StartDate) == "" || strings.TrimSpace(query.EndDate) == "" {
+		return nil, errors.New("startDate 与 endDate 不能为空")
+	}
+	days, err := expandInclusiveDates(query.StartDate, query.EndDate)
+	if err != nil {
+		return nil, err
+	}
+
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("no institution context")
+		}
+		return nil, err
+	}
+
+	ctx := context.Background()
+	roster, err := svc.repo.ListInstUsersForScheduleMatrix(ctx, instID)
+	if err != nil {
+		return nil, err
+	}
+	schedules, err := svc.repo.ListTeachingSchedules(ctx, instID, query)
+	if err != nil {
+		return nil, err
+	}
+
+	teacherOrder, teacherNames := buildTeacherOrderForMatrix(roster, schedules)
+	keyed := make(map[string][]model.TeachingScheduleVO)
+	for _, s := range schedules {
+		tid := strings.TrimSpace(s.TeacherID)
+		k := s.LessonDate + "\t" + tid
+		keyed[k] = append(keyed[k], s)
+	}
+
+	out := make([]model.TeachingScheduleMatrixDayVO, 0, len(days))
+	for _, d := range days {
+		cols := make([]model.TeachingScheduleMatrixTeacher, 0, len(teacherOrder))
+		for _, tid := range teacherOrder {
+			k := d + "\t" + strconv.FormatInt(tid, 10)
+			raw := keyed[k]
+			legacy := make([]model.TeachingScheduleInfoLegacyVO, 0, len(raw))
+			for _, item := range raw {
+				legacy = append(legacy, mapTeachingScheduleToLegacyVO(item, instID))
+			}
+			cols = append(cols, model.TeachingScheduleMatrixTeacher{
+				TeacherName:        teacherNames[tid],
+				TeacherID:          tid,
+				ScheduleInfoVoList: legacy,
+			})
+		}
+		out = append(out, model.TeachingScheduleMatrixDayVO{
+			ScheduleDate:       d,
+			Width:              len(teacherOrder),
+			ScheduleInfoVoList: nil, // 输出 JSON null
+			ScheduleListVoList: cols,
+		})
+	}
+	return out, nil
+}
+
+func expandInclusiveDates(startStr, endStr string) ([]string, error) {
+	start, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(startStr), time.Local)
+	if err != nil {
+		return nil, errors.New("startDate 格式须为 YYYY-MM-DD")
+	}
+	end, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(endStr), time.Local)
+	if err != nil {
+		return nil, errors.New("endDate 格式须为 YYYY-MM-DD")
+	}
+	if end.Before(start) {
+		return nil, errors.New("endDate 不能早于 startDate")
+	}
+	var days []string
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		days = append(days, d.Format("2006-01-02"))
+	}
+	return days, nil
+}
+
+type matrixExtraTeacher struct {
+	id   int64
+	name string
+}
+
+func buildTeacherOrderForMatrix(roster []model.InstUserScheduleRosterItem, schedules []model.TeachingScheduleVO) (order []int64, names map[int64]string) {
+	names = make(map[int64]string)
+	order = make([]int64, 0, len(roster)+8)
+	seen := make(map[int64]struct{})
+
+	for _, r := range roster {
+		if r.ID <= 0 {
+			continue
+		}
+		nm := strings.TrimSpace(r.Name)
+		if nm == "" {
+			nm = "-"
+		}
+		names[r.ID] = nm
+		seen[r.ID] = struct{}{}
+		order = append(order, r.ID)
+	}
+
+	var extras []matrixExtraTeacher
+	for _, s := range schedules {
+		tid, err := strconv.ParseInt(strings.TrimSpace(s.TeacherID), 10, 64)
+		if err != nil || tid <= 0 {
+			continue
+		}
+		if _, ok := seen[tid]; ok {
+			continue
+		}
+		seen[tid] = struct{}{}
+		nm := strings.TrimSpace(s.TeacherName)
+		if nm == "" {
+			nm = "-"
+		}
+		names[tid] = nm
+		extras = append(extras, matrixExtraTeacher{id: tid, name: nm})
+	}
+	sort.Slice(extras, func(i, j int) bool {
+		if extras[i].name != extras[j].name {
+			return extras[i].name < extras[j].name
+		}
+		return extras[i].id < extras[j].id
+	})
+	for _, e := range extras {
+		order = append(order, e.id)
+	}
+	return order, names
+}
+
+func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) model.TeachingScheduleInfoLegacyVO {
+	id, _ := strconv.ParseInt(v.ID, 10, 64)
+	tid, _ := strconv.ParseInt(strings.TrimSpace(v.TeacherID), 10, 64)
+	sid, _ := strconv.ParseInt(strings.TrimSpace(v.StudentID), 10, 64)
+	cid, _ := strconv.ParseInt(strings.TrimSpace(v.LessonID), 10, 64)
+	classIDVal, _ := strconv.ParseInt(strings.TrimSpace(v.TeachingClassID), 10, 64)
+
+	minutes := int(v.EndAt.Sub(v.StartAt).Minutes())
+	if minutes < 0 {
+		minutes = 0
+	}
+
+	teacherList := []model.ScheduleLegacyPersonVO{
+		{Name: v.TeacherName, ID: tid, Type: 0, Disabled: false},
+	}
+	for i, aid := range v.AssistantIDs {
+		aid = strings.TrimSpace(aid)
+		if aid == "" {
+			continue
+		}
+		aidInt, err := strconv.ParseInt(aid, 10, 64)
+		if err != nil {
+			continue
+		}
+		nm := ""
+		if i < len(v.AssistantNames) {
+			nm = strings.TrimSpace(v.AssistantNames[i])
+		}
+		teacherList = append(teacherList, model.ScheduleLegacyPersonVO{Name: nm, ID: aidInt, Type: 0, Disabled: false})
+	}
+	studentList := []model.ScheduleLegacyPersonVO{
+		{Name: v.StudentName, ID: sid, Type: 1},
+	}
+
+	batchID, _ := strconv.ParseInt(strings.TrimSpace(v.BatchNo), 10, 64)
+
+	var classIDPtr *int64
+	if classIDVal > 0 {
+		classIDPtr = &classIDVal
+	}
+
+	return model.TeachingScheduleInfoLegacyVO{
+		ID:                id,
+		InstID:            instID,
+		BatchID:           batchID,
+		ModifyBatchID:     batchID,
+		CourseID:          cid,
+		ClassID:           classIDPtr,
+		ScheduleDate:      v.LessonDate,
+		ScheduleStartTime: v.StartAt.Format("15:04"),
+		ScheduleEndTime:   v.EndAt.Format("15:04"),
+		ScheduleStatus:    v.Status,
+		MissSchedule:      false,
+		CourseStatus:      0,
+		Width:             0,
+		TeacherList:       teacherList,
+		StudentList:       studentList,
+		CourseName:        v.LessonName,
+		CourseType:        v.ClassType,
+		ClassName:         v.TeachingClassName,
+		LeaveList:         []any{},
+		CourseTime:        minutes,
+		CourseHour:        1,
+		FinishType:        0,
+	}
 }
 
 func (svc *Service) BatchUpdateTeachingSchedules(userID int64, dto model.TeachingScheduleBatchUpdateDTO) error {

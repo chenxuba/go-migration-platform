@@ -96,3 +96,70 @@ type OneToOneScheduleCreateContext struct {
 	Status             int
 	ClassStudentStatus int
 }
+
+// InstUserScheduleRosterItem 课表矩阵机构在职人员（未禁用的机构用户）
+type InstUserScheduleRosterItem struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// TeachingScheduleMatrixDayVO 按「日期 → 教师分列」矩阵（对齐旧版 scheduleListVoList 结构）
+type TeachingScheduleMatrixDayVO struct {
+	ScheduleDate       string                          `json:"scheduleDate"`
+	Width              int                             `json:"width"`
+	ScheduleInfoVoList any                             `json:"scheduleInfoVoList"` // 旧版字段，输出 null
+	ScheduleListVoList []TeachingScheduleMatrixTeacher `json:"scheduleListVoList"`
+}
+
+// TeachingScheduleMatrixTeacher 单日下单个教师列
+type TeachingScheduleMatrixTeacher struct {
+	TeacherName        string                         `json:"teacherName"`
+	TeacherID          int64                          `json:"teacherId"`
+	ScheduleInfoVoList []TeachingScheduleInfoLegacyVO `json:"scheduleInfoVoList"`
+}
+
+// ScheduleLegacyPersonVO 旧版 teacherList / studentList 元素
+type ScheduleLegacyPersonVO struct {
+	Name     string `json:"name"`
+	ID       int64  `json:"id"`
+	Type     int    `json:"type"`
+	Disabled bool   `json:"disabled,omitempty"`
+	UUID     any    `json:"uuid,omitempty"`
+	Version  any    `json:"version,omitempty"`
+}
+
+// TeachingScheduleInfoLegacyVO 旧版日程明细（在能力范围内从 TeachingScheduleVO 映射）
+type TeachingScheduleInfoLegacyVO struct {
+	ID                 int64                  `json:"id"`
+	UUID               string                 `json:"uuid,omitempty"`
+	Version            int64                  `json:"version,omitempty"`
+	CreateTime         string                 `json:"createTime,omitempty"`
+	UpdateTime         *string                `json:"updateTime"`
+	InstID             int64                  `json:"instId,omitempty"`
+	BatchID            int64                  `json:"batchId,omitempty"`
+	ModifyBatchID      int64                  `json:"modifyBatchId,omitempty"`
+	CourseID           int64                  `json:"courseId,omitempty"`
+	ClassID            *int64                 `json:"classId"`
+	OriginID           *int64                 `json:"originId"`
+	ScheduleDate       string                 `json:"scheduleDate"`
+	ScheduleStartTime  string                 `json:"scheduleStartTime"`
+	ScheduleEndTime    string                 `json:"scheduleEndTime"`
+	ScheduleStatus     int                    `json:"scheduleStatus"`
+	MissSchedule       bool                   `json:"missSchedule"`
+	HasIgnore          *bool                  `json:"hasIgnore"`
+	CourseStatus       int                    `json:"courseStatus"`
+	Remark             *string                `json:"remark"`
+	Width              int                    `json:"width"`
+	TeacherList        []ScheduleLegacyPersonVO `json:"teacherList"`
+	StudentList        []ScheduleLegacyPersonVO `json:"studentList"`
+	CourseName         string                 `json:"courseName"`
+	CourseType         int                    `json:"courseType"`
+	ClassName          string                 `json:"className,omitempty"`
+	CrossOver          any                    `json:"crossOver"`
+	InfoVoList         any                    `json:"infoVoList"`
+	LeaveList          []any                  `json:"leaveList"`
+	InstName           string                 `json:"instName,omitempty"`
+	CourseTime         int                    `json:"courseTime"`
+	CourseHour         int                    `json:"courseHour"`
+	FinishType         int                    `json:"finishType"`
+}

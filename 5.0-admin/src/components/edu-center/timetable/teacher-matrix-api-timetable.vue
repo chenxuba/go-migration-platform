@@ -1,0 +1,1430 @@
+<script setup lang="ts">
+import type { Dayjs } from 'dayjs'
+import type {
+  TeachingScheduleItem,
+  TeachingScheduleMatrixDay,
+  TeachingScheduleMatrixLegacyItem,
+} from '@/api/edu-center/teaching-schedule'
+import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
+
+const currentDate = ref(dayjs())
+const now = ref(dayjs())
+const loading = ref(false)
+const matrixDays = ref<TeachingScheduleMatrixDay[]>([])
+const scheduleEditOpen = ref(false)
+const currentSchedule = ref<TeachingScheduleItem | null>(null)
+
+const headerDatesRef = ref<HTMLElement | null>(null)
+const bodyScrollRef = ref<HTMLElement | null>(null)
+let syncingScroll = false
+
+/** 日期条横向「钉」在可视区内（对齐旧版 orgAllCourseData.vue updateFloatingDatePositions） */
+/** 浮动日期芯片宽度（与样式 padding、边框配合） */
+const floatingDatePillWidth = 156
+
+interface FloatingDateStyle {
+  left: string
+  opacity: string
+  visibility: string
+}
+const floatingDateStyles = ref<Record<string, FloatingDateStyle>>({})
+
+let headerDatesResizeObserver: ResizeObserver | null = null
+
+function getDayColumnRange(dayIndex: number) {
+  const groups = dateTeacherGroups.value
+  if (dayIndex < 0 || dayIndex >= groups.length)
+    return { left: 0, width: 0 }
+  let left = 0
+  for (let i = 0; i < dayIndex; i++) {
+    const g = groups[i]
+    for (const t of g.teachers) {
+      const entry = layoutsByCell.value.get(`${g.dateKey}|${t.key}`)
+      const w = Math.max(teacherColWidth, entry?.colWidth ?? teacherColWidth)
+      left += w
+    }
+  }
+  const g = groups[dayIndex]
+  let width = 0
+  for (const t of g.teachers) {
+    const entry = layoutsByCell.value.get(`${g.dateKey}|${t.key}`)
+    const w = Math.max(teacherColWidth, entry?.colWidth ?? teacherColWidth)
+    width += w
+  }
+  return { left, width }
+}
+
+/**
+ * 对齐旧版 orgAllCourseData.vue：以课表主体 scrollLeft 参与计算；可视宽度与旧版 scheduleBody.clientWidth-100
+ * 一致时可用 header 日期区宽度；left 为内容坐标 finalPosition（旧版 floatingElement.style.left = finalPosition + 'px'）。
+ */
+function updateFloatingDatePositions(scrollLeftOverride?: number) {
+  const headerEl = headerDatesRef.value
+  const boardEl = bodyScrollRef.value
+  const groups = dateTeacherGroups.value
+  if (!headerEl || !groups.length) {
+    floatingDateStyles.value = {}
+    return
+  }
+  const scrollLeft
+    = scrollLeftOverride ?? boardEl?.scrollLeft ?? headerEl.scrollLeft
+  const containerWidth
+    = headerEl.clientWidth > 0
+      ? headerEl.clientWidth
+      : Math.max(300, (boardEl?.clientWidth ?? 800) - 100)
+  const pillW = floatingDatePillWidth
+  const next: Record<string, FloatingDateStyle> = {}
+
+  groups.forEach((g, index) => {
+    const { left: leftOffset, width: dayColumnWidth } = getDayColumnRange(index)
+    const rightOffset = leftOffset + dayColumnWidth
+    const expandedScrollLeft = Math.max(0, scrollLeft - 200)
+    const expandedScrollRight = scrollLeft + containerWidth + 200
+    const inPlay = rightOffset > expandedScrollLeft && leftOffset < expandedScrollRight
+
+    if (!inPlay || dayColumnWidth <= 0) {
+      next[g.dateKey] = {
+        left: `${leftOffset}px`,
+        opacity: '0',
+        visibility: 'hidden',
+      }
+      return
+    }
+
+    let finalPosition = leftOffset + (dayColumnWidth - pillW) / 2
+    if (leftOffset >= scrollLeft && rightOffset <= scrollLeft + containerWidth) {
+      finalPosition = leftOffset + (dayColumnWidth - pillW) / 2
+    }
+    else {
+      const visibleLeft = Math.max(leftOffset, scrollLeft)
+      const visibleRight = Math.min(rightOffset, scrollLeft + containerWidth)
+      const visibleWidth = visibleRight - visibleLeft
+      if (visibleWidth >= pillW)
+        finalPosition = visibleLeft + (visibleWidth - pillW) / 2
+      else
+        finalPosition = visibleLeft
+    }
+    if (finalPosition < leftOffset)
+      finalPosition = leftOffset
+    if (finalPosition + pillW > rightOffset)
+      finalPosition = rightOffset - pillW
+
+    next[g.dateKey] = {
+      left: `${finalPosition}px`,
+      opacity: '1',
+      visibility: 'visible',
+    }
+  })
+  floatingDateStyles.value = next
+}
+
+function getFloatingStyle(dateKey: string): FloatingDateStyle {
+  return floatingDateStyles.value[dateKey] ?? {
+    left: '0',
+    opacity: '0',
+    visibility: 'hidden',
+  }
+}
+
+function floatingPillStyle(dateKey: string): Record<string, string> {
+  const s = getFloatingStyle(dateKey)
+  return {
+    width: `${floatingDatePillWidth}px`,
+    left: s.left,
+    opacity: s.opacity,
+    visibility: s.visibility,
+  }
+}
+
+const timelineStart = 8 * 60
+const timelineEnd = 22 * 60
+const timelineTopPadding = 18
+const hourRowHeight = 96
+const timelineBottomPadding = 28
+const timeColWidth = 84
+const teacherColWidth = 168
+const scheduleCardMinWidth = 152
+const scheduleCardGap = 5
+const scheduleColumnHorizontalInset = 6
+const baseDateColumnWidth = scheduleCardMinWidth + scheduleColumnHorizontalInset * 2
+const overlapExtraWidth = scheduleCardMinWidth + scheduleCardGap
+
+function getWeekStart(value: Dayjs = dayjs()) {
+  const current = dayjs(value)
+  const diff = current.day() === 0 ? -6 : 1 - current.day()
+  return current.add(diff, 'day').startOf('day')
+}
+
+const displayDates = computed(() => {
+  const start = getWeekStart(currentDate.value)
+  return Array.from({ length: 7 }, (_, i) => start.add(i, 'day'))
+})
+
+const todayKey = computed(() => now.value.format('YYYY-MM-DD'))
+
+const queryRange = computed(() => ({
+  startDate: displayDates.value[0]?.format('YYYY-MM-DD') ?? dayjs().format('YYYY-MM-DD'),
+  endDate: displayDates.value[6]?.format('YYYY-MM-DD') ?? dayjs().format('YYYY-MM-DD'),
+}))
+
+function formatWeekRange(value: Dayjs) {
+  const start = getWeekStart(value)
+  const end = start.add(6, 'day')
+  if (start.year() === end.year() && start.month() === end.month())
+    return `${start.format('YYYY年MM月DD日')} ~ ${end.format('DD日')}`
+  if (start.year() === end.year())
+    return `${start.format('YYYY年MM月DD日')} ~ ${end.format('MM月DD日')}`
+  return `${start.format('YYYY年MM月DD日')} ~ ${end.format('YYYY年MM月DD日')}`
+}
+
+const isThisWeek = computed(() =>
+  getWeekStart(currentDate.value).isSame(getWeekStart(now.value), 'day'),
+)
+
+function handlePrevWeek() {
+  currentDate.value = currentDate.value.subtract(1, 'week')
+}
+
+function handleNextWeek() {
+  currentDate.value = currentDate.value.add(1, 'week')
+}
+
+function handleThisWeek() {
+  currentDate.value = dayjs()
+}
+
+async function loadMatrix() {
+  loading.value = true
+  try {
+    const res = await listTeachingSchedulesByTeacherMatrixApi({
+      startDate: queryRange.value.startDate,
+      endDate: queryRange.value.endDate,
+      classType: 2,
+    })
+    if (res.code === 200 && Array.isArray(res.result))
+      matrixDays.value = res.result
+    else
+      matrixDays.value = []
+  }
+  catch (e) {
+    console.error('load teacher matrix failed', e)
+    matrixDays.value = []
+  }
+  finally {
+    loading.value = false
+    await nextTick()
+    syncScroll(bodyScrollRef.value, headerDatesRef.value)
+    updateFloatingDatePositions(bodyScrollRef.value?.scrollLeft ?? 0)
+  }
+}
+
+function syncScroll(source: HTMLElement | null, target: HTMLElement | null) {
+  if (!source || !target || syncingScroll)
+    return
+  syncingScroll = true
+  target.scrollLeft = source.scrollLeft
+  requestAnimationFrame(() => {
+    syncingScroll = false
+  })
+}
+
+function handleHeaderScroll(event: Event) {
+  const header = event.target as HTMLElement
+  syncScroll(header, bodyScrollRef.value)
+  updateFloatingDatePositions(
+    bodyScrollRef.value?.scrollLeft ?? header.scrollLeft,
+  )
+}
+
+function handleBoardScroll(event: Event) {
+  const board = event.target as HTMLElement
+  syncScroll(board, headerDatesRef.value)
+  updateFloatingDatePositions(board.scrollLeft)
+}
+
+onMounted(() => {
+  loadMatrix()
+})
+
+onUnmounted(() => {
+  headerDatesResizeObserver?.disconnect()
+  headerDatesResizeObserver = null
+})
+
+watch(queryRange, () => loadMatrix(), { deep: true })
+
+watch(
+  () => headerDatesRef.value,
+  (el) => {
+    headerDatesResizeObserver?.disconnect()
+    headerDatesResizeObserver = null
+    if (!el || typeof ResizeObserver === 'undefined')
+      return
+    headerDatesResizeObserver = new ResizeObserver(() => updateFloatingDatePositions())
+    headerDatesResizeObserver.observe(el)
+    nextTick(() => updateFloatingDatePositions())
+  },
+)
+
+const dateTeacherGroups = computed(() => {
+  const days = matrixDays.value
+  if (!days.length)
+    return []
+  return days.map((day) => {
+    const cols = day.scheduleListVoList ?? []
+    const dayCount = cols.reduce(
+      (n, c) => n + (c.scheduleInfoVoList?.length ?? 0),
+      0,
+    )
+    return {
+      dateKey: day.scheduleDate,
+      date: dayjs(day.scheduleDate),
+      dayCount,
+      teachers: cols.map(t => ({
+        key: `id:${t.teacherId}`,
+        name: t.teacherName,
+        empty: false,
+        count: t.scheduleInfoVoList?.length ?? 0,
+      })),
+    }
+  })
+})
+
+function legacyToTeachingScheduleItem(
+  info: TeachingScheduleMatrixLegacyItem,
+  col: { teacherId: number, teacherName: string },
+): TeachingScheduleItem {
+  const tid = info.teacherList?.[0]?.id ?? col.teacherId
+  const tname = info.teacherList?.[0]?.name ?? col.teacherName
+  const stu0 = info.studentList?.[0]
+  const start = dayjs(`${info.scheduleDate} ${info.scheduleStartTime}`, 'YYYY-MM-DD HH:mm')
+  const end = dayjs(`${info.scheduleDate} ${info.scheduleEndTime}`, 'YYYY-MM-DD HH:mm')
+  return {
+    id: String(info.id),
+    batchNo: info.batchId != null ? String(info.batchId) : undefined,
+    batchSize: 1,
+    classType: info.courseType ?? 0,
+    teachingClassId: info.classId != null ? String(info.classId) : '',
+    teachingClassName: info.className ?? '',
+    studentId: stu0 != null ? String(stu0.id) : '',
+    studentName: stu0?.name ?? '',
+    lessonId: info.courseId != null ? String(info.courseId) : '',
+    lessonName: info.courseName ?? '',
+    teacherId: String(tid),
+    teacherName: tname,
+    classroomId: '',
+    classroomName: '',
+    lessonDate: info.scheduleDate,
+    startAt: start.format('YYYY-MM-DD HH:mm:ss'),
+    endAt: end.format('YYYY-MM-DD HH:mm:ss'),
+    status: info.scheduleStatus ?? 1,
+  }
+}
+
+type CellSchedule = {
+  id: string
+  dateKey: string
+  teacherKey: string
+  startAt: Dayjs
+  endAt: Dayjs
+  startMinutes: number
+  endMinutes: number
+  title: string
+  course: string
+  teacher: string
+  classroom: string
+  classType: number
+  status: string
+  raw: TeachingScheduleItem
+  displayColumnIndex?: number
+  displayColumnCount?: number
+  timeText?: string
+}
+
+const internalSchedules = computed((): CellSchedule[] => {
+  const out: CellSchedule[] = []
+  for (const day of matrixDays.value ?? []) {
+    for (const col of day.scheduleListVoList ?? []) {
+      for (const info of col.scheduleInfoVoList ?? []) {
+        const start = dayjs(
+          `${info.scheduleDate} ${info.scheduleStartTime}`,
+          'YYYY-MM-DD HH:mm',
+        )
+        const end = dayjs(
+          `${info.scheduleDate} ${info.scheduleEndTime}`,
+          'YYYY-MM-DD HH:mm',
+        )
+        const raw = legacyToTeachingScheduleItem(info, col)
+        out.push({
+          id: String(info.id),
+          dateKey: day.scheduleDate,
+          teacherKey: `id:${col.teacherId}`,
+          startAt: start,
+          endAt: end,
+          startMinutes: start.hour() * 60 + start.minute(),
+          endMinutes: end.hour() * 60 + end.minute(),
+          title: (info.className || info.courseName || '日程') as string,
+          course: info.courseName || '-',
+          teacher: col.teacherName,
+          classroom: '-',
+          classType: info.courseType ?? 0,
+          status: 'unsigned',
+          raw,
+        })
+      }
+    }
+  }
+  return out
+})
+
+const flatColumns = computed(() => {
+  const cols: Array<{
+    dateKey: string
+    teacherKey: string
+    teacherName: string
+    empty: boolean
+    count: number
+  }> = []
+  for (const g of dateTeacherGroups.value) {
+    for (const t of g.teachers) {
+      cols.push({
+        dateKey: g.dateKey,
+        teacherKey: t.key,
+        teacherName: t.name,
+        empty: false,
+        count: t.count ?? 0,
+      })
+    }
+  }
+  return cols
+})
+
+const hourMarks = computed(() =>
+  Array.from(
+    { length: timelineEnd / 60 - timelineStart / 60 + 1 },
+    (_, i) => timelineStart + i * 60,
+  ),
+)
+
+const timelineHeight = computed(
+  () =>
+    timelineTopPadding
+    + (hourMarks.value.length - 1) * hourRowHeight
+    + timelineBottomPadding,
+)
+
+function minuteOffset(minutes: number) {
+  return timelineTopPadding + ((minutes - timelineStart) / 60) * hourRowHeight
+}
+
+function computeOverlapPeak(items: { startMinutes: number, endMinutes: number }[]) {
+  const columns: number[] = []
+  let peak = 1
+  items.forEach((item) => {
+    let columnIndex = columns.findIndex(endValue => endValue <= item.startMinutes)
+    if (columnIndex === -1) {
+      columnIndex = columns.length
+      columns.push(item.endMinutes)
+    }
+    else {
+      columns[columnIndex] = item.endMinutes
+    }
+    peak = Math.max(peak, columns.length)
+  })
+  return peak
+}
+
+function buildClusterLayouts(clusterItems: CellSchedule[]) {
+  const columns: number[] = []
+  let peakColumns = 0
+  const assigned = clusterItems.map((item) => {
+    let columnIndex = columns.findIndex(endValue => endValue <= item.startMinutes)
+    if (columnIndex === -1) {
+      columnIndex = columns.length
+      columns.push(item.endMinutes)
+    }
+    else {
+      columns[columnIndex] = item.endMinutes
+    }
+    peakColumns = Math.max(peakColumns, columns.length)
+    return {
+      ...item,
+      columnIndex,
+      timeText: `${item.startAt.format('HH:mm')} - ${item.endAt.format('HH:mm')}`,
+    }
+  })
+  return assigned.map(item => ({
+    ...item,
+    displayColumnIndex: item.columnIndex,
+    displayColumnCount: peakColumns,
+  }))
+}
+
+function buildDayLayouts(items: CellSchedule[]) {
+  const sorted = [...items].sort((a, b) => a.startAt.valueOf() - b.startAt.valueOf())
+  const clusters: CellSchedule[][] = []
+  let currentCluster: CellSchedule[] = []
+  let currentEnd = -1
+  sorted.forEach((item) => {
+    if (currentCluster.length === 0) {
+      currentCluster = [item]
+      currentEnd = item.endMinutes
+      return
+    }
+    if (item.startMinutes < currentEnd) {
+      currentCluster.push(item)
+      currentEnd = Math.max(currentEnd, item.endMinutes)
+      return
+    }
+    clusters.push(currentCluster)
+    currentCluster = [item]
+    currentEnd = item.endMinutes
+  })
+  if (currentCluster.length)
+    clusters.push(currentCluster)
+  return clusters.flatMap(cluster => buildClusterLayouts(cluster))
+}
+
+const layoutsByCell = computed(() => {
+  const map = new Map<string, { layouts: CellSchedule[], colWidth: number }>()
+  for (const col of flatColumns.value) {
+    const list = internalSchedules.value.filter(
+      s => s.dateKey === col.dateKey && s.teacherKey === col.teacherKey,
+    )
+    const peak = computeOverlapPeak(list)
+    const colWidth
+      = baseDateColumnWidth + Math.max(0, peak - 1) * overlapExtraWidth
+    map.set(`${col.dateKey}|${col.teacherKey}`, {
+      layouts: buildDayLayouts(list),
+      colWidth: Math.max(teacherColWidth, colWidth),
+    })
+  }
+  return map
+})
+
+const gridTemplateStyleHeader = computed(() => {
+  const n = flatColumns.value.length
+  if (!n) {
+    return {
+      gridTemplateColumns: '1fr',
+      width: '100%' as const,
+      minWidth: '100%' as const,
+    }
+  }
+  const tracks = flatColumns.value.map((col) => {
+    const entry = layoutsByCell.value.get(`${col.dateKey}|${col.teacherKey}`)
+    const w = Math.max(teacherColWidth, entry?.colWidth ?? teacherColWidth)
+    return `${w}px`
+  })
+  return {
+    gridTemplateColumns: tracks.join(' '),
+    width: 'max-content' as const,
+    minWidth: '100%' as const,
+  }
+})
+
+watch(gridTemplateStyleHeader, () => nextTick(() => updateFloatingDatePositions()))
+
+const gridTemplateStyle = computed(() => {
+  const n = flatColumns.value.length
+  if (!n) {
+    return {
+      gridTemplateColumns: `${timeColWidth}px`,
+      width: '100%' as const,
+      minWidth: '100%' as const,
+    }
+  }
+  const tracks = flatColumns.value.map((col) => {
+    const entry = layoutsByCell.value.get(`${col.dateKey}|${col.teacherKey}`)
+    const w = Math.max(teacherColWidth, entry?.colWidth ?? teacherColWidth)
+    return `${w}px`
+  })
+  return {
+    gridTemplateColumns: `${timeColWidth}px ${tracks.join(' ')}`,
+    width: 'max-content' as const,
+    minWidth: '100%' as const,
+  }
+})
+
+function eventStyle(event: CellSchedule, col: { dateKey: string, teacherKey: string }) {
+  const entry = layoutsByCell.value.get(`${col.dateKey}|${col.teacherKey}`)
+  const colWidth = entry?.colWidth ?? teacherColWidth
+  const leftOffset
+    = (event.displayColumnIndex || 0) * (scheduleCardMinWidth + scheduleCardGap)
+      + scheduleColumnHorizontalInset
+  return {
+    top: `${minuteOffset(event.startMinutes)}px`,
+    height: `${Math.max(
+      82,
+      ((event.endMinutes - event.startMinutes) / 60) * hourRowHeight,
+    )}px`,
+    left: `${leftOffset}px`,
+    width: `${Math.min(scheduleCardMinWidth, colWidth - scheduleColumnHorizontalInset * 2)}px`,
+  }
+}
+
+function isActiveDate(dateKey: string) {
+  return dateKey === todayKey.value
+}
+
+function formatClock(minutes: number) {
+  const hour = String(Math.floor(minutes / 60)).padStart(2, '0')
+  const minute = String(minutes % 60).padStart(2, '0')
+  return `${hour}:${minute}`
+}
+
+const currentTimeMinutes = computed(() => now.value.hour() * 60 + now.value.minute())
+const currentTimeLabel = computed(() => now.value.format('HH:mm'))
+const showCurrentTimeLine = computed(() => {
+  if (
+    currentTimeMinutes.value < timelineStart
+    || currentTimeMinutes.value > timelineEnd
+  )
+    return false
+  return displayDates.value.some(d => d.format('YYYY-MM-DD') === todayKey.value)
+})
+
+function openScheduleEdit(event: CellSchedule) {
+  currentSchedule.value = event.raw
+  scheduleEditOpen.value = true
+}
+
+function onUpdated() {
+  loadMatrix()
+}
+
+const totalLessons = computed(() => internalSchedules.value.length)
+</script>
+
+<template>
+  <div class="tm-api-root">
+    <div class="tm-api-toolbar">
+      <div class="tm-api-toolbar__nav time-selector text-#0061ff font-800 text-5 flex-center">
+        <a-popover trigger="hover">
+          <template #content>
+            上一周
+          </template>
+          <span
+            class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
+            @click="handlePrevWeek"
+          >
+            <LeftOutlined />
+          </span>
+        </a-popover>
+        <span class="mx-2">
+          <div class="relative cursor-pointer">
+            {{ formatWeekRange(currentDate) }}
+            <a-date-picker
+              v-model:value="currentDate"
+              class="absolute left-0 top-0 right-0 bottom-0 z-10 opacity-0"
+              picker="week"
+              :allow-clear="false"
+              :bordered="false"
+              :format="formatWeekRange"
+              style="cursor: pointer"
+            />
+          </div>
+        </span>
+        <a-popover trigger="hover">
+          <template #content>
+            下一周
+          </template>
+          <span
+            class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
+            @click="handleNextWeek"
+          >
+            <RightOutlined />
+          </span>
+        </a-popover>
+        <a-button
+          type="default"
+          size="small"
+          class="ml2"
+          :disabled="isThisWeek"
+          @click="handleThisWeek"
+        >
+          本周
+        </a-button>
+      </div>
+    </div>
+
+    <div class="tm-api-card">
+      <a-spin :spinning="loading" :delay="120" size="small" class="tm-api-spin">
+        <div class="tm-sticky-shell">
+          <div class="tm-api-summary">
+            <span class="summary-accent" />
+            <span>本周共 <strong>{{ totalLessons }}</strong> 节日程</span>
+          </div>
+
+          <div v-if="matrixDays.length" class="tm-schedule-header">
+              <div class="tm-header-time-corner">
+                <div class="tm-header-time-corner__label">
+                  时间
+                </div>
+              </div>
+              <div
+                ref="headerDatesRef"
+                class="tm-header-dates"
+                @scroll="handleHeaderScroll"
+              >
+                <!-- 与旧版一致：浮动层放在「与列同宽的滚动内容」里，left 才用内容坐标 finalPosition -->
+                <div class="tm-header-dates-track">
+                  <div class="tm-floating-date-layer">
+                    <div
+                      v-for="g in dateTeacherGroups"
+                      :key="`float-${g.dateKey}`"
+                      class="tm-floating-chip"
+                      :class="{ 'tm-floating-chip--today': isActiveDate(g.dateKey) }"
+                      :style="floatingPillStyle(g.dateKey)"
+                    >
+                      <div class="tm-floating-chip__line">
+                        <span class="tm-floating-chip__date">{{ g.date.format('M/D') }}</span>
+                        <span class="tm-floating-chip__week">{{
+                          ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][g.date.day()]
+                        }}</span>
+                      </div>
+                      <div class="tm-floating-chip__meta">
+                        共 <strong>{{ g.dayCount }}</strong> 节
+                      </div>
+                    </div>
+                  </div>
+                  <div class="tm-header-grid" :style="gridTemplateStyleHeader">
+                    <div
+                      v-for="(g, gi) in dateTeacherGroups"
+                      :key="g.dateKey"
+                      class="tm-date-banner"
+                      :class="{
+                        'tm-date-banner--active': isActiveDate(g.dateKey),
+                        'tm-date-banner--day-divider': gi < dateTeacherGroups.length - 1,
+                      }"
+                      :style="{ gridColumn: `span ${g.teachers.length}` }"
+                    >
+                      <div class="tm-date-banner__inner tm-date-banner__inner--ghost" aria-hidden="true">
+                        <span class="tm-date-banner__date">{{ g.date.format('M/D') }}</span>
+                        <span class="tm-date-banner__week">{{ ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][g.date.day()] }}</span>
+                        <span class="tm-date-banner__count">共 {{ g.dayCount }} 节</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="tm-subheader-grid" :style="gridTemplateStyleHeader">
+                    <div
+                      v-for="(g, gi) in dateTeacherGroups"
+                      :key="`w-${g.dateKey}`"
+                      class="tm-teacher-head-group"
+                    >
+                      <div
+                        v-for="(t, ti) in g.teachers"
+                        :key="`${g.dateKey}-${t.key}`"
+                        class="tm-teacher-head"
+                        :class="{
+                          'tm-teacher-head--active': isActiveDate(g.dateKey),
+                          'tm-teacher-head--has-class': (t.count ?? 0) > 0,
+                          'tm-teacher-head--no-class': (t.count ?? 0) === 0,
+                          'tm-teacher-head--day-divider':
+                            ti === g.teachers.length - 1 && gi < dateTeacherGroups.length - 1,
+                        }"
+                      >
+                        <div class="tm-teacher-head__avatar">
+                          {{ (t.name || '?').slice(0, 1) }}
+                        </div>
+                        <div class="tm-teacher-head__meta">
+                          <div class="tm-teacher-head__name">
+                            {{ t.name }}
+                          </div>
+                          <div
+                            class="tm-teacher-head__count"
+                            :class="{
+                              'tm-teacher-head__count--zero': (t.count ?? 0) === 0,
+                              'tm-teacher-head__count--has': (t.count ?? 0) > 0,
+                            }"
+                          >
+                            共 {{ t.count ?? 0 }} 节
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        <div v-if="!matrixDays.length && !loading" class="tm-api-empty">
+          本周暂无数据
+        </div>
+
+        <div
+          v-if="matrixDays.length"
+          ref="bodyScrollRef"
+          class="tm-schedule-board"
+          @scroll="handleBoardScroll"
+        >
+            <div class="tm-board-grid" :style="gridTemplateStyle">
+              <div class="tm-time-axis">
+                <div
+                  v-for="mark in hourMarks"
+                  :key="mark"
+                  class="tm-time-label"
+                  :style="{ top: `${minuteOffset(mark)}px` }"
+                >
+                  <span>{{ formatClock(mark) }}</span>
+                </div>
+                <div
+                  v-if="showCurrentTimeLine"
+                  class="tm-now-line"
+                  :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
+                >
+                  <span class="tm-now-line__text">{{ currentTimeLabel }}</span>
+                </div>
+              </div>
+
+              <div
+                v-for="(col, ci) in flatColumns"
+                :key="`${col.dateKey}-${col.teacherKey}`"
+                class="tm-column"
+                :class="{
+                  'tm-column--active': isActiveDate(col.dateKey),
+                  'tm-column--no-class': col.count === 0,
+                  'tm-column--has-class': col.count > 0,
+                  'tm-column--day-divider':
+                    ci < flatColumns.length - 1 && flatColumns[ci + 1].dateKey !== col.dateKey,
+                }"
+              >
+                <div
+                  class="tm-column__body"
+                  :style="{ height: `${timelineHeight}px` }"
+                >
+                  <div
+                    v-for="mark in hourMarks"
+                    :key="`${col.dateKey}-${col.teacherKey}-${mark}`"
+                    class="tm-column__line"
+                    :style="{ top: `${minuteOffset(mark)}px` }"
+                  />
+                  <div
+                    v-if="showCurrentTimeLine && col.dateKey === todayKey"
+                    class="tm-now-marker"
+                    :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
+                  />
+
+                  <div
+                    v-for="event in (layoutsByCell.get(`${col.dateKey}|${col.teacherKey}`)?.layouts ?? [])"
+                    :key="event.id"
+                    class="tm-event"
+                    :style="eventStyle(event, col)"
+                    @click="openScheduleEdit(event)"
+                  >
+                    <div class="tm-event__top">
+                      <div class="tm-event__time">
+                        {{ event.timeText }}
+                      </div>
+                      <span
+                        v-if="event.classType === 2"
+                        class="tm-event__badge"
+                      >
+                        1v1
+                      </span>
+                    </div>
+                    <div class="tm-event__body">
+                      <div class="tm-event__title">
+                        {{ event.title }}
+                      </div>
+                      <div class="tm-event__meta">
+                        {{ event.course }}
+                      </div>
+                      <div class="tm-event__meta tm-event__meta--muted">
+                        {{ event.teacher }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+      </a-spin>
+    </div>
+
+    <ScheduleBatchEditModal
+      v-model:open="scheduleEditOpen"
+      :schedule="currentSchedule"
+      @updated="onUpdated"
+    />
+  </div>
+</template>
+
+<style scoped lang="less">
+.tm-api-root {
+  min-width: 0;
+}
+
+.tm-api-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tm-api-card {
+  border: 1px solid #e5ebf3;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 4%);
+  overflow: visible;
+}
+
+.tm-api-spin {
+  display: block;
+  width: 100%;
+
+  :deep(.ant-spin-nested-loading) {
+    width: 100%;
+  }
+
+  :deep(.ant-spin-container) {
+    overflow: visible;
+  }
+}
+
+/* 与时间课表 .schedule-sticky-shell 一致：统计 + 表头随页面滚动吸顶 */
+.tm-sticky-shell {
+  position: sticky;
+  top: 8px;
+  z-index: 40;
+  background: #fff;
+  box-shadow: 0 10px 22px rgb(15 23 42 / 6%);
+}
+
+.tm-api-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid #edf2f7;
+  background: rgb(255 255 255 / 98%);
+  backdrop-filter: blur(12px);
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+
+  .summary-accent {
+    display: inline-block;
+    width: 4px;
+    height: 16px;
+    border-radius: 999px;
+    background: #1677ff;
+  }
+}
+
+.tm-api-empty {
+  padding: 48px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.tm-schedule-header {
+  display: flex;
+  min-height: 104px;
+  border-bottom: 1px solid #dde5f0;
+  background: #fff;
+}
+
+.tm-header-time-corner {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  min-width: 84px;
+  border-right: 1px solid #dde5f0;
+  background: #eff4fb;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tm-header-dates {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.tm-header-dates-track {
+  position: relative;
+  width: max-content;
+  min-width: 100%;
+}
+
+.tm-floating-date-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  pointer-events: none;
+}
+
+/**
+ * 浮动日期：独立「芯片」样式，与表头 #eff4fb 协调，盖住格线又不像弹层卡片
+ */
+.tm-floating-chip {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 44px;
+  padding: 6px 12px 7px;
+  border: 1px solid #cdd9ea;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 6%),
+    0 0 0 1px rgb(255 255 255 / 80%) inset;
+  text-align: center;
+  isolation: isolate;
+  transform: translateY(-50%);
+}
+
+.tm-floating-chip__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  line-height: 1.15;
+}
+
+.tm-floating-chip__date {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tm-floating-chip__week {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tm-floating-chip__meta {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+
+.tm-floating-chip__meta strong {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.tm-floating-chip--today {
+  border-color: #91caff;
+  background: #f5f9ff;
+  box-shadow:
+    0 1px 3px rgb(22 119 255 / 12%),
+    inset 0 0 0 1px rgb(255 255 255 / 90%);
+}
+
+.tm-floating-chip--today::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 34px;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+  background: #1677ff;
+  transform: translateX(-50%);
+}
+
+.tm-floating-chip--today .tm-floating-chip__date {
+  color: #0958d9;
+}
+
+.tm-floating-chip--today .tm-floating-chip__week {
+  color: #1677ff;
+}
+
+.tm-floating-chip--today .tm-floating-chip__meta,
+.tm-floating-chip--today .tm-floating-chip__meta strong {
+  color: #1677ff;
+}
+
+.tm-floating-chip--today .tm-floating-chip__meta {
+  opacity: 0.9;
+}
+
+/* 与时间课表 .schedule-board：横向滚动 + 纵向由页面承担 */
+.tm-schedule-board {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: visible;
+  background: #fff;
+  scrollbar-width: thin;
+  scrollbar-color: #b8c9de #eef2f8;
+
+  &::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    margin: 0 4px;
+    border-radius: 999px;
+    background: #eef2f8;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: linear-gradient(180deg, #c5d4ea 0%, #a8bad4 100%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+
+    &:hover {
+      background: linear-gradient(180deg, #a8bad4 0%, #8fa3bd 100%);
+    }
+  }
+}
+
+.tm-header-grid,
+.tm-subheader-grid,
+.tm-board-grid {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+}
+
+.tm-date-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 8px;
+  border-right: 1px solid #dde5f0;
+  border-bottom: 1px solid #dde5f0;
+  background: #eff4fb;
+  text-align: center;
+}
+
+.tm-date-banner--active {
+  color: #1677ff;
+  box-shadow: inset 0 3px 0 #1677ff;
+}
+
+/* 相邻两天的分界：略深、略粗，区别于同一天内教师列 */
+.tm-date-banner--day-divider {
+  border-right-width: 2px;
+  border-right-color: #a8b8cc;
+}
+
+.tm-date-banner__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 10px;
+}
+
+.tm-date-banner__inner--ghost {
+  visibility: hidden;
+}
+
+.tm-date-banner__date {
+  color: #374151;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tm-date-banner__week {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tm-date-banner__count {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tm-subheader-grid {
+  background: #fff;
+  border-bottom: 1px solid #dde5f0;
+}
+
+.tm-teacher-head-group {
+  display: contents;
+}
+
+.tm-teacher-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-right: 1px solid #dde5f0;
+  background: #eff4fb;
+  min-width: 0;
+}
+
+.tm-teacher-head--active {
+  background: #f3f9ff;
+}
+
+.tm-teacher-head--has-class {
+  box-shadow: inset 0 0 0 1px rgb(22 119 255 / 12%);
+}
+
+.tm-teacher-head--day-divider {
+  border-right-width: 2px;
+  border-right-color: #a8b8cc;
+}
+
+.tm-teacher-head__count--zero {
+  color: #9ca3af;
+  font-weight: 600;
+}
+
+.tm-teacher-head__count--has {
+  color: #1677ff;
+  font-weight: 700;
+}
+
+.tm-teacher-head__meta {
+  min-width: 0;
+  text-align: center;
+}
+
+.tm-teacher-head__avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 32px;
+  text-align: center;
+}
+
+.tm-teacher-head__name {
+  overflow: hidden;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tm-teacher-head__count {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tm-time-axis {
+  position: relative;
+  border-right: 1px solid #dde5f0;
+  background: #fff;
+  box-shadow: 4px 0 14px -6px rgb(15 23 42 / 12%);
+}
+
+.tm-board-grid .tm-time-axis {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 84px;
+  max-width: 84px;
+}
+
+.tm-time-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  text-align: center;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.tm-time-label span {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  padding: 0 10px;
+  background: #fff;
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.tm-time-label::before {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid #dde5f0;
+  content: "";
+  z-index: 0;
+}
+
+.tm-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.tm-now-line__text {
+  position: absolute;
+  top: -7px;
+  left: -3px;
+  right: -4px;
+  color: #ff4d4f;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.tm-column {
+  position: relative;
+  border-right: 1px solid #dde5f0;
+  background: #fff;
+}
+
+.tm-column--day-divider {
+  border-right-width: 2px;
+  border-right-color: #a8b8cc;
+}
+
+.tm-column--active {
+  background: #f3f9ff;
+}
+
+.tm-column--no-class {
+  background: #f9fafb;
+}
+
+.tm-column--has-class {
+  background: #fff;
+}
+
+.tm-column__body {
+  position: relative;
+}
+
+.tm-column__line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #dde5f0;
+  pointer-events: none;
+}
+
+.tm-now-marker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  border-top: 1px solid #ffb3b3;
+  pointer-events: none;
+}
+
+.tm-event {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 6px 16px rgb(22 119 255 / 10%);
+  cursor: pointer;
+}
+
+.tm-event__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+  padding: 3px 4px 3px 10px;
+  background: #1677ff;
+}
+
+.tm-event__time {
+  flex: 1;
+  min-width: 0;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tm-event__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: rgb(9 61 149 / 24%);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.tm-event__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0 0 10px;
+}
+
+.tm-event__title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.tm-event__meta {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tm-event__meta--muted {
+  color: #334155;
+  font-weight: 600;
+}
+</style>

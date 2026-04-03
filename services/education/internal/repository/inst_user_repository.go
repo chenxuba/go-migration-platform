@@ -686,6 +686,30 @@ func (repo *Repository) BatchModifyInstUserRole(ctx context.Context, instID int6
 	return tx.Commit()
 }
 
+// ListInstUsersForScheduleMatrix 机构在职、未删除且未禁用的用户，作为教师矩阵固定列（顺序与 id 升序一致）
+func (repo *Repository) ListInstUsersForScheduleMatrix(ctx context.Context, instID int64) ([]model.InstUserScheduleRosterItem, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id,
+			COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name
+		FROM inst_user
+		WHERE inst_id = ? AND del_flag = 0 AND disabled = 0
+		ORDER BY id ASC
+	`, instID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]model.InstUserScheduleRosterItem, 0, 64)
+	for rows.Next() {
+		var item model.InstUserScheduleRosterItem
+		if err := rows.Scan(&item.ID, &item.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (repo *Repository) ChangeInstUserPhone(ctx context.Context, instUserID, instID int64, mobile string) error {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {

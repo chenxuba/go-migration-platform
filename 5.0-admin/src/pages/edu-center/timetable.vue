@@ -1,6 +1,7 @@
 <script setup>
 import { SettingFilled } from '@ant-design/icons-vue'
 import { ref } from 'vue'
+import TeacherMatrixApiTimetable from '@/components/edu-center/timetable/teacher-matrix-api-timetable.vue'
 
 const activeKey = ref('1')
 </script>
@@ -31,6 +32,9 @@ const activeKey = ref('1')
         </a-tab-pane>
         <a-tab-pane key="6" tab="智慧课表">
           <smart-timetable />
+        </a-tab-pane>
+        <a-tab-pane key="7" tab="教师矩阵">
+          <TeacherMatrixApiTimetable />
         </a-tab-pane>
       </a-tabs>
       <div class="absolute right-6 top-1.5 bg-#f6f7f8 h-8 px-4 flex-center rounded-4 text-#222 cursor-pointer font-500">

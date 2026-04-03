@@ -93,6 +93,55 @@ export function listTeachingSchedulesApi(params: {
   return useGet<TeachingScheduleItem[]>('/api/v1/teaching-schedules', params)
 }
 
+/** 旧版机构总课表矩阵接口返回的教师列 */
+export interface TeachingScheduleMatrixTeacherColumn {
+  teacherName: string
+  teacherId: number
+  scheduleInfoVoList: TeachingScheduleMatrixLegacyItem[]
+}
+
+export interface TeachingScheduleMatrixLegacyItem {
+  id: number
+  scheduleDate: string
+  scheduleStartTime: string
+  scheduleEndTime: string
+  scheduleStatus?: number
+  courseStatus?: number
+  courseType?: number
+  courseName?: string
+  className?: string | null
+  classId?: number | null
+  courseId?: number
+  batchId?: number
+  teacherList?: Array<{ name: string, id: number, type?: number, disabled?: boolean }>
+  studentList?: Array<{ name: string, id: number, type?: number }>
+  instId?: number
+  width?: number
+  courseTime?: number
+  courseHour?: number
+  finishType?: number
+  leaveList?: unknown[]
+}
+
+/** 按「日期 × 教师」矩阵 */
+export interface TeachingScheduleMatrixDay {
+  scheduleDate: string
+  width: number
+  scheduleInfoVoList?: null
+  scheduleListVoList: TeachingScheduleMatrixTeacherColumn[]
+}
+
+export function listTeachingSchedulesByTeacherMatrixApi(params: {
+  startDate: string
+  endDate: string
+  classType?: number
+}) {
+  return useGet<TeachingScheduleMatrixDay[]>(
+    '/api/v1/teaching-schedules/by-teacher-matrix',
+    params,
+  )
+}
+
 export function batchUpdateTeachingSchedulesApi(data: {
   batchNo?: string
   ids?: string[]
