@@ -107,6 +107,11 @@ interface WorkbenchRow {
   allowClassroomConflict: boolean
 }
 
+interface SoftConflictSnapshotItem {
+  allowStudentConflict: boolean
+  allowClassroomConflict: boolean
+}
+
 const modalOpen = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
@@ -117,6 +122,7 @@ const validationState = ref(props.validation || null)
 const rowStates = ref<WorkbenchRow[]>([])
 const initialConflictMap = ref<Record<string, string[]>>({})
 const lastValidatedRowMap = ref<Record<string, WorkbenchRow>>({})
+const bulkSoftConflictSnapshot = ref<Record<string, SoftConflictSnapshotItem> | null>(null)
 let revalidateTimer: ReturnType<typeof setTimeout> | null = null
 
 function parseTimeText(text?: string) {
@@ -322,6 +328,26 @@ const summary = computed(() => {
   }
 })
 
+const canEnableAllSoftConflicts = computed(() =>
+  rowViews.value.some(row =>
+    (row.displayHasStudentConflict && !row.allowStudentConflict)
+    || (row.displayHasClassroomConflict && !row.allowClassroomConflict),
+  ),
+)
+
+const canUndoEnableAllSoftConflicts = computed(() => {
+  const snapshot = bulkSoftConflictSnapshot.value
+  if (!snapshot)
+    return false
+  return rowStates.value.some((row) => {
+    const previous = snapshot[row.key]
+    if (!previous)
+      return false
+    return previous.allowStudentConflict !== row.allowStudentConflict
+      || previous.allowClassroomConflict !== row.allowClassroomConflict
+  })
+})
+
 function teacherNameById(id: string) {
   return props.teacherOptions.find(item => item.value === id)?.label || '-'
 }
@@ -397,6 +423,7 @@ function initializeRows() {
     }
   })
   validationState.value = props.validation || null
+  bulkSoftConflictSnapshot.value = null
   initialConflictMap.value = {}
   props.plans.forEach((plan, index) => {
     const current = props.validation?.currentSchedules?.[index]
@@ -473,11 +500,45 @@ function changeRowTime(key: string, value: string) {
 }
 
 function enableAllSoftConflicts() {
-  rowStates.value = rowStates.value.map(row => ({
-    ...row,
-    allowStudentConflict: rowViews.value.find(item => item.key === row.key)?.hasStudentConflict ? true : row.allowStudentConflict,
-    allowClassroomConflict: rowViews.value.find(item => item.key === row.key)?.hasClassroomConflict ? true : row.allowClassroomConflict,
-  }))
+  if (!canEnableAllSoftConflicts.value)
+    return
+
+  if (!bulkSoftConflictSnapshot.value) {
+    bulkSoftConflictSnapshot.value = rowStates.value.reduce<Record<string, SoftConflictSnapshotItem>>((map, row) => {
+      map[row.key] = {
+        allowStudentConflict: row.allowStudentConflict,
+        allowClassroomConflict: row.allowClassroomConflict,
+      }
+      return map
+    }, {})
+  }
+
+  rowStates.value = rowStates.value.map((row) => {
+    const currentView = rowViews.value.find(item => item.key === row.key)
+    return {
+      ...row,
+      allowStudentConflict: currentView?.displayHasStudentConflict ? true : row.allowStudentConflict,
+      allowClassroomConflict: currentView?.displayHasClassroomConflict ? true : row.allowClassroomConflict,
+    }
+  })
+}
+
+function restoreBulkSoftConflictSelection() {
+  const snapshot = bulkSoftConflictSnapshot.value
+  if (!snapshot)
+    return
+
+  rowStates.value = rowStates.value.map((row) => {
+    const previous = snapshot[row.key]
+    if (!previous)
+      return row
+    return {
+      ...row,
+      allowStudentConflict: previous.allowStudentConflict,
+      allowClassroomConflict: previous.allowClassroomConflict,
+    }
+  })
+  bulkSoftConflictSnapshot.value = null
 }
 
 function submitResolvedRows() {
@@ -547,7 +608,20 @@ const columns = [
           共 {{ summary.total }} 节待处理日程，其中老师冲突 {{ summary.teacher }} 节，学员冲突 {{ summary.student }} 节，教室冲突 {{ summary.classroom }} 节，当前可直接创建 {{ summary.ready }} 节。
         </div>
         <div class="schedule-conflict__toolbar-actions">
-          <a-button type="link" class="schedule-conflict__toolbar-link" @click="enableAllSoftConflicts">
+          <a-button
+            v-if="canUndoEnableAllSoftConflicts"
+            type="link"
+            class="schedule-conflict__toolbar-link schedule-conflict__toolbar-link--muted"
+            @click="restoreBulkSoftConflictSelection"
+          >
+            撤销批量忽略
+          </a-button>
+          <a-button
+            type="link"
+            class="schedule-conflict__toolbar-link"
+            :disabled="!canEnableAllSoftConflicts"
+            @click="enableAllSoftConflicts"
+          >
             忽略全部软冲突
           </a-button>
           <a-button size="small" :loading="validating" @click="revalidateRows">
@@ -821,6 +895,14 @@ const columns = [
   padding: 0;
   height: auto;
   font-weight: 600;
+}
+
+.schedule-conflict__toolbar-link--muted {
+  color: #667085;
+}
+
+.schedule-conflict__toolbar-link--muted:hover {
+  color: #475467;
 }
 
 .schedule-conflict__workbench {
