@@ -102,6 +102,10 @@ export function createOneToOneSchedulesApi(data: {
     lessonDate: string
     startTime: string
     endTime: string
+    teacherId?: string
+    classroomId?: string
+    allowStudentConflict?: boolean
+    allowClassroomConflict?: boolean
   }>
 }) {
   return usePost<CreateOneToOneSchedulesResult>('/api/v1/teaching-schedules/one-to-one/create', data)
@@ -116,6 +120,8 @@ export function validateOneToOneSchedulesApi(data: {
     lessonDate: string
     startTime: string
     endTime: string
+    teacherId?: string
+    classroomId?: string
   }>
 }) {
   return usePost<TeachingScheduleValidationResult>('/api/v1/teaching-schedules/one-to-one/validate', data)

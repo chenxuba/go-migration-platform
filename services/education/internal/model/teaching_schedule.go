@@ -8,9 +8,13 @@ const (
 )
 
 type TeachingScheduleCreateSlotDTO struct {
-	LessonDate string `json:"lessonDate"`
-	StartTime  string `json:"startTime"`
-	EndTime    string `json:"endTime"`
+	LessonDate             string `json:"lessonDate"`
+	StartTime              string `json:"startTime"`
+	EndTime                string `json:"endTime"`
+	TeacherID              string `json:"teacherId,omitempty"`
+	ClassroomID            string `json:"classroomId,omitempty"`
+	AllowStudentConflict   bool   `json:"allowStudentConflict,omitempty"`
+	AllowClassroomConflict bool   `json:"allowClassroomConflict,omitempty"`
 }
 
 type CreateOneToOneSchedulesDTO struct {

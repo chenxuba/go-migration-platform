@@ -13,6 +13,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { computed, nextTick, ref, watch } from 'vue'
 import ScheduleConflictWorkbenchModal from './schedule-conflict-workbench-modal.vue'
 import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
+import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import type { TeachingScheduleValidationResult } from '@/api/edu-center/teaching-schedule'
@@ -43,6 +44,10 @@ interface PreviewItem {
   endTime: string
   teacher: string
   classroom: string
+  teacherId?: string
+  classroomId?: string
+  allowStudentConflict?: boolean
+  allowClassroomConflict?: boolean
   tone: PreviewTone
 }
 
@@ -202,6 +207,7 @@ function isTeacherAllowedInPeriodGroup(teacherIdStr: string, groupIndex: number)
 }
 
 const classroomList = ref<ClassroomItem[]>([])
+const workbenchTeacherList = ref<StaffOptionItem[]>([])
 const oneToOneRecords = ref<OneToOneItem[]>([])
 const oneToOneLoading = ref(false)
 const selectedOneToOneId = ref<string | undefined>(undefined)
@@ -487,6 +493,7 @@ watch(modalOpen, async (value) => {
       userStore.getInstConfig(),
       fetchOneToOneRecords(),
       fetchClassroomList(),
+      fetchWorkbenchTeacherList(),
     ])
     await nextTick()
     scrollPlannerShellToTop()
@@ -555,6 +562,41 @@ const selectedTeacherText = computed(() => {
     return displayStaffName(preset)
   return String(selectedTeacher.value)
 })
+
+const teacherSelectOptions = computed(() => {
+  const merged = new Map<string, { value: string, label: string }>()
+  const append = (item?: StaffOptionItem | null) => {
+    if (!isValidStaffId(item?.id))
+      return
+    const value = String(item.id).trim()
+    const label = displayStaffName(item) || value
+    if (!merged.has(value))
+      merged.set(value, { value, label })
+  }
+  teacherPresetStaff.value.forEach(item => append(item))
+  workbenchTeacherList.value.forEach(item => append(item))
+  return [...merged.values()]
+})
+
+const conflictWorkbenchPeriodGroups = computed(() =>
+  groupOptions.value.map((opt) => {
+    const group = sortedPeriodGroups.value[periodGroupIndexForKey(opt.key)]
+    const teacherIds = Array.isArray(group?.boundTeachers)
+      ? group.boundTeachers.map(item => String(item.id ?? '').trim()).filter(Boolean)
+      : []
+    return {
+      key: opt.key,
+      label: opt.label,
+      teacherIds,
+      timeOptions: slotsForGroupKey(opt.key).map(slot => ({
+        value: `${opt.key}|${slot.start}|${slot.end}`,
+        label: `第${slot.index}节课 · ${slot.start}-${slot.end}`,
+        startTime: slot.start,
+        endTime: slot.end,
+      })),
+    }
+  }),
+)
 const selectedAssistantText = computed(() =>
   selectedAssistant.value.length
     ? selectedAssistant.value.map((id) => {
@@ -870,6 +912,10 @@ const previewPlans = computed<PreviewItem[]>(() => {
       endTime: block.endTime,
       teacher: selectedTeacherText.value,
       classroom: scheduledClassroomText.value,
+      teacherId: selectedTeacherIdNormalized.value || undefined,
+      classroomId: normalizedSelectedClassroomId.value || undefined,
+      allowStudentConflict: false,
+      allowClassroomConflict: false,
       tone,
     })),
   )
@@ -1045,6 +1091,40 @@ async function fetchClassroomList() {
   }
 }
 
+async function fetchWorkbenchTeacherList() {
+  try {
+    const res = await getUserListApi({
+      pageRequestModel: {
+        needTotal: false,
+        pageSize: 500,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+      queryModel: {
+        status: 0,
+      },
+    })
+    if (res.code !== 200) {
+      messageService.error(res.message || '获取老师列表失败')
+      return
+    }
+    const rows = Array.isArray(res.result) ? res.result : []
+    workbenchTeacherList.value = rows.map((item: any) => {
+      const label = String(item.nickName || item.name || item.id || '').trim()
+      return {
+        id: String(item.id ?? '').trim(),
+        name: label,
+        nickName: label,
+        mobile: String(item.mobile ?? '').trim(),
+      }
+    }).filter(item => item.id)
+  }
+  catch (error: any) {
+    console.error('fetch workbench teacher list failed', error)
+    messageService.error(error?.message || '获取老师列表失败')
+  }
+}
+
 function closeModal() {
   previewModalOpen.value = false
   modalOpen.value = false
@@ -1069,6 +1149,10 @@ function buildScheduleCreatePayload(options: {
       lessonDate: item.date,
       startTime: item.startTime,
       endTime: item.endTime,
+      teacherId: item.teacherId ? String(item.teacherId) : undefined,
+      classroomId: item.classroomId ? String(item.classroomId) : undefined,
+      allowStudentConflict: item.allowStudentConflict === true || options.allowStudentConflict === true,
+      allowClassroomConflict: item.allowClassroomConflict === true || options.allowClassroomConflict === true,
     })),
   }
 }
@@ -1158,13 +1242,9 @@ async function confirmBatchCreate(options: {
 
 function handleConflictWorkbenchSubmit(payload: {
   plans: PreviewItem[]
-  allowStudentConflict: boolean
-  allowClassroomConflict: boolean
 }) {
   void confirmBatchCreate({
     plans: payload.plans,
-    allowStudentConflict: payload.allowStudentConflict,
-    allowClassroomConflict: payload.allowClassroomConflict,
   })
 }
 
@@ -1920,8 +2000,22 @@ function invertWeekdays() {
 
   <ScheduleConflictWorkbenchModal
     v-model:open="conflictModalOpen"
+    :one-to-one-id="String(selectedOneToOne?.id || '')"
+    :assistant-ids="selectedAssistant.map(id => String(id))"
     :plans="previewPlans"
     :validation="previewValidationResult"
+    :teacher-options="teacherSelectOptions"
+    :classroom-options="classroomOptions"
+    :period-groups="conflictWorkbenchPeriodGroups"
+    :time-options="schoolTimeSlotOptions.map(item => ({
+      value: item.value,
+      label: `${item.desc} · ${item.start}-${item.end}`,
+      startTime: item.start,
+      endTime: item.end,
+    }))"
+    :default-group-key="currentGroup"
+    :default-teacher-id="String(selectedTeacher || '')"
+    :default-classroom-id="normalizedSelectedClassroomId"
     :loading="creatingSchedules || creatingWithSoftConflict"
     @submit="handleConflictWorkbenchSubmit"
   />
