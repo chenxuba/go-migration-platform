@@ -120,8 +120,18 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 	keyed := make(map[string][]model.TeachingScheduleVO)
 	for _, s := range schedules {
 		tid := strings.TrimSpace(s.TeacherID)
-		k := s.LessonDate + "\t" + tid
-		keyed[k] = append(keyed[k], s)
+		if tid != "" {
+			k := s.LessonDate + "\t" + tid
+			keyed[k] = append(keyed[k], s)
+		}
+		for _, aid := range s.AssistantIDs {
+			aid = strings.TrimSpace(aid)
+			if aid == "" {
+				continue
+			}
+			k := s.LessonDate + "\t" + aid
+			keyed[k] = append(keyed[k], s)
+		}
 	}
 
 	matrixTeacherFilter := normalizeMatrixTeacherFilter(query.MatrixTeacherFilter)
@@ -287,19 +297,37 @@ func buildTeacherOrderForMatrix(roster []model.InstUserScheduleRosterItem, sched
 	var extras []matrixExtraTeacher
 	for _, s := range schedules {
 		tid, err := strconv.ParseInt(strings.TrimSpace(s.TeacherID), 10, 64)
-		if err != nil || tid <= 0 {
-			continue
+		if err == nil && tid > 0 {
+			if _, ok := seen[tid]; !ok {
+				seen[tid] = struct{}{}
+				nm := strings.TrimSpace(s.TeacherName)
+				if nm == "" {
+					nm = "-"
+				}
+				names[tid] = nm
+				extras = append(extras, matrixExtraTeacher{id: tid, name: nm})
+			}
 		}
-		if _, ok := seen[tid]; ok {
-			continue
+		for i, aid := range s.AssistantIDs {
+			aid = strings.TrimSpace(aid)
+			assistantID, err := strconv.ParseInt(aid, 10, 64)
+			if err != nil || assistantID <= 0 {
+				continue
+			}
+			if _, ok := seen[assistantID]; ok {
+				continue
+			}
+			seen[assistantID] = struct{}{}
+			nm := ""
+			if i < len(s.AssistantNames) {
+				nm = strings.TrimSpace(s.AssistantNames[i])
+			}
+			if nm == "" {
+				nm = "-"
+			}
+			names[assistantID] = nm
+			extras = append(extras, matrixExtraTeacher{id: assistantID, name: nm})
 		}
-		seen[tid] = struct{}{}
-		nm := strings.TrimSpace(s.TeacherName)
-		if nm == "" {
-			nm = "-"
-		}
-		names[tid] = nm
-		extras = append(extras, matrixExtraTeacher{id: tid, name: nm})
 	}
 	sort.Slice(extras, func(i, j int) bool {
 		if extras[i].name != extras[j].name {
