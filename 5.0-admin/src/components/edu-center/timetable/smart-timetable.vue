@@ -1436,7 +1436,7 @@ function confirmScheduleWithOptionalSkip({
         timeLabel,
         teacherName,
         groupLabel,
-        onSkipTodayChange: checked => { skipToday = checked },
+        onSkipTodayChange: (checked) => { skipToday = checked },
       }),
       async onOk() {
         if (skipToday)
@@ -1488,15 +1488,15 @@ function handleScheduleClick(timeSlot, column, record) {
     const lessonIndex = getLessonIndex(column.startTime)
 
     void confirmScheduleWithOptionalSkip({
-        modeLabel: '1v1',
-        modeColor: '#1677ff',
-        targetLabel: '排课对象',
-        targetValue: studentInfo.studentName,
-        courseName: studentInfo.courseName,
-        dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
-        timeLabel: `${column.startTime}-${column.endTime}`,
-        teacherName: record.name,
-        groupLabel: activeGroupLabel.value || '当前组',
+      modeLabel: '1v1',
+      modeColor: '#1677ff',
+      targetLabel: '排课对象',
+      targetValue: studentInfo.studentName,
+      courseName: studentInfo.courseName,
+      dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
+      timeLabel: `${column.startTime}-${column.endTime}`,
+      teacherName: record.name,
+      groupLabel: activeGroupLabel.value || '当前组',
       async onConfirm() {
         creatingOneToOneSchedule.value = true
         try {
@@ -1564,15 +1564,15 @@ function handleScheduleClick(timeSlot, column, record) {
     const lessonIndex = getLessonIndex(column.startTime)
 
     void confirmScheduleWithOptionalSkip({
-        modeLabel: '班课',
-        modeColor: '#13c2c2',
-        targetLabel: '排课班级',
-        targetValue: classInfo.name,
-        courseName: classInfo.courseName,
-        dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
-        timeLabel: `${column.startTime}-${column.endTime}`,
-        teacherName: record.name,
-        groupLabel: activeGroupLabel.value || '当前组',
+      modeLabel: '班课',
+      modeColor: '#13c2c2',
+      targetLabel: '排课班级',
+      targetValue: classInfo.name,
+      courseName: classInfo.courseName,
+      dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
+      timeLabel: `${column.startTime}-${column.endTime}`,
+      teacherName: record.name,
+      groupLabel: activeGroupLabel.value || '当前组',
       onConfirm() {
         console.log('确认排课', classInfo.name, column.startTime, column.endTime)
 
