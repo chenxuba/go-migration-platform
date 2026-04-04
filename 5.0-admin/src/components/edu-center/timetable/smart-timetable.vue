@@ -1282,7 +1282,7 @@ watch(currentModel, (newValue) => {
             </a-select>
           </div>
         </div>
-        <div class="time-selector flex items-center shrink-0">
+        <div class="time-selector flex items-center shrink-0 st-time-selector--after-filters">
           <a-select
             v-model:value="currentTime"
             :options="timeViewOptions"
@@ -1492,6 +1492,11 @@ watch(currentModel, (newValue) => {
   .ant-radio-button-wrapper {
     padding: 0 16px;
   }
+}
+
+/* 一对一/班课筛选与「周视图」之间略增间距 */
+.st-time-selector--after-filters {
+  margin-left: 8px;
 }
 
 .st-this-week-btn {
