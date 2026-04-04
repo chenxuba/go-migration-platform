@@ -672,6 +672,41 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 	return tx.Commit()
 }
 
+func (repo *Repository) CancelTeachingSchedules(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleCancelDTO) (model.TeachingScheduleCancelResult, error) {
+	ids := parseStringIDs(dto.IDs)
+	if len(ids) == 0 {
+		return model.TeachingScheduleCancelResult{}, errors.New("缺少待撤销的日程")
+	}
+
+	res, err := repo.db.ExecContext(ctx, `
+		UPDATE teaching_schedule
+		SET del_flag = 1,
+		    status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND status = ?
+		  AND id IN (`+sqlPlaceholders(len(ids))+`)
+	`, append([]any{
+		model.TeachingScheduleStatusCanceled,
+		operatorID,
+		instID,
+		model.TeachingScheduleStatusActive,
+	}, int64SliceToAny(ids)...)...)
+	if err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	if affected <= 0 {
+		return model.TeachingScheduleCancelResult{}, errors.New("未找到可撤销的日程")
+	}
+	return model.TeachingScheduleCancelResult{Canceled: int(affected)}, nil
+}
+
 type normalizedScheduleSlot struct {
 	LessonDate time.Time
 	StartAt    time.Time

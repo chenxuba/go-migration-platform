@@ -57,6 +57,14 @@ type TeachingScheduleBatchUpdateDTO struct {
 	EndTime      string   `json:"endTime"`
 }
 
+type TeachingScheduleCancelDTO struct {
+	IDs []string `json:"ids"`
+}
+
+type TeachingScheduleCancelResult struct {
+	Canceled int `json:"canceled"`
+}
+
 // TeachingScheduleCopyWeekDTO 将源日期区间内的课表按「星期对齐」复制到目标区间（两区间须同为连续日历天且天数一致）。
 type TeachingScheduleCopyWeekDTO struct {
 	SourceStartDate string `json:"sourceStartDate"`

@@ -230,6 +230,12 @@ export function batchUpdateTeachingSchedulesApi(data: {
   return usePost<boolean>('/api/v1/teaching-schedules/batch-update', data)
 }
 
+export function cancelTeachingSchedulesApi(data: {
+  ids: string[]
+}) {
+  return usePost<{ canceled: number }>('/api/v1/teaching-schedules/cancel', data)
+}
+
 /** 将源周课表按天对齐复制到目标周；源 batch 在目标周使用新 batchNo，batchSize 与复制条数一致 */
 export function copyTeachingSchedulesWeekApi(data: {
   sourceStartDate: string

@@ -5,7 +5,7 @@ import dayjs from 'dayjs'
 import { h } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
-import { checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { cancelTeachingSchedulesApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 import {
@@ -145,11 +145,29 @@ const matrixDays = ref([])
 const timetableLoading = ref(false)
 const oneToOneAvailabilityLoading = ref(false)
 const creatingOneToOneSchedule = ref(false)
+const deletingScheduledLesson = ref(false)
 const conflictDetailModalOpen = ref(false)
 const conflictDetailState = ref({
   summary: '',
   attempted: null,
   items: [],
+})
+const scheduledLessonDetailOpen = ref(false)
+const scheduledLessonDetailState = ref({
+  modeLabel: '',
+  modeColor: '',
+  lessonTitle: '',
+  dateLabel: '',
+  timeLabel: '',
+  teacherName: '',
+  groupLabel: '',
+  studentText: '',
+  courseName: '',
+  scheduleId: '',
+  courseType: null,
+  text: null,
+  column: null,
+  record: null,
 })
 /** 防止快速切换周次/组别时旧请求晚到覆盖新矩阵 */
 let matrixLoadSeq = 0
@@ -253,6 +271,7 @@ function minutesFromHHMM(t) {
 
 function emptyLessonCell(slot) {
   return {
+    scheduleId: null,
     startTime: slot.start,
     endTime: slot.end,
     courseName: null,
@@ -304,6 +323,7 @@ function buildLessonsForRow(slots, legacyList) {
 
     lessons[idx] = {
       ...lessons[idx],
+      scheduleId: leg.id != null ? String(leg.id) : null,
       courseName: leg.courseName || null,
       studentId: studentIds.length ? studentIds : null,
       classId: leg.classId != null ? String(leg.classId) : null,
@@ -1458,6 +1478,117 @@ function confirmScheduleWithOptionalSkip({
   })
 }
 
+function buildScheduledLessonCancelConfirmTitle(text, column, record) {
+  const dateObj = dayjs(record.date)
+  const month = dateObj.format('M')
+  const day = dateObj.format('D')
+  const lessonIndex = getLessonIndex(column.startTime)
+  const studentText = Array.isArray(text.studentNames)
+    ? text.studentNames.map(item => item.name).filter(Boolean).join('、')
+    : '-'
+
+  return h('div', {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px',
+      maxWidth: '360px',
+      lineHeight: '20px',
+    },
+  }, [
+    h('div', {
+      style: {
+        color: '#262626',
+        fontSize: '14px',
+        fontWeight: 700,
+      },
+    }, '撤销这节 1v1 课程？'),
+    h('div', {
+      style: {
+        color: '#595959',
+        fontSize: '13px',
+      },
+    }, `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节 · ${column.startTime}-${column.endTime}`),
+    h('div', {
+      style: {
+        color: '#595959',
+        fontSize: '13px',
+      },
+    }, `老师：${record.name} · ${activeGroupLabel.value || '当前组'} · 学员：${studentText}`),
+    h('div', {
+      style: {
+        color: '#8c8c8c',
+        fontSize: '12px',
+      },
+    }, text.courseName || '课程'),
+  ])
+}
+
+function openScheduledLessonDetail(text, column, record) {
+  const dateObj = dayjs(record.date)
+  const month = dateObj.format('M')
+  const day = dateObj.format('D')
+  const lessonIndex = getLessonIndex(column.startTime)
+  const studentText = Array.isArray(text.studentNames)
+    ? text.studentNames.map(item => item.name).filter(Boolean).join('、')
+    : '-'
+
+  scheduledLessonDetailState.value = {
+    modeLabel: text.courseType === 1 ? '1v1' : '班课',
+    modeColor: text.courseType === 1 ? '#1677ff' : '#13c2c2',
+    lessonTitle: `${studentText || '学员'} · ${text.courseName || '课程'}`,
+    dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
+    timeLabel: `${column.startTime}-${column.endTime}`,
+    teacherName: record.name,
+    groupLabel: activeGroupLabel.value || '当前组',
+    studentText: studentText || '-',
+    courseName: text.courseName || '',
+    scheduleId: String(text.scheduleId || ''),
+    courseType: text.courseType,
+    text,
+    column,
+    record,
+  }
+  scheduledLessonDetailOpen.value = true
+}
+
+async function deleteScheduledLessonFromDetail() {
+  const detail = scheduledLessonDetailState.value
+  if (detail.courseType !== 1) {
+    messageService.info('班课删除建议和主教/辅教联动一起设计，这里先不直接删除。')
+    return
+  }
+  if (!detail.scheduleId) {
+    messageService.warning('当前日程缺少可撤销标识，请刷新后重试')
+    return
+  }
+
+  const dateObj = dayjs(detail.record?.date)
+  const month = dateObj.format('M')
+  const day = dateObj.format('D')
+  const lessonIndex = getLessonIndex(detail.column?.startTime)
+
+  deletingScheduledLesson.value = true
+  try {
+    const res = await cancelTeachingSchedulesApi({
+      ids: [detail.scheduleId],
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '删除日程失败')
+    scheduledLessonDetailOpen.value = false
+    messageService.success(`已删除 ${month}月${day}日 第${lessonIndex}节 1v1 日程`)
+    emitter.emit(EVENTS.REFRESH_DATA)
+  }
+  catch (error) {
+    console.error('cancel teaching schedule failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '删除日程失败')
+    throw error
+  }
+  finally {
+    deletingScheduledLesson.value = false
+  }
+}
+
 // 排课
 function handleScheduleClick(timeSlot, column, record) {
   if (currentModel.value === '1') {
@@ -1816,8 +1947,9 @@ watch(currentModel, (newValue) => {
             <div
               v-if="text.studentId"
               :data-schedule-cell-key="buildAvailabilitySlotKey(record.teacherId, record.date, column.startTime, column.endTime)"
-              class="st-schedule-cell flex flex-col bg-#4e6dff1f h-11 rounded-1 text-3 text-#fff"
+              class="st-schedule-cell flex flex-col bg-#4e6dff1f h-11 rounded-1 text-3 text-#fff cursor-pointer"
               :class="{ 'st-schedule-cell--focused': focusedScheduleCellKey === buildAvailabilitySlotKey(record.teacherId, record.date, column.startTime, column.endTime) }"
+              @click="openScheduledLessonDetail(text, column, record)"
             >
               <!-- 方格头部时间 -->
               <!-- 班课 -->
@@ -1832,13 +1964,13 @@ watch(currentModel, (newValue) => {
                 </span>
               </div>
               <!-- 1v1 -->
-              <div v-if="!text.classId" class="flex pl-1 flex-1 text-#002cfd cursor-pointer flex-items-center">
+              <div v-if="!text.classId" class="flex pl-1 flex-1 text-#002cfd flex-items-center">
                 <span v-for="(item, index) in text.studentNames" :key="index">
                   <div class="flex">{{ item.name }}{{ index !== text.studentNames.length - 1 ? '、' : '' }}-{{ text.courseName }}</div>
                 </span>
               </div>
               <!-- 班课 -->
-              <div v-else class="flex  pl-1 flex-1 text-#002cfd cursor-pointer line-height-4 flex-items-center">
+              <div v-else class="flex  pl-1 flex-1 text-#002cfd line-height-4 flex-items-center">
                 <div class="flex">
                   {{ text.className }}-{{ text.courseName }}
                 </div>
@@ -1870,6 +2002,56 @@ watch(currentModel, (newValue) => {
         </template>
       </a-table>
     </a-spin>
+
+    <a-modal
+      v-model:open="scheduledLessonDetailOpen"
+      title="课程详情"
+      width="620px"
+      centered
+      :ok-button-props="{ danger: true, loading: deletingScheduledLesson }"
+      :ok-text="scheduledLessonDetailState.courseType === 1 ? '删除本节' : undefined"
+      cancel-text="关闭"
+      :ok-cancel="scheduledLessonDetailState.courseType === 1"
+      @ok="deleteScheduledLessonFromDetail"
+    >
+      <div class="st-scheduled-detail">
+        <div class="st-scheduled-detail__hero">
+          <span
+            class="st-scheduled-detail__badge"
+            :style="{ background: scheduledLessonDetailState.modeColor || '#1677ff' }"
+          >
+            {{ scheduledLessonDetailState.modeLabel }}
+          </span>
+          <span class="st-scheduled-detail__title">{{ scheduledLessonDetailState.lessonTitle }}</span>
+        </div>
+
+        <div class="st-scheduled-detail__card">
+          <div class="st-scheduled-detail__row">
+            <span>上课时间</span>
+            <strong>{{ scheduledLessonDetailState.dateLabel }} · {{ scheduledLessonDetailState.timeLabel }}</strong>
+          </div>
+          <div class="st-scheduled-detail__row">
+            <span>上课老师</span>
+            <strong>{{ scheduledLessonDetailState.teacherName }}</strong>
+          </div>
+          <div class="st-scheduled-detail__row">
+            <span>所在组别</span>
+            <strong>{{ scheduledLessonDetailState.groupLabel }}</strong>
+          </div>
+          <div class="st-scheduled-detail__row">
+            <span>上课学员</span>
+            <strong>{{ scheduledLessonDetailState.studentText }}</strong>
+          </div>
+        </div>
+
+        <div v-if="scheduledLessonDetailState.courseType === 1" class="st-scheduled-detail__hint st-scheduled-detail__hint--danger">
+          当前已支持删除这节 1v1 日程。删除后会立即从课表移除。
+        </div>
+        <div v-else class="st-scheduled-detail__hint">
+          这里建议作为后续“查看详情 / 调课 / 调整老师 / 调整教室”的统一入口。班课删除暂未开放，避免误删主教/辅教安排。
+        </div>
+      </div>
+    </a-modal>
 
     <a-modal
       v-model:open="conflictDetailModalOpen"
@@ -2029,6 +2211,80 @@ watch(currentModel, (newValue) => {
     0 0 20px rgba(255, 77, 79, 0.5);
   transform: scale(1.015);
   z-index: 2;
+}
+
+.st-scheduled-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.st-scheduled-detail__hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.st-scheduled-detail__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.st-scheduled-detail__title {
+  color: #262626;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.st-scheduled-detail__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #edf2f7;
+}
+
+.st-scheduled-detail__row {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 12px;
+  align-items: start;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.st-scheduled-detail__row > span {
+  color: #8c8c8c;
+}
+
+.st-scheduled-detail__row > strong {
+  color: #1f2329;
+  font-weight: 700;
+}
+
+.st-scheduled-detail__hint {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f6ffed;
+  color: #389e0d;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.st-scheduled-detail__hint--danger {
+  background: #fff1f0;
+  color: #cf1322;
 }
 
 @keyframes st-schedule-cell-flash {
