@@ -12,6 +12,7 @@ type TeachingScheduleCreateSlotDTO struct {
 	StartTime              string `json:"startTime"`
 	EndTime                string `json:"endTime"`
 	TeacherID              string `json:"teacherId,omitempty"`
+	AssistantIDs           []string `json:"assistantIds,omitempty"`
 	ClassroomID            string `json:"classroomId,omitempty"`
 	AllowStudentConflict   bool   `json:"allowStudentConflict,omitempty"`
 	AllowClassroomConflict bool   `json:"allowClassroomConflict,omitempty"`

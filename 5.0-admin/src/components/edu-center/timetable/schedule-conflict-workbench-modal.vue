@@ -108,6 +108,7 @@ interface WorkbenchRow {
   startTime: string
   endTime: string
   teacherId: string
+  assistantIds: string[]
   classroomId: string
   allowStudentConflict: boolean
   allowClassroomConflict: boolean
@@ -153,7 +154,6 @@ const rowStates = ref<WorkbenchRow[]>([])
 const initialConflictMap = ref<Record<string, string[]>>({})
 const lastValidatedRowMap = ref<Record<string, WorkbenchRow>>({})
 const bulkSoftConflictSnapshot = ref<Record<string, SoftConflictSnapshotItem> | null>(null)
-const assistantIdsState = ref<string[]>([])
 let revalidateTimer: ReturnType<typeof setTimeout> | null = null
 const timeOptionAvailabilityMap = ref<Record<string, TimeOptionAvailabilityView>>({})
 const timeOptionAvailabilityLoading = ref(false)
@@ -530,21 +530,8 @@ function assistantNamesByIds(ids?: Array<string | number>) {
   return Array.from(new Set(labels))
 }
 
-const assistantDisplayText = computed(() => {
-  const names = assistantNamesByIds(assistantIdsState.value)
-  return names.length ? names.join('、') : '未安排'
-})
-
-const selectedAssistantNameSet = computed(() =>
-  new Set(assistantNamesByIds(assistantIdsState.value).map(name => normalizeText(name)).filter(Boolean)),
-)
-
-const selectedAssistantIdSet = computed(() =>
-  new Set(assistantIdsState.value.map(id => normalizedTeacherId(id)).filter(Boolean)),
-)
-
 function currentRowAssistantEntries(row: Record<string, any>) {
-  return normalizedAssistantIds(assistantIdsState.value).map((id) => {
+  return normalizedAssistantIds(row.assistantIds).map((id) => {
     const name = assistantNamesByIds([id])[0] || id
     const availability = assistantAvailabilityForRow(row, id)
     return {
@@ -555,22 +542,30 @@ function currentRowAssistantEntries(row: Record<string, any>) {
   })
 }
 
-function conflictItemAssistantEntries(item: ConflictDetailView) {
+function selectedAssistantNameSetForRow(row: Record<string, any>) {
+  return new Set(assistantNamesByIds(row.assistantIds).map(name => normalizeText(name)).filter(Boolean))
+}
+
+function selectedAssistantIdSetForRow(row: Record<string, any>) {
+  return new Set(normalizedAssistantIds(row.assistantIds).map(id => normalizedTeacherId(id)).filter(Boolean))
+}
+
+function conflictItemAssistantEntries(row: Record<string, any>, item: ConflictDetailView) {
   return (item.assistantNames || []).filter(Boolean).map((name) => {
     return {
       name,
-      danger: item.activeConflictTypes.includes('助教') && selectedAssistantNameSet.value.has(normalizeText(name)),
+      danger: item.activeConflictTypes.includes('助教') && selectedAssistantNameSetForRow(row).has(normalizeText(name)),
     }
   })
 }
 
-function conflictItemTeacherTone(item: ConflictDetailView) {
+function conflictItemTeacherTone(row: Record<string, any>, item: ConflictDetailView) {
   if (item.activeConflictTypes.includes('老师'))
     return 'danger'
   if (item.activeConflictTypes.includes('助教')) {
     const teacherId = normalizedTeacherId(item.teacherId || '')
     const teacherName = normalizeText(item.teacherName)
-    if ((teacherId && selectedAssistantIdSet.value.has(teacherId)) || (teacherName && selectedAssistantNameSet.value.has(teacherName)))
+    if ((teacherId && selectedAssistantIdSetForRow(row).has(teacherId)) || (teacherName && selectedAssistantNameSetForRow(row).has(teacherName)))
       return 'danger'
   }
   if (item.resolvedConflictTypes.includes('老师'))
@@ -579,16 +574,18 @@ function conflictItemTeacherTone(item: ConflictDetailView) {
 }
 
 function buildValidationPayload() {
+  const unionAssistantIds = Array.from(new Set(rowStates.value.flatMap(row => normalizedAssistantIds(row.assistantIds))))
   return {
     oneToOneId: props.oneToOneId,
     teacherId: props.defaultTeacherId || rowStates.value[0]?.teacherId || '',
-    assistantIds: assistantIdsState.value,
+    assistantIds: unionAssistantIds,
     classroomId: props.defaultClassroomId || '',
     schedules: rowStates.value.map(row => ({
       lessonDate: row.date,
       startTime: row.startTime,
       endTime: row.endTime,
       teacherId: row.teacherId,
+      assistantIds: row.assistantIds,
       classroomId: row.classroomId,
     })),
   }
@@ -777,6 +774,7 @@ function initializeRows() {
       startTime: plan.startTime,
       endTime: plan.endTime,
       teacherId: defaultTeacherId,
+      assistantIds: normalizedAssistantIds(plan.assistantIds || props.assistantIds || []),
       classroomId: defaultClassroomId,
       allowStudentConflict: Boolean(plan.allowStudentConflict),
       allowClassroomConflict: Boolean(plan.allowClassroomConflict),
@@ -784,7 +782,6 @@ function initializeRows() {
   })
   validationState.value = props.validation || null
   bulkSoftConflictSnapshot.value = null
-  assistantIdsState.value = normalizedAssistantIds(props.assistantIds || [])
   initialConflictMap.value = {}
   props.plans.forEach((plan, index) => {
     const current = props.validation?.currentSchedules?.[index]
@@ -815,14 +812,6 @@ watch(
       validationState.value = value || null
       syncValidatedRowSnapshot()
     }
-  },
-)
-
-watch(
-  () => props.assistantIds,
-  (value) => {
-    if (!props.open)
-      assistantIdsState.value = normalizedAssistantIds(value || [])
   },
 )
 
@@ -867,10 +856,19 @@ function updateRow<K extends keyof WorkbenchRow>(key: string, field: K, value: W
     return next
   })
   if (field === 'teacherId') {
-    const teacherIds = new Set(rowStates.value.map(row => normalizedTeacherId(row.teacherId)).filter(Boolean))
-    const nextAssistantIds = assistantIdsState.value.filter(id => !teacherIds.has(id))
-    if (nextAssistantIds.length !== assistantIdsState.value.length)
-      assistantIdsState.value = nextAssistantIds
+    rowStates.value = rowStates.value.map((row) => {
+      const teacherId = normalizedTeacherId(row.teacherId)
+      if (!teacherId)
+        return row
+      const nextAssistantIds = normalizedAssistantIds(row.assistantIds).filter(id => id !== teacherId)
+      if (nextAssistantIds.length === row.assistantIds.length)
+        return row
+      return {
+        ...row,
+        assistantIds: nextAssistantIds,
+      }
+    })
+    scheduleAssistantAvailabilityCheck()
   }
   if (field === 'teacherId' || field === 'groupKey')
     scheduleTimeOptionAvailabilityCheck()
@@ -940,9 +938,17 @@ function restoreBulkSoftConflictSelection() {
   bulkSoftConflictSnapshot.value = null
 }
 
-function updateAssistantIds(value: Array<string | number>) {
-  const teacherIds = new Set(rowStates.value.map(row => normalizedTeacherId(row.teacherId)).filter(Boolean))
-  assistantIdsState.value = normalizedAssistantIds(value).filter(id => !teacherIds.has(id))
+function updateAssistantIds(key: string, value: Array<string | number>) {
+  rowStates.value = rowStates.value.map((row) => {
+    if (row.key !== key)
+      return row
+    const teacherId = normalizedTeacherId(row.teacherId)
+    return {
+      ...row,
+      assistantIds: normalizedAssistantIds(value).filter(id => id !== teacherId),
+    }
+  })
+  scheduleAssistantAvailabilityCheck()
   scheduleRevalidate()
 }
 
@@ -962,16 +968,16 @@ function submitResolvedRows() {
         startTime: row.startTime,
         endTime: row.endTime,
         teacher: teacherNameById(row.teacherId),
-        assistant: assistantDisplayText.value,
+        assistant: assistantNamesByIds(row.assistantIds).join('、') || '未安排',
         classroom: classroomNameById(row.classroomId),
         teacherId: row.teacherId,
-        assistantIds: [...assistantIdsState.value],
+        assistantIds: [...row.assistantIds],
         classroomId: row.classroomId,
         allowStudentConflict: row.allowStudentConflict,
         allowClassroomConflict: row.allowClassroomConflict,
       }
     }),
-    assistantIds: [...assistantIdsState.value],
+    assistantIds: Array.from(new Set(selected.map(row => row.assistantIds).flat())),
   })
 }
 
@@ -1101,20 +1107,20 @@ const columns = [
                   <span>{{ item.date }} {{ item.timeText }}</span>
                 </div>
                 <div class="schedule-conflict__cell-meta">
-                  <span>老师：<strong :class="toneClass(conflictItemTeacherTone(item))">{{ item.teacherName || '-' }}</strong></span>
+                  <span>老师：<strong :class="toneClass(conflictItemTeacherTone(record, item))">{{ item.teacherName || '-' }}</strong></span>
                   <span>
                     助教：
                     <span class="schedule-conflict__name-list">
-                    <template v-if="conflictItemAssistantEntries(item).length">
-                      <span
-                        v-for="(assistant, assistantIndex) in conflictItemAssistantEntries(item)"
-                        :key="`${item.key}-assistant-${assistant.name}-${assistantIndex}`"
-                        :class="{ 'schedule-conflict__cell--danger': assistant.danger }"
-                      >
-                        {{ assistant.name }}<template v-if="assistantIndex < conflictItemAssistantEntries(item).length - 1">、</template>
-                      </span>
-                    </template>
-                    <span v-else>未安排</span>
+                      <template v-if="conflictItemAssistantEntries(record, item).length">
+                        <span
+                          v-for="(assistant, assistantIndex) in conflictItemAssistantEntries(record, item)"
+                          :key="`${item.key}-assistant-${assistant.name}-${assistantIndex}`"
+                          :class="{ 'schedule-conflict__cell--danger': assistant.danger }"
+                        >
+                          {{ assistant.name }}<template v-if="assistantIndex < conflictItemAssistantEntries(record, item).length - 1">、</template>
+                        </span>
+                      </template>
+                      <span v-else>未安排</span>
                     </span>
                   </span>
                   <span>教室：<strong :class="toneClass(item.classroomTone)">{{ item.classroomName || '-' }}</strong></span>
@@ -1206,10 +1212,10 @@ const columns = [
               <div class="schedule-conflict__action-group">
                 <div class="schedule-conflict__action-label-row">
                   <span class="schedule-conflict__action-label">上课助教</span>
-                  <small class="schedule-conflict__action-label-hint">本次创建共用助教</small>
+                  <small class="schedule-conflict__action-label-hint">本行独立助教</small>
                 </div>
                 <a-select
-                  :value="assistantIdsState"
+                  :value="record.assistantIds"
                   mode="multiple"
                   show-search
                   allow-clear
@@ -1217,7 +1223,7 @@ const columns = [
                   option-filter-prop="label"
                   popup-class-name="schedule-conflict__assistant-dropdown"
                   class="schedule-conflict__control schedule-conflict__control--multiple"
-                  @change="value => updateAssistantIds((value || []) as Array<string | number>)"
+                  @change="value => updateAssistantIds(record.key, (value || []) as Array<string | number>)"
                 >
                   <a-select-option
                     v-for="item in assistantOptionViewsForRow(record)"

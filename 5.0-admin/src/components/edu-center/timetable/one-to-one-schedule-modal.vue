@@ -46,6 +46,7 @@ interface PreviewItem {
   assistant: string
   classroom: string
   teacherId?: string
+  assistantIds?: string[]
   classroomId?: string
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
@@ -1180,6 +1181,7 @@ const previewPlans = computed<PreviewItem[]>(() => {
       assistant: selectedAssistantText.value,
       classroom: scheduledClassroomText.value,
       teacherId: selectedTeacherIdNormalized.value || undefined,
+      assistantIds: selectedAssistant.value.map(id => String(id)),
       classroomId: normalizedSelectedClassroomId.value || undefined,
       allowStudentConflict: false,
       allowClassroomConflict: false,
@@ -1460,6 +1462,7 @@ function buildScheduleCreatePayload(options: {
       startTime: item.startTime,
       endTime: item.endTime,
       teacherId: item.teacherId ? String(item.teacherId) : undefined,
+      assistantIds: Array.isArray(item.assistantIds) ? item.assistantIds.map(id => String(id)) : undefined,
       classroomId: item.classroomId ? String(item.classroomId) : undefined,
       allowStudentConflict: item.allowStudentConflict === true || options.allowStudentConflict === true,
       allowClassroomConflict: item.allowClassroomConflict === true || options.allowClassroomConflict === true,
@@ -1555,12 +1558,6 @@ function handleConflictWorkbenchSubmit(payload: {
   plans: PreviewItem[]
   assistantIds?: string[]
 }) {
-  if (Array.isArray(payload.assistantIds)) {
-    selectedAssistant.value = payload.assistantIds
-    selectedAssistantDisplays.value = payload.assistantIds.map((id) => {
-      return assistantSelectStaffs.value.find(item => sameStaffId(item.id, id))
-    }).filter(Boolean) as StaffOptionItem[]
-  }
   void confirmBatchCreate({
     assistantIds: payload.assistantIds,
     plans: payload.plans,

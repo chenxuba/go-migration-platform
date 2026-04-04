@@ -133,6 +133,7 @@ export function createOneToOneSchedulesApi(data: {
     startTime: string
     endTime: string
     teacherId?: string
+    assistantIds?: string[]
     classroomId?: string
     allowStudentConflict?: boolean
     allowClassroomConflict?: boolean
@@ -151,6 +152,7 @@ export function validateOneToOneSchedulesApi(data: {
     startTime: string
     endTime: string
     teacherId?: string
+    assistantIds?: string[]
     classroomId?: string
   }>
 }) {

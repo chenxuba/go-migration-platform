@@ -317,7 +317,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		return model.CreateOneToOneSchedulesResult{}, errors.New("当前1对1学员状态不允许创建日程")
 	}
 
-	plans, err := normalizeCreateSchedulePlans(dto.Schedules, fallbackTeacherID, fallbackClassroomID)
+	plans, err := normalizeCreateSchedulePlans(dto.Schedules, fallbackTeacherID, fallbackClassroomID, assistantIDs)
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
@@ -332,8 +332,9 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		}
 		return model.CreateOneToOneSchedulesResult{}, errors.New("上课教师无效")
 	}
-	if len(assistantIDs) > 0 {
-		if n, err := repo.CountInstUsersByIDs(ctx, instID, assistantIDs); err != nil || n != len(assistantIDs) {
+	planAssistantIDs := collectPlanAssistantIDs(plans)
+	if len(planAssistantIDs) > 0 {
+		if n, err := repo.CountInstUsersByIDs(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
 			if err != nil {
 				return model.CreateOneToOneSchedulesResult{}, err
 			}
@@ -347,13 +348,17 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 	}
 
 	teacherNames := repo.resolveTeacherNames(ctx, teacherIDs)
-	assistantNames := make([]string, 0, len(assistantIDs))
-	for _, id := range assistantIDs {
-		copyID := id
-		name := strings.TrimSpace(repo.GetStaffNameByID(ctx, &copyID))
-		if name != "" && name != "-" {
-			assistantNames = append(assistantNames, name)
-		}
+	assistantNameMap := repo.resolveTeacherNames(ctx, planAssistantIDs)
+	for i := range plans {
+		plans[i].AssistantNames = compactStrings(func() []string {
+			names := make([]string, 0, len(plans[i].AssistantIDs))
+			for _, id := range plans[i].AssistantIDs {
+				if name := strings.TrimSpace(assistantNameMap[id]); name != "" && name != "-" {
+					names = append(names, name)
+				}
+			}
+			return names
+		}())
 	}
 
 	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans)
@@ -368,7 +373,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
-	assistantConflicts, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, assistantIDs, plansToSlots(plans), "", nil)
+	assistantConflictsByPlan, err := repo.listAssistantConflictsByPlanTx(ctx, tx, instID, plans)
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
@@ -389,11 +394,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		}, studentConflicts) && !plan.AllowStudentConflict {
 			hardConflictTypes["学员"] = struct{}{}
 		}
-		if slotHasConflict(normalizedScheduleSlot{
-			LessonDate: plan.LessonDate,
-			StartAt:    plan.StartAt,
-			EndAt:      plan.EndAt,
-		}, assistantConflicts) {
+		if len(assistantConflictsByPlan[key]) > 0 {
 			hardConflictTypes["助教"] = struct{}{}
 		}
 	}
@@ -411,8 +412,6 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		batchNo = fmt.Sprintf("BATCH-%d", time.Now().UnixNano())
 	}
 
-	assistantIDsJSON, _ := json.Marshal(stringIDsFromInt64(assistantIDs))
-	assistantNamesJSON, _ := json.Marshal(assistantNames)
 	result := model.CreateOneToOneSchedulesResult{
 		BatchNo: batchNo,
 		Count:   len(plans),
@@ -423,6 +422,8 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		teacherName := firstNonEmptyString(teacherNames[plan.TeacherID], "-")
 		classroomName := classroomNames[plan.ClassroomID]
 		classroomID := plan.ClassroomID
+		assistantIDsJSON, _ := json.Marshal(stringIDsFromInt64(plan.AssistantIDs))
+		assistantNamesJSON, _ := json.Marshal(plan.AssistantNames)
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO teaching_schedule (
 				uuid, version, inst_id, class_type, teaching_class_id, teaching_class_name,
@@ -464,7 +465,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		if err != nil {
 			return model.CreateOneToOneSchedulesResult{}, err
 		}
-		result.List = append(result.List, model.TeachingScheduleVO{
+			result.List = append(result.List, model.TeachingScheduleVO{
 			ID:                strconv.FormatInt(id, 10),
 			BatchNo:           batchNo,
 			BatchSize:         len(plans),
@@ -477,8 +478,8 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 			LessonName:        base.LessonName,
 			TeacherID:         strconv.FormatInt(plan.TeacherID, 10),
 			TeacherName:       teacherName,
-			AssistantIDs:      stringIDsFromInt64(assistantIDs),
-			AssistantNames:    assistantNames,
+			AssistantIDs:      stringIDsFromInt64(plan.AssistantIDs),
+			AssistantNames:    plan.AssistantNames,
 			ClassroomID:       emptyStringIfZero(classroomID),
 			ClassroomName:     classroomName,
 			LessonDate:        plan.LessonDate.Format("2006-01-02"),
@@ -529,7 +530,7 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 		return model.TeachingScheduleValidationResult{}, errors.New("当前1对1学员状态不允许创建日程")
 	}
 
-	plans, err := normalizeCreateSchedulePlans(dto.Schedules, fallbackTeacherID, fallbackClassroomID)
+	plans, err := normalizeCreateSchedulePlans(dto.Schedules, fallbackTeacherID, fallbackClassroomID, assistantIDs)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
@@ -544,8 +545,9 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 		}
 		return model.TeachingScheduleValidationResult{}, errors.New("上课教师无效")
 	}
-	if len(assistantIDs) > 0 {
-		if n, err := repo.CountInstUsersByIDs(ctx, instID, assistantIDs); err != nil || n != len(assistantIDs) {
+	planAssistantIDs := collectPlanAssistantIDs(plans)
+	if len(planAssistantIDs) > 0 {
+		if n, err := repo.CountInstUsersByIDs(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
 			if err != nil {
 				return model.TeachingScheduleValidationResult{}, err
 			}
@@ -559,13 +561,17 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 	}
 
 	teacherNames := repo.resolveTeacherNames(ctx, teacherIDs)
-	assistantNames := make([]string, 0, len(assistantIDs))
-	for _, id := range assistantIDs {
-		copyID := id
-		name := strings.TrimSpace(repo.GetStaffNameByID(ctx, &copyID))
-		if name != "" && name != "-" {
-			assistantNames = append(assistantNames, name)
-		}
+	assistantNameMap := repo.resolveTeacherNames(ctx, planAssistantIDs)
+	for i := range plans {
+		plans[i].AssistantNames = compactStrings(func() []string {
+			names := make([]string, 0, len(plans[i].AssistantIDs))
+			for _, id := range plans[i].AssistantIDs {
+				if name := strings.TrimSpace(assistantNameMap[id]); name != "" && name != "-" {
+					names = append(names, name)
+				}
+			}
+			return names
+		}())
 	}
 	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans)
 	if err != nil {
@@ -579,7 +585,7 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
-	assistantConflicts, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, assistantIDs, plansToSlots(plans), "", nil)
+	assistantConflictsByPlan, err := repo.listAssistantConflictsByPlanTx(ctx, tx, instID, plans)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
@@ -588,12 +594,11 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 		base,
 		plans,
 		teacherNames,
-		assistantNames,
 		classroomNames,
 		teacherConflictsByPlan,
 		classroomConflictsByPlan,
 		studentConflicts,
-		assistantConflicts,
+		assistantConflictsByPlan,
 	)
 	if len(conflictTypes) > 0 {
 		return model.TeachingScheduleValidationResult{
@@ -980,6 +985,8 @@ type normalizedSchedulePlan struct {
 	StartAt                time.Time
 	EndAt                  time.Time
 	TeacherID              int64
+	AssistantIDs           []int64
+	AssistantNames         []string
 	ClassroomID            int64
 	AllowStudentConflict   bool
 	AllowClassroomConflict bool
@@ -990,6 +997,7 @@ func schedulePlanKey(plan normalizedSchedulePlan) string {
 		plan.StartAt.Format(time.RFC3339) + "|" +
 		plan.EndAt.Format(time.RFC3339) + "|" +
 		strconv.FormatInt(plan.TeacherID, 10) + "|" +
+		strings.Join(stringIDsFromInt64(plan.AssistantIDs), ",") + "|" +
 		strconv.FormatInt(plan.ClassroomID, 10)
 }
 
@@ -1137,6 +1145,25 @@ func collectPlanClassroomIDs(plans []normalizedSchedulePlan) []int64 {
 	return result
 }
 
+func collectPlanAssistantIDs(plans []normalizedSchedulePlan) []int64 {
+	seen := make(map[int64]struct{})
+	result := make([]int64, 0)
+	for _, plan := range plans {
+		for _, assistantID := range plan.AssistantIDs {
+			if assistantID <= 0 {
+				continue
+			}
+			if _, ok := seen[assistantID]; ok {
+				continue
+			}
+			seen[assistantID] = struct{}{}
+			result = append(result, assistantID)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+
 func (repo *Repository) resolveTeacherNames(ctx context.Context, teacherIDs []int64) map[int64]string {
 	result := make(map[int64]string, len(teacherIDs))
 	for _, teacherID := range teacherIDs {
@@ -1184,6 +1211,25 @@ func (repo *Repository) listClassroomConflictsByPlanTx(ctx context.Context, tx *
 			continue
 		}
 		rows, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "classroom_id", plan.ClassroomID, []normalizedScheduleSlot{{
+			LessonDate: plan.LessonDate,
+			StartAt:    plan.StartAt,
+			EndAt:      plan.EndAt,
+		}}, "", nil)
+		if err != nil {
+			return nil, err
+		}
+		result[schedulePlanKey(plan)] = rows
+	}
+	return result, nil
+}
+
+func (repo *Repository) listAssistantConflictsByPlanTx(ctx context.Context, tx *sql.Tx, instID int64, plans []normalizedSchedulePlan) (map[string][]scheduleConflictDetailRow, error) {
+	result := make(map[string][]scheduleConflictDetailRow, len(plans))
+	for _, plan := range plans {
+		if len(plan.AssistantIDs) == 0 {
+			continue
+		}
+		rows, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, plan.AssistantIDs, []normalizedScheduleSlot{{
 			LessonDate: plan.LessonDate,
 			StartAt:    plan.StartAt,
 			EndAt:      plan.EndAt,
@@ -1754,7 +1800,7 @@ func normalizeAssistantAvailabilityScheduleSlots(slots []model.AssistantSchedule
 	return result, nil
 }
 
-func normalizeCreateSchedulePlans(slots []model.TeachingScheduleCreateSlotDTO, fallbackTeacherID, fallbackClassroomID int64) ([]normalizedSchedulePlan, error) {
+func normalizeCreateSchedulePlans(slots []model.TeachingScheduleCreateSlotDTO, fallbackTeacherID, fallbackClassroomID int64, fallbackAssistantIDs []int64) ([]normalizedSchedulePlan, error) {
 	result := make([]normalizedSchedulePlan, 0, len(slots))
 	seen := make(map[string]struct{}, len(slots))
 	for _, item := range slots {
@@ -1779,8 +1825,13 @@ func normalizeCreateSchedulePlans(slots []model.TeachingScheduleCreateSlotDTO, f
 		if classroomID <= 0 {
 			classroomID = fallbackClassroomID
 		}
+		assistantIDs := parseStringIDs(item.AssistantIDs)
+		if len(assistantIDs) == 0 && len(fallbackAssistantIDs) > 0 {
+			assistantIDs = append([]int64{}, fallbackAssistantIDs...)
+		}
 
 		key := strconv.FormatInt(teacherID, 10) + "|" +
+			strings.Join(stringIDsFromInt64(assistantIDs), ",") + "|" +
 			strconv.FormatInt(classroomID, 10) + "|" +
 			startAt.Format(time.RFC3339) + "|" +
 			endAt.Format(time.RFC3339)
@@ -1793,6 +1844,7 @@ func normalizeCreateSchedulePlans(slots []model.TeachingScheduleCreateSlotDTO, f
 			StartAt:                startAt,
 			EndAt:                  endAt,
 			TeacherID:              teacherID,
+			AssistantIDs:           assistantIDs,
 			ClassroomID:            classroomID,
 			AllowStudentConflict:   item.AllowStudentConflict,
 			AllowClassroomConflict: item.AllowClassroomConflict,
@@ -1998,12 +2050,11 @@ func buildScheduleConflictResultFromPlans(
 	base model.OneToOneScheduleCreateContext,
 	plans []normalizedSchedulePlan,
 	teacherNames map[int64]string,
-	assistantNames []string,
 	classroomNames map[int64]string,
 	teacherConflicts map[string][]scheduleConflictDetailRow,
 	classroomConflicts map[string][]scheduleConflictDetailRow,
 	studentConflicts []scheduleConflictDetailRow,
-	assistantConflicts []scheduleConflictDetailRow,
+	assistantConflicts map[string][]scheduleConflictDetailRow,
 ) ([]model.TeachingScheduleConflictItem, []model.TeachingScheduleConflictItem, []string) {
 	typeSet := make(map[string]struct{})
 	current := make([]model.TeachingScheduleConflictItem, 0, len(plans))
@@ -2067,15 +2118,11 @@ func buildScheduleConflictResultFromPlans(
 				}
 			}
 		}
-		if slotHasConflict(slot, assistantConflicts) {
+		if rows := assistantConflicts[key]; len(rows) > 0 {
 			conflictTypes = append(conflictTypes, "助教")
 			typeSet["助教"] = struct{}{}
-			for _, row := range assistantConflicts {
-				if row.LessonDate.Format("2006-01-02") == slot.LessonDate.Format("2006-01-02") &&
-					row.StartAt.Before(slot.EndAt) &&
-					row.EndAt.After(slot.StartAt) {
-					appendExisting(row, "助教")
-				}
+			for _, row := range rows {
+				appendExisting(row, "助教")
 			}
 		}
 
@@ -2088,7 +2135,7 @@ func buildScheduleConflictResultFromPlans(
 			TimeText:      plan.StartAt.Format("15:04") + "~" + plan.EndAt.Format("15:04"),
 			TeacherID:     emptyStringIfZero(plan.TeacherID),
 			TeacherName:   firstNonEmptyString(teacherNames[plan.TeacherID], "-"),
-			AssistantNames: compactStrings(assistantNames),
+			AssistantNames: compactStrings(plan.AssistantNames),
 			ClassroomName: firstNonEmptyString(classroomNames[plan.ClassroomID], "-"),
 			StudentNames:  compactStrings([]string{base.StudentName}),
 			ConflictTypes: conflictTypes,
