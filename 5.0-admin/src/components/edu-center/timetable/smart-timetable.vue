@@ -2201,9 +2201,9 @@ watch(currentModel, (newValue) => {
               <span>待排课程信息</span>
               <a-button
                 v-if="conflictDetailState.attempted?.forceAllowed"
+                type="primary"
+                ghost
                 danger
-                size="small"
-                class="st-conflict-attempt__force-btn"
                 :loading="forcingConflictSchedule"
                 @click="forceScheduleDespiteStudentConflict"
               >
@@ -2556,7 +2556,7 @@ watch(currentModel, (newValue) => {
   font-weight: 700;
 }
 
-.st-conflict-attempt__force-btn {
+.st-conflict-attempt__headline > .ant-btn {
   margin-left: auto;
 }
 
