@@ -21,6 +21,18 @@ type CreateOneToOneSchedulesDTO struct {
 	Schedules    []TeachingScheduleCreateSlotDTO `json:"schedules"`
 }
 
+type OneToOneScheduleAvailabilitySlotDTO struct {
+	TeacherID  string `json:"teacherId"`
+	LessonDate string `json:"lessonDate"`
+	StartTime  string `json:"startTime"`
+	EndTime    string `json:"endTime"`
+}
+
+type CheckOneToOneScheduleAvailabilityDTO struct {
+	OneToOneID string                                `json:"oneToOneId"`
+	Schedules  []OneToOneScheduleAvailabilitySlotDTO `json:"schedules"`
+}
+
 type TeachingScheduleListQueryDTO struct {
 	StartDate string `json:"startDate"`
 	EndDate   string `json:"endDate"`
@@ -96,12 +108,30 @@ type TeachingScheduleValidationResult struct {
 	ConflictTypes     []string                       `json:"conflictTypes,omitempty"`
 }
 
+type OneToOneScheduleAvailabilityItem struct {
+	TeacherID         string                         `json:"teacherId"`
+	LessonDate        string                         `json:"lessonDate"`
+	StartTime         string                         `json:"startTime"`
+	EndTime           string                         `json:"endTime"`
+	Valid             bool                           `json:"valid"`
+	Message           string                         `json:"message,omitempty"`
+	ExistingSchedules []TeachingScheduleConflictItem `json:"existingSchedules,omitempty"`
+	ConflictTypes     []string                       `json:"conflictTypes,omitempty"`
+}
+
+type OneToOneScheduleAvailabilityResult struct {
+	ValidCount   int                                `json:"validCount"`
+	InvalidCount int                                `json:"invalidCount"`
+	Items        []OneToOneScheduleAvailabilityItem `json:"items"`
+}
+
 type TeachingScheduleConflictItem struct {
 	Date          string   `json:"date"`
 	Week          string   `json:"week,omitempty"`
 	Name          string   `json:"name"`
 	ClassTypeText string   `json:"classTypeText"`
 	TimeText      string   `json:"timeText"`
+	TeacherID     string   `json:"teacherId,omitempty"`
 	TeacherName   string   `json:"teacherName"`
 	ClassroomName string   `json:"classroomName,omitempty"`
 	StudentNames  []string `json:"studentNames,omitempty"`
@@ -152,36 +182,36 @@ type ScheduleLegacyPersonVO struct {
 
 // TeachingScheduleInfoLegacyVO 旧版日程明细（在能力范围内从 TeachingScheduleVO 映射）
 type TeachingScheduleInfoLegacyVO struct {
-	ID                 int64                  `json:"id"`
-	UUID               string                 `json:"uuid,omitempty"`
-	Version            int64                  `json:"version,omitempty"`
-	CreateTime         string                 `json:"createTime,omitempty"`
-	UpdateTime         *string                `json:"updateTime"`
-	InstID             int64                  `json:"instId,omitempty"`
-	BatchID            int64                  `json:"batchId,omitempty"`
-	ModifyBatchID      int64                  `json:"modifyBatchId,omitempty"`
-	CourseID           int64                  `json:"courseId,omitempty"`
-	ClassID            *int64                 `json:"classId"`
-	OriginID           *int64                 `json:"originId"`
-	ScheduleDate       string                 `json:"scheduleDate"`
-	ScheduleStartTime  string                 `json:"scheduleStartTime"`
-	ScheduleEndTime    string                 `json:"scheduleEndTime"`
-	ScheduleStatus     int                    `json:"scheduleStatus"`
-	MissSchedule       bool                   `json:"missSchedule"`
-	HasIgnore          *bool                  `json:"hasIgnore"`
-	CourseStatus       int                    `json:"courseStatus"`
-	Remark             *string                `json:"remark"`
-	Width              int                    `json:"width"`
-	TeacherList        []ScheduleLegacyPersonVO `json:"teacherList"`
-	StudentList        []ScheduleLegacyPersonVO `json:"studentList"`
-	CourseName         string                 `json:"courseName"`
-	CourseType         int                    `json:"courseType"`
-	ClassName          string                 `json:"className,omitempty"`
-	CrossOver          any                    `json:"crossOver"`
-	InfoVoList         any                    `json:"infoVoList"`
-	LeaveList          []any                  `json:"leaveList"`
-	InstName           string                 `json:"instName,omitempty"`
-	CourseTime         int                    `json:"courseTime"`
-	CourseHour         int                    `json:"courseHour"`
-	FinishType         int                    `json:"finishType"`
+	ID                int64                    `json:"id"`
+	UUID              string                   `json:"uuid,omitempty"`
+	Version           int64                    `json:"version,omitempty"`
+	CreateTime        string                   `json:"createTime,omitempty"`
+	UpdateTime        *string                  `json:"updateTime"`
+	InstID            int64                    `json:"instId,omitempty"`
+	BatchID           int64                    `json:"batchId,omitempty"`
+	ModifyBatchID     int64                    `json:"modifyBatchId,omitempty"`
+	CourseID          int64                    `json:"courseId,omitempty"`
+	ClassID           *int64                   `json:"classId"`
+	OriginID          *int64                   `json:"originId"`
+	ScheduleDate      string                   `json:"scheduleDate"`
+	ScheduleStartTime string                   `json:"scheduleStartTime"`
+	ScheduleEndTime   string                   `json:"scheduleEndTime"`
+	ScheduleStatus    int                      `json:"scheduleStatus"`
+	MissSchedule      bool                     `json:"missSchedule"`
+	HasIgnore         *bool                    `json:"hasIgnore"`
+	CourseStatus      int                      `json:"courseStatus"`
+	Remark            *string                  `json:"remark"`
+	Width             int                      `json:"width"`
+	TeacherList       []ScheduleLegacyPersonVO `json:"teacherList"`
+	StudentList       []ScheduleLegacyPersonVO `json:"studentList"`
+	CourseName        string                   `json:"courseName"`
+	CourseType        int                      `json:"courseType"`
+	ClassName         string                   `json:"className,omitempty"`
+	CrossOver         any                      `json:"crossOver"`
+	InfoVoList        any                      `json:"infoVoList"`
+	LeaveList         []any                    `json:"leaveList"`
+	InstName          string                   `json:"instName,omitempty"`
+	CourseTime        int                      `json:"courseTime"`
+	CourseHour        int                      `json:"courseHour"`
+	FinishType        int                      `json:"finishType"`
 }

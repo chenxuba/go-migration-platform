@@ -40,6 +40,7 @@ export interface TeachingScheduleValidationResult {
     date: string
     week?: string
     timeText: string
+    teacherId?: string
     teacherName: string
     classroomName?: string
     studentNames?: string[]
@@ -51,12 +52,41 @@ export interface TeachingScheduleValidationResult {
     date: string
     week?: string
     timeText: string
+    teacherId?: string
     teacherName: string
     classroomName?: string
     studentNames?: string[]
     conflictTypes?: string[]
   }>
   conflictTypes?: string[]
+}
+
+export interface OneToOneScheduleAvailabilityItem {
+  teacherId: string
+  lessonDate: string
+  startTime: string
+  endTime: string
+  valid: boolean
+  message?: string
+  conflictTypes?: string[]
+  existingSchedules?: Array<{
+    name: string
+    classTypeText: string
+    date: string
+    week?: string
+    timeText: string
+    teacherId?: string
+    teacherName: string
+    classroomName?: string
+    studentNames?: string[]
+    conflictTypes?: string[]
+  }>
+}
+
+export interface OneToOneScheduleAvailabilityResult {
+  validCount: number
+  invalidCount: number
+  items: OneToOneScheduleAvailabilityItem[]
 }
 
 export function createOneToOneSchedulesApi(data: {
@@ -85,6 +115,18 @@ export function validateOneToOneSchedulesApi(data: {
   }>
 }) {
   return usePost<TeachingScheduleValidationResult>('/api/v1/teaching-schedules/one-to-one/validate', data)
+}
+
+export function checkOneToOneScheduleAvailabilityApi(data: {
+  oneToOneId: string
+  schedules: Array<{
+    teacherId: string
+    lessonDate: string
+    startTime: string
+    endTime: string
+  }>
+}) {
+  return usePost<OneToOneScheduleAvailabilityResult>('/api/v1/teaching-schedules/one-to-one/slot-availability', data)
 }
 
 export function listTeachingSchedulesApi(params: {

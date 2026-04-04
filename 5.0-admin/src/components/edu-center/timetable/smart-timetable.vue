@@ -2,18 +2,18 @@
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import CreateSchedulePopover from './create-schedule-popover.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
-import { listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 import {
+  DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   buildQuickHourlySlots,
   configGroupsSorted,
-  DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   parseUnifiedTimePeriodConfig,
 } from '@/utils/unified-time-period'
 import emitter, { EVENTS } from '@/utils/eventBus'
-import CreateSchedulePopover from './create-schedule-popover.vue'
 
 const displayArray = ref([
   'intentionCourse', // 意向课程
@@ -38,6 +38,15 @@ const currentModel = ref('1')
 const currentGroup = ref('A')
 /** 与 matrixDays、表头节次列对齐；切换 A/B 时在新数据返回前不改，避免清空矩阵导致整页高度塌缩抖动 */
 const displayedGroupKey = ref('A')
+const timetableRootRef = ref(null)
+/** 当前选中的 1 对 1 记录 id（非学员 id，避免同一学员多门课冲突） */
+const oneToOneRecordId = ref(undefined)
+const studentIds = ref([])
+const courseId = ref(null)
+const courseName = ref(null)
+const classId = ref(null)
+const className = ref(null)
+const teacherId = ref(null)
 
 function getWeekStart(value = dayjs()) {
   const d = dayjs(value)
@@ -133,8 +142,20 @@ function formatWeek(date) {
 const userStore = useUserStore()
 const matrixDays = ref([])
 const timetableLoading = ref(false)
+const oneToOneAvailabilityLoading = ref(false)
+const creatingOneToOneSchedule = ref(false)
+const conflictDetailModalOpen = ref(false)
+const conflictDetailState = ref({
+  summary: '',
+  attempted: null,
+  items: [],
+})
 /** 防止快速切换周次/组别时旧请求晚到覆盖新矩阵 */
 let matrixLoadSeq = 0
+let oneToOneAvailabilitySeq = 0
+let pendingConflictJump = null
+let focusedScheduleCellTimer = null
+const focusedScheduleCellKey = ref('')
 
 const displayDates = computed(() => {
   if (currentTime.value === 'day')
@@ -241,6 +262,8 @@ function emptyLessonCell(slot) {
     courseType: null,
     conflict: false,
     conflictReason: null,
+    serverConflict: false,
+    serverConflictReason: null,
     isMain: undefined,
   }
 }
@@ -347,6 +370,35 @@ const dataSource = computed(() => {
   })
 })
 
+function syncLessonConflictState(lesson) {
+  const serverReason = lesson.serverConflict ? lesson.serverConflictReason : null
+  lesson.conflict = Boolean(serverReason)
+  lesson.conflictReason = serverReason || null
+}
+
+function clearLessonConflictState(lesson, scope = 'all') {
+  if (scope === 'all' || scope === 'server') {
+    lesson.serverConflict = false
+    lesson.serverConflictReason = null
+  }
+  if (scope === 'all') {
+    lesson.conflict = false
+    lesson.conflictReason = null
+  }
+  else {
+    syncLessonConflictState(lesson)
+  }
+}
+
+function resetEmptyLessonConflicts(scope = 'all') {
+  dataSource.value.forEach((teacher) => {
+    teacher.lessons.forEach((lesson) => {
+      if (!lesson.studentId)
+        clearLessonConflictState(lesson, scope)
+    })
+  })
+}
+
 /** 当前展示范围内每位老师已占用的节次数（与格子里蓝色已排课一致：有 studentId 即计入） */
 const scheduledLessonCountByTeacher = computed(() => {
   const map = new Map()
@@ -410,6 +462,16 @@ async function loadTimetableMatrix() {
     else
       matrixDays.value = []
     displayedGroupKey.value = requestedGroup
+    await nextTick()
+    if (seq !== matrixLoadSeq)
+      return
+    if (currentModel.value === '1' && oneToOneRecordId.value)
+      await detectOneToOneAvailability(oneToOneRecordId.value)
+    else if (currentModel.value === '2' && classId.value)
+      handleClass(classId.value)
+    else
+      resetEmptyLessonConflicts()
+    await flushPendingConflictJump()
   }
   catch (e) {
     console.error('loadTimetableMatrix failed', e)
@@ -440,6 +502,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   emitter.off(EVENTS.REFRESH_DATA, refreshTimetableRelatedData)
+  if (focusedScheduleCellTimer)
+    clearTimeout(focusedScheduleCellTimer)
 })
 const columns = computed(() => {
   const slots = activePeriodSlots.value
@@ -590,43 +654,295 @@ function filterOneToOneOption(input, option) {
   return blob.includes(q)
 }
 
-/** 当前选中的 1 对 1 记录 id（非学员 id，避免同一学员多门课冲突） */
-const oneToOneRecordId = ref(undefined)
-const studentIds = ref([])
-const courseId = ref(null)
-const courseName = ref(null)
-const classId = ref(null)
-const className = ref(null)
-const teacherId = ref(null)
-// 选择1v1触发
-function timeToMinutes(timeStr) {
-  const [hours, minutes] = timeStr.split(':').map(Number)
-  return hours * 60 + minutes
+// 当前视图下的全部行（时段 A/B 切换后数据源已重建；跨组检测以当前页为准）
+const allDataSource = computed(() => dataSource.value)
+
+function buildAvailabilitySlotKey(teacherId, lessonDate, startTime, endTime) {
+  return `${String(teacherId)}|${lessonDate}|${startTime}|${endTime}`
 }
 
-function handle1v1(value) {
-  if (!value) {
-    // 清除所有冲突标记
-    dataSource.value.forEach((teacher) => {
-      teacher.lessons.forEach((lesson) => {
-        if (!lesson.studentId) {
-          lesson.conflict = false
-        }
-      })
+function parseConflictTimeRange(timeText) {
+  const m = String(timeText || '').trim().match(/(\d{2}:\d{2})\s*[~-]\s*(\d{2}:\d{2})/)
+  if (!m)
+    return null
+  return { startTime: m[1], endTime: m[2] }
+}
+
+function resolveConflictScheduleGroupInfo(item) {
+  const teacherId = String(item?.teacherId || '').trim()
+  const timeRange = parseConflictTimeRange(item?.timeText)
+  const matches = groupOptions.value
+    .map((opt) => {
+      const group = periodGroupForKey(opt.key)
+      const teacherMatched = !teacherId || !(group?.boundTeachers?.length)
+        || group.boundTeachers.some(t => String(t.id) === teacherId)
+      const timeMatched = !timeRange || slotsForGroupKey(opt.key).some(slot =>
+        slot.start === timeRange.startTime && slot.end === timeRange.endTime,
+      )
+      return teacherMatched && timeMatched
+        ? { key: opt.key, label: opt.label }
+        : null
     })
+    .filter(Boolean)
+
+  const unique = matches.filter((item, index, arr) =>
+    arr.findIndex(x => x.key === item.key) === index,
+  )
+  return {
+    keys: unique.map(item => item.key),
+    labels: unique.map(item => item.label),
+  }
+}
+
+function resolveConflictScheduleGroupLabel(item) {
+  return resolveConflictScheduleGroupInfo(item).labels.join('/')
+}
+
+function setFocusedScheduleCell(key) {
+  focusedScheduleCellKey.value = key || ''
+  if (focusedScheduleCellTimer)
+    clearTimeout(focusedScheduleCellTimer)
+  if (key) {
+    focusedScheduleCellTimer = window.setTimeout(() => {
+      if (focusedScheduleCellKey.value === key)
+        focusedScheduleCellKey.value = ''
+    }, 3000)
+  }
+}
+
+async function focusScheduleCell(key) {
+  await nextTick()
+  const root = timetableRootRef.value
+  if (!root || !key)
+    return false
+  const cell = Array.from(root.querySelectorAll('[data-schedule-cell-key]')).find(
+    el => el.getAttribute('data-schedule-cell-key') === key,
+  )
+  if (!cell)
+    return false
+  cell.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+    inline: 'center',
+  })
+  setFocusedScheduleCell(key)
+  return true
+}
+
+async function flushPendingConflictJump() {
+  if (!pendingConflictJump?.cellKey)
+    return
+  const pending = pendingConflictJump
+  const found = await focusScheduleCell(pending.cellKey)
+  if (found) {
+    pendingConflictJump = null
+    messageService.success('已定位到冲突课程')
+  }
+}
+
+function openApiConflictModal(reason, column, record) {
+  const existingSchedules = Array.isArray(reason?.existingSchedules) ? reason.existingSchedules : []
+  const items = existingSchedules.map((item, index) => {
+    const groupInfo = resolveConflictScheduleGroupInfo(item)
+    const timeRange = parseConflictTimeRange(item.timeText)
+    const jumpGroupKey = groupInfo.keys.includes(currentGroup.value)
+      ? currentGroup.value
+      : groupInfo.keys[0] || ''
+    return {
+      key: `${item.teacherId || item.teacherName || 'teacher'}-${item.date}-${item.timeText}-${index}`,
+      name: item.name || '-',
+      classTypeText: item.classTypeText || '日程',
+      date: item.date,
+      week: item.week || '',
+      timeText: item.timeText,
+      teacherId: item.teacherId || '',
+      teacherName: item.teacherName || '-',
+      groupLabel: groupInfo.labels.join('/') || '未知组别',
+      classroomName: item.classroomName || '-',
+      studentText: (item.studentNames || []).join('、') || '-',
+      conflictTypes: item.conflictTypes || [],
+      jumpCellKey: timeRange && item.teacherId
+        ? buildAvailabilitySlotKey(item.teacherId, item.date, timeRange.startTime, timeRange.endTime)
+        : '',
+      jumpGroupKey,
+    }
+  })
+
+  conflictDetailState.value = {
+    summary: `${reason.message || '当前空位存在时间冲突'}，共发现 ${items.length} 条冲突日程。`,
+    attempted: {
+      date: record.date,
+      week: formatWeek(record.date),
+      timeText: `${column.startTime}-${column.endTime}`,
+      teacherName: record.name,
+      lessonIndex: getLessonIndex(column.startTime),
+      groupLabel: activeGroupLabel.value || '当前组',
+    },
+    items,
+  }
+  conflictDetailModalOpen.value = true
+}
+
+async function jumpToConflictSchedule(item) {
+  if (!item?.jumpCellKey) {
+    messageService.warning('当前冲突课程暂不支持定位')
     return
   }
 
-  const studentInfo = oneToOneData.value.find(item => item.id === String(value))
-  if (!studentInfo)
-    return
+  conflictDetailModalOpen.value = false
+  pendingConflictJump = {
+    cellKey: item.jumpCellKey,
+  }
 
-  // 检查冲突
-  checkConflicts(studentInfo)
+  let needReload = false
+  if (item.jumpGroupKey && item.jumpGroupKey !== currentGroup.value) {
+    currentGroup.value = item.jumpGroupKey
+    needReload = true
+  }
+
+  const targetDate = String(item.date || '').trim()
+  if (targetDate) {
+    if (currentTime.value === 'day') {
+      if (dayjs(currentWeek.value).format('YYYY-MM-DD') !== targetDate) {
+        currentWeek.value = dayjs(targetDate)
+        needReload = true
+      }
+    }
+    else {
+      const { startDate, endDate } = queryDateRange.value
+      if (targetDate < startDate || targetDate > endDate) {
+        currentWeek.value = dayjs(targetDate)
+        needReload = true
+      }
+    }
+  }
+
+  if (!needReload) {
+    const found = await focusScheduleCell(item.jumpCellKey)
+    if (found) {
+      pendingConflictJump = null
+      messageService.success('已定位到冲突课程')
+    }
+    else {
+      await loadTimetableMatrix()
+    }
+  }
 }
 
-// 当前视图下的全部行（时段 A/B 切换后数据源已重建；跨组检测以当前页为准）
-const allDataSource = computed(() => dataSource.value)
+function buildCurrentOneToOneAvailabilityPayload(oneToOneId) {
+  const schedules = []
+  dataSource.value.forEach((teacher) => {
+    teacher.lessons.forEach((lesson) => {
+      if (!lesson.studentId) {
+        schedules.push({
+          teacherId: String(teacher.teacherId),
+          lessonDate: teacher.date,
+          startTime: lesson.startTime,
+          endTime: lesson.endTime,
+        })
+      }
+    })
+  })
+  return {
+    oneToOneId: String(oneToOneId || ''),
+    schedules,
+  }
+}
+
+function buildAvailabilityConflictDetail(reason) {
+  const schedules = Array.isArray(reason?.existingSchedules) ? reason.existingSchedules : []
+  if (!schedules.length)
+    return reason?.message || '该时间段不可排课'
+  const detail = schedules.map((item) => {
+    const groupText = resolveConflictScheduleGroupLabel(item)
+    const studentText = (item.studentNames || []).length ? `，学员：${item.studentNames.join('、')}` : ''
+    const groupSuffix = groupText ? `(${groupText})` : ''
+    return `${item.date} ${item.timeText} ${item.teacherName || '-'}${groupSuffix} ${item.name}${studentText}`
+  }).join('；')
+  return `${reason.message || '该时间段不可排课'}。已有日程：${detail}`
+}
+
+function applyServerAvailabilityResult(result) {
+  resetEmptyLessonConflicts('server')
+  const invalidMap = new Map()
+  const items = Array.isArray(result?.items) ? result.items : []
+  items.forEach((item) => {
+    if (item?.valid === false) {
+      invalidMap.set(
+        buildAvailabilitySlotKey(item.teacherId, item.lessonDate, item.startTime, item.endTime),
+        item,
+      )
+    }
+  })
+
+  dataSource.value.forEach((teacher) => {
+    teacher.lessons.forEach((lesson) => {
+      if (lesson.studentId)
+        return
+      const matched = invalidMap.get(
+        buildAvailabilitySlotKey(teacher.teacherId, teacher.date, lesson.startTime, lesson.endTime),
+      )
+      lesson.serverConflict = Boolean(matched)
+      lesson.serverConflictReason = matched
+        ? {
+            type: '1v1-api',
+            message: matched.message || '该时间段不可排课',
+            conflictTypes: matched.conflictTypes || [],
+            existingSchedules: matched.existingSchedules || [],
+          }
+        : null
+      syncLessonConflictState(lesson)
+    })
+  })
+}
+
+async function detectOneToOneAvailability(value) {
+  const seq = ++oneToOneAvailabilitySeq
+  const oneToOneId = String(value || '').trim()
+  if (!oneToOneId || currentModel.value !== '1') {
+    oneToOneAvailabilityLoading.value = false
+    resetEmptyLessonConflicts()
+    return
+  }
+
+  if (!oneToOneData.value.some(item => item.id === oneToOneId)) {
+    oneToOneAvailabilityLoading.value = false
+    resetEmptyLessonConflicts()
+    return
+  }
+
+  const payload = buildCurrentOneToOneAvailabilityPayload(oneToOneId)
+  if (!payload.schedules.length) {
+    oneToOneAvailabilityLoading.value = false
+    resetEmptyLessonConflicts()
+    return
+  }
+
+  oneToOneAvailabilityLoading.value = true
+  try {
+    const res = await checkOneToOneScheduleAvailabilityApi(payload)
+    if (seq !== oneToOneAvailabilitySeq)
+      return
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '检测课表空位失败')
+    applyServerAvailabilityResult(res.result)
+  }
+  catch (error) {
+    if (seq !== oneToOneAvailabilitySeq)
+      return
+    console.error('detectOneToOneAvailability failed', error)
+    resetEmptyLessonConflicts('server')
+    messageService.error(error?.response?.data?.message || error?.message || '检测课表空位失败')
+  }
+  finally {
+    if (seq === oneToOneAvailabilitySeq)
+      oneToOneAvailabilityLoading.value = false
+  }
+}
+
+function handle1v1(value) {
+  void detectOneToOneAvailability(value)
+}
 
 // 检查两个时间段是否有交叉
 function isTimeOverlap(time1, time2) {
@@ -643,78 +959,6 @@ function isTimeOverlap(time1, time2) {
 
   // 检查时间是否交叉
   return (start1 < end2 && start2 < end1)
-}
-
-// 检查1v1冲突
-function checkConflicts(studentInfo) {
-  console.log('运行1v1冲突检测', studentInfo)
-
-  // 先清除所有冲突标记
-  dataSource.value.forEach((teacher) => {
-    teacher.lessons.forEach((lesson) => {
-      if (!lesson.studentId) {
-        lesson.conflict = false
-        lesson.conflictReason = null
-      }
-    })
-  })
-
-  // 遍历所有老师的课表查找学生已有的课程时间段 (包括A组和B组)
-  const studentLessonTimes = []
-
-  allDataSource.value.forEach((teacher) => {
-    teacher.lessons.forEach((lesson) => {
-      // 如果该时间段已经有这个学生的课，记录下来
-      if (lesson.studentId && lesson.studentId.includes(studentInfo.studentId)) {
-        studentLessonTimes.push({
-          date: teacher.date,
-          startTime: lesson.startTime,
-          endTime: lesson.endTime,
-          teacherName: teacher.name,
-          courseName: lesson.courseName,
-          lessonIndex: getLessonIndex(lesson.startTime),
-          studentName: studentInfo.studentName,
-          group: activeGroupLabel.value,
-        })
-      }
-    })
-  })
-
-  // 标记冲突时间段
-  if (studentLessonTimes.length > 0) {
-    dataSource.value.forEach((teacher) => {
-      teacher.lessons.forEach((lesson) => {
-        // 只检查空闲时段
-        if (!lesson.studentId) {
-          // 检查是否与学生已有课程在同一天且时间重叠
-          const conflictLesson = studentLessonTimes.find(existingLesson =>
-            existingLesson.date === teacher.date
-            && isTimeOverlap(
-              { start: existingLesson.startTime, end: existingLesson.endTime },
-              { start: lesson.startTime, end: lesson.endTime },
-            ),
-          )
-
-          if (conflictLesson) {
-            lesson.conflict = true
-            // 记录冲突原因
-            const month = dayjs(conflictLesson.date).format('M')
-            const day = dayjs(conflictLesson.date).format('D')
-            lesson.conflictReason = {
-              type: '1v1',
-              studentName: conflictLesson.studentName,
-              date: `${month}月${day}日`,
-              lessonIndex: conflictLesson.lessonIndex,
-              teacherName: conflictLesson.teacherName,
-              courseName: conflictLesson.courseName,
-              group: conflictLesson.group,
-              time: `${conflictLesson.startTime}-${conflictLesson.endTime}`,
-            }
-          }
-        }
-      })
-    })
-  }
 }
 // 班级数据
 const classData = ref([
@@ -742,14 +986,7 @@ const classData = ref([
 // 选择班级触发
 function handleClass(value) {
   if (!value) {
-    // 清除所有冲突标记
-    dataSource.value.forEach((teacher) => {
-      teacher.lessons.forEach((lesson) => {
-        if (!lesson.studentId) {
-          lesson.conflict = false
-        }
-      })
-    })
+    resetEmptyLessonConflicts()
     return
   }
 
@@ -763,29 +1000,12 @@ function handleClass(value) {
   // 检查班课冲突
   checkClassCrossTimeConflicts(classInfo)
 }
-// 监听组别变化
-watch(currentGroup, () => {
-  if (oneToOneRecordId.value)
-    handle1v1(oneToOneRecordId.value)
-  // 如果当前有选中的班级，重新进行冲突检测
-  if (classId.value) {
-    handleClass(classId.value)
-  }
-})
 
 // 检查班课交叉时间冲突
 function checkClassCrossTimeConflicts(classInfo) {
   console.log('运行班课冲突检测', classInfo)
 
-  // 先清除所有冲突标记
-  dataSource.value.forEach((teacher) => {
-    teacher.lessons.forEach((lesson) => {
-      if (!lesson.studentId) {
-        lesson.conflict = false
-        lesson.conflictReason = null
-      }
-    })
-  })
+  resetEmptyLessonConflicts()
 
   // 首先收集这个班级在所有组已排课的时间段（跨组检测）
   const classExistingLessons = []
@@ -892,57 +1112,57 @@ function checkClassCrossTimeConflicts(classInfo) {
         // 3. 检查学生冲突 - 班级学生是否在同一时间有其他课程 (跨组检测)
         if (!hasConflict && classInfo.studentIds?.length > 0) {
           // 遍历所有组的老师课表，查找同一时间的课程
-          teacherLoop: for (const t of allDataSource.value) {
+          for (const t of allDataSource.value) {
             // 只检查同一天的课程
-            if (t.date === currentTime.date) {
-              const sameTimeLessons = t.lessons.filter(l =>
-                l.studentId
-                && isTimeOverlap(
-                  { start: l.startTime, end: l.endTime },
-                  { start: currentTime.startTime, end: currentTime.endTime },
-                ),
-              )
+            if (t.date !== currentTime.date)
+              continue
 
-              // 检查每个同时间的课程
-              for (const sameTimeLesson of sameTimeLessons) {
-                // 如果是当前选中的班级课程，不算冲突
-                if (sameTimeLesson.classId === classInfo.id)
-                  continue
+            const sameTimeLessons = t.lessons.filter(l =>
+              l.studentId
+              && isTimeOverlap(
+                { start: l.startTime, end: l.endTime },
+                { start: currentTime.startTime, end: currentTime.endTime },
+              ),
+            )
 
-                // 检查学生是否有交集
-                for (const sid of classInfo.studentIds) {
-                  if (sameTimeLesson.studentId?.includes(sid)) {
-                    console.log('学生时间冲突', currentTime.date, currentTime.startTime, sameTimeLesson.startTime)
-                    hasConflict = true
+            let matchedStudentConflict = false
+            for (const sameTimeLesson of sameTimeLessons) {
+              if (sameTimeLesson.classId === classInfo.id)
+                continue
 
-                    // 查找冲突学生姓名
-                    const studentIndex = classInfo.studentIds.indexOf(sid)
-                    const studentName = studentIndex >= 0 ? classInfo.studentNames[studentIndex] : '未知学生'
+              for (const sid of classInfo.studentIds) {
+                if (sameTimeLesson.studentId?.includes(sid)) {
+                  console.log('学生时间冲突', currentTime.date, currentTime.startTime, sameTimeLesson.startTime)
+                  hasConflict = true
 
-                    // 记录冲突原因
-                    const month = dayjs(t.date).format('M')
-                    const day = dayjs(t.date).format('D')
+                  const studentIndex = classInfo.studentIds.indexOf(sid)
+                  const studentName = studentIndex >= 0 ? classInfo.studentNames[studentIndex] : '未知学生'
+                  const month = dayjs(t.date).format('M')
+                  const day = dayjs(t.date).format('D')
+                  const conflictGroup = activeGroupLabel.value
 
-                    // 获取冲突课程所在组别
-                    const conflictGroup = activeGroupLabel.value
-
-                    conflictReason = {
-                      type: '学生课程冲突',
-                      studentName,
-                      date: `${month}月${day}日`,
-                      lessonIndex: getLessonIndex(sameTimeLesson.startTime),
-                      teacherName: t.name,
-                      courseName: sameTimeLesson.courseName,
-                      className: sameTimeLesson.className,
-                      group: conflictGroup,
-                      time: `${sameTimeLesson.startTime}-${sameTimeLesson.endTime}`,
-                    }
-
-                    break teacherLoop // 找到一个冲突就跳出循环
+                  conflictReason = {
+                    type: '学生课程冲突',
+                    studentName,
+                    date: `${month}月${day}日`,
+                    lessonIndex: getLessonIndex(sameTimeLesson.startTime),
+                    teacherName: t.name,
+                    courseName: sameTimeLesson.courseName,
+                    className: sameTimeLesson.className,
+                    group: conflictGroup,
+                    time: `${sameTimeLesson.startTime}-${sameTimeLesson.endTime}`,
                   }
+
+                  matchedStudentConflict = true
+                  break
                 }
               }
+              if (matchedStudentConflict)
+                break
             }
+
+            if (matchedStudentConflict)
+              break
           }
         }
 
@@ -994,7 +1214,7 @@ function checkClassExistingTeacherRole(classId, teacherId, startTime, endTime) {
 }
 
 // 处理冲突点击
-function handleConflictClick(timeSlot, column) {
+function handleConflictClick(timeSlot, column, record) {
   let content = '该时间段已有课程安排，无法排课'
 
   // 根据冲突原因提供更详细的信息
@@ -1003,8 +1223,9 @@ function handleConflictClick(timeSlot, column) {
     const groupInfo = reason.group ? `(${reason.group})` : ''
     const timeInfo = reason.time ? `[${reason.time}]` : ''
 
-    if (reason.type === '1v1') {
-      content = `该时间段${reason.studentName}在${reason.date}第${reason.lessonIndex}节课${timeInfo}已有${reason.teacherName}${groupInfo}的${reason.courseName}课程安排，无法排课`
+    if (reason.type === '1v1-api') {
+      openApiConflictModal(reason, column, record)
+      return
     }
     else if (reason.type === '教师班课冲突') {
       content = `该时间段${reason.teacherName}在${reason.date}第${reason.lessonIndex}节课${timeInfo}已有${reason.className}的${reason.courseName}班课安排，无法排课`
@@ -1026,7 +1247,6 @@ function handleConflictClick(timeSlot, column) {
 // 排课
 function handleScheduleClick(timeSlot, column, record) {
   if (currentModel.value === '1') {
-    // 1v1排课逻辑
     if (!oneToOneRecordId.value) {
       Modal.warning({
         title: '请先选择一对一',
@@ -1056,42 +1276,32 @@ function handleScheduleClick(timeSlot, column, record) {
     Modal.confirm({
       title: '确认排课',
       content: `确定要为 ${studentInfo.studentName} 安排 ${month}月${day}日 ${record.name} 第${lessonIndex}节课 ${column.startTime}-${column.endTime} 的课程吗？`,
-      onOk() {
-        console.log('确认排课', studentInfo.studentName, column.startTime, column.endTime)
+      async onOk() {
+        creatingOneToOneSchedule.value = true
+        try {
+          const res = await createOneToOneSchedulesApi({
+            oneToOneId: String(oneToOneRecordId.value),
+            teacherId: String(record.teacherId),
+            schedules: [{
+              lessonDate: record.date,
+              startTime: column.startTime,
+              endTime: column.endTime,
+            }],
+          })
+          if (res.code !== 200)
+            throw new Error(res.message || '创建1对1日程失败')
 
-        // 更新数据源
-        const targetTeacher = dataSource.value.find(
-          t => t.teacherId === record.teacherId && t.date === record.date,
-        )
-
-        if (!targetTeacher)
-          return
-
-        // 获取列索引
-        const columnIndex = column.dataIndex[1]
-
-        // 使用列索引直接获取正确的时间槽
-        const targetLesson = targetTeacher.lessons[columnIndex]
-
-        if (!targetLesson)
-          return
-
-        // 更新课程信息
-        Object.assign(targetLesson, {
-          studentId: [studentInfo.studentId],
-          courseName: studentInfo.courseName,
-          courseType: 1,
-          studentNames: [{
-            id: studentInfo.studentId,
-            name: studentInfo.studentName,
-          }],
-          classId: null,
-          className: null,
-          conflict: false,
-        })
-
-        // 重新检查冲突
-        handle1v1(oneToOneRecordId.value)
+          messageService.success(`已为 ${studentInfo.studentName} 创建 ${month}月${day}日 第${lessonIndex}节课`)
+          emitter.emit(EVENTS.REFRESH_DATA)
+        }
+        catch (error) {
+          console.error('create one-to-one schedule failed', error)
+          messageService.error(error?.response?.data?.message || error?.message || '创建1对1日程失败')
+          await loadTimetableMatrix()
+        }
+        finally {
+          creatingOneToOneSchedule.value = false
+        }
       },
     })
   }
@@ -1173,6 +1383,9 @@ function handleScheduleClick(timeSlot, column, record) {
           studentNames: classInfo.studentNames.map(name => ({ name })),
           studentId: classInfo.studentIds,
           conflict: false,
+          conflictReason: null,
+          serverConflict: false,
+          serverConflictReason: null,
         })
 
         console.log('更新课程信息完成', targetLesson)
@@ -1194,15 +1407,9 @@ function getLessonIndex(startTime) {
 watch(currentModel, (newValue) => {
   console.log('切换模式', newValue)
 
-  // 清除所有冲突标记
-  dataSource.value.forEach((teacher) => {
-    teacher.lessons.forEach((lesson) => {
-      if (!lesson.studentId) {
-        lesson.conflict = false
-        lesson.conflictReason = null
-      }
-    })
-  })
+  oneToOneAvailabilitySeq += 1
+  oneToOneAvailabilityLoading.value = false
+  resetEmptyLessonConflicts()
 
   if (newValue === '1') {
     // 切换到1v1模式，清空班级选择
@@ -1218,7 +1425,7 @@ watch(currentModel, (newValue) => {
 </script>
 
 <template>
-  <div>
+  <div ref="timetableRootRef">
     <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
       <all-filter :display-array="displayArray" :is-show-search-stu-phonefilter="true" />
     </div>
@@ -1235,7 +1442,7 @@ watch(currentModel, (newValue) => {
           </a-radio-group>
         </div>
         <div class="shrink-0">
-          <div v-if="currentModel == 1" class="flex items-center shrink-0 gap-1">
+          <div v-if="currentModel === '1'" class="flex items-center shrink-0 gap-1">
             <span class="whitespace-nowrap w-71px text-right">选择1v1：</span>
             <a-select
               v-model:value="oneToOneRecordId"
@@ -1258,7 +1465,7 @@ watch(currentModel, (newValue) => {
               </a-select-option>
             </a-select>
           </div>
-          <div v-if="currentModel == 2" class="flex items-center">
+          <div v-if="currentModel === '2'" class="flex items-center">
             <!-- 写一个 select下拉选择框，使用 班级数据  -->
             <span class="w-75px">选择班级：</span>
             <a-select
@@ -1354,82 +1561,149 @@ watch(currentModel, (newValue) => {
             </a-radio-button>
           </a-radio-group>
           <a-space>
-            <create-schedule-popover />
+            <CreateSchedulePopover />
             <a-button>导出课表</a-button>
           </a-space>
         </div>
       </div>
     </div>
-    <a-spin :spinning="timetableLoading">
+    <a-spin :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule">
       <a-table
         :scroll="{ x: 1300 }" :sticky="{ offsetHeader: 100 }" size="small" :pagination="false" bordered
         :data-source="dataSource" :columns="columns"
       >
-      <template #headerCell="{ column }">
-        <template v-if="column.startTime && column.endTime">
-          <div>{{ column.title }}</div>
-          <div class="text-12px text-#666 line-height-2">
-            {{ column.startTime }}-{{ column.endTime }}
-          </div>
-        </template>
-        <template v-else>
-          {{ column.title }}
-        </template>
-      </template>
-      <template #bodyCell="{ column, record, text }">
-        <template v-if="column.dataIndex?.[0] === 'lessons'">
-          <div v-if="text.studentId" class=" flex  flex-col bg-#4e6dff1f h-11 rounded-1 text-3 text-#fff">
-            <!-- 方格头部时间 -->
-            <!-- 班课 -->
-            <div class="pl1 bg-#06f rounded-1 rounded-lb-0 rounded-rb-0 flex relative h-5">
+        <template #headerCell="{ column }">
+          <template v-if="column.startTime && column.endTime">
+            <div>{{ column.title }}</div>
+            <div class="text-12px text-#666 line-height-2">
               {{ column.startTime }}-{{ column.endTime }}
-              <!-- 标记 -->
-              <span
-                class="absolute right-0 pl-2 pr-1  h-4 bg-#00000080 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2"
-              >
-                <span v-if="text.courseType == 1">1v1</span>
-                <span v-if="text.courseType == 2">班课(<span>{{ text.isMain ? '主教' : '辅教' }}</span>)</span>
-              </span>
             </div>
-            <!-- 1v1 -->
-            <div v-if="!text.classId" class="flex pl-1 flex-1 text-#002cfd cursor-pointer flex-items-center">
-              <span v-for="(item, index) in text.studentNames" :key="index">
-                <div class="flex">{{ item.name }}{{ index !== text.studentNames.length - 1 ? '、' : '' }}-{{ text.courseName }}</div>
-              </span>
-            </div>
-            <!-- 班课 -->
-            <div v-else class="flex  pl-1 flex-1 text-#002cfd cursor-pointer line-height-4 flex-items-center">
-              <div class="flex">
-                {{ text.className }}-{{ text.courseName }}
+          </template>
+          <template v-else>
+            {{ column.title }}
+          </template>
+        </template>
+        <template #bodyCell="{ column, record, text }">
+          <template v-if="column.dataIndex?.[0] === 'lessons'">
+            <div
+              v-if="text.studentId"
+              :data-schedule-cell-key="buildAvailabilitySlotKey(record.teacherId, record.date, column.startTime, column.endTime)"
+              class="st-schedule-cell flex flex-col bg-#4e6dff1f h-11 rounded-1 text-3 text-#fff"
+              :class="{ 'st-schedule-cell--focused': focusedScheduleCellKey === buildAvailabilitySlotKey(record.teacherId, record.date, column.startTime, column.endTime) }"
+            >
+              <!-- 方格头部时间 -->
+              <!-- 班课 -->
+              <div class="pl1 bg-#06f rounded-1 rounded-lb-0 rounded-rb-0 flex relative h-5">
+                {{ column.startTime }}-{{ column.endTime }}
+                <!-- 标记 -->
+                <span
+                  class="absolute right-0 pl-2 pr-1  h-4 bg-#00000080 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2"
+                >
+                  <span v-if="text.courseType === 1">1v1</span>
+                  <span v-if="text.courseType === 2">班课(<span>{{ text.isMain ? '主教' : '辅教' }}</span>)</span>
+                </span>
+              </div>
+              <!-- 1v1 -->
+              <div v-if="!text.classId" class="flex pl-1 flex-1 text-#002cfd cursor-pointer flex-items-center">
+                <span v-for="(item, index) in text.studentNames" :key="index">
+                  <div class="flex">{{ item.name }}{{ index !== text.studentNames.length - 1 ? '、' : '' }}-{{ text.courseName }}</div>
+                </span>
+              </div>
+              <!-- 班课 -->
+              <div v-else class="flex  pl-1 flex-1 text-#002cfd cursor-pointer line-height-4 flex-items-center">
+                <div class="flex">
+                  {{ text.className }}-{{ text.courseName }}
+                </div>
               </div>
             </div>
-          </div>
-          <!-- 空闲时段 -->
-          <div
-            v-else class="h-11 rounded-1 text-3 flex-center cursor-pointer" :class="[
-              text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a',
-            ]" @click="text.conflict ? handleConflictClick(text, column) : handleScheduleClick(text, column, record)"
-          >
-            {{ text.conflict ? '时间冲突(不可排)' : '空闲时段(可排)' }}
-          </div>
+            <!-- 空闲时段 -->
+            <div
+              v-else class="h-11 rounded-1 text-3 flex-center cursor-pointer" :class="[
+                text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a',
+              ]" @click="text.conflict ? handleConflictClick(text, column, record) : handleScheduleClick(text, column, record)"
+            >
+              {{ text.conflict ? '时间冲突(不可排)' : '空闲时段(可排)' }}
+            </div>
+          </template>
+          <template v-if="column.key === 'date'">
+            <div class="text-3.5 ">
+              {{ formatWeek(text) }}
+            </div>
+            <div class="text-3 font-500 line-height-3 text-#666">
+              {{ formatDate(text) }}
+            </div>
+          </template>
+          <template v-if="column.key === 'name'">
+            <div>{{ text }}</div>
+            <div class="text-3 text-#666 leading-snug">
+              {{ teacherLessonCountLabel(record.teacherId) }}
+            </div>
+          </template>
         </template>
-        <template v-if="column.key == 'date'">
-          <div class="text-3.5 ">
-            {{ formatWeek(text) }}
-          </div>
-          <div class="text-3 font-500 line-height-3 text-#666">
-            {{ formatDate(text) }}
-          </div>
-        </template>
-        <template v-if="column.key == 'name'">
-          <div>{{ text }}</div>
-          <div class="text-3 text-#666 leading-snug">
-            {{ teacherLessonCountLabel(record.teacherId) }}
-          </div>
-        </template>
-      </template>
       </a-table>
     </a-spin>
+
+    <a-modal
+      v-model:open="conflictDetailModalOpen"
+      title="冲突详情"
+      :footer="null"
+      width="760px"
+      centered
+    >
+      <div class="st-conflict-modal">
+        <div class="st-conflict-summary">
+          {{ conflictDetailState.summary }}
+        </div>
+
+        <div v-if="conflictDetailState.attempted" class="st-conflict-attempt">
+          <div class="st-conflict-section-title">
+            你正在选择的空位
+          </div>
+          <div class="st-conflict-attempt__card">
+            <div class="st-conflict-attempt__headline">
+              {{ conflictDetailState.attempted.date }} {{ conflictDetailState.attempted.week }}
+              第{{ conflictDetailState.attempted.lessonIndex }}节
+            </div>
+            <div class="st-conflict-attempt__meta">
+              {{ conflictDetailState.attempted.timeText }} · {{ conflictDetailState.attempted.teacherName }} · {{ conflictDetailState.attempted.groupLabel }}
+            </div>
+          </div>
+        </div>
+
+        <div class="st-conflict-section-title">
+          冲突课程
+        </div>
+        <div class="st-conflict-list">
+          <div v-for="item in conflictDetailState.items" :key="item.key" class="st-conflict-item">
+            <div class="st-conflict-item__main">
+              <div class="st-conflict-item__headline">
+                <span>{{ item.name }}</span>
+                <a-tag color="blue" :bordered="false">
+                  {{ item.classTypeText }}
+                </a-tag>
+                <a-tag color="orange" :bordered="false">
+                  {{ item.groupLabel }}
+                </a-tag>
+              </div>
+              <div class="st-conflict-item__meta">
+                {{ item.date }} {{ item.week }} · {{ item.timeText }}
+              </div>
+              <div class="st-conflict-item__meta">
+                教师：{{ item.teacherName }}｜学员：{{ item.studentText }}
+              </div>
+              <div class="st-conflict-item__meta">
+                冲突原因：{{ (item.conflictTypes || []).map(type => `${type}冲突`).join('、') || '时间冲突' }}
+              </div>
+            </div>
+            <div class="st-conflict-item__side">
+              <a-button type="primary" ghost :disabled="!item.jumpCellKey" @click="jumpToConflictSchedule(item)">
+                定位到课程
+              </a-button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -1512,5 +1786,113 @@ watch(currentModel, (newValue) => {
 
 :deep(td.ant-table-cell) {
   padding: 4px !important;
+}
+
+.st-schedule-cell {
+  position: relative;
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.st-schedule-cell--focused {
+  animation: st-schedule-cell-flash 0.5s ease-in-out 6;
+  box-shadow:
+    0 0 0 3px rgba(255, 77, 79, 0.98),
+    0 0 0 8px rgba(255, 77, 79, 0.26),
+    0 0 20px rgba(255, 77, 79, 0.5);
+  transform: scale(1.015);
+  z-index: 2;
+}
+
+@keyframes st-schedule-cell-flash {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px rgba(255, 77, 79, 0.9),
+      0 0 0 5px rgba(255, 77, 79, 0.14),
+      0 0 10px rgba(255, 77, 79, 0.22);
+    transform: scale(1.005);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(255, 77, 79, 1),
+      0 0 0 10px rgba(255, 77, 79, 0.34),
+      0 0 26px rgba(255, 77, 79, 0.62);
+    transform: scale(1.022);
+  }
+}
+
+.st-conflict-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.st-conflict-summary {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #fff7e6;
+  color: #ad6800;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.7;
+}
+
+.st-conflict-section-title {
+  color: #1f2329;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.st-conflict-attempt__card,
+.st-conflict-item {
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.st-conflict-attempt__card {
+  padding: 14px 16px;
+}
+
+.st-conflict-attempt__headline,
+.st-conflict-item__headline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #1f2329;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.st-conflict-attempt__meta,
+.st-conflict-item__meta {
+  margin-top: 6px;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.st-conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.st-conflict-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+}
+
+.st-conflict-item__main {
+  min-width: 0;
+  flex: 1;
+}
+
+.st-conflict-item__side {
+  flex-shrink: 0;
 }
 </style>
