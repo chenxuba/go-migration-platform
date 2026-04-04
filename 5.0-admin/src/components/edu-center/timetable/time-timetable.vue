@@ -1013,11 +1013,8 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
       v-model:open="scheduleConflictOpen"
       :validation="scheduleConflictValidation"
       title="冲突详情"
-      compare-title="按当前冲突日程逐项查看"
       current-title="当前冲突日程"
       existing-title="与其冲突的日程"
-      current-column-title="当前冲突日程"
-      existing-column-title="与其冲突的日程"
       fallback-message="当前日程与已有日程存在冲突"
     />
   </div>

@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, nextTick, ref, watch } from 'vue'
-import ScheduleConflictModal from './schedule-conflict-modal.vue'
+import ScheduleConflictWorkbenchModal from './schedule-conflict-workbench-modal.vue'
 import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
@@ -880,30 +880,6 @@ const previewPlans = computed<PreviewItem[]>(() => {
 })
 
 const estimatedCount = computed(() => previewPlans.value.length)
-const SOFT_CONFLICT_TYPES = ['学员', '教室']
-
-const previewConflictTypes = computed(() => previewValidationResult.value?.conflictTypes || [])
-const previewSoftConflictTypes = computed(() =>
-  previewConflictTypes.value.filter(type => SOFT_CONFLICT_TYPES.includes(type)),
-)
-const previewHardConflictTypes = computed(() =>
-  previewConflictTypes.value.filter(type => !SOFT_CONFLICT_TYPES.includes(type)),
-)
-const canContinueWithSoftConflict = computed(() =>
-  previewHasConflict.value
-  && previewSoftConflictTypes.value.length > 0
-  && previewHardConflictTypes.value.length === 0,
-)
-const continueConflictHintText = computed(() => {
-  if (canContinueWithSoftConflict.value) {
-    const labels = previewSoftConflictTypes.value.map(type => `${type}冲突`).join('、')
-    return `当前仅存在${labels}，可继续创建；创建后这些日程会在课表中标记为冲突。`
-  }
-  if (previewHardConflictTypes.value.length > 0) {
-    return `存在${previewHardConflictTypes.value.map(type => `${type}冲突`).join('、')}，需要先调整后再创建。`
-  }
-  return ''
-})
 
 type ScheduleConflictRow = NonNullable<
   TeachingScheduleValidationResult['currentSchedules']
@@ -1077,7 +1053,11 @@ function closeModal() {
 function buildScheduleCreatePayload(options: {
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
+  plans?: PreviewItem[]
 } = {}) {
+  const plans = Array.isArray(options.plans) && options.plans.length
+    ? options.plans
+    : previewPlans.value
   return {
     oneToOneId: String(selectedOneToOne.value?.id || ''),
     teacherId: String(selectedTeacher.value || ''),
@@ -1085,7 +1065,7 @@ function buildScheduleCreatePayload(options: {
     classroomId: normalizedSelectedClassroomId.value || '',
     allowStudentConflict: options.allowStudentConflict === true,
     allowClassroomConflict: options.allowClassroomConflict === true,
-    schedules: previewPlans.value.map(item => ({
+    schedules: plans.map(item => ({
       lessonDate: item.date,
       startTime: item.startTime,
       endTime: item.endTime,
@@ -1137,6 +1117,7 @@ function closePreviewModal() {
 async function confirmBatchCreate(options: {
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
+  plans?: PreviewItem[]
 } = {}) {
   if (!selectedOneToOne.value?.id)
     return
@@ -1149,7 +1130,7 @@ async function confirmBatchCreate(options: {
     const res = await createOneToOneSchedulesApi(buildScheduleCreatePayload(options))
     if (res.code !== 200)
       throw new Error(res.message || '创建1对1日程失败')
-    const count = res.result?.count || previewPlans.value.length
+    const count = res.result?.count || (options.plans?.length || previewPlans.value.length)
     if (isSoftConflictCreate) {
       messageService.success(`已创建 ${count} 节1对1日程，并标记冲突`)
     }
@@ -1173,6 +1154,18 @@ async function confirmBatchCreate(options: {
     creatingSchedules.value = false
     creatingWithSoftConflict.value = false
   }
+}
+
+function handleConflictWorkbenchSubmit(payload: {
+  plans: PreviewItem[]
+  allowStudentConflict: boolean
+  allowClassroomConflict: boolean
+}) {
+  void confirmBatchCreate({
+    plans: payload.plans,
+    allowStudentConflict: payload.allowStudentConflict,
+    allowClassroomConflict: payload.allowClassroomConflict,
+  })
 }
 
 function handleTeacherChange(_value: string | number | undefined, staff?: StaffOptionItem | null) {
@@ -1925,21 +1918,12 @@ function invertWeekdays() {
     </a-modal>
   </div>
 
-  <ScheduleConflictModal
+  <ScheduleConflictWorkbenchModal
     v-model:open="conflictModalOpen"
+    :plans="previewPlans"
     :validation="previewValidationResult"
-    compare-title="按当前创建日程逐项查看"
-    current-column-title="待创建日程"
-    existing-column-title="与其冲突的日程"
-    :show-footer="previewHasConflict"
-    :close-text="previewHardConflictTypes.length ? '返回调整' : '暂不创建'"
-    :continue-text="canContinueWithSoftConflict ? '仍要创建并标记冲突' : undefined"
-    :continue-loading="creatingWithSoftConflict"
-    :continue-hint="continueConflictHintText"
-    @continue="confirmBatchCreate({
-      allowStudentConflict: previewSoftConflictTypes.includes('学员'),
-      allowClassroomConflict: previewSoftConflictTypes.includes('教室'),
-    })"
+    :loading="creatingSchedules || creatingWithSoftConflict"
+    @submit="handleConflictWorkbenchSubmit"
   />
 </template>
 
