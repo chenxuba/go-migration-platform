@@ -165,6 +165,7 @@ const scheduledLessonDetailState = ref({
   dateLabel: '',
   timeLabel: '',
   teacherName: '',
+  assistantText: '',
   groupLabel: '',
   studentText: '',
   courseName: '',
@@ -327,6 +328,9 @@ function buildLessonsForRow(slots, legacyList) {
     const displayCourseType = leg.courseType === 2 ? 1 : 2
     const studentIds = (leg.studentList || []).map(s => String(s.id)).filter(Boolean)
     const names = (leg.studentList || []).map(s => ({ id: String(s.id), name: s.name }))
+    const teacherPeople = Array.isArray(leg.teacherList) ? leg.teacherList : []
+    const mainTeacher = teacherPeople[0]
+    const assistantNames = teacherPeople.slice(1).map(item => item?.name).filter(Boolean)
 
     lessons[idx] = {
       ...lessons[idx],
@@ -339,6 +343,8 @@ function buildLessonsForRow(slots, legacyList) {
       courseType: displayCourseType,
       scheduledConflict: leg.conflict === true,
       scheduledConflictTypes: leg.conflictTypes || [],
+      teacherName: mainTeacher?.name || null,
+      assistantText: assistantNames.length ? assistantNames.join('、') : '未安排',
       isMain: true,
     }
   }
@@ -1648,7 +1654,8 @@ function openScheduledLessonDetail(text, column, record) {
     lessonTitle: `${studentText || '学员'} · ${text.courseName || '课程'}`,
     dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
     timeLabel: `${column.startTime}-${column.endTime}`,
-    teacherName: record.name,
+    teacherName: text.teacherName || record.name,
+    assistantText: text.assistantText || '未安排',
     groupLabel: activeGroupLabel.value || '当前组',
     studentText: studentText || '-',
     courseName: text.courseName || '',
@@ -1685,7 +1692,7 @@ async function deleteScheduledLessonFromDetail() {
     if (res.code !== 200)
       throw new Error(res.message || '删除日程失败')
     scheduledLessonDetailOpen.value = false
-    messageService.success(`已删除 ${month}月${day}日 第${lessonIndex}节 1v1 日程`)
+    messageService.success(`已删除 ${month}月${day}日 第${lessonIndex}节 1v1 日程，主教/助教课表已同步移除`)
     emitter.emit(EVENTS.REFRESH_DATA)
   }
   catch (error) {
@@ -2151,6 +2158,10 @@ watch(currentModel, (newValue) => {
             <strong>{{ scheduledLessonDetailState.teacherName }}</strong>
           </div>
           <div class="st-scheduled-detail__row">
+            <span>上课助教</span>
+            <strong>{{ scheduledLessonDetailState.assistantText }}</strong>
+          </div>
+          <div class="st-scheduled-detail__row">
             <span>所在组别</span>
             <strong>{{ scheduledLessonDetailState.groupLabel }}</strong>
           </div>
@@ -2161,7 +2172,7 @@ watch(currentModel, (newValue) => {
         </div>
 
         <div v-if="scheduledLessonDetailState.courseType === 1" class="st-scheduled-detail__hint st-scheduled-detail__hint--danger">
-          当前已支持删除这节 1v1 日程。删除后会立即从课表移除。
+          当前已支持删除这节 1v1 日程。删除后会立即从主教与助教课表中同步移除。
         </div>
         <div v-else class="st-scheduled-detail__hint">
           这里建议作为后续“查看详情 / 调课 / 调整老师 / 调整教室”的统一入口。班课删除暂未开放，避免误删主教/辅教安排。
