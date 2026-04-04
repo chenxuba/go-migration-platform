@@ -980,6 +980,22 @@ func weekDisplay(value time.Time) string {
 	}
 }
 
+// SoftDeleteAllTeachingSchedulesForInst 软删本机构全部未删除排课（列表与矩阵仅展示 del_flag=0）
+func (repo *Repository) SoftDeleteAllTeachingSchedulesForInst(ctx context.Context, instID, operatorID int64) (int64, error) {
+	res, err := repo.db.ExecContext(ctx, `
+		UPDATE teaching_schedule
+		SET del_flag = 1,
+		    status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE inst_id = ? AND del_flag = 0
+	`, model.TeachingScheduleStatusCanceled, operatorID, instID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func firstNonEmptyString(values ...string) string {
 	for _, value := range values {
 		value = strings.TrimSpace(value)

@@ -199,3 +199,8 @@ export function copyTeachingSchedulesWeekApi(data: {
 }) {
   return usePost<{ created: number }>('/api/v1/teaching-schedules/copy-week', data)
 }
+
+/** 软删本机构全部排课；须 confirm 以防误触 */
+export function clearAllTeachingSchedulesApi() {
+  return usePost<{ deleted: number }>('/api/v1/teaching-schedules/clear-all', { confirm: true })
+}

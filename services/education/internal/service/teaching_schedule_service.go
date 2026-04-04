@@ -358,6 +358,19 @@ func (svc *Service) CopyTeachingSchedulesWeek(userID int64, dto model.TeachingSc
 	return svc.repo.CopyTeachingSchedulesWeek(context.Background(), instID, operatorID, dto)
 }
 
+// ClearAllTeachingSchedules 清空当前登录用户所在机构的全部排课记录（软删）
+func (svc *Service) ClearAllTeachingSchedules(userID int64) (deleted int64, err error) {
+	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return 0, err
+	}
+	n, err := svc.repo.SoftDeleteAllTeachingSchedulesForInst(context.Background(), instID, operatorID)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (svc *Service) resolveTeachingScheduleOperator(userID int64) (int64, int64, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

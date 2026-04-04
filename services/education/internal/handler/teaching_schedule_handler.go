@@ -166,6 +166,31 @@ func (handler *Handler) teachingSchedulesTeacherMatrixExport(w http.ResponseWrit
 	_, _ = w.Write(buf)
 }
 
+func (handler *Handler) clearAllTeachingSchedules(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var body struct {
+		Confirm bool `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
+		httpx.WriteError(w, http.StatusBadRequest, "请传 JSON：{\"confirm\":true} 以确认清空本机构全部排课", ctx.RequestID)
+		return
+	}
+	n, err := handler.service.ClearAllTeachingSchedules(claims.UserID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"deleted": n}, ctx.RequestID)
+}
+
 func (handler *Handler) batchUpdateTeachingSchedules(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
