@@ -763,9 +763,11 @@ async function flushPendingConflictJump() {
 
 function openApiConflictModal(reason, column, record) {
   const existingSchedules = Array.isArray(reason?.existingSchedules) ? reason.existingSchedules : []
+  const selectedTarget = resolveConflictAttemptTarget()
   const items = existingSchedules.map((item, index) => {
     const groupInfo = resolveConflictScheduleGroupInfo(item)
     const timeRange = parseConflictTimeRange(item.timeText)
+    const conflictTypes = item.conflictTypes || []
     const jumpGroupKey = groupInfo.keys.includes(currentGroup.value)
       ? currentGroup.value
       : groupInfo.keys[0] || ''
@@ -781,7 +783,10 @@ function openApiConflictModal(reason, column, record) {
       groupLabel: groupInfo.labels.join('/') || '未知组别',
       classroomName: item.classroomName || '-',
       studentText: (item.studentNames || []).join('、') || '-',
-      conflictTypes: item.conflictTypes || [],
+      conflictTypes,
+      hasTeacherConflict: conflictTypes.includes('老师'),
+      hasStudentConflict: conflictTypes.includes('学员'),
+      hasClassroomConflict: conflictTypes.includes('教室'),
       jumpCellKey: timeRange && item.teacherId
         ? buildAvailabilitySlotKey(item.teacherId, item.date, timeRange.startTime, timeRange.endTime)
         : '',
@@ -792,6 +797,10 @@ function openApiConflictModal(reason, column, record) {
   conflictDetailState.value = {
     summary: `${reason.message || '当前空位存在时间冲突'}，共发现 ${items.length} 条冲突日程。`,
     attempted: {
+      modeLabel: selectedTarget.modeLabel,
+      targetLabel: selectedTarget.targetLabel,
+      targetValue: selectedTarget.targetValue,
+      courseName: selectedTarget.courseName,
       date: record.date,
       week: formatWeek(record.date),
       timeText: `${column.startTime}-${column.endTime}`,
@@ -1004,6 +1013,27 @@ const classData = ref([
     mainTeacherName: '李老师',
   },
 ])
+
+function resolveConflictAttemptTarget() {
+  if (currentModel.value === '1') {
+    const selectedOneToOne = oneToOneData.value.find(item => item.id === String(oneToOneRecordId.value))
+    return {
+      modeLabel: '1v1',
+      targetLabel: '排课学员',
+      targetValue: selectedOneToOne?.studentName || '未选择学员',
+      courseName: selectedOneToOne?.courseName || '未选择课程',
+    }
+  }
+
+  const selectedClass = classData.value.find(item => item.id === classId.value)
+  return {
+    modeLabel: '班课',
+    targetLabel: '排课班级',
+    targetValue: selectedClass?.name || '未选择班级',
+    courseName: selectedClass?.courseName || '未选择课程',
+  }
+}
+
 // 选择班级触发
 function handleClass(value) {
   if (!value) {
@@ -2071,11 +2101,39 @@ watch(currentModel, (newValue) => {
           </div>
           <div class="st-conflict-attempt__card">
             <div class="st-conflict-attempt__headline">
+              <span class="st-conflict-attempt__badge">{{ conflictDetailState.attempted.modeLabel }}</span>
+              <span>待排课程信息</span>
+            </div>
+            <div class="st-conflict-attempt__meta st-conflict-attempt__meta--time">
               {{ conflictDetailState.attempted.date }} {{ conflictDetailState.attempted.week }}
               第{{ conflictDetailState.attempted.lessonIndex }}节
             </div>
+            <div class="st-conflict-attempt__target">
+              <div class="st-conflict-attempt__target-label">
+                <span>{{ conflictDetailState.attempted.targetLabel }}</span>
+              </div>
+              <strong class="st-conflict-attempt__target-value">{{ conflictDetailState.attempted.targetValue }}</strong>
+            </div>
+            <div class="st-conflict-attempt__facts">
+              <div class="st-conflict-attempt__fact">
+                <span class="st-conflict-attempt__fact-label">上课课程</span>
+                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.courseName }}</strong>
+              </div>
+              <div class="st-conflict-attempt__fact">
+                <span class="st-conflict-attempt__fact-label">上课时间</span>
+                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.timeText }}</strong>
+              </div>
+              <div class="st-conflict-attempt__fact">
+                <span class="st-conflict-attempt__fact-label">上课老师</span>
+                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.teacherName }}</strong>
+              </div>
+              <div class="st-conflict-attempt__fact">
+                <span class="st-conflict-attempt__fact-label">所在组别</span>
+                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.groupLabel }}</strong>
+              </div>
+            </div>
             <div class="st-conflict-attempt__meta">
-              {{ conflictDetailState.attempted.timeText }} · {{ conflictDetailState.attempted.teacherName }} · {{ conflictDetailState.attempted.groupLabel }}
+              系统正在校验这条待排课信息与课表中的已有日程是否冲突。
             </div>
           </div>
         </div>
@@ -2099,10 +2157,31 @@ watch(currentModel, (newValue) => {
                 {{ item.date }} {{ item.week }} · {{ item.timeText }}
               </div>
               <div class="st-conflict-item__meta">
-                教师：{{ item.teacherName }}｜学员：{{ item.studentText }}
+                教师：
+                <span :class="{ 'st-conflict-item__value--danger': item.hasTeacherConflict }">{{ item.teacherName }}</span>
+                <span class="st-conflict-item__sep">｜</span>
+                学员：
+                <span :class="{ 'st-conflict-item__value--danger': item.hasStudentConflict }">{{ item.studentText }}</span>
+                <template v-if="item.classroomName && item.classroomName !== '-'">
+                  <span class="st-conflict-item__sep">｜</span>
+                  教室：
+                  <span :class="{ 'st-conflict-item__value--danger': item.hasClassroomConflict }">{{ item.classroomName }}</span>
+                </template>
               </div>
-              <div class="st-conflict-item__meta">
-                冲突原因：{{ (item.conflictTypes || []).map(type => `${type}冲突`).join('、') || '时间冲突' }}
+              <div class="st-conflict-item__meta st-conflict-item__meta--reasons">
+                <span>冲突原因：</span>
+                <span v-if="!(item.conflictTypes || []).length" class="st-conflict-item__reason-chip st-conflict-item__reason-chip--danger">
+                  时间冲突
+                </span>
+                <template v-else>
+                  <span
+                    v-for="type in item.conflictTypes || []"
+                    :key="type"
+                    class="st-conflict-item__reason-chip st-conflict-item__reason-chip--danger"
+                  >
+                    {{ type }}冲突
+                  </span>
+                </template>
               </div>
             </div>
             <div class="st-conflict-item__side">
@@ -2338,6 +2417,20 @@ watch(currentModel, (newValue) => {
   padding: 14px 16px;
 }
 
+.st-conflict-attempt__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #1677ff;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .st-conflict-attempt__headline,
 .st-conflict-item__headline {
   display: flex;
@@ -2357,6 +2450,65 @@ watch(currentModel, (newValue) => {
   line-height: 1.7;
 }
 
+.st-conflict-attempt__meta--time {
+  color: #1677ff;
+  font-weight: 700;
+}
+
+.st-conflict-attempt__target {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #edf2f7;
+}
+
+.st-conflict-attempt__target-label {
+  flex-shrink: 0;
+  color: #8c8c8c;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.st-conflict-attempt__target-value {
+  color: #1f2329;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 22px;
+}
+
+.st-conflict-attempt__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.st-conflict-attempt__fact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #edf2f7;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.st-conflict-attempt__fact-label {
+  color: #8c8c8c;
+}
+
+.st-conflict-attempt__fact-value {
+  color: #1f2329;
+  font-weight: 700;
+}
+
 .st-conflict-list {
   display: flex;
   flex-direction: column;
@@ -2374,6 +2526,40 @@ watch(currentModel, (newValue) => {
 .st-conflict-item__main {
   min-width: 0;
   flex: 1;
+}
+
+.st-conflict-item__sep {
+  margin: 0 4px;
+  color: #d9d9d9;
+}
+
+.st-conflict-item__value--danger {
+  color: #ff4d4f;
+  font-weight: 700;
+}
+
+.st-conflict-item__meta--reasons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.st-conflict-item__reason-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.st-conflict-item__reason-chip--danger {
+  background: #fff1f0;
+  color: #ff4d4f;
 }
 
 .st-conflict-item__side {

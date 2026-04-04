@@ -45,6 +45,8 @@ const timelineEnd = 22 * 60
 const timelineTopPadding = 18
 const hourRowHeight = 96
 const timelineBottomPadding = 28
+/** 避免过短日程信息完全挤爆，但不能大到吃掉真实课间距 */
+const scheduleCardMinHeight = 60
 const scheduleCardMinWidth = 152
 const scheduleCardGap = 5
 /** 列宽 = 左 6px + 卡片 + 右 6px；与 eventStyle 里 +6 对齐，避免只左边留白、右边贴线 */
@@ -522,7 +524,7 @@ function eventStyle(item) {
   return {
     top: `${minuteOffset(item.startMinutes)}px`,
     height: `${Math.max(
-      82,
+      scheduleCardMinHeight,
       ((item.endMinutes - item.startMinutes) / 60) * hourRowHeight,
     )}px`,
     left: `${leftOffset}px`,
@@ -740,229 +742,229 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
           size="small"
           class="schedule-area-spin"
         >
-        <div class="schedule-sticky-shell">
-          <div class="schedule-summary">
-            <div class="schedule-summary__left">
-              <span class="summary-accent" />
-              <span>共 {{ mockSchedules.length }} 个日程（未点名
-                {{ unsignedCount }} 个日程）</span>
-            </div>
-            <div class="schedule-summary__right">
-              <span
-                v-for="item in scheduleLegend"
-                :key="item.key"
-                class="legend-item"
-              >
-                <span
-                  v-if="item.type === 'bar'"
-                  class="legend-item__bar"
-                  :style="{ background: item.color }"
-                />
-                <span
-                  v-else-if="item.type === 'icon'"
-                  class="legend-item__icon legend-item__icon--trial"
-                />
-                <span
-                  v-else
-                  class="legend-item__icon legend-item__icon--danger"
-                />
-                {{ item.label }}
-              </span>
-            </div>
-          </div>
-
-          <div
-            ref="headerScrollRef"
-            class="schedule-header-scroll"
-            @scroll="handleHeaderScroll"
-          >
-            <div class="schedule-header-track">
-              <div class="schedule-floating-date-layer">
-                <div
-                  v-for="item in headerSummaries"
-                  :key="`float-${item.key}`"
-                  class="schedule-floating-chip"
-                  :class="{ 'schedule-floating-chip--today': isActiveColumn(item.key) }"
-                  :style="floatingPillStyle(item.key)"
-                >
-                  <div class="schedule-floating-chip__line">
-                    <span class="schedule-floating-chip__date">{{ item.date.format("M/D") }}</span>
-                    <span class="schedule-floating-chip__week">{{
-                      ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][item.date.day()]
-                    }}</span>
-                  </div>
-                  <div class="schedule-floating-chip__meta">
-                    共 <strong>{{ item.count }}</strong> 个
-                  </div>
-                </div>
+          <div class="schedule-sticky-shell">
+            <div class="schedule-summary">
+              <div class="schedule-summary__left">
+                <span class="summary-accent" />
+                <span>共 {{ mockSchedules.length }} 个日程（未点名
+                  {{ unsignedCount }} 个日程）</span>
               </div>
-              <div class="schedule-header-grid" :style="gridTemplateStyle">
-                <div class="schedule-time-header" />
-
-                <div
-                  v-for="(item, di) in headerSummaries"
+              <div class="schedule-summary__right">
+                <span
+                  v-for="item in scheduleLegend"
                   :key="item.key"
-                  class="schedule-column-header"
-                  :class="{
-                    'schedule-column-header--active': isActiveColumn(item.key),
-                    'schedule-column-header--day-divider':
-                      di < headerSummaries.length - 1,
-                  }"
+                  class="legend-item"
                 >
-                  <div class="schedule-column-header__title schedule-column-header__title--ghost" aria-hidden="true">
-                    {{
-                      currentTime === "day"
-                        ? "当日"
-                        : weekdayLabels[
-                          item.date.day() === 0 ? 6 : item.date.day() - 1
-                        ]
-                    }}
-                    <span class="schedule-column-header__date">（{{ item.date.format("M-D") }}）</span>
-                  </div>
-                  <div class="schedule-column-header__count schedule-column-header__count--ghost" aria-hidden="true">
-                    {{ item.count }}个
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div
-          ref="boardScrollRef"
-          class="schedule-board"
-          @scroll="handleBoardScroll"
-        >
-          <div class="schedule-grid" :style="gridTemplateStyle">
-            <div class="schedule-time-axis">
-              <div
-                v-for="(mark, index) in hourMarks"
-                :key="mark"
-                class="schedule-time-axis__label"
-                :class="{
-                  'schedule-time-axis__label--first': index === 0,
-                  'schedule-time-axis__label--muted': isMutedTimeLabel(mark),
-                }"
-                :style="{ top: `${minuteOffset(mark)}px` }"
-              >
-                <span class="schedule-time-axis__text">{{
-                  formatClock(mark)
-                }}</span>
-              </div>
-              <div
-                v-if="showCurrentTimeLine"
-                class="schedule-now-axis"
-                :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-              >
-                <span class="schedule-now-axis__text">{{
-                  currentTimeLabel
-                }}</span>
-                <span class="schedule-now-axis__dot" />
+                  <span
+                    v-if="item.type === 'bar'"
+                    class="legend-item__bar"
+                    :style="{ background: item.color }"
+                  />
+                  <span
+                    v-else-if="item.type === 'icon'"
+                    class="legend-item__icon legend-item__icon--trial"
+                  />
+                  <span
+                    v-else
+                    class="legend-item__icon legend-item__icon--danger"
+                  />
+                  {{ item.label }}
+                </span>
               </div>
             </div>
 
             <div
-              v-for="(item, di) in headerSummaries"
-              :key="`${item.key}-body`"
-              class="schedule-column"
-              :class="{
-                'schedule-column--active': isActiveColumn(item.key),
-                'schedule-column--day-divider':
-                  di < headerSummaries.length - 1,
-              }"
+              ref="headerScrollRef"
+              class="schedule-header-scroll"
+              @scroll="handleHeaderScroll"
             >
-              <div
-                class="schedule-column__body"
-                :style="{ height: `${timelineHeight}px` }"
-              >
-                <div
-                  v-for="mark in hourMarks"
-                  :key="`${item.key}-${mark}`"
-                  class="schedule-column__line"
-                  :style="{ top: `${minuteOffset(mark)}px` }"
-                />
-                <template
-                  v-for="slot in hoverSlots"
-                  :key="`${item.key}-${slot.key}`"
-                >
+              <div class="schedule-header-track">
+                <div class="schedule-floating-date-layer">
                   <div
-                    v-if="
-                      isFutureSlot(
-                        item.key,
-                        slot.startMinutes,
-                        slot.endMinutes,
-                      )
-                        && !hasEventInSlot(
-                          item.key,
-                          slot.startMinutes,
-                          slot.endMinutes,
-                        )
-                    "
-                    class="schedule-create-slot"
-                    :style="createSlotStyle(slot.startMinutes, slot.endMinutes)"
+                    v-for="item in headerSummaries"
+                    :key="`float-${item.key}`"
+                    class="schedule-floating-chip"
+                    :class="{ 'schedule-floating-chip--today': isActiveColumn(item.key) }"
+                    :style="floatingPillStyle(item.key)"
                   >
-                    <CreateSchedulePopover trigger="click">
-                      <button
-                        type="button"
-                        class="schedule-create-slot__trigger"
-                      >
-                        点击创建排课日程
-                      </button>
-                    </CreateSchedulePopover>
+                    <div class="schedule-floating-chip__line">
+                      <span class="schedule-floating-chip__date">{{ item.date.format("M/D") }}</span>
+                      <span class="schedule-floating-chip__week">{{
+                        ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][item.date.day()]
+                      }}</span>
+                    </div>
+                    <div class="schedule-floating-chip__meta">
+                      共 <strong>{{ item.count }}</strong> 个
+                    </div>
                   </div>
-                </template>
-                <div
-                  v-if="showCurrentTimeLine"
-                  class="schedule-now-line"
-                  :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-                />
+                </div>
+                <div class="schedule-header-grid" :style="gridTemplateStyle">
+                  <div class="schedule-time-header" />
 
-                <div
-                  v-for="event in layoutsByDate.get(item.key) || []"
-                  :key="event.id"
-                  :class="eventClass(event)"
-                  :style="eventStyle(event)"
-                  @click="openScheduleEdit(event)"
-                >
-                  <div class="schedule-event__top">
-                    <div class="schedule-event__time">
-                      {{ event.timeText }}
+                  <div
+                    v-for="(item, di) in headerSummaries"
+                    :key="item.key"
+                    class="schedule-column-header"
+                    :class="{
+                      'schedule-column-header--active': isActiveColumn(item.key),
+                      'schedule-column-header--day-divider':
+                        di < headerSummaries.length - 1,
+                    }"
+                  >
+                    <div class="schedule-column-header__title schedule-column-header__title--ghost" aria-hidden="true">
+                      {{
+                        currentTime === "day"
+                          ? "当日"
+                          : weekdayLabels[
+                            item.date.day() === 0 ? 6 : item.date.day() - 1
+                          ]
+                      }}
+                      <span class="schedule-column-header__date">（{{ item.date.format("M-D") }}）</span>
                     </div>
-                    <div class="schedule-event__badges">
-                      <span
-                        v-if="event.classType === 2"
-                        class="schedule-event__badge schedule-event__badge--one-to-one"
-                      >
-                        1v1
-                      </span>
-                      <span v-if="event.hasTrial" class="schedule-event__badge">
-                        试听
-                      </span>
-                    </div>
-                  </div>
-                  <div class="schedule-event__body">
-                    <div class="schedule-event__title">
-                      {{ event.title }}
-                    </div>
-                    <div class="schedule-event__meta schedule-event__meta__course">
-                      {{ event.course }}
-                    </div>
-                    <div
-                      class="schedule-event__meta schedule-event__meta--muted"
-                    >
-                      {{ event.teacher }}
-                      <template
-                        v-if="event.classroom && event.classroom !== '-'"
-                      >
-                        · {{ event.classroom }}
-                      </template>
+                    <div class="schedule-column-header__count schedule-column-header__count--ghost" aria-hidden="true">
+                      {{ item.count }}个
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+
+          <div
+            ref="boardScrollRef"
+            class="schedule-board"
+            @scroll="handleBoardScroll"
+          >
+            <div class="schedule-grid" :style="gridTemplateStyle">
+              <div class="schedule-time-axis">
+                <div
+                  v-for="(mark, index) in hourMarks"
+                  :key="mark"
+                  class="schedule-time-axis__label"
+                  :class="{
+                    'schedule-time-axis__label--first': index === 0,
+                    'schedule-time-axis__label--muted': isMutedTimeLabel(mark),
+                  }"
+                  :style="{ top: `${minuteOffset(mark)}px` }"
+                >
+                  <span class="schedule-time-axis__text">{{
+                    formatClock(mark)
+                  }}</span>
+                </div>
+                <div
+                  v-if="showCurrentTimeLine"
+                  class="schedule-now-axis"
+                  :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
+                >
+                  <span class="schedule-now-axis__text">{{
+                    currentTimeLabel
+                  }}</span>
+                  <span class="schedule-now-axis__dot" />
+                </div>
+              </div>
+
+              <div
+                v-for="(item, di) in headerSummaries"
+                :key="`${item.key}-body`"
+                class="schedule-column"
+                :class="{
+                  'schedule-column--active': isActiveColumn(item.key),
+                  'schedule-column--day-divider':
+                    di < headerSummaries.length - 1,
+                }"
+              >
+                <div
+                  class="schedule-column__body"
+                  :style="{ height: `${timelineHeight}px` }"
+                >
+                  <div
+                    v-for="mark in hourMarks"
+                    :key="`${item.key}-${mark}`"
+                    class="schedule-column__line"
+                    :style="{ top: `${minuteOffset(mark)}px` }"
+                  />
+                  <template
+                    v-for="slot in hoverSlots"
+                    :key="`${item.key}-${slot.key}`"
+                  >
+                    <div
+                      v-if="
+                        isFutureSlot(
+                          item.key,
+                          slot.startMinutes,
+                          slot.endMinutes,
+                        )
+                          && !hasEventInSlot(
+                            item.key,
+                            slot.startMinutes,
+                            slot.endMinutes,
+                          )
+                      "
+                      class="schedule-create-slot"
+                      :style="createSlotStyle(slot.startMinutes, slot.endMinutes)"
+                    >
+                      <CreateSchedulePopover trigger="click">
+                        <button
+                          type="button"
+                          class="schedule-create-slot__trigger"
+                        >
+                          点击创建排课日程
+                        </button>
+                      </CreateSchedulePopover>
+                    </div>
+                  </template>
+                  <div
+                    v-if="showCurrentTimeLine"
+                    class="schedule-now-line"
+                    :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
+                  />
+
+                  <div
+                    v-for="event in layoutsByDate.get(item.key) || []"
+                    :key="event.id"
+                    :class="eventClass(event)"
+                    :style="eventStyle(event)"
+                    @click="openScheduleEdit(event)"
+                  >
+                    <div class="schedule-event__top">
+                      <div class="schedule-event__time">
+                        {{ event.timeText }}
+                      </div>
+                      <div class="schedule-event__badges">
+                        <span
+                          v-if="event.classType === 2"
+                          class="schedule-event__badge schedule-event__badge--one-to-one"
+                        >
+                          1v1
+                        </span>
+                        <span v-if="event.hasTrial" class="schedule-event__badge">
+                          试听
+                        </span>
+                      </div>
+                    </div>
+                    <div class="schedule-event__body">
+                      <div class="schedule-event__title">
+                        {{ event.title }}
+                      </div>
+                      <div class="schedule-event__meta schedule-event__meta__course">
+                        {{ event.course }}
+                      </div>
+                      <div
+                        class="schedule-event__meta schedule-event__meta--muted"
+                      >
+                        {{ event.teacher }}
+                        <template
+                          v-if="event.classroom && event.classroom !== '-'"
+                        >
+                          · {{ event.classroom }}
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </a-spin>
       </div>
     </div>
