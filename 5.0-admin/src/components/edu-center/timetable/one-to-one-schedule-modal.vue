@@ -269,9 +269,9 @@ function scheduleSlotKeysEqual(a: string[], b: string[]) {
   return true
 }
 
-const scheduleStartDate = ref(dayjs().add(5, 'day').startOf('day'))
-const freeSelectedDates = ref<Dayjs[]>([dayjs().add(5, 'day').startOf('day')])
-const freeCalendarPanelDate = ref(dayjs().add(5, 'day').startOf('month'))
+const scheduleStartDate = ref(dayjs().startOf('day'))
+const freeSelectedDates = ref<Dayjs[]>([dayjs().startOf('day')])
+const freeCalendarPanelDate = ref(dayjs().startOf('month'))
 const freeCalendarOpen = ref(false)
 const plannedClassCount = ref(1)
 
@@ -442,7 +442,8 @@ watch(
     selectedAssistant.value = []
     selectedAssistantDisplays.value = []
     selectedSchoolTimeSlots.value = []
-    freeSelectedDates.value = [dayjs().add(5, 'day').startOf('day')]
+    scheduleStartDate.value = dayjs().startOf('day')
+    freeSelectedDates.value = [dayjs().startOf('day')]
     freeCalendarPanelDate.value = freeSelectedDates.value[0].startOf('month')
   },
   { immediate: true },
