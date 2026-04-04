@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CloseOutlined, ExclamationCircleFilled } from '@ant-design/icons-vue'
-import { validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { checkOneToOneScheduleAvailabilityApi, type OneToOneScheduleAvailabilityItem, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
 
 interface ConflictWorkbenchPlan {
@@ -112,6 +112,22 @@ interface SoftConflictSnapshotItem {
   allowClassroomConflict: boolean
 }
 
+interface TimeOptionAvailabilityView {
+  status: 'free' | 'busy' | 'unknown'
+  statusText: string
+  reasonText: string
+  conflictTypes: string[]
+}
+
+interface TimeOptionSelectView {
+  value: string
+  label: string
+  baseLabel: string
+  status: 'free' | 'busy' | 'unknown'
+  statusText: string
+  reasonText: string
+}
+
 const modalOpen = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
@@ -124,6 +140,10 @@ const initialConflictMap = ref<Record<string, string[]>>({})
 const lastValidatedRowMap = ref<Record<string, WorkbenchRow>>({})
 const bulkSoftConflictSnapshot = ref<Record<string, SoftConflictSnapshotItem> | null>(null)
 let revalidateTimer: ReturnType<typeof setTimeout> | null = null
+const timeOptionAvailabilityMap = ref<Record<string, TimeOptionAvailabilityView>>({})
+const timeOptionAvailabilityLoading = ref(false)
+let timeOptionAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
+let timeOptionAvailabilitySeq = 0
 
 function parseTimeText(text?: string) {
   const m = String(text || '').match(/(\d{1,2}:\d{2})[~～](\d{1,2}:\d{2})/)
@@ -180,6 +200,10 @@ function timeValueForRow(row: Record<string, any>) {
   return `${row.groupKey}|${row.startTime}|${row.endTime}`
 }
 
+function buildTimeValue(groupKey: string, startTime: string, endTime: string) {
+  return `${groupKey}|${startTime}|${endTime}`
+}
+
 function groupOptionsForRow(row: Record<string, any>) {
   const groups = allowedGroupOptionsByTeacher(row.teacherId)
   return groups.length ? groups : (props.periodGroups || [])
@@ -189,6 +213,64 @@ function timeOptionsForRow(row: Record<string, any>) {
   const groups = props.periodGroups || []
   const group = groups.find(item => item.key === row.groupKey) || groupOptionsForRow(row)[0]
   return group?.timeOptions || []
+}
+
+function buildTimeOptionAvailabilityKey(teacherId: string, lessonDate: string, startTime: string, endTime: string) {
+  return `${normalizedTeacherId(teacherId)}|${lessonDate}|${startTime}|${endTime}`
+}
+
+function buildTimeOptionAvailabilityView(item: OneToOneScheduleAvailabilityItem): TimeOptionAvailabilityView {
+  if (item.valid) {
+    return {
+      status: 'free',
+      statusText: '空闲',
+      reasonText: '当前老师该节次可排',
+      conflictTypes: [],
+    }
+  }
+
+  const conflictTypes = item.conflictTypes || []
+  const reasonText = item.message || (conflictTypes.length ? `${conflictTypes.join('、')}冲突` : '该节次已有冲突')
+  return {
+    status: 'busy',
+    statusText: '繁忙',
+    reasonText,
+    conflictTypes,
+  }
+}
+
+function timeOptionAvailabilityFor(row: Record<string, any>, option: TimeOption): TimeOptionAvailabilityView {
+  const teacherId = normalizedTeacherId(row.teacherId)
+  if (!teacherId) {
+    return {
+      status: 'unknown',
+      statusText: '先选老师',
+      reasonText: '',
+      conflictTypes: [],
+    }
+  }
+
+  const key = buildTimeOptionAvailabilityKey(teacherId, row.date, option.startTime, option.endTime)
+  return timeOptionAvailabilityMap.value[key] || {
+    status: 'unknown',
+    statusText: timeOptionAvailabilityLoading.value ? '检测中' : '待检测',
+    reasonText: '',
+    conflictTypes: [],
+  }
+}
+
+function timeOptionViewsForRow(row: Record<string, any>): TimeOptionSelectView[] {
+  return timeOptionsForRow(row).map((option) => {
+    const availability = timeOptionAvailabilityFor(row, option)
+    return {
+      value: buildTimeValue(row.groupKey, option.startTime, option.endTime),
+      label: `${option.label} · ${availability.statusText}`,
+      baseLabel: option.label,
+      status: availability.status,
+      statusText: availability.statusText,
+      reasonText: availability.reasonText,
+    }
+  })
 }
 
 function syncValidatedRowSnapshot(rows = rowStates.value) {
@@ -317,14 +399,23 @@ const rowViews = computed(() =>
   }),
 )
 
+function shouldRenderRowInWorkbench(row: { key: string }) {
+  return (initialConflictMap.value[row.key] || []).length > 0
+}
+
+const workbenchRowViews = computed(() =>
+  rowViews.value.filter(row => shouldRenderRowInWorkbench(row)),
+)
+
 const summary = computed(() => {
-  const rows = rowViews.value
+  const rows = workbenchRowViews.value
+  const allRows = rowViews.value
   return {
     total: rows.length,
     teacher: rows.filter(row => row.hasTeacherConflict).length,
     student: rows.filter(row => row.hasStudentConflict).length,
     classroom: rows.filter(row => row.hasClassroomConflict).length,
-    ready: rows.filter(row => row.canCreate).length,
+    ready: allRows.filter(row => row.canCreate).length,
   }
 })
 
@@ -394,12 +485,80 @@ async function revalidateRows() {
   }
 }
 
+async function fetchTimeOptionAvailability() {
+  const seq = ++timeOptionAvailabilitySeq
+  const oneToOneId = String(props.oneToOneId || '').trim()
+  const schedulesMap = new Map<string, {
+    teacherId: string
+    lessonDate: string
+    startTime: string
+    endTime: string
+  }>()
+
+  rowStates.value.forEach((row) => {
+    const teacherId = normalizedTeacherId(row.teacherId)
+    if (!teacherId)
+      return
+    timeOptionsForRow(row).forEach((option) => {
+      const key = buildTimeOptionAvailabilityKey(teacherId, row.date, option.startTime, option.endTime)
+      schedulesMap.set(key, {
+        teacherId,
+        lessonDate: row.date,
+        startTime: option.startTime,
+        endTime: option.endTime,
+      })
+    })
+  })
+
+  if (!props.open || !oneToOneId || !schedulesMap.size) {
+    timeOptionAvailabilityMap.value = {}
+    timeOptionAvailabilityLoading.value = false
+    return
+  }
+
+  timeOptionAvailabilityLoading.value = true
+  try {
+    const res = await checkOneToOneScheduleAvailabilityApi({
+      oneToOneId,
+      schedules: Array.from(schedulesMap.values()),
+    })
+    if (seq !== timeOptionAvailabilitySeq)
+      return
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '检测节次空闲状态失败')
+
+    const nextMap: Record<string, TimeOptionAvailabilityView> = {}
+    ;(res.result.items || []).forEach((item) => {
+      nextMap[buildTimeOptionAvailabilityKey(item.teacherId, item.lessonDate, item.startTime, item.endTime)] = buildTimeOptionAvailabilityView(item)
+    })
+    timeOptionAvailabilityMap.value = nextMap
+  }
+  catch (error) {
+    if (seq !== timeOptionAvailabilitySeq)
+      return
+    console.error('fetchTimeOptionAvailability failed', error)
+    timeOptionAvailabilityMap.value = {}
+  }
+  finally {
+    if (seq === timeOptionAvailabilitySeq)
+      timeOptionAvailabilityLoading.value = false
+  }
+}
+
 function scheduleRevalidate() {
   if (revalidateTimer)
     clearTimeout(revalidateTimer)
   revalidateTimer = setTimeout(() => {
     void revalidateRows()
   }, 240)
+}
+
+function scheduleTimeOptionAvailabilityCheck() {
+  if (timeOptionAvailabilityTimer)
+    clearTimeout(timeOptionAvailabilityTimer)
+  timeOptionAvailabilityTimer = setTimeout(() => {
+    void fetchTimeOptionAvailability()
+  }, 180)
 }
 
 function initializeRows() {
@@ -430,6 +589,7 @@ function initializeRows() {
     initialConflictMap.value[`${plan.date}|${plan.startTime}|${plan.endTime}|${index}`] = current?.conflictTypes || []
   })
   syncValidatedRowSnapshot()
+  scheduleTimeOptionAvailabilityCheck()
 }
 
 watch(
@@ -437,6 +597,8 @@ watch(
   (open) => {
     if (open)
       initializeRows()
+    else
+      timeOptionAvailabilityMap.value = {}
   },
   { immediate: true },
 )
@@ -478,6 +640,8 @@ function updateRow<K extends keyof WorkbenchRow>(key: string, field: K, value: W
     }
     return next
   })
+  if (field === 'teacherId' || field === 'groupKey')
+    scheduleTimeOptionAvailabilityCheck()
   if (field === 'teacherId' || field === 'classroomId' || field === 'startTime' || field === 'endTime' || field === 'groupKey')
     scheduleRevalidate()
 }
@@ -633,7 +797,7 @@ const columns = [
       <a-table
         class="schedule-conflict__workbench"
         :columns="columns"
-        :data-source="rowViews"
+        :data-source="workbenchRowViews"
         :pagination="false"
         row-key="key"
         :scroll="{ y: 560 }"
@@ -719,19 +883,6 @@ const columns = [
               </div>
 
               <div class="schedule-conflict__action-group">
-                <span class="schedule-conflict__action-label">节次时间</span>
-                <a-select
-                  :value="timeValueForRow(record)"
-                  :options="timeOptionsForRow(record).map(item => ({
-                    value: `${record.groupKey}|${item.startTime}|${item.endTime}`,
-                    label: item.label,
-                  }))"
-                  class="schedule-conflict__control"
-                  @change="value => changeRowTime(record.key, String(value))"
-                />
-              </div>
-
-              <div class="schedule-conflict__action-group">
                 <span class="schedule-conflict__action-label">上课老师</span>
                 <a-select
                   :value="record.teacherId"
@@ -739,6 +890,43 @@ const columns = [
                   class="schedule-conflict__control"
                   @change="value => updateRow(record.key, 'teacherId', String(value))"
                 />
+              </div>
+
+              <div class="schedule-conflict__action-group">
+                <div class="schedule-conflict__action-label-row">
+                  <span class="schedule-conflict__action-label">节次时间</span>
+                  <small class="schedule-conflict__action-label-hint">
+                    {{ timeOptionAvailabilityLoading ? '正在检测空闲状态' : '先选老师，再看节次空闲情况' }}
+                  </small>
+                </div>
+                <a-select
+                  :value="timeValueForRow(record)"
+                  option-label-prop="label"
+                  popup-class-name="schedule-conflict__time-dropdown"
+                  class="schedule-conflict__control"
+                  @change="value => changeRowTime(record.key, String(value))"
+                >
+                  <a-select-option
+                    v-for="item in timeOptionViewsForRow(record)"
+                    :key="item.value"
+                    :value="item.value"
+                    :label="item.label"
+                  >
+                    <div class="schedule-conflict__time-option">
+                      <span class="schedule-conflict__time-option-label">{{ item.baseLabel }}</span>
+                      <span
+                        class="schedule-conflict__time-option-status"
+                        :class="{
+                          'schedule-conflict__time-option-status--free': item.status === 'free',
+                          'schedule-conflict__time-option-status--busy': item.status === 'busy',
+                          'schedule-conflict__time-option-status--unknown': item.status === 'unknown',
+                        }"
+                      >
+                        {{ item.statusText }}
+                      </span>
+                    </div>
+                  </a-select-option>
+                </a-select>
               </div>
 
               <div class="schedule-conflict__action-group">
@@ -1064,8 +1252,116 @@ const columns = [
   font-weight: 600;
 }
 
+.schedule-conflict__action-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.schedule-conflict__action-label-hint {
+  color: #98a2b3;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .schedule-conflict__control {
   width: 100%;
+}
+
+.schedule-conflict__action-group :deep(.ant-select-selector) {
+  min-height: 42px !important;
+  padding: 4px 12px !important;
+  border: 1px solid #dfe7f1 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.schedule-conflict__action-group :deep(.ant-select-selection-item),
+.schedule-conflict__action-group :deep(.ant-select-selection-placeholder) {
+  line-height: 32px !important;
+}
+
+.schedule-conflict__action-group :deep(.ant-select-arrow) {
+  color: #b3b8c2;
+}
+
+.schedule-conflict__time-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.schedule-conflict__time-option-label {
+  min-width: 0;
+  color: #1f2329;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.schedule-conflict__time-option-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.schedule-conflict__time-option-status::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  content: '';
+}
+
+.schedule-conflict__time-option-status--free {
+  color: #52c41a;
+}
+
+.schedule-conflict__time-option-status--busy {
+  color: #ff7a45;
+}
+
+.schedule-conflict__time-option-status--unknown {
+  color: #98a2b3;
+}
+
+:deep(.schedule-conflict__time-dropdown) {
+  .ant-select-item {
+    padding: 0;
+  }
+
+  .ant-select-item-option {
+    padding: 0 !important;
+  }
+
+  .ant-select-item-option-content {
+    padding: 12px 16px;
+  }
+
+  .ant-select-item-option-active:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
+    background: #f8fbff;
+  }
+
+  .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
+    background: #edf5ff;
+  }
+
+  .ant-select-item-option-selected .schedule-conflict__time-option-label {
+    color: #1677ff;
+  }
+
+  .ant-select-item-option + .ant-select-item-option {
+    border-top: 1px solid #f2f4f7;
+  }
 }
 
 .schedule-conflict__action-option {

@@ -1971,7 +1971,7 @@ function invertWeekdays() {
                       v-else
                       class="planner-tag planner-tag--table"
                     >
-                      待校验
+                      正常
                     </span>
                   </td>
                 </tr>
