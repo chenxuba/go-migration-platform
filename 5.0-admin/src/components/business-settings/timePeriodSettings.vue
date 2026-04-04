@@ -373,7 +373,17 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
               {{ groupTimeSpan(record) }}
             </template>
             <template v-else-if="column.key === 'teachers'">
-              <span :title="formatBoundTeachersSummary(record)">{{ formatBoundTeachersSummary(record) }}</span>
+              <span v-if="!(record.boundTeachers || []).length" class="period-teachers-cell period-teachers-cell--empty">
+                —
+              </span>
+              <a-tooltip
+                v-else
+                placement="topLeft"
+                :overlay-inner-style="{ maxWidth: 'min(420px, 90vw)' }"
+                :title="formatBoundTeachersSummary(record)"
+              >
+                <span class="period-teachers-cell">{{ formatBoundTeachersSummary(record) }}</span>
+              </a-tooltip>
             </template>
             <template v-else-if="column.key === 'status'">
               <span
@@ -581,6 +591,20 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
 
 .period-action + .period-action {
   margin-left: 4px;
+}
+
+.period-teachers-cell {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.period-teachers-cell--empty {
+  cursor: default;
 }
 
 .bind-teachers-toolbar {

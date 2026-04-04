@@ -17,10 +17,13 @@ const props = withDefaults(
     group: UnifiedPeriodGroup
     iconVariant?: 'a' | 'b'
     allowDeleteGroup?: boolean
+    /** 为 false 时不展示「关联老师」（如单组「编辑时段组」弹窗） */
+    showBoundTeachers?: boolean
   }>(),
   {
     iconVariant: 'a',
     allowDeleteGroup: false,
+    showBoundTeachers: true,
   },
 )
 
@@ -319,7 +322,7 @@ function filterTeacherOption(input: string, option: { label?: string }) {
       <a-input v-model:value="group.name" allow-clear placeholder="如 A时段" />
     </div>
 
-    <div class="up-group-form__field">
+    <div v-if="showBoundTeachers" class="up-group-form__field">
       <span class="up-group-form__label">关联老师</span>
       <p class="up-group-form__field-hint">
         可选多名；<strong>同一老师可绑定多个时段组</strong>。

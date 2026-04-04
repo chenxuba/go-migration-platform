@@ -183,6 +183,7 @@ async function handleSave() {
         ref="formRef"
         :group="localGroup"
         icon-variant="a"
+        :show-bound-teachers="mode === 'create'"
       />
     </div>
     <div class="upgm-footer">

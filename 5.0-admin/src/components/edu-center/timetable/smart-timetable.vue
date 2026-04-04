@@ -124,6 +124,8 @@ function formatWeek(date) {
 const userStore = useUserStore()
 const matrixDays = ref([])
 const timetableLoading = ref(false)
+/** 防止快速切换周次/组别时旧请求晚到覆盖新矩阵，并与 sync watch 配合避免「新列头 + 旧数据」闪屏 */
+let matrixLoadSeq = 0
 
 const displayDates = computed(() => {
   if (currentTime.value === 'day')
@@ -351,9 +353,13 @@ watch(
 )
 
 async function loadTimetableMatrix() {
+  const seq = ++matrixLoadSeq
+  matrixDays.value = []
   timetableLoading.value = true
   try {
     await userStore.getInstConfig()
+    if (seq !== matrixLoadSeq)
+      return
     const { startDate, endDate } = queryDateRange.value
     const classType = currentModel.value === '1' ? 2 : 1
     const res = await listTeachingSchedulesByTeacherMatrixApi({
@@ -362,6 +368,8 @@ async function loadTimetableMatrix() {
       classType,
       ...teacherMatrixGroupParams(),
     })
+    if (seq !== matrixLoadSeq)
+      return
     if (res.code === 200 && Array.isArray(res.result))
       matrixDays.value = res.result
     else
@@ -369,10 +377,12 @@ async function loadTimetableMatrix() {
   }
   catch (e) {
     console.error('loadTimetableMatrix failed', e)
-    matrixDays.value = []
+    if (seq === matrixLoadSeq)
+      matrixDays.value = []
   }
   finally {
-    timetableLoading.value = false
+    if (seq === matrixLoadSeq)
+      timetableLoading.value = false
   }
 }
 
@@ -381,6 +391,7 @@ watch(
   () => {
     void loadTimetableMatrix()
   },
+  { flush: 'sync' },
 )
 
 onMounted(() => {
