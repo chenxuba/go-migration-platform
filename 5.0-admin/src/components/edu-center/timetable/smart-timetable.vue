@@ -2,8 +2,10 @@
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
 import { useUserStore } from '@/stores/user'
+import messageService from '@/utils/messageService'
 import {
   buildQuickHourlySlots,
   configGroupsSorted,
@@ -340,6 +342,33 @@ const dataSource = computed(() => {
   })
 })
 
+/** 当前展示范围内每位老师已占用的节次数（与格子里蓝色已排课一致：有 studentId 即计入） */
+const scheduledLessonCountByTeacher = computed(() => {
+  const map = new Map()
+  for (const row of dataSource.value) {
+    const tid = String(row.teacherId)
+    let n = 0
+    for (const lesson of row.lessons || []) {
+      if (lesson.studentId)
+        n++
+    }
+    map.set(tid, (map.get(tid) || 0) + n)
+  }
+  return map
+})
+
+function teacherScheduledLessonCount(teacherId) {
+  if (teacherId == null)
+    return 0
+  return scheduledLessonCountByTeacher.value.get(String(teacherId)) ?? 0
+}
+
+function teacherLessonCountLabel(teacherId) {
+  const n = teacherScheduledLessonCount(teacherId)
+  const scope = currentTime.value === 'day' ? '当日' : '本周'
+  return `${scope}共${n}节课`
+}
+
 const activeGroupLabel = computed(() => {
   return groupOptions.value.find(o => o.key === displayedGroupKey.value)?.label || ''
 })
@@ -393,13 +422,19 @@ watch(
   },
 )
 
+function refreshTimetableRelatedData() {
+  void loadTimetableMatrix()
+  void fetchOneToOneOptionsForTimetable()
+}
+
 onMounted(() => {
   void loadTimetableMatrix()
-  emitter.on(EVENTS.REFRESH_DATA, loadTimetableMatrix)
+  void fetchOneToOneOptionsForTimetable()
+  emitter.on(EVENTS.REFRESH_DATA, refreshTimetableRelatedData)
 })
 
 onUnmounted(() => {
-  emitter.off(EVENTS.REFRESH_DATA, loadTimetableMatrix)
+  emitter.off(EVENTS.REFRESH_DATA, refreshTimetableRelatedData)
 })
 const columns = computed(() => {
   const slots = activePeriodSlots.value
@@ -483,56 +518,75 @@ const courseList = ref([
     courseType: 2,
   },
 ])
-// 一对一课程数据
-const oneToOneData = ref([
-  {
-    id: '589251755896808448',
-    courseId: '589251114063479808',
-    courseName: '初级认知课',
-    studentId: '10001',
-    studentName: '张三',
-    name: '张三-初级认知课',
-    remainQuantity: 9,
-  },
-  {
-    id: '5892517551234546775',
-    courseId: '58925112157479108',
-    courseName: '初级感统课',
-    studentId: '10002',
-    studentName: '李四',
-    name: '李四-初级感统课',
-    remainQuantity: 6,
-  },
-  {
-    id: '5892517551234546776',
-    courseId: '589251121574791081',
-    courseName: 'PT治疗课',
-    studentId: '10003',
-    studentName: '王五',
-    name: '王五-PT治疗课',
-    remainQuantity: 10,
-  },
-  {
-    id: '5892517551234546777',
-    courseId: '589251121574791082',
-    courseName: 'OT精细课',
-    studentId: '20014',
-    studentName: '林十四',
-    name: '林十四-OT精细课',
-    remainQuantity: 10,
-  },
-  {
-  // 孙八
-    id: '5892517551234546778',
-    courseId: '589251121574791083',
-    courseName: '口肌训练课',
-    studentId: '10009',
-    studentName: '孙八',
-    name: '孙八-口肌训练课',
-    remainQuantity: 10,
-  },
-])
-const studentId = ref(null)
+/** 开班中的 1 对 1 列表（来自 getOneToOneListApi，下拉 value 为 record.id） */
+const oneToOneData = ref([])
+const oneToOneListLoading = ref(false)
+
+function mapRowToOneToOneOption(row) {
+  const id = String(row.id || '').trim()
+  const studentId = String(row.studentId || '').trim()
+  const studentName = String(row.studentName || '').trim()
+  const lessonName = String(row.lessonName || '').trim()
+  const name = String(row.name || '').trim()
+    || (studentName && lessonName ? `${studentName}-${lessonName}` : studentName || lessonName || id)
+  return {
+    id,
+    studentId,
+    studentName,
+    courseId: row.lessonId != null ? String(row.lessonId) : '',
+    courseName: lessonName,
+    name,
+  }
+}
+
+async function fetchOneToOneOptionsForTimetable() {
+  oneToOneListLoading.value = true
+  try {
+    const res = await getOneToOneListApi({
+      pageRequestModel: {
+        needTotal: false,
+        pageSize: 500,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+      queryModel: {
+        /** 与一对一列表页默认一致：仅开班中 */
+        status: [1],
+      },
+    })
+    if (res.code === 200 && res.result) {
+      const list = Array.isArray(res.result.list) ? res.result.list : []
+      oneToOneData.value = list.map(mapRowToOneToOneOption).filter(item => item.id)
+    }
+    else {
+      oneToOneData.value = []
+      messageService.error(res.message || '获取1对1列表失败')
+    }
+  }
+  catch (e) {
+    console.error('fetchOneToOneOptionsForTimetable', e)
+    oneToOneData.value = []
+    messageService.error('获取1对1列表失败')
+  }
+  finally {
+    oneToOneListLoading.value = false
+  }
+}
+
+function filterOneToOneOption(input, option) {
+  const q = (input || '').trim().toLowerCase()
+  if (!q)
+    return true
+  const id = option?.value != null ? String(option.value) : ''
+  const item = oneToOneData.value.find(r => r.id === id)
+  if (!item)
+    return true
+  const blob = `${item.name} ${item.studentName} ${item.courseName} ${item.studentId}`.toLowerCase()
+  return blob.includes(q)
+}
+
+/** 当前选中的 1 对 1 记录 id（非学员 id，避免同一学员多门课冲突） */
+const oneToOneRecordId = ref(undefined)
 const studentIds = ref([])
 const courseId = ref(null)
 const courseName = ref(null)
@@ -558,8 +612,7 @@ function handle1v1(value) {
     return
   }
 
-  // 获取学生信息
-  const studentInfo = oneToOneData.value.find(item => item.studentId === value)
+  const studentInfo = oneToOneData.value.find(item => item.id === String(value))
   if (!studentInfo)
     return
 
@@ -707,10 +760,8 @@ function handleClass(value) {
 }
 // 监听组别变化
 watch(currentGroup, () => {
-  // 如果当前有选中的学生，重新进行冲突检测
-  if (studentId.value) {
-    handle1v1(studentId.value)
-  }
+  if (oneToOneRecordId.value)
+    handle1v1(oneToOneRecordId.value)
   // 如果当前有选中的班级，重新进行冲突检测
   if (classId.value) {
     handleClass(classId.value)
@@ -971,23 +1022,22 @@ function handleConflictClick(timeSlot, column) {
 function handleScheduleClick(timeSlot, column, record) {
   if (currentModel.value === '1') {
     // 1v1排课逻辑
-    if (!studentId.value) {
+    if (!oneToOneRecordId.value) {
       Modal.warning({
-        title: '请先选择学生',
-        content: '请先在上方选择要排课的学生',
+        title: '请先选择一对一',
+        content: '请先在上方选择要排课的 1 对 1 记录',
       })
       return
     }
 
-    // 获取学生信息
     const studentInfo = oneToOneData.value.find(
-      item => item.studentId === studentId.value,
+      item => item.id === String(oneToOneRecordId.value),
     )
 
     if (!studentInfo) {
       Modal.warning({
-        title: '学生信息不存在',
-        content: '请选择有效的学生',
+        title: '记录不存在',
+        content: '所选 1 对 1 已不在列表中，请重新选择或刷新页面',
       })
       return
     }
@@ -1036,7 +1086,7 @@ function handleScheduleClick(timeSlot, column, record) {
         })
 
         // 重新检查冲突
-        handle1v1(studentId.value)
+        handle1v1(oneToOneRecordId.value)
       },
     })
   }
@@ -1155,8 +1205,7 @@ watch(currentModel, (newValue) => {
     className.value = null
   }
   else {
-    // 切换到班课模式，清空学生选择
-    studentId.value = null
+    oneToOneRecordId.value = undefined
     courseId.value = null
     courseName.value = null
   }
@@ -1181,16 +1230,23 @@ watch(currentModel, (newValue) => {
           </a-radio-group>
         </div>
         <div>
-          <div v-if="currentModel == 1" class="flex items-center">
-            <!-- 写一个 select下拉选择框，使用 一对一课程数据  -->
-            <span>选择一对一：</span>
+          <div v-if="currentModel == 1" class="flex items-center shrink-0 gap-1 mr-2">
+            <span class="whitespace-nowrap">选择一对一：</span>
             <a-select
-              v-model:value="studentId" allow-clear placeholder="请搜索/选择一对一" style="width: 160px"
-              option-label-prop="label" @change="handle1v1"
+              v-model:value="oneToOneRecordId"
+              allow-clear
+              show-search
+              :loading="oneToOneListLoading"
+              :filter-option="filterOneToOneOption"
+              placeholder="搜索/选择"
+              class="st-top-1v1-select"
+              option-label-prop="label"
+              @change="handle1v1"
             >
-              <!-- 原有选项内容保持不变 -->
               <a-select-option
-                v-for="item in oneToOneData" :key="item.id" :value="item.studentId" :data="item"
+                v-for="item in oneToOneData"
+                :key="item.id"
+                :value="item.id"
                 :label="item.name"
               >
                 <div>{{ item.name }}</div>
@@ -1217,7 +1273,7 @@ watch(currentModel, (newValue) => {
             </a-select>
           </div>
         </div>
-        <div class="time-selector flex-center flex-1">
+        <div class="time-selector flex-center flex-1 min-w-0">
           <a-radio-group v-model:value="currentTime" button-style="solid">
             <a-radio-button v-for="opt in timeOptions" :key="opt.key" :value="opt.key">
               {{ opt.label }}
@@ -1235,8 +1291,9 @@ watch(currentModel, (newValue) => {
                 <LeftOutlined />
               </span>
             </a-popover>
-            <span class="mx-2">
-              <div class="relative cursor-pointer">{{ formatDateRange(currentWeek) }}
+            <span class="mx-2 min-w-0">
+              <div class="relative cursor-pointer whitespace-nowrap text-center">
+                {{ formatDateRange(currentWeek) }}
                 <a-date-picker
                   v-if="currentTime === 'day'"
                   v-model:value="currentWeek" class="absolute top-0 left-0 right-0 bottom-0 z-10 opacity-0"
@@ -1345,8 +1402,8 @@ watch(currentModel, (newValue) => {
         </template>
         <template v-if="column.key == 'name'">
           <div>{{ text }}</div>
-          <div class="text-3 cursor-pointer text-#06f">
-            查看空闲时间
+          <div class="text-3 text-#666 leading-snug">
+            {{ teacherLessonCountLabel(record.teacherId) }}
           </div>
         </template>
       </template>
@@ -1356,6 +1413,12 @@ watch(currentModel, (newValue) => {
 </template>
 
 <style lang="less" scoped>
+/* 与班课下拉同量级宽度，避免顶栏把日期区挤换行 */
+.st-top-1v1-select {
+  width: 168px;
+  max-width: 168px;
+}
+
 .time-selector {
   font-family: DINAlternate-Bold, DINAlternate;
 
