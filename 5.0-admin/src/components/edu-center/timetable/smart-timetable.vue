@@ -28,10 +28,10 @@ const displayArray = ref([
 const currentTime = ref('week')
 // 当前的日期区间 - 默认设置为本周
 const currentWeek = ref(dayjs())
-// 时间维度选项
-const timeOptions = [
-  { key: 'day', label: '日' },
-  { key: 'week', label: '周' },
+/** 课表时间视图：下拉与日期导航联动 */
+const timeViewOptions = [
+  { value: 'day', label: '日视图' },
+  { value: 'week', label: '周视图' },
 ]
 /** 1=1v1，2=班课 */
 const currentModel = ref('1')
@@ -107,6 +107,11 @@ function handleNext() {
       break
   }
 }
+
+function handleThisWeek() {
+  currentWeek.value = dayjs()
+}
+
 // 创建一个方法 用于格式化时间xx月-xx日
 function formatDate(date) {
   return dayjs(date).format('MM-DD')
@@ -1218,8 +1223,8 @@ watch(currentModel, (newValue) => {
       <all-filter :display-array="displayArray" :is-show-search-stu-phonefilter="true" />
     </div>
     <div class="time-template mt2 bg-white py3 px5 rounded-4 rounded-lb-0 rounded-rb-0">
-      <div class="top-filter flex justify-between flex-items-center">
-        <div class="mr2">
+      <div class="top-filter st-top-filter-bar flex flex-nowrap items-center gap-1 overflow-x-auto">
+        <div class="shrink-0">
           <a-radio-group v-model:value="currentModel" button-style="solid">
             <a-radio-button value="1">
               1v1
@@ -1229,9 +1234,9 @@ watch(currentModel, (newValue) => {
             </a-radio-button>
           </a-radio-group>
         </div>
-        <div>
-          <div v-if="currentModel == 1" class="flex items-center shrink-0 gap-1 mr-2">
-            <span class="whitespace-nowrap">选择一对一：</span>
+        <div class="shrink-0">
+          <div v-if="currentModel == 1" class="flex items-center shrink-0 gap-1">
+            <span class="whitespace-nowrap w-71px text-right">选择1v1：</span>
             <a-select
               v-model:value="oneToOneRecordId"
               allow-clear
@@ -1255,10 +1260,14 @@ watch(currentModel, (newValue) => {
           </div>
           <div v-if="currentModel == 2" class="flex items-center">
             <!-- 写一个 select下拉选择框，使用 班级数据  -->
-            <span>选择班级：</span>
+            <span class="w-75px">选择班级：</span>
             <a-select
-              v-model:value="classId" allow-clear placeholder="请搜索/选择班级" style="width: 160px"
-              option-label-prop="label" @change="handleClass"
+              v-model:value="classId"
+              allow-clear
+              placeholder="请搜索/选择班级"
+              class="st-top-class-select"
+              option-label-prop="label"
+              @change="handleClass"
             >
               <!-- 原有选项内容保持不变 -->
               <a-select-option
@@ -1273,26 +1282,35 @@ watch(currentModel, (newValue) => {
             </a-select>
           </div>
         </div>
-        <div class="time-selector flex-center flex-1 min-w-0">
-          <a-radio-group v-model:value="currentTime" button-style="solid">
-            <a-radio-button v-for="opt in timeOptions" :key="opt.key" :value="opt.key">
-              {{ opt.label }}
-            </a-radio-button>
-          </a-radio-group>
-          <div class="ml3 text-#0061ff font-800 text-5 flex-center">
+        <div class="time-selector flex items-center shrink-0">
+          <a-select
+            v-model:value="currentTime"
+            :options="timeViewOptions"
+            class="st-time-view-select"
+          />
+          <div
+            class="text-#0061ff font-800 text-5 flex items-center shrink-0 st-date-nav"
+            :class="
+              currentTime === 'day'
+                ? 'st-date-nav--day'
+                : currentTime === 'week'
+                  ? 'st-date-nav--week'
+                  : 'st-date-nav--month'
+            "
+          >
             <a-popover trigger="hover">
               <template #content>
                 {{ currentTime === 'day' ? '前一天' : currentTime === 'week' ? '上一周' : '上个月' }}
               </template>
               <span
-                class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
+                class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 shrink-0 hover-text-#06f hover-bg-#e6f0ff"
                 @click="handlePrev"
               >
                 <LeftOutlined />
               </span>
             </a-popover>
-            <span class="mx-2 min-w-0">
-              <div class="relative cursor-pointer whitespace-nowrap text-center">
+            <span class="mx-1 min-w-0 flex-1 st-date-nav__mid">
+              <div class="relative cursor-pointer whitespace-nowrap text-center st-date-nav__text">
                 {{ formatDateRange(currentWeek) }}
                 <a-date-picker
                   v-if="currentTime === 'day'"
@@ -1317,26 +1335,29 @@ watch(currentModel, (newValue) => {
                 {{ currentTime === 'day' ? '后一天' : currentTime === 'week' ? '下一周' : '下个月' }}
               </template>
               <span
-                class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
+                class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 shrink-0 hover-text-#06f hover-bg-#e6f0ff"
                 @click="handleNext"
               >
                 <RightOutlined />
               </span>
             </a-popover>
           </div>
+          <a-button size="small" class="shrink-0 st-this-week-btn" @click="handleThisWeek">
+            本周
+          </a-button>
         </div>
-        <div>
+        <div class="ml-auto flex shrink-0 items-center gap-2">
           <!-- 添加组别选择 -->
-          <a-radio-group v-model:value="currentGroup" button-style="solid" class="mr-4">
+          <a-radio-group v-model:value="currentGroup" button-style="solid">
             <a-radio-button v-for="opt in groupOptions" :key="opt.key" :value="opt.key">
               {{ opt.label }}
             </a-radio-button>
           </a-radio-group>
+          <a-space>
+            <create-schedule-popover />
+            <a-button>导出课表</a-button>
+          </a-space>
         </div>
-        <a-space>
-          <create-schedule-popover />
-          <a-button>导出课表</a-button>
-        </a-space>
       </div>
     </div>
     <a-spin :spinning="timetableLoading">
@@ -1415,16 +1436,69 @@ watch(currentModel, (newValue) => {
 <style lang="less" scoped>
 /* 与班课下拉同量级宽度，避免顶栏把日期区挤换行 */
 .st-top-1v1-select {
-  width: 168px;
-  max-width: 168px;
+  width: 180px;
+  max-width: 180px;
+}
+
+.st-top-class-select {
+  width: 180px;
+  max-width: 180px;
+}
+
+.st-time-view-select {
+  width: 112px;
+  min-width: 112px;
+  flex-shrink: 0;
+}
+
+/* 左箭头 + 日期 + 右箭头 整体固定宽度，避免仅中间字数变化时整块左右滑 */
+.st-date-nav {
+  box-sizing: border-box;
+}
+.st-date-nav--day {
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+}
+.st-date-nav--week {
+  width: 300px;
+  min-width: 300px;
+  max-width: 300px;
+}
+.st-date-nav--month {
+  width: 180px;
+  min-width: 180px;
+  max-width: 180px;
+}
+.st-date-nav__mid {
+  overflow: hidden;
+}
+.st-date-nav__text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 单行不换行；极窄时出现横向滚动条，避免「创建日程」掉到第二行 */
+.st-top-filter-bar {
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .time-selector {
   font-family: DINAlternate-Bold, DINAlternate;
+  gap: 6px;
 
   .ant-radio-button-wrapper {
     padding: 0 16px;
   }
+}
+
+.st-this-week-btn {
+  padding: 0 10px;
+  height: 28px;
+  line-height: 26px;
+  border-radius: 8px;
 }
 
 :deep(td.ant-table-cell.ant-table-cell-row-hover) {
