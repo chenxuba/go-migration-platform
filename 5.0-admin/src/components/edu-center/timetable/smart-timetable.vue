@@ -34,6 +34,8 @@ const timeOptions = [
 /** 1=1v1，2=班课 */
 const currentModel = ref('1')
 const currentGroup = ref('A')
+/** 与 matrixDays、表头节次列对齐；切换 A/B 时在新数据返回前不改，避免清空矩阵导致整页高度塌缩抖动 */
+const displayedGroupKey = ref('A')
 
 function getWeekStart(value = dayjs()) {
   const d = dayjs(value)
@@ -124,7 +126,7 @@ function formatWeek(date) {
 const userStore = useUserStore()
 const matrixDays = ref([])
 const timetableLoading = ref(false)
-/** 防止快速切换周次/组别时旧请求晚到覆盖新矩阵，并与 sync watch 配合避免「新列头 + 旧数据」闪屏 */
+/** 防止快速切换周次/组别时旧请求晚到覆盖新矩阵 */
 let matrixLoadSeq = 0
 
 const displayDates = computed(() => {
@@ -175,20 +177,19 @@ function slotsForGroupKey(key) {
   return [...g.slots].filter(s => s.enabled !== false).sort((a, b) => a.index - b.index)
 }
 
-const activePeriodSlots = computed(() => slotsForGroupKey(currentGroup.value))
+const activePeriodSlots = computed(() => slotsForGroupKey(displayedGroupKey.value))
 
-/** 当前 A/B 对应的时段组配置（含 boundTeachers） */
-const activePeriodGroup = computed(() => {
+function periodGroupForKey(key) {
   const groups = sortedPeriodGroups.value
   if (!groups.length)
     return null
-  const idx = currentGroup.value === 'B' ? 1 : 0
+  const idx = key === 'B' ? 1 : 0
   return groups[idx] || groups[0] || null
-})
+}
 
-/** 矩阵接口：时段组 UUID + 回退 teacherIds（切换分组会随请求重拉） */
-function teacherMatrixGroupParams() {
-  const g = activePeriodGroup.value
+/** 矩阵接口：时段组 UUID + 回退 teacherIds（按请求时的组别快照，避免加载途中切换导致参数错位） */
+function teacherMatrixGroupParamsForKey(key) {
+  const g = periodGroupForKey(key)
   if (!g)
     return {}
   const periodGroupUuid = String(g.id || '').trim()
@@ -340,7 +341,7 @@ const dataSource = computed(() => {
 })
 
 const activeGroupLabel = computed(() => {
-  return groupOptions.value.find(o => o.key === currentGroup.value)?.label || ''
+  return groupOptions.value.find(o => o.key === displayedGroupKey.value)?.label || ''
 })
 
 watch(
@@ -354,7 +355,7 @@ watch(
 
 async function loadTimetableMatrix() {
   const seq = ++matrixLoadSeq
-  matrixDays.value = []
+  const requestedGroup = currentGroup.value
   timetableLoading.value = true
   try {
     await userStore.getInstConfig()
@@ -366,7 +367,7 @@ async function loadTimetableMatrix() {
       startDate,
       endDate,
       classType,
-      ...teacherMatrixGroupParams(),
+      ...teacherMatrixGroupParamsForKey(requestedGroup),
     })
     if (seq !== matrixLoadSeq)
       return
@@ -374,11 +375,10 @@ async function loadTimetableMatrix() {
       matrixDays.value = res.result
     else
       matrixDays.value = []
+    displayedGroupKey.value = requestedGroup
   }
   catch (e) {
     console.error('loadTimetableMatrix failed', e)
-    if (seq === matrixLoadSeq)
-      matrixDays.value = []
   }
   finally {
     if (seq === matrixLoadSeq)
@@ -391,7 +391,6 @@ watch(
   () => {
     void loadTimetableMatrix()
   },
-  { flush: 'sync' },
 )
 
 onMounted(() => {

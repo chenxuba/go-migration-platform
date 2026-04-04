@@ -152,19 +152,19 @@ const timelineTopPadding = 18
 const timelineBottomPadding = 28
 
 const TM_DISPLAY_STORAGE_KEY = 'teacher-matrix-display-v1'
-type MatrixSlotPreset = 30 | 40 | 50
 
 interface MatrixDisplayPreferences {
   weekdays: number[]
   teacherFilter: MatrixTeacherFilterParam
-  slotHeight: MatrixSlotPreset
 }
+
+/** 每小时行高（px），固定为原「宽松 50」档，不再提供配置项 */
+const HOUR_ROW_HEIGHT_PX = 120
 
 function defaultMatrixDisplay(): MatrixDisplayPreferences {
   return {
     weekdays: [1, 2, 3, 4, 5, 6, 7],
     teacherFilter: 'all',
-    slotHeight: 40,
   }
 }
 
@@ -180,8 +180,7 @@ function loadMatrixDisplayFromStorage(): MatrixDisplayPreferences {
     const tf = o.teacherFilter === 'has_class' || o.teacherFilter === 'no_class'
       ? o.teacherFilter
       : 'all'
-    const sh = o.slotHeight === 30 || o.slotHeight === 50 ? o.slotHeight : 40
-    return { weekdays: wd, teacherFilter: tf, slotHeight: sh }
+    return { weekdays: wd, teacherFilter: tf }
   }
   catch {
     return defaultMatrixDisplay()
@@ -207,16 +206,10 @@ const weekdayOptions = [
   { value: 7, label: '周日' },
 ]
 
-const hourRowHeightPx = computed(() => {
-  const m: Record<MatrixSlotPreset, number> = { 30: 72, 40: 96, 50: 120 }
-  return m[matrixDisplay.value.slotHeight]
-})
-
 function openMatrixDisplayConfig() {
   tempMatrixDisplay.value = {
     weekdays: [...matrixDisplay.value.weekdays],
     teacherFilter: matrixDisplay.value.teacherFilter,
-    slotHeight: matrixDisplay.value.slotHeight,
   }
   displayConfigOpen.value = true
 }
@@ -229,7 +222,6 @@ function applyMatrixDisplayConfig() {
   matrixDisplay.value = {
     weekdays: wd,
     teacherFilter: tempMatrixDisplay.value.teacherFilter,
-    slotHeight: tempMatrixDisplay.value.slotHeight,
   }
   try {
     localStorage.setItem(TM_DISPLAY_STORAGE_KEY, JSON.stringify(matrixDisplay.value))
@@ -632,12 +624,12 @@ const hourMarks = computed(() =>
 const timelineHeight = computed(
   () =>
     timelineTopPadding
-    + (hourMarks.value.length - 1) * hourRowHeightPx.value
+    + (hourMarks.value.length - 1) * HOUR_ROW_HEIGHT_PX
     + timelineBottomPadding,
 )
 
 function minuteOffset(minutes: number) {
-  return timelineTopPadding + ((minutes - timelineStart) / 60) * hourRowHeightPx.value
+  return timelineTopPadding + ((minutes - timelineStart) / 60) * HOUR_ROW_HEIGHT_PX
 }
 
 function computeOverlapPeak(items: { startMinutes: number, endMinutes: number }[]) {
@@ -779,7 +771,7 @@ function eventStyle(event: CellSchedule, col: { dateKey: string, teacherKey: str
     top: `${minuteOffset(event.startMinutes)}px`,
     height: `${Math.max(
       82,
-      ((event.endMinutes - event.startMinutes) / 60) * hourRowHeightPx.value,
+      ((event.endMinutes - event.startMinutes) / 60) * HOUR_ROW_HEIGHT_PX,
     )}px`,
     left: `${leftOffset}px`,
     width: `${Math.min(scheduleCardMinWidth, colWidth - scheduleColumnHorizontalInset * 2)}px`,
@@ -932,12 +924,9 @@ const totalLessons = computed(() => internalSchedules.value.length)
         <div class="tm-dc-row">
           <div class="tm-dc-head">
             <span class="tm-dc-title">筛选老师</span>
-            <span class="tm-dc-hint">按日当天日程筛列，接口与旧版总课表逻辑一致</span>
+            <span class="tm-dc-hint">按日当天日程筛列</span>
           </div>
-          <a-radio-group
-            v-model:value="tempMatrixDisplay.teacherFilter"
-            class="tm-dc-teacher-filter"
-          >
+          <a-radio-group v-model:value="tempMatrixDisplay.teacherFilter" class="custom-radio">
             <a-radio value="all">
               全部老师
             </a-radio>
@@ -947,23 +936,6 @@ const totalLessons = computed(() => internalSchedules.value.length)
             <a-radio value="no_class">
               仅无课老师
             </a-radio>
-          </a-radio-group>
-        </div>
-        <div class="tm-dc-row">
-          <div class="tm-dc-head">
-            <span class="tm-dc-title">时间格高度</span>
-            <span class="tm-dc-hint">对应旧版 15 分钟一格的像素高度，仅影响本页纵向密度</span>
-          </div>
-          <a-radio-group v-model:value="tempMatrixDisplay.slotHeight">
-            <a-radio-button :value="30">
-              紧凑 30
-            </a-radio-button>
-            <a-radio-button :value="40">
-              标准 40
-            </a-radio-button>
-            <a-radio-button :value="50">
-              宽松 50
-            </a-radio-button>
           </a-radio-group>
         </div>
       </div>
@@ -1375,34 +1347,6 @@ const totalLessons = computed(() => internalSchedules.value.length)
   color: #94a3b8;
   font-size: 12px;
   font-weight: 500;
-}
-
-/* 筛选老师：选中态为空心圆环（白底 + 蓝色描边），与实心圆点区分 */
-.tm-dc-teacher-filter {
-  :deep(.ant-radio-checked .ant-radio-inner) {
-    background-color: #fff;
-    border-color: #1677ff;
-  }
-
-  :deep(.ant-radio-checked .ant-radio-inner::after) {
-    box-sizing: border-box;
-    background-color: transparent;
-    border: 2px solid #1677ff;
-    width: 10px;
-    height: 10px;
-    margin-block-start: -5px;
-    margin-inline-start: -5px;
-    transform: scale(1);
-    opacity: 1;
-  }
-
-  :deep(.ant-radio-disabled.ant-radio-checked .ant-radio-inner) {
-    border-color: rgb(0 0 0 / 25%);
-  }
-
-  :deep(.ant-radio-disabled.ant-radio-checked .ant-radio-inner::after) {
-    border-color: rgb(0 0 0 / 25%);
-  }
 }
 
 .tm-api-card {
