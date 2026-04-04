@@ -339,7 +339,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
-	if err := repo.validateTeachingScheduleConflictsTx(ctx, tx, instID, teacherID, classroomID, normalized, "", nil); err != nil {
+	if err := repo.validateTeachingScheduleConflictsTx(ctx, tx, instID, teacherID, classroomID, normalized, "", nil, dto.AllowClassroomConflict); err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
 	studentConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", base.StudentID, normalized, "", nil)
@@ -706,7 +706,7 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 		excludeIDs = append(excludeIDs, item.ID)
 	}
 
-	if err := repo.validateTeachingScheduleConflictsTx(ctx, tx, instID, teacherID, classroomID, updatedSlots, strings.TrimSpace(dto.BatchNo), excludeIDs); err != nil {
+	if err := repo.validateTeachingScheduleConflictsTx(ctx, tx, instID, teacherID, classroomID, updatedSlots, strings.TrimSpace(dto.BatchNo), excludeIDs, false); err != nil {
 		return err
 	}
 
@@ -901,7 +901,7 @@ func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *s
 	return list, rows.Err()
 }
 
-func (repo *Repository) validateTeachingScheduleConflictsTx(ctx context.Context, tx *sql.Tx, instID, teacherID, classroomID int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64) error {
+func (repo *Repository) validateTeachingScheduleConflictsTx(ctx context.Context, tx *sql.Tx, instID, teacherID, classroomID int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64, allowClassroomConflict bool) error {
 	if len(slots) == 0 {
 		return nil
 	}
@@ -924,7 +924,7 @@ func (repo *Repository) validateTeachingScheduleConflictsTx(ctx context.Context,
 				return fmt.Errorf("老师在 %s %s-%s 已有日程冲突", slot.LessonDate.Format("2006-01-02"), slot.StartAt.Format("15:04"), slot.EndAt.Format("15:04"))
 			}
 		}
-		if classroomID > 0 {
+		if classroomID > 0 && !allowClassroomConflict {
 			if conflict, err := repo.countScheduleOverlapTx(ctx, tx, instID, "classroom_id", classroomID, slot, excludeBatchNo, excludeIDs); err != nil {
 				return err
 			} else if conflict > 0 {

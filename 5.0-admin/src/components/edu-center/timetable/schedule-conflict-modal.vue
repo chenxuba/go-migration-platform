@@ -9,10 +9,18 @@ const props = defineProps<{
   currentTitle?: string
   existingTitle?: string
   fallbackMessage?: string
+  showFooter?: boolean
+  closeText?: string
+  continueText?: string
+  continueLoading?: boolean
+  continueDisabled?: boolean
+  continueHint?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
+  (e: 'continue'): void
+  (e: 'close'): void
 }>()
 
 const modalOpen = computed({
@@ -22,9 +30,84 @@ const modalOpen = computed({
 
 const currentSchedules = computed(() => props.validation?.currentSchedules || [])
 const existingSchedules = computed(() => props.validation?.existingSchedules || [])
+const activeConflictFilter = ref<'all' | '老师' | '学员' | '教室'>('all')
 
 function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
   return (item.conflictTypes || []).includes(type)
+}
+
+function parseTimeText(text?: string) {
+  const m = String(text || '').match(/(\d{1,2}:\d{2})[~～](\d{1,2}:\d{2})/)
+  if (!m)
+    return null
+  const toMinutes = (value: string) => {
+    const [hour, minute] = value.split(':').map(Number)
+    return hour * 60 + minute
+  }
+  return {
+    start: toMinutes(m[1]),
+    end: toMinutes(m[2]),
+  }
+}
+
+function schedulesOverlap(
+  current: { date?: string, timeText?: string },
+  existing: { date?: string, timeText?: string },
+) {
+  if (current.date !== existing.date)
+    return false
+  const currentRange = parseTimeText(current.timeText)
+  const existingRange = parseTimeText(existing.timeText)
+  if (!currentRange || !existingRange)
+    return false
+  return currentRange.start < existingRange.end && currentRange.end > existingRange.start
+}
+
+const conflictTypeStats = computed(() => {
+  const list = currentSchedules.value
+  return {
+    total: list.length,
+    teacher: list.filter(item => hasConflictType(item, '老师')).length,
+    student: list.filter(item => hasConflictType(item, '学员')).length,
+    classroom: list.filter(item => hasConflictType(item, '教室')).length,
+  }
+})
+
+const conflictFilters = computed(() => {
+  const stats = conflictTypeStats.value
+  return [
+    { key: 'all', label: `全部 ${stats.total}` },
+    { key: '老师', label: `老师 ${stats.teacher}` },
+    { key: '学员', label: `学员 ${stats.student}` },
+    { key: '教室', label: `教室 ${stats.classroom}` },
+  ]
+})
+
+const conflictGroups = computed(() =>
+  currentSchedules.value.map((current, index) => {
+    const matches = existingSchedules.value.filter(existing => schedulesOverlap(current, existing))
+    return {
+      key: `${current.date || 'date'}-${current.timeText || 'time'}-${index}`,
+      index: index + 1,
+      current,
+      matches,
+    }
+  }),
+)
+
+const visibleConflictGroups = computed(() => {
+  if (activeConflictFilter.value === 'all')
+    return conflictGroups.value
+  return conflictGroups.value.filter(group => hasConflictType(group.current, activeConflictFilter.value))
+})
+
+function handleClose() {
+  emit('close')
+  modalOpen.value = false
+}
+
+function handleContinue() {
+  emit('continue')
 }
 </script>
 
@@ -43,7 +126,7 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
     <template #title>
       <div class="schedule-conflict__titlebar">
         <span>{{ props.title || '冲突提示' }}</span>
-        <a-button type="text" @click="modalOpen = false">
+        <a-button type="text" @click="handleClose">
           <template #icon>
             <CloseOutlined />
           </template>
@@ -141,6 +224,26 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
           </div>
         </div>
       </section>
+
+      <div v-if="props.showFooter" class="schedule-conflict__footer">
+        <div v-if="props.continueHint" class="schedule-conflict__footer-hint">
+          {{ props.continueHint }}
+        </div>
+        <div class="schedule-conflict__footer-actions">
+          <a-button @click="handleClose">
+            {{ props.closeText || '返回修改' }}
+          </a-button>
+          <a-button
+            v-if="props.continueText"
+            type="primary"
+            :loading="props.continueLoading"
+            :disabled="props.continueDisabled"
+            @click="handleContinue"
+          >
+            {{ props.continueText }}
+          </a-button>
+        </div>
+      </div>
     </div>
   </a-modal>
 </template>
@@ -238,7 +341,38 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
   gap: 8px;
 }
 
+.schedule-conflict__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.schedule-conflict__footer-hint {
+  color: #8c8c8c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.schedule-conflict__footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
 @media (max-width: 1200px) {
+  .schedule-conflict__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .schedule-conflict__footer-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .schedule-conflict__table {
     overflow-x: auto;
   }

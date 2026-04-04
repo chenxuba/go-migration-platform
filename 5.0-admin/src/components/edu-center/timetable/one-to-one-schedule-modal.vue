@@ -246,6 +246,7 @@ const previewValidationMessage = ref('')
 const previewHasConflict = ref(false)
 const conflictModalOpen = ref(false)
 const previewValidationResult = ref<TeachingScheduleValidationResult | null>(null)
+const creatingWithSoftConflict = ref(false)
 const plannerShellRef = ref<HTMLElement | null>(null)
 
 function scrollPlannerShellToTop() {
@@ -879,6 +880,30 @@ const previewPlans = computed<PreviewItem[]>(() => {
 })
 
 const estimatedCount = computed(() => previewPlans.value.length)
+const SOFT_CONFLICT_TYPES = ['学员', '教室']
+
+const previewConflictTypes = computed(() => previewValidationResult.value?.conflictTypes || [])
+const previewSoftConflictTypes = computed(() =>
+  previewConflictTypes.value.filter(type => SOFT_CONFLICT_TYPES.includes(type)),
+)
+const previewHardConflictTypes = computed(() =>
+  previewConflictTypes.value.filter(type => !SOFT_CONFLICT_TYPES.includes(type)),
+)
+const canContinueWithSoftConflict = computed(() =>
+  previewHasConflict.value
+  && previewSoftConflictTypes.value.length > 0
+  && previewHardConflictTypes.value.length === 0,
+)
+const continueConflictHintText = computed(() => {
+  if (canContinueWithSoftConflict.value) {
+    const labels = previewSoftConflictTypes.value.map(type => `${type}冲突`).join('、')
+    return `当前仅存在${labels}，可继续创建；创建后这些日程会在课表中标记为冲突。`
+  }
+  if (previewHardConflictTypes.value.length > 0) {
+    return `存在${previewHardConflictTypes.value.map(type => `${type}冲突`).join('、')}，需要先调整后再创建。`
+  }
+  return ''
+})
 
 type ScheduleConflictRow = NonNullable<
   TeachingScheduleValidationResult['currentSchedules']
@@ -1049,12 +1074,17 @@ function closeModal() {
   modalOpen.value = false
 }
 
-function buildScheduleCreatePayload() {
+function buildScheduleCreatePayload(options: {
+  allowStudentConflict?: boolean
+  allowClassroomConflict?: boolean
+} = {}) {
   return {
     oneToOneId: String(selectedOneToOne.value?.id || ''),
     teacherId: String(selectedTeacher.value || ''),
     assistantIds: selectedAssistant.value.map(id => String(id)),
     classroomId: normalizedSelectedClassroomId.value || '',
+    allowStudentConflict: options.allowStudentConflict === true,
+    allowClassroomConflict: options.allowClassroomConflict === true,
     schedules: previewPlans.value.map(item => ({
       lessonDate: item.date,
       startTime: item.startTime,
@@ -1104,16 +1134,30 @@ function closePreviewModal() {
   previewModalOpen.value = false
 }
 
-async function confirmBatchCreate() {
+async function confirmBatchCreate(options: {
+  allowStudentConflict?: boolean
+  allowClassroomConflict?: boolean
+} = {}) {
   if (!selectedOneToOne.value?.id)
     return
-  creatingSchedules.value = true
+  const isSoftConflictCreate = options.allowStudentConflict === true || options.allowClassroomConflict === true
+  if (isSoftConflictCreate)
+    creatingWithSoftConflict.value = true
+  else
+    creatingSchedules.value = true
   try {
-    const res = await createOneToOneSchedulesApi(buildScheduleCreatePayload())
+    const res = await createOneToOneSchedulesApi(buildScheduleCreatePayload(options))
     if (res.code !== 200)
       throw new Error(res.message || '创建1对1日程失败')
-    messageService.success(`已创建 ${res.result?.count || previewPlans.value.length} 节1对1日程`)
+    const count = res.result?.count || previewPlans.value.length
+    if (isSoftConflictCreate) {
+      messageService.success(`已创建 ${count} 节1对1日程，并标记冲突`)
+    }
+    else {
+      messageService.success(`已创建 ${count} 节1对1日程`)
+    }
     emitter.emit(EVENTS.REFRESH_DATA)
+    conflictModalOpen.value = false
     previewModalOpen.value = false
     modalOpen.value = false
   }
@@ -1127,6 +1171,7 @@ async function confirmBatchCreate() {
   }
   finally {
     creatingSchedules.value = false
+    creatingWithSoftConflict.value = false
   }
 }
 
@@ -1797,7 +1842,9 @@ function invertWeekdays() {
                 <th>时间</th>
                 <th>老师</th>
                 <th>教室</th>
-                <th>状态</th>
+                <th class="planner-table__status-cell">
+                  状态
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1830,7 +1877,7 @@ function invertWeekdays() {
                   >
                     {{ item.classroom }}
                   </td>
-                  <td>
+                  <td class="planner-table__status-cell">
                     <template v-if="item.tone === 'blocked'">
                       <span class="planner-tag planner-tag--table planner-tag--warning">
                         不可创建
@@ -1881,6 +1928,15 @@ function invertWeekdays() {
   <ScheduleConflictModal
     v-model:open="conflictModalOpen"
     :validation="previewValidationResult"
+    :show-footer="previewHasConflict"
+    :close-text="previewHardConflictTypes.length ? '返回调整' : '暂不创建'"
+    :continue-text="canContinueWithSoftConflict ? '仍要创建并标记冲突' : undefined"
+    :continue-loading="creatingWithSoftConflict"
+    :continue-hint="continueConflictHintText"
+    @continue="confirmBatchCreate({
+      allowStudentConflict: previewSoftConflictTypes.includes('学员'),
+      allowClassroomConflict: previewSoftConflictTypes.includes('教室'),
+    })"
   />
 </template>
 
@@ -2864,11 +2920,13 @@ button.planner-chip.planner-chip--active {
 
 .planner-table-wrap--modal {
   max-height: min(56vh, 540px);
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 .planner-table {
-  width: 100%;
-  min-width: 860px;
+  width: max-content;
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -2894,6 +2952,7 @@ button.planner-chip.planner-chip--active {
   font-size: 13px;
   line-height: 1.6;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .planner-table tbody tr:last-child td {
@@ -2908,6 +2967,54 @@ button.planner-chip.planner-chip--active {
   padding: 36px 14px !important;
   color: #86909c !important;
   text-align: center;
+}
+
+.planner-table th:nth-child(1),
+.planner-table td:nth-child(1) {
+  min-width: 120px;
+}
+
+.planner-table th:nth-child(2),
+.planner-table td:nth-child(2) {
+  min-width: 92px;
+}
+
+.planner-table th:nth-child(3),
+.planner-table td:nth-child(3) {
+  min-width: 420px;
+}
+
+.planner-table th:nth-child(4),
+.planner-table td:nth-child(4) {
+  min-width: 220px;
+}
+
+.planner-table th:nth-child(5),
+.planner-table td:nth-child(5) {
+  min-width: 110px;
+}
+
+.planner-table th:nth-child(6),
+.planner-table td:nth-child(6) {
+  min-width: 110px;
+}
+
+.planner-table__status-cell {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  min-width: 160px;
+  background: #fff;
+  box-shadow: -8px 0 12px -10px rgb(15 23 42 / 18%);
+}
+
+.planner-table thead .planner-table__status-cell {
+  z-index: 4;
+  background: #fafafa;
+}
+
+.planner-table__row--blocked .planner-table__status-cell {
+  background: #fffaf0;
 }
 
 :deep(.one-to-one-schedule-modal .ant-modal-content),

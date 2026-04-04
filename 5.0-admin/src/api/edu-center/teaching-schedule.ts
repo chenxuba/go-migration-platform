@@ -97,6 +97,7 @@ export function createOneToOneSchedulesApi(data: {
   assistantIds?: string[]
   classroomId?: string
   allowStudentConflict?: boolean
+  allowClassroomConflict?: boolean
   schedules: Array<{
     lessonDate: string
     startTime: string

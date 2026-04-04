@@ -14,12 +14,13 @@ type TeachingScheduleCreateSlotDTO struct {
 }
 
 type CreateOneToOneSchedulesDTO struct {
-	OneToOneID           string                          `json:"oneToOneId"`
-	TeacherID            string                          `json:"teacherId"`
-	AssistantIDs         []string                        `json:"assistantIds"`
-	ClassroomID          string                          `json:"classroomId"`
-	AllowStudentConflict bool                            `json:"allowStudentConflict,omitempty"`
-	Schedules            []TeachingScheduleCreateSlotDTO `json:"schedules"`
+	OneToOneID             string                          `json:"oneToOneId"`
+	TeacherID              string                          `json:"teacherId"`
+	AssistantIDs           []string                        `json:"assistantIds"`
+	ClassroomID            string                          `json:"classroomId"`
+	AllowStudentConflict   bool                            `json:"allowStudentConflict,omitempty"`
+	AllowClassroomConflict bool                            `json:"allowClassroomConflict,omitempty"`
+	Schedules              []TeachingScheduleCreateSlotDTO `json:"schedules"`
 }
 
 type OneToOneScheduleAvailabilitySlotDTO struct {
