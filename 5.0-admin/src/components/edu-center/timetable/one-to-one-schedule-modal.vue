@@ -1928,6 +1928,9 @@ function invertWeekdays() {
   <ScheduleConflictModal
     v-model:open="conflictModalOpen"
     :validation="previewValidationResult"
+    compare-title="按当前创建日程逐项查看"
+    current-column-title="待创建日程"
+    existing-column-title="与其冲突的日程"
     :show-footer="previewHasConflict"
     :close-text="previewHardConflictTypes.length ? '返回调整' : '暂不创建'"
     :continue-text="canContinueWithSoftConflict ? '仍要创建并标记冲突' : undefined"

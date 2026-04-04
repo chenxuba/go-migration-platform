@@ -161,7 +161,7 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 
 	return model.TeachingScheduleValidationResult{
 		Valid:             false,
-		Message:           buildConflictSummaryMessage(conflictTypes),
+		Message:           buildExistingConflictSummaryMessage(conflictTypes),
 		CurrentSchedules:  currentItems,
 		ExistingSchedules: existingItems,
 		ConflictTypes:     conflictTypes,
@@ -1474,6 +1474,16 @@ func buildConflictSummaryMessage(conflictTypes []string) string {
 		return "当前创建日程存在" + conflictTypes[0] + "冲突"
 	}
 	return "当前创建日程存在" + strings.Join(conflictTypes, "、") + "冲突"
+}
+
+func buildExistingConflictSummaryMessage(conflictTypes []string) string {
+	if len(conflictTypes) == 0 {
+		return "当前日程存在冲突"
+	}
+	if len(conflictTypes) == 1 {
+		return "当前日程存在" + conflictTypes[0] + "冲突"
+	}
+	return "当前日程存在" + strings.Join(conflictTypes, "、") + "冲突"
 }
 
 func buildAvailabilityConflictSummaryMessage(conflictTypes []string) string {

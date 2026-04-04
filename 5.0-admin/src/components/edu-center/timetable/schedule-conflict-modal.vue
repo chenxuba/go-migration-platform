@@ -6,8 +6,11 @@ const props = defineProps<{
   open: boolean
   validation?: TeachingScheduleValidationResult | null
   title?: string
+  compareTitle?: string
   currentTitle?: string
   existingTitle?: string
+  currentColumnTitle?: string
+  existingColumnTitle?: string
   fallbackMessage?: string
   showFooter?: boolean
   closeText?: string
@@ -31,6 +34,10 @@ const modalOpen = computed({
 const currentSchedules = computed(() => props.validation?.currentSchedules || [])
 const existingSchedules = computed(() => props.validation?.existingSchedules || [])
 const activeConflictFilter = ref<'all' | '老师' | '学员' | '教室'>('all')
+const isExistingConflictMode = computed(() =>
+  String(props.currentTitle || '').includes('冲突')
+  || String(props.currentColumnTitle || '').includes('冲突'),
+)
 
 function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
   return (item.conflictTypes || []).includes(type)
@@ -73,6 +80,10 @@ const conflictTypeStats = computed(() => {
   }
 })
 
+const summaryNounText = computed(() =>
+  isExistingConflictMode.value ? '冲突日程' : '待处理日程',
+)
+
 const conflictFilters = computed(() => {
   const stats = conflictTypeStats.value
   return [
@@ -100,6 +111,29 @@ const visibleConflictGroups = computed(() => {
     return conflictGroups.value
   return conflictGroups.value.filter(group => hasConflictType(group.current, activeConflictFilter.value))
 })
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open)
+      activeConflictFilter.value = 'all'
+  },
+)
+
+const conflictTableColumns = computed(() => [
+  {
+    title: props.currentColumnTitle || '待创建日程',
+    key: 'current',
+    dataIndex: 'current',
+    width: '50%',
+  },
+  {
+    title: props.existingColumnTitle || '与其冲突的日程',
+    key: 'existing',
+    dataIndex: 'matches',
+    width: '50%',
+  },
+])
 
 function handleClose() {
   emit('close')
@@ -140,89 +174,135 @@ function handleContinue() {
         <span>{{ validation?.message || props.fallbackMessage || '当前创建日程与已有日程冲突' }}</span>
       </div>
 
-      <section class="schedule-conflict__section">
-        <div class="schedule-conflict__section-title">
-          {{ props.currentTitle || '当前创建日程' }}
+      <div class="schedule-conflict__toolbar">
+        <div class="schedule-conflict__toolbar-summary">
+          共 {{ conflictTypeStats.total }} 节{{ summaryNounText }}，
+          其中老师冲突 {{ conflictTypeStats.teacher }} 节，
+          学员冲突 {{ conflictTypeStats.student }} 节，
+          教室冲突 {{ conflictTypeStats.classroom }} 节。
         </div>
-        <div class="schedule-conflict__table">
-          <div class="schedule-conflict__head">
-            <span>日程名称</span>
-            <span>日程类型</span>
-            <span>上课时间</span>
-            <span>上课教师</span>
-            <span>上课教室</span>
-            <span>冲突类型</span>
-          </div>
-          <div
-            v-for="(item, index) in currentSchedules"
-            :key="`${item.date}-${item.timeText}-${index}`"
-            class="schedule-conflict__row"
+        <div class="schedule-conflict__filters">
+          <button
+            v-for="item in conflictFilters"
+            :key="item.key"
+            type="button"
+            class="schedule-conflict__filter"
+            :class="{ 'schedule-conflict__filter--active': activeConflictFilter === item.key }"
+            @click="activeConflictFilter = item.key"
           >
-            <span>{{ item.name }}</span>
-            <span>{{ item.classTypeText }}</span>
-            <span>{{ item.date }} {{ item.timeText }}</span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
-              }"
-            >{{ item.teacherName || '-' }}</span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '教室'),
-              }"
-            >{{ item.classroomName || '-' }}</span>
-            <span class="schedule-conflict__tags">
-              <a-tag
-                v-for="tag in item.conflictTypes || []"
-                :key="tag"
-                color="error"
-                :bordered="false"
-              >
-                {{ tag }}冲突
-              </a-tag>
-            </span>
-          </div>
+            {{ item.label }}
+          </button>
         </div>
-      </section>
+      </div>
 
       <section class="schedule-conflict__section">
         <div class="schedule-conflict__section-title">
-          {{ props.existingTitle || '校内已有日程' }}
+          {{ props.compareTitle || '按当前创建日程逐项查看' }}
         </div>
-        <div class="schedule-conflict__table">
-          <div class="schedule-conflict__head">
-            <span>日程名称</span>
-            <span>日程类型</span>
-            <span>上课时间</span>
-            <span>上课教师</span>
-            <span>上课教室</span>
-            <span>冲突学员</span>
-          </div>
-          <div
-            v-for="(item, index) in existingSchedules"
-            :key="`${item.date}-${item.timeText}-${index}`"
-            class="schedule-conflict__row"
-          >
-            <span>{{ item.name }}</span>
-            <span>{{ item.classTypeText }}</span>
-            <span>{{ item.date }} {{ item.timeText }}</span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
-              }"
-            >{{ item.teacherName || '-' }}</span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '教室'),
-              }"
-            >{{ item.classroomName || '-' }}</span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '学员'),
-              }"
-            >{{ (item.studentNames || []).join('、') || '-' }}</span>
-          </div>
+        <div v-if="!visibleConflictGroups.length" class="schedule-conflict__empty">
+          当前筛选条件下暂无冲突日程。
         </div>
+        <a-table
+          v-else
+          class="schedule-conflict__matrix"
+          :columns="conflictTableColumns"
+          :data-source="visibleConflictGroups"
+          :pagination="false"
+          row-key="key"
+          :scroll="{ x: 980 }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'current'">
+              <div class="schedule-conflict__cell-card schedule-conflict__cell-card--current">
+                <div class="schedule-conflict__cell-top">
+                  <span v-if="!isExistingConflictMode" class="schedule-conflict__group-index">
+                    {{ `第 ${record.index} 节待创建` }}
+                  </span>
+                  <span v-else class="schedule-conflict__cell-caption">
+                    {{ props.currentColumnTitle || '当前冲突日程' }}
+                  </span>
+                  <span class="schedule-conflict__group-time">{{ record.current.date }} {{ record.current.timeText }}</span>
+                </div>
+                <div class="schedule-conflict__cell-main">
+                  <strong>{{ record.current.name }}</strong>
+                  <span>{{ record.current.classTypeText }}</span>
+                </div>
+                <div class="schedule-conflict__cell-meta">
+                  <span>
+                    老师：
+                    <strong :class="{ 'schedule-conflict__cell--danger': hasConflictType(record.current, '老师') }">{{ record.current.teacherName || '-' }}</strong>
+                  </span>
+                  <span>
+                    教室：
+                    <strong :class="{ 'schedule-conflict__cell--danger': hasConflictType(record.current, '教室') }">{{ record.current.classroomName || '-' }}</strong>
+                  </span>
+                  <span v-if="(record.current.studentNames || []).length">
+                    学员：
+                    <strong :class="{ 'schedule-conflict__cell--danger': hasConflictType(record.current, '学员') }">{{ (record.current.studentNames || []).join('、') }}</strong>
+                  </span>
+                </div>
+                <div class="schedule-conflict__tags">
+                  <a-tag
+                    v-for="tag in record.current.conflictTypes || []"
+                    :key="`${record.key}-${tag}`"
+                    color="error"
+                    :bordered="false"
+                  >
+                    {{ tag }}冲突
+                  </a-tag>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="column.key === 'existing'">
+              <div class="schedule-conflict__cell-stack">
+                <div v-if="!record.matches.length" class="schedule-conflict__empty-inline">
+                  暂无可直接匹配的冲突明细
+                </div>
+                <div
+                  v-for="(item, index) in record.matches"
+                  :key="`${item.date}-${item.timeText}-${index}`"
+                  class="schedule-conflict__cell-card schedule-conflict__cell-card--existing"
+                >
+                  <div class="schedule-conflict__cell-top">
+                    <span class="schedule-conflict__cell-caption">
+                      {{ props.existingColumnTitle || '与其冲突的日程' }}
+                    </span>
+                    <span class="schedule-conflict__group-time">{{ item.date }} {{ item.timeText }}</span>
+                  </div>
+                  <div class="schedule-conflict__cell-main">
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ item.classTypeText }}</span>
+                  </div>
+                  <div class="schedule-conflict__cell-meta">
+                    <span>
+                      老师：
+                      <strong :class="{ 'schedule-conflict__cell--danger': hasConflictType(item, '老师') }">{{ item.teacherName || '-' }}</strong>
+                    </span>
+                    <span>
+                      教室：
+                      <strong :class="{ 'schedule-conflict__cell--danger': hasConflictType(item, '教室') }">{{ item.classroomName || '-' }}</strong>
+                    </span>
+                    <span>
+                      冲突学员：
+                      <strong :class="{ 'schedule-conflict__cell--danger': hasConflictType(item, '学员') }">{{ (item.studentNames || []).join('、') || '-' }}</strong>
+                    </span>
+                  </div>
+                  <div class="schedule-conflict__tags">
+                    <a-tag
+                      v-for="tag in item.conflictTypes || []"
+                      :key="`${record.key}-existing-${index}-${tag}`"
+                      color="error"
+                      :bordered="false"
+                    >
+                      {{ tag }}冲突
+                    </a-tag>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </template>
+        </a-table>
       </section>
 
       <div v-if="props.showFooter" class="schedule-conflict__footer">
@@ -275,6 +355,51 @@ function handleContinue() {
   border: 1px solid #ffe1e0;
 }
 
+.schedule-conflict__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.schedule-conflict__toolbar-summary {
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.schedule-conflict__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.schedule-conflict__filter {
+  padding: 6px 12px;
+  border: 1px solid #d9e1ea;
+  border-radius: 999px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.schedule-conflict__filter:hover {
+  border-color: #91caff;
+  color: #1677ff;
+}
+
+.schedule-conflict__filter--active {
+  border-color: #1677ff;
+  background: #e6f4ff;
+  color: #1677ff;
+  font-weight: 600;
+}
+
 .schedule-conflict__section {
   display: flex;
   flex-direction: column;
@@ -298,6 +423,149 @@ function handleContinue() {
   border-radius: 999px;
   background: #1677ff;
   content: '';
+}
+
+.schedule-conflict__empty {
+  padding: 28px 18px;
+  border-radius: 16px;
+  border: 1px dashed #d9e1ea;
+  background: #fafcff;
+  color: #8c8c8c;
+  font-size: 14px;
+  text-align: center;
+}
+
+.schedule-conflict__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.schedule-conflict__matrix {
+  :deep(.ant-table) {
+    background: transparent;
+  }
+
+  :deep(.ant-table-thead > tr > th:nth-child(1)),
+  :deep(.ant-table-thead > tr > th:nth-child(2)) {
+    width: 50%;
+  }
+
+  :deep(.ant-table-thead > tr > th) {
+    padding: 12px 14px;
+    color: #4b5563;
+    font-size: 13px;
+    font-weight: 700;
+    background: #f8fafc;
+  }
+
+  :deep(.ant-table-thead > tr > th::before) {
+    display: none;
+  }
+
+  :deep(.ant-table-tbody > tr > td) {
+    padding: 12px 14px;
+    vertical-align: top;
+    background: #fff;
+  }
+
+  :deep(.ant-table-tbody > tr > td:nth-child(1)),
+  :deep(.ant-table-tbody > tr > td:nth-child(2)) {
+    width: 50%;
+  }
+}
+
+.schedule-conflict__cell-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-height: 148px;
+  padding: 10px 12px;
+  border: 1px solid #edf2f7;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.schedule-conflict__cell-card--existing + .schedule-conflict__cell-card--existing {
+  margin-top: 8px;
+}
+
+.schedule-conflict__cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.schedule-conflict__cell-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.schedule-conflict__group-index {
+  color: #1f2329;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.schedule-conflict__group-type {
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
+.schedule-conflict__cell-caption {
+  color: #8c8c8c;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.schedule-conflict__group-time {
+  color: #1677ff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.schedule-conflict__cell-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #8c8c8c;
+  font-size: 12px;
+  min-height: 24px;
+}
+
+.schedule-conflict__cell-main strong {
+  color: #1f2329;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.schedule-conflict__cell-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: #4b5563;
+  font-size: 13px;
+  line-height: 1.7;
+  min-height: 28px;
+}
+
+.schedule-conflict__empty-inline {
+  padding: 12px;
+  color: #8c8c8c;
+  font-size: 13px;
+  text-align: center;
+}
+
+.schedule-conflict__meta-sep {
+  margin: 0 6px;
+  color: #d0d7e2;
 }
 
 .schedule-conflict__table {
@@ -363,6 +631,13 @@ function handleContinue() {
 }
 
 @media (max-width: 1200px) {
+  .schedule-conflict__cell-top,
+  .schedule-conflict__cell-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
   .schedule-conflict__footer {
     align-items: stretch;
     flex-direction: column;
