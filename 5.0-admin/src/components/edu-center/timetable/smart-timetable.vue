@@ -2,6 +2,7 @@
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import { h } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
@@ -1244,6 +1245,219 @@ function handleConflictClick(timeSlot, column, record) {
   })
 }
 
+function buildConfirmField(label, value, valueColor = '#1f2329') {
+  return h('div', {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '76px 1fr',
+      gap: '10px',
+      alignItems: 'start',
+      fontSize: '14px',
+      lineHeight: '22px',
+    },
+  }, [
+    h('div', {
+      style: {
+        color: '#8c8c8c',
+      },
+    }, label),
+    h('div', {
+      style: {
+        color: valueColor,
+        fontWeight: 600,
+        wordBreak: 'break-word',
+      },
+    }, value || '-'),
+  ])
+}
+
+const SMART_TIMETABLE_SKIP_CONFIRM_KEY = 'smart-timetable-skip-confirm-date'
+
+function todayScheduleConfirmKey() {
+  return dayjs().format('YYYY-MM-DD')
+}
+
+function shouldSkipScheduleConfirmToday() {
+  if (typeof window === 'undefined')
+    return false
+  try {
+    return window.localStorage.getItem(SMART_TIMETABLE_SKIP_CONFIRM_KEY) === todayScheduleConfirmKey()
+  }
+  catch {
+    return false
+  }
+}
+
+function setSkipScheduleConfirmToday(enabled) {
+  if (typeof window === 'undefined')
+    return
+  try {
+    if (enabled)
+      window.localStorage.setItem(SMART_TIMETABLE_SKIP_CONFIRM_KEY, todayScheduleConfirmKey())
+    else
+      window.localStorage.removeItem(SMART_TIMETABLE_SKIP_CONFIRM_KEY)
+  }
+  catch {
+  }
+}
+
+function buildScheduleConfirmContent({
+  modeLabel,
+  modeColor,
+  targetLabel,
+  targetValue,
+  courseName,
+  dateLabel,
+  timeLabel,
+  teacherName,
+  groupLabel,
+  onSkipTodayChange,
+}) {
+  return h('div', {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '14px',
+      marginTop: '4px',
+    },
+  }, [
+    h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        flexWrap: 'wrap',
+      },
+    }, [
+      h('span', {
+        style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: '52px',
+          height: '28px',
+          padding: '0 10px',
+          borderRadius: '999px',
+          background: modeColor,
+          color: '#fff',
+          fontSize: '13px',
+          fontWeight: 700,
+        },
+      }, modeLabel),
+      h('span', {
+        style: {
+          color: '#262626',
+          fontSize: '16px',
+          fontWeight: 700,
+        },
+      }, `${targetValue}${courseName ? ` · ${courseName}` : ''}`),
+    ]),
+    h('div', {
+      style: {
+        padding: '14px 16px',
+        borderRadius: '14px',
+        background: '#f8fafc',
+        border: '1px solid #edf2f7',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+      },
+    }, [
+      buildConfirmField(targetLabel, targetValue),
+      buildConfirmField('上课时间', `${dateLabel} · ${timeLabel}`, '#1677ff'),
+      buildConfirmField('上课老师', teacherName),
+      buildConfirmField('所在组别', groupLabel || '当前组'),
+    ]),
+    h('div', {
+      style: {
+        padding: '12px 14px',
+        borderRadius: '12px',
+        background: '#fff7e6',
+        color: '#ad6800',
+        fontSize: '13px',
+        lineHeight: '22px',
+      },
+    }, '确认后将立即创建日程并占用该时段；如果此时课表已被别人占用，系统会再次拦截。'),
+    h('label', {
+      style: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '8px',
+        cursor: 'pointer',
+        color: '#595959',
+        fontSize: '13px',
+        userSelect: 'none',
+      },
+    }, [
+      h('input', {
+        type: 'checkbox',
+        onChange: event => onSkipTodayChange?.(Boolean(event?.target?.checked)),
+        style: {
+          width: '14px',
+          height: '14px',
+          cursor: 'pointer',
+        },
+      }),
+      h('span', null, '今日不再提示'),
+    ]),
+  ])
+}
+
+function confirmScheduleWithOptionalSkip({
+  modeLabel,
+  modeColor,
+  targetLabel,
+  targetValue,
+  courseName,
+  dateLabel,
+  timeLabel,
+  teacherName,
+  groupLabel,
+  onConfirm,
+}) {
+  if (shouldSkipScheduleConfirmToday()) {
+    return Promise.resolve(onConfirm())
+  }
+
+  let skipToday = false
+  return new Promise((resolve, reject) => {
+    Modal.confirm({
+      title: '确认排课',
+      width: 620,
+      okText: '确认排课',
+      cancelText: '再想想',
+      content: buildScheduleConfirmContent({
+        modeLabel,
+        modeColor,
+        targetLabel,
+        targetValue,
+        courseName,
+        dateLabel,
+        timeLabel,
+        teacherName,
+        groupLabel,
+        onSkipTodayChange: checked => { skipToday = checked },
+      }),
+      async onOk() {
+        if (skipToday)
+          setSkipScheduleConfirmToday(true)
+        try {
+          const result = await onConfirm()
+          resolve(result)
+          return result
+        }
+        catch (error) {
+          reject(error)
+          throw error
+        }
+      },
+      onCancel() {
+        resolve(false)
+      },
+    })
+  })
+}
+
 // 排课
 function handleScheduleClick(timeSlot, column, record) {
   if (currentModel.value === '1') {
@@ -1273,10 +1487,17 @@ function handleScheduleClick(timeSlot, column, record) {
     const day = dateObj.format('D')
     const lessonIndex = getLessonIndex(column.startTime)
 
-    Modal.confirm({
-      title: '确认排课',
-      content: `确定要为 ${studentInfo.studentName} 安排 ${month}月${day}日 ${record.name} 第${lessonIndex}节课 ${column.startTime}-${column.endTime} 的课程吗？`,
-      async onOk() {
+    void confirmScheduleWithOptionalSkip({
+        modeLabel: '1v1',
+        modeColor: '#1677ff',
+        targetLabel: '排课对象',
+        targetValue: studentInfo.studentName,
+        courseName: studentInfo.courseName,
+        dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
+        timeLabel: `${column.startTime}-${column.endTime}`,
+        teacherName: record.name,
+        groupLabel: activeGroupLabel.value || '当前组',
+      async onConfirm() {
         creatingOneToOneSchedule.value = true
         try {
           const res = await createOneToOneSchedulesApi({
@@ -1342,10 +1563,17 @@ function handleScheduleClick(timeSlot, column, record) {
     const day = dateObj.format('D')
     const lessonIndex = getLessonIndex(column.startTime)
 
-    Modal.confirm({
-      title: '确认排课',
-      content: `确定要为 ${classInfo.name} 安排 ${month}月${day}日 ${record.name} 第${lessonIndex}节课 ${column.startTime}-${column.endTime} 的课程吗？`,
-      onOk() {
+    void confirmScheduleWithOptionalSkip({
+        modeLabel: '班课',
+        modeColor: '#13c2c2',
+        targetLabel: '排课班级',
+        targetValue: classInfo.name,
+        courseName: classInfo.courseName,
+        dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
+        timeLabel: `${column.startTime}-${column.endTime}`,
+        teacherName: record.name,
+        groupLabel: activeGroupLabel.value || '当前组',
+      onConfirm() {
         console.log('确认排课', classInfo.name, column.startTime, column.endTime)
 
         // 更新数据源
