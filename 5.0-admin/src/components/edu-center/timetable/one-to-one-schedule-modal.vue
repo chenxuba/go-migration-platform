@@ -313,6 +313,12 @@ function isValidStaffId(value: unknown) {
   return text !== '' && text !== '0' && text !== 'undefined' && text !== 'null'
 }
 
+/** 与列表页一致：接口常用 0 / "0" 表示未设置教室，不应作为可选值展示 */
+function isValidClassroomId(value: unknown) {
+  const text = String(value ?? '').trim()
+  return text !== '' && text !== '0' && text !== 'undefined' && text !== 'null'
+}
+
 function sameStaffId(a: unknown, b: unknown) {
   return isValidStaffId(a) && isValidStaffId(b) && String(a) === String(b)
 }
@@ -370,9 +376,11 @@ const scheduleStaffSelectKey = computed(() => selectedOneToOne.value?.id || 'emp
 const classroomOptions = computed(() => {
   const classroomSet = new Map<string, { value: string, label: string }>()
   const append = (id?: string | number, name?: string) => {
-    const key = String(id || '').trim()
+    if (!isValidClassroomId(id))
+      return
+    const key = String(id).trim()
     const label = String(name || '').trim()
-    if (!key || !label || classroomSet.has(key))
+    if (!label || classroomSet.has(key))
       return
     classroomSet.set(key, { value: key, label })
   }
@@ -428,8 +436,8 @@ watch(
       : teacherPresetStaff.value[0]?.id
     selectedTeacher.value = defaultTeacherId
     selectedTeacherDisplay.value = teacherPresetStaff.value.find(item => sameStaffId(item.id, defaultTeacherId)) || null
-    selectedClassroom.value = value
-      ? (value.classRoomId || undefined)
+    selectedClassroom.value = value && isValidClassroomId(value.classRoomId)
+      ? String(value.classRoomId).trim()
       : undefined
     selectedAssistant.value = []
     selectedAssistantDisplays.value = []
