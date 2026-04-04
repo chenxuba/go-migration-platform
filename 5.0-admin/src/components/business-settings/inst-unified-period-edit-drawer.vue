@@ -34,6 +34,7 @@ function cloneConfig(c: UnifiedTimePeriodConfig): UnifiedTimePeriodConfig {
     groups: c.groups.map(g => ({
       ...g,
       slots: g.slots.map(s => ({ ...s })),
+      boundTeachers: (g.boundTeachers || []).map(t => ({ ...t })),
     })),
   }
 }
@@ -78,6 +79,7 @@ function addGroupTab() {
       { index: 1, start: '08:00', end: '09:00', enabled: true },
       { index: 2, start: '09:00', end: '10:00', enabled: true },
     ],
+    boundTeachers: [],
   })
   activeTabKey.value = id
 }

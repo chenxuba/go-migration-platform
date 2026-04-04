@@ -143,6 +143,10 @@ export function listTeachingSchedulesByTeacherMatrixApi(params: {
   weekdays?: string
   /** 教师列：仅有课 / 仅无课，与旧版课表展示配置一致 */
   teacherFilter?: Exclude<MatrixTeacherFilterParam, 'all'>
+  /** 时段组 UUID（unified 配置 groups[].id），服务端按关联老师筛列 */
+  periodGroupUuid?: string
+  /** 逗号分隔教师用户 ID；库中该组无关联时用作回退筛选 */
+  matrixTeacherIds?: string
 }) {
   return useGet<TeachingScheduleMatrixDay[]>(
     '/api/v1/teaching-schedules/by-teacher-matrix',
@@ -157,6 +161,8 @@ export async function downloadTeachingSchedulesTeacherMatrixExcelApi(params: {
   classType?: number
   weekdays?: string
   teacherFilter?: Exclude<MatrixTeacherFilterParam, 'all'>
+  periodGroupUuid?: string
+  matrixTeacherIds?: string
 }) {
   const token = useAuthorization()
   return axios.get('/api/v1/teaching-schedules/by-teacher-matrix/export', {

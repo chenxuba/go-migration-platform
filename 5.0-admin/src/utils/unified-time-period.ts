@@ -1,4 +1,4 @@
-/** 机构统一上课时间段 JSON，存 inst_config.unified_time_period_json */
+/** 机构统一上课时间段（与 inst-config 中 unifiedTimePeriodJson 字段结构一致） */
 
 export interface UnifiedPeriodSlot {
   index: number
@@ -7,11 +7,18 @@ export interface UnifiedPeriodSlot {
   enabled?: boolean
 }
 
+/** 时段组关联的老师（仅存机构用户 id + 展示名）；不同时段组可重复绑定同一老师 */
+export interface UnifiedPeriodBoundTeacher {
+  id: string
+  name: string
+}
+
 export interface UnifiedPeriodGroup {
   id: string
   name: string
   sort: number
   slots: UnifiedPeriodSlot[]
+  boundTeachers?: UnifiedPeriodBoundTeacher[]
 }
 
 export interface UnifiedTimePeriodConfig {
@@ -116,8 +123,8 @@ export function buildQuickHourlySlots(): UnifiedPeriodSlot[] {
 export const DEFAULT_UNIFIED_TIME_PERIOD_CONFIG: UnifiedTimePeriodConfig = {
   version: 1,
   groups: [
-    { id: 'group-a', name: 'A时段', sort: 0, slots: buildQuickHourlySlots() },
-    { id: 'group-b', name: 'B时段', sort: 1, slots: buildQuickHourlySlots() },
+    { id: 'group-a', name: 'A时段', sort: 0, slots: buildQuickHourlySlots(), boundTeachers: [] },
+    { id: 'group-b', name: 'B时段', sort: 1, slots: buildQuickHourlySlots(), boundTeachers: [] },
   ],
 }
 
@@ -145,6 +152,23 @@ export function parseUnifiedTimePeriodConfig(raw: unknown): UnifiedTimePeriodCon
   }
 }
 
+function normalizeBoundTeachers(raw: unknown): UnifiedPeriodBoundTeacher[] {
+  if (!Array.isArray(raw))
+    return []
+  const out: UnifiedPeriodBoundTeacher[] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null)
+      continue
+    const o = item as Record<string, unknown>
+    const id = String(o.id ?? o.teacherId ?? '').trim()
+    if (!id)
+      continue
+    const name = String(o.name ?? o.teacherName ?? o.nickName ?? '').trim() || id
+    out.push({ id, name })
+  }
+  return out
+}
+
 function normalizeGroup(g: Partial<UnifiedPeriodGroup>, fallbackIndex: number): UnifiedPeriodGroup {
   const id = String(g.id || `group-${fallbackIndex}`).trim() || `group-${fallbackIndex}`
   const name = String(g.name || `时段${fallbackIndex + 1}`).trim()
@@ -152,7 +176,8 @@ function normalizeGroup(g: Partial<UnifiedPeriodGroup>, fallbackIndex: number): 
   const slots = Array.isArray(g.slots)
     ? g.slots.map((s, si) => normalizeSlot(s, si)).filter(s => s.start && s.end)
     : []
-  return { id, name, sort, slots }
+  const boundTeachers = normalizeBoundTeachers((g as UnifiedPeriodGroup).boundTeachers)
+  return { id, name, sort, slots, boundTeachers }
 }
 
 function normalizeSlot(s: Partial<UnifiedPeriodSlot>, si: number): UnifiedPeriodSlot {

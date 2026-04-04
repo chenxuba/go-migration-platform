@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 单个时段组新增/编辑：写入 inst_config.unifiedTimePeriodJson
+ * 单个时段组新增/编辑，保存机构统一时段配置
  */
 import UnifiedPeriodGroupForm from '@/components/business-settings/unified-period-group-form.vue'
 import { setInstConfigApi } from '@/api/common/config'
@@ -42,6 +42,7 @@ function emptyNewGroup(): UnifiedPeriodGroup {
     name: '',
     sort: 0,
     slots: buildQuickHourlySlots().map(s => ({ ...s })),
+    boundTeachers: [],
   }
 }
 
@@ -51,6 +52,7 @@ function cloneGroup(g: UnifiedPeriodGroup): UnifiedPeriodGroup {
     name: g.name,
     sort: g.sort,
     slots: g.slots.map(s => ({ ...s })),
+    boundTeachers: (g.boundTeachers || []).map(t => ({ ...t })),
   }
 }
 
@@ -170,7 +172,7 @@ async function handleSave() {
     :open="open"
     class="unified-period-group-modal"
     :title="modalTitle"
-    :width="560"
+    :width="600"
     :mask-closable="false"
     destroy-on-close
     :footer="null"

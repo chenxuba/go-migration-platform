@@ -140,6 +140,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := EnsureInstConfigUnifiedTimePeriodColumns(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := EnsureInstPeriodTables(ctx, repo.db); err != nil {
+		return err
+	}
 	var exists int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)

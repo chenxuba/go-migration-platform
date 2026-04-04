@@ -17,6 +17,18 @@ func parseTeacherMatrixQuery(r *http.Request) model.TeachingScheduleListQueryDTO
 		StartDate:           strings.TrimSpace(r.URL.Query().Get("startDate")),
 		EndDate:             strings.TrimSpace(r.URL.Query().Get("endDate")),
 		MatrixTeacherFilter: strings.TrimSpace(strings.ToLower(r.URL.Query().Get("teacherFilter"))),
+		PeriodGroupUUID:     strings.TrimSpace(r.URL.Query().Get("periodGroupUuid")),
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("matrixTeacherIds")); raw != "" {
+		for _, p := range strings.Split(raw, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if v, err := strconv.ParseInt(p, 10, 64); err == nil && v > 0 {
+				query.MatrixTeacherIDs = append(query.MatrixTeacherIDs, v)
+			}
+		}
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("classType")); raw != "" {
 		if value, err := strconv.Atoi(raw); err == nil && value > 0 {

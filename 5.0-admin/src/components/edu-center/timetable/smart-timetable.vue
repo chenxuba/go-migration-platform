@@ -2,6 +2,15 @@
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import { listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { useUserStore } from '@/stores/user'
+import {
+  buildQuickHourlySlots,
+  configGroupsSorted,
+  DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
+  parseUnifiedTimePeriodConfig,
+} from '@/utils/unified-time-period'
+import emitter, { EVENTS } from '@/utils/eventBus'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 
 const displayArray = ref([
@@ -22,9 +31,18 @@ const timeOptions = [
   { key: 'day', label: '日' },
   { key: 'week', label: '周' },
 ]
+/** 1=1v1，2=班课 */
+const currentModel = ref('1')
+const currentGroup = ref('A')
+
+function getWeekStart(value = dayjs()) {
+  const d = dayjs(value)
+  const diff = d.day() === 0 ? -6 : 1 - d.day()
+  return d.add(diff, 'day').startOf('day')
+}
+
 // 监听时间维度变化
 watch(currentTime, () => {
-  // 切换时始终使用当前时间
   currentWeek.value = dayjs()
 })
 
@@ -36,10 +54,9 @@ function formatDateRange(value) {
   switch (currentTime.value) {
     case 'day':
       return value.format('YYYY年MM月DD日')
-    case 'week':
-      const start = value.startOf('week')
-      const end = value.endOf('week')
-
+    case 'week': {
+      const start = getWeekStart(value)
+      const end = start.add(6, 'day')
       if (start.year() === end.year() && start.month() === end.month()) {
         return `${start.format('YYYY年MM月DD日')} ~ ${end.format('DD日')}`
       }
@@ -49,6 +66,7 @@ function formatDateRange(value) {
       else {
         return `${start.format('YYYY年MM月DD日')} ~ ${end.format('YYYY年MM月DD日')}`
       }
+    }
     case 'month':
       return value.format('YYYY年MM月')
     default:
@@ -103,1062 +121,278 @@ function formatWeek(date) {
   }
   return `周${weekMap[day]}`
 }
-const dataSource = computed(() => {
-  // 根据当前选中的组别选择数据源
-  const sourceData = currentGroup.value === 'A' ? rawDataSourceA.value : rawDataSourceB.value
+const userStore = useUserStore()
+const matrixDays = ref([])
+const timetableLoading = ref(false)
 
-  // 对选中的数据源进行排序
-  return [...sourceData].sort((a, b) => {
-    // 首先按照teacherId排序
-    if (a.teacherId !== b.teacherId) {
-      return a.teacherId.localeCompare(b.teacherId)
+const displayDates = computed(() => {
+  if (currentTime.value === 'day')
+    return [dayjs(currentWeek.value).startOf('day')]
+  const start = getWeekStart(currentWeek.value)
+  return Array.from({ length: 7 }, (_, i) => start.add(i, 'day'))
+})
+
+const queryDateRange = computed(() => {
+  const dates = displayDates.value
+  if (!dates.length) {
+    const d = dayjs().format('YYYY-MM-DD')
+    return { startDate: d, endDate: d }
+  }
+  return {
+    startDate: dates[0].format('YYYY-MM-DD'),
+    endDate: dates[dates.length - 1].format('YYYY-MM-DD'),
+  }
+})
+
+const periodConfig = computed(() => {
+  const parsed = parseUnifiedTimePeriodConfig(userStore.instConfig?.unifiedTimePeriodJson)
+  return parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG
+})
+
+const sortedPeriodGroups = computed(() => configGroupsSorted(periodConfig.value))
+
+const groupOptions = computed(() => {
+  const g = sortedPeriodGroups.value
+  if (!g.length)
+    return [{ key: 'A', label: '默认时段' }]
+  if (g.length === 1)
+    return [{ key: 'A', label: g[0].name || '时段' }]
+  return [
+    { key: 'A', label: g[0].name || 'A时段' },
+    { key: 'B', label: g[1].name || 'B时段' },
+  ]
+})
+
+function slotsForGroupKey(key) {
+  const groups = sortedPeriodGroups.value
+  const fallback = buildQuickHourlySlots().filter(s => s.enabled !== false)
+  if (!groups.length)
+    return [...fallback].sort((a, b) => a.index - b.index)
+  const idx = key === 'B' ? 1 : 0
+  const g = groups[idx] || groups[0]
+  return [...g.slots].filter(s => s.enabled !== false).sort((a, b) => a.index - b.index)
+}
+
+const activePeriodSlots = computed(() => slotsForGroupKey(currentGroup.value))
+
+/** 当前 A/B 对应的时段组配置（含 boundTeachers） */
+const activePeriodGroup = computed(() => {
+  const groups = sortedPeriodGroups.value
+  if (!groups.length)
+    return null
+  const idx = currentGroup.value === 'B' ? 1 : 0
+  return groups[idx] || groups[0] || null
+})
+
+/** 矩阵接口：时段组 UUID + 回退 teacherIds（切换分组会随请求重拉） */
+function teacherMatrixGroupParams() {
+  const g = activePeriodGroup.value
+  if (!g)
+    return {}
+  const periodGroupUuid = String(g.id || '').trim()
+  const bound = g.boundTeachers
+  const ids = Array.isArray(bound)
+    ? bound.map(t => String(t.id ?? '').trim()).filter(Boolean)
+    : []
+  return {
+    ...(periodGroupUuid ? { periodGroupUuid } : {}),
+    ...(ids.length ? { matrixTeacherIds: ids.join(',') } : {}),
+  }
+}
+
+function normalizeHHMM(t) {
+  const s = String(t || '').trim()
+  if (!s)
+    return ''
+  return s.length >= 5 ? s.slice(0, 5) : s
+}
+
+function minutesFromHHMM(t) {
+  const n = normalizeHHMM(t)
+  const m = /^(\d{1,2}):(\d{2})$/.exec(n)
+  if (!m)
+    return null
+  const h = Number(m[1])
+  const mi = Number(m[2])
+  if (!Number.isFinite(h) || !Number.isFinite(mi))
+    return null
+  return h * 60 + mi
+}
+
+function emptyLessonCell(slot) {
+  return {
+    startTime: slot.start,
+    endTime: slot.end,
+    courseName: null,
+    studentId: null,
+    classId: null,
+    className: null,
+    studentNames: null,
+    courseType: null,
+    conflict: false,
+    conflictReason: null,
+    isMain: undefined,
+  }
+}
+
+function buildLessonsForRow(slots, legacyList) {
+  const lessons = slots.map(s => emptyLessonCell(s))
+  const list = Array.isArray(legacyList) ? legacyList : []
+  for (const leg of list) {
+    const st = normalizeHHMM(leg.scheduleStartTime)
+    const et = normalizeHHMM(leg.scheduleEndTime)
+    const sm = minutesFromHHMM(st)
+    const em = minutesFromHHMM(et)
+    let idx = lessons.findIndex(l => l.startTime === st && l.endTime === et)
+    if (idx < 0 && sm != null && em != null) {
+      let best = -1
+      let bestOverlap = 0
+      lessons.forEach((l, i) => {
+        const ls = minutesFromHHMM(l.startTime)
+        const le = minutesFromHHMM(l.endTime)
+        if (ls == null || le == null)
+          return
+        const ov = Math.min(le, em) - Math.max(ls, sm)
+        if (ov > bestOverlap) {
+          bestOverlap = ov
+          best = i
+        }
+      })
+      if (best >= 0 && bestOverlap > 0)
+        idx = best
     }
-    // teacherId相同时，按照日期排序
+    if (idx < 0)
+      continue
+
+    const displayCourseType = leg.courseType === 2 ? 1 : 2
+    const studentIds = (leg.studentList || []).map(s => String(s.id)).filter(Boolean)
+    const names = (leg.studentList || []).map(s => ({ id: String(s.id), name: s.name }))
+
+    lessons[idx] = {
+      ...lessons[idx],
+      courseName: leg.courseName || null,
+      studentId: studentIds.length ? studentIds : null,
+      classId: leg.classId != null ? String(leg.classId) : null,
+      className: leg.className || null,
+      studentNames: names.length ? names : null,
+      courseType: displayCourseType,
+      isMain: true,
+    }
+  }
+  return lessons
+}
+
+const gridRows = computed(() => {
+  const slots = activePeriodSlots.value
+  const dates = displayDates.value.map(d => d.format('YYYY-MM-DD'))
+  if (!slots.length || !dates.length)
+    return []
+
+  let teacherCols = []
+  for (const d of dates) {
+    const day = matrixDays.value.find(x => x.scheduleDate === d)
+    if (day?.scheduleListVoList?.length) {
+      teacherCols = day.scheduleListVoList
+      break
+    }
+  }
+  if (!teacherCols.length && matrixDays.value[0]?.scheduleListVoList)
+    teacherCols = matrixDays.value[0].scheduleListVoList || []
+
+  if (!teacherCols.length)
+    return []
+
+  const dayMap = new Map()
+  for (const day of matrixDays.value) {
+    const m = new Map()
+    for (const col of day.scheduleListVoList || []) {
+      m.set(String(col.teacherId), col.scheduleInfoVoList || [])
+    }
+    dayMap.set(day.scheduleDate, m)
+  }
+
+  const rows = []
+  for (const col of teacherCols) {
+    const tid = String(col.teacherId)
+    const tname = col.teacherName
+    for (const dateStr of dates) {
+      const schedules = dayMap.get(dateStr)?.get(tid) || []
+      rows.push({
+        key: `${tid}-${dateStr}`,
+        name: tname,
+        teacherId: tid,
+        date: dateStr,
+        lessons: buildLessonsForRow(slots, schedules),
+      })
+    }
+  }
+  return rows
+})
+
+const dataSource = computed(() => {
+  return [...gridRows.value].sort((a, b) => {
+    if (a.teacherId !== b.teacherId)
+      return a.teacherId.localeCompare(b.teacherId)
     return a.date.localeCompare(b.date)
   })
 })
 
-const rawDataSourceA = ref([
-  {
-    key: '1',
-    name: '张老师',
-    teacherId: 't001',
-    date: '2025-04-28',
-    lessons: [
-      {
-        startTime: '08:00',
-        endTime: '08:40',
-        courseName: '口肌训练课',
-        studentId: ['10001'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '10001', name: '张三' }],
-        courseType: 1,
-      },
-      {
-        startTime: '08:50',
-        endTime: '09:30',
-        courseName: '初级感统课',
-        studentId: ['10002'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '10002', name: '李四' }],
-        courseType: 1,
-      },
-      {
-        startTime: '09:40',
-        endTime: '10:20',
-        courseName: 'OT精细课',
-        studentId: ['10003'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '10003', name: '王五' }],
-        courseType: 1,
-      },
-      {
-        startTime: '10:30',
-        endTime: '11:10',
-        courseName: '初级认知课',
-        studentId: ['10004', '10009'],
-        classId: 'C-01',
-        className: '苹果基础班',
-        studentNames: [{ id: '10004', name: '赵六' }, { id: '10009', name: '孙八' }],
-        courseType: 2,
-        isMain: true,
-      },
-      {
-        startTime: '11:20',
-        endTime: '12:00',
-        courseName: 'PT治疗课',
-        studentId: ['10005'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '10005', name: '钱七' }],
-        courseType: 1,
-      },
-      {
-        startTime: '12:10',
-        endTime: '12:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      // 新增的6节课
-      {
-        startTime: '13:00',
-        endTime: '13:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '13:50',
-        endTime: '14:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '14:40',
-        endTime: '15:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '15:30',
-        endTime: '16:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:20',
-        endTime: '17:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '17:10',
-        endTime: '17:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-    ],
-  },
-  {
-    key: '1',
-    name: '张老师',
-    teacherId: 't001',
-    date: '2025-04-29',
-    lessons: [
-      {
-        startTime: '08:00',
-        endTime: '08:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-      },
-      {
-        startTime: '08:50',
-        endTime: '09:30',
-        courseName: '初级感统课',
-        studentId: ['10002'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '10002', name: '李四' }],
-        courseType: 1,
-      },
-      {
-        startTime: '09:40',
-        endTime: '10:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '10:30',
-        endTime: '11:10',
-        courseName: '初级认知课',
-        studentId: ['10004'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '10004', name: '赵六' }],
-        courseType: 1,
-      },
-      {
-        startTime: '11:20',
-        endTime: '12:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '12:10',
-        endTime: '12:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      // 新增的6节课
-      {
-        startTime: '13:00',
-        endTime: '13:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '13:50',
-        endTime: '14:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '14:40',
-        endTime: '15:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '15:30',
-        endTime: '16:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:20',
-        endTime: '17:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '17:10',
-        endTime: '17:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-    ],
-  },
-  {
-    key: '1',
-    name: '王老师',
-    teacherId: 't002',
-    date: '2025-04-28',
-    lessons: [
-      {
-        startTime: '08:00',
-        endTime: '08:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '08:50',
-        endTime: '09:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '09:40',
-        endTime: '10:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '10:30',
-        endTime: '11:10',
-        courseName: '初级认知课',
-        studentId: ['10004', '10009'],
-        classId: 'C-01',
-        className: '苹果基础班',
-        studentNames: [{ id: '10004', name: '赵六' }, { id: '10009', name: '孙八' }],
-        courseType: 2,
-        isMain: false,
-      },
-      {
-        startTime: '11:20',
-        endTime: '12:00',
-        courseName: 'PT治疗课',
-        studentId: ['10005'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '10005', name: '钱七' }],
-        courseType: 1,
-      },
-      {
-        startTime: '12:10',
-        endTime: '12:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      // 新增的6节课
-      {
-        startTime: '13:00',
-        endTime: '13:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '13:50',
-        endTime: '14:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '14:40',
-        endTime: '15:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '15:30',
-        endTime: '16:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:20',
-        endTime: '17:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '17:10',
-        endTime: '17:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-    ],
-  },
-  {
-    key: '1',
-    name: '王老师',
-    teacherId: 't002',
-    date: '2025-04-29',
-    lessons: [
-      {
-        startTime: '08:00',
-        endTime: '08:40',
-        courseName: '口肌训练课',
-        studentId: ['10001'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '10001', name: '张三' }],
-        courseType: 1,
-      },
-      {
-        startTime: '08:50',
-        endTime: '09:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '09:40',
-        endTime: '10:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '10:30',
-        endTime: '11:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '11:20',
-        endTime: '12:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '12:10',
-        endTime: '12:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      // 新增的6节课
-      {
-        startTime: '13:00',
-        endTime: '13:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '13:50',
-        endTime: '14:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '14:40',
-        endTime: '15:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '15:30',
-        endTime: '16:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:20',
-        endTime: '17:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '17:10',
-        endTime: '17:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-    ],
-  },
-])
-const rawDataSourceB = ref([
-  {
-    key: '1',
-    name: '李老师',
-    teacherId: 't003',
-    date: '2025-04-28',
-    lessons: [
-      {
-        startTime: '08:30',
-        endTime: '09:10',
-        courseName: '口肌训练课',
-        studentId: ['20001'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20001', name: '刘一' }],
-        courseType: 1,
-      },
-      {
-        startTime: '09:20',
-        endTime: '10:00',
-        courseName: '初级感统课',
-        studentId: ['20002'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20002', name: '陈二' }],
-        courseType: 1,
-      },
-      {
-        startTime: '10:10',
-        endTime: '10:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-      },
-      {
-        startTime: '11:00',
-        endTime: '11:40',
-        courseName: '初级认知课',
-        studentId: ['20004', '20009'],
-        classId: 'C-02',
-        className: '橙子基础班',
-        studentNames: [{ id: '20004', name: '张四' }, { id: '20009', name: '王九' }],
-        courseType: 2,
-        isMain: true,
-      },
-      {
-        startTime: '11:50',
-        endTime: '12:30',
-        courseName: 'PT治疗课',
-        studentId: ['20005'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20005', name: '李五' }],
-        courseType: 1,
-      },
-      {
-        startTime: '12:40',
-        endTime: '13:20',
-        courseName: 'PT治疗课',
-        studentId: ['20006'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20006', name: '赵六' }],
-        courseType: 1,
-      },
-      // 新增的6节课
-      {
-        startTime: '13:30',
-        endTime: '14:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '14:20',
-        endTime: '15:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '15:10',
-        endTime: '15:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:00',
-        endTime: '16:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:50',
-        endTime: '17:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '17:40',
-        endTime: '18:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-    ],
-  },
-  {
-    key: '1',
-    name: '李老师',
-    teacherId: 't003',
-    date: '2025-04-29',
-    lessons: [
-      {
-        startTime: '08:30',
-        endTime: '09:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-      },
-      {
-        startTime: '09:20',
-        endTime: '10:00',
-        courseName: '初级感统课',
-        studentId: ['20007'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20007', name: '钱七' }],
-        courseType: 1,
-      },
-      {
-        startTime: '10:10',
-        endTime: '10:50',
-        courseName: 'OT精细课',
-        studentId: ['10009'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '10009', name: '孙八' }],
-        courseType: 1,
-      },
-      {
-        startTime: '11:00',
-        endTime: '11:40',
-        courseName: '初级认知课',
-        studentId: ['20010'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20010', name: '周十' }],
-        courseType: 1,
-      },
-      {
-        startTime: '11:50',
-        endTime: '12:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-      },
-      {
-        startTime: '12:40',
-        endTime: '13:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      // 新增的6节课
-      {
-        startTime: '13:30',
-        endTime: '14:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '14:20',
-        endTime: '15:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '15:10',
-        endTime: '15:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:00',
-        endTime: '16:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:50',
-        endTime: '17:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '17:40',
-        endTime: '18:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-    ],
-  },
-  {
-    key: '1',
-    name: '陈老师',
-    teacherId: 't004',
-    date: '2025-04-28',
-    lessons: [
-      {
-        startTime: '08:30',
-        endTime: '09:10',
-        courseName: '口肌训练课',
-        studentId: ['20011'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20011', name: '吴十一' }],
-        courseType: 1,
-      },
-      {
-        startTime: '09:20',
-        endTime: '10:00',
-        courseName: '初级感统课',
-        studentId: ['20012'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20012', name: '郑十二' }],
-        courseType: 1,
-      },
-      {
-        startTime: '10:10',
-        endTime: '10:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '11:00',
-        endTime: '11:40',
-        courseName: '初级认知课',
-        studentId: ['20004', '20009'],
-        classId: 'C-02',
-        className: '橙子基础班',
-        studentNames: [{ id: '20004', name: '张四' }, { id: '20009', name: '王九' }],
-        courseType: 2,
-        isMain: false,
-      },
-      {
-        startTime: '11:50',
-        endTime: '12:30',
-        courseName: 'PT治疗课',
-        studentId: ['20013'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20013', name: '马十三' }],
-        courseType: 1,
-      },
-      {
-        startTime: '12:40',
-        endTime: '13:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      // 新增的6节课
-      {
-        startTime: '13:30',
-        endTime: '14:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '14:20',
-        endTime: '15:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '15:10',
-        endTime: '15:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:00',
-        endTime: '16:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:50',
-        endTime: '17:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '17:40',
-        endTime: '18:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-    ],
-  },
-  {
-    key: '1',
-    name: '陈老师',
-    teacherId: 't004',
-    date: '2025-04-29',
-    lessons: [
-      {
-        startTime: '08:30',
-        endTime: '09:10',
-        courseName: '口肌训练课',
-        studentId: ['20014'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20014', name: '林十四' }],
-        courseType: 1,
-      },
-      {
-        startTime: '09:20',
-        endTime: '10:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '10:10',
-        endTime: '10:50',
-        courseName: 'OT精细课',
-        studentId: ['20015'],
-        classId: null,
-        className: null,
-        studentNames: [{ id: '20015', name: '王十五' }],
-        courseType: 1,
-      },
-      {
-        startTime: '11:00',
-        endTime: '11:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '11:50',
-        endTime: '12:30',
-        courseName: null,
-        studentId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '12:40',
-        endTime: '13:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      // 新增的6节课
-      {
-        startTime: '13:30',
-        endTime: '14:10',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '14:20',
-        endTime: '15:00',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '15:10',
-        endTime: '15:50',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:00',
-        endTime: '16:40',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '16:50',
-        endTime: '17:30',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-      {
-        startTime: '17:40',
-        endTime: '18:20',
-        courseName: null,
-        studentId: null,
-        classId: null,
-        className: null,
-        studentNames: null,
-        courseType: null,
-      },
-    ],
-  },
-])
-// columns的定义也需要相应修改
-const columns = computed(() => {
-  // 获取最大课程数
-  const maxLessons = Math.max(...dataSource.value.map(item => item.lessons.length))
+const activeGroupLabel = computed(() => {
+  return groupOptions.value.find(o => o.key === currentGroup.value)?.label || ''
+})
 
-  // 基础列定义
+watch(
+  groupOptions,
+  (opts) => {
+    if (!opts.some(o => o.key === currentGroup.value))
+      currentGroup.value = 'A'
+  },
+  { immediate: true },
+)
+
+async function loadTimetableMatrix() {
+  timetableLoading.value = true
+  try {
+    await userStore.getInstConfig()
+    const { startDate, endDate } = queryDateRange.value
+    const classType = currentModel.value === '1' ? 2 : 1
+    const res = await listTeachingSchedulesByTeacherMatrixApi({
+      startDate,
+      endDate,
+      classType,
+      ...teacherMatrixGroupParams(),
+    })
+    if (res.code === 200 && Array.isArray(res.result))
+      matrixDays.value = res.result
+    else
+      matrixDays.value = []
+  }
+  catch (e) {
+    console.error('loadTimetableMatrix failed', e)
+    matrixDays.value = []
+  }
+  finally {
+    timetableLoading.value = false
+  }
+}
+
+watch(
+  [currentWeek, currentTime, currentModel, currentGroup],
+  () => {
+    void loadTimetableMatrix()
+  },
+)
+
+onMounted(() => {
+  void loadTimetableMatrix()
+  emitter.on(EVENTS.REFRESH_DATA, loadTimetableMatrix)
+})
+
+onUnmounted(() => {
+  emitter.off(EVENTS.REFRESH_DATA, loadTimetableMatrix)
+})
+const columns = computed(() => {
+  const slots = activePeriodSlots.value
   const baseColumns = [
     {
       title: '教师',
@@ -1168,16 +402,16 @@ const columns = computed(() => {
       align: 'center',
       fixed: 'left',
       customCell: (_, index) => {
+        if (!dataSource.value.length)
+          return {}
         const currentTeacherId = dataSource.value[index].teacherId
         if (index === 0 || dataSource.value[index - 1].teacherId !== currentTeacherId) {
           let count = 1
           for (let i = index + 1; i < dataSource.value.length; i++) {
-            if (dataSource.value[i].teacherId === currentTeacherId) {
+            if (dataSource.value[i].teacherId === currentTeacherId)
               count++
-            }
-            else {
+            else
               break
-            }
           }
           return { rowSpan: count }
         }
@@ -1194,13 +428,12 @@ const columns = computed(() => {
     },
   ]
 
-  // 动态生成课程列
-  const lessonColumns = Array.from({ length: maxLessons }, (_, index) => ({
-    title: `第${index + 1}节课`,
-    startTime: dataSource.value[0].lessons[index]?.startTime || '',
-    endTime: dataSource.value[0].lessons[index]?.endTime || '',
+  const lessonColumns = slots.map((slot, index) => ({
+    title: `第${slot.index}节课`,
+    startTime: slot.start,
+    endTime: slot.end,
     dataIndex: ['lessons', index],
-    key: `lesson${index}`,
+    key: `lesson-${slot.index}-${index}`,
     width: 160,
     align: 'center',
   }))
@@ -1324,10 +557,8 @@ function handle1v1(value) {
   checkConflicts(studentInfo)
 }
 
-// 获取所有组合并的数据源(用于冲突检测)
-const allDataSource = computed(() => {
-  return [...rawDataSourceA.value, ...rawDataSourceB.value]
-})
+// 当前视图下的全部行（时段 A/B 切换后数据源已重建；跨组检测以当前页为准）
+const allDataSource = computed(() => dataSource.value)
 
 // 检查两个时间段是否有交叉
 function isTimeOverlap(time1, time2) {
@@ -1375,7 +606,7 @@ function checkConflicts(studentInfo) {
           courseName: lesson.courseName,
           lessonIndex: getLessonIndex(lesson.startTime),
           studentName: studentInfo.studentName,
-          group: teacher.teacherId.startsWith('t00') ? 'A组' : 'B组', // 根据老师ID判断所属组别
+          group: activeGroupLabel.value,
         })
       }
     })
@@ -1417,7 +648,6 @@ function checkConflicts(studentInfo) {
     })
   }
 }
-const currentModel = ref('1')
 // 班级数据
 const classData = ref([
   {
@@ -1465,13 +695,6 @@ function handleClass(value) {
   // 检查班课冲突
   checkClassCrossTimeConflicts(classInfo)
 }
-// 当前选中的组别
-const currentGroup = ref('A')
-const groupOptions = [
-  { key: 'A', label: 'A组' },
-  { key: 'B', label: 'B组' },
-]
-
 // 监听组别变化
 watch(currentGroup, () => {
   // 如果当前有选中的学生，重新进行冲突检测
@@ -1556,7 +779,7 @@ function checkClassCrossTimeConflicts(classInfo) {
           const day = dayjs(classTimeConflict.date).format('D')
 
           // 获取冲突课程所在组别
-          const conflictGroup = classTimeConflict.teacherId.startsWith('t00') ? 'A组' : 'B组'
+          const conflictGroup = activeGroupLabel.value
 
           conflictReason = {
             type: '班级时间段交叉冲突',
@@ -1635,7 +858,7 @@ function checkClassCrossTimeConflicts(classInfo) {
                     const day = dayjs(t.date).format('D')
 
                     // 获取冲突课程所在组别
-                    const conflictGroup = t.teacherId.startsWith('t00') ? 'A组' : 'B组'
+                    const conflictGroup = activeGroupLabel.value
 
                     conflictReason = {
                       type: '学生课程冲突',
@@ -1896,39 +1119,10 @@ function handleScheduleClick(timeSlot, column, record) {
   }
 }
 
-// 获取课程节数
 function getLessonIndex(startTime) {
-  const timeMapA = {
-    '08:00': 1,
-    '08:50': 2,
-    '09:40': 3,
-    '10:30': 4,
-    '11:20': 5,
-    '12:10': 6,
-    '13:00': 7,
-    '13:50': 8,
-    '14:40': 9,
-    '15:30': 10,
-    '16:20': 11,
-    '17:10': 12,
-  }
-
-  const timeMapB = {
-    '08:30': 1,
-    '09:20': 2,
-    '10:10': 3,
-    '11:00': 4,
-    '11:50': 5,
-    '12:40': 6,
-    '13:30': 7,
-    '14:20': 8,
-    '15:10': 9,
-    '16:00': 10,
-    '16:50': 11,
-    '17:40': 12,
-  }
-
-  return timeMapA[startTime] || timeMapB[startTime] || ''
+  const slots = activePeriodSlots.value
+  const i = slots.findIndex(s => s.start === startTime)
+  return i >= 0 ? i + 1 : ''
 }
 
 // 添加监听，当模式切换时清空之前的选择
@@ -1956,319 +1150,6 @@ watch(currentModel, (newValue) => {
     courseId.value = null
     courseName.value = null
   }
-})
-
-// 生成空闲课程数据
-function createEmptyLessonsA() {
-  return [
-    {
-      startTime: '08:00',
-      endTime: '08:40',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '08:50',
-      endTime: '09:30',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '09:40',
-      endTime: '10:20',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '10:30',
-      endTime: '11:10',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '11:20',
-      endTime: '12:00',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '12:10',
-      endTime: '12:50',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '13:00',
-      endTime: '13:40',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '13:50',
-      endTime: '14:30',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '14:40',
-      endTime: '15:20',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '15:30',
-      endTime: '16:10',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '16:20',
-      endTime: '17:00',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '17:10',
-      endTime: '17:50',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-  ]
-}
-
-function createEmptyLessonsB() {
-  return [
-    {
-      startTime: '08:30',
-      endTime: '09:10',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '09:20',
-      endTime: '10:00',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '10:10',
-      endTime: '10:50',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '11:00',
-      endTime: '11:40',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '11:50',
-      endTime: '12:30',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '12:40',
-      endTime: '13:20',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '13:30',
-      endTime: '14:10',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '14:20',
-      endTime: '15:00',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '15:10',
-      endTime: '15:50',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '16:00',
-      endTime: '16:40',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '16:50',
-      endTime: '17:30',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-    {
-      startTime: '17:40',
-      endTime: '18:20',
-      courseName: null,
-      studentId: null,
-      classId: null,
-      className: null,
-      studentNames: null,
-      courseType: null,
-    },
-  ]
-}
-
-// 添加A组老师额外的5天数据
-const extraDaysA = [
-  '2025-04-30',
-  '2025-05-01',
-  '2025-05-02',
-  '2025-05-03',
-  '2025-05-04',
-]
-
-// 为张老师添加额外的5天数据
-extraDaysA.forEach((date) => {
-  rawDataSourceA.value.push({
-    key: '1',
-    name: '张老师',
-    teacherId: 't001',
-    date,
-    lessons: createEmptyLessonsA(),
-  })
-})
-
-// 为王老师添加额外的5天数据
-extraDaysA.forEach((date) => {
-  rawDataSourceA.value.push({
-    key: '1',
-    name: '王老师',
-    teacherId: 't002',
-    date,
-    lessons: createEmptyLessonsA(),
-  })
-})
-
-// 添加B组老师额外的5天数据
-const extraDaysB = [
-  '2025-04-30',
-  '2025-05-01',
-  '2025-05-02',
-  '2025-05-03',
-  '2025-05-04',
-]
-
-// 为李老师添加额外的5天数据
-extraDaysB.forEach((date) => {
-  rawDataSourceB.value.push({
-    key: '1',
-    name: '李老师',
-    teacherId: 't003',
-    date,
-    lessons: createEmptyLessonsB(),
-  })
-})
-
-// the same for 陈老师
-extraDaysB.forEach((date) => {
-  rawDataSourceB.value.push({
-    key: '1',
-    name: '陈老师',
-    teacherId: 't004',
-    date,
-    lessons: createEmptyLessonsB(),
-  })
 })
 </script>
 
@@ -2391,10 +1272,11 @@ extraDaysB.forEach((date) => {
         </a-space>
       </div>
     </div>
-    <a-table
-      :scroll="{ x: 1300 }" :sticky="{ offsetHeader: 100 }" size="small" :pagination="false" bordered
-      :data-source="dataSource" :columns="columns"
-    >
+    <a-spin :spinning="timetableLoading">
+      <a-table
+        :scroll="{ x: 1300 }" :sticky="{ offsetHeader: 100 }" size="small" :pagination="false" bordered
+        :data-source="dataSource" :columns="columns"
+      >
       <template #headerCell="{ column }">
         <template v-if="column.startTime && column.endTime">
           <div>{{ column.title }}</div>
@@ -2458,7 +1340,8 @@ extraDaysB.forEach((date) => {
           </div>
         </template>
       </template>
-    </a-table>
+      </a-table>
+    </a-spin>
   </div>
 </template>
 

@@ -3,6 +3,7 @@
  * 单个时段组：名称 + 节次列表（由父组件传入同一引用以便双向修改）
  */
 import { DeleteOutlined } from '@ant-design/icons-vue'
+import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import {
   generateSlotsSmartFill,
   slotCountActive,
@@ -158,6 +159,74 @@ function validateGroup(): string | null {
 }
 
 defineExpose({ validateGroup })
+
+type StaffOptionRow = { id: string, nickName: string }
+
+const staffList = ref<StaffOptionRow[]>([])
+const staffLoading = ref(false)
+
+const teacherSelectOptions = computed(() =>
+  staffList.value.map(s => ({ value: s.id, label: s.nickName })),
+)
+
+const teacherIdsModel = computed({
+  get: () => (props.group.boundTeachers || []).map(t => String(t.id)),
+  set: (ids: string[]) => {
+    const safeIds = (ids || []).map(String).filter(Boolean)
+    const byStaff = new Map(staffList.value.map(s => [s.id, s.nickName]))
+    const prev = props.group.boundTeachers || []
+    const prevName = new Map(prev.map(t => [String(t.id), t.name]))
+    props.group.boundTeachers = safeIds.map((id) => {
+      const name = byStaff.get(id) || prevName.get(id) || id
+      return { id, name }
+    })
+  },
+})
+
+async function ensureStaffOptionsLoaded() {
+  if (staffList.value.length)
+    return
+  staffLoading.value = true
+  try {
+    const res = await getUserListApi({
+      pageRequestModel: {
+        needTotal: false,
+        pageSize: 500,
+        pageIndex: 1,
+        skipCount: 1,
+      },
+      queryModel: {
+        status: 0,
+      },
+    })
+    if (res.code === 200) {
+      const rows = Array.isArray(res.result) ? res.result : []
+      staffList.value = rows.map((r: { id?: unknown, nickName?: string, name?: string }) => ({
+        id: String(r.id ?? ''),
+        nickName: String(r.nickName || r.name || r.id || '').trim() || String(r.id),
+      })).filter((r: StaffOptionRow) => r.id)
+    }
+  }
+  catch (e) {
+    console.error('load staff for period group', e)
+    messageService.error('加载老师列表失败')
+  }
+  finally {
+    staffLoading.value = false
+  }
+}
+
+function onTeacherDropdownOpen(open: boolean) {
+  if (open)
+    void ensureStaffOptionsLoaded()
+}
+
+function filterTeacherOption(input: string, option: { label?: string }) {
+  const q = (input || '').trim().toLowerCase()
+  if (!q)
+    return true
+  return String(option?.label || '').toLowerCase().includes(q)
+}
 </script>
 
 <template>
@@ -248,6 +317,25 @@ defineExpose({ validateGroup })
     <div class="up-group-form__field">
       <span class="up-group-form__label">时段名称</span>
       <a-input v-model:value="group.name" allow-clear placeholder="如 A时段" />
+    </div>
+
+    <div class="up-group-form__field">
+      <span class="up-group-form__label">关联老师</span>
+      <p class="up-group-form__field-hint">
+        可选多名；<strong>同一老师可绑定多个时段组</strong>。
+      </p>
+      <a-select
+        v-model:value="teacherIdsModel"
+        mode="multiple"
+        allow-clear
+        show-search
+        :options="teacherSelectOptions"
+        :filter-option="filterTeacherOption"
+        :loading="staffLoading"
+        placeholder="打开下拉可加载机构老师，支持搜索"
+        class="up-group-form__teacher-select"
+        @dropdown-visible-change="onTeacherDropdownOpen"
+      />
     </div>
 
     <div class="up-group-form__slots">
@@ -414,6 +502,21 @@ defineExpose({ validateGroup })
 
 .up-group-form__field :deep(.ant-input) {
   border-radius: 10px;
+}
+
+.up-group-form__field-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8c8c8c;
+}
+
+.up-group-form__teacher-select {
+  width: 100%;
+
+  :deep(.ant-select-selector) {
+    border-radius: 10px;
+  }
 }
 
 .up-group-form__slots {

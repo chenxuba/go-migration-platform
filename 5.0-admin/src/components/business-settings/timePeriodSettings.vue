@@ -4,6 +4,7 @@ import { Modal } from 'ant-design-vue'
 import type { TableColumnType } from 'ant-design-vue'
 import UnifiedPeriodGroupModal from '@/components/business-settings/unified-period-group-modal.vue'
 import { type InstConfig, setInstConfigApi } from '@/api/common/config'
+import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useUserStore } from '@/stores/user'
 import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
@@ -34,8 +35,9 @@ const columns: TableColumnType<UnifiedPeriodGroup>[] = [
   { title: '时段名称', dataIndex: 'name', key: 'name', ellipsis: true },
   { title: '节次', key: 'slots', width: 150 },
   { title: '时间范围', key: 'span', width: 200 },
+  { title: '关联老师', key: 'teachers', width: 200, ellipsis: true },
   { title: '状态', key: 'status', width: 120 },
-  { title: '操作', key: 'action', width: 160 },
+  { title: '操作', key: 'action', width: 236 },
 ]
 
 function sortSlots(slots: UnifiedPeriodSlot[]) {
@@ -61,8 +63,16 @@ function cloneConfig(c: UnifiedTimePeriodConfig): UnifiedTimePeriodConfig {
     groups: c.groups.map(g => ({
       ...g,
       slots: g.slots.map(s => ({ ...s })),
+      boundTeachers: (g.boundTeachers || []).map(t => ({ ...t })),
     })),
   }
+}
+
+function formatBoundTeachersSummary(g: UnifiedPeriodGroup): string {
+  const list = g.boundTeachers || []
+  if (!list.length)
+    return '—'
+  return list.map(t => t.name).join('、')
 }
 
 function loadBaseConfig(): UnifiedTimePeriodConfig {
@@ -130,6 +140,160 @@ function openEditGroup(id: string) {
 
 function onGroupModalSaved() {
   void refreshFromServer()
+}
+
+/** —— 操作列：关联老师（仅存 unifiedTimePeriodJson，无需后端新接口） */
+const bindModalOpen = ref(false)
+const bindGroupId = ref<string | null>(null)
+const bindSaving = ref(false)
+const bindTeacherIds = ref<string[]>([])
+
+type StaffRow = { id: string, nickName: string, mobile: string }
+const staffList = ref<StaffRow[]>([])
+const staffLoading = ref(false)
+const bindStaffKeyword = ref('')
+
+const filteredStaffForBind = computed(() => {
+  const q = bindStaffKeyword.value.trim().toLowerCase()
+  if (!q)
+    return staffList.value
+  return staffList.value.filter(s =>
+    s.nickName.toLowerCase().includes(q) || (s.mobile && s.mobile.includes(q)),
+  )
+})
+
+const bindTeacherColumns: TableColumnType<StaffRow>[] = [
+  { title: '姓名', dataIndex: 'nickName', key: 'nickName', ellipsis: true },
+  { title: '手机号', dataIndex: 'mobile', key: 'mobile', width: 130, ellipsis: true },
+]
+
+const bindRowSelection = computed(() => ({
+  selectedRowKeys: bindTeacherIds.value as unknown as (string | number)[],
+  onChange: (keys: (string | number)[]) => {
+    bindTeacherIds.value = keys.map(String)
+  },
+  preserveSelectedRowKeys: true,
+}))
+
+const bindModalTitle = computed(() => {
+  const g = periodGroups.value.find(x => x.id === bindGroupId.value)
+  const name = g?.name?.trim() || '该时段组'
+  return `关联老师 — ${name}`
+})
+
+async function ensureStaffForBind() {
+  if (staffList.value.length)
+    return
+  staffLoading.value = true
+  try {
+    const res = await getUserListApi({
+      pageRequestModel: {
+        needTotal: false,
+        pageSize: 500,
+        pageIndex: 1,
+        skipCount: 1,
+      },
+      queryModel: { status: 0 },
+    })
+    if (res.code === 200) {
+      const rows = Array.isArray(res.result) ? res.result : []
+      staffList.value = rows.map((r: { id?: unknown, nickName?: string, name?: string, mobile?: string }) => ({
+        id: String(r.id ?? ''),
+        nickName: String(r.nickName || r.name || r.id || '').trim() || String(r.id),
+        mobile: String(r.mobile ?? '').trim(),
+      })).filter((r: StaffRow) => r.id)
+    }
+  }
+  catch (e) {
+    console.error('load staff for bind teachers', e)
+    messageService.error('加载老师列表失败')
+  }
+  finally {
+    staffLoading.value = false
+  }
+}
+
+function openBindTeachers(record: UnifiedPeriodGroup) {
+  bindGroupId.value = record.id
+  bindTeacherIds.value = (record.boundTeachers || []).map(t => String(t.id))
+  bindStaffKeyword.value = ''
+  bindModalOpen.value = true
+  void ensureStaffForBind()
+}
+
+function closeBindModal() {
+  bindModalOpen.value = false
+  bindGroupId.value = null
+  bindTeacherIds.value = []
+  bindStaffKeyword.value = ''
+}
+
+/** 全选当前筛选结果中的老师 */
+function selectAllFilteredStaff() {
+  const set = new Set(bindTeacherIds.value)
+  filteredStaffForBind.value.forEach(s => set.add(s.id))
+  bindTeacherIds.value = Array.from(set)
+}
+
+/** 取消选中当前筛选结果中的老师 */
+function clearFilteredStaffSelection() {
+  const drop = new Set(filteredStaffForBind.value.map(s => s.id))
+  bindTeacherIds.value = bindTeacherIds.value.filter(id => !drop.has(id))
+}
+
+/** 在当前筛选结果内反选 */
+function invertFilteredStaffSelection() {
+  const visible = new Set(filteredStaffForBind.value.map(s => s.id))
+  const cur = new Set(bindTeacherIds.value)
+  const next = new Set(bindTeacherIds.value)
+  visible.forEach((id) => {
+    if (cur.has(id))
+      next.delete(id)
+    else
+      next.add(id)
+  })
+  bindTeacherIds.value = Array.from(next)
+}
+
+async function saveBindTeachers() {
+  if (!bindGroupId.value)
+    return
+  bindSaving.value = true
+  try {
+    const cfg = loadBaseConfig()
+    const g = cfg.groups.find(x => x.id === bindGroupId.value)
+    if (!g) {
+      messageService.error('未找到该时段组，请刷新后重试')
+      throw new Error('group missing')
+    }
+    const byStaff = new Map(staffList.value.map(s => [s.id, s.nickName]))
+    const prev = g.boundTeachers || []
+    const prevName = new Map(prev.map(t => [String(t.id), t.name]))
+    g.boundTeachers = bindTeacherIds.value.map(id => ({
+      id: String(id),
+      name: byStaff.get(String(id)) || prevName.get(String(id)) || String(id),
+    }))
+    const res = await setInstConfigApi({
+      ...(userStore.instConfig as InstConfig),
+      unifiedTimePeriodJson: cfg,
+    })
+    if (res.code !== 200) {
+      messageService.error(res.message || '保存失败')
+      throw new Error(res.message || 'save failed')
+    }
+    await userStore.getInstConfig()
+    messageService.success('已保存关联老师')
+    closeBindModal()
+  }
+  catch (e) {
+    console.error(e)
+    if (!(e instanceof Error && e.message === 'group missing') && !(e instanceof Error && e.message === 'save failed'))
+      messageService.error('保存失败')
+    throw e
+  }
+  finally {
+    bindSaving.value = false
+  }
 }
 
 function confirmDeleteGroup(item: UnifiedPeriodGroup) {
@@ -208,6 +372,9 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
             <template v-else-if="column.key === 'span'">
               {{ groupTimeSpan(record) }}
             </template>
+            <template v-else-if="column.key === 'teachers'">
+              <span :title="formatBoundTeachersSummary(record)">{{ formatBoundTeachersSummary(record) }}</span>
+            </template>
             <template v-else-if="column.key === 'status'">
               <span
                 class="period-status"
@@ -219,6 +386,9 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
             <template v-else-if="column.key === 'action'">
               <a-button type="link" size="small" class="period-action" @click="openEditGroup(record.id)">
                 编辑
+              </a-button>
+              <a-button type="link" size="small" class="period-action" @click="openBindTeachers(record)">
+                关联老师
               </a-button>
               <a-button
                 v-if="periodGroups.length > 1"
@@ -242,6 +412,52 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
       :group-id="editingGroupId"
       @saved="onGroupModalSaved"
     />
+
+    <a-modal
+      :open="bindModalOpen"
+      :title="bindModalTitle"
+      :width="640"
+      :mask-closable="false"
+      destroy-on-close
+      :confirm-loading="bindSaving"
+      ok-text="保存"
+      cancel-text="取消"
+      class="bind-teachers-modal"
+      @ok="saveBindTeachers"
+      @cancel="closeBindModal"
+    >
+      <a-spin :spinning="staffLoading">
+        <div class="bind-teachers-toolbar">
+          <a-input-search
+            v-model:value="bindStaffKeyword"
+            allow-clear
+            placeholder="搜索姓名或手机号"
+            class="bind-teachers-toolbar__search"
+          />
+          <a-space :size="8" wrap>
+            <a-button size="small" @click="selectAllFilteredStaff">
+              全选列表
+            </a-button>
+            <a-button size="small" @click="clearFilteredStaffSelection">
+              取消全选
+            </a-button>
+            <a-button size="small" @click="invertFilteredStaffSelection">
+              反选
+            </a-button>
+          </a-space>
+        </div>
+        <a-table
+          class="bind-teachers-table"
+          size="small"
+          :columns="bindTeacherColumns"
+          :data-source="filteredStaffForBind"
+          :row-selection="bindRowSelection"
+          :pagination="{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+          row-key="id"
+          :scroll="{ y: 320 }"
+        />
+      </a-spin>
+    </a-modal>
   </div>
 </template>
 
@@ -365,5 +581,33 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
 
 .period-action + .period-action {
   margin-left: 4px;
+}
+
+.bind-teachers-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.bind-teachers-toolbar__search {
+  width: 220px;
+  max-width: 100%;
+}
+
+.bind-teachers-table {
+  :deep(.ant-table-thead > tr > th) {
+    padding: 8px 12px;
+  }
+
+  :deep(.ant-table-tbody > tr > td) {
+    padding: 8px 12px;
+  }
+}
+
+:deep(.bind-teachers-modal .ant-modal-body) {
+  padding-top: 12px;
 }
 </style>

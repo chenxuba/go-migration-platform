@@ -74,6 +74,10 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 	}
 
 	teacherOrder, teacherNames := buildTeacherOrderForMatrix(roster, schedules)
+	allowTeachers, err := svc.resolveMatrixTeacherAllowList(ctx, instID, query)
+	if err != nil {
+		return nil, err
+	}
 	keyed := make(map[string][]model.TeachingScheduleVO)
 	for _, s := range schedules {
 		tid := strings.TrimSpace(s.TeacherID)
@@ -93,6 +97,11 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 
 		cols := make([]model.TeachingScheduleMatrixTeacher, 0, len(teacherOrder))
 		for _, tid := range teacherOrder {
+			if allowTeachers != nil {
+				if _, ok := allowTeachers[tid]; !ok {
+					continue
+				}
+			}
 			k := d + "\t" + strconv.FormatInt(tid, 10)
 			raw := keyed[k]
 			legacy := make([]model.TeachingScheduleInfoLegacyVO, 0, len(raw))
@@ -129,6 +138,37 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 		})
 	}
 	return out, nil
+}
+
+// resolveMatrixTeacherAllowList 非 nil 时表示仅展示这些教师列；nil 表示不做 ID 级筛选（与未传时段组一致）。
+// 优先使用 periodGroupUuid 在库中的关联；若无则使用 matrixTeacherIds。
+func (svc *Service) resolveMatrixTeacherAllowList(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) (map[int64]struct{}, error) {
+	u := strings.TrimSpace(query.PeriodGroupUUID)
+	if u != "" {
+		ids, err := svc.repo.ListPeriodTeacherUserIDsByGroupUUID(ctx, instID, u)
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) > 0 {
+			m := make(map[int64]struct{}, len(ids))
+			for _, id := range ids {
+				m[id] = struct{}{}
+			}
+			return m, nil
+		}
+	}
+	if len(query.MatrixTeacherIDs) > 0 {
+		m := make(map[int64]struct{}, len(query.MatrixTeacherIDs))
+		for _, id := range query.MatrixTeacherIDs {
+			if id > 0 {
+				m[id] = struct{}{}
+			}
+		}
+		if len(m) > 0 {
+			return m, nil
+		}
+	}
+	return nil, nil
 }
 
 func normalizeMatrixTeacherFilter(raw string) string {

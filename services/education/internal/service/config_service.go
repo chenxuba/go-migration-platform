@@ -8,6 +8,7 @@ import (
 
 	"go-migration-platform/pkg/qiniux"
 	"go-migration-platform/services/education/internal/model"
+	"go-migration-platform/services/education/internal/repository"
 )
 
 func (svc *Service) GetQiniuUploadToken() (qiniux.TokenVO, error) {
@@ -33,17 +34,51 @@ func (svc *Service) GetInstConfig(userID int64) (map[string]any, error) {
 		return nil, err
 	}
 
-	config, err := svc.repo.GetInstConfig(context.Background(), instID)
+	ctx := context.Background()
+	config, err := svc.repo.GetInstConfig(ctx, instID)
 	if err != nil {
 		return nil, err
 	}
 	if len(config) == 0 {
-		if err := svc.repo.CreateDefaultInstConfig(context.Background(), instID); err != nil {
+		if err := svc.repo.CreateDefaultInstConfig(ctx, instID); err != nil {
 			return nil, err
 		}
-		return svc.repo.GetInstConfig(context.Background(), instID)
+		config, err = svc.repo.GetInstConfig(ctx, instID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := svc.mergeInstPeriodConfigIntoMap(ctx, instID, config); err != nil {
+		return nil, err
 	}
 	return config, nil
+}
+
+// mergeInstPeriodConfigIntoMap 主存储为 inst_period_* 表；首次从 legacy unifiedTimePeriodJson 自动迁移并清空列。
+func (svc *Service) mergeInstPeriodConfigIntoMap(ctx context.Context, instID int64, config map[string]any) error {
+	n, err := svc.repo.CountInstPeriodGroups(ctx, instID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		raw, ok := config["unifiedTimePeriodJson"]
+		if ok && raw != nil {
+			if err := svc.repo.ImportInstPeriodFromLegacyJSON(ctx, instID, raw); err != nil {
+				return err
+			}
+			if err := svc.repo.ClearInstConfigLegacyUnifiedPeriodJSON(ctx, instID); err != nil {
+				return err
+			}
+		}
+	}
+	built, err := svc.repo.GetInstPeriodConfigJSON(ctx, instID)
+	if err != nil {
+		return err
+	}
+	if built != nil {
+		config["unifiedTimePeriodJson"] = built
+	}
+	return nil
 }
 
 func (svc *Service) SetInstConfig(userID int64, payload map[string]any) error {
@@ -55,16 +90,30 @@ func (svc *Service) SetInstConfig(userID int64, payload map[string]any) error {
 		return err
 	}
 
-	config, err := svc.repo.GetInstConfig(context.Background(), instID)
+	ctx := context.Background()
+	config, err := svc.repo.GetInstConfig(ctx, instID)
 	if err != nil {
 		return err
 	}
 	if len(config) == 0 {
-		if err := svc.repo.CreateDefaultInstConfig(context.Background(), instID); err != nil {
+		if err := svc.repo.CreateDefaultInstConfig(ctx, instID); err != nil {
 			return err
 		}
 	}
-	return svc.repo.UpdateInstConfig(context.Background(), instID, payload)
+	if raw, ok := payload["unifiedTimePeriodJson"]; ok {
+		periodPayload, err := repository.ParseUnifiedPeriodPayloadFromAny(raw)
+		if err != nil {
+			return err
+		}
+		if err := svc.repo.ReplaceInstPeriodConfig(ctx, instID, periodPayload); err != nil {
+			return err
+		}
+		delete(payload, "unifiedTimePeriodJson")
+		if err := svc.repo.ClearInstConfigLegacyUnifiedPeriodJSON(ctx, instID); err != nil {
+			return err
+		}
+	}
+	return svc.repo.UpdateInstConfig(ctx, instID, payload)
 }
 
 func (svc *Service) InitInstAllConfig(instID int64) error {

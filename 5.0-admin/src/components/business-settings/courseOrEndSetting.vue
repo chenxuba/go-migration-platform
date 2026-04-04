@@ -383,7 +383,7 @@ const toggleValue10 = ref(true)
         >编辑</span>
       </div>
     </div>
-    <!-- 时段列表（数据来自 inst_config，样式类名保持与原静态稿一致） -->
+    <!-- 时段列表 -->
     <a-collapse
       v-model:active-key="activeKey4"
       ghost

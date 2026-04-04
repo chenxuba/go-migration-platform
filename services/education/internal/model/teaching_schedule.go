@@ -29,6 +29,10 @@ type TeachingScheduleListQueryDTO struct {
 	MatrixWeekdays []int `json:"matrixWeekdays,omitempty"`
 	// Matrix API 可选：教师列筛选，all | has_class | no_class，空等价于 all
 	MatrixTeacherFilter string `json:"matrixTeacherFilter,omitempty"`
+	// Matrix API 可选：时段组 UUID（与 unified 配置 groups[].id 一致），服务端优先从 inst_period_group_teacher 解析教师列
+	PeriodGroupUUID string `json:"periodGroupUuid,omitempty"`
+	// Matrix API 可选：教师用户 ID 列表（HTTP 上为逗号分隔），当库中无时段组或组下无关联老师时作为回退筛选
+	MatrixTeacherIDs []int64 `json:"matrixTeacherIds,omitempty"`
 }
 
 type TeachingScheduleBatchUpdateDTO struct {

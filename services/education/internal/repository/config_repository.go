@@ -113,7 +113,7 @@ func (repo *Repository) UpdateInstConfig(ctx context.Context, instID int64, payl
 		"limitSameWeChat":           "limit_same_weChat",
 		"limitImportSameWeChat":     "limit_import_same_weChat",
 		"enableQuickUnifiedPeriod":  "enable_quick_unified_period",
-		"unifiedTimePeriodJson":     "unified_time_period_json",
+		// unifiedTimePeriodJson 已改为 inst_period_* 表存储，勿再通过本方法写入 LONGTEXT
 	}
 
 	setClauses := make([]string, 0, len(payload)+1)
