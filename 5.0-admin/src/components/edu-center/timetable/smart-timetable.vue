@@ -4,8 +4,9 @@ import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { h } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
+import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
-import { cancelTeachingSchedulesApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { cancelTeachingSchedulesApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 import {
@@ -148,6 +149,9 @@ const creatingOneToOneSchedule = ref(false)
 const deletingScheduledLesson = ref(false)
 const forcingConflictSchedule = ref(false)
 const conflictDetailModalOpen = ref(false)
+const scheduledConflictDetailOpen = ref(false)
+const scheduledConflictDetailLoading = ref(false)
+const scheduledConflictDetailValidation = ref(null)
 const conflictDetailState = ref({
   summary: '',
   attempted: null,
@@ -860,6 +864,31 @@ async function forceScheduleDespiteStudentConflict() {
   }
   finally {
     forcingConflictSchedule.value = false
+  }
+}
+
+async function openScheduledConflictDetail(text) {
+  if (!text?.scheduledConflict || !text?.scheduleId) {
+    messageService.warning('当前课程暂无可查看的冲突详情')
+    return
+  }
+
+  scheduledConflictDetailLoading.value = true
+  try {
+    const res = await getTeachingScheduleConflictDetailApi({
+      id: String(text.scheduleId),
+    })
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '加载冲突详情失败')
+    scheduledConflictDetailValidation.value = res.result
+    scheduledConflictDetailOpen.value = true
+  }
+  catch (error) {
+    console.error('openScheduledConflictDetail failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '加载冲突详情失败')
+  }
+  finally {
+    scheduledConflictDetailLoading.value = false
   }
 }
 
@@ -2042,6 +2071,8 @@ watch(currentModel, (newValue) => {
                 <span
                   class="absolute right-0 pl-2 pr-1  h-4 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2"
                   :class="text.scheduledConflict ? 'st-schedule-cell__badge--conflict' : 'bg-#00000080'"
+                  :style="{ cursor: text.scheduledConflict ? 'pointer' : 'default' }"
+                  @click.stop="text.scheduledConflict ? openScheduledConflictDetail(text) : undefined"
                 >
                   <span v-if="text.scheduledConflict">冲突</span>
                   <span v-else-if="text.courseType === 1">1v1</span>
@@ -2138,12 +2169,22 @@ watch(currentModel, (newValue) => {
       </div>
     </a-modal>
 
+    <ScheduleConflictModal
+      v-model:open="scheduledConflictDetailOpen"
+      :validation="scheduledConflictDetailValidation"
+      title="冲突详情"
+      current-title="当前冲突日程"
+      existing-title="与其冲突的日程"
+      fallback-message="当前日程与已有日程存在冲突"
+    />
+
     <a-modal
       v-model:open="conflictDetailModalOpen"
       title="冲突详情"
       :footer="null"
       width="760px"
       centered
+      :body-style="{ paddingTop: '0px' }"
     >
       <div class="st-conflict-modal">
         <div class="st-conflict-summary">
@@ -2158,6 +2199,16 @@ watch(currentModel, (newValue) => {
             <div class="st-conflict-attempt__headline">
               <span class="st-conflict-attempt__badge">{{ conflictDetailState.attempted.modeLabel }}</span>
               <span>待排课程信息</span>
+              <a-button
+                v-if="conflictDetailState.attempted?.forceAllowed"
+                danger
+                size="small"
+                class="st-conflict-attempt__force-btn"
+                :loading="forcingConflictSchedule"
+                @click="forceScheduleDespiteStudentConflict"
+              >
+                仍要排课
+              </a-button>
             </div>
             <div class="st-conflict-attempt__meta st-conflict-attempt__meta--time">
               {{ conflictDetailState.attempted.date }} {{ conflictDetailState.attempted.week }}
@@ -2242,14 +2293,6 @@ watch(currentModel, (newValue) => {
             <div class="st-conflict-item__side">
               <a-button type="primary" ghost :disabled="!item.jumpCellKey" @click="jumpToConflictSchedule(item)">
                 定位到课程
-              </a-button>
-              <a-button
-                v-if="conflictDetailState.attempted?.forceAllowed"
-                danger
-                :loading="forcingConflictSchedule"
-                @click="forceScheduleDespiteStudentConflict"
-              >
-                仍要排课
               </a-button>
             </div>
           </div>
@@ -2458,7 +2501,6 @@ watch(currentModel, (newValue) => {
 .st-conflict-modal {
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
 .st-conflict-summary {
@@ -2475,6 +2517,7 @@ watch(currentModel, (newValue) => {
   color: #1f2329;
   font-size: 15px;
   font-weight: 700;
+  margin: 10px 0;
 }
 
 .st-conflict-attempt__card,
@@ -2511,6 +2554,10 @@ watch(currentModel, (newValue) => {
   color: #1f2329;
   font-size: 15px;
   font-weight: 700;
+}
+
+.st-conflict-attempt__force-btn {
+  margin-left: auto;
 }
 
 .st-conflict-attempt__meta,
@@ -2636,7 +2683,6 @@ watch(currentModel, (newValue) => {
 .st-conflict-item__side {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   flex-shrink: 0;
 }
 </style>

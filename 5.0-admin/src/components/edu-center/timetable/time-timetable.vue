@@ -4,8 +4,10 @@ import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
-import { listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import ScheduleConflictModal from './schedule-conflict-modal.vue'
+import { getTeachingScheduleConflictDetailApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import emitter, { EVENTS } from '@/utils/eventBus'
+import messageService from '@/utils/messageService'
 
 const displayArray = ref([
   'intentionCourse',
@@ -29,6 +31,9 @@ const scheduleLoading = ref(false)
 const scheduleRows = ref([])
 const scheduleEditOpen = ref(false)
 const currentSchedule = ref(null)
+const scheduleConflictOpen = ref(false)
+const scheduleConflictValidation = ref(null)
+const scheduleConflictLoading = ref(false)
 const headerScrollRef = ref(null)
 const boardScrollRef = ref(null)
 let syncingScroll = false
@@ -542,6 +547,29 @@ function eventClass(item) {
   }
 }
 
+async function openEventConflictDetail(event) {
+  if (!event?.conflict)
+    return
+
+  scheduleConflictLoading.value = true
+  try {
+    const res = await getTeachingScheduleConflictDetailApi({
+      id: String(event.id),
+    })
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '加载冲突详情失败')
+    scheduleConflictValidation.value = res.result
+    scheduleConflictOpen.value = true
+  }
+  catch (error) {
+    console.error('openEventConflictDetail failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '加载冲突详情失败')
+  }
+  finally {
+    scheduleConflictLoading.value = false
+  }
+}
+
 function openScheduleEdit(item) {
   currentSchedule.value = item?.raw || null
   scheduleEditOpen.value = true
@@ -935,6 +963,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                         <span
                           v-if="event.conflict"
                           class="schedule-event__badge schedule-event__badge--conflict"
+                          @click.stop="openEventConflictDetail(event)"
                         >
                           冲突
                         </span>
@@ -979,6 +1008,14 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
       v-model:open="scheduleEditOpen"
       :schedule="currentSchedule"
       @updated="handleScheduleUpdated"
+    />
+    <ScheduleConflictModal
+      v-model:open="scheduleConflictOpen"
+      :validation="scheduleConflictValidation"
+      title="冲突详情"
+      current-title="当前冲突日程"
+      existing-title="与其冲突的日程"
+      fallback-message="当前日程与已有日程存在冲突"
     />
   </div>
 </template>

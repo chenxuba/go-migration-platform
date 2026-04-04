@@ -48,6 +48,10 @@ type TeachingScheduleListQueryDTO struct {
 	MatrixTeacherIDs []int64 `json:"matrixTeacherIds,omitempty"`
 }
 
+type TeachingScheduleConflictDetailQueryDTO struct {
+	ID string `json:"id"`
+}
+
 type TeachingScheduleBatchUpdateDTO struct {
 	BatchNo      string   `json:"batchNo"`
 	IDs          []string `json:"ids"`

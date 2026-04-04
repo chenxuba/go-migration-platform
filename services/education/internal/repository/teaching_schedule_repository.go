@@ -102,6 +102,72 @@ func (repo *Repository) GetOneToOneScheduleCreateContextTx(ctx context.Context, 
 	return item, nil
 }
 
+func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, instID int64, query model.TeachingScheduleConflictDetailQueryDTO) (model.TeachingScheduleValidationResult, error) {
+	scheduleID, err := strconv.ParseInt(strings.TrimSpace(query.ID), 10, 64)
+	if err != nil || scheduleID <= 0 {
+		return model.TeachingScheduleValidationResult{}, errors.New("缺少有效的日程ID")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.TeachingScheduleValidationResult{}, err
+	}
+	defer tx.Rollback()
+
+	current, err := repo.loadScheduleConflictDetailByIDTx(ctx, tx, instID, scheduleID)
+	if err != nil {
+		return model.TeachingScheduleValidationResult{}, err
+	}
+
+	slot := normalizedScheduleSlot{
+		LessonDate: startOfDay(current.LessonDate),
+		StartAt:    current.StartAt,
+		EndAt:      current.EndAt,
+	}
+	excludeIDs := []int64{current.ID}
+
+	teacherConflicts := []scheduleConflictDetailRow{}
+	if current.TeacherID > 0 {
+		teacherConflicts, err = repo.listScheduleConflictDetailsTx(ctx, tx, instID, "teacher_id", current.TeacherID, []normalizedScheduleSlot{slot}, "", excludeIDs)
+		if err != nil {
+			return model.TeachingScheduleValidationResult{}, err
+		}
+	}
+
+	studentConflicts := []scheduleConflictDetailRow{}
+	if current.StudentID > 0 {
+		studentConflicts, err = repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", current.StudentID, []normalizedScheduleSlot{slot}, "", excludeIDs)
+		if err != nil {
+			return model.TeachingScheduleValidationResult{}, err
+		}
+	}
+
+	classroomConflicts := []scheduleConflictDetailRow{}
+	if current.ClassroomID > 0 {
+		classroomConflicts, err = repo.listScheduleConflictDetailsTx(ctx, tx, instID, "classroom_id", current.ClassroomID, []normalizedScheduleSlot{slot}, "", excludeIDs)
+		if err != nil {
+			return model.TeachingScheduleValidationResult{}, err
+		}
+	}
+
+	currentItems, existingItems, conflictTypes := buildScheduleConflictResultFromExisting(current, teacherConflicts, classroomConflicts, studentConflicts)
+	if len(conflictTypes) == 0 {
+		return model.TeachingScheduleValidationResult{
+			Valid:            true,
+			Message:          "当前日程暂无冲突",
+			CurrentSchedules: currentItems,
+		}, nil
+	}
+
+	return model.TeachingScheduleValidationResult{
+		Valid:             false,
+		Message:           buildConflictSummaryMessage(conflictTypes),
+		CurrentSchedules:  currentItems,
+		ExistingSchedules: existingItems,
+		ConflictTypes:     conflictTypes,
+	}, nil
+}
+
 func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleVO, error) {
 	filters := []string{"inst_id = ?", "del_flag = 0", "status = ?"}
 	args := []any{instID, model.TeachingScheduleStatusActive}
@@ -722,7 +788,9 @@ type normalizedAvailabilityScheduleSlot struct {
 
 type scheduleConflictDetailRow struct {
 	ID                int64
+	StudentID         int64
 	TeacherID         int64
+	ClassroomID       int64
 	ClassType         int
 	TeachingClassName string
 	StudentName       string
@@ -750,6 +818,51 @@ type teachingScheduleRow struct {
 	ID         int64
 	BatchNo    string
 	LessonDate time.Time
+}
+
+func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx *sql.Tx, instID, scheduleID int64) (scheduleConflictDetailRow, error) {
+	var item scheduleConflictDetailRow
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			id,
+			IFNULL(student_id, 0),
+			IFNULL(teacher_id, 0),
+			IFNULL(classroom_id, 0),
+			IFNULL(class_type, 0),
+			IFNULL(teaching_class_name, ''),
+			IFNULL(student_name, ''),
+			IFNULL(teacher_name, ''),
+			IFNULL(classroom_name, ''),
+			lesson_date,
+			lesson_start_at,
+			lesson_end_at
+		FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND id = ?
+		  AND del_flag = 0
+		  AND status = ?
+		LIMIT 1
+	`, instID, scheduleID, model.TeachingScheduleStatusActive).Scan(
+		&item.ID,
+		&item.StudentID,
+		&item.TeacherID,
+		&item.ClassroomID,
+		&item.ClassType,
+		&item.TeachingClassName,
+		&item.StudentName,
+		&item.TeacherName,
+		&item.ClassroomName,
+		&item.LessonDate,
+		&item.StartAt,
+		&item.EndAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return item, errors.New("未找到该日程")
+		}
+		return item, err
+	}
+	return item, nil
 }
 
 func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *sql.Tx, instID int64, batchNo string, ids []int64) ([]teachingScheduleRow, error) {
@@ -896,7 +1009,9 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 		rows, err := tx.QueryContext(ctx, `
 			SELECT
 				id,
+				IFNULL(student_id, 0),
 				IFNULL(teacher_id, 0),
+				IFNULL(classroom_id, 0),
 				IFNULL(class_type, 0),
 				IFNULL(teaching_class_name, ''),
 				IFNULL(student_name, ''),
@@ -916,7 +1031,9 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 			var item scheduleConflictDetailRow
 			if err := rows.Scan(
 				&item.ID,
+				&item.StudentID,
 				&item.TeacherID,
+				&item.ClassroomID,
 				&item.ClassType,
 				&item.TeachingClassName,
 				&item.StudentName,
@@ -1259,6 +1376,94 @@ func buildScheduleConflictResult(
 		return existing[i].Date < existing[j].Date
 	})
 	return current, existing, conflictTypes
+}
+
+func buildScheduleConflictResultFromExisting(
+	current scheduleConflictDetailRow,
+	teacherConflicts []scheduleConflictDetailRow,
+	classroomConflicts []scheduleConflictDetailRow,
+	studentConflicts []scheduleConflictDetailRow,
+) ([]model.TeachingScheduleConflictItem, []model.TeachingScheduleConflictItem, []string) {
+	typeSet := make(map[string]struct{})
+	currentConflictTypes := make([]string, 0, 3)
+	if len(teacherConflicts) > 0 {
+		currentConflictTypes = append(currentConflictTypes, "老师")
+		typeSet["老师"] = struct{}{}
+	}
+	if len(classroomConflicts) > 0 {
+		currentConflictTypes = append(currentConflictTypes, "教室")
+		typeSet["教室"] = struct{}{}
+	}
+	if len(studentConflicts) > 0 {
+		currentConflictTypes = append(currentConflictTypes, "学员")
+		typeSet["学员"] = struct{}{}
+	}
+
+	currentItems := []model.TeachingScheduleConflictItem{{
+		Name:          current.TeachingClassName,
+		ClassTypeText: scheduleClassTypeText(current.ClassType),
+		Date:          current.LessonDate.Format("2006-01-02"),
+		Week:          weekDisplay(current.LessonDate),
+		TimeText:      current.StartAt.Format("15:04") + "~" + current.EndAt.Format("15:04"),
+		TeacherID:     emptyStringIfZero(current.TeacherID),
+		TeacherName:   firstNonEmptyString(current.TeacherName, "-"),
+		ClassroomName: firstNonEmptyString(current.ClassroomName, "-"),
+		StudentNames:  compactStrings([]string{current.StudentName}),
+		ConflictTypes: currentConflictTypes,
+	}}
+
+	existingMap := make(map[int64]model.TeachingScheduleConflictItem)
+	appendExisting := func(row scheduleConflictDetailRow, conflictType string) {
+		if row.ID == current.ID {
+			return
+		}
+		item, ok := existingMap[row.ID]
+		if !ok {
+			item = model.TeachingScheduleConflictItem{
+				Name:          row.TeachingClassName,
+				ClassTypeText: scheduleClassTypeText(row.ClassType),
+				Date:          row.LessonDate.Format("2006-01-02"),
+				Week:          weekDisplay(row.LessonDate),
+				TimeText:      row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+				TeacherID:     emptyStringIfZero(row.TeacherID),
+				TeacherName:   firstNonEmptyString(row.TeacherName, "-"),
+				ClassroomName: firstNonEmptyString(row.ClassroomName, "-"),
+				StudentNames:  compactStrings([]string{row.StudentName}),
+				ConflictTypes: []string{},
+			}
+		}
+		if !containsString(item.ConflictTypes, conflictType) {
+			item.ConflictTypes = append(item.ConflictTypes, conflictType)
+		}
+		existingMap[row.ID] = item
+	}
+	for _, row := range teacherConflicts {
+		appendExisting(row, "老师")
+	}
+	for _, row := range classroomConflicts {
+		appendExisting(row, "教室")
+	}
+	for _, row := range studentConflicts {
+		appendExisting(row, "学员")
+	}
+
+	existing := make([]model.TeachingScheduleConflictItem, 0, len(existingMap))
+	for _, item := range existingMap {
+		sort.Strings(item.ConflictTypes)
+		existing = append(existing, item)
+	}
+	conflictTypes := make([]string, 0, len(typeSet))
+	for key := range typeSet {
+		conflictTypes = append(conflictTypes, key)
+	}
+	sort.Strings(conflictTypes)
+	sort.Slice(existing, func(i, j int) bool {
+		if existing[i].Date == existing[j].Date {
+			return existing[i].TimeText < existing[j].TimeText
+		}
+		return existing[i].Date < existing[j].Date
+	})
+	return currentItems, existing, conflictTypes
 }
 
 func buildConflictSummaryMessage(conflictTypes []string) string {

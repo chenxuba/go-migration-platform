@@ -132,6 +132,12 @@ export function checkOneToOneScheduleAvailabilityApi(data: {
   return usePost<OneToOneScheduleAvailabilityResult>('/api/v1/teaching-schedules/one-to-one/slot-availability', data)
 }
 
+export function getTeachingScheduleConflictDetailApi(params: {
+  id: string
+}) {
+  return useGet<TeachingScheduleValidationResult>('/api/v1/teaching-schedules/conflict-detail', params)
+}
+
 export function listTeachingSchedulesApi(params: {
   startDate: string
   endDate: string
