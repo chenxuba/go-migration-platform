@@ -2961,10 +2961,26 @@ button.planner-chip.planner-chip--active {
 
 :deep(.planner-multi-slot-select .ant-select-selection-overflow) {
   flex-wrap: wrap !important;
+  align-items: center !important;
 }
 
 :deep(.planner-multi-slot-select .ant-select-selection-overflow-item) {
   max-width: none !important;
+}
+
+/* 与胶囊标签的 margin + min-height 对齐，避免 caret 相对标签行偏上 */
+:deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-search) {
+  display: inline-flex !important;
+  align-items: center !important;
+  margin-top: 8px;
+  margin-bottom: 6px;
+}
+
+:deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-search-input),
+:deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-search-mirror) {
+  height: 28px !important;
+  min-height: 28px !important;
+  line-height: 28px !important;
 }
 
 :deep(.planner-control--major.ant-picker),
