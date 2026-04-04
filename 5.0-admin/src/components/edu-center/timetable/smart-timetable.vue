@@ -1456,9 +1456,9 @@ watch(currentModel, (newValue) => {
   box-sizing: border-box;
 }
 .st-date-nav--day {
-  width: 200px;
-  min-width: 200px;
-  max-width: 200px;
+  width: 300px;
+  min-width: 300px;
+  max-width: 300px;
 }
 .st-date-nav--week {
   width: 300px;
