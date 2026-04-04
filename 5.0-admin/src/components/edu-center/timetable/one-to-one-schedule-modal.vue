@@ -820,16 +820,27 @@ function assistantAvailabilityFor(staff: StaffOptionItem): AvailabilityBadgeView
 }
 
 const assistantSelectOptionViews = computed<AssistantSelectOptionView[]>(() =>
-  assistantSelectStaffs.value.map((staff) => {
-    const availability = assistantAvailabilityFor(staff)
-    return {
-      value: String(staff.id),
-      label: displayStaffName(staff) || String(staff.id),
-      mobile: displayMobileText(staff),
-      status: availability.status,
-      statusText: availability.statusText,
-    }
-  }),
+  assistantSelectStaffs.value
+    .filter(staff => !sameStaffId(staff.id, selectedTeacher.value))
+    .map((staff) => {
+      const availability = assistantAvailabilityFor(staff)
+      return {
+        value: String(staff.id),
+        label: displayStaffName(staff) || String(staff.id),
+        mobile: displayMobileText(staff),
+        status: availability.status,
+        statusText: availability.statusText,
+      }
+    }),
+)
+
+const assistantOptionList = computed(() =>
+  assistantSelectStaffs.value
+    .filter(item => !sameStaffId(item.id, selectedTeacher.value))
+    .map(item => ({
+      value: String(item.id),
+      label: displayStaffName(item) || String(item.id),
+    })),
 )
 
 async function fetchAssistantAvailability() {
@@ -1196,6 +1207,19 @@ watch(
 )
 
 watch(
+  selectedTeacher,
+  (value) => {
+    if (!isValidStaffId(value))
+      return
+    const next = selectedAssistant.value.filter(id => !sameStaffId(id, value))
+    if (next.length !== selectedAssistant.value.length) {
+      selectedAssistant.value = next
+      handleAssistantChange(next)
+    }
+  },
+)
+
+watch(
   () => [
     String(selectedOneToOne.value?.id || ''),
     plannedDates.value.map(item => item.format('YYYY-MM-DD')).join(','),
@@ -1416,6 +1440,7 @@ function closeModal() {
 function buildScheduleCreatePayload(options: {
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
+  assistantIds?: string[]
   plans?: PreviewItem[]
 } = {}) {
   const plans = Array.isArray(options.plans) && options.plans.length
@@ -1424,7 +1449,9 @@ function buildScheduleCreatePayload(options: {
   return {
     oneToOneId: String(selectedOneToOne.value?.id || ''),
     teacherId: String(selectedTeacher.value || ''),
-    assistantIds: selectedAssistant.value.map(id => String(id)),
+    assistantIds: Array.isArray(options.assistantIds)
+      ? options.assistantIds.map(id => String(id))
+      : selectedAssistant.value.map(id => String(id)),
     classroomId: normalizedSelectedClassroomId.value || '',
     allowStudentConflict: options.allowStudentConflict === true,
     allowClassroomConflict: options.allowClassroomConflict === true,
@@ -1484,6 +1511,7 @@ function closePreviewModal() {
 async function confirmBatchCreate(options: {
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
+  assistantIds?: string[]
   plans?: PreviewItem[]
 } = {}) {
   if (!selectedOneToOne.value?.id)
@@ -1525,8 +1553,16 @@ async function confirmBatchCreate(options: {
 
 function handleConflictWorkbenchSubmit(payload: {
   plans: PreviewItem[]
+  assistantIds?: string[]
 }) {
+  if (Array.isArray(payload.assistantIds)) {
+    selectedAssistant.value = payload.assistantIds
+    selectedAssistantDisplays.value = payload.assistantIds.map((id) => {
+      return assistantSelectStaffs.value.find(item => sameStaffId(item.id, id))
+    }).filter(Boolean) as StaffOptionItem[]
+  }
   void confirmBatchCreate({
+    assistantIds: payload.assistantIds,
     plans: payload.plans,
   })
 }
@@ -2344,6 +2380,7 @@ function invertWeekdays() {
     :plans="previewPlans"
     :validation="previewValidationResult"
     :teacher-options="teacherSelectOptions"
+    :assistant-options="assistantOptionList"
     :classroom-options="classroomOptions"
     :period-groups="conflictWorkbenchPeriodGroups"
     :time-options="schoolTimeSlotOptions.map(item => ({

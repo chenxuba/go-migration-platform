@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CloseOutlined, ExclamationCircleFilled } from '@ant-design/icons-vue'
-import { checkOneToOneScheduleAvailabilityApi, type OneToOneScheduleAvailabilityItem, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, type OneToOneScheduleAvailabilityItem, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
 
 interface ConflictWorkbenchPlan {
@@ -11,8 +11,10 @@ interface ConflictWorkbenchPlan {
   startTime: string
   endTime: string
   teacher: string
+  assistant?: string
   classroom: string
   teacherId?: string
+  assistantIds?: string[]
   classroomId?: string
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
@@ -39,6 +41,7 @@ interface PeriodGroupOption {
 
 interface ConflictWorkbenchSubmitPayload {
   plans: ConflictWorkbenchPlan[]
+  assistantIds?: string[]
 }
 
 interface ScheduleConflictItem {
@@ -80,6 +83,7 @@ const props = defineProps<{
   } | null
   plans: ConflictWorkbenchPlan[]
   teacherOptions: SimpleOption[]
+  assistantOptions?: SimpleOption[]
   classroomOptions: SimpleOption[]
   timeOptions: TimeOption[]
   periodGroups?: PeriodGroupOption[]
@@ -130,6 +134,14 @@ interface TimeOptionSelectView {
   reasonText: string
 }
 
+interface AssistantOptionSelectView {
+  value: string
+  label: string
+  baseLabel: string
+  status: 'free' | 'busy' | 'unknown'
+  statusText: string
+}
+
 const modalOpen = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
@@ -141,11 +153,16 @@ const rowStates = ref<WorkbenchRow[]>([])
 const initialConflictMap = ref<Record<string, string[]>>({})
 const lastValidatedRowMap = ref<Record<string, WorkbenchRow>>({})
 const bulkSoftConflictSnapshot = ref<Record<string, SoftConflictSnapshotItem> | null>(null)
+const assistantIdsState = ref<string[]>([])
 let revalidateTimer: ReturnType<typeof setTimeout> | null = null
 const timeOptionAvailabilityMap = ref<Record<string, TimeOptionAvailabilityView>>({})
 const timeOptionAvailabilityLoading = ref(false)
 let timeOptionAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
 let timeOptionAvailabilitySeq = 0
+const assistantAvailabilityMap = ref<Record<string, TimeOptionAvailabilityView>>({})
+const assistantAvailabilityLoading = ref(false)
+let assistantAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
+let assistantAvailabilitySeq = 0
 
 function parseTimeText(text?: string) {
   const m = String(text || '').match(/(\d{1,2}:\d{2})[~～](\d{1,2}:\d{2})/)
@@ -191,6 +208,10 @@ function normalizedTeacherId(value: string) {
   return String(value || '').trim()
 }
 
+function normalizedAssistantIds(values?: Array<string | number>) {
+  return Array.from(new Set((values || []).map(value => String(value || '').trim()).filter(Boolean)))
+}
+
 function allowedGroupOptionsByTeacher(teacherId: string) {
   const normalized = normalizedTeacherId(teacherId)
   return (props.periodGroups || []).filter(group =>
@@ -219,6 +240,10 @@ function timeOptionsForRow(row: Record<string, any>) {
 
 function buildTimeOptionAvailabilityKey(teacherId: string, lessonDate: string, startTime: string, endTime: string) {
   return `${normalizedTeacherId(teacherId)}|${lessonDate}|${startTime}|${endTime}`
+}
+
+function buildAssistantAvailabilityKey(rowKey: string, assistantId: string) {
+  return `${rowKey}|${String(assistantId || '').trim()}`
 }
 
 function buildTimeOptionAvailabilityView(item: OneToOneScheduleAvailabilityItem): TimeOptionAvailabilityView {
@@ -273,6 +298,39 @@ function timeOptionViewsForRow(row: Record<string, any>): TimeOptionSelectView[]
       reasonText: availability.reasonText,
     }
   })
+}
+
+function assistantAvailabilityForRow(row: Record<string, any>, assistantId: string): TimeOptionAvailabilityView {
+  const normalized = String(assistantId || '').trim()
+  if (!normalized) {
+    return {
+      status: 'unknown',
+      statusText: '待定',
+      reasonText: '',
+      conflictTypes: [],
+    }
+  }
+  return assistantAvailabilityMap.value[buildAssistantAvailabilityKey(row.key, normalized)] || {
+    status: 'unknown',
+    statusText: assistantAvailabilityLoading.value ? '检测中' : '待检测',
+    reasonText: '',
+    conflictTypes: [],
+  }
+}
+
+function assistantOptionViewsForRow(row: Record<string, any>): AssistantOptionSelectView[] {
+  return (props.assistantOptions || [])
+    .filter(option => option.value !== row.teacherId)
+    .map((option) => {
+      const availability = assistantAvailabilityForRow(row, option.value)
+      return {
+        value: option.value,
+        label: `${option.label} · ${availability.statusText}`,
+        baseLabel: option.label,
+        status: availability.status,
+        statusText: availability.statusText,
+      }
+    })
 }
 
 function syncValidatedRowSnapshot(rows = rowStates.value) {
@@ -457,11 +515,74 @@ function classroomNameById(id: string) {
   return props.classroomOptions.find(item => item.value === id)?.label || '-'
 }
 
+function classroomSelectValue(value?: string) {
+  const normalized = String(value || '').trim()
+  return normalized || undefined
+}
+
+function assistantNamesByIds(ids?: Array<string | number>) {
+  const normalized = normalizedAssistantIds(ids)
+  if (!normalized.length)
+    return []
+  const labels = normalized.map((id) => {
+    return props.assistantOptions?.find(item => item.value === id)?.label || id
+  }).filter(Boolean)
+  return Array.from(new Set(labels))
+}
+
+const assistantDisplayText = computed(() => {
+  const names = assistantNamesByIds(assistantIdsState.value)
+  return names.length ? names.join('、') : '未安排'
+})
+
+const selectedAssistantNameSet = computed(() =>
+  new Set(assistantNamesByIds(assistantIdsState.value).map(name => normalizeText(name)).filter(Boolean)),
+)
+
+const selectedAssistantIdSet = computed(() =>
+  new Set(assistantIdsState.value.map(id => normalizedTeacherId(id)).filter(Boolean)),
+)
+
+function currentRowAssistantEntries(row: Record<string, any>) {
+  return normalizedAssistantIds(assistantIdsState.value).map((id) => {
+    const name = assistantNamesByIds([id])[0] || id
+    const availability = assistantAvailabilityForRow(row, id)
+    return {
+      id,
+      name,
+      danger: availability.status === 'busy',
+    }
+  })
+}
+
+function conflictItemAssistantEntries(item: ConflictDetailView) {
+  return (item.assistantNames || []).filter(Boolean).map((name) => {
+    return {
+      name,
+      danger: item.activeConflictTypes.includes('助教') && selectedAssistantNameSet.value.has(normalizeText(name)),
+    }
+  })
+}
+
+function conflictItemTeacherTone(item: ConflictDetailView) {
+  if (item.activeConflictTypes.includes('老师'))
+    return 'danger'
+  if (item.activeConflictTypes.includes('助教')) {
+    const teacherId = normalizedTeacherId(item.teacherId || '')
+    const teacherName = normalizeText(item.teacherName)
+    if ((teacherId && selectedAssistantIdSet.value.has(teacherId)) || (teacherName && selectedAssistantNameSet.value.has(teacherName)))
+      return 'danger'
+  }
+  if (item.resolvedConflictTypes.includes('老师'))
+    return 'success'
+  return 'default'
+}
+
 function buildValidationPayload() {
   return {
     oneToOneId: props.oneToOneId,
     teacherId: props.defaultTeacherId || rowStates.value[0]?.teacherId || '',
-    assistantIds: props.assistantIds || [],
+    assistantIds: assistantIdsState.value,
     classroomId: props.defaultClassroomId || '',
     schedules: rowStates.value.map(row => ({
       lessonDate: row.date,
@@ -553,6 +674,70 @@ async function fetchTimeOptionAvailability() {
   }
 }
 
+async function fetchAssistantAvailability() {
+  const seq = ++assistantAvailabilitySeq
+  const oneToOneId = String(props.oneToOneId || '').trim()
+  const assistantIds = normalizedAssistantIds((props.assistantOptions || []).map(item => item.value))
+  if (!props.open || !oneToOneId || !assistantIds.length || !rowStates.value.length) {
+    assistantAvailabilityMap.value = {}
+    assistantAvailabilityLoading.value = false
+    return
+  }
+
+  assistantAvailabilityLoading.value = true
+  try {
+    const results = await Promise.all(
+      rowStates.value.map(async (row) => {
+        const res = await checkAssistantScheduleAvailabilityApi({
+          oneToOneId,
+          assistantIds,
+          schedules: [{
+            lessonDate: row.date,
+            startTime: row.startTime,
+            endTime: row.endTime,
+          }],
+        })
+        return { rowKey: row.key, res }
+      }),
+    )
+    if (seq !== assistantAvailabilitySeq)
+      return
+
+    const nextMap: Record<string, TimeOptionAvailabilityView> = {}
+    results.forEach(({ rowKey, res }) => {
+      if (res.code !== 200 || !res.result)
+        throw new Error(res.message || '检测助教空闲状态失败')
+      assistantIds.forEach((assistantId) => {
+        nextMap[buildAssistantAvailabilityKey(rowKey, assistantId)] = {
+          status: 'free',
+          statusText: '空闲',
+          reasonText: '',
+          conflictTypes: [],
+        }
+      })
+      ;(res.result.items || []).forEach((item) => {
+        nextMap[buildAssistantAvailabilityKey(rowKey, item.assistantId)] = {
+          status: item.valid ? 'free' : 'busy',
+          statusText: item.valid ? '空闲' : '繁忙',
+          reasonText: item.message || '',
+          conflictTypes: item.conflictTypes || [],
+        }
+      })
+    })
+    assistantAvailabilityMap.value = nextMap
+  }
+  catch (error) {
+    if (seq !== assistantAvailabilitySeq)
+      return
+    console.error('fetchAssistantAvailability failed', error)
+    assistantAvailabilityMap.value = {}
+  }
+  finally {
+    if (seq === assistantAvailabilitySeq)
+      assistantAvailabilityLoading.value = false
+  }
+}
+
 function scheduleRevalidate() {
   if (revalidateTimer)
     clearTimeout(revalidateTimer)
@@ -566,6 +751,14 @@ function scheduleTimeOptionAvailabilityCheck() {
     clearTimeout(timeOptionAvailabilityTimer)
   timeOptionAvailabilityTimer = setTimeout(() => {
     void fetchTimeOptionAvailability()
+  }, 180)
+}
+
+function scheduleAssistantAvailabilityCheck() {
+  if (assistantAvailabilityTimer)
+    clearTimeout(assistantAvailabilityTimer)
+  assistantAvailabilityTimer = setTimeout(() => {
+    void fetchAssistantAvailability()
   }, 180)
 }
 
@@ -591,6 +784,7 @@ function initializeRows() {
   })
   validationState.value = props.validation || null
   bulkSoftConflictSnapshot.value = null
+  assistantIdsState.value = normalizedAssistantIds(props.assistantIds || [])
   initialConflictMap.value = {}
   props.plans.forEach((plan, index) => {
     const current = props.validation?.currentSchedules?.[index]
@@ -598,6 +792,7 @@ function initializeRows() {
   })
   syncValidatedRowSnapshot()
   scheduleTimeOptionAvailabilityCheck()
+  scheduleAssistantAvailabilityCheck()
 }
 
 watch(
@@ -605,8 +800,10 @@ watch(
   (open) => {
     if (open)
       initializeRows()
-    else
+    else {
       timeOptionAvailabilityMap.value = {}
+      assistantAvailabilityMap.value = {}
+    }
   },
   { immediate: true },
 )
@@ -618,6 +815,27 @@ watch(
       validationState.value = value || null
       syncValidatedRowSnapshot()
     }
+  },
+)
+
+watch(
+  () => props.assistantIds,
+  (value) => {
+    if (!props.open)
+      assistantIdsState.value = normalizedAssistantIds(value || [])
+  },
+)
+
+watch(
+  () => [
+    props.open ? '1' : '0',
+    props.oneToOneId,
+    (props.assistantOptions || []).map(item => item.value).join(','),
+    rowStates.value.map(row => `${row.key}|${row.date}|${row.startTime}|${row.endTime}`).join(','),
+  ].join('|'),
+  () => {
+    if (props.open)
+      scheduleAssistantAvailabilityCheck()
   },
 )
 
@@ -648,8 +866,16 @@ function updateRow<K extends keyof WorkbenchRow>(key: string, field: K, value: W
     }
     return next
   })
+  if (field === 'teacherId') {
+    const teacherIds = new Set(rowStates.value.map(row => normalizedTeacherId(row.teacherId)).filter(Boolean))
+    const nextAssistantIds = assistantIdsState.value.filter(id => !teacherIds.has(id))
+    if (nextAssistantIds.length !== assistantIdsState.value.length)
+      assistantIdsState.value = nextAssistantIds
+  }
   if (field === 'teacherId' || field === 'groupKey')
     scheduleTimeOptionAvailabilityCheck()
+  if (field === 'groupKey' || field === 'startTime' || field === 'endTime')
+    scheduleAssistantAvailabilityCheck()
   if (field === 'teacherId' || field === 'classroomId' || field === 'startTime' || field === 'endTime' || field === 'groupKey')
     scheduleRevalidate()
 }
@@ -668,6 +894,7 @@ function changeRowTime(key: string, value: string) {
       endTime,
     }
   })
+  scheduleAssistantAvailabilityCheck()
   scheduleRevalidate()
 }
 
@@ -713,6 +940,12 @@ function restoreBulkSoftConflictSelection() {
   bulkSoftConflictSnapshot.value = null
 }
 
+function updateAssistantIds(value: Array<string | number>) {
+  const teacherIds = new Set(rowStates.value.map(row => normalizedTeacherId(row.teacherId)).filter(Boolean))
+  assistantIdsState.value = normalizedAssistantIds(value).filter(id => !teacherIds.has(id))
+  scheduleRevalidate()
+}
+
 function submitResolvedRows() {
   const selected = rowViews.value.filter(row => row.canCreate)
   if (!selected.length)
@@ -729,13 +962,16 @@ function submitResolvedRows() {
         startTime: row.startTime,
         endTime: row.endTime,
         teacher: teacherNameById(row.teacherId),
+        assistant: assistantDisplayText.value,
         classroom: classroomNameById(row.classroomId),
         teacherId: row.teacherId,
+        assistantIds: [...assistantIdsState.value],
         classroomId: row.classroomId,
         allowStudentConflict: row.allowStudentConflict,
         allowClassroomConflict: row.allowClassroomConflict,
       }
     }),
+    assistantIds: [...assistantIdsState.value],
   })
 }
 
@@ -824,7 +1060,21 @@ const columns = [
               </div>
               <div class="schedule-conflict__cell-meta">
                 <span>老师：<strong :class="{ 'schedule-conflict__cell--danger': record.displayHasTeacherConflict, 'schedule-conflict__cell--success': !record.displayHasTeacherConflict && record.resolvedConflictTypes.includes('老师') }">{{ teacherNameById(record.teacherId) }}</strong></span>
-                <span>助教：<strong :class="{ 'schedule-conflict__cell--danger': record.displayHasAssistantConflict }">{{ (record.current?.assistantNames || []).join('、') || '未安排' }}</strong></span>
+                <span>
+                  助教：
+                  <span class="schedule-conflict__name-list">
+                    <template v-if="currentRowAssistantEntries(record).length">
+                      <span
+                        v-for="(assistant, assistantIndex) in currentRowAssistantEntries(record)"
+                        :key="`${record.key}-assistant-${assistant.id}`"
+                        :class="{ 'schedule-conflict__cell--danger': assistant.danger }"
+                      >
+                        {{ assistant.name }}<template v-if="assistantIndex < currentRowAssistantEntries(record).length - 1">、</template>
+                      </span>
+                    </template>
+                    <span v-else>未安排</span>
+                  </span>
+                </span>
                 <span>教室：<strong :class="{ 'schedule-conflict__cell--danger': record.displayHasClassroomConflict, 'schedule-conflict__cell--success': !record.displayHasClassroomConflict && record.resolvedConflictTypes.includes('教室') }">{{ classroomNameById(record.classroomId) }}</strong></span>
                 <span>学员：<strong :class="{ 'schedule-conflict__cell--danger': record.displayHasStudentConflict }">{{ (record.current?.studentNames || []).join('、') || '-' }}</strong></span>
               </div>
@@ -851,8 +1101,22 @@ const columns = [
                   <span>{{ item.date }} {{ item.timeText }}</span>
                 </div>
                 <div class="schedule-conflict__cell-meta">
-                  <span>老师：<strong :class="toneClass(item.teacherTone)">{{ item.teacherName || '-' }}</strong></span>
-                  <span>助教：<strong :class="toneClass(item.assistantTone)">{{ (item.assistantNames || []).join('、') || '未安排' }}</strong></span>
+                  <span>老师：<strong :class="toneClass(conflictItemTeacherTone(item))">{{ item.teacherName || '-' }}</strong></span>
+                  <span>
+                    助教：
+                    <span class="schedule-conflict__name-list">
+                    <template v-if="conflictItemAssistantEntries(item).length">
+                      <span
+                        v-for="(assistant, assistantIndex) in conflictItemAssistantEntries(item)"
+                        :key="`${item.key}-assistant-${assistant.name}-${assistantIndex}`"
+                        :class="{ 'schedule-conflict__cell--danger': assistant.danger }"
+                      >
+                        {{ assistant.name }}<template v-if="assistantIndex < conflictItemAssistantEntries(item).length - 1">、</template>
+                      </span>
+                    </template>
+                    <span v-else>未安排</span>
+                    </span>
+                  </span>
                   <span>教室：<strong :class="toneClass(item.classroomTone)">{{ item.classroomName || '-' }}</strong></span>
                   <span>冲突学员：<strong :class="toneClass(item.studentTone)">{{ (item.studentNames || []).join('、') || '-' }}</strong></span>
                 </div>
@@ -940,10 +1204,50 @@ const columns = [
               </div>
 
               <div class="schedule-conflict__action-group">
+                <div class="schedule-conflict__action-label-row">
+                  <span class="schedule-conflict__action-label">上课助教</span>
+                  <small class="schedule-conflict__action-label-hint">本次创建共用助教</small>
+                </div>
+                <a-select
+                  :value="assistantIdsState"
+                  mode="multiple"
+                  show-search
+                  allow-clear
+                  option-label-prop="label"
+                  option-filter-prop="label"
+                  popup-class-name="schedule-conflict__assistant-dropdown"
+                  class="schedule-conflict__control schedule-conflict__control--multiple"
+                  @change="value => updateAssistantIds((value || []) as Array<string | number>)"
+                >
+                  <a-select-option
+                    v-for="item in assistantOptionViewsForRow(record)"
+                    :key="item.value"
+                    :value="item.value"
+                    :label="item.label"
+                  >
+                    <div class="schedule-conflict__staff-option">
+                      <span class="schedule-conflict__staff-option-label">{{ item.baseLabel }}</span>
+                      <span
+                        class="schedule-conflict__time-option-status"
+                        :class="{
+                          'schedule-conflict__time-option-status--free': item.status === 'free',
+                          'schedule-conflict__time-option-status--busy': item.status === 'busy',
+                          'schedule-conflict__time-option-status--unknown': item.status === 'unknown',
+                        }"
+                      >
+                        {{ item.statusText }}
+                      </span>
+                    </div>
+                  </a-select-option>
+                </a-select>
+              </div>
+
+              <div class="schedule-conflict__action-group">
                 <span class="schedule-conflict__action-label">上课教室</span>
                 <a-select
-                  :value="record.classroomId || undefined"
+                  :value="classroomSelectValue(record.classroomId)"
                   allow-clear
+                  placeholder="请选择上课教室"
                   :options="classroomOptions"
                   class="schedule-conflict__control"
                   @change="value => updateRow(record.key, 'classroomId', String(value || ''))"
@@ -984,7 +1288,7 @@ const columns = [
               </div>
               <div v-if="record.displayHasAssistantConflict" class="schedule-conflict__action-tip schedule-conflict__action-tip--danger">
                 <span class="schedule-conflict__action-badge schedule-conflict__action-badge--danger">助教冲突</span>
-                <span>请返回创建弹窗调整助教后再创建</span>
+                <span>可直接调整上课助教后再创建</span>
               </div>
               <div
                 v-else-if="!record.displayHasAssistantConflict && record.resolvedConflictTypes.includes('老师')"
@@ -1209,6 +1513,10 @@ const columns = [
   line-height: 1.7;
 }
 
+.schedule-conflict__name-list {
+  color: inherit;
+}
+
 .schedule-conflict__cell--danger {
   color: #ff4d4f;
   font-weight: 700;
@@ -1284,6 +1592,46 @@ const columns = [
   width: 100%;
 }
 
+.schedule-conflict__control--multiple {
+  :deep(.ant-select-selector) {
+    align-items: center !important;
+    min-height: 42px !important;
+    row-gap: 4px;
+  }
+
+  :deep(.ant-select-selection-overflow) {
+    flex-wrap: wrap !important;
+    align-items: center !important;
+  }
+
+  :deep(.ant-select-selection-overflow-item) {
+    max-width: none !important;
+  }
+
+  :deep(.ant-select-selection-item) {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    padding: 0 10px;
+    border: 1px solid #d6e4ff;
+    border-radius: 8px;
+    background: #eef6ff;
+    color: #1677ff;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  :deep(.ant-select-selection-item-remove) {
+    color: #6da7ff;
+  }
+
+  :deep(.ant-select-selection-item-remove:hover) {
+    color: #1677ff;
+  }
+}
+
 .schedule-conflict__action-group :deep(.ant-select-selector) {
   min-height: 42px !important;
   padding: 4px 12px !important;
@@ -1308,6 +1656,22 @@ const columns = [
   justify-content: space-between;
   gap: 12px;
   width: 100%;
+}
+
+.schedule-conflict__staff-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.schedule-conflict__staff-option-label {
+  min-width: 0;
+  color: #1f2329;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .schedule-conflict__time-option-label {
@@ -1375,6 +1739,36 @@ const columns = [
 
   .ant-select-item-option-selected .schedule-conflict__time-option-label {
     color: #1677ff;
+  }
+
+  .ant-select-item-option + .ant-select-item-option {
+    border-top: 1px solid #f2f4f7;
+  }
+}
+
+:deep(.schedule-conflict__assistant-dropdown) {
+  .ant-select-item {
+    padding: 0;
+  }
+
+  .ant-select-item-option {
+    padding: 0 !important;
+  }
+
+  .ant-select-item-option-content {
+    padding: 12px 16px;
+  }
+
+  .ant-select-item-option-active:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
+    background: #f8fbff;
+  }
+
+  .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
+    background: #edf5ff;
+  }
+
+  .ant-select-item-option-state {
+    display: none;
   }
 
   .ant-select-item-option + .ant-select-item-option {
@@ -1557,6 +1951,42 @@ const columns = [
   .schedule-conflict__footer-actions {
     width: 100%;
     justify-content: flex-end;
+  }
+}
+</style>
+
+<style lang="less">
+.schedule-conflict__assistant-dropdown.ant-select-dropdown,
+.schedule-conflict__time-dropdown.ant-select-dropdown {
+  .ant-select-item-option-state {
+    display: none !important;
+  }
+}
+
+.schedule-conflict__assistant-dropdown.ant-select-dropdown {
+  .ant-select-item {
+    padding: 0;
+  }
+
+  .ant-select-item-option {
+    min-height: auto;
+    padding: 0 !important;
+  }
+
+  .ant-select-item-option-content {
+    padding: 12px 16px;
+  }
+
+  .ant-select-item-option-active:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
+    background: #f8fbff;
+  }
+
+  .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
+    background: #edf5ff;
+  }
+
+  .ant-select-item-option + .ant-select-item-option {
+    border-top: 1px solid #f2f4f7;
   }
 }
 </style>
