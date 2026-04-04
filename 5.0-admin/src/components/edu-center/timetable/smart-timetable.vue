@@ -2181,6 +2181,7 @@ watch(currentModel, (newValue) => {
     <a-modal
       v-model:open="conflictDetailModalOpen"
       title="冲突详情"
+      class="st-conflict-detail-modal"
       :footer="null"
       width="760px"
       centered
@@ -2197,8 +2198,10 @@ watch(currentModel, (newValue) => {
           </div>
           <div class="st-conflict-attempt__card">
             <div class="st-conflict-attempt__headline">
-              <span class="st-conflict-attempt__badge">{{ conflictDetailState.attempted.modeLabel }}</span>
-              <span>待排课程信息</span>
+              <div class="st-conflict-attempt__headline-main">
+                <span class="st-conflict-attempt__badge">{{ conflictDetailState.attempted.modeLabel }}</span>
+                <span>待排课程信息</span>
+              </div>
               <a-button
                 v-if="conflictDetailState.attempted?.forceAllowed"
                 type="primary"
@@ -2503,6 +2506,10 @@ watch(currentModel, (newValue) => {
   flex-direction: column;
 }
 
+:deep(.st-conflict-detail-modal .ant-modal-body) {
+  padding-top: 0 !important;
+}
+
 .st-conflict-summary {
   padding: 14px 16px;
   border-radius: 12px;
@@ -2549,6 +2556,7 @@ watch(currentModel, (newValue) => {
 .st-conflict-item__headline {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
   color: #1f2329;
@@ -2556,8 +2564,15 @@ watch(currentModel, (newValue) => {
   font-weight: 700;
 }
 
-.st-conflict-attempt__headline > .ant-btn {
-  margin-left: auto;
+.st-conflict-attempt {
+  margin-bottom: 10px;
+}
+
+.st-conflict-attempt__headline-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .st-conflict-attempt__meta,

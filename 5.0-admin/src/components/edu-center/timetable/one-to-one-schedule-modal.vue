@@ -21,9 +21,9 @@ import messageService from '@/utils/messageService'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import { useUserStore } from '@/stores/user'
 import {
+  DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   buildQuickHourlySlots,
   configGroupsSorted,
-  DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   parseUnifiedTimePeriodConfig,
 } from '@/utils/unified-time-period'
 
@@ -384,10 +384,24 @@ const classroomOptions = computed(() => {
       return
     classroomSet.set(key, { value: key, label })
   }
-  append(selectedOneToOne.value?.classRoomId, selectedOneToOne.value?.classRoomName)
   classroomList.value.forEach(item => append(item.id, item.name))
   return [...classroomSet.values()]
 })
+
+const normalizedSelectedClassroomId = computed(() => {
+  const current = String(selectedClassroom.value || '').trim()
+  if (!current)
+    return ''
+  return classroomOptions.value.some(item => item.value === current) ? current : ''
+})
+
+watch(classroomOptions, (options) => {
+  const current = String(selectedClassroom.value || '').trim()
+  if (!current)
+    return
+  if (!options.some(item => item.value === current))
+    selectedClassroom.value = undefined
+}, { immediate: true })
 
 watch(
   groupOptions,
@@ -1040,7 +1054,7 @@ function buildScheduleCreatePayload() {
     oneToOneId: String(selectedOneToOne.value?.id || ''),
     teacherId: String(selectedTeacher.value || ''),
     assistantIds: selectedAssistant.value.map(id => String(id)),
-    classroomId: selectedClassroom.value || '',
+    classroomId: normalizedSelectedClassroomId.value || '',
     schedules: previewPlans.value.map(item => ({
       lessonDate: item.date,
       startTime: item.startTime,
@@ -1177,7 +1191,6 @@ function invertWeekdays() {
   const inverted = weekDayOptions.filter(item => !selectedWeekdays.value.includes(item))
   selectedWeekdays.value = inverted
 }
-
 </script>
 
 <template>

@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { PlusOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
 import type { TableColumnType } from 'ant-design-vue'
 import {
   type ClassroomItem,
   createClassroomApi,
-  deleteClassroomApi,
   listClassroomsApi,
   updateClassroomApi,
   updateClassroomStatusApi,
@@ -33,7 +31,7 @@ const formState = reactive<ClassroomFormState>({
 const columns: TableColumnType<ClassroomItem>[] = [
   { title: '教室名称', dataIndex: 'name', key: 'name', ellipsis: true },
   { title: '教室状态', key: 'status', width: 120 },
-  { title: '操作', key: 'action', width: 220 },
+  { title: '操作', key: 'action', width: 180 },
 ]
 
 async function loadClassrooms() {
@@ -143,32 +141,6 @@ async function toggleClassroomStatus(item: ClassroomItem, checked: boolean) {
     messageService.error(error?.message || '更新教室状态失败')
   }
 }
-
-function confirmDelete(item: ClassroomItem) {
-  Modal.confirm({
-    title: '删除教室',
-    centered: true,
-    content: `删除后，该教室将不再出现在新增排课和建班选择里。确认删除“${item.name}”吗？`,
-    okText: '删除',
-    okType: 'danger',
-    cancelText: '取消',
-    async onOk() {
-      try {
-        const res = await deleteClassroomApi({ id: item.id })
-        if (res.code !== 200) {
-          messageService.error(res.message || '删除教室失败')
-          return
-        }
-        messageService.success('教室删除成功')
-        await loadClassrooms()
-      }
-      catch (error: any) {
-        console.error('delete classroom failed', error)
-        messageService.error(error?.message || '删除教室失败')
-      }
-    },
-  })
-}
 </script>
 
 <template>
@@ -226,9 +198,6 @@ function confirmDelete(item: ClassroomItem) {
                 @click="toggleClassroomStatus(record, true)"
               >
                 启用
-              </a-button>
-              <a-button type="link" size="small" danger class="classroom-action" @click="confirmDelete(record)">
-                删除
               </a-button>
             </template>
             <template v-else>
