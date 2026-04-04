@@ -479,6 +479,8 @@ func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) mod
 		Width:             0,
 		TeacherList:       teacherList,
 		StudentList:       studentList,
+		ClassroomID:       strings.TrimSpace(v.ClassroomID),
+		ClassroomName:     v.ClassroomName,
 		CourseName:        v.LessonName,
 		CourseType:        v.ClassType,
 		ClassName:         v.TeachingClassName,

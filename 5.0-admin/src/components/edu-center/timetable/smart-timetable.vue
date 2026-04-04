@@ -6,7 +6,7 @@ import { h } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
-import { cancelTeachingSchedulesApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 import {
@@ -165,12 +165,16 @@ const scheduledLessonDetailState = ref({
   dateLabel: '',
   timeLabel: '',
   teacherName: '',
+  mainTeacherId: '',
   assistantText: '',
+  assistantIds: [],
+  classroomId: '',
   groupLabel: '',
   studentText: '',
   courseName: '',
   scheduleId: '',
   courseType: null,
+  isMain: true,
   text: null,
   column: null,
   record: null,
@@ -296,7 +300,7 @@ function emptyLessonCell(slot) {
   }
 }
 
-function buildLessonsForRow(slots, legacyList) {
+function buildLessonsForRow(slots, legacyList, currentTeacherId) {
   const lessons = slots.map(s => emptyLessonCell(s))
   const list = Array.isArray(legacyList) ? legacyList : []
   for (const leg of list) {
@@ -330,7 +334,10 @@ function buildLessonsForRow(slots, legacyList) {
     const names = (leg.studentList || []).map(s => ({ id: String(s.id), name: s.name }))
     const teacherPeople = Array.isArray(leg.teacherList) ? leg.teacherList : []
     const mainTeacher = teacherPeople[0]
-    const assistantNames = teacherPeople.slice(1).map(item => item?.name).filter(Boolean)
+    const assistants = teacherPeople.slice(1)
+    const assistantNames = assistants.map(item => item?.name).filter(Boolean)
+    const assistantIds = assistants.map(item => String(item?.id || '')).filter(Boolean)
+    const mainTeacherId = String(mainTeacher?.id || '')
 
     lessons[idx] = {
       ...lessons[idx],
@@ -343,9 +350,13 @@ function buildLessonsForRow(slots, legacyList) {
       courseType: displayCourseType,
       scheduledConflict: leg.conflict === true,
       scheduledConflictTypes: leg.conflictTypes || [],
+      mainTeacherId,
       teacherName: mainTeacher?.name || null,
       assistantText: assistantNames.length ? assistantNames.join('、') : '未安排',
-      isMain: true,
+      assistantIds,
+      classroomId: String(leg.classroomId || '').trim(),
+      classroomName: leg.classroomName || '',
+      isMain: String(currentTeacherId || '') === mainTeacherId,
     }
   }
   return lessons
@@ -391,7 +402,7 @@ const gridRows = computed(() => {
         name: tname,
         teacherId: tid,
         date: dateStr,
-        lessons: buildLessonsForRow(slots, schedules),
+        lessons: buildLessonsForRow(slots, schedules, tid),
       })
     }
   }
@@ -1655,12 +1666,16 @@ function openScheduledLessonDetail(text, column, record) {
     dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
     timeLabel: `${column.startTime}-${column.endTime}`,
     teacherName: text.teacherName || record.name,
+    mainTeacherId: String(text.mainTeacherId || ''),
     assistantText: text.assistantText || '未安排',
+    assistantIds: Array.isArray(text.assistantIds) ? text.assistantIds : [],
+    classroomId: String(text.classroomId || ''),
     groupLabel: activeGroupLabel.value || '当前组',
     studentText: studentText || '-',
     courseName: text.courseName || '',
     scheduleId: String(text.scheduleId || ''),
     courseType: text.courseType,
+    isMain: text.isMain !== false,
     text,
     column,
     record,
@@ -1686,6 +1701,24 @@ async function deleteScheduledLessonFromDetail() {
 
   deletingScheduledLesson.value = true
   try {
+    if (detail.isMain === false) {
+      const nextAssistantIds = (detail.assistantIds || []).filter(id => String(id) !== String(detail.record?.teacherId || ''))
+      const res = await batchUpdateTeachingSchedulesApi({
+        ids: [detail.scheduleId],
+        teacherId: detail.mainTeacherId,
+        assistantIds: nextAssistantIds,
+        classroomId: detail.classroomId || '',
+        startTime: detail.column?.startTime,
+        endTime: detail.column?.endTime,
+      })
+      if (res.code !== 200)
+        throw new Error(res.message || '移除助教失败')
+      scheduledLessonDetailOpen.value = false
+      messageService.success(`已移除 ${month}月${day}日 第${lessonIndex}节课的助教`)
+      emitter.emit(EVENTS.REFRESH_DATA)
+      return
+    }
+
     const res = await cancelTeachingSchedulesApi({
       ids: [detail.scheduleId],
     })
@@ -2132,7 +2165,7 @@ watch(currentModel, (newValue) => {
       width="620px"
       centered
       :ok-button-props="{ danger: true, loading: deletingScheduledLesson }"
-      :ok-text="scheduledLessonDetailState.courseType === 1 ? '删除本节' : undefined"
+      :ok-text="scheduledLessonDetailState.courseType === 1 ? (scheduledLessonDetailState.isMain ? '删除本节' : '移除助教') : undefined"
       cancel-text="关闭"
       :ok-cancel="scheduledLessonDetailState.courseType === 1"
       @ok="deleteScheduledLessonFromDetail"
@@ -2172,7 +2205,7 @@ watch(currentModel, (newValue) => {
         </div>
 
         <div v-if="scheduledLessonDetailState.courseType === 1" class="st-scheduled-detail__hint st-scheduled-detail__hint--danger">
-          当前已支持删除这节 1v1 日程。删除后会立即从主教与助教课表中同步移除。
+          {{ scheduledLessonDetailState.isMain ? '删除这节 1v1 日程后，会立即从主教与助教课表中同步移除。' : '当前为助教视角。确认后仅移除这节课的当前助教，不会删除整节课。' }}
         </div>
         <div v-else class="st-scheduled-detail__hint">
           这里建议作为后续“查看详情 / 调课 / 调整老师 / 调整教室”的统一入口。班课删除暂未开放，避免误删主教/辅教安排。

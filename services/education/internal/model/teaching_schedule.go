@@ -255,6 +255,8 @@ type TeachingScheduleInfoLegacyVO struct {
 	Width             int                      `json:"width"`
 	TeacherList       []ScheduleLegacyPersonVO `json:"teacherList"`
 	StudentList       []ScheduleLegacyPersonVO `json:"studentList"`
+	ClassroomID       string                   `json:"classroomId,omitempty"`
+	ClassroomName     string                   `json:"classroomName,omitempty"`
 	CourseName        string                   `json:"courseName"`
 	CourseType        int                      `json:"courseType"`
 	ClassName         string                   `json:"className,omitempty"`
