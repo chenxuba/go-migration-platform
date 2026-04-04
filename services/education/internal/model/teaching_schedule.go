@@ -39,6 +39,18 @@ type CheckOneToOneScheduleAvailabilityDTO struct {
 	Schedules  []OneToOneScheduleAvailabilitySlotDTO `json:"schedules"`
 }
 
+type AssistantScheduleAvailabilitySlotDTO struct {
+	LessonDate string `json:"lessonDate"`
+	StartTime  string `json:"startTime"`
+	EndTime    string `json:"endTime"`
+}
+
+type CheckAssistantScheduleAvailabilityDTO struct {
+	OneToOneID   string                               `json:"oneToOneId"`
+	AssistantIDs []string                             `json:"assistantIds"`
+	Schedules    []AssistantScheduleAvailabilitySlotDTO `json:"schedules"`
+}
+
 type TeachingScheduleListQueryDTO struct {
 	StartDate string `json:"startDate"`
 	EndDate   string `json:"endDate"`
@@ -153,9 +165,25 @@ type TeachingScheduleConflictItem struct {
 	TimeText      string   `json:"timeText"`
 	TeacherID     string   `json:"teacherId,omitempty"`
 	TeacherName   string   `json:"teacherName"`
+	AssistantNames []string `json:"assistantNames,omitempty"`
 	ClassroomName string   `json:"classroomName,omitempty"`
 	StudentNames  []string `json:"studentNames,omitempty"`
 	ConflictTypes []string `json:"conflictTypes,omitempty"`
+}
+
+type AssistantScheduleAvailabilityItem struct {
+	AssistantID      string                         `json:"assistantId"`
+	AssistantName    string                         `json:"assistantName,omitempty"`
+	Valid            bool                           `json:"valid"`
+	Message          string                         `json:"message,omitempty"`
+	ExistingSchedules []TeachingScheduleConflictItem `json:"existingSchedules,omitempty"`
+	ConflictTypes    []string                       `json:"conflictTypes,omitempty"`
+}
+
+type AssistantScheduleAvailabilityResult struct {
+	ValidCount   int                                 `json:"validCount"`
+	InvalidCount int                                 `json:"invalidCount"`
+	Items        []AssistantScheduleAvailabilityItem `json:"items"`
 }
 
 type OneToOneScheduleCreateContext struct {

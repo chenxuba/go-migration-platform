@@ -150,7 +150,15 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 		}
 	}
 
-	currentItems, existingItems, conflictTypes := buildScheduleConflictResultFromExisting(current, teacherConflicts, classroomConflicts, studentConflicts)
+	assistantConflicts := []scheduleConflictDetailRow{}
+	if len(current.AssistantIDs) > 0 {
+		assistantConflicts, err = repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, parseStringIDs(current.AssistantIDs), []normalizedScheduleSlot{slot}, "", excludeIDs)
+		if err != nil {
+			return model.TeachingScheduleValidationResult{}, err
+		}
+	}
+
+	currentItems, existingItems, conflictTypes := buildScheduleConflictResultFromExisting(current, teacherConflicts, classroomConflicts, studentConflicts, assistantConflicts)
 	if len(conflictTypes) == 0 {
 		return model.TeachingScheduleValidationResult{
 			Valid:            true,
@@ -360,6 +368,10 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
+	assistantConflicts, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, assistantIDs, plansToSlots(plans), "", nil)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
 
 	hardConflictTypes := make(map[string]struct{})
 	for _, plan := range plans {
@@ -376,6 +388,13 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 			EndAt:      plan.EndAt,
 		}, studentConflicts) && !plan.AllowStudentConflict {
 			hardConflictTypes["学员"] = struct{}{}
+		}
+		if slotHasConflict(normalizedScheduleSlot{
+			LessonDate: plan.LessonDate,
+			StartAt:    plan.StartAt,
+			EndAt:      plan.EndAt,
+		}, assistantConflicts) {
+			hardConflictTypes["助教"] = struct{}{}
 		}
 	}
 	if len(hardConflictTypes) > 0 {
@@ -540,6 +559,14 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 	}
 
 	teacherNames := repo.resolveTeacherNames(ctx, teacherIDs)
+	assistantNames := make([]string, 0, len(assistantIDs))
+	for _, id := range assistantIDs {
+		copyID := id
+		name := strings.TrimSpace(repo.GetStaffNameByID(ctx, &copyID))
+		if name != "" && name != "-" {
+			assistantNames = append(assistantNames, name)
+		}
+	}
 	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
@@ -552,15 +579,21 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
+	assistantConflicts, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, assistantIDs, plansToSlots(plans), "", nil)
+	if err != nil {
+		return model.TeachingScheduleValidationResult{}, err
+	}
 
 	currentItems, existingItems, conflictTypes := buildScheduleConflictResultFromPlans(
 		base,
 		plans,
 		teacherNames,
+		assistantNames,
 		classroomNames,
 		teacherConflictsByPlan,
 		classroomConflictsByPlan,
 		studentConflicts,
+		assistantConflicts,
 	)
 	if len(conflictTypes) > 0 {
 		return model.TeachingScheduleValidationResult{
@@ -671,6 +704,114 @@ func (repo *Repository) CheckOneToOneScheduleAvailability(ctx context.Context, i
 			LessonDate:        slot.LessonDate.Format("2006-01-02"),
 			StartTime:         slot.StartAt.Format("15:04"),
 			EndTime:           slot.EndAt.Format("15:04"),
+			Valid:             len(conflictTypes) == 0,
+			ConflictTypes:     conflictTypes,
+			ExistingSchedules: existingSchedules,
+		}
+		if item.Valid {
+			result.ValidCount++
+		} else {
+			item.Message = buildAvailabilityConflictSummaryMessage(conflictTypes)
+			result.InvalidCount++
+		}
+		result.Items = append(result.Items, item)
+	}
+
+	return result, nil
+}
+
+func (repo *Repository) CheckAssistantScheduleAvailability(ctx context.Context, instID int64, dto model.CheckAssistantScheduleAvailabilityDTO) (model.AssistantScheduleAvailabilityResult, error) {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.OneToOneID), 10, 64)
+	if err != nil || classID <= 0 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请选择1对1")
+	}
+	assistantIDs := parseStringIDs(dto.AssistantIDs)
+	if len(assistantIDs) == 0 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请至少选择一个上课助教")
+	}
+	if len(dto.Schedules) == 0 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请至少选择一个上课时段")
+	}
+	if len(dto.Schedules) > 2000 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("待检测时段过多，请缩小时间范围后重试")
+	}
+
+	normalized, err := normalizeAssistantAvailabilityScheduleSlots(dto.Schedules)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+	if len(normalized) == 0 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请至少选择一个上课时段")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+	defer tx.Rollback()
+
+	base, err := repo.GetOneToOneScheduleCreateContextTx(ctx, tx, instID, classID)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+	if base.Status != model.TeachingClassStatusActive {
+		return buildUnavailableAssistantAvailabilityResult(assistantIDs, repo.resolveTeacherNames(ctx, assistantIDs), "当前1对1已结班，暂不可排课"), nil
+	}
+	if base.ClassStudentStatus != model.TeachingClassStudentStatusStudying {
+		return buildUnavailableAssistantAvailabilityResult(assistantIDs, repo.resolveTeacherNames(ctx, assistantIDs), "当前1对1学员状态不允许排课"), nil
+	}
+	if n, err := repo.CountInstUsersByIDs(ctx, instID, assistantIDs); err != nil || n != len(assistantIDs) {
+		if err != nil {
+			return model.AssistantScheduleAvailabilityResult{}, err
+		}
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("存在无效的上课助教")
+	}
+
+	startDate, endDate := scheduleSlotsDateRange(normalized)
+	conflicts, err := repo.listAvailabilityConflictsByAssistantsTx(ctx, tx, instID, assistantIDs, startDate, endDate)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+
+	assistantNames := repo.resolveTeacherNames(ctx, assistantIDs)
+	result := model.AssistantScheduleAvailabilityResult{
+		Items: make([]model.AssistantScheduleAvailabilityItem, 0, len(assistantIDs)),
+	}
+	for _, assistantID := range assistantIDs {
+		assistantConflictRows := make([]scheduleAvailabilityConflictRow, 0)
+		for _, row := range conflicts {
+			if row.TeacherID == assistantID || stringSliceHasAnyID(row.AssistantIDs, map[int64]struct{}{assistantID: {}}) {
+				assistantConflictRows = append(assistantConflictRows, row)
+			}
+		}
+
+		existingMap := make(map[int64]model.TeachingScheduleConflictItem)
+		conflictTypes := make([]string, 0, 1)
+		for _, row := range assistantConflictRows {
+			if !availabilityRowOverlapsAnySlot(row, normalized) {
+				continue
+			}
+			appendAvailabilityConflict(existingMap, row, "助教")
+			if !containsString(conflictTypes, "助教") {
+				conflictTypes = append(conflictTypes, "助教")
+			}
+		}
+
+		existingSchedules := make([]model.TeachingScheduleConflictItem, 0, len(existingMap))
+		for _, item := range existingMap {
+			sort.Strings(item.ConflictTypes)
+			existingSchedules = append(existingSchedules, item)
+		}
+		sort.Slice(existingSchedules, func(i, j int) bool {
+			if existingSchedules[i].Date == existingSchedules[j].Date {
+				return existingSchedules[i].TimeText < existingSchedules[j].TimeText
+			}
+			return existingSchedules[i].Date < existingSchedules[j].Date
+		})
+
+		item := model.AssistantScheduleAvailabilityItem{
+			AssistantID:       strconv.FormatInt(assistantID, 10),
+			AssistantName:     firstNonEmptyString(assistantNames[assistantID], "-"),
 			Valid:             len(conflictTypes) == 0,
 			ConflictTypes:     conflictTypes,
 			ExistingSchedules: existingSchedules,
@@ -880,6 +1021,8 @@ type scheduleConflictDetailRow struct {
 	TeachingClassName string
 	StudentName       string
 	TeacherName       string
+	AssistantIDs      []string
+	AssistantNames    []string
 	ClassroomName     string
 	LessonDate        time.Time
 	StartAt           time.Time
@@ -893,6 +1036,8 @@ type scheduleAvailabilityConflictRow struct {
 	TeachingClassName string
 	StudentName       string
 	TeacherName       string
+	AssistantIDs      []string
+	AssistantNames    []string
 	ClassroomName     string
 	LessonDate        time.Time
 	StartAt           time.Time
@@ -907,6 +1052,8 @@ type teachingScheduleRow struct {
 
 func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx *sql.Tx, instID, scheduleID int64) (scheduleConflictDetailRow, error) {
 	var item scheduleConflictDetailRow
+	var assistantIDsRaw []byte
+	var assistantNamesRaw []byte
 	err := tx.QueryRowContext(ctx, `
 		SELECT
 			id,
@@ -917,6 +1064,8 @@ func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx
 			IFNULL(teaching_class_name, ''),
 			IFNULL(student_name, ''),
 			IFNULL(teacher_name, ''),
+			assistant_ids_json,
+			assistant_names_json,
 			IFNULL(classroom_name, ''),
 			lesson_date,
 			lesson_start_at,
@@ -936,6 +1085,8 @@ func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx
 		&item.TeachingClassName,
 		&item.StudentName,
 		&item.TeacherName,
+		&assistantIDsRaw,
+		&assistantNamesRaw,
 		&item.ClassroomName,
 		&item.LessonDate,
 		&item.StartAt,
@@ -947,6 +1098,8 @@ func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx
 		}
 		return item, err
 	}
+	item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
+	item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
 	return item, nil
 }
 
@@ -1041,6 +1194,113 @@ func (repo *Repository) listClassroomConflictsByPlanTx(ctx context.Context, tx *
 		result[schedulePlanKey(plan)] = rows
 	}
 	return result, nil
+}
+
+func (repo *Repository) listScheduleConflictDetailsByAssistantsTx(ctx context.Context, tx *sql.Tx, instID int64, assistantIDs []int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64) ([]scheduleConflictDetailRow, error) {
+	if len(assistantIDs) == 0 || len(slots) == 0 {
+		return []scheduleConflictDetailRow{}, nil
+	}
+
+	startDate, endDate := scheduleSlotsDateRange(slots)
+	if startDate == "" || endDate == "" {
+		return []scheduleConflictDetailRow{}, nil
+	}
+
+	candidateSet := make(map[int64]struct{}, len(assistantIDs))
+	for _, id := range assistantIDs {
+		if id > 0 {
+			candidateSet[id] = struct{}{}
+		}
+	}
+
+	filters := []string{
+		"inst_id = ?",
+		"del_flag = 0",
+		"status = ?",
+		"lesson_date >= ?",
+		"lesson_date <= ?",
+	}
+	args := []any{
+		instID,
+		model.TeachingScheduleStatusActive,
+		startDate,
+		endDate,
+	}
+	if excludeBatchNo != "" {
+		filters = append(filters, "batch_no <> ?")
+		args = append(args, excludeBatchNo)
+	}
+	if len(excludeIDs) > 0 {
+		filters = append(filters, "id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
+		for _, id := range excludeIDs {
+			args = append(args, id)
+		}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			id,
+			IFNULL(student_id, 0),
+			IFNULL(teacher_id, 0),
+			IFNULL(classroom_id, 0),
+			IFNULL(class_type, 0),
+			IFNULL(teaching_class_name, ''),
+			IFNULL(student_name, ''),
+			IFNULL(teacher_name, ''),
+			assistant_ids_json,
+			assistant_names_json,
+			IFNULL(classroom_name, ''),
+			lesson_date,
+			lesson_start_at,
+			lesson_end_at
+		FROM teaching_schedule
+		WHERE `+strings.Join(filters, " AND ")+`
+		ORDER BY lesson_date ASC, lesson_start_at ASC, id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]scheduleConflictDetailRow, 0, 32)
+	seen := make(map[int64]struct{})
+	for rows.Next() {
+		var item scheduleConflictDetailRow
+		var assistantIDsRaw []byte
+		var assistantNamesRaw []byte
+		if err := rows.Scan(
+			&item.ID,
+			&item.StudentID,
+			&item.TeacherID,
+			&item.ClassroomID,
+			&item.ClassType,
+			&item.TeachingClassName,
+			&item.StudentName,
+			&item.TeacherName,
+			&assistantIDsRaw,
+			&assistantNamesRaw,
+			&item.ClassroomName,
+			&item.LessonDate,
+			&item.StartAt,
+			&item.EndAt,
+		); err != nil {
+			return nil, err
+		}
+		item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
+		item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
+		if _, ok := candidateSet[item.TeacherID]; !ok && !stringSliceHasAnyID(item.AssistantIDs, candidateSet) {
+			continue
+		}
+		if !scheduleRowOverlapsAnySlot(item.LessonDate, item.StartAt, item.EndAt, slots) {
+			continue
+		}
+		if _, ok := seen[item.ID]; ok {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		result = append(result, item)
+	}
+	return result, rows.Err()
 }
 
 func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *sql.Tx, instID int64, batchNo string, ids []int64) ([]teachingScheduleRow, error) {
@@ -1194,6 +1454,8 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 				IFNULL(teaching_class_name, ''),
 				IFNULL(student_name, ''),
 				IFNULL(teacher_name, ''),
+				assistant_ids_json,
+				assistant_names_json,
 				IFNULL(classroom_name, ''),
 				lesson_date,
 				lesson_start_at,
@@ -1207,6 +1469,8 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 		}
 		for rows.Next() {
 			var item scheduleConflictDetailRow
+			var assistantIDsRaw []byte
+			var assistantNamesRaw []byte
 			if err := rows.Scan(
 				&item.ID,
 				&item.StudentID,
@@ -1216,6 +1480,8 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 				&item.TeachingClassName,
 				&item.StudentName,
 				&item.TeacherName,
+				&assistantIDsRaw,
+				&assistantNamesRaw,
 				&item.ClassroomName,
 				&item.LessonDate,
 				&item.StartAt,
@@ -1227,6 +1493,8 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 			if _, ok := seen[item.ID]; ok {
 				continue
 			}
+			item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
+			item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
 			seen[item.ID] = struct{}{}
 			result = append(result, item)
 		}
@@ -1251,6 +1519,8 @@ func (repo *Repository) listAvailabilityConflictsByStudentTx(ctx context.Context
 			IFNULL(teaching_class_name, ''),
 			IFNULL(student_name, ''),
 			IFNULL(teacher_name, ''),
+			assistant_ids_json,
+			assistant_names_json,
 			IFNULL(classroom_name, ''),
 			lesson_date,
 			lesson_start_at,
@@ -1272,6 +1542,8 @@ func (repo *Repository) listAvailabilityConflictsByStudentTx(ctx context.Context
 	result := make([]scheduleAvailabilityConflictRow, 0, 16)
 	for rows.Next() {
 		var item scheduleAvailabilityConflictRow
+		var assistantIDsRaw []byte
+		var assistantNamesRaw []byte
 		if err := rows.Scan(
 			&item.ID,
 			&item.TeacherID,
@@ -1279,6 +1551,8 @@ func (repo *Repository) listAvailabilityConflictsByStudentTx(ctx context.Context
 			&item.TeachingClassName,
 			&item.StudentName,
 			&item.TeacherName,
+			&assistantIDsRaw,
+			&assistantNamesRaw,
 			&item.ClassroomName,
 			&item.LessonDate,
 			&item.StartAt,
@@ -1286,6 +1560,8 @@ func (repo *Repository) listAvailabilityConflictsByStudentTx(ctx context.Context
 		); err != nil {
 			return nil, err
 		}
+		item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
+		item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
 		result = append(result, item)
 	}
 	return result, rows.Err()
@@ -1311,6 +1587,8 @@ func (repo *Repository) listAvailabilityConflictsByTeachersTx(ctx context.Contex
 			IFNULL(teaching_class_name, ''),
 			IFNULL(student_name, ''),
 			IFNULL(teacher_name, ''),
+			assistant_ids_json,
+			assistant_names_json,
 			IFNULL(classroom_name, ''),
 			lesson_date,
 			lesson_start_at,
@@ -1332,6 +1610,8 @@ func (repo *Repository) listAvailabilityConflictsByTeachersTx(ctx context.Contex
 	result := make([]scheduleAvailabilityConflictRow, 0, 32)
 	for rows.Next() {
 		var item scheduleAvailabilityConflictRow
+		var assistantIDsRaw []byte
+		var assistantNamesRaw []byte
 		if err := rows.Scan(
 			&item.ID,
 			&item.TeacherID,
@@ -1339,12 +1619,86 @@ func (repo *Repository) listAvailabilityConflictsByTeachersTx(ctx context.Contex
 			&item.TeachingClassName,
 			&item.StudentName,
 			&item.TeacherName,
+			&assistantIDsRaw,
+			&assistantNamesRaw,
 			&item.ClassroomName,
 			&item.LessonDate,
 			&item.StartAt,
 			&item.EndAt,
 		); err != nil {
 			return nil, err
+		}
+		item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
+		item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func (repo *Repository) listAvailabilityConflictsByAssistantsTx(ctx context.Context, tx *sql.Tx, instID int64, assistantIDs []int64, startDate, endDate string) ([]scheduleAvailabilityConflictRow, error) {
+	if len(assistantIDs) == 0 || strings.TrimSpace(startDate) == "" || strings.TrimSpace(endDate) == "" {
+		return []scheduleAvailabilityConflictRow{}, nil
+	}
+
+	candidateSet := make(map[int64]struct{}, len(assistantIDs))
+	for _, id := range assistantIDs {
+		if id > 0 {
+			candidateSet[id] = struct{}{}
+		}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			id,
+			IFNULL(teacher_id, 0),
+			IFNULL(class_type, 0),
+			IFNULL(teaching_class_name, ''),
+			IFNULL(student_name, ''),
+			IFNULL(teacher_name, ''),
+			assistant_ids_json,
+			assistant_names_json,
+			IFNULL(classroom_name, ''),
+			lesson_date,
+			lesson_start_at,
+			lesson_end_at
+		FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND status = ?
+		  AND lesson_date >= ?
+		  AND lesson_date <= ?
+		ORDER BY lesson_date ASC, lesson_start_at ASC, id ASC
+	`, instID, model.TeachingScheduleStatusActive, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]scheduleAvailabilityConflictRow, 0, 32)
+	for rows.Next() {
+		var item scheduleAvailabilityConflictRow
+		var assistantIDsRaw []byte
+		var assistantNamesRaw []byte
+		if err := rows.Scan(
+			&item.ID,
+			&item.TeacherID,
+			&item.ClassType,
+			&item.TeachingClassName,
+			&item.StudentName,
+			&item.TeacherName,
+			&assistantIDsRaw,
+			&assistantNamesRaw,
+			&item.ClassroomName,
+			&item.LessonDate,
+			&item.StartAt,
+			&item.EndAt,
+		); err != nil {
+			return nil, err
+		}
+		item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
+		item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
+		if _, ok := candidateSet[item.TeacherID]; !ok && !stringSliceHasAnyID(item.AssistantIDs, candidateSet) {
+			continue
 		}
 		result = append(result, item)
 	}
@@ -1370,6 +1724,28 @@ func normalizeAvailabilityScheduleSlots(slots []model.OneToOneScheduleAvailabili
 		seen[key] = struct{}{}
 		result = append(result, normalizedAvailabilityScheduleSlot{
 			TeacherID:  teacherID,
+			LessonDate: startOfDay(startAt),
+			StartAt:    startAt,
+			EndAt:      endAt,
+		})
+	}
+	return result, nil
+}
+
+func normalizeAssistantAvailabilityScheduleSlots(slots []model.AssistantScheduleAvailabilitySlotDTO) ([]normalizedScheduleSlot, error) {
+	result := make([]normalizedScheduleSlot, 0, len(slots))
+	seen := make(map[string]struct{}, len(slots))
+	for _, item := range slots {
+		startAt, endAt, err := buildScheduleDateTime(item.LessonDate, item.StartTime, item.EndTime)
+		if err != nil {
+			return nil, err
+		}
+		key := startAt.Format(time.RFC3339) + "|" + endAt.Format(time.RFC3339)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, normalizedScheduleSlot{
 			LessonDate: startOfDay(startAt),
 			StartAt:    startAt,
 			EndAt:      endAt,
@@ -1529,6 +1905,7 @@ func startOfDay(value time.Time) time.Time {
 func buildScheduleConflictResult(
 	base model.OneToOneScheduleCreateContext,
 	teacherName string,
+	assistantNames []string,
 	classroomName string,
 	slots []normalizedScheduleSlot,
 	teacherConflicts []scheduleConflictDetailRow,
@@ -1559,6 +1936,7 @@ func buildScheduleConflictResult(
 			TimeText:      slot.StartAt.Format("15:04") + "~" + slot.EndAt.Format("15:04"),
 			TeacherID:     "",
 			TeacherName:   firstNonEmptyString(teacherName, "-"),
+			AssistantNames: compactStrings(assistantNames),
 			ClassroomName: firstNonEmptyString(classroomName, "-"),
 			StudentNames:  compactStrings([]string{base.StudentName}),
 			ConflictTypes: conflictTypes,
@@ -1577,6 +1955,7 @@ func buildScheduleConflictResult(
 				TimeText:      row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
 				TeacherID:     emptyStringIfZero(row.TeacherID),
 				TeacherName:   firstNonEmptyString(row.TeacherName, "-"),
+				AssistantNames: compactStrings(row.AssistantNames),
 				ClassroomName: firstNonEmptyString(row.ClassroomName, "-"),
 				StudentNames:  compactStrings([]string{row.StudentName}),
 				ConflictTypes: []string{},
@@ -1619,10 +1998,12 @@ func buildScheduleConflictResultFromPlans(
 	base model.OneToOneScheduleCreateContext,
 	plans []normalizedSchedulePlan,
 	teacherNames map[int64]string,
+	assistantNames []string,
 	classroomNames map[int64]string,
 	teacherConflicts map[string][]scheduleConflictDetailRow,
 	classroomConflicts map[string][]scheduleConflictDetailRow,
 	studentConflicts []scheduleConflictDetailRow,
+	assistantConflicts []scheduleConflictDetailRow,
 ) ([]model.TeachingScheduleConflictItem, []model.TeachingScheduleConflictItem, []string) {
 	typeSet := make(map[string]struct{})
 	current := make([]model.TeachingScheduleConflictItem, 0, len(plans))
@@ -1639,6 +2020,7 @@ func buildScheduleConflictResultFromPlans(
 				TimeText:      row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
 				TeacherID:     emptyStringIfZero(row.TeacherID),
 				TeacherName:   firstNonEmptyString(row.TeacherName, "-"),
+				AssistantNames: compactStrings(row.AssistantNames),
 				ClassroomName: firstNonEmptyString(row.ClassroomName, "-"),
 				StudentNames:  compactStrings([]string{row.StudentName}),
 				ConflictTypes: []string{},
@@ -1685,6 +2067,17 @@ func buildScheduleConflictResultFromPlans(
 				}
 			}
 		}
+		if slotHasConflict(slot, assistantConflicts) {
+			conflictTypes = append(conflictTypes, "助教")
+			typeSet["助教"] = struct{}{}
+			for _, row := range assistantConflicts {
+				if row.LessonDate.Format("2006-01-02") == slot.LessonDate.Format("2006-01-02") &&
+					row.StartAt.Before(slot.EndAt) &&
+					row.EndAt.After(slot.StartAt) {
+					appendExisting(row, "助教")
+				}
+			}
+		}
 
 		sort.Strings(conflictTypes)
 		current = append(current, model.TeachingScheduleConflictItem{
@@ -1695,6 +2088,7 @@ func buildScheduleConflictResultFromPlans(
 			TimeText:      plan.StartAt.Format("15:04") + "~" + plan.EndAt.Format("15:04"),
 			TeacherID:     emptyStringIfZero(plan.TeacherID),
 			TeacherName:   firstNonEmptyString(teacherNames[plan.TeacherID], "-"),
+			AssistantNames: compactStrings(assistantNames),
 			ClassroomName: firstNonEmptyString(classroomNames[plan.ClassroomID], "-"),
 			StudentNames:  compactStrings([]string{base.StudentName}),
 			ConflictTypes: conflictTypes,
@@ -1726,9 +2120,10 @@ func buildScheduleConflictResultFromExisting(
 	teacherConflicts []scheduleConflictDetailRow,
 	classroomConflicts []scheduleConflictDetailRow,
 	studentConflicts []scheduleConflictDetailRow,
+	assistantConflicts []scheduleConflictDetailRow,
 ) ([]model.TeachingScheduleConflictItem, []model.TeachingScheduleConflictItem, []string) {
 	typeSet := make(map[string]struct{})
-	currentConflictTypes := make([]string, 0, 3)
+	currentConflictTypes := make([]string, 0, 4)
 	if len(teacherConflicts) > 0 {
 		currentConflictTypes = append(currentConflictTypes, "老师")
 		typeSet["老师"] = struct{}{}
@@ -1741,6 +2136,10 @@ func buildScheduleConflictResultFromExisting(
 		currentConflictTypes = append(currentConflictTypes, "学员")
 		typeSet["学员"] = struct{}{}
 	}
+	if len(assistantConflicts) > 0 {
+		currentConflictTypes = append(currentConflictTypes, "助教")
+		typeSet["助教"] = struct{}{}
+	}
 
 	currentItems := []model.TeachingScheduleConflictItem{{
 		Name:          current.TeachingClassName,
@@ -1750,6 +2149,7 @@ func buildScheduleConflictResultFromExisting(
 		TimeText:      current.StartAt.Format("15:04") + "~" + current.EndAt.Format("15:04"),
 		TeacherID:     emptyStringIfZero(current.TeacherID),
 		TeacherName:   firstNonEmptyString(current.TeacherName, "-"),
+		AssistantNames: compactStrings(current.AssistantNames),
 		ClassroomName: firstNonEmptyString(current.ClassroomName, "-"),
 		StudentNames:  compactStrings([]string{current.StudentName}),
 		ConflictTypes: currentConflictTypes,
@@ -1770,6 +2170,7 @@ func buildScheduleConflictResultFromExisting(
 				TimeText:      row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
 				TeacherID:     emptyStringIfZero(row.TeacherID),
 				TeacherName:   firstNonEmptyString(row.TeacherName, "-"),
+				AssistantNames: compactStrings(row.AssistantNames),
 				ClassroomName: firstNonEmptyString(row.ClassroomName, "-"),
 				StudentNames:  compactStrings([]string{row.StudentName}),
 				ConflictTypes: []string{},
@@ -1788,6 +2189,9 @@ func buildScheduleConflictResultFromExisting(
 	}
 	for _, row := range studentConflicts {
 		appendExisting(row, "学员")
+	}
+	for _, row := range assistantConflicts {
+		appendExisting(row, "助教")
 	}
 
 	existing := make([]model.TeachingScheduleConflictItem, 0, len(existingMap))
@@ -1850,10 +2254,51 @@ func slotHasConflict(slot normalizedScheduleSlot, rows []scheduleConflictDetailR
 	return false
 }
 
+func scheduleRowOverlapsAnySlot(lessonDate, startAt, endAt time.Time, slots []normalizedScheduleSlot) bool {
+	for _, slot := range slots {
+		if lessonDate.Format("2006-01-02") != slot.LessonDate.Format("2006-01-02") {
+			continue
+		}
+		if startAt.Before(slot.EndAt) && endAt.After(slot.StartAt) {
+			return true
+		}
+	}
+	return false
+}
+
+func scheduleSlotsDateRange(slots []normalizedScheduleSlot) (string, string) {
+	if len(slots) == 0 {
+		return "", ""
+	}
+	start := slots[0].LessonDate
+	end := slots[0].LessonDate
+	for _, slot := range slots[1:] {
+		if slot.LessonDate.Before(start) {
+			start = slot.LessonDate
+		}
+		if slot.LessonDate.After(end) {
+			end = slot.LessonDate
+		}
+	}
+	return start.Format("2006-01-02"), end.Format("2006-01-02")
+}
+
 func availabilitySlotsOverlap(slot normalizedAvailabilityScheduleSlot, lessonDate, startAt, endAt time.Time) bool {
 	return lessonDate.Format("2006-01-02") == slot.LessonDate.Format("2006-01-02") &&
 		startAt.Before(slot.EndAt) &&
 		endAt.After(slot.StartAt)
+}
+
+func availabilityRowOverlapsAnySlot(row scheduleAvailabilityConflictRow, slots []normalizedScheduleSlot) bool {
+	for _, slot := range slots {
+		if row.LessonDate.Format("2006-01-02") != slot.LessonDate.Format("2006-01-02") {
+			continue
+		}
+		if row.StartAt.Before(slot.EndAt) && row.EndAt.After(slot.StartAt) {
+			return true
+		}
+	}
+	return false
 }
 
 func availabilityDateRange(slots []normalizedAvailabilityScheduleSlot) (string, string) {
@@ -1901,6 +2346,7 @@ func appendAvailabilityConflict(existingMap map[int64]model.TeachingScheduleConf
 			TimeText:      row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
 			TeacherID:     emptyStringIfZero(row.TeacherID),
 			TeacherName:   firstNonEmptyString(row.TeacherName, "-"),
+			AssistantNames: compactStrings(row.AssistantNames),
 			ClassroomName: firstNonEmptyString(row.ClassroomName, "-"),
 			StudentNames:  compactStrings([]string{row.StudentName}),
 			ConflictTypes: []string{},
@@ -1925,6 +2371,22 @@ func buildUnavailableAvailabilityResult(slots []normalizedAvailabilityScheduleSl
 			EndTime:    slot.EndAt.Format("15:04"),
 			Valid:      false,
 			Message:    message,
+		})
+	}
+	return result
+}
+
+func buildUnavailableAssistantAvailabilityResult(assistantIDs []int64, assistantNames map[int64]string, message string) model.AssistantScheduleAvailabilityResult {
+	result := model.AssistantScheduleAvailabilityResult{
+		InvalidCount: len(assistantIDs),
+		Items:        make([]model.AssistantScheduleAvailabilityItem, 0, len(assistantIDs)),
+	}
+	for _, assistantID := range assistantIDs {
+		result.Items = append(result.Items, model.AssistantScheduleAvailabilityItem{
+			AssistantID:   strconv.FormatInt(assistantID, 10),
+			AssistantName: firstNonEmptyString(assistantNames[assistantID], "-"),
+			Valid:         false,
+			Message:       message,
 		})
 	}
 	return result
@@ -1995,6 +2457,30 @@ func compactStrings(values []string) []string {
 		result = append(result, value)
 	}
 	return result
+}
+
+func decodeJSONStringArray(raw []byte) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var result []string
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil
+	}
+	return compactStrings(result)
+}
+
+func stringSliceHasAnyID(values []string, candidateSet map[int64]struct{}) bool {
+	for _, value := range values {
+		id, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		if _, ok := candidateSet[id]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func containsString(list []string, value string) bool {

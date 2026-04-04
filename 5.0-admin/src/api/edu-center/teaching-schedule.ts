@@ -44,6 +44,7 @@ export interface TeachingScheduleValidationResult {
     timeText: string
     teacherId?: string
     teacherName: string
+    assistantNames?: string[]
     classroomName?: string
     studentNames?: string[]
     conflictTypes?: string[]
@@ -56,6 +57,7 @@ export interface TeachingScheduleValidationResult {
     timeText: string
     teacherId?: string
     teacherName: string
+    assistantNames?: string[]
     classroomName?: string
     studentNames?: string[]
     conflictTypes?: string[]
@@ -79,6 +81,7 @@ export interface OneToOneScheduleAvailabilityItem {
     timeText: string
     teacherId?: string
     teacherName: string
+    assistantNames?: string[]
     classroomName?: string
     studentNames?: string[]
     conflictTypes?: string[]
@@ -89,6 +92,33 @@ export interface OneToOneScheduleAvailabilityResult {
   validCount: number
   invalidCount: number
   items: OneToOneScheduleAvailabilityItem[]
+}
+
+export interface AssistantScheduleAvailabilityItem {
+  assistantId: string
+  assistantName?: string
+  valid: boolean
+  message?: string
+  conflictTypes?: string[]
+  existingSchedules?: Array<{
+    name: string
+    classTypeText: string
+    date: string
+    week?: string
+    timeText: string
+    teacherId?: string
+    teacherName: string
+    assistantNames?: string[]
+    classroomName?: string
+    studentNames?: string[]
+    conflictTypes?: string[]
+  }>
+}
+
+export interface AssistantScheduleAvailabilityResult {
+  validCount: number
+  invalidCount: number
+  items: AssistantScheduleAvailabilityItem[]
 }
 
 export function createOneToOneSchedulesApi(data: {
@@ -137,6 +167,18 @@ export function checkOneToOneScheduleAvailabilityApi(data: {
   }>
 }) {
   return usePost<OneToOneScheduleAvailabilityResult>('/api/v1/teaching-schedules/one-to-one/slot-availability', data)
+}
+
+export function checkAssistantScheduleAvailabilityApi(data: {
+  oneToOneId: string
+  assistantIds: string[]
+  schedules: Array<{
+    lessonDate: string
+    startTime: string
+    endTime: string
+  }>
+}) {
+  return usePost<AssistantScheduleAvailabilityResult>('/api/v1/teaching-schedules/one-to-one/assistant-availability', data)
 }
 
 export function getTeachingScheduleConflictDetailApi(params: {

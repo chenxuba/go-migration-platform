@@ -49,6 +49,7 @@ interface ScheduleConflictItem {
   timeText?: string
   teacherId?: string
   teacherName?: string
+  assistantNames?: string[]
   classroomName?: string
   studentNames?: string[]
   conflictTypes?: string[]
@@ -59,6 +60,7 @@ interface ConflictDetailView extends ScheduleConflictItem {
   activeConflictTypes: string[]
   resolvedConflictTypes: string[]
   teacherTone: 'default' | 'danger' | 'success'
+  assistantTone: 'default' | 'danger' | 'success'
   classroomTone: 'default' | 'danger' | 'success'
   studentTone: 'default' | 'danger' | 'success'
   isResolved: boolean
@@ -326,6 +328,7 @@ function buildConflictDetailView(row: WorkbenchRow, item: ScheduleConflictItem, 
     activeConflictTypes,
     resolvedConflictTypes,
     teacherTone: activeConflictTypes.includes('老师') ? 'danger' : (resolvedConflictTypes.includes('老师') ? 'success' : 'default'),
+    assistantTone: activeConflictTypes.includes('助教') ? 'danger' : (resolvedConflictTypes.includes('助教') ? 'success' : 'default'),
     classroomTone: activeConflictTypes.includes('教室') ? 'danger' : (resolvedConflictTypes.includes('教室') ? 'success' : 'default'),
     studentTone: activeConflictTypes.includes('学员') ? 'danger' : 'default',
     isResolved: !activeConflictTypes.length && resolvedConflictTypes.length > 0,
@@ -358,9 +361,11 @@ const rowViews = computed(() =>
     ])
     const displayConflictTypes = conflictTypes.filter(type => !localResolvedConflictTypes.includes(type))
     const hasTeacherConflict = conflictTypes.includes('老师')
+    const hasAssistantConflict = conflictTypes.includes('助教')
     const hasStudentConflict = conflictTypes.includes('学员')
     const hasClassroomConflict = conflictTypes.includes('教室')
     const displayHasTeacherConflict = displayConflictTypes.includes('老师')
+    const displayHasAssistantConflict = displayConflictTypes.includes('助教')
     const displayHasStudentConflict = displayConflictTypes.includes('学员')
     const displayHasClassroomConflict = displayConflictTypes.includes('教室')
     const matches = (validationState.value?.existingSchedules || []).filter(item =>
@@ -386,15 +391,17 @@ const rowViews = computed(() =>
       conflictTypes,
       displayConflictTypes,
       hasTeacherConflict,
+      hasAssistantConflict,
       hasStudentConflict,
       hasClassroomConflict,
       displayHasTeacherConflict,
+      displayHasAssistantConflict,
       displayHasStudentConflict,
       displayHasClassroomConflict,
       localResolvedConflictTypes,
       confirmedResolvedConflictTypes,
       resolvedConflictTypes,
-      canCreate: !hasTeacherConflict && readyBySoftConflict,
+      canCreate: !hasTeacherConflict && !hasAssistantConflict && readyBySoftConflict,
     }
   }),
 )
@@ -413,6 +420,7 @@ const summary = computed(() => {
   return {
     total: rows.length,
     teacher: rows.filter(row => row.hasTeacherConflict).length,
+    assistant: rows.filter(row => row.hasAssistantConflict).length,
     student: rows.filter(row => row.hasStudentConflict).length,
     classroom: rows.filter(row => row.hasClassroomConflict).length,
     ready: allRows.filter(row => row.canCreate).length,
@@ -769,7 +777,7 @@ const columns = [
 
       <div class="schedule-conflict__toolbar">
         <div class="schedule-conflict__toolbar-summary">
-          共 {{ summary.total }} 节待处理日程，其中老师冲突 {{ summary.teacher }} 节，学员冲突 {{ summary.student }} 节，教室冲突 {{ summary.classroom }} 节，当前可直接创建 {{ summary.ready }} 节。
+          共 {{ summary.total }} 节待处理日程，其中老师冲突 {{ summary.teacher }} 节，助教冲突 {{ summary.assistant }} 节，学员冲突 {{ summary.student }} 节，教室冲突 {{ summary.classroom }} 节，当前可直接创建 {{ summary.ready }} 节。
         </div>
         <div class="schedule-conflict__toolbar-actions">
           <a-button
@@ -816,6 +824,7 @@ const columns = [
               </div>
               <div class="schedule-conflict__cell-meta">
                 <span>老师：<strong :class="{ 'schedule-conflict__cell--danger': record.displayHasTeacherConflict, 'schedule-conflict__cell--success': !record.displayHasTeacherConflict && record.resolvedConflictTypes.includes('老师') }">{{ teacherNameById(record.teacherId) }}</strong></span>
+                <span>助教：<strong :class="{ 'schedule-conflict__cell--danger': record.displayHasAssistantConflict }">{{ (record.current?.assistantNames || []).join('、') || '未安排' }}</strong></span>
                 <span>教室：<strong :class="{ 'schedule-conflict__cell--danger': record.displayHasClassroomConflict, 'schedule-conflict__cell--success': !record.displayHasClassroomConflict && record.resolvedConflictTypes.includes('教室') }">{{ classroomNameById(record.classroomId) }}</strong></span>
                 <span>学员：<strong :class="{ 'schedule-conflict__cell--danger': record.displayHasStudentConflict }">{{ (record.current?.studentNames || []).join('、') || '-' }}</strong></span>
               </div>
@@ -843,6 +852,7 @@ const columns = [
                 </div>
                 <div class="schedule-conflict__cell-meta">
                   <span>老师：<strong :class="toneClass(item.teacherTone)">{{ item.teacherName || '-' }}</strong></span>
+                  <span>助教：<strong :class="toneClass(item.assistantTone)">{{ (item.assistantNames || []).join('、') || '未安排' }}</strong></span>
                   <span>教室：<strong :class="toneClass(item.classroomTone)">{{ item.classroomName || '-' }}</strong></span>
                   <span>冲突学员：<strong :class="toneClass(item.studentTone)">{{ (item.studentNames || []).join('、') || '-' }}</strong></span>
                 </div>
@@ -972,8 +982,12 @@ const columns = [
                 <span class="schedule-conflict__action-badge schedule-conflict__action-badge--danger">老师冲突</span>
                 <span>请调整老师或节次后再创建</span>
               </div>
+              <div v-if="record.displayHasAssistantConflict" class="schedule-conflict__action-tip schedule-conflict__action-tip--danger">
+                <span class="schedule-conflict__action-badge schedule-conflict__action-badge--danger">助教冲突</span>
+                <span>请返回创建弹窗调整助教后再创建</span>
+              </div>
               <div
-                v-else-if="record.resolvedConflictTypes.includes('老师')"
+                v-else-if="!record.displayHasAssistantConflict && record.resolvedConflictTypes.includes('老师')"
                 class="schedule-conflict__action-tip schedule-conflict__action-tip--success"
               >
                 <span class="schedule-conflict__action-badge schedule-conflict__action-badge--success">已解决</span>
@@ -1012,7 +1026,7 @@ const columns = [
 
       <div class="schedule-conflict__footer">
         <div class="schedule-conflict__footer-hint">
-          学员冲突、教室冲突可在工作台内忽略；老师冲突请先改老师或改节次。
+          学员冲突、教室冲突可在工作台内忽略；老师冲突请先改老师或改节次；助教冲突请返回创建弹窗修改助教。
         </div>
         <div class="schedule-conflict__footer-actions">
           <a-button @click="modalOpen = false">
@@ -1353,6 +1367,10 @@ const columns = [
 
   .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
     background: #edf5ff;
+  }
+
+  .ant-select-item-option-state {
+    display: none;
   }
 
   .ant-select-item-option-selected .schedule-conflict__time-option-label {

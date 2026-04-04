@@ -45,6 +45,17 @@ func (svc *Service) CheckOneToOneScheduleAvailability(userID int64, dto model.Ch
 	return svc.repo.CheckOneToOneScheduleAvailability(context.Background(), instID, dto)
 }
 
+func (svc *Service) CheckAssistantScheduleAvailability(userID int64, dto model.CheckAssistantScheduleAvailabilityDTO) (model.AssistantScheduleAvailabilityResult, error) {
+	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+	if strings.TrimSpace(dto.OneToOneID) == "" {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请选择1对1")
+	}
+	return svc.repo.CheckAssistantScheduleAvailability(context.Background(), instID, dto)
+}
+
 func (svc *Service) GetTeachingScheduleConflictDetail(userID int64, query model.TeachingScheduleConflictDetailQueryDTO) (model.TeachingScheduleValidationResult, error) {
 	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
 	if err != nil {

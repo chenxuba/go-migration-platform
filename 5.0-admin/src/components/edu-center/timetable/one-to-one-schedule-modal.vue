@@ -17,7 +17,7 @@ import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import type { TeachingScheduleValidationResult } from '@/api/edu-center/teaching-schedule'
-import { createOneToOneSchedulesApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import { useUserStore } from '@/stores/user'
@@ -43,6 +43,7 @@ interface PreviewItem {
   startTime: string
   endTime: string
   teacher: string
+  assistant: string
   classroom: string
   teacherId?: string
   classroomId?: string
@@ -89,6 +90,27 @@ interface StaffOptionItem {
   nickName?: string
   mobile?: string
   status?: number
+}
+
+interface AvailabilityBadgeView {
+  status: 'free' | 'busy' | 'unknown'
+  statusText: string
+}
+
+interface SlotSelectOptionView {
+  value: string
+  label: string
+  baseLabel: string
+  status: 'free' | 'busy' | 'unknown'
+  statusText: string
+}
+
+interface AssistantSelectOptionView {
+  value: string
+  label: string
+  mobile?: string
+  status: 'free' | 'busy' | 'unknown'
+  statusText: string
 }
 
 const props = defineProps<{
@@ -231,14 +253,6 @@ const schoolTimeSlotOptions = computed<SchoolTimeSlot[]>(() => {
   }))
 })
 
-/** Select 的 options 模式，避免 slot 子节点在父级重绘时整表重挂导致下拉立刻关闭 */
-const schoolTimeSlotSelectOptions = computed(() =>
-  schoolTimeSlotOptions.value.map(item => ({
-    value: item.value,
-    label: `${item.desc} · ${item.start} - ${item.end}`,
-  })),
-)
-
 const selectedTeacher = ref<string | number | undefined>(undefined)
 const selectedTeacherDisplay = ref<StaffOptionItem | null>(null)
 const selectedAssistant = ref<Array<string | number>>([])
@@ -254,6 +268,14 @@ const conflictModalOpen = ref(false)
 const previewValidationResult = ref<TeachingScheduleValidationResult | null>(null)
 const creatingWithSoftConflict = ref(false)
 const plannerShellRef = ref<HTMLElement | null>(null)
+const teacherSlotAvailabilityMap = ref<Record<string, AvailabilityBadgeView>>({})
+const teacherSlotAvailabilityLoading = ref(false)
+const assistantAvailabilityMap = ref<Record<string, AvailabilityBadgeView>>({})
+const assistantAvailabilityLoading = ref(false)
+let teacherSlotAvailabilitySeq = 0
+let assistantAvailabilitySeq = 0
+let teacherSlotAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
+let assistantAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
 
 function scrollPlannerShellToTop() {
   const el = plannerShellRef.value
@@ -274,6 +296,14 @@ function scheduleSlotKeysEqual(a: string[], b: string[]) {
       return false
   }
   return true
+}
+
+function scheduleAvailabilityBadge(status: 'free' | 'busy' | 'unknown', statusText: string): AvailabilityBadgeView {
+  return { status, statusText }
+}
+
+function displayMobileText(staff?: StaffOptionItem | null) {
+  return String(staff?.mobile || '').trim()
 }
 
 const scheduleStartDate = ref(dayjs().startOf('day'))
@@ -463,6 +493,8 @@ watch(
     selectedAssistant.value = []
     selectedAssistantDisplays.value = []
     selectedSchoolTimeSlots.value = []
+    teacherSlotAvailabilityMap.value = {}
+    assistantAvailabilityMap.value = {}
     scheduleStartDate.value = dayjs().startOf('day')
     freeSelectedDates.value = [dayjs().startOf('day')]
     freeCalendarPanelDate.value = freeSelectedDates.value[0].startOf('month')
@@ -499,8 +531,11 @@ watch(modalOpen, async (value) => {
     scrollPlannerShellToTop()
     requestAnimationFrame(() => scrollPlannerShellToTop())
   }
-  if (!value)
+  if (!value) {
     previewModalOpen.value = false
+    teacherSlotAvailabilityMap.value = {}
+    assistantAvailabilityMap.value = {}
+  }
 })
 
 const oneToOneStatusText = computed(() =>
@@ -574,6 +609,27 @@ const teacherSelectOptions = computed(() => {
       merged.set(value, { value, label })
   }
   teacherPresetStaff.value.forEach(item => append(item))
+  workbenchTeacherList.value.forEach(item => append(item))
+  return [...merged.values()]
+})
+
+const assistantSelectStaffs = computed<StaffOptionItem[]>(() => {
+  const merged = new Map<string, StaffOptionItem>()
+  const append = (item?: StaffOptionItem | null) => {
+    if (!isValidStaffId(item?.id))
+      return
+    const id = String(item.id).trim()
+    if (!merged.has(id)) {
+      merged.set(id, {
+        id,
+        name: displayStaffName(item),
+        nickName: displayStaffName(item) || id,
+        mobile: displayMobileText(item),
+        status: item?.status,
+      })
+    }
+  }
+  selectedAssistantDisplays.value.forEach(item => append(item))
   workbenchTeacherList.value.forEach(item => append(item))
   return [...merged.values()]
 })
@@ -656,6 +712,202 @@ const activeTimeBlocks = computed<TimeBlock[]>(() => {
     .map(({ sortKey: _s, ...r }) => r)
 })
 
+function slotBaseLabel(slot: SchoolTimeSlot) {
+  return `${slot.desc} · ${slot.start} - ${slot.end}`
+}
+
+function teacherSlotAvailabilityFor(slot: SchoolTimeSlot): AvailabilityBadgeView {
+  if (!isValidStaffId(selectedTeacher.value))
+    return scheduleAvailabilityBadge('unknown', '先选老师')
+  if (!plannedDates.value.length)
+    return scheduleAvailabilityBadge('unknown', '待定')
+  return teacherSlotAvailabilityMap.value[slot.value]
+    || scheduleAvailabilityBadge(teacherSlotAvailabilityLoading.value ? 'unknown' : 'free', teacherSlotAvailabilityLoading.value ? '检测中' : '空闲')
+}
+
+const schoolTimeSlotOptionViews = computed<SlotSelectOptionView[]>(() =>
+  schoolTimeSlotOptions.value.map((slot) => {
+    const availability = teacherSlotAvailabilityFor(slot)
+    return {
+      value: slot.value,
+      label: `${slotBaseLabel(slot)} · ${availability.statusText}`,
+      baseLabel: slotBaseLabel(slot),
+      status: availability.status,
+      statusText: availability.statusText,
+    }
+  }),
+)
+
+function selectedTimeBlockStatusText(block: TimeBlock) {
+  const matched = schoolTimeSlotOptionViews.value.find(item => item.value === block.key)
+  return matched?.statusText || '待定'
+}
+
+async function fetchTeacherSlotAvailability() {
+  const seq = ++teacherSlotAvailabilitySeq
+  const oneToOneId = String(selectedOneToOne.value?.id || '').trim()
+  const teacherId = selectedTeacherIdNormalized.value
+  if (!oneToOneId || !teacherId || !plannedDates.value.length || !schoolTimeSlotOptions.value.length) {
+    teacherSlotAvailabilityMap.value = {}
+    teacherSlotAvailabilityLoading.value = false
+    return
+  }
+
+  const schedules = plannedDates.value.flatMap(date =>
+    schoolTimeSlotOptions.value.map(slot => ({
+      teacherId,
+      lessonDate: date.format('YYYY-MM-DD'),
+      startTime: slot.start,
+      endTime: slot.end,
+    })),
+  )
+  if (!schedules.length || schedules.length > 2000) {
+    teacherSlotAvailabilityMap.value = {}
+    teacherSlotAvailabilityLoading.value = false
+    return
+  }
+
+  teacherSlotAvailabilityLoading.value = true
+  try {
+    const res = await checkOneToOneScheduleAvailabilityApi({
+      oneToOneId,
+      schedules,
+    })
+    if (seq !== teacherSlotAvailabilitySeq)
+      return
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '检测老师节次空闲状态失败')
+
+    const nextMap: Record<string, AvailabilityBadgeView> = {}
+    schoolTimeSlotOptions.value.forEach((slot) => {
+      nextMap[slot.value] = scheduleAvailabilityBadge('free', '空闲')
+    })
+    ;(res.result.items || []).forEach((item) => {
+      if (item.valid !== false)
+        return
+      const matched = schoolTimeSlotOptions.value.find(slot => slot.start === item.startTime && slot.end === item.endTime)
+      if (!matched)
+        return
+      nextMap[matched.value] = scheduleAvailabilityBadge('busy', '繁忙')
+    })
+    teacherSlotAvailabilityMap.value = nextMap
+  }
+  catch (error: any) {
+    if (seq !== teacherSlotAvailabilitySeq)
+      return
+    console.error('fetchTeacherSlotAvailability failed', error)
+    teacherSlotAvailabilityMap.value = {}
+  }
+  finally {
+    if (seq === teacherSlotAvailabilitySeq)
+      teacherSlotAvailabilityLoading.value = false
+  }
+}
+
+function scheduleTeacherSlotAvailabilityCheck() {
+  if (teacherSlotAvailabilityTimer)
+    clearTimeout(teacherSlotAvailabilityTimer)
+  teacherSlotAvailabilityTimer = setTimeout(() => {
+    void fetchTeacherSlotAvailability()
+  }, 180)
+}
+
+function assistantAvailabilityFor(staff: StaffOptionItem): AvailabilityBadgeView {
+  if (!activeTimeBlocks.value.length)
+    return scheduleAvailabilityBadge('unknown', '先选时段')
+  return assistantAvailabilityMap.value[String(staff.id)]
+    || scheduleAvailabilityBadge(assistantAvailabilityLoading.value ? 'unknown' : 'free', assistantAvailabilityLoading.value ? '检测中' : '空闲')
+}
+
+const assistantSelectOptionViews = computed<AssistantSelectOptionView[]>(() =>
+  assistantSelectStaffs.value.map((staff) => {
+    const availability = assistantAvailabilityFor(staff)
+    return {
+      value: String(staff.id),
+      label: displayStaffName(staff) || String(staff.id),
+      mobile: displayMobileText(staff),
+      status: availability.status,
+      statusText: availability.statusText,
+    }
+  }),
+)
+
+async function fetchAssistantAvailability() {
+  const seq = ++assistantAvailabilitySeq
+  const oneToOneId = String(selectedOneToOne.value?.id || '').trim()
+  const assistantIds = assistantSelectOptionViews.value.map(item => item.value)
+  if (!oneToOneId || !assistantIds.length || !plannedDates.value.length || !activeTimeBlocks.value.length) {
+    assistantAvailabilityMap.value = {}
+    assistantAvailabilityLoading.value = false
+    return
+  }
+
+  const schedules = plannedDates.value.flatMap(date =>
+    activeTimeBlocks.value.map(block => ({
+      lessonDate: date.format('YYYY-MM-DD'),
+      startTime: block.startTime,
+      endTime: block.endTime,
+    })),
+  )
+  if (!schedules.length || schedules.length > 2000) {
+    assistantAvailabilityMap.value = {}
+    assistantAvailabilityLoading.value = false
+    return
+  }
+
+  assistantAvailabilityLoading.value = true
+  try {
+    const res = await checkAssistantScheduleAvailabilityApi({
+      oneToOneId,
+      assistantIds,
+      schedules,
+    })
+    if (seq !== assistantAvailabilitySeq)
+      return
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '检测助教空闲状态失败')
+
+    const nextMap: Record<string, AvailabilityBadgeView> = {}
+    assistantIds.forEach((id) => {
+      nextMap[id] = scheduleAvailabilityBadge('free', '空闲')
+    })
+    ;(res.result.items || []).forEach((item) => {
+      nextMap[item.assistantId] = scheduleAvailabilityBadge(item.valid ? 'free' : 'busy', item.valid ? '空闲' : '繁忙')
+    })
+    assistantAvailabilityMap.value = nextMap
+  }
+  catch (error: any) {
+    if (seq !== assistantAvailabilitySeq)
+      return
+    console.error('fetchAssistantAvailability failed', error)
+    assistantAvailabilityMap.value = {}
+  }
+  finally {
+    if (seq === assistantAvailabilitySeq)
+      assistantAvailabilityLoading.value = false
+  }
+}
+
+function scheduleAssistantAvailabilityCheck() {
+  if (assistantAvailabilityTimer)
+    clearTimeout(assistantAvailabilityTimer)
+  assistantAvailabilityTimer = setTimeout(() => {
+    void fetchAssistantAvailability()
+  }, 180)
+}
+
+function filterAssistantOption(input: string, option?: { value?: string | number, label?: unknown }) {
+  const keyword = String(input || '').trim().toLowerCase()
+  if (!keyword)
+    return true
+  const matched = assistantSelectOptionViews.value.find(item => String(item.value) === String(option?.value ?? ''))
+  const haystacks = [
+    String(option?.label || ''),
+    matched?.mobile || '',
+  ]
+  return haystacks.some(text => text.toLowerCase().includes(keyword))
+}
+
 const scheduleSessionMinutesText = computed(() => {
   const blocks = activeTimeBlocks.value
   if (!blocks.length)
@@ -709,7 +961,10 @@ const timeModeText = computed(() => {
   const prefix = groupLabel ? `${groupLabel} · ` : ''
   if (!blocks.length)
     return `${prefix}请选择课表节次`
-  const blocksDesc = blocks.map(b => b.rangeText).join('；')
+  const blocksDesc = blocks.map((b) => {
+    const statusText = selectedTimeBlockStatusText(b)
+    return `${b.rangeText} · ${statusText}`
+  }).join('；')
   const n = blocks.length
   const head = n > 1 ? `课表节次（共 ${n} 节）` : '课表节次'
   return `${prefix}${head} · ${blocksDesc}`
@@ -911,6 +1166,7 @@ const previewPlans = computed<PreviewItem[]>(() => {
       startTime: block.startTime,
       endTime: block.endTime,
       teacher: selectedTeacherText.value,
+      assistant: selectedAssistantText.value,
       classroom: scheduledClassroomText.value,
       teacherId: selectedTeacherIdNormalized.value || undefined,
       classroomId: normalizedSelectedClassroomId.value || undefined,
@@ -924,6 +1180,33 @@ const previewPlans = computed<PreviewItem[]>(() => {
     return []
   return unclipped.slice(0, cap)
 })
+
+watch(
+  () => [
+    String(selectedOneToOne.value?.id || ''),
+    selectedTeacherIdNormalized.value,
+    currentGroup.value,
+    plannedDates.value.map(item => item.format('YYYY-MM-DD')).join(','),
+    schoolTimeSlotOptions.value.map(item => `${item.start}-${item.end}`).join(','),
+  ].join('|'),
+  () => {
+    scheduleTeacherSlotAvailabilityCheck()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [
+    String(selectedOneToOne.value?.id || ''),
+    plannedDates.value.map(item => item.format('YYYY-MM-DD')).join(','),
+    activeTimeBlocks.value.map(item => `${item.startTime}-${item.endTime}`).join(','),
+    assistantSelectStaffs.value.map(item => String(item.id)).join(','),
+  ].join('|'),
+  () => {
+    scheduleAssistantAvailabilityCheck()
+  },
+  { immediate: true },
+)
 
 const estimatedCount = computed(() => previewPlans.value.length)
 
@@ -1252,8 +1535,11 @@ function handleTeacherChange(_value: string | number | undefined, staff?: StaffO
   selectedTeacherDisplay.value = staff || null
 }
 
-function handleAssistantChange(_value: Array<string | number>, staffs?: StaffOptionItem[]) {
-  selectedAssistantDisplays.value = Array.isArray(staffs) ? staffs : []
+function handleAssistantChange(values?: Array<string | number>) {
+  const nextValues = Array.isArray(values) ? values : selectedAssistant.value
+  selectedAssistantDisplays.value = nextValues.map((id) => {
+    return assistantSelectStaffs.value.find(item => sameStaffId(item.id, id))
+  }).filter(Boolean) as StaffOptionItem[]
 }
 
 function handleStudentLessonChange(value?: string[]) {
@@ -1816,15 +2102,36 @@ function invertWeekdays() {
                         v-model:value="selectedSchoolTimeSlots"
                         mode="multiple"
                         size="large"
+                        option-label-prop="label"
                         allow-clear
                         placeholder="同一天内可勾选多节，例如上午 + 下午"
                         max-tag-count="responsive"
                         :max-tag-placeholder="schoolSlotMaxTagPlaceholder"
-                        :options="schoolTimeSlotSelectOptions"
                         :get-popup-container="scheduleSlotSelectGetPopupContainer"
                         popup-class-name="planner-schedule-slot-select-dropdown"
                         class="planner-control planner-control--major planner-multi-slot-select"
-                      />
+                      >
+                        <a-select-option
+                          v-for="item in schoolTimeSlotOptionViews"
+                          :key="item.value"
+                          :value="item.value"
+                          :label="item.label"
+                        >
+                          <div class="planner-slot-option">
+                            <span class="planner-slot-option__label">{{ item.baseLabel }}</span>
+                            <span
+                              class="planner-slot-option__status"
+                              :class="{
+                                'planner-slot-option__status--free': item.status === 'free',
+                                'planner-slot-option__status--busy': item.status === 'busy',
+                                'planner-slot-option__status--unknown': item.status === 'unknown',
+                              }"
+                            >
+                              {{ item.statusText }}
+                            </span>
+                          </div>
+                        </a-select-option>
+                      </a-select>
                     </span>
                   </div>
 
@@ -1833,19 +2140,43 @@ function invertWeekdays() {
                       <TeamOutlined />
                       上课助教
                     </span>
-                    <StaffSelect
-                      :key="`${scheduleStaffSelectKey}-assistant`"
-                      v-model="selectedAssistant"
-                      size="large"
+                    <a-select
+                      v-model:value="selectedAssistant"
+                      mode="multiple"
+                      show-search
                       placeholder="可不选"
-                      width="100%"
-                      :multiple="true"
-                      :status="0"
-                      :allow-clear="true"
-                      :preset-staff="selectedAssistantDisplays"
-                      class="planner-control planner-multi-slot-select"
+                      size="large"
+                      allow-clear
+                      option-label-prop="label"
+                      :filter-option="filterAssistantOption"
+                      popup-class-name="planner-assistant-select-dropdown"
+                      class="planner-control planner-multi-slot-select planner-assistant-select"
                       @change="handleAssistantChange"
-                    />
+                    >
+                      <a-select-option
+                        v-for="item in assistantSelectOptionViews"
+                        :key="item.value"
+                        :value="item.value"
+                        :label="item.label"
+                      >
+                        <div class="planner-staff-option">
+                          <div class="planner-staff-option__main">
+                            <span class="planner-staff-option__label">{{ item.label }}</span>
+                            <span v-if="item.mobile" class="planner-staff-option__mobile">{{ item.mobile }}</span>
+                          </div>
+                          <span
+                            class="planner-slot-option__status"
+                            :class="{
+                              'planner-slot-option__status--free': item.status === 'free',
+                              'planner-slot-option__status--busy': item.status === 'busy',
+                              'planner-slot-option__status--unknown': item.status === 'unknown',
+                            }"
+                          >
+                            {{ item.statusText }}
+                          </span>
+                        </div>
+                      </a-select-option>
+                    </a-select>
                   </label>
                 </div>
               </div>
@@ -1914,6 +2245,7 @@ function invertWeekdays() {
                 <th>规则</th>
                 <th>时间</th>
                 <th>老师</th>
+                <th>助教</th>
                 <th>教室</th>
                 <th class="planner-table__status-cell">
                   状态
@@ -1922,7 +2254,7 @@ function invertWeekdays() {
             </thead>
             <tbody>
               <tr v-if="!previewPlans.length">
-                <td colspan="7" class="planner-table__empty">
+                <td colspan="8" class="planner-table__empty">
                   暂无预计日程
                 </td>
               </tr>
@@ -1942,6 +2274,13 @@ function invertWeekdays() {
                     }"
                   >
                     {{ item.teacher }}
+                  </td>
+                  <td
+                    :class="{
+                      'planner-table__cell--danger': previewRowConflictTypes(item).includes('助教'),
+                    }"
+                  >
+                    {{ item.assistant }}
                   </td>
                   <td
                     :class="{
@@ -3080,6 +3419,11 @@ button.planner-chip.planner-chip--active {
   min-width: 110px;
 }
 
+.planner-table th:nth-child(7),
+.planner-table td:nth-child(7) {
+  min-width: 110px;
+}
+
 .planner-table__status-cell {
   position: sticky;
   right: 0;
@@ -3472,6 +3816,106 @@ button.planner-chip.planner-chip--active {
 /* 渲染在 body 上，需高于 Modal(1000) / Mask，避免被挡或焦点异常 */
 .planner-schedule-slot-select-dropdown.ant-select-dropdown {
   z-index: 3000 !important;
+}
+
+.planner-assistant-select-dropdown.ant-select-dropdown {
+  z-index: 3000 !important;
+}
+
+.planner-schedule-slot-select-dropdown .ant-select-item,
+.planner-assistant-select-dropdown .ant-select-item {
+  padding: 0;
+}
+
+.planner-schedule-slot-select-dropdown .ant-select-item-option,
+.planner-assistant-select-dropdown .ant-select-item-option {
+  min-height: auto;
+  padding: 0;
+}
+
+.planner-schedule-slot-select-dropdown .ant-select-item-option-content,
+.planner-assistant-select-dropdown .ant-select-item-option-content {
+  padding: 12px 14px;
+}
+
+.planner-schedule-slot-select-dropdown .ant-select-item-option + .ant-select-item-option,
+.planner-assistant-select-dropdown .ant-select-item-option + .ant-select-item-option {
+  border-top: 1px solid #f2f4f7;
+}
+
+.planner-schedule-slot-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) .ant-select-item-option-content,
+.planner-assistant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
+  background: #f8fbff;
+}
+
+.planner-schedule-slot-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .ant-select-item-option-content,
+.planner-assistant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) .ant-select-item-option-content {
+  background: #edf5ff;
+}
+
+.planner-schedule-slot-select-dropdown .ant-select-item-option-state,
+.planner-assistant-select-dropdown .ant-select-item-option-state {
+  display: none;
+}
+
+.planner-slot-option,
+.planner-staff-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planner-slot-option__label,
+.planner-staff-option__label {
+  min-width: 0;
+  color: #1f2329;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.planner-staff-option__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.planner-staff-option__mobile {
+  color: #98a2b3;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.planner-slot-option__status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.planner-slot-option__status::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  content: '';
+}
+
+.planner-slot-option__status--free {
+  color: #52c41a;
+}
+
+.planner-slot-option__status--busy {
+  color: #ff7a45;
+}
+
+.planner-slot-option__status--unknown {
+  color: #98a2b3;
 }
 
 .planner-record-select-dropdown {
