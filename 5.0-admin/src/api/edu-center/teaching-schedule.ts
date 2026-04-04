@@ -23,6 +23,8 @@ export interface TeachingScheduleItem {
   startAt: string
   endAt: string
   status: number
+  conflict: boolean
+  conflictTypes?: string[]
 }
 
 export interface CreateOneToOneSchedulesResult {
@@ -94,6 +96,7 @@ export function createOneToOneSchedulesApi(data: {
   teacherId: string
   assistantIds?: string[]
   classroomId?: string
+  allowStudentConflict?: boolean
   schedules: Array<{
     lessonDate: string
     startTime: string
@@ -150,6 +153,8 @@ export interface TeachingScheduleMatrixLegacyItem {
   scheduleStartTime: string
   scheduleEndTime: string
   scheduleStatus?: number
+  conflict?: boolean
+  conflictTypes?: string[]
   courseStatus?: number
   courseType?: number
   courseName?: string

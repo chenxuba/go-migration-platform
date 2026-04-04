@@ -280,7 +280,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
-	if len(studentConflicts) > 0 {
+	if len(studentConflicts) > 0 && !dto.AllowStudentConflict {
 		return model.CreateOneToOneSchedulesResult{}, errors.New(buildConflictSummaryMessage([]string{"学员"}))
 	}
 

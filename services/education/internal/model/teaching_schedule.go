@@ -14,11 +14,12 @@ type TeachingScheduleCreateSlotDTO struct {
 }
 
 type CreateOneToOneSchedulesDTO struct {
-	OneToOneID   string                          `json:"oneToOneId"`
-	TeacherID    string                          `json:"teacherId"`
-	AssistantIDs []string                        `json:"assistantIds"`
-	ClassroomID  string                          `json:"classroomId"`
-	Schedules    []TeachingScheduleCreateSlotDTO `json:"schedules"`
+	OneToOneID           string                          `json:"oneToOneId"`
+	TeacherID            string                          `json:"teacherId"`
+	AssistantIDs         []string                        `json:"assistantIds"`
+	ClassroomID          string                          `json:"classroomId"`
+	AllowStudentConflict bool                            `json:"allowStudentConflict,omitempty"`
+	Schedules            []TeachingScheduleCreateSlotDTO `json:"schedules"`
 }
 
 type OneToOneScheduleAvailabilitySlotDTO struct {
@@ -100,6 +101,8 @@ type TeachingScheduleVO struct {
 	StartAt           time.Time `json:"startAt"`
 	EndAt             time.Time `json:"endAt"`
 	Status            int       `json:"status"`
+	Conflict          bool      `json:"conflict"`
+	ConflictTypes     []string  `json:"conflictTypes,omitempty"`
 }
 
 type CreateOneToOneSchedulesResult struct {
@@ -205,6 +208,8 @@ type TeachingScheduleInfoLegacyVO struct {
 	ScheduleStartTime string                   `json:"scheduleStartTime"`
 	ScheduleEndTime   string                   `json:"scheduleEndTime"`
 	ScheduleStatus    int                      `json:"scheduleStatus"`
+	Conflict          bool                     `json:"conflict"`
+	ConflictTypes     []string                 `json:"conflictTypes,omitempty"`
 	MissSchedule      bool                     `json:"missSchedule"`
 	HasIgnore         *bool                    `json:"hasIgnore"`
 	CourseStatus      int                      `json:"courseStatus"`

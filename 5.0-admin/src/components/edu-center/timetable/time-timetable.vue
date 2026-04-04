@@ -241,7 +241,8 @@ const mockSchedules = computed(() =>
     classroom: item.classroomName || '-',
     studentText: item.studentName ? `学员：${item.studentName}` : '-',
     status: 'unsigned',
-    conflict: false,
+    conflict: item.conflict === true,
+    conflictTypes: item.conflictTypes || [],
     hasTrial: false,
     raw: item,
   })),
@@ -932,7 +933,13 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                       </div>
                       <div class="schedule-event__badges">
                         <span
-                          v-if="event.classType === 2"
+                          v-if="event.conflict"
+                          class="schedule-event__badge schedule-event__badge--conflict"
+                        >
+                          冲突
+                        </span>
+                        <span
+                          v-else-if="event.classType === 2"
                           class="schedule-event__badge schedule-event__badge--one-to-one"
                         >
                           1v1
@@ -1514,16 +1521,15 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 }
 
 .schedule-event--conflict {
-  box-shadow: 0 0 0 2px rgb(255 77 79 / 28%), 0 16px 32px rgb(255 77 79 / 16%);
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.4);
 }
 
 .schedule-event__top {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   min-height: 24px;
-  padding: 3px 4px 3px 10px;
+  padding: 3px 56px 3px 10px;
   background: #1677ff;
 }
 
@@ -1543,9 +1549,13 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 }
 
 .schedule-event__badges {
+  position: absolute;
+  top: 0;
+  right: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -1565,7 +1575,16 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 }
 
 .schedule-event__badge--one-to-one {
-  background: rgb(9 61 149 / 24%);
+  padding: 0 8px 0 9px;
+  border-radius: 0 4px 0 8px;
+  background: rgb(0 0 0 / 50%);
+  color: #fff;
+}
+
+.schedule-event__badge--conflict {
+  padding: 0 8px 0 9px;
+  border-radius: 0 4px 0 8px;
+  background: #ff4d4f;
   color: #fff;
 }
 

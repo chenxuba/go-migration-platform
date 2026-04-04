@@ -53,7 +53,12 @@ func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingSche
 		}
 		return nil, err
 	}
-	return svc.repo.ListTeachingSchedules(context.Background(), instID, query)
+	schedules, err := svc.repo.ListTeachingSchedules(context.Background(), instID, query)
+	if err != nil {
+		return nil, err
+	}
+	annotateTeachingScheduleConflicts(schedules)
+	return schedules, nil
 }
 
 // ListTeachingSchedulesByTeacherMatrix 按「日期 × 教师」矩阵返回课表（结构对齐旧版机构总课表 scheduleListVoList）
@@ -83,6 +88,7 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 	if err != nil {
 		return nil, err
 	}
+	annotateTeachingScheduleConflicts(schedules)
 
 	teacherOrder, teacherNames := buildTeacherOrderForMatrix(roster, schedules)
 	allowTeachers, err := svc.resolveMatrixTeacherAllowList(ctx, instID, query)
@@ -285,6 +291,85 @@ func buildTeacherOrderForMatrix(roster []model.InstUserScheduleRosterItem, sched
 	return order, names
 }
 
+func annotateTeachingScheduleConflicts(schedules []model.TeachingScheduleVO) {
+	for i := range schedules {
+		schedules[i].Conflict = false
+		schedules[i].ConflictTypes = nil
+	}
+	if len(schedules) <= 1 {
+		return
+	}
+
+	grouped := make(map[string][]int)
+	for i, item := range schedules {
+		grouped[item.LessonDate] = append(grouped[item.LessonDate], i)
+	}
+
+	for _, indexes := range grouped {
+		sort.Slice(indexes, func(i, j int) bool {
+			left := schedules[indexes[i]]
+			right := schedules[indexes[j]]
+			if left.StartAt.Equal(right.StartAt) {
+				return left.EndAt.Before(right.EndAt)
+			}
+			return left.StartAt.Before(right.StartAt)
+		})
+
+		for i := 0; i < len(indexes); i++ {
+			leftIndex := indexes[i]
+			left := schedules[leftIndex]
+			for j := i + 1; j < len(indexes); j++ {
+				rightIndex := indexes[j]
+				right := schedules[rightIndex]
+				if !left.EndAt.After(right.StartAt) {
+					break
+				}
+				if !right.EndAt.After(left.StartAt) {
+					continue
+				}
+				if sameNonEmptyString(left.StudentID, right.StudentID) {
+					appendScheduleConflictType(&schedules[leftIndex], "学员")
+					appendScheduleConflictType(&schedules[rightIndex], "学员")
+				}
+				if sameNonEmptyString(left.TeacherID, right.TeacherID) {
+					appendScheduleConflictType(&schedules[leftIndex], "老师")
+					appendScheduleConflictType(&schedules[rightIndex], "老师")
+				}
+				if sameNonEmptyString(left.ClassroomID, right.ClassroomID) {
+					appendScheduleConflictType(&schedules[leftIndex], "教室")
+					appendScheduleConflictType(&schedules[rightIndex], "教室")
+				}
+			}
+		}
+	}
+}
+
+func appendScheduleConflictType(item *model.TeachingScheduleVO, conflictType string) {
+	if item == nil || strings.TrimSpace(conflictType) == "" {
+		return
+	}
+	if !containsStringValue(item.ConflictTypes, conflictType) {
+		item.ConflictTypes = append(item.ConflictTypes, conflictType)
+		sort.Strings(item.ConflictTypes)
+	}
+	item.Conflict = len(item.ConflictTypes) > 0
+}
+
+func containsStringValue(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func sameNonEmptyString(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	return left != "" && right != "" && left == right
+}
+
 func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) model.TeachingScheduleInfoLegacyVO {
 	id, _ := strconv.ParseInt(v.ID, 10, 64)
 	tid, _ := strconv.ParseInt(strings.TrimSpace(v.TeacherID), 10, 64)
@@ -337,6 +422,8 @@ func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) mod
 		ScheduleStartTime: v.StartAt.Format("15:04"),
 		ScheduleEndTime:   v.EndAt.Format("15:04"),
 		ScheduleStatus:    v.Status,
+		Conflict:          v.Conflict,
+		ConflictTypes:     append([]string(nil), v.ConflictTypes...),
 		MissSchedule:      false,
 		CourseStatus:      0,
 		Width:             0,

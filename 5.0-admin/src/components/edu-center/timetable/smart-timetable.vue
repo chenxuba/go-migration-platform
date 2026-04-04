@@ -146,6 +146,7 @@ const timetableLoading = ref(false)
 const oneToOneAvailabilityLoading = ref(false)
 const creatingOneToOneSchedule = ref(false)
 const deletingScheduledLesson = ref(false)
+const forcingConflictSchedule = ref(false)
 const conflictDetailModalOpen = ref(false)
 const conflictDetailState = ref({
   summary: '',
@@ -280,6 +281,8 @@ function emptyLessonCell(slot) {
     className: null,
     studentNames: null,
     courseType: null,
+    scheduledConflict: false,
+    scheduledConflictTypes: [],
     conflict: false,
     conflictReason: null,
     serverConflict: false,
@@ -330,6 +333,8 @@ function buildLessonsForRow(slots, legacyList) {
       className: leg.className || null,
       studentNames: names.length ? names : null,
       courseType: displayCourseType,
+      scheduledConflict: leg.conflict === true,
+      scheduledConflictTypes: leg.conflictTypes || [],
       isMain: true,
     }
   }
@@ -764,6 +769,11 @@ async function flushPendingConflictJump() {
 function openApiConflictModal(reason, column, record) {
   const existingSchedules = Array.isArray(reason?.existingSchedules) ? reason.existingSchedules : []
   const selectedTarget = resolveConflictAttemptTarget()
+  const attemptedConflictTypes = Array.isArray(reason?.conflictTypes) ? reason.conflictTypes : []
+  const forceAllowed = currentModel.value === '1'
+    && Boolean(oneToOneRecordId.value)
+    && attemptedConflictTypes.length > 0
+    && attemptedConflictTypes.every(type => type === '学员')
   const items = existingSchedules.map((item, index) => {
     const groupInfo = resolveConflictScheduleGroupInfo(item)
     const timeRange = parseConflictTimeRange(item.timeText)
@@ -807,10 +817,50 @@ function openApiConflictModal(reason, column, record) {
       teacherName: record.name,
       lessonIndex: getLessonIndex(column.startTime),
       groupLabel: activeGroupLabel.value || '当前组',
+      forceAllowed,
+      forcePayload: forceAllowed
+        ? {
+            oneToOneId: String(oneToOneRecordId.value),
+            teacherId: String(record.teacherId),
+            schedules: [{
+              lessonDate: record.date,
+              startTime: column.startTime,
+              endTime: column.endTime,
+            }],
+          }
+        : null,
     },
     items,
   }
   conflictDetailModalOpen.value = true
+}
+
+async function forceScheduleDespiteStudentConflict() {
+  const attempted = conflictDetailState.value.attempted
+  if (!attempted?.forceAllowed || !attempted?.forcePayload) {
+    messageService.warning('当前冲突类型暂不支持强制排课')
+    return
+  }
+
+  forcingConflictSchedule.value = true
+  try {
+    const res = await createOneToOneSchedulesApi({
+      ...attempted.forcePayload,
+      allowStudentConflict: true,
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '强制排课失败')
+    conflictDetailModalOpen.value = false
+    messageService.success('已按学员冲突方式排课，课表将标记冲突')
+    emitter.emit(EVENTS.REFRESH_DATA)
+  }
+  catch (error) {
+    console.error('force schedule despite student conflict failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '强制排课失败')
+  }
+  finally {
+    forcingConflictSchedule.value = false
+  }
 }
 
 async function jumpToConflictSchedule(item) {
@@ -1978,7 +2028,10 @@ watch(currentModel, (newValue) => {
               v-if="text.studentId"
               :data-schedule-cell-key="buildAvailabilitySlotKey(record.teacherId, record.date, column.startTime, column.endTime)"
               class="st-schedule-cell flex flex-col bg-#4e6dff1f h-11 rounded-1 text-3 text-#fff cursor-pointer"
-              :class="{ 'st-schedule-cell--focused': focusedScheduleCellKey === buildAvailabilitySlotKey(record.teacherId, record.date, column.startTime, column.endTime) }"
+              :class="{
+                'st-schedule-cell--focused': focusedScheduleCellKey === buildAvailabilitySlotKey(record.teacherId, record.date, column.startTime, column.endTime),
+                'st-schedule-cell--conflict': text.scheduledConflict,
+              }"
               @click="openScheduledLessonDetail(text, column, record)"
             >
               <!-- 方格头部时间 -->
@@ -1987,10 +2040,12 @@ watch(currentModel, (newValue) => {
                 {{ column.startTime }}-{{ column.endTime }}
                 <!-- 标记 -->
                 <span
-                  class="absolute right-0 pl-2 pr-1  h-4 bg-#00000080 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2"
+                  class="absolute right-0 pl-2 pr-1  h-4 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2"
+                  :class="text.scheduledConflict ? 'st-schedule-cell__badge--conflict' : 'bg-#00000080'"
                 >
-                  <span v-if="text.courseType === 1">1v1</span>
-                  <span v-if="text.courseType === 2">班课(<span>{{ text.isMain ? '主教' : '辅教' }}</span>)</span>
+                  <span v-if="text.scheduledConflict">冲突</span>
+                  <span v-else-if="text.courseType === 1">1v1</span>
+                  <span v-else-if="text.courseType === 2">班课(<span>{{ text.isMain ? '主教' : '辅教' }}</span>)</span>
                 </span>
               </div>
               <!-- 1v1 -->
@@ -2188,6 +2243,14 @@ watch(currentModel, (newValue) => {
               <a-button type="primary" ghost :disabled="!item.jumpCellKey" @click="jumpToConflictSchedule(item)">
                 定位到课程
               </a-button>
+              <a-button
+                v-if="conflictDetailState.attempted?.forceAllowed"
+                danger
+                :loading="forcingConflictSchedule"
+                @click="forceScheduleDespiteStudentConflict"
+              >
+                仍要排课
+              </a-button>
             </div>
           </div>
         </div>
@@ -2280,6 +2343,14 @@ watch(currentModel, (newValue) => {
 .st-schedule-cell {
   position: relative;
   transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.st-schedule-cell--conflict {
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.4);
+}
+
+.st-schedule-cell__badge--conflict {
+  background: #ff4d4f;
 }
 
 .st-schedule-cell--focused {
@@ -2563,6 +2634,9 @@ watch(currentModel, (newValue) => {
 }
 
 .st-conflict-item__side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   flex-shrink: 0;
 }
 </style>
