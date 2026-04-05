@@ -1,9 +1,11 @@
 <script setup>
-import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { h } from 'vue'
-import CreateSchedulePopover from './create-schedule-popover.vue'
+import SmartTimetableConflictModal from './smart-timetable-conflict-modal.vue'
+import SmartTimetableGrid from './smart-timetable-grid.vue'
+import SmartTimetableScheduledDetailModal from './smart-timetable-scheduled-detail-modal.vue'
+import SmartTimetableToolbar from './smart-timetable-toolbar.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
@@ -1199,9 +1201,16 @@ async function forceScheduleDespiteStudentConflict() {
 
   forcingConflictSchedule.value = true
   try {
+    const schedules = Array.isArray(attempted.forcePayload.schedules)
+      ? attempted.forcePayload.schedules.map(item => ({
+          ...item,
+          allowStudentConflict: true,
+        }))
+      : []
     const res = await createOneToOneSchedulesApi({
       ...attempted.forcePayload,
       allowStudentConflict: true,
+      schedules,
     })
     if (res.code !== 200)
       throw new Error(res.message || '强制排课失败')
@@ -2710,301 +2719,58 @@ watch(currentModel, (newValue) => {
     <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
       <all-filter :display-array="displayArray" :is-show-search-stu-phonefilter="true" />
     </div>
-    <div class="time-template mt2 bg-white py3 px5 rounded-4 rounded-lb-0 rounded-rb-0">
-      <div class="top-filter st-top-filter-bar flex flex-nowrap items-center gap-1 overflow-x-auto">
-        <div class="shrink-0">
-          <a-radio-group v-model:value="currentModel" button-style="solid">
-            <a-radio-button value="1">
-              1v1
-            </a-radio-button>
-            <a-radio-button value="2">
-              班课
-            </a-radio-button>
-          </a-radio-group>
-        </div>
-        <div class="shrink-0">
-          <div v-if="currentModel === '1'" class="flex items-center shrink-0 gap-1">
-            <span class="whitespace-nowrap w-71px text-right">选择1v1：</span>
-            <a-select
-              v-model:value="oneToOneRecordId"
-              v-model:open="oneToOnePickerOpen"
-              allow-clear
-              show-search
-              :loading="oneToOneListLoading"
-              :dropdown-match-select-width="false"
-              :dropdown-style="oneToOneDropdownStyle"
-              :dropdown-render="renderOneToOneDropdown"
-              :filter-option="filterOneToOneOption"
-              placeholder="搜索/选择"
-              class="st-top-1v1-select"
-              popup-class-name="st-top-1v1-select-dropdown"
-              option-label-prop="label"
-              @dropdown-visible-change="handleOneToOneDropdownVisibleChange"
-              @change="handle1v1"
-            >
-              <a-select-option
-                v-for="item in oneToOneData"
-                :key="item.id"
-                :value="item.id"
-                :label="item.name"
-              >
-                <div>{{ item.name }}</div>
-              </a-select-option>
-            </a-select>
-          </div>
-          <div v-if="currentModel === '2'" class="flex items-center">
-            <!-- 写一个 select下拉选择框，使用 班级数据  -->
-            <span class="w-75px">选择班级：</span>
-            <a-select
-              v-model:value="classId"
-              allow-clear
-              placeholder="请搜索/选择班级"
-              class="st-top-class-select"
-              option-label-prop="label"
-              @change="handleClass"
-            >
-              <!-- 原有选项内容保持不变 -->
-              <a-select-option
-                v-for="item in classData" :key="item.id" :value="item.id" :data="item"
-                :label="item.name"
-              >
-                <div>{{ item.name }}</div>
-                <div class="text-3 text-#666">
-                  主教：{{ item.mainTeacherName }}
-                </div>
-              </a-select-option>
-            </a-select>
-          </div>
-        </div>
-        <div class="time-selector flex items-center shrink-0 st-time-selector--after-filters">
-          <a-select
-            v-model:value="currentTime"
-            :options="timeViewOptions"
-            class="st-time-view-select"
-          />
-          <div
-            class="text-#0061ff font-800 text-5 flex items-center shrink-0 st-date-nav"
-            :class="
-              currentTime === 'day'
-                ? 'st-date-nav--day'
-                : isWeekLikeView
-                  ? 'st-date-nav--week'
-                  : 'st-date-nav--month'
-            "
-          >
-            <a-popover trigger="hover">
-              <template #content>
-                {{ currentTime === 'day' ? '前一天' : isWeekLikeView ? '上一周' : '上个月' }}
-              </template>
-              <span
-                class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 shrink-0 hover-text-#06f hover-bg-#e6f0ff"
-                @click="handlePrev"
-              >
-                <LeftOutlined />
-              </span>
-            </a-popover>
-            <span class="mx-1 min-w-0 flex-1 st-date-nav__mid">
-              <div class="relative cursor-pointer whitespace-nowrap text-center st-date-nav__text">
-                {{ formatDateRange(currentWeek) }}
-                <a-date-picker
-                  v-if="currentTime === 'day'"
-                  v-model:value="currentWeek" class="absolute top-0 left-0 right-0 bottom-0 z-10 opacity-0"
-                  :allow-clear="false" :bordered="false" :format="formatDateRange" style="cursor:pointer;"
-                />
-                <a-date-picker
-                  v-else-if="isWeekLikeView"
-                  v-model:value="currentWeek" class="absolute top-0 left-0 right-0 bottom-0 z-10 opacity-0"
-                  picker="week" :allow-clear="false" :bordered="false" :format="formatDateRange"
-                  style="cursor:pointer;"
-                />
-                <a-date-picker
-                  v-else v-model:value="currentWeek"
-                  class="absolute top-0 left-0 right-0 bottom-0 z-10 opacity-0" picker="month" :allow-clear="false" :bordered="false"
-                  :format="formatDateRange" style="cursor:pointer;"
-                />
-              </div>
-            </span>
-            <a-popover trigger="hover">
-              <template #content>
-                {{ currentTime === 'day' ? '后一天' : isWeekLikeView ? '下一周' : '下个月' }}
-              </template>
-              <span
-                class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 shrink-0 hover-text-#06f hover-bg-#e6f0ff"
-                @click="handleNext"
-              >
-                <RightOutlined />
-              </span>
-            </a-popover>
-          </div>
-          <a-button size="small" class="shrink-0 st-this-week-btn" @click="handleThisWeek">
-            本周
-          </a-button>
-        </div>
-        <div class="ml-auto flex shrink-0 items-center gap-2">
-          <!-- 添加组别选择 -->
-          <a-radio-group v-model:value="currentGroup" button-style="solid">
-            <a-radio-button v-for="opt in groupOptions" :key="opt.key" :value="opt.key">
-              {{ opt.label }}
-            </a-radio-button>
-          </a-radio-group>
-          <a-space>
-            <CreateSchedulePopover />
-            <a-button>导出课表</a-button>
-          </a-space>
-        </div>
-      </div>
-    </div>
-    <a-spin :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule">
-      <a-table
-        :scroll="{ x: 1300 }" :sticky="{ offsetHeader: 100 }" size="small" :pagination="false" bordered
-        :data-source="tableDataSource" :columns="columns"
-      >
-        <template #headerCell="{ column }">
-          <template v-if="!isSwapTimeGrid && column.startTime && column.endTime">
-            <div>{{ column.title }}</div>
-            <div class="text-12px text-#666 line-height-2">
-              {{ column.startTime }}-{{ column.endTime }}
-            </div>
-          </template>
-          <template v-else-if="isSwapTimeGrid && column.date">
-            <div>{{ column.title }}</div>
-            <div class="text-12px text-#666 line-height-2">
-              {{ column.dateText }}
-            </div>
-          </template>
-          <template v-else>
-            {{ column.title }}
-          </template>
-        </template>
-        <template #bodyCell="{ column, record, text }">
-          <template v-if="isScheduleColumn(column)">
-            <div
-              v-if="text.studentId"
-              :data-schedule-cell-key="scheduleCellKey(column, record)"
-              class="st-schedule-cell flex flex-col bg-#4e6dff1f h-11 rounded-1 text-3 text-#fff cursor-pointer"
-              :class="{
-                'st-schedule-cell--focused': focusedScheduleCellKey === scheduleCellKey(column, record),
-                'st-schedule-cell--conflict': text.scheduledConflict,
-              }"
-              @click="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
-            >
-              <!-- 方格头部时间 -->
-              <!-- 班课 -->
-              <div class="pl1 bg-#06f rounded-1 rounded-lb-0 rounded-rb-0 flex relative h-5">
-                {{ scheduleCellStartTime(column, record) }}-{{ scheduleCellEndTime(column, record) }}
-                <!-- 标记 -->
-                <span
-                  class="absolute right-0 pl-2 pr-1  h-4 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2"
-                  :class="text.scheduledConflict ? 'st-schedule-cell__badge--conflict' : 'bg-#00000080'"
-                  :style="{ cursor: text.scheduledConflict ? 'pointer' : 'default' }"
-                  @click.stop="text.scheduledConflict ? openScheduledConflictDetail(text) : undefined"
-                >
-                  <span v-if="text.scheduledConflict">冲突</span>
-                  <span v-else-if="text.courseType === 1">1v1</span>
-                  <span v-else-if="text.courseType === 2">班课(<span>{{ text.isMain ? '主教' : '辅教' }}</span>)</span>
-                </span>
-              </div>
-              <!-- 1v1 -->
-              <div v-if="!text.classId" class="flex pl-1 flex-1 text-#002cfd flex-items-center">
-                <span v-for="(item, index) in text.studentNames" :key="index">
-                  <div class="flex">{{ item.name }}{{ index !== text.studentNames.length - 1 ? '、' : '' }}-{{ text.courseName }}</div>
-                </span>
-              </div>
-              <!-- 班课 -->
-              <div v-else class="flex  pl-1 flex-1 text-#002cfd line-height-4 flex-items-center">
-                <div class="flex">
-                  {{ text.className }}-{{ text.courseName }}
-                </div>
-              </div>
-            </div>
-            <!-- 空闲时段 -->
-            <div
-              v-else class="h-11 rounded-1 text-3 flex-center cursor-pointer" :class="[
-                text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a',
-              ]" @click="text.conflict ? handleConflictClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record)) : handleScheduleClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
-            >
-              {{ emptyLessonStatusText(text) }}
-            </div>
-          </template>
-          <template v-if="column.key === 'date'">
-            <div class="text-3.5 ">
-              {{ formatWeek(text) }}
-            </div>
-            <div class="text-3 font-500 line-height-3 text-#666">
-              {{ formatDate(text) }}
-            </div>
-          </template>
-          <template v-if="column.key === 'name'">
-            <div>{{ text }}</div>
-            <div class="text-3 text-#666 leading-snug">
-              {{ teacherLessonCountLabel(record.teacherId) }}
-            </div>
-          </template>
-          <template v-if="column.key === 'slot'">
-            <div class="text-3.5">
-              {{ text }}
-            </div>
-            <div class="text-3 font-500 line-height-3 text-#666">
-              {{ record.startTime }}-{{ record.endTime }}
-            </div>
-          </template>
-        </template>
-      </a-table>
-    </a-spin>
+    <smart-timetable-toolbar
+      v-model:current-model="currentModel"
+      v-model:one-to-one-record-id="oneToOneRecordId"
+      v-model:one-to-one-picker-open="oneToOnePickerOpen"
+      v-model:class-id="classId"
+      v-model:current-time="currentTime"
+      v-model:current-week="currentWeek"
+      v-model:current-group="currentGroup"
+      :one-to-one-list-loading="oneToOneListLoading"
+      :one-to-one-data="oneToOneData"
+      :render-one-to-one-dropdown="renderOneToOneDropdown"
+      :filter-one-to-one-option="filterOneToOneOption"
+      :class-data="classData"
+      :time-view-options="timeViewOptions"
+      :format-date-range="formatDateRange"
+      :is-week-like-view="isWeekLikeView"
+      :group-options="groupOptions"
+      :on-one-to-one-change="handle1v1"
+      :on-one-to-one-dropdown-visible-change="handleOneToOneDropdownVisibleChange"
+      :on-class-change="handleClass"
+      :on-prev="handlePrev"
+      :on-next="handleNext"
+      :on-this-week="handleThisWeek"
+    />
+    <smart-timetable-grid
+      :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule"
+      :table-data-source="tableDataSource"
+      :columns="columns"
+      :is-swap-time-grid="isSwapTimeGrid"
+      :focused-schedule-cell-key="focusedScheduleCellKey"
+      :is-schedule-column="isScheduleColumn"
+      :schedule-cell-key="scheduleCellKey"
+      :schedule-cell-start-time="scheduleCellStartTime"
+      :schedule-cell-end-time="scheduleCellEndTime"
+      :schedule-cell-context-column="scheduleCellContextColumn"
+      :schedule-cell-context-record="scheduleCellContextRecord"
+      :open-scheduled-lesson-detail="openScheduledLessonDetail"
+      :open-scheduled-conflict-detail="openScheduledConflictDetail"
+      :handle-conflict-click="handleConflictClick"
+      :handle-schedule-click="handleScheduleClick"
+      :empty-lesson-status-text="emptyLessonStatusText"
+      :teacher-lesson-count-label="teacherLessonCountLabel"
+      :format-week="formatWeek"
+      :format-date="formatDate"
+    />
 
-    <a-modal
+    <smart-timetable-scheduled-detail-modal
       v-model:open="scheduledLessonDetailOpen"
-      title="课程详情"
-      width="620px"
-      centered
-      :ok-button-props="{ danger: true, loading: deletingScheduledLesson }"
-      :ok-text="scheduledLessonDetailState.courseType === 1 ? (scheduledLessonDetailState.isMain ? '删除本节' : '移除助教') : undefined"
-      cancel-text="关闭"
-      :ok-cancel="scheduledLessonDetailState.courseType === 1"
-      @ok="deleteScheduledLessonFromDetail"
-    >
-      <div class="st-scheduled-detail">
-        <div class="st-scheduled-detail__hero">
-          <span
-            class="st-scheduled-detail__badge"
-            :style="{ background: scheduledLessonDetailState.modeColor || '#1677ff' }"
-          >
-            {{ scheduledLessonDetailState.modeLabel }}
-          </span>
-          <span class="st-scheduled-detail__title">{{ scheduledLessonDetailState.lessonTitle }}</span>
-        </div>
-
-        <div class="st-scheduled-detail__card">
-          <div class="st-scheduled-detail__row">
-            <span>上课时间</span>
-            <strong>{{ scheduledLessonDetailState.dateLabel }} · {{ scheduledLessonDetailState.timeLabel }}</strong>
-          </div>
-          <div class="st-scheduled-detail__row">
-            <span>上课老师</span>
-            <strong>{{ scheduledLessonDetailState.teacherName }}</strong>
-          </div>
-          <div class="st-scheduled-detail__row">
-            <span>上课助教</span>
-            <strong>{{ scheduledLessonDetailState.assistantText }}</strong>
-          </div>
-          <div class="st-scheduled-detail__row">
-            <span>所在组别</span>
-            <strong>{{ scheduledLessonDetailState.groupLabel }}</strong>
-          </div>
-          <div class="st-scheduled-detail__row">
-            <span>上课学员</span>
-            <strong>{{ scheduledLessonDetailState.studentText }}</strong>
-          </div>
-        </div>
-
-        <div v-if="scheduledLessonDetailState.courseType === 1" class="st-scheduled-detail__hint st-scheduled-detail__hint--danger">
-          {{ scheduledLessonDetailState.isMain ? '删除这节 1v1 日程后，会立即从主教与助教课表中同步移除。' : '当前为助教视角。确认后仅移除这节课的当前助教，不会删除整节课。' }}
-        </div>
-        <div v-else class="st-scheduled-detail__hint">
-          这里建议作为后续“查看详情 / 调课 / 调整老师 / 调整教室”的统一入口。班课删除暂未开放，避免误删主教/辅教安排。
-        </div>
-      </div>
-    </a-modal>
+      :detail="scheduledLessonDetailState"
+      :deleting="deletingScheduledLesson"
+      @confirm="deleteScheduledLessonFromDetail"
+    />
 
     <ScheduleConflictModal
       v-model:open="scheduledConflictDetailOpen"
@@ -3015,139 +2781,13 @@ watch(currentModel, (newValue) => {
       fallback-message="当前日程与已有日程存在冲突"
     />
 
-    <a-modal
+    <smart-timetable-conflict-modal
       v-model:open="conflictDetailModalOpen"
-      title="冲突详情"
-      class="st-conflict-detail-modal"
-      :footer="null"
-      width="760px"
-      centered
-      :body-style="{ paddingTop: '0px' }"
-    >
-      <div class="st-conflict-modal">
-        <div class="st-conflict-summary">
-          {{ conflictDetailState.summary }}
-        </div>
-
-        <div v-if="conflictDetailState.attempted" class="st-conflict-attempt">
-          <div class="st-conflict-section-title">
-            你正在选择的空位
-          </div>
-          <div class="st-conflict-attempt__card">
-            <div class="st-conflict-attempt__headline">
-              <div class="st-conflict-attempt__headline-main">
-                <span class="st-conflict-attempt__badge">{{ conflictDetailState.attempted.modeLabel }}</span>
-                <span>待排课程信息</span>
-              </div>
-              <a-button
-                v-if="conflictDetailState.attempted?.forceAllowed"
-                type="primary"
-                ghost
-                danger
-                :loading="forcingConflictSchedule"
-                @click="forceScheduleDespiteStudentConflict"
-              >
-                仍要排课
-              </a-button>
-            </div>
-            <div class="st-conflict-attempt__meta st-conflict-attempt__meta--time">
-              {{ conflictDetailState.attempted.date }} {{ conflictDetailState.attempted.week }}
-              第{{ conflictDetailState.attempted.lessonIndex }}节
-            </div>
-            <div class="st-conflict-attempt__target">
-              <div class="st-conflict-attempt__target-label">
-                <span>{{ conflictDetailState.attempted.targetLabel }}</span>
-              </div>
-              <strong class="st-conflict-attempt__target-value">{{ conflictDetailState.attempted.targetValue }}</strong>
-            </div>
-            <div class="st-conflict-attempt__facts">
-              <div class="st-conflict-attempt__fact">
-                <span class="st-conflict-attempt__fact-label">上课课程</span>
-                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.courseName }}</strong>
-              </div>
-              <div class="st-conflict-attempt__fact">
-                <span class="st-conflict-attempt__fact-label">上课时间</span>
-                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.timeText }}</strong>
-              </div>
-              <div class="st-conflict-attempt__fact">
-                <span class="st-conflict-attempt__fact-label">上课老师</span>
-                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.teacherName }}</strong>
-              </div>
-              <div class="st-conflict-attempt__fact">
-                <span class="st-conflict-attempt__fact-label">上课助教</span>
-                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.assistantText || '未安排' }}</strong>
-              </div>
-              <div class="st-conflict-attempt__fact">
-                <span class="st-conflict-attempt__fact-label">所在组别</span>
-                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.groupLabel }}</strong>
-              </div>
-            </div>
-            <div class="st-conflict-attempt__meta">
-              系统正在校验这条待排课信息与课表中的已有日程是否冲突。
-            </div>
-          </div>
-        </div>
-
-        <div class="st-conflict-section-title">
-          冲突课程
-        </div>
-        <div class="st-conflict-list">
-          <div v-for="item in conflictDetailState.items" :key="item.key" class="st-conflict-item">
-            <div class="st-conflict-item__main">
-              <div class="st-conflict-item__headline">
-                <span>{{ item.name }}</span>
-                <a-tag color="blue" :bordered="false">
-                  {{ item.classTypeText }}
-                </a-tag>
-                <a-tag color="orange" :bordered="false">
-                  {{ item.groupLabel }}
-                </a-tag>
-              </div>
-              <div class="st-conflict-item__meta">
-                {{ item.date }} {{ item.week }} · {{ item.timeText }}
-              </div>
-              <div class="st-conflict-item__meta">
-                教师：
-                <span :class="{ 'st-conflict-item__value--danger': item.hasTeacherConflict }">{{ item.teacherName }}</span>
-                <template v-if="item.assistantText && item.assistantText !== '-'">
-                  <span class="st-conflict-item__sep">｜</span>
-                  助教：
-                  <span :class="{ 'st-conflict-item__value--danger': item.hasAssistantConflict }">{{ item.assistantText }}</span>
-                </template>
-                <span class="st-conflict-item__sep">｜</span>
-                学员：
-                <span :class="{ 'st-conflict-item__value--danger': item.hasStudentConflict }">{{ item.studentText }}</span>
-                <template v-if="item.classroomName && item.classroomName !== '-'">
-                  <span class="st-conflict-item__sep">｜</span>
-                  教室：
-                  <span :class="{ 'st-conflict-item__value--danger': item.hasClassroomConflict }">{{ item.classroomName }}</span>
-                </template>
-              </div>
-              <div class="st-conflict-item__meta st-conflict-item__meta--reasons">
-                <span>冲突原因：</span>
-                <span v-if="!(item.conflictTypes || []).length" class="st-conflict-item__reason-chip st-conflict-item__reason-chip--danger">
-                  时间冲突
-                </span>
-                <template v-else>
-                  <span
-                    v-for="type in item.conflictTypes || []"
-                    :key="type"
-                    class="st-conflict-item__reason-chip st-conflict-item__reason-chip--danger"
-                  >
-                    {{ type }}冲突
-                  </span>
-                </template>
-              </div>
-            </div>
-            <div class="st-conflict-item__side">
-              <a-button type="primary" ghost :disabled="!item.jumpCellKey" @click="jumpToConflictSchedule(item)">
-                定位到课程
-              </a-button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </a-modal>
+      :forcing="forcingConflictSchedule"
+      :conflict-detail-state="conflictDetailState"
+      @force="forceScheduleDespiteStudentConflict"
+      @jump="jumpToConflictSchedule"
+    />
   </div>
 </template>
 
@@ -3423,389 +3063,6 @@ watch(currentModel, (newValue) => {
   line-height: 18px;
 }
 
-.st-time-view-select {
-  width: 112px;
-  min-width: 112px;
-  flex-shrink: 0;
-}
-
-/* 左箭头 + 日期 + 右箭头 整体固定宽度，避免仅中间字数变化时整块左右滑 */
-.st-date-nav {
-  box-sizing: border-box;
-}
-.st-date-nav--day {
-  width: 300px;
-  min-width: 300px;
-  max-width: 300px;
-}
-.st-date-nav--week {
-  width: 300px;
-  min-width: 300px;
-  max-width: 300px;
-}
-.st-date-nav--month {
-  width: 180px;
-  min-width: 180px;
-  max-width: 180px;
-}
-.st-date-nav__mid {
-  overflow: hidden;
-}
-.st-date-nav__text {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 单行不换行；极窄时出现横向滚动条，避免「创建日程」掉到第二行 */
-.st-top-filter-bar {
-  scrollbar-width: thin;
-  -webkit-overflow-scrolling: touch;
-}
-
-.time-selector {
-  font-family: DINAlternate-Bold, DINAlternate;
-  gap: 6px;
-
-  .ant-radio-button-wrapper {
-    padding: 0 16px;
-  }
-}
-
-/* 一对一/班课筛选与「日期/时间视图」之间略增间距 */
-.st-time-selector--after-filters {
-  margin-left: 8px;
-}
-
-.st-this-week-btn {
-  padding: 0 10px;
-  height: 28px;
-  line-height: 26px;
-  border-radius: 8px;
-}
-
-:deep(td.ant-table-cell.ant-table-cell-row-hover) {
-  background-color: rgb(231, 236, 255) !important;
-}
-
-:deep(td.ant-table-cell) {
-  padding: 4px !important;
-}
-
-.st-schedule-cell {
-  position: relative;
-  transition: box-shadow 0.25s ease, transform 0.25s ease;
-}
-
-.st-schedule-cell--conflict {
-  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.4);
-}
-
-.st-schedule-cell__badge--conflict {
-  background: #ff4d4f;
-}
-
-.st-schedule-cell--focused {
-  animation: st-schedule-cell-flash 0.5s ease-in-out 6;
-  box-shadow:
-    0 0 0 3px rgba(255, 77, 79, 0.98),
-    0 0 0 8px rgba(255, 77, 79, 0.26),
-    0 0 20px rgba(255, 77, 79, 0.5);
-  transform: scale(1.015);
-  z-index: 2;
-}
-
-.st-scheduled-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.st-scheduled-detail__hero {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.st-scheduled-detail__badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 56px;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.st-scheduled-detail__title {
-  color: #262626;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.st-scheduled-detail__card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 18px;
-  border-radius: 16px;
-  background: #f8fafc;
-  border: 1px solid #edf2f7;
-}
-
-.st-scheduled-detail__row {
-  display: grid;
-  grid-template-columns: 76px 1fr;
-  gap: 12px;
-  align-items: start;
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.st-scheduled-detail__row > span {
-  color: #8c8c8c;
-}
-
-.st-scheduled-detail__row > strong {
-  color: #1f2329;
-  font-weight: 700;
-}
-
-.st-scheduled-detail__hint {
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f6ffed;
-  color: #389e0d;
-  font-size: 13px;
-  line-height: 22px;
-}
-
-.st-scheduled-detail__hint--danger {
-  background: #fff1f0;
-  color: #cf1322;
-}
-
-@keyframes st-schedule-cell-flash {
-  0%, 100% {
-    box-shadow:
-      0 0 0 2px rgba(255, 77, 79, 0.9),
-      0 0 0 5px rgba(255, 77, 79, 0.14),
-      0 0 10px rgba(255, 77, 79, 0.22);
-    transform: scale(1.005);
-  }
-
-  50% {
-    box-shadow:
-      0 0 0 4px rgba(255, 77, 79, 1),
-      0 0 0 10px rgba(255, 77, 79, 0.34),
-      0 0 26px rgba(255, 77, 79, 0.62);
-    transform: scale(1.022);
-  }
-}
-
-.st-conflict-modal {
-  display: flex;
-  flex-direction: column;
-}
-
-:deep(.st-conflict-detail-modal .ant-modal-body) {
-  padding-top: 0 !important;
-}
-
-.st-conflict-summary {
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: #fff7e6;
-  color: #ad6800;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.7;
-}
-
-.st-conflict-section-title {
-  color: #1f2329;
-  font-size: 15px;
-  font-weight: 700;
-  margin: 10px 0;
-}
-
-.st-conflict-attempt__card,
-.st-conflict-item {
-  border: 1px solid #edf2f7;
-  border-radius: 14px;
-  background: #fff;
-}
-
-.st-conflict-attempt__card {
-  padding: 14px 16px;
-}
-
-.st-conflict-attempt__badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 46px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #1677ff;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.st-conflict-attempt__headline,
-.st-conflict-item__headline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  color: #1f2329;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.st-conflict-attempt {
-  margin-bottom: 10px;
-}
-
-.st-conflict-attempt__headline-main {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.st-conflict-attempt__meta,
-.st-conflict-item__meta {
-  margin-top: 6px;
-  color: #4b5563;
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.st-conflict-attempt__meta--time {
-  color: #1677ff;
-  font-weight: 700;
-}
-
-.st-conflict-attempt__target {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #edf2f7;
-}
-
-.st-conflict-attempt__target-label {
-  flex-shrink: 0;
-  color: #8c8c8c;
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.st-conflict-attempt__target-value {
-  color: #1f2329;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 22px;
-}
-
-.st-conflict-attempt__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.st-conflict-attempt__fact {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #edf2f7;
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.st-conflict-attempt__fact-label {
-  color: #8c8c8c;
-}
-
-.st-conflict-attempt__fact-value {
-  color: #1f2329;
-  font-weight: 700;
-}
-
-.st-conflict-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.st-conflict-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
-}
-
-.st-conflict-item__main {
-  min-width: 0;
-  flex: 1;
-}
-
-.st-conflict-item__sep {
-  margin: 0 4px;
-  color: #d9d9d9;
-}
-
-.st-conflict-item__value--danger {
-  color: #ff4d4f;
-  font-weight: 700;
-}
-
-.st-conflict-item__meta--reasons {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.st-conflict-item__reason-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 24px;
-}
-
-.st-conflict-item__reason-chip--danger {
-  background: #fff1f0;
-  color: #ff4d4f;
-}
-
-.st-conflict-item__side {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-}
 </style>
 
 <style lang="less">

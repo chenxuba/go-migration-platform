@@ -321,6 +321,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
+	applyCreateScheduleConflictAllowances(plans, dto.AllowStudentConflict, dto.AllowClassroomConflict)
 	teacherIDs := collectPlanTeacherIDs(plans)
 	if len(teacherIDs) == 0 {
 		return model.CreateOneToOneSchedulesResult{}, errors.New("请选择上课教师")
@@ -1851,6 +1852,17 @@ func normalizeCreateSchedulePlans(slots []model.TeachingScheduleCreateSlotDTO, f
 		})
 	}
 	return result, nil
+}
+
+func applyCreateScheduleConflictAllowances(plans []normalizedSchedulePlan, allowStudentConflict bool, allowClassroomConflict bool) {
+	for i := range plans {
+		if allowStudentConflict {
+			plans[i].AllowStudentConflict = true
+		}
+		if allowClassroomConflict {
+			plans[i].AllowClassroomConflict = true
+		}
+	}
 }
 
 func normalizeCreateScheduleSlots(slots []model.TeachingScheduleCreateSlotDTO) ([]normalizedScheduleSlot, error) {
