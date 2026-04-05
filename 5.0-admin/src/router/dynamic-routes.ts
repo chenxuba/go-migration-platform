@@ -581,6 +581,14 @@ export default [
           title: '财务设置',
         },
       },
+      {
+        path: '/business-settings/more-settings',
+        name: 'BusinessSettingsMoreSettings',
+        component: () => import('~/pages/business-settings/more-settings/index.vue'),
+        meta: {
+          title: '更多设置',
+        },
+      },
     ],
   },
 ] as RouteRecordRaw[]

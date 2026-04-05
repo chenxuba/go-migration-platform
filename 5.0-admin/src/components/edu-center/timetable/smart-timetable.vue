@@ -7,7 +7,9 @@ import SmartTimetableGrid from './smart-timetable-grid.vue'
 import SmartTimetableScheduledDetailModal from './smart-timetable-scheduled-detail-modal.vue'
 import SmartTimetableToolbar from './smart-timetable-toolbar.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
-import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { useSmartTimetableAvailability } from '@/composables/useSmartTimetableAvailability'
+import { useSmartTimetableClassMode } from '@/composables/useSmartTimetableClassMode'
 import { useSmartTimetablePicker } from '@/composables/useSmartTimetablePicker'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
@@ -170,7 +172,6 @@ function formatWeek(date) {
 const userStore = useUserStore()
 const matrixDays = ref([])
 const timetableLoading = ref(false)
-const oneToOneAvailabilityLoading = ref(false)
 const creatingOneToOneSchedule = ref(false)
 const deletingScheduledLesson = ref(false)
 const forcingConflictSchedule = ref(false)
@@ -207,7 +208,6 @@ const scheduledLessonDetailState = ref({
 })
 /** 防止快速切换周次/组别时旧请求晚到覆盖新矩阵 */
 let matrixLoadSeq = 0
-let oneToOneAvailabilitySeq = 0
 let pendingConflictJump = null
 let focusedScheduleCellTimer = null
 const focusedScheduleCellKey = ref('')
@@ -587,6 +587,9 @@ const activeGroupLabel = computed(() => {
   return groupOptions.value.find(o => o.key === displayedGroupKey.value)?.label || ''
 })
 
+let detectOneToOneAvailabilityBridge = (_value) => {}
+let handleClassBridge = (_value) => {}
+
 const {
   assistantNameById,
   fetchAssistantOptions,
@@ -607,10 +610,30 @@ const {
   activeGroupLabel,
   currentModel,
   displayedGroupKey,
-  detectOneToOneAvailability,
+  detectOneToOneAvailability: value => detectOneToOneAvailabilityBridge(value),
   periodGroupForKey,
   resetAssistantConflicts: () => resetEmptyLessonConflicts('assistant'),
 })
+
+const {
+  cancelOneToOneAvailabilityCheck,
+  detectOneToOneAvailability,
+  oneToOneAvailabilityLoading,
+} = useSmartTimetableAvailability({
+  assistantNameById,
+  buildAvailabilitySlotKey,
+  currentModel,
+  dataSource,
+  normalizedSelectedAssistantIds,
+  oneToOneData,
+  parseConflictTimeRange,
+  resetEmptyLessonConflicts,
+  syncLessonConflictState,
+  uniqueConflictTypes,
+  uniqueExistingSchedules,
+})
+
+detectOneToOneAvailabilityBridge = value => detectOneToOneAvailability(value)
 
 watch(
   groupOptions,
@@ -650,7 +673,7 @@ async function loadTimetableMatrix() {
     if (currentModel.value === '1' && oneToOneRecordId.value)
       await detectOneToOneAvailability(oneToOneRecordId.value)
     else if (currentModel.value === '2' && classId.value)
-      handleClass(classId.value)
+      handleClassBridge(classId.value)
     else
       resetEmptyLessonConflicts()
     await flushPendingConflictJump()
@@ -844,6 +867,23 @@ const courseList = ref([
 ])
 // 当前视图下的全部行（时段 A/B 切换后数据源已重建；跨组检测以当前页为准）
 const allDataSource = computed(() => dataSource.value)
+
+const {
+  applyClassSchedule,
+  classData,
+  findClassInfo,
+  handleClass,
+  resolveClassConflictMessage,
+  resolveSelectedClassTarget,
+} = useSmartTimetableClassMode({
+  activeGroupLabel,
+  allDataSource,
+  dataSource,
+  getLessonIndex,
+  resetEmptyLessonConflicts,
+})
+
+handleClassBridge = value => handleClass(value)
 
 function buildAvailabilitySlotKey(teacherId, lessonDate, startTime, endTime) {
   return `${String(teacherId)}|${lessonDate}|${startTime}|${endTime}`
@@ -1109,288 +1149,6 @@ async function jumpToConflictSchedule(item) {
   }
 }
 
-function buildCurrentOneToOneAvailabilityPayload(oneToOneId) {
-  const schedules = []
-  dataSource.value.forEach((teacher) => {
-    teacher.lessons.forEach((lesson) => {
-      if (!lesson.studentId) {
-        schedules.push({
-          teacherId: String(teacher.teacherId),
-          lessonDate: teacher.date,
-          startTime: lesson.startTime,
-          endTime: lesson.endTime,
-        })
-      }
-    })
-  })
-  return {
-    oneToOneId: String(oneToOneId || ''),
-    schedules,
-  }
-}
-
-function buildCurrentAssistantAvailabilityPayload(oneToOneId) {
-  const schedules = []
-  dataSource.value.forEach((teacher) => {
-    teacher.lessons.forEach((lesson) => {
-      if (!lesson.studentId) {
-        schedules.push({
-          lessonDate: teacher.date,
-          startTime: lesson.startTime,
-          endTime: lesson.endTime,
-        })
-      }
-    })
-  })
-  return {
-    oneToOneId: String(oneToOneId || ''),
-    assistantIds: normalizedSelectedAssistantIds.value,
-    schedules,
-  }
-}
-
-function buildAssistantConflictReason(issues) {
-  const selectionNames = Array.from(
-    new Set(
-      issues
-        .filter(item => item.kind === 'selection')
-        .map(item => String(item.assistantName || '').trim())
-        .filter(Boolean),
-    ),
-  )
-  const busyNames = Array.from(
-    new Set(
-      issues
-        .filter(item => item.kind !== 'selection')
-        .map(item => String(item.assistantName || '').trim())
-        .filter(Boolean),
-    ),
-  )
-  const messageParts = []
-  if (selectionNames.length)
-    messageParts.push(`已选助教包含当前行老师${selectionNames.join('、')}，主教与助教不能为同一人`)
-  if (busyNames.length)
-    messageParts.push(`助教${busyNames.join('、')}该时间段已有安排`)
-
-  const existingSchedules = uniqueExistingSchedules(issues.flatMap(item => item.existingSchedules || []))
-  const conflictTypes = uniqueConflictTypes(['助教', ...issues.flatMap(item => item.conflictTypes || [])])
-  return {
-    type: existingSchedules.length ? '1v1-api' : '1v1-assistant-selection',
-    message: messageParts.join('；') || '所选助教该时间段不可排课',
-    conflictTypes,
-    existingSchedules,
-  }
-}
-
-function buildAvailabilityConflictDetail(reason) {
-  const schedules = Array.isArray(reason?.existingSchedules) ? reason.existingSchedules : []
-  if (!schedules.length)
-    return reason?.message || '该时间段不可排课'
-  const detail = schedules.map((item) => {
-    const groupText = resolveConflictScheduleGroupLabel(item)
-    const studentText = (item.studentNames || []).length ? `，学员：${item.studentNames.join('、')}` : ''
-    const groupSuffix = groupText ? `(${groupText})` : ''
-    return `${item.date} ${item.timeText} ${item.teacherName || '-'}${groupSuffix} ${item.name}${studentText}`
-  }).join('；')
-  return `${reason.message || '该时间段不可排课'}。已有日程：${detail}`
-}
-
-function applyServerAvailabilityResult(result) {
-  resetEmptyLessonConflicts('server')
-  const invalidMap = new Map()
-  const items = Array.isArray(result?.items) ? result.items : []
-  items.forEach((item) => {
-    if (item?.valid === false) {
-      invalidMap.set(
-        buildAvailabilitySlotKey(item.teacherId, item.lessonDate, item.startTime, item.endTime),
-        item,
-      )
-    }
-  })
-
-  dataSource.value.forEach((teacher) => {
-    teacher.lessons.forEach((lesson) => {
-      if (lesson.studentId)
-        return
-      const matched = invalidMap.get(
-        buildAvailabilitySlotKey(teacher.teacherId, teacher.date, lesson.startTime, lesson.endTime),
-      )
-      lesson.serverConflict = Boolean(matched)
-      lesson.serverConflictReason = matched
-        ? {
-            type: '1v1-api',
-            message: matched.message || '该时间段不可排课',
-            conflictTypes: matched.conflictTypes || [],
-            existingSchedules: matched.existingSchedules || [],
-          }
-        : null
-      syncLessonConflictState(lesson)
-    })
-  })
-}
-
-function applyAssistantAvailabilityResult(result) {
-  resetEmptyLessonConflicts('assistant')
-  const selectedIds = normalizedSelectedAssistantIds.value
-  if (!selectedIds.length)
-    return
-
-  const invalidItems = (Array.isArray(result?.items) ? result.items : [])
-    .filter(item => item?.valid === false)
-    .map(item => ({
-      assistantId: String(item.assistantId || '').trim(),
-      assistantName: String(item.assistantName || assistantNameById(item.assistantId) || item.assistantId || '').trim(),
-      conflictTypes: uniqueConflictTypes(item.conflictTypes || []),
-      existingSchedules: Array.isArray(item.existingSchedules) ? item.existingSchedules : [],
-    }))
-
-  dataSource.value.forEach((teacher) => {
-    const teacherId = String(teacher.teacherId || '').trim()
-    teacher.lessons.forEach((lesson) => {
-      if (lesson.studentId)
-        return
-
-      const issues = []
-      if (teacherId && selectedIds.includes(teacherId)) {
-        issues.push({
-          kind: 'selection',
-          assistantId: teacherId,
-          assistantName: teacher.name || assistantNameById(teacherId) || teacherId,
-          conflictTypes: ['助教'],
-          existingSchedules: [],
-        })
-      }
-
-      invalidItems.forEach((item) => {
-        if (!item.existingSchedules.length) {
-          issues.push({
-            ...item,
-            kind: 'global',
-          })
-          return
-        }
-
-        const matchedSchedules = item.existingSchedules.filter((schedule) => {
-          const timeRange = parseConflictTimeRange(schedule?.timeText)
-          if (!timeRange)
-            return false
-          return String(schedule?.date || '').trim() === teacher.date
-            && isTimeOverlap(
-              { start: lesson.startTime, end: lesson.endTime },
-              { start: timeRange.startTime, end: timeRange.endTime },
-            )
-        })
-
-        if (matchedSchedules.length) {
-          issues.push({
-            ...item,
-            kind: 'busy',
-            existingSchedules: matchedSchedules,
-          })
-        }
-      })
-
-      lesson.assistantConflict = issues.length > 0
-      lesson.assistantConflictReason = issues.length ? buildAssistantConflictReason(issues) : null
-      syncLessonConflictState(lesson)
-    })
-  })
-}
-
-async function detectOneToOneAvailability(value) {
-  const seq = ++oneToOneAvailabilitySeq
-  const oneToOneId = String(value || '').trim()
-  if (!oneToOneId || currentModel.value !== '1') {
-    oneToOneAvailabilityLoading.value = false
-    resetEmptyLessonConflicts()
-    return
-  }
-
-  if (!oneToOneData.value.some(item => item.id === oneToOneId)) {
-    oneToOneAvailabilityLoading.value = false
-    resetEmptyLessonConflicts()
-    return
-  }
-
-  const payload = buildCurrentOneToOneAvailabilityPayload(oneToOneId)
-  if (!payload.schedules.length) {
-    oneToOneAvailabilityLoading.value = false
-    resetEmptyLessonConflicts()
-    return
-  }
-
-  oneToOneAvailabilityLoading.value = true
-  try {
-    const assistantPayload = buildCurrentAssistantAvailabilityPayload(oneToOneId)
-    const [res, assistantRes] = await Promise.all([
-      checkOneToOneScheduleAvailabilityApi(payload),
-      assistantPayload.assistantIds.length
-        ? checkAssistantScheduleAvailabilityApi(assistantPayload)
-        : Promise.resolve(null),
-    ])
-    if (seq !== oneToOneAvailabilitySeq)
-      return
-    if (res.code !== 200 || !res.result)
-      throw new Error(res.message || '检测课表空位失败')
-    if (assistantRes && (assistantRes.code !== 200 || !assistantRes.result))
-      throw new Error(assistantRes.message || '检测助教空闲状态失败')
-    applyServerAvailabilityResult(res.result)
-    applyAssistantAvailabilityResult(assistantRes?.result)
-  }
-  catch (error) {
-    if (seq !== oneToOneAvailabilitySeq)
-      return
-    console.error('detectOneToOneAvailability failed', error)
-    resetEmptyLessonConflicts('server')
-    resetEmptyLessonConflicts('assistant')
-    messageService.error(error?.response?.data?.message || error?.message || '检测课表空位失败')
-  }
-  finally {
-    if (seq === oneToOneAvailabilitySeq)
-      oneToOneAvailabilityLoading.value = false
-  }
-}
-
-// 检查两个时间段是否有交叉
-function isTimeOverlap(time1, time2) {
-  // 将时间转换为分钟数进行比较
-  const timeToMinutes = (timeStr) => {
-    const [hours, minutes] = timeStr.split(':').map(Number)
-    return hours * 60 + minutes
-  }
-
-  const start1 = timeToMinutes(time1.start)
-  const end1 = timeToMinutes(time1.end)
-  const start2 = timeToMinutes(time2.start)
-  const end2 = timeToMinutes(time2.end)
-
-  // 检查时间是否交叉
-  return (start1 < end2 && start2 < end1)
-}
-// 班级数据
-const classData = ref([
-  {
-    id: 'C-01',
-    name: '苹果基础班',
-    studentIds: ['589250903194799104', '5892509031876223323', '10001'],
-    studentNames: ['陈陈', '晨晨', '张三'],
-    courseId: '589251114063479808',
-    courseName: '初级认知课',
-    mainTeacherId: 't001',
-    mainTeacherName: '张老师',
-  },
-  {
-    id: 'C-02',
-    name: '橙子基础班',
-    studentIds: ['20004', '20009', '5892509031876223323'],
-    studentNames: ['张四', '王九', '晨晨'],
-    courseId: '589251121574791084',
-    courseName: '初级认知课',
-    mainTeacherId: 't003',
-    mainTeacherName: '李老师',
-  },
-])
-
 function resolveConflictAttemptTarget() {
   if (currentModel.value === '1') {
     const selectedOneToOne = oneToOneData.value.find(item => item.id === String(oneToOneRecordId.value))
@@ -1402,243 +1160,7 @@ function resolveConflictAttemptTarget() {
     }
   }
 
-  const selectedClass = classData.value.find(item => item.id === classId.value)
-  return {
-    modeLabel: '班课',
-    targetLabel: '排课班级',
-    targetValue: selectedClass?.name || '未选择班级',
-    courseName: selectedClass?.courseName || '未选择课程',
-  }
-}
-
-// 选择班级触发
-function handleClass(value) {
-  if (!value) {
-    resetEmptyLessonConflicts()
-    return
-  }
-
-  // 获取班级信息
-  const classInfo = classData.value.find(item => item.id === value)
-  if (!classInfo)
-    return
-
-  console.log('选择班级', classInfo.name)
-
-  // 检查班课冲突
-  checkClassCrossTimeConflicts(classInfo)
-}
-
-// 检查班课交叉时间冲突
-function checkClassCrossTimeConflicts(classInfo) {
-  console.log('运行班课冲突检测', classInfo)
-
-  resetEmptyLessonConflicts()
-
-  // 首先收集这个班级在所有组已排课的时间段（跨组检测）
-  const classExistingLessons = []
-
-  allDataSource.value.forEach((teacher) => {
-    teacher.lessons.forEach((lesson) => {
-      // 如果这个时间段已经排了当前班级的课
-      if (lesson.classId === classInfo.id) {
-        classExistingLessons.push({
-          date: teacher.date,
-          startTime: lesson.startTime,
-          endTime: lesson.endTime,
-          teacherName: teacher.name,
-          teacherId: teacher.teacherId,
-          lessonIndex: getLessonIndex(lesson.startTime),
-        })
-      }
-    })
-  })
-
-  console.log('班级已排课时间段', classExistingLessons)
-
-  // 遍历所有老师的课表
-  dataSource.value.forEach((teacher) => {
-    // 检查每个时间段
-    teacher.lessons.forEach((lesson, lessonIndex) => {
-      if (!lesson.studentId) {
-        // 获取当前时间段信息
-        const currentTime = {
-          date: teacher.date,
-          startTime: lesson.startTime,
-          endTime: lesson.endTime,
-        }
-
-        let hasConflict = false
-        let conflictReason = null
-
-        // 1. 检查班级跨组交叉时段冲突 - 只检查时间段不同但有重叠的情况
-        // 注意：同一班级在完全相同的时间段不算冲突（允许安排主教+辅教）
-        const classTimeConflict = classExistingLessons.find(existingLesson =>
-          existingLesson.date === currentTime.date
-          // 关键逻辑：只有当时间段不完全相同但有重叠时才算冲突
-          && (existingLesson.startTime !== currentTime.startTime
-            || existingLesson.endTime !== currentTime.endTime)
-          && isTimeOverlap(
-            { start: existingLesson.startTime, end: existingLesson.endTime },
-            { start: currentTime.startTime, end: currentTime.endTime },
-          ),
-        )
-
-        if (classTimeConflict) {
-          console.log('班级跨组交叉时段冲突', classInfo.name, currentTime.date, currentTime.startTime)
-          hasConflict = true
-
-          // 记录冲突原因
-          const month = dayjs(classTimeConflict.date).format('M')
-          const day = dayjs(classTimeConflict.date).format('D')
-
-          // 获取冲突课程所在组别
-          const conflictGroup = activeGroupLabel.value
-
-          conflictReason = {
-            type: '班级时间段交叉冲突',
-            className: classInfo.name,
-            date: `${month}月${day}日`,
-            lessonIndex: classTimeConflict.lessonIndex,
-            teacherName: classTimeConflict.teacherName,
-            group: conflictGroup,
-            time: `${classTimeConflict.startTime}-${classTimeConflict.endTime}`,
-          }
-        }
-
-        // 2. 检查教师冲突 - 同一教师在同一时间是否有其他班级的课
-        if (!hasConflict) {
-          const teacherOtherLesson = teacher.lessons.find((l, idx) =>
-            idx !== lessonIndex
-            && l.courseType === 2
-            && l.classId !== classInfo.id
-            && isTimeOverlap(
-              { start: l.startTime, end: l.endTime },
-              { start: currentTime.startTime, end: currentTime.endTime },
-            ),
-          )
-
-          if (teacherOtherLesson) {
-            console.log('教师已有其他班级课程', teacher.name, currentTime.startTime)
-            hasConflict = true
-
-            // 记录冲突原因
-            const month = dayjs(teacher.date).format('M')
-            const day = dayjs(teacher.date).format('D')
-            conflictReason = {
-              type: '教师班课冲突',
-              teacherName: teacher.name,
-              date: `${month}月${day}日`,
-              lessonIndex: getLessonIndex(currentTime.startTime),
-              className: teacherOtherLesson.className,
-              courseName: teacherOtherLesson.courseName,
-              time: `${teacherOtherLesson.startTime}-${teacherOtherLesson.endTime}`,
-            }
-          }
-        }
-
-        // 3. 检查学生冲突 - 班级学生是否在同一时间有其他课程 (跨组检测)
-        if (!hasConflict && classInfo.studentIds?.length > 0) {
-          // 遍历所有组的老师课表，查找同一时间的课程
-          for (const t of allDataSource.value) {
-            // 只检查同一天的课程
-            if (t.date !== currentTime.date)
-              continue
-
-            const sameTimeLessons = t.lessons.filter(l =>
-              l.studentId
-              && isTimeOverlap(
-                { start: l.startTime, end: l.endTime },
-                { start: currentTime.startTime, end: currentTime.endTime },
-              ),
-            )
-
-            let matchedStudentConflict = false
-            for (const sameTimeLesson of sameTimeLessons) {
-              if (sameTimeLesson.classId === classInfo.id)
-                continue
-
-              for (const sid of classInfo.studentIds) {
-                if (sameTimeLesson.studentId?.includes(sid)) {
-                  console.log('学生时间冲突', currentTime.date, currentTime.startTime, sameTimeLesson.startTime)
-                  hasConflict = true
-
-                  const studentIndex = classInfo.studentIds.indexOf(sid)
-                  const studentName = studentIndex >= 0 ? classInfo.studentNames[studentIndex] : '未知学生'
-                  const month = dayjs(t.date).format('M')
-                  const day = dayjs(t.date).format('D')
-                  const conflictGroup = activeGroupLabel.value
-
-                  conflictReason = {
-                    type: '学生课程冲突',
-                    studentName,
-                    date: `${month}月${day}日`,
-                    lessonIndex: getLessonIndex(sameTimeLesson.startTime),
-                    teacherName: t.name,
-                    courseName: sameTimeLesson.courseName,
-                    className: sameTimeLesson.className,
-                    group: conflictGroup,
-                    time: `${sameTimeLesson.startTime}-${sameTimeLesson.endTime}`,
-                  }
-
-                  matchedStudentConflict = true
-                  break
-                }
-              }
-              if (matchedStudentConflict)
-                break
-            }
-
-            if (matchedStudentConflict)
-              break
-          }
-        }
-
-        // 设置冲突标记和原因
-        lesson.conflict = hasConflict
-        lesson.conflictReason = conflictReason
-      }
-    })
-  })
-}
-
-// 检查班级在某个时间段是否已经有课程安排及主教设置
-function checkClassExistingTeacherRole(classId, teacherId, startTime, endTime) {
-  console.log('检查班级主教/辅教角色', classId, teacherId, startTime)
-
-  // 获取班级信息
-  const classInfo = classData.value.find(item => item.id === classId)
-  if (!classInfo) {
-    console.log('未找到班级信息，默认设置为主教')
-    return { isMainTeacher: true, hasExistingArrangement: false }
-  }
-
-  // 统一仅使用mainTeacherId判断
-  // 如果老师ID等于班级配置的主教ID，则为主教；否则为辅教
-  const isMainTeacher = classInfo.mainTeacherId === teacherId
-
-  console.log('根据班级配置判断角色:', isMainTeacher ? '主教' : '辅教')
-  console.log('班级配置的主教ID:', classInfo.mainTeacherId, '当前老师ID:', teacherId)
-
-  // 检查是否已存在该班级课程安排
-  let hasExistingArrangement = false
-
-  // 遍历所有老师的所有日期，检查是否已有该班级同时段的课程
-  allDataSource.value.forEach((teacher) => {
-    teacher.lessons.forEach((lesson) => {
-      // 只检查与当前时间段相同的时间段
-      if (lesson.startTime === startTime && lesson.endTime === endTime) {
-        // 检查是否是同一个班级的课程
-        if (lesson.classId === classId) {
-          hasExistingArrangement = true
-        }
-      }
-    })
-  })
-
-  console.log('是否已有该班级课程安排:', hasExistingArrangement)
-  console.log('最终角色设置:', isMainTeacher ? '主教' : '辅教')
-  return { isMainTeacher, hasExistingArrangement }
+  return resolveSelectedClassTarget(classId.value)
 }
 
 // 处理冲突点击
@@ -1648,8 +1170,6 @@ function handleConflictClick(timeSlot, column, record) {
   // 根据冲突原因提供更详细的信息
   if (timeSlot.conflictReason) {
     const reason = timeSlot.conflictReason
-    const groupInfo = reason.group ? `(${reason.group})` : ''
-    const timeInfo = reason.time ? `[${reason.time}]` : ''
 
     if (reason.type === '1v1-api') {
       openApiConflictModal(reason, column, record)
@@ -1658,14 +1178,8 @@ function handleConflictClick(timeSlot, column, record) {
     else if (reason.type === '1v1-assistant-selection') {
       content = reason.message || '已选助教与当前上课老师重复，请调整助教后再排课'
     }
-    else if (reason.type === '教师班课冲突') {
-      content = `该时间段${reason.teacherName}在${reason.date}第${reason.lessonIndex}节课${timeInfo}已有${reason.className}的${reason.courseName}班课安排，无法排课`
-    }
-    else if (reason.type === '学生课程冲突') {
-      content = `该时间段${reason.studentName}在${reason.date}第${reason.lessonIndex}节课${timeInfo}已有${reason.teacherName}${groupInfo}的${reason.courseName || (`${reason.className}班课`)}课程安排，无法排课`
-    }
-    else if (reason.type === '班级时间段交叉冲突') {
-      content = `该时间段${reason.className}在${reason.date}第${reason.lessonIndex}节课${timeInfo}已有${reason.teacherName}${groupInfo}的课程安排，不支持交叉时间段排课`
+    else {
+      content = resolveClassConflictMessage(reason) || content
     }
   }
 
@@ -2107,9 +1621,7 @@ function handleScheduleClick(timeSlot, column, record) {
       return
     }
 
-    const classInfo = classData.value.find(
-      item => item.id === classId.value,
-    )
+    const classInfo = findClassInfo(classId.value)
 
     if (!classInfo) {
       Modal.warning({
@@ -2146,51 +1658,11 @@ function handleScheduleClick(timeSlot, column, record) {
       groupLabel: activeGroupLabel.value || '当前组',
       onConfirm() {
         console.log('确认排课', classInfo.name, column.startTime, column.endTime)
-
-        // 更新数据源
-        const targetTeacher = dataSource.value.find(
-          t => t.teacherId === record.teacherId && t.date === record.date,
-        )
-
-        if (!targetTeacher)
-          return
-
-        // 获取列索引
-        const columnIndex = column.dataIndex[1]
-
-        // 使用列索引直接获取正确的时间槽
-        const targetLesson = targetTeacher.lessons[columnIndex]
-
-        if (!targetLesson)
-          return
-
-        // 检查主教/辅教角色
-        const { isMainTeacher } = checkClassExistingTeacherRole(
-          classInfo.id,
-          record.teacherId,
-          targetLesson.startTime,
-          targetLesson.endTime,
-        )
-
-        // 更新课程信息
-        Object.assign(targetLesson, {
-          classId: classInfo.id,
-          className: classInfo.name,
-          courseName: classInfo.courseName,
-          courseType: 2,
-          isMain: isMainTeacher, // 根据检查结果设置是否为主教
-          studentNames: classInfo.studentNames.map(name => ({ name })),
-          studentId: classInfo.studentIds,
-          conflict: false,
-          conflictReason: null,
-          serverConflict: false,
-          serverConflictReason: null,
+        applyClassSchedule({
+          classInfo,
+          column,
+          record,
         })
-
-        console.log('更新课程信息完成', targetLesson)
-
-        // 重新检查班课交叉时间冲突
-        checkClassCrossTimeConflicts(classInfo)
       },
     })
   }
@@ -2217,8 +1689,7 @@ function emptyLessonStatusText(lesson) {
 watch(currentModel, (newValue) => {
   console.log('切换模式', newValue)
 
-  oneToOneAvailabilitySeq += 1
-  oneToOneAvailabilityLoading.value = false
+  cancelOneToOneAvailabilityCheck()
   resetEmptyLessonConflicts()
 
   if (newValue === '1') {

@@ -122,7 +122,8 @@ const settingsList = ref([
     path: '/industry-news-settings',
   },
   {
-    title: '机构数据清空',
+    title: '校区数据清空',
+    description: '清空业务数据后，仍会保留员工、校区与功能配置等基础信息',
     path: '/campus-data-clear',
   },
   {
@@ -160,7 +161,7 @@ function getLevel2Component(path) {
     case '/lead-settings': return LeadSettings // 线索设置
     case '/student-attribute-settings' : return StudentAttributeSettings // 学员属性设置
     case '/classroom-settings': return ClassroomSettings // 教室设置
-    case '/campus-data-clear': return CampusDataClear // 机构数据清空
+    case '/campus-data-clear': return CampusDataClear // 校区数据清空
     // ... 其他二级页面
     default: return null
   }

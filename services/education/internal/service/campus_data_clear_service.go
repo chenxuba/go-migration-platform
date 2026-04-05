@@ -41,16 +41,17 @@ func (svc *Service) ClearCampusData(userID int64, req model.CampusDataClearReque
 
 	result := model.CampusDataClearResult{
 		Scope:     scope,
-		ScopeName: "只清业务数据",
+		ScopeName: "只清校区业务数据",
 		Cleared:   summary,
 		Preserved: []string{
-			"员工与角色",
-			"校区业务设置",
+			"员工、角色与部门等组织信息",
+			"校区信息",
+			"功能配置与业务设置",
 			"渠道与渠道分类",
 			"课程与课程配置（详情、报价、属性结果、销量）",
 			"课程分类、课程属性与课程属性选项",
 			"订单标签",
-			"学员自定义字段",
+			"学员自定义字段定义",
 			"审批模板与审批流配置",
 		},
 	}

@@ -13,6 +13,7 @@ export interface CampusDataClearResult {
     orders: number
     orderCourseDetails: number
     orderPaymentDetails: number
+    ledgers: number
     approvalRecords: number
     approvalHistories: number
     tuitionAccounts: number
