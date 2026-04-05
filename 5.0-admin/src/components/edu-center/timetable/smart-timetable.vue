@@ -780,7 +780,11 @@ watch(
     })
     if (next.length === normalizedSelectedAssistantIds.value.length)
       return
+    const removedCount = normalizedSelectedAssistantIds.value.length - next.length
     handleAssistantSelectChange(next)
+    if (removedCount > 0) {
+      messageService.warning(`已切换到${activeGroupLabel.value || '当前组'}，自动移除 ${removedCount} 位非本组助教`, { duration: 4500 })
+    }
   },
   { immediate: true },
 )
