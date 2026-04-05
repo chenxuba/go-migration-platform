@@ -34,7 +34,8 @@ const currentWeek = ref(dayjs())
 /** 课表时间视图：下拉与日期导航联动 */
 const timeViewOptions = [
   { value: 'day', label: '日视图' },
-  { value: 'week', label: '周视图' },
+  { value: 'week', label: '日期视图' },
+  { value: 'swapWeek', label: '时间视图' },
 ]
 /** 1=1v1，2=班课 */
 const currentModel = ref('1')
@@ -73,7 +74,8 @@ function formatDateRange(value) {
   switch (currentTime.value) {
     case 'day':
       return value.format('YYYY年MM月DD日')
-    case 'week': {
+    case 'week':
+    case 'swapWeek': {
       const start = getWeekStart(value)
       const end = start.add(6, 'day')
       if (start.year() === end.year() && start.month() === end.month()) {
@@ -100,6 +102,7 @@ function handlePrev() {
       currentWeek.value = currentWeek.value.subtract(1, 'day')
       break
     case 'week':
+    case 'swapWeek':
       currentWeek.value = currentWeek.value.subtract(1, 'week')
       break
     case 'month':
@@ -115,6 +118,7 @@ function handleNext() {
       currentWeek.value = currentWeek.value.add(1, 'day')
       break
     case 'week':
+    case 'swapWeek':
       currentWeek.value = currentWeek.value.add(1, 'week')
       break
     case 'month':
@@ -192,6 +196,8 @@ let focusedScheduleCellTimer = null
 let lastHandledOneToOneId = ''
 let preserveOneToOnePickerOpen = false
 const focusedScheduleCellKey = ref('')
+const isSwapTimeGrid = computed(() => currentTime.value === 'swapWeek')
+const isWeekLikeView = computed(() => currentTime.value === 'week' || currentTime.value === 'swapWeek')
 
 const displayDates = computed(() => {
   if (currentTime.value === 'day')
@@ -426,6 +432,39 @@ const dataSource = computed(() => {
   })
 })
 
+const transposedDataSource = computed(() => {
+  const slots = activePeriodSlots.value
+  const dates = displayDates.value.map(d => d.format('YYYY-MM-DD'))
+  const rows = []
+  const teacherSeen = new Set()
+
+  dataSource.value.forEach((row) => {
+    if (teacherSeen.has(row.teacherId))
+      return
+    teacherSeen.add(row.teacherId)
+
+    slots.forEach((slot, slotIndex) => {
+      rows.push({
+        key: `${row.teacherId}-slot-${slot.index}`,
+        teacherId: row.teacherId,
+        name: row.name,
+        slotIndex,
+        slotLabel: `第${slot.index}节课`,
+        startTime: slot.start,
+        endTime: slot.end,
+        cells: dates.map((date) => {
+          const matchedRow = dataSource.value.find(item => item.teacherId === row.teacherId && item.date === date)
+          return matchedRow?.lessons?.[slotIndex] || emptyLessonCell(slot)
+        }),
+      })
+    })
+  })
+
+  return rows
+})
+
+const tableDataSource = computed(() => isSwapTimeGrid.value ? transposedDataSource.value : dataSource.value)
+
 function uniqueConflictTypes(list) {
   return Array.from(new Set((Array.isArray(list) ? list : []).map(item => String(item || '').trim()).filter(Boolean)))
 }
@@ -586,7 +625,7 @@ async function loadTimetableMatrix() {
 }
 
 watch(
-  [currentWeek, currentTime, currentModel, currentGroup],
+  [currentWeek, () => (currentTime.value === 'swapWeek' ? 'week' : currentTime.value), currentModel, currentGroup],
   () => {
     void loadTimetableMatrix()
   },
@@ -612,31 +651,56 @@ onUnmounted(() => {
 })
 const columns = computed(() => {
   const slots = activePeriodSlots.value
-  const baseColumns = [
-    {
-      title: '教师',
-      dataIndex: 'name',
-      key: 'name',
-      width: 120,
-      align: 'center',
-      fixed: 'left',
-      customCell: (_, index) => {
-        if (!dataSource.value.length)
-          return {}
-        const currentTeacherId = dataSource.value[index].teacherId
-        if (index === 0 || dataSource.value[index - 1].teacherId !== currentTeacherId) {
-          let count = 1
-          for (let i = index + 1; i < dataSource.value.length; i++) {
-            if (dataSource.value[i].teacherId === currentTeacherId)
-              count++
-            else
-              break
-          }
-          return { rowSpan: count }
+  const teacherColumn = {
+    title: '教师',
+    dataIndex: 'name',
+    key: 'name',
+    width: 120,
+    align: 'center',
+    fixed: 'left',
+    customCell: (_, index) => {
+      if (!tableDataSource.value.length)
+        return {}
+      const currentTeacherId = tableDataSource.value[index].teacherId
+      if (index === 0 || tableDataSource.value[index - 1].teacherId !== currentTeacherId) {
+        let count = 1
+        for (let i = index + 1; i < tableDataSource.value.length; i++) {
+          if (tableDataSource.value[i].teacherId === currentTeacherId)
+            count++
+          else
+            break
         }
-        return { rowSpan: 0 }
-      },
+        return { rowSpan: count }
+      }
+      return { rowSpan: 0 }
     },
+  }
+
+  if (isSwapTimeGrid.value) {
+    const slotColumn = {
+      title: '节次',
+      dataIndex: 'slotLabel',
+      key: 'slot',
+      width: 120,
+      fixed: 'left',
+      align: 'center',
+    }
+
+    const dateColumns = displayDates.value.map((date, index) => ({
+      title: formatWeek(date.format('YYYY-MM-DD')),
+      date: date.format('YYYY-MM-DD'),
+      dateText: formatDate(date),
+      dataIndex: ['cells', index],
+      key: `date-${date.format('YYYY-MM-DD')}`,
+      width: 160,
+      align: 'center',
+    }))
+
+    return [teacherColumn, slotColumn, ...dateColumns]
+  }
+
+  const baseColumns = [
+    teacherColumn,
     {
       title: '日期',
       dataIndex: 'date',
@@ -659,6 +723,52 @@ const columns = computed(() => {
 
   return [...baseColumns, ...lessonColumns]
 })
+
+function isScheduleColumn(column) {
+  const key = column?.dataIndex?.[0]
+  return key === 'lessons' || key === 'cells'
+}
+
+function scheduleCellDate(column, record) {
+  return isSwapTimeGrid.value ? column?.date : record?.date
+}
+
+function scheduleCellStartTime(column, record) {
+  return isSwapTimeGrid.value ? record?.startTime : column?.startTime
+}
+
+function scheduleCellEndTime(column, record) {
+  return isSwapTimeGrid.value ? record?.endTime : column?.endTime
+}
+
+function scheduleCellTeacherName(record) {
+  return record?.name || '-'
+}
+
+function scheduleCellKey(column, record) {
+  return buildAvailabilitySlotKey(
+    record?.teacherId,
+    scheduleCellDate(column, record),
+    scheduleCellStartTime(column, record),
+    scheduleCellEndTime(column, record),
+  )
+}
+
+function scheduleCellContextRecord(column, record) {
+  return {
+    ...record,
+    date: scheduleCellDate(column, record),
+    name: scheduleCellTeacherName(record),
+  }
+}
+
+function scheduleCellContextColumn(column, record) {
+  return {
+    ...column,
+    startTime: scheduleCellStartTime(column, record),
+    endTime: scheduleCellEndTime(column, record),
+  }
+}
 // 课程列表数据
 const courseList = ref([
   {
@@ -2655,14 +2765,14 @@ watch(currentModel, (newValue) => {
             :class="
               currentTime === 'day'
                 ? 'st-date-nav--day'
-                : currentTime === 'week'
+                : isWeekLikeView
                   ? 'st-date-nav--week'
                   : 'st-date-nav--month'
             "
           >
             <a-popover trigger="hover">
               <template #content>
-                {{ currentTime === 'day' ? '前一天' : currentTime === 'week' ? '上一周' : '上个月' }}
+                {{ currentTime === 'day' ? '前一天' : isWeekLikeView ? '上一周' : '上个月' }}
               </template>
               <span
                 class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 shrink-0 hover-text-#06f hover-bg-#e6f0ff"
@@ -2680,7 +2790,7 @@ watch(currentModel, (newValue) => {
                   :allow-clear="false" :bordered="false" :format="formatDateRange" style="cursor:pointer;"
                 />
                 <a-date-picker
-                  v-else-if="currentTime === 'week'"
+                  v-else-if="isWeekLikeView"
                   v-model:value="currentWeek" class="absolute top-0 left-0 right-0 bottom-0 z-10 opacity-0"
                   picker="week" :allow-clear="false" :bordered="false" :format="formatDateRange"
                   style="cursor:pointer;"
@@ -2694,7 +2804,7 @@ watch(currentModel, (newValue) => {
             </span>
             <a-popover trigger="hover">
               <template #content>
-                {{ currentTime === 'day' ? '后一天' : currentTime === 'week' ? '下一周' : '下个月' }}
+                {{ currentTime === 'day' ? '后一天' : isWeekLikeView ? '下一周' : '下个月' }}
               </template>
               <span
                 class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 shrink-0 hover-text-#06f hover-bg-#e6f0ff"
@@ -2725,13 +2835,19 @@ watch(currentModel, (newValue) => {
     <a-spin :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule">
       <a-table
         :scroll="{ x: 1300 }" :sticky="{ offsetHeader: 100 }" size="small" :pagination="false" bordered
-        :data-source="dataSource" :columns="columns"
+        :data-source="tableDataSource" :columns="columns"
       >
         <template #headerCell="{ column }">
-          <template v-if="column.startTime && column.endTime">
+          <template v-if="!isSwapTimeGrid && column.startTime && column.endTime">
             <div>{{ column.title }}</div>
             <div class="text-12px text-#666 line-height-2">
               {{ column.startTime }}-{{ column.endTime }}
+            </div>
+          </template>
+          <template v-else-if="isSwapTimeGrid && column.date">
+            <div>{{ column.title }}</div>
+            <div class="text-12px text-#666 line-height-2">
+              {{ column.dateText }}
             </div>
           </template>
           <template v-else>
@@ -2739,21 +2855,21 @@ watch(currentModel, (newValue) => {
           </template>
         </template>
         <template #bodyCell="{ column, record, text }">
-          <template v-if="column.dataIndex?.[0] === 'lessons'">
+          <template v-if="isScheduleColumn(column)">
             <div
               v-if="text.studentId"
-              :data-schedule-cell-key="buildAvailabilitySlotKey(record.teacherId, record.date, column.startTime, column.endTime)"
+              :data-schedule-cell-key="scheduleCellKey(column, record)"
               class="st-schedule-cell flex flex-col bg-#4e6dff1f h-11 rounded-1 text-3 text-#fff cursor-pointer"
               :class="{
-                'st-schedule-cell--focused': focusedScheduleCellKey === buildAvailabilitySlotKey(record.teacherId, record.date, column.startTime, column.endTime),
+                'st-schedule-cell--focused': focusedScheduleCellKey === scheduleCellKey(column, record),
                 'st-schedule-cell--conflict': text.scheduledConflict,
               }"
-              @click="openScheduledLessonDetail(text, column, record)"
+              @click="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
             >
               <!-- 方格头部时间 -->
               <!-- 班课 -->
               <div class="pl1 bg-#06f rounded-1 rounded-lb-0 rounded-rb-0 flex relative h-5">
-                {{ column.startTime }}-{{ column.endTime }}
+                {{ scheduleCellStartTime(column, record) }}-{{ scheduleCellEndTime(column, record) }}
                 <!-- 标记 -->
                 <span
                   class="absolute right-0 pl-2 pr-1  h-4 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2"
@@ -2783,7 +2899,7 @@ watch(currentModel, (newValue) => {
             <div
               v-else class="h-11 rounded-1 text-3 flex-center cursor-pointer" :class="[
                 text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a',
-              ]" @click="text.conflict ? handleConflictClick(text, column, record) : handleScheduleClick(text, column, record)"
+              ]" @click="text.conflict ? handleConflictClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record)) : handleScheduleClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
             >
               {{ emptyLessonStatusText(text) }}
             </div>
@@ -2800,6 +2916,14 @@ watch(currentModel, (newValue) => {
             <div>{{ text }}</div>
             <div class="text-3 text-#666 leading-snug">
               {{ teacherLessonCountLabel(record.teacherId) }}
+            </div>
+          </template>
+          <template v-if="column.key === 'slot'">
+            <div class="text-3.5">
+              {{ text }}
+            </div>
+            <div class="text-3 font-500 line-height-3 text-#666">
+              {{ record.startTime }}-{{ record.endTime }}
             </div>
           </template>
         </template>
@@ -3326,7 +3450,7 @@ watch(currentModel, (newValue) => {
   }
 }
 
-/* 一对一/班课筛选与「周视图」之间略增间距 */
+/* 一对一/班课筛选与「日期/时间视图」之间略增间距 */
 .st-time-selector--after-filters {
   margin-left: 8px;
 }
