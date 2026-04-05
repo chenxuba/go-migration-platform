@@ -2,7 +2,7 @@
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import { defineComponent, h } from 'vue'
+import { h } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
@@ -53,18 +53,6 @@ const courseName = ref(null)
 const classId = ref(null)
 const className = ref(null)
 const teacherId = ref(null)
-
-const VNodes = defineComponent({
-  props: {
-    vnodes: {
-      type: [Object, Array],
-      required: true,
-    },
-  },
-  setup(props) {
-    return () => props.vnodes
-  },
-})
 
 function getWeekStart(value = dayjs()) {
   const d = dayjs(value)
@@ -740,15 +728,55 @@ const selectedAssistantText = computed(() => {
   return names.length ? names.join('、') : '未安排'
 })
 
+const currentDisplayedGroupTeacherIds = computed(() => {
+  const bound = periodGroupForKey(displayedGroupKey.value)?.boundTeachers
+  return Array.isArray(bound)
+    ? bound.map(item => String(item.id ?? '').trim()).filter(Boolean)
+    : []
+})
+
+function isAssistantAllowedInDisplayedGroup(id) {
+  const normalized = String(id || '').trim()
+  if (!normalized)
+    return false
+  const allowed = currentDisplayedGroupTeacherIds.value
+  if (!allowed.length)
+    return true
+  return allowed.includes(normalized)
+}
+
 const assistantOptionsInPicker = computed(() => {
   const keyword = String(assistantKeyword.value || '').trim().toLowerCase()
   return assistantOptions.value.filter((item) => {
+    if (!isAssistantAllowedInDisplayedGroup(item.value))
+      return false
     if (!keyword)
       return true
     const blob = `${item.label || ''} ${item.mobile || ''} ${item.value || ''}`.toLowerCase()
     return blob.includes(keyword)
   })
 })
+
+watch(
+  [displayedGroupKey, assistantOptions],
+  () => {
+    if (!normalizedSelectedAssistantIds.value.length)
+      return
+    const bound = periodGroupForKey(displayedGroupKey.value)?.boundTeachers
+    const allowed = Array.isArray(bound)
+      ? bound.map(item => String(item.id ?? '').trim()).filter(Boolean)
+      : []
+    const next = normalizedSelectedAssistantIds.value.filter((id) => {
+      if (!allowed.length)
+        return true
+      return allowed.includes(String(id || '').trim())
+    })
+    if (next.length === normalizedSelectedAssistantIds.value.length)
+      return
+    handleAssistantSelectChange(next)
+  },
+  { immediate: true },
+)
 
 function mapRowToOneToOneOption(row) {
   const id = String(row.id || '').trim()
@@ -1401,6 +1429,81 @@ function toggleAssistantOption(value, checked) {
 
 function handleOneToOneDropdownVisibleChange(open) {
   oneToOnePickerOpen.value = open
+}
+
+function renderOneToOneDropdown({ menuNode }) {
+  const sideChildren = [
+    h('div', { class: 'st-top-1v1-dropdown__section-head' }, [
+      h('span', { class: 'st-top-1v1-dropdown__section-title' }, '选择助教'),
+      h(
+        'span',
+        { class: 'st-top-1v1-dropdown__section-hint' },
+        oneToOneRecordId.value ? '多选，可不选' : '先选1v1后配置',
+      ),
+    ]),
+  ]
+
+  if (oneToOneRecordId.value) {
+    sideChildren.push(
+      h('input', {
+        class: 'st-top-1v1-dropdown__search-input',
+        value: assistantKeyword.value,
+        placeholder: '搜索助教',
+        onInput: (event) => {
+          assistantKeyword.value = event?.target?.value || ''
+        },
+      }),
+    )
+
+    if (normalizedSelectedAssistantIds.value.length) {
+      sideChildren.push(
+        h('div', { class: 'st-top-1v1-dropdown__summary' }, `已选助教：${selectedAssistantText.value}`),
+      )
+    }
+
+    if (assistantOptionsInPicker.value.length) {
+      sideChildren.push(
+        h(
+          'div',
+          { class: 'st-top-1v1-dropdown__assistant-list' },
+          assistantOptionsInPicker.value.map(item =>
+            h('label', { class: 'st-top-1v1-dropdown__assistant-item', key: item.value }, [
+              h('input', {
+                class: 'st-top-1v1-dropdown__assistant-checkbox',
+                type: 'checkbox',
+                checked: normalizedSelectedAssistantIds.value.includes(String(item.value)),
+                onChange: (event) => {
+                  toggleAssistantOption(item.value, Boolean(event?.target?.checked))
+                },
+              }),
+              h('span', { class: 'st-top-1v1-dropdown__assistant-name' }, item.label),
+              item.mobile
+                ? h('span', { class: 'st-top-1v1-dropdown__assistant-mobile' }, item.mobile)
+                : null,
+            ]),
+          ),
+        ),
+      )
+    }
+    else {
+      sideChildren.push(h('div', { class: 'st-top-1v1-dropdown__empty' }, '暂无匹配助教'))
+    }
+  }
+  else {
+    sideChildren.push(h('div', { class: 'st-top-1v1-dropdown__empty' }, '先选 1v1，再在右侧勾选助教。'))
+  }
+
+  return h('div', { class: 'st-top-1v1-dropdown' }, [
+    h('div', { class: 'st-top-1v1-dropdown__list' }, [menuNode]),
+    h(
+      'div',
+      {
+        class: 'st-top-1v1-dropdown__side',
+        onMousedown: event => event.preventDefault(),
+      },
+      sideChildren,
+    ),
+  ])
 }
 
 // 检查两个时间段是否有交叉
@@ -2317,6 +2420,7 @@ watch(currentModel, (newValue) => {
               :loading="oneToOneListLoading"
               :dropdown-match-select-width="false"
               :dropdown-style="{ width: '520px' }"
+              :dropdown-render="renderOneToOneDropdown"
               :filter-option="filterOneToOneOption"
               placeholder="搜索/选择"
               class="st-top-1v1-select"
@@ -2324,53 +2428,6 @@ watch(currentModel, (newValue) => {
               @dropdown-visible-change="handleOneToOneDropdownVisibleChange"
               @change="handle1v1"
             >
-              <template #dropdownRender="{ menuNode }">
-                <div class="st-top-1v1-dropdown">
-                  <div class="st-top-1v1-dropdown__list">
-                    <VNodes :vnodes="menuNode" />
-                  </div>
-                  <div class="st-top-1v1-dropdown__side" @mousedown.prevent>
-                    <div class="st-top-1v1-dropdown__section-head">
-                      <span class="st-top-1v1-dropdown__section-title">选择助教</span>
-                      <span class="st-top-1v1-dropdown__section-hint">
-                        {{ oneToOneRecordId ? '多选，可不选' : '先选1v1后配置' }}
-                      </span>
-                    </div>
-                    <template v-if="oneToOneRecordId">
-                      <a-input
-                        v-model:value="assistantKeyword"
-                        allow-clear
-                        size="small"
-                        placeholder="搜索助教"
-                        class="st-top-1v1-dropdown__search"
-                      />
-                      <div v-if="normalizedSelectedAssistantIds.length" class="st-top-1v1-dropdown__summary">
-                        已选助教：{{ selectedAssistantText }}
-                      </div>
-                      <div v-if="assistantOptionsInPicker.length" class="st-top-1v1-dropdown__assistant-list">
-                        <label
-                          v-for="item in assistantOptionsInPicker"
-                          :key="item.value"
-                          class="st-top-1v1-dropdown__assistant-item"
-                        >
-                          <a-checkbox
-                            :checked="normalizedSelectedAssistantIds.includes(String(item.value))"
-                            @change="event => toggleAssistantOption(item.value, event.target.checked)"
-                          />
-                          <span class="st-top-1v1-dropdown__assistant-name">{{ item.label }}</span>
-                          <span v-if="item.mobile" class="st-top-1v1-dropdown__assistant-mobile">{{ item.mobile }}</span>
-                        </label>
-                      </div>
-                      <div v-else class="st-top-1v1-dropdown__empty">
-                        暂无匹配助教
-                      </div>
-                    </template>
-                    <div v-else class="st-top-1v1-dropdown__empty">
-                      先选 1v1，再在右侧勾选助教。
-                    </div>
-                  </div>
-                </div>
-              </template>
               <a-select-option
                 v-for="item in oneToOneData"
                 :key="item.id"

@@ -229,6 +229,11 @@ function isTeacherAllowedInPeriodGroup(teacherIdStr: string, groupIndex: number)
   return list.some(t => String(t.id ?? '').trim() === teacherIdStr)
 }
 
+/** 助教跟随当前时段组筛选；当前组未配置关联老师时，仍允许全部老师可选 */
+function isAssistantAllowedInCurrentGroup(assistantIdStr: string): boolean {
+  return isTeacherAllowedInPeriodGroup(assistantIdStr, periodGroupIndexForKey(currentGroup.value))
+}
+
 const classroomList = ref<ClassroomItem[]>([])
 const workbenchTeacherList = ref<StaffOptionItem[]>([])
 const oneToOneRecords = ref<OneToOneItem[]>([])
@@ -620,6 +625,8 @@ const assistantSelectStaffs = computed<StaffOptionItem[]>(() => {
     if (!isValidStaffId(item?.id))
       return
     const id = String(item.id).trim()
+    if (!isAssistantAllowedInCurrentGroup(id))
+      return
     if (!merged.has(id)) {
       merged.set(id, {
         id,
@@ -1219,6 +1226,18 @@ watch(
       handleAssistantChange(next)
     }
   },
+)
+
+watch(
+  () => [currentGroup.value, assistantSelectStaffs.value.map(item => String(item.id)).join(',')].join('|'),
+  () => {
+    const next = selectedAssistant.value.filter(id => isAssistantAllowedInCurrentGroup(String(id)))
+    if (next.length !== selectedAssistant.value.length) {
+      selectedAssistant.value = next
+      handleAssistantChange(next)
+    }
+  },
+  { immediate: true },
 )
 
 watch(
@@ -2177,7 +2196,7 @@ function invertWeekdays() {
                       v-model:value="selectedAssistant"
                       mode="multiple"
                       show-search
-                      placeholder="可不选"
+                      :placeholder="`可不选，仅${groupOptions.find(o => o.key === currentGroup)?.label || '当前组'}可选`"
                       size="large"
                       allow-clear
                       option-label-prop="label"
