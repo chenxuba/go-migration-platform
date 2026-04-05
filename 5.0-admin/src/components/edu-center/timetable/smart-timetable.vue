@@ -728,6 +728,12 @@ const selectedAssistantText = computed(() => {
   return names.length ? names.join('、') : '未安排'
 })
 
+const oneToOneDropdownStyle = computed(() => ({
+  width: '520px',
+  minWidth: '520px',
+  '--assistant-render-tick': `${assistantKeyword.value}|${normalizedSelectedAssistantIds.value.join(',')}|${String(oneToOneRecordId.value || '')}|${activeGroupLabel.value}`,
+}))
+
 const currentDisplayedGroupTeacherIds = computed(() => {
   const bound = periodGroupForKey(displayedGroupKey.value)?.boundTeachers
   return Array.isArray(bound)
@@ -1638,7 +1644,7 @@ function renderOneToOneDropdown({ menuNode }) {
           padding: '14px 16px 16px',
           background: 'linear-gradient(180deg, #fcfdff 0%, #fff 100%)',
         },
-        onMousedown: event => event.preventDefault(),
+        onMousedown: event => event.stopPropagation(),
       },
       sideChildren,
     ),
@@ -2558,7 +2564,7 @@ watch(currentModel, (newValue) => {
               show-search
               :loading="oneToOneListLoading"
               :dropdown-match-select-width="false"
-              :dropdown-style="{ width: '520px' }"
+              :dropdown-style="oneToOneDropdownStyle"
               :dropdown-render="renderOneToOneDropdown"
               :filter-option="filterOneToOneOption"
               placeholder="搜索/选择"
