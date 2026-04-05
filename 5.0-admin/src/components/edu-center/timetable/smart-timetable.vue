@@ -6,7 +6,8 @@ import { h } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
-import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 import {
@@ -43,6 +44,7 @@ const displayedGroupKey = ref('A')
 const timetableRootRef = ref(null)
 /** 当前选中的 1 对 1 记录 id（非学员 id，避免同一学员多门课冲突） */
 const oneToOneRecordId = ref(undefined)
+const selectedAssistantIds = ref([])
 const studentIds = ref([])
 const courseId = ref(null)
 const courseName = ref(null)
@@ -145,6 +147,7 @@ const userStore = useUserStore()
 const matrixDays = ref([])
 const timetableLoading = ref(false)
 const oneToOneAvailabilityLoading = ref(false)
+const assistantOptionsLoading = ref(false)
 const creatingOneToOneSchedule = ref(false)
 const deletingScheduledLesson = ref(false)
 const forcingConflictSchedule = ref(false)
@@ -184,6 +187,7 @@ let matrixLoadSeq = 0
 let oneToOneAvailabilitySeq = 0
 let pendingConflictJump = null
 let focusedScheduleCellTimer = null
+let lastHandledOneToOneId = ''
 const focusedScheduleCellKey = ref('')
 
 const displayDates = computed(() => {
@@ -296,6 +300,8 @@ function emptyLessonCell(slot) {
     conflictReason: null,
     serverConflict: false,
     serverConflictReason: null,
+    assistantConflict: false,
+    assistantConflictReason: null,
     isMain: undefined,
   }
 }
@@ -417,16 +423,63 @@ const dataSource = computed(() => {
   })
 })
 
+function uniqueConflictTypes(list) {
+  return Array.from(new Set((Array.isArray(list) ? list : []).map(item => String(item || '').trim()).filter(Boolean)))
+}
+
+function uniqueExistingSchedules(list) {
+  const map = new Map()
+  ;(Array.isArray(list) ? list : []).forEach((item) => {
+    const key = [
+      String(item?.teacherId || '').trim(),
+      String(item?.date || '').trim(),
+      String(item?.timeText || '').trim(),
+      String(item?.name || '').trim(),
+    ].join('|')
+    if (!map.has(key))
+      map.set(key, item)
+  })
+  return [...map.values()]
+}
+
+function mergeAvailabilityConflictReasons(reasons) {
+  const normalized = (Array.isArray(reasons) ? reasons : []).filter(Boolean)
+  const existingSchedules = uniqueExistingSchedules(normalized.flatMap(reason => reason?.existingSchedules || []))
+  const conflictTypes = uniqueConflictTypes(normalized.flatMap(reason => reason?.conflictTypes || []))
+  const messages = Array.from(new Set(normalized.map(reason => String(reason?.message || '').trim()).filter(Boolean)))
+  return {
+    type: existingSchedules.length ? '1v1-api' : (normalized[0]?.type || '1v1-api'),
+    message: messages.join('；') || '该时间段不可排课',
+    conflictTypes,
+    existingSchedules,
+  }
+}
+
 function syncLessonConflictState(lesson) {
-  const serverReason = lesson.serverConflict ? lesson.serverConflictReason : null
-  lesson.conflict = Boolean(serverReason)
-  lesson.conflictReason = serverReason || null
+  const reasons = []
+  if (lesson.serverConflict && lesson.serverConflictReason)
+    reasons.push(lesson.serverConflictReason)
+  if (lesson.assistantConflict && lesson.assistantConflictReason)
+    reasons.push(lesson.assistantConflictReason)
+
+  if (!reasons.length) {
+    lesson.conflict = false
+    lesson.conflictReason = null
+    return
+  }
+
+  lesson.conflict = true
+  lesson.conflictReason = reasons.length === 1 ? reasons[0] : mergeAvailabilityConflictReasons(reasons)
 }
 
 function clearLessonConflictState(lesson, scope = 'all') {
   if (scope === 'all' || scope === 'server') {
     lesson.serverConflict = false
     lesson.serverConflictReason = null
+  }
+  if (scope === 'all' || scope === 'assistant') {
+    lesson.assistantConflict = false
+    lesson.assistantConflictReason = null
   }
   if (scope === 'all') {
     lesson.conflict = false
@@ -539,11 +592,13 @@ watch(
 function refreshTimetableRelatedData() {
   void loadTimetableMatrix()
   void fetchOneToOneOptionsForTimetable()
+  void fetchAssistantOptions()
 }
 
 onMounted(() => {
   void loadTimetableMatrix()
   void fetchOneToOneOptionsForTimetable()
+  void fetchAssistantOptions()
   emitter.on(EVENTS.REFRESH_DATA, refreshTimetableRelatedData)
 })
 
@@ -637,6 +692,39 @@ const courseList = ref([
 /** 开班中的 1 对 1 列表（来自 getOneToOneListApi，下拉 value 为 record.id） */
 const oneToOneData = ref([])
 const oneToOneListLoading = ref(false)
+const assistantOptions = ref([])
+
+function normalizeStringArray(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
+const normalizedSelectedAssistantIds = computed(() => normalizeStringArray(selectedAssistantIds.value))
+
+const assistantOptionMap = computed(() => {
+  const map = new Map()
+  assistantOptions.value.forEach((item) => {
+    map.set(String(item.value), item)
+  })
+  return map
+})
+
+function assistantNameById(id) {
+  const normalized = String(id || '').trim()
+  if (!normalized)
+    return ''
+  return assistantOptionMap.value.get(normalized)?.label || normalized
+}
+
+const selectedAssistantText = computed(() => {
+  const names = normalizedSelectedAssistantIds.value.map(id => assistantNameById(id)).filter(Boolean)
+  return names.length ? names.join('、') : '未安排'
+})
 
 function mapRowToOneToOneOption(row) {
   const id = String(row.id || '').trim()
@@ -652,6 +740,16 @@ function mapRowToOneToOneOption(row) {
     courseId: row.lessonId != null ? String(row.lessonId) : '',
     courseName: lessonName,
     name,
+  }
+}
+
+function mapStaffToAssistantOption(row) {
+  const value = String(row.id ?? '').trim()
+  const label = String(row.nickName || row.name || value).trim()
+  return {
+    value,
+    label: label || value,
+    mobile: String(row.mobile ?? '').trim(),
   }
 }
 
@@ -689,6 +787,41 @@ async function fetchOneToOneOptionsForTimetable() {
   }
 }
 
+async function fetchAssistantOptions() {
+  assistantOptionsLoading.value = true
+  try {
+    const res = await getUserListApi({
+      pageRequestModel: {
+        needTotal: false,
+        pageSize: 500,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+      queryModel: {
+        status: 0,
+      },
+    })
+    if (res.code !== 200) {
+      assistantOptions.value = []
+      messageService.error(res.message || '获取助教列表失败')
+      return
+    }
+
+    const rows = Array.isArray(res.result) ? res.result : []
+    assistantOptions.value = rows
+      .map(mapStaffToAssistantOption)
+      .filter(item => item.value)
+  }
+  catch (error) {
+    console.error('fetchAssistantOptions failed', error)
+    assistantOptions.value = []
+    messageService.error(error?.response?.data?.message || error?.message || '获取助教列表失败')
+  }
+  finally {
+    assistantOptionsLoading.value = false
+  }
+}
+
 function filterOneToOneOption(input, option) {
   const q = (input || '').trim().toLowerCase()
   if (!q)
@@ -699,6 +832,20 @@ function filterOneToOneOption(input, option) {
     return true
   const blob = `${item.name} ${item.studentName} ${item.courseName} ${item.studentId}`.toLowerCase()
   return blob.includes(q)
+}
+
+function filterAssistantOption(input, option) {
+  const keyword = String(input || '').trim().toLowerCase()
+  if (!keyword)
+    return true
+  const optionValue = String(option?.value || '').trim()
+  const matched = assistantOptionMap.value.get(optionValue)
+  const haystacks = [
+    String(option?.label || ''),
+    matched?.mobile || '',
+    optionValue,
+  ]
+  return haystacks.some(text => String(text || '').toLowerCase().includes(keyword))
 }
 
 // 当前视图下的全部行（时段 A/B 切换后数据源已重建；跨组检测以当前页为准）
@@ -791,6 +938,7 @@ function openApiConflictModal(reason, column, record) {
   const existingSchedules = Array.isArray(reason?.existingSchedules) ? reason.existingSchedules : []
   const selectedTarget = resolveConflictAttemptTarget()
   const attemptedConflictTypes = Array.isArray(reason?.conflictTypes) ? reason.conflictTypes : []
+  const fallbackConflictTypes = attemptedConflictTypes.length ? attemptedConflictTypes : ['时间']
   const forceAllowed = currentModel.value === '1'
     && Boolean(oneToOneRecordId.value)
     && attemptedConflictTypes.length > 0
@@ -798,7 +946,7 @@ function openApiConflictModal(reason, column, record) {
   const items = existingSchedules.map((item, index) => {
     const groupInfo = resolveConflictScheduleGroupInfo(item)
     const timeRange = parseConflictTimeRange(item.timeText)
-    const conflictTypes = item.conflictTypes || []
+    const conflictTypes = Array.isArray(item.conflictTypes) && item.conflictTypes.length ? item.conflictTypes : fallbackConflictTypes
     const jumpGroupKey = groupInfo.keys.includes(currentGroup.value)
       ? currentGroup.value
       : groupInfo.keys[0] || ''
@@ -813,9 +961,11 @@ function openApiConflictModal(reason, column, record) {
       teacherName: item.teacherName || '-',
       groupLabel: groupInfo.labels.join('/') || '未知组别',
       classroomName: item.classroomName || '-',
+      assistantText: (item.assistantNames || []).join('、') || '-',
       studentText: (item.studentNames || []).join('、') || '-',
       conflictTypes,
       hasTeacherConflict: conflictTypes.includes('老师'),
+      hasAssistantConflict: conflictTypes.includes('助教'),
       hasStudentConflict: conflictTypes.includes('学员'),
       hasClassroomConflict: conflictTypes.includes('教室'),
       jumpCellKey: timeRange && item.teacherId
@@ -836,6 +986,7 @@ function openApiConflictModal(reason, column, record) {
       week: formatWeek(record.date),
       timeText: `${column.startTime}-${column.endTime}`,
       teacherName: record.name,
+      assistantText: selectedAssistantText.value,
       lessonIndex: getLessonIndex(column.startTime),
       groupLabel: activeGroupLabel.value || '当前组',
       forceAllowed,
@@ -843,10 +994,12 @@ function openApiConflictModal(reason, column, record) {
         ? {
             oneToOneId: String(oneToOneRecordId.value),
             teacherId: String(record.teacherId),
+            assistantIds: normalizedSelectedAssistantIds.value,
             schedules: [{
               lessonDate: record.date,
               startTime: column.startTime,
               endTime: column.endTime,
+              assistantIds: normalizedSelectedAssistantIds.value,
             }],
           }
         : null,
@@ -975,6 +1128,59 @@ function buildCurrentOneToOneAvailabilityPayload(oneToOneId) {
   }
 }
 
+function buildCurrentAssistantAvailabilityPayload(oneToOneId) {
+  const schedules = []
+  dataSource.value.forEach((teacher) => {
+    teacher.lessons.forEach((lesson) => {
+      if (!lesson.studentId) {
+        schedules.push({
+          lessonDate: teacher.date,
+          startTime: lesson.startTime,
+          endTime: lesson.endTime,
+        })
+      }
+    })
+  })
+  return {
+    oneToOneId: String(oneToOneId || ''),
+    assistantIds: normalizedSelectedAssistantIds.value,
+    schedules,
+  }
+}
+
+function buildAssistantConflictReason(issues) {
+  const selectionNames = Array.from(
+    new Set(
+      issues
+        .filter(item => item.kind === 'selection')
+        .map(item => String(item.assistantName || '').trim())
+        .filter(Boolean),
+    ),
+  )
+  const busyNames = Array.from(
+    new Set(
+      issues
+        .filter(item => item.kind !== 'selection')
+        .map(item => String(item.assistantName || '').trim())
+        .filter(Boolean),
+    ),
+  )
+  const messageParts = []
+  if (selectionNames.length)
+    messageParts.push(`已选助教包含当前行老师${selectionNames.join('、')}，主教与助教不能为同一人`)
+  if (busyNames.length)
+    messageParts.push(`助教${busyNames.join('、')}该时间段已有安排`)
+
+  const existingSchedules = uniqueExistingSchedules(issues.flatMap(item => item.existingSchedules || []))
+  const conflictTypes = uniqueConflictTypes(['助教', ...issues.flatMap(item => item.conflictTypes || [])])
+  return {
+    type: existingSchedules.length ? '1v1-api' : '1v1-assistant-selection',
+    message: messageParts.join('；') || '所选助教该时间段不可排课',
+    conflictTypes,
+    existingSchedules,
+  }
+}
+
 function buildAvailabilityConflictDetail(reason) {
   const schedules = Array.isArray(reason?.existingSchedules) ? reason.existingSchedules : []
   if (!schedules.length)
@@ -1022,6 +1228,74 @@ function applyServerAvailabilityResult(result) {
   })
 }
 
+function applyAssistantAvailabilityResult(result) {
+  resetEmptyLessonConflicts('assistant')
+  const selectedIds = normalizedSelectedAssistantIds.value
+  if (!selectedIds.length)
+    return
+
+  const invalidItems = (Array.isArray(result?.items) ? result.items : [])
+    .filter(item => item?.valid === false)
+    .map(item => ({
+      assistantId: String(item.assistantId || '').trim(),
+      assistantName: String(item.assistantName || assistantNameById(item.assistantId) || item.assistantId || '').trim(),
+      conflictTypes: uniqueConflictTypes(item.conflictTypes || []),
+      existingSchedules: Array.isArray(item.existingSchedules) ? item.existingSchedules : [],
+    }))
+
+  dataSource.value.forEach((teacher) => {
+    const teacherId = String(teacher.teacherId || '').trim()
+    teacher.lessons.forEach((lesson) => {
+      if (lesson.studentId)
+        return
+
+      const issues = []
+      if (teacherId && selectedIds.includes(teacherId)) {
+        issues.push({
+          kind: 'selection',
+          assistantId: teacherId,
+          assistantName: teacher.name || assistantNameById(teacherId) || teacherId,
+          conflictTypes: ['助教'],
+          existingSchedules: [],
+        })
+      }
+
+      invalidItems.forEach((item) => {
+        if (!item.existingSchedules.length) {
+          issues.push({
+            ...item,
+            kind: 'global',
+          })
+          return
+        }
+
+        const matchedSchedules = item.existingSchedules.filter((schedule) => {
+          const timeRange = parseConflictTimeRange(schedule?.timeText)
+          if (!timeRange)
+            return false
+          return String(schedule?.date || '').trim() === teacher.date
+            && isTimeOverlap(
+              { start: lesson.startTime, end: lesson.endTime },
+              { start: timeRange.startTime, end: timeRange.endTime },
+            )
+        })
+
+        if (matchedSchedules.length) {
+          issues.push({
+            ...item,
+            kind: 'busy',
+            existingSchedules: matchedSchedules,
+          })
+        }
+      })
+
+      lesson.assistantConflict = issues.length > 0
+      lesson.assistantConflictReason = issues.length ? buildAssistantConflictReason(issues) : null
+      syncLessonConflictState(lesson)
+    })
+  })
+}
+
 async function detectOneToOneAvailability(value) {
   const seq = ++oneToOneAvailabilitySeq
   const oneToOneId = String(value || '').trim()
@@ -1046,18 +1320,28 @@ async function detectOneToOneAvailability(value) {
 
   oneToOneAvailabilityLoading.value = true
   try {
-    const res = await checkOneToOneScheduleAvailabilityApi(payload)
+    const assistantPayload = buildCurrentAssistantAvailabilityPayload(oneToOneId)
+    const [res, assistantRes] = await Promise.all([
+      checkOneToOneScheduleAvailabilityApi(payload),
+      assistantPayload.assistantIds.length
+        ? checkAssistantScheduleAvailabilityApi(assistantPayload)
+        : Promise.resolve(null),
+    ])
     if (seq !== oneToOneAvailabilitySeq)
       return
     if (res.code !== 200 || !res.result)
       throw new Error(res.message || '检测课表空位失败')
+    if (assistantRes && (assistantRes.code !== 200 || !assistantRes.result))
+      throw new Error(assistantRes.message || '检测助教空闲状态失败')
     applyServerAvailabilityResult(res.result)
+    applyAssistantAvailabilityResult(assistantRes?.result)
   }
   catch (error) {
     if (seq !== oneToOneAvailabilitySeq)
       return
     console.error('detectOneToOneAvailability failed', error)
     resetEmptyLessonConflicts('server')
+    resetEmptyLessonConflicts('assistant')
     messageService.error(error?.response?.data?.message || error?.message || '检测课表空位失败')
   }
   finally {
@@ -1067,7 +1351,21 @@ async function detectOneToOneAvailability(value) {
 }
 
 function handle1v1(value) {
+  const nextId = String(value || '').trim()
+  if (nextId !== lastHandledOneToOneId && normalizedSelectedAssistantIds.value.length)
+    selectedAssistantIds.value = []
+  lastHandledOneToOneId = nextId
   void detectOneToOneAvailability(value)
+}
+
+function handleAssistantSelectChange(value) {
+  selectedAssistantIds.value = normalizeStringArray(value)
+  if (currentModel.value === '1' && oneToOneRecordId.value) {
+    void detectOneToOneAvailability(oneToOneRecordId.value)
+  }
+  else {
+    resetEmptyLessonConflicts('assistant')
+  }
 }
 
 // 检查两个时间段是否有交叉
@@ -1374,6 +1672,9 @@ function handleConflictClick(timeSlot, column, record) {
       openApiConflictModal(reason, column, record)
       return
     }
+    else if (reason.type === '1v1-assistant-selection') {
+      content = reason.message || '已选助教与当前上课老师重复，请调整助教后再排课'
+    }
     else if (reason.type === '教师班课冲突') {
       content = `该时间段${reason.teacherName}在${reason.date}第${reason.lessonIndex}节课${timeInfo}已有${reason.className}的${reason.courseName}班课安排，无法排课`
     }
@@ -1456,6 +1757,7 @@ function buildScheduleConfirmContent({
   dateLabel,
   timeLabel,
   teacherName,
+  assistantText,
   groupLabel,
   onSkipTodayChange,
 }) {
@@ -1512,6 +1814,7 @@ function buildScheduleConfirmContent({
       buildConfirmField(targetLabel, targetValue),
       buildConfirmField('上课时间', `${dateLabel} · ${timeLabel}`, '#1677ff'),
       buildConfirmField('上课老师', teacherName),
+      ...(assistantText != null ? [buildConfirmField('上课助教', assistantText)] : []),
       buildConfirmField('所在组别', groupLabel || '当前组'),
     ]),
     h('div', {
@@ -1558,6 +1861,7 @@ function confirmScheduleWithOptionalSkip({
   dateLabel,
   timeLabel,
   teacherName,
+  assistantText,
   groupLabel,
   onConfirm,
 }) {
@@ -1581,6 +1885,7 @@ function confirmScheduleWithOptionalSkip({
         dateLabel,
         timeLabel,
         teacherName,
+        assistantText,
         groupLabel,
         onSkipTodayChange: (checked) => { skipToday = checked },
       }),
@@ -1776,6 +2081,7 @@ function handleScheduleClick(timeSlot, column, record) {
       dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
       timeLabel: `${column.startTime}-${column.endTime}`,
       teacherName: record.name,
+      assistantText: selectedAssistantText.value,
       groupLabel: activeGroupLabel.value || '当前组',
       async onConfirm() {
         creatingOneToOneSchedule.value = true
@@ -1783,10 +2089,12 @@ function handleScheduleClick(timeSlot, column, record) {
           const res = await createOneToOneSchedulesApi({
             oneToOneId: String(oneToOneRecordId.value),
             teacherId: String(record.teacherId),
+            assistantIds: normalizedSelectedAssistantIds.value,
             schedules: [{
               lessonDate: record.date,
               startTime: column.startTime,
               endTime: column.endTime,
+              assistantIds: normalizedSelectedAssistantIds.value,
             }],
           })
           if (res.code !== 200)
@@ -1911,6 +2219,17 @@ function getLessonIndex(startTime) {
   return i >= 0 ? i + 1 : ''
 }
 
+function emptyLessonStatusText(lesson) {
+  const conflictTypes = uniqueConflictTypes(lesson?.conflictReason?.conflictTypes || [])
+  if (!lesson?.conflict)
+    return '空闲时段(可排)'
+  if (lesson?.conflictReason?.type === '1v1-assistant-selection')
+    return '主助教同人(不可排)'
+  if (conflictTypes.length === 1 && conflictTypes[0] === '助教')
+    return '助教冲突(不可排)'
+  return '时间冲突(不可排)'
+}
+
 // 添加监听，当模式切换时清空之前的选择
 watch(currentModel, (newValue) => {
   console.log('切换模式', newValue)
@@ -1926,6 +2245,8 @@ watch(currentModel, (newValue) => {
   }
   else {
     oneToOneRecordId.value = undefined
+    selectedAssistantIds.value = []
+    lastHandledOneToOneId = ''
     courseId.value = null
     courseName.value = null
   }
@@ -1970,6 +2291,33 @@ watch(currentModel, (newValue) => {
                 :label="item.name"
               >
                 <div>{{ item.name }}</div>
+              </a-select-option>
+            </a-select>
+            <span class="whitespace-nowrap w-71px text-right">选择助教：</span>
+            <a-select
+              v-model:value="selectedAssistantIds"
+              mode="multiple"
+              allow-clear
+              show-search
+              :loading="assistantOptionsLoading"
+              :disabled="!oneToOneRecordId"
+              :filter-option="filterAssistantOption"
+              placeholder="可多选"
+              class="st-top-assistant-select"
+              option-label-prop="label"
+              max-tag-count="responsive"
+              @change="handleAssistantSelectChange"
+            >
+              <a-select-option
+                v-for="item in assistantOptions"
+                :key="item.value"
+                :value="item.value"
+                :label="item.label"
+              >
+                <div class="flex justify-between gap-3">
+                  <span>{{ item.label }}</span>
+                  <span v-if="item.mobile" class="text-3 text-#666">{{ item.mobile }}</span>
+                </div>
               </a-select-option>
             </a-select>
           </div>
@@ -2138,7 +2486,7 @@ watch(currentModel, (newValue) => {
                 text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a',
               ]" @click="text.conflict ? handleConflictClick(text, column, record) : handleScheduleClick(text, column, record)"
             >
-              {{ text.conflict ? '时间冲突(不可排)' : '空闲时段(可排)' }}
+              {{ emptyLessonStatusText(text) }}
             </div>
           </template>
           <template v-if="column.key === 'date'">
@@ -2281,6 +2629,10 @@ watch(currentModel, (newValue) => {
                 <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.teacherName }}</strong>
               </div>
               <div class="st-conflict-attempt__fact">
+                <span class="st-conflict-attempt__fact-label">上课助教</span>
+                <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.assistantText || '未安排' }}</strong>
+              </div>
+              <div class="st-conflict-attempt__fact">
                 <span class="st-conflict-attempt__fact-label">所在组别</span>
                 <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.groupLabel }}</strong>
               </div>
@@ -2312,6 +2664,11 @@ watch(currentModel, (newValue) => {
               <div class="st-conflict-item__meta">
                 教师：
                 <span :class="{ 'st-conflict-item__value--danger': item.hasTeacherConflict }">{{ item.teacherName }}</span>
+                <template v-if="item.assistantText && item.assistantText !== '-'">
+                  <span class="st-conflict-item__sep">｜</span>
+                  助教：
+                  <span :class="{ 'st-conflict-item__value--danger': item.hasAssistantConflict }">{{ item.assistantText }}</span>
+                </template>
                 <span class="st-conflict-item__sep">｜</span>
                 学员：
                 <span :class="{ 'st-conflict-item__value--danger': item.hasStudentConflict }">{{ item.studentText }}</span>
@@ -2359,6 +2716,12 @@ watch(currentModel, (newValue) => {
 .st-top-class-select {
   width: 180px;
   max-width: 180px;
+}
+
+.st-top-assistant-select {
+  width: 220px;
+  min-width: 220px;
+  max-width: 220px;
 }
 
 .st-time-view-select {
