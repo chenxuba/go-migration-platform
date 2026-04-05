@@ -261,7 +261,7 @@ const schoolTimeSlotOptions = computed<SchoolTimeSlot[]>(() => {
 
 const selectedTeacher = ref<string | number | undefined>(undefined)
 const selectedTeacherDisplay = ref<StaffOptionItem | null>(null)
-const selectedAssistant = ref<Array<string | number>>([])
+const selectedAssistant = ref<Array<string | number> | undefined>(undefined)
 const selectedAssistantDisplays = ref<StaffOptionItem[]>([])
 const selectedClassroom = ref<string | undefined>(undefined)
 const selectedStudentLessonPath = ref<string[] | undefined>(undefined)
@@ -320,6 +320,10 @@ const plannedClassCount = ref(1)
 
 const selectedOneToOne = computed(() =>
   oneToOneRecords.value.find(item => item.id === selectedOneToOneId.value),
+)
+
+const selectedAssistantValues = computed<Array<string | number>>(() =>
+  Array.isArray(selectedAssistant.value) ? selectedAssistant.value : [],
 )
 
 const oneToOneSelectOptions = computed(() =>
@@ -496,7 +500,7 @@ watch(
     selectedClassroom.value = value && isValidClassroomId(value.classRoomId)
       ? String(value.classRoomId).trim()
       : undefined
-    selectedAssistant.value = []
+    selectedAssistant.value = undefined
     selectedAssistantDisplays.value = []
     selectedSchoolTimeSlots.value = []
     teacherSlotAvailabilityMap.value = {}
@@ -662,8 +666,8 @@ const conflictWorkbenchPeriodGroups = computed(() =>
   }),
 )
 const selectedAssistantText = computed(() =>
-  selectedAssistant.value.length
-    ? selectedAssistant.value.map((id) => {
+  selectedAssistantValues.value.length
+    ? selectedAssistantValues.value.map((id) => {
         const current = selectedAssistantDisplays.value.find(item => sameStaffId(item.id, id))
         if (displayStaffName(current))
           return displayStaffName(current)
@@ -1188,7 +1192,7 @@ const previewPlans = computed<PreviewItem[]>(() => {
       assistant: selectedAssistantText.value,
       classroom: scheduledClassroomText.value,
       teacherId: selectedTeacherIdNormalized.value || undefined,
-      assistantIds: selectedAssistant.value.map(id => String(id)),
+      assistantIds: selectedAssistantValues.value.map(id => String(id)),
       classroomId: normalizedSelectedClassroomId.value || undefined,
       allowStudentConflict: false,
       allowClassroomConflict: false,
@@ -1220,9 +1224,10 @@ watch(
   (value) => {
     if (!isValidStaffId(value))
       return
-    const next = selectedAssistant.value.filter(id => !sameStaffId(id, value))
-    if (next.length !== selectedAssistant.value.length) {
-      selectedAssistant.value = next
+    const currentAssistantValues = selectedAssistantValues.value
+    const next = currentAssistantValues.filter(id => !sameStaffId(id, value))
+    if (next.length !== currentAssistantValues.length) {
+      selectedAssistant.value = next.length ? next : undefined
       handleAssistantChange(next)
     }
   },
@@ -1231,9 +1236,10 @@ watch(
 watch(
   () => [currentGroup.value, assistantSelectStaffs.value.map(item => String(item.id)).join(',')].join('|'),
   () => {
-    const next = selectedAssistant.value.filter(id => isAssistantAllowedInCurrentGroup(String(id)))
-    if (next.length !== selectedAssistant.value.length) {
-      selectedAssistant.value = next
+    const currentAssistantValues = selectedAssistantValues.value
+    const next = currentAssistantValues.filter(id => isAssistantAllowedInCurrentGroup(String(id)))
+    if (next.length !== currentAssistantValues.length) {
+      selectedAssistant.value = next.length ? next : undefined
       handleAssistantChange(next)
     }
   },
@@ -1472,7 +1478,7 @@ function buildScheduleCreatePayload(options: {
     teacherId: String(selectedTeacher.value || ''),
     assistantIds: Array.isArray(options.assistantIds)
       ? options.assistantIds.map(id => String(id))
-      : selectedAssistant.value.map(id => String(id)),
+      : selectedAssistantValues.value.map(id => String(id)),
     classroomId: normalizedSelectedClassroomId.value || '',
     allowStudentConflict: options.allowStudentConflict === true,
     allowClassroomConflict: options.allowClassroomConflict === true,
@@ -1588,7 +1594,10 @@ function handleTeacherChange(_value: string | number | undefined, staff?: StaffO
 }
 
 function handleAssistantChange(values?: Array<string | number>) {
-  const nextValues = Array.isArray(values) ? values : selectedAssistant.value
+  const nextValues = Array.isArray(values)
+    ? values
+    : selectedAssistantValues.value
+  selectedAssistant.value = nextValues.length ? nextValues : undefined
   selectedAssistantDisplays.value = nextValues.map((id) => {
     return assistantSelectStaffs.value.find(item => sameStaffId(item.id, id))
   }).filter(Boolean) as StaffOptionItem[]
@@ -2392,7 +2401,7 @@ function invertWeekdays() {
   <ScheduleConflictWorkbenchModal
     v-model:open="conflictModalOpen"
     :one-to-one-id="String(selectedOneToOne?.id || '')"
-    :assistant-ids="selectedAssistant.map(id => String(id))"
+    :assistant-ids="selectedAssistantValues.map(id => String(id))"
     :plans="previewPlans"
     :validation="previewValidationResult"
     :teacher-options="teacherSelectOptions"

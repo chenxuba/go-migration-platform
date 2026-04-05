@@ -1217,6 +1217,7 @@ const columns = [
                 <a-select
                   :value="record.assistantIds"
                   mode="multiple"
+                  placeholder="请选择上课助教"
                   show-search
                   allow-clear
                   option-label-prop="label"
