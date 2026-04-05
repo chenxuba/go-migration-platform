@@ -1481,16 +1481,16 @@ function renderOneToOneDropdown({ menuNode }) {
         placeholder: '搜索助教',
         style: {
           width: '100%',
-          height: '38px',
-          padding: '0 12px',
+          height: '30px',
+          padding: '0 10px',
           color: '#262626',
-          fontSize: '14px',
+          fontSize: '12px',
           background: '#fff',
           border: '1px solid #d9d9d9',
-          borderRadius: '10px',
+          borderRadius: '8px',
           outline: 'none',
           boxSizing: 'border-box',
-          marginBottom: '10px',
+          marginBottom: '4px',
         },
         onInput: (event) => {
           assistantKeyword.value = event?.target?.value || ''
@@ -1503,10 +1503,10 @@ function renderOneToOneDropdown({ menuNode }) {
         h('div', {
           class: 'st-top-1v1-dropdown__summary',
           style: {
-            marginBottom: '8px',
+            marginBottom: '2px',
             color: '#5b6475',
             fontSize: '12px',
-            lineHeight: '18px',
+            lineHeight: '1.5',
           },
         }, `已选助教：${selectedAssistantText.value}`),
       )
@@ -1534,9 +1534,9 @@ function renderOneToOneDropdown({ menuNode }) {
               style: {
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px',
+                gap: '4px',
                 minHeight: '30px',
-                padding: '2px 10px',
+                padding: '2px 0px',
                 borderRadius: '10px',
                 cursor: 'pointer',
                 boxSizing: 'border-box',
@@ -1573,7 +1573,7 @@ function renderOneToOneDropdown({ menuNode }) {
                   class: 'st-top-1v1-dropdown__assistant-mobile',
                   style: {
                     color: '#8c8c8c',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     lineHeight: '20px',
                     flex: '0 0 auto',
                   },
