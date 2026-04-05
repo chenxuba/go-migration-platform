@@ -7,9 +7,8 @@ import SmartTimetableGrid from './smart-timetable-grid.vue'
 import SmartTimetableScheduledDetailModal from './smart-timetable-scheduled-detail-modal.vue'
 import SmartTimetableToolbar from './smart-timetable-toolbar.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
-import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
-import { getUserListApi } from '@/api/internal-manage/staff-manage'
+import { useSmartTimetablePicker } from '@/composables/useSmartTimetablePicker'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 import {
@@ -60,11 +59,6 @@ const currentGroup = ref('A')
 /** 与 matrixDays、表头节次列对齐；切换 A/B 时在新数据返回前不改，避免清空矩阵导致整页高度塌缩抖动 */
 const displayedGroupKey = ref('A')
 const timetableRootRef = ref(null)
-/** 当前选中的 1 对 1 记录 id（非学员 id，避免同一学员多门课冲突） */
-const oneToOneRecordId = ref(undefined)
-const oneToOnePickerOpen = ref(false)
-const selectedAssistantIds = ref([])
-const assistantKeyword = ref('')
 const studentIds = ref([])
 const courseId = ref(null)
 const courseName = ref(null)
@@ -177,7 +171,6 @@ const userStore = useUserStore()
 const matrixDays = ref([])
 const timetableLoading = ref(false)
 const oneToOneAvailabilityLoading = ref(false)
-const assistantOptionsLoading = ref(false)
 const creatingOneToOneSchedule = ref(false)
 const deletingScheduledLesson = ref(false)
 const forcingConflictSchedule = ref(false)
@@ -217,8 +210,6 @@ let matrixLoadSeq = 0
 let oneToOneAvailabilitySeq = 0
 let pendingConflictJump = null
 let focusedScheduleCellTimer = null
-let lastHandledOneToOneId = ''
-let preserveOneToOnePickerOpen = false
 const focusedScheduleCellKey = ref('')
 const isSwapTimeGrid = computed(() => currentTime.value === 'swapWeek')
 const isWeekLikeView = computed(() => currentTime.value === 'week' || currentTime.value === 'swapWeek')
@@ -596,6 +587,31 @@ const activeGroupLabel = computed(() => {
   return groupOptions.value.find(o => o.key === displayedGroupKey.value)?.label || ''
 })
 
+const {
+  assistantNameById,
+  fetchAssistantOptions,
+  fetchOneToOneOptionsForTimetable,
+  filterOneToOneOption,
+  handle1v1,
+  handleOneToOneDropdownVisibleChange,
+  normalizedSelectedAssistantIds,
+  oneToOneData,
+  oneToOneListLoading,
+  oneToOnePickerOpen,
+  oneToOneRecordId,
+  renderOneToOneDropdown,
+  resetOneToOnePickerState,
+  selectedAssistantIds,
+  selectedAssistantText,
+} = useSmartTimetablePicker({
+  activeGroupLabel,
+  currentModel,
+  displayedGroupKey,
+  detectOneToOneAvailability,
+  periodGroupForKey,
+  resetAssistantConflicts: () => resetEmptyLessonConflicts('assistant'),
+})
+
 watch(
   groupOptions,
   (opts) => {
@@ -826,211 +842,6 @@ const courseList = ref([
     courseType: 2,
   },
 ])
-/** 开班中的 1 对 1 列表（来自 getOneToOneListApi，下拉 value 为 record.id） */
-const oneToOneData = ref([])
-const oneToOneListLoading = ref(false)
-const assistantOptions = ref([])
-
-function normalizeStringArray(values) {
-  return Array.from(
-    new Set(
-      (Array.isArray(values) ? values : [])
-        .map(value => String(value || '').trim())
-        .filter(Boolean),
-    ),
-  )
-}
-
-const normalizedSelectedAssistantIds = computed(() => normalizeStringArray(selectedAssistantIds.value))
-
-const assistantOptionMap = computed(() => {
-  const map = new Map()
-  assistantOptions.value.forEach((item) => {
-    map.set(String(item.value), item)
-  })
-  return map
-})
-
-function assistantNameById(id) {
-  const normalized = String(id || '').trim()
-  if (!normalized)
-    return ''
-  return assistantOptionMap.value.get(normalized)?.label || normalized
-}
-
-const selectedAssistantText = computed(() => {
-  const names = normalizedSelectedAssistantIds.value.map(id => assistantNameById(id)).filter(Boolean)
-  return names.length ? names.join('、') : '未安排'
-})
-
-const oneToOneDropdownStyle = computed(() => ({
-  width: '520px',
-  minWidth: '520px',
-  '--assistant-render-tick': `${assistantKeyword.value}|${normalizedSelectedAssistantIds.value.join(',')}|${String(oneToOneRecordId.value || '')}|${activeGroupLabel.value}`,
-}))
-
-const currentDisplayedGroupTeacherIds = computed(() => {
-  const bound = periodGroupForKey(displayedGroupKey.value)?.boundTeachers
-  return Array.isArray(bound)
-    ? bound.map(item => String(item.id ?? '').trim()).filter(Boolean)
-    : []
-})
-
-function isAssistantAllowedInDisplayedGroup(id) {
-  const normalized = String(id || '').trim()
-  if (!normalized)
-    return false
-  const allowed = currentDisplayedGroupTeacherIds.value
-  if (!allowed.length)
-    return true
-  return allowed.includes(normalized)
-}
-
-const assistantOptionsInPicker = computed(() => {
-  const keyword = String(assistantKeyword.value || '').trim().toLowerCase()
-  return assistantOptions.value.filter((item) => {
-    if (!isAssistantAllowedInDisplayedGroup(item.value))
-      return false
-    if (!keyword)
-      return true
-    const blob = `${item.label || ''} ${item.mobile || ''} ${item.value || ''}`.toLowerCase()
-    return blob.includes(keyword)
-  })
-})
-
-watch(
-  [displayedGroupKey, assistantOptions],
-  () => {
-    if (!normalizedSelectedAssistantIds.value.length)
-      return
-    const bound = periodGroupForKey(displayedGroupKey.value)?.boundTeachers
-    const allowed = Array.isArray(bound)
-      ? bound.map(item => String(item.id ?? '').trim()).filter(Boolean)
-      : []
-    const next = normalizedSelectedAssistantIds.value.filter((id) => {
-      if (!allowed.length)
-        return true
-      return allowed.includes(String(id || '').trim())
-    })
-    if (next.length === normalizedSelectedAssistantIds.value.length)
-      return
-    const removedCount = normalizedSelectedAssistantIds.value.length - next.length
-    handleAssistantSelectChange(next)
-    if (removedCount > 0) {
-      messageService.warning(`已切换到${activeGroupLabel.value || '当前组'}，自动移除 ${removedCount} 位非本组助教`, { duration: 4500 })
-    }
-  },
-  { immediate: true },
-)
-
-function mapRowToOneToOneOption(row) {
-  const id = String(row.id || '').trim()
-  const studentId = String(row.studentId || '').trim()
-  const studentName = String(row.studentName || '').trim()
-  const lessonName = String(row.lessonName || '').trim()
-  const name = String(row.name || '').trim()
-    || (studentName && lessonName ? `${studentName}-${lessonName}` : studentName || lessonName || id)
-  return {
-    id,
-    studentId,
-    studentName,
-    courseId: row.lessonId != null ? String(row.lessonId) : '',
-    courseName: lessonName,
-    name,
-  }
-}
-
-function mapStaffToAssistantOption(row) {
-  const value = String(row.id ?? '').trim()
-  const label = String(row.nickName || row.name || value).trim()
-  return {
-    value,
-    label: label || value,
-    mobile: String(row.mobile ?? '').trim(),
-  }
-}
-
-async function fetchOneToOneOptionsForTimetable() {
-  oneToOneListLoading.value = true
-  try {
-    const res = await getOneToOneListApi({
-      pageRequestModel: {
-        needTotal: false,
-        pageSize: 500,
-        pageIndex: 1,
-        skipCount: 0,
-      },
-      queryModel: {
-        /** 与一对一列表页默认一致：仅开班中 */
-        status: [1],
-      },
-    })
-    if (res.code === 200 && res.result) {
-      const list = Array.isArray(res.result.list) ? res.result.list : []
-      oneToOneData.value = list.map(mapRowToOneToOneOption).filter(item => item.id)
-    }
-    else {
-      oneToOneData.value = []
-      messageService.error(res.message || '获取1对1列表失败')
-    }
-  }
-  catch (e) {
-    console.error('fetchOneToOneOptionsForTimetable', e)
-    oneToOneData.value = []
-    messageService.error('获取1对1列表失败')
-  }
-  finally {
-    oneToOneListLoading.value = false
-  }
-}
-
-async function fetchAssistantOptions() {
-  assistantOptionsLoading.value = true
-  try {
-    const res = await getUserListApi({
-      pageRequestModel: {
-        needTotal: false,
-        pageSize: 500,
-        pageIndex: 1,
-        skipCount: 0,
-      },
-      queryModel: {
-        status: 0,
-      },
-    })
-    if (res.code !== 200) {
-      assistantOptions.value = []
-      messageService.error(res.message || '获取助教列表失败')
-      return
-    }
-
-    const rows = Array.isArray(res.result) ? res.result : []
-    assistantOptions.value = rows
-      .map(mapStaffToAssistantOption)
-      .filter(item => item.value)
-  }
-  catch (error) {
-    console.error('fetchAssistantOptions failed', error)
-    assistantOptions.value = []
-    messageService.error(error?.response?.data?.message || error?.message || '获取助教列表失败')
-  }
-  finally {
-    assistantOptionsLoading.value = false
-  }
-}
-
-function filterOneToOneOption(input, option) {
-  const q = (input || '').trim().toLowerCase()
-  if (!q)
-    return true
-  const id = option?.value != null ? String(option.value) : ''
-  const item = oneToOneData.value.find(r => r.id === id)
-  if (!item)
-    return true
-  const blob = `${item.name} ${item.studentName} ${item.courseName} ${item.studentId}`.toLowerCase()
-  return blob.includes(q)
-}
-
 // 当前视图下的全部行（时段 A/B 切换后数据源已重建；跨组检测以当前页为准）
 const allDataSource = computed(() => dataSource.value)
 
@@ -1538,294 +1349,6 @@ async function detectOneToOneAvailability(value) {
     if (seq === oneToOneAvailabilitySeq)
       oneToOneAvailabilityLoading.value = false
   }
-}
-
-function handle1v1(value) {
-  const nextId = String(value || '').trim()
-  if (nextId !== lastHandledOneToOneId && normalizedSelectedAssistantIds.value.length)
-    selectedAssistantIds.value = []
-  assistantKeyword.value = ''
-  lastHandledOneToOneId = nextId
-  if (nextId) {
-    requestAnimationFrame(() => {
-      oneToOnePickerOpen.value = true
-    })
-  }
-  else {
-    oneToOnePickerOpen.value = false
-  }
-  void detectOneToOneAvailability(value)
-}
-
-function handleAssistantSelectChange(value) {
-  selectedAssistantIds.value = normalizeStringArray(value)
-  if (currentModel.value === '1' && oneToOneRecordId.value) {
-    void detectOneToOneAvailability(oneToOneRecordId.value)
-  }
-  else {
-    resetEmptyLessonConflicts('assistant')
-  }
-}
-
-function requestKeepOneToOnePickerOpen() {
-  preserveOneToOnePickerOpen = true
-  requestAnimationFrame(() => {
-    oneToOnePickerOpen.value = true
-    preserveOneToOnePickerOpen = false
-  })
-}
-
-function toggleAssistantOption(value, checked) {
-  const normalized = String(value || '').trim()
-  if (!normalized)
-    return
-  const next = new Set(normalizedSelectedAssistantIds.value)
-  if (checked)
-    next.add(normalized)
-  else
-    next.delete(normalized)
-  handleAssistantSelectChange([...next])
-  requestKeepOneToOnePickerOpen()
-}
-
-function handleOneToOneDropdownVisibleChange(open) {
-  if (!open && preserveOneToOnePickerOpen) {
-    oneToOnePickerOpen.value = true
-    return
-  }
-  oneToOnePickerOpen.value = open
-}
-
-function renderOneToOneDropdown({ menuNode }) {
-  const sideChildren = [
-    h('div', {
-      class: 'st-top-1v1-dropdown__section-head',
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '12px',
-        marginBottom: '12px',
-      },
-    }, [
-      h('span', {
-        class: 'st-top-1v1-dropdown__section-title',
-        style: {
-          color: '#262626',
-          fontSize: '14px',
-          fontWeight: 700,
-          lineHeight: 1,
-        },
-      }, '选择助教'),
-      h(
-        'span',
-        {
-          class: 'st-top-1v1-dropdown__section-hint',
-          style: {
-            color: '#8c8c8c',
-            fontSize: '12px',
-            lineHeight: 1,
-          },
-        },
-        oneToOneRecordId.value ? '多选，可不选' : '先选1v1后配置',
-      ),
-    ]),
-  ]
-
-  if (oneToOneRecordId.value) {
-    sideChildren.push(
-      h('input', {
-        class: 'st-top-1v1-dropdown__search-input',
-        value: assistantKeyword.value,
-        placeholder: '搜索助教',
-        style: {
-          width: '100%',
-          height: '30px',
-          padding: '0 10px',
-          color: '#262626',
-          fontSize: '12px',
-          background: '#fff',
-          border: '1px solid #d9d9d9',
-          borderRadius: '8px',
-          outline: 'none',
-          boxSizing: 'border-box',
-          marginBottom: '4px',
-        },
-        onInput: (event) => {
-          assistantKeyword.value = event?.target?.value || ''
-        },
-        onFocus: () => {
-          requestKeepOneToOnePickerOpen()
-        },
-        onClick: () => {
-          requestKeepOneToOnePickerOpen()
-        },
-      }),
-    )
-
-    if (normalizedSelectedAssistantIds.value.length) {
-      sideChildren.push(
-        h('div', {
-          class: 'st-top-1v1-dropdown__summary',
-          style: {
-            marginBottom: '2px',
-            color: '#5b6475',
-            fontSize: '12px',
-            lineHeight: '1.5',
-          },
-        }, `已选助教：${selectedAssistantText.value}`),
-      )
-    }
-
-    if (assistantOptionsInPicker.value.length) {
-      sideChildren.push(
-        h(
-          'div',
-          {
-            class: 'st-top-1v1-dropdown__assistant-list',
-            style: {
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0px',
-              flex: 1,
-              overflowY: 'auto',
-              paddingRight: '4px',
-            },
-          },
-          assistantOptionsInPicker.value.map((item) => {
-            const checked = normalizedSelectedAssistantIds.value.includes(String(item.value))
-            return h('div', {
-              class: 'st-top-1v1-dropdown__assistant-item',
-              key: item.value,
-              style: {
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                minHeight: '30px',
-                padding: '2px 0px',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                boxSizing: 'border-box',
-                userSelect: 'none',
-              },
-              onMousedown: (event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              },
-              onClick: () => {
-                toggleAssistantOption(item.value, !checked)
-              },
-            }, [
-              h('span', {
-                class: 'st-top-1v1-dropdown__assistant-checkbox',
-                style: {
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '16px',
-                  height: '16px',
-                  borderRadius: '4px',
-                  border: checked ? '1px solid #1677ff' : '1px solid #8c8c8c',
-                  background: checked ? '#1677ff' : '#fff',
-                  color: '#fff',
-                  flex: '0 0 auto',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  lineHeight: 1,
-                },
-              }, checked ? '✓' : ''),
-              h('span', {
-                class: 'st-top-1v1-dropdown__assistant-name',
-                style: {
-                  flex: 1,
-                  minWidth: 0,
-                  color: '#262626',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  lineHeight: '20px',
-                },
-              }, item.label),
-              item.mobile
-                ? h('span', {
-                  class: 'st-top-1v1-dropdown__assistant-mobile',
-                  style: {
-                    color: '#8c8c8c',
-                    fontSize: '11px',
-                    lineHeight: '20px',
-                    flex: '0 0 auto',
-                  },
-                }, item.mobile)
-                : null,
-            ])
-          }),
-        ),
-      )
-    }
-    else {
-      sideChildren.push(h('div', {
-        class: 'st-top-1v1-dropdown__empty',
-        style: {
-          padding: '14px 0 4px',
-          color: '#8c8c8c',
-          fontSize: '12px',
-          lineHeight: '18px',
-        },
-      }, '暂无匹配助教'))
-    }
-  }
-  else {
-    sideChildren.push(h('div', {
-      class: 'st-top-1v1-dropdown__empty',
-      style: {
-        padding: '14px 0 4px',
-        color: '#8c8c8c',
-        fontSize: '12px',
-        lineHeight: '18px',
-      },
-    }, '先选 1v1，再在右侧勾选助教。'))
-  }
-
-  return h('div', {
-    class: 'st-top-1v1-dropdown',
-    style: {
-      display: 'flex',
-      width: '520px',
-      minWidth: '520px',
-      maxWidth: '520px',
-      minHeight: '280px',
-      maxHeight: '280px',
-      background: '#fff',
-      borderRadius: '12px',
-      overflow: 'hidden',
-    },
-  }, [
-    h('div', {
-      class: 'st-top-1v1-dropdown__list',
-      style: {
-        flex: '0 0 278px',
-        minWidth: '278px',
-        maxWidth: '278px',
-        overflowY: 'auto',
-        borderRight: '1px solid #f0f0f0',
-      },
-    }, [menuNode]),
-    h(
-      'div',
-      {
-        class: 'st-top-1v1-dropdown__side',
-        style: {
-          display: 'flex',
-          flex: 1,
-          flexDirection: 'column',
-          minWidth: 0,
-          padding: '14px 16px 16px',
-          background: 'linear-gradient(180deg, #fcfdff 0%, #fff 100%)',
-        },
-        onMousedown: event => event.stopPropagation(),
-      },
-      sideChildren,
-    ),
-  ])
 }
 
 // 检查两个时间段是否有交叉
@@ -2704,10 +2227,7 @@ watch(currentModel, (newValue) => {
     className.value = null
   }
   else {
-    oneToOneRecordId.value = undefined
-    oneToOnePickerOpen.value = false
-    selectedAssistantIds.value = []
-    lastHandledOneToOneId = ''
+    resetOneToOnePickerState()
     courseId.value = null
     courseName.value = null
   }
@@ -2719,7 +2239,7 @@ watch(currentModel, (newValue) => {
     <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
       <all-filter :display-array="displayArray" :is-show-search-stu-phonefilter="true" />
     </div>
-    <smart-timetable-toolbar
+    <SmartTimetableToolbar
       v-model:current-model="currentModel"
       v-model:one-to-one-record-id="oneToOneRecordId"
       v-model:one-to-one-picker-open="oneToOnePickerOpen"
@@ -2743,7 +2263,7 @@ watch(currentModel, (newValue) => {
       :on-next="handleNext"
       :on-this-week="handleThisWeek"
     />
-    <smart-timetable-grid
+    <SmartTimetableGrid
       :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule"
       :table-data-source="tableDataSource"
       :columns="columns"
@@ -2765,7 +2285,7 @@ watch(currentModel, (newValue) => {
       :format-date="formatDate"
     />
 
-    <smart-timetable-scheduled-detail-modal
+    <SmartTimetableScheduledDetailModal
       v-model:open="scheduledLessonDetailOpen"
       :detail="scheduledLessonDetailState"
       :deleting="deletingScheduledLesson"
@@ -2781,7 +2301,7 @@ watch(currentModel, (newValue) => {
       fallback-message="当前日程与已有日程存在冲突"
     />
 
-    <smart-timetable-conflict-modal
+    <SmartTimetableConflictModal
       v-model:open="conflictDetailModalOpen"
       :forcing="forcingConflictSchedule"
       :conflict-detail-state="conflictDetailState"
@@ -3062,7 +2582,6 @@ watch(currentModel, (newValue) => {
   font-size: 12px;
   line-height: 18px;
 }
-
 </style>
 
 <style lang="less">
