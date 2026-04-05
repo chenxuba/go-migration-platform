@@ -416,9 +416,10 @@ func (repo *Repository) upsertOneToOneTeachingClassTx(ctx context.Context, tx *s
 			INSERT INTO teaching_class_student (
 				uuid, version, inst_id, teaching_class_id, student_id, order_id, order_course_detail_id, quote_id,
 				primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
-				last_finished_lesson_day, class_properties_json, create_id, create_time, update_id, update_time, del_flag
+				class_time_record_mode, last_finished_lesson_day, class_properties_json,
+				create_id, create_time, update_id, update_time, del_flag
 			) VALUES (
-				UUID(), 0, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, NULL, NULL, ?, NOW(), ?, NOW(), 0
+				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, 1, NULL, NULL, ?, NOW(), ?, NOW(), 0
 			)
 		`, instID, reuseClassID, studentID, orderID, orderCourseDetailID, quoteID, primaryTuitionAccountID, operatorID, operatorID)
 		return err
@@ -427,10 +428,10 @@ func (repo *Repository) upsertOneToOneTeachingClassTx(ctx context.Context, tx *s
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO teaching_class (
 			uuid, version, inst_id, class_type, course_id, name, advisor_id, default_teacher_id, status,
-			scheduled_lesson_count, finished_lesson_count, class_room_id, class_room_name, classroom_enabled,
+			scheduled_lesson_count, finished_lesson_count, class_room_id, class_room_name, classroom_enabled, remark,
 			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, 0, 0, ?, 0, 0, 0, '', NULL, ?, ?, ?, ?, 0
+			UUID(), 0, ?, ?, ?, ?, 0, 0, ?, 0, 0, 0, '', NULL, '', ?, ?, ?, ?, 0
 		)
 	`, instID, model.TeachingClassTypeOneToOne, courseID, className, model.TeachingClassStatusActive, operatorID, now, operatorID, now)
 	if err != nil {
@@ -444,9 +445,10 @@ func (repo *Repository) upsertOneToOneTeachingClassTx(ctx context.Context, tx *s
 		INSERT INTO teaching_class_student (
 			uuid, version, inst_id, teaching_class_id, student_id, order_id, order_course_detail_id, quote_id,
 			primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
-			last_finished_lesson_day, class_properties_json, create_id, create_time, update_id, update_time, del_flag
+			class_time_record_mode, last_finished_lesson_day, class_properties_json,
+			create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, NULL, NULL, ?, NOW(), ?, NOW(), 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 1, 1, 1, 0, 1, NULL, NULL, ?, NOW(), ?, NOW(), 0
 		)
 	`, instID, classID, studentID, orderID, orderCourseDetailID, quoteID, primaryTuitionAccountID, operatorID, operatorID)
 	return err
