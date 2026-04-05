@@ -1433,11 +1433,35 @@ function handleOneToOneDropdownVisibleChange(open) {
 
 function renderOneToOneDropdown({ menuNode }) {
   const sideChildren = [
-    h('div', { class: 'st-top-1v1-dropdown__section-head' }, [
-      h('span', { class: 'st-top-1v1-dropdown__section-title' }, '选择助教'),
+    h('div', {
+      class: 'st-top-1v1-dropdown__section-head',
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '12px',
+        marginBottom: '12px',
+      },
+    }, [
+      h('span', {
+        class: 'st-top-1v1-dropdown__section-title',
+        style: {
+          color: '#262626',
+          fontSize: '14px',
+          fontWeight: 700,
+          lineHeight: 1,
+        },
+      }, '选择助教'),
       h(
         'span',
-        { class: 'st-top-1v1-dropdown__section-hint' },
+        {
+          class: 'st-top-1v1-dropdown__section-hint',
+          style: {
+            color: '#8c8c8c',
+            fontSize: '12px',
+            lineHeight: 1,
+          },
+        },
         oneToOneRecordId.value ? '多选，可不选' : '先选1v1后配置',
       ),
     ]),
@@ -1449,6 +1473,19 @@ function renderOneToOneDropdown({ menuNode }) {
         class: 'st-top-1v1-dropdown__search-input',
         value: assistantKeyword.value,
         placeholder: '搜索助教',
+        style: {
+          width: '100%',
+          height: '38px',
+          padding: '0 12px',
+          color: '#262626',
+          fontSize: '14px',
+          background: '#fff',
+          border: '1px solid #d9d9d9',
+          borderRadius: '10px',
+          outline: 'none',
+          boxSizing: 'border-box',
+          marginBottom: '10px',
+        },
         onInput: (event) => {
           assistantKeyword.value = event?.target?.value || ''
         },
@@ -1457,7 +1494,15 @@ function renderOneToOneDropdown({ menuNode }) {
 
     if (normalizedSelectedAssistantIds.value.length) {
       sideChildren.push(
-        h('div', { class: 'st-top-1v1-dropdown__summary' }, `已选助教：${selectedAssistantText.value}`),
+        h('div', {
+          class: 'st-top-1v1-dropdown__summary',
+          style: {
+            marginBottom: '8px',
+            color: '#5b6475',
+            fontSize: '12px',
+            lineHeight: '18px',
+          },
+        }, `已选助教：${selectedAssistantText.value}`),
       )
     }
 
@@ -1465,20 +1510,68 @@ function renderOneToOneDropdown({ menuNode }) {
       sideChildren.push(
         h(
           'div',
-          { class: 'st-top-1v1-dropdown__assistant-list' },
+          {
+            class: 'st-top-1v1-dropdown__assistant-list',
+            style: {
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              flex: 1,
+              overflowY: 'auto',
+              paddingRight: '2px',
+            },
+          },
           assistantOptionsInPicker.value.map(item =>
-            h('label', { class: 'st-top-1v1-dropdown__assistant-item', key: item.value }, [
+            h('label', {
+              class: 'st-top-1v1-dropdown__assistant-item',
+              key: item.value,
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                minHeight: '42px',
+                padding: '8px 10px',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+              },
+            }, [
               h('input', {
                 class: 'st-top-1v1-dropdown__assistant-checkbox',
                 type: 'checkbox',
                 checked: normalizedSelectedAssistantIds.value.includes(String(item.value)),
+                style: {
+                  width: '18px',
+                  height: '18px',
+                  margin: 0,
+                  accentColor: '#1677ff',
+                  flex: '0 0 auto',
+                },
                 onChange: (event) => {
                   toggleAssistantOption(item.value, Boolean(event?.target?.checked))
                 },
               }),
-              h('span', { class: 'st-top-1v1-dropdown__assistant-name' }, item.label),
+              h('span', {
+                class: 'st-top-1v1-dropdown__assistant-name',
+                style: {
+                  flex: 1,
+                  minWidth: 0,
+                  color: '#262626',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  lineHeight: '20px',
+                },
+              }, item.label),
               item.mobile
-                ? h('span', { class: 'st-top-1v1-dropdown__assistant-mobile' }, item.mobile)
+                ? h('span', {
+                  class: 'st-top-1v1-dropdown__assistant-mobile',
+                  style: {
+                    color: '#8c8c8c',
+                    fontSize: '13px',
+                    lineHeight: '20px',
+                    flex: '0 0 auto',
+                  },
+                }, item.mobile)
                 : null,
             ]),
           ),
@@ -1486,19 +1579,65 @@ function renderOneToOneDropdown({ menuNode }) {
       )
     }
     else {
-      sideChildren.push(h('div', { class: 'st-top-1v1-dropdown__empty' }, '暂无匹配助教'))
+      sideChildren.push(h('div', {
+        class: 'st-top-1v1-dropdown__empty',
+        style: {
+          padding: '14px 0 4px',
+          color: '#8c8c8c',
+          fontSize: '12px',
+          lineHeight: '18px',
+        },
+      }, '暂无匹配助教'))
     }
   }
   else {
-    sideChildren.push(h('div', { class: 'st-top-1v1-dropdown__empty' }, '先选 1v1，再在右侧勾选助教。'))
+    sideChildren.push(h('div', {
+      class: 'st-top-1v1-dropdown__empty',
+      style: {
+        padding: '14px 0 4px',
+        color: '#8c8c8c',
+        fontSize: '12px',
+        lineHeight: '18px',
+      },
+    }, '先选 1v1，再在右侧勾选助教。'))
   }
 
-  return h('div', { class: 'st-top-1v1-dropdown' }, [
-    h('div', { class: 'st-top-1v1-dropdown__list' }, [menuNode]),
+  return h('div', {
+    class: 'st-top-1v1-dropdown',
+    style: {
+      display: 'flex',
+      width: '520px',
+      minWidth: '520px',
+      maxWidth: '520px',
+      minHeight: '280px',
+      maxHeight: '280px',
+      background: '#fff',
+      borderRadius: '12px',
+      overflow: 'hidden',
+    },
+  }, [
+    h('div', {
+      class: 'st-top-1v1-dropdown__list',
+      style: {
+        flex: '0 0 278px',
+        minWidth: '278px',
+        maxWidth: '278px',
+        overflowY: 'auto',
+        borderRight: '1px solid #f0f0f0',
+      },
+    }, [menuNode]),
     h(
       'div',
       {
         class: 'st-top-1v1-dropdown__side',
+        style: {
+          display: 'flex',
+          flex: 1,
+          flexDirection: 'column',
+          minWidth: 0,
+          padding: '14px 16px 16px',
+          background: 'linear-gradient(180deg, #fcfdff 0%, #fff 100%)',
+        },
         onMousedown: event => event.preventDefault(),
       },
       sideChildren,
@@ -2424,6 +2563,7 @@ watch(currentModel, (newValue) => {
               :filter-option="filterOneToOneOption"
               placeholder="搜索/选择"
               class="st-top-1v1-select"
+              popup-class-name="st-top-1v1-select-dropdown"
               option-label-prop="label"
               @dropdown-visible-change="handleOneToOneDropdownVisibleChange"
               @change="handle1v1"
@@ -2931,6 +3071,138 @@ watch(currentModel, (newValue) => {
 
 .st-top-1v1-dropdown__empty {
   padding: 12px 0 4px;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown) {
+  display: flex;
+  width: 520px;
+  min-width: 520px;
+  max-width: 520px;
+  min-height: 280px;
+  max-height: 280px;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__list) {
+  flex: 0 0 278px;
+  min-width: 278px;
+  max-width: 278px;
+  overflow-y: auto;
+  border-right: 1px solid #f0f0f0;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__side) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  background: linear-gradient(180deg, #fcfdff 0%, #fff 100%);
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__section-head) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__section-title) {
+  color: #262626;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__section-hint) {
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 1;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__search-input) {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  color: #262626;
+  font-size: 14px;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__search-input:focus) {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__summary) {
+  margin: 10px 0 8px;
+  color: #5b6475;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__assistant-list) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__assistant-item) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+  box-sizing: border-box;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__assistant-item:hover) {
+  background: #f5f9ff;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__assistant-checkbox) {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #1677ff;
+  flex: 0 0 auto;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__assistant-name) {
+  flex: 1;
+  min-width: 0;
+  color: #262626;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__assistant-mobile) {
+  color: #8c8c8c;
+  font-size: 13px;
+  line-height: 20px;
+  flex: 0 0 auto;
+}
+
+:deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown__empty) {
+  padding: 14px 0 4px;
   color: #8c8c8c;
   font-size: 12px;
   line-height: 18px;
