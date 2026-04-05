@@ -44,6 +44,7 @@ const displayedGroupKey = ref('A')
 const timetableRootRef = ref(null)
 /** 当前选中的 1 对 1 记录 id（非学员 id，避免同一学员多门课冲突） */
 const oneToOneRecordId = ref(undefined)
+const oneToOnePickerOpen = ref(false)
 const selectedAssistantIds = ref([])
 const assistantKeyword = ref('')
 const studentIds = ref([])
@@ -1365,6 +1366,14 @@ function handle1v1(value) {
     selectedAssistantIds.value = []
   assistantKeyword.value = ''
   lastHandledOneToOneId = nextId
+  if (nextId) {
+    requestAnimationFrame(() => {
+      oneToOnePickerOpen.value = true
+    })
+  }
+  else {
+    oneToOnePickerOpen.value = false
+  }
   void detectOneToOneAvailability(value)
 }
 
@@ -1388,6 +1397,10 @@ function toggleAssistantOption(value, checked) {
   else
     next.delete(normalized)
   handleAssistantSelectChange([...next])
+}
+
+function handleOneToOneDropdownVisibleChange(open) {
+  oneToOnePickerOpen.value = open
 }
 
 // 检查两个时间段是否有交叉
@@ -2267,6 +2280,7 @@ watch(currentModel, (newValue) => {
   }
   else {
     oneToOneRecordId.value = undefined
+    oneToOnePickerOpen.value = false
     selectedAssistantIds.value = []
     lastHandledOneToOneId = ''
     courseId.value = null
@@ -2297,6 +2311,7 @@ watch(currentModel, (newValue) => {
             <span class="whitespace-nowrap w-71px text-right">选择1v1：</span>
             <a-select
               v-model:value="oneToOneRecordId"
+              v-model:open="oneToOnePickerOpen"
               allow-clear
               show-search
               :loading="oneToOneListLoading"
@@ -2306,6 +2321,7 @@ watch(currentModel, (newValue) => {
               placeholder="搜索/选择"
               class="st-top-1v1-select"
               option-label-prop="label"
+              @dropdown-visible-change="handleOneToOneDropdownVisibleChange"
               @change="handle1v1"
             >
               <template #dropdownRender="{ menuNode }">
