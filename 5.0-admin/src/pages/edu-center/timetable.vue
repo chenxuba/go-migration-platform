@@ -15,25 +15,16 @@ const activeKey = ref('1')
           'border-bottom-right-radius': '0px',
         }"
       >
-        <a-tab-pane key="1" tab="时间课表">
-          <time-timetable />
-        </a-tab-pane>
-        <a-tab-pane key="2" tab="教师课表">
-          <teacher-timetable />
-        </a-tab-pane>
-        <a-tab-pane key="3" tab="分组日课表">
-          <class-room-timetable />
-        </a-tab-pane>
-        <a-tab-pane key="4" tab="分组周课表">
-          <schedule-list />
-        </a-tab-pane>
-        <a-tab-pane key="5" tab="冲突日程">
-          <conflict-schedule />
-        </a-tab-pane>
-        <a-tab-pane key="6" tab="智慧课表">
+        <a-tab-pane key="1" tab="智慧课表">
           <smart-timetable />
         </a-tab-pane>
-        <a-tab-pane key="7" tab="教师矩阵">
+        <a-tab-pane key="2" tab="时间课表">
+          <time-timetable />
+        </a-tab-pane>
+        <a-tab-pane key="3" tab="冲突日程">
+          <conflict-schedule />
+        </a-tab-pane>
+        <a-tab-pane key="4" tab="教师矩阵">
           <TeacherMatrixApiTimetable />
         </a-tab-pane>
       </a-tabs>

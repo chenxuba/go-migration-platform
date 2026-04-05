@@ -27,8 +27,23 @@ const displayArray = ref([
   'channelType', // 渠道类型
   'subject', // 科目
 ])
+const SMART_TIMETABLE_VIEW_MODE_KEY = 'smart-timetable-view-mode'
+
+function getSavedTimeView() {
+  if (typeof window === 'undefined')
+    return 'week'
+  try {
+    const saved = window.localStorage.getItem(SMART_TIMETABLE_VIEW_MODE_KEY)
+    if (saved === 'day' || saved === 'week' || saved === 'swapWeek')
+      return saved
+  }
+  catch {
+  }
+  return 'week'
+}
+
 // 当前选中的时间维度
-const currentTime = ref('week')
+const currentTime = ref(getSavedTimeView())
 // 当前的日期区间 - 默认设置为本周
 const currentWeek = ref(dayjs())
 /** 课表时间视图：下拉与日期导航联动 */
@@ -63,6 +78,13 @@ function getWeekStart(value = dayjs()) {
 
 // 监听时间维度变化
 watch(currentTime, () => {
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(SMART_TIMETABLE_VIEW_MODE_KEY, currentTime.value)
+    }
+    catch {
+    }
+  }
   currentWeek.value = dayjs()
 })
 
