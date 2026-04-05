@@ -32,11 +32,14 @@ export interface CampusDataClearResult {
     importTaskRecords: number
     orderImportTasks: number
     orderImportTaskRecords: number
+    rechargeImportTasks: number
+    rechargeImportTaskRecords: number
     exportRecords: number
     courseSaleVolumesReset: number
     teachingClasses: number
     teachingClassStudents: number
     teachingClassTeachers: number
+    teachingSchedules: number
   }
   preserved: string[]
   intentStudentIndexCleared: boolean

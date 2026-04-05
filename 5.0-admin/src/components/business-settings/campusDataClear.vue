@@ -18,16 +18,16 @@ const submitting = ref(false)
 const recommendedScope = {
   value: CAMPUS_DATA_CLEAR_SCOPE_BUSINESS_ONLY,
   title: '只清校区业务数据',
-  description: '适合校区重新起盘、演示环境回收、历史业务重置等场景，不影响基础配置继续使用。',
+  description: '适合校区重新起盘、演示环境回收、历史业务重置等场景，不影响基础配置继续使用；本次清空会直接硬删除，不保留软删除数据。',
   includes: [
     '学员主档、学员自定义字段值与学员变更记录',
     '跟进记录',
     '订单、订单课程明细与支付记录',
     '审批记录与审批历史',
     '学费账户、充值账户及相关流水、业务台账',
-    '意向学员/订单导入记录与学员导出记录',
+    '意向学员/订单/充值账户导入记录与学员导出记录',
     '套餐、套餐内商品、套餐属性结果',
-    '班级与 1 对 1（含班员、教师关联）',
+    '班级、1 对 1 与课表数据（含班员、教师关联、排课记录）',
   ],
   excludes: [
     '员工、角色、部门等组织信息',
@@ -55,7 +55,14 @@ function buildSuccessMessage(result) {
   if (!cleared)
     return result?.intentStudentIndexMessage || '校区业务数据已清空'
 
-  const summary = `已清空学员 ${cleared.students || 0} 条、订单 ${cleared.orders || 0} 条、审批 ${cleared.approvalRecords || 0} 条、1对1/班级 ${cleared.teachingClasses || 0} 条`
+  const importExportTotal = (cleared.importTasks || 0)
+    + (cleared.importTaskRecords || 0)
+    + (cleared.orderImportTasks || 0)
+    + (cleared.orderImportTaskRecords || 0)
+    + (cleared.rechargeImportTasks || 0)
+    + (cleared.rechargeImportTaskRecords || 0)
+    + (cleared.exportRecords || 0)
+  const summary = `已硬删除学员 ${cleared.students || 0} 条、订单 ${cleared.orders || 0} 条、课表 ${cleared.teachingSchedules || 0} 条、审批 ${cleared.approvalRecords || 0} 条、1对1/班级 ${cleared.teachingClasses || 0} 条、导入导出记录 ${importExportTotal} 条`
   return result?.intentStudentIndexMessage ? `${summary}，${result.intentStudentIndexMessage}` : summary
 }
 
@@ -110,7 +117,7 @@ function handleClearClick() {
       </div>
 
       <div class="summary-text">
-        清空数据后，系统仍会保留员工信息、校区信息、功能配置等基础信息，渠道、课程配置等资料也会继续保留，方便后续继续使用。
+        清空数据后，系统仍会保留员工信息、校区信息、功能配置等基础信息，渠道、课程配置等资料也会继续保留，方便后续继续使用；本次清空的数据将直接硬删除，不会以软删除方式保留。
       </div>
 
       <div class="scope-grid">
@@ -180,7 +187,7 @@ function handleClearClick() {
 .panel-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 5px;
   font-size: 15px;
   font-weight: 600;
   color: #1f2329;
@@ -189,7 +196,7 @@ function handleClearClick() {
 
 .panel-title__marker {
   width: 6px;
-  height: 24px;
+  height: 14px;
   border-radius: 999px;
   background: var(--pro-ant-color-primary, #1677ff);
   flex-shrink: 0;

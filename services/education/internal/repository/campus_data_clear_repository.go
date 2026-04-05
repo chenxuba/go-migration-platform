@@ -19,219 +19,65 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 		return model.CampusDataClearSummary{}, err
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE inst_student_field_value v
-		INNER JOIN inst_student s ON s.id = v.student_id
-		SET v.del_flag = 1, v.update_id = ?, v.update_time = NOW()
-		WHERE s.inst_id = ? AND s.del_flag = 0 AND v.del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
+	_ = operatorID
+
+	deleteStatements := []string{
+		`DELETE FROM teaching_schedule WHERE inst_id = ?`,
+		`DELETE FROM teaching_class_teacher WHERE inst_id = ?`,
+		`DELETE FROM teaching_class_student WHERE inst_id = ?`,
+		`DELETE FROM teaching_class WHERE inst_id = ?`,
+		`DELETE FROM inst_student_field_value
+			WHERE student_id IN (
+				SELECT id FROM (
+					SELECT id FROM inst_student WHERE inst_id = ?
+				) AS campus_students
+			)`,
+		`DELETE FROM inst_student_record WHERE inst_id = ?`,
+		`DELETE FROM follow_record WHERE inst_id = ?`,
+		`DELETE h FROM approval_history h
+			INNER JOIN approval_record r ON r.id = h.approval_id
+			WHERE r.inst_id = ?`,
+		`DELETE FROM approval_record WHERE inst_id = ?`,
+		`DELETE FROM tuition_account_flow WHERE inst_id = ?`,
+		`DELETE FROM tuition_account WHERE inst_id = ?`,
+		`DELETE FROM inst_ledger WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_flow WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_student WHERE inst_id = ?`,
+		`DELETE FROM recharge_account WHERE inst_id = ?`,
+		`DELETE r FROM intention_student_import_task_record r
+			INNER JOIN intention_student_import_task t ON t.id = r.task_id
+			WHERE t.inst_id = ?`,
+		`DELETE FROM intention_student_import_task WHERE inst_id = ?`,
+		`DELETE r FROM order_import_task_record r
+			INNER JOIN order_import_task t ON t.id = r.task_id
+			WHERE t.inst_id = ?`,
+		`DELETE FROM order_import_task WHERE inst_id = ?`,
+		`DELETE r FROM recharge_account_import_task_record r
+			INNER JOIN recharge_account_import_task t ON t.id = r.task_id
+			WHERE t.inst_id = ?`,
+		`DELETE FROM recharge_account_import_task WHERE inst_id = ?`,
+		`DELETE FROM enrolled_student_export_record WHERE inst_id = ?`,
+		`DELETE d FROM sale_order_course_detail d
+			INNER JOIN sale_order so ON so.id = d.order_id
+			WHERE so.inst_id = ?`,
+		`DELETE pd FROM sale_order_pay_detail pd
+			INNER JOIN sale_order so ON so.id = pd.order_id
+			WHERE so.inst_id = ?`,
+		`DELETE FROM sale_order WHERE inst_id = ?`,
+		`DELETE ppr FROM product_package_property_result ppr
+			INNER JOIN product_package pp ON pp.id = ppr.product_package_id
+			WHERE pp.inst_id = ?`,
+		`DELETE ppi FROM product_package_item ppi
+			INNER JOIN product_package pp ON pp.id = ppi.product_package_id
+			WHERE pp.inst_id = ?`,
+		`DELETE FROM product_package WHERE inst_id = ?`,
+		`DELETE FROM inst_student WHERE inst_id = ?`,
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE inst_student_record
-		SET del_flag = 1
-		WHERE inst_id = ? AND del_flag = 0
-	`, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE follow_record
-		SET del_flag = 1, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE approval_history h
-		INNER JOIN approval_record r ON r.id = h.approval_id
-		SET h.del_flag = 1, h.update_id = ?, h.update_time = NOW()
-		WHERE r.inst_id = ? AND r.del_flag = 0 AND h.del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE approval_record
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE sale_order_pay_detail pd
-		INNER JOIN sale_order so ON so.id = pd.order_id
-		SET pd.del_flag = 1, pd.update_id = ?, pd.update_time = NOW()
-		WHERE so.inst_id = ? AND so.del_flag = 0 AND pd.del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE sale_order_course_detail d
-		INNER JOIN sale_order so ON so.id = d.order_id
-		SET d.del_flag = 1, d.update_id = ?, d.update_time = NOW()
-		WHERE so.inst_id = ? AND so.del_flag = 0 AND d.del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE tuition_account
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE tuition_account_flow
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE inst_ledger
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE recharge_account_flow
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE recharge_account_student
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE recharge_account
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE intention_student_import_task_record r
-		INNER JOIN intention_student_import_task t ON t.id = r.task_id
-		SET r.del_flag = 1, r.update_time = NOW()
-		WHERE t.inst_id = ? AND t.del_flag = 0 AND r.del_flag = 0
-	`, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE intention_student_import_task
-		SET del_flag = 1, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE order_import_task_record r
-		INNER JOIN order_import_task t ON t.id = r.task_id
-		SET r.del_flag = 1, r.update_time = NOW()
-		WHERE t.inst_id = ? AND t.del_flag = 0 AND r.del_flag = 0
-	`, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE order_import_task
-		SET del_flag = 1, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE enrolled_student_export_record
-		SET del_flag = 1, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE sale_order
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	// 班级与 1 对 1（含班员、任课/班主任关联），原清空逻辑未覆盖，会导致列表残留与同名误判
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE teaching_class_teacher
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE teaching_class_student
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE teaching_class
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE inst_student
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE product_package_property_result ppr
-		INNER JOIN product_package pp ON pp.id = ppr.product_package_id
-		SET ppr.del_flag = 1, ppr.update_id = ?, ppr.update_time = NOW()
-		WHERE pp.inst_id = ? AND pp.del_flag = 0 AND ppr.del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE product_package_item ppi
-		INNER JOIN product_package pp ON pp.id = ppi.product_package_id
-		SET ppi.del_flag = 1, ppi.update_id = ?, ppi.update_time = NOW()
-		WHERE pp.inst_id = ? AND pp.del_flag = 0 AND ppi.del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE product_package
-		SET del_flag = 1, update_id = ?, update_time = NOW()
-		WHERE inst_id = ? AND del_flag = 0
-	`, operatorID, instID); err != nil {
-		return model.CampusDataClearSummary{}, err
+	for _, query := range deleteStatements {
+		if _, err := tx.ExecContext(ctx, query, instID); err != nil {
+			return model.CampusDataClearSummary{}, err
+		}
 	}
 
 	// 保留课程主档与其配置（详情/报价/属性结果/销量），避免清空校区数据后课程基础资料丢失。
@@ -385,6 +231,21 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 			args: []any{instID},
 		},
 		{
+			target: &summary.RechargeImportTasks,
+			query:  `SELECT COUNT(*) FROM recharge_account_import_task WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RechargeImportTaskRecords,
+			query: `
+				SELECT COUNT(*)
+				FROM recharge_account_import_task_record r
+				INNER JOIN recharge_account_import_task t ON t.id = r.task_id
+				WHERE t.inst_id = ? AND t.del_flag = 0 AND r.del_flag = 0
+			`,
+			args: []any{instID},
+		},
+		{
 			target: &summary.Courses,
 			query:  `SELECT COUNT(*) FROM inst_course WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
@@ -462,6 +323,11 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 		{
 			target: &summary.TeachingClassTeachers,
 			query:  `SELECT COUNT(*) FROM teaching_class_teacher WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TeachingSchedules,
+			query:  `SELECT COUNT(*) FROM teaching_schedule WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
 		},
 	}
