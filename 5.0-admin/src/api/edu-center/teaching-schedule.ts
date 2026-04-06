@@ -268,6 +268,14 @@ export function listTeachingSchedulesByTeacherMatrixApi(params: {
   startDate: string
   endDate: string
   classType?: number
+  studentId?: string
+  scheduleTeacherIds?: string
+  classroomIds?: string
+  groupClassIds?: string
+  oneToOneClassIds?: string
+  lessonIds?: string
+  scheduleTypes?: string
+  callStatuses?: string
   /** 逗号分隔 1–7（周一…周日），省略或全开则不传以缩短 URL */
   weekdays?: string
   /** 教师列：仅有课 / 仅无课，与旧版课表展示配置一致 */
@@ -288,6 +296,14 @@ export async function downloadTeachingSchedulesTeacherMatrixExcelApi(params: {
   startDate: string
   endDate: string
   classType?: number
+  studentId?: string
+  scheduleTeacherIds?: string
+  classroomIds?: string
+  groupClassIds?: string
+  oneToOneClassIds?: string
+  lessonIds?: string
+  scheduleTypes?: string
+  callStatuses?: string
   weekdays?: string
   teacherFilter?: Exclude<MatrixTeacherFilterParam, 'all'>
   periodGroupUuid?: string

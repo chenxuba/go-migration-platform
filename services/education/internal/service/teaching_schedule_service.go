@@ -117,6 +117,23 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 	if err != nil {
 		return nil, err
 	}
+	if len(query.ScheduleTeacherIDs) > 0 {
+		selectedTeachers := make(map[int64]struct{}, len(query.ScheduleTeacherIDs))
+		for _, id := range query.ScheduleTeacherIDs {
+			if id > 0 {
+				selectedTeachers[id] = struct{}{}
+			}
+		}
+		if allowTeachers == nil {
+			allowTeachers = selectedTeachers
+		} else {
+			for id := range allowTeachers {
+				if _, ok := selectedTeachers[id]; !ok {
+					delete(allowTeachers, id)
+				}
+			}
+		}
+	}
 	keyed := make(map[string][]model.TeachingScheduleVO)
 	for _, s := range schedules {
 		tid := strings.TrimSpace(s.TeacherID)

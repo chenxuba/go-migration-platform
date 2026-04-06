@@ -57,6 +57,15 @@ type TeachingScheduleListQueryDTO struct {
 	StartDate string `json:"startDate"`
 	EndDate   string `json:"endDate"`
 	ClassType *int   `json:"classType,omitempty"`
+	StudentID string `json:"studentId,omitempty"`
+	// 课表业务筛选（HTTP 上为逗号分隔）
+	ScheduleTeacherIDs   []int64  `json:"scheduleTeacherIds,omitempty"`
+	ClassroomIDs         []int64  `json:"classroomIds,omitempty"`
+	GroupClassIDs        []int64  `json:"groupClassIds,omitempty"`
+	OneToOneClassIDs     []int64  `json:"oneToOneClassIds,omitempty"`
+	LessonIDs            []int64  `json:"lessonIds,omitempty"`
+	ScheduleTypeFilters  []string `json:"scheduleTypeFilters,omitempty"`
+	CallStatusFilters    []string `json:"callStatusFilters,omitempty"`
 	// Matrix API（by-teacher-matrix）可选：日期展示维度，1=周一…7=周日，空=不限制
 	MatrixWeekdays []int `json:"matrixWeekdays,omitempty"`
 	// Matrix API 可选：教师列筛选，all | has_class | no_class，空等价于 all

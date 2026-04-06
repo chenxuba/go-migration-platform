@@ -837,6 +837,7 @@ func parseOneToOneListQueryDTO(raw map[string]any) model.OneToOneListQueryDTO {
 	}
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
 		query.QueryModel = model.OneToOneListQueryModel{
+			SearchKey:          asString(qm["searchKey"]),
 			StudentID:          asString(qm["studentId"]),
 			LessonIDs:          coalesceStringSlice(qm["lessonIds"], qm["lessonId"]),
 			ClassTeacherID:     asString(qm["classTeacherId"]),

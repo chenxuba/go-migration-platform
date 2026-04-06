@@ -9,7 +9,12 @@ import SmartTimetableGrid from './smart-timetable-grid.vue'
 import SmartTimetableScheduledDetailModal from './smart-timetable-scheduled-detail-modal.vue'
 import SmartTimetableToolbar from './smart-timetable-toolbar.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
+import { listClassroomsApi } from '@/api/business-settings/classroom'
+import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
+import { pageGroupClassesApi } from '@/api/edu-center/group-class'
+import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
 import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useSmartTimetableAvailability } from '@/composables/useSmartTimetableAvailability'
 import { useSmartTimetableClassMode } from '@/composables/useSmartTimetableClassMode'
 import { useSmartTimetablePicker } from '@/composables/useSmartTimetablePicker'
@@ -24,13 +29,13 @@ import {
 import emitter, { EVENTS } from '@/utils/eventBus'
 
 const displayArray = ref([
-  'intentionCourse', // 意向课程
-  'reference', // 推荐人
-  'department', // 所属部门（仅在 type='dpt' 时显示）
-  'channelCategory', // 渠道
-  'channelStatus', // 渠道状态
-  'channelType', // 渠道类型
-  'subject', // 科目
+  'scheduleTeacher',
+  'scheduleClassroom',
+  'scheduleClass',
+  'scheduleOneToOne',
+  'scheduleCourse',
+  'scheduleType',
+  'scheduleCallStatus',
 ])
 const SMART_TIMETABLE_VIEW_MODE_KEY = 'smart-timetable-view-mode'
 const DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD = 500
@@ -66,12 +71,326 @@ const currentGroup = ref('A')
 /** 与 matrixDays、表头节次列对齐；切换 A/B 时在新数据返回前不改，避免清空矩阵导致整页高度塌缩抖动 */
 const displayedGroupKey = ref('A')
 const timetableRootRef = ref(null)
-const studentIds = ref([])
-const courseId = ref(null)
-const courseName = ref(null)
 const classId = ref(null)
-const className = ref(null)
-const teacherId = ref(null)
+const filterStudentId = ref(undefined)
+const filterTeacherId = ref([])
+const filterClassroomId = ref([])
+const filterClassId = ref(undefined)
+const filterOneToOneId = ref(undefined)
+const filterCourseId = ref(undefined)
+const filterScheduleType = ref([])
+const filterCallStatus = ref(undefined)
+
+const scheduleTypeOptions = [
+  { id: 'group_class', value: '班级日程' },
+  { id: 'one_to_one', value: '1对1日程' },
+  { id: 'trial', value: '试听日程' },
+]
+
+const scheduleCallStatusOptions = [
+  { id: 'unsigned', value: '未点名' },
+  { id: 'signed', value: '已点名' },
+]
+
+function normalizeScheduleFilterValue(value) {
+  if (Array.isArray(value))
+    return value.length ? value[0] : undefined
+  const text = String(value ?? '').trim()
+  return text ? text : undefined
+}
+
+function normalizeScheduleFilterValues(value) {
+  if (!Array.isArray(value))
+    return []
+  return value.map(item => String(item ?? '').trim()).filter(Boolean)
+}
+
+function handleScheduleTeacherFilter(value) {
+  filterTeacherId.value = normalizeScheduleFilterValues(value)
+}
+
+function handleScheduleClassroomFilter(value) {
+  filterClassroomId.value = normalizeScheduleFilterValues(value)
+}
+
+function handleScheduleClassFilter(value) {
+  filterClassId.value = normalizeScheduleFilterValue(value)
+}
+
+function handleScheduleOneToOneFilter(value) {
+  filterOneToOneId.value = normalizeScheduleFilterValue(value)
+}
+
+function handleScheduleCourseFilter(value) {
+  filterCourseId.value = normalizeScheduleFilterValue(value)
+}
+
+function handleScheduleTypeFilter(value) {
+  filterScheduleType.value = normalizeScheduleFilterValues(value)
+}
+
+function handleScheduleCallStatusFilter(value) {
+  filterCallStatus.value = normalizeScheduleFilterValue(value)
+}
+
+function handleStuPhoneFilter(value) {
+  filterStudentId.value = normalizeScheduleFilterValue(value)
+}
+
+function mergeFilterOptions(previous, incoming, selectedValues = []) {
+  const selectedSet = new Set((Array.isArray(selectedValues) ? selectedValues : [selectedValues]).map(value => String(value || '')).filter(Boolean))
+  const map = new Map()
+  ;(Array.isArray(previous) ? previous : []).forEach((item) => {
+    const key = String(item?.id || '').trim()
+    if (key && selectedSet.has(key))
+      map.set(key, item)
+  })
+  ;(Array.isArray(incoming) ? incoming : []).forEach((item) => {
+    const key = String(item?.id || '').trim()
+    if (key)
+      map.set(key, item)
+  })
+  return [...map.values()]
+}
+
+async function loadScheduleTeacherOptions(searchKey = '', reset = true) {
+  if (reset) {
+    scheduleTeacherPagination.value.current = 1
+    scheduleTeacherFinished.value = false
+  }
+  scheduleTeacherSearchKey.value = searchKey
+  try {
+    const res = await getUserListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: scheduleTeacherPagination.value.pageSize,
+        pageIndex: scheduleTeacherPagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        searchKey,
+        status: 0,
+      },
+      sortModel: {},
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result) ? res.result : []).map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.nickName || item.name || item.value || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    scheduleTeacherOptions.value = reset
+      ? mergeFilterOptions(scheduleTeacherOptions.value, resultData, filterTeacherId.value)
+      : mergeFilterOptions(scheduleTeacherOptions.value, [...scheduleTeacherOptions.value, ...resultData], filterTeacherId.value)
+    const total = Number(res.total || resultData.length || 0)
+    scheduleTeacherPagination.value.total = total
+    scheduleTeacherFinished.value = scheduleTeacherOptions.value.length >= total
+  }
+  catch (error) {
+    console.error('load schedule teacher options failed', error)
+  }
+}
+
+async function loadScheduleClassroomOptions(searchKey = '') {
+  scheduleClassroomSearchKey.value = searchKey
+  try {
+    const res = await listClassroomsApi({
+      enabledOnly: true,
+      searchKey,
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result) ? res.result : []).map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.name || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    scheduleClassroomOptions.value = mergeFilterOptions(scheduleClassroomOptions.value, resultData, filterClassroomId.value)
+    scheduleClassroomFinished.value = true
+  }
+  catch (error) {
+    console.error('load schedule classroom options failed', error)
+  }
+}
+
+async function loadScheduleClassOptions(searchKey = '', reset = true) {
+  if (reset) {
+    scheduleClassPagination.value.current = 1
+    scheduleClassFinished.value = false
+  }
+  scheduleClassSearchKey.value = searchKey
+  try {
+    const res = await pageGroupClassesApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: scheduleClassPagination.value.pageSize,
+        pageIndex: scheduleClassPagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        className: searchKey || undefined,
+      },
+    })
+    if (res.code !== 200)
+      return
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    const resultData = list.map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.name || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    scheduleClassOptions.value = reset
+      ? mergeFilterOptions(scheduleClassOptions.value, resultData, filterClassId.value)
+      : mergeFilterOptions(scheduleClassOptions.value, [...scheduleClassOptions.value, ...resultData], filterClassId.value)
+    const total = Number(res.result?.total || resultData.length || 0)
+    scheduleClassPagination.value.total = total
+    scheduleClassFinished.value = scheduleClassOptions.value.length >= total
+  }
+  catch (error) {
+    console.error('load schedule class options failed', error)
+  }
+}
+
+async function loadScheduleOneToOneOptions(searchKey = '', reset = true) {
+  if (reset) {
+    scheduleOneToOnePagination.value.current = 1
+    scheduleOneToOneFinished.value = false
+  }
+  scheduleOneToOneSearchKey.value = searchKey
+  try {
+    const res = await getOneToOneListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: scheduleOneToOnePagination.value.pageSize,
+        pageIndex: scheduleOneToOnePagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        status: [1],
+        searchKey,
+      },
+    })
+    if (res.code !== 200)
+      return
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    const resultData = list.map(item => ({
+      id: String(item.id ?? ''),
+      value: `${String(item.studentName || item.name || item.id || '').trim()}～${String(item.lessonName || '').trim()}`.replace(/～$/, ''),
+    })).filter(item => item.id && item.value)
+    scheduleOneToOneOptions.value = reset
+      ? mergeFilterOptions(scheduleOneToOneOptions.value, resultData, filterOneToOneId.value)
+      : mergeFilterOptions(scheduleOneToOneOptions.value, [...scheduleOneToOneOptions.value, ...resultData], filterOneToOneId.value)
+    const total = Number(res.result?.total || resultData.length || 0)
+    scheduleOneToOnePagination.value.total = total
+    scheduleOneToOneFinished.value = scheduleOneToOneOptions.value.length >= total
+  }
+  catch (error) {
+    console.error('load schedule one to one options failed', error)
+  }
+}
+
+async function loadScheduleCourseOptions(searchKey = '', reset = true) {
+  if (reset) {
+    scheduleCoursePagination.value.current = 1
+    scheduleCourseFinished.value = false
+  }
+  scheduleCourseSearchKey.value = searchKey
+  try {
+    const res = await getCourseIdAndNameApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: scheduleCoursePagination.value.pageSize,
+        pageIndex: scheduleCoursePagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        searchKey,
+      },
+      sortModel: {},
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result) ? res.result : []).map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.name || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    scheduleCourseOptions.value = reset
+      ? mergeFilterOptions(scheduleCourseOptions.value, resultData, filterCourseId.value)
+      : mergeFilterOptions(scheduleCourseOptions.value, [...scheduleCourseOptions.value, ...resultData], filterCourseId.value)
+    const total = Number(res.total || resultData.length || 0)
+    scheduleCoursePagination.value.total = total
+    scheduleCourseFinished.value = scheduleCourseOptions.value.length >= total
+  }
+  catch (error) {
+    console.error('load schedule course options failed', error)
+  }
+}
+
+async function onScheduleTeacherDropdownVisibleChange() {
+  await loadScheduleTeacherOptions('', true)
+}
+
+async function onScheduleTeacherSearch(keyword) {
+  await loadScheduleTeacherOptions(keyword || '', true)
+}
+
+async function loadMoreScheduleTeacher() {
+  if (scheduleTeacherFinished.value)
+    return
+  scheduleTeacherPagination.value.current += 1
+  await loadScheduleTeacherOptions(scheduleTeacherSearchKey.value, false)
+}
+
+async function onScheduleClassroomDropdownVisibleChange() {
+  await loadScheduleClassroomOptions('')
+}
+
+async function onScheduleClassroomSearch(keyword) {
+  await loadScheduleClassroomOptions(keyword || '')
+}
+
+async function onScheduleClassDropdownVisibleChange() {
+  await loadScheduleClassOptions('', true)
+}
+
+async function onScheduleClassSearch(keyword) {
+  await loadScheduleClassOptions(keyword || '', true)
+}
+
+async function loadMoreScheduleClass() {
+  if (scheduleClassFinished.value)
+    return
+  scheduleClassPagination.value.current += 1
+  await loadScheduleClassOptions(scheduleClassSearchKey.value, false)
+}
+
+async function onScheduleOneToOneDropdownVisibleChange() {
+  await loadScheduleOneToOneOptions('', true)
+}
+
+async function onScheduleOneToOneSearch(keyword) {
+  await loadScheduleOneToOneOptions(keyword || '', true)
+}
+
+async function loadMoreScheduleOneToOne() {
+  if (scheduleOneToOneFinished.value)
+    return
+  scheduleOneToOnePagination.value.current += 1
+  await loadScheduleOneToOneOptions(scheduleOneToOneSearchKey.value, false)
+}
+
+async function onScheduleCourseDropdownVisibleChange() {
+  await loadScheduleCourseOptions('', true)
+}
+
+async function onScheduleCourseSearch(keyword) {
+  await loadScheduleCourseOptions(keyword || '', true)
+}
+
+async function loadMoreScheduleCourse() {
+  if (scheduleCourseFinished.value)
+    return
+  scheduleCoursePagination.value.current += 1
+  await loadScheduleCourseOptions(scheduleCourseSearchKey.value, false)
+}
 
 function getWeekStart(value = dayjs()) {
   const d = dayjs(value)
@@ -381,6 +700,30 @@ function emptyLessonCell(slot) {
   }
 }
 
+function normalizeFilterOptionId(...values) {
+  for (const value of values) {
+    const text = String(value ?? '').trim()
+    if (text)
+      return text
+  }
+  return ''
+}
+
+function resolveLessonScheduleTypeKey(courseType, isMain) {
+  if (courseType === 1)
+    return 'one_to_one'
+  return isMain === false ? 'group_assistant' : 'group_main'
+}
+
+function resolveLessonCallStatusKey(legacyItem) {
+  const scheduleStatus = Number(legacyItem?.scheduleStatus ?? 0)
+  const courseStatus = Number(legacyItem?.courseStatus ?? 0)
+  const finishType = Number(legacyItem?.finishType ?? 0)
+  if (finishType > 1 || courseStatus > 1 || scheduleStatus === 2)
+    return 'signed'
+  return 'unsigned'
+}
+
 function buildLessonsForRow(slots, legacyList, currentTeacherId) {
   const lessons = slots.map(s => emptyLessonCell(s))
   const list = Array.isArray(legacyList) ? legacyList : []
@@ -419,11 +762,15 @@ function buildLessonsForRow(slots, legacyList, currentTeacherId) {
     const assistantNames = assistants.map(item => item?.name).filter(Boolean)
     const assistantIds = assistants.map(item => String(item?.id || '')).filter(Boolean)
     const mainTeacherId = String(mainTeacher?.id || '')
+    const isMain = String(currentTeacherId || '') === mainTeacherId
+    const scheduleTypeKey = resolveLessonScheduleTypeKey(displayCourseType, isMain)
+    const callStatusKey = resolveLessonCallStatusKey(leg)
 
     lessons[idx] = {
       ...lessons[idx],
       scheduleId: leg.id != null ? String(leg.id) : null,
       courseName: leg.courseName || null,
+      courseId: leg.courseId != null ? String(leg.courseId) : '',
       studentId: studentIds.length ? studentIds : null,
       classId: leg.classId != null ? String(leg.classId) : null,
       className: leg.className || null,
@@ -437,13 +784,18 @@ function buildLessonsForRow(slots, legacyList, currentTeacherId) {
       assistantIds,
       classroomId: String(leg.classroomId || '').trim(),
       classroomName: leg.classroomName || '',
-      isMain: String(currentTeacherId || '') === mainTeacherId,
+      isMain,
+      scheduleTypeKey,
+      callStatusKey,
+      scheduleStatus: leg.scheduleStatus ?? null,
+      courseStatus: leg.courseStatus ?? null,
+      finishType: leg.finishType ?? null,
     }
   }
   return lessons
 }
 
-const gridRows = computed(() => {
+const rawGridRows = computed(() => {
   const slots = activePeriodSlots.value
   const dates = displayDates.value.map(d => d.format('YYYY-MM-DD'))
   if (!slots.length || !dates.length)
@@ -490,8 +842,31 @@ const gridRows = computed(() => {
   return rows
 })
 
+const scheduleTeacherOptions = ref([])
+const scheduleClassroomOptions = ref([])
+const scheduleClassOptions = ref([])
+const scheduleOneToOneOptions = ref([])
+const scheduleCourseOptions = ref([])
+
+const scheduleTeacherFinished = ref(false)
+const scheduleClassroomFinished = ref(false)
+const scheduleClassFinished = ref(false)
+const scheduleOneToOneFinished = ref(false)
+const scheduleCourseFinished = ref(false)
+
+const scheduleTeacherPagination = ref({ current: 1, pageSize: 20, total: 0 })
+const scheduleClassPagination = ref({ current: 1, pageSize: 20, total: 0 })
+const scheduleOneToOnePagination = ref({ current: 1, pageSize: 20, total: 0 })
+const scheduleCoursePagination = ref({ current: 1, pageSize: 20, total: 0 })
+
+const scheduleTeacherSearchKey = ref('')
+const scheduleClassSearchKey = ref('')
+const scheduleOneToOneSearchKey = ref('')
+const scheduleCourseSearchKey = ref('')
+const scheduleClassroomSearchKey = ref('')
+
 const dataSource = computed(() => {
-  return [...gridRows.value].sort((a, b) => {
+  return [...rawGridRows.value].sort((a, b) => {
     if (a.teacherId !== b.teacherId)
       return a.teacherId.localeCompare(b.teacherId)
     return a.date.localeCompare(b.date)
@@ -705,10 +1080,20 @@ async function loadTimetableMatrix() {
       return
     const { startDate, endDate } = queryDateRange.value
     const classType = currentModel.value === '1' ? 2 : 1
+    const scheduleTeacherIds = filterTeacherId.value.join(',')
+    const classroomIds = filterClassroomId.value.join(',')
     const res = await listTeachingSchedulesByTeacherMatrixApi({
       startDate,
       endDate,
       classType,
+      studentId: filterStudentId.value,
+      scheduleTeacherIds: scheduleTeacherIds || undefined,
+      classroomIds: classroomIds || undefined,
+      groupClassIds: filterClassId.value && currentModel.value !== '1' ? String(filterClassId.value) : undefined,
+      oneToOneClassIds: filterOneToOneId.value && currentModel.value === '1' ? String(filterOneToOneId.value) : undefined,
+      lessonIds: filterCourseId.value ? String(filterCourseId.value) : undefined,
+      scheduleTypes: filterScheduleType.value.length ? filterScheduleType.value.join(',') : undefined,
+      callStatuses: filterCallStatus.value ? String(filterCallStatus.value) : undefined,
       ...teacherMatrixGroupParamsForKey(requestedGroup),
     })
     if (seq !== matrixLoadSeq)
@@ -743,6 +1128,14 @@ watch(
   () => {
     void loadTimetableMatrix()
   },
+)
+
+watch(
+  [filterStudentId, filterTeacherId, filterClassroomId, filterClassId, filterOneToOneId, filterCourseId, filterScheduleType, filterCallStatus],
+  () => {
+    void loadTimetableMatrix()
+  },
+  { deep: true },
 )
 
 function refreshTimetableRelatedData() {
@@ -2703,7 +3096,44 @@ watch(dragConflictDetailOpen, (open) => {
 <template>
   <div ref="timetableRootRef">
     <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
-      <all-filter :display-array="displayArray" :is-show-search-stu-phonefilter="true" />
+      <all-filter
+        :display-array="displayArray"
+        :is-show-search-stu-phonefilter="true"
+        :schedule-teacher-options="scheduleTeacherOptions"
+        :schedule-teacher-finished="scheduleTeacherFinished"
+        :on-schedule-teacher-dropdown-visible-change="onScheduleTeacherDropdownVisibleChange"
+        :on-schedule-teacher-search="onScheduleTeacherSearch"
+        :on-schedule-teacher-load-more="loadMoreScheduleTeacher"
+        :schedule-classroom-options="scheduleClassroomOptions"
+        :schedule-classroom-finished="scheduleClassroomFinished"
+        :on-schedule-classroom-dropdown-visible-change="onScheduleClassroomDropdownVisibleChange"
+        :on-schedule-classroom-search="onScheduleClassroomSearch"
+        :schedule-class-options="scheduleClassOptions"
+        :schedule-class-finished="scheduleClassFinished"
+        :on-schedule-class-dropdown-visible-change="onScheduleClassDropdownVisibleChange"
+        :on-schedule-class-search="onScheduleClassSearch"
+        :on-schedule-class-load-more="loadMoreScheduleClass"
+        :schedule-one-to-one-options="scheduleOneToOneOptions"
+        :schedule-one-to-one-finished="scheduleOneToOneFinished"
+        :on-schedule-one-to-one-dropdown-visible-change="onScheduleOneToOneDropdownVisibleChange"
+        :on-schedule-one-to-one-search="onScheduleOneToOneSearch"
+        :on-schedule-one-to-one-load-more="loadMoreScheduleOneToOne"
+        :schedule-course-options="scheduleCourseOptions"
+        :schedule-course-finished="scheduleCourseFinished"
+        :on-schedule-course-dropdown-visible-change="onScheduleCourseDropdownVisibleChange"
+        :on-schedule-course-search="onScheduleCourseSearch"
+        :on-schedule-course-load-more="loadMoreScheduleCourse"
+        :schedule-type-options="scheduleTypeOptions"
+        :schedule-call-status-options="scheduleCallStatusOptions"
+        @update:schedule-teacher-filter="handleScheduleTeacherFilter"
+        @update:schedule-classroom-filter="handleScheduleClassroomFilter"
+        @update:schedule-class-filter="handleScheduleClassFilter"
+        @update:schedule-one-to-one-filter="handleScheduleOneToOneFilter"
+        @update:schedule-course-filter="handleScheduleCourseFilter"
+        @update:schedule-type-filter="handleScheduleTypeFilter"
+        @update:schedule-call-status-filter="handleScheduleCallStatusFilter"
+        @update:stu-phone-search-filter="handleStuPhoneFilter"
+      />
     </div>
     <SmartTimetableToolbar
       v-model:current-model="currentModel"

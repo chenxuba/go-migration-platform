@@ -126,6 +126,7 @@ export interface OneToOneListParams {
     skipCount?: number
   }
   queryModel?: {
+    searchKey?: string
     studentId?: string
     lessonIds?: string[]
     classTeacherId?: string

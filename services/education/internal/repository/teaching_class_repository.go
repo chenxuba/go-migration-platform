@@ -2143,6 +2143,11 @@ func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, exclud
 	}
 	args := []any{instID, model.TeachingClassTypeOneToOne}
 
+	if key := strings.TrimSpace(query.SearchKey); key != "" {
+		kw := "%" + key + "%"
+		whereParts = append(whereParts, `(IFNULL(tc.name, '') LIKE ? OR IFNULL(s.stu_name, '') LIKE ? OR IFNULL(c.name, '') LIKE ? OR IFNULL(s.mobile, '') LIKE ?)`)
+		args = append(args, kw, kw, kw, kw)
+	}
 	if strings.TrimSpace(query.StudentID) != "" {
 		whereParts = append(whereParts, `EXISTS (
 			SELECT 1 FROM teaching_class_student tcs_w

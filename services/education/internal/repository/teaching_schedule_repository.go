@@ -177,19 +177,115 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 }
 
 func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleVO, error) {
-	filters := []string{"inst_id = ?", "del_flag = 0", "status = ?"}
+	filters := []string{"ts.inst_id = ?", "ts.del_flag = 0", "ts.status = ?"}
 	args := []any{instID, model.TeachingScheduleStatusActive}
 	if strings.TrimSpace(query.StartDate) != "" {
-		filters = append(filters, "lesson_date >= ?")
+		filters = append(filters, "ts.lesson_date >= ?")
 		args = append(args, strings.TrimSpace(query.StartDate))
 	}
 	if strings.TrimSpace(query.EndDate) != "" {
-		filters = append(filters, "lesson_date <= ?")
+		filters = append(filters, "ts.lesson_date <= ?")
 		args = append(args, strings.TrimSpace(query.EndDate))
 	}
+	if sid := strings.TrimSpace(query.StudentID); sid != "" {
+		filters = append(filters, "CAST(ts.student_id AS CHAR) = ?")
+		args = append(args, sid)
+	}
 	if query.ClassType != nil && *query.ClassType > 0 {
-		filters = append(filters, "class_type = ?")
+		filters = append(filters, "ts.class_type = ?")
 		args = append(args, *query.ClassType)
+	}
+	appendInt64InFilter := func(column string, values []int64) {
+		if len(values) == 0 {
+			return
+		}
+		holders := make([]string, 0, len(values))
+		for _, item := range values {
+			if item <= 0 {
+				continue
+			}
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		if len(holders) > 0 {
+			filters = append(filters, column+" IN ("+strings.Join(holders, ",")+")")
+		}
+	}
+	appendInt64InFilter("ts.teacher_id", query.ScheduleTeacherIDs)
+	appendInt64InFilter("ts.classroom_id", query.ClassroomIDs)
+	appendInt64InFilter("ts.lesson_id", query.LessonIDs)
+
+	if len(query.GroupClassIDs) > 0 || len(query.OneToOneClassIDs) > 0 {
+		typeParts := make([]string, 0, 2)
+		typeArgs := make([]any, 0, len(query.GroupClassIDs)+len(query.OneToOneClassIDs)+2)
+		if len(query.GroupClassIDs) > 0 {
+			holders := make([]string, 0, len(query.GroupClassIDs))
+			typeArgs = append(typeArgs, model.TeachingClassTypeNormal)
+			for _, item := range query.GroupClassIDs {
+				if item <= 0 {
+					continue
+				}
+				holders = append(holders, "?")
+				typeArgs = append(typeArgs, item)
+			}
+			if len(holders) > 0 {
+				typeParts = append(typeParts, "(ts.class_type = ? AND ts.teaching_class_id IN ("+strings.Join(holders, ",")+"))")
+			}
+		}
+		if len(query.OneToOneClassIDs) > 0 {
+			holders := make([]string, 0, len(query.OneToOneClassIDs))
+			typeArgs = append(typeArgs, model.TeachingClassTypeOneToOne)
+			for _, item := range query.OneToOneClassIDs {
+				if item <= 0 {
+					continue
+				}
+				holders = append(holders, "?")
+				typeArgs = append(typeArgs, item)
+			}
+			if len(holders) > 0 {
+				typeParts = append(typeParts, "(ts.class_type = ? AND ts.teaching_class_id IN ("+strings.Join(holders, ",")+"))")
+			}
+		}
+		if len(typeParts) > 0 {
+			filters = append(filters, "("+strings.Join(typeParts, " OR ")+")")
+			args = append(args, typeArgs...)
+		}
+	}
+
+	trialExistsSQL := buildTeachingScheduleTrialExistsSQL()
+	if typeSet := normalizeTeachingScheduleTypeFilters(query.ScheduleTypeFilters); len(typeSet) > 0 {
+		typeParts := make([]string, 0, len(typeSet))
+		if _, ok := typeSet["group_class"]; ok {
+			typeParts = append(typeParts, "(ts.class_type = 1 AND NOT "+trialExistsSQL+")")
+		}
+		if _, ok := typeSet["one_to_one"]; ok {
+			typeParts = append(typeParts, "(ts.class_type = 2 AND NOT "+trialExistsSQL+")")
+		}
+		if _, ok := typeSet["trial"]; ok {
+			typeParts = append(typeParts, trialExistsSQL)
+		}
+		if len(typeParts) > 0 {
+			filters = append(filters, "("+strings.Join(typeParts, " OR ")+")")
+		}
+	}
+
+	if statusSet := normalizeTeachingScheduleCallStatusFilters(query.CallStatusFilters); len(statusSet) > 0 {
+		existsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(existsSQL) != "" {
+			statusParts := make([]string, 0, len(statusSet))
+			if _, ok := statusSet["signed"]; ok {
+				statusParts = append(statusParts, existsSQL)
+			}
+			if _, ok := statusSet["unsigned"]; ok {
+				statusParts = append(statusParts, "NOT "+existsSQL)
+			}
+			if len(statusParts) > 0 {
+				filters = append(filters, "("+strings.Join(statusParts, " OR ")+")")
+			}
+		}
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
@@ -214,9 +310,9 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 			lesson_start_at,
 			lesson_end_at,
 			IFNULL(status, 0)
-		FROM teaching_schedule
+		FROM teaching_schedule ts
 		WHERE `+strings.Join(filters, " AND ")+`
-		ORDER BY lesson_start_at ASC, id ASC
+		ORDER BY ts.lesson_start_at ASC, ts.id ASC
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -280,6 +376,117 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func normalizeTeachingScheduleTypeFilters(list []string) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, item := range list {
+		switch strings.TrimSpace(strings.ToLower(item)) {
+		case "group_class", "group", "class", "class_schedule":
+			result["group_class"] = struct{}{}
+		case "one_to_one", "one2one", "1v1":
+			result["one_to_one"] = struct{}{}
+		case "trial", "audition":
+			result["trial"] = struct{}{}
+		}
+	}
+	return result
+}
+
+func normalizeTeachingScheduleCallStatusFilters(list []string) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, item := range list {
+		switch strings.TrimSpace(strings.ToLower(item)) {
+		case "signed", "called":
+			result["signed"] = struct{}{}
+		case "unsigned", "uncalled":
+			result["unsigned"] = struct{}{}
+		}
+	}
+	return result
+}
+
+func buildTeachingScheduleTrialExistsSQL() string {
+	return `EXISTS (
+		SELECT 1
+		FROM teaching_class_student tcs
+		LEFT JOIN tuition_account ta_ded ON ta_ded.id = COALESCE(
+			NULLIF(tcs.primary_tuition_account_id, 0),
+			(SELECT MIN(ta0.id) FROM tuition_account ta0
+			 WHERE ta0.order_course_detail_id = tcs.order_course_detail_id
+			   AND ta0.inst_id = tcs.inst_id AND ta0.del_flag = 0)
+		) AND ta_ded.inst_id = tcs.inst_id AND ta_ded.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod_ta_ded ON sod_ta_ded.id = ta_ded.order_course_detail_id AND sod_ta_ded.del_flag = 0
+		LEFT JOIN inst_course_quotation icq_ded ON icq_ded.id = COALESCE(
+			NULLIF(ta_ded.quote_id, 0),
+			NULLIF(sod_ta_ded.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta_ded.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta_ded.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta_ded.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta_ded.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq_ded.del_flag = 0
+		WHERE tcs.inst_id = ts.inst_id
+		  AND tcs.teaching_class_id = ts.teaching_class_id
+		  AND tcs.del_flag = 0
+		  AND (ts.student_id = 0 OR tcs.student_id = ts.student_id)
+		  AND IFNULL(icq_ded.lesson_audition, 0) = 1
+	)`
+}
+
+func (repo *Repository) buildTeachingScheduleRecordExistsSQL(ctx context.Context) (string, error) {
+	teachingTable, err := repo.firstExistingTable(ctx, []string{"teaching_record", "inst_teaching_record", "class_teaching_record"})
+	if err != nil || strings.TrimSpace(teachingTable) == "" {
+		return "", err
+	}
+	classIDColumn, err := repo.firstExistingColumn(ctx, teachingTable, []string{"class_id"})
+	if err != nil || strings.TrimSpace(classIDColumn) == "" {
+		return "", err
+	}
+	lessonDayColumn, err := repo.firstExistingColumn(ctx, teachingTable, []string{"lesson_day", "teaching_day", "class_day", "teaching_date", "lesson_date"})
+	if err != nil {
+		return "", err
+	}
+	startMinutesColumn, err := repo.firstExistingColumn(ctx, teachingTable, []string{"start_minutes", "start_minute"})
+	if err != nil {
+		return "", err
+	}
+	endMinutesColumn, err := repo.firstExistingColumn(ctx, teachingTable, []string{"end_minutes", "end_minute"})
+	if err != nil {
+		return "", err
+	}
+	instIDColumn, err := repo.firstExistingColumn(ctx, teachingTable, []string{"inst_id"})
+	if err != nil {
+		return "", err
+	}
+	delFlagColumn, err := repo.firstExistingColumn(ctx, teachingTable, []string{"del_flag"})
+	if err != nil {
+		return "", err
+	}
+
+	parts := []string{
+		"CAST(tr." + classIDColumn + " AS CHAR) = CAST(ts.teaching_class_id AS CHAR)",
+	}
+	if instIDColumn != "" {
+		parts = append(parts, "tr."+instIDColumn+" = ts.inst_id")
+	}
+	if delFlagColumn != "" {
+		parts = append(parts, "IFNULL(tr."+delFlagColumn+", 0) = 0")
+	}
+	if lessonDayColumn != "" {
+		parts = append(parts, "DATE(tr."+lessonDayColumn+") = ts.lesson_date")
+	}
+	if startMinutesColumn != "" {
+		parts = append(parts, "IFNULL(tr."+startMinutesColumn+", 0) = (HOUR(ts.lesson_start_at) * 60 + MINUTE(ts.lesson_start_at))")
+	}
+	if endMinutesColumn != "" {
+		parts = append(parts, "IFNULL(tr."+endMinutesColumn+", 0) = (HOUR(ts.lesson_end_at) * 60 + MINUTE(ts.lesson_end_at))")
+	}
+
+	return "EXISTS (SELECT 1 FROM " + teachingTable + " tr WHERE " + strings.Join(parts, " AND ") + ")", nil
 }
 
 func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, operatorID int64, dto model.CreateOneToOneSchedulesDTO) (model.CreateOneToOneSchedulesResult, error) {

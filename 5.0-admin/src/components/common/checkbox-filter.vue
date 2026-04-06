@@ -279,6 +279,10 @@ function handleChange(type) {
   }
   emit('change', checkedValues.value)
 }
+
+function handleCheckboxGroupChange(values) {
+  emit('change', values)
+}
 function handleDropdownVisibleChange(visible) {
   // 如果为true emit自定义事件 让父组件请求接口获取渠道树
   if (visible) {
@@ -343,6 +347,8 @@ watch(visible, (newVal) => {
     }
   } else {
     // 当下拉框关闭时，重置所有状态
+    searchPeo.value = ''
+    searchChannelCategory.value = ''
     specifiedDate.value = null
     selectDates.value = []
     pickerKey.value++ // 加上这个不会出现bug 但会没有隐藏动画
@@ -401,8 +407,8 @@ function handleScroll(e) {
         <a-menu-item v-if="filteredOptions.length > 0" class="check-item ">
           <div ref="scrollContainer" class="list scrollbar" @scroll="handleScroll">
             <a-spin :spinning="spinning">
-              <a-checkbox-group v-model:value="checkedValues" class="vertical-checkbox-group ">
-                <a-checkbox v-for="item in filteredOptions" :key="item.id" :value="item.id" @change="handleChange">
+              <a-checkbox-group v-model:value="checkedValues" class="vertical-checkbox-group " @change="handleCheckboxGroupChange">
+                <a-checkbox v-for="item in filteredOptions" :key="item.id" :value="item.id">
                   {{ item.value }}
                 </a-checkbox>
               </a-checkbox-group>

@@ -16,8 +16,32 @@ func parseTeacherMatrixQuery(r *http.Request) model.TeachingScheduleListQueryDTO
 	query := model.TeachingScheduleListQueryDTO{
 		StartDate:           strings.TrimSpace(r.URL.Query().Get("startDate")),
 		EndDate:             strings.TrimSpace(r.URL.Query().Get("endDate")),
+		StudentID:           strings.TrimSpace(r.URL.Query().Get("studentId")),
 		MatrixTeacherFilter: strings.TrimSpace(strings.ToLower(r.URL.Query().Get("teacherFilter"))),
 		PeriodGroupUUID:     strings.TrimSpace(r.URL.Query().Get("periodGroupUuid")),
+	}
+	parseInt64CSV := func(raw string) []int64 {
+		out := make([]int64, 0)
+		for _, p := range strings.Split(strings.TrimSpace(raw), ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if v, err := strconv.ParseInt(p, 10, 64); err == nil && v > 0 {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	parseStringCSV := func(raw string) []string {
+		out := make([]string, 0)
+		for _, p := range strings.Split(strings.TrimSpace(raw), ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
 	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("matrixTeacherIds")); raw != "" {
 		for _, p := range strings.Split(raw, ",") {
@@ -48,6 +72,13 @@ func parseTeacherMatrixQuery(r *http.Request) model.TeachingScheduleListQueryDTO
 			query.MatrixWeekdays = append(query.MatrixWeekdays, v)
 		}
 	}
+	query.ScheduleTeacherIDs = parseInt64CSV(r.URL.Query().Get("scheduleTeacherIds"))
+	query.ClassroomIDs = parseInt64CSV(r.URL.Query().Get("classroomIds"))
+	query.GroupClassIDs = parseInt64CSV(r.URL.Query().Get("groupClassIds"))
+	query.OneToOneClassIDs = parseInt64CSV(r.URL.Query().Get("oneToOneClassIds"))
+	query.LessonIDs = parseInt64CSV(r.URL.Query().Get("lessonIds"))
+	query.ScheduleTypeFilters = parseStringCSV(r.URL.Query().Get("scheduleTypes"))
+	query.CallStatusFilters = parseStringCSV(r.URL.Query().Get("callStatuses"))
 	return query
 }
 

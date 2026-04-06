@@ -24,6 +24,7 @@ type OneToOneListQueryDTO struct {
 }
 
 type OneToOneListQueryModel struct {
+	SearchKey          string   `json:"searchKey"`
 	StudentID          string   `json:"studentId"`
 	LessonIDs          []string `json:"lessonIds"`
 	ClassTeacherID     string   `json:"classTeacherId"`
