@@ -862,6 +862,7 @@ async function fetchTeacherSlotAvailability() {
   const seq = ++teacherSlotAvailabilitySeq
   const oneToOneId = String(selectedOneToOne.value?.id || '').trim()
   const teacherId = selectedTeacherIdNormalized.value
+  const excludeIds = isBatchPlanEditMode.value ? props.batchPlanPreset?.scheduleIds?.map(id => String(id)) || [] : []
   if (!oneToOneId || !teacherId || !plannedDates.value.length || !schoolTimeSlotOptions.value.length) {
     teacherSlotAvailabilityMap.value = {}
     teacherSlotAvailabilityLoading.value = false
@@ -886,6 +887,7 @@ async function fetchTeacherSlotAvailability() {
   try {
     const res = await checkOneToOneScheduleAvailabilityApi({
       oneToOneId,
+      excludeIds,
       schedules,
     })
     if (seq !== teacherSlotAvailabilitySeq)
@@ -962,6 +964,7 @@ async function fetchAssistantAvailability() {
   const seq = ++assistantAvailabilitySeq
   const oneToOneId = String(selectedOneToOne.value?.id || '').trim()
   const assistantIds = assistantSelectOptionViews.value.map(item => item.value)
+  const excludeIds = isBatchPlanEditMode.value ? props.batchPlanPreset?.scheduleIds?.map(id => String(id)) || [] : []
   if (!oneToOneId || !assistantIds.length || !plannedDates.value.length || !activeTimeBlocks.value.length) {
     assistantAvailabilityMap.value = {}
     assistantAvailabilityLoading.value = false
@@ -986,6 +989,7 @@ async function fetchAssistantAvailability() {
     const res = await checkAssistantScheduleAvailabilityApi({
       oneToOneId,
       assistantIds,
+      excludeIds,
       schedules,
     })
     if (seq !== assistantAvailabilitySeq)
@@ -1610,6 +1614,7 @@ function buildScheduleCreatePayload(options: {
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
   assistantIds?: string[]
+  excludeIds?: string[]
   plans?: PreviewItem[]
 } = {}) {
   const plans = Array.isArray(options.plans) && options.plans.length
@@ -1623,6 +1628,9 @@ function buildScheduleCreatePayload(options: {
       : selectedAssistantValues.value.map(id => String(id)),
     classroomId: normalizedSelectedClassroomId.value || '',
     batchMeta: buildBatchMetaPayload(),
+    excludeIds: Array.isArray(options.excludeIds)
+      ? options.excludeIds.map(id => String(id)).filter(Boolean)
+      : undefined,
     allowStudentConflict: options.allowStudentConflict === true,
     allowClassroomConflict: options.allowClassroomConflict === true,
     schedules: plans.map(item => ({
@@ -1646,7 +1654,9 @@ async function validatePreviewSchedules() {
   previewValidationMessage.value = ''
   previewValidationResult.value = null
   try {
-    const res = await validateOneToOneSchedulesApi(buildScheduleCreatePayload())
+    const res = await validateOneToOneSchedulesApi(buildScheduleCreatePayload({
+      excludeIds: isBatchPlanEditMode.value ? props.batchPlanPreset?.scheduleIds : undefined,
+    }))
     if (res.code !== 200 || !res.result) {
       previewHasConflict.value = true
       previewValidationMessage.value = res.message || '预检失败，请稍后重试。'

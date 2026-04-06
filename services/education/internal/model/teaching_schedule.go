@@ -49,6 +49,7 @@ type OneToOneScheduleAvailabilitySlotDTO struct {
 
 type CheckOneToOneScheduleAvailabilityDTO struct {
 	OneToOneID string                                `json:"oneToOneId"`
+	ExcludeIDs []string                              `json:"excludeIds,omitempty"`
 	Schedules  []OneToOneScheduleAvailabilitySlotDTO `json:"schedules"`
 }
 
@@ -61,6 +62,7 @@ type AssistantScheduleAvailabilitySlotDTO struct {
 type CheckAssistantScheduleAvailabilityDTO struct {
 	OneToOneID   string                                 `json:"oneToOneId"`
 	AssistantIDs []string                               `json:"assistantIds"`
+	ExcludeIDs   []string                               `json:"excludeIds,omitempty"`
 	Schedules    []AssistantScheduleAvailabilitySlotDTO `json:"schedules"`
 }
 

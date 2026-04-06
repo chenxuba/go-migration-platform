@@ -212,6 +212,7 @@ export function validateOneToOneSchedulesApi(data: {
 
 export function checkOneToOneScheduleAvailabilityApi(data: {
   oneToOneId: string
+  excludeIds?: string[]
   schedules: Array<{
     teacherId: string
     lessonDate: string
@@ -225,6 +226,7 @@ export function checkOneToOneScheduleAvailabilityApi(data: {
 export function checkAssistantScheduleAvailabilityApi(data: {
   oneToOneId: string
   assistantIds: string[]
+  excludeIds?: string[]
   schedules: Array<{
     lessonDate: string
     startTime: string

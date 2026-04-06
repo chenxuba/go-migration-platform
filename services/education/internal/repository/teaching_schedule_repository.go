@@ -904,6 +904,7 @@ func (repo *Repository) CheckOneToOneScheduleAvailability(ctx context.Context, i
 	if err != nil {
 		return model.OneToOneScheduleAvailabilityResult{}, err
 	}
+	excludeIDs := parseStringIDs(dto.ExcludeIDs)
 	if len(normalized) == 0 {
 		return model.OneToOneScheduleAvailabilityResult{}, errors.New("请至少选择一个空位")
 	}
@@ -928,11 +929,11 @@ func (repo *Repository) CheckOneToOneScheduleAvailability(ctx context.Context, i
 	startDate, endDate := availabilityDateRange(normalized)
 	teacherIDs := collectAvailabilityTeacherIDs(normalized)
 
-	studentConflicts, err := repo.listAvailabilityConflictsByStudentTx(ctx, tx, instID, base.StudentID, startDate, endDate)
+	studentConflicts, err := repo.listAvailabilityConflictsByStudentTx(ctx, tx, instID, base.StudentID, startDate, endDate, excludeIDs)
 	if err != nil {
 		return model.OneToOneScheduleAvailabilityResult{}, err
 	}
-	teacherConflicts, err := repo.listAvailabilityConflictsByTeachersTx(ctx, tx, instID, teacherIDs, startDate, endDate)
+	teacherConflicts, err := repo.listAvailabilityConflictsByTeachersTx(ctx, tx, instID, teacherIDs, startDate, endDate, excludeIDs)
 	if err != nil {
 		return model.OneToOneScheduleAvailabilityResult{}, err
 	}
@@ -1021,6 +1022,7 @@ func (repo *Repository) CheckAssistantScheduleAvailability(ctx context.Context, 
 	if err != nil {
 		return model.AssistantScheduleAvailabilityResult{}, err
 	}
+	excludeIDs := parseStringIDs(dto.ExcludeIDs)
 	if len(normalized) == 0 {
 		return model.AssistantScheduleAvailabilityResult{}, errors.New("请至少选择一个上课时段")
 	}
@@ -1049,7 +1051,7 @@ func (repo *Repository) CheckAssistantScheduleAvailability(ctx context.Context, 
 	}
 
 	startDate, endDate := scheduleSlotsDateRange(normalized)
-	conflicts, err := repo.listAvailabilityConflictsByAssistantsTx(ctx, tx, instID, assistantIDs, startDate, endDate)
+	conflicts, err := repo.listAvailabilityConflictsByAssistantsTx(ctx, tx, instID, assistantIDs, startDate, endDate, excludeIDs)
 	if err != nil {
 		return model.AssistantScheduleAvailabilityResult{}, err
 	}
@@ -2485,9 +2487,24 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 	return result, nil
 }
 
-func (repo *Repository) listAvailabilityConflictsByStudentTx(ctx context.Context, tx *sql.Tx, instID, studentID int64, startDate, endDate string) ([]scheduleAvailabilityConflictRow, error) {
+func (repo *Repository) listAvailabilityConflictsByStudentTx(ctx context.Context, tx *sql.Tx, instID, studentID int64, startDate, endDate string, excludeIDs []int64) ([]scheduleAvailabilityConflictRow, error) {
 	if studentID <= 0 || strings.TrimSpace(startDate) == "" || strings.TrimSpace(endDate) == "" {
 		return []scheduleAvailabilityConflictRow{}, nil
+	}
+	filters := []string{
+		"inst_id = ?",
+		"del_flag = 0",
+		"status = ?",
+		"student_id = ?",
+		"lesson_date >= ?",
+		"lesson_date <= ?",
+	}
+	args := []any{instID, model.TeachingScheduleStatusActive, studentID, startDate, endDate}
+	if len(excludeIDs) > 0 {
+		filters = append(filters, "id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
+		for _, id := range excludeIDs {
+			args = append(args, id)
+		}
 	}
 	rows, err := tx.QueryContext(ctx, `
 		SELECT
@@ -2504,14 +2521,9 @@ func (repo *Repository) listAvailabilityConflictsByStudentTx(ctx context.Context
 			lesson_start_at,
 			lesson_end_at
 		FROM teaching_schedule
-		WHERE inst_id = ?
-		  AND del_flag = 0
-		  AND status = ?
-		  AND student_id = ?
-		  AND lesson_date >= ?
-		  AND lesson_date <= ?
+		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY lesson_date ASC, lesson_start_at ASC, id ASC
-	`, instID, model.TeachingScheduleStatusActive, studentID, startDate, endDate)
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2545,7 +2557,7 @@ func (repo *Repository) listAvailabilityConflictsByStudentTx(ctx context.Context
 	return result, rows.Err()
 }
 
-func (repo *Repository) listAvailabilityConflictsByTeachersTx(ctx context.Context, tx *sql.Tx, instID int64, teacherIDs []int64, startDate, endDate string) ([]scheduleAvailabilityConflictRow, error) {
+func (repo *Repository) listAvailabilityConflictsByTeachersTx(ctx context.Context, tx *sql.Tx, instID int64, teacherIDs []int64, startDate, endDate string, excludeIDs []int64) ([]scheduleAvailabilityConflictRow, error) {
 	if len(teacherIDs) == 0 || strings.TrimSpace(startDate) == "" || strings.TrimSpace(endDate) == "" {
 		return []scheduleAvailabilityConflictRow{}, nil
 	}
@@ -2556,6 +2568,20 @@ func (repo *Repository) listAvailabilityConflictsByTeachersTx(ctx context.Contex
 		args = append(args, teacherID)
 	}
 	args = append(args, startDate, endDate)
+	filters := []string{
+		"inst_id = ?",
+		"del_flag = 0",
+		"status = ?",
+		"teacher_id IN (" + placeholders + ")",
+		"lesson_date >= ?",
+		"lesson_date <= ?",
+	}
+	if len(excludeIDs) > 0 {
+		filters = append(filters, "id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
+		for _, id := range excludeIDs {
+			args = append(args, id)
+		}
+	}
 
 	rows, err := tx.QueryContext(ctx, `
 		SELECT
@@ -2572,12 +2598,7 @@ func (repo *Repository) listAvailabilityConflictsByTeachersTx(ctx context.Contex
 			lesson_start_at,
 			lesson_end_at
 		FROM teaching_schedule
-		WHERE inst_id = ?
-		  AND del_flag = 0
-		  AND status = ?
-		  AND teacher_id IN (`+placeholders+`)
-		  AND lesson_date >= ?
-		  AND lesson_date <= ?
+		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY lesson_date ASC, lesson_start_at ASC, id ASC
 	`, args...)
 	if err != nil {
@@ -2613,7 +2634,7 @@ func (repo *Repository) listAvailabilityConflictsByTeachersTx(ctx context.Contex
 	return result, rows.Err()
 }
 
-func (repo *Repository) listAvailabilityConflictsByAssistantsTx(ctx context.Context, tx *sql.Tx, instID int64, assistantIDs []int64, startDate, endDate string) ([]scheduleAvailabilityConflictRow, error) {
+func (repo *Repository) listAvailabilityConflictsByAssistantsTx(ctx context.Context, tx *sql.Tx, instID int64, assistantIDs []int64, startDate, endDate string, excludeIDs []int64) ([]scheduleAvailabilityConflictRow, error) {
 	if len(assistantIDs) == 0 || strings.TrimSpace(startDate) == "" || strings.TrimSpace(endDate) == "" {
 		return []scheduleAvailabilityConflictRow{}, nil
 	}
@@ -2625,6 +2646,20 @@ func (repo *Repository) listAvailabilityConflictsByAssistantsTx(ctx context.Cont
 		}
 	}
 
+	filters := []string{
+		"inst_id = ?",
+		"del_flag = 0",
+		"status = ?",
+		"lesson_date >= ?",
+		"lesson_date <= ?",
+	}
+	args := []any{instID, model.TeachingScheduleStatusActive, startDate, endDate}
+	if len(excludeIDs) > 0 {
+		filters = append(filters, "id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
+		for _, id := range excludeIDs {
+			args = append(args, id)
+		}
+	}
 	rows, err := tx.QueryContext(ctx, `
 		SELECT
 			id,
@@ -2640,13 +2675,9 @@ func (repo *Repository) listAvailabilityConflictsByAssistantsTx(ctx context.Cont
 			lesson_start_at,
 			lesson_end_at
 		FROM teaching_schedule
-		WHERE inst_id = ?
-		  AND del_flag = 0
-		  AND status = ?
-		  AND lesson_date >= ?
-		  AND lesson_date <= ?
+		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY lesson_date ASC, lesson_start_at ASC, id ASC
-	`, instID, model.TeachingScheduleStatusActive, startDate, endDate)
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
