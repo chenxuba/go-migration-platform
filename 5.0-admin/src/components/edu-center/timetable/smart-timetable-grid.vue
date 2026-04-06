@@ -191,7 +191,9 @@ const props = defineProps({
                   ? 'st-empty-cell--drag-valid'
                   : emptyLessonDragState(column, record)?.valid === false
                     ? 'st-empty-cell--drag-invalid'
-                    : (text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a'),
+                    : (emptyLessonStatusText(text)
+                        ? (text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a')
+                        : 'st-empty-cell--idle'),
             ]"
             @click="text.conflict ? handleConflictClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record)) : handleScheduleClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
           >
@@ -288,6 +290,12 @@ const props = defineProps({
     color 0.18s ease,
     box-shadow 0.18s ease,
     transform 0.18s ease;
+}
+
+.st-empty-cell--idle {
+  background: transparent;
+  color: transparent;
+  box-shadow: none;
 }
 
 .st-empty-cell--drag-checking {

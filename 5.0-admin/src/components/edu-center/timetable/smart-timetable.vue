@@ -2167,7 +2167,15 @@ function getLessonIndex(startTime) {
   return i >= 0 ? i + 1 : ''
 }
 
+function hasActiveScheduleTarget() {
+  if (currentModel.value === '1')
+    return Boolean(String(oneToOneRecordId.value || '').trim())
+  return Boolean(String(classId.value || '').trim())
+}
+
 function emptyLessonStatusText(lesson) {
+  if (!hasActiveScheduleTarget())
+    return ''
   const conflictTypes = uniqueConflictTypes(lesson?.conflictReason?.conflictTypes || [])
   if (!lesson?.conflict)
     return '空闲时段(可排)'
