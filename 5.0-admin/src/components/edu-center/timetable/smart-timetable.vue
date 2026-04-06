@@ -2345,6 +2345,9 @@ function resolveScheduleDragBlockedMessage(text) {
 }
 
 function buildDraggingScheduleState(text, column, record) {
+  const lessonDate = scheduleCellDate(column, record)
+  const startTime = scheduleCellStartTime(column, record)
+  const endTime = scheduleCellEndTime(column, record)
   return {
     scheduleId: String(text?.scheduleId || '').trim(),
     oneToOneId: String(text?.classId || '').trim(),
@@ -2357,21 +2360,24 @@ function buildDraggingScheduleState(text, column, record) {
     lessonTitle: scheduleLessonTitle(text),
     lessonMeta: scheduleLessonMeta(text),
     studentText: scheduleStudentText(text),
-    sourceDate: record?.date || '',
-    sourceStartTime: column?.startTime || '',
-    sourceEndTime: column?.endTime || '',
-    sourceCellKey: buildAvailabilitySlotKey(record?.teacherId, record?.date, column?.startTime, column?.endTime),
+    sourceDate: lessonDate || '',
+    sourceStartTime: startTime || '',
+    sourceEndTime: endTime || '',
+    sourceCellKey: buildAvailabilitySlotKey(record?.teacherId, lessonDate, startTime, endTime),
   }
 }
 
 function buildDragTarget(column, record) {
+  const lessonDate = scheduleCellDate(column, record)
+  const startTime = scheduleCellStartTime(column, record)
+  const endTime = scheduleCellEndTime(column, record)
   return {
-    key: buildAvailabilitySlotKey(record?.teacherId, record?.date, column?.startTime, column?.endTime),
+    key: buildAvailabilitySlotKey(record?.teacherId, lessonDate, startTime, endTime),
     teacherId: String(record?.teacherId || '').trim(),
     teacherName: record?.name || '-',
-    lessonDate: record?.date || '',
-    startTime: column?.startTime || '',
-    endTime: column?.endTime || '',
+    lessonDate: lessonDate || '',
+    startTime: startTime || '',
+    endTime: endTime || '',
   }
 }
 
