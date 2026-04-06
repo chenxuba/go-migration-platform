@@ -45,29 +45,46 @@ const modalOpen = computed({
         </div>
 
         <div class="st-drag-conflict__attempt-card">
-          <div class="st-drag-conflict__attempt-head">
-            <span class="st-drag-conflict__badge">{{ detail.attempted.modeLabel || '1v1' }}</span>
-            <span class="st-drag-conflict__attempt-title">待调课程信息</span>
+          <div class="st-drag-conflict__item-main">
+            <div class="st-drag-conflict__item-head">
+              <div class="st-drag-conflict__item-name">
+                待调课程信息
+              </div>
+              <div class="st-drag-conflict__item-tags">
+                <a-tag color="blue" :bordered="false">
+                  {{ detail.attempted.modeLabel || '1v1' }}
+                </a-tag>
+                <a-tag color="orange" :bordered="false">
+                  {{ detail.attempted.groupLabel || '当前组' }}
+                </a-tag>
+              </div>
+            </div>
+
+            <div class="st-drag-conflict__item-time">
+              {{ detail.attempted.date }} {{ detail.attempted.week }} · 第{{ detail.attempted.lessonIndex }}节
+              <template v-if="detail.attempted.timeText">
+                · {{ detail.attempted.timeText }}
+              </template>
+            </div>
+
+            <div class="st-drag-conflict__item-meta">
+              课程：
+              <span>{{ detail.attempted.courseName || '-' }}</span>
+              <span class="st-drag-conflict__sep">｜</span>
+              学员：
+              <span>{{ detail.attempted.studentText || detail.attempted.targetValue || '-' }}</span>
+            </div>
+
+            <div class="st-drag-conflict__item-meta">
+              教师：
+              <span>{{ detail.attempted.teacherName || '-' }}</span>
+              <span class="st-drag-conflict__sep">｜</span>
+              助教：
+              <span>{{ detail.attempted.assistantText || '未安排' }}</span>
+            </div>
           </div>
 
-          <div class="st-drag-conflict__attempt-date">
-            {{ detail.attempted.date }} {{ detail.attempted.week }} 第{{ detail.attempted.lessonIndex }}节
-          </div>
-
-          <div class="st-drag-conflict__attempt-student">
-            排课学员
-            <strong>{{ detail.attempted.studentText || detail.attempted.targetValue || '-' }}</strong>
-          </div>
-
-          <div class="st-drag-conflict__attempt-facts">
-            <span class="st-drag-conflict__fact-chip">上课课程 {{ detail.attempted.courseName || '-' }}</span>
-            <span class="st-drag-conflict__fact-chip">上课时间 {{ detail.attempted.timeText || '-' }}</span>
-            <span class="st-drag-conflict__fact-chip">上课老师 {{ detail.attempted.teacherName || '-' }}</span>
-            <span class="st-drag-conflict__fact-chip">上课助教 {{ detail.attempted.assistantText || '未安排' }}</span>
-            <span class="st-drag-conflict__fact-chip">所在组别 {{ detail.attempted.groupLabel || '-' }}</span>
-          </div>
-
-          <div class="st-drag-conflict__attempt-tip">
+          <div class="st-drag-conflict__attempt-tip st-drag-conflict__item-meta">
             系统检测到这条调课信息与已有日程发生冲突，请先处理冲突后再继续调课。
           </div>
         </div>
@@ -177,82 +194,11 @@ const modalOpen = computed({
 }
 
 .st-drag-conflict__attempt-card {
-  padding: 14px 16px 12px;
-}
-
-.st-drag-conflict__attempt-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.st-drag-conflict__badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 52px;
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #2f7bff 0%, #1d64f2 100%);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.st-drag-conflict__attempt-title {
-  color: #1f2329;
-  font-size: 15px;
-  font-weight: 800;
-}
-
-.st-drag-conflict__attempt-date {
-  margin-top: 12px;
-  color: #256be9;
-  font-size: 15px;
-  font-weight: 800;
-}
-
-.st-drag-conflict__attempt-student {
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: #f7f9fd;
-  color: #8a909c;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.st-drag-conflict__attempt-student strong {
-  margin-left: 10px;
-  color: #1f2329;
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.st-drag-conflict__attempt-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
-}
-
-.st-drag-conflict__fact-chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 0 12px;
-  border: 1px solid #e6ecf5;
-  border-radius: 12px;
-  background: #f9fbff;
-  color: #6b7280;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.4;
+  padding: 14px 16px;
 }
 
 .st-drag-conflict__attempt-tip {
-  margin-top: 12px;
+  margin-top: 8px;
   color: #5b6475;
   font-size: 12px;
   line-height: 1.55;
@@ -266,6 +212,7 @@ const modalOpen = computed({
 
 .st-drag-conflict__item {
   display: flex;
+  align-items: flex-start;
   gap: 12px;
   justify-content: space-between;
   padding: 14px 16px;
@@ -278,7 +225,7 @@ const modalOpen = computed({
 
 .st-drag-conflict__item-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
@@ -292,6 +239,7 @@ const modalOpen = computed({
 
 .st-drag-conflict__item-tags {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -341,10 +289,22 @@ const modalOpen = computed({
 }
 
 .st-drag-conflict__item-side {
+  align-self: flex-start;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   flex-shrink: 0;
-  padding-top: 2px;
+}
+
+:deep(.st-drag-conflict__item-tags .ant-tag) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  margin-inline-end: 0;
+  padding-inline: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 :deep(.st-drag-conflict-modal.ant-modal) {
