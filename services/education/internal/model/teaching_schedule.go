@@ -307,6 +307,7 @@ type TeachingScheduleInfoLegacyVO struct {
 	CreateTime        string                   `json:"createTime,omitempty"`
 	UpdateTime        *string                  `json:"updateTime"`
 	InstID            int64                    `json:"instId,omitempty"`
+	BatchNo           string                   `json:"batchNo,omitempty"`
 	BatchID           int64                    `json:"batchId,omitempty"`
 	ModifyBatchID     int64                    `json:"modifyBatchId,omitempty"`
 	CourseID          int64                    `json:"courseId,omitempty"`

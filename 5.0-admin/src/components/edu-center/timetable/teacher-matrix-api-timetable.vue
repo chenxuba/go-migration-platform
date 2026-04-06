@@ -519,7 +519,7 @@ function legacyToTeachingScheduleItem(
   const end = dayjs(`${info.scheduleDate} ${info.scheduleEndTime}`, 'YYYY-MM-DD HH:mm')
   return {
     id: String(info.id),
-    batchNo: info.batchId != null ? String(info.batchId) : undefined,
+    batchNo: String(info.batchNo || '').trim() || (info.batchId != null ? String(info.batchId) : undefined),
     batchSize: 1,
     classType: info.courseType ?? 0,
     teachingClassId: info.classId != null ? String(info.classId) : '',

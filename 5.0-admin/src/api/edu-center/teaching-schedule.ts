@@ -259,6 +259,7 @@ export interface TeachingScheduleMatrixTeacherColumn {
 
 export interface TeachingScheduleMatrixLegacyItem {
   id: number
+  batchNo?: string
   scheduleDate: string
   scheduleStartTime: string
   scheduleEndTime: string

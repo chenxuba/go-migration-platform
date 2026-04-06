@@ -481,6 +481,7 @@ func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) mod
 	return model.TeachingScheduleInfoLegacyVO{
 		ID:                id,
 		InstID:            instID,
+		BatchNo:           strings.TrimSpace(v.BatchNo),
 		BatchID:           batchID,
 		ModifyBatchID:     batchID,
 		CourseID:          cid,
