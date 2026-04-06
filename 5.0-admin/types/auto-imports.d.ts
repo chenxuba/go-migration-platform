@@ -287,6 +287,8 @@ declare global {
   const useSetGlobalConfig: typeof import('../src/composables/global-config')['useSetGlobalConfig']
   const useShare: typeof import('@vueuse/core')['useShare']
   const useSlots: typeof import('vue')['useSlots']
+  const useSmartTimetableAvailability: typeof import('../src/composables/useSmartTimetableAvailability')['useSmartTimetableAvailability']
+  const useSmartTimetableClassMode: typeof import('../src/composables/useSmartTimetableClassMode')['useSmartTimetableClassMode']
   const useSmartTimetablePicker: typeof import('../src/composables/useSmartTimetablePicker')['useSmartTimetablePicker']
   const useSorted: typeof import('@vueuse/core')['useSorted']
   const useSpeechRecognition: typeof import('@vueuse/core')['useSpeechRecognition']
