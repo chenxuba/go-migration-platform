@@ -864,6 +864,7 @@ const scheduleClassSearchKey = ref('')
 const scheduleOneToOneSearchKey = ref('')
 const scheduleCourseSearchKey = ref('')
 const scheduleClassroomSearchKey = ref('')
+const lessonConflictRenderTick = ref(0)
 
 const dataSource = computed(() => {
   return [...rawGridRows.value].sort((a, b) => {
@@ -904,7 +905,11 @@ const transposedDataSource = computed(() => {
   return rows
 })
 
-const tableDataSource = computed(() => isSwapTimeGrid.value ? transposedDataSource.value : dataSource.value)
+const tableDataSource = computed(() => {
+  lessonConflictRenderTick.value
+  const rows = isSwapTimeGrid.value ? transposedDataSource.value : dataSource.value
+  return [...rows]
+})
 
 function uniqueConflictTypes(list) {
   return Array.from(new Set((Array.isArray(list) ? list : []).map(item => String(item || '').trim()).filter(Boolean)))
@@ -980,6 +985,12 @@ function resetEmptyLessonConflicts(scope = 'all') {
         clearLessonConflictState(lesson, scope)
     })
   })
+  lessonConflictRenderTick.value += 1
+}
+
+function clearOneToOneAvailabilityHighlights() {
+  cancelOneToOneAvailabilityCheck()
+  resetEmptyLessonConflicts()
 }
 
 /** 当前展示范围内每位老师已占用的节次数（与格子里蓝色已排课一致：有 studentId 即计入） */
@@ -3069,6 +3080,24 @@ watch(currentModel, (newValue) => {
     courseName.value = null
   }
 })
+
+watch(
+  () => String(oneToOneRecordId.value || '').trim(),
+  (value, previousValue) => {
+    if (value || !previousValue)
+      return
+    clearOneToOneAvailabilityHighlights()
+  },
+)
+
+watch(
+  () => String(filterOneToOneId.value || '').trim(),
+  (value, previousValue) => {
+    if (value || !previousValue || String(oneToOneRecordId.value || '').trim())
+      return
+    clearOneToOneAvailabilityHighlights()
+  },
+)
 
 watch(dragConfirmOpen, (open) => {
   if (!open && !dragConfirmSubmitting.value) {
