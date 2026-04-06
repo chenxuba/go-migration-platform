@@ -33,6 +33,8 @@ const displayArray = ref([
   'subject', // 科目
 ])
 const SMART_TIMETABLE_VIEW_MODE_KEY = 'smart-timetable-view-mode'
+const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 120
+const DRAG_BATCH_VALIDATE_CONCURRENCY = 2
 
 function getSavedTimeView() {
   if (typeof window === 'undefined')
@@ -231,12 +233,19 @@ const dragConfirmDetail = ref({
 const updatingDraggedSchedule = ref(false)
 const dragHoverState = ref({
   key: '',
+  teacherId: '',
+  teacherName: '-',
+  lessonDate: '',
+  startTime: '',
+  endTime: '',
   checking: false,
   valid: null,
   label: '',
   message: '',
   conflictTypes: [],
+  existingSchedules: [],
 })
+const dragValidationStateMap = ref({})
 const dragValidationCache = new Map()
 const dragValidationPromises = new Map()
 /** 防止快速切换周次/组别时旧请求晚到覆盖新矩阵 */
@@ -250,6 +259,7 @@ let blockedScheduleDragAttempt = null
 let blockedScheduleDragMoveHandler = null
 let blockedScheduleDragUpHandler = null
 let lastBlockedScheduleDragHintAt = 0
+let activeDragValidationSessionId = 0
 const focusedScheduleCellKey = ref('')
 const isSwapTimeGrid = computed(() => currentTime.value === 'swapWeek')
 const isWeekLikeView = computed(() => currentTime.value === 'week' || currentTime.value === 'swapWeek')
@@ -1835,17 +1845,55 @@ function showBlockedScheduleDragHint(message) {
 function createEmptyDragHoverState() {
   return {
     key: '',
+    teacherId: '',
+    teacherName: '-',
+    lessonDate: '',
+    startTime: '',
+    endTime: '',
     checking: false,
     valid: null,
     label: '',
     message: '',
     conflictTypes: [],
+    existingSchedules: [],
   }
+}
+
+function setDragValidationState(target, payload = {}, options = {}) {
+  const key = String(target?.key || payload?.key || '').trim()
+  if (!key)
+    return null
+
+  if (options.sessionId != null && options.sessionId !== activeDragValidationSessionId)
+    return null
+
+  if (options.dragState && draggingScheduleState.value?.scheduleId !== options.dragState.scheduleId)
+    return null
+
+  const previous = dragValidationStateMap.value[key] || createEmptyDragHoverState()
+  const nextConflictTypes = payload?.conflictTypes ?? previous.conflictTypes ?? []
+  const nextExistingSchedules = Array.isArray(payload?.existingSchedules)
+    ? payload.existingSchedules
+    : (Array.isArray(previous.existingSchedules) ? previous.existingSchedules : [])
+
+  const next = {
+    ...previous,
+    ...(target || {}),
+    ...(payload || {}),
+    key,
+    conflictTypes: uniqueConflictTypes(nextConflictTypes),
+    existingSchedules: nextExistingSchedules,
+  }
+  dragValidationStateMap.value[key] = next
+  if (dragHoverState.value.key === key)
+    dragHoverState.value = { ...next }
+  return next
 }
 
 function resetDragScheduleState() {
   clearCustomScheduleDragListeners()
   clearBlockedScheduleDragAttempt()
+  activeDragValidationSessionId += 1
   draggingScheduleState.value = null
   draggingScheduleCellKey.value = ''
   dragPointerState.value = {
@@ -1854,6 +1902,7 @@ function resetDragScheduleState() {
     visible: false,
   }
   dragHoverState.value = createEmptyDragHoverState()
+  dragValidationStateMap.value = {}
   dragValidationCache.clear()
   dragValidationPromises.clear()
 }
@@ -1957,6 +2006,33 @@ function dragConflictStateFromTypes(conflictTypes, message) {
   }
 }
 
+function buildDragValidationResultFromValidationItem(target, item) {
+  if (!item) {
+    return {
+      valid: false,
+      label: '检测失败',
+      message: '未返回当前空点的检测结果',
+      conflictTypes: [],
+      existingSchedules: [],
+    }
+  }
+
+  if (item.valid) {
+    return {
+      valid: true,
+      label: '可调课',
+      message: item.message || `${target.teacherName} ${target.lessonDate} ${target.startTime}-${target.endTime} 可调课`,
+      conflictTypes: [],
+      existingSchedules: Array.isArray(item.existingSchedules) ? item.existingSchedules : [],
+    }
+  }
+
+  return {
+    ...dragConflictStateFromTypes(item.conflictTypes || [], item.message || '当前空点不可调课'),
+    existingSchedules: Array.isArray(item.existingSchedules) ? item.existingSchedules : [],
+  }
+}
+
 function validateDragTargetLocally(dragState, target) {
   if (!dragState?.scheduleId) {
     return {
@@ -1996,6 +2072,107 @@ function buildDragValidationCacheKey(dragState, target) {
     dragState.assistantIds.join(','),
     dragState.classroomId,
   ].join('|')
+}
+
+function scheduleCellValue(column, record) {
+  const root = column?.dataIndex?.[0]
+  const index = Number(column?.dataIndex?.[1])
+  if (!Number.isInteger(index))
+    return null
+  if (root === 'lessons')
+    return record?.lessons?.[index] || null
+  if (root === 'cells')
+    return record?.cells?.[index] || null
+  return null
+}
+
+function collectVisibleEmptyDragTargets() {
+  const targets = []
+  const seen = new Set()
+  const scheduleColumns = columns.value.filter(isScheduleColumn)
+
+  tableDataSource.value.forEach((row) => {
+    scheduleColumns.forEach((column) => {
+      const lesson = scheduleCellValue(column, row)
+      if (!lesson || lesson.studentId)
+        return
+
+      const target = buildDragTarget(scheduleCellContextColumn(column, row), scheduleCellContextRecord(column, row))
+      if (!target.key || seen.has(target.key))
+        return
+
+      seen.add(target.key)
+      targets.push(target)
+    })
+  })
+
+  return targets
+}
+
+function applyDragValidationResult(target, result, options = {}) {
+  const dragState = options.dragState || draggingScheduleState.value
+  if (dragState)
+    dragValidationCache.set(buildDragValidationCacheKey(dragState, target), result)
+  if (options.updateCellState !== false)
+    setDragValidationState(target, result, { sessionId: options.sessionId, dragState })
+  if (options.apply !== false && dragHoverState.value.key === target.key)
+    applyDragHoverState(target.key, { ...target, ...result })
+}
+
+async function validateDragTargetsInBatch(targets, options = {}) {
+  const dragState = options.dragState || draggingScheduleState.value
+  if (!dragState || !targets.length)
+    return
+
+  try {
+    const res = await validateOneToOneSchedulesApi({
+      oneToOneId: dragState.oneToOneId,
+      teacherId: targets[0]?.teacherId || '',
+      assistantIds: dragState.assistantIds,
+      classroomId: dragState.classroomId,
+      excludeIds: [dragState.scheduleId],
+      schedules: targets.map(target => ({
+        lessonDate: target.lessonDate,
+        startTime: target.startTime,
+        endTime: target.endTime,
+        teacherId: target.teacherId,
+        assistantIds: dragState.assistantIds,
+        classroomId: dragState.classroomId,
+      })),
+    })
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '批量检测调课空点失败')
+
+    const itemMap = new Map(
+      (Array.isArray(res.result.items) ? res.result.items : [])
+        .map(item => [buildAvailabilitySlotKey(item.teacherId, item.lessonDate, item.startTime, item.endTime), item]),
+    )
+
+    targets.forEach((target) => {
+      const item = itemMap.get(target.key)
+      const result = buildDragValidationResultFromValidationItem(target, item)
+      applyDragValidationResult(target, result, {
+        dragState,
+        sessionId: options.sessionId,
+        apply: options.apply === true && dragHoverState.value.key === target.key,
+      })
+    })
+  }
+  catch (error) {
+    console.error('validate drag targets in batch failed', error)
+    const result = {
+      valid: false,
+      label: '检测失败',
+      message: error?.response?.data?.message || error?.message || '批量检测调课空点失败',
+      conflictTypes: [],
+      existingSchedules: [],
+    }
+    targets.forEach(target => applyDragValidationResult(target, result, {
+      dragState,
+      sessionId: options.sessionId,
+      apply: options.apply === true && dragHoverState.value.key === target.key,
+    }))
+  }
 }
 
 const dragPreviewStyle = computed(() => {
@@ -2089,36 +2266,30 @@ async function ensureDragTargetValidation(target, options = {}) {
 
   const localResult = validateDragTargetLocally(dragState, target)
   if (localResult) {
-    if (options.apply !== false && dragHoverState.value.key === target.key) {
-      applyDragHoverState(target.key, {
-        ...target,
-        ...localResult,
-      })
-    }
+    if (options.updateCellState !== false)
+      setDragValidationState(target, localResult, { sessionId: options.sessionId, dragState })
+    if (options.apply !== false && dragHoverState.value.key === target.key)
+      applyDragHoverState(target.key, { ...target, ...localResult })
     return localResult
   }
 
   const cacheKey = buildDragValidationCacheKey(dragState, target)
   if (dragValidationCache.has(cacheKey)) {
     const cached = dragValidationCache.get(cacheKey)
-    if (options.apply !== false && dragHoverState.value.key === target.key) {
-      applyDragHoverState(target.key, {
-        ...target,
-        ...cached,
-      })
-    }
+    if (options.updateCellState !== false)
+      setDragValidationState(target, cached, { sessionId: options.sessionId, dragState })
+    if (options.apply !== false && dragHoverState.value.key === target.key)
+      applyDragHoverState(target.key, { ...target, ...cached })
     return cached
   }
 
   if (dragValidationPromises.has(cacheKey)) {
     const pending = dragValidationPromises.get(cacheKey)
     const result = await pending
-    if (options.apply !== false && dragHoverState.value.key === target.key) {
-      applyDragHoverState(target.key, {
-        ...target,
-        ...result,
-      })
-    }
+    if (options.updateCellState !== false)
+      setDragValidationState(target, result, { sessionId: options.sessionId, dragState })
+    if (options.apply !== false && dragHoverState.value.key === target.key)
+      applyDragHoverState(target.key, { ...target, ...result })
     return result
   }
 
@@ -2142,18 +2313,23 @@ async function ensureDragTargetValidation(target, options = {}) {
       if (res.code !== 200 || !res.result)
         throw new Error(res.message || '检测调课空点失败')
 
-      const result = res.result.valid
-        ? {
-            valid: true,
-            label: '释放鼠标调到此处',
-            message: `${target.teacherName} ${target.lessonDate} ${target.startTime}-${target.endTime} 可调课`,
-            conflictTypes: [],
-            existingSchedules: [],
-          }
-        : {
-            ...dragConflictStateFromTypes(res.result.conflictTypes || [], res.result.message || '当前空点不可调课'),
-            existingSchedules: Array.isArray(res.result.existingSchedules) ? res.result.existingSchedules : [],
-          }
+      const item = Array.isArray(res.result.items) && res.result.items.length === 1
+        ? res.result.items[0]
+        : null
+      const result = item
+        ? buildDragValidationResultFromValidationItem(target, item)
+        : res.result.valid
+          ? {
+              valid: true,
+              label: '可调课',
+              message: `${target.teacherName} ${target.lessonDate} ${target.startTime}-${target.endTime} 可调课`,
+              conflictTypes: [],
+              existingSchedules: [],
+            }
+          : {
+              ...dragConflictStateFromTypes(res.result.conflictTypes || [], res.result.message || '当前空点不可调课'),
+              existingSchedules: Array.isArray(res.result.existingSchedules) ? res.result.existingSchedules : [],
+            }
       dragValidationCache.set(cacheKey, result)
       return result
     }
@@ -2176,6 +2352,8 @@ async function ensureDragTargetValidation(target, options = {}) {
 
   dragValidationPromises.set(cacheKey, promise)
   const result = await promise
+  if (options.updateCellState !== false)
+    setDragValidationState(target, result, { sessionId: options.sessionId, dragState })
   if (options.apply !== false && dragHoverState.value.key === target.key && draggingScheduleState.value?.scheduleId === dragState.scheduleId) {
     applyDragHoverState(target.key, {
       ...target,
@@ -2185,9 +2363,55 @@ async function ensureDragTargetValidation(target, options = {}) {
   return result
 }
 
+async function primeDragValidationForVisibleTargets(dragState, sessionId) {
+  const remoteTargets = []
+
+  collectVisibleEmptyDragTargets().forEach((target) => {
+    const localResult = validateDragTargetLocally(dragState, target)
+    if (localResult) {
+      setDragValidationState(target, localResult, { sessionId, dragState })
+      return
+    }
+
+    setDragValidationState(target, {
+      checking: true,
+      valid: null,
+      label: '检测中...',
+      message: '正在检测当前空点是否可调',
+      conflictTypes: [],
+      existingSchedules: [],
+    }, { sessionId, dragState })
+    remoteTargets.push(target)
+  })
+
+  if (!remoteTargets.length)
+    return
+
+  const chunks = []
+  for (let i = 0; i < remoteTargets.length; i += DRAG_BATCH_VALIDATE_CHUNK_SIZE)
+    chunks.push(remoteTargets.slice(i, i + DRAG_BATCH_VALIDATE_CHUNK_SIZE))
+
+  let index = 0
+  const workerCount = Math.min(DRAG_BATCH_VALIDATE_CONCURRENCY, chunks.length)
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (index < chunks.length) {
+      if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
+        return
+      const chunk = chunks[index++]
+      await validateDragTargetsInBatch(chunk, {
+        dragState,
+        sessionId,
+      })
+    }
+  })
+
+  await Promise.all(workers)
+}
+
 function emptyLessonDragState(column, record) {
   const target = buildDragTarget(column, record)
-  return dragHoverState.value.key === target.key ? dragHoverState.value : null
+  return dragValidationStateMap.value[target.key]
+    || (dragHoverState.value.key === target.key ? dragHoverState.value : null)
 }
 
 function handleSchedulePointerDown(event, text, column, record) {
@@ -2228,12 +2452,16 @@ function handleSchedulePointerDown(event, text, column, record) {
           offsetX: pendingScheduleDragStart.offsetX,
           offsetY: pendingScheduleDragStart.offsetY,
         }
+        activeDragValidationSessionId += 1
         draggingScheduleCellKey.value = pendingScheduleDragStart.dragState.sourceCellKey
         dragHoverState.value = createEmptyDragHoverState()
+        dragValidationStateMap.value = {}
         dragValidationCache.clear()
         dragValidationPromises.clear()
+        const sessionId = activeDragValidationSessionId
         pendingScheduleDragStart = null
         document.body.style.userSelect = 'none'
+        void primeDragValidationForVisibleTargets(draggingScheduleState.value, sessionId)
       }
 
       updateDragPointer(moveEvent)
@@ -2242,16 +2470,34 @@ function handleSchedulePointerDown(event, text, column, record) {
         dragHoverState.value = createEmptyDragHoverState()
         return
       }
-      if (dragHoverState.value.key !== target.key || dragHoverState.value.valid == null) {
+      const existingState = dragValidationStateMap.value[target.key]
+      if (existingState) {
         applyDragHoverState(target.key, {
+          ...existingState,
           ...target,
-          checking: true,
-          label: '检测中...',
-          message: '正在检测当前空点是否可调',
-          conflictTypes: [],
         })
-        void ensureDragTargetValidation(target)
+        return
       }
+      setDragValidationState(target, {
+        checking: true,
+        valid: null,
+        label: '检测中...',
+        message: '正在检测当前空点是否可调',
+        conflictTypes: [],
+        existingSchedules: [],
+      }, { sessionId: activeDragValidationSessionId, dragState: draggingScheduleState.value })
+      applyDragHoverState(target.key, dragValidationStateMap.value[target.key] || {
+        ...target,
+        checking: true,
+        valid: null,
+        label: '检测中...',
+        message: '正在检测当前空点是否可调',
+        conflictTypes: [],
+      })
+      void ensureDragTargetValidation(target, {
+        dragState: draggingScheduleState.value,
+        sessionId: activeDragValidationSessionId,
+      })
     }
 
     customScheduleDragUpHandler = async (upEvent) => {

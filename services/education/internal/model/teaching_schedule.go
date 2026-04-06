@@ -136,9 +136,21 @@ type CreateOneToOneSchedulesResult struct {
 }
 
 type TeachingScheduleValidationResult struct {
+	Valid             bool                             `json:"valid"`
+	Message           string                           `json:"message,omitempty"`
+	CurrentSchedules  []TeachingScheduleConflictItem   `json:"currentSchedules,omitempty"`
+	ExistingSchedules []TeachingScheduleConflictItem   `json:"existingSchedules,omitempty"`
+	ConflictTypes     []string                         `json:"conflictTypes,omitempty"`
+	Items             []TeachingScheduleValidationItem `json:"items,omitempty"`
+}
+
+type TeachingScheduleValidationItem struct {
+	TeacherID         string                         `json:"teacherId,omitempty"`
+	LessonDate        string                         `json:"lessonDate"`
+	StartTime         string                         `json:"startTime"`
+	EndTime           string                         `json:"endTime"`
 	Valid             bool                           `json:"valid"`
 	Message           string                         `json:"message,omitempty"`
-	CurrentSchedules  []TeachingScheduleConflictItem `json:"currentSchedules,omitempty"`
 	ExistingSchedules []TeachingScheduleConflictItem `json:"existingSchedules,omitempty"`
 	ConflictTypes     []string                       `json:"conflictTypes,omitempty"`
 }

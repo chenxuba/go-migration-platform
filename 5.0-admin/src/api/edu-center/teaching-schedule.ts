@@ -63,6 +63,30 @@ export interface TeachingScheduleValidationResult {
     conflictTypes?: string[]
   }>
   conflictTypes?: string[]
+  items?: TeachingScheduleValidationItem[]
+}
+
+export interface TeachingScheduleValidationItem {
+  teacherId?: string
+  lessonDate: string
+  startTime: string
+  endTime: string
+  valid: boolean
+  message?: string
+  existingSchedules?: Array<{
+    name: string
+    classTypeText: string
+    date: string
+    week?: string
+    timeText: string
+    teacherId?: string
+    teacherName: string
+    assistantNames?: string[]
+    classroomName?: string
+    studentNames?: string[]
+    conflictTypes?: string[]
+  }>
+  conflictTypes?: string[]
 }
 
 export interface OneToOneScheduleAvailabilityItem {

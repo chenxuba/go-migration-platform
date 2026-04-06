@@ -575,43 +575,34 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 			return names
 		}())
 	}
-	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans, excludeIDs)
+	slots := plansToSlots(plans)
+	teacherConflictRows, err := repo.listScheduleConflictDetailsByFieldValuesTx(ctx, tx, instID, "teacher_id", teacherIDs, slots, "", excludeIDs)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
-	classroomConflictsByPlan, err := repo.listClassroomConflictsByPlanTx(ctx, tx, instID, plans, excludeIDs)
+	classroomConflictRows, err := repo.listScheduleConflictDetailsByFieldValuesTx(ctx, tx, instID, "classroom_id", collectPlanClassroomIDs(plans), slots, "", excludeIDs)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
-	studentConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", base.StudentID, plansToSlots(plans), "", excludeIDs)
+	studentConflictRows, err := repo.listScheduleConflictDetailsByFieldValuesTx(ctx, tx, instID, "student_id", []int64{base.StudentID}, slots, "", excludeIDs)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
-	assistantConflictsByPlan, err := repo.listAssistantConflictsByPlanTx(ctx, tx, instID, plans, excludeIDs)
+	assistantConflictRows, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, planAssistantIDs, slots, "", excludeIDs)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
 
-	currentItems, existingItems, conflictTypes := buildScheduleConflictResultFromPlans(
+	return buildScheduleValidationResultFromPlans(
 		base,
 		plans,
 		teacherNames,
 		classroomNames,
-		teacherConflictsByPlan,
-		classroomConflictsByPlan,
-		studentConflicts,
-		assistantConflictsByPlan,
-	)
-	if len(conflictTypes) > 0 {
-		return model.TeachingScheduleValidationResult{
-			Valid:             false,
-			Message:           buildConflictSummaryMessage(conflictTypes),
-			CurrentSchedules:  currentItems,
-			ExistingSchedules: existingItems,
-			ConflictTypes:     conflictTypes,
-		}, nil
-	}
-	return model.TeachingScheduleValidationResult{Valid: true}, nil
+		teacherConflictRows,
+		classroomConflictRows,
+		studentConflictRows,
+		assistantConflictRows,
+	), nil
 }
 
 func (repo *Repository) CheckOneToOneScheduleAvailability(ctx context.Context, instID int64, dto model.CheckOneToOneScheduleAvailabilityDTO) (model.OneToOneScheduleAvailabilityResult, error) {
@@ -1278,6 +1269,122 @@ func (repo *Repository) listAssistantConflictsByPlanTx(ctx context.Context, tx *
 		result[schedulePlanKey(plan)] = rows
 	}
 	return result, nil
+}
+
+func (repo *Repository) listScheduleConflictDetailsByFieldValuesTx(ctx context.Context, tx *sql.Tx, instID int64, field string, fieldValues []int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64) ([]scheduleConflictDetailRow, error) {
+	if len(fieldValues) == 0 || len(slots) == 0 {
+		return []scheduleConflictDetailRow{}, nil
+	}
+
+	startDate, endDate := scheduleSlotsDateRange(slots)
+	if startDate == "" || endDate == "" {
+		return []scheduleConflictDetailRow{}, nil
+	}
+
+	uniqueFieldValues := make([]int64, 0, len(fieldValues))
+	seenFieldValues := make(map[int64]struct{}, len(fieldValues))
+	for _, value := range fieldValues {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seenFieldValues[value]; ok {
+			continue
+		}
+		seenFieldValues[value] = struct{}{}
+		uniqueFieldValues = append(uniqueFieldValues, value)
+	}
+	if len(uniqueFieldValues) == 0 {
+		return []scheduleConflictDetailRow{}, nil
+	}
+
+	filters := []string{
+		"inst_id = ?",
+		"del_flag = 0",
+		"status = ?",
+		field + " IN (" + sqlPlaceholders(len(uniqueFieldValues)) + ")",
+		"lesson_date >= ?",
+		"lesson_date <= ?",
+	}
+	args := []any{
+		instID,
+		model.TeachingScheduleStatusActive,
+	}
+	for _, value := range uniqueFieldValues {
+		args = append(args, value)
+	}
+	args = append(args, startDate, endDate)
+	if excludeBatchNo != "" {
+		filters = append(filters, "batch_no <> ?")
+		args = append(args, excludeBatchNo)
+	}
+	if len(excludeIDs) > 0 {
+		filters = append(filters, "id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
+		for _, id := range excludeIDs {
+			args = append(args, id)
+		}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			id,
+			IFNULL(student_id, 0),
+			IFNULL(teacher_id, 0),
+			IFNULL(classroom_id, 0),
+			IFNULL(class_type, 0),
+			IFNULL(teaching_class_name, ''),
+			IFNULL(student_name, ''),
+			IFNULL(teacher_name, ''),
+			assistant_ids_json,
+			assistant_names_json,
+			IFNULL(classroom_name, ''),
+			lesson_date,
+			lesson_start_at,
+			lesson_end_at
+		FROM teaching_schedule
+		WHERE `+strings.Join(filters, " AND ")+`
+		ORDER BY lesson_date ASC, lesson_start_at ASC, id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]scheduleConflictDetailRow, 0, 32)
+	seenRows := make(map[int64]struct{})
+	for rows.Next() {
+		var item scheduleConflictDetailRow
+		var assistantIDsRaw []byte
+		var assistantNamesRaw []byte
+		if err := rows.Scan(
+			&item.ID,
+			&item.StudentID,
+			&item.TeacherID,
+			&item.ClassroomID,
+			&item.ClassType,
+			&item.TeachingClassName,
+			&item.StudentName,
+			&item.TeacherName,
+			&assistantIDsRaw,
+			&assistantNamesRaw,
+			&item.ClassroomName,
+			&item.LessonDate,
+			&item.StartAt,
+			&item.EndAt,
+		); err != nil {
+			return nil, err
+		}
+		if !scheduleRowOverlapsAnySlot(item.LessonDate, item.StartAt, item.EndAt, slots) {
+			continue
+		}
+		if _, ok := seenRows[item.ID]; ok {
+			continue
+		}
+		item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
+		item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
+		seenRows[item.ID] = struct{}{}
+		result = append(result, item)
+	}
+	return result, rows.Err()
 }
 
 func (repo *Repository) listScheduleConflictDetailsByAssistantsTx(ctx context.Context, tx *sql.Tx, instID int64, assistantIDs []int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64) ([]scheduleConflictDetailRow, error) {
@@ -2216,6 +2323,263 @@ func buildScheduleConflictResultFromPlans(
 	return current, existing, conflictTypes
 }
 
+func buildTeachingScheduleConflictItemFromRow(row scheduleConflictDetailRow) model.TeachingScheduleConflictItem {
+	return model.TeachingScheduleConflictItem{
+		Name:           row.TeachingClassName,
+		ClassTypeText:  scheduleClassTypeText(row.ClassType),
+		Date:           row.LessonDate.Format("2006-01-02"),
+		Week:           weekDisplay(row.LessonDate),
+		TimeText:       row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+		TeacherID:      emptyStringIfZero(row.TeacherID),
+		TeacherName:    firstNonEmptyString(row.TeacherName, "-"),
+		AssistantNames: compactStrings(row.AssistantNames),
+		ClassroomName:  firstNonEmptyString(row.ClassroomName, "-"),
+		StudentNames:   compactStrings([]string{row.StudentName}),
+		ConflictTypes:  []string{},
+	}
+}
+
+func appendConflictRowsToItemMap(existingMap map[int64]model.TeachingScheduleConflictItem, rows []scheduleConflictDetailRow, conflictType string) {
+	for _, row := range rows {
+		item, ok := existingMap[row.ID]
+		if !ok {
+			item = buildTeachingScheduleConflictItemFromRow(row)
+		}
+		if !containsString(item.ConflictTypes, conflictType) {
+			item.ConflictTypes = append(item.ConflictTypes, conflictType)
+		}
+		existingMap[row.ID] = item
+	}
+}
+
+func finalizeConflictItemMap(existingMap map[int64]model.TeachingScheduleConflictItem) []model.TeachingScheduleConflictItem {
+	existing := make([]model.TeachingScheduleConflictItem, 0, len(existingMap))
+	for _, item := range existingMap {
+		sort.Strings(item.ConflictTypes)
+		existing = append(existing, item)
+	}
+	sort.Slice(existing, func(i, j int) bool {
+		if existing[i].Date == existing[j].Date {
+			return existing[i].TimeText < existing[j].TimeText
+		}
+		return existing[i].Date < existing[j].Date
+	})
+	return existing
+}
+
+func groupScheduleConflictRowsByIDAndDate(rows []scheduleConflictDetailRow, resolveID func(scheduleConflictDetailRow) int64) map[int64]map[string][]scheduleConflictDetailRow {
+	result := make(map[int64]map[string][]scheduleConflictDetailRow)
+	for _, row := range rows {
+		id := resolveID(row)
+		if id <= 0 {
+			continue
+		}
+		dateKey := row.LessonDate.Format("2006-01-02")
+		if _, ok := result[id]; !ok {
+			result[id] = make(map[string][]scheduleConflictDetailRow)
+		}
+		result[id][dateKey] = append(result[id][dateKey], row)
+	}
+	return result
+}
+
+func groupScheduleConflictRowsByDate(rows []scheduleConflictDetailRow) map[string][]scheduleConflictDetailRow {
+	result := make(map[string][]scheduleConflictDetailRow)
+	for _, row := range rows {
+		dateKey := row.LessonDate.Format("2006-01-02")
+		result[dateKey] = append(result[dateKey], row)
+	}
+	return result
+}
+
+func groupAssistantConflictRowsByCandidateIDAndDate(rows []scheduleConflictDetailRow, candidateSet map[int64]struct{}) map[int64]map[string][]scheduleConflictDetailRow {
+	result := make(map[int64]map[string][]scheduleConflictDetailRow)
+	for _, row := range rows {
+		dateKey := row.LessonDate.Format("2006-01-02")
+		attachIDs := make([]int64, 0, 1+len(row.AssistantIDs))
+		if _, ok := candidateSet[row.TeacherID]; ok && row.TeacherID > 0 {
+			attachIDs = append(attachIDs, row.TeacherID)
+		}
+		for _, raw := range row.AssistantIDs {
+			assistantID, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+			if err != nil || assistantID <= 0 {
+				continue
+			}
+			if _, ok := candidateSet[assistantID]; ok && !containsInt64(attachIDs, assistantID) {
+				attachIDs = append(attachIDs, assistantID)
+			}
+		}
+		for _, attachID := range attachIDs {
+			if _, ok := result[attachID]; !ok {
+				result[attachID] = make(map[string][]scheduleConflictDetailRow)
+			}
+			result[attachID][dateKey] = append(result[attachID][dateKey], row)
+		}
+	}
+	return result
+}
+
+func filterOverlappingScheduleConflictRows(rows []scheduleConflictDetailRow, lessonDate, startAt, endAt time.Time) []scheduleConflictDetailRow {
+	if len(rows) == 0 {
+		return nil
+	}
+	result := make([]scheduleConflictDetailRow, 0, len(rows))
+	for _, row := range rows {
+		if row.LessonDate.Format("2006-01-02") != lessonDate.Format("2006-01-02") {
+			continue
+		}
+		if row.StartAt.Before(endAt) && row.EndAt.After(startAt) {
+			result = append(result, row)
+		}
+	}
+	return result
+}
+
+func collectPlanAssistantConflictRows(plan normalizedSchedulePlan, assistantIndex map[int64]map[string][]scheduleConflictDetailRow) []scheduleConflictDetailRow {
+	if len(plan.AssistantIDs) == 0 {
+		return nil
+	}
+	dateKey := plan.LessonDate.Format("2006-01-02")
+	result := make([]scheduleConflictDetailRow, 0)
+	seen := make(map[int64]struct{})
+	for _, assistantID := range plan.AssistantIDs {
+		rowsByDate := assistantIndex[assistantID]
+		if len(rowsByDate) == 0 {
+			continue
+		}
+		rows := filterOverlappingScheduleConflictRows(rowsByDate[dateKey], plan.LessonDate, plan.StartAt, plan.EndAt)
+		for _, row := range rows {
+			if _, ok := seen[row.ID]; ok {
+				continue
+			}
+			seen[row.ID] = struct{}{}
+			result = append(result, row)
+		}
+	}
+	return result
+}
+
+func buildScheduleValidationResultFromPlans(
+	base model.OneToOneScheduleCreateContext,
+	plans []normalizedSchedulePlan,
+	teacherNames map[int64]string,
+	classroomNames map[int64]string,
+	teacherConflictRows []scheduleConflictDetailRow,
+	classroomConflictRows []scheduleConflictDetailRow,
+	studentConflictRows []scheduleConflictDetailRow,
+	assistantConflictRows []scheduleConflictDetailRow,
+) model.TeachingScheduleValidationResult {
+	teacherIndex := groupScheduleConflictRowsByIDAndDate(teacherConflictRows, func(row scheduleConflictDetailRow) int64 {
+		return row.TeacherID
+	})
+	classroomIndex := groupScheduleConflictRowsByIDAndDate(classroomConflictRows, func(row scheduleConflictDetailRow) int64 {
+		return row.ClassroomID
+	})
+	studentIndex := groupScheduleConflictRowsByDate(studentConflictRows)
+
+	assistantCandidateSet := make(map[int64]struct{})
+	for _, id := range collectPlanAssistantIDs(plans) {
+		if id > 0 {
+			assistantCandidateSet[id] = struct{}{}
+		}
+	}
+	assistantIndex := groupAssistantConflictRowsByCandidateIDAndDate(assistantConflictRows, assistantCandidateSet)
+
+	globalTypeSet := make(map[string]struct{})
+	globalExistingMap := make(map[int64]model.TeachingScheduleConflictItem)
+	currentItems := make([]model.TeachingScheduleConflictItem, 0, len(plans))
+	validationItems := make([]model.TeachingScheduleValidationItem, 0, len(plans))
+
+	for _, plan := range plans {
+		dateKey := plan.LessonDate.Format("2006-01-02")
+		conflictTypes := make([]string, 0, 4)
+		itemExistingMap := make(map[int64]model.TeachingScheduleConflictItem)
+
+		teacherRows := filterOverlappingScheduleConflictRows(teacherIndex[plan.TeacherID][dateKey], plan.LessonDate, plan.StartAt, plan.EndAt)
+		if len(teacherRows) > 0 {
+			conflictTypes = append(conflictTypes, "老师")
+			globalTypeSet["老师"] = struct{}{}
+			appendConflictRowsToItemMap(itemExistingMap, teacherRows, "老师")
+			appendConflictRowsToItemMap(globalExistingMap, teacherRows, "老师")
+		}
+
+		classroomRows := filterOverlappingScheduleConflictRows(classroomIndex[plan.ClassroomID][dateKey], plan.LessonDate, plan.StartAt, plan.EndAt)
+		if len(classroomRows) > 0 {
+			conflictTypes = append(conflictTypes, "教室")
+			globalTypeSet["教室"] = struct{}{}
+			appendConflictRowsToItemMap(itemExistingMap, classroomRows, "教室")
+			appendConflictRowsToItemMap(globalExistingMap, classroomRows, "教室")
+		}
+
+		studentRows := filterOverlappingScheduleConflictRows(studentIndex[dateKey], plan.LessonDate, plan.StartAt, plan.EndAt)
+		if len(studentRows) > 0 {
+			conflictTypes = append(conflictTypes, "学员")
+			globalTypeSet["学员"] = struct{}{}
+			appendConflictRowsToItemMap(itemExistingMap, studentRows, "学员")
+			appendConflictRowsToItemMap(globalExistingMap, studentRows, "学员")
+		}
+
+		assistantRows := collectPlanAssistantConflictRows(plan, assistantIndex)
+		if len(assistantRows) > 0 {
+			conflictTypes = append(conflictTypes, "助教")
+			globalTypeSet["助教"] = struct{}{}
+			appendConflictRowsToItemMap(itemExistingMap, assistantRows, "助教")
+			appendConflictRowsToItemMap(globalExistingMap, assistantRows, "助教")
+		}
+
+		sort.Strings(conflictTypes)
+		currentItems = append(currentItems, model.TeachingScheduleConflictItem{
+			Name:           base.ClassName,
+			ClassTypeText:  "1对1日程",
+			Date:           dateKey,
+			Week:           weekDisplay(plan.LessonDate),
+			TimeText:       plan.StartAt.Format("15:04") + "~" + plan.EndAt.Format("15:04"),
+			TeacherID:      emptyStringIfZero(plan.TeacherID),
+			TeacherName:    firstNonEmptyString(teacherNames[plan.TeacherID], "-"),
+			AssistantNames: compactStrings(plan.AssistantNames),
+			ClassroomName:  firstNonEmptyString(classroomNames[plan.ClassroomID], "-"),
+			StudentNames:   compactStrings([]string{base.StudentName}),
+			ConflictTypes:  conflictTypes,
+		})
+
+		item := model.TeachingScheduleValidationItem{
+			TeacherID:     emptyStringIfZero(plan.TeacherID),
+			LessonDate:    dateKey,
+			StartTime:     plan.StartAt.Format("15:04"),
+			EndTime:       plan.EndAt.Format("15:04"),
+			Valid:         len(conflictTypes) == 0,
+			ConflictTypes: conflictTypes,
+		}
+		if !item.Valid {
+			item.Message = buildAvailabilityConflictSummaryMessage(conflictTypes)
+			item.ExistingSchedules = finalizeConflictItemMap(itemExistingMap)
+		}
+		validationItems = append(validationItems, item)
+	}
+
+	conflictTypes := make([]string, 0, len(globalTypeSet))
+	for key := range globalTypeSet {
+		conflictTypes = append(conflictTypes, key)
+	}
+	sort.Strings(conflictTypes)
+
+	if len(conflictTypes) == 0 {
+		return model.TeachingScheduleValidationResult{
+			Valid: true,
+			Items: validationItems,
+		}
+	}
+
+	return model.TeachingScheduleValidationResult{
+		Valid:             false,
+		Message:           buildConflictSummaryMessage(conflictTypes),
+		CurrentSchedules:  currentItems,
+		ExistingSchedules: finalizeConflictItemMap(globalExistingMap),
+		ConflictTypes:     conflictTypes,
+		Items:             validationItems,
+	}
+}
+
 func buildScheduleConflictResultFromExisting(
 	current scheduleConflictDetailRow,
 	teacherConflicts []scheduleConflictDetailRow,
@@ -2585,6 +2949,15 @@ func stringSliceHasAnyID(values []string, candidateSet map[int64]struct{}) bool 
 }
 
 func containsString(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func containsInt64(list []int64, value int64) bool {
 	for _, item := range list {
 		if item == value {
 			return true
