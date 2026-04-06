@@ -297,20 +297,19 @@ const props = defineProps({
 }
 
 .st-empty-cell--drag-valid {
-  background: #e6fffb;
-  color: #08979c;
+  background: #fff7e6;
+  color: #d48806;
   box-shadow:
-    inset 0 0 0 1px rgba(19, 194, 194, 0.24),
-    0 0 0 2px rgba(19, 194, 194, 0.12);
-  transform: scale(1.01);
+    inset 0 0 0 1px rgba(250, 173, 20, 0.34),
+    0 0 0 2px rgba(250, 173, 20, 0.12);
 }
 
 .st-empty-cell--drag-invalid {
-  background: #fff1f0;
+  background: #ffe1df;
   color: #cf1322;
   box-shadow:
-    inset 0 0 0 1px rgba(255, 77, 79, 0.24),
-    0 0 0 2px rgba(255, 77, 79, 0.1);
+    inset 0 0 0 1px rgba(255, 77, 79, 0.4),
+    0 0 0 2px rgba(255, 77, 79, 0.16);
 }
 
 @keyframes st-schedule-cell-flash {

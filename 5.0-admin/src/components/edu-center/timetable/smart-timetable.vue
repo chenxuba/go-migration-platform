@@ -1885,6 +1885,8 @@ function setDragValidationState(target, payload = {}, options = {}) {
     conflictTypes: uniqueConflictTypes(nextConflictTypes),
     existingSchedules: nextExistingSchedules,
   }
+  if (payload?.checking == null && (payload?.valid === true || payload?.valid === false))
+    next.checking = false
   dragValidationStateMap.value[key] = next
   if (dragHoverState.value.key === key)
     dragHoverState.value = { ...next }
