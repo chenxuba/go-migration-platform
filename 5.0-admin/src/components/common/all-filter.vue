@@ -324,6 +324,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  scheduleTypeLabel: {
+    type: String,
+    default: '日程类型',
+  },
   scheduleCallStatusOptions: {
     type: Array,
     default: () => [],
@@ -2357,7 +2361,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'scheduleType',
-      label: '日程类型',
+      label: props.scheduleTypeLabel,
       show: props.displayArray.includes('scheduleType'),
       values: props.scheduleTypeOptions.filter(opt => scheduleTypeVals.value.includes(opt.id)),
     },
@@ -5451,7 +5455,7 @@ defineExpose({
                 @load-more="onScheduleCourseLoadMore?.()" />
 
               <checkbox-filter v-if="filterType === 'scheduleType'"
-                v-model:checked-values="scheduleTypeVals" :options="scheduleTypeOptions" label="日程类型"
+                v-model:checked-values="scheduleTypeVals" :options="scheduleTypeOptions" :label="scheduleTypeLabel"
                 type="checkbox" @change="handleScheduleTypeChange" />
 
               <checkbox-filter v-if="filterType === 'scheduleCallStatus'"
