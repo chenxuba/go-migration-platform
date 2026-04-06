@@ -211,7 +211,29 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 			filters = append(filters, column+" IN ("+strings.Join(holders, ",")+")")
 		}
 	}
-	appendInt64InFilter("ts.teacher_id", query.ScheduleTeacherIDs)
+	appendScheduleTeacherFilter := func(values []int64) {
+		if len(values) == 0 {
+			return
+		}
+		teacherHolders := make([]string, 0, len(values))
+		assistantParts := make([]string, 0, len(values))
+		assistantArgs := make([]any, 0, len(values))
+		for _, item := range values {
+			if item <= 0 {
+				continue
+			}
+			teacherHolders = append(teacherHolders, "?")
+			args = append(args, item)
+			assistantParts = append(assistantParts, "JSON_SEARCH(COALESCE(ts.assistant_ids_json, JSON_ARRAY()), 'one', ?) IS NOT NULL")
+			assistantArgs = append(assistantArgs, strconv.FormatInt(item, 10))
+		}
+		if len(teacherHolders) == 0 {
+			return
+		}
+		args = append(args, assistantArgs...)
+		filters = append(filters, "(ts.teacher_id IN ("+strings.Join(teacherHolders, ",")+") OR "+strings.Join(assistantParts, " OR ")+")")
+	}
+	appendScheduleTeacherFilter(query.ScheduleTeacherIDs)
 	appendInt64InFilter("ts.classroom_id", query.ClassroomIDs)
 	appendInt64InFilter("ts.lesson_id", query.LessonIDs)
 

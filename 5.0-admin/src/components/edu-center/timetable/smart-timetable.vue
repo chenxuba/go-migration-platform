@@ -1079,18 +1079,16 @@ async function loadTimetableMatrix() {
     if (seq !== matrixLoadSeq)
       return
     const { startDate, endDate } = queryDateRange.value
-    const classType = currentModel.value === '1' ? 2 : 1
     const scheduleTeacherIds = filterTeacherId.value.join(',')
     const classroomIds = filterClassroomId.value.join(',')
     const res = await listTeachingSchedulesByTeacherMatrixApi({
       startDate,
       endDate,
-      classType,
       studentId: filterStudentId.value,
       scheduleTeacherIds: scheduleTeacherIds || undefined,
       classroomIds: classroomIds || undefined,
-      groupClassIds: filterClassId.value && currentModel.value !== '1' ? String(filterClassId.value) : undefined,
-      oneToOneClassIds: filterOneToOneId.value && currentModel.value === '1' ? String(filterOneToOneId.value) : undefined,
+      groupClassIds: filterClassId.value ? String(filterClassId.value) : undefined,
+      oneToOneClassIds: filterOneToOneId.value ? String(filterOneToOneId.value) : undefined,
       lessonIds: filterCourseId.value ? String(filterCourseId.value) : undefined,
       scheduleTypes: filterScheduleType.value.length ? filterScheduleType.value.join(',') : undefined,
       callStatuses: filterCallStatus.value ? String(filterCallStatus.value) : undefined,
