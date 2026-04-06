@@ -18,6 +18,16 @@ type TeachingScheduleCreateSlotDTO struct {
 	AllowClassroomConflict bool     `json:"allowClassroomConflict,omitempty"`
 }
 
+type TeachingScheduleBatchMeta struct {
+	SchedulingMode    string   `json:"schedulingMode,omitempty"`
+	RepeatRule        string   `json:"repeatRule,omitempty"`
+	HolidayPolicy     string   `json:"holidayPolicy,omitempty"`
+	SelectedWeekdays  []string `json:"selectedWeekdays,omitempty"`
+	ScheduleStartDate string   `json:"scheduleStartDate,omitempty"`
+	FreeSelectedDates []string `json:"freeSelectedDates,omitempty"`
+	PlannedClassCount int      `json:"plannedClassCount,omitempty"`
+}
+
 type CreateOneToOneSchedulesDTO struct {
 	OneToOneID             string                          `json:"oneToOneId"`
 	TeacherID              string                          `json:"teacherId"`
@@ -26,6 +36,7 @@ type CreateOneToOneSchedulesDTO struct {
 	ExcludeIDs             []string                        `json:"excludeIds,omitempty"`
 	AllowStudentConflict   bool                            `json:"allowStudentConflict,omitempty"`
 	AllowClassroomConflict bool                            `json:"allowClassroomConflict,omitempty"`
+	BatchMeta              *TeachingScheduleBatchMeta      `json:"batchMeta,omitempty"`
 	Schedules              []TeachingScheduleCreateSlotDTO `json:"schedules"`
 }
 
@@ -54,18 +65,20 @@ type CheckAssistantScheduleAvailabilityDTO struct {
 }
 
 type TeachingScheduleListQueryDTO struct {
-	StartDate string `json:"startDate"`
-	EndDate   string `json:"endDate"`
-	ClassType *int   `json:"classType,omitempty"`
-	StudentID string `json:"studentId,omitempty"`
+	StartDate string   `json:"startDate"`
+	EndDate   string   `json:"endDate"`
+	ClassType *int     `json:"classType,omitempty"`
+	StudentID string   `json:"studentId,omitempty"`
+	BatchNo   string   `json:"batchNo,omitempty"`
+	IDs       []string `json:"ids,omitempty"`
 	// 课表业务筛选（HTTP 上为逗号分隔）
-	ScheduleTeacherIDs   []int64  `json:"scheduleTeacherIds,omitempty"`
-	ClassroomIDs         []int64  `json:"classroomIds,omitempty"`
-	GroupClassIDs        []int64  `json:"groupClassIds,omitempty"`
-	OneToOneClassIDs     []int64  `json:"oneToOneClassIds,omitempty"`
-	LessonIDs            []int64  `json:"lessonIds,omitempty"`
-	ScheduleTypeFilters  []string `json:"scheduleTypeFilters,omitempty"`
-	CallStatusFilters    []string `json:"callStatusFilters,omitempty"`
+	ScheduleTeacherIDs  []int64  `json:"scheduleTeacherIds,omitempty"`
+	ClassroomIDs        []int64  `json:"classroomIds,omitempty"`
+	GroupClassIDs       []int64  `json:"groupClassIds,omitempty"`
+	OneToOneClassIDs    []int64  `json:"oneToOneClassIds,omitempty"`
+	LessonIDs           []int64  `json:"lessonIds,omitempty"`
+	ScheduleTypeFilters []string `json:"scheduleTypeFilters,omitempty"`
+	CallStatusFilters   []string `json:"callStatusFilters,omitempty"`
 	// Matrix API（by-teacher-matrix）可选：日期展示维度，1=周一…7=周日，空=不限制
 	MatrixWeekdays []int `json:"matrixWeekdays,omitempty"`
 	// Matrix API 可选：教师列筛选，all | has_class | no_class，空等价于 all
@@ -89,6 +102,38 @@ type TeachingScheduleBatchUpdateDTO struct {
 	LessonDate   string   `json:"lessonDate"`
 	StartTime    string   `json:"startTime"`
 	EndTime      string   `json:"endTime"`
+}
+
+type TeachingScheduleBatchDetailQueryDTO struct {
+	BatchNo string   `json:"batchNo"`
+	IDs     []string `json:"ids,omitempty"`
+}
+
+type TeachingScheduleBatchDetailVO struct {
+	BatchNo           string                     `json:"batchNo,omitempty"`
+	BatchSize         int                        `json:"batchSize"`
+	ClassType         int                        `json:"classType"`
+	TeachingClassID   string                     `json:"teachingClassId"`
+	TeachingClassName string                     `json:"teachingClassName"`
+	StudentID         string                     `json:"studentId"`
+	StudentName       string                     `json:"studentName"`
+	LessonID          string                     `json:"lessonId"`
+	LessonName        string                     `json:"lessonName"`
+	BatchMeta         *TeachingScheduleBatchMeta `json:"batchMeta,omitempty"`
+	Schedules         []TeachingScheduleVO       `json:"schedules"`
+}
+
+type TeachingScheduleBatchReplaceDTO struct {
+	BatchNo                string                          `json:"batchNo"`
+	IDs                    []string                        `json:"ids"`
+	OneToOneID             string                          `json:"oneToOneId,omitempty"`
+	TeacherID              string                          `json:"teacherId"`
+	AssistantIDs           []string                        `json:"assistantIds"`
+	ClassroomID            string                          `json:"classroomId"`
+	AllowStudentConflict   bool                            `json:"allowStudentConflict,omitempty"`
+	AllowClassroomConflict bool                            `json:"allowClassroomConflict,omitempty"`
+	BatchMeta              *TeachingScheduleBatchMeta      `json:"batchMeta,omitempty"`
+	Schedules              []TeachingScheduleCreateSlotDTO `json:"schedules"`
 }
 
 type TeachingScheduleCancelDTO struct {

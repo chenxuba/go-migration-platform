@@ -11,13 +11,14 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, nextTick, ref, watch } from 'vue'
+import type { BatchPlanModalPreset } from './batch-plan-preset'
 import ScheduleConflictWorkbenchModal from './schedule-conflict-workbench-modal.vue'
 import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import type { TeachingScheduleValidationResult } from '@/api/edu-center/teaching-schedule'
-import { checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, replaceTeachingScheduleBatchApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import { useUserStore } from '@/stores/user'
@@ -114,18 +115,26 @@ interface AssistantSelectOptionView {
   statusText: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
-}>()
+  mode?: 'create' | 'editBatch'
+  batchPlanPreset?: BatchPlanModalPreset | null
+}>(), {
+  mode: 'create',
+  batchPlanPreset: null,
+})
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
+  (e: 'updated'): void
 }>()
 
 const modalOpen = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
 })
+
+const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
 
 const weekDayOptions = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const weekdayToNumber: Record<string, number> = {
@@ -229,11 +238,6 @@ function isTeacherAllowedInPeriodGroup(teacherIdStr: string, groupIndex: number)
   return list.some(t => String(t.id ?? '').trim() === teacherIdStr)
 }
 
-/** 助教跟随当前时段组筛选；当前组未配置关联老师时，仍允许全部老师可选 */
-function isAssistantAllowedInCurrentGroup(assistantIdStr: string): boolean {
-  return isTeacherAllowedInPeriodGroup(assistantIdStr, periodGroupIndexForKey(currentGroup.value))
-}
-
 const classroomList = ref<ClassroomItem[]>([])
 const workbenchTeacherList = ref<StaffOptionItem[]>([])
 const oneToOneRecords = ref<OneToOneItem[]>([])
@@ -247,6 +251,11 @@ const currentGroup = ref<PeriodGroupKey>('A')
 const selectedWeekdays = ref(['周一', '周三', '周五'])
 /** 同一选课可多次勾选（例如上午一节 + 下午一节），每个上课日按所选时段各生成一节 */
 const selectedSchoolTimeSlots = ref<string[]>([])
+
+/** 助教跟随当前时段组筛选；当前组未配置关联老师时，仍允许全部老师可选 */
+function isAssistantAllowedInCurrentGroup(assistantIdStr: string): boolean {
+  return isTeacherAllowedInPeriodGroup(assistantIdStr, periodGroupIndexForKey(currentGroup.value))
+}
 
 const schoolTimeSlotOptions = computed<SchoolTimeSlot[]>(() => {
   const slots = slotsForGroupKey(currentGroup.value)
@@ -302,6 +311,35 @@ function scheduleSlotKeysEqual(a: string[], b: string[]) {
       return false
   }
   return true
+}
+
+function findPresetGroupAndSlotKeys(timeBlocks: BatchPlanModalPreset['timeBlocks']) {
+  const normalized = Array.isArray(timeBlocks)
+    ? timeBlocks.map(item => ({
+        startTime: String(item?.startTime || '').trim().slice(0, 5),
+        endTime: String(item?.endTime || '').trim().slice(0, 5),
+      })).filter(item => item.startTime && item.endTime)
+    : []
+  if (!normalized.length)
+    return { group: currentGroup.value, slotKeys: [] as string[] }
+
+  for (const opt of groupOptions.value) {
+    const key = opt.key as PeriodGroupKey
+    const options = slotsForGroupKey(key)
+    const slotKeys: string[] = []
+    let matched = true
+    for (const block of normalized) {
+      const slot = options.find(item => String(item.start || '').slice(0, 5) === block.startTime && String(item.end || '').slice(0, 5) === block.endTime)
+      if (!slot) {
+        matched = false
+        break
+      }
+      slotKeys.push(`period-${slot.index}`)
+    }
+    if (matched)
+      return { group: key, slotKeys }
+  }
+  return { group: currentGroup.value, slotKeys: [] as string[] }
 }
 
 function scheduleAvailabilityBadge(status: 'free' | 'busy' | 'unknown', statusText: string): AvailabilityBadgeView {
@@ -413,10 +451,25 @@ const teacherPresetStaff = computed<StaffOptionItem[]>(() => {
     records.push({ id: key, name: label, nickName: label })
   }
 
+  const batchPresetSchedules = Array.isArray(props.batchPlanPreset?.detail?.schedules)
+    ? props.batchPlanPreset.detail.schedules
+    : []
+  batchPresetSchedules.forEach(item => append(item.teacherId, item.teacherName))
+  append(selectedTeacherDisplay.value?.id, displayStaffName(selectedTeacherDisplay.value))
   selectedOneToOne.value?.teacherList?.forEach(item => append(item.teacherId, item.name))
   append(selectedOneToOne.value?.defaultTeacherId, selectedOneToOne.value?.defaultTeacherName)
   return records
 })
+
+function resolveStaffDisplayById(id: string | number | undefined) {
+  if (!isValidStaffId(id))
+    return null
+  const target = String(id)
+  return workbenchTeacherList.value.find(item => sameStaffId(item.id, target))
+    || teacherPresetStaff.value.find(item => sameStaffId(item.id, target))
+    || selectedAssistantDisplays.value.find(item => sameStaffId(item.id, target))
+    || null
+}
 
 const scheduleStaffSelectKey = computed(() => selectedOneToOne.value?.id || 'empty')
 
@@ -525,6 +578,45 @@ watch(selectedOneToOneId, (value) => {
   plannedClassCount.value = remain > 0 ? Math.max(1, Math.ceil(remain)) : 1
 }, { immediate: true })
 
+async function applyBatchPlanPreset(preset?: BatchPlanModalPreset | null) {
+  if (!preset)
+    return
+  scheduleType.value = 'oneToOne'
+  selectedOneToOneId.value = preset.oneToOneId
+  await nextTick()
+
+  schedulingMode.value = preset.schedulingMode as SchedulingMode
+  repeatRule.value = preset.repeatRule as RepeatRule
+  holidayPolicy.value = preset.holidayPolicy
+  selectedWeekdays.value = preset.selectedWeekdays.length ? [...preset.selectedWeekdays] : ['周一']
+  scheduleStartDate.value = dayjs(preset.scheduleStartDate || dayjs()).startOf('day')
+  freeSelectedDates.value = (preset.freeSelectedDates.length ? preset.freeSelectedDates : [preset.scheduleStartDate || dayjs().format('YYYY-MM-DD')])
+    .map(item => dayjs(item).startOf('day'))
+    .filter(item => item.isValid())
+  if (!freeSelectedDates.value.length)
+    freeSelectedDates.value = [dayjs().startOf('day')]
+  freeCalendarPanelDate.value = freeSelectedDates.value[0].startOf('month')
+  plannedClassCount.value = Math.max(1, Number(preset.plannedClassCount || 1))
+
+  const teacherId = String(preset.teacherId || '').trim()
+  selectedTeacher.value = teacherId || undefined
+  selectedTeacherDisplay.value = resolveStaffDisplayById(teacherId)
+
+  selectedClassroom.value = String(preset.classroomId || '').trim() || undefined
+
+  const assistantIds = Array.isArray(preset.assistantIds)
+    ? preset.assistantIds.map(item => String(item).trim()).filter(Boolean)
+    : []
+
+  const matchedSlots = findPresetGroupAndSlotKeys(preset.timeBlocks)
+  currentGroup.value = matchedSlots.group
+  await nextTick()
+  selectedSchoolTimeSlots.value = matchedSlots.slotKeys
+
+  selectedAssistant.value = assistantIds.length ? assistantIds : undefined
+  handleAssistantChange(assistantIds)
+}
+
 watch(modalOpen, async (value) => {
   if (value) {
     selectedOneToOneId.value = undefined
@@ -537,6 +629,8 @@ watch(modalOpen, async (value) => {
       fetchClassroomList(),
       fetchWorkbenchTeacherList(),
     ])
+    if (isBatchPlanEditMode.value && props.batchPlanPreset)
+      await applyBatchPlanPreset(props.batchPlanPreset)
     await nextTick()
     scrollPlannerShellToTop()
     requestAnimationFrame(() => scrollPlannerShellToTop())
@@ -546,7 +640,16 @@ watch(modalOpen, async (value) => {
     teacherSlotAvailabilityMap.value = {}
     assistantAvailabilityMap.value = {}
   }
-})
+}, { immediate: true })
+
+watch(
+  () => [modalOpen.value, isBatchPlanEditMode.value, props.batchPlanPreset] as const,
+  async ([open, editMode, preset]) => {
+    if (!open || !editMode || !preset || !oneToOneRecords.value.length)
+      return
+    await applyBatchPlanPreset(preset)
+  },
+)
 
 const oneToOneStatusText = computed(() =>
   Number(selectedOneToOne.value?.status) === 2 ? '已结班' : '开班中',
@@ -1324,23 +1427,50 @@ const previewHelperText = computed(() => {
   if (previewValidating.value)
     return '正在校验老师、教室与时间冲突，请稍候。'
   if (previewHasConflict.value)
-    return previewValidationMessage.value || '当前排课方案存在冲突，请返回修改后再尝试创建。'
+    return previewValidationMessage.value || (isBatchPlanEditMode.value ? '当前批次规则存在冲突，请返回修改后再尝试保存。' : '当前排课方案存在冲突，请返回修改后再尝试创建。')
   if (!estimatedCount.value && excludedHolidayCount.value > 0)
     return '当前日期都命中节假日且已被过滤，请调整日期或关闭节假日过滤。'
   if (!estimatedCount.value)
     return '请先选择有效的排课日期。'
   if (excludedHolidayCount.value > 0)
-    return `已根据节假日规则过滤 ${excludedHolidayCount.value} 节，剩余 ${estimatedCount.value} 节待创建。`
-  return '已完成预检，可确认创建。正式创建时服务端仍会再校验一次。'
+    return `已根据节假日规则过滤 ${excludedHolidayCount.value} 节，剩余 ${estimatedCount.value} 节待${isBatchPlanEditMode.value ? '保存' : '创建'}。`
+  return `已完成预检，可确认${isBatchPlanEditMode.value ? '保存' : '创建'}。正式提交时服务端仍会再校验一次。`
 })
+
+const modalTitleText = computed(() => isBatchPlanEditMode.value ? '编辑批次规则' : '创建1对1日程')
+
+const modalSubtitleText = computed(() =>
+  isBatchPlanEditMode.value
+    ? '回显当前批次的生成条件，调整后会整体替换这批日程。'
+    : '参考当前1对1档案快速生成日程，先把规则配置清楚，再确认创建。',
+)
+
+const selectedRecordLabelText = computed(() => isBatchPlanEditMode.value ? '当前1对1' : (scheduleType.value === 'oneToOne' ? '选择1对1' : '选择学员和课程'))
+
+const selectedRecordPlaceholderText = computed(() => {
+  if (oneToOneLoading.value)
+    return '正在加载1对1数据...'
+  return isBatchPlanEditMode.value ? '当前批次对应的1对1' : '请选择1对1'
+})
+
+const summaryCardTitleText = computed(() => isBatchPlanEditMode.value ? '当前批次' : '当前档案')
+const summaryCardDescText = computed(() => isBatchPlanEditMode.value ? '来自当前批次的基础信息与规则摘要。' : '来自当前1对1记录的基础信息与创建摘要。')
+const overviewCardTitleText = computed(() => isBatchPlanEditMode.value ? '规则摘要' : '创建摘要')
+const formCardDescText = computed(() => isBatchPlanEditMode.value ? '回显当前批次的生成条件，调整后整体替换本批次。' : '按顺序完成排课方式、日期规则和时间资源。')
+const reviewTitleText = computed(() => isBatchPlanEditMode.value ? '预计替换清单' : '预计排课清单')
+const reviewSubtitleText = computed(() => isBatchPlanEditMode.value ? '先确认本次将替换出的日程，再执行整体保存。' : '先确认本次将创建的日程，再执行批量创建。')
 
 const footerTipText = computed(() => {
   if (selectedOneToOne.value?.remark)
     return `档案备注：${selectedOneToOne.value.remark}`
-  return '创建后仍可在日程列表中继续调整老师、教室和具体时间。'
+  return isBatchPlanEditMode.value
+    ? '保存后会整体替换当前批次；原批次日程会被撤销，新批次会按当前规则重建。'
+    : '创建后仍可在日程列表中继续调整老师、教室和具体时间。'
 })
 
 const actionButtonText = computed(() => {
+  if (isBatchPlanEditMode.value)
+    return estimatedCount.value > 0 ? `保存并替换 ${estimatedCount.value} 节` : '保存批次规则'
   if (schedulingMode.value === 'free')
     return estimatedCount.value > 0 ? '创建单次日程' : '创建日程'
   return estimatedCount.value > 0 ? `批量创建 ${estimatedCount.value} 节` : '批量创建日程'
@@ -1464,6 +1594,18 @@ function closeModal() {
   modalOpen.value = false
 }
 
+function buildBatchMetaPayload() {
+  return {
+    schedulingMode: schedulingMode.value,
+    repeatRule: repeatRule.value,
+    holidayPolicy: holidayPolicy.value,
+    selectedWeekdays: [...selectedWeekdays.value],
+    scheduleStartDate: scheduleStartDate.value.format('YYYY-MM-DD'),
+    freeSelectedDates: freeSelectedDatesSorted.value.map(item => item.format('YYYY-MM-DD')),
+    plannedClassCount: Math.max(0, Math.floor(Number(plannedClassCount.value) || 0)),
+  }
+}
+
 function buildScheduleCreatePayload(options: {
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
@@ -1480,6 +1622,7 @@ function buildScheduleCreatePayload(options: {
       ? options.assistantIds.map(id => String(id))
       : selectedAssistantValues.value.map(id => String(id)),
     classroomId: normalizedSelectedClassroomId.value || '',
+    batchMeta: buildBatchMetaPayload(),
     allowStudentConflict: options.allowStudentConflict === true,
     allowClassroomConflict: options.allowClassroomConflict === true,
     schedules: plans.map(item => ({
@@ -1550,17 +1693,29 @@ async function confirmBatchCreate(options: {
   else
     creatingSchedules.value = true
   try {
-    const res = await createOneToOneSchedulesApi(buildScheduleCreatePayload(options))
+    const payload = buildScheduleCreatePayload(options)
+    const res = isBatchPlanEditMode.value
+      ? await replaceTeachingScheduleBatchApi({
+        batchNo: props.batchPlanPreset?.batchNo,
+        ids: props.batchPlanPreset?.scheduleIds,
+        oneToOneId: String(selectedOneToOne.value?.id || ''),
+        ...payload,
+      })
+      : await createOneToOneSchedulesApi(payload)
     if (res.code !== 200)
-      throw new Error(res.message || '创建1对1日程失败')
+      throw new Error(res.message || (isBatchPlanEditMode.value ? '保存批次规则失败' : '创建1对1日程失败'))
     const count = res.result?.count || (options.plans?.length || previewPlans.value.length)
-    if (isSoftConflictCreate) {
+    if (isBatchPlanEditMode.value) {
+      messageService.success(`已按新规则替换 ${count} 节日程`)
+    }
+    else if (isSoftConflictCreate) {
       messageService.success(`已创建 ${count} 节1对1日程，并标记冲突`)
     }
     else {
       messageService.success(`已创建 ${count} 节1对1日程`)
     }
     emitter.emit(EVENTS.REFRESH_DATA)
+    emit('updated')
     conflictModalOpen.value = false
     previewModalOpen.value = false
     modalOpen.value = false
@@ -1568,7 +1723,7 @@ async function confirmBatchCreate(options: {
   catch (error: any) {
     console.error('create one-to-one schedules failed', error)
     previewHasConflict.value = true
-    previewValidationMessage.value = error?.response?.data?.message || error?.message || '创建1对1日程失败'
+    previewValidationMessage.value = error?.response?.data?.message || error?.message || (isBatchPlanEditMode.value ? '保存批次规则失败' : '创建1对1日程失败')
     if (previewValidationResult.value)
       conflictModalOpen.value = true
     messageService.error(previewValidationMessage.value)
@@ -1675,10 +1830,10 @@ function invertWeekdays() {
         <div class="planner-head">
           <div class="planner-head__main">
             <div class="planner-head__title">
-              创建1对1日程
+              {{ modalTitleText }}
             </div>
             <div class="planner-head__subtitle">
-              参考当前1对1档案快速生成日程，先把规则配置清楚，再确认创建。
+              {{ modalSubtitleText }}
             </div>
           </div>
 
@@ -1730,6 +1885,7 @@ function invertWeekdays() {
                   type="button"
                   class="planner-choice planner-choice--type"
                   :class="{ 'planner-choice--active': scheduleType === item.value }"
+                  :disabled="isBatchPlanEditMode"
                   @click="scheduleType = item.value"
                 >
                   <span class="planner-choice__title">{{ item.label }}</span>
@@ -1740,7 +1896,7 @@ function invertWeekdays() {
             <div class="planner-inline__group planner-inline__group--record">
               <span class="planner-label planner-label--inline">
                 <BookOutlined />
-                {{ scheduleType === 'oneToOne' ? '选择1对1' : '选择学员和课程' }}
+                {{ selectedRecordLabelText }}
               </span>
               <a-select
                 v-if="scheduleType === 'oneToOne'"
@@ -1752,9 +1908,9 @@ function invertWeekdays() {
                 popup-class-name="planner-record-select-dropdown"
                 allow-clear
                 :loading="oneToOneLoading"
-                :disabled="oneToOneLoading || !oneToOneSelectOptions.length"
+                :disabled="isBatchPlanEditMode || oneToOneLoading || !oneToOneSelectOptions.length"
                 :not-found-content="oneToOneLoading ? '正在加载1对1数据...' : '暂无1对1数据'"
-                :placeholder="oneToOneLoading ? '正在加载1对1数据...' : '请选择1对1'"
+                :placeholder="selectedRecordPlaceholderText"
                 class="planner-control planner-control--record"
               >
                 <a-select-option
@@ -1775,7 +1931,7 @@ function invertWeekdays() {
                 v-model:value="selectedStudentLessonPath"
                 :options="studentLessonCascaderOptions"
                 allow-clear
-                :disabled="oneToOneLoading || !studentLessonCascaderOptions.length"
+                :disabled="isBatchPlanEditMode || oneToOneLoading || !studentLessonCascaderOptions.length"
                 :placeholder="oneToOneLoading ? '正在加载1对1数据...' : '请选择学员和课程'"
                 class="planner-control planner-control--record"
                 @change="handleStudentLessonChange"
@@ -1803,10 +1959,10 @@ function invertWeekdays() {
             <section class="planner-card planner-card--summary">
               <div class="planner-card__head">
                 <div class="planner-card__title">
-                  当前档案
+                  {{ summaryCardTitleText }}
                 </div>
                 <div class="planner-card__desc">
-                  来自当前1对1记录的基础信息与创建摘要。
+                  {{ summaryCardDescText }}
                 </div>
               </div>
 
@@ -1831,7 +1987,7 @@ function invertWeekdays() {
               </div>
 
               <div class="planner-card__subhead">
-                创建摘要
+                {{ overviewCardTitleText }}
               </div>
 
               <div class="planner-summary-list planner-summary-list--secondary">
@@ -1854,6 +2010,14 @@ function invertWeekdays() {
                 {{ selectedOneToOne.remark }}
               </div>
 
+              <div
+                v-for="(warning, index) in (isBatchPlanEditMode ? props.batchPlanPreset?.warnings || [] : [])"
+                :key="`preset-warning-${index}`"
+                class="planner-alert planner-alert--soft"
+              >
+                {{ warning }}
+              </div>
+
               <div v-if="planExceedsRemainHint" class="planner-alert planner-alert--soft">
                 {{ planExceedsRemainHint }}
               </div>
@@ -1871,7 +2035,7 @@ function invertWeekdays() {
                   排课设置
                 </div>
                 <div class="planner-card__desc">
-                  按顺序完成排课方式、日期规则和时间资源。
+                  {{ formCardDescText }}
                 </div>
               </div>
 
@@ -2268,10 +2432,10 @@ function invertWeekdays() {
         <div class="planner-review__head">
           <div>
             <div class="planner-review__title">
-              预计排课清单
+              {{ reviewTitleText }}
             </div>
             <div class="planner-review__subtitle">
-              先确认本次将创建的日程，再执行批量创建。
+              {{ reviewSubtitleText }}
             </div>
           </div>
           <div class="planner-review__count">
@@ -2389,7 +2553,7 @@ function invertWeekdays() {
             <a-button @click="closePreviewModal">
               返回修改
             </a-button>
-            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0 || previewValidating || previewHasConflict" :loading="creatingSchedules" @click="confirmBatchCreate">
+            <a-button type="primary" :disabled="!isSchedulable || estimatedCount === 0 || previewValidating || previewHasConflict" :loading="creatingSchedules" @click="() => confirmBatchCreate()">
               {{ actionButtonText }}
             </a-button>
           </div>

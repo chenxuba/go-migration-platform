@@ -174,6 +174,37 @@ func (handler *Handler) checkAssistantScheduleAvailability(w http.ResponseWriter
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) teachingScheduleBatchDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query := model.TeachingScheduleBatchDetailQueryDTO{
+		BatchNo: strings.TrimSpace(r.URL.Query().Get("batchNo")),
+	}
+	for _, raw := range strings.Split(strings.TrimSpace(r.URL.Query().Get("ids")), ",") {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		query.IDs = append(query.IDs, value)
+	}
+	if id := strings.TrimSpace(r.URL.Query().Get("id")); id != "" {
+		query.IDs = append(query.IDs, id)
+	}
+	result, err := handler.service.GetTeachingScheduleBatchDetail(claims.UserID, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) teachingScheduleConflictDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -287,6 +318,29 @@ func (handler *Handler) clearAllTeachingSchedules(w http.ResponseWriter, r *http
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"deleted": n}, ctx.RequestID)
+}
+
+func (handler *Handler) replaceTeachingScheduleBatch(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var dto model.TeachingScheduleBatchReplaceDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.ReplaceTeachingScheduleBatch(claims.UserID, dto)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
 func (handler *Handler) batchUpdateTeachingSchedules(w http.ResponseWriter, r *http.Request) {

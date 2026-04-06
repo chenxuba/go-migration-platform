@@ -27,6 +27,30 @@ export interface TeachingScheduleItem {
   conflictTypes?: string[]
 }
 
+export interface TeachingScheduleBatchMeta {
+  schedulingMode?: string
+  repeatRule?: string
+  holidayPolicy?: string
+  selectedWeekdays?: string[]
+  scheduleStartDate?: string
+  freeSelectedDates?: string[]
+  plannedClassCount?: number
+}
+
+export interface TeachingScheduleBatchDetail {
+  batchNo?: string
+  batchSize: number
+  classType: number
+  teachingClassId: string
+  teachingClassName: string
+  studentId: string
+  studentName: string
+  lessonId: string
+  lessonName: string
+  batchMeta?: TeachingScheduleBatchMeta
+  schedules: TeachingScheduleItem[]
+}
+
 export interface CreateOneToOneSchedulesResult {
   batchNo?: string
   count: number
@@ -150,6 +174,7 @@ export function createOneToOneSchedulesApi(data: {
   teacherId: string
   assistantIds?: string[]
   classroomId?: string
+  batchMeta?: TeachingScheduleBatchMeta
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
   schedules: Array<{
@@ -171,6 +196,7 @@ export function validateOneToOneSchedulesApi(data: {
   teacherId: string
   assistantIds?: string[]
   classroomId?: string
+  batchMeta?: TeachingScheduleBatchMeta
   excludeIds?: string[]
   schedules: Array<{
     lessonDate: string
@@ -332,6 +358,42 @@ export function batchUpdateTeachingSchedulesApi(data: {
   endTime: string
 }) {
   return usePost<boolean>('/api/v1/teaching-schedules/batch-update', data)
+}
+
+export function getTeachingScheduleBatchDetailApi(params: {
+  batchNo?: string
+  ids?: string[]
+  id?: string
+}) {
+  return useGet<TeachingScheduleBatchDetail>('/api/v1/teaching-schedules/batch-detail', {
+    batchNo: params.batchNo,
+    ids: Array.isArray(params.ids) ? params.ids.join(',') : undefined,
+    id: params.id,
+  })
+}
+
+export function replaceTeachingScheduleBatchApi(data: {
+  batchNo?: string
+  ids?: string[]
+  oneToOneId?: string
+  teacherId: string
+  assistantIds?: string[]
+  classroomId?: string
+  batchMeta?: TeachingScheduleBatchMeta
+  allowStudentConflict?: boolean
+  allowClassroomConflict?: boolean
+  schedules: Array<{
+    lessonDate: string
+    startTime: string
+    endTime: string
+    teacherId?: string
+    assistantIds?: string[]
+    classroomId?: string
+    allowStudentConflict?: boolean
+    allowClassroomConflict?: boolean
+  }>
+}) {
+  return usePost<CreateOneToOneSchedulesResult>('/api/v1/teaching-schedules/batch-replace', data)
 }
 
 export function cancelTeachingSchedulesApi(data: {

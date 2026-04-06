@@ -516,6 +516,22 @@ func (svc *Service) BatchUpdateTeachingSchedules(userID int64, dto model.Teachin
 	return svc.repo.BatchUpdateTeachingSchedules(context.Background(), instID, operatorID, dto)
 }
 
+func (svc *Service) GetTeachingScheduleBatchDetail(userID int64, query model.TeachingScheduleBatchDetailQueryDTO) (model.TeachingScheduleBatchDetailVO, error) {
+	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.TeachingScheduleBatchDetailVO{}, err
+	}
+	return svc.repo.GetTeachingScheduleBatchDetail(context.Background(), instID, query)
+}
+
+func (svc *Service) ReplaceTeachingScheduleBatch(userID int64, dto model.TeachingScheduleBatchReplaceDTO) (model.CreateOneToOneSchedulesResult, error) {
+	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	return svc.repo.ReplaceTeachingScheduleBatch(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) CancelTeachingSchedules(userID int64, dto model.TeachingScheduleCancelDTO) (model.TeachingScheduleCancelResult, error) {
 	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
 	if err != nil {

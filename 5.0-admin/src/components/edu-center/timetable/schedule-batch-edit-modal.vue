@@ -20,6 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'updated'): void
+  (e: 'editBatchPlan', schedule: TeachingScheduleItem): void
 }>()
 
 const modalOpen = computed({
@@ -62,6 +63,10 @@ const assistantPresetStaff = computed(() => {
 
 const titleText = computed(() =>
   Number(props.schedule?.batchSize || 1) > 1 ? '批量修改本批次日程' : '编辑日程',
+)
+
+const canEditBatchPlan = computed(() =>
+  Number(props.schedule?.batchSize || 1) > 1 && Number(props.schedule?.classType || 0) === 2,
 )
 
 const helperText = computed(() => {
@@ -115,6 +120,13 @@ watch(() => [props.open, props.schedule], async ([open]) => {
 
 function closeModal() {
   modalOpen.value = false
+}
+
+function handleEditBatchPlan() {
+  if (!props.schedule)
+    return
+  emit('editBatchPlan', props.schedule)
+  closeModal()
 }
 
 async function submitForm() {
@@ -187,6 +199,14 @@ async function submitForm() {
         <div class="schedule-batch-edit__hint">
           {{ helperText }}
         </div>
+        <a-button
+          v-if="canEditBatchPlan"
+          type="link"
+          class="schedule-batch-edit__hero-action"
+          @click="handleEditBatchPlan"
+        >
+          编辑生成条件
+        </a-button>
       </div>
 
       <div class="schedule-batch-edit__grid">
@@ -300,6 +320,11 @@ async function submitForm() {
   color: #1677ff;
   font-size: 12px;
   line-height: 1.6;
+}
+
+.schedule-batch-edit__hero-action {
+  margin-top: 8px;
+  padding-left: 0;
 }
 
 .schedule-batch-edit__grid {

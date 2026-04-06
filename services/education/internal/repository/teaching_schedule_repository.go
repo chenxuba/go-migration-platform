@@ -54,13 +54,42 @@ func ensureTeachingScheduleTables(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	return ensureColumnsOnTable(ctx, db, "teaching_schedule", map[string]string{
+	if err := ensureColumnsOnTable(ctx, db, "teaching_schedule", map[string]string{
 		"assistant_ids_json":   "assistant_ids_json JSON NULL AFTER teacher_name",
 		"assistant_names_json": "assistant_names_json JSON NULL AFTER assistant_ids_json",
 		"classroom_id":         "classroom_id BIGINT NOT NULL DEFAULT 0 AFTER assistant_names_json",
 		"classroom_name":       "classroom_name VARCHAR(150) NOT NULL DEFAULT '' AFTER classroom_id",
 		"batch_no":             "batch_no VARCHAR(64) NOT NULL DEFAULT '' AFTER lesson_end_at",
 		"batch_size":           "batch_size INT NOT NULL DEFAULT 1 AFTER batch_no",
+	}); err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS teaching_schedule_batch_meta (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			inst_id BIGINT NOT NULL,
+			batch_key VARCHAR(96) NOT NULL,
+			batch_no VARCHAR(64) NOT NULL DEFAULT '',
+			class_type INT NOT NULL DEFAULT 0,
+			teaching_class_id BIGINT NOT NULL DEFAULT 0,
+			meta_json JSON NULL,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uniq_teaching_schedule_batch_meta_key (inst_id, batch_key),
+			KEY idx_teaching_schedule_batch_meta_batch_no (inst_id, batch_no)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	return ensureColumnsOnTable(ctx, db, "teaching_schedule_batch_meta", map[string]string{
+		"batch_no":          "batch_no VARCHAR(64) NOT NULL DEFAULT '' AFTER batch_key",
+		"class_type":        "class_type INT NOT NULL DEFAULT 0 AFTER batch_no",
+		"teaching_class_id": "teaching_class_id BIGINT NOT NULL DEFAULT 0 AFTER class_type",
+		"meta_json":         "meta_json JSON NULL AFTER teaching_class_id",
 	})
 }
 
@@ -179,6 +208,16 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleVO, error) {
 	filters := []string{"ts.inst_id = ?", "ts.del_flag = 0", "ts.status = ?"}
 	args := []any{instID, model.TeachingScheduleStatusActive}
+	if batchNo := strings.TrimSpace(query.BatchNo); batchNo != "" {
+		filters = append(filters, "ts.batch_no = ?")
+		args = append(args, batchNo)
+	}
+	if ids := parseStringIDs(query.IDs); len(ids) > 0 {
+		filters = append(filters, "ts.id IN ("+sqlPlaceholders(len(ids))+")")
+		for _, id := range ids {
+			args = append(args, id)
+		}
+	}
 	if strings.TrimSpace(query.StartDate) != "" {
 		filters = append(filters, "ts.lesson_date >= ?")
 		args = append(args, strings.TrimSpace(query.StartDate))
@@ -647,6 +686,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		Count:   len(plans),
 		List:    make([]model.TeachingScheduleVO, 0, len(plans)),
 	}
+	createdScheduleIDs := make([]int64, 0, len(plans))
 
 	for _, plan := range plans {
 		teacherName := firstNonEmptyString(teacherNames[plan.TeacherID], "-")
@@ -695,6 +735,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		if err != nil {
 			return model.CreateOneToOneSchedulesResult{}, err
 		}
+		createdScheduleIDs = append(createdScheduleIDs, id)
 		result.List = append(result.List, model.TeachingScheduleVO{
 			ID:                strconv.FormatInt(id, 10),
 			BatchNo:           batchNo,
@@ -717,6 +758,19 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 			EndAt:             plan.EndAt,
 			Status:            model.TeachingScheduleStatusActive,
 		})
+	}
+	if err := repo.saveTeachingScheduleBatchMetaTx(
+		ctx,
+		tx,
+		instID,
+		operatorID,
+		batchNo,
+		model.TeachingClassTypeOneToOne,
+		base.ClassID,
+		createdScheduleIDs,
+		dto.BatchMeta,
+	); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -1055,6 +1109,388 @@ func (repo *Repository) CheckAssistantScheduleAvailability(ctx context.Context, 
 	return result, nil
 }
 
+func (repo *Repository) GetTeachingScheduleBatchDetail(ctx context.Context, instID int64, query model.TeachingScheduleBatchDetailQueryDTO) (model.TeachingScheduleBatchDetailVO, error) {
+	items, err := repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
+		BatchNo: query.BatchNo,
+		IDs:     query.IDs,
+	})
+	if err != nil {
+		return model.TeachingScheduleBatchDetailVO{}, err
+	}
+	if len(items) == 0 {
+		return model.TeachingScheduleBatchDetailVO{}, errors.New("未找到该批次日程")
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].LessonDate == items[j].LessonDate {
+			if items[i].StartAt.Equal(items[j].StartAt) {
+				return items[i].ID < items[j].ID
+			}
+			return items[i].StartAt.Before(items[j].StartAt)
+		}
+		return items[i].LessonDate < items[j].LessonDate
+	})
+	scheduleIDs := make([]int64, 0, len(items))
+	for _, item := range items {
+		id, parseErr := strconv.ParseInt(strings.TrimSpace(item.ID), 10, 64)
+		if parseErr == nil && id > 0 {
+			scheduleIDs = append(scheduleIDs, id)
+		}
+	}
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.TeachingScheduleBatchDetailVO{}, err
+	}
+	defer tx.Rollback()
+	meta, err := repo.loadTeachingScheduleBatchMetaTx(ctx, tx, instID, items[0].BatchNo, scheduleIDs)
+	if err != nil {
+		return model.TeachingScheduleBatchDetailVO{}, err
+	}
+	first := items[0]
+	return model.TeachingScheduleBatchDetailVO{
+		BatchNo:           first.BatchNo,
+		BatchSize:         len(items),
+		ClassType:         first.ClassType,
+		TeachingClassID:   first.TeachingClassID,
+		TeachingClassName: first.TeachingClassName,
+		StudentID:         first.StudentID,
+		StudentName:       first.StudentName,
+		LessonID:          first.LessonID,
+		LessonName:        first.LessonName,
+		BatchMeta:         meta,
+		Schedules:         items,
+	}, nil
+}
+
+func (repo *Repository) ReplaceTeachingScheduleBatch(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleBatchReplaceDTO) (model.CreateOneToOneSchedulesResult, error) {
+	fallbackTeacherID, err := parseOptionalPositiveID(dto.TeacherID)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("请选择上课教师")
+	}
+	fallbackClassroomID, err := parseOptionalPositiveID(dto.ClassroomID)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("classroomId 无效")
+	}
+	if len(dto.Schedules) == 0 {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("请至少选择一节日程")
+	}
+	assistantIDs := parseStringIDs(dto.AssistantIDs)
+	for _, assistantID := range assistantIDs {
+		if assistantID == fallbackTeacherID {
+			return model.CreateOneToOneSchedulesResult{}, errors.New("主教与助教不能为同一人")
+		}
+	}
+
+	existing, err := repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
+		BatchNo: strings.TrimSpace(dto.BatchNo),
+		IDs:     dto.IDs,
+	})
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	if len(existing) == 0 {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("未找到可替换的日程")
+	}
+	allBatchSchedules := existing
+	if batchNo := strings.TrimSpace(dto.BatchNo); batchNo != "" {
+		allBatchSchedules, err = repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
+			BatchNo: batchNo,
+		})
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+	}
+
+	classID, err := strconv.ParseInt(strings.TrimSpace(existing[0].TeachingClassID), 10, 64)
+	if err != nil || classID <= 0 {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("当前批次缺少有效的1对1信息")
+	}
+	if raw := strings.TrimSpace(dto.OneToOneID); raw != "" && raw != strconv.FormatInt(classID, 10) {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("当前批次与所选1对1不一致")
+	}
+	for _, item := range existing {
+		if item.ClassType != model.TeachingClassTypeOneToOne {
+			return model.CreateOneToOneSchedulesResult{}, errors.New("仅支持按1对1规则重排当前批次")
+		}
+		if strings.TrimSpace(item.TeachingClassID) != strconv.FormatInt(classID, 10) {
+			return model.CreateOneToOneSchedulesResult{}, errors.New("当前批次包含多个1对1，暂不支持合并重排")
+		}
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	defer tx.Rollback()
+
+	base, err := repo.GetOneToOneScheduleCreateContextTx(ctx, tx, instID, classID)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	if base.Status != model.TeachingClassStatusActive {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("当前1对1已结班，暂不可调整批次规则")
+	}
+	if base.ClassStudentStatus != model.TeachingClassStudentStatusStudying {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("当前1对1学员状态不允许调整批次规则")
+	}
+
+	plans, err := normalizeCreateSchedulePlans(dto.Schedules, fallbackTeacherID, fallbackClassroomID, assistantIDs)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	applyCreateScheduleConflictAllowances(plans, dto.AllowStudentConflict, dto.AllowClassroomConflict)
+	teacherIDs := collectPlanTeacherIDs(plans)
+	if len(teacherIDs) == 0 {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("请选择上课教师")
+	}
+	if n, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs); err != nil || n != len(teacherIDs) {
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		return model.CreateOneToOneSchedulesResult{}, errors.New("上课教师无效")
+	}
+	planAssistantIDs := collectPlanAssistantIDs(plans)
+	if len(planAssistantIDs) > 0 {
+		if n, err := repo.CountInstUsersByIDs(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
+			if err != nil {
+				return model.CreateOneToOneSchedulesResult{}, err
+			}
+			return model.CreateOneToOneSchedulesResult{}, errors.New("存在无效的上课助教")
+		}
+	}
+
+	classroomNames, err := repo.resolveClassroomNamesTx(ctx, tx, instID, collectPlanClassroomIDs(plans))
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+
+	teacherNames := repo.resolveTeacherNames(ctx, teacherIDs)
+	assistantNameMap := repo.resolveTeacherNames(ctx, planAssistantIDs)
+	for i := range plans {
+		plans[i].AssistantNames = compactStrings(func() []string {
+			names := make([]string, 0, len(plans[i].AssistantIDs))
+			for _, id := range plans[i].AssistantIDs {
+				if name := strings.TrimSpace(assistantNameMap[id]); name != "" && name != "-" {
+					names = append(names, name)
+				}
+			}
+			return names
+		}())
+	}
+
+	existingIDs := make([]int64, 0, len(existing))
+	for _, item := range existing {
+		id, parseErr := strconv.ParseInt(strings.TrimSpace(item.ID), 10, 64)
+		if parseErr == nil && id > 0 {
+			existingIDs = append(existingIDs, id)
+		}
+	}
+	allBatchIDs := make([]int64, 0, len(allBatchSchedules))
+	for _, item := range allBatchSchedules {
+		id, parseErr := strconv.ParseInt(strings.TrimSpace(item.ID), 10, 64)
+		if parseErr == nil && id > 0 {
+			allBatchIDs = append(allBatchIDs, id)
+		}
+	}
+	targetIDSet := make(map[int64]struct{}, len(existingIDs))
+	for _, id := range existingIDs {
+		targetIDSet[id] = struct{}{}
+	}
+	untouchedIDs := make([]int64, 0, len(allBatchIDs))
+	for _, id := range allBatchIDs {
+		if _, ok := targetIDSet[id]; ok {
+			continue
+		}
+		untouchedIDs = append(untouchedIDs, id)
+	}
+
+	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans, existingIDs)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	classroomConflictsByPlan, err := repo.listClassroomConflictsByPlanTx(ctx, tx, instID, plans, existingIDs)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	studentConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", base.StudentID, plansToSlots(plans), "", existingIDs)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	assistantConflictsByPlan, err := repo.listAssistantConflictsByPlanTx(ctx, tx, instID, plans, existingIDs)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+
+	hardConflictTypes := make(map[string]struct{})
+	for _, plan := range plans {
+		key := schedulePlanKey(plan)
+		if len(teacherConflictsByPlan[key]) > 0 {
+			hardConflictTypes["老师"] = struct{}{}
+		}
+		if len(classroomConflictsByPlan[key]) > 0 && !plan.AllowClassroomConflict {
+			hardConflictTypes["教室"] = struct{}{}
+		}
+		if slotHasConflict(normalizedScheduleSlot{
+			LessonDate: plan.LessonDate,
+			StartAt:    plan.StartAt,
+			EndAt:      plan.EndAt,
+		}, studentConflicts) && !plan.AllowStudentConflict {
+			hardConflictTypes["学员"] = struct{}{}
+		}
+		if len(assistantConflictsByPlan[key]) > 0 {
+			hardConflictTypes["助教"] = struct{}{}
+		}
+	}
+	if len(hardConflictTypes) > 0 {
+		conflictTypes := make([]string, 0, len(hardConflictTypes))
+		for key := range hardConflictTypes {
+			conflictTypes = append(conflictTypes, key)
+		}
+		sort.Strings(conflictTypes)
+		return model.CreateOneToOneSchedulesResult{}, errors.New(buildConflictSummaryMessage(conflictTypes))
+	}
+
+	if len(existingIDs) > 0 {
+		args := append([]any{
+			model.TeachingScheduleStatusCanceled,
+			operatorID,
+			instID,
+			model.TeachingScheduleStatusActive,
+		}, int64SliceToAny(existingIDs)...)
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_schedule
+			SET del_flag = 1,
+			    status = ?,
+			    update_id = ?,
+			    update_time = NOW()
+			WHERE inst_id = ?
+			  AND del_flag = 0
+			  AND status = ?
+			  AND id IN (`+sqlPlaceholders(len(existingIDs))+`)
+		`, args...); err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+	}
+
+	batchNo := strings.TrimSpace(existing[0].BatchNo)
+	if batchNo != "" && len(untouchedIDs) > 0 {
+		if err := repo.deleteTeachingScheduleBatchMetaTx(ctx, tx, instID, batchNo, nil); err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_schedule
+			SET batch_size = ?,
+			    update_id = ?,
+			    update_time = NOW()
+			WHERE inst_id = ?
+			  AND del_flag = 0
+			  AND id IN (`+sqlPlaceholders(len(untouchedIDs))+`)
+		`, append([]any{len(untouchedIDs), operatorID, instID}, int64SliceToAny(untouchedIDs)...)...); err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		batchNo = ""
+	}
+	if batchNo == "" && len(plans) > 1 {
+		batchNo = fmt.Sprintf("BATCH-%d", time.Now().UnixNano())
+	}
+
+	result := model.CreateOneToOneSchedulesResult{
+		BatchNo: batchNo,
+		Count:   len(plans),
+		List:    make([]model.TeachingScheduleVO, 0, len(plans)),
+	}
+	createdScheduleIDs := make([]int64, 0, len(plans))
+
+	for _, plan := range plans {
+		teacherName := firstNonEmptyString(teacherNames[plan.TeacherID], "-")
+		classroomName := classroomNames[plan.ClassroomID]
+		classroomID := plan.ClassroomID
+		assistantIDsJSON, _ := json.Marshal(stringIDsFromInt64(plan.AssistantIDs))
+		assistantNamesJSON, _ := json.Marshal(plan.AssistantNames)
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO teaching_schedule (
+				uuid, version, inst_id, class_type, teaching_class_id, teaching_class_name,
+				student_id, student_name, lesson_id, lesson_name,
+				teacher_id, teacher_name, assistant_ids_json, assistant_names_json,
+				classroom_id, classroom_name, lesson_date, lesson_start_at, lesson_end_at,
+				batch_no, batch_size, status, create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
+			)
+		`,
+			instID,
+			model.TeachingClassTypeOneToOne,
+			base.ClassID,
+			base.ClassName,
+			base.StudentID,
+			base.StudentName,
+			base.LessonID,
+			base.LessonName,
+			plan.TeacherID,
+			teacherName,
+			nullJSONBytes(assistantIDsJSON),
+			nullJSONBytes(assistantNamesJSON),
+			classroomID,
+			classroomName,
+			plan.LessonDate.Format("2006-01-02"),
+			plan.StartAt,
+			plan.EndAt,
+			batchNo,
+			len(plans),
+			model.TeachingScheduleStatusActive,
+			operatorID,
+			operatorID,
+		)
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		createdScheduleIDs = append(createdScheduleIDs, id)
+		result.List = append(result.List, model.TeachingScheduleVO{
+			ID:                strconv.FormatInt(id, 10),
+			BatchNo:           batchNo,
+			BatchSize:         len(plans),
+			ClassType:         model.TeachingClassTypeOneToOne,
+			TeachingClassID:   strconv.FormatInt(base.ClassID, 10),
+			TeachingClassName: base.ClassName,
+			StudentID:         strconv.FormatInt(base.StudentID, 10),
+			StudentName:       base.StudentName,
+			LessonID:          strconv.FormatInt(base.LessonID, 10),
+			LessonName:        base.LessonName,
+			TeacherID:         strconv.FormatInt(plan.TeacherID, 10),
+			TeacherName:       teacherName,
+			AssistantIDs:      stringIDsFromInt64(plan.AssistantIDs),
+			AssistantNames:    plan.AssistantNames,
+			ClassroomID:       emptyStringIfZero(classroomID),
+			ClassroomName:     classroomName,
+			LessonDate:        plan.LessonDate.Format("2006-01-02"),
+			StartAt:           plan.StartAt,
+			EndAt:             plan.EndAt,
+			Status:            model.TeachingScheduleStatusActive,
+		})
+	}
+	if err := repo.saveTeachingScheduleBatchMetaTx(
+		ctx,
+		tx,
+		instID,
+		operatorID,
+		batchNo,
+		model.TeachingClassTypeOneToOne,
+		base.ClassID,
+		createdScheduleIDs,
+		dto.BatchMeta,
+	); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	return result, nil
+}
+
 func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleBatchUpdateDTO) error {
 	teacherID, err := strconv.ParseInt(strings.TrimSpace(dto.TeacherID), 10, 64)
 	if err != nil || teacherID <= 0 {
@@ -1314,6 +1750,123 @@ type teachingScheduleRow struct {
 	ClassType  int
 	StudentID  int64
 	LessonDate time.Time
+}
+
+func buildTeachingScheduleBatchMetaKey(batchNo string, scheduleIDs []int64) (string, error) {
+	batchNo = strings.TrimSpace(batchNo)
+	if batchNo != "" {
+		return "batch:" + batchNo, nil
+	}
+	if len(scheduleIDs) == 1 && scheduleIDs[0] > 0 {
+		return fmt.Sprintf("schedule:%d", scheduleIDs[0]), nil
+	}
+	return "", errors.New("缺少批次元数据键")
+}
+
+func normalizeTeachingScheduleBatchMeta(meta *model.TeachingScheduleBatchMeta) *model.TeachingScheduleBatchMeta {
+	if meta == nil {
+		return nil
+	}
+	next := &model.TeachingScheduleBatchMeta{
+		SchedulingMode:    strings.TrimSpace(meta.SchedulingMode),
+		RepeatRule:        strings.TrimSpace(meta.RepeatRule),
+		HolidayPolicy:     strings.TrimSpace(meta.HolidayPolicy),
+		SelectedWeekdays:  compactStrings(meta.SelectedWeekdays),
+		ScheduleStartDate: strings.TrimSpace(meta.ScheduleStartDate),
+		FreeSelectedDates: compactStrings(meta.FreeSelectedDates),
+		PlannedClassCount: meta.PlannedClassCount,
+	}
+	if next.PlannedClassCount < 0 {
+		next.PlannedClassCount = 0
+	}
+	if next.SchedulingMode == "" &&
+		next.RepeatRule == "" &&
+		next.HolidayPolicy == "" &&
+		len(next.SelectedWeekdays) == 0 &&
+		next.ScheduleStartDate == "" &&
+		len(next.FreeSelectedDates) == 0 &&
+		next.PlannedClassCount == 0 {
+		return nil
+	}
+	return next
+}
+
+func (repo *Repository) loadTeachingScheduleBatchMetaTx(ctx context.Context, tx *sql.Tx, instID int64, batchNo string, scheduleIDs []int64) (*model.TeachingScheduleBatchMeta, error) {
+	batchKey, err := buildTeachingScheduleBatchMetaKey(batchNo, scheduleIDs)
+	if err != nil {
+		return nil, nil
+	}
+	var raw []byte
+	err = tx.QueryRowContext(ctx, `
+		SELECT meta_json
+		FROM teaching_schedule_batch_meta
+		WHERE inst_id = ?
+		  AND batch_key = ?
+		  AND del_flag = 0
+		LIMIT 1
+	`, instID, batchKey).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var meta model.TeachingScheduleBatchMeta
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return nil, err
+	}
+	return normalizeTeachingScheduleBatchMeta(&meta), nil
+}
+
+func (repo *Repository) saveTeachingScheduleBatchMetaTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, batchNo string, classType, teachingClassID int64, scheduleIDs []int64, meta *model.TeachingScheduleBatchMeta) error {
+	normalized := normalizeTeachingScheduleBatchMeta(meta)
+	if normalized == nil {
+		return nil
+	}
+	batchKey, err := buildTeachingScheduleBatchMetaKey(batchNo, scheduleIDs)
+	if err != nil {
+		return nil
+	}
+	raw, err := json.Marshal(normalized)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO teaching_schedule_batch_meta (
+			inst_id, batch_key, batch_no, class_type, teaching_class_id, meta_json,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
+		)
+		ON DUPLICATE KEY UPDATE
+			batch_no = VALUES(batch_no),
+			class_type = VALUES(class_type),
+			teaching_class_id = VALUES(teaching_class_id),
+			meta_json = VALUES(meta_json),
+			update_id = VALUES(update_id),
+			update_time = NOW(),
+			del_flag = 0
+	`, instID, batchKey, strings.TrimSpace(batchNo), classType, teachingClassID, nullJSONBytes(raw), operatorID, operatorID)
+	return err
+}
+
+func (repo *Repository) deleteTeachingScheduleBatchMetaTx(ctx context.Context, tx *sql.Tx, instID int64, batchNo string, scheduleIDs []int64) error {
+	batchKey, err := buildTeachingScheduleBatchMetaKey(batchNo, scheduleIDs)
+	if err != nil {
+		return nil
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE teaching_schedule_batch_meta
+		SET del_flag = 1,
+		    update_time = NOW()
+		WHERE inst_id = ?
+		  AND batch_key = ?
+		  AND del_flag = 0
+	`, instID, batchKey)
+	return err
 }
 
 func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx *sql.Tx, instID, scheduleID int64) (scheduleConflictDetailRow, error) {

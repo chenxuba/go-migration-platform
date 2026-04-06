@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
+import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import { getTeachingScheduleConflictDetailApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import emitter, { EVENTS } from '@/utils/eventBus'
@@ -31,6 +32,8 @@ const scheduleLoading = ref(false)
 const scheduleRows = ref([])
 const scheduleEditOpen = ref(false)
 const currentSchedule = ref(null)
+const scheduleBatchPlanEditOpen = ref(false)
+const currentBatchPlanSchedule = ref(null)
 const scheduleConflictOpen = ref(false)
 const scheduleConflictValidation = ref(null)
 const scheduleConflictLoading = ref(false)
@@ -571,11 +574,26 @@ async function openEventConflictDetail(event) {
 }
 
 function openScheduleEdit(item) {
-  currentSchedule.value = item?.raw || null
+  const schedule = item?.raw || null
+  if (schedule?.classType === 2) {
+    openBatchPlanEdit(schedule)
+    return
+  }
+  currentSchedule.value = schedule
   scheduleEditOpen.value = true
 }
 
 function handleScheduleUpdated() {
+  loadSchedules()
+}
+
+function openBatchPlanEdit(schedule) {
+  currentBatchPlanSchedule.value = schedule || null
+  scheduleBatchPlanEditOpen.value = true
+}
+
+function handleBatchPlanUpdated() {
+  scheduleBatchPlanEditOpen.value = false
   loadSchedules()
 }
 
@@ -1007,7 +1025,13 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
     <ScheduleBatchEditModal
       v-model:open="scheduleEditOpen"
       :schedule="currentSchedule"
+      @edit-batch-plan="openBatchPlanEdit"
       @updated="handleScheduleUpdated"
+    />
+    <ScheduleBatchPlanEditModal
+      v-model:open="scheduleBatchPlanEditOpen"
+      :schedule="currentBatchPlanSchedule"
+      @updated="handleBatchPlanUpdated"
     />
     <ScheduleConflictModal
       v-model:open="scheduleConflictOpen"

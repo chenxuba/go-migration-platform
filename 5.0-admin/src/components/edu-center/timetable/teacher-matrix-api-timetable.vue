@@ -16,6 +16,7 @@ import {
   type MatrixTeacherFilterParam,
 } from '@/api/edu-center/teaching-schedule'
 import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
+import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 
 const currentDate = ref(dayjs())
 const now = ref(dayjs())
@@ -23,6 +24,8 @@ const loading = ref(false)
 const matrixDays = ref<TeachingScheduleMatrixDay[]>([])
 const scheduleEditOpen = ref(false)
 const currentSchedule = ref<TeachingScheduleItem | null>(null)
+const scheduleBatchPlanEditOpen = ref(false)
+const currentBatchPlanSchedule = ref<TeachingScheduleItem | null>(null)
 
 const headerDatesRef = ref<HTMLElement | null>(null)
 const bodyScrollRef = ref<HTMLElement | null>(null)
@@ -533,6 +536,8 @@ function legacyToTeachingScheduleItem(
     startAt: start.format('YYYY-MM-DD HH:mm:ss'),
     endAt: end.format('YYYY-MM-DD HH:mm:ss'),
     status: info.scheduleStatus ?? 1,
+    conflict: info.conflict === true,
+    conflictTypes: info.conflictTypes ?? [],
   }
 }
 
@@ -800,11 +805,21 @@ const showCurrentTimeLine = computed(() => {
 })
 
 function openScheduleEdit(event: CellSchedule) {
+  if (event.raw?.classType === 2) {
+    currentBatchPlanSchedule.value = event.raw
+    scheduleBatchPlanEditOpen.value = true
+    return
+  }
   currentSchedule.value = event.raw
   scheduleEditOpen.value = true
 }
 
 function onUpdated() {
+  loadMatrix()
+}
+
+function onBatchPlanUpdated() {
+  scheduleBatchPlanEditOpen.value = false
   loadMatrix()
 }
 
@@ -1163,6 +1178,11 @@ const totalLessons = computed(() => internalSchedules.value.length)
       v-model:open="scheduleEditOpen"
       :schedule="currentSchedule"
       @updated="onUpdated"
+    />
+    <ScheduleBatchPlanEditModal
+      v-model:open="scheduleBatchPlanEditOpen"
+      :schedule="currentBatchPlanSchedule"
+      @updated="onBatchPlanUpdated"
     />
   </div>
 </template>
