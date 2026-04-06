@@ -147,6 +147,7 @@ export function validateOneToOneSchedulesApi(data: {
   teacherId: string
   assistantIds?: string[]
   classroomId?: string
+  excludeIds?: string[]
   schedules: Array<{
     lessonDate: string
     startTime: string
@@ -286,6 +287,7 @@ export function batchUpdateTeachingSchedulesApi(data: {
   teacherId: string
   assistantIds?: string[]
   classroomId?: string
+  lessonDate?: string
   startTime: string
   endTime: string
 }) {

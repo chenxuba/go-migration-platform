@@ -3,11 +3,13 @@ import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { h } from 'vue'
 import SmartTimetableConflictModal from './smart-timetable-conflict-modal.vue'
+import SmartTimetableDragConfirmModal from './smart-timetable-drag-confirm-modal.vue'
+import SmartTimetableDragConflictModal from './smart-timetable-drag-conflict-modal.vue'
 import SmartTimetableGrid from './smart-timetable-grid.vue'
 import SmartTimetableScheduledDetailModal from './smart-timetable-scheduled-detail-modal.vue'
 import SmartTimetableToolbar from './smart-timetable-toolbar.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
-import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi } from '@/api/edu-center/teaching-schedule'
+import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { useSmartTimetableAvailability } from '@/composables/useSmartTimetableAvailability'
 import { useSmartTimetableClassMode } from '@/composables/useSmartTimetableClassMode'
 import { useSmartTimetablePicker } from '@/composables/useSmartTimetablePicker'
@@ -176,10 +178,16 @@ const creatingOneToOneSchedule = ref(false)
 const deletingScheduledLesson = ref(false)
 const forcingConflictSchedule = ref(false)
 const conflictDetailModalOpen = ref(false)
+const dragConflictDetailOpen = ref(false)
 const scheduledConflictDetailOpen = ref(false)
 const scheduledConflictDetailLoading = ref(false)
 const scheduledConflictDetailValidation = ref(null)
 const conflictDetailState = ref({
+  summary: '',
+  attempted: null,
+  items: [],
+})
+const dragConflictDetailState = ref({
   summary: '',
   attempted: null,
   items: [],
@@ -206,10 +214,42 @@ const scheduledLessonDetailState = ref({
   column: null,
   record: null,
 })
+const draggingScheduleState = ref(null)
+const draggingScheduleCellKey = ref('')
+const dragPointerState = ref({
+  x: 0,
+  y: 0,
+  visible: false,
+})
+const dragConfirmOpen = ref(false)
+const dragConfirmSubmitting = ref(false)
+const dragConfirmDetail = ref({
+  source: null,
+  target: null,
+  payload: null,
+})
+const updatingDraggedSchedule = ref(false)
+const dragHoverState = ref({
+  key: '',
+  checking: false,
+  valid: null,
+  label: '',
+  message: '',
+  conflictTypes: [],
+})
+const dragValidationCache = new Map()
+const dragValidationPromises = new Map()
 /** 防止快速切换周次/组别时旧请求晚到覆盖新矩阵 */
 let matrixLoadSeq = 0
 let pendingConflictJump = null
 let focusedScheduleCellTimer = null
+let pendingScheduleDragStart = null
+let customScheduleDragMoveHandler = null
+let customScheduleDragUpHandler = null
+let blockedScheduleDragAttempt = null
+let blockedScheduleDragMoveHandler = null
+let blockedScheduleDragUpHandler = null
+let lastBlockedScheduleDragHintAt = 0
 const focusedScheduleCellKey = ref('')
 const isSwapTimeGrid = computed(() => currentTime.value === 'swapWeek')
 const isWeekLikeView = computed(() => currentTime.value === 'week' || currentTime.value === 'swapWeek')
@@ -709,6 +749,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   emitter.off(EVENTS.REFRESH_DATA, refreshTimetableRelatedData)
+  clearCustomScheduleDragListeners()
+  clearBlockedScheduleDragAttempt()
   if (focusedScheduleCellTimer)
     clearTimeout(focusedScheduleCellTimer)
 })
@@ -968,16 +1010,9 @@ async function flushPendingConflictJump() {
   }
 }
 
-function openApiConflictModal(reason, column, record) {
+function buildConflictDetailItems(reason, fallbackConflictTypes = ['时间']) {
   const existingSchedules = Array.isArray(reason?.existingSchedules) ? reason.existingSchedules : []
-  const selectedTarget = resolveConflictAttemptTarget()
-  const attemptedConflictTypes = Array.isArray(reason?.conflictTypes) ? reason.conflictTypes : []
-  const fallbackConflictTypes = attemptedConflictTypes.length ? attemptedConflictTypes : ['时间']
-  const forceAllowed = currentModel.value === '1'
-    && Boolean(oneToOneRecordId.value)
-    && attemptedConflictTypes.length > 0
-    && attemptedConflictTypes.every(type => type === '学员')
-  const items = existingSchedules.map((item, index) => {
+  return existingSchedules.map((item, index) => {
     const groupInfo = resolveConflictScheduleGroupInfo(item)
     const timeRange = parseConflictTimeRange(item.timeText)
     const conflictTypes = Array.isArray(item.conflictTypes) && item.conflictTypes.length ? item.conflictTypes : fallbackConflictTypes
@@ -1008,39 +1043,83 @@ function openApiConflictModal(reason, column, record) {
       jumpGroupKey,
     }
   })
+}
 
+function openConflictDetailModalWithAttempt(reason, attempted) {
+  const attemptedConflictTypes = Array.isArray(reason?.conflictTypes) ? reason.conflictTypes : []
+  const fallbackConflictTypes = attemptedConflictTypes.length ? attemptedConflictTypes : ['时间']
+  const items = buildConflictDetailItems(reason, fallbackConflictTypes)
   conflictDetailState.value = {
     summary: `${reason.message || '当前空位存在时间冲突'}，共发现 ${items.length} 条冲突日程。`,
-    attempted: {
-      modeLabel: selectedTarget.modeLabel,
-      targetLabel: selectedTarget.targetLabel,
-      targetValue: selectedTarget.targetValue,
-      courseName: selectedTarget.courseName,
-      date: record.date,
-      week: formatWeek(record.date),
-      timeText: `${column.startTime}-${column.endTime}`,
-      teacherName: record.name,
-      assistantText: selectedAssistantText.value,
-      lessonIndex: getLessonIndex(column.startTime),
-      groupLabel: activeGroupLabel.value || '当前组',
-      forceAllowed,
-      forcePayload: forceAllowed
-        ? {
-            oneToOneId: String(oneToOneRecordId.value),
-            teacherId: String(record.teacherId),
-            assistantIds: normalizedSelectedAssistantIds.value,
-            schedules: [{
-              lessonDate: record.date,
-              startTime: column.startTime,
-              endTime: column.endTime,
-              assistantIds: normalizedSelectedAssistantIds.value,
-            }],
-          }
-        : null,
-    },
+    attempted,
     items,
   }
   conflictDetailModalOpen.value = true
+}
+
+function openDragConflictDetailModal(validation, dragState, target) {
+  const conflictTypes = Array.isArray(validation?.conflictTypes) ? validation.conflictTypes : []
+  const fallbackConflictTypes = conflictTypes.length ? conflictTypes : ['时间']
+  const items = buildConflictDetailItems({
+    message: validation?.message,
+    conflictTypes,
+    existingSchedules: validation?.existingSchedules,
+  }, fallbackConflictTypes)
+
+  dragConflictDetailState.value = {
+    summary: `${validation?.message || '当前调课存在时间冲突'}，共发现 ${items.length} 条冲突日程。`,
+    attempted: {
+      modeLabel: '1v1',
+      studentText: dragState?.studentText || '未识别学员',
+      courseName: dragState?.courseName || '未识别课程',
+      date: target?.lessonDate || '',
+      week: formatWeek(target?.lessonDate || ''),
+      timeText: `${target?.startTime || ''}-${target?.endTime || ''}`,
+      teacherName: target?.teacherName || '-',
+      assistantText: dragState?.assistantText || '未安排',
+      lessonIndex: getLessonIndex(target?.startTime || ''),
+      groupLabel: activeGroupLabel.value || '当前组',
+    },
+    items,
+  }
+  dragConflictDetailOpen.value = true
+}
+
+function openApiConflictModal(reason, column, record) {
+  const selectedTarget = resolveConflictAttemptTarget()
+  const attemptedConflictTypes = Array.isArray(reason?.conflictTypes) ? reason.conflictTypes : []
+  const forceAllowed = currentModel.value === '1'
+    && Boolean(oneToOneRecordId.value)
+    && attemptedConflictTypes.length > 0
+    && attemptedConflictTypes.every(type => type === '学员')
+
+  openConflictDetailModalWithAttempt(reason, {
+    modeLabel: selectedTarget.modeLabel,
+    targetLabel: selectedTarget.targetLabel,
+    targetValue: selectedTarget.targetValue,
+    courseName: selectedTarget.courseName,
+    date: record.date,
+    week: formatWeek(record.date),
+    timeText: `${column.startTime}-${column.endTime}`,
+    teacherName: record.name,
+    assistantText: selectedAssistantText.value,
+    lessonIndex: getLessonIndex(column.startTime),
+    groupLabel: activeGroupLabel.value || '当前组',
+    forceAllowed,
+    forcePayload: forceAllowed
+      ? {
+          oneToOneId: String(oneToOneRecordId.value),
+          teacherId: String(record.teacherId),
+          assistantIds: normalizedSelectedAssistantIds.value,
+          schedules: [{
+            lessonDate: record.date,
+            startTime: column.startTime,
+            endTime: column.endTime,
+            assistantIds: normalizedSelectedAssistantIds.value,
+          }],
+        }
+      : null,
+  })
 }
 
 async function forceScheduleDespiteStudentConflict() {
@@ -1110,6 +1189,7 @@ async function jumpToConflictSchedule(item) {
   }
 
   conflictDetailModalOpen.value = false
+  dragConflictDetailOpen.value = false
   pendingConflictJump = {
     cellKey: item.jumpCellKey,
   }
@@ -1685,10 +1765,648 @@ function emptyLessonStatusText(lesson) {
   return '时间冲突(不可排)'
 }
 
+function scheduleLessonTitle(text) {
+  const className = String(text?.className || '').trim()
+  const courseName = String(text?.courseName || '').trim()
+  return className || courseName || '课程'
+}
+
+function scheduleLessonMeta(text) {
+  const className = String(text?.className || '').trim()
+  const courseName = String(text?.courseName || '').trim()
+  if (className && courseName && className !== courseName)
+    return courseName
+  return courseName || className || '-'
+}
+
+function formatDragDateLabel(date) {
+  if (!date)
+    return '-'
+  return `${dayjs(date).format('MM-DD')} (${formatWeek(date)})`
+}
+
+function formatDragTimeLabel(startTime, endTime, separator = '~') {
+  if (!startTime || !endTime)
+    return '-'
+  return `${startTime}${separator}${endTime}`
+}
+
+function updateDragPointer(event) {
+  dragPointerState.value = {
+    x: Number(event?.clientX || 0),
+    y: Number(event?.clientY || 0),
+    visible: true,
+  }
+}
+
+function clearCustomScheduleDragListeners() {
+  if (typeof document === 'undefined')
+    return
+  pendingScheduleDragStart = null
+  if (customScheduleDragMoveHandler)
+    document.removeEventListener('mousemove', customScheduleDragMoveHandler)
+  if (customScheduleDragUpHandler)
+    document.removeEventListener('mouseup', customScheduleDragUpHandler)
+  customScheduleDragMoveHandler = null
+  customScheduleDragUpHandler = null
+  document.body.style.userSelect = ''
+}
+
+function clearBlockedScheduleDragAttempt() {
+  blockedScheduleDragAttempt = null
+  if (typeof document === 'undefined')
+    return
+  if (blockedScheduleDragMoveHandler)
+    document.removeEventListener('mousemove', blockedScheduleDragMoveHandler)
+  if (blockedScheduleDragUpHandler)
+    document.removeEventListener('mouseup', blockedScheduleDragUpHandler)
+  blockedScheduleDragMoveHandler = null
+  blockedScheduleDragUpHandler = null
+}
+
+function showBlockedScheduleDragHint(message) {
+  const now = Date.now()
+  if (now - lastBlockedScheduleDragHintAt < 1200)
+    return
+  lastBlockedScheduleDragHintAt = now
+  messageService.info(message)
+}
+
+function createEmptyDragHoverState() {
+  return {
+    key: '',
+    checking: false,
+    valid: null,
+    label: '',
+    message: '',
+    conflictTypes: [],
+  }
+}
+
+function resetDragScheduleState() {
+  clearCustomScheduleDragListeners()
+  clearBlockedScheduleDragAttempt()
+  draggingScheduleState.value = null
+  draggingScheduleCellKey.value = ''
+  dragPointerState.value = {
+    x: 0,
+    y: 0,
+    visible: false,
+  }
+  dragHoverState.value = createEmptyDragHoverState()
+  dragValidationCache.clear()
+  dragValidationPromises.clear()
+}
+
+function scheduleStudentText(text) {
+  return Array.isArray(text?.studentNames)
+    ? text.studentNames.map(item => item.name).filter(Boolean).join('、')
+    : ''
+}
+
+function isScheduleDraggable(text) {
+  return currentModel.value === '1'
+    && text?.courseType === 1
+    && text?.isMain !== false
+    && Boolean(text?.scheduleId)
+    && Boolean(text?.classId)
+}
+
+function resolveScheduleDragBlockedMessage(text) {
+  if (text?.courseType === 1 && text?.isMain === false)
+    return '当前是助教课表，暂不支持拖拽调课，请在主教老师所在行操作'
+  if (text?.courseType === 2)
+    return '当前仅支持 1v1 主教课程拖拽调课'
+  if (text?.courseType === 1)
+    return '当前课程暂不支持拖拽调课'
+  return ''
+}
+
+function buildDraggingScheduleState(text, column, record) {
+  return {
+    scheduleId: String(text?.scheduleId || '').trim(),
+    oneToOneId: String(text?.classId || '').trim(),
+    assistantIds: Array.isArray(text?.assistantIds)
+      ? text.assistantIds.map(id => String(id || '').trim()).filter(Boolean)
+      : [],
+    assistantText: text?.assistantText || '未安排',
+    classroomId: String(text?.classroomId || '').trim(),
+    courseName: text?.courseName || '',
+    lessonTitle: scheduleLessonTitle(text),
+    lessonMeta: scheduleLessonMeta(text),
+    studentText: scheduleStudentText(text),
+    sourceDate: record?.date || '',
+    sourceStartTime: column?.startTime || '',
+    sourceEndTime: column?.endTime || '',
+    sourceCellKey: buildAvailabilitySlotKey(record?.teacherId, record?.date, column?.startTime, column?.endTime),
+  }
+}
+
+function buildDragTarget(column, record) {
+  return {
+    key: buildAvailabilitySlotKey(record?.teacherId, record?.date, column?.startTime, column?.endTime),
+    teacherId: String(record?.teacherId || '').trim(),
+    teacherName: record?.name || '-',
+    lessonDate: record?.date || '',
+    startTime: column?.startTime || '',
+    endTime: column?.endTime || '',
+  }
+}
+
+function dragConflictStateFromTypes(conflictTypes, message) {
+  const types = uniqueConflictTypes(conflictTypes)
+  if (types.length === 1) {
+    if (types[0] === '助教') {
+      return {
+        valid: false,
+        label: '助教冲突(不可调)',
+        message: message || '所选助教该时间段已有安排',
+        conflictTypes: types,
+      }
+    }
+    if (types[0] === '学员') {
+      return {
+        valid: false,
+        label: '学员冲突(不可调)',
+        message: message || '当前学员该时间段已有安排',
+        conflictTypes: types,
+      }
+    }
+    if (types[0] === '老师') {
+      return {
+        valid: false,
+        label: '老师冲突(不可调)',
+        message: message || '当前老师该时间段已有安排',
+        conflictTypes: types,
+      }
+    }
+    if (types[0] === '教室') {
+      return {
+        valid: false,
+        label: '教室冲突(不可调)',
+        message: message || '当前教室该时间段已有安排',
+        conflictTypes: types,
+      }
+    }
+  }
+  return {
+    valid: false,
+    label: '冲突时段(不可调)',
+    message: message || '当前空点不可调课',
+    conflictTypes: types,
+  }
+}
+
+function validateDragTargetLocally(dragState, target) {
+  if (!dragState?.scheduleId) {
+    return {
+      valid: false,
+      label: '拖拽失效',
+      message: '当前拖拽状态已失效，请重新拖拽',
+      conflictTypes: [],
+    }
+  }
+  if (!dragState.oneToOneId) {
+    return {
+      valid: false,
+      label: '信息不完整',
+      message: '当前课程缺少1对1标识，暂不支持拖拽调课',
+      conflictTypes: [],
+    }
+  }
+  if (dragState.assistantIds.includes(target.teacherId)) {
+    return {
+      valid: false,
+      label: '主助教同人(不可调)',
+      message: '目标老师已在本节课助教列表中，主教与助教不能为同一人',
+      conflictTypes: ['助教'],
+    }
+  }
+  return null
+}
+
+function buildDragValidationCacheKey(dragState, target) {
+  return [
+    dragState.scheduleId,
+    dragState.oneToOneId,
+    target.teacherId,
+    target.lessonDate,
+    target.startTime,
+    target.endTime,
+    dragState.assistantIds.join(','),
+    dragState.classroomId,
+  ].join('|')
+}
+
+const dragPreviewStyle = computed(() => {
+  const dragState = draggingScheduleState.value
+  if (!dragState?.previewWidth || !dragState?.previewHeight) {
+    const x = Math.max(12, Math.round(dragPointerState.value.x + 18))
+    const y = Math.max(12, Math.round(dragPointerState.value.y - 22))
+    return {
+      transform: `translate3d(${x}px, ${y}px, 0)`,
+    }
+  }
+
+  const left = Math.round(dragPointerState.value.x - dragState.offsetX)
+  const top = Math.max(8, Math.round(dragPointerState.value.y - dragState.offsetY - 22))
+  return {
+    transform: `translate3d(${left}px, ${top}px, 0)`,
+  }
+})
+
+const draggingScheduleStyle = computed(() => {
+  const dragState = draggingScheduleState.value
+  if (!dragState?.previewWidth || !dragState?.previewHeight)
+    return {}
+  const left = Math.round(dragPointerState.value.x - dragState.offsetX)
+  const top = Math.round(dragPointerState.value.y - dragState.offsetY)
+  return {
+    position: 'fixed',
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${Math.round(dragState.previewWidth)}px`,
+    height: `${Math.round(dragState.previewHeight)}px`,
+    zIndex: 1200,
+  }
+})
+
+const dragPreviewTargetText = computed(() => {
+  if (!draggingScheduleState.value)
+    return ''
+  if (!dragHoverState.value.key)
+    return '拖动到空闲时段调课'
+  const parts = []
+  if (dragHoverState.value.valid === false)
+    parts.push('不可调')
+  parts.push('调整到：')
+  parts.push(formatDragDateLabel(dragHoverState.value.lessonDate))
+  parts.push(dragHoverState.value.startTime || '')
+  return parts.filter(Boolean).join(' ')
+})
+
+function buildDragConfirmState(dragState, target) {
+  return {
+    source: {
+      dateLabel: formatDragDateLabel(dragState.sourceDate),
+      timeLabel: formatDragTimeLabel(dragState.sourceStartTime, dragState.sourceEndTime),
+      lessonTitle: dragState.lessonTitle || '-',
+      courseName: dragState.lessonMeta || '-',
+      studentText: dragState.studentText || '-',
+    },
+    target: {
+      dateLabel: formatDragDateLabel(target.lessonDate),
+      timeLabel: formatDragTimeLabel(target.startTime, target.endTime),
+      lessonTitle: dragState.lessonTitle || '-',
+      courseName: dragState.lessonMeta || '-',
+      studentText: dragState.studentText || '-',
+    },
+    payload: {
+      dragState,
+      target,
+    },
+  }
+}
+
+function applyDragHoverState(targetKey, payload) {
+  if (!targetKey)
+    return
+  dragHoverState.value = {
+    key: targetKey,
+    checking: false,
+    valid: null,
+    label: '',
+    message: '',
+    conflictTypes: [],
+    ...payload,
+  }
+}
+
+async function ensureDragTargetValidation(target, options = {}) {
+  const dragState = options.dragState || draggingScheduleState.value
+  if (!dragState)
+    return null
+
+  const localResult = validateDragTargetLocally(dragState, target)
+  if (localResult) {
+    if (options.apply !== false && dragHoverState.value.key === target.key) {
+      applyDragHoverState(target.key, {
+        ...target,
+        ...localResult,
+      })
+    }
+    return localResult
+  }
+
+  const cacheKey = buildDragValidationCacheKey(dragState, target)
+  if (dragValidationCache.has(cacheKey)) {
+    const cached = dragValidationCache.get(cacheKey)
+    if (options.apply !== false && dragHoverState.value.key === target.key) {
+      applyDragHoverState(target.key, {
+        ...target,
+        ...cached,
+      })
+    }
+    return cached
+  }
+
+  if (dragValidationPromises.has(cacheKey)) {
+    const pending = dragValidationPromises.get(cacheKey)
+    const result = await pending
+    if (options.apply !== false && dragHoverState.value.key === target.key) {
+      applyDragHoverState(target.key, {
+        ...target,
+        ...result,
+      })
+    }
+    return result
+  }
+
+  const promise = (async () => {
+    try {
+      const res = await validateOneToOneSchedulesApi({
+        oneToOneId: dragState.oneToOneId,
+        teacherId: target.teacherId,
+        assistantIds: dragState.assistantIds,
+        classroomId: dragState.classroomId,
+        excludeIds: [dragState.scheduleId],
+        schedules: [{
+          lessonDate: target.lessonDate,
+          startTime: target.startTime,
+          endTime: target.endTime,
+          teacherId: target.teacherId,
+          assistantIds: dragState.assistantIds,
+          classroomId: dragState.classroomId,
+        }],
+      })
+      if (res.code !== 200 || !res.result)
+        throw new Error(res.message || '检测调课空点失败')
+
+      const result = res.result.valid
+        ? {
+            valid: true,
+            label: '释放鼠标调到此处',
+            message: `${target.teacherName} ${target.lessonDate} ${target.startTime}-${target.endTime} 可调课`,
+            conflictTypes: [],
+            existingSchedules: [],
+          }
+        : {
+            ...dragConflictStateFromTypes(res.result.conflictTypes || [], res.result.message || '当前空点不可调课'),
+            existingSchedules: Array.isArray(res.result.existingSchedules) ? res.result.existingSchedules : [],
+          }
+      dragValidationCache.set(cacheKey, result)
+      return result
+    }
+    catch (error) {
+      console.error('validate drag target failed', error)
+      const result = {
+        valid: false,
+        label: '检测失败',
+        message: error?.response?.data?.message || error?.message || '检测调课空点失败',
+        conflictTypes: [],
+      }
+      dragValidationCache.set(cacheKey, result)
+      return result
+    }
+    finally {
+      if (dragValidationPromises.get(cacheKey) === promise)
+        dragValidationPromises.delete(cacheKey)
+    }
+  })()
+
+  dragValidationPromises.set(cacheKey, promise)
+  const result = await promise
+  if (options.apply !== false && dragHoverState.value.key === target.key && draggingScheduleState.value?.scheduleId === dragState.scheduleId) {
+    applyDragHoverState(target.key, {
+      ...target,
+      ...result,
+    })
+  }
+  return result
+}
+
+function emptyLessonDragState(column, record) {
+  const target = buildDragTarget(column, record)
+  return dragHoverState.value.key === target.key ? dragHoverState.value : null
+}
+
+function handleSchedulePointerDown(event, text, column, record) {
+  clearCustomScheduleDragListeners()
+  clearBlockedScheduleDragAttempt()
+  if (isScheduleDraggable(text)) {
+    if (typeof document === 'undefined')
+      return
+    const dragElement = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+    if (!dragElement)
+      return
+
+    const rect = dragElement.getBoundingClientRect()
+    pendingScheduleDragStart = {
+      startX: Number(event?.clientX || 0),
+      startY: Number(event?.clientY || 0),
+      dragState: buildDraggingScheduleState(text, column, record),
+      rect,
+      offsetX: Math.max(8, Math.min(rect.width - 8, Number(event?.clientX || 0) - rect.left)),
+      offsetY: Math.max(8, Math.min(rect.height - 8, Number(event?.clientY || 0) - rect.top)),
+    }
+
+    customScheduleDragMoveHandler = (moveEvent) => {
+      const moveX = Number(moveEvent?.clientX || 0)
+      const moveY = Number(moveEvent?.clientY || 0)
+      if (!draggingScheduleState.value) {
+        if (!pendingScheduleDragStart)
+          return
+        const deltaX = Math.abs(moveX - pendingScheduleDragStart.startX)
+        const deltaY = Math.abs(moveY - pendingScheduleDragStart.startY)
+        if (deltaX < 4 && deltaY < 4)
+          return
+
+        draggingScheduleState.value = {
+          ...pendingScheduleDragStart.dragState,
+          previewWidth: pendingScheduleDragStart.rect.width,
+          previewHeight: pendingScheduleDragStart.rect.height,
+          offsetX: pendingScheduleDragStart.offsetX,
+          offsetY: pendingScheduleDragStart.offsetY,
+        }
+        draggingScheduleCellKey.value = pendingScheduleDragStart.dragState.sourceCellKey
+        dragHoverState.value = createEmptyDragHoverState()
+        dragValidationCache.clear()
+        dragValidationPromises.clear()
+        pendingScheduleDragStart = null
+        document.body.style.userSelect = 'none'
+      }
+
+      updateDragPointer(moveEvent)
+      const target = resolvePointerDragTarget(moveX, moveY)
+      if (!target) {
+        dragHoverState.value = createEmptyDragHoverState()
+        return
+      }
+      if (dragHoverState.value.key !== target.key || dragHoverState.value.valid == null) {
+        applyDragHoverState(target.key, {
+          ...target,
+          checking: true,
+          label: '检测中...',
+          message: '正在检测当前空点是否可调',
+          conflictTypes: [],
+        })
+        void ensureDragTargetValidation(target)
+      }
+    }
+
+    customScheduleDragUpHandler = async (upEvent) => {
+      if (!draggingScheduleState.value) {
+        clearCustomScheduleDragListeners()
+        return
+      }
+
+      const dragState = draggingScheduleState.value
+      const target = resolvePointerDragTarget(Number(upEvent?.clientX || 0), Number(upEvent?.clientY || 0))
+      if (!target) {
+        resetDragScheduleState()
+        return
+      }
+
+      const validation = await ensureDragTargetValidation(target, { dragState })
+      if (!validation?.valid) {
+        const warningMessage = validation?.message || '当前空点不可调课'
+        messageService.warning(warningMessage)
+        if (Array.isArray(validation?.existingSchedules) && validation.existingSchedules.length) {
+          openDragConflictDetailModal(validation, dragState, target)
+        }
+        resetDragScheduleState()
+        return
+      }
+
+      openDragScheduleConfirm(dragState, target)
+      resetDragScheduleState()
+    }
+
+    document.addEventListener('mousemove', customScheduleDragMoveHandler)
+    document.addEventListener('mouseup', customScheduleDragUpHandler)
+    return
+  }
+
+  const message = resolveScheduleDragBlockedMessage(text)
+  if (!message || typeof document === 'undefined')
+    return
+
+  blockedScheduleDragAttempt = {
+    startX: Number(event?.clientX || 0),
+    startY: Number(event?.clientY || 0),
+    message,
+  }
+
+  blockedScheduleDragMoveHandler = (moveEvent) => {
+    if (!blockedScheduleDragAttempt)
+      return
+    const deltaX = Math.abs(Number(moveEvent?.clientX || 0) - blockedScheduleDragAttempt.startX)
+    const deltaY = Math.abs(Number(moveEvent?.clientY || 0) - blockedScheduleDragAttempt.startY)
+    if (deltaX < 6 && deltaY < 6)
+      return
+    showBlockedScheduleDragHint(blockedScheduleDragAttempt.message)
+    clearBlockedScheduleDragAttempt()
+  }
+
+  blockedScheduleDragUpHandler = () => {
+    clearBlockedScheduleDragAttempt()
+  }
+
+  document.addEventListener('mousemove', blockedScheduleDragMoveHandler)
+  document.addEventListener('mouseup', blockedScheduleDragUpHandler)
+}
+
+function openDragScheduleConfirm(dragState, target) {
+  dragConfirmDetail.value = buildDragConfirmState(dragState, target)
+  dragConfirmOpen.value = true
+}
+
+async function submitDragScheduleAdjustment() {
+  const payload = dragConfirmDetail.value?.payload
+  if (!payload?.dragState || !payload?.target) {
+    dragConfirmOpen.value = false
+    return
+  }
+
+  const { dragState, target } = payload
+  const dateLabel = dayjs(target.lessonDate).format('M月D日')
+  const lessonIndex = getLessonIndex(target.startTime)
+  dragConfirmSubmitting.value = true
+  updatingDraggedSchedule.value = true
+  try {
+    const res = await batchUpdateTeachingSchedulesApi({
+      ids: [dragState.scheduleId],
+      teacherId: target.teacherId,
+      assistantIds: dragState.assistantIds,
+      classroomId: dragState.classroomId,
+      lessonDate: target.lessonDate,
+      startTime: target.startTime,
+      endTime: target.endTime,
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '拖拽调课失败')
+
+    dragConfirmOpen.value = false
+    dragConfirmDetail.value = {
+      source: null,
+      target: null,
+      payload: null,
+    }
+    const lessonText = dragState.studentText || dragState.courseName || '课程'
+    messageService.success(`已将 ${lessonText} 调到 ${dateLabel} ${formatWeek(target.lessonDate)} 第${lessonIndex}节`)
+    emitter.emit(EVENTS.REFRESH_DATA)
+  }
+  catch (error) {
+    console.error('drag update teaching schedule failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '拖拽调课失败')
+    await loadTimetableMatrix()
+  }
+  finally {
+    dragConfirmSubmitting.value = false
+    updatingDraggedSchedule.value = false
+  }
+}
+
+function resolvePointerDragTarget(clientX, clientY) {
+  if (typeof document === 'undefined')
+    return null
+  const el = document.elementFromPoint(clientX, clientY)
+  const targetEl = el instanceof HTMLElement
+    ? el.closest('[data-empty-schedule-cell-key]')
+    : null
+  if (!(targetEl instanceof HTMLElement))
+    return null
+
+  const key = String(targetEl.dataset.emptyScheduleCellKey || '').trim()
+  if (!key)
+    return null
+  return {
+    key,
+    teacherId: String(targetEl.dataset.dragTargetTeacherId || '').trim(),
+    teacherName: String(targetEl.dataset.dragTargetTeacherName || '').trim() || '-',
+    lessonDate: String(targetEl.dataset.dragTargetLessonDate || '').trim(),
+    startTime: String(targetEl.dataset.dragTargetStartTime || '').trim(),
+    endTime: String(targetEl.dataset.dragTargetEndTime || '').trim(),
+  }
+}
+
 // 添加监听，当模式切换时清空之前的选择
 watch(currentModel, (newValue) => {
   console.log('切换模式', newValue)
 
+  resetDragScheduleState()
+  dragConfirmOpen.value = false
+  dragConflictDetailOpen.value = false
+  dragConfirmDetail.value = {
+    source: null,
+    target: null,
+    payload: null,
+  }
+  dragConflictDetailState.value = {
+    summary: '',
+    attempted: null,
+    items: [],
+  }
   cancelOneToOneAvailabilityCheck()
   resetEmptyLessonConflicts()
 
@@ -1701,6 +2419,26 @@ watch(currentModel, (newValue) => {
     resetOneToOnePickerState()
     courseId.value = null
     courseName.value = null
+  }
+})
+
+watch(dragConfirmOpen, (open) => {
+  if (!open && !dragConfirmSubmitting.value) {
+    dragConfirmDetail.value = {
+      source: null,
+      target: null,
+      payload: null,
+    }
+  }
+})
+
+watch(dragConflictDetailOpen, (open) => {
+  if (!open) {
+    dragConflictDetailState.value = {
+      summary: '',
+      attempted: null,
+      items: [],
+    }
   }
 })
 </script>
@@ -1735,11 +2473,12 @@ watch(currentModel, (newValue) => {
       :on-this-week="handleThisWeek"
     />
     <SmartTimetableGrid
-      :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule"
+      :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule || updatingDraggedSchedule"
       :table-data-source="tableDataSource"
       :columns="columns"
       :is-swap-time-grid="isSwapTimeGrid"
       :focused-schedule-cell-key="focusedScheduleCellKey"
+      :dragging-schedule-cell-key="draggingScheduleCellKey"
       :is-schedule-column="isScheduleColumn"
       :schedule-cell-key="scheduleCellKey"
       :schedule-cell-start-time="scheduleCellStartTime"
@@ -1750,11 +2489,31 @@ watch(currentModel, (newValue) => {
       :open-scheduled-conflict-detail="openScheduledConflictDetail"
       :handle-conflict-click="handleConflictClick"
       :handle-schedule-click="handleScheduleClick"
+      :handle-schedule-pointer-down="handleSchedulePointerDown"
+      :is-schedule-draggable="isScheduleDraggable"
+      :dragging-schedule-style="draggingScheduleStyle"
+      :empty-lesson-drag-state="emptyLessonDragState"
       :empty-lesson-status-text="emptyLessonStatusText"
       :teacher-lesson-count-label="teacherLessonCountLabel"
       :format-week="formatWeek"
       :format-date="formatDate"
     />
+
+    <div
+      v-if="draggingScheduleState && dragPointerState.visible"
+      class="st-drag-preview"
+      :style="dragPreviewStyle"
+    >
+      <div
+        class="st-drag-preview__target"
+        :class="{
+          'st-drag-preview__target--invalid': dragHoverState.valid === false,
+          'st-drag-preview__target--active': dragHoverState.valid === true,
+        }"
+      >
+        {{ dragPreviewTargetText }}
+      </div>
+    </div>
 
     <SmartTimetableScheduledDetailModal
       v-model:open="scheduledLessonDetailOpen"
@@ -1779,10 +2538,53 @@ watch(currentModel, (newValue) => {
       @force="forceScheduleDespiteStudentConflict"
       @jump="jumpToConflictSchedule"
     />
+
+    <SmartTimetableDragConflictModal
+      v-model:open="dragConflictDetailOpen"
+      :detail="dragConflictDetailState"
+      @jump="jumpToConflictSchedule"
+    />
+
+    <SmartTimetableDragConfirmModal
+      v-model:open="dragConfirmOpen"
+      :detail="dragConfirmDetail"
+      :submitting="dragConfirmSubmitting"
+      @confirm="submitDragScheduleAdjustment"
+    />
   </div>
 </template>
 
 <style lang="less" scoped>
+.st-drag-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1100;
+  pointer-events: none;
+}
+
+.st-drag-preview__target {
+  display: inline-block;
+  align-items: center;
+  max-width: 320px;
+  color: #1668ff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: normal;
+  text-shadow:
+    0 1px 2px rgba(255, 255, 255, 0.96),
+    0 0 10px rgba(255, 255, 255, 0.72);
+}
+
+.st-drag-preview__target--active {
+  color: #1677ff;
+}
+
+.st-drag-preview__target--invalid {
+  color: #cf1322;
+}
+
 /* 与班课下拉同量级宽度，避免顶栏把日期区挤换行 */
 .st-top-1v1-select {
   width: 180px;

@@ -20,6 +20,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  draggingScheduleCellKey: {
+    type: String,
+    default: '',
+  },
   isScheduleColumn: {
     type: Function,
     required: true,
@@ -57,6 +61,22 @@ const props = defineProps({
     required: true,
   },
   handleScheduleClick: {
+    type: Function,
+    required: true,
+  },
+  handleSchedulePointerDown: {
+    type: Function,
+    required: true,
+  },
+  isScheduleDraggable: {
+    type: Function,
+    required: true,
+  },
+  draggingScheduleStyle: {
+    type: Object,
+    default: () => ({}),
+  },
+  emptyLessonDragState: {
     type: Function,
     required: true,
   },
@@ -117,8 +137,15 @@ const props = defineProps({
             :class="{
               'st-schedule-cell--focused': focusedScheduleCellKey === scheduleCellKey(column, record),
               'st-schedule-cell--conflict': text.scheduledConflict,
+              'st-schedule-cell--draggable': isScheduleDraggable(text),
+              'st-schedule-cell--drag-disabled': !isScheduleDraggable(text) && text.courseType === 1 && text.isMain === false,
+              'st-schedule-cell--floating': draggingScheduleCellKey === scheduleCellKey(column, record),
+              'st-schedule-cell--dragging': draggingScheduleCellKey === scheduleCellKey(column, record),
             }"
+            :title="!isScheduleDraggable(text) && text.courseType === 1 && text.isMain === false ? '助教课暂不支持拖拽调课，请在主教老师所在行操作' : undefined"
+            :style="draggingScheduleCellKey === scheduleCellKey(column, record) ? draggingScheduleStyle : undefined"
             @click="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
+            @mousedown.left="handleSchedulePointerDown($event, text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
           >
             <div class="pl1 bg-#06f rounded-1 rounded-lb-0 rounded-rb-0 flex relative h-5">
               {{ scheduleCellStartTime(column, record) }}-{{ scheduleCellEndTime(column, record) }}
@@ -149,11 +176,26 @@ const props = defineProps({
 
           <div
             v-else
-            class="h-11 rounded-1 text-3 flex-center cursor-pointer"
-            :class="[text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a']"
+            :data-empty-schedule-cell-key="scheduleCellKey(column, record)"
+            :data-drag-target-teacher-id="record?.teacherId || ''"
+            :data-drag-target-teacher-name="record?.name || ''"
+            :data-drag-target-lesson-date="scheduleCellContextRecord(column, record)?.date || ''"
+            :data-drag-target-start-time="scheduleCellContextColumn(column, record)?.startTime || ''"
+            :data-drag-target-end-time="scheduleCellContextColumn(column, record)?.endTime || ''"
+            class="st-empty-cell h-11 rounded-1 text-3 flex-center cursor-pointer"
+            :title="emptyLessonDragState(column, record)?.message || undefined"
+            :class="[
+              emptyLessonDragState(column, record)?.checking
+                ? 'st-empty-cell--drag-checking'
+                : emptyLessonDragState(column, record)?.valid === true
+                  ? 'st-empty-cell--drag-valid'
+                  : emptyLessonDragState(column, record)?.valid === false
+                    ? 'st-empty-cell--drag-invalid'
+                    : (text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a'),
+            ]"
             @click="text.conflict ? handleConflictClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record)) : handleScheduleClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
           >
-            {{ emptyLessonStatusText(text) }}
+            {{ emptyLessonDragState(column, record)?.label || emptyLessonStatusText(text) }}
           </div>
         </template>
 
@@ -197,11 +239,33 @@ const props = defineProps({
 
 .st-schedule-cell {
   position: relative;
-  transition: box-shadow 0.25s ease, transform 0.25s ease;
+  transition: box-shadow 0.25s ease, transform 0.25s ease, opacity 0.2s ease;
 }
 
 .st-schedule-cell--conflict {
   box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.4);
+}
+
+.st-schedule-cell--draggable {
+  cursor: grab;
+}
+
+.st-schedule-cell--drag-disabled {
+  cursor: not-allowed;
+}
+
+.st-schedule-cell--dragging {
+  cursor: grabbing;
+}
+
+.st-schedule-cell--floating {
+  margin: 0 !important;
+  pointer-events: none;
+  box-shadow:
+    0 18px 40px rgba(31, 35, 41, 0.2),
+    0 8px 18px rgba(31, 35, 41, 0.12);
+  transform: rotate(-1deg);
+  z-index: 1200;
 }
 
 .st-schedule-cell__badge--conflict {
@@ -216,6 +280,37 @@ const props = defineProps({
     0 0 20px rgba(255, 77, 79, 0.5);
   transform: scale(1.015);
   z-index: 2;
+}
+
+.st-empty-cell {
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+
+.st-empty-cell--drag-checking {
+  background: #fff7e6;
+  color: #d48806;
+  box-shadow: inset 0 0 0 1px rgba(250, 173, 20, 0.28);
+}
+
+.st-empty-cell--drag-valid {
+  background: #e6fffb;
+  color: #08979c;
+  box-shadow:
+    inset 0 0 0 1px rgba(19, 194, 194, 0.24),
+    0 0 0 2px rgba(19, 194, 194, 0.12);
+  transform: scale(1.01);
+}
+
+.st-empty-cell--drag-invalid {
+  background: #fff1f0;
+  color: #cf1322;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 77, 79, 0.24),
+    0 0 0 2px rgba(255, 77, 79, 0.1);
 }
 
 @keyframes st-schedule-cell-flash {

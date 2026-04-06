@@ -362,11 +362,11 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		}())
 	}
 
-	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans)
+	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans, nil)
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
-	classroomConflictsByPlan, err := repo.listClassroomConflictsByPlanTx(ctx, tx, instID, plans)
+	classroomConflictsByPlan, err := repo.listClassroomConflictsByPlanTx(ctx, tx, instID, plans, nil)
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
@@ -374,7 +374,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
-	assistantConflictsByPlan, err := repo.listAssistantConflictsByPlanTx(ctx, tx, instID, plans)
+	assistantConflictsByPlan, err := repo.listAssistantConflictsByPlanTx(ctx, tx, instID, plans, nil)
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
@@ -466,7 +466,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		if err != nil {
 			return model.CreateOneToOneSchedulesResult{}, err
 		}
-			result.List = append(result.List, model.TeachingScheduleVO{
+		result.List = append(result.List, model.TeachingScheduleVO{
 			ID:                strconv.FormatInt(id, 10),
 			BatchNo:           batchNo,
 			BatchSize:         len(plans),
@@ -513,6 +513,7 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 		return model.TeachingScheduleValidationResult{}, errors.New("请至少选择一节日程")
 	}
 	assistantIDs := parseStringIDs(dto.AssistantIDs)
+	excludeIDs := parseStringIDs(dto.ExcludeIDs)
 
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -574,19 +575,19 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 			return names
 		}())
 	}
-	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans)
+	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans, excludeIDs)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
-	classroomConflictsByPlan, err := repo.listClassroomConflictsByPlanTx(ctx, tx, instID, plans)
+	classroomConflictsByPlan, err := repo.listClassroomConflictsByPlanTx(ctx, tx, instID, plans, excludeIDs)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
-	studentConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", base.StudentID, plansToSlots(plans), "", nil)
+	studentConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", base.StudentID, plansToSlots(plans), "", excludeIDs)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
-	assistantConflictsByPlan, err := repo.listAssistantConflictsByPlanTx(ctx, tx, instID, plans)
+	assistantConflictsByPlan, err := repo.listAssistantConflictsByPlanTx(ctx, tx, instID, plans, excludeIDs)
 	if err != nil {
 		return model.TeachingScheduleValidationResult{}, err
 	}
@@ -840,6 +841,11 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 		return errors.New("请选择上课教师")
 	}
 	assistantIDs := parseStringIDs(dto.AssistantIDs)
+	for _, assistantID := range assistantIDs {
+		if assistantID == teacherID {
+			return errors.New("主教与助教不能为同一人")
+		}
+	}
 	targetIDs := parseStringIDs(dto.IDs)
 	if strings.TrimSpace(dto.BatchNo) == "" && len(targetIDs) == 0 {
 		return errors.New("缺少待修改日程")
@@ -880,6 +886,10 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 	if len(schedules) == 0 {
 		return errors.New("未找到可修改的日程")
 	}
+	targetLessonDate := strings.TrimSpace(dto.LessonDate)
+	if targetLessonDate != "" && len(schedules) > 1 {
+		return errors.New("批量修改暂不支持统一调整日期")
+	}
 
 	teacherName := repo.GetStaffNameByID(ctx, &teacherID)
 	assistantNames := make([]string, 0, len(assistantIDs))
@@ -896,12 +906,16 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 	updatedSlots := make([]normalizedScheduleSlot, 0, len(schedules))
 	excludeIDs := make([]int64, 0, len(schedules))
 	for _, item := range schedules {
-		startAt, endAt, err := buildScheduleDateTime(item.LessonDate.Format("2006-01-02"), dto.StartTime, dto.EndTime)
+		lessonDate := item.LessonDate.Format("2006-01-02")
+		if targetLessonDate != "" {
+			lessonDate = targetLessonDate
+		}
+		startAt, endAt, err := buildScheduleDateTime(lessonDate, dto.StartTime, dto.EndTime)
 		if err != nil {
 			return err
 		}
 		updatedSlots = append(updatedSlots, normalizedScheduleSlot{
-			LessonDate: item.LessonDate,
+			LessonDate: startOfDay(startAt),
 			StartAt:    startAt,
 			EndAt:      endAt,
 		})
@@ -914,10 +928,30 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 
 	for index, item := range schedules {
 		slot := updatedSlots[index]
+		if item.ClassType == model.TeachingClassTypeOneToOne {
+			if item.StudentID > 0 {
+				studentConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", item.StudentID, []normalizedScheduleSlot{slot}, strings.TrimSpace(dto.BatchNo), excludeIDs)
+				if err != nil {
+					return err
+				}
+				if len(studentConflicts) > 0 {
+					return fmt.Errorf("学员在 %s %s-%s 已有日程冲突", slot.LessonDate.Format("2006-01-02"), slot.StartAt.Format("15:04"), slot.EndAt.Format("15:04"))
+				}
+			}
+			if len(assistantIDs) > 0 {
+				assistantConflicts, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, assistantIDs, []normalizedScheduleSlot{slot}, strings.TrimSpace(dto.BatchNo), excludeIDs)
+				if err != nil {
+					return err
+				}
+				if len(assistantConflicts) > 0 {
+					return fmt.Errorf("助教在 %s %s-%s 已有日程冲突", slot.LessonDate.Format("2006-01-02"), slot.StartAt.Format("15:04"), slot.EndAt.Format("15:04"))
+				}
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE teaching_schedule
 			SET teacher_id = ?, teacher_name = ?, assistant_ids_json = ?, assistant_names_json = ?,
-			    classroom_id = ?, classroom_name = ?, lesson_start_at = ?, lesson_end_at = ?,
+			    classroom_id = ?, classroom_name = ?, lesson_date = ?, lesson_start_at = ?, lesson_end_at = ?,
 			    update_id = ?, update_time = NOW()
 			WHERE id = ? AND inst_id = ? AND del_flag = 0
 		`,
@@ -927,6 +961,7 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 			nullJSONBytes(assistantNamesJSON),
 			classroomID,
 			classroomName,
+			slot.LessonDate.Format("2006-01-02"),
 			slot.StartAt,
 			slot.EndAt,
 			operatorID,
@@ -1056,6 +1091,8 @@ type scheduleAvailabilityConflictRow struct {
 type teachingScheduleRow struct {
 	ID         int64
 	BatchNo    string
+	ClassType  int
+	StudentID  int64
 	LessonDate time.Time
 }
 
@@ -1186,7 +1223,7 @@ func (repo *Repository) resolveClassroomNamesTx(ctx context.Context, tx *sql.Tx,
 	return result, nil
 }
 
-func (repo *Repository) listTeacherConflictsByPlanTx(ctx context.Context, tx *sql.Tx, instID int64, plans []normalizedSchedulePlan) (map[string][]scheduleConflictDetailRow, error) {
+func (repo *Repository) listTeacherConflictsByPlanTx(ctx context.Context, tx *sql.Tx, instID int64, plans []normalizedSchedulePlan, excludeIDs []int64) (map[string][]scheduleConflictDetailRow, error) {
 	result := make(map[string][]scheduleConflictDetailRow, len(plans))
 	for _, plan := range plans {
 		if plan.TeacherID <= 0 {
@@ -1196,7 +1233,7 @@ func (repo *Repository) listTeacherConflictsByPlanTx(ctx context.Context, tx *sq
 			LessonDate: plan.LessonDate,
 			StartAt:    plan.StartAt,
 			EndAt:      plan.EndAt,
-		}}, "", nil)
+		}}, "", excludeIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -1205,7 +1242,7 @@ func (repo *Repository) listTeacherConflictsByPlanTx(ctx context.Context, tx *sq
 	return result, nil
 }
 
-func (repo *Repository) listClassroomConflictsByPlanTx(ctx context.Context, tx *sql.Tx, instID int64, plans []normalizedSchedulePlan) (map[string][]scheduleConflictDetailRow, error) {
+func (repo *Repository) listClassroomConflictsByPlanTx(ctx context.Context, tx *sql.Tx, instID int64, plans []normalizedSchedulePlan, excludeIDs []int64) (map[string][]scheduleConflictDetailRow, error) {
 	result := make(map[string][]scheduleConflictDetailRow, len(plans))
 	for _, plan := range plans {
 		if plan.ClassroomID <= 0 {
@@ -1215,7 +1252,7 @@ func (repo *Repository) listClassroomConflictsByPlanTx(ctx context.Context, tx *
 			LessonDate: plan.LessonDate,
 			StartAt:    plan.StartAt,
 			EndAt:      plan.EndAt,
-		}}, "", nil)
+		}}, "", excludeIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -1224,7 +1261,7 @@ func (repo *Repository) listClassroomConflictsByPlanTx(ctx context.Context, tx *
 	return result, nil
 }
 
-func (repo *Repository) listAssistantConflictsByPlanTx(ctx context.Context, tx *sql.Tx, instID int64, plans []normalizedSchedulePlan) (map[string][]scheduleConflictDetailRow, error) {
+func (repo *Repository) listAssistantConflictsByPlanTx(ctx context.Context, tx *sql.Tx, instID int64, plans []normalizedSchedulePlan, excludeIDs []int64) (map[string][]scheduleConflictDetailRow, error) {
 	result := make(map[string][]scheduleConflictDetailRow, len(plans))
 	for _, plan := range plans {
 		if len(plan.AssistantIDs) == 0 {
@@ -1234,7 +1271,7 @@ func (repo *Repository) listAssistantConflictsByPlanTx(ctx context.Context, tx *
 			LessonDate: plan.LessonDate,
 			StartAt:    plan.StartAt,
 			EndAt:      plan.EndAt,
-		}}, "", nil)
+		}}, "", excludeIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -1366,7 +1403,12 @@ func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *s
 		}
 	}
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, IFNULL(batch_no, ''), lesson_date
+		SELECT
+			id,
+			IFNULL(batch_no, ''),
+			IFNULL(class_type, 0),
+			IFNULL(student_id, 0),
+			lesson_date
 		FROM teaching_schedule
 		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY lesson_start_at ASC, id ASC
@@ -1378,7 +1420,7 @@ func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *s
 	list := make([]teachingScheduleRow, 0, 16)
 	for rows.Next() {
 		var item teachingScheduleRow
-		if err := rows.Scan(&item.ID, &item.BatchNo, &item.LessonDate); err != nil {
+		if err := rows.Scan(&item.ID, &item.BatchNo, &item.ClassType, &item.StudentID, &item.LessonDate); err != nil {
 			return nil, err
 		}
 		list = append(list, item)
@@ -1993,17 +2035,17 @@ func buildScheduleConflictResult(
 			typeSet["学员"] = struct{}{}
 		}
 		current = append(current, model.TeachingScheduleConflictItem{
-			Name:          base.ClassName,
-			ClassTypeText: "1对1日程",
-			Date:          slot.LessonDate.Format("2006-01-02"),
-			Week:          weekDisplay(slot.LessonDate),
-			TimeText:      slot.StartAt.Format("15:04") + "~" + slot.EndAt.Format("15:04"),
-			TeacherID:     "",
-			TeacherName:   firstNonEmptyString(teacherName, "-"),
+			Name:           base.ClassName,
+			ClassTypeText:  "1对1日程",
+			Date:           slot.LessonDate.Format("2006-01-02"),
+			Week:           weekDisplay(slot.LessonDate),
+			TimeText:       slot.StartAt.Format("15:04") + "~" + slot.EndAt.Format("15:04"),
+			TeacherID:      "",
+			TeacherName:    firstNonEmptyString(teacherName, "-"),
 			AssistantNames: compactStrings(assistantNames),
-			ClassroomName: firstNonEmptyString(classroomName, "-"),
-			StudentNames:  compactStrings([]string{base.StudentName}),
-			ConflictTypes: conflictTypes,
+			ClassroomName:  firstNonEmptyString(classroomName, "-"),
+			StudentNames:   compactStrings([]string{base.StudentName}),
+			ConflictTypes:  conflictTypes,
 		})
 	}
 
@@ -2012,17 +2054,17 @@ func buildScheduleConflictResult(
 		item, ok := existingMap[row.ID]
 		if !ok {
 			item = model.TeachingScheduleConflictItem{
-				Name:          row.TeachingClassName,
-				ClassTypeText: scheduleClassTypeText(row.ClassType),
-				Date:          row.LessonDate.Format("2006-01-02"),
-				Week:          weekDisplay(row.LessonDate),
-				TimeText:      row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
-				TeacherID:     emptyStringIfZero(row.TeacherID),
-				TeacherName:   firstNonEmptyString(row.TeacherName, "-"),
+				Name:           row.TeachingClassName,
+				ClassTypeText:  scheduleClassTypeText(row.ClassType),
+				Date:           row.LessonDate.Format("2006-01-02"),
+				Week:           weekDisplay(row.LessonDate),
+				TimeText:       row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+				TeacherID:      emptyStringIfZero(row.TeacherID),
+				TeacherName:    firstNonEmptyString(row.TeacherName, "-"),
 				AssistantNames: compactStrings(row.AssistantNames),
-				ClassroomName: firstNonEmptyString(row.ClassroomName, "-"),
-				StudentNames:  compactStrings([]string{row.StudentName}),
-				ConflictTypes: []string{},
+				ClassroomName:  firstNonEmptyString(row.ClassroomName, "-"),
+				StudentNames:   compactStrings([]string{row.StudentName}),
+				ConflictTypes:  []string{},
 			}
 		}
 		if !containsString(item.ConflictTypes, conflictType) {
@@ -2076,17 +2118,17 @@ func buildScheduleConflictResultFromPlans(
 		item, ok := existingMap[row.ID]
 		if !ok {
 			item = model.TeachingScheduleConflictItem{
-				Name:          row.TeachingClassName,
-				ClassTypeText: scheduleClassTypeText(row.ClassType),
-				Date:          row.LessonDate.Format("2006-01-02"),
-				Week:          weekDisplay(row.LessonDate),
-				TimeText:      row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
-				TeacherID:     emptyStringIfZero(row.TeacherID),
-				TeacherName:   firstNonEmptyString(row.TeacherName, "-"),
+				Name:           row.TeachingClassName,
+				ClassTypeText:  scheduleClassTypeText(row.ClassType),
+				Date:           row.LessonDate.Format("2006-01-02"),
+				Week:           weekDisplay(row.LessonDate),
+				TimeText:       row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+				TeacherID:      emptyStringIfZero(row.TeacherID),
+				TeacherName:    firstNonEmptyString(row.TeacherName, "-"),
 				AssistantNames: compactStrings(row.AssistantNames),
-				ClassroomName: firstNonEmptyString(row.ClassroomName, "-"),
-				StudentNames:  compactStrings([]string{row.StudentName}),
-				ConflictTypes: []string{},
+				ClassroomName:  firstNonEmptyString(row.ClassroomName, "-"),
+				StudentNames:   compactStrings([]string{row.StudentName}),
+				ConflictTypes:  []string{},
 			}
 		}
 		if !containsString(item.ConflictTypes, conflictType) {
@@ -2140,17 +2182,17 @@ func buildScheduleConflictResultFromPlans(
 
 		sort.Strings(conflictTypes)
 		current = append(current, model.TeachingScheduleConflictItem{
-			Name:          base.ClassName,
-			ClassTypeText: "1对1日程",
-			Date:          plan.LessonDate.Format("2006-01-02"),
-			Week:          weekDisplay(plan.LessonDate),
-			TimeText:      plan.StartAt.Format("15:04") + "~" + plan.EndAt.Format("15:04"),
-			TeacherID:     emptyStringIfZero(plan.TeacherID),
-			TeacherName:   firstNonEmptyString(teacherNames[plan.TeacherID], "-"),
+			Name:           base.ClassName,
+			ClassTypeText:  "1对1日程",
+			Date:           plan.LessonDate.Format("2006-01-02"),
+			Week:           weekDisplay(plan.LessonDate),
+			TimeText:       plan.StartAt.Format("15:04") + "~" + plan.EndAt.Format("15:04"),
+			TeacherID:      emptyStringIfZero(plan.TeacherID),
+			TeacherName:    firstNonEmptyString(teacherNames[plan.TeacherID], "-"),
 			AssistantNames: compactStrings(plan.AssistantNames),
-			ClassroomName: firstNonEmptyString(classroomNames[plan.ClassroomID], "-"),
-			StudentNames:  compactStrings([]string{base.StudentName}),
-			ConflictTypes: conflictTypes,
+			ClassroomName:  firstNonEmptyString(classroomNames[plan.ClassroomID], "-"),
+			StudentNames:   compactStrings([]string{base.StudentName}),
+			ConflictTypes:  conflictTypes,
 		})
 	}
 
@@ -2201,17 +2243,17 @@ func buildScheduleConflictResultFromExisting(
 	}
 
 	currentItems := []model.TeachingScheduleConflictItem{{
-		Name:          current.TeachingClassName,
-		ClassTypeText: scheduleClassTypeText(current.ClassType),
-		Date:          current.LessonDate.Format("2006-01-02"),
-		Week:          weekDisplay(current.LessonDate),
-		TimeText:      current.StartAt.Format("15:04") + "~" + current.EndAt.Format("15:04"),
-		TeacherID:     emptyStringIfZero(current.TeacherID),
-		TeacherName:   firstNonEmptyString(current.TeacherName, "-"),
+		Name:           current.TeachingClassName,
+		ClassTypeText:  scheduleClassTypeText(current.ClassType),
+		Date:           current.LessonDate.Format("2006-01-02"),
+		Week:           weekDisplay(current.LessonDate),
+		TimeText:       current.StartAt.Format("15:04") + "~" + current.EndAt.Format("15:04"),
+		TeacherID:      emptyStringIfZero(current.TeacherID),
+		TeacherName:    firstNonEmptyString(current.TeacherName, "-"),
 		AssistantNames: compactStrings(current.AssistantNames),
-		ClassroomName: firstNonEmptyString(current.ClassroomName, "-"),
-		StudentNames:  compactStrings([]string{current.StudentName}),
-		ConflictTypes: currentConflictTypes,
+		ClassroomName:  firstNonEmptyString(current.ClassroomName, "-"),
+		StudentNames:   compactStrings([]string{current.StudentName}),
+		ConflictTypes:  currentConflictTypes,
 	}}
 
 	existingMap := make(map[int64]model.TeachingScheduleConflictItem)
@@ -2222,17 +2264,17 @@ func buildScheduleConflictResultFromExisting(
 		item, ok := existingMap[row.ID]
 		if !ok {
 			item = model.TeachingScheduleConflictItem{
-				Name:          row.TeachingClassName,
-				ClassTypeText: scheduleClassTypeText(row.ClassType),
-				Date:          row.LessonDate.Format("2006-01-02"),
-				Week:          weekDisplay(row.LessonDate),
-				TimeText:      row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
-				TeacherID:     emptyStringIfZero(row.TeacherID),
-				TeacherName:   firstNonEmptyString(row.TeacherName, "-"),
+				Name:           row.TeachingClassName,
+				ClassTypeText:  scheduleClassTypeText(row.ClassType),
+				Date:           row.LessonDate.Format("2006-01-02"),
+				Week:           weekDisplay(row.LessonDate),
+				TimeText:       row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+				TeacherID:      emptyStringIfZero(row.TeacherID),
+				TeacherName:    firstNonEmptyString(row.TeacherName, "-"),
 				AssistantNames: compactStrings(row.AssistantNames),
-				ClassroomName: firstNonEmptyString(row.ClassroomName, "-"),
-				StudentNames:  compactStrings([]string{row.StudentName}),
-				ConflictTypes: []string{},
+				ClassroomName:  firstNonEmptyString(row.ClassroomName, "-"),
+				StudentNames:   compactStrings([]string{row.StudentName}),
+				ConflictTypes:  []string{},
 			}
 		}
 		if !containsString(item.ConflictTypes, conflictType) {
@@ -2398,17 +2440,17 @@ func appendAvailabilityConflict(existingMap map[int64]model.TeachingScheduleConf
 	item, ok := existingMap[row.ID]
 	if !ok {
 		item = model.TeachingScheduleConflictItem{
-			Name:          row.TeachingClassName,
-			ClassTypeText: scheduleClassTypeText(row.ClassType),
-			Date:          row.LessonDate.Format("2006-01-02"),
-			Week:          weekDisplay(row.LessonDate),
-			TimeText:      row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
-			TeacherID:     emptyStringIfZero(row.TeacherID),
-			TeacherName:   firstNonEmptyString(row.TeacherName, "-"),
+			Name:           row.TeachingClassName,
+			ClassTypeText:  scheduleClassTypeText(row.ClassType),
+			Date:           row.LessonDate.Format("2006-01-02"),
+			Week:           weekDisplay(row.LessonDate),
+			TimeText:       row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+			TeacherID:      emptyStringIfZero(row.TeacherID),
+			TeacherName:    firstNonEmptyString(row.TeacherName, "-"),
 			AssistantNames: compactStrings(row.AssistantNames),
-			ClassroomName: firstNonEmptyString(row.ClassroomName, "-"),
-			StudentNames:  compactStrings([]string{row.StudentName}),
-			ConflictTypes: []string{},
+			ClassroomName:  firstNonEmptyString(row.ClassroomName, "-"),
+			StudentNames:   compactStrings([]string{row.StudentName}),
+			ConflictTypes:  []string{},
 		}
 	}
 	if !containsString(item.ConflictTypes, conflictType) {

@@ -8,14 +8,14 @@ const (
 )
 
 type TeachingScheduleCreateSlotDTO struct {
-	LessonDate             string `json:"lessonDate"`
-	StartTime              string `json:"startTime"`
-	EndTime                string `json:"endTime"`
-	TeacherID              string `json:"teacherId,omitempty"`
+	LessonDate             string   `json:"lessonDate"`
+	StartTime              string   `json:"startTime"`
+	EndTime                string   `json:"endTime"`
+	TeacherID              string   `json:"teacherId,omitempty"`
 	AssistantIDs           []string `json:"assistantIds,omitempty"`
-	ClassroomID            string `json:"classroomId,omitempty"`
-	AllowStudentConflict   bool   `json:"allowStudentConflict,omitempty"`
-	AllowClassroomConflict bool   `json:"allowClassroomConflict,omitempty"`
+	ClassroomID            string   `json:"classroomId,omitempty"`
+	AllowStudentConflict   bool     `json:"allowStudentConflict,omitempty"`
+	AllowClassroomConflict bool     `json:"allowClassroomConflict,omitempty"`
 }
 
 type CreateOneToOneSchedulesDTO struct {
@@ -23,6 +23,7 @@ type CreateOneToOneSchedulesDTO struct {
 	TeacherID              string                          `json:"teacherId"`
 	AssistantIDs           []string                        `json:"assistantIds"`
 	ClassroomID            string                          `json:"classroomId"`
+	ExcludeIDs             []string                        `json:"excludeIds,omitempty"`
 	AllowStudentConflict   bool                            `json:"allowStudentConflict,omitempty"`
 	AllowClassroomConflict bool                            `json:"allowClassroomConflict,omitempty"`
 	Schedules              []TeachingScheduleCreateSlotDTO `json:"schedules"`
@@ -47,8 +48,8 @@ type AssistantScheduleAvailabilitySlotDTO struct {
 }
 
 type CheckAssistantScheduleAvailabilityDTO struct {
-	OneToOneID   string                               `json:"oneToOneId"`
-	AssistantIDs []string                             `json:"assistantIds"`
+	OneToOneID   string                                 `json:"oneToOneId"`
+	AssistantIDs []string                               `json:"assistantIds"`
 	Schedules    []AssistantScheduleAvailabilitySlotDTO `json:"schedules"`
 }
 
@@ -76,6 +77,7 @@ type TeachingScheduleBatchUpdateDTO struct {
 	TeacherID    string   `json:"teacherId"`
 	AssistantIDs []string `json:"assistantIds"`
 	ClassroomID  string   `json:"classroomId"`
+	LessonDate   string   `json:"lessonDate"`
 	StartTime    string   `json:"startTime"`
 	EndTime      string   `json:"endTime"`
 }
@@ -159,26 +161,26 @@ type OneToOneScheduleAvailabilityResult struct {
 }
 
 type TeachingScheduleConflictItem struct {
-	Date          string   `json:"date"`
-	Week          string   `json:"week,omitempty"`
-	Name          string   `json:"name"`
-	ClassTypeText string   `json:"classTypeText"`
-	TimeText      string   `json:"timeText"`
-	TeacherID     string   `json:"teacherId,omitempty"`
-	TeacherName   string   `json:"teacherName"`
+	Date           string   `json:"date"`
+	Week           string   `json:"week,omitempty"`
+	Name           string   `json:"name"`
+	ClassTypeText  string   `json:"classTypeText"`
+	TimeText       string   `json:"timeText"`
+	TeacherID      string   `json:"teacherId,omitempty"`
+	TeacherName    string   `json:"teacherName"`
 	AssistantNames []string `json:"assistantNames,omitempty"`
-	ClassroomName string   `json:"classroomName,omitempty"`
-	StudentNames  []string `json:"studentNames,omitempty"`
-	ConflictTypes []string `json:"conflictTypes,omitempty"`
+	ClassroomName  string   `json:"classroomName,omitempty"`
+	StudentNames   []string `json:"studentNames,omitempty"`
+	ConflictTypes  []string `json:"conflictTypes,omitempty"`
 }
 
 type AssistantScheduleAvailabilityItem struct {
-	AssistantID      string                         `json:"assistantId"`
-	AssistantName    string                         `json:"assistantName,omitempty"`
-	Valid            bool                           `json:"valid"`
-	Message          string                         `json:"message,omitempty"`
+	AssistantID       string                         `json:"assistantId"`
+	AssistantName     string                         `json:"assistantName,omitempty"`
+	Valid             bool                           `json:"valid"`
+	Message           string                         `json:"message,omitempty"`
 	ExistingSchedules []TeachingScheduleConflictItem `json:"existingSchedules,omitempty"`
-	ConflictTypes    []string                       `json:"conflictTypes,omitempty"`
+	ConflictTypes     []string                       `json:"conflictTypes,omitempty"`
 }
 
 type AssistantScheduleAvailabilityResult struct {
