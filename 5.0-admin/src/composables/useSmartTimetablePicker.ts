@@ -238,11 +238,10 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
     assistantKeyword.value = ''
     lastHandledOneToOneId = nextId
     if (nextId) {
-      requestAnimationFrame(() => {
-        oneToOnePickerOpen.value = true
-      })
+      requestKeepOneToOnePickerOpen()
     }
     else {
+      preserveOneToOnePickerOpen = false
       oneToOnePickerOpen.value = false
     }
     void options.detectOneToOneAvailability(value)
@@ -269,8 +268,8 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
 
   function requestKeepOneToOnePickerOpen() {
     preserveOneToOnePickerOpen = true
+    oneToOnePickerOpen.value = true
     requestAnimationFrame(() => {
-      oneToOnePickerOpen.value = true
       preserveOneToOnePickerOpen = false
     })
   }
