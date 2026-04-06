@@ -33,7 +33,8 @@ const displayArray = ref([
   'subject', // 科目
 ])
 const SMART_TIMETABLE_VIEW_MODE_KEY = 'smart-timetable-view-mode'
-const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 120
+const DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD = 500
+const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 300
 const DRAG_BATCH_VALIDATE_CONCURRENCY = 2
 
 function getSavedTimeView() {
@@ -2386,6 +2387,14 @@ async function primeDragValidationForVisibleTargets(dragState, sessionId) {
 
   if (!remoteTargets.length)
     return
+
+  if (remoteTargets.length <= DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD) {
+    await validateDragTargetsInBatch(remoteTargets, {
+      dragState,
+      sessionId,
+    })
+    return
+  }
 
   const chunks = []
   for (let i = 0; i < remoteTargets.length; i += DRAG_BATCH_VALIDATE_CHUNK_SIZE)
