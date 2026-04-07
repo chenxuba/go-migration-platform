@@ -308,7 +308,6 @@ function confirmDelete(record: Record<string, any>) {
         :pagination="false"
         :loading="loading"
         :scroll="{ x: 980 }"
-        :locale="{ emptyText: '当前筛选条件下暂无冲突日程' }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'dateTime'">

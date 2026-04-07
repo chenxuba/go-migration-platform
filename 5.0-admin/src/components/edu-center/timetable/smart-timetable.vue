@@ -71,6 +71,7 @@ const currentGroup = ref('A')
 /** 与 matrixDays、表头节次列对齐；切换 A/B 时在新数据返回前不改，避免清空矩阵导致整页高度塌缩抖动 */
 const displayedGroupKey = ref('A')
 const timetableRootRef = ref(null)
+const allFilterRef = ref(null)
 const classId = ref(null)
 const filterStudentId = ref(undefined)
 const filterTeacherId = ref([])
@@ -1609,6 +1610,19 @@ async function jumpToConflictSchedule(item) {
   }
 
   let needReload = false
+  const jumpTeacherId = String(item.teacherId || '').trim()
+  const jumpTeacherName = String(item.teacherName || '').trim()
+  if (jumpTeacherId && !filterTeacherId.value.includes(jumpTeacherId)) {
+    const nextTeacherIds = [...filterTeacherId.value, jumpTeacherId]
+    scheduleTeacherOptions.value = mergeFilterOptions(scheduleTeacherOptions.value, [{
+      id: jumpTeacherId,
+      value: jumpTeacherName || jumpTeacherId,
+    }], nextTeacherIds)
+    filterTeacherId.value = nextTeacherIds
+    allFilterRef.value?.setScheduleTeacherFilter?.(nextTeacherIds, false)
+    needReload = true
+  }
+
   if (item.jumpGroupKey && item.jumpGroupKey !== currentGroup.value) {
     currentGroup.value = item.jumpGroupKey
     needReload = true
@@ -3195,6 +3209,7 @@ watch(dragConflictDetailOpen, (open) => {
   <div ref="timetableRootRef">
     <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
       <all-filter
+        ref="allFilterRef"
         :display-array="displayArray"
         :is-show-search-stu-phonefilter="true"
         :schedule-teacher-options="scheduleTeacherOptions"

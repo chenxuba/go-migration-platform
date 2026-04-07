@@ -4890,6 +4890,17 @@ function handleScheduleTeacherChange(e) {
   })
 }
 
+function setScheduleTeacherFilter(values = [], shouldEmit = false) {
+  scheduleTeacherVals.value = Array.isArray(values)
+    ? values.map(item => String(item ?? '').trim()).filter(Boolean)
+    : []
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:scheduleTeacherFilter', [...scheduleTeacherVals.value])
+    })
+  }
+}
+
 function handleScheduleClassroomChange(e) {
   nextTick(() => {
     emit('update:scheduleClassroomFilter', e)
@@ -5205,6 +5216,7 @@ watch(shouldLoadDepartmentData, (needLoad) => {
 // 暴露方法供父组件调用
 defineExpose({
   clearQuickFilter,
+  setScheduleTeacherFilter,
   updateStaffSearchData,
   getOrderedConditions: () => orderedConditions.value,
   // 新增：暴露部门数据获取方法
