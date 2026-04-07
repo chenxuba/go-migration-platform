@@ -202,8 +202,35 @@ function isOneToOneSchedule(record: Record<string, any>) {
   return Number(record.classType) === 2
 }
 
-function buildDeleteSuccessMessage(record: Record<string, any>) {
+function isSameScheduleSlot(left: Record<string, any>, right: Record<string, any>) {
+  return String(left.lessonDate || '') === String(right.lessonDate || '')
+    && String(left.startAt || '') === String(right.startAt || '')
+    && String(left.endAt || '') === String(right.endAt || '')
+}
+
+function hasAssistantOverlap(left: Record<string, any>, right: Record<string, any>) {
+  const leftSet = new Set((Array.isArray(left.assistantIds) ? left.assistantIds : []).map(item => String(item || '').trim()).filter(Boolean))
+  const rightList = (Array.isArray(right.assistantIds) ? right.assistantIds : []).map(item => String(item || '').trim()).filter(Boolean)
+  return rightList.some(item => leftSet.has(item))
+}
+
+function findLinkedConflictRows(record: Record<string, any>) {
+  return conflictRows.value.filter(item =>
+    String(item.id || '') !== String(record.id || '')
+    && isSameScheduleSlot(item, record)
+    && (
+      (item.studentId && item.studentId === record.studentId)
+      || (item.teacherId && item.teacherId === record.teacherId)
+      || (item.classroomId && item.classroomId === record.classroomId)
+      || hasAssistantOverlap(item, record)
+    ),
+  )
+}
+
+function buildDeleteSuccessMessage(record: Record<string, any>, linkedCount = 0) {
   const dateText = dayjs(record.lessonDate).format('M月D日')
+  if (linkedCount > 0)
+    return `已删除 1 条日程；同冲突中的另外 ${linkedCount} 条因不再冲突，会从“冲突日程”列表移除，但不会被删除`
   return `已删除 ${dateText} ${formatLessonTime(record)} 的 1对1 冲突日程`
 }
 
@@ -213,10 +240,15 @@ function confirmDelete(record: Record<string, any>) {
     return
   }
 
+  const linkedConflictRows = findLinkedConflictRows(record)
+  const linkedHint = linkedConflictRows.length
+    ? `删除当前这条后，和它成对冲突的另外 ${linkedConflictRows.length} 条记录如果不再冲突，会一起从“冲突日程”列表消失，但不会被删除。`
+    : ''
+
   Modal.confirm({
     centered: true,
     title: '确认删除这条冲突日程？',
-    content: '删除后会同步从当前 1 对 1 的排课记录中移除，该操作不可恢复。',
+    content: `删除后会同步从当前 1 对 1 的排课记录中移除，该操作不可恢复。${linkedHint}`,
     okText: '删除',
     cancelText: '取消',
     okButtonProps: {
@@ -230,7 +262,7 @@ function confirmDelete(record: Record<string, any>) {
         })
         if (res.code !== 200)
           throw new Error(res.message || '删除冲突日程失败')
-        messageService.success(buildDeleteSuccessMessage(record))
+        messageService.success(buildDeleteSuccessMessage(record, linkedConflictRows.length))
         emitter.emit(EVENTS.REFRESH_DATA)
       }
       catch (error) {
