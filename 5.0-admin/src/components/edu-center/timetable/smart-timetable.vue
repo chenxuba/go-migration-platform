@@ -545,6 +545,7 @@ const dragPointerState = ref({
 })
 const dragConfirmOpen = ref(false)
 const dragConfirmSubmitting = ref(false)
+const dragCopySubmitting = ref(false)
 const dragConfirmDetail = ref({
   source: null,
   target: null,
@@ -3040,6 +3041,62 @@ async function submitDragScheduleAdjustment() {
   }
 }
 
+async function copyDraggedScheduleToTarget() {
+  const payload = dragConfirmDetail.value?.payload
+  if (!payload?.dragState || !payload?.target) {
+    dragConfirmOpen.value = false
+    return
+  }
+
+  const { dragState, target } = payload
+  if (!dragState.oneToOneId) {
+    messageService.warning('当前课程缺少1对1标识，暂不支持复制')
+    return
+  }
+
+  const dateLabel = dayjs(target.lessonDate).format('M月D日')
+  const lessonIndex = getLessonIndex(target.startTime)
+  dragCopySubmitting.value = true
+  creatingOneToOneSchedule.value = true
+  try {
+    const res = await createOneToOneSchedulesApi({
+      oneToOneId: dragState.oneToOneId,
+      teacherId: target.teacherId,
+      assistantIds: dragState.assistantIds,
+      classroomId: dragState.classroomId || undefined,
+      schedules: [{
+        lessonDate: target.lessonDate,
+        startTime: target.startTime,
+        endTime: target.endTime,
+        teacherId: target.teacherId,
+        assistantIds: dragState.assistantIds,
+        classroomId: dragState.classroomId || undefined,
+      }],
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '复制课程失败')
+
+    dragConfirmOpen.value = false
+    dragConfirmDetail.value = {
+      source: null,
+      target: null,
+      payload: null,
+    }
+    const lessonText = dragState.studentText || dragState.courseName || '课程'
+    messageService.success(`已复制 ${lessonText} 到 ${dateLabel} ${formatWeek(target.lessonDate)} 第${lessonIndex}节`)
+    emitter.emit(EVENTS.REFRESH_DATA)
+  }
+  catch (error) {
+    console.error('copy teaching schedule failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '复制课程失败')
+    await loadTimetableMatrix()
+  }
+  finally {
+    dragCopySubmitting.value = false
+    creatingOneToOneSchedule.value = false
+  }
+}
+
 function resolvePointerDragTarget(clientX, clientY) {
   if (typeof document === 'undefined')
     return null
@@ -3114,7 +3171,7 @@ watch(
 )
 
 watch(dragConfirmOpen, (open) => {
-  if (!open && !dragConfirmSubmitting.value) {
+  if (!open && !dragConfirmSubmitting.value && !dragCopySubmitting.value) {
     dragConfirmDetail.value = {
       source: null,
       target: null,
@@ -3277,7 +3334,9 @@ watch(dragConflictDetailOpen, (open) => {
       v-model:open="dragConfirmOpen"
       :detail="dragConfirmDetail"
       :submitting="dragConfirmSubmitting"
+      :copying="dragCopySubmitting"
       @confirm="submitDragScheduleAdjustment"
+      @copy="copyDraggedScheduleToTarget"
     />
   </div>
 </template>

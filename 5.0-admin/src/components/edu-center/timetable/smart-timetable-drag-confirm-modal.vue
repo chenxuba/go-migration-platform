@@ -11,6 +11,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  copying: {
+    type: Boolean,
+    default: false,
+  },
   detail: {
     type: Object,
     default: () => ({
@@ -20,7 +24,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:open', 'confirm'])
+const emit = defineEmits(['update:open', 'confirm', 'copy'])
 
 const modalOpen = computed({
   get: () => props.open,
@@ -93,10 +97,13 @@ const modalOpen = computed({
       </div>
 
       <div class="st-drag-confirm__footer">
+        <a-button :loading="copying" :disabled="submitting" @click="$emit('copy')">
+          复制课程
+        </a-button>
         <a-button @click="modalOpen = false">
           取消
         </a-button>
-        <a-button type="primary" :loading="submitting" @click="$emit('confirm')">
+        <a-button type="primary" :loading="submitting" :disabled="copying" @click="$emit('confirm')">
           确定
         </a-button>
       </div>
