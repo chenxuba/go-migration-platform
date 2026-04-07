@@ -1422,6 +1422,31 @@ async function flushPendingConflictJump() {
   if (found) {
     pendingConflictJump = null
     messageService.success('已定位到冲突课程')
+    return
+  }
+
+  if (pending.allowAppendTeacherFilter && !pending.teacherFilterExpanded) {
+    const teacherId = String(pending.teacherId || '').trim()
+    const teacherName = String(pending.teacherName || '').trim()
+    if (teacherId && !filterTeacherId.value.includes(teacherId)) {
+      const nextTeacherIds = [...filterTeacherId.value, teacherId]
+      scheduleTeacherOptions.value = mergeFilterOptions(scheduleTeacherOptions.value, [{
+        id: teacherId,
+        value: teacherName || teacherId,
+      }], nextTeacherIds)
+      filterTeacherId.value = nextTeacherIds
+      allFilterRef.value?.setScheduleTeacherFilter?.(nextTeacherIds, false)
+      pendingConflictJump = {
+        ...pending,
+        teacherFilterExpanded: true,
+      }
+      return
+    }
+  }
+
+  if (pending.teacherFilterExpanded) {
+    pendingConflictJump = null
+    messageService.warning('已自动补充目标老师筛选，但仍未定位到课程，请检查日期或组别')
   }
 }
 
@@ -1605,24 +1630,10 @@ async function jumpToConflictSchedule(item) {
 
   conflictDetailModalOpen.value = false
   dragConflictDetailOpen.value = false
-  pendingConflictJump = {
-    cellKey: item.jumpCellKey,
-  }
-
-  let needReload = false
   const jumpTeacherId = String(item.teacherId || '').trim()
   const jumpTeacherName = String(item.teacherName || '').trim()
-  if (jumpTeacherId && !filterTeacherId.value.includes(jumpTeacherId)) {
-    const nextTeacherIds = [...filterTeacherId.value, jumpTeacherId]
-    scheduleTeacherOptions.value = mergeFilterOptions(scheduleTeacherOptions.value, [{
-      id: jumpTeacherId,
-      value: jumpTeacherName || jumpTeacherId,
-    }], nextTeacherIds)
-    filterTeacherId.value = nextTeacherIds
-    allFilterRef.value?.setScheduleTeacherFilter?.(nextTeacherIds, false)
-    needReload = true
-  }
-
+  const teacherFilterMissing = jumpTeacherId && !filterTeacherId.value.includes(jumpTeacherId)
+  let needReload = false
   if (item.jumpGroupKey && item.jumpGroupKey !== currentGroup.value) {
     currentGroup.value = item.jumpGroupKey
     needReload = true
@@ -1648,13 +1659,19 @@ async function jumpToConflictSchedule(item) {
   if (!needReload) {
     const found = await focusScheduleCell(item.jumpCellKey)
     if (found) {
-      pendingConflictJump = null
       messageService.success('已定位到冲突课程')
-    }
-    else {
-      await loadTimetableMatrix()
+      return
     }
   }
+
+  pendingConflictJump = {
+    cellKey: item.jumpCellKey,
+    teacherId: jumpTeacherId,
+    teacherName: jumpTeacherName,
+    allowAppendTeacherFilter: Boolean(teacherFilterMissing),
+    teacherFilterExpanded: false,
+  }
+  await loadTimetableMatrix()
 }
 
 function resolveConflictAttemptTarget() {
