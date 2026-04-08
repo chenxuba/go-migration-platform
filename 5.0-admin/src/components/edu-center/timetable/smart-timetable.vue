@@ -15,7 +15,7 @@ import { getInstConfigApi } from '@/api/common/config'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, createOneToOneSchedulesApi, downloadSmartTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, downloadSmartTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useSmartTimetableAvailability } from '@/composables/useSmartTimetableAvailability'
 import { useSmartTimetableClassMode } from '@/composables/useSmartTimetableClassMode'
@@ -2694,6 +2694,103 @@ function buildDragValidationResultFromValidationItem(target, item) {
   }
 }
 
+function mergeDragExistingSchedules(...groups) {
+  const map = new Map()
+  groups.flat().forEach((item) => {
+    if (!item)
+      return
+    const key = [
+      item.date,
+      item.timeText,
+      item.teacherId,
+      item.teacherName,
+      item.name,
+      item.classroomName,
+      (item.conflictTypes || []).join(','),
+    ].join('|')
+    if (!map.has(key))
+      map.set(key, item)
+  })
+  return [...map.values()]
+}
+
+function mergeDragValidationResults(primary, secondary) {
+  if (!secondary)
+    return primary
+  if (primary?.valid === false && secondary?.valid !== false)
+    return primary
+  if (primary?.valid !== false && secondary?.valid === false)
+    return secondary
+  if (primary?.valid !== false && secondary?.valid !== false)
+    return primary
+
+  const conflictTypes = uniqueConflictTypes([
+    ...(primary?.conflictTypes || []),
+    ...(secondary?.conflictTypes || []),
+  ])
+  return {
+    ...dragConflictStateFromTypes(conflictTypes, secondary?.message || primary?.message || '当前空点不可调课'),
+    existingSchedules: mergeDragExistingSchedules(primary?.existingSchedules || [], secondary?.existingSchedules || []),
+  }
+}
+
+async function checkDragTargetsTeacherAvailability(targets, dragState) {
+  const res = await checkOneToOneScheduleAvailabilityApi({
+    oneToOneId: dragState.oneToOneId,
+    excludeIds: [dragState.scheduleId],
+    schedules: targets.map(target => ({
+      teacherId: target.teacherId,
+      lessonDate: target.lessonDate,
+      startTime: target.startTime,
+      endTime: target.endTime,
+    })),
+  })
+  if (res.code !== 200 || !res.result)
+    throw new Error(res.message || '检测调课空点失败')
+
+  return new Map(
+    (Array.isArray(res.result.items) ? res.result.items : [])
+      .map(item => [buildAvailabilitySlotKey(item.teacherId, item.lessonDate, item.startTime, item.endTime), item]),
+  )
+}
+
+async function checkDragTargetAssistantAvailability(target, dragState) {
+  if (!Array.isArray(dragState?.assistantIds) || !dragState.assistantIds.length)
+    return null
+
+  const res = await checkAssistantScheduleAvailabilityApi({
+    oneToOneId: dragState.oneToOneId,
+    assistantIds: dragState.assistantIds,
+    excludeIds: [dragState.scheduleId],
+    schedules: [{
+      lessonDate: target.lessonDate,
+      startTime: target.startTime,
+      endTime: target.endTime,
+    }],
+  })
+  if (res.code !== 200 || !res.result)
+    throw new Error(res.message || '检测助教空闲状态失败')
+
+  const invalidItems = (Array.isArray(res.result.items) ? res.result.items : []).filter(item => item.valid === false)
+  if (!invalidItems.length) {
+    return {
+      valid: true,
+      label: '可调课',
+      message: `${target.teacherName} ${target.lessonDate} ${target.startTime}-${target.endTime} 可调课`,
+      conflictTypes: [],
+      existingSchedules: [],
+    }
+  }
+
+  return {
+    ...dragConflictStateFromTypes(
+      uniqueConflictTypes(invalidItems.flatMap(item => item.conflictTypes || [])),
+      invalidItems[0]?.message || '所选助教该时间段已有安排',
+    ),
+    existingSchedules: mergeDragExistingSchedules(invalidItems.flatMap(item => item.existingSchedules || [])),
+  }
+}
+
 function validateDragTargetLocally(dragState, target) {
   if (!dragState?.scheduleId) {
     return {
@@ -2821,18 +2918,33 @@ async function validateDragTargetsInBatch(targets, options = {}) {
   }
   catch (error) {
     console.error('validate drag targets in batch failed', error)
-    const result = {
-      valid: false,
-      label: '检测失败',
-      message: error?.response?.data?.message || error?.message || '批量检测调课空点失败',
-      conflictTypes: [],
-      existingSchedules: [],
+    try {
+      const itemMap = await checkDragTargetsTeacherAvailability(targets, dragState)
+      targets.forEach((target) => {
+        const item = itemMap.get(target.key)
+        const result = buildDragValidationResultFromValidationItem(target, item)
+        applyDragValidationResult(target, result, {
+          dragState,
+          sessionId: options.sessionId,
+          apply: options.apply === true && dragHoverState.value.key === target.key,
+        })
+      })
     }
-    targets.forEach(target => applyDragValidationResult(target, result, {
-      dragState,
-      sessionId: options.sessionId,
-      apply: options.apply === true && dragHoverState.value.key === target.key,
-    }))
+    catch (fallbackError) {
+      console.error('fallback drag availability check failed', fallbackError)
+      const result = {
+        valid: false,
+        label: '检测失败',
+        message: fallbackError?.response?.data?.message || fallbackError?.message || error?.response?.data?.message || error?.message || '批量检测调课空点失败',
+        conflictTypes: [],
+        existingSchedules: [],
+      }
+      targets.forEach(target => applyDragValidationResult(target, result, {
+        dragState,
+        sessionId: options.sessionId,
+        apply: options.apply === true && dragHoverState.value.key === target.key,
+      }))
+    }
   }
 }
 
@@ -2996,14 +3108,25 @@ async function ensureDragTargetValidation(target, options = {}) {
     }
     catch (error) {
       console.error('validate drag target failed', error)
-      const result = {
-        valid: false,
-        label: '检测失败',
-        message: error?.response?.data?.message || error?.message || '检测调课空点失败',
-        conflictTypes: [],
+      try {
+        const itemMap = await checkDragTargetsTeacherAvailability([target], dragState)
+        const teacherResult = buildDragValidationResultFromValidationItem(target, itemMap.get(target.key))
+        const assistantResult = await checkDragTargetAssistantAvailability(target, dragState)
+        const result = mergeDragValidationResults(teacherResult, assistantResult)
+        dragValidationCache.set(cacheKey, result)
+        return result
       }
-      dragValidationCache.set(cacheKey, result)
-      return result
+      catch (fallbackError) {
+        console.error('fallback validate drag target failed', fallbackError)
+        const result = {
+          valid: false,
+          label: '检测失败',
+          message: fallbackError?.response?.data?.message || fallbackError?.message || error?.response?.data?.message || error?.message || '检测调课空点失败',
+          conflictTypes: [],
+        }
+        dragValidationCache.set(cacheKey, result)
+        return result
+      }
     }
     finally {
       if (dragValidationPromises.get(cacheKey) === promise)

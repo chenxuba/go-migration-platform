@@ -595,7 +595,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		return model.CreateOneToOneSchedulesResult{}, errors.New("请选择上课教师")
 	}
 
-	if n, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs); err != nil || n != len(teacherIDs) {
+	if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, teacherIDs); err != nil || n != len(teacherIDs) {
 		if err != nil {
 			return model.CreateOneToOneSchedulesResult{}, err
 		}
@@ -603,7 +603,7 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 	}
 	planAssistantIDs := collectPlanAssistantIDs(plans)
 	if len(planAssistantIDs) > 0 {
-		if n, err := repo.CountInstUsersByIDs(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
+		if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
 			if err != nil {
 				return model.CreateOneToOneSchedulesResult{}, err
 			}
@@ -824,7 +824,7 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 		return model.TeachingScheduleValidationResult{}, errors.New("请选择上课教师")
 	}
 
-	if n, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs); err != nil || n != len(teacherIDs) {
+	if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, teacherIDs); err != nil || n != len(teacherIDs) {
 		if err != nil {
 			return model.TeachingScheduleValidationResult{}, err
 		}
@@ -832,7 +832,7 @@ func (repo *Repository) ValidateOneToOneSchedules(ctx context.Context, instID in
 	}
 	planAssistantIDs := collectPlanAssistantIDs(plans)
 	if len(planAssistantIDs) > 0 {
-		if n, err := repo.CountInstUsersByIDs(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
+		if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
 			if err != nil {
 				return model.TeachingScheduleValidationResult{}, err
 			}
@@ -1043,7 +1043,7 @@ func (repo *Repository) CheckAssistantScheduleAvailability(ctx context.Context, 
 	if base.ClassStudentStatus != model.TeachingClassStudentStatusStudying {
 		return buildUnavailableAssistantAvailabilityResult(assistantIDs, repo.resolveTeacherNames(ctx, assistantIDs), "当前1对1学员状态不允许排课"), nil
 	}
-	if n, err := repo.CountInstUsersByIDs(ctx, instID, assistantIDs); err != nil || n != len(assistantIDs) {
+	if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, assistantIDs); err != nil || n != len(assistantIDs) {
 		if err != nil {
 			return model.AssistantScheduleAvailabilityResult{}, err
 		}
@@ -1244,7 +1244,7 @@ func (repo *Repository) ReplaceTeachingScheduleBatch(ctx context.Context, instID
 	if len(teacherIDs) == 0 {
 		return model.CreateOneToOneSchedulesResult{}, errors.New("请选择上课教师")
 	}
-	if n, err := repo.CountInstUsersByIDs(ctx, instID, teacherIDs); err != nil || n != len(teacherIDs) {
+	if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, teacherIDs); err != nil || n != len(teacherIDs) {
 		if err != nil {
 			return model.CreateOneToOneSchedulesResult{}, err
 		}
@@ -1252,7 +1252,7 @@ func (repo *Repository) ReplaceTeachingScheduleBatch(ctx context.Context, instID
 	}
 	planAssistantIDs := collectPlanAssistantIDs(plans)
 	if len(planAssistantIDs) > 0 {
-		if n, err := repo.CountInstUsersByIDs(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
+		if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
 			if err != nil {
 				return model.CreateOneToOneSchedulesResult{}, err
 			}
@@ -1518,14 +1518,14 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 	}
 	defer tx.Rollback()
 
-	if n, err := repo.CountInstUsersByIDs(ctx, instID, []int64{teacherID}); err != nil || n != 1 {
+	if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, []int64{teacherID}); err != nil || n != 1 {
 		if err != nil {
 			return err
 		}
 		return errors.New("上课教师无效")
 	}
 	if len(assistantIDs) > 0 {
-		if n, err := repo.CountInstUsersByIDs(ctx, instID, assistantIDs); err != nil || n != len(assistantIDs) {
+		if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, assistantIDs); err != nil || n != len(assistantIDs) {
 			if err != nil {
 				return err
 			}

@@ -44,6 +44,14 @@ func (repo *Repository) CountActiveGroupClassByName(ctx context.Context, instID 
 }
 
 func (repo *Repository) CountInstUsersByIDs(ctx context.Context, instID int64, userIDs []int64) (int, error) {
+	return repo.countInstUsersByIDs(ctx, instID, userIDs, false)
+}
+
+func (repo *Repository) CountInstUsersByIDsIncludingDisabled(ctx context.Context, instID int64, userIDs []int64) (int, error) {
+	return repo.countInstUsersByIDs(ctx, instID, userIDs, true)
+}
+
+func (repo *Repository) countInstUsersByIDs(ctx context.Context, instID int64, userIDs []int64, includeDisabled bool) (int, error) {
 	if len(userIDs) == 0 {
 		return 0, nil
 	}
@@ -53,11 +61,15 @@ func (repo *Repository) CountInstUsersByIDs(ctx context.Context, instID int64, u
 	for _, id := range userIDs {
 		args = append(args, id)
 	}
+	disabledFilter := " AND IFNULL(disabled,0) = 0"
+	if includeDisabled {
+		disabledFilter = ""
+	}
 	var n int
 	err := repo.db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT COUNT(DISTINCT id) FROM inst_user
-		WHERE inst_id = ? AND del_flag = 0 AND IFNULL(disabled,0) = 0 AND id IN (%s)
-	`, ph), args...).Scan(&n)
+		WHERE inst_id = ? AND del_flag = 0%s AND id IN (%s)
+	`, disabledFilter, ph), args...).Scan(&n)
 	return n, err
 }
 
