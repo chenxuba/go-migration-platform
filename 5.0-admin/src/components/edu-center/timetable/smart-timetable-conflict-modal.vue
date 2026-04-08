@@ -10,6 +10,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  jumpingKey: {
+    type: String,
+    default: '',
+  },
   conflictDetailState: {
     type: Object,
     default: () => ({
@@ -154,7 +158,13 @@ const modalOpen = computed({
             </div>
           </div>
           <div class="st-conflict-item__side">
-            <a-button type="primary" ghost :disabled="!item.jumpCellKey" @click="$emit('jump', item)">
+            <a-button
+              type="primary"
+              ghost
+              :disabled="!item.jumpCellKey"
+              :loading="jumpingKey === item.key"
+              @click="$emit('jump', item)"
+            >
               定位到课程
             </a-button>
           </div>

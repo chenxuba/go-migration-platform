@@ -367,6 +367,7 @@ const currentBatchPlanSchedule = ref(null)
 const scheduleConflictOpen = ref(false)
 const scheduleConflictValidation = ref(null)
 const scheduleConflictLoading = ref(false)
+const locatingConflictItemKey = ref('')
 const focusedScheduleId = ref('')
 const headerScrollRef = ref(null)
 const boardScrollRef = ref(null)
@@ -1069,6 +1070,7 @@ async function flushPendingConflictJump() {
     const found = await focusScheduleEvent(matched.id)
     if (found) {
       pendingConflictJump = null
+      locatingConflictItemKey.value = ''
       closeScheduleConflictModalIfOpen(pending.closeScheduleConflictModal)
       messageService.success('已定位到冲突课程')
       return
@@ -1094,6 +1096,7 @@ async function flushPendingConflictJump() {
   }
 
   pendingConflictJump = null
+  locatingConflictItemKey.value = ''
   messageService.warning('未定位到课程，请检查筛选条件或日期范围')
 }
 
@@ -1121,8 +1124,15 @@ async function openEventConflictDetail(event) {
 }
 
 async function jumpToConflictSchedule(item) {
+  locatingConflictItemKey.value = [
+    String(item?.teacherId || '').trim(),
+    String(item?.teacherName || '').trim(),
+    String(item?.date || '').trim(),
+    String(item?.timeText || '').trim(),
+  ].join('|')
   const locator = buildConflictJumpLocator(item)
   if (!locator.date || !locator.startTime || !locator.endTime) {
+    locatingConflictItemKey.value = ''
     messageService.warning('当前冲突课程暂不支持定位')
     return
   }
@@ -1149,6 +1159,7 @@ async function jumpToConflictSchedule(item) {
     if (matched?.id) {
       const found = await focusScheduleEvent(matched.id)
       if (found) {
+        locatingConflictItemKey.value = ''
         closeScheduleConflictModalIfOpen(closeScheduleConflictModal)
         messageService.success('已定位到冲突课程')
         return
@@ -1670,6 +1681,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
     <ScheduleConflictModal
       v-model:open="scheduleConflictOpen"
       :validation="scheduleConflictValidation"
+      :jumping-key="locatingConflictItemKey"
       title="冲突详情"
       current-title="当前冲突日程"
       existing-title="与其冲突的日程"

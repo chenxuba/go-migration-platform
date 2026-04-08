@@ -11,6 +11,8 @@ const props = defineProps<{
   currentTitle?: string
   existingTitle?: string
   fallbackMessage?: string
+  jumpingKey?: string
+  getTimeExtraLabel?: (item: ConflictScheduleItem) => string
 }>()
 
 const emit = defineEmits<{
@@ -32,6 +34,19 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
 
 function canJumpToItem(item: ConflictScheduleItem) {
   return Boolean(String(item?.date || '').trim() && String(item?.timeText || '').trim())
+}
+
+function jumpActionKey(item: ConflictScheduleItem) {
+  return [
+    String(item?.teacherId || '').trim(),
+    String(item?.teacherName || '').trim(),
+    String(item?.date || '').trim(),
+    String(item?.timeText || '').trim(),
+  ].join('|')
+}
+
+function resolveTimeExtraLabel(item: ConflictScheduleItem) {
+  return props.getTimeExtraLabel?.(item) || ''
 }
 </script>
 
@@ -72,7 +87,7 @@ function canJumpToItem(item: ConflictScheduleItem) {
           <div class="schedule-conflict__head schedule-conflict__head--with-action">
             <span>日程名称</span>
             <span>日程类型</span>
-            <span>上课时间</span>
+            <span>{{ props.getTimeExtraLabel ? '上课时间 / 时段名称' : '上课时间' }}</span>
             <span>上课教师</span>
             <span>上课教室</span>
             <span>冲突类型</span>
@@ -85,7 +100,12 @@ function canJumpToItem(item: ConflictScheduleItem) {
           >
             <span>{{ item.name }}</span>
             <span>{{ item.classTypeText }}</span>
-            <span>{{ item.date }} {{ item.timeText }}</span>
+            <span class="schedule-conflict__time-cell">
+              <span>{{ item.date }} {{ item.timeText }}</span>
+              <span v-if="resolveTimeExtraLabel(item)" class="schedule-conflict__time-extra">
+                {{ resolveTimeExtraLabel(item) }}
+              </span>
+            </span>
             <span
               :class="{
                 'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
@@ -119,7 +139,7 @@ function canJumpToItem(item: ConflictScheduleItem) {
           <div class="schedule-conflict__head schedule-conflict__head--with-action">
             <span>日程名称</span>
             <span>日程类型</span>
-            <span>上课时间</span>
+            <span>{{ props.getTimeExtraLabel ? '上课时间 / 时段名称' : '上课时间' }}</span>
             <span>上课教师</span>
             <span>上课教室</span>
             <span>冲突学员</span>
@@ -132,7 +152,12 @@ function canJumpToItem(item: ConflictScheduleItem) {
           >
             <span>{{ item.name }}</span>
             <span>{{ item.classTypeText }}</span>
-            <span>{{ item.date }} {{ item.timeText }}</span>
+            <span class="schedule-conflict__time-cell">
+              <span>{{ item.date }} {{ item.timeText }}</span>
+              <span v-if="resolveTimeExtraLabel(item)" class="schedule-conflict__time-extra">
+                {{ resolveTimeExtraLabel(item) }}
+              </span>
+            </span>
             <span
               :class="{
                 'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
@@ -154,6 +179,7 @@ function canJumpToItem(item: ConflictScheduleItem) {
                 type="primary"
                 ghost
                 class="schedule-conflict__jump"
+                :loading="props.jumpingKey === jumpActionKey(item)"
                 @click.stop="emit('jump', item)"
               >
                 定位到课程
@@ -249,6 +275,18 @@ function canJumpToItem(item: ConflictScheduleItem) {
   color: #1f2329;
   font-size: 14px;
   line-height: 1.6;
+}
+
+.schedule-conflict__time-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.schedule-conflict__time-extra {
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .schedule-conflict__head--with-action,

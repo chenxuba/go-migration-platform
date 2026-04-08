@@ -576,6 +576,7 @@ const timetableLoading = ref(false)
 const creatingOneToOneSchedule = ref(false)
 const deletingScheduledLesson = ref(false)
 const forcingConflictSchedule = ref(false)
+const locatingConflictItemKey = ref('')
 const conflictDetailModalOpen = ref(false)
 const dragConflictDetailOpen = ref(false)
 const scheduledConflictDetailOpen = ref(false)
@@ -1516,6 +1517,34 @@ function resolveConflictScheduleGroupLabel(item) {
   return resolveConflictScheduleGroupInfo(item).labels.join('/')
 }
 
+function conflictJumpActionKey(item) {
+  return String(item?.key || [
+    String(item?.teacherId || '').trim(),
+    String(item?.teacherName || '').trim(),
+    String(item?.date || '').trim(),
+    String(item?.timeText || '').trim(),
+  ].join('|'))
+}
+
+function resolveConflictScheduleTimeLabel(item) {
+  const timeRange = parseConflictTimeRange(item?.timeText)
+  const groupInfo = resolveConflictScheduleGroupInfo(item)
+  const groupKey = groupInfo.keys.includes(currentGroup.value)
+    ? currentGroup.value
+    : (groupInfo.keys[0] || '')
+  const matchedSlot = findBestSlotForTimeRange(
+    slotsForGroupKey(groupKey || currentGroup.value),
+    timeRange,
+  )
+  if (!matchedSlot)
+    return ''
+  const groupLabel = groupOptions.value.find(opt => opt.key === (groupKey || currentGroup.value))?.label
+    || groupInfo.labels[0]
+    || activeGroupLabel.value
+    || '当前组'
+  return `${groupLabel} 第${matchedSlot.index}节`
+}
+
 function setFocusedScheduleCell(key) {
   focusedScheduleCellKey.value = key || ''
   if (focusedScheduleCellTimer)
@@ -1563,6 +1592,7 @@ async function flushPendingConflictJump() {
   const found = await focusScheduleCell(pending.cellKey)
   if (found) {
     pendingConflictJump = null
+    locatingConflictItemKey.value = ''
     closeConflictModalsByFlags(pending)
     messageService.success('已定位到冲突课程')
     return
@@ -1589,6 +1619,7 @@ async function flushPendingConflictJump() {
 
   if (pending.teacherFilterExpanded) {
     pendingConflictJump = null
+    locatingConflictItemKey.value = ''
     messageService.warning('已自动补充目标老师筛选，但仍未定位到课程，请检查日期或组别')
   }
 }
@@ -1772,7 +1803,9 @@ async function openScheduledConflictDetail(text) {
 }
 
 async function jumpToConflictSchedule(item) {
+  locatingConflictItemKey.value = conflictJumpActionKey(item)
   if (!item?.jumpCellKey) {
+    locatingConflictItemKey.value = ''
     messageService.warning('当前冲突课程暂不支持定位')
     return
   }
@@ -1811,6 +1844,7 @@ async function jumpToConflictSchedule(item) {
   if (!needReload) {
     const found = await focusScheduleCell(item.jumpCellKey)
     if (found) {
+      locatingConflictItemKey.value = ''
       closeConflictModalsByFlags(modalFlags)
       messageService.success('已定位到冲突课程')
       return
@@ -1829,7 +1863,14 @@ async function jumpToConflictSchedule(item) {
 }
 
 async function jumpToScheduledConflictSchedule(item) {
-  await jumpToConflictSchedule(buildConflictJumpItem(item, 0))
+  const jumpItem = buildConflictJumpItem(item, 0)
+  locatingConflictItemKey.value = [
+    String(item?.teacherId || '').trim(),
+    String(item?.teacherName || '').trim(),
+    String(item?.date || '').trim(),
+    String(item?.timeText || '').trim(),
+  ].join('|')
+  await jumpToConflictSchedule(jumpItem)
 }
 
 function resolveConflictAttemptTarget() {
@@ -3509,6 +3550,8 @@ watch(dragConflictDetailOpen, (open) => {
     <ScheduleConflictModal
       v-model:open="scheduledConflictDetailOpen"
       :validation="scheduledConflictDetailValidation"
+      :jumping-key="locatingConflictItemKey"
+      :get-time-extra-label="resolveConflictScheduleTimeLabel"
       title="冲突详情"
       current-title="当前冲突日程"
       existing-title="与其冲突的日程"
@@ -3519,6 +3562,7 @@ watch(dragConflictDetailOpen, (open) => {
     <SmartTimetableConflictModal
       v-model:open="conflictDetailModalOpen"
       :forcing="forcingConflictSchedule"
+      :jumping-key="locatingConflictItemKey"
       :conflict-detail-state="conflictDetailState"
       @force="forceScheduleDespiteStudentConflict"
       @jump="jumpToConflictSchedule"
@@ -3526,6 +3570,7 @@ watch(dragConflictDetailOpen, (open) => {
 
     <SmartTimetableDragConflictModal
       v-model:open="dragConflictDetailOpen"
+      :jumping-key="locatingConflictItemKey"
       :detail="dragConflictDetailState"
       @jump="jumpToConflictSchedule"
     />
