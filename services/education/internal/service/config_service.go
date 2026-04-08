@@ -18,6 +18,22 @@ type InstConfigUpdateResult struct {
 	PeriodAppliedToday bool   `json:"periodAppliedToday,omitempty"`
 }
 
+func (svc *Service) PreviewInstPeriodConfigUpdate(userID int64, raw any) (InstConfigUpdateResult, error) {
+	result := InstConfigUpdateResult{Success: true}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return result, errors.New("no institution context")
+		}
+		return result, err
+	}
+	periodPayload, err := repository.ParseUnifiedPeriodPayloadFromAny(raw)
+	if err != nil {
+		return result, err
+	}
+	return svc.resolveInstPeriodUpdateResult(context.Background(), instID, periodPayload)
+}
+
 func (svc *Service) GetQiniuUploadToken() (qiniux.TokenVO, error) {
 	if svc.qiniuClient == nil {
 		return qiniux.TokenVO{}, errors.New("qiniu not configured")
@@ -118,11 +134,18 @@ func (svc *Service) SetInstConfig(userID int64, payload map[string]any) (InstCon
 		if err != nil {
 			return result, err
 		}
-		effectiveWeekStart, appliedToday, err := svc.repo.ResolveInstPeriodEffectiveWeekStart(ctx, instID, time.Now())
+		result, err = svc.resolveInstPeriodUpdateResult(ctx, instID, periodPayload)
+		if err != nil {
+			return result, err
+		}
+		effectiveWeekStart, err := time.ParseInLocation("2006-01-02", result.PeriodWeekStart, time.Local)
 		if err != nil {
 			return result, err
 		}
 		if err := svc.repo.ReplaceInstPeriodConfig(ctx, instID, periodPayload); err != nil {
+			return result, err
+		}
+		if err := svc.repo.DeleteInstPeriodConfigVersionsFromWeek(ctx, instID, effectiveWeekStart); err != nil {
 			return result, err
 		}
 		if err := svc.repo.UpsertInstPeriodConfigVersion(ctx, instID, effectiveWeekStart, periodPayload); err != nil {
@@ -132,10 +155,24 @@ func (svc *Service) SetInstConfig(userID int64, payload map[string]any) (InstCon
 		if err := svc.repo.ClearInstConfigLegacyUnifiedPeriodJSON(ctx, instID); err != nil {
 			return result, err
 		}
-		result.PeriodWeekStart = effectiveWeekStart.Format("2006-01-02")
-		result.PeriodAppliedToday = appliedToday
 	}
 	return result, svc.repo.UpdateInstConfig(ctx, instID, payload)
+}
+
+func (svc *Service) resolveInstPeriodUpdateResult(ctx context.Context, instID int64, periodPayload *repository.InstPeriodFilePayloadAlias) (InstConfigUpdateResult, error) {
+	result := InstConfigUpdateResult{Success: true}
+	latestPayload, err := svc.repo.GetLatestInstPeriodPayload(ctx, instID)
+	if err != nil {
+		return result, err
+	}
+	affectedTeacherIDs := repository.CollectAffectedTeacherUserIDs(latestPayload, periodPayload)
+	effectiveWeekStart, appliedToday, err := svc.repo.ResolveInstPeriodEffectiveWeekStart(ctx, instID, time.Now(), affectedTeacherIDs)
+	if err != nil {
+		return result, err
+	}
+	result.PeriodWeekStart = effectiveWeekStart.Format("2006-01-02")
+	result.PeriodAppliedToday = appliedToday
+	return result, nil
 }
 
 func (svc *Service) InitInstAllConfig(instID int64) error {

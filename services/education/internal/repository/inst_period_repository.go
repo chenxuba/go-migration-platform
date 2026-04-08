@@ -103,6 +103,8 @@ type instPeriodFilePayload struct {
 	Groups  []instPeriodGroupJSON `json:"groups"`
 }
 
+type InstPeriodFilePayloadAlias = instPeriodFilePayload
+
 const instPeriodInitialEffectiveWeekStart = "2000-01-03"
 
 // CountInstPeriodGroups 该机构是否已有时段表数据
@@ -394,20 +396,47 @@ func (repo *Repository) UpsertInstPeriodConfigVersion(ctx context.Context, instI
 	return err
 }
 
-func (repo *Repository) ResolveInstPeriodEffectiveWeekStart(ctx context.Context, instID int64, now time.Time) (time.Time, bool, error) {
-	weekStart := mondayOfInstPeriodWeek(now)
-	weekEnd := weekStart.AddDate(0, 0, 6)
-	count, err := repo.CountActiveTeachingSchedulesInRange(ctx, instID, weekStart, weekEnd)
-	if err != nil {
-		return time.Time{}, false, err
-	}
-	if count == 0 {
-		return weekStart, true, nil
-	}
-	return weekStart.AddDate(0, 0, 7), false, nil
+func (repo *Repository) DeleteInstPeriodConfigVersionsFromWeek(ctx context.Context, instID int64, effectiveWeekStart time.Time) error {
+	_, err := repo.db.ExecContext(ctx, `
+		DELETE FROM inst_period_config_version
+		WHERE inst_id = ? AND effective_week_start >= ?
+	`, instID, mondayOfInstPeriodWeek(effectiveWeekStart).Format("2006-01-02"))
+	return err
 }
 
-func (repo *Repository) CountActiveTeachingSchedulesInRange(ctx context.Context, instID int64, startDate, endDate time.Time) (int, error) {
+func (repo *Repository) ResolveInstPeriodEffectiveWeekStart(ctx context.Context, instID int64, now time.Time, teacherUserIDs []int64) (time.Time, bool, error) {
+	weekStart := mondayOfInstPeriodWeek(now)
+	const maxWeeksToScan = 260
+	for i := 0; i < maxWeeksToScan; i++ {
+		candidateWeekStart := weekStart.AddDate(0, 0, i*7)
+		candidateWeekEnd := candidateWeekStart.AddDate(0, 0, 6)
+		count, err := repo.CountActiveTeachingSchedulesForUsersInRange(ctx, instID, teacherUserIDs, candidateWeekStart, candidateWeekEnd)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		if count == 0 {
+			return candidateWeekStart, i == 0, nil
+		}
+	}
+	return weekStart.AddDate(0, 0, maxWeeksToScan*7), false, nil
+}
+
+func (repo *Repository) CountActiveTeachingSchedulesForUsersInRange(ctx context.Context, instID int64, teacherUserIDs []int64, startDate, endDate time.Time) (int, error) {
+	ids := uniquePositiveInt64s(teacherUserIDs)
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	teacherPlaceholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	assistantParts := make([]string, 0, len(ids))
+	args := make([]any, 0, 3+len(ids)*2)
+	args = append(args, instID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	for _, id := range ids {
+		assistantParts = append(assistantParts, "JSON_SEARCH(COALESCE(assistant_ids_json, JSON_ARRAY()), 'one', ?) IS NOT NULL")
+		args = append(args, strconv.FormatInt(id, 10))
+	}
 	var count int
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
@@ -417,7 +446,11 @@ func (repo *Repository) CountActiveTeachingSchedulesInRange(ctx context.Context,
 		  AND status = 1
 		  AND lesson_date >= ?
 		  AND lesson_date <= ?
-	`, instID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02")).Scan(&count)
+		  AND (
+			teacher_id IN (`+teacherPlaceholders+`)
+			OR `+strings.Join(assistantParts, " OR ")+`
+		  )
+	`, args...).Scan(&count)
 	return count, err
 }
 
@@ -611,6 +644,43 @@ func ParseUnifiedPeriodPayloadFromAny(raw any) (*instPeriodFilePayload, error) {
 	return &payload, nil
 }
 
+func CollectAffectedTeacherUserIDs(previous, next *instPeriodFilePayload) []int64 {
+	prevGroups := mapInstPeriodGroupsByID(previous)
+	nextGroups := mapInstPeriodGroupsByID(next)
+	groupIDs := make(map[string]struct{}, len(prevGroups)+len(nextGroups))
+	for id := range prevGroups {
+		groupIDs[id] = struct{}{}
+	}
+	for id := range nextGroups {
+		groupIDs[id] = struct{}{}
+	}
+
+	seenTeachers := make(map[int64]struct{})
+	out := make([]int64, 0)
+	for groupID := range groupIDs {
+		prevGroup, prevOK := prevGroups[groupID]
+		nextGroup, nextOK := nextGroups[groupID]
+		if prevOK && nextOK && instPeriodGroupsEqual(prevGroup, nextGroup) {
+			continue
+		}
+		for _, teacherID := range collectTeacherIDsFromInstPeriodGroup(prevGroup) {
+			if _, ok := seenTeachers[teacherID]; ok {
+				continue
+			}
+			seenTeachers[teacherID] = struct{}{}
+			out = append(out, teacherID)
+		}
+		for _, teacherID := range collectTeacherIDsFromInstPeriodGroup(nextGroup) {
+			if _, ok := seenTeachers[teacherID]; ok {
+				continue
+			}
+			seenTeachers[teacherID] = struct{}{}
+			out = append(out, teacherID)
+		}
+	}
+	return out
+}
+
 func instPeriodPayloadToMap(payload *instPeriodFilePayload) map[string]any {
 	if payload == nil {
 		return nil
@@ -675,4 +745,58 @@ func mondayOfInstPeriodWeek(value time.Time) time.Time {
 		weekday = 7
 	}
 	return t.AddDate(0, 0, -(weekday - 1))
+}
+
+func mapInstPeriodGroupsByID(payload *instPeriodFilePayload) map[string]instPeriodGroupJSON {
+	out := make(map[string]instPeriodGroupJSON)
+	if payload == nil {
+		return out
+	}
+	for _, group := range payload.Groups {
+		id := strings.TrimSpace(group.ID)
+		if id == "" {
+			continue
+		}
+		out[id] = group
+	}
+	return out
+}
+
+func instPeriodGroupsEqual(a, b instPeriodGroupJSON) bool {
+	ab, errA := json.Marshal(a)
+	bb, errB := json.Marshal(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return string(ab) == string(bb)
+}
+
+func collectTeacherIDsFromInstPeriodGroup(group instPeriodGroupJSON) []int64 {
+	out := make([]int64, 0, len(group.BoundTeachers))
+	for _, teacher := range group.BoundTeachers {
+		id, err := strconv.ParseInt(strings.TrimSpace(teacher.ID), 10, 64)
+		if err == nil && id > 0 {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func uniquePositiveInt64s(list []int64) []int64 {
+	if len(list) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(list))
+	out := make([]int64, 0, len(list))
+	for _, item := range list {
+		if item <= 0 {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
 }

@@ -3,7 +3,7 @@
  * 单个时段组新增/编辑，保存机构统一时段配置
  */
 import UnifiedPeriodGroupForm from '@/components/business-settings/unified-period-group-form.vue'
-import { setInstConfigApi } from '@/api/common/config'
+import { previewInstPeriodEffectiveApi, setInstConfigApi } from '@/api/common/config'
 import { useUserStore } from '@/stores/user'
 import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
@@ -28,6 +28,9 @@ const emit = defineEmits<{
 
 const userStore = useUserStore()
 const saving = ref(false)
+const previewLoading = ref(false)
+const previewWeekStart = ref('')
+const previewAppliedToday = ref<boolean | null>(null)
 const formRef = ref<InstanceType<typeof UnifiedPeriodGroupForm> | null>(null)
 
 const localGroup = ref<UnifiedPeriodGroup>(emptyNewGroup())
@@ -37,6 +40,14 @@ const modalTitle = computed(() =>
 )
 
 const effectiveRuleText = '保存后：当前周之前保持不变；如果本周还没有老师排课，则新时段从本周生效，否则从下周生效。'
+
+const effectivePreviewText = computed(() => {
+  if (!previewWeekStart.value)
+    return '正在计算本次修改会从哪一周开始生效...'
+  return previewAppliedToday.value
+    ? `本次预计从 ${previewWeekStart.value} 开始生效。`
+    : `本次预计从 ${previewWeekStart.value} 开始生效；在此之前已排课的周不受影响。`
+})
 
 function emptyNewGroup(): UnifiedPeriodGroup {
   return {
@@ -85,6 +96,49 @@ function validateFullConfig(cfg: UnifiedTimePeriodConfig): string | null {
   return null
 }
 
+function buildEditingConfig(): UnifiedTimePeriodConfig | null {
+  const cfg = loadBaseConfig()
+  if (props.mode === 'edit' && props.groupId) {
+    const i = cfg.groups.findIndex(x => x.id === props.groupId)
+    if (i < 0)
+      return null
+    cfg.groups[i] = cloneGroup(localGroup.value)
+    return cfg
+  }
+  const g = cloneGroup(localGroup.value)
+  g.id = `group-${Date.now()}`
+  g.sort = cfg.groups.length
+  cfg.groups.push(g)
+  return cfg
+}
+
+let previewTimer: ReturnType<typeof setTimeout> | null = null
+
+async function refreshEffectivePreview() {
+  const cfg = buildEditingConfig()
+  if (!cfg) {
+    previewWeekStart.value = ''
+    previewAppliedToday.value = null
+    return
+  }
+  previewLoading.value = true
+  try {
+    const res = await previewInstPeriodEffectiveApi({
+      unifiedTimePeriodJson: cfg,
+    })
+    previewWeekStart.value = String(res.result?.periodWeekStart || '').trim()
+    previewAppliedToday.value = typeof res.result?.periodAppliedToday === 'boolean' ? res.result.periodAppliedToday : null
+  }
+  catch (e) {
+    console.error('preview inst period effective failed', e)
+    previewWeekStart.value = ''
+    previewAppliedToday.value = null
+  }
+  finally {
+    previewLoading.value = false
+  }
+}
+
 watch(
   () => props.open,
   (open) => {
@@ -92,6 +146,7 @@ watch(
       return
     if (props.mode === 'create') {
       localGroup.value = emptyNewGroup()
+      void refreshEffectivePreview()
       return
     }
     if (!props.groupId) {
@@ -107,6 +162,26 @@ watch(
       return
     }
     localGroup.value = cloneGroup(g)
+    void refreshEffectivePreview()
+  },
+)
+
+watch(
+  () => props.open
+    ? JSON.stringify({
+        mode: props.mode,
+        groupId: props.groupId,
+        group: localGroup.value,
+      })
+    : '',
+  () => {
+    if (!props.open)
+      return
+    if (previewTimer)
+      clearTimeout(previewTimer)
+    previewTimer = setTimeout(() => {
+      void refreshEffectivePreview()
+    }, 250)
   },
 )
 
@@ -125,21 +200,10 @@ async function handleSave() {
     return
   }
 
-  const cfg = loadBaseConfig()
-
-  if (props.mode === 'edit' && props.groupId) {
-    const i = cfg.groups.findIndex(x => x.id === props.groupId)
-    if (i < 0) {
-      messageService.error('时段组不存在，请刷新后重试')
-      return
-    }
-    cfg.groups[i] = cloneGroup(localGroup.value)
-  }
-  else {
-    const g = cloneGroup(localGroup.value)
-    g.id = `group-${Date.now()}`
-    g.sort = cfg.groups.length
-    cfg.groups.push(g)
+  const cfg = buildEditingConfig()
+  if (!cfg) {
+    messageService.error('时段组不存在，请刷新后重试')
+    return
   }
 
   const fullErr = validateFullConfig(cfg)
@@ -159,7 +223,7 @@ async function handleSave() {
     if (appliedWeek) {
       messageService.success(res.result?.periodAppliedToday
         ? `保存成功，已从本周 ${appliedWeek} 生效`
-        : `保存成功，因本周已有排课，已从下周 ${appliedWeek} 生效`)
+        : `保存成功，已从 ${appliedWeek} 这一周开始生效，之前已排课周不受影响`)
     }
     else {
       messageService.success('保存成功')
@@ -198,6 +262,9 @@ async function handleSave() {
     </div>
     <div class="upgm-tip">
       {{ effectiveRuleText }}
+    </div>
+    <div class="upgm-tip upgm-tip--accent">
+      {{ previewLoading ? '正在计算预计生效日期...' : effectivePreviewText }}
     </div>
     <div class="upgm-footer">
       <a-button @click="close">
@@ -252,6 +319,12 @@ async function handleSave() {
   color: #2f5f8f;
   font-size: 13px;
   line-height: 20px;
+}
+
+.upgm-tip--accent {
+  background: #fff9ef;
+  border-color: #ffe2b8;
+  color: #8a5a15;
 }
 
 :deep(.unified-period-group-modal .ant-modal-body) {

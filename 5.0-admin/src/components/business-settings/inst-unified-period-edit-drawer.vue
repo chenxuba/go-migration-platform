@@ -10,7 +10,7 @@ import {
   parseUnifiedTimePeriodConfig,
 } from '@/utils/unified-time-period'
 import UnifiedPeriodGroupForm from '@/components/business-settings/unified-period-group-form.vue'
-import { setInstConfigApi } from '@/api/common/config'
+import { previewInstPeriodEffectiveApi, setInstConfigApi } from '@/api/common/config'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 
@@ -25,9 +25,19 @@ const emit = defineEmits<{
 
 const userStore = useUserStore()
 const saving = ref(false)
+const previewLoading = ref(false)
+const previewWeekStart = ref('')
+const previewAppliedToday = ref<boolean | null>(null)
 const draft = ref<UnifiedTimePeriodConfig>(structuredClone(DEFAULT_UNIFIED_TIME_PERIOD_CONFIG))
 const activeTabKey = ref('')
 const effectiveRuleText = '保存后：当前周之前保持不变；如果本周还没有老师排课，则新时段从本周生效，否则从下周生效。'
+const effectivePreviewText = computed(() => {
+  if (!previewWeekStart.value)
+    return '正在计算本次修改会从哪一周开始生效...'
+  return previewAppliedToday.value
+    ? `本次预计从 ${previewWeekStart.value} 开始生效。`
+    : `本次预计从 ${previewWeekStart.value} 开始生效；在此之前已排课的周不受影响。`
+})
 
 function cloneConfig(c: UnifiedTimePeriodConfig): UnifiedTimePeriodConfig {
   return {
@@ -48,11 +58,47 @@ function loadDraftFromStore() {
   activeTabKey.value = sorted[0]?.id ?? ''
 }
 
+async function refreshEffectivePreview() {
+  previewLoading.value = true
+  try {
+    const res = await previewInstPeriodEffectiveApi({
+      unifiedTimePeriodJson: draft.value,
+    })
+    previewWeekStart.value = String(res.result?.periodWeekStart || '').trim()
+    previewAppliedToday.value = typeof res.result?.periodAppliedToday === 'boolean' ? res.result.periodAppliedToday : null
+  }
+  catch (e) {
+    console.error('preview inst period effective failed', e)
+    previewWeekStart.value = ''
+    previewAppliedToday.value = null
+  }
+  finally {
+    previewLoading.value = false
+  }
+}
+
+let previewTimer: ReturnType<typeof setTimeout> | null = null
+
 watch(
   () => props.open,
   (open) => {
-    if (open)
+    if (open) {
       loadDraftFromStore()
+      void refreshEffectivePreview()
+    }
+  },
+)
+
+watch(
+  () => props.open ? JSON.stringify(draft.value) : '',
+  () => {
+    if (!props.open)
+      return
+    if (previewTimer)
+      clearTimeout(previewTimer)
+    previewTimer = setTimeout(() => {
+      void refreshEffectivePreview()
+    }, 250)
   },
 )
 
@@ -142,7 +188,7 @@ async function handleSave() {
     if (appliedWeek) {
       messageService.success(res.result?.periodAppliedToday
         ? `保存成功，已从本周 ${appliedWeek} 生效`
-        : `保存成功，因本周已有排课，已从下周 ${appliedWeek} 生效`)
+        : `保存成功，已从 ${appliedWeek} 这一周开始生效，之前已排课周不受影响`)
     }
     else {
       messageService.success('保存成功')
@@ -200,6 +246,10 @@ async function handleSave() {
 
     <div class="up-full__tip">
       {{ effectiveRuleText }}
+    </div>
+
+    <div class="up-full__tip up-full__tip--accent">
+      {{ previewLoading ? '正在计算预计生效日期...' : effectivePreviewText }}
     </div>
 
     <div class="up-full__footer">
@@ -267,6 +317,12 @@ async function handleSave() {
   color: #2f5f8f;
   font-size: 13px;
   line-height: 20px;
+}
+
+.up-full__tip--accent {
+  background: #fff9ef;
+  border-color: #ffe2b8;
+  color: #8a5a15;
 }
 
 :deep(.unified-period-full-modal .ant-modal-body) {

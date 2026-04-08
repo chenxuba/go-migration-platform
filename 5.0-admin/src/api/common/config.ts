@@ -141,6 +141,10 @@ export function getInstConfigApi(params?: GetInstConfigParams) {
 export function setInstConfigApi(data: InstConfig) {
   return usePost<SetInstConfigResult>('/api/v1/inst-config/update', data)
 }
+
+export function previewInstPeriodEffectiveApi(data: { unifiedTimePeriodJson: unknown }) {
+  return usePost<SetInstConfigResult>('/api/v1/inst-config/period-effective-preview', data)
+}
 // 解密学员手机号
 export function getStudentPhoneNumberApi(data: { studentId: number }) {
   return useGet<string>('/api/v1/intent-students/phone', data)
