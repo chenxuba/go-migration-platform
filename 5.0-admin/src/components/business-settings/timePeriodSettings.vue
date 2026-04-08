@@ -4,7 +4,7 @@ import { Modal } from 'ant-design-vue'
 import type { TableColumnType } from 'ant-design-vue'
 import { debounce } from 'lodash-es'
 import UnifiedPeriodGroupModal from '@/components/business-settings/unified-period-group-modal.vue'
-import { type InstConfig, setInstConfigApi } from '@/api/common/config'
+import { repairInstPeriodVersionsApi, type InstConfig, setInstConfigApi } from '@/api/common/config'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useUserStore } from '@/stores/user'
 import {
@@ -20,6 +20,7 @@ import messageService from '@/utils/messageService'
 
 const userStore = useUserStore()
 const loading = ref(false)
+const repairing = ref(false)
 const quickUnifiedEnabled = ref(false)
 
 const groupModalOpen = ref(false)
@@ -146,6 +147,36 @@ function openEditGroup(id: string) {
 
 function onGroupModalSaved() {
   void refreshFromServer()
+}
+
+function repairPeriodVersions() {
+  Modal.confirm({
+    title: '一键修复已排课周',
+    centered: true,
+    content: '会把落在已排课周上的时段版本自动顺延到该组老师的第一个空周，历史和已排课周保持不变。确定继续吗？',
+    okText: '开始修复',
+    cancelText: '取消',
+    async onOk() {
+      repairing.value = true
+      try {
+        const res = await repairInstPeriodVersionsApi()
+        const repairedCount = Number(res.result?.repairedVersions || 0)
+        if (repairedCount > 0)
+          messageService.success(`修复完成，已顺延 ${repairedCount} 个时段版本`)
+        else
+          messageService.success('未发现需要修复的已排课周')
+        await refreshFromServer()
+      }
+      catch (e) {
+        console.error('repair inst period versions failed', e)
+        messageService.error('修复失败')
+        throw e
+      }
+      finally {
+        repairing.value = false
+      }
+    },
+  })
 }
 
 /** —— 操作列：关联老师（仅存 unifiedTimePeriodJson，无需后端新接口） */
@@ -384,12 +415,17 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
           <span class="period-panel__accent" aria-hidden="true" />
           <span class="period-panel__summary-text">当前共计 {{ periodGroups.length }} 个时段组（逐行编辑，可随时添加）</span>
         </div>
-        <a-button type="primary" class="period-panel__edit" @click="openCreateGroup">
-          <template #icon>
-            <PlusOutlined />
-          </template>
-          添加时段组
-        </a-button>
+        <div class="period-panel__actions">
+          <a-button :loading="repairing" @click="repairPeriodVersions">
+            一键修复
+          </a-button>
+          <a-button type="primary" class="period-panel__edit" @click="openCreateGroup">
+            <template #icon>
+              <PlusOutlined />
+            </template>
+            添加时段组
+          </a-button>
+        </div>
       </div>
 
       <div class="period-panel__switch-row">
@@ -573,6 +609,13 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
   font-weight: 500;
   color: #1f2329;
   line-height: 1.5;
+}
+
+.period-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .period-panel__edit {

@@ -30,6 +30,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/inst-config", handler.getInstConfig)
 	mux.HandleFunc("/api/v1/inst-config/update", handler.setInstConfig)
 	mux.HandleFunc("/api/v1/inst-config/period-effective-preview", handler.previewInstPeriodEffective)
+	mux.HandleFunc("/api/v1/inst-config/period-repair", handler.repairInstPeriodConfigVersions)
 	mux.HandleFunc("/api/v1/inst-config/init-all", handler.initInstAllConfig)
 	mux.HandleFunc("/api/v1/approval-configs/save", handler.saveApprovalConfig)
 	mux.HandleFunc("/api/v1/approvals/all-paged-list", handler.approvalAllPagedList)
@@ -350,6 +351,24 @@ func (handler *Handler) previewInstPeriodEffective(w http.ResponseWriter, r *htt
 		return
 	}
 	result, err := handler.service.PreviewInstPeriodConfigUpdate(claims.UserID, payload["unifiedTimePeriodJson"])
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) repairInstPeriodConfigVersions(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.RepairInstPeriodConfigVersions(claims.UserID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

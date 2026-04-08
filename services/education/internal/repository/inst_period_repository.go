@@ -105,6 +105,11 @@ type instPeriodFilePayload struct {
 
 type InstPeriodFilePayloadAlias = instPeriodFilePayload
 
+type instPeriodConfigVersionRecord struct {
+	EffectiveWeekStart time.Time
+	Payload            *instPeriodFilePayload
+}
+
 const instPeriodInitialEffectiveWeekStart = "2000-01-03"
 
 // CountInstPeriodGroups 该机构是否已有时段表数据
@@ -402,6 +407,51 @@ func (repo *Repository) DeleteInstPeriodConfigVersionsFromWeek(ctx context.Conte
 		WHERE inst_id = ? AND effective_week_start >= ?
 	`, instID, mondayOfInstPeriodWeek(effectiveWeekStart).Format("2006-01-02"))
 	return err
+}
+
+func (repo *Repository) RepairInstPeriodConfigVersions(ctx context.Context, instID int64) (int, error) {
+	if err := repo.ensureInitialInstPeriodVersion(ctx, instID); err != nil {
+		return 0, err
+	}
+	versions, err := repo.listInstPeriodConfigVersions(ctx, instID)
+	if err != nil {
+		return 0, err
+	}
+	if len(versions) <= 1 {
+		return 0, nil
+	}
+
+	repaired := make([]instPeriodConfigVersionRecord, 0, len(versions))
+	repaired = append(repaired, versions[0])
+	prevPlaced := mondayOfInstPeriodWeek(versions[0].EffectiveWeekStart)
+	repairedCount := 0
+
+	for i := 1; i < len(versions); i++ {
+		current := versions[i]
+		lowerBound := mondayOfInstPeriodWeek(current.EffectiveWeekStart)
+		minStart := prevPlaced.AddDate(0, 0, 7)
+		if lowerBound.Before(minStart) {
+			lowerBound = minStart
+		}
+		affectedTeacherIDs := CollectAffectedTeacherUserIDs(versions[i-1].Payload, current.Payload)
+		nextStart, _, err := repo.ResolveInstPeriodEffectiveWeekStart(ctx, instID, lowerBound, affectedTeacherIDs)
+		if err != nil {
+			return 0, err
+		}
+		if !sameInstPeriodWeek(current.EffectiveWeekStart, nextStart) {
+			repairedCount++
+		}
+		current.EffectiveWeekStart = nextStart
+		repaired = append(repaired, current)
+		prevPlaced = nextStart
+	}
+	if repairedCount == 0 {
+		return 0, nil
+	}
+	if err := repo.replaceInstPeriodConfigVersions(ctx, instID, repaired); err != nil {
+		return 0, err
+	}
+	return repairedCount, nil
 }
 
 func (repo *Repository) ResolveInstPeriodEffectiveWeekStart(ctx context.Context, instID int64, now time.Time, teacherUserIDs []int64) (time.Time, bool, error) {
@@ -745,6 +795,72 @@ func mondayOfInstPeriodWeek(value time.Time) time.Time {
 		weekday = 7
 	}
 	return t.AddDate(0, 0, -(weekday - 1))
+}
+
+func sameInstPeriodWeek(a, b time.Time) bool {
+	return mondayOfInstPeriodWeek(a).Equal(mondayOfInstPeriodWeek(b))
+}
+
+func (repo *Repository) listInstPeriodConfigVersions(ctx context.Context, instID int64) ([]instPeriodConfigVersionRecord, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT effective_week_start, payload_json
+		FROM inst_period_config_version
+		WHERE inst_id = ?
+		ORDER BY effective_week_start ASC, id ASC
+	`, instID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []instPeriodConfigVersionRecord
+	for rows.Next() {
+		var weekStart time.Time
+		var raw string
+		if err := rows.Scan(&weekStart, &raw); err != nil {
+			return nil, err
+		}
+		payload, err := ParseUnifiedPeriodPayloadFromAny(raw)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, instPeriodConfigVersionRecord{
+			EffectiveWeekStart: weekStart,
+			Payload:            payload,
+		})
+	}
+	return out, rows.Err()
+}
+
+func (repo *Repository) replaceInstPeriodConfigVersions(ctx context.Context, instID int64, versions []instPeriodConfigVersionRecord) error {
+	tx, err := repo.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM inst_period_config_version
+		WHERE inst_id = ?
+	`, instID); err != nil {
+		return err
+	}
+	for _, version := range versions {
+		if version.Payload == nil {
+			continue
+		}
+		blob, err := json.Marshal(version.Payload)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO inst_period_config_version (inst_id, effective_week_start, payload_json)
+			VALUES (?, ?, ?)
+		`, instID, mondayOfInstPeriodWeek(version.EffectiveWeekStart).Format("2006-01-02"), string(blob)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func mapInstPeriodGroupsByID(payload *instPeriodFilePayload) map[string]instPeriodGroupJSON {

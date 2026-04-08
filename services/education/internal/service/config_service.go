@@ -18,6 +18,11 @@ type InstConfigUpdateResult struct {
 	PeriodAppliedToday bool   `json:"periodAppliedToday,omitempty"`
 }
 
+type InstPeriodRepairResult struct {
+	Success          bool `json:"success"`
+	RepairedVersions int  `json:"repairedVersions"`
+}
+
 func (svc *Service) PreviewInstPeriodConfigUpdate(userID int64, raw any) (InstConfigUpdateResult, error) {
 	result := InstConfigUpdateResult{Success: true}
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
@@ -32,6 +37,23 @@ func (svc *Service) PreviewInstPeriodConfigUpdate(userID int64, raw any) (InstCo
 		return result, err
 	}
 	return svc.resolveInstPeriodUpdateResult(context.Background(), instID, periodPayload)
+}
+
+func (svc *Service) RepairInstPeriodConfigVersions(userID int64) (InstPeriodRepairResult, error) {
+	result := InstPeriodRepairResult{Success: true}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return result, errors.New("no institution context")
+		}
+		return result, err
+	}
+	repairedCount, err := svc.repo.RepairInstPeriodConfigVersions(context.Background(), instID)
+	if err != nil {
+		return result, err
+	}
+	result.RepairedVersions = repairedCount
+	return result, nil
 }
 
 func (svc *Service) GetQiniuUploadToken() (qiniux.TokenVO, error) {

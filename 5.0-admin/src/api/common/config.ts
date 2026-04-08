@@ -134,6 +134,11 @@ export interface SetInstConfigResult {
   periodAppliedToday?: boolean
 }
 
+export interface InstPeriodRepairResult {
+  success: boolean
+  repairedVersions: number
+}
+
 export function getInstConfigApi(params?: GetInstConfigParams) {
   return useGet<InstConfig>('/api/v1/inst-config', params)
 }
@@ -144,6 +149,10 @@ export function setInstConfigApi(data: InstConfig) {
 
 export function previewInstPeriodEffectiveApi(data: { unifiedTimePeriodJson: unknown }) {
   return usePost<SetInstConfigResult>('/api/v1/inst-config/period-effective-preview', data)
+}
+
+export function repairInstPeriodVersionsApi() {
+  return usePost<InstPeriodRepairResult>('/api/v1/inst-config/period-repair', {})
 }
 // 解密学员手机号
 export function getStudentPhoneNumberApi(data: { studentId: number }) {
