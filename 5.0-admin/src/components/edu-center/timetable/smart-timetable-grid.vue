@@ -77,6 +77,10 @@ const props = defineProps({
     type: Function,
     required: true,
   },
+  resolveScheduleDragBlockedMessage: {
+    type: Function,
+    required: true,
+  },
   draggingScheduleStyle: {
     type: Object,
     default: () => ({}),
@@ -363,25 +367,26 @@ function goRollCall() {
 
             <div
               :data-schedule-cell-key="scheduleCellKey(column, record)"
-              class="st-schedule-cell flex flex-col bg-#4e6dff1f h-11 rounded-1 text-3 text-#fff cursor-pointer"
+              class="st-schedule-cell st-schedule-cell--unsigned flex h-11 cursor-pointer flex-col rounded-1 text-3"
               :class="{
                 'st-schedule-cell--focused': focusedScheduleCellKey === scheduleCellKey(column, record),
                 'st-schedule-cell--conflict': text.scheduledConflict,
+                'st-schedule-cell--signed': text.callStatusKey === 'signed',
                 'st-schedule-cell--draggable': isScheduleDraggable(text),
-                'st-schedule-cell--drag-disabled': !isScheduleDraggable(text) && text.courseType === 1 && text.isMain === false,
+                'st-schedule-cell--drag-disabled': !isScheduleDraggable(text),
                 'st-schedule-cell--floating': draggingScheduleCellKey === scheduleCellKey(column, record),
                 'st-schedule-cell--dragging': draggingScheduleCellKey === scheduleCellKey(column, record),
               }"
-              :title="!isScheduleDraggable(text) && text.courseType === 1 && text.isMain === false ? '助教课暂不支持拖拽调课，请在主教老师所在行操作' : undefined"
+              :title="!isScheduleDraggable(text) ? resolveScheduleDragBlockedMessage(text) : undefined"
               :style="draggingScheduleCellKey === scheduleCellKey(column, record) ? draggingScheduleStyle : undefined"
               @click="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
               @mousedown.left="handleSchedulePointerDown($event, text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
             >
-              <div class="pl1 bg-#06f rounded-1 rounded-lb-0 rounded-rb-0 flex relative h-5">
+              <div class="st-schedule-cell__header flex h-5 rounded-1 rounded-lb-0 rounded-rb-0 pl1 relative">
                 {{ scheduleCellStartTime(column, record) }}-{{ scheduleCellEndTime(column, record) }}
                 <a-tooltip v-if="text.scheduledConflict" :title="conflictBadgeTooltip(text)" placement="top">
                   <span
-                    class="absolute right-0 pl-2 pr-1 h-4 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2 st-schedule-cell__badge--conflict"
+                    class="st-schedule-cell__badge st-schedule-cell__badge--conflict absolute right-0 h-4 rounded-lb-2 rounded-rt-1 pl-2 pr-1 text-2.5 font-500"
                     style="cursor: pointer"
                     @click.stop="openScheduledConflictDetail(text)"
                   >
@@ -390,20 +395,20 @@ function goRollCall() {
                 </a-tooltip>
                 <span
                   v-else
-                  class="absolute right-0 pl-2 pr-1 h-4 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2 bg-#00000080"
+                  class="st-schedule-cell__badge st-schedule-cell__badge--mode absolute right-0 h-4 rounded-lb-2 rounded-rt-1 pl-2 pr-1 text-2.5 font-500"
                 >
                   <span v-if="text.courseType === 1">1v1</span>
                   <span v-else-if="text.courseType === 2">班课(<span>{{ text.isMain ? '主教' : '辅教' }}</span>)</span>
                 </span>
               </div>
 
-              <div v-if="!text.classId" class="flex pl-1 flex-1 text-#002cfd flex-items-center">
+              <div v-if="!text.classId" class="st-schedule-cell__body st-schedule-cell__body--students flex flex-1 flex-items-center pl-1">
                 <span v-for="(item, index) in text.studentNames" :key="index">
                   <div class="flex">{{ item.name }}{{ index !== text.studentNames.length - 1 ? '、' : '' }}-{{ text.courseName }}</div>
                 </span>
               </div>
 
-              <div v-else class="flex pl-1 flex-1 text-#002cfd line-height-4 flex-items-center">
+              <div v-else class="st-schedule-cell__body st-schedule-cell__body--class flex flex-1 flex-items-center pl-1 line-height-4">
                 <div class="flex">
                   {{ text.className }}-{{ text.courseName }}
                 </div>
@@ -488,7 +493,41 @@ function goRollCall() {
 
 .st-schedule-cell {
   position: relative;
+  overflow: hidden;
+  background: rgba(78, 109, 255, 0.12);
+  color: #fff;
   transition: box-shadow 0.25s ease, transform 0.25s ease, opacity 0.2s ease;
+}
+
+.st-schedule-cell--unsigned {
+  background: rgba(78, 109, 255, 0.12);
+}
+
+.st-schedule-cell--signed {
+  background: linear-gradient(180deg, #fbfbfc 0%, #f2f3f5 100%);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.st-schedule-cell__header {
+  align-items: center;
+  background: #06f;
+  color: #fff;
+}
+
+.st-schedule-cell--signed .st-schedule-cell__header {
+  background: linear-gradient(180deg, #aab0bb 0%, #9ba2ae 100%);
+}
+
+.st-schedule-cell__badge {
+  color: #fff;
+}
+
+.st-schedule-cell__badge--mode {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.st-schedule-cell--signed .st-schedule-cell__badge--mode {
+  background: rgba(0, 0, 0, 0.42);
 }
 
 .st-schedule-cell--conflict {
@@ -519,6 +558,15 @@ function goRollCall() {
 
 .st-schedule-cell__badge--conflict {
   background: #ff4d4f;
+}
+
+.st-schedule-cell__body {
+  color: #002cfd;
+}
+
+.st-schedule-cell--signed .st-schedule-cell__body {
+  color: #707784;
+  font-weight: 600;
 }
 
 .st-schedule-cell--focused {

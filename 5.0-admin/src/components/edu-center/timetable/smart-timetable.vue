@@ -2598,11 +2598,14 @@ function isScheduleDraggable(text) {
   return currentModel.value === '1'
     && text?.courseType === 1
     && text?.isMain !== false
+    && text?.callStatusKey !== 'signed'
     && Boolean(text?.scheduleId)
     && Boolean(text?.classId)
 }
 
 function resolveScheduleDragBlockedMessage(text) {
+  if (text?.callStatusKey === 'signed')
+    return '当前课程已点名，暂不支持拖拽调课'
   if (text?.courseType === 1 && text?.isMain === false)
     return '当前是助教课表，暂不支持拖拽调课，请在主教老师所在行操作'
   if (text?.courseType === 2)
@@ -3676,6 +3679,7 @@ watch(dragConflictDetailOpen, (open) => {
       :handle-schedule-click="handleScheduleClick"
       :handle-schedule-pointer-down="handleSchedulePointerDown"
       :is-schedule-draggable="isScheduleDraggable"
+      :resolve-schedule-drag-blocked-message="resolveScheduleDragBlockedMessage"
       :dragging-schedule-style="draggingScheduleStyle"
       :empty-lesson-drag-state="emptyLessonDragState"
       :empty-lesson-status-text="emptyLessonStatusText"
