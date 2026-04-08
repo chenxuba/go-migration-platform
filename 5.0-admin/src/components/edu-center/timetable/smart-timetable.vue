@@ -604,6 +604,7 @@ const scheduledLessonDetailState = ref({
   assistantText: '',
   assistantIds: [],
   classroomId: '',
+  classroomName: '',
   groupLabel: '',
   studentText: '',
   courseName: '',
@@ -2226,6 +2227,7 @@ function openScheduledLessonDetail(text, column, record) {
     assistantText: text.assistantText || '未安排',
     assistantIds: Array.isArray(text.assistantIds) ? text.assistantIds : [],
     classroomId: String(text.classroomId || ''),
+    classroomName: text.classroomName || '',
     groupLabel: activeGroupLabel.value || '当前组',
     studentText: studentText || '-',
     courseName: text.courseName || '',
@@ -3695,6 +3697,7 @@ watch(dragConflictDetailOpen, (open) => {
 
     <SmartTimetableScheduleDetailDrawer
       v-model:open="scheduledLessonDetailOpen"
+      :detail="scheduledLessonDetailState"
     />
 
     <ScheduleConflictModal
