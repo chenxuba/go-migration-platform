@@ -914,12 +914,19 @@ function legacyToTeachingScheduleItem(
     startAt: start.format('YYYY-MM-DD HH:mm:ss'),
     endAt: end.format('YYYY-MM-DD HH:mm:ss'),
     status: info.scheduleStatus ?? 1,
+    callStatus: info.callStatus ?? 1,
+    callStatusText: info.callStatusText ?? (Number(info.callStatus) === 2 ? '已点名' : '未点名'),
     conflict: info.conflict === true,
     conflictTypes: info.conflictTypes ?? [],
   }
 }
 
 function resolveLessonCallStatusKey(info: TeachingScheduleMatrixLegacyItem) {
+  const explicitCallStatus = Number(info?.callStatus ?? 0)
+  if (explicitCallStatus === 2)
+    return 'signed'
+  if (explicitCallStatus === 1)
+    return 'unsigned'
   const scheduleStatus = Number(info?.scheduleStatus ?? 0)
   const courseStatus = Number(info?.courseStatus ?? 0)
   const finishType = Number(info?.finishType ?? 0)

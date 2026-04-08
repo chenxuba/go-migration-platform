@@ -117,6 +117,39 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesAssistantMatchesInTeacherF
 		},
 		{
 			query: `
+				SELECT COUNT(*)
+				FROM information_schema.TABLES
+				WHERE TABLE_SCHEMA = DATABASE()
+				  AND TABLE_NAME = ?
+			`,
+			args:    []any{"teaching_record"},
+			columns: []string{"COUNT(*)"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM information_schema.TABLES
+				WHERE TABLE_SCHEMA = DATABASE()
+				  AND TABLE_NAME = ?
+			`,
+			args:    []any{"inst_teaching_record"},
+			columns: []string{"COUNT(*)"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM information_schema.TABLES
+				WHERE TABLE_SCHEMA = DATABASE()
+				  AND TABLE_NAME = ?
+			`,
+			args:    []any{"class_teaching_record"},
+			columns: []string{"COUNT(*)"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		{
+			query: `
 				SELECT
 					id,
 					IFNULL(batch_no, ''),

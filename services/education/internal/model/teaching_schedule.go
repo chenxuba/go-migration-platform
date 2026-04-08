@@ -130,13 +130,17 @@ type TeachingScheduleBatchDetailVO struct {
 }
 
 type TeachingScheduleDetailStudentVO struct {
-	StudentID       string `json:"studentId"`
-	StudentName     string `json:"studentName"`
-	Phone           string `json:"phone,omitempty"`
-	ClassStatus     int    `json:"classStatus"`
-	ClassStatusText string `json:"classStatusText,omitempty"`
-	CallStatus      int    `json:"callStatus"`
-	CallStatusText  string `json:"callStatusText,omitempty"`
+	StudentID             string `json:"studentId"`
+	StudentName           string `json:"studentName"`
+	AvatarURL             string `json:"avatarUrl,omitempty"`
+	Phone                 string `json:"phone,omitempty"`
+	MaskedPhone           string `json:"maskedPhone,omitempty"`
+	PhoneRelationship     int    `json:"phoneRelationship,omitempty"`
+	PhoneRelationshipText string `json:"phoneRelationshipText,omitempty"`
+	ClassStatus           int    `json:"classStatus"`
+	ClassStatusText       string `json:"classStatusText,omitempty"`
+	CallStatus            int    `json:"callStatus"`
+	CallStatusText        string `json:"callStatusText,omitempty"`
 }
 
 type TeachingScheduleDetailVO struct {
@@ -221,6 +225,8 @@ type TeachingScheduleVO struct {
 	StartAt           time.Time `json:"startAt"`
 	EndAt             time.Time `json:"endAt"`
 	Status            int       `json:"status"`
+	CallStatus        int       `json:"callStatus"`
+	CallStatusText    string    `json:"callStatusText,omitempty"`
 	Conflict          bool      `json:"conflict"`
 	ConflictTypes     []string  `json:"conflictTypes,omitempty"`
 }
@@ -357,6 +363,8 @@ type TeachingScheduleInfoLegacyVO struct {
 	ScheduleStartTime string                   `json:"scheduleStartTime"`
 	ScheduleEndTime   string                   `json:"scheduleEndTime"`
 	ScheduleStatus    int                      `json:"scheduleStatus"`
+	CallStatus        int                      `json:"callStatus"`
+	CallStatusText    string                   `json:"callStatusText,omitempty"`
 	Conflict          bool                     `json:"conflict"`
 	ConflictTypes     []string                 `json:"conflictTypes,omitempty"`
 	MissSchedule      bool                     `json:"missSchedule"`

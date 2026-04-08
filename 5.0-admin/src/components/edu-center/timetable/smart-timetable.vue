@@ -799,6 +799,11 @@ function resolveLessonScheduleTypeKey(courseType, isMain) {
 }
 
 function resolveLessonCallStatusKey(legacyItem) {
+  const explicitCallStatus = Number(legacyItem?.callStatus ?? 0)
+  if (explicitCallStatus === 2)
+    return 'signed'
+  if (explicitCallStatus === 1)
+    return 'unsigned'
   const scheduleStatus = Number(legacyItem?.scheduleStatus ?? 0)
   const courseStatus = Number(legacyItem?.courseStatus ?? 0)
   const finishType = Number(legacyItem?.finishType ?? 0)

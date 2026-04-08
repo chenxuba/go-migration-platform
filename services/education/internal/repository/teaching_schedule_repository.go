@@ -331,20 +331,27 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 	}
 
 	if statusSet := normalizeTeachingScheduleCallStatusFilters(query.CallStatusFilters); len(statusSet) > 0 {
-		existsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+		recordExistsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if strings.TrimSpace(existsSQL) != "" {
+		if strings.TrimSpace(recordExistsSQL) != "" {
 			statusParts := make([]string, 0, len(statusSet))
 			if _, ok := statusSet["signed"]; ok {
-				statusParts = append(statusParts, existsSQL)
+				statusParts = append(statusParts, recordExistsSQL)
 			}
 			if _, ok := statusSet["unsigned"]; ok {
-				statusParts = append(statusParts, "NOT "+existsSQL)
+				statusParts = append(statusParts, "NOT "+recordExistsSQL)
 			}
 			if len(statusParts) > 0 {
 				filters = append(filters, "("+strings.Join(statusParts, " OR ")+")")
+			}
+		}
+		if strings.TrimSpace(recordExistsSQL) == "" {
+			_, wantSigned := statusSet["signed"]
+			_, wantUnsigned := statusSet["unsigned"]
+			if wantSigned && !wantUnsigned {
+				filters = append(filters, "1 = 0")
 			}
 		}
 	}
@@ -499,6 +506,13 @@ func buildTeachingScheduleTrialExistsSQL() string {
 }
 
 func (repo *Repository) buildTeachingScheduleRecordExistsSQL(ctx context.Context) (string, error) {
+	repo.teachingScheduleRecordExistsOnce.Do(func() {
+		repo.teachingScheduleRecordExistsSQL, repo.teachingScheduleRecordExistsErr = repo.buildTeachingScheduleRecordExistsSQLUncached(ctx)
+	})
+	return repo.teachingScheduleRecordExistsSQL, repo.teachingScheduleRecordExistsErr
+}
+
+func (repo *Repository) buildTeachingScheduleRecordExistsSQLUncached(ctx context.Context) (string, error) {
 	teachingTable, err := repo.firstExistingTable(ctx, []string{"teaching_record", "inst_teaching_record", "class_teaching_record"})
 	if err != nil || strings.TrimSpace(teachingTable) == "" {
 		return "", err
@@ -757,6 +771,8 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 			StartAt:           plan.StartAt,
 			EndAt:             plan.EndAt,
 			Status:            model.TeachingScheduleStatusActive,
+			CallStatus:        1,
+			CallStatusText:    teachingScheduleCallStatusText(1),
 		})
 	}
 	if err := repo.saveTeachingScheduleBatchMetaTx(
@@ -1193,6 +1209,9 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 		TeachingClassName string
 		StudentID         int64
 		StudentName       string
+		StudentAvatarURL  string
+		StudentPhone      string
+		PhoneRelationship int
 		LessonID          int64
 		LessonName        string
 		TeacherID         int64
@@ -1221,6 +1240,9 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 			IFNULL(ts.teaching_class_name, ''),
 			IFNULL(ts.student_id, 0),
 			IFNULL(ts.student_name, ''),
+			IFNULL(stu.avatar_url, ''),
+			IFNULL(stu.mobile, ''),
+			IFNULL(stu.phone_relationship, 0),
 			IFNULL(ts.lesson_id, 0),
 			IFNULL(ts.lesson_name, ''),
 			IFNULL(ts.teacher_id, 0),
@@ -1239,6 +1261,10 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 			ON tc.id = ts.teaching_class_id
 		   AND tc.inst_id = ts.inst_id
 		   AND tc.del_flag = 0
+		LEFT JOIN inst_student stu
+			ON stu.id = ts.student_id
+		   AND stu.inst_id = ts.inst_id
+		   AND stu.del_flag = 0
 		WHERE ts.inst_id = ?
 		  AND ts.id = ?
 		  AND ts.del_flag = 0
@@ -1254,6 +1280,9 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 		&row.TeachingClassName,
 		&row.StudentID,
 		&row.StudentName,
+		&row.StudentAvatarURL,
+		&row.StudentPhone,
+		&row.PhoneRelationship,
 		&row.LessonID,
 		&row.LessonName,
 		&row.TeacherID,
@@ -1283,12 +1312,17 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 	}
 	if len(students) == 0 && row.StudentID > 0 {
 		students = []model.TeachingScheduleDetailStudentVO{{
-			StudentID:       strconv.FormatInt(row.StudentID, 10),
-			StudentName:     firstNonEmptyString(row.StudentName, "-"),
-			ClassStatus:     model.TeachingClassStudentStatusStudying,
-			ClassStatusText: teachingClassStudentStatusText(model.TeachingClassStudentStatusStudying),
-			CallStatus:      row.CallStatus,
-			CallStatusText:  teachingScheduleCallStatusText(row.CallStatus),
+			StudentID:             strconv.FormatInt(row.StudentID, 10),
+			StudentName:           firstNonEmptyString(row.StudentName, "-"),
+			AvatarURL:             strings.TrimSpace(row.StudentAvatarURL),
+			Phone:                 strings.TrimSpace(row.StudentPhone),
+			MaskedPhone:           maskStudentMobile(strings.TrimSpace(row.StudentPhone)),
+			PhoneRelationship:     row.PhoneRelationship,
+			PhoneRelationshipText: studentPhoneRelationshipText(row.PhoneRelationship),
+			ClassStatus:           model.TeachingClassStudentStatusStudying,
+			ClassStatusText:       teachingClassStudentStatusText(model.TeachingClassStudentStatusStudying),
+			CallStatus:            row.CallStatus,
+			CallStatusText:        teachingScheduleCallStatusText(row.CallStatus),
 		}}
 	}
 
@@ -1637,6 +1671,8 @@ func (repo *Repository) ReplaceTeachingScheduleBatch(ctx context.Context, instID
 			StartAt:           plan.StartAt,
 			EndAt:             plan.EndAt,
 			Status:            model.TeachingScheduleStatusActive,
+			CallStatus:        1,
+			CallStatusText:    teachingScheduleCallStatusText(1),
 		})
 	}
 	if err := repo.saveTeachingScheduleBatchMetaTx(
@@ -2163,7 +2199,9 @@ func (repo *Repository) listTeachingScheduleDetailStudentsTx(ctx context.Context
 		SELECT
 			IFNULL(tcs.student_id, 0),
 			IFNULL(s.stu_name, ''),
+			IFNULL(s.avatar_url, ''),
 			IFNULL(s.mobile, ''),
+			IFNULL(s.phone_relationship, 0),
 			IFNULL(tcs.class_student_status, 0)
 		FROM teaching_class_student tcs
 		LEFT JOIN inst_student s
@@ -2184,25 +2222,114 @@ func (repo *Repository) listTeachingScheduleDetailStudentsTx(ctx context.Context
 	for rows.Next() {
 		var studentID int64
 		var studentName string
+		var avatarURL string
 		var phone string
+		var phoneRelationship int
 		var classStatus int
-		if err := rows.Scan(&studentID, &studentName, &phone, &classStatus); err != nil {
+		if err := rows.Scan(&studentID, &studentName, &avatarURL, &phone, &phoneRelationship, &classStatus); err != nil {
 			return nil, err
 		}
 		result = append(result, model.TeachingScheduleDetailStudentVO{
-			StudentID:       emptyStringIfZero(studentID),
-			StudentName:     firstNonEmptyString(studentName, "-"),
-			Phone:           strings.TrimSpace(phone),
-			ClassStatus:     classStatus,
-			ClassStatusText: teachingClassStudentStatusText(classStatus),
-			CallStatus:      callStatus,
-			CallStatusText:  teachingScheduleCallStatusText(callStatus),
+			StudentID:             emptyStringIfZero(studentID),
+			StudentName:           firstNonEmptyString(studentName, "-"),
+			AvatarURL:             strings.TrimSpace(avatarURL),
+			Phone:                 strings.TrimSpace(phone),
+			MaskedPhone:           maskStudentMobile(strings.TrimSpace(phone)),
+			PhoneRelationship:     phoneRelationship,
+			PhoneRelationshipText: studentPhoneRelationshipText(phoneRelationship),
+			ClassStatus:           classStatus,
+			ClassStatusText:       teachingClassStudentStatusText(classStatus),
+			CallStatus:            callStatus,
+			CallStatusText:        teachingScheduleCallStatusText(callStatus),
 		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, instID int64, items []model.TeachingScheduleVO) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	ids := make([]int64, 0, len(items))
+	itemIndex := make(map[int64][]int, len(items))
+	for index, item := range items {
+		id, err := strconv.ParseInt(strings.TrimSpace(item.ID), 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		if _, ok := itemIndex[id]; !ok {
+			ids = append(ids, id)
+		}
+		itemIndex[id] = append(itemIndex[id], index)
+	}
+	if len(ids) == 0 {
+		for i := range items {
+			items[i].CallStatus = 1
+			items[i].CallStatusText = teachingScheduleCallStatusText(1)
+		}
+		return nil
+	}
+
+	recordExistsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(recordExistsSQL) == "" {
+		for i := range items {
+			items[i].CallStatus = 1
+			items[i].CallStatusText = teachingScheduleCallStatusText(1)
+		}
+		return nil
+	}
+
+	queryArgs := make([]any, 0, len(ids)+1)
+	queryArgs = append(queryArgs, instID)
+	for _, id := range ids {
+		queryArgs = append(queryArgs, id)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			ts.id,
+			CASE WHEN `+recordExistsSQL+` THEN 2 ELSE 1 END AS call_status
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ?
+		  AND ts.id IN (`+sqlPlaceholders(len(ids))+`)
+		  AND ts.del_flag = 0
+	`, queryArgs...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	statusByID := make(map[int64]int, len(ids))
+	for rows.Next() {
+		var scheduleID int64
+		var callStatus int
+		if err := rows.Scan(&scheduleID, &callStatus); err != nil {
+			return err
+		}
+		statusByID[scheduleID] = callStatus
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, id := range ids {
+		status := statusByID[id]
+		if status != 2 {
+			status = 1
+		}
+		for _, index := range itemIndex[id] {
+			items[index].CallStatus = status
+			items[index].CallStatusText = teachingScheduleCallStatusText(status)
+		}
+	}
+	return nil
 }
 
 func collectPlanTeacherIDs(plans []normalizedSchedulePlan) []int64 {
@@ -4044,6 +4171,38 @@ func teachingScheduleCallStatusText(status int) string {
 		return "已点名"
 	}
 	return "未点名"
+}
+
+func maskStudentMobile(mobile string) string {
+	trimmed := strings.TrimSpace(mobile)
+	if trimmed == "" {
+		return "-"
+	}
+	if len(trimmed) == 11 {
+		return trimmed[:3] + "****" + trimmed[7:]
+	}
+	return trimmed
+}
+
+func studentPhoneRelationshipText(value int) string {
+	switch value {
+	case 1:
+		return "爸爸"
+	case 2:
+		return "妈妈"
+	case 3:
+		return "爷爷"
+	case 4:
+		return "奶奶"
+	case 5:
+		return "外公"
+	case 6:
+		return "外婆"
+	case 7:
+		return "其他"
+	default:
+		return "-"
+	}
 }
 
 func compactStrings(values []string) []string {

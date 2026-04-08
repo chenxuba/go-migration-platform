@@ -23,6 +23,8 @@ export interface TeachingScheduleItem {
   startAt: string
   endAt: string
   status: number
+  callStatus: number
+  callStatusText?: string
   conflict: boolean
   conflictTypes?: string[]
 }
@@ -54,7 +56,11 @@ export interface TeachingScheduleBatchDetail {
 export interface TeachingScheduleDetailStudent {
   studentId: string
   studentName: string
+  avatarUrl?: string
   phone?: string
+  maskedPhone?: string
+  phoneRelationship?: number
+  phoneRelationshipText?: string
   classStatus: number
   classStatusText?: string
   callStatus: number
@@ -314,6 +320,8 @@ export interface TeachingScheduleMatrixLegacyItem {
   scheduleStartTime: string
   scheduleEndTime: string
   scheduleStatus?: number
+  callStatus?: number
+  callStatusText?: string
   conflict?: boolean
   conflictTypes?: string[]
   courseStatus?: number

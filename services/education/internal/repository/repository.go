@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -14,7 +15,10 @@ import (
 )
 
 type Repository struct {
-	db *sql.DB
+	db                               *sql.DB
+	teachingScheduleRecordExistsOnce sync.Once
+	teachingScheduleRecordExistsSQL  string
+	teachingScheduleRecordExistsErr  error
 }
 
 type StudentSnapshot struct {

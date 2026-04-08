@@ -6,6 +6,7 @@ import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import { getTeachingScheduleDetailApi, type TeachingScheduleDetail, type TeachingScheduleDetailStudent } from '@/api/edu-center/teaching-schedule'
+import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
 
 type DrawerSummary = {
@@ -38,22 +39,32 @@ const openDrawer = computed({
 
 const loading = ref(false)
 const detailData = ref<TeachingScheduleDetail | null>(null)
+const studentStore = useStudentStore()
+const openStudentDrawer = ref(false)
+const defaultStudentAvatar = 'https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png'
 const studentColumns: TableColumnsType<TeachingScheduleDetailStudent> = [
   {
     title: '学员姓名',
     dataIndex: 'studentName',
     key: 'studentName',
+    width: 260,
   },
   {
     title: '联系电话',
     dataIndex: 'phone',
     key: 'phone',
+    width: 220,
   },
   {
     title: '状态',
-    dataIndex: 'callStatusText',
-    key: 'callStatusText',
+    key: 'studentType',
     width: 120,
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 100,
+    align: 'center',
   },
 ]
 
@@ -78,7 +89,6 @@ const headerTitle = computed(() => {
     return props.detail.lessonTitle
   return detailData.value?.lessonName || detailData.value?.teachingClassName || '日程详情'
 })
-const callStatusText = computed(() => detailData.value?.callStatusText || '未点名')
 const timeText = computed(() => {
   if (!detailData.value)
     return '-'
@@ -109,6 +119,7 @@ const repeatRuleText = computed(() => {
   return base
 })
 const remarkText = computed(() => detailData.value?.remark || '-')
+const studentTypeText = computed(() => (Number(detailData.value?.classType) === 2 ? '1对1学员' : '班课学员'))
 
 let loadSeq = 0
 
@@ -124,6 +135,14 @@ function formatWeek(date: string) {
     6: '周六',
   }
   return weekMap[day] || '-'
+}
+
+function handleViewStudent(studentId?: string) {
+  const id = String(studentId || '').trim()
+  if (!id)
+    return
+  studentStore.setStudentId(id)
+  openStudentDrawer.value = true
 }
 
 async function loadDetail() {
@@ -204,9 +223,7 @@ watch(
               <div class="name text-5 font-800">
                 {{ headerTitle }}
               </div>
-              <a-tag :color="callStatusText === '已点名' ? 'green' : 'blue'">
-                {{ callStatusText }}
-              </a-tag>
+             
             </a-space>
             <a-space>
               <a-button type="link" ghost>
@@ -270,15 +287,36 @@ watch(
                 :data-source="students"
                 :pagination="false"
                 row-key="studentId"
+                :scroll="{ x: 700 }"
               >
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'phone'">
-                    {{ record.phone || '-' }}
+                    <div class="student-phone-cell">
+                      <div class="student-phone-relation">
+                        {{ record.phoneRelationshipText || '-' }}
+                      </div>
+                      <div class="student-phone-number">
+                        {{ record.maskedPhone || record.phone || '-' }}
+                      </div>
+                    </div>
                   </template>
-                  <template v-else-if="column.key === 'callStatusText'">
-                    <a-tag :color="record.callStatus === 2 ? 'green' : 'blue'">
-                      {{ record.callStatusText || '-' }}
-                    </a-tag>
+                  <template v-else-if="column.key === 'studentName'">
+                    <div class="student-name-cell" @click="handleViewStudent(record.studentId)">
+                      <img class="student-avatar" :src="record.avatarUrl || defaultStudentAvatar" alt="">
+                      <div class="student-name-text">
+                        {{ record.studentName || '-' }}
+                      </div>
+                    </div>
+                  </template>
+                  <template v-else-if="column.key === 'studentType'">
+                    <span class="student-type-text">
+                      {{ studentTypeText }}
+                    </span>
+                  </template>
+                  <template v-else-if="column.key === 'action'">
+                    <a-button type="link" class="px0" @click="handleViewStudent(record.studentId)">
+                      详情
+                    </a-button>
                   </template>
                 </template>
               </a-table>
@@ -287,6 +325,7 @@ watch(
         </a-tabs>
       </div>
     </a-spin>
+    <student-info-drawer v-model:open="openStudentDrawer" />
   </a-drawer>
 </template>
 
@@ -337,5 +376,45 @@ watch(
       content: "";
     }
   }
+}
+
+.student-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.student-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 36px;
+}
+
+.student-name-text {
+  color: #222;
+  font-weight: 500;
+}
+
+.student-name-cell:hover .student-name-text {
+  color: #06f;
+}
+
+.student-phone-cell {
+  line-height: 1.5;
+}
+
+.student-phone-relation {
+  color: #222;
+}
+
+.student-phone-number {
+  color: #888;
+}
+
+.student-type-text {
+  color: #222;
 }
 </style>

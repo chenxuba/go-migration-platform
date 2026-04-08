@@ -91,6 +91,9 @@ func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingSche
 	if err != nil {
 		return nil, err
 	}
+	if err := svc.repo.FillTeachingScheduleCallStatus(ctx, instID, schedules); err != nil {
+		return nil, err
+	}
 	if err := svc.annotateTeachingScheduleConflictsForQuery(ctx, instID, query, schedules); err != nil {
 		return nil, err
 	}
@@ -122,6 +125,9 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 	}
 	schedules, err := svc.repo.ListTeachingSchedules(ctx, instID, query)
 	if err != nil {
+		return nil, err
+	}
+	if err := svc.repo.FillTeachingScheduleCallStatus(ctx, instID, schedules); err != nil {
 		return nil, err
 	}
 	if err := svc.annotateTeachingScheduleConflictsForQuery(ctx, instID, query, schedules); err != nil {
@@ -691,6 +697,8 @@ func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) mod
 		ScheduleStartTime: v.StartAt.Format("15:04"),
 		ScheduleEndTime:   v.EndAt.Format("15:04"),
 		ScheduleStatus:    v.Status,
+		CallStatus:        v.CallStatus,
+		CallStatusText:    v.CallStatusText,
 		Conflict:          v.Conflict,
 		ConflictTypes:     append([]string(nil), v.ConflictTypes...),
 		MissSchedule:      false,

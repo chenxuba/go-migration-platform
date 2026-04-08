@@ -679,7 +679,7 @@ const mockSchedules = computed(() =>
     teacher: item.teacherName || '-',
     classroom: item.classroomName || '-',
     studentText: item.studentName ? `学员：${item.studentName}` : '-',
-    status: 'unsigned',
+    status: Number(item.callStatus) === 2 ? 'signed' : 'unsigned',
     conflict: item.conflict === true,
     conflictTypes: item.conflictTypes || [],
     hasTrial: false,
