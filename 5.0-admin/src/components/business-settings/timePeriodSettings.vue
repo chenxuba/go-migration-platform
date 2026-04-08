@@ -2,6 +2,7 @@
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import type { TableColumnType } from 'ant-design-vue'
+import { debounce } from 'lodash-es'
 import UnifiedPeriodGroupModal from '@/components/business-settings/unified-period-group-modal.vue'
 import { type InstConfig, setInstConfigApi } from '@/api/common/config'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
@@ -150,16 +151,13 @@ const bindTeacherIds = ref<string[]>([])
 
 type StaffRow = { id: string, nickName: string, mobile: string }
 const staffList = ref<StaffRow[]>([])
+const bindStaffCache = new Map<string, StaffRow>()
 const staffLoading = ref(false)
 const bindStaffKeyword = ref('')
-
-const filteredStaffForBind = computed(() => {
-  const q = bindStaffKeyword.value.trim().toLowerCase()
-  if (!q)
-    return staffList.value
-  return staffList.value.filter(s =>
-    s.nickName.toLowerCase().includes(q) || (s.mobile && s.mobile.includes(q)),
-  )
+const bindPagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
 })
 
 const bindTeacherColumns: TableColumnType<StaffRow>[] = [
@@ -181,26 +179,39 @@ const bindModalTitle = computed(() => {
   return `关联老师 — ${name}`
 })
 
-async function ensureStaffForBind() {
-  if (staffList.value.length)
-    return
+function cacheBindStaffRows(rows: StaffRow[]) {
+  rows.forEach((row) => {
+    bindStaffCache.set(row.id, row)
+  })
+}
+
+async function loadStaffForBind() {
   staffLoading.value = true
   try {
     const res = await getUserListApi({
       pageRequestModel: {
-        needTotal: false,
-        pageSize: 500,
-        pageIndex: 1,
-        skipCount: 1,
+        needTotal: true,
+        pageSize: bindPagination.pageSize,
+        pageIndex: bindPagination.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        searchKey: bindStaffKeyword.value.trim() || undefined,
       },
     })
     if (res.code === 200) {
       const rows = Array.isArray(res.result) ? res.result : []
-      staffList.value = rows.map((r: { id?: unknown, nickName?: string, name?: string, mobile?: string }) => ({
+      const list = rows.map((r: { id?: unknown, nickName?: string, name?: string, mobile?: string }) => ({
         id: String(r.id ?? ''),
         nickName: String(r.nickName || r.name || r.id || '').trim() || String(r.id),
         mobile: String(r.mobile ?? '').trim(),
       })).filter((r: StaffRow) => r.id)
+      staffList.value = list
+      cacheBindStaffRows(list)
+      bindPagination.total = Number(res.total || 0)
+    }
+    else {
+      messageService.error(res.message || '加载老师列表失败')
     }
   }
   catch (e) {
@@ -213,36 +224,40 @@ async function ensureStaffForBind() {
 }
 
 function openBindTeachers(record: UnifiedPeriodGroup) {
+  bindStaffCache.clear()
   bindGroupId.value = record.id
   bindTeacherIds.value = (record.boundTeachers || []).map(t => String(t.id))
+  bindPagination.current = 1
+  bindPagination.total = 0
   bindStaffKeyword.value = ''
   bindModalOpen.value = true
-  void ensureStaffForBind()
+  void loadStaffForBind()
 }
 
 function closeBindModal() {
+  debouncedSearchBindStaff.cancel()
   bindModalOpen.value = false
   bindGroupId.value = null
   bindTeacherIds.value = []
   bindStaffKeyword.value = ''
+  bindPagination.current = 1
+  bindPagination.total = 0
+  staffList.value = []
 }
 
-/** 全选当前筛选结果中的老师 */
 function selectAllFilteredStaff() {
   const set = new Set(bindTeacherIds.value)
-  filteredStaffForBind.value.forEach(s => set.add(s.id))
+  staffList.value.forEach(s => set.add(s.id))
   bindTeacherIds.value = Array.from(set)
 }
 
-/** 取消选中当前筛选结果中的老师 */
 function clearFilteredStaffSelection() {
-  const drop = new Set(filteredStaffForBind.value.map(s => s.id))
+  const drop = new Set(staffList.value.map(s => s.id))
   bindTeacherIds.value = bindTeacherIds.value.filter(id => !drop.has(id))
 }
 
-/** 在当前筛选结果内反选 */
 function invertFilteredStaffSelection() {
-  const visible = new Set(filteredStaffForBind.value.map(s => s.id))
+  const visible = new Set(staffList.value.map(s => s.id))
   const cur = new Set(bindTeacherIds.value)
   const next = new Set(bindTeacherIds.value)
   visible.forEach((id) => {
@@ -253,6 +268,27 @@ function invertFilteredStaffSelection() {
   })
   bindTeacherIds.value = Array.from(next)
 }
+
+function handleBindTableChange(paginationInfo: { current?: number, pageSize?: number }) {
+  const nextPageSize = Number(paginationInfo.pageSize || bindPagination.pageSize)
+  const pageSizeChanged = nextPageSize !== bindPagination.pageSize
+  bindPagination.pageSize = nextPageSize
+  bindPagination.current = pageSizeChanged ? 1 : Number(paginationInfo.current || 1)
+  void loadStaffForBind()
+}
+
+const debouncedSearchBindStaff = debounce(() => {
+  if (!bindModalOpen.value)
+    return
+  bindPagination.current = 1
+  void loadStaffForBind()
+}, 300)
+
+watch(bindStaffKeyword, () => {
+  if (!bindModalOpen.value)
+    return
+  debouncedSearchBindStaff()
+})
 
 async function saveBindTeachers() {
   if (!bindGroupId.value)
@@ -265,12 +301,11 @@ async function saveBindTeachers() {
       messageService.error('未找到该时段组，请刷新后重试')
       throw new Error('group missing')
     }
-    const byStaff = new Map(staffList.value.map(s => [s.id, s.nickName]))
     const prev = g.boundTeachers || []
     const prevName = new Map(prev.map(t => [String(t.id), t.name]))
     g.boundTeachers = bindTeacherIds.value.map(id => ({
       id: String(id),
-      name: byStaff.get(String(id)) || prevName.get(String(id)) || String(id),
+      name: bindStaffCache.get(String(id))?.nickName || prevName.get(String(id)) || String(id),
     }))
     const res = await setInstConfigApi({
       ...(userStore.instConfig as InstConfig),
@@ -459,11 +494,18 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
           class="bind-teachers-table"
           size="small"
           :columns="bindTeacherColumns"
-          :data-source="filteredStaffForBind"
+          :data-source="staffList"
           :row-selection="bindRowSelection"
-          :pagination="{ pageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }"
+          :pagination="{
+            current: bindPagination.current,
+            pageSize: bindPagination.pageSize,
+            total: bindPagination.total,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
+          }"
           row-key="id"
           :scroll="{ y: 320 }"
+          @change="handleBindTableChange"
         />
       </a-spin>
     </a-modal>
