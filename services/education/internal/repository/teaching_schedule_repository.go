@@ -1532,6 +1532,7 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 			return errors.New("存在无效的上课助教")
 		}
 	}
+	classroomIDProvided := strings.TrimSpace(dto.ClassroomID) != "" && strings.TrimSpace(dto.ClassroomID) != "0"
 	classroomID, classroomName, _, err := repo.resolveClassroomByIDTx(ctx, tx, instID, dto.ClassroomID)
 	if err != nil {
 		return err
@@ -1580,14 +1581,22 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 		excludeIDs = append(excludeIDs, item.ID)
 	}
 
+	assistantRemovalOnly := isAssistantRemovalOnlyBatchUpdate(schedules, teacherID, classroomID, classroomIDProvided, assistantIDs, updatedSlots)
+
 	if err := repo.validateTeachingScheduleConflictsTx(ctx, tx, instID, teacherID, classroomID, updatedSlots, strings.TrimSpace(dto.BatchNo), excludeIDs, false); err != nil {
 		return err
 	}
 
 	for index, item := range schedules {
 		slot := updatedSlots[index]
+		nextClassroomID := classroomID
+		nextClassroomName := classroomName
+		if assistantRemovalOnly && !classroomIDProvided {
+			nextClassroomID = item.ClassroomID
+			nextClassroomName = item.ClassroomName
+		}
 		if item.ClassType == model.TeachingClassTypeOneToOne {
-			if item.StudentID > 0 {
+			if !assistantRemovalOnly && item.StudentID > 0 {
 				studentConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", item.StudentID, []normalizedScheduleSlot{slot}, strings.TrimSpace(dto.BatchNo), excludeIDs)
 				if err != nil {
 					return err
@@ -1596,7 +1605,7 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 					return fmt.Errorf("学员在 %s %s-%s 已有日程冲突", slot.LessonDate.Format("2006-01-02"), slot.StartAt.Format("15:04"), slot.EndAt.Format("15:04"))
 				}
 			}
-			if len(assistantIDs) > 0 {
+			if !assistantRemovalOnly && len(assistantIDs) > 0 {
 				assistantConflicts, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, assistantIDs, []normalizedScheduleSlot{slot}, strings.TrimSpace(dto.BatchNo), excludeIDs)
 				if err != nil {
 					return err
@@ -1617,8 +1626,8 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 			teacherName,
 			nullJSONBytes(assistantIDsJSON),
 			nullJSONBytes(assistantNamesJSON),
-			classroomID,
-			classroomName,
+			nextClassroomID,
+			nextClassroomName,
 			slot.LessonDate.Format("2006-01-02"),
 			slot.StartAt,
 			slot.EndAt,
@@ -1747,11 +1756,67 @@ type scheduleAvailabilityConflictRow struct {
 }
 
 type teachingScheduleRow struct {
-	ID         int64
-	BatchNo    string
-	ClassType  int
-	StudentID  int64
-	LessonDate time.Time
+	ID            int64
+	BatchNo       string
+	ClassType     int
+	StudentID     int64
+	TeacherID     int64
+	ClassroomID   int64
+	ClassroomName string
+	AssistantIDs  []string
+	LessonDate    time.Time
+	StartAt       time.Time
+	EndAt         time.Time
+}
+
+func isAssistantRemovalOnlyBatchUpdate(schedules []teachingScheduleRow, teacherID, classroomID int64, classroomIDProvided bool, assistantIDs []int64, updatedSlots []normalizedScheduleSlot) bool {
+	if len(schedules) == 0 || len(schedules) != len(updatedSlots) {
+		return false
+	}
+
+	nextAssistantIDSet := make(map[string]struct{}, len(assistantIDs))
+	for _, id := range assistantIDs {
+		nextAssistantIDSet[strconv.FormatInt(id, 10)] = struct{}{}
+	}
+
+	for index, item := range schedules {
+		if item.ClassType != model.TeachingClassTypeOneToOne {
+			return false
+		}
+		if item.TeacherID != teacherID {
+			return false
+		}
+		if classroomIDProvided && item.ClassroomID != classroomID {
+			return false
+		}
+
+		slot := updatedSlots[index]
+		if item.LessonDate.Format("2006-01-02") != slot.LessonDate.Format("2006-01-02") {
+			return false
+		}
+		if !item.StartAt.Equal(slot.StartAt) || !item.EndAt.Equal(slot.EndAt) {
+			return false
+		}
+
+		currentAssistantIDSet := make(map[string]struct{}, len(item.AssistantIDs))
+		for _, raw := range item.AssistantIDs {
+			id := strings.TrimSpace(raw)
+			if id == "" {
+				continue
+			}
+			currentAssistantIDSet[id] = struct{}{}
+		}
+		if len(nextAssistantIDSet) >= len(currentAssistantIDSet) {
+			return false
+		}
+		for id := range nextAssistantIDSet {
+			if _, ok := currentAssistantIDSet[id]; !ok {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 func buildTeachingScheduleBatchMetaKey(batchNo string, scheduleIDs []int64) (string, error) {
@@ -2299,7 +2364,13 @@ func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *s
 			IFNULL(batch_no, ''),
 			IFNULL(class_type, 0),
 			IFNULL(student_id, 0),
-			lesson_date
+			IFNULL(teacher_id, 0),
+			IFNULL(classroom_id, 0),
+			IFNULL(classroom_name, ''),
+			assistant_ids_json,
+			lesson_date,
+			lesson_start_at,
+			lesson_end_at
 		FROM teaching_schedule
 		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY lesson_start_at ASC, id ASC
@@ -2311,9 +2382,23 @@ func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *s
 	list := make([]teachingScheduleRow, 0, 16)
 	for rows.Next() {
 		var item teachingScheduleRow
-		if err := rows.Scan(&item.ID, &item.BatchNo, &item.ClassType, &item.StudentID, &item.LessonDate); err != nil {
+		var assistantIDsRaw []byte
+		if err := rows.Scan(
+			&item.ID,
+			&item.BatchNo,
+			&item.ClassType,
+			&item.StudentID,
+			&item.TeacherID,
+			&item.ClassroomID,
+			&item.ClassroomName,
+			&assistantIDsRaw,
+			&item.LessonDate,
+			&item.StartAt,
+			&item.EndAt,
+		); err != nil {
 			return nil, err
 		}
+		item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
 		list = append(list, item)
 	}
 	return list, rows.Err()
