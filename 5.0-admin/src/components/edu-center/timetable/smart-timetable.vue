@@ -6,7 +6,7 @@ import SmartTimetableConflictModal from './smart-timetable-conflict-modal.vue'
 import SmartTimetableDragConfirmModal from './smart-timetable-drag-confirm-modal.vue'
 import SmartTimetableDragConflictModal from './smart-timetable-drag-conflict-modal.vue'
 import SmartTimetableGrid from './smart-timetable-grid.vue'
-import SmartTimetableScheduledDetailModal from './smart-timetable-scheduled-detail-modal.vue'
+import SmartTimetableScheduleDetailDrawer from './smart-timetable-schedule-detail-drawer.vue'
 import SmartTimetableToolbar from './smart-timetable-toolbar.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import TimetableScheduleSummary from './timetable-schedule-summary.vue'
@@ -3693,11 +3693,8 @@ watch(dragConflictDetailOpen, (open) => {
       </div>
     </div>
 
-    <SmartTimetableScheduledDetailModal
+    <SmartTimetableScheduleDetailDrawer
       v-model:open="scheduledLessonDetailOpen"
-      :detail="scheduledLessonDetailState"
-      :deleting="deletingScheduledLesson"
-      @confirm="deleteScheduledLessonFromDetail"
     />
 
     <ScheduleConflictModal
