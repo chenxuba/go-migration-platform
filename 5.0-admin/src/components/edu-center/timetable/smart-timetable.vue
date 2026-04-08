@@ -13,7 +13,7 @@ import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, createOneToOneSchedulesApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, createOneToOneSchedulesApi, downloadSmartTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useSmartTimetableAvailability } from '@/composables/useSmartTimetableAvailability'
 import { useSmartTimetableClassMode } from '@/composables/useSmartTimetableClassMode'
@@ -73,6 +73,7 @@ const displayedGroupKey = ref('A')
 const timetableRootRef = ref(null)
 const allFilterRef = ref(null)
 const classId = ref(null)
+const exportLoading = ref(false)
 const filterStudentId = ref(undefined)
 const filterTeacherId = ref([])
 const filterClassroomId = ref([])
@@ -474,6 +475,78 @@ function handleNext() {
 
 function handleThisWeek() {
   currentWeek.value = dayjs()
+}
+
+function parseAttachmentFilenameFromHeader(cd) {
+  if (!cd)
+    return undefined
+  const star = /filename\*=(?:UTF-8'')?([^;\n]+)/i.exec(cd)
+  if (star?.[1]) {
+    const raw = star[1].trim().replace(/^["']|["']$/g, '')
+    try {
+      return decodeURIComponent(raw.replace(/\+/g, ' '))
+    }
+    catch {
+      return raw
+    }
+  }
+  const quoted = /filename="([^"]*)"/i.exec(cd)
+  return quoted?.[1] || undefined
+}
+
+async function exportSmartTimetable() {
+  exportLoading.value = true
+  try {
+    const { startDate, endDate } = queryDateRange.value
+    const scheduleTeacherIds = filterTeacherId.value.join(',')
+    const classroomIds = filterClassroomId.value.join(',')
+    const res = await downloadSmartTimetableExcelApi({
+      startDate,
+      endDate,
+      viewMode: currentTime.value,
+      studentId: filterStudentId.value,
+      scheduleTeacherIds: scheduleTeacherIds || undefined,
+      classroomIds: classroomIds || undefined,
+      groupClassIds: filterClassId.value ? String(filterClassId.value) : undefined,
+      oneToOneClassIds: filterOneToOneId.value ? String(filterOneToOneId.value) : undefined,
+      lessonIds: filterCourseId.value ? String(filterCourseId.value) : undefined,
+      scheduleTypes: filterScheduleType.value.length ? filterScheduleType.value.join(',') : undefined,
+      callStatuses: filterCallStatus.value ? String(filterCallStatus.value) : undefined,
+      ...teacherMatrixGroupParamsForKey(currentGroup.value),
+    })
+    const ct = String(res.headers['content-type'] || '')
+    if (ct.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const j = JSON.parse(text)
+        messageService.error(j.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: ct || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const cd = res.headers['content-disposition']
+    const filename = parseAttachmentFilenameFromHeader(cd)
+      || `智慧课表_${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    messageService.success('已导出课表')
+  }
+  catch (error) {
+    console.error('export smart timetable failed', error)
+    messageService.error('导出失败')
+  }
+  finally {
+    exportLoading.value = false
+  }
 }
 
 // 创建一个方法 用于格式化时间xx月-xx日
@@ -1395,6 +1468,15 @@ function setFocusedScheduleCell(key) {
   }
 }
 
+function closeConflictModalsByFlags(flags = {}) {
+  if (flags.closeScheduledConflictModal)
+    scheduledConflictDetailOpen.value = false
+  if (flags.closeConflictDetailModal)
+    conflictDetailModalOpen.value = false
+  if (flags.closeDragConflictModal)
+    dragConflictDetailOpen.value = false
+}
+
 async function focusScheduleCell(key) {
   await nextTick()
   const root = timetableRootRef.value
@@ -1421,6 +1503,7 @@ async function flushPendingConflictJump() {
   const found = await focusScheduleCell(pending.cellKey)
   if (found) {
     pendingConflictJump = null
+    closeConflictModalsByFlags(pending)
     messageService.success('已定位到冲突课程')
     return
   }
@@ -1450,39 +1533,41 @@ async function flushPendingConflictJump() {
   }
 }
 
+function buildConflictJumpItem(item, index = 0, fallbackConflictTypes = ['时间']) {
+  const groupInfo = resolveConflictScheduleGroupInfo(item)
+  const timeRange = parseConflictTimeRange(item?.timeText)
+  const conflictTypes = Array.isArray(item?.conflictTypes) && item.conflictTypes.length ? item.conflictTypes : fallbackConflictTypes
+  const jumpGroupKey = groupInfo.keys.includes(currentGroup.value)
+    ? currentGroup.value
+    : groupInfo.keys[0] || ''
+  return {
+    key: `${item?.teacherId || item?.teacherName || 'teacher'}-${item?.date}-${item?.timeText}-${index}`,
+    name: item?.name || '-',
+    classTypeText: item?.classTypeText || '日程',
+    date: item?.date,
+    week: item?.week || '',
+    timeText: item?.timeText,
+    teacherId: item?.teacherId || '',
+    teacherName: item?.teacherName || '-',
+    groupLabel: groupInfo.labels.join('/') || '未知组别',
+    classroomName: item?.classroomName || '-',
+    assistantText: (item?.assistantNames || []).join('、') || '-',
+    studentText: (item?.studentNames || []).join('、') || '-',
+    conflictTypes,
+    hasTeacherConflict: conflictTypes.includes('老师'),
+    hasAssistantConflict: conflictTypes.includes('助教'),
+    hasStudentConflict: conflictTypes.includes('学员'),
+    hasClassroomConflict: conflictTypes.includes('教室'),
+    jumpCellKey: timeRange && item?.teacherId
+      ? buildAvailabilitySlotKey(item.teacherId, item.date, timeRange.startTime, timeRange.endTime)
+      : '',
+    jumpGroupKey,
+  }
+}
+
 function buildConflictDetailItems(reason, fallbackConflictTypes = ['时间']) {
   const existingSchedules = Array.isArray(reason?.existingSchedules) ? reason.existingSchedules : []
-  return existingSchedules.map((item, index) => {
-    const groupInfo = resolveConflictScheduleGroupInfo(item)
-    const timeRange = parseConflictTimeRange(item.timeText)
-    const conflictTypes = Array.isArray(item.conflictTypes) && item.conflictTypes.length ? item.conflictTypes : fallbackConflictTypes
-    const jumpGroupKey = groupInfo.keys.includes(currentGroup.value)
-      ? currentGroup.value
-      : groupInfo.keys[0] || ''
-    return {
-      key: `${item.teacherId || item.teacherName || 'teacher'}-${item.date}-${item.timeText}-${index}`,
-      name: item.name || '-',
-      classTypeText: item.classTypeText || '日程',
-      date: item.date,
-      week: item.week || '',
-      timeText: item.timeText,
-      teacherId: item.teacherId || '',
-      teacherName: item.teacherName || '-',
-      groupLabel: groupInfo.labels.join('/') || '未知组别',
-      classroomName: item.classroomName || '-',
-      assistantText: (item.assistantNames || []).join('、') || '-',
-      studentText: (item.studentNames || []).join('、') || '-',
-      conflictTypes,
-      hasTeacherConflict: conflictTypes.includes('老师'),
-      hasAssistantConflict: conflictTypes.includes('助教'),
-      hasStudentConflict: conflictTypes.includes('学员'),
-      hasClassroomConflict: conflictTypes.includes('教室'),
-      jumpCellKey: timeRange && item.teacherId
-        ? buildAvailabilitySlotKey(item.teacherId, item.date, timeRange.startTime, timeRange.endTime)
-        : '',
-      jumpGroupKey,
-    }
-  })
+  return existingSchedules.map((item, index) => buildConflictJumpItem(item, index, fallbackConflictTypes))
 }
 
 function openConflictDetailModalWithAttempt(reason, attempted) {
@@ -1628,11 +1713,14 @@ async function jumpToConflictSchedule(item) {
     return
   }
 
-  conflictDetailModalOpen.value = false
-  dragConflictDetailOpen.value = false
   const jumpTeacherId = String(item.teacherId || '').trim()
   const jumpTeacherName = String(item.teacherName || '').trim()
   const teacherFilterMissing = jumpTeacherId && !filterTeacherId.value.includes(jumpTeacherId)
+  const modalFlags = {
+    closeScheduledConflictModal: scheduledConflictDetailOpen.value,
+    closeConflictDetailModal: conflictDetailModalOpen.value,
+    closeDragConflictModal: dragConflictDetailOpen.value,
+  }
   let needReload = false
   if (item.jumpGroupKey && item.jumpGroupKey !== currentGroup.value) {
     currentGroup.value = item.jumpGroupKey
@@ -1659,12 +1747,14 @@ async function jumpToConflictSchedule(item) {
   if (!needReload) {
     const found = await focusScheduleCell(item.jumpCellKey)
     if (found) {
+      closeConflictModalsByFlags(modalFlags)
       messageService.success('已定位到冲突课程')
       return
     }
   }
 
   pendingConflictJump = {
+    ...modalFlags,
     cellKey: item.jumpCellKey,
     teacherId: jumpTeacherId,
     teacherName: jumpTeacherName,
@@ -1672,6 +1762,10 @@ async function jumpToConflictSchedule(item) {
     teacherFilterExpanded: false,
   }
   await loadTimetableMatrix()
+}
+
+async function jumpToScheduledConflictSchedule(item) {
+  await jumpToConflictSchedule(buildConflictJumpItem(item, 0))
 }
 
 function resolveConflictAttemptTarget() {
@@ -3288,6 +3382,8 @@ watch(dragConflictDetailOpen, (open) => {
       :on-prev="handlePrev"
       :on-next="handleNext"
       :on-this-week="handleThisWeek"
+      :on-export="exportSmartTimetable"
+      :export-loading="exportLoading"
     />
     <SmartTimetableGrid
       :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule || updatingDraggedSchedule"
@@ -3346,6 +3442,7 @@ watch(dragConflictDetailOpen, (open) => {
       current-title="当前冲突日程"
       existing-title="与其冲突的日程"
       fallback-message="当前日程与已有日程存在冲突"
+      @jump="jumpToScheduledConflictSchedule"
     />
 
     <SmartTimetableConflictModal

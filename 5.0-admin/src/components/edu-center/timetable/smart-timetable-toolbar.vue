@@ -93,6 +93,14 @@ const props = defineProps({
     type: Function,
     required: true,
   },
+  onExport: {
+    type: Function,
+    required: true,
+  },
+  exportLoading: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits([
@@ -317,7 +325,9 @@ const isCurrentRange = computed(() => {
         </a-radio-group>
         <a-space>
           <CreateSchedulePopover />
-          <a-button>导出课表</a-button>
+          <a-button :loading="exportLoading" @click="onExport">
+            导出课表
+          </a-button>
         </a-space>
       </div>
     </div>

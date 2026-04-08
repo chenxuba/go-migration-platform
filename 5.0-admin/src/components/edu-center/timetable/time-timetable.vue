@@ -10,7 +10,7 @@ import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { getTeachingScheduleConflictDetailApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { downloadTimeTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
@@ -358,6 +358,7 @@ const timeOptions = [
 const currentTime = ref('week')
 const currentDate = ref(dayjs())
 const now = ref(dayjs())
+const exportLoading = ref(false)
 const scheduleLoading = ref(false)
 const scheduleRows = ref([])
 const scheduleEditOpen = ref(false)
@@ -367,10 +368,13 @@ const currentBatchPlanSchedule = ref(null)
 const scheduleConflictOpen = ref(false)
 const scheduleConflictValidation = ref(null)
 const scheduleConflictLoading = ref(false)
+const focusedScheduleId = ref('')
 const headerScrollRef = ref(null)
 const boardScrollRef = ref(null)
 let syncingScroll = false
 let scheduleLoadSeq = 0
+let focusedScheduleTimer = null
+let pendingConflictJump = null
 
 /** 与教师矩阵课表一致：日期条横向滚动时「钉」在可视区中心的浮动芯片 */
 const timeHeaderTimeColWidth = 84
@@ -440,6 +444,10 @@ onUnmounted(() => {
     clearInterval(nowTimer)
     nowTimer = null
   }
+  if (focusedScheduleTimer) {
+    clearTimeout(focusedScheduleTimer)
+    focusedScheduleTimer = null
+  }
   emitter.off(EVENTS.REFRESH_DATA, loadSchedules)
   if (headerDatesResizeObserver) {
     headerDatesResizeObserver.disconnect()
@@ -484,6 +492,76 @@ function handleNext() {
 
 function handleGoThisWeek() {
   currentDate.value = dayjs()
+}
+
+function parseAttachmentFilenameFromHeader(cd) {
+  if (!cd)
+    return undefined
+  const star = /filename\*=(?:UTF-8'')?([^;\n]+)/i.exec(cd)
+  if (star?.[1]) {
+    const raw = star[1].trim().replace(/^["']|["']$/g, '')
+    try {
+      return decodeURIComponent(raw.replace(/\+/g, ' '))
+    }
+    catch {
+      return raw
+    }
+  }
+  const quoted = /filename="([^"]*)"/i.exec(cd)
+  return quoted?.[1] || undefined
+}
+
+async function exportTimeTimetable() {
+  exportLoading.value = true
+  try {
+    const scheduleTeacherIds = filterTeacherId.value.join(',')
+    const classroomIds = filterClassroomId.value.join(',')
+    const res = await downloadTimeTimetableExcelApi({
+      startDate: queryDateRange.value.startDate,
+      endDate: queryDateRange.value.endDate,
+      classType: 2,
+      studentId: filterStudentId.value,
+      scheduleTeacherIds: scheduleTeacherIds || undefined,
+      classroomIds: classroomIds || undefined,
+      groupClassIds: filterClassId.value ? String(filterClassId.value) : undefined,
+      oneToOneClassIds: filterOneToOneId.value ? String(filterOneToOneId.value) : undefined,
+      lessonIds: filterCourseId.value ? String(filterCourseId.value) : undefined,
+      scheduleTypes: filterScheduleType.value.length ? filterScheduleType.value.join(',') : undefined,
+      callStatuses: filterCallStatus.value ? String(filterCallStatus.value) : undefined,
+    })
+    const ct = String(res.headers['content-type'] || '')
+    if (ct.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const j = JSON.parse(text)
+        messageService.error(j.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: ct || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const cd = res.headers['content-disposition']
+    const filename = parseAttachmentFilenameFromHeader(cd)
+      || `时间课表明细_${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    messageService.success('已导出课表')
+  }
+  catch (error) {
+    console.error('export time timetable failed', error)
+    messageService.error('导出失败')
+  }
+  finally {
+    exportLoading.value = false
+  }
 }
 
 const isViewingTodayOrThisWeek = computed(() => {
@@ -570,6 +648,7 @@ async function loadSchedules() {
       scheduleLoading.value = false
       await nextTick()
       updateFloatingDatePositions(boardScrollRef.value?.scrollLeft ?? headerScrollRef.value?.scrollLeft ?? 0)
+      await flushPendingConflictJump()
     }
   }
 }
@@ -899,7 +978,124 @@ function eventClass(item) {
     'schedule-event--unsigned': item.status === 'unsigned',
     'schedule-event--signed': item.status === 'signed',
     'schedule-event--conflict': item.conflict,
+    'schedule-event--focused': focusedScheduleId.value === String(item.id),
   }
+}
+
+function parseConflictTimeRange(timeText) {
+  const matched = String(timeText || '').trim().match(/(\d{2}:\d{2})\s*[~-]\s*(\d{2}:\d{2})/)
+  if (!matched)
+    return null
+  return {
+    startTime: matched[1],
+    endTime: matched[2],
+  }
+}
+
+function setFocusedSchedule(id) {
+  focusedScheduleId.value = id ? String(id) : ''
+  if (focusedScheduleTimer)
+    clearTimeout(focusedScheduleTimer)
+  if (focusedScheduleId.value) {
+    focusedScheduleTimer = window.setTimeout(() => {
+      if (focusedScheduleId.value === String(id))
+        focusedScheduleId.value = ''
+    }, 3000)
+  }
+}
+
+function closeScheduleConflictModalIfOpen(shouldClose) {
+  if (shouldClose)
+    scheduleConflictOpen.value = false
+}
+
+async function focusScheduleEvent(scheduleId) {
+  await nextTick()
+  const root = boardScrollRef.value
+  const targetId = String(scheduleId || '').trim()
+  if (!root || !targetId)
+    return false
+  const eventNode = Array.from(root.querySelectorAll('[data-schedule-event-id]')).find(
+    el => el.getAttribute('data-schedule-event-id') === targetId,
+  )
+  if (!eventNode)
+    return false
+  eventNode.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+    inline: 'center',
+  })
+  setFocusedSchedule(targetId)
+  return true
+}
+
+function buildConflictJumpLocator(item) {
+  const timeRange = parseConflictTimeRange(item?.timeText)
+  return {
+    date: String(item?.date || '').trim(),
+    teacherId: String(item?.teacherId || '').trim(),
+    teacherName: String(item?.teacherName || '').trim(),
+    startTime: timeRange?.startTime || '',
+    endTime: timeRange?.endTime || '',
+  }
+}
+
+function findScheduleForLocator(locator) {
+  const targetDate = String(locator?.date || '').trim()
+  const targetTeacherId = String(locator?.teacherId || '').trim()
+  const targetTeacherName = String(locator?.teacherName || '').trim()
+  const targetStartTime = String(locator?.startTime || '').trim()
+  const targetEndTime = String(locator?.endTime || '').trim()
+  return mockSchedules.value.find((item) => {
+    const raw = item?.raw || {}
+    const matchesDate = item.dateKey === targetDate
+    const matchesTime = item.startAt?.format('HH:mm') === targetStartTime
+      && item.endAt?.format('HH:mm') === targetEndTime
+    const rawTeacherId = String(raw.teacherId || '').trim()
+    const rawTeacherName = String(raw.teacherName || '').trim()
+    const matchesTeacher = (targetTeacherId && rawTeacherId === targetTeacherId)
+      || (!targetTeacherId && targetTeacherName && rawTeacherName === targetTeacherName)
+      || (!targetTeacherId && !targetTeacherName)
+    return matchesDate && matchesTime && matchesTeacher
+  }) || null
+}
+
+async function flushPendingConflictJump() {
+  if (!pendingConflictJump?.locator)
+    return
+
+  const pending = pendingConflictJump
+  const matched = findScheduleForLocator(pending.locator)
+  if (matched?.id) {
+    const found = await focusScheduleEvent(matched.id)
+    if (found) {
+      pendingConflictJump = null
+      closeScheduleConflictModalIfOpen(pending.closeScheduleConflictModal)
+      messageService.success('已定位到冲突课程')
+      return
+    }
+  }
+
+  if (pending.allowAppendTeacherFilter && !pending.teacherFilterExpanded) {
+    const teacherId = String(pending.locator?.teacherId || '').trim()
+    const teacherName = String(pending.locator?.teacherName || '').trim()
+    if (teacherId && !filterTeacherId.value.includes(teacherId)) {
+      const nextTeacherIds = [...filterTeacherId.value, teacherId]
+      scheduleTeacherOptions.value = mergeFilterOptions(scheduleTeacherOptions.value, [{
+        id: teacherId,
+        value: teacherName || teacherId,
+      }], nextTeacherIds)
+      filterTeacherId.value = nextTeacherIds
+      pendingConflictJump = {
+        ...pending,
+        teacherFilterExpanded: true,
+      }
+      return
+    }
+  }
+
+  pendingConflictJump = null
+  messageService.warning('未定位到课程，请检查筛选条件或日期范围')
 }
 
 async function openEventConflictDetail(event) {
@@ -923,6 +1119,51 @@ async function openEventConflictDetail(event) {
   finally {
     scheduleConflictLoading.value = false
   }
+}
+
+async function jumpToConflictSchedule(item) {
+  const locator = buildConflictJumpLocator(item)
+  if (!locator.date || !locator.startTime || !locator.endTime) {
+    messageService.warning('当前冲突课程暂不支持定位')
+    return
+  }
+
+  const teacherFilterMissing = locator.teacherId && !filterTeacherId.value.includes(locator.teacherId)
+  const closeScheduleConflictModal = scheduleConflictOpen.value
+  let needReload = false
+  if (currentTime.value === 'day') {
+    if (dayjs(currentDate.value).format('YYYY-MM-DD') !== locator.date) {
+      currentDate.value = dayjs(locator.date)
+      needReload = true
+    }
+  }
+  else {
+    const { startDate, endDate } = queryDateRange.value
+    if (locator.date < startDate || locator.date > endDate) {
+      currentDate.value = dayjs(locator.date)
+      needReload = true
+    }
+  }
+
+  if (!needReload) {
+    const matched = findScheduleForLocator(locator)
+    if (matched?.id) {
+      const found = await focusScheduleEvent(matched.id)
+      if (found) {
+        closeScheduleConflictModalIfOpen(closeScheduleConflictModal)
+        messageService.success('已定位到冲突课程')
+        return
+      }
+    }
+  }
+
+  pendingConflictJump = {
+    closeScheduleConflictModal,
+    locator,
+    allowAppendTeacherFilter: Boolean(teacherFilterMissing),
+    teacherFilterExpanded: false,
+  }
+  await loadSchedules()
 }
 
 function openScheduleEdit(item) {
@@ -1169,7 +1410,9 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 
           <a-space>
             <CreateSchedulePopover />
-            <a-button>导出课表</a-button>
+            <a-button :loading="exportLoading" @click="exportTimeTimetable">
+              导出课表
+            </a-button>
           </a-space>
         </div>
       </div>
@@ -1361,6 +1604,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                     :key="event.id"
                     :class="eventClass(event)"
                     :style="eventStyle(event)"
+                    :data-schedule-event-id="String(event.id)"
                     @click="openScheduleEdit(event)"
                   >
                     <div class="schedule-event__top">
@@ -1430,6 +1674,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
       current-title="当前冲突日程"
       existing-title="与其冲突的日程"
       fallback-message="当前日程与已有日程存在冲突"
+      @jump="jumpToConflictSchedule"
     />
   </div>
 </template>
@@ -2022,6 +2267,10 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 
 .schedule-event--conflict {
   box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.4);
+}
+
+.schedule-event--focused {
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.45), 0 14px 28px rgba(22, 119, 255, 0.2);
 }
 
 .schedule-event__top {

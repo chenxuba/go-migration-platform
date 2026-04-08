@@ -358,6 +358,61 @@ export async function downloadTeachingSchedulesTeacherMatrixExcelApi(params: {
   })
 }
 
+export async function downloadSmartTimetableExcelApi(params: {
+  startDate: string
+  endDate: string
+  viewMode?: 'day' | 'week' | 'swapWeek'
+  classType?: number
+  studentId?: string
+  scheduleTeacherIds?: string
+  classroomIds?: string
+  groupClassIds?: string
+  oneToOneClassIds?: string
+  lessonIds?: string
+  scheduleTypes?: string
+  callStatuses?: string
+  weekdays?: string
+  teacherFilter?: Exclude<MatrixTeacherFilterParam, 'all'>
+  periodGroupUuid?: string
+  matrixTeacherIds?: string
+}) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/teaching-schedules/smart/export', {
+    params,
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
+export async function downloadTimeTimetableExcelApi(params: {
+  startDate: string
+  endDate: string
+  classType?: number
+  studentId?: string
+  scheduleTeacherIds?: string
+  classroomIds?: string
+  groupClassIds?: string
+  oneToOneClassIds?: string
+  lessonIds?: string
+  scheduleTypes?: string
+  callStatuses?: string
+}) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/teaching-schedules/time/export', {
+    params,
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 export function batchUpdateTeachingSchedulesApi(data: {
   batchNo?: string
   ids?: string[]

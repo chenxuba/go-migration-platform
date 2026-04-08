@@ -331,6 +331,51 @@ func (handler *Handler) teachingSchedulesTeacherMatrixExport(w http.ResponseWrit
 	_, _ = w.Write(buf)
 }
 
+func (handler *Handler) smartTeachingSchedulesExport(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query := parseTeacherMatrixQuery(r)
+	viewMode := strings.TrimSpace(r.URL.Query().Get("viewMode"))
+	buf, filename, err := handler.service.ExportSmartTimetableExcel(claims.UserID, query, viewMode)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf)
+}
+
+func (handler *Handler) timeTeachingSchedulesExport(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query := parseTeachingScheduleListQuery(r)
+	buf, filename, err := handler.service.ExportTimeTimetableExcel(claims.UserID, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf)
+}
+
 func (handler *Handler) clearAllTeachingSchedules(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

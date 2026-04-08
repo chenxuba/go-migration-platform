@@ -128,6 +128,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/group-classes/statistics", handler.groupClassStatistics)
 	mux.HandleFunc("/api/v1/group-classes/students-by-class-ids", handler.listGroupClassStudentsByClassIDs)
 	mux.HandleFunc("/api/v1/group-classes/batch-assign-students", handler.batchAssignGroupClassStudents)
+	mux.HandleFunc("/api/v1/teaching-schedules/smart/export", handler.smartTeachingSchedulesExport)
+	mux.HandleFunc("/api/v1/teaching-schedules/time/export", handler.timeTeachingSchedulesExport)
 	mux.HandleFunc("/api/v1/teaching-schedules/by-teacher-matrix/export", handler.teachingSchedulesTeacherMatrixExport)
 	mux.HandleFunc("/api/v1/teaching-schedules/by-teacher-matrix", handler.teachingSchedulesByTeacherMatrix)
 	mux.HandleFunc("/api/v1/teaching-schedules/clear-all", handler.clearAllTeachingSchedules)

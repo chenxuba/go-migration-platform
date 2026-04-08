@@ -2,6 +2,8 @@
 import { CloseOutlined, ExclamationCircleFilled } from '@ant-design/icons-vue'
 import type { TeachingScheduleValidationResult } from '@/api/edu-center/teaching-schedule'
 
+type ConflictScheduleItem = NonNullable<TeachingScheduleValidationResult['existingSchedules']>[number]
+
 const props = defineProps<{
   open: boolean
   validation?: TeachingScheduleValidationResult | null
@@ -13,6 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
+  (e: 'jump', item: ConflictScheduleItem): void
 }>()
 
 const modalOpen = computed({
@@ -25,6 +28,10 @@ const existingSchedules = computed(() => props.validation?.existingSchedules || 
 
 function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
   return (item.conflictTypes || []).includes(type)
+}
+
+function canJumpToItem(item: ConflictScheduleItem) {
+  return Boolean(String(item?.date || '').trim() && String(item?.timeText || '').trim())
 }
 </script>
 
@@ -62,18 +69,19 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
           {{ props.currentTitle || '当前冲突日程' }}
         </div>
         <div class="schedule-conflict__table">
-          <div class="schedule-conflict__head">
+          <div class="schedule-conflict__head schedule-conflict__head--with-action">
             <span>日程名称</span>
             <span>日程类型</span>
             <span>上课时间</span>
             <span>上课教师</span>
             <span>上课教室</span>
             <span>冲突类型</span>
+            <span class="schedule-conflict__action-head">操作</span>
           </div>
           <div
             v-for="(item, index) in currentSchedules"
             :key="`${item.date}-${item.timeText}-${index}`"
-            class="schedule-conflict__row"
+            class="schedule-conflict__row schedule-conflict__row--with-action"
           >
             <span>{{ item.name }}</span>
             <span>{{ item.classTypeText }}</span>
@@ -98,6 +106,7 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
                 {{ tag }}冲突
               </a-tag>
             </span>
+            <span class="schedule-conflict__action-cell">-</span>
           </div>
         </div>
       </section>
@@ -107,18 +116,19 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
           {{ props.existingTitle || '与其冲突的日程' }}
         </div>
         <div class="schedule-conflict__table">
-          <div class="schedule-conflict__head">
+          <div class="schedule-conflict__head schedule-conflict__head--with-action">
             <span>日程名称</span>
             <span>日程类型</span>
             <span>上课时间</span>
             <span>上课教师</span>
             <span>上课教室</span>
             <span>冲突学员</span>
+            <span class="schedule-conflict__action-head">操作</span>
           </div>
           <div
             v-for="(item, index) in existingSchedules"
             :key="`${item.date}-${item.timeText}-${index}`"
-            class="schedule-conflict__row"
+            class="schedule-conflict__row schedule-conflict__row--with-action"
           >
             <span>{{ item.name }}</span>
             <span>{{ item.classTypeText }}</span>
@@ -138,6 +148,20 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
                 'schedule-conflict__cell--danger': hasConflictType(item, '学员'),
               }"
             >{{ (item.studentNames || []).join('、') || '-' }}</span>
+            <span class="schedule-conflict__action-cell">
+              <a-button
+                v-if="canJumpToItem(item)"
+                type="primary"
+                ghost
+                class="schedule-conflict__jump"
+                @click.stop="emit('jump', item)"
+              >
+                定位到课程
+              </a-button>
+              <template v-else>
+                -
+              </template>
+            </span>
           </div>
         </div>
       </section>
@@ -227,6 +251,11 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
   line-height: 1.6;
 }
 
+.schedule-conflict__head--with-action,
+.schedule-conflict__row--with-action {
+  grid-template-columns: 1.4fr 1fr 1.5fr 1fr 1fr 1fr 156px;
+}
+
 .schedule-conflict__cell--danger {
   color: #ff4d4f;
   font-weight: 700;
@@ -238,6 +267,38 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
   gap: 8px;
 }
 
+.schedule-conflict__action-head,
+.schedule-conflict__action-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.schedule-conflict__jump {
+  width: 102px;
+  min-width: 102px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 400;
+  flex: 0 0 auto;
+}
+
+.schedule-conflict__action-cell :deep(.ant-btn.schedule-conflict__jump) {
+  width: 102px;
+  min-width: 102px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.schedule-conflict__jump:disabled {
+  opacity: 0.5;
+}
+
 @media (max-width: 1200px) {
   .schedule-conflict__table {
     overflow-x: auto;
@@ -246,6 +307,11 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
   .schedule-conflict__head,
   .schedule-conflict__row {
     min-width: 960px;
+  }
+
+  .schedule-conflict__head--with-action,
+  .schedule-conflict__row--with-action {
+    min-width: 1116px;
   }
 }
 </style>
