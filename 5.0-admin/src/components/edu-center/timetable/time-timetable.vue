@@ -1477,7 +1477,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 
 .toolbar-date-range {
   display: inline-block;
-  min-width: 280px;
+  min-width: 240px;
   text-align: center;
 }
 
