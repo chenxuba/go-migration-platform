@@ -5,11 +5,18 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"go-migration-platform/pkg/qiniux"
 	"go-migration-platform/services/education/internal/model"
 	"go-migration-platform/services/education/internal/repository"
 )
+
+type InstConfigUpdateResult struct {
+	Success            bool   `json:"success"`
+	PeriodWeekStart    string `json:"periodWeekStart,omitempty"`
+	PeriodAppliedToday bool   `json:"periodAppliedToday,omitempty"`
+}
 
 func (svc *Service) GetQiniuUploadToken() (qiniux.TokenVO, error) {
 	if svc.qiniuClient == nil {
@@ -25,7 +32,7 @@ func (svc *Service) GetQiniuVideoUploadToken() (qiniux.TokenVO, error) {
 	return svc.qiniuClient.VideoUploadToken()
 }
 
-func (svc *Service) GetInstConfig(userID int64) (map[string]any, error) {
+func (svc *Service) GetInstConfig(userID int64, effectiveDate *time.Time) (map[string]any, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -48,14 +55,14 @@ func (svc *Service) GetInstConfig(userID int64) (map[string]any, error) {
 			return nil, err
 		}
 	}
-	if err := svc.mergeInstPeriodConfigIntoMap(ctx, instID, config); err != nil {
+	if err := svc.mergeInstPeriodConfigIntoMap(ctx, instID, config, effectiveDate); err != nil {
 		return nil, err
 	}
 	return config, nil
 }
 
 // mergeInstPeriodConfigIntoMap 主存储为 inst_period_* 表；首次从 legacy unifiedTimePeriodJson 自动迁移并清空列。
-func (svc *Service) mergeInstPeriodConfigIntoMap(ctx context.Context, instID int64, config map[string]any) error {
+func (svc *Service) mergeInstPeriodConfigIntoMap(ctx context.Context, instID int64, config map[string]any, effectiveDate *time.Time) error {
 	n, err := svc.repo.CountInstPeriodGroups(ctx, instID)
 	if err != nil {
 		return err
@@ -71,7 +78,12 @@ func (svc *Service) mergeInstPeriodConfigIntoMap(ctx context.Context, instID int
 			}
 		}
 	}
-	built, err := svc.repo.GetInstPeriodConfigJSON(ctx, instID)
+	var built map[string]any
+	if effectiveDate != nil {
+		built, err = svc.repo.GetInstPeriodConfigJSONForDate(ctx, instID, *effectiveDate)
+	} else {
+		built, err = svc.repo.GetInstPeriodConfigJSON(ctx, instID)
+	}
 	if err != nil {
 		return err
 	}
@@ -81,39 +93,49 @@ func (svc *Service) mergeInstPeriodConfigIntoMap(ctx context.Context, instID int
 	return nil
 }
 
-func (svc *Service) SetInstConfig(userID int64, payload map[string]any) error {
+func (svc *Service) SetInstConfig(userID int64, payload map[string]any) (InstConfigUpdateResult, error) {
+	result := InstConfigUpdateResult{Success: true}
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return errors.New("no institution context")
+			return result, errors.New("no institution context")
 		}
-		return err
+		return result, err
 	}
 
 	ctx := context.Background()
 	config, err := svc.repo.GetInstConfig(ctx, instID)
 	if err != nil {
-		return err
+		return result, err
 	}
 	if len(config) == 0 {
 		if err := svc.repo.CreateDefaultInstConfig(ctx, instID); err != nil {
-			return err
+			return result, err
 		}
 	}
 	if raw, ok := payload["unifiedTimePeriodJson"]; ok {
 		periodPayload, err := repository.ParseUnifiedPeriodPayloadFromAny(raw)
 		if err != nil {
-			return err
+			return result, err
+		}
+		effectiveWeekStart, appliedToday, err := svc.repo.ResolveInstPeriodEffectiveWeekStart(ctx, instID, time.Now())
+		if err != nil {
+			return result, err
 		}
 		if err := svc.repo.ReplaceInstPeriodConfig(ctx, instID, periodPayload); err != nil {
-			return err
+			return result, err
+		}
+		if err := svc.repo.UpsertInstPeriodConfigVersion(ctx, instID, effectiveWeekStart, periodPayload); err != nil {
+			return result, err
 		}
 		delete(payload, "unifiedTimePeriodJson")
 		if err := svc.repo.ClearInstConfigLegacyUnifiedPeriodJSON(ctx, instID); err != nil {
-			return err
+			return result, err
 		}
+		result.PeriodWeekStart = effectiveWeekStart.Format("2006-01-02")
+		result.PeriodAppliedToday = appliedToday
 	}
-	return svc.repo.UpdateInstConfig(ctx, instID, payload)
+	return result, svc.repo.UpdateInstConfig(ctx, instID, payload)
 }
 
 func (svc *Service) InitInstAllConfig(instID int64) error {

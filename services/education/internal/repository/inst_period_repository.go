@@ -60,15 +60,30 @@ func EnsureInstPeriodTables(ctx context.Context, db *sql.DB) error {
 			CONSTRAINT fk_inst_period_group_teacher_group FOREIGN KEY (group_id) REFERENCES inst_period_group (id) ON DELETE CASCADE
 		)
 	`)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS inst_period_config_version (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			inst_id BIGINT NOT NULL,
+			effective_week_start DATE NOT NULL,
+			payload_json LONGTEXT NOT NULL,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			UNIQUE KEY uk_inst_period_cfg_version_week (inst_id, effective_week_start),
+			KEY idx_inst_period_cfg_version_inst_week (inst_id, effective_week_start)
+		)
+	`)
 	return err
 }
 
 type instPeriodGroupJSON struct {
-	ID              string                    `json:"id"`
-	Name            string                    `json:"name"`
-	Sort            int                       `json:"sort"`
-	Slots           []instPeriodSlotJSON      `json:"slots"`
-	BoundTeachers   []instPeriodBoundTeacherJSON `json:"boundTeachers"`
+	ID            string                       `json:"id"`
+	Name          string                       `json:"name"`
+	Sort          int                          `json:"sort"`
+	Slots         []instPeriodSlotJSON         `json:"slots"`
+	BoundTeachers []instPeriodBoundTeacherJSON `json:"boundTeachers"`
 }
 
 type instPeriodSlotJSON struct {
@@ -84,9 +99,11 @@ type instPeriodBoundTeacherJSON struct {
 }
 
 type instPeriodFilePayload struct {
-	Version int                 `json:"version"`
+	Version int                   `json:"version"`
 	Groups  []instPeriodGroupJSON `json:"groups"`
 }
+
+const instPeriodInitialEffectiveWeekStart = "2000-01-03"
 
 // CountInstPeriodGroups 该机构是否已有时段表数据
 func (repo *Repository) CountInstPeriodGroups(ctx context.Context, instID int64) (int, error) {
@@ -152,6 +169,10 @@ func (repo *Repository) ReplaceInstPeriodConfig(ctx context.Context, instID int6
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if err := validateBoundTeacherGroupsRetainedTx(ctx, tx, instID, payload); err != nil {
+		return err
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM inst_period_group_teacher WHERE group_id IN (
@@ -240,6 +261,56 @@ func (repo *Repository) ReplaceInstPeriodConfig(ctx context.Context, instID int6
 	return nil
 }
 
+type instPeriodExistingGroup struct {
+	GroupUUID    string
+	Name         string
+	TeacherCount int
+}
+
+func validateBoundTeacherGroupsRetainedTx(ctx context.Context, tx *sql.Tx, instID int64, payload *instPeriodFilePayload) error {
+	if payload == nil {
+		return errors.New("empty period config")
+	}
+	keep := make(map[string]struct{}, len(payload.Groups))
+	for _, group := range payload.Groups {
+		groupUUID := strings.TrimSpace(group.ID)
+		if groupUUID != "" {
+			keep[groupUUID] = struct{}{}
+		}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT g.group_uuid, g.name, COUNT(t.id) AS teacher_count
+		FROM inst_period_group g
+		LEFT JOIN inst_period_group_teacher t ON t.group_id = g.id
+		WHERE g.inst_id = ? AND g.del_flag = 0
+		GROUP BY g.id, g.group_uuid, g.name
+	`, instID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var group instPeriodExistingGroup
+		if err := rows.Scan(&group.GroupUUID, &group.Name, &group.TeacherCount); err != nil {
+			return err
+		}
+		if group.TeacherCount <= 0 {
+			continue
+		}
+		if _, ok := keep[strings.TrimSpace(group.GroupUUID)]; ok {
+			continue
+		}
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			name = "该时段组"
+		}
+		return fmt.Errorf("时段组「%s」已关联老师，不能删除，请先取消关联老师", name)
+	}
+	return rows.Err()
+}
+
 func normHHMM(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) >= 5 {
@@ -250,6 +321,107 @@ func normHHMM(s string) string {
 
 // GetInstPeriodConfigJSON 组装为与前端一致的 unifiedTimePeriodJson 对象（map）
 func (repo *Repository) GetInstPeriodConfigJSON(ctx context.Context, instID int64) (map[string]any, error) {
+	payload, err := repo.GetLatestInstPeriodPayload(ctx, instID)
+	if err != nil {
+		return nil, err
+	}
+	return instPeriodPayloadToMap(payload), nil
+}
+
+func (repo *Repository) GetInstPeriodConfigJSONForDate(ctx context.Context, instID int64, targetDate time.Time) (map[string]any, error) {
+	payload, err := repo.GetInstPeriodPayloadForDate(ctx, instID, targetDate)
+	if err != nil {
+		return nil, err
+	}
+	return instPeriodPayloadToMap(payload), nil
+}
+
+func (repo *Repository) GetLatestInstPeriodPayload(ctx context.Context, instID int64) (*instPeriodFilePayload, error) {
+	if err := repo.ensureInitialInstPeriodVersion(ctx, instID); err != nil {
+		return nil, err
+	}
+	return repo.loadInstPeriodPayloadBySQL(ctx, `
+		SELECT payload_json
+		FROM inst_period_config_version
+		WHERE inst_id = ?
+		ORDER BY effective_week_start DESC, id DESC
+		LIMIT 1
+	`, instID)
+}
+
+func (repo *Repository) GetInstPeriodPayloadForDate(ctx context.Context, instID int64, targetDate time.Time) (*instPeriodFilePayload, error) {
+	if err := repo.ensureInitialInstPeriodVersion(ctx, instID); err != nil {
+		return nil, err
+	}
+	weekStart := mondayOfInstPeriodWeek(targetDate).Format("2006-01-02")
+	payload, err := repo.loadInstPeriodPayloadBySQL(ctx, `
+		SELECT payload_json
+		FROM inst_period_config_version
+		WHERE inst_id = ? AND effective_week_start <= ?
+		ORDER BY effective_week_start DESC, id DESC
+		LIMIT 1
+	`, instID, weekStart)
+	if err != nil {
+		return nil, err
+	}
+	if payload != nil {
+		return payload, nil
+	}
+	return repo.GetLatestInstPeriodPayload(ctx, instID)
+}
+
+func (repo *Repository) UpsertInstPeriodConfigVersion(ctx context.Context, instID int64, effectiveWeekStart time.Time, payload *instPeriodFilePayload) error {
+	if instID <= 0 {
+		return errors.New("invalid instID")
+	}
+	if payload == nil {
+		return errors.New("empty period config")
+	}
+	if payload.Version <= 0 {
+		payload.Version = 1
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		INSERT INTO inst_period_config_version (inst_id, effective_week_start, payload_json)
+		VALUES (?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			payload_json = VALUES(payload_json),
+			update_time = CURRENT_TIMESTAMP
+	`, instID, mondayOfInstPeriodWeek(effectiveWeekStart).Format("2006-01-02"), string(blob))
+	return err
+}
+
+func (repo *Repository) ResolveInstPeriodEffectiveWeekStart(ctx context.Context, instID int64, now time.Time) (time.Time, bool, error) {
+	weekStart := mondayOfInstPeriodWeek(now)
+	weekEnd := weekStart.AddDate(0, 0, 6)
+	count, err := repo.CountActiveTeachingSchedulesInRange(ctx, instID, weekStart, weekEnd)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	if count == 0 {
+		return weekStart, true, nil
+	}
+	return weekStart.AddDate(0, 0, 7), false, nil
+}
+
+func (repo *Repository) CountActiveTeachingSchedulesInRange(ctx context.Context, instID int64, startDate, endDate time.Time) (int, error) {
+	var count int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND status = 1
+		  AND lesson_date >= ?
+		  AND lesson_date <= ?
+	`, instID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02")).Scan(&count)
+	return count, err
+}
+
+func (repo *Repository) getCurrentInstPeriodConfigJSONFromTables(ctx context.Context, instID int64) (map[string]any, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT id, group_uuid, name, sort_order
 		FROM inst_period_group
@@ -262,10 +434,10 @@ func (repo *Repository) GetInstPeriodConfigJSON(ctx context.Context, instID int6
 	defer rows.Close()
 
 	type grow struct {
-		dbID  int64
-		uuid  string
-		name  string
-		sort  int
+		dbID int64
+		uuid string
+		name string
+		sort int
 	}
 	var groups []grow
 	for rows.Next() {
@@ -393,6 +565,10 @@ func (repo *Repository) ListPeriodTeacherUserIDsByGroupUUID(ctx context.Context,
 	return out, rows.Err()
 }
 
+func (repo *Repository) ListPeriodTeacherUserIDsByGroupUUIDForDate(ctx context.Context, instID int64, groupUUID string, targetDate time.Time) ([]int64, error) {
+	return repo.ListPeriodTeacherUserIDsByGroupUUID(ctx, instID, groupUUID)
+}
+
 // ClearInstConfigLegacyUnifiedPeriodJSON 主数据已在关系表时清空 legacy 列，避免双源
 func (repo *Repository) ClearInstConfigLegacyUnifiedPeriodJSON(ctx context.Context, instID int64) error {
 	_, err := repo.db.ExecContext(ctx, `
@@ -433,4 +609,70 @@ func ParseUnifiedPeriodPayloadFromAny(raw any) (*instPeriodFilePayload, error) {
 		payload.Version = 1
 	}
 	return &payload, nil
+}
+
+func instPeriodPayloadToMap(payload *instPeriodFilePayload) map[string]any {
+	if payload == nil {
+		return nil
+	}
+	blob, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	var out map[string]any
+	if err := json.Unmarshal(blob, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func (repo *Repository) ensureInitialInstPeriodVersion(ctx context.Context, instID int64) error {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM inst_period_config_version
+		WHERE inst_id = ?
+	`, instID).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	cfg, err := repo.getCurrentInstPeriodConfigJSONFromTables(ctx, instID)
+	if err != nil {
+		return err
+	}
+	if cfg == nil {
+		return nil
+	}
+	payload, err := ParseUnifiedPeriodPayloadFromAny(cfg)
+	if err != nil {
+		return err
+	}
+	baseStart, err := time.ParseInLocation("2006-01-02", instPeriodInitialEffectiveWeekStart, time.Local)
+	if err != nil {
+		return err
+	}
+	return repo.UpsertInstPeriodConfigVersion(ctx, instID, baseStart, payload)
+}
+
+func (repo *Repository) loadInstPeriodPayloadBySQL(ctx context.Context, query string, args ...any) (*instPeriodFilePayload, error) {
+	var raw string
+	err := repo.db.QueryRowContext(ctx, query, args...).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return ParseUnifiedPeriodPayloadFromAny(raw)
+}
+
+func mondayOfInstPeriodWeek(value time.Time) time.Time {
+	t := time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, value.Location())
+	weekday := int(t.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	return t.AddDate(0, 0, -(weekday - 1))
 }

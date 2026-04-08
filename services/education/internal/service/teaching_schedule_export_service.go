@@ -46,7 +46,7 @@ func (svc *Service) ExportSmartTimetableExcel(userID int64, query model.Teaching
 	}
 	ctx := context.Background()
 	viewMode = normalizeSmartExportViewMode(viewMode)
-	cfg, err := svc.repo.GetInstPeriodConfigJSON(ctx, instID)
+	cfg, err := svc.repo.GetInstPeriodConfigJSONForDate(ctx, instID, smartExportPeriodTargetDate(query))
 	if err != nil {
 		return nil, "", err
 	}
@@ -102,7 +102,7 @@ func (svc *Service) ExportTimeTimetableExcel(userID int64, query model.TeachingS
 }
 
 func (svc *Service) resolveSmartExportSlots(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) ([]smartExportSlot, string, error) {
-	cfg, err := svc.repo.GetInstPeriodConfigJSON(ctx, instID)
+	cfg, err := svc.repo.GetInstPeriodConfigJSONForDate(ctx, instID, smartExportPeriodTargetDate(query))
 	if err != nil {
 		return nil, "", err
 	}
@@ -124,6 +124,15 @@ func (svc *Service) resolveSmartExportSlots(ctx context.Context, instID int64, q
 		return buildDefaultSmartExportSlots(), chosen.Name, nil
 	}
 	return chosen.Slots, chosen.Name, nil
+}
+
+func smartExportPeriodTargetDate(query model.TeachingScheduleListQueryDTO) time.Time {
+	if strings.TrimSpace(query.StartDate) != "" {
+		if parsed, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(query.StartDate), time.Local); err == nil {
+			return parsed
+		}
+	}
+	return time.Now()
 }
 
 func parseSmartExportGroups(cfg map[string]any) []smartExportGroup {

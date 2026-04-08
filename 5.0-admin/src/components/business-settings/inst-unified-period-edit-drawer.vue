@@ -27,6 +27,7 @@ const userStore = useUserStore()
 const saving = ref(false)
 const draft = ref<UnifiedTimePeriodConfig>(structuredClone(DEFAULT_UNIFIED_TIME_PERIOD_CONFIG))
 const activeTabKey = ref('')
+const effectiveRuleText = '保存后：当前周之前保持不变；如果本周还没有老师排课，则新时段从本周生效，否则从下周生效。'
 
 function cloneConfig(c: UnifiedTimePeriodConfig): UnifiedTimePeriodConfig {
   return {
@@ -67,6 +68,10 @@ function sortGroups(list: UnifiedPeriodGroup[]) {
   return [...list].sort((a, b) => a.sort - b.sort)
 }
 
+function hasBoundTeachers(group: UnifiedPeriodGroup): boolean {
+  return Array.isArray(group.boundTeachers) && group.boundTeachers.length > 0
+}
+
 function addGroupTab() {
   const n = draft.value.groups.length
   const ch = String.fromCharCode(65 + (n % 26))
@@ -87,6 +92,11 @@ function addGroupTab() {
 function removeGroupFromDraft(id: string) {
   if (draft.value.groups.length <= 1) {
     messageService.warning('至少保留一个时段组')
+    return
+  }
+  const target = draft.value.groups.find(g => g.id === id)
+  if (target && hasBoundTeachers(target)) {
+    messageService.warning('已关联老师的时段组不能删除，请先取消关联老师')
     return
   }
   draft.value.groups = draft.value.groups.filter(g => g.id !== id)
@@ -123,12 +133,20 @@ async function handleSave() {
   }
   saving.value = true
   try {
-    await setInstConfigApi({
-      ...(userStore.instConfig as Record<string, unknown>),
+    const res = await setInstConfigApi({
+      ...(userStore.instConfig as unknown as Record<string, unknown>),
       unifiedTimePeriodJson: draft.value,
     } as never)
     await userStore.getInstConfig()
-    messageService.success('保存成功')
+    const appliedWeek = res.result?.periodWeekStart
+    if (appliedWeek) {
+      messageService.success(res.result?.periodAppliedToday
+        ? `保存成功，已从本周 ${appliedWeek} 生效`
+        : `保存成功，因本周已有排课，已从下周 ${appliedWeek} 生效`)
+    }
+    else {
+      messageService.success('保存成功')
+    }
     emit('saved')
     close()
   }
@@ -173,10 +191,15 @@ async function handleSave() {
             :group="g"
             :icon-variant="gi % 2 === 0 ? 'a' : 'b'"
             :allow-delete-group="draft.groups.length > 1"
+            :delete-disabled-reason="hasBoundTeachers(g) ? '已关联老师的时段组不能删除，请先取消关联老师' : ''"
             @remove-group="removeGroupFromDraft(g.id)"
           />
         </a-tab-pane>
       </a-tabs>
+    </div>
+
+    <div class="up-full__tip">
+      {{ effectiveRuleText }}
     </div>
 
     <div class="up-full__footer">
@@ -233,6 +256,17 @@ async function handleSave() {
   padding-top: 16px;
   margin-top: 8px;
   border-top: 1px solid #f0f0f0;
+}
+
+.up-full__tip {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f6fbff;
+  border: 1px solid #d9efff;
+  color: #2f5f8f;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 :deep(.unified-period-full-modal .ant-modal-body) {

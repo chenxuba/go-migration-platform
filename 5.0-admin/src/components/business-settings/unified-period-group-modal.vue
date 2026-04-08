@@ -36,6 +36,8 @@ const modalTitle = computed(() =>
   props.mode === 'create' ? '添加时段组' : '编辑时段组',
 )
 
+const effectiveRuleText = '保存后：当前周之前保持不变；如果本周还没有老师排课，则新时段从本周生效，否则从下周生效。'
+
 function emptyNewGroup(): UnifiedPeriodGroup {
   return {
     id: `group-${Date.now()}`,
@@ -148,12 +150,20 @@ async function handleSave() {
 
   saving.value = true
   try {
-    await setInstConfigApi({
-      ...(userStore.instConfig as Record<string, unknown>),
+    const res = await setInstConfigApi({
+      ...(userStore.instConfig as unknown as Record<string, unknown>),
       unifiedTimePeriodJson: cfg,
     } as never)
     await userStore.getInstConfig()
-    messageService.success('保存成功')
+    const appliedWeek = res.result?.periodWeekStart
+    if (appliedWeek) {
+      messageService.success(res.result?.periodAppliedToday
+        ? `保存成功，已从本周 ${appliedWeek} 生效`
+        : `保存成功，因本周已有排课，已从下周 ${appliedWeek} 生效`)
+    }
+    else {
+      messageService.success('保存成功')
+    }
     emit('saved')
     close()
   }
@@ -185,6 +195,9 @@ async function handleSave() {
         icon-variant="a"
         :show-bound-teachers="mode === 'create'"
       />
+    </div>
+    <div class="upgm-tip">
+      {{ effectiveRuleText }}
     </div>
     <div class="upgm-footer">
       <a-button @click="close">
@@ -228,6 +241,17 @@ async function handleSave() {
   padding-top: 16px;
   margin-top: 8px;
   border-top: 1px solid #f0f0f0;
+}
+
+.upgm-tip {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f6fbff;
+  border: 1px solid #d9efff;
+  color: #2f5f8f;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 :deep(.unified-period-group-modal .ant-modal-body) {

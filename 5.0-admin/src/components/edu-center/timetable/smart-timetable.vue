@@ -10,6 +10,7 @@ import SmartTimetableScheduledDetailModal from './smart-timetable-scheduled-deta
 import SmartTimetableToolbar from './smart-timetable-toolbar.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
+import { getInstConfigApi } from '@/api/common/config'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
@@ -679,8 +680,10 @@ const queryDateRange = computed(() => {
   }
 })
 
+const effectivePeriodConfigRaw = ref(null)
+
 const periodConfig = computed(() => {
-  const parsed = parseUnifiedTimePeriodConfig(userStore.instConfig?.unifiedTimePeriodJson)
+  const parsed = parseUnifiedTimePeriodConfig(effectivePeriodConfigRaw.value ?? userStore.instConfig?.unifiedTimePeriodJson)
   return parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG
 })
 
@@ -1167,6 +1170,16 @@ async function loadTimetableMatrix() {
     if (seq !== matrixLoadSeq)
       return
     const { startDate, endDate } = queryDateRange.value
+    try {
+      const cfgRes = await getInstConfigApi({ effectiveDate: startDate })
+      if (seq !== matrixLoadSeq)
+        return
+      effectivePeriodConfigRaw.value = cfgRes.result?.unifiedTimePeriodJson ?? userStore.instConfig?.unifiedTimePeriodJson ?? null
+    }
+    catch (error) {
+      console.warn('load effective inst period config failed, fallback to latest', error)
+      effectivePeriodConfigRaw.value = userStore.instConfig?.unifiedTimePeriodJson ?? null
+    }
     const scheduleTeacherIds = filterTeacherId.value.join(',')
     const classroomIds = filterClassroomId.value.join(',')
     const res = await listTeachingSchedulesByTeacherMatrixApi({

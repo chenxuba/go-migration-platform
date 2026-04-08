@@ -17,12 +17,14 @@ const props = withDefaults(
     group: UnifiedPeriodGroup
     iconVariant?: 'a' | 'b'
     allowDeleteGroup?: boolean
+    deleteDisabledReason?: string
     /** 为 false 时不展示「关联老师」（如单组「编辑时段组」弹窗） */
     showBoundTeachers?: boolean
   }>(),
   {
     iconVariant: 'a',
     allowDeleteGroup: false,
+    deleteDisabledReason: '',
     showBoundTeachers: true,
   },
 )
@@ -227,6 +229,8 @@ function filterTeacherOption(input: string, option: { label?: string }) {
     return true
   return String(option?.label || '').toLowerCase().includes(q)
 }
+
+const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
 </script>
 
 <template>
@@ -242,14 +246,16 @@ function filterTeacherOption(input: string, option: { label?: string }) {
         <span class="up-group-form__name">{{ group.name || '未命名时段' }}</span>
         <span class="up-group-form__meta">共 {{ slotCountActive(group) }} 节启用</span>
       </div>
-      <button
-        v-if="allowDeleteGroup"
-        type="button"
-        class="up-group-form__trash"
-        @click="emit('removeGroup')"
-      >
-        <DeleteOutlined />
-      </button>
+      <a-tooltip v-if="allowDeleteGroup" :title="deleteGroupDisabled ? props.deleteDisabledReason : null">
+        <button
+          type="button"
+          class="up-group-form__trash"
+          :disabled="deleteGroupDisabled"
+          @click="emit('removeGroup')"
+        >
+          <DeleteOutlined />
+        </button>
+      </a-tooltip>
     </div>
 
     <div class="up-group-form__toolbar">
@@ -455,6 +461,15 @@ function filterTeacherOption(input: string, option: { label?: string }) {
 
   &:hover {
     color: #ff4d4f;
+  }
+
+  &:disabled {
+    color: #d9d9d9;
+    cursor: not-allowed;
+  }
+
+  &:disabled:hover {
+    color: #d9d9d9;
   }
 }
 

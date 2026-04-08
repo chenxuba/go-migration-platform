@@ -233,7 +233,13 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 func (svc *Service) resolveMatrixTeacherAllowList(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) (map[int64]struct{}, []int64, error) {
 	u := strings.TrimSpace(query.PeriodGroupUUID)
 	if u != "" {
-		ids, err := svc.repo.ListPeriodTeacherUserIDsByGroupUUID(ctx, instID, u)
+		targetDate := time.Now()
+		if strings.TrimSpace(query.StartDate) != "" {
+			if parsed, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(query.StartDate), time.Local); err == nil {
+				targetDate = parsed
+			}
+		}
+		ids, err := svc.repo.ListPeriodTeacherUserIDsByGroupUUIDForDate(ctx, instID, u, targetDate)
 		if err != nil {
 			return nil, nil, err
 		}

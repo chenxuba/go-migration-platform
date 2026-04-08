@@ -14,6 +14,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { BatchPlanModalPreset } from './batch-plan-preset'
 import ScheduleConflictWorkbenchModal from './schedule-conflict-workbench-modal.vue'
 import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
+import { getInstConfigApi } from '@/api/common/config'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
@@ -192,9 +193,10 @@ const repeatRuleLabelMap: Record<RepeatRule, string> = {
 const schoolHolidaySet = new Set(['2026-05-01', '2026-05-02', '2026-05-03'])
 
 const userStore = useUserStore()
+const effectivePeriodConfigRaw = ref<unknown>(null)
 
 const periodConfig = computed(() => {
-  const parsed = parseUnifiedTimePeriodConfig(userStore.instConfig?.unifiedTimePeriodJson)
+  const parsed = parseUnifiedTimePeriodConfig(effectivePeriodConfigRaw.value ?? userStore.instConfig?.unifiedTimePeriodJson)
   return parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG
 })
 
@@ -225,6 +227,19 @@ function slotsForGroupKey(key: PeriodGroupKey) {
 
 function periodGroupIndexForKey(key: PeriodGroupKey): number {
   return resolvePeriodGroupIndex(key)
+}
+
+async function loadEffectivePeriodConfig(dateText?: string) {
+  try {
+    const res = await getInstConfigApi({
+      effectiveDate: dateText || scheduleStartDate.value.format('YYYY-MM-DD'),
+    })
+    effectivePeriodConfigRaw.value = res.result?.unifiedTimePeriodJson ?? userStore.instConfig?.unifiedTimePeriodJson ?? null
+  }
+  catch (error) {
+    console.warn('load effective period config failed, fallback to latest', error)
+    effectivePeriodConfigRaw.value = userStore.instConfig?.unifiedTimePeriodJson ?? null
+  }
 }
 
 /** 该组未配置关联老师时，任意老师可选；配置后仅列表内老师可选 */
@@ -632,6 +647,7 @@ watch(modalOpen, async (value) => {
       fetchClassroomList(),
       fetchWorkbenchTeacherList(),
     ])
+    await loadEffectivePeriodConfig()
     if (isBatchPlanEditMode.value && props.batchPlanPreset)
       await applyBatchPlanPreset(props.batchPlanPreset)
     await nextTick()
@@ -644,6 +660,11 @@ watch(modalOpen, async (value) => {
     assistantAvailabilityMap.value = {}
   }
 }, { immediate: true })
+
+watch(scheduleStartDate, () => {
+  if (modalOpen.value)
+    void loadEffectivePeriodConfig()
+})
 
 watch(
   () => [modalOpen.value, isBatchPlanEditMode.value, props.batchPlanPreset] as const,

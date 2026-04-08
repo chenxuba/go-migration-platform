@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"go-migration-platform/pkg/authx"
 	"go-migration-platform/pkg/httpx"
@@ -292,7 +293,16 @@ func (handler *Handler) getInstConfig(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	result, err := handler.service.GetInstConfig(claims.UserID)
+	var effectiveDate *time.Time
+	if raw := strings.TrimSpace(r.URL.Query().Get("effectiveDate")); raw != "" {
+		t, parseErr := time.ParseInLocation("2006-01-02", raw, time.Local)
+		if parseErr != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "effectiveDate 格式应为 YYYY-MM-DD", ctx.RequestID)
+			return
+		}
+		effectiveDate = &t
+	}
+	result, err := handler.service.GetInstConfig(claims.UserID, effectiveDate)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -315,11 +325,12 @@ func (handler *Handler) setInstConfig(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
-	if err := handler.service.SetInstConfig(claims.UserID, payload); err != nil {
+	result, err := handler.service.SetInstConfig(claims.UserID, payload)
+	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
 func (handler *Handler) initInstAllConfig(w http.ResponseWriter, r *http.Request) {

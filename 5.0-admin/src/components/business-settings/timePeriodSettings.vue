@@ -25,6 +25,7 @@ const quickUnifiedEnabled = ref(false)
 const groupModalOpen = ref(false)
 const groupModalMode = ref<'create' | 'edit'>('edit')
 const editingGroupId = ref<string | null>(null)
+const effectiveRuleText = '生效规则：历史周不会被覆盖；如果本周没有老师排课，新时段从本周生效，否则从下周生效。'
 
 const periodGroups = computed<UnifiedPeriodGroup[]>(() => {
   const parsed = parseUnifiedTimePeriodConfig(userStore.instConfig?.unifiedTimePeriodJson)
@@ -74,6 +75,10 @@ function formatBoundTeachersSummary(g: UnifiedPeriodGroup): string {
   if (!list.length)
     return '—'
   return list.map(t => t.name).join('、')
+}
+
+function hasBoundTeachers(g: UnifiedPeriodGroup): boolean {
+  return Array.isArray(g.boundTeachers) && g.boundTeachers.length > 0
 }
 
 function loadBaseConfig(): UnifiedTimePeriodConfig {
@@ -335,6 +340,10 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
     messageService.warning('至少保留一个时段组')
     return
   }
+  if (hasBoundTeachers(item)) {
+    messageService.warning('已关联老师的时段组不能删除，请先取消关联老师')
+    return
+  }
   Modal.confirm({
     title: '删除时段组',
     centered: true,
@@ -391,6 +400,10 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
         />
       </div>
 
+      <div class="period-panel__tip">
+        {{ effectiveRuleText }}
+      </div>
+
       <a-spin :spinning="loading">
         <a-table
           class="period-table"
@@ -434,16 +447,18 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
               <a-button type="link" size="small" class="period-action" @click="openBindTeachers(record)">
                 关联老师
               </a-button>
-              <a-button
-                v-if="periodGroups.length > 1"
-                type="link"
-                size="small"
-                danger
-                class="period-action"
-                @click="confirmDeleteGroup(record)"
-              >
-                删除
-              </a-button>
+              <a-tooltip v-if="periodGroups.length > 1" :title="hasBoundTeachers(record) ? '已关联老师的时段组不能删除，请先取消关联老师' : null">
+                <a-button
+                  type="link"
+                  size="small"
+                  danger
+                  class="period-action"
+                  :disabled="hasBoundTeachers(record)"
+                  @click="confirmDeleteGroup(record)"
+                >
+                  删除
+                </a-button>
+              </a-tooltip>
             </template>
           </template>
         </a-table>
@@ -582,6 +597,17 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
   font-weight: 500;
 }
 
+.period-panel__tip {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f6fbff;
+  border: 1px solid #d9efff;
+  color: #2f5f8f;
+  font-size: 13px;
+  line-height: 20px;
+}
+
 .period-table {
   :deep(.ant-table) {
     background: transparent;
@@ -628,6 +654,12 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
   padding: 0 4px !important;
   height: auto !important;
   color: #1677ff !important;
+}
+
+.period-action.ant-btn-disabled,
+.period-action:disabled {
+  color: #bfbfbf !important;
+  cursor: not-allowed !important;
 }
 
 .period-action + .period-action {

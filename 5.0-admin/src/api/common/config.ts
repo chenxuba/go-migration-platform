@@ -82,7 +82,7 @@ export interface InstConfig {
   enableSubjectOnlineSaleFilter: string
   enableTeachingBillRemindSms: string
   enableQuickUnifiedPeriod?: boolean
-  unifiedTimePeriodJson?: string | Record<string, unknown>
+  unifiedTimePeriodJson?: unknown
   enableTimetableTimeConfig: string
   enableTranOrderFinishedSendMessage: string
   enableTruantDeductMoney: string
@@ -124,12 +124,22 @@ export interface InstConfig {
   uuid: string
   version: number
 }
-export function getInstConfigApi() {
-  return useGet<InstConfig>('/api/v1/inst-config')
+export interface GetInstConfigParams {
+  effectiveDate?: string
+}
+
+export interface SetInstConfigResult {
+  success: boolean
+  periodWeekStart?: string
+  periodAppliedToday?: boolean
+}
+
+export function getInstConfigApi(params?: GetInstConfigParams) {
+  return useGet<InstConfig>('/api/v1/inst-config', params)
 }
 // /instConfig/setInstConfig
 export function setInstConfigApi(data: InstConfig) {
-  return usePost<InstConfig>('/api/v1/inst-config/update', data)
+  return usePost<SetInstConfigResult>('/api/v1/inst-config/update', data)
 }
 // 解密学员手机号
 export function getStudentPhoneNumberApi(data: { studentId: number }) {
