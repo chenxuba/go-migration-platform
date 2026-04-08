@@ -97,6 +97,15 @@ const props = defineProps({
     required: true,
   },
 })
+
+function conflictBadgeTooltip(text) {
+  const types = Array.isArray(text?.scheduledConflictTypes)
+    ? text.scheduledConflictTypes.filter(Boolean)
+    : []
+  if (types.length)
+    return `冲突原因：${types.join('、')}冲突，点击查看详情`
+  return '当前课程存在冲突，点击查看详情'
+}
 </script>
 
 <template>
@@ -149,14 +158,20 @@ const props = defineProps({
           >
             <div class="pl1 bg-#06f rounded-1 rounded-lb-0 rounded-rb-0 flex relative h-5">
               {{ scheduleCellStartTime(column, record) }}-{{ scheduleCellEndTime(column, record) }}
+              <a-tooltip v-if="text.scheduledConflict" :title="conflictBadgeTooltip(text)" placement="top">
+                <span
+                  class="absolute right-0 pl-2 pr-1 h-4 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2 st-schedule-cell__badge--conflict"
+                  style="cursor: pointer"
+                  @click.stop="openScheduledConflictDetail(text)"
+                >
+                  冲突
+                </span>
+              </a-tooltip>
               <span
-                class="absolute right-0 pl-2 pr-1 h-4 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2"
-                :class="text.scheduledConflict ? 'st-schedule-cell__badge--conflict' : 'bg-#00000080'"
-                :style="{ cursor: text.scheduledConflict ? 'pointer' : 'default' }"
-                @click.stop="text.scheduledConflict ? openScheduledConflictDetail(text) : undefined"
+                v-else
+                class="absolute right-0 pl-2 pr-1 h-4 text-#fff text-2.5 font-500 rounded-rt-1 rounded-lb-2 bg-#00000080"
               >
-                <span v-if="text.scheduledConflict">冲突</span>
-                <span v-else-if="text.courseType === 1">1v1</span>
+                <span v-if="text.courseType === 1">1v1</span>
                 <span v-else-if="text.courseType === 2">班课(<span>{{ text.isMain ? '主教' : '辅教' }}</span>)</span>
               </span>
             </div>
