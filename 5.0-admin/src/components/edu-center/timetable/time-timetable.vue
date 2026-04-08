@@ -370,6 +370,7 @@ const scheduleConflictLoading = ref(false)
 const headerScrollRef = ref(null)
 const boardScrollRef = ref(null)
 let syncingScroll = false
+let scheduleLoadSeq = 0
 
 /** 与教师矩阵课表一致：日期条横向滚动时「钉」在可视区中心的浮动芯片 */
 const timeHeaderTimeColWidth = 84
@@ -532,6 +533,7 @@ const queryDateRange = computed(() => {
 })
 
 async function loadSchedules() {
+  const seq = ++scheduleLoadSeq
   scheduleLoading.value = true
   try {
     const scheduleTeacherIds = filterTeacherId.value.join(',')
@@ -549,6 +551,8 @@ async function loadSchedules() {
       scheduleTypes: filterScheduleType.value.length ? filterScheduleType.value.join(',') : undefined,
       callStatuses: filterCallStatus.value ? String(filterCallStatus.value) : undefined,
     })
+    if (seq !== scheduleLoadSeq)
+      return
     if (res.code === 200) {
       scheduleRows.value = Array.isArray(res.result) ? res.result : []
       return
@@ -557,22 +561,22 @@ async function loadSchedules() {
   }
   catch (error) {
     console.error('load schedules failed', error)
+    if (seq !== scheduleLoadSeq)
+      return
     scheduleRows.value = []
   }
   finally {
-    scheduleLoading.value = false
-    await nextTick()
-    updateFloatingDatePositions(boardScrollRef.value?.scrollLeft ?? headerScrollRef.value?.scrollLeft ?? 0)
+    if (seq === scheduleLoadSeq) {
+      scheduleLoading.value = false
+      await nextTick()
+      updateFloatingDatePositions(boardScrollRef.value?.scrollLeft ?? headerScrollRef.value?.scrollLeft ?? 0)
+    }
   }
 }
 
-watch(
-  queryDateRange,
-  () => {
-    loadSchedules()
-  },
-  { deep: true },
-)
+watch(currentDate, () => {
+  loadSchedules()
+})
 
 watch(
   [filterStudentId, filterTeacherId, filterClassroomId, filterClassId, filterOneToOneId, filterCourseId, filterScheduleType, filterCallStatus],
@@ -1170,11 +1174,9 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
         </div>
       </div>
 
-      <div class="schedule-card">
+      <div class="schedule-card" :class="{ 'schedule-card--loading': scheduleLoading }">
         <a-spin
           :spinning="scheduleLoading"
-          :delay="120"
-          size="small"
           class="schedule-area-spin"
         >
           <div class="schedule-sticky-shell">
@@ -1488,6 +1490,13 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
   border-top-right-radius: 0;
 }
 
+.schedule-card--loading {
+  .schedule-sticky-shell,
+  .schedule-board {
+    pointer-events: none;
+  }
+}
+
 .toolbar-today-week-btn {
   padding: 0 10px;
   border-radius: 8px;
@@ -1518,6 +1527,14 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
     width: 100%;
   }
 
+  :deep(.ant-spin-container) {
+    overflow: visible;
+  }
+
+  :deep(.ant-spin-container.ant-spin-blur) {
+    pointer-events: none;
+  }
+
   :deep(.ant-spin-blur) {
     opacity: 0.72;
     filter: none;
@@ -1526,6 +1543,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 
   :deep(.ant-spin) {
     max-height: none;
+    z-index: 60;
   }
 
   :deep(.ant-spin-dot) {
