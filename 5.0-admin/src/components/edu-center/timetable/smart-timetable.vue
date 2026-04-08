@@ -1458,6 +1458,36 @@ function parseConflictTimeRange(timeText) {
   return { startTime: m[1], endTime: m[2] }
 }
 
+function findBestSlotForTimeRange(slots, timeRange) {
+  if (!timeRange)
+    return null
+  const exact = (Array.isArray(slots) ? slots : []).find(slot =>
+    slot.start === timeRange.startTime && slot.end === timeRange.endTime,
+  )
+  if (exact)
+    return exact
+
+  const targetStart = minutesFromHHMM(timeRange.startTime)
+  const targetEnd = minutesFromHHMM(timeRange.endTime)
+  if (targetStart == null || targetEnd == null)
+    return null
+
+  let bestSlot = null
+  let bestOverlap = 0
+  ;(Array.isArray(slots) ? slots : []).forEach((slot) => {
+    const slotStart = minutesFromHHMM(slot?.start)
+    const slotEnd = minutesFromHHMM(slot?.end)
+    if (slotStart == null || slotEnd == null)
+      return
+    const overlap = Math.min(slotEnd, targetEnd) - Math.max(slotStart, targetStart)
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap
+      bestSlot = slot
+    }
+  })
+  return bestOverlap > 0 ? bestSlot : null
+}
+
 function resolveConflictScheduleGroupInfo(item) {
   const teacherId = String(item?.teacherId || '').trim()
   const timeRange = parseConflictTimeRange(item?.timeText)
@@ -1466,9 +1496,7 @@ function resolveConflictScheduleGroupInfo(item) {
       const group = periodGroupForKey(opt.key)
       const teacherMatched = !teacherId || !(group?.boundTeachers?.length)
         || group.boundTeachers.some(t => String(t.id) === teacherId)
-      const timeMatched = !timeRange || slotsForGroupKey(opt.key).some(slot =>
-        slot.start === timeRange.startTime && slot.end === timeRange.endTime,
-      )
+      const timeMatched = !timeRange || Boolean(findBestSlotForTimeRange(slotsForGroupKey(opt.key), timeRange))
       return teacherMatched && timeMatched
         ? { key: opt.key, label: opt.label }
         : null
@@ -1572,6 +1600,10 @@ function buildConflictJumpItem(item, index = 0, fallbackConflictTypes = ['时间
   const jumpGroupKey = groupInfo.keys.includes(currentGroup.value)
     ? currentGroup.value
     : groupInfo.keys[0] || ''
+  const matchedSlot = findBestSlotForTimeRange(
+    slotsForGroupKey(jumpGroupKey || currentGroup.value),
+    timeRange,
+  )
   return {
     key: `${item?.teacherId || item?.teacherName || 'teacher'}-${item?.date}-${item?.timeText}-${index}`,
     name: item?.name || '-',
@@ -1590,8 +1622,8 @@ function buildConflictJumpItem(item, index = 0, fallbackConflictTypes = ['时间
     hasAssistantConflict: conflictTypes.includes('助教'),
     hasStudentConflict: conflictTypes.includes('学员'),
     hasClassroomConflict: conflictTypes.includes('教室'),
-    jumpCellKey: timeRange && item?.teacherId
-      ? buildAvailabilitySlotKey(item.teacherId, item.date, timeRange.startTime, timeRange.endTime)
+    jumpCellKey: matchedSlot && item?.teacherId
+      ? buildAvailabilitySlotKey(item.teacherId, item.date, matchedSlot.start, matchedSlot.end)
       : '',
     jumpGroupKey,
   }
