@@ -196,6 +196,23 @@ export function configGroupsSorted(config: UnifiedTimePeriodConfig | null): Unif
   return [...config.groups].sort((a, b) => a.sort - b.sort)
 }
 
+export function periodGroupKeyForIndex(index: number): string {
+  const safeIndex = Number.isFinite(index) ? Math.max(0, Math.floor(index)) : 0
+  if (safeIndex < 26)
+    return String.fromCharCode(65 + safeIndex)
+  return `G${safeIndex + 1}`
+}
+
+export function periodGroupIndexForKey(key: string): number {
+  const normalized = String(key || '').trim().toUpperCase()
+  if (/^[A-Z]$/.test(normalized))
+    return normalized.charCodeAt(0) - 65
+  const match = normalized.match(/^G(\d+)$/)
+  if (match)
+    return Math.max(0, Number(match[1]) - 1)
+  return 0
+}
+
 export function slotCountActive(g: UnifiedPeriodGroup): number {
   return g.slots.filter(s => s.enabled !== false).length
 }

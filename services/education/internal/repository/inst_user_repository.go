@@ -710,6 +710,45 @@ func (repo *Repository) ListInstUsersForScheduleMatrix(ctx context.Context, inst
 	return out, rows.Err()
 }
 
+// ListInstUsersForScheduleMatrixByIDs 按指定机构用户 ID 补充课表矩阵列；允许包含离职员工。
+func (repo *Repository) ListInstUsersForScheduleMatrixByIDs(ctx context.Context, instID int64, userIDs []int64) ([]model.InstUserScheduleRosterItem, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(userIDs)+1)
+	args = append(args, instID)
+	for _, id := range userIDs {
+		args = append(args, id)
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id,
+			COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name,
+			IFNULL(disabled, 0) AS disabled
+		FROM inst_user
+		WHERE inst_id = ? AND del_flag = 0 AND id IN (`+sqlPlaceholders(len(userIDs))+`)
+		ORDER BY id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]model.InstUserScheduleRosterItem, 0, len(userIDs))
+	for rows.Next() {
+		var (
+			item     model.InstUserScheduleRosterItem
+			disabled bool
+		)
+		if err := rows.Scan(&item.ID, &item.Name, &disabled); err != nil {
+			return nil, err
+		}
+		if disabled && item.Name != "" && !strings.HasSuffix(item.Name, "（离职）") {
+			item.Name += "（离职）"
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (repo *Repository) ChangeInstUserPhone(ctx context.Context, instUserID, instID int64, mobile string) error {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {

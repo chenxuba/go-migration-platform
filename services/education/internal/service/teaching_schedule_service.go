@@ -117,8 +117,7 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 		return nil, err
 	}
 
-	teacherOrder, teacherNames := buildTeacherOrderForMatrix(roster, schedules)
-	allowTeachers, err := svc.resolveMatrixTeacherAllowList(ctx, instID, query)
+	allowTeachers, allowTeacherOrder, err := svc.resolveMatrixTeacherAllowList(ctx, instID, query)
 	if err != nil {
 		return nil, err
 	}
@@ -131,14 +130,32 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 		}
 		if allowTeachers == nil {
 			allowTeachers = selectedTeachers
+			allowTeacherOrder = uniquePositiveTeacherIDs(query.ScheduleTeacherIDs)
 		} else {
 			for id := range allowTeachers {
 				if _, ok := selectedTeachers[id]; !ok {
 					delete(allowTeachers, id)
 				}
 			}
+			allowTeacherOrder = filterTeacherOrderByAllowList(allowTeacherOrder, allowTeachers)
+			for _, id := range query.ScheduleTeacherIDs {
+				if id <= 0 {
+					continue
+				}
+				if _, ok := allowTeachers[id]; ok && !containsTeacherID(allowTeacherOrder, id) {
+					allowTeacherOrder = append(allowTeacherOrder, id)
+				}
+			}
 		}
 	}
+	if len(allowTeacherOrder) > 0 {
+		roster, err = svc.appendMatrixRosterUsersByIDs(ctx, instID, roster, allowTeacherOrder)
+		if err != nil {
+			return nil, err
+		}
+	}
+	teacherOrder, teacherNames := buildTeacherOrderForMatrix(roster, schedules)
+	teacherOrder = prioritizeTeacherOrder(teacherOrder, allowTeacherOrder)
 	keyed := make(map[string][]model.TeachingScheduleVO)
 	for _, s := range schedules {
 		tid := strings.TrimSpace(s.TeacherID)
@@ -213,33 +230,135 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 
 // resolveMatrixTeacherAllowList 非 nil 时表示仅展示这些教师列；nil 表示不做 ID 级筛选（与未传时段组一致）。
 // 优先使用 periodGroupUuid 在库中的关联；若无则使用 matrixTeacherIds。
-func (svc *Service) resolveMatrixTeacherAllowList(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) (map[int64]struct{}, error) {
+func (svc *Service) resolveMatrixTeacherAllowList(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) (map[int64]struct{}, []int64, error) {
 	u := strings.TrimSpace(query.PeriodGroupUUID)
 	if u != "" {
 		ids, err := svc.repo.ListPeriodTeacherUserIDsByGroupUUID(ctx, instID, u)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if len(ids) > 0 {
-			m := make(map[int64]struct{}, len(ids))
-			for _, id := range ids {
+		ordered := uniquePositiveTeacherIDs(ids)
+		if len(ordered) > 0 {
+			m := make(map[int64]struct{}, len(ordered))
+			for _, id := range ordered {
 				m[id] = struct{}{}
 			}
-			return m, nil
+			return m, ordered, nil
 		}
 	}
-	if len(query.MatrixTeacherIDs) > 0 {
-		m := make(map[int64]struct{}, len(query.MatrixTeacherIDs))
-		for _, id := range query.MatrixTeacherIDs {
-			if id > 0 {
-				m[id] = struct{}{}
-			}
+	ordered := uniquePositiveTeacherIDs(query.MatrixTeacherIDs)
+	if len(ordered) > 0 {
+		m := make(map[int64]struct{}, len(ordered))
+		for _, id := range ordered {
+			m[id] = struct{}{}
 		}
-		if len(m) > 0 {
-			return m, nil
+		return m, ordered, nil
+	}
+	return nil, nil, nil
+}
+
+func (svc *Service) appendMatrixRosterUsersByIDs(ctx context.Context, instID int64, roster []model.InstUserScheduleRosterItem, teacherIDs []int64) ([]model.InstUserScheduleRosterItem, error) {
+	if len(teacherIDs) == 0 {
+		return roster, nil
+	}
+	existing := make(map[int64]struct{}, len(roster))
+	for _, item := range roster {
+		if item.ID > 0 {
+			existing[item.ID] = struct{}{}
 		}
 	}
-	return nil, nil
+	missing := make([]int64, 0, len(teacherIDs))
+	for _, id := range teacherIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := existing[id]; ok {
+			continue
+		}
+		existing[id] = struct{}{}
+		missing = append(missing, id)
+	}
+	if len(missing) == 0 {
+		return roster, nil
+	}
+	extras, err := svc.repo.ListInstUsersForScheduleMatrixByIDs(ctx, instID, missing)
+	if err != nil {
+		return nil, err
+	}
+	if len(extras) == 0 {
+		return roster, nil
+	}
+	return append(roster, extras...), nil
+}
+
+func uniquePositiveTeacherIDs(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func filterTeacherOrderByAllowList(order []int64, allow map[int64]struct{}) []int64 {
+	if len(order) == 0 || allow == nil {
+		return order
+	}
+	out := make([]int64, 0, len(order))
+	for _, id := range order {
+		if _, ok := allow[id]; ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func containsTeacherID(ids []int64, target int64) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
+}
+
+func prioritizeTeacherOrder(base, preferred []int64) []int64 {
+	if len(preferred) == 0 {
+		return base
+	}
+	out := make([]int64, 0, len(base))
+	seen := make(map[int64]struct{}, len(base))
+	for _, id := range preferred {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	for _, id := range base {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 func normalizeMatrixTeacherFilter(raw string) string {

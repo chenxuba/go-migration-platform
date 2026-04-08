@@ -24,6 +24,8 @@ import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   buildQuickHourlySlots,
   configGroupsSorted,
+  periodGroupIndexForKey,
+  periodGroupKeyForIndex,
   parseUnifiedTimePeriodConfig,
 } from '@/utils/unified-time-period'
 import emitter, { EVENTS } from '@/utils/eventBus'
@@ -688,12 +690,13 @@ const groupOptions = computed(() => {
   const g = sortedPeriodGroups.value
   if (!g.length)
     return [{ key: 'A', label: '默认时段' }]
-  if (g.length === 1)
-    return [{ key: 'A', label: g[0].name || '时段' }]
-  return [
-    { key: 'A', label: g[0].name || 'A时段' },
-    { key: 'B', label: g[1].name || 'B时段' },
-  ]
+  return g.map((group, index) => {
+    const key = periodGroupKeyForIndex(index)
+    return {
+      key,
+      label: group.name || `${key}时段`,
+    }
+  })
 })
 
 function slotsForGroupKey(key) {
@@ -701,7 +704,7 @@ function slotsForGroupKey(key) {
   const fallback = buildQuickHourlySlots().filter(s => s.enabled !== false)
   if (!groups.length)
     return [...fallback].sort((a, b) => a.index - b.index)
-  const idx = key === 'B' ? 1 : 0
+  const idx = periodGroupIndexForKey(key)
   const g = groups[idx] || groups[0]
   return [...g.slots].filter(s => s.enabled !== false).sort((a, b) => a.index - b.index)
 }
@@ -712,7 +715,7 @@ function periodGroupForKey(key) {
   const groups = sortedPeriodGroups.value
   if (!groups.length)
     return null
-  const idx = key === 'B' ? 1 : 0
+  const idx = periodGroupIndexForKey(key)
   return groups[idx] || groups[0] || null
 }
 
@@ -1150,7 +1153,7 @@ watch(
   groupOptions,
   (opts) => {
     if (!opts.some(o => o.key === currentGroup.value))
-      currentGroup.value = 'A'
+      currentGroup.value = opts[0]?.key || 'A'
   },
   { immediate: true },
 )

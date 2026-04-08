@@ -26,6 +26,8 @@ import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   buildQuickHourlySlots,
   configGroupsSorted,
+  periodGroupIndexForKey as resolvePeriodGroupIndex,
+  periodGroupKeyForIndex,
   parseUnifiedTimePeriodConfig,
 } from '@/utils/unified-time-period'
 
@@ -34,7 +36,7 @@ type ScheduleType = 'oneToOne' | 'studentLesson'
 type SchedulingMode = 'repeat' | 'free'
 type RepeatRule = 'none' | 'weekly' | 'biweekly' | 'daily' | 'alternateDay'
 type HolidayPolicy = 'include' | 'filter'
-type PeriodGroupKey = 'A' | 'B'
+type PeriodGroupKey = string
 
 interface PreviewItem {
   date: string
@@ -201,13 +203,14 @@ const sortedPeriodGroups = computed(() => configGroupsSorted(periodConfig.value)
 const groupOptions = computed(() => {
   const g = sortedPeriodGroups.value
   if (!g.length)
-    return [{ key: 'A' as const, label: '默认时段' }]
-  if (g.length === 1)
-    return [{ key: 'A' as const, label: g[0].name || '时段' }]
-  return [
-    { key: 'A' as const, label: g[0].name || 'A时段' },
-    { key: 'B' as const, label: g[1].name || 'B时段' },
-  ]
+    return [{ key: 'A', label: '默认时段' }]
+  return g.map((group, index) => {
+    const key = periodGroupKeyForIndex(index)
+    return {
+      key,
+      label: group.name || `${key}时段`,
+    }
+  })
 })
 
 function slotsForGroupKey(key: PeriodGroupKey) {
@@ -215,13 +218,13 @@ function slotsForGroupKey(key: PeriodGroupKey) {
   const fallback = buildQuickHourlySlots().filter(s => s.enabled !== false)
   if (!groups.length)
     return [...fallback].sort((a, b) => a.index - b.index)
-  const idx = key === 'B' ? 1 : 0
+  const idx = periodGroupIndexForKey(key)
   const g = groups[idx] || groups[0]
   return [...g.slots].filter(s => s.enabled !== false).sort((a, b) => a.index - b.index)
 }
 
 function periodGroupIndexForKey(key: PeriodGroupKey): number {
-  return key === 'B' ? 1 : 0
+  return resolvePeriodGroupIndex(key)
 }
 
 /** 该组未配置关联老师时，任意老师可选；配置后仅列表内老师可选 */
@@ -507,7 +510,7 @@ watch(
   groupOptions,
   (opts) => {
     if (!opts.some(o => o.key === currentGroup.value))
-      currentGroup.value = 'A'
+      currentGroup.value = opts[0]?.key || 'A'
   },
   { immediate: true },
 )

@@ -148,6 +148,8 @@ const currentGroupValue = computed({
   set: value => emit('update:currentGroup', value),
 })
 
+const useCompactGroupSwitcher = computed(() => (props.groupOptions?.length || 0) > 2)
+
 function getWeekStart(value) {
   const current = dayjs(value)
   const diff = current.day() === 0 ? -6 : 1 - current.day()
@@ -318,7 +320,13 @@ const isCurrentRange = computed(() => {
       </div>
 
       <div class="ml-auto flex shrink-0 items-center gap-2">
-        <a-radio-group v-model:value="currentGroupValue" button-style="solid">
+        <a-select
+          v-if="useCompactGroupSwitcher"
+          v-model:value="currentGroupValue"
+          :options="groupOptions.map(opt => ({ value: opt.key, label: opt.label }))"
+          class="st-group-select"
+        />
+        <a-radio-group v-else v-model:value="currentGroupValue" button-style="solid">
           <a-radio-button v-for="opt in groupOptions" :key="opt.key" :value="opt.key">
             {{ opt.label }}
           </a-radio-button>
@@ -406,5 +414,10 @@ const isCurrentRange = computed(() => {
   height: 28px;
   line-height: 26px;
   border-radius: 8px;
+}
+
+.st-group-select {
+  width: 112px;
+  min-width: 112px;
 }
 </style>
