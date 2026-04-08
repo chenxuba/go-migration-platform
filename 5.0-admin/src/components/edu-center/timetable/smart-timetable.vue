@@ -763,6 +763,7 @@ function minutesFromHHMM(t) {
 function emptyLessonCell(slot) {
   return {
     scheduleId: null,
+    lessonDate: '',
     startTime: slot.start,
     endTime: slot.end,
     courseName: null,
@@ -857,6 +858,7 @@ function buildLessonsForRow(slots, legacyList, currentTeacherId) {
     lessons[idx] = {
       ...lessons[idx],
       scheduleId: leg.id != null ? String(leg.id) : null,
+      lessonDate: String(leg.scheduleDate || '').trim(),
       courseName: leg.courseName || null,
       courseId: leg.courseId != null ? String(leg.courseId) : '',
       studentId: studentIds.length ? studentIds : null,
@@ -2594,16 +2596,26 @@ function scheduleStudentText(text) {
     : ''
 }
 
+function isScheduleBeforeToday(text) {
+  const lessonDate = String(text?.lessonDate || '').trim()
+  if (!lessonDate)
+    return false
+  return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
+}
+
 function isScheduleDraggable(text) {
   return currentModel.value === '1'
     && text?.courseType === 1
     && text?.isMain !== false
+    && !isScheduleBeforeToday(text)
     && text?.callStatusKey !== 'signed'
     && Boolean(text?.scheduleId)
     && Boolean(text?.classId)
 }
 
 function resolveScheduleDragBlockedMessage(text) {
+  if (isScheduleBeforeToday(text))
+    return '过去的日程，不允许拖拽调课'
   if (text?.callStatusKey === 'signed')
     return '当前课程已点名，暂不支持拖拽调课'
   if (text?.courseType === 1 && text?.isMain === false)
@@ -2834,6 +2846,14 @@ function validateDragTargetLocally(dragState, target) {
       valid: false,
       label: '信息不完整',
       message: '当前课程缺少1对1标识，暂不支持拖拽调课',
+      conflictTypes: [],
+    }
+  }
+  if (dayjs(String(target?.lessonDate || '').trim()).isBefore(dayjs().startOf('day'), 'day')) {
+    return {
+      valid: false,
+      label: '过去日期(不可调)',
+      message: '不允许拖拽调课到过去的日期',
       conflictTypes: [],
     }
   }
