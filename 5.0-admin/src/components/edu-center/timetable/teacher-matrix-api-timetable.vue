@@ -50,6 +50,7 @@ const currentBatchPlanSchedule = ref<TeachingScheduleItem | null>(null)
 const headerDatesRef = ref<HTMLElement | null>(null)
 const bodyScrollRef = ref<HTMLElement | null>(null)
 let syncingScroll = false
+let matrixLoadSeq = 0
 
 const filterStudentId = ref<string | undefined>(undefined)
 const filterTeacherId = ref<string[]>([])
@@ -701,7 +702,6 @@ async function handleCopyWeekConfirm() {
     )
     copyWeekModalOpen.value = false
     currentDate.value = getWeekStart(copyTargetWeek.value)
-    await loadMatrix()
   }
   catch {
     return Promise.reject(new Error('copy week failed'))
@@ -764,6 +764,7 @@ async function exportTeacherMatrixExcel() {
 }
 
 async function loadMatrix() {
+  const seq = ++matrixLoadSeq
   loading.value = true
   try {
     const { weekdaysStr, teacherFilter } = buildMatrixQueryParams()
@@ -784,6 +785,8 @@ async function loadMatrix() {
       ...(weekdaysStr ? { weekdays: weekdaysStr } : {}),
       ...(teacherFilter ? { teacherFilter } : {}),
     })
+    if (seq !== matrixLoadSeq)
+      return
     if (res.code === 200 && Array.isArray(res.result))
       matrixDays.value = res.result
     else
@@ -791,13 +794,17 @@ async function loadMatrix() {
   }
   catch (e) {
     console.error('load teacher matrix failed', e)
+    if (seq !== matrixLoadSeq)
+      return
     matrixDays.value = []
   }
   finally {
-    loading.value = false
-    await nextTick()
-    syncScroll(bodyScrollRef.value, headerDatesRef.value)
-    updateFloatingDatePositions(bodyScrollRef.value?.scrollLeft ?? 0)
+    if (seq === matrixLoadSeq) {
+      loading.value = false
+      await nextTick()
+      syncScroll(bodyScrollRef.value, headerDatesRef.value)
+      updateFloatingDatePositions(bodyScrollRef.value?.scrollLeft ?? 0)
+    }
   }
 }
 
@@ -834,7 +841,7 @@ onUnmounted(() => {
   headerDatesResizeObserver = null
 })
 
-watch(queryRange, () => loadMatrix(), { deep: true })
+watch(currentDate, () => loadMatrix())
 
 watch(
   [filterStudentId, filterTeacherId, filterClassroomId, filterClassId, filterOneToOneId, filterCourseId, filterScheduleType, filterCallStatus],
@@ -1239,90 +1246,110 @@ const totalLessons = computed(() => internalSchedules.value.length)
         @update:stu-phone-search-filter="handleStuPhoneFilter"
       />
     </div>
-    <div class="tm-api-toolbar">
-      <div class="tm-api-toolbar__side tm-api-toolbar__side--left" aria-hidden="true" />
+    <div class="tm-api-toolbar-card mt2">
+      <div class="toolbar-main">
+        <div class="toolbar-group tm-toolbar-ghost" aria-hidden="true">
+          <a-radio-group button-style="solid" size="small">
+            <a-radio-button value="day">
+              日
+            </a-radio-button>
+            <a-radio-button value="week">
+              周
+            </a-radio-button>
+          </a-radio-group>
+        </div>
 
-      <div class="tm-api-toolbar__center">
-        <div class="tm-week-picker">
+        <div class="toolbar-date time-selector ml3 font-800 text-5 flex-center">
           <a-popover trigger="hover">
             <template #content>
               上一周
             </template>
-            <button
-              type="button"
-              class="tm-week-picker__icon-btn"
-              aria-label="上一周"
+            <span
+              class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
               @click="handlePrevWeek"
             >
               <LeftOutlined />
-            </button>
+            </span>
           </a-popover>
-          <div class="tm-week-picker__range-wrap">
-            <span class="tm-week-picker__range">{{ formatWeekRange(currentDate) }}</span>
-            <a-date-picker
-              v-model:value="currentDate"
-              class="tm-week-picker__input"
-              picker="week"
-              :allow-clear="false"
-              :bordered="false"
-              :format="formatWeekRange"
-            />
-          </div>
+          <span class="mx-2">
+            <div
+              class="relative cursor-pointer toolbar-date-range"
+              :class="isThisWeek ? 'text-#0061ff' : 'text-#222'"
+            >
+              {{ formatWeekRange(currentDate) }}
+              <a-date-picker
+                v-model:value="currentDate"
+                class="absolute left-0 top-0 right-0 bottom-0 z-10 opacity-0"
+                picker="week"
+                :allow-clear="false"
+                :bordered="false"
+                :format="formatWeekRange"
+                style="cursor: pointer"
+              />
+            </div>
+          </span>
           <a-popover trigger="hover">
             <template #content>
               下一周
             </template>
-            <button
-              type="button"
-              class="tm-week-picker__icon-btn"
-              aria-label="下一周"
+            <span
+              class="cursor-pointer text-3 text-#888 flex w6 h6 bg-#eee rounded-10 flex-center font-500 hover-text-#06f hover-bg-#e6f0ff"
               @click="handleNextWeek"
             >
               <RightOutlined />
-            </button>
+            </span>
+          </a-popover>
+          <a-popover trigger="hover">
+            <template #content>
+              回到本周
+            </template>
+            <a-button
+              type="default"
+              size="small"
+              class="toolbar-today-week-btn ml2"
+              :class="{
+                'toolbar-today-week-btn--active': isThisWeek,
+                'toolbar-today-week-btn--inactive': !isThisWeek,
+              }"
+              @click="handleThisWeek"
+            >
+              本周
+            </a-button>
           </a-popover>
         </div>
-      </div>
 
-      <div class="tm-api-toolbar__side tm-api-toolbar__side--right">
-        <a-button
-          type="default"
-          size="small"
-          :disabled="isThisWeek"
-          @click="handleThisWeek"
-        >
-          本周
-        </a-button>
-        <a-button
-          type="default"
-          size="small"
-          @click="openCopyWeekModal"
-        >
-          <template #icon>
-            <CopyOutlined />
-          </template>
-          复制周课表
-        </a-button>
-        <a-button
-          type="default"
-          size="small"
-          @click="exportTeacherMatrixExcel"
-        >
-          <template #icon>
-            <DownloadOutlined />
-          </template>
-          导出课表
-        </a-button>
-        <a-button
-          type="default"
-          size="small"
-          @click="openMatrixDisplayConfig"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          展示配置
-        </a-button>
+        <a-space>
+          <a-button
+            type="default"
+            size="small"
+            @click="openCopyWeekModal"
+          >
+            <template #icon>
+              <CopyOutlined />
+            </template>
+            复制周课表
+          </a-button>
+          <a-button
+            type="default"
+            size="small"
+            @click="exportTeacherMatrixExcel"
+          >
+            <template #icon>
+              <DownloadOutlined />
+            </template>
+            导出课表
+          </a-button>
+          <a-button
+            type="default"
+            size="small"
+            @click="openMatrixDisplayConfig"
+          >
+            <template #icon>
+              <SettingOutlined />
+            </template>
+            展示配置
+          </a-button>
+        </a-space>
       </div>
     </div>
 
@@ -1603,129 +1630,84 @@ const totalLessons = computed(() => internalSchedules.value.length)
   min-width: 0;
 }
 
-.tm-api-toolbar {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 12px 16px;
-  margin-bottom: 14px;
-  min-height: 40px;
+.tm-api-toolbar-card,
+.tm-api-card {
+  border: 1px solid #e5ebf3;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 4%);
+  overflow: visible;
 }
 
-.tm-api-toolbar__side--left {
-  min-width: 0;
+.tm-api-toolbar-card {
+  padding: 14px 18px;
+  border-bottom: none;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
-.tm-api-toolbar__center {
+.toolbar-main {
   display: flex;
-  justify-content: center;
-  justify-self: center;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
-.tm-api-toolbar__side--right {
+.toolbar-group {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  gap: 12px;
 }
 
-.tm-week-picker {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  border: 1px solid #dde5f0;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
-  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
-}
-
-.tm-week-picker__icon-btn {
+.toolbar-date {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  border-radius: 10px;
-  background: #eef2f7;
-  color: #64748b;
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-
-  &:hover {
-    background: #e0e9f4;
-    color: #1677ff;
-  }
+  flex: 1;
+  min-width: 0;
 }
 
-.tm-week-picker__range-wrap {
-  position: relative;
-  min-width: min(100vw - 200px, 320px);
-  max-width: 420px;
-  padding: 0 12px;
-}
-
-.tm-week-picker__range {
-  display: block;
-  color: #0958d9;
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 32px;
-  letter-spacing: -0.02em;
+.toolbar-date-range {
+  display: inline-block;
+  width: 240px;
+  min-width: 240px;
+  max-width: 240px;
   text-align: center;
+}
+
+.tm-toolbar-ghost {
+  visibility: hidden;
   pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.tm-week-picker__input {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100% !important;
-  height: 100% !important;
-  cursor: pointer;
-  opacity: 0;
+.time-selector {
+  font-family: DINAlternate-Bold, DINAlternate;
+  gap: 6px;
 }
 
-@media (max-width: 768px) {
-  .tm-api-toolbar {
-    grid-template-columns: 1fr;
-    justify-items: stretch;
-  }
+.toolbar-today-week-btn {
+  padding: 0 10px;
+  border-radius: 8px;
+  transition:
+    color 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
 
-  .tm-api-toolbar__center {
-    justify-self: stretch;
-    order: -1;
-  }
+.toolbar-today-week-btn--active {
+  color: #1677ff;
+  border-color: #91caff;
+  background: #f5f9ff;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 72%);
+}
 
-  .tm-week-picker {
-    width: 100%;
-    justify-content: space-between;
-  }
+.toolbar-today-week-btn--inactive {
+  color: #222;
+}
 
-  .tm-week-picker__range-wrap {
-    min-width: 0;
-    flex: 1;
-    max-width: none;
-  }
-
-  .tm-api-toolbar__side--right {
-    justify-content: center;
-  }
-
-  .tm-api-toolbar__side--left {
-    display: none;
-  }
+.tm-api-toolbar-card :deep(.ant-radio-button-wrapper) {
+  padding: 0 16px;
 }
 
 .tm-display-config {
@@ -1781,11 +1763,9 @@ const totalLessons = computed(() => internalSchedules.value.length)
 }
 
 .tm-api-card {
-  border: 1px solid #e5ebf3;
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 10px 24px rgb(15 23 42 / 4%);
-  overflow: visible;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .tm-api-spin {
