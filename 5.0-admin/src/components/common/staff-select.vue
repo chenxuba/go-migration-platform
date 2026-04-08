@@ -134,6 +134,10 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  includeDisabled: {
+    type: Boolean,
+    default: false,
+  },
   // 每页数量
   pageSize: {
     type: Number,
@@ -180,6 +184,10 @@ function normalizeStaffItems(res) {
     : (res.result || [])
 }
 
+function effectiveStatus() {
+  return props.includeDisabled ? undefined : props.status
+}
+
 // 搜索防抖函数
 const debouncedSearch = debounce((value) => {
   pagination.value.current = 1
@@ -217,6 +225,7 @@ async function getStaffList(params = { searchKey: undefined }) {
 
     let res
     const searchKey = `${params.searchKey || ''}`.trim()
+    const status = effectiveStatus()
     const loadStaffPage = async () => {
       if (props.fetchType === 'approval') {
         const response = await getStaffSummariesApi({
@@ -245,7 +254,7 @@ async function getStaffList(params = { searchKey: undefined }) {
           skipCount: 0,
         },
         queryModel: {
-          status: props.status,
+          status,
           searchKey,
         },
       })
@@ -261,7 +270,7 @@ async function getStaffList(params = { searchKey: undefined }) {
     if (!searchKey && pagination.value.current === 1) {
       const cached = await getCachedInitialStaffList(
         props.fetchType,
-        props.status,
+        status,
         async () => {
           const loaded = await loadStaffPage()
           return {
@@ -279,7 +288,7 @@ async function getStaffList(params = { searchKey: undefined }) {
       resultItems = loaded.items
       total = loaded.total
       if (!searchKey && pagination.value.current === 1) {
-        mergeCachedStaff(props.fetchType, props.status, resultItems, total)
+        mergeCachedStaff(props.fetchType, status, resultItems, total)
       }
     }
 
@@ -424,8 +433,9 @@ function handleDropdownVisibleChange(visible) {
 // 根据员工ID获取员工信息（用于初始化显示）
 async function getStaffById(staffId) {
   if (!staffId) return null
+  const status = effectiveStatus()
 
-  const cachedStaff = findCachedStaff(props.fetchType, props.status, staffId)
+  const cachedStaff = findCachedStaff(props.fetchType, status, staffId)
   if (cachedStaff) {
     return cachedStaff
   }
@@ -433,7 +443,7 @@ async function getStaffById(staffId) {
   try {
     const cached = await getCachedInitialStaffList(
       props.fetchType,
-      props.status,
+      status,
       async () => {
         if (props.fetchType === 'approval') {
           const response = await getStaffSummariesApi({
@@ -459,7 +469,7 @@ async function getStaffById(staffId) {
             skipCount: 0,
           },
           queryModel: {
-            status: props.status,
+            status,
           },
         })
         return {
@@ -498,7 +508,7 @@ async function getStaffById(staffId) {
           skipCount: 0,
         },
         queryModel: {
-          status: props.status,
+          status,
         },
       })
     }
@@ -507,7 +517,7 @@ async function getStaffById(staffId) {
       const sourceList = normalizeStaffItems(res)
       const staff = sourceList.find(item => sameStaffId(item.id, staffId))
       if (staff) {
-        mergeCachedStaff(props.fetchType, props.status, [staff])
+        mergeCachedStaff(props.fetchType, status, [staff])
         return staff
       }
     }

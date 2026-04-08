@@ -3698,6 +3698,8 @@ watch(dragConflictDetailOpen, (open) => {
     <SmartTimetableScheduleDetailDrawer
       v-model:open="scheduledLessonDetailOpen"
       :detail="scheduledLessonDetailState"
+      :deleting="deletingScheduledLesson"
+      @delete="deleteScheduledLessonFromDetail"
     />
 
     <ScheduleConflictModal

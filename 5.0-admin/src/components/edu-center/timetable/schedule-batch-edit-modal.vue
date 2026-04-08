@@ -231,6 +231,7 @@ async function submitForm() {
             width="100%"
             :multiple="true"
             :status="0"
+            include-disabled
             :allow-clear="true"
             :preset-staff="assistantPresetStaff"
           />

@@ -51,6 +51,42 @@ export interface TeachingScheduleBatchDetail {
   schedules: TeachingScheduleItem[]
 }
 
+export interface TeachingScheduleDetailStudent {
+  studentId: string
+  studentName: string
+  phone?: string
+  classStatus: number
+  classStatusText?: string
+  callStatus: number
+  callStatusText?: string
+}
+
+export interface TeachingScheduleDetail {
+  id: string
+  batchNo?: string
+  batchSize: number
+  classType: number
+  teachingClassId: string
+  teachingClassName: string
+  lessonId: string
+  lessonName: string
+  teacherId: string
+  teacherName: string
+  assistantIds?: string[]
+  assistantNames?: string[]
+  classroomId?: string
+  classroomName?: string
+  lessonDate: string
+  startAt: string
+  endAt: string
+  durationMinutes: number
+  callStatus: number
+  callStatusText?: string
+  remark?: string
+  batchMeta?: TeachingScheduleBatchMeta
+  students: TeachingScheduleDetailStudent[]
+}
+
 export interface CreateOneToOneSchedulesResult {
   batchNo?: string
   count: number
@@ -240,6 +276,12 @@ export function getTeachingScheduleConflictDetailApi(params: {
   id: string
 }) {
   return useGet<TeachingScheduleValidationResult>('/api/v1/teaching-schedules/conflict-detail', params)
+}
+
+export function getTeachingScheduleDetailApi(params: {
+  id: string
+}) {
+  return useGet<TeachingScheduleDetail>('/api/v1/teaching-schedules/detail', params)
 }
 
 export function listTeachingSchedulesApi(params: {

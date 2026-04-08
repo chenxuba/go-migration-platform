@@ -8,6 +8,7 @@ interface PickerOptionItem {
   value: string
   label: string
   mobile?: string
+  disabled?: boolean
 }
 
 interface UseSmartTimetablePickerOptions {
@@ -143,11 +144,16 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
 
   function mapStaffToAssistantOption(row: any): PickerOptionItem {
     const value = String(row.id ?? '').trim()
-    const label = String(row.nickName || row.name || value).trim()
+    const rawLabel = String(row.nickName || row.name || value).trim()
+    const disabled = row?.disabled === true
+    const label = disabled && rawLabel && !rawLabel.endsWith('（离职）')
+      ? `${rawLabel}（离职）`
+      : rawLabel
     return {
       value,
       label: label || value,
       mobile: String(row.mobile ?? '').trim(),
+      disabled,
     }
   }
 
@@ -194,9 +200,7 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
           pageIndex: 1,
           skipCount: 0,
         },
-        queryModel: {
-          status: 0,
-        },
+        queryModel: {},
       })
       if (res.code !== 200) {
         assistantOptions.value = []
@@ -206,6 +210,7 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
 
       const rows = Array.isArray(res.result) ? res.result : []
       assistantOptions.value = rows
+        .sort((left: any, right: any) => Number(Boolean(left?.disabled)) - Number(Boolean(right?.disabled)))
         .map(mapStaffToAssistantOption)
         .filter(item => item.value)
     }

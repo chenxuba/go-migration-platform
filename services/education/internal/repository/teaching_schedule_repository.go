@@ -1163,6 +1163,172 @@ func (repo *Repository) GetTeachingScheduleBatchDetail(ctx context.Context, inst
 	}, nil
 }
 
+func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID int64, query model.TeachingScheduleDetailQueryDTO) (model.TeachingScheduleDetailVO, error) {
+	scheduleID, err := strconv.ParseInt(strings.TrimSpace(query.ID), 10, 64)
+	if err != nil || scheduleID <= 0 {
+		return model.TeachingScheduleDetailVO{}, errors.New("日程ID无效")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.TeachingScheduleDetailVO{}, err
+	}
+	defer tx.Rollback()
+
+	recordExistsSQL, recordExistsErr := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if recordExistsErr != nil {
+		recordExistsSQL = ""
+	}
+	callStatusSelect := "1"
+	if strings.TrimSpace(recordExistsSQL) != "" {
+		callStatusSelect = "CASE WHEN " + recordExistsSQL + " THEN 2 ELSE 1 END"
+	}
+
+	type scheduleDetailRow struct {
+		ID                int64
+		BatchNo           string
+		BatchSize         int
+		ClassType         int
+		TeachingClassID   int64
+		TeachingClassName string
+		StudentID         int64
+		StudentName       string
+		LessonID          int64
+		LessonName        string
+		TeacherID         int64
+		TeacherName       string
+		AssistantIDs      []string
+		AssistantNames    []string
+		ClassroomID       int64
+		ClassroomName     string
+		LessonDate        time.Time
+		StartAt           time.Time
+		EndAt             time.Time
+		CallStatus        int
+		Remark            string
+	}
+
+	var row scheduleDetailRow
+	var assistantIDsRaw []byte
+	var assistantNamesRaw []byte
+	detailQuery := `
+		SELECT
+			ts.id,
+			IFNULL(ts.batch_no, ''),
+			IFNULL(ts.batch_size, 1),
+			IFNULL(ts.class_type, 0),
+			IFNULL(ts.teaching_class_id, 0),
+			IFNULL(ts.teaching_class_name, ''),
+			IFNULL(ts.student_id, 0),
+			IFNULL(ts.student_name, ''),
+			IFNULL(ts.lesson_id, 0),
+			IFNULL(ts.lesson_name, ''),
+			IFNULL(ts.teacher_id, 0),
+			IFNULL(ts.teacher_name, ''),
+			ts.assistant_ids_json,
+			ts.assistant_names_json,
+			IFNULL(ts.classroom_id, 0),
+			IFNULL(ts.classroom_name, ''),
+			ts.lesson_date,
+			ts.lesson_start_at,
+			ts.lesson_end_at,
+			` + callStatusSelect + `,
+			IFNULL(tc.remark, '')
+		FROM teaching_schedule ts
+		LEFT JOIN teaching_class tc
+			ON tc.id = ts.teaching_class_id
+		   AND tc.inst_id = ts.inst_id
+		   AND tc.del_flag = 0
+		WHERE ts.inst_id = ?
+		  AND ts.id = ?
+		  AND ts.del_flag = 0
+		  AND ts.status = ?
+		LIMIT 1
+	`
+	err = tx.QueryRowContext(ctx, detailQuery, instID, scheduleID, model.TeachingScheduleStatusActive).Scan(
+		&row.ID,
+		&row.BatchNo,
+		&row.BatchSize,
+		&row.ClassType,
+		&row.TeachingClassID,
+		&row.TeachingClassName,
+		&row.StudentID,
+		&row.StudentName,
+		&row.LessonID,
+		&row.LessonName,
+		&row.TeacherID,
+		&row.TeacherName,
+		&assistantIDsRaw,
+		&assistantNamesRaw,
+		&row.ClassroomID,
+		&row.ClassroomName,
+		&row.LessonDate,
+		&row.StartAt,
+		&row.EndAt,
+		&row.CallStatus,
+		&row.Remark,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.TeachingScheduleDetailVO{}, errors.New("未找到该日程")
+		}
+		return model.TeachingScheduleDetailVO{}, err
+	}
+	row.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
+	row.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
+
+	students, err := repo.listTeachingScheduleDetailStudentsTx(ctx, tx, instID, row.TeachingClassID, row.CallStatus)
+	if err != nil {
+		return model.TeachingScheduleDetailVO{}, err
+	}
+	if len(students) == 0 && row.StudentID > 0 {
+		students = []model.TeachingScheduleDetailStudentVO{{
+			StudentID:       strconv.FormatInt(row.StudentID, 10),
+			StudentName:     firstNonEmptyString(row.StudentName, "-"),
+			ClassStatus:     model.TeachingClassStudentStatusStudying,
+			ClassStatusText: teachingClassStudentStatusText(model.TeachingClassStudentStatusStudying),
+			CallStatus:      row.CallStatus,
+			CallStatusText:  teachingScheduleCallStatusText(row.CallStatus),
+		}}
+	}
+
+	meta, err := repo.loadTeachingScheduleBatchMetaTx(ctx, tx, instID, row.BatchNo, []int64{row.ID})
+	if err != nil {
+		return model.TeachingScheduleDetailVO{}, err
+	}
+
+	durationMinutes := int(row.EndAt.Sub(row.StartAt).Minutes())
+	if durationMinutes < 0 {
+		durationMinutes = 0
+	}
+
+	return model.TeachingScheduleDetailVO{
+		ID:                strconv.FormatInt(row.ID, 10),
+		BatchNo:           row.BatchNo,
+		BatchSize:         row.BatchSize,
+		ClassType:         row.ClassType,
+		TeachingClassID:   emptyStringIfZero(row.TeachingClassID),
+		TeachingClassName: row.TeachingClassName,
+		LessonID:          emptyStringIfZero(row.LessonID),
+		LessonName:        row.LessonName,
+		TeacherID:         emptyStringIfZero(row.TeacherID),
+		TeacherName:       firstNonEmptyString(row.TeacherName, "-"),
+		AssistantIDs:      row.AssistantIDs,
+		AssistantNames:    row.AssistantNames,
+		ClassroomID:       emptyStringIfZero(row.ClassroomID),
+		ClassroomName:     row.ClassroomName,
+		LessonDate:        row.LessonDate.Format("2006-01-02"),
+		StartAt:           row.StartAt,
+		EndAt:             row.EndAt,
+		DurationMinutes:   durationMinutes,
+		CallStatus:        row.CallStatus,
+		CallStatusText:    teachingScheduleCallStatusText(row.CallStatus),
+		Remark:            strings.TrimSpace(row.Remark),
+		BatchMeta:         meta,
+		Students:          students,
+	}, nil
+}
+
 func (repo *Repository) ReplaceTeachingScheduleBatch(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleBatchReplaceDTO) (model.CreateOneToOneSchedulesResult, error) {
 	fallbackTeacherID, err := parseOptionalPositiveID(dto.TeacherID)
 	if err != nil {
@@ -1987,6 +2153,56 @@ func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx
 	item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
 	item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
 	return item, nil
+}
+
+func (repo *Repository) listTeachingScheduleDetailStudentsTx(ctx context.Context, tx *sql.Tx, instID, classID int64, callStatus int) ([]model.TeachingScheduleDetailStudentVO, error) {
+	if classID <= 0 {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			IFNULL(tcs.student_id, 0),
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.mobile, ''),
+			IFNULL(tcs.class_student_status, 0)
+		FROM teaching_class_student tcs
+		LEFT JOIN inst_student s
+			ON s.id = tcs.student_id
+		   AND s.inst_id = tcs.inst_id
+		   AND s.del_flag = 0
+		WHERE tcs.inst_id = ?
+		  AND tcs.teaching_class_id = ?
+		  AND tcs.del_flag = 0
+		ORDER BY tcs.id ASC
+	`, instID, classID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]model.TeachingScheduleDetailStudentVO, 0)
+	for rows.Next() {
+		var studentID int64
+		var studentName string
+		var phone string
+		var classStatus int
+		if err := rows.Scan(&studentID, &studentName, &phone, &classStatus); err != nil {
+			return nil, err
+		}
+		result = append(result, model.TeachingScheduleDetailStudentVO{
+			StudentID:       emptyStringIfZero(studentID),
+			StudentName:     firstNonEmptyString(studentName, "-"),
+			Phone:           strings.TrimSpace(phone),
+			ClassStatus:     classStatus,
+			ClassStatusText: teachingClassStudentStatusText(classStatus),
+			CallStatus:      callStatus,
+			CallStatusText:  teachingScheduleCallStatusText(callStatus),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func collectPlanTeacherIDs(plans []normalizedSchedulePlan) []int64 {
@@ -3808,6 +4024,26 @@ func firstNonEmptyString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func teachingClassStudentStatusText(status int) string {
+	switch status {
+	case model.TeachingClassStudentStatusStudying:
+		return "在读"
+	case model.TeachingClassStudentStatusStopped:
+		return "停课"
+	case model.TeachingClassStudentStatusClosed:
+		return "结课"
+	default:
+		return "-"
+	}
+}
+
+func teachingScheduleCallStatusText(status int) string {
+	if status == 2 {
+		return "已点名"
+	}
+	return "未点名"
 }
 
 func compactStrings(values []string) []string {

@@ -95,6 +95,7 @@ interface StaffOptionItem {
   nickName?: string
   mobile?: string
   status?: number
+  disabled?: boolean
 }
 
 interface AvailabilityBadgeView {
@@ -258,6 +259,7 @@ function isTeacherAllowedInPeriodGroup(teacherIdStr: string, groupIndex: number)
 
 const classroomList = ref<ClassroomItem[]>([])
 const workbenchTeacherList = ref<StaffOptionItem[]>([])
+const assistantWorkbenchStaffList = ref<StaffOptionItem[]>([])
 const oneToOneRecords = ref<OneToOneItem[]>([])
 const oneToOneLoading = ref(false)
 const selectedOneToOneId = ref<string | undefined>(undefined)
@@ -450,7 +452,10 @@ function isPeriodGroupChoiceDisabled(key: PeriodGroupKey): boolean {
 }
 
 function displayStaffName(staff?: StaffOptionItem | null) {
-  return staff?.nickName || staff?.name || ''
+  const base = staff?.nickName || staff?.name || ''
+  if (!base)
+    return ''
+  return staff?.disabled && !base.endsWith('（离职）') ? `${base}（离职）` : base
 }
 
 const teacherPresetStaff = computed<StaffOptionItem[]>(() => {
@@ -769,7 +774,7 @@ const assistantSelectStaffs = computed<StaffOptionItem[]>(() => {
     }
   }
   selectedAssistantDisplays.value.forEach(item => append(item))
-  workbenchTeacherList.value.forEach(item => append(item))
+  assistantWorkbenchStaffList.value.forEach(item => append(item))
   return [...merged.values()]
 })
 
@@ -1585,35 +1590,53 @@ async function fetchClassroomList() {
 
 async function fetchWorkbenchTeacherList() {
   try {
-    const res = await getUserListApi({
-      pageRequestModel: {
-        needTotal: false,
-        pageSize: 500,
-        pageIndex: 1,
-        skipCount: 0,
-      },
-      queryModel: {
-        status: 0,
-      },
-    })
-    if (res.code !== 200) {
-      messageService.error(res.message || '获取老师列表失败')
+    const pageRequestModel = {
+      needTotal: false,
+      pageSize: 500,
+      pageIndex: 1,
+      skipCount: 0,
+    }
+    const [teacherRes, assistantRes] = await Promise.all([
+      getUserListApi({
+        pageRequestModel,
+        queryModel: {
+          status: 0,
+        },
+      }),
+      getUserListApi({
+        pageRequestModel,
+        queryModel: {},
+      }),
+    ])
+    if (teacherRes.code !== 200) {
+      messageService.error(teacherRes.message || '获取老师列表失败')
       return
     }
-    const rows = Array.isArray(res.result) ? res.result : []
-    workbenchTeacherList.value = rows.map((item: any) => {
+    if (assistantRes.code !== 200) {
+      messageService.error(assistantRes.message || '获取助教列表失败')
+      return
+    }
+    const mapStaff = (item: any) => {
       const label = String(item.nickName || item.name || item.id || '').trim()
       return {
         id: String(item.id ?? '').trim(),
         name: label,
         nickName: label,
         mobile: String(item.mobile ?? '').trim(),
+        disabled: item?.disabled === true,
       }
-    }).filter(item => item.id)
+    }
+    const teacherRows = Array.isArray(teacherRes.result) ? teacherRes.result : []
+    const assistantRows = Array.isArray(assistantRes.result) ? assistantRes.result : []
+    workbenchTeacherList.value = teacherRows.map(mapStaff).filter(item => item.id)
+    assistantWorkbenchStaffList.value = assistantRows
+      .sort((left: any, right: any) => Number(Boolean(left?.disabled)) - Number(Boolean(right?.disabled)))
+      .map(mapStaff)
+      .filter(item => item.id)
   }
   catch (error: any) {
     console.error('fetch workbench teacher list failed', error)
-    messageService.error(error?.message || '获取老师列表失败')
+    messageService.error(error?.message || '获取老师/助教列表失败')
   }
 }
 

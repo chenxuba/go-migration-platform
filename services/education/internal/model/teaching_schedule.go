@@ -95,6 +95,10 @@ type TeachingScheduleConflictDetailQueryDTO struct {
 	ID string `json:"id"`
 }
 
+type TeachingScheduleDetailQueryDTO struct {
+	ID string `json:"id"`
+}
+
 type TeachingScheduleBatchUpdateDTO struct {
 	BatchNo      string   `json:"batchNo"`
 	IDs          []string `json:"ids"`
@@ -123,6 +127,42 @@ type TeachingScheduleBatchDetailVO struct {
 	LessonName        string                     `json:"lessonName"`
 	BatchMeta         *TeachingScheduleBatchMeta `json:"batchMeta,omitempty"`
 	Schedules         []TeachingScheduleVO       `json:"schedules"`
+}
+
+type TeachingScheduleDetailStudentVO struct {
+	StudentID       string `json:"studentId"`
+	StudentName     string `json:"studentName"`
+	Phone           string `json:"phone,omitempty"`
+	ClassStatus     int    `json:"classStatus"`
+	ClassStatusText string `json:"classStatusText,omitempty"`
+	CallStatus      int    `json:"callStatus"`
+	CallStatusText  string `json:"callStatusText,omitempty"`
+}
+
+type TeachingScheduleDetailVO struct {
+	ID                string                            `json:"id"`
+	BatchNo           string                            `json:"batchNo,omitempty"`
+	BatchSize         int                               `json:"batchSize"`
+	ClassType         int                               `json:"classType"`
+	TeachingClassID   string                            `json:"teachingClassId"`
+	TeachingClassName string                            `json:"teachingClassName"`
+	LessonID          string                            `json:"lessonId"`
+	LessonName        string                            `json:"lessonName"`
+	TeacherID         string                            `json:"teacherId"`
+	TeacherName       string                            `json:"teacherName"`
+	AssistantIDs      []string                          `json:"assistantIds,omitempty"`
+	AssistantNames    []string                          `json:"assistantNames,omitempty"`
+	ClassroomID       string                            `json:"classroomId,omitempty"`
+	ClassroomName     string                            `json:"classroomName,omitempty"`
+	LessonDate        string                            `json:"lessonDate"`
+	StartAt           time.Time                         `json:"startAt"`
+	EndAt             time.Time                         `json:"endAt"`
+	DurationMinutes   int                               `json:"durationMinutes"`
+	CallStatus        int                               `json:"callStatus"`
+	CallStatusText    string                            `json:"callStatusText,omitempty"`
+	Remark            string                            `json:"remark,omitempty"`
+	BatchMeta         *TeachingScheduleBatchMeta        `json:"batchMeta,omitempty"`
+	Students          []TeachingScheduleDetailStudentVO `json:"students"`
 }
 
 type TeachingScheduleBatchReplaceDTO struct {

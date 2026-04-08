@@ -67,6 +67,17 @@ func (svc *Service) GetTeachingScheduleConflictDetail(userID int64, query model.
 	return svc.repo.GetTeachingScheduleConflictDetail(context.Background(), instID, query)
 }
 
+func (svc *Service) GetTeachingScheduleDetail(userID int64, query model.TeachingScheduleDetailQueryDTO) (model.TeachingScheduleDetailVO, error) {
+	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.TeachingScheduleDetailVO{}, err
+	}
+	if strings.TrimSpace(query.ID) == "" {
+		return model.TeachingScheduleDetailVO{}, errors.New("缺少日程ID")
+	}
+	return svc.repo.GetTeachingScheduleDetail(context.Background(), instID, query)
+}
+
 func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleVO, error) {
 	ctx := context.Background()
 	instID, err := svc.repo.FindInstIDByUserID(ctx, userID)
