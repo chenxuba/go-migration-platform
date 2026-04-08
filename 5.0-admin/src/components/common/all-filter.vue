@@ -332,6 +332,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  wholeConditionClearTypes: {
+    type: Array,
+    default: () => [],
+  },
   // 年级选项数据
   gradeOptionsData: {
     type: Array,
@@ -3281,6 +3285,11 @@ const selectedConditions = computed(() => {
     .filter(item => item.values.length > 0 && item.show)
     .sort((a, b) => (lastUpdated[a.type] || 0) - (lastUpdated[b.type] || 0))
 })
+
+function shouldClearWholeCondition(type) {
+  return Array.isArray(props.wholeConditionClearTypes)
+    && props.wholeConditionClearTypes.includes(type)
+}
 // watch(selectDptVals, () => {
 //   dptName.value = getNameById(selectDptVals.value)
 // })
@@ -3820,10 +3829,20 @@ function removeCondition(type, id) {
       searchKeyOneToOne.value = undefined
       break
     case 'scheduleTeacher':
+      if (shouldClearWholeCondition(type)) {
+        scheduleTeacherVals.value = []
+        emit('update:scheduleTeacherFilter', [], false, id, type)
+        break
+      }
       scheduleTeacherVals.value = scheduleTeacherVals.value.filter(item => String(item) !== String(id))
       emit('update:scheduleTeacherFilter', [...scheduleTeacherVals.value], false, id, type)
       break
     case 'scheduleClassroom':
+      if (shouldClearWholeCondition(type)) {
+        scheduleClassroomVals.value = []
+        emit('update:scheduleClassroomFilter', [], false, id, type)
+        break
+      }
       scheduleClassroomVals.value = scheduleClassroomVals.value.filter(item => String(item) !== String(id))
       emit('update:scheduleClassroomFilter', [...scheduleClassroomVals.value], false, id, type)
       break
@@ -3840,6 +3859,11 @@ function removeCondition(type, id) {
       emit('update:scheduleCourseFilter', undefined, false, id, type)
       break
     case 'scheduleType':
+      if (shouldClearWholeCondition(type)) {
+        scheduleTypeVals.value = []
+        emit('update:scheduleTypeFilter', [], false, id, type)
+        break
+      }
       scheduleTypeVals.value = scheduleTypeVals.value.filter(item => String(item) !== String(id))
       emit('update:scheduleTypeFilter', [...scheduleTypeVals.value], false, id, type)
       break

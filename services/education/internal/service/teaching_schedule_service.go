@@ -68,18 +68,21 @@ func (svc *Service) GetTeachingScheduleConflictDetail(userID int64, query model.
 }
 
 func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleVO, error) {
-	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	ctx := context.Background()
+	instID, err := svc.repo.FindInstIDByUserID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errors.New("no institution context")
 		}
 		return nil, err
 	}
-	schedules, err := svc.repo.ListTeachingSchedules(context.Background(), instID, query)
+	schedules, err := svc.repo.ListTeachingSchedules(ctx, instID, query)
 	if err != nil {
 		return nil, err
 	}
-	annotateTeachingScheduleConflicts(schedules)
+	if err := svc.annotateTeachingScheduleConflictsForQuery(ctx, instID, query, schedules); err != nil {
+		return nil, err
+	}
 	return schedules, nil
 }
 
@@ -110,7 +113,9 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 	if err != nil {
 		return nil, err
 	}
-	annotateTeachingScheduleConflicts(schedules)
+	if err := svc.annotateTeachingScheduleConflictsForQuery(ctx, instID, query, schedules); err != nil {
+		return nil, err
+	}
 
 	teacherOrder, teacherNames := buildTeacherOrderForMatrix(roster, schedules)
 	allowTeachers, err := svc.resolveMatrixTeacherAllowList(ctx, instID, query)
@@ -407,6 +412,66 @@ func annotateTeachingScheduleConflicts(schedules []model.TeachingScheduleVO) {
 					appendScheduleConflictType(&schedules[rightIndex], "教室")
 				}
 			}
+		}
+	}
+}
+
+func (svc *Service) annotateTeachingScheduleConflictsForQuery(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO, schedules []model.TeachingScheduleVO) error {
+	if len(schedules) == 0 {
+		return nil
+	}
+	if !needsFullConflictAnnotation(query) {
+		annotateTeachingScheduleConflicts(schedules)
+		return nil
+	}
+
+	conflictScopeQuery := buildConflictAnnotationQuery(query)
+	allSchedules, err := svc.repo.ListTeachingSchedules(ctx, instID, conflictScopeQuery)
+	if err != nil {
+		return err
+	}
+	annotateTeachingScheduleConflicts(allSchedules)
+	applyAnnotatedConflictsByID(schedules, allSchedules)
+	return nil
+}
+
+func needsFullConflictAnnotation(query model.TeachingScheduleListQueryDTO) bool {
+	return strings.TrimSpace(query.StudentID) != "" ||
+		len(query.ScheduleTeacherIDs) > 0 ||
+		len(query.ClassroomIDs) > 0 ||
+		len(query.GroupClassIDs) > 0 ||
+		len(query.OneToOneClassIDs) > 0 ||
+		len(query.LessonIDs) > 0 ||
+		len(query.ScheduleTypeFilters) > 0 ||
+		len(query.CallStatusFilters) > 0
+}
+
+func buildConflictAnnotationQuery(query model.TeachingScheduleListQueryDTO) model.TeachingScheduleListQueryDTO {
+	return model.TeachingScheduleListQueryDTO{
+		StartDate: strings.TrimSpace(query.StartDate),
+		EndDate:   strings.TrimSpace(query.EndDate),
+	}
+}
+
+func applyAnnotatedConflictsByID(targets []model.TeachingScheduleVO, annotated []model.TeachingScheduleVO) {
+	conflictByID := make(map[string]model.TeachingScheduleVO, len(annotated))
+	for _, item := range annotated {
+		id := strings.TrimSpace(item.ID)
+		if id == "" {
+			continue
+		}
+		conflictByID[id] = item
+	}
+	for i := range targets {
+		targets[i].Conflict = false
+		targets[i].ConflictTypes = nil
+		id := strings.TrimSpace(targets[i].ID)
+		if id == "" {
+			continue
+		}
+		if matched, ok := conflictByID[id]; ok {
+			targets[i].Conflict = matched.Conflict
+			targets[i].ConflictTypes = append([]string(nil), matched.ConflictTypes...)
 		}
 	}
 }

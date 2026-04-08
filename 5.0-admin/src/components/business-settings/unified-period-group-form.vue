@@ -198,9 +198,6 @@ async function ensureStaffOptionsLoaded() {
         pageIndex: 1,
         skipCount: 1,
       },
-      queryModel: {
-        status: 0,
-      },
     })
     if (res.code === 200) {
       const rows = Array.isArray(res.result) ? res.result : []

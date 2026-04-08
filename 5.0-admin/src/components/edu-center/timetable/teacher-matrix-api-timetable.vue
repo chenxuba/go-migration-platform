@@ -171,7 +171,6 @@ async function loadScheduleTeacherOptions(searchKey = '', reset = true) {
       },
       queryModel: {
         searchKey,
-        status: 0,
       },
       sortModel: {},
     })
@@ -1236,6 +1235,7 @@ const totalLessons = computed(() => internalSchedules.value.length)
         :on-schedule-course-load-more="loadMoreScheduleCourse"
         :schedule-type-options="scheduleTypeOptions"
         :schedule-call-status-options="scheduleCallStatusOptions"
+        :whole-condition-clear-types="['scheduleTeacher', 'scheduleClassroom', 'scheduleType']"
         @update:schedule-teacher-filter="handleScheduleTeacherFilter"
         @update:schedule-classroom-filter="handleScheduleClassroomFilter"
         @update:schedule-class-filter="handleScheduleClassFilter"
