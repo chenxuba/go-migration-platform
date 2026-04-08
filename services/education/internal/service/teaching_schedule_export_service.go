@@ -668,9 +668,7 @@ func formatSmartExportCell(items []model.TeachingScheduleInfoLegacyVO) string {
 	}
 	blocks := make([]string, 0, len(items))
 	for _, item := range items {
-		lines := []string{
-			fmt.Sprintf("%s-%s", normalizeExportHHMM(item.ScheduleStartTime), normalizeExportHHMM(item.ScheduleEndTime)),
-		}
+		lines := make([]string, 0, 5)
 		mainLine := strings.TrimSpace(item.ClassName)
 		if item.ClassID == nil || *item.ClassID <= 0 {
 			mainLine = strings.Join(legacyStudentNames(item.StudentList), "、")
