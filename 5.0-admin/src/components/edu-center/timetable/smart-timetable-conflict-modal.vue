@@ -10,9 +10,9 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  jumpingKey: {
-    type: String,
-    default: '',
+  locating: {
+    type: Boolean,
+    default: false,
   },
   conflictDetailState: {
     type: Object,
@@ -47,135 +47,143 @@ const modalOpen = computed({
         {{ conflictDetailState.summary }}
       </div>
 
-      <div v-if="conflictDetailState.attempted" class="st-conflict-attempt">
-        <div class="st-conflict-section-title">
-          你正在选择的空位
-        </div>
-        <div class="st-conflict-attempt__card">
-          <div class="st-conflict-attempt__headline">
-            <div class="st-conflict-attempt__headline-main">
-              <span class="st-conflict-attempt__badge">{{ conflictDetailState.attempted.modeLabel }}</span>
-              <span>待排课程信息</span>
+      <a-spin :spinning="locating" tip="定位中..." class="st-conflict-content-spin">
+        <div class="st-conflict-content">
+          <div v-if="conflictDetailState.attempted" class="st-conflict-attempt">
+            <div class="st-conflict-section-title">
+              你正在选择的空位
             </div>
-            <a-button
-              v-if="conflictDetailState.attempted?.forceAllowed"
-              type="primary"
-              ghost
-              danger
-              :loading="forcing"
-              @click="$emit('force')"
-            >
-              仍要排课
-            </a-button>
-          </div>
-          <div class="st-conflict-attempt__meta st-conflict-attempt__meta--time">
-            {{ conflictDetailState.attempted.date }} {{ conflictDetailState.attempted.week }}
-            第{{ conflictDetailState.attempted.lessonIndex }}节
-          </div>
-          <div class="st-conflict-attempt__target">
-            <div class="st-conflict-attempt__target-label">
-              <span>{{ conflictDetailState.attempted.targetLabel }}</span>
-            </div>
-            <strong class="st-conflict-attempt__target-value">{{ conflictDetailState.attempted.targetValue }}</strong>
-          </div>
-          <div class="st-conflict-attempt__facts">
-            <div class="st-conflict-attempt__fact">
-              <span class="st-conflict-attempt__fact-label">上课课程</span>
-              <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.courseName }}</strong>
-            </div>
-            <div class="st-conflict-attempt__fact">
-              <span class="st-conflict-attempt__fact-label">上课时间</span>
-              <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.timeText }}</strong>
-            </div>
-            <div class="st-conflict-attempt__fact">
-              <span class="st-conflict-attempt__fact-label">上课老师</span>
-              <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.teacherName }}</strong>
-            </div>
-            <div class="st-conflict-attempt__fact">
-              <span class="st-conflict-attempt__fact-label">上课助教</span>
-              <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.assistantText || '未安排' }}</strong>
-            </div>
-            <div class="st-conflict-attempt__fact">
-              <span class="st-conflict-attempt__fact-label">所在组别</span>
-              <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.groupLabel }}</strong>
-            </div>
-          </div>
-          <div class="st-conflict-attempt__meta">
-            系统正在校验这条待排课信息与课表中的已有日程是否冲突。
-          </div>
-        </div>
-      </div>
-
-      <div class="st-conflict-section-title">
-        冲突课程
-      </div>
-      <div class="st-conflict-list">
-        <div v-for="item in conflictDetailState.items" :key="item.key" class="st-conflict-item">
-          <div class="st-conflict-item__main">
-            <div class="st-conflict-item__headline">
-              <span>{{ item.name }}</span>
-              <a-tag color="blue" :bordered="false">
-                {{ item.classTypeText }}
-              </a-tag>
-              <a-tag color="orange" :bordered="false">
-                {{ item.groupLabel }}
-              </a-tag>
-            </div>
-            <div class="st-conflict-item__meta">
-              {{ item.date }} {{ item.week }} · {{ item.timeText }}
-            </div>
-            <div class="st-conflict-item__meta">
-              教师：
-              <span :class="{ 'st-conflict-item__value--danger': item.hasTeacherConflict }">{{ item.teacherName }}</span>
-              <template v-if="item.assistantText && item.assistantText !== '-'">
-                <span class="st-conflict-item__sep">｜</span>
-                助教：
-                <span :class="{ 'st-conflict-item__value--danger': item.hasAssistantConflict }">{{ item.assistantText }}</span>
-              </template>
-              <span class="st-conflict-item__sep">｜</span>
-              学员：
-              <span :class="{ 'st-conflict-item__value--danger': item.hasStudentConflict }">{{ item.studentText }}</span>
-              <template v-if="item.classroomName && item.classroomName !== '-'">
-                <span class="st-conflict-item__sep">｜</span>
-                教室：
-                <span :class="{ 'st-conflict-item__value--danger': item.hasClassroomConflict }">{{ item.classroomName }}</span>
-              </template>
-            </div>
-            <div class="st-conflict-item__meta st-conflict-item__meta--reasons">
-              <span>冲突原因：</span>
-              <span v-if="!(item.conflictTypes || []).length" class="st-conflict-item__reason-chip st-conflict-item__reason-chip--danger">
-                时间冲突
-              </span>
-              <template v-else>
-                <span
-                  v-for="type in item.conflictTypes || []"
-                  :key="type"
-                  class="st-conflict-item__reason-chip st-conflict-item__reason-chip--danger"
+            <div class="st-conflict-attempt__card">
+              <div class="st-conflict-attempt__headline">
+                <div class="st-conflict-attempt__headline-main">
+                  <span class="st-conflict-attempt__badge">{{ conflictDetailState.attempted.modeLabel }}</span>
+                  <span>待排课程信息</span>
+                </div>
+                <a-button
+                  v-if="conflictDetailState.attempted?.forceAllowed"
+                  type="primary"
+                  ghost
+                  danger
+                  :loading="forcing"
+                  @click="$emit('force')"
                 >
-                  {{ type }}冲突
-                </span>
-              </template>
+                  仍要排课
+                </a-button>
+              </div>
+              <div class="st-conflict-attempt__meta st-conflict-attempt__meta--time">
+                {{ conflictDetailState.attempted.date }} {{ conflictDetailState.attempted.week }}
+                第{{ conflictDetailState.attempted.lessonIndex }}节
+              </div>
+              <div class="st-conflict-attempt__target">
+                <div class="st-conflict-attempt__target-label">
+                  <span>{{ conflictDetailState.attempted.targetLabel }}</span>
+                </div>
+                <strong class="st-conflict-attempt__target-value">{{ conflictDetailState.attempted.targetValue }}</strong>
+              </div>
+              <div class="st-conflict-attempt__facts">
+                <div class="st-conflict-attempt__fact">
+                  <span class="st-conflict-attempt__fact-label">上课课程</span>
+                  <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.courseName }}</strong>
+                </div>
+                <div class="st-conflict-attempt__fact">
+                  <span class="st-conflict-attempt__fact-label">上课时间</span>
+                  <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.timeText }}</strong>
+                </div>
+                <div class="st-conflict-attempt__fact">
+                  <span class="st-conflict-attempt__fact-label">上课老师</span>
+                  <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.teacherName }}</strong>
+                </div>
+                <div class="st-conflict-attempt__fact">
+                  <span class="st-conflict-attempt__fact-label">上课助教</span>
+                  <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.assistantText || '未安排' }}</strong>
+                </div>
+                <div class="st-conflict-attempt__fact">
+                  <span class="st-conflict-attempt__fact-label">所在组别</span>
+                  <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.groupLabel }}</strong>
+                </div>
+              </div>
+              <div class="st-conflict-attempt__meta">
+                系统正在校验这条待排课信息与课表中的已有日程是否冲突。
+              </div>
             </div>
           </div>
-          <div class="st-conflict-item__side">
-            <a-button
-              type="primary"
-              ghost
-              :disabled="!item.jumpCellKey"
-              :loading="jumpingKey === item.key"
-              @click="$emit('jump', item)"
-            >
-              定位到课程
-            </a-button>
+
+          <div class="st-conflict-section-title">
+            冲突课程
+          </div>
+          <div class="st-conflict-list">
+            <div v-for="item in conflictDetailState.items" :key="item.key" class="st-conflict-item">
+              <div class="st-conflict-item__main">
+                <div class="st-conflict-item__headline">
+                  <span>{{ item.name }}</span>
+                  <a-tag color="blue" :bordered="false">
+                    {{ item.classTypeText }}
+                  </a-tag>
+                  <a-tag color="orange" :bordered="false">
+                    {{ item.groupLabel }}
+                  </a-tag>
+                </div>
+                <div class="st-conflict-item__meta">
+                  {{ item.date }} {{ item.week }} · {{ item.timeText }}
+                </div>
+                <div class="st-conflict-item__meta">
+                  教师：
+                  <span :class="{ 'st-conflict-item__value--danger': item.hasTeacherConflict }">{{ item.teacherName }}</span>
+                  <template v-if="item.assistantText && item.assistantText !== '-'">
+                    <span class="st-conflict-item__sep">｜</span>
+                    助教：
+                    <span :class="{ 'st-conflict-item__value--danger': item.hasAssistantConflict }">{{ item.assistantText }}</span>
+                  </template>
+                  <span class="st-conflict-item__sep">｜</span>
+                  学员：
+                  <span :class="{ 'st-conflict-item__value--danger': item.hasStudentConflict }">{{ item.studentText }}</span>
+                  <template v-if="item.classroomName && item.classroomName !== '-'">
+                    <span class="st-conflict-item__sep">｜</span>
+                    教室：
+                    <span :class="{ 'st-conflict-item__value--danger': item.hasClassroomConflict }">{{ item.classroomName }}</span>
+                  </template>
+                </div>
+                <div class="st-conflict-item__meta st-conflict-item__meta--reasons">
+                  <span>冲突原因：</span>
+                  <span v-if="!(item.conflictTypes || []).length" class="st-conflict-item__reason-chip st-conflict-item__reason-chip--danger">
+                    时间冲突
+                  </span>
+                  <template v-else>
+                    <span
+                      v-for="type in item.conflictTypes || []"
+                      :key="type"
+                      class="st-conflict-item__reason-chip st-conflict-item__reason-chip--danger"
+                    >
+                      {{ type }}冲突
+                    </span>
+                  </template>
+                </div>
+              </div>
+              <div class="st-conflict-item__side">
+                <a-button
+                  type="primary"
+                  ghost
+                  :disabled="!item.jumpCellKey"
+                  @click="$emit('jump', item)"
+                >
+                  定位到课程
+                </a-button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </a-spin>
     </div>
   </a-modal>
 </template>
 
 <style scoped lang="less">
 .st-conflict-modal {
+  display: flex;
+  flex-direction: column;
+}
+
+.st-conflict-content {
   display: flex;
   flex-direction: column;
 }
@@ -192,6 +200,10 @@ const modalOpen = computed({
   font-size: 14px;
   font-weight: 600;
   line-height: 1.7;
+}
+
+.st-conflict-content-spin {
+  min-height: 280px;
 }
 
 .st-conflict-section-title {

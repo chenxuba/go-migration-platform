@@ -1545,6 +1545,17 @@ function resolveConflictScheduleTimeLabel(item) {
   return `${groupLabel} 第${matchedSlot.index}节`
 }
 
+async function openConflictLocatingState(key) {
+  locatingConflictItemKey.value = String(key || '').trim()
+  await nextTick()
+  await new Promise((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function')
+      window.requestAnimationFrame(() => resolve(true))
+    else
+      resolve(true)
+  })
+}
+
 function setFocusedScheduleCell(key) {
   focusedScheduleCellKey.value = key || ''
   if (focusedScheduleCellTimer)
@@ -1803,7 +1814,7 @@ async function openScheduledConflictDetail(text) {
 }
 
 async function jumpToConflictSchedule(item) {
-  locatingConflictItemKey.value = conflictJumpActionKey(item)
+  await openConflictLocatingState(conflictJumpActionKey(item))
   if (!item?.jumpCellKey) {
     locatingConflictItemKey.value = ''
     messageService.warning('当前冲突课程暂不支持定位')
@@ -1864,12 +1875,12 @@ async function jumpToConflictSchedule(item) {
 
 async function jumpToScheduledConflictSchedule(item) {
   const jumpItem = buildConflictJumpItem(item, 0)
-  locatingConflictItemKey.value = [
+  await openConflictLocatingState([
     String(item?.teacherId || '').trim(),
     String(item?.teacherName || '').trim(),
     String(item?.date || '').trim(),
     String(item?.timeText || '').trim(),
-  ].join('|')
+  ].join('|'))
   await jumpToConflictSchedule(jumpItem)
 }
 
@@ -3550,7 +3561,7 @@ watch(dragConflictDetailOpen, (open) => {
     <ScheduleConflictModal
       v-model:open="scheduledConflictDetailOpen"
       :validation="scheduledConflictDetailValidation"
-      :jumping-key="locatingConflictItemKey"
+      :locating="Boolean(locatingConflictItemKey)"
       :get-time-extra-label="resolveConflictScheduleTimeLabel"
       title="冲突详情"
       current-title="当前冲突日程"
@@ -3562,7 +3573,7 @@ watch(dragConflictDetailOpen, (open) => {
     <SmartTimetableConflictModal
       v-model:open="conflictDetailModalOpen"
       :forcing="forcingConflictSchedule"
-      :jumping-key="locatingConflictItemKey"
+      :locating="Boolean(locatingConflictItemKey)"
       :conflict-detail-state="conflictDetailState"
       @force="forceScheduleDespiteStudentConflict"
       @jump="jumpToConflictSchedule"
@@ -3570,7 +3581,7 @@ watch(dragConflictDetailOpen, (open) => {
 
     <SmartTimetableDragConflictModal
       v-model:open="dragConflictDetailOpen"
-      :jumping-key="locatingConflictItemKey"
+      :locating="Boolean(locatingConflictItemKey)"
       :detail="dragConflictDetailState"
       @jump="jumpToConflictSchedule"
     />

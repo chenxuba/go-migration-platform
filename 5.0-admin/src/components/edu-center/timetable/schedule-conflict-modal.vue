@@ -11,7 +11,7 @@ const props = defineProps<{
   currentTitle?: string
   existingTitle?: string
   fallbackMessage?: string
-  jumpingKey?: string
+  locating?: boolean
   getTimeExtraLabel?: (item: ConflictScheduleItem) => string
 }>()
 
@@ -34,15 +34,6 @@ function hasConflictType(item: { conflictTypes?: string[] }, type: string) {
 
 function canJumpToItem(item: ConflictScheduleItem) {
   return Boolean(String(item?.date || '').trim() && String(item?.timeText || '').trim())
-}
-
-function jumpActionKey(item: ConflictScheduleItem) {
-  return [
-    String(item?.teacherId || '').trim(),
-    String(item?.teacherName || '').trim(),
-    String(item?.date || '').trim(),
-    String(item?.timeText || '').trim(),
-  ].join('|')
 }
 
 function resolveTimeExtraLabel(item: ConflictScheduleItem) {
@@ -79,118 +70,121 @@ function resolveTimeExtraLabel(item: ConflictScheduleItem) {
         <span>{{ validation?.message || props.fallbackMessage || '当前日程与已有日程冲突' }}</span>
       </div>
 
-      <section class="schedule-conflict__section">
-        <div class="schedule-conflict__section-title">
-          {{ props.currentTitle || '当前冲突日程' }}
-        </div>
-        <div class="schedule-conflict__table">
-          <div class="schedule-conflict__head schedule-conflict__head--with-action">
-            <span>日程名称</span>
-            <span>日程类型</span>
-            <span>{{ props.getTimeExtraLabel ? '上课时间 / 时段名称' : '上课时间' }}</span>
-            <span>上课教师</span>
-            <span>上课教室</span>
-            <span>冲突类型</span>
-            <span class="schedule-conflict__action-head">操作</span>
-          </div>
-          <div
-            v-for="(item, index) in currentSchedules"
-            :key="`${item.date}-${item.timeText}-${index}`"
-            class="schedule-conflict__row schedule-conflict__row--with-action"
-          >
-            <span>{{ item.name }}</span>
-            <span>{{ item.classTypeText }}</span>
-            <span class="schedule-conflict__time-cell">
-              <span>{{ item.date }} {{ item.timeText }}</span>
-              <span v-if="resolveTimeExtraLabel(item)" class="schedule-conflict__time-extra">
-                {{ resolveTimeExtraLabel(item) }}
-              </span>
-            </span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
-              }"
-            >{{ item.teacherName || '-' }}</span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '教室'),
-              }"
-            >{{ item.classroomName || '-' }}</span>
-            <span class="schedule-conflict__tags">
-              <a-tag
-                v-for="tag in item.conflictTypes || []"
-                :key="tag"
-                color="error"
-                :bordered="false"
+      <a-spin :spinning="props.locating" tip="定位中..." class="schedule-conflict__content-spin">
+        <div class="schedule-conflict__content">
+          <section class="schedule-conflict__section">
+            <div class="schedule-conflict__section-title">
+              {{ props.currentTitle || '当前冲突日程' }}
+            </div>
+            <div class="schedule-conflict__table">
+              <div class="schedule-conflict__head schedule-conflict__head--with-action">
+                <span>日程名称</span>
+                <span>日程类型</span>
+                <span>{{ props.getTimeExtraLabel ? '上课时间 / 时段名称' : '上课时间' }}</span>
+                <span>上课教师</span>
+                <span>上课教室</span>
+                <span>冲突类型</span>
+                <span class="schedule-conflict__action-head">操作</span>
+              </div>
+              <div
+                v-for="(item, index) in currentSchedules"
+                :key="`${item.date}-${item.timeText}-${index}`"
+                class="schedule-conflict__row schedule-conflict__row--with-action"
               >
-                {{ tag }}冲突
-              </a-tag>
-            </span>
-            <span class="schedule-conflict__action-cell">-</span>
-          </div>
-        </div>
-      </section>
+                <span>{{ item.name }}</span>
+                <span>{{ item.classTypeText }}</span>
+                <span class="schedule-conflict__time-cell">
+                  <span>{{ item.date }} {{ item.timeText }}</span>
+                  <span v-if="resolveTimeExtraLabel(item)" class="schedule-conflict__time-extra">
+                    {{ resolveTimeExtraLabel(item) }}
+                  </span>
+                </span>
+                <span
+                  :class="{
+                    'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
+                  }"
+                >{{ item.teacherName || '-' }}</span>
+                <span
+                  :class="{
+                    'schedule-conflict__cell--danger': hasConflictType(item, '教室'),
+                  }"
+                >{{ item.classroomName || '-' }}</span>
+                <span class="schedule-conflict__tags">
+                  <a-tag
+                    v-for="tag in item.conflictTypes || []"
+                    :key="tag"
+                    color="error"
+                    :bordered="false"
+                  >
+                    {{ tag }}冲突
+                  </a-tag>
+                </span>
+                <span class="schedule-conflict__action-cell">-</span>
+              </div>
+            </div>
+          </section>
 
-      <section class="schedule-conflict__section">
-        <div class="schedule-conflict__section-title">
-          {{ props.existingTitle || '与其冲突的日程' }}
-        </div>
-        <div class="schedule-conflict__table">
-          <div class="schedule-conflict__head schedule-conflict__head--with-action">
-            <span>日程名称</span>
-            <span>日程类型</span>
-            <span>{{ props.getTimeExtraLabel ? '上课时间 / 时段名称' : '上课时间' }}</span>
-            <span>上课教师</span>
-            <span>上课教室</span>
-            <span>冲突学员</span>
-            <span class="schedule-conflict__action-head">操作</span>
-          </div>
-          <div
-            v-for="(item, index) in existingSchedules"
-            :key="`${item.date}-${item.timeText}-${index}`"
-            class="schedule-conflict__row schedule-conflict__row--with-action"
-          >
-            <span>{{ item.name }}</span>
-            <span>{{ item.classTypeText }}</span>
-            <span class="schedule-conflict__time-cell">
-              <span>{{ item.date }} {{ item.timeText }}</span>
-              <span v-if="resolveTimeExtraLabel(item)" class="schedule-conflict__time-extra">
-                {{ resolveTimeExtraLabel(item) }}
-              </span>
-            </span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
-              }"
-            >{{ item.teacherName || '-' }}</span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '教室'),
-              }"
-            >{{ item.classroomName || '-' }}</span>
-            <span
-              :class="{
-                'schedule-conflict__cell--danger': hasConflictType(item, '学员'),
-              }"
-            >{{ (item.studentNames || []).join('、') || '-' }}</span>
-            <span class="schedule-conflict__action-cell">
-              <a-button
-                v-if="canJumpToItem(item)"
-                type="primary"
-                ghost
-                class="schedule-conflict__jump"
-                :loading="props.jumpingKey === jumpActionKey(item)"
-                @click.stop="emit('jump', item)"
+          <section class="schedule-conflict__section">
+            <div class="schedule-conflict__section-title">
+              {{ props.existingTitle || '与其冲突的日程' }}
+            </div>
+            <div class="schedule-conflict__table">
+              <div class="schedule-conflict__head schedule-conflict__head--with-action">
+                <span>日程名称</span>
+                <span>日程类型</span>
+                <span>{{ props.getTimeExtraLabel ? '上课时间 / 时段名称' : '上课时间' }}</span>
+                <span>上课教师</span>
+                <span>上课教室</span>
+                <span>冲突学员</span>
+                <span class="schedule-conflict__action-head">操作</span>
+              </div>
+              <div
+                v-for="(item, index) in existingSchedules"
+                :key="`${item.date}-${item.timeText}-${index}`"
+                class="schedule-conflict__row schedule-conflict__row--with-action"
               >
-                定位到课程
-              </a-button>
-              <template v-else>
-                -
-              </template>
-            </span>
-          </div>
+                <span>{{ item.name }}</span>
+                <span>{{ item.classTypeText }}</span>
+                <span class="schedule-conflict__time-cell">
+                  <span>{{ item.date }} {{ item.timeText }}</span>
+                  <span v-if="resolveTimeExtraLabel(item)" class="schedule-conflict__time-extra">
+                    {{ resolveTimeExtraLabel(item) }}
+                  </span>
+                </span>
+                <span
+                  :class="{
+                    'schedule-conflict__cell--danger': hasConflictType(item, '老师'),
+                  }"
+                >{{ item.teacherName || '-' }}</span>
+                <span
+                  :class="{
+                    'schedule-conflict__cell--danger': hasConflictType(item, '教室'),
+                  }"
+                >{{ item.classroomName || '-' }}</span>
+                <span
+                  :class="{
+                    'schedule-conflict__cell--danger': hasConflictType(item, '学员'),
+                  }"
+                >{{ (item.studentNames || []).join('、') || '-' }}</span>
+                <span class="schedule-conflict__action-cell">
+                  <a-button
+                    v-if="canJumpToItem(item)"
+                    type="primary"
+                    ghost
+                    class="schedule-conflict__jump"
+                    @click.stop="emit('jump', item)"
+                  >
+                    定位到课程
+                  </a-button>
+                  <template v-else>
+                    -
+                  </template>
+                </span>
+              </div>
+            </div>
+          </section>
         </div>
-      </section>
+      </a-spin>
     </div>
   </a-modal>
 </template>
@@ -209,6 +203,12 @@ function resolveTimeExtraLabel(item: ConflictScheduleItem) {
   gap: 16px;
 }
 
+.schedule-conflict__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .schedule-conflict__banner {
   display: flex;
   align-items: center;
@@ -220,6 +220,10 @@ function resolveTimeExtraLabel(item: ConflictScheduleItem) {
   font-size: 13px;
   font-weight: 600;
   border: 1px solid #ffe1e0;
+}
+
+.schedule-conflict__content-spin {
+  min-height: 320px;
 }
 
 .schedule-conflict__section {

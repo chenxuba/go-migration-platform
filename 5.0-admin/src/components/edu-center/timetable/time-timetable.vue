@@ -1100,6 +1100,17 @@ async function flushPendingConflictJump() {
   messageService.warning('未定位到课程，请检查筛选条件或日期范围')
 }
 
+async function openConflictLocatingState(key) {
+  locatingConflictItemKey.value = String(key || '').trim()
+  await nextTick()
+  await new Promise((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function')
+      window.requestAnimationFrame(() => resolve(true))
+    else
+      resolve(true)
+  })
+}
+
 async function openEventConflictDetail(event) {
   if (!event?.conflict)
     return
@@ -1124,12 +1135,12 @@ async function openEventConflictDetail(event) {
 }
 
 async function jumpToConflictSchedule(item) {
-  locatingConflictItemKey.value = [
+  await openConflictLocatingState([
     String(item?.teacherId || '').trim(),
     String(item?.teacherName || '').trim(),
     String(item?.date || '').trim(),
     String(item?.timeText || '').trim(),
-  ].join('|')
+  ].join('|'))
   const locator = buildConflictJumpLocator(item)
   if (!locator.date || !locator.startTime || !locator.endTime) {
     locatingConflictItemKey.value = ''
@@ -1681,7 +1692,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
     <ScheduleConflictModal
       v-model:open="scheduleConflictOpen"
       :validation="scheduleConflictValidation"
-      :jumping-key="locatingConflictItemKey"
+      :locating="Boolean(locatingConflictItemKey)"
       title="冲突详情"
       current-title="当前冲突日程"
       existing-title="与其冲突的日程"
