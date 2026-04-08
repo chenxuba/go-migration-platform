@@ -69,6 +69,12 @@ const modalOpen = computed({
                 >
                   仍要排课
                 </a-button>
+                <div
+                  v-else-if="conflictDetailState.attempted?.forceDisabledReason"
+                  class="st-conflict-attempt__force-tip"
+                >
+                  {{ conflictDetailState.attempted.forceDisabledReason }}
+                </div>
               </div>
               <div class="st-conflict-attempt__meta st-conflict-attempt__meta--time">
                 {{ conflictDetailState.attempted.date }} {{ conflictDetailState.attempted.week }}
@@ -91,16 +97,36 @@ const modalOpen = computed({
                 </div>
                 <div class="st-conflict-attempt__fact">
                   <span class="st-conflict-attempt__fact-label">上课老师</span>
-                  <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.teacherName }}</strong>
+                  <strong
+                    class="st-conflict-attempt__fact-value"
+                    :class="{ 'st-conflict-attempt__fact-value--danger': (conflictDetailState.attempted?.conflictTypes || []).includes('老师') }"
+                  >
+                    {{ conflictDetailState.attempted.teacherName }}
+                  </strong>
                 </div>
                 <div class="st-conflict-attempt__fact">
                   <span class="st-conflict-attempt__fact-label">上课助教</span>
-                  <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.assistantText || '未安排' }}</strong>
+                  <strong
+                    class="st-conflict-attempt__fact-value"
+                    :class="{ 'st-conflict-attempt__fact-value--danger': (conflictDetailState.attempted?.conflictTypes || []).includes('助教') }"
+                  >
+                    {{ conflictDetailState.attempted.assistantText || '未安排' }}
+                  </strong>
                 </div>
                 <div class="st-conflict-attempt__fact">
                   <span class="st-conflict-attempt__fact-label">所在组别</span>
                   <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.groupLabel }}</strong>
                 </div>
+              </div>
+              <div v-if="(conflictDetailState.attempted?.conflictTypes || []).length" class="st-conflict-attempt__reason-row">
+                <span class="st-conflict-attempt__reason-label">当前冲突：</span>
+                <span
+                  v-for="type in conflictDetailState.attempted.conflictTypes || []"
+                  :key="type"
+                  class="st-conflict-attempt__reason-chip"
+                >
+                  {{ type }}冲突
+                </span>
               </div>
               <div class="st-conflict-attempt__meta">
                 系统正在校验这条待排课信息与课表中的已有日程是否冲突。
@@ -261,6 +287,20 @@ const modalOpen = computed({
   flex-wrap: wrap;
 }
 
+.st-conflict-attempt__force-tip {
+  max-width: 420px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #ffd8bf;
+  background: #fff2e8;
+  text-align: left;
+  color: #cf1322;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 .st-conflict-attempt__meta,
 .st-conflict-item__meta {
   margin-top: 6px;
@@ -326,6 +366,37 @@ const modalOpen = computed({
 .st-conflict-attempt__fact-value {
   color: #1f2329;
   font-weight: 700;
+}
+
+.st-conflict-attempt__fact-value--danger {
+  color: #ff4d4f;
+}
+
+.st-conflict-attempt__reason-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.st-conflict-attempt__reason-label {
+  color: #8c8c8c;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.st-conflict-attempt__reason-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #fff1f0;
+  color: #ff4d4f;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .st-conflict-list {

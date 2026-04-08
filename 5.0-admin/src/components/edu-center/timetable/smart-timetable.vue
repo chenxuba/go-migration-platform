@@ -1638,7 +1638,10 @@ async function flushPendingConflictJump() {
 function buildConflictJumpItem(item, index = 0, fallbackConflictTypes = ['时间']) {
   const groupInfo = resolveConflictScheduleGroupInfo(item)
   const timeRange = parseConflictTimeRange(item?.timeText)
-  const conflictTypes = Array.isArray(item?.conflictTypes) && item.conflictTypes.length ? item.conflictTypes : fallbackConflictTypes
+  const conflictTypes = uniqueConflictTypes([
+    ...(Array.isArray(item?.conflictTypes) ? item.conflictTypes : []),
+    ...(Array.isArray(fallbackConflictTypes) ? fallbackConflictTypes : []),
+  ])
   const jumpGroupKey = groupInfo.keys.includes(currentGroup.value)
     ? currentGroup.value
     : groupInfo.keys[0] || ''
@@ -1716,6 +1719,20 @@ function openDragConflictDetailModal(validation, dragState, target) {
   dragConflictDetailOpen.value = true
 }
 
+function buildForceScheduleDisabledReason(conflictTypes = []) {
+  const normalized = uniqueConflictTypes(conflictTypes)
+  if (!normalized.length)
+    return '当前冲突类型暂不支持仍要排课。'
+  if (normalized.every(type => type === '学员'))
+    return ''
+
+  const blockingTypes = normalized.filter(type => type !== '学员')
+  if (!blockingTypes.length)
+    return '当前冲突类型暂不支持仍要排课。'
+
+  return `当前还存在${blockingTypes.join('、')}冲突，仅纯学员冲突支持仍要排课。`
+}
+
 function openApiConflictModal(reason, column, record) {
   const selectedTarget = resolveConflictAttemptTarget()
   const attemptedConflictTypes = Array.isArray(reason?.conflictTypes) ? reason.conflictTypes : []
@@ -1736,7 +1753,9 @@ function openApiConflictModal(reason, column, record) {
     assistantText: selectedAssistantText.value,
     lessonIndex: getLessonIndex(column.startTime),
     groupLabel: activeGroupLabel.value || '当前组',
+    conflictTypes: attemptedConflictTypes,
     forceAllowed,
+    forceDisabledReason: forceAllowed ? '' : buildForceScheduleDisabledReason(attemptedConflictTypes),
     forcePayload: forceAllowed
       ? {
           oneToOneId: String(oneToOneRecordId.value),
