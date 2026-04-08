@@ -22,6 +22,7 @@ import {
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
 import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
+import TimetableScheduleSummary from './timetable-schedule-summary.vue'
 
 type FilterOption = {
   id: string
@@ -918,6 +919,15 @@ function legacyToTeachingScheduleItem(
   }
 }
 
+function resolveLessonCallStatusKey(info: TeachingScheduleMatrixLegacyItem) {
+  const scheduleStatus = Number(info?.scheduleStatus ?? 0)
+  const courseStatus = Number(info?.courseStatus ?? 0)
+  const finishType = Number(info?.finishType ?? 0)
+  if (finishType > 1 || courseStatus > 1 || scheduleStatus === 2)
+    return 'signed'
+  return 'unsigned'
+}
+
 type CellSchedule = {
   id: string
   dateKey: string
@@ -965,7 +975,7 @@ const internalSchedules = computed((): CellSchedule[] => {
           teacher: col.teacherName,
           classroom: '-',
           classType: info.courseType ?? 0,
-          status: 'unsigned',
+          status: resolveLessonCallStatusKey(info),
           raw,
         })
       }
@@ -1201,6 +1211,9 @@ function onBatchPlanUpdated() {
 }
 
 const totalLessons = computed(() => internalSchedules.value.length)
+const unsignedLessons = computed(() =>
+  internalSchedules.value.filter(item => item.status === 'unsigned').length,
+)
 </script>
 
 <template>
@@ -1421,8 +1434,10 @@ const totalLessons = computed(() => internalSchedules.value.length)
       <a-spin :spinning="loading" :delay="120" size="small" class="tm-api-spin">
         <div class="tm-sticky-shell">
           <div class="tm-api-summary">
-            <span class="summary-accent" />
-            <span>本周共 <strong>{{ totalLessons }}</strong> 节日程</span>
+            <TimetableScheduleSummary
+              :total="totalLessons"
+              :unsigned-count="unsignedLessons"
+            />
           </div>
 
           <div v-if="matrixDays.length" class="tm-schedule-header">
@@ -1791,24 +1806,7 @@ const totalLessons = computed(() => internalSchedules.value.length)
 }
 
 .tm-api-summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px 10px;
-  border-bottom: 1px solid #edf2f7;
   background: rgb(255 255 255 / 98%);
-  backdrop-filter: blur(12px);
-  color: #1f2937;
-  font-size: 13px;
-  font-weight: 600;
-
-  .summary-accent {
-    display: inline-block;
-    width: 4px;
-    height: 16px;
-    border-radius: 999px;
-    background: #1677ff;
-  }
 }
 
 .tm-api-empty {

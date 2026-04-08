@@ -231,6 +231,16 @@ const props = defineProps({
 </template>
 
 <style scoped lang="less">
+:deep(.ant-table-wrapper),
+:deep(.ant-table-container) {
+  border-radius: 0 !important;
+}
+
+:deep(.ant-table-thead > tr:first-child > th:first-child),
+:deep(.ant-table-thead > tr:first-child > th:last-child) {
+  border-radius: 0 !important;
+}
+
 :deep(td.ant-table-cell.ant-table-cell-row-hover) {
   background-color: rgb(231, 236, 255) !important;
 }

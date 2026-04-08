@@ -9,6 +9,7 @@ import SmartTimetableGrid from './smart-timetable-grid.vue'
 import SmartTimetableScheduledDetailModal from './smart-timetable-scheduled-detail-modal.vue'
 import SmartTimetableToolbar from './smart-timetable-toolbar.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
+import TimetableScheduleSummary from './timetable-schedule-summary.vue'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { getInstConfigApi } from '@/api/common/config'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
@@ -1099,6 +1100,22 @@ function teacherLessonCountLabel(teacherId) {
   const scope = currentTime.value === 'day' ? '当日' : '本周'
   return `${scope}共${n}节课`
 }
+
+const visibleScheduledLessons = computed(() => {
+  const lessons = []
+  dataSource.value.forEach((row) => {
+    ;(row.lessons || []).forEach((lesson) => {
+      if (lesson.studentId)
+        lessons.push(lesson)
+    })
+  })
+  return lessons
+})
+
+const smartTimetableTotalSchedules = computed(() => visibleScheduledLessons.value.length)
+const smartTimetableUnsignedSchedules = computed(() =>
+  visibleScheduledLessons.value.filter(lesson => lesson.callStatusKey === 'unsigned').length,
+)
 
 const activeGroupLabel = computed(() => {
   return groupOptions.value.find(o => o.key === displayedGroupKey.value)?.label || ''
@@ -3401,6 +3418,12 @@ watch(dragConflictDetailOpen, (open) => {
       :on-export="exportSmartTimetable"
       :export-loading="exportLoading"
     />
+    <div class="st-summary-shell">
+      <TimetableScheduleSummary
+        :total="smartTimetableTotalSchedules"
+        :unsigned-count="smartTimetableUnsignedSchedules"
+      />
+    </div>
     <SmartTimetableGrid
       :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule || updatingDraggedSchedule"
       :table-data-source="tableDataSource"
@@ -3654,6 +3677,15 @@ watch(dragConflictDetailOpen, (open) => {
   color: #8c8c8c;
   font-size: 12px;
   line-height: 18px;
+}
+
+.st-summary-shell {
+  overflow: hidden;
+  background: #fff;
+}
+
+.st-summary-shell :deep(.timetable-summary) {
+  padding-top: 0;
 }
 
 :deep(.st-top-1v1-select-dropdown .st-top-1v1-dropdown) {
