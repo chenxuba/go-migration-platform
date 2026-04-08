@@ -82,6 +82,50 @@ func parseTeacherMatrixQuery(r *http.Request) model.TeachingScheduleListQueryDTO
 	return query
 }
 
+func parseTeachingScheduleListQuery(r *http.Request) model.TeachingScheduleListQueryDTO {
+	query := model.TeachingScheduleListQueryDTO{
+		StartDate: strings.TrimSpace(r.URL.Query().Get("startDate")),
+		EndDate:   strings.TrimSpace(r.URL.Query().Get("endDate")),
+		StudentID: strings.TrimSpace(r.URL.Query().Get("studentId")),
+	}
+	parseInt64CSV := func(raw string) []int64 {
+		out := make([]int64, 0)
+		for _, p := range strings.Split(strings.TrimSpace(raw), ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if v, err := strconv.ParseInt(p, 10, 64); err == nil && v > 0 {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	parseStringCSV := func(raw string) []string {
+		out := make([]string, 0)
+		for _, p := range strings.Split(strings.TrimSpace(raw), ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("classType")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+			query.ClassType = &value
+		}
+	}
+	query.ScheduleTeacherIDs = parseInt64CSV(r.URL.Query().Get("scheduleTeacherIds"))
+	query.ClassroomIDs = parseInt64CSV(r.URL.Query().Get("classroomIds"))
+	query.GroupClassIDs = parseInt64CSV(r.URL.Query().Get("groupClassIds"))
+	query.OneToOneClassIDs = parseInt64CSV(r.URL.Query().Get("oneToOneClassIds"))
+	query.LessonIDs = parseInt64CSV(r.URL.Query().Get("lessonIds"))
+	query.ScheduleTypeFilters = parseStringCSV(r.URL.Query().Get("scheduleTypes"))
+	query.CallStatusFilters = parseStringCSV(r.URL.Query().Get("callStatuses"))
+	return query
+}
+
 func (handler *Handler) createOneToOneSchedules(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -236,15 +280,7 @@ func (handler *Handler) teachingSchedules(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	query := model.TeachingScheduleListQueryDTO{
-		StartDate: strings.TrimSpace(r.URL.Query().Get("startDate")),
-		EndDate:   strings.TrimSpace(r.URL.Query().Get("endDate")),
-	}
-	if raw := strings.TrimSpace(r.URL.Query().Get("classType")); raw != "" {
-		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
-			query.ClassType = &value
-		}
-	}
+	query := parseTeachingScheduleListQuery(r)
 	result, err := handler.service.ListTeachingSchedules(claims.UserID, query)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)

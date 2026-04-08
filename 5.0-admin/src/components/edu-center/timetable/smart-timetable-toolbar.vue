@@ -1,5 +1,6 @@
 <script setup>
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
 import { computed } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 
@@ -138,6 +139,22 @@ const currentGroupValue = computed({
   get: () => props.currentGroup,
   set: value => emit('update:currentGroup', value),
 })
+
+function getWeekStart(value) {
+  const current = dayjs(value)
+  const diff = current.day() === 0 ? -6 : 1 - current.day()
+  return current.add(diff, 'day').startOf('day')
+}
+
+const isCurrentRange = computed(() => {
+  const current = dayjs(props.currentWeek)
+  const now = dayjs()
+  if (props.currentTime === 'day')
+    return current.isSame(now, 'day')
+  if (props.isWeekLikeView)
+    return getWeekStart(current).isSame(getWeekStart(now), 'day')
+  return current.isSame(now, 'month')
+})
 </script>
 
 <template>
@@ -218,7 +235,7 @@ const currentGroupValue = computed({
           class="st-time-view-select"
         />
         <div
-          class="text-#0061ff font-800 text-5 flex items-center shrink-0 st-date-nav"
+          class="font-800 text-5 flex items-center shrink-0 st-date-nav"
           :class="
             currentTime === 'day'
               ? 'st-date-nav--day'
@@ -239,7 +256,10 @@ const currentGroupValue = computed({
             </span>
           </a-popover>
           <span class="mx-1 min-w-0 flex-1 st-date-nav__mid">
-            <div class="relative cursor-pointer whitespace-nowrap text-center st-date-nav__text">
+            <div
+              class="relative cursor-pointer whitespace-nowrap text-center st-date-nav__text"
+              :class="isCurrentRange ? 'text-#0061ff' : 'text-#222'"
+            >
               {{ formatDateRange(currentWeek) }}
               <a-date-picker
                 v-if="currentTime === 'day'"

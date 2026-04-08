@@ -246,6 +246,14 @@ export function listTeachingSchedulesApi(params: {
   startDate: string
   endDate: string
   classType?: number
+  studentId?: string
+  scheduleTeacherIds?: string
+  classroomIds?: string
+  groupClassIds?: string
+  oneToOneClassIds?: string
+  lessonIds?: string
+  scheduleTypes?: string
+  callStatuses?: string
 }) {
   return useGet<TeachingScheduleItem[]>('/api/v1/teaching-schedules', params)
 }
