@@ -1,5 +1,6 @@
 <script setup>
 import { CopyOutlined, EditOutlined } from '@ant-design/icons-vue'
+import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -221,6 +222,30 @@ const schedulePopoverInnerStyle = {
   padding: '0px',
 }
 
+const openSchedulePopoverKey = ref('')
+
+function schedulePopoverKey(column, record) {
+  return String(props.scheduleCellKey(column, record) || '').trim()
+}
+
+function handleSchedulePopoverOpenChange(column, record, open) {
+  const key = schedulePopoverKey(column, record)
+  openSchedulePopoverKey.value = open ? key : ''
+}
+
+function handleSchedulePointerDownWithPopoverClose(event, text, column, record) {
+  openSchedulePopoverKey.value = ''
+  props.handleSchedulePointerDown(event, text, column, record)
+}
+
+watch(
+  () => props.draggingScheduleCellKey,
+  (value) => {
+    if (String(value || '').trim())
+      openSchedulePopoverKey.value = ''
+  },
+)
+
 function goRollCall() {
   router.push('/edu-center/roll-call-list')
 }
@@ -265,6 +290,8 @@ function goRollCall() {
             :overlay-inner-style="schedulePopoverInnerStyle"
             :mouse-enter-delay="0.12"
             :mouse-leave-delay="0.06"
+            :open="!draggingScheduleCellKey && openSchedulePopoverKey === schedulePopoverKey(column, record)"
+            @open-change="handleSchedulePopoverOpenChange(column, record, $event)"
           >
             <template #content>
               <div class="st-schedule-hover-card">
@@ -380,7 +407,7 @@ function goRollCall() {
               :title="!isScheduleDraggable(text) ? resolveScheduleDragBlockedMessage(text) : undefined"
               :style="draggingScheduleCellKey === scheduleCellKey(column, record) ? draggingScheduleStyle : undefined"
               @click="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
-              @mousedown.left="handleSchedulePointerDown($event, text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
+              @mousedown.left="handleSchedulePointerDownWithPopoverClose($event, text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
             >
               <div class="st-schedule-cell__header flex h-5 rounded-1 rounded-lb-0 rounded-rb-0 pl1 relative">
                 {{ scheduleCellStartTime(column, record) }}-{{ scheduleCellEndTime(column, record) }}
