@@ -4925,6 +4925,93 @@ function setScheduleTeacherFilter(values = [], shouldEmit = false) {
   }
 }
 
+function setScheduleClassroomFilter(values = [], shouldEmit = false) {
+  scheduleClassroomVals.value = Array.isArray(values)
+    ? values.map(item => String(item ?? '').trim()).filter(Boolean)
+    : []
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:scheduleClassroomFilter', [...scheduleClassroomVals.value])
+    })
+  }
+}
+
+function setScheduleClassFilter(value = undefined, shouldEmit = false) {
+  const normalized = value === undefined || value === null || String(value).trim() === ''
+    ? undefined
+    : String(value).trim()
+  scheduleClassVals.value = normalized
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:scheduleClassFilter', scheduleClassVals.value)
+    })
+  }
+}
+
+function setScheduleOneToOneFilter(value = undefined, shouldEmit = false) {
+  const normalized = value === undefined || value === null || String(value).trim() === ''
+    ? undefined
+    : String(value).trim()
+  scheduleOneToOneVals.value = normalized
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:scheduleOneToOneFilter', scheduleOneToOneVals.value)
+    })
+  }
+}
+
+function setScheduleCourseFilter(value = undefined, shouldEmit = false) {
+  const normalized = value === undefined || value === null || String(value).trim() === ''
+    ? undefined
+    : String(value).trim()
+  scheduleCourseVals.value = normalized
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:scheduleCourseFilter', scheduleCourseVals.value)
+    })
+  }
+}
+
+function setScheduleTypeFilter(values = [], shouldEmit = false) {
+  scheduleTypeVals.value = Array.isArray(values)
+    ? values.map(item => String(item ?? '').trim()).filter(Boolean)
+    : []
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:scheduleTypeFilter', [...scheduleTypeVals.value])
+    })
+  }
+}
+
+function setScheduleCallStatusFilter(value = undefined, shouldEmit = false) {
+  const normalized = value === undefined || value === null || String(value).trim() === ''
+    ? undefined
+    : String(value).trim()
+  scheduleCallStatusVals.value = normalized
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:scheduleCallStatusFilter', scheduleCallStatusVals.value)
+    })
+  }
+}
+
+function setStuPhoneSearchFilter(value = undefined, shouldEmit = false) {
+  const normalized = value === undefined || value === null || String(value).trim() === ''
+    ? undefined
+    : String(value).trim()
+  searchKeyStuPhone.value = normalized
+  stuPhoneSearchVals.value = normalized
+  if (!normalized) {
+    selectedStuPhoneSearchInfo.value = null
+    searchKeyStuPhoneModel.value = undefined
+  }
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:stuPhoneSearchFilter', normalized)
+    })
+  }
+}
+
 function handleScheduleClassroomChange(e) {
   nextTick(() => {
     emit('update:scheduleClassroomFilter', e)
@@ -5241,6 +5328,13 @@ watch(shouldLoadDepartmentData, (needLoad) => {
 defineExpose({
   clearQuickFilter,
   setScheduleTeacherFilter,
+  setScheduleClassroomFilter,
+  setScheduleClassFilter,
+  setScheduleOneToOneFilter,
+  setScheduleCourseFilter,
+  setScheduleTypeFilter,
+  setScheduleCallStatusFilter,
+  setStuPhoneSearchFilter,
   updateStaffSearchData,
   getOrderedConditions: () => orderedConditions.value,
   // 新增：暴露部门数据获取方法

@@ -155,6 +155,58 @@ function handleStuPhoneFilter(value) {
   filterStudentId.value = normalizeScheduleFilterValue(value)
 }
 
+function hasScheduledLesson(lesson) {
+  if (!lesson || typeof lesson !== 'object')
+    return false
+  if (String(lesson.scheduleId || '').trim())
+    return true
+  if (String(lesson.classId || '').trim())
+    return true
+  if (Array.isArray(lesson.studentId) ? lesson.studentId.length > 0 : Boolean(lesson.studentId))
+    return true
+  return Array.isArray(lesson.studentNames) && lesson.studentNames.length > 0
+}
+
+function syncAllFilterScheduleTeacher(values) {
+  allFilterRef.value?.setScheduleTeacherFilter?.(values, false)
+  filterTeacherId.value = normalizeScheduleFilterValues(values)
+}
+
+function syncAllFilterScheduleClassroom(values) {
+  allFilterRef.value?.setScheduleClassroomFilter?.(values, false)
+  filterClassroomId.value = normalizeScheduleFilterValues(values)
+}
+
+function syncAllFilterScheduleClass(value) {
+  allFilterRef.value?.setScheduleClassFilter?.(value, false)
+  filterClassId.value = normalizeScheduleFilterValue(value)
+}
+
+function syncAllFilterScheduleOneToOne(value) {
+  allFilterRef.value?.setScheduleOneToOneFilter?.(value, false)
+  filterOneToOneId.value = normalizeScheduleFilterValue(value)
+}
+
+function syncAllFilterScheduleCourse(value) {
+  allFilterRef.value?.setScheduleCourseFilter?.(value, false)
+  filterCourseId.value = normalizeScheduleFilterValue(value)
+}
+
+function syncAllFilterScheduleType(values) {
+  allFilterRef.value?.setScheduleTypeFilter?.(values, false)
+  filterScheduleType.value = normalizeScheduleFilterValues(values)
+}
+
+function syncAllFilterScheduleCallStatus(value) {
+  allFilterRef.value?.setScheduleCallStatusFilter?.(value, false)
+  filterCallStatus.value = normalizeScheduleFilterValue(value)
+}
+
+function syncAllFilterStuPhone(value) {
+  allFilterRef.value?.setStuPhoneSearchFilter?.(value, false)
+  filterStudentId.value = normalizeScheduleFilterValue(value)
+}
+
 function mergeFilterOptions(previous, incoming, selectedValues = []) {
   const selectedSet = new Set((Array.isArray(selectedValues) ? selectedValues : [selectedValues]).map(value => String(value || '')).filter(Boolean))
   const map = new Map()
@@ -1138,7 +1190,7 @@ function clearLessonConflictState(lesson, scope = 'all') {
 function resetEmptyLessonConflicts(scope = 'all') {
   dataSource.value.forEach((teacher) => {
     teacher.lessons.forEach((lesson) => {
-      if (!lesson.studentId)
+      if (!hasScheduledLesson(lesson))
         clearLessonConflictState(lesson, scope)
     })
   })
@@ -1150,14 +1202,14 @@ function clearOneToOneAvailabilityHighlights() {
   resetEmptyLessonConflicts()
 }
 
-/** 当前展示范围内每位老师已占用的节次数（与格子里蓝色已排课一致：有 studentId 即计入） */
+/** 当前展示范围内每位老师已占用的节次数（与格子里蓝色已排课一致：有已排日程即计入） */
 const scheduledLessonCountByTeacher = computed(() => {
   const map = new Map()
   for (const row of dataSource.value) {
     const tid = String(row.teacherId)
     let n = 0
     for (const lesson of row.lessons || []) {
-      if (lesson.studentId)
+      if (hasScheduledLesson(lesson))
         n++
     }
     map.set(tid, (map.get(tid) || 0) + n)
@@ -1181,7 +1233,7 @@ const visibleScheduledLessons = computed(() => {
   const lessons = []
   dataSource.value.forEach((row) => {
     ;(row.lessons || []).forEach((lesson) => {
-      if (lesson.studentId)
+      if (hasScheduledLesson(lesson))
         lessons.push(lesson)
     })
   })
@@ -1243,6 +1295,7 @@ const {
   buildAvailabilitySlotKey,
   currentModel,
   dataSource,
+  hasScheduledLesson,
   normalizedSelectedAssistantIds,
   normalizedSelectedClassroomId: computed(() => normalizeOptionalClassroomId(selectedOneToOneClassroomId.value)),
   oneToOneData,
@@ -2445,8 +2498,7 @@ async function flushPendingConflictJump() {
         id: teacherId,
         value: teacherName || teacherId,
       }], nextTeacherIds)
-      filterTeacherId.value = nextTeacherIds
-      allFilterRef.value?.setScheduleTeacherFilter?.(nextTeacherIds, false)
+      syncAllFilterScheduleTeacher(nextTeacherIds)
       pendingConflictJump = {
         ...pending,
         teacherFilterExpanded: true,
@@ -2455,11 +2507,58 @@ async function flushPendingConflictJump() {
     }
   }
 
-  if (pending.teacherFilterExpanded) {
-    pendingConflictJump = null
-    locatingConflictItemKey.value = ''
-    messageService.warning('已自动补充目标老师筛选，但仍未定位到课程，请检查日期或组别')
+  if (!pending.filtersRelaxed) {
+    const clearedFilterLabels = []
+    if (filterStudentId.value) {
+      syncAllFilterStuPhone(undefined)
+      clearedFilterLabels.push('学员/电话')
+    }
+    if (filterClassroomId.value.length) {
+      syncAllFilterScheduleClassroom([])
+      clearedFilterLabels.push('上课教室')
+    }
+    if (filterClassId.value) {
+      syncAllFilterScheduleClass(undefined)
+      clearedFilterLabels.push('班级')
+    }
+    if (filterOneToOneId.value) {
+      syncAllFilterScheduleOneToOne(undefined)
+      clearedFilterLabels.push('1对1')
+    }
+    if (filterCourseId.value) {
+      syncAllFilterScheduleCourse(undefined)
+      clearedFilterLabels.push('课程')
+    }
+    if (filterScheduleType.value.length) {
+      syncAllFilterScheduleType([])
+      clearedFilterLabels.push('日程类型')
+    }
+    if (filterCallStatus.value) {
+      syncAllFilterScheduleCallStatus(undefined)
+      clearedFilterLabels.push('点名状态')
+    }
+
+    if (clearedFilterLabels.length) {
+      pendingConflictJump = {
+        ...pending,
+        filtersRelaxed: true,
+        clearedFilterLabels,
+      }
+      return
+    }
   }
+
+  pendingConflictJump = null
+  locatingConflictItemKey.value = ''
+  const adjustedLabels = []
+  if (pending.teacherFilterExpanded)
+    adjustedLabels.push('目标老师')
+  if (Array.isArray(pending.clearedFilterLabels) && pending.clearedFilterLabels.length)
+    adjustedLabels.push(...pending.clearedFilterLabels)
+  const adjustedText = adjustedLabels.length
+    ? `已自动调整${adjustedLabels.join('、')}筛选，`
+    : ''
+  messageService.warning(`${adjustedText}仍未定位到课程，请检查日期或组别`)
 }
 
 function buildConflictJumpItem(item, index = 0, fallbackConflictTypes = ['时间']) {
@@ -4008,7 +4107,7 @@ function collectVisibleEmptyDragTargets() {
   tableDataSource.value.forEach((row) => {
     scheduleColumns.forEach((column) => {
       const lesson = scheduleCellValue(column, row)
-      if (!lesson || lesson.studentId)
+      if (!lesson || hasScheduledLesson(lesson))
         return
 
       const target = buildDragTarget(scheduleCellContextColumn(column, row), scheduleCellContextRecord(column, row))
@@ -4836,6 +4935,7 @@ watch(dragConflictDetailOpen, (open) => {
       :schedule-cell-end-time="scheduleCellEndTime"
       :schedule-cell-context-column="scheduleCellContextColumn"
       :schedule-cell-context-record="scheduleCellContextRecord"
+      :has-scheduled-lesson="hasScheduledLesson"
       :open-scheduled-lesson-detail="openScheduledLessonDetail"
       :open-scheduled-conflict-detail="openScheduledConflictDetail"
       :handle-conflict-click="handleConflictClick"

@@ -8,6 +8,7 @@ interface UseSmartTimetableAvailabilityOptions {
   buildAvailabilitySlotKey: (teacherId: unknown, lessonDate: string, startTime: string, endTime: string) => string
   currentModel: Ref<string>
   dataSource: ComputedRef<any[]>
+  hasScheduledLesson: (lesson: any) => boolean
   normalizedSelectedAssistantIds: ComputedRef<string[]>
   normalizedSelectedClassroomId: ComputedRef<string>
   oneToOneData: Ref<any[]>
@@ -37,7 +38,7 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
 
     options.dataSource.value.forEach((teacher) => {
       teacher.lessons.forEach((lesson: any) => {
-        if (!lesson.studentId) {
+        if (!options.hasScheduledLesson(lesson)) {
           schedules.push({
             teacherId: String(teacher.teacherId),
             lessonDate: teacher.date,
@@ -74,7 +75,7 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
 
     options.dataSource.value.forEach((teacher) => {
       teacher.lessons.forEach((lesson: any) => {
-        if (lesson.studentId)
+        if (options.hasScheduledLesson(lesson))
           return
         const matched = invalidMap.get(
           options.buildAvailabilitySlotKey(teacher.teacherId, teacher.date, lesson.startTime, lesson.endTime),

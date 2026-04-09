@@ -51,6 +51,10 @@ const props = defineProps({
     type: Function,
     required: true,
   },
+  hasScheduledLesson: {
+    type: Function,
+    required: true,
+  },
   openScheduledLessonDetail: {
     type: Function,
     required: true,
@@ -349,7 +353,7 @@ onUnmounted(() => {
       <template #bodyCell="{ column, record, text }">
         <template v-if="isScheduleColumn(column)">
           <TimetableScheduleHoverPopover
-            v-if="text.studentId"
+            v-if="hasScheduledLesson(text)"
             :open="!draggingScheduleCellKey && openSchedulePopoverKey === schedulePopoverKey(column, record)"
             :schedule-id="String(text.scheduleId || '')"
             :mode-label="scheduleModeShortLabel(text)"
