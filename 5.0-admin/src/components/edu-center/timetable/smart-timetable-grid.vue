@@ -490,7 +490,7 @@ function goRollCall() {
                 {{ scheduleCellStartTime(column, record) }}-{{ scheduleCellEndTime(column, record) }}
                 <a-tooltip v-if="text.scheduledConflict" :title="conflictBadgeTooltip(text)" placement="top">
                   <span
-                    class="st-schedule-cell__badge st-schedule-cell__badge--conflict absolute right-0 h-4 rounded-lb-2 rounded-rt-1 pl-2 pr-1 text-2.5 font-500"
+                    class="st-schedule-cell__badge st-schedule-cell__badge--edge st-schedule-cell__badge--conflict absolute right-0 h-4 rounded-lb-2 rounded-rt-1 pl-2 pr-1 text-2.5 font-500"
                     style="cursor: pointer"
                     @click.stop="openScheduledConflictDetail(text)"
                   >
@@ -499,7 +499,7 @@ function goRollCall() {
                 </a-tooltip>
                 <span
                   v-else
-                  class="st-schedule-cell__badge st-schedule-cell__badge--mode absolute right-0 h-4 rounded-lb-2 rounded-rt-1 pl-2 pr-1 text-2.5 font-500"
+                  class="st-schedule-cell__badge st-schedule-cell__badge--edge st-schedule-cell__badge--mode absolute right-0 h-4 rounded-lb-2 rounded-rt-1 pl-2 pr-1 text-2.5 font-500"
                 >
                   <span v-if="text.courseType === 1">1v1</span>
                   <span v-else-if="text.courseType === 2">班课(<span>{{ text.isMain ? '主教' : '辅教' }}</span>)</span>
@@ -625,6 +625,11 @@ function goRollCall() {
 
 .st-schedule-cell__badge {
   color: #fff;
+}
+
+.st-schedule-cell__badge--edge {
+  top: -1px;
+  right: -1px;
 }
 
 .st-schedule-cell__badge--mode {
