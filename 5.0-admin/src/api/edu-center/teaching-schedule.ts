@@ -91,6 +91,7 @@ export interface TeachingScheduleDetail {
   remark?: string
   batchMeta?: TeachingScheduleBatchMeta
   students: TeachingScheduleDetailStudent[]
+  leaveStudents?: TeachingScheduleDetailStudent[]
 }
 
 export interface CreateOneToOneSchedulesResult {

@@ -6,6 +6,7 @@ import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import { getTeachingScheduleDetailApi, type TeachingScheduleDetail, type TeachingScheduleDetailStudent } from '@/api/edu-center/teaching-schedule'
+import RollCallAddStudentModal from '@/components/common/roll-call-add-student-modal.vue'
 import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
 
@@ -41,6 +42,9 @@ const loading = ref(false)
 const detailData = ref<TeachingScheduleDetail | null>(null)
 const studentStore = useStudentStore()
 const openStudentDrawer = ref(false)
+const activeStudentTabKey = ref('students')
+const addStudentModalOpen = ref(false)
+const addStudentModalTitle = ref('添加补课学员')
 const defaultStudentAvatar = 'https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png'
 const studentColumns: TableColumnsType<TeachingScheduleDetailStudent> = [
   {
@@ -84,6 +88,7 @@ const isOneToOne = computed(() => {
 })
 const scheduleCover = computed(() => (isOneToOne.value ? scheduleOneToOneImage : scheduleClassImage))
 const students = computed(() => detailData.value?.students || [])
+const leaveStudents = computed(() => detailData.value?.leaveStudents || [])
 const headerTitle = computed(() => {
   if (props.detail?.lessonTitle)
     return props.detail.lessonTitle
@@ -119,7 +124,12 @@ const repeatRuleText = computed(() => {
   return base
 })
 const remarkText = computed(() => detailData.value?.remark || '-')
-const studentTypeText = computed(() => (Number(detailData.value?.classType) === 2 ? '1对1学员' : '班课学员'))
+const currentStudentList = computed(() => (activeStudentTabKey.value === 'leave' ? leaveStudents.value : students.value))
+const studentCardTitle = computed(() => {
+  if (isOneToOne.value)
+    return '学员列表'
+  return activeStudentTabKey.value === 'leave' ? '请假学员列表' : '班级学员列表'
+})
 
 let loadSeq = 0
 
@@ -143,6 +153,27 @@ function handleViewStudent(studentId?: string) {
     return
   studentStore.setStudentId(id)
   openStudentDrawer.value = true
+}
+
+function studentTypeText() {
+  if (activeStudentTabKey.value === 'leave')
+    return '请假学员'
+  if (Number(detailData.value?.classType) === 2)
+    return '1对1学员'
+  return '班课学员'
+}
+
+function handleAddStudentMenuClick({ key }) {
+  if (key === 'makeup') {
+    addStudentModalTitle.value = '添加补课学员'
+  }
+  else if (key === 'temporary') {
+    addStudentModalTitle.value = '添加临时学员'
+  }
+  else {
+    addStudentModalTitle.value = '添加试听学员'
+  }
+  addStudentModalOpen.value = true
 }
 
 async function loadDetail() {
@@ -182,9 +213,20 @@ watch(
     if (!openDrawer.value) {
       detailData.value = null
       loading.value = false
+      activeStudentTabKey.value = 'students'
       return
     }
+    activeStudentTabKey.value = 'students'
     await loadDetail()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => isOneToOne.value,
+  (value) => {
+    if (value)
+      activeStudentTabKey.value = 'students'
   },
   { immediate: true },
 )
@@ -276,15 +318,39 @@ watch(
 
       <div class="tabs">
         <a-tabs
-          active-key="0"
+          v-model:activeKey="activeStudentTabKey"
           size="large"
           :tab-bar-style="{ 'border-radius': '0px', 'padding-left': '24px' }"
         >
-          <a-tab-pane key="0" tab="学员名单">
-            <a-card title="上课学员" :bordered="false">
+          <a-tab-pane key="students" tab="学员名单">
+            <a-card :title="studentCardTitle" :bordered="false">
+              <template v-if="!isOneToOne" #extra>
+                <a-dropdown
+                  placement="bottomRight"
+                  :trigger="['hover']"
+                  overlay-class-name="schedule-detail-add-student-dropdown"
+                >
+                  <a-button>
+                    <span>添加学员</span>
+                  </a-button>
+                  <template #overlay>
+                    <a-menu @click="handleAddStudentMenuClick">
+                      <a-menu-item key="makeup">
+                        补课学员
+                      </a-menu-item>
+                      <a-menu-item key="temporary">
+                        临时学员
+                      </a-menu-item>
+                      <a-menu-item key="trial">
+                        试听学员
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
+              </template>
               <a-table
                 :columns="studentColumns"
-                :data-source="students"
+                :data-source="currentStudentList"
                 :pagination="false"
                 row-key="studentId"
                 :scroll="{ x: 700 }"
@@ -310,7 +376,49 @@ watch(
                   </template>
                   <template v-else-if="column.key === 'studentType'">
                     <span class="student-type-text">
-                      {{ studentTypeText }}
+                      {{ studentTypeText() }}
+                    </span>
+                  </template>
+                  <template v-else-if="column.key === 'action'">
+                    <a-button type="link" class="px0" @click="handleViewStudent(record.studentId)">
+                      详情
+                    </a-button>
+                  </template>
+                </template>
+              </a-table>
+            </a-card>
+          </a-tab-pane>
+          <a-tab-pane v-if="!isOneToOne" key="leave" tab="请假学员">
+            <a-card :title="studentCardTitle" :bordered="false">
+              <a-table
+                :columns="studentColumns"
+                :data-source="currentStudentList"
+                :pagination="false"
+                row-key="studentId"
+                :scroll="{ x: 700 }"
+              >
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'phone'">
+                    <div class="student-phone-cell">
+                      <div class="student-phone-relation">
+                        {{ record.phoneRelationshipText || '-' }}
+                      </div>
+                      <div class="student-phone-number">
+                        {{ record.maskedPhone || record.phone || '-' }}
+                      </div>
+                    </div>
+                  </template>
+                  <template v-else-if="column.key === 'studentName'">
+                    <div class="student-name-cell" @click="handleViewStudent(record.studentId)">
+                      <img class="student-avatar" :src="record.avatarUrl || defaultStudentAvatar" alt="">
+                      <div class="student-name-text">
+                        {{ record.studentName || '-' }}
+                      </div>
+                    </div>
+                  </template>
+                  <template v-else-if="column.key === 'studentType'">
+                    <span class="student-type-text">
+                      {{ studentTypeText() }}
                     </span>
                   </template>
                   <template v-else-if="column.key === 'action'">
@@ -326,6 +434,7 @@ watch(
       </div>
     </a-spin>
     <student-info-drawer v-model:open="openStudentDrawer" />
+    <RollCallAddStudentModal v-model:open="addStudentModalOpen" :title="addStudentModalTitle" />
   </a-drawer>
 </template>
 
@@ -376,6 +485,44 @@ watch(
       content: "";
     }
   }
+}
+
+:deep(.tabs .ant-card-head) {
+  min-height: 68px;
+  padding: 0 24px;
+}
+
+:deep(.tabs .ant-card-head-title) {
+  padding: 20px 0;
+  color: #1f2329;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+:deep(.tabs .ant-card-extra) {
+  padding: 14px 0;
+}
+
+:global(.schedule-detail-add-student-dropdown .ant-dropdown-menu) {
+  min-width: 132px;
+  padding: 8px;
+  border-radius: 16px;
+  border: 1px solid #eef0f4;
+  box-shadow: 0 12px 28px rgb(15 23 42 / 10%);
+}
+
+:global(.schedule-detail-add-student-dropdown .ant-dropdown-menu-item) {
+  min-height: 40px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  color: #1f2329;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+:global(.schedule-detail-add-student-dropdown .ant-dropdown-menu-item:hover) {
+  background: #f5f7fb;
 }
 
 .student-name-cell {
