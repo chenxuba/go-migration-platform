@@ -27,9 +27,9 @@ import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   buildQuickHourlySlots,
   configGroupsSorted,
+  parseUnifiedTimePeriodConfig,
   periodGroupIndexForKey,
   periodGroupKeyForIndex,
-  parseUnifiedTimePeriodConfig,
 } from '@/utils/unified-time-period'
 import emitter, { EVENTS } from '@/utils/eventBus'
 
@@ -87,6 +87,10 @@ const filterOneToOneId = ref(undefined)
 const filterCourseId = ref(undefined)
 const filterScheduleType = ref([])
 const filterCallStatus = ref(undefined)
+const schedulingClassroomList = ref([])
+const schedulingClassroomLoading = ref(false)
+const selectedOneToOneClassroomId = ref(undefined)
+const selectedClassClassroomId = ref(undefined)
 
 const scheduleTypeOptions = [
   { id: 'group_class', value: '班级日程' },
@@ -99,11 +103,18 @@ const scheduleCallStatusOptions = [
   { id: 'signed', value: '已点名' },
 ]
 
+function normalizeOptionalClassroomId(value) {
+  const text = String(value ?? '').trim()
+  if (!text || text === '0' || text.toLowerCase() === 'null' || text.toLowerCase() === 'undefined')
+    return ''
+  return text
+}
+
 function normalizeScheduleFilterValue(value) {
   if (Array.isArray(value))
     return value.length ? value[0] : undefined
   const text = String(value ?? '').trim()
-  return text ? text : undefined
+  return text || undefined
 }
 
 function normalizeScheduleFilterValues(value) {
@@ -217,6 +228,58 @@ async function loadScheduleClassroomOptions(searchKey = '') {
     console.error('load schedule classroom options failed', error)
   }
 }
+
+async function loadSchedulingClassrooms() {
+  schedulingClassroomLoading.value = true
+  try {
+    const res = await listClassroomsApi({
+      enabledOnly: true,
+    })
+    if (res.code !== 200) {
+      messageService.error(res.message || '获取教室列表失败')
+      return
+    }
+    schedulingClassroomList.value = Array.isArray(res.result) ? res.result : []
+  }
+  catch (error) {
+    console.error('load scheduling classrooms failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '获取教室列表失败')
+  }
+  finally {
+    schedulingClassroomLoading.value = false
+  }
+}
+
+function classroomNameById(value, fallbackName = '') {
+  const normalized = normalizeOptionalClassroomId(value)
+  if (!normalized)
+    return String(fallbackName || '').trim()
+  const matched = schedulingClassroomList.value.find(item => String(item?.id ?? '').trim() === normalized)
+  return String(matched?.name || fallbackName || '').trim()
+}
+
+const selectedOneToOneSchedulingClassroomName = computed(() =>
+  classroomNameById(selectedOneToOneClassroomId.value),
+)
+
+const oneToOneSchedulingClassroomOptions = computed(() => {
+  const optionMap = new Map()
+  const append = (id, name) => {
+    const normalizedId = normalizeOptionalClassroomId(id)
+    const label = String(name || '').trim()
+    if (!normalizedId || !label || optionMap.has(normalizedId))
+      return
+    optionMap.set(normalizedId, {
+      value: normalizedId,
+      label,
+    })
+  }
+
+  schedulingClassroomList.value.forEach(item => append(item?.id, item?.name))
+  append(selectedOneToOneClassroomId.value, selectedOneToOneSchedulingClassroomName.value)
+
+  return [...optionMap.values()]
+})
 
 async function loadScheduleClassOptions(searchKey = '', reset = true) {
   if (reset) {
@@ -1159,6 +1222,11 @@ const {
   selectedAssistantIds,
 } = useSmartTimetablePicker({
   activeGroupLabel,
+  classroomId: selectedOneToOneClassroomId,
+  classroomLoading: schedulingClassroomLoading,
+  classroomNameById: value => classroomNameById(value),
+  classroomOptions: oneToOneSchedulingClassroomOptions,
+  classroomPlaceholder: computed(() => '不选则不占用教室'),
   currentModel,
   displayedGroupKey,
   detectOneToOneAvailability: value => detectOneToOneAvailabilityBridge(value),
@@ -1176,6 +1244,7 @@ const {
   currentModel,
   dataSource,
   normalizedSelectedAssistantIds,
+  normalizedSelectedClassroomId: computed(() => normalizeOptionalClassroomId(selectedOneToOneClassroomId.value)),
   oneToOneData,
   parseConflictTimeRange,
   resetEmptyLessonConflicts,
@@ -1277,6 +1346,7 @@ function refreshTimetableRelatedData() {
   void fetchOneToOneOptionsForTimetable()
   void fetchAssistantOptions()
   void loadClassOptions()
+  void loadSchedulingClassrooms()
 }
 
 onMounted(() => {
@@ -1284,6 +1354,7 @@ onMounted(() => {
   void fetchOneToOneOptionsForTimetable()
   void fetchAssistantOptions()
   void loadClassOptions()
+  void loadSchedulingClassrooms()
   emitter.on(EVENTS.REFRESH_DATA, refreshTimetableRelatedData)
 })
 
@@ -1465,15 +1536,88 @@ const {
   getLessonIndex,
   queryDateRange,
   resetEmptyLessonConflicts,
+  selectedClassroomId: computed(() => normalizeOptionalClassroomId(selectedClassClassroomId.value)),
+  resolveClassroomName: value => classroomNameById(value),
 })
 
-handleClassBridge = value => {
+const selectedClassSchedulingClassroomName = computed(() => {
+  const selectedClass = findClassInfo(classId.value)
+  const defaultClassroomId = normalizeOptionalClassroomId(selectedClass?.classroomId)
+  const defaultClassroomName = String(selectedClass?.classroomName || '').trim()
+  const explicitClassroomId = normalizeOptionalClassroomId(selectedClassClassroomId.value)
+  if (!explicitClassroomId)
+    return defaultClassroomName
+  return classroomNameById(
+    explicitClassroomId,
+    explicitClassroomId === defaultClassroomId ? defaultClassroomName : '',
+  )
+})
+
+const schedulingClassroomOptions = computed(() => {
+  const optionMap = new Map()
+  const append = (id, name) => {
+    const normalizedId = normalizeOptionalClassroomId(id)
+    const label = String(name || '').trim()
+    if (!normalizedId || !label || optionMap.has(normalizedId))
+      return
+    optionMap.set(normalizedId, {
+      value: normalizedId,
+      label,
+    })
+  }
+
+  schedulingClassroomList.value.forEach(item => append(item?.id, item?.name))
+  const selectedClass = findClassInfo(classId.value)
+  append(selectedClass?.classroomId, selectedClass?.classroomName)
+  append(selectedOneToOneClassroomId.value, selectedOneToOneSchedulingClassroomName.value)
+  append(selectedClassClassroomId.value, selectedClassSchedulingClassroomName.value)
+
+  return [...optionMap.values()]
+})
+
+const schedulingClassroomPlaceholder = computed(() =>
+  currentModel.value === '1'
+    ? '不选则不占用教室'
+    : (normalizeOptionalClassroomId(findClassInfo(classId.value)?.classroomId) ? '不选则默认班级教室' : '请选择教室'),
+)
+
+const classSchedulingClassroomSummary = computed(() => {
+  if (selectedClassSchedulingClassroomName.value)
+    return `已选教室：${selectedClassSchedulingClassroomName.value}`
+  if (normalizeOptionalClassroomId(findClassInfo(classId.value)?.classroomId))
+    return '未选择教室时，默认使用班级教室。'
+  return '当前班级未配置默认教室，可在此选择。'
+})
+
+function resolveSelectedOneToOneClassroom() {
+  const classroomId = normalizeOptionalClassroomId(selectedOneToOneClassroomId.value)
+  return {
+    classroomId,
+    classroomName: classroomNameById(classroomId),
+  }
+}
+
+function resolveSelectedClassroomForClass(classInfo) {
+  const explicitClassroomId = normalizeOptionalClassroomId(selectedClassClassroomId.value)
+  const fallbackClassroomId = normalizeOptionalClassroomId(classInfo?.classroomId)
+  const classroomId = explicitClassroomId || fallbackClassroomId
+  return {
+    classroomId,
+    classroomName: classroomNameById(
+      classroomId,
+      classroomId === fallbackClassroomId ? String(classInfo?.classroomName || '').trim() : '',
+    ),
+  }
+}
+
+handleClassBridge = (value) => {
   void handleClass(value)
 }
 
 const classPickerOpen = ref(false)
 const selectedClassAssistantIds = ref([])
 const classAssistantKeyword = ref('')
+const classClassroomKeyword = ref('')
 const autoClassTeacherFilterId = ref('')
 let preserveClassPickerOpen = false
 let lastHandledClassId = ''
@@ -1501,6 +1645,15 @@ const classAssistantOptionsInPicker = computed(() => {
       return true
     const blob = `${item.label || ''} ${item.mobile || ''} ${item.value || ''}`.toLowerCase()
     return blob.includes(keyword)
+  })
+})
+
+const classClassroomOptionsInPicker = computed(() => {
+  const keyword = String(classClassroomKeyword.value || '').trim().toLowerCase()
+  return schedulingClassroomOptions.value.filter((item) => {
+    if (!keyword)
+      return true
+    return String(item?.label || '').trim().toLowerCase().includes(keyword)
   })
 })
 
@@ -1576,7 +1729,75 @@ function toggleClassAssistantOption(value, checked) {
 
 function renderClassDropdown({ menuNode }) {
   const selectedClass = findClassInfo(classId.value)
-  const sideChildren = [
+  const classroomOptionNodes = classClassroomOptionsInPicker.value.length
+    ? classClassroomOptionsInPicker.value.map((item) => {
+        const checked = normalizeOptionalClassroomId(selectedClassClassroomId.value) === String(item.value || '').trim()
+        return h('div', {
+          class: 'st-top-1v1-dropdown__assistant-item',
+          key: item.value,
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            minHeight: '30px',
+            padding: '2px 0px',
+            borderRadius: '10px',
+            cursor: 'pointer',
+            boxSizing: 'border-box',
+            userSelect: 'none',
+          },
+          onMousedown: (event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          },
+          onClick: () => {
+            selectedClassClassroomId.value = String(item.value || '').trim() || undefined
+            requestKeepClassPickerOpen()
+          },
+        }, [
+          h('span', {
+            class: 'st-top-1v1-dropdown__assistant-checkbox',
+            style: {
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '16px',
+              height: '16px',
+              borderRadius: '4px',
+              border: checked ? '1px solid #1677ff' : '1px solid #8c8c8c',
+              background: checked ? '#1677ff' : '#fff',
+              color: '#fff',
+              flex: '0 0 auto',
+              fontSize: '11px',
+              fontWeight: 700,
+              lineHeight: 1,
+            },
+          }, checked ? '✓' : ''),
+          h('span', {
+            class: 'st-top-1v1-dropdown__assistant-name',
+            style: {
+              flex: 1,
+              minWidth: 0,
+              color: '#262626',
+              fontSize: '12px',
+              fontWeight: 600,
+              lineHeight: '20px',
+            },
+          }, item.label),
+        ])
+      })
+    : [
+        h('div', {
+          class: 'st-top-1v1-dropdown__empty',
+          style: {
+            padding: '8px 0 12px',
+            color: '#8c8c8c',
+            fontSize: '12px',
+            lineHeight: '18px',
+          },
+        }, '暂无匹配教室'),
+      ]
+  const assistantChildren = [
     h('div', {
       class: 'st-top-1v1-dropdown__section-head',
       style: {
@@ -1606,10 +1827,153 @@ function renderClassDropdown({ menuNode }) {
       }, classId.value ? '多选，可不选' : '先选班级后配置'),
     ]),
   ]
+  const classroomChildren = [
+    h('div', {
+      class: 'st-top-1v1-dropdown__section-head',
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '12px',
+        marginBottom: '10px',
+      },
+    }, [
+      h('span', {
+        class: 'st-top-1v1-dropdown__section-title',
+        style: {
+          color: '#262626',
+          fontSize: '14px',
+          fontWeight: 700,
+          lineHeight: 1,
+        },
+      }, '选择教室'),
+      h('span', {
+        class: 'st-top-1v1-dropdown__section-hint',
+        style: {
+          color: '#8c8c8c',
+          fontSize: '12px',
+          lineHeight: 1,
+        },
+      }, '单选，可不选'),
+    ]),
+    h('input', {
+      class: 'st-top-1v1-dropdown__search-input',
+      value: classClassroomKeyword.value,
+      placeholder: '搜索教室',
+      style: {
+        width: '100%',
+        height: '30px',
+        padding: '0 10px',
+        color: '#262626',
+        fontSize: '12px',
+        background: '#fff',
+        border: '1px solid #d9d9d9',
+        borderRadius: '8px',
+        outline: 'none',
+        boxSizing: 'border-box',
+        marginBottom: '4px',
+      },
+      onInput: (event) => {
+        classClassroomKeyword.value = event?.target?.value || ''
+      },
+      onFocus: () => {
+        requestKeepClassPickerOpen()
+      },
+      onClick: () => {
+        requestKeepClassPickerOpen()
+      },
+    }),
+    h('div', {
+      class: 'st-top-1v1-dropdown__summary',
+      style: {
+        marginBottom: '14px',
+        color: '#5b6475',
+        fontSize: '12px',
+        lineHeight: '1.5',
+      },
+    }, classSchedulingClassroomSummary.value),
+    schedulingClassroomLoading.value
+      ? h('div', {
+          class: 'st-top-1v1-dropdown__empty',
+          style: {
+            padding: '8px 0 12px',
+            color: '#8c8c8c',
+            fontSize: '12px',
+            lineHeight: '18px',
+            marginBottom: '12px',
+          },
+        }, '教室加载中...')
+      : h('div', {
+          class: 'st-top-1v1-dropdown__assistant-list',
+          style: {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0px',
+            maxHeight: '200px',
+            overflowY: 'auto',
+            paddingRight: '4px',
+            marginBottom: '14px',
+          },
+        }, [
+          h('div', {
+            class: 'st-top-1v1-dropdown__assistant-item',
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              minHeight: '30px',
+              padding: '2px 0px',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+              userSelect: 'none',
+            },
+            onMousedown: (event) => {
+              event.preventDefault()
+              event.stopPropagation()
+            },
+            onClick: () => {
+              selectedClassClassroomId.value = undefined
+              requestKeepClassPickerOpen()
+            },
+          }, [
+            h('span', {
+              class: 'st-top-1v1-dropdown__assistant-checkbox',
+              style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '16px',
+                height: '16px',
+                borderRadius: '4px',
+                border: !normalizeOptionalClassroomId(selectedClassClassroomId.value) ? '1px solid #1677ff' : '1px solid #8c8c8c',
+                background: !normalizeOptionalClassroomId(selectedClassClassroomId.value) ? '#1677ff' : '#fff',
+                color: '#fff',
+                flex: '0 0 auto',
+                fontSize: '11px',
+                fontWeight: 700,
+                lineHeight: 1,
+              },
+            }, !normalizeOptionalClassroomId(selectedClassClassroomId.value) ? '✓' : ''),
+            h('span', {
+              class: 'st-top-1v1-dropdown__assistant-name',
+              style: {
+                flex: 1,
+                minWidth: 0,
+                color: '#262626',
+                fontSize: '12px',
+                fontWeight: 600,
+                lineHeight: '20px',
+              },
+            }, schedulingClassroomPlaceholder.value),
+          ]),
+          ...classroomOptionNodes,
+        ]),
+  ]
 
   if (classId.value) {
     if (selectedClass?.mainTeacherName) {
-      sideChildren.push(
+      assistantChildren.push(
         h('div', {
           class: 'st-top-1v1-dropdown__summary',
           style: {
@@ -1622,7 +1986,7 @@ function renderClassDropdown({ menuNode }) {
       )
     }
 
-    sideChildren.push(
+    assistantChildren.push(
       h('input', {
         class: 'st-top-1v1-dropdown__search-input',
         value: classAssistantKeyword.value,
@@ -1653,7 +2017,7 @@ function renderClassDropdown({ menuNode }) {
     )
 
     if (normalizedSelectedClassAssistantIds.value.length) {
-      sideChildren.push(
+      assistantChildren.push(
         h('div', {
           class: 'st-top-1v1-dropdown__summary',
           style: {
@@ -1667,7 +2031,7 @@ function renderClassDropdown({ menuNode }) {
     }
 
     if (assistantOptionsLoading.value) {
-      sideChildren.push(h('div', {
+      assistantChildren.push(h('div', {
         class: 'st-top-1v1-dropdown__empty',
         style: {
           padding: '14px 0 4px',
@@ -1678,7 +2042,7 @@ function renderClassDropdown({ menuNode }) {
       }, '助教加载中...'))
     }
     else if (classAssistantOptionsInPicker.value.length) {
-      sideChildren.push(
+      assistantChildren.push(
         h('div', {
           class: 'st-top-1v1-dropdown__assistant-list',
           style: {
@@ -1686,6 +2050,7 @@ function renderClassDropdown({ menuNode }) {
             flexDirection: 'column',
             gap: '0px',
             flex: 1,
+            minHeight: 0,
             overflowY: 'auto',
             paddingRight: '4px',
           },
@@ -1758,7 +2123,7 @@ function renderClassDropdown({ menuNode }) {
       )
     }
     else {
-      sideChildren.push(h('div', {
+      assistantChildren.push(h('div', {
         class: 'st-top-1v1-dropdown__empty',
         style: {
           padding: '14px 0 4px',
@@ -1770,10 +2135,10 @@ function renderClassDropdown({ menuNode }) {
     }
   }
   else {
-    sideChildren.push(h('div', {
+    assistantChildren.push(h('div', {
       class: 'st-top-1v1-dropdown__empty',
       style: {
-        padding: '14px 0 4px',
+        padding: '14px 0 18px',
         color: '#8c8c8c',
         fontSize: '12px',
         lineHeight: '18px',
@@ -1785,11 +2150,11 @@ function renderClassDropdown({ menuNode }) {
     class: 'st-top-1v1-dropdown',
     style: {
       display: 'flex',
-      width: '520px',
-      minWidth: '520px',
-      maxWidth: '520px',
-      minHeight: '280px',
-      maxHeight: '280px',
+      width: '820px',
+      minWidth: '820px',
+      maxWidth: '820px',
+      minHeight: '300px',
+      maxHeight: '300px',
       background: '#fff',
       borderRadius: '12px',
       overflow: 'hidden',
@@ -1809,14 +2174,30 @@ function renderClassDropdown({ menuNode }) {
       class: 'st-top-1v1-dropdown__side',
       style: {
         display: 'flex',
+        flex: '0 0 271px',
+        flexDirection: 'column',
+        minHeight: 0,
+        minWidth: 0,
+        padding: '14px 16px 16px',
+        background: 'linear-gradient(180deg, #fcfdff 0%, #fff 100%)',
+        overflow: 'hidden',
+        borderRight: '1px solid #f0f0f0',
+      },
+      onMousedown: event => event.stopPropagation(),
+    }, assistantChildren),
+    h('div', {
+      class: 'st-top-1v1-dropdown__side',
+      style: {
+        display: 'flex',
         flex: 1,
         flexDirection: 'column',
         minWidth: 0,
         padding: '14px 16px 16px',
         background: 'linear-gradient(180deg, #fcfdff 0%, #fff 100%)',
+        overflowY: 'auto',
       },
-      onMousedown: (event) => event.stopPropagation(),
-    }, sideChildren),
+      onMousedown: event => event.stopPropagation(),
+    }, classroomChildren),
   ])
 }
 
@@ -1874,19 +2255,24 @@ async function handleClassSelectionChange(value) {
   if (nextClassId !== lastHandledClassId) {
     selectedClassAssistantIds.value = []
     classAssistantKeyword.value = ''
+    classClassroomKeyword.value = ''
+    selectedClassClassroomId.value = undefined
   }
   lastHandledClassId = nextClassId
   if (!nextClassId) {
     preserveClassPickerOpen = false
     classPickerOpen.value = false
     clearClassAutoTeacherFilter()
+    selectedClassClassroomId.value = undefined
     await handleClass(value)
     return
   }
   requestKeepClassPickerOpen()
   const classInfo = await handleClass(value)
-  if (classInfo)
+  if (classInfo) {
+    selectedClassClassroomId.value = normalizeOptionalClassroomId(classInfo.classroomId) || undefined
     applyClassDefaultTeacherQuickFilter(classInfo)
+  }
 }
 
 function buildAvailabilitySlotKey(teacherId, lessonDate, startTime, endTime) {
@@ -2197,6 +2583,7 @@ function buildForceScheduleDisabledReason(conflictTypes = [], actionText = '排�
 function openApiConflictModal(reason, column, record) {
   const selectedTarget = resolveConflictAttemptTarget()
   const attemptedConflictTypes = Array.isArray(reason?.conflictTypes) ? reason.conflictTypes : []
+  const selectedClassroom = resolveSelectedOneToOneClassroom()
   const assignment = buildOneToOneScheduleAssignment(
     record.teacherId,
     normalizedSelectedAssistantIds.value,
@@ -2216,6 +2603,8 @@ function openApiConflictModal(reason, column, record) {
     timeText: `${column.startTime}-${column.endTime}`,
     teacherName: record.name,
     assistantText: assistantTextForIds(assignment.assistantIds),
+    classroomId: selectedClassroom.classroomId,
+    classroomName: selectedClassroom.classroomName,
     warningText: assignment.removedAssistantIds.length > 0 ? '主教与助教不能为同一人，系统已自动忽略重复助教。' : '',
     lessonIndex: getLessonIndex(column.startTime),
     groupLabel: activeGroupLabel.value || '当前组',
@@ -2228,11 +2617,13 @@ function openApiConflictModal(reason, column, record) {
           oneToOneId: String(oneToOneRecordId.value),
           teacherId: String(record.teacherId),
           assistantIds: assignment.assistantIds,
+          classroomId: selectedClassroom.classroomId || undefined,
           schedules: [{
             lessonDate: record.date,
             startTime: column.startTime,
             endTime: column.endTime,
             assistantIds: assignment.assistantIds,
+            classroomId: selectedClassroom.classroomId || undefined,
           }],
         }
       : null,
@@ -2250,6 +2641,7 @@ function openClassConflictModal(reason, column, record) {
   const conflictingStudentText = Array.isArray(reason?.conflictingStudentNames) && reason.conflictingStudentNames.length
     ? reason.conflictingStudentNames.join('、')
     : (hasStudentConflict ? '未识别到具体冲突学员' : '')
+  const selectedClassroom = resolveSelectedClassroomForClass(selectedClass)
   const assignment = selectedClass
     ? buildClassScheduleAssignment(
         selectedClass,
@@ -2280,8 +2672,8 @@ function openClassConflictModal(reason, column, record) {
     studentText: classStudentText,
     conflictStudentLabel: hasStudentConflict ? '冲突学员' : '',
     conflictStudentText: conflictingStudentText,
-    classroomId: String(selectedClass?.classroomId || '').trim(),
-    classroomName: String(selectedClass?.classroomName || '').trim(),
+    classroomId: selectedClassroom.classroomId,
+    classroomName: selectedClassroom.classroomName,
     warningText: assignment.removedAssistantIds.length > 0 ? '主教与助教不能为同一人，系统已自动忽略重复助教。' : '',
     lessonIndex: getLessonIndex(column.startTime),
     groupLabel: activeGroupLabel.value || '当前组',
@@ -2294,14 +2686,14 @@ function openClassConflictModal(reason, column, record) {
           groupClassId: String(classId.value),
           teacherId: assignment.teacherId,
           assistantIds: assignment.assistantIds,
-          classroomId: String(selectedClass?.classroomId || '').trim() || undefined,
+          classroomId: selectedClassroom.classroomId || undefined,
           schedules: [{
             lessonDate: record.date,
             startTime: column.startTime,
             endTime: column.endTime,
             teacherId: assignment.teacherId,
             assistantIds: assignment.assistantIds,
-            classroomId: String(selectedClass?.classroomId || '').trim() || undefined,
+            classroomId: selectedClassroom.classroomId || undefined,
           }],
         }
       : null,
@@ -2588,6 +2980,7 @@ function buildScheduleConfirmContent({
   timeLabel,
   teacherName,
   assistantText,
+  classroomText,
   warningText,
   groupLabel,
   onSkipTodayChange,
@@ -2646,6 +3039,7 @@ function buildScheduleConfirmContent({
       buildConfirmField('上课时间', `${dateLabel} · ${timeLabel}`, '#1677ff'),
       buildConfirmField('上课老师', teacherName),
       ...(assistantText != null ? [buildConfirmField('上课助教', assistantText)] : []),
+      ...(classroomText != null ? [buildConfirmField('上课教室', classroomText)] : []),
       buildConfirmField('所在组别', groupLabel || '当前组'),
     ]),
     ...(warningText
@@ -2708,6 +3102,7 @@ function confirmScheduleWithOptionalSkip({
   timeLabel,
   teacherName,
   assistantText,
+  classroomText,
   warningText,
   groupLabel,
   onConfirm,
@@ -2733,6 +3128,7 @@ function confirmScheduleWithOptionalSkip({
         timeLabel,
         teacherName,
         assistantText,
+        classroomText,
         warningText,
         groupLabel,
         onSkipTodayChange: (checked) => { skipToday = checked },
@@ -2981,6 +3377,7 @@ async function handleScheduleClick(timeSlot, column, record) {
       record.teacherId,
       normalizedSelectedAssistantIds.value,
     )
+    const selectedClassroom = resolveSelectedOneToOneClassroom()
 
     void confirmScheduleWithOptionalSkip({
       modeLabel: '1v1',
@@ -2992,6 +3389,7 @@ async function handleScheduleClick(timeSlot, column, record) {
       timeLabel: `${column.startTime}-${column.endTime}`,
       teacherName: record.name,
       assistantText: assistantTextForIds(assignment.assistantIds),
+      classroomText: selectedClassroom.classroomName || '未设置教室',
       warningText: assignment.removedAssistantIds.length > 0 ? '主教与助教不能为同一人，系统已自动忽略重复助教。' : '',
       groupLabel: activeGroupLabel.value || '当前组',
       async onConfirm() {
@@ -3001,11 +3399,13 @@ async function handleScheduleClick(timeSlot, column, record) {
             oneToOneId: String(oneToOneRecordId.value),
             teacherId: String(record.teacherId),
             assistantIds: assignment.assistantIds,
+            classroomId: selectedClassroom.classroomId || undefined,
             schedules: [{
               lessonDate: record.date,
               startTime: column.startTime,
               endTime: column.endTime,
               assistantIds: assignment.assistantIds,
+              classroomId: selectedClassroom.classroomId || undefined,
             }],
           })
           if (res.code !== 200)
@@ -3060,6 +3460,7 @@ async function handleScheduleClick(timeSlot, column, record) {
     )
     const hasDuplicateClassAssistant = classAssignment.removedAssistantIds.length > 0
     const previewAssistantText = classAssistantTextForIds(classAssignment.assistantIds)
+    const previewClassroom = resolveSelectedClassroomForClass(classInfo)
 
     void confirmScheduleWithOptionalSkip({
       modeLabel: '班课',
@@ -3071,12 +3472,14 @@ async function handleScheduleClick(timeSlot, column, record) {
       timeLabel: `${column.startTime}-${column.endTime}`,
       teacherName: record.name,
       assistantText: previewAssistantText,
+      classroomText: previewClassroom.classroomName || '未设置教室',
       warningText: hasDuplicateClassAssistant ? '主教与助教不能为同一人，系统已自动忽略重复助教。' : '',
       groupLabel: activeGroupLabel.value || '当前组',
       async onConfirm() {
         creatingOneToOneSchedule.value = true
         try {
           const ensuredClassInfo = await ensureClassLoaded(classInfo.id) || classInfo
+          const selectedClassroom = resolveSelectedClassroomForClass(ensuredClassInfo)
           const assignment = buildClassScheduleAssignment(
             ensuredClassInfo,
             record.teacherId,
@@ -3086,14 +3489,14 @@ async function handleScheduleClick(timeSlot, column, record) {
             groupClassId: ensuredClassInfo.id,
             teacherId: assignment.teacherId,
             assistantIds: assignment.assistantIds,
-            classroomId: ensuredClassInfo.classroomId || undefined,
+            classroomId: selectedClassroom.classroomId || undefined,
             schedules: [{
               lessonDate: record.date,
               startTime: column.startTime,
               endTime: column.endTime,
               teacherId: assignment.teacherId,
               assistantIds: assignment.assistantIds,
-              classroomId: ensuredClassInfo.classroomId || undefined,
+              classroomId: selectedClassroom.classroomId || undefined,
             }],
           })
           if (res.code !== 200)
@@ -4292,6 +4695,28 @@ watch(
     if (value || !previousValue || String(oneToOneRecordId.value || '').trim())
       return
     clearOneToOneAvailabilityHighlights()
+  },
+)
+
+watch(
+  () => normalizeOptionalClassroomId(selectedOneToOneClassroomId.value),
+  (value, previousValue) => {
+    if (value === previousValue)
+      return
+    if (currentModel.value !== '1' || !String(oneToOneRecordId.value || '').trim())
+      return
+    void detectOneToOneAvailability(oneToOneRecordId.value)
+  },
+)
+
+watch(
+  () => normalizeOptionalClassroomId(selectedClassClassroomId.value),
+  (value, previousValue) => {
+    if (value === previousValue)
+      return
+    if (currentModel.value !== '2' || !String(classId.value || '').trim())
+      return
+    handleClassBridge(classId.value)
   },
 )
 

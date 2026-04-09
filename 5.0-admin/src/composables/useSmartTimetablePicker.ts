@@ -13,6 +13,11 @@ interface PickerOptionItem {
 
 interface UseSmartTimetablePickerOptions {
   activeGroupLabel: ComputedRef<string>
+  classroomId: Ref<string | undefined>
+  classroomLoading: Ref<boolean>
+  classroomNameById: (id: unknown) => string
+  classroomOptions: ComputedRef<Array<{ value: string, label: string }>>
+  classroomPlaceholder: ComputedRef<string>
   currentModel: Ref<string>
   displayedGroupKey: Ref<string>
   detectOneToOneAvailability: (value: string | number | undefined) => void | Promise<void>
@@ -25,6 +30,7 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
   const oneToOnePickerOpen = ref(false)
   const selectedAssistantIds = ref<string[]>([])
   const assistantKeyword = ref('')
+  const classroomKeyword = ref('')
   const oneToOneData = ref<any[]>([])
   const oneToOneListLoading = ref(false)
   const assistantOptions = ref<PickerOptionItem[]>([])
@@ -110,6 +116,15 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
         return true
       const blob = `${item.label || ''} ${item.mobile || ''} ${item.value || ''}`.toLowerCase()
       return blob.includes(keyword)
+    })
+  })
+
+  const classroomOptionsInPicker = computed(() => {
+    const keyword = String(classroomKeyword.value || '').trim().toLowerCase()
+    return options.classroomOptions.value.filter((item) => {
+      if (!keyword)
+        return true
+      return String(item?.label || '').trim().toLowerCase().includes(keyword)
     })
   })
 
@@ -280,6 +295,7 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
     oneToOnePickerOpen.value = false
     selectedAssistantIds.value = []
     assistantKeyword.value = ''
+    classroomKeyword.value = ''
     lastHandledOneToOneId = ''
     preserveOneToOnePickerOpen = false
   }
@@ -314,7 +330,76 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
   }
 
   function renderOneToOneDropdown({ menuNode }: { menuNode: any }) {
-    const sideChildren = [
+    const selectedClassroomName = options.classroomNameById(options.classroomId.value)
+    const classroomOptionNodes = classroomOptionsInPicker.value.length
+      ? classroomOptionsInPicker.value.map((item) => {
+          const checked = String(options.classroomId.value || '') === String(item.value || '')
+          return h('div', {
+            class: 'st-top-1v1-dropdown__assistant-item',
+            key: item.value,
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              minHeight: '30px',
+              padding: '2px 0px',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+              userSelect: 'none',
+            },
+            onMousedown: (event: MouseEvent) => {
+              event.preventDefault()
+              event.stopPropagation()
+            },
+            onClick: () => {
+              options.classroomId.value = String(item.value || '').trim() || undefined
+              requestKeepOneToOnePickerOpen()
+            },
+          }, [
+            h('span', {
+              class: 'st-top-1v1-dropdown__assistant-checkbox',
+              style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '16px',
+                height: '16px',
+                borderRadius: '4px',
+                border: checked ? '1px solid #1677ff' : '1px solid #8c8c8c',
+                background: checked ? '#1677ff' : '#fff',
+                color: '#fff',
+                flex: '0 0 auto',
+                fontSize: '11px',
+                fontWeight: 700,
+                lineHeight: 1,
+              },
+            }, checked ? '✓' : ''),
+            h('span', {
+              class: 'st-top-1v1-dropdown__assistant-name',
+              style: {
+                flex: 1,
+                minWidth: 0,
+                color: '#262626',
+                fontSize: '12px',
+                fontWeight: 600,
+                lineHeight: '20px',
+              },
+            }, item.label),
+          ])
+        })
+      : [
+          h('div', {
+            class: 'st-top-1v1-dropdown__empty',
+            style: {
+              padding: '8px 0 12px',
+              color: '#8c8c8c',
+              fontSize: '12px',
+              lineHeight: '18px',
+            },
+          }, '暂无匹配教室'),
+        ]
+    const assistantChildren = [
       h('div', {
         class: 'st-top-1v1-dropdown__section-head',
         style: {
@@ -344,9 +429,152 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
         }, oneToOneRecordId.value ? '多选，可不选' : '先选1v1后配置'),
       ]),
     ]
+    const classroomChildren = [
+      h('div', {
+        class: 'st-top-1v1-dropdown__section-head',
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          marginBottom: '10px',
+        },
+      }, [
+        h('span', {
+          class: 'st-top-1v1-dropdown__section-title',
+          style: {
+            color: '#262626',
+            fontSize: '14px',
+            fontWeight: 700,
+            lineHeight: 1,
+          },
+        }, '选择教室'),
+        h('span', {
+          class: 'st-top-1v1-dropdown__section-hint',
+          style: {
+            color: '#8c8c8c',
+            fontSize: '12px',
+            lineHeight: 1,
+          },
+        }, '单选，可不选'),
+      ]),
+      h('input', {
+        class: 'st-top-1v1-dropdown__search-input',
+        value: classroomKeyword.value,
+        placeholder: '搜索教室',
+        style: {
+          width: '100%',
+          height: '30px',
+          padding: '0 10px',
+          color: '#262626',
+          fontSize: '12px',
+          background: '#fff',
+          border: '1px solid #d9d9d9',
+          borderRadius: '8px',
+          outline: 'none',
+          boxSizing: 'border-box',
+          marginBottom: '4px',
+        },
+        onInput: (event: any) => {
+          classroomKeyword.value = event?.target?.value || ''
+        },
+        onFocus: () => {
+          requestKeepOneToOnePickerOpen()
+        },
+        onClick: () => {
+          requestKeepOneToOnePickerOpen()
+        },
+      }),
+      h('div', {
+        class: 'st-top-1v1-dropdown__summary',
+        style: {
+          marginBottom: '14px',
+          color: '#5b6475',
+          fontSize: '12px',
+          lineHeight: '1.5',
+        },
+      }, selectedClassroomName ? `已选教室：${selectedClassroomName}` : '未选择教室时，不占用教室资源。'),
+      options.classroomLoading.value
+        ? h('div', {
+            class: 'st-top-1v1-dropdown__empty',
+            style: {
+              padding: '8px 0 12px',
+              color: '#8c8c8c',
+              fontSize: '12px',
+              lineHeight: '18px',
+              marginBottom: '12px',
+            },
+          }, '教室加载中...')
+        : h('div', {
+            class: 'st-top-1v1-dropdown__assistant-list',
+            style: {
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0px',
+              maxHeight: '200px',
+              overflowY: 'auto',
+              paddingRight: '4px',
+              marginBottom: '14px',
+            },
+          }, [
+            h('div', {
+              class: 'st-top-1v1-dropdown__assistant-item',
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                minHeight: '30px',
+                padding: '2px 0px',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                boxSizing: 'border-box',
+                userSelect: 'none',
+              },
+              onMousedown: (event: MouseEvent) => {
+                event.preventDefault()
+                event.stopPropagation()
+              },
+              onClick: () => {
+                options.classroomId.value = undefined
+                requestKeepOneToOnePickerOpen()
+              },
+            }, [
+              h('span', {
+                class: 'st-top-1v1-dropdown__assistant-checkbox',
+                style: {
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '16px',
+                  height: '16px',
+                  borderRadius: '4px',
+                  border: !options.classroomId.value ? '1px solid #1677ff' : '1px solid #8c8c8c',
+                  background: !options.classroomId.value ? '#1677ff' : '#fff',
+                  color: '#fff',
+                  flex: '0 0 auto',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  lineHeight: 1,
+                },
+              }, !options.classroomId.value ? '✓' : ''),
+              h('span', {
+                class: 'st-top-1v1-dropdown__assistant-name',
+                style: {
+                  flex: 1,
+                  minWidth: 0,
+                  color: '#262626',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  lineHeight: '20px',
+                },
+              }, options.classroomPlaceholder.value),
+            ]),
+            ...classroomOptionNodes,
+          ]),
+    ]
 
     if (oneToOneRecordId.value) {
-      sideChildren.push(
+      assistantChildren.push(
         h('input', {
           class: 'st-top-1v1-dropdown__search-input',
           value: assistantKeyword.value,
@@ -377,7 +605,7 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
       )
 
       if (normalizedSelectedAssistantIds.value.length) {
-        sideChildren.push(
+        assistantChildren.push(
           h('div', {
             class: 'st-top-1v1-dropdown__summary',
             style: {
@@ -391,7 +619,7 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
       }
 
       if (assistantOptionsInPicker.value.length) {
-        sideChildren.push(
+        assistantChildren.push(
           h('div', {
             class: 'st-top-1v1-dropdown__assistant-list',
             style: {
@@ -399,6 +627,7 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
               flexDirection: 'column',
               gap: '0px',
               flex: 1,
+              minHeight: 0,
               overflowY: 'auto',
               paddingRight: '4px',
             },
@@ -471,7 +700,7 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
         )
       }
       else {
-        sideChildren.push(h('div', {
+        assistantChildren.push(h('div', {
           class: 'st-top-1v1-dropdown__empty',
           style: {
             padding: '14px 0 4px',
@@ -483,10 +712,10 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
       }
     }
     else {
-      sideChildren.push(h('div', {
+      assistantChildren.push(h('div', {
         class: 'st-top-1v1-dropdown__empty',
         style: {
-          padding: '14px 0 4px',
+          padding: '14px 0 18px',
           color: '#8c8c8c',
           fontSize: '12px',
           lineHeight: '18px',
@@ -498,11 +727,11 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
       class: 'st-top-1v1-dropdown',
       style: {
         display: 'flex',
-        width: '520px',
-        minWidth: '520px',
-        maxWidth: '520px',
-        minHeight: '280px',
-        maxHeight: '280px',
+        width: '820px',
+        minWidth: '820px',
+        maxWidth: '820px',
+        minHeight: '300px',
+        maxHeight: '300px',
         background: '#fff',
         borderRadius: '12px',
         overflow: 'hidden',
@@ -522,14 +751,30 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
         class: 'st-top-1v1-dropdown__side',
         style: {
           display: 'flex',
+          flex: '0 0 271px',
+          flexDirection: 'column',
+          minHeight: 0,
+          minWidth: 0,
+          padding: '14px 16px 16px',
+          background: 'linear-gradient(180deg, #fcfdff 0%, #fff 100%)',
+          overflow: 'hidden',
+          borderRight: '1px solid #f0f0f0',
+        },
+        onMousedown: (event: MouseEvent) => event.stopPropagation(),
+      }, assistantChildren),
+      h('div', {
+        class: 'st-top-1v1-dropdown__side',
+        style: {
+          display: 'flex',
           flex: 1,
           flexDirection: 'column',
           minWidth: 0,
           padding: '14px 16px 16px',
           background: 'linear-gradient(180deg, #fcfdff 0%, #fff 100%)',
+          overflowY: 'auto',
         },
         onMousedown: (event: MouseEvent) => event.stopPropagation(),
-      }, sideChildren),
+      }, classroomChildren),
     ])
   }
 

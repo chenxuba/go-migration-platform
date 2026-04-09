@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import type { ComputedRef, Ref } from 'vue'
-import { checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi } from '@/api/edu-center/teaching-schedule'
+import { validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
 
 interface UseSmartTimetableAvailabilityOptions {
@@ -9,6 +9,7 @@ interface UseSmartTimetableAvailabilityOptions {
   currentModel: Ref<string>
   dataSource: ComputedRef<any[]>
   normalizedSelectedAssistantIds: ComputedRef<string[]>
+  normalizedSelectedClassroomId: ComputedRef<string>
   oneToOneData: Ref<any[]>
   parseConflictTimeRange: (timeText: unknown) => { startTime: string, endTime: string } | null
   resetEmptyLessonConflicts: (scope?: string) => void
@@ -22,26 +23,16 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
 
   let oneToOneAvailabilitySeq = 0
 
-  function isTimeOverlap(time1: { start: string, end: string }, time2: { start: string, end: string }) {
-    const timeToMinutes = (timeStr: string) => {
-      const [hours, minutes] = timeStr.split(':').map(Number)
-      return hours * 60 + minutes
-    }
-
-    const start1 = timeToMinutes(time1.start)
-    const end1 = timeToMinutes(time1.end)
-    const start2 = timeToMinutes(time2.start)
-    const end2 = timeToMinutes(time2.end)
-
-    return start1 < end2 && start2 < end1
-  }
-
   function buildCurrentOneToOneAvailabilityPayload(oneToOneId: unknown) {
+    const classroomId = String(options.normalizedSelectedClassroomId.value || '').trim()
+    const assistantIds = options.normalizedSelectedAssistantIds.value
     const schedules: Array<{
       teacherId: string
       lessonDate: string
       startTime: string
       endTime: string
+      assistantIds?: string[]
+      classroomId?: string
     }> = []
 
     options.dataSource.value.forEach((teacher) => {
@@ -52,6 +43,8 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
             lessonDate: teacher.date,
             startTime: lesson.startTime,
             endTime: lesson.endTime,
+            assistantIds,
+            classroomId: classroomId || undefined,
           })
         }
       })
@@ -59,61 +52,15 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
 
     return {
       oneToOneId: String(oneToOneId || ''),
+      teacherId: '',
+      assistantIds,
+      classroomId: classroomId || undefined,
       schedules,
-    }
-  }
-
-  function buildCurrentAssistantAvailabilityPayload(oneToOneId: unknown) {
-    const schedules: Array<{
-      lessonDate: string
-      startTime: string
-      endTime: string
-    }> = []
-
-    options.dataSource.value.forEach((teacher) => {
-      teacher.lessons.forEach((lesson: any) => {
-        if (!lesson.studentId) {
-          schedules.push({
-            lessonDate: teacher.date,
-            startTime: lesson.startTime,
-            endTime: lesson.endTime,
-          })
-        }
-      })
-    })
-
-    return {
-      oneToOneId: String(oneToOneId || ''),
-      assistantIds: options.normalizedSelectedAssistantIds.value,
-      schedules,
-    }
-  }
-
-  function buildAssistantConflictReason(issues: any[]) {
-    const busyNames = Array.from(
-      new Set(
-        issues
-          .filter(item => item.kind !== 'selection')
-          .map(item => String(item.assistantName || '').trim())
-          .filter(Boolean),
-      ),
-    )
-    const messageParts = []
-    if (busyNames.length)
-      messageParts.push(`助教${busyNames.join('、')}该时间段已有安排`)
-
-    const existingSchedules = options.uniqueExistingSchedules(issues.flatMap(item => item.existingSchedules || []))
-    const conflictTypes = options.uniqueConflictTypes(['助教', ...issues.flatMap(item => item.conflictTypes || [])])
-    return {
-      type: existingSchedules.length ? '1v1-api' : '1v1-assistant-selection',
-      message: messageParts.join('；') || '所选助教该时间段不可排课',
-      conflictTypes,
-      existingSchedules,
     }
   }
 
   function applyServerAvailabilityResult(result: any) {
-    options.resetEmptyLessonConflicts('server')
+    options.resetEmptyLessonConflicts()
     const invalidMap = new Map()
     const items = Array.isArray(result?.items) ? result.items : []
     items.forEach((item) => {
@@ -141,64 +88,6 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
               existingSchedules: matched.existingSchedules || [],
             }
           : null
-        options.syncLessonConflictState(lesson)
-      })
-    })
-  }
-
-  function applyAssistantAvailabilityResult(result: any) {
-    options.resetEmptyLessonConflicts('assistant')
-    const selectedIds = options.normalizedSelectedAssistantIds.value
-    if (!selectedIds.length)
-      return
-
-    const invalidItems = (Array.isArray(result?.items) ? result.items : [])
-      .filter(item => item?.valid === false)
-      .map(item => ({
-        assistantId: String(item.assistantId || '').trim(),
-        assistantName: String(item.assistantName || options.assistantNameById(item.assistantId) || item.assistantId || '').trim(),
-        conflictTypes: options.uniqueConflictTypes(item.conflictTypes || []),
-        existingSchedules: Array.isArray(item.existingSchedules) ? item.existingSchedules : [],
-      }))
-
-    options.dataSource.value.forEach((teacher) => {
-      teacher.lessons.forEach((lesson: any) => {
-        if (lesson.studentId)
-          return
-
-        const issues: any[] = []
-
-        invalidItems.forEach((item) => {
-          if (!item.existingSchedules.length) {
-            issues.push({
-              ...item,
-              kind: 'global',
-            })
-            return
-          }
-
-          const matchedSchedules = item.existingSchedules.filter((schedule: any) => {
-            const timeRange = options.parseConflictTimeRange(schedule?.timeText)
-            if (!timeRange)
-              return false
-            return String(schedule?.date || '').trim() === teacher.date
-              && isTimeOverlap(
-                { start: lesson.startTime, end: lesson.endTime },
-                { start: timeRange.startTime, end: timeRange.endTime },
-              )
-          })
-
-          if (matchedSchedules.length) {
-            issues.push({
-              ...item,
-              kind: 'busy',
-              existingSchedules: matchedSchedules,
-            })
-          }
-        })
-
-        lesson.assistantConflict = issues.length > 0
-        lesson.assistantConflictReason = issues.length ? buildAssistantConflictReason(issues) : null
         options.syncLessonConflictState(lesson)
       })
     })
@@ -233,28 +122,18 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
 
     oneToOneAvailabilityLoading.value = true
     try {
-      const assistantPayload = buildCurrentAssistantAvailabilityPayload(oneToOneId)
-      const [res, assistantRes] = await Promise.all([
-        checkOneToOneScheduleAvailabilityApi(payload),
-        assistantPayload.assistantIds.length
-          ? checkAssistantScheduleAvailabilityApi(assistantPayload)
-          : Promise.resolve(null),
-      ])
+      const res = await validateOneToOneSchedulesApi(payload)
       if (seq !== oneToOneAvailabilitySeq)
         return
       if (res.code !== 200 || !res.result)
         throw new Error(res.message || '检测课表空位失败')
-      if (assistantRes && (assistantRes.code !== 200 || !assistantRes.result))
-        throw new Error(assistantRes.message || '检测助教空闲状态失败')
       applyServerAvailabilityResult(res.result)
-      applyAssistantAvailabilityResult(assistantRes?.result)
     }
     catch (error: any) {
       if (seq !== oneToOneAvailabilitySeq)
         return
       console.error('detectOneToOneAvailability failed', error)
-      options.resetEmptyLessonConflicts('server')
-      options.resetEmptyLessonConflicts('assistant')
+      options.resetEmptyLessonConflicts()
       messageService.error(error?.response?.data?.message || error?.message || '检测课表空位失败')
     }
     finally {

@@ -217,7 +217,7 @@ const isCurrentRange = computed(() => {
             show-search
             :loading="oneToOneListLoading"
             :dropdown-match-select-width="false"
-            :dropdown-style="{ width: '520px' }"
+            :dropdown-style="{ width: '820px' }"
             :dropdown-render="renderOneToOneDropdown"
             :filter-option="filterOneToOneOption"
             placeholder="搜索/选择"
@@ -248,7 +248,7 @@ const isCurrentRange = computed(() => {
             :filter-option="false"
             :loading="classListLoading"
             :dropdown-match-select-width="false"
-            :dropdown-style="{ width: '520px' }"
+            :dropdown-style="{ width: '820px' }"
             :dropdown-render="renderClassDropdown"
             placeholder="请搜索/选择班级"
             class="st-top-class-select"

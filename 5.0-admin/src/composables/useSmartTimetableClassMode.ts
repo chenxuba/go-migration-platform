@@ -25,6 +25,8 @@ interface UseSmartTimetableClassModeOptions {
   getLessonIndex: (startTime: string) => string | number
   queryDateRange: ComputedRef<{ startDate: string, endDate: string }>
   resetEmptyLessonConflicts: (scope?: string) => void
+  selectedClassroomId?: ComputedRef<string>
+  resolveClassroomName?: (id: unknown) => string
 }
 
 interface ClassConflictSnapshot {
@@ -229,14 +231,32 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
   }
 
   function buildClassConflictCacheKey(classInfo: ClassInfo) {
+    const effectiveClassroom = resolveEffectiveClassroom(classInfo)
     const { startDate, endDate } = options.queryDateRange.value
     return [
       classInfo.id,
-      classInfo.classroomId,
+      effectiveClassroom.id,
       startDate,
       endDate,
       [...classInfo.studentIds].sort().join(','),
     ].join('|')
+  }
+
+  function resolveEffectiveClassroom(classInfo: ClassInfo) {
+    const selectedClassroomId = normalizeOptionalClassroomId(options.selectedClassroomId?.value)
+    const selectedClassroomName = selectedClassroomId
+      ? String(options.resolveClassroomName?.(selectedClassroomId) || '').trim()
+      : ''
+    if (selectedClassroomId) {
+      return {
+        id: selectedClassroomId,
+        name: selectedClassroomName || String(classInfo.classroomName || '').trim(),
+      }
+    }
+    return {
+      id: normalizeOptionalClassroomId(classInfo.classroomId),
+      name: String(classInfo.classroomName || '').trim(),
+    }
   }
 
   async function listTeachingSchedulesSafe(params: Parameters<typeof listTeachingSchedulesApi>[0]) {
@@ -398,6 +418,7 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
       const cacheVersion = classConflictCacheVersion
       const { startDate, endDate } = options.queryDateRange.value
       const uniqueStudentIds = Array.from(new Set(classInfo.studentIds))
+      const effectiveClassroom = resolveEffectiveClassroom(classInfo)
 
       const [classSchedules, classroomSchedules, studentEntries] = await Promise.all([
         listTeachingSchedulesSafe({
@@ -405,11 +426,11 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
           endDate,
           groupClassIds: classInfo.id,
         }),
-        classInfo.classroomId
+        effectiveClassroom.id
           ? listTeachingSchedulesSafe({
               startDate,
               endDate,
-              classroomIds: classInfo.classroomId,
+              classroomIds: effectiveClassroom.id,
             })
           : Promise.resolve([]),
         Promise.all(uniqueStudentIds.map(async (studentId) => {
@@ -497,6 +518,7 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
 
   function checkClassCrossTimeConflicts(classInfo: ClassInfo, snapshot: ClassConflictSnapshot) {
     options.resetEmptyLessonConflicts()
+    const effectiveClassroom = resolveEffectiveClassroom(classInfo)
 
     options.dataSource.value.forEach((teacher) => {
       teacher.lessons.forEach((lesson: any, lessonIndex: number) => {
@@ -568,7 +590,7 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
           })
         }
 
-        if (classInfo.classroomId) {
+        if (effectiveClassroom.id) {
           const classroomConflict = snapshot.classroomSchedules.find((schedule) => {
             const meta = buildScheduleMeta(schedule)
             return meta.classId !== classInfo.id
@@ -583,7 +605,7 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
             const meta = buildScheduleMeta(classroomConflict)
             conflictReasons.push({
               type: '教室冲突',
-              classroomName: classInfo.classroomName || meta.classroomName,
+              classroomName: effectiveClassroom.name || meta.classroomName,
               date: meta.dateLabel,
               lessonIndex: meta.lessonIndex,
               teacherName: meta.teacherName,
@@ -592,7 +614,7 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
               time: meta.timeLabel,
               conflictTypes: ['教室'],
               existingSchedules: [buildExistingScheduleFromTeachingSchedule(classroomConflict, ['教室'])],
-              message: `该时间段教室${classInfo.classroomName || meta.classroomName || '-'}在${meta.dateLabel}第${meta.lessonIndex}节课[${meta.timeLabel}]已有${meta.teacherName}的${meta.displayName}安排，无法排课`,
+              message: `该时间段教室${effectiveClassroom.name || meta.classroomName || '-'}在${meta.dateLabel}第${meta.lessonIndex}节课[${meta.timeLabel}]已有${meta.teacherName}的${meta.displayName}安排，无法排课`,
             })
           }
         }
