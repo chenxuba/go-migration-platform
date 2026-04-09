@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"go-migration-platform/pkg/httpx"
 	"go-migration-platform/pkg/tenant"
@@ -484,6 +485,51 @@ func (handler *Handler) clearAllTeachingSchedules(w http.ResponseWriter, r *http
 		return
 	}
 	n, err := handler.service.ClearAllTeachingSchedules(claims.UserID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"deleted": n}, ctx.RequestID)
+}
+
+func (handler *Handler) clearWeekTeachingSchedules(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var body struct {
+		Confirm   bool   `json:"confirm"`
+		StartDate string `json:"startDate"`
+		EndDate   string `json:"endDate"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if !body.Confirm {
+		httpx.WriteError(w, http.StatusBadRequest, "请传 JSON：{\"confirm\":true,\"startDate\":\"YYYY-MM-DD\",\"endDate\":\"YYYY-MM-DD\"} 以确认硬删除当前周课表", ctx.RequestID)
+		return
+	}
+	startDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(body.StartDate), time.Local)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "开始日期格式错误，应为 YYYY-MM-DD", ctx.RequestID)
+		return
+	}
+	endDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(body.EndDate), time.Local)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "结束日期格式错误，应为 YYYY-MM-DD", ctx.RequestID)
+		return
+	}
+	if endDate.Before(startDate) {
+		httpx.WriteError(w, http.StatusBadRequest, "结束日期不能早于开始日期", ctx.RequestID)
+		return
+	}
+	n, err := handler.service.ClearWeekTeachingSchedules(claims.UserID, startDate, endDate)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

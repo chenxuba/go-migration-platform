@@ -6083,6 +6083,165 @@ func (repo *Repository) SoftDeleteAllTeachingSchedulesForInst(ctx context.Contex
 	return res.RowsAffected()
 }
 
+func (repo *Repository) HardDeleteTeachingSchedulesInDateRange(ctx context.Context, instID, operatorID int64, startDate, endDate time.Time) (int64, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	startText := startDate.Format("2006-01-02")
+	endText := endDate.Format("2006-01-02")
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			id,
+			IFNULL(teaching_class_id, 0),
+			IFNULL(batch_no, '')
+		FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND lesson_date >= ?
+		  AND lesson_date <= ?
+	`, instID, startText, endText)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	scheduleIDs := make([]int64, 0)
+	classIDs := make([]int64, 0)
+	batchNos := make([]string, 0)
+	batchNoSet := make(map[string]struct{})
+	batchMetaKeys := make([]string, 0)
+	for rows.Next() {
+		var scheduleID int64
+		var classID int64
+		var batchNo string
+		if err := rows.Scan(&scheduleID, &classID, &batchNo); err != nil {
+			return 0, err
+		}
+		if scheduleID <= 0 {
+			continue
+		}
+		scheduleIDs = append(scheduleIDs, scheduleID)
+		if classID > 0 {
+			classIDs = append(classIDs, classID)
+		}
+		batchNo = strings.TrimSpace(batchNo)
+		if batchNo != "" {
+			if _, ok := batchNoSet[batchNo]; !ok {
+				batchNoSet[batchNo] = struct{}{}
+				batchNos = append(batchNos, batchNo)
+				batchMetaKeys = append(batchMetaKeys, "batch:"+batchNo)
+			}
+			continue
+		}
+		batchMetaKeys = append(batchMetaKeys, fmt.Sprintf("schedule:%d", scheduleID))
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(scheduleIDs) == 0 {
+		return 0, nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM teaching_schedule_student
+		WHERE inst_id = ?
+		  AND teaching_schedule_id IN (`+sqlPlaceholders(len(scheduleIDs))+`)
+	`, append([]any{instID}, int64SliceToAny(scheduleIDs)...)...); err != nil {
+		return 0, err
+	}
+
+	deleteResult, err := tx.ExecContext(ctx, `
+		DELETE FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND id IN (`+sqlPlaceholders(len(scheduleIDs))+`)
+	`, append([]any{instID}, int64SliceToAny(scheduleIDs)...)...)
+	if err != nil {
+		return 0, err
+	}
+	deletedCount, err := deleteResult.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	if len(batchMetaKeys) > 0 {
+		deleteArgs := make([]any, 0, len(batchMetaKeys)+1)
+		deleteArgs = append(deleteArgs, instID)
+		for _, key := range batchMetaKeys {
+			deleteArgs = append(deleteArgs, key)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM teaching_schedule_batch_meta
+			WHERE inst_id = ?
+			  AND batch_key IN (`+sqlPlaceholders(len(batchMetaKeys))+`)
+		`, deleteArgs...); err != nil {
+			return 0, err
+		}
+	}
+
+	if len(batchNos) > 0 {
+		countArgs := make([]any, 0, len(batchNos)+1)
+		countArgs = append(countArgs, instID)
+		for _, batchNo := range batchNos {
+			countArgs = append(countArgs, batchNo)
+		}
+		remainingRows, err := tx.QueryContext(ctx, `
+			SELECT batch_no, COUNT(*)
+			FROM teaching_schedule
+			WHERE inst_id = ?
+			  AND del_flag = 0
+			  AND batch_no IN (`+sqlPlaceholders(len(batchNos))+`)
+			GROUP BY batch_no
+		`, countArgs...)
+		if err != nil {
+			return 0, err
+		}
+		remainingCounts := make(map[string]int64, len(batchNos))
+		for remainingRows.Next() {
+			var batchNo string
+			var count int64
+			if err := remainingRows.Scan(&batchNo, &count); err != nil {
+				remainingRows.Close()
+				return 0, err
+			}
+			remainingCounts[strings.TrimSpace(batchNo)] = count
+		}
+		if err := remainingRows.Err(); err != nil {
+			remainingRows.Close()
+			return 0, err
+		}
+		remainingRows.Close()
+
+		for _, batchNo := range batchNos {
+			remainingCount := remainingCounts[batchNo]
+			if remainingCount <= 0 {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE teaching_schedule
+				SET batch_size = ?,
+				    update_id = ?,
+				    update_time = NOW()
+				WHERE inst_id = ?
+				  AND del_flag = 0
+				  AND batch_no = ?
+			`, remainingCount, operatorID, instID, batchNo); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	if err := repo.refreshTeachingClassScheduleCountsTx(ctx, tx, instID, operatorID, classIDs); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return deletedCount, nil
+}
+
 func firstNonEmptyString(values ...string) string {
 	for _, value := range values {
 		value = strings.TrimSpace(value)

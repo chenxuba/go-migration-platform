@@ -964,6 +964,21 @@ func (svc *Service) ClearAllTeachingSchedules(userID int64) (deleted int64, err 
 	return n, nil
 }
 
+func (svc *Service) ClearWeekTeachingSchedules(userID int64, startDate, endDate time.Time) (deleted int64, err error) {
+	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return 0, err
+	}
+	if endDate.Before(startDate) {
+		return 0, errors.New("结束日期不能早于开始日期")
+	}
+	n, err := svc.repo.HardDeleteTeachingSchedulesInDateRange(context.Background(), instID, operatorID, startDate, endDate)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (svc *Service) resolveTeachingScheduleOperator(userID int64) (int64, int64, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

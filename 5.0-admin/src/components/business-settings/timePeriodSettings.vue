@@ -43,20 +43,48 @@ const columns: TableColumnType<UnifiedPeriodGroup>[] = [
   { title: '操作', key: 'action', width: 236 },
 ]
 
+type UnifiedPeriodGroupLike = UnifiedPeriodGroup | Record<string, any>
+
+function normalizedSlots(group: UnifiedPeriodGroupLike): UnifiedPeriodSlot[] {
+  return Array.isArray(group.slots)
+    ? group.slots.map((slot: any) => ({
+        id: String(slot?.id || ''),
+        index: Number(slot?.index || 0),
+        name: String(slot?.name || ''),
+        start: String(slot?.start || ''),
+        end: String(slot?.end || ''),
+        enabled: slot?.enabled !== false,
+      }))
+    : []
+}
+
+function normalizedBoundTeachers(group: UnifiedPeriodGroupLike) {
+  return Array.isArray(group.boundTeachers)
+    ? group.boundTeachers.map((teacher: any) => ({
+        id: String(teacher?.id || ''),
+        name: String(teacher?.name || ''),
+      }))
+    : []
+}
+
 function sortSlots(slots: UnifiedPeriodSlot[]) {
   return [...slots].sort((a, b) => a.index - b.index)
 }
 
-function groupTimeSpan(g: UnifiedPeriodGroup): string {
-  const active = sortSlots(g.slots).filter(s => s.enabled !== false)
+function groupTimeSpan(g: UnifiedPeriodGroupLike): string {
+  const active = sortSlots(normalizedSlots(g)).filter(s => s.enabled !== false)
   if (!active.length)
     return '—'
   return `${active[0].start} ~ ${active[active.length - 1].end}`
 }
 
-function slotsSummary(g: UnifiedPeriodGroup): string {
-  const total = g.slots.length
-  const active = slotCountActive(g)
+function activeSlotCount(g: UnifiedPeriodGroupLike): number {
+  return normalizedSlots(g).filter(slot => slot.enabled !== false).length
+}
+
+function slotsSummary(g: UnifiedPeriodGroupLike): string {
+  const total = normalizedSlots(g).length
+  const active = activeSlotCount(g)
   return `${active} / ${total} 节启用`
 }
 
@@ -71,15 +99,15 @@ function cloneConfig(c: UnifiedTimePeriodConfig): UnifiedTimePeriodConfig {
   }
 }
 
-function formatBoundTeachersSummary(g: UnifiedPeriodGroup): string {
-  const list = g.boundTeachers || []
+function formatBoundTeachersSummary(g: UnifiedPeriodGroupLike): string {
+  const list = normalizedBoundTeachers(g)
   if (!list.length)
     return '—'
   return list.map(t => t.name).join('、')
 }
 
-function hasBoundTeachers(g: UnifiedPeriodGroup): boolean {
-  return Array.isArray(g.boundTeachers) && g.boundTeachers.length > 0
+function hasBoundTeachers(g: UnifiedPeriodGroupLike): boolean {
+  return normalizedBoundTeachers(g).length > 0
 }
 
 function loadBaseConfig(): UnifiedTimePeriodConfig {
@@ -259,10 +287,10 @@ async function loadStaffForBind() {
   }
 }
 
-function openBindTeachers(record: UnifiedPeriodGroup) {
+function openBindTeachers(record: UnifiedPeriodGroupLike) {
   bindStaffCache.clear()
-  bindGroupId.value = record.id
-  bindTeacherIds.value = (record.boundTeachers || []).map(t => String(t.id))
+  bindGroupId.value = String(record.id || '')
+  bindTeacherIds.value = normalizedBoundTeachers(record).map(t => String(t.id))
   bindPagination.current = 1
   bindPagination.total = 0
   bindStaffKeyword.value = ''
@@ -366,7 +394,7 @@ async function saveBindTeachers() {
   }
 }
 
-function confirmDeleteGroup(item: UnifiedPeriodGroup) {
+function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
   if (periodGroups.value.length <= 1) {
     messageService.warning('至少保留一个时段组')
     return
@@ -378,14 +406,14 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
   Modal.confirm({
     title: '删除时段组',
     centered: true,
-    content: `确定删除「${item.name}」吗？排课中引用该组的节次可能受影响。`,
+    content: `确定删除「${String(item.name || '')}」吗？排课中引用该组的节次可能受影响。`,
     okText: '删除',
     okType: 'danger',
     cancelText: '取消',
     async onOk() {
       try {
         const cfg = loadBaseConfig()
-        cfg.groups = cfg.groups.filter(g => g.id !== item.id)
+        cfg.groups = cfg.groups.filter(g => g.id !== String(item.id || ''))
         cfg.groups.forEach((g, i) => { g.sort = i })
         const res = await setInstConfigApi({
           ...(userStore.instConfig as InstConfig),
@@ -471,9 +499,9 @@ function confirmDeleteGroup(item: UnifiedPeriodGroup) {
             <template v-else-if="column.key === 'status'">
               <span
                 class="period-status"
-                :class="slotCountActive(record) > 0 ? 'period-status--on' : 'period-status--off'"
+                :class="activeSlotCount(record) > 0 ? 'period-status--on' : 'period-status--off'"
               >
-                {{ slotCountActive(record) > 0 ? '有可用节次' : '无启用节次' }}
+                {{ activeSlotCount(record) > 0 ? '有可用节次' : '无启用节次' }}
               </span>
             </template>
             <template v-else-if="column.key === 'action'">

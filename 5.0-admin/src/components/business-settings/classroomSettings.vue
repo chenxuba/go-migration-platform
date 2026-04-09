@@ -17,6 +17,8 @@ interface ClassroomFormState {
   enabled: boolean
 }
 
+type ClassroomRowLike = ClassroomItem | Record<string, any>
+
 const loading = ref(false)
 const submitting = ref(false)
 const formModalOpen = ref(false)
@@ -69,10 +71,10 @@ function openCreateModal() {
   formModalOpen.value = true
 }
 
-function openEditModal(item: ClassroomItem) {
-  formState.id = item.id
-  formState.name = item.name || ''
-  formState.address = item.address || ''
+function openEditModal(item: ClassroomRowLike) {
+  formState.id = Number(item.id)
+  formState.name = String(item.name || '')
+  formState.address = String(item.address || '')
   formState.enabled = !!item.enabled
   formModalOpen.value = true
 }
@@ -123,10 +125,10 @@ async function submitForm() {
   }
 }
 
-async function toggleClassroomStatus(item: ClassroomItem, checked: boolean) {
+async function toggleClassroomStatus(item: ClassroomRowLike, checked: boolean) {
   try {
     const res = await updateClassroomStatusApi({
-      id: item.id,
+      id: Number(item.id),
       enabled: checked,
     })
     if (res.code !== 200) {

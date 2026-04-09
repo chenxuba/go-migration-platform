@@ -4,6 +4,7 @@ import addSchedulePopoverBg from '../../../assets/images/timetable/add-schedule-
 import scheduleClassIcon from '../../../assets/images/timetable/schedule-class.png'
 import scheduleFreeIcon from '../../../assets/images/timetable/schedule-free.png'
 import scheduleOneToOneIcon from '../../../assets/images/timetable/schedule-one2one.png'
+import GroupClassScheduleModal from './group-class-schedule-modal.vue'
 import OneToOneScheduleModal from './one-to-one-schedule-modal.vue'
 
 type ScheduleType = 'class' | 'oneToOne' | 'trial'
@@ -48,11 +49,15 @@ const overlayInnerStyle = {
 }
 
 const popoverOpen = ref(false)
+const groupClassModalOpen = ref(false)
 const oneToOneModalOpen = ref(false)
 
 function handleSelect(type: ScheduleType) {
   popoverOpen.value = false
-  if (type === 'oneToOne') {
+  if (type === 'class') {
+    groupClassModalOpen.value = true
+  }
+  else if (type === 'oneToOne') {
     oneToOneModalOpen.value = true
   }
   emit('select', type)
@@ -105,6 +110,7 @@ function handleSelect(type: ScheduleType) {
     </slot>
   </a-popover>
 
+  <group-class-schedule-modal v-model:open="groupClassModalOpen" />
   <one-to-one-schedule-modal v-model:open="oneToOneModalOpen" />
 </template>
 

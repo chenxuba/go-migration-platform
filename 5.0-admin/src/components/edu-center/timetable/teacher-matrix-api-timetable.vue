@@ -29,6 +29,10 @@ import {
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import messageService from '@/utils/messageService'
 
+const emit = defineEmits<{
+  (e: 'week-range-change', value: { startDate: string, endDate: string }): void
+}>()
+
 interface FilterOption {
   id: string
   value: string
@@ -681,6 +685,14 @@ function getWeekStart(value: Dayjs = dayjs()) {
   return current.add(diff, 'day').startOf('day')
 }
 
+function emitCurrentWeekRange(value: Dayjs = currentDate.value) {
+  const start = getWeekStart(value)
+  emit('week-range-change', {
+    startDate: start.format('YYYY-MM-DD'),
+    endDate: start.add(6, 'day').format('YYYY-MM-DD'),
+  })
+}
+
 const displayDates = computed(() => {
   const start = getWeekStart(currentDate.value)
   return Array.from({ length: 7 }, (_, i) => start.add(i, 'day'))
@@ -928,6 +940,8 @@ onUnmounted(() => {
 })
 
 watch(currentDate, () => loadMatrix())
+
+watch(currentDate, value => emitCurrentWeekRange(value), { immediate: true })
 
 watch(
   [filterStudentId, filterTeacherId, filterClassroomId, filterClassId, filterOneToOneId, filterCourseId, filterScheduleType, filterCallStatus],

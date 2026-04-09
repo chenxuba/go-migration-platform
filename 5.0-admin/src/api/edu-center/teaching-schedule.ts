@@ -590,3 +590,15 @@ export function copyTeachingSchedulesWeekApi(data: {
 export function clearAllTeachingSchedulesApi() {
   return usePost<{ deleted: number }>('/api/v1/teaching-schedules/clear-all', { confirm: true })
 }
+
+/** 按日期区间硬删除课表；用于清空当前周，不保留软删除数据 */
+export function clearWeekTeachingSchedulesApi(data: {
+  startDate: string
+  endDate: string
+}) {
+  return usePost<{ deleted: number }>('/api/v1/teaching-schedules/clear-week', {
+    confirm: true,
+    startDate: data.startDate,
+    endDate: data.endDate,
+  })
+}

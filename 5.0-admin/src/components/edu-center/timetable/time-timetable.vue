@@ -16,6 +16,8 @@ import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
+const emit = defineEmits(['week-range-change'])
+
 const displayArray = ref([
   'scheduleTeacher',
   'scheduleClassroom',
@@ -443,6 +445,14 @@ function getWeekStart(value = dayjs()) {
   return current.add(diff, 'day').startOf('day')
 }
 
+function emitCurrentWeekRange(value = currentDate.value) {
+  const start = getWeekStart(value)
+  emit('week-range-change', {
+    startDate: start.format('YYYY-MM-DD'),
+    endDate: start.add(6, 'day').format('YYYY-MM-DD'),
+  })
+}
+
 let nowTimer = null
 
 onMounted(() => {
@@ -472,6 +482,8 @@ onUnmounted(() => {
 watch(currentTime, () => {
   currentDate.value = dayjs()
 })
+
+watch(currentDate, value => emitCurrentWeekRange(value), { immediate: true })
 
 function formatDateRange(value) {
   if (!value)

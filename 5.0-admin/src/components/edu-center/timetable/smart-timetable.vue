@@ -33,6 +33,8 @@ import {
 } from '@/utils/unified-time-period'
 import emitter, { EVENTS } from '@/utils/eventBus'
 
+const emit = defineEmits(['week-range-change'])
+
 const displayArray = ref([
   'scheduleTeacher',
   'scheduleClassroom',
@@ -519,6 +521,14 @@ function getWeekStart(value = dayjs()) {
   return d.add(diff, 'day').startOf('day')
 }
 
+function emitCurrentWeekRange(value = currentWeek.value) {
+  const start = getWeekStart(value)
+  emit('week-range-change', {
+    startDate: start.format('YYYY-MM-DD'),
+    endDate: start.add(6, 'day').format('YYYY-MM-DD'),
+  })
+}
+
 // 监听时间维度变化
 watch(currentTime, () => {
   if (typeof window !== 'undefined') {
@@ -530,6 +540,8 @@ watch(currentTime, () => {
   }
   currentWeek.value = dayjs()
 })
+
+watch(currentWeek, value => emitCurrentWeekRange(value), { immediate: true })
 
 // 格式化日期显示
 function formatDateRange(value) {
