@@ -1721,24 +1721,44 @@ function openDragConflictDetailModal(validation, dragState, target) {
       assistantText: dragState?.assistantText || '未安排',
       lessonIndex: getLessonIndex(target?.startTime || ''),
       groupLabel: activeGroupLabel.value || '当前组',
+      conflictTypes,
+      forceAllowed: Boolean(dragState?.scheduleId)
+        && Boolean(dragState?.oneToOneId)
+        && conflictTypes.length > 0
+        && conflictTypes.every(type => type === '学员'),
+      forceDisabledReason: buildForceScheduleDisabledReason(conflictTypes, '调课'),
+      forcePayload: Boolean(dragState?.scheduleId)
+        && Boolean(dragState?.oneToOneId)
+        && conflictTypes.length > 0
+        && conflictTypes.every(type => type === '学员')
+        ? {
+            ids: [String(dragState.scheduleId)],
+            teacherId: String(target?.teacherId || '').trim(),
+            assistantIds: Array.isArray(dragState?.assistantIds) ? dragState.assistantIds : [],
+            classroomId: String(dragState?.classroomId || '').trim() || undefined,
+            lessonDate: String(target?.lessonDate || '').trim(),
+            startTime: String(target?.startTime || '').trim(),
+            endTime: String(target?.endTime || '').trim(),
+          }
+        : null,
     },
     items,
   }
   dragConflictDetailOpen.value = true
 }
 
-function buildForceScheduleDisabledReason(conflictTypes = []) {
+function buildForceScheduleDisabledReason(conflictTypes = [], actionText = '排课') {
   const normalized = uniqueConflictTypes(conflictTypes)
   if (!normalized.length)
-    return '当前冲突类型暂不支持仍要排课。'
+    return `当前冲突类型暂不支持仍要${actionText}。`
   if (normalized.every(type => type === '学员'))
     return ''
 
   const blockingTypes = normalized.filter(type => type !== '学员')
   if (!blockingTypes.length)
-    return '当前冲突类型暂不支持仍要排课。'
+    return `当前冲突类型暂不支持仍要${actionText}。`
 
-  return `当前还存在${blockingTypes.join('、')}冲突，仅纯学员冲突支持仍要排课。`
+  return `当前还存在${blockingTypes.join('、')}冲突，仅纯学员冲突支持仍要${actionText}。`
 }
 
 function openApiConflictModal(reason, column, record) {
@@ -1812,6 +1832,38 @@ async function forceScheduleDespiteStudentConflict() {
   }
   finally {
     forcingConflictSchedule.value = false
+  }
+}
+
+async function forceDragScheduleDespiteStudentConflict() {
+  const attempted = dragConflictDetailState.value.attempted
+  if (!attempted?.forceAllowed || !attempted?.forcePayload) {
+    messageService.warning('当前冲突类型暂不支持强制调课')
+    return
+  }
+
+  forcingConflictSchedule.value = true
+  updatingDraggedSchedule.value = true
+  try {
+    const res = await batchUpdateTeachingSchedulesApi({
+      ...attempted.forcePayload,
+      allowStudentConflict: true,
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '强制调课失败')
+    dragConflictDetailOpen.value = false
+    const lessonText = attempted.studentText || attempted.courseName || '课程'
+    messageService.success(`已按学员冲突方式调课：${lessonText}`)
+    emitter.emit(EVENTS.REFRESH_DATA)
+  }
+  catch (error) {
+    console.error('force drag schedule despite student conflict failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '强制调课失败')
+    await loadTimetableMatrix()
+  }
+  finally {
+    forcingConflictSchedule.value = false
+    updatingDraggedSchedule.value = false
   }
 }
 
@@ -3754,8 +3806,10 @@ watch(dragConflictDetailOpen, (open) => {
 
     <SmartTimetableDragConflictModal
       v-model:open="dragConflictDetailOpen"
+      :forcing="forcingConflictSchedule"
       :locating="Boolean(locatingConflictItemKey)"
       :detail="dragConflictDetailState"
+      @force="forceDragScheduleDespiteStudentConflict"
       @jump="jumpToConflictSchedule"
     />
 

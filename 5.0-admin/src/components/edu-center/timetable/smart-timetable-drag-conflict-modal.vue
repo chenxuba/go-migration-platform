@@ -6,6 +6,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  forcing: {
+    type: Boolean,
+    default: false,
+  },
   locating: {
     type: Boolean,
     default: false,
@@ -20,7 +24,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:open', 'jump'])
+const emit = defineEmits(['update:open', 'force', 'jump'])
 
 const modalOpen = computed({
   get: () => props.open,
@@ -56,13 +60,31 @@ const modalOpen = computed({
                   <div class="st-drag-conflict__item-name">
                     待调课程信息
                   </div>
-                  <div class="st-drag-conflict__item-tags">
-                    <a-tag color="blue" :bordered="false">
-                      {{ detail.attempted.modeLabel || '1v1' }}
-                    </a-tag>
-                    <a-tag color="orange" :bordered="false">
-                      {{ detail.attempted.groupLabel || '当前组' }}
-                    </a-tag>
+                  <div class="st-drag-conflict__item-head-actions">
+                    <div class="st-drag-conflict__item-tags">
+                      <a-tag color="blue" :bordered="false">
+                        {{ detail.attempted.modeLabel || '1v1' }}
+                      </a-tag>
+                      <a-tag color="orange" :bordered="false">
+                        {{ detail.attempted.groupLabel || '当前组' }}
+                      </a-tag>
+                    </div>
+                    <a-button
+                      v-if="detail.attempted?.forceAllowed"
+                      type="primary"
+                      ghost
+                      danger
+                      :loading="forcing"
+                      @click="$emit('force')"
+                    >
+                      仍要调课
+                    </a-button>
+                    <div
+                      v-else-if="detail.attempted?.forceDisabledReason"
+                      class="st-drag-conflict__force-tip"
+                    >
+                      {{ detail.attempted.forceDisabledReason }}
+                    </div>
                   </div>
                 </div>
 
@@ -252,11 +274,25 @@ const modalOpen = computed({
   gap: 8px;
 }
 
+.st-drag-conflict__item-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .st-drag-conflict__item-name {
   color: #1f2329;
   font-size: 15px;
   font-weight: 800;
   line-height: 1.4;
+}
+
+.st-drag-conflict__force-tip {
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .st-drag-conflict__item-tags {

@@ -1798,7 +1798,7 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 			nextClassroomName = item.ClassroomName
 		}
 		if item.ClassType == model.TeachingClassTypeOneToOne {
-			if !assistantRemovalOnly && item.StudentID > 0 {
+			if !assistantRemovalOnly && item.StudentID > 0 && !dto.AllowStudentConflict {
 				studentConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", item.StudentID, []normalizedScheduleSlot{slot}, strings.TrimSpace(dto.BatchNo), excludeIDs)
 				if err != nil {
 					return err

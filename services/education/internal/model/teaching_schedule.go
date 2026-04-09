@@ -100,14 +100,15 @@ type TeachingScheduleDetailQueryDTO struct {
 }
 
 type TeachingScheduleBatchUpdateDTO struct {
-	BatchNo      string   `json:"batchNo"`
-	IDs          []string `json:"ids"`
-	TeacherID    string   `json:"teacherId"`
-	AssistantIDs []string `json:"assistantIds"`
-	ClassroomID  string   `json:"classroomId"`
-	LessonDate   string   `json:"lessonDate"`
-	StartTime    string   `json:"startTime"`
-	EndTime      string   `json:"endTime"`
+	BatchNo              string   `json:"batchNo"`
+	IDs                  []string `json:"ids"`
+	TeacherID            string   `json:"teacherId"`
+	AssistantIDs         []string `json:"assistantIds"`
+	ClassroomID          string   `json:"classroomId"`
+	LessonDate           string   `json:"lessonDate"`
+	StartTime            string   `json:"startTime"`
+	EndTime              string   `json:"endTime"`
+	AllowStudentConflict bool     `json:"allowStudentConflict,omitempty"`
 }
 
 type TeachingScheduleBatchDetailQueryDTO struct {

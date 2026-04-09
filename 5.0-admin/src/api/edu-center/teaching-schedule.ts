@@ -472,6 +472,7 @@ export function batchUpdateTeachingSchedulesApi(data: {
   lessonDate?: string
   startTime: string
   endTime: string
+  allowStudentConflict?: boolean
 }) {
   return usePost<boolean>('/api/v1/teaching-schedules/batch-update', data)
 }
