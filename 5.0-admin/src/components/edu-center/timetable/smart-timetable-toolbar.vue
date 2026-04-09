@@ -208,7 +208,7 @@ const isCurrentRange = computed(() => {
       </div>
 
       <div class="shrink-0">
-        <div v-if="currentModel === '1'" class="flex items-center shrink-0 gap-1">
+        <div v-show="currentModel === '1'" class="flex items-center shrink-0 gap-1">
           <span class="whitespace-nowrap w-71px text-right">选择1v1：</span>
           <a-select
             v-model:value="oneToOneValue"
@@ -238,7 +238,7 @@ const isCurrentRange = computed(() => {
           </a-select>
         </div>
 
-        <div v-if="currentModel === '2'" class="flex items-center">
+        <div v-show="currentModel === '2'" class="flex items-center">
           <span class="w-75px">选择班级：</span>
           <a-select
             v-model:value="classIdValue"

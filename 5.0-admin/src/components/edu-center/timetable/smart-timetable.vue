@@ -1327,7 +1327,7 @@ async function loadTimetableMatrix() {
 }
 
 watch(
-  [currentWeek, () => (currentTime.value === 'swapWeek' ? 'week' : currentTime.value), currentModel, currentGroup],
+  [currentWeek, () => (currentTime.value === 'swapWeek' ? 'week' : currentTime.value), currentGroup],
   () => {
     void loadTimetableMatrix()
   },
@@ -4666,17 +4666,18 @@ watch(currentModel, (newValue) => {
   if (newValue === '1') {
     // 切换到1v1模式，清空班级选择
     classId.value = null
-    className.value = null
     classPickerOpen.value = false
     selectedClassAssistantIds.value = []
     classAssistantKeyword.value = ''
+    classClassroomKeyword.value = ''
+    selectedClassClassroomId.value = undefined
+    preserveClassPickerOpen = false
     lastHandledClassId = ''
     clearClassAutoTeacherFilter()
   }
   else {
     resetOneToOnePickerState()
-    courseId.value = null
-    courseName.value = null
+    selectedOneToOneClassroomId.value = undefined
   }
 })
 
