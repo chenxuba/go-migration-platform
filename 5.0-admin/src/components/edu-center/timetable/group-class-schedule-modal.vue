@@ -2920,61 +2920,6 @@ watch(modalOpen, async (value) => {
   gap: 8px;
 }
 
-.planner-slot-option,
-.planner-staff-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.planner-staff-option__main {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.planner-slot-option__label,
-.planner-staff-option__label {
-  color: #1f2329;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.planner-staff-option__mobile {
-  color: #98a2b3;
-  font-size: 12px;
-}
-
-.planner-slot-option__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.planner-slot-option__status::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.planner-slot-option__status--free {
-  color: #52c41a;
-}
-
-.planner-slot-option__status--busy {
-  color: #ff7a45;
-}
-
-.planner-slot-option__status--unknown {
-  color: #98a2b3;
-}
-
 .planner-review {
   display: flex;
   flex-direction: column;
