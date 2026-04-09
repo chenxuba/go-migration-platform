@@ -148,6 +148,47 @@ func TestResolveGroupClassRosterReferenceAtUsesCreationTimeForRetroSchedules(t *
 	}
 }
 
+func TestNormalizeCreateSchedulePlansRemovesTeacherFromAssistantIDs(t *testing.T) {
+	plans, err := normalizeCreateSchedulePlans([]model.TeachingScheduleCreateSlotDTO{
+		{
+			LessonDate:   "2026-04-09",
+			StartTime:    "10:00",
+			EndTime:      "11:00",
+			TeacherID:    "100",
+			AssistantIDs: []string{"100", "101", "101"},
+		},
+	}, 0, 0, nil)
+	if err != nil {
+		t.Fatalf("expected normalizeCreateSchedulePlans to succeed, got %v", err)
+	}
+	if len(plans) != 1 {
+		t.Fatalf("expected one normalized plan, got %d", len(plans))
+	}
+	if len(plans[0].AssistantIDs) != 1 || plans[0].AssistantIDs[0] != 101 {
+		t.Fatalf("expected duplicate teacher assistant to be removed, got %#v", plans[0].AssistantIDs)
+	}
+}
+
+func TestNormalizeCreateSchedulePlansRemovesTeacherFromFallbackAssistantIDs(t *testing.T) {
+	plans, err := normalizeCreateSchedulePlans([]model.TeachingScheduleCreateSlotDTO{
+		{
+			LessonDate: "2026-04-09",
+			StartTime:  "14:00",
+			EndTime:    "15:00",
+			TeacherID:  "200",
+		},
+	}, 0, 0, []int64{200, 201})
+	if err != nil {
+		t.Fatalf("expected normalizeCreateSchedulePlans to succeed with fallback assistants, got %v", err)
+	}
+	if len(plans) != 1 {
+		t.Fatalf("expected one normalized plan, got %d", len(plans))
+	}
+	if len(plans[0].AssistantIDs) != 1 || plans[0].AssistantIDs[0] != 201 {
+		t.Fatalf("expected fallback assistant matching teacher to be removed, got %#v", plans[0].AssistantIDs)
+	}
+}
+
 func TestBuildGroupClassStudentRosterFromMembershipsIncludesStudentsJoinedBeforeRetroScheduleCreation(t *testing.T) {
 	scheduleStartAt := time.Date(2026, 4, 9, 9, 15, 0, 0, time.Local)
 	scheduleCreatedAt := time.Date(2026, 4, 9, 20, 49, 0, 0, time.Local)
@@ -284,5 +325,45 @@ func TestBuildGroupClassScheduleRosterFromMembershipsAndOverrides_SplitsLeaveAnd
 	}
 	if roster.Active[1].StudentID != 3 || roster.Active[1].ScheduleStudentType != model.TeachingScheduleStudentTypeMakeup {
 		t.Fatalf("expected makeup student to appear in active roster, got %#v", roster.Active)
+	}
+}
+
+func TestCollectGroupClassConflictingStudentNames(t *testing.T) {
+	currentRoster := groupClassScheduleRoster{
+		Active: []groupClassScheduleStudent{
+			{StudentID: 1, StudentName: "学员甲"},
+			{StudentID: 2, StudentName: "学员乙"},
+			{StudentID: 3, StudentName: "学员丙"},
+		},
+	}
+
+	got := collectGroupClassConflictingStudentNames(
+		currentRoster,
+		[]scheduleConflictDetailRow{
+			{
+				ID:        10,
+				ClassType: model.TeachingClassTypeNormal,
+			},
+			{
+				ID:        11,
+				ClassType: model.TeachingClassTypeOneToOne,
+				StudentID: 3,
+			},
+		},
+		map[int64]groupClassScheduleRoster{
+			10: {
+				Active: []groupClassScheduleStudent{
+					{StudentID: 2, StudentName: "学员乙"},
+					{StudentID: 4, StudentName: "其他学员"},
+				},
+			},
+		},
+	)
+
+	if len(got) != 2 {
+		t.Fatalf("expected two conflicting student names, got %#v", got)
+	}
+	if got[0] != "学员乙" || got[1] != "学员丙" {
+		t.Fatalf("expected conflicting student names to keep current roster order, got %#v", got)
 	}
 }

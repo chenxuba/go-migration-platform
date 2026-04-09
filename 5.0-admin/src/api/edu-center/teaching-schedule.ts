@@ -144,6 +144,7 @@ export interface TeachingScheduleValidationItem {
   endTime: string
   valid: boolean
   message?: string
+  conflictingStudentNames?: string[]
   existingSchedules?: Array<{
     name: string
     classTypeText: string
@@ -277,6 +278,25 @@ export function validateOneToOneSchedulesApi(data: {
   }>
 }) {
   return usePost<TeachingScheduleValidationResult>('/api/v1/teaching-schedules/one-to-one/validate', data)
+}
+
+export function validateGroupClassSchedulesApi(data: {
+  groupClassId: string
+  teacherId?: string
+  assistantIds?: string[]
+  classroomId?: string
+  allowStudentConflict?: boolean
+  allowClassroomConflict?: boolean
+  schedules: Array<{
+    lessonDate: string
+    startTime: string
+    endTime: string
+    teacherId?: string
+    assistantIds?: string[]
+    classroomId?: string
+  }>
+}) {
+  return usePost<TeachingScheduleValidationResult>('/api/v1/teaching-schedules/group-class/validate', data)
 }
 
 export function checkOneToOneScheduleAvailabilityApi(data: {

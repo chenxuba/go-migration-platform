@@ -1323,9 +1323,6 @@ async function loadTimetableMatrix() {
   clearClassConflictCache()
   timetableLoading.value = true
   try {
-    await userStore.getInstConfig()
-    if (seq !== matrixLoadSeq)
-      return
     const { startDate, endDate } = queryDateRange.value
     try {
       const cfgRes = await getInstConfigApi({ effectiveDate: startDate })
@@ -1335,6 +1332,10 @@ async function loadTimetableMatrix() {
     }
     catch (error) {
       console.warn('load effective inst period config failed, fallback to latest', error)
+      if (!userStore.instConfig)
+        await userStore.getInstConfig()
+      if (seq !== matrixLoadSeq)
+        return
       effectivePeriodConfigRaw.value = userStore.instConfig?.unifiedTimePeriodJson ?? null
     }
     const scheduleTeacherIds = filterTeacherId.value.join(',')
@@ -1571,6 +1572,29 @@ const courseList = ref([
     courseType: 2,
   },
 ])
+const classPickerOpen = ref(false)
+const selectedClassAssistantIds = ref([])
+const classAssistantKeyword = ref('')
+const classClassroomKeyword = ref('')
+const autoClassTeacherFilterId = ref('')
+let classSelectionSyncing = false
+let preserveClassPickerOpen = false
+let lastHandledClassId = ''
+
+function normalizeClassAssistantIds(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
+const normalizedSelectedClassAssistantIds = computed(() =>
+  normalizeClassAssistantIds(selectedClassAssistantIds.value),
+)
+
 const {
   buildClassScheduleAssignment,
   classData,
@@ -1587,6 +1611,8 @@ const {
   activeGroupLabel,
   dataSource,
   getLessonIndex,
+  hasScheduledLesson,
+  normalizedSelectedAssistantIds: normalizedSelectedClassAssistantIds,
   queryDateRange,
   resetEmptyLessonConflicts,
   selectedClassroomId: computed(() => normalizeOptionalClassroomId(selectedClassClassroomId.value)),
@@ -1666,28 +1692,6 @@ function resolveSelectedClassroomForClass(classInfo) {
 handleClassBridge = (value) => {
   void handleClass(value)
 }
-
-const classPickerOpen = ref(false)
-const selectedClassAssistantIds = ref([])
-const classAssistantKeyword = ref('')
-const classClassroomKeyword = ref('')
-const autoClassTeacherFilterId = ref('')
-let preserveClassPickerOpen = false
-let lastHandledClassId = ''
-
-function normalizeClassAssistantIds(values) {
-  return Array.from(
-    new Set(
-      (Array.isArray(values) ? values : [])
-        .map(value => String(value || '').trim())
-        .filter(Boolean),
-    ),
-  )
-}
-
-const normalizedSelectedClassAssistantIds = computed(() =>
-  normalizeClassAssistantIds(selectedClassAssistantIds.value),
-)
 
 const classAssistantOptionsInPicker = computed(() => {
   const keyword = String(classAssistantKeyword.value || '').trim().toLowerCase()
@@ -1780,8 +1784,61 @@ function toggleClassAssistantOption(value, checked) {
   requestKeepClassPickerOpen()
 }
 
-function renderClassDropdown({ menuNode }) {
+function renderClassDropdown() {
   const selectedClass = findClassInfo(classId.value)
+  const classOptionNodes = classData.value.length
+    ? classData.value.map((item) => {
+        const selected = String(classId.value || '').trim() === String(item.id || '').trim()
+        return h('div', {
+          class: 'st-top-1v1-dropdown__class-option',
+          key: item.id,
+          style: {
+            padding: '12px 16px',
+            borderBottom: '1px solid #f5f5f5',
+            background: selected ? '#e6f4ff' : '#fff',
+            cursor: 'pointer',
+            transition: 'background 0.2s ease',
+          },
+          onMousedown: (event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          },
+          onClick: async () => {
+            const nextClassId = String(item.id || '').trim()
+            classId.value = nextClassId || null
+            await handleClassSelectionChange(nextClassId)
+            requestKeepClassPickerOpen()
+          },
+        }, [
+          h('div', {
+            style: {
+              color: '#262626',
+              fontSize: '14px',
+              fontWeight: 700,
+              lineHeight: '22px',
+              marginBottom: '4px',
+            },
+          }, item.name || '-'),
+          h('div', {
+            style: {
+              color: '#666',
+              fontSize: '12px',
+              lineHeight: '18px',
+            },
+          }, `主教：${item.mainTeacherName || '-'}`),
+        ])
+      })
+    : [
+        h('div', {
+          class: 'st-top-1v1-dropdown__empty',
+          style: {
+            padding: '16px',
+            color: '#8c8c8c',
+            fontSize: '12px',
+            lineHeight: '18px',
+          },
+        }, classListLoading.value ? '班级加载中...' : '暂无匹配班级'),
+      ]
   const classroomOptionNodes = classClassroomOptionsInPicker.value.length
     ? classClassroomOptionsInPicker.value.map((item) => {
         const checked = normalizeOptionalClassroomId(selectedClassClassroomId.value) === String(item.value || '').trim()
@@ -2222,7 +2279,7 @@ function renderClassDropdown({ menuNode }) {
         overflowY: 'auto',
         borderRight: '1px solid #f0f0f0',
       },
-    }, [menuNode]),
+    }, classOptionNodes),
     h('div', {
       class: 'st-top-1v1-dropdown__side',
       style: {
@@ -2260,6 +2317,7 @@ function applyClassDefaultTeacherQuickFilter(classInfo) {
   const previousAutoTeacherId = String(autoClassTeacherFilterId.value || '').trim()
   autoClassTeacherFilterId.value = defaultTeacherId
   if (!defaultTeacherId) {
+    const shouldClear = Boolean(previousAutoTeacherId && filterTeacherId.value.length === 1 && filterTeacherId.value[0] === previousAutoTeacherId)
     if (previousAutoTeacherId && filterTeacherId.value.length === 1 && filterTeacherId.value[0] === previousAutoTeacherId) {
       nextTick(() => {
         if (allFilterRef.value?.setScheduleTeacherFilter) {
@@ -2270,8 +2328,9 @@ function applyClassDefaultTeacherQuickFilter(classInfo) {
         }
       })
     }
-    return
+    return shouldClear
   }
+  const shouldUpdate = filterTeacherId.value.length !== 1 || filterTeacherId.value[0] !== defaultTeacherId
   scheduleTeacherOptions.value = mergeFilterOptions(scheduleTeacherOptions.value, [{
     id: defaultTeacherId,
     value: defaultTeacherName || defaultTeacherId,
@@ -2284,6 +2343,7 @@ function applyClassDefaultTeacherQuickFilter(classInfo) {
       handleScheduleTeacherFilter([defaultTeacherId])
     }
   })
+  return shouldUpdate
 }
 
 function clearClassAutoTeacherFilter() {
@@ -2321,10 +2381,23 @@ async function handleClassSelectionChange(value) {
     return
   }
   requestKeepClassPickerOpen()
-  const classInfo = await handleClass(value)
-  if (classInfo) {
-    selectedClassClassroomId.value = normalizeOptionalClassroomId(classInfo.classroomId) || undefined
-    applyClassDefaultTeacherQuickFilter(classInfo)
+  classSelectionSyncing = true
+  try {
+    const classInfo = await ensureClassLoaded(value)
+    if (classInfo) {
+      selectedClassClassroomId.value = normalizeOptionalClassroomId(classInfo.classroomId) || undefined
+      const teacherFilterChanged = applyClassDefaultTeacherQuickFilter(classInfo)
+      if (!teacherFilterChanged)
+        await handleClass(value)
+    }
+    else {
+      await handleClass(value)
+    }
+  }
+  finally {
+    nextTick(() => {
+      classSelectionSyncing = false
+    })
   }
 }
 
@@ -4813,6 +4886,8 @@ watch(
   () => normalizeOptionalClassroomId(selectedClassClassroomId.value),
   (value, previousValue) => {
     if (value === previousValue)
+      return
+    if (classSelectionSyncing)
       return
     if (currentModel.value !== '2' || !String(classId.value || '').trim())
       return

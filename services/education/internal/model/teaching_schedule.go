@@ -281,14 +281,15 @@ type TeachingScheduleValidationResult struct {
 }
 
 type TeachingScheduleValidationItem struct {
-	TeacherID         string                         `json:"teacherId,omitempty"`
-	LessonDate        string                         `json:"lessonDate"`
-	StartTime         string                         `json:"startTime"`
-	EndTime           string                         `json:"endTime"`
-	Valid             bool                           `json:"valid"`
-	Message           string                         `json:"message,omitempty"`
-	ExistingSchedules []TeachingScheduleConflictItem `json:"existingSchedules,omitempty"`
-	ConflictTypes     []string                       `json:"conflictTypes,omitempty"`
+	TeacherID               string                         `json:"teacherId,omitempty"`
+	LessonDate              string                         `json:"lessonDate"`
+	StartTime               string                         `json:"startTime"`
+	EndTime                 string                         `json:"endTime"`
+	Valid                   bool                           `json:"valid"`
+	Message                 string                         `json:"message,omitempty"`
+	ExistingSchedules       []TeachingScheduleConflictItem `json:"existingSchedules,omitempty"`
+	ConflictTypes           []string                       `json:"conflictTypes,omitempty"`
+	ConflictingStudentNames []string                       `json:"conflictingStudentNames,omitempty"`
 }
 
 type OneToOneScheduleAvailabilityItem struct {

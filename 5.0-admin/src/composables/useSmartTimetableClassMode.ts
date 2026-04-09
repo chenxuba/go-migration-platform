@@ -2,7 +2,7 @@ import dayjs from 'dayjs'
 import { ref } from 'vue'
 import type { ComputedRef } from 'vue'
 import { getGroupClassDetailApi, listGroupClassStudentsByClassIdsApi, pageGroupClassesApi } from '@/api/edu-center/group-class'
-import { type TeachingScheduleItem, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { type TeachingScheduleValidationResult, validateGroupClassSchedulesApi } from '@/api/edu-center/teaching-schedule'
 
 interface ClassInfo {
   id: string
@@ -23,30 +23,12 @@ interface UseSmartTimetableClassModeOptions {
   activeGroupLabel: ComputedRef<string>
   dataSource: ComputedRef<any[]>
   getLessonIndex: (startTime: string) => string | number
+  hasScheduledLesson: (lesson: any) => boolean
+  normalizedSelectedAssistantIds: ComputedRef<string[]>
   queryDateRange: ComputedRef<{ startDate: string, endDate: string }>
   resetEmptyLessonConflicts: (scope?: string) => void
   selectedClassroomId?: ComputedRef<string>
   resolveClassroomName?: (id: unknown) => string
-}
-
-interface ClassConflictSnapshot {
-  classSchedules: TeachingScheduleItem[]
-  classroomSchedules: TeachingScheduleItem[]
-  studentSchedulesById: Map<string, TeachingScheduleItem[]>
-}
-
-interface ConflictExistingScheduleItem {
-  name: string
-  classTypeText: string
-  date: string
-  week: string
-  timeText: string
-  teacherId?: string
-  teacherName: string
-  assistantNames?: string[]
-  classroomName?: string
-  studentNames?: string[]
-  conflictTypes?: string[]
 }
 
 function isTimeOverlap(time1: { start: string, end: string }, time2: { start: string, end: string }) {
@@ -99,8 +81,8 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
   const classDetailLoading = ref(false)
   const classConflictLoading = ref(false)
   const pendingClassLoads = new Map<string, Promise<ClassInfo | null>>()
-  const pendingClassConflictLoads = new Map<string, Promise<ClassConflictSnapshot>>()
-  const classConflictCache = new Map<string, ClassConflictSnapshot>()
+  const pendingClassConflictLoads = new Map<string, Promise<TeachingScheduleValidationResult | null>>()
+  const classConflictCache = new Map<string, TeachingScheduleValidationResult | null>()
   let classConflictCacheVersion = 0
   let classConflictSeq = 0
 
@@ -238,6 +220,7 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
       effectiveClassroom.id,
       startDate,
       endDate,
+      [...options.normalizedSelectedAssistantIds.value].sort().join(','),
       [...classInfo.studentIds].sort().join(','),
     ].join('|')
   }
@@ -259,153 +242,7 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
     }
   }
 
-  async function listTeachingSchedulesSafe(params: Parameters<typeof listTeachingSchedulesApi>[0]) {
-    try {
-      const res = await listTeachingSchedulesApi(params)
-      return res.code === 200 && Array.isArray(res.result) ? res.result : []
-    }
-    catch (error) {
-      console.error('load class related schedules failed', error)
-      return []
-    }
-  }
-
-  function dedupeTeachingSchedules(items: TeachingScheduleItem[]) {
-    const map = new Map<string, TeachingScheduleItem>()
-    items.forEach((item) => {
-      const key = [
-        String(item?.id || '').trim(),
-        String(item?.teachingClassId || '').trim(),
-        String(item?.lessonDate || '').trim(),
-        String(item?.startAt || '').trim(),
-        String(item?.endAt || '').trim(),
-      ].join('|')
-      if (key && !map.has(key))
-        map.set(key, item)
-    })
-    return [...map.values()]
-  }
-
-  function dedupeExistingSchedules(items: ConflictExistingScheduleItem[]) {
-    const map = new Map<string, ConflictExistingScheduleItem>()
-    items.forEach((item) => {
-      const key = [
-        String(item?.teacherId || '').trim(),
-        String(item?.date || '').trim(),
-        String(item?.timeText || '').trim(),
-        String(item?.name || '').trim(),
-      ].join('|')
-      if (key && !map.has(key))
-        map.set(key, item)
-    })
-    return [...map.values()]
-  }
-
-  function extractScheduleDate(value: Partial<TeachingScheduleItem>) {
-    const lessonDate = String(value?.lessonDate || '').trim()
-    if (lessonDate)
-      return lessonDate
-    const startAt = String(value?.startAt || '').trim()
-    return startAt ? dayjs(startAt).format('YYYY-MM-DD') : ''
-  }
-
-  function extractScheduleHHMM(value: unknown) {
-    const text = String(value || '').trim()
-    if (!text)
-      return ''
-    const matched = text.match(/(\d{2}:\d{2})/)
-    if (matched?.[1])
-      return matched[1]
-    const parsed = dayjs(text)
-    return parsed.isValid() ? parsed.format('HH:mm') : ''
-  }
-
-  function scheduleDisplayName(schedule: Partial<TeachingScheduleItem>) {
-    const className = String(schedule?.teachingClassName || '').trim()
-    const courseName = String(schedule?.lessonName || '').trim()
-    if (className && courseName && className !== courseName)
-      return `${className}·${courseName}`
-    return className || courseName || '课程'
-  }
-
-  function scheduleClassTypeText(schedule: Partial<TeachingScheduleItem>) {
-    return Number(schedule?.classType) === 2 ? '1对1日程' : '班课日程'
-  }
-
-  function normalizeStudentNames(schedule: Partial<TeachingScheduleItem>) {
-    const raw = String(schedule?.studentName || '').trim()
-    if (!raw)
-      return []
-    return raw.split(/[、,，]/).map(item => item.trim()).filter(Boolean)
-  }
-
-  function buildScheduleMeta(schedule: Partial<TeachingScheduleItem>) {
-    const lessonDate = extractScheduleDate(schedule)
-    const startTime = extractScheduleHHMM(schedule?.startAt)
-    const endTime = extractScheduleHHMM(schedule?.endAt)
-    return {
-      classId: String(schedule?.teachingClassId || '').trim(),
-      className: String(schedule?.teachingClassName || '').trim(),
-      classroomName: String(schedule?.classroomName || '').trim(),
-      courseName: String(schedule?.lessonName || '').trim(),
-      displayName: scheduleDisplayName(schedule),
-      lessonDate,
-      startTime,
-      endTime,
-      teacherName: String(schedule?.teacherName || '').trim() || '未知老师',
-      dateLabel: lessonDate ? `${dayjs(lessonDate).format('M')}月${dayjs(lessonDate).format('D')}日` : '',
-      lessonIndex: startTime ? options.getLessonIndex(startTime) : '',
-      timeLabel: startTime && endTime ? `${startTime}-${endTime}` : '',
-    }
-  }
-
-  function buildExistingScheduleFromTeachingSchedule(
-    schedule: Partial<TeachingScheduleItem>,
-    conflictTypes: string[] = [],
-  ): ConflictExistingScheduleItem {
-    const meta = buildScheduleMeta(schedule)
-    return {
-      name: meta.displayName,
-      classTypeText: scheduleClassTypeText(schedule),
-      date: meta.lessonDate,
-      week: meta.lessonDate ? formatWeek(meta.lessonDate) : '',
-      timeText: meta.timeLabel,
-      teacherId: String(schedule?.teacherId || '').trim(),
-      teacherName: meta.teacherName,
-      assistantNames: Array.isArray(schedule?.assistantNames) ? schedule.assistantNames.filter(Boolean) : [],
-      classroomName: meta.classroomName,
-      studentNames: normalizeStudentNames(schedule),
-      conflictTypes,
-    }
-  }
-
-  function buildExistingScheduleFromMatrixLesson(
-    teacher: any,
-    lesson: any,
-    conflictTypes: string[] = [],
-  ): ConflictExistingScheduleItem {
-    const studentNames = Array.isArray(lesson?.studentNames)
-      ? lesson.studentNames.map((item: any) => String(item?.name || '').trim()).filter(Boolean)
-      : []
-    const assistantNames = String(lesson?.assistantText || '').trim() && String(lesson?.assistantText || '').trim() !== '未安排'
-      ? String(lesson.assistantText).split('、').map(item => item.trim()).filter(Boolean)
-      : []
-    return {
-      name: String(lesson?.className || lesson?.courseName || '').trim() || '课程',
-      classTypeText: Number(lesson?.courseType) === 1 ? '1对1日程' : '班课日程',
-      date: String(teacher?.date || '').trim(),
-      week: String(teacher?.date || '').trim() ? formatWeek(String(teacher.date).trim()) : '',
-      timeText: `${String(lesson?.startTime || '').trim()}-${String(lesson?.endTime || '').trim()}`,
-      teacherId: String(teacher?.teacherId || '').trim(),
-      teacherName: String(teacher?.name || '').trim() || '未知老师',
-      assistantNames,
-      classroomName: String(lesson?.classroomName || '').trim(),
-      studentNames,
-      conflictTypes,
-    }
-  }
-
-  async function loadClassConflictSnapshot(classInfo: ClassInfo) {
+  async function loadClassConflictValidation(classInfo: ClassInfo) {
     const cacheKey = buildClassConflictCacheKey(classInfo)
     if (classConflictCache.has(cacheKey))
       return classConflictCache.get(cacheKey)!
@@ -416,41 +253,46 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
 
     const request = (async () => {
       const cacheVersion = classConflictCacheVersion
-      const { startDate, endDate } = options.queryDateRange.value
-      const uniqueStudentIds = Array.from(new Set(classInfo.studentIds))
       const effectiveClassroom = resolveEffectiveClassroom(classInfo)
-
-      const [classSchedules, classroomSchedules, studentEntries] = await Promise.all([
-        listTeachingSchedulesSafe({
-          startDate,
-          endDate,
-          groupClassIds: classInfo.id,
-        }),
-        effectiveClassroom.id
-          ? listTeachingSchedulesSafe({
-              startDate,
-              endDate,
-              classroomIds: effectiveClassroom.id,
-            })
-          : Promise.resolve([]),
-        Promise.all(uniqueStudentIds.map(async (studentId) => {
-          const rows = await listTeachingSchedulesSafe({
-            startDate,
-            endDate,
-            studentId,
+      const schedules = options.dataSource.value.flatMap((teacher) => {
+        return (Array.isArray(teacher?.lessons) ? teacher.lessons : [])
+          .filter((lesson: any) => !options.hasScheduledLesson(lesson))
+          .map((lesson: any) => {
+            const assignment = buildClassScheduleAssignment(
+              classInfo,
+              teacher?.teacherId,
+              options.normalizedSelectedAssistantIds.value,
+            )
+            return {
+              lessonDate: String(teacher?.date || '').trim(),
+              startTime: String(lesson?.startTime || '').trim(),
+              endTime: String(lesson?.endTime || '').trim(),
+              teacherId: assignment.teacherId,
+              assistantIds: assignment.assistantIds,
+              classroomId: effectiveClassroom.id || undefined,
+            }
           })
-          return [studentId, dedupeTeachingSchedules(rows)] as const
-        })),
-      ])
+          .filter(item => item.lessonDate && item.startTime && item.endTime && item.teacherId)
+      })
 
-      const snapshot: ClassConflictSnapshot = {
-        classSchedules: dedupeTeachingSchedules(classSchedules),
-        classroomSchedules: dedupeTeachingSchedules(classroomSchedules),
-        studentSchedulesById: new Map(studentEntries),
+      if (!schedules.length) {
+        if (cacheVersion === classConflictCacheVersion)
+          classConflictCache.set(cacheKey, null)
+        return null
       }
+
+      const res = await validateGroupClassSchedulesApi({
+        groupClassId: classInfo.id,
+        teacherId: '',
+        classroomId: effectiveClassroom.id || undefined,
+        schedules,
+      })
+      if (res.code !== 200)
+        throw new Error(res.message || '检测班课空位失败')
+      const validation = res.result || null
       if (cacheVersion === classConflictCacheVersion)
-        classConflictCache.set(cacheKey, snapshot)
-      return snapshot
+        classConflictCache.set(cacheKey, validation)
+      return validation
     })()
 
     pendingClassConflictLoads.set(cacheKey, request)
@@ -473,189 +315,47 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
     }
   }
 
-  function buildCombinedConflictReason(reasons: any[]) {
-    const normalized = (Array.isArray(reasons) ? reasons : []).filter(Boolean)
-    if (!normalized.length)
-      return null
-    if (normalized.length === 1)
-      return normalized[0]
-
-    const conflictTypes = Array.from(new Set(
-      normalized
-        .flatMap(item => Array.isArray(item?.conflictTypes) ? item.conflictTypes : [])
-        .map(item => String(item || '').trim())
-        .filter(Boolean),
-    ))
-    const messages = Array.from(new Set(
-      normalized
-        .map(item => String(item?.message || '').trim())
-        .filter(Boolean),
-    ))
-    const existingSchedules = dedupeExistingSchedules(
-      normalized.flatMap(item => Array.isArray(item?.existingSchedules) ? item.existingSchedules : []),
-    )
-    const conflictingStudentNames = Array.from(new Set(
-      normalized
-        .flatMap((item) => {
-          if (Array.isArray(item?.conflictingStudentNames))
-            return item.conflictingStudentNames
-          return item?.studentName ? [item.studentName] : []
-        })
-        .map(item => String(item || '').trim())
-        .filter(Boolean),
-    ))
-
-    return {
-      type: '班课全局冲突',
-      conflictTypes,
-      existingSchedules,
-      conflictingStudentNames,
-      message: messages.length
-        ? `该时间段存在${conflictTypes.join('、')}冲突：${messages.join('；')}`
-        : '该时间段存在冲突，无法排课',
-    }
+  function buildValidationItemKey(teacherId: unknown, lessonDate: unknown, startTime: unknown, endTime: unknown) {
+    return [
+      String(teacherId || '').trim(),
+      String(lessonDate || '').trim(),
+      String(startTime || '').trim(),
+      String(endTime || '').trim(),
+    ].join('|')
   }
 
-  function checkClassCrossTimeConflicts(classInfo: ClassInfo, snapshot: ClassConflictSnapshot) {
+  function applyClassValidationResult(classInfo: ClassInfo, validation: TeachingScheduleValidationResult | null) {
     options.resetEmptyLessonConflicts()
-    const effectiveClassroom = resolveEffectiveClassroom(classInfo)
+    const invalidMap = new Map(
+      (Array.isArray(validation?.items) ? validation.items : [])
+        .filter(item => item?.valid === false)
+        .map(item => [
+          buildValidationItemKey(item.teacherId, item.lessonDate, item.startTime, item.endTime),
+          item,
+        ]),
+    )
 
     options.dataSource.value.forEach((teacher) => {
-      teacher.lessons.forEach((lesson: any, lessonIndex: number) => {
-        if (lesson.studentId)
+      teacher.lessons.forEach((lesson: any) => {
+        if (options.hasScheduledLesson(lesson))
           return
-
-        const currentTime = {
-          date: teacher.date,
-          startTime: lesson.startTime,
-          endTime: lesson.endTime,
-        }
-
-        const conflictReasons: any[] = []
-
-        const classTimeConflict = snapshot.classSchedules.find((schedule) => {
-          const meta = buildScheduleMeta(schedule)
-          return meta.lessonDate === currentTime.date
-            && isTimeOverlap(
-              { start: meta.startTime, end: meta.endTime },
-              { start: currentTime.startTime, end: currentTime.endTime },
-            )
-        })
-
-        if (classTimeConflict) {
-          const meta = buildScheduleMeta(classTimeConflict)
-          const exactMatch = meta.startTime === currentTime.startTime && meta.endTime === currentTime.endTime
-          const reasonType = exactMatch ? '班级已有安排' : '班级时间段交叉冲突'
-          const baseMessage = exactMatch
-            ? `该时间段${classInfo.name}在${meta.dateLabel}第${meta.lessonIndex}节课[${meta.timeLabel}]已有${meta.teacherName}的${meta.displayName}安排，无法重复排课`
-            : `该时间段${classInfo.name}在${meta.dateLabel}第${meta.lessonIndex}节课[${meta.timeLabel}]已有${meta.teacherName}的课程安排，不支持交叉时间段排课`
-          conflictReasons.push({
-            type: reasonType,
-            className: classInfo.name,
-            date: meta.dateLabel,
-            lessonIndex: meta.lessonIndex,
-            teacherName: meta.teacherName,
-            group: options.activeGroupLabel.value,
-            time: meta.timeLabel,
-            conflictTypes: ['班级'],
-            existingSchedules: [buildExistingScheduleFromTeachingSchedule(classTimeConflict, ['班级'])],
-            message: baseMessage,
-          })
-        }
-
-        const teacherOtherLesson = teacher.lessons.find((item: any, idx: number) =>
-          idx !== lessonIndex
-          && item.studentId
-          && isTimeOverlap(
-            { start: item.startTime, end: item.endTime },
-            { start: currentTime.startTime, end: currentTime.endTime },
-          ),
+        const matched = invalidMap.get(
+          buildValidationItemKey(teacher?.teacherId, teacher?.date, lesson?.startTime, lesson?.endTime),
         )
-
-        if (teacherOtherLesson) {
-          const month = dayjs(teacher.date).format('M')
-          const day = dayjs(teacher.date).format('D')
-          const timeText = `${teacherOtherLesson.startTime}-${teacherOtherLesson.endTime}`
-          conflictReasons.push({
-            type: '教师课程冲突',
-            teacherName: teacher.name,
-            date: `${month}月${day}日`,
-            lessonIndex: options.getLessonIndex(teacherOtherLesson.startTime),
-            className: teacherOtherLesson.className,
-            courseName: teacherOtherLesson.courseName,
-            time: timeText,
-            conflictTypes: ['老师'],
-            existingSchedules: [buildExistingScheduleFromMatrixLesson(teacher, teacherOtherLesson, ['老师'])],
-            message: `该时间段${teacher.name}在${month}月${day}日第${options.getLessonIndex(teacherOtherLesson.startTime)}节课[${timeText}]已有${teacherOtherLesson.className || teacherOtherLesson.courseName || '课程'}安排，无法排课`,
-          })
-        }
-
-        if (effectiveClassroom.id) {
-          const classroomConflict = snapshot.classroomSchedules.find((schedule) => {
-            const meta = buildScheduleMeta(schedule)
-            return meta.classId !== classInfo.id
-              && meta.lessonDate === currentTime.date
-              && isTimeOverlap(
-                { start: meta.startTime, end: meta.endTime },
-                { start: currentTime.startTime, end: currentTime.endTime },
-              )
-          })
-
-          if (classroomConflict) {
-            const meta = buildScheduleMeta(classroomConflict)
-            conflictReasons.push({
-              type: '教室冲突',
-              classroomName: effectiveClassroom.name || meta.classroomName,
-              date: meta.dateLabel,
-              lessonIndex: meta.lessonIndex,
-              teacherName: meta.teacherName,
-              className: meta.className,
-              courseName: meta.courseName,
-              time: meta.timeLabel,
-              conflictTypes: ['教室'],
-              existingSchedules: [buildExistingScheduleFromTeachingSchedule(classroomConflict, ['教室'])],
-              message: `该时间段教室${effectiveClassroom.name || meta.classroomName || '-'}在${meta.dateLabel}第${meta.lessonIndex}节课[${meta.timeLabel}]已有${meta.teacherName}的${meta.displayName}安排，无法排课`,
-            })
-          }
-        }
-
-        for (const sid of classInfo.studentIds) {
-          const matchedSchedules = snapshot.studentSchedulesById.get(sid) || []
-          const studentConflict = matchedSchedules.find((schedule) => {
-            const meta = buildScheduleMeta(schedule)
-            return meta.classId !== classInfo.id
-              && meta.lessonDate === currentTime.date
-              && isTimeOverlap(
-                { start: meta.startTime, end: meta.endTime },
-                { start: currentTime.startTime, end: currentTime.endTime },
-              )
-          })
-
-          if (!studentConflict)
-            continue
-
-          const meta = buildScheduleMeta(studentConflict)
-          const studentIndex = classInfo.studentIds.indexOf(sid)
-          const studentName = studentIndex >= 0 ? classInfo.studentNames[studentIndex] : '未知学生'
-          conflictReasons.push({
-            type: '学生课程冲突',
-            studentName,
-            conflictingStudentNames: [studentName],
-            date: meta.dateLabel,
-            lessonIndex: meta.lessonIndex,
-            teacherName: meta.teacherName,
-            courseName: meta.courseName,
-            className: meta.className,
-            group: options.activeGroupLabel.value,
-            time: meta.timeLabel,
-            conflictTypes: ['学员'],
-            existingSchedules: [buildExistingScheduleFromTeachingSchedule(studentConflict, ['学员'])],
-            message: `该时间段${studentName}在${meta.dateLabel}第${meta.lessonIndex}节课[${meta.timeLabel}]已有${meta.teacherName}的${meta.displayName}安排，无法排课`,
-          })
-        }
-
-        lesson.conflict = conflictReasons.length > 0
-        lesson.conflictReason = buildCombinedConflictReason(conflictReasons)
+        lesson.conflict = Boolean(matched)
+        lesson.conflictReason = matched
+          ? {
+              type: 'group-class-api',
+              className: classInfo.name,
+              lessonIndex: options.getLessonIndex(lesson?.startTime),
+              date: teacher?.date ? `${dayjs(teacher.date).format('M')}月${dayjs(teacher.date).format('D')}日` : '',
+              time: `${String(lesson?.startTime || '').trim()}-${String(lesson?.endTime || '').trim()}`,
+              message: matched.message || '当前空位不可排课',
+              conflictTypes: Array.isArray(matched.conflictTypes) ? matched.conflictTypes : [],
+              existingSchedules: Array.isArray(matched.existingSchedules) ? matched.existingSchedules : [],
+              conflictingStudentNames: Array.isArray(matched.conflictingStudentNames) ? matched.conflictingStudentNames : [],
+            }
+          : null
       })
     })
   }
@@ -679,11 +379,11 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
         return null
       }
 
-      const snapshot = await loadClassConflictSnapshot(classInfo)
+      const validation = await loadClassConflictValidation(classInfo)
       if (seq !== classConflictSeq)
         return classInfo
 
-      checkClassCrossTimeConflicts(classInfo, snapshot)
+      applyClassValidationResult(classInfo, validation)
       return classInfo
     }
     catch (error) {

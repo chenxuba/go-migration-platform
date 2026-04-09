@@ -45,6 +45,17 @@ func (svc *Service) ValidateOneToOneSchedules(userID int64, dto model.CreateOneT
 	return svc.repo.ValidateOneToOneSchedules(context.Background(), instID, dto)
 }
 
+func (svc *Service) ValidateGroupClassSchedules(userID int64, dto model.CreateGroupClassSchedulesDTO) (model.TeachingScheduleValidationResult, error) {
+	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.TeachingScheduleValidationResult{}, err
+	}
+	if strings.TrimSpace(dto.GroupClassID) == "" {
+		return model.TeachingScheduleValidationResult{}, errors.New("请选择班级")
+	}
+	return svc.repo.ValidateGroupClassSchedules(context.Background(), instID, dto)
+}
+
 func (svc *Service) CheckOneToOneScheduleAvailability(userID int64, dto model.CheckOneToOneScheduleAvailabilityDTO) (model.OneToOneScheduleAvailabilityResult, error) {
 	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
 	if err != nil {
