@@ -5,6 +5,7 @@ import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
+import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import SmartTimetableScheduleDetailDrawer from './smart-timetable-schedule-detail-drawer.vue'
 import TimetableScheduleHoverPopover from './timetable-schedule-hover-popover.vue'
 import TimetableScheduleSummary from './timetable-schedule-summary.vue'
@@ -22,9 +23,11 @@ import {
   cancelTeachingSchedulesApi,
   copyTeachingSchedulesWeekApi,
   downloadTeachingSchedulesTeacherMatrixExcelApi,
+  getTeachingScheduleConflictDetailApi,
   listTeachingSchedulesByTeacherMatrixApi,
 } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
+import messageService from '@/utils/messageService'
 
 interface FilterOption {
   id: string
@@ -63,6 +66,9 @@ const currentScheduleDetail = ref<DrawerSummary | null>(null)
 const deletingScheduleDetail = ref(false)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref<TeachingScheduleItem | null>(null)
+const scheduleConflictOpen = ref(false)
+const scheduleConflictValidation = ref(null)
+const scheduleConflictLoading = ref(false)
 
 const headerDatesRef = ref<HTMLElement | null>(null)
 const bodyScrollRef = ref<HTMLElement | null>(null)
@@ -119,7 +125,7 @@ function conflictBadgeTitle(event: CellSchedule) {
   const types = Array.isArray(event?.raw?.conflictTypes)
     ? event.raw.conflictTypes.map(item => String(item || '').trim()).filter(Boolean)
     : []
-  return types.length ? `冲突：${types.join('、')}` : '存在冲突'
+  return types.length ? `冲突原因：${types.join('、')}冲突，点击查看详情` : '当前课程存在冲突，点击查看详情'
 }
 
 function isOneToOneSchedule(schedule: TeachingScheduleItem | null | undefined) {
@@ -1302,6 +1308,29 @@ function onBatchPlanUpdated() {
 
 const isCurrentDetailOneToOne = computed(() => isOneToOneSchedule(currentDetailSchedule.value))
 
+async function openEventConflictDetail(event: CellSchedule) {
+  if (!event?.raw?.conflict)
+    return
+
+  scheduleConflictLoading.value = true
+  try {
+    const res = await getTeachingScheduleConflictDetailApi({
+      id: String(event.id),
+    })
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '加载冲突详情失败')
+    scheduleConflictValidation.value = res.result
+    scheduleConflictOpen.value = true
+  }
+  catch (error: any) {
+    console.error('openEventConflictDetail failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '加载冲突详情失败')
+  }
+  finally {
+    scheduleConflictLoading.value = false
+  }
+}
+
 async function handleScheduleDetailDelete() {
   const schedule = currentDetailSchedule.value
   const scheduleId = String(schedule?.id || '').trim()
@@ -1748,13 +1777,14 @@ const unsignedLessons = computed(() =>
                         {{ event.timeText }}
                       </div>
                       <div class="tm-event__badges">
-                        <span
-                          v-if="event.raw?.conflict"
-                          class="tm-event__badge tm-event__badge--conflict"
-                          :title="conflictBadgeTitle(event)"
-                        >
-                          冲突
-                        </span>
+                        <a-tooltip v-if="event.raw?.conflict" :title="conflictBadgeTitle(event)" placement="top" @click.stop>
+                          <span
+                            class="tm-event__badge tm-event__badge--conflict"
+                            @click.stop="openEventConflictDetail(event)"
+                          >
+                            冲突
+                          </span>
+                        </a-tooltip>
                         <span
                           v-else-if="event.classType === 1 || event.classType === 2"
                           class="tm-event__badge"
@@ -1796,6 +1826,15 @@ const unsignedLessons = computed(() =>
       v-model:open="scheduleBatchPlanEditOpen"
       :schedule="currentBatchPlanSchedule"
       @updated="onBatchPlanUpdated"
+    />
+    <ScheduleConflictModal
+      v-model:open="scheduleConflictOpen"
+      :validation="scheduleConflictValidation"
+      :locating="scheduleConflictLoading"
+      title="冲突详情"
+      current-title="当前冲突日程"
+      existing-title="与其冲突的日程"
+      fallback-message="当前日程与已有日程存在冲突"
     />
   </div>
 </template>

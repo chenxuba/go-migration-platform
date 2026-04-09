@@ -793,6 +793,15 @@ function scheduleConflictSummary(schedule) {
   return schedule?.conflict ? '当前课程存在冲突' : ''
 }
 
+function conflictBadgeTooltip(event) {
+  const types = Array.isArray(event?.raw?.conflictTypes)
+    ? event.raw.conflictTypes.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+  if (types.length)
+    return `冲突原因：${types.join('、')}冲突，点击查看详情`
+  return '当前课程存在冲突，点击查看详情'
+}
+
 function scheduleHoverTitle(schedule) {
   if (isOneToOneSchedule(schedule))
     return String(schedule?.lessonName || '').trim() || '1对1日程'
@@ -1771,13 +1780,14 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                           {{ event.timeText }}
                         </div>
                         <div class="schedule-event__badges">
-                          <span
-                            v-if="event.conflict"
-                            class="schedule-event__badge schedule-event__badge--conflict"
-                            @click.stop="openEventConflictDetail(event)"
-                          >
-                            冲突
-                          </span>
+                          <a-tooltip v-if="event.conflict" :title="conflictBadgeTooltip(event)" placement="top" @click.stop>
+                            <span
+                              class="schedule-event__badge schedule-event__badge--conflict"
+                              @click.stop="openEventConflictDetail(event)"
+                            >
+                              冲突
+                            </span>
+                          </a-tooltip>
                           <span
                             v-else
                             class="schedule-event__badge"
