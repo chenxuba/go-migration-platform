@@ -315,6 +315,28 @@ func (handler *Handler) teachingScheduleDetail(w http.ResponseWriter, r *http.Re
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) removeTeachingScheduleStudentCurrent(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var dto model.TeachingScheduleStudentRemoveCurrentDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.RemoveTeachingScheduleStudentCurrent(claims.UserID, dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, true, ctx.RequestID)
+}
+
 func (handler *Handler) teachingSchedules(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

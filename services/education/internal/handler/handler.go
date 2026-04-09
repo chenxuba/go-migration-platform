@@ -143,6 +143,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/teaching-schedules/one-to-one/create", handler.createOneToOneSchedules)
 	mux.HandleFunc("/api/v1/teaching-schedules/group-class/create", handler.createGroupClassSchedules)
 	mux.HandleFunc("/api/v1/teaching-schedules/detail", handler.teachingScheduleDetail)
+	mux.HandleFunc("/api/v1/teaching-schedules/students/remove-current", handler.removeTeachingScheduleStudentCurrent)
 	mux.HandleFunc("/api/v1/teaching-schedules/batch-detail", handler.teachingScheduleBatchDetail)
 	mux.HandleFunc("/api/v1/teaching-schedules/batch-replace", handler.replaceTeachingScheduleBatch)
 	mux.HandleFunc("/api/v1/teaching-schedules/conflict-detail", handler.teachingScheduleConflictDetail)

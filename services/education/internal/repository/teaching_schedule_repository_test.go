@@ -103,3 +103,150 @@ func TestBuildTeachingClassFinishedCountSQLFallsBackWhenRecordSQLMissing(t *test
 		t.Fatalf("expected live finished count SQL to keep active status constraint, got %s", got)
 	}
 }
+
+func TestBuildGroupClassStudentRosterFromMembershipsUsesScheduleStartAsBoundary(t *testing.T) {
+	scheduleStartAt := time.Date(2026, 4, 9, 10, 0, 0, 0, time.Local)
+	roster := buildGroupClassStudentRosterFromMemberships([]groupClassStudentMembership{
+		{
+			StudentID:       1,
+			StudentName:     "先加入的学员",
+			JoinAt:          scheduleStartAt.Add(-time.Minute),
+			ClassStatus:     model.TeachingClassStudentStatusStudying,
+			StatusChangedAt: scheduleStartAt.Add(-time.Minute),
+		},
+		{
+			StudentID:       2,
+			StudentName:     "同一时刻加入的学员",
+			JoinAt:          scheduleStartAt,
+			ClassStatus:     model.TeachingClassStudentStatusStudying,
+			StatusChangedAt: scheduleStartAt,
+		},
+		{
+			StudentID:       3,
+			StudentName:     "后加入的学员",
+			JoinAt:          scheduleStartAt.Add(time.Minute),
+			ClassStatus:     model.TeachingClassStudentStatusStudying,
+			StatusChangedAt: scheduleStartAt.Add(time.Minute),
+		},
+	}, scheduleStartAt)
+
+	if len(roster.IDs) != 1 || roster.IDs[0] != 1 {
+		t.Fatalf("expected only students added before schedule start to be included, got %#v", roster.IDs)
+	}
+	if len(roster.Names) != 1 || roster.Names[0] != "先加入的学员" {
+		t.Fatalf("expected roster names to match effective students, got %#v", roster.Names)
+	}
+}
+
+func TestBuildGroupClassStudentRosterFromMembershipsExcludesStudentsRemovedBeforeSchedule(t *testing.T) {
+	scheduleStartAt := time.Date(2026, 4, 9, 10, 0, 0, 0, time.Local)
+	roster := buildGroupClassStudentRosterFromMemberships([]groupClassStudentMembership{
+		{
+			StudentID:       1,
+			StudentName:     "已移出的学员",
+			JoinAt:          scheduleStartAt.Add(-2 * time.Hour),
+			ClassStatus:     model.TeachingClassStudentStatusClosed,
+			StatusChangedAt: scheduleStartAt.Add(-time.Minute),
+		},
+		{
+			StudentID:       2,
+			StudentName:     "稍后才移出的学员",
+			JoinAt:          scheduleStartAt.Add(-2 * time.Hour),
+			ClassStatus:     model.TeachingClassStudentStatusClosed,
+			StatusChangedAt: scheduleStartAt.Add(time.Minute),
+		},
+		{
+			StudentID:       3,
+			StudentName:     "正好此刻移出的学员",
+			JoinAt:          scheduleStartAt.Add(-2 * time.Hour),
+			ClassStatus:     model.TeachingClassStudentStatusClosed,
+			StatusChangedAt: scheduleStartAt,
+		},
+	}, scheduleStartAt)
+
+	if len(roster.IDs) != 1 || roster.IDs[0] != 2 {
+		t.Fatalf("expected only students removed after schedule start to remain, got %#v", roster.IDs)
+	}
+	if len(roster.Names) != 1 || roster.Names[0] != "稍后才移出的学员" {
+		t.Fatalf("expected roster names to exclude already removed students, got %#v", roster.Names)
+	}
+}
+
+func TestBuildGroupClassScheduleRosterFromMembershipsAndOverrides_RemovesCurrentLessonOnly(t *testing.T) {
+	scheduleStartAt := time.Date(2026, 4, 9, 10, 0, 0, 0, time.Local)
+	roster := buildGroupClassScheduleRosterFromMembershipsAndOverrides(
+		[]groupClassStudentMembership{
+			{
+				StudentID:   1,
+				StudentName: "被移出本节的学员",
+				JoinAt:      scheduleStartAt.Add(-time.Hour),
+			},
+			{
+				StudentID:   2,
+				StudentName: "仍然保留的学员",
+				JoinAt:      scheduleStartAt.Add(-time.Hour),
+			},
+		},
+		[]teachingScheduleStudentOverride{
+			{
+				StudentID:    1,
+				StudentType:  model.TeachingScheduleStudentTypeClassMember,
+				RosterStatus: model.TeachingScheduleStudentRosterStatusRemoved,
+			},
+		},
+		scheduleStartAt,
+	)
+
+	if len(roster.Active) != 1 || roster.Active[0].StudentID != 2 {
+		t.Fatalf("expected current-lesson removal to exclude only the overridden student, got %#v", roster.Active)
+	}
+	if len(roster.Leave) != 0 {
+		t.Fatalf("expected no leave students after removal override, got %#v", roster.Leave)
+	}
+}
+
+func TestBuildGroupClassScheduleRosterFromMembershipsAndOverrides_SplitsLeaveAndScheduleOnlyStudents(t *testing.T) {
+	scheduleStartAt := time.Date(2026, 4, 9, 10, 0, 0, 0, time.Local)
+	roster := buildGroupClassScheduleRosterFromMembershipsAndOverrides(
+		[]groupClassStudentMembership{
+			{
+				StudentID:   1,
+				StudentName: "班级学员",
+				JoinAt:      scheduleStartAt.Add(-time.Hour),
+			},
+		},
+		[]teachingScheduleStudentOverride{
+			{
+				StudentID:    1,
+				StudentType:  model.TeachingScheduleStudentTypeClassMember,
+				RosterStatus: model.TeachingScheduleStudentRosterStatusLeave,
+			},
+			{
+				StudentID:    2,
+				StudentName:  "临时学员",
+				StudentType:  model.TeachingScheduleStudentTypeTemporary,
+				RosterStatus: model.TeachingScheduleStudentRosterStatusActive,
+			},
+			{
+				StudentID:    3,
+				StudentName:  "补课学员",
+				StudentType:  model.TeachingScheduleStudentTypeMakeup,
+				RosterStatus: model.TeachingScheduleStudentRosterStatusActive,
+			},
+		},
+		scheduleStartAt,
+	)
+
+	if len(roster.Leave) != 1 || roster.Leave[0].StudentID != 1 {
+		t.Fatalf("expected class member leave override to move the student into leave tab, got %#v", roster.Leave)
+	}
+	if len(roster.Active) != 2 {
+		t.Fatalf("expected schedule-only active students to stay in active roster, got %#v", roster.Active)
+	}
+	if roster.Active[0].StudentID != 2 || roster.Active[0].ScheduleStudentType != model.TeachingScheduleStudentTypeTemporary {
+		t.Fatalf("expected temporary student to appear first in active roster, got %#v", roster.Active)
+	}
+	if roster.Active[1].StudentID != 3 || roster.Active[1].ScheduleStudentType != model.TeachingScheduleStudentTypeMakeup {
+		t.Fatalf("expected makeup student to appear in active roster, got %#v", roster.Active)
+	}
+}

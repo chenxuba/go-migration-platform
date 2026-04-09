@@ -2,10 +2,11 @@
 import { CloseOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import type { TableColumnsType } from 'ant-design-vue'
+import { Modal } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
-import { type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi } from '@/api/edu-center/teaching-schedule'
+import { type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi, removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
 import RollCallAddStudentModal from '@/components/common/roll-call-add-student-modal.vue'
 import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
@@ -37,6 +38,7 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'delete'): void
   (e: 'edit'): void
+  (e: 'updated'): void
 }>()
 
 const openDrawer = computed({
@@ -161,14 +163,6 @@ function handleViewStudent(studentId?: string) {
   openStudentDrawer.value = true
 }
 
-function studentTypeText() {
-  if (activeStudentTabKey.value === 'leave')
-    return '请假学员'
-  if (Number(detailData.value?.classType) === 2)
-    return '1对1学员'
-  return '班课学员'
-}
-
 function handleAddStudentMenuClick({ key }) {
   if (key === 'makeup') {
     addStudentModalTitle.value = '添加补课学员'
@@ -189,7 +183,35 @@ function handleStudentReschedule(student: Record<string, any>) {
 
 function handleStudentRemove(student: Record<string, any>) {
   const name = String(student?.studentName || '').trim() || '当前学员'
-  messageService.info(`${name} 的班课移出功能待接入`)
+  const currentScheduleId = scheduleId.value
+  const currentStudentId = String(student?.studentId || '').trim()
+  if (!currentScheduleId || !currentStudentId) {
+    messageService.warning('当前学员缺少移出标识，请刷新后重试')
+    return
+  }
+  Modal.confirm({
+    title: '移出本节学员',
+    content: `移出后仅影响本节课，不会影响班级成员和后续未开课。确认移出“${name}”吗？`,
+    okText: '确认移出',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        const res = await removeTeachingScheduleStudentCurrentApi({
+          scheduleId: currentScheduleId,
+          studentId: currentStudentId,
+        })
+        if (res.code !== 200)
+          throw new Error(res.message || '移出本节失败')
+        messageService.success(`已将${name}移出本节`)
+        await loadDetail()
+        emit('updated')
+      }
+      catch (error: any) {
+        messageService.error(error?.response?.data?.message || error?.message || '移出本节失败')
+        throw error
+      }
+    },
+  })
 }
 
 async function loadDetail() {
@@ -389,7 +411,7 @@ watch(
                   </template>
                   <template v-else-if="column.key === 'studentType'">
                     <span class="student-type-text">
-                      {{ studentTypeText() }}
+                      {{ record.scheduleStudentTypeText || (isOneToOne ? '1对1学员' : '班课学员') }}
                     </span>
                   </template>
                   <template v-else-if="column.key === 'action'">
@@ -403,7 +425,7 @@ watch(
                       </button>
                       <span class="student-action-divider" />
                       <button type="button" class="student-action-link" @click="handleStudentRemove(record)">
-                        移出
+                        移出本节
                       </button>
                     </div>
                     <a-button v-else type="link" class="px0" @click="handleViewStudent(record.studentId)">
@@ -444,7 +466,7 @@ watch(
                   </template>
                   <template v-else-if="column.key === 'studentType'">
                     <span class="student-type-text">
-                      {{ studentTypeText() }}
+                      {{ record.scheduleStudentTypeText || (isOneToOne ? '1对1学员' : '班课学员') }}
                     </span>
                   </template>
                   <template v-else-if="column.key === 'action'">
@@ -458,7 +480,7 @@ watch(
                       </button>
                       <span class="student-action-divider" />
                       <button type="button" class="student-action-link" @click="handleStudentRemove(record)">
-                        移出
+                        移出本节
                       </button>
                     </div>
                   </template>

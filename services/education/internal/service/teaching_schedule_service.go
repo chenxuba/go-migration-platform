@@ -89,6 +89,20 @@ func (svc *Service) GetTeachingScheduleDetail(userID int64, query model.Teaching
 	return svc.repo.GetTeachingScheduleDetail(context.Background(), instID, query)
 }
 
+func (svc *Service) RemoveTeachingScheduleStudentCurrent(userID int64, dto model.TeachingScheduleStudentRemoveCurrentDTO) error {
+	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(dto.ScheduleID) == "" {
+		return errors.New("缺少日程ID")
+	}
+	if strings.TrimSpace(dto.StudentID) == "" {
+		return errors.New("缺少学员ID")
+	}
+	return svc.repo.RemoveTeachingScheduleStudentCurrent(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleVO, error) {
 	ctx := context.Background()
 	instID, err := svc.repo.FindInstIDByUserID(ctx, userID)
@@ -805,6 +819,7 @@ func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) mod
 	if fallbackStudentName == "" {
 		fallbackStudentName = "-"
 	}
+	requireRealStudentID := v.ClassType == model.TeachingClassTypeNormal
 	for i := 0; i < studentCount; i++ {
 		var studentID int64
 		if i < len(studentIDParts) {
@@ -814,7 +829,11 @@ func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) mod
 		if i < len(studentNameParts) {
 			studentName = strings.TrimSpace(studentNameParts[i])
 		}
-		if studentID <= 0 && studentName == "" {
+		if requireRealStudentID {
+			if studentID <= 0 {
+				continue
+			}
+		} else if studentID <= 0 && studentName == "" {
 			continue
 		}
 		studentList = append(studentList, model.ScheduleLegacyPersonVO{
@@ -828,7 +847,7 @@ func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) mod
 			Type: 1,
 		})
 	}
-	if len(studentList) == 0 {
+	if len(studentList) == 0 && !requireRealStudentID {
 		name := strings.TrimSpace(v.StudentName)
 		if name == "" {
 			name = fallbackStudentName

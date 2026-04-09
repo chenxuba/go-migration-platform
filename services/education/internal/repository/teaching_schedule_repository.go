@@ -14,6 +14,10 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
+type sqlQueryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 func ensureTeachingScheduleTables(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS teaching_schedule (
@@ -85,11 +89,42 @@ func ensureTeachingScheduleTables(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	return ensureColumnsOnTable(ctx, db, "teaching_schedule_batch_meta", map[string]string{
+	if err := ensureColumnsOnTable(ctx, db, "teaching_schedule_batch_meta", map[string]string{
 		"batch_no":          "batch_no VARCHAR(64) NOT NULL DEFAULT '' AFTER batch_key",
 		"class_type":        "class_type INT NOT NULL DEFAULT 0 AFTER batch_no",
 		"teaching_class_id": "teaching_class_id BIGINT NOT NULL DEFAULT 0 AFTER class_type",
 		"meta_json":         "meta_json JSON NULL AFTER teaching_class_id",
+	}); err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS teaching_schedule_student (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			uuid VARCHAR(64) NULL,
+			version BIGINT NOT NULL DEFAULT 0,
+			inst_id BIGINT NOT NULL,
+			teaching_schedule_id BIGINT NOT NULL DEFAULT 0,
+			teaching_class_id BIGINT NOT NULL DEFAULT 0,
+			student_id BIGINT NOT NULL DEFAULT 0,
+			student_type INT NOT NULL DEFAULT 1,
+			roster_status INT NOT NULL DEFAULT 1,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_teaching_schedule_student_unique (inst_id, teaching_schedule_id, student_id),
+			KEY idx_teaching_schedule_student_schedule (inst_id, teaching_schedule_id),
+			KEY idx_teaching_schedule_student_student (inst_id, student_id)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	return ensureColumnsOnTable(ctx, db, "teaching_schedule_student", map[string]string{
+		"teaching_class_id": "teaching_class_id BIGINT NOT NULL DEFAULT 0 AFTER teaching_schedule_id",
+		"student_type":      "student_type INT NOT NULL DEFAULT 1 AFTER student_id",
+		"roster_status":     "roster_status INT NOT NULL DEFAULT 1 AFTER student_type",
 	})
 }
 
@@ -222,10 +257,15 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 
 	studentConflicts := []scheduleConflictDetailRow{}
 	if current.ClassType == model.TeachingClassTypeNormal && current.TeachingClassID > 0 {
-		studentIDs, _, rosterErr := repo.listGroupClassStudentRosterTx(ctx, tx, instID, current.TeachingClassID)
+		rosterByScheduleID, rosterErr := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{
+			ScheduleID: current.ID,
+			ClassID:    current.TeachingClassID,
+			StartAt:    current.StartAt,
+		}})
 		if rosterErr != nil {
 			return model.TeachingScheduleValidationResult{}, rosterErr
 		}
+		studentIDs := rosterByScheduleID[current.ID].activeIDs()
 		if len(studentIDs) > 0 {
 			studentConflicts, err = repo.listScheduleConflictDetailsByStudentsTx(ctx, tx, instID, studentIDs, []normalizedScheduleSlot{slot}, "", excludeIDs)
 			if err != nil {
@@ -238,6 +278,11 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 			return model.TeachingScheduleValidationResult{}, err
 		}
 	}
+	currentRows := []scheduleConflictDetailRow{current}
+	if err := repo.fillGroupClassStudentNamesForConflictRowsTx(ctx, tx, instID, currentRows); err != nil {
+		return model.TeachingScheduleValidationResult{}, err
+	}
+	current = currentRows[0]
 
 	classroomConflicts := []scheduleConflictDetailRow{}
 	if current.ClassroomID > 0 {
@@ -276,6 +321,7 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleVO, error) {
 	filters := []string{"ts.inst_id = ?", "ts.del_flag = 0", "ts.status = ?"}
 	args := []any{instID, model.TeachingScheduleStatusActive}
+	var studentFilterID int64
 	if batchNo := strings.TrimSpace(query.BatchNo); batchNo != "" {
 		filters = append(filters, "ts.batch_no = ?")
 		args = append(args, batchNo)
@@ -296,8 +342,18 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 	}
 	if sid := strings.TrimSpace(query.StudentID); sid != "" {
 		if studentID, err := strconv.ParseInt(sid, 10, 64); err == nil && studentID > 0 {
+			studentFilterID = studentID
 			filters = append(filters, `(
 				ts.student_id = ?
+				OR EXISTS (
+					SELECT 1
+					FROM teaching_schedule_student tss
+					WHERE tss.inst_id = ts.inst_id
+					  AND tss.teaching_schedule_id = ts.id
+					  AND tss.del_flag = 0
+					  AND tss.student_id = ?
+					  AND IFNULL(tss.roster_status, ?) <> ?
+				)
 				OR (
 					ts.class_type = ?
 					AND EXISTS (
@@ -306,11 +362,23 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 						WHERE tcs.inst_id = ts.inst_id
 						  AND tcs.teaching_class_id = ts.teaching_class_id
 						  AND tcs.del_flag = 0
+						  AND tcs.create_time < ts.lesson_start_at
+						  AND (
+							IFNULL(tcs.class_student_status, 1) = 1
+							OR tcs.update_time > ts.lesson_start_at
+						  )
 						  AND tcs.student_id = ?
 					)
 				)
 			)`)
-			args = append(args, studentID, model.TeachingClassTypeNormal, studentID)
+			args = append(args,
+				studentID,
+				studentID,
+				model.TeachingScheduleStudentRosterStatusActive,
+				model.TeachingScheduleStudentRosterStatusRemoved,
+				model.TeachingClassTypeNormal,
+				studentID,
+			)
 		} else {
 			filters = append(filters, "CAST(ts.student_id AS CHAR) = ?")
 			args = append(args, sid)
@@ -534,6 +602,30 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 	}
 	if err := repo.fillGroupClassStudentRosterForSchedules(ctx, instID, items); err != nil {
 		return nil, err
+	}
+	if studentFilterID > 0 {
+		filtered := make([]model.TeachingScheduleVO, 0, len(items))
+		studentIDText := strconv.FormatInt(studentFilterID, 10)
+		containsStudentID := func(raw string) bool {
+			for _, part := range strings.Split(strings.TrimSpace(raw), ",") {
+				if strings.TrimSpace(part) == studentIDText {
+					return true
+				}
+			}
+			return false
+		}
+		for _, item := range items {
+			if item.ClassType == model.TeachingClassTypeNormal {
+				if containsStudentID(item.StudentID) {
+					filtered = append(filtered, item)
+				}
+				continue
+			}
+			if strings.TrimSpace(item.StudentID) == studentIDText {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
 	}
 	return items, nil
 }
@@ -1003,14 +1095,20 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 	return result, nil
 }
 
-func (repo *Repository) listGroupClassStudentRosterTx(ctx context.Context, tx *sql.Tx, instID, classID int64) ([]int64, []string, error) {
+func (repo *Repository) listGroupClassStudentMembershipsTx(ctx context.Context, tx *sql.Tx, instID, classID int64) ([]groupClassStudentMembership, error) {
 	if classID <= 0 {
-		return nil, nil, nil
+		return nil, nil
 	}
 	rows, err := tx.QueryContext(ctx, `
 		SELECT
 			IFNULL(tcs.student_id, 0),
-			IFNULL(s.stu_name, '')
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.avatar_url, ''),
+			IFNULL(s.mobile, ''),
+			IFNULL(s.phone_relationship, 0),
+			tcs.create_time,
+			IFNULL(tcs.class_student_status, 1),
+			tcs.update_time
 		FROM teaching_class_student tcs
 		LEFT JOIN inst_student s
 			ON s.id = tcs.student_id
@@ -1022,31 +1120,49 @@ func (repo *Repository) listGroupClassStudentRosterTx(ctx context.Context, tx *s
 		ORDER BY tcs.id ASC
 	`, instID, classID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer rows.Close()
 
-	studentIDs := make([]int64, 0)
-	studentNames := make([]string, 0)
+	memberships := make([]groupClassStudentMembership, 0)
 	for rows.Next() {
 		var (
-			studentID   int64
-			studentName string
+			studentID         int64
+			studentName       string
+			avatarURL         string
+			phone             string
+			phoneRelationship int
+			joinAt            time.Time
+			classStatus       int
+			statusChangedAt   time.Time
 		)
-		if err := rows.Scan(&studentID, &studentName); err != nil {
-			return nil, nil, err
+		if err := rows.Scan(&studentID, &studentName, &avatarURL, &phone, &phoneRelationship, &joinAt, &classStatus, &statusChangedAt); err != nil {
+			return nil, err
 		}
-		if studentID > 0 {
-			studentIDs = append(studentIDs, studentID)
-		}
-		if strings.TrimSpace(studentName) != "" {
-			studentNames = append(studentNames, strings.TrimSpace(studentName))
-		}
+		memberships = append(memberships, groupClassStudentMembership{
+			StudentID:         studentID,
+			StudentName:       strings.TrimSpace(studentName),
+			AvatarURL:         strings.TrimSpace(avatarURL),
+			Phone:             strings.TrimSpace(phone),
+			PhoneRelationship: phoneRelationship,
+			JoinAt:            joinAt,
+			ClassStatus:       classStatus,
+			StatusChangedAt:   statusChangedAt,
+		})
 	}
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return memberships, nil
+}
+
+func (repo *Repository) listGroupClassStudentRosterTx(ctx context.Context, tx *sql.Tx, instID, classID int64, scheduleStartAt time.Time) ([]int64, []string, error) {
+	memberships, err := repo.listGroupClassStudentMembershipsTx(ctx, tx, instID, classID)
+	if err != nil {
 		return nil, nil, err
 	}
-	return studentIDs, studentNames, nil
+	roster := buildGroupClassStudentRosterFromMemberships(memberships, scheduleStartAt)
+	return roster.IDs, roster.Names, nil
 }
 
 func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, operatorID int64, dto model.CreateGroupClassSchedulesDTO) (model.CreateOneToOneSchedulesResult, error) {
@@ -1145,13 +1261,9 @@ func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, o
 		}())
 	}
 
-	studentIDs, studentNames, err := repo.listGroupClassStudentRosterTx(ctx, tx, instID, classID)
+	memberships, err := repo.listGroupClassStudentMembershipsTx(ctx, tx, instID, classID)
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
-	}
-	studentNameText := strings.Join(compactStrings(studentNames), "、")
-	if studentNameText == "" {
-		studentNameText = strings.TrimSpace(base.ClassName)
 	}
 
 	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans, nil)
@@ -1170,9 +1282,24 @@ func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, o
 	if err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
-	studentConflicts, err := repo.listScheduleConflictDetailsByStudentsTx(ctx, tx, instID, studentIDs, plansToSlots(plans), "", nil)
-	if err != nil {
-		return model.CreateOneToOneSchedulesResult{}, err
+	studentConflictsByPlan := make(map[string][]scheduleConflictDetailRow, len(plans))
+	planRosterByKey := make(map[string]groupClassStudentRoster, len(plans))
+	for _, plan := range plans {
+		key := schedulePlanKey(plan)
+		roster := buildGroupClassStudentRosterFromMemberships(memberships, plan.StartAt)
+		planRosterByKey[key] = roster
+		if len(roster.IDs) == 0 {
+			continue
+		}
+		rows, err := repo.listScheduleConflictDetailsByStudentsTx(ctx, tx, instID, roster.IDs, []normalizedScheduleSlot{{
+			LessonDate: plan.LessonDate,
+			StartAt:    plan.StartAt,
+			EndAt:      plan.EndAt,
+		}}, "", nil)
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		studentConflictsByPlan[key] = rows
 	}
 
 	hardConflictTypes := make(map[string]struct{})
@@ -1195,7 +1322,7 @@ func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, o
 		if slotHasConflict(slot, classConflicts) {
 			hardConflictTypes["班级"] = struct{}{}
 		}
-		if slotHasConflict(slot, studentConflicts) && !plan.AllowStudentConflict {
+		if len(studentConflictsByPlan[key]) > 0 && !plan.AllowStudentConflict {
 			hardConflictTypes["学员"] = struct{}{}
 		}
 	}
@@ -1219,10 +1346,14 @@ func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, o
 		List:    make([]model.TeachingScheduleVO, 0, len(plans)),
 	}
 	createdScheduleIDs := make([]int64, 0, len(plans))
-	stringStudentIDs := stringIDsFromInt64(studentIDs)
-	studentIDText := strings.Join(stringStudentIDs, ",")
 
 	for _, plan := range plans {
+		roster := planRosterByKey[schedulePlanKey(plan)]
+		studentNameText := strings.Join(compactStrings(roster.Names), "、")
+		if studentNameText == "" {
+			studentNameText = strings.TrimSpace(base.ClassName)
+		}
+		studentIDText := strings.Join(stringIDsFromInt64(roster.IDs), ",")
 		teacherName := firstNonEmptyString(teacherNames[plan.TeacherID], "-")
 		classroomName := classroomNames[plan.ClassroomID]
 		classroomID := plan.ClassroomID
@@ -1829,23 +1960,25 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 	row.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
 	row.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
 
-	students, err := repo.listTeachingScheduleDetailStudentsTx(ctx, tx, instID, row.TeachingClassID, row.CallStatus)
+	students, leaveStudents, err := repo.listTeachingScheduleDetailStudentsTx(ctx, tx, instID, row.ID, row.TeachingClassID, row.StartAt, row.CallStatus)
 	if err != nil {
 		return model.TeachingScheduleDetailVO{}, err
 	}
 	if len(students) == 0 && row.StudentID > 0 {
 		students = []model.TeachingScheduleDetailStudentVO{{
-			StudentID:             strconv.FormatInt(row.StudentID, 10),
-			StudentName:           firstNonEmptyString(row.StudentName, "-"),
-			AvatarURL:             strings.TrimSpace(row.StudentAvatarURL),
-			Phone:                 strings.TrimSpace(row.StudentPhone),
-			MaskedPhone:           maskStudentMobile(strings.TrimSpace(row.StudentPhone)),
-			PhoneRelationship:     row.PhoneRelationship,
-			PhoneRelationshipText: studentPhoneRelationshipText(row.PhoneRelationship),
-			ClassStatus:           model.TeachingClassStudentStatusStudying,
-			ClassStatusText:       teachingClassStudentStatusText(model.TeachingClassStudentStatusStudying),
-			CallStatus:            row.CallStatus,
-			CallStatusText:        teachingScheduleCallStatusText(row.CallStatus),
+			StudentID:               strconv.FormatInt(row.StudentID, 10),
+			StudentName:             firstNonEmptyString(row.StudentName, "-"),
+			AvatarURL:               strings.TrimSpace(row.StudentAvatarURL),
+			Phone:                   strings.TrimSpace(row.StudentPhone),
+			MaskedPhone:             maskStudentMobile(strings.TrimSpace(row.StudentPhone)),
+			PhoneRelationship:       row.PhoneRelationship,
+			PhoneRelationshipText:   studentPhoneRelationshipText(row.PhoneRelationship),
+			ScheduleStudentType:     model.TeachingScheduleStudentTypeClassMember,
+			ScheduleStudentTypeText: teachingScheduleStudentTypeText(model.TeachingScheduleStudentTypeClassMember),
+			ClassStatus:             model.TeachingClassStudentStatusStudying,
+			ClassStatusText:         teachingClassStudentStatusText(model.TeachingClassStudentStatusStudying),
+			CallStatus:              row.CallStatus,
+			CallStatusText:          teachingScheduleCallStatusText(row.CallStatus),
 		}}
 	}
 
@@ -1883,7 +2016,94 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 		Remark:            strings.TrimSpace(row.Remark),
 		BatchMeta:         meta,
 		Students:          students,
+		LeaveStudents:     leaveStudents,
 	}, nil
+}
+
+func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleStudentRemoveCurrentDTO) error {
+	scheduleID, err := strconv.ParseInt(strings.TrimSpace(dto.ScheduleID), 10, 64)
+	if err != nil || scheduleID <= 0 {
+		return errors.New("日程ID无效")
+	}
+	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
+	if err != nil || studentID <= 0 {
+		return errors.New("学员ID无效")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	type scheduleRow struct {
+		ID              int64
+		ClassType       int
+		TeachingClassID int64
+		StartAt         time.Time
+	}
+	var row scheduleRow
+	err = tx.QueryRowContext(ctx, `
+		SELECT
+			ts.id,
+			IFNULL(ts.class_type, 0),
+			IFNULL(ts.teaching_class_id, 0),
+			ts.lesson_start_at
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ?
+		  AND ts.id = ?
+		  AND ts.del_flag = 0
+		  AND ts.status = ?
+		LIMIT 1
+	`, instID, scheduleID, model.TeachingScheduleStatusActive).Scan(
+		&row.ID,
+		&row.ClassType,
+		&row.TeachingClassID,
+		&row.StartAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("未找到该日程")
+		}
+		return err
+	}
+	if row.ClassType != model.TeachingClassTypeNormal || row.TeachingClassID <= 0 {
+		return errors.New("当前仅支持班课学员移出本节")
+	}
+	if !time.Now().Before(row.StartAt) {
+		return errors.New("仅支持移出未开始的班课学员")
+	}
+
+	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{
+		ScheduleID: row.ID,
+		ClassID:    row.TeachingClassID,
+		StartAt:    row.StartAt,
+	}})
+	if err != nil {
+		return err
+	}
+	student, ok := rosterByScheduleID[row.ID].associatedStudent(studentID)
+	if !ok {
+		return errors.New("当前学员不在本节日程中")
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO teaching_schedule_student (
+			inst_id, teaching_schedule_id, teaching_class_id, student_id,
+			student_type, roster_status, create_id, update_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			teaching_class_id = VALUES(teaching_class_id),
+			student_type = VALUES(student_type),
+			roster_status = VALUES(roster_status),
+			update_id = VALUES(update_id),
+			update_time = CURRENT_TIMESTAMP,
+			del_flag = 0
+	`, instID, row.ID, row.TeachingClassID, studentID, normalizeTeachingScheduleStudentType(student.ScheduleStudentType), model.TeachingScheduleStudentRosterStatusRemoved, operatorID, operatorID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (repo *Repository) ReplaceTeachingScheduleBatch(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleBatchReplaceDTO) (model.CreateOneToOneSchedulesResult, error) {
@@ -2486,6 +2706,40 @@ type scheduleConflictDetailRow struct {
 	EndAt             time.Time
 }
 
+func (repo *Repository) fillGroupClassStudentNamesForConflictRowsTx(ctx context.Context, tx *sql.Tx, instID int64, rows []scheduleConflictDetailRow) error {
+	metas := make([]effectiveGroupClassScheduleMeta, 0, len(rows))
+	for _, row := range rows {
+		if row.ClassType != model.TeachingClassTypeNormal || row.ID <= 0 || row.TeachingClassID <= 0 {
+			continue
+		}
+		metas = append(metas, effectiveGroupClassScheduleMeta{
+			ScheduleID: row.ID,
+			ClassID:    row.TeachingClassID,
+			StartAt:    row.StartAt,
+		})
+	}
+	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, metas)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		if rows[i].ClassType != model.TeachingClassTypeNormal || rows[i].ID <= 0 {
+			continue
+		}
+		roster, ok := rosterByScheduleID[rows[i].ID]
+		if !ok {
+			rows[i].StudentName = ""
+			continue
+		}
+		if activeNames := roster.activeNames(); len(activeNames) > 0 {
+			rows[i].StudentName = strings.Join(activeNames, "、")
+			continue
+		}
+		rows[i].StudentName = ""
+	}
+	return nil
+}
+
 type scheduleAvailabilityConflictRow struct {
 	ID                int64
 	TeacherID         int64
@@ -2737,62 +2991,46 @@ func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx
 	return item, nil
 }
 
-func (repo *Repository) listTeachingScheduleDetailStudentsTx(ctx context.Context, tx *sql.Tx, instID, classID int64, callStatus int) ([]model.TeachingScheduleDetailStudentVO, error) {
-	if classID <= 0 {
-		return nil, nil
+func (repo *Repository) listTeachingScheduleDetailStudentsTx(ctx context.Context, tx *sql.Tx, instID, scheduleID, classID int64, scheduleStartAt time.Time, callStatus int) ([]model.TeachingScheduleDetailStudentVO, []model.TeachingScheduleDetailStudentVO, error) {
+	if scheduleID <= 0 || classID <= 0 {
+		return nil, nil, nil
 	}
-	rows, err := tx.QueryContext(ctx, `
-		SELECT
-			IFNULL(tcs.student_id, 0),
-			IFNULL(s.stu_name, ''),
-			IFNULL(s.avatar_url, ''),
-			IFNULL(s.mobile, ''),
-			IFNULL(s.phone_relationship, 0),
-			IFNULL(tcs.class_student_status, 0)
-		FROM teaching_class_student tcs
-		LEFT JOIN inst_student s
-			ON s.id = tcs.student_id
-		   AND s.inst_id = tcs.inst_id
-		   AND s.del_flag = 0
-		WHERE tcs.inst_id = ?
-		  AND tcs.teaching_class_id = ?
-		  AND tcs.del_flag = 0
-		ORDER BY tcs.id ASC
-	`, instID, classID)
+	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{
+		ScheduleID: scheduleID,
+		ClassID:    classID,
+		StartAt:    scheduleStartAt,
+	}})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer rows.Close()
-
-	result := make([]model.TeachingScheduleDetailStudentVO, 0)
-	for rows.Next() {
-		var studentID int64
-		var studentName string
-		var avatarURL string
-		var phone string
-		var phoneRelationship int
-		var classStatus int
-		if err := rows.Scan(&studentID, &studentName, &avatarURL, &phone, &phoneRelationship, &classStatus); err != nil {
-			return nil, err
+	roster := rosterByScheduleID[scheduleID]
+	buildStudentVO := func(student groupClassScheduleStudent) model.TeachingScheduleDetailStudentVO {
+		classStatus := model.TeachingClassStudentStatusStudying
+		return model.TeachingScheduleDetailStudentVO{
+			StudentID:               emptyStringIfZero(student.StudentID),
+			StudentName:             firstNonEmptyString(student.StudentName, "-"),
+			AvatarURL:               strings.TrimSpace(student.AvatarURL),
+			Phone:                   strings.TrimSpace(student.Phone),
+			MaskedPhone:             maskStudentMobile(strings.TrimSpace(student.Phone)),
+			PhoneRelationship:       student.PhoneRelationship,
+			PhoneRelationshipText:   studentPhoneRelationshipText(student.PhoneRelationship),
+			ScheduleStudentType:     normalizeTeachingScheduleStudentType(student.ScheduleStudentType),
+			ScheduleStudentTypeText: teachingScheduleStudentTypeText(student.ScheduleStudentType),
+			ClassStatus:             classStatus,
+			ClassStatusText:         teachingClassStudentStatusText(classStatus),
+			CallStatus:              callStatus,
+			CallStatusText:          teachingScheduleCallStatusText(callStatus),
 		}
-		result = append(result, model.TeachingScheduleDetailStudentVO{
-			StudentID:             emptyStringIfZero(studentID),
-			StudentName:           firstNonEmptyString(studentName, "-"),
-			AvatarURL:             strings.TrimSpace(avatarURL),
-			Phone:                 strings.TrimSpace(phone),
-			MaskedPhone:           maskStudentMobile(strings.TrimSpace(phone)),
-			PhoneRelationship:     phoneRelationship,
-			PhoneRelationshipText: studentPhoneRelationshipText(phoneRelationship),
-			ClassStatus:           classStatus,
-			ClassStatusText:       teachingClassStudentStatusText(classStatus),
-			CallStatus:            callStatus,
-			CallStatusText:        teachingScheduleCallStatusText(callStatus),
-		})
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	students := make([]model.TeachingScheduleDetailStudentVO, 0, len(roster.Active))
+	for _, student := range roster.Active {
+		students = append(students, buildStudentVO(student))
 	}
-	return result, nil
+	leaveStudents := make([]model.TeachingScheduleDetailStudentVO, 0, len(roster.Leave))
+	for _, student := range roster.Leave {
+		leaveStudents = append(leaveStudents, buildStudentVO(student))
+	}
+	return students, leaveStudents, nil
 }
 
 func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, instID int64, items []model.TeachingScheduleVO) error {
@@ -2883,28 +3121,280 @@ type groupClassStudentRoster struct {
 	Names []string
 }
 
+type groupClassStudentMembership struct {
+	StudentID         int64
+	StudentName       string
+	AvatarURL         string
+	Phone             string
+	PhoneRelationship int
+	JoinAt            time.Time
+	ClassStatus       int
+	StatusChangedAt   time.Time
+}
+
+type teachingScheduleStudentOverride struct {
+	ScheduleID        int64
+	TeachingClassID   int64
+	StudentID         int64
+	StudentName       string
+	AvatarURL         string
+	Phone             string
+	PhoneRelationship int
+	StudentType       int
+	RosterStatus      int
+}
+
+type groupClassScheduleStudent struct {
+	StudentID           int64
+	StudentName         string
+	AvatarURL           string
+	Phone               string
+	PhoneRelationship   int
+	ClassStatus         int
+	ScheduleStudentType int
+	RosterStatus        int
+}
+
+type groupClassScheduleRoster struct {
+	Active []groupClassScheduleStudent
+	Leave  []groupClassScheduleStudent
+}
+
+func normalizeTeachingClassStudentStatus(status int) int {
+	if status <= 0 {
+		return model.TeachingClassStudentStatusStudying
+	}
+	return status
+}
+
+func groupClassStudentMembershipLeaveAt(membership groupClassStudentMembership) (time.Time, bool) {
+	if normalizeTeachingClassStudentStatus(membership.ClassStatus) == model.TeachingClassStudentStatusStudying {
+		return time.Time{}, false
+	}
+	if membership.StatusChangedAt.IsZero() {
+		return time.Time{}, false
+	}
+	return membership.StatusChangedAt, true
+}
+
+func groupClassStudentMembershipEffectiveAt(membership groupClassStudentMembership, scheduleStartAt time.Time) bool {
+	if scheduleStartAt.IsZero() || membership.JoinAt.IsZero() {
+		return true
+	}
+	if !membership.JoinAt.Before(scheduleStartAt) {
+		return false
+	}
+	if leaveAt, ok := groupClassStudentMembershipLeaveAt(membership); ok && !scheduleStartAt.Before(leaveAt) {
+		return false
+	}
+	return true
+}
+
+func buildGroupClassStudentRosterFromMemberships(memberships []groupClassStudentMembership, scheduleStartAt time.Time) groupClassStudentRoster {
+	roster := groupClassStudentRoster{
+		IDs:   make([]int64, 0, len(memberships)),
+		Names: make([]string, 0, len(memberships)),
+	}
+	for _, membership := range memberships {
+		if !groupClassStudentMembershipEffectiveAt(membership, scheduleStartAt) {
+			continue
+		}
+		if membership.StudentID > 0 {
+			roster.IDs = append(roster.IDs, membership.StudentID)
+		}
+		if name := strings.TrimSpace(membership.StudentName); name != "" {
+			roster.Names = append(roster.Names, name)
+		}
+	}
+	return roster
+}
+
+func normalizeTeachingScheduleStudentType(studentType int) int {
+	switch studentType {
+	case model.TeachingScheduleStudentTypeTemporary,
+		model.TeachingScheduleStudentTypeTrial,
+		model.TeachingScheduleStudentTypeMakeup:
+		return studentType
+	default:
+		return model.TeachingScheduleStudentTypeClassMember
+	}
+}
+
+func normalizeTeachingScheduleStudentRosterStatus(status int) int {
+	switch status {
+	case model.TeachingScheduleStudentRosterStatusLeave, model.TeachingScheduleStudentRosterStatusRemoved:
+		return status
+	default:
+		return model.TeachingScheduleStudentRosterStatusActive
+	}
+}
+
+func buildGroupClassScheduleRosterFromMembershipsAndOverrides(memberships []groupClassStudentMembership, overrides []teachingScheduleStudentOverride, scheduleStartAt time.Time) groupClassScheduleRoster {
+	entryByStudentID := make(map[int64]groupClassScheduleStudent, len(memberships)+len(overrides))
+	order := make([]int64, 0, len(memberships)+len(overrides))
+	seenOrder := make(map[int64]struct{}, len(memberships)+len(overrides))
+	appendOrder := func(studentID int64) {
+		if studentID <= 0 {
+			return
+		}
+		if _, ok := seenOrder[studentID]; ok {
+			return
+		}
+		seenOrder[studentID] = struct{}{}
+		order = append(order, studentID)
+	}
+	for _, membership := range memberships {
+		if !groupClassStudentMembershipEffectiveAt(membership, scheduleStartAt) || membership.StudentID <= 0 {
+			continue
+		}
+		appendOrder(membership.StudentID)
+		entryByStudentID[membership.StudentID] = groupClassScheduleStudent{
+			StudentID:           membership.StudentID,
+			StudentName:         strings.TrimSpace(membership.StudentName),
+			AvatarURL:           strings.TrimSpace(membership.AvatarURL),
+			Phone:               strings.TrimSpace(membership.Phone),
+			PhoneRelationship:   membership.PhoneRelationship,
+			ClassStatus:         model.TeachingClassStudentStatusStudying,
+			ScheduleStudentType: model.TeachingScheduleStudentTypeClassMember,
+			RosterStatus:        model.TeachingScheduleStudentRosterStatusActive,
+		}
+	}
+	for _, override := range overrides {
+		if override.StudentID <= 0 {
+			continue
+		}
+		status := normalizeTeachingScheduleStudentRosterStatus(override.RosterStatus)
+		if status == model.TeachingScheduleStudentRosterStatusRemoved {
+			delete(entryByStudentID, override.StudentID)
+			continue
+		}
+		entry, ok := entryByStudentID[override.StudentID]
+		if !ok {
+			appendOrder(override.StudentID)
+			entry = groupClassScheduleStudent{
+				StudentID:   override.StudentID,
+				ClassStatus: model.TeachingClassStudentStatusStudying,
+			}
+		}
+		if name := strings.TrimSpace(override.StudentName); name != "" {
+			entry.StudentName = name
+		}
+		if avatarURL := strings.TrimSpace(override.AvatarURL); avatarURL != "" {
+			entry.AvatarURL = avatarURL
+		}
+		if phone := strings.TrimSpace(override.Phone); phone != "" {
+			entry.Phone = phone
+		}
+		if override.PhoneRelationship > 0 {
+			entry.PhoneRelationship = override.PhoneRelationship
+		}
+		entry.ScheduleStudentType = normalizeTeachingScheduleStudentType(override.StudentType)
+		entry.RosterStatus = status
+		entryByStudentID[override.StudentID] = entry
+	}
+
+	roster := groupClassScheduleRoster{
+		Active: make([]groupClassScheduleStudent, 0, len(order)),
+		Leave:  make([]groupClassScheduleStudent, 0, len(overrides)),
+	}
+	for _, studentID := range order {
+		entry, ok := entryByStudentID[studentID]
+		if !ok {
+			continue
+		}
+		entry.StudentName = firstNonEmptyString(entry.StudentName, "-")
+		if entry.RosterStatus == model.TeachingScheduleStudentRosterStatusLeave {
+			roster.Leave = append(roster.Leave, entry)
+			continue
+		}
+		roster.Active = append(roster.Active, entry)
+	}
+	return roster
+}
+
+func (roster groupClassScheduleRoster) activeIDs() []int64 {
+	result := make([]int64, 0, len(roster.Active))
+	for _, student := range roster.Active {
+		if student.StudentID > 0 {
+			result = append(result, student.StudentID)
+		}
+	}
+	return result
+}
+
+func (roster groupClassScheduleRoster) activeNames() []string {
+	result := make([]string, 0, len(roster.Active))
+	for _, student := range roster.Active {
+		if name := strings.TrimSpace(student.StudentName); name != "" {
+			result = append(result, name)
+		}
+	}
+	return result
+}
+
+func (roster groupClassScheduleRoster) associatedStudent(studentID int64) (groupClassScheduleStudent, bool) {
+	if studentID <= 0 {
+		return groupClassScheduleStudent{}, false
+	}
+	for _, student := range roster.Active {
+		if student.StudentID == studentID {
+			return student, true
+		}
+	}
+	for _, student := range roster.Leave {
+		if student.StudentID == studentID {
+			return student, true
+		}
+	}
+	return groupClassScheduleStudent{}, false
+}
+
+func (roster groupClassScheduleRoster) containsActiveStudent(studentIDs map[int64]struct{}) bool {
+	if len(studentIDs) == 0 {
+		return false
+	}
+	for _, student := range roster.Active {
+		if _, ok := studentIDs[student.StudentID]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func teachingScheduleStudentMap(studentIDs []int64) map[int64]struct{} {
+	result := make(map[int64]struct{}, len(studentIDs))
+	for _, studentID := range studentIDs {
+		if studentID > 0 {
+			result[studentID] = struct{}{}
+		}
+	}
+	return result
+}
+
 func (repo *Repository) fillGroupClassStudentRosterForSchedules(ctx context.Context, instID int64, items []model.TeachingScheduleVO) error {
-	classIDs := make([]int64, 0)
-	seen := make(map[int64]struct{})
+	metas := make([]effectiveGroupClassScheduleMeta, 0, len(items))
 	for _, item := range items {
 		if item.ClassType != model.TeachingClassTypeNormal {
+			continue
+		}
+		scheduleID, err := strconv.ParseInt(strings.TrimSpace(item.ID), 10, 64)
+		if err != nil || scheduleID <= 0 {
 			continue
 		}
 		classID, err := strconv.ParseInt(strings.TrimSpace(item.TeachingClassID), 10, 64)
 		if err != nil || classID <= 0 {
 			continue
 		}
-		if _, ok := seen[classID]; ok {
-			continue
-		}
-		seen[classID] = struct{}{}
-		classIDs = append(classIDs, classID)
+		metas = append(metas, effectiveGroupClassScheduleMeta{
+			ScheduleID: scheduleID,
+			ClassID:    classID,
+			StartAt:    item.StartAt,
+		})
 	}
-	if len(classIDs) == 0 {
+	if len(metas) == 0 {
 		return nil
 	}
-
-	rosterByClassID, err := repo.loadGroupClassStudentRosterMap(ctx, instID, classIDs)
+	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, repo.db, instID, metas)
 	if err != nil {
 		return err
 	}
@@ -2912,33 +3402,53 @@ func (repo *Repository) fillGroupClassStudentRosterForSchedules(ctx context.Cont
 		if items[i].ClassType != model.TeachingClassTypeNormal {
 			continue
 		}
-		classID, err := strconv.ParseInt(strings.TrimSpace(items[i].TeachingClassID), 10, 64)
-		if err != nil || classID <= 0 {
+		scheduleID, err := strconv.ParseInt(strings.TrimSpace(items[i].ID), 10, 64)
+		if err != nil || scheduleID <= 0 {
 			continue
 		}
-		roster, ok := rosterByClassID[classID]
+		roster, ok := rosterByScheduleID[scheduleID]
 		if !ok {
 			continue
 		}
-		if len(roster.IDs) > 0 {
-			items[i].StudentID = strings.Join(stringIDsFromInt64(roster.IDs), ",")
+		if activeIDs := roster.activeIDs(); len(activeIDs) > 0 {
+			items[i].StudentID = strings.Join(stringIDsFromInt64(activeIDs), ",")
+		} else {
+			items[i].StudentID = ""
 		}
-		if len(roster.Names) > 0 {
-			items[i].StudentName = strings.Join(roster.Names, "、")
+		if activeNames := roster.activeNames(); len(activeNames) > 0 {
+			items[i].StudentName = strings.Join(activeNames, "、")
+		} else {
+			items[i].StudentName = ""
 		}
 	}
 	return nil
 }
 
-func (repo *Repository) loadGroupClassStudentRosterMap(ctx context.Context, instID int64, classIDs []int64) (map[int64]groupClassStudentRoster, error) {
+type effectiveGroupClassScheduleMeta struct {
+	ScheduleID int64
+	ClassID    int64
+	StartAt    time.Time
+}
+
+func (repo *Repository) loadGroupClassStudentMembershipMap(ctx context.Context, instID int64, classIDs []int64) (map[int64][]groupClassStudentMembership, error) {
+	return repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, repo.db, instID, classIDs)
+}
+
+func (repo *Repository) loadGroupClassStudentMembershipMapWithQueryer(ctx context.Context, queryer sqlQueryer, instID int64, classIDs []int64) (map[int64][]groupClassStudentMembership, error) {
 	if len(classIDs) == 0 {
-		return map[int64]groupClassStudentRoster{}, nil
+		return map[int64][]groupClassStudentMembership{}, nil
 	}
-	rows, err := repo.db.QueryContext(ctx, `
+	rows, err := queryer.QueryContext(ctx, `
 		SELECT
 			IFNULL(tcs.teaching_class_id, 0),
 			IFNULL(tcs.student_id, 0),
-			IFNULL(s.stu_name, '')
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.avatar_url, ''),
+			IFNULL(s.mobile, ''),
+			IFNULL(s.phone_relationship, 0),
+			tcs.create_time,
+			IFNULL(tcs.class_student_status, 1),
+			tcs.update_time
 		FROM teaching_class_student tcs
 		LEFT JOIN inst_student s
 			ON s.id = tcs.student_id
@@ -2954,27 +3464,140 @@ func (repo *Repository) loadGroupClassStudentRosterMap(ctx context.Context, inst
 	}
 	defer rows.Close()
 
-	result := make(map[int64]groupClassStudentRoster, len(classIDs))
+	result := make(map[int64][]groupClassStudentMembership, len(classIDs))
 	for rows.Next() {
 		var (
-			classID     int64
-			studentID   int64
-			studentName string
+			classID           int64
+			studentID         int64
+			studentName       string
+			avatarURL         string
+			phone             string
+			phoneRelationship int
+			joinAt            time.Time
+			classStatus       int
+			statusChangedAt   time.Time
 		)
-		if err := rows.Scan(&classID, &studentID, &studentName); err != nil {
+		if err := rows.Scan(&classID, &studentID, &studentName, &avatarURL, &phone, &phoneRelationship, &joinAt, &classStatus, &statusChangedAt); err != nil {
 			return nil, err
 		}
-		roster := result[classID]
-		if studentID > 0 {
-			roster.IDs = append(roster.IDs, studentID)
-		}
-		if strings.TrimSpace(studentName) != "" {
-			roster.Names = append(roster.Names, strings.TrimSpace(studentName))
-		}
-		result[classID] = roster
+		result[classID] = append(result[classID], groupClassStudentMembership{
+			StudentID:         studentID,
+			StudentName:       strings.TrimSpace(studentName),
+			AvatarURL:         strings.TrimSpace(avatarURL),
+			Phone:             strings.TrimSpace(phone),
+			PhoneRelationship: phoneRelationship,
+			JoinAt:            joinAt,
+			ClassStatus:       classStatus,
+			StatusChangedAt:   statusChangedAt,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) loadTeachingScheduleStudentOverrideMap(ctx context.Context, queryer sqlQueryer, instID int64, scheduleIDs []int64) (map[int64][]teachingScheduleStudentOverride, error) {
+	if len(scheduleIDs) == 0 {
+		return map[int64][]teachingScheduleStudentOverride{}, nil
+	}
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT
+			IFNULL(tss.teaching_schedule_id, 0),
+			IFNULL(tss.teaching_class_id, 0),
+			IFNULL(tss.student_id, 0),
+			IFNULL(stu.stu_name, ''),
+			IFNULL(stu.avatar_url, ''),
+			IFNULL(stu.mobile, ''),
+			IFNULL(stu.phone_relationship, 0),
+			IFNULL(tss.student_type, ?),
+			IFNULL(tss.roster_status, ?)
+		FROM teaching_schedule_student tss
+		LEFT JOIN inst_student stu
+			ON stu.id = tss.student_id
+		   AND stu.inst_id = tss.inst_id
+		   AND stu.del_flag = 0
+		WHERE tss.inst_id = ?
+		  AND tss.del_flag = 0
+		  AND tss.teaching_schedule_id IN (`+sqlPlaceholders(len(scheduleIDs))+`)
+		ORDER BY tss.teaching_schedule_id ASC, tss.create_time ASC, tss.id ASC
+	`, append(
+		[]any{
+			model.TeachingScheduleStudentTypeClassMember,
+			model.TeachingScheduleStudentRosterStatusActive,
+			instID,
+		},
+		int64SliceToAny(scheduleIDs)...,
+	)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64][]teachingScheduleStudentOverride, len(scheduleIDs))
+	for rows.Next() {
+		var item teachingScheduleStudentOverride
+		if err := rows.Scan(
+			&item.ScheduleID,
+			&item.TeachingClassID,
+			&item.StudentID,
+			&item.StudentName,
+			&item.AvatarURL,
+			&item.Phone,
+			&item.PhoneRelationship,
+			&item.StudentType,
+			&item.RosterStatus,
+		); err != nil {
+			return nil, err
+		}
+		item.StudentName = strings.TrimSpace(item.StudentName)
+		item.AvatarURL = strings.TrimSpace(item.AvatarURL)
+		item.Phone = strings.TrimSpace(item.Phone)
+		result[item.ScheduleID] = append(result[item.ScheduleID], item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) loadEffectiveGroupClassScheduleRosterMap(ctx context.Context, queryer sqlQueryer, instID int64, schedules []effectiveGroupClassScheduleMeta) (map[int64]groupClassScheduleRoster, error) {
+	if len(schedules) == 0 {
+		return map[int64]groupClassScheduleRoster{}, nil
+	}
+	classIDs := make([]int64, 0, len(schedules))
+	seenClassIDs := make(map[int64]struct{}, len(schedules))
+	scheduleIDs := make([]int64, 0, len(schedules))
+	seenScheduleIDs := make(map[int64]struct{}, len(schedules))
+	for _, schedule := range schedules {
+		if schedule.ClassID > 0 {
+			if _, ok := seenClassIDs[schedule.ClassID]; !ok {
+				seenClassIDs[schedule.ClassID] = struct{}{}
+				classIDs = append(classIDs, schedule.ClassID)
+			}
+		}
+		if schedule.ScheduleID > 0 {
+			if _, ok := seenScheduleIDs[schedule.ScheduleID]; !ok {
+				seenScheduleIDs[schedule.ScheduleID] = struct{}{}
+				scheduleIDs = append(scheduleIDs, schedule.ScheduleID)
+			}
+		}
+	}
+	membershipsByClassID, err := repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, queryer, instID, classIDs)
+	if err != nil {
+		return nil, err
+	}
+	overridesByScheduleID, err := repo.loadTeachingScheduleStudentOverrideMap(ctx, queryer, instID, scheduleIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[int64]groupClassScheduleRoster, len(schedules))
+	for _, schedule := range schedules {
+		result[schedule.ScheduleID] = buildGroupClassScheduleRosterFromMembershipsAndOverrides(
+			membershipsByClassID[schedule.ClassID],
+			overridesByScheduleID[schedule.ScheduleID],
+			schedule.StartAt,
+		)
 	}
 	return result, nil
 }
@@ -3170,6 +3793,7 @@ func (repo *Repository) listScheduleConflictDetailsByFieldValuesTx(ctx context.C
 			IFNULL(teacher_id, 0),
 			IFNULL(classroom_id, 0),
 			IFNULL(class_type, 0),
+			IFNULL(teaching_class_id, 0),
 			IFNULL(teaching_class_name, ''),
 			IFNULL(student_name, ''),
 			IFNULL(teacher_name, ''),
@@ -3200,6 +3824,7 @@ func (repo *Repository) listScheduleConflictDetailsByFieldValuesTx(ctx context.C
 			&item.TeacherID,
 			&item.ClassroomID,
 			&item.ClassType,
+			&item.TeachingClassID,
 			&item.TeachingClassName,
 			&item.StudentName,
 			&item.TeacherName,
@@ -3223,7 +3848,13 @@ func (repo *Repository) listScheduleConflictDetailsByFieldValuesTx(ctx context.C
 		seenRows[item.ID] = struct{}{}
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := repo.fillGroupClassStudentNamesForConflictRowsTx(ctx, tx, instID, result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (repo *Repository) listScheduleConflictDetailsByStudentsTx(ctx context.Context, tx *sql.Tx, instID int64, studentIDs []int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64) ([]scheduleConflictDetailRow, error) {
@@ -3260,6 +3891,15 @@ func (repo *Repository) listScheduleConflictDetailsByStudentsTx(ctx context.Cont
 		"ts.lesson_date <= ?",
 		`(
 			ts.student_id IN (` + sqlPlaceholders(len(uniqueStudentIDs)) + `)
+			OR EXISTS (
+				SELECT 1
+				FROM teaching_schedule_student tss
+				WHERE tss.inst_id = ts.inst_id
+				  AND tss.teaching_schedule_id = ts.id
+				  AND tss.del_flag = 0
+				  AND tss.student_id IN (` + sqlPlaceholders(len(uniqueStudentIDs)) + `)
+				  AND IFNULL(tss.roster_status, ?) <> ?
+			)
 			OR (
 				ts.class_type = ?
 				AND EXISTS (
@@ -3268,6 +3908,11 @@ func (repo *Repository) listScheduleConflictDetailsByStudentsTx(ctx context.Cont
 					WHERE tcs.inst_id = ts.inst_id
 					  AND tcs.teaching_class_id = ts.teaching_class_id
 					  AND tcs.del_flag = 0
+					  AND tcs.create_time < ts.lesson_start_at
+					  AND (
+						IFNULL(tcs.class_student_status, 1) = 1
+						OR tcs.update_time > ts.lesson_start_at
+					  )
 					  AND tcs.student_id IN (` + sqlPlaceholders(len(uniqueStudentIDs)) + `)
 				)
 			)
@@ -3282,6 +3927,13 @@ func (repo *Repository) listScheduleConflictDetailsByStudentsTx(ctx context.Cont
 	for _, studentID := range uniqueStudentIDs {
 		args = append(args, studentID)
 	}
+	for _, studentID := range uniqueStudentIDs {
+		args = append(args, studentID)
+	}
+	args = append(args,
+		model.TeachingScheduleStudentRosterStatusActive,
+		model.TeachingScheduleStudentRosterStatusRemoved,
+	)
 	args = append(args, model.TeachingClassTypeNormal)
 	for _, studentID := range uniqueStudentIDs {
 		args = append(args, studentID)
@@ -3359,7 +4011,41 @@ func (repo *Repository) listScheduleConflictDetailsByStudentsTx(ctx context.Cont
 		seenRows[item.ID] = struct{}{}
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	studentIDSet := teachingScheduleStudentMap(uniqueStudentIDs)
+	metas := make([]effectiveGroupClassScheduleMeta, 0, len(result))
+	for _, item := range result {
+		if item.ClassType != model.TeachingClassTypeNormal || item.ID <= 0 || item.TeachingClassID <= 0 {
+			continue
+		}
+		metas = append(metas, effectiveGroupClassScheduleMeta{
+			ScheduleID: item.ID,
+			ClassID:    item.TeachingClassID,
+			StartAt:    item.StartAt,
+		})
+	}
+	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, metas)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]scheduleConflictDetailRow, 0, len(result))
+	for _, item := range result {
+		if item.ClassType == model.TeachingClassTypeNormal {
+			roster, ok := rosterByScheduleID[item.ID]
+			if !ok || !roster.containsActiveStudent(studentIDSet) {
+				continue
+			}
+			if activeNames := roster.activeNames(); len(activeNames) > 0 {
+				item.StudentName = strings.Join(activeNames, "、")
+			} else {
+				item.StudentName = ""
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered, nil
 }
 
 func (repo *Repository) listScheduleConflictDetailsByAssistantsTx(ctx context.Context, tx *sql.Tx, instID int64, assistantIDs []int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64) ([]scheduleConflictDetailRow, error) {
@@ -3468,7 +4154,13 @@ func (repo *Repository) listScheduleConflictDetailsByAssistantsTx(ctx context.Co
 		seen[item.ID] = struct{}{}
 		result = append(result, item)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := repo.fillGroupClassStudentNamesForConflictRowsTx(ctx, tx, instID, result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *sql.Tx, instID int64, batchNo string, ids []int64) ([]teachingScheduleRow, error) {
@@ -3698,6 +4390,9 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 			return nil, err
 		}
 		rows.Close()
+	}
+	if err := repo.fillGroupClassStudentNamesForConflictRowsTx(ctx, tx, instID, result); err != nil {
+		return nil, err
 	}
 	return result, nil
 }
@@ -4966,6 +5661,19 @@ func teachingScheduleCallStatusText(status int) string {
 		return "已点名"
 	}
 	return "未点名"
+}
+
+func teachingScheduleStudentTypeText(studentType int) string {
+	switch normalizeTeachingScheduleStudentType(studentType) {
+	case model.TeachingScheduleStudentTypeTemporary:
+		return "临时学员"
+	case model.TeachingScheduleStudentTypeTrial:
+		return "试听学员"
+	case model.TeachingScheduleStudentTypeMakeup:
+		return "补课学员"
+	default:
+		return "班课学员"
+	}
 }
 
 func maskStudentMobile(mobile string) string {

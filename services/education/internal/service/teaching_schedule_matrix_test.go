@@ -402,6 +402,33 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesDisabledTeacherFromPeriodG
 	}
 }
 
+func TestMapTeachingScheduleToLegacyVO_DoesNotFabricateGroupClassStudentsFromNameOnly(t *testing.T) {
+	startAt := time.Date(2026, 4, 8, 10, 5, 0, 0, time.Local)
+	endAt := time.Date(2026, 4, 8, 10, 45, 0, 0, time.Local)
+
+	legacy := mapTeachingScheduleToLegacyVO(model.TeachingScheduleVO{
+		ID:                "1",
+		ClassType:         model.TeachingClassTypeNormal,
+		TeachingClassID:   "101",
+		TeachingClassName: "认知班课",
+		StudentID:         "",
+		StudentName:       "王认知",
+		LessonID:          "201",
+		LessonName:        "班级认知课",
+		TeacherID:         "301",
+		TeacherName:       "许晶晶",
+		LessonDate:        "2026-04-08",
+		StartAt:           startAt,
+		EndAt:             endAt,
+		Status:            model.TeachingScheduleStatusActive,
+		CallStatus:        1,
+	}, 1)
+
+	if len(legacy.StudentList) != 0 {
+		t.Fatalf("expected group class legacy mapping to keep empty student list when only stale studentName exists, got %#v", legacy.StudentList)
+	}
+}
+
 func matrixIntPtr(v int) *int {
 	return &v
 }

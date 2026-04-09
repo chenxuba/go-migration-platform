@@ -7,6 +7,19 @@ const (
 	TeachingScheduleStatusCanceled = 2
 )
 
+const (
+	TeachingScheduleStudentTypeClassMember = 1
+	TeachingScheduleStudentTypeTemporary   = 2
+	TeachingScheduleStudentTypeTrial       = 3
+	TeachingScheduleStudentTypeMakeup      = 4
+)
+
+const (
+	TeachingScheduleStudentRosterStatusActive  = 1
+	TeachingScheduleStudentRosterStatusLeave   = 2
+	TeachingScheduleStudentRosterStatusRemoved = 3
+)
+
 type TeachingScheduleCreateSlotDTO struct {
 	LessonDate             string   `json:"lessonDate"`
 	StartTime              string   `json:"startTime"`
@@ -111,6 +124,11 @@ type TeachingScheduleDetailQueryDTO struct {
 	ID string `json:"id"`
 }
 
+type TeachingScheduleStudentRemoveCurrentDTO struct {
+	ScheduleID string `json:"scheduleId"`
+	StudentID  string `json:"studentId"`
+}
+
 type TeachingScheduleBatchUpdateDTO struct {
 	BatchNo              string   `json:"batchNo"`
 	IDs                  []string `json:"ids"`
@@ -143,17 +161,19 @@ type TeachingScheduleBatchDetailVO struct {
 }
 
 type TeachingScheduleDetailStudentVO struct {
-	StudentID             string `json:"studentId"`
-	StudentName           string `json:"studentName"`
-	AvatarURL             string `json:"avatarUrl,omitempty"`
-	Phone                 string `json:"phone,omitempty"`
-	MaskedPhone           string `json:"maskedPhone,omitempty"`
-	PhoneRelationship     int    `json:"phoneRelationship,omitempty"`
-	PhoneRelationshipText string `json:"phoneRelationshipText,omitempty"`
-	ClassStatus           int    `json:"classStatus"`
-	ClassStatusText       string `json:"classStatusText,omitempty"`
-	CallStatus            int    `json:"callStatus"`
-	CallStatusText        string `json:"callStatusText,omitempty"`
+	StudentID               string `json:"studentId"`
+	StudentName             string `json:"studentName"`
+	AvatarURL               string `json:"avatarUrl,omitempty"`
+	Phone                   string `json:"phone,omitempty"`
+	MaskedPhone             string `json:"maskedPhone,omitempty"`
+	PhoneRelationship       int    `json:"phoneRelationship,omitempty"`
+	PhoneRelationshipText   string `json:"phoneRelationshipText,omitempty"`
+	ScheduleStudentType     int    `json:"scheduleStudentType"`
+	ScheduleStudentTypeText string `json:"scheduleStudentTypeText,omitempty"`
+	ClassStatus             int    `json:"classStatus"`
+	ClassStatusText         string `json:"classStatusText,omitempty"`
+	CallStatus              int    `json:"callStatus"`
+	CallStatusText          string `json:"callStatusText,omitempty"`
 }
 
 type TeachingScheduleDetailVO struct {
@@ -180,6 +200,7 @@ type TeachingScheduleDetailVO struct {
 	Remark            string                            `json:"remark,omitempty"`
 	BatchMeta         *TeachingScheduleBatchMeta        `json:"batchMeta,omitempty"`
 	Students          []TeachingScheduleDetailStudentVO `json:"students"`
+	LeaveStudents     []TeachingScheduleDetailStudentVO `json:"leaveStudents,omitempty"`
 }
 
 type TeachingScheduleBatchReplaceDTO struct {

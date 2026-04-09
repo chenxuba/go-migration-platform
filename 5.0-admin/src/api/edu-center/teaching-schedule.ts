@@ -61,6 +61,8 @@ export interface TeachingScheduleDetailStudent {
   maskedPhone?: string
   phoneRelationship?: number
   phoneRelationshipText?: string
+  scheduleStudentType: number
+  scheduleStudentTypeText?: string
   classStatus: number
   classStatusText?: string
   callStatus: number
@@ -313,6 +315,13 @@ export function getTeachingScheduleDetailApi(params: {
   id: string
 }) {
   return useGet<TeachingScheduleDetail>('/api/v1/teaching-schedules/detail', params)
+}
+
+export function removeTeachingScheduleStudentCurrentApi(data: {
+  scheduleId: string
+  studentId: string
+}) {
+  return usePost<boolean>('/api/v1/teaching-schedules/students/remove-current', data)
 }
 
 export function listTeachingSchedulesApi(params: {
