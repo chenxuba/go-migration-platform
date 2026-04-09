@@ -128,6 +128,9 @@ const modalOpen = computed({
                   {{ type }}冲突
                 </span>
               </div>
+              <div v-if="conflictDetailState.attempted?.warningText" class="st-conflict-attempt__warning">
+                {{ conflictDetailState.attempted.warningText }}
+              </div>
               <div class="st-conflict-attempt__meta">
                 系统正在校验这条待排课信息与课表中的已有日程是否冲突。
               </div>
@@ -248,6 +251,17 @@ const modalOpen = computed({
 
 .st-conflict-attempt__card {
   padding: 14px 16px;
+}
+
+.st-conflict-attempt__warning {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  color: #ad6800;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .st-conflict-attempt__badge {

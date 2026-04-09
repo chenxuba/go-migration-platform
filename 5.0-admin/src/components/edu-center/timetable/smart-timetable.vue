@@ -1138,6 +1138,8 @@ const {
   assistantNameById,
   assistantOptions,
   assistantOptionsLoading,
+  assistantTextForIds,
+  buildOneToOneScheduleAssignment,
   fetchAssistantOptions,
   fetchOneToOneOptionsForTimetable,
   filterOneToOneOption,
@@ -1152,7 +1154,6 @@ const {
   renderOneToOneDropdown,
   resetOneToOnePickerState,
   selectedAssistantIds,
-  selectedAssistantText,
 } = useSmartTimetablePicker({
   activeGroupLabel,
   currentModel,
@@ -2193,6 +2194,10 @@ function buildForceScheduleDisabledReason(conflictTypes = [], actionText = '排�
 function openApiConflictModal(reason, column, record) {
   const selectedTarget = resolveConflictAttemptTarget()
   const attemptedConflictTypes = Array.isArray(reason?.conflictTypes) ? reason.conflictTypes : []
+  const assignment = buildOneToOneScheduleAssignment(
+    record.teacherId,
+    normalizedSelectedAssistantIds.value,
+  )
   const forceAllowed = currentModel.value === '1'
     && Boolean(oneToOneRecordId.value)
     && attemptedConflictTypes.length > 0
@@ -2207,22 +2212,24 @@ function openApiConflictModal(reason, column, record) {
     week: formatWeek(record.date),
     timeText: `${column.startTime}-${column.endTime}`,
     teacherName: record.name,
-    assistantText: selectedAssistantText.value,
+    assistantText: assistantTextForIds(assignment.assistantIds),
+    warningText: assignment.removedAssistantIds.length > 0 ? '主教与助教不能为同一人，系统已自动忽略重复助教。' : '',
     lessonIndex: getLessonIndex(column.startTime),
     groupLabel: activeGroupLabel.value || '当前组',
     conflictTypes: attemptedConflictTypes,
+    removedAssistantIds: assignment.removedAssistantIds,
     forceAllowed,
     forceDisabledReason: forceAllowed ? '' : buildForceScheduleDisabledReason(attemptedConflictTypes),
     forcePayload: forceAllowed
       ? {
           oneToOneId: String(oneToOneRecordId.value),
           teacherId: String(record.teacherId),
-          assistantIds: normalizedSelectedAssistantIds.value,
+          assistantIds: assignment.assistantIds,
           schedules: [{
             lessonDate: record.date,
             startTime: column.startTime,
             endTime: column.endTime,
-            assistantIds: normalizedSelectedAssistantIds.value,
+            assistantIds: assignment.assistantIds,
           }],
         }
       : null,
@@ -2252,7 +2259,11 @@ async function forceScheduleDespiteStudentConflict() {
     if (res.code !== 200)
       throw new Error(res.message || '强制排课失败')
     conflictDetailModalOpen.value = false
-    messageService.success('已按学员冲突方式排课，课表将标记冲突')
+    messageService.success(
+      Array.isArray(attempted?.removedAssistantIds) && attempted.removedAssistantIds.length > 0
+        ? '已自动忽略与主教重复的助教，并按学员冲突方式排课'
+        : '已按学员冲突方式排课，课表将标记冲突',
+    )
     emitter.emit(EVENTS.REFRESH_DATA)
   }
   catch (error) {
@@ -2824,6 +2835,10 @@ function handleScheduleClick(timeSlot, column, record) {
     const month = dateObj.format('M')
     const day = dateObj.format('D')
     const lessonIndex = getLessonIndex(column.startTime)
+    const assignment = buildOneToOneScheduleAssignment(
+      record.teacherId,
+      normalizedSelectedAssistantIds.value,
+    )
 
     void confirmScheduleWithOptionalSkip({
       modeLabel: '1v1',
@@ -2834,7 +2849,8 @@ function handleScheduleClick(timeSlot, column, record) {
       dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
       timeLabel: `${column.startTime}-${column.endTime}`,
       teacherName: record.name,
-      assistantText: selectedAssistantText.value,
+      assistantText: assistantTextForIds(assignment.assistantIds),
+      warningText: assignment.removedAssistantIds.length > 0 ? '主教与助教不能为同一人，系统已自动忽略重复助教。' : '',
       groupLabel: activeGroupLabel.value || '当前组',
       async onConfirm() {
         creatingOneToOneSchedule.value = true
@@ -2842,18 +2858,22 @@ function handleScheduleClick(timeSlot, column, record) {
           const res = await createOneToOneSchedulesApi({
             oneToOneId: String(oneToOneRecordId.value),
             teacherId: String(record.teacherId),
-            assistantIds: normalizedSelectedAssistantIds.value,
+            assistantIds: assignment.assistantIds,
             schedules: [{
               lessonDate: record.date,
               startTime: column.startTime,
               endTime: column.endTime,
-              assistantIds: normalizedSelectedAssistantIds.value,
+              assistantIds: assignment.assistantIds,
             }],
           })
           if (res.code !== 200)
             throw new Error(res.message || '创建1对1日程失败')
 
-          messageService.success(`已为 ${studentInfo.studentName} 创建 ${month}月${day}日 第${lessonIndex}节课`)
+          messageService.success(
+            assignment.removedAssistantIds.length > 0
+              ? `已自动忽略与主教重复的助教，并为 ${studentInfo.studentName} 创建 ${month}月${day}日 第${lessonIndex}节课`
+              : `已为 ${studentInfo.studentName} 创建 ${month}月${day}日 第${lessonIndex}节课`,
+          )
           emitter.emit(EVENTS.REFRESH_DATA)
         }
         catch (error) {

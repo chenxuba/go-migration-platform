@@ -90,14 +90,6 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
   }
 
   function buildAssistantConflictReason(issues: any[]) {
-    const selectionNames = Array.from(
-      new Set(
-        issues
-          .filter(item => item.kind === 'selection')
-          .map(item => String(item.assistantName || '').trim())
-          .filter(Boolean),
-      ),
-    )
     const busyNames = Array.from(
       new Set(
         issues
@@ -107,8 +99,6 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
       ),
     )
     const messageParts = []
-    if (selectionNames.length)
-      messageParts.push(`已选助教包含当前行老师${selectionNames.join('、')}，主教与助教不能为同一人`)
     if (busyNames.length)
       messageParts.push(`助教${busyNames.join('、')}该时间段已有安排`)
 
@@ -172,21 +162,11 @@ export function useSmartTimetableAvailability(options: UseSmartTimetableAvailabi
       }))
 
     options.dataSource.value.forEach((teacher) => {
-      const teacherId = String(teacher.teacherId || '').trim()
       teacher.lessons.forEach((lesson: any) => {
         if (lesson.studentId)
           return
 
         const issues: any[] = []
-        if (teacherId && selectedIds.includes(teacherId)) {
-          issues.push({
-            kind: 'selection',
-            assistantId: teacherId,
-            assistantName: teacher.name || options.assistantNameById(teacherId) || teacherId,
-            conflictTypes: ['助教'],
-            existingSchedules: [],
-          })
-        }
 
         invalidItems.forEach((item) => {
           if (!item.existingSchedules.length) {

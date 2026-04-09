@@ -60,10 +60,23 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
     return assistantOptionMap.value.get(normalized)?.label || normalized
   }
 
-  const selectedAssistantText = computed(() => {
-    const names = normalizedSelectedAssistantIds.value.map(id => assistantNameById(id)).filter(Boolean)
+  function assistantTextForIds(values: unknown) {
+    const names = normalizeStringArray(values).map(id => assistantNameById(id)).filter(Boolean)
     return names.length ? names.join('、') : '未安排'
-  })
+  }
+
+  function buildOneToOneScheduleAssignment(teacherId: unknown, assistantIds: unknown = []) {
+    const normalizedTeacherId = String(teacherId || '').trim()
+    const rawAssistantIds = normalizeStringArray(assistantIds)
+    const removedAssistantIds = rawAssistantIds.filter(id => id === normalizedTeacherId)
+    return {
+      teacherId: normalizedTeacherId,
+      assistantIds: rawAssistantIds.filter(id => id !== normalizedTeacherId),
+      removedAssistantIds,
+    }
+  }
+
+  const selectedAssistantText = computed(() => assistantTextForIds(normalizedSelectedAssistantIds.value))
 
   const oneToOneDropdownStyle = computed(() => ({
     width: '520px',
@@ -523,8 +536,10 @@ export function useSmartTimetablePicker(options: UseSmartTimetablePickerOptions)
   return {
     assistantNameById,
     assistantKeyword,
+    assistantTextForIds,
     assistantOptions,
     assistantOptionsLoading,
+    buildOneToOneScheduleAssignment,
     fetchAssistantOptions,
     fetchOneToOneOptionsForTimetable,
     filterOneToOneOption,
