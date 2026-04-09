@@ -94,16 +94,17 @@ function normalizeFilterValues(value: unknown) {
 const defaultCreateTimeVals = getWeekRange()
 const queryRange = ref<string[]>([...defaultCreateTimeVals])
 const selectedConflictKeys = ref<ConflictFilterKey[]>([])
+const selectedConflictTypes = ref<ConflictType[]>([])
 const loading = ref(false)
 const deletingId = ref('')
 const scheduleRows = ref<TeachingScheduleItem[]>([])
 let requestToken = 0
 
-const selectedConflictTypes = computed(() =>
-  selectedConflictKeys.value
+function syncSelectedConflictTypes() {
+  selectedConflictTypes.value = selectedConflictKeys.value
     .map(key => conflictFilterTypeMap[key])
-    .filter(Boolean),
-)
+    .filter(Boolean)
+}
 
 const conflictRows = computed(() => {
   const filtered = scheduleRows.value.filter(item => item?.conflict)
@@ -122,13 +123,17 @@ function handleCreateTimeFilter(value: unknown) {
       String(value[0] || ''),
       String(value[1] || ''),
     ]
-    return
   }
-  queryRange.value = [...defaultCreateTimeVals]
+  else {
+    queryRange.value = [...defaultCreateTimeVals]
+  }
+  void loadConflictSchedules()
 }
 
 function handleConflictTypeFilter(value: unknown) {
   selectedConflictKeys.value = normalizeFilterValues(value) as ConflictFilterKey[]
+  syncSelectedConflictTypes()
+  void loadConflictSchedules()
 }
 
 async function loadConflictSchedules() {
@@ -158,20 +163,13 @@ async function loadConflictSchedules() {
   }
 }
 
-watch(
-  [queryRange, selectedConflictTypes],
-  () => {
-    loadConflictSchedules()
-  },
-  { deep: true, immediate: true },
-)
-
 function handleExternalRefresh() {
-  loadConflictSchedules()
+  void loadConflictSchedules()
 }
 
 onMounted(() => {
   emitter.on(EVENTS.REFRESH_DATA, handleExternalRefresh)
+  void loadConflictSchedules()
 })
 
 onUnmounted(() => {

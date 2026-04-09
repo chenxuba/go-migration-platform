@@ -75,3 +75,32 @@ func TestAnnotateTeachingScheduleConflicts_MarksGroupClassAndAssistantOverlap(t 
 		}
 	}
 }
+
+func TestFilterTeachingSchedulesByConflictTypes_ReturnsOnlyMatchedConflicts(t *testing.T) {
+	schedules := []model.TeachingScheduleVO{
+		{
+			ID:            "1",
+			Conflict:      true,
+			ConflictTypes: []string{"老师", "学员"},
+		},
+		{
+			ID:            "2",
+			Conflict:      true,
+			ConflictTypes: []string{"教室"},
+		},
+		{
+			ID:            "3",
+			Conflict:      false,
+			ConflictTypes: []string{"老师"},
+		},
+	}
+
+	filtered := filterTeachingSchedulesByConflictTypes(schedules, []string{"老师"})
+
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 matched schedule, got %d", len(filtered))
+	}
+	if filtered[0].ID != "1" {
+		t.Fatalf("expected schedule 1 to remain after filtering, got %s", filtered[0].ID)
+	}
+}
