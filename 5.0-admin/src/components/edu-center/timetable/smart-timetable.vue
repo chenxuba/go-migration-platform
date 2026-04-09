@@ -2836,10 +2836,6 @@ function openScheduledLessonDetail(text, column, record) {
 
 async function deleteScheduledLessonFromDetail() {
   const detail = scheduledLessonDetailState.value
-  if (detail.courseType !== 1) {
-    messageService.info('班课删除建议和主教/辅教联动一起设计，这里先不直接删除。')
-    return
-  }
   if (!detail.scheduleId) {
     messageService.warning('当前日程缺少可撤销标识，请刷新后重试')
     return
@@ -2876,7 +2872,8 @@ async function deleteScheduledLessonFromDetail() {
     if (res.code !== 200)
       throw new Error(res.message || '删除日程失败')
     scheduledLessonDetailOpen.value = false
-    messageService.success(`已删除 ${month}月${day}日 第${lessonIndex}节 1v1 日程，主教/助教课表已同步移除`)
+    const scheduleLabel = detail.courseType === 1 ? '1v1' : '班课'
+    messageService.success(`已删除 ${month}月${day}日 第${lessonIndex}节 ${scheduleLabel}日程，主教/助教课表已同步移除`)
     emitter.emit(EVENTS.REFRESH_DATA)
   }
   catch (error) {

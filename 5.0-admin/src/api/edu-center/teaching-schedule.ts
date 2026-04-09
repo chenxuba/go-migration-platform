@@ -319,6 +319,7 @@ export function listTeachingSchedulesApi(params: {
   endDate: string
   classType?: number
   studentId?: string
+  conflictTypes?: string
   scheduleTeacherIds?: string
   classroomIds?: string
   groupClassIds?: string

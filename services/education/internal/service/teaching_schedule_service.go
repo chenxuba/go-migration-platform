@@ -108,6 +108,9 @@ func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingSche
 	if err := svc.annotateTeachingScheduleConflictsForQuery(ctx, instID, query, schedules); err != nil {
 		return nil, err
 	}
+	if len(query.ConflictTypes) > 0 {
+		schedules = filterTeachingSchedulesByConflictTypes(schedules, query.ConflictTypes)
+	}
 	return schedules, nil
 }
 
@@ -713,6 +716,41 @@ func nonEmptyIDSetsOverlap(left, right map[string]struct{}) bool {
 		}
 	}
 	return false
+}
+
+func filterTeachingSchedulesByConflictTypes(schedules []model.TeachingScheduleVO, conflictTypes []string) []model.TeachingScheduleVO {
+	if len(conflictTypes) == 0 || len(schedules) == 0 {
+		return schedules
+	}
+	typeSet := make(map[string]struct{}, len(conflictTypes))
+	for _, item := range conflictTypes {
+		text := strings.TrimSpace(item)
+		if text == "" {
+			continue
+		}
+		typeSet[text] = struct{}{}
+	}
+	if len(typeSet) == 0 {
+		return schedules
+	}
+
+	filtered := make([]model.TeachingScheduleVO, 0, len(schedules))
+	for _, item := range schedules {
+		if !item.Conflict {
+			continue
+		}
+		matched := false
+		for _, conflictType := range item.ConflictTypes {
+			if _, ok := typeSet[strings.TrimSpace(conflictType)]; ok {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) model.TeachingScheduleInfoLegacyVO {

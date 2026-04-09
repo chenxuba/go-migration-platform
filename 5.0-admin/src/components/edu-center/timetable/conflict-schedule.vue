@@ -7,14 +7,16 @@ import { cancelTeachingSchedulesApi, listTeachingSchedulesApi } from '@/api/edu-
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
-type ConflictFilterKey = 'teacher' | 'classroom' | 'student' | 'assistant'
-type ConflictType = '老师' | '教室' | '学员' | '助教'
+type ConflictFilterKey = 'class' | 'teacher' | 'classroom' | 'student' | 'assistant'
+type ConflictType = '班级' | '老师' | '教室' | '学员' | '助教'
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const conflictTypeOrder: ConflictType[] = ['班级', '老师', '教室', '学员', '助教']
 
 const displayArray = ['createTime', 'scheduleType']
 
 const conflictFilterTypeMap: Record<ConflictFilterKey, ConflictType> = {
+  class: '班级',
   teacher: '老师',
   classroom: '教室',
   student: '学员',
@@ -22,6 +24,7 @@ const conflictFilterTypeMap: Record<ConflictFilterKey, ConflictType> = {
 }
 
 const scheduleTypeOptions = [
+  { id: 'class', value: '班级冲突' },
   { id: 'teacher', value: '上课教师冲突' },
   { id: 'classroom', value: '上课教室冲突' },
   { id: 'student', value: '学员冲突' },
@@ -37,6 +40,11 @@ const tableColumns = [
   {
     title: '日程类型',
     key: 'scheduleType',
+    width: 130,
+  },
+  {
+    title: '冲突类型',
+    key: 'conflictType',
     width: 130,
   },
   {
@@ -98,13 +106,7 @@ const selectedConflictTypes = computed(() =>
 )
 
 const conflictRows = computed(() => {
-  const filtered = scheduleRows.value.filter((item) => {
-    if (!item?.conflict)
-      return false
-    if (!selectedConflictTypes.value.length)
-      return true
-    return selectedConflictTypes.value.some(type => (item.conflictTypes || []).includes(type))
-  })
+  const filtered = scheduleRows.value.filter(item => item?.conflict)
 
   return filtered.slice().sort((a, b) => {
     const timeDiff = dayjs(a.startAt).valueOf() - dayjs(b.startAt).valueOf()
@@ -137,6 +139,7 @@ async function loadConflictSchedules() {
     const res = await listTeachingSchedulesApi({
       startDate,
       endDate,
+      conflictTypes: selectedConflictTypes.value.join(',') || undefined,
     })
     if (token !== requestToken)
       return
@@ -156,7 +159,7 @@ async function loadConflictSchedules() {
 }
 
 watch(
-  queryRange,
+  [queryRange, selectedConflictTypes],
   () => {
     loadConflictSchedules()
   },
@@ -182,6 +185,58 @@ function formatLessonDate(record: Record<string, any>) {
 
 function formatLessonTime(record: Record<string, any>) {
   return `${dayjs(record.startAt).format('HH:mm')} ~ ${dayjs(record.endAt).format('HH:mm')}`
+}
+
+function conflictTypesForRecord(record: Record<string, any>) {
+  const source = Array.isArray(record.conflictTypes) ? record.conflictTypes : []
+  const normalized = source
+    .map(item => String(item || '').trim())
+    .filter(Boolean)
+  const unique = Array.from(new Set(normalized))
+  const ordered = conflictTypeOrder.filter(type => unique.includes(type))
+  const rest = unique.filter(type => !conflictTypeOrder.includes(type as ConflictType))
+  return [...ordered, ...rest]
+}
+
+function conflictTypeText(type: string) {
+  return `${type}冲突`
+}
+
+function conflictTypeChipClass(type: string) {
+  if (type === '班级')
+    return 'conflict-type-chip--class'
+  if (type === '老师')
+    return 'conflict-type-chip--teacher'
+  if (type === '教室')
+    return 'conflict-type-chip--classroom'
+  if (type === '学员')
+    return 'conflict-type-chip--student'
+  if (type === '助教')
+    return 'conflict-type-chip--assistant'
+  return ''
+}
+
+function conflictTypeDescription(type: string, record: Record<string, any>) {
+  const className = String(record.teachingClassName || '').trim() || '当前班级'
+  const teacherName = String(record.teacherName || '').trim() || '当前老师'
+  const classroomName = String(record.classroomName || '').trim()
+  const assistantText = Array.isArray(record.assistantNames) && record.assistantNames.length
+    ? record.assistantNames.join('、')
+    : '当前助教'
+
+  if (type === '班级')
+    return `同一时间 ${className} 已有其他日程安排。`
+  if (type === '老师')
+    return `同一时间老师 ${teacherName} 已有其他日程安排。`
+  if (type === '教室')
+    return classroomName
+      ? `同一时间教室 ${classroomName} 已有其他日程安排。`
+      : '同一时间存在教室占用冲突。'
+  if (type === '学员')
+    return `同一时间该日程内至少 1 位学员已有其他日程安排。`
+  if (type === '助教')
+    return `同一时间助教 ${assistantText} 已有其他日程安排。`
+  return `同一时间存在${type}相关冲突。`
 }
 
 function scheduleTypeLabel(record: Record<string, any>) {
@@ -214,12 +269,29 @@ function hasAssistantOverlap(left: Record<string, any>, right: Record<string, an
   return rightList.some(item => leftSet.has(item))
 }
 
+function parseScheduleStudentIds(value: unknown) {
+  return new Set(
+    String(value || '')
+      .split(',')
+      .map(item => item.trim())
+      .filter(item => item && item !== '0'),
+  )
+}
+
+function hasStudentOverlap(left: Record<string, any>, right: Record<string, any>) {
+  const leftSet = parseScheduleStudentIds(left.studentId)
+  if (!leftSet.size)
+    return false
+  return [...parseScheduleStudentIds(right.studentId)].some(item => leftSet.has(item))
+}
+
 function findLinkedConflictRows(record: Record<string, any>) {
   return conflictRows.value.filter(item =>
     String(item.id || '') !== String(record.id || '')
     && isSameScheduleSlot(item, record)
     && (
-      (item.studentId && item.studentId === record.studentId)
+      (item.teachingClassId && item.teachingClassId === record.teachingClassId)
+      || hasStudentOverlap(item, record)
       || (item.teacherId && item.teacherId === record.teacherId)
       || (item.classroomId && item.classroomId === record.classroomId)
       || hasAssistantOverlap(item, record)
@@ -229,26 +301,26 @@ function findLinkedConflictRows(record: Record<string, any>) {
 
 function buildDeleteSuccessMessage(record: Record<string, any>, linkedCount = 0) {
   const dateText = dayjs(record.lessonDate).format('M月D日')
+  const scheduleLabel = isOneToOneSchedule(record) ? '1对1' : '班课'
   if (linkedCount > 0)
     return `已删除 1 条日程；同冲突中的另外 ${linkedCount} 条因不再冲突，会从“冲突日程”列表移除，但不会被删除`
-  return `已删除 ${dateText} ${formatLessonTime(record)} 的 1对1 冲突日程`
+  return `已删除 ${dateText} ${formatLessonTime(record)} 的${scheduleLabel}冲突日程`
 }
 
 function confirmDelete(record: Record<string, any>) {
-  if (!isOneToOneSchedule(record)) {
-    messageService.info('班课删除暂未开放，后续再补主教/辅教联动删除。')
-    return
-  }
-
+  const isOneToOne = isOneToOneSchedule(record)
   const linkedConflictRows = findLinkedConflictRows(record)
   const linkedHint = linkedConflictRows.length
     ? `删除当前这条后，和它成对冲突的另外 ${linkedConflictRows.length} 条记录如果不再冲突，会一起从“冲突日程”列表消失，但不会被删除。`
     : ''
+  const deleteImpact = isOneToOne
+    ? '删除后会同步从当前 1 对 1 的排课记录中移除，该操作不可恢复。'
+    : '删除后会同步从当前班课的主教与全部助教课表中移除，仅删除这一节，不会删除整批班课。'
 
   Modal.confirm({
     centered: true,
     title: '确认删除这条冲突日程？',
-    content: `删除后会同步从当前 1 对 1 的排课记录中移除，该操作不可恢复。${linkedHint}`,
+    content: `${deleteImpact}${linkedHint}`,
     okText: '删除',
     cancelText: '取消',
     okButtonProps: {
@@ -307,7 +379,6 @@ function confirmDelete(record: Record<string, any>) {
         :data-source="conflictRows"
         :pagination="false"
         :loading="loading"
-        :scroll="{ x: 980 }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'dateTime'">
@@ -324,6 +395,42 @@ function confirmDelete(record: Record<string, any>) {
           <template v-else-if="column.key === 'scheduleType'">
             <div class="text-#222 whitespace-nowrap">
               {{ scheduleTypeLabel(record) }}
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'conflictType'">
+            <div v-if="conflictTypesForRecord(record).length" class="conflict-type-cell">
+              <a-tooltip placement="topLeft">
+                <template #title>
+                  <div class="conflict-type-tooltip">
+                    <div class="conflict-type-tooltip__title">
+                      冲突详情
+                    </div>
+                    <div
+                      v-for="type in conflictTypesForRecord(record)"
+                      :key="type"
+                      class="conflict-type-tooltip__item"
+                    >
+                      <strong class="conflict-type-tooltip__item-label">{{ conflictTypeText(type) }}</strong>
+                      <span class="conflict-type-tooltip__item-desc">{{ conflictTypeDescription(type, record) }}</span>
+                    </div>
+                  </div>
+                </template>
+
+                <div class="conflict-type-cell__chips">
+                  <span
+                    v-for="type in conflictTypesForRecord(record)"
+                    :key="type"
+                    class="conflict-type-chip"
+                    :class="conflictTypeChipClass(type)"
+                  >
+                    {{ conflictTypeText(type) }}
+                  </span>
+                </div>
+              </a-tooltip>
+            </div>
+            <div v-else class="text-#bbb whitespace-nowrap">
+              -
             </div>
           </template>
 
@@ -365,16 +472,7 @@ function confirmDelete(record: Record<string, any>) {
                   </a-button>
                 </span>
               </a-tooltip>
-
-              <a-tooltip v-if="!isOneToOneSchedule(record)" title="班课删除暂未开放">
-                <span>
-                  <a-button type="link" size="small" danger disabled>
-                    删除
-                  </a-button>
-                </span>
-              </a-tooltip>
               <a-button
-                v-else
                 type="link"
                 size="small"
                 danger
@@ -421,6 +519,86 @@ function confirmDelete(record: Record<string, any>) {
   border-radius: 999px;
   background: #1677ff;
   content: '';
+}
+
+.conflict-type-cell {
+  max-width: 220px;
+}
+
+.conflict-type-cell__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  cursor: help;
+}
+
+.conflict-type-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.conflict-type-chip--class {
+  color: #ad6800;
+  background: #fff7e6;
+}
+
+.conflict-type-chip--teacher {
+  color: #cf1322;
+  background: #fff1f0;
+}
+
+.conflict-type-chip--classroom {
+  color: #0958d9;
+  background: #e6f4ff;
+}
+
+.conflict-type-chip--student {
+  color: #c41d7f;
+  background: #fff0f6;
+}
+
+.conflict-type-chip--assistant {
+  color: #531dab;
+  background: #f9f0ff;
+}
+
+.conflict-type-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 340px;
+}
+
+.conflict-type-tooltip__title {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.conflict-type-tooltip__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.conflict-type-tooltip__item-label {
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.conflict-type-tooltip__item-desc {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: normal;
 }
 
 </style>

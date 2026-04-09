@@ -78,12 +78,13 @@ type CheckAssistantScheduleAvailabilityDTO struct {
 }
 
 type TeachingScheduleListQueryDTO struct {
-	StartDate string   `json:"startDate"`
-	EndDate   string   `json:"endDate"`
-	ClassType *int     `json:"classType,omitempty"`
-	StudentID string   `json:"studentId,omitempty"`
-	BatchNo   string   `json:"batchNo,omitempty"`
-	IDs       []string `json:"ids,omitempty"`
+	StartDate     string   `json:"startDate"`
+	EndDate       string   `json:"endDate"`
+	ClassType     *int     `json:"classType,omitempty"`
+	StudentID     string   `json:"studentId,omitempty"`
+	ConflictTypes []string `json:"conflictTypes,omitempty"`
+	BatchNo       string   `json:"batchNo,omitempty"`
+	IDs           []string `json:"ids,omitempty"`
 	// 课表业务筛选（HTTP 上为逗号分隔）
 	ScheduleTeacherIDs  []int64  `json:"scheduleTeacherIds,omitempty"`
 	ClassroomIDs        []int64  `json:"classroomIds,omitempty"`

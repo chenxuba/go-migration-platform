@@ -31,9 +31,9 @@ const modalOpen = computed({
     width="620px"
     centered
     :ok-button-props="{ danger: true, loading: deleting }"
-    :ok-text="detail.courseType === 1 ? (detail.isMain ? '删除本节' : '移除助教') : undefined"
+    :ok-text="detail.courseType === 1 ? (detail.isMain ? '删除本节' : '移除助教') : '删除本节'"
     cancel-text="关闭"
-    :ok-cancel="detail.courseType === 1"
+    :ok-cancel="true"
     @ok="$emit('confirm')"
   >
     <div class="st-scheduled-detail">
@@ -73,8 +73,8 @@ const modalOpen = computed({
       <div v-if="detail.courseType === 1" class="st-scheduled-detail__hint st-scheduled-detail__hint--danger">
         {{ detail.isMain ? '删除这节 1v1 日程后，会立即从主教与助教课表中同步移除。' : '当前为助教视角。确认后仅移除这节课的当前助教，不会删除整节课。' }}
       </div>
-      <div v-else class="st-scheduled-detail__hint">
-        这里建议作为后续“查看详情 / 调课 / 调整老师 / 调整教室”的统一入口。班课删除暂未开放，避免误删主教/辅教安排。
+      <div v-else class="st-scheduled-detail__hint st-scheduled-detail__hint--danger">
+        删除这节班课后，会同步从主教与全部助教课表中移除，仅删除当前这节，不会删除整批班课。
       </div>
     </div>
   </a-modal>

@@ -121,6 +121,7 @@ func parseTeachingScheduleListQuery(r *http.Request) model.TeachingScheduleListQ
 	query.GroupClassIDs = parseInt64CSV(r.URL.Query().Get("groupClassIds"))
 	query.OneToOneClassIDs = parseInt64CSV(r.URL.Query().Get("oneToOneClassIds"))
 	query.LessonIDs = parseInt64CSV(r.URL.Query().Get("lessonIds"))
+	query.ConflictTypes = parseStringCSV(r.URL.Query().Get("conflictTypes"))
 	query.ScheduleTypeFilters = parseStringCSV(r.URL.Query().Get("scheduleTypes"))
 	query.CallStatusFilters = parseStringCSV(r.URL.Query().Get("callStatuses"))
 	return query
