@@ -78,6 +78,17 @@ func (svc *Service) CheckAssistantScheduleAvailability(userID int64, dto model.C
 	return svc.repo.CheckAssistantScheduleAvailability(context.Background(), instID, dto)
 }
 
+func (svc *Service) CheckGroupClassAssistantScheduleAvailability(userID int64, dto model.CheckGroupClassAssistantScheduleAvailabilityDTO) (model.AssistantScheduleAvailabilityResult, error) {
+	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+	if strings.TrimSpace(dto.GroupClassID) == "" {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请选择班课")
+	}
+	return svc.repo.CheckGroupClassAssistantScheduleAvailability(context.Background(), instID, dto)
+}
+
 func (svc *Service) GetTeachingScheduleConflictDetail(userID int64, query model.TeachingScheduleConflictDetailQueryDTO) (model.TeachingScheduleValidationResult, error) {
 	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
 	if err != nil {

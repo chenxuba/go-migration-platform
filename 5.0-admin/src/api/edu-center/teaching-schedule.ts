@@ -325,6 +325,19 @@ export function checkAssistantScheduleAvailabilityApi(data: {
   return usePost<AssistantScheduleAvailabilityResult>('/api/v1/teaching-schedules/one-to-one/assistant-availability', data)
 }
 
+export function checkGroupClassAssistantScheduleAvailabilityApi(data: {
+  groupClassId: string
+  assistantIds: string[]
+  excludeIds?: string[]
+  schedules: Array<{
+    lessonDate: string
+    startTime: string
+    endTime: string
+  }>
+}) {
+  return usePost<AssistantScheduleAvailabilityResult>('/api/v1/teaching-schedules/group-class/assistant-availability', data)
+}
+
 export function getTeachingScheduleConflictDetailApi(params: {
   id: string
 }) {

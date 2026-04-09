@@ -1962,6 +1962,112 @@ func (repo *Repository) CheckAssistantScheduleAvailability(ctx context.Context, 
 	return result, nil
 }
 
+func (repo *Repository) CheckGroupClassAssistantScheduleAvailability(ctx context.Context, instID int64, dto model.CheckGroupClassAssistantScheduleAvailabilityDTO) (model.AssistantScheduleAvailabilityResult, error) {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.GroupClassID), 10, 64)
+	if err != nil || classID <= 0 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请选择班课")
+	}
+	assistantIDs := parseStringIDs(dto.AssistantIDs)
+	if len(assistantIDs) == 0 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请至少选择一个上课助教")
+	}
+	if len(dto.Schedules) == 0 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请至少选择一个上课时段")
+	}
+	if len(dto.Schedules) > 2000 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("待检测时段过多，请缩小时间范围后重试")
+	}
+
+	normalized, err := normalizeAssistantAvailabilityScheduleSlots(dto.Schedules)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+	excludeIDs := parseStringIDs(dto.ExcludeIDs)
+	if len(normalized) == 0 {
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("请至少选择一个上课时段")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+	defer tx.Rollback()
+
+	base, err := repo.GetGroupClassScheduleCreateContextTx(ctx, tx, instID, classID)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+	if base.Status != model.TeachingClassStatusActive {
+		return buildUnavailableAssistantAvailabilityResult(assistantIDs, repo.resolveTeacherNames(ctx, assistantIDs), "当前班课已结班，暂不可排课"), nil
+	}
+	if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, assistantIDs); err != nil || n != len(assistantIDs) {
+		if err != nil {
+			return model.AssistantScheduleAvailabilityResult{}, err
+		}
+		return model.AssistantScheduleAvailabilityResult{}, errors.New("存在无效的上课助教")
+	}
+
+	startDate, endDate := scheduleSlotsDateRange(normalized)
+	conflicts, err := repo.listAvailabilityConflictsByAssistantsTx(ctx, tx, instID, assistantIDs, startDate, endDate, excludeIDs)
+	if err != nil {
+		return model.AssistantScheduleAvailabilityResult{}, err
+	}
+
+	assistantNames := repo.resolveTeacherNames(ctx, assistantIDs)
+	result := model.AssistantScheduleAvailabilityResult{
+		Items: make([]model.AssistantScheduleAvailabilityItem, 0, len(assistantIDs)),
+	}
+	for _, assistantID := range assistantIDs {
+		assistantConflictRows := make([]scheduleAvailabilityConflictRow, 0)
+		for _, row := range conflicts {
+			if row.TeacherID == assistantID || stringSliceHasAnyID(row.AssistantIDs, map[int64]struct{}{assistantID: {}}) {
+				assistantConflictRows = append(assistantConflictRows, row)
+			}
+		}
+
+		existingMap := make(map[int64]model.TeachingScheduleConflictItem)
+		conflictTypes := make([]string, 0, 1)
+		for _, row := range assistantConflictRows {
+			if !availabilityRowOverlapsAnySlot(row, normalized) {
+				continue
+			}
+			appendAvailabilityConflict(existingMap, row, "助教")
+			if !containsString(conflictTypes, "助教") {
+				conflictTypes = append(conflictTypes, "助教")
+			}
+		}
+
+		existingSchedules := make([]model.TeachingScheduleConflictItem, 0, len(existingMap))
+		for _, item := range existingMap {
+			sort.Strings(item.ConflictTypes)
+			existingSchedules = append(existingSchedules, item)
+		}
+		sort.Slice(existingSchedules, func(i, j int) bool {
+			if existingSchedules[i].Date == existingSchedules[j].Date {
+				return existingSchedules[i].TimeText < existingSchedules[j].TimeText
+			}
+			return existingSchedules[i].Date < existingSchedules[j].Date
+		})
+
+		item := model.AssistantScheduleAvailabilityItem{
+			AssistantID:       strconv.FormatInt(assistantID, 10),
+			AssistantName:     firstNonEmptyString(assistantNames[assistantID], "-"),
+			Valid:             len(conflictTypes) == 0,
+			ConflictTypes:     conflictTypes,
+			ExistingSchedules: existingSchedules,
+		}
+		if item.Valid {
+			result.ValidCount++
+		} else {
+			item.Message = buildAvailabilityConflictSummaryMessage(conflictTypes)
+			result.InvalidCount++
+		}
+		result.Items = append(result.Items, item)
+	}
+
+	return result, nil
+}
+
 func (repo *Repository) GetTeachingScheduleBatchDetail(ctx context.Context, instID int64, query model.TeachingScheduleBatchDetailQueryDTO) (model.TeachingScheduleBatchDetailVO, error) {
 	items, err := repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
 		BatchNo: query.BatchNo,

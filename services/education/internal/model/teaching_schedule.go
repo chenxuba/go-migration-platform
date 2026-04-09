@@ -90,6 +90,13 @@ type CheckAssistantScheduleAvailabilityDTO struct {
 	Schedules    []AssistantScheduleAvailabilitySlotDTO `json:"schedules"`
 }
 
+type CheckGroupClassAssistantScheduleAvailabilityDTO struct {
+	GroupClassID string                                 `json:"groupClassId"`
+	AssistantIDs []string                               `json:"assistantIds"`
+	ExcludeIDs   []string                               `json:"excludeIds,omitempty"`
+	Schedules    []AssistantScheduleAvailabilitySlotDTO `json:"schedules"`
+}
+
 type TeachingScheduleListQueryDTO struct {
 	StartDate     string   `json:"startDate"`
 	EndDate       string   `json:"endDate"`

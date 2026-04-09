@@ -15,7 +15,7 @@ import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/c
 import { getInstPeriodConfigApi } from '@/api/common/config'
 import { type GroupClassDetailVO, type GroupClassRow, listGroupClassStudentsByClassIdsApi, pageGroupClassesApi, getGroupClassDetailApi } from '@/api/edu-center/group-class'
 import type { TeachingScheduleValidationResult } from '@/api/edu-center/teaching-schedule'
-import { createGroupClassSchedulesApi, validateGroupClassSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { checkGroupClassAssistantScheduleAvailabilityApi, createGroupClassSchedulesApi, validateGroupClassSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { useUserStore } from '@/stores/user'
@@ -106,6 +106,8 @@ interface AssistantSelectOptionView {
   value: string
   label: string
   mobile?: string
+  status: 'free' | 'busy' | 'unknown'
+  statusText: string
 }
 
 interface GroupClassRecord {
@@ -407,10 +409,14 @@ const freeCalendarOpen = ref(false)
 const plannedClassCount = ref(1)
 const slotAvailabilityMap = ref<Record<string, AvailabilityBadgeView>>({})
 const slotAvailabilityLoading = ref(false)
+const assistantAvailabilityMap = ref<Record<string, AvailabilityBadgeView>>({})
+const assistantAvailabilityLoading = ref(false)
 
 let selectedGroupClassSeq = 0
 let slotAvailabilitySeq = 0
 let slotAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
+let assistantAvailabilitySeq = 0
+let assistantAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
 
 const selectedGroupClass = computed(() =>
   groupClassRecords.value.find(item => item.id === selectedGroupClassId.value),
@@ -562,13 +568,23 @@ const assistantSelectOptionViews = computed<AssistantSelectOptionView[]>(() =>
   assistantSelectStaffs.value
     .filter(staff => !sameStaffId(staff.id, selectedTeacher.value))
     .map((staff) => {
+      const availability = assistantAvailabilityFor(staff)
       return {
         value: String(staff.id),
         label: displayStaffName(staff) || String(staff.id),
         mobile: displayMobileText(staff),
+        status: availability.status,
+        statusText: availability.statusText,
       }
     }),
 )
+
+function assistantAvailabilityFor(staff: StaffOptionItem): AvailabilityBadgeView {
+  if (!activeTimeBlocks.value.length)
+    return scheduleAvailabilityBadge('unknown', '先选时段')
+  return assistantAvailabilityMap.value[String(staff.id)]
+    || scheduleAvailabilityBadge(assistantAvailabilityLoading.value ? 'unknown' : 'free', assistantAvailabilityLoading.value ? '检测中' : '空闲')
+}
 
 const assistantOptionList = computed(() =>
   assistantSelectStaffs.value
@@ -1357,6 +1373,70 @@ function filterAssistantOption(input: string, option?: { value?: string | number
   return haystacks.some(text => text.toLowerCase().includes(keyword))
 }
 
+async function fetchAssistantAvailability() {
+  const seq = ++assistantAvailabilitySeq
+  const groupClassId = String(selectedGroupClass.value?.id || '').trim()
+  const assistantIds = assistantSelectOptionViews.value.map(item => item.value)
+  if (!groupClassId || !assistantIds.length || !plannedDates.value.length || !activeTimeBlocks.value.length) {
+    assistantAvailabilityMap.value = {}
+    assistantAvailabilityLoading.value = false
+    return
+  }
+
+  const schedules = plannedDates.value.flatMap(date =>
+    activeTimeBlocks.value.map(block => ({
+      lessonDate: date.format('YYYY-MM-DD'),
+      startTime: block.startTime,
+      endTime: block.endTime,
+    })),
+  )
+  if (!schedules.length || schedules.length > 2000) {
+    assistantAvailabilityMap.value = {}
+    assistantAvailabilityLoading.value = false
+    return
+  }
+
+  assistantAvailabilityLoading.value = true
+  try {
+    const res = await checkGroupClassAssistantScheduleAvailabilityApi({
+      groupClassId,
+      assistantIds,
+      schedules,
+    })
+    if (seq !== assistantAvailabilitySeq)
+      return
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '检测助教时段状态失败')
+
+    const nextMap: Record<string, AvailabilityBadgeView> = {}
+    assistantIds.forEach((id) => {
+      nextMap[id] = scheduleAvailabilityBadge('free', '空闲')
+    })
+    ;(res.result.items || []).forEach((item) => {
+      nextMap[item.assistantId] = scheduleAvailabilityBadge(item.valid ? 'free' : 'busy', item.valid ? '空闲' : '繁忙')
+    })
+    assistantAvailabilityMap.value = nextMap
+  }
+  catch (error) {
+    if (seq !== assistantAvailabilitySeq)
+      return
+    console.error('fetch group class assistant availability failed', error)
+    assistantAvailabilityMap.value = {}
+  }
+  finally {
+    if (seq === assistantAvailabilitySeq)
+      assistantAvailabilityLoading.value = false
+  }
+}
+
+function scheduleAssistantAvailabilityCheck() {
+  if (assistantAvailabilityTimer)
+    clearTimeout(assistantAvailabilityTimer)
+  assistantAvailabilityTimer = setTimeout(() => {
+    void fetchAssistantAvailability()
+  }, 180)
+}
+
 function schoolSlotMaxTagPlaceholder(omittedValues: { label?: unknown, value?: unknown }[]) {
   const count = omittedValues?.length ?? 0
   return count > 0 ? `+${count}` : ''
@@ -1513,6 +1593,7 @@ watch(
       previewHasConflict.value = false
       previewValidationMessage.value = ''
       slotAvailabilityMap.value = {}
+      assistantAvailabilityMap.value = {}
       return
     }
     try {
@@ -1534,6 +1615,7 @@ watch(
       previewHasConflict.value = false
       previewValidationMessage.value = ''
       slotAvailabilityMap.value = {}
+      assistantAvailabilityMap.value = {}
       scheduleStartDate.value = dayjs().startOf('day')
       freeSelectedDates.value = [dayjs().startOf('day')]
       freeCalendarPanelDate.value = freeSelectedDates.value[0].startOf('month')
@@ -1569,6 +1651,19 @@ watch(
       selectedAssistant.value = next.length ? next : undefined
       handleAssistantChange(next)
     }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [
+    String(selectedGroupClass.value?.id || ''),
+    plannedDates.value.map(item => item.format('YYYY-MM-DD')).join(','),
+    activeTimeBlocks.value.map(item => `${item.startTime}-${item.endTime}`).join(','),
+    assistantSelectStaffs.value.map(item => String(item.id)).join(','),
+  ].join('|'),
+  () => {
+    scheduleAssistantAvailabilityCheck()
   },
   { immediate: true },
 )
@@ -1623,6 +1718,7 @@ watch(modalOpen, async (value) => {
     previewModalOpen.value = false
     conflictModalOpen.value = false
     slotAvailabilityMap.value = {}
+    assistantAvailabilityMap.value = {}
   }
 }, { immediate: true })
 </script>
@@ -2167,6 +2263,16 @@ watch(modalOpen, async (value) => {
                             <span class="planner-staff-option__label">{{ item.label }}</span>
                             <span v-if="item.mobile" class="planner-staff-option__mobile">{{ item.mobile }}</span>
                           </div>
+                          <span
+                            class="planner-slot-option__status"
+                            :class="{
+                              'planner-slot-option__status--free': item.status === 'free',
+                              'planner-slot-option__status--busy': item.status === 'busy',
+                              'planner-slot-option__status--unknown': item.status === 'unknown',
+                            }"
+                          >
+                            {{ item.statusText }}
+                          </span>
                         </div>
                       </a-select-option>
                     </a-select>
@@ -3149,6 +3255,12 @@ watch(modalOpen, async (value) => {
   font-weight: 400 !important;
 }
 
+:deep(.planner-control .ant-select-selection-placeholder),
+:deep(.planner-control .ant-select-selection-search-input) {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+}
+
 .planner-balance {
   flex: 0 0 auto;
   gap: 6px;
@@ -3769,6 +3881,11 @@ button.planner-chip.planner-chip--active {
   margin-bottom: 6px;
 }
 
+:deep(.planner-control--major.planner-multi-slot-select.ant-select-multiple .ant-select-selection-search) {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
 :deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-search-input),
 :deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-search-mirror) {
   height: 28px !important;
@@ -3787,6 +3904,12 @@ button.planner-chip.planner-chip--active {
 :deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selector) {
   height: auto !important;
   min-height: var(--planner-major-height) !important;
+}
+
+:deep(.planner-control--major.planner-multi-slot-select.ant-select-multiple .ant-select-selector) {
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+  row-gap: 2px;
 }
 
 :deep(.planner-control--major.ant-picker .ant-picker-input) {
@@ -3824,6 +3947,12 @@ button.planner-chip.planner-chip--active {
   font-size: 13px;
   font-weight: 400;
   white-space: nowrap !important;
+}
+
+:deep(.planner-control--major.planner-multi-slot-select.ant-select-multiple .ant-select-selection-item) {
+  min-height: 26px;
+  margin-top: 4px;
+  margin-bottom: 4px;
 }
 
 :deep(.planner-multi-slot-select.ant-select-multiple .ant-select-selection-item-content) {
