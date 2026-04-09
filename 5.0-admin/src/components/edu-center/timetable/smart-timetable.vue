@@ -8,6 +8,7 @@ import SmartTimetableDragConflictModal from './smart-timetable-drag-conflict-mod
 import SmartTimetableGrid from './smart-timetable-grid.vue'
 import SmartTimetableScheduleDetailDrawer from './smart-timetable-schedule-detail-drawer.vue'
 import SmartTimetableToolbar from './smart-timetable-toolbar.vue'
+import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import TimetableScheduleSummary from './timetable-schedule-summary.vue'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
@@ -575,6 +576,8 @@ const matrixDays = ref([])
 const timetableLoading = ref(false)
 const creatingOneToOneSchedule = ref(false)
 const deletingScheduledLesson = ref(false)
+const scheduleBatchPlanEditOpen = ref(false)
+const currentBatchPlanSchedule = ref(null)
 const forcingConflictSchedule = ref(false)
 const locatingConflictItemKey = ref('')
 const conflictDetailModalOpen = ref(false)
@@ -2888,6 +2891,70 @@ async function deleteScheduledLessonFromDetail() {
   }
 }
 
+function buildBatchPlanScheduleFromDetail(detail) {
+  if (!detail?.scheduleId)
+    return null
+  const studentNames = Array.isArray(detail?.text?.studentNames)
+    ? detail.text.studentNames.map(item => String(item?.name || '').trim()).filter(Boolean)
+    : []
+  const firstStudentId = Array.isArray(detail?.text?.studentNames)
+    ? String(detail.text.studentNames[0]?.id || '').trim()
+    : ''
+  const assistantNames = detail.assistantText && detail.assistantText !== '未安排'
+    ? String(detail.assistantText).split('、').map(item => item.trim()).filter(Boolean)
+    : []
+  const lessonDate = String(detail.record?.date || '').trim()
+  const startTime = String(detail.column?.startTime || '').trim()
+  const endTime = String(detail.column?.endTime || '').trim()
+
+  return {
+    id: String(detail.scheduleId || '').trim(),
+    batchNo: String(detail.text?.batchNo || '').trim() || undefined,
+    batchSize: 1,
+    classType: detail.courseType === 1 ? 2 : 1,
+    teachingClassId: String(detail.text?.classId || '').trim(),
+    teachingClassName: String(detail.text?.className || '').trim(),
+    studentId: firstStudentId,
+    studentName: studentNames.join('、'),
+    lessonId: String(detail.text?.courseId || '').trim(),
+    lessonName: String(detail.courseName || '').trim(),
+    teacherId: String(detail.text?.teacherId || detail.record?.teacherId || '').trim(),
+    teacherName: String(detail.teacherName || '').trim(),
+    assistantIds: Array.isArray(detail.assistantIds) ? detail.assistantIds : [],
+    assistantNames,
+    classroomId: String(detail.classroomId || '').trim(),
+    classroomName: String(detail.classroomName || '').trim(),
+    lessonDate,
+    startAt: lessonDate && startTime ? `${lessonDate} ${startTime}:00` : '',
+    endAt: lessonDate && endTime ? `${lessonDate} ${endTime}:00` : '',
+    status: 1,
+    callStatus: detail.text?.callStatusKey === 'signed' ? 2 : 1,
+    callStatusText: detail.text?.callStatusKey === 'signed' ? '已点名' : '未点名',
+    conflict: Boolean(detail.text?.scheduledConflict),
+    conflictTypes: Array.isArray(detail.text?.scheduledConflictTypes) ? detail.text.scheduledConflictTypes : [],
+  }
+}
+
+function openScheduledLessonBatchPlanEdit() {
+  const detail = scheduledLessonDetailState.value
+  if (!(detail.courseType === 1 && detail.isMain !== false))
+    return
+  const schedule = buildBatchPlanScheduleFromDetail(detail)
+  if (!schedule) {
+    messageService.warning('当前日程缺少编辑标识，请刷新后重试')
+    return
+  }
+  scheduledLessonDetailOpen.value = false
+  currentBatchPlanSchedule.value = schedule
+  scheduleBatchPlanEditOpen.value = true
+}
+
+function handleBatchPlanUpdated() {
+  scheduleBatchPlanEditOpen.value = false
+  currentBatchPlanSchedule.value = null
+  emitter.emit(EVENTS.REFRESH_DATA)
+}
+
 // 排课
 async function handleScheduleClick(timeSlot, column, record) {
   if (currentModel.value === '1') {
@@ -4379,7 +4446,15 @@ watch(dragConflictDetailOpen, (open) => {
       v-model:open="scheduledLessonDetailOpen"
       :detail="scheduledLessonDetailState"
       :deleting="deletingScheduledLesson"
+      :editable="scheduledLessonDetailState.courseType === 1 && scheduledLessonDetailState.isMain !== false"
       @delete="deleteScheduledLessonFromDetail"
+      @edit="openScheduledLessonBatchPlanEdit"
+    />
+
+    <ScheduleBatchPlanEditModal
+      v-model:open="scheduleBatchPlanEditOpen"
+      :schedule="currentBatchPlanSchedule"
+      @updated="handleBatchPlanUpdated"
     />
 
     <ScheduleConflictModal

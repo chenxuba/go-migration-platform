@@ -19,6 +19,7 @@ import type {
   TeachingScheduleMatrixLegacyItem,
 } from '@/api/edu-center/teaching-schedule'
 import {
+  cancelTeachingSchedulesApi,
   copyTeachingSchedulesWeekApi,
   downloadTeachingSchedulesTeacherMatrixExcelApi,
   listTeachingSchedulesByTeacherMatrixApi,
@@ -59,6 +60,7 @@ const matrixDays = ref<TeachingScheduleMatrixDay[]>([])
 const scheduleDetailOpen = ref(false)
 const currentDetailSchedule = ref<TeachingScheduleItem | null>(null)
 const currentScheduleDetail = ref<DrawerSummary | null>(null)
+const deletingScheduleDetail = ref(false)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref<TeachingScheduleItem | null>(null)
 
@@ -1300,6 +1302,36 @@ function onBatchPlanUpdated() {
 
 const isCurrentDetailOneToOne = computed(() => isOneToOneSchedule(currentDetailSchedule.value))
 
+async function handleScheduleDetailDelete() {
+  const schedule = currentDetailSchedule.value
+  const scheduleId = String(schedule?.id || '').trim()
+  if (!scheduleId) {
+    message.warning('当前日程缺少删除标识，请刷新后重试')
+    return
+  }
+
+  deletingScheduleDetail.value = true
+  try {
+    const res = await cancelTeachingSchedulesApi({
+      ids: [scheduleId],
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '删除日程失败')
+    scheduleDetailOpen.value = false
+    currentDetailSchedule.value = null
+    currentScheduleDetail.value = null
+    message.success(`已删除${isOneToOneSchedule(schedule) ? '1对1' : '班课'}日程`)
+    await loadMatrix()
+  }
+  catch (error: any) {
+    console.error('delete schedule detail failed', error)
+    message.error(error?.response?.data?.message || error?.message || '删除日程失败')
+  }
+  finally {
+    deletingScheduleDetail.value = false
+  }
+}
+
 function handleScheduleDetailEdit() {
   const schedule = currentDetailSchedule.value
   if (!isOneToOneSchedule(schedule))
@@ -1755,8 +1787,9 @@ const unsignedLessons = computed(() =>
     <SmartTimetableScheduleDetailDrawer
       v-model:open="scheduleDetailOpen"
       :detail="currentScheduleDetail"
+      :deleting="deletingScheduleDetail"
       :editable="isCurrentDetailOneToOne"
-      :deletable="false"
+      @delete="handleScheduleDetailDelete"
       @edit="handleScheduleDetailEdit"
     />
     <ScheduleBatchPlanEditModal

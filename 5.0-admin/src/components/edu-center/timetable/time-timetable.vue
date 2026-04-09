@@ -11,7 +11,7 @@ import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { downloadTimeTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { cancelTeachingSchedulesApi, downloadTimeTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
@@ -375,6 +375,7 @@ const scheduleRows = ref([])
 const scheduleDetailOpen = ref(false)
 const currentDetailSchedule = ref(null)
 const currentScheduleDetail = ref(null)
+const deletingScheduleDetail = ref(false)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref(null)
 const scheduleConflictOpen = ref(false)
@@ -1290,6 +1291,36 @@ function openBatchPlanEdit(schedule) {
 
 const isCurrentDetailOneToOne = computed(() => isOneToOneSchedule(currentDetailSchedule.value))
 
+async function handleScheduleDetailDelete() {
+  const schedule = currentDetailSchedule.value
+  const scheduleId = String(schedule?.id || '').trim()
+  if (!scheduleId) {
+    messageService.warning('当前日程缺少删除标识，请刷新后重试')
+    return
+  }
+
+  deletingScheduleDetail.value = true
+  try {
+    const res = await cancelTeachingSchedulesApi({
+      ids: [scheduleId],
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '删除日程失败')
+    scheduleDetailOpen.value = false
+    currentDetailSchedule.value = null
+    currentScheduleDetail.value = null
+    messageService.success(`已删除${isOneToOneSchedule(schedule) ? '1对1' : '班课'}日程`)
+    await loadSchedules()
+  }
+  catch (error) {
+    console.error('delete schedule detail failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '删除日程失败')
+  }
+  finally {
+    deletingScheduleDetail.value = false
+  }
+}
+
 function handleScheduleDetailEdit() {
   const schedule = currentDetailSchedule.value
   if (!isOneToOneSchedule(schedule))
@@ -1789,8 +1820,9 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
     <SmartTimetableScheduleDetailDrawer
       v-model:open="scheduleDetailOpen"
       :detail="currentScheduleDetail"
+      :deleting="deletingScheduleDetail"
       :editable="isCurrentDetailOneToOne"
-      :deletable="false"
+      @delete="handleScheduleDetailDelete"
       @edit="handleScheduleDetailEdit"
     />
     <ScheduleBatchPlanEditModal
