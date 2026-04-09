@@ -2517,6 +2517,7 @@ const unsignedLessons = computed(() =>
   padding: 0 8px 0 9px;
   border-radius: 0 4px 0 8px;
   background: #ff4d4f;
+  cursor: pointer;
 }
 
 .tm-event__body {

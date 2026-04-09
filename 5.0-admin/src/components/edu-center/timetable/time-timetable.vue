@@ -2516,6 +2516,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
   border-radius: 0 4px 0 8px;
   background: #ff4d4f;
   color: #fff;
+  cursor: pointer;
 }
 
 .schedule-event__body {
