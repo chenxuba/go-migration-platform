@@ -67,6 +67,17 @@ const scheduleCallStatusOptions = [
   { id: 'signed', value: '已点名' },
 ]
 
+function scheduleBadgeText(classType) {
+  return Number(classType) === 1 ? '班课' : '1v1'
+}
+
+function scheduleTitle(item) {
+  return item.teachingClassName
+    || item.studentName
+    || item.lessonName
+    || (Number(item.classType) === 1 ? '班课日程' : '1对1日程')
+}
+
 function normalizeScheduleFilterValue(value) {
   if (Array.isArray(value))
     return value.length ? value[0] : undefined
@@ -519,7 +530,6 @@ async function exportTimeTimetable() {
     const res = await downloadTimeTimetableExcelApi({
       startDate: queryDateRange.value.startDate,
       endDate: queryDateRange.value.endDate,
-      classType: 2,
       studentId: filterStudentId.value,
       scheduleTeacherIds: scheduleTeacherIds || undefined,
       classroomIds: classroomIds || undefined,
@@ -619,7 +629,6 @@ async function loadSchedules() {
     const res = await listTeachingSchedulesApi({
       startDate: queryDateRange.value.startDate,
       endDate: queryDateRange.value.endDate,
-      classType: 2,
       studentId: filterStudentId.value,
       scheduleTeacherIds: scheduleTeacherIds || undefined,
       classroomIds: classroomIds || undefined,
@@ -674,7 +683,7 @@ const mockSchedules = computed(() =>
     dateKey: dayjs(item.startAt).format('YYYY-MM-DD'),
     startAt: dayjs(item.startAt),
     endAt: dayjs(item.endAt),
-    title: item.teachingClassName || item.studentName || '1对1日程',
+    title: scheduleTitle(item),
     course: item.lessonName || '-',
     teacher: item.teacherName || '-',
     classroom: item.classroomName || '-',
@@ -1642,10 +1651,11 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                           冲突
                         </span>
                         <span
-                          v-else-if="event.classType === 2"
-                          class="schedule-event__badge schedule-event__badge--one-to-one"
+                          v-else
+                          class="schedule-event__badge"
+                          :class="event.classType === 1 ? 'schedule-event__badge--group-class' : 'schedule-event__badge--one-to-one'"
                         >
-                          1v1
+                          {{ scheduleBadgeText(event.classType) }}
                         </span>
                         <span v-if="event.hasTrial" class="schedule-event__badge">
                           试听
@@ -2350,6 +2360,13 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
   padding: 0 8px 0 9px;
   border-radius: 0 4px 0 8px;
   background: rgb(0 0 0 / 50%);
+  color: #fff;
+}
+
+.schedule-event__badge--group-class {
+  padding: 0 8px 0 9px;
+  border-radius: 0 4px 0 8px;
+  background: #d46b08;
   color: #fff;
 }
 

@@ -95,6 +95,10 @@ const scheduleCallStatusOptions: FilterOption[] = [
   { id: 'signed', value: '已点名' },
 ]
 
+function scheduleBadgeText(classType: number) {
+  return Number(classType) === 1 ? '班课' : '1v1'
+}
+
 function normalizeScheduleFilterValue(value: unknown): string | undefined {
   if (Array.isArray(value))
     return value.length ? String(value[0] ?? '').trim() || undefined : undefined
@@ -719,7 +723,6 @@ async function exportTeacherMatrixExcel() {
     const res = await downloadTeachingSchedulesTeacherMatrixExcelApi({
       startDate: queryRange.value.startDate,
       endDate: queryRange.value.endDate,
-      classType: 2,
       studentId: filterStudentId.value,
       scheduleTeacherIds: scheduleTeacherIds || undefined,
       classroomIds: classroomIds || undefined,
@@ -773,7 +776,6 @@ async function loadMatrix() {
     const res = await listTeachingSchedulesByTeacherMatrixApi({
       startDate: queryRange.value.startDate,
       endDate: queryRange.value.endDate,
-      classType: 2,
       studentId: filterStudentId.value,
       scheduleTeacherIds: scheduleTeacherIds || undefined,
       classroomIds: classroomIds || undefined,
@@ -1609,10 +1611,11 @@ const unsignedLessons = computed(() =>
                         {{ event.timeText }}
                       </div>
                       <span
-                        v-if="event.classType === 2"
+                        v-if="event.classType === 1 || event.classType === 2"
                         class="tm-event__badge"
+                        :class="event.classType === 1 ? 'tm-event__badge--group-class' : 'tm-event__badge--one-to-one'"
                       >
-                        1v1
+                        {{ scheduleBadgeText(event.classType) }}
                       </span>
                     </div>
                     <div class="tm-event__body">
@@ -2292,6 +2295,14 @@ const unsignedLessons = computed(() =>
   color: #fff;
   font-size: 10px;
   font-weight: 700;
+}
+
+.tm-event__badge--one-to-one {
+  background: rgb(0 0 0 / 50%);
+}
+
+.tm-event__badge--group-class {
+  background: #d46b08;
 }
 
 .tm-event__body {
