@@ -2476,36 +2476,44 @@ watch(modalOpen, async (value) => {
 
 .planner-head__stats {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   gap: 8px;
 }
 
 .planner-stat {
-  min-width: 98px;
-  padding: 8px 12px;
-  border-radius: 14px;
-  background: #f7f9fc;
-  text-align: center;
+  min-width: 108px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f6fbff 0%, #edf6ff 100%);
+  text-align: right;
 }
 
 .planner-stat strong {
   display: block;
   color: #1677ff;
   font-size: 20px;
-  line-height: 1.2;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .planner-stat span {
-  color: #86909c;
-  font-size: 12px;
+  display: block;
+  margin-top: 4px;
+  color: #6b7785;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.planner-stat--subtle {
+  background: #f7f8fa;
 }
 
 .planner-stat--subtle strong {
-  color: #fa8c16;
+  color: #1f2329;
 }
 
 .planner-head__close {
-  margin-left: auto;
+  color: #94a3b8;
 }
 
 .planner-shell {
