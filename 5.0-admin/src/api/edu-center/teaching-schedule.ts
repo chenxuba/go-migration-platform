@@ -99,6 +99,8 @@ export interface CreateOneToOneSchedulesResult {
   list: TeachingScheduleItem[]
 }
 
+export type CreateGroupClassSchedulesResult = CreateOneToOneSchedulesResult
+
 export interface TeachingScheduleValidationResult {
   valid: boolean
   message?: string
@@ -231,6 +233,28 @@ export function createOneToOneSchedulesApi(data: {
   }>
 }) {
   return usePost<CreateOneToOneSchedulesResult>('/api/v1/teaching-schedules/one-to-one/create', data)
+}
+
+export function createGroupClassSchedulesApi(data: {
+  groupClassId: string
+  teacherId: string
+  assistantIds?: string[]
+  classroomId?: string
+  batchMeta?: TeachingScheduleBatchMeta
+  allowStudentConflict?: boolean
+  allowClassroomConflict?: boolean
+  schedules: Array<{
+    lessonDate: string
+    startTime: string
+    endTime: string
+    teacherId?: string
+    assistantIds?: string[]
+    classroomId?: string
+    allowStudentConflict?: boolean
+    allowClassroomConflict?: boolean
+  }>
+}) {
+  return usePost<CreateGroupClassSchedulesResult>('/api/v1/teaching-schedules/group-class/create', data)
 }
 
 export function validateOneToOneSchedulesApi(data: {

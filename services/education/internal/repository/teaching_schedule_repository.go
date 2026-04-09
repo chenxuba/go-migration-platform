@@ -131,6 +131,55 @@ func (repo *Repository) GetOneToOneScheduleCreateContextTx(ctx context.Context, 
 	return item, nil
 }
 
+func (repo *Repository) GetGroupClassScheduleCreateContextTx(ctx context.Context, tx *sql.Tx, instID, classID int64) (model.GroupClassScheduleCreateContext, error) {
+	var (
+		item      model.GroupClassScheduleCreateContext
+		courseID  int64
+		composeID int64
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			tc.id,
+			IFNULL(tc.name, ''),
+			IFNULL(tc.course_id, 0),
+			IFNULL(tc.compose_lesson_id, 0),
+			COALESCE(NULLIF(icl.name, ''), NULLIF(ic.name, ''), ''),
+			IFNULL(tc.status, 0),
+			IFNULL(tc.default_teacher_id, 0),
+			IFNULL(dt.nick_name, ''),
+			IFNULL(tc.class_room_id, 0),
+			IFNULL(tc.class_room_name, '')
+		FROM teaching_class tc
+		LEFT JOIN inst_course ic ON ic.id = tc.course_id AND ic.del_flag = 0
+		LEFT JOIN inst_compose_lesson icl ON icl.id = tc.compose_lesson_id AND icl.del_flag = 0
+		LEFT JOIN inst_user dt ON dt.id = tc.default_teacher_id AND dt.del_flag = 0
+		WHERE tc.inst_id = ? AND tc.id = ? AND tc.class_type = ? AND tc.del_flag = 0
+		LIMIT 1
+	`, instID, classID, model.TeachingClassTypeNormal).Scan(
+		&item.ClassID,
+		&item.ClassName,
+		&courseID,
+		&composeID,
+		&item.LessonName,
+		&item.Status,
+		&item.DefaultTeacherID,
+		&item.DefaultTeacherName,
+		&item.ClassroomID,
+		&item.ClassroomName,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return item, errors.New("班级不存在")
+		}
+		return item, err
+	}
+	item.LessonID = courseID
+	if composeID > 0 {
+		item.LessonID = composeID
+	}
+	return item, nil
+}
+
 func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, instID int64, query model.TeachingScheduleConflictDetailQueryDTO) (model.TeachingScheduleValidationResult, error) {
 	scheduleID, err := strconv.ParseInt(strings.TrimSpace(query.ID), 10, 64)
 	if err != nil || scheduleID <= 0 {
@@ -227,8 +276,26 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 		args = append(args, strings.TrimSpace(query.EndDate))
 	}
 	if sid := strings.TrimSpace(query.StudentID); sid != "" {
-		filters = append(filters, "CAST(ts.student_id AS CHAR) = ?")
-		args = append(args, sid)
+		if studentID, err := strconv.ParseInt(sid, 10, 64); err == nil && studentID > 0 {
+			filters = append(filters, `(
+				ts.student_id = ?
+				OR (
+					ts.class_type = ?
+					AND EXISTS (
+						SELECT 1
+						FROM teaching_class_student tcs
+						WHERE tcs.inst_id = ts.inst_id
+						  AND tcs.teaching_class_id = ts.teaching_class_id
+						  AND tcs.del_flag = 0
+						  AND tcs.student_id = ?
+					)
+				)
+			)`)
+			args = append(args, studentID, model.TeachingClassTypeNormal, studentID)
+		} else {
+			filters = append(filters, "CAST(ts.student_id AS CHAR) = ?")
+			args = append(args, sid)
+		}
 	}
 	if query.ClassType != nil && *query.ClassType > 0 {
 		filters = append(filters, "ts.class_type = ?")
@@ -443,7 +510,13 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := repo.fillGroupClassStudentRosterForSchedules(ctx, instID, items); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func normalizeTeachingScheduleTypeFilters(list []string) map[string]struct{} {
@@ -782,6 +855,318 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		operatorID,
 		batchNo,
 		model.TeachingClassTypeOneToOne,
+		base.ClassID,
+		createdScheduleIDs,
+		dto.BatchMeta,
+	); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) listGroupClassStudentRosterTx(ctx context.Context, tx *sql.Tx, instID, classID int64) ([]int64, []string, error) {
+	if classID <= 0 {
+		return nil, nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			IFNULL(tcs.student_id, 0),
+			IFNULL(s.stu_name, '')
+		FROM teaching_class_student tcs
+		LEFT JOIN inst_student s
+			ON s.id = tcs.student_id
+		   AND s.inst_id = tcs.inst_id
+		   AND s.del_flag = 0
+		WHERE tcs.inst_id = ?
+		  AND tcs.teaching_class_id = ?
+		  AND tcs.del_flag = 0
+		ORDER BY tcs.id ASC
+	`, instID, classID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	studentIDs := make([]int64, 0)
+	studentNames := make([]string, 0)
+	for rows.Next() {
+		var (
+			studentID   int64
+			studentName string
+		)
+		if err := rows.Scan(&studentID, &studentName); err != nil {
+			return nil, nil, err
+		}
+		if studentID > 0 {
+			studentIDs = append(studentIDs, studentID)
+		}
+		if strings.TrimSpace(studentName) != "" {
+			studentNames = append(studentNames, strings.TrimSpace(studentName))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return studentIDs, studentNames, nil
+}
+
+func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, operatorID int64, dto model.CreateGroupClassSchedulesDTO) (model.CreateOneToOneSchedulesResult, error) {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.GroupClassID), 10, 64)
+	if err != nil || classID <= 0 {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("请选择班级")
+	}
+	fallbackTeacherID, err := parseOptionalPositiveID(dto.TeacherID)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("请选择上课教师")
+	}
+	fallbackClassroomID, err := parseOptionalPositiveID(dto.ClassroomID)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("classroomId 无效")
+	}
+	if len(dto.Schedules) == 0 {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("请至少选择一节日程")
+	}
+	assistantIDs := parseStringIDs(dto.AssistantIDs)
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	defer tx.Rollback()
+
+	base, err := repo.GetGroupClassScheduleCreateContextTx(ctx, tx, instID, classID)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	if base.Status != model.TeachingClassStatusActive {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("当前班级已结班，暂不可创建日程")
+	}
+	if fallbackTeacherID <= 0 {
+		fallbackTeacherID = base.DefaultTeacherID
+	}
+	if fallbackClassroomID <= 0 {
+		fallbackClassroomID = base.ClassroomID
+	}
+
+	plans, err := normalizeCreateSchedulePlans(dto.Schedules, fallbackTeacherID, fallbackClassroomID, assistantIDs)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	applyCreateScheduleConflictAllowances(plans, dto.AllowStudentConflict, dto.AllowClassroomConflict)
+	teacherIDs := collectPlanTeacherIDs(plans)
+	if len(teacherIDs) == 0 {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("请选择上课教师")
+	}
+	for _, plan := range plans {
+		for _, assistantID := range plan.AssistantIDs {
+			if assistantID == plan.TeacherID {
+				return model.CreateOneToOneSchedulesResult{}, errors.New("主教与助教不能为同一人")
+			}
+		}
+	}
+
+	if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, teacherIDs); err != nil || n != len(teacherIDs) {
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		return model.CreateOneToOneSchedulesResult{}, errors.New("上课教师无效")
+	}
+	planAssistantIDs := collectPlanAssistantIDs(plans)
+	if len(planAssistantIDs) > 0 {
+		if n, err := repo.CountInstUsersByIDsIncludingDisabled(ctx, instID, planAssistantIDs); err != nil || n != len(planAssistantIDs) {
+			if err != nil {
+				return model.CreateOneToOneSchedulesResult{}, err
+			}
+			return model.CreateOneToOneSchedulesResult{}, errors.New("存在无效的上课助教")
+		}
+	}
+
+	classroomNames, err := repo.resolveClassroomNamesTx(ctx, tx, instID, collectPlanClassroomIDs(plans))
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	if base.ClassroomID > 0 && strings.TrimSpace(classroomNames[base.ClassroomID]) == "" {
+		classroomNames[base.ClassroomID] = strings.TrimSpace(base.ClassroomName)
+	}
+
+	teacherNames := repo.resolveTeacherNames(ctx, teacherIDs)
+	if base.DefaultTeacherID > 0 && strings.TrimSpace(teacherNames[base.DefaultTeacherID]) == "" {
+		teacherNames[base.DefaultTeacherID] = strings.TrimSpace(base.DefaultTeacherName)
+	}
+	assistantNameMap := repo.resolveTeacherNames(ctx, planAssistantIDs)
+	for i := range plans {
+		plans[i].AssistantNames = compactStrings(func() []string {
+			names := make([]string, 0, len(plans[i].AssistantIDs))
+			for _, id := range plans[i].AssistantIDs {
+				if name := strings.TrimSpace(assistantNameMap[id]); name != "" && name != "-" {
+					names = append(names, name)
+				}
+			}
+			return names
+		}())
+	}
+
+	studentIDs, studentNames, err := repo.listGroupClassStudentRosterTx(ctx, tx, instID, classID)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	studentNameText := strings.Join(compactStrings(studentNames), "、")
+	if studentNameText == "" {
+		studentNameText = strings.TrimSpace(base.ClassName)
+	}
+
+	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans, nil)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	classroomConflictsByPlan, err := repo.listClassroomConflictsByPlanTx(ctx, tx, instID, plans, nil)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	assistantConflictsByPlan, err := repo.listAssistantConflictsByPlanTx(ctx, tx, instID, plans, nil)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	classConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "teaching_class_id", base.ClassID, plansToSlots(plans), "", nil)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	studentConflicts, err := repo.listScheduleConflictDetailsByStudentsTx(ctx, tx, instID, studentIDs, plansToSlots(plans), "", nil)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+
+	hardConflictTypes := make(map[string]struct{})
+	for _, plan := range plans {
+		key := schedulePlanKey(plan)
+		if len(teacherConflictsByPlan[key]) > 0 {
+			hardConflictTypes["老师"] = struct{}{}
+		}
+		if len(classroomConflictsByPlan[key]) > 0 && !plan.AllowClassroomConflict {
+			hardConflictTypes["教室"] = struct{}{}
+		}
+		if len(assistantConflictsByPlan[key]) > 0 {
+			hardConflictTypes["助教"] = struct{}{}
+		}
+		slot := normalizedScheduleSlot{
+			LessonDate: plan.LessonDate,
+			StartAt:    plan.StartAt,
+			EndAt:      plan.EndAt,
+		}
+		if slotHasConflict(slot, classConflicts) {
+			hardConflictTypes["班级"] = struct{}{}
+		}
+		if slotHasConflict(slot, studentConflicts) && !plan.AllowStudentConflict {
+			hardConflictTypes["学员"] = struct{}{}
+		}
+	}
+	if len(hardConflictTypes) > 0 {
+		conflictTypes := make([]string, 0, len(hardConflictTypes))
+		for key := range hardConflictTypes {
+			conflictTypes = append(conflictTypes, key)
+		}
+		sort.Strings(conflictTypes)
+		return model.CreateOneToOneSchedulesResult{}, errors.New(buildConflictSummaryMessage(conflictTypes))
+	}
+
+	batchNo := ""
+	if len(plans) > 1 {
+		batchNo = fmt.Sprintf("BATCH-%d", time.Now().UnixNano())
+	}
+
+	result := model.CreateOneToOneSchedulesResult{
+		BatchNo: batchNo,
+		Count:   len(plans),
+		List:    make([]model.TeachingScheduleVO, 0, len(plans)),
+	}
+	createdScheduleIDs := make([]int64, 0, len(plans))
+	stringStudentIDs := stringIDsFromInt64(studentIDs)
+	studentIDText := strings.Join(stringStudentIDs, ",")
+
+	for _, plan := range plans {
+		teacherName := firstNonEmptyString(teacherNames[plan.TeacherID], "-")
+		classroomName := classroomNames[plan.ClassroomID]
+		classroomID := plan.ClassroomID
+		assistantIDsJSON, _ := json.Marshal(stringIDsFromInt64(plan.AssistantIDs))
+		assistantNamesJSON, _ := json.Marshal(plan.AssistantNames)
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO teaching_schedule (
+				uuid, version, inst_id, class_type, teaching_class_id, teaching_class_name,
+				student_id, student_name, lesson_id, lesson_name,
+				teacher_id, teacher_name, assistant_ids_json, assistant_names_json,
+				classroom_id, classroom_name, lesson_date, lesson_start_at, lesson_end_at,
+				batch_no, batch_size, status, create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0
+			)
+		`,
+			instID,
+			model.TeachingClassTypeNormal,
+			base.ClassID,
+			base.ClassName,
+			0,
+			studentNameText,
+			base.LessonID,
+			base.LessonName,
+			plan.TeacherID,
+			teacherName,
+			nullJSONBytes(assistantIDsJSON),
+			nullJSONBytes(assistantNamesJSON),
+			classroomID,
+			classroomName,
+			plan.LessonDate.Format("2006-01-02"),
+			plan.StartAt,
+			plan.EndAt,
+			batchNo,
+			len(plans),
+			model.TeachingScheduleStatusActive,
+			operatorID,
+			operatorID,
+		)
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		id, err := res.LastInsertId()
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		createdScheduleIDs = append(createdScheduleIDs, id)
+		result.List = append(result.List, model.TeachingScheduleVO{
+			ID:                strconv.FormatInt(id, 10),
+			BatchNo:           batchNo,
+			BatchSize:         len(plans),
+			ClassType:         model.TeachingClassTypeNormal,
+			TeachingClassID:   strconv.FormatInt(base.ClassID, 10),
+			TeachingClassName: base.ClassName,
+			StudentID:         studentIDText,
+			StudentName:       studentNameText,
+			LessonID:          strconv.FormatInt(base.LessonID, 10),
+			LessonName:        base.LessonName,
+			TeacherID:         strconv.FormatInt(plan.TeacherID, 10),
+			TeacherName:       teacherName,
+			AssistantIDs:      stringIDsFromInt64(plan.AssistantIDs),
+			AssistantNames:    plan.AssistantNames,
+			ClassroomID:       emptyStringIfZero(classroomID),
+			ClassroomName:     classroomName,
+			LessonDate:        plan.LessonDate.Format("2006-01-02"),
+			StartAt:           plan.StartAt,
+			EndAt:             plan.EndAt,
+			Status:            model.TeachingScheduleStatusActive,
+			CallStatus:        1,
+			CallStatusText:    teachingScheduleCallStatusText(1),
+		})
+	}
+	if err := repo.saveTeachingScheduleBatchMetaTx(
+		ctx,
+		tx,
+		instID,
+		operatorID,
+		batchNo,
+		model.TeachingClassTypeNormal,
 		base.ClassID,
 		createdScheduleIDs,
 		dto.BatchMeta,
@@ -2332,6 +2717,107 @@ func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, inst
 	return nil
 }
 
+type groupClassStudentRoster struct {
+	IDs   []int64
+	Names []string
+}
+
+func (repo *Repository) fillGroupClassStudentRosterForSchedules(ctx context.Context, instID int64, items []model.TeachingScheduleVO) error {
+	classIDs := make([]int64, 0)
+	seen := make(map[int64]struct{})
+	for _, item := range items {
+		if item.ClassType != model.TeachingClassTypeNormal {
+			continue
+		}
+		classID, err := strconv.ParseInt(strings.TrimSpace(item.TeachingClassID), 10, 64)
+		if err != nil || classID <= 0 {
+			continue
+		}
+		if _, ok := seen[classID]; ok {
+			continue
+		}
+		seen[classID] = struct{}{}
+		classIDs = append(classIDs, classID)
+	}
+	if len(classIDs) == 0 {
+		return nil
+	}
+
+	rosterByClassID, err := repo.loadGroupClassStudentRosterMap(ctx, instID, classIDs)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		if items[i].ClassType != model.TeachingClassTypeNormal {
+			continue
+		}
+		classID, err := strconv.ParseInt(strings.TrimSpace(items[i].TeachingClassID), 10, 64)
+		if err != nil || classID <= 0 {
+			continue
+		}
+		roster, ok := rosterByClassID[classID]
+		if !ok {
+			continue
+		}
+		if len(roster.IDs) > 0 {
+			items[i].StudentID = strings.Join(stringIDsFromInt64(roster.IDs), ",")
+		}
+		if len(roster.Names) > 0 {
+			items[i].StudentName = strings.Join(roster.Names, "、")
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) loadGroupClassStudentRosterMap(ctx context.Context, instID int64, classIDs []int64) (map[int64]groupClassStudentRoster, error) {
+	if len(classIDs) == 0 {
+		return map[int64]groupClassStudentRoster{}, nil
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			IFNULL(tcs.teaching_class_id, 0),
+			IFNULL(tcs.student_id, 0),
+			IFNULL(s.stu_name, '')
+		FROM teaching_class_student tcs
+		LEFT JOIN inst_student s
+			ON s.id = tcs.student_id
+		   AND s.inst_id = tcs.inst_id
+		   AND s.del_flag = 0
+		WHERE tcs.inst_id = ?
+		  AND tcs.del_flag = 0
+		  AND tcs.teaching_class_id IN (`+sqlPlaceholders(len(classIDs))+`)
+		ORDER BY tcs.teaching_class_id ASC, tcs.id ASC
+	`, append([]any{instID}, int64SliceToAny(classIDs)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]groupClassStudentRoster, len(classIDs))
+	for rows.Next() {
+		var (
+			classID     int64
+			studentID   int64
+			studentName string
+		)
+		if err := rows.Scan(&classID, &studentID, &studentName); err != nil {
+			return nil, err
+		}
+		roster := result[classID]
+		if studentID > 0 {
+			roster.IDs = append(roster.IDs, studentID)
+		}
+		if strings.TrimSpace(studentName) != "" {
+			roster.Names = append(roster.Names, strings.TrimSpace(studentName))
+		}
+		result[classID] = roster
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func collectPlanTeacherIDs(plans []normalizedSchedulePlan) []int64 {
 	seen := make(map[int64]struct{}, len(plans))
 	result := make([]int64, 0, len(plans))
@@ -2535,6 +3021,140 @@ func (repo *Repository) listScheduleConflictDetailsByFieldValuesTx(ctx context.C
 		FROM teaching_schedule
 		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY lesson_date ASC, lesson_start_at ASC, id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]scheduleConflictDetailRow, 0, 32)
+	seenRows := make(map[int64]struct{})
+	for rows.Next() {
+		var item scheduleConflictDetailRow
+		var assistantIDsRaw []byte
+		var assistantNamesRaw []byte
+		if err := rows.Scan(
+			&item.ID,
+			&item.StudentID,
+			&item.TeacherID,
+			&item.ClassroomID,
+			&item.ClassType,
+			&item.TeachingClassName,
+			&item.StudentName,
+			&item.TeacherName,
+			&assistantIDsRaw,
+			&assistantNamesRaw,
+			&item.ClassroomName,
+			&item.LessonDate,
+			&item.StartAt,
+			&item.EndAt,
+		); err != nil {
+			return nil, err
+		}
+		if !scheduleRowOverlapsAnySlot(item.LessonDate, item.StartAt, item.EndAt, slots) {
+			continue
+		}
+		if _, ok := seenRows[item.ID]; ok {
+			continue
+		}
+		item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
+		item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
+		seenRows[item.ID] = struct{}{}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func (repo *Repository) listScheduleConflictDetailsByStudentsTx(ctx context.Context, tx *sql.Tx, instID int64, studentIDs []int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64) ([]scheduleConflictDetailRow, error) {
+	if len(studentIDs) == 0 || len(slots) == 0 {
+		return []scheduleConflictDetailRow{}, nil
+	}
+
+	startDate, endDate := scheduleSlotsDateRange(slots)
+	if startDate == "" || endDate == "" {
+		return []scheduleConflictDetailRow{}, nil
+	}
+
+	uniqueStudentIDs := make([]int64, 0, len(studentIDs))
+	seenStudentIDs := make(map[int64]struct{}, len(studentIDs))
+	for _, studentID := range studentIDs {
+		if studentID <= 0 {
+			continue
+		}
+		if _, ok := seenStudentIDs[studentID]; ok {
+			continue
+		}
+		seenStudentIDs[studentID] = struct{}{}
+		uniqueStudentIDs = append(uniqueStudentIDs, studentID)
+	}
+	if len(uniqueStudentIDs) == 0 {
+		return []scheduleConflictDetailRow{}, nil
+	}
+
+	filters := []string{
+		"ts.inst_id = ?",
+		"ts.del_flag = 0",
+		"ts.status = ?",
+		"ts.lesson_date >= ?",
+		"ts.lesson_date <= ?",
+		`(
+			ts.student_id IN (` + sqlPlaceholders(len(uniqueStudentIDs)) + `)
+			OR (
+				ts.class_type = ?
+				AND EXISTS (
+					SELECT 1
+					FROM teaching_class_student tcs
+					WHERE tcs.inst_id = ts.inst_id
+					  AND tcs.teaching_class_id = ts.teaching_class_id
+					  AND tcs.del_flag = 0
+					  AND tcs.student_id IN (` + sqlPlaceholders(len(uniqueStudentIDs)) + `)
+				)
+			)
+		)`,
+	}
+	args := []any{
+		instID,
+		model.TeachingScheduleStatusActive,
+		startDate,
+		endDate,
+	}
+	for _, studentID := range uniqueStudentIDs {
+		args = append(args, studentID)
+	}
+	args = append(args, model.TeachingClassTypeNormal)
+	for _, studentID := range uniqueStudentIDs {
+		args = append(args, studentID)
+	}
+	if excludeBatchNo != "" {
+		filters = append(filters, "ts.batch_no <> ?")
+		args = append(args, excludeBatchNo)
+	}
+	if len(excludeIDs) > 0 {
+		filters = append(filters, "ts.id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
+		for _, id := range excludeIDs {
+			args = append(args, id)
+		}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			ts.id,
+			IFNULL(ts.student_id, 0),
+			IFNULL(ts.teacher_id, 0),
+			IFNULL(ts.classroom_id, 0),
+			IFNULL(ts.class_type, 0),
+			IFNULL(ts.teaching_class_name, ''),
+			IFNULL(ts.student_name, ''),
+			IFNULL(ts.teacher_name, ''),
+			ts.assistant_ids_json,
+			ts.assistant_names_json,
+			IFNULL(ts.classroom_name, ''),
+			ts.lesson_date,
+			ts.lesson_start_at,
+			ts.lesson_end_at
+		FROM teaching_schedule ts
+		WHERE `+strings.Join(filters, " AND ")+`
+		ORDER BY ts.lesson_date ASC, ts.lesson_start_at ASC, ts.id ASC
 	`, args...)
 	if err != nil {
 		return nil, err

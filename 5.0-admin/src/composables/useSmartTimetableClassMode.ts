@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 import { ref } from 'vue'
 import type { ComputedRef } from 'vue'
+import { getGroupClassDetailApi, listGroupClassStudentsByClassIdsApi, pageGroupClassesApi } from '@/api/edu-center/group-class'
 
 interface ClassInfo {
   id: string
@@ -11,6 +12,10 @@ interface ClassInfo {
   courseName: string
   mainTeacherId: string
   mainTeacherName: string
+  classroomId: string
+  classroomName: string
+  teacherIds: string[]
+  detailLoaded?: boolean
 }
 
 interface UseSmartTimetableClassModeOptions {
@@ -21,42 +26,97 @@ interface UseSmartTimetableClassModeOptions {
   resetEmptyLessonConflicts: (scope?: string) => void
 }
 
+function isTimeOverlap(time1: { start: string, end: string }, time2: { start: string, end: string }) {
+  const timeToMinutes = (timeStr: string) => {
+    const [hours, minutes] = timeStr.split(':').map(Number)
+    return hours * 60 + minutes
+  }
+
+  const start1 = timeToMinutes(time1.start)
+  const end1 = timeToMinutes(time1.end)
+  const start2 = timeToMinutes(time2.start)
+  const end2 = timeToMinutes(time2.end)
+
+  return start1 < end2 && start2 < end1
+}
+
+function normalizeClassInfo(value: Partial<ClassInfo> & { id: string, name: string }): ClassInfo {
+  return {
+    id: String(value.id || '').trim(),
+    name: String(value.name || '').trim(),
+    studentIds: Array.isArray(value.studentIds) ? value.studentIds.map(item => String(item || '').trim()).filter(Boolean) : [],
+    studentNames: Array.isArray(value.studentNames) ? value.studentNames.map(item => String(item || '').trim()).filter(Boolean) : [],
+    courseId: String(value.courseId || '').trim(),
+    courseName: String(value.courseName || '').trim(),
+    mainTeacherId: String(value.mainTeacherId || '').trim(),
+    mainTeacherName: String(value.mainTeacherName || '').trim(),
+    classroomId: String(value.classroomId || '').trim(),
+    classroomName: String(value.classroomName || '').trim(),
+    teacherIds: Array.isArray(value.teacherIds) ? value.teacherIds.map(item => String(item || '').trim()).filter(Boolean) : [],
+    detailLoaded: value.detailLoaded === true,
+  }
+}
+
 export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOptions) {
-  const classData = ref<ClassInfo[]>([
-    {
-      id: 'C-01',
-      name: '苹果基础班',
-      studentIds: ['589250903194799104', '5892509031876223323', '10001'],
-      studentNames: ['陈陈', '晨晨', '张三'],
-      courseId: '589251114063479808',
-      courseName: '初级认知课',
-      mainTeacherId: 't001',
-      mainTeacherName: '张老师',
-    },
-    {
-      id: 'C-02',
-      name: '橙子基础班',
-      studentIds: ['20004', '20009', '5892509031876223323'],
-      studentNames: ['张四', '王九', '晨晨'],
-      courseId: '589251121574791084',
-      courseName: '初级认知课',
-      mainTeacherId: 't003',
-      mainTeacherName: '李老师',
-    },
-  ])
+  const classData = ref<ClassInfo[]>([])
+  const classListLoading = ref(false)
+  const classDetailLoading = ref(false)
+  const pendingClassLoads = new Map<string, Promise<ClassInfo | null>>()
 
-  function isTimeOverlap(time1: { start: string, end: string }, time2: { start: string, end: string }) {
-    const timeToMinutes = (timeStr: string) => {
-      const [hours, minutes] = timeStr.split(':').map(Number)
-      return hours * 60 + minutes
+  function upsertClassInfo(next: ClassInfo) {
+    const currentMap = new Map(classData.value.map(item => [item.id, item]))
+    const existing = currentMap.get(next.id)
+    currentMap.set(next.id, normalizeClassInfo({
+      ...existing,
+      ...next,
+      studentIds: next.studentIds.length ? next.studentIds : existing?.studentIds,
+      studentNames: next.studentNames.length ? next.studentNames : existing?.studentNames,
+      teacherIds: next.teacherIds.length ? next.teacherIds : existing?.teacherIds,
+      detailLoaded: next.detailLoaded || existing?.detailLoaded,
+    }))
+    classData.value = [...currentMap.values()]
+    return currentMap.get(next.id) || null
+  }
+
+  function mapClassListItem(item: any): ClassInfo {
+    return normalizeClassInfo({
+      id: String(item?.id ?? ''),
+      name: String(item?.name || item?.id || '').trim(),
+      courseId: String(item?.lessonId ?? ''),
+      courseName: String(item?.lessonName || '').trim(),
+      mainTeacherId: String(item?.defaultTeacherId ?? ''),
+      mainTeacherName: String(item?.defaultTeacherName || '').trim(),
+      classroomName: String(item?.classRoomName || '').trim(),
+      teacherIds: Array.isArray(item?.teachers) ? item.teachers.map((teacher: any) => teacher?.id) : [],
+    })
+  }
+
+  async function loadClassOptions(searchKey = '') {
+    classListLoading.value = true
+    try {
+      const res = await pageGroupClassesApi({
+        pageRequestModel: {
+          needTotal: true,
+          pageSize: 50,
+          pageIndex: 1,
+          skipCount: 0,
+        },
+        queryModel: {
+          className: String(searchKey || '').trim() || undefined,
+          statues: [1],
+        },
+      })
+      if (res.code !== 200)
+        return
+      const list = Array.isArray(res.result?.list) ? res.result.list : []
+      list.map(mapClassListItem).forEach(item => upsertClassInfo(item))
     }
-
-    const start1 = timeToMinutes(time1.start)
-    const end1 = timeToMinutes(time1.end)
-    const start2 = timeToMinutes(time2.start)
-    const end2 = timeToMinutes(time2.end)
-
-    return start1 < end2 && start2 < end1
+    catch (error) {
+      console.error('load class options failed', error)
+    }
+    finally {
+      classListLoading.value = false
+    }
   }
 
   function findClassInfo(value: unknown) {
@@ -64,6 +124,63 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
     if (!normalized)
       return null
     return classData.value.find(item => item.id === normalized) || null
+  }
+
+  async function ensureClassLoaded(value: unknown) {
+    const classID = String(value || '').trim()
+    if (!classID)
+      return null
+
+    const existing = findClassInfo(classID)
+    if (existing?.detailLoaded)
+      return existing
+
+    const pending = pendingClassLoads.get(classID)
+    if (pending)
+      return pending
+
+    const request = (async () => {
+      classDetailLoading.value = true
+      try {
+        const [detailRes, studentsRes] = await Promise.all([
+          getGroupClassDetailApi({ id: classID }),
+          listGroupClassStudentsByClassIdsApi({ classIds: [classID] }),
+        ])
+        if (detailRes.code !== 200)
+          throw new Error(detailRes.message || '获取班级详情失败')
+        if (studentsRes.code !== 200)
+          throw new Error(studentsRes.message || '获取班级学员失败')
+
+        const detail: any = detailRes.result || {}
+        const studentBucket = (Array.isArray(studentsRes.result) ? studentsRes.result : [])
+          .find(bucket => String(bucket?.classId || '') === classID)
+        const students = Array.isArray(studentBucket?.students) ? studentBucket.students : []
+
+        const next = normalizeClassInfo({
+          ...mapClassListItem(detail),
+          id: classID,
+          name: String(detail?.name || existing?.name || classID).trim(),
+          classroomId: String(detail?.classroomId ?? ''),
+          classroomName: String(detail?.classroomName || detail?.classRoomName || existing?.classroomName || '').trim(),
+          studentIds: students.map(student => String(student?.id || '').trim()).filter(Boolean),
+          studentNames: students.map(student => String(student?.name || '').trim()).filter(Boolean),
+          detailLoaded: true,
+        })
+
+        return upsertClassInfo(next)
+      }
+      catch (error) {
+        console.error('load class detail failed', error)
+        return existing || null
+      }
+      finally {
+        classDetailLoading.value = false
+        pendingClassLoads.delete(classID)
+      }
+    })()
+
+    pendingClassLoads.set(classID, request)
+    return request
   }
 
   function resolveSelectedClassTarget(value: unknown) {
@@ -77,8 +194,6 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
   }
 
   function checkClassCrossTimeConflicts(classInfo: ClassInfo) {
-    console.log('运行班课冲突检测', classInfo)
-
     options.resetEmptyLessonConflicts()
 
     const classExistingLessons: Array<{
@@ -105,8 +220,6 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
       })
     })
 
-    console.log('班级已排课时间段', classExistingLessons)
-
     options.dataSource.value.forEach((teacher) => {
       teacher.lessons.forEach((lesson: any, lessonIndex: number) => {
         if (lesson.studentId)
@@ -132,7 +245,6 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
         )
 
         if (classTimeConflict) {
-          console.log('班级跨组交叉时段冲突', classInfo.name, currentTime.date, currentTime.startTime)
           hasConflict = true
 
           const month = dayjs(classTimeConflict.date).format('M')
@@ -162,7 +274,6 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
           )
 
           if (teacherOtherLesson) {
-            console.log('教师已有其他班级课程', teacher.name, currentTime.startTime)
             hasConflict = true
 
             const month = dayjs(teacher.date).format('M')
@@ -179,7 +290,7 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
           }
         }
 
-        if (!hasConflict && classInfo.studentIds?.length > 0) {
+        if (!hasConflict && classInfo.studentIds.length > 0) {
           for (const teacherRow of options.allDataSource.value) {
             if (teacherRow.date !== currentTime.date)
               continue
@@ -198,8 +309,7 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
                 continue
 
               for (const sid of classInfo.studentIds) {
-                if (sameTimeLesson.studentId?.includes(sid)) {
-                  console.log('学生时间冲突', currentTime.date, currentTime.startTime, sameTimeLesson.startTime)
+                if (sameTimeLesson.studentId?.includes?.(sid)) {
                   hasConflict = true
 
                   const studentIndex = classInfo.studentIds.indexOf(sid)
@@ -240,46 +350,20 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
     })
   }
 
-  function checkClassExistingTeacherRole(classId: string, teacherId: string, startTime: string, endTime: string) {
-    console.log('检查班级主教/辅教角色', classId, teacherId, startTime)
-
-    const classInfo = findClassInfo(classId)
-    if (!classInfo) {
-      console.log('未找到班级信息，默认设置为主教')
-      return { hasExistingArrangement: false, isMainTeacher: true }
-    }
-
-    const isMainTeacher = classInfo.mainTeacherId === teacherId
-
-    console.log('根据班级配置判断角色:', isMainTeacher ? '主教' : '辅教')
-    console.log('班级配置的主教ID:', classInfo.mainTeacherId, '当前老师ID:', teacherId)
-
-    let hasExistingArrangement = false
-
-    options.allDataSource.value.forEach((teacher) => {
-      teacher.lessons.forEach((lesson: any) => {
-        if (lesson.startTime === startTime && lesson.endTime === endTime && lesson.classId === classId)
-          hasExistingArrangement = true
-      })
-    })
-
-    console.log('是否已有该班级课程安排:', hasExistingArrangement)
-    console.log('最终角色设置:', isMainTeacher ? '主教' : '辅教')
-    return { hasExistingArrangement, isMainTeacher }
-  }
-
-  function handleClass(value: unknown) {
+  async function handleClass(value: unknown) {
     if (!value) {
       options.resetEmptyLessonConflicts()
-      return
+      return null
     }
 
-    const classInfo = findClassInfo(value)
-    if (!classInfo)
-      return
+    const classInfo = await ensureClassLoaded(value)
+    if (!classInfo) {
+      options.resetEmptyLessonConflicts()
+      return null
+    }
 
-    console.log('选择班级', classInfo.name)
     checkClassCrossTimeConflicts(classInfo)
+    return classInfo
   }
 
   function resolveClassConflictMessage(reason: any) {
@@ -298,55 +382,31 @@ export function useSmartTimetableClassMode(options: UseSmartTimetableClassModeOp
     return ''
   }
 
-  function applyClassSchedule(params: {
-    classInfo: ClassInfo
-    column: any
-    record: any
-  }) {
-    const { classInfo, column, record } = params
-    const targetTeacher = options.dataSource.value.find(
-      teacher => teacher.teacherId === record.teacherId && teacher.date === record.date,
-    )
-
-    if (!targetTeacher)
-      return false
-
-    const columnIndex = column?.dataIndex?.[1]
-    const targetLesson = targetTeacher.lessons?.[columnIndex]
-    if (!targetLesson)
-      return false
-
-    const { isMainTeacher } = checkClassExistingTeacherRole(
-      classInfo.id,
-      String(record.teacherId || ''),
-      targetLesson.startTime,
-      targetLesson.endTime,
-    )
-
-    Object.assign(targetLesson, {
-      classId: classInfo.id,
-      className: classInfo.name,
-      courseName: classInfo.courseName,
-      courseType: 2,
-      isMain: isMainTeacher,
-      studentNames: classInfo.studentNames.map(name => ({ name })),
-      studentId: classInfo.studentIds,
-      conflict: false,
-      conflictReason: null,
-      serverConflict: false,
-      serverConflictReason: null,
-    })
-
-    console.log('更新课程信息完成', targetLesson)
-    checkClassCrossTimeConflicts(classInfo)
-    return true
+  function buildClassScheduleAssignment(classInfo: ClassInfo, teacherId: unknown, assistantIds: unknown = []) {
+    const targetTeacherId = String(teacherId || '').trim()
+    const effectiveTeacherId = targetTeacherId || String(classInfo?.mainTeacherId || '').trim()
+    const rawAssistantIds = (Array.isArray(assistantIds) ? assistantIds : [])
+      .map(item => String(item || '').trim())
+      .filter(Boolean)
+    const removedAssistantIds = Array.from(new Set(rawAssistantIds.filter(item => item === effectiveTeacherId)))
+    const normalizedAssistantIds = Array.from(new Set(rawAssistantIds.filter(item => item !== effectiveTeacherId)))
+    return {
+      teacherId: effectiveTeacherId,
+      assistantIds: normalizedAssistantIds,
+      removedAssistantIds,
+      isMainTeacher: true,
+    }
   }
 
   return {
-    applyClassSchedule,
+    buildClassScheduleAssignment,
     classData,
+    classDetailLoading,
+    classListLoading,
+    ensureClassLoaded,
     findClassInfo,
     handleClass,
+    loadClassOptions,
     resolveClassConflictMessage,
     resolveSelectedClassTarget,
   }

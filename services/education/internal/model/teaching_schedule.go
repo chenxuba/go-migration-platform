@@ -40,6 +40,17 @@ type CreateOneToOneSchedulesDTO struct {
 	Schedules              []TeachingScheduleCreateSlotDTO `json:"schedules"`
 }
 
+type CreateGroupClassSchedulesDTO struct {
+	GroupClassID           string                          `json:"groupClassId"`
+	TeacherID              string                          `json:"teacherId"`
+	AssistantIDs           []string                        `json:"assistantIds"`
+	ClassroomID            string                          `json:"classroomId"`
+	AllowStudentConflict   bool                            `json:"allowStudentConflict,omitempty"`
+	AllowClassroomConflict bool                            `json:"allowClassroomConflict,omitempty"`
+	BatchMeta              *TeachingScheduleBatchMeta      `json:"batchMeta,omitempty"`
+	Schedules              []TeachingScheduleCreateSlotDTO `json:"schedules"`
+}
+
 type OneToOneScheduleAvailabilitySlotDTO struct {
 	TeacherID  string `json:"teacherId"`
 	LessonDate string `json:"lessonDate"`
@@ -313,6 +324,18 @@ type OneToOneScheduleCreateContext struct {
 	LessonName         string
 	Status             int
 	ClassStudentStatus int
+}
+
+type GroupClassScheduleCreateContext struct {
+	ClassID            int64
+	ClassName          string
+	LessonID           int64
+	LessonName         string
+	Status             int
+	DefaultTeacherID   int64
+	DefaultTeacherName string
+	ClassroomID        int64
+	ClassroomName      string
 }
 
 // InstUserScheduleRosterItem 课表矩阵机构在职人员（未禁用的机构用户）

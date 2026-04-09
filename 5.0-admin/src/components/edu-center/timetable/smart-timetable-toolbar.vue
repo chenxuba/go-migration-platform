@@ -37,9 +37,17 @@ const props = defineProps({
     type: [String, Number],
     default: null,
   },
+  classPickerOpen: {
+    type: Boolean,
+    default: false,
+  },
   classData: {
     type: Array,
     default: () => [],
+  },
+  classListLoading: {
+    type: Boolean,
+    default: false,
   },
   currentTime: {
     type: String,
@@ -81,6 +89,18 @@ const props = defineProps({
     type: Function,
     required: true,
   },
+  onClassDropdownVisibleChange: {
+    type: Function,
+    required: true,
+  },
+  onClassSearch: {
+    type: Function,
+    required: true,
+  },
+  renderClassDropdown: {
+    type: Function,
+    required: true,
+  },
   onPrev: {
     type: Function,
     required: true,
@@ -108,6 +128,7 @@ const emit = defineEmits([
   'update:oneToOneRecordId',
   'update:oneToOnePickerOpen',
   'update:classId',
+  'update:classPickerOpen',
   'update:currentTime',
   'update:currentWeek',
   'update:currentGroup',
@@ -131,6 +152,11 @@ const oneToOneOpenValue = computed({
 const classIdValue = computed({
   get: () => props.classId,
   set: value => emit('update:classId', value),
+})
+
+const classPickerOpenValue = computed({
+  get: () => props.classPickerOpen,
+  set: value => emit('update:classPickerOpen', value),
 })
 
 const currentTimeValue = computed({
@@ -216,10 +242,20 @@ const isCurrentRange = computed(() => {
           <span class="w-75px">选择班级：</span>
           <a-select
             v-model:value="classIdValue"
+            v-model:open="classPickerOpenValue"
             allow-clear
+            show-search
+            :filter-option="false"
+            :loading="classListLoading"
+            :dropdown-match-select-width="false"
+            :dropdown-style="{ width: '520px' }"
+            :dropdown-render="renderClassDropdown"
             placeholder="请搜索/选择班级"
             class="st-top-class-select"
             option-label-prop="label"
+            popup-class-name="st-top-1v1-select-dropdown"
+            @dropdown-visible-change="onClassDropdownVisibleChange"
+            @search="onClassSearch"
             @change="onClassChange"
           >
             <a-select-option

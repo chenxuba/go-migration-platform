@@ -23,6 +23,17 @@ func (svc *Service) CreateOneToOneSchedules(userID int64, dto model.CreateOneToO
 	return svc.repo.CreateOneToOneSchedules(context.Background(), instID, operatorID, dto)
 }
 
+func (svc *Service) CreateGroupClassSchedules(userID int64, dto model.CreateGroupClassSchedulesDTO) (model.CreateOneToOneSchedulesResult, error) {
+	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	if strings.TrimSpace(dto.GroupClassID) == "" {
+		return model.CreateOneToOneSchedulesResult{}, errors.New("请选择班级")
+	}
+	return svc.repo.CreateGroupClassSchedules(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) ValidateOneToOneSchedules(userID int64, dto model.CreateOneToOneSchedulesDTO) (model.TeachingScheduleValidationResult, error) {
 	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
 	if err != nil {
@@ -647,7 +658,6 @@ func sameNonEmptyString(left, right string) bool {
 func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) model.TeachingScheduleInfoLegacyVO {
 	id, _ := strconv.ParseInt(v.ID, 10, 64)
 	tid, _ := strconv.ParseInt(strings.TrimSpace(v.TeacherID), 10, 64)
-	sid, _ := strconv.ParseInt(strings.TrimSpace(v.StudentID), 10, 64)
 	cid, _ := strconv.ParseInt(strings.TrimSpace(v.LessonID), 10, 64)
 	classIDVal, _ := strconv.ParseInt(strings.TrimSpace(v.TeachingClassID), 10, 64)
 
@@ -674,8 +684,62 @@ func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) mod
 		}
 		teacherList = append(teacherList, model.ScheduleLegacyPersonVO{Name: nm, ID: aidInt, Type: 0, Disabled: false})
 	}
-	studentList := []model.ScheduleLegacyPersonVO{
-		{Name: v.StudentName, ID: sid, Type: 1},
+	studentIDParts := make([]string, 0)
+	for _, part := range strings.Split(strings.TrimSpace(v.StudentID), ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			studentIDParts = append(studentIDParts, part)
+		}
+	}
+	studentNameParts := make([]string, 0)
+	for _, part := range strings.Split(strings.TrimSpace(v.StudentName), "、") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			studentNameParts = append(studentNameParts, part)
+		}
+	}
+	studentCount := len(studentIDParts)
+	if len(studentNameParts) > studentCount {
+		studentCount = len(studentNameParts)
+	}
+	studentList := make([]model.ScheduleLegacyPersonVO, 0, studentCount)
+	fallbackStudentName := strings.TrimSpace(v.TeachingClassName)
+	if fallbackStudentName == "" {
+		fallbackStudentName = "-"
+	}
+	for i := 0; i < studentCount; i++ {
+		var studentID int64
+		if i < len(studentIDParts) {
+			studentID, _ = strconv.ParseInt(strings.TrimSpace(studentIDParts[i]), 10, 64)
+		}
+		studentName := ""
+		if i < len(studentNameParts) {
+			studentName = strings.TrimSpace(studentNameParts[i])
+		}
+		if studentID <= 0 && studentName == "" {
+			continue
+		}
+		studentList = append(studentList, model.ScheduleLegacyPersonVO{
+			Name: func() string {
+				if studentName != "" {
+					return studentName
+				}
+				return fallbackStudentName
+			}(),
+			ID:   studentID,
+			Type: 1,
+		})
+	}
+	if len(studentList) == 0 {
+		name := strings.TrimSpace(v.StudentName)
+		if name == "" {
+			name = fallbackStudentName
+		}
+		studentList = []model.ScheduleLegacyPersonVO{{
+			Name: name,
+			ID:   0,
+			Type: 1,
+		}}
 	}
 
 	batchID, _ := strconv.ParseInt(strings.TrimSpace(v.BatchNo), 10, 64)

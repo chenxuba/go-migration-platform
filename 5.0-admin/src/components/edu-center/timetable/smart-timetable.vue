@@ -15,7 +15,7 @@ import { getInstConfigApi } from '@/api/common/config'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, downloadSmartTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createGroupClassSchedulesApi, createOneToOneSchedulesApi, downloadSmartTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useSmartTimetableAvailability } from '@/composables/useSmartTimetableAvailability'
 import { useSmartTimetableClassMode } from '@/composables/useSmartTimetableClassMode'
@@ -1136,11 +1136,14 @@ let handleClassBridge = (_value) => {}
 
 const {
   assistantNameById,
+  assistantOptions,
+  assistantOptionsLoading,
   fetchAssistantOptions,
   fetchOneToOneOptionsForTimetable,
   filterOneToOneOption,
   handle1v1,
   handleOneToOneDropdownVisibleChange,
+  isAssistantAllowedInDisplayedGroup,
   normalizedSelectedAssistantIds,
   oneToOneData,
   oneToOneListLoading,
@@ -1268,12 +1271,14 @@ function refreshTimetableRelatedData() {
   void loadTimetableMatrix()
   void fetchOneToOneOptionsForTimetable()
   void fetchAssistantOptions()
+  void loadClassOptions()
 }
 
 onMounted(() => {
   void loadTimetableMatrix()
   void fetchOneToOneOptionsForTimetable()
   void fetchAssistantOptions()
+  void loadClassOptions()
   emitter.on(EVENTS.REFRESH_DATA, refreshTimetableRelatedData)
 })
 
@@ -1441,10 +1446,13 @@ const courseList = ref([
 const allDataSource = computed(() => dataSource.value)
 
 const {
-  applyClassSchedule,
+  buildClassScheduleAssignment,
   classData,
+  classListLoading,
+  ensureClassLoaded,
   findClassInfo,
   handleClass,
+  loadClassOptions,
   resolveClassConflictMessage,
   resolveSelectedClassTarget,
 } = useSmartTimetableClassMode({
@@ -1455,7 +1463,427 @@ const {
   resetEmptyLessonConflicts,
 })
 
-handleClassBridge = value => handleClass(value)
+handleClassBridge = value => {
+  void handleClass(value)
+}
+
+const classPickerOpen = ref(false)
+const selectedClassAssistantIds = ref([])
+const classAssistantKeyword = ref('')
+const autoClassTeacherFilterId = ref('')
+let preserveClassPickerOpen = false
+let lastHandledClassId = ''
+
+function normalizeClassAssistantIds(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map(value => String(value || '').trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
+const normalizedSelectedClassAssistantIds = computed(() =>
+  normalizeClassAssistantIds(selectedClassAssistantIds.value),
+)
+
+const classAssistantOptionsInPicker = computed(() => {
+  const keyword = String(classAssistantKeyword.value || '').trim().toLowerCase()
+  return assistantOptions.value.filter((item) => {
+    if (!isAssistantAllowedInDisplayedGroup(item.value))
+      return false
+    if (!keyword)
+      return true
+    const blob = `${item.label || ''} ${item.mobile || ''} ${item.value || ''}`.toLowerCase()
+    return blob.includes(keyword)
+  })
+})
+
+watch(
+  [displayedGroupKey, assistantOptions],
+  () => {
+    if (!normalizedSelectedClassAssistantIds.value.length)
+      return
+    const next = normalizedSelectedClassAssistantIds.value.filter(id => isAssistantAllowedInDisplayedGroup(id))
+    if (next.length === normalizedSelectedClassAssistantIds.value.length)
+      return
+    const removedCount = normalizedSelectedClassAssistantIds.value.length - next.length
+    handleClassAssistantSelectChange(next)
+    if (removedCount > 0) {
+      messageService.warning(`已切换到${activeGroupLabel.value || '当前组'}，自动移除 ${removedCount} 位非本组助教`, { duration: 4500 })
+    }
+  },
+  { immediate: true },
+)
+
+function classAssistantTextForTeacher(teacherId) {
+  const normalizedTeacherId = String(teacherId || '').trim()
+  return classAssistantTextForIds(
+    normalizedSelectedClassAssistantIds.value.filter(id => id !== normalizedTeacherId),
+  )
+}
+
+function classAssistantTextForIds(assistantIds) {
+  const names = (Array.isArray(assistantIds) ? assistantIds : [])
+    .map(id => assistantNameById(id))
+    .filter(Boolean)
+  return names.length ? names.join('、') : '未安排'
+}
+
+const selectedClassAssistantText = computed(() => classAssistantTextForTeacher(''))
+
+function requestKeepClassPickerOpen() {
+  preserveClassPickerOpen = true
+  classPickerOpen.value = true
+  requestAnimationFrame(() => {
+    preserveClassPickerOpen = false
+  })
+}
+
+function handleClassDropdownVisibleChange(open) {
+  if (!open && preserveClassPickerOpen) {
+    classPickerOpen.value = true
+    return
+  }
+  classPickerOpen.value = open
+}
+
+function handleClassAssistantSelectChange(value) {
+  selectedClassAssistantIds.value = normalizeClassAssistantIds(value)
+  if (currentModel.value === '2' && classId.value)
+    handleClassBridge(classId.value)
+  else
+    resetEmptyLessonConflicts('assistant')
+}
+
+function toggleClassAssistantOption(value, checked) {
+  const normalized = String(value || '').trim()
+  if (!normalized)
+    return
+  const next = new Set(normalizedSelectedClassAssistantIds.value)
+  if (checked)
+    next.add(normalized)
+  else
+    next.delete(normalized)
+  handleClassAssistantSelectChange([...next])
+  requestKeepClassPickerOpen()
+}
+
+function renderClassDropdown({ menuNode }) {
+  const selectedClass = findClassInfo(classId.value)
+  const sideChildren = [
+    h('div', {
+      class: 'st-top-1v1-dropdown__section-head',
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '12px',
+        marginBottom: '12px',
+      },
+    }, [
+      h('span', {
+        class: 'st-top-1v1-dropdown__section-title',
+        style: {
+          color: '#262626',
+          fontSize: '14px',
+          fontWeight: 700,
+          lineHeight: 1,
+        },
+      }, '选择助教'),
+      h('span', {
+        class: 'st-top-1v1-dropdown__section-hint',
+        style: {
+          color: '#8c8c8c',
+          fontSize: '12px',
+          lineHeight: 1,
+        },
+      }, classId.value ? '多选，可不选' : '先选班级后配置'),
+    ]),
+  ]
+
+  if (classId.value) {
+    if (selectedClass?.mainTeacherName) {
+      sideChildren.push(
+        h('div', {
+          class: 'st-top-1v1-dropdown__summary',
+          style: {
+            marginBottom: '8px',
+            color: '#5b6475',
+            fontSize: '12px',
+            lineHeight: '1.5',
+          },
+        }, `默认主教筛选：${selectedClass.mainTeacherName}`),
+      )
+    }
+
+    sideChildren.push(
+      h('input', {
+        class: 'st-top-1v1-dropdown__search-input',
+        value: classAssistantKeyword.value,
+        placeholder: '搜索助教',
+        style: {
+          width: '100%',
+          height: '30px',
+          padding: '0 10px',
+          color: '#262626',
+          fontSize: '12px',
+          background: '#fff',
+          border: '1px solid #d9d9d9',
+          borderRadius: '8px',
+          outline: 'none',
+          boxSizing: 'border-box',
+          marginBottom: '4px',
+        },
+        onInput: (event) => {
+          classAssistantKeyword.value = event?.target?.value || ''
+        },
+        onFocus: () => {
+          requestKeepClassPickerOpen()
+        },
+        onClick: () => {
+          requestKeepClassPickerOpen()
+        },
+      }),
+    )
+
+    if (normalizedSelectedClassAssistantIds.value.length) {
+      sideChildren.push(
+        h('div', {
+          class: 'st-top-1v1-dropdown__summary',
+          style: {
+            marginBottom: '2px',
+            color: '#5b6475',
+            fontSize: '12px',
+            lineHeight: '1.5',
+          },
+        }, `已选助教：${selectedClassAssistantText.value}`),
+      )
+    }
+
+    if (assistantOptionsLoading.value) {
+      sideChildren.push(h('div', {
+        class: 'st-top-1v1-dropdown__empty',
+        style: {
+          padding: '14px 0 4px',
+          color: '#8c8c8c',
+          fontSize: '12px',
+          lineHeight: '18px',
+        },
+      }, '助教加载中...'))
+    }
+    else if (classAssistantOptionsInPicker.value.length) {
+      sideChildren.push(
+        h('div', {
+          class: 'st-top-1v1-dropdown__assistant-list',
+          style: {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0px',
+            flex: 1,
+            overflowY: 'auto',
+            paddingRight: '4px',
+          },
+        }, classAssistantOptionsInPicker.value.map((item) => {
+          const checked = normalizedSelectedClassAssistantIds.value.includes(String(item.value))
+          return h('div', {
+            class: 'st-top-1v1-dropdown__assistant-item',
+            key: item.value,
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              minHeight: '30px',
+              padding: '2px 0px',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              boxSizing: 'border-box',
+              userSelect: 'none',
+            },
+            onMousedown: (event) => {
+              event.preventDefault()
+              event.stopPropagation()
+            },
+            onClick: () => {
+              toggleClassAssistantOption(item.value, !checked)
+            },
+          }, [
+            h('span', {
+              class: 'st-top-1v1-dropdown__assistant-checkbox',
+              style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '16px',
+                height: '16px',
+                borderRadius: '4px',
+                border: checked ? '1px solid #1677ff' : '1px solid #8c8c8c',
+                background: checked ? '#1677ff' : '#fff',
+                color: '#fff',
+                flex: '0 0 auto',
+                fontSize: '11px',
+                fontWeight: 700,
+                lineHeight: 1,
+              },
+            }, checked ? '✓' : ''),
+            h('span', {
+              class: 'st-top-1v1-dropdown__assistant-name',
+              style: {
+                flex: 1,
+                minWidth: 0,
+                color: '#262626',
+                fontSize: '12px',
+                fontWeight: 600,
+                lineHeight: '20px',
+              },
+            }, item.label),
+            item.mobile
+              ? h('span', {
+                  class: 'st-top-1v1-dropdown__assistant-mobile',
+                  style: {
+                    color: '#8c8c8c',
+                    fontSize: '11px',
+                    lineHeight: '20px',
+                    flex: '0 0 auto',
+                  },
+                }, item.mobile)
+              : null,
+          ])
+        })),
+      )
+    }
+    else {
+      sideChildren.push(h('div', {
+        class: 'st-top-1v1-dropdown__empty',
+        style: {
+          padding: '14px 0 4px',
+          color: '#8c8c8c',
+          fontSize: '12px',
+          lineHeight: '18px',
+        },
+      }, '暂无匹配助教'))
+    }
+  }
+  else {
+    sideChildren.push(h('div', {
+      class: 'st-top-1v1-dropdown__empty',
+      style: {
+        padding: '14px 0 4px',
+        color: '#8c8c8c',
+        fontSize: '12px',
+        lineHeight: '18px',
+      },
+    }, '先选班级，再在右侧勾选助教。'))
+  }
+
+  return h('div', {
+    class: 'st-top-1v1-dropdown',
+    style: {
+      display: 'flex',
+      width: '520px',
+      minWidth: '520px',
+      maxWidth: '520px',
+      minHeight: '280px',
+      maxHeight: '280px',
+      background: '#fff',
+      borderRadius: '12px',
+      overflow: 'hidden',
+    },
+  }, [
+    h('div', {
+      class: 'st-top-1v1-dropdown__list',
+      style: {
+        flex: '0 0 278px',
+        minWidth: '278px',
+        maxWidth: '278px',
+        overflowY: 'auto',
+        borderRight: '1px solid #f0f0f0',
+      },
+    }, [menuNode]),
+    h('div', {
+      class: 'st-top-1v1-dropdown__side',
+      style: {
+        display: 'flex',
+        flex: 1,
+        flexDirection: 'column',
+        minWidth: 0,
+        padding: '14px 16px 16px',
+        background: 'linear-gradient(180deg, #fcfdff 0%, #fff 100%)',
+      },
+      onMousedown: (event) => event.stopPropagation(),
+    }, sideChildren),
+  ])
+}
+
+function applyClassDefaultTeacherQuickFilter(classInfo) {
+  const defaultTeacherId = String(classInfo?.mainTeacherId || '').trim()
+  const defaultTeacherName = String(classInfo?.mainTeacherName || defaultTeacherId).trim()
+  const previousAutoTeacherId = String(autoClassTeacherFilterId.value || '').trim()
+  autoClassTeacherFilterId.value = defaultTeacherId
+  if (!defaultTeacherId) {
+    if (previousAutoTeacherId && filterTeacherId.value.length === 1 && filterTeacherId.value[0] === previousAutoTeacherId) {
+      nextTick(() => {
+        if (allFilterRef.value?.setScheduleTeacherFilter) {
+          allFilterRef.value.setScheduleTeacherFilter([], true)
+        }
+        else {
+          handleScheduleTeacherFilter([])
+        }
+      })
+    }
+    return
+  }
+  scheduleTeacherOptions.value = mergeFilterOptions(scheduleTeacherOptions.value, [{
+    id: defaultTeacherId,
+    value: defaultTeacherName || defaultTeacherId,
+  }], [defaultTeacherId])
+  nextTick(() => {
+    if (allFilterRef.value?.setScheduleTeacherFilter) {
+      allFilterRef.value.setScheduleTeacherFilter([defaultTeacherId], true)
+    }
+    else {
+      handleScheduleTeacherFilter([defaultTeacherId])
+    }
+  })
+}
+
+function clearClassAutoTeacherFilter() {
+  const autoTeacherId = String(autoClassTeacherFilterId.value || '').trim()
+  autoClassTeacherFilterId.value = ''
+  if (!autoTeacherId)
+    return
+  if (filterTeacherId.value.length !== 1 || filterTeacherId.value[0] !== autoTeacherId)
+    return
+  nextTick(() => {
+    if (allFilterRef.value?.setScheduleTeacherFilter) {
+      allFilterRef.value.setScheduleTeacherFilter([], true)
+    }
+    else {
+      handleScheduleTeacherFilter([])
+    }
+  })
+}
+
+async function handleClassSelectionChange(value) {
+  const nextClassId = String(value || '').trim()
+  if (nextClassId !== lastHandledClassId) {
+    selectedClassAssistantIds.value = []
+    classAssistantKeyword.value = ''
+  }
+  lastHandledClassId = nextClassId
+  if (!nextClassId) {
+    preserveClassPickerOpen = false
+    classPickerOpen.value = false
+    clearClassAutoTeacherFilter()
+    await handleClass(value)
+    return
+  }
+  requestKeepClassPickerOpen()
+  const classInfo = await handleClass(value)
+  if (classInfo)
+    applyClassDefaultTeacherQuickFilter(classInfo)
+}
 
 function buildAvailabilitySlotKey(teacherId, lessonDate, startTime, endTime) {
   return `${String(teacherId)}|${lessonDate}|${startTime}|${endTime}`
@@ -2070,6 +2498,7 @@ function buildScheduleConfirmContent({
   timeLabel,
   teacherName,
   assistantText,
+  warningText,
   groupLabel,
   onSkipTodayChange,
 }) {
@@ -2129,12 +2558,27 @@ function buildScheduleConfirmContent({
       ...(assistantText != null ? [buildConfirmField('上课助教', assistantText)] : []),
       buildConfirmField('所在组别', groupLabel || '当前组'),
     ]),
+    ...(warningText
+      ? [
+          h('div', {
+            style: {
+              padding: '12px 14px',
+              borderRadius: '12px',
+              background: '#fff7e6',
+              border: '1px solid #ffd591',
+              color: '#ad6800',
+              fontSize: '13px',
+              lineHeight: '22px',
+            },
+          }, warningText),
+        ]
+      : []),
     h('div', {
       style: {
         padding: '12px 14px',
         borderRadius: '12px',
-        background: '#fff7e6',
-        color: '#ad6800',
+        background: '#f5f5f5',
+        color: '#595959',
         fontSize: '13px',
         lineHeight: '22px',
       },
@@ -2174,6 +2618,7 @@ function confirmScheduleWithOptionalSkip({
   timeLabel,
   teacherName,
   assistantText,
+  warningText,
   groupLabel,
   onConfirm,
 }) {
@@ -2198,6 +2643,7 @@ function confirmScheduleWithOptionalSkip({
         timeLabel,
         teacherName,
         assistantText,
+        warningText,
         groupLabel,
         onSkipTodayChange: (checked) => { skipToday = checked },
       }),
@@ -2422,7 +2868,6 @@ function handleScheduleClick(timeSlot, column, record) {
     })
   }
   else {
-    // 班课排课逻辑
     if (!classId.value) {
       messageService.warning('请先在上方选择要排课的班级')
       return
@@ -2446,6 +2891,13 @@ function handleScheduleClick(timeSlot, column, record) {
     const month = dateObj.format('M')
     const day = dateObj.format('D')
     const lessonIndex = getLessonIndex(column.startTime)
+    const classAssignment = buildClassScheduleAssignment(
+      classInfo,
+      record.teacherId,
+      normalizedSelectedClassAssistantIds.value,
+    )
+    const hasDuplicateClassAssistant = classAssignment.removedAssistantIds.length > 0
+    const previewAssistantText = classAssistantTextForIds(classAssignment.assistantIds)
 
     void confirmScheduleWithOptionalSkip({
       modeLabel: '班课',
@@ -2456,14 +2908,50 @@ function handleScheduleClick(timeSlot, column, record) {
       dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
       timeLabel: `${column.startTime}-${column.endTime}`,
       teacherName: record.name,
+      assistantText: previewAssistantText,
+      warningText: hasDuplicateClassAssistant ? '主教与助教不能为同一人，系统已自动忽略重复助教。' : '',
       groupLabel: activeGroupLabel.value || '当前组',
-      onConfirm() {
-        console.log('确认排课', classInfo.name, column.startTime, column.endTime)
-        applyClassSchedule({
-          classInfo,
-          column,
-          record,
-        })
+      async onConfirm() {
+        creatingOneToOneSchedule.value = true
+        try {
+          const ensuredClassInfo = await ensureClassLoaded(classInfo.id) || classInfo
+          const assignment = buildClassScheduleAssignment(
+            ensuredClassInfo,
+            record.teacherId,
+            normalizedSelectedClassAssistantIds.value,
+          )
+          const res = await createGroupClassSchedulesApi({
+            groupClassId: ensuredClassInfo.id,
+            teacherId: assignment.teacherId,
+            assistantIds: assignment.assistantIds,
+            classroomId: ensuredClassInfo.classroomId || undefined,
+            schedules: [{
+              lessonDate: record.date,
+              startTime: column.startTime,
+              endTime: column.endTime,
+              teacherId: assignment.teacherId,
+              assistantIds: assignment.assistantIds,
+              classroomId: ensuredClassInfo.classroomId || undefined,
+            }],
+          })
+          if (res.code !== 200)
+            throw new Error(res.message || '创建班课日程失败')
+
+          messageService.success(
+            assignment.removedAssistantIds.length > 0
+              ? `已自动忽略与主教重复的助教，并为 ${ensuredClassInfo.name} 创建 ${month}月${day}日 第${lessonIndex}节课`
+              : `已为 ${ensuredClassInfo.name} 创建 ${month}月${day}日 第${lessonIndex}节课`,
+          )
+          emitter.emit(EVENTS.REFRESH_DATA)
+        }
+        catch (error) {
+          console.error('create group class schedule failed', error)
+          messageService.error(error?.response?.data?.message || error?.message || '创建班课日程失败')
+          await loadTimetableMatrix()
+        }
+        finally {
+          creatingOneToOneSchedule.value = false
+        }
       },
     })
   }
@@ -3612,6 +4100,11 @@ watch(currentModel, (newValue) => {
     // 切换到1v1模式，清空班级选择
     classId.value = null
     className.value = null
+    classPickerOpen.value = false
+    selectedClassAssistantIds.value = []
+    classAssistantKeyword.value = ''
+    lastHandledClassId = ''
+    clearClassAutoTeacherFilter()
   }
   else {
     resetOneToOnePickerState()
@@ -3708,6 +4201,7 @@ watch(dragConflictDetailOpen, (open) => {
       v-model:one-to-one-record-id="oneToOneRecordId"
       v-model:one-to-one-picker-open="oneToOnePickerOpen"
       v-model:class-id="classId"
+      v-model:class-picker-open="classPickerOpen"
       v-model:current-time="currentTime"
       v-model:current-week="currentWeek"
       v-model:current-group="currentGroup"
@@ -3715,14 +4209,18 @@ watch(dragConflictDetailOpen, (open) => {
       :one-to-one-data="oneToOneData"
       :render-one-to-one-dropdown="renderOneToOneDropdown"
       :filter-one-to-one-option="filterOneToOneOption"
+      :render-class-dropdown="renderClassDropdown"
       :class-data="classData"
+      :class-list-loading="classListLoading"
       :time-view-options="timeViewOptions"
       :format-date-range="formatDateRange"
       :is-week-like-view="isWeekLikeView"
       :group-options="groupOptions"
       :on-one-to-one-change="handle1v1"
       :on-one-to-one-dropdown-visible-change="handleOneToOneDropdownVisibleChange"
-      :on-class-change="handleClass"
+      :on-class-change="handleClassSelectionChange"
+      :on-class-dropdown-visible-change="handleClassDropdownVisibleChange"
+      :on-class-search="loadClassOptions"
       :on-prev="handlePrev"
       :on-next="handleNext"
       :on-this-week="handleThisWeek"
