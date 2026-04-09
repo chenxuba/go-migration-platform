@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CopyOutlined, EditOutlined } from '@ant-design/icons-vue'
-import { computed, getCurrentInstance } from 'vue'
+import { computed, getCurrentInstance, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const props = withDefaults(defineProps<{
@@ -44,25 +44,34 @@ const instance = getCurrentInstance()
 const popoverInnerStyle = {
   padding: '0px',
 }
+const innerOpen = ref(false)
 const isOpenControlled = computed(() => {
   const vnodeProps = instance?.vnode.props
   return Boolean(vnodeProps && Object.prototype.hasOwnProperty.call(vnodeProps, 'open'))
 })
 const popoverOpenProps = computed(() => (
-  isOpenControlled.value
-    ? { open: props.open }
-    : {}
+  { open: isOpenControlled.value ? props.open : innerOpen.value }
 ))
 
-function openDetail() {
-  emit('detail')
+function closePopover() {
+  if (!isOpenControlled.value)
+    innerOpen.value = false
+  emit('openChange', false)
 }
 
 function handleOpenChange(value: boolean) {
+  if (!isOpenControlled.value)
+    innerOpen.value = value
   emit('openChange', value)
 }
 
+function openDetail() {
+  closePopover()
+  emit('detail')
+}
+
 function goRollCall() {
+  closePopover()
   router.push('/edu-center/roll-call-list')
 }
 </script>
