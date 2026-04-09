@@ -12,7 +12,7 @@ import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import TimetableScheduleSummary from './timetable-schedule-summary.vue'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
-import { getInstConfigApi } from '@/api/common/config'
+import { getInstPeriodConfigApi } from '@/api/common/config'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
@@ -1325,7 +1325,7 @@ async function loadTimetableMatrix() {
   try {
     const { startDate, endDate } = queryDateRange.value
     try {
-      const cfgRes = await getInstConfigApi({ effectiveDate: startDate })
+      const cfgRes = await getInstPeriodConfigApi({ effectiveDate: startDate })
       if (seq !== matrixLoadSeq)
         return
       effectivePeriodConfigRaw.value = cfgRes.result?.unifiedTimePeriodJson ?? userStore.instConfig?.unifiedTimePeriodJson ?? null

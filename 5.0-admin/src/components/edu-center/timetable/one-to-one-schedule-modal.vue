@@ -14,7 +14,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { BatchPlanModalPreset } from './batch-plan-preset'
 import ScheduleConflictWorkbenchModal from './schedule-conflict-workbench-modal.vue'
 import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
-import { getInstConfigApi } from '@/api/common/config'
+import { getInstPeriodConfigApi } from '@/api/common/config'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { type OneToOneItem, getOneToOneListApi } from '@/api/edu-center/one-to-one'
@@ -232,13 +232,15 @@ function periodGroupIndexForKey(key: PeriodGroupKey): number {
 
 async function loadEffectivePeriodConfig(dateText?: string) {
   try {
-    const res = await getInstConfigApi({
+    const res = await getInstPeriodConfigApi({
       effectiveDate: dateText || scheduleStartDate.value.format('YYYY-MM-DD'),
     })
     effectivePeriodConfigRaw.value = res.result?.unifiedTimePeriodJson ?? userStore.instConfig?.unifiedTimePeriodJson ?? null
   }
   catch (error) {
     console.warn('load effective period config failed, fallback to latest', error)
+    if (!userStore.instConfig)
+      await userStore.getInstConfig()
     effectivePeriodConfigRaw.value = userStore.instConfig?.unifiedTimePeriodJson ?? null
   }
 }
@@ -647,7 +649,6 @@ watch(modalOpen, async (value) => {
     await nextTick()
     scrollPlannerShellToTop()
     await Promise.all([
-      userStore.getInstConfig(),
       fetchOneToOneRecords(),
       fetchClassroomList(),
       fetchWorkbenchTeacherList(),

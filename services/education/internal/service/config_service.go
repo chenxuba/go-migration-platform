@@ -23,6 +23,10 @@ type InstPeriodRepairResult struct {
 	RepairedVersions int  `json:"repairedVersions"`
 }
 
+type InstPeriodConfigResult struct {
+	UnifiedTimePeriodJSON map[string]any `json:"unifiedTimePeriodJson,omitempty"`
+}
+
 func (svc *Service) PreviewInstPeriodConfigUpdate(userID int64, raw any) (InstConfigUpdateResult, error) {
 	result := InstConfigUpdateResult{Success: true}
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
@@ -97,6 +101,39 @@ func (svc *Service) GetInstConfig(userID int64, effectiveDate *time.Time) (map[s
 		return nil, err
 	}
 	return config, nil
+}
+
+func (svc *Service) GetInstPeriodConfig(userID int64, effectiveDate *time.Time) (InstPeriodConfigResult, error) {
+	result := InstPeriodConfigResult{}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return result, errors.New("no institution context")
+		}
+		return result, err
+	}
+
+	ctx := context.Background()
+	config, err := svc.repo.GetInstConfig(ctx, instID)
+	if err != nil {
+		return result, err
+	}
+	if len(config) == 0 {
+		if err := svc.repo.CreateDefaultInstConfig(ctx, instID); err != nil {
+			return result, err
+		}
+		config, err = svc.repo.GetInstConfig(ctx, instID)
+		if err != nil {
+			return result, err
+		}
+	}
+	if err := svc.mergeInstPeriodConfigIntoMap(ctx, instID, config, effectiveDate); err != nil {
+		return result, err
+	}
+	if built, ok := config["unifiedTimePeriodJson"].(map[string]any); ok {
+		result.UnifiedTimePeriodJSON = built
+	}
+	return result, nil
 }
 
 // mergeInstPeriodConfigIntoMap 主存储为 inst_period_* 表；首次从 legacy unifiedTimePeriodJson 自动迁移并清空列。

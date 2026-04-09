@@ -128,6 +128,10 @@ export interface GetInstConfigParams {
   effectiveDate?: string
 }
 
+export interface InstPeriodConfig {
+  unifiedTimePeriodJson?: unknown
+}
+
 export interface SetInstConfigResult {
   success: boolean
   periodWeekStart?: string
@@ -141,6 +145,10 @@ export interface InstPeriodRepairResult {
 
 export function getInstConfigApi(params?: GetInstConfigParams) {
   return useGet<InstConfig>('/api/v1/inst-config', params)
+}
+
+export function getInstPeriodConfigApi(params?: GetInstConfigParams) {
+  return useGet<InstPeriodConfig>('/api/v1/inst-config/period', params)
 }
 // /instConfig/setInstConfig
 export function setInstConfigApi(data: InstConfig) {

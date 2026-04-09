@@ -28,6 +28,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/students/detail", handler.studentDetailView)
 	mux.HandleFunc("/api/v1/orders", handler.orders)
 	mux.HandleFunc("/api/v1/inst-config", handler.getInstConfig)
+	mux.HandleFunc("/api/v1/inst-config/period", handler.getInstPeriodConfig)
 	mux.HandleFunc("/api/v1/inst-config/update", handler.setInstConfig)
 	mux.HandleFunc("/api/v1/inst-config/period-effective-preview", handler.previewInstPeriodEffective)
 	mux.HandleFunc("/api/v1/inst-config/period-repair", handler.repairInstPeriodConfigVersions)
@@ -309,6 +310,33 @@ func (handler *Handler) getInstConfig(w http.ResponseWriter, r *http.Request) {
 		effectiveDate = &t
 	}
 	result, err := handler.service.GetInstConfig(claims.UserID, effectiveDate)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) getInstPeriodConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var effectiveDate *time.Time
+	if raw := strings.TrimSpace(r.URL.Query().Get("effectiveDate")); raw != "" {
+		t, parseErr := time.ParseInLocation("2006-01-02", raw, time.Local)
+		if parseErr != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "effectiveDate 格式应为 YYYY-MM-DD", ctx.RequestID)
+			return
+		}
+		effectiveDate = &t
+	}
+	result, err := handler.service.GetInstPeriodConfig(claims.UserID, effectiveDate)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
