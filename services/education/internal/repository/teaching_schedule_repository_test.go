@@ -138,6 +138,42 @@ func TestBuildGroupClassStudentRosterFromMembershipsUsesScheduleStartAsBoundary(
 	}
 }
 
+func TestResolveGroupClassRosterReferenceAtUsesCreationTimeForRetroSchedules(t *testing.T) {
+	scheduleStartAt := time.Date(2026, 4, 9, 9, 15, 0, 0, time.Local)
+	scheduleCreatedAt := time.Date(2026, 4, 9, 20, 49, 0, 0, time.Local)
+
+	got := resolveGroupClassRosterReferenceAt(scheduleStartAt, scheduleCreatedAt)
+	if !got.Equal(scheduleCreatedAt) {
+		t.Fatalf("expected retro schedule roster boundary to use create time, got %s", got)
+	}
+}
+
+func TestBuildGroupClassStudentRosterFromMembershipsIncludesStudentsJoinedBeforeRetroScheduleCreation(t *testing.T) {
+	scheduleStartAt := time.Date(2026, 4, 9, 9, 15, 0, 0, time.Local)
+	scheduleCreatedAt := time.Date(2026, 4, 9, 20, 49, 0, 0, time.Local)
+	referenceAt := resolveGroupClassRosterReferenceAt(scheduleStartAt, scheduleCreatedAt)
+
+	roster := buildGroupClassStudentRosterFromMemberships([]groupClassStudentMembership{
+		{
+			StudentID:   1,
+			StudentName: "补排前已在班里的学员",
+			JoinAt:      time.Date(2026, 4, 9, 12, 58, 42, 0, time.Local),
+		},
+		{
+			StudentID:   2,
+			StudentName: "补排后才加入的学员",
+			JoinAt:      scheduleCreatedAt.Add(time.Minute),
+		},
+	}, referenceAt)
+
+	if len(roster.IDs) != 1 || roster.IDs[0] != 1 {
+		t.Fatalf("expected retro schedule roster to include only students joined before create time, got %#v", roster.IDs)
+	}
+	if len(roster.Names) != 1 || roster.Names[0] != "补排前已在班里的学员" {
+		t.Fatalf("expected retro schedule roster names to use create time boundary, got %#v", roster.Names)
+	}
+}
+
 func TestBuildGroupClassStudentRosterFromMembershipsExcludesStudentsRemovedBeforeSchedule(t *testing.T) {
 	scheduleStartAt := time.Date(2026, 4, 9, 10, 0, 0, 0, time.Local)
 	roster := buildGroupClassStudentRosterFromMemberships([]groupClassStudentMembership{

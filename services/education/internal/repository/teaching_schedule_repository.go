@@ -362,10 +362,10 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 						WHERE tcs.inst_id = ts.inst_id
 						  AND tcs.teaching_class_id = ts.teaching_class_id
 						  AND tcs.del_flag = 0
-						  AND tcs.create_time < ts.lesson_start_at
+						  AND tcs.create_time < GREATEST(ts.lesson_start_at, ts.create_time)
 						  AND (
 							IFNULL(tcs.class_student_status, 1) = 1
-							OR tcs.update_time > ts.lesson_start_at
+							OR tcs.update_time > GREATEST(ts.lesson_start_at, ts.create_time)
 						  )
 						  AND tcs.student_id = ?
 					)
@@ -1243,6 +1243,7 @@ func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, o
 	if base.ClassroomID > 0 && strings.TrimSpace(classroomNames[base.ClassroomID]) == "" {
 		classroomNames[base.ClassroomID] = strings.TrimSpace(base.ClassroomName)
 	}
+	creationReferenceAt := time.Now()
 
 	teacherNames := repo.resolveTeacherNames(ctx, teacherIDs)
 	if base.DefaultTeacherID > 0 && strings.TrimSpace(teacherNames[base.DefaultTeacherID]) == "" {
@@ -1286,7 +1287,10 @@ func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, o
 	planRosterByKey := make(map[string]groupClassStudentRoster, len(plans))
 	for _, plan := range plans {
 		key := schedulePlanKey(plan)
-		roster := buildGroupClassStudentRosterFromMemberships(memberships, plan.StartAt)
+		roster := buildGroupClassStudentRosterFromMemberships(
+			memberships,
+			resolveGroupClassRosterReferenceAt(plan.StartAt, creationReferenceAt),
+		)
 		planRosterByKey[key] = roster
 		if len(roster.IDs) == 0 {
 			continue
@@ -3177,26 +3181,36 @@ func groupClassStudentMembershipLeaveAt(membership groupClassStudentMembership) 
 	return membership.StatusChangedAt, true
 }
 
-func groupClassStudentMembershipEffectiveAt(membership groupClassStudentMembership, scheduleStartAt time.Time) bool {
-	if scheduleStartAt.IsZero() || membership.JoinAt.IsZero() {
+func resolveGroupClassRosterReferenceAt(scheduleStartAt, scheduleCreatedAt time.Time) time.Time {
+	if scheduleStartAt.IsZero() {
+		return scheduleCreatedAt
+	}
+	if scheduleCreatedAt.IsZero() || !scheduleCreatedAt.After(scheduleStartAt) {
+		return scheduleStartAt
+	}
+	return scheduleCreatedAt
+}
+
+func groupClassStudentMembershipEffectiveAt(membership groupClassStudentMembership, referenceAt time.Time) bool {
+	if referenceAt.IsZero() || membership.JoinAt.IsZero() {
 		return true
 	}
-	if !membership.JoinAt.Before(scheduleStartAt) {
+	if !membership.JoinAt.Before(referenceAt) {
 		return false
 	}
-	if leaveAt, ok := groupClassStudentMembershipLeaveAt(membership); ok && !scheduleStartAt.Before(leaveAt) {
+	if leaveAt, ok := groupClassStudentMembershipLeaveAt(membership); ok && !referenceAt.Before(leaveAt) {
 		return false
 	}
 	return true
 }
 
-func buildGroupClassStudentRosterFromMemberships(memberships []groupClassStudentMembership, scheduleStartAt time.Time) groupClassStudentRoster {
+func buildGroupClassStudentRosterFromMemberships(memberships []groupClassStudentMembership, referenceAt time.Time) groupClassStudentRoster {
 	roster := groupClassStudentRoster{
 		IDs:   make([]int64, 0, len(memberships)),
 		Names: make([]string, 0, len(memberships)),
 	}
 	for _, membership := range memberships {
-		if !groupClassStudentMembershipEffectiveAt(membership, scheduleStartAt) {
+		if !groupClassStudentMembershipEffectiveAt(membership, referenceAt) {
 			continue
 		}
 		if membership.StudentID > 0 {
@@ -3229,7 +3243,7 @@ func normalizeTeachingScheduleStudentRosterStatus(status int) int {
 	}
 }
 
-func buildGroupClassScheduleRosterFromMembershipsAndOverrides(memberships []groupClassStudentMembership, overrides []teachingScheduleStudentOverride, scheduleStartAt time.Time) groupClassScheduleRoster {
+func buildGroupClassScheduleRosterFromMembershipsAndOverrides(memberships []groupClassStudentMembership, overrides []teachingScheduleStudentOverride, referenceAt time.Time) groupClassScheduleRoster {
 	entryByStudentID := make(map[int64]groupClassScheduleStudent, len(memberships)+len(overrides))
 	order := make([]int64, 0, len(memberships)+len(overrides))
 	seenOrder := make(map[int64]struct{}, len(memberships)+len(overrides))
@@ -3244,7 +3258,7 @@ func buildGroupClassScheduleRosterFromMembershipsAndOverrides(memberships []grou
 		order = append(order, studentID)
 	}
 	for _, membership := range memberships {
-		if !groupClassStudentMembershipEffectiveAt(membership, scheduleStartAt) || membership.StudentID <= 0 {
+		if !groupClassStudentMembershipEffectiveAt(membership, referenceAt) || membership.StudentID <= 0 {
 			continue
 		}
 		appendOrder(membership.StudentID)
@@ -3430,6 +3444,43 @@ type effectiveGroupClassScheduleMeta struct {
 	StartAt    time.Time
 }
 
+func (repo *Repository) loadTeachingScheduleCreateTimeMap(ctx context.Context, queryer sqlQueryer, instID int64, scheduleIDs []int64) (map[int64]time.Time, error) {
+	if len(scheduleIDs) == 0 {
+		return map[int64]time.Time{}, nil
+	}
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT
+			IFNULL(ts.id, 0),
+			ts.create_time
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ?
+		  AND ts.id IN (`+sqlPlaceholders(len(scheduleIDs))+`)
+	`, append([]any{instID}, int64SliceToAny(scheduleIDs)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]time.Time, len(scheduleIDs))
+	for rows.Next() {
+		var (
+			scheduleID int64
+			createTime time.Time
+		)
+		if err := rows.Scan(&scheduleID, &createTime); err != nil {
+			return nil, err
+		}
+		if scheduleID <= 0 {
+			continue
+		}
+		result[scheduleID] = createTime
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (repo *Repository) loadGroupClassStudentMembershipMap(ctx context.Context, instID int64, classIDs []int64) (map[int64][]groupClassStudentMembership, error) {
 	return repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, repo.db, instID, classIDs)
 }
@@ -3591,12 +3642,16 @@ func (repo *Repository) loadEffectiveGroupClassScheduleRosterMap(ctx context.Con
 	if err != nil {
 		return nil, err
 	}
+	createTimeByScheduleID, err := repo.loadTeachingScheduleCreateTimeMap(ctx, queryer, instID, scheduleIDs)
+	if err != nil {
+		return nil, err
+	}
 	result := make(map[int64]groupClassScheduleRoster, len(schedules))
 	for _, schedule := range schedules {
 		result[schedule.ScheduleID] = buildGroupClassScheduleRosterFromMembershipsAndOverrides(
 			membershipsByClassID[schedule.ClassID],
 			overridesByScheduleID[schedule.ScheduleID],
-			schedule.StartAt,
+			resolveGroupClassRosterReferenceAt(schedule.StartAt, createTimeByScheduleID[schedule.ScheduleID]),
 		)
 	}
 	return result, nil
@@ -3908,10 +3963,10 @@ func (repo *Repository) listScheduleConflictDetailsByStudentsTx(ctx context.Cont
 					WHERE tcs.inst_id = ts.inst_id
 					  AND tcs.teaching_class_id = ts.teaching_class_id
 					  AND tcs.del_flag = 0
-					  AND tcs.create_time < ts.lesson_start_at
+					  AND tcs.create_time < GREATEST(ts.lesson_start_at, ts.create_time)
 					  AND (
 						IFNULL(tcs.class_student_status, 1) = 1
-						OR tcs.update_time > ts.lesson_start_at
+						OR tcs.update_time > GREATEST(ts.lesson_start_at, ts.create_time)
 					  )
 					  AND tcs.student_id IN (` + sqlPlaceholders(len(uniqueStudentIDs)) + `)
 				)
