@@ -2360,10 +2360,7 @@ async function deleteScheduledLessonFromDetail() {
 function handleScheduleClick(timeSlot, column, record) {
   if (currentModel.value === '1') {
     if (!oneToOneRecordId.value) {
-      Modal.warning({
-        title: '请先选择一对一',
-        content: '请先在上方选择要排课的 1 对 1 记录',
-      })
+      messageService.warning('请先在上方选择要排课的 1 对 1 记录')
       return
     }
 
@@ -2372,10 +2369,7 @@ function handleScheduleClick(timeSlot, column, record) {
     )
 
     if (!studentInfo) {
-      Modal.warning({
-        title: '记录不存在',
-        content: '所选 1 对 1 已不在列表中，请重新选择或刷新页面',
-      })
+      messageService.warning('所选 1 对 1 已不在列表中，请重新选择或刷新页面')
       return
     }
 
@@ -2430,29 +2424,20 @@ function handleScheduleClick(timeSlot, column, record) {
   else {
     // 班课排课逻辑
     if (!classId.value) {
-      Modal.warning({
-        title: '请先选择班级',
-        content: '请先在上方选择要排课的班级',
-      })
+      messageService.warning('请先在上方选择要排课的班级')
       return
     }
 
     const classInfo = findClassInfo(classId.value)
 
     if (!classInfo) {
-      Modal.warning({
-        title: '班级信息不存在',
-        content: '请选择有效的班级',
-      })
+      messageService.warning('请选择有效的班级')
       return
     }
 
     // 检查时间冲突
     if (timeSlot.conflict) {
-      Modal.warning({
-        title: '时间冲突',
-        content: '该时间段已有冲突，不可排课',
-      })
+      messageService.warning('该时间段已有冲突，不可排课')
       return
     }
 
