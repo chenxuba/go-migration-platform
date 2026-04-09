@@ -2585,11 +2585,7 @@ watch(modalOpen, async (value) => {
   box-shadow: none !important;
 }
 
-:deep(.planner-control .ant-select-selection-item),
-:deep(.planner-control .ant-select-selection-placeholder),
-:deep(.planner-control .ant-picker-input > input) {
-  line-height: 40px !important;
-}
+
 
 .planner-balance {
   display: flex;
