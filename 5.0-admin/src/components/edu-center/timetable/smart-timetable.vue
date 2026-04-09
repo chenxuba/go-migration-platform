@@ -659,6 +659,7 @@ let blockedScheduleDragAttempt = null
 let blockedScheduleDragMoveHandler = null
 let blockedScheduleDragUpHandler = null
 let lastBlockedScheduleDragHintAt = 0
+let suppressScheduledLessonClickUntil = 0
 let activeDragValidationSessionId = 0
 const focusedScheduleCellKey = ref('')
 const isSwapTimeGrid = computed(() => currentTime.value === 'swapWeek')
@@ -2565,6 +2566,8 @@ function clearBlockedScheduleDragAttempt() {
     document.removeEventListener('mouseup', blockedScheduleDragUpHandler)
   blockedScheduleDragMoveHandler = null
   blockedScheduleDragUpHandler = null
+  if (!draggingScheduleState.value)
+    document.body.style.userSelect = ''
 }
 
 function showBlockedScheduleDragHint(message) {
@@ -2573,6 +2576,18 @@ function showBlockedScheduleDragHint(message) {
     return
   lastBlockedScheduleDragHintAt = now
   messageService.info(message)
+}
+
+function suppressScheduledLessonClick(duration = 220) {
+  suppressScheduledLessonClickUntil = Date.now() + duration
+}
+
+function consumeScheduledLessonClickSuppressed() {
+  if (Date.now() <= suppressScheduledLessonClickUntil) {
+    suppressScheduledLessonClickUntil = 0
+    return true
+  }
+  return false
 }
 
 function createEmptyDragHoverState() {
@@ -3345,6 +3360,7 @@ function handleSchedulePointerDown(event, text, column, record) {
           offsetX: pendingScheduleDragStart.offsetX,
           offsetY: pendingScheduleDragStart.offsetY,
         }
+        suppressScheduledLessonClick()
         activeDragValidationSessionId += 1
         draggingScheduleCellKey.value = pendingScheduleDragStart.dragState.sourceCellKey
         dragHoverState.value = createEmptyDragHoverState()
@@ -3435,6 +3451,7 @@ function handleSchedulePointerDown(event, text, column, record) {
     startY: Number(event?.clientY || 0),
     message,
   }
+  document.body.style.userSelect = 'none'
 
   blockedScheduleDragMoveHandler = (moveEvent) => {
     if (!blockedScheduleDragAttempt)
@@ -3443,6 +3460,7 @@ function handleSchedulePointerDown(event, text, column, record) {
     const deltaY = Math.abs(Number(moveEvent?.clientY || 0) - blockedScheduleDragAttempt.startY)
     if (deltaX < 6 && deltaY < 6)
       return
+    suppressScheduledLessonClick()
     showBlockedScheduleDragHint(blockedScheduleDragAttempt.message)
     clearBlockedScheduleDragAttempt()
   }
@@ -3749,6 +3767,7 @@ watch(dragConflictDetailOpen, (open) => {
       :open-scheduled-conflict-detail="openScheduledConflictDetail"
       :handle-conflict-click="handleConflictClick"
       :handle-schedule-click="handleScheduleClick"
+      :consume-scheduled-lesson-click-suppressed="consumeScheduledLessonClickSuppressed"
       :handle-schedule-pointer-down="handleSchedulePointerDown"
       :is-schedule-draggable="isScheduleDraggable"
       :resolve-schedule-drag-blocked-message="resolveScheduleDragBlockedMessage"

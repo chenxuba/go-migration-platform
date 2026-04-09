@@ -1,6 +1,6 @@
 <script setup>
 import { CopyOutlined, EditOutlined } from '@ant-design/icons-vue'
-import { ref, watch } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -67,6 +67,10 @@ const props = defineProps({
     required: true,
   },
   handleScheduleClick: {
+    type: Function,
+    required: true,
+  },
+  consumeScheduledLessonClickSuppressed: {
     type: Function,
     required: true,
   },
@@ -223,9 +227,43 @@ const schedulePopoverInnerStyle = {
 }
 
 const openSchedulePopoverKey = ref('')
+const scheduleCellPressState = ref(null)
+let scheduleCellPressMoveHandler = null
+let scheduleCellPressUpHandler = null
+let suppressedScheduleCellClickKey = ''
+let suppressedScheduleCellClickUntil = 0
 
 function schedulePopoverKey(column, record) {
   return String(props.scheduleCellKey(column, record) || '').trim()
+}
+
+function clearScheduleCellPressTracking() {
+  scheduleCellPressState.value = null
+  if (typeof document === 'undefined')
+    return
+  if (scheduleCellPressMoveHandler)
+    document.removeEventListener('mousemove', scheduleCellPressMoveHandler)
+  if (scheduleCellPressUpHandler)
+    document.removeEventListener('mouseup', scheduleCellPressUpHandler)
+  scheduleCellPressMoveHandler = null
+  scheduleCellPressUpHandler = null
+}
+
+function suppressScheduleCellClick(key, duration = 260) {
+  suppressedScheduleCellClickKey = String(key || '').trim()
+  suppressedScheduleCellClickUntil = Date.now() + duration
+}
+
+function consumeScheduleCellClickSuppressed(key) {
+  const normalizedKey = String(key || '').trim()
+  if (!normalizedKey)
+    return false
+  if (normalizedKey === suppressedScheduleCellClickKey && Date.now() <= suppressedScheduleCellClickUntil) {
+    suppressedScheduleCellClickKey = ''
+    suppressedScheduleCellClickUntil = 0
+    return true
+  }
+  return false
 }
 
 function handleSchedulePopoverOpenChange(column, record, open) {
@@ -234,8 +272,43 @@ function handleSchedulePopoverOpenChange(column, record, open) {
 }
 
 function handleSchedulePointerDownWithPopoverClose(event, text, column, record) {
+  clearScheduleCellPressTracking()
   openSchedulePopoverKey.value = ''
+  if (typeof document !== 'undefined') {
+    scheduleCellPressState.value = {
+      key: schedulePopoverKey(column, record),
+      startX: Number(event?.clientX || 0),
+      startY: Number(event?.clientY || 0),
+      moved: false,
+    }
+
+    scheduleCellPressMoveHandler = (moveEvent) => {
+      if (!scheduleCellPressState.value)
+        return
+      const deltaX = Math.abs(Number(moveEvent?.clientX || 0) - scheduleCellPressState.value.startX)
+      const deltaY = Math.abs(Number(moveEvent?.clientY || 0) - scheduleCellPressState.value.startY)
+      if (deltaX >= 3 || deltaY >= 3)
+        scheduleCellPressState.value.moved = true
+    }
+
+    scheduleCellPressUpHandler = () => {
+      if (scheduleCellPressState.value?.moved)
+        suppressScheduleCellClick(scheduleCellPressState.value.key)
+      clearScheduleCellPressTracking()
+    }
+
+    document.addEventListener('mousemove', scheduleCellPressMoveHandler)
+    document.addEventListener('mouseup', scheduleCellPressUpHandler)
+  }
   props.handleSchedulePointerDown(event, text, column, record)
+}
+
+function handleScheduleCellClick(text, column, record) {
+  if (consumeScheduleCellClickSuppressed(schedulePopoverKey(column, record)))
+    return
+  if (props.consumeScheduledLessonClickSuppressed())
+    return
+  props.openScheduledLessonDetail(text, column, record)
 }
 
 watch(
@@ -245,6 +318,10 @@ watch(
       openSchedulePopoverKey.value = ''
   },
 )
+
+onUnmounted(() => {
+  clearScheduleCellPressTracking()
+})
 
 function goRollCall() {
   router.push('/edu-center/roll-call-list')
@@ -406,7 +483,7 @@ function goRollCall() {
               }"
               :title="!isScheduleDraggable(text) ? resolveScheduleDragBlockedMessage(text) : undefined"
               :style="draggingScheduleCellKey === scheduleCellKey(column, record) ? draggingScheduleStyle : undefined"
-              @click="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
+              @click="handleScheduleCellClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
               @mousedown.left="handleSchedulePointerDownWithPopoverClose($event, text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
             >
               <div class="st-schedule-cell__header flex h-5 rounded-1 rounded-lb-0 rounded-rb-0 pl1 relative">
@@ -523,6 +600,7 @@ function goRollCall() {
   overflow: hidden;
   background: rgba(78, 109, 255, 0.12);
   color: #fff;
+  user-select: none;
   transition: box-shadow 0.25s ease, transform 0.25s ease, opacity 0.2s ease;
 }
 
