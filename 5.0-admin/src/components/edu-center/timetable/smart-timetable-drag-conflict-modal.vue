@@ -30,6 +30,55 @@ const modalOpen = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
 })
+
+function normalizeNameList(value) {
+  if (Array.isArray(value))
+    return value.map(item => String(item || '').trim()).filter(Boolean)
+  const text = String(value || '').trim()
+  if (!text || text === '未安排' || text === '-')
+    return []
+  return text.split(/[、,，]/).map(item => item.trim()).filter(Boolean)
+}
+
+function extractAssistantNames(source) {
+  if (!source)
+    return []
+  if (Array.isArray(source.assistantNames) && source.assistantNames.length)
+    return normalizeNameList(source.assistantNames)
+  return normalizeNameList(source.assistantText)
+}
+
+function hasAssistantConflict(source) {
+  if (!source)
+    return false
+  if (typeof source.hasAssistantConflict === 'boolean')
+    return source.hasAssistantConflict
+  return Array.isArray(source.conflictTypes) && source.conflictTypes.includes('助教')
+}
+
+const attemptedAssistantNames = computed(() => extractAssistantNames(props.detail?.attempted))
+const attemptedAssistantNameSet = computed(() => new Set(attemptedAssistantNames.value))
+
+const conflictingAttemptedAssistantNames = computed(() => {
+  const names = Array.isArray(props.detail?.items)
+    ? props.detail.items
+        .filter(item => hasAssistantConflict(item))
+        .flatMap(item => extractAssistantNames(item).filter(name => attemptedAssistantNameSet.value.has(name)))
+    : []
+  return new Set(names)
+})
+
+function assistantNamesFor(source) {
+  return extractAssistantNames(source)
+}
+
+function isAttemptedAssistantDanger(name) {
+  return conflictingAttemptedAssistantNames.value.has(name)
+}
+
+function isConflictAssistantDanger(item, name) {
+  return hasAssistantConflict(item) && attemptedAssistantNameSet.value.has(name)
+}
 </script>
 
 <template>
@@ -108,7 +157,20 @@ const modalOpen = computed({
                   <span>{{ detail.attempted.teacherName || '-' }}</span>
                   <span class="st-drag-conflict__sep">｜</span>
                   助教：
-                  <span>{{ detail.attempted.assistantText || '未安排' }}</span>
+                  <span>
+                    <template v-if="assistantNamesFor(detail.attempted).length">
+                      <template
+                        v-for="(name, index) in assistantNamesFor(detail.attempted)"
+                        :key="`attempted-assistant-${name}-${index}`"
+                      >
+                        <span :class="{ 'st-drag-conflict__danger': isAttemptedAssistantDanger(name) }">{{ name }}</span>
+                        <span v-if="index < assistantNamesFor(detail.attempted).length - 1">、</span>
+                      </template>
+                    </template>
+                    <template v-else>
+                      未安排
+                    </template>
+                  </span>
                 </div>
               </div>
 
@@ -149,7 +211,20 @@ const modalOpen = computed({
                     <span :class="{ 'st-drag-conflict__danger': item.hasTeacherConflict }">{{ item.teacherName || '-' }}</span>
                     <span class="st-drag-conflict__sep">｜</span>
                     助教：
-                    <span :class="{ 'st-drag-conflict__danger': item.hasAssistantConflict }">{{ item.assistantText || '-' }}</span>
+                    <span>
+                      <template v-if="assistantNamesFor(item).length">
+                        <template
+                          v-for="(name, index) in assistantNamesFor(item)"
+                          :key="`${item.key}-assistant-${name}-${index}`"
+                        >
+                          <span :class="{ 'st-drag-conflict__danger': isConflictAssistantDanger(item, name) }">{{ name }}</span>
+                          <span v-if="index < assistantNamesFor(item).length - 1">、</span>
+                        </template>
+                      </template>
+                      <template v-else>
+                        -
+                      </template>
+                    </span>
                     <span class="st-drag-conflict__sep">｜</span>
                     学员：
                     <span :class="{ 'st-drag-conflict__danger': item.hasStudentConflict }">{{ item.studentText || '-' }}</span>

@@ -63,6 +63,55 @@ const summaryHint = computed(() => {
     return '下方列出具体冲突课程，可先定位查看；纯学员冲突支持仍要排课。'
   return '下方列出具体冲突课程，可直接定位查看，再决定调整时间、老师或排课对象。'
 })
+
+function normalizeNameList(value) {
+  if (Array.isArray(value))
+    return value.map(item => String(item || '').trim()).filter(Boolean)
+  const text = String(value || '').trim()
+  if (!text || text === '未安排' || text === '-')
+    return []
+  return text.split(/[、,，]/).map(item => item.trim()).filter(Boolean)
+}
+
+function extractAssistantNames(source) {
+  if (!source)
+    return []
+  if (Array.isArray(source.assistantNames) && source.assistantNames.length)
+    return normalizeNameList(source.assistantNames)
+  return normalizeNameList(source.assistantText)
+}
+
+function hasAssistantConflict(source) {
+  if (!source)
+    return false
+  if (typeof source.hasAssistantConflict === 'boolean')
+    return source.hasAssistantConflict
+  return Array.isArray(source.conflictTypes) && source.conflictTypes.includes('助教')
+}
+
+const attemptedAssistantNames = computed(() => extractAssistantNames(props.conflictDetailState?.attempted))
+const attemptedAssistantNameSet = computed(() => new Set(attemptedAssistantNames.value))
+
+const conflictingAttemptedAssistantNames = computed(() => {
+  const names = Array.isArray(props.conflictDetailState?.items)
+    ? props.conflictDetailState.items
+        .filter(item => hasAssistantConflict(item))
+        .flatMap(item => extractAssistantNames(item).filter(name => attemptedAssistantNameSet.value.has(name)))
+    : []
+  return new Set(names)
+})
+
+function assistantNamesFor(source) {
+  return extractAssistantNames(source)
+}
+
+function isAttemptedAssistantDanger(name) {
+  return conflictingAttemptedAssistantNames.value.has(name)
+}
+
+function isConflictAssistantDanger(item, name) {
+  return hasAssistantConflict(item) && attemptedAssistantNameSet.value.has(name)
+}
 </script>
 
 <template>
@@ -161,9 +210,19 @@ const summaryHint = computed(() => {
                   <span class="st-conflict-attempt__fact-label">上课助教</span>
                   <strong
                     class="st-conflict-attempt__fact-value"
-                    :class="{ 'st-conflict-attempt__fact-value--danger': (conflictDetailState.attempted?.conflictTypes || []).includes('助教') }"
                   >
-                    {{ conflictDetailState.attempted.assistantText || '未安排' }}
+                    <template v-if="assistantNamesFor(conflictDetailState.attempted).length">
+                      <template
+                        v-for="(name, index) in assistantNamesFor(conflictDetailState.attempted)"
+                        :key="`${name}-${index}`"
+                      >
+                        <span :class="{ 'st-conflict-attempt__fact-value--danger': isAttemptedAssistantDanger(name) }">{{ name }}</span>
+                        <span v-if="index < assistantNamesFor(conflictDetailState.attempted).length - 1">、</span>
+                      </template>
+                    </template>
+                    <template v-else>
+                      未安排
+                    </template>
                   </strong>
                 </div>
                 <div
@@ -197,7 +256,7 @@ const summaryHint = computed(() => {
                   >
                     {{
                       conflictDetailState.attempted.classroomName
-                      || '未设置教室'
+                        || '未设置教室'
                     }}
                   </strong>
                 </div>
@@ -249,7 +308,15 @@ const summaryHint = computed(() => {
                   <template v-if="item.assistantText && item.assistantText !== '-'">
                     <span class="st-conflict-item__sep">｜</span>
                     助教：
-                    <span :class="{ 'st-conflict-item__value--danger': item.hasAssistantConflict }">{{ item.assistantText }}</span>
+                    <span>
+                      <template
+                        v-for="(name, index) in assistantNamesFor(item)"
+                        :key="`${item.key}-assistant-${name}-${index}`"
+                      >
+                        <span :class="{ 'st-conflict-item__value--danger': isConflictAssistantDanger(item, name) }">{{ name }}</span>
+                        <span v-if="index < assistantNamesFor(item).length - 1">、</span>
+                      </template>
+                    </span>
                   </template>
                   <span class="st-conflict-item__sep">｜</span>
                   学员：
