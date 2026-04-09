@@ -99,6 +99,13 @@ function scheduleBadgeText(classType: number) {
   return Number(classType) === 1 ? '班课' : '1v1'
 }
 
+function conflictBadgeTitle(event: CellSchedule) {
+  const types = Array.isArray(event?.raw?.conflictTypes)
+    ? event.raw.conflictTypes.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+  return types.length ? `冲突：${types.join('、')}` : '存在冲突'
+}
+
 function normalizeScheduleFilterValue(value: unknown): string | undefined {
   if (Array.isArray(value))
     return value.length ? String(value[0] ?? '').trim() || undefined : undefined
@@ -1603,6 +1610,7 @@ const unsignedLessons = computed(() =>
                     v-for="event in (layoutsByCell.get(`${col.dateKey}|${col.teacherKey}`)?.layouts ?? [])"
                     :key="event.id"
                     class="tm-event"
+                    :class="{ 'tm-event--conflict': event.raw?.conflict }"
                     :style="eventStyle(event, col)"
                     @click="openScheduleEdit(event)"
                   >
@@ -1610,13 +1618,22 @@ const unsignedLessons = computed(() =>
                       <div class="tm-event__time">
                         {{ event.timeText }}
                       </div>
-                      <span
-                        v-if="event.classType === 1 || event.classType === 2"
-                        class="tm-event__badge"
-                        :class="event.classType === 1 ? 'tm-event__badge--group-class' : 'tm-event__badge--one-to-one'"
-                      >
-                        {{ scheduleBadgeText(event.classType) }}
-                      </span>
+                      <div class="tm-event__badges">
+                        <span
+                          v-if="event.raw?.conflict"
+                          class="tm-event__badge tm-event__badge--conflict"
+                          :title="conflictBadgeTitle(event)"
+                        >
+                          冲突
+                        </span>
+                        <span
+                          v-else-if="event.classType === 1 || event.classType === 2"
+                          class="tm-event__badge"
+                          :class="event.classType === 1 ? 'tm-event__badge--group-class' : 'tm-event__badge--one-to-one'"
+                        >
+                          {{ scheduleBadgeText(event.classType) }}
+                        </span>
+                      </div>
                     </div>
                     <div class="tm-event__body">
                       <div class="tm-event__title">
@@ -2265,13 +2282,16 @@ const unsignedLessons = computed(() =>
   cursor: pointer;
 }
 
+.tm-event--conflict {
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.4);
+}
+
 .tm-event__top {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   min-height: 24px;
-  padding: 3px 4px 3px 10px;
+  padding: 3px 56px 3px 10px;
   background: #1677ff;
 }
 
@@ -2295,14 +2315,36 @@ const unsignedLessons = computed(() =>
   color: #fff;
   font-size: 10px;
   font-weight: 700;
+  line-height: 1;
+}
+
+.tm-event__badges {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .tm-event__badge--one-to-one {
+  padding: 0 8px 0 9px;
+  border-radius: 0 4px 0 8px;
   background: rgb(0 0 0 / 50%);
 }
 
 .tm-event__badge--group-class {
+  padding: 0 8px 0 9px;
+  border-radius: 0 4px 0 8px;
   background: #d46b08;
+}
+
+.tm-event__badge--conflict {
+  padding: 0 8px 0 9px;
+  border-radius: 0 4px 0 8px;
+  background: #ff4d4f;
 }
 
 .tm-event__body {
