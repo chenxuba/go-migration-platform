@@ -30,6 +30,39 @@ const modalOpen = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
 })
+
+const summaryCount = computed(() => (
+  Array.isArray(props.conflictDetailState?.items)
+    ? props.conflictDetailState.items.length
+    : 0
+))
+
+const summaryConflictTypes = computed(() => {
+  const attemptedTypes = Array.isArray(props.conflictDetailState?.attempted?.conflictTypes)
+    ? props.conflictDetailState.attempted.conflictTypes
+    : []
+  const itemTypes = Array.isArray(props.conflictDetailState?.items)
+    ? props.conflictDetailState.items.flatMap(item => Array.isArray(item?.conflictTypes) ? item.conflictTypes : [])
+    : []
+  const normalized = [...attemptedTypes, ...itemTypes]
+    .map(item => String(item || '').trim())
+    .filter(Boolean)
+  return Array.from(new Set(normalized))
+})
+
+const summaryTitle = computed(() => {
+  if (summaryConflictTypes.value.length > 1)
+    return `当前空位存在 ${summaryConflictTypes.value.join('、')} 冲突`
+  if (summaryConflictTypes.value.length === 1)
+    return `当前空位存在 ${summaryConflictTypes.value[0]} 冲突`
+  return '当前空位存在冲突'
+})
+
+const summaryHint = computed(() => {
+  if (props.conflictDetailState?.attempted?.forceAllowed)
+    return '下方列出具体冲突课程，可先定位查看；纯学员冲突支持仍要排课。'
+  return '下方列出具体冲突课程，可直接定位查看，再决定调整时间、老师或排课对象。'
+})
 </script>
 
 <template>
@@ -44,7 +77,27 @@ const modalOpen = computed({
   >
     <div class="st-conflict-modal">
       <div class="st-conflict-summary">
-        {{ conflictDetailState.summary }}
+        <div class="st-conflict-summary__headline">
+          <div class="st-conflict-summary__title">
+            {{ summaryTitle }}
+          </div>
+          <div class="st-conflict-summary__count">
+            共 {{ summaryCount }} 条冲突日程
+          </div>
+        </div>
+        <div v-if="summaryConflictTypes.length" class="st-conflict-summary__chips">
+          <span class="st-conflict-summary__chips-label">冲突类型</span>
+          <span
+            v-for="type in summaryConflictTypes"
+            :key="type"
+            class="st-conflict-summary__chip"
+          >
+            {{ type }}冲突
+          </span>
+        </div>
+        <div class="st-conflict-summary__hint">
+          {{ summaryHint }}
+        </div>
       </div>
 
       <a-spin :spinning="locating" tip="定位中..." class="st-conflict-content-spin">
@@ -113,6 +166,41 @@ const modalOpen = computed({
                     {{ conflictDetailState.attempted.assistantText || '未安排' }}
                   </strong>
                 </div>
+                <div
+                  v-if="conflictDetailState.attempted?.studentText"
+                  class="st-conflict-attempt__fact"
+                >
+                  <span class="st-conflict-attempt__fact-label">{{ conflictDetailState.attempted.studentLabel || '上课学员' }}</span>
+                  <strong class="st-conflict-attempt__fact-value">
+                    {{ conflictDetailState.attempted.studentText }}
+                  </strong>
+                </div>
+                <div
+                  v-if="conflictDetailState.attempted?.conflictStudentText"
+                  class="st-conflict-attempt__fact"
+                >
+                  <span class="st-conflict-attempt__fact-label">{{ conflictDetailState.attempted.conflictStudentLabel || '冲突学员' }}</span>
+                  <strong
+                    class="st-conflict-attempt__fact-value st-conflict-attempt__fact-value--danger"
+                  >
+                    {{ conflictDetailState.attempted.conflictStudentText }}
+                  </strong>
+                </div>
+                <div
+                  v-if="conflictDetailState.attempted?.modeLabel === '班课' || conflictDetailState.attempted?.classroomName || (conflictDetailState.attempted?.conflictTypes || []).includes('教室')"
+                  class="st-conflict-attempt__fact"
+                >
+                  <span class="st-conflict-attempt__fact-label">上课教室</span>
+                  <strong
+                    class="st-conflict-attempt__fact-value"
+                    :class="{ 'st-conflict-attempt__fact-value--danger': (conflictDetailState.attempted?.conflictTypes || []).includes('教室') }"
+                  >
+                    {{
+                      conflictDetailState.attempted.classroomName
+                      || '未设置教室'
+                    }}
+                  </strong>
+                </div>
                 <div class="st-conflict-attempt__fact">
                   <span class="st-conflict-attempt__fact-label">所在组别</span>
                   <strong class="st-conflict-attempt__fact-value">{{ conflictDetailState.attempted.groupLabel }}</strong>
@@ -166,10 +254,10 @@ const modalOpen = computed({
                   <span class="st-conflict-item__sep">｜</span>
                   学员：
                   <span :class="{ 'st-conflict-item__value--danger': item.hasStudentConflict }">{{ item.studentText }}</span>
-                  <template v-if="item.classroomName && item.classroomName !== '-'">
+                  <template v-if="item.hasClassroomConflict || (item.classroomName && item.classroomName !== '-')">
                     <span class="st-conflict-item__sep">｜</span>
                     教室：
-                    <span :class="{ 'st-conflict-item__value--danger': item.hasClassroomConflict }">{{ item.classroomName }}</span>
+                    <span :class="{ 'st-conflict-item__value--danger': item.hasClassroomConflict }">{{ item.classroomName || '未设置教室' }}</span>
                   </template>
                 </div>
                 <div class="st-conflict-item__meta st-conflict-item__meta--reasons">
@@ -225,9 +313,63 @@ const modalOpen = computed({
   padding: 14px 16px;
   border-radius: 12px;
   background: #fff7e6;
+  border: 1px solid #ffe7ba;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.st-conflict-summary__headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.st-conflict-summary__title {
   color: #ad6800;
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.st-conflict-summary__count {
+  color: #8c8c8c;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 20px;
+}
+
+.st-conflict-summary__chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.st-conflict-summary__chips-label {
+  color: #8c8c8c;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.st-conflict-summary__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fff1f0;
+  color: #ff4d4f;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.st-conflict-summary__hint {
+  color: #8c8c8c;
+  font-size: 13px;
   line-height: 1.7;
 }
 
@@ -380,6 +522,7 @@ const modalOpen = computed({
 .st-conflict-attempt__fact-value {
   color: #1f2329;
   font-weight: 700;
+  word-break: break-word;
 }
 
 .st-conflict-attempt__fact-value--danger {

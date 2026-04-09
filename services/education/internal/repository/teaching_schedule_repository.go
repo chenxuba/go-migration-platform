@@ -212,8 +212,27 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 		}
 	}
 
+	classConflicts := []scheduleConflictDetailRow{}
+	if current.ClassType == model.TeachingClassTypeNormal && current.TeachingClassID > 0 {
+		classConflicts, err = repo.listScheduleConflictDetailsTx(ctx, tx, instID, "teaching_class_id", current.TeachingClassID, []normalizedScheduleSlot{slot}, "", excludeIDs)
+		if err != nil {
+			return model.TeachingScheduleValidationResult{}, err
+		}
+	}
+
 	studentConflicts := []scheduleConflictDetailRow{}
-	if current.StudentID > 0 {
+	if current.ClassType == model.TeachingClassTypeNormal && current.TeachingClassID > 0 {
+		studentIDs, _, rosterErr := repo.listGroupClassStudentRosterTx(ctx, tx, instID, current.TeachingClassID)
+		if rosterErr != nil {
+			return model.TeachingScheduleValidationResult{}, rosterErr
+		}
+		if len(studentIDs) > 0 {
+			studentConflicts, err = repo.listScheduleConflictDetailsByStudentsTx(ctx, tx, instID, studentIDs, []normalizedScheduleSlot{slot}, "", excludeIDs)
+			if err != nil {
+				return model.TeachingScheduleValidationResult{}, err
+			}
+		}
+	} else if current.StudentID > 0 {
 		studentConflicts, err = repo.listScheduleConflictDetailsTx(ctx, tx, instID, "student_id", current.StudentID, []normalizedScheduleSlot{slot}, "", excludeIDs)
 		if err != nil {
 			return model.TeachingScheduleValidationResult{}, err
@@ -236,7 +255,7 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 		}
 	}
 
-	currentItems, existingItems, conflictTypes := buildScheduleConflictResultFromExisting(current, teacherConflicts, classroomConflicts, studentConflicts, assistantConflicts)
+	currentItems, existingItems, conflictTypes := buildScheduleConflictResultFromExisting(current, classConflicts, teacherConflicts, classroomConflicts, studentConflicts, assistantConflicts)
 	if len(conflictTypes) == 0 {
 		return model.TeachingScheduleValidationResult{
 			Valid:            true,
@@ -2316,6 +2335,7 @@ type scheduleConflictDetailRow struct {
 	TeacherID         int64
 	ClassroomID       int64
 	ClassType         int
+	TeachingClassID   int64
 	TeachingClassName string
 	StudentName       string
 	TeacherName       string
@@ -2534,6 +2554,7 @@ func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx
 			IFNULL(teacher_id, 0),
 			IFNULL(classroom_id, 0),
 			IFNULL(class_type, 0),
+			IFNULL(teaching_class_id, 0),
 			IFNULL(teaching_class_name, ''),
 			IFNULL(student_name, ''),
 			IFNULL(teacher_name, ''),
@@ -2555,6 +2576,7 @@ func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx
 		&item.TeacherID,
 		&item.ClassroomID,
 		&item.ClassType,
+		&item.TeachingClassID,
 		&item.TeachingClassName,
 		&item.StudentName,
 		&item.TeacherName,
@@ -3143,6 +3165,7 @@ func (repo *Repository) listScheduleConflictDetailsByStudentsTx(ctx context.Cont
 			IFNULL(ts.teacher_id, 0),
 			IFNULL(ts.classroom_id, 0),
 			IFNULL(ts.class_type, 0),
+			IFNULL(ts.teaching_class_id, 0),
 			IFNULL(ts.teaching_class_name, ''),
 			IFNULL(ts.student_name, ''),
 			IFNULL(ts.teacher_name, ''),
@@ -3173,6 +3196,7 @@ func (repo *Repository) listScheduleConflictDetailsByStudentsTx(ctx context.Cont
 			&item.TeacherID,
 			&item.ClassroomID,
 			&item.ClassType,
+			&item.TeachingClassID,
 			&item.TeachingClassName,
 			&item.StudentName,
 			&item.TeacherName,
@@ -3247,6 +3271,7 @@ func (repo *Repository) listScheduleConflictDetailsByAssistantsTx(ctx context.Co
 			IFNULL(teacher_id, 0),
 			IFNULL(classroom_id, 0),
 			IFNULL(class_type, 0),
+			IFNULL(teaching_class_id, 0),
 			IFNULL(teaching_class_name, ''),
 			IFNULL(student_name, ''),
 			IFNULL(teacher_name, ''),
@@ -3277,6 +3302,7 @@ func (repo *Repository) listScheduleConflictDetailsByAssistantsTx(ctx context.Co
 			&item.TeacherID,
 			&item.ClassroomID,
 			&item.ClassType,
+			&item.TeachingClassID,
 			&item.TeachingClassName,
 			&item.StudentName,
 			&item.TeacherName,
@@ -3479,6 +3505,7 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 				IFNULL(teacher_id, 0),
 				IFNULL(classroom_id, 0),
 				IFNULL(class_type, 0),
+				IFNULL(teaching_class_id, 0),
 				IFNULL(teaching_class_name, ''),
 				IFNULL(student_name, ''),
 				IFNULL(teacher_name, ''),
@@ -3505,6 +3532,7 @@ func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *s
 				&item.TeacherID,
 				&item.ClassroomID,
 				&item.ClassType,
+				&item.TeachingClassID,
 				&item.TeachingClassName,
 				&item.StudentName,
 				&item.TeacherName,
@@ -4443,13 +4471,18 @@ func buildScheduleValidationResultFromPlans(
 
 func buildScheduleConflictResultFromExisting(
 	current scheduleConflictDetailRow,
+	classConflicts []scheduleConflictDetailRow,
 	teacherConflicts []scheduleConflictDetailRow,
 	classroomConflicts []scheduleConflictDetailRow,
 	studentConflicts []scheduleConflictDetailRow,
 	assistantConflicts []scheduleConflictDetailRow,
 ) ([]model.TeachingScheduleConflictItem, []model.TeachingScheduleConflictItem, []string) {
 	typeSet := make(map[string]struct{})
-	currentConflictTypes := make([]string, 0, 4)
+	currentConflictTypes := make([]string, 0, 5)
+	if len(classConflicts) > 0 {
+		currentConflictTypes = append(currentConflictTypes, "班级")
+		typeSet["班级"] = struct{}{}
+	}
 	if len(teacherConflicts) > 0 {
 		currentConflictTypes = append(currentConflictTypes, "老师")
 		typeSet["老师"] = struct{}{}
@@ -4506,6 +4539,9 @@ func buildScheduleConflictResultFromExisting(
 			item.ConflictTypes = append(item.ConflictTypes, conflictType)
 		}
 		existingMap[row.ID] = item
+	}
+	for _, row := range classConflicts {
+		appendExisting(row, "班级")
 	}
 	for _, row := range teacherConflicts {
 		appendExisting(row, "老师")

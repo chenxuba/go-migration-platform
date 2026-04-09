@@ -525,6 +525,13 @@ func annotateTeachingScheduleConflicts(schedules []model.TeachingScheduleVO) {
 		return
 	}
 
+	studentIDSets := make([]map[string]struct{}, len(schedules))
+	assistantIDSets := make([]map[string]struct{}, len(schedules))
+	for i, item := range schedules {
+		studentIDSets[i] = parseDelimitedPositiveIDSet(item.StudentID)
+		assistantIDSets[i] = parseStringSliceIDSet(item.AssistantIDs)
+	}
+
 	grouped := make(map[string][]int)
 	for i, item := range schedules {
 		grouped[item.LessonDate] = append(grouped[item.LessonDate], i)
@@ -556,6 +563,10 @@ func annotateTeachingScheduleConflicts(schedules []model.TeachingScheduleVO) {
 					appendScheduleConflictType(&schedules[leftIndex], "学员")
 					appendScheduleConflictType(&schedules[rightIndex], "学员")
 				}
+				if nonEmptyIDSetsOverlap(studentIDSets[leftIndex], studentIDSets[rightIndex]) {
+					appendScheduleConflictType(&schedules[leftIndex], "学员")
+					appendScheduleConflictType(&schedules[rightIndex], "学员")
+				}
 				if sameNonEmptyString(left.TeacherID, right.TeacherID) {
 					appendScheduleConflictType(&schedules[leftIndex], "老师")
 					appendScheduleConflictType(&schedules[rightIndex], "老师")
@@ -563,6 +574,16 @@ func annotateTeachingScheduleConflicts(schedules []model.TeachingScheduleVO) {
 				if sameNonEmptyString(left.ClassroomID, right.ClassroomID) {
 					appendScheduleConflictType(&schedules[leftIndex], "教室")
 					appendScheduleConflictType(&schedules[rightIndex], "教室")
+				}
+				if left.ClassType == model.TeachingClassTypeNormal &&
+					right.ClassType == model.TeachingClassTypeNormal &&
+					sameNonEmptyString(left.TeachingClassID, right.TeachingClassID) {
+					appendScheduleConflictType(&schedules[leftIndex], "班级")
+					appendScheduleConflictType(&schedules[rightIndex], "班级")
+				}
+				if nonEmptyIDSetsOverlap(assistantIDSets[leftIndex], assistantIDSets[rightIndex]) {
+					appendScheduleConflictType(&schedules[leftIndex], "助教")
+					appendScheduleConflictType(&schedules[rightIndex], "助教")
 				}
 			}
 		}
@@ -653,6 +674,45 @@ func sameNonEmptyString(left, right string) bool {
 	left = strings.TrimSpace(left)
 	right = strings.TrimSpace(right)
 	return left != "" && right != "" && left == right
+}
+
+func parseDelimitedPositiveIDSet(raw string) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, part := range strings.Split(strings.TrimSpace(raw), ",") {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "0" {
+			continue
+		}
+		result[part] = struct{}{}
+	}
+	return result
+}
+
+func parseStringSliceIDSet(values []string) map[string]struct{} {
+	result := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		text := strings.TrimSpace(value)
+		if text == "" || text == "0" {
+			continue
+		}
+		result[text] = struct{}{}
+	}
+	return result
+}
+
+func nonEmptyIDSetsOverlap(left, right map[string]struct{}) bool {
+	if len(left) == 0 || len(right) == 0 {
+		return false
+	}
+	if len(left) > len(right) {
+		left, right = right, left
+	}
+	for id := range left {
+		if _, ok := right[id]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func mapTeachingScheduleToLegacyVO(v model.TeachingScheduleVO, instID int64) model.TeachingScheduleInfoLegacyVO {

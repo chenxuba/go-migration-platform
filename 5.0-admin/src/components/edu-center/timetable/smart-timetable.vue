@@ -1195,6 +1195,7 @@ watch(
 async function loadTimetableMatrix() {
   const seq = ++matrixLoadSeq
   const requestedGroup = currentGroup.value
+  clearClassConflictCache()
   timetableLoading.value = true
   try {
     await userStore.getInstConfig()
@@ -1443,13 +1444,12 @@ const courseList = ref([
     courseType: 2,
   },
 ])
-// 当前视图下的全部行（时段 A/B 切换后数据源已重建；跨组检测以当前页为准）
-const allDataSource = computed(() => dataSource.value)
-
 const {
   buildClassScheduleAssignment,
   classData,
+  classConflictLoading,
   classListLoading,
+  clearClassConflictCache,
   ensureClassLoaded,
   findClassInfo,
   handleClass,
@@ -1458,9 +1458,9 @@ const {
   resolveSelectedClassTarget,
 } = useSmartTimetableClassMode({
   activeGroupLabel,
-  allDataSource,
   dataSource,
   getLessonIndex,
+  queryDateRange,
   resetEmptyLessonConflicts,
 })
 
@@ -2236,6 +2236,75 @@ function openApiConflictModal(reason, column, record) {
   })
 }
 
+function openClassConflictModal(reason, column, record) {
+  const selectedTarget = resolveConflictAttemptTarget()
+  const attemptedConflictTypes = Array.isArray(reason?.conflictTypes) ? reason.conflictTypes : []
+  const selectedClass = findClassInfo(classId.value)
+  const hasStudentConflict = attemptedConflictTypes.includes('学员')
+  const classStudentText = Array.isArray(selectedClass?.studentNames) && selectedClass.studentNames.length
+    ? selectedClass.studentNames.join('、')
+    : '暂无班级学员信息'
+  const conflictingStudentText = Array.isArray(reason?.conflictingStudentNames) && reason.conflictingStudentNames.length
+    ? reason.conflictingStudentNames.join('、')
+    : (hasStudentConflict ? '未识别到具体冲突学员' : '')
+  const assignment = selectedClass
+    ? buildClassScheduleAssignment(
+        selectedClass,
+        record.teacherId,
+        normalizedSelectedClassAssistantIds.value,
+      )
+    : {
+        teacherId: String(record.teacherId || '').trim(),
+        assistantIds: [],
+        removedAssistantIds: [],
+      }
+  const forceAllowed = currentModel.value === '2'
+    && Boolean(classId.value)
+    && attemptedConflictTypes.length > 0
+    && attemptedConflictTypes.every(type => type === '学员')
+
+  openConflictDetailModalWithAttempt(reason, {
+    modeLabel: selectedTarget.modeLabel,
+    targetLabel: selectedTarget.targetLabel,
+    targetValue: selectedTarget.targetValue,
+    courseName: selectedTarget.courseName,
+    date: record.date,
+    week: formatWeek(record.date),
+    timeText: `${column.startTime}-${column.endTime}`,
+    teacherName: record.name,
+    assistantText: classAssistantTextForIds(assignment.assistantIds),
+    studentLabel: '班级学员',
+    studentText: classStudentText,
+    conflictStudentLabel: hasStudentConflict ? '冲突学员' : '',
+    conflictStudentText: conflictingStudentText,
+    classroomId: String(selectedClass?.classroomId || '').trim(),
+    classroomName: String(selectedClass?.classroomName || '').trim(),
+    warningText: assignment.removedAssistantIds.length > 0 ? '主教与助教不能为同一人，系统已自动忽略重复助教。' : '',
+    lessonIndex: getLessonIndex(column.startTime),
+    groupLabel: activeGroupLabel.value || '当前组',
+    conflictTypes: attemptedConflictTypes,
+    removedAssistantIds: assignment.removedAssistantIds,
+    forceAllowed,
+    forceDisabledReason: forceAllowed ? '' : buildForceScheduleDisabledReason(attemptedConflictTypes),
+    forcePayload: forceAllowed
+      ? {
+          groupClassId: String(classId.value),
+          teacherId: assignment.teacherId,
+          assistantIds: assignment.assistantIds,
+          classroomId: String(selectedClass?.classroomId || '').trim() || undefined,
+          schedules: [{
+            lessonDate: record.date,
+            startTime: column.startTime,
+            endTime: column.endTime,
+            teacherId: assignment.teacherId,
+            assistantIds: assignment.assistantIds,
+            classroomId: String(selectedClass?.classroomId || '').trim() || undefined,
+          }],
+        }
+      : null,
+  })
+}
+
 async function forceScheduleDespiteStudentConflict() {
   const attempted = conflictDetailState.value.attempted
   if (!attempted?.forceAllowed || !attempted?.forcePayload) {
@@ -2251,11 +2320,14 @@ async function forceScheduleDespiteStudentConflict() {
           allowStudentConflict: true,
         }))
       : []
-    const res = await createOneToOneSchedulesApi({
+    const payload = {
       ...attempted.forcePayload,
       allowStudentConflict: true,
       schedules,
-    })
+    }
+    const res = attempted.forcePayload.oneToOneId
+      ? await createOneToOneSchedulesApi(payload)
+      : await createGroupClassSchedulesApi(payload)
     if (res.code !== 200)
       throw new Error(res.message || '强制排课失败')
     conflictDetailModalOpen.value = false
@@ -2427,6 +2499,10 @@ function handleConflictClick(timeSlot, column, record) {
 
     if (reason.type === '1v1-api') {
       openApiConflictModal(reason, column, record)
+      return
+    }
+    else if (currentModel.value === '2' && Array.isArray(reason?.existingSchedules) && reason.existingSchedules.length) {
+      openClassConflictModal(reason, column, record)
       return
     }
     else if (reason.type === '1v1-assistant-selection') {
@@ -2814,7 +2890,7 @@ async function deleteScheduledLessonFromDetail() {
 }
 
 // 排课
-function handleScheduleClick(timeSlot, column, record) {
+async function handleScheduleClick(timeSlot, column, record) {
   if (currentModel.value === '1') {
     if (!oneToOneRecordId.value) {
       messageService.warning('请先在上方选择要排课的 1 对 1 记录')
@@ -2893,7 +2969,7 @@ function handleScheduleClick(timeSlot, column, record) {
       return
     }
 
-    const classInfo = findClassInfo(classId.value)
+    const classInfo = await handleClass(classId.value)
 
     if (!classInfo) {
       messageService.warning('请选择有效的班级')
@@ -2992,6 +3068,8 @@ function hasActiveScheduleTarget() {
 function emptyLessonStatusText(lesson) {
   if (!hasActiveScheduleTarget())
     return ''
+  if (currentModel.value === '2' && classId.value && classConflictLoading.value)
+    return '空闲时段(检测中...)'
   const conflictTypes = uniqueConflictTypes(lesson?.conflictReason?.conflictTypes || [])
   if (!lesson?.conflict)
     return '空闲时段(可排)'
