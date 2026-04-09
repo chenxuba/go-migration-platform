@@ -351,6 +351,7 @@ onUnmounted(() => {
           <TimetableScheduleHoverPopover
             v-if="text.studentId"
             :open="!draggingScheduleCellKey && openSchedulePopoverKey === schedulePopoverKey(column, record)"
+            :schedule-id="String(text.scheduleId || '')"
             :mode-label="scheduleModeShortLabel(text)"
             :lesson-title="scheduleLessonTitle(text)"
             :teacher-name="text.teacherName || record.name || '-'"

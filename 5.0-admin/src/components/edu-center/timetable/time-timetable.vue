@@ -1758,6 +1758,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                   <TimetableScheduleHoverPopover
                     v-for="event in layoutsByDate.get(item.key) || []"
                     :key="event.id"
+                    :schedule-id="String(event.id || '')"
                     :mode-label="scheduleBadgeText(event.classType)"
                     :lesson-title="scheduleHoverTitle(event.raw)"
                     :teacher-name="event.teacher"

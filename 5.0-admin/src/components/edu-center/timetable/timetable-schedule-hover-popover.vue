@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { CopyOutlined, EditOutlined } from '@ant-design/icons-vue'
-import { computed, getCurrentInstance, ref } from 'vue'
+import dayjs from 'dayjs'
+import { computed, getCurrentInstance, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi } from '@/api/edu-center/teaching-schedule'
 
 const props = withDefaults(defineProps<{
   open?: boolean
+  scheduleId?: string
   modeLabel?: string
   lessonTitle?: string
   teacherName?: string
@@ -19,6 +22,7 @@ const props = withDefaults(defineProps<{
   conflictText?: string
   showCopyAction?: boolean
 }>(), {
+  scheduleId: '',
   modeLabel: '课程',
   lessonTitle: '课程',
   teacherName: '-',
@@ -45,6 +49,9 @@ const popoverInnerStyle = {
   padding: '0px',
 }
 const innerOpen = ref(false)
+const detailLoading = ref(false)
+const detailData = ref<TeachingScheduleDetail | null>(null)
+let detailLoadSeq = 0
 const isOpenControlled = computed(() => {
   const vnodeProps = instance?.vnode.props
   return Boolean(vnodeProps && Object.prototype.hasOwnProperty.call(vnodeProps, 'open'))
@@ -52,6 +59,114 @@ const isOpenControlled = computed(() => {
 const popoverOpenProps = computed(() => (
   { open: isOpenControlled.value ? props.open : innerOpen.value }
 ))
+const currentOpen = computed(() => (isOpenControlled.value ? Boolean(props.open) : innerOpen.value))
+
+function formatWeek(date: string) {
+  const day = dayjs(date).day()
+  const weekMap: Record<number, string> = {
+    0: '周日',
+    1: '周一',
+    2: '周二',
+    3: '周三',
+    4: '周四',
+    5: '周五',
+    6: '周六',
+  }
+  return weekMap[day] || '-'
+}
+
+function firstNonEmptyText(...values: Array<string | undefined | null>) {
+  for (const value of values) {
+    const text = String(value || '').trim()
+    if (text)
+      return text
+  }
+  return '-'
+}
+
+function formatNameBucket(names: string[]) {
+  const validNames = names.map(item => String(item || '').trim()).filter(Boolean)
+  if (!validNames.length)
+    return '-'
+  return `${validNames.length}人，${validNames.join('、')}`
+}
+
+function formatStudentBucket(students: TeachingScheduleDetailStudent[]) {
+  return formatNameBucket(students.map(item => item.studentName))
+}
+
+const activeStudents = computed(() => {
+  if (!detailData.value)
+    return []
+  return (detailData.value.students || []).filter(item => Number(item.scheduleStudentType) !== 3)
+})
+const trialStudents = computed(() => {
+  if (!detailData.value)
+    return []
+  return (detailData.value.students || []).filter(item => Number(item.scheduleStudentType) === 3)
+})
+const leaveStudents = computed(() => detailData.value?.leaveStudents || [])
+const displayLessonTitle = computed(() => firstNonEmptyText(
+  detailData.value?.teachingClassName,
+  detailData.value?.lessonName,
+  props.lessonTitle,
+))
+const displayTeacherName = computed(() => firstNonEmptyText(detailData.value?.teacherName, props.teacherName))
+const displayCourseName = computed(() => firstNonEmptyText(detailData.value?.lessonName, props.courseName))
+const displayAssistantText = computed(() => {
+  if (detailData.value) {
+    const assistantNames = Array.isArray(detailData.value.assistantNames) ? detailData.value.assistantNames : []
+    return formatNameBucket(assistantNames)
+  }
+  return firstNonEmptyText(props.assistantText)
+})
+const displayStudentText = computed(() => (
+  detailData.value ? formatStudentBucket(activeStudents.value) : firstNonEmptyText(props.studentText)
+))
+const displayTrialStudentText = computed(() => (
+  detailData.value ? formatStudentBucket(trialStudents.value) : firstNonEmptyText(props.trialStudentText)
+))
+const displayLeaveStudentText = computed(() => (
+  detailData.value ? formatStudentBucket(leaveStudents.value) : firstNonEmptyText(props.leaveStudentText)
+))
+const displayRemarkText = computed(() => firstNonEmptyText(detailData.value?.remark, props.remarkText))
+const displayTimeText = computed(() => {
+  if (!detailData.value)
+    return firstNonEmptyText(props.timeText)
+  const dateText = dayjs(detailData.value.lessonDate).format('M月D日')
+  const weekText = formatWeek(detailData.value.lessonDate)
+  const startTime = dayjs(detailData.value.startAt).format('HH:mm')
+  const endTime = dayjs(detailData.value.endAt).format('HH:mm')
+  return `${startTime} ~ ${endTime}(${weekText}) ${dateText}`
+})
+
+async function loadLatestDetail() {
+  const scheduleId = String(props.scheduleId || '').trim()
+  if (!scheduleId) {
+    detailData.value = null
+    return
+  }
+  const seq = ++detailLoadSeq
+  detailLoading.value = true
+  try {
+    const res = await getTeachingScheduleDetailApi({ id: scheduleId })
+    if (seq !== detailLoadSeq)
+      return
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '加载日程详情失败')
+    detailData.value = res.result
+  }
+  catch (error) {
+    if (seq !== detailLoadSeq)
+      return
+    detailData.value = null
+    console.error('load hover schedule detail failed', error)
+  }
+  finally {
+    if (seq === detailLoadSeq)
+      detailLoading.value = false
+  }
+}
 
 function closePopover() {
   if (!isOpenControlled.value)
@@ -74,6 +189,18 @@ function goRollCall() {
   closePopover()
   router.push('/edu-center/roll-call-list')
 }
+
+watch(
+  () => `${currentOpen.value}|${String(props.scheduleId || '').trim()}`,
+  async () => {
+    if (!currentOpen.value) {
+      detailLoading.value = false
+      return
+    }
+    await loadLatestDetail()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -88,102 +215,104 @@ function goRollCall() {
     @open-change="handleOpenChange"
   >
     <template #content>
-      <div class="st-schedule-hover-card">
-        <div class="st-schedule-hover-card__header">
-          <div class="st-schedule-hover-card__hero">
-            <div class="st-schedule-hover-card__badge-shell">
-              <div class="st-schedule-hover-card__badge">
-                {{ modeLabel }}
+      <a-spin :spinning="detailLoading">
+        <div class="st-schedule-hover-card">
+          <div class="st-schedule-hover-card__header">
+            <div class="st-schedule-hover-card__hero">
+              <div class="st-schedule-hover-card__badge-shell">
+                <div class="st-schedule-hover-card__badge">
+                  {{ modeLabel }}
+                </div>
+              </div>
+
+              <div class="st-schedule-hover-card__hero-main">
+                <div class="st-schedule-hover-card__hero-top">
+                  <div class="st-schedule-hover-card__title" :title="displayLessonTitle">
+                    {{ displayLessonTitle }}
+                  </div>
+                  <button
+                    type="button"
+                    class="st-schedule-hover-card__detail-link"
+                    @click.stop="openDetail"
+                  >
+                    详情
+                  </button>
+                </div>
+                <div class="st-schedule-hover-card__time" :title="displayTimeText">
+                  {{ displayTimeText }}
+                </div>
               </div>
             </div>
+          </div>
 
-            <div class="st-schedule-hover-card__hero-main">
-              <div class="st-schedule-hover-card__hero-top">
-                <div class="st-schedule-hover-card__title" :title="lessonTitle">
-                  {{ lessonTitle }}
-                </div>
+          <div class="st-schedule-hover-card__body">
+            <div class="st-schedule-hover-card__row">
+              <span>上课教师：</span>
+              <strong :title="displayTeacherName">{{ displayTeacherName }}</strong>
+            </div>
+            <div class="st-schedule-hover-card__row">
+              <span>课程：</span>
+              <strong :title="displayCourseName">{{ displayCourseName }}</strong>
+            </div>
+            <div class="st-schedule-hover-card__row">
+              <span>上课助教：</span>
+              <strong :title="displayAssistantText">{{ displayAssistantText }}</strong>
+            </div>
+            <div class="st-schedule-hover-card__row">
+              <span>上课学员：</span>
+              <strong class="st-schedule-hover-card__value--primary" :title="displayStudentText">{{ displayStudentText }}</strong>
+            </div>
+            <div class="st-schedule-hover-card__row">
+              <span>试听学员：</span>
+              <strong :title="displayTrialStudentText">{{ displayTrialStudentText }}</strong>
+            </div>
+            <div class="st-schedule-hover-card__row">
+              <span>请假学员：</span>
+              <strong :title="displayLeaveStudentText">{{ displayLeaveStudentText }}</strong>
+            </div>
+            <div class="st-schedule-hover-card__row">
+              <span>对内备注：</span>
+              <strong :title="displayRemarkText">{{ displayRemarkText }}</strong>
+            </div>
+            <div v-if="conflictText" class="st-schedule-hover-card__row st-schedule-hover-card__row--danger">
+              <span>冲突说明：</span>
+              <strong :title="conflictText">{{ conflictText }}</strong>
+            </div>
+          </div>
+
+          <div class="st-schedule-hover-card__footer">
+            <div class="st-schedule-hover-card__actions">
+              <a-tooltip title="编辑日程" placement="top">
                 <button
                   type="button"
-                  class="st-schedule-hover-card__detail-link"
+                  class="st-schedule-hover-card__icon-btn"
                   @click.stop="openDetail"
                 >
-                  详情
+                  <EditOutlined />
                 </button>
-              </div>
-              <div class="st-schedule-hover-card__time" :title="timeText">
-                {{ timeText }}
-              </div>
+              </a-tooltip>
+
+              <a-tooltip v-if="showCopyAction" title="复制日程" placement="top">
+                <button
+                  type="button"
+                  class="st-schedule-hover-card__icon-btn"
+                  @click.stop
+                >
+                  <CopyOutlined />
+                </button>
+              </a-tooltip>
             </div>
+
+            <button
+              type="button"
+              class="st-schedule-hover-card__primary-btn"
+              @click.stop="goRollCall"
+            >
+              去点名
+            </button>
           </div>
         </div>
-
-        <div class="st-schedule-hover-card__body">
-          <div class="st-schedule-hover-card__row">
-            <span>上课教师：</span>
-            <strong :title="teacherName">{{ teacherName }}</strong>
-          </div>
-          <div class="st-schedule-hover-card__row">
-            <span>课程：</span>
-            <strong :title="courseName">{{ courseName }}</strong>
-          </div>
-          <div class="st-schedule-hover-card__row">
-            <span>上课助教：</span>
-            <strong :title="assistantText">{{ assistantText }}</strong>
-          </div>
-          <div class="st-schedule-hover-card__row">
-            <span>上课学员：</span>
-            <strong class="st-schedule-hover-card__value--primary" :title="studentText">{{ studentText }}</strong>
-          </div>
-          <div class="st-schedule-hover-card__row">
-            <span>试听学员：</span>
-            <strong :title="trialStudentText">{{ trialStudentText }}</strong>
-          </div>
-          <div class="st-schedule-hover-card__row">
-            <span>请假学员：</span>
-            <strong :title="leaveStudentText">{{ leaveStudentText }}</strong>
-          </div>
-          <div class="st-schedule-hover-card__row">
-            <span>对内备注：</span>
-            <strong :title="remarkText">{{ remarkText }}</strong>
-          </div>
-          <div v-if="conflictText" class="st-schedule-hover-card__row st-schedule-hover-card__row--danger">
-            <span>冲突说明：</span>
-            <strong :title="conflictText">{{ conflictText }}</strong>
-          </div>
-        </div>
-
-        <div class="st-schedule-hover-card__footer">
-          <div class="st-schedule-hover-card__actions">
-            <a-tooltip title="编辑日程" placement="top">
-              <button
-                type="button"
-                class="st-schedule-hover-card__icon-btn"
-                @click.stop="openDetail"
-              >
-                <EditOutlined />
-              </button>
-            </a-tooltip>
-
-            <a-tooltip v-if="showCopyAction" title="复制日程" placement="top">
-              <button
-                type="button"
-                class="st-schedule-hover-card__icon-btn"
-                @click.stop
-              >
-                <CopyOutlined />
-              </button>
-            </a-tooltip>
-          </div>
-
-          <button
-            type="button"
-            class="st-schedule-hover-card__primary-btn"
-            @click.stop="goRollCall"
-          >
-            去点名
-          </button>
-        </div>
-      </div>
+      </a-spin>
     </template>
 
     <slot />

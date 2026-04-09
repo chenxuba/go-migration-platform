@@ -1755,6 +1755,7 @@ const unsignedLessons = computed(() =>
                 <TimetableScheduleHoverPopover
                   v-for="event in (layoutsByCell.get(`${col.dateKey}|${col.teacherKey}`)?.layouts ?? [])"
                   :key="event.id"
+                  :schedule-id="String(event.id || '')"
                   :mode-label="scheduleBadgeText(event.classType)"
                   :lesson-title="scheduleHoverTitle(event.raw)"
                   :teacher-name="event.teacher"
@@ -1821,6 +1822,7 @@ const unsignedLessons = computed(() =>
       :editable="isCurrentDetailOneToOne"
       @delete="handleScheduleDetailDelete"
       @edit="handleScheduleDetailEdit"
+      @updated="onBatchPlanUpdated"
     />
     <ScheduleBatchPlanEditModal
       v-model:open="scheduleBatchPlanEditOpen"
