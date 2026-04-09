@@ -67,7 +67,7 @@ const studentColumns: TableColumnsType<TeachingScheduleDetailStudent> = [
   {
     title: '操作',
     key: 'action',
-    width: 100,
+    width: 220,
     align: 'center',
   },
 ]
@@ -174,6 +174,16 @@ function handleAddStudentMenuClick({ key }) {
     addStudentModalTitle.value = '添加试听学员'
   }
   addStudentModalOpen.value = true
+}
+
+function handleStudentReschedule(student: Record<string, any>) {
+  const name = String(student?.studentName || '').trim() || '当前学员'
+  messageService.info(`${name} 的班课调课功能待接入`)
+}
+
+function handleStudentRemove(student: Record<string, any>) {
+  const name = String(student?.studentName || '').trim() || '当前学员'
+  messageService.info(`${name} 的班课移出功能待接入`)
 }
 
 async function loadDetail() {
@@ -380,7 +390,20 @@ watch(
                     </span>
                   </template>
                   <template v-else-if="column.key === 'action'">
-                    <a-button type="link" class="px0" @click="handleViewStudent(record.studentId)">
+                    <div v-if="!isOneToOne" class="student-action-links">
+                      <button type="button" class="student-action-link" @click="handleViewStudent(record.studentId)">
+                        详情
+                      </button>
+                      <span class="student-action-divider" />
+                      <button type="button" class="student-action-link" @click="handleStudentReschedule(record)">
+                        调课
+                      </button>
+                      <span class="student-action-divider" />
+                      <button type="button" class="student-action-link" @click="handleStudentRemove(record)">
+                        移出
+                      </button>
+                    </div>
+                    <a-button v-else type="link" class="px0" @click="handleViewStudent(record.studentId)">
                       详情
                     </a-button>
                   </template>
@@ -422,9 +445,19 @@ watch(
                     </span>
                   </template>
                   <template v-else-if="column.key === 'action'">
-                    <a-button type="link" class="px0" @click="handleViewStudent(record.studentId)">
-                      详情
-                    </a-button>
+                    <div class="student-action-links">
+                      <button type="button" class="student-action-link" @click="handleViewStudent(record.studentId)">
+                        详情
+                      </button>
+                      <span class="student-action-divider" />
+                      <button type="button" class="student-action-link" @click="handleStudentReschedule(record)">
+                        调课
+                      </button>
+                      <span class="student-action-divider" />
+                      <button type="button" class="student-action-link" @click="handleStudentRemove(record)">
+                        移出
+                      </button>
+                    </div>
                   </template>
                 </template>
               </a-table>
@@ -563,5 +596,33 @@ watch(
 
 .student-type-text {
   color: #222;
+}
+
+.student-action-links {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  white-space: nowrap;
+}
+
+.student-action-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #1677ff;
+  font-size: 15px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.student-action-link:hover {
+  color: #0958d9;
+}
+
+.student-action-divider {
+  width: 1px;
+  height: 16px;
+  background: #e5e6eb;
 }
 </style>
