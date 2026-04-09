@@ -2614,10 +2614,10 @@ function isScheduleDraggable(text) {
 }
 
 function resolveScheduleDragBlockedMessage(text) {
-  if (isScheduleBeforeToday(text))
-    return '过去的日程，不允许拖拽调课'
   if (text?.callStatusKey === 'signed')
     return '当前课程已点名，暂不支持拖拽调课'
+  if (isScheduleBeforeToday(text))
+    return '过去的日程，不允许拖拽调课'
   if (text?.courseType === 1 && text?.isMain === false)
     return '当前是助教课表，暂不支持拖拽调课，请在主教老师所在行操作'
   if (text?.courseType === 2)
