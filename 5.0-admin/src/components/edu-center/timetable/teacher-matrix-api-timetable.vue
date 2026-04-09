@@ -1,32 +1,45 @@
 <script setup lang="ts">
 import type { Dayjs } from 'dayjs'
-import type {
-  TeachingScheduleItem,
-  TeachingScheduleMatrixDay,
-  TeachingScheduleMatrixLegacyItem,
-} from '@/api/edu-center/teaching-schedule'
 import { CopyOutlined, DownloadOutlined, LeftOutlined, RightOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
+import SmartTimetableScheduleDetailDrawer from './smart-timetable-schedule-detail-drawer.vue'
+import TimetableScheduleHoverPopover from './timetable-schedule-hover-popover.vue'
+import TimetableScheduleSummary from './timetable-schedule-summary.vue'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
+import type {
+  MatrixTeacherFilterParam,
+  TeachingScheduleItem,
+  TeachingScheduleMatrixDay,
+  TeachingScheduleMatrixLegacyItem,
+} from '@/api/edu-center/teaching-schedule'
 import {
   copyTeachingSchedulesWeekApi,
   downloadTeachingSchedulesTeacherMatrixExcelApi,
   listTeachingSchedulesByTeacherMatrixApi,
-  type MatrixTeacherFilterParam,
 } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
-import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
-import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
-import TimetableScheduleSummary from './timetable-schedule-summary.vue'
 
-type FilterOption = {
+interface FilterOption {
   id: string
   value: string
+}
+
+interface DrawerSummary {
+  scheduleId?: string
+  id?: string
+  lessonTitle?: string
+  courseName?: string
+  teacherName?: string
+  assistantText?: string
+  classroomName?: string
+  studentText?: string
+  courseType?: number
 }
 
 const displayArray = ref([
@@ -43,8 +56,9 @@ const currentDate = ref(dayjs())
 const now = ref(dayjs())
 const loading = ref(false)
 const matrixDays = ref<TeachingScheduleMatrixDay[]>([])
-const scheduleEditOpen = ref(false)
-const currentSchedule = ref<TeachingScheduleItem | null>(null)
+const scheduleDetailOpen = ref(false)
+const currentDetailSchedule = ref<TeachingScheduleItem | null>(null)
+const currentScheduleDetail = ref<DrawerSummary | null>(null)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref<TeachingScheduleItem | null>(null)
 
@@ -106,11 +120,64 @@ function conflictBadgeTitle(event: CellSchedule) {
   return types.length ? `冲突：${types.join('、')}` : '存在冲突'
 }
 
+function isOneToOneSchedule(schedule: TeachingScheduleItem | null | undefined) {
+  return Number(schedule?.classType) === 2
+}
+
+function scheduleAssistantText(schedule: TeachingScheduleItem | null | undefined) {
+  const list = Array.isArray(schedule?.assistantNames)
+    ? schedule.assistantNames.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+  return list.length ? list.join('、') : '未安排'
+}
+
+function scheduleStudentSummary(schedule: TeachingScheduleItem | null | undefined) {
+  const text = String(schedule?.studentName || '').trim()
+  return text || '-'
+}
+
+function scheduleConflictSummary(schedule: TeachingScheduleItem | null | undefined) {
+  const types = Array.isArray(schedule?.conflictTypes)
+    ? schedule.conflictTypes.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+  if (types.length)
+    return `${types.join('、')}冲突`
+  return schedule?.conflict ? '当前课程存在冲突' : ''
+}
+
+function scheduleHoverTitle(schedule: TeachingScheduleItem | null | undefined) {
+  if (isOneToOneSchedule(schedule))
+    return String(schedule?.lessonName || '').trim() || '1对1日程'
+  return String(schedule?.teachingClassName || '').trim()
+    || String(schedule?.lessonName || '').trim()
+    || '班课日程'
+}
+
+function scheduleTimeTextFromEvent(event: CellSchedule) {
+  return `${event.startAt.format('YYYY-MM-DD')} ${event.startAt.format('HH:mm')} ~ ${event.endAt.format('HH:mm')}`
+}
+
+function buildScheduleDrawerDetail(schedule: TeachingScheduleItem | null | undefined): DrawerSummary | null {
+  if (!schedule)
+    return null
+  return {
+    scheduleId: String(schedule.id || '').trim(),
+    id: String(schedule.id || '').trim(),
+    lessonTitle: scheduleHoverTitle(schedule),
+    courseName: String(schedule.lessonName || '').trim() || '-',
+    teacherName: String(schedule.teacherName || '').trim() || '-',
+    assistantText: scheduleAssistantText(schedule),
+    classroomName: String(schedule.classroomName || '').trim() || '',
+    studentText: scheduleStudentSummary(schedule),
+    courseType: isOneToOneSchedule(schedule) ? 1 : 2,
+  }
+}
+
 function normalizeScheduleFilterValue(value: unknown): string | undefined {
   if (Array.isArray(value))
     return value.length ? String(value[0] ?? '').trim() || undefined : undefined
   const text = String(value ?? '').trim()
-  return text ? text : undefined
+  return text || undefined
 }
 
 function normalizeScheduleFilterValues(value: unknown): string[] {
@@ -401,6 +468,7 @@ const floatingDateStyles = ref<Record<string, FloatingDateStyle>>({})
 
 let headerDatesResizeObserver: ResizeObserver | null = null
 
+/* eslint-disable ts/no-use-before-define */
 function getDayColumnRange(dayIndex: number) {
   const groups = dateTeacherGroups.value
   if (dayIndex < 0 || dayIndex >= groups.length)
@@ -487,6 +555,7 @@ function updateFloatingDatePositions(scrollLeftOverride?: number) {
   })
   floatingDateStyles.value = next
 }
+/* eslint-enable ts/no-use-before-define */
 
 function getFloatingStyle(dateKey: string): FloatingDateStyle {
   return floatingDateStyles.value[dateKey] ?? {
@@ -899,9 +968,16 @@ function legacyToTeachingScheduleItem(
   info: TeachingScheduleMatrixLegacyItem,
   col: { teacherId: number, teacherName: string },
 ): TeachingScheduleItem {
-  const tid = info.teacherList?.[0]?.id ?? col.teacherId
-  const tname = info.teacherList?.[0]?.name ?? col.teacherName
-  const stu0 = info.studentList?.[0]
+  const teacherList = Array.isArray(info.teacherList) ? info.teacherList : []
+  const studentList = Array.isArray(info.studentList) ? info.studentList : []
+  const mainTeacher = teacherList[0]
+  const assistantList = teacherList.slice(1)
+  const studentText = studentList
+    .map(item => String(item?.name || '').trim())
+    .filter(Boolean)
+    .join('、')
+  const tid = mainTeacher?.id ?? col.teacherId
+  const tname = mainTeacher?.name ?? col.teacherName
   const start = dayjs(`${info.scheduleDate} ${info.scheduleStartTime}`, 'YYYY-MM-DD HH:mm')
   const end = dayjs(`${info.scheduleDate} ${info.scheduleEndTime}`, 'YYYY-MM-DD HH:mm')
   return {
@@ -911,12 +987,14 @@ function legacyToTeachingScheduleItem(
     classType: info.courseType ?? 0,
     teachingClassId: info.classId != null ? String(info.classId) : '',
     teachingClassName: info.className ?? '',
-    studentId: stu0 != null ? String(stu0.id) : '',
-    studentName: stu0?.name ?? '',
+    studentId: studentList[0] != null ? String(studentList[0].id) : '',
+    studentName: studentText,
     lessonId: info.courseId != null ? String(info.courseId) : '',
     lessonName: info.courseName ?? '',
     teacherId: String(tid),
     teacherName: tname,
+    assistantIds: assistantList.map(item => String(item.id)),
+    assistantNames: assistantList.map(item => String(item.name || '').trim()).filter(Boolean),
     classroomId: '',
     classroomName: '',
     lessonDate: info.scheduleDate,
@@ -944,7 +1022,7 @@ function resolveLessonCallStatusKey(info: TeachingScheduleMatrixLegacyItem) {
   return 'unsigned'
 }
 
-type CellSchedule = {
+interface CellSchedule {
   id: string
   dateKey: string
   teacherKey: string
@@ -1202,28 +1280,35 @@ const showCurrentTimeLine = computed(() => {
   if (
     currentTimeMinutes.value < timelineStart
     || currentTimeMinutes.value > timelineEnd
-  )
+  ) {
     return false
+  }
   return displayDates.value.some(d => d.format('YYYY-MM-DD') === todayKey.value)
 })
 
 function openScheduleEdit(event: CellSchedule) {
-  if (event.raw?.classType === 2) {
-    currentBatchPlanSchedule.value = event.raw
-    scheduleBatchPlanEditOpen.value = true
-    return
-  }
-  currentSchedule.value = event.raw
-  scheduleEditOpen.value = true
-}
-
-function onUpdated() {
-  loadMatrix()
+  const schedule = event.raw
+  currentDetailSchedule.value = schedule
+  currentScheduleDetail.value = buildScheduleDrawerDetail(schedule)
+  scheduleDetailOpen.value = true
 }
 
 function onBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
   loadMatrix()
+}
+
+const isCurrentDetailOneToOne = computed(() => isOneToOneSchedule(currentDetailSchedule.value))
+
+function handleScheduleDetailEdit() {
+  const schedule = currentDetailSchedule.value
+  if (!isOneToOneSchedule(schedule))
+    return
+  scheduleDetailOpen.value = false
+  nextTick(() => {
+    currentBatchPlanSchedule.value = schedule
+    scheduleBatchPlanEditOpen.value = true
+  })
 }
 
 const totalLessons = computed(() => internalSchedules.value.length)
@@ -1457,89 +1542,88 @@ const unsignedLessons = computed(() =>
           </div>
 
           <div v-if="matrixDays.length" class="tm-schedule-header">
-              <div class="tm-header-time-corner">
-                <div class="tm-header-time-corner__label">
-                  时间
-                </div>
+            <div class="tm-header-time-corner">
+              <div class="tm-header-time-corner__label">
+                时间
               </div>
-              <div
-                ref="headerDatesRef"
-                class="tm-header-dates"
-                @scroll="handleHeaderScroll"
-              >
-                <!-- 与旧版一致：浮动层放在「与列同宽的滚动内容」里，left 才用内容坐标 finalPosition -->
-                <div class="tm-header-dates-track">
-                  <div class="tm-floating-date-layer">
-                    <div
-                      v-for="g in dateTeacherGroups"
-                      :key="`float-${g.dateKey}`"
-                      class="tm-floating-chip"
-                      :class="{ 'tm-floating-chip--today': isActiveDate(g.dateKey) }"
-                      :style="floatingPillStyle(g.dateKey)"
-                    >
-                      <div class="tm-floating-chip__line">
-                        <span class="tm-floating-chip__date">{{ g.date.format('M/D') }}</span>
-                        <span class="tm-floating-chip__week">{{
-                          ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][g.date.day()]
-                        }}</span>
-                      </div>
-                      <div class="tm-floating-chip__meta">
-                        共 <strong>{{ g.dayCount }}</strong> 节
-                      </div>
+            </div>
+            <div
+              ref="headerDatesRef"
+              class="tm-header-dates"
+              @scroll="handleHeaderScroll"
+            >
+              <!-- 与旧版一致：浮动层放在「与列同宽的滚动内容」里，left 才用内容坐标 finalPosition -->
+              <div class="tm-header-dates-track">
+                <div class="tm-floating-date-layer">
+                  <div
+                    v-for="g in dateTeacherGroups"
+                    :key="`float-${g.dateKey}`"
+                    class="tm-floating-chip"
+                    :class="{ 'tm-floating-chip--today': isActiveDate(g.dateKey) }"
+                    :style="floatingPillStyle(g.dateKey)"
+                  >
+                    <div class="tm-floating-chip__line">
+                      <span class="tm-floating-chip__date">{{ g.date.format('M/D') }}</span>
+                      <span class="tm-floating-chip__week">{{
+                        ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][g.date.day()]
+                      }}</span>
+                    </div>
+                    <div class="tm-floating-chip__meta">
+                      共 <strong>{{ g.dayCount }}</strong> 节
                     </div>
                   </div>
-                  <div class="tm-header-grid" :style="gridTemplateStyleHeader">
+                </div>
+                <div class="tm-header-grid" :style="gridTemplateStyleHeader">
+                  <div
+                    v-for="(g, gi) in dateTeacherGroups"
+                    :key="g.dateKey"
+                    class="tm-date-banner"
+                    :class="{
+                      'tm-date-banner--active': isActiveDate(g.dateKey),
+                      'tm-date-banner--day-divider': gi < dateTeacherGroups.length - 1,
+                    }"
+                    :style="{ gridColumn: `span ${g.teachers.length}` }"
+                  >
+                    <div class="tm-date-banner__inner tm-date-banner__inner--ghost" aria-hidden="true">
+                      <span class="tm-date-banner__date">{{ g.date.format('M/D') }}</span>
+                      <span class="tm-date-banner__week">{{ ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][g.date.day()] }}</span>
+                      <span class="tm-date-banner__count">共 {{ g.dayCount }} 节</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="tm-subheader-grid" :style="gridTemplateStyleHeader">
+                  <div
+                    v-for="(g, gi) in dateTeacherGroups"
+                    :key="`w-${g.dateKey}`"
+                    class="tm-teacher-head-group"
+                  >
                     <div
-                      v-for="(g, gi) in dateTeacherGroups"
-                      :key="g.dateKey"
-                      class="tm-date-banner"
+                      v-for="(t, ti) in g.teachers"
+                      :key="`${g.dateKey}-${t.key}`"
+                      class="tm-teacher-head"
                       :class="{
-                        'tm-date-banner--active': isActiveDate(g.dateKey),
-                        'tm-date-banner--day-divider': gi < dateTeacherGroups.length - 1,
+                        'tm-teacher-head--active': isActiveDate(g.dateKey),
+                        'tm-teacher-head--has-class': (t.count ?? 0) > 0,
+                        'tm-teacher-head--no-class': (t.count ?? 0) === 0,
+                        'tm-teacher-head--day-divider':
+                          ti === g.teachers.length - 1 && gi < dateTeacherGroups.length - 1,
                       }"
-                      :style="{ gridColumn: `span ${g.teachers.length}` }"
                     >
-                      <div class="tm-date-banner__inner tm-date-banner__inner--ghost" aria-hidden="true">
-                        <span class="tm-date-banner__date">{{ g.date.format('M/D') }}</span>
-                        <span class="tm-date-banner__week">{{ ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][g.date.day()] }}</span>
-                        <span class="tm-date-banner__count">共 {{ g.dayCount }} 节</span>
+                      <div class="tm-teacher-head__avatar">
+                        {{ (t.name || '?').slice(0, 1) }}
                       </div>
-                    </div>
-                  </div>
-                  <div class="tm-subheader-grid" :style="gridTemplateStyleHeader">
-                    <div
-                      v-for="(g, gi) in dateTeacherGroups"
-                      :key="`w-${g.dateKey}`"
-                      class="tm-teacher-head-group"
-                    >
-                      <div
-                        v-for="(t, ti) in g.teachers"
-                        :key="`${g.dateKey}-${t.key}`"
-                        class="tm-teacher-head"
-                        :class="{
-                          'tm-teacher-head--active': isActiveDate(g.dateKey),
-                          'tm-teacher-head--has-class': (t.count ?? 0) > 0,
-                          'tm-teacher-head--no-class': (t.count ?? 0) === 0,
-                          'tm-teacher-head--day-divider':
-                            ti === g.teachers.length - 1 && gi < dateTeacherGroups.length - 1,
-                        }"
-                      >
-                        <div class="tm-teacher-head__avatar">
-                          {{ (t.name || '?').slice(0, 1) }}
+                      <div class="tm-teacher-head__meta">
+                        <div class="tm-teacher-head__name">
+                          {{ t.name }}
                         </div>
-                        <div class="tm-teacher-head__meta">
-                          <div class="tm-teacher-head__name">
-                            {{ t.name }}
-                          </div>
-                          <div
-                            class="tm-teacher-head__count"
-                            :class="{
-                              'tm-teacher-head__count--zero': (t.count ?? 0) === 0,
-                              'tm-teacher-head__count--has': (t.count ?? 0) > 0,
-                            }"
-                          >
-                            共 {{ t.count ?? 0 }} 节
-                          </div>
+                        <div
+                          class="tm-teacher-head__count"
+                          :class="{
+                            'tm-teacher-head__count--zero': (t.count ?? 0) === 0,
+                            'tm-teacher-head__count--has': (t.count ?? 0) > 0,
+                          }"
+                        >
+                          共 {{ t.count ?? 0 }} 节
                         </div>
                       </div>
                     </div>
@@ -1548,6 +1632,7 @@ const unsignedLessons = computed(() =>
               </div>
             </div>
           </div>
+        </div>
 
         <div v-if="!matrixDays.length && !loading" class="tm-api-empty">
           本周暂无数据
@@ -1559,56 +1644,68 @@ const unsignedLessons = computed(() =>
           class="tm-schedule-board"
           @scroll="handleBoardScroll"
         >
-            <div class="tm-board-grid" :style="gridTemplateStyle">
-              <div class="tm-time-axis">
-                <div
-                  v-for="mark in hourMarks"
-                  :key="mark"
-                  class="tm-time-label"
-                  :style="{ top: `${minuteOffset(mark)}px` }"
-                >
-                  <span>{{ formatClock(mark) }}</span>
-                </div>
-                <div
-                  v-if="showCurrentTimeLine"
-                  class="tm-now-line"
-                  :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-                >
-                  <span class="tm-now-line__text">{{ currentTimeLabel }}</span>
-                </div>
-              </div>
-
+          <div class="tm-board-grid" :style="gridTemplateStyle">
+            <div class="tm-time-axis">
               <div
-                v-for="(col, ci) in flatColumns"
-                :key="`${col.dateKey}-${col.teacherKey}`"
-                class="tm-column"
-                :class="{
-                  'tm-column--active': isActiveDate(col.dateKey),
-                  'tm-column--no-class': col.count === 0,
-                  'tm-column--has-class': col.count > 0,
-                  'tm-column--day-divider':
-                    ci < flatColumns.length - 1 && flatColumns[ci + 1].dateKey !== col.dateKey,
-                }"
+                v-for="mark in hourMarks"
+                :key="mark"
+                class="tm-time-label"
+                :style="{ top: `${minuteOffset(mark)}px` }"
+              >
+                <span>{{ formatClock(mark) }}</span>
+              </div>
+              <div
+                v-if="showCurrentTimeLine"
+                class="tm-now-line"
+                :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
+              >
+                <span class="tm-now-line__text">{{ currentTimeLabel }}</span>
+              </div>
+            </div>
+
+            <div
+              v-for="(col, ci) in flatColumns"
+              :key="`${col.dateKey}-${col.teacherKey}`"
+              class="tm-column"
+              :class="{
+                'tm-column--active': isActiveDate(col.dateKey),
+                'tm-column--no-class': col.count === 0,
+                'tm-column--has-class': col.count > 0,
+                'tm-column--day-divider':
+                  ci < flatColumns.length - 1 && flatColumns[ci + 1].dateKey !== col.dateKey,
+              }"
+            >
+              <div
+                class="tm-column__body"
+                :style="{ height: `${timelineHeight}px` }"
               >
                 <div
-                  class="tm-column__body"
-                  :style="{ height: `${timelineHeight}px` }"
+                  v-for="mark in hourMarks"
+                  :key="`${col.dateKey}-${col.teacherKey}-${mark}`"
+                  class="tm-column__line"
+                  :style="{ top: `${minuteOffset(mark)}px` }"
+                />
+                <div
+                  v-if="showCurrentTimeLine && col.dateKey === todayKey"
+                  class="tm-now-marker"
+                  :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
+                />
+
+                <TimetableScheduleHoverPopover
+                  v-for="event in (layoutsByCell.get(`${col.dateKey}|${col.teacherKey}`)?.layouts ?? [])"
+                  :key="event.id"
+                  :mode-label="scheduleBadgeText(event.classType)"
+                  :lesson-title="scheduleHoverTitle(event.raw)"
+                  :teacher-name="event.teacher"
+                  :course-name="event.course"
+                  :assistant-text="scheduleAssistantText(event.raw)"
+                  :student-text="scheduleStudentSummary(event.raw)"
+                  :classroom-name="event.classroom"
+                  :time-text="scheduleTimeTextFromEvent(event)"
+                  :conflict-text="scheduleConflictSummary(event.raw)"
+                  @detail="openScheduleEdit(event)"
                 >
                   <div
-                    v-for="mark in hourMarks"
-                    :key="`${col.dateKey}-${col.teacherKey}-${mark}`"
-                    class="tm-column__line"
-                    :style="{ top: `${minuteOffset(mark)}px` }"
-                  />
-                  <div
-                    v-if="showCurrentTimeLine && col.dateKey === todayKey"
-                    class="tm-now-marker"
-                    :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-                  />
-
-                  <div
-                    v-for="event in (layoutsByCell.get(`${col.dateKey}|${col.teacherKey}`)?.layouts ?? [])"
-                    :key="event.id"
                     class="tm-event"
                     :class="{ 'tm-event--conflict': event.raw?.conflict }"
                     :style="eventStyle(event, col)"
@@ -1647,17 +1744,20 @@ const unsignedLessons = computed(() =>
                       </div>
                     </div>
                   </div>
-                </div>
+                </TimetableScheduleHoverPopover>
               </div>
             </div>
           </div>
+        </div>
       </a-spin>
     </div>
 
-    <ScheduleBatchEditModal
-      v-model:open="scheduleEditOpen"
-      :schedule="currentSchedule"
-      @updated="onUpdated"
+    <SmartTimetableScheduleDetailDrawer
+      v-model:open="scheduleDetailOpen"
+      :detail="currentScheduleDetail"
+      :editable="isCurrentDetailOneToOne"
+      :deletable="false"
+      @edit="handleScheduleDetailEdit"
     />
     <ScheduleBatchPlanEditModal
       v-model:open="scheduleBatchPlanEditOpen"

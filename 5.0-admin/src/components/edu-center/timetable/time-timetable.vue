@@ -3,9 +3,10 @@ import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
-import ScheduleBatchEditModal from './schedule-batch-edit-modal.vue'
 import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
+import SmartTimetableScheduleDetailDrawer from './smart-timetable-schedule-detail-drawer.vue'
+import TimetableScheduleHoverPopover from './timetable-schedule-hover-popover.vue'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
@@ -82,7 +83,7 @@ function normalizeScheduleFilterValue(value) {
   if (Array.isArray(value))
     return value.length ? value[0] : undefined
   const text = String(value ?? '').trim()
-  return text ? text : undefined
+  return text || undefined
 }
 
 function normalizeScheduleFilterValues(value) {
@@ -371,8 +372,9 @@ const now = ref(dayjs())
 const exportLoading = ref(false)
 const scheduleLoading = ref(false)
 const scheduleRows = ref([])
-const scheduleEditOpen = ref(false)
-const currentSchedule = ref(null)
+const scheduleDetailOpen = ref(false)
+const currentDetailSchedule = ref(null)
+const currentScheduleDetail = ref(null)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref(null)
 const scheduleConflictOpen = ref(false)
@@ -522,14 +524,31 @@ function parseAttachmentFilenameFromHeader(cd) {
   return quoted?.[1] || undefined
 }
 
+function resolveExportDateRange() {
+  if (currentTime.value === 'day') {
+    const date = dayjs(currentDate.value).startOf('day')
+    const dateText = date.format('YYYY-MM-DD')
+    return {
+      startDate: dateText,
+      endDate: dateText,
+    }
+  }
+  const start = getWeekStart(currentDate.value)
+  return {
+    startDate: start.format('YYYY-MM-DD'),
+    endDate: start.add(6, 'day').format('YYYY-MM-DD'),
+  }
+}
+
 async function exportTimeTimetable() {
   exportLoading.value = true
   try {
     const scheduleTeacherIds = filterTeacherId.value.join(',')
     const classroomIds = filterClassroomId.value.join(',')
+    const { startDate, endDate } = resolveExportDateRange()
     const res = await downloadTimeTimetableExcelApi({
-      startDate: queryDateRange.value.startDate,
-      endDate: queryDateRange.value.endDate,
+      startDate,
+      endDate,
       studentId: filterStudentId.value,
       scheduleTeacherIds: scheduleTeacherIds || undefined,
       classroomIds: classroomIds || undefined,
@@ -746,6 +765,70 @@ function normalizeScheduleItem(item) {
     startMinutes: item.startAt.hour() * 60 + item.startAt.minute(),
     endMinutes: item.endAt.hour() * 60 + item.endAt.minute(),
   }
+}
+
+function isOneToOneSchedule(schedule) {
+  return Number(schedule?.classType) === 2
+}
+
+function scheduleAssistantText(schedule) {
+  const list = Array.isArray(schedule?.assistantNames)
+    ? schedule.assistantNames.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+  return list.length ? list.join('、') : '未安排'
+}
+
+function scheduleStudentSummary(schedule) {
+  const text = String(schedule?.studentName || '').trim()
+  return text || '-'
+}
+
+function scheduleConflictSummary(schedule) {
+  const types = Array.isArray(schedule?.conflictTypes)
+    ? schedule.conflictTypes.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+  if (types.length)
+    return `${types.join('、')}冲突`
+  return schedule?.conflict ? '当前课程存在冲突' : ''
+}
+
+function scheduleHoverTitle(schedule) {
+  if (isOneToOneSchedule(schedule))
+    return String(schedule?.lessonName || '').trim() || '1对1日程'
+  return String(schedule?.teachingClassName || '').trim()
+    || String(schedule?.lessonName || '').trim()
+    || '班课日程'
+}
+
+function scheduleTimeTextFromEvent(event) {
+  if (!event?.startAt || !event?.endAt)
+    return '-'
+  return `${event.startAt.format('YYYY-MM-DD')} ${event.startAt.format('HH:mm')} ~ ${event.endAt.format('HH:mm')}`
+}
+
+function buildScheduleDrawerDetail(schedule) {
+  if (!schedule)
+    return null
+  return {
+    scheduleId: String(schedule.id || '').trim(),
+    id: String(schedule.id || '').trim(),
+    lessonTitle: scheduleHoverTitle(schedule),
+    courseName: String(schedule.lessonName || '').trim() || '-',
+    teacherName: String(schedule.teacherName || '').trim() || '-',
+    assistantText: scheduleAssistantText(schedule),
+    classroomName: String(schedule.classroomName || '').trim() || '',
+    studentText: scheduleStudentSummary(schedule),
+    courseType: isOneToOneSchedule(schedule) ? 1 : 2,
+  }
+}
+
+function openScheduleDetail(item) {
+  const schedule = item?.raw || item || null
+  if (!schedule)
+    return
+  currentDetailSchedule.value = schedule
+  currentScheduleDetail.value = buildScheduleDrawerDetail(schedule)
+  scheduleDetailOpen.value = true
 }
 
 function computeOverlapPeak(items = []) {
@@ -1197,22 +1280,24 @@ async function jumpToConflictSchedule(item) {
 }
 
 function openScheduleEdit(item) {
-  const schedule = item?.raw || null
-  if (schedule?.classType === 2) {
-    openBatchPlanEdit(schedule)
-    return
-  }
-  currentSchedule.value = schedule
-  scheduleEditOpen.value = true
-}
-
-function handleScheduleUpdated() {
-  loadSchedules()
+  openScheduleDetail(item)
 }
 
 function openBatchPlanEdit(schedule) {
   currentBatchPlanSchedule.value = schedule || null
   scheduleBatchPlanEditOpen.value = true
+}
+
+const isCurrentDetailOneToOne = computed(() => isOneToOneSchedule(currentDetailSchedule.value))
+
+function handleScheduleDetailEdit() {
+  const schedule = currentDetailSchedule.value
+  if (!isOneToOneSchedule(schedule))
+    return
+  scheduleDetailOpen.value = false
+  nextTick(() => {
+    openBatchPlanEdit(schedule)
+  })
 }
 
 function handleBatchPlanUpdated() {
@@ -1630,57 +1715,70 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                     :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
                   />
 
-                  <div
+                  <TimetableScheduleHoverPopover
                     v-for="event in layoutsByDate.get(item.key) || []"
                     :key="event.id"
-                    :class="eventClass(event)"
-                    :style="eventStyle(event)"
-                    :data-schedule-event-id="String(event.id)"
-                    @click="openScheduleEdit(event)"
+                    :mode-label="scheduleBadgeText(event.classType)"
+                    :lesson-title="scheduleHoverTitle(event.raw)"
+                    :teacher-name="event.teacher"
+                    :course-name="event.course"
+                    :assistant-text="scheduleAssistantText(event.raw)"
+                    :student-text="scheduleStudentSummary(event.raw)"
+                    :classroom-name="event.classroom"
+                    :time-text="scheduleTimeTextFromEvent(event)"
+                    :conflict-text="scheduleConflictSummary(event.raw)"
+                    @detail="openScheduleDetail(event)"
                   >
-                    <div class="schedule-event__top">
-                      <div class="schedule-event__time">
-                        {{ event.timeText }}
+                    <div
+                      :class="eventClass(event)"
+                      :style="eventStyle(event)"
+                      :data-schedule-event-id="String(event.id)"
+                      @click="openScheduleEdit(event)"
+                    >
+                      <div class="schedule-event__top">
+                        <div class="schedule-event__time">
+                          {{ event.timeText }}
+                        </div>
+                        <div class="schedule-event__badges">
+                          <span
+                            v-if="event.conflict"
+                            class="schedule-event__badge schedule-event__badge--conflict"
+                            @click.stop="openEventConflictDetail(event)"
+                          >
+                            冲突
+                          </span>
+                          <span
+                            v-else
+                            class="schedule-event__badge"
+                            :class="event.classType === 1 ? 'schedule-event__badge--group-class' : 'schedule-event__badge--one-to-one'"
+                          >
+                            {{ scheduleBadgeText(event.classType) }}
+                          </span>
+                          <span v-if="event.hasTrial" class="schedule-event__badge">
+                            试听
+                          </span>
+                        </div>
                       </div>
-                      <div class="schedule-event__badges">
-                        <span
-                          v-if="event.conflict"
-                          class="schedule-event__badge schedule-event__badge--conflict"
-                          @click.stop="openEventConflictDetail(event)"
+                      <div class="schedule-event__body">
+                        <div class="schedule-event__title">
+                          {{ event.title }}
+                        </div>
+                        <div class="schedule-event__meta schedule-event__meta__course">
+                          {{ event.course }}
+                        </div>
+                        <div
+                          class="schedule-event__meta schedule-event__meta--muted"
                         >
-                          冲突
-                        </span>
-                        <span
-                          v-else
-                          class="schedule-event__badge"
-                          :class="event.classType === 1 ? 'schedule-event__badge--group-class' : 'schedule-event__badge--one-to-one'"
-                        >
-                          {{ scheduleBadgeText(event.classType) }}
-                        </span>
-                        <span v-if="event.hasTrial" class="schedule-event__badge">
-                          试听
-                        </span>
+                          {{ event.teacher }}
+                          <template
+                            v-if="event.classroom && event.classroom !== '-'"
+                          >
+                            · {{ event.classroom }}
+                          </template>
+                        </div>
                       </div>
                     </div>
-                    <div class="schedule-event__body">
-                      <div class="schedule-event__title">
-                        {{ event.title }}
-                      </div>
-                      <div class="schedule-event__meta schedule-event__meta__course">
-                        {{ event.course }}
-                      </div>
-                      <div
-                        class="schedule-event__meta schedule-event__meta--muted"
-                      >
-                        {{ event.teacher }}
-                        <template
-                          v-if="event.classroom && event.classroom !== '-'"
-                        >
-                          · {{ event.classroom }}
-                        </template>
-                      </div>
-                    </div>
-                  </div>
+                  </TimetableScheduleHoverPopover>
                 </div>
               </div>
             </div>
@@ -1688,11 +1786,12 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
         </a-spin>
       </div>
     </div>
-    <ScheduleBatchEditModal
-      v-model:open="scheduleEditOpen"
-      :schedule="currentSchedule"
-      @edit-batch-plan="openBatchPlanEdit"
-      @updated="handleScheduleUpdated"
+    <SmartTimetableScheduleDetailDrawer
+      v-model:open="scheduleDetailOpen"
+      :detail="currentScheduleDetail"
+      :editable="isCurrentDetailOneToOne"
+      :deletable="false"
+      @edit="handleScheduleDetailEdit"
     />
     <ScheduleBatchPlanEditModal
       v-model:open="scheduleBatchPlanEditOpen"

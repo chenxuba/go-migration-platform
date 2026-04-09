@@ -5,12 +5,12 @@ import type { TableColumnsType } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
-import { getTeachingScheduleDetailApi, type TeachingScheduleDetail, type TeachingScheduleDetailStudent } from '@/api/edu-center/teaching-schedule'
+import { type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi } from '@/api/edu-center/teaching-schedule'
 import RollCallAddStudentModal from '@/components/common/roll-call-add-student-modal.vue'
 import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
 
-type DrawerSummary = {
+interface DrawerSummary {
   scheduleId?: string
   id?: string
   lessonTitle?: string
@@ -22,15 +22,21 @@ type DrawerSummary = {
   courseType?: number
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   detail?: DrawerSummary | null
   deleting?: boolean
-}>()
+  editable?: boolean
+  deletable?: boolean
+}>(), {
+  editable: false,
+  deletable: true,
+})
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'delete'): void
+  (e: 'edit'): void
 }>()
 
 const openDrawer = computed({
@@ -275,21 +281,18 @@ watch(
               <div class="name text-5 font-800">
                 {{ headerTitle }}
               </div>
-             
             </a-space>
             <a-space>
               <a-button type="link" ghost>
                 仅复制此日程
               </a-button>
-              <a-button danger ghost :loading="deleting" @click="$emit('delete')">
+              <a-button v-if="deletable" danger ghost :loading="deleting" @click="$emit('delete')">
                 删除
               </a-button>
-              <!-- 编辑 -->
-              <a-button type="primary" >
+              <a-button v-if="editable && isOneToOne" type="primary" @click="$emit('edit')">
                 编辑
               </a-button>
-              <!-- 去点名 -->
-              <a-button type="primary" >
+              <a-button type="primary">
                 去点名
               </a-button>
             </a-space>
@@ -328,7 +331,7 @@ watch(
 
       <div class="tabs">
         <a-tabs
-          v-model:activeKey="activeStudentTabKey"
+          v-model:active-key="activeStudentTabKey"
           size="large"
           :tab-bar-style="{ 'border-radius': '0px', 'padding-left': '24px' }"
         >

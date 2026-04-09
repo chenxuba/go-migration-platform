@@ -1,9 +1,6 @@
 <script setup>
-import { CopyOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
+import TimetableScheduleHoverPopover from './timetable-schedule-hover-popover.vue'
 
 const props = defineProps({
   spinning: {
@@ -222,10 +219,6 @@ function scheduleStudentSummary(text) {
   return `${names.length}人，${names.join('、')}`
 }
 
-const schedulePopoverInnerStyle = {
-  padding: '0px',
-}
-
 const openSchedulePopoverKey = ref('')
 const scheduleCellPressState = ref(null)
 let scheduleCellPressMoveHandler = null
@@ -322,10 +315,6 @@ watch(
 onUnmounted(() => {
   clearScheduleCellPressTracking()
 })
-
-function goRollCall() {
-  router.push('/edu-center/roll-call-list')
-}
 </script>
 
 <template>
@@ -359,116 +348,20 @@ function goRollCall() {
 
       <template #bodyCell="{ column, record, text }">
         <template v-if="isScheduleColumn(column)">
-          <a-popover
+          <TimetableScheduleHoverPopover
             v-if="text.studentId"
-            trigger="hover"
-            placement="rightTop"
-            overlay-class-name="st-schedule-cell-popover"
-            :overlay-inner-style="schedulePopoverInnerStyle"
-            :mouse-enter-delay="0.12"
-            :mouse-leave-delay="0.06"
             :open="!draggingScheduleCellKey && openSchedulePopoverKey === schedulePopoverKey(column, record)"
+            :mode-label="scheduleModeShortLabel(text)"
+            :lesson-title="scheduleLessonTitle(text)"
+            :teacher-name="text.teacherName || record.name || '-'"
+            :course-name="scheduleLessonSubtitle(text) || scheduleLessonTitle(text)"
+            :assistant-text="scheduleAssistantSummary(text)"
+            :student-text="scheduleStudentSummary(text)"
+            :time-text="scheduleHeaderTimeText(column, record)"
+            :conflict-text="text.scheduledConflict ? scheduleConflictText(text) : ''"
             @open-change="handleSchedulePopoverOpenChange(column, record, $event)"
+            @detail="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
           >
-            <template #content>
-              <div class="st-schedule-hover-card">
-                <div class="st-schedule-hover-card__header">
-                  <div class="st-schedule-hover-card__hero">
-                    <div class="st-schedule-hover-card__badge-shell">
-                      <div class="st-schedule-hover-card__badge">
-                        {{ scheduleModeShortLabel(text) }}
-                      </div>
-                    </div>
-
-                    <div class="st-schedule-hover-card__hero-main">
-                      <div class="st-schedule-hover-card__hero-top">
-                        <div class="st-schedule-hover-card__title" :title="scheduleLessonTitle(text)">
-                          {{ scheduleLessonTitle(text) }}
-                        </div>
-                        <button
-                          type="button"
-                          class="st-schedule-hover-card__detail-link"
-                          @click.stop="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
-                        >
-                          详情
-                        </button>
-                      </div>
-                      <div class="st-schedule-hover-card__time" :title="scheduleHeaderTimeText(column, record)">
-                        {{ scheduleHeaderTimeText(column, record) }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="st-schedule-hover-card__body">
-                  <div class="st-schedule-hover-card__row">
-                    <span>上课教师：</span>
-                    <strong :title="text.teacherName || record.name || '-'">{{ text.teacherName || record.name || '-' }}</strong>
-                  </div>
-                  <div class="st-schedule-hover-card__row">
-                    <span>课程：</span>
-                    <strong :title="scheduleLessonSubtitle(text) || scheduleLessonTitle(text)">{{ scheduleLessonSubtitle(text) || scheduleLessonTitle(text) }}</strong>
-                  </div>
-                  <div class="st-schedule-hover-card__row">
-                    <span>上课助教：</span>
-                    <strong :title="scheduleAssistantSummary(text)">{{ scheduleAssistantSummary(text) }}</strong>
-                  </div>
-                  <div class="st-schedule-hover-card__row">
-                    <span>上课学员：</span>
-                    <strong class="st-schedule-hover-card__value--primary" :title="scheduleStudentSummary(text)">{{ scheduleStudentSummary(text) }}</strong>
-                  </div>
-                  <div class="st-schedule-hover-card__row">
-                    <span>试听学员：</span>
-                    <strong>-</strong>
-                  </div>
-                  <div class="st-schedule-hover-card__row">
-                    <span>请假学员：</span>
-                    <strong>-</strong>
-                  </div>
-                  <div class="st-schedule-hover-card__row">
-                    <span>对内备注：</span>
-                    <strong>-</strong>
-                  </div>
-                  <div v-if="text.scheduledConflict" class="st-schedule-hover-card__row st-schedule-hover-card__row--danger">
-                    <span>冲突说明：</span>
-                    <strong :title="scheduleConflictText(text)">{{ scheduleConflictText(text) }}</strong>
-                  </div>
-                </div>
-
-                <div class="st-schedule-hover-card__footer">
-                  <div class="st-schedule-hover-card__actions">
-                    <a-tooltip title="编辑日程" placement="top">
-                      <button
-                        type="button"
-                        class="st-schedule-hover-card__icon-btn"
-                        @click.stop="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
-                      >
-                        <EditOutlined />
-                      </button>
-                    </a-tooltip>
-
-                    <a-tooltip title="复制日程" placement="top">
-                      <button
-                        type="button"
-                        class="st-schedule-hover-card__icon-btn"
-                        @click.stop
-                      >
-                        <CopyOutlined />
-                      </button>
-                    </a-tooltip>
-                  </div>
-
-                  <button
-                    type="button"
-                    class="st-schedule-hover-card__primary-btn"
-                    @click.stop="goRollCall()"
-                  >
-                    去点名
-                  </button>
-                </div>
-              </div>
-            </template>
-
             <div
               :data-schedule-cell-key="scheduleCellKey(column, record)"
               class="st-schedule-cell st-schedule-cell--unsigned flex h-11 cursor-pointer flex-col rounded-1 text-3"
@@ -518,7 +411,7 @@ function goRollCall() {
                 </div>
               </div>
             </div>
-          </a-popover>
+          </TimetableScheduleHoverPopover>
 
           <div
             v-else
@@ -537,9 +430,9 @@ function goRollCall() {
                   ? 'st-empty-cell--drag-valid'
                   : emptyLessonDragState(column, record)?.valid === false
                     ? 'st-empty-cell--drag-invalid'
-                    : (emptyLessonStatusText(text)
-                        ? (text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a')
-                        : 'st-empty-cell--idle'),
+                    : emptyLessonStatusText(text)
+                      ? (text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a')
+                      : 'st-empty-cell--idle',
             ]"
             @click="text.conflict ? handleConflictClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record)) : handleScheduleClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
           >
