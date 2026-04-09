@@ -1,8 +1,12 @@
 package repository
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"go-migration-platform/services/education/internal/model"
 )
 
 func TestApplyCreateScheduleConflictAllowances(t *testing.T) {
@@ -69,5 +73,33 @@ func TestIsAssistantRemovalOnlyBatchUpdate(t *testing.T) {
 	}
 	if isAssistantRemovalOnlyBatchUpdate([]teachingScheduleRow{baseSchedule}, 100, 200, true, []int64{300}, []normalizedScheduleSlot{shiftedSlot}) {
 		t.Fatalf("expected time changes to break removal only update detection")
+	}
+}
+
+func TestBuildTeachingClassScheduleExistsSQLUsesLiveTeachingScheduleTable(t *testing.T) {
+	got := buildTeachingClassScheduleExistsSQL("tc", "1")
+	if !strings.Contains(got, "FROM teaching_schedule ts") {
+		t.Fatalf("expected existence SQL to query teaching_schedule, got %s", got)
+	}
+	if !strings.Contains(got, "ts.teaching_class_id = tc.id") {
+		t.Fatalf("expected existence SQL to bind teaching_class_id to current class, got %s", got)
+	}
+	if !strings.Contains(got, "ts.status = "+strconv.Itoa(model.TeachingScheduleStatusActive)) {
+		t.Fatalf("expected existence SQL to filter active schedules, got %s", got)
+	}
+}
+
+func TestBuildTeachingClassFinishedCountSQLFallsBackWhenRecordSQLMissing(t *testing.T) {
+	got := buildTeachingClassFinishedCountSQL("tc", "tc.class_type", "", "IFNULL(tc.finished_lesson_count, 0)")
+	if got != "IFNULL(tc.finished_lesson_count, 0)" {
+		t.Fatalf("expected fallback finished count SQL, got %s", got)
+	}
+
+	got = buildTeachingClassFinishedCountSQL("tc", "tc.class_type", "EXISTS (SELECT 1 FROM teaching_record tr WHERE tr.class_id = ts.teaching_class_id)", "0")
+	if !strings.Contains(got, "FROM teaching_schedule ts") {
+		t.Fatalf("expected live finished count SQL to query teaching_schedule, got %s", got)
+	}
+	if !strings.Contains(got, strconv.Itoa(model.TeachingScheduleStatusActive)) {
+		t.Fatalf("expected live finished count SQL to keep active status constraint, got %s", got)
 	}
 }

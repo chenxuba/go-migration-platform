@@ -656,6 +656,119 @@ func (repo *Repository) buildTeachingScheduleRecordExistsSQLUncached(ctx context
 	return "EXISTS (SELECT 1 FROM " + teachingTable + " tr WHERE " + strings.Join(parts, " AND ") + ")", nil
 }
 
+func buildTeachingClassScheduleExistsSQL(classAlias, classTypeExpr string) string {
+	classAlias = firstNonEmptyString(classAlias, "tc")
+	classTypeExpr = firstNonEmptyString(classTypeExpr, classAlias+".class_type")
+	return `EXISTS (
+		SELECT 1
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ` + classAlias + `.inst_id
+		  AND ts.teaching_class_id = ` + classAlias + `.id
+		  AND ts.class_type = ` + classTypeExpr + `
+		  AND ts.del_flag = 0
+		  AND ts.status = ` + strconv.Itoa(model.TeachingScheduleStatusActive) + `
+	)`
+}
+
+func buildTeachingClassScheduledCountSQL(classAlias, classTypeExpr string) string {
+	classAlias = firstNonEmptyString(classAlias, "tc")
+	classTypeExpr = firstNonEmptyString(classTypeExpr, classAlias+".class_type")
+	return `(
+		SELECT COUNT(*)
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ` + classAlias + `.inst_id
+		  AND ts.teaching_class_id = ` + classAlias + `.id
+		  AND ts.class_type = ` + classTypeExpr + `
+		  AND ts.del_flag = 0
+		  AND ts.status = ` + strconv.Itoa(model.TeachingScheduleStatusActive) + `
+	)`
+}
+
+func buildTeachingClassFinishedCountSQL(classAlias, classTypeExpr, recordExistsSQL, fallbackExpr string) string {
+	fallbackExpr = firstNonEmptyString(fallbackExpr, "0")
+	if strings.TrimSpace(recordExistsSQL) == "" {
+		return fallbackExpr
+	}
+	classAlias = firstNonEmptyString(classAlias, "tc")
+	classTypeExpr = firstNonEmptyString(classTypeExpr, classAlias+".class_type")
+	return `(
+		SELECT COUNT(*)
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ` + classAlias + `.inst_id
+		  AND ts.teaching_class_id = ` + classAlias + `.id
+		  AND ts.class_type = ` + classTypeExpr + `
+		  AND ts.del_flag = 0
+		  AND ts.status = ` + strconv.Itoa(model.TeachingScheduleStatusActive) + `
+		  AND ` + recordExistsSQL + `
+	)`
+}
+
+func (repo *Repository) refreshTeachingClassScheduleCountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, classIDs []int64) error {
+	classIDs = uniquePositiveInt64s(classIDs)
+	if len(classIDs) == 0 {
+		return nil
+	}
+
+	recordExistsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if err != nil {
+		recordExistsSQL = ""
+	}
+	finishedCountSQL := buildTeachingClassFinishedCountSQL("tc", "tc.class_type", recordExistsSQL, "tc.finished_lesson_count")
+
+	args := make([]any, 0, len(classIDs)+2)
+	args = append(args, operatorID, instID)
+	for _, classID := range classIDs {
+		args = append(args, classID)
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE teaching_class tc
+		SET tc.scheduled_lesson_count = `+buildTeachingClassScheduledCountSQL("tc", "tc.class_type")+`,
+		    tc.finished_lesson_count = `+finishedCountSQL+`,
+		    tc.update_id = ?,
+		    tc.update_time = NOW()
+		WHERE tc.inst_id = ?
+		  AND tc.del_flag = 0
+		  AND tc.id IN (`+sqlPlaceholders(len(classIDs))+`)
+	`, args...)
+	return err
+}
+
+func (repo *Repository) listTeachingScheduleClassIDsByIDsTx(ctx context.Context, tx *sql.Tx, instID int64, ids []int64) ([]int64, error) {
+	ids = uniquePositiveInt64s(ids)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT teaching_class_id
+		FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND status = ?
+		  AND teaching_class_id > 0
+		  AND id IN (`+sqlPlaceholders(len(ids))+`)
+	`, append([]any{instID, model.TeachingScheduleStatusActive}, int64SliceToAny(ids)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	classIDs := make([]int64, 0, len(ids))
+	for rows.Next() {
+		var classID int64
+		if err := rows.Scan(&classID); err != nil {
+			return nil, err
+		}
+		if classID > 0 {
+			classIDs = append(classIDs, classID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return uniquePositiveInt64s(classIDs), nil
+}
+
 func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, operatorID int64, dto model.CreateOneToOneSchedulesDTO) (model.CreateOneToOneSchedulesResult, error) {
 	classID, err := strconv.ParseInt(strings.TrimSpace(dto.OneToOneID), 10, 64)
 	if err != nil || classID <= 0 {
@@ -878,6 +991,9 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 		createdScheduleIDs,
 		dto.BatchMeta,
 	); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	if err := repo.refreshTeachingClassScheduleCountsTx(ctx, tx, instID, operatorID, []int64{base.ClassID}); err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
 
@@ -1190,6 +1306,9 @@ func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, o
 		createdScheduleIDs,
 		dto.BatchMeta,
 	); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
+	if err := repo.refreshTeachingClassScheduleCountsTx(ctx, tx, instID, operatorID, []int64{base.ClassID}); err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
 
@@ -2092,6 +2211,9 @@ func (repo *Repository) ReplaceTeachingScheduleBatch(ctx context.Context, instID
 	); err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
+	if err := repo.refreshTeachingClassScheduleCountsTx(ctx, tx, instID, operatorID, []int64{base.ClassID}); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
@@ -2254,7 +2376,18 @@ func (repo *Repository) CancelTeachingSchedules(ctx context.Context, instID, ope
 		return model.TeachingScheduleCancelResult{}, errors.New("缺少待撤销的日程")
 	}
 
-	res, err := repo.db.ExecContext(ctx, `
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	defer tx.Rollback()
+
+	classIDs, err := repo.listTeachingScheduleClassIDsByIDsTx(ctx, tx, instID, ids)
+	if err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+
+	res, err := tx.ExecContext(ctx, `
 		UPDATE teaching_schedule
 		SET del_flag = 1,
 		    status = ?,
@@ -2279,6 +2412,12 @@ func (repo *Repository) CancelTeachingSchedules(ctx context.Context, instID, ope
 	}
 	if affected <= 0 {
 		return model.TeachingScheduleCancelResult{}, errors.New("未找到可撤销的日程")
+	}
+	if err := repo.refreshTeachingClassScheduleCountsTx(ctx, tx, instID, operatorID, classIDs); err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.TeachingScheduleCancelResult{}, err
 	}
 	return model.TeachingScheduleCancelResult{Canceled: int(affected)}, nil
 }

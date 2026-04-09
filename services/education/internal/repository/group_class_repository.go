@@ -689,10 +689,11 @@ func buildGroupClassFilters(instID int64, q model.GroupClassListQueryModel) (str
 		}
 	}
 	if q.IsScheduled != nil {
+		scheduleExistsSQL := buildTeachingClassScheduleExistsSQL("tc", strconv.Itoa(model.TeachingClassTypeNormal))
 		if *q.IsScheduled {
-			cond += " AND tc.scheduled_lesson_count > 0"
+			cond += " AND " + scheduleExistsSQL
 		} else {
-			cond += " AND IFNULL(tc.scheduled_lesson_count, 0) = 0"
+			cond += " AND NOT " + scheduleExistsSQL
 		}
 	}
 	if ids := parseIDStrings(q.CreatedStaffIDs); len(ids) > 0 {
@@ -739,6 +740,10 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 		offset = page.SkipCount
 	}
 
+	recordExistsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if err != nil {
+		recordExistsSQL = ""
+	}
 	where, args := buildGroupClassFilters(instID, q)
 	countQ := `SELECT COUNT(*) FROM teaching_class tc WHERE ` + where
 	var total int
@@ -753,7 +758,9 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 	listQ := `
 		SELECT
 			tc.id, tc.name, tc.course_id, tc.compose_lesson_id, tc.max_count, tc.status,
-			tc.scheduled_lesson_count, tc.finished_lesson_count, tc.class_room_name,
+			` + buildTeachingClassScheduledCountSQL("tc", strconv.Itoa(model.TeachingClassTypeNormal)) + `,
+			` + buildTeachingClassFinishedCountSQL("tc", strconv.Itoa(model.TeachingClassTypeNormal), recordExistsSQL, "IFNULL(tc.finished_lesson_count, 0)") + `,
+			tc.class_room_name,
 			tc.default_teacher_id, tc.remark, tc.create_time,
 			IFNULL(creator.nick_name, ''),
 			COALESCE(NULLIF(icl.name, ''), NULLIF(ic.name, ''), '') AS lesson_display_name,

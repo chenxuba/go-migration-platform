@@ -83,6 +83,16 @@ func (repo *Repository) CopyTeachingSchedulesWeek(ctx context.Context, instID, o
 	if err != nil {
 		return zero, err
 	}
+	classIDs := make([]int64, 0, len(plans))
+	for _, plan := range plans {
+		classID, parseErr := strconv.ParseInt(strings.TrimSpace(plan.Source.TeachingClassID), 10, 64)
+		if parseErr == nil && classID > 0 {
+			classIDs = append(classIDs, classID)
+		}
+	}
+	if err := repo.refreshTeachingClassScheduleCountsTx(ctx, tx, instID, operatorID, classIDs); err != nil {
+		return zero, err
+	}
 	if err := tx.Commit(); err != nil {
 		return zero, err
 	}
