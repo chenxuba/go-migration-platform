@@ -311,7 +311,7 @@ watch(
               <a-button v-if="deletable" danger ghost :loading="deleting" @click="$emit('delete')">
                 删除
               </a-button>
-              <a-button v-if="editable && isOneToOne" type="primary" @click="$emit('edit')">
+              <a-button v-if="editable" type="primary" @click="$emit('edit')">
                 编辑
               </a-button>
               <a-button type="primary">
