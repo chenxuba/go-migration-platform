@@ -378,6 +378,7 @@ watch(
 
                 <a-button @click.stop>
                   编辑
+                  <DownOutlined />
                 </a-button>
               </a-dropdown>
               <a-button v-else-if="editable" type="primary" @click="$emit('edit')">
