@@ -2440,6 +2440,9 @@ func (repo *Repository) ReplaceTeachingScheduleBatch(ctx context.Context, instID
 	if len(existing) == 0 {
 		return model.CreateOneToOneSchedulesResult{}, errors.New("未找到可替换的日程")
 	}
+	if err := ensureTeachingScheduleVOsEditable(existing); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
 	allBatchSchedules := existing
 	if batchNo := strings.TrimSpace(dto.BatchNo); batchNo != "" {
 		allBatchSchedules, err = repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
@@ -3228,6 +3231,9 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 	}
 	if len(schedules) == 0 {
 		return errors.New("未找到可修改的日程")
+	}
+	if err := ensureTeachingScheduleRowsEditable(schedules); err != nil {
+		return err
 	}
 	targetLessonDate := strings.TrimSpace(dto.LessonDate)
 	if targetLessonDate != "" && len(schedules) > 1 {
@@ -6065,6 +6071,33 @@ func emptyStringIfZero(value int64) string {
 
 func startOfDay(value time.Time) time.Time {
 	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, value.Location())
+}
+
+func ensureTeachingScheduleVOsEditable(list []model.TeachingScheduleVO) error {
+	todayStart := startOfDay(time.Now())
+	for _, item := range list {
+		lessonDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(item.LessonDate), time.Local)
+		if err != nil {
+			if item.StartAt.IsZero() {
+				continue
+			}
+			lessonDate = item.StartAt
+		}
+		if startOfDay(lessonDate).Before(todayStart) {
+			return errors.New("过去日程不可编辑")
+		}
+	}
+	return nil
+}
+
+func ensureTeachingScheduleRowsEditable(list []teachingScheduleRow) error {
+	todayStart := startOfDay(time.Now())
+	for _, item := range list {
+		if startOfDay(item.LessonDate).Before(todayStart) {
+			return errors.New("过去日程不可编辑")
+		}
+	}
+	return nil
 }
 
 func buildScheduleConflictResult(

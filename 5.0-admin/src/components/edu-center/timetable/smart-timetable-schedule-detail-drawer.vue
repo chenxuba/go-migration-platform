@@ -144,6 +144,16 @@ const repeatRuleText = computed(() => {
   return base
 })
 const remarkText = computed(() => detailData.value?.remark || '-')
+const isPastSchedule = computed(() => {
+  const lessonDate = String(detailData.value?.lessonDate || '').trim()
+  if (!lessonDate)
+    return false
+  return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
+})
+const editDisabledReason = computed(() => (
+  isPastSchedule.value ? '过去日程不可编辑' : ''
+))
+const canEditSchedule = computed(() => props.editable && !isPastSchedule.value)
 const hasBatchSchedule = computed(() => {
   return Number(detailData.value?.batchSize || props.detail?.batchSize || 0) > 1
     || String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() !== ''
@@ -213,6 +223,8 @@ function handleStudentReschedule(student: Record<string, any>) {
 
 function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
   domEvent?.stopPropagation?.()
+  if (!canEditSchedule.value)
+    return
   if (key === 'current')
     emit('edit-current', scheduleEditPayload.value)
   else if (key === 'future')
@@ -228,6 +240,8 @@ function handleBatchDeleteMenuClick({ key, domEvent }: { key: string | number, d
 }
 
 function handleSingleEditClick() {
+  if (!canEditSchedule.value)
+    return
   emit('edit', scheduleEditPayload.value)
 }
 
@@ -407,7 +421,7 @@ watch(
                 </a-button>
               </a-tooltip>
               <a-dropdown
-                v-if="hasBatchSchedule"
+                v-if="hasBatchSchedule && canEditSchedule"
                 :trigger="['hover']"
                 placement="bottomLeft"
               >
@@ -427,10 +441,19 @@ watch(
                   <DownOutlined />
                 </a-button>
               </a-dropdown>
-              <a-tooltip v-else-if="editable" title="编辑此日程" placement="top">
-                <a-button @click="handleSingleEditClick">
-                  编辑
-                </a-button>
+              <a-tooltip v-else-if="hasBatchSchedule && editable" :title="editDisabledReason || '编辑日程'" placement="top">
+                <span>
+                  <a-button disabled @click.stop>
+                    编辑
+                  </a-button>
+                </span>
+              </a-tooltip>
+              <a-tooltip v-else-if="editable" :title="editDisabledReason || '编辑此日程'" placement="top">
+                <span>
+                  <a-button :disabled="!canEditSchedule" @click="handleSingleEditClick">
+                    编辑
+                  </a-button>
+                </span>
               </a-tooltip>
               <a-button type="primary">
                 去点名

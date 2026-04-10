@@ -143,6 +143,15 @@ const displayTimeText = computed(() => {
   const endTime = dayjs(detailData.value.endAt).format('HH:mm')
   return `${startTime} ~ ${endTime}(${weekText}) ${dateText}`
 })
+const isPastSchedule = computed(() => {
+  const lessonDate = String(detailData.value?.lessonDate || '').trim()
+  if (!lessonDate)
+    return false
+  return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
+})
+const editDisabledReason = computed(() => (
+  isPastSchedule.value ? '过去日程不可编辑' : '编辑日程'
+))
 
 async function loadLatestDetail() {
   const scheduleId = String(props.scheduleId || '').trim()
@@ -320,11 +329,12 @@ watch(
 
           <div class="st-schedule-hover-card__footer">
             <div class="st-schedule-hover-card__actions">
-              <a-tooltip title="编辑日程" placement="top">
+              <a-tooltip :title="editDisabledReason" placement="top">
                 <button
                   type="button"
                   class="st-schedule-hover-card__icon-btn"
-                  @click.stop="openDetail"
+                  :disabled="isPastSchedule"
+                  @click.stop="!isPastSchedule && openDetail()"
                 >
                   <EditOutlined />
                 </button>
