@@ -84,11 +84,11 @@ function handleClearCurrentWeek() {
         <a-tab-pane key="2" tab="时间课表">
           <time-timetable @week-range-change="value => updateWeekRange('2', value)" />
         </a-tab-pane>
-        <a-tab-pane key="3" tab="冲突日程">
-          <conflict-schedule />
-        </a-tab-pane>
         <a-tab-pane key="4" tab="教师矩阵">
           <TeacherMatrixApiTimetable @week-range-change="value => updateWeekRange('4', value)" />
+        </a-tab-pane>
+        <a-tab-pane key="3" tab="冲突日程">
+          <conflict-schedule />
         </a-tab-pane>
       </a-tabs>
       <a-button
