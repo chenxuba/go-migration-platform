@@ -2717,6 +2717,7 @@ function openConflictDetailModalWithAttempt(reason, attempted) {
 function openDragConflictDetailModal(validation, dragState, target) {
   const conflictTypes = Array.isArray(validation?.conflictTypes) ? validation.conflictTypes : []
   const fallbackConflictTypes = conflictTypes.length ? conflictTypes : ['时间']
+  const assignment = buildDragScheduleAssignment(dragState, target)
   const items = buildConflictDetailItems({
     message: validation?.message,
     conflictTypes,
@@ -2732,8 +2733,8 @@ function openDragConflictDetailModal(validation, dragState, target) {
       date: target?.lessonDate || '',
       week: formatWeek(target?.lessonDate || ''),
       timeText: `${target?.startTime || ''}-${target?.endTime || ''}`,
-      teacherName: target?.teacherName || '-',
-      assistantText: dragState?.assistantText || '未安排',
+      teacherName: assignment.teacherName || '-',
+      assistantText: assignment.assistantText || '未安排',
       lessonIndex: getLessonIndex(target?.startTime || ''),
       groupLabel: activeGroupLabel.value || '当前组',
       conflictTypes,
@@ -2746,8 +2747,8 @@ function openDragConflictDetailModal(validation, dragState, target) {
         && conflictTypes.every(type => type === '学员')
         ? {
             ids: [String(dragState.scheduleId)],
-            teacherId: String(target?.teacherId || '').trim(),
-            assistantIds: Array.isArray(dragState?.assistantIds) ? dragState.assistantIds : [],
+            teacherId: assignment.teacherId,
+            assistantIds: Array.isArray(assignment?.assistantIds) ? assignment.assistantIds : [],
             classroomId: String(dragState?.classroomId || '').trim() || undefined,
             lessonDate: String(target?.lessonDate || '').trim(),
             startTime: String(target?.startTime || '').trim(),
@@ -3943,15 +3944,11 @@ function isScheduleBeforeToday(text) {
 }
 
 function isScheduleDraggable(text) {
-  return text?.isMain !== false
-    && !isScheduleBeforeToday(text)
+  return !isScheduleBeforeToday(text)
     && text?.callStatusKey !== 'signed'
     && Boolean(text?.scheduleId)
     && Boolean(text?.classId)
-    && (
-      (currentModel.value === '1' && text?.courseType === 1)
-      || (currentModel.value === '2' && text?.courseType === 2)
-    )
+    && (text?.courseType === 1 || text?.courseType === 2)
 }
 
 function resolveScheduleDragBlockedMessage(text) {
@@ -3959,15 +3956,6 @@ function resolveScheduleDragBlockedMessage(text) {
     return '当前课程已点名，暂不支持拖拽调课'
   if (isScheduleBeforeToday(text))
     return '过去的日程，不允许拖拽调课'
-  if (text?.isMain === false) {
-    return text?.courseType === 2
-      ? '当前是班课辅教课表，暂不支持拖拽调课，请在主教老师所在行操作'
-      : '当前是助教课表，暂不支持拖拽调课，请在主教老师所在行操作'
-  }
-  if (text?.courseType === 2 && currentModel.value !== '2')
-    return '请切换到班课模式后拖拽调课'
-  if (text?.courseType === 1 && currentModel.value !== '1')
-    return '请切换到1v1模式后拖拽调课'
   if (text?.courseType === 1)
     return '当前课程暂不支持拖拽调课'
   if (text?.courseType === 2)
@@ -3981,11 +3969,17 @@ function buildDraggingScheduleState(text, column, record) {
   const endTime = scheduleCellEndTime(column, record)
   const teachingClassId = String(text?.classId || '').trim()
   const courseType = Number(text?.courseType || 0)
+  const sourceTeacherId = String(record?.teacherId || '').trim()
+  const mainTeacherId = String(text?.mainTeacherId || record?.teacherId || '').trim()
   return {
     scheduleId: String(text?.scheduleId || '').trim(),
     courseType,
     modeLabel: dragScheduleModeLabel(text),
     teachingClassId,
+    sourceTeacherId,
+    sourceTeacherName: String(record?.name || '').trim() || '-',
+    mainTeacherId,
+    mainTeacherName: String(text?.teacherName || record?.name || '').trim() || '-',
     oneToOneId: courseType === 1 ? teachingClassId : '',
     groupClassId: courseType === 2 ? teachingClassId : '',
     assistantIds: Array.isArray(text?.assistantIds)
@@ -4001,6 +3995,38 @@ function buildDraggingScheduleState(text, column, record) {
     sourceStartTime: startTime || '',
     sourceEndTime: endTime || '',
     sourceCellKey: buildAvailabilitySlotKey(record?.teacherId, lessonDate, startTime, endTime),
+  }
+}
+
+function buildDragScheduleAssignment(dragState, target) {
+  const sourceTeacherId = String(dragState?.sourceTeacherId || '').trim()
+  const mainTeacherId = String(dragState?.mainTeacherId || '').trim()
+  const targetTeacherId = String(target?.teacherId || '').trim()
+  const shouldSwitchTeacher = Boolean(targetTeacherId) && targetTeacherId !== sourceTeacherId
+  const nextTeacherId = shouldSwitchTeacher ? targetTeacherId : mainTeacherId
+  const assignment = isGroupClassDragSchedule(dragState)
+    ? buildClassScheduleAssignment(
+        { mainTeacherId },
+        nextTeacherId,
+        Array.isArray(dragState?.assistantIds) ? dragState.assistantIds : [],
+      )
+    : buildOneToOneScheduleAssignment(
+        nextTeacherId,
+        Array.isArray(dragState?.assistantIds) ? dragState.assistantIds : [],
+      )
+
+  return {
+    ...assignment,
+    teacherId: String(assignment?.teacherId || nextTeacherId || '').trim(),
+    teacherName: shouldSwitchTeacher
+      ? (String(target?.teacherName || '').trim() || String(dragState?.mainTeacherName || '').trim() || '-')
+      : (String(dragState?.mainTeacherName || '').trim() || String(target?.teacherName || '').trim() || '-'),
+    assistantText: isGroupClassDragSchedule(dragState)
+      ? classAssistantTextForIds(assignment?.assistantIds)
+      : assistantTextForIds(assignment?.assistantIds),
+    warningText: Array.isArray(assignment?.removedAssistantIds) && assignment.removedAssistantIds.length > 0
+      ? '主教与助教不能为同一人，系统已自动忽略重复助教。'
+      : '',
   }
 }
 
@@ -4130,11 +4156,18 @@ function mergeDragValidationResults(primary, secondary) {
 }
 
 async function checkDragTargetsTeacherAvailability(targets, dragState) {
+  const requestTargets = targets.map((target) => {
+    const assignment = buildDragScheduleAssignment(dragState, target)
+    return {
+      target,
+      assignment,
+    }
+  })
   const res = await checkOneToOneScheduleAvailabilityApi({
     oneToOneId: dragState.oneToOneId,
     excludeIds: [dragState.scheduleId],
-    schedules: targets.map(target => ({
-      teacherId: target.teacherId,
+    schedules: requestTargets.map(({ target, assignment }) => ({
+      teacherId: assignment.teacherId,
       lessonDate: target.lessonDate,
       startTime: target.startTime,
       endTime: target.endTime,
@@ -4143,18 +4176,25 @@ async function checkDragTargetsTeacherAvailability(targets, dragState) {
   if (res.code !== 200 || !res.result)
     throw new Error(res.message || '检测调课空点失败')
 
-  return new Map(
+  const itemMap = new Map(
     (Array.isArray(res.result.items) ? res.result.items : [])
       .map(item => [buildAvailabilitySlotKey(item.teacherId, item.lessonDate, item.startTime, item.endTime), item]),
+  )
+  return new Map(
+    requestTargets.map(({ target, assignment }) => [
+      target.key,
+      itemMap.get(buildAvailabilitySlotKey(assignment.teacherId, target.lessonDate, target.startTime, target.endTime)),
+    ]),
   )
 }
 
 async function checkDragTargetAssistantAvailability(target, dragState) {
-  if (!Array.isArray(dragState?.assistantIds) || !dragState.assistantIds.length)
+  const assignment = buildDragScheduleAssignment(dragState, target)
+  if (!Array.isArray(assignment?.assistantIds) || !assignment.assistantIds.length)
     return null
 
   const requestPayload = {
-    assistantIds: dragState.assistantIds,
+    assistantIds: assignment.assistantIds,
     excludeIds: [dragState.scheduleId],
     schedules: [{
       lessonDate: target.lessonDate,
@@ -4219,27 +4259,29 @@ function validateDragTargetLocally(dragState, target) {
       conflictTypes: [],
     }
   }
-  if (dragState.assistantIds.includes(target.teacherId)) {
+  const assignment = buildDragScheduleAssignment(dragState, target)
+  if (!assignment.teacherId) {
     return {
       valid: false,
-      label: '主助教同人(不可调)',
-      message: '目标老师已在本节课助教列表中，主教与助教不能为同一人',
-      conflictTypes: ['助教'],
+      label: '信息不完整',
+      message: '当前课程缺少可用的主教信息，暂不支持拖拽调课',
+      conflictTypes: [],
     }
   }
   return null
 }
 
 function buildDragValidationCacheKey(dragState, target) {
+  const assignment = buildDragScheduleAssignment(dragState, target)
   return [
     dragState.scheduleId,
     dragState.courseType,
     dragState.teachingClassId,
-    target.teacherId,
+    assignment.teacherId,
     target.lessonDate,
     target.startTime,
     target.endTime,
-    dragState.assistantIds.join(','),
+    Array.isArray(assignment.assistantIds) ? assignment.assistantIds.join(',') : '',
     dragState.classroomId,
   ].join('|')
 }
@@ -4295,17 +4337,24 @@ async function validateDragTargetsInBatch(targets, options = {}) {
     return
 
   try {
+    const requestTargets = targets.map((target) => {
+      const assignment = buildDragScheduleAssignment(dragState, target)
+      return {
+        target,
+        assignment,
+      }
+    })
     const requestPayload = {
-      teacherId: targets[0]?.teacherId || '',
-      assistantIds: dragState.assistantIds,
+      teacherId: requestTargets[0]?.assignment?.teacherId || '',
+      assistantIds: requestTargets[0]?.assignment?.assistantIds || [],
       classroomId: dragState.classroomId,
       excludeIds: [dragState.scheduleId],
-      schedules: targets.map(target => ({
+      schedules: requestTargets.map(({ target, assignment }) => ({
         lessonDate: target.lessonDate,
         startTime: target.startTime,
         endTime: target.endTime,
-        teacherId: target.teacherId,
-        assistantIds: dragState.assistantIds,
+        teacherId: assignment.teacherId,
+        assistantIds: assignment.assistantIds,
         classroomId: dragState.classroomId,
       })),
     }
@@ -4326,9 +4375,13 @@ async function validateDragTargetsInBatch(targets, options = {}) {
         .map(item => [buildAvailabilitySlotKey(item.teacherId, item.lessonDate, item.startTime, item.endTime), item]),
     )
 
-    targets.forEach((target) => {
-      const item = itemMap.get(target.key)
-      const result = buildDragValidationResultFromValidationItem(target, item)
+    requestTargets.forEach(({ target, assignment }) => {
+      const item = itemMap.get(buildAvailabilitySlotKey(assignment.teacherId, target.lessonDate, target.startTime, target.endTime))
+      const result = buildDragValidationResultFromValidationItem({
+        ...target,
+        teacherId: assignment.teacherId,
+        teacherName: assignment.teacherName,
+      }, item)
       applyDragValidationResult(target, result, {
         dragState,
         sessionId: options.sessionId,
@@ -4356,8 +4409,13 @@ async function validateDragTargetsInBatch(targets, options = {}) {
     try {
       const itemMap = await checkDragTargetsTeacherAvailability(targets, dragState)
       targets.forEach((target) => {
+        const assignment = buildDragScheduleAssignment(dragState, target)
         const item = itemMap.get(target.key)
-        const result = buildDragValidationResultFromValidationItem(target, item)
+        const result = buildDragValidationResultFromValidationItem({
+          ...target,
+          teacherId: assignment.teacherId,
+          teacherName: assignment.teacherName,
+        }, item)
         applyDragValidationResult(target, result, {
           dragState,
           sessionId: options.sessionId,
@@ -4431,6 +4489,7 @@ const dragPreviewTargetText = computed(() => {
 })
 
 function buildDragConfirmState(dragState, target) {
+  const assignment = buildDragScheduleAssignment(dragState, target)
   return {
     source: {
       dateLabel: formatDragDateLabel(dragState.sourceDate),
@@ -4438,6 +4497,8 @@ function buildDragConfirmState(dragState, target) {
       lessonTitle: dragState.lessonTitle || '-',
       courseName: dragState.lessonMeta || '-',
       studentText: dragState.studentText || '-',
+      teacherText: dragState.mainTeacherName || '-',
+      assistantText: dragState.assistantText || '未安排',
     },
     target: {
       dateLabel: formatDragDateLabel(target.lessonDate),
@@ -4445,7 +4506,10 @@ function buildDragConfirmState(dragState, target) {
       lessonTitle: dragState.lessonTitle || '-',
       courseName: dragState.lessonMeta || '-',
       studentText: dragState.studentText || '-',
+      teacherText: assignment.teacherName || '-',
+      assistantText: assignment.assistantText || '未安排',
     },
+    warningText: assignment.warningText || '',
     payload: {
       dragState,
       target,
@@ -4503,17 +4567,18 @@ async function ensureDragTargetValidation(target, options = {}) {
 
   const promise = (async () => {
     try {
+      const assignment = buildDragScheduleAssignment(dragState, target)
       const requestPayload = {
-        teacherId: target.teacherId,
-        assistantIds: dragState.assistantIds,
+        teacherId: assignment.teacherId,
+        assistantIds: assignment.assistantIds,
         classroomId: dragState.classroomId,
         excludeIds: [dragState.scheduleId],
         schedules: [{
           lessonDate: target.lessonDate,
           startTime: target.startTime,
           endTime: target.endTime,
-          teacherId: target.teacherId,
-          assistantIds: dragState.assistantIds,
+          teacherId: assignment.teacherId,
+          assistantIds: assignment.assistantIds,
           classroomId: dragState.classroomId,
         }],
       }
@@ -4533,12 +4598,16 @@ async function ensureDragTargetValidation(target, options = {}) {
         ? res.result.items[0]
         : null
       const result = item
-        ? buildDragValidationResultFromValidationItem(target, item)
+        ? buildDragValidationResultFromValidationItem({
+            ...target,
+            teacherId: assignment.teacherId,
+            teacherName: assignment.teacherName,
+          }, item)
         : res.result.valid
           ? {
               valid: true,
               label: '可调课',
-              message: `${target.teacherName} ${target.lessonDate} ${target.startTime}-${target.endTime} 可调课`,
+              message: `${assignment.teacherName} ${target.lessonDate} ${target.startTime}-${target.endTime} 可调课`,
               conflictTypes: [],
               existingSchedules: [],
             }
@@ -4563,7 +4632,12 @@ async function ensureDragTargetValidation(target, options = {}) {
       }
       try {
         const itemMap = await checkDragTargetsTeacherAvailability([target], dragState)
-        const teacherResult = buildDragValidationResultFromValidationItem(target, itemMap.get(target.key))
+        const assignment = buildDragScheduleAssignment(dragState, target)
+        const teacherResult = buildDragValidationResultFromValidationItem({
+          ...target,
+          teacherId: assignment.teacherId,
+          teacherName: assignment.teacherName,
+        }, itemMap.get(target.key))
         const assistantResult = await checkDragTargetAssistantAvailability(target, dragState)
         const result = mergeDragValidationResults(teacherResult, assistantResult)
         dragValidationCache.set(cacheKey, result)
@@ -4823,6 +4897,7 @@ async function submitDragScheduleAdjustment() {
   }
 
   const { dragState, target } = payload
+  const assignment = buildDragScheduleAssignment(dragState, target)
   const dateLabel = dayjs(target.lessonDate).format('M月D日')
   const lessonIndex = getLessonIndex(target.startTime)
   dragConfirmSubmitting.value = true
@@ -4830,8 +4905,8 @@ async function submitDragScheduleAdjustment() {
   try {
     const res = await batchUpdateTeachingSchedulesApi({
       ids: [dragState.scheduleId],
-      teacherId: target.teacherId,
-      assistantIds: dragState.assistantIds,
+      teacherId: assignment.teacherId,
+      assistantIds: assignment.assistantIds,
       classroomId: dragState.classroomId,
       lessonDate: target.lessonDate,
       startTime: target.startTime,
@@ -4874,21 +4949,22 @@ async function copyDraggedScheduleToTarget() {
     return
   }
 
+  const assignment = buildDragScheduleAssignment(dragState, target)
   const dateLabel = dayjs(target.lessonDate).format('M月D日')
   const lessonIndex = getLessonIndex(target.startTime)
   dragCopySubmitting.value = true
   creatingOneToOneSchedule.value = true
   try {
     const requestPayload = {
-      teacherId: target.teacherId,
-      assistantIds: dragState.assistantIds,
+      teacherId: assignment.teacherId,
+      assistantIds: assignment.assistantIds,
       classroomId: dragState.classroomId || undefined,
       schedules: [{
         lessonDate: target.lessonDate,
         startTime: target.startTime,
         endTime: target.endTime,
-        teacherId: target.teacherId,
-        assistantIds: dragState.assistantIds,
+        teacherId: assignment.teacherId,
+        assistantIds: assignment.assistantIds,
         classroomId: dragState.classroomId || undefined,
       }],
     }

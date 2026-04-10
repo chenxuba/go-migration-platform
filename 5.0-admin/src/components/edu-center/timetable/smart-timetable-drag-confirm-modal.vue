@@ -46,6 +46,10 @@ const modalOpen = computed({
         请确认课程将从原时段移动到新时段，确认后会立即更新课表。
       </div>
 
+      <div v-if="detail?.warningText" class="st-drag-confirm__warning">
+        {{ detail.warningText }}
+      </div>
+
       <div class="st-drag-confirm__body">
         <div class="st-drag-confirm__card">
           <div class="st-drag-confirm__tag">
@@ -65,6 +69,12 @@ const modalOpen = computed({
           </div>
           <div class="st-drag-confirm__meta">
             {{ detail?.source?.studentText || '-' }}
+          </div>
+          <div class="st-drag-confirm__meta">
+            主教：{{ detail?.source?.teacherText || '-' }}
+          </div>
+          <div class="st-drag-confirm__meta">
+            助教：{{ detail?.source?.assistantText || '未安排' }}
           </div>
         </div>
 
@@ -92,6 +102,12 @@ const modalOpen = computed({
           </div>
           <div class="st-drag-confirm__meta">
             {{ detail?.target?.studentText || '-' }}
+          </div>
+          <div class="st-drag-confirm__meta">
+            主教：{{ detail?.target?.teacherText || '-' }}
+          </div>
+          <div class="st-drag-confirm__meta">
+            助教：{{ detail?.target?.assistantText || '未安排' }}
           </div>
         </div>
       </div>
@@ -121,6 +137,15 @@ const modalOpen = computed({
 .st-drag-confirm__summary {
   color: #6b7280;
   font-size: 14px;
+  line-height: 1.5;
+}
+
+.st-drag-confirm__warning {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff7e6;
+  color: #ad6800;
+  font-size: 13px;
   line-height: 1.5;
 }
 
