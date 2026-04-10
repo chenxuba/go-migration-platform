@@ -3395,6 +3395,11 @@ function buildScheduledLessonCancelConfirmTitle(text, column, record) {
 }
 
 function openScheduledLessonDetail(text, column, record) {
+  scheduledLessonDetailState.value = buildScheduledLessonDetailState(text, column, record)
+  scheduledLessonDetailOpen.value = true
+}
+
+function buildScheduledLessonDetailState(text, column, record) {
   const dateObj = dayjs(record.date)
   const month = dateObj.format('M')
   const day = dateObj.format('D')
@@ -3403,7 +3408,7 @@ function openScheduledLessonDetail(text, column, record) {
     ? text.studentNames.map(item => item.name).filter(Boolean).join('、')
     : '-'
 
-  scheduledLessonDetailState.value = {
+  return {
     modeLabel: text.courseType === 1 ? '1v1' : '班课',
     modeColor: text.courseType === 1 ? '#1677ff' : '#13c2c2',
     lessonTitle: text.courseType === 1
@@ -3429,7 +3434,16 @@ function openScheduledLessonDetail(text, column, record) {
     column,
     record,
   }
-  scheduledLessonDetailOpen.value = true
+}
+
+function openScheduledLessonEdit(text, column, record, payload) {
+  scheduledLessonDetailState.value = buildScheduledLessonDetailState(text, column, record)
+  openScheduledLessonBatchPlanEdit(payload)
+}
+
+function openScheduledLessonEditCurrent(text, column, record, payload) {
+  scheduledLessonDetailState.value = buildScheduledLessonDetailState(text, column, record)
+  openScheduledLessonBatchPlanEdit('current', payload)
 }
 
 async function deleteScheduledLessonFromDetail(scope = 'current') {
@@ -5227,6 +5241,8 @@ watch(dragConflictDetailOpen, (open) => {
       :schedule-cell-context-record="scheduleCellContextRecord"
       :has-scheduled-lesson="hasScheduledLesson"
       :open-scheduled-lesson-detail="openScheduledLessonDetail"
+      :open-scheduled-lesson-edit="openScheduledLessonEdit"
+      :open-scheduled-lesson-edit-current="openScheduledLessonEditCurrent"
       :open-scheduled-conflict-detail="openScheduledConflictDetail"
       :handle-conflict-click="handleConflictClick"
       :handle-schedule-click="handleScheduleClick"

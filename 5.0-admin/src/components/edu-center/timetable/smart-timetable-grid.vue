@@ -59,6 +59,14 @@ const props = defineProps({
     type: Function,
     required: true,
   },
+  openScheduledLessonEdit: {
+    type: Function,
+    required: true,
+  },
+  openScheduledLessonEditCurrent: {
+    type: Function,
+    required: true,
+  },
   openScheduledConflictDetail: {
     type: Function,
     required: true,
@@ -356,6 +364,9 @@ onUnmounted(() => {
             v-if="hasScheduledLesson(text)"
             :open="!draggingScheduleCellKey && openSchedulePopoverKey === schedulePopoverKey(column, record)"
             :schedule-id="String(text.scheduleId || '')"
+            :editable="Boolean(text.scheduleId) && !(text.courseType === 1 && text.isMain === false)"
+            :batch-no="String(text.batchNo || '')"
+            :batch-size="Number(text.batchSize || 0)"
             :mode-label="scheduleModeShortLabel(text)"
             :lesson-title="scheduleLessonTitle(text)"
             :teacher-name="text.teacherName || record.name || '-'"
@@ -366,6 +377,8 @@ onUnmounted(() => {
             :conflict-text="text.scheduledConflict ? scheduleConflictText(text) : ''"
             @open-change="handleSchedulePopoverOpenChange(column, record, $event)"
             @detail="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
+            @edit="payload => openScheduledLessonEdit(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record), payload)"
+            @edit-current="payload => openScheduledLessonEditCurrent(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record), payload)"
           >
             <div
               :data-schedule-cell-key="scheduleCellKey(column, record)"

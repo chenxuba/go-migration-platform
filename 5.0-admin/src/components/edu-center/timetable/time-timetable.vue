@@ -1873,6 +1873,8 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                     v-for="event in layoutsByDate.get(item.key) || []"
                     :key="event.id"
                     :schedule-id="String(event.id || '')"
+                    :batch-no="String(event.raw?.batchNo || '')"
+                    :batch-size="Number(event.raw?.batchSize || 0)"
                     :mode-label="scheduleBadgeText(event.classType)"
                     :lesson-title="scheduleHoverTitle(event.raw)"
                     :teacher-name="event.teacher"
@@ -1883,6 +1885,8 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                     :time-text="scheduleTimeTextFromEvent(event)"
                     :conflict-text="scheduleConflictSummary(event.raw)"
                     @detail="openScheduleDetail(event)"
+                    @edit="payload => openBatchPlanEdit(event.raw, 'batch', payload)"
+                    @edit-current="payload => openBatchPlanEdit(event.raw, 'current', payload)"
                   >
                     <div
                       :class="eventClass(event)"

@@ -3,11 +3,20 @@ import { CopyOutlined, EditOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { computed, getCurrentInstance, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi } from '@/api/edu-center/teaching-schedule'
+import { type TeachingScheduleBatchMeta, type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi } from '@/api/edu-center/teaching-schedule'
+
+interface ScheduleEditPayload {
+  batchMeta?: TeachingScheduleBatchMeta
+  batchNo?: string
+  batchSize?: number
+}
 
 const props = withDefaults(defineProps<{
   open?: boolean
   scheduleId?: string
+  editable?: boolean
+  batchNo?: string
+  batchSize?: number
   modeLabel?: string
   lessonTitle?: string
   teacherName?: string
@@ -23,6 +32,9 @@ const props = withDefaults(defineProps<{
   showCopyAction?: boolean
 }>(), {
   scheduleId: '',
+  editable: true,
+  batchNo: '',
+  batchSize: 0,
   modeLabel: '课程',
   lessonTitle: '课程',
   teacherName: '-',
@@ -40,6 +52,8 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'detail'): void
+  (e: 'edit', payload?: ScheduleEditPayload): void
+  (e: 'edit-current', payload?: ScheduleEditPayload): void
   (e: 'openChange', value: boolean): void
 }>()
 
@@ -149,8 +163,29 @@ const isPastSchedule = computed(() => {
     return false
   return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
 })
+const hasBatchSchedule = computed(() => {
+  const batchSize = Number(detailData.value?.batchSize || props.batchSize || 0)
+  const batchNo = String(detailData.value?.batchNo || props.batchNo || '').trim()
+  return batchSize > 1 || batchNo !== ''
+})
+const canEditByContext = computed(() => Boolean(String(props.scheduleId || '').trim()) && props.editable)
+const canEditSchedule = computed(() => canEditByContext.value && !isPastSchedule.value)
+const scheduleEditPayload = computed<ScheduleEditPayload>(() => {
+  const batchMeta = detailData.value?.batchMeta
+  const batchNo = String(detailData.value?.batchNo || props.batchNo || '').trim() || undefined
+  const batchSize = Number(detailData.value?.batchSize || props.batchSize || 0)
+  return {
+    batchMeta: batchMeta ? {
+      ...batchMeta,
+      selectedWeekdays: Array.isArray(batchMeta.selectedWeekdays) ? [...batchMeta.selectedWeekdays] : undefined,
+      freeSelectedDates: Array.isArray(batchMeta.freeSelectedDates) ? [...batchMeta.freeSelectedDates] : undefined,
+    } : undefined,
+    batchNo,
+    batchSize: batchSize > 0 ? batchSize : undefined,
+  }
+})
 const editDisabledReason = computed(() => (
-  isPastSchedule.value ? '过去日程不可编辑' : '编辑日程'
+  isPastSchedule.value ? '过去日程不可编辑' : (canEditByContext.value ? '编辑日程' : '当前日程不可编辑')
 ))
 
 async function loadLatestDetail() {
@@ -229,6 +264,26 @@ function handleOpenChange(value: boolean) {
 function openDetail() {
   closePopover()
   emit('detail')
+}
+
+function openEdit() {
+  closePopover()
+  emit('edit', scheduleEditPayload.value)
+}
+
+function openEditCurrent() {
+  closePopover()
+  emit('edit-current', scheduleEditPayload.value)
+}
+
+function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
+  domEvent?.stopPropagation()
+  if (!canEditSchedule.value)
+    return
+  if (String(key) === 'current')
+    openEditCurrent()
+  else
+    openEdit()
 }
 
 function goRollCall() {
@@ -329,12 +384,36 @@ watch(
 
           <div class="st-schedule-hover-card__footer">
             <div class="st-schedule-hover-card__actions">
-              <a-tooltip :title="editDisabledReason" placement="top">
+              <a-dropdown
+                v-if="hasBatchSchedule && canEditSchedule"
+                :trigger="['hover']"
+                placement="topLeft"
+              >
+                <template #overlay>
+                  <a-menu :selectable="false" @click="handleBatchEditMenuClick">
+                    <a-menu-item key="current">
+                      仅编辑此日程
+                    </a-menu-item>
+                    <a-menu-item key="future">
+                      编辑以后日程
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+
                 <button
                   type="button"
                   class="st-schedule-hover-card__icon-btn"
-                  :disabled="isPastSchedule"
-                  @click.stop="!isPastSchedule && openDetail()"
+                  @click.stop
+                >
+                  <EditOutlined />
+                </button>
+              </a-dropdown>
+              <a-tooltip v-else :title="editDisabledReason" placement="top">
+                <button
+                  type="button"
+                  class="st-schedule-hover-card__icon-btn"
+                  :disabled="!canEditSchedule"
+                  @click.stop="canEditSchedule && openEdit()"
                 >
                   <EditOutlined />
                 </button>

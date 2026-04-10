@@ -1323,6 +1323,21 @@ function openScheduleEdit(event: CellSchedule) {
   scheduleDetailOpen.value = true
 }
 
+function openBatchPlanEdit(schedule: TeachingScheduleItem | null | undefined, scope: 'batch' | 'current' = 'batch', payload?: ScheduleEditPayload) {
+  if (!schedule?.id)
+    return
+  scheduleBatchPlanEditScope.value = scope
+  currentBatchPlanSchedule.value = payload
+    ? {
+        ...schedule,
+        batchMeta: payload.batchMeta,
+        batchNo: payload.batchNo || schedule.batchNo,
+        batchSize: Number(payload.batchSize || schedule.batchSize || 0) || schedule.batchSize,
+      }
+    : schedule
+  scheduleBatchPlanEditOpen.value = true
+}
+
 function onBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
   scheduleDetailOpen.value = false
@@ -1415,34 +1430,12 @@ async function handleScheduleDetailDelete(scope: 'current' | 'future' = 'current
 
 function handleScheduleDetailEdit(payload?: ScheduleEditPayload) {
   const schedule = currentDetailSchedule.value
-  if (!schedule?.id)
-    return
-  scheduleBatchPlanEditScope.value = 'batch'
-  currentBatchPlanSchedule.value = payload
-    ? {
-        ...schedule,
-        batchMeta: payload.batchMeta,
-        batchNo: payload.batchNo || schedule.batchNo,
-        batchSize: Number(payload.batchSize || schedule.batchSize || 0) || schedule.batchSize,
-      }
-    : schedule
-  scheduleBatchPlanEditOpen.value = true
+  openBatchPlanEdit(schedule, 'batch', payload)
 }
 
 function handleScheduleDetailEditCurrent(payload?: ScheduleEditPayload) {
   const schedule = currentDetailSchedule.value
-  if (!schedule?.id)
-    return
-  scheduleBatchPlanEditScope.value = 'current'
-  currentBatchPlanSchedule.value = payload
-    ? {
-        ...schedule,
-        batchMeta: payload.batchMeta,
-        batchNo: payload.batchNo || schedule.batchNo,
-        batchSize: Number(payload.batchSize || schedule.batchSize || 0) || schedule.batchSize,
-      }
-    : schedule
-  scheduleBatchPlanEditOpen.value = true
+  openBatchPlanEdit(schedule, 'current', payload)
 }
 
 const totalLessons = computed(() => internalSchedules.value.length)
@@ -1829,6 +1822,8 @@ const unsignedLessons = computed(() =>
                   v-for="event in (layoutsByCell.get(`${col.dateKey}|${col.teacherKey}`)?.layouts ?? [])"
                   :key="event.id"
                   :schedule-id="String(event.id || '')"
+                  :batch-no="String(event.raw?.batchNo || '')"
+                  :batch-size="Number(event.raw?.batchSize || 0)"
                   :mode-label="scheduleBadgeText(event.classType)"
                   :lesson-title="scheduleHoverTitle(event.raw)"
                   :teacher-name="event.teacher"
@@ -1839,6 +1834,8 @@ const unsignedLessons = computed(() =>
                   :time-text="scheduleTimeTextFromEvent(event)"
                   :conflict-text="scheduleConflictSummary(event.raw)"
                   @detail="openScheduleEdit(event)"
+                  @edit="payload => openBatchPlanEdit(event.raw, 'batch', payload)"
+                  @edit-current="payload => openBatchPlanEdit(event.raw, 'current', payload)"
                 >
                   <div
                     class="tm-event"
