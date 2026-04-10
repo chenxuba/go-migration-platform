@@ -2914,14 +2914,13 @@ function invertWeekdays() {
 .planner-tag {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-height: 30px;
-  padding: 0 12px;
+  min-height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
-  background: #f2f4f7;
-  color: #4e5969;
+  background: #f0fdf4;
+  color: #389e0d;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .planner-tag--primary {
@@ -2930,8 +2929,8 @@ function invertWeekdays() {
 }
 
 .planner-tag--warning {
-  background: #fff7e6;
-  color: #d46b08;
+  background: #fff1f0;
+  color: #cf1322;
 }
 
 .planner-tag--table {
