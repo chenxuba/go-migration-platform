@@ -357,7 +357,7 @@ watch(
                   <DownOutlined />
                 </a-button>
               </a-dropdown>
-              <a-button v-else-if="deletable" danger ghost :loading="deleting" @click="$emit('delete')">
+              <a-button v-else-if="deletable" :loading="deleting" @click="$emit('delete')">
                 删除
               </a-button>
               <a-dropdown
@@ -381,7 +381,7 @@ watch(
                   <DownOutlined />
                 </a-button>
               </a-dropdown>
-              <a-button v-else-if="editable" type="primary" @click="$emit('edit')">
+              <a-button v-else-if="editable" @click="$emit('edit')">
                 编辑
               </a-button>
               <a-button type="primary">
