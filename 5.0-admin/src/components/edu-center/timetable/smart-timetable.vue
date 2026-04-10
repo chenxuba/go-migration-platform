@@ -16,7 +16,7 @@ import { getInstPeriodConfigApi } from '@/api/common/config'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { batchUpdateTeachingSchedulesApi, cancelTeachingScheduleScopedApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createGroupClassSchedulesApi, createOneToOneSchedulesApi, downloadSmartTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { batchUpdateTeachingSchedulesApi, cancelTeachingScheduleScopedApi, checkAssistantScheduleAvailabilityApi, checkGroupClassAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createGroupClassSchedulesApi, createOneToOneSchedulesApi, downloadSmartTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateGroupClassSchedulesApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useSmartTimetableAvailability } from '@/composables/useSmartTimetableAvailability'
 import { useSmartTimetableClassMode } from '@/composables/useSmartTimetableClassMode'
@@ -2726,7 +2726,7 @@ function openDragConflictDetailModal(validation, dragState, target) {
   dragConflictDetailState.value = {
     summary: `${validation?.message || '当前调课存在时间冲突'}，共发现 ${items.length} 条冲突日程。`,
     attempted: {
-      modeLabel: '1v1',
+      modeLabel: dragScheduleModeLabel(dragState),
       studentText: dragState?.studentText || '未识别学员',
       courseName: dragState?.courseName || '未识别课程',
       date: target?.lessonDate || '',
@@ -2738,12 +2738,10 @@ function openDragConflictDetailModal(validation, dragState, target) {
       groupLabel: activeGroupLabel.value || '当前组',
       conflictTypes,
       forceAllowed: Boolean(dragState?.scheduleId)
-        && Boolean(dragState?.oneToOneId)
         && conflictTypes.length > 0
         && conflictTypes.every(type => type === '学员'),
       forceDisabledReason: buildForceScheduleDisabledReason(conflictTypes, '调课'),
       forcePayload: Boolean(dragState?.scheduleId)
-        && Boolean(dragState?.oneToOneId)
         && conflictTypes.length > 0
         && conflictTypes.every(type => type === '学员')
         ? {
@@ -3929,6 +3927,14 @@ function scheduleStudentText(text) {
     : ''
 }
 
+function dragScheduleModeLabel(value) {
+  return Number(value?.courseType) === 2 ? '班课' : '1v1'
+}
+
+function isGroupClassDragSchedule(value) {
+  return Number(value?.courseType) === 2
+}
+
 function isScheduleBeforeToday(text) {
   const lessonDate = String(text?.lessonDate || '').trim()
   if (!lessonDate)
@@ -3937,13 +3943,15 @@ function isScheduleBeforeToday(text) {
 }
 
 function isScheduleDraggable(text) {
-  return currentModel.value === '1'
-    && text?.courseType === 1
-    && text?.isMain !== false
+  return text?.isMain !== false
     && !isScheduleBeforeToday(text)
     && text?.callStatusKey !== 'signed'
     && Boolean(text?.scheduleId)
     && Boolean(text?.classId)
+    && (
+      (currentModel.value === '1' && text?.courseType === 1)
+      || (currentModel.value === '2' && text?.courseType === 2)
+    )
 }
 
 function resolveScheduleDragBlockedMessage(text) {
@@ -3951,12 +3959,19 @@ function resolveScheduleDragBlockedMessage(text) {
     return '当前课程已点名，暂不支持拖拽调课'
   if (isScheduleBeforeToday(text))
     return '过去的日程，不允许拖拽调课'
-  if (text?.courseType === 1 && text?.isMain === false)
-    return '当前是助教课表，暂不支持拖拽调课，请在主教老师所在行操作'
-  if (text?.courseType === 2)
-    return '当前仅支持 1v1 主教课程拖拽调课'
+  if (text?.isMain === false) {
+    return text?.courseType === 2
+      ? '当前是班课辅教课表，暂不支持拖拽调课，请在主教老师所在行操作'
+      : '当前是助教课表，暂不支持拖拽调课，请在主教老师所在行操作'
+  }
+  if (text?.courseType === 2 && currentModel.value !== '2')
+    return '请切换到班课模式后拖拽调课'
+  if (text?.courseType === 1 && currentModel.value !== '1')
+    return '请切换到1v1模式后拖拽调课'
   if (text?.courseType === 1)
     return '当前课程暂不支持拖拽调课'
+  if (text?.courseType === 2)
+    return '当前班课暂不支持拖拽调课'
   return ''
 }
 
@@ -3964,9 +3979,15 @@ function buildDraggingScheduleState(text, column, record) {
   const lessonDate = scheduleCellDate(column, record)
   const startTime = scheduleCellStartTime(column, record)
   const endTime = scheduleCellEndTime(column, record)
+  const teachingClassId = String(text?.classId || '').trim()
+  const courseType = Number(text?.courseType || 0)
   return {
     scheduleId: String(text?.scheduleId || '').trim(),
-    oneToOneId: String(text?.classId || '').trim(),
+    courseType,
+    modeLabel: dragScheduleModeLabel(text),
+    teachingClassId,
+    oneToOneId: courseType === 1 ? teachingClassId : '',
+    groupClassId: courseType === 2 ? teachingClassId : '',
     assistantIds: Array.isArray(text?.assistantIds)
       ? text.assistantIds.map(id => String(id || '').trim()).filter(Boolean)
       : [],
@@ -4132,8 +4153,7 @@ async function checkDragTargetAssistantAvailability(target, dragState) {
   if (!Array.isArray(dragState?.assistantIds) || !dragState.assistantIds.length)
     return null
 
-  const res = await checkAssistantScheduleAvailabilityApi({
-    oneToOneId: dragState.oneToOneId,
+  const requestPayload = {
     assistantIds: dragState.assistantIds,
     excludeIds: [dragState.scheduleId],
     schedules: [{
@@ -4141,7 +4161,16 @@ async function checkDragTargetAssistantAvailability(target, dragState) {
       startTime: target.startTime,
       endTime: target.endTime,
     }],
-  })
+  }
+  const res = isGroupClassDragSchedule(dragState)
+    ? await checkGroupClassAssistantScheduleAvailabilityApi({
+        groupClassId: dragState.groupClassId,
+        ...requestPayload,
+      })
+    : await checkAssistantScheduleAvailabilityApi({
+        oneToOneId: dragState.oneToOneId,
+        ...requestPayload,
+      })
   if (res.code !== 200 || !res.result)
     throw new Error(res.message || '检测助教空闲状态失败')
 
@@ -4174,11 +4203,11 @@ function validateDragTargetLocally(dragState, target) {
       conflictTypes: [],
     }
   }
-  if (!dragState.oneToOneId) {
+  if (!dragState.teachingClassId) {
     return {
       valid: false,
       label: '信息不完整',
-      message: '当前课程缺少1对1标识，暂不支持拖拽调课',
+      message: `当前课程缺少${dragScheduleModeLabel(dragState)}标识，暂不支持拖拽调课`,
       conflictTypes: [],
     }
   }
@@ -4204,7 +4233,8 @@ function validateDragTargetLocally(dragState, target) {
 function buildDragValidationCacheKey(dragState, target) {
   return [
     dragState.scheduleId,
-    dragState.oneToOneId,
+    dragState.courseType,
+    dragState.teachingClassId,
     target.teacherId,
     target.lessonDate,
     target.startTime,
@@ -4265,8 +4295,7 @@ async function validateDragTargetsInBatch(targets, options = {}) {
     return
 
   try {
-    const res = await validateOneToOneSchedulesApi({
-      oneToOneId: dragState.oneToOneId,
+    const requestPayload = {
       teacherId: targets[0]?.teacherId || '',
       assistantIds: dragState.assistantIds,
       classroomId: dragState.classroomId,
@@ -4279,7 +4308,16 @@ async function validateDragTargetsInBatch(targets, options = {}) {
         assistantIds: dragState.assistantIds,
         classroomId: dragState.classroomId,
       })),
-    })
+    }
+    const res = isGroupClassDragSchedule(dragState)
+      ? await validateGroupClassSchedulesApi({
+          groupClassId: dragState.groupClassId,
+          ...requestPayload,
+        })
+      : await validateOneToOneSchedulesApi({
+          oneToOneId: dragState.oneToOneId,
+          ...requestPayload,
+        })
     if (res.code !== 200 || !res.result)
       throw new Error(res.message || '批量检测调课空点失败')
 
@@ -4300,6 +4338,21 @@ async function validateDragTargetsInBatch(targets, options = {}) {
   }
   catch (error) {
     console.error('validate drag targets in batch failed', error)
+    if (isGroupClassDragSchedule(dragState)) {
+      const result = {
+        valid: false,
+        label: '检测失败',
+        message: error?.response?.data?.message || error?.message || '批量检测调课空点失败',
+        conflictTypes: [],
+        existingSchedules: [],
+      }
+      targets.forEach(target => applyDragValidationResult(target, result, {
+        dragState,
+        sessionId: options.sessionId,
+        apply: options.apply === true && dragHoverState.value.key === target.key,
+      }))
+      return
+    }
     try {
       const itemMap = await checkDragTargetsTeacherAvailability(targets, dragState)
       targets.forEach((target) => {
@@ -4450,8 +4503,7 @@ async function ensureDragTargetValidation(target, options = {}) {
 
   const promise = (async () => {
     try {
-      const res = await validateOneToOneSchedulesApi({
-        oneToOneId: dragState.oneToOneId,
+      const requestPayload = {
         teacherId: target.teacherId,
         assistantIds: dragState.assistantIds,
         classroomId: dragState.classroomId,
@@ -4464,7 +4516,16 @@ async function ensureDragTargetValidation(target, options = {}) {
           assistantIds: dragState.assistantIds,
           classroomId: dragState.classroomId,
         }],
-      })
+      }
+      const res = isGroupClassDragSchedule(dragState)
+        ? await validateGroupClassSchedulesApi({
+            groupClassId: dragState.groupClassId,
+            ...requestPayload,
+          })
+        : await validateOneToOneSchedulesApi({
+            oneToOneId: dragState.oneToOneId,
+            ...requestPayload,
+          })
       if (res.code !== 200 || !res.result)
         throw new Error(res.message || '检测调课空点失败')
 
@@ -4490,6 +4551,16 @@ async function ensureDragTargetValidation(target, options = {}) {
     }
     catch (error) {
       console.error('validate drag target failed', error)
+      if (isGroupClassDragSchedule(dragState)) {
+        const result = {
+          valid: false,
+          label: '检测失败',
+          message: error?.response?.data?.message || error?.message || '检测调课空点失败',
+          conflictTypes: [],
+        }
+        dragValidationCache.set(cacheKey, result)
+        return result
+      }
       try {
         const itemMap = await checkDragTargetsTeacherAvailability([target], dragState)
         const teacherResult = buildDragValidationResultFromValidationItem(target, itemMap.get(target.key))
@@ -4775,7 +4846,7 @@ async function submitDragScheduleAdjustment() {
       target: null,
       payload: null,
     }
-    const lessonText = dragState.studentText || dragState.courseName || '课程'
+    const lessonText = dragState.lessonTitle || dragState.courseName || dragState.studentText || '课程'
     messageService.success(`已将 ${lessonText} 调到 ${dateLabel} ${formatWeek(target.lessonDate)} 第${lessonIndex}节`)
     emitter.emit(EVENTS.REFRESH_DATA)
   }
@@ -4798,8 +4869,8 @@ async function copyDraggedScheduleToTarget() {
   }
 
   const { dragState, target } = payload
-  if (!dragState.oneToOneId) {
-    messageService.warning('当前课程缺少1对1标识，暂不支持复制')
+  if (!dragState.teachingClassId) {
+    messageService.warning(`当前课程缺少${dragScheduleModeLabel(dragState)}标识，暂不支持复制`)
     return
   }
 
@@ -4808,8 +4879,7 @@ async function copyDraggedScheduleToTarget() {
   dragCopySubmitting.value = true
   creatingOneToOneSchedule.value = true
   try {
-    const res = await createOneToOneSchedulesApi({
-      oneToOneId: dragState.oneToOneId,
+    const requestPayload = {
       teacherId: target.teacherId,
       assistantIds: dragState.assistantIds,
       classroomId: dragState.classroomId || undefined,
@@ -4821,7 +4891,16 @@ async function copyDraggedScheduleToTarget() {
         assistantIds: dragState.assistantIds,
         classroomId: dragState.classroomId || undefined,
       }],
-    })
+    }
+    const res = isGroupClassDragSchedule(dragState)
+      ? await createGroupClassSchedulesApi({
+          groupClassId: dragState.groupClassId,
+          ...requestPayload,
+        })
+      : await createOneToOneSchedulesApi({
+          oneToOneId: dragState.oneToOneId,
+          ...requestPayload,
+        })
     if (res.code !== 200)
       throw new Error(res.message || '复制课程失败')
 
@@ -4831,7 +4910,7 @@ async function copyDraggedScheduleToTarget() {
       target: null,
       payload: null,
     }
-    const lessonText = dragState.studentText || dragState.courseName || '课程'
+    const lessonText = dragState.lessonTitle || dragState.courseName || dragState.studentText || '课程'
     messageService.success(`已复制 ${lessonText} 到 ${dateLabel} ${formatWeek(target.lessonDate)} 第${lessonIndex}节`)
     emitter.emit(EVENTS.REFRESH_DATA)
   }

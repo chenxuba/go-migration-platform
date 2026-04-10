@@ -3272,6 +3272,28 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 	}
 
 	assistantRemovalOnly := isAssistantRemovalOnlyBatchUpdate(schedules, teacherID, classroomID, classroomIDProvided, assistantIDs, updatedSlots)
+	classMembershipsByClassID := map[int64][]groupClassStudentMembership{}
+	creationReferenceAt := time.Now()
+	if !assistantRemovalOnly {
+		classIDSet := make(map[int64]struct{})
+		classIDs := make([]int64, 0, len(schedules))
+		for _, item := range schedules {
+			if item.ClassType != model.TeachingClassTypeNormal || item.TeachingClassID <= 0 {
+				continue
+			}
+			if _, ok := classIDSet[item.TeachingClassID]; ok {
+				continue
+			}
+			classIDSet[item.TeachingClassID] = struct{}{}
+			classIDs = append(classIDs, item.TeachingClassID)
+		}
+		if len(classIDs) > 0 {
+			classMembershipsByClassID, err = repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, tx, instID, classIDs)
+			if err != nil {
+				return err
+			}
+		}
+	}
 
 	if err := repo.validateTeachingScheduleConflictsTx(ctx, tx, instID, teacherID, classroomID, updatedSlots, strings.TrimSpace(dto.BatchNo), excludeIDs, false); err != nil {
 		return err
@@ -3295,14 +3317,42 @@ func (repo *Repository) BatchUpdateTeachingSchedules(ctx context.Context, instID
 					return fmt.Errorf("学员在 %s %s-%s 已有日程冲突", slot.LessonDate.Format("2006-01-02"), slot.StartAt.Format("15:04"), slot.EndAt.Format("15:04"))
 				}
 			}
-			if !assistantRemovalOnly && len(assistantIDs) > 0 {
-				assistantConflicts, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, assistantIDs, []normalizedScheduleSlot{slot}, strings.TrimSpace(dto.BatchNo), excludeIDs)
+		}
+		if item.ClassType == model.TeachingClassTypeNormal && !assistantRemovalOnly {
+			if item.TeachingClassID > 0 {
+				classConflicts, err := repo.listScheduleConflictDetailsTx(ctx, tx, instID, "teaching_class_id", item.TeachingClassID, []normalizedScheduleSlot{slot}, strings.TrimSpace(dto.BatchNo), excludeIDs)
 				if err != nil {
 					return err
 				}
-				if len(assistantConflicts) > 0 {
-					return fmt.Errorf("助教在 %s %s-%s 已有日程冲突", slot.LessonDate.Format("2006-01-02"), slot.StartAt.Format("15:04"), slot.EndAt.Format("15:04"))
+				if len(classConflicts) > 0 {
+					return fmt.Errorf("班级在 %s %s-%s 已有日程冲突", slot.LessonDate.Format("2006-01-02"), slot.StartAt.Format("15:04"), slot.EndAt.Format("15:04"))
 				}
+			}
+			if !dto.AllowStudentConflict && item.TeachingClassID > 0 {
+				roster := buildGroupClassScheduleRosterFromMembershipsAndOverrides(
+					classMembershipsByClassID[item.TeachingClassID],
+					nil,
+					resolveGroupClassRosterReferenceAt(slot.StartAt, creationReferenceAt),
+				)
+				studentIDs := roster.activeIDs()
+				if len(studentIDs) > 0 {
+					studentConflicts, err := repo.listScheduleConflictDetailsByStudentsTx(ctx, tx, instID, studentIDs, []normalizedScheduleSlot{slot}, strings.TrimSpace(dto.BatchNo), excludeIDs)
+					if err != nil {
+						return err
+					}
+					if len(studentConflicts) > 0 {
+						return fmt.Errorf("班级学员在 %s %s-%s 已有日程冲突", slot.LessonDate.Format("2006-01-02"), slot.StartAt.Format("15:04"), slot.EndAt.Format("15:04"))
+					}
+				}
+			}
+		}
+		if !assistantRemovalOnly && len(assistantIDs) > 0 {
+			assistantConflicts, err := repo.listScheduleConflictDetailsByAssistantsTx(ctx, tx, instID, assistantIDs, []normalizedScheduleSlot{slot}, strings.TrimSpace(dto.BatchNo), excludeIDs)
+			if err != nil {
+				return err
+			}
+			if len(assistantConflicts) > 0 {
+				return fmt.Errorf("助教在 %s %s-%s 已有日程冲突", slot.LessonDate.Format("2006-01-02"), slot.StartAt.Format("15:04"), slot.EndAt.Format("15:04"))
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `
@@ -3784,17 +3834,18 @@ type scheduleAvailabilityConflictRow struct {
 }
 
 type teachingScheduleRow struct {
-	ID            int64
-	BatchNo       string
-	ClassType     int
-	StudentID     int64
-	TeacherID     int64
-	ClassroomID   int64
-	ClassroomName string
-	AssistantIDs  []string
-	LessonDate    time.Time
-	StartAt       time.Time
-	EndAt         time.Time
+	ID              int64
+	BatchNo         string
+	ClassType       int
+	TeachingClassID int64
+	StudentID       int64
+	TeacherID       int64
+	ClassroomID     int64
+	ClassroomName   string
+	AssistantIDs    []string
+	LessonDate      time.Time
+	StartAt         time.Time
+	EndAt           time.Time
 }
 
 func isAssistantRemovalOnlyBatchUpdate(schedules []teachingScheduleRow, teacherID, classroomID int64, classroomIDProvided bool, assistantIDs []int64, updatedSlots []normalizedScheduleSlot) bool {
@@ -5403,6 +5454,7 @@ func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *s
 			id,
 			IFNULL(batch_no, ''),
 			IFNULL(class_type, 0),
+			IFNULL(teaching_class_id, 0),
 			IFNULL(student_id, 0),
 			IFNULL(teacher_id, 0),
 			IFNULL(classroom_id, 0),
@@ -5427,6 +5479,7 @@ func (repo *Repository) loadSchedulesForBatchUpdateTx(ctx context.Context, tx *s
 			&item.ID,
 			&item.BatchNo,
 			&item.ClassType,
+			&item.TeachingClassID,
 			&item.StudentID,
 			&item.TeacherID,
 			&item.ClassroomID,
