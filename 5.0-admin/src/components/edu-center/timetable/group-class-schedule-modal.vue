@@ -782,6 +782,33 @@ const selectedGroupClassSummary = computed<SummaryItem[]>(() => [
 
 const selectedWeekdaysText = computed(() => selectedWeekdays.value.join(' / '))
 
+const schoolSlotFieldLabelText = computed(() => isSingleScheduleEditMode.value ? '课表节次' : '课表节次（可多选）')
+const schoolSlotTooltipText = computed(() =>
+  isSingleScheduleEditMode.value
+    ? '单个班课日程编辑时仅允许选择一个课表节次，保存后会更新当前这节班课。'
+    : '同一上课日内按所选「第几节课」各生成一节班课日程；重复排课时每个上课日都会生成这些节。',
+)
+const schoolSlotPlaceholderText = computed(() =>
+  isSingleScheduleEditMode.value ? '请选择一个课表节次' : '同一天内可勾选多节，例如上午 + 下午',
+)
+const schoolTimeSlotSelectValue = computed<string | string[] | undefined>({
+  get() {
+    if (isSingleScheduleEditMode.value)
+      return selectedSchoolTimeSlots.value[0]
+    return selectedSchoolTimeSlots.value
+  },
+  set(value) {
+    if (isSingleScheduleEditMode.value) {
+      const normalized = String(value || '').trim()
+      selectedSchoolTimeSlots.value = normalized ? [normalized] : []
+      return
+    }
+    selectedSchoolTimeSlots.value = Array.isArray(value)
+      ? value.map(item => String(item || '').trim()).filter(Boolean)
+      : []
+  },
+})
+
 const freeSelectedDatesSorted = computed(() =>
   [...freeSelectedDates.value].sort((a, b) => a.valueOf() - b.valueOf()),
 )
@@ -1514,7 +1541,7 @@ async function applyBatchPlanPreset(preset?: GroupClassBatchPlanModalPreset | nu
     const matchedSlots = findPresetGroupAndSlotKeys(preset.timeBlocks)
     currentGroup.value = matchedSlots.group
     await nextTick()
-    selectedSchoolTimeSlots.value = matchedSlots.slotKeys
+    selectedSchoolTimeSlots.value = isSingleScheduleEditMode.value ? matchedSlots.slotKeys.slice(0, 1) : matchedSlots.slotKeys
     selectedTeacherDisplay.value = resolveStaffDisplayById(teacherId)
 
     const assistantIds = Array.isArray(preset.assistantIds)
@@ -2416,8 +2443,8 @@ watch(
                     <div class="planner-field__label-row planner-field__label-row--with-period-group">
                       <span class="planner-label planner-label--required planner-label--with-inline-tip">
                         <ClockCircleOutlined />
-                        课表节次（可多选）
-                        <a-tooltip title="同一上课日内按所选「第几节课」各生成一节班课日程；重复排课时每个上课日都会生成这些节。">
+                        {{ schoolSlotFieldLabelText }}
+                        <a-tooltip :title="schoolSlotTooltipText">
                           <QuestionCircleOutlined class="planner-label__tip" />
                         </a-tooltip>
                       </span>
@@ -2444,12 +2471,12 @@ watch(
                     </div>
                     <span class="planner-control-tooltip-wrap">
                       <a-select
-                        v-model:value="selectedSchoolTimeSlots"
-                        mode="multiple"
+                        v-model:value="schoolTimeSlotSelectValue"
+                        :mode="isSingleScheduleEditMode ? undefined : 'multiple'"
                         size="large"
                         option-label-prop="label"
                         allow-clear
-                        placeholder="同一天内可勾选多节，例如上午 + 下午"
+                        :placeholder="schoolSlotPlaceholderText"
                         max-tag-count="responsive"
                         :max-tag-placeholder="schoolSlotMaxTagPlaceholder"
                         :get-popup-container="scheduleSlotSelectGetPopupContainer"
