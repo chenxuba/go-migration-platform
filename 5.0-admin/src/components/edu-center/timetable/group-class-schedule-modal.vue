@@ -153,6 +153,15 @@ const modalOpen = computed({
 })
 
 const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
+const isSingleScheduleEditMode = computed(() => {
+  if (!isBatchPlanEditMode.value || !props.batchPlanPreset)
+    return false
+  const batchNo = String(props.batchPlanPreset.batchNo || '').trim()
+  const scheduleIds = Array.isArray(props.batchPlanPreset.scheduleIds)
+    ? props.batchPlanPreset.scheduleIds.map(id => String(id || '').trim()).filter(Boolean)
+    : []
+  return !batchNo && scheduleIds.length === 1
+})
 
 const weekDayOptions = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const weekdayToNumber: Record<string, number> = {
@@ -1042,7 +1051,7 @@ const previewHelperText = computed(() => {
   if (previewValidating.value)
     return '正在校验班级、老师、助教、学员与教室冲突，请稍候。'
   if (previewHasConflict.value)
-    return previewValidationMessage.value || (isBatchPlanEditMode.value ? '当前批次规则存在冲突，请返回修改后再尝试保存。' : '当前排课方案存在冲突，请返回修改后再尝试创建。')
+    return previewValidationMessage.value || (isSingleScheduleEditMode.value ? '当前日程设置存在冲突，请返回修改后再尝试保存。' : (isBatchPlanEditMode.value ? '当前批次规则存在冲突，请返回修改后再尝试保存。' : '当前排课方案存在冲突，请返回修改后再尝试创建。'))
   if (!estimatedCount.value && excludedHolidayCount.value > 0)
     return '当前日期都命中节假日且已被过滤，请调整日期或关闭节假日过滤。'
   if (!estimatedCount.value)
@@ -1054,31 +1063,57 @@ const previewHelperText = computed(() => {
 
 const modalTitleText = computed(() => isBatchPlanEditMode.value ? '编辑班级日程' : '创建班级日程')
 const modalSubtitleText = computed(() =>
+  isSingleScheduleEditMode.value
+    ? '回显当前班课日程信息，可调整本节的日期与时间资源。'
+    : (
   isBatchPlanEditMode.value
     ? '回显当前班课批次的生成条件，调整后会整体替换这批日程。'
-    : '参考班级基础信息快速批量排课，先把规则配置清楚，再确认创建。',
+    : '参考班级基础信息快速批量排课，先把规则配置清楚，再确认创建。'
+      ),
 )
-const summaryCardTitleText = computed(() => isBatchPlanEditMode.value ? '当前批次' : '当前班级')
-const summaryCardDescText = computed(() => isBatchPlanEditMode.value ? '来自当前批次的基础信息与规则摘要。' : '来自当前班级档案的基础信息与创建摘要。')
-const overviewCardTitleText = computed(() => isBatchPlanEditMode.value ? '规则摘要' : '创建摘要')
-const formCardDescText = computed(() => isBatchPlanEditMode.value ? '回显当前批次的生成条件，调整后整体替换本批次。' : '按顺序完成排课方式、日期规则和时间资源。')
-const reviewTitleText = computed(() => isBatchPlanEditMode.value ? '预计替换清单' : '预计排课清单')
-const reviewSubtitleText = computed(() => isBatchPlanEditMode.value ? '先确认本次将替换出的班课日程，再执行整体保存。' : '先确认本次将创建的班课日程，再执行批量创建。')
+const summaryCardTitleText = computed(() => isSingleScheduleEditMode.value ? '当前日程' : (isBatchPlanEditMode.value ? '当前批次' : '当前班级'))
+const summaryCardDescText = computed(() =>
+  isSingleScheduleEditMode.value
+    ? '来自当前日程的基础信息与编辑摘要。'
+    : (isBatchPlanEditMode.value ? '来自当前批次的基础信息与规则摘要。' : '来自当前班级档案的基础信息与创建摘要。'),
+)
+const overviewCardTitleText = computed(() => isSingleScheduleEditMode.value ? '编辑摘要' : (isBatchPlanEditMode.value ? '规则摘要' : '创建摘要'))
+const formCardDescText = computed(() =>
+  isSingleScheduleEditMode.value
+    ? '当前为单节班课编辑，可调整开始日期与时间资源，其他日期规则已锁定。'
+    : (isBatchPlanEditMode.value ? '回显当前批次的生成条件，调整后整体替换本批次。' : '按顺序完成排课方式、日期规则和时间资源。'),
+)
+const reviewTitleText = computed(() => isSingleScheduleEditMode.value ? '预计保存结果' : (isBatchPlanEditMode.value ? '预计替换清单' : '预计排课清单'))
+const reviewSubtitleText = computed(() =>
+  isSingleScheduleEditMode.value
+    ? '先确认本次将保存的班课日程，再执行保存。'
+    : (isBatchPlanEditMode.value ? '先确认本次将替换出的班课日程，再执行整体保存。' : '先确认本次将创建的班课日程，再执行批量创建。'),
+)
 const selectedRecordPlaceholderText = computed(() => {
   if (groupClassLoading.value)
     return '正在加载班级数据...'
-  return isBatchPlanEditMode.value ? '当前批次对应的班级' : '请选择班级'
+  return isSingleScheduleEditMode.value ? '当前日程对应的班级' : (isBatchPlanEditMode.value ? '当前批次对应的班级' : '请选择班级')
 })
+const datePlanEndHintText = computed(() =>
+  isSingleScheduleEditMode.value ? '单节日程的结束日期与开始日期保持一致' : '根据计划上课次数与重复规则自动推算',
+)
+const datePlanFooterHintText = computed(() =>
+  isSingleScheduleEditMode.value ? '当前为单节班课编辑，开始日期可以调整，计划次数固定为 1。' : '可自由填写节数；结束日期由开始日期、重复规则与本次数推算。',
+)
 
 const footerTipText = computed(() => {
   if (selectedGroupClass.value?.remark)
     return `班级备注：${selectedGroupClass.value.remark}`
+  if (isSingleScheduleEditMode.value)
+    return '保存后会更新当前这节班课日程。'
   return isBatchPlanEditMode.value
     ? '保存后会整体替换当前批次；原批次日程会被撤销，新批次会按当前规则重建。'
     : '创建后仍可在课表中继续调整老师、教室和班级学员。'
 })
 
 const actionButtonText = computed(() => {
+  if (isSingleScheduleEditMode.value)
+    return '保存班课日程'
   if (isBatchPlanEditMode.value)
     return estimatedCount.value > 0 ? `保存并替换 ${estimatedCount.value} 节` : '保存班课规则'
   if (schedulingMode.value === 'free')
@@ -1388,7 +1423,7 @@ async function confirmBatchCreate(options: {
       throw new Error(res.message || (isBatchPlanEditMode.value ? '保存班课规则失败' : '创建班课日程失败'))
     const count = res.result?.count || (options.plans?.length || previewPlans.value.length)
     if (isBatchPlanEditMode.value) {
-      messageService.success(`已按新规则替换 ${count} 节班课日程`)
+      messageService.success(isSingleScheduleEditMode.value ? '已更新班课日程' : `已按新规则替换 ${count} 节班课日程`)
     }
     else {
       messageService.success(
@@ -1462,6 +1497,15 @@ async function applyBatchPlanPreset(preset?: GroupClassBatchPlanModalPreset | nu
       freeSelectedDates.value = [dayjs().startOf('day')]
     freeCalendarPanelDate.value = freeSelectedDates.value[0].startOf('month')
     plannedClassCount.value = Math.max(1, Number(preset.plannedClassCount || 1))
+    if (isSingleScheduleEditMode.value) {
+      schedulingMode.value = 'repeat'
+      repeatRule.value = 'none'
+      holidayPolicy.value = 'include'
+      selectedWeekdays.value = []
+      plannedClassCount.value = 1
+      freeSelectedDates.value = [scheduleStartDate.value.startOf('day')]
+      freeCalendarPanelDate.value = scheduleStartDate.value.startOf('month')
+    }
 
     const teacherId = String(preset.teacherId || '').trim()
     selectedTeacher.value = teacherId || undefined
@@ -2117,7 +2161,7 @@ watch(
                 </div>
               </div>
 
-              <div class="planner-section">
+              <div v-if="!isSingleScheduleEditMode" class="planner-section">
                 <div class="planner-section__title">
                   排课方式
                 </div>
@@ -2165,6 +2209,7 @@ watch(
                         v-model:value="plannedClassCount"
                         :min="1"
                         :precision="0"
+                        :disabled="isSingleScheduleEditMode"
                         size="large"
                         class="planner-control"
                       />
@@ -2177,11 +2222,11 @@ watch(
                       </span>
                       <div class="planner-static-field planner-static-field--compact planner-static-field--inline-hint">
                         <strong>{{ autoScheduleEndDate.format('YYYY-MM-DD') }}</strong>
-                        <span>根据计划上课次数与重复规则自动推算</span>
+                        <span>{{ datePlanEndHintText }}</span>
                       </div>
                     </div>
 
-                    <span class="planner-field__hint planner-date-plan-row__hint">可自由填写节数；结束日期由开始日期、重复规则与本次数推算。</span>
+                    <span class="planner-field__hint planner-date-plan-row__hint">{{ datePlanFooterHintText }}</span>
                   </div>
 
                   <div
@@ -2241,7 +2286,7 @@ watch(
                     </div>
                   </div>
 
-                  <div v-if="schedulingMode === 'repeat'" class="planner-field planner-field--full">
+                  <div v-if="schedulingMode === 'repeat' && !isSingleScheduleEditMode" class="planner-field planner-field--full">
                     <span class="planner-label planner-label--required">
                       重复规则
                     </span>
@@ -2288,7 +2333,7 @@ watch(
                     </div>
                   </div>
 
-                  <div class="planner-field planner-field--full">
+                  <div v-if="!isSingleScheduleEditMode" class="planner-field planner-field--full">
                     <span class="planner-label planner-label--required">
                       节假日
                       <a-tooltip title="当前示例会按学校节假日配置过滤 2026-05-01 至 2026-05-03。">
