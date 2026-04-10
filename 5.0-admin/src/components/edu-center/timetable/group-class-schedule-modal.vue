@@ -164,6 +164,7 @@ const isSingleScheduleEditMode = computed(() => {
     : []
   return !batchNo && scheduleIds.length === 1
 })
+const showSchedulingModeSection = computed(() => !isBatchPlanEditMode.value)
 
 const weekDayOptions = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const weekdayToNumber: Record<string, number> = {
@@ -2190,7 +2191,7 @@ watch(
                 </div>
               </div>
 
-              <div v-if="!isSingleScheduleEditMode" class="planner-section">
+              <div v-if="showSchedulingModeSection" class="planner-section">
                 <div class="planner-section__title">
                   排课方式
                 </div>
