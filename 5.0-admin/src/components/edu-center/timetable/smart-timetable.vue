@@ -747,6 +747,12 @@ const scheduledLessonDetailState = ref({
   column: null,
   record: null,
 })
+const scheduledLessonDetailEditable = computed(() => {
+  const detail = scheduledLessonDetailState.value
+  if (!String(detail?.scheduleId || '').trim())
+    return false
+  return !(detail?.courseType === 1 && detail?.isMain === false)
+})
 const draggingScheduleState = ref(null)
 const draggingScheduleCellKey = ref('')
 const dragPointerState = ref({
@@ -3423,7 +3429,7 @@ function openScheduledLessonDetail(text, column, record) {
   scheduledLessonDetailOpen.value = true
 }
 
-async function deleteScheduledLessonFromDetail() {
+function deleteScheduledLessonFromDetail() {
   const detail = scheduledLessonDetailState.value
   if (!detail.scheduleId) {
     messageService.warning('当前日程缺少可撤销标识，请刷新后重试')
@@ -3435,44 +3441,55 @@ async function deleteScheduledLessonFromDetail() {
   const day = dateObj.format('D')
   const lessonIndex = getLessonIndex(detail.column?.startTime)
 
-  deletingScheduledLesson.value = true
-  try {
-    if (detail.isMain === false) {
-      const nextAssistantIds = (detail.assistantIds || []).filter(id => String(id) !== String(detail.record?.teacherId || ''))
-      const res = await batchUpdateTeachingSchedulesApi({
-        ids: [detail.scheduleId],
-        teacherId: detail.mainTeacherId,
-        assistantIds: nextAssistantIds,
-        classroomId: detail.classroomId || '',
-        startTime: detail.column?.startTime,
-        endTime: detail.column?.endTime,
-      })
-      if (res.code !== 200)
-        throw new Error(res.message || '移除助教失败')
-      scheduledLessonDetailOpen.value = false
-      messageService.success(`已移除 ${month}月${day}日 第${lessonIndex}节课的助教`)
-      emitter.emit(EVENTS.REFRESH_DATA)
-      return
-    }
+  const isAssistantView = detail.isMain === false
+  Modal.confirm({
+    title: isAssistantView ? '移除助教?' : '删除日程?',
+    content: isAssistantView
+      ? '移除后本节课将不再安排该助教，请谨慎操作'
+      : '删除后将不可恢复，请谨慎操作',
+    okText: isAssistantView ? '移除' : '删除',
+    cancelText: '取消',
+    async onOk() {
+      deletingScheduledLesson.value = true
+      try {
+        if (isAssistantView) {
+          const nextAssistantIds = (detail.assistantIds || []).filter(id => String(id) !== String(detail.record?.teacherId || ''))
+          const res = await batchUpdateTeachingSchedulesApi({
+            ids: [detail.scheduleId],
+            teacherId: detail.mainTeacherId,
+            assistantIds: nextAssistantIds,
+            classroomId: detail.classroomId || '',
+            startTime: detail.column?.startTime,
+            endTime: detail.column?.endTime,
+          })
+          if (res.code !== 200)
+            throw new Error(res.message || '移除助教失败')
+          scheduledLessonDetailOpen.value = false
+          messageService.success(`已移除 ${month}月${day}日 第${lessonIndex}节课的助教`)
+          emitter.emit(EVENTS.REFRESH_DATA)
+          return
+        }
 
-    const res = await cancelTeachingSchedulesApi({
-      ids: [detail.scheduleId],
-    })
-    if (res.code !== 200)
-      throw new Error(res.message || '删除日程失败')
-    scheduledLessonDetailOpen.value = false
-    const scheduleLabel = detail.courseType === 1 ? '1v1' : '班课'
-    messageService.success(`已删除 ${month}月${day}日 第${lessonIndex}节 ${scheduleLabel}日程，主教/助教课表已同步移除`)
-    emitter.emit(EVENTS.REFRESH_DATA)
-  }
-  catch (error) {
-    console.error('cancel teaching schedule failed', error)
-    messageService.error(error?.response?.data?.message || error?.message || '删除日程失败')
-    throw error
-  }
-  finally {
-    deletingScheduledLesson.value = false
-  }
+        const res = await cancelTeachingSchedulesApi({
+          ids: [detail.scheduleId],
+        })
+        if (res.code !== 200)
+          throw new Error(res.message || '删除日程失败')
+        scheduledLessonDetailOpen.value = false
+        const scheduleLabel = detail.courseType === 1 ? '1v1' : '班课'
+        messageService.success(`已删除 ${month}月${day}日 第${lessonIndex}节 ${scheduleLabel}日程，主教/助教课表已同步移除`)
+        emitter.emit(EVENTS.REFRESH_DATA)
+      }
+      catch (error) {
+        console.error('cancel teaching schedule failed', error)
+        messageService.error(error?.response?.data?.message || error?.message || (isAssistantView ? '移除助教失败' : '删除日程失败'))
+        throw error
+      }
+      finally {
+        deletingScheduledLesson.value = false
+      }
+    },
+  })
 }
 
 function buildBatchPlanScheduleFromDetail(detail) {
@@ -3521,7 +3538,7 @@ function buildBatchPlanScheduleFromDetail(detail) {
 
 function openScheduledLessonBatchPlanEdit() {
   const detail = scheduledLessonDetailState.value
-  if (detail.isMain === false)
+  if (detail.courseType === 1 && detail.isMain === false)
     return
   const schedule = buildBatchPlanScheduleFromDetail(detail)
   if (!schedule) {
@@ -5063,7 +5080,7 @@ watch(dragConflictDetailOpen, (open) => {
       v-model:open="scheduledLessonDetailOpen"
       :detail="scheduledLessonDetailState"
       :deleting="deletingScheduledLesson"
-      :editable="scheduledLessonDetailState.isMain !== false"
+      :editable="scheduledLessonDetailEditable"
       @delete="deleteScheduledLessonFromDetail"
       @edit="openScheduledLessonBatchPlanEdit"
     />

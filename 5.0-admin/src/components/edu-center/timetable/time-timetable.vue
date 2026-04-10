@@ -1,5 +1,6 @@
 <script setup>
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
@@ -1352,7 +1353,7 @@ function openBatchPlanEdit(schedule) {
 
 const isCurrentDetailEditable = computed(() => Boolean(currentDetailSchedule.value?.id))
 
-async function handleScheduleDetailDelete() {
+function handleScheduleDetailDelete() {
   const schedule = currentDetailSchedule.value
   const scheduleId = String(schedule?.id || '').trim()
   if (!scheduleId) {
@@ -1360,26 +1361,35 @@ async function handleScheduleDetailDelete() {
     return
   }
 
-  deletingScheduleDetail.value = true
-  try {
-    const res = await cancelTeachingSchedulesApi({
-      ids: [scheduleId],
-    })
-    if (res.code !== 200)
-      throw new Error(res.message || '删除日程失败')
-    scheduleDetailOpen.value = false
-    currentDetailSchedule.value = null
-    currentScheduleDetail.value = null
-    messageService.success(`已删除${isOneToOneSchedule(schedule) ? '1对1' : '班课'}日程`)
-    await loadSchedules()
-  }
-  catch (error) {
-    console.error('delete schedule detail failed', error)
-    messageService.error(error?.response?.data?.message || error?.message || '删除日程失败')
-  }
-  finally {
-    deletingScheduleDetail.value = false
-  }
+  Modal.confirm({
+    title: '删除日程?',
+    content: '删除后将不可恢复，请谨慎操作',
+    okText: '删除',
+    cancelText: '取消',
+    async onOk() {
+      deletingScheduleDetail.value = true
+      try {
+        const res = await cancelTeachingSchedulesApi({
+          ids: [scheduleId],
+        })
+        if (res.code !== 200)
+          throw new Error(res.message || '删除日程失败')
+        scheduleDetailOpen.value = false
+        currentDetailSchedule.value = null
+        currentScheduleDetail.value = null
+        messageService.success(`已删除${isOneToOneSchedule(schedule) ? '1对1' : '班课'}日程`)
+        await loadSchedules()
+      }
+      catch (error) {
+        console.error('delete schedule detail failed', error)
+        messageService.error(error?.response?.data?.message || error?.message || '删除日程失败')
+        throw error
+      }
+      finally {
+        deletingScheduleDetail.value = false
+      }
+    },
+  })
 }
 
 function handleScheduleDetailEdit() {

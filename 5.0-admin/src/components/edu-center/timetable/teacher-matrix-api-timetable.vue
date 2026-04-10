@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Dayjs } from 'dayjs'
 import { CopyOutlined, DownloadOutlined, LeftOutlined, RightOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { message } from 'ant-design-vue'
+import { Modal, message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
@@ -1345,7 +1345,7 @@ async function openEventConflictDetail(event: CellSchedule) {
   }
 }
 
-async function handleScheduleDetailDelete() {
+function handleScheduleDetailDelete() {
   const schedule = currentDetailSchedule.value
   const scheduleId = String(schedule?.id || '').trim()
   if (!scheduleId) {
@@ -1353,26 +1353,35 @@ async function handleScheduleDetailDelete() {
     return
   }
 
-  deletingScheduleDetail.value = true
-  try {
-    const res = await cancelTeachingSchedulesApi({
-      ids: [scheduleId],
-    })
-    if (res.code !== 200)
-      throw new Error(res.message || '删除日程失败')
-    scheduleDetailOpen.value = false
-    currentDetailSchedule.value = null
-    currentScheduleDetail.value = null
-    message.success(`已删除${isOneToOneSchedule(schedule) ? '1对1' : '班课'}日程`)
-    await loadMatrix()
-  }
-  catch (error: any) {
-    console.error('delete schedule detail failed', error)
-    message.error(error?.response?.data?.message || error?.message || '删除日程失败')
-  }
-  finally {
-    deletingScheduleDetail.value = false
-  }
+  Modal.confirm({
+    title: '删除日程?',
+    content: '删除后将不可恢复，请谨慎操作',
+    okText: '删除',
+    cancelText: '取消',
+    async onOk() {
+      deletingScheduleDetail.value = true
+      try {
+        const res = await cancelTeachingSchedulesApi({
+          ids: [scheduleId],
+        })
+        if (res.code !== 200)
+          throw new Error(res.message || '删除日程失败')
+        scheduleDetailOpen.value = false
+        currentDetailSchedule.value = null
+        currentScheduleDetail.value = null
+        message.success(`已删除${isOneToOneSchedule(schedule) ? '1对1' : '班课'}日程`)
+        await loadMatrix()
+      }
+      catch (error: any) {
+        console.error('delete schedule detail failed', error)
+        message.error(error?.response?.data?.message || error?.message || '删除日程失败')
+        throw error
+      }
+      finally {
+        deletingScheduleDetail.value = false
+      }
+    },
+  })
 }
 
 function handleScheduleDetailEdit() {

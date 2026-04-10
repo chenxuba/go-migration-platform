@@ -16,6 +16,7 @@ interface DrawerSummary {
   id?: string
   batchNo?: string
   batchSize?: number
+  isMain?: boolean
   lessonTitle?: string
   courseName?: string
   teacherName?: string
@@ -134,10 +135,13 @@ const repeatRuleText = computed(() => {
   return base
 })
 const remarkText = computed(() => detailData.value?.remark || '-')
+const isAssistantScheduleView = computed(() => props.detail?.isMain === false)
 const hasBatchSchedule = computed(() => {
   return Number(detailData.value?.batchSize || props.detail?.batchSize || 0) > 1
     || String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() !== ''
 })
+const singleDeleteTooltipText = computed(() => isAssistantScheduleView.value ? '移除此节助教' : '删除此日程')
+const singleDeleteButtonText = computed(() => isAssistantScheduleView.value ? '移除助教' : '删除')
 const currentStudentList = computed(() => (activeStudentTabKey.value === 'leave' ? leaveStudents.value : students.value))
 const studentCardTitle = computed(() => {
   if (isOneToOne.value)
@@ -357,9 +361,9 @@ watch(
                   <DownOutlined />
                 </a-button>
               </a-dropdown>
-              <a-tooltip v-else-if="deletable" title="删除此日程" placement="top">
+              <a-tooltip v-else-if="deletable" :title="singleDeleteTooltipText" placement="top">
                 <a-button :loading="deleting" @click="$emit('delete')">
-                  删除
+                  {{ singleDeleteButtonText }}
                 </a-button>
               </a-tooltip>
               <a-dropdown
