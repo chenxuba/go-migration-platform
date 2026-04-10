@@ -642,18 +642,30 @@ const assistantSelectStaffs = computed<StaffOptionItem[]>(() => {
     if (!isValidStaffId(item?.id))
       return
     const id = String(item.id).trim()
-    if (!force && !isAssistantAllowedInCurrentGroup(id))
+    const existing = merged.get(id)
+    if (!force && !existing && !isAssistantAllowedInCurrentGroup(id))
       return
-    if (!merged.has(id)) {
+    const displayName = displayStaffName(item) || id
+    const mobile = displayMobileText(item)
+    if (!existing) {
       merged.set(id, {
         id,
-        name: displayStaffName(item),
-        nickName: displayStaffName(item) || id,
-        mobile: displayMobileText(item),
+        name: displayName,
+        nickName: displayName,
+        mobile,
         status: item?.status,
         disabled: item?.disabled,
       })
+      return
     }
+    merged.set(id, {
+      ...existing,
+      name: existing.name || displayName,
+      nickName: existing.nickName || displayName,
+      mobile: existing.mobile || mobile,
+      status: item?.status ?? existing.status,
+      disabled: item?.disabled ?? existing.disabled,
+    })
   }
   selectedAssistantDisplays.value.forEach(item => append(item, true))
   assistantPresetStaff.value.forEach(item => append(item, isPresetAssistantId(item.id)))
