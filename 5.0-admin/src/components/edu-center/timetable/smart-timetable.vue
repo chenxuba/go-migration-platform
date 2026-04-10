@@ -3524,13 +3524,13 @@ function openScheduledLessonBatchPlanEdit() {
     messageService.warning('当前日程缺少编辑标识，请刷新后重试')
     return
   }
-  scheduledLessonDetailOpen.value = false
   currentBatchPlanSchedule.value = schedule
   scheduleBatchPlanEditOpen.value = true
 }
 
 function handleBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
+  scheduledLessonDetailOpen.value = false
   currentBatchPlanSchedule.value = null
   emitter.emit(EVENTS.REFRESH_DATA)
 }

@@ -1317,6 +1317,7 @@ function openScheduleEdit(event: CellSchedule) {
 
 function onBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
+  scheduleDetailOpen.value = false
   loadMatrix()
 }
 
@@ -1388,11 +1389,8 @@ function handleScheduleDetailEdit() {
   const schedule = currentDetailSchedule.value
   if (!schedule?.id)
     return
-  scheduleDetailOpen.value = false
-  nextTick(() => {
-    currentBatchPlanSchedule.value = schedule
-    scheduleBatchPlanEditOpen.value = true
-  })
+  currentBatchPlanSchedule.value = schedule
+  scheduleBatchPlanEditOpen.value = true
 }
 
 const totalLessons = computed(() => internalSchedules.value.length)

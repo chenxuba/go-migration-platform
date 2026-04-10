@@ -1396,14 +1396,12 @@ function handleScheduleDetailEdit() {
   const schedule = currentDetailSchedule.value
   if (!schedule?.id)
     return
-  scheduleDetailOpen.value = false
-  nextTick(() => {
-    openBatchPlanEdit(schedule)
-  })
+  openBatchPlanEdit(schedule)
 }
 
 function handleBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
+  scheduleDetailOpen.value = false
   loadSchedules()
 }
 
