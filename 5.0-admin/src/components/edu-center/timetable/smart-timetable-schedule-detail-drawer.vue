@@ -14,6 +14,8 @@ import messageService from '@/utils/messageService'
 interface DrawerSummary {
   scheduleId?: string
   id?: string
+  batchNo?: string
+  batchSize?: number
   lessonTitle?: string
   courseName?: string
   teacherName?: string
@@ -135,7 +137,8 @@ const remarkText = computed(() => detailData.value?.remark || '-')
 const showBatchEditHoverMenu = computed(() => {
   if (!props.editable)
     return false
-  return Number(detailData.value?.batchSize || 0) > 1 || String(detailData.value?.batchNo || '').trim() !== ''
+  return Number(detailData.value?.batchSize || props.detail?.batchSize || 0) > 1
+    || String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() !== ''
 })
 const currentStudentList = computed(() => (activeStudentTabKey.value === 'leave' ? leaveStudents.value : students.value))
 const studentCardTitle = computed(() => {
