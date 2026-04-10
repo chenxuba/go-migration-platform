@@ -3441,35 +3441,14 @@ function deleteScheduledLessonFromDetail() {
   const day = dateObj.format('D')
   const lessonIndex = getLessonIndex(detail.column?.startTime)
 
-  const isAssistantView = detail.isMain === false
   Modal.confirm({
-    title: isAssistantView ? '移除助教?' : '删除日程?',
-    content: isAssistantView
-      ? '移除后本节课将不再安排该助教，请谨慎操作'
-      : '删除后将不可恢复，请谨慎操作',
-    okText: isAssistantView ? '移除' : '删除',
+    title: '删除日程?',
+    content: '删除后将不可恢复，请谨慎操作',
+    okText: '删除',
     cancelText: '取消',
     async onOk() {
       deletingScheduledLesson.value = true
       try {
-        if (isAssistantView) {
-          const nextAssistantIds = (detail.assistantIds || []).filter(id => String(id) !== String(detail.record?.teacherId || ''))
-          const res = await batchUpdateTeachingSchedulesApi({
-            ids: [detail.scheduleId],
-            teacherId: detail.mainTeacherId,
-            assistantIds: nextAssistantIds,
-            classroomId: detail.classroomId || '',
-            startTime: detail.column?.startTime,
-            endTime: detail.column?.endTime,
-          })
-          if (res.code !== 200)
-            throw new Error(res.message || '移除助教失败')
-          scheduledLessonDetailOpen.value = false
-          messageService.success(`已移除 ${month}月${day}日 第${lessonIndex}节课的助教`)
-          emitter.emit(EVENTS.REFRESH_DATA)
-          return
-        }
-
         const res = await cancelTeachingSchedulesApi({
           ids: [detail.scheduleId],
         })
@@ -3482,7 +3461,7 @@ function deleteScheduledLessonFromDetail() {
       }
       catch (error) {
         console.error('cancel teaching schedule failed', error)
-        messageService.error(error?.response?.data?.message || error?.message || (isAssistantView ? '移除助教失败' : '删除日程失败'))
+        messageService.error(error?.response?.data?.message || error?.message || '删除日程失败')
         throw error
       }
       finally {

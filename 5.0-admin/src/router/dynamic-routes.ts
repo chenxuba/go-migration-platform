@@ -377,14 +377,14 @@ export default [
           title: '报名优惠',
         },
       },
-      {
-        path: '/form/basic4',
-        name: 'Basic4',
-        component: () => import('~/pages/form/basic-form/index.vue'),
-        meta: {
-          title: '电子合同',
-        },
-      },
+      // {
+      //   path: '/form/basic4',
+      //   name: 'Basic4',
+      //   component: () => import('~/pages/form/basic-form/index.vue'),
+      //   meta: {
+      //     title: '电子合同',
+      //   },
+      // },
       {
         path: '/finance-center/performance-management',
         name: 'PerformanceManagement',
