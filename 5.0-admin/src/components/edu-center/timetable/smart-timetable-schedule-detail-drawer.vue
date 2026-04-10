@@ -193,6 +193,8 @@ function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, dom
   domEvent?.stopPropagation?.()
   if (key === 'current')
     emit('edit-current')
+  else if (key === 'future')
+    emit('edit')
 }
 
 function handleStudentRemove(student: Record<string, any>) {
