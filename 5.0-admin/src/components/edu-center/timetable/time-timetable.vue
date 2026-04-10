@@ -12,10 +12,11 @@ import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { cancelTeachingSchedulesApi, downloadTimeTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { cancelTeachingScheduleScopedApi, downloadTimeTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
+import { loadTeachingScheduleDeleteTargetCount } from './schedule-delete-scope'
 
 const emit = defineEmits(['week-range-change'])
 
@@ -1363,7 +1364,7 @@ function openBatchPlanEdit(schedule, scope = 'batch', payload) {
 
 const isCurrentDetailEditable = computed(() => Boolean(currentDetailSchedule.value?.id))
 
-function handleScheduleDetailDelete() {
+async function handleScheduleDetailDelete(scope = 'current') {
   const schedule = currentDetailSchedule.value
   const scheduleId = String(schedule?.id || '').trim()
   if (!scheduleId) {
@@ -1371,23 +1372,42 @@ function handleScheduleDetailDelete() {
     return
   }
 
+  let deleteCount = 1
+  if (scope === 'future') {
+    try {
+      deleteCount = await loadTeachingScheduleDeleteTargetCount(schedule, 'future')
+    }
+    catch (error) {
+      console.error('load batch delete count failed', error)
+      messageService.error(error?.response?.data?.message || error?.message || '加载待删除日程失败')
+      return
+    }
+  }
+
   Modal.confirm({
-    title: '删除日程?',
-    content: '删除后将不可恢复，请谨慎操作',
+    title: scope === 'future' ? '删除后续全部日程?' : '删除日程?',
+    content: scope === 'future'
+      ? `后续 ${deleteCount} 个日程将被全部删除，删除后不可恢复，请谨慎操作`
+      : '删除后将不可恢复，请谨慎操作',
     okText: '删除',
     cancelText: '取消',
     async onOk() {
       deletingScheduleDetail.value = true
       try {
-        const res = await cancelTeachingSchedulesApi({
-          ids: [scheduleId],
+        const res = await cancelTeachingScheduleScopedApi({
+          id: scheduleId,
+          scope,
         })
         if (res.code !== 200)
           throw new Error(res.message || '删除日程失败')
         scheduleDetailOpen.value = false
         currentDetailSchedule.value = null
         currentScheduleDetail.value = null
-        messageService.success(`已删除${isOneToOneSchedule(schedule) ? '1对1' : '班课'}日程`)
+        messageService.success(
+          scope === 'future'
+            ? `已删除后续 ${deleteCount} 节${isOneToOneSchedule(schedule) ? '1对1' : '班课'}日程`
+            : `已删除${isOneToOneSchedule(schedule) ? '1对1' : '班课'}日程`,
+        )
         await loadSchedules()
       }
       catch (error) {
@@ -1928,6 +1948,8 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
       :deleting="deletingScheduleDetail"
       :editable="isCurrentDetailEditable"
       @delete="handleScheduleDetailDelete"
+      @delete-current="handleScheduleDetailDelete('current')"
+      @delete-future="handleScheduleDetailDelete('future')"
       @edit="handleScheduleDetailEdit"
       @edit-current="handleScheduleDetailEditCurrent"
     />

@@ -3378,6 +3378,292 @@ func (repo *Repository) CancelTeachingSchedules(ctx context.Context, instID, ope
 	return model.TeachingScheduleCancelResult{Canceled: int(affected)}, nil
 }
 
+type teachingScheduleBatchRow struct {
+	ID              int64
+	BatchNo         string
+	BatchSize       int
+	ClassType       int
+	TeachingClassID int64
+	LessonDate      time.Time
+	StartAt         time.Time
+	EndAt           time.Time
+}
+
+func (repo *Repository) CancelTeachingScheduleScoped(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleScopedCancelDTO) (model.TeachingScheduleCancelResult, error) {
+	scheduleID, err := strconv.ParseInt(strings.TrimSpace(dto.ID), 10, 64)
+	if err != nil || scheduleID <= 0 {
+		return model.TeachingScheduleCancelResult{}, errors.New("缺少待撤销的日程")
+	}
+	scope := strings.TrimSpace(dto.Scope)
+	if scope == "" {
+		scope = model.TeachingScheduleCancelScopeCurrent
+	}
+	if scope != model.TeachingScheduleCancelScopeCurrent && scope != model.TeachingScheduleCancelScopeFuture {
+		return model.TeachingScheduleCancelResult{}, errors.New("删除范围无效")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	defer tx.Rollback()
+
+	anchor, err := repo.loadTeachingScheduleBatchAnchorTx(ctx, tx, instID, scheduleID)
+	if err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+
+	originalBatchNo := strings.TrimSpace(anchor.BatchNo)
+	allRows := []teachingScheduleBatchRow{anchor}
+	targetRows := []teachingScheduleBatchRow{anchor}
+	remainingRows := []teachingScheduleBatchRow{}
+	if originalBatchNo != "" {
+		allRows, err = repo.listActiveTeachingScheduleBatchRowsTx(ctx, tx, instID, originalBatchNo)
+		if err != nil {
+			return model.TeachingScheduleCancelResult{}, err
+		}
+		targetRows, remainingRows, err = splitTeachingScheduleBatchRowsByScope(allRows, anchor.ID, scope)
+		if err != nil {
+			return model.TeachingScheduleCancelResult{}, err
+		}
+	}
+
+	targetIDs := teachingScheduleBatchRowIDs(targetRows)
+	if len(targetIDs) == 0 {
+		return model.TeachingScheduleCancelResult{}, errors.New("未找到可撤销的日程")
+	}
+
+	classIDs := uniquePositiveInt64s([]int64{anchor.TeachingClassID})
+	var originalBatchMeta *model.TeachingScheduleBatchMeta
+	if originalBatchNo != "" {
+		originalBatchMeta, err = repo.loadTeachingScheduleBatchMetaTx(ctx, tx, instID, originalBatchNo, teachingScheduleBatchRowIDs(allRows))
+		if err != nil {
+			return model.TeachingScheduleCancelResult{}, err
+		}
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE teaching_schedule
+		SET del_flag = 1,
+		    status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND status = ?
+		  AND id IN (`+sqlPlaceholders(len(targetIDs))+`)
+	`, append([]any{
+		model.TeachingScheduleStatusCanceled,
+		operatorID,
+		instID,
+		model.TeachingScheduleStatusActive,
+	}, int64SliceToAny(targetIDs)...)...)
+	if err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	if affected <= 0 {
+		return model.TeachingScheduleCancelResult{}, errors.New("未找到可撤销的日程")
+	}
+
+	if originalBatchNo != "" {
+		if err := repo.deleteTeachingScheduleBatchMetaTx(ctx, tx, instID, originalBatchNo, nil); err != nil {
+			return model.TeachingScheduleCancelResult{}, err
+		}
+		remainingIDs := teachingScheduleBatchRowIDs(remainingRows)
+		if len(remainingIDs) > 0 {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE teaching_schedule
+				SET batch_size = ?,
+				    update_id = ?,
+				    update_time = NOW()
+				WHERE inst_id = ?
+				  AND del_flag = 0
+				  AND id IN (`+sqlPlaceholders(len(remainingIDs))+`)
+			`, append([]any{len(remainingIDs), operatorID, instID}, int64SliceToAny(remainingIDs)...)...); err != nil {
+				return model.TeachingScheduleCancelResult{}, err
+			}
+			if adjustedMeta := adjustTeachingScheduleBatchMetaForSchedules(originalBatchMeta, teachingScheduleBatchRowsToVOs(remainingRows)); adjustedMeta != nil {
+				if err := repo.saveTeachingScheduleBatchMetaTx(
+					ctx,
+					tx,
+					instID,
+					operatorID,
+					originalBatchNo,
+					int64(anchor.ClassType),
+					anchor.TeachingClassID,
+					remainingIDs,
+					adjustedMeta,
+				); err != nil {
+					return model.TeachingScheduleCancelResult{}, err
+				}
+			}
+		}
+	}
+
+	if err := repo.refreshTeachingClassScheduleCountsTx(ctx, tx, instID, operatorID, classIDs); err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	return model.TeachingScheduleCancelResult{Canceled: int(affected)}, nil
+}
+
+func (repo *Repository) loadTeachingScheduleBatchAnchorTx(ctx context.Context, tx *sql.Tx, instID, scheduleID int64) (teachingScheduleBatchRow, error) {
+	var item teachingScheduleBatchRow
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			id,
+			IFNULL(batch_no, ''),
+			IFNULL(batch_size, 1),
+			IFNULL(class_type, 0),
+			IFNULL(teaching_class_id, 0),
+			lesson_date,
+			lesson_start_at,
+			lesson_end_at
+		FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND id = ?
+		  AND del_flag = 0
+		  AND status = ?
+		LIMIT 1
+	`, instID, scheduleID, model.TeachingScheduleStatusActive).Scan(
+		&item.ID,
+		&item.BatchNo,
+		&item.BatchSize,
+		&item.ClassType,
+		&item.TeachingClassID,
+		&item.LessonDate,
+		&item.StartAt,
+		&item.EndAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return item, errors.New("未找到可撤销的日程")
+		}
+		return item, err
+	}
+	return item, nil
+}
+
+func (repo *Repository) listActiveTeachingScheduleBatchRowsTx(ctx context.Context, tx *sql.Tx, instID int64, batchNo string) ([]teachingScheduleBatchRow, error) {
+	batchNo = strings.TrimSpace(batchNo)
+	if batchNo == "" {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			id,
+			IFNULL(batch_no, ''),
+			IFNULL(batch_size, 1),
+			IFNULL(class_type, 0),
+			IFNULL(teaching_class_id, 0),
+			lesson_date,
+			lesson_start_at,
+			lesson_end_at
+		FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND batch_no = ?
+		  AND del_flag = 0
+		  AND status = ?
+	`, instID, batchNo, model.TeachingScheduleStatusActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]teachingScheduleBatchRow, 0)
+	for rows.Next() {
+		var item teachingScheduleBatchRow
+		if err := rows.Scan(
+			&item.ID,
+			&item.BatchNo,
+			&item.BatchSize,
+			&item.ClassType,
+			&item.TeachingClassID,
+			&item.LessonDate,
+			&item.StartAt,
+			&item.EndAt,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sortTeachingScheduleBatchRows(list), nil
+}
+
+func sortTeachingScheduleBatchRows(list []teachingScheduleBatchRow) []teachingScheduleBatchRow {
+	sorted := append([]teachingScheduleBatchRow(nil), list...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if !sorted[i].LessonDate.Equal(sorted[j].LessonDate) {
+			return sorted[i].LessonDate.Before(sorted[j].LessonDate)
+		}
+		if !sorted[i].StartAt.Equal(sorted[j].StartAt) {
+			return sorted[i].StartAt.Before(sorted[j].StartAt)
+		}
+		if !sorted[i].EndAt.Equal(sorted[j].EndAt) {
+			return sorted[i].EndAt.Before(sorted[j].EndAt)
+		}
+		return sorted[i].ID < sorted[j].ID
+	})
+	return sorted
+}
+
+func splitTeachingScheduleBatchRowsByScope(list []teachingScheduleBatchRow, anchorID int64, scope string) ([]teachingScheduleBatchRow, []teachingScheduleBatchRow, error) {
+	sorted := sortTeachingScheduleBatchRows(list)
+	index := -1
+	for i, item := range sorted {
+		if item.ID == anchorID {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return nil, nil, errors.New("未找到当前批次日程")
+	}
+	switch scope {
+	case model.TeachingScheduleCancelScopeFuture:
+		return append([]teachingScheduleBatchRow(nil), sorted[index:]...), append([]teachingScheduleBatchRow(nil), sorted[:index]...), nil
+	case model.TeachingScheduleCancelScopeCurrent:
+		remaining := make([]teachingScheduleBatchRow, 0, len(sorted)-1)
+		remaining = append(remaining, sorted[:index]...)
+		remaining = append(remaining, sorted[index+1:]...)
+		return []teachingScheduleBatchRow{sorted[index]}, remaining, nil
+	default:
+		return nil, nil, errors.New("删除范围无效")
+	}
+}
+
+func teachingScheduleBatchRowIDs(list []teachingScheduleBatchRow) []int64 {
+	ids := make([]int64, 0, len(list))
+	for _, item := range list {
+		if item.ID > 0 {
+			ids = append(ids, item.ID)
+		}
+	}
+	return ids
+}
+
+func teachingScheduleBatchRowsToVOs(list []teachingScheduleBatchRow) []model.TeachingScheduleVO {
+	result := make([]model.TeachingScheduleVO, 0, len(list))
+	for _, item := range sortTeachingScheduleBatchRows(list) {
+		result = append(result, model.TeachingScheduleVO{
+			ID:         strconv.FormatInt(item.ID, 10),
+			LessonDate: item.LessonDate.Format("2006-01-02"),
+			StartAt:    item.StartAt,
+			EndAt:      item.EndAt,
+		})
+	}
+	return result
+}
+
 type normalizedScheduleSlot struct {
 	LessonDate time.Time
 	StartAt    time.Time

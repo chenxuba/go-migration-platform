@@ -953,6 +953,14 @@ func (svc *Service) CancelTeachingSchedules(userID int64, dto model.TeachingSche
 	return svc.repo.CancelTeachingSchedules(context.Background(), instID, operatorID, dto)
 }
 
+func (svc *Service) CancelTeachingScheduleScoped(userID int64, dto model.TeachingScheduleScopedCancelDTO) (model.TeachingScheduleCancelResult, error) {
+	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
+	return svc.repo.CancelTeachingScheduleScoped(context.Background(), instID, operatorID, dto)
+}
+
 // CopyTeachingSchedulesWeek 将源周课表复制到目标周（按日历天对齐）；源 batch 在目标周生成新 batch_no，batch_size 与复制条数一致。
 func (svc *Service) CopyTeachingSchedulesWeek(userID int64, dto model.TeachingScheduleCopyWeekDTO) (model.TeachingScheduleCopyWeekResult, error) {
 	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)

@@ -46,6 +46,8 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'delete'): void
+  (e: 'delete-current'): void
+  (e: 'delete-future'): void
   (e: 'edit', payload?: ScheduleEditPayload): void
   (e: 'edit-current', payload?: ScheduleEditPayload): void
   (e: 'updated'): void
@@ -217,6 +219,14 @@ function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, dom
     emit('edit', scheduleEditPayload.value)
 }
 
+function handleBatchDeleteMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
+  domEvent?.stopPropagation?.()
+  if (key === 'delete-current')
+    emit('delete-current')
+  else if (key === 'delete-future')
+    emit('delete-future')
+}
+
 function handleSingleEditClick() {
   emit('edit', scheduleEditPayload.value)
 }
@@ -376,7 +386,7 @@ watch(
                 placement="bottomLeft"
               >
                 <template #overlay>
-                  <a-menu :selectable="false">
+                  <a-menu :selectable="false" @click="handleBatchDeleteMenuClick">
                     <a-menu-item key="delete-current">
                       仅删除此日程
                     </a-menu-item>

@@ -16,12 +16,13 @@ import { getInstPeriodConfigApi } from '@/api/common/config'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { batchUpdateTeachingSchedulesApi, cancelTeachingSchedulesApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createGroupClassSchedulesApi, createOneToOneSchedulesApi, downloadSmartTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { batchUpdateTeachingSchedulesApi, cancelTeachingScheduleScopedApi, checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createGroupClassSchedulesApi, createOneToOneSchedulesApi, downloadSmartTimetableExcelApi, getTeachingScheduleConflictDetailApi, listTeachingSchedulesByTeacherMatrixApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useSmartTimetableAvailability } from '@/composables/useSmartTimetableAvailability'
 import { useSmartTimetableClassMode } from '@/composables/useSmartTimetableClassMode'
 import { useSmartTimetablePicker } from '@/composables/useSmartTimetablePicker'
 import { useUserStore } from '@/stores/user'
+import { loadTeachingScheduleDeleteTargetCount } from './schedule-delete-scope'
 import messageService from '@/utils/messageService'
 import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
@@ -3432,9 +3433,10 @@ function openScheduledLessonDetail(text, column, record) {
   scheduledLessonDetailOpen.value = true
 }
 
-function deleteScheduledLessonFromDetail() {
+async function deleteScheduledLessonFromDetail(scope = 'current') {
   const detail = scheduledLessonDetailState.value
-  if (!detail.scheduleId) {
+  const schedule = buildBatchPlanScheduleFromDetail(detail)
+  if (!schedule?.id) {
     messageService.warning('当前日程缺少可撤销标识，请刷新后重试')
     return
   }
@@ -3443,23 +3445,42 @@ function deleteScheduledLessonFromDetail() {
   const month = dateObj.format('M')
   const day = dateObj.format('D')
   const lessonIndex = getLessonIndex(detail.column?.startTime)
+  const scheduleLabel = detail.courseType === 1 ? '1v1' : '班课'
+  let deleteCount = 1
+
+  if (scope === 'future') {
+    try {
+      deleteCount = await loadTeachingScheduleDeleteTargetCount(schedule, 'future')
+    }
+    catch (error) {
+      console.error('load batch delete count failed', error)
+      messageService.error(error?.response?.data?.message || error?.message || '加载待删除日程失败')
+      return
+    }
+  }
 
   Modal.confirm({
-    title: '删除日程?',
-    content: '删除后将不可恢复，请谨慎操作',
+    title: scope === 'future' ? '删除后续全部日程?' : '删除日程?',
+    content: scope === 'future'
+      ? `后续 ${deleteCount} 个日程将被全部删除，删除后不可恢复，请谨慎操作`
+      : '删除后将不可恢复，请谨慎操作',
     okText: '删除',
     cancelText: '取消',
     async onOk() {
       deletingScheduledLesson.value = true
       try {
-        const res = await cancelTeachingSchedulesApi({
-          ids: [detail.scheduleId],
+        const res = await cancelTeachingScheduleScopedApi({
+          id: schedule.id,
+          scope,
         })
         if (res.code !== 200)
           throw new Error(res.message || '删除日程失败')
         scheduledLessonDetailOpen.value = false
-        const scheduleLabel = detail.courseType === 1 ? '1v1' : '班课'
-        messageService.success(`已删除 ${month}月${day}日 第${lessonIndex}节 ${scheduleLabel}日程，主教/助教课表已同步移除`)
+        messageService.success(
+          scope === 'future'
+            ? `已删除后续 ${deleteCount} 节 ${scheduleLabel}日程，主教/助教课表已同步移除`
+            : `已删除 ${month}月${day}日 第${lessonIndex}节 ${scheduleLabel}日程，主教/助教课表已同步移除`,
+        )
         emitter.emit(EVENTS.REFRESH_DATA)
       }
       catch (error) {
@@ -5082,6 +5103,8 @@ watch(dragConflictDetailOpen, (open) => {
       :deleting="deletingScheduledLesson"
       :editable="scheduledLessonDetailEditable"
       @delete="deleteScheduledLessonFromDetail"
+      @delete-current="deleteScheduledLessonFromDetail('current')"
+      @delete-future="deleteScheduledLessonFromDetail('future')"
       @edit="openScheduledLessonBatchPlanEdit"
       @edit-current="payload => openScheduledLessonBatchPlanEdit('current', payload)"
     />

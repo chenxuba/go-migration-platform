@@ -3,7 +3,7 @@ import dayjs from 'dayjs'
 import { Modal } from 'ant-design-vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { TeachingScheduleItem } from '@/api/edu-center/teaching-schedule'
-import { cancelTeachingSchedulesApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { cancelTeachingScheduleScopedApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
@@ -327,8 +327,9 @@ function confirmDelete(record: Record<string, any>) {
     onOk: async () => {
       deletingId.value = String(record.id || '')
       try {
-        const res = await cancelTeachingSchedulesApi({
-          ids: [String(record.id)],
+        const res = await cancelTeachingScheduleScopedApi({
+          id: String(record.id || ''),
+          scope: 'current',
         })
         if (res.code !== 200)
           throw new Error(res.message || '删除冲突日程失败')

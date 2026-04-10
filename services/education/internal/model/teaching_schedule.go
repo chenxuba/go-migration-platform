@@ -8,6 +8,11 @@ const (
 )
 
 const (
+	TeachingScheduleCancelScopeCurrent = "current"
+	TeachingScheduleCancelScopeFuture  = "future"
+)
+
+const (
 	TeachingScheduleStudentTypeClassMember = 1
 	TeachingScheduleStudentTypeTemporary   = 2
 	TeachingScheduleStudentTypeTrial       = 3
@@ -227,6 +232,11 @@ type TeachingScheduleBatchReplaceDTO struct {
 
 type TeachingScheduleCancelDTO struct {
 	IDs []string `json:"ids"`
+}
+
+type TeachingScheduleScopedCancelDTO struct {
+	ID    string `json:"id"`
+	Scope string `json:"scope"`
 }
 
 type TeachingScheduleCancelResult struct {

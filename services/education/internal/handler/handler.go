@@ -152,6 +152,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/teaching-schedules/batch-replace", handler.replaceTeachingScheduleBatch)
 	mux.HandleFunc("/api/v1/teaching-schedules/conflict-detail", handler.teachingScheduleConflictDetail)
 	mux.HandleFunc("/api/v1/teaching-schedules/cancel", handler.cancelTeachingSchedules)
+	mux.HandleFunc("/api/v1/teaching-schedules/cancel-scoped", handler.cancelTeachingScheduleScoped)
 	mux.HandleFunc("/api/v1/teaching-schedules/copy-week", handler.copyTeachingSchedulesWeek)
 	mux.HandleFunc("/api/v1/teaching-schedules/batch-update", handler.batchUpdateTeachingSchedules)
 	mux.HandleFunc("/api/v1/infrastructure/status", handler.infrastructureStatus)
