@@ -4490,6 +4490,10 @@ const dragPreviewTargetText = computed(() => {
 
 function buildDragConfirmState(dragState, target) {
   const assignment = buildDragScheduleAssignment(dragState, target)
+  const sourceTeacherText = dragState.mainTeacherName || '-'
+  const sourceAssistantText = dragState.assistantText || '未安排'
+  const targetTeacherText = assignment.teacherName || '-'
+  const targetAssistantText = assignment.assistantText || '未安排'
   return {
     source: {
       dateLabel: formatDragDateLabel(dragState.sourceDate),
@@ -4497,8 +4501,8 @@ function buildDragConfirmState(dragState, target) {
       lessonTitle: dragState.lessonTitle || '-',
       courseName: dragState.lessonMeta || '-',
       studentText: dragState.studentText || '-',
-      teacherText: dragState.mainTeacherName || '-',
-      assistantText: dragState.assistantText || '未安排',
+      teacherText: sourceTeacherText,
+      assistantText: sourceAssistantText,
     },
     target: {
       dateLabel: formatDragDateLabel(target.lessonDate),
@@ -4506,8 +4510,10 @@ function buildDragConfirmState(dragState, target) {
       lessonTitle: dragState.lessonTitle || '-',
       courseName: dragState.lessonMeta || '-',
       studentText: dragState.studentText || '-',
-      teacherText: assignment.teacherName || '-',
-      assistantText: assignment.assistantText || '未安排',
+      teacherText: targetTeacherText,
+      assistantText: targetAssistantText,
+      teacherChanged: targetTeacherText !== sourceTeacherText,
+      assistantChanged: targetAssistantText !== sourceAssistantText,
     },
     warningText: assignment.warningText || '',
     payload: {

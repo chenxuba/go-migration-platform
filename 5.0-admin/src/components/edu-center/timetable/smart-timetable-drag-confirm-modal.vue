@@ -104,10 +104,16 @@ const modalOpen = computed({
             {{ detail?.target?.studentText || '-' }}
           </div>
           <div class="st-drag-confirm__meta">
-            主教：{{ detail?.target?.teacherText || '-' }}
+            主教：
+            <span :class="{ 'st-drag-confirm__meta-highlight': detail?.target?.teacherChanged }">
+              {{ detail?.target?.teacherText || '-' }}
+            </span>
           </div>
           <div class="st-drag-confirm__meta">
-            助教：{{ detail?.target?.assistantText || '未安排' }}
+            助教：
+            <span :class="{ 'st-drag-confirm__meta-highlight': detail?.target?.assistantChanged }">
+              {{ detail?.target?.assistantText || '未安排' }}
+            </span>
           </div>
         </div>
       </div>
@@ -231,6 +237,11 @@ const modalOpen = computed({
   font-size: 15px;
   line-height: 1.4;
   word-break: break-word;
+}
+
+.st-drag-confirm__meta-highlight {
+  color: #1668ff;
+  font-weight: 700;
 }
 
 .st-drag-confirm__arrow {
