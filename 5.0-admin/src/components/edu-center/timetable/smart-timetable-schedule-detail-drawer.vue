@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CloseOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, DownOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import type { TableColumnsType } from 'ant-design-vue'
 import { Modal } from 'ant-design-vue'
@@ -134,9 +134,7 @@ const repeatRuleText = computed(() => {
   return base
 })
 const remarkText = computed(() => detailData.value?.remark || '-')
-const showBatchEditHoverMenu = computed(() => {
-  if (!props.editable)
-    return false
+const hasBatchSchedule = computed(() => {
   return Number(detailData.value?.batchSize || props.detail?.batchSize || 0) > 1
     || String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() !== ''
 })
@@ -313,17 +311,59 @@ watch(
               </div>
             </a-space>
             <a-space>
-              <a-button type="link" ghost>
+              <a-dropdown
+                v-if="hasBatchSchedule"
+                :trigger="['hover']"
+                placement="bottomLeft"
+              >
+                <template #overlay>
+                  <a-menu :selectable="false">
+                    <a-menu-item key="copy-current">
+                      仅复制此日程
+                    </a-menu-item>
+                    <a-menu-item key="copy-all">
+                      复制全部日程
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+
+                <a-button @click.stop>
+                  复制日程
+                  <DownOutlined />
+                </a-button>
+              </a-dropdown>
+              <a-button v-else type="link" ghost>
                 仅复制此日程
               </a-button>
-              <a-button v-if="deletable" danger ghost :loading="deleting" @click="$emit('delete')">
+
+              <a-dropdown
+                v-if="deletable && hasBatchSchedule"
+                :trigger="['hover']"
+                placement="bottomLeft"
+              >
+                <template #overlay>
+                  <a-menu :selectable="false">
+                    <a-menu-item key="delete-current">
+                      仅删除此日程
+                    </a-menu-item>
+                    <a-menu-item key="delete-future">
+                      删除后续全部日程
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+
+                <a-button @click.stop>
+                  删除
+                  <DownOutlined />
+                </a-button>
+              </a-dropdown>
+              <a-button v-else-if="deletable" danger ghost :loading="deleting" @click="$emit('delete')">
                 删除
               </a-button>
               <a-dropdown
-                v-if="editable && showBatchEditHoverMenu"
+                v-if="hasBatchSchedule"
                 :trigger="['hover']"
                 placement="bottomLeft"
-                overlay-class-name="schedule-detail-edit-menu-dropdown"
               >
                 <template #overlay>
                   <a-menu :selectable="false">
@@ -336,7 +376,7 @@ watch(
                   </a-menu>
                 </template>
 
-                <a-button type="primary" @click.stop>
+                <a-button @click.stop>
                   编辑
                 </a-button>
               </a-dropdown>
@@ -609,31 +649,6 @@ watch(
 }
 
 :global(.schedule-detail-add-student-dropdown .ant-dropdown-menu-item:hover) {
-  background: #f5f7fb;
-}
-
-:global(.schedule-detail-edit-menu-dropdown .ant-dropdown-menu) {
-  min-width: 156px;
-  padding: 6px 0;
-  border: 1px solid #eef0f4;
-  border-radius: 10px;
-  box-shadow: 0 12px 28px rgb(15 23 42 / 12%);
-}
-
-:global(.schedule-detail-edit-menu-dropdown .ant-dropdown-menu-item) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  padding: 8px 16px;
-  color: #1f2329;
-  font-size: 14px;
-  line-height: 22px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-:global(.schedule-detail-edit-menu-dropdown .ant-dropdown-menu-item:hover) {
   background: #f5f7fb;
 }
 
