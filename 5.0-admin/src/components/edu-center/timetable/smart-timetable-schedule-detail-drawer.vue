@@ -132,6 +132,11 @@ const repeatRuleText = computed(() => {
   return base
 })
 const remarkText = computed(() => detailData.value?.remark || '-')
+const showBatchEditHoverMenu = computed(() => {
+  if (!props.editable)
+    return false
+  return Number(detailData.value?.batchSize || 0) > 1 || String(detailData.value?.batchNo || '').trim() !== ''
+})
 const currentStudentList = computed(() => (activeStudentTabKey.value === 'leave' ? leaveStudents.value : students.value))
 const studentCardTitle = computed(() => {
   if (isOneToOne.value)
@@ -311,7 +316,28 @@ watch(
               <a-button v-if="deletable" danger ghost :loading="deleting" @click="$emit('delete')">
                 删除
               </a-button>
-              <a-button v-if="editable" type="primary" @click="$emit('edit')">
+              <a-dropdown
+                v-if="editable && showBatchEditHoverMenu"
+                :trigger="['hover']"
+                placement="bottomLeft"
+                overlay-class-name="schedule-detail-edit-menu-dropdown"
+              >
+                <template #overlay>
+                  <a-menu :selectable="false">
+                    <a-menu-item key="current">
+                      仅编辑此日程
+                    </a-menu-item>
+                    <a-menu-item key="future">
+                      编辑以后日程
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+
+                <a-button type="primary" @click.stop>
+                  编辑
+                </a-button>
+              </a-dropdown>
+              <a-button v-else-if="editable" type="primary" @click="$emit('edit')">
                 编辑
               </a-button>
               <a-button type="primary">
@@ -580,6 +606,31 @@ watch(
 }
 
 :global(.schedule-detail-add-student-dropdown .ant-dropdown-menu-item:hover) {
+  background: #f5f7fb;
+}
+
+:global(.schedule-detail-edit-menu-dropdown .ant-dropdown-menu) {
+  min-width: 156px;
+  padding: 6px 0;
+  border: 1px solid #eef0f4;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgb(15 23 42 / 12%);
+}
+
+:global(.schedule-detail-edit-menu-dropdown .ant-dropdown-menu-item) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 16px;
+  color: #1f2329;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+:global(.schedule-detail-edit-menu-dropdown .ant-dropdown-menu-item:hover) {
   background: #f5f7fb;
 }
 
