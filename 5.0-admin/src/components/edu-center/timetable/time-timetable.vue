@@ -1347,9 +1347,17 @@ function openScheduleEdit(item) {
   openScheduleDetail(item)
 }
 
-function openBatchPlanEdit(schedule, scope = 'batch') {
+function openBatchPlanEdit(schedule, scope = 'batch', payload) {
+  const nextSchedule = payload
+    ? {
+        ...schedule,
+        batchMeta: payload.batchMeta,
+        batchNo: payload.batchNo || schedule?.batchNo,
+        batchSize: Number(payload.batchSize || schedule?.batchSize || 0) || schedule?.batchSize,
+      }
+    : schedule
   scheduleBatchPlanEditScope.value = scope
-  currentBatchPlanSchedule.value = schedule || null
+  currentBatchPlanSchedule.value = nextSchedule || null
   scheduleBatchPlanEditOpen.value = true
 }
 
@@ -1394,18 +1402,18 @@ function handleScheduleDetailDelete() {
   })
 }
 
-function handleScheduleDetailEdit() {
+function handleScheduleDetailEdit(payload) {
   const schedule = currentDetailSchedule.value
   if (!schedule?.id)
     return
-  openBatchPlanEdit(schedule)
+  openBatchPlanEdit(schedule, 'batch', payload)
 }
 
-function handleScheduleDetailEditCurrent() {
+function handleScheduleDetailEditCurrent(payload) {
   const schedule = currentDetailSchedule.value
   if (!schedule?.id)
     return
-  openBatchPlanEdit(schedule, 'current')
+  openBatchPlanEdit(schedule, 'current', payload)
 }
 
 function handleBatchPlanUpdated() {

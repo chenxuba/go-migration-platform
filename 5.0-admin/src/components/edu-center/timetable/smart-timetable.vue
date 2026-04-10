@@ -3518,7 +3518,16 @@ function buildBatchPlanScheduleFromDetail(detail) {
   }
 }
 
-function openScheduledLessonBatchPlanEdit(scope = 'batch') {
+function openScheduledLessonBatchPlanEdit(scope = 'batch', payload) {
+  let editScope = scope
+  let editPayload = null
+  if (typeof scope === 'object' && scope !== null) {
+    editScope = 'batch'
+    editPayload = scope
+  }
+  else {
+    editPayload = payload
+  }
   const detail = scheduledLessonDetailState.value
   if (detail.courseType === 1 && detail.isMain === false)
     return
@@ -3527,8 +3536,15 @@ function openScheduledLessonBatchPlanEdit(scope = 'batch') {
     messageService.warning('当前日程缺少编辑标识，请刷新后重试')
     return
   }
-  scheduleBatchPlanEditScope.value = scope
-  currentBatchPlanSchedule.value = schedule
+  scheduleBatchPlanEditScope.value = editScope
+  currentBatchPlanSchedule.value = editPayload
+    ? {
+        ...schedule,
+        batchMeta: editPayload.batchMeta,
+        batchNo: editPayload.batchNo || schedule.batchNo,
+        batchSize: Number(editPayload.batchSize || schedule.batchSize || 0) || schedule.batchSize,
+      }
+    : schedule
   scheduleBatchPlanEditOpen.value = true
 }
 
@@ -5067,7 +5083,7 @@ watch(dragConflictDetailOpen, (open) => {
       :editable="scheduledLessonDetailEditable"
       @delete="deleteScheduledLessonFromDetail"
       @edit="openScheduledLessonBatchPlanEdit"
-      @edit-current="() => openScheduledLessonBatchPlanEdit('current')"
+      @edit-current="payload => openScheduledLessonBatchPlanEdit('current', payload)"
     />
 
     <ScheduleBatchPlanEditModal

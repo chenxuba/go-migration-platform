@@ -6,6 +6,7 @@ export interface TeachingScheduleItem {
   id: string
   batchNo?: string
   batchSize?: number
+  batchMeta?: TeachingScheduleBatchMeta
   classType: number
   teachingClassId: string
   teachingClassName: string

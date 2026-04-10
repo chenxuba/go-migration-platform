@@ -2105,6 +2105,13 @@ func (repo *Repository) GetTeachingScheduleBatchDetail(ctx context.Context, inst
 	if err != nil {
 		return model.TeachingScheduleBatchDetailVO{}, err
 	}
+	if meta == nil && strings.TrimSpace(items[0].BatchNo) != "" {
+		meta, err = repo.loadDeletedTeachingScheduleBatchMetaTx(ctx, tx, instID, items[0].BatchNo)
+		if err != nil {
+			return model.TeachingScheduleBatchDetailVO{}, err
+		}
+		meta = adjustTeachingScheduleBatchMetaForSchedules(meta, items)
+	}
 	first := items[0]
 	return model.TeachingScheduleBatchDetailVO{
 		BatchNo:           first.BatchNo,
@@ -2273,6 +2280,21 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 	meta, err := repo.loadTeachingScheduleBatchMetaTx(ctx, tx, instID, row.BatchNo, []int64{row.ID})
 	if err != nil {
 		return model.TeachingScheduleDetailVO{}, err
+	}
+	if meta == nil && strings.TrimSpace(row.BatchNo) != "" {
+		meta, err = repo.loadDeletedTeachingScheduleBatchMetaTx(ctx, tx, instID, row.BatchNo)
+		if err != nil {
+			return model.TeachingScheduleDetailVO{}, err
+		}
+		meta = adjustTeachingScheduleBatchMetaForSchedules(meta, []model.TeachingScheduleVO{{
+			ID:         strconv.FormatInt(row.ID, 10),
+			BatchNo:    row.BatchNo,
+			BatchSize:  row.BatchSize,
+			ClassType:  row.ClassType,
+			LessonDate: row.LessonDate.Format("2006-01-02"),
+			StartAt:    row.StartAt,
+			EndAt:      row.EndAt,
+		}})
 	}
 
 	durationMinutes := int(row.EndAt.Sub(row.StartAt).Minutes())
@@ -2464,6 +2486,30 @@ func splitTeachingScheduleBatchTargetIDs(existingIDs, allBatchIDs []int64) []int
 	return untouchedIDs
 }
 
+func filterTeachingSchedulesByIDs(list []model.TeachingScheduleVO, targetIDs []int64) []model.TeachingScheduleVO {
+	if len(list) == 0 || len(targetIDs) == 0 {
+		return nil
+	}
+	targetIDSet := make(map[int64]struct{}, len(targetIDs))
+	for _, id := range targetIDs {
+		if id > 0 {
+			targetIDSet[id] = struct{}{}
+		}
+	}
+	result := make([]model.TeachingScheduleVO, 0, len(targetIDSet))
+	for _, item := range list {
+		id, err := strconv.ParseInt(strings.TrimSpace(item.ID), 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		if _, ok := targetIDSet[id]; !ok {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
 func (repo *Repository) replaceOneToOneScheduleBatch(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleBatchReplaceDTO, existing, allBatchSchedules []model.TeachingScheduleVO, fallbackTeacherID, fallbackClassroomID int64, assistantIDs []int64) (model.CreateOneToOneSchedulesResult, error) {
 	classID, err := strconv.ParseInt(strings.TrimSpace(existing[0].TeachingClassID), 10, 64)
 	if err != nil || classID <= 0 {
@@ -2554,6 +2600,15 @@ func (repo *Repository) replaceOneToOneScheduleBatch(ctx context.Context, instID
 	existingIDs := collectTeachingScheduleIDs(existing)
 	allBatchIDs := collectTeachingScheduleIDs(allBatchSchedules)
 	untouchedIDs := splitTeachingScheduleBatchTargetIDs(existingIDs, allBatchIDs)
+	untouchedSchedules := filterTeachingSchedulesByIDs(allBatchSchedules, untouchedIDs)
+	originalBatchNo := strings.TrimSpace(existing[0].BatchNo)
+	var originalBatchMeta *model.TeachingScheduleBatchMeta
+	if originalBatchNo != "" {
+		originalBatchMeta, err = repo.loadTeachingScheduleBatchMetaTx(ctx, tx, instID, originalBatchNo, allBatchIDs)
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+	}
 
 	teacherConflictsByPlan, err := repo.listTeacherConflictsByPlanTx(ctx, tx, instID, plans, existingIDs)
 	if err != nil {
@@ -2623,7 +2678,7 @@ func (repo *Repository) replaceOneToOneScheduleBatch(ctx context.Context, instID
 		}
 	}
 
-	batchNo := strings.TrimSpace(existing[0].BatchNo)
+	batchNo := originalBatchNo
 	if batchNo != "" && len(untouchedIDs) > 0 {
 		if err := repo.deleteTeachingScheduleBatchMetaTx(ctx, tx, instID, batchNo, nil); err != nil {
 			return model.CreateOneToOneSchedulesResult{}, err
@@ -2638,6 +2693,21 @@ func (repo *Repository) replaceOneToOneScheduleBatch(ctx context.Context, instID
 			  AND id IN (`+sqlPlaceholders(len(untouchedIDs))+`)
 		`, append([]any{len(untouchedIDs), operatorID, instID}, int64SliceToAny(untouchedIDs)...)...); err != nil {
 			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		if adjustedMeta := adjustTeachingScheduleBatchMetaForSchedules(originalBatchMeta, untouchedSchedules); adjustedMeta != nil {
+			if err := repo.saveTeachingScheduleBatchMetaTx(
+				ctx,
+				tx,
+				instID,
+				operatorID,
+				batchNo,
+				model.TeachingClassTypeOneToOne,
+				base.ClassID,
+				untouchedIDs,
+				adjustedMeta,
+			); err != nil {
+				return model.CreateOneToOneSchedulesResult{}, err
+			}
 		}
 		batchNo = ""
 	}
@@ -2855,6 +2925,15 @@ func (repo *Repository) replaceGroupClassScheduleBatch(ctx context.Context, inst
 	existingIDs := collectTeachingScheduleIDs(existing)
 	allBatchIDs := collectTeachingScheduleIDs(allBatchSchedules)
 	untouchedIDs := splitTeachingScheduleBatchTargetIDs(existingIDs, allBatchIDs)
+	untouchedSchedules := filterTeachingSchedulesByIDs(allBatchSchedules, untouchedIDs)
+	originalBatchNo := strings.TrimSpace(existing[0].BatchNo)
+	var originalBatchMeta *model.TeachingScheduleBatchMeta
+	if originalBatchNo != "" {
+		originalBatchMeta, err = repo.loadTeachingScheduleBatchMetaTx(ctx, tx, instID, originalBatchNo, allBatchIDs)
+		if err != nil {
+			return model.CreateOneToOneSchedulesResult{}, err
+		}
+	}
 
 	memberships, err := repo.listGroupClassStudentMembershipsTx(ctx, tx, instID, classID)
 	if err != nil {
@@ -2956,7 +3035,7 @@ func (repo *Repository) replaceGroupClassScheduleBatch(ctx context.Context, inst
 		}
 	}
 
-	batchNo := strings.TrimSpace(existing[0].BatchNo)
+	batchNo := originalBatchNo
 	if batchNo != "" && len(untouchedIDs) > 0 {
 		if err := repo.deleteTeachingScheduleBatchMetaTx(ctx, tx, instID, batchNo, nil); err != nil {
 			return model.CreateOneToOneSchedulesResult{}, err
@@ -2971,6 +3050,21 @@ func (repo *Repository) replaceGroupClassScheduleBatch(ctx context.Context, inst
 			  AND id IN (`+sqlPlaceholders(len(untouchedIDs))+`)
 		`, append([]any{len(untouchedIDs), operatorID, instID}, int64SliceToAny(untouchedIDs)...)...); err != nil {
 			return model.CreateOneToOneSchedulesResult{}, err
+		}
+		if adjustedMeta := adjustTeachingScheduleBatchMetaForSchedules(originalBatchMeta, untouchedSchedules); adjustedMeta != nil {
+			if err := repo.saveTeachingScheduleBatchMetaTx(
+				ctx,
+				tx,
+				instID,
+				operatorID,
+				batchNo,
+				model.TeachingClassTypeNormal,
+				base.ClassID,
+				untouchedIDs,
+				adjustedMeta,
+			); err != nil {
+				return model.CreateOneToOneSchedulesResult{}, err
+			}
 		}
 		batchNo = ""
 	}
@@ -3500,6 +3594,88 @@ func normalizeTeachingScheduleBatchMeta(meta *model.TeachingScheduleBatchMeta) *
 	return next
 }
 
+func uniqueTeachingScheduleDates(list []model.TeachingScheduleVO) []string {
+	if len(list) == 0 {
+		return nil
+	}
+	sorted := append([]model.TeachingScheduleVO(nil), list...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].LessonDate == sorted[j].LessonDate {
+			if sorted[i].StartAt.Equal(sorted[j].StartAt) {
+				return sorted[i].ID < sorted[j].ID
+			}
+			return sorted[i].StartAt.Before(sorted[j].StartAt)
+		}
+		return sorted[i].LessonDate < sorted[j].LessonDate
+	})
+	seen := make(map[string]struct{}, len(sorted))
+	dates := make([]string, 0, len(sorted))
+	for _, item := range sorted {
+		dateText := strings.TrimSpace(item.LessonDate)
+		if dateText == "" {
+			continue
+		}
+		if _, ok := seen[dateText]; ok {
+			continue
+		}
+		seen[dateText] = struct{}{}
+		dates = append(dates, dateText)
+	}
+	return dates
+}
+
+func selectedWeekdaysFromDateTexts(dates []string) []string {
+	if len(dates) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(dates))
+	labels := make([]string, 0, len(dates))
+	for _, dateText := range dates {
+		parsed, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(dateText), time.Local)
+		if err != nil {
+			continue
+		}
+		label := weekDisplay(parsed)
+		if label == "" {
+			continue
+		}
+		if _, ok := seen[label]; ok {
+			continue
+		}
+		seen[label] = struct{}{}
+		labels = append(labels, label)
+	}
+	return labels
+}
+
+func adjustTeachingScheduleBatchMetaForSchedules(meta *model.TeachingScheduleBatchMeta, schedules []model.TeachingScheduleVO) *model.TeachingScheduleBatchMeta {
+	normalized := normalizeTeachingScheduleBatchMeta(meta)
+	if normalized == nil {
+		return nil
+	}
+	if len(schedules) == 0 {
+		return normalized
+	}
+	dates := uniqueTeachingScheduleDates(schedules)
+	next := &model.TeachingScheduleBatchMeta{
+		SchedulingMode:    normalized.SchedulingMode,
+		RepeatRule:        normalized.RepeatRule,
+		HolidayPolicy:     normalized.HolidayPolicy,
+		SelectedWeekdays:  append([]string(nil), normalized.SelectedWeekdays...),
+		ScheduleStartDate: normalized.ScheduleStartDate,
+		FreeSelectedDates: append([]string(nil), normalized.FreeSelectedDates...),
+		PlannedClassCount: len(schedules),
+	}
+	if len(dates) > 0 {
+		next.ScheduleStartDate = dates[0]
+		next.FreeSelectedDates = append([]string(nil), dates...)
+		if len(next.SelectedWeekdays) == 0 {
+			next.SelectedWeekdays = selectedWeekdaysFromDateTexts(dates)
+		}
+	}
+	return normalizeTeachingScheduleBatchMeta(next)
+}
+
 func (repo *Repository) loadTeachingScheduleBatchMetaTx(ctx context.Context, tx *sql.Tx, instID int64, batchNo string, scheduleIDs []int64) (*model.TeachingScheduleBatchMeta, error) {
 	batchKey, err := buildTeachingScheduleBatchMetaKey(batchNo, scheduleIDs)
 	if err != nil {
@@ -3514,6 +3690,37 @@ func (repo *Repository) loadTeachingScheduleBatchMetaTx(ctx context.Context, tx 
 		  AND del_flag = 0
 		LIMIT 1
 	`, instID, batchKey).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var meta model.TeachingScheduleBatchMeta
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		return nil, err
+	}
+	return normalizeTeachingScheduleBatchMeta(&meta), nil
+}
+
+func (repo *Repository) loadDeletedTeachingScheduleBatchMetaTx(ctx context.Context, tx *sql.Tx, instID int64, batchNo string) (*model.TeachingScheduleBatchMeta, error) {
+	batchNo = strings.TrimSpace(batchNo)
+	if batchNo == "" {
+		return nil, nil
+	}
+	var raw []byte
+	err := tx.QueryRowContext(ctx, `
+		SELECT meta_json
+		FROM teaching_schedule_batch_meta
+		WHERE inst_id = ?
+		  AND batch_key = ?
+		  AND del_flag = 1
+		ORDER BY update_time DESC, id DESC
+		LIMIT 1
+	`, instID, "batch:"+batchNo).Scan(&raw)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

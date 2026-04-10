@@ -50,6 +50,12 @@ interface DrawerSummary {
   courseType?: number
 }
 
+interface ScheduleEditPayload {
+  batchMeta?: TeachingScheduleItem['batchMeta']
+  batchNo?: string
+  batchSize?: number
+}
+
 const displayArray = ref([
   'scheduleTeacher',
   'scheduleClassroom',
@@ -1387,21 +1393,35 @@ function handleScheduleDetailDelete() {
   })
 }
 
-function handleScheduleDetailEdit() {
+function handleScheduleDetailEdit(payload?: ScheduleEditPayload) {
   const schedule = currentDetailSchedule.value
   if (!schedule?.id)
     return
   scheduleBatchPlanEditScope.value = 'batch'
-  currentBatchPlanSchedule.value = schedule
+  currentBatchPlanSchedule.value = payload
+    ? {
+        ...schedule,
+        batchMeta: payload.batchMeta,
+        batchNo: payload.batchNo || schedule.batchNo,
+        batchSize: Number(payload.batchSize || schedule.batchSize || 0) || schedule.batchSize,
+      }
+    : schedule
   scheduleBatchPlanEditOpen.value = true
 }
 
-function handleScheduleDetailEditCurrent() {
+function handleScheduleDetailEditCurrent(payload?: ScheduleEditPayload) {
   const schedule = currentDetailSchedule.value
   if (!schedule?.id)
     return
   scheduleBatchPlanEditScope.value = 'current'
-  currentBatchPlanSchedule.value = schedule
+  currentBatchPlanSchedule.value = payload
+    ? {
+        ...schedule,
+        batchMeta: payload.batchMeta,
+        batchNo: payload.batchNo || schedule.batchNo,
+        batchSize: Number(payload.batchSize || schedule.batchSize || 0) || schedule.batchSize,
+      }
+    : schedule
   scheduleBatchPlanEditOpen.value = true
 }
 

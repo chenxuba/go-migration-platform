@@ -6,7 +6,7 @@ import { Modal } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
-import { type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi, removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
+import { type TeachingScheduleBatchMeta, type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi, removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
 import RollCallAddStudentModal from '@/components/common/roll-call-add-student-modal.vue'
 import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
@@ -26,6 +26,12 @@ interface DrawerSummary {
   courseType?: number
 }
 
+interface ScheduleEditPayload {
+  batchMeta?: TeachingScheduleBatchMeta
+  batchNo?: string
+  batchSize?: number
+}
+
 const props = withDefaults(defineProps<{
   open: boolean
   detail?: DrawerSummary | null
@@ -40,8 +46,8 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'delete'): void
-  (e: 'edit'): void
-  (e: 'edit-current'): void
+  (e: 'edit', payload?: ScheduleEditPayload): void
+  (e: 'edit-current', payload?: ScheduleEditPayload): void
   (e: 'updated'): void
 }>()
 
@@ -140,6 +146,20 @@ const hasBatchSchedule = computed(() => {
   return Number(detailData.value?.batchSize || props.detail?.batchSize || 0) > 1
     || String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() !== ''
 })
+const scheduleEditPayload = computed<ScheduleEditPayload>(() => {
+  const batchMeta = detailData.value?.batchMeta
+  const batchNo = String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() || undefined
+  const batchSize = Number(detailData.value?.batchSize || props.detail?.batchSize || 0)
+  return {
+    batchMeta: batchMeta ? {
+      ...batchMeta,
+      selectedWeekdays: Array.isArray(batchMeta.selectedWeekdays) ? [...batchMeta.selectedWeekdays] : undefined,
+      freeSelectedDates: Array.isArray(batchMeta.freeSelectedDates) ? [...batchMeta.freeSelectedDates] : undefined,
+    } : undefined,
+    batchNo,
+    batchSize: batchSize > 0 ? batchSize : undefined,
+  }
+})
 const currentStudentList = computed(() => (activeStudentTabKey.value === 'leave' ? leaveStudents.value : students.value))
 const studentCardTitle = computed(() => {
   if (isOneToOne.value)
@@ -192,9 +212,13 @@ function handleStudentReschedule(student: Record<string, any>) {
 function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
   domEvent?.stopPropagation?.()
   if (key === 'current')
-    emit('edit-current')
+    emit('edit-current', scheduleEditPayload.value)
   else if (key === 'future')
-    emit('edit')
+    emit('edit', scheduleEditPayload.value)
+}
+
+function handleSingleEditClick() {
+  emit('edit', scheduleEditPayload.value)
 }
 
 function handleStudentRemove(student: Record<string, any>) {
@@ -394,7 +418,7 @@ watch(
                 </a-button>
               </a-dropdown>
               <a-tooltip v-else-if="editable" title="编辑此日程" placement="top">
-                <a-button @click="$emit('edit')">
+                <a-button @click="handleSingleEditClick">
                   编辑
                 </a-button>
               </a-tooltip>

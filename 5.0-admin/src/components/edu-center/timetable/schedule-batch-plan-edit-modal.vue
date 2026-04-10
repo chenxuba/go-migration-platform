@@ -4,7 +4,7 @@ import { type BatchPlanModalPreset, inferBatchPlanPreset } from './batch-plan-pr
 import GroupClassScheduleModal from './group-class-schedule-modal.vue'
 import { type GroupClassBatchPlanModalPreset, inferGroupClassBatchPlanPreset } from './group-class-batch-plan-preset'
 import OneToOneScheduleModal from './one-to-one-schedule-modal.vue'
-import type { TeachingScheduleItem } from '@/api/edu-center/teaching-schedule'
+import type { TeachingScheduleBatchDetail, TeachingScheduleBatchMeta, TeachingScheduleItem } from '@/api/edu-center/teaching-schedule'
 import { getTeachingScheduleBatchDetailApi } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
 
@@ -34,6 +34,55 @@ const groupClassPreset = ref<GroupClassBatchPlanModalPreset | null>(null)
 
 let loadSeq = 0
 
+function normalizeSchedulingMode(value?: string) {
+  const mode = String(value || '').trim()
+  if (mode === 'free' || mode === 'repeat')
+    return mode
+  return undefined
+}
+
+function cloneBatchMeta(meta?: TeachingScheduleBatchMeta) {
+  if (!meta)
+    return undefined
+  return {
+    ...meta,
+    selectedWeekdays: Array.isArray(meta.selectedWeekdays) ? [...meta.selectedWeekdays] : undefined,
+    freeSelectedDates: Array.isArray(meta.freeSelectedDates) ? [...meta.freeSelectedDates] : undefined,
+  }
+}
+
+function resolveBatchDetailMeta(detail: TeachingScheduleBatchDetail, current?: TeachingScheduleItem | null, scope: ScheduleBatchPlanEditScope = 'batch') {
+  const metaHint = cloneBatchMeta(current?.batchMeta)
+  if (!metaHint)
+    return detail
+
+  const detailMeta = cloneBatchMeta(detail.batchMeta)
+  const detailMode = normalizeSchedulingMode(detailMeta?.schedulingMode)
+  const hintMode = normalizeSchedulingMode(metaHint.schedulingMode)
+  const batchNo = String(detail.batchNo || current?.batchNo || '').trim()
+  const batchSize = Math.max(Number(detail.batchSize || 0), Number(current?.batchSize || 0))
+  const shouldUseHint = !detailMeta
+    || !detailMode
+    || (scope === 'batch' && batchNo && batchSize <= 1 && hintMode === 'repeat' && detailMode === 'free')
+
+  if (!shouldUseHint)
+    return detail
+
+  return {
+    ...detail,
+    batchMeta: {
+      ...detailMeta,
+      ...metaHint,
+      selectedWeekdays: Array.isArray(metaHint.selectedWeekdays) && metaHint.selectedWeekdays.length
+        ? [...metaHint.selectedWeekdays]
+        : (Array.isArray(detailMeta?.selectedWeekdays) ? [...detailMeta.selectedWeekdays] : undefined),
+      freeSelectedDates: Array.isArray(metaHint.freeSelectedDates) && metaHint.freeSelectedDates.length
+        ? [...metaHint.freeSelectedDates]
+        : (Array.isArray(detailMeta?.freeSelectedDates) ? [...detailMeta.freeSelectedDates] : undefined),
+    },
+  }
+}
+
 async function loadPreset() {
   const current = props.schedule
   if (!modalOpen.value || !current)
@@ -54,13 +103,14 @@ async function loadPreset() {
       return
     if (res.code !== 200 || !res.result)
       throw new Error(res.message || '加载批次规则失败')
+    const detail = resolveBatchDetailMeta(res.result, current, props.scope)
     if (Number(res.result.classType) === 2) {
-      preset.value = inferBatchPlanPreset(res.result, current.id)
+      preset.value = inferBatchPlanPreset(detail, current.id)
       return
     }
     if (Number(res.result.classType) === 1) {
       groupClassPreset.value = {
-        ...inferGroupClassBatchPlanPreset(res.result, current.id),
+        ...inferGroupClassBatchPlanPreset(detail, current.id),
         editScope: props.scope,
       }
       return
