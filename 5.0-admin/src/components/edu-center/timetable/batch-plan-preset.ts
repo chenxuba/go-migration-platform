@@ -14,6 +14,7 @@ export interface BatchPlanTimeBlockPreset {
 export interface BatchPlanModalPreset {
   batchNo?: string
   scheduleIds: string[]
+  editScope?: 'batch' | 'current'
   oneToOneId: string
   scheduleType: BatchPlanScheduleType
   schedulingMode: BatchPlanSchedulingMode

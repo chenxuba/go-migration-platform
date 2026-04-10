@@ -105,7 +105,10 @@ async function loadPreset() {
       throw new Error(res.message || '加载批次规则失败')
     const detail = resolveBatchDetailMeta(res.result, current, props.scope)
     if (Number(res.result.classType) === 2) {
-      preset.value = inferBatchPlanPreset(detail, current.id)
+      preset.value = {
+        ...inferBatchPlanPreset(detail, current.id),
+        editScope: props.scope,
+      }
       return
     }
     if (Number(res.result.classType) === 1) {
