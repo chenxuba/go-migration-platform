@@ -357,9 +357,11 @@ watch(
                   <DownOutlined />
                 </a-button>
               </a-dropdown>
-              <a-button v-else-if="deletable" :loading="deleting" @click="$emit('delete')">
-                删除
-              </a-button>
+              <a-tooltip v-else-if="deletable" title="删除此日程" placement="top">
+                <a-button :loading="deleting" @click="$emit('delete')">
+                  删除
+                </a-button>
+              </a-tooltip>
               <a-dropdown
                 v-if="hasBatchSchedule"
                 :trigger="['hover']"
@@ -381,9 +383,11 @@ watch(
                   <DownOutlined />
                 </a-button>
               </a-dropdown>
-              <a-button v-else-if="editable" @click="$emit('edit')">
-                编辑
-              </a-button>
+              <a-tooltip v-else-if="editable" title="编辑此日程" placement="top">
+                <a-button @click="$emit('edit')">
+                  编辑
+                </a-button>
+              </a-tooltip>
               <a-button type="primary">
                 去点名
               </a-button>
