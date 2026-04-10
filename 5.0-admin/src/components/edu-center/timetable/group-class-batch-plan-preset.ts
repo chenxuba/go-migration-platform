@@ -71,7 +71,13 @@ function sliceSchedulesFromAnchor(list: TeachingScheduleItem[], anchorScheduleId
   const index = sorted.findIndex(item => String(item.id || '').trim() === anchorId)
   if (index < 0)
     return sorted
-  return sorted.slice(index)
+  const anchorDate = String(sorted[index]?.lessonDate || '').trim()
+  if (!anchorDate)
+    return sorted.slice(index)
+  return sorted.filter((item) => {
+    const lessonDate = String(item.lessonDate || '').trim()
+    return lessonDate ? lessonDate >= anchorDate : false
+  })
 }
 
 function uniqueDates(list: TeachingScheduleItem[]) {

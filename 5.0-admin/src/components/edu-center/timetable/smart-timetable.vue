@@ -998,6 +998,8 @@ function buildLessonsForRow(slots, legacyList, currentTeacherId) {
     lessons[idx] = {
       ...lessons[idx],
       scheduleId: leg.id != null ? String(leg.id) : null,
+      batchNo: String(leg.batchNo || '').trim() || (leg.batchId != null ? String(leg.batchId) : undefined),
+      batchSize: Number(leg.batchSize || 1),
       lessonDate: String(leg.scheduleDate || '').trim(),
       courseName: leg.courseName || null,
       courseId: leg.courseId != null ? String(leg.courseId) : '',
