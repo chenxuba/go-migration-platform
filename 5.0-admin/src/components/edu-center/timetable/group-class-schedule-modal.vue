@@ -110,6 +110,7 @@ interface SlotSelectOptionView {
 interface AssistantSelectOptionView {
   value: string
   label: string
+  baseLabel: string
   mobile?: string
   status: 'free' | 'busy' | 'unknown'
   statusText: string
@@ -665,9 +666,11 @@ const assistantSelectOptionViews = computed<AssistantSelectOptionView[]>(() =>
     .filter(staff => !sameStaffId(staff.id, selectedTeacher.value))
     .map((staff) => {
       const availability = assistantAvailabilityFor(staff)
+      const baseLabel = displayStaffName(staff) || String(staff.id)
       return {
         value: String(staff.id),
-        label: displayStaffName(staff) || String(staff.id),
+        label: `${baseLabel} · ${availability.statusText}`,
+        baseLabel,
         mobile: displayMobileText(staff),
         status: availability.status,
         statusText: availability.statusText,
@@ -2536,7 +2539,7 @@ watch(
                       >
                         <div class="planner-staff-option">
                           <div class="planner-staff-option__main">
-                            <span class="planner-staff-option__label">{{ item.label }}</span>
+                            <span class="planner-staff-option__label">{{ item.baseLabel }}</span>
                             <span v-if="item.mobile" class="planner-staff-option__mobile">{{ item.mobile }}</span>
                           </div>
                           <span
