@@ -70,6 +70,7 @@ const currentScheduleDetail = ref<DrawerSummary | null>(null)
 const deletingScheduleDetail = ref(false)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref<TeachingScheduleItem | null>(null)
+const scheduleBatchPlanEditScope = ref<'batch' | 'current'>('batch')
 const scheduleConflictOpen = ref(false)
 const scheduleConflictValidation = ref(null)
 const scheduleConflictLoading = ref(false)
@@ -1318,6 +1319,7 @@ function openScheduleEdit(event: CellSchedule) {
 function onBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
   scheduleDetailOpen.value = false
+  scheduleBatchPlanEditScope.value = 'batch'
   loadMatrix()
 }
 
@@ -1389,6 +1391,16 @@ function handleScheduleDetailEdit() {
   const schedule = currentDetailSchedule.value
   if (!schedule?.id)
     return
+  scheduleBatchPlanEditScope.value = 'batch'
+  currentBatchPlanSchedule.value = schedule
+  scheduleBatchPlanEditOpen.value = true
+}
+
+function handleScheduleDetailEditCurrent() {
+  const schedule = currentDetailSchedule.value
+  if (!schedule?.id)
+    return
+  scheduleBatchPlanEditScope.value = 'current'
   currentBatchPlanSchedule.value = schedule
   scheduleBatchPlanEditOpen.value = true
 }
@@ -1843,11 +1855,13 @@ const unsignedLessons = computed(() =>
       :editable="isCurrentDetailEditable"
       @delete="handleScheduleDetailDelete"
       @edit="handleScheduleDetailEdit"
+      @edit-current="handleScheduleDetailEditCurrent"
       @updated="onBatchPlanUpdated"
     />
     <ScheduleBatchPlanEditModal
       v-model:open="scheduleBatchPlanEditOpen"
       :schedule="currentBatchPlanSchedule"
+      :scope="scheduleBatchPlanEditScope"
       @updated="onBatchPlanUpdated"
     />
     <ScheduleConflictModal

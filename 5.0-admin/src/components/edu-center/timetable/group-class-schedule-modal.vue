@@ -156,6 +156,8 @@ const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
 const isSingleScheduleEditMode = computed(() => {
   if (!isBatchPlanEditMode.value || !props.batchPlanPreset)
     return false
+  if (props.batchPlanPreset.editScope === 'current')
+    return true
   const batchNo = String(props.batchPlanPreset.batchNo || '').trim()
   const scheduleIds = Array.isArray(props.batchPlanPreset.scheduleIds)
     ? props.batchPlanPreset.scheduleIds.map(id => String(id || '').trim()).filter(Boolean)

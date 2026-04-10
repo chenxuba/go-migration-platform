@@ -41,6 +41,7 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'delete'): void
   (e: 'edit'): void
+  (e: 'edit-current'): void
   (e: 'updated'): void
 }>()
 
@@ -188,6 +189,12 @@ function handleStudentReschedule(student: Record<string, any>) {
   messageService.info(`${name} 的班课调课功能待接入`)
 }
 
+function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
+  domEvent?.stopPropagation?.()
+  if (key === 'current')
+    emit('edit-current')
+}
+
 function handleStudentRemove(student: Record<string, any>) {
   const name = String(student?.studentName || '').trim() || '当前学员'
   const currentScheduleId = scheduleId.value
@@ -333,7 +340,7 @@ watch(
                   <DownOutlined />
                 </a-button>
               </a-dropdown>
-              <a-button v-else type="link" ghost>
+              <a-button v-else type="link">
                 仅复制此日程
               </a-button>
 
@@ -369,7 +376,7 @@ watch(
                 placement="bottomLeft"
               >
                 <template #overlay>
-                  <a-menu :selectable="false">
+                  <a-menu :selectable="false" @click="handleBatchEditMenuClick">
                     <a-menu-item key="current">
                       仅编辑此日程
                     </a-menu-item>

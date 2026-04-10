@@ -705,6 +705,7 @@ const creatingOneToOneSchedule = ref(false)
 const deletingScheduledLesson = ref(false)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref(null)
+const scheduleBatchPlanEditScope = ref('batch')
 const forcingConflictSchedule = ref(false)
 const locatingConflictItemKey = ref('')
 const conflictDetailModalOpen = ref(false)
@@ -3515,7 +3516,7 @@ function buildBatchPlanScheduleFromDetail(detail) {
   }
 }
 
-function openScheduledLessonBatchPlanEdit() {
+function openScheduledLessonBatchPlanEdit(scope = 'batch') {
   const detail = scheduledLessonDetailState.value
   if (detail.courseType === 1 && detail.isMain === false)
     return
@@ -3524,6 +3525,7 @@ function openScheduledLessonBatchPlanEdit() {
     messageService.warning('当前日程缺少编辑标识，请刷新后重试')
     return
   }
+  scheduleBatchPlanEditScope.value = scope
   currentBatchPlanSchedule.value = schedule
   scheduleBatchPlanEditOpen.value = true
 }
@@ -3531,6 +3533,7 @@ function openScheduledLessonBatchPlanEdit() {
 function handleBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
   scheduledLessonDetailOpen.value = false
+  scheduleBatchPlanEditScope.value = 'batch'
   currentBatchPlanSchedule.value = null
   emitter.emit(EVENTS.REFRESH_DATA)
 }
@@ -5062,11 +5065,13 @@ watch(dragConflictDetailOpen, (open) => {
       :editable="scheduledLessonDetailEditable"
       @delete="deleteScheduledLessonFromDetail"
       @edit="openScheduledLessonBatchPlanEdit"
+      @edit-current="() => openScheduledLessonBatchPlanEdit('current')"
     />
 
     <ScheduleBatchPlanEditModal
       v-model:open="scheduleBatchPlanEditOpen"
       :schedule="currentBatchPlanSchedule"
+      :scope="scheduleBatchPlanEditScope"
       @updated="handleBatchPlanUpdated"
     />
 

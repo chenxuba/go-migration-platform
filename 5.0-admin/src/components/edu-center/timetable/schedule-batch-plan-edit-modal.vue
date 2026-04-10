@@ -8,10 +8,15 @@ import type { TeachingScheduleItem } from '@/api/edu-center/teaching-schedule'
 import { getTeachingScheduleBatchDetailApi } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
 
-const props = defineProps<{
+type ScheduleBatchPlanEditScope = 'batch' | 'current'
+
+const props = withDefaults(defineProps<{
   open: boolean
   schedule?: TeachingScheduleItem | null
-}>()
+  scope?: ScheduleBatchPlanEditScope
+}>(), {
+  scope: 'batch',
+})
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
@@ -41,8 +46,9 @@ async function loadPreset() {
 
   try {
     const res = await getTeachingScheduleBatchDetailApi({
-      batchNo: current.batchNo,
-      id: current.batchNo ? undefined : current.id,
+      batchNo: props.scope === 'current' ? undefined : current.batchNo,
+      ids: props.scope === 'current' ? [current.id] : undefined,
+      id: props.scope === 'current' ? undefined : (current.batchNo ? undefined : current.id),
     })
     if (seq !== loadSeq)
       return
@@ -53,7 +59,10 @@ async function loadPreset() {
       return
     }
     if (Number(res.result.classType) === 1) {
-      groupClassPreset.value = inferGroupClassBatchPlanPreset(res.result, current.id)
+      groupClassPreset.value = {
+        ...inferGroupClassBatchPlanPreset(res.result, current.id),
+        editScope: props.scope,
+      }
       return
     }
     throw new Error('当前日程类型暂不支持编辑')
@@ -72,7 +81,7 @@ async function loadPreset() {
 }
 
 watch(
-  () => [modalOpen.value, props.schedule?.batchNo, props.schedule?.id].join('|'),
+  () => [modalOpen.value, props.scope, props.schedule?.batchNo, props.schedule?.id].join('|'),
   async () => {
     if (!modalOpen.value) {
       preset.value = null

@@ -381,6 +381,7 @@ const currentScheduleDetail = ref(null)
 const deletingScheduleDetail = ref(false)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref(null)
+const scheduleBatchPlanEditScope = ref('batch')
 const scheduleConflictOpen = ref(false)
 const scheduleConflictValidation = ref(null)
 const scheduleConflictLoading = ref(false)
@@ -1346,7 +1347,8 @@ function openScheduleEdit(item) {
   openScheduleDetail(item)
 }
 
-function openBatchPlanEdit(schedule) {
+function openBatchPlanEdit(schedule, scope = 'batch') {
+  scheduleBatchPlanEditScope.value = scope
   currentBatchPlanSchedule.value = schedule || null
   scheduleBatchPlanEditOpen.value = true
 }
@@ -1399,9 +1401,17 @@ function handleScheduleDetailEdit() {
   openBatchPlanEdit(schedule)
 }
 
+function handleScheduleDetailEditCurrent() {
+  const schedule = currentDetailSchedule.value
+  if (!schedule?.id)
+    return
+  openBatchPlanEdit(schedule, 'current')
+}
+
 function handleBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
   scheduleDetailOpen.value = false
+  scheduleBatchPlanEditScope.value = 'batch'
   loadSchedules()
 }
 
@@ -1911,10 +1921,12 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
       :editable="isCurrentDetailEditable"
       @delete="handleScheduleDetailDelete"
       @edit="handleScheduleDetailEdit"
+      @edit-current="handleScheduleDetailEditCurrent"
     />
     <ScheduleBatchPlanEditModal
       v-model:open="scheduleBatchPlanEditOpen"
       :schedule="currentBatchPlanSchedule"
+      :scope="scheduleBatchPlanEditScope"
       @updated="handleBatchPlanUpdated"
     />
     <ScheduleConflictModal

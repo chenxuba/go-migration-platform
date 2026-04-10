@@ -14,6 +14,7 @@ export interface GroupClassBatchPlanTimeBlockPreset {
 export interface GroupClassBatchPlanModalPreset {
   batchNo?: string
   scheduleIds: string[]
+  editScope?: 'batch' | 'current'
   groupClassId: string
   scheduleType: GroupClassBatchPlanScheduleType
   schedulingMode: GroupClassBatchPlanSchedulingMode
