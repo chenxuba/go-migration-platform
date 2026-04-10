@@ -76,12 +76,12 @@ onUnmounted(() => {
       </TokenProvider>
     </a-app>
   </a-config-provider>
-  <div ref="draggableElement" class="fixed cursor-pointer" :style="positionStyle" @mousedown="startDrag">
+  <!-- <div ref="draggableElement" class="fixed cursor-pointer" :style="positionStyle" @mousedown="startDrag">
     <img
       width="58" height="58" src="https://xiaoguanai.oss-cn-hangzhou.aliyuncs.com/xai/xiaobao.png" alt=""
       style="pointer-events: none"
     >
-  </div>
+  </div> -->
 </template>
 
 <style>
