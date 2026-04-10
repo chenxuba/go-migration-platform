@@ -1350,7 +1350,7 @@ function openBatchPlanEdit(schedule) {
   scheduleBatchPlanEditOpen.value = true
 }
 
-const isCurrentDetailOneToOne = computed(() => isOneToOneSchedule(currentDetailSchedule.value))
+const isCurrentDetailEditable = computed(() => Boolean(currentDetailSchedule.value?.id))
 
 async function handleScheduleDetailDelete() {
   const schedule = currentDetailSchedule.value
@@ -1384,7 +1384,7 @@ async function handleScheduleDetailDelete() {
 
 function handleScheduleDetailEdit() {
   const schedule = currentDetailSchedule.value
-  if (!isOneToOneSchedule(schedule))
+  if (!schedule?.id)
     return
   scheduleDetailOpen.value = false
   nextTick(() => {
@@ -1900,7 +1900,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
       v-model:open="scheduleDetailOpen"
       :detail="currentScheduleDetail"
       :deleting="deletingScheduleDetail"
-      :editable="isCurrentDetailOneToOne"
+      :editable="isCurrentDetailEditable"
       @delete="handleScheduleDetailDelete"
       @edit="handleScheduleDetailEdit"
     />

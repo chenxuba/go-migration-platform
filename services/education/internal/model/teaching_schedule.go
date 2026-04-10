@@ -58,6 +58,7 @@ type CreateGroupClassSchedulesDTO struct {
 	TeacherID              string                          `json:"teacherId"`
 	AssistantIDs           []string                        `json:"assistantIds"`
 	ClassroomID            string                          `json:"classroomId"`
+	ExcludeIDs             []string                        `json:"excludeIds,omitempty"`
 	AllowStudentConflict   bool                            `json:"allowStudentConflict,omitempty"`
 	AllowClassroomConflict bool                            `json:"allowClassroomConflict,omitempty"`
 	BatchMeta              *TeachingScheduleBatchMeta      `json:"batchMeta,omitempty"`
@@ -214,6 +215,7 @@ type TeachingScheduleBatchReplaceDTO struct {
 	BatchNo                string                          `json:"batchNo"`
 	IDs                    []string                        `json:"ids"`
 	OneToOneID             string                          `json:"oneToOneId,omitempty"`
+	GroupClassID           string                          `json:"groupClassId,omitempty"`
 	TeacherID              string                          `json:"teacherId"`
 	AssistantIDs           []string                        `json:"assistantIds"`
 	ClassroomID            string                          `json:"classroomId"`

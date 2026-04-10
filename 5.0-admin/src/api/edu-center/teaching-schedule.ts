@@ -285,6 +285,7 @@ export function validateGroupClassSchedulesApi(data: {
   teacherId?: string
   assistantIds?: string[]
   classroomId?: string
+  excludeIds?: string[]
   allowStudentConflict?: boolean
   allowClassroomConflict?: boolean
   schedules: Array<{
@@ -561,6 +562,7 @@ export function replaceTeachingScheduleBatchApi(data: {
   batchNo?: string
   ids?: string[]
   oneToOneId?: string
+  groupClassId?: string
   teacherId: string
   assistantIds?: string[]
   classroomId?: string

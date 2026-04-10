@@ -1320,7 +1320,7 @@ function onBatchPlanUpdated() {
   loadMatrix()
 }
 
-const isCurrentDetailOneToOne = computed(() => isOneToOneSchedule(currentDetailSchedule.value))
+const isCurrentDetailEditable = computed(() => Boolean(currentDetailSchedule.value?.id))
 
 async function openEventConflictDetail(event: CellSchedule) {
   if (!event?.raw?.conflict)
@@ -1377,7 +1377,7 @@ async function handleScheduleDetailDelete() {
 
 function handleScheduleDetailEdit() {
   const schedule = currentDetailSchedule.value
-  if (!isOneToOneSchedule(schedule))
+  if (!schedule?.id)
     return
   scheduleDetailOpen.value = false
   nextTick(() => {
@@ -1833,7 +1833,7 @@ const unsignedLessons = computed(() =>
       v-model:open="scheduleDetailOpen"
       :detail="currentScheduleDetail"
       :deleting="deletingScheduleDetail"
-      :editable="isCurrentDetailOneToOne"
+      :editable="isCurrentDetailEditable"
       @delete="handleScheduleDetailDelete"
       @edit="handleScheduleDetailEdit"
       @updated="onBatchPlanUpdated"

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { type BatchPlanModalPreset, inferBatchPlanPreset } from './batch-plan-preset'
+import GroupClassScheduleModal from './group-class-schedule-modal.vue'
+import { type GroupClassBatchPlanModalPreset, inferGroupClassBatchPlanPreset } from './group-class-batch-plan-preset'
 import OneToOneScheduleModal from './one-to-one-schedule-modal.vue'
 import type { TeachingScheduleItem } from '@/api/edu-center/teaching-schedule'
 import { getTeachingScheduleBatchDetailApi } from '@/api/edu-center/teaching-schedule'
@@ -23,6 +25,7 @@ const modalOpen = computed({
 
 const loading = ref(false)
 const preset = ref<BatchPlanModalPreset | null>(null)
+const groupClassPreset = ref<GroupClassBatchPlanModalPreset | null>(null)
 
 let loadSeq = 0
 
@@ -34,6 +37,7 @@ async function loadPreset() {
   const seq = ++loadSeq
   loading.value = true
   preset.value = null
+  groupClassPreset.value = null
 
   try {
     const res = await getTeachingScheduleBatchDetailApi({
@@ -44,7 +48,15 @@ async function loadPreset() {
       return
     if (res.code !== 200 || !res.result)
       throw new Error(res.message || '加载批次规则失败')
-    preset.value = inferBatchPlanPreset(res.result, current.id)
+    if (Number(res.result.classType) === 2) {
+      preset.value = inferBatchPlanPreset(res.result, current.id)
+      return
+    }
+    if (Number(res.result.classType) === 1) {
+      groupClassPreset.value = inferGroupClassBatchPlanPreset(res.result, current.id)
+      return
+    }
+    throw new Error('当前日程类型暂不支持编辑')
   }
   catch (error: any) {
     if (seq !== loadSeq)
@@ -64,6 +76,7 @@ watch(
   async () => {
     if (!modalOpen.value) {
       preset.value = null
+      groupClassPreset.value = null
       loading.value = false
       return
     }
@@ -83,6 +96,14 @@ function handleUpdated() {
     v-model:open="modalOpen"
     mode="editBatch"
     :batch-plan-preset="preset"
+    @updated="handleUpdated"
+  />
+
+  <GroupClassScheduleModal
+    v-else-if="modalOpen && groupClassPreset"
+    v-model:open="modalOpen"
+    mode="editBatch"
+    :batch-plan-preset="groupClassPreset"
     @updated="handleUpdated"
   />
 

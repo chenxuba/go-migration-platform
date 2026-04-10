@@ -10,12 +10,13 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, nextTick, ref, watch } from 'vue'
+import type { GroupClassBatchPlanModalPreset } from './group-class-batch-plan-preset'
 import GroupClassScheduleConflictWorkbenchModal from './group-class-schedule-conflict-workbench-modal.vue'
 import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
 import { getInstPeriodConfigApi } from '@/api/common/config'
 import { type GroupClassDetailVO, type GroupClassRow, listGroupClassStudentsByClassIdsApi, pageGroupClassesApi, getGroupClassDetailApi } from '@/api/edu-center/group-class'
 import type { TeachingScheduleValidationResult } from '@/api/edu-center/teaching-schedule'
-import { checkGroupClassAssistantScheduleAvailabilityApi, createGroupClassSchedulesApi, validateGroupClassSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { checkGroupClassAssistantScheduleAvailabilityApi, createGroupClassSchedulesApi, replaceTeachingScheduleBatchApi, validateGroupClassSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { useUserStore } from '@/stores/user'
@@ -51,6 +52,10 @@ interface PreviewItem {
   classroomId?: string
   allowStudentConflict?: boolean
   tone: PreviewTone
+}
+
+type BatchCreatePlan = Omit<PreviewItem, 'tone'> & {
+  tone?: PreviewTone
 }
 
 interface SummaryItem {
@@ -128,9 +133,14 @@ interface GroupClassRecord {
   detailLoaded?: boolean
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
-}>()
+  mode?: 'create' | 'editBatch'
+  batchPlanPreset?: GroupClassBatchPlanModalPreset | null
+}>(), {
+  mode: 'create',
+  batchPlanPreset: null,
+})
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
@@ -141,6 +151,8 @@ const modalOpen = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
 })
+
+const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
 
 const weekDayOptions = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const weekdayToNumber: Record<string, number> = {
@@ -298,6 +310,36 @@ function scheduleSlotKeysEqual(a: string[], b: string[]) {
   return true
 }
 
+function findPresetGroupAndSlotKeys(timeBlocks: GroupClassBatchPlanModalPreset['timeBlocks']) {
+  const normalized = Array.isArray(timeBlocks)
+    ? timeBlocks.map(item => ({
+        startTime: String(item?.startTime || '').trim().slice(0, 5),
+        endTime: String(item?.endTime || '').trim().slice(0, 5),
+      })).filter(item => item.startTime && item.endTime)
+    : []
+  if (!normalized.length)
+    return { group: currentGroup.value, slotKeys: [] as string[] }
+
+  for (const opt of groupOptions.value) {
+    const key = opt.key as PeriodGroupKey
+    const options = slotsForGroupKey(key)
+    const slotKeys: string[] = []
+    let matched = true
+    for (const block of normalized) {
+      const slot = options.find(item => String(item.start || '').slice(0, 5) === block.startTime && String(item.end || '').slice(0, 5) === block.endTime)
+      if (!slot) {
+        matched = false
+        break
+      }
+      slotKeys.push(`period-${slot.index}`)
+    }
+    if (matched)
+      return { group: key, slotKeys }
+  }
+
+  return { group: currentGroup.value, slotKeys: [] as string[] }
+}
+
 function scheduleAvailabilityBadge(status: 'free' | 'busy' | 'unknown', statusText: string): AvailabilityBadgeView {
   return { status, statusText }
 }
@@ -417,6 +459,7 @@ let slotAvailabilitySeq = 0
 let slotAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
 let assistantAvailabilitySeq = 0
 let assistantAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
+let applyingBatchPlanPreset = false
 
 const selectedGroupClass = computed(() =>
   groupClassRecords.value.find(item => item.id === selectedGroupClassId.value),
@@ -424,6 +467,12 @@ const selectedGroupClass = computed(() =>
 
 const selectedAssistantValues = computed<Array<string | number>>(() =>
   Array.isArray(selectedAssistant.value) ? selectedAssistant.value : [],
+)
+
+const batchPresetSchedules = computed(() =>
+  Array.isArray(props.batchPlanPreset?.detail?.schedules)
+    ? props.batchPlanPreset.detail.schedules
+    : [],
 )
 
 const schoolTimeSlotOptions = computed<SchoolTimeSlot[]>(() => {
@@ -462,6 +511,16 @@ function isPeriodGroupChoiceDisabled(key: PeriodGroupKey): boolean {
 
 function isAssistantAllowedInCurrentGroup(assistantIdStr: string) {
   return isTeacherAllowedInPeriodGroup(assistantIdStr, periodGroupIndexForKey(currentGroup.value))
+}
+
+function isPresetAssistantId(id: unknown) {
+  if (!isBatchPlanEditMode.value)
+    return false
+  const target = String(id || '').trim()
+  if (!target)
+    return false
+  return Array.isArray(props.batchPlanPreset?.assistantIds)
+    && props.batchPlanPreset.assistantIds.some(item => String(item || '').trim() === target)
 }
 
 const activeTimeBlocks = computed<TimeBlock[]>(() => {
@@ -506,10 +565,34 @@ const teacherPresetStaff = computed<StaffOptionItem[]>(() => {
     added.add(key)
     records.push({ id: key, name: label, nickName: label })
   }
+  batchPresetSchedules.value.forEach(item => append(item.teacherId, item.teacherName))
   const current = selectedGroupClass.value
   current?.teacherIds.forEach((id, index) => append(id, current.teacherNames[index]))
   append(current?.defaultTeacherId, current?.defaultTeacherName)
   append(selectedTeacherDisplay.value?.id, displayStaffName(selectedTeacherDisplay.value))
+  return records
+})
+
+const assistantPresetStaff = computed<StaffOptionItem[]>(() => {
+  const records: StaffOptionItem[] = []
+  const added = new Set<string>()
+  const append = (id: unknown, name?: string) => {
+    if (!isValidStaffId(id))
+      return
+    const label = String(name || '').trim()
+    if (!label)
+      return
+    const key = String(id).trim()
+    if (added.has(key))
+      return
+    added.add(key)
+    records.push({ id: key, name: label, nickName: label })
+  }
+  batchPresetSchedules.value.forEach((item) => {
+    const ids = Array.isArray(item.assistantIds) ? item.assistantIds : []
+    const names = Array.isArray(item.assistantNames) ? item.assistantNames : []
+    ids.forEach((id, index) => append(id, names[index]))
+  })
   return records
 })
 
@@ -542,11 +625,11 @@ const teacherSelectOptions = computed(() => {
 
 const assistantSelectStaffs = computed<StaffOptionItem[]>(() => {
   const merged = new Map<string, StaffOptionItem>()
-  const append = (item?: StaffOptionItem | null) => {
+  const append = (item?: StaffOptionItem | null, force = false) => {
     if (!isValidStaffId(item?.id))
       return
     const id = String(item.id).trim()
-    if (!isAssistantAllowedInCurrentGroup(id))
+    if (!force && !isAssistantAllowedInCurrentGroup(id))
       return
     if (!merged.has(id)) {
       merged.set(id, {
@@ -559,7 +642,8 @@ const assistantSelectStaffs = computed<StaffOptionItem[]>(() => {
       })
     }
   }
-  selectedAssistantDisplays.value.forEach(item => append(item))
+  selectedAssistantDisplays.value.forEach(item => append(item, true))
+  assistantPresetStaff.value.forEach(item => append(item, isPresetAssistantId(item.id)))
   assistantWorkbenchStaffList.value.forEach(item => append(item))
   return [...merged.values()]
 })
@@ -608,8 +692,8 @@ const classroomOptions = computed(() => {
     classroomSet.set(key, { value: key, label })
   }
   classroomList.value.forEach(item => append(item.id, item.name))
+  batchPresetSchedules.value.forEach(item => append(item.classroomId, item.classroomName))
   append(selectedGroupClass.value?.classroomId, selectedGroupClass.value?.classroomName)
-  append(selectedClassroom.value, selectedGroupClass.value?.classroomName)
   return [...classroomSet.values()]
 })
 
@@ -958,33 +1042,45 @@ const previewHelperText = computed(() => {
   if (previewValidating.value)
     return '正在校验班级、老师、助教、学员与教室冲突，请稍候。'
   if (previewHasConflict.value)
-    return previewValidationMessage.value || '当前排课方案存在冲突，请返回修改后再尝试创建。'
+    return previewValidationMessage.value || (isBatchPlanEditMode.value ? '当前批次规则存在冲突，请返回修改后再尝试保存。' : '当前排课方案存在冲突，请返回修改后再尝试创建。')
   if (!estimatedCount.value && excludedHolidayCount.value > 0)
     return '当前日期都命中节假日且已被过滤，请调整日期或关闭节假日过滤。'
   if (!estimatedCount.value)
     return '请先选择有效的排课日期。'
   if (excludedHolidayCount.value > 0)
-    return `已根据节假日规则过滤 ${excludedHolidayCount.value} 节，剩余 ${estimatedCount.value} 节待创建。`
-  return '已完成预检，可确认创建。正式提交时服务端仍会再校验一次。'
+    return `已根据节假日规则过滤 ${excludedHolidayCount.value} 节，剩余 ${estimatedCount.value} 节待${isBatchPlanEditMode.value ? '保存' : '创建'}。`
+  return `已完成预检，可确认${isBatchPlanEditMode.value ? '保存' : '创建'}。正式提交时服务端仍会再校验一次。`
 })
 
-const modalTitleText = computed(() => '创建班级日程')
-const modalSubtitleText = computed(() => '参考班级基础信息快速批量排课，先把规则配置清楚，再确认创建。')
-const summaryCardTitleText = computed(() => '当前班级')
-const summaryCardDescText = computed(() => '来自当前班级档案的基础信息与创建摘要。')
-const overviewCardTitleText = computed(() => '创建摘要')
-const formCardDescText = computed(() => '按顺序完成排课方式、日期规则和时间资源。')
-const reviewTitleText = computed(() => '预计排课清单')
-const reviewSubtitleText = computed(() => '先确认本次将创建的班课日程，再执行批量创建。')
-const selectedRecordPlaceholderText = computed(() => groupClassLoading.value ? '正在加载班级数据...' : '请选择班级')
+const modalTitleText = computed(() => isBatchPlanEditMode.value ? '编辑班级日程' : '创建班级日程')
+const modalSubtitleText = computed(() =>
+  isBatchPlanEditMode.value
+    ? '回显当前班课批次的生成条件，调整后会整体替换这批日程。'
+    : '参考班级基础信息快速批量排课，先把规则配置清楚，再确认创建。',
+)
+const summaryCardTitleText = computed(() => isBatchPlanEditMode.value ? '当前批次' : '当前班级')
+const summaryCardDescText = computed(() => isBatchPlanEditMode.value ? '来自当前批次的基础信息与规则摘要。' : '来自当前班级档案的基础信息与创建摘要。')
+const overviewCardTitleText = computed(() => isBatchPlanEditMode.value ? '规则摘要' : '创建摘要')
+const formCardDescText = computed(() => isBatchPlanEditMode.value ? '回显当前批次的生成条件，调整后整体替换本批次。' : '按顺序完成排课方式、日期规则和时间资源。')
+const reviewTitleText = computed(() => isBatchPlanEditMode.value ? '预计替换清单' : '预计排课清单')
+const reviewSubtitleText = computed(() => isBatchPlanEditMode.value ? '先确认本次将替换出的班课日程，再执行整体保存。' : '先确认本次将创建的班课日程，再执行批量创建。')
+const selectedRecordPlaceholderText = computed(() => {
+  if (groupClassLoading.value)
+    return '正在加载班级数据...'
+  return isBatchPlanEditMode.value ? '当前批次对应的班级' : '请选择班级'
+})
 
 const footerTipText = computed(() => {
   if (selectedGroupClass.value?.remark)
     return `班级备注：${selectedGroupClass.value.remark}`
-  return '创建后仍可在课表中继续调整老师、教室和班级学员。'
+  return isBatchPlanEditMode.value
+    ? '保存后会整体替换当前批次；原批次日程会被撤销，新批次会按当前规则重建。'
+    : '创建后仍可在课表中继续调整老师、教室和班级学员。'
 })
 
 const actionButtonText = computed(() => {
+  if (isBatchPlanEditMode.value)
+    return estimatedCount.value > 0 ? `保存并替换 ${estimatedCount.value} 节` : '保存班课规则'
   if (schedulingMode.value === 'free')
     return estimatedCount.value > 0 ? '创建单次日程' : '创建日程'
   return estimatedCount.value > 0 ? `批量创建 ${estimatedCount.value} 节` : '批量创建日程'
@@ -1189,7 +1285,9 @@ function buildBatchMetaPayload() {
 }
 
 function buildScheduleCreatePayload(options: {
-  plans?: PreviewItem[]
+  assistantIds?: string[]
+  excludeIds?: string[]
+  plans?: BatchCreatePlan[]
 } = {}) {
   const plans = Array.isArray(options.plans) && options.plans.length ? options.plans : previewPlans.value
   const normalizedPlans = plans.map((item) => ({
@@ -1207,8 +1305,13 @@ function buildScheduleCreatePayload(options: {
   return {
     groupClassId: String(selectedGroupClass.value?.id || ''),
     teacherId: topTeacherId,
-    assistantIds: unionAssistantIds,
+    assistantIds: Array.isArray(options.assistantIds)
+      ? options.assistantIds.map(id => String(id)).filter(Boolean)
+      : unionAssistantIds,
     classroomId: topClassroomId,
+    excludeIds: Array.isArray(options.excludeIds)
+      ? options.excludeIds.map(id => String(id)).filter(Boolean)
+      : undefined,
     batchMeta: buildBatchMetaPayload(),
     allowStudentConflict: normalizedPlans.some(item => item.allowStudentConflict === true),
     schedules: normalizedPlans,
@@ -1223,7 +1326,9 @@ async function validatePreviewSchedules() {
   previewValidationMessage.value = ''
   previewValidationResult.value = null
   try {
-    const res = await validateGroupClassSchedulesApi(buildScheduleCreatePayload())
+    const res = await validateGroupClassSchedulesApi(buildScheduleCreatePayload({
+      excludeIds: isBatchPlanEditMode.value ? props.batchPlanPreset?.scheduleIds : undefined,
+    }))
     if (res.code !== 200 || !res.result) {
       previewHasConflict.value = true
       previewValidationMessage.value = res.message || '预检失败，请稍后重试。'
@@ -1257,7 +1362,8 @@ function closePreviewModal() {
 }
 
 async function confirmBatchCreate(options: {
-  plans?: PreviewItem[]
+  assistantIds?: string[]
+  plans?: BatchCreatePlan[]
 } = {}) {
   if (!selectedGroupClass.value?.id)
     return
@@ -1270,15 +1376,27 @@ async function confirmBatchCreate(options: {
     creatingSchedules.value = true
   try {
     const payload = buildScheduleCreatePayload(options)
-    const res = await createGroupClassSchedulesApi(payload)
+    const res = isBatchPlanEditMode.value
+      ? await replaceTeachingScheduleBatchApi({
+        batchNo: props.batchPlanPreset?.batchNo,
+        ids: props.batchPlanPreset?.scheduleIds,
+        groupClassId: String(selectedGroupClass.value?.id || ''),
+        ...payload,
+      })
+      : await createGroupClassSchedulesApi(payload)
     if (res.code !== 200)
-      throw new Error(res.message || '创建班课日程失败')
+      throw new Error(res.message || (isBatchPlanEditMode.value ? '保存班课规则失败' : '创建班课日程失败'))
     const count = res.result?.count || (options.plans?.length || previewPlans.value.length)
-    messageService.success(
-      isSoftConflictCreate
-        ? `已创建 ${count} 节班课日程，并保留学员冲突标记`
-        : `已创建 ${count} 节班课日程`,
-    )
+    if (isBatchPlanEditMode.value) {
+      messageService.success(`已按新规则替换 ${count} 节班课日程`)
+    }
+    else {
+      messageService.success(
+        isSoftConflictCreate
+          ? `已创建 ${count} 节班课日程，并保留学员冲突标记`
+          : `已创建 ${count} 节班课日程`,
+      )
+    }
     emitter.emit(EVENTS.REFRESH_DATA)
     emit('updated')
     previewModalOpen.value = false
@@ -1288,7 +1406,7 @@ async function confirmBatchCreate(options: {
   catch (error: any) {
     console.error('create group class schedules failed', error)
     previewHasConflict.value = true
-    previewValidationMessage.value = error?.response?.data?.message || error?.message || '创建班课日程失败'
+    previewValidationMessage.value = error?.response?.data?.message || error?.message || (isBatchPlanEditMode.value ? '保存班课规则失败' : '创建班课日程失败')
     if (previewValidationResult.value)
       conflictModalOpen.value = true
     messageService.error(previewValidationMessage.value)
@@ -1299,8 +1417,9 @@ async function confirmBatchCreate(options: {
   }
 }
 
-function handleConflictWorkbenchSubmit(payload: { plans: PreviewItem[] }) {
+function handleConflictWorkbenchSubmit(payload: { plans: BatchCreatePlan[], assistantIds?: string[] }) {
   void confirmBatchCreate({
+    assistantIds: payload.assistantIds,
     plans: payload.plans,
   })
 }
@@ -1315,6 +1434,54 @@ function handleAssistantChange(values?: Array<string | number>) {
   selectedAssistantDisplays.value = nextValues.map((id) => {
     return assistantSelectStaffs.value.find(item => sameStaffId(item.id, id))
   }).filter(Boolean) as StaffOptionItem[]
+}
+
+async function applyBatchPlanPreset(preset?: GroupClassBatchPlanModalPreset | null) {
+  if (!preset)
+    return
+
+  const groupClassId = String(preset.groupClassId || '').trim()
+  if (!groupClassId)
+    return
+
+  applyingBatchPlanPreset = true
+  try {
+    selectedGroupClassId.value = groupClassId
+    await ensureSelectedGroupClassLoaded(groupClassId)
+    await nextTick()
+
+    schedulingMode.value = preset.schedulingMode as SchedulingMode
+    repeatRule.value = preset.repeatRule as RepeatRule
+    holidayPolicy.value = preset.holidayPolicy
+    selectedWeekdays.value = preset.selectedWeekdays.length ? [...preset.selectedWeekdays] : ['周一']
+    scheduleStartDate.value = dayjs(preset.scheduleStartDate || dayjs()).startOf('day')
+    freeSelectedDates.value = (preset.freeSelectedDates.length ? preset.freeSelectedDates : [preset.scheduleStartDate || dayjs().format('YYYY-MM-DD')])
+      .map(item => dayjs(item).startOf('day'))
+      .filter(item => item.isValid())
+    if (!freeSelectedDates.value.length)
+      freeSelectedDates.value = [dayjs().startOf('day')]
+    freeCalendarPanelDate.value = freeSelectedDates.value[0].startOf('month')
+    plannedClassCount.value = Math.max(1, Number(preset.plannedClassCount || 1))
+
+    const teacherId = String(preset.teacherId || '').trim()
+    selectedTeacher.value = teacherId || undefined
+    selectedClassroom.value = String(preset.classroomId || '').trim() || undefined
+
+    const matchedSlots = findPresetGroupAndSlotKeys(preset.timeBlocks)
+    currentGroup.value = matchedSlots.group
+    await nextTick()
+    selectedSchoolTimeSlots.value = matchedSlots.slotKeys
+    selectedTeacherDisplay.value = resolveStaffDisplayById(teacherId)
+
+    const assistantIds = Array.isArray(preset.assistantIds)
+      ? preset.assistantIds.map(item => String(item).trim()).filter(Boolean)
+      : []
+    selectedAssistant.value = assistantIds.length ? assistantIds : undefined
+    handleAssistantChange(assistantIds)
+  }
+  finally {
+    applyingBatchPlanPreset = false
+  }
 }
 
 function toggleFreeScheduleDate(date: Dayjs) {
@@ -1401,6 +1568,7 @@ async function fetchAssistantAvailability() {
     const res = await checkGroupClassAssistantScheduleAvailabilityApi({
       groupClassId,
       assistantIds,
+      excludeIds: isBatchPlanEditMode.value ? props.batchPlanPreset?.scheduleIds : undefined,
       schedules,
     })
     if (seq !== assistantAvailabilitySeq)
@@ -1476,6 +1644,7 @@ async function fetchSlotAvailability() {
       teacherId,
       assistantIds: selectedAssistantValues.value.map(id => String(id)),
       classroomId: normalizedSelectedClassroomId.value || undefined,
+      excludeIds: isBatchPlanEditMode.value ? props.batchPlanPreset?.scheduleIds : undefined,
       schedules,
     })
     if (seq !== slotAvailabilitySeq)
@@ -1551,6 +1720,8 @@ watch(
 watch(
   eligiblePeriodGroupKeys,
   () => {
+    if (applyingBatchPlanPreset)
+      return
     const eligible = eligiblePeriodGroupKeys.value
     if (eligible.length === 1) {
       currentGroup.value = eligible[0]
@@ -1582,6 +1753,11 @@ watch(
   () => selectedGroupClassId.value,
   async (value) => {
     const currentSeq = ++selectedGroupClassSeq
+    const normalizedValue = String(value || '').trim()
+    const preservePresetSelection = isBatchPlanEditMode.value
+      && !!props.batchPlanPreset
+      && normalizedValue !== ''
+      && normalizedValue === String(props.batchPlanPreset.groupClassId || '').trim()
     if (!value) {
       selectedTeacher.value = undefined
       selectedTeacherDisplay.value = null
@@ -1594,11 +1770,20 @@ watch(
       previewValidationMessage.value = ''
       slotAvailabilityMap.value = {}
       assistantAvailabilityMap.value = {}
+      if (preservePresetSelection)
+        return
       return
     }
     try {
-      const current = await ensureSelectedGroupClassLoaded(String(value))
+      const current = await ensureSelectedGroupClassLoaded(normalizedValue)
       if (currentSeq !== selectedGroupClassSeq || !current)
+        return
+      previewValidationResult.value = null
+      previewHasConflict.value = false
+      previewValidationMessage.value = ''
+      slotAvailabilityMap.value = {}
+      assistantAvailabilityMap.value = {}
+      if (preservePresetSelection)
         return
       const defaultTeacherId = isValidStaffId(current.defaultTeacherId)
         ? current.defaultTeacherId
@@ -1611,11 +1796,6 @@ watch(
       selectedAssistant.value = undefined
       selectedAssistantDisplays.value = []
       selectedSchoolTimeSlots.value = []
-      previewValidationResult.value = null
-      previewHasConflict.value = false
-      previewValidationMessage.value = ''
-      slotAvailabilityMap.value = {}
-      assistantAvailabilityMap.value = {}
       scheduleStartDate.value = dayjs().startOf('day')
       freeSelectedDates.value = [dayjs().startOf('day')]
       freeCalendarPanelDate.value = freeSelectedDates.value[0].startOf('month')
@@ -1645,8 +1825,10 @@ watch(selectedTeacher, (value) => {
 watch(
   () => [currentGroup.value, assistantSelectStaffs.value.map(item => String(item.id)).join(',')].join('|'),
   () => {
+    if (applyingBatchPlanPreset)
+      return
     const currentAssistantValues = selectedAssistantValues.value
-    const next = currentAssistantValues.filter(id => isAssistantAllowedInCurrentGroup(String(id)))
+    const next = currentAssistantValues.filter(id => isAssistantAllowedInCurrentGroup(String(id)) || isPresetAssistantId(id))
     if (next.length !== currentAssistantValues.length) {
       selectedAssistant.value = next.length ? next : undefined
       handleAssistantChange(next)
@@ -1710,6 +1892,8 @@ watch(modalOpen, async (value) => {
       fetchWorkbenchTeacherList(),
     ])
     await loadEffectivePeriodConfig()
+    if (isBatchPlanEditMode.value && props.batchPlanPreset)
+      await applyBatchPlanPreset(props.batchPlanPreset)
     await nextTick()
     scrollPlannerShellToTop()
     requestAnimationFrame(() => scrollPlannerShellToTop())
@@ -1721,6 +1905,15 @@ watch(modalOpen, async (value) => {
     assistantAvailabilityMap.value = {}
   }
 }, { immediate: true })
+
+watch(
+  () => [modalOpen.value, isBatchPlanEditMode.value, props.batchPlanPreset] as const,
+  async ([open, editMode, preset]) => {
+    if (!open || !editMode || !preset || !groupClassRecords.value.length)
+      return
+    await applyBatchPlanPreset(preset)
+  },
+)
 </script>
 
 <template>
@@ -1800,7 +1993,7 @@ watch(modalOpen, async (value) => {
                 popup-class-name="planner-record-select-dropdown"
                 allow-clear
                 :loading="groupClassLoading || groupClassDetailLoading"
-                :disabled="groupClassLoading || !groupClassSelectOptions.length"
+                :disabled="isBatchPlanEditMode || groupClassLoading || !groupClassSelectOptions.length"
                 :not-found-content="groupClassLoading ? '正在加载班级数据...' : '暂无班级数据'"
                 :placeholder="selectedRecordPlaceholderText"
                 class="planner-control planner-control--record"
@@ -1893,6 +2086,14 @@ watch(modalOpen, async (value) => {
 
               <div v-if="selectedGroupClass?.remark" class="planner-note">
                 {{ selectedGroupClass.remark }}
+              </div>
+
+              <div
+                v-for="(warning, index) in (isBatchPlanEditMode ? props.batchPlanPreset?.warnings || [] : [])"
+                :key="`group-preset-warning-${index}`"
+                class="planner-alert planner-alert--soft"
+              >
+                {{ warning }}
               </div>
 
               <div v-if="emptyStudentHint" class="planner-alert planner-alert--soft">

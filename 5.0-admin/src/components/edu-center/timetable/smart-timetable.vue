@@ -3517,7 +3517,7 @@ function buildBatchPlanScheduleFromDetail(detail) {
 
 function openScheduledLessonBatchPlanEdit() {
   const detail = scheduledLessonDetailState.value
-  if (!(detail.courseType === 1 && detail.isMain !== false))
+  if (detail.isMain === false)
     return
   const schedule = buildBatchPlanScheduleFromDetail(detail)
   if (!schedule) {
@@ -5059,7 +5059,7 @@ watch(dragConflictDetailOpen, (open) => {
       v-model:open="scheduledLessonDetailOpen"
       :detail="scheduledLessonDetailState"
       :deleting="deletingScheduledLesson"
-      :editable="scheduledLessonDetailState.courseType === 1 && scheduledLessonDetailState.isMain !== false"
+      :editable="scheduledLessonDetailState.isMain !== false"
       @delete="deleteScheduledLessonFromDetail"
       @edit="openScheduledLessonBatchPlanEdit"
     />
