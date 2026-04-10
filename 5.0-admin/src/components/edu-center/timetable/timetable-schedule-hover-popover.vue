@@ -48,10 +48,14 @@ const instance = getCurrentInstance()
 const popoverInnerStyle = {
   padding: '0px',
 }
+const popoverSafeWidth = 376
+const popoverSafeHeight = 332
 const innerOpen = ref(false)
 const detailLoading = ref(false)
 const detailData = ref<TeachingScheduleDetail | null>(null)
+const popoverPlacement = ref<'rightTop' | 'rightBottom' | 'leftTop' | 'leftBottom'>('rightTop')
 let detailLoadSeq = 0
+let lastTriggerNode: HTMLElement | null = null
 const isOpenControlled = computed(() => {
   const vnodeProps = instance?.vnode.props
   return Boolean(vnodeProps && Object.prototype.hasOwnProperty.call(vnodeProps, 'open'))
@@ -174,7 +178,40 @@ function closePopover() {
   emit('openChange', false)
 }
 
+function resolvePopoverPlacement(triggerNode = lastTriggerNode) {
+  if (typeof window === 'undefined' || !triggerNode)
+    return
+
+  const rect = triggerNode.getBoundingClientRect()
+  const spaceRight = window.innerWidth - rect.right
+  const spaceLeft = rect.left
+  const placeOnRight = spaceRight >= popoverSafeWidth || spaceRight >= spaceLeft
+
+  const topAlignedSpace = window.innerHeight - rect.top
+  const bottomAlignedSpace = rect.bottom
+  const alignToTop = topAlignedSpace >= popoverSafeHeight || topAlignedSpace >= bottomAlignedSpace
+
+  if (placeOnRight)
+    popoverPlacement.value = alignToTop ? 'rightTop' : 'rightBottom'
+  else
+    popoverPlacement.value = alignToTop ? 'leftTop' : 'leftBottom'
+}
+
+function resolvePopoverContainer(triggerNode?: HTMLElement) {
+  if (triggerNode instanceof HTMLElement) {
+    lastTriggerNode = triggerNode
+    resolvePopoverPlacement(triggerNode)
+    return (triggerNode.closest('.schedule-board') as HTMLElement | null)
+      || (triggerNode.closest('.schedule-card') as HTMLElement | null)
+      || document.body
+  }
+  return document.body
+}
+
 function handleOpenChange(value: boolean) {
+  if (value && typeof window !== 'undefined') {
+    window.requestAnimationFrame(() => resolvePopoverPlacement())
+  }
   if (!isOpenControlled.value)
     innerOpen.value = value
   emit('openChange', value)
@@ -206,9 +243,10 @@ watch(
 <template>
   <a-popover
     trigger="hover"
-    placement="rightTop"
+    :placement="popoverPlacement"
     overlay-class-name="st-schedule-cell-popover"
     :overlay-inner-style="popoverInnerStyle"
+    :get-popup-container="resolvePopoverContainer"
     :mouse-enter-delay="0.12"
     :mouse-leave-delay="0.06"
     v-bind="popoverOpenProps"

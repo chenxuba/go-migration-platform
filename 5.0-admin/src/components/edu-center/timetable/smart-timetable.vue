@@ -3722,7 +3722,7 @@ function emptyLessonStatusText(lesson) {
   if (!hasActiveScheduleTarget())
     return ''
   if (currentModel.value === '2' && classId.value && classConflictLoading.value)
-    return '空闲时段(检测中...)'
+    return '空闲时段(可排)'
   const conflictTypes = uniqueConflictTypes(lesson?.conflictReason?.conflictTypes || [])
   if (!lesson?.conflict)
     return '空闲时段(可排)'

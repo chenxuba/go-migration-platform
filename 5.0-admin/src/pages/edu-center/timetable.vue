@@ -73,7 +73,7 @@ function handleClearCurrentWeek() {
   <div class="home">
     <div class="tabs">
       <a-tabs
-        v-model:active-key="activeKey" animated :tab-bar-style="{
+        v-model:active-key="activeKey" :animated="false" :tab-bar-style="{
           'border-bottom-left-radius': '0px',
           'border-bottom-right-radius': '0px',
         }"
