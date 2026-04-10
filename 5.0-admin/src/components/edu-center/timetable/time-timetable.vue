@@ -387,6 +387,7 @@ const locatingConflictItemKey = ref('')
 const focusedScheduleId = ref('')
 const headerScrollRef = ref(null)
 const boardScrollRef = ref(null)
+const scheduleViewportWidth = ref(0)
 let syncingScroll = false
 let scheduleLoadSeq = 0
 let focusedScheduleTimer = null
@@ -396,7 +397,7 @@ let pendingConflictJump = null
 const timeHeaderTimeColWidth = 84
 const floatingDatePillWidth = 156
 const floatingDateStyles = ref({})
-let headerDatesResizeObserver = null
+let layoutResizeObserver = null
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const timelineStart = 8 * 60
@@ -473,9 +474,9 @@ onUnmounted(() => {
     focusedScheduleTimer = null
   }
   emitter.off(EVENTS.REFRESH_DATA, loadSchedules)
-  if (headerDatesResizeObserver) {
-    headerDatesResizeObserver.disconnect()
-    headerDatesResizeObserver = null
+  if (layoutResizeObserver) {
+    layoutResizeObserver.disconnect()
+    layoutResizeObserver = null
   }
 })
 
@@ -688,6 +689,7 @@ async function loadSchedules() {
     if (seq === scheduleLoadSeq) {
       scheduleLoading.value = false
       await nextTick()
+      updateScheduleViewportWidth()
       updateFloatingDatePositions(boardScrollRef.value?.scrollLeft ?? headerScrollRef.value?.scrollLeft ?? 0)
       await flushPendingConflictJump()
     }
@@ -872,7 +874,13 @@ function computeOverlapPeak(items = []) {
   return peak
 }
 
-const dateColumnWidths = computed(() => {
+function updateScheduleViewportWidth() {
+  const headerWidth = Number(headerScrollRef.value?.clientWidth || 0)
+  const boardWidth = Number(boardScrollRef.value?.clientWidth || 0)
+  scheduleViewportWidth.value = Math.max(headerWidth, boardWidth, 0)
+}
+
+const intrinsicDateColumnWidths = computed(() => {
   const map = new Map()
   headerSummaries.value.forEach((item) => {
     const list = mockSchedules.value
@@ -887,6 +895,41 @@ const dateColumnWidths = computed(() => {
   })
   return map
 })
+
+const dateColumnWidths = computed(() => {
+  const map = new Map()
+  const items = headerSummaries.value
+  if (!items.length)
+    return map
+
+  const entries = items.map(item => ({
+    key: item.key,
+    width: intrinsicDateColumnWidths.value.get(item.key) || baseDateColumnWidth,
+  }))
+  const minGridWidth = timeHeaderTimeColWidth + entries.reduce((sum, item) => sum + item.width, 0)
+  const extraWidthPerColumn = scheduleViewportWidth.value > minGridWidth
+    ? (scheduleViewportWidth.value - minGridWidth) / entries.length
+    : 0
+
+  entries.forEach((item) => {
+    map.set(item.key, item.width + extraWidthPerColumn)
+  })
+
+  return map
+})
+
+const totalGridWidth = computed(() =>
+  timeHeaderTimeColWidth
+  + headerSummaries.value.reduce(
+    (sum, item) => sum + (dateColumnWidths.value.get(item.key) || baseDateColumnWidth),
+    0,
+  ),
+)
+
+const gridTrackStyle = computed(() => ({
+  width: '100%',
+  minWidth: `${totalGridWidth.value}px`,
+}))
 
 function getDayColumnLeftAndWidth(dayIndex) {
   const items = headerSummaries.value
@@ -981,17 +1024,14 @@ function floatingPillStyle(dateKey) {
 }
 
 const gridTemplateStyle = computed(() => {
-  const isDaySingleColumn
-    = currentTime.value === 'day' && headerSummaries.value.length === 1
   const dateCols = headerSummaries.value.map((item) => {
     const w = dateColumnWidths.value.get(item.key) || baseDateColumnWidth
-    // 日视图仅一列：用 1fr 撑满剩余宽度，避免右侧大片留白
-    return isDaySingleColumn ? `minmax(${w}px, 1fr)` : `${w}px`
+    return `${w}px`
   })
   return {
     gridTemplateColumns: `84px ${dateCols.join(' ')}`,
-    width: isDaySingleColumn ? '100%' : 'max-content',
-    minWidth: '100%',
+    width: '100%',
+    minWidth: `${totalGridWidth.value}px`,
   }
 })
 
@@ -1425,18 +1465,34 @@ function handleBoardScroll(event) {
 }
 
 watch(
-  () => headerScrollRef.value,
-  (el) => {
-    if (headerDatesResizeObserver) {
-      headerDatesResizeObserver.disconnect()
-      headerDatesResizeObserver = null
+  [() => headerScrollRef.value, () => boardScrollRef.value],
+  ([headerEl, boardEl]) => {
+    if (layoutResizeObserver) {
+      layoutResizeObserver.disconnect()
+      layoutResizeObserver = null
     }
-    if (!el || typeof ResizeObserver === 'undefined')
+
+    updateScheduleViewportWidth()
+    if (typeof ResizeObserver === 'undefined') {
+      nextTick(() => updateFloatingDatePositions())
       return
-    headerDatesResizeObserver = new ResizeObserver(() => updateFloatingDatePositions())
-    headerDatesResizeObserver.observe(el)
-    nextTick(() => updateFloatingDatePositions())
+    }
+
+    layoutResizeObserver = new ResizeObserver(() => {
+      updateScheduleViewportWidth()
+      updateFloatingDatePositions()
+    })
+    if (headerEl)
+      layoutResizeObserver.observe(headerEl)
+    if (boardEl && boardEl !== headerEl)
+      layoutResizeObserver.observe(boardEl)
+
+    nextTick(() => {
+      updateScheduleViewportWidth()
+      updateFloatingDatePositions()
+    })
   },
+  { immediate: true },
 )
 
 watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
@@ -1626,7 +1682,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
               class="schedule-header-scroll"
               @scroll="handleHeaderScroll"
             >
-              <div class="schedule-header-track">
+              <div class="schedule-header-track" :style="gridTrackStyle">
                 <div class="schedule-floating-date-layer">
                   <div
                     v-for="item in headerSummaries"
