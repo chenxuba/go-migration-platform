@@ -4,6 +4,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { computed, onMounted, ref, watch } from 'vue'
 import { getStudentTeachingRecordPagedListApi, type StudentTeachingRecordItem } from '@/api/edu-center/class-record'
 import { useTableColumns } from '@/composables/useTableColumns'
+import { useStudentStore } from '@/stores/student'
 
 const monthStart = dayjs().startOf('month')
 const today = dayjs()
@@ -17,6 +18,7 @@ const scheduleTypeOptions = [
 
 const loading = ref(false)
 const openClassRecordDrawer = ref(false)
+const openStudentDrawer = ref(false)
 const dataSource = ref<StudentTeachingRecordItem[]>([])
 const filterDateRange = ref<[Dayjs, Dayjs]>([monthStart, today])
 const filterScheduleTypes = ref<string[]>([])
@@ -31,9 +33,18 @@ const pagination = ref({
   pageSize: 50,
   total: 0,
 })
+const studentStore = useStudentStore()
 
 function handleSeeClassRecord() {
   openClassRecordDrawer.value = true
+}
+
+function handleViewStudent(studentId?: string) {
+  const id = String(studentId || '').trim()
+  if (!id)
+    return
+  studentStore.setStudentId(id)
+  openStudentDrawer.value = true
 }
 
 const allColumns = ref<any[]>([
@@ -460,7 +471,7 @@ onMounted(() => {
                 </div>
               </template>
               <template v-if="column.key === 'name'">
-                <div class="flex">
+                <div class="flex student-name-cell" @click="handleViewStudent(record.studentId)">
                   <img
                     width="40" height="40" class="mr-2" style="border-radius: 100%;"
                     :src="record.avatar || 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png?x-oss-process=image/resize,w_120'"
@@ -542,6 +553,7 @@ onMounted(() => {
       </div>
     </div>
     <class-record-details v-model:open="openClassRecordDrawer" />
+    <student-info-drawer v-model:open="openStudentDrawer" />
   </div>
 </template>
 
@@ -579,6 +591,10 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.student-name-cell {
+  cursor: pointer;
 }
 
 .table-header-tip-icon {
