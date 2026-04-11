@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import type { TableColumnsType } from 'ant-design-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import { type TeachingScheduleBatchMeta, type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi, removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
@@ -62,6 +63,7 @@ const openDrawer = computed({
 
 const loading = ref(false)
 const detailData = ref<TeachingScheduleDetail | null>(null)
+const router = useRouter()
 const studentStore = useStudentStore()
 const openStudentDrawer = ref(false)
 const activeStudentTabKey = ref('students')
@@ -152,10 +154,27 @@ const isPastSchedule = computed(() => {
     return false
   return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
 })
+const isFutureSchedule = computed(() => {
+  const lessonDate = String(detailData.value?.lessonDate || '').trim()
+  if (!lessonDate)
+    return false
+  return dayjs(lessonDate).isAfter(dayjs().startOf('day'), 'day')
+})
 const editDisabledReason = computed(() => (
   isPastSchedule.value ? '过去日程不可编辑' : ''
 ))
 const canEditSchedule = computed(() => props.editable && !isPastSchedule.value)
+const rollCallDisabledReason = computed(() => {
+  const serverReason = String(detailData.value?.rollCallDisabledReason || '').trim()
+  if (serverReason)
+    return serverReason
+  return isFutureSchedule.value ? '未到日期，不可点名' : ''
+})
+const canRollCall = computed(() => {
+  if (typeof detailData.value?.canRollCall === 'boolean')
+    return detailData.value.canRollCall
+  return !isFutureSchedule.value
+})
 const hasBatchSchedule = computed(() => {
   return Number(detailData.value?.batchSize || props.detail?.batchSize || 0) > 1
     || String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() !== ''
@@ -257,6 +276,12 @@ function handleSingleEditClick() {
   if (!canEditSchedule.value)
     return
   emit('edit', scheduleEditPayload.value)
+}
+
+function goRollCall() {
+  if (!canRollCall.value)
+    return
+  router.push('/edu-center/roll-call-list')
 }
 
 function handleStudentRemove(student: Record<string, any>) {
@@ -469,9 +494,13 @@ watch(
                   </a-button>
                 </span>
               </a-tooltip>
-              <a-button type="primary">
-                去点名
-              </a-button>
+              <a-tooltip :title="rollCallDisabledReason || null" placement="top">
+                <span>
+                  <a-button type="primary" :disabled="!canRollCall" @click="goRollCall">
+                    去点名
+                  </a-button>
+                </span>
+              </a-tooltip>
             </a-space>
           </div>
           <div class="bottom flex-1 flex flex-items-center mt-2">

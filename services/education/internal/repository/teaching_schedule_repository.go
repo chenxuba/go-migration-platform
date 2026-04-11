@@ -589,6 +589,7 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 			item.ClassroomID = ""
 		}
 		item.LessonDate = lessonDate.Format("2006-01-02")
+		item.CanRollCall, item.RollCallDisabledReason = teachingScheduleRollCallPermission(lessonDate)
 		if len(assistantIDsRaw) > 0 {
 			_ = json.Unmarshal(assistantIDsRaw, &item.AssistantIDs)
 		}
@@ -1047,29 +1048,32 @@ func (repo *Repository) CreateOneToOneSchedules(ctx context.Context, instID, ope
 			return model.CreateOneToOneSchedulesResult{}, err
 		}
 		createdScheduleIDs = append(createdScheduleIDs, id)
+		canRollCall, rollCallDisabledReason := teachingScheduleRollCallPermission(plan.LessonDate)
 		result.List = append(result.List, model.TeachingScheduleVO{
-			ID:                strconv.FormatInt(id, 10),
-			BatchNo:           batchNo,
-			BatchSize:         len(plans),
-			ClassType:         model.TeachingClassTypeOneToOne,
-			TeachingClassID:   strconv.FormatInt(base.ClassID, 10),
-			TeachingClassName: base.ClassName,
-			StudentID:         strconv.FormatInt(base.StudentID, 10),
-			StudentName:       base.StudentName,
-			LessonID:          strconv.FormatInt(base.LessonID, 10),
-			LessonName:        base.LessonName,
-			TeacherID:         strconv.FormatInt(plan.TeacherID, 10),
-			TeacherName:       teacherName,
-			AssistantIDs:      stringIDsFromInt64(plan.AssistantIDs),
-			AssistantNames:    plan.AssistantNames,
-			ClassroomID:       emptyStringIfZero(classroomID),
-			ClassroomName:     classroomName,
-			LessonDate:        plan.LessonDate.Format("2006-01-02"),
-			StartAt:           plan.StartAt,
-			EndAt:             plan.EndAt,
-			Status:            model.TeachingScheduleStatusActive,
-			CallStatus:        1,
-			CallStatusText:    teachingScheduleCallStatusText(1),
+			ID:                     strconv.FormatInt(id, 10),
+			BatchNo:                batchNo,
+			BatchSize:              len(plans),
+			ClassType:              model.TeachingClassTypeOneToOne,
+			TeachingClassID:        strconv.FormatInt(base.ClassID, 10),
+			TeachingClassName:      base.ClassName,
+			StudentID:              strconv.FormatInt(base.StudentID, 10),
+			StudentName:            base.StudentName,
+			LessonID:               strconv.FormatInt(base.LessonID, 10),
+			LessonName:             base.LessonName,
+			TeacherID:              strconv.FormatInt(plan.TeacherID, 10),
+			TeacherName:            teacherName,
+			AssistantIDs:           stringIDsFromInt64(plan.AssistantIDs),
+			AssistantNames:         plan.AssistantNames,
+			ClassroomID:            emptyStringIfZero(classroomID),
+			ClassroomName:          classroomName,
+			LessonDate:             plan.LessonDate.Format("2006-01-02"),
+			StartAt:                plan.StartAt,
+			EndAt:                  plan.EndAt,
+			Status:                 model.TeachingScheduleStatusActive,
+			CallStatus:             1,
+			CallStatusText:         teachingScheduleCallStatusText(1),
+			CanRollCall:            canRollCall,
+			RollCallDisabledReason: rollCallDisabledReason,
 		})
 	}
 	if err := repo.saveTeachingScheduleBatchMetaTx(
@@ -1405,29 +1409,32 @@ func (repo *Repository) CreateGroupClassSchedules(ctx context.Context, instID, o
 			return model.CreateOneToOneSchedulesResult{}, err
 		}
 		createdScheduleIDs = append(createdScheduleIDs, id)
+		canRollCall, rollCallDisabledReason := teachingScheduleRollCallPermission(plan.LessonDate)
 		result.List = append(result.List, model.TeachingScheduleVO{
-			ID:                strconv.FormatInt(id, 10),
-			BatchNo:           batchNo,
-			BatchSize:         len(plans),
-			ClassType:         model.TeachingClassTypeNormal,
-			TeachingClassID:   strconv.FormatInt(base.ClassID, 10),
-			TeachingClassName: base.ClassName,
-			StudentID:         studentIDText,
-			StudentName:       studentNameText,
-			LessonID:          strconv.FormatInt(base.LessonID, 10),
-			LessonName:        base.LessonName,
-			TeacherID:         strconv.FormatInt(plan.TeacherID, 10),
-			TeacherName:       teacherName,
-			AssistantIDs:      stringIDsFromInt64(plan.AssistantIDs),
-			AssistantNames:    plan.AssistantNames,
-			ClassroomID:       emptyStringIfZero(classroomID),
-			ClassroomName:     classroomName,
-			LessonDate:        plan.LessonDate.Format("2006-01-02"),
-			StartAt:           plan.StartAt,
-			EndAt:             plan.EndAt,
-			Status:            model.TeachingScheduleStatusActive,
-			CallStatus:        1,
-			CallStatusText:    teachingScheduleCallStatusText(1),
+			ID:                     strconv.FormatInt(id, 10),
+			BatchNo:                batchNo,
+			BatchSize:              len(plans),
+			ClassType:              model.TeachingClassTypeNormal,
+			TeachingClassID:        strconv.FormatInt(base.ClassID, 10),
+			TeachingClassName:      base.ClassName,
+			StudentID:              studentIDText,
+			StudentName:            studentNameText,
+			LessonID:               strconv.FormatInt(base.LessonID, 10),
+			LessonName:             base.LessonName,
+			TeacherID:              strconv.FormatInt(plan.TeacherID, 10),
+			TeacherName:            teacherName,
+			AssistantIDs:           stringIDsFromInt64(plan.AssistantIDs),
+			AssistantNames:         plan.AssistantNames,
+			ClassroomID:            emptyStringIfZero(classroomID),
+			ClassroomName:          classroomName,
+			LessonDate:             plan.LessonDate.Format("2006-01-02"),
+			StartAt:                plan.StartAt,
+			EndAt:                  plan.EndAt,
+			Status:                 model.TeachingScheduleStatusActive,
+			CallStatus:             1,
+			CallStatusText:         teachingScheduleCallStatusText(1),
+			CanRollCall:            canRollCall,
+			RollCallDisabledReason: rollCallDisabledReason,
 		})
 	}
 	if err := repo.saveTeachingScheduleBatchMetaTx(
@@ -2301,32 +2308,35 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 	if durationMinutes < 0 {
 		durationMinutes = 0
 	}
+	canRollCall, rollCallDisabledReason := teachingScheduleRollCallPermission(row.LessonDate)
 
 	return model.TeachingScheduleDetailVO{
-		ID:                strconv.FormatInt(row.ID, 10),
-		BatchNo:           row.BatchNo,
-		BatchSize:         row.BatchSize,
-		ClassType:         row.ClassType,
-		TeachingClassID:   emptyStringIfZero(row.TeachingClassID),
-		TeachingClassName: row.TeachingClassName,
-		LessonID:          emptyStringIfZero(row.LessonID),
-		LessonName:        row.LessonName,
-		TeacherID:         emptyStringIfZero(row.TeacherID),
-		TeacherName:       firstNonEmptyString(row.TeacherName, "-"),
-		AssistantIDs:      row.AssistantIDs,
-		AssistantNames:    row.AssistantNames,
-		ClassroomID:       emptyStringIfZero(row.ClassroomID),
-		ClassroomName:     row.ClassroomName,
-		LessonDate:        row.LessonDate.Format("2006-01-02"),
-		StartAt:           row.StartAt,
-		EndAt:             row.EndAt,
-		DurationMinutes:   durationMinutes,
-		CallStatus:        row.CallStatus,
-		CallStatusText:    teachingScheduleCallStatusText(row.CallStatus),
-		Remark:            strings.TrimSpace(row.Remark),
-		BatchMeta:         meta,
-		Students:          students,
-		LeaveStudents:     leaveStudents,
+		ID:                     strconv.FormatInt(row.ID, 10),
+		BatchNo:                row.BatchNo,
+		BatchSize:              row.BatchSize,
+		ClassType:              row.ClassType,
+		TeachingClassID:        emptyStringIfZero(row.TeachingClassID),
+		TeachingClassName:      row.TeachingClassName,
+		LessonID:               emptyStringIfZero(row.LessonID),
+		LessonName:             row.LessonName,
+		TeacherID:              emptyStringIfZero(row.TeacherID),
+		TeacherName:            firstNonEmptyString(row.TeacherName, "-"),
+		AssistantIDs:           row.AssistantIDs,
+		AssistantNames:         row.AssistantNames,
+		ClassroomID:            emptyStringIfZero(row.ClassroomID),
+		ClassroomName:          row.ClassroomName,
+		LessonDate:             row.LessonDate.Format("2006-01-02"),
+		StartAt:                row.StartAt,
+		EndAt:                  row.EndAt,
+		DurationMinutes:        durationMinutes,
+		CallStatus:             row.CallStatus,
+		CallStatusText:         teachingScheduleCallStatusText(row.CallStatus),
+		CanRollCall:            canRollCall,
+		RollCallDisabledReason: rollCallDisabledReason,
+		Remark:                 strings.TrimSpace(row.Remark),
+		BatchMeta:              meta,
+		Students:               students,
+		LeaveStudents:          leaveStudents,
 	}, nil
 }
 
@@ -2773,29 +2783,32 @@ func (repo *Repository) replaceOneToOneScheduleBatch(ctx context.Context, instID
 			return model.CreateOneToOneSchedulesResult{}, err
 		}
 		createdScheduleIDs = append(createdScheduleIDs, id)
+		canRollCall, rollCallDisabledReason := teachingScheduleRollCallPermission(plan.LessonDate)
 		result.List = append(result.List, model.TeachingScheduleVO{
-			ID:                strconv.FormatInt(id, 10),
-			BatchNo:           batchNo,
-			BatchSize:         len(plans),
-			ClassType:         model.TeachingClassTypeOneToOne,
-			TeachingClassID:   strconv.FormatInt(base.ClassID, 10),
-			TeachingClassName: base.ClassName,
-			StudentID:         strconv.FormatInt(base.StudentID, 10),
-			StudentName:       base.StudentName,
-			LessonID:          strconv.FormatInt(base.LessonID, 10),
-			LessonName:        base.LessonName,
-			TeacherID:         strconv.FormatInt(plan.TeacherID, 10),
-			TeacherName:       teacherName,
-			AssistantIDs:      stringIDsFromInt64(plan.AssistantIDs),
-			AssistantNames:    plan.AssistantNames,
-			ClassroomID:       emptyStringIfZero(classroomID),
-			ClassroomName:     classroomName,
-			LessonDate:        plan.LessonDate.Format("2006-01-02"),
-			StartAt:           plan.StartAt,
-			EndAt:             plan.EndAt,
-			Status:            model.TeachingScheduleStatusActive,
-			CallStatus:        1,
-			CallStatusText:    teachingScheduleCallStatusText(1),
+			ID:                     strconv.FormatInt(id, 10),
+			BatchNo:                batchNo,
+			BatchSize:              len(plans),
+			ClassType:              model.TeachingClassTypeOneToOne,
+			TeachingClassID:        strconv.FormatInt(base.ClassID, 10),
+			TeachingClassName:      base.ClassName,
+			StudentID:              strconv.FormatInt(base.StudentID, 10),
+			StudentName:            base.StudentName,
+			LessonID:               strconv.FormatInt(base.LessonID, 10),
+			LessonName:             base.LessonName,
+			TeacherID:              strconv.FormatInt(plan.TeacherID, 10),
+			TeacherName:            teacherName,
+			AssistantIDs:           stringIDsFromInt64(plan.AssistantIDs),
+			AssistantNames:         plan.AssistantNames,
+			ClassroomID:            emptyStringIfZero(classroomID),
+			ClassroomName:          classroomName,
+			LessonDate:             plan.LessonDate.Format("2006-01-02"),
+			StartAt:                plan.StartAt,
+			EndAt:                  plan.EndAt,
+			Status:                 model.TeachingScheduleStatusActive,
+			CallStatus:             1,
+			CallStatusText:         teachingScheduleCallStatusText(1),
+			CanRollCall:            canRollCall,
+			RollCallDisabledReason: rollCallDisabledReason,
 		})
 	}
 	if err := repo.saveTeachingScheduleBatchMetaTx(
@@ -3136,29 +3149,32 @@ func (repo *Repository) replaceGroupClassScheduleBatch(ctx context.Context, inst
 			return model.CreateOneToOneSchedulesResult{}, err
 		}
 		createdScheduleIDs = append(createdScheduleIDs, id)
+		canRollCall, rollCallDisabledReason := teachingScheduleRollCallPermission(plan.LessonDate)
 		result.List = append(result.List, model.TeachingScheduleVO{
-			ID:                strconv.FormatInt(id, 10),
-			BatchNo:           batchNo,
-			BatchSize:         len(plans),
-			ClassType:         model.TeachingClassTypeNormal,
-			TeachingClassID:   strconv.FormatInt(base.ClassID, 10),
-			TeachingClassName: base.ClassName,
-			StudentID:         studentIDText,
-			StudentName:       studentNameText,
-			LessonID:          strconv.FormatInt(base.LessonID, 10),
-			LessonName:        base.LessonName,
-			TeacherID:         strconv.FormatInt(plan.TeacherID, 10),
-			TeacherName:       teacherName,
-			AssistantIDs:      stringIDsFromInt64(plan.AssistantIDs),
-			AssistantNames:    plan.AssistantNames,
-			ClassroomID:       emptyStringIfZero(classroomID),
-			ClassroomName:     classroomName,
-			LessonDate:        plan.LessonDate.Format("2006-01-02"),
-			StartAt:           plan.StartAt,
-			EndAt:             plan.EndAt,
-			Status:            model.TeachingScheduleStatusActive,
-			CallStatus:        1,
-			CallStatusText:    teachingScheduleCallStatusText(1),
+			ID:                     strconv.FormatInt(id, 10),
+			BatchNo:                batchNo,
+			BatchSize:              len(plans),
+			ClassType:              model.TeachingClassTypeNormal,
+			TeachingClassID:        strconv.FormatInt(base.ClassID, 10),
+			TeachingClassName:      base.ClassName,
+			StudentID:              studentIDText,
+			StudentName:            studentNameText,
+			LessonID:               strconv.FormatInt(base.LessonID, 10),
+			LessonName:             base.LessonName,
+			TeacherID:              strconv.FormatInt(plan.TeacherID, 10),
+			TeacherName:            teacherName,
+			AssistantIDs:           stringIDsFromInt64(plan.AssistantIDs),
+			AssistantNames:         plan.AssistantNames,
+			ClassroomID:            emptyStringIfZero(classroomID),
+			ClassroomName:          classroomName,
+			LessonDate:             plan.LessonDate.Format("2006-01-02"),
+			StartAt:                plan.StartAt,
+			EndAt:                  plan.EndAt,
+			Status:                 model.TeachingScheduleStatusActive,
+			CallStatus:             1,
+			CallStatusText:         teachingScheduleCallStatusText(1),
+			CanRollCall:            canRollCall,
+			RollCallDisabledReason: rollCallDisabledReason,
 		})
 	}
 	if err := repo.saveTeachingScheduleBatchMetaTx(
@@ -3710,11 +3726,14 @@ func teachingScheduleBatchRowIDs(list []teachingScheduleBatchRow) []int64 {
 func teachingScheduleBatchRowsToVOs(list []teachingScheduleBatchRow) []model.TeachingScheduleVO {
 	result := make([]model.TeachingScheduleVO, 0, len(list))
 	for _, item := range sortTeachingScheduleBatchRows(list) {
+		canRollCall, rollCallDisabledReason := teachingScheduleRollCallPermission(item.LessonDate)
 		result = append(result, model.TeachingScheduleVO{
-			ID:         strconv.FormatInt(item.ID, 10),
-			LessonDate: item.LessonDate.Format("2006-01-02"),
-			StartAt:    item.StartAt,
-			EndAt:      item.EndAt,
+			ID:                     strconv.FormatInt(item.ID, 10),
+			LessonDate:             item.LessonDate.Format("2006-01-02"),
+			StartAt:                item.StartAt,
+			EndAt:                  item.EndAt,
+			CanRollCall:            canRollCall,
+			RollCallDisabledReason: rollCallDisabledReason,
 		})
 	}
 	return result
@@ -6124,6 +6143,16 @@ func emptyStringIfZero(value int64) string {
 
 func startOfDay(value time.Time) time.Time {
 	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, value.Location())
+}
+
+func teachingScheduleRollCallPermission(lessonDate time.Time) (bool, string) {
+	if lessonDate.IsZero() {
+		return true, ""
+	}
+	if startOfDay(lessonDate).After(startOfDay(time.Now())) {
+		return false, "未到日期，不可点名"
+	}
+	return true, ""
 }
 
 func ensureTeachingScheduleVOsEditable(list []model.TeachingScheduleVO) error {

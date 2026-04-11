@@ -26,6 +26,8 @@ export interface TeachingScheduleItem {
   status: number
   callStatus: number
   callStatusText?: string
+  canRollCall?: boolean
+  rollCallDisabledReason?: string
   conflict: boolean
   conflictTypes?: string[]
 }
@@ -91,6 +93,8 @@ export interface TeachingScheduleDetail {
   durationMinutes: number
   callStatus: number
   callStatusText?: string
+  canRollCall?: boolean
+  rollCallDisabledReason?: string
   remark?: string
   batchMeta?: TeachingScheduleBatchMeta
   students: TeachingScheduleDetailStudent[]

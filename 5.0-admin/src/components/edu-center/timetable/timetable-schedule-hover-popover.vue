@@ -165,6 +165,12 @@ const isPastSchedule = computed(() => {
     return false
   return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
 })
+const isFutureSchedule = computed(() => {
+  const lessonDate = String(detailData.value?.lessonDate || '').trim()
+  if (!lessonDate)
+    return false
+  return dayjs(lessonDate).isAfter(dayjs().startOf('day'), 'day')
+})
 const hasBatchSchedule = computed(() => {
   const batchSize = Number(detailData.value?.batchSize || props.batchSize || 0)
   const batchNo = String(detailData.value?.batchNo || props.batchNo || '').trim()
@@ -189,6 +195,17 @@ const scheduleEditPayload = computed<ScheduleEditPayload>(() => {
 const editDisabledReason = computed(() => (
   isPastSchedule.value ? '过去日程不可编辑' : (canEditByContext.value ? '编辑日程' : '当前日程不可编辑')
 ))
+const rollCallDisabledReason = computed(() => {
+  const serverReason = String(detailData.value?.rollCallDisabledReason || '').trim()
+  if (serverReason)
+    return serverReason
+  return isFutureSchedule.value ? '未到日期，不可点名' : ''
+})
+const canRollCall = computed(() => {
+  if (typeof detailData.value?.canRollCall === 'boolean')
+    return detailData.value.canRollCall
+  return !isFutureSchedule.value
+})
 
 async function loadLatestDetail() {
   const scheduleId = String(props.scheduleId || '').trim()
@@ -307,6 +324,8 @@ function handleBatchCopyMenuClick({ key, domEvent }: { key: string | number, dom
 }
 
 function goRollCall() {
+  if (!canRollCall.value)
+    return
   closePopover()
   router.push('/edu-center/roll-call-list')
 }
@@ -474,13 +493,18 @@ watch(
               </a-tooltip>
             </div>
 
-            <button
-              type="button"
-              class="st-schedule-hover-card__primary-btn"
-              @click.stop="goRollCall"
-            >
-              去点名
-            </button>
+            <a-tooltip :title="rollCallDisabledReason || null" placement="top">
+              <span class="st-schedule-hover-card__primary-wrap">
+                <button
+                  type="button"
+                  class="st-schedule-hover-card__primary-btn"
+                  :disabled="!canRollCall"
+                  @click.stop="goRollCall"
+                >
+                  去点名
+                </button>
+              </span>
+            </a-tooltip>
           </div>
         </div>
       </a-spin>
@@ -653,6 +677,10 @@ watch(
   gap: 10px;
 }
 
+.st-schedule-hover-card__primary-wrap {
+  display: inline-flex;
+}
+
 .st-schedule-hover-card__icon-btn {
   display: inline-flex;
   align-items: center;
@@ -688,5 +716,10 @@ watch(
   font-weight: 700;
   line-height: 28px;
   cursor: pointer;
+}
+
+.st-schedule-hover-card__primary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 </style>
