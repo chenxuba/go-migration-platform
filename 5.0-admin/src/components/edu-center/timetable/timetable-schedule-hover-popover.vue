@@ -64,6 +64,9 @@ const instance = getCurrentInstance()
 const popoverInnerStyle = {
   padding: '0px',
 }
+const hoverActionTooltipStyle = {
+  zIndex: 1301,
+}
 const popoverSafeWidth = 376
 const popoverSafeHeight = 332
 const innerOpen = ref(false)
@@ -289,6 +292,12 @@ function resolvePopoverContainer(triggerNode?: HTMLElement) {
   return root
 }
 
+function resolveTooltipContainer() {
+  if (typeof document === 'undefined')
+    return undefined as unknown as HTMLElement
+  return document.body
+}
+
 function handleOpenChange(value: boolean) {
   if (value && typeof window !== 'undefined') {
     window.requestAnimationFrame(() => resolvePopoverPlacement())
@@ -511,7 +520,13 @@ watch(
               </a-tooltip>
             </div>
 
-            <a-tooltip :title="rollCallDisabledReason || null" placement="top">
+            <a-tooltip
+              :title="rollCallDisabledReason || null"
+              placement="top"
+              :auto-adjust-overflow="false"
+              :get-popup-container="resolveTooltipContainer"
+              :overlay-style="hoverActionTooltipStyle"
+            >
               <span class="st-schedule-hover-card__primary-wrap">
                 <button
                   type="button"
