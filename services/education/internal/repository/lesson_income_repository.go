@@ -279,43 +279,259 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 	fragments.teachingCourseIDExpr = teachingCourseIDExpr
 	fragments.teachingCourseNameExpr = teachingCourseNameExpr
 
+	recordStudentAlias := ""
+	recordStudentHasStartTime := false
+	recordStudentHasEndTime := false
+	recordStudentHasUpdatedTime := false
+	recordStudentHasTeacherID := false
+	recordStudentHasTeacherName := false
+	recordStudentHasAssistantNames := false
+	recordStudentHasClassID := false
+	recordStudentHasClassName := false
+	if recordTableExists, err := repo.tableExists(ctx, "student_teaching_record"); err != nil {
+		return lessonIncomeQueryFragments{}, err
+	} else if recordTableExists {
+		hasTeachingRecordID, err := repo.columnExists(ctx, "student_teaching_record", "teaching_record_id")
+		if err != nil {
+			return lessonIncomeQueryFragments{}, err
+		}
+		if hasTeachingRecordID {
+			recordStudentHasStartTime, err = repo.columnExists(ctx, "student_teaching_record", "start_time")
+			if err != nil {
+				return lessonIncomeQueryFragments{}, err
+			}
+			recordStudentHasEndTime, err = repo.columnExists(ctx, "student_teaching_record", "end_time")
+			if err != nil {
+				return lessonIncomeQueryFragments{}, err
+			}
+			recordStudentHasUpdatedTime, err = repo.columnExists(ctx, "student_teaching_record", "updated_time")
+			if err != nil {
+				return lessonIncomeQueryFragments{}, err
+			}
+			recordStudentHasTeacherID, err = repo.columnExists(ctx, "student_teaching_record", "main_teacher_id")
+			if err != nil {
+				return lessonIncomeQueryFragments{}, err
+			}
+			recordStudentHasTeacherName, err = repo.columnExists(ctx, "student_teaching_record", "main_teacher_name")
+			if err != nil {
+				return lessonIncomeQueryFragments{}, err
+			}
+			recordStudentHasAssistantNames, err = repo.columnExists(ctx, "student_teaching_record", "assistant_teacher_names_json")
+			if err != nil {
+				return lessonIncomeQueryFragments{}, err
+			}
+			recordStudentHasClassID, err = repo.columnExists(ctx, "student_teaching_record", "class_id")
+			if err != nil {
+				return lessonIncomeQueryFragments{}, err
+			}
+			recordStudentHasClassName, err = repo.columnExists(ctx, "student_teaching_record", "class_name")
+			if err != nil {
+				return lessonIncomeQueryFragments{}, err
+			}
+			if recordStudentHasStartTime || recordStudentHasEndTime || recordStudentHasUpdatedTime || recordStudentHasTeacherID || recordStudentHasTeacherName || recordStudentHasAssistantNames || recordStudentHasClassID || recordStudentHasClassName {
+				recordStudentAlias = "taf_income_student_teach_record"
+				recordStudentStartTimeExpr := "NULL AS start_time"
+				recordStudentEndTimeExpr := "NULL AS end_time"
+				recordStudentUpdatedTimeExpr := "NULL AS updated_time"
+				recordStudentTeacherIDExpr := "0 AS main_teacher_id"
+				recordStudentTeacherNameExpr := "'' AS main_teacher_name"
+				recordStudentAssistantNamesExpr := "'' AS assistant_teacher_names"
+				recordStudentClassIDExpr := "0 AS class_id"
+				recordStudentClassNameExpr := "'' AS class_name"
+				if recordStudentHasStartTime {
+					recordStudentStartTimeExpr = "MIN(start_time) AS start_time"
+				}
+				if recordStudentHasEndTime {
+					recordStudentEndTimeExpr = "MAX(end_time) AS end_time"
+				}
+				if recordStudentHasUpdatedTime {
+					recordStudentUpdatedTimeExpr = "MAX(updated_time) AS updated_time"
+				}
+				if recordStudentHasTeacherID {
+					recordStudentTeacherIDExpr = "MAX(IFNULL(main_teacher_id, 0)) AS main_teacher_id"
+				}
+				if recordStudentHasTeacherName {
+					recordStudentTeacherNameExpr = "MAX(IFNULL(main_teacher_name, '')) AS main_teacher_name"
+				}
+				if recordStudentHasAssistantNames {
+					recordStudentAssistantNamesExpr = "MAX(CAST(IFNULL(assistant_teacher_names_json, JSON_ARRAY()) AS CHAR(1000))) AS assistant_teacher_names"
+				}
+				if recordStudentHasClassID {
+					recordStudentClassIDExpr = "MAX(IFNULL(class_id, 0)) AS class_id"
+				}
+				if recordStudentHasClassName {
+					recordStudentClassNameExpr = "MAX(IFNULL(class_name, '')) AS class_name"
+				}
+				fragments.joins = append(fragments.joins, fmt.Sprintf(`LEFT JOIN (
+					SELECT
+						inst_id,
+						teaching_record_id,
+						%s,
+						%s,
+						%s,
+						%s,
+						%s,
+						%s,
+						%s,
+						%s
+					FROM student_teaching_record
+					WHERE del_flag = 0
+					GROUP BY inst_id, teaching_record_id
+				) %s ON %s.inst_id = taf.inst_id AND %s.teaching_record_id = taf.teaching_record_id`,
+					recordStudentStartTimeExpr,
+					recordStudentEndTimeExpr,
+					recordStudentUpdatedTimeExpr,
+					recordStudentTeacherIDExpr,
+					recordStudentTeacherNameExpr,
+					recordStudentAssistantNamesExpr,
+					recordStudentClassIDExpr,
+					recordStudentClassNameExpr,
+					recordStudentAlias,
+					recordStudentAlias,
+					recordStudentAlias,
+				))
+				if recordStudentHasStartTime {
+					fragments.lessonDayExpr = fmt.Sprintf("DATE(%s.start_time)", recordStudentAlias)
+					fragments.startMinutesExpr = fmt.Sprintf("(HOUR(%s.start_time) * 60 + MINUTE(%s.start_time))", recordStudentAlias, recordStudentAlias)
+					fragments.teachingTimeExpr = fmt.Sprintf("%s.start_time", recordStudentAlias)
+				}
+				if recordStudentHasEndTime {
+					fragments.endMinutesExpr = fmt.Sprintf("(HOUR(%s.end_time) * 60 + MINUTE(%s.end_time))", recordStudentAlias, recordStudentAlias)
+				}
+				if recordStudentHasUpdatedTime {
+					fragments.rollCallTimeExpr = fmt.Sprintf("%s.updated_time", recordStudentAlias)
+				}
+				if recordStudentHasTeacherID {
+					fragments.teacherIDExpr = fmt.Sprintf("COALESCE(CAST(%s.main_teacher_id AS CHAR), '')", recordStudentAlias)
+				}
+				if recordStudentHasTeacherName {
+					fragments.teacherNameExpr = fmt.Sprintf("IFNULL(%s.main_teacher_name, '')", recordStudentAlias)
+				}
+				if recordStudentHasAssistantNames {
+					fragments.assistantNameExpr = fmt.Sprintf("IFNULL(%s.assistant_teacher_names, '')", recordStudentAlias)
+				}
+				if recordStudentHasClassID {
+					classIDRawExpr = recordStudentAlias + ".class_id"
+					fragments.classIDExpr = fmt.Sprintf("COALESCE(CAST(%s.class_id AS CHAR), '0')", recordStudentAlias)
+				}
+				if recordStudentHasClassName {
+					fragments.classNameExpr = fmt.Sprintf("IFNULL(%s.class_name, '')", recordStudentAlias)
+				}
+			}
+		}
+	}
+
 	if schema.teachingTable != "" {
 		fragments.joins = append(fragments.joins, fmt.Sprintf("LEFT JOIN %s tr ON tr.id = taf.teaching_record_id", schema.teachingTable))
+		fallbackLessonDayExpr := "NULL"
+		fallbackStartMinutesExpr := "0"
+		fallbackEndMinutesExpr := "0"
+		fallbackTeachingTimeExpr := "NULL"
+		fallbackRollCallTimeExpr := "NULL"
+		fallbackTeacherIDExpr := "''"
+		fallbackTeacherNameExpr := "''"
+		fallbackAssistantIDExpr := "''"
+		fallbackAssistantNameExpr := "''"
+		fallbackClassNameExpr := "''"
 		if schema.teachingLessonDayColumn != "" {
-			fragments.lessonDayExpr = "tr." + schema.teachingLessonDayColumn
+			fallbackLessonDayExpr = "tr." + schema.teachingLessonDayColumn
 		}
 		if schema.teachingStartMinutesColumn != "" {
-			fragments.startMinutesExpr = fmt.Sprintf("IFNULL(tr.%s, 0)", schema.teachingStartMinutesColumn)
+			fallbackStartMinutesExpr = fmt.Sprintf("IFNULL(tr.%s, 0)", schema.teachingStartMinutesColumn)
 		}
 		if schema.teachingEndMinutesColumn != "" {
-			fragments.endMinutesExpr = fmt.Sprintf("IFNULL(tr.%s, 0)", schema.teachingEndMinutesColumn)
+			fallbackEndMinutesExpr = fmt.Sprintf("IFNULL(tr.%s, 0)", schema.teachingEndMinutesColumn)
 		}
 		if schema.teachingTimeColumn != "" {
-			fragments.teachingTimeExpr = "tr." + schema.teachingTimeColumn
+			fallbackTeachingTimeExpr = "tr." + schema.teachingTimeColumn
 		} else if schema.teachingLessonDayColumn != "" {
-			fragments.teachingTimeExpr = "tr." + schema.teachingLessonDayColumn
+			fallbackTeachingTimeExpr = "tr." + schema.teachingLessonDayColumn
 		}
 		if schema.teachingRollCallColumn != "" {
-			fragments.rollCallTimeExpr = "tr." + schema.teachingRollCallColumn
+			fallbackRollCallTimeExpr = "tr." + schema.teachingRollCallColumn
 		}
 		if schema.teachingTeacherIDColumn != "" {
 			rawExpr := "tr." + schema.teachingTeacherIDColumn
-			fragments.teacherIDExpr = fmt.Sprintf("COALESCE(CAST(%s AS CHAR), '')", rawExpr)
+			fallbackTeacherIDExpr = fmt.Sprintf("COALESCE(CAST(%s AS CHAR), '')", rawExpr)
 			fragments.joins = append(fragments.joins, fmt.Sprintf("LEFT JOIN inst_user lesson_teacher ON lesson_teacher.id = %s AND lesson_teacher.del_flag = 0", rawExpr))
-			fragments.teacherNameExpr = "IFNULL(lesson_teacher.nick_name, '')"
+			fallbackTeacherNameExpr = "IFNULL(lesson_teacher.nick_name, '')"
 		}
 		if schema.teachingAssistantIDColumn != "" {
 			rawExpr := "tr." + schema.teachingAssistantIDColumn
-			fragments.assistantIDExpr = fmt.Sprintf("COALESCE(CAST(%s AS CHAR), '')", rawExpr)
+			fallbackAssistantIDExpr = fmt.Sprintf("COALESCE(CAST(%s AS CHAR), '')", rawExpr)
 			fragments.joins = append(fragments.joins, fmt.Sprintf("LEFT JOIN inst_user lesson_assistant ON lesson_assistant.id = %s AND lesson_assistant.del_flag = 0", rawExpr))
-			fragments.assistantNameExpr = "IFNULL(lesson_assistant.nick_name, '')"
+			fallbackAssistantNameExpr = "IFNULL(lesson_assistant.nick_name, '')"
 		}
 		if schema.teachingClassIDColumn != "" {
-			classIDRawExpr = "tr." + schema.teachingClassIDColumn
-			fragments.classIDExpr = fmt.Sprintf("COALESCE(CAST(%s AS CHAR), '0')", classIDRawExpr)
+			fallbackClassIDRawExpr := "tr." + schema.teachingClassIDColumn
+			if classIDRawExpr == "" {
+				classIDRawExpr = fallbackClassIDRawExpr
+			}
+			if recordStudentAlias == "" || !recordStudentHasClassID {
+				fragments.classIDExpr = fmt.Sprintf("COALESCE(CAST(%s AS CHAR), '0')", fallbackClassIDRawExpr)
+			}
 		}
 		if schema.teachingClassNameColumn != "" {
-			fragments.classNameExpr = fmt.Sprintf("IFNULL(tr.%s, '')", schema.teachingClassNameColumn)
+			fallbackClassNameExpr = fmt.Sprintf("IFNULL(tr.%s, '')", schema.teachingClassNameColumn)
+		}
+		if recordStudentAlias != "" {
+			if recordStudentHasStartTime && fallbackLessonDayExpr != "NULL" {
+				fragments.lessonDayExpr = fmt.Sprintf("COALESCE(DATE(%s.start_time), %s)", recordStudentAlias, fallbackLessonDayExpr)
+			} else if !recordStudentHasStartTime && fallbackLessonDayExpr != "NULL" {
+				fragments.lessonDayExpr = fallbackLessonDayExpr
+			}
+			if recordStudentHasStartTime {
+				fragments.startMinutesExpr = fmt.Sprintf("CASE WHEN %s.start_time IS NOT NULL THEN (HOUR(%s.start_time) * 60 + MINUTE(%s.start_time)) ELSE %s END", recordStudentAlias, recordStudentAlias, recordStudentAlias, fallbackStartMinutesExpr)
+				fragments.teachingTimeExpr = fmt.Sprintf("COALESCE(%s.start_time, %s)", recordStudentAlias, fallbackTeachingTimeExpr)
+			} else {
+				fragments.startMinutesExpr = fallbackStartMinutesExpr
+				fragments.teachingTimeExpr = fallbackTeachingTimeExpr
+			}
+			if recordStudentHasEndTime {
+				fragments.endMinutesExpr = fmt.Sprintf("CASE WHEN %s.end_time IS NOT NULL THEN (HOUR(%s.end_time) * 60 + MINUTE(%s.end_time)) ELSE %s END", recordStudentAlias, recordStudentAlias, recordStudentAlias, fallbackEndMinutesExpr)
+			} else {
+				fragments.endMinutesExpr = fallbackEndMinutesExpr
+			}
+			if recordStudentHasUpdatedTime {
+				fragments.rollCallTimeExpr = fmt.Sprintf("COALESCE(%s.updated_time, %s)", recordStudentAlias, fallbackRollCallTimeExpr)
+			} else {
+				fragments.rollCallTimeExpr = fallbackRollCallTimeExpr
+			}
+			if recordStudentHasTeacherID {
+				fragments.teacherIDExpr = fmt.Sprintf("CASE WHEN IFNULL(%s.main_teacher_id, 0) > 0 THEN CAST(%s.main_teacher_id AS CHAR) ELSE %s END", recordStudentAlias, recordStudentAlias, fallbackTeacherIDExpr)
+			} else {
+				fragments.teacherIDExpr = fallbackTeacherIDExpr
+			}
+			if recordStudentHasTeacherName {
+				fragments.teacherNameExpr = fmt.Sprintf("CASE WHEN NULLIF(TRIM(IFNULL(%s.main_teacher_name, '')), '') IS NOT NULL THEN IFNULL(%s.main_teacher_name, '') ELSE %s END", recordStudentAlias, recordStudentAlias, fallbackTeacherNameExpr)
+			} else {
+				fragments.teacherNameExpr = fallbackTeacherNameExpr
+			}
+			fragments.assistantIDExpr = fallbackAssistantIDExpr
+			if recordStudentHasAssistantNames {
+				fragments.assistantNameExpr = fmt.Sprintf("CASE WHEN NULLIF(TRIM(IFNULL(%s.assistant_teacher_names, '')), '') IS NOT NULL THEN IFNULL(%s.assistant_teacher_names, '') ELSE %s END", recordStudentAlias, recordStudentAlias, fallbackAssistantNameExpr)
+			} else {
+				fragments.assistantNameExpr = fallbackAssistantNameExpr
+			}
+			if recordStudentHasClassID {
+				fragments.classIDExpr = fmt.Sprintf("CASE WHEN IFNULL(%s.class_id, 0) > 0 THEN CAST(%s.class_id AS CHAR) ELSE %s END", recordStudentAlias, recordStudentAlias, fragments.classIDExpr)
+			}
+			if recordStudentHasClassName {
+				fragments.classNameExpr = fmt.Sprintf("CASE WHEN NULLIF(TRIM(IFNULL(%s.class_name, '')), '') IS NOT NULL THEN IFNULL(%s.class_name, '') ELSE %s END", recordStudentAlias, recordStudentAlias, fallbackClassNameExpr)
+			} else {
+				fragments.classNameExpr = fallbackClassNameExpr
+			}
+		} else {
+			fragments.lessonDayExpr = fallbackLessonDayExpr
+			fragments.startMinutesExpr = fallbackStartMinutesExpr
+			fragments.endMinutesExpr = fallbackEndMinutesExpr
+			fragments.teachingTimeExpr = fallbackTeachingTimeExpr
+			fragments.rollCallTimeExpr = fallbackRollCallTimeExpr
+			fragments.teacherIDExpr = fallbackTeacherIDExpr
+			fragments.teacherNameExpr = fallbackTeacherNameExpr
+			fragments.assistantIDExpr = fallbackAssistantIDExpr
+			fragments.assistantNameExpr = fallbackAssistantNameExpr
+			fragments.classNameExpr = fallbackClassNameExpr
 		}
 	}
 
@@ -587,6 +803,7 @@ func (repo *Repository) GetLessonIncomePagedList(ctx context.Context, instID int
 			t := conformIncomeTime.Time
 			item.ConformIncomeTime = &t
 		}
+		item.AssistantName = normalizeJSONStringListText(item.AssistantName)
 		if teacherID != "" && teacherID != "0" && strings.TrimSpace(item.TeacherName) != "" {
 			item.Teachers = []model.LessonIncomeTeacher{{
 				ID:   teacherID,

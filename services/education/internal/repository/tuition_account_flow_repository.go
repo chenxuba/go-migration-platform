@@ -62,6 +62,56 @@ func (repo *Repository) buildTuitionAccountFlowTeachingCourseFragments(
 
 	recordCourseIDExpr := "0"
 	recordCourseNameExpr := "''"
+	recordStudentAlias := ""
+	if recordTableExists, err := repo.tableExists(ctx, "student_teaching_record"); err != nil {
+		return nil, "", "", err
+	} else if recordTableExists {
+		hasTeachingRecordID, err := repo.columnExists(ctx, "student_teaching_record", "teaching_record_id")
+		if err != nil {
+			return nil, "", "", err
+		}
+		hasLessonID, err := repo.columnExists(ctx, "student_teaching_record", "lesson_id")
+		if err != nil {
+			return nil, "", "", err
+		}
+		hasLessonName, err := repo.columnExists(ctx, "student_teaching_record", "lesson_name")
+		if err != nil {
+			return nil, "", "", err
+		}
+		if hasTeachingRecordID && (hasLessonID || hasLessonName) {
+			recordStudentAlias = flowAlias + "_student_teach_record"
+			recordStudentLessonIDExpr := "0 AS lesson_id"
+			recordStudentLessonNameExpr := "'' AS lesson_name"
+			if hasLessonID {
+				recordStudentLessonIDExpr = "MAX(IFNULL(lesson_id, 0)) AS lesson_id"
+			}
+			if hasLessonName {
+				recordStudentLessonNameExpr = "MAX(IFNULL(lesson_name, '')) AS lesson_name"
+			}
+			joins = append(joins, fmt.Sprintf(`LEFT JOIN (
+				SELECT
+					inst_id,
+					teaching_record_id,
+					%s,
+					%s
+				FROM student_teaching_record
+				WHERE del_flag = 0
+				GROUP BY inst_id, teaching_record_id
+			) %s ON %s.inst_id = %s AND %s.teaching_record_id = %s`,
+				recordStudentLessonIDExpr,
+				recordStudentLessonNameExpr,
+				recordStudentAlias,
+				recordStudentAlias, instIDExpr,
+				recordStudentAlias, teachingRecordIDExpr,
+			))
+			if hasLessonID {
+				recordCourseIDExpr = fmt.Sprintf("IFNULL(%s.lesson_id, 0)", recordStudentAlias)
+			}
+			if hasLessonName {
+				recordCourseNameExpr = fmt.Sprintf("IFNULL(%s.lesson_name, '')", recordStudentAlias)
+			}
+		}
+	}
 	if schema.teachingTable != "" && schema.teachingClassIDColumn != "" {
 		recordAlias := flowAlias + "_teach_record"
 		recordClassAlias := flowAlias + "_teach_class"
@@ -73,8 +123,15 @@ func (repo *Repository) buildTuitionAccountFlowTeachingCourseFragments(
 			fmt.Sprintf("LEFT JOIN inst_course %s ON %s.id = %s.course_id AND %s.del_flag = 0",
 				recordCourseAlias, recordCourseAlias, recordClassAlias, recordCourseAlias),
 		)
-		recordCourseIDExpr = fmt.Sprintf("IFNULL(%s.course_id, 0)", recordClassAlias)
-		recordCourseNameExpr = fmt.Sprintf("IFNULL(%s.name, '')", recordCourseAlias)
+		fallbackCourseIDExpr := fmt.Sprintf("IFNULL(%s.course_id, 0)", recordClassAlias)
+		fallbackCourseNameExpr := fmt.Sprintf("IFNULL(%s.name, '')", recordCourseAlias)
+		if recordStudentAlias != "" {
+			recordCourseIDExpr = fmt.Sprintf("CASE WHEN %s > 0 THEN %s ELSE %s END", recordCourseIDExpr, recordCourseIDExpr, fallbackCourseIDExpr)
+			recordCourseNameExpr = fmt.Sprintf("CASE WHEN NULLIF(TRIM(%s), '') IS NOT NULL THEN %s ELSE %s END", recordCourseNameExpr, recordCourseNameExpr, fallbackCourseNameExpr)
+		} else {
+			recordCourseIDExpr = fallbackCourseIDExpr
+			recordCourseNameExpr = fallbackCourseNameExpr
+		}
 	}
 
 	sourceClassAlias := flowAlias + "_source_class"

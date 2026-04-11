@@ -12,7 +12,7 @@ import { useTableColumns } from '@/composables/useTableColumns'
 import messageService from '@/utils/messageService'
 
 const TEACHING_METHOD_MAP = {
-  1: '班课',
+  1: '班级授课',
   2: '1v1',
   3: '直播课',
 }
@@ -749,7 +749,7 @@ onUnmounted(() => {
                   {{ formatDateTime(record.lessonDay, 'YYYY-MM-DD') }}
                 </div>
                 <div v-if="hasMeaningfulTimeRange(record)" class="text-3 text-#888">
-                  时段：{{ minutesToTime(record.startMinutes) }}~{{ minutesToTime(record.endMinutes) }}
+                  {{ minutesToTime(record.startMinutes) }}~{{ minutesToTime(record.endMinutes) }}
                 </div>
               </template>
               <template v-if="column.key === 'rollCallTime'">
