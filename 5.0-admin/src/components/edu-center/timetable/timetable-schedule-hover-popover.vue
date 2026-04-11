@@ -2,8 +2,8 @@
 import { CopyOutlined, EditOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { computed, getCurrentInstance, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { type TeachingScheduleBatchMeta, type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi } from '@/api/edu-center/teaching-schedule'
+import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
 
 interface ScheduleEditPayload {
   batchMeta?: TeachingScheduleBatchMeta
@@ -59,7 +59,6 @@ const emit = defineEmits<{
   (e: 'openChange', value: boolean): void
 }>()
 
-const router = useRouter()
 const instance = getCurrentInstance()
 const popoverInnerStyle = {
   padding: '0px',
@@ -73,6 +72,7 @@ const innerOpen = ref(false)
 const detailLoading = ref(false)
 const detailData = ref<TeachingScheduleDetail | null>(null)
 const popoverPlacement = ref<'rightTop' | 'rightBottom' | 'leftTop' | 'leftBottom'>('rightTop')
+const rollCallDrawerOpen = ref(false)
 let detailLoadSeq = 0
 let lastTriggerNode: HTMLElement | null = null
 let hoverPopoverRoot: HTMLElement | null = null
@@ -350,7 +350,7 @@ function goRollCall() {
   if (!canRollCall.value)
     return
   closePopover()
-  router.push('/edu-center/roll-call-list')
+  rollCallDrawerOpen.value = true
 }
 
 watch(
@@ -555,6 +555,7 @@ watch(
 
     <slot />
   </a-popover>
+  <RollCallDrawer v-model:open="rollCallDrawerOpen" />
 </template>
 
 <style scoped lang="less">

@@ -4,11 +4,11 @@ import dayjs from 'dayjs'
 import type { TableColumnsType } from 'ant-design-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import { type TeachingScheduleBatchMeta, type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi, removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
 import RollCallAddStudentModal from '@/components/common/roll-call-add-student-modal.vue'
+import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
 import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
 
@@ -63,9 +63,9 @@ const openDrawer = computed({
 
 const loading = ref(false)
 const detailData = ref<TeachingScheduleDetail | null>(null)
-const router = useRouter()
 const studentStore = useStudentStore()
 const openStudentDrawer = ref(false)
+const rollCallDrawerOpen = ref(false)
 const activeStudentTabKey = ref('students')
 const addStudentModalOpen = ref(false)
 const addStudentModalTitle = ref('添加补课学员')
@@ -308,7 +308,7 @@ function handleSingleEditClick() {
 function goRollCall() {
   if (!canRollCall.value)
     return
-  router.push('/edu-center/roll-call-list')
+  rollCallDrawerOpen.value = true
 }
 
 function handleStudentRemove(student: Record<string, any>) {
@@ -707,6 +707,7 @@ watch(
       </div>
     </a-spin>
     <student-info-drawer v-model:open="openStudentDrawer" />
+    <RollCallDrawer v-model:open="rollCallDrawerOpen" />
     <RollCallAddStudentModal
       v-model:open="addStudentModalOpen"
       :title="addStudentModalTitle"
