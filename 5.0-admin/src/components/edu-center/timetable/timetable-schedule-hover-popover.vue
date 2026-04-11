@@ -119,11 +119,7 @@ function formatStudentBucket(students: TeachingScheduleDetailStudent[]) {
   return formatNameBucket(students.map(item => item.studentName))
 }
 
-const activeStudents = computed(() => {
-  if (!detailData.value)
-    return []
-  return (detailData.value.students || []).filter(item => Number(item.scheduleStudentType) !== 3)
-})
+const activeStudents = computed(() => detailData.value?.students || [])
 const trialStudents = computed(() => {
   if (!detailData.value)
     return []
