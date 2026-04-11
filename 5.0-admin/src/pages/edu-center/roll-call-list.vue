@@ -55,12 +55,6 @@ const allColumns = ref([
     width: 120,
   },
   {
-    title: '科目',
-    dataIndex: 'subject',
-    key: 'subject',
-    width: 150,
-  },
-  {
     title: '操作',
     dataIndex: 'action',
     key: 'action',
