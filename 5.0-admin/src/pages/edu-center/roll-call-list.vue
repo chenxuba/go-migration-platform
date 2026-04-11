@@ -48,6 +48,8 @@ const tableLoading = ref(false)
 const statisticsLoading = ref(false)
 const batchDeleting = ref(false)
 const openDrawer = ref(false)
+const currentRollCallScheduleId = ref('')
+const currentRollCallLessonDay = ref('')
 const allFilterRef = ref<AllFilterExpose | null>(null)
 const dashboardFilter = ref<DashboardFilter>('custom')
 const dateRange = ref<[Dayjs, Dayjs]>([monthStart, todayDayjs])
@@ -380,7 +382,9 @@ function handleQuickFilter(type: DashboardFilter) {
   }
 }
 
-function handleRollCall() {
+function handleRollCall(record?: Partial<TeachingScheduleItem> | Record<string, any>) {
+  currentRollCallScheduleId.value = String(record?.id || '').trim()
+  currentRollCallLessonDay.value = String(record?.lessonDate || '').trim()
   openDrawer.value = true
 }
 
@@ -803,14 +807,18 @@ onMounted(async () => {
           </template>
           <template v-else-if="column.key === 'action'">
             <span class="flex action">
-              <a class="font500" @click="handleRollCall()">点名</a>
+              <a class="font500" @click="handleRollCall(record)">点名</a>
             </span>
           </template>
         </template>
       </a-table>
     </div>
 
-    <roll-call-drawer v-model:open="openDrawer" />
+    <roll-call-drawer
+      v-model:open="openDrawer"
+      :schedule-id="currentRollCallScheduleId"
+      :lesson-day="currentRollCallLessonDay"
+    />
   </div>
 </template>
 

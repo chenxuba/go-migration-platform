@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"sort"
 	"strconv"
@@ -78,6 +80,49 @@ func (svc *Service) GetRollCallPagedList(userID int64, dto model.RollCallPagedLi
 		List:  items[offset:end],
 		Total: total,
 	}, nil
+}
+
+func (svc *Service) GetRollCallClassTimetable(userID int64, dto model.RollCallClassTimetableQueryDTO) (model.RollCallClassTimetableResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.RollCallClassTimetableResult{}, err
+	}
+	return svc.repo.GetRollCallClassTimetable(context.Background(), instID, dto)
+}
+
+func (svc *Service) GetRollCallTeachingRecordStudentList(userID int64, dto model.RollCallTeachingRecordStudentListQueryDTO) (model.RollCallTeachingRecordStudentListResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.RollCallTeachingRecordStudentListResult{}, err
+	}
+	return svc.repo.GetRollCallTeachingRecordStudentList(context.Background(), instID, dto)
+}
+
+func (svc *Service) GetRollCallStudentLeaveCount(userID int64, dto model.RollCallStudentLeaveCountQueryDTO) ([]model.RollCallStudentLeaveCountVO, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return svc.repo.GetRollCallStudentLeaveCount(context.Background(), instID, dto)
+}
+
+func (svc *Service) GetRollCallStudentTuitionExtraInfo(userID int64, dto model.RollCallStudentTuitionExtraInfoQueryDTO) ([]model.RollCallStudentTuitionExtraInfoVO, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return nil, err
+	}
+	return svc.repo.GetRollCallStudentTuitionExtraInfo(context.Background(), instID, dto)
+}
+
+func (svc *Service) rollCallInstID(userID int64) (int64, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, errors.New("no institution context")
+		}
+		return 0, err
+	}
+	return instID, nil
 }
 
 func (svc *Service) listRollCallSchedules(userID int64, query model.RollCallQueryModel, startDate, endDate, sortDirection string) ([]model.TeachingScheduleVO, error) {

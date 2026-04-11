@@ -43,3 +43,150 @@ type RollCallPagedListResult struct {
 	List  []TeachingScheduleVO `json:"list"`
 	Total int                  `json:"total"`
 }
+
+type RollCallClassTimetableQueryDTO struct {
+	ID        string `json:"id"`
+	LessonDay string `json:"lessonDay"`
+}
+
+type RollCallClassTimetableTeacherVO struct {
+	TeacherID     string `json:"teacherId"`
+	TeacherDuty   int    `json:"teacherDuty"`
+	TeacherName   string `json:"teacherName"`
+	TeacherStatus int    `json:"teacherStatus"`
+}
+
+type RollCallClassTimetableStudentVO struct {
+	SourceType                   int    `json:"sourceType"`
+	SourceID                     string `json:"sourceId"`
+	StudentID                    string `json:"studentId"`
+	StudentName                  string `json:"studentName"`
+	StudentAvatar                string `json:"studentAvatar,omitempty"`
+	StudentPhone                 string `json:"studentPhone,omitempty"`
+	StudentPhoneRelationshipType int    `json:"studentPhoneRelationshipType"`
+}
+
+type RollCallClassTimetableLessonDayVO struct {
+	LessonDay        string                            `json:"lessonDay"`
+	IsFinished       bool                              `json:"isFinished"`
+	LessonDayIndex   int                               `json:"lessonDayIndex"`
+	Students         []RollCallClassTimetableStudentVO `json:"students"`
+	RemoveStudent    []RollCallClassTimetableStudentVO `json:"removeStudent"`
+	TeachingRecordID string                            `json:"teachingRecordId"`
+}
+
+type RollCallClassTimetableDetailVO struct {
+	ID                         string                              `json:"id"`
+	ClassID                    string                              `json:"classId"`
+	ClassName                  string                              `json:"className"`
+	ClassTimes                 float64                             `json:"classTimes"`
+	DefaultStudentClassTime    float64                             `json:"defaultStudentClassTime"`
+	DefaultTeacherClassTime    float64                             `json:"defaultTeacherClassTime"`
+	DefaultClassTimeRecordMode int                                 `json:"defaultClassTimeRecordMode"`
+	LessonPrice                float64                             `json:"lessonPrice"`
+	Teachers                   []RollCallClassTimetableTeacherVO   `json:"teachers"`
+	AddressType                int                                 `json:"addressType"`
+	AddressID                  string                              `json:"addressId"`
+	AddressName                string                              `json:"addressName"`
+	LessonID                   string                              `json:"lessonId"`
+	LessonName                 string                              `json:"lessonName"`
+	LessonType                 int                                 `json:"lessonType"`
+	StartMinutes               int                                 `json:"startMinutes"`
+	EndMinutes                 int                                 `json:"endMinutes"`
+	RepeatSpan                 int                                 `json:"repeatSpan"`
+	WeekDays                   int                                 `json:"weekDays"`
+	StartDate                  string                              `json:"startDate"`
+	EndDate                    string                              `json:"endDate"`
+	LessonCount                int                                 `json:"lessonCount"`
+	Remark                     string                              `json:"remark"`
+	ExternalRemark             string                              `json:"externalRemark"`
+	LessonDays                 []RollCallClassTimetableLessonDayVO `json:"lessonDays"`
+	IsBookLesson               bool                                `json:"isBookLesson"`
+	SubjectID                  string                              `json:"subjectId"`
+	SubjectName                string                              `json:"subjectName"`
+	IsOrgCreated               bool                                `json:"isOrgCreated"`
+	SchoolID                   string                              `json:"schoolId"`
+	SchoolName                 string                              `json:"schoolName"`
+	IsOpenLiveRecord           bool                                `json:"isOpenLiveRecord"`
+	IsOpenLive                 bool                                `json:"isOpenLive"`
+}
+
+type RollCallClassTimetableResult struct {
+	Detail RollCallClassTimetableDetailVO `json:"detail"`
+}
+
+type RollCallTeachingRecordStudentListQueryDTO struct {
+	TimetableSourceID   string `json:"timetableSourceId"`
+	TimetableSourceType int    `json:"timetableSourceType"`
+	ClassID             string `json:"classId"`
+	LessonID            string `json:"lessonId"`
+	OneToOneID          string `json:"one2OneId"`
+	StartDate           string `json:"startDate"`
+	EndDate             string `json:"endDate"`
+	LessonDay           string `json:"lessonDay"`
+}
+
+type RollCallTeachingRecordMetaVO struct {
+	SourceName          string  `json:"sourceName"`
+	SourceType          int     `json:"sourceType"`
+	SourceID            string  `json:"sourceId"`
+	LessonID            string  `json:"lessonId"`
+	TimetableSourceType int     `json:"timetableSourceType"`
+	Tag                 int     `json:"tag"`
+	TimetableSourceID   string  `json:"timetableSourceId"`
+	StartTime           string  `json:"startTime"`
+	EndTime             string  `json:"endTime"`
+	TeacherClassTime    float64 `json:"teacherClassTime"`
+	ClassroomID         string  `json:"classroomId"`
+}
+
+type RollCallTeachingRecordTeacherVO struct {
+	TeacherID string `json:"teacherId"`
+	Type      int    `json:"type"`
+}
+
+type RollCallTeachingRecordStudentVO struct {
+	StudentID                    string  `json:"studentId"`
+	StudentName                  string  `json:"studentName"`
+	Avatar                       string  `json:"avatar,omitempty"`
+	IsBindChild                  bool    `json:"isBindChild"`
+	Quantity                     float64 `json:"quantity"`
+	PaidRemaining                float64 `json:"paidRemaining"`
+	ChargingMode                 int     `json:"chargingMode"`
+	IsTuitionAccountActive       bool    `json:"isTuitionAccountActive"`
+	MakeUpTeachingRecordID       string  `json:"makeUpTeachingRecordId"`
+	AbsentStudentType            int     `json:"absentStudentType"`
+	TuitionAccountID             string  `json:"tuitionAccountId"`
+	SourceType                   int     `json:"sourceType"`
+	StudentTeachingStatus        int     `json:"studentTeachingStatus"`
+	DefaultStudentTeachingStatus int     `json:"defaultStudentTeachingStatus"`
+	HasSignIn                    bool    `json:"hasSignIn"`
+	IsCrossSchoolStudent         bool    `json:"isCrossSchoolStudent"`
+}
+
+type RollCallTeachingRecordStudentListResult struct {
+	Data     RollCallTeachingRecordMetaVO      `json:"data"`
+	Teachers []RollCallTeachingRecordTeacherVO `json:"teachers"`
+	Students []RollCallTeachingRecordStudentVO `json:"students"`
+}
+
+type RollCallStudentLeaveCountQueryDTO struct {
+	StudentIDs []string `json:"studentIds"`
+	LessonID   string   `json:"lessonId"`
+}
+
+type RollCallStudentLeaveCountVO struct {
+	StudentID  string `json:"studentId"`
+	LeaveCount int    `json:"leaveCount"`
+}
+
+type RollCallStudentTuitionExtraInfoQueryDTO struct {
+	StudentIDs []string `json:"studentIds"`
+	LessonID   string   `json:"lessonId"`
+}
+
+type RollCallStudentTuitionExtraInfoVO struct {
+	StudentID            string `json:"studentId"`
+	MutilTuition         bool   `json:"mutilTuition"`
+	BestMatchProductName string `json:"bestMatchProductName"`
+}

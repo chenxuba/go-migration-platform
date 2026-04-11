@@ -884,6 +884,40 @@ func parseRollCallPagedListQueryDTO(raw map[string]any) model.RollCallPagedListQ
 	return query
 }
 
+func parseRollCallClassTimetableQueryDTO(raw map[string]any) model.RollCallClassTimetableQueryDTO {
+	return model.RollCallClassTimetableQueryDTO{
+		ID:        asString(raw["id"]),
+		LessonDay: asString(raw["lessonDay"]),
+	}
+}
+
+func parseRollCallTeachingRecordStudentListQueryDTO(raw map[string]any) model.RollCallTeachingRecordStudentListQueryDTO {
+	return model.RollCallTeachingRecordStudentListQueryDTO{
+		TimetableSourceID:   asString(raw["timetableSourceId"]),
+		TimetableSourceType: asInt(raw["timetableSourceType"], 0),
+		ClassID:             asString(raw["classId"]),
+		LessonID:            asString(raw["lessonId"]),
+		OneToOneID:          asString(firstNonNil(raw["one2OneId"], raw["oneToOneId"])),
+		StartDate:           asString(raw["startDate"]),
+		EndDate:             asString(raw["endDate"]),
+		LessonDay:           asString(raw["lessonDay"]),
+	}
+}
+
+func parseRollCallStudentLeaveCountQueryDTO(raw map[string]any) model.RollCallStudentLeaveCountQueryDTO {
+	return model.RollCallStudentLeaveCountQueryDTO{
+		StudentIDs: asStringSlice(raw["studentIds"]),
+		LessonID:   asString(raw["lessonId"]),
+	}
+}
+
+func parseRollCallStudentTuitionExtraInfoQueryDTO(raw map[string]any) model.RollCallStudentTuitionExtraInfoQueryDTO {
+	return model.RollCallStudentTuitionExtraInfoQueryDTO{
+		StudentIDs: asStringSlice(raw["studentIds"]),
+		LessonID:   asString(raw["lessonId"]),
+	}
+}
+
 func parseRollCallQueryModel(raw map[string]any) model.RollCallQueryModel {
 	return model.RollCallQueryModel{
 		StartDate:     asString(raw["startDate"]),

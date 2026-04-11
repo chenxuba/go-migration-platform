@@ -1,6 +1,15 @@
 <script setup>
 import { CloseOutlined, DownOutlined, ExclamationCircleFilled, ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { onMounted, onUnmounted } from 'vue'
+import dayjs from 'dayjs'
+import {
+  getRollCallClassTimetableApi,
+  getRollCallStudentLeaveCountApi,
+  getRollCallStudentTuitionExtraInfoApi,
+  getRollCallTeachingRecordStudentListApi,
+} from '@/api/edu-center/roll-call'
+import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
+import { useStudentStore } from '@/stores/student'
+import messageService from '@/utils/messageService'
 import EditClassInfoModal from './edit-class-info-modal.vue'
 
 const props = defineProps({
@@ -8,73 +17,37 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  scheduleId: {
+    type: String,
+    default: '',
+  },
+  lessonDay: {
+    type: String,
+    default: '',
+  },
 })
 const emit = defineEmits(['update:open'])
-// 处理双向绑定
 const openDrawer = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
 })
-// 数据源改为ref，以便响应式更新
-const data = ref([
-  {
-    id: '1',
-    type: '1', // 上课学员
-    studentAccount: '张三',
-    attended: true,
-    absent: false,
-    leave: false,
-    unrecorded: false,
-    consumptionMethod: '1', // 按课时
-    recordAttendance: true,
-    attendanceCount: 1,
-    internalNote: '',
-    externalNote: '',
-  },
-  {
-    id: '2',
-    type: '2', // 临时学员
-    studentAccount: '李四',
-    attended: true,
-    absent: false,
-    leave: false,
-    unrecorded: false,
-    consumptionMethod: '2', // 按时段
-    recordAttendance: false,
-    attendanceCount: 1,
-    internalNote: '',
-    externalNote: '',
-  },
-  {
-    id: '3',
-    type: '3', // 试听学员
-    studentAccount: '王五',
-    attended: true,
-    absent: false,
-    leave: false,
-    unrecorded: false,
-    consumptionMethod: '3', // 按金额
-    recordAttendance: false,
-    attendanceCount: 1,
-    internalNote: '',
-    externalNote: '',
-  },
-  {
-    id: '4',
-    type: '4', // 补课学员
-    studentAccount: '赵六',
-    attended: true,
-    absent: false,
-    leave: false,
-    unrecorded: false,
-    consumptionMethod: '1', // 按课时
-    recordAttendance: false,
-    attendanceCount: 1,
-    internalNote: '',
-    externalNote: '',
-  },
-
-])
+const currentScheduleId = computed(() => String(props.scheduleId || '').trim())
+const currentLessonDay = computed(() => {
+  const text = String(props.lessonDay || '').trim()
+  if (!text)
+    return ''
+  if (text.includes('T'))
+    return text
+  return `${text}T00:00:00`
+})
+const defaultStudentAvatar = 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png'
+const studentStore = useStudentStore()
+const openStudentDrawer = ref(false)
+const loading = ref(false)
+const classTimetableDetail = ref(null)
+const teachingRecordResult = ref(null)
+const data = ref([])
+let loadSeq = 0
 // 定义列
 const columns = ref(
   [
@@ -155,7 +128,7 @@ const totalWidth = computed(() =>
 )
 const userName = ref('')
 // 修改为独立的状态控制
-const headerStatus = ref('attended') // 默认为到课
+const headerStatus = ref('')
 // 根据表头状态设置每个学生的状态
 function setAllStudentStatus(status) {
   data.value.forEach((item) => {
@@ -169,6 +142,11 @@ function setAllStudentStatus(status) {
       item[status] = true
     }
   })
+}
+function syncHeaderStatus() {
+  const statuses = ['attended', 'absent', 'leave', 'unrecorded']
+  const matchedStatus = statuses.find(status => data.value.length > 0 && data.value.every(item => item[status]))
+  headerStatus.value = matchedStatus || ''
 }
 // 计算属性监听表头状态变化
 watch(() => headerStatus.value, (newStatus) => {
@@ -236,6 +214,218 @@ const attendanceStats = computed(() => {
     unrecorded: data.value.filter(student => student.unrecorded).length,
   }
 })
+const filteredData = computed(() => {
+  const keyword = String(userName.value || '').trim()
+  if (!keyword)
+    return data.value
+  return data.value.filter(item =>
+    String(item.studentAccount || '').includes(keyword)
+    || String(item.accountName || '').includes(keyword),
+  )
+})
+const titleText = computed(() =>
+  String(classTimetableDetail.value?.className || teachingRecordResult.value?.data?.sourceName || '上课点名').trim() || '上课点名',
+)
+const teacherBucket = computed(() => {
+  const teachers = Array.isArray(classTimetableDetail.value?.teachers) ? classTimetableDetail.value.teachers : []
+  const mainTeacher = teachers.find(item => Number(item.teacherDuty) === 1) || teachers[0]
+  const assistantNames = teachers
+    .filter(item => Number(item.teacherDuty) !== 1)
+    .map(item => String(item.teacherName || '').trim())
+    .filter(Boolean)
+  return {
+    teacherName: String(mainTeacher?.teacherName || '').trim() || '-',
+    assistantText: assistantNames.length ? assistantNames.join('、') : '-',
+  }
+})
+const classroomText = computed(() => String(classTimetableDetail.value?.addressName || '-').trim() || '-')
+const showTip = computed(() => data.value.some(item => item.bindChildText === '未关注'))
+const tipText = computed(() => '未关注家校平台的学员家长，无法接收课消提醒')
+const timeText = computed(() => {
+  const startTime = String(teachingRecordResult.value?.data?.startTime || '').trim()
+  const endTime = String(teachingRecordResult.value?.data?.endTime || '').trim()
+  if (!startTime || !endTime)
+    return '-'
+  const weekText = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][dayjs(startTime).day()] || '-'
+  return `${dayjs(startTime).format('YYYY-MM-DD')}(${weekText}) ${dayjs(startTime).format('HH:mm')} ~ ${dayjs(endTime).format('HH:mm')}`
+})
+const durationText = computed(() => {
+  const startTime = String(teachingRecordResult.value?.data?.startTime || '').trim()
+  const endTime = String(teachingRecordResult.value?.data?.endTime || '').trim()
+  if (!startTime || !endTime)
+    return '-'
+  const minutes = dayjs(endTime).diff(dayjs(startTime), 'minute')
+  return minutes > 0 ? `${minutes}分钟` : '-'
+})
+const teacherClassTimeText = computed(() => {
+  const value = Number(teachingRecordResult.value?.data?.teacherClassTime ?? classTimetableDetail.value?.defaultTeacherClassTime ?? 0)
+  return `教师记录 ${Number.isInteger(value) ? value : value.toFixed(2).replace(/\.?0+$/, '')} 课时`
+})
+function getConsumptionMethodText(mode, studentType) {
+  if (String(studentType || '') === '3')
+    return '按课时'
+  if (Number(mode) === 1)
+    return '按课时'
+  if (Number(mode) === 2)
+    return '按时间'
+  if (Number(mode) === 3)
+    return '按金额'
+  return '-'
+}
+function formatRemainingText(mode, quantity, paidRemaining) {
+  const chargeMode = Number(mode || 0)
+  if (chargeMode === 1)
+    return `剩余课时：${Number(quantity || 0)}`
+  if (chargeMode === 2)
+    return `剩余天数：${Number(quantity || 0)}`
+  if (chargeMode === 3)
+    return `剩余金额：${Number(paidRemaining || 0)}`
+  return ''
+}
+function teachingSourceTypeToTagType(sourceType) {
+  if (Number(sourceType) === 4)
+    return '3'
+  if (Number(sourceType) === 2)
+    return '2'
+  if (Number(sourceType) === 3)
+    return '4'
+  return '1'
+}
+function defaultTeachingStatusToKey(value) {
+  if (Number(value) === 2)
+    return 'absent'
+  if (Number(value) === 3)
+    return 'leave'
+  if (Number(value) === 4)
+    return 'unrecorded'
+  return 'attended'
+}
+function applyStudentState(item) {
+  item.attended = false
+  item.absent = false
+  item.leave = false
+  item.unrecorded = false
+  const status = String(item.defaultAttendanceStatus || 'attended')
+  if (status === 'absent')
+    item.absent = true
+  else if (status === 'leave')
+    item.leave = true
+  else if (status === 'unrecorded')
+    item.unrecorded = true
+  else
+    item.attended = true
+}
+function mapStudentRow(item, leaveCountMap, tuitionExtraMap) {
+  const extra = tuitionExtraMap.get(String(item.studentId || '')) || {}
+  const leaveCount = Number(leaveCountMap.get(String(item.studentId || '')) || 0)
+  const studentType = teachingSourceTypeToTagType(item.sourceType)
+  const row = {
+    id: String(item.studentId || ''),
+    type: studentType,
+    studentAccount: String(item.studentName || '-'),
+    avatarUrl: String(item.avatar || defaultStudentAvatar),
+    bindChildText: item.isBindChild ? '已关注' : '未关注',
+    accountName: String(extra.bestMatchProductName || ''),
+    remainingText: formatRemainingText(item.chargingMode, item.quantity, item.paidRemaining),
+    leaveCountText: `已请假：${leaveCount}次`,
+    consumptionMethod: String(item.chargingMode || ''),
+    consumptionMethodText: getConsumptionMethodText(item.chargingMode, studentType),
+    recordAttendance: Number(item.chargingMode || 0) === 1,
+    attendanceCount: Number(classTimetableDetail.value?.defaultStudentClassTime || 1),
+    internalNote: '',
+    externalNote: '',
+    defaultAttendanceStatus: defaultTeachingStatusToKey(item.defaultStudentTeachingStatus),
+    canSwitchAccount: Boolean(extra.mutilTuition),
+    canRemove: true,
+    attended: false,
+    absent: false,
+    leave: false,
+    unrecorded: false,
+  }
+  applyStudentState(row)
+  return row
+}
+async function loadDetail() {
+  if (!openDrawer.value || !currentScheduleId.value) {
+    classTimetableDetail.value = null
+    teachingRecordResult.value = null
+    data.value = []
+    headerStatus.value = ''
+    return
+  }
+
+  const seq = ++loadSeq
+  loading.value = true
+  try {
+    const classTimetableRes = await getRollCallClassTimetableApi({
+      id: currentScheduleId.value,
+      lessonDay: currentLessonDay.value || undefined,
+    })
+    if (seq !== loadSeq)
+      return
+    if (classTimetableRes.code !== 200 || !classTimetableRes.result?.detail)
+      throw new Error(classTimetableRes.message || '加载点名课表失败')
+
+    classTimetableDetail.value = classTimetableRes.result.detail
+    const lessonDay = String(classTimetableRes.result.detail.lessonDays?.[0]?.lessonDay || currentLessonDay.value || '')
+    const classId = String(classTimetableRes.result.detail.classId || '')
+    const lessonId = String(classTimetableRes.result.detail.lessonId || '')
+
+    const recordRes = await getRollCallTeachingRecordStudentListApi({
+      timetableSourceId: currentScheduleId.value,
+      timetableSourceType: 1,
+      classId,
+      lessonId,
+      one2OneId: '0',
+      startDate: String(classTimetableRes.result.detail.startDate || '0001-01-01T00:00:00'),
+      endDate: String(classTimetableRes.result.detail.endDate || '0001-01-01T00:00:00'),
+      lessonDay,
+    })
+    if (seq !== loadSeq)
+      return
+    if (recordRes.code !== 200 || !recordRes.result)
+      throw new Error(recordRes.message || '加载点名学员失败')
+
+    teachingRecordResult.value = recordRes.result
+    const studentIds = Array.isArray(recordRes.result.students) ? recordRes.result.students.map(item => String(item.studentId || '')).filter(Boolean) : []
+    const [leaveCountRes, tuitionExtraRes] = await Promise.all([
+      getRollCallStudentLeaveCountApi({
+        studentIds,
+        lessonId,
+      }),
+      getRollCallStudentTuitionExtraInfoApi({
+        studentIds,
+        lessonId,
+      }),
+    ])
+    if (seq !== loadSeq)
+      return
+    if (leaveCountRes.code !== 200)
+      throw new Error(leaveCountRes.message || '加载请假次数失败')
+    if (tuitionExtraRes.code !== 200)
+      throw new Error(tuitionExtraRes.message || '加载扣费补充信息失败')
+
+    const leaveCountMap = new Map((Array.isArray(leaveCountRes.result) ? leaveCountRes.result : []).map(item => [String(item.studentId || ''), Number(item.leaveCount || 0)]))
+    const tuitionExtraMap = new Map((Array.isArray(tuitionExtraRes.result) ? tuitionExtraRes.result : []).map(item => [String(item.studentId || ''), item]))
+    data.value = (Array.isArray(recordRes.result.students) ? recordRes.result.students : []).map(item =>
+      mapStudentRow(item, leaveCountMap, tuitionExtraMap),
+    )
+    syncHeaderStatus()
+  }
+  catch (error) {
+    if (seq !== loadSeq)
+      return
+    classTimetableDetail.value = null
+    teachingRecordResult.value = null
+    data.value = []
+    headerStatus.value = ''
+    messageService.error(error?.response?.data?.message || error?.message || '加载点名详情失败')
+  }
+  finally {
+    if (seq === loadSeq)
+      loading.value = false
+  }
+}
 // 编辑上课信息
 const editClassInfoModal = ref(false)
 function handleEditClassInfo() {
@@ -249,27 +439,60 @@ function handleEditClassInfo() {
 // 添加学员modal
 const addStudentModal = ref(false)
 const addStudentModalTitle = ref('')
+const addStudentType = ref(4)
 // 添加学员
 function handleAddStudent({ key }) {
   if (key === '1') {
-    // 补课学员 跳转补课学员页面
-    addStudentModalTitle.value = '添加补课学员'
+    messageService.info('补课学员功能暂未开发')
+    return
   }
   else if (key === '2') {
-    // 临时学员 跳转临时学员页面
     addStudentModalTitle.value = '添加临时学员'
+    addStudentType.value = 2
   }
   else if (key === '3') {
-    // 试听学员 跳转试听学员页面
     addStudentModalTitle.value = '添加试听学员'
+    addStudentType.value = 3
   }
   addStudentModal.value = true
+}
+async function handleAddStudentSuccess() {
+  await loadDetail()
 }
 // 批量编辑modal
 const batchEditModal = ref(false)
 function handleBatchEdit() {
   batchEditModal.value = true
 }
+function handleConfirmRollCall() {
+  messageService.info('点名提交功能暂未开发')
+}
+function handleSwitchAccount(record) {
+  if (!record?.canSwitchAccount)
+    return
+  messageService.info('切换扣费账户接口待对接')
+}
+function handleViewStudent(studentId) {
+  const id = String(studentId || '').trim()
+  if (!id)
+    return
+  studentStore.setStudentId(id)
+  openStudentDrawer.value = true
+}
+
+useStudentListRefresh(() => {
+  if (openDrawer.value && currentScheduleId.value) {
+    loadDetail()
+  }
+})
+
+watch(
+  () => `${openDrawer.value}|${currentScheduleId.value}|${currentLessonDay.value}`,
+  () => {
+    loadDetail()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -291,8 +514,8 @@ function handleBatchEdit() {
           </a-button>
         </div>
       </template>
-      <div class="tips bg-#e6f0ff py-12px px-16px text-#06f">
-        <ExclamationCircleFilled /> 未关注家校平台的学员家长，无法接收课消提醒
+      <div v-if="showTip" class="tips bg-#e6f0ff py-12px px-16px text-#06f">
+        <ExclamationCircleFilled /> {{ tipText }}
       </div>
       <div class="contenter flex flex-center bg-white px6 py3">
         <div class="avatarBox w-16 h-16 relative">
@@ -305,14 +528,14 @@ function handleBatchEdit() {
           <div class="top flex justify-between flex-center flex-1">
             <a-space>
               <div class="name text-5 font-800">
-                陈陈-初级感统课
+                {{ titleText }}
               </div>
             </a-space>
           </div>
           <div class="bottom flex-1 flex flex-items-center mt-2">
             <div class="birthday flex-center">
-              <span class="text-4 text-#222">2025-04-14(周一)10:00 ~ 10:30</span>
-              <span class="bg-#e6f0ff text-#06f text-3 px2 py1 rounded-10 ml2">30分钟</span>
+              <span class="text-4 text-#222">{{ timeText }}</span>
+              <span class="bg-#e6f0ff text-#06f text-3 px2 py1 rounded-10 ml2">{{ durationText }}</span>
             </div>
           </div>
         </div>
@@ -320,16 +543,16 @@ function handleBatchEdit() {
       <div class="desc pt-4 bg-white px6 py3 pb0">
         <a-descriptions :column="3" size="small" :content-style="{ color: '#333' }">
           <a-descriptions-item label="上课教师">
-            张晨
+            {{ teacherBucket.teacherName }}
           </a-descriptions-item>
           <a-descriptions-item label="上课助教">
-            陈瑞生
+            {{ teacherBucket.assistantText }}
           </a-descriptions-item>
           <a-descriptions-item label="上课教室">
-            -
+            {{ classroomText }}
           </a-descriptions-item>
           <a-descriptions-item label="本次上课">
-            教师记录 <span class="text-#f03 mx-1">1</span> 课时
+            {{ teacherClassTimeText }}
           </a-descriptions-item>
           <a-descriptions-item>
             <span class="text-#06f cursor-pointer" @click="handleEditClassInfo">编辑上课信息</span>
@@ -348,7 +571,7 @@ function handleBatchEdit() {
         <!-- 用a-table 学员/扣费课程账户	到课  旷课  请假  未记录  课消方式 	上课点名数量	对内备注	对外备注	操作 -->
         <!-- 带序号 -->
         <a-table
-          :columns="columns" :data-source="data" row-key="id" class="mt-12px" :pagination="false"
+          :columns="columns" :data-source="filteredData" row-key="id" class="mt-12px" :pagination="false"
           :scroll="{ x: totalWidth, }"
         >
           <template #headerCell="{ column }">
@@ -460,10 +683,10 @@ function handleBatchEdit() {
               {{ index + 1 }} {{ record.name }}
             </div>
             <div v-if="column.dataIndex === 'studentAccount'">
-              <div class="flex flex-items-center text-3">
+              <div class="flex flex-items-center text-3 cursor-pointer" @click="handleViewStudent(record.id)">
                 <div class=" mr-4px">
                   <img
-                    src="https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png"
+                    :src="record.avatarUrl || defaultStudentAvatar"
                     class="w-40px h-40px rounded-full mr-6px" alt=""
                   >
                   <span
@@ -482,13 +705,17 @@ function handleBatchEdit() {
                 <div class="text-#888">
                   <div class="text-14px text-#333 mb-2px">
                     {{ record.studentAccount }} <span
-                      class="bg-#e6f0ff text-#06f text-3 px2 py2px rounded-10 ml2px"
-                    >已关注</span>
+                      class="text-3 px2 py2px rounded-10 ml2px"
+                      :class="record.bindChildText === '已关注' ? 'bg-#e6f0ff text-#06f' : 'bg-#f2f3f5 text-#8c8c8c'"
+                    >{{ record.bindChildText }}</span>
                   </div>
-                  <div>高级言语课</div>
-                  <div>剩余课时：22</div>
+                  <div v-if="record.accountName || record.canSwitchAccount">
+                    {{ record.accountName }}
+                    <a v-if="record.canSwitchAccount" class="text-#06f ml-4px" @click.stop="handleSwitchAccount(record)">切换</a>
+                  </div>
+                  <div v-if="record.remainingText">{{ record.remainingText }}</div>
                   <div class="text-#f90">
-                    已请假：2次
+                    {{ record.leaveCountText }}
                   </div>
                 </div>
               </div>
@@ -547,8 +774,7 @@ function handleBatchEdit() {
               </div>
             </div>
             <div v-if="column.dataIndex === 'consumptionMethod'">
-              <span>{{ record.consumptionMethod === '1' ? '按课时' : record.consumptionMethod === '2' ? '按时间' : '按金额'
-              }}</span>
+              <span>{{ record.consumptionMethodText || '-' }}</span>
               <!-- 分割线 -->
               <span class="flex w-47px">
                 <a-divider
@@ -587,7 +813,7 @@ function handleBatchEdit() {
             </div>
             <div v-else-if="column.dataIndex === 'action'">
               <a-space>
-                <a>移出</a>
+                <a v-if="record.canRemove">移出</a>
               </a-space>
             </div>
           </template>
@@ -627,17 +853,24 @@ function handleBatchEdit() {
               }}人，未记录{{
                 attendanceStats.unrecorded }}人</span>
             </div>
-            <a-button type="primary" class="h-48px text-18px w-140px font500">
+            <a-button type="primary" class="h-48px text-18px w-140px font500" @click="handleConfirmRollCall">
               确认点名
             </a-button>
           </a-space>
         </div>
       </template>
     </a-drawer>
+    <student-info-drawer v-model:open="openStudentDrawer" />
     <!-- 编辑上课信息 -->
     <EditClassInfoModal v-model:open="editClassInfoModal" />
     <!-- 添加学员modal -->
-    <roll-call-add-student-modal v-model:open="addStudentModal" :title="addStudentModalTitle" />
+    <roll-call-add-student-modal
+      v-model:open="addStudentModal"
+      :title="addStudentModalTitle"
+      :schedule-id="currentScheduleId"
+      :student-type="addStudentType"
+      @success="handleAddStudentSuccess"
+    />
     <!-- 批量编辑 -->
     <roll-call-batch-edit-modal v-model:open="batchEditModal" />
   </div>

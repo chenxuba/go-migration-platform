@@ -707,7 +707,11 @@ watch(
       </div>
     </a-spin>
     <student-info-drawer v-model:open="openStudentDrawer" />
-    <RollCallDrawer v-model:open="rollCallDrawerOpen" />
+    <RollCallDrawer
+      v-model:open="rollCallDrawerOpen"
+      :schedule-id="scheduleId"
+      :lesson-day="detailData?.lessonDate || ''"
+    />
     <RollCallAddStudentModal
       v-model:open="addStudentModalOpen"
       :title="addStudentModalTitle"

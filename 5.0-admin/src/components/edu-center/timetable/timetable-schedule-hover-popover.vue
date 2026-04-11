@@ -555,7 +555,11 @@ watch(
 
     <slot />
   </a-popover>
-  <RollCallDrawer v-model:open="rollCallDrawerOpen" />
+  <RollCallDrawer
+    v-model:open="rollCallDrawerOpen"
+    :schedule-id="String(props.scheduleId || '')"
+    :lesson-day="detailData?.lessonDate || ''"
+  />
 </template>
 
 <style scoped lang="less">
