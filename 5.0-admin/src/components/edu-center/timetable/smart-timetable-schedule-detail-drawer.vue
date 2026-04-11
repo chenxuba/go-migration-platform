@@ -182,6 +182,12 @@ const canRollCall = computed(() => {
   return !isFutureSchedule.value
 })
 const rollCallButtonText = computed(() => (Number(detailData.value?.callStatus || 1) === 2 ? '点名详情' : '去点名'))
+const deleteDisabledReason = computed(() => {
+  if (Number(detailData.value?.callStatus || 1) === 2)
+    return '当前日程已点名，不可删除'
+  return ''
+})
+const canDeleteSchedule = computed(() => props.deletable && !deleteDisabledReason.value)
 const hasBatchSchedule = computed(() => {
   return Number(detailData.value?.batchSize || props.detail?.batchSize || 0) > 1
     || String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() !== ''
@@ -298,6 +304,10 @@ function handleSingleCopyClick() {
 
 function handleBatchDeleteMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
   domEvent?.stopPropagation?.()
+  if (!canDeleteSchedule.value) {
+    messageService.warning(deleteDisabledReason.value || '当前日程不可删除')
+    return
+  }
   if (key === 'delete-current')
     emit('delete-current')
   else if (key === 'delete-future')
@@ -488,7 +498,7 @@ watch(
               </a-button>
 
               <a-dropdown
-                v-if="deletable && hasBatchSchedule"
+                v-if="canDeleteSchedule && hasBatchSchedule"
                 :trigger="['hover']"
                 placement="bottomLeft"
               >
@@ -508,10 +518,25 @@ watch(
                   <DownOutlined />
                 </a-button>
               </a-dropdown>
-              <a-tooltip v-else-if="deletable" title="删除此日程" placement="top">
+              <a-tooltip v-else-if="deletable && hasBatchSchedule" :title="deleteDisabledReason || '删除此日程'" placement="top">
+                <span>
+                  <a-button disabled @click.stop>
+                    删除
+                    <DownOutlined />
+                  </a-button>
+                </span>
+              </a-tooltip>
+              <a-tooltip v-else-if="canDeleteSchedule" title="删除此日程" placement="top">
                 <a-button :loading="deleting" @click="$emit('delete')">
                   删除
                 </a-button>
+              </a-tooltip>
+              <a-tooltip v-else-if="deletable" :title="deleteDisabledReason || '删除此日程'" placement="top">
+                <span>
+                  <a-button disabled>
+                    删除
+                  </a-button>
+                </span>
               </a-tooltip>
               <a-dropdown
                 v-if="hasBatchSchedule && canEditSchedule"

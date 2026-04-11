@@ -3789,6 +3789,9 @@ func (repo *Repository) CancelTeachingSchedules(ctx context.Context, instID, ope
 	if err != nil {
 		return model.TeachingScheduleCancelResult{}, err
 	}
+	if err := repo.ensureTeachingSchedulesNotSignedTx(ctx, tx, instID, ids); err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
 
 	res, err := tx.ExecContext(ctx, `
 		UPDATE teaching_schedule
@@ -3879,6 +3882,9 @@ func (repo *Repository) CancelTeachingScheduleScoped(ctx context.Context, instID
 	if len(targetIDs) == 0 {
 		return model.TeachingScheduleCancelResult{}, errors.New("未找到可撤销的日程")
 	}
+	if err := repo.ensureTeachingSchedulesNotSignedTx(ctx, tx, instID, targetIDs); err != nil {
+		return model.TeachingScheduleCancelResult{}, err
+	}
 
 	classIDs := uniquePositiveInt64s([]int64{anchor.TeachingClassID})
 	var originalBatchMeta *model.TeachingScheduleBatchMeta
@@ -3958,6 +3964,38 @@ func (repo *Repository) CancelTeachingScheduleScoped(ctx context.Context, instID
 		return model.TeachingScheduleCancelResult{}, err
 	}
 	return model.TeachingScheduleCancelResult{Canceled: int(affected)}, nil
+}
+
+func (repo *Repository) ensureTeachingSchedulesNotSignedTx(ctx context.Context, tx *sql.Tx, instID int64, ids []int64) error {
+	ids = uniquePositiveInt64s(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+
+	recordExistsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if err != nil {
+		return err
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT ts.id
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ?
+		  AND ts.del_flag = 0
+		  AND ts.status = ?
+		  AND ts.id IN (`+sqlPlaceholders(len(ids))+`)
+		  AND (`+buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)+`) = 2
+		LIMIT 1
+	`, append([]any{instID, model.TeachingScheduleStatusActive}, int64SliceToAny(ids)...)...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		return errors.New("已点名日程不可删除")
+	}
+	return rows.Err()
 }
 
 func (repo *Repository) loadTeachingScheduleBatchAnchorTx(ctx context.Context, tx *sql.Tx, instID, scheduleID int64) (teachingScheduleBatchRow, error) {
