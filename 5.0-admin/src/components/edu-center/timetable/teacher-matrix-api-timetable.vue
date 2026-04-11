@@ -1327,8 +1327,6 @@ function openScheduleEdit(event: CellSchedule) {
 function openBatchPlanEdit(schedule: TeachingScheduleItem | null | undefined, scope: 'batch' | 'current' = 'batch', payload?: ScheduleEditPayload, action: 'edit' | 'copy' = 'edit') {
   if (!schedule?.id)
     return
-  if (action === 'copy')
-    scheduleDetailOpen.value = false
   scheduleBatchPlanAction.value = action
   scheduleBatchPlanEditScope.value = scope
   currentBatchPlanSchedule.value = payload

@@ -3600,7 +3600,6 @@ function openScheduledLessonBatchPlanCopy(scope = 'batch', payload) {
     messageService.warning('当前日程缺少复制标识，请刷新后重试')
     return
   }
-  scheduledLessonDetailOpen.value = false
   scheduleBatchPlanAction.value = 'copy'
   scheduleBatchPlanEditScope.value = copyScope
   currentBatchPlanSchedule.value = copyPayload

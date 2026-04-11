@@ -624,8 +624,8 @@ async function applyBatchPlanPreset(preset?: BatchPlanModalPreset | null) {
   selectedOneToOneId.value = preset.oneToOneId
   await nextTick()
 
-  schedulingMode.value = preset.schedulingMode as SchedulingMode
-  repeatRule.value = preset.repeatRule as RepeatRule
+  schedulingMode.value = isCopyPresetMode.value ? 'repeat' : (preset.schedulingMode as SchedulingMode)
+  repeatRule.value = isCopyPresetMode.value ? 'none' : (preset.repeatRule as RepeatRule)
   holidayPolicy.value = preset.holidayPolicy
   selectedWeekdays.value = preset.selectedWeekdays.length ? [...preset.selectedWeekdays] : ['周一']
   scheduleStartDate.value = dayjs(preset.scheduleStartDate || dayjs()).startOf('day')

@@ -1358,8 +1358,6 @@ function openBatchPlanEdit(schedule, scope = 'batch', payload, action = 'edit') 
         batchSize: Number(payload.batchSize || schedule?.batchSize || 0) || schedule?.batchSize,
       }
     : schedule
-  if (action === 'copy')
-    scheduleDetailOpen.value = false
   scheduleBatchPlanAction.value = action
   scheduleBatchPlanEditScope.value = scope
   currentBatchPlanSchedule.value = nextSchedule || null
