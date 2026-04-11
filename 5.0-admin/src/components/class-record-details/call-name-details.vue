@@ -315,27 +315,14 @@ const filteredData = computed(() => {
 })
 
 const summary = computed(() => {
-  return filteredData.value.reduce((acc, item) => {
-    acc.total += 1
-    if (Number(item.status || 0) === 1)
-      acc.arrived += 1
-    else if (Number(item.status || 0) === 3)
-      acc.leave += 1
-    else if (Number(item.status || 0) === 2)
-      acc.absent += 1
-
-    if (!isTrialStudent(item) && !isTimeChargingMode(item))
-      acc.quantity += Number(item.quantity || 0)
-    acc.tuition += Number(item.actualTuition || 0)
-    return acc
-  }, {
-    total: 0,
-    arrived: 0,
-    leave: 0,
-    absent: 0,
-    quantity: 0,
-    tuition: 0,
-  })
+  return {
+    total: Number(props.detail?.shouldAttendanceCount || 0),
+    arrived: Number(props.detail?.actualAttendanceCount || 0),
+    leave: Number(props.detail?.leaveCount || 0),
+    absent: Number(props.detail?.truancyCount || 0),
+    quantity: Number(props.detail?.studentTotalClassTime || 0),
+    tuition: Number(props.detail?.studentActualTuition || 0),
+  }
 })
 
 function openStudentDetail(studentId?: string) {
