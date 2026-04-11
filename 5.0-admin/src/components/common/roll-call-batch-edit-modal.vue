@@ -6,8 +6,12 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  initialClassNumber: {
+    type: Number,
+    default: 1,
+  },
 })
-const emit = defineEmits(['update:open'])
+const emit = defineEmits(['update:open', 'submit'])
 const formRef = ref()
 // 处理双向绑定
 const openModal = computed({
@@ -24,20 +28,44 @@ const editRangeOptions = [
   { label: '仅对请假状态的学员', value: '3' },
   { label: '仅对旷课状态的学员', value: '4' },
 ]
+
+function resetFormState() {
+  formState.value = {
+    classNumber: Number(props.initialClassNumber || 1),
+    editRange: '1',
+  }
+  nextTick(() => {
+    formRef.value?.clearValidate?.()
+  })
+}
+
 // 手动触发验证
 async function handleSubmit() {
   try {
     await formRef.value.validate() // 关键3：通过引用调用验证方法
-    console.log('验证通过，提交数据:', formState)
+    emit('submit', {
+      classNumber: Number(formState.value.classNumber || 0),
+      editRange: String(formState.value.editRange || '1'),
+    })
+    closeFun()
   }
   catch (error) {
     console.log('验证失败:', error)
   }
 }
 function closeFun() {
-  formRef.value.resetFields()
   openModal.value = false
+  resetFormState()
 }
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open)
+      resetFormState()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

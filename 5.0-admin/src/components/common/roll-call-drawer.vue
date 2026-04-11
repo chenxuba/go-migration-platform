@@ -607,6 +607,33 @@ const batchEditModal = ref(false)
 function handleBatchEdit() {
   batchEditModal.value = true
 }
+function isBatchEditableStudent(record) {
+  return String(record?.type || '') !== '3' && String(record?.type || '') !== '4'
+}
+function matchesBatchEditRange(record, editRange) {
+  if (!record || !isBatchEditableStudent(record))
+    return false
+  if (String(editRange) === '2')
+    return Boolean(record.attended)
+  if (String(editRange) === '3')
+    return Boolean(record.leave)
+  if (String(editRange) === '4')
+    return Boolean(record.absent)
+  return Boolean(record.attended || record.leave || record.absent)
+}
+function handleBatchEditSubmit(payload) {
+  const classNumber = Number(payload?.classNumber || 0)
+  const editRange = String(payload?.editRange || '1')
+  const targetRows = data.value.filter(record => matchesBatchEditRange(record, editRange))
+  if (targetRows.length === 0) {
+    messageService.warning('当前没有符合条件的学员')
+    return
+  }
+  targetRows.forEach((record) => {
+    record.attendanceCount = classNumber
+  })
+  messageService.success(`已批量修改${targetRows.length}位学员的上课点名数量`)
+}
 function handleConfirmRollCall() {
   messageService.info('点名提交功能暂未开发')
 }
@@ -1208,7 +1235,11 @@ watch(
       @success="handleAddStudentSuccess"
     />
     <!-- 批量编辑 -->
-    <roll-call-batch-edit-modal v-model:open="batchEditModal" />
+    <roll-call-batch-edit-modal
+      v-model:open="batchEditModal"
+      :initial-class-number="Number(classTimetableDetail?.defaultStudentClassTime || 1)"
+      @submit="handleBatchEditSubmit"
+    />
   </div>
 </template>
 
