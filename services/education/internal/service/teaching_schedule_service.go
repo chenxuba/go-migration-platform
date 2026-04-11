@@ -972,6 +972,15 @@ func (svc *Service) CopyTeachingSchedulesWeek(userID int64, dto model.TeachingSc
 	return svc.repo.CopyTeachingSchedulesWeek(context.Background(), instID, operatorID, dto)
 }
 
+// CopyTeachingSchedulesDay 将源日期的老师课表复制到目标日期；若目标日期已有任意有效日程则整次失败。
+func (svc *Service) CopyTeachingSchedulesDay(userID int64, dto model.TeachingScheduleCopyDayDTO) (model.TeachingScheduleCopyDayResult, error) {
+	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.TeachingScheduleCopyDayResult{}, err
+	}
+	return svc.repo.CopyTeachingSchedulesDay(context.Background(), instID, operatorID, dto)
+}
+
 // ClearAllTeachingSchedules 清空当前登录用户所在机构的全部排课记录（软删）
 func (svc *Service) ClearAllTeachingSchedules(userID int64) (deleted int64, err error) {
 	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)

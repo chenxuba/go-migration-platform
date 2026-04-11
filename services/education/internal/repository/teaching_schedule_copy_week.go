@@ -99,6 +99,89 @@ func (repo *Repository) CopyTeachingSchedulesWeek(ctx context.Context, instID, o
 	return model.TeachingScheduleCopyWeekResult{Created: created}, nil
 }
 
+// CopyTeachingSchedulesDay 将源日期的老师课表复制到目标日期；若目标日期已有任意有效日程则整次失败。
+func (repo *Repository) CopyTeachingSchedulesDay(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleCopyDayDTO) (model.TeachingScheduleCopyDayResult, error) {
+	var zero model.TeachingScheduleCopyDayResult
+	sourceDate := strings.TrimSpace(dto.SourceDate)
+	targetDate := strings.TrimSpace(dto.TargetDate)
+	if sourceDate == "" || targetDate == "" {
+		return zero, errors.New("请填写源日期和目标日期")
+	}
+	if sourceDate == targetDate {
+		return zero, errors.New("源日期与目标日期不能相同")
+	}
+	if _, err := time.ParseInLocation("2006-01-02", sourceDate, time.Local); err != nil {
+		return zero, errors.New("日期格式须为 YYYY-MM-DD")
+	}
+	if _, err := time.ParseInLocation("2006-01-02", targetDate, time.Local); err != nil {
+		return zero, errors.New("日期格式须为 YYYY-MM-DD")
+	}
+
+	query := model.TeachingScheduleListQueryDTO{
+		StartDate:           sourceDate,
+		EndDate:             sourceDate,
+		StudentID:           strings.TrimSpace(dto.StudentID),
+		ScheduleTeacherIDs:  parsePositiveInt64Strings(dto.ScheduleTeacherIDs),
+		ClassroomIDs:        parsePositiveInt64Strings(dto.ClassroomIDs),
+		GroupClassIDs:       parsePositiveInt64Strings(dto.GroupClassIDs),
+		OneToOneClassIDs:    parsePositiveInt64Strings(dto.OneToOneClassIDs),
+		LessonIDs:           parsePositiveInt64Strings(dto.LessonIDs),
+		ScheduleTypeFilters: normalizeNonEmptyStringList(dto.ScheduleTypes),
+		CallStatusFilters:   normalizeNonEmptyStringList(dto.CallStatuses),
+	}
+	sourceRows, err := repo.ListTeachingSchedules(ctx, instID, query)
+	if err != nil {
+		return zero, err
+	}
+	if len(sourceRows) == 0 {
+		if len(query.ScheduleTeacherIDs) > 0 {
+			return zero, errors.New("源日期该老师暂无可复制日程")
+		}
+		return zero, errors.New("源日期暂无可复制日程")
+	}
+
+	batchGroups, singles := groupSchedulesByBatchForCopy(sourceRows)
+	plans, err := buildCopyPlans(batchGroups, singles, map[string]string{sourceDate: targetDate})
+	if err != nil {
+		return zero, err
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return zero, err
+	}
+	defer tx.Rollback()
+
+	if err := repo.ensureTeachingScheduleCopyTargetDateEmptyTx(ctx, tx, instID, targetDate); err != nil {
+		return zero, err
+	}
+	if err := repo.validateOneToOneClassesReadyForCopyTx(ctx, tx, instID, plans); err != nil {
+		return zero, err
+	}
+	if err := repo.validateCopiedSchedulePlansAgainstDBTx(ctx, tx, instID, plans); err != nil {
+		return zero, err
+	}
+
+	created, err := insertCopiedTeachingSchedulesTx(ctx, tx, instID, operatorID, plans)
+	if err != nil {
+		return zero, err
+	}
+	classIDs := make([]int64, 0, len(plans))
+	for _, plan := range plans {
+		classID, parseErr := strconv.ParseInt(strings.TrimSpace(plan.Source.TeachingClassID), 10, 64)
+		if parseErr == nil && classID > 0 {
+			classIDs = append(classIDs, classID)
+		}
+	}
+	if err := repo.refreshTeachingClassScheduleCountsTx(ctx, tx, instID, operatorID, classIDs); err != nil {
+		return zero, err
+	}
+	if err := tx.Commit(); err != nil {
+		return zero, err
+	}
+	return model.TeachingScheduleCopyDayResult{Created: created}, nil
+}
+
 type scheduleCopyPlan struct {
 	Source           model.TeachingScheduleVO
 	TargetLessonDate string
@@ -116,6 +199,46 @@ type copyOverlapTeacherKey struct {
 type copyOverlapClassroomKey struct {
 	cid int64
 	d   string
+}
+
+func parsePositiveInt64Strings(list []string) []int64 {
+	if len(list) == 0 {
+		return nil
+	}
+	out := make([]int64, 0, len(list))
+	seen := make(map[int64]struct{}, len(list))
+	for _, raw := range list {
+		value, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func normalizeNonEmptyStringList(list []string) []string {
+	if len(list) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(list))
+	seen := make(map[string]struct{}, len(list))
+	for _, raw := range list {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func expandScheduleCopyDateRange(startStr, endStr string) ([]string, error) {
@@ -237,6 +360,28 @@ func shiftScheduleTimesToDate(startAt, endAt time.Time, targetDateISO string) (t
 	ns := time.Date(y, m, day, startAt.Hour(), startAt.Minute(), startAt.Second(), startAt.Nanosecond(), startAt.Location())
 	ne := time.Date(y, m, day, endAt.Hour(), endAt.Minute(), endAt.Second(), endAt.Nanosecond(), endAt.Location())
 	return ns, ne
+}
+
+func (repo *Repository) ensureTeachingScheduleCopyTargetDateEmptyTx(ctx context.Context, tx *sql.Tx, instID int64, targetDate string) error {
+	var count int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND lesson_date = ?
+		  AND del_flag = 0
+		  AND status = ?
+	`,
+		instID,
+		targetDate,
+		model.TeachingScheduleStatusActive,
+	).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("目标日期 %s 已有日程，请先清空后再复制", targetDate)
+	}
+	return nil
 }
 
 func (repo *Repository) validateOneToOneClassesReadyForCopyTx(ctx context.Context, tx *sql.Tx, instID int64, plans []scheduleCopyPlan) error {

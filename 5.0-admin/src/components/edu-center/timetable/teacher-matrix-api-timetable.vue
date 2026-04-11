@@ -21,6 +21,7 @@ import type {
 } from '@/api/edu-center/teaching-schedule'
 import {
   cancelTeachingScheduleScopedApi,
+  copyTeachingSchedulesDayApi,
   copyTeachingSchedulesWeekApi,
   downloadTeachingSchedulesTeacherMatrixExcelApi,
   getTeachingScheduleConflictDetailApi,
@@ -55,6 +56,14 @@ interface ScheduleEditPayload {
   batchMeta?: TeachingScheduleItem['batchMeta']
   batchNo?: string
   batchSize?: number
+}
+
+interface CopyDayContext {
+  mode: 'date' | 'teacher'
+  sourceDate: string
+  sourceCount: number
+  teacherId?: number
+  teacherName?: string
 }
 
 const displayArray = ref([
@@ -645,6 +654,10 @@ const tempMatrixDisplay = ref<MatrixDisplayPreferences>({ ...loadMatrixDisplayFr
 const copyWeekModalOpen = ref(false)
 const copyTargetWeek = ref(dayjs())
 const copyWeekSubmitting = ref(false)
+const copyDayModalOpen = ref(false)
+const copyDaySubmitting = ref(false)
+const copyDayTargetDate = ref(dayjs())
+const copyDayContext = ref<CopyDayContext | null>(null)
 
 const weekdayOptions = [
   { value: 1, label: '周一' },
@@ -820,6 +833,116 @@ async function handleCopyWeekConfirm() {
   }
 }
 
+const copyDayModalTitle = computed(() => (
+  copyDayContext.value?.mode === 'teacher' ? '复制老师课表' : '复制当天课表'
+))
+
+const copyDayModalDescription = computed(() => {
+  const context = copyDayContext.value
+  if (!context)
+    return ''
+  const dateText = dayjs(context.sourceDate).format('M月D日')
+  if (context.mode === 'teacher') {
+    const teacherName = String(context.teacherName || '').trim() || '当前老师'
+    return `将 ${dateText} ${teacherName} 的 ${context.sourceCount} 节日程复制到目标日期。若目标日期已有任意日程，将整次终止复制。`
+  }
+  return `将 ${dateText} 当天全部老师的 ${context.sourceCount} 节日程复制到目标日期。若目标日期已有任意日程，将整次终止复制。`
+})
+
+function openCopyDayModalForDate(group: { dateKey: string, dayCount: number }) {
+  if ((group.dayCount ?? 0) <= 0) {
+    message.warning('当天暂无可复制日程')
+    return
+  }
+  copyDayContext.value = {
+    mode: 'date',
+    sourceDate: group.dateKey,
+    sourceCount: group.dayCount,
+  }
+  copyDayTargetDate.value = dayjs(group.dateKey).add(7, 'day')
+  copyDayModalOpen.value = true
+}
+
+function openCopyDayModalForTeacher(group: { dateKey: string }, teacher: { teacherId?: number, teacherName?: string, count?: number }) {
+  if ((teacher.count ?? 0) <= 0) {
+    message.warning('该老师当天暂无可复制日程')
+    return
+  }
+  const teacherId = Number(teacher.teacherId || 0)
+  if (teacherId <= 0) {
+    message.warning('当前老师缺少复制标识，请刷新后重试')
+    return
+  }
+  copyDayContext.value = {
+    mode: 'teacher',
+    sourceDate: group.dateKey,
+    sourceCount: Number(teacher.count || 0),
+    teacherId,
+    teacherName: teacher.teacherName,
+  }
+  copyDayTargetDate.value = dayjs(group.dateKey).add(7, 'day')
+  copyDayModalOpen.value = true
+}
+
+function isCopyDayActionDisabled(count?: number) {
+  return Number(count || 0) <= 0
+}
+
+function buildCopyDayPayload(context: CopyDayContext) {
+  return {
+    sourceDate: context.sourceDate,
+    targetDate: copyDayTargetDate.value.format('YYYY-MM-DD'),
+    studentId: filterStudentId.value,
+    scheduleTeacherIds: context.mode === 'teacher'
+      ? [String(context.teacherId)]
+      : (filterTeacherId.value.length ? [...filterTeacherId.value] : undefined),
+    classroomIds: filterClassroomId.value.length ? [...filterClassroomId.value] : undefined,
+    groupClassIds: filterClassId.value ? [String(filterClassId.value)] : undefined,
+    oneToOneClassIds: filterOneToOneId.value ? [String(filterOneToOneId.value)] : undefined,
+    lessonIds: filterCourseId.value ? [String(filterCourseId.value)] : undefined,
+    scheduleTypes: filterScheduleType.value.length ? [...filterScheduleType.value] : undefined,
+    callStatuses: filterCallStatus.value ? [String(filterCallStatus.value)] : undefined,
+  }
+}
+
+function disableCopyDayTargetDate(current: Dayjs) {
+  const sourceDate = copyDayContext.value?.sourceDate
+  if (!sourceDate)
+    return false
+  return current.isSame(dayjs(sourceDate), 'day')
+}
+
+async function handleCopyDayConfirm() {
+  const context = copyDayContext.value
+  if (!context) {
+    message.warning('当前复制上下文已失效，请重新操作')
+    return Promise.reject(new Error('missing copy context'))
+  }
+  const sourceDate = context.sourceDate
+  const targetDate = copyDayTargetDate.value.format('YYYY-MM-DD')
+  if (sourceDate === targetDate) {
+    message.warning('目标日期不能与源日期相同')
+    return Promise.reject(new Error('same day'))
+  }
+  copyDaySubmitting.value = true
+  try {
+    const res = await copyTeachingSchedulesDayApi(buildCopyDayPayload(context))
+    const raw = res.data ?? res.result
+    const created = typeof raw === 'object' && raw && 'created' in raw
+      ? Number((raw as { created: number }).created)
+      : 0
+    message.success(created > 0 ? `已复制 ${created} 节日程到 ${targetDate}` : '未新增日程')
+    copyDayModalOpen.value = false
+    currentDate.value = dayjs(targetDate)
+  }
+  catch (error) {
+    return Promise.reject(error instanceof Error ? error : new Error('copy day failed'))
+  }
+  finally {
+    copyDaySubmitting.value = false
+  }
+}
+
 async function exportTeacherMatrixExcel() {
   try {
     const { weekdaysStr, teacherFilter } = buildMatrixQueryParams()
@@ -987,6 +1110,8 @@ const dateTeacherGroups = computed(() => {
       dayCount,
       teachers: cols.map(t => ({
         key: `id:${t.teacherId}`,
+        teacherId: t.teacherId,
+        teacherName: t.teacherName,
         name: t.teacherName,
         empty: false,
         count: t.scheduleInfoVoList?.length ?? 0,
@@ -1661,6 +1786,29 @@ const unsignedLessons = computed(() =>
       </div>
     </a-modal>
 
+    <a-modal
+      v-model:open="copyDayModalOpen"
+      :title="copyDayModalTitle"
+      ok-text="开始复制"
+      cancel-text="取消"
+      :confirm-loading="copyDaySubmitting"
+      @ok="handleCopyDayConfirm"
+    >
+      <p class="tm-copy-week-hint">
+        {{ copyDayModalDescription }}
+      </p>
+      <div class="tm-copy-week-picker">
+        <span class="tm-copy-week-label">复制到</span>
+        <a-date-picker
+          v-model:value="copyDayTargetDate"
+          :allow-clear="false"
+          style="width: 100%"
+          format="YYYY-MM-DD"
+          :disabled-date="disableCopyDayTargetDate"
+        />
+      </div>
+    </a-modal>
+
     <div class="tm-api-card">
       <a-spin :spinning="loading" :delay="120" size="small" class="tm-api-spin">
         <div class="tm-sticky-shell">
@@ -1685,17 +1833,32 @@ const unsignedLessons = computed(() =>
               <!-- 与旧版一致：浮动层放在「与列同宽的滚动内容」里，left 才用内容坐标 finalPosition -->
               <div class="tm-header-dates-track">
                 <div class="tm-floating-date-layer">
-                  <div
-                    v-for="g in dateTeacherGroups"
-                    :key="`float-${g.dateKey}`"
-                    class="tm-floating-chip"
-                    :class="{ 'tm-floating-chip--today': isActiveDate(g.dateKey) }"
-                    :style="floatingPillStyle(g.dateKey)"
+                <div
+                  v-for="g in dateTeacherGroups"
+                  :key="`float-${g.dateKey}`"
+                  class="tm-floating-chip"
+                  :class="{ 'tm-floating-chip--today': isActiveDate(g.dateKey) }"
+                  :style="floatingPillStyle(g.dateKey)"
+                >
+                  <a-tooltip
+                    :title="isCopyDayActionDisabled(g.dayCount) ? '当天暂无可复制日程' : '复制当天全部老师课表到某一天'"
+                    placement="top"
                   >
-                    <div class="tm-floating-chip__line">
-                      <span class="tm-floating-chip__date">{{ g.date.format('M/D') }}</span>
-                      <span class="tm-floating-chip__week">{{
-                        ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][g.date.day()]
+                    <span class="tm-copy-trigger-wrap tm-floating-chip__copy-wrap">
+                      <button
+                        type="button"
+                        class="tm-copy-trigger"
+                        :class="{ 'tm-copy-trigger--disabled': isCopyDayActionDisabled(g.dayCount) }"
+                        @click.stop="openCopyDayModalForDate(g)"
+                      >
+                        <CopyOutlined />
+                      </button>
+                    </span>
+                  </a-tooltip>
+                  <div class="tm-floating-chip__line">
+                    <span class="tm-floating-chip__date">{{ g.date.format('M/D') }}</span>
+                    <span class="tm-floating-chip__week">{{
+                      ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][g.date.day()]
                       }}</span>
                     </div>
                     <div class="tm-floating-chip__meta">
@@ -1756,6 +1919,21 @@ const unsignedLessons = computed(() =>
                           共 {{ t.count ?? 0 }} 节
                         </div>
                       </div>
+                      <a-tooltip
+                        :title="isCopyDayActionDisabled(t.count) ? '该老师当天暂无可复制日程' : '复制该老师当天课表到某一天'"
+                        placement="top"
+                      >
+                        <span class="tm-copy-trigger-wrap tm-teacher-head__copy-wrap">
+                          <button
+                            type="button"
+                            class="tm-copy-trigger"
+                            :class="{ 'tm-copy-trigger--disabled': isCopyDayActionDisabled(t.count) }"
+                            @click.stop="openCopyDayModalForTeacher(g, t)"
+                          >
+                            <CopyOutlined />
+                          </button>
+                        </span>
+                      </a-tooltip>
                     </div>
                   </div>
                 </div>
@@ -2174,6 +2352,47 @@ const unsignedLessons = computed(() =>
   text-align: center;
   isolation: isolate;
   transform: translateY(-50%);
+  pointer-events: auto;
+}
+
+.tm-copy-trigger-wrap {
+  display: inline-flex;
+}
+
+.tm-copy-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #d0dbea;
+  border-radius: 8px;
+  background: #fff;
+  color: #4b5563;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tm-copy-trigger:hover {
+  border-color: #91caff;
+  color: #1677ff;
+  box-shadow: 0 4px 10px rgb(22 119 255 / 14%);
+}
+
+.tm-copy-trigger--disabled,
+.tm-copy-trigger--disabled:hover {
+  border-color: #e5e7eb;
+  color: #c4c9d4;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.tm-floating-chip__copy-wrap {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .tm-floating-chip__line {
@@ -2350,11 +2569,12 @@ const unsignedLessons = computed(() =>
 }
 
 .tm-teacher-head {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px 42px 10px 12px;
   border-right: 1px solid #dde5f0;
   background: #eff4fb;
   min-width: 0;
@@ -2415,6 +2635,13 @@ const unsignedLessons = computed(() =>
   margin-top: 2px;
   font-size: 12px;
   font-weight: 600;
+}
+
+.tm-teacher-head__copy-wrap {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .tm-time-axis {

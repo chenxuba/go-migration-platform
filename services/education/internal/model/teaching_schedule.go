@@ -259,6 +259,26 @@ type TeachingScheduleCopyWeekResult struct {
 	Created int `json:"created"`
 }
 
+// TeachingScheduleCopyDayDTO 将源日期下的老师课表复制到目标日期。
+// TeacherIDs 为空时复制当前条件下源日期的全部老师课表；传入单个老师时复制该老师在矩阵中可见的当天课表。
+// 若目标日期存在任意有效日程，则整次复制终止。
+type TeachingScheduleCopyDayDTO struct {
+	SourceDate         string   `json:"sourceDate"`
+	TargetDate         string   `json:"targetDate"`
+	StudentID          string   `json:"studentId,omitempty"`
+	ScheduleTeacherIDs []string `json:"scheduleTeacherIds,omitempty"`
+	ClassroomIDs       []string `json:"classroomIds,omitempty"`
+	GroupClassIDs      []string `json:"groupClassIds,omitempty"`
+	OneToOneClassIDs   []string `json:"oneToOneClassIds,omitempty"`
+	LessonIDs          []string `json:"lessonIds,omitempty"`
+	ScheduleTypes      []string `json:"scheduleTypes,omitempty"`
+	CallStatuses       []string `json:"callStatuses,omitempty"`
+}
+
+type TeachingScheduleCopyDayResult struct {
+	Created int `json:"created"`
+}
+
 type TeachingScheduleVO struct {
 	ID                     string    `json:"id"`
 	BatchNo                string    `json:"batchNo,omitempty"`

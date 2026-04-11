@@ -613,6 +613,22 @@ export function copyTeachingSchedulesWeekApi(data: {
   return usePost<{ created: number }>('/api/v1/teaching-schedules/copy-week', data)
 }
 
+/** 将源日期下当前矩阵范围内的老师课表复制到目标日期；若目标日期已有任意日程则整次失败 */
+export function copyTeachingSchedulesDayApi(data: {
+  sourceDate: string
+  targetDate: string
+  studentId?: string
+  scheduleTeacherIds?: string[]
+  classroomIds?: string[]
+  groupClassIds?: string[]
+  oneToOneClassIds?: string[]
+  lessonIds?: string[]
+  scheduleTypes?: string[]
+  callStatuses?: string[]
+}) {
+  return usePost<{ created: number }>('/api/v1/teaching-schedules/copy-day', data)
+}
+
 /** 软删本机构全部排课；须 confirm 以防误触 */
 export function clearAllTeachingSchedulesApi() {
   return usePost<{ deleted: number }>('/api/v1/teaching-schedules/clear-all', { confirm: true })
