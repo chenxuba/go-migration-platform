@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import type { Dayjs } from 'dayjs'
+import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, createVNode, onMounted, ref, watch } from 'vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
 import { getRollCallPagedListApi, getRollCallStatisticsApi } from '@/api/edu-center/roll-call'
-import type { TeachingScheduleItem } from '@/api/edu-center/teaching-schedule'
+import { cancelTeachingSchedulesApi, type TeachingScheduleItem } from '@/api/edu-center/teaching-schedule'
+import messageService from '@/utils/messageService'
 
 interface FilterOption {
   id: string
@@ -43,6 +46,7 @@ const displayArray = ref([
 const dataSource = ref<TeachingScheduleItem[]>([])
 const tableLoading = ref(false)
 const statisticsLoading = ref(false)
+const batchDeleting = ref(false)
 const openDrawer = ref(false)
 const allFilterRef = ref<AllFilterExpose | null>(null)
 const dashboardFilter = ref<DashboardFilter>('custom')
@@ -54,6 +58,7 @@ const pagination = ref({
   pageSize: 50,
   total: 0,
 })
+const selectedRowKeys = ref<string[]>([])
 
 const dashboardStats = ref({
   todayCount: 0,
@@ -164,6 +169,13 @@ const tablePagination = computed(() => ({
   showTotal: (total: number) => `共 ${total} 条`,
 }))
 
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: (string | number)[]) => {
+    selectedRowKeys.value = keys.map(key => String(key))
+  },
+}))
+
 function normalizeScheduleFilterValue(value: unknown) {
   if (Array.isArray(value))
     return value.length ? String(value[0] ?? '').trim() || undefined : undefined
@@ -265,6 +277,7 @@ async function loadList() {
   if (dashboardFilter.value === 'partial') {
     dataSource.value = []
     pagination.value.total = 0
+    selectedRowKeys.value = []
     return
   }
 
@@ -285,15 +298,18 @@ async function loadList() {
     if (res.code === 200) {
       dataSource.value = Array.isArray(res.result?.list) ? res.result.list : []
       pagination.value.total = Number(res.result?.total || 0)
+      selectedRowKeys.value = selectedRowKeys.value.filter(key => dataSource.value.some(item => String(item.id) === key))
       return
     }
     dataSource.value = []
     pagination.value.total = 0
+    selectedRowKeys.value = []
   }
   catch (error) {
     console.error('load roll call list failed', error)
     dataSource.value = []
     pagination.value.total = 0
+    selectedRowKeys.value = []
   }
   finally {
     tableLoading.value = false
@@ -366,6 +382,43 @@ function handleQuickFilter(type: DashboardFilter) {
 
 function handleRollCall() {
   openDrawer.value = true
+}
+
+function handleBatchDelete() {
+  if (!selectedRowKeys.value.length) {
+    messageService.warning('请先选择要删除的日程')
+    return
+  }
+
+  Modal.confirm({
+    title: '确定删除？',
+    icon: createVNode(ExclamationCircleOutlined, { style: 'color: #ff4d4f' }),
+    content: `删除的日程无法恢复，并不会再显示在课表中。已选择 ${selectedRowKeys.value.length} 条，确认删除？`,
+    okText: '确定删除',
+    cancelText: '再想想',
+    async onOk() {
+      batchDeleting.value = true
+      try {
+        const res = await cancelTeachingSchedulesApi({
+          ids: selectedRowKeys.value,
+        })
+        if (res.code !== 200)
+          throw new Error(res.message || '批量删除失败')
+        messageService.success(`已删除 ${Number(res.result?.canceled || selectedRowKeys.value.length)} 条日程`)
+        selectedRowKeys.value = []
+        await loadStatistics()
+        await loadList()
+      }
+      catch (error: any) {
+        console.error('batch delete roll call schedules failed', error)
+        messageService.error(error?.response?.data?.message || error?.message || '批量删除失败')
+        throw error
+      }
+      finally {
+        batchDeleting.value = false
+      }
+    },
+  })
 }
 
 function handleTableChange(page: { current?: number, pageSize?: number }, _filters: unknown, sorter: { order?: string } | Array<{ order?: string }>) {
@@ -697,7 +750,7 @@ onMounted(async () => {
           当前共计 {{ pagination.total }} 条待点名日程
         </div>
         <div class="edit flex">
-          <a-button class="mr-3">
+          <a-button class="mr-3" :loading="batchDeleting" @click="handleBatchDelete">
             批量删除
           </a-button>
           <a-button class="mr-3">
@@ -719,6 +772,7 @@ onMounted(async () => {
         :loading="tableLoading"
         :data-source="dataSource"
         :pagination="tablePagination"
+        :row-selection="rowSelection"
         :columns="filteredColumns"
         :scroll="{ x: totalWidth }"
         size="small"
