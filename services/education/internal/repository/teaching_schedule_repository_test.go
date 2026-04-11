@@ -328,6 +328,44 @@ func TestBuildGroupClassScheduleRosterFromMembershipsAndOverrides_SplitsLeaveAnd
 	}
 }
 
+func TestBuildAssociatedGroupClassStudentSet_IncludesRemovedClassMemberOverrides(t *testing.T) {
+	scheduleStartAt := time.Date(2026, 4, 9, 10, 0, 0, 0, time.Local)
+	got := buildAssociatedGroupClassStudentSet(
+		[]groupClassStudentMembership{
+			{
+				StudentID:   1,
+				StudentName: "正式班课学员",
+				JoinAt:      scheduleStartAt.Add(-time.Hour),
+			},
+		},
+		[]teachingScheduleStudentOverride{
+			{
+				StudentID:    2,
+				StudentName:  "本节移除的班课学员",
+				StudentType:  model.TeachingScheduleStudentTypeClassMember,
+				RosterStatus: model.TeachingScheduleStudentRosterStatusRemoved,
+			},
+			{
+				StudentID:    3,
+				StudentName:  "试听学员",
+				StudentType:  model.TeachingScheduleStudentTypeTrial,
+				RosterStatus: model.TeachingScheduleStudentRosterStatusActive,
+			},
+		},
+		scheduleStartAt,
+	)
+
+	if _, ok := got[1]; !ok {
+		t.Fatalf("expected studying class member to be marked as associated, got %#v", got)
+	}
+	if _, ok := got[2]; !ok {
+		t.Fatalf("expected removed class-member override to still be marked as associated, got %#v", got)
+	}
+	if _, ok := got[3]; ok {
+		t.Fatalf("expected trial override to not be marked as associated, got %#v", got)
+	}
+}
+
 func TestCollectGroupClassConflictingStudentNames(t *testing.T) {
 	currentRoster := groupClassScheduleRoster{
 		Active: []groupClassScheduleStudent{

@@ -2745,16 +2745,15 @@ func (repo *Repository) AddTeachingScheduleStudentsCurrent(ctx context.Context, 
 		return err
 	}
 	referenceAt := resolveGroupClassRosterReferenceAt(row.StartAt, time.Time{})
-	classMemberSet := make(map[int64]struct{})
-	for _, membership := range membershipMap[row.TeachingClassID] {
-		if membership.StudentID <= 0 {
-			continue
-		}
-		if !groupClassStudentMembershipEffectiveAt(membership, referenceAt) {
-			continue
-		}
-		classMemberSet[membership.StudentID] = struct{}{}
+	overrideMap, err := repo.loadTeachingScheduleStudentOverrideMap(ctx, tx, instID, []int64{row.ID})
+	if err != nil {
+		return err
 	}
+	classMemberSet := buildAssociatedGroupClassStudentSet(
+		membershipMap[row.TeachingClassID],
+		overrideMap[row.ID],
+		referenceAt,
+	)
 
 	for _, studentID := range studentIDs {
 		if studentType == model.TeachingScheduleStudentTypeTrial {
@@ -4780,6 +4779,29 @@ func groupClassStudentMembershipEffectiveAt(membership groupClassStudentMembersh
 		return false
 	}
 	return true
+}
+
+func buildAssociatedGroupClassStudentSet(memberships []groupClassStudentMembership, overrides []teachingScheduleStudentOverride, referenceAt time.Time) map[int64]struct{} {
+	result := make(map[int64]struct{}, len(memberships)+len(overrides))
+	for _, membership := range memberships {
+		if membership.StudentID <= 0 {
+			continue
+		}
+		if !groupClassStudentMembershipEffectiveAt(membership, referenceAt) {
+			continue
+		}
+		result[membership.StudentID] = struct{}{}
+	}
+	for _, override := range overrides {
+		if override.StudentID <= 0 {
+			continue
+		}
+		if normalizeTeachingScheduleStudentType(override.StudentType) != model.TeachingScheduleStudentTypeClassMember {
+			continue
+		}
+		result[override.StudentID] = struct{}{}
+	}
+	return result
 }
 
 func buildGroupClassStudentRosterFromMemberships(memberships []groupClassStudentMembership, referenceAt time.Time) groupClassStudentRoster {
