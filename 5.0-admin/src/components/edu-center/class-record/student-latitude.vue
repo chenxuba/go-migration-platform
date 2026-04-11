@@ -3,8 +3,8 @@ import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, onMounted, ref, watch } from 'vue'
 import { getStudentTeachingRecordPagedListApi, type StudentTeachingRecordItem } from '@/api/edu-center/class-record'
+import StudentAvatar from '@/components/common/StudentAvatar.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
-import { useStudentStore } from '@/stores/student'
 
 const monthStart = dayjs().startOf('month')
 const today = dayjs()
@@ -18,7 +18,6 @@ const scheduleTypeOptions = [
 
 const loading = ref(false)
 const openClassRecordDrawer = ref(false)
-const openStudentDrawer = ref(false)
 const dataSource = ref<StudentTeachingRecordItem[]>([])
 const filterDateRange = ref<[Dayjs, Dayjs]>([monthStart, today])
 const filterScheduleTypes = ref<string[]>([])
@@ -33,18 +32,9 @@ const pagination = ref({
   pageSize: 50,
   total: 0,
 })
-const studentStore = useStudentStore()
 
 function handleSeeClassRecord() {
   openClassRecordDrawer.value = true
-}
-
-function handleViewStudent(studentId?: string) {
-  const id = String(studentId || '').trim()
-  if (!id)
-    return
-  studentStore.setStudentId(id)
-  openStudentDrawer.value = true
 }
 
 const allColumns = ref<any[]>([
@@ -193,6 +183,31 @@ const tablePagination = computed(() => ({
   showQuickJumper: true,
   showTotal: (total: number) => `共 ${total} 条`,
 }))
+
+const headerTipMap: Record<string, string[]> = {
+  studentIdentity: [
+    '【学员身份】指学员当时是以什么身份来上课的',
+    '【举例】A学员由于请假未上课，老师随后对A学员进行了“补课”操作，那么A学员的身份就是补课学员。',
+  ],
+  courseNotMethod: [
+    '【课消方式】课消方式决定了点名时的记录内容。',
+    '“按课时”：可以记录课时。',
+    '“按金额”：可以记录课时和金额。',
+    '“按时间”：可以记录课时。',
+  ],
+  useNum: [
+    '【消耗数量】当次课程真实消耗了多少课时/金额。',
+  ],
+  oweNum: [
+    '【拖欠数量】该学员“剩余数量 < 点名数量时”，会产生“拖欠数量”。',
+  ],
+  usePrice: [
+    '【消耗学费】本次点名数量对应的学费（钱），即机构实际确认收入。',
+  ],
+  callupdateTime: [
+    '【点名更新时间】最近一次编辑点名的时间和操作人',
+  ],
+}
 
 function formatDateTimeRange(record: Partial<StudentTeachingRecordItem> | Record<string, any>) {
   const start = dayjs(record.startTime)
@@ -444,14 +459,15 @@ onMounted(() => {
             @change="handleTableChange"
           >
             <template #headerCell="{ column }">
-              <template v-if="column.key === 'studentIdentity'">
+              <template v-if="headerTipMap[String(column.key || '')]">
                 <div class="table-header-with-tip">
-                  <span>学员身份</span>
+                  <span>{{ column.title }}</span>
                   <a-tooltip placement="top">
                     <template #title>
                       <div class="identity-tip">
-                        <div>【学员身份】指学员当时是以什么身份来上课的</div>
-                        <div>【举例】A学员由于请假未上课，老师随后对A学员进行了“补课”操作，那么A学员的身份就是补课学员。</div>
+                        <div v-for="line in headerTipMap[String(column.key || '')]" :key="line">
+                          {{ line }}
+                        </div>
                       </div>
                     </template>
                     <QuestionCircleOutlined class="table-header-tip-icon" />
@@ -471,21 +487,15 @@ onMounted(() => {
                 </div>
               </template>
               <template v-if="column.key === 'name'">
-                <div class="flex student-name-cell" @click="handleViewStudent(record.studentId)">
-                  <img
-                    width="40" height="40" class="mr-2" style="border-radius: 100%;"
-                    :src="record.avatar || 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png?x-oss-process=image/resize,w_120'"
-                    alt=""
-                  >
-                  <div class="name mt-1">
-                    <div class="text-#222">
-                      {{ record.studentName || '-' }}
-                    </div>
-                    <div class="text-3 text-#888 flex flex-items-center">
-                      {{ record.studentPhone || '-' }}
-                    </div>
-                  </div>
-                </div>
+                <StudentAvatar
+                  :id="record.studentId"
+                  :name="record.studentName || '-'"
+                  :avatar-url="record.avatar"
+                  :phone="record.studentPhone"
+                  :show-gender="false"
+                  :show-age="false"
+                  default-active-key="0"
+                />
               </template>
               <template v-if="column.key === 'linkClass1v1'">
                 {{ classDisplay(record) }}
@@ -536,7 +546,14 @@ onMounted(() => {
                 {{ record.assistants || '-' }}
               </template>
               <template v-if="column.key === 'callupdateTime'">
-                {{ record.updatedTime ? dayjs(record.updatedTime).format('YYYY-MM-DD HH:mm') : '-' }}
+                <div class="update-time-cell">
+                  <div>
+                    {{ record.updatedTime ? dayjs(record.updatedTime).format('YYYY-MM-DD HH:mm') : '-' }}
+                  </div>
+                  <div class="update-time-operator">
+                    {{ record.updatedStaffName || '-' }}
+                  </div>
+                </div>
               </template>
               <template v-if="column.key === 'externalRemarks'">
                 {{ record.remark || '-' }}
@@ -553,7 +570,6 @@ onMounted(() => {
       </div>
     </div>
     <class-record-details v-model:open="openClassRecordDrawer" />
-    <student-info-drawer v-model:open="openStudentDrawer" />
   </div>
 </template>
 
@@ -593,10 +609,6 @@ onMounted(() => {
   gap: 4px;
 }
 
-.student-name-cell {
-  cursor: pointer;
-}
-
 .table-header-tip-icon {
   color: #999;
   cursor: pointer;
@@ -607,6 +619,18 @@ onMounted(() => {
   max-width: 240px;
   line-height: 22px;
   white-space: normal;
+}
+
+.update-time-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.update-time-operator {
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .record-status-tag {
