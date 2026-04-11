@@ -652,7 +652,7 @@ onMounted(async () => {
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'name'">
-                <a-button type="link" class="text-#222" @click="openClassListDrawer">
+                <a-button type="link"  @click="openClassListDrawer">
                   {{ record.name || '-' }}
                 </a-button>
               </template>
