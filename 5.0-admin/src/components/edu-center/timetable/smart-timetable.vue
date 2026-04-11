@@ -707,6 +707,7 @@ const deletingScheduledLesson = ref(false)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref(null)
 const scheduleBatchPlanEditScope = ref('batch')
+const scheduleBatchPlanAction = ref('edit')
 const forcingConflictSchedule = ref(false)
 const locatingConflictItemKey = ref('')
 const conflictDetailModalOpen = ref(false)
@@ -3570,6 +3571,7 @@ function openScheduledLessonBatchPlanEdit(scope = 'batch', payload) {
     messageService.warning('当前日程缺少编辑标识，请刷新后重试')
     return
   }
+  scheduleBatchPlanAction.value = 'edit'
   scheduleBatchPlanEditScope.value = editScope
   currentBatchPlanSchedule.value = editPayload
     ? {
@@ -3582,10 +3584,41 @@ function openScheduledLessonBatchPlanEdit(scope = 'batch', payload) {
   scheduleBatchPlanEditOpen.value = true
 }
 
+function openScheduledLessonBatchPlanCopy(scope = 'batch', payload) {
+  let copyScope = scope
+  let copyPayload = null
+  if (typeof scope === 'object' && scope !== null) {
+    copyScope = 'batch'
+    copyPayload = scope
+  }
+  else {
+    copyPayload = payload
+  }
+  const detail = scheduledLessonDetailState.value
+  const schedule = buildBatchPlanScheduleFromDetail(detail)
+  if (!schedule) {
+    messageService.warning('当前日程缺少复制标识，请刷新后重试')
+    return
+  }
+  scheduledLessonDetailOpen.value = false
+  scheduleBatchPlanAction.value = 'copy'
+  scheduleBatchPlanEditScope.value = copyScope
+  currentBatchPlanSchedule.value = copyPayload
+    ? {
+        ...schedule,
+        batchMeta: copyPayload.batchMeta,
+        batchNo: copyPayload.batchNo || schedule.batchNo,
+        batchSize: Number(copyPayload.batchSize || schedule.batchSize || 0) || schedule.batchSize,
+      }
+    : schedule
+  scheduleBatchPlanEditOpen.value = true
+}
+
 function handleBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
   scheduledLessonDetailOpen.value = false
   scheduleBatchPlanEditScope.value = 'batch'
+  scheduleBatchPlanAction.value = 'edit'
   currentBatchPlanSchedule.value = null
   emitter.emit(EVENTS.REFRESH_DATA)
 }
@@ -5282,6 +5315,8 @@ watch(dragConflictDetailOpen, (open) => {
       @delete="deleteScheduledLessonFromDetail"
       @delete-current="deleteScheduledLessonFromDetail('current')"
       @delete-future="deleteScheduledLessonFromDetail('future')"
+      @copy="openScheduledLessonBatchPlanCopy"
+      @copy-current="payload => openScheduledLessonBatchPlanCopy('current', payload)"
       @edit="openScheduledLessonBatchPlanEdit"
       @edit-current="payload => openScheduledLessonBatchPlanEdit('current', payload)"
     />
@@ -5290,6 +5325,7 @@ watch(dragConflictDetailOpen, (open) => {
       v-model:open="scheduleBatchPlanEditOpen"
       :schedule="currentBatchPlanSchedule"
       :scope="scheduleBatchPlanEditScope"
+      :action="scheduleBatchPlanAction"
       @updated="handleBatchPlanUpdated"
     />
 

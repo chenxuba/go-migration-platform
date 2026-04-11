@@ -78,6 +78,7 @@ const deletingScheduleDetail = ref(false)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref<TeachingScheduleItem | null>(null)
 const scheduleBatchPlanEditScope = ref<'batch' | 'current'>('batch')
+const scheduleBatchPlanAction = ref<'edit' | 'copy'>('edit')
 const scheduleConflictOpen = ref(false)
 const scheduleConflictValidation = ref(null)
 const scheduleConflictLoading = ref(false)
@@ -1323,9 +1324,12 @@ function openScheduleEdit(event: CellSchedule) {
   scheduleDetailOpen.value = true
 }
 
-function openBatchPlanEdit(schedule: TeachingScheduleItem | null | undefined, scope: 'batch' | 'current' = 'batch', payload?: ScheduleEditPayload) {
+function openBatchPlanEdit(schedule: TeachingScheduleItem | null | undefined, scope: 'batch' | 'current' = 'batch', payload?: ScheduleEditPayload, action: 'edit' | 'copy' = 'edit') {
   if (!schedule?.id)
     return
+  if (action === 'copy')
+    scheduleDetailOpen.value = false
+  scheduleBatchPlanAction.value = action
   scheduleBatchPlanEditScope.value = scope
   currentBatchPlanSchedule.value = payload
     ? {
@@ -1342,6 +1346,7 @@ function onBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
   scheduleDetailOpen.value = false
   scheduleBatchPlanEditScope.value = 'batch'
+  scheduleBatchPlanAction.value = 'edit'
   loadMatrix()
 }
 
@@ -1893,6 +1898,8 @@ const unsignedLessons = computed(() =>
       @delete="handleScheduleDetailDelete"
       @delete-current="handleScheduleDetailDelete('current')"
       @delete-future="handleScheduleDetailDelete('future')"
+      @copy="payload => openBatchPlanEdit(currentDetailSchedule, 'batch', payload, 'copy')"
+      @copy-current="payload => openBatchPlanEdit(currentDetailSchedule, 'current', payload, 'copy')"
       @edit="handleScheduleDetailEdit"
       @edit-current="handleScheduleDetailEditCurrent"
       @updated="onBatchPlanUpdated"
@@ -1901,6 +1908,7 @@ const unsignedLessons = computed(() =>
       v-model:open="scheduleBatchPlanEditOpen"
       :schedule="currentBatchPlanSchedule"
       :scope="scheduleBatchPlanEditScope"
+      :action="scheduleBatchPlanAction"
       @updated="onBatchPlanUpdated"
     />
     <ScheduleConflictModal

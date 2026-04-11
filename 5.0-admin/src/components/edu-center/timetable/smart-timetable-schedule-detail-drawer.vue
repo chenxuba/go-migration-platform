@@ -48,6 +48,8 @@ const emit = defineEmits<{
   (e: 'delete'): void
   (e: 'delete-current'): void
   (e: 'delete-future'): void
+  (e: 'copy', payload?: ScheduleEditPayload): void
+  (e: 'copy-current', payload?: ScheduleEditPayload): void
   (e: 'edit', payload?: ScheduleEditPayload): void
   (e: 'edit-current', payload?: ScheduleEditPayload): void
   (e: 'updated'): void
@@ -231,6 +233,18 @@ function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, dom
     emit('edit', scheduleEditPayload.value)
 }
 
+function handleBatchCopyMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
+  domEvent?.stopPropagation?.()
+  if (key === 'copy-current')
+    emit('copy-current', scheduleEditPayload.value)
+  else if (key === 'copy-all')
+    emit('copy', scheduleEditPayload.value)
+}
+
+function handleSingleCopyClick() {
+  emit('copy-current', scheduleEditPayload.value)
+}
+
 function handleBatchDeleteMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
   domEvent?.stopPropagation?.()
   if (key === 'delete-current')
@@ -375,12 +389,12 @@ watch(
                 placement="bottomLeft"
               >
                 <template #overlay>
-                  <a-menu :selectable="false">
+                  <a-menu :selectable="false" @click="handleBatchCopyMenuClick">
                     <a-menu-item key="copy-current">
-                      仅复制此日程
+                      仅复制当前课程
                     </a-menu-item>
                     <a-menu-item key="copy-all">
-                      复制全部日程
+                      复制后续全部课程
                     </a-menu-item>
                   </a-menu>
                 </template>
@@ -390,8 +404,8 @@ watch(
                   <DownOutlined />
                 </a-button>
               </a-dropdown>
-              <a-button v-else type="link">
-                仅复制此日程
+              <a-button v-else type="link" @click="handleSingleCopyClick">
+                仅复制当前课程
               </a-button>
 
               <a-dropdown

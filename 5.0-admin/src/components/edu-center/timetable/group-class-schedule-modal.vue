@@ -154,6 +154,7 @@ const modalOpen = computed({
 })
 
 const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
+const isCopyPresetMode = computed(() => props.mode === 'create' && !!props.batchPlanPreset)
 const isSingleScheduleEditMode = computed(() => {
   if (!isBatchPlanEditMode.value || !props.batchPlanPreset)
     return false
@@ -165,7 +166,7 @@ const isSingleScheduleEditMode = computed(() => {
     : []
   return !batchNo && scheduleIds.length === 1
 })
-const showSchedulingModeSection = computed(() => !isBatchPlanEditMode.value)
+const showSchedulingModeSection = computed(() => !isBatchPlanEditMode.value && !isCopyPresetMode.value)
 
 const weekDayOptions = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const weekdayToNumber: Record<string, number> = {
@@ -1981,7 +1982,7 @@ watch(modalOpen, async (value) => {
       fetchWorkbenchTeacherList(),
     ])
     await loadEffectivePeriodConfig()
-    if (isBatchPlanEditMode.value && props.batchPlanPreset)
+    if (props.batchPlanPreset)
       await applyBatchPlanPreset(props.batchPlanPreset)
     await nextTick()
     scrollPlannerShellToTop()
@@ -1996,9 +1997,9 @@ watch(modalOpen, async (value) => {
 }, { immediate: true })
 
 watch(
-  () => [modalOpen.value, isBatchPlanEditMode.value, props.batchPlanPreset] as const,
-  async ([open, editMode, preset]) => {
-    if (!open || !editMode || !preset || !groupClassRecords.value.length)
+  () => [modalOpen.value, props.batchPlanPreset] as const,
+  async ([open, preset]) => {
+    if (!open || !preset || !groupClassRecords.value.length)
       return
     await applyBatchPlanPreset(preset)
   },

@@ -14,8 +14,10 @@ const props = withDefaults(defineProps<{
   open: boolean
   schedule?: TeachingScheduleItem | null
   scope?: ScheduleBatchPlanEditScope
+  action?: 'edit' | 'copy'
 }>(), {
   scope: 'batch',
+  action: 'edit',
 })
 
 const emit = defineEmits<{
@@ -156,7 +158,7 @@ function handleUpdated() {
   <OneToOneScheduleModal
     v-if="modalOpen && preset"
     v-model:open="modalOpen"
-    mode="editBatch"
+    :mode="props.action === 'copy' ? 'create' : 'editBatch'"
     :batch-plan-preset="preset"
     @updated="handleUpdated"
   />
@@ -164,7 +166,7 @@ function handleUpdated() {
   <GroupClassScheduleModal
     v-else-if="modalOpen && groupClassPreset"
     v-model:open="modalOpen"
-    mode="editBatch"
+    :mode="props.action === 'copy' ? 'create' : 'editBatch'"
     :batch-plan-preset="groupClassPreset"
     @updated="handleUpdated"
   />

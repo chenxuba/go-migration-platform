@@ -383,6 +383,7 @@ const deletingScheduleDetail = ref(false)
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref(null)
 const scheduleBatchPlanEditScope = ref('batch')
+const scheduleBatchPlanAction = ref('edit')
 const scheduleConflictOpen = ref(false)
 const scheduleConflictValidation = ref(null)
 const scheduleConflictLoading = ref(false)
@@ -1348,7 +1349,7 @@ function openScheduleEdit(item) {
   openScheduleDetail(item)
 }
 
-function openBatchPlanEdit(schedule, scope = 'batch', payload) {
+function openBatchPlanEdit(schedule, scope = 'batch', payload, action = 'edit') {
   const nextSchedule = payload
     ? {
         ...schedule,
@@ -1357,6 +1358,9 @@ function openBatchPlanEdit(schedule, scope = 'batch', payload) {
         batchSize: Number(payload.batchSize || schedule?.batchSize || 0) || schedule?.batchSize,
       }
     : schedule
+  if (action === 'copy')
+    scheduleDetailOpen.value = false
+  scheduleBatchPlanAction.value = action
   scheduleBatchPlanEditScope.value = scope
   currentBatchPlanSchedule.value = nextSchedule || null
   scheduleBatchPlanEditOpen.value = true
@@ -1440,6 +1444,7 @@ function handleBatchPlanUpdated() {
   scheduleBatchPlanEditOpen.value = false
   scheduleDetailOpen.value = false
   scheduleBatchPlanEditScope.value = 'batch'
+  scheduleBatchPlanAction.value = 'edit'
   loadSchedules()
 }
 
@@ -1954,6 +1959,8 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
       @delete="handleScheduleDetailDelete"
       @delete-current="handleScheduleDetailDelete('current')"
       @delete-future="handleScheduleDetailDelete('future')"
+      @copy="payload => openBatchPlanEdit(currentDetailSchedule, 'batch', payload, 'copy')"
+      @copy-current="payload => openBatchPlanEdit(currentDetailSchedule, 'current', payload, 'copy')"
       @edit="handleScheduleDetailEdit"
       @edit-current="handleScheduleDetailEditCurrent"
     />
@@ -1961,6 +1968,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
       v-model:open="scheduleBatchPlanEditOpen"
       :schedule="currentBatchPlanSchedule"
       :scope="scheduleBatchPlanEditScope"
+      :action="scheduleBatchPlanAction"
       @updated="handleBatchPlanUpdated"
     />
     <ScheduleConflictModal
