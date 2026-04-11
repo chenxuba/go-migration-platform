@@ -29,7 +29,7 @@ const props = defineProps({
     default: '',
   },
 })
-const emit = defineEmits(['update:open'])
+const emit = defineEmits(['update:open', 'updated'])
 const openDrawer = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
@@ -56,6 +56,7 @@ const loading = ref(false)
 const classTimetableDetail = ref(null)
 const teachingRecordResult = ref(null)
 const data = ref([])
+const rollCallChanged = ref(false)
 let loadSeq = 0
 // 定义列
 const columns = ref(
@@ -597,6 +598,8 @@ function handleAddStudent({ key }) {
   addStudentModal.value = true
 }
 async function handleAddStudentSuccess() {
+  rollCallChanged.value = true
+  emit('updated')
   await loadDetail()
 }
 // 批量编辑modal
@@ -696,6 +699,8 @@ function handleRemoveStudent(record) {
         if (res.code !== 200)
           throw new Error(res.message || '移出本节失败')
         messageService.success(`已将${name}移出本节`)
+        rollCallChanged.value = true
+        emit('updated')
         await loadDetail()
       }
       catch (error) {
@@ -723,6 +728,18 @@ watch(
     loadDetail()
   },
   { immediate: true },
+)
+
+watch(
+  () => openDrawer.value,
+  (open, previous) => {
+    if (!open && previous && rollCallChanged.value) {
+      emit('updated')
+      rollCallChanged.value = false
+    }
+    if (open && !previous)
+      rollCallChanged.value = false
+  },
 )
 </script>
 

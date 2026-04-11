@@ -725,6 +725,7 @@ watch(
       v-model:open="rollCallDrawerOpen"
       :schedule-id="scheduleId"
       :lesson-day="detailData?.lessonDate || ''"
+      @updated="loadDetail"
     />
     <RollCallAddStudentModal
       v-model:open="addStudentModalOpen"
