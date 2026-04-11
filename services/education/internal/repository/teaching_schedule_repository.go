@@ -2740,7 +2740,32 @@ func (repo *Repository) AddTeachingScheduleStudentsCurrent(ctx context.Context, 
 		return errors.New("存在无效学员，请刷新后重试")
 	}
 
+	membershipMap, err := repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, tx, instID, []int64{row.TeachingClassID})
+	if err != nil {
+		return err
+	}
+	referenceAt := resolveGroupClassRosterReferenceAt(row.StartAt, time.Time{})
+	classMemberSet := make(map[int64]struct{})
+	for _, membership := range membershipMap[row.TeachingClassID] {
+		if membership.StudentID <= 0 {
+			continue
+		}
+		if !groupClassStudentMembershipEffectiveAt(membership, referenceAt) {
+			continue
+		}
+		classMemberSet[membership.StudentID] = struct{}{}
+	}
+
 	for _, studentID := range studentIDs {
+		if studentType == model.TeachingScheduleStudentTypeTrial {
+			if _, ok := classMemberSet[studentID]; ok {
+				return errors.New("此学员为日程班级的关联学员，无法作为试听学员进行添加")
+			}
+		}
+		persistStudentType := studentType
+		if _, ok := classMemberSet[studentID]; ok {
+			persistStudentType = model.TeachingScheduleStudentTypeClassMember
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO teaching_schedule_student (
 				inst_id, teaching_schedule_id, teaching_class_id, student_id,
@@ -2753,7 +2778,7 @@ func (repo *Repository) AddTeachingScheduleStudentsCurrent(ctx context.Context, 
 				update_id = VALUES(update_id),
 				update_time = CURRENT_TIMESTAMP,
 				del_flag = 0
-		`, instID, row.ID, row.TeachingClassID, studentID, studentType, model.TeachingScheduleStudentRosterStatusActive, operatorID, operatorID); err != nil {
+		`, instID, row.ID, row.TeachingClassID, studentID, persistStudentType, model.TeachingScheduleStudentRosterStatusActive, operatorID, operatorID); err != nil {
 			return err
 		}
 	}
@@ -4866,7 +4891,9 @@ func buildGroupClassScheduleRosterFromMembershipsAndOverrides(memberships []grou
 		if override.PhoneRelationship > 0 {
 			entry.PhoneRelationship = override.PhoneRelationship
 		}
-		entry.ScheduleStudentType = normalizeTeachingScheduleStudentType(override.StudentType)
+		if !(ok && entry.ScheduleStudentType == model.TeachingScheduleStudentTypeClassMember) {
+			entry.ScheduleStudentType = normalizeTeachingScheduleStudentType(override.StudentType)
+		}
 		entry.RosterStatus = status
 		entryByStudentID[override.StudentID] = entry
 	}

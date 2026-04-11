@@ -33,6 +33,7 @@ const submitLoading = ref(false)
 const data = ref<TeachingScheduleStudentCandidate[]>([])
 const selectedRowKeys = ref<string[]>([])
 const selectedRows = ref<TeachingScheduleStudentCandidate[]>([])
+const defaultStudentAvatar = 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png'
 
 const paginationState = reactive({
   current: 1,
@@ -81,6 +82,17 @@ const rowSelection = computed(() => ({
     selectedRows.value = rows
   },
 }))
+
+function getStudentStatusTagClass(status?: number) {
+  switch (Number(status ?? -1)) {
+    case 1:
+      return 'student-status-tag student-status-tag--enrolled'
+    case 2:
+      return 'student-status-tag student-status-tag--history'
+    default:
+      return 'student-status-tag student-status-tag--intent'
+  }
+}
 
 function staticRows(): TeachingScheduleStudentCandidate[] {
   return [
@@ -261,6 +273,11 @@ async function handleSubmit() {
         <template #bodyCell="{ column, record }">
           <template v-if="column.dataIndex === 'studentName'">
             <div class="student-name-cell">
+              <img
+                :src="record.avatarUrl || defaultStudentAvatar"
+                class="student-avatar"
+                alt=""
+              >
               {{ record.studentName || '-' }}
             </div>
           </template>
@@ -271,7 +288,9 @@ async function handleSubmit() {
             </div>
           </template>
           <template v-else-if="column.dataIndex === 'studentStatusText'">
-            <span>{{ record.studentStatusText || '-' }}</span>
+            <span :class="getStudentStatusTagClass(record.studentStatus)">
+              {{ record.studentStatusText || '-' }}
+            </span>
           </template>
         </template>
       </a-table>
@@ -318,8 +337,19 @@ async function handleSubmit() {
 }
 
 .student-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   color: #1f2329;
   font-weight: 500;
+}
+
+.student-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex: 0 0 32px;
+  object-fit: cover;
 }
 
 .student-phone-cell {
@@ -327,6 +357,33 @@ async function handleSubmit() {
   gap: 6px;
   align-items: center;
   color: #5c6570;
+}
+
+.student-status-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.student-status-tag--enrolled {
+  color: #1677ff;
+  background: #e8f3ff;
+}
+
+.student-status-tag--history {
+  color: #666d7a;
+  background: #f1f3f5;
+}
+
+.student-status-tag--intent {
+  color: #d46b08;
+  background: #fff3e8;
 }
 </style>
 
