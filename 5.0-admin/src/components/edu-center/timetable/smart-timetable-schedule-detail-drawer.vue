@@ -226,6 +226,19 @@ function handleViewStudent(studentId?: string) {
   openStudentDrawer.value = true
 }
 
+function getStudentTypeTagClass(studentType?: number) {
+  switch (Number(studentType || 0)) {
+    case 2:
+      return 'student-type-tag--temporary'
+    case 3:
+      return 'student-type-tag--trial'
+    case 4:
+      return 'student-type-tag--makeup'
+    default:
+      return 'student-type-tag--member'
+  }
+}
+
 function handleAddStudentMenuClick({ key }) {
   if (!canManageCurrentStudents.value) {
     messageService.warning('已点名日程不可添加学员')
@@ -612,7 +625,7 @@ watch(
                     </div>
                   </template>
                   <template v-else-if="column.key === 'studentType'">
-                    <span class="student-type-text">
+                    <span class="student-type-tag" :class="getStudentTypeTagClass(record.scheduleStudentType)">
                       {{ record.scheduleStudentTypeText || (isOneToOne ? '1对1学员' : '班课学员') }}
                     </span>
                   </template>
@@ -667,7 +680,7 @@ watch(
                     </div>
                   </template>
                   <template v-else-if="column.key === 'studentType'">
-                    <span class="student-type-text">
+                    <span class="student-type-tag" :class="getStudentTypeTagClass(record.scheduleStudentType)">
                       {{ record.scheduleStudentTypeText || (isOneToOne ? '1对1学员' : '班课学员') }}
                     </span>
                   </template>
@@ -827,8 +840,36 @@ watch(
   color: #888;
 }
 
-.student-type-text {
-  color: #222;
+.student-type-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.student-type-tag--member {
+  color: #1668ff;
+  background: #eaf3ff;
+}
+
+.student-type-tag--temporary {
+  color: #ad6800;
+  background: #fff3d6;
+}
+
+.student-type-tag--trial {
+  color: #047857;
+  background: #dcfce7;
+}
+
+.student-type-tag--makeup {
+  color: #7c3aed;
+  background: #f3e8ff;
 }
 
 .student-action-links {
@@ -844,8 +885,6 @@ watch(
   border: none;
   background: transparent;
   color: #1677ff;
-  font-size: 15px;
-  line-height: 22px;
   cursor: pointer;
 }
 
