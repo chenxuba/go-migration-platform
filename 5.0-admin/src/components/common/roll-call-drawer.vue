@@ -1,5 +1,6 @@
 <script setup>
 import { CloseOutlined, DownOutlined, ExclamationCircleFilled, ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import {
   getRollCallClassTimetableApi,
@@ -8,6 +9,7 @@ import {
   getRollCallStudentTuitionExtraInfoApi,
   getRollCallTeachingRecordStudentListApi,
 } from '@/api/edu-center/roll-call'
+import { removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
 import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
 import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
@@ -478,6 +480,9 @@ function applySwitchedAccountOverrides(rows) {
 function clearSwitchedAccountOverrides() {
   switchedAccountOverrideMap.value = new Map()
 }
+function shouldSkipManualErrorMessage(error) {
+  return Number(error?.response?.status || 0) === 400
+}
 async function loadDetail() {
   if (!openDrawer.value || !currentScheduleId.value) {
     classTimetableDetail.value = null
@@ -663,6 +668,47 @@ function submitSwitchAccount() {
   syncRecordTuitionAccount(switchAccountRecord.value, selectedAccount)
   saveStudentAccountOverride(switchAccountRecord.value.id, selectedAccount)
   closeSwitchAccountModal()
+}
+function handleRemoveStudent(record) {
+  const scheduleId = String(currentScheduleId.value || '').trim()
+  const studentId = String(record?.id || '').trim()
+  const name = String(record?.studentAccount || '').trim() || '当前学员'
+  if (!scheduleId || !studentId) {
+    messageService.warning('当前学员缺少移出标识，请刷新后重试')
+    return
+  }
+  let removing = false
+  Modal.confirm({
+    title: '移出本节学员',
+    content: `移出后仅影响本节课，不会影响班级成员和后续未开课。确认移出“${name}”吗？`,
+    okText: '确认移出',
+    cancelText: '取消',
+    async onOk() {
+      if (removing)
+        return
+      removing = true
+      try {
+        messageService.clear()
+        const res = await removeTeachingScheduleStudentCurrentApi({
+          scheduleId,
+          studentId,
+        })
+        if (res.code !== 200)
+          throw new Error(res.message || '移出本节失败')
+        messageService.success(`已将${name}移出本节`)
+        await loadDetail()
+      }
+      catch (error) {
+        if (!shouldSkipManualErrorMessage(error)) {
+          messageService.error(error?.response?.data?.message || error?.message || '移出本节失败')
+        }
+        throw error
+      }
+      finally {
+        removing = false
+      }
+    },
+  })
 }
 
 useStudentListRefresh(() => {
@@ -1010,7 +1056,7 @@ watch(
             </div>
             <div v-else-if="column.dataIndex === 'action'">
               <a-space>
-                <a v-if="record.canRemove">移出</a>
+                <a v-if="record.canRemove" @click="handleRemoveStudent(record)">移出</a>
               </a-space>
             </div>
           </template>

@@ -311,6 +311,10 @@ function goRollCall() {
   rollCallDrawerOpen.value = true
 }
 
+function shouldSkipManualErrorMessage(error: any) {
+  return Number(error?.response?.status || 0) === 400
+}
+
 function handleStudentRemove(student: Record<string, any>) {
   if (!canManageCurrentStudents.value) {
     messageService.warning('已点名日程不可移出本节学员')
@@ -323,13 +327,18 @@ function handleStudentRemove(student: Record<string, any>) {
     messageService.warning('当前学员缺少移出标识，请刷新后重试')
     return
   }
+  let removing = false
   Modal.confirm({
     title: '移出本节学员',
     content: `移出后仅影响本节课，不会影响班级成员和后续未开课。确认移出“${name}”吗？`,
     okText: '确认移出',
     cancelText: '取消',
     async onOk() {
+      if (removing)
+        return
+      removing = true
       try {
+        messageService.clear()
         const res = await removeTeachingScheduleStudentCurrentApi({
           scheduleId: currentScheduleId,
           studentId: currentStudentId,
@@ -341,8 +350,13 @@ function handleStudentRemove(student: Record<string, any>) {
         emit('updated')
       }
       catch (error: any) {
-        messageService.error(error?.response?.data?.message || error?.message || '移出本节失败')
-        throw error
+        if (!shouldSkipManualErrorMessage(error)) {
+          messageService.error(error?.response?.data?.message || error?.message || '移出本节失败')
+          throw error
+        }
+      }
+      finally {
+        removing = false
       }
     },
   })
