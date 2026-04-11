@@ -321,6 +321,10 @@ func (repo *Repository) GetTeachingScheduleConflictDetail(ctx context.Context, i
 func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleVO, error) {
 	filters := []string{"ts.inst_id = ?", "ts.del_flag = 0", "ts.status = ?"}
 	args := []any{instID, model.TeachingScheduleStatusActive}
+	orderDirection := "ASC"
+	if strings.EqualFold(strings.TrimSpace(query.SortDirection), "desc") {
+		orderDirection = "DESC"
+	}
 	var studentFilterID int64
 	if batchNo := strings.TrimSpace(query.BatchNo); batchNo != "" {
 		filters = append(filters, "ts.batch_no = ?")
@@ -534,7 +538,7 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 			IFNULL(status, 0)
 		FROM teaching_schedule ts
 		WHERE `+strings.Join(filters, " AND ")+`
-		ORDER BY ts.lesson_start_at ASC, ts.id ASC
+		ORDER BY ts.lesson_start_at `+orderDirection+`, ts.id `+orderDirection+`
 	`, args...)
 	if err != nil {
 		return nil, err

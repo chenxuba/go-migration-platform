@@ -106,6 +106,7 @@ type CheckGroupClassAssistantScheduleAvailabilityDTO struct {
 type TeachingScheduleListQueryDTO struct {
 	StartDate     string   `json:"startDate"`
 	EndDate       string   `json:"endDate"`
+	SortDirection string   `json:"sortDirection,omitempty"`
 	ClassType     *int     `json:"classType,omitempty"`
 	StudentID     string   `json:"studentId,omitempty"`
 	ConflictTypes []string `json:"conflictTypes,omitempty"`

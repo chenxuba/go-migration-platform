@@ -17,6 +17,7 @@ func parseTeacherMatrixQuery(r *http.Request) model.TeachingScheduleListQueryDTO
 	query := model.TeachingScheduleListQueryDTO{
 		StartDate:           strings.TrimSpace(r.URL.Query().Get("startDate")),
 		EndDate:             strings.TrimSpace(r.URL.Query().Get("endDate")),
+		SortDirection:       strings.TrimSpace(strings.ToLower(r.URL.Query().Get("sortDirection"))),
 		StudentID:           strings.TrimSpace(r.URL.Query().Get("studentId")),
 		MatrixTeacherFilter: strings.TrimSpace(strings.ToLower(r.URL.Query().Get("teacherFilter"))),
 		PeriodGroupUUID:     strings.TrimSpace(r.URL.Query().Get("periodGroupUuid")),
@@ -85,9 +86,10 @@ func parseTeacherMatrixQuery(r *http.Request) model.TeachingScheduleListQueryDTO
 
 func parseTeachingScheduleListQuery(r *http.Request) model.TeachingScheduleListQueryDTO {
 	query := model.TeachingScheduleListQueryDTO{
-		StartDate: strings.TrimSpace(r.URL.Query().Get("startDate")),
-		EndDate:   strings.TrimSpace(r.URL.Query().Get("endDate")),
-		StudentID: strings.TrimSpace(r.URL.Query().Get("studentId")),
+		StartDate:     strings.TrimSpace(r.URL.Query().Get("startDate")),
+		EndDate:       strings.TrimSpace(r.URL.Query().Get("endDate")),
+		SortDirection: strings.TrimSpace(strings.ToLower(r.URL.Query().Get("sortDirection"))),
+		StudentID:     strings.TrimSpace(r.URL.Query().Get("studentId")),
 	}
 	parseInt64CSV := func(raw string) []int64 {
 		out := make([]int64, 0)

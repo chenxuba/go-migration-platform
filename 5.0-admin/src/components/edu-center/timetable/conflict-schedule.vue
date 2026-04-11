@@ -4,11 +4,20 @@ import { Modal } from 'ant-design-vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { TeachingScheduleItem } from '@/api/edu-center/teaching-schedule'
 import { cancelTeachingScheduleScopedApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
 type ConflictFilterKey = 'class' | 'teacher' | 'classroom' | 'student' | 'assistant'
 type ConflictType = '班级' | '老师' | '教室' | '学员' | '助教'
+
+interface ScheduleEditPayload {
+  batchMeta?: TeachingScheduleItem['batchMeta']
+  batchNo?: string
+  batchSize?: number
+}
+
+type ScheduleRecord = TeachingScheduleItem | Record<string, any>
 
 const weekdayLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 const conflictTypeOrder: ConflictType[] = ['班级', '老师', '教室', '学员', '助教']
@@ -98,6 +107,10 @@ const selectedConflictTypes = ref<ConflictType[]>([])
 const loading = ref(false)
 const deletingId = ref('')
 const scheduleRows = ref<TeachingScheduleItem[]>([])
+const scheduleBatchPlanEditOpen = ref(false)
+const currentBatchPlanSchedule = ref<TeachingScheduleItem | null>(null)
+const scheduleBatchPlanEditScope = ref<'batch' | 'current'>('batch')
+const scheduleBatchPlanAction = ref<'edit' | 'copy'>('edit')
 let requestToken = 0
 
 function syncSelectedConflictTypes() {
@@ -107,14 +120,7 @@ function syncSelectedConflictTypes() {
 }
 
 const conflictRows = computed(() => {
-  const filtered = scheduleRows.value.filter(item => item?.conflict)
-
-  return filtered.slice().sort((a, b) => {
-    const timeDiff = dayjs(a.startAt).valueOf() - dayjs(b.startAt).valueOf()
-    if (timeDiff !== 0)
-      return timeDiff
-    return String(a.id || '').localeCompare(String(b.id || ''))
-  })
+  return scheduleRows.value.filter(item => item?.conflict)
 })
 
 function handleCreateTimeFilter(value: unknown) {
@@ -144,6 +150,7 @@ async function loadConflictSchedules() {
     const res = await listTeachingSchedulesApi({
       startDate,
       endDate,
+      sortDirection: 'desc',
       conflictTypes: selectedConflictTypes.value.join(',') || undefined,
     })
     if (token !== requestToken)
@@ -253,6 +260,63 @@ function teachingClassBadgeClass(record: Record<string, any>) {
 
 function isOneToOneSchedule(record: Record<string, any>) {
   return Number(record.classType) === 2
+}
+
+function isPastSchedule(record: Record<string, any>) {
+  const lessonDate = String(record.lessonDate || '').trim()
+  if (!lessonDate)
+    return false
+  return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
+}
+
+function canEditSchedule(record: Record<string, any>) {
+  return Boolean(String(record.id || '').trim()) && !isPastSchedule(record)
+}
+
+function editDisabledReason(record: Record<string, any>) {
+  return isPastSchedule(record) ? '过去日程不可编辑' : '当前日程不可编辑'
+}
+
+function hasBatchSchedule(record: Record<string, any>) {
+  const batchSize = Number(record.batchSize || 0)
+  const batchNo = String(record.batchNo || '').trim()
+  return batchSize > 1 || batchNo !== ''
+}
+
+function openBatchPlanEdit(schedule: ScheduleRecord | null | undefined, scope: 'batch' | 'current' = 'batch', payload?: ScheduleEditPayload, action: 'edit' | 'copy' = 'edit') {
+  if (!schedule)
+    return
+  const baseSchedule = schedule as TeachingScheduleItem
+  const nextSchedule = payload
+    ? {
+        ...baseSchedule,
+        batchMeta: payload.batchMeta,
+        batchNo: payload.batchNo || baseSchedule.batchNo,
+        batchSize: Number(payload.batchSize || baseSchedule.batchSize || 0) || baseSchedule.batchSize,
+      }
+    : baseSchedule
+  scheduleBatchPlanAction.value = action
+  scheduleBatchPlanEditScope.value = scope
+  currentBatchPlanSchedule.value = nextSchedule
+  scheduleBatchPlanEditOpen.value = true
+}
+
+function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }, record: ScheduleRecord) {
+  domEvent?.stopPropagation()
+  if (!canEditSchedule(record))
+    return
+  if (String(key) === 'current')
+    openBatchPlanEdit(record, 'current')
+  else
+    openBatchPlanEdit(record, 'batch')
+}
+
+function handleBatchPlanUpdated() {
+  scheduleBatchPlanEditOpen.value = false
+  currentBatchPlanSchedule.value = null
+  scheduleBatchPlanEditScope.value = 'batch'
+  scheduleBatchPlanAction.value = 'edit'
+  emitter.emit(EVENTS.REFRESH_DATA)
 }
 
 function isSameScheduleSlot(left: Record<string, any>, right: Record<string, any>) {
@@ -464,9 +528,33 @@ function confirmDelete(record: Record<string, any>) {
 
           <template v-else-if="column.key === 'actions'">
             <a-space :size="8">
-              <a-tooltip title="编辑暂未开放">
+              <a-dropdown
+                v-if="hasBatchSchedule(record) && canEditSchedule(record)"
+                :trigger="['hover']"
+                placement="bottomRight"
+              >
+                <template #overlay>
+                  <a-menu :selectable="false" @click="menu => handleBatchEditMenuClick(menu, record)">
+                    <a-menu-item key="current">
+                      仅编辑此日程
+                    </a-menu-item>
+                    <a-menu-item key="future">
+                      编辑以后日程
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+                <a-button type="link" size="small" @click.stop>
+                  编辑
+                </a-button>
+              </a-dropdown>
+              <a-tooltip v-else :title="canEditSchedule(record) ? '编辑日程' : editDisabledReason(record)">
                 <span>
-                  <a-button type="link" size="small" disabled>
+                  <a-button
+                    type="link"
+                    size="small"
+                    :disabled="!canEditSchedule(record)"
+                    @click="canEditSchedule(record) && openBatchPlanEdit(record, 'current')"
+                  >
                     编辑
                   </a-button>
                 </span>
@@ -485,6 +573,14 @@ function confirmDelete(record: Record<string, any>) {
         </template>
       </a-table>
     </div>
+
+    <ScheduleBatchPlanEditModal
+      v-model:open="scheduleBatchPlanEditOpen"
+      :schedule="currentBatchPlanSchedule"
+      :scope="scheduleBatchPlanEditScope"
+      :action="scheduleBatchPlanAction"
+      @updated="handleBatchPlanUpdated"
+    />
   </div>
 </template>
 

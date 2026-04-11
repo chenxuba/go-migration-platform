@@ -366,6 +366,7 @@ export function removeTeachingScheduleStudentCurrentApi(data: {
 export function listTeachingSchedulesApi(params: {
   startDate: string
   endDate: string
+  sortDirection?: 'asc' | 'desc'
   classType?: number
   studentId?: string
   conflictTypes?: string
