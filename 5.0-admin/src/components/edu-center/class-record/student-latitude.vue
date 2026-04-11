@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { DownOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, onMounted, ref, watch } from 'vue'
 import { getStudentTeachingRecordPagedListApi, type StudentTeachingRecordItem } from '@/api/edu-center/class-record'
@@ -221,7 +221,7 @@ function sourceTypeText(value?: number) {
     return '试听学员'
   if (type === 6)
     return '1对1学员'
-  return '班课学员'
+  return '班级学员'
 }
 
 function statusText(value?: number) {
@@ -233,6 +233,17 @@ function statusText(value?: number) {
   if (status === 4)
     return '未记录'
   return '到课'
+}
+
+function statusTagClass(value?: number) {
+  const status = Number(value || 0)
+  if (status === 2)
+    return 'record-status-tag record-status-tag--absent'
+  if (status === 3)
+    return 'record-status-tag record-status-tag--leave'
+  if (status === 4)
+    return 'record-status-tag record-status-tag--pending'
+  return 'record-status-tag record-status-tag--arrived'
 }
 
 function scheduleTypeText(value?: number) {
@@ -251,6 +262,18 @@ function chargingModeText(value?: number) {
   if (mode === 3)
     return '按金额'
   return '按课时'
+}
+
+function isTimeChargingMode(record: Partial<StudentTeachingRecordItem> | Record<string, any>) {
+  return Number(record?.skuMode || 0) === 2
+}
+
+function isTrialStudent(record: Partial<StudentTeachingRecordItem> | Record<string, any>) {
+  return Number(record?.sourceType || 0) === 4
+}
+
+function hasArrearQuantity(record: Partial<StudentTeachingRecordItem> | Record<string, any>) {
+  return Number(record?.arrearQuantity || 0) > 0
 }
 
 function classDisplay(record: Partial<StudentTeachingRecordItem> | Record<string, any>) {
@@ -409,6 +432,22 @@ onMounted(() => {
             size="small"
             @change="handleTableChange"
           >
+            <template #headerCell="{ column }">
+              <template v-if="column.key === 'studentIdentity'">
+                <div class="table-header-with-tip">
+                  <span>学员身份</span>
+                  <a-tooltip placement="top">
+                    <template #title>
+                      <div class="identity-tip">
+                        <div>【学员身份】指学员当时是以什么身份来上课的</div>
+                        <div>【举例】A学员由于请假未上课，老师随后对A学员进行了“补课”操作，那么A学员的身份就是补课学员。</div>
+                      </div>
+                    </template>
+                    <QuestionCircleOutlined class="table-header-tip-icon" />
+                  </a-tooltip>
+                </div>
+              </template>
+            </template>
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'classDateTime'">
                 <div class="name">
@@ -453,25 +492,31 @@ onMounted(() => {
                 {{ sourceTypeText(record.sourceType) }}
               </template>
               <template v-if="column.key === 'classStatus'">
-                {{ statusText(record.status) }}
+                <span :class="statusTagClass(record.status)">
+                  {{ statusText(record.status) }}
+                </span>
               </template>
               <template v-if="column.key === 'deductionAccount'">
-                {{ record.tuitionAccountName || '-' }}
+                {{ isTrialStudent(record) ? '-' : (record.tuitionAccountName || '-') }}
               </template>
               <template v-if="column.key === 'courseNotMethod'">
-                {{ chargingModeText(record.skuMode) }}
+                {{ isTrialStudent(record) ? '-' : chargingModeText(record.skuMode) }}
               </template>
               <template v-if="column.key === 'classCallNum'">
-                {{ formatNumber(record.quantity, '课时') }}
+                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '不记课时' : formatNumber(record.quantity, '课时') }}
               </template>
               <template v-if="column.key === 'useNum'">
-                {{ formatNumber(record.actualQuantity, '课时') }}
+                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(record.actualQuantity, '课时') }}
               </template>
               <template v-if="column.key === 'oweNum'">
-                {{ formatNumber(record.arrearQuantity, '课时') }}
+                <span :class="{ 'owe-num-text': hasArrearQuantity(record) }">
+                  {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(record.arrearQuantity, '课时') }}
+                </span>
               </template>
               <template v-if="column.key === 'usePrice'">
-                {{ formatCurrency(record.actualTuition) }}
+                <span class="use-price-text">
+                  {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatCurrency(record.actualTuition) }}
+                </span>
               </template>
               <template v-if="column.key === 'mainTeacher'">
                 {{ record.teacherName || '-' }}
@@ -528,5 +573,63 @@ onMounted(() => {
     margin-right: 6px;
     width: 6px;
   }
+}
+
+.table-header-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.table-header-tip-icon {
+  color: #999;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.identity-tip {
+  max-width: 240px;
+  line-height: 22px;
+  white-space: normal;
+}
+
+.record-status-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.record-status-tag--arrived {
+  color: #2f6bff;
+  background: #eef4ff;
+}
+
+.record-status-tag--leave {
+  color: #fa8c16;
+  background: #fff4e8;
+}
+
+.record-status-tag--absent {
+  color: #f5222d;
+  background: #fff1f0;
+}
+
+.record-status-tag--pending {
+  color: #8c8c8c;
+  background: #f5f5f5;
+}
+
+.use-price-text {
+  font-weight: 600;
+}
+
+.owe-num-text {
+  color: #f5222d;
 }
 </style>
