@@ -429,9 +429,12 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 			CAST(MAX(subject_id) AS CHAR),
 			MAX(subject_name),
 			CASE WHEN SUM(CASE WHEN status = 4 THEN 1 ELSE 0 END) > 0 THEN 1 ELSE 2 END AS roll_call_status,
-			CASE WHEN COUNT(*) = 0 THEN 0 ELSE SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) / COUNT(*) END AS attendance_rate,
-			SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS attend_count,
-			COUNT(*) AS should_attend_count,
+			CASE
+				WHEN SUM(CASE WHEN source_type <> 4 THEN 1 ELSE 0 END) = 0 THEN 0
+				ELSE SUM(CASE WHEN source_type <> 4 AND status = 1 THEN 1 ELSE 0 END) / SUM(CASE WHEN source_type <> 4 THEN 1 ELSE 0 END)
+			END AS attendance_rate,
+			SUM(CASE WHEN source_type <> 4 AND status = 1 THEN 1 ELSE 0 END) AS attend_count,
+			SUM(CASE WHEN source_type <> 4 THEN 1 ELSE 0 END) AS should_attend_count,
 			IFNULL(SUM(actual_quantity), 0),
 			IFNULL(SUM(actual_tuition), 0),
 			MAX(main_teacher_name),

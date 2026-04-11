@@ -230,6 +230,13 @@ function classDisplay(record: Partial<ScheduleTeachingRecordItem> | Record<strin
   return record.className || record.one2OneName || '-'
 }
 
+function attendanceRateText(record: Partial<ScheduleTeachingRecordItem> | Record<string, any>) {
+  const shouldAttendCount = Number(record.shouldAttendCount || 0)
+  if (shouldAttendCount <= 0)
+    return '--'
+  return `${Math.round(Number(record.attendanceRate || 0) * 100)}%`
+}
+
 function buildQueryModel() {
   return {
     beginStartTime: filterDateRange.value[0]?.format('YYYY-MM-DD'),
@@ -415,7 +422,7 @@ onMounted(() => {
               <template v-if="column.key === 'attendanceRate'">
                 <div class="name">
                   <div class="text-#000">
-                    {{ `${Math.round(Number(record.attendanceRate || 0) * 100)}%` }}
+                    {{ attendanceRateText(record) }}
                   </div>
                   <div class="text-3 text-#888 flex flex-items-center">
                     实到{{ record.attendCount || 0 }}人 / 应到{{ record.shouldAttendCount || 0 }}人
