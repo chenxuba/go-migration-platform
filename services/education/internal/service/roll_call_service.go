@@ -1,0 +1,267 @@
+package service
+
+import (
+	"errors"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"go-migration-platform/services/education/internal/model"
+)
+
+func (svc *Service) GetRollCallStatistics(userID int64, dto model.RollCallStatisticsQueryDTO) (model.RollCallStatisticsVO, error) {
+	today := time.Now().Format("2006-01-02")
+
+	todayItems, err := svc.listRollCallSchedules(userID, dto.QueryModel, today, today, "desc")
+	if err != nil {
+		return model.RollCallStatisticsVO{}, err
+	}
+
+	allItems, err := svc.listRollCallSchedules(userID, dto.QueryModel, "", today, "desc")
+	if err != nil {
+		return model.RollCallStatisticsVO{}, err
+	}
+
+	return model.RollCallStatisticsVO{
+		TodayCount:   len(todayItems),
+		AllCount:     len(allItems),
+		PartialCount: 0,
+	}, nil
+}
+
+func (svc *Service) GetRollCallPagedList(userID int64, dto model.RollCallPagedListQueryDTO) (model.RollCallPagedListResult, error) {
+	pageSize := dto.PageRequestModel.PageSize
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+
+	pageIndex := dto.PageRequestModel.PageIndex
+	if pageIndex <= 0 {
+		pageIndex = 1
+	}
+
+	offset := (pageIndex - 1) * pageSize
+	if dto.PageRequestModel.SkipCount > 0 {
+		offset = dto.PageRequestModel.SkipCount
+	}
+
+	sortDirection := "asc"
+	if dto.SortModel.ByStartDate == 2 {
+		sortDirection = "desc"
+	}
+
+	items, err := svc.listRollCallSchedules(userID, dto.QueryModel, dto.QueryModel.StartDate, dto.QueryModel.EndDate, sortDirection)
+	if err != nil {
+		return model.RollCallPagedListResult{}, err
+	}
+
+	sortRollCallSchedules(items, dto.SortModel.ByStartDate)
+
+	total := len(items)
+	if offset >= total {
+		return model.RollCallPagedListResult{
+			List:  []model.TeachingScheduleVO{},
+			Total: total,
+		}, nil
+	}
+
+	end := offset + pageSize
+	if end > total {
+		end = total
+	}
+
+	return model.RollCallPagedListResult{
+		List:  items[offset:end],
+		Total: total,
+	}, nil
+}
+
+func (svc *Service) listRollCallSchedules(userID int64, query model.RollCallQueryModel, startDate, endDate, sortDirection string) ([]model.TeachingScheduleVO, error) {
+	listQuery, err := buildRollCallTeachingScheduleQuery(query, startDate, endDate, sortDirection)
+	if err != nil {
+		return nil, err
+	}
+
+	items, err := svc.ListTeachingSchedules(userID, listQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	return filterRollCallSchedulesByTeacher(items, query.TeacherID, query.TeacherTypes), nil
+}
+
+func buildRollCallTeachingScheduleQuery(query model.RollCallQueryModel, startDate, endDate, sortDirection string) (model.TeachingScheduleListQueryDTO, error) {
+	listQuery := model.TeachingScheduleListQueryDTO{
+		StartDate:           strings.TrimSpace(startDate),
+		EndDate:             strings.TrimSpace(endDate),
+		SortDirection:       normalizeRollCallSortDirection(sortDirection),
+		ScheduleTypeFilters: normalizeRollCallScheduleTypes(query.ScheduleTypes),
+		CallStatusFilters:   []string{"unsigned"},
+	}
+
+	if strings.TrimSpace(listQuery.StartDate) == "" {
+		listQuery.StartDate = strings.TrimSpace(query.StartDate)
+	}
+	if strings.TrimSpace(listQuery.EndDate) == "" {
+		listQuery.EndDate = strings.TrimSpace(query.EndDate)
+	}
+
+	if id, ok, err := parsePositiveInt64String(query.LessonID); err != nil {
+		return model.TeachingScheduleListQueryDTO{}, err
+	} else if ok {
+		listQuery.LessonIDs = []int64{id}
+	}
+
+	if id, ok, err := parsePositiveInt64String(query.ClassroomID); err != nil {
+		return model.TeachingScheduleListQueryDTO{}, err
+	} else if ok {
+		listQuery.ClassroomIDs = []int64{id}
+	}
+
+	if id, ok, err := parsePositiveInt64String(query.ClassID); err != nil {
+		return model.TeachingScheduleListQueryDTO{}, err
+	} else if ok {
+		listQuery.GroupClassIDs = []int64{id}
+	}
+
+	if id, ok, err := parsePositiveInt64String(query.OneToOneID); err != nil {
+		return model.TeachingScheduleListQueryDTO{}, err
+	} else if ok {
+		listQuery.OneToOneClassIDs = []int64{id}
+	}
+
+	return listQuery, nil
+}
+
+func normalizeRollCallScheduleTypes(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, item := range values {
+		normalized := strings.TrimSpace(item)
+		switch normalized {
+		case "1":
+			normalized = "group_class"
+		case "2":
+			normalized = "one_to_one"
+		case "3":
+			normalized = "trial"
+		}
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func normalizeRollCallTeacherTypes(values []int) map[int]struct{} {
+	if len(values) == 0 {
+		return map[int]struct{}{
+			1: {},
+			2: {},
+		}
+	}
+
+	result := make(map[int]struct{}, len(values))
+	for _, item := range values {
+		if item == 1 || item == 2 {
+			result[item] = struct{}{}
+		}
+	}
+
+	if len(result) == 0 {
+		result[1] = struct{}{}
+		result[2] = struct{}{}
+	}
+	return result
+}
+
+func filterRollCallSchedulesByTeacher(items []model.TeachingScheduleVO, teacherID string, teacherTypes []int) []model.TeachingScheduleVO {
+	teacherID = strings.TrimSpace(teacherID)
+	if teacherID == "" {
+		return items
+	}
+
+	allowedTypes := normalizeRollCallTeacherTypes(teacherTypes)
+	filtered := make([]model.TeachingScheduleVO, 0, len(items))
+	for _, item := range items {
+		matched := false
+		if _, ok := allowedTypes[1]; ok && strings.TrimSpace(item.TeacherID) == teacherID {
+			matched = true
+		}
+		if !matched {
+			if _, ok := allowedTypes[2]; ok {
+				for _, assistantID := range item.AssistantIDs {
+					if strings.TrimSpace(assistantID) == teacherID {
+						matched = true
+						break
+					}
+				}
+			}
+		}
+		if matched {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func normalizeRollCallSortDirection(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "desc") {
+		return "desc"
+	}
+	return "asc"
+}
+
+func sortRollCallSchedules(items []model.TeachingScheduleVO, byStartDate int) {
+	desc := byStartDate == 2
+	sort.SliceStable(items, func(i, j int) bool {
+		left := rollCallScheduleSortTime(items[i])
+		right := rollCallScheduleSortTime(items[j])
+		if left.Equal(right) {
+			if desc {
+				return strings.TrimSpace(items[i].ID) > strings.TrimSpace(items[j].ID)
+			}
+			return strings.TrimSpace(items[i].ID) < strings.TrimSpace(items[j].ID)
+		}
+		if desc {
+			return left.After(right)
+		}
+		return left.Before(right)
+	})
+}
+
+func rollCallScheduleSortTime(item model.TeachingScheduleVO) time.Time {
+	if !item.StartAt.IsZero() {
+		return item.StartAt
+	}
+	if strings.TrimSpace(item.LessonDate) != "" {
+		if parsed, err := time.ParseInLocation("2006-01-02", item.LessonDate, time.Local); err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
+}
+
+func parsePositiveInt64String(value string) (int64, bool, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, false, nil
+	}
+	parsed, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0, false, errors.New("筛选ID格式无效")
+	}
+	return parsed, true, nil
+}

@@ -51,6 +51,10 @@ const props = defineProps({
     type: String,
     default: 'click',
   },
+  disableFutureDate: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['update:checkedValues', 'change', 'radioChange', 'datePickerChange', 'inputChange', 'dropdownVisibleChange', 'onDropdownVisibleChange', 'onSearch', 'loadMore'])
@@ -592,8 +596,8 @@ function handleScroll(e) {
       </div>
       <DownOutlined v-else :style="{ fontSize: '10px' }" />
       <a-range-picker :key="pickerKey" v-model:value="selectDates" value-format="YYYY-MM-DD"
-        :disabled-date="disabledDateBefore" popup-class-name="picker-wrapper dateTimeQuick" :open="visible"
-        :presets="rangePresets" @calendar-change="calendarChangeFun" @change="handleRangePicker"
+        :disabled-date="disableFutureDate ? disabledDate : disabledDateBefore" popup-class-name="picker-wrapper dateTimeQuick" :open="visible"
+        :presets="disableFutureDate ? rangePresetsNot : rangePresets" @calendar-change="calendarChangeFun" @change="handleRangePicker"
         @panel-change="handlePanelChange">
         <template #renderExtraFooter>
           <div v-if="!isYearOrMonthPanel" class="pl-3.5">

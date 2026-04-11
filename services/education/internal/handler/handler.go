@@ -156,6 +156,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/teaching-schedules/copy-day", handler.copyTeachingSchedulesDay)
 	mux.HandleFunc("/api/v1/teaching-schedules/copy-week", handler.copyTeachingSchedulesWeek)
 	mux.HandleFunc("/api/v1/teaching-schedules/batch-update", handler.batchUpdateTeachingSchedules)
+	mux.HandleFunc("/api/v1/roll-call/statistics", handler.rollCallStatistics)
+	mux.HandleFunc("/api/v1/roll-call/paged-list", handler.rollCallPagedList)
 	mux.HandleFunc("/api/v1/infrastructure/status", handler.infrastructureStatus)
 	mux.HandleFunc("/api/v1/mq/event-logs", handler.mqEventLogs)
 	mux.HandleFunc("/api/v1/es-sync/intent-student/sync", handler.syncIntentStudents)

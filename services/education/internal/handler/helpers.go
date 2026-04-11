@@ -859,6 +859,45 @@ func parseOneToOneListQueryDTO(raw map[string]any) model.OneToOneListQueryDTO {
 	return query
 }
 
+func parseRollCallStatisticsQueryDTO(raw map[string]any) model.RollCallStatisticsQueryDTO {
+	query := model.RollCallStatisticsQueryDTO{}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = parseRollCallQueryModel(qm)
+	}
+	return query
+}
+
+func parseRollCallPagedListQueryDTO(raw map[string]any) model.RollCallPagedListQueryDTO {
+	query := model.RollCallPagedListQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.NeedTotal = derefBoolValue(asBoolPtr(page["needTotal"]))
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 50)
+		query.PageRequestModel.SkipCount = asInt(page["skipCount"], 0)
+	}
+	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.ByStartDate = asInt(sortModel["byStartDate"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = parseRollCallQueryModel(qm)
+	}
+	return query
+}
+
+func parseRollCallQueryModel(raw map[string]any) model.RollCallQueryModel {
+	return model.RollCallQueryModel{
+		StartDate:     asString(raw["startDate"]),
+		EndDate:       asString(raw["endDate"]),
+		LessonID:      asString(raw["lessonId"]),
+		ClassroomID:   asString(firstNonNil(raw["classroomId"], raw["classRoomId"])),
+		ClassID:       asString(raw["classId"]),
+		OneToOneID:    asString(firstNonNil(raw["oneToOneId"], raw["one2OneId"])),
+		TeacherID:     asString(firstNonNil(raw["teacherId"], raw["staffId"])),
+		TeacherTypes:  asIntSlice(raw["teacherTypes"]),
+		ScheduleTypes: asStringSlice(firstNonNil(raw["scheduleTypes"], raw["sourceTypes"])),
+	}
+}
+
 func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQueryDTO {
 	query := model.ApprovalConfigPageQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {

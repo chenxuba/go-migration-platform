@@ -94,6 +94,16 @@ const props = defineProps({
     type: Number,
     default: null,
   },
+  defaultScheduleDateVals: {
+    type: Array,
+    default: () => {
+      return []
+    },
+  },
+  scheduleDateDisableFuture: {
+    type: Boolean,
+    default: false,
+  },
   type: {
     type: String,
     default: 'all',
@@ -374,6 +384,8 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:scheduleTeacherFilter', 'update:scheduleClassroomFilter', 'update:scheduleClassFilter',
   'update:scheduleOneToOneFilter', 'update:scheduleCourseFilter', 'update:scheduleTypeFilter',
   'update:scheduleCallStatusFilter',
+  'update:scheduleDateFilter',
+  'update:teacherRoleFilter',
 ])
 const spinning = ref(false)
 
@@ -456,12 +468,22 @@ const scheduleClassroomVals = ref([])
 const scheduleClassVals = ref(undefined)
 const scheduleOneToOneVals = ref(undefined)
 const scheduleCourseVals = ref(undefined)
+const scheduleDateVals = ref([])
 const scheduleTypeVals = ref([])
 const scheduleCallStatusVals = ref(undefined)
 const searchInputKey = ref(undefined)
 const selectInputKey = ref(undefined)
 const teacherType = ref(1)
 const selectTeacher = ref(undefined)
+const scheduleDateDefaultApplied = ref(false)
+const teacherSearchOptions = ref([])
+const teacherSearchPagination = ref({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+})
+const teacherSearchFinished = ref(false)
+const teacherSearchKeyword = ref('')
 const childRefs = ref({}) // 存储子组件实例（按 category 分类）
 // 动态收集/清理子组件实例
 function handleRef(el, category) {
@@ -2312,7 +2334,7 @@ const selectedConditions = computed(() => {
       values: (() => {
         if (!selectTeacher.value)
           return []
-        const item = createUserOptions.value.find(
+        const item = teacherSearchOptions.value.find(
           opt => opt.id === selectTeacher.value,
         )
         return item ? [{ id: item.id, value: `${item.value}` }] : []
@@ -2362,6 +2384,20 @@ const selectedConditions = computed(() => {
       label: '课程',
       show: props.displayArray.includes('scheduleCourse'),
       values: props.scheduleCourseOptions.filter(opt => opt.id === scheduleCourseVals.value),
+    },
+    {
+      type: 'scheduleDate',
+      label: '上课日期',
+      show: props.displayArray.includes('scheduleDate'),
+      values:
+        scheduleDateVals.value.length === 2
+          ? [
+              {
+                id: 'dateRange',
+                value: `${scheduleDateVals.value[0]} 至 ${scheduleDateVals.value[1]}`,
+              },
+            ]
+          : [],
     },
     {
       type: 'scheduleType',
@@ -3407,8 +3443,16 @@ watch(scheduleClassroomVals, () => (lastUpdated.scheduleClassroom = Date.now()))
 watch(scheduleClassVals, () => (lastUpdated.scheduleClass = Date.now()))
 watch(scheduleOneToOneVals, () => (lastUpdated.scheduleOneToOne = Date.now()))
 watch(scheduleCourseVals, () => (lastUpdated.scheduleCourse = Date.now()))
+watch(scheduleDateVals, () => {
+  lastUpdated.scheduleDate = Date.now()
+  debouncedEmit('scheduleDateFilter', scheduleDateVals.value)
+})
 watch(scheduleTypeVals, () => (lastUpdated.scheduleType = Date.now()))
 watch(scheduleCallStatusVals, () => (lastUpdated.scheduleCallStatus = Date.now()))
+watch(selectTeacher, () => {
+  lastUpdated.teacherSelect = Date.now()
+  emitTeacherRoleFilter()
+})
 
 // 同步「真正用于请求的 id」和下拉框回显对象，保证始终能显示学员姓名
 watch(
@@ -3627,6 +3671,7 @@ const clearAll = debounce(() => {
     emit('update:scheduleClassFilter', undefined, true)
     emit('update:scheduleOneToOneFilter', undefined, true)
     emit('update:scheduleCourseFilter', undefined, true)
+    emit('update:scheduleDateFilter', undefined, true)
     emit('update:scheduleTypeFilter', undefined, true)
     emit('update:scheduleCallStatusFilter', undefined, true)
   })
@@ -3690,6 +3735,7 @@ const clearAll = debounce(() => {
   scheduleClassVals.value = undefined
   scheduleOneToOneVals.value = undefined
   scheduleCourseVals.value = undefined
+  scheduleDateVals.value = []
   scheduleTypeVals.value = []
   scheduleCallStatusVals.value = undefined
   // 重置推荐人相关状态 - 独立处理
@@ -3741,6 +3787,11 @@ const clearAll = debounce(() => {
   skipNextWatch = true // 跳过下次watch触发
   inputValue.value = undefined
   selectTeacher.value = undefined
+  teacherSearchOptions.value = []
+  teacherSearchPagination.value.current = 1
+  teacherSearchFinished.value = false
+  teacherSearchKeyword.value = ''
+  emitTeacherRoleFilter()
 
   // 清空所有自定义搜索字段
   searchInputVals.value = {}
@@ -3824,6 +3875,7 @@ function removeCondition(type, id) {
       break
     case 'teacherSelect':
       selectTeacher.value = undefined
+      emitTeacherRoleFilter()
       break
     case 'oneToOneSearch':
       searchKeyOneToOne.value = undefined
@@ -3857,6 +3909,10 @@ function removeCondition(type, id) {
     case 'scheduleCourse':
       scheduleCourseVals.value = undefined
       emit('update:scheduleCourseFilter', undefined, false, id, type)
+      break
+    case 'scheduleDate':
+      scheduleDateVals.value = []
+      emit('update:scheduleDateFilter', [], false, id, type)
       break
     case 'scheduleType':
       if (shouldClearWholeCondition(type)) {
@@ -4412,6 +4468,9 @@ function clearQuickFilter(id, type) {
     case 'scheduleCourse':
       scheduleCourseVals.value = undefined
       break
+    case 'scheduleDate':
+      scheduleDateVals.value = []
+      break
     case 'scheduleType':
       scheduleTypeVals.value = []
       break
@@ -4900,12 +4959,102 @@ watchEffect(() => {
   }
 })
 
+watch(
+  () => props.defaultScheduleDateVals,
+  (newVal) => {
+    if (scheduleDateDefaultApplied.value)
+      return
+    const normalized = Array.isArray(newVal) ? newVal.map(item => String(item ?? '').trim()).filter(Boolean) : []
+    if (normalized.length !== 2)
+      return
+    if (scheduleDateVals.value.length === 2
+      && scheduleDateVals.value[0] === normalized[0]
+      && scheduleDateVals.value[1] === normalized[1]) {
+      scheduleDateDefaultApplied.value = true
+      return
+    }
+    scheduleDateVals.value = normalized
+    scheduleDateDefaultApplied.value = true
+  },
+  { immediate: true, deep: false },
+)
+
 function filterClassOrCourseOption(input, option) {
   return option.value.toLowerCase().includes(input.toLowerCase())
 }
 // 改变老师类型选择
 function changeTeacherType() {
   selectTeacher.value = undefined
+  emitTeacherRoleFilter()
+}
+
+function emitTeacherRoleFilter() {
+  emit('update:teacherRoleFilter', {
+    teacherType: teacherType.value,
+    teacherId: selectTeacher.value,
+  })
+}
+
+async function loadTeacherSearchOptions(searchKey = '', reset = true) {
+  if (reset) {
+    teacherSearchPagination.value.current = 1
+    teacherSearchFinished.value = false
+  }
+  teacherSearchKeyword.value = searchKey
+  try {
+    const res = await getUserListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: teacherSearchPagination.value.pageSize,
+        pageIndex: teacherSearchPagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        searchKey,
+      },
+      sortModel: {},
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result) ? res.result : []).map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.nickName || item.name || item.value || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    teacherSearchOptions.value = reset
+      ? resultData
+      : [...teacherSearchOptions.value, ...resultData].filter((item, index, array) => array.findIndex(option => option.id === item.id) === index)
+    teacherSearchPagination.value.total = Number(res.total || resultData.length || 0)
+    teacherSearchFinished.value = teacherSearchOptions.value.length >= teacherSearchPagination.value.total
+  }
+  catch (error) {
+    console.error('加载上课老师/助教搜索数据失败:', error)
+    if (!reset && teacherSearchPagination.value.current > 1) {
+      teacherSearchPagination.value.current -= 1
+    }
+  }
+}
+
+async function handleTeacherSearchDropdownVisibleChange(open) {
+  if (!open)
+    return
+  await loadTeacherSearchOptions('', true)
+}
+
+async function handleTeacherSearch(value) {
+  await loadTeacherSearchOptions(value || '', true)
+}
+
+async function handleTeacherSearchPopupScroll(event) {
+  if (teacherSearchFinished.value)
+    return
+  const target = event?.target
+  if (!target)
+    return
+  const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+  if (distanceToBottom > 16)
+    return
+  teacherSearchPagination.value.current += 1
+  await loadTeacherSearchOptions(teacherSearchKeyword.value, false)
 }
 
 function handleScheduleTeacherChange(e) {
@@ -4932,6 +5081,15 @@ function setScheduleClassroomFilter(values = [], shouldEmit = false) {
   if (shouldEmit) {
     nextTick(() => {
       emit('update:scheduleClassroomFilter', [...scheduleClassroomVals.value])
+    })
+  }
+}
+
+function setScheduleDateFilter(values = [], shouldEmit = false) {
+  scheduleDateVals.value = Array.isArray(values) ? values : []
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:scheduleDateFilter', [...scheduleDateVals.value])
     })
   }
 }
@@ -5021,6 +5179,12 @@ function handleScheduleClassroomChange(e) {
 function handleScheduleClassChange(e) {
   nextTick(() => {
     emit('update:scheduleClassFilter', e)
+  })
+}
+
+function handleScheduleDateChange(e) {
+  nextTick(() => {
+    emit('update:scheduleDateFilter', e)
   })
 }
 
@@ -5332,6 +5496,7 @@ defineExpose({
   setScheduleClassFilter,
   setScheduleOneToOneFilter,
   setScheduleCourseFilter,
+  setScheduleDateFilter,
   setScheduleTypeFilter,
   setScheduleCallStatusFilter,
   setStuPhoneSearchFilter,
@@ -5583,6 +5748,11 @@ defineExpose({
                 @on-dropdown-visible-change="onScheduleCourseDropdownVisibleChange?.()"
                 @on-search="keyword => onScheduleCourseSearch?.(keyword)"
                 @load-more="onScheduleCourseLoadMore?.()" />
+
+              <checkbox-filter v-if="filterType === 'scheduleDate'"
+                v-model:checked-values="scheduleDateVals" label="上课日期" type="dateTimeQuick"
+                :disable-future-date="scheduleDateDisableFuture"
+                @date-picker-change="handleScheduleDateChange" />
 
               <checkbox-filter v-if="filterType === 'scheduleType'"
                 v-model:checked-values="scheduleTypeVals" :options="scheduleTypeOptions" :label="scheduleTypeLabel"
@@ -6139,8 +6309,17 @@ defineExpose({
                   上课助教
                 </a-select-option>
               </a-select>
-              <a-select v-model:value="selectTeacher" show-search class="w-50" placeholder="请输入上课老师">
-                <a-select-option v-for="(item, index) in createUserOptions" :key="index" :value="item.id" :data="item">
+              <a-select
+                v-model:value="selectTeacher"
+                show-search
+                :filter-option="false"
+                class="w-50"
+                :placeholder="teacherType === 1 ? '请输入上课老师' : '请输入上课助教'"
+                @dropdown-visible-change="handleTeacherSearchDropdownVisibleChange"
+                @search="handleTeacherSearch"
+                @popup-scroll="handleTeacherSearchPopupScroll"
+              >
+                <a-select-option v-for="(item, index) in teacherSearchOptions" :key="index" :value="item.id" :data="item">
                   {{
                     item.value }}
                 </a-select-option>
