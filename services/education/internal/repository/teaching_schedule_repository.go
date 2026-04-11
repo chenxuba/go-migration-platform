@@ -2455,6 +2455,10 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 		"s.del_flag = 0",
 	}
 	args := []any{instID}
+	if candidateStatuses := teachingScheduleCandidateAllowedStudentStatuses(studentType); len(candidateStatuses) > 0 {
+		filters = append(filters, "IFNULL(s.student_status, 0) IN ("+sqlPlaceholders(len(candidateStatuses))+")")
+		args = append(args, intSliceToAny(candidateStatuses)...)
+	}
 	if keyword := strings.TrimSpace(dto.QueryModel.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
 		filters = append(filters, "(IFNULL(s.stu_name, '') LIKE ? OR IFNULL(s.mobile, '') LIKE ?)")
@@ -2850,6 +2854,17 @@ func filterTeachingSchedulesByIDs(list []model.TeachingScheduleVO, targetIDs []i
 			continue
 		}
 		result = append(result, item)
+	}
+	return result
+}
+
+func intSliceToAny(values []int) []any {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]any, 0, len(values))
+	for _, value := range values {
+		result = append(result, value)
 	}
 	return result
 }
@@ -7712,6 +7727,21 @@ func teachingScheduleCandidateStudentStatusText(status int) string {
 		return "历史学员"
 	default:
 		return "意向学员"
+	}
+}
+
+func teachingScheduleCandidateAllowedStudentStatuses(studentType int) []int {
+	switch normalizeTeachingScheduleStudentType(studentType) {
+	case model.TeachingScheduleStudentTypeTemporary:
+		return []int{model.InstStudentStatusEnrolled}
+	case model.TeachingScheduleStudentTypeTrial:
+		return []int{
+			model.InstStudentStatusIntent,
+			model.InstStudentStatusEnrolled,
+			model.InstStudentStatusHistory,
+		}
+	default:
+		return nil
 	}
 }
 
