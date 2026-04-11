@@ -83,6 +83,26 @@ const rowSelection = computed(() => ({
   },
 }))
 
+function toggleRowSelection(record: TeachingScheduleStudentCandidate) {
+  const studentId = String(record?.studentId || '').trim()
+  if (!studentId)
+    return
+  const nextSelectedMap = new Map(selectedRows.value.map(item => [String(item.studentId || ''), item]))
+  if (nextSelectedMap.has(studentId))
+    nextSelectedMap.delete(studentId)
+  else
+    nextSelectedMap.set(studentId, record)
+  selectedRows.value = Array.from(nextSelectedMap.values())
+  selectedRowKeys.value = selectedRows.value.map(item => String(item.studentId || '')).filter(Boolean)
+}
+
+function handleRowClick(record: TeachingScheduleStudentCandidate, event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('.ant-checkbox-wrapper') || target?.closest('.ant-checkbox'))
+    return
+  toggleRowSelection(record)
+}
+
 function getStudentStatusTagClass(status?: number) {
   switch (Number(status ?? -1)) {
     case 1:
@@ -104,6 +124,10 @@ function staticRows(): TeachingScheduleStudentCandidate[] {
       phoneRelationshipText: '妈妈',
     },
   ]
+}
+
+function shouldSkipManualErrorMessage(error: any) {
+  return Number(error?.response?.status || 0) === 400
 }
 
 async function loadTableData() {
@@ -139,7 +163,8 @@ async function loadTableData() {
     console.error(error)
     data.value = []
     paginationState.total = 0
-    messageService.error(error?.response?.data?.message || error?.message || '获取可添加学员失败')
+    if (!shouldSkipManualErrorMessage(error))
+      messageService.error(error?.response?.data?.message || error?.message || '获取可添加学员失败')
   }
   finally {
     listLoading.value = false
@@ -222,7 +247,8 @@ async function handleSubmit() {
     closeFun()
   }
   catch (error: any) {
-    messageService.error(error?.response?.data?.message || error?.message || '添加学员失败')
+    if (!shouldSkipManualErrorMessage(error))
+      messageService.error(error?.response?.data?.message || error?.message || '添加学员失败')
   }
   finally {
     submitLoading.value = false
@@ -268,6 +294,7 @@ async function handleSubmit() {
         :loading="listLoading"
         :pagination="tablePagination"
         :row-selection="rowSelection"
+        :custom-row="record => ({ onClick: (event: MouseEvent) => handleRowClick(record, event) })"
         @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">

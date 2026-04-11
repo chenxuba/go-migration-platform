@@ -2754,13 +2754,26 @@ func (repo *Repository) AddTeachingScheduleStudentsCurrent(ctx context.Context, 
 		overrideMap[row.ID],
 		referenceAt,
 	)
+	classMemberNameMap := buildAssociatedGroupClassStudentNameMap(
+		membershipMap[row.TeachingClassID],
+		overrideMap[row.ID],
+		referenceAt,
+	)
 
+	trialConflictNames := make([]string, 0)
 	for _, studentID := range studentIDs {
 		if studentType == model.TeachingScheduleStudentTypeTrial {
 			if _, ok := classMemberSet[studentID]; ok {
-				return errors.New("此学员为日程班级的关联学员，无法作为试听学员进行添加")
+				trialConflictNames = append(trialConflictNames, firstNonEmptyString(strings.TrimSpace(classMemberNameMap[studentID]), "该学员"))
+				continue
 			}
 		}
+	}
+	if len(trialConflictNames) > 0 {
+		return fmt.Errorf("%s为日程班级的关联学员，无法作为试听学员进行添加", strings.Join(trialConflictNames, "、"))
+	}
+
+	for _, studentID := range studentIDs {
 		persistStudentType := studentType
 		if _, ok := classMemberSet[studentID]; ok {
 			persistStudentType = model.TeachingScheduleStudentTypeClassMember
@@ -4783,6 +4796,14 @@ func groupClassStudentMembershipEffectiveAt(membership groupClassStudentMembersh
 
 func buildAssociatedGroupClassStudentSet(memberships []groupClassStudentMembership, overrides []teachingScheduleStudentOverride, referenceAt time.Time) map[int64]struct{} {
 	result := make(map[int64]struct{}, len(memberships)+len(overrides))
+	for studentID := range buildAssociatedGroupClassStudentNameMap(memberships, overrides, referenceAt) {
+		result[studentID] = struct{}{}
+	}
+	return result
+}
+
+func buildAssociatedGroupClassStudentNameMap(memberships []groupClassStudentMembership, overrides []teachingScheduleStudentOverride, referenceAt time.Time) map[int64]string {
+	result := make(map[int64]string, len(memberships)+len(overrides))
 	for _, membership := range memberships {
 		if membership.StudentID <= 0 {
 			continue
@@ -4790,7 +4811,7 @@ func buildAssociatedGroupClassStudentSet(memberships []groupClassStudentMembersh
 		if !groupClassStudentMembershipEffectiveAt(membership, referenceAt) {
 			continue
 		}
-		result[membership.StudentID] = struct{}{}
+		result[membership.StudentID] = firstNonEmptyString(strings.TrimSpace(membership.StudentName), "该学员")
 	}
 	for _, override := range overrides {
 		if override.StudentID <= 0 {
@@ -4799,7 +4820,7 @@ func buildAssociatedGroupClassStudentSet(memberships []groupClassStudentMembersh
 		if normalizeTeachingScheduleStudentType(override.StudentType) != model.TeachingScheduleStudentTypeClassMember {
 			continue
 		}
-		result[override.StudentID] = struct{}{}
+		result[override.StudentID] = firstNonEmptyString(strings.TrimSpace(override.StudentName), result[override.StudentID], "该学员")
 	}
 	return result
 }
