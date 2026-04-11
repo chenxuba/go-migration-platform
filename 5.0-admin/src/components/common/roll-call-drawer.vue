@@ -803,7 +803,7 @@ watch(
               </div>
             </div>
             <div v-if="column.dataIndex === 'attendanceCount'">
-              <div v-if="record.recordAttendance && !record.unrecorded" class="flex flex-col">
+              <div v-if="record.recordAttendance && !record.unrecorded" class="relative inline-flex flex-items-center">
                 <span class="flex flex-items-center"><a-input-number
                   v-model:value="record.attendanceCount"
                   :min="0"
@@ -811,7 +811,10 @@ watch(
                   :status="isRemainingInsufficient(record) ? 'error' : undefined"
                   class="w-80px mr-4px"
                 />课时</span>
-                <span v-if="isRemainingInsufficient(record)" class="text-#f33 text-12px leading-16px mt-2px">
+                <span
+                  v-if="isRemainingInsufficient(record)"
+                  class="absolute left-0 top-full text-#f33 text-12px leading-16px pt-2px whitespace-nowrap"
+                >
                   剩余数量不足
                 </span>
               </div>
