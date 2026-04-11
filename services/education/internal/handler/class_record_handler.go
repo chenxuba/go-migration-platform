@@ -6,6 +6,7 @@ import (
 
 	"go-migration-platform/pkg/httpx"
 	"go-migration-platform/pkg/tenant"
+	"go-migration-platform/services/education/internal/model"
 )
 
 func (handler *Handler) studentTeachingRecordPagedList(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +52,28 @@ func (handler *Handler) scheduleTeachingRecordPagedList(w http.ResponseWriter, r
 	}
 
 	result, err := handler.service.GetScheduleTeachingRecordPagedList(claims.UserID, parseScheduleTeachingRecordPagedQueryDTO(raw))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) teachingRecordDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	query := model.TeachingRecordDetailQueryDTO{
+		TeachingRecordID: r.URL.Query().Get("teachingRecordId"),
+	}
+	result, err := handler.service.GetTeachingRecordDetail(claims.UserID, query)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

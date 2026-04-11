@@ -3,8 +3,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"go-migration-platform/services/education/internal/model"
@@ -485,6 +487,232 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 		result.List = append(result.List, item)
 	}
 	return result, rows.Err()
+}
+
+func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int64, query model.TeachingRecordDetailQueryDTO) (model.TeachingRecordDetailResult, error) {
+	teachingRecordID, err := strconv.ParseInt(strings.TrimSpace(query.TeachingRecordID), 10, 64)
+	if err != nil || teachingRecordID <= 0 {
+		return model.TeachingRecordDetailResult{}, errors.New("上课记录ID无效")
+	}
+
+	var result model.TeachingRecordDetailResult
+	var mainTeacherID int64
+	var mainTeacherName string
+	var rawAssistantTeacherIDs string
+	var rawAssistantTeacherNames string
+	var rawTeachingContentImages string
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT
+			CAST(MAX(teaching_record_id) AS CHAR),
+			MAX(
+				CASE
+					WHEN LENGTH(TRIM(one_to_one_name)) > 0 THEN one_to_one_name
+					WHEN LENGTH(TRIM(class_name)) > 0 THEN class_name
+					ELSE lesson_name
+				END
+			) AS source_name,
+			CASE
+				WHEN MAX(one_to_one_id) > 0 THEN 2
+				WHEN MAX(class_id) > 0 THEN 1
+				WHEN MAX(timetable_source_type) = 3 THEN 3
+				ELSE 0
+			END AS source_type,
+			CAST(
+				CASE
+					WHEN MAX(one_to_one_id) > 0 THEN MAX(one_to_one_id)
+					WHEN MAX(class_id) > 0 THEN MAX(class_id)
+					ELSE 0
+				END AS CHAR
+			) AS source_id,
+			CAST(MAX(lesson_id) AS CHAR),
+			CASE WHEN MAX(one_to_one_id) > 0 THEN 2 ELSE 1 END AS lesson_type,
+			DATE_FORMAT(MAX(start_time), '%Y-%m-%dT%H:%i:%s'),
+			DATE_FORMAT(MAX(end_time), '%Y-%m-%dT%H:%i:%s'),
+			SUM(CASE WHEN status IN (1, 2, 3) THEN 1 ELSE 0 END) AS should_attendance_count,
+			SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS actual_attendance_count,
+			SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS leave_count,
+			SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS truancy_count,
+			IFNULL(MAX(teacher_class_time), 0),
+			IFNULL(SUM(quantity), 0),
+			IFNULL(SUM(actual_tuition), 0),
+			DATE_FORMAT(MIN(teaching_record_created_time), '%Y-%m-%d %H:%i:%s'),
+			MAX(updated_staff_name),
+			MAX(timetable_source_type),
+			MAX(classroom_name),
+			CAST(MAX(classroom_id) AS CHAR),
+			CAST(MAX(teaching_schedule_id) AS CHAR),
+			MAX(lesson_name),
+			MAX(teaching_content),
+			CAST(MAX(subject_id) AS CHAR),
+			MAX(subject_name),
+			MAX(main_teacher_id),
+			MAX(main_teacher_name),
+			MAX(CAST(IFNULL(assistant_teacher_ids_json, JSON_ARRAY()) AS CHAR)),
+			MAX(CAST(IFNULL(assistant_teacher_names_json, JSON_ARRAY()) AS CHAR)),
+			MAX(CAST(IFNULL(teaching_content_images_json, JSON_ARRAY()) AS CHAR))
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND teaching_record_id = ?
+	`, instID, teachingRecordID).Scan(
+		&result.TeachingRecordID,
+		&result.SourceName,
+		&result.SourceType,
+		&result.SourceID,
+		&result.LessonID,
+		&result.LessonType,
+		&result.StartTime,
+		&result.EndTime,
+		&result.ShouldAttendanceCount,
+		&result.ActualAttendanceCount,
+		&result.LeaveCount,
+		&result.TruancyCount,
+		&result.TeacherClassTime,
+		&result.StudentTotalClassTime,
+		&result.StudentActualTuition,
+		&result.CreatedTime,
+		&result.CreatedStaffName,
+		&result.TimetableSourceType,
+		&result.ClassRoomName,
+		&result.ClassRoomID,
+		&result.TimetableSourceID,
+		&result.LessonName,
+		&result.TeachingContent,
+		&result.SubjectID,
+		&result.SubjectName,
+		&mainTeacherID,
+		&mainTeacherName,
+		&rawAssistantTeacherIDs,
+		&rawAssistantTeacherNames,
+		&rawTeachingContentImages,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.TeachingRecordDetailResult{}, errors.New("未找到上课记录")
+		}
+		return model.TeachingRecordDetailResult{}, err
+	}
+
+	if strings.TrimSpace(rawTeachingContentImages) != "" {
+		_ = json.Unmarshal([]byte(rawTeachingContentImages), &result.TeachingContentImages)
+	}
+	if result.TeachingContentImages == nil {
+		result.TeachingContentImages = []string{}
+	}
+
+	result.TeacherList = buildTeachingRecordDetailTeachers(mainTeacherID, mainTeacherName, rawAssistantTeacherIDs, rawAssistantTeacherNames)
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			CAST(str.id AS CHAR),
+			CAST(str.student_id AS CHAR),
+			str.student_name,
+			str.student_phone,
+			str.avatar_url,
+			str.status,
+			str.source_type,
+			IFNULL(str.quantity, 0),
+			IFNULL(str.actual_quantity, 0),
+			str.remark,
+			str.external_remark,
+			CAST(str.tuition_account_id AS CHAR),
+			str.tuition_account_name,
+			IFNULL(ta.status, 0),
+			IFNULL(ta.remaining_quantity, 0),
+			IFNULL(str.sku_mode, 0),
+			IFNULL(str.amount, 0),
+			IFNULL(str.actual_deduct, 0),
+			IFNULL(str.actual_tuition, 0),
+			IFNULL(str.arrear_quantity, 0),
+			DATE_FORMAT(str.record_time, '%Y-%m-%d %H:%i:%s'),
+			DATE_FORMAT(str.updated_time, '%Y-%m-%d %H:%i:%s'),
+			str.updated_staff_name
+		FROM student_teaching_record str
+		LEFT JOIN tuition_account ta
+			ON ta.id = str.tuition_account_id
+		   AND ta.inst_id = str.inst_id
+		   AND ta.del_flag = 0
+		WHERE str.inst_id = ?
+		  AND str.del_flag = 0
+		  AND str.teaching_record_id = ?
+		ORDER BY str.id ASC
+	`, instID, teachingRecordID)
+	if err != nil {
+		return model.TeachingRecordDetailResult{}, err
+	}
+	defer rows.Close()
+
+	result.StudentList = make([]model.TeachingRecordDetailStudent, 0)
+	for rows.Next() {
+		var item model.TeachingRecordDetailStudent
+		var accountStatus int
+		if err := rows.Scan(
+			&item.StudentTeachingRecordID,
+			&item.StudentID,
+			&item.StudentName,
+			&item.StudentPhone,
+			&item.Avatar,
+			&item.Status,
+			&item.SourceType,
+			&item.Quantity,
+			&item.ActualQuantity,
+			&item.Remark,
+			&item.ExternalRemark,
+			&item.TuitionAccountID,
+			&item.TuitionAccountName,
+			&accountStatus,
+			&item.LeftQuantity,
+			&item.SkuMode,
+			&item.Amount,
+			&item.ActualDeduct,
+			&item.ActualTuition,
+			&item.ArrearQuantity,
+			&item.RecordTime,
+			&item.UpdatedTime,
+			&item.UpdatedStaffName,
+		); err != nil {
+			return model.TeachingRecordDetailResult{}, err
+		}
+		item.IsTuitionAccountActive = accountStatus == model.TuitionAccountStatusActive
+		result.StudentList = append(result.StudentList, item)
+	}
+
+	return result, rows.Err()
+}
+
+func buildTeachingRecordDetailTeachers(mainTeacherID int64, mainTeacherName, rawAssistantTeacherIDs, rawAssistantTeacherNames string) []model.TeachingRecordDetailTeacher {
+	result := make([]model.TeachingRecordDetailTeacher, 0)
+	name := strings.TrimSpace(mainTeacherName)
+	if mainTeacherID > 0 || name != "" {
+		result = append(result, model.TeachingRecordDetailTeacher{
+			TeacherID:   emptyStringIfZero(mainTeacherID),
+			TeacherName: firstNonEmptyString(name, "-"),
+			Type:        1,
+			Status:      1,
+			Quantity:    0,
+		})
+	}
+
+	assistantIDs := decodeJSONStringArray([]byte(rawAssistantTeacherIDs))
+	assistantNames := decodeJSONStringArray([]byte(rawAssistantTeacherNames))
+	for index, assistantName := range assistantNames {
+		assistantName = strings.TrimSpace(assistantName)
+		if assistantName == "" {
+			continue
+		}
+		assistantID := ""
+		if index < len(assistantIDs) {
+			assistantID = strings.TrimSpace(assistantIDs[index])
+		}
+		result = append(result, model.TeachingRecordDetailTeacher{
+			TeacherID:   assistantID,
+			TeacherName: assistantName,
+			Type:        3,
+			Status:      1,
+			Quantity:    0,
+		})
+	}
+	return result
 }
 
 func normalizeRollCallPage(page model.RollCallPageRequestModel) (pageIndex, pageSize, offset int) {

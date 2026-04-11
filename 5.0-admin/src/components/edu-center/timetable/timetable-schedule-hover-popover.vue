@@ -571,7 +571,7 @@ watch(
     :lesson-day="detailData?.lessonDate || ''"
     @updated="loadLatestDetail"
   />
-  <ClassRecordDetails v-model:open="classRecordDrawerOpen" />
+  <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="detailData?.teachingRecordId || ''" />
 </template>
 
 <style scoped lang="less">

@@ -6,6 +6,10 @@ type StudentTeachingRecordPagedQueryDTO struct {
 	QueryModel       StudentTeachingRecordQueryModel `json:"queryModel"`
 }
 
+type TeachingRecordDetailQueryDTO struct {
+	TeachingRecordID string `json:"teachingRecordId"`
+}
+
 type StudentTeachingRecordQueryModel struct {
 	BeginStartTime                string   `json:"beginStartTime"`
 	EndStartTime                  string   `json:"endStartTime"`
@@ -84,6 +88,71 @@ type StudentTeachingRecordPagedResult struct {
 	TotalStudentCount int                         `json:"totalStudentCount"`
 	List              []StudentTeachingRecordItem `json:"list"`
 	Total             int                         `json:"total"`
+}
+
+type TeachingRecordDetailTeacher struct {
+	TeacherID   string  `json:"teacherId"`
+	TeacherName string  `json:"teacherName"`
+	Type        int     `json:"type"`
+	Status      int     `json:"status"`
+	Quantity    float64 `json:"quantity"`
+}
+
+type TeachingRecordDetailStudent struct {
+	StudentTeachingRecordID string  `json:"studentTeachingRecordId"`
+	StudentID               string  `json:"studentId"`
+	StudentName             string  `json:"studentName"`
+	StudentPhone            string  `json:"studentPhone"`
+	Avatar                  string  `json:"avatar"`
+	Status                  int     `json:"status"`
+	SourceType              int     `json:"sourceType"`
+	Quantity                float64 `json:"quantity"`
+	ActualQuantity          float64 `json:"actualQuantity"`
+	Remark                  string  `json:"remark"`
+	ExternalRemark          string  `json:"externalRemark"`
+	TuitionAccountID        string  `json:"tuitionAccountId"`
+	TuitionAccountName      string  `json:"tuitionAccountName"`
+	IsTuitionAccountActive  bool    `json:"isTuitionAccountActive"`
+	LeftQuantity            float64 `json:"leftQuantity"`
+	SkuMode                 int     `json:"skuMode"`
+	Amount                  float64 `json:"amount"`
+	ActualDeduct            float64 `json:"actualDeduct"`
+	ActualTuition           float64 `json:"actualTuition"`
+	ArrearQuantity          float64 `json:"arrearQuantity"`
+	RecordTime              string  `json:"recordTime"`
+	UpdatedTime             string  `json:"updatedTime"`
+	UpdatedStaffName        string  `json:"updatedStaffName"`
+}
+
+type TeachingRecordDetailResult struct {
+	TeachingRecordID      string                        `json:"teachingRecordId"`
+	SourceName            string                        `json:"sourceName"`
+	SourceType            int                           `json:"sourceType"`
+	SourceID              string                        `json:"sourceId"`
+	LessonID              string                        `json:"lessonId"`
+	LessonType            int                           `json:"lessonType"`
+	StartTime             string                        `json:"startTime"`
+	EndTime               string                        `json:"endTime"`
+	ShouldAttendanceCount int                           `json:"shouldAttendanceCount"`
+	ActualAttendanceCount int                           `json:"actualAttendanceCount"`
+	LeaveCount            int                           `json:"leaveCount"`
+	TruancyCount          int                           `json:"truancyCount"`
+	TeacherClassTime      float64                       `json:"teacherClassTime"`
+	StudentTotalClassTime float64                       `json:"studentTotalClassTime"`
+	StudentActualTuition  float64                       `json:"studentActualTuition"`
+	TeacherList           []TeachingRecordDetailTeacher `json:"teacherList"`
+	StudentList           []TeachingRecordDetailStudent `json:"studentList"`
+	CreatedTime           string                        `json:"createdTime"`
+	CreatedStaffName      string                        `json:"createdStaffName"`
+	TimetableSourceType   int                           `json:"timetableSourceType"`
+	ClassRoomName         string                        `json:"classRoomName"`
+	ClassRoomID           string                        `json:"classRoomId"`
+	TimetableSourceID     string                        `json:"timetableSourceId"`
+	LessonName            string                        `json:"lessonName"`
+	TeachingContent       string                        `json:"teachingContent"`
+	SubjectID             string                        `json:"subjectId"`
+	SubjectName           string                        `json:"subjectName"`
+	TeachingContentImages []string                      `json:"teachingContentImages"`
 }
 
 type ScheduleTeachingRecordPagedQueryDTO struct {

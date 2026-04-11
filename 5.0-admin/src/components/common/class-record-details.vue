@@ -1,47 +1,147 @@
-<script setup>
+<script setup lang="ts">
 import { CloseCircleOutlined, CloseOutlined, ExclamationCircleFilled } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
+import { computed, ref, watch } from 'vue'
+import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
+import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
+import { getTeachingRecordDetailApi, type TeachingRecordDetailResult, type TeachingRecordDetailTeacher } from '@/api/edu-center/class-record'
+import messageService from '@/utils/messageService'
 import EditClassInfoModal from './edit-class-info-modal.vue'
 import EditRollNameModal from './edit-roll-name-modal.vue'
 
-const props = defineProps({
-  open: {
-    type: Boolean,
-    default: false,
-  },
+const props = withDefaults(defineProps<{
+  open: boolean
+  teachingRecordId?: string
+}>(), {
+  teachingRecordId: '',
 })
+
 const emit = defineEmits(['update:open'])
 const activeKey = ref('0')
-// 处理双向绑定
+const openModal = ref(false)
+const editClassInfoModal = ref(false)
+const editRollNameModal = ref(false)
+const loading = ref(false)
+const detailData = ref<TeachingRecordDetailResult | null>(null)
+
 const openDrawer = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
 })
 
-// defineEmits(['update:open']);
-const openModal = ref(false)
+const currentTeachingRecordId = computed(() => String(props.teachingRecordId || '').trim())
+const sourceCover = computed(() => (Number(detailData.value?.timetableSourceType || 0) === 2 ? scheduleOneToOneImage : scheduleClassImage))
+const headerTitle = computed(() => detailData.value?.sourceName || detailData.value?.lessonName || '-')
+const teacherList = computed(() => Array.isArray(detailData.value?.teacherList) ? detailData.value?.teacherList || [] : [])
+const mainTeacherText = computed(() => formatTeacherNames(teacherList.value.filter(item => Number(item.type || 0) === 1)))
+const assistantTeacherText = computed(() => formatTeacherNames(teacherList.value.filter(item => Number(item.type || 0) !== 1)))
+const classDurationText = computed(() => {
+  const start = dayjs(detailData.value?.startTime)
+  const end = dayjs(detailData.value?.endTime)
+  if (!start.isValid() || !end.isValid())
+    return '-'
+  const minutes = Math.max(end.diff(start, 'minute'), 0)
+  return `${minutes}分钟`
+})
+const timeText = computed(() => {
+  const start = dayjs(detailData.value?.startTime)
+  const end = dayjs(detailData.value?.endTime)
+  if (!start.isValid() || !end.isValid())
+    return '-'
+  const weekMap = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return `${start.format('YYYY-MM-DD')}(${weekMap[start.day()] || '-'})${start.format('HH:mm')} ~ ${end.format('HH:mm')}`
+})
+const teacherClassTimeText = computed(() => `教师记录${formatClassTime(detailData.value?.teacherClassTime)}`)
+const createdText = computed(() => {
+  const time = String(detailData.value?.createdTime || '').trim()
+  const staff = String(detailData.value?.createdStaffName || '').trim()
+  if (time && staff)
+    return `${time} ${staff}`
+  return time || staff || '-'
+})
+
+let loadSeq = 0
+
 function handleDelete() {
-  console.log('删除')
   openModal.value = true
 }
-// 编辑上课信息
-const editClassInfoModal = ref(false)
+
 function handleEditClassInfo() {
   editClassInfoModal.value = true
 }
-// 编辑点名
-const editRollNameModal = ref(false)
+
 function handleEditRollName() {
   editRollNameModal.value = true
 }
+
+function formatTeacherNames(list: TeachingRecordDetailTeacher[]) {
+  const names = list.map(item => String(item.teacherName || '').trim()).filter(Boolean)
+  return names.length ? names.join('、') : '-'
+}
+
+function formatClassTime(value?: number) {
+  const num = Number(value || 0)
+  if (!Number.isFinite(num))
+    return '0课时'
+  const text = Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.?0+$/, '')
+  return `${text}课时`
+}
+
+async function loadDetail() {
+  const teachingRecordId = currentTeachingRecordId.value
+  if (!openDrawer.value || !teachingRecordId) {
+    detailData.value = null
+    return
+  }
+
+  const seq = ++loadSeq
+  loading.value = true
+  try {
+    const res = await getTeachingRecordDetailApi({ teachingRecordId })
+    if (seq !== loadSeq)
+      return
+    if (res.code !== 200 || !res.result)
+      throw new Error(res.message || '加载上课记录详情失败')
+    detailData.value = res.result
+  }
+  catch (error: any) {
+    if (seq !== loadSeq)
+      return
+    detailData.value = null
+    messageService.error(error?.response?.data?.message || error?.message || '加载上课记录详情失败')
+  }
+  finally {
+    if (seq === loadSeq)
+      loading.value = false
+  }
+}
+
+watch(
+  () => `${openDrawer.value}|${currentTeachingRecordId.value}`,
+  async () => {
+    if (!openDrawer.value) {
+      detailData.value = null
+      loading.value = false
+      activeKey.value = '0'
+      return
+    }
+    activeKey.value = '0'
+    await loadDetail()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
   <div>
     <a-drawer
-      v-model:open="openDrawer" :push="{ distance: 80 }" :body-style="{ padding: '0', background: '#f7f7fd' }"
-      :closable="false" width="1165px" placement="right"
+      v-model:open="openDrawer"
+      :push="{ distance: 80 }"
+      :body-style="{ padding: '0', background: '#f7f7fd' }"
+      :closable="false"
+      width="1165px"
+      placement="right"
     >
-      <!-- 自定义头部 -->
       <template #title>
         <div class="custom-header flex justify-between h-4 flex-items-center">
           <div class="text-5">
@@ -54,84 +154,94 @@ function handleEditRollName() {
           </a-button>
         </div>
       </template>
-      <div class="contenter flex flex-center bg-white px6 py3">
-        <div class="avatarBox w-16 h-16 relative">
-          <img
-            width="64" height="64" class=" rounded-100"
-            src="https://pcsys.admin.ybc365.com//e64c7fd6-2edc-412f-9141-a9904be88b4f.png" alt=""
-          >
-        </div>
-        <div class="info flex flex-1 ml-4 flex-col">
-          <div class="top flex justify-between flex-center flex-1">
-            <a-space>
-              <div class="name text-5 font-800">
-                奥夫班
-              </div>
-            </a-space>
-            <a-space>
-              <a-button danger ghost @click="handleDelete">
-                删除
-              </a-button>
-              <a-button type="primary" @click="handleEditRollName">
-                编辑点名
-              </a-button>
-              <a-button type="primary">
-                课堂点评
-              </a-button>
-              <a-button type="primary">
-                课后任务
-              </a-button>
-            </a-space>
+
+      <a-spin :spinning="loading">
+        <div class="contenter flex flex-center bg-white px6 py3">
+          <div class="avatarBox w-16 h-16 relative">
+            <img width="64" height="64" class="rounded-100" :src="sourceCover" alt="">
           </div>
-          <div class="bottom flex-1 flex flex-items-center mt-2">
-            <div class="birthday flex-center">
-              <span class="text-4 text-#222">2025-04-14(周一)10:00 ~ 10:30</span>
-              <span class="bg-#e6f0ff text-#06f text-3 px2 py1 rounded-10 ml2">30分钟</span>
+          <div class="info flex flex-1 ml-4 flex-col">
+            <div class="top flex justify-between flex-center flex-1">
+              <a-space>
+                <div class="name text-5 font-800">
+                  {{ headerTitle }}
+                </div>
+              </a-space>
+              <a-space>
+                <a-button danger ghost @click="handleDelete">
+                  删除
+                </a-button>
+                <a-button type="primary" @click="handleEditRollName">
+                  编辑点名
+                </a-button>
+                <a-button type="primary">
+                  课堂点评
+                </a-button>
+                <a-button type="primary">
+                  课后任务
+                </a-button>
+              </a-space>
+            </div>
+            <div class="bottom flex-1 flex flex-items-center mt-2">
+              <div class="birthday flex-center">
+                <span class="text-4 text-#222">{{ timeText }}</span>
+                <span class="bg-#e6f0ff text-#06f text-3 px2 py1 rounded-10 ml2">{{ classDurationText }}</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <div class="desc pt-4 bg-white px6 py3 pb0">
-        <a-descriptions :column="4" size="small" :content-style="{ color: '#888' }">
-          <a-descriptions-item label="上课老师">
-            张晨
-          </a-descriptions-item>
-          <a-descriptions-item label="上课助教">
-            陈瑞生
-          </a-descriptions-item>
-          <a-descriptions-item label="上课教室">
-            -
-          </a-descriptions-item>
-          <a-descriptions-item label="本次上课">
-            教师记录1课时
-          </a-descriptions-item>
-          <a-descriptions-item label="创建时间">
-            2025-04-14 08:19 陈瑞
-          </a-descriptions-item>
-          <a-descriptions-item label="科目">
-            -
-          </a-descriptions-item>
-          <a-descriptions-item> <span class="text-#06f cursor-pointer" @click="handleEditClassInfo">编辑上课信息</span> </a-descriptions-item>
-        </a-descriptions>
-      </div>
-      <div class="tabs">
-        <a-tabs
-          v-model:active-key="activeKey" size="large" :tab-bar-style="{
-            'border-radius': '0px', 'padding-left': '24px',
-          }"
-        >
-          <a-tab-pane key="0" tab="点名详情">
-            <call-name-details />
-          </a-tab-pane>
-          <a-tab-pane key="1" tab="点名变更记录">
-            <call-name-change-details />
-          </a-tab-pane>
-        </a-tabs>
-      </div>
+
+        <div class="desc pt-4 bg-white px6 py3 pb0">
+          <a-descriptions :column="4" size="small" :content-style="{ color: '#888' }">
+            <a-descriptions-item label="上课老师">
+              {{ mainTeacherText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="上课助教">
+              {{ assistantTeacherText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="上课教室">
+              {{ detailData?.classRoomName || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="本次上课">
+              {{ teacherClassTimeText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="创建时间">
+              {{ createdText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="科目">
+              {{ detailData?.subjectName || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item>
+              <span class="text-#06f cursor-pointer" @click="handleEditClassInfo">编辑上课信息</span>
+            </a-descriptions-item>
+          </a-descriptions>
+        </div>
+
+        <div class="tabs">
+          <a-tabs
+            v-model:active-key="activeKey"
+            size="large"
+            :tab-bar-style="{ 'border-radius': '0px', 'padding-left': '24px' }"
+          >
+            <a-tab-pane key="0" tab="点名详情">
+              <call-name-details :detail="detailData" :loading="loading" />
+            </a-tab-pane>
+            <a-tab-pane key="1" tab="点名变更记录">
+              <call-name-change-details />
+            </a-tab-pane>
+          </a-tabs>
+        </div>
+      </a-spin>
     </a-drawer>
+
     <a-modal
-      v-model:open="openModal" centered :footer="false" :closable="false" :mask-closable="false"
-      :keyboard="false" width="440px" @ok="handleDelete"
+      v-model:open="openModal"
+      centered
+      :footer="false"
+      :closable="false"
+      :mask-closable="false"
+      :keyboard="false"
+      width="440px"
     >
       <div class="text-18px mb-12px font500">
         <CloseCircleOutlined class="text-#f00 mr2 text-5" /> 删除上课点名记录？
@@ -154,15 +264,13 @@ function handleEditRollName() {
         </a-button>
       </a-space>
     </a-modal>
-    <!-- 编辑上课信息 -->
+
     <EditClassInfoModal v-model:open="editClassInfoModal" />
-    <!-- 编辑点名 -->
     <EditRollNameModal v-model:open="editRollNameModal" />
   </div>
 </template>
 
 <style lang="less" scoped>
-/* 添加旋转动画 */
 @keyframes icon-rotate {
   from {
     transform: rotate(0deg);

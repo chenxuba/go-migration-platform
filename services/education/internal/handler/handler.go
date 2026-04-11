@@ -170,6 +170,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/roll-call/confirm", handler.rollCallConfirm)
 	mux.HandleFunc("/api/v1/class-records/student-paged-list", handler.studentTeachingRecordPagedList)
 	mux.HandleFunc("/api/v1/class-records/schedule-paged-list", handler.scheduleTeachingRecordPagedList)
+	mux.HandleFunc("/api/v1/class-records/detail", handler.teachingRecordDetail)
 	mux.HandleFunc("/api/v1/infrastructure/status", handler.infrastructureStatus)
 	mux.HandleFunc("/api/v1/mq/event-logs", handler.mqEventLogs)
 	mux.HandleFunc("/api/v1/es-sync/intent-student/sync", handler.syncIntentStudents)

@@ -17,6 +17,7 @@ const scheduleTypeOptions = [
 const dataSource = ref<ScheduleTeachingRecordItem[]>([])
 const loading = ref(false)
 const openClassRecordDrawer = ref(false)
+const currentTeachingRecordId = ref('')
 const filterDateRange = ref<[Dayjs, Dayjs]>([monthStart, today])
 const filterScheduleTypes = ref<string[]>([])
 const filterIsArrear = ref<boolean | null>(null)
@@ -32,7 +33,8 @@ const pagination = ref({
   total: 0,
 })
 
-function handleSeeClassRecord() {
+function handleSeeClassRecord(record?: Partial<ScheduleTeachingRecordItem>) {
+  currentTeachingRecordId.value = String(record?.teachingRecordId || '').trim()
   openClassRecordDrawer.value = true
 }
 
@@ -445,14 +447,14 @@ onMounted(() => {
                 {{ record.createdTime || '-' }}
               </template>
               <template v-if="column.key === 'action'">
-                <a class="font500" @click="handleSeeClassRecord()">上课记录详情</a>
+                <a class="font500" @click="handleSeeClassRecord(record)">上课记录详情</a>
               </template>
             </template>
           </a-table>
         </div>
       </div>
     </div>
-    <class-record-details v-model:open="openClassRecordDrawer" />
+    <class-record-details v-model:open="openClassRecordDrawer" :teaching-record-id="currentTeachingRecordId" />
   </div>
 </template>
 

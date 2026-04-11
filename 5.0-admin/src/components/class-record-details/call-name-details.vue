@@ -1,21 +1,34 @@
-<script setup>
+<script setup lang="ts">
 import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { computed, ref, watch } from 'vue'
+import type { TeachingRecordDetailResult, TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
+import StudentAvatar from '@/components/common/StudentAvatar.vue'
+import { useStudentStore } from '@/stores/student'
 
-const displayArray = ref(['intention', 'followStatus', 'sex'])
-const dataSource = ref([{ key: 1 }, { key: 2 }])
+const props = withDefaults(defineProps<{
+  detail?: TeachingRecordDetailResult | null
+  loading?: boolean
+}>(), {
+  detail: null,
+  loading: false,
+})
+
+const displayArray = ref(['studentIdentity', 'classStatus', 'billingMode'])
+const searchKeyword = ref('')
+const filterStudentIdentityValues = ref<string[]>([])
+const filterClassStatusValues = ref<string[]>([])
+const filterBillingModeValues = ref<number[]>([])
 const openDrawer = ref(false)
-function handleSeeStuData() {
-  openDrawer.value = true
-}
-const allColumns = ref([
+const studentStore = useStudentStore()
+
+const allColumns = ref<any[]>([
   {
     title: '学员/电话',
     dataIndex: 'name',
     key: 'name',
     fixed: 'left',
-    width: 160,
-    required: true, // 新增必选标识
-
+    width: 180,
+    required: true,
   },
   {
     title: '详情',
@@ -26,8 +39,8 @@ const allColumns = ref([
   },
   {
     title: '学员身份',
-    dataIndex: 'studentId',
-    key: 'studentId',
+    dataIndex: 'studentIdentity',
+    key: 'studentIdentity',
     width: 120,
   },
   {
@@ -35,117 +48,94 @@ const allColumns = ref([
     dataIndex: 'classStatus',
     key: 'classStatus',
     width: 120,
-
   },
   {
     title: '扣费课程账户',
     dataIndex: 'deductionAccount',
     key: 'deductionAccount',
     width: 160,
-
   },
   {
     title: '课消方式',
     key: 'courseNotMethod',
     dataIndex: 'courseNotMethod',
-    width: 110,
+    width: 120,
   },
   {
     title: '上课点名数量',
     dataIndex: 'classCallNum',
     key: 'classCallNum',
-    width: 160,
+    width: 120,
   },
   {
     title: '消耗数量',
     dataIndex: 'useNum',
     key: 'useNum',
-    width: 140,
+    width: 120,
   },
   {
     title: '拖欠数量',
     dataIndex: 'oweNum',
     key: 'oweNum',
-    width: 140,
+    width: 120,
   },
   {
     title: '消耗学费',
     dataIndex: 'usePrice',
     key: 'usePrice',
-    width: 140,
+    width: 120,
   },
-
   {
     title: '对内备注',
     dataIndex: 'externalRemarks',
     key: 'externalRemarks',
-    width: 140,
+    width: 160,
   },
   {
     title: '对外备注',
     dataIndex: 'remarks',
     key: 'remarks',
-    width: 140,
+    width: 160,
   },
   {
     title: '点名更新时间',
     key: 'callupdateTime',
     dataIndex: 'callupdateTime',
-    width: 150,
+    width: 170,
     fixed: 'right',
   },
-
 ])
-const rowSelection = {
-  onChange: (selectedRowKeys, selectedRows) => {
-    console.log(`selectedRowKeys: ${selectedRowKeys}`, 'selectedRows: ', selectedRows)
-  },
-}
-const defaultStudentStatus = ref(1)
-// 从本地存储读取已保存的列配置
+
 const savedSelected = localStorage.getItem('call-name-details')
 const keysArray = allColumns.value
-  .map(column => column?.key) // 可选链操作符
-  .filter(key => typeof key !== 'undefined') // 过滤未定义的值
-const initialSelectedValues = savedSelected
-  ? JSON.parse(savedSelected)
-  : keysArray
-
-// 选中的列（初始化包含重要字段）
+  .map(column => column?.key)
+  .filter(key => typeof key !== 'undefined')
+const initialSelectedValues = savedSelected ? JSON.parse(savedSelected) : keysArray
 const selectedValues = ref(initialSelectedValues)
-// 生成字段选择选项（排除操作列）
 const columnOptions = computed(() =>
   allColumns.value
     .filter(col => col.key !== 'action')
     .map(col => ({
       id: col.key,
       value: col.title,
-      disabled: col.required, // 禁用必选字段
+      disabled: col.required,
     })),
 )
-// 过滤后的列（自动包含必选列）
 const filteredColumns = computed(() => {
   const requiredColumns = allColumns.value.filter(col => col.required)
   const optionalColumns = allColumns.value
-    .filter(col =>
-      selectedValues.value.includes(col.key)
-      && !col.required,
-    )
-
-  // 保持固定列顺序：left -> normal -> right
+    .filter(col => selectedValues.value.includes(col.key) && !col.required)
   return [
     ...requiredColumns.filter(col => col.fixed === 'left'),
     ...optionalColumns,
     ...requiredColumns.filter(col => col.fixed === 'right'),
   ]
 })
-// 强制包含必选字段的监听
+
 watch(selectedValues, (newVal) => {
   const requiredKeys = allColumns.value
     .filter(col => col.required)
     .map(col => col.key)
-
-  // 自动补全必选字段
   if (!requiredKeys.every(k => newVal.includes(k))) {
     selectedValues.value = Array.from(new Set([
       ...newVal.filter(v => !requiredKeys.includes(v)),
@@ -153,36 +143,269 @@ watch(selectedValues, (newVal) => {
     ]))
   }
 }, { deep: true })
-// 自动保存列配置到本地存储
+
 watch(selectedValues, (newVal) => {
   localStorage.setItem('call-name-details', JSON.stringify(newVal))
 }, { deep: true })
-// 表格总宽度计算
+
 const totalWidth = computed(() =>
   filteredColumns.value.reduce((acc, column) => acc + (column.width || 0), 0),
 )
+const tablePagination = computed(() => (filteredData.value.length > 10 ? { hideOnSinglePage: true } : false))
+
+const studentIdentityOptions = [
+  { id: 'class', value: '班级学员' },
+  { id: 'one_to_one', value: '1对1学员' },
+  { id: 'trial', value: '试听学员' },
+  { id: 'temporary', value: '临时学员' },
+  { id: 'makeup', value: '补课学员' },
+]
+
+const classStatusOptions = [
+  { id: '1', value: '到课' },
+  { id: '3', value: '请假' },
+  { id: '2', value: '旷课' },
+  { id: '0', value: '未记录' },
+]
+
+const billingModeOptions = [
+  { id: 1, value: '按课时' },
+  { id: 2, value: '按时间' },
+  { id: 3, value: '按金额' },
+  { id: 4, value: '不记课时' },
+]
+
+function formatNumber(value?: number, suffix = '') {
+  const num = Number(value || 0)
+  if (!Number.isFinite(num))
+    return suffix ? `0${suffix}` : '0'
+  const text = Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.?0+$/, '')
+  return suffix ? `${text}${suffix}` : text
+}
+
+function formatCurrency(value?: number) {
+  return `¥ ${Number(value || 0).toFixed(0)}`
+}
+
+function sourceTypeText(value?: number) {
+  const type = Number(value || 0)
+  if (type === 2)
+    return '临时学员'
+  if (type === 3 || type === 7)
+    return '补课学员'
+  if (type === 4)
+    return '试听学员'
+  if (type === 6)
+    return '1对1学员'
+  return '班级学员'
+}
+
+function studentIdentityTagClass(value?: number) {
+  const type = Number(value || 0)
+  if (type === 2)
+    return 'record-meta-tag record-meta-tag--temporary'
+  if (type === 3 || type === 7)
+    return 'record-meta-tag record-meta-tag--make-up'
+  if (type === 4)
+    return 'record-meta-tag record-meta-tag--trial-student'
+  if (type === 6)
+    return 'record-meta-tag record-meta-tag--one-to-one-student'
+  return 'record-meta-tag record-meta-tag--class-student'
+}
+
+function statusText(value?: number) {
+  const status = Number(value || 0)
+  if (status === 2)
+    return '旷课'
+  if (status === 3)
+    return '请假'
+  if (status === 4)
+    return '未记录'
+  return '到课'
+}
+
+function statusTagClass(value?: number) {
+  const status = Number(value || 0)
+  if (status === 2)
+    return 'record-status-tag record-status-tag--absent'
+  if (status === 3)
+    return 'record-status-tag record-status-tag--leave'
+  if (status === 4)
+    return 'record-status-tag record-status-tag--pending'
+  return 'record-status-tag record-status-tag--arrived'
+}
+
+function chargingModeText(value?: number) {
+  const mode = Number(value || 0)
+  if (mode === 2)
+    return '按时间'
+  if (mode === 3)
+    return '按金额'
+  return '按课时'
+}
+
+function isTrialStudent(record: Partial<TeachingRecordDetailStudent>) {
+  return Number(record.sourceType || 0) === 4
+}
+
+function isTimeChargingMode(record: Partial<TeachingRecordDetailStudent>) {
+  return Number(record.skuMode || 0) === 2
+}
+
+function hasArrearQuantity(record: Partial<TeachingRecordDetailStudent>) {
+  return Number(record.arrearQuantity || 0) > 0
+}
+
+function buildStudentSourceTypes(values: string[]) {
+  const result = new Set<number>()
+  values.forEach((item) => {
+    if (item === 'class')
+      result.add(5)
+    else if (item === 'one_to_one')
+      result.add(6)
+    else if (item === 'trial')
+      result.add(4)
+    else if (item === 'temporary')
+      result.add(2)
+    else if (item === 'makeup') {
+      result.add(3)
+      result.add(7)
+    }
+  })
+  return result
+}
+
+function buildClassStatusValues(values: string[]) {
+  return new Set(values.map((item) => {
+    if (item === '0')
+      return 4
+    return Number(item)
+  }).filter(item => Number.isFinite(item)))
+}
+
+const rawStudentList = computed(() => Array.isArray(props.detail?.studentList) ? props.detail?.studentList || [] : [])
+
+const filteredData = computed(() => {
+  const search = searchKeyword.value.trim().toLowerCase()
+  const sourceTypeSet = buildStudentSourceTypes(filterStudentIdentityValues.value)
+  const statusSet = buildClassStatusValues(filterClassStatusValues.value)
+
+  return rawStudentList.value.filter((item) => {
+    if (search) {
+      const name = String(item.studentName || '').toLowerCase()
+      if (!name.includes(search))
+        return false
+    }
+    if (sourceTypeSet.size > 0 && !sourceTypeSet.has(Number(item.sourceType || 0)))
+      return false
+    if (statusSet.size > 0 && !statusSet.has(Number(item.status || 0)))
+      return false
+    if (filterBillingModeValues.value.length > 0) {
+      const currentMode = Number(item.skuMode || 0)
+      const matches = filterBillingModeValues.value.some((mode) => {
+        if (mode === 4)
+          return isTrialStudent(item)
+        return currentMode === mode
+      })
+      if (!matches)
+        return false
+    }
+    return true
+  })
+})
+
+const summary = computed(() => {
+  return filteredData.value.reduce((acc, item) => {
+    acc.total += 1
+    if (Number(item.status || 0) === 1)
+      acc.arrived += 1
+    else if (Number(item.status || 0) === 3)
+      acc.leave += 1
+    else if (Number(item.status || 0) === 2)
+      acc.absent += 1
+
+    if (!isTrialStudent(item) && !isTimeChargingMode(item))
+      acc.quantity += Number(item.quantity || 0)
+    acc.tuition += Number(item.actualTuition || 0)
+    return acc
+  }, {
+    total: 0,
+    arrived: 0,
+    leave: 0,
+    absent: 0,
+    quantity: 0,
+    tuition: 0,
+  })
+})
+
+function openStudentDetail(studentId?: string) {
+  const id = String(studentId || '').trim()
+  if (!id)
+    return
+  studentStore.setStudentId(id)
+  openDrawer.value = true
+}
+
+function handleSearchInput(value?: string) {
+  searchKeyword.value = String(value || '').trim()
+}
+
+function handleStudentIdentityFilter(value: unknown) {
+  filterStudentIdentityValues.value = Array.isArray(value)
+    ? value.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+}
+
+function handleClassStatusFilter(value: unknown) {
+  filterClassStatusValues.value = Array.isArray(value)
+    ? value.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+}
+
+function handleBillingModeFilter(value: unknown) {
+  filterBillingModeValues.value = Array.isArray(value)
+    ? value.map(item => Number(item)).filter(item => Number.isFinite(item))
+    : []
+}
 </script>
 
 <template>
   <div>
-    <!-- 学员筛选条件 -->
-    <div class="filter-wrap bg-white  pl-3 pr-3 rounded-4">
+    <div class="filter-wrap bg-white pl-3 pr-3 rounded-4">
       <all-filter
-        :default-student-status="defaultStudentStatus" :display-array="displayArray" :is-quick-show="false"
-        :is-show-search-input="true" search-label="学员姓名"
+        :display-array="displayArray"
+        :is-quick-show="false"
+        :is-show-search-input="true"
+        :student-identity-options="studentIdentityOptions"
+        :class-status-options="classStatusOptions"
+        :billing-mode-label="'课消方式'"
+        :billing-mode-options-data="billingModeOptions"
+        :whole-condition-clear-types="['studentIdentity', 'classStatus', 'billingMode']"
+        search-label="学员姓名"
+        @searchInputFun="handleSearchInput"
+        @update:student-identity-filter="handleStudentIdentityFilter"
+        @update:class-status-filter="handleClassStatusFilter"
+        @update:billing-mode-filter="handleBillingModeFilter"
+        @update:charging-method-filter="handleBillingModeFilter"
       />
     </div>
+
     <div class="student-list mt-3 pt-3 pb-3 pl-6 pr-6 bg-white rounded-4">
       <div class="tab-table">
         <div class="table-title flex justify-between">
           <div class="total">
-            共 <span class="text-4 mx-2 text-#06f">{{ dataSource.length }}</span> 条记录
+            共 {{ summary.total }} 人（到课 {{ summary.arrived }}人，请假 {{ summary.leave }}人，旷课{{ summary.absent }}人）；共记 {{ formatNumber(summary.quantity, '课时') }}，共消耗学费 {{ formatCurrency(summary.tuition) }}
           </div>
         </div>
         <div class="table-content mt-2">
           <a-table
-            :data-source="dataSource" :pagination="dataSource.length > 10" :columns="filteredColumns"
-            :scroll="{ x: totalWidth }" size="small"
+            :loading="loading"
+            :data-source="filteredData"
+            row-key="studentTeachingRecordId"
+            :pagination="tablePagination"
+            :columns="filteredColumns"
+            :scroll="{ x: totalWidth }"
+            size="small"
           >
             <template #headerCell="{ column }">
               <template v-if="column.key === 'courseNotMethod'">
@@ -225,7 +448,7 @@ const totalWidth = computed(() =>
                     </div>
                   </template>
                   <template #content>
-                    <div>【拖欠数量】该学员“剩余数量＜点名数量时”，会产生“拖欠数量”。</div>
+                    <div>【拖欠数量】该学员“剩余数量 &lt; 点名数量时”，会产生“拖欠数量”。</div>
                   </template>
                   <ExclamationCircleOutlined />
                 </a-popover>
@@ -245,75 +468,69 @@ const totalWidth = computed(() =>
                 </a-popover>
               </template>
             </template>
+
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'name'">
-                <a-tooltip>
-                  <template #title>
-                    查看学员档案{{ record.a }}
-                  </template>
-                  <div class="flex cursor-pointer  hover" @click="handleSeeStuData()">
-                    <img
-                      width="36" height="36" class="mr-1" style="border-radius: 100%;"
-                      src="https://pcsys.admin.ybc365.com/c04d0ea2-a8b0-4001-b19b-946a980cb726.png"
-                      alt=""
-                    >
-                    <div class="name mt-0">
-                      <div class="text-#222 name">
-                        龙龙
-                      </div>
-                      <div class="text-3 text-#888 flex flex-items-center">
-                        176****1636
-                      </div>
-                    </div>
-                  </div>
-                </a-tooltip>
+                <StudentAvatar
+                  :id="record.studentId"
+                  :name="record.studentName || '-'"
+                  :avatar-url="record.avatar"
+                  :phone="record.studentPhone"
+                  :show-gender="false"
+                  :show-age="false"
+                  default-active-key="0"
+                />
               </template>
               <template v-if="column.key === 'detail'">
-                <a-tooltip>
-                  <template #title>
-                    学员点名详情{{ record.a }}
-                  </template>
-                  <span class="cursor-pointer hover-text-#06f">详情</span>
-                </a-tooltip>
+                <span class="detail-link" @click="openStudentDetail(record.studentId)">详情</span>
               </template>
-              <template v-if="column.key === 'studentId'">
-                班级学员
+              <template v-if="column.key === 'studentIdentity'">
+                <span :class="studentIdentityTagClass(record.sourceType)">
+                  {{ sourceTypeText(record.sourceType) }}
+                </span>
               </template>
               <template v-if="column.key === 'classStatus'">
-                <span class="bg-#e6f0ff text-#06f text-3 px2 py1 rounded-10 ml2">到课</span>
+                <span :class="statusTagClass(record.status)">
+                  {{ statusText(record.status) }}
+                </span>
               </template>
               <template v-if="column.key === 'deductionAccount'">
-                初级认知课
+                {{ isTrialStudent(record) ? '-' : (record.tuitionAccountName || '-') }}
               </template>
               <template v-if="column.key === 'courseNotMethod'">
-                按课时
+                {{ isTrialStudent(record) ? '-' : chargingModeText(record.skuMode) }}
               </template>
               <template v-if="column.key === 'classCallNum'">
-                1课时
+                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '不记课时' : formatNumber(record.quantity, '课时') }}
               </template>
               <template v-if="column.key === 'useNum'">
-                1课时
+                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(record.actualQuantity, '课时') }}
               </template>
               <template v-if="column.key === 'oweNum'">
-                -
+                <span :class="{ 'owe-num-text': hasArrearQuantity(record) }">
+                  {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(record.arrearQuantity, '课时') }}
+                </span>
               </template>
               <template v-if="column.key === 'usePrice'">
-                ¥200.00
-              </template>
-              <template v-if="column.key === 'callupdateTime'">
-                2024-12-23 13:22
+                <span class="use-price-text">
+                  {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : `¥${Number(record.actualTuition || 0).toFixed(2)}` }}
+                </span>
               </template>
               <template v-if="column.key === 'externalRemarks'">
-                -
+                {{ record.remark || '-' }}
               </template>
               <template v-if="column.key === 'remarks'">
-                -
+                {{ record.externalRemark || '-' }}
+              </template>
+              <template v-if="column.key === 'callupdateTime'">
+                {{ record.updatedTime || '-' }}
               </template>
             </template>
           </a-table>
         </div>
       </div>
     </div>
+
     <student-info-drawer v-model:open="openDrawer" />
   </div>
 </template>
@@ -338,51 +555,91 @@ const totalWidth = computed(() =>
   }
 }
 
-.studentStatus {
-
-  span.dot {
-    border-radius: 50%;
-    display: inline-block;
-    height: 6px;
-    position: relative;
-    vertical-align: middle;
-    width: 6px;
-    margin-right: 4px;
-    background: var(--pro-ant-color-primary);
-  }
+.detail-link {
+  color: #1677ff;
+  cursor: pointer;
 }
 
-.tip {
-  padding: 10px 24px 10px 14px;
-  background: #e6f0ff;
-  color: #333;
-
-  a {
-    color: var(--pro-ant-color-primary);
-  }
+.record-status-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
-.upNew {
-  position: relative;
-
-  &::before {
-    position: absolute;
-    top: -12px;
-    left: -22px;
-    z-index: 999;
-    width: 39px;
-    height: 22px;
-    background: url(data:image/png;base64,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);
-    background-size: contain;
-    content: "";
-  }
+.record-meta-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  border: 1px solid transparent;
 }
 
-.hover {
-  &:hover {
-    .name {
-      color: var(--pro-ant-color-primary);
-    }
-  }
+.record-meta-tag--class-student {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.record-meta-tag--one-to-one-student {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.record-meta-tag--trial-student {
+  color: #c2410c;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.record-meta-tag--temporary {
+  color: #7c3aed;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
+
+.record-meta-tag--make-up {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+
+.record-status-tag--arrived {
+  color: #2f6bff;
+  background: #eef4ff;
+}
+
+.record-status-tag--leave {
+  color: #fa8c16;
+  background: #fff4e8;
+}
+
+.record-status-tag--absent {
+  color: #f5222d;
+  background: #fff1f0;
+}
+
+.record-status-tag--pending {
+  color: #8c8c8c;
+  background: #f5f5f5;
+}
+
+.use-price-text {
+  font-weight: 600;
+}
+
+.owe-num-text {
+  color: #f5222d;
 }
 </style>

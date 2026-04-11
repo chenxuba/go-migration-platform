@@ -100,6 +100,7 @@ export interface TeachingScheduleDetail {
   lessonDate: string
   startAt: string
   endAt: string
+  teachingRecordId?: string
   durationMinutes: number
   callStatus: number
   callStatusText?: string

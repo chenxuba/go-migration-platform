@@ -64,6 +64,7 @@ const arrearOnlyOptions = [
 
 const loading = ref(false)
 const openClassRecordDrawer = ref(false)
+const currentTeachingRecordId = ref('')
 const dataSource = ref<StudentTeachingRecordItem[]>([])
 const filterDateRange = ref<[Dayjs, Dayjs]>([monthStart, today])
 const filterUpdatedDateRange = ref<[Dayjs, Dayjs] | null>(null)
@@ -110,7 +111,8 @@ const oneToOneSearchKey = ref('')
 const teacherSearchKey = ref('')
 const assistantTeacherSearchKey = ref('')
 
-function handleSeeClassRecord() {
+function handleSeeClassRecord(record?: Partial<StudentTeachingRecordItem>) {
+  currentTeachingRecordId.value = String(record?.teachingRecordId || '').trim()
   openClassRecordDrawer.value = true
 }
 
@@ -829,6 +831,7 @@ onMounted(() => {
         @update:student-identity-filter="handleStudentIdentityFilter"
         @update:class-status-filter="handleClassStatusFilter"
         @update:billing-mode-filter="handleLessonChargingModeFilter"
+        @update:charging-method-filter="handleLessonChargingModeFilter"
         @update:is-arrears-filter="handleIsArrearsFilter"
       />
     </div>
@@ -984,14 +987,14 @@ onMounted(() => {
                 {{ record.externalRemark || '-' }}
               </template>
               <template v-if="column.key === 'action'">
-                <a class="font500" @click="handleSeeClassRecord()">上课记录详情</a>
+                <a class="font500" @click="handleSeeClassRecord(record)">上课记录详情</a>
               </template>
             </template>
           </a-table>
         </div>
       </div>
     </div>
-    <class-record-details v-model:open="openClassRecordDrawer" />
+    <class-record-details v-model:open="openClassRecordDrawer" :teaching-record-id="currentTeachingRecordId" />
   </div>
 </template>
 

@@ -761,7 +761,7 @@ watch(
       :lesson-day="detailData?.lessonDate || ''"
       @updated="loadDetail"
     />
-    <ClassRecordDetails v-model:open="classRecordDrawerOpen" />
+    <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="detailData?.teachingRecordId || ''" />
     <RollCallAddStudentModal
       v-model:open="addStudentModalOpen"
       :title="addStudentModalTitle"

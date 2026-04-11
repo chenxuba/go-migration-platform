@@ -2298,6 +2298,7 @@ function handleOrNotFenClassChange(e) {
 function handleBillingModeChange(e) {
   nextTick(() => {
     console.log('收费方式:', selectBillingModeVals.value)
+    debouncedEmit('billingModeFilter', selectBillingModeVals.value)
     debouncedEmit('chargingMethodFilter', selectBillingModeVals.value)
   })
 }
@@ -3796,6 +3797,7 @@ const clearAll = debounce(() => {
     emit('update:courseCategoryFilter', undefined, true)
     emit('update:teachingMethodFilter', undefined, true)
     emit('update:sellStatusFilter', undefined, true)
+    emit('update:billingModeFilter', [], true)
     emit('update:chargingMethodFilter', [], true)
     emit('update:hasTrialPriceFilter', undefined, true)
     emit('update:isMicroSchoolSaleFilter', undefined, true)
@@ -4407,6 +4409,7 @@ function removeCondition(type, id) {
       // 清空收费方式多选
       selectBillingModeVals.value = []
       emit('update:billingModeFilter', [], false, id, type)
+      emit('update:chargingMethodFilter', [], false, id, type)
       break
     case 'isSetExpirationDate':
       // 清空是否设置有效期

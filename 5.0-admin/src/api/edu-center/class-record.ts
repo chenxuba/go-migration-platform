@@ -1,4 +1,4 @@
-import { usePost } from '~/utils/request'
+import { useGet, usePost } from '~/utils/request'
 
 export interface ClassRecordQueryModel {
   beginStartTime?: string
@@ -75,6 +75,71 @@ export interface StudentTeachingRecordPagedResult {
   total?: number
 }
 
+export interface TeachingRecordDetailTeacher {
+  teacherId: string
+  teacherName: string
+  type: number
+  status: number
+  quantity: number
+}
+
+export interface TeachingRecordDetailStudent {
+  studentTeachingRecordId: string
+  studentId: string
+  studentName: string
+  studentPhone?: string
+  avatar?: string
+  status: number
+  sourceType: number
+  quantity?: number
+  actualQuantity?: number
+  remark?: string
+  externalRemark?: string
+  tuitionAccountId?: string
+  tuitionAccountName?: string
+  isTuitionAccountActive?: boolean
+  leftQuantity?: number
+  skuMode?: number
+  amount?: number
+  actualDeduct?: number
+  actualTuition?: number
+  arrearQuantity?: number
+  recordTime?: string
+  updatedTime?: string
+  updatedStaffName?: string
+}
+
+export interface TeachingRecordDetailResult {
+  teachingRecordId: string
+  sourceName?: string
+  sourceType?: number
+  sourceId?: string
+  lessonId?: string
+  lessonType?: number
+  startTime?: string
+  endTime?: string
+  shouldAttendanceCount?: number
+  actualAttendanceCount?: number
+  leaveCount?: number
+  truancyCount?: number
+  teacherClassTime?: number
+  studentTotalClassTime?: number
+  studentActualTuition?: number
+  teacherList?: TeachingRecordDetailTeacher[]
+  studentList?: TeachingRecordDetailStudent[]
+  createdTime?: string
+  createdStaffName?: string
+  timetableSourceType?: number
+  classRoomName?: string
+  classRoomId?: string
+  timetableSourceId?: string
+  lessonName?: string
+  teachingContent?: string
+  subjectId?: string
+  subjectName?: string
+  teachingContentImages?: string[]
+}
+
 export interface ScheduleTeachingRecordItem {
   teachingRecordId: string
   startTime?: string
@@ -126,4 +191,8 @@ export function getStudentTeachingRecordPagedListApi(data: ClassRecordPagedParam
 
 export function getScheduleTeachingRecordPagedListApi(data: ClassRecordPagedParams) {
   return usePost<ScheduleTeachingRecordPagedResult>('/api/v1/class-records/schedule-paged-list', data)
+}
+
+export function getTeachingRecordDetailApi(params: { teachingRecordId: string }) {
+  return useGet<TeachingRecordDetailResult>('/api/v1/class-records/detail', params)
 }

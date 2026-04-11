@@ -242,6 +242,7 @@ type TeachingScheduleDetailVO struct {
 	LessonDate             string                            `json:"lessonDate"`
 	StartAt                time.Time                         `json:"startAt"`
 	EndAt                  time.Time                         `json:"endAt"`
+	TeachingRecordID       string                            `json:"teachingRecordId,omitempty"`
 	DurationMinutes        int                               `json:"durationMinutes"`
 	CallStatus             int                               `json:"callStatus"`
 	CallStatusText         string                            `json:"callStatusText,omitempty"`

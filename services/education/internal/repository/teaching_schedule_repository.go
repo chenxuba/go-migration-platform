@@ -2184,6 +2184,7 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 		LessonDate        time.Time
 		StartAt           time.Time
 		EndAt             time.Time
+		TeachingRecordID  string
 		CallStatus        int
 		Remark            string
 	}
@@ -2215,6 +2216,13 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 			ts.lesson_date,
 			ts.lesson_start_at,
 			ts.lesson_end_at,
+			(
+				SELECT CAST(MAX(str.teaching_record_id) AS CHAR)
+				FROM student_teaching_record str
+				WHERE str.inst_id = ts.inst_id
+				  AND str.del_flag = 0
+				  AND str.teaching_schedule_id = ts.id
+			) AS teaching_record_id,
 			` + callStatusSelect + `,
 			IFNULL(tc.remark, '')
 		FROM teaching_schedule ts
@@ -2255,6 +2263,7 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 		&row.LessonDate,
 		&row.StartAt,
 		&row.EndAt,
+		&row.TeachingRecordID,
 		&row.CallStatus,
 		&row.Remark,
 	)
@@ -2333,6 +2342,7 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 		LessonDate:             row.LessonDate.Format("2006-01-02"),
 		StartAt:                row.StartAt,
 		EndAt:                  row.EndAt,
+		TeachingRecordID:       strings.TrimSpace(row.TeachingRecordID),
 		DurationMinutes:        durationMinutes,
 		CallStatus:             row.CallStatus,
 		CallStatusText:         teachingScheduleCallStatusText(row.CallStatus),

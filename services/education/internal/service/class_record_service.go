@@ -21,3 +21,11 @@ func (svc *Service) GetScheduleTeachingRecordPagedList(userID int64, dto model.S
 	}
 	return svc.repo.GetScheduleTeachingRecordPagedList(context.Background(), instID, dto)
 }
+
+func (svc *Service) GetTeachingRecordDetail(userID int64, query model.TeachingRecordDetailQueryDTO) (model.TeachingRecordDetailResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.TeachingRecordDetailResult{}, err
+	}
+	return svc.repo.GetTeachingRecordDetail(context.Background(), instID, query)
+}
