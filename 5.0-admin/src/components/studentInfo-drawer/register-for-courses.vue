@@ -174,20 +174,9 @@ function getDisplayedRemainTuition(item) {
   return Number(item?.tuition || 0)
 }
 
-/** 报读列表按课程聚合：剩余数量与剩余学费均为 0、曾有报读且无欠费时视为已结课（含手动结课扣完） */
+/** 报读列表仅在真实结课状态下展示“已结课”，点名扣完剩余也不能自动视为结课。 */
 function isTuitionAccountCourseEnded(item) {
-  const totalTuition = Number(item?.totalTuition || 0)
-  const totalQty = Number(item?.totalQuantity || 0)
-  const totalFree = Number(item?.totalFreeQuantity || 0)
-  if (totalTuition <= 0 && totalQty + totalFree <= 0)
-    return false
-  if (Number(item?.arrearTuition || 0) > 0.01)
-    return false
-  if (isTuitionAccountClosedByStatus(item))
-    return true
-  const remainQty = getDisplayedRemainQuantity(item) + getDisplayedRemainFreeQuantity(item)
-  const remainTuition = getDisplayedRemainTuition(item)
-  return remainQty <= 0.0001 && remainTuition <= 0.0001
+  return isTuitionAccountClosedByStatus(item)
 }
 
 function onEndedMenuRenew() {

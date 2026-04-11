@@ -3,6 +3,7 @@ import { CopyOutlined, EditOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { computed, getCurrentInstance, ref, watch } from 'vue'
 import { type TeachingScheduleBatchMeta, type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi } from '@/api/edu-center/teaching-schedule'
+import ClassRecordDetails from '@/components/common/class-record-details.vue'
 import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
 
 interface ScheduleEditPayload {
@@ -73,6 +74,7 @@ const detailLoading = ref(false)
 const detailData = ref<TeachingScheduleDetail | null>(null)
 const popoverPlacement = ref<'rightTop' | 'rightBottom' | 'leftTop' | 'leftBottom'>('rightTop')
 const rollCallDrawerOpen = ref(false)
+const classRecordDrawerOpen = ref(false)
 let detailLoadSeq = 0
 let lastTriggerNode: HTMLElement | null = null
 let hoverPopoverRoot: HTMLElement | null = null
@@ -202,10 +204,13 @@ const rollCallDisabledReason = computed(() => {
   return isFutureSchedule.value ? '未到日期，不可点名' : ''
 })
 const canRollCall = computed(() => {
+  if (Number(detailData.value?.callStatus || 1) === 2)
+    return true
   if (typeof detailData.value?.canRollCall === 'boolean')
     return detailData.value.canRollCall
   return !isFutureSchedule.value
 })
+const rollCallButtonText = computed(() => (Number(detailData.value?.callStatus || 1) === 2 ? '点名详情' : '去点名'))
 
 async function loadLatestDetail() {
   const scheduleId = String(props.scheduleId || '').trim()
@@ -347,6 +352,11 @@ function handleBatchCopyMenuClick({ key, domEvent }: { key: string | number, dom
 }
 
 function goRollCall() {
+  if (Number(detailData.value?.callStatus || 1) === 2) {
+    closePopover()
+    classRecordDrawerOpen.value = true
+    return
+  }
   if (!canRollCall.value)
     return
   closePopover()
@@ -544,7 +554,7 @@ watch(
                   :disabled="!canRollCall"
                   @click.stop="goRollCall"
                 >
-                  去点名
+                  {{ rollCallButtonText }}
                 </button>
               </span>
             </a-tooltip>
@@ -559,7 +569,9 @@ watch(
     v-model:open="rollCallDrawerOpen"
     :schedule-id="String(props.scheduleId || '')"
     :lesson-day="detailData?.lessonDate || ''"
+    @updated="loadLatestDetail"
   />
+  <ClassRecordDetails v-model:open="classRecordDrawerOpen" />
 </template>
 
 <style scoped lang="less">

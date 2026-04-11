@@ -129,6 +129,34 @@ func (svc *Service) GetRollCallStudentTuitionAccounts(userID int64, dto model.St
 	return model.StudentLessonTuitionAccountsResult{List: list}, nil
 }
 
+func (svc *Service) CheckRollCallTeachingRecordByTeacherAndTime(userID int64, dto model.RollCallCheckTeachingRecordByTeacherAndTimeDTO) error {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return err
+	}
+	return svc.repo.CheckRollCallTeachingRecordByTeacherAndTime(context.Background(), instID, dto)
+}
+
+func (svc *Service) BatchEstimateRollCallSufficientTuitionAccount(userID int64, dto model.RollCallBatchEstimateSufficientTuitionAccountDTO) (model.RollCallBatchEstimateSufficientTuitionAccountResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.RollCallBatchEstimateSufficientTuitionAccountResult{}, err
+	}
+	return svc.repo.BatchEstimateRollCallSufficientTuitionAccount(context.Background(), instID, dto)
+}
+
+func (svc *Service) ConfirmRollCall(userID int64, dto model.RollCallConfirmDTO) (model.RollCallConfirmResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	operatorID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	return svc.repo.ConfirmRollCall(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) rollCallInstID(userID int64) (int64, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

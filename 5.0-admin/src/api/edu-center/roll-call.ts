@@ -1,6 +1,6 @@
-import { usePost } from '~/utils/request'
 import type { TeachingScheduleItem } from './teaching-schedule'
 import type { StudentLessonTuitionAccountsResult } from './one-to-one'
+import { usePost } from '~/utils/request'
 
 export interface RollCallQueryModel {
   startDate?: string
@@ -182,6 +182,75 @@ export interface RollCallStudentTuitionAccountsParams {
   lessonId: string
 }
 
+export interface RollCallCheckTeachingRecordByTeacherAndTimeParams {
+  startTime: string
+  endTime: string
+  teacherId: string
+}
+
+export interface RollCallEstimateTuitionInfo {
+  quantity: number
+  tuitionAccountId: string
+  studentName: string
+}
+
+export interface RollCallBatchEstimateSufficientTuitionAccountParams {
+  tuitionInfoList: RollCallEstimateTuitionInfo[]
+}
+
+export interface RollCallEstimateTuitionResultItem {
+  tuitionAccountId: string
+  isSufficient: boolean
+}
+
+export interface RollCallBatchEstimateSufficientTuitionAccountResult {
+  tuitionInfoList?: RollCallEstimateTuitionResultItem[]
+}
+
+export interface RollCallConfirmTeacher {
+  teacherId: string
+  type: number
+}
+
+export interface RollCallConfirmStudent {
+  studentShouldDeduct: number
+  studentName: string
+  studentId: string
+  tuitionAccountId: string
+  absentTeachingRecordId: string
+  status: number
+  sourceType: number
+  remark: string
+  externalRemark: string
+  skuMode: number
+  amount: number
+  quantity: number
+}
+
+export interface RollCallConfirmParams {
+  sourceName: string
+  teachingContent: string
+  teachingContentImages: string[]
+  timetableSourceType: number
+  timetableSourceId: string
+  sourceId: string
+  sourceType: number
+  lessonId: string
+  startTime: string
+  endTime: string
+  teacherClassTime: number
+  studentShouldDeduct: number
+  studentList: RollCallConfirmStudent[]
+  teacherList: RollCallConfirmTeacher[]
+  subjectId: string
+  classRoomId: string
+}
+
+export interface RollCallConfirmResult {
+  id: string
+  name: string
+}
+
 export function getRollCallClassTimetableApi(data: RollCallClassTimetableParams) {
   return usePost<RollCallClassTimetableResult>('/api/v1/roll-call/class-timetable', data)
 }
@@ -200,6 +269,18 @@ export function getRollCallStudentTuitionExtraInfoApi(data: RollCallStudentTuiti
 
 export function getRollCallStudentTuitionAccountsApi(data: RollCallStudentTuitionAccountsParams) {
   return usePost<StudentLessonTuitionAccountsResult>('/api/v1/roll-call/student-tuition-accounts', data)
+}
+
+export function checkRollCallTeachingRecordByTeacherAndTimeApi(data: RollCallCheckTeachingRecordByTeacherAndTimeParams) {
+  return usePost<Record<string, never>>('/api/v1/roll-call/check-teaching-record-by-teacher-and-time', data)
+}
+
+export function batchEstimateRollCallSufficientTuitionAccountApi(data: RollCallBatchEstimateSufficientTuitionAccountParams) {
+  return usePost<RollCallBatchEstimateSufficientTuitionAccountResult>('/api/v1/roll-call/batch-estimate-sufficient-tuition-account', data)
+}
+
+export function confirmRollCallApi(data: RollCallConfirmParams) {
+  return usePost<RollCallConfirmResult>('/api/v1/roll-call/confirm', data)
 }
 
 export function getRollCallStatisticsApi(data: { queryModel?: RollCallQueryModel }) {

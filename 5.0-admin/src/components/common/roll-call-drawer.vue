@@ -2,7 +2,11 @@
 import { CloseOutlined, DownOutlined, ExclamationCircleFilled, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import EditClassInfoModal from './edit-class-info-modal.vue'
 import {
+  batchEstimateRollCallSufficientTuitionAccountApi,
+  checkRollCallTeachingRecordByTeacherAndTimeApi,
+  confirmRollCallApi,
   getRollCallClassTimetableApi,
   getRollCallStudentLeaveCountApi,
   getRollCallStudentTuitionAccountsApi,
@@ -12,8 +16,8 @@ import {
 import { removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
 import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
 import { useStudentStore } from '@/stores/student'
+import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
-import EditClassInfoModal from './edit-class-info-modal.vue'
 
 const props = defineProps({
   open: {
@@ -52,6 +56,7 @@ const switchAccountOptions = ref([])
 const switchAccountSelectedId = ref()
 const switchAccountRecord = ref(null)
 const switchedAccountOverrideMap = ref(new Map())
+const submittingRollCall = ref(false)
 const loading = ref(false)
 const classTimetableDetail = ref(null)
 const teachingRecordResult = ref(null)
@@ -415,6 +420,8 @@ function mapStudentRow(item, leaveCountMap, tuitionExtraMap) {
     consumptionMethod: String(item.chargingMode || ''),
     consumptionMethodText: getConsumptionMethodText(item.chargingMode, studentType),
     tuitionAccountId: String(item.tuitionAccountId || ''),
+    sourceType: Number(item.sourceType || 0),
+    rawChargingMode: Number(item.chargingMode || 0),
     recordAttendance: Number(item.chargingMode || 0) === 1,
     attendanceCount: Number(classTimetableDetail.value?.defaultStudentClassTime || 1),
     internalNote: '',
@@ -573,10 +580,6 @@ function handleEditClassInfo() {
   editClassInfoModal.value = true
 }
 
-
-
-
-
 // 添加学员modal
 const addStudentModal = ref(false)
 const addStudentModalTitle = ref('')
@@ -634,8 +637,144 @@ function handleBatchEditSubmit(payload) {
   })
   messageService.success(`已批量修改${targetRows.length}位学员的上课点名数量`)
 }
-function handleConfirmRollCall() {
-  messageService.info('点名提交功能暂未开发')
+function getRollCallRecordStatus(record) {
+  if (record?.absent)
+    return 2
+  if (record?.leave)
+    return 3
+  if (record?.unrecorded)
+    return 4
+  return 1
+}
+function buildRollCallStudentQuantity(record) {
+  if (!record || record.unrecorded)
+    return 0
+  if (!record.recordAttendance)
+    return 0
+  return Math.max(parseNumber(record.attendanceCount), 0)
+}
+function buildRollCallEstimatePayload() {
+  return data.value
+    .filter(record => Number(record?.consumptionMethod || 0) === 1 && buildRollCallStudentQuantity(record) > 0)
+    .map(record => ({
+      quantity: buildRollCallStudentQuantity(record),
+      tuitionAccountId: String(record?.tuitionAccountId || ''),
+      studentName: String(record?.studentAccount || ''),
+    }))
+}
+function buildRollCallConfirmPayload() {
+  const meta = teachingRecordResult.value?.data || {}
+  const detail = classTimetableDetail.value || {}
+  const teacherList = Array.isArray(teachingRecordResult.value?.teachers) ? teachingRecordResult.value.teachers : []
+  return {
+    sourceName: String(meta.sourceName || detail.className || ''),
+    teachingContent: '',
+    teachingContentImages: [],
+    timetableSourceType: Number(meta.timetableSourceType || 0),
+    timetableSourceId: String(meta.timetableSourceId || currentScheduleId.value || ''),
+    sourceId: String(meta.sourceId || detail.classId || ''),
+    sourceType: Number(meta.sourceType || 0),
+    lessonId: String(meta.lessonId || detail.lessonId || ''),
+    startTime: String(meta.startTime || ''),
+    endTime: String(meta.endTime || ''),
+    teacherClassTime: Number(meta.teacherClassTime || detail.defaultTeacherClassTime || 0),
+    studentShouldDeduct: Number(detail.defaultStudentClassTime || 1),
+    teacherList: teacherList.map(item => ({
+      teacherId: String(item?.teacherId || ''),
+      type: Number(item?.type || 0),
+    })),
+    studentList: data.value.map((record) => {
+      const quantity = buildRollCallStudentQuantity(record)
+      return {
+        studentShouldDeduct: quantity,
+        studentName: String(record?.studentAccount || ''),
+        studentId: String(record?.id || ''),
+        tuitionAccountId: String(record?.tuitionAccountId || '0'),
+        absentTeachingRecordId: '0',
+        status: getRollCallRecordStatus(record),
+        sourceType: Number(record?.sourceType || 0),
+        remark: String(record?.internalNote || ''),
+        externalRemark: String(record?.externalNote || ''),
+        skuMode: Number(record?.consumptionMethod || record?.rawChargingMode || 0),
+        amount: 0,
+        quantity,
+      }
+    }),
+    subjectId: '0',
+    classRoomId: String(meta.classroomId || detail.addressId || '0'),
+  }
+}
+function showRollCallArrearWarning(names) {
+  if (!Array.isArray(names) || names.length === 0)
+    return
+  Modal.warning({
+    title: '超记提醒',
+    content: `以下学员剩余课时不足，已按超记处理：${names.join('、')}`,
+    okText: '我知道了',
+  })
+}
+async function handleConfirmRollCall() {
+  if (submittingRollCall.value)
+    return
+  if (!data.value.length) {
+    messageService.warning('当前没有可提交的点名学员')
+    return
+  }
+  const payload = buildRollCallConfirmPayload()
+  if (!payload.startTime || !payload.endTime) {
+    messageService.warning('缺少上课时间，请刷新后重试')
+    return
+  }
+  const mainTeacher = payload.teacherList.find(item => Number(item?.type) === 1)
+  const estimatePayload = buildRollCallEstimatePayload()
+  submittingRollCall.value = true
+  try {
+    if (mainTeacher?.teacherId) {
+      const checkRes = await checkRollCallTeachingRecordByTeacherAndTimeApi({
+        startTime: payload.startTime,
+        endTime: payload.endTime,
+        teacherId: String(mainTeacher.teacherId || ''),
+      })
+      if (checkRes.code !== 200)
+        throw new Error(checkRes.message || '上课教师时间冲突校验失败')
+    }
+
+    let insufficientNames = []
+    if (estimatePayload.length > 0) {
+      const estimateRes = await batchEstimateRollCallSufficientTuitionAccountApi({
+        tuitionInfoList: estimatePayload,
+      })
+      if (estimateRes.code !== 200)
+        throw new Error(estimateRes.message || '扣费账户剩余校验失败')
+      const insufficientIdSet = new Set(
+        (Array.isArray(estimateRes.result?.tuitionInfoList) ? estimateRes.result.tuitionInfoList : [])
+          .filter(item => item?.isSufficient === false)
+          .map(item => String(item?.tuitionAccountId || '')),
+      )
+      insufficientNames = estimatePayload
+        .filter(item => insufficientIdSet.has(String(item?.tuitionAccountId || '')))
+        .map(item => String(item?.studentName || ''))
+        .filter(Boolean)
+    }
+
+    messageService.clear()
+    const confirmRes = await confirmRollCallApi(payload)
+    if (confirmRes.code !== 200)
+      throw new Error(confirmRes.message || '点名提交失败')
+
+    messageService.success('点名成功')
+    rollCallChanged.value = true
+    openDrawer.value = false
+    showRollCallArrearWarning(Array.from(new Set(insufficientNames)))
+  }
+  catch (error) {
+    if (!shouldSkipManualErrorMessage(error)) {
+      messageService.error(error?.response?.data?.message || error?.message || '点名提交失败')
+    }
+  }
+  finally {
+    submittingRollCall.value = false
+  }
 }
 async function handleSwitchAccount(record) {
   if (!record?.canSwitchAccount)
@@ -762,6 +901,7 @@ watch(
   (open, previous) => {
     if (!open && previous && rollCallChanged.value) {
       emit('updated')
+      emitter.emit(EVENTS.REFRESH_DATA)
       rollCallChanged.value = false
     }
     if (open && !previous)
@@ -843,11 +983,11 @@ watch(
             >
           </template>
         </a-input>
-        <!-- 用a-table 学员/扣费课程账户	到课  旷课  请假  未记录  课消方式 	上课点名数量	对内备注	对外备注	操作 -->
+        <!-- 用a-table 学员/扣费课程账户 到课 旷课 请假 未记录 课消方式 上课点名数量 对内备注 对外备注 操作 -->
         <!-- 带序号 -->
         <a-table
           :columns="columns" :data-source="filteredData" row-key="id" class="mt-12px" :pagination="false"
-          :scroll="{ x: totalWidth, }"
+          :scroll="{ x: totalWidth }"
         >
           <template #headerCell="{ column }">
             <div v-if="column.dataIndex === 'studentAccount'">
@@ -988,7 +1128,9 @@ watch(
                     {{ record.accountName }}
                     <a v-if="record.canSwitchAccount" class="text-#06f ml-4px" @click.stop="handleSwitchAccount(record)">切换</a>
                   </div>
-                  <div v-if="record.remainingText">{{ record.remainingText }}</div>
+                  <div v-if="record.remainingText">
+                    {{ record.remainingText }}
+                  </div>
                   <div class="text-#f90">
                     {{ record.leaveCountText }}
                   </div>
@@ -1140,7 +1282,7 @@ watch(
               }}人，未记录{{
                 attendanceStats.unrecorded }}人</span>
             </div>
-            <a-button type="primary" class="h-48px text-18px w-140px font500" @click="handleConfirmRollCall">
+            <a-button type="primary" class="h-48px text-18px w-140px font500" :loading="submittingRollCall" @click="handleConfirmRollCall">
               确认点名
             </a-button>
           </a-space>

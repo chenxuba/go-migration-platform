@@ -190,3 +190,72 @@ type RollCallStudentTuitionExtraInfoVO struct {
 	MutilTuition         bool   `json:"mutilTuition"`
 	BestMatchProductName string `json:"bestMatchProductName"`
 }
+
+type RollCallCheckTeachingRecordByTeacherAndTimeDTO struct {
+	StartTime string `json:"startTime"`
+	EndTime   string `json:"endTime"`
+	TeacherID string `json:"teacherId"`
+}
+
+type RollCallEstimateTuitionInfo struct {
+	Quantity         float64 `json:"quantity"`
+	TuitionAccountID string  `json:"tuitionAccountId"`
+	StudentName      string  `json:"studentName"`
+}
+
+type RollCallBatchEstimateSufficientTuitionAccountDTO struct {
+	TuitionInfoList []RollCallEstimateTuitionInfo `json:"tuitionInfoList"`
+}
+
+type RollCallEstimateTuitionResultItem struct {
+	TuitionAccountID string `json:"tuitionAccountId"`
+	IsSufficient     bool   `json:"isSufficient"`
+}
+
+type RollCallBatchEstimateSufficientTuitionAccountResult struct {
+	TuitionInfoList []RollCallEstimateTuitionResultItem `json:"tuitionInfoList"`
+}
+
+type RollCallConfirmTeacher struct {
+	TeacherID string `json:"teacherId"`
+	Type      int    `json:"type"`
+}
+
+type RollCallConfirmStudent struct {
+	StudentShouldDeduct    int     `json:"studentShouldDeduct"`
+	StudentName            string  `json:"studentName"`
+	StudentID              string  `json:"studentId"`
+	TuitionAccountID       string  `json:"tuitionAccountId"`
+	AbsentTeachingRecordID string  `json:"absentTeachingRecordId"`
+	Status                 int     `json:"status"`
+	SourceType             int     `json:"sourceType"`
+	Remark                 string  `json:"remark"`
+	ExternalRemark         string  `json:"externalRemark"`
+	SkuMode                int     `json:"skuMode"`
+	Amount                 float64 `json:"amount"`
+	Quantity               float64 `json:"quantity"`
+}
+
+type RollCallConfirmDTO struct {
+	SourceName            string                   `json:"sourceName"`
+	TeachingContent       string                   `json:"teachingContent"`
+	TeachingContentImages []string                 `json:"teachingContentImages"`
+	TimetableSourceType   int                      `json:"timetableSourceType"`
+	TimetableSourceID     string                   `json:"timetableSourceId"`
+	SourceID              string                   `json:"sourceId"`
+	SourceType            int                      `json:"sourceType"`
+	LessonID              string                   `json:"lessonId"`
+	StartTime             string                   `json:"startTime"`
+	EndTime               string                   `json:"endTime"`
+	TeacherClassTime      float64                  `json:"teacherClassTime"`
+	StudentShouldDeduct   int                      `json:"studentShouldDeduct"`
+	StudentList           []RollCallConfirmStudent `json:"studentList"`
+	TeacherList           []RollCallConfirmTeacher `json:"teacherList"`
+	SubjectID             string                   `json:"subjectId"`
+	ClassRoomID           string                   `json:"classRoomId"`
+}
+
+type RollCallConfirmResult struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}

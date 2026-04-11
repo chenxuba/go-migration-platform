@@ -925,6 +925,88 @@ func parseRollCallStudentTuitionAccountsQueryDTO(raw map[string]any) model.Stude
 	}
 }
 
+func parseRollCallCheckTeachingRecordByTeacherAndTimeDTO(raw map[string]any) model.RollCallCheckTeachingRecordByTeacherAndTimeDTO {
+	return model.RollCallCheckTeachingRecordByTeacherAndTimeDTO{
+		StartTime: asString(raw["startTime"]),
+		EndTime:   asString(raw["endTime"]),
+		TeacherID: asString(raw["teacherId"]),
+	}
+}
+
+func parseRollCallBatchEstimateSufficientTuitionAccountDTO(raw map[string]any) model.RollCallBatchEstimateSufficientTuitionAccountDTO {
+	dto := model.RollCallBatchEstimateSufficientTuitionAccountDTO{}
+	list, _ := raw["tuitionInfoList"].([]any)
+	dto.TuitionInfoList = make([]model.RollCallEstimateTuitionInfo, 0, len(list))
+	for _, item := range list {
+		row, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		dto.TuitionInfoList = append(dto.TuitionInfoList, model.RollCallEstimateTuitionInfo{
+			Quantity:         asFloat64(row["quantity"]),
+			TuitionAccountID: asString(row["tuitionAccountId"]),
+			StudentName:      asString(row["studentName"]),
+		})
+	}
+	return dto
+}
+
+func parseRollCallConfirmDTO(raw map[string]any) model.RollCallConfirmDTO {
+	dto := model.RollCallConfirmDTO{
+		SourceName:            asString(raw["sourceName"]),
+		TeachingContent:       asString(raw["teachingContent"]),
+		TeachingContentImages: asStringSlice(raw["teachingContentImages"]),
+		TimetableSourceType:   asInt(raw["timetableSourceType"], 0),
+		TimetableSourceID:     asString(raw["timetableSourceId"]),
+		SourceID:              asString(raw["sourceId"]),
+		SourceType:            asInt(raw["sourceType"], 0),
+		LessonID:              asString(raw["lessonId"]),
+		StartTime:             asString(raw["startTime"]),
+		EndTime:               asString(raw["endTime"]),
+		TeacherClassTime:      asFloat64(raw["teacherClassTime"]),
+		StudentShouldDeduct:   asInt(raw["studentShouldDeduct"], 0),
+		SubjectID:             asString(raw["subjectId"]),
+		ClassRoomID:           asString(firstNonNil(raw["classRoomId"], raw["classroomId"])),
+	}
+	if list, ok := raw["teacherList"].([]any); ok {
+		dto.TeacherList = make([]model.RollCallConfirmTeacher, 0, len(list))
+		for _, item := range list {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			dto.TeacherList = append(dto.TeacherList, model.RollCallConfirmTeacher{
+				TeacherID: asString(row["teacherId"]),
+				Type:      asInt(row["type"], 0),
+			})
+		}
+	}
+	if list, ok := raw["studentList"].([]any); ok {
+		dto.StudentList = make([]model.RollCallConfirmStudent, 0, len(list))
+		for _, item := range list {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			dto.StudentList = append(dto.StudentList, model.RollCallConfirmStudent{
+				StudentShouldDeduct:    asInt(row["studentShouldDeduct"], 0),
+				StudentName:            asString(row["studentName"]),
+				StudentID:              asString(row["studentId"]),
+				TuitionAccountID:       asString(row["tuitionAccountId"]),
+				AbsentTeachingRecordID: asString(row["absentTeachingRecordId"]),
+				Status:                 asInt(row["status"], 0),
+				SourceType:             asInt(row["sourceType"], 0),
+				Remark:                 asString(row["remark"]),
+				ExternalRemark:         asString(row["externalRemark"]),
+				SkuMode:                asInt(row["skuMode"], 0),
+				Amount:                 asFloat64(row["amount"]),
+				Quantity:               asFloat64(row["quantity"]),
+			})
+		}
+	}
+	return dto
+}
+
 func parseRollCallQueryModel(raw map[string]any) model.RollCallQueryModel {
 	return model.RollCallQueryModel{
 		StartDate:     asString(raw["startDate"]),
@@ -937,6 +1019,58 @@ func parseRollCallQueryModel(raw map[string]any) model.RollCallQueryModel {
 		TeacherTypes:  asIntSlice(raw["teacherTypes"]),
 		ScheduleTypes: asStringSlice(firstNonNil(raw["scheduleTypes"], raw["sourceTypes"])),
 	}
+}
+
+func parseStudentTeachingRecordQueryModel(raw map[string]any) model.StudentTeachingRecordQueryModel {
+	return model.StudentTeachingRecordQueryModel{
+		BeginStartTime:                asString(raw["beginStartTime"]),
+		EndStartTime:                  asString(raw["endStartTime"]),
+		TeacherIDs:                    asStringSlice(raw["teacherIds"]),
+		AssistantTeacherIDs:           asStringSlice(raw["assistantTeacherIds"]),
+		ClassTeacherIDs:               asStringSlice(raw["classTeacherIds"]),
+		One2OneTeacherIDs:             asStringSlice(raw["one2OneTeacherIds"]),
+		TimetableSourceTypes:          asIntSlice(raw["timetableSourceTypes"]),
+		StudentSourceTypes:            asIntSlice(raw["studentSourceTypes"]),
+		LessonChargingModeEnums:       asIntSlice(raw["lessonChargingModeEnums"]),
+		StudentTeachingRecordStatuses: asIntSlice(raw["studentTeachingRecordStatuses"]),
+		IsArrear:                      asBoolPtr(raw["isArrear"]),
+	}
+}
+
+func parseStudentTeachingRecordPagedQueryDTO(raw map[string]any) model.StudentTeachingRecordPagedQueryDTO {
+	query := model.StudentTeachingRecordPagedQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.NeedTotal = derefBoolValue(asBoolPtr(page["needTotal"]))
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 50)
+		query.PageRequestModel.SkipCount = asInt(page["skipCount"], 0)
+	}
+	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.StartTime = asInt(sortModel["startTime"], 0)
+		query.SortModel.UpdatedTime = asInt(sortModel["updatedTime"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = parseStudentTeachingRecordQueryModel(qm)
+	}
+	return query
+}
+
+func parseScheduleTeachingRecordPagedQueryDTO(raw map[string]any) model.ScheduleTeachingRecordPagedQueryDTO {
+	query := model.ScheduleTeachingRecordPagedQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.NeedTotal = derefBoolValue(asBoolPtr(page["needTotal"]))
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 50)
+		query.PageRequestModel.SkipCount = asInt(page["skipCount"], 0)
+	}
+	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.StartTime = asInt(sortModel["startTime"], 0)
+		query.SortModel.UpdatedTime = asInt(sortModel["updatedTime"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = parseStudentTeachingRecordQueryModel(qm)
+	}
+	return query
 }
 
 func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQueryDTO {

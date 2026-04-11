@@ -7,6 +7,7 @@ import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import { type TeachingScheduleBatchMeta, type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi, removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
+import ClassRecordDetails from '@/components/common/class-record-details.vue'
 import RollCallAddStudentModal from '@/components/common/roll-call-add-student-modal.vue'
 import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
 import { useStudentStore } from '@/stores/student'
@@ -66,6 +67,7 @@ const detailData = ref<TeachingScheduleDetail | null>(null)
 const studentStore = useStudentStore()
 const openStudentDrawer = ref(false)
 const rollCallDrawerOpen = ref(false)
+const classRecordDrawerOpen = ref(false)
 const activeStudentTabKey = ref('students')
 const addStudentModalOpen = ref(false)
 const addStudentModalTitle = ref('添加补课学员')
@@ -173,10 +175,13 @@ const rollCallDisabledReason = computed(() => {
 })
 const canManageCurrentStudents = computed(() => Number(detailData.value?.callStatus || 1) !== 2)
 const canRollCall = computed(() => {
+  if (Number(detailData.value?.callStatus || 1) === 2)
+    return true
   if (typeof detailData.value?.canRollCall === 'boolean')
     return detailData.value.canRollCall
   return !isFutureSchedule.value
 })
+const rollCallButtonText = computed(() => (Number(detailData.value?.callStatus || 1) === 2 ? '点名详情' : '去点名'))
 const hasBatchSchedule = computed(() => {
   return Number(detailData.value?.batchSize || props.detail?.batchSize || 0) > 1
     || String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() !== ''
@@ -306,6 +311,10 @@ function handleSingleEditClick() {
 }
 
 function goRollCall() {
+  if (Number(detailData.value?.callStatus || 1) === 2) {
+    classRecordDrawerOpen.value = true
+    return
+  }
   if (!canRollCall.value)
     return
   rollCallDrawerOpen.value = true
@@ -542,7 +551,7 @@ watch(
               <a-tooltip :title="rollCallDisabledReason || null" placement="top">
                 <span>
                   <a-button type="primary" :disabled="!canRollCall" @click="goRollCall">
-                    去点名
+                    {{ rollCallButtonText }}
                   </a-button>
                 </span>
               </a-tooltip>
@@ -727,6 +736,7 @@ watch(
       :lesson-day="detailData?.lessonDate || ''"
       @updated="loadDetail"
     />
+    <ClassRecordDetails v-model:open="classRecordDrawerOpen" />
     <RollCallAddStudentModal
       v-model:open="addStudentModalOpen"
       :title="addStudentModalTitle"

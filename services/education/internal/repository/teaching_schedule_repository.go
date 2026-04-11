@@ -493,24 +493,16 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 		if err != nil {
 			return nil, err
 		}
-		if strings.TrimSpace(recordExistsSQL) != "" {
-			statusParts := make([]string, 0, len(statusSet))
-			if _, ok := statusSet["signed"]; ok {
-				statusParts = append(statusParts, recordExistsSQL)
-			}
-			if _, ok := statusSet["unsigned"]; ok {
-				statusParts = append(statusParts, "NOT "+recordExistsSQL)
-			}
-			if len(statusParts) > 0 {
-				filters = append(filters, "("+strings.Join(statusParts, " OR ")+")")
-			}
+		callStatusExpr := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
+		statusParts := make([]string, 0, len(statusSet))
+		if _, ok := statusSet["signed"]; ok {
+			statusParts = append(statusParts, "("+callStatusExpr+") = 2")
 		}
-		if strings.TrimSpace(recordExistsSQL) == "" {
-			_, wantSigned := statusSet["signed"]
-			_, wantUnsigned := statusSet["unsigned"]
-			if wantSigned && !wantUnsigned {
-				filters = append(filters, "1 = 0")
-			}
+		if _, ok := statusSet["unsigned"]; ok {
+			statusParts = append(statusParts, "("+callStatusExpr+") = 1")
+		}
+		if len(statusParts) > 0 {
+			filters = append(filters, "("+strings.Join(statusParts, " OR ")+")")
 		}
 	}
 
@@ -765,6 +757,18 @@ func buildTeachingClassScheduleExistsSQL(classAlias, classTypeExpr string) strin
 		  AND ts.del_flag = 0
 		  AND ts.status = ` + strconv.Itoa(model.TeachingScheduleStatusActive) + `
 	)`
+}
+
+func buildTeachingScheduleStudentRecordExistsSQL() string {
+	return "EXISTS (SELECT 1 FROM student_teaching_record str WHERE str.inst_id = ts.inst_id AND IFNULL(str.del_flag, 0) = 0 AND CAST(str.teaching_schedule_id AS CHAR) = CAST(ts.id AS CHAR))"
+}
+
+func buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL string) string {
+	studentRecordExistsSQL := buildTeachingScheduleStudentRecordExistsSQL()
+	if strings.TrimSpace(recordExistsSQL) != "" {
+		return "CASE WHEN (" + studentRecordExistsSQL + " OR " + recordExistsSQL + ") THEN 2 ELSE 1 END"
+	}
+	return "CASE WHEN " + studentRecordExistsSQL + " THEN 2 ELSE 1 END"
 }
 
 func buildTeachingClassScheduledCountSQL(classAlias, classTypeExpr string) string {
@@ -2155,10 +2159,7 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 	if recordExistsErr != nil {
 		recordExistsSQL = ""
 	}
-	callStatusSelect := "1"
-	if strings.TrimSpace(recordExistsSQL) != "" {
-		callStatusSelect = "CASE WHEN " + recordExistsSQL + " THEN 2 ELSE 1 END"
-	}
+	callStatusSelect := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
 
 	type scheduleDetailRow struct {
 		ID                int64
@@ -2379,10 +2380,7 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 	if recordExistsErr != nil {
 		recordExistsSQL = ""
 	}
-	callStatusSelect := "1"
-	if strings.TrimSpace(recordExistsSQL) != "" {
-		callStatusSelect = "CASE WHEN " + recordExistsSQL + " THEN 2 ELSE 1 END"
-	}
+	callStatusSelect := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
 	err = repo.db.QueryRowContext(ctx, `
 		SELECT
 			ts.id,
@@ -2559,10 +2557,7 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 	if recordExistsErr != nil {
 		recordExistsSQL = ""
 	}
-	callStatusSelect := "1"
-	if strings.TrimSpace(recordExistsSQL) != "" {
-		callStatusSelect = "CASE WHEN " + recordExistsSQL + " THEN 2 ELSE 1 END"
-	}
+	callStatusSelect := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
 	err = tx.QueryRowContext(ctx, `
 		SELECT
 			ts.id,
@@ -2660,10 +2655,7 @@ func (repo *Repository) AddTeachingScheduleStudentsCurrent(ctx context.Context, 
 	if recordExistsErr != nil {
 		recordExistsSQL = ""
 	}
-	callStatusSelect := "1"
-	if strings.TrimSpace(recordExistsSQL) != "" {
-		callStatusSelect = "CASE WHEN " + recordExistsSQL + " THEN 2 ELSE 1 END"
-	}
+	callStatusSelect := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
 	err = tx.QueryRowContext(ctx, `
 		SELECT
 			ts.id,
@@ -4656,13 +4648,6 @@ func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, inst
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(recordExistsSQL) == "" {
-		for i := range items {
-			items[i].CallStatus = 1
-			items[i].CallStatusText = teachingScheduleCallStatusText(1)
-		}
-		return nil
-	}
 
 	queryArgs := make([]any, 0, len(ids)+1)
 	queryArgs = append(queryArgs, instID)
@@ -4673,7 +4658,7 @@ func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, inst
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
 			ts.id,
-			CASE WHEN `+recordExistsSQL+` THEN 2 ELSE 1 END AS call_status
+			`+buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)+` AS call_status
 		FROM teaching_schedule ts
 		WHERE ts.inst_id = ?
 		  AND ts.id IN (`+sqlPlaceholders(len(ids))+`)
