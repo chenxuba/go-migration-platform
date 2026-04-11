@@ -474,7 +474,14 @@ watch(
                   <EditOutlined />
                 </button>
               </a-dropdown>
-              <a-tooltip v-else :title="editDisabledReason" placement="top">
+              <a-tooltip
+                v-else
+                :title="editDisabledReason"
+                placement="top"
+                :auto-adjust-overflow="false"
+                :get-popup-container="resolveTooltipContainer"
+                :overlay-style="hoverActionTooltipStyle"
+              >
                 <button
                   type="button"
                   class="st-schedule-hover-card__icon-btn"
@@ -509,7 +516,14 @@ watch(
                   <CopyOutlined />
                 </button>
               </a-dropdown>
-              <a-tooltip v-else-if="showCopyAction" title="仅复制当前课程" placement="top">
+              <a-tooltip
+                v-else-if="showCopyAction"
+                title="仅复制当前课程"
+                placement="top"
+                :auto-adjust-overflow="false"
+                :get-popup-container="resolveTooltipContainer"
+                :overlay-style="hoverActionTooltipStyle"
+              >
                 <button
                   type="button"
                   class="st-schedule-hover-card__icon-btn"

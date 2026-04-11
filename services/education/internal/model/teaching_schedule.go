@@ -143,6 +143,40 @@ type TeachingScheduleStudentRemoveCurrentDTO struct {
 	StudentID  string `json:"studentId"`
 }
 
+type TeachingScheduleStudentCandidateQueryDTO struct {
+	PageRequestModel PageRequestModel                           `json:"pageRequestModel"`
+	QueryModel       TeachingScheduleStudentCandidateQueryModel `json:"queryModel"`
+}
+
+type TeachingScheduleStudentCandidateQueryModel struct {
+	ScheduleID  string `json:"scheduleId"`
+	StudentType int    `json:"studentType"`
+	Keyword     string `json:"keyword"`
+}
+
+type TeachingScheduleStudentCandidateVO struct {
+	StudentID             string `json:"studentId"`
+	StudentName           string `json:"studentName"`
+	AvatarURL             string `json:"avatarUrl,omitempty"`
+	Phone                 string `json:"phone,omitempty"`
+	MaskedPhone           string `json:"maskedPhone,omitempty"`
+	PhoneRelationship     int    `json:"phoneRelationship,omitempty"`
+	PhoneRelationshipText string `json:"phoneRelationshipText,omitempty"`
+	StudentStatus         int    `json:"studentStatus,omitempty"`
+	StudentStatusText     string `json:"studentStatusText,omitempty"`
+}
+
+type TeachingScheduleStudentCandidatePagedResult struct {
+	List  []TeachingScheduleStudentCandidateVO `json:"list"`
+	Total int                                  `json:"total"`
+}
+
+type TeachingScheduleStudentsAddCurrentDTO struct {
+	ScheduleID  string   `json:"scheduleId"`
+	StudentType int      `json:"studentType"`
+	StudentIDs  []string `json:"studentIds"`
+}
+
 type TeachingScheduleBatchUpdateDTO struct {
 	BatchNo              string   `json:"batchNo"`
 	IDs                  []string `json:"ids"`

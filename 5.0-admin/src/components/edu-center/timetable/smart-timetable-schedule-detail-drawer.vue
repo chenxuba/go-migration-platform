@@ -69,6 +69,7 @@ const openStudentDrawer = ref(false)
 const activeStudentTabKey = ref('students')
 const addStudentModalOpen = ref(false)
 const addStudentModalTitle = ref('添加补课学员')
+const addStudentType = ref(4)
 const defaultStudentAvatar = 'https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png'
 const studentColumns: TableColumnsType<TeachingScheduleDetailStudent> = [
   {
@@ -170,6 +171,7 @@ const rollCallDisabledReason = computed(() => {
     return serverReason
   return isFutureSchedule.value ? '未到日期，不可点名' : ''
 })
+const canManageCurrentStudents = computed(() => Number(detailData.value?.callStatus || 1) !== 2)
 const canRollCall = computed(() => {
   if (typeof detailData.value?.canRollCall === 'boolean')
     return detailData.value.canRollCall
@@ -225,16 +227,28 @@ function handleViewStudent(studentId?: string) {
 }
 
 function handleAddStudentMenuClick({ key }) {
+  if (!canManageCurrentStudents.value) {
+    messageService.warning('已点名日程不可添加学员')
+    return
+  }
   if (key === 'makeup') {
-    addStudentModalTitle.value = '添加补课学员'
+    messageService.info('补课学员功能暂未开发')
+    return
   }
   else if (key === 'temporary') {
     addStudentModalTitle.value = '添加临时学员'
+    addStudentType.value = 2
   }
   else {
     addStudentModalTitle.value = '添加试听学员'
+    addStudentType.value = 3
   }
   addStudentModalOpen.value = true
+}
+
+async function handleAddStudentSuccess() {
+  await loadDetail()
+  emit('updated')
 }
 
 function handleStudentReschedule(student: Record<string, any>) {
@@ -285,6 +299,10 @@ function goRollCall() {
 }
 
 function handleStudentRemove(student: Record<string, any>) {
+  if (!canManageCurrentStudents.value) {
+    messageService.warning('已点名日程不可移出本节学员')
+    return
+  }
   const name = String(student?.studentName || '').trim() || '当前学员'
   const currentScheduleId = scheduleId.value
   const currentStudentId = String(student?.studentId || '').trim()
@@ -676,7 +694,13 @@ watch(
       </div>
     </a-spin>
     <student-info-drawer v-model:open="openStudentDrawer" />
-    <RollCallAddStudentModal v-model:open="addStudentModalOpen" :title="addStudentModalTitle" />
+    <RollCallAddStudentModal
+      v-model:open="addStudentModalOpen"
+      :title="addStudentModalTitle"
+      :schedule-id="scheduleId"
+      :student-type="addStudentType"
+      @success="handleAddStudentSuccess"
+    />
   </a-drawer>
 </template>
 

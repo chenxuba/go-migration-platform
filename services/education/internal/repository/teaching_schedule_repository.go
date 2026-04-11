@@ -2344,6 +2344,189 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 	}, nil
 }
 
+func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Context, instID int64, dto model.TeachingScheduleStudentCandidateQueryDTO) (model.TeachingScheduleStudentCandidatePagedResult, error) {
+	scheduleID, err := strconv.ParseInt(strings.TrimSpace(dto.QueryModel.ScheduleID), 10, 64)
+	if err != nil || scheduleID <= 0 {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("日程ID无效")
+	}
+	studentType := normalizeTeachingScheduleStudentType(dto.QueryModel.StudentType)
+	if !isScheduleOnlyStudentType(studentType) {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("学员类型无效")
+	}
+
+	pageIndex := dto.PageRequestModel.PageIndex
+	if pageIndex <= 0 {
+		pageIndex = 1
+	}
+	pageSize := dto.PageRequestModel.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (pageIndex - 1) * pageSize
+
+	type scheduleRow struct {
+		ID              int64
+		ClassType       int
+		TeachingClassID int64
+		StartAt         time.Time
+		CallStatus      int
+	}
+	var row scheduleRow
+	recordExistsSQL, recordExistsErr := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if recordExistsErr != nil {
+		recordExistsSQL = ""
+	}
+	callStatusSelect := "1"
+	if strings.TrimSpace(recordExistsSQL) != "" {
+		callStatusSelect = "CASE WHEN " + recordExistsSQL + " THEN 2 ELSE 1 END"
+	}
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT
+			ts.id,
+			IFNULL(ts.class_type, 0),
+			IFNULL(ts.teaching_class_id, 0),
+			ts.lesson_start_at,
+			`+callStatusSelect+`
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ?
+		  AND ts.id = ?
+		  AND ts.del_flag = 0
+		  AND ts.status = ?
+		LIMIT 1
+	`, instID, scheduleID, model.TeachingScheduleStatusActive).Scan(
+		&row.ID,
+		&row.ClassType,
+		&row.TeachingClassID,
+		&row.StartAt,
+		&row.CallStatus,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("未找到该日程")
+		}
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	if row.ClassType != model.TeachingClassTypeNormal || row.TeachingClassID <= 0 {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("当前仅支持班课添加本节学员")
+	}
+	if row.CallStatus == 2 {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("已点名日程不可添加本节学员")
+	}
+
+	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, repo.db, instID, []effectiveGroupClassScheduleMeta{{
+		ScheduleID: row.ID,
+		ClassID:    row.TeachingClassID,
+		StartAt:    row.StartAt,
+	}})
+	if err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+
+	excludeIDs := make([]int64, 0)
+	seenExclude := make(map[int64]struct{})
+	if roster, ok := rosterByScheduleID[row.ID]; ok {
+		for _, student := range roster.Active {
+			if student.StudentID <= 0 {
+				continue
+			}
+			if _, exists := seenExclude[student.StudentID]; exists {
+				continue
+			}
+			seenExclude[student.StudentID] = struct{}{}
+			excludeIDs = append(excludeIDs, student.StudentID)
+		}
+		for _, student := range roster.Leave {
+			if student.StudentID <= 0 {
+				continue
+			}
+			if _, exists := seenExclude[student.StudentID]; exists {
+				continue
+			}
+			seenExclude[student.StudentID] = struct{}{}
+			excludeIDs = append(excludeIDs, student.StudentID)
+		}
+	}
+
+	filters := []string{
+		"s.inst_id = ?",
+		"s.del_flag = 0",
+	}
+	args := []any{instID}
+	if keyword := strings.TrimSpace(dto.QueryModel.Keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		filters = append(filters, "(IFNULL(s.stu_name, '') LIKE ? OR IFNULL(s.mobile, '') LIKE ?)")
+		args = append(args, like, like)
+	}
+	if len(excludeIDs) > 0 {
+		filters = append(filters, "s.id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
+		args = append(args, int64SliceToAny(excludeIDs)...)
+	}
+
+	whereClause := strings.Join(filters, " AND ")
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM inst_student s
+		WHERE `+whereClause, args...).Scan(&total); err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			s.id,
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.avatar_url, ''),
+			IFNULL(s.mobile, ''),
+			IFNULL(s.phone_relationship, 0),
+			IFNULL(s.student_status, 0)
+		FROM inst_student s
+		WHERE `+whereClause+`
+		ORDER BY s.id DESC
+		LIMIT ? OFFSET ?
+	`, append(args, pageSize, offset)...)
+	if err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	defer rows.Close()
+
+	result := model.TeachingScheduleStudentCandidatePagedResult{
+		List:  make([]model.TeachingScheduleStudentCandidateVO, 0),
+		Total: total,
+	}
+	for rows.Next() {
+		var (
+			studentID         int64
+			studentName       string
+			avatarURL         string
+			phone             string
+			phoneRelationship int
+			studentStatus     int
+		)
+		if err := rows.Scan(&studentID, &studentName, &avatarURL, &phone, &phoneRelationship, &studentStatus); err != nil {
+			return model.TeachingScheduleStudentCandidatePagedResult{}, err
+		}
+		phone = strings.TrimSpace(phone)
+		result.List = append(result.List, model.TeachingScheduleStudentCandidateVO{
+			StudentID:             strconv.FormatInt(studentID, 10),
+			StudentName:           firstNonEmptyString(strings.TrimSpace(studentName), "-"),
+			AvatarURL:             strings.TrimSpace(avatarURL),
+			Phone:                 "",
+			MaskedPhone:           maskPhoneLocal(phone),
+			PhoneRelationship:     phoneRelationship,
+			PhoneRelationshipText: studentPhoneRelationshipText(phoneRelationship),
+			StudentStatus:         studentStatus,
+			StudentStatusText:     teachingScheduleCandidateStudentStatusText(studentStatus),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	return result, nil
+}
+
 func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleStudentRemoveCurrentDTO) error {
 	scheduleID, err := strconv.ParseInt(strings.TrimSpace(dto.ScheduleID), 10, 64)
 	if err != nil || scheduleID <= 0 {
@@ -2365,14 +2548,24 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 		ClassType       int
 		TeachingClassID int64
 		StartAt         time.Time
+		CallStatus      int
 	}
 	var row scheduleRow
+	recordExistsSQL, recordExistsErr := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if recordExistsErr != nil {
+		recordExistsSQL = ""
+	}
+	callStatusSelect := "1"
+	if strings.TrimSpace(recordExistsSQL) != "" {
+		callStatusSelect = "CASE WHEN " + recordExistsSQL + " THEN 2 ELSE 1 END"
+	}
 	err = tx.QueryRowContext(ctx, `
 		SELECT
 			ts.id,
 			IFNULL(ts.class_type, 0),
 			IFNULL(ts.teaching_class_id, 0),
-			ts.lesson_start_at
+			ts.lesson_start_at,
+			`+callStatusSelect+`
 		FROM teaching_schedule ts
 		WHERE ts.inst_id = ?
 		  AND ts.id = ?
@@ -2384,6 +2577,7 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 		&row.ClassType,
 		&row.TeachingClassID,
 		&row.StartAt,
+		&row.CallStatus,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -2394,8 +2588,8 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 	if row.ClassType != model.TeachingClassTypeNormal || row.TeachingClassID <= 0 {
 		return errors.New("当前仅支持班课学员移出本节")
 	}
-	if !time.Now().Before(row.StartAt) {
-		return errors.New("仅支持移出未开始的班课学员")
+	if row.CallStatus == 2 {
+		return errors.New("已点名日程不可移出本节学员")
 	}
 
 	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{
@@ -2425,6 +2619,139 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 			del_flag = 0
 	`, instID, row.ID, row.TeachingClassID, studentID, normalizeTeachingScheduleStudentType(student.ScheduleStudentType), model.TeachingScheduleStudentRosterStatusRemoved, operatorID, operatorID); err != nil {
 		return err
+	}
+
+	return tx.Commit()
+}
+
+func (repo *Repository) AddTeachingScheduleStudentsCurrent(ctx context.Context, instID, operatorID int64, dto model.TeachingScheduleStudentsAddCurrentDTO) error {
+	scheduleID, err := strconv.ParseInt(strings.TrimSpace(dto.ScheduleID), 10, 64)
+	if err != nil || scheduleID <= 0 {
+		return errors.New("日程ID无效")
+	}
+	studentType := normalizeTeachingScheduleStudentType(dto.StudentType)
+	if !isScheduleOnlyStudentType(studentType) {
+		return errors.New("学员类型无效")
+	}
+	studentIDs := parseStringIDs(dto.StudentIDs)
+	if len(studentIDs) == 0 {
+		return errors.New("请至少选择一位学员")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	type scheduleRow struct {
+		ID              int64
+		ClassType       int
+		TeachingClassID int64
+		StartAt         time.Time
+		CallStatus      int
+	}
+	var row scheduleRow
+	recordExistsSQL, recordExistsErr := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if recordExistsErr != nil {
+		recordExistsSQL = ""
+	}
+	callStatusSelect := "1"
+	if strings.TrimSpace(recordExistsSQL) != "" {
+		callStatusSelect = "CASE WHEN " + recordExistsSQL + " THEN 2 ELSE 1 END"
+	}
+	err = tx.QueryRowContext(ctx, `
+		SELECT
+			ts.id,
+			IFNULL(ts.class_type, 0),
+			IFNULL(ts.teaching_class_id, 0),
+			ts.lesson_start_at,
+			`+callStatusSelect+`
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ?
+		  AND ts.id = ?
+		  AND ts.del_flag = 0
+		  AND ts.status = ?
+		LIMIT 1
+	`, instID, scheduleID, model.TeachingScheduleStatusActive).Scan(
+		&row.ID,
+		&row.ClassType,
+		&row.TeachingClassID,
+		&row.StartAt,
+		&row.CallStatus,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("未找到该日程")
+		}
+		return err
+	}
+	if row.ClassType != model.TeachingClassTypeNormal || row.TeachingClassID <= 0 {
+		return errors.New("当前仅支持班课添加本节学员")
+	}
+	if row.CallStatus == 2 {
+		return errors.New("已点名日程不可添加本节学员")
+	}
+
+	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{
+		ScheduleID: row.ID,
+		ClassID:    row.TeachingClassID,
+		StartAt:    row.StartAt,
+	}})
+	if err != nil {
+		return err
+	}
+	currentRoster := rosterByScheduleID[row.ID]
+	for _, studentID := range studentIDs {
+		if student, exists := currentRoster.associatedStudent(studentID); exists {
+			name := firstNonEmptyString(strings.TrimSpace(student.StudentName), "所选学员")
+			return fmt.Errorf("%s已在本节名单中，请勿重复添加", name)
+		}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id
+		FROM inst_student
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND id IN (`+sqlPlaceholders(len(studentIDs))+`)
+	`, append([]any{instID}, int64SliceToAny(studentIDs)...)...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	foundStudentIDs := make(map[int64]struct{}, len(studentIDs))
+	for rows.Next() {
+		var studentID int64
+		if err := rows.Scan(&studentID); err != nil {
+			return err
+		}
+		foundStudentIDs[studentID] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(foundStudentIDs) != len(studentIDs) {
+		return errors.New("存在无效学员，请刷新后重试")
+	}
+
+	for _, studentID := range studentIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO teaching_schedule_student (
+				inst_id, teaching_schedule_id, teaching_class_id, student_id,
+				student_type, roster_status, create_id, update_id
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON DUPLICATE KEY UPDATE
+				teaching_class_id = VALUES(teaching_class_id),
+				student_type = VALUES(student_type),
+				roster_status = VALUES(roster_status),
+				update_id = VALUES(update_id),
+				update_time = CURRENT_TIMESTAMP,
+				del_flag = 0
+		`, instID, row.ID, row.TeachingClassID, studentID, studentType, model.TeachingScheduleStudentRosterStatusActive, operatorID, operatorID); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()
@@ -4442,6 +4769,17 @@ func normalizeTeachingScheduleStudentType(studentType int) int {
 		return studentType
 	default:
 		return model.TeachingScheduleStudentTypeClassMember
+	}
+}
+
+func isScheduleOnlyStudentType(studentType int) bool {
+	switch normalizeTeachingScheduleStudentType(studentType) {
+	case model.TeachingScheduleStudentTypeTemporary,
+		model.TeachingScheduleStudentTypeTrial,
+		model.TeachingScheduleStudentTypeMakeup:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -7363,6 +7701,17 @@ func teachingScheduleStudentTypeText(studentType int) string {
 		return "补课学员"
 	default:
 		return "班课学员"
+	}
+}
+
+func teachingScheduleCandidateStudentStatusText(status int) string {
+	switch status {
+	case model.InstStudentStatusEnrolled:
+		return "在读学员"
+	case model.InstStudentStatusHistory:
+		return "历史学员"
+	default:
+		return "意向学员"
 	}
 }
 

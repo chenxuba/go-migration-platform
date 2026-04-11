@@ -111,6 +111,17 @@ func (svc *Service) GetTeachingScheduleDetail(userID int64, query model.Teaching
 	return svc.repo.GetTeachingScheduleDetail(context.Background(), instID, query)
 }
 
+func (svc *Service) PageTeachingScheduleStudentCandidates(userID int64, dto model.TeachingScheduleStudentCandidateQueryDTO) (model.TeachingScheduleStudentCandidatePagedResult, error) {
+	instID, _, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	if strings.TrimSpace(dto.QueryModel.ScheduleID) == "" {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("缺少日程ID")
+	}
+	return svc.repo.PageTeachingScheduleStudentCandidates(context.Background(), instID, dto)
+}
+
 func (svc *Service) RemoveTeachingScheduleStudentCurrent(userID int64, dto model.TeachingScheduleStudentRemoveCurrentDTO) error {
 	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
 	if err != nil {
@@ -123,6 +134,20 @@ func (svc *Service) RemoveTeachingScheduleStudentCurrent(userID int64, dto model
 		return errors.New("缺少学员ID")
 	}
 	return svc.repo.RemoveTeachingScheduleStudentCurrent(context.Background(), instID, operatorID, dto)
+}
+
+func (svc *Service) AddTeachingScheduleStudentsCurrent(userID int64, dto model.TeachingScheduleStudentsAddCurrentDTO) error {
+	instID, operatorID, err := svc.resolveTeachingScheduleOperator(userID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(dto.ScheduleID) == "" {
+		return errors.New("缺少日程ID")
+	}
+	if len(dto.StudentIDs) == 0 {
+		return errors.New("请至少选择一位学员")
+	}
+	return svc.repo.AddTeachingScheduleStudentsCurrent(context.Background(), instID, operatorID, dto)
 }
 
 func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleVO, error) {

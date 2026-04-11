@@ -153,8 +153,6 @@ const columns = ref(
 const totalWidth = computed(() =>
   columns.value.reduce((acc, col) => acc + (col.width || 0), 0),
 )
-// 计算表格高度 500 换成动态的值
-const customScrollY = ref(window.innerHeight - 500)
 const userName = ref('')
 // 修改为独立的状态控制
 const headerStatus = ref('attended') // 默认为到课
@@ -244,20 +242,10 @@ function handleEditClassInfo() {
   editClassInfoModal.value = true
 }
 
-// 监听窗口大小变化
-function onResize() {
-  customScrollY.value = window.innerHeight - 500
-}
 
-// 组件挂载时添加监听
-onMounted(() => {
-  window.addEventListener('resize', onResize)
-})
 
-// 组件卸载时移除监听
-onUnmounted(() => {
-  window.removeEventListener('resize', onResize)
-})
+
+
 // 添加学员modal
 const addStudentModal = ref(false)
 const addStudentModalTitle = ref('')
@@ -361,7 +349,7 @@ function handleBatchEdit() {
         <!-- 带序号 -->
         <a-table
           :columns="columns" :data-source="data" row-key="id" class="mt-12px" :pagination="false"
-          :scroll="{ x: totalWidth, y: customScrollY }"
+          :scroll="{ x: totalWidth, }"
         >
           <template #headerCell="{ column }">
             <div v-if="column.dataIndex === 'studentAccount'">

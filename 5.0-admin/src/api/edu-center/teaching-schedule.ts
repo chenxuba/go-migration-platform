@@ -72,6 +72,16 @@ export interface TeachingScheduleDetailStudent {
   callStatusText?: string
 }
 
+export interface TeachingScheduleStudentCandidate {
+  studentId: string
+  studentName: string
+  avatarUrl?: string
+  phone?: string
+  maskedPhone?: string
+  phoneRelationship?: number
+  phoneRelationshipText?: string
+}
+
 export interface TeachingScheduleDetail {
   id: string
   batchNo?: string
@@ -361,6 +371,28 @@ export function removeTeachingScheduleStudentCurrentApi(data: {
   studentId: string
 }) {
   return usePost<boolean>('/api/v1/teaching-schedules/students/remove-current', data)
+}
+
+export function pageTeachingScheduleStudentCandidatesApi(data: {
+  pageRequestModel: {
+    pageIndex: number
+    pageSize: number
+  }
+  queryModel: {
+    scheduleId: string
+    studentType: number
+    keyword?: string
+  }
+}) {
+  return usePost<{ list: TeachingScheduleStudentCandidate[], total: number }>('/api/v1/teaching-schedules/students/candidates', data)
+}
+
+export function addTeachingScheduleStudentsCurrentApi(data: {
+  scheduleId: string
+  studentType: number
+  studentIds: string[]
+}) {
+  return usePost<boolean>('/api/v1/teaching-schedules/students/add-current', data)
 }
 
 export function listTeachingSchedulesApi(params: {
