@@ -1888,6 +1888,8 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
                     :time-text="scheduleTimeTextFromEvent(event)"
                     :conflict-text="scheduleConflictSummary(event.raw)"
                     @detail="openScheduleDetail(event)"
+                    @copy="payload => openBatchPlanEdit(event.raw, 'batch', payload, 'copy')"
+                    @copy-current="payload => openBatchPlanEdit(event.raw, 'current', payload, 'copy')"
                     @edit="payload => openBatchPlanEdit(event.raw, 'batch', payload)"
                     @edit-current="payload => openBatchPlanEdit(event.raw, 'current', payload)"
                   >

@@ -3447,6 +3447,16 @@ function openScheduledLessonEditCurrent(text, column, record, payload) {
   openScheduledLessonBatchPlanEdit('current', payload)
 }
 
+function openScheduledLessonCopy(text, column, record, payload) {
+  scheduledLessonDetailState.value = buildScheduledLessonDetailState(text, column, record)
+  openScheduledLessonBatchPlanCopy(payload)
+}
+
+function openScheduledLessonCopyCurrent(text, column, record, payload) {
+  scheduledLessonDetailState.value = buildScheduledLessonDetailState(text, column, record)
+  openScheduledLessonBatchPlanCopy('current', payload)
+}
+
 async function deleteScheduledLessonFromDetail(scope = 'current') {
   const detail = scheduledLessonDetailState.value
   const schedule = buildBatchPlanScheduleFromDetail(detail)
@@ -5275,6 +5285,8 @@ watch(dragConflictDetailOpen, (open) => {
       :open-scheduled-lesson-detail="openScheduledLessonDetail"
       :open-scheduled-lesson-edit="openScheduledLessonEdit"
       :open-scheduled-lesson-edit-current="openScheduledLessonEditCurrent"
+      :open-scheduled-lesson-copy="openScheduledLessonCopy"
+      :open-scheduled-lesson-copy-current="openScheduledLessonCopyCurrent"
       :open-scheduled-conflict-detail="openScheduledConflictDetail"
       :handle-conflict-click="handleConflictClick"
       :handle-schedule-click="handleScheduleClick"

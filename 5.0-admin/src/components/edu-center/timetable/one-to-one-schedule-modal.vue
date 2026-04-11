@@ -141,6 +141,17 @@ const modalOpen = computed({
 
 const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
 const isCopyPresetMode = computed(() => props.mode === 'create' && !!props.batchPlanPreset)
+const isCopyCurrentPresetMode = computed(() => {
+  if (!isCopyPresetMode.value || !props.batchPlanPreset)
+    return false
+  if (props.batchPlanPreset.editScope === 'current')
+    return true
+  const batchNo = String(props.batchPlanPreset.batchNo || '').trim()
+  const scheduleIds = Array.isArray(props.batchPlanPreset.scheduleIds)
+    ? props.batchPlanPreset.scheduleIds.map(id => String(id || '').trim()).filter(Boolean)
+    : []
+  return !batchNo && scheduleIds.length === 1
+})
 const isSingleScheduleEditMode = computed(() => {
   if (!isBatchPlanEditMode.value || !props.batchPlanPreset)
     return false
@@ -624,8 +635,8 @@ async function applyBatchPlanPreset(preset?: BatchPlanModalPreset | null) {
   selectedOneToOneId.value = preset.oneToOneId
   await nextTick()
 
-  schedulingMode.value = isCopyPresetMode.value ? 'repeat' : (preset.schedulingMode as SchedulingMode)
-  repeatRule.value = isCopyPresetMode.value ? 'none' : (preset.repeatRule as RepeatRule)
+  schedulingMode.value = isCopyCurrentPresetMode.value ? 'repeat' : (preset.schedulingMode as SchedulingMode)
+  repeatRule.value = isCopyCurrentPresetMode.value ? 'none' : (preset.repeatRule as RepeatRule)
   holidayPolicy.value = preset.holidayPolicy
   selectedWeekdays.value = preset.selectedWeekdays.length ? [...preset.selectedWeekdays] : ['周一']
   scheduleStartDate.value = dayjs(preset.scheduleStartDate || dayjs()).startOf('day')

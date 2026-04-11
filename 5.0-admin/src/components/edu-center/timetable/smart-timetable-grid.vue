@@ -67,6 +67,14 @@ const props = defineProps({
     type: Function,
     required: true,
   },
+  openScheduledLessonCopy: {
+    type: Function,
+    required: true,
+  },
+  openScheduledLessonCopyCurrent: {
+    type: Function,
+    required: true,
+  },
   openScheduledConflictDetail: {
     type: Function,
     required: true,
@@ -377,6 +385,8 @@ onUnmounted(() => {
             :conflict-text="text.scheduledConflict ? scheduleConflictText(text) : ''"
             @open-change="handleSchedulePopoverOpenChange(column, record, $event)"
             @detail="openScheduledLessonDetail(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
+            @copy="payload => openScheduledLessonCopy(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record), payload)"
+            @copy-current="payload => openScheduledLessonCopyCurrent(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record), payload)"
             @edit="payload => openScheduledLessonEdit(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record), payload)"
             @edit-current="payload => openScheduledLessonEditCurrent(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record), payload)"
           >

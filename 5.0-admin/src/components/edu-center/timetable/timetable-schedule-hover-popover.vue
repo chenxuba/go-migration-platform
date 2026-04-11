@@ -52,6 +52,8 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'detail'): void
+  (e: 'copy', payload?: ScheduleEditPayload): void
+  (e: 'copy-current', payload?: ScheduleEditPayload): void
   (e: 'edit', payload?: ScheduleEditPayload): void
   (e: 'edit-current', payload?: ScheduleEditPayload): void
   (e: 'openChange', value: boolean): void
@@ -276,6 +278,16 @@ function openEditCurrent() {
   emit('edit-current', scheduleEditPayload.value)
 }
 
+function openCopy() {
+  closePopover()
+  emit('copy', scheduleEditPayload.value)
+}
+
+function openCopyCurrent() {
+  closePopover()
+  emit('copy-current', scheduleEditPayload.value)
+}
+
 function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
   domEvent?.stopPropagation()
   if (!canEditSchedule.value)
@@ -284,6 +296,14 @@ function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, dom
     openEditCurrent()
   else
     openEdit()
+}
+
+function handleBatchCopyMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
+  domEvent?.stopPropagation()
+  if (String(key) === 'current')
+    openCopyCurrent()
+  else
+    openCopy()
 }
 
 function goRollCall() {
@@ -419,11 +439,35 @@ watch(
                 </button>
               </a-tooltip>
 
-              <a-tooltip v-if="showCopyAction" title="复制日程" placement="top">
+              <a-dropdown
+                v-if="showCopyAction && hasBatchSchedule"
+                :trigger="['hover']"
+                placement="topLeft"
+              >
+                <template #overlay>
+                  <a-menu :selectable="false" @click="handleBatchCopyMenuClick">
+                    <a-menu-item key="current">
+                      仅复制当前课程
+                    </a-menu-item>
+                    <a-menu-item key="future">
+                      复制后续全部课程
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+
                 <button
                   type="button"
                   class="st-schedule-hover-card__icon-btn"
                   @click.stop
+                >
+                  <CopyOutlined />
+                </button>
+              </a-dropdown>
+              <a-tooltip v-else-if="showCopyAction" title="仅复制当前课程" placement="top">
+                <button
+                  type="button"
+                  class="st-schedule-hover-card__icon-btn"
+                  @click.stop="openCopyCurrent()"
                 >
                   <CopyOutlined />
                 </button>
