@@ -164,6 +164,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/roll-call/teaching-record/student-list", handler.rollCallTeachingRecordStudentList)
 	mux.HandleFunc("/api/v1/roll-call/student-leave-count", handler.rollCallStudentLeaveCount)
 	mux.HandleFunc("/api/v1/roll-call/student-tuition-extra-info", handler.rollCallStudentTuitionExtraInfo)
+	mux.HandleFunc("/api/v1/roll-call/student-tuition-accounts", handler.rollCallStudentTuitionAccounts)
 	mux.HandleFunc("/api/v1/infrastructure/status", handler.infrastructureStatus)
 	mux.HandleFunc("/api/v1/mq/event-logs", handler.mqEventLogs)
 	mux.HandleFunc("/api/v1/es-sync/intent-student/sync", handler.syncIntentStudents)

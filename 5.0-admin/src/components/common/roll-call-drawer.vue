@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import {
   getRollCallClassTimetableApi,
   getRollCallStudentLeaveCountApi,
+  getRollCallStudentTuitionAccountsApi,
   getRollCallStudentTuitionExtraInfoApi,
   getRollCallTeachingRecordStudentListApi,
 } from '@/api/edu-center/roll-call'
@@ -43,6 +44,12 @@ const currentLessonDay = computed(() => {
 const defaultStudentAvatar = 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png'
 const studentStore = useStudentStore()
 const openStudentDrawer = ref(false)
+const switchAccountModalOpen = ref(false)
+const switchAccountLoading = ref(false)
+const switchAccountOptions = ref([])
+const switchAccountSelectedId = ref()
+const switchAccountRecord = ref(null)
+const switchedAccountOverrideMap = ref(new Map())
 const loading = ref(false)
 const classTimetableDetail = ref(null)
 const teachingRecordResult = ref(null)
@@ -282,6 +289,67 @@ function formatRemainingText(mode, quantity, paidRemaining) {
     return `剩余金额：${Number(paidRemaining || 0)}`
   return ''
 }
+function normalizeAccountChargingMode(mode) {
+  const parsed = Number(mode || 0)
+  if (parsed === 4)
+    return 3
+  return parsed
+}
+function effectiveAccountChargingMode(acc) {
+  const mode = normalizeAccountChargingMode(acc?.lessonChargingMode)
+  if (mode > 0)
+    return mode
+  const totalQty = Number(acc?.totalQuantity || 0) + Number(acc?.totalFreeQuantity || 0)
+  const remainQty = Number(acc?.quantity || 0) + Number(acc?.freeQuantity || 0)
+  if ((totalQty > 0 || remainQty > 0) && acc?.enableExpireTime)
+    return 2
+  if (totalQty > 0 || remainQty > 0)
+    return 1
+  if (Number(acc?.totalTuition || 0) > 0 || Number(acc?.tuition || 0) > 0)
+    return 3
+  return 0
+}
+function isZeroDateTime(value) {
+  const text = String(value || '').trim()
+  return !text || text.startsWith('0001-01-01')
+}
+function getChargingModeText(mode) {
+  if (Number(mode) === 1)
+    return '课时'
+  if (Number(mode) === 2)
+    return '时段'
+  if (Number(mode) === 3)
+    return '金额'
+  return '-'
+}
+function accountDeductTeachMethodText(lessonType) {
+  const type = Number(lessonType || 0)
+  if (type === 1)
+    return '班级授课'
+  if (type === 2)
+    return '1对1授课'
+  return '班级授课'
+}
+function switchAccountRemainText(acc) {
+  const mode = effectiveAccountChargingMode(acc)
+  const remainQuantity = Number(acc?.quantity || 0) + Number(acc?.freeQuantity || 0)
+  if (mode === 1)
+    return `剩余课时：${remainQuantity}`
+  if (mode === 2)
+    return `剩余天数：${remainQuantity}`
+  if (mode === 3)
+    return `剩余金额：${Number(acc?.tuition || 0)}`
+  return '-'
+}
+function switchAccountExpireText(acc) {
+  const startText = isZeroDateTime(acc?.startTime) ? '' : dayjs(acc.startTime).format('YYYY-MM-DD')
+  const expireText = isZeroDateTime(acc?.expireTime) ? '' : dayjs(acc.expireTime).format('YYYY-MM-DD')
+  if (startText && expireText)
+    return `${startText} ~ ${expireText}`
+  if (expireText)
+    return expireText
+  return '不限制'
+}
 function parseNumber(value) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -339,9 +407,11 @@ function mapStudentRow(item, leaveCountMap, tuitionExtraMap) {
     accountName: String(extra.bestMatchProductName || ''),
     remainingText: formatRemainingText(item.chargingMode, item.quantity, item.paidRemaining),
     remainingQuantity: Number(item.quantity || 0),
+    paidRemaining: Number(item.paidRemaining || 0),
     leaveCountText: `已请假：${leaveCount}次`,
     consumptionMethod: String(item.chargingMode || ''),
     consumptionMethodText: getConsumptionMethodText(item.chargingMode, studentType),
+    tuitionAccountId: String(item.tuitionAccountId || ''),
     recordAttendance: Number(item.chargingMode || 0) === 1,
     attendanceCount: Number(classTimetableDetail.value?.defaultStudentClassTime || 1),
     internalNote: '',
@@ -357,12 +427,65 @@ function mapStudentRow(item, leaveCountMap, tuitionExtraMap) {
   applyStudentState(row)
   return row
 }
+function pickSwitchAccountSelectedId(list, record) {
+  const currentId = String(record?.tuitionAccountId || '')
+  const direct = list.find(acc => String(acc?.id || '') === currentId)
+  if (direct?.id)
+    return String(direct.id)
+  return String(list[0]?.id || '')
+}
+function syncRecordTuitionAccount(record, acc) {
+  const mode = effectiveAccountChargingMode(acc)
+  const remainQuantity = Number(acc?.quantity || 0) + Number(acc?.freeQuantity || 0)
+  record.tuitionAccountId = String(acc?.id || '')
+  record.accountName = String(acc?.productName || acc?.lessonName || '')
+  record.remainingQuantity = remainQuantity
+  record.paidRemaining = Number(acc?.tuition || 0)
+  record.remainingText = formatRemainingText(mode, remainQuantity, acc?.tuition)
+  record.consumptionMethod = String(mode || '')
+  record.consumptionMethodText = getConsumptionMethodText(mode, record.type)
+  record.recordAttendance = mode === 1
+}
+function studentAccountOverrideKey(studentId) {
+  return [
+    String(currentScheduleId.value || '').trim(),
+    String(currentLessonDay.value || '').trim(),
+    String(studentId || '').trim(),
+  ].join('#')
+}
+function saveStudentAccountOverride(studentId, acc) {
+  const key = studentAccountOverrideKey(studentId)
+  if (!key || !acc)
+    return
+  const nextMap = new Map(switchedAccountOverrideMap.value)
+  nextMap.set(key, { ...acc })
+  switchedAccountOverrideMap.value = nextMap
+}
+function getStudentAccountOverride(studentId) {
+  const key = studentAccountOverrideKey(studentId)
+  if (!key)
+    return null
+  return switchedAccountOverrideMap.value.get(key) || null
+}
+function applySwitchedAccountOverrides(rows) {
+  rows.forEach((row) => {
+    const override = getStudentAccountOverride(row?.id)
+    if (override)
+      syncRecordTuitionAccount(row, override)
+  })
+  return rows
+}
+function clearSwitchedAccountOverrides() {
+  switchedAccountOverrideMap.value = new Map()
+}
 async function loadDetail() {
   if (!openDrawer.value || !currentScheduleId.value) {
     classTimetableDetail.value = null
     teachingRecordResult.value = null
     data.value = []
     headerStatus.value = ''
+    closeSwitchAccountModal()
+    clearSwitchedAccountOverrides()
     return
   }
 
@@ -419,9 +542,9 @@ async function loadDetail() {
 
     const leaveCountMap = new Map((Array.isArray(leaveCountRes.result) ? leaveCountRes.result : []).map(item => [String(item.studentId || ''), Number(item.leaveCount || 0)]))
     const tuitionExtraMap = new Map((Array.isArray(tuitionExtraRes.result) ? tuitionExtraRes.result : []).map(item => [String(item.studentId || ''), item]))
-    data.value = (Array.isArray(recordRes.result.students) ? recordRes.result.students : []).map(item =>
+    data.value = applySwitchedAccountOverrides((Array.isArray(recordRes.result.students) ? recordRes.result.students : []).map(item =>
       mapStudentRow(item, leaveCountMap, tuitionExtraMap),
-    )
+    ))
     syncHeaderStatus()
   }
   catch (error) {
@@ -479,10 +602,39 @@ function handleBatchEdit() {
 function handleConfirmRollCall() {
   messageService.info('点名提交功能暂未开发')
 }
-function handleSwitchAccount(record) {
+async function handleSwitchAccount(record) {
   if (!record?.canSwitchAccount)
     return
-  messageService.info('切换扣费账户接口待对接')
+  const lessonId = String(classTimetableDetail.value?.lessonId || teachingRecordResult.value?.data?.lessonId || '').trim()
+  if (!lessonId) {
+    messageService.error('缺少课程信息')
+    return
+  }
+  switchAccountRecord.value = record
+  switchAccountLoading.value = true
+  try {
+    const res = await getRollCallStudentTuitionAccountsApi({
+      studentId: String(record.id || ''),
+      lessonId,
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '加载扣费课程账户失败')
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    switchAccountOptions.value = list
+    if (list.length === 0) {
+      messageService.warning('暂无可切换的扣费课程账户')
+      return
+    }
+    switchAccountSelectedId.value = pickSwitchAccountSelectedId(list, record)
+    switchAccountModalOpen.value = true
+  }
+  catch (error) {
+    console.error('load roll call tuition accounts failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '加载扣费课程账户失败')
+  }
+  finally {
+    switchAccountLoading.value = false
+  }
 }
 function handleViewStudent(studentId) {
   const id = String(studentId || '').trim()
@@ -490,6 +642,27 @@ function handleViewStudent(studentId) {
     return
   studentStore.setStudentId(id)
   openStudentDrawer.value = true
+}
+function closeSwitchAccountModal() {
+  switchAccountModalOpen.value = false
+  switchAccountSelectedId.value = undefined
+  switchAccountOptions.value = []
+  switchAccountRecord.value = null
+}
+function submitSwitchAccount() {
+  const currentId = String(switchAccountSelectedId.value || '').trim()
+  if (!currentId) {
+    messageService.warning('请选择扣费课程账户')
+    return
+  }
+  const selectedAccount = switchAccountOptions.value.find(acc => String(acc?.id || '') === currentId)
+  if (!selectedAccount || !switchAccountRecord.value) {
+    messageService.warning('请选择扣费课程账户')
+    return
+  }
+  syncRecordTuitionAccount(switchAccountRecord.value, selectedAccount)
+  saveStudentAccountOverride(switchAccountRecord.value.id, selectedAccount)
+  closeSwitchAccountModal()
 }
 
 useStudentListRefresh(() => {
@@ -884,6 +1057,82 @@ watch(
         </div>
       </template>
     </a-drawer>
+    <a-modal
+      v-model:open="switchAccountModalOpen"
+      class="roll-call-switch-account-modal"
+      ok-text="确定"
+      cancel-text="取消"
+      :closable="false"
+      width="720px"
+      @ok="submitSwitchAccount"
+      @cancel="closeSwitchAccountModal"
+    >
+      <template #title>
+        <div class="roll-call-switch-account-modal__title">
+          <span>选择扣费课程账户</span>
+          <a-button type="text" class="close-btn" @click="closeSwitchAccountModal">
+            <template #icon>
+              <CloseOutlined class="text-5 close-icon" />
+            </template>
+          </a-button>
+        </div>
+      </template>
+
+      <div class="roll-call-switch-account-modal__notice">
+        <ExclamationCircleOutlined class="roll-call-switch-account-modal__notice-icon" />
+        <span>以下为当前相关课程的扣费课程账户</span>
+      </div>
+
+      <div class="roll-call-switch-account-modal__table">
+        <div class="roll-call-switch-account-modal__thead">
+          <div class="roll-call-switch-account-modal__col roll-call-switch-account-modal__col--account">
+            课程账户
+          </div>
+          <div class="roll-call-switch-account-modal__col roll-call-switch-account-modal__col--remain">
+            剩余数量
+          </div>
+          <div class="roll-call-switch-account-modal__col roll-call-switch-account-modal__col--expire">
+            有效日期/有效时段
+          </div>
+        </div>
+        <a-spin :spinning="switchAccountLoading">
+          <a-radio-group v-model:value="switchAccountSelectedId" class="roll-call-switch-account-modal__group custom-radio">
+            <label
+              v-for="acc in switchAccountOptions"
+              :key="acc.id"
+              class="roll-call-switch-account-modal__row"
+              :class="{ 'is-active': String(switchAccountSelectedId) === String(acc.id) }"
+            >
+              <a-radio :value="acc.id" class="roll-call-switch-account-modal__radio" />
+              <div class="roll-call-switch-account-modal__col roll-call-switch-account-modal__col--account">
+                <div class="roll-call-switch-account-modal__account-name">
+                  {{ acc.productName || acc.lessonName || '-' }}
+                </div>
+                <div class="roll-call-switch-account-modal__tags">
+                  <a-tag color="#e9f2ff" :bordered="false">
+                    {{ accountDeductTeachMethodText(acc.lessonType) }}
+                  </a-tag>
+                  <a-tag color="#eef3ff" :bordered="false">
+                    {{ getChargingModeText(effectiveAccountChargingMode(acc)) }}
+                  </a-tag>
+                </div>
+              </div>
+              <div class="roll-call-switch-account-modal__col roll-call-switch-account-modal__col--remain">
+                {{ switchAccountRemainText(acc) }}
+              </div>
+              <div class="roll-call-switch-account-modal__col roll-call-switch-account-modal__col--expire">
+                {{ switchAccountExpireText(acc) }}
+              </div>
+            </label>
+            <a-empty
+              v-if="!switchAccountLoading && switchAccountOptions.length === 0"
+              class="roll-call-switch-account-modal__empty"
+              description="暂无可切换的扣费课程账户"
+            />
+          </a-radio-group>
+        </a-spin>
+      </div>
+    </a-modal>
     <student-info-drawer v-model:open="openStudentDrawer" />
     <!-- 编辑上课信息 -->
     <EditClassInfoModal v-model:open="editClassInfoModal" />
@@ -1032,5 +1281,181 @@ watch(
 /* 当按钮悬停时旋转图标 */
 .h-40px:hover .rotate-icon {
   transform: rotate(180deg);
+}
+
+.roll-call-switch-account-modal__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f1f1f;
+}
+
+.roll-call-switch-account-modal__notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: #edf4ff;
+  color: #3f6fdc;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.roll-call-switch-account-modal__notice-icon {
+  font-size: 14px;
+}
+
+.roll-call-switch-account-modal__table {
+  overflow: hidden;
+  border: 1px solid #edf0f5;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.roll-call-switch-account-modal__thead {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) 132px 210px;
+  align-items: center;
+  padding: 14px 18px 14px 50px;
+  background: #f7f9fc;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.roll-call-switch-account-modal__col {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.roll-call-switch-account-modal__thead .roll-call-switch-account-modal__col {
+  color: #667085;
+  font-weight: 600;
+}
+
+.roll-call-switch-account-modal__group {
+  display: block;
+}
+
+.roll-call-switch-account-modal__row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1.5fr) 132px 210px;
+  align-items: center;
+  column-gap: 10px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #f0f2f5;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.roll-call-switch-account-modal__row:last-child {
+  border-bottom: 0;
+}
+
+.roll-call-switch-account-modal__row:hover {
+  background: #fafcff;
+}
+
+.roll-call-switch-account-modal__row.is-active {
+  background: #eaf3ff;
+}
+
+.roll-call-switch-account-modal__radio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.roll-call-switch-account-modal__account-name {
+  color: #1f1f1f;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.roll-call-switch-account-modal__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.roll-call-switch-account-modal__tags :deep(.ant-tag) {
+  margin-inline-end: 0;
+  border-radius: 999px;
+  padding-inline: 10px;
+  color: #4a67c7;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.roll-call-switch-account-modal__col--remain,
+.roll-call-switch-account-modal__col--expire {
+  color: #4b5565;
+  line-height: 22px;
+}
+
+.roll-call-switch-account-modal__col--expire {
+  white-space: nowrap;
+}
+
+.roll-call-switch-account-modal__empty {
+  padding: 40px 0 36px;
+}
+
+.roll-call-switch-account-modal :deep(.ant-radio-wrapper) {
+  margin-inline-end: 0;
+}
+
+.roll-call-switch-account-modal :deep(.ant-radio) {
+  top: 0;
+}
+
+.roll-call-switch-account-modal :deep(.ant-radio-inner) {
+  width: 18px;
+  height: 18px;
+}
+
+.roll-call-switch-account-modal :deep(.ant-radio-checked .ant-radio-inner) {
+  box-shadow: 0 0 0 4px rgba(76, 132, 255, 0.12);
+}
+
+.roll-call-switch-account-modal :deep(.ant-radio-input:focus + .ant-radio-inner) {
+  box-shadow: 0 0 0 4px rgba(76, 132, 255, 0.12);
+}
+
+@media (max-width: 900px) {
+  .roll-call-switch-account-modal__thead {
+    grid-template-columns: minmax(0, 1.2fr) 112px 180px;
+    padding-right: 14px;
+    padding-left: 44px;
+  }
+
+  .roll-call-switch-account-modal__row {
+    grid-template-columns: 18px minmax(0, 1.2fr) 112px 180px;
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+}
+</style>
+
+<style>
+.roll-call-switch-account-modal .ant-modal-header {
+  padding: 18px 24px 14px !important;
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.roll-call-switch-account-modal .ant-modal-body {
+  padding: 6px 24px 8px !important;
+}
+
+.roll-call-switch-account-modal .ant-modal-footer {
+  padding: 16px 24px 20px !important;
+  border-top-color: #f0f2f5;
 }
 </style>

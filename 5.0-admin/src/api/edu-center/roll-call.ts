@@ -1,5 +1,6 @@
 import { usePost } from '~/utils/request'
 import type { TeachingScheduleItem } from './teaching-schedule'
+import type { StudentLessonTuitionAccountsResult } from './one-to-one'
 
 export interface RollCallQueryModel {
   startDate?: string
@@ -176,6 +177,11 @@ export interface RollCallStudentTuitionExtraInfoParams {
   lessonId: string
 }
 
+export interface RollCallStudentTuitionAccountsParams {
+  studentId: string
+  lessonId: string
+}
+
 export function getRollCallClassTimetableApi(data: RollCallClassTimetableParams) {
   return usePost<RollCallClassTimetableResult>('/api/v1/roll-call/class-timetable', data)
 }
@@ -190,6 +196,10 @@ export function getRollCallStudentLeaveCountApi(data: RollCallStudentLeaveCountP
 
 export function getRollCallStudentTuitionExtraInfoApi(data: RollCallStudentTuitionExtraInfoParams) {
   return usePost<RollCallStudentTuitionExtraInfoItem[]>('/api/v1/roll-call/student-tuition-extra-info', data)
+}
+
+export function getRollCallStudentTuitionAccountsApi(data: RollCallStudentTuitionAccountsParams) {
+  return usePost<StudentLessonTuitionAccountsResult>('/api/v1/roll-call/student-tuition-accounts', data)
 }
 
 export function getRollCallStatisticsApi(data: { queryModel?: RollCallQueryModel }) {

@@ -278,6 +278,41 @@ func (repo *Repository) GetRollCallStudentTuitionExtraInfo(ctx context.Context, 
 	return result, nil
 }
 
+func (repo *Repository) GetRollCallStudentTuitionAccounts(ctx context.Context, instID int64, dto model.StudentLessonTuitionAccountsQueryDTO) ([]model.StudentLessonTuitionAccountItem, error) {
+	lessonID := strings.TrimSpace(dto.LessonID)
+	if lessonID == "" {
+		return []model.StudentLessonTuitionAccountItem{}, nil
+	}
+	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
+	if err != nil || studentID <= 0 {
+		return []model.StudentLessonTuitionAccountItem{}, nil
+	}
+
+	courseScope, err := repo.resolveRollCallDrawerLessonCourseScope(ctx, instID, lessonID)
+	if err != nil {
+		return nil, err
+	}
+	accounts, _, err := repo.listRollCallDrawerStudentAccountsByCourseScope(ctx, instID, studentID, courseScope, 0, model.TeachingClassTypeNormal)
+	if err != nil {
+		return nil, err
+	}
+
+	scheduleOnlyStudentMap, err := repo.loadRollCallDrawerLessonScheduleOnlyStudentMap(ctx, instID, lessonID, []int64{studentID})
+	if err != nil {
+		return nil, err
+	}
+	if len(accounts) == 0 && scheduleOnlyStudentMap[studentID] {
+		accounts, err = repo.listRollCallDrawerAllStudentAccounts(ctx, instID, studentID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if accounts == nil {
+		return []model.StudentLessonTuitionAccountItem{}, nil
+	}
+	return accounts, nil
+}
+
 type rollCallDrawerContext struct {
 	ClassID                    string
 	ClassName                  string

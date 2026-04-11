@@ -114,6 +114,21 @@ func (svc *Service) GetRollCallStudentTuitionExtraInfo(userID int64, dto model.R
 	return svc.repo.GetRollCallStudentTuitionExtraInfo(context.Background(), instID, dto)
 }
 
+func (svc *Service) GetRollCallStudentTuitionAccounts(userID int64, dto model.StudentLessonTuitionAccountsQueryDTO) (model.StudentLessonTuitionAccountsResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.StudentLessonTuitionAccountsResult{}, err
+	}
+	list, err := svc.repo.GetRollCallStudentTuitionAccounts(context.Background(), instID, dto)
+	if err != nil {
+		return model.StudentLessonTuitionAccountsResult{}, err
+	}
+	if list == nil {
+		list = []model.StudentLessonTuitionAccountItem{}
+	}
+	return model.StudentLessonTuitionAccountsResult{List: list}, nil
+}
+
 func (svc *Service) rollCallInstID(userID int64) (int64, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

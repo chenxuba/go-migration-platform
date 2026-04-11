@@ -918,6 +918,13 @@ func parseRollCallStudentTuitionExtraInfoQueryDTO(raw map[string]any) model.Roll
 	}
 }
 
+func parseRollCallStudentTuitionAccountsQueryDTO(raw map[string]any) model.StudentLessonTuitionAccountsQueryDTO {
+	return model.StudentLessonTuitionAccountsQueryDTO{
+		StudentID: asString(raw["studentId"]),
+		LessonID:  asString(raw["lessonId"]),
+	}
+}
+
 func parseRollCallQueryModel(raw map[string]any) model.RollCallQueryModel {
 	return model.RollCallQueryModel{
 		StartDate:     asString(raw["startDate"]),
