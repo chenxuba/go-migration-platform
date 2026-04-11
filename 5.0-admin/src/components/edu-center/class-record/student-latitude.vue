@@ -281,6 +281,28 @@ function scheduleTypeText(value?: number) {
   return '班级日程'
 }
 
+function scheduleTypeTagClass(value?: number) {
+  const type = Number(value || 0)
+  if (type === 2)
+    return 'record-meta-tag record-meta-tag--one-to-one'
+  if (type === 3)
+    return 'record-meta-tag record-meta-tag--trial'
+  return 'record-meta-tag record-meta-tag--group'
+}
+
+function studentIdentityTagClass(value?: number) {
+  const type = Number(value || 0)
+  if (type === 2)
+    return 'record-meta-tag record-meta-tag--temporary'
+  if (type === 3 || type === 7)
+    return 'record-meta-tag record-meta-tag--make-up'
+  if (type === 4)
+    return 'record-meta-tag record-meta-tag--trial-student'
+  if (type === 6)
+    return 'record-meta-tag record-meta-tag--one-to-one-student'
+  return 'record-meta-tag record-meta-tag--class-student'
+}
+
 function chargingModeText(value?: number) {
   const mode = Number(value || 0)
   if (mode === 2)
@@ -507,10 +529,14 @@ onMounted(() => {
                 {{ record.subjectName || '-' }}
               </template>
               <template v-if="column.key === 'scheduleType'">
-                {{ scheduleTypeText(record.timetableSourceType) }}
+                <span :class="scheduleTypeTagClass(record.timetableSourceType)">
+                  {{ scheduleTypeText(record.timetableSourceType) }}
+                </span>
               </template>
               <template v-if="column.key === 'studentIdentity'">
-                {{ sourceTypeText(record.sourceType) }}
+                <span :class="studentIdentityTagClass(record.sourceType)">
+                  {{ sourceTypeText(record.sourceType) }}
+                </span>
               </template>
               <template v-if="column.key === 'classStatus'">
                 <span :class="statusTagClass(record.status)">
@@ -643,6 +669,52 @@ onMounted(() => {
   font-size: 12px;
   line-height: 20px;
   white-space: nowrap;
+}
+
+.record-meta-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.record-meta-tag--group,
+.record-meta-tag--class-student {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.record-meta-tag--one-to-one,
+.record-meta-tag--one-to-one-student {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.record-meta-tag--trial,
+.record-meta-tag--trial-student {
+  color: #c2410c;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.record-meta-tag--temporary {
+  color: #7c3aed;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
+
+.record-meta-tag--make-up {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
 }
 
 .record-status-tag--arrived {
