@@ -282,6 +282,17 @@ function formatRemainingText(mode, quantity, paidRemaining) {
     return `剩余金额：${Number(paidRemaining || 0)}`
   return ''
 }
+function parseNumber(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+function isRemainingInsufficient(record) {
+  if (!record || record.type === '3' || record.unrecorded || !record.recordAttendance)
+    return false
+  if (String(record.consumptionMethod || '') !== '1')
+    return false
+  return parseNumber(record.attendanceCount) > parseNumber(record.remainingQuantity)
+}
 function teachingSourceTypeToTagType(sourceType) {
   if (Number(sourceType) === 4)
     return '3'
@@ -327,6 +338,7 @@ function mapStudentRow(item, leaveCountMap, tuitionExtraMap) {
     bindChildText: item.isBindChild ? '已关注' : '未关注',
     accountName: String(extra.bestMatchProductName || ''),
     remainingText: formatRemainingText(item.chargingMode, item.quantity, item.paidRemaining),
+    remainingQuantity: Number(item.quantity || 0),
     leaveCountText: `已请假：${leaveCount}次`,
     consumptionMethod: String(item.chargingMode || ''),
     consumptionMethodText: getConsumptionMethodText(item.chargingMode, studentType),
@@ -791,9 +803,18 @@ watch(
               </div>
             </div>
             <div v-if="column.dataIndex === 'attendanceCount'">
-              <span v-if="record.recordAttendance && !record.unrecorded" class="flex flex-items-center"><a-input-number
-                v-model:value="record.attendanceCount" :min="0" :precision="2" class="w-80px mr-4px"
-              />课时</span>
+              <div v-if="record.recordAttendance && !record.unrecorded" class="flex flex-col">
+                <span class="flex flex-items-center"><a-input-number
+                  v-model:value="record.attendanceCount"
+                  :min="0"
+                  :precision="2"
+                  :status="isRemainingInsufficient(record) ? 'error' : undefined"
+                  class="w-80px mr-4px"
+                />课时</span>
+                <span v-if="isRemainingInsufficient(record)" class="text-#f33 text-12px leading-16px mt-2px">
+                  剩余数量不足
+                </span>
+              </div>
               <!-- 当是未记录时，展示不计课时，不发送家长端消息提示 -->
               <span v-else-if="record.unrecorded && record.type !== '3'" class="flex flex-col">
                 <span>不计课时</span>
