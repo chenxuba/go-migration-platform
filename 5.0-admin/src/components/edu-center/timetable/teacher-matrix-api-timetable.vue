@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { Dayjs } from 'dayjs'
-import { CopyOutlined, DownloadOutlined, LeftOutlined, RightOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { CopyOutlined, DownloadOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { Modal, message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import CreateSchedulePopover from './create-schedule-popover.vue'
 import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import SmartTimetableScheduleDetailDrawer from './smart-timetable-schedule-detail-drawer.vue'
@@ -29,6 +30,7 @@ import {
 } from '@/api/edu-center/teaching-schedule'
 import { loadTeachingScheduleDeleteTargetCount } from './schedule-delete-scope'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
+import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
 const emit = defineEmits<{
@@ -791,8 +793,14 @@ function openCopyWeekModal() {
   copyWeekModalOpen.value = true
 }
 
+const copyWeekScheduleTypes = computed(() => (
+  filterScheduleType.value.length
+    ? [...filterScheduleType.value]
+    : scheduleTypeOptions.map(item => item.id)
+))
+
 /**
- * 将当前 queryRange 对应周的 1 对 1 课表复制到目标周（与后端 copy-week 一致）。
+ * 将当前 queryRange 对应周、当前筛选条件内的课表复制到目标周。
  * 返回 rejected Promise 时可阻止弹窗关闭（Ant Design Vue Modal async ok）。
  */
 async function handleCopyWeekConfirm() {
@@ -811,7 +819,7 @@ async function handleCopyWeekConfirm() {
       sourceEndDate: srcEnd,
       targetStartDate: tStart,
       targetEndDate: tEnd,
-      classType: 2,
+      scheduleTypes: copyWeekScheduleTypes.value,
     })
     const raw = res.data ?? res.result
     const created = typeof raw === 'object' && raw && 'created' in raw
@@ -1064,9 +1072,11 @@ function handleBoardScroll(event: Event) {
 
 onMounted(() => {
   loadMatrix()
+  emitter.on(EVENTS.REFRESH_DATA, loadMatrix)
 })
 
 onUnmounted(() => {
+  emitter.off(EVENTS.REFRESH_DATA, loadMatrix)
   headerDatesResizeObserver?.disconnect()
   headerDatesResizeObserver = null
 })
@@ -1617,15 +1627,21 @@ const unsignedLessons = computed(() =>
     </div>
     <div class="tm-api-toolbar-card mt2">
       <div class="toolbar-main">
-        <div class="toolbar-group tm-toolbar-ghost" aria-hidden="true">
-          <a-radio-group button-style="solid" size="small">
-            <a-radio-button value="day">
-              日
-            </a-radio-button>
-            <a-radio-button value="week">
-              周
-            </a-radio-button>
-          </a-radio-group>
+        <div class="toolbar-group tm-toolbar-left-actions">
+          <a-space>
+            <a-button
+              type="default"
+              @click="openCopyWeekModal"
+            >
+              复制周课表
+            </a-button>
+            <a-button
+              type="default"
+              @click="openMatrixDisplayConfig"
+            >
+              展示配置
+            </a-button>
+          </a-space>
         </div>
 
         <div class="toolbar-date time-selector ml3 font-800 text-5 flex-center">
@@ -1687,38 +1703,20 @@ const unsignedLessons = computed(() =>
           </a-popover>
         </div>
 
-        <a-space>
-          <a-button
-            type="default"
-            size="small"
-            @click="openCopyWeekModal"
-          >
-            <template #icon>
-              <CopyOutlined />
-            </template>
-            复制周课表
-          </a-button>
-          <a-button
-            type="default"
-            size="small"
-            @click="exportTeacherMatrixExcel"
-          >
-            <template #icon>
-              <DownloadOutlined />
-            </template>
-            导出课表
-          </a-button>
-          <a-button
-            type="default"
-            size="small"
-            @click="openMatrixDisplayConfig"
-          >
-            <template #icon>
-              <SettingOutlined />
-            </template>
-            展示配置
-          </a-button>
-        </a-space>
+        <div class="ml-auto flex shrink-0 items-center gap-2 tm-toolbar-actions">
+          <a-space>
+            <CreateSchedulePopover />
+            <a-button
+              type="default"
+              @click="exportTeacherMatrixExcel"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              导出课表
+            </a-button>
+          </a-space>
+        </div>
       </div>
     </div>
 
@@ -1772,7 +1770,7 @@ const unsignedLessons = computed(() =>
       @ok="handleCopyWeekConfirm"
     >
       <p class="tm-copy-week-hint">
-        将当前周 <strong>{{ formatWeekRange(currentDate) }}</strong> 的 <strong>1 对 1</strong> 课表按星期对齐复制到目标周（批量排课会保持新的批量关系）。
+        将当前周 <strong>{{ formatWeekRange(currentDate) }}</strong> 当前筛选条件下的课表按星期对齐复制到目标周（批量排课会保持新的批量关系）。
       </p>
       <div class="tm-copy-week-picker">
         <span class="tm-copy-week-label">复制到</span>
@@ -2135,6 +2133,10 @@ const unsignedLessons = computed(() =>
   gap: 12px;
 }
 
+.tm-toolbar-actions {
+  min-width: fit-content;
+}
+
 .toolbar-date {
   display: flex;
   align-items: center;
@@ -2151,14 +2153,17 @@ const unsignedLessons = computed(() =>
   text-align: center;
 }
 
-.tm-toolbar-ghost {
-  visibility: hidden;
-  pointer-events: none;
-}
-
 .time-selector {
   font-family: DINAlternate-Bold, DINAlternate;
   gap: 6px;
+}
+
+.tm-toolbar-left-actions :deep(.ant-space) {
+  gap: 8px !important;
+}
+
+.tm-toolbar-left-actions :deep(.ant-btn) {
+  border-radius: 8px;
 }
 
 .toolbar-today-week-btn {
@@ -2180,6 +2185,14 @@ const unsignedLessons = computed(() =>
 
 .toolbar-today-week-btn--inactive {
   color: #222;
+}
+
+.tm-toolbar-actions :deep(.ant-space) {
+  gap: 8px !important;
+}
+
+.tm-toolbar-actions :deep(.ant-btn) {
+  border-radius: 8px;
 }
 
 .tm-api-toolbar-card :deep(.ant-radio-button-wrapper) {

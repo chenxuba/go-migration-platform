@@ -43,14 +43,18 @@ func (repo *Repository) CopyTeachingSchedulesWeek(ctx context.Context, instID, o
 		dateMap[srcDays[i]] = tgtDays[i]
 	}
 
-	classType := model.TeachingClassTypeOneToOne
-	if dto.ClassType != nil && *dto.ClassType > 0 {
-		classType = *dto.ClassType
-	}
 	query := model.TeachingScheduleListQueryDTO{
 		StartDate: srcStart,
 		EndDate:   srcEnd,
-		ClassType: &classType,
+	}
+	if scheduleTypes := normalizeNonEmptyStringList(dto.ScheduleTypes); len(scheduleTypes) > 0 {
+		query.ScheduleTypeFilters = scheduleTypes
+	} else {
+		classType := model.TeachingClassTypeOneToOne
+		if dto.ClassType != nil && *dto.ClassType > 0 {
+			classType = *dto.ClassType
+		}
+		query.ClassType = &classType
 	}
 	sourceRows, err := repo.ListTeachingSchedules(ctx, instID, query)
 	if err != nil {

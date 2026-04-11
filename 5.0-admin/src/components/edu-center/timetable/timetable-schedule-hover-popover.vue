@@ -72,6 +72,7 @@ const detailData = ref<TeachingScheduleDetail | null>(null)
 const popoverPlacement = ref<'rightTop' | 'rightBottom' | 'leftTop' | 'leftBottom'>('rightTop')
 let detailLoadSeq = 0
 let lastTriggerNode: HTMLElement | null = null
+let hoverPopoverRoot: HTMLElement | null = null
 const isOpenControlled = computed(() => {
   const vnodeProps = instance?.vnode.props
   return Boolean(vnodeProps && Object.prototype.hasOwnProperty.call(vnodeProps, 'open'))
@@ -264,11 +265,28 @@ function resolvePopoverContainer(triggerNode?: HTMLElement) {
   if (triggerNode instanceof HTMLElement) {
     lastTriggerNode = triggerNode
     resolvePopoverPlacement(triggerNode)
-    return (triggerNode.closest('.schedule-board') as HTMLElement | null)
-      || (triggerNode.closest('.schedule-card') as HTMLElement | null)
-      || document.body
   }
-  return document.body
+  if (typeof document === 'undefined')
+    return undefined as unknown as HTMLElement
+  if (hoverPopoverRoot?.isConnected)
+    return hoverPopoverRoot
+  const existingRoot = document.getElementById('timetable-hover-popover-root')
+  if (existingRoot) {
+    hoverPopoverRoot = existingRoot
+    return existingRoot
+  }
+  const root = document.createElement('div')
+  root.id = 'timetable-hover-popover-root'
+  root.style.position = 'fixed'
+  root.style.left = '0'
+  root.style.top = '0'
+  root.style.width = '0'
+  root.style.height = '0'
+  root.style.zIndex = '1080'
+  root.style.overflow = 'visible'
+  document.body.appendChild(root)
+  hoverPopoverRoot = root
+  return root
 }
 
 function handleOpenChange(value: boolean) {

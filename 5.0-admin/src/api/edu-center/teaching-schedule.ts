@@ -607,7 +607,9 @@ export function copyTeachingSchedulesWeekApi(data: {
   sourceEndDate: string
   targetStartDate: string
   targetEndDate: string
-  /** 省略时后端默认仅复制 1 对 1（classType=2） */
+  /** 优先按业务课型复制：group_class / one_to_one / trial */
+  scheduleTypes?: string[]
+  /** 兼容旧调用；未传 scheduleTypes 时才按 classType 生效，省略默认仅复制 1 对 1（classType=2） */
   classType?: number
 }) {
   return usePost<{ created: number }>('/api/v1/teaching-schedules/copy-week', data)

@@ -251,7 +251,9 @@ type TeachingScheduleCopyWeekDTO struct {
 	SourceEndDate   string `json:"sourceEndDate"`
 	TargetStartDate string `json:"targetStartDate"`
 	TargetEndDate   string `json:"targetEndDate"`
-	// ClassType 可选；省略时仅复制 1 对 1（与矩阵课表一致）。传入其它值可复制对应类型。
+	// ScheduleTypes 可选；支持 group_class / one_to_one / trial，传入时优先按课表业务类型复制。
+	ScheduleTypes []string `json:"scheduleTypes,omitempty"`
+	// ClassType 兼容旧调用；当未传 ScheduleTypes 时生效。省略时仅复制 1 对 1。
 	ClassType *int `json:"classType,omitempty"`
 }
 
