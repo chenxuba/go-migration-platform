@@ -3,15 +3,19 @@ import { usePost } from '~/utils/request'
 export interface ClassRecordQueryModel {
   beginStartTime?: string
   endStartTime?: string
+  beginUpdatedTime?: string
+  endUpdatedTime?: string
+  studentId?: string
   teacherIds?: string[]
   assistantTeacherIds?: string[]
-  classTeacherIds?: string[]
-  one2OneTeacherIds?: string[]
+  one2OneIds?: string[]
   timetableSourceTypes?: number[]
   studentSourceTypes?: number[]
   lessonChargingModeEnums?: number[]
   studentTeachingRecordStatuses?: number[]
   isArrear?: boolean | null
+  lessonIds?: string[]
+  classIds?: string[]
 }
 
 export interface StudentTeachingRecordItem {

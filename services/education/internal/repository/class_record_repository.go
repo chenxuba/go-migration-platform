@@ -111,6 +111,18 @@ func (repo *Repository) buildStudentTeachingRecordQuery(dto model.StudentTeachin
 		whereParts = append(whereParts, "start_time <= ?")
 		args = append(args, *end)
 	}
+	if begin := parseDateStart(strings.TrimSpace(query.BeginUpdatedTime)); begin != nil {
+		whereParts = append(whereParts, "updated_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(strings.TrimSpace(query.EndUpdatedTime)); end != nil {
+		whereParts = append(whereParts, "updated_time <= ?")
+		args = append(args, *end)
+	}
+	if studentID := strings.TrimSpace(query.StudentID); studentID != "" {
+		whereParts = append(whereParts, "CAST(student_id AS CHAR) = ?")
+		args = append(args, studentID)
+	}
 	if len(query.TeacherIDs) > 0 {
 		values := normalizeStringIDs(query.TeacherIDs)
 		if len(values) > 0 {
@@ -123,27 +135,11 @@ func (repo *Repository) buildStudentTeachingRecordQuery(dto model.StudentTeachin
 			whereParts = append(whereParts, filter)
 		}
 	}
-	if len(query.ClassTeacherIDs) > 0 {
-		values := normalizeStringIDs(query.ClassTeacherIDs)
+	if len(query.One2OneIDs) > 0 {
+		values := normalizeStringIDs(query.One2OneIDs)
 		if len(values) > 0 {
-			parts := make([]string, 0, 3)
-			if filter := buildJSONArrayAnyMatch("class_teacher_ids_json", values); filter != "" {
-				parts = append(parts, filter)
-			}
-			if filter := buildJSONArrayAnyMatch("roll_call_class_teacher_ids_json", values); filter != "" {
-				parts = append(parts, filter)
-			}
-			if filter := buildJSONArrayAnyMatch("current_class_teacher_ids_json", values); filter != "" {
-				parts = append(parts, filter)
-			}
-			if len(parts) > 0 {
-				whereParts = append(whereParts, "("+strings.Join(parts, " OR ")+")")
-			}
-		}
-	}
-	if len(query.One2OneTeacherIDs) > 0 {
-		if filter := buildJSONArrayAnyMatch("one2one_teacher_ids_json", normalizeStringIDs(query.One2OneTeacherIDs)); filter != "" {
-			whereParts = append(whereParts, filter)
+			whereParts = append(whereParts, "CAST(one_to_one_id AS CHAR) IN ("+sqlPlaceholders(len(values))+")")
+			args = append(args, stringSliceToAny(values)...)
 		}
 	}
 	if len(query.TimetableSourceTypes) > 0 {
@@ -155,18 +151,57 @@ func (repo *Repository) buildStudentTeachingRecordQuery(dto model.StudentTeachin
 		args = append(args, intSliceToAny(query.StudentSourceTypes)...)
 	}
 	if len(query.LessonChargingModeEnums) > 0 {
-		whereParts = append(whereParts, "sku_mode IN ("+sqlPlaceholders(len(query.LessonChargingModeEnums))+")")
-		args = append(args, intSliceToAny(query.LessonChargingModeEnums)...)
+		modeValues := make([]int, 0, len(query.LessonChargingModeEnums))
+		includeNoCountMode := false
+		for _, item := range query.LessonChargingModeEnums {
+			if item == 4 {
+				includeNoCountMode = true
+				continue
+			}
+			modeValues = append(modeValues, item)
+		}
+		switch {
+		case len(modeValues) > 0 && includeNoCountMode:
+			whereParts = append(whereParts, "(sku_mode IN ("+sqlPlaceholders(len(modeValues))+") OR source_type = 4)")
+			args = append(args, intSliceToAny(modeValues)...)
+		case len(modeValues) > 0:
+			whereParts = append(whereParts, "sku_mode IN ("+sqlPlaceholders(len(modeValues))+")")
+			args = append(args, intSliceToAny(modeValues)...)
+		case includeNoCountMode:
+			whereParts = append(whereParts, "source_type = 4")
+		}
 	}
 	if len(query.StudentTeachingRecordStatuses) > 0 {
-		whereParts = append(whereParts, "status IN ("+sqlPlaceholders(len(query.StudentTeachingRecordStatuses))+")")
-		args = append(args, intSliceToAny(query.StudentTeachingRecordStatuses)...)
+		statusValues := make([]int, 0, len(query.StudentTeachingRecordStatuses))
+		for _, item := range query.StudentTeachingRecordStatuses {
+			if item == 0 {
+				statusValues = append(statusValues, 4)
+				continue
+			}
+			statusValues = append(statusValues, item)
+		}
+		whereParts = append(whereParts, "status IN ("+sqlPlaceholders(len(statusValues))+")")
+		args = append(args, intSliceToAny(statusValues)...)
 	}
 	if query.IsArrear != nil {
 		if *query.IsArrear {
 			whereParts = append(whereParts, "arrear_quantity > 0")
 		} else {
 			whereParts = append(whereParts, "arrear_quantity <= 0")
+		}
+	}
+	if len(query.LessonIDs) > 0 {
+		values := normalizeStringIDs(query.LessonIDs)
+		if len(values) > 0 {
+			whereParts = append(whereParts, "CAST(lesson_id AS CHAR) IN ("+sqlPlaceholders(len(values))+")")
+			args = append(args, stringSliceToAny(values)...)
+		}
+	}
+	if len(query.ClassIDs) > 0 {
+		values := normalizeStringIDs(query.ClassIDs)
+		if len(values) > 0 {
+			whereParts = append(whereParts, "CAST(class_id AS CHAR) IN ("+sqlPlaceholders(len(values))+")")
+			args = append(args, stringSliceToAny(values)...)
 		}
 	}
 

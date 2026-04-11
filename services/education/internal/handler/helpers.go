@@ -1025,15 +1025,19 @@ func parseStudentTeachingRecordQueryModel(raw map[string]any) model.StudentTeach
 	return model.StudentTeachingRecordQueryModel{
 		BeginStartTime:                asString(raw["beginStartTime"]),
 		EndStartTime:                  asString(raw["endStartTime"]),
+		BeginUpdatedTime:              asString(raw["beginUpdatedTime"]),
+		EndUpdatedTime:                asString(raw["endUpdatedTime"]),
+		StudentID:                     asString(raw["studentId"]),
 		TeacherIDs:                    asStringSlice(raw["teacherIds"]),
 		AssistantTeacherIDs:           asStringSlice(raw["assistantTeacherIds"]),
-		ClassTeacherIDs:               asStringSlice(raw["classTeacherIds"]),
-		One2OneTeacherIDs:             asStringSlice(raw["one2OneTeacherIds"]),
+		One2OneIDs:                    coalesceStringSlice(raw["one2OneIds"], raw["one2oneIds"], raw["oneToOneIds"]),
 		TimetableSourceTypes:          asIntSlice(raw["timetableSourceTypes"]),
 		StudentSourceTypes:            asIntSlice(raw["studentSourceTypes"]),
 		LessonChargingModeEnums:       asIntSlice(raw["lessonChargingModeEnums"]),
 		StudentTeachingRecordStatuses: asIntSlice(raw["studentTeachingRecordStatuses"]),
 		IsArrear:                      asBoolPtr(raw["isArrear"]),
+		LessonIDs:                     coalesceStringSlice(raw["lessonIds"], raw["lessonId"]),
+		ClassIDs:                      asStringSlice(raw["classIds"]),
 	}
 }
 

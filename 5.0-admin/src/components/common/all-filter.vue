@@ -100,6 +100,12 @@ const props = defineProps({
       return []
     },
   },
+  defaultClassStatusVals: {
+    type: Array,
+    default: () => {
+      return []
+    },
+  },
   scheduleDateDisableFuture: {
     type: Boolean,
     default: false,
@@ -238,6 +244,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  scheduleTeacherLabel: {
+    type: String,
+    default: '上课教师',
+  },
   scheduleTeacherFinished: {
     type: Boolean,
     default: false,
@@ -251,6 +261,30 @@ const props = defineProps({
     default: undefined,
   },
   onScheduleTeacherLoadMore: {
+    type: Function,
+    default: undefined,
+  },
+  assistantTeacherOptions: {
+    type: Array,
+    default: () => [],
+  },
+  assistantTeacherLabel: {
+    type: String,
+    default: '上课助教',
+  },
+  assistantTeacherFinished: {
+    type: Boolean,
+    default: false,
+  },
+  onAssistantTeacherDropdownVisibleChange: {
+    type: Function,
+    default: undefined,
+  },
+  onAssistantTeacherSearch: {
+    type: Function,
+    default: undefined,
+  },
+  onAssistantTeacherLoadMore: {
     type: Function,
     default: undefined,
   },
@@ -274,6 +308,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  scheduleClassLabel: {
+    type: String,
+    default: '班级',
+  },
   scheduleClassFinished: {
     type: Boolean,
     default: false,
@@ -294,6 +332,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  scheduleOneToOneLabel: {
+    type: String,
+    default: '1对1',
+  },
   scheduleOneToOneFinished: {
     type: Boolean,
     default: false,
@@ -313,6 +355,10 @@ const props = defineProps({
   scheduleCourseOptions: {
     type: Array,
     default: () => [],
+  },
+  scheduleCourseLabel: {
+    type: String,
+    default: '课程',
   },
   scheduleCourseFinished: {
     type: Boolean,
@@ -338,7 +384,71 @@ const props = defineProps({
     type: String,
     default: '日程类型',
   },
+  studentIdentityOptions: {
+    type: Array,
+    default: () => [],
+  },
+  studentIdentityLabel: {
+    type: String,
+    default: '学员身份',
+  },
+  classStatusOptions: {
+    type: Array,
+    default: () => [],
+  },
+  classStatusLabel: {
+    type: String,
+    default: '上课状态',
+  },
   scheduleCallStatusOptions: {
+    type: Array,
+    default: () => [],
+  },
+  oneToOneTeacherOptions: {
+    type: Array,
+    default: () => [],
+  },
+  oneToOneTeacherLabel: {
+    type: String,
+    default: '1对1班主任',
+  },
+  oneToOneTeacherFinished: {
+    type: Boolean,
+    default: false,
+  },
+  onOneToOneTeacherDropdownVisibleChange: {
+    type: Function,
+    default: undefined,
+  },
+  onOneToOneTeacherSearch: {
+    type: Function,
+    default: undefined,
+  },
+  onOneToOneTeacherLoadMore: {
+    type: Function,
+    default: undefined,
+  },
+  classTeacherLabel: {
+    type: String,
+    default: '班主任',
+  },
+  isArrearsLabel: {
+    type: String,
+    default: '是否欠费',
+  },
+  isArrearsOptionsData: {
+    type: Array,
+    default: () => [],
+  },
+  lastEditedTimeLabel: {
+    type: String,
+    default: '最近编辑时间',
+  },
+  billingModeLabel: {
+    type: String,
+    default: '收费方式',
+  },
+  billingModeOptionsData: {
     type: Array,
     default: () => [],
   },
@@ -386,6 +496,10 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:scheduleCallStatusFilter',
   'update:scheduleDateFilter',
   'update:teacherRoleFilter',
+  'update:assistantTeacherFilter',
+  'update:studentIdentityFilter',
+  'update:classStatusFilter',
+  'update:oneToOneTeacherFilter',
 ])
 const spinning = ref(false)
 
@@ -464,12 +578,16 @@ const searchKeyStuPhone = ref(undefined) // 学员/电话搜索的值（真正�
 // 学员/电话下拉框的 v-model，使用 labelInValue 结构，保证有名字可用于回显
 const searchKeyStuPhoneModel = ref()
 const scheduleTeacherVals = ref([])
+const assistantTeacherVals = ref([])
 const scheduleClassroomVals = ref([])
 const scheduleClassVals = ref(undefined)
 const scheduleOneToOneVals = ref(undefined)
 const scheduleCourseVals = ref(undefined)
 const scheduleDateVals = ref([])
 const scheduleTypeVals = ref([])
+const studentIdentityVals = ref([])
+const classStatusVals = ref([])
+const oneToOneTeacherVals = ref([])
 const scheduleCallStatusVals = ref(undefined)
 const searchInputKey = ref(undefined)
 const selectInputKey = ref(undefined)
@@ -690,6 +808,11 @@ const isArrearsOptions = ref([
   { id: IsCommonYesNo.Yes, value: '是' },
   { id: IsCommonYesNo.No, value: '否' },
 ])
+const resolvedIsArrearsOptions = computed(() =>
+  Array.isArray(props.isArrearsOptionsData) && props.isArrearsOptionsData.length
+    ? props.isArrearsOptionsData
+    : isArrearsOptions.value,
+)
 const isArrearsVals = ref(null)
 const orderArrearStatusOptions = ref([
   { id: 2, value: '有欠费未补费' },
@@ -1379,6 +1502,11 @@ const billingModeOptions = ref([
   { id: 2, value: '按时段' },
   { id: 3, value: '按金额' },
 ])
+const resolvedBillingModeOptions = computed(() =>
+  Array.isArray(props.billingModeOptionsData) && props.billingModeOptionsData.length
+    ? props.billingModeOptionsData
+    : billingModeOptions.value,
+)
 const selectBillingModeVals = ref([])
 
 // 是否设置有效期
@@ -2357,9 +2485,15 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'scheduleTeacher',
-      label: '上课教师',
+      label: props.scheduleTeacherLabel,
       show: props.displayArray.includes('scheduleTeacher'),
       values: props.scheduleTeacherOptions.filter(opt => scheduleTeacherVals.value.includes(opt.id)),
+    },
+    {
+      type: 'assistantTeacher',
+      label: props.assistantTeacherLabel,
+      show: props.displayArray.includes('assistantTeacher'),
+      values: props.assistantTeacherOptions.filter(opt => assistantTeacherVals.value.includes(opt.id)),
     },
     {
       type: 'scheduleClassroom',
@@ -2369,19 +2503,19 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'scheduleClass',
-      label: '班级',
+      label: props.scheduleClassLabel,
       show: props.displayArray.includes('scheduleClass'),
       values: props.scheduleClassOptions.filter(opt => opt.id === scheduleClassVals.value),
     },
     {
       type: 'scheduleOneToOne',
-      label: '1对1',
+      label: props.scheduleOneToOneLabel,
       show: props.displayArray.includes('scheduleOneToOne'),
       values: props.scheduleOneToOneOptions.filter(opt => opt.id === scheduleOneToOneVals.value),
     },
     {
       type: 'scheduleCourse',
-      label: '课程',
+      label: props.scheduleCourseLabel,
       show: props.displayArray.includes('scheduleCourse'),
       values: props.scheduleCourseOptions.filter(opt => opt.id === scheduleCourseVals.value),
     },
@@ -2404,6 +2538,18 @@ const selectedConditions = computed(() => {
       label: props.scheduleTypeLabel,
       show: props.displayArray.includes('scheduleType'),
       values: props.scheduleTypeOptions.filter(opt => scheduleTypeVals.value.includes(opt.id)),
+    },
+    {
+      type: 'studentIdentity',
+      label: props.studentIdentityLabel,
+      show: props.displayArray.includes('studentIdentity'),
+      values: props.studentIdentityOptions.filter(opt => studentIdentityVals.value.includes(opt.id)),
+    },
+    {
+      type: 'classStatus',
+      label: props.classStatusLabel,
+      show: props.displayArray.includes('classStatus'),
+      values: props.classStatusOptions.filter(opt => classStatusVals.value.includes(opt.id)),
     },
     {
       type: 'scheduleCallStatus',
@@ -2648,7 +2794,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'classTeacher',
-      label: '班主任',
+      label: props.classTeacherLabel,
       show: props.displayArray.includes('classTeacher'),
       values: (() => {
         if (!classTeacherVals.value)
@@ -2672,10 +2818,16 @@ const selectedConditions = computed(() => {
       })(),
     },
     {
+      type: 'oneToOneTeacher',
+      label: props.oneToOneTeacherLabel,
+      show: props.displayArray.includes('oneToOneTeacher'),
+      values: props.oneToOneTeacherOptions.filter(opt => oneToOneTeacherVals.value.includes(opt.id)),
+    },
+    {
       type: 'isArrears',
-      label: '是否欠费',
+      label: props.isArrearsLabel,
       show: props.displayArray.includes('isArrears'),
-      values: isArrearsOptions.value.filter(
+      values: resolvedIsArrearsOptions.value.filter(
         opt => opt.id === isArrearsVals.value,
       ),
     },
@@ -2709,7 +2861,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'lastEditedTime',
-      label: '最近编辑时间',
+      label: props.lastEditedTimeLabel,
       show: props.displayArray.includes('lastEditedTime'),
       values:
         lastEditedTimeVals.value.length === 2
@@ -3114,9 +3266,9 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'billingMode',
-      label: '收费方式',
+      label: props.billingModeLabel,
       show: props.displayArray.includes('billingMode'),
-      values: billingModeOptions.value.filter(opt =>
+      values: resolvedBillingModeOptions.value.filter(opt =>
         selectBillingModeVals.value.includes(opt.id),
       ),
     },
@@ -3439,6 +3591,7 @@ watch(searchKeyStuPhone, () => {
   }
 })
 watch(scheduleTeacherVals, () => (lastUpdated.scheduleTeacher = Date.now()))
+watch(assistantTeacherVals, () => (lastUpdated.assistantTeacher = Date.now()))
 watch(scheduleClassroomVals, () => (lastUpdated.scheduleClassroom = Date.now()))
 watch(scheduleClassVals, () => (lastUpdated.scheduleClass = Date.now()))
 watch(scheduleOneToOneVals, () => (lastUpdated.scheduleOneToOne = Date.now()))
@@ -3448,6 +3601,9 @@ watch(scheduleDateVals, () => {
   debouncedEmit('scheduleDateFilter', scheduleDateVals.value)
 })
 watch(scheduleTypeVals, () => (lastUpdated.scheduleType = Date.now()))
+watch(studentIdentityVals, () => (lastUpdated.studentIdentity = Date.now()))
+watch(classStatusVals, () => (lastUpdated.classStatus = Date.now()))
+watch(oneToOneTeacherVals, () => (lastUpdated.oneToOneTeacher = Date.now()))
 watch(scheduleCallStatusVals, () => (lastUpdated.scheduleCallStatus = Date.now()))
 watch(selectTeacher, () => {
   lastUpdated.teacherSelect = Date.now()
@@ -3667,12 +3823,16 @@ const clearAll = debounce(() => {
     emit('update:openClassStatusFilter', undefined, true)
     emit('update:doYouScheduleFilter', undefined, true)
     emit('update:scheduleTeacherFilter', undefined, true)
+    emit('update:assistantTeacherFilter', undefined, true)
     emit('update:scheduleClassroomFilter', undefined, true)
     emit('update:scheduleClassFilter', undefined, true)
     emit('update:scheduleOneToOneFilter', undefined, true)
     emit('update:scheduleCourseFilter', undefined, true)
     emit('update:scheduleDateFilter', undefined, true)
     emit('update:scheduleTypeFilter', undefined, true)
+    emit('update:studentIdentityFilter', undefined, true)
+    emit('update:classStatusFilter', undefined, true)
+    emit('update:oneToOneTeacherFilter', undefined, true)
     emit('update:scheduleCallStatusFilter', undefined, true)
   })
 
@@ -3731,12 +3891,16 @@ const clearAll = debounce(() => {
   classTeacherVals.value = null
   selectedClassTeacherInfo.value = null
   scheduleTeacherVals.value = []
+  assistantTeacherVals.value = []
   scheduleClassroomVals.value = []
   scheduleClassVals.value = undefined
   scheduleOneToOneVals.value = undefined
   scheduleCourseVals.value = undefined
   scheduleDateVals.value = []
   scheduleTypeVals.value = []
+  studentIdentityVals.value = []
+  classStatusVals.value = []
+  oneToOneTeacherVals.value = []
   scheduleCallStatusVals.value = undefined
   // 重置推荐人相关状态 - 独立处理
   recommendVals.value = null
@@ -3889,6 +4053,15 @@ function removeCondition(type, id) {
       scheduleTeacherVals.value = scheduleTeacherVals.value.filter(item => String(item) !== String(id))
       emit('update:scheduleTeacherFilter', [...scheduleTeacherVals.value], false, id, type)
       break
+    case 'assistantTeacher':
+      if (shouldClearWholeCondition(type)) {
+        assistantTeacherVals.value = []
+        emit('update:assistantTeacherFilter', [], false, id, type)
+        break
+      }
+      assistantTeacherVals.value = assistantTeacherVals.value.filter(item => String(item) !== String(id))
+      emit('update:assistantTeacherFilter', [...assistantTeacherVals.value], false, id, type)
+      break
     case 'scheduleClassroom':
       if (shouldClearWholeCondition(type)) {
         scheduleClassroomVals.value = []
@@ -3923,16 +4096,40 @@ function removeCondition(type, id) {
       scheduleTypeVals.value = scheduleTypeVals.value.filter(item => String(item) !== String(id))
       emit('update:scheduleTypeFilter', [...scheduleTypeVals.value], false, id, type)
       break
+    case 'studentIdentity':
+      if (shouldClearWholeCondition(type)) {
+        studentIdentityVals.value = []
+        emit('update:studentIdentityFilter', [], false, id, type)
+        break
+      }
+      studentIdentityVals.value = studentIdentityVals.value.filter(item => String(item) !== String(id))
+      emit('update:studentIdentityFilter', [...studentIdentityVals.value], false, id, type)
+      break
+    case 'classStatus':
+      if (shouldClearWholeCondition(type)) {
+        classStatusVals.value = []
+        emit('update:classStatusFilter', [], false, id, type)
+        break
+      }
+      classStatusVals.value = classStatusVals.value.filter(item => String(item) !== String(id))
+      emit('update:classStatusFilter', [...classStatusVals.value], false, id, type)
+      break
     case 'scheduleCallStatus':
       scheduleCallStatusVals.value = undefined
       emit('update:scheduleCallStatusFilter', undefined, false, id, type)
       break
     case 'stuPhoneSearch':
-      // searchKeyStuPhone.value = undefined;
+      searchKeyStuPhone.value = undefined
+      stuPhoneSearchVals.value = null
+      selectedStuPhoneSearchInfo.value = null
+      searchKeyStuPhoneModel.value = undefined
       emit('update:stuPhoneSearchFilter', undefined, false, id, type)
       break
     case 'stuPhoneSearchNew':
       searchKeyStuPhone.value = undefined
+      stuPhoneSearchVals.value = null
+      selectedStuPhoneSearchInfo.value = null
+      searchKeyStuPhoneModel.value = undefined
       emit('update:stuPhoneSearchFilter', undefined, false, id, type)
       break
     case 'selectInputKeySearch':
@@ -4029,6 +4226,15 @@ function removeCondition(type, id) {
       // 班主任：只通知父组件清除筛选条件，本地选中值在 clearQuickFilter 中、接口成功后再清
       emit('update:classTeacherFilter', undefined, false, id, type)
       break
+    case 'oneToOneTeacher':
+      if (shouldClearWholeCondition(type)) {
+        oneToOneTeacherVals.value = []
+        emit('update:oneToOneTeacherFilter', [], false, id, type)
+        break
+      }
+      oneToOneTeacherVals.value = oneToOneTeacherVals.value.filter(item => String(item) !== String(id))
+      emit('update:oneToOneTeacherFilter', [...oneToOneTeacherVals.value], false, id, type)
+      break
     case 'wxChat':
       // wxChatVals.value = null;
       // if (childRefs.value['wxChat'] && childRefs.value['wxChat'].closeDropdown) {
@@ -4121,8 +4327,7 @@ function removeCondition(type, id) {
       }
       break
     case 'lastEditedTime': // 最近修改时间移除逻辑
-      // lastEditedTimeVals.value = []
-      // console.log('单个清楚')
+      lastEditedTimeVals.value = []
       emit('update:lastEditedTimeFilter', [], false, id, type)
       break
     case 'assignTime': // 分配时间移除逻辑
@@ -4236,7 +4441,7 @@ function removeCondition(type, id) {
       emit('update:teachingMethodFilter', undefined, false, id, type)
       break
     case 'isArrears':
-      // 是否欠费：只通知父组件清除筛选条件，本地选中值在 clearQuickFilter 中、接口成功后再清
+      isArrearsVals.value = null
       emit('update:isArrearsFilter', undefined, false, id, type)
       break
     case 'lastClassTime':
@@ -4453,8 +4658,14 @@ function clearQuickFilter(id, type) {
         childRefs.value.classTeacher.resetSearch()
       }
       break
+    case 'oneToOneTeacher':
+      oneToOneTeacherVals.value = []
+      break
     case 'scheduleTeacher':
       scheduleTeacherVals.value = []
+      break
+    case 'assistantTeacher':
+      assistantTeacherVals.value = []
       break
     case 'scheduleClassroom':
       scheduleClassroomVals.value = []
@@ -4473,6 +4684,12 @@ function clearQuickFilter(id, type) {
       break
     case 'scheduleType':
       scheduleTypeVals.value = []
+      break
+    case 'studentIdentity':
+      studentIdentityVals.value = []
+      break
+    case 'classStatus':
+      classStatusVals.value = []
       break
     case 'scheduleCallStatus':
       scheduleCallStatusVals.value = undefined
@@ -4957,6 +5174,10 @@ watchEffect(() => {
   if (props.defaultOpenClassStatus) {
     selectOpenClassStatusVals.value = props.defaultOpenClassStatus
   }
+
+  if (props.defaultClassStatusVals?.length) {
+    classStatusVals.value = props.defaultClassStatusVals.map(item => String(item ?? '').trim()).filter(Boolean)
+  }
 })
 
 watch(
@@ -5060,6 +5281,12 @@ async function handleTeacherSearchPopupScroll(event) {
 function handleScheduleTeacherChange(e) {
   nextTick(() => {
     emit('update:scheduleTeacherFilter', e)
+  })
+}
+
+function handleAssistantTeacherChange(e) {
+  nextTick(() => {
+    emit('update:assistantTeacherFilter', e)
   })
 }
 
@@ -5206,6 +5433,18 @@ function handleScheduleTypeChange(e) {
   })
 }
 
+function handleStudentIdentityChange(e) {
+  nextTick(() => {
+    emit('update:studentIdentityFilter', e)
+  })
+}
+
+function handleClassStatusChange(e) {
+  nextTick(() => {
+    emit('update:classStatusFilter', e)
+  })
+}
+
 function handleScheduleCallStatusChange(e) {
   nextTick(() => {
     emit('update:scheduleCallStatusFilter', e)
@@ -5287,6 +5526,12 @@ function handleClassTeacherChange(e) {
   nextTick(() => {
     console.log('班主任:', e)
     emit('update:classTeacherFilter', e)
+  })
+}
+
+function handleOneToOneTeacherChange(e) {
+  nextTick(() => {
+    emit('update:oneToOneTeacherFilter', e)
   })
 }
 
@@ -5707,12 +5952,21 @@ defineExpose({
 
               <checkbox-filter v-if="filterType === 'scheduleTeacher'"
                 v-model:checked-values="scheduleTeacherVals" category="course"
-                placeholder="请输入上课教师" :options="scheduleTeacherOptions" label="上课教师" show-search
+                placeholder="请输入上课教师" :options="scheduleTeacherOptions" :label="scheduleTeacherLabel" show-search
                 type="checkbox" :finished="scheduleTeacherFinished"
                 @change="handleScheduleTeacherChange"
                 @on-dropdown-visible-change="onScheduleTeacherDropdownVisibleChange?.()"
                 @on-search="keyword => onScheduleTeacherSearch?.(keyword)"
                 @load-more="onScheduleTeacherLoadMore?.()" />
+
+              <checkbox-filter v-if="filterType === 'assistantTeacher'"
+                v-model:checked-values="assistantTeacherVals" category="course"
+                placeholder="请输入上课助教" :options="assistantTeacherOptions" :label="assistantTeacherLabel" show-search
+                type="checkbox" :finished="assistantTeacherFinished"
+                @change="handleAssistantTeacherChange"
+                @on-dropdown-visible-change="onAssistantTeacherDropdownVisibleChange?.()"
+                @on-search="keyword => onAssistantTeacherSearch?.(keyword)"
+                @load-more="onAssistantTeacherLoadMore?.()" />
 
               <checkbox-filter v-if="filterType === 'scheduleClassroom'"
                 v-model:checked-values="scheduleClassroomVals" category="course"
@@ -5724,7 +5978,7 @@ defineExpose({
 
               <checkbox-filter v-if="filterType === 'scheduleClass'"
                 v-model:checked-values="scheduleClassVals" category="course"
-                placeholder="请输入班级" :options="scheduleClassOptions" label="班级" type="radio"
+                placeholder="请输入班级" :options="scheduleClassOptions" :label="scheduleClassLabel" type="radio"
                 :finished="scheduleClassFinished"
                 @radio-change="handleScheduleClassChange"
                 @on-dropdown-visible-change="onScheduleClassDropdownVisibleChange?.()"
@@ -5733,7 +5987,7 @@ defineExpose({
 
               <checkbox-filter v-if="filterType === 'scheduleOneToOne'"
                 v-model:checked-values="scheduleOneToOneVals" category="course"
-                placeholder="请输入1对1" :options="scheduleOneToOneOptions" label="1对1" type="radio"
+                placeholder="请输入1对1" :options="scheduleOneToOneOptions" :label="scheduleOneToOneLabel" type="radio"
                 :finished="scheduleOneToOneFinished"
                 @radio-change="handleScheduleOneToOneChange"
                 @on-dropdown-visible-change="onScheduleOneToOneDropdownVisibleChange?.()"
@@ -5742,7 +5996,7 @@ defineExpose({
 
               <checkbox-filter v-if="filterType === 'scheduleCourse'"
                 v-model:checked-values="scheduleCourseVals" category="course"
-                placeholder="请输入课程" :options="scheduleCourseOptions" label="课程" type="radio"
+                placeholder="请输入课程" :options="scheduleCourseOptions" :label="scheduleCourseLabel" type="radio"
                 :finished="scheduleCourseFinished"
                 @radio-change="handleScheduleCourseChange"
                 @on-dropdown-visible-change="onScheduleCourseDropdownVisibleChange?.()"
@@ -5757,6 +6011,14 @@ defineExpose({
               <checkbox-filter v-if="filterType === 'scheduleType'"
                 v-model:checked-values="scheduleTypeVals" :options="scheduleTypeOptions" :label="scheduleTypeLabel"
                 type="checkbox" @change="handleScheduleTypeChange" />
+
+              <checkbox-filter v-if="filterType === 'studentIdentity'"
+                v-model:checked-values="studentIdentityVals" :options="studentIdentityOptions" :label="studentIdentityLabel"
+                type="checkbox" @change="handleStudentIdentityChange" />
+
+              <checkbox-filter v-if="filterType === 'classStatus'"
+                v-model:checked-values="classStatusVals" :options="classStatusOptions" :label="classStatusLabel"
+                type="checkbox" @change="handleClassStatusChange" />
 
               <checkbox-filter v-if="filterType === 'scheduleCallStatus'"
                 v-model:checked-values="scheduleCallStatusVals" category="noSearchRadio"
@@ -5782,14 +6044,22 @@ defineExpose({
               <!-- 班主任（复用销售员组件） -->
               <checkbox-filter v-if="filterType === 'classTeacher'" :ref="(el) => handleRef(el, 'classTeacher')"
                 v-model:checked-values="classTeacherVals" category="teacher" placeholder="请输入班主任"
-                :options="classTeacherOptions" label="班主任" type="radio" :finished="classTeacherFinished"
+                :options="classTeacherOptions" :label="classTeacherLabel" type="radio" :finished="classTeacherFinished"
                 @radio-change="handleClassTeacherChange" @on-dropdown-visible-change="onDropdownVisibleChangeClassTeacher"
                 @on-search="onSearchClassTeacherFun" @load-more="loadMoreClassTeacher" />
+
+              <checkbox-filter v-if="filterType === 'oneToOneTeacher'"
+                v-model:checked-values="oneToOneTeacherVals" category="teacher" placeholder="请输入1对1班主任"
+                :options="oneToOneTeacherOptions" :label="oneToOneTeacherLabel" type="checkbox" :finished="oneToOneTeacherFinished"
+                @change="handleOneToOneTeacherChange"
+                @on-dropdown-visible-change="onOneToOneTeacherDropdownVisibleChange?.()"
+                @on-search="keyword => onOneToOneTeacherSearch?.(keyword)"
+                @load-more="onOneToOneTeacherLoadMore?.()" />
 
               <!-- 是否欠费（复用是否有体验价组件） -->
               <checkbox-filter v-if="filterType === 'isArrears'" :ref="(el) => handleRef(el, 'isArrears')"
                 v-model:checked-values="isArrearsVals" category="noSearchRadio" placeholder="请选择是否欠费"
-                :options="isArrearsOptions" label="是否欠费" type="radio" @radio-change="handleIsArrearsChange" />
+                :options="resolvedIsArrearsOptions" :label="isArrearsLabel" type="radio" @radio-change="handleIsArrearsChange" />
 
               <checkbox-filter v-if="filterType === 'enableStatus'" :ref="(el) => handleRef(el, 'enableStatus')"
                 v-model:checked-values="enableStatusVals" category="noSearchRadio" placeholder="请选择启用状态"
@@ -5809,7 +6079,7 @@ defineExpose({
 
               <!-- 最近编辑时间 -->
               <checkbox-filter v-if="filterType === 'lastEditedTime'" v-model:checked-values="lastEditedTimeVals"
-                label="最近编辑时间" type="dateTime" @date-picker-change="handlelastEditedTimeChange" />
+                :label="lastEditedTimeLabel" type="dateTime" @date-picker-change="handlelastEditedTimeChange" />
 
               <!-- 生日 -->
               <checkbox-filter v-if="filterType === 'birthday'" v-model:checked-values="birthdayVals" label="生日"
@@ -5987,7 +6257,7 @@ defineExpose({
 
               <!-- 收费方式 -->
               <checkbox-filter v-if="filterType === 'billingMode'" :ref="(el) => handleRef(el, 'billingMode')"
-                v-model:checked-values="selectBillingModeVals" :options="billingModeOptions" label="收费方式"
+                v-model:checked-values="selectBillingModeVals" :options="resolvedBillingModeOptions" :label="billingModeLabel"
                 type="checkbox" @change="handleBillingModeChange" />
 
               <!-- 是否设置有效期 -->

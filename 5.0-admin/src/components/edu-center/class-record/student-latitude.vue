@@ -2,25 +2,81 @@
 import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, onMounted, ref, watch } from 'vue'
+import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
+import { pageGroupClassesApi } from '@/api/edu-center/group-class'
+import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
+import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { getStudentTeachingRecordPagedListApi, type StudentTeachingRecordItem } from '@/api/edu-center/class-record'
 import StudentAvatar from '@/components/common/StudentAvatar.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 
+interface FilterOption {
+  id: string
+  value: string
+}
+
 const monthStart = dayjs().startOf('month')
 const today = dayjs()
 const defaultScheduleDateVals = [monthStart.format('YYYY-MM-DD'), today.format('YYYY-MM-DD')]
-const displayArray = ref(['scheduleDate', 'scheduleType', 'isArrears'])
+const displayArray = ref([
+  'scheduleDate',
+  'stuPhoneSearch',
+  'scheduleCourse',
+  'scheduleTeacher',
+  'assistantTeacher',
+  'scheduleClass',
+  'scheduleOneToOne',
+  'lastEditedTime',
+  'scheduleType',
+  'studentIdentity',
+  'classStatus',
+  'billingMode',
+  'isArrears',
+])
 const scheduleTypeOptions = [
   { id: '1', value: '班级日程' },
   { id: '2', value: '1对1日程' },
   { id: '3', value: '试听日程' },
+]
+const studentIdentityOptions = [
+  { id: 'class', value: '班级学员' },
+  { id: 'one_to_one', value: '1对1学员' },
+  { id: 'trial', value: '试听学员' },
+  { id: 'temporary', value: '临时学员' },
+  { id: 'makeup', value: '补课学员' },
+]
+const classStatusOptions = [
+  { id: '1', value: '到课' },
+  { id: '3', value: '请假' },
+  { id: '2', value: '旷课' },
+  { id: '0', value: '未记录' },
+]
+const defaultClassStatusVals = ['1', '3', '2']
+const lessonChargingModeOptions = [
+  { id: 1, value: '按课时' },
+  { id: 2, value: '按时段' },
+  { id: 3, value: '按金额' },
+  { id: 4, value: '不记课时' },
+]
+const arrearOnlyOptions = [
+  { id: 1, value: '仅显示有拖欠数据的记录' },
 ]
 
 const loading = ref(false)
 const openClassRecordDrawer = ref(false)
 const dataSource = ref<StudentTeachingRecordItem[]>([])
 const filterDateRange = ref<[Dayjs, Dayjs]>([monthStart, today])
+const filterUpdatedDateRange = ref<[Dayjs, Dayjs] | null>(null)
+const filterStudentId = ref<string | undefined>(undefined)
+const filterLessonId = ref<string | undefined>(undefined)
+const filterTeacherIds = ref<string[]>([])
+const filterAssistantTeacherIds = ref<string[]>([])
+const filterClassId = ref<string | undefined>(undefined)
+const filterOneToOneId = ref<string | undefined>(undefined)
 const filterScheduleTypes = ref<string[]>([])
+const filterStudentIdentityValues = ref<string[]>([])
+const filterClassStatusValues = ref<string[]>([...defaultClassStatusVals])
+const filterLessonChargingModeValues = ref<number[]>([])
 const filterIsArrear = ref<boolean | null>(null)
 const summary = ref({
   total: 0,
@@ -33,8 +89,56 @@ const pagination = ref({
   total: 0,
 })
 
+const courseOptions = ref<FilterOption[]>([])
+const courseFinished = ref(false)
+const classOptions = ref<FilterOption[]>([])
+const classFinished = ref(false)
+const oneToOneOptions = ref<FilterOption[]>([])
+const oneToOneFinished = ref(false)
+const teacherOptions = ref<FilterOption[]>([])
+const teacherFinished = ref(false)
+const assistantTeacherOptions = ref<FilterOption[]>([])
+const assistantTeacherFinished = ref(false)
+
+const classPagination = ref({ current: 1, pageSize: 20, total: 0 })
+const oneToOnePagination = ref({ current: 1, pageSize: 20, total: 0 })
+const teacherPagination = ref({ current: 1, pageSize: 20, total: 0 })
+const assistantTeacherPagination = ref({ current: 1, pageSize: 20, total: 0 })
+
+const classSearchKey = ref('')
+const oneToOneSearchKey = ref('')
+const teacherSearchKey = ref('')
+const assistantTeacherSearchKey = ref('')
+
 function handleSeeClassRecord() {
   openClassRecordDrawer.value = true
+}
+
+function normalizeFilterValue(value: unknown) {
+  if (Array.isArray(value))
+    return value.length ? String(value[0] ?? '').trim() || undefined : undefined
+  const text = String(value ?? '').trim()
+  return text || undefined
+}
+
+function normalizeFilterValues(value: unknown) {
+  if (!Array.isArray(value))
+    return []
+  return value.map(item => String(item ?? '').trim()).filter(Boolean)
+}
+
+function mergeFilterOptions(previous: FilterOption[], incoming: FilterOption[], selectedValues: string | string[] | undefined = []) {
+  const selectedSet = new Set((Array.isArray(selectedValues) ? selectedValues : [selectedValues]).map(value => String(value || '')).filter(Boolean))
+  const map = new Map<string, FilterOption>()
+  previous.forEach((item) => {
+    if (selectedSet.has(item.id))
+      map.set(item.id, item)
+  })
+  incoming.forEach((item) => {
+    if (item.id)
+      map.set(item.id, item)
+  })
+  return [...map.values()]
 }
 
 const allColumns = ref<any[]>([
@@ -250,6 +354,33 @@ function sourceTypeText(value?: number) {
   return '班级学员'
 }
 
+function buildStudentSourceTypes(values: string[]) {
+  const result = new Set<number>()
+  values.forEach((item) => {
+    if (item === 'class')
+      result.add(5)
+    else if (item === 'one_to_one')
+      result.add(6)
+    else if (item === 'trial')
+      result.add(4)
+    else if (item === 'temporary')
+      result.add(2)
+    else if (item === 'makeup') {
+      result.add(3)
+      result.add(7)
+    }
+  })
+  return [...result]
+}
+
+function buildClassStatusValues(values: string[]) {
+  return values.map((item) => {
+    if (item === '0')
+      return 0
+    return Number(item)
+  }).filter(item => Number.isFinite(item))
+}
+
 function statusText(value?: number) {
   const status = Number(value || 0)
   if (status === 2)
@@ -332,9 +463,163 @@ function buildQueryModel() {
   return {
     beginStartTime: filterDateRange.value[0]?.format('YYYY-MM-DD'),
     endStartTime: filterDateRange.value[1]?.format('YYYY-MM-DD'),
+    beginUpdatedTime: filterUpdatedDateRange.value?.[0]?.format('YYYY-MM-DD'),
+    endUpdatedTime: filterUpdatedDateRange.value?.[1]?.format('YYYY-MM-DD'),
+    studentId: filterStudentId.value,
+    lessonIds: filterLessonId.value ? [filterLessonId.value] : undefined,
     timetableSourceTypes: filterScheduleTypes.value.map(item => Number(item)).filter(Boolean),
+    teacherIds: filterTeacherIds.value.length ? filterTeacherIds.value : undefined,
+    assistantTeacherIds: filterAssistantTeacherIds.value.length ? filterAssistantTeacherIds.value : undefined,
+    classIds: filterClassId.value ? [filterClassId.value] : undefined,
+    one2OneIds: filterOneToOneId.value ? [filterOneToOneId.value] : undefined,
+    studentSourceTypes: buildStudentSourceTypes(filterStudentIdentityValues.value),
+    studentTeachingRecordStatuses: buildClassStatusValues(filterClassStatusValues.value),
+    lessonChargingModeEnums: filterLessonChargingModeValues.value.length ? filterLessonChargingModeValues.value : undefined,
     isArrear: filterIsArrear.value,
   }
+}
+
+async function loadCourseOptions(searchKey = '') {
+  try {
+    const res = await getCourseIdAndNameApi({
+      searchKey: searchKey || '',
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result) ? res.result : []).map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.name || item.value || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    courseOptions.value = mergeFilterOptions(courseOptions.value, resultData, filterLessonId.value)
+    courseFinished.value = true
+  }
+  catch (error) {
+    console.error('load class record courses failed', error)
+  }
+}
+
+async function loadClassOptions(searchKey = '', reset = true) {
+  if (reset) {
+    classPagination.value.current = 1
+    classFinished.value = false
+  }
+  classSearchKey.value = searchKey
+  try {
+    const res = await pageGroupClassesApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: classPagination.value.pageSize,
+        pageIndex: classPagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        className: searchKey || undefined,
+      },
+    })
+    if (res.code !== 200)
+      return
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    const resultData = list.map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.name || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    classOptions.value = reset
+      ? mergeFilterOptions(classOptions.value, resultData, filterClassId.value)
+      : mergeFilterOptions(classOptions.value, [...classOptions.value, ...resultData], filterClassId.value)
+    classPagination.value.total = Number(res.result?.total || resultData.length || 0)
+    classFinished.value = classOptions.value.length >= classPagination.value.total
+  }
+  catch (error) {
+    console.error('load class record classes failed', error)
+  }
+}
+
+async function loadOneToOneOptions(searchKey = '', reset = true) {
+  if (reset) {
+    oneToOnePagination.value.current = 1
+    oneToOneFinished.value = false
+  }
+  oneToOneSearchKey.value = searchKey
+  try {
+    const res = await getOneToOneListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: oneToOnePagination.value.pageSize,
+        pageIndex: oneToOnePagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        searchKey: searchKey || undefined,
+      },
+    })
+    if (res.code !== 200)
+      return
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    const resultData = list.map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.name || item.studentName || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    oneToOneOptions.value = reset
+      ? mergeFilterOptions(oneToOneOptions.value, resultData, filterOneToOneId.value)
+      : mergeFilterOptions(oneToOneOptions.value, [...oneToOneOptions.value, ...resultData], filterOneToOneId.value)
+    oneToOnePagination.value.total = Number(res.result?.total || resultData.length || 0)
+    oneToOneFinished.value = oneToOneOptions.value.length >= oneToOnePagination.value.total
+  }
+  catch (error) {
+    console.error('load class record one to one failed', error)
+  }
+}
+
+async function loadTeacherFilterOptions(
+  targetOptions: typeof teacherOptions,
+  targetFinished: typeof teacherFinished,
+  targetPagination: typeof teacherPagination,
+  selectedValues: string[] | string | undefined,
+  searchKey = '',
+  reset = true,
+) {
+  if (reset) {
+    targetPagination.value.current = 1
+    targetFinished.value = false
+  }
+  try {
+    const res = await getUserListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: targetPagination.value.pageSize,
+        pageIndex: targetPagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        searchKey: searchKey || undefined,
+      },
+      sortModel: {},
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result) ? res.result : []).map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.nickName || item.name || item.value || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    targetOptions.value = reset
+      ? mergeFilterOptions(targetOptions.value, resultData, selectedValues)
+      : mergeFilterOptions(targetOptions.value, [...targetOptions.value, ...resultData], selectedValues)
+    targetPagination.value.total = Number(res.total || resultData.length || 0)
+    targetFinished.value = targetOptions.value.length >= targetPagination.value.total
+  }
+  catch (error) {
+    console.error('load class record teachers failed', error)
+  }
+}
+
+function loadTeacherOptions(searchKey = '', reset = true) {
+  teacherSearchKey.value = searchKey
+  return loadTeacherFilterOptions(teacherOptions, teacherFinished, teacherPagination, filterTeacherIds.value, searchKey, reset)
+}
+
+function loadAssistantTeacherOptions(searchKey = '', reset = true) {
+  assistantTeacherSearchKey.value = searchKey
+  return loadTeacherFilterOptions(assistantTeacherOptions, assistantTeacherFinished, assistantTeacherPagination, filterAssistantTeacherIds.value, searchKey, reset)
 }
 
 async function loadList() {
@@ -391,8 +676,60 @@ function handleScheduleDateFilter(value: unknown) {
   ]
 }
 
+function handleUpdatedTimeFilter(value: unknown) {
+  if (!Array.isArray(value) || value.length < 2) {
+    filterUpdatedDateRange.value = null
+    return
+  }
+  const start = dayjs(String(value[0] || ''))
+  const end = dayjs(String(value[1] || ''))
+  if (!start.isValid() || !end.isValid()) {
+    filterUpdatedDateRange.value = null
+    return
+  }
+  filterUpdatedDateRange.value = [start, end]
+}
+
+function handleStudentFilter(value: unknown) {
+  filterStudentId.value = normalizeFilterValue(value)
+}
+
+function handleLessonFilter(value: unknown) {
+  filterLessonId.value = normalizeFilterValue(value)
+}
+
+function handleTeacherFilter(value: unknown) {
+  filterTeacherIds.value = normalizeFilterValues(value)
+}
+
+function handleAssistantTeacherFilter(value: unknown) {
+  filterAssistantTeacherIds.value = normalizeFilterValues(value)
+}
+
+function handleClassFilter(value: unknown) {
+  filterClassId.value = normalizeFilterValue(value)
+}
+
+function handleOneToOneFilter(value: unknown) {
+  filterOneToOneId.value = normalizeFilterValue(value)
+}
+
 function handleScheduleTypeFilter(value: unknown) {
   filterScheduleTypes.value = Array.isArray(value) ? value.map(item => String(item || '')).filter(Boolean) : []
+}
+
+function handleStudentIdentityFilter(value: unknown) {
+  filterStudentIdentityValues.value = normalizeFilterValues(value)
+}
+
+function handleClassStatusFilter(value: unknown) {
+  filterClassStatusValues.value = normalizeFilterValues(value)
+}
+
+function handleLessonChargingModeFilter(value: unknown) {
+  filterLessonChargingModeValues.value = Array.isArray(value)
+    ? value.map(item => Number(item)).filter(item => Number.isFinite(item))
+    : []
 }
 
 function handleIsArrearsFilter(value: unknown) {
@@ -409,7 +746,21 @@ function handleTableChange(page: { current?: number, pageSize?: number }) {
 }
 
 watch(
-  [filterDateRange, filterScheduleTypes, filterIsArrear],
+  [
+    filterDateRange,
+    filterUpdatedDateRange,
+    filterStudentId,
+    filterLessonId,
+    filterTeacherIds,
+    filterAssistantTeacherIds,
+    filterClassId,
+    filterOneToOneId,
+    filterScheduleTypes,
+    filterStudentIdentityValues,
+    filterClassStatusValues,
+    filterLessonChargingModeValues,
+    filterIsArrear,
+  ],
   () => {
     pagination.value.current = 1
     loadList()
@@ -428,11 +779,56 @@ onMounted(() => {
       <all-filter
         :display-array="displayArray"
         :default-schedule-date-vals="defaultScheduleDateVals"
+        :default-class-status-vals="defaultClassStatusVals"
         :schedule-date-disable-future="true"
         :schedule-type-options="scheduleTypeOptions"
+        :schedule-course-options="courseOptions"
+        :schedule-course-finished="courseFinished"
+        :on-schedule-course-dropdown-visible-change="() => loadCourseOptions()"
+        :on-schedule-course-search="loadCourseOptions"
+        :schedule-teacher-options="teacherOptions"
+        :schedule-teacher-finished="teacherFinished"
+        :on-schedule-teacher-dropdown-visible-change="() => loadTeacherOptions('', true)"
+        :on-schedule-teacher-search="keyword => loadTeacherOptions(keyword, true)"
+        :on-schedule-teacher-load-more="() => { teacherPagination.current += 1; return loadTeacherOptions(teacherSearchKey, false) }"
+        :assistant-teacher-options="assistantTeacherOptions"
+        :assistant-teacher-finished="assistantTeacherFinished"
+        :on-assistant-teacher-dropdown-visible-change="() => loadAssistantTeacherOptions('', true)"
+        :on-assistant-teacher-search="keyword => loadAssistantTeacherOptions(keyword, true)"
+        :on-assistant-teacher-load-more="() => { assistantTeacherPagination.current += 1; return loadAssistantTeacherOptions(assistantTeacherSearchKey, false) }"
+        :schedule-class-options="classOptions"
+        :schedule-class-finished="classFinished"
+        :on-schedule-class-dropdown-visible-change="() => loadClassOptions('', true)"
+        :on-schedule-class-search="keyword => loadClassOptions(keyword, true)"
+        :on-schedule-class-load-more="() => { classPagination.current += 1; return loadClassOptions(classSearchKey, false) }"
+        :schedule-one-to-one-options="oneToOneOptions"
+        :schedule-one-to-one-finished="oneToOneFinished"
+        :on-schedule-one-to-one-dropdown-visible-change="() => loadOneToOneOptions('', true)"
+        :on-schedule-one-to-one-search="keyword => loadOneToOneOptions(keyword, true)"
+        :on-schedule-one-to-one-load-more="() => { oneToOnePagination.current += 1; return loadOneToOneOptions(oneToOneSearchKey, false) }"
+        :student-identity-options="studentIdentityOptions"
+        :class-status-options="classStatusOptions"
+        :billing-mode-label="'课消方式'"
+        :billing-mode-options-data="lessonChargingModeOptions"
+        :is-arrears-label="'拖欠数量'"
+        :is-arrears-options-data="arrearOnlyOptions"
+        :schedule-course-label="'关联课程'"
+        :last-edited-time-label="'点名更新时间'"
+        :whole-condition-clear-types="['scheduleTeacher', 'assistantTeacher', 'scheduleType', 'studentIdentity', 'classStatus']"
         :is-quick-show="false"
+        :student-status="1"
         @update:schedule-date-filter="handleScheduleDateFilter"
+        @update:stu-phone-search-filter="handleStudentFilter"
+        @update:schedule-course-filter="handleLessonFilter"
+        @update:schedule-teacher-filter="handleTeacherFilter"
+        @update:assistant-teacher-filter="handleAssistantTeacherFilter"
+        @update:schedule-class-filter="handleClassFilter"
+        @update:schedule-one-to-one-filter="handleOneToOneFilter"
+        @update:last-edited-time-filter="handleUpdatedTimeFilter"
         @update:schedule-type-filter="handleScheduleTypeFilter"
+        @update:student-identity-filter="handleStudentIdentityFilter"
+        @update:class-status-filter="handleClassStatusFilter"
+        @update:billing-mode-filter="handleLessonChargingModeFilter"
         @update:is-arrears-filter="handleIsArrearsFilter"
       />
     </div>

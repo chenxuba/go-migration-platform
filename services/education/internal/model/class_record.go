@@ -9,15 +9,19 @@ type StudentTeachingRecordPagedQueryDTO struct {
 type StudentTeachingRecordQueryModel struct {
 	BeginStartTime                string   `json:"beginStartTime"`
 	EndStartTime                  string   `json:"endStartTime"`
+	BeginUpdatedTime              string   `json:"beginUpdatedTime"`
+	EndUpdatedTime                string   `json:"endUpdatedTime"`
+	StudentID                     string   `json:"studentId"`
 	TeacherIDs                    []string `json:"teacherIds"`
 	AssistantTeacherIDs           []string `json:"assistantTeacherIds"`
-	ClassTeacherIDs               []string `json:"classTeacherIds"`
-	One2OneTeacherIDs             []string `json:"one2OneTeacherIds"`
+	One2OneIDs                    []string `json:"one2OneIds"`
 	TimetableSourceTypes          []int    `json:"timetableSourceTypes"`
 	StudentSourceTypes            []int    `json:"studentSourceTypes"`
 	LessonChargingModeEnums       []int    `json:"lessonChargingModeEnums"`
 	StudentTeachingRecordStatuses []int    `json:"studentTeachingRecordStatuses"`
 	IsArrear                      *bool    `json:"isArrear"`
+	LessonIDs                     []string `json:"lessonIds"`
+	ClassIDs                      []string `json:"classIds"`
 }
 
 type StudentTeachingRecordSortModel struct {
