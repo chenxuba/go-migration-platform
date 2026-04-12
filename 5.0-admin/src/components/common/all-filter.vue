@@ -404,6 +404,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  scheduleCallStatusLabel: {
+    type: String,
+    default: '点名状态',
+  },
   oneToOneTeacherOptions: {
     type: Array,
     default: () => [],
@@ -2554,7 +2558,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'scheduleCallStatus',
-      label: '点名状态',
+      label: props.scheduleCallStatusLabel,
       show: props.displayArray.includes('scheduleCallStatus'),
       values: props.scheduleCallStatusOptions.filter(opt => opt.id === scheduleCallStatusVals.value),
     },
@@ -4324,7 +4328,7 @@ function removeCondition(type, id) {
     case 'createTime': // 新增创建时间移除逻辑
       // 当type为noDelCreateTime时，不清除创建时间
       if (props.type !== 'noDelCreateTime') {
-        // createTimeVals.value = []
+        createTimeVals.value = []
         emit('update:createTimeFilter', [], false, id, type)
       }
       break
@@ -6025,7 +6029,7 @@ defineExpose({
 
               <checkbox-filter v-if="filterType === 'scheduleCallStatus'"
                 v-model:checked-values="scheduleCallStatusVals" category="noSearchRadio"
-                placeholder="请选择点名状态" :options="scheduleCallStatusOptions" label="点名状态" type="radio"
+                :placeholder="`请选择${scheduleCallStatusLabel}`" :options="scheduleCallStatusOptions" :label="scheduleCallStatusLabel" type="radio"
                 @radio-change="handleScheduleCallStatusChange" />
 
               <!-- 班级名称（多选） -->

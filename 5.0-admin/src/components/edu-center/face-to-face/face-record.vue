@@ -5,11 +5,14 @@ import faceIcon from '@/assets/images/face.png'
 import StudentAvatar from '@/components/common/StudentAvatar.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 
-const displayArray = ref(['createTime'])
+const displayArray = ref(['scheduleType', 'createTime', 'lastEditedTime', 'scheduleCallStatus'])
 const dataSource = ref<FaceAttendanceRecordItem[]>([])
 const loading = ref(false)
 const filterStudentId = ref<string | undefined>(undefined)
-const filterCreateTime = ref<string[]>([])
+const filterSignInTime = ref<string[]>([])
+const filterSignOutTime = ref<string[]>([])
+const filterActionTypes = ref<string[]>([])
+const filterPendingSignOut = ref<string | undefined>(undefined)
 const pagination = ref({
   current: 1,
   pageSize: 20,
@@ -22,6 +25,14 @@ const previewVisible = ref(false)
 const previewImage = ref('')
 const previewTitle = ref('')
 const previewTimeText = ref('')
+const attendanceActionOptions = [
+  { id: 'sign_in', value: '自动签到' },
+  { id: 'sign_out', value: '自动签退' },
+]
+const pendingSignOutOptions = [
+  { id: '1', value: '含待签退的数据' },
+  { id: '0', value: '不含待签退的数据' },
+]
 
 const allColumns = ref([
   {
@@ -31,12 +42,6 @@ const allColumns = ref([
     fixed: 'left',
     width: 130,
     required: true,
-  },
-  {
-    title: '考勤时间',
-    dataIndex: 'faceTime',
-    width: 150,
-    key: 'faceTime',
   },
   {
     title: '人脸采集',
@@ -212,9 +217,33 @@ function openRelatedScheduleModal(record: Record<string, any>) {
 }
 
 function handleCreateTimeFilter(value: unknown) {
-  filterCreateTime.value = Array.isArray(value)
+  filterSignInTime.value = Array.isArray(value)
     ? value.map(item => String(item || '').trim()).filter(Boolean)
     : []
+  pagination.value.current = 1
+  loadList()
+}
+
+function handleSignOutTimeFilter(value: unknown) {
+  filterSignOutTime.value = Array.isArray(value)
+    ? value.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+  pagination.value.current = 1
+  loadList()
+}
+
+function handleActionTypeFilter(value: unknown) {
+  filterActionTypes.value = Array.isArray(value)
+    ? value.map(item => String(item || '').trim()).filter(Boolean)
+    : []
+  pagination.value.current = 1
+  loadList()
+}
+
+function handlePendingSignOutFilter(value: unknown) {
+  const normalized = Array.isArray(value) ? value[0] : value
+  const text = String(normalized || '').trim()
+  filterPendingSignOut.value = text || undefined
   pagination.value.current = 1
   loadList()
 }
@@ -237,8 +266,12 @@ async function loadList() {
       },
       queryModel: {
         studentId: filterStudentId.value,
-        beginAttendanceTime: filterCreateTime.value[0],
-        endAttendanceTime: filterCreateTime.value[1],
+        actionTypes: filterActionTypes.value,
+        beginSignInTime: filterSignInTime.value[0],
+        endSignInTime: filterSignInTime.value[1],
+        beginSignOutTime: filterSignOutTime.value[0],
+        endSignOutTime: filterSignOutTime.value[1],
+        pendingSignOut: filterPendingSignOut.value === '1' ? true : (filterPendingSignOut.value === '0' ? false : undefined),
       },
     })
     if (res.code === 200) {
@@ -280,8 +313,18 @@ onMounted(() => {
         :display-array="displayArray"
         :is-quick-show="false"
         :is-show-search-stu-phonefilter="true"
+        :whole-condition-clear-types="['scheduleType']"
+        create-time-label="签到时间"
+        last-edited-time-label="签退时间"
+        schedule-type-label="签到/签退类型"
+        :schedule-type-options="attendanceActionOptions"
+        schedule-call-status-label="待签退"
+        :schedule-call-status-options="pendingSignOutOptions"
         search-placeholder="搜索姓名/手机号"
         @update:createTimeFilter="handleCreateTimeFilter"
+        @update:lastEditedTimeFilter="handleSignOutTimeFilter"
+        @update:scheduleTypeFilter="handleActionTypeFilter"
+        @update:scheduleCallStatusFilter="handlePendingSignOutFilter"
         @update:stuPhoneSearchFilter="handleStudentFilter"
       />
     </div>
@@ -326,9 +369,6 @@ onMounted(() => {
                   :show-age="false"
                   :auto-width="false"
                 />
-              </template>
-              <template v-else-if="column.key === 'faceTime'">
-                {{ formatDateTime(record.attendanceTime) }}
               </template>
               <template v-else-if="column.key === 'face'">
                 <div class="flex flex-items-center">

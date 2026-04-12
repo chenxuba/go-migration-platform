@@ -748,6 +748,7 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 			IFNULL(fas.status, 0) AS session_status,
 			IFNULL(fas.sign_in_image, '') AS sign_in_image,
 			IFNULL(fas.sign_out_image, '') AS sign_out_image,
+			fas.sign_in_time AS sign_in_time,
 			fas.sign_in_time AS action_time,
 			fas.sign_out_time AS sign_out_time,
 			'sign_in' AS action
@@ -763,6 +764,7 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 			IFNULL(fas.status, 0) AS session_status,
 			IFNULL(fas.sign_in_image, '') AS sign_in_image,
 			IFNULL(fas.sign_out_image, '') AS sign_out_image,
+			fas.sign_in_time AS sign_in_time,
 			fas.sign_out_time AS action_time,
 			fas.sign_out_time AS sign_out_time,
 			'sign_out' AS action
@@ -777,13 +779,35 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 		filters = append(filters, "src.student_id = ?")
 		args = append(args, query.QueryModel.StudentID)
 	}
-	if beginTime, ok := normalizeFaceAttendanceRecordBoundary(query.QueryModel.BeginAttendanceTime, false); ok {
-		filters = append(filters, "src.action_time >= ?")
+	actionTypes := normalizeFaceAttendanceActionTypes(query.QueryModel.ActionTypes)
+	if len(actionTypes) > 0 {
+		filters = append(filters, "src.action IN ("+sqlPlaceholders(len(actionTypes))+")")
+		args = append(args, stringSliceToAny(actionTypes)...)
+	}
+	if beginTime, ok := normalizeFaceAttendanceRecordBoundary(query.QueryModel.BeginSignInTime, false); ok {
+		filters = append(filters, "src.sign_in_time >= ?")
 		args = append(args, beginTime)
 	}
-	if endTime, ok := normalizeFaceAttendanceRecordBoundary(query.QueryModel.EndAttendanceTime, true); ok {
-		filters = append(filters, "src.action_time <= ?")
+	if endTime, ok := normalizeFaceAttendanceRecordBoundary(query.QueryModel.EndSignInTime, true); ok {
+		filters = append(filters, "src.sign_in_time <= ?")
 		args = append(args, endTime)
+	}
+	if beginTime, ok := normalizeFaceAttendanceRecordBoundary(query.QueryModel.BeginSignOutTime, false); ok {
+		filters = append(filters, "src.sign_out_time >= ?")
+		args = append(args, beginTime)
+	}
+	if endTime, ok := normalizeFaceAttendanceRecordBoundary(query.QueryModel.EndSignOutTime, true); ok {
+		filters = append(filters, "src.sign_out_time <= ?")
+		args = append(args, endTime)
+	}
+	if query.QueryModel.PendingSignOut != nil {
+		if *query.QueryModel.PendingSignOut {
+			filters = append(filters, "src.session_status = ? AND src.sign_out_time IS NULL")
+			args = append(args, model.FaceAttendanceSessionStatusSignedIn)
+		} else {
+			filters = append(filters, "NOT (src.session_status = ? AND src.sign_out_time IS NULL)")
+			args = append(args, model.FaceAttendanceSessionStatusSignedIn)
+		}
 	}
 	whereClause := strings.Join(filters, " AND ")
 
@@ -811,6 +835,7 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 			src.session_status,
 			src.sign_in_image,
 			src.sign_out_image,
+			src.sign_in_time,
 			src.action_time,
 			src.sign_out_time,
 			src.action,
@@ -839,6 +864,7 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 	for rows.Next() {
 		var (
 			item        model.FaceAttendanceRecordItem
+			signInTime  sql.NullTime
 			actionTime  sql.NullTime
 			signOutTime sql.NullTime
 			action      string
@@ -852,6 +878,7 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 			&item.SessionStatus,
 			&item.SignInImage,
 			&item.SignOutImage,
+			&signInTime,
 			&actionTime,
 			&signOutTime,
 			&action,
@@ -869,9 +896,12 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 		item.AttendanceType = "人脸考勤"
 		item.StudentMobile = maskStudentMobile(mobile)
 		item.IsCollect = isCollect != 0
+		if signInTime.Valid {
+			t := signInTime.Time
+			item.AttendanceTime = &t
+		}
 		if actionTime.Valid {
 			t := actionTime.Time
-			item.AttendanceTime = &t
 			item.ActionTime = &t
 		}
 		if signOutTime.Valid {
@@ -914,6 +944,26 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 		Current: current,
 		Size:    size,
 	}, nil
+}
+
+func normalizeFaceAttendanceActionTypes(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		normalized := strings.TrimSpace(value)
+		if normalized != model.FaceAttendanceSessionActionSignIn && normalized != model.FaceAttendanceSessionActionSignOut {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
 }
 
 func (repo *Repository) ListFaceAttendanceRecords(ctx context.Context, instID int64, limit int) ([]model.FaceAttendanceRecord, error) {

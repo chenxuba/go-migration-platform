@@ -122,9 +122,13 @@ type FaceAttendanceRecordPagedQueryDTO struct {
 }
 
 type FaceAttendanceRecordFilter struct {
-	StudentID           int64  `json:"studentId"`
-	BeginAttendanceTime string `json:"beginAttendanceTime"`
-	EndAttendanceTime   string `json:"endAttendanceTime"`
+	StudentID        int64    `json:"studentId"`
+	ActionTypes      []string `json:"actionTypes"`
+	BeginSignInTime  string   `json:"beginSignInTime"`
+	EndSignInTime    string   `json:"endSignInTime"`
+	BeginSignOutTime string   `json:"beginSignOutTime"`
+	EndSignOutTime   string   `json:"endSignOutTime"`
+	PendingSignOut   *bool    `json:"pendingSignOut"`
 }
 
 type FaceAttendanceRelatedScheduleItem struct {

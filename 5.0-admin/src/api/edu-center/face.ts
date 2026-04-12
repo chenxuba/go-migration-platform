@@ -174,8 +174,12 @@ export function pageFaceAttendanceRecordsApi(data: {
   }
   queryModel?: {
     studentId?: string | number
-    beginAttendanceTime?: string
-    endAttendanceTime?: string
+    actionTypes?: string[]
+    beginSignInTime?: string
+    endSignInTime?: string
+    beginSignOutTime?: string
+    endSignOutTime?: string
+    pendingSignOut?: boolean
   }
 }) {
   return usePost<FaceAttendanceRecordItem[]>('/api/v1/face-collections/attendance-records/page', data)
