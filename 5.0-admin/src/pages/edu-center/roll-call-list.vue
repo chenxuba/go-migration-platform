@@ -388,6 +388,12 @@ function handleRollCall(record?: Partial<TeachingScheduleItem> | Record<string, 
   openDrawer.value = true
 }
 
+async function refreshAfterRollCall() {
+  resetToFirstPage()
+  await loadStatistics()
+  await loadList()
+}
+
 function handleBatchDelete() {
   if (!selectedRowKeys.value.length) {
     messageService.warning('请先选择要删除的日程')
@@ -818,6 +824,8 @@ onMounted(async () => {
       v-model:open="openDrawer"
       :schedule-id="currentRollCallScheduleId"
       :lesson-day="currentRollCallLessonDay"
+      @updated="refreshAfterRollCall"
+      @confirmed="refreshAfterRollCall"
     />
   </div>
 </template>
