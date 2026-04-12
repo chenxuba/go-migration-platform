@@ -1187,7 +1187,7 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 
 func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, studentID int64) (model.IntentStudent, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship, s.sale_person, IFNULL(iu.nick_name, ''), s.intent_level,
+		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship, IFNULL(s.is_collect, 0), s.sale_person, IFNULL(iu.nick_name, ''), s.intent_level,
 		       IFNULL(s.intended_course, ''), s.channel_id, IFNULL(c.channel_name, ''), IFNULL(cc.category_name, ''), s.create_time, s.birthday,
 		       IFNULL(s.wechat_number, ''), IFNULL(s.study_school, ''), IFNULL(s.grade, ''), IFNULL(s.interest, ''), IFNULL(s.address, ''),
 		       s.follow_up_status, s.student_status, s.last_follow_up_time, s.next_follow_up_time, IFNULL(s.remark, ''),
@@ -1219,6 +1219,7 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 		&item.StuSex,
 		&item.Mobile,
 		&item.PhoneRelationship,
+		&item.IsCollect,
 		&item.SalePerson,
 		&item.SalePersonName,
 		&item.IntentLevel,

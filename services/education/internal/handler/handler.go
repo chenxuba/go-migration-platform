@@ -292,6 +292,11 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/recommenders/page", handler.recommendersPage)
 	mux.HandleFunc("/api/v1/birthday-students/page", handler.birthdayStudentsPage)
 	mux.HandleFunc("/api/v1/students/change-records", handler.studentChangeRecords)
+	mux.HandleFunc("/api/v1/face-collections/students/page", handler.pageFaceCollectionStudents)
+	mux.HandleFunc("/api/v1/face-collections/profile", handler.getFaceCollectionProfile)
+	mux.HandleFunc("/api/v1/face-collections/profiles", handler.listFaceCollectionProfiles)
+	mux.HandleFunc("/api/v1/face-collections/save", handler.saveFaceCollectionProfile)
+	mux.HandleFunc("/api/v1/face-collections/delete", handler.deleteFaceCollectionProfile)
 }
 
 func (handler *Handler) health(w http.ResponseWriter, r *http.Request) {

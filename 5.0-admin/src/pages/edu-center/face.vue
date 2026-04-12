@@ -5,16 +5,22 @@ import { useRoute } from 'vue-router'
 import * as faceapi from 'face-api.js'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import {
+  deleteFaceCollectionProfileApi,
+  getFaceCollectionProfileApi,
+  listFaceCollectionProfilesApi,
+  pageFaceCollectionStudentsApi,
+  saveFaceCollectionProfileApi,
+} from '@/api/edu-center/face'
 
 const route = useRoute()
 const data = ref(null)
 const student = ref(undefined)
-const studentList = ref([
-  { id: 1, name: '张晨', phone: '17601241636', status: 0 },
-  { id: 2, name: '李元芳', phone: '18899238823', status: 0 },
-  { id: 3, name: '潘金莲', phone: '15782827732', status: 0 },
-  { id: 4, name: '武松', phone: '17866232253', status: 0 },
-])
+const studentList = ref([])
+const studentListLoading = ref(false)
+const studentSearchKey = ref('')
+const collectedProfiles = ref([])
+let studentSearchTimer = null
 // 添加一个ref来跟踪每个学生的最后考勤时间
 const lastAttendanceTimes = ref({})
 // 添加一个ref来控制显示哪个提示
@@ -107,6 +113,108 @@ function filterOption(input, option) {
   ].join(' ')
 
   return searchContent.includes(normalizedInput)
+}
+
+function getSelectedStudentInfo() {
+  return studentList.value.find(item => String(item.id) === String(student.value))
+}
+
+function syncStudentCollectStatus() {
+  const collectedStudentIds = new Set(
+    (Array.isArray(collectedProfiles.value) ? collectedProfiles.value : [])
+      .map(item => String(item.studentId || ''))
+      .filter(Boolean),
+  )
+  studentList.value = (Array.isArray(studentList.value) ? studentList.value : []).map(item => ({
+    ...item,
+    status: collectedStudentIds.has(String(item.id)) || Number(item.status || 0) === 1 ? 1 : 0,
+  }))
+}
+
+async function loadStudentList(searchKey = '') {
+  studentListLoading.value = true
+  try {
+    const res = await pageFaceCollectionStudentsApi({
+      pageRequestModel: {
+        pageIndex: 1,
+        pageSize: 50,
+      },
+      queryModel: {
+        searchKey: searchKey || undefined,
+      },
+    })
+    if (res.code !== 200) {
+      studentList.value = []
+      return
+    }
+    studentList.value = (Array.isArray(res.result) ? res.result : []).map(item => ({
+      id: String(item.id || ''),
+      name: item.stuName || '',
+      phone: item.mobile || '',
+      avatarUrl: item.avatarUrl || '',
+      status: item.isCollect ? 1 : 0,
+    }))
+    syncStudentCollectStatus()
+  }
+  catch (error) {
+    console.error('加载人脸采集学员列表失败:', error)
+    studentList.value = []
+  }
+  finally {
+    studentListLoading.value = false
+  }
+}
+
+async function loadCollectedProfiles() {
+  try {
+    const res = await listFaceCollectionProfilesApi()
+    if (res.code !== 200) {
+      collectedProfiles.value = []
+      syncStudentCollectStatus()
+      return []
+    }
+    collectedProfiles.value = Array.isArray(res.result) ? res.result : []
+    syncStudentCollectStatus()
+    return collectedProfiles.value
+  }
+  catch (error) {
+    console.error('加载已采集人脸档案失败:', error)
+    collectedProfiles.value = []
+    syncStudentCollectStatus()
+    return []
+  }
+}
+
+async function loadStudentProfile(studentId) {
+  capturedImageUrl.value = ''
+  capturedTime.value = ''
+  if (!studentId)
+    return
+  try {
+    const res = await getFaceCollectionProfileApi({ studentId })
+    if (res.code !== 200) {
+      return
+    }
+    capturedImageUrl.value = res.result?.faceImage || ''
+    capturedTime.value = res.result?.updatedTime ? dayjs(res.result.updatedTime).format('YYYY-MM-DD HH:mm:ss') : ''
+  }
+  catch (error) {
+    console.error('加载学员人脸档案失败:', error)
+  }
+}
+
+function handleStudentSearch(value) {
+  studentSearchKey.value = value || ''
+  if (studentSearchTimer)
+    clearTimeout(studentSearchTimer)
+  studentSearchTimer = setTimeout(() => {
+    loadStudentList(studentSearchKey.value)
+  }, 250)
+}
+
+function handleStudentDropdownVisibleChange(open) {
+  if (open)
+    loadStudentList(studentSearchKey.value)
 }
 
 // Load face-api.js models
@@ -382,7 +490,9 @@ async function recognizeFace(currentFaceDescriptor) {
   recognizingFace.value = true
 
   try {
-    const storedFaces = loadFaceData()
+    let storedFaces = Array.isArray(collectedProfiles.value) ? collectedProfiles.value : []
+    if (!storedFaces.length)
+      storedFaces = await loadCollectedProfiles()
 
     if (storedFaces.length === 0) {
       showCooldownMessage.value = false // 确保显示"脸部与摄像头平视，识别中"
@@ -407,9 +517,12 @@ async function recognizeFace(currentFaceDescriptor) {
     }
 
     if (bestMatch) {
-      const matchedStudent = studentList.value.find(s => s.id === bestMatch.studentId)
+      const matchedStudent = studentList.value.find(s => String(s.id) === String(bestMatch.studentId)) || {
+        id: String(bestMatch.studentId || ''),
+        name: bestMatch.stuName || '',
+      }
 
-      if (matchedStudent) {
+      if (matchedStudent?.id) {
         // 检查是否在1分钟内重复考勤
         const lastAttendanceTime = lastAttendanceTimes.value[matchedStudent.id]
         const now = Date.now()
@@ -433,7 +546,7 @@ async function recognizeFace(currentFaceDescriptor) {
 
           // 更新最后考勤时间
           lastAttendanceTimes.value[matchedStudent.id] = now
-          saveAttendanceRecord(bestMatch.studentId, timestamp)
+          saveAttendanceRecord(bestMatch.studentId, timestamp, matchedStudent.name)
         }
       }
     }
@@ -471,12 +584,8 @@ async function captureFace() {
     capturedImageUrl.value = ''
     capturedTime.value = ''
 
-    // Here you would typically save the face descriptor to your backend
-    // For demonstration, we'll just update the local student list
-    const studentIndex = studentList.value.findIndex(s => s.id === student.value)
+    const studentIndex = studentList.value.findIndex(s => String(s.id) === String(student.value))
     if (studentIndex !== -1) {
-      studentList.value[studentIndex].status = 1 // Mark as collected
-
       // Take a snapshot of the current face with correct orientation
       const canvas = document.createElement('canvas')
       canvas.width = videoRef.value.videoWidth
@@ -502,105 +611,25 @@ async function captureFace() {
         second: '2-digit',
       }) // Store capture time
 
-      // 保存到本地存储
-      if (saveFaceData(student.value, faceDescriptor.value, faceImageData)) {
-        message.success('人脸采集成功并已保存到本地')
+      const saveRes = await saveFaceCollectionProfileApi({
+        studentId: Number(student.value),
+        faceDescriptor: Array.from(faceDescriptor.value || []),
+        faceImage: faceImageData,
+      })
+      if (saveRes.code === 200) {
+        studentList.value[studentIndex].status = 1
+        await loadCollectedProfiles()
+        message.success('人脸采集成功')
         speakMessage('人脸采集成功')
       }
       else {
-        message.warning('人脸采集成功但保存失败')
+        message.warning(saveRes.message || '人脸采集成功但保存失败')
       }
-
-      console.log('Face descriptor captured for student:', studentList.value[studentIndex].name)
-      console.log('Face data:', faceDescriptor.value)
     }
   }
   catch (error) {
     console.error('人脸采集失败:', error)
     message.error('人脸采集失败，请重试')
-  }
-}
-
-// 读取本地存储的人脸数据
-function loadFaceData() {
-  try {
-    const faceData = localStorage.getItem('faceData')
-    if (faceData) {
-      const parsedData = JSON.parse(faceData)
-
-      // 更新学生状态
-      studentList.value.forEach((student) => {
-        const storedFace = parsedData.find(item => item.studentId === student.id)
-        if (storedFace) {
-          student.status = 1 // 标记为已采集
-        }
-      })
-
-      return parsedData
-    }
-    return []
-  }
-  catch (error) {
-    console.error('读取本地人脸数据失败:', error)
-    return []
-  }
-}
-
-// 保存人脸数据到本地存储
-function saveFaceData(studentId, faceDesc, faceImg) {
-  try {
-    const existingData = loadFaceData()
-
-    // 检查是否已存在该学生的数据
-    const existingIndex = existingData.findIndex(item => item.studentId === studentId)
-
-    if (existingIndex !== -1) {
-      // 更新现有数据
-      existingData[existingIndex] = {
-        studentId,
-        faceDescriptor: Array.from(faceDesc), // 转换为普通数组以便JSON序列化
-        faceImage: faceImg,
-        timestamp: Date.now(),
-      }
-    }
-    else {
-      // 添加新数据
-      existingData.push({
-        studentId,
-        faceDescriptor: Array.from(faceDesc), // 转换为普通数组以便JSON序列化
-        faceImage: faceImg,
-        timestamp: Date.now(),
-      })
-    }
-
-    // 保存到本地存储
-    localStorage.setItem('faceData', JSON.stringify(existingData))
-    return true
-  }
-  catch (error) {
-    console.error('保存人脸数据失败:', error)
-    return false
-  }
-}
-
-// 删除本地存储的人脸数据
-function deleteFaceData(studentId) {
-  try {
-    const existingData = loadFaceData()
-    const filteredData = existingData.filter(item => item.studentId !== studentId)
-    localStorage.setItem('faceData', JSON.stringify(filteredData))
-
-    // 更新学生状态
-    const studentIndex = studentList.value.findIndex(s => s.id === studentId)
-    if (studentIndex !== -1) {
-      studentList.value[studentIndex].status = 0
-    }
-
-    return true
-  }
-  catch (error) {
-    console.error('删除人脸数据失败:', error)
-    return false
   }
 }
 
@@ -628,10 +657,10 @@ function scrollToBottom() {
   })
 }
 // 保存考勤记录
-function saveAttendanceRecord(studentId, timestamp) {
+function saveAttendanceRecord(studentId, timestamp, studentName = '') {
   try {
-    const student = studentList.value.find(s => s.id === studentId)
-    if (!student)
+    const student = studentList.value.find(s => String(s.id) === String(studentId))
+    if (!student && !studentName)
       return false
 
     // 捕获当前视频帧作为考勤图像
@@ -651,7 +680,7 @@ function saveAttendanceRecord(studentId, timestamp) {
 
     attendanceRecords.value.push({
       studentId,
-      studentName: student.name,
+      studentName: student?.name || studentName,
       timestamp,
       faceImage: faceImageData, // 保存人脸图像
     })
@@ -679,30 +708,28 @@ function speakMessage(message) {
 }
 
 // Delete captured face
-function deleteFace() {
+async function deleteFace() {
   if (!student.value)
     return
 
   try {
-    const studentIndex = studentList.value.findIndex(s => s.id === student.value)
+    const studentIndex = studentList.value.findIndex(s => String(s.id) === String(student.value))
     if (studentIndex !== -1) {
-      // 更新学生状态为未采集
-      studentList.value[studentIndex].status = 0
-
       // 清除当前显示
       capturedImageUrl.value = ''
       capturedTime.value = ''
 
-      // 从本地存储删除
-      if (deleteFaceData(student.value)) {
-        // 强制更新 studentList 以触发视图更新
-        studentList.value = [...studentList.value]
-
+      const res = await deleteFaceCollectionProfileApi({
+        studentId: Number(student.value),
+      })
+      if (res.code === 200) {
+        studentList.value[studentIndex].status = 0
+        await loadCollectedProfiles()
         message.success('人脸已删除')
         speakMessage('人脸已删除')
       }
       else {
-        message.warning('人脸删除失败')
+        message.warning(res.message || '人脸删除失败')
       }
     }
   }
@@ -728,7 +755,7 @@ function retakeFace() {
 }
 
 // Watch for student selection changes
-watch(student, (newVal, oldVal) => {
+watch(student, async (newVal, oldVal) => {
   // 当切换学生时，重置采集状态
   if (newVal !== oldVal) {
     // 先重置状态
@@ -739,21 +766,7 @@ watch(student, (newVal, oldVal) => {
 
     // 如果选择了新学生，尝试加载已存在的人脸数据
     if (newVal) {
-      const storedFaces = loadFaceData()
-      const existingFace = storedFaces.find(face => face.studentId === newVal)
-
-      if (existingFace) {
-        // 如果找到已存在的人脸数据，显示图像
-        capturedImageUrl.value = existingFace.faceImage
-        capturedTime.value = new Date(existingFace.timestamp).toLocaleString('zh-CN', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-      }
+      await loadStudentProfile(newVal)
     }
   }
 
@@ -763,15 +776,15 @@ watch(student, (newVal, oldVal) => {
   }
 })
 
-onMounted(() => {
+onMounted(async () => {
   // 直接获取参数
-  const type = route.query.type
+  const type = Number(route.query.type || 1)
   console.log('参数变化:', type)
   document.title = type === 1 ? '人脸采集' : '人脸考勤'
   data.value = type
 
-  // 加载本地存储的人脸数据
-  loadFaceData()
+  await loadStudentList()
+  await loadCollectedProfiles()
 
   // 加载考勤记录
   loadAttendanceRecords()
@@ -799,6 +812,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (studentSearchTimer) {
+    clearTimeout(studentSearchTimer)
+    studentSearchTimer = null
+  }
   // 清理所有资源
   if (detectionInterval.value) {
     clearInterval(detectionInterval.value)
@@ -855,6 +872,10 @@ watch(
 function switchMode(mode) {
   data.value = Number(mode)
   document.title = data.value === 1 ? '人脸采集' : '人脸考勤'
+
+  if (data.value === 1)
+    loadStudentList(studentSearchKey.value)
+  loadCollectedProfiles()
 
   // 更新界面提示
   if (data.value === 2) {
@@ -1062,8 +1083,11 @@ function startAttendance() {
             </div>
             <div class="con">
               <a-select
-                v-model:value="student" allow-clear :filter-option="filterOption" show-search
+                v-model:value="student" allow-clear :filter-option="false" show-search
                 style="width: 100%;" placeholder="搜索学员姓名/手机号" option-label-prop="label"
+                :loading="studentListLoading"
+                @search="handleStudentSearch"
+                @dropdown-visible-change="handleStudentDropdownVisibleChange"
               >
                 <a-select-option v-for="(item, index) in studentList" :key="index" :value="item.id" :label="item.name">
                   <div class="flex justify-between flex-items-center">
@@ -1079,14 +1103,13 @@ function startAttendance() {
               <div v-if="!student" class="faceNoDataBox">
                 请先选择一位学员进行人脸采集
               </div>
-              <div v-else class="faceDataBox rounded-2">
+                <div v-else class="faceDataBox rounded-2">
                 <div class="flex bg-#fff rounded-2 rounded-lb-0 rounded-rb-0 justify-between mt2 px3 py2 flex-center">
                   <span class="text-3.5">
-                    {{ studentList.find(s => s.id === student)?.name || '' }} {{ studentList.find(s => s.id
-                      === student)?.phone || '' }}
+                    {{ getSelectedStudentInfo()?.name || '' }} {{ getSelectedStudentInfo()?.phone || '' }}
                   </span>
                   <span
-                    v-if="studentList.find(s => s.id === student)?.status === 1"
+                    v-if="getSelectedStudentInfo()?.status === 1"
                     class="text-3 bg-#e6ffec text-#0c3 rounded-4 px3 font500" style="line-height:2;"
                   >
                     <CheckCircleFilled /> <span>已采集</span>

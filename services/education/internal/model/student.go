@@ -102,6 +102,7 @@ type IntentStudent struct {
 	RechargeAmountTotal           float64        `json:"rechargeAmountTotal"`
 	ResidualAmountTotal           float64        `json:"residualAmountTotal"`
 	GivingAmountTotal             float64        `json:"givingAmountTotal"`
+	IsCollect                     bool           `json:"isCollect"`
 	PrimaryCourseCount            int            `json:"primaryCourseCount"`
 	CustomInfo                    []CustomInfo   `json:"customInfo"`
 	Remark                        string         `json:"remark,omitempty"`

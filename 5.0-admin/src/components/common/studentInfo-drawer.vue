@@ -703,7 +703,13 @@ async function handlePhoneToggle() {
               <a-tooltip title="未关注">
                 <img class="mt-0.5 cursor-pointer ml1" src="~@/assets/images/follow.svg" alt="">
               </a-tooltip>
-              <a-tooltip title="未采集">
+              <a-tooltip v-if="studentDetail?.isCollect" title="已采集">
+                <span class="face-collect-status face-collect-status--collected ml0.5">
+                  <span class="face-collect-status__text">已采集</span>
+                  <img class="face-collect-status__icon face-collect-status__icon--collected" src="~@/assets/images/face.svg" alt="">
+                </span>
+              </a-tooltip>
+              <a-tooltip v-else title="未采集">
                 <img class="mt-0.5 cursor-pointer ml0.5" src="~@/assets/images/face.svg" alt="">
               </a-tooltip>
             </a-space>
@@ -1133,6 +1139,33 @@ async function handlePhoneToggle() {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 300px;
+}
+
+.face-collect-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+
+.face-collect-status--collected {
+  color: #222;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.face-collect-status__text {
+  white-space: nowrap;
+}
+
+.face-collect-status__icon {
+  width: 20px;
+  height: 20px;
+  margin-left: 6px;
+}
+
+.face-collect-status__icon--collected {
+  filter: brightness(0) saturate(100%) invert(49%) sepia(88%) saturate(3657%) hue-rotate(208deg) brightness(101%) contrast(101%);
 }
 
 // 防止 descriptions label 换行
