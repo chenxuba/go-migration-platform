@@ -7,6 +7,11 @@ import { debounce } from 'lodash-es'
 import DeleteConfirmModal from './DeleteConfirmModal.vue'
 import AssignSalesModal from './assign-sales-modal.vue'
 import CreateStudent from './create-student.vue'
+import RegisterForCourses from '@/components/studentInfo-drawer/register-for-courses.vue'
+import StudentClassRecord from '@/components/studentInfo-drawer/student-class-record.vue'
+import OrderRecord from '@/components/studentInfo-drawer/order-record.vue'
+import TryListeningRecord from '@/components/studentInfo-drawer/try-listening-record.vue'
+import FollowUpRecord from '@/components/studentInfo-drawer/follow-up-record.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { useStudentFields } from '@/composables/useStudentFields'
 import { batchAssignSalespersonApi, batchDeleteIntendedStudentApi, batchTransferToPublicPoolApi, getIntentStudentDetailApi, listStudentChangeInfoApi, updateIntendedStudentApi, updateStatusApi } from '@/api/enroll-center/intention-student'
@@ -843,19 +848,19 @@ async function handlePhoneToggle() {
             key="0"
             :tab="`${primaryCourseTabLabel}（${registerCourseCount}）`"
           >
-            <register-for-courses ref="registerForCoursesRef" :empty-text="primaryCourseEmptyText" />
+            <RegisterForCourses ref="registerForCoursesRef" :empty-text="primaryCourseEmptyText" />
           </a-tab-pane>
           <a-tab-pane key="1" tab="上课记录">
-            <class-record />
+            <StudentClassRecord />
           </a-tab-pane>
           <a-tab-pane key="2" tab="订单记录">
-            <order-record />
+            <OrderRecord />
           </a-tab-pane>
           <a-tab-pane key="3" tab="试听记录">
-            <try-listening-record />
+            <TryListeningRecord />
           </a-tab-pane>
           <a-tab-pane key="4" tab="跟进记录">
-            <follow-up-record ref="followUpRecordRef" :student-id="studentId" :student-detail="studentDetail" 
+            <FollowUpRecord ref="followUpRecordRef" :student-id="studentId" :student-detail="studentDetail" 
               @refresh-student-detail="handleRefreshStudentDetail" />
           </a-tab-pane>
           <a-tab-pane key="5" tab="康复档案">
