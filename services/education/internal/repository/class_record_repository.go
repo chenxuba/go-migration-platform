@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,15 @@ type classRecordScheduleMeta struct {
 	ClassID    int64
 	StudentID  int64
 	StartAt    time.Time
+}
+
+type teachingRecordDeleteStudentRow struct {
+	StudentTeachingRecordID int64
+	TeachingScheduleID      int64
+	StudentID               int64
+	TuitionAccountID        int64
+	ActualDeduct            float64
+	ActualTuition           float64
 }
 
 func classRecordRollCallStatus(status int) int {
@@ -813,6 +823,258 @@ func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int6
 		return model.TeachingRecordDetailResult{}, err
 	}
 	return result, nil
+}
+
+func (repo *Repository) DeleteTeachingRecord(ctx context.Context, instID, operatorID int64, dto model.DeleteTeachingRecordDTO) (bool, error) {
+	teachingRecordID, err := strconv.ParseInt(strings.TrimSpace(dto.TeachingRecordID), 10, 64)
+	if err != nil || teachingRecordID <= 0 {
+		return false, errors.New("缺少有效的上课点名记录")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	rows, err := repo.loadTeachingRecordDeleteRowsTx(ctx, tx, instID, teachingRecordID)
+	if err != nil {
+		return false, err
+	}
+	if len(rows) == 0 {
+		return false, errors.New("未找到上课点名记录")
+	}
+
+	accountMap, err := repo.loadTeachingRecordDeleteAccountMapTx(ctx, tx, instID, rows)
+	if err != nil {
+		return false, err
+	}
+
+	for _, row := range rows {
+		if row.TuitionAccountID <= 0 || row.ActualDeduct <= 0 {
+			continue
+		}
+		key := strconv.FormatInt(row.TuitionAccountID, 10)
+		account, ok := accountMap[key]
+		if !ok {
+			continue
+		}
+		if err := repo.revertTeachingRecordConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, row, account); err != nil {
+			return false, err
+		}
+		account.UsedQuantity = math.Max(roundMoney(account.UsedQuantity-row.ActualDeduct), 0)
+		account.UsedTuition = math.Max(roundMoney(account.UsedTuition-row.ActualTuition), 0)
+		account.ConfirmedTuition = math.Max(roundMoney(account.ConfirmedTuition-row.ActualTuition), 0)
+		account.RemainingQuantity = roundMoney(math.Max(account.TotalQuantity-account.UsedQuantity, 0))
+		account.RemainingTuition = roundMoney(math.Max(account.TotalTuition-account.UsedTuition, 0))
+		accountMap[key] = account
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE student_teaching_record
+		SET del_flag = 1,
+		    updated_staff_id = ?,
+		    updated_staff_name = ?,
+		    updated_time = NOW(),
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE inst_id = ?
+		  AND teaching_record_id = ?
+		  AND del_flag = 0
+	`, operatorID, firstNonEmptyString(repo.GetStaffNameByID(ctx, &operatorID), "系统"), operatorID, instID, teachingRecordID); err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (repo *Repository) loadTeachingRecordDeleteRowsTx(ctx context.Context, tx *sql.Tx, instID, teachingRecordID int64) ([]teachingRecordDeleteStudentRow, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			IFNULL(id, 0),
+			IFNULL(teaching_schedule_id, 0),
+			IFNULL(student_id, 0),
+			IFNULL(tuition_account_id, 0),
+			IFNULL(actual_deduct, 0),
+			IFNULL(actual_tuition, 0)
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND teaching_record_id = ?
+		  AND del_flag = 0
+		ORDER BY id ASC
+	`, instID, teachingRecordID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]teachingRecordDeleteStudentRow, 0)
+	for rows.Next() {
+		var item teachingRecordDeleteStudentRow
+		if err := rows.Scan(
+			&item.StudentTeachingRecordID,
+			&item.TeachingScheduleID,
+			&item.StudentID,
+			&item.TuitionAccountID,
+			&item.ActualDeduct,
+			&item.ActualTuition,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) loadTeachingRecordDeleteAccountMapTx(ctx context.Context, tx *sql.Tx, instID int64, rows []teachingRecordDeleteStudentRow) (map[string]rollCallConfirmAccount, error) {
+	accountIDs := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		if row.TuitionAccountID > 0 && row.ActualDeduct > 0 {
+			accountIDs = append(accountIDs, row.TuitionAccountID)
+		}
+	}
+	accountIDs = uniquePositiveInt64s(accountIDs)
+	if len(accountIDs) == 0 {
+		return map[string]rollCallConfirmAccount{}, nil
+	}
+
+	queryArgs := append([]any{instID}, int64SliceToAny(accountIDs)...)
+	query := `
+		SELECT
+			ta.id,
+			ta.student_id,
+			ta.course_id,
+			IFNULL(so.order_number, ''),
+			IFNULL(ic.teach_method, 0),
+			CASE
+				WHEN IFNULL(icq.lesson_model, 0) = 4 THEN 3
+				ELSE IFNULL(icq.lesson_model, 0)
+			END AS lesson_charging_mode,
+			IFNULL(ta.total_quantity, 0),
+			IFNULL(ta.free_quantity, 0),
+			IFNULL(ta.used_quantity, 0),
+			IFNULL(ta.remaining_quantity, 0),
+			IFNULL(ta.total_tuition, 0),
+			IFNULL(ta.used_tuition, 0),
+			IFNULL(ta.remaining_tuition, 0),
+			IFNULL(ta.confirmed_tuition, 0),
+			IFNULL(ta.status, 0),
+			IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, ''))
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(ta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
+		WHERE ta.inst_id = ?
+		  AND ta.del_flag = 0
+		  AND ta.id IN (` + sqlPlaceholders(len(accountIDs)) + `)
+		FOR UPDATE
+	`
+
+	queryRows, err := tx.QueryContext(ctx, query, queryArgs...)
+	if err != nil {
+		return nil, err
+	}
+	defer queryRows.Close()
+
+	result := make(map[string]rollCallConfirmAccount, len(accountIDs))
+	for queryRows.Next() {
+		var item rollCallConfirmAccount
+		if err := queryRows.Scan(
+			&item.ID,
+			&item.StudentID,
+			&item.CourseID,
+			&item.OrderNumber,
+			&item.LessonType,
+			&item.LessonChargingMode,
+			&item.TotalQuantity,
+			&item.FreeQuantity,
+			&item.UsedQuantity,
+			&item.RemainingQuantity,
+			&item.TotalTuition,
+			&item.UsedTuition,
+			&item.RemainingTuition,
+			&item.ConfirmedTuition,
+			&item.Status,
+			&item.ProductName,
+		); err != nil {
+			return nil, err
+		}
+		result[strconv.FormatInt(item.ID, 10)] = item
+	}
+	if err := queryRows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) revertTeachingRecordConsumeTx(ctx context.Context, tx *sql.Tx, instID, operatorID, teachingRecordID int64, row teachingRecordDeleteStudentRow, account rollCallConfirmAccount) error {
+	newUsedQuantity := math.Max(roundMoney(account.UsedQuantity-row.ActualDeduct), 0)
+	newUsedTuition := math.Max(roundMoney(account.UsedTuition-row.ActualTuition), 0)
+	newConfirmedTuition := math.Max(roundMoney(account.ConfirmedTuition-row.ActualTuition), 0)
+	newRemainingQuantity := roundMoney(math.Max(account.TotalQuantity-newUsedQuantity, 0))
+	newRemainingTuition := roundMoney(math.Max(account.TotalTuition-newUsedTuition, 0))
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account
+		SET used_quantity = ?,
+		    remaining_quantity = ?,
+		    used_tuition = ?,
+		    remaining_tuition = ?,
+		    confirmed_tuition = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, newUsedQuantity, newRemainingQuantity, newUsedTuition, newRemainingTuition, newConfirmedTuition, operatorID, account.ID, instID); err != nil {
+		return err
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO tuition_account_flow (
+			uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
+			source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, NOW(), ?, ?, ?, ?,
+			?, NOW(), ?, NOW(), 0
+		)
+	`,
+		instID,
+		account.ID,
+		account.StudentID,
+		account.CourseID,
+		account.LessonType,
+		normalizeRollCallDrawerChargingMode(account.LessonChargingMode),
+		model.TuitionAccountFlowSourceConsumeReturn,
+		teachingRecordID,
+		teachingRecordID,
+		account.OrderNumber,
+		roundMoney(row.ActualDeduct),
+		roundMoney(-row.ActualTuition),
+		newRemainingQuantity,
+		newRemainingTuition,
+		operatorID,
+		operatorID,
+	)
+	return err
 }
 
 func (repo *Repository) mergeTeachingRecordDetailStudentList(ctx context.Context, instID int64, scheduleIDText string, existing []model.TeachingRecordDetailStudent) ([]model.TeachingRecordDetailStudent, error) {

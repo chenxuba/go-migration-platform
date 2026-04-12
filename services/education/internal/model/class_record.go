@@ -10,6 +10,10 @@ type TeachingRecordDetailQueryDTO struct {
 	TeachingRecordID string `json:"teachingRecordId"`
 }
 
+type DeleteTeachingRecordDTO struct {
+	TeachingRecordID string `json:"teachingRecordId"`
+}
+
 type StudentTeachingRecordQueryModel struct {
 	BeginStartTime                string   `json:"beginStartTime"`
 	EndStartTime                  string   `json:"endStartTime"`

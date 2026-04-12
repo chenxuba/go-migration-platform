@@ -1082,6 +1082,12 @@ func parseScheduleTeachingRecordPagedQueryDTO(raw map[string]any) model.Schedule
 	return query
 }
 
+func parseDeleteTeachingRecordDTO(raw map[string]any) model.DeleteTeachingRecordDTO {
+	return model.DeleteTeachingRecordDTO{
+		TeachingRecordID: asString(raw["teachingRecordId"]),
+	}
+}
+
 func parseApprovalConfigQueryDTO(raw map[string]any) model.ApprovalConfigPageQueryDTO {
 	query := model.ApprovalConfigPageQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {

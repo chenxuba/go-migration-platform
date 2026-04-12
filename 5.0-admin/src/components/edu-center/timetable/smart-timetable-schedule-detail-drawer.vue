@@ -829,7 +829,7 @@ watch(
       @updated="loadDetail"
       @confirmed="handleRollCallConfirmed"
     />
-    <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="currentTeachingRecordId || detailData?.teachingRecordId || ''" />
+    <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="currentTeachingRecordId || detailData?.teachingRecordId || ''" @updated="loadDetail" />
     <RollCallAddStudentModal
       v-model:open="addStudentModalOpen"
       :title="addStudentModalTitle"

@@ -4,7 +4,7 @@ import dayjs from 'dayjs'
 import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
-import { getTeachingRecordDetailApi, type TeachingRecordDetailResult, type TeachingRecordDetailTeacher } from '@/api/edu-center/class-record'
+import { deleteTeachingRecordApi, getTeachingRecordDetailApi, type TeachingRecordDetailResult, type TeachingRecordDetailTeacher } from '@/api/edu-center/class-record'
 import messageService from '@/utils/messageService'
 import EditClassInfoModal from './edit-class-info-modal.vue'
 import EditRollNameModal from './edit-roll-name-modal.vue'
@@ -16,12 +16,13 @@ const props = withDefaults(defineProps<{
   teachingRecordId: '',
 })
 
-const emit = defineEmits(['update:open'])
+const emit = defineEmits(['update:open', 'updated', 'deleted'])
 const activeKey = ref('0')
 const openModal = ref(false)
 const editClassInfoModal = ref(false)
 const editRollNameModal = ref(false)
 const loading = ref(false)
+const deleting = ref(false)
 const detailData = ref<TeachingRecordDetailResult | null>(null)
 
 const openDrawer = computed({
@@ -62,6 +63,29 @@ let loadSeq = 0
 
 function handleDelete() {
   openModal.value = true
+}
+
+async function handleConfirmDelete() {
+  const teachingRecordId = currentTeachingRecordId.value
+  if (!teachingRecordId || deleting.value)
+    return
+  deleting.value = true
+  try {
+    const res = await deleteTeachingRecordApi({ teachingRecordId })
+    if (res.code !== 200 || res.result !== true)
+      throw new Error(res.message || '删除上课点名记录失败')
+    messageService.success('删除成功')
+    openModal.value = false
+    openDrawer.value = false
+    emit('updated')
+    emit('deleted')
+  }
+  catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || '删除上课点名记录失败')
+  }
+  finally {
+    deleting.value = false
+  }
 }
 
 function handleEditClassInfo() {
@@ -120,6 +144,7 @@ watch(
     if (!openDrawer.value) {
       detailData.value = null
       loading.value = false
+      deleting.value = false
       activeKey.value = '0'
       return
     }
@@ -245,19 +270,19 @@ watch(
         <CloseCircleOutlined class="text-#f00 mr2 text-5" /> 删除上课点名记录？
       </div>
       <div class="pl-30px text-#666">
-        <div>1.删除后已点名扣费学员将会反还学费，并减少对应的已确认收入;</div>
-        <div>2.若包含试听、补课学员状态不会修改，已试听状态变成已取消状态，已补课学员将退回至未安排状态，并删除上课记录;</div>
-        <div>3.删除上课点名记录后，（除了试听日程）所对应的日程中的学员点名状态变成未点名;</div>
+        <div>1.删除后已点名扣费学员将会返还学费，并减少对应的已确认收入;</div>
+        <div>2.若包含试听学员，已试听状态将变成已取消状态，并删除上课记录；若包含补课学员，已补课状态将变成已安排或未安排状态，并删除上课记录;</div>
+        <div>3.删除上课点名记录后，所对应的日程中的学员点名状态变成未点名;</div>
         <div>4.删除上课点名记录后，日程状态从已点名变成未点名。</div>
         <div class="text-#f00 mt-12px">
           <ExclamationCircleFilled /> 此操作不可撤销，请谨慎操作
         </div>
       </div>
       <a-space class="mt-24px flex justify-end">
-        <a-button danger ghost>
+        <a-button danger ghost :loading="deleting" @click="handleConfirmDelete">
           删除
         </a-button>
-        <a-button class="text-#666" @click="openModal = false">
+        <a-button class="text-#666" :disabled="deleting" @click="openModal = false">
           再想想
         </a-button>
       </a-space>

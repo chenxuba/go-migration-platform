@@ -29,3 +29,15 @@ func (svc *Service) GetTeachingRecordDetail(userID int64, query model.TeachingRe
 	}
 	return svc.repo.GetTeachingRecordDetail(context.Background(), instID, query)
 }
+
+func (svc *Service) DeleteTeachingRecord(userID int64, dto model.DeleteTeachingRecordDTO) (bool, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return false, err
+	}
+	operatorID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		return false, err
+	}
+	return svc.repo.DeleteTeachingRecord(context.Background(), instID, operatorID, dto)
+}

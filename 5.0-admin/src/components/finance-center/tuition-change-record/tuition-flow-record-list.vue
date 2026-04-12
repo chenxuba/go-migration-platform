@@ -635,7 +635,7 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-    <ClassRecordDetails v-model:open="openClassRecordDrawer" :teaching-record-id="currentTeachingRecordId" />
+    <ClassRecordDetails v-model:open="openClassRecordDrawer" :teaching-record-id="currentTeachingRecordId" @updated="fetchFlowRecordList" />
   </div>
 </template>
 

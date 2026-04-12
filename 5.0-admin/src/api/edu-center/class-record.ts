@@ -200,3 +200,7 @@ export function getScheduleTeachingRecordPagedListApi(data: ClassRecordPagedPara
 export function getTeachingRecordDetailApi(params: { teachingRecordId: string }) {
   return useGet<TeachingRecordDetailResult>('/api/v1/class-records/detail', params)
 }
+
+export function deleteTeachingRecordApi(data: { teachingRecordId: string }) {
+  return usePost<boolean>('/api/v1/class-records/delete', data)
+}

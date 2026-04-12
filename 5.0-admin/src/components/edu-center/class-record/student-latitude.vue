@@ -1002,7 +1002,7 @@ onMounted(() => {
         </div>
       </div>
     </div>
-    <class-record-details v-model:open="openClassRecordDrawer" :teaching-record-id="currentTeachingRecordId" />
+    <class-record-details v-model:open="openClassRecordDrawer" :teaching-record-id="currentTeachingRecordId" @updated="loadList" />
   </div>
 </template>
 

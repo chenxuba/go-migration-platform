@@ -611,7 +611,7 @@ watch(
     @updated="loadLatestDetail"
     @confirmed="handleRollCallConfirmed"
   />
-  <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="currentTeachingRecordId || detailData?.teachingRecordId || ''" />
+  <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="currentTeachingRecordId || detailData?.teachingRecordId || ''" @updated="loadLatestDetail" />
 </template>
 
 <style scoped lang="less">
