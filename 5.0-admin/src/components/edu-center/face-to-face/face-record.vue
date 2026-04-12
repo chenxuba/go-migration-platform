@@ -21,6 +21,7 @@ const currentScheduleRecord = ref<FaceAttendanceRecordItem | null>(null)
 const previewVisible = ref(false)
 const previewImage = ref('')
 const previewTitle = ref('')
+const previewTimeText = ref('')
 
 const allColumns = ref([
   {
@@ -171,6 +172,7 @@ function openAttendancePhoto(record: Partial<FaceAttendanceRecordItem> | Record<
     return
   previewImage.value = image
   previewTitle.value = getAttendancePhotoTitle(record)
+  previewTimeText.value = formatDateTime(String(record.actionTime || ''))
   previewVisible.value = true
 }
 
@@ -438,7 +440,12 @@ onMounted(() => {
       </a-table>
     </a-modal>
     <a-modal v-model:open="previewVisible" :title="previewTitle" :footer="null" @cancel="previewVisible = false">
-      <img alt="attendance" style="width: 100%" :src="previewImage">
+      <div class="attendance-preview">
+        <img alt="attendance" class="attendance-preview__image" :src="previewImage">
+        <div v-if="previewTimeText" class="attendance-preview__stamp">
+          {{ previewTimeText }}
+        </div>
+      </div>
     </a-modal>
   </div>
 </template>
@@ -531,5 +538,27 @@ onMounted(() => {
   height: 16px;
   cursor: pointer;
   flex: 0 0 auto;
+}
+
+.attendance-preview {
+  position: relative;
+}
+
+.attendance-preview__image {
+  width: 100%;
+  display: block;
+}
+
+.attendance-preview__stamp {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.58);
+  color: #fff;
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
 </style>
