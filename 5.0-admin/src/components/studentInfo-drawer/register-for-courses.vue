@@ -135,6 +135,23 @@ function hasArrearTuition(item) {
   return Number(item?.arrearTuition || 0) > 0
 }
 
+function hasConsumedTuitionAccount(item) {
+  const chargingMode = Number(item?.lessonChargingMode || 0)
+  if (chargingMode === 3) {
+    return getDisplayedRemainTuition(item) < Number(item?.totalTuition || 0)
+  }
+
+  const remainQuantity = getDisplayedRemainQuantity(item)
+  const remainFreeQuantity = getDisplayedRemainFreeQuantity(item)
+  const totalQuantity = Number(item?.totalQuantity || 0)
+  const totalFreeQuantity = Number(item?.totalFreeQuantity || 0)
+  return remainQuantity + remainFreeQuantity < totalQuantity + totalFreeQuantity
+}
+
+function shouldShowArrearBadge(item) {
+  return hasArrearTuition(item) && hasConsumedTuitionAccount(item)
+}
+
 function getArrearTuitionTooltip(item) {
   return `欠费学费金额：¥ ${formatMoney(item?.arrearTuition || 0)}`
 }
@@ -649,7 +666,7 @@ watch(endTheClassDrawerOpen, (value) => {
             <div class="remaining-tuition px3 text-#888 flex justify-start flex-items-center mt-1">
               <span class="text-3">
                 剩余学费：¥ {{ formatMoney(getDisplayedRemainTuition(item)) }}（总计 ¥ {{ formatMoney(item.totalTuition) }}
-                <a-tooltip v-if="hasArrearTuition(item)" placement="top">
+                <a-tooltip v-if="shouldShowArrearBadge(item)" placement="top">
                   <template #title>
                     {{ getArrearTuitionTooltip(item) }}
                   </template>
