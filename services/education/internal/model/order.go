@@ -77,6 +77,7 @@ type OrderManageQueryVO struct {
 	OrderSource                   *int       `json:"orderSource,omitempty"`
 	StaffID                       string     `json:"staffId,omitempty"`
 	StaffName                     string     `json:"staffName,omitempty"`
+	UpdateStaffName               string     `json:"updateStaffName,omitempty"`
 	DealDate                      *time.Time `json:"dealDate,omitempty"`
 	SalePersonID                  string     `json:"salePersonId,omitempty"`
 	SalePersonName                string     `json:"salePersonName,omitempty"`

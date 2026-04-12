@@ -985,7 +985,7 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 		       so.create_time,
 		       IFNULL(so.order_real_amount, 0), IFNULL(so.order_discount_amount, 0), IFNULL(so.order_tag_ids, ''),
 		       so.order_status, so.order_type, so.order_source, so.create_id,
-		       IFNULL(u.nick_name, ''), so.deal_date, so.sale_person, IFNULL(sale.nick_name, ''), IFNULL(so.internal_remark, ''), IFNULL(so.external_remark, ''), so.update_time,
+		       IFNULL(u.nick_name, ''), IFNULL(update_user.nick_name, ''), so.deal_date, so.sale_person, IFNULL(sale.nick_name, ''), IFNULL(so.internal_remark, ''), IFNULL(so.external_remark, ''), so.update_time,
 		       s.stu_sex, IFNULL(s.avatar_url, ''),
 		       IFNULL((SELECT rao.amount FROM recharge_account_order rao WHERE rao.sale_order_id = so.id AND rao.del_flag = 0 ORDER BY rao.id DESC LIMIT 1), 0),
 		       IFNULL((SELECT rao.residual_amount FROM recharge_account_order rao WHERE rao.sale_order_id = so.id AND rao.del_flag = 0 ORDER BY rao.id DESC LIMIT 1), 0),
@@ -993,6 +993,7 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 		FROM sale_order so
 		LEFT JOIN inst_student s ON so.student_id = s.id
 		LEFT JOIN inst_user u ON so.create_id = u.id
+		LEFT JOIN inst_user update_user ON so.update_id = update_user.id
 		LEFT JOIN inst_user sale ON so.sale_person = sale.id
 		WHERE so.del_flag = 0 AND so.inst_id = ? AND so.id = ?
 		LIMIT 1`, instID, orderID)
@@ -1006,7 +1007,7 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 	var updatedAt sql.NullTime
 	var sex sql.NullInt64
 	var orderTagIDs string
-	if err := row.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.CreatedTime, &item.Amount, &item.OrderDiscountAmount, &orderTagIDs, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar, &item.RechargeAccountAmount, &item.RechargeAccountResidualAmount, &item.RechargeAccountGivingAmount); err != nil {
+	if err := row.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.CreatedTime, &item.Amount, &item.OrderDiscountAmount, &orderTagIDs, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &item.UpdateStaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar, &item.RechargeAccountAmount, &item.RechargeAccountResidualAmount, &item.RechargeAccountGivingAmount); err != nil {
 		return model.OrderDetailVO{}, err
 	}
 	item.OrderID = strconv.FormatInt(oid, 10)

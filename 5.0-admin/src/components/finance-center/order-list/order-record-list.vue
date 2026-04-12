@@ -860,7 +860,7 @@ defineExpose({
                   </a-tooltip>
                   <!-- 欠费标记（非坏账） -->
                   <a-tooltip
-                    v-else-if="record.isAmountOwed && record.orderStatus !== 1"
+                    v-else-if="record.isAmountOwed && record.orderStatus !== 1 && record.orderStatus !== 4"
                   >
                     <template #title>订单欠费未缴清</template>
                     <span

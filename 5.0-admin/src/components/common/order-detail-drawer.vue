@@ -190,6 +190,7 @@ const showApprovalSection = computed(() => {
   return !!(approvalNumberText.value !== '-' || approvalId.value)
 })
 const orderItems = computed(() => Array.isArray(detail.value?.orderItems) ? detail.value.orderItems : [])
+const isClosedOrderDetail = computed(() => Number(detail.value?.orderStatus || 0) === 4)
 const isRechargeOrderDetail = computed(() => Number(detail.value?.orderType || 0) === 2)
 const isRefundRechargeOrderDetail = computed(() => Number(detail.value?.orderType || 0) === 4)
 /** 退费类订单：流水区块展示为「退款记录」 */
@@ -304,16 +305,21 @@ const orderTagText = computed(() => {
   return '-'
 })
 const showBadDebtBanner = computed(() => {
-  return !!detail.value?.isBadDebt
+  return !isClosedOrderDetail.value && !!detail.value?.isBadDebt
 })
 const showArrearBanner = computed(() => {
-  return !!detail.value && detail.value.orderStatus !== 1 && !detail.value.isBadDebt && Number(detail.value.arrearAmount || 0) > 0
+  return !!detail.value && !isClosedOrderDetail.value && detail.value.orderStatus !== 1 && !detail.value.isBadDebt && Number(detail.value.arrearAmount || 0) > 0
 })
 
 const orderStatusText = computed(() => {
   return orderStatusMap[detail.value?.orderStatus] || '-'
 })
-const voidedOrderActionText = computed(() => {
+const orderStatusActionText = computed(() => {
+  if (detail.value?.orderStatus === 4) {
+    const operatorName = String(detail.value?.updateStaffName || '').trim() || '-'
+    const operateTime = formatDate(detail.value?.finishedTime)
+    return `${operatorName}在 ${operateTime} 关闭了订单`
+  }
   if (detail.value?.orderStatus !== 5) {
     return ''
   }
@@ -1183,8 +1189,8 @@ function isHandledApprovalFlow(flow) {
           <div class="flex flex-items-start justify-between mb-5">
             <div class="flex-1 min-w-0">
               <div>订单状态：{{ orderStatusText }}</div>
-              <div v-if="voidedOrderActionText" class="mt-3 w-full px-4 py-3 rounded-2 bg-#f6f7f8 text-#666">
-                {{ voidedOrderActionText }}
+              <div v-if="orderStatusActionText" class="mt-3 w-full px-4 py-3 rounded-2 bg-#f6f7f8 text-#666">
+                {{ orderStatusActionText }}
               </div>
             </div>
             <a-space class="ml-4 flex-shrink-0">
@@ -1365,7 +1371,7 @@ function isHandledApprovalFlow(flow) {
               <a-descriptions-item :label="orderTimeLabelText">
                 {{ orderTimeValueText }}
               </a-descriptions-item>
-              <a-descriptions-item label="完成时间">
+              <a-descriptions-item v-if="!isClosedOrderDetail" label="完成时间">
                 {{ formatDate(detail.finishedTime) }}
               </a-descriptions-item>
               <a-descriptions-item label="对内备注">
