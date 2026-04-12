@@ -191,6 +191,7 @@ const canDeleteSchedule = computed(() => props.deletable && !deleteDisabledReaso
 const hasBatchSchedule = computed(() => {
   return Number(detailData.value?.batchSize || props.detail?.batchSize || 0) > 1
     || String(detailData.value?.batchNo || props.detail?.batchNo || '').trim() !== ''
+    || hasBatchMetaSchedule(detailData.value?.batchMeta)
 })
 const scheduleEditPayload = computed<ScheduleEditPayload>(() => {
   const batchMeta = detailData.value?.batchMeta
@@ -248,6 +249,19 @@ function getStudentTypeTagClass(studentType?: number) {
     default:
       return 'student-type-tag--member'
   }
+}
+
+function hasBatchMetaSchedule(meta?: TeachingScheduleBatchMeta | null) {
+  if (!meta)
+    return false
+  const schedulingMode = String(meta.schedulingMode || '').trim()
+  const repeatRule = String(meta.repeatRule || '').trim()
+  const plannedClassCount = Number(meta.plannedClassCount || 0)
+  const freeSelectedDates = Array.isArray(meta.freeSelectedDates) ? meta.freeSelectedDates.filter(Boolean) : []
+  return plannedClassCount > 1
+    || freeSelectedDates.length > 1
+    || schedulingMode === 'free'
+    || (schedulingMode === 'repeat' && repeatRule !== '' && repeatRule !== 'none')
 }
 
 function handleAddStudentMenuClick({ key }) {

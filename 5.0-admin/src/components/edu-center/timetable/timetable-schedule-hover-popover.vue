@@ -121,6 +121,19 @@ function formatStudentBucket(students: TeachingScheduleDetailStudent[]) {
   return formatNameBucket(students.map(item => item.studentName))
 }
 
+function hasBatchMetaSchedule(meta?: TeachingScheduleBatchMeta | null) {
+  if (!meta)
+    return false
+  const schedulingMode = String(meta.schedulingMode || '').trim()
+  const repeatRule = String(meta.repeatRule || '').trim()
+  const plannedClassCount = Number(meta.plannedClassCount || 0)
+  const freeSelectedDates = Array.isArray(meta.freeSelectedDates) ? meta.freeSelectedDates.filter(Boolean) : []
+  return plannedClassCount > 1
+    || freeSelectedDates.length > 1
+    || schedulingMode === 'free'
+    || (schedulingMode === 'repeat' && repeatRule !== '' && repeatRule !== 'none')
+}
+
 const activeStudents = computed(() => detailData.value?.students || [])
 const trialStudents = computed(() => {
   if (!detailData.value)
@@ -176,7 +189,7 @@ const isFutureSchedule = computed(() => {
 const hasBatchSchedule = computed(() => {
   const batchSize = Number(detailData.value?.batchSize || props.batchSize || 0)
   const batchNo = String(detailData.value?.batchNo || props.batchNo || '').trim()
-  return batchSize > 1 || batchNo !== ''
+  return batchSize > 1 || batchNo !== '' || hasBatchMetaSchedule(detailData.value?.batchMeta)
 })
 const canEditByContext = computed(() => Boolean(String(props.scheduleId || '').trim()) && props.editable)
 const canEditSchedule = computed(() => canEditByContext.value && !isPastSchedule.value)
@@ -294,6 +307,19 @@ function resolvePopoverContainer(triggerNode?: HTMLElement) {
 }
 
 function resolveTooltipContainer() {
+  if (typeof document === 'undefined')
+    return undefined as unknown as HTMLElement
+  return document.body
+}
+
+function resolveDropdownContainer(triggerNode?: HTMLElement) {
+  if (triggerNode instanceof HTMLElement) {
+    const card = triggerNode.closest('.st-schedule-hover-card')
+    if (card instanceof HTMLElement)
+      return card
+  }
+  if (hoverPopoverRoot?.isConnected)
+    return hoverPopoverRoot
   if (typeof document === 'undefined')
     return undefined as unknown as HTMLElement
   return document.body
@@ -458,8 +484,9 @@ watch(
             <div class="st-schedule-hover-card__actions">
               <a-dropdown
                 v-if="hasBatchSchedule && canEditSchedule"
-                :trigger="['hover']"
+                :trigger="['click']"
                 placement="topLeft"
+                :get-popup-container="resolveDropdownContainer"
               >
                 <template #overlay>
                   <a-menu :selectable="false" @click="handleBatchEditMenuClick">
@@ -500,8 +527,9 @@ watch(
 
               <a-dropdown
                 v-if="showCopyAction && hasBatchSchedule"
-                :trigger="['hover']"
+                :trigger="['click']"
                 placement="topLeft"
+                :get-popup-container="resolveDropdownContainer"
               >
                 <template #overlay>
                   <a-menu :selectable="false" @click="handleBatchCopyMenuClick">
