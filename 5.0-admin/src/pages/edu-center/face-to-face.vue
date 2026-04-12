@@ -38,7 +38,7 @@ const activeKey = ref('1')
 
     :deep(.ant-tabs-nav) {
       background: #fff;
-      border-radius: 0 0 16px 16px;
+      border-radius: 16px;
       margin: 0;
     }
 

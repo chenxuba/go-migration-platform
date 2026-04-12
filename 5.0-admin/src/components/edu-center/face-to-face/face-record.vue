@@ -414,6 +414,11 @@ onMounted(() => {
   cursor: pointer;
 }
 
+.filter-wrap {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
 .total {
   position: relative;
   padding-left: 10px;
