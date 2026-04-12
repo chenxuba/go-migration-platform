@@ -433,6 +433,12 @@ const scheduleLegend = [
     color: '#b7bec8',
   },
   {
+    key: 'partial',
+    label: '部分点名',
+    type: 'bar',
+    color: '#f59e0b',
+  },
+  {
     key: 'trial',
     label: '含试听学员',
     type: 'icon',
