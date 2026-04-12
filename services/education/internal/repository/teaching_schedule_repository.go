@@ -2594,6 +2594,9 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 		}
 		return err
 	}
+	if row.ClassType == model.TeachingClassTypeOneToOne {
+		return errors.New("一对一日程不支持移出本节学员")
+	}
 	if row.ClassType != model.TeachingClassTypeNormal || row.TeachingClassID <= 0 {
 		return errors.New("当前仅支持班课学员移出本节")
 	}
