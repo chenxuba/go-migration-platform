@@ -86,6 +86,7 @@ const studentId = computed(() => studentStore.studentId)
 const studentDetail = ref({})
 const oneToOneClassTeacherNames = ref([])
 const router = useRouter()
+const hasFaceCollected = computed(() => !!studentDetail.value?.isCollect)
 
 // 判断是否是自己的学员
 const isMyStudent = computed(() => {
@@ -113,9 +114,16 @@ function handleEnrollment() {
 // 获取意向学员详情
 // getIntentStudentDetailApi
 async function getIntentStudentDetail(flag = true) {
+  const currentStudentId = String(studentId.value || '').trim()
+  if (!currentStudentId) {
+    studentDetail.value = {}
+    return
+  }
   try {
-    const res = await getIntentStudentDetailApi({ studentId: studentId.value })
+    const res = await getIntentStudentDetailApi({ studentId: currentStudentId })
     if (res.code === 200) {
+      if (String(studentId.value || '').trim() !== currentStudentId)
+        return
       studentDetail.value = res.result
       nextTick(() => {
         if (activeKey.value === '4' && flag) {
@@ -204,6 +212,13 @@ watch(() => openDrawer.value, (newVal) => {
       refreshPrimaryCourseList()
     }
   }
+})
+
+watch(() => studentId.value, (newVal, oldVal) => {
+  if (!openDrawer.value || newVal === oldVal)
+    return
+  getIntentStudentDetail()
+  getOneToOneClassTeachers()
 })
 
 // 监听 activeKey 变化，切换到报读课程时刷新数据
@@ -459,6 +474,8 @@ const studentAvatarSrc = computed(() => {
   return studentDetail.value?.avatarUrl || studentDetail.value?.avatar || DEFAULT_AVATAR_URL
 })
 
+const hasFollowedOfficialAccount = computed(() => !!studentDetail.value?.isBindChild)
+
 const studentGender = computed(() => {
   return (studentDetail.value?.stuSex ?? studentDetail.value?.sex) ?? Sex.Unknown
 })
@@ -700,13 +717,35 @@ async function handlePhoneToggle() {
               <div class="name text-5 font-800 whitespace-nowrap">
                 {{ studentNameDisplay }}
               </div>
-              <a-tooltip title="未关注">
-                <img class="mt-0.5 cursor-pointer ml1" src="~@/assets/images/follow.svg" alt="">
+              <a-tooltip :title="hasFollowedOfficialAccount ? '已关注' : '未关注'">
+                <img
+                  class="mt-0.5 cursor-pointer ml1 follow-status-icon"
+                  :class="{ 'follow-status-icon--inactive': !hasFollowedOfficialAccount }"
+                  src="~@/assets/images/follow.svg"
+                  alt=""
+                >
               </a-tooltip>
-              <a-tooltip v-if="studentDetail?.isCollect" title="已采集">
-                <span class="face-collect-status face-collect-status--collected ml0.5">
-                  <span class="face-collect-status__text">已采集</span>
-                  <img class="face-collect-status__icon face-collect-status__icon--collected" src="~@/assets/images/face.svg" alt="">
+              <a-tooltip v-if="hasFaceCollected" title="已采集">
+                <span class="face-collect-status ml0.5">
+                  <svg class="face-collect-status__svg" width="16px" height="16px" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+                    <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+                      <g transform="translate(-594.000000, -464.000000)">
+                        <g transform="translate(518.000000, 310.000000)">
+                          <g transform="translate(0.000000, 126.000000)">
+                            <g transform="translate(76.000000, 21.600000)">
+                              <g transform="translate(0.000000, 6.400000)">
+                                <polygon fill="#000000" fill-rule="nonzero" opacity="0" points="0 0 16 0 16 16 8 16 0 16" />
+                                <path
+                                  d="M1.49983336,11 C1.74529324,10.9999182 1.94950067,11.1767253 1.99191437,11.4099604 L2,11.4998334 L2,14 L4.5,14 C4.74545992,14 4.9496084,14.1768752 4.99194436,14.4101244 L5,14.5 C5,14.7454599 4.82312487,14.9496084 4.58987566,14.9919444 L4.5,15 L1.50100003,15 C1.25559799,15 1.05147725,14.8232051 1.00908211,14.5900195 L1.00100006,14.5001667 L1,11.5001667 C0.999908009,11.2240243 1.223691,11.0000921 1.49983336,11 Z M14.4988336,11 C14.7442935,10.9999183 14.9485009,11.1767254 14.9909146,11.4099605 L14.9990002,11.4998334 L15,14.4998334 C15.0000818,14.7453511 14.8231944,14.9495863 14.5898958,14.9919408 L14.5,15 L11.5,15 C11.2238576,15 11,14.7761424 11,14.5 C11,14.2545401 11.1768752,14.0503917 11.4101244,14.0080557 L11.5,14 L14,14 L13.9990003,11.5001667 C13.9989185,11.2547068 14.1757256,11.0504994 14.4089607,11.0080857 L14.4988336,11 Z M4.5,9 L11.5,9 L11.4931641,9.38828125 L11.4769287,9.60498047 L11.4453125,9.83125 C11.28125,10.75 10.625,11.8 8,11.8 C5.484375,11.8 4.77685547,10.8356771 4.5778656,9.94669189 L4.53663635,9.71717529 C4.53140259,9.67943522 4.5269165,9.64200846 4.52307129,9.60498047 L4.50683594,9.38828125 L4.5,9 Z M11,5.5 C11.5522847,5.5 12,5.94771525 12,6.5 C12,7.05228475 11.5522847,7.5 11,7.5 C10.4477153,7.5 10,7.05228475 10,6.5 C10,5.94771525 10.4477153,5.5 11,5.5 Z M5,5.5 C5.55228475,5.5 6,5.94771525 6,6.5 C6,7.05228475 5.55228475,7.5 5,7.5 C4.44771525,7.5 4,7.05228475 4,6.5 C4,5.94771525 4.44771525,5.5 5,5.5 Z M14.5,1 C14.7455177,1 14.9496939,1.17695541 14.9919707,1.41026814 L15,1.50016663 L14.9990002,4.50016663 C14.9989082,4.77630898 14.774976,5.000092 14.4988336,5 C14.2533737,4.99991817 14.0492842,4.82297499 14.007026,4.58971169 L13.9990003,4.49983337 L14,2 L11.5,2 C11.2545401,2 11.0503916,1.82312484 11.0080557,1.58987563 L11,1.5 C11,1.25454011 11.1768752,1.05039163 11.4101244,1.00805567 L11.5,1 L14.5,1 Z M4.5,1 C4.77614235,1 5,1.22385763 5,1.5 C5,1.74545989 4.82312481,1.94960837 4.5898756,1.99194433 L4.5,2 L2,2 L2,4.50016667 C1.99991812,4.74562654 1.82297492,4.94971605 1.58971162,4.99197426 L1.49983331,5 C1.25437343,4.99991815 1.05028392,4.82297495 1.00802571,4.58971165 L1,4.49983333 L1.001,1.49983333 C1.0010818,1.25443131 1.17794474,1.05036951 1.41114451,1.0080521 L1.50099997,1 L4.5,1 Z"
+                                  fill="#0066FF"
+                                />
+                              </g>
+                            </g>
+                          </g>
+                        </g>
+                      </g>
+                    </g>
+                  </svg>
                 </span>
               </a-tooltip>
               <a-tooltip v-else title="未采集">
@@ -1141,31 +1180,23 @@ async function handlePhoneToggle() {
   max-width: 300px;
 }
 
+.follow-status-icon--inactive {
+  filter: grayscale(1) opacity(0.45);
+}
+
 .face-collect-status {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
 }
 
-.face-collect-status--collected {
-  color: #222;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 24px;
-}
-
-.face-collect-status__text {
-  white-space: nowrap;
-}
-
 .face-collect-status__icon {
   width: 20px;
   height: 20px;
-  margin-left: 6px;
 }
 
-.face-collect-status__icon--collected {
-  filter: brightness(0) saturate(100%) invert(49%) sepia(88%) saturate(3657%) hue-rotate(208deg) brightness(101%) contrast(101%);
+.face-collect-status__svg {
+  display: block;
 }
 
 // 防止 descriptions label 换行

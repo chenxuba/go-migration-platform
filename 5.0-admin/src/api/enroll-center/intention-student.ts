@@ -20,6 +20,8 @@ export interface StudentInfo {
   version?: number
   studentStatus?: number
   primaryCourseCount?: number
+  isBindChild?: boolean
+  isCollect?: boolean
   stuName: string
   mobile: string
   avatar: string

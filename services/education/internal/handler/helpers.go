@@ -1289,6 +1289,7 @@ func formatIntentStudentDetail(item model.IntentStudent) map[string]any {
 		"rechargeAmountTotal":         item.RechargeAmountTotal,
 		"residualAmountTotal":         item.ResidualAmountTotal,
 		"givingAmountTotal":           item.GivingAmountTotal,
+		"isBindChild":                 item.IsBindChild,
 		"isCollect":                   item.IsCollect,
 		"primaryCourseCount":          item.PrimaryCourseCount,
 		"customInfo":                  item.CustomInfo,
