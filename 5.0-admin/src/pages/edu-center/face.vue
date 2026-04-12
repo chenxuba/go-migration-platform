@@ -42,6 +42,12 @@ function formatDate(timestamp) {
   return dayjs(timestamp).format('MM-DD HH:mm')
 }
 
+function formatFullDate(timestamp) {
+  if (!timestamp)
+    return ''
+  return dayjs(timestamp).format('YYYY-MM-DD HH:mm')
+}
+
 function getAttendanceStatusText(item) {
   if (Number(item?.status || 0) === 2)
     return '已签退'
@@ -64,6 +70,35 @@ function getAttendanceTipText(item) {
   if (signInText)
     return `签到时间 ${signInText}，等待签退`
   return '已完成签到，等待签退'
+}
+
+function getAttendancePrimaryTime(item) {
+  if (!item)
+    return ''
+  if (Number(item.status || 0) === 2) {
+    const signInText = formatFullDate(item.signInTime)
+    return signInText ? `签到时间 ${signInText}` : ''
+  }
+  const signInText = formatFullDate(item.signInTime)
+  return signInText ? `签到时间 ${signInText}` : ''
+}
+
+function getAttendanceSecondaryTime(item) {
+  if (!item)
+    return ''
+  if (Number(item.status || 0) === 2)
+    return formatDate(item.signOutTime || item.latestTime)
+  return ''
+}
+
+function getAttendanceFooterText(item) {
+  if (!item)
+    return ''
+  if (item.hasSchedule === false)
+    return '考勤当日无排课计划'
+  if (Number(item?.status || 0) === 2)
+    return '已完成当日考勤'
+  return '等待签退'
 }
 
 // 考勤记录
@@ -1284,29 +1319,30 @@ function startAttendance() {
             <div class="con2 con scrollbar">
               <div
                 v-for="(item, index) in attendanceRecords"
-                :key="index" class="flex flex-items-center mb-12px pb-12px border-x-0 border-t-0 border-b border-color-#e6e6e6 border-solid "
+                :key="index" class="attendance-record-row flex flex-items-start mb-12px pb-12px border-x-0 border-t-0 border-b border-color-#e6e6e6 border-solid "
               >
                 <div class="left w-40px h-40px">
                   <img width="40px" height="40px" class="rounded-20 object-cover" :src="item.latestImage || item.avatarUrl" alt="">
                 </div>
-                <div class="center mx-10px flex-1">
-                  <div class="name flex flex-items-center">
-                    <span class="text-16px font500 text-#222">{{ item.studentName }}</span>
-                    <span class="bg-#e6f0ff rounded-20 px-10px py-2px text-12px text-#0066ff font500">{{ getAttendanceStatusText(item) }}</span>
+                <div class="attendance-record-content mx-10px flex-1 min-w-0">
+                  <div class="attendance-record-header">
+                    <div class="attendance-record-title">
+                      <span class="text-16px font500 text-#222">{{ item.studentName }}</span>
+                      <span class="bg-#e6f0ff rounded-20 px-10px py-2px text-12px text-#0066ff font500">{{ getAttendanceStatusText(item) }}</span>
+                    </div>
+                    <CheckCircleFilled class="attendance-record-check text-#01c38f text-22px" />
                   </div>
-                  <div v-if="item.hasSchedule === false" class="tips text-#ff9900 text-3 font-500">
-                    <ExclamationCircleFilled /> 考勤当日无排课计划
+                  <div class="attendance-record-time-row text-#7b889d text-3 font-500 mt-4px">
+                    <span class="attendance-record-time-left">{{ getAttendancePrimaryTime(item) }}</span>
+                    <span class="attendance-record-time-right">{{ getAttendanceSecondaryTime(item) }}</span>
                   </div>
-                  <div v-if="getAttendanceTipText(item)" class="tips text-#7b889d text-3 font-500 mt-4px">
-                    {{ getAttendanceTipText(item) }}
-                  </div>
-                </div>
-                <div class="right flex flex-items-end flex-col">
-                  <div class="icon">
-                    <CheckCircleFilled class="text-#01c38f text-22px" />
-                  </div>
-                  <div class="time text-3 text-#7b889d">
-                    {{ formatDate(item.latestTime || item.signOutTime || item.signInTime) }}
+                  <div
+                    v-if="getAttendanceFooterText(item)"
+                    class="attendance-record-footer text-3 font-500 mt-4px"
+                    :class="item.hasSchedule === false ? 'text-#ff9900' : 'text-#7b889d'"
+                  >
+                    <ExclamationCircleFilled v-if="item.hasSchedule === false" class="mr-4px" />
+                    {{ getAttendanceFooterText(item) }}
                   </div>
                 </div>
               </div>
@@ -1370,6 +1406,62 @@ function startAttendance() {
   min-height: 100vh;
   background: #f0f0fb;
   padding-bottom: 30px;
+
+  .attendance-record-row {
+    width: 100%;
+  }
+
+  .attendance-record-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .attendance-record-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .attendance-record-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .attendance-record-check {
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .attendance-record-time-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    white-space: nowrap;
+  }
+
+  .attendance-record-time-left,
+  .attendance-record-time-right {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .attendance-record-time-left {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .attendance-record-footer {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+  }
 
   .faceInner {
     width: 960px;
