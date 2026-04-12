@@ -123,6 +123,13 @@ function formatMoney(amount) {
   return num.toFixed(2)
 }
 
+function roundMoneyAmount(amount) {
+  const num = Number(amount)
+  if (Number.isNaN(num))
+    return 0
+  return Number(num.toFixed(2))
+}
+
 function formatCount(value) {
   const num = Number(value || 0)
   if (Number.isInteger(num)) {
@@ -132,7 +139,7 @@ function formatCount(value) {
 }
 
 function hasArrearTuition(item) {
-  return Number(item?.arrearTuition || 0) > 0
+  return roundMoneyAmount(item?.arrearTuition || 0) > 0
 }
 
 function hasConsumedTuitionAccount(item) {
