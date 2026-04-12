@@ -13,6 +13,8 @@ type TeachingRecordDetailQueryDTO struct {
 type StudentTeachingRecordQueryModel struct {
 	BeginStartTime                string   `json:"beginStartTime"`
 	EndStartTime                  string   `json:"endStartTime"`
+	BeginCreateTime               string   `json:"beginCreateTime"`
+	EndCreateTime                 string   `json:"endCreateTime"`
 	BeginUpdatedTime              string   `json:"beginUpdatedTime"`
 	EndUpdatedTime                string   `json:"endUpdatedTime"`
 	StudentID                     string   `json:"studentId"`
@@ -23,6 +25,7 @@ type StudentTeachingRecordQueryModel struct {
 	StudentSourceTypes            []int    `json:"studentSourceTypes"`
 	LessonChargingModeEnums       []int    `json:"lessonChargingModeEnums"`
 	StudentTeachingRecordStatuses []int    `json:"studentTeachingRecordStatuses"`
+	ScheduleCallStatus            *int     `json:"scheduleCallStatus,omitempty"`
 	IsArrear                      *bool    `json:"isArrear"`
 	LessonIDs                     []string `json:"lessonIds"`
 	ClassIDs                      []string `json:"classIds"`

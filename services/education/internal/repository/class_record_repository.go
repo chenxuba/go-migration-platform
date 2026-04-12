@@ -124,6 +124,14 @@ func (repo *Repository) buildStudentTeachingRecordQuery(dto model.StudentTeachin
 		whereParts = append(whereParts, "start_time <= ?")
 		args = append(args, *end)
 	}
+	if begin := parseDateStart(strings.TrimSpace(query.BeginCreateTime)); begin != nil {
+		whereParts = append(whereParts, "teaching_record_created_time >= ?")
+		args = append(args, *begin)
+	}
+	if end := parseDateEnd(strings.TrimSpace(query.EndCreateTime)); end != nil {
+		whereParts = append(whereParts, "teaching_record_created_time <= ?")
+		args = append(args, *end)
+	}
 	if begin := parseDateStart(strings.TrimSpace(query.BeginUpdatedTime)); begin != nil {
 		whereParts = append(whereParts, "updated_time >= ?")
 		args = append(args, *begin)
@@ -232,6 +240,22 @@ func (repo *Repository) buildStudentTeachingRecordQuery(dto model.StudentTeachin
 		args:     args,
 		orderBy:  orderBy,
 	}
+}
+
+func buildScheduleTeachingRecordHaving(query model.StudentTeachingRecordQueryModel) (string, []any) {
+	conditions := make([]string, 0, 1)
+	args := make([]any, 0, 1)
+	if query.ScheduleCallStatus != nil {
+		status := *query.ScheduleCallStatus
+		if status == 1 || status == 2 {
+			conditions = append(conditions, "CASE WHEN SUM(CASE WHEN status = 4 THEN 1 ELSE 0 END) > 0 THEN 1 ELSE 2 END = ?")
+			args = append(args, status)
+		}
+	}
+	if len(conditions) == 0 {
+		return "", nil
+	}
+	return " HAVING " + strings.Join(conditions, " AND "), args
 }
 
 func (repo *Repository) GetStudentTeachingRecordPagedList(ctx context.Context, instID int64, dto model.StudentTeachingRecordPagedQueryDTO) (model.StudentTeachingRecordPagedResult, error) {
@@ -398,34 +422,30 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 		},
 		QueryModel: dto.QueryModel,
 	}, instID)
+	havingSQL, havingArgs := buildScheduleTeachingRecordHaving(dto.QueryModel)
 
 	var result model.ScheduleTeachingRecordPagedResult
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT
-			COUNT(DISTINCT teaching_record_id),
+			COUNT(*),
+			IFNULL(SUM(record_stat.actual_quantity), 0),
 			IFNULL(SUM(record_stat.teacher_class_time), 0),
 			IFNULL(SUM(record_stat.actual_tuition), 0)
 		FROM (
 			SELECT
 				teaching_record_id,
 				MAX(teacher_class_time) AS teacher_class_time,
-				SUM(actual_tuition) AS actual_tuition
+				SUM(actual_tuition) AS actual_tuition,
+				SUM(CASE
+					WHEN IFNULL(arrear_quantity, 0) > 0 AND IFNULL(actual_tuition, 0) <= 0 THEN 0
+					ELSE IFNULL(actual_quantity, 0)
+				END) AS actual_quantity
 			FROM student_teaching_record
 			WHERE `+studentFragments.whereSQL+`
 			GROUP BY teaching_record_id
+			`+havingSQL+`
 		) AS record_stat
-	`, studentFragments.args...).Scan(&result.Total, &result.TotalTeacherTimes, &result.TotalTuition); err != nil {
-		return model.ScheduleTeachingRecordPagedResult{}, err
-	}
-	if err := repo.db.QueryRowContext(ctx, `
-		SELECT IFNULL(SUM(
-			CASE
-				WHEN IFNULL(arrear_quantity, 0) > 0 AND IFNULL(actual_tuition, 0) <= 0 THEN 0
-				ELSE IFNULL(actual_quantity, 0)
-			END
-		), 0)
-		FROM student_teaching_record
-		WHERE `+studentFragments.whereSQL, studentFragments.args...).Scan(&result.TotalClassTimes); err != nil {
+	`, append(studentFragments.args, havingArgs...)...).Scan(&result.Total, &result.TotalClassTimes, &result.TotalTeacherTimes, &result.TotalTuition); err != nil {
 		return model.ScheduleTeachingRecordPagedResult{}, err
 	}
 
@@ -471,9 +491,10 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 		FROM student_teaching_record
 		WHERE `+studentFragments.whereSQL+`
 		GROUP BY teaching_record_id
+		`+havingSQL+`
 		ORDER BY `+orderBy+`
 		LIMIT ? OFFSET ?
-	`, append(studentFragments.args, pageSize, offset)...)
+	`, append(append(studentFragments.args, havingArgs...), pageSize, offset)...)
 	if err != nil {
 		return model.ScheduleTeachingRecordPagedResult{}, err
 	}

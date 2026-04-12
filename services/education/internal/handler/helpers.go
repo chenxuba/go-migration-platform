@@ -1025,6 +1025,8 @@ func parseStudentTeachingRecordQueryModel(raw map[string]any) model.StudentTeach
 	return model.StudentTeachingRecordQueryModel{
 		BeginStartTime:                asString(raw["beginStartTime"]),
 		EndStartTime:                  asString(raw["endStartTime"]),
+		BeginCreateTime:               asString(firstNonNil(raw["beginCreateTime"], raw["beginCreatedTime"])),
+		EndCreateTime:                 asString(firstNonNil(raw["endCreateTime"], raw["endCreatedTime"])),
 		BeginUpdatedTime:              asString(raw["beginUpdatedTime"]),
 		EndUpdatedTime:                asString(raw["endUpdatedTime"]),
 		StudentID:                     asString(raw["studentId"]),
@@ -1035,6 +1037,7 @@ func parseStudentTeachingRecordQueryModel(raw map[string]any) model.StudentTeach
 		StudentSourceTypes:            asIntSlice(raw["studentSourceTypes"]),
 		LessonChargingModeEnums:       asIntSlice(raw["lessonChargingModeEnums"]),
 		StudentTeachingRecordStatuses: asIntSlice(raw["studentTeachingRecordStatuses"]),
+		ScheduleCallStatus:            asIntPtr(firstNonNil(raw["scheduleCallStatus"], raw["rollCallStatus"])),
 		IsArrear:                      asBoolPtr(raw["isArrear"]),
 		LessonIDs:                     coalesceStringSlice(raw["lessonIds"], raw["lessonId"]),
 		ClassIDs:                      asStringSlice(raw["classIds"]),

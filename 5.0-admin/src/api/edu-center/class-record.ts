@@ -3,6 +3,8 @@ import { useGet, usePost } from '~/utils/request'
 export interface ClassRecordQueryModel {
   beginStartTime?: string
   endStartTime?: string
+  beginCreateTime?: string
+  endCreateTime?: string
   beginUpdatedTime?: string
   endUpdatedTime?: string
   studentId?: string
@@ -13,6 +15,7 @@ export interface ClassRecordQueryModel {
   studentSourceTypes?: number[]
   lessonChargingModeEnums?: number[]
   studentTeachingRecordStatuses?: number[]
+  scheduleCallStatus?: number
   isArrear?: boolean | null
   lessonIds?: string[]
   classIds?: string[]
