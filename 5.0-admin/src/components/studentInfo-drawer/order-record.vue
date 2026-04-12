@@ -125,7 +125,7 @@ function orderAmountText(record) {
 }
 
 function shouldShowArrearBadge(record) {
-  return !record?.isBadDebt && Number(record?.arrearAmount || 0) > 0
+  return !record?.isBadDebt && Number(record?.orderStatus || 0) !== 4 && Number(record?.arrearAmount || 0) > 0
 }
 
 function handleOrderDetail(orderId) {
