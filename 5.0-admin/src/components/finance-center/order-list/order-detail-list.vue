@@ -478,7 +478,7 @@ defineExpose({
                       class="w-5 h-5 block text-#333 bg-#DDD font-600 text-3 ml-1 text-center line-height-5 rounded-1"
                     >坏</span>
                   </a-tooltip>
-                  <a-tooltip v-else-if="record.arrearAmount > 0">
+                  <a-tooltip v-else-if="record.arrearAmount > 0 && record.orderStatus !== 4">
                     <template #title>订单欠费未缴清</template>
                     <span
                       class="w-5 h-5 block text-red bg-#FBE7E6 font-600 text-3 ml-1 text-center line-height-5 rounded-1"
