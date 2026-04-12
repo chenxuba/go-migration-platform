@@ -2216,13 +2216,13 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 			ts.lesson_date,
 			ts.lesson_start_at,
 			ts.lesson_end_at,
-			(
+			IFNULL((
 				SELECT CAST(MAX(str.teaching_record_id) AS CHAR)
 				FROM student_teaching_record str
 				WHERE str.inst_id = ts.inst_id
 				  AND str.del_flag = 0
 				  AND str.teaching_schedule_id = ts.id
-			) AS teaching_record_id,
+			), '') AS teaching_record_id,
 			` + callStatusSelect + `,
 			IFNULL(tc.remark, '')
 		FROM teaching_schedule ts
