@@ -215,7 +215,7 @@ watch(() => openDrawer.value, (newVal) => {
 })
 
 watch(() => studentId.value, (newVal, oldVal) => {
-  if (!openDrawer.value || newVal === oldVal)
+  if (!openDrawer.value || !oldVal || newVal === oldVal)
     return
   getIntentStudentDetail()
   getOneToOneClassTeachers()
