@@ -1,47 +1,109 @@
-<script setup>
+<script setup lang="ts">
 import { CloseOutlined } from '@ant-design/icons-vue'
+import type { TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
+import messageService from '@/utils/messageService'
 
-const props = defineProps({
-  open: {
-    type: Boolean,
-    default: false,
-  },
+const props = withDefaults(defineProps<{
+  open: boolean
+  student?: TeachingRecordDetailStudent | null
+}>(), {
+  student: null,
 })
+
 const emit = defineEmits(['update:open'])
 const formRef = ref()
-// 处理双向绑定
+
 const openModal = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
 })
+
 const formState = reactive({
-  status: 1,
-  editRecord: 1,
-  internalNote: undefined,
-  externalNote: undefined,
+  status: 0,
+  editRecord: undefined as number | undefined,
+  internalNote: '',
+  externalNote: '',
 })
-// 手动触发验证
+
+const avatarUrl = computed(() => String(props.student?.avatar || '').trim() || 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png')
+const studentName = computed(() => String(props.student?.studentName || '').trim() || '-')
+const chargingModeText = computed(() => {
+  const mode = Number(props.student?.skuMode || 0)
+  if (mode === 2)
+    return '按时间'
+  if (mode === 3)
+    return '按金额'
+  if (mode === 1)
+    return '按课时'
+  return '-'
+})
+const sourceTypeText = computed(() => {
+  const type = Number(props.student?.sourceType || 0)
+  if (type === 2)
+    return '临时学员'
+  if (type === 3 || type === 7)
+    return '补课学员'
+  if (type === 4)
+    return '试听学员'
+  if (type === 6)
+    return '1对1学员'
+  return '班级学员'
+})
+const tuitionAccountText = computed(() => String(props.student?.tuitionAccountName || '').trim() || '-')
+const leftQuantityText = computed(() => {
+  const quantity = Number(props.student?.leftQuantity || 0)
+  if (!Number.isFinite(quantity))
+    return '-'
+  const text = Number.isInteger(quantity) ? String(quantity) : quantity.toFixed(2).replace(/\.?0+$/, '')
+  return `${text}课时`
+})
+const quantityDisabled = computed(() => Number(props.student?.sourceType || 0) === 4 || Number(props.student?.skuMode || 0) === 2)
+
+function syncFormState() {
+  const student = props.student
+  formState.status = Number(student?.status ?? 0)
+  formState.editRecord = student && String(student.studentTeachingRecordId || '').trim()
+    ? Number(student.quantity ?? 0)
+    : undefined
+  formState.internalNote = String(student?.remark || '')
+  formState.externalNote = String(student?.externalRemark || '')
+}
+
+watch(
+  () => [openModal.value, props.student] as const,
+  ([open]) => {
+    if (!open)
+      return
+    syncFormState()
+  },
+  { immediate: true },
+)
+
 async function handleSubmit() {
   try {
-    await formRef.value.validate() // 关键3：通过引用调用验证方法
-    console.log('验证通过，提交数据:', formState)
-    // 关闭modal
+    await formRef.value?.validate()
+    messageService.info('编辑点名保存接口暂未接入，当前先支持真实数据回显')
     openModal.value = false
   }
-  catch (error) {
-    console.log('验证失败:', error)
+  catch {
   }
 }
+
 function closeFun() {
-  formRef.value.resetFields()
+  formRef.value?.resetFields()
   openModal.value = false
 }
 </script>
 
 <template>
   <a-modal
-    v-model:open="openModal" centered class="modal-content-box" :keyboard="false" :closable="false"
-    :mask-closable="false" :width="800"
+    v-model:open="openModal"
+    centered
+    class="modal-content-box"
+    :keyboard="false"
+    :closable="false"
+    :mask-closable="false"
+    :width="800"
   >
     <template #title>
       <div class="text-5 flex justify-between flex-center">
@@ -54,32 +116,27 @@ function closeFun() {
       </div>
     </template>
     <div class="rounded-12px bg-#fafafa mx-24px">
-      <div class="contenter   px6 py3" style="margin-bottom: 0;">
+      <div class="contenter px6 py3" style="margin-bottom: 0;">
         <div class="avatar flex flex-items-center">
-          <img
-            src="https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png"
-            className="w-40px h-40px rounded-full mr-8px" alt=""
-          >
-          <span class="text-5 text-#222 font-800">张三</span>
+          <img :src="avatarUrl" class="w-40px h-40px rounded-full mr-8px" alt="">
+          <span class="text-5 text-#222 font-800">{{ studentName }}</span>
         </div>
         <div class="text-14px text-#222 flex mt-12px flex-wrap">
           <div class="mr-60px mb-10px flex flex-items-center">
             <span class="text-#888">学员身份：</span>
-            <span class="flex flex-items-center">试听学员
-              <span class="mt-1px ml4px bg-#fff5e6 text-#f90  text-10px px2 py2px rounded-10">免费试听</span>
-            </span>
+            <span>{{ sourceTypeText }}</span>
           </div>
-          <div class="mr-60px">
+          <div class="mr-60px mb-10px">
             <span class="text-#888">课消方式：</span>
-            <span>按课时</span>
+            <span>{{ chargingModeText }}</span>
           </div>
-          <div class="mr-60px">
+          <div class="mr-60px mb-10px">
             <span class="text-#888">扣费课程账户：</span>
-            <span>视知觉训练</span>
+            <span>{{ tuitionAccountText }}</span>
           </div>
-          <div class="mr-60px">
+          <div class="mr-60px mb-10px">
             <span class="text-#888">剩余课时：</span>
-            <span>20课时</span>
+            <span>{{ leftQuantityText }}</span>
           </div>
         </div>
       </div>
@@ -88,34 +145,40 @@ function closeFun() {
       </div>
       <div class="contenter scrollbar" style="margin: 0 24px 24px 24px;">
         <a-form ref="formRef" :model="formState" :label-col="{ span: 4 }" :wrapper-col="{ span: 18 }">
-          <!-- 编辑状态 必选- 单选框 -->
           <a-form-item label="编辑状态" name="status" :rules="[{ required: true, message: '请选择编辑状态' }]" class="mb-40px">
-            <div class="flex flex-col relative">
-              <a-radio-group v-model:value="formState.status" class="custom-radio">
-                <a-radio :value="1">
-                  到课
-                </a-radio>
-                <a-radio :value="2">
-                  请假
-                </a-radio>
-                <a-radio :value="3">
-                  旷课
-                </a-radio>
-              </a-radio-group>
-              <span class="text-14px text-#888 absolute bottom--22px">免费试听学员，不支持记录课时</span>
-            </div>
+            <a-radio-group v-model:value="formState.status" class="custom-radio">
+              <a-radio :value="0">
+                未点名
+              </a-radio>
+              <a-radio :value="1">
+                到课
+              </a-radio>
+              <a-radio :value="3">
+                请假
+              </a-radio>
+              <a-radio :value="2">
+                旷课
+              </a-radio>
+              <a-radio :value="4">
+                未记录
+              </a-radio>
+            </a-radio-group>
           </a-form-item>
-          <!-- 编辑记录 -->
+
           <a-form-item label="编辑记录" name="editRecord">
             <div class="flex flex-items-center">
-              <a-input-number v-model:value="formState.editRecord" :precision="2" placeholder="选填（200字以内）" :min="0" :max="100" /> <span class="ml-4px">课时</span>
+              <a-input-number v-model:value="formState.editRecord" :precision="2" :min="0" :max="100" :disabled="quantityDisabled" />
+              <span class="ml-4px">课时</span>
+            </div>
+            <div v-if="quantityDisabled" class="text-12px text-#888 mt-6px">
+              当前学员课消方式不记录课时
             </div>
           </a-form-item>
-          <!-- 编辑对内备注 -->
+
           <a-form-item label="编辑对内备注" name="internalNote">
             <a-input v-model:value="formState.internalNote" placeholder="选填（200字以内）" :maxlength="200" />
           </a-form-item>
-          <!-- 编辑对外备注 -->
+
           <a-form-item label="编辑对外备注" name="externalNote">
             <a-input v-model:value="formState.externalNote" placeholder="选填（200字以内）" :maxlength="200" />
           </a-form-item>
@@ -134,7 +197,6 @@ function closeFun() {
 </template>
 
 <style lang="less" scoped>
-/* 添加旋转动画 */
 @keyframes icon-rotate {
   from {
     transform: rotate(0deg);
@@ -159,14 +221,6 @@ function closeFun() {
   padding: 24px;
   background: #fafafa;
   margin: 24px;
-
-  .multiple-select {
-    :deep(.ant-select-selection-item) {
-      background-color: #e6f0ff;
-      border: 1px solid #99c2ff;
-    }
-  }
-
 }
 </style>
 

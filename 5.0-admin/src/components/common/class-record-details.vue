@@ -264,7 +264,7 @@ watch(
     </a-modal>
 
     <EditClassInfoModal v-model:open="editClassInfoModal" />
-    <EditRollNameModal v-model:open="editRollNameModal" />
+    <EditRollNameModal v-model:open="editRollNameModal" :detail="detailData" />
   </div>
 </template>
 
