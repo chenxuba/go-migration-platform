@@ -110,9 +110,8 @@ const repeatRuleLabelMap: Record<string, string> = {
 
 const scheduleId = computed(() => String(props.detail?.scheduleId || props.detail?.id || '').trim())
 const isOneToOne = computed(() => {
-  if (detailData.value)
-    return Number(detailData.value.classType) === 2
-  return Number(props.detail?.courseType) === 1
+  return Number(detailData.value?.classType || 0) === 2
+    || Number(props.detail?.courseType || 0) === 1
 })
 const scheduleCover = computed(() => (isOneToOne.value ? scheduleOneToOneImage : scheduleClassImage))
 const students = computed(() => detailData.value?.students || [])
