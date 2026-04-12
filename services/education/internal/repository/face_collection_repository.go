@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 
 	"go-migration-platform/services/education/internal/model"
@@ -136,6 +137,60 @@ func (repo *Repository) GetFaceCollectionProfile(ctx context.Context, instID, st
 		item.UpdatedTime = &t
 	}
 	return item, nil
+}
+
+func (repo *Repository) CompareFaceCollectionProfile(ctx context.Context, instID int64, descriptor []float32) (model.FaceCollectionCompareResult, error) {
+	if len(descriptor) == 0 {
+		return model.FaceCollectionCompareResult{}, errors.New("faceDescriptor 不能为空")
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT p.student_id, IFNULL(s.stu_name, ''), IFNULL(p.face_descriptor, '')
+		FROM inst_student_face_profile p
+		LEFT JOIN inst_student s ON s.id = p.student_id
+		WHERE p.inst_id = ? AND p.del_flag = 0
+	`, instID)
+	if err != nil {
+		return model.FaceCollectionCompareResult{}, err
+	}
+	defer rows.Close()
+
+	bestResult := model.FaceCollectionCompareResult{Matched: false}
+	minDistance := 0.6
+
+	for rows.Next() {
+		var (
+			studentID      int64
+			studentName    string
+			descriptorJSON string
+			stored         []float32
+		)
+		if err := rows.Scan(&studentID, &studentName, &descriptorJSON); err != nil {
+			return model.FaceCollectionCompareResult{}, err
+		}
+		if strings.TrimSpace(descriptorJSON) == "" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(descriptorJSON), &stored); err != nil {
+			return model.FaceCollectionCompareResult{}, err
+		}
+		distance, ok := calculateEuclideanDistance(descriptor, stored)
+		if !ok {
+			continue
+		}
+		if distance < minDistance {
+			minDistance = distance
+			bestResult = model.FaceCollectionCompareResult{
+				Matched:     true,
+				StudentID:   studentID,
+				StudentName: studentName,
+				Distance:    distance,
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return model.FaceCollectionCompareResult{}, err
+	}
+	return bestResult, nil
 }
 
 func (repo *Repository) ListFaceCollectionProfiles(ctx context.Context, instID int64) ([]model.FaceCollectionProfile, error) {
@@ -349,4 +404,16 @@ func (repo *Repository) GetFaceAttendanceRecordByID(ctx context.Context, instID,
 		item.RecordTime = &t
 	}
 	return item, nil
+}
+
+func calculateEuclideanDistance(current, stored []float32) (float64, bool) {
+	if len(current) == 0 || len(current) != len(stored) {
+		return 0, false
+	}
+	var sum float64
+	for i := range current {
+		diff := float64(current[i] - stored[i])
+		sum += diff * diff
+	}
+	return math.Sqrt(sum), true
 }

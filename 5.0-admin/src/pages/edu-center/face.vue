@@ -7,6 +7,7 @@ import * as qiniu from 'qiniu-js'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import {
+  compareFaceCollectionApi,
   deleteFaceCollectionProfileApi,
   getFaceCollectionProfileApi,
   listFaceAttendanceRecordsApi,
@@ -551,11 +552,10 @@ async function recognizeFace(currentFaceDescriptor) {
   recognizingFace.value = true
 
   try {
-    let storedFaces = Array.isArray(collectedProfiles.value) ? collectedProfiles.value : []
-    if (!storedFaces.length)
-      storedFaces = await loadCollectedProfiles()
-
-    if (storedFaces.length === 0) {
+    if (!Array.isArray(collectedProfiles.value) || collectedProfiles.value.length === 0) {
+      await loadCollectedProfiles()
+    }
+    if (!Array.isArray(collectedProfiles.value) || collectedProfiles.value.length === 0) {
       showCooldownMessage.value = false // 确保显示"脸部与摄像头平视，识别中"
       message.warning('未找到已采集的人脸数据')
       setTimeout(() => {
@@ -564,23 +564,14 @@ async function recognizeFace(currentFaceDescriptor) {
       return
     }
 
-    let bestMatch = null
-    let minDistance = 0.6
+    const compareRes = await compareFaceCollectionApi({
+      faceDescriptor: Array.from(currentFaceDescriptor || []),
+    })
 
-    for (const face of storedFaces) {
-      const storedDescriptor = new Float32Array(face.faceDescriptor)
-      const distance = faceapi.euclideanDistance(currentFaceDescriptor, storedDescriptor)
-
-      if (distance < minDistance) {
-        minDistance = distance
-        bestMatch = face
-      }
-    }
-
-    if (bestMatch) {
-      const matchedStudent = studentList.value.find(s => String(s.id) === String(bestMatch.studentId)) || {
-        id: String(bestMatch.studentId || ''),
-        name: bestMatch.stuName || '',
+    if (compareRes.code === 200 && compareRes.result?.matched) {
+      const matchedStudent = studentList.value.find(s => String(s.id) === String(compareRes.result.studentId)) || {
+        id: String(compareRes.result.studentId || ''),
+        name: compareRes.result.studentName || '',
       }
 
       if (matchedStudent?.id) {
@@ -593,7 +584,7 @@ async function recognizeFace(currentFaceDescriptor) {
         }
         else {
           showCooldownMessage.value = false
-          const saved = await saveAttendanceRecord(bestMatch.studentId, matchedStudent.name)
+          const saved = await saveAttendanceRecord(compareRes.result.studentId, matchedStudent.name)
           if (saved) {
             lastAttendanceTimes.value[matchedStudent.id] = now
             message.success(`人脸考勤成功: ${matchedStudent.name}`)

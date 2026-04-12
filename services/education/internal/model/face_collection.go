@@ -37,6 +37,17 @@ type FaceCollectionProfileDeleteDTO struct {
 	StudentID int64 `json:"studentId"`
 }
 
+type FaceCollectionCompareDTO struct {
+	FaceDescriptor []float32 `json:"faceDescriptor"`
+}
+
+type FaceCollectionCompareResult struct {
+	Matched     bool    `json:"matched"`
+	StudentID   int64   `json:"studentId,omitempty"`
+	StudentName string  `json:"studentName,omitempty"`
+	Distance    float64 `json:"distance,omitempty"`
+}
+
 type FaceAttendanceRecord struct {
 	ID          int64      `json:"id"`
 	StudentID   int64      `json:"studentId"`

@@ -295,6 +295,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/face-collections/students/page", handler.pageFaceCollectionStudents)
 	mux.HandleFunc("/api/v1/face-collections/profile", handler.getFaceCollectionProfile)
 	mux.HandleFunc("/api/v1/face-collections/profiles", handler.listFaceCollectionProfiles)
+	mux.HandleFunc("/api/v1/face-collections/compare", handler.compareFaceCollectionProfile)
 	mux.HandleFunc("/api/v1/face-collections/save", handler.saveFaceCollectionProfile)
 	mux.HandleFunc("/api/v1/face-collections/delete", handler.deleteFaceCollectionProfile)
 	mux.HandleFunc("/api/v1/face-collections/attendance-records", handler.listFaceAttendanceRecords)

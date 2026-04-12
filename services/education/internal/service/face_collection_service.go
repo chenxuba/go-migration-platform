@@ -48,6 +48,17 @@ func (svc *Service) ListFaceCollectionProfiles(userID int64) ([]model.FaceCollec
 	return svc.repo.ListFaceCollectionProfiles(context.Background(), instID)
 }
 
+func (svc *Service) CompareFaceCollectionProfile(userID int64, dto model.FaceCollectionCompareDTO) (model.FaceCollectionCompareResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.FaceCollectionCompareResult{}, errors.New("no institution context")
+		}
+		return model.FaceCollectionCompareResult{}, err
+	}
+	return svc.repo.CompareFaceCollectionProfile(context.Background(), instID, dto.FaceDescriptor)
+}
+
 func (svc *Service) SaveFaceCollectionProfile(userID int64, dto model.FaceCollectionProfileSaveDTO) error {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

@@ -18,7 +18,6 @@ export interface FaceCollectionStudentPagedResult {
 export interface FaceCollectionProfile {
   studentId: string
   stuName?: string
-  faceDescriptor?: number[]
   faceImage?: string
   updatedTime?: string
 }
@@ -29,6 +28,13 @@ export interface FaceAttendanceRecord {
   studentName?: string
   faceImage?: string
   recordTime?: string
+}
+
+export interface FaceCompareResult {
+  matched: boolean
+  studentId?: string
+  studentName?: string
+  distance?: number
 }
 
 export function pageFaceCollectionStudentsApi(data: {
@@ -51,6 +57,12 @@ export function getFaceCollectionProfileApi(params: { studentId: string | number
 
 export function listFaceCollectionProfilesApi() {
   return useGet<FaceCollectionProfile[]>('/api/v1/face-collections/profiles')
+}
+
+export function compareFaceCollectionApi(data: {
+  faceDescriptor: number[]
+}) {
+  return usePost<FaceCompareResult>('/api/v1/face-collections/compare', data)
 }
 
 export function saveFaceCollectionProfileApi(data: {
