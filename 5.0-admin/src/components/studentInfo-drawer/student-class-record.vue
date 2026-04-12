@@ -223,8 +223,8 @@ function sourceTypeText(value?: number) {
   return '班级学员'
 }
 
-function statusText(value?: number) {
-  const status = Number(value || 0)
+function statusText(record: Partial<StudentTeachingRecordItem>) {
+  const status = Number(record.status || 0)
   if (status === 2)
     return '旷课'
   if (status === 3)
@@ -234,8 +234,8 @@ function statusText(value?: number) {
   return '到课'
 }
 
-function statusTagClass(value?: number) {
-  const status = Number(value || 0)
+function statusTagClass(record: Partial<StudentTeachingRecordItem>) {
+  const status = Number(record.status || 0)
   if (status === 2)
     return 'record-status-tag record-status-tag--absent'
   if (status === 3)
@@ -547,8 +547,8 @@ watch(
                 </span>
               </template>
               <template v-else-if="column.key === 'classStatus'">
-                <span :class="statusTagClass(record.status)">
-                  {{ statusText(record.status) }}
+                <span :class="statusTagClass(record)">
+                  {{ statusText(record) }}
                 </span>
               </template>
               <template v-else-if="column.key === 'deductionAccount'">

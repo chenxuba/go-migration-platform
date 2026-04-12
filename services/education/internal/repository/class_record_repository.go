@@ -3,8 +3,8 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -28,6 +28,7 @@ func ensureStudentTeachingRecordTables(ctx context.Context, db *sql.DB) error {
 			source_type INT NOT NULL DEFAULT 0,
 			current_student_status INT NOT NULL DEFAULT 0,
 			status INT NOT NULL DEFAULT 0,
+			is_late TINYINT(1) NOT NULL DEFAULT 0,
 			class_id BIGINT NOT NULL DEFAULT 0,
 			class_name VARCHAR(150) NOT NULL DEFAULT '',
 			one_to_one_id BIGINT NOT NULL DEFAULT 0,
@@ -88,7 +89,17 @@ func ensureStudentTeachingRecordTables(ctx context.Context, db *sql.DB) error {
 			KEY idx_student_teaching_record_schedule (inst_id, teaching_schedule_id)
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	for _, statement := range []string{
+		"ALTER TABLE student_teaching_record ADD COLUMN is_late TINYINT(1) NOT NULL DEFAULT 0 AFTER status",
+	} {
+		if _, alterErr := db.ExecContext(ctx, statement); alterErr != nil && !strings.Contains(strings.ToLower(alterErr.Error()), "duplicate column") {
+			return alterErr
+		}
+	}
+	return nil
 }
 
 type classRecordStudentQueryFragments struct {
@@ -250,11 +261,11 @@ func (repo *Repository) GetStudentTeachingRecordPagedList(ctx context.Context, i
 			main_teacher_name,
 			teacher_employee_type,
 			CAST(IFNULL(assistant_teacher_names_json, JSON_ARRAY()) AS CHAR),
-			class_name,
-			one_to_one_name,
-			lesson_name,
-			status,
-			source_type,
+				class_name,
+				one_to_one_name,
+				lesson_name,
+				status,
+				source_type,
 			DATE_FORMAT(start_time, '%Y-%m-%dT%H:%i:%s'),
 			DATE_FORMAT(end_time, '%Y-%m-%dT%H:%i:%s'),
 			DATE_FORMAT(teaching_record_created_time, '%Y-%m-%dT%H:%i:%s'),

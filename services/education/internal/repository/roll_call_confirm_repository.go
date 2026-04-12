@@ -44,6 +44,10 @@ type rollCallConfirmAccount struct {
 	ProductName        string
 }
 
+type rollCallConfirmOptions struct {
+	RecordTime *time.Time
+}
+
 func (repo *Repository) CheckRollCallTeachingRecordByTeacherAndTime(ctx context.Context, instID int64, dto model.RollCallCheckTeachingRecordByTeacherAndTimeDTO) error {
 	teacherID, err := strconv.ParseInt(strings.TrimSpace(dto.TeacherID), 10, 64)
 	if err != nil || teacherID <= 0 {
@@ -119,6 +123,23 @@ func (repo *Repository) BatchEstimateRollCallSufficientTuitionAccount(ctx contex
 }
 
 func (repo *Repository) ConfirmRollCall(ctx context.Context, instID, operatorID int64, dto model.RollCallConfirmDTO) (model.RollCallConfirmResult, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	defer tx.Rollback()
+
+	result, err := repo.confirmRollCallTx(ctx, tx, instID, operatorID, dto, rollCallConfirmOptions{})
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, dto model.RollCallConfirmDTO, options rollCallConfirmOptions) (model.RollCallConfirmResult, error) {
 	scheduleID, err := strconv.ParseInt(strings.TrimSpace(dto.TimetableSourceID), 10, 64)
 	if err != nil || scheduleID <= 0 {
 		return model.RollCallConfirmResult{}, errors.New("缺少日程信息")
@@ -185,12 +206,9 @@ func (repo *Repository) ConfirmRollCall(ctx context.Context, instID, operatorID 
 	}
 
 	operatorName := repo.GetStaffNameByID(ctx, &operatorID)
-
-	tx, err := repo.db.BeginTx(ctx, nil)
-	if err != nil {
-		return model.RollCallConfirmResult{}, err
+	if operatorID <= 0 || strings.TrimSpace(operatorName) == "" || strings.HasPrefix(operatorName, "未知(") {
+		operatorName = "系统自动点名"
 	}
-	defer tx.Rollback()
 
 	var exists int
 	if err := tx.QueryRowContext(ctx, `
@@ -218,6 +236,10 @@ func (repo *Repository) ConfirmRollCall(ctx context.Context, instID, operatorID 
 	}
 	classTeacherNamesJSON, currentClassTeacherNamesJSON, oneToOneTeacherNamesJSON := rollCallConfirmClassTeacherJSON(detail, classMeta)
 	emptyIDsJSON, _ := json.Marshal([]string{})
+	recordTime := startTime
+	if options.RecordTime != nil && !options.RecordTime.IsZero() {
+		recordTime = *options.RecordTime
+	}
 
 	for _, item := range dto.StudentList {
 		studentID, _ := strconv.ParseInt(strings.TrimSpace(item.StudentID), 10, 64)
@@ -267,11 +289,10 @@ func (repo *Repository) ConfirmRollCall(ctx context.Context, instID, operatorID 
 		} else {
 			recordClassName = classMeta.ClassName
 		}
-
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO student_teaching_record (
 				inst_id, teaching_record_id, teaching_schedule_id, timetable_source_type, timetable_source_id,
-				student_id, student_name, student_phone, avatar_url, source_type, current_student_status, status,
+				student_id, student_name, student_phone, avatar_url, source_type, current_student_status, status, is_late,
 				class_id, class_name, one_to_one_id, one_to_one_name, lesson_id, lesson_name, subject_id, subject_name,
 				teaching_content, teaching_content_images_json, classroom_id, classroom_name, main_teacher_id, main_teacher_name,
 				teacher_employee_type, assistant_teacher_ids_json, assistant_teacher_names_json, class_teacher_ids_json, class_teacher_names_json,
@@ -282,7 +303,7 @@ func (repo *Repository) ConfirmRollCall(ctx context.Context, instID, operatorID 
 				record_time, updated_staff_id, updated_staff_name, updated_time, create_id, create_time, update_id, update_time, del_flag
 			) VALUES (
 				?, ?, ?, ?, ?,
-				?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?,
@@ -295,7 +316,7 @@ func (repo *Repository) ConfirmRollCall(ctx context.Context, instID, operatorID 
 		`,
 			instID, teachingRecordID, scheduleID, dto.TimetableSourceType, scheduleID,
 			studentID, firstNonEmptyString(strings.TrimSpace(item.StudentName), profile.StudentName), profile.StudentPhone, firstNonEmptyString(profile.AvatarURL, defaultStudentAvatarURL()),
-			item.SourceType, profile.StudentStatus, status,
+			item.SourceType, profile.StudentStatus, status, false,
 			parseRollCallConfirmInt64(dto.SourceID), recordClassName, parseRollCallConfirmOneToOneID(detail, dto.SourceID), recordOneToOneName,
 			parseRollCallConfirmInt64(detail.LessonID), detail.LessonName, parseRollCallConfirmInt64(dto.SubjectID), "",
 			strings.TrimSpace(dto.TeachingContent), teachingContentImagesJSON, parseRollCallConfirmInt64(dto.ClassRoomID), strings.TrimSpace(detail.ClassroomName),
@@ -303,15 +324,11 @@ func (repo *Repository) ConfirmRollCall(ctx context.Context, instID, operatorID 
 			emptyIDsJSON, classTeacherNamesJSON, emptyIDsJSON, currentClassTeacherNamesJSON, emptyIDsJSON, oneToOneTeacherNamesJSON,
 			parseRollCallConfirmInt64(item.TuitionAccountID), tuitionAccountName, normalizeRollCallDrawerChargingMode(item.SkuMode), quantity, actualQuantity,
 			roundMoney(item.Amount), actualDeduct, actualTuition, arrearQuantity, dto.TeacherClassTime, strings.TrimSpace(item.Remark), strings.TrimSpace(item.ExternalRemark), false,
-			profile.AdvisorStaffID, profile.AdvisorStaffName, profile.StudentManagerID, profile.StudentManagerName, startTime, endTime, startTime,
-			startTime, operatorID, operatorName, operatorID, operatorID,
+			profile.AdvisorStaffID, profile.AdvisorStaffName, profile.StudentManagerID, profile.StudentManagerName, startTime, endTime, recordTime,
+			recordTime, operatorID, operatorName, operatorID, operatorID,
 		); err != nil {
 			return model.RollCallConfirmResult{}, err
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return model.RollCallConfirmResult{}, err
 	}
 
 	return model.RollCallConfirmResult{

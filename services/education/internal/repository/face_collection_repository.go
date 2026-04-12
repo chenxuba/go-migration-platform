@@ -76,6 +76,33 @@ func ensureFaceCollectionTables(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	_, err = db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS inst_student_face_roll_call_task (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			inst_id BIGINT NOT NULL,
+			attendance_session_id BIGINT NOT NULL,
+			student_id BIGINT NOT NULL,
+			attendance_date DATE NOT NULL,
+			teaching_schedule_id BIGINT NOT NULL,
+			execute_at DATETIME NOT NULL,
+			sign_in_time DATETIME NULL,
+			status INT NOT NULL DEFAULT 1,
+			teaching_record_id BIGINT NOT NULL DEFAULT 0,
+			last_error VARCHAR(500) NOT NULL DEFAULT '',
+			create_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_inst_student_face_roll_call_task (inst_id, attendance_session_id, teaching_schedule_id),
+			KEY idx_inst_student_face_roll_call_task_execute (inst_id, status, execute_at, id),
+			KEY idx_inst_student_face_roll_call_task_session (inst_id, attendance_session_id),
+			KEY idx_inst_student_face_roll_call_task_student (inst_id, student_id, attendance_date)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS inst_student_face_attendance_record (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			inst_id BIGINT NOT NULL,
@@ -465,6 +492,12 @@ func (repo *Repository) RecognizeFaceAttendanceSession(ctx context.Context, inst
 			result.Message = "今日无日程，无需签到"
 			return result, nil
 		}
+		if !canFaceAttendanceSignIn(now, lastLessonEndTime) {
+			result.Action = model.FaceAttendanceSessionActionIgnore
+			result.ActionLabel = faceAttendanceActionLabel(result.Action)
+			result.Message = "今日课程已结束，无需签到"
+			return result, nil
+		}
 		result.Action = model.FaceAttendanceSessionActionSignIn
 		result.ActionLabel = faceAttendanceActionLabel(result.Action)
 		result.NeedUpload = true
@@ -560,6 +593,12 @@ func (repo *Repository) CommitFaceAttendanceSession(ctx context.Context, instID,
 
 	switch dto.Action {
 	case model.FaceAttendanceSessionActionSignIn:
+		if !hasSchedule {
+			return model.FaceAttendanceSession{}, errors.New("今日无日程，无需签到")
+		}
+		if !canFaceAttendanceSignIn(now, lastLessonEndTime) {
+			return model.FaceAttendanceSession{}, errors.New("今日课程已结束，无需签到")
+		}
 		if found {
 			if record.Status == model.FaceAttendanceSessionStatusSignedIn {
 				return model.FaceAttendanceSession{}, errors.New("今日已签到，无需重复提交")
@@ -579,9 +618,13 @@ func (repo *Repository) CommitFaceAttendanceSession(ctx context.Context, instID,
 		if err != nil {
 			return model.FaceAttendanceSession{}, err
 		}
+		if _, err := repo.enqueueFaceAttendanceAutoRollCallTasksTx(ctx, tx, instID, operatorID, recordID, dto.StudentID, attendanceDate, now); err != nil {
+			return model.FaceAttendanceSession{}, err
+		}
 		if err := tx.Commit(); err != nil {
 			return model.FaceAttendanceSession{}, err
 		}
+		_, _ = repo.ProcessFaceAttendanceAutoRollCallTasks(ctx, operatorID, now, &instID, &recordID)
 		return repo.GetFaceAttendanceSessionByID(ctx, instID, recordID)
 	case model.FaceAttendanceSessionActionSignOut:
 		if !found {
@@ -924,6 +967,13 @@ func withinDuplicateWindow(now time.Time, lastTime *time.Time) bool {
 	}
 	delta := now.Sub(*lastTime)
 	return delta >= 0 && delta < faceAttendanceDuplicateWindow
+}
+
+func canFaceAttendanceSignIn(now time.Time, lastLessonEndTime *time.Time) bool {
+	if lastLessonEndTime == nil || lastLessonEndTime.IsZero() {
+		return false
+	}
+	return !now.After(*lastLessonEndTime)
 }
 
 func canFaceAttendanceSignOut(now time.Time, hasSchedule bool, lastLessonEndTime *time.Time) bool {

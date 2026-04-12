@@ -213,8 +213,8 @@ function studentIdentityTagClass(value?: number) {
   return 'record-meta-tag record-meta-tag--class-student'
 }
 
-function statusText(value?: number) {
-  const status = Number(value || 0)
+function statusText(record: Partial<TeachingRecordDetailStudent>) {
+  const status = Number(record.status || 0)
   if (status === 2)
     return '旷课'
   if (status === 3)
@@ -224,8 +224,8 @@ function statusText(value?: number) {
   return '到课'
 }
 
-function statusTagClass(value?: number) {
-  const status = Number(value || 0)
+function statusTagClass(record: Partial<TeachingRecordDetailStudent>) {
+  const status = Number(record.status || 0)
   if (status === 2)
     return 'record-status-tag record-status-tag--absent'
   if (status === 3)
@@ -477,8 +477,8 @@ function handleBillingModeFilter(value: unknown) {
                 </span>
               </template>
               <template v-if="column.key === 'classStatus'">
-                <span :class="statusTagClass(record.status)">
-                  {{ statusText(record.status) }}
+                <span :class="statusTagClass(record)">
+                  {{ statusText(record) }}
                 </span>
               </template>
               <template v-if="column.key === 'deductionAccount'">

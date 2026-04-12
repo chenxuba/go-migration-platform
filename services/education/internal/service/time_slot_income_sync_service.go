@@ -25,6 +25,7 @@ func (svc *Service) SyncTimeSlotAutoIncomeOnce() {
 func (svc *Service) StartBackgroundJobs(ctx context.Context) {
 	svc.startScheduledSuspendResumeTuitionAccountSync(ctx)
 	svc.startTimeSlotIncomeSync(ctx)
+	svc.startFaceAttendanceAutoRollCallSync(ctx)
 }
 
 func (svc *Service) startTimeSlotIncomeSync(ctx context.Context) {
