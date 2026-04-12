@@ -117,55 +117,6 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesAssistantMatchesInTeacherF
 		},
 		{
 			query: `
-				SELECT COUNT(*)
-				FROM information_schema.TABLES
-				WHERE TABLE_SCHEMA = DATABASE()
-				  AND TABLE_NAME = ?
-			`,
-			args:    []any{"teaching_record"},
-			columns: []string{"COUNT(*)"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM information_schema.TABLES
-				WHERE TABLE_SCHEMA = DATABASE()
-				  AND TABLE_NAME = ?
-			`,
-			args:    []any{"inst_teaching_record"},
-			columns: []string{"COUNT(*)"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM information_schema.TABLES
-				WHERE TABLE_SCHEMA = DATABASE()
-				  AND TABLE_NAME = ?
-			`,
-			args:    []any{"class_teaching_record"},
-			columns: []string{"COUNT(*)"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
-		{
-			query: `
-				SELECT
-					ts.id,
-					CASE WHEN EXISTS (SELECT 1 FROM student_teaching_record str WHERE str.inst_id = ts.inst_id AND IFNULL(str.del_flag, 0) = 0 AND CAST(str.teaching_schedule_id AS CHAR) = CAST(ts.id AS CHAR)) THEN 2 ELSE 1 END AS call_status
-				FROM teaching_schedule ts
-				WHERE ts.inst_id = ?
-				  AND ts.id IN (?)
-				  AND ts.del_flag = 0
-			`,
-			args:    []any{instID, int64(301)},
-			columns: []string{"id", "call_status"},
-			rows: [][]driver.Value{
-				{int64(301), int64(1)},
-			},
-		},
-		{
-			query: `
 				SELECT
 					id,
 					IFNULL(batch_no, ''),

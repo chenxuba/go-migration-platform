@@ -145,6 +145,7 @@ export interface TeachingRecordDetailResult {
 
 export interface ScheduleTeachingRecordItem {
   teachingRecordId: string
+  timetableSourceId?: string
   startTime?: string
   endTime?: string
   timetableSourceType: number

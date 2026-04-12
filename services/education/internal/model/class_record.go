@@ -171,6 +171,7 @@ type ScheduleTeachingRecordSortModel struct {
 
 type ScheduleTeachingRecordItem struct {
 	TeachingRecordID    string  `json:"teachingRecordId"`
+	TimetableSourceID   string  `json:"timetableSourceId,omitempty"`
 	StartTime           string  `json:"startTime"`
 	EndTime             string  `json:"endTime"`
 	TimetableSourceType int     `json:"timetableSourceType"`

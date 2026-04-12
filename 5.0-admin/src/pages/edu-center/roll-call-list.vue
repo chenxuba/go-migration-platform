@@ -247,6 +247,7 @@ function buildListQueryModel() {
     ...buildStatisticsQueryModel(),
     startDate: range.startDate,
     endDate: range.endDate,
+    callStatusMode: dashboardFilter.value === 'partial' ? 'partial' : 'incomplete',
   }
 }
 
@@ -276,13 +277,6 @@ async function loadStatistics() {
 }
 
 async function loadList() {
-  if (dashboardFilter.value === 'partial') {
-    dataSource.value = []
-    pagination.value.total = 0
-    selectedRowKeys.value = []
-    return
-  }
-
   tableLoading.value = true
   try {
     const res = await getRollCallPagedListApi({
@@ -690,7 +684,7 @@ onMounted(async () => {
           </div>
           <div class="contentSub">
             <div class="contentSubLeft">
-              过去至今从未点名的日程
+              过去至今未完成全部点名的日程
             </div>
             <div class="contentSubRight">
               快捷筛选

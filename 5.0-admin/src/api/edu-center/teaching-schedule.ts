@@ -70,6 +70,9 @@ export interface TeachingScheduleDetailStudent {
   classStatusText?: string
   callStatus: number
   callStatusText?: string
+  hasTeachingRecord: boolean
+  actionDisabled: boolean
+  actionDisabledReason?: string
 }
 
 export interface TeachingScheduleStudentCandidate {

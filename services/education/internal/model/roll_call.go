@@ -1,15 +1,16 @@
 package model
 
 type RollCallQueryModel struct {
-	StartDate     string   `json:"startDate"`
-	EndDate       string   `json:"endDate"`
-	LessonID      string   `json:"lessonId"`
-	ClassroomID   string   `json:"classroomId"`
-	ClassID       string   `json:"classId"`
-	OneToOneID    string   `json:"oneToOneId"`
-	TeacherID     string   `json:"teacherId"`
-	TeacherTypes  []int    `json:"teacherTypes"`
-	ScheduleTypes []string `json:"scheduleTypes"`
+	StartDate      string   `json:"startDate"`
+	EndDate        string   `json:"endDate"`
+	LessonID       string   `json:"lessonId"`
+	ClassroomID    string   `json:"classroomId"`
+	ClassID        string   `json:"classId"`
+	OneToOneID     string   `json:"oneToOneId"`
+	TeacherID      string   `json:"teacherId"`
+	TeacherTypes   []int    `json:"teacherTypes"`
+	ScheduleTypes  []string `json:"scheduleTypes"`
+	CallStatusMode string   `json:"callStatusMode,omitempty"`
 }
 
 type RollCallPageRequestModel struct {
@@ -162,6 +163,15 @@ type RollCallTeachingRecordStudentVO struct {
 	DefaultStudentTeachingStatus int     `json:"defaultStudentTeachingStatus"`
 	HasSignIn                    bool    `json:"hasSignIn"`
 	IsCrossSchoolStudent         bool    `json:"isCrossSchoolStudent"`
+	HasTeachingRecord            bool    `json:"hasTeachingRecord"`
+	RecordedQuantity             float64 `json:"recordedQuantity"`
+	RecordedRemark               string  `json:"recordedRemark,omitempty"`
+	RecordedExternalRemark       string  `json:"recordedExternalRemark,omitempty"`
+	RecordedSkuMode              int     `json:"recordedSkuMode"`
+	RecordedTuitionAccountID     string  `json:"recordedTuitionAccountId,omitempty"`
+	RecordedTuitionAccountName   string  `json:"recordedTuitionAccountName,omitempty"`
+	Locked                       bool    `json:"locked"`
+	AutoRollCall                 bool    `json:"autoRollCall"`
 }
 
 type RollCallTeachingRecordStudentListResult struct {
@@ -192,9 +202,10 @@ type RollCallStudentTuitionExtraInfoVO struct {
 }
 
 type RollCallCheckTeachingRecordByTeacherAndTimeDTO struct {
-	StartTime string `json:"startTime"`
-	EndTime   string `json:"endTime"`
-	TeacherID string `json:"teacherId"`
+	StartTime         string `json:"startTime"`
+	EndTime           string `json:"endTime"`
+	TeacherID         string `json:"teacherId"`
+	TimetableSourceID string `json:"timetableSourceId"`
 }
 
 type RollCallEstimateTuitionInfo struct {

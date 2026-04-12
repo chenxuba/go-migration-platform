@@ -927,9 +927,10 @@ func parseRollCallStudentTuitionAccountsQueryDTO(raw map[string]any) model.Stude
 
 func parseRollCallCheckTeachingRecordByTeacherAndTimeDTO(raw map[string]any) model.RollCallCheckTeachingRecordByTeacherAndTimeDTO {
 	return model.RollCallCheckTeachingRecordByTeacherAndTimeDTO{
-		StartTime: asString(raw["startTime"]),
-		EndTime:   asString(raw["endTime"]),
-		TeacherID: asString(raw["teacherId"]),
+		StartTime:         asString(raw["startTime"]),
+		EndTime:           asString(raw["endTime"]),
+		TeacherID:         asString(raw["teacherId"]),
+		TimetableSourceID: asString(raw["timetableSourceId"]),
 	}
 }
 
@@ -1009,15 +1010,16 @@ func parseRollCallConfirmDTO(raw map[string]any) model.RollCallConfirmDTO {
 
 func parseRollCallQueryModel(raw map[string]any) model.RollCallQueryModel {
 	return model.RollCallQueryModel{
-		StartDate:     asString(raw["startDate"]),
-		EndDate:       asString(raw["endDate"]),
-		LessonID:      asString(raw["lessonId"]),
-		ClassroomID:   asString(firstNonNil(raw["classroomId"], raw["classRoomId"])),
-		ClassID:       asString(raw["classId"]),
-		OneToOneID:    asString(firstNonNil(raw["oneToOneId"], raw["one2OneId"])),
-		TeacherID:     asString(firstNonNil(raw["teacherId"], raw["staffId"])),
-		TeacherTypes:  asIntSlice(raw["teacherTypes"]),
-		ScheduleTypes: asStringSlice(firstNonNil(raw["scheduleTypes"], raw["sourceTypes"])),
+		StartDate:      asString(raw["startDate"]),
+		EndDate:        asString(raw["endDate"]),
+		LessonID:       asString(raw["lessonId"]),
+		ClassroomID:    asString(firstNonNil(raw["classroomId"], raw["classRoomId"])),
+		ClassID:        asString(raw["classId"]),
+		OneToOneID:     asString(firstNonNil(raw["oneToOneId"], raw["one2OneId"])),
+		TeacherID:      asString(firstNonNil(raw["teacherId"], raw["staffId"])),
+		TeacherTypes:   asIntSlice(raw["teacherTypes"]),
+		ScheduleTypes:  asStringSlice(firstNonNil(raw["scheduleTypes"], raw["sourceTypes"])),
+		CallStatusMode: asString(firstNonNil(raw["callStatusMode"], raw["rollCallStatusMode"])),
 	}
 }
 

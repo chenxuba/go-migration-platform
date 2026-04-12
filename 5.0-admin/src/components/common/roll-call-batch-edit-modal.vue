@@ -83,7 +83,7 @@ watch(
         </a-button>
       </div>
     </template>
-    <a-alert type="info" show-icon class="border-none rounded-0 text-#06f text-14px" message="批量编辑不包含补课学员、试听学员">
+    <a-alert type="info" show-icon class="border-none rounded-0 text-#06f text-14px" message="批量编辑不包含补课学员、试听学员、已自动点名学员">
       <template #icon>
         <InfoCircleFilled />
       </template>

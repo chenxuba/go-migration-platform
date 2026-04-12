@@ -945,6 +945,8 @@ function resolveLessonCallStatusKey(legacyItem) {
   const explicitCallStatus = Number(legacyItem?.callStatus ?? 0)
   if (explicitCallStatus === 2)
     return 'signed'
+  if (explicitCallStatus === 3)
+    return 'partial'
   if (explicitCallStatus === 1)
     return 'unsigned'
   const scheduleStatus = Number(legacyItem?.scheduleStatus ?? 0)
@@ -1267,7 +1269,7 @@ const visibleScheduledLessons = computed(() => {
 
 const smartTimetableTotalSchedules = computed(() => visibleScheduledLessons.value.length)
 const smartTimetableUnsignedSchedules = computed(() =>
-  visibleScheduledLessons.value.filter(lesson => lesson.callStatusKey === 'unsigned').length,
+  visibleScheduledLessons.value.filter(lesson => lesson.callStatusKey !== 'signed').length,
 )
 
 const activeGroupLabel = computed(() => {
@@ -3554,8 +3556,8 @@ function buildBatchPlanScheduleFromDetail(detail) {
     startAt: lessonDate && startTime ? `${lessonDate} ${startTime}:00` : '',
     endAt: lessonDate && endTime ? `${lessonDate} ${endTime}:00` : '',
     status: 1,
-    callStatus: detail.text?.callStatusKey === 'signed' ? 2 : 1,
-    callStatusText: detail.text?.callStatusKey === 'signed' ? '已点名' : '未点名',
+    callStatus: detail.text?.callStatusKey === 'signed' ? 2 : detail.text?.callStatusKey === 'partial' ? 3 : 1,
+    callStatusText: detail.text?.callStatusKey === 'signed' ? '已点名' : detail.text?.callStatusKey === 'partial' ? '部分点名' : '未点名',
     conflict: Boolean(detail.text?.scheduledConflict),
     conflictTypes: Array.isArray(detail.text?.scheduledConflictTypes) ? detail.text.scheduledConflictTypes : [],
   }
@@ -3999,7 +4001,7 @@ function isScheduleBeforeToday(text) {
 
 function isScheduleDraggable(text) {
   return !isScheduleBeforeToday(text)
-    && text?.callStatusKey !== 'signed'
+    && text?.callStatusKey === 'unsigned'
     && Boolean(text?.scheduleId)
     && Boolean(text?.classId)
     && (text?.courseType === 1 || text?.courseType === 2)
@@ -4008,6 +4010,8 @@ function isScheduleDraggable(text) {
 function resolveScheduleDragBlockedMessage(text) {
   if (text?.callStatusKey === 'signed')
     return '当前课程已点名，暂不支持拖拽调课'
+  if (text?.callStatusKey === 'partial')
+    return '当前课程已部分点名，暂不支持拖拽调课'
   if (isScheduleBeforeToday(text))
     return '过去的日程，不允许拖拽调课'
   if (text?.courseType === 1)

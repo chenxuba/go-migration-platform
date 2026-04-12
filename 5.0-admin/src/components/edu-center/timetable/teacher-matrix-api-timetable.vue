@@ -1168,7 +1168,7 @@ function legacyToTeachingScheduleItem(
     endAt: end.format('YYYY-MM-DD HH:mm:ss'),
     status: info.scheduleStatus ?? 1,
     callStatus: info.callStatus ?? 1,
-    callStatusText: info.callStatusText ?? (Number(info.callStatus) === 2 ? '已点名' : '未点名'),
+    callStatusText: info.callStatusText ?? (Number(info.callStatus) === 2 ? '已点名' : Number(info.callStatus) === 3 ? '部分点名' : '未点名'),
     conflict: info.conflict === true,
     conflictTypes: info.conflictTypes ?? [],
   }
@@ -1178,6 +1178,8 @@ function resolveLessonCallStatusKey(info: TeachingScheduleMatrixLegacyItem) {
   const explicitCallStatus = Number(info?.callStatus ?? 0)
   if (explicitCallStatus === 2)
     return 'signed'
+  if (explicitCallStatus === 3)
+    return 'partial'
   if (explicitCallStatus === 1)
     return 'unsigned'
   const scheduleStatus = Number(info?.scheduleStatus ?? 0)
@@ -1578,7 +1580,7 @@ function handleScheduleDetailEditCurrent(payload?: ScheduleEditPayload) {
 
 const totalLessons = computed(() => internalSchedules.value.length)
 const unsignedLessons = computed(() =>
-  internalSchedules.value.filter(item => item.status === 'unsigned').length,
+  internalSchedules.value.filter(item => item.status !== 'signed').length,
 )
 </script>
 

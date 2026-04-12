@@ -771,6 +771,166 @@ func buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL string) string {
 	return "CASE WHEN " + studentRecordExistsSQL + " THEN 2 ELSE 1 END"
 }
 
+type teachingScheduleRollCallMeta struct {
+	ScheduleID int64
+	ClassType  int
+	ClassID    int64
+	StudentID  int64
+	StartAt    time.Time
+}
+
+type teachingScheduleRecordedStudentSummary struct {
+	TeachingRecordID int64
+	StudentIDSet     map[int64]struct{}
+}
+
+func normalizeTeachingScheduleCallStatus(status int) int {
+	switch status {
+	case 2, 3:
+		return status
+	default:
+		return 1
+	}
+}
+
+func isTeachingScheduleFullyRolled(status int) bool {
+	return normalizeTeachingScheduleCallStatus(status) == 2
+}
+
+func isTeachingSchedulePartiallyRolled(status int) bool {
+	return normalizeTeachingScheduleCallStatus(status) == 3
+}
+
+func (repo *Repository) loadTeachingScheduleRecordedStudentSummaryMap(ctx context.Context, queryer sqlQueryer, instID int64, scheduleIDs []int64) (map[int64]teachingScheduleRecordedStudentSummary, error) {
+	if len(scheduleIDs) == 0 {
+		return map[int64]teachingScheduleRecordedStudentSummary{}, nil
+	}
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT
+			IFNULL(teaching_schedule_id, 0),
+			IFNULL(student_id, 0),
+			IFNULL(MAX(teaching_record_id), 0)
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND teaching_schedule_id IN (`+sqlPlaceholders(len(scheduleIDs))+`)
+		GROUP BY teaching_schedule_id, student_id
+	`, append([]any{instID}, int64SliceToAny(scheduleIDs)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]teachingScheduleRecordedStudentSummary, len(scheduleIDs))
+	for rows.Next() {
+		var scheduleID, studentID, teachingRecordID int64
+		if err := rows.Scan(&scheduleID, &studentID, &teachingRecordID); err != nil {
+			return nil, err
+		}
+		if scheduleID <= 0 {
+			continue
+		}
+		summary := result[scheduleID]
+		if summary.StudentIDSet == nil {
+			summary.StudentIDSet = make(map[int64]struct{})
+		}
+		if teachingRecordID > 0 && summary.TeachingRecordID <= 0 {
+			summary.TeachingRecordID = teachingRecordID
+		}
+		if studentID > 0 {
+			summary.StudentIDSet[studentID] = struct{}{}
+		}
+		result[scheduleID] = summary
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) computeTeachingScheduleCallStatusMap(ctx context.Context, queryer sqlQueryer, instID int64, metas []teachingScheduleRollCallMeta) (map[int64]int, error) {
+	if len(metas) == 0 {
+		return map[int64]int{}, nil
+	}
+
+	scheduleIDs := make([]int64, 0, len(metas))
+	groupMetas := make([]effectiveGroupClassScheduleMeta, 0, len(metas))
+	for _, meta := range metas {
+		if meta.ScheduleID <= 0 {
+			continue
+		}
+		scheduleIDs = append(scheduleIDs, meta.ScheduleID)
+		if meta.ClassType == model.TeachingClassTypeNormal && meta.ClassID > 0 {
+			groupMetas = append(groupMetas, effectiveGroupClassScheduleMeta{
+				ScheduleID: meta.ScheduleID,
+				ClassID:    meta.ClassID,
+				StartAt:    meta.StartAt,
+			})
+		}
+	}
+
+	recordedSummaryMap, err := repo.loadTeachingScheduleRecordedStudentSummaryMap(ctx, queryer, instID, uniquePositiveInt64s(scheduleIDs))
+	if err != nil {
+		return nil, err
+	}
+
+	rosterByScheduleID := map[int64]groupClassScheduleRoster{}
+	if len(groupMetas) > 0 {
+		rosterByScheduleID, err = repo.loadEffectiveGroupClassScheduleRosterMap(ctx, queryer, instID, groupMetas)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	result := make(map[int64]int, len(metas))
+	for _, meta := range metas {
+		if meta.ScheduleID <= 0 {
+			continue
+		}
+		recordedSummary := recordedSummaryMap[meta.ScheduleID]
+		recordedCount := len(recordedSummary.StudentIDSet)
+		status := 1
+
+		if meta.ClassType == model.TeachingClassTypeNormal && meta.ClassID > 0 {
+			expectedIDs := rosterByScheduleID[meta.ScheduleID].activeIDs()
+			if len(expectedIDs) == 0 {
+				if recordedCount > 0 {
+					status = 2
+				}
+				result[meta.ScheduleID] = status
+				continue
+			}
+			matchedCount := 0
+			for _, studentID := range expectedIDs {
+				if _, ok := recordedSummary.StudentIDSet[studentID]; ok {
+					matchedCount++
+				}
+			}
+			switch {
+			case matchedCount <= 0:
+				status = 1
+			case matchedCount < len(expectedIDs):
+				status = 3
+			default:
+				status = 2
+			}
+			result[meta.ScheduleID] = status
+			continue
+		}
+
+		switch {
+		case meta.StudentID > 0:
+			if _, ok := recordedSummary.StudentIDSet[meta.StudentID]; ok {
+				status = 2
+			}
+		case recordedCount > 0:
+			status = 2
+		}
+		result[meta.ScheduleID] = status
+	}
+	return result, nil
+}
+
 func buildTeachingClassScheduledCountSQL(classAlias, classTypeExpr string) string {
 	classAlias = firstNonEmptyString(classAlias, "tc")
 	classTypeExpr = firstNonEmptyString(classTypeExpr, classAlias+".class_type")
@@ -2155,12 +2315,6 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 	}
 	defer tx.Rollback()
 
-	recordExistsSQL, recordExistsErr := repo.buildTeachingScheduleRecordExistsSQL(ctx)
-	if recordExistsErr != nil {
-		recordExistsSQL = ""
-	}
-	callStatusSelect := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
-
 	type scheduleDetailRow struct {
 		ID                int64
 		BatchNo           string
@@ -2223,7 +2377,7 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 				  AND str.del_flag = 0
 				  AND str.teaching_schedule_id = ts.id
 			), '') AS teaching_record_id,
-			` + callStatusSelect + `,
+			1,
 			IFNULL(tc.remark, '')
 		FROM teaching_schedule ts
 		LEFT JOIN teaching_class tc
@@ -2275,12 +2429,29 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 	}
 	row.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
 	row.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
+	statusByID, err := repo.computeTeachingScheduleCallStatusMap(ctx, tx, instID, []teachingScheduleRollCallMeta{{
+		ScheduleID: row.ID,
+		ClassType:  row.ClassType,
+		ClassID:    row.TeachingClassID,
+		StudentID:  row.StudentID,
+		StartAt:    row.StartAt,
+	}})
+	if err != nil {
+		return model.TeachingScheduleDetailVO{}, err
+	}
+	row.CallStatus = normalizeTeachingScheduleCallStatus(statusByID[row.ID])
 
 	students, leaveStudents, err := repo.listTeachingScheduleDetailStudentsTx(ctx, tx, instID, row.ID, row.TeachingClassID, row.StartAt, row.CallStatus)
 	if err != nil {
 		return model.TeachingScheduleDetailVO{}, err
 	}
 	if len(students) == 0 && row.StudentID > 0 {
+		hasTeachingRecord := strings.TrimSpace(row.TeachingRecordID) != ""
+		studentCallStatus := 1
+		if hasTeachingRecord {
+			studentCallStatus = 2
+		}
+		actionDisabledReason := teachingScheduleStudentActionDisabledReason(hasTeachingRecord)
 		students = []model.TeachingScheduleDetailStudentVO{{
 			StudentID:               strconv.FormatInt(row.StudentID, 10),
 			StudentName:             firstNonEmptyString(row.StudentName, "-"),
@@ -2293,8 +2464,11 @@ func (repo *Repository) GetTeachingScheduleDetail(ctx context.Context, instID in
 			ScheduleStudentTypeText: teachingScheduleStudentTypeText(model.TeachingScheduleStudentTypeClassMember),
 			ClassStatus:             model.TeachingClassStudentStatusStudying,
 			ClassStatusText:         teachingClassStudentStatusText(model.TeachingClassStudentStatusStudying),
-			CallStatus:              row.CallStatus,
-			CallStatusText:          teachingScheduleCallStatusText(row.CallStatus),
+			CallStatus:              studentCallStatus,
+			CallStatusText:          teachingScheduleCallStatusText(studentCallStatus),
+			HasTeachingRecord:       hasTeachingRecord,
+			ActionDisabled:          actionDisabledReason != "",
+			ActionDisabledReason:    actionDisabledReason,
 		}}
 	}
 
@@ -2386,18 +2560,13 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 		CallStatus      int
 	}
 	var row scheduleRow
-	recordExistsSQL, recordExistsErr := repo.buildTeachingScheduleRecordExistsSQL(ctx)
-	if recordExistsErr != nil {
-		recordExistsSQL = ""
-	}
-	callStatusSelect := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
 	err = repo.db.QueryRowContext(ctx, `
 		SELECT
 			ts.id,
 			IFNULL(ts.class_type, 0),
 			IFNULL(ts.teaching_class_id, 0),
 			ts.lesson_start_at,
-			`+callStatusSelect+`
+			1
 		FROM teaching_schedule ts
 		WHERE ts.inst_id = ?
 		  AND ts.id = ?
@@ -2420,7 +2589,17 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 	if row.ClassType != model.TeachingClassTypeNormal || row.TeachingClassID <= 0 {
 		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("当前仅支持班课添加本节学员")
 	}
-	if row.CallStatus == 2 {
+	statusByID, err := repo.computeTeachingScheduleCallStatusMap(ctx, repo.db, instID, []teachingScheduleRollCallMeta{{
+		ScheduleID: row.ID,
+		ClassType:  row.ClassType,
+		ClassID:    row.TeachingClassID,
+		StartAt:    row.StartAt,
+	}})
+	if err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	row.CallStatus = normalizeTeachingScheduleCallStatus(statusByID[row.ID])
+	if isTeachingScheduleFullyRolled(row.CallStatus) {
 		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("已点名日程不可添加本节学员")
 	}
 
@@ -2563,18 +2742,13 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 		CallStatus      int
 	}
 	var row scheduleRow
-	recordExistsSQL, recordExistsErr := repo.buildTeachingScheduleRecordExistsSQL(ctx)
-	if recordExistsErr != nil {
-		recordExistsSQL = ""
-	}
-	callStatusSelect := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
 	err = tx.QueryRowContext(ctx, `
 		SELECT
 			ts.id,
 			IFNULL(ts.class_type, 0),
 			IFNULL(ts.teaching_class_id, 0),
 			ts.lesson_start_at,
-			`+callStatusSelect+`
+			1
 		FROM teaching_schedule ts
 		WHERE ts.inst_id = ?
 		  AND ts.id = ?
@@ -2600,7 +2774,17 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 	if row.ClassType != model.TeachingClassTypeNormal || row.TeachingClassID <= 0 {
 		return errors.New("当前仅支持班课学员移出本节")
 	}
-	if row.CallStatus == 2 {
+	statusByID, err := repo.computeTeachingScheduleCallStatusMap(ctx, tx, instID, []teachingScheduleRollCallMeta{{
+		ScheduleID: row.ID,
+		ClassType:  row.ClassType,
+		ClassID:    row.TeachingClassID,
+		StartAt:    row.StartAt,
+	}})
+	if err != nil {
+		return err
+	}
+	row.CallStatus = normalizeTeachingScheduleCallStatus(statusByID[row.ID])
+	if isTeachingScheduleFullyRolled(row.CallStatus) {
 		return errors.New("该日程已点名，不可移出")
 	}
 
@@ -2615,6 +2799,13 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 	student, ok := rosterByScheduleID[row.ID].associatedStudent(studentID)
 	if !ok {
 		return errors.New("当前学员不在本节日程中")
+	}
+	recordedSummaryMap, err := repo.loadTeachingScheduleRecordedStudentSummaryMap(ctx, tx, instID, []int64{row.ID})
+	if err != nil {
+		return err
+	}
+	if _, exists := recordedSummaryMap[row.ID].StudentIDSet[studentID]; exists {
+		return errors.New("该学员已点名，不可移出本节")
 	}
 
 	if _, err := tx.ExecContext(ctx, `
@@ -2664,18 +2855,13 @@ func (repo *Repository) AddTeachingScheduleStudentsCurrent(ctx context.Context, 
 		CallStatus      int
 	}
 	var row scheduleRow
-	recordExistsSQL, recordExistsErr := repo.buildTeachingScheduleRecordExistsSQL(ctx)
-	if recordExistsErr != nil {
-		recordExistsSQL = ""
-	}
-	callStatusSelect := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
 	err = tx.QueryRowContext(ctx, `
 		SELECT
 			ts.id,
 			IFNULL(ts.class_type, 0),
 			IFNULL(ts.teaching_class_id, 0),
 			ts.lesson_start_at,
-			`+callStatusSelect+`
+			1
 		FROM teaching_schedule ts
 		WHERE ts.inst_id = ?
 		  AND ts.id = ?
@@ -2698,7 +2884,17 @@ func (repo *Repository) AddTeachingScheduleStudentsCurrent(ctx context.Context, 
 	if row.ClassType != model.TeachingClassTypeNormal || row.TeachingClassID <= 0 {
 		return errors.New("当前仅支持班课添加本节学员")
 	}
-	if row.CallStatus == 2 {
+	statusByID, err := repo.computeTeachingScheduleCallStatusMap(ctx, tx, instID, []teachingScheduleRollCallMeta{{
+		ScheduleID: row.ID,
+		ClassType:  row.ClassType,
+		ClassID:    row.TeachingClassID,
+		StartAt:    row.StartAt,
+	}})
+	if err != nil {
+		return err
+	}
+	row.CallStatus = normalizeTeachingScheduleCallStatus(statusByID[row.ID])
+	if isTeachingScheduleFullyRolled(row.CallStatus) {
 		return errors.New("已点名日程不可添加本节学员")
 	}
 
@@ -4628,10 +4824,15 @@ func (repo *Repository) loadScheduleConflictDetailByIDTx(ctx context.Context, tx
 	return item, nil
 }
 
-func (repo *Repository) listTeachingScheduleDetailStudentsTx(ctx context.Context, tx *sql.Tx, instID, scheduleID, classID int64, scheduleStartAt time.Time, callStatus int) ([]model.TeachingScheduleDetailStudentVO, []model.TeachingScheduleDetailStudentVO, error) {
+func (repo *Repository) listTeachingScheduleDetailStudentsTx(ctx context.Context, tx *sql.Tx, instID, scheduleID, classID int64, scheduleStartAt time.Time, _ int) ([]model.TeachingScheduleDetailStudentVO, []model.TeachingScheduleDetailStudentVO, error) {
 	if scheduleID <= 0 || classID <= 0 {
 		return nil, nil, nil
 	}
+	recordedSummaryMap, err := repo.loadTeachingScheduleRecordedStudentSummaryMap(ctx, tx, instID, []int64{scheduleID})
+	if err != nil {
+		return nil, nil, err
+	}
+	recordedStudentSet := recordedSummaryMap[scheduleID].StudentIDSet
 	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{
 		ScheduleID: scheduleID,
 		ClassID:    classID,
@@ -4643,6 +4844,15 @@ func (repo *Repository) listTeachingScheduleDetailStudentsTx(ctx context.Context
 	roster := rosterByScheduleID[scheduleID]
 	buildStudentVO := func(student groupClassScheduleStudent) model.TeachingScheduleDetailStudentVO {
 		classStatus := model.TeachingClassStudentStatusStudying
+		hasTeachingRecord := false
+		if student.StudentID > 0 {
+			_, hasTeachingRecord = recordedStudentSet[student.StudentID]
+		}
+		studentCallStatus := 1
+		if hasTeachingRecord {
+			studentCallStatus = 2
+		}
+		actionDisabledReason := teachingScheduleStudentActionDisabledReason(hasTeachingRecord)
 		return model.TeachingScheduleDetailStudentVO{
 			StudentID:               emptyStringIfZero(student.StudentID),
 			StudentName:             firstNonEmptyString(student.StudentName, "-"),
@@ -4655,8 +4865,11 @@ func (repo *Repository) listTeachingScheduleDetailStudentsTx(ctx context.Context
 			ScheduleStudentTypeText: teachingScheduleStudentTypeText(student.ScheduleStudentType),
 			ClassStatus:             classStatus,
 			ClassStatusText:         teachingClassStudentStatusText(classStatus),
-			CallStatus:              callStatus,
-			CallStatusText:          teachingScheduleCallStatusText(callStatus),
+			CallStatus:              studentCallStatus,
+			CallStatusText:          teachingScheduleCallStatusText(studentCallStatus),
+			HasTeachingRecord:       hasTeachingRecord,
+			ActionDisabled:          actionDisabledReason != "",
+			ActionDisabledReason:    actionDisabledReason,
 		}
 	}
 	students := make([]model.TeachingScheduleDetailStudentVO, 0, len(roster.Active))
@@ -4677,6 +4890,8 @@ func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, inst
 
 	ids := make([]int64, 0, len(items))
 	itemIndex := make(map[int64][]int, len(items))
+	metas := make([]teachingScheduleRollCallMeta, 0, len(items))
+	hasGroupClass := false
 	for index, item := range items {
 		id, err := strconv.ParseInt(strings.TrimSpace(item.ID), 10, 64)
 		if err != nil || id <= 0 {
@@ -4684,6 +4899,18 @@ func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, inst
 		}
 		if _, ok := itemIndex[id]; !ok {
 			ids = append(ids, id)
+			classID, _ := strconv.ParseInt(strings.TrimSpace(item.TeachingClassID), 10, 64)
+			studentID, _ := strconv.ParseInt(strings.TrimSpace(item.StudentID), 10, 64)
+			metas = append(metas, teachingScheduleRollCallMeta{
+				ScheduleID: id,
+				ClassType:  item.ClassType,
+				ClassID:    classID,
+				StudentID:  studentID,
+				StartAt:    item.StartAt,
+			})
+			if item.ClassType == model.TeachingClassTypeNormal && classID > 0 {
+				hasGroupClass = true
+			}
 		}
 		itemIndex[id] = append(itemIndex[id], index)
 	}
@@ -4695,49 +4922,24 @@ func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, inst
 		return nil
 	}
 
-	recordExistsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if !hasGroupClass {
+		for _, id := range ids {
+			for _, index := range itemIndex[id] {
+				status := normalizeTeachingScheduleCallStatus(items[index].CallStatus)
+				items[index].CallStatus = status
+				items[index].CallStatusText = teachingScheduleCallStatusText(status)
+			}
+		}
+		return nil
+	}
+
+	statusByID, err := repo.computeTeachingScheduleCallStatusMap(ctx, repo.db, instID, metas)
 	if err != nil {
 		return err
 	}
 
-	queryArgs := make([]any, 0, len(ids)+1)
-	queryArgs = append(queryArgs, instID)
 	for _, id := range ids {
-		queryArgs = append(queryArgs, id)
-	}
-
-	rows, err := repo.db.QueryContext(ctx, `
-		SELECT
-			ts.id,
-			`+buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)+` AS call_status
-		FROM teaching_schedule ts
-		WHERE ts.inst_id = ?
-		  AND ts.id IN (`+sqlPlaceholders(len(ids))+`)
-		  AND ts.del_flag = 0
-	`, queryArgs...)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	statusByID := make(map[int64]int, len(ids))
-	for rows.Next() {
-		var scheduleID int64
-		var callStatus int
-		if err := rows.Scan(&scheduleID, &callStatus); err != nil {
-			return err
-		}
-		statusByID[scheduleID] = callStatus
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	for _, id := range ids {
-		status := statusByID[id]
-		if status != 2 {
-			status = 1
-		}
+		status := normalizeTeachingScheduleCallStatus(statusByID[id])
 		for _, index := range itemIndex[id] {
 			items[index].CallStatus = status
 			items[index].CallStatusText = teachingScheduleCallStatusText(status)
@@ -7806,10 +8008,21 @@ func teachingClassStudentStatusText(status int) string {
 }
 
 func teachingScheduleCallStatusText(status int) string {
-	if status == 2 {
+	switch normalizeTeachingScheduleCallStatus(status) {
+	case 2:
 		return "已点名"
+	case 3:
+		return "部分点名"
+	default:
+		return "未点名"
 	}
-	return "未点名"
+}
+
+func teachingScheduleStudentActionDisabledReason(hasTeachingRecord bool) string {
+	if hasTeachingRecord {
+		return "该学员已点名，不可调课或移出本节"
+	}
+	return ""
 }
 
 func teachingScheduleStudentTypeText(studentType int) string {

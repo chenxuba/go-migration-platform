@@ -214,6 +214,19 @@ const studentCardTitle = computed(() => {
   return activeStudentTabKey.value === 'leave' ? '请假学员列表' : '班级学员列表'
 })
 
+function getStudentActionDisabledReason(student?: Partial<TeachingScheduleDetailStudent> | Record<string, any> | null) {
+  const studentReason = String(student?.actionDisabledReason || '').trim()
+  if (studentReason)
+    return studentReason
+  if (!canManageCurrentStudents.value)
+    return '该日程已点名，不可操作'
+  return ''
+}
+
+function canManageStudentAction(student?: Partial<TeachingScheduleDetailStudent> | Record<string, any> | null) {
+  return !getStudentActionDisabledReason(student)
+}
+
 let loadSeq = 0
 
 function formatWeek(date: string) {
@@ -290,8 +303,11 @@ async function handleAddStudentSuccess() {
 }
 
 function handleStudentReschedule(student: Record<string, any>) {
-  if (!canManageCurrentStudents.value)
+  const disabledReason = getStudentActionDisabledReason(student as TeachingScheduleDetailStudent)
+  if (disabledReason) {
+    messageService.warning(disabledReason)
     return
+  }
   const name = String(student?.studentName || '').trim() || '当前学员'
   messageService.info(`${name} 的班课调课功能待接入`)
 }
@@ -361,8 +377,9 @@ function shouldSkipManualErrorMessage(error: any) {
 }
 
 function handleStudentRemove(student: Record<string, any>) {
-  if (!canManageCurrentStudents.value) {
-    messageService.warning('该日程已点名，不可移出')
+  const disabledReason = getStudentActionDisabledReason(student as TeachingScheduleDetailStudent)
+  if (disabledReason) {
+    messageService.warning(disabledReason)
     return
   }
   const name = String(student?.studentName || '').trim() || '当前学员'
@@ -709,11 +726,23 @@ watch(
                         详情
                       </button>
                       <span class="student-action-divider" />
-                      <button type="button" class="student-action-link" :disabled="!canManageCurrentStudents" @click="handleStudentReschedule(record)">
+                      <button
+                        type="button"
+                        class="student-action-link"
+                        :disabled="!canManageStudentAction(record)"
+                        :title="getStudentActionDisabledReason(record)"
+                        @click="handleStudentReschedule(record)"
+                      >
                         调课
                       </button>
                       <span class="student-action-divider" />
-                      <button type="button" class="student-action-link" :disabled="!canManageCurrentStudents" @click="handleStudentRemove(record)">
+                      <button
+                        type="button"
+                        class="student-action-link"
+                        :disabled="!canManageStudentAction(record)"
+                        :title="getStudentActionDisabledReason(record)"
+                        @click="handleStudentRemove(record)"
+                      >
                         移出本节
                       </button>
                     </div>
@@ -764,11 +793,23 @@ watch(
                         详情
                       </button>
                       <span class="student-action-divider" />
-                      <button type="button" class="student-action-link" :disabled="!canManageCurrentStudents" @click="handleStudentReschedule(record)">
+                      <button
+                        type="button"
+                        class="student-action-link"
+                        :disabled="!canManageStudentAction(record)"
+                        :title="getStudentActionDisabledReason(record)"
+                        @click="handleStudentReschedule(record)"
+                      >
                         调课
                       </button>
                       <span class="student-action-divider" />
-                      <button type="button" class="student-action-link" :disabled="!canManageCurrentStudents" @click="handleStudentRemove(record)">
+                      <button
+                        type="button"
+                        class="student-action-link"
+                        :disabled="!canManageStudentAction(record)"
+                        :title="getStudentActionDisabledReason(record)"
+                        @click="handleStudentRemove(record)"
+                      >
                         移出本节
                       </button>
                     </div>

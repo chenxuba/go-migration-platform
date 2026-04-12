@@ -165,7 +165,8 @@ const classStatusOptions = [
   { id: '1', value: '到课' },
   { id: '3', value: '请假' },
   { id: '2', value: '旷课' },
-  { id: '0', value: '未记录' },
+  { id: '0', value: '未点名' },
+  { id: '4', value: '未记录' },
 ]
 
 const billingModeOptions = [
@@ -223,6 +224,8 @@ function studentIdentityTagClass(value?: number) {
 
 function statusText(record: Partial<TeachingRecordDetailStudent>) {
   const status = Number(record.status || 0)
+  if (status === 0)
+    return '未点名'
   if (status === 2)
     return '旷课'
   if (status === 3)
@@ -234,13 +237,19 @@ function statusText(record: Partial<TeachingRecordDetailStudent>) {
 
 function statusTagClass(record: Partial<TeachingRecordDetailStudent>) {
   const status = Number(record.status || 0)
+  if (status === 0)
+    return 'record-status-tag record-status-tag--unsigned'
   if (status === 2)
     return 'record-status-tag record-status-tag--absent'
   if (status === 3)
     return 'record-status-tag record-status-tag--leave'
   if (status === 4)
-    return 'record-status-tag record-status-tag--pending'
+    return 'record-status-tag record-status-tag--unrecorded'
   return 'record-status-tag record-status-tag--arrived'
+}
+
+function hasTeachingRecord(record: Partial<TeachingRecordDetailStudent>) {
+  return String(record.studentTeachingRecordId || '').trim() !== ''
 }
 
 function chargingModeText(value?: number) {
@@ -284,11 +293,9 @@ function buildStudentSourceTypes(values: string[]) {
 }
 
 function buildClassStatusValues(values: string[]) {
-  return new Set(values.map((item) => {
-    if (item === '0')
-      return 4
-    return Number(item)
-  }).filter(item => Number.isFinite(item)))
+  return new Set(values
+    .map(item => Number(item))
+    .filter(item => Number.isFinite(item)))
 }
 
 const rawStudentList = computed(() => Array.isArray(props.detail?.studentList) ? props.detail?.studentList || [] : [])
@@ -362,6 +369,16 @@ function handleBillingModeFilter(value: unknown) {
     ? value.map(item => Number(item)).filter(item => Number.isFinite(item))
     : []
 }
+
+function resolveRowKey(record: Partial<TeachingRecordDetailStudent>) {
+  const teachingRecordId = String(record.studentTeachingRecordId || '').trim()
+  if (teachingRecordId)
+    return teachingRecordId
+  const studentId = String(record.studentId || '').trim()
+  if (studentId)
+    return `pending-${studentId}`
+  return `pending-${String(record.studentName || '').trim()}`
+}
 </script>
 
 <template>
@@ -396,7 +413,7 @@ function handleBillingModeFilter(value: unknown) {
           <a-table
             :loading="loading"
             :data-source="filteredData"
-            row-key="studentTeachingRecordId"
+            :row-key="resolveRowKey"
             :pagination="tablePagination"
             :columns="filteredColumns"
             :scroll="{ x: totalWidth }"
@@ -490,25 +507,25 @@ function handleBillingModeFilter(value: unknown) {
                 </span>
               </template>
               <template v-if="column.key === 'deductionAccount'">
-                {{ isTrialStudent(record) ? '-' : (record.tuitionAccountName || '-') }}
+                {{ !hasTeachingRecord(record) ? '-' : (isTrialStudent(record) ? '-' : (record.tuitionAccountName || '-')) }}
               </template>
               <template v-if="column.key === 'courseNotMethod'">
-                {{ isTrialStudent(record) ? '-' : chargingModeText(record.skuMode) }}
+                {{ !hasTeachingRecord(record) ? '-' : (isTrialStudent(record) ? '-' : chargingModeText(record.skuMode)) }}
               </template>
               <template v-if="column.key === 'classCallNum'">
-                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '不记课时' : formatNumber(record.quantity, '课时') }}
+                {{ !hasTeachingRecord(record) ? formatNumber(0, '课时') : (isTrialStudent(record) || isTimeChargingMode(record) ? '不记课时' : formatNumber(record.quantity, '课时')) }}
               </template>
               <template v-if="column.key === 'useNum'">
-                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(displayConsumedQuantity(record), '课时') }}
+                {{ !hasTeachingRecord(record) ? formatNumber(0, '课时') : (isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(displayConsumedQuantity(record), '课时')) }}
               </template>
               <template v-if="column.key === 'oweNum'">
                 <span :class="{ 'owe-num-text': hasArrearQuantity(record) }">
-                  {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(record.arrearQuantity, '课时') }}
+                  {{ !hasTeachingRecord(record) ? formatNumber(0, '课时') : (isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(record.arrearQuantity, '课时')) }}
                 </span>
               </template>
               <template v-if="column.key === 'usePrice'">
                 <span class="use-price-text">
-                  {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : `¥${Number(record.actualTuition || 0).toFixed(2)}` }}
+                  {{ !hasTeachingRecord(record) ? '¥0.00' : (isTrialStudent(record) || isTimeChargingMode(record) ? '-' : `¥${Number(record.actualTuition || 0).toFixed(2)}`) }}
                 </span>
               </template>
               <template v-if="column.key === 'externalRemarks'">
@@ -615,6 +632,11 @@ function handleBillingModeFilter(value: unknown) {
   background: #eef4ff;
 }
 
+.record-status-tag--unsigned {
+  color: #b45309;
+  background: #fff7ed;
+}
+
 .record-status-tag--leave {
   color: #fa8c16;
   background: #fff4e8;
@@ -625,7 +647,7 @@ function handleBillingModeFilter(value: unknown) {
   background: #fff1f0;
 }
 
-.record-status-tag--pending {
+.record-status-tag--unrecorded {
   color: #8c8c8c;
   background: #f5f5f5;
 }

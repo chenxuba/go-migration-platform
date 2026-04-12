@@ -30,6 +30,19 @@ type faceAttendanceStudentBase struct {
 	AvatarURL   string
 }
 
+type faceAttendanceScheduleMatch struct {
+	ScheduleID           int64
+	ClassType            int
+	ClassID              int64
+	StudentID            int64
+	TeachingClassName    string
+	StudentName          string
+	LessonName           string
+	LessonStartAt        time.Time
+	LessonEndAt          time.Time
+	NormalizedCallStatus int
+}
+
 type faceAttendanceRecordSessionSummary struct {
 	HasSchedule          bool
 	ClassTimes           []string
@@ -416,26 +429,7 @@ func (repo *Repository) ListFaceAttendanceSessions(ctx context.Context, instID i
 			IFNULL(fas.sign_in_image, ''),
 			fas.sign_out_time,
 			IFNULL(fas.sign_out_image, ''),
-			EXISTS(
-				SELECT 1
-				FROM teaching_schedule ts
-				LEFT JOIN teaching_schedule_student tss
-					ON tss.teaching_schedule_id = ts.id
-				   AND tss.inst_id = ts.inst_id
-				   AND tss.del_flag = 0
-				WHERE ts.inst_id = fas.inst_id
-				  AND ts.del_flag = 0
-				  AND ts.status = ?
-				  AND DATE(ts.lesson_date) = fas.attendance_date
-				  AND (
-					ts.student_id = fas.student_id
-					OR (
-						tss.student_id = fas.student_id
-						AND IFNULL(tss.roster_status, ?) <> ?
-					)
-				  )
-				LIMIT 1
-			) AS has_schedule
+			0 AS has_schedule
 		FROM inst_student_face_attendance_session fas
 		LEFT JOIN inst_student s
 			ON s.id = fas.student_id
@@ -445,7 +439,7 @@ func (repo *Repository) ListFaceAttendanceSessions(ctx context.Context, instID i
 		  AND fas.attendance_date = ?
 		ORDER BY COALESCE(fas.sign_out_time, fas.sign_in_time, fas.update_time) DESC, fas.id DESC
 		LIMIT ?
-	`, model.TeachingScheduleStatusActive, model.TeachingScheduleStudentRosterStatusActive, model.TeachingScheduleStudentRosterStatusRemoved, instID, attendanceDate, limit)
+	`, instID, attendanceDate, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -457,6 +451,12 @@ func (repo *Repository) ListFaceAttendanceSessions(ctx context.Context, instID i
 		if err != nil {
 			return nil, err
 		}
+		hasSchedule, lastLessonEndTime, err := repo.getStudentLastLessonEndTime(ctx, repo.db, instID, item.StudentID, item.AttendanceDate)
+		if err != nil {
+			return nil, err
+		}
+		item.HasSchedule = hasSchedule
+		item.LastLessonEndTime = lastLessonEndTime
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -691,26 +691,7 @@ func (repo *Repository) GetFaceAttendanceSessionByID(ctx context.Context, instID
 			IFNULL(fas.sign_in_image, ''),
 			fas.sign_out_time,
 			IFNULL(fas.sign_out_image, ''),
-			EXISTS(
-				SELECT 1
-				FROM teaching_schedule ts
-				LEFT JOIN teaching_schedule_student tss
-					ON tss.teaching_schedule_id = ts.id
-				   AND tss.inst_id = ts.inst_id
-				   AND tss.del_flag = 0
-				WHERE ts.inst_id = fas.inst_id
-				  AND ts.del_flag = 0
-				  AND ts.status = ?
-				  AND DATE(ts.lesson_date) = fas.attendance_date
-				  AND (
-					ts.student_id = fas.student_id
-					OR (
-						tss.student_id = fas.student_id
-						AND IFNULL(tss.roster_status, ?) <> ?
-					)
-				  )
-				LIMIT 1
-			) AS has_schedule
+			0 AS has_schedule
 		FROM inst_student_face_attendance_session fas
 		LEFT JOIN inst_student s
 			ON s.id = fas.student_id
@@ -718,13 +699,14 @@ func (repo *Repository) GetFaceAttendanceSessionByID(ctx context.Context, instID
 		   AND s.del_flag = 0
 		WHERE fas.inst_id = ? AND fas.id = ? AND fas.del_flag = 0
 		LIMIT 1
-	`, model.TeachingScheduleStatusActive, model.TeachingScheduleStudentRosterStatusActive, model.TeachingScheduleStudentRosterStatusRemoved, instID, recordID)
+	`, instID, recordID)
 	item, err := scanFaceAttendanceSession(row)
 	if err != nil {
 		return model.FaceAttendanceSession{}, err
 	}
-	_, lastLessonEndTime, err := repo.getStudentLastLessonEndTime(ctx, repo.db, instID, item.StudentID, item.AttendanceDate)
+	hasSchedule, lastLessonEndTime, err := repo.getStudentLastLessonEndTime(ctx, repo.db, instID, item.StudentID, item.AttendanceDate)
 	if err == nil {
+		item.HasSchedule = hasSchedule
 		item.LastLessonEndTime = lastLessonEndTime
 	}
 	return item, nil
@@ -1069,58 +1051,22 @@ func (repo *Repository) loadFaceAttendanceRecordSessionSummaries(ctx context.Con
 		return result, nil
 	}
 
-	holders := make([]string, 0, len(sessionIDs))
-	args := make([]any, 0, len(sessionIDs)+4)
-	args = append(args, model.TeachingScheduleStatusActive, model.TeachingScheduleStudentRosterStatusRemoved, instID)
-	for _, id := range sessionIDs {
-		holders = append(holders, "?")
-		args = append(args, id)
+	sessionIDs = uniquePositiveInt64s(sessionIDs)
+	if len(sessionIDs) == 0 {
+		return result, nil
 	}
+
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
-			fas.id AS session_id,
-			IFNULL(ts.id, 0) AS schedule_id,
-			IFNULL(CONCAT(DATE_FORMAT(ts.lesson_date, '%Y-%m-%d'), '\n', DATE_FORMAT(ts.lesson_start_at, '%H:%i'), ' ~ ', DATE_FORMAT(ts.lesson_end_at, '%H:%i')), '') AS class_time_text,
-			IFNULL(CASE
-				WHEN TRIM(IFNULL(ts.teaching_class_name, '')) <> '' THEN TRIM(IFNULL(ts.teaching_class_name, ''))
-				WHEN ts.class_type = ? AND TRIM(IFNULL(ts.student_name, '')) <> '' THEN CONCAT(TRIM(IFNULL(ts.student_name, '')), CASE WHEN TRIM(IFNULL(ts.lesson_name, '')) <> '' THEN CONCAT('-', TRIM(IFNULL(ts.lesson_name, ''))) ELSE '' END)
-				ELSE TRIM(IFNULL(ts.lesson_name, ''))
-			END, '') AS related_schedule_text,
-			CASE
-				WHEN ts.id IS NULL OR ts.id = 0 THEN ''
-				WHEN EXISTS (
-					SELECT 1
-					FROM student_teaching_record str
-					WHERE str.inst_id = ts.inst_id
-					  AND IFNULL(str.del_flag, 0) = 0
-					  AND CAST(str.teaching_schedule_id AS CHAR) = CAST(ts.id AS CHAR)
-					LIMIT 1
-				) THEN '已点名'
-				ELSE '未点名'
-			END AS roll_call_status
+			fas.id,
+			fas.student_id,
+			DATE_FORMAT(fas.attendance_date, '%Y-%m-%d')
 		FROM inst_student_face_attendance_session fas
-		LEFT JOIN teaching_schedule ts
-			ON ts.inst_id = fas.inst_id
-		   AND IFNULL(ts.del_flag, 0) = 0
-		   AND ts.status = ?
-		   AND ts.lesson_date = fas.attendance_date
-		   AND (
-			ts.student_id = fas.student_id
-			OR EXISTS (
-				SELECT 1
-				FROM teaching_schedule_student tss
-				WHERE tss.inst_id = ts.inst_id
-				  AND tss.teaching_schedule_id = ts.id
-				  AND tss.student_id = fas.student_id
-				  AND IFNULL(tss.del_flag, 0) = 0
-				  AND IFNULL(tss.roster_status, 0) <> ?
-			)
-		   )
 		WHERE fas.inst_id = ?
-		  AND fas.id IN (`+strings.Join(holders, ",")+`)
+		  AND fas.id IN (`+sqlPlaceholders(len(sessionIDs))+`)
 		  AND IFNULL(fas.del_flag, 0) = 0
-		ORDER BY fas.id ASC, ts.lesson_start_at ASC, ts.id ASC
-	`, append([]any{model.TeachingClassTypeOneToOne}, args...)...)
+		ORDER BY fas.id ASC
+	`, append([]any{instID}, int64SliceToAny(sessionIDs)...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1128,34 +1074,18 @@ func (repo *Repository) loadFaceAttendanceRecordSessionSummaries(ctx context.Con
 
 	for rows.Next() {
 		var (
-			sessionID           int64
-			scheduleID          int64
-			classTimeText       string
-			relatedScheduleText string
-			rollCallStatus      string
+			sessionID      int64
+			studentID      int64
+			attendanceDate string
 		)
-		if err := rows.Scan(&sessionID, &scheduleID, &classTimeText, &relatedScheduleText, &rollCallStatus); err != nil {
+		if err := rows.Scan(&sessionID, &studentID, &attendanceDate); err != nil {
 			return nil, err
 		}
-		summary := result[sessionID]
-		if scheduleID > 0 {
-			summary.HasSchedule = true
-			classTimeText = strings.TrimSpace(classTimeText)
-			relatedScheduleText = strings.TrimSpace(relatedScheduleText)
-			if classTimeText != "" {
-				summary.ClassTimes = append(summary.ClassTimes, classTimeText)
-			}
-			if relatedScheduleText != "" {
-				summary.RelatedSchedules = append(summary.RelatedSchedules, relatedScheduleText)
-			}
-			summary.RelatedScheduleItems = append(summary.RelatedScheduleItems, model.FaceAttendanceRelatedScheduleItem{
-				ScheduleID:     fmt.Sprintf("%d", scheduleID),
-				ClassTime:      classTimeText,
-				ScheduleName:   relatedScheduleText,
-				RollCallStatus: strings.TrimSpace(rollCallStatus),
-			})
+		matches, err := repo.listFaceAttendanceMatchedSchedules(ctx, repo.db, instID, studentID, attendanceDate)
+		if err != nil {
+			return nil, err
 		}
-		result[sessionID] = summary
+		result[sessionID] = buildFaceAttendanceRecordSessionSummary(matches)
 	}
 	return result, rows.Err()
 }
@@ -1330,37 +1260,172 @@ func (repo *Repository) getFaceAttendanceRecordForDate(ctx context.Context, runn
 }
 
 func (repo *Repository) getStudentLastLessonEndTime(ctx context.Context, runner faceAttendanceQueryRunner, instID, studentID int64, attendanceDate string) (bool, *time.Time, error) {
-	var (
-		total         int
-		lastLessonEnd sql.NullTime
-	)
-	err := runner.QueryRowContext(ctx, `
-		SELECT COUNT(*), MAX(ts.lesson_end_at)
-		FROM teaching_schedule ts
-		LEFT JOIN teaching_schedule_student tss
-			ON tss.teaching_schedule_id = ts.id
-		   AND tss.inst_id = ts.inst_id
-		   AND tss.del_flag = 0
-		WHERE ts.inst_id = ?
-		  AND ts.del_flag = 0
-		  AND ts.status = ?
-		  AND DATE(ts.lesson_date) = ?
-		  AND (
-			ts.student_id = ?
-			OR (
-				tss.student_id = ?
-				AND IFNULL(tss.roster_status, ?) <> ?
-			)
-		  )
-	`, instID, model.TeachingScheduleStatusActive, attendanceDate, studentID, studentID, model.TeachingScheduleStudentRosterStatusActive, model.TeachingScheduleStudentRosterStatusRemoved).Scan(&total, &lastLessonEnd)
+	matches, err := repo.listFaceAttendanceMatchedSchedules(ctx, runner, instID, studentID, attendanceDate)
 	if err != nil {
 		return false, nil, err
 	}
-	if !lastLessonEnd.Valid || total == 0 {
+	if len(matches) == 0 {
 		return false, nil, nil
 	}
-	t := lastLessonEnd.Time
-	return true, &t, nil
+	lastLessonEnd := matches[0].LessonEndAt
+	for i := 1; i < len(matches); i++ {
+		if matches[i].LessonEndAt.After(lastLessonEnd) {
+			lastLessonEnd = matches[i].LessonEndAt
+		}
+	}
+	return true, &lastLessonEnd, nil
+}
+
+func (repo *Repository) listFaceAttendanceMatchedSchedules(ctx context.Context, queryer sqlQueryer, instID, studentID int64, attendanceDate string) ([]faceAttendanceScheduleMatch, error) {
+	if instID <= 0 || studentID <= 0 || strings.TrimSpace(attendanceDate) == "" {
+		return nil, nil
+	}
+
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT
+			IFNULL(ts.id, 0),
+			IFNULL(ts.class_type, 0),
+			IFNULL(ts.teaching_class_id, 0),
+			IFNULL(ts.student_id, 0),
+			IFNULL(ts.teaching_class_name, ''),
+			IFNULL(ts.student_name, ''),
+			IFNULL(ts.lesson_name, ''),
+			ts.lesson_start_at,
+			ts.lesson_end_at
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ?
+		  AND IFNULL(ts.del_flag, 0) = 0
+		  AND ts.status = ?
+		  AND ts.lesson_date = ?
+		ORDER BY ts.lesson_start_at ASC, ts.id ASC
+	`, instID, model.TeachingScheduleStatusActive, attendanceDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	schedules := make([]faceAttendanceScheduleMatch, 0)
+	groupMetas := make([]effectiveGroupClassScheduleMeta, 0)
+	for rows.Next() {
+		var item faceAttendanceScheduleMatch
+		if err := rows.Scan(
+			&item.ScheduleID,
+			&item.ClassType,
+			&item.ClassID,
+			&item.StudentID,
+			&item.TeachingClassName,
+			&item.StudentName,
+			&item.LessonName,
+			&item.LessonStartAt,
+			&item.LessonEndAt,
+		); err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, item)
+		if item.ClassType == model.TeachingClassTypeNormal && item.ClassID > 0 {
+			groupMetas = append(groupMetas, effectiveGroupClassScheduleMeta{
+				ScheduleID: item.ScheduleID,
+				ClassID:    item.ClassID,
+				StartAt:    item.LessonStartAt,
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(schedules) == 0 {
+		return nil, nil
+	}
+
+	rosterByScheduleID := map[int64]groupClassScheduleRoster{}
+	if len(groupMetas) > 0 {
+		rosterByScheduleID, err = repo.loadEffectiveGroupClassScheduleRosterMap(ctx, queryer, instID, groupMetas)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	matches := make([]faceAttendanceScheduleMatch, 0, len(schedules))
+	rollCallMetas := make([]teachingScheduleRollCallMeta, 0, len(schedules))
+	for _, item := range schedules {
+		matched := false
+		if item.ClassType == model.TeachingClassTypeNormal && item.ClassID > 0 {
+			if _, ok := rosterByScheduleID[item.ScheduleID].associatedStudent(studentID); ok {
+				matched = true
+			}
+		} else if item.StudentID == studentID {
+			matched = true
+		}
+		if !matched {
+			continue
+		}
+		matches = append(matches, item)
+		rollCallMetas = append(rollCallMetas, teachingScheduleRollCallMeta{
+			ScheduleID: item.ScheduleID,
+			ClassType:  item.ClassType,
+			ClassID:    item.ClassID,
+			StudentID:  item.StudentID,
+			StartAt:    item.LessonStartAt,
+		})
+	}
+	if len(matches) == 0 {
+		return nil, nil
+	}
+
+	statusByID, err := repo.computeTeachingScheduleCallStatusMap(ctx, queryer, instID, rollCallMetas)
+	if err != nil {
+		return nil, err
+	}
+	for i := range matches {
+		matches[i].NormalizedCallStatus = normalizeTeachingScheduleCallStatus(statusByID[matches[i].ScheduleID])
+	}
+	return matches, nil
+}
+
+func buildFaceAttendanceRecordSessionSummary(matches []faceAttendanceScheduleMatch) faceAttendanceRecordSessionSummary {
+	summary := faceAttendanceRecordSessionSummary{
+		HasSchedule: len(matches) > 0,
+	}
+	for _, item := range matches {
+		classTime := formatFaceAttendanceScheduleClassTime(item)
+		scheduleName := formatFaceAttendanceScheduleName(item)
+		if classTime != "" {
+			summary.ClassTimes = append(summary.ClassTimes, classTime)
+		}
+		if scheduleName != "" {
+			summary.RelatedSchedules = append(summary.RelatedSchedules, scheduleName)
+		}
+		summary.RelatedScheduleItems = append(summary.RelatedScheduleItems, model.FaceAttendanceRelatedScheduleItem{
+			ScheduleID:     fmt.Sprintf("%d", item.ScheduleID),
+			ClassTime:      classTime,
+			ScheduleName:   scheduleName,
+			RollCallStatus: teachingScheduleCallStatusText(item.NormalizedCallStatus),
+		})
+	}
+	return summary
+}
+
+func formatFaceAttendanceScheduleClassTime(item faceAttendanceScheduleMatch) string {
+	if item.LessonStartAt.IsZero() || item.LessonEndAt.IsZero() {
+		return ""
+	}
+	return fmt.Sprintf("%s\n%s ~ %s", item.LessonStartAt.Format("2006-01-02"), item.LessonStartAt.Format("15:04"), item.LessonEndAt.Format("15:04"))
+}
+
+func formatFaceAttendanceScheduleName(item faceAttendanceScheduleMatch) string {
+	className := strings.TrimSpace(item.TeachingClassName)
+	lessonName := strings.TrimSpace(item.LessonName)
+	studentName := strings.TrimSpace(item.StudentName)
+	if className != "" {
+		return className
+	}
+	if item.ClassType == model.TeachingClassTypeOneToOne && studentName != "" {
+		if lessonName != "" {
+			return studentName + "-" + lessonName
+		}
+		return studentName
+	}
+	return lessonName
 }
 
 func scanFaceAttendanceSession(scanner interface {

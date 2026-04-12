@@ -11,6 +11,19 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
+type rollCallExistingStudentRecord struct {
+	TeachingRecordID   int64
+	StudentID          int64
+	Status             int
+	Quantity           float64
+	Remark             string
+	ExternalRemark     string
+	TuitionAccountID   string
+	TuitionAccountName string
+	SkuMode            int
+	IsAutoRollCall     bool
+}
+
 func (repo *Repository) GetRollCallClassTimetable(ctx context.Context, instID int64, dto model.RollCallClassTimetableQueryDTO) (model.RollCallClassTimetableResult, error) {
 	detail, classMeta, err := repo.loadRollCallDrawerContext(ctx, instID, strings.TrimSpace(dto.ID))
 	if err != nil {
@@ -82,6 +95,10 @@ func (repo *Repository) GetRollCallTeachingRecordStudentList(ctx context.Context
 	if err != nil {
 		return model.RollCallTeachingRecordStudentListResult{}, err
 	}
+	existingRecordMap, err := repo.loadRollCallExistingStudentRecordMap(ctx, instID, strings.TrimSpace(dto.TimetableSourceID))
+	if err != nil {
+		return model.RollCallTeachingRecordStudentListResult{}, err
+	}
 
 	sources := make([]rollCallDrawerStudentSource, 0, len(detail.Students)+len(detail.LeaveStudents))
 	for _, item := range detail.Students {
@@ -130,6 +147,35 @@ func (repo *Repository) GetRollCallTeachingRecordStudentList(ctx context.Context
 			isActive = account.IsTuitionAccountActive
 			tuitionAccountID = firstNonEmptyString(strings.TrimSpace(account.ID), "0")
 		}
+		existingRecord := existingRecordMap[studentID]
+		recordedTuitionAccountID := ""
+		recordedTuitionAccountName := ""
+		recordedSkuMode := 0
+		recordedQuantity := 0.0
+		recordedRemark := ""
+		recordedExternalRemark := ""
+		recordedStatus := 0
+		hasTeachingRecord := false
+		locked := false
+		autoRollCall := false
+		if existingRecord.StudentID > 0 {
+			hasTeachingRecord = true
+			recordedTuitionAccountID = strings.TrimSpace(existingRecord.TuitionAccountID)
+			recordedTuitionAccountName = strings.TrimSpace(existingRecord.TuitionAccountName)
+			recordedSkuMode = normalizeRollCallDrawerChargingMode(existingRecord.SkuMode)
+			recordedQuantity = roundMoney(existingRecord.Quantity)
+			recordedRemark = strings.TrimSpace(existingRecord.Remark)
+			recordedExternalRemark = strings.TrimSpace(existingRecord.ExternalRemark)
+			recordedStatus = normalizeRollCallConfirmStudentStatus(existingRecord.Status)
+			autoRollCall = existingRecord.IsAutoRollCall
+			locked = autoRollCall
+			if recordedTuitionAccountID != "" && recordedTuitionAccountID != "0" {
+				tuitionAccountID = recordedTuitionAccountID
+			}
+			if recordedSkuMode > 0 {
+				chargingMode = recordedSkuMode
+			}
+		}
 		students = append(students, model.RollCallTeachingRecordStudentVO{
 			StudentID:                    source.Student.StudentID,
 			StudentName:                  source.Student.StudentName,
@@ -143,10 +189,19 @@ func (repo *Repository) GetRollCallTeachingRecordStudentList(ctx context.Context
 			AbsentStudentType:            0,
 			TuitionAccountID:             tuitionAccountID,
 			SourceType:                   rollCallTeachingRecordSourceType(source.Student.ScheduleStudentType),
-			StudentTeachingStatus:        0,
+			StudentTeachingStatus:        recordedStatus,
 			DefaultStudentTeachingStatus: source.DefaultTeachingStatus,
-			HasSignIn:                    false,
+			HasSignIn:                    hasTeachingRecord,
 			IsCrossSchoolStudent:         false,
+			HasTeachingRecord:            hasTeachingRecord,
+			RecordedQuantity:             recordedQuantity,
+			RecordedRemark:               recordedRemark,
+			RecordedExternalRemark:       recordedExternalRemark,
+			RecordedSkuMode:              recordedSkuMode,
+			RecordedTuitionAccountID:     recordedTuitionAccountID,
+			RecordedTuitionAccountName:   recordedTuitionAccountName,
+			Locked:                       locked,
+			AutoRollCall:                 autoRollCall,
 		})
 	}
 
@@ -167,6 +222,64 @@ func (repo *Repository) GetRollCallTeachingRecordStudentList(ctx context.Context
 		Teachers: classMeta.TeachingRecordTeachers,
 		Students: students,
 	}, nil
+}
+
+func (repo *Repository) loadRollCallExistingStudentRecordMap(ctx context.Context, instID int64, scheduleIDText string) (map[int64]rollCallExistingStudentRecord, error) {
+	scheduleID, err := strconv.ParseInt(strings.TrimSpace(scheduleIDText), 10, 64)
+	if err != nil || scheduleID <= 0 {
+		return map[int64]rollCallExistingStudentRecord{}, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			IFNULL(teaching_record_id, 0),
+			IFNULL(student_id, 0),
+			IFNULL(status, 0),
+			IFNULL(quantity, 0),
+			IFNULL(remark, ''),
+			IFNULL(external_remark, ''),
+			CAST(IFNULL(tuition_account_id, 0) AS CHAR),
+			IFNULL(tuition_account_name, ''),
+			IFNULL(sku_mode, 0),
+			IFNULL(is_auto_roll_call, 0)
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND teaching_schedule_id = ?
+		ORDER BY id ASC
+	`, instID, scheduleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]rollCallExistingStudentRecord)
+	for rows.Next() {
+		var item rollCallExistingStudentRecord
+		var autoRollCall int
+		if err := rows.Scan(
+			&item.TeachingRecordID,
+			&item.StudentID,
+			&item.Status,
+			&item.Quantity,
+			&item.Remark,
+			&item.ExternalRemark,
+			&item.TuitionAccountID,
+			&item.TuitionAccountName,
+			&item.SkuMode,
+			&autoRollCall,
+		); err != nil {
+			return nil, err
+		}
+		item.IsAutoRollCall = autoRollCall != 0
+		if item.StudentID > 0 {
+			result[item.StudentID] = item
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (repo *Repository) GetRollCallStudentLeaveCount(ctx context.Context, instID int64, dto model.RollCallStudentLeaveCountQueryDTO) ([]model.RollCallStudentLeaveCountVO, error) {

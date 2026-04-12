@@ -44,6 +44,11 @@ type rollCallConfirmAccount struct {
 	ProductName        string
 }
 
+type rollCallExistingScheduleRecordSummary struct {
+	TeachingRecordID int64
+	StudentIDSet     map[int64]struct{}
+}
+
 type rollCallConfirmOptions struct {
 	RecordTime     *time.Time
 	OperatorName   string
@@ -55,6 +60,7 @@ func (repo *Repository) CheckRollCallTeachingRecordByTeacherAndTime(ctx context.
 	if err != nil || teacherID <= 0 {
 		return nil
 	}
+	excludeScheduleID, _ := strconv.ParseInt(strings.TrimSpace(dto.TimetableSourceID), 10, 64)
 	startTime, err := parseRollCallConfirmDateTime(dto.StartTime)
 	if err != nil {
 		return err
@@ -68,7 +74,7 @@ func (repo *Repository) CheckRollCallTeachingRecordByTeacherAndTime(ctx context.
 	}
 
 	var count int
-	if err := repo.db.QueryRowContext(ctx, `
+	query := `
 		SELECT COUNT(*)
 		FROM student_teaching_record
 		WHERE inst_id = ?
@@ -76,7 +82,13 @@ func (repo *Repository) CheckRollCallTeachingRecordByTeacherAndTime(ctx context.
 		  AND main_teacher_id = ?
 		  AND start_time < ?
 		  AND end_time > ?
-	`, instID, teacherID, endTime, startTime).Scan(&count); err != nil {
+	`
+	args := []any{instID, teacherID, endTime, startTime}
+	if excludeScheduleID > 0 {
+		query += " AND teaching_schedule_id <> ?"
+		args = append(args, excludeScheduleID)
+	}
+	if err := repo.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
@@ -218,23 +230,43 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 		operatorName = "系统自动点名"
 	}
 
-	var exists int
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM student_teaching_record
-		WHERE inst_id = ?
-		  AND teaching_schedule_id = ?
-		  AND del_flag = 0
-	`, instID, scheduleID).Scan(&exists); err != nil {
+	existingSummary, err := repo.loadRollCallExistingScheduleRecordSummaryTx(ctx, tx, instID, scheduleID)
+	if err != nil {
 		return model.RollCallConfirmResult{}, err
 	}
-	if exists > 0 {
+	if detail.CallStatus == 2 {
+		return model.RollCallConfirmResult{}, errors.New("当前日程已完成点名")
+	}
+	if detail.ClassType != model.TeachingClassTypeNormal && len(existingSummary.StudentIDSet) > 0 {
 		return model.RollCallConfirmResult{}, errors.New("当前日程已完成点名")
 	}
 
-	teachingRecordID, err := repo.nextRollCallTeachingRecordIDTx(ctx, tx)
-	if err != nil {
-		return model.RollCallConfirmResult{}, err
+	pendingStudents := make([]model.RollCallConfirmStudent, 0, len(dto.StudentList))
+	for _, item := range dto.StudentList {
+		studentID, _ := strconv.ParseInt(strings.TrimSpace(item.StudentID), 10, 64)
+		if studentID > 0 {
+			if _, exists := existingSummary.StudentIDSet[studentID]; exists {
+				continue
+			}
+		}
+		pendingStudents = append(pendingStudents, item)
+	}
+	if len(pendingStudents) == 0 {
+		if existingSummary.TeachingRecordID > 0 {
+			return model.RollCallConfirmResult{
+				ID:   strconv.FormatInt(existingSummary.TeachingRecordID, 10),
+				Name: "",
+			}, nil
+		}
+		return model.RollCallConfirmResult{}, errors.New("暂无可提交的点名学员")
+	}
+
+	teachingRecordID := existingSummary.TeachingRecordID
+	if teachingRecordID <= 0 {
+		teachingRecordID, err = repo.nextRollCallTeachingRecordIDTx(ctx, tx)
+		if err != nil {
+			return model.RollCallConfirmResult{}, err
+		}
 	}
 
 	teacherNamesJSON, teacherIDsJSON := rollCallConfirmTeacherJSON(detail.AssistantNames, detail.AssistantIDs)
@@ -249,7 +281,8 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 		recordTime = *options.RecordTime
 	}
 
-	for _, item := range dto.StudentList {
+	insertedCount := 0
+	for _, item := range pendingStudents {
 		studentID, _ := strconv.ParseInt(strings.TrimSpace(item.StudentID), 10, 64)
 		profile := profileMap[studentID]
 		account, hasAccount := accountMap[strings.TrimSpace(item.TuitionAccountID)]
@@ -320,7 +353,7 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 				teacher_employee_type, assistant_teacher_ids_json, assistant_teacher_names_json, class_teacher_ids_json, class_teacher_names_json,
 				roll_call_class_teacher_ids_json, roll_call_class_teacher_names_json, current_class_teacher_ids_json, current_class_teacher_names_json,
 				one2one_teacher_ids_json, one2one_teacher_names_json, tuition_account_id, tuition_account_name, sku_mode, quantity, actual_quantity,
-				amount, actual_deduct, actual_tuition, arrear_quantity, teacher_class_time, remark, external_remark, has_compensated,
+				amount, actual_deduct, actual_tuition, arrear_quantity, teacher_class_time, remark, external_remark, is_auto_roll_call, has_compensated,
 				advisor_staff_id, advisor_staff_name, student_manager_id, student_manager_name, start_time, end_time, teaching_record_created_time,
 				record_time, updated_staff_id, updated_staff_name, updated_time, create_id, create_time, update_id, update_time, del_flag
 			) VALUES (
@@ -330,7 +363,7 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 				?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?,
 				?, ?, ?, ?,
-				?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, ?, ?, ?, ?,
 				?, ?, ?, NOW(), ?, NOW(), ?, NOW(), 0
@@ -345,18 +378,61 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 			parseRollCallConfirmInt64(detail.TeacherID), strings.TrimSpace(detail.TeacherName), 0, teacherIDsJSON, teacherNamesJSON, emptyIDsJSON, classTeacherNamesJSON,
 			emptyIDsJSON, classTeacherNamesJSON, emptyIDsJSON, currentClassTeacherNamesJSON, emptyIDsJSON, oneToOneTeacherNamesJSON,
 			parseRollCallConfirmInt64(item.TuitionAccountID), tuitionAccountName, normalizeRollCallDrawerChargingMode(item.SkuMode), quantity, actualQuantity,
-			roundMoney(item.Amount), actualDeduct, actualTuition, arrearQuantity, dto.TeacherClassTime, strings.TrimSpace(item.Remark), strings.TrimSpace(item.ExternalRemark), false,
+			roundMoney(item.Amount), actualDeduct, actualTuition, arrearQuantity, dto.TeacherClassTime, strings.TrimSpace(item.Remark), strings.TrimSpace(item.ExternalRemark), options.IsAutoRollCall, false,
 			profile.AdvisorStaffID, profile.AdvisorStaffName, profile.StudentManagerID, profile.StudentManagerName, startTime, endTime, recordTime,
 			recordTime, operatorID, operatorName, operatorID, operatorID,
 		); err != nil {
 			return model.RollCallConfirmResult{}, err
 		}
+		insertedCount++
+	}
+
+	if insertedCount == 0 && len(existingSummary.StudentIDSet) == 0 {
+		return model.RollCallConfirmResult{}, errors.New("暂无可提交的点名学员")
 	}
 
 	return model.RollCallConfirmResult{
 		ID:   strconv.FormatInt(teachingRecordID, 10),
 		Name: "",
 	}, nil
+}
+
+func (repo *Repository) loadRollCallExistingScheduleRecordSummaryTx(ctx context.Context, tx *sql.Tx, instID, scheduleID int64) (rollCallExistingScheduleRecordSummary, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			IFNULL(student_id, 0),
+			IFNULL(teaching_record_id, 0)
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND teaching_schedule_id = ?
+		  AND del_flag = 0
+		ORDER BY id ASC
+	`, instID, scheduleID)
+	if err != nil {
+		return rollCallExistingScheduleRecordSummary{}, err
+	}
+	defer rows.Close()
+
+	result := rollCallExistingScheduleRecordSummary{
+		StudentIDSet: make(map[int64]struct{}),
+	}
+	for rows.Next() {
+		var studentID int64
+		var teachingRecordID int64
+		if err := rows.Scan(&studentID, &teachingRecordID); err != nil {
+			return rollCallExistingScheduleRecordSummary{}, err
+		}
+		if result.TeachingRecordID <= 0 && teachingRecordID > 0 {
+			result.TeachingRecordID = teachingRecordID
+		}
+		if studentID > 0 {
+			result.StudentIDSet[studentID] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return rollCallExistingScheduleRecordSummary{}, err
+	}
+	return result, nil
 }
 
 func (repo *Repository) loadRollCallConfirmStudentProfileMap(ctx context.Context, instID int64, studentIDs []int64) (map[int64]rollCallConfirmStudentProfile, error) {

@@ -53,11 +53,9 @@ const timeText = computed(() => {
 })
 const teacherClassTimeText = computed(() => `教师记录${formatClassTime(detailData.value?.teacherClassTime)}`)
 const createdText = computed(() => {
-  const time = String(detailData.value?.createdTime || '').trim()
-  const staff = String(detailData.value?.createdStaffName || '').trim()
-  if (time && staff)
-    return `${time} ${staff}`
-  return time || staff || '-'
+  const rawTime = String(detailData.value?.createdTime || '').trim()
+  const time = dayjs(rawTime).isValid() ? dayjs(rawTime).format('YYYY-MM-DD HH:mm') : rawTime
+  return time || '-'
 })
 
 let loadSeq = 0

@@ -222,6 +222,9 @@ type TeachingScheduleDetailStudentVO struct {
 	ClassStatusText         string `json:"classStatusText,omitempty"`
 	CallStatus              int    `json:"callStatus"`
 	CallStatusText          string `json:"callStatusText,omitempty"`
+	HasTeachingRecord       bool   `json:"hasTeachingRecord"`
+	ActionDisabled          bool   `json:"actionDisabled"`
+	ActionDisabledReason    string `json:"actionDisabledReason,omitempty"`
 }
 
 type TeachingScheduleDetailVO struct {

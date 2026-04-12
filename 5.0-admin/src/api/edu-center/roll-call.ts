@@ -12,6 +12,7 @@ export interface RollCallQueryModel {
   teacherId?: string
   teacherTypes?: number[]
   scheduleTypes?: string[]
+  callStatusMode?: string
 }
 
 export interface RollCallStatisticsResult {
@@ -148,6 +149,15 @@ export interface RollCallTeachingRecordStudent {
   defaultStudentTeachingStatus: number
   hasSignIn: boolean
   isCrossSchoolStudent: boolean
+  hasTeachingRecord: boolean
+  recordedQuantity: number
+  recordedRemark?: string
+  recordedExternalRemark?: string
+  recordedSkuMode: number
+  recordedTuitionAccountId?: string
+  recordedTuitionAccountName?: string
+  locked: boolean
+  autoRollCall: boolean
 }
 
 export interface RollCallTeachingRecordStudentListResult {
@@ -186,6 +196,7 @@ export interface RollCallCheckTeachingRecordByTeacherAndTimeParams {
   startTime: string
   endTime: string
   teacherId: string
+  timetableSourceId?: string
 }
 
 export interface RollCallEstimateTuitionInfo {

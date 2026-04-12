@@ -15,12 +15,17 @@ import (
 func (svc *Service) GetRollCallStatistics(userID int64, dto model.RollCallStatisticsQueryDTO) (model.RollCallStatisticsVO, error) {
 	today := time.Now().Format("2006-01-02")
 
-	todayItems, err := svc.listRollCallSchedules(userID, dto.QueryModel, today, today, "desc")
+	todayItems, err := svc.listRollCallSchedules(userID, dto.QueryModel, today, today, "desc", "incomplete")
 	if err != nil {
 		return model.RollCallStatisticsVO{}, err
 	}
 
-	allItems, err := svc.listRollCallSchedules(userID, dto.QueryModel, "", today, "desc")
+	allItems, err := svc.listRollCallSchedules(userID, dto.QueryModel, "", today, "desc", "incomplete")
+	if err != nil {
+		return model.RollCallStatisticsVO{}, err
+	}
+
+	partialItems, err := svc.listRollCallSchedules(userID, dto.QueryModel, "", today, "desc", "partial")
 	if err != nil {
 		return model.RollCallStatisticsVO{}, err
 	}
@@ -28,7 +33,7 @@ func (svc *Service) GetRollCallStatistics(userID int64, dto model.RollCallStatis
 	return model.RollCallStatisticsVO{
 		TodayCount:   len(todayItems),
 		AllCount:     len(allItems),
-		PartialCount: 0,
+		PartialCount: len(partialItems),
 	}, nil
 }
 
@@ -56,7 +61,7 @@ func (svc *Service) GetRollCallPagedList(userID int64, dto model.RollCallPagedLi
 		sortDirection = "desc"
 	}
 
-	items, err := svc.listRollCallSchedules(userID, dto.QueryModel, dto.QueryModel.StartDate, dto.QueryModel.EndDate, sortDirection)
+	items, err := svc.listRollCallSchedules(userID, dto.QueryModel, dto.QueryModel.StartDate, dto.QueryModel.EndDate, sortDirection, strings.TrimSpace(dto.QueryModel.CallStatusMode))
 	if err != nil {
 		return model.RollCallPagedListResult{}, err
 	}
@@ -168,7 +173,7 @@ func (svc *Service) rollCallInstID(userID int64) (int64, error) {
 	return instID, nil
 }
 
-func (svc *Service) listRollCallSchedules(userID int64, query model.RollCallQueryModel, startDate, endDate, sortDirection string) ([]model.TeachingScheduleVO, error) {
+func (svc *Service) listRollCallSchedules(userID int64, query model.RollCallQueryModel, startDate, endDate, sortDirection string, callStatusMode string) ([]model.TeachingScheduleVO, error) {
 	listQuery, err := buildRollCallTeachingScheduleQuery(query, startDate, endDate, sortDirection)
 	if err != nil {
 		return nil, err
@@ -179,7 +184,8 @@ func (svc *Service) listRollCallSchedules(userID int64, query model.RollCallQuer
 		return nil, err
 	}
 
-	return filterRollCallSchedulesByTeacher(items, query.TeacherID, query.TeacherTypes), nil
+	items = filterRollCallSchedulesByTeacher(items, query.TeacherID, query.TeacherTypes)
+	return filterRollCallSchedulesByStatus(items, callStatusMode), nil
 }
 
 func buildRollCallTeachingScheduleQuery(query model.RollCallQueryModel, startDate, endDate, sortDirection string) (model.TeachingScheduleListQueryDTO, error) {
@@ -188,7 +194,6 @@ func buildRollCallTeachingScheduleQuery(query model.RollCallQueryModel, startDat
 		EndDate:             strings.TrimSpace(endDate),
 		SortDirection:       normalizeRollCallSortDirection(sortDirection),
 		ScheduleTypeFilters: normalizeRollCallScheduleTypes(query.ScheduleTypes),
-		CallStatusFilters:   []string{"unsigned"},
 	}
 
 	if strings.TrimSpace(listQuery.StartDate) == "" {
@@ -223,6 +228,32 @@ func buildRollCallTeachingScheduleQuery(query model.RollCallQueryModel, startDat
 	}
 
 	return listQuery, nil
+}
+
+func filterRollCallSchedulesByStatus(items []model.TeachingScheduleVO, mode string) []model.TeachingScheduleVO {
+	mode = strings.TrimSpace(mode)
+	filtered := make([]model.TeachingScheduleVO, 0, len(items))
+	for _, item := range items {
+		status := 1
+		if item.CallStatus == 2 || item.CallStatus == 3 {
+			status = item.CallStatus
+		}
+		switch mode {
+		case "partial":
+			if status == 3 {
+				filtered = append(filtered, item)
+			}
+		case "all", "pending", "incomplete", "":
+			if status == 1 || status == 3 {
+				filtered = append(filtered, item)
+			}
+		default:
+			if status == 1 || status == 3 {
+				filtered = append(filtered, item)
+			}
+		}
+	}
+	return filtered
 }
 
 func normalizeRollCallScheduleTypes(values []string) []string {

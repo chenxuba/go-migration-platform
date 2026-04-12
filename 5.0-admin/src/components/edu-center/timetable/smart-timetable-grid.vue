@@ -417,6 +417,7 @@ onUnmounted(() => {
                 'st-schedule-cell--focused': focusedScheduleCellKey === scheduleCellKey(column, record),
                 'st-schedule-cell--conflict': text.scheduledConflict,
                 'st-schedule-cell--signed': text.callStatusKey === 'signed',
+                'st-schedule-cell--partial': text.callStatusKey === 'partial',
                 'st-schedule-cell--draggable': isScheduleDraggable(text),
                 'st-schedule-cell--drag-disabled': !isScheduleDraggable(text),
                 'st-schedule-cell--floating': draggingScheduleCellKey === scheduleCellKey(column, record),
@@ -554,6 +555,11 @@ onUnmounted(() => {
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
 }
 
+.st-schedule-cell--partial {
+  background: linear-gradient(180deg, rgba(255, 244, 229, 0.95) 0%, rgba(255, 236, 210, 0.95) 100%);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.16);
+}
+
 .st-schedule-cell__header {
   align-items: center;
   background: #06f;
@@ -562,6 +568,10 @@ onUnmounted(() => {
 
 .st-schedule-cell--signed .st-schedule-cell__header {
   background: linear-gradient(180deg, #aab0bb 0%, #9ba2ae 100%);
+}
+
+.st-schedule-cell--partial .st-schedule-cell__header {
+  background: linear-gradient(180deg, #ffb74d 0%, #f59e0b 100%);
 }
 
 .st-schedule-cell__badge {
@@ -579,6 +589,10 @@ onUnmounted(() => {
 
 .st-schedule-cell--signed .st-schedule-cell__badge--mode {
   background: rgba(0, 0, 0, 0.42);
+}
+
+.st-schedule-cell--partial .st-schedule-cell__badge--mode {
+  background: rgba(120, 53, 15, 0.24);
 }
 
 .st-schedule-cell--conflict {
@@ -617,6 +631,11 @@ onUnmounted(() => {
 
 .st-schedule-cell--signed .st-schedule-cell__body {
   color: #707784;
+  font-weight: 600;
+}
+
+.st-schedule-cell--partial .st-schedule-cell__body {
+  color: #9a3412;
   font-weight: 600;
 }
 

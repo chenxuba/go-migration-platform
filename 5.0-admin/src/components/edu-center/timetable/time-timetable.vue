@@ -726,7 +726,7 @@ const mockSchedules = computed(() =>
     teacher: item.teacherName || '-',
     classroom: item.classroomName || '-',
     studentText: item.studentName ? `学员：${item.studentName}` : '-',
-    status: Number(item.callStatus) === 2 ? 'signed' : 'unsigned',
+    status: Number(item.callStatus) === 2 ? 'signed' : Number(item.callStatus) === 3 ? 'partial' : 'unsigned',
     conflict: item.conflict === true,
     conflictTypes: item.conflictTypes || [],
     hasTrial: false,
@@ -1135,6 +1135,7 @@ function eventClass(item) {
     'schedule-event': true,
     'schedule-event--unsigned': item.status === 'unsigned',
     'schedule-event--signed': item.status === 'signed',
+    'schedule-event--partial': item.status === 'partial',
     'schedule-event--conflict': item.conflict,
     'schedule-event--focused': focusedScheduleId.value === String(item.id),
   }
@@ -2570,6 +2571,10 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
   background: #f5f7fa;
 }
 
+.schedule-event--partial {
+  background: #fff4e5;
+}
+
 .schedule-event--conflict {
   box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.4);
 }
@@ -2589,6 +2594,10 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 
 .schedule-event--signed .schedule-event__top {
   background: #98a2b3;
+}
+
+.schedule-event--partial .schedule-event__top {
+  background: #f59e0b;
 }
 
 .schedule-event__time {

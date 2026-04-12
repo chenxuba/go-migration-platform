@@ -6,6 +6,7 @@ import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { getScheduleTeachingRecordPagedListApi, type ScheduleTeachingRecordItem } from '@/api/edu-center/class-record'
+import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 
 interface FilterOption {
@@ -41,6 +42,9 @@ const dataSource = ref<ScheduleTeachingRecordItem[]>([])
 const loading = ref(false)
 const openClassRecordDrawer = ref(false)
 const currentTeachingRecordId = ref('')
+const openRollCallDrawer = ref(false)
+const currentScheduleId = ref('')
+const currentLessonDay = ref('')
 const filterDateRange = ref<[Dayjs, Dayjs]>([monthStart, today])
 const filterCreateDateRange = ref<[Dayjs, Dayjs] | null>(null)
 const filterLessonId = ref<string | undefined>(undefined)
@@ -86,6 +90,15 @@ const assistantTeacherSearchKey = ref('')
 function handleSeeClassRecord(record?: Partial<ScheduleTeachingRecordItem>) {
   currentTeachingRecordId.value = String(record?.teachingRecordId || '').trim()
   openClassRecordDrawer.value = true
+}
+
+function handleContinueRollCall(record?: Partial<ScheduleTeachingRecordItem>) {
+  currentScheduleId.value = String(record?.timetableSourceId || '').trim()
+  currentLessonDay.value = String(record?.startTime || '').trim()
+  if (!currentScheduleId.value) {
+    return
+  }
+  openRollCallDrawer.value = true
 }
 
 function normalizeFilterValue(value: unknown) {
@@ -767,7 +780,14 @@ onMounted(() => {
                 {{ record.createdTime || '-' }}
               </template>
               <template v-if="column.key === 'action'">
-                <a class="font500" @click="handleSeeClassRecord(record)">上课记录详情</a>
+                <a
+                  v-if="Number(record.rollCallStatus || 0) === 1 && String(record.timetableSourceId || '').trim()"
+                  class="font500"
+                  @click="handleContinueRollCall(record)"
+                >
+                  去点名
+                </a>
+                <a v-else class="font500" @click="handleSeeClassRecord(record)">上课记录详情</a>
               </template>
             </template>
           </a-table>
@@ -775,6 +795,13 @@ onMounted(() => {
       </div>
     </div>
     <class-record-details v-model:open="openClassRecordDrawer" :teaching-record-id="currentTeachingRecordId" />
+    <RollCallDrawer
+      v-model:open="openRollCallDrawer"
+      :schedule-id="currentScheduleId"
+      :lesson-day="currentLessonDay"
+      @updated="loadList"
+      @confirmed="loadList"
+    />
   </div>
 </template>
 

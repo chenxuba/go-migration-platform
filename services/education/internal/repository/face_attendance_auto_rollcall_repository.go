@@ -44,6 +44,15 @@ type faceAttendanceSessionSnapshot struct {
 	Status         int
 }
 
+type faceAttendanceAutoRollCallScheduleCandidate struct {
+	ScheduleID int64
+	ClassType  int
+	ClassID    int64
+	StudentID  int64
+	StartAt    time.Time
+	EndAt      time.Time
+}
+
 func (repo *Repository) SyncFaceAttendanceAutoRollCallTasks(ctx context.Context, operatorID int64, now time.Time) (int, int, error) {
 	created, err := repo.ensureFaceAttendanceAutoRollCallTasksForActiveSessions(ctx, operatorID, now)
 	if err != nil {
@@ -135,44 +144,97 @@ func (repo *Repository) ensureFaceAttendanceAutoRollCallTasksForSession(ctx cont
 }
 
 func (repo *Repository) enqueueFaceAttendanceAutoRollCallTasksTx(ctx context.Context, tx *sql.Tx, instID, operatorID, sessionID, studentID int64, attendanceDate string, signInTime time.Time) (int, error) {
-	result, err := tx.ExecContext(ctx, `
-		INSERT INTO inst_student_face_roll_call_task (
-			inst_id, attendance_session_id, student_id, attendance_date, teaching_schedule_id,
-			execute_at, sign_in_time, status, teaching_record_id, last_error, create_id, update_id, del_flag
-		)
+	rows, err := tx.QueryContext(ctx, `
 		SELECT
-			ts.inst_id,
-			?,
-			ts.student_id,
-			ts.lesson_date,
 			ts.id,
+			IFNULL(ts.class_type, 0),
+			IFNULL(ts.teaching_class_id, 0),
+			IFNULL(ts.student_id, 0),
 			ts.lesson_start_at,
-			?,
-			?,
-			0,
-			'',
-			?,
-			?,
-			0
+			ts.lesson_end_at
 		FROM teaching_schedule ts
 		WHERE ts.inst_id = ?
 		  AND ts.del_flag = 0
 		  AND ts.status = ?
-		  AND ts.class_type = ?
-		  AND ts.student_id = ?
 		  AND ts.lesson_date = ?
 		  AND ts.lesson_end_at >= ?
-		ON DUPLICATE KEY UPDATE
-			sign_in_time = VALUES(sign_in_time),
-			update_id = VALUES(update_id),
-			update_time = CURRENT_TIMESTAMP,
-			del_flag = 0
-	`, sessionID, signInTime, faceAttendanceRollCallTaskStatusPending, operatorID, operatorID, instID, model.TeachingScheduleStatusActive, model.TeachingClassTypeOneToOne, studentID, attendanceDate, signInTime)
+		  AND ts.class_type IN (?, ?)
+	`, instID, model.TeachingScheduleStatusActive, attendanceDate, signInTime, model.TeachingClassTypeNormal, model.TeachingClassTypeOneToOne)
 	if err != nil {
 		return 0, err
 	}
-	affected, _ := result.RowsAffected()
-	return int(affected), nil
+	defer rows.Close()
+
+	candidates := make([]faceAttendanceAutoRollCallScheduleCandidate, 0)
+	groupMetas := make([]effectiveGroupClassScheduleMeta, 0)
+	for rows.Next() {
+		var item faceAttendanceAutoRollCallScheduleCandidate
+		if err := rows.Scan(
+			&item.ScheduleID,
+			&item.ClassType,
+			&item.ClassID,
+			&item.StudentID,
+			&item.StartAt,
+			&item.EndAt,
+		); err != nil {
+			return 0, err
+		}
+		candidates = append(candidates, item)
+		if item.ClassType == model.TeachingClassTypeNormal && item.ClassID > 0 {
+			groupMetas = append(groupMetas, effectiveGroupClassScheduleMeta{
+				ScheduleID: item.ScheduleID,
+				ClassID:    item.ClassID,
+				StartAt:    item.StartAt,
+			})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	rosterByScheduleID := map[int64]groupClassScheduleRoster{}
+	if len(groupMetas) > 0 {
+		rosterByScheduleID, err = repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, groupMetas)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	totalAffected := 0
+	for _, candidate := range candidates {
+		shouldEnqueue := false
+		switch candidate.ClassType {
+		case model.TeachingClassTypeOneToOne:
+			shouldEnqueue = candidate.StudentID == studentID
+		case model.TeachingClassTypeNormal:
+			if candidate.ClassID > 0 {
+				if _, ok := rosterByScheduleID[candidate.ScheduleID].activeStudentNameMap()[studentID]; ok {
+					shouldEnqueue = true
+				}
+			}
+		}
+		if !shouldEnqueue {
+			continue
+		}
+
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO inst_student_face_roll_call_task (
+				inst_id, attendance_session_id, student_id, attendance_date, teaching_schedule_id,
+				execute_at, sign_in_time, status, teaching_record_id, last_error, create_id, update_id, del_flag
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, 0)
+			ON DUPLICATE KEY UPDATE
+				sign_in_time = VALUES(sign_in_time),
+				update_id = VALUES(update_id),
+				update_time = CURRENT_TIMESTAMP,
+				del_flag = 0
+		`, instID, sessionID, studentID, attendanceDate, candidate.ScheduleID, candidate.StartAt, signInTime, faceAttendanceRollCallTaskStatusPending, operatorID, operatorID)
+		if err != nil {
+			return totalAffected, err
+		}
+		affected, _ := result.RowsAffected()
+		totalAffected += int(affected)
+	}
+	return totalAffected, nil
 }
 
 func (repo *Repository) listDueFaceAttendanceAutoRollCallTaskIDs(ctx context.Context, now time.Time, instID *int64, sessionID *int64, limit int) ([]int64, error) {
@@ -248,7 +310,7 @@ func (repo *Repository) processFaceAttendanceAutoRollCallTaskByID(ctx context.Co
 		return true, tx.Commit()
 	}
 
-	if existingTeachingRecordID, err := repo.findExistingTeachingRecordIDByScheduleTx(ctx, tx, task.InstID, task.TeachingScheduleID); err != nil {
+	if existingTeachingRecordID, err := repo.findExistingTeachingRecordIDByScheduleStudentTx(ctx, tx, task.InstID, task.TeachingScheduleID, task.StudentID); err != nil {
 		return false, err
 	} else if existingTeachingRecordID > 0 {
 		if err := repo.updateFaceAttendanceAutoRollCallTaskStatusTx(ctx, tx, task.ID, operatorID, faceAttendanceRollCallTaskStatusSuccess, existingTeachingRecordID, ""); err != nil {
@@ -342,17 +404,18 @@ func (repo *Repository) getFaceAttendanceSessionSnapshotForUpdate(ctx context.Co
 	return item, true, nil
 }
 
-func (repo *Repository) findExistingTeachingRecordIDByScheduleTx(ctx context.Context, tx *sql.Tx, instID, scheduleID int64) (int64, error) {
+func (repo *Repository) findExistingTeachingRecordIDByScheduleStudentTx(ctx context.Context, tx *sql.Tx, instID, scheduleID, studentID int64) (int64, error) {
 	var teachingRecordID int64
 	err := tx.QueryRowContext(ctx, `
 		SELECT IFNULL(teaching_record_id, 0)
 		FROM student_teaching_record
 		WHERE inst_id = ?
 		  AND teaching_schedule_id = ?
+		  AND student_id = ?
 		  AND del_flag = 0
 		ORDER BY id ASC
 		LIMIT 1
-	`, instID, scheduleID).Scan(&teachingRecordID)
+	`, instID, scheduleID, studentID).Scan(&teachingRecordID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, nil

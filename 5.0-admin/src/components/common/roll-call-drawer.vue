@@ -147,6 +147,8 @@ const headerStatus = ref('')
 // 根据表头状态设置每个学生的状态
 function setAllStudentStatus(status) {
   data.value.forEach((item) => {
+    if (item.locked)
+      return
     // 重置所有状态
     item.attended = false
     item.absent = false
@@ -159,8 +161,13 @@ function setAllStudentStatus(status) {
   })
 }
 function syncHeaderStatus() {
+  const editableRows = data.value.filter(item => !item.locked)
+  if (!editableRows.length) {
+    headerStatus.value = ''
+    return
+  }
   const statuses = ['attended', 'absent', 'leave', 'unrecorded']
-  const matchedStatus = statuses.find(status => data.value.length > 0 && data.value.every(item => item[status]))
+  const matchedStatus = statuses.find(status => editableRows.every(item => item[status]))
   headerStatus.value = matchedStatus || ''
 }
 // 计算属性监听表头状态变化
@@ -186,6 +193,8 @@ function handleHeaderStatusChange(status) {
 }
 // 处理单个学生状态变更
 function handleStudentStatusChange(record, status) {
+  if (record?.locked)
+    return
   // 判断是否是取消选择当前状态
   if (record[status]) {
     // 如果当前状态已经选中，则取消选择
@@ -203,8 +212,9 @@ function handleStudentStatusChange(record, status) {
   }
 
   // 检查表头状态，只有全部学生选中同一状态时才改变表头状态
-  const allSelected = data.value.every(item => item[status])
-  const anySelected = data.value.some(item => item[status])
+  const editableRows = data.value.filter(item => !item.locked)
+  const allSelected = editableRows.length > 0 && editableRows.every(item => item[status])
+  const anySelected = editableRows.some(item => item[status])
 
   if (allSelected) {
     headerStatus.value = status
@@ -371,6 +381,8 @@ function parseNumber(value) {
 function isRemainingInsufficient(record) {
   if (!record || record.type === '3' || record.unrecorded || !record.recordAttendance)
     return false
+  if (Boolean(record.locked) || Boolean(record.autoRollCall) || Boolean(record.hasTeachingRecord))
+    return false
   if (String(record.consumptionMethod || '') !== '1')
     return false
   return parseNumber(record.attendanceCount) > parseNumber(record.remainingQuantity)
@@ -393,6 +405,9 @@ function defaultTeachingStatusToKey(value) {
     return 'unrecorded'
   return 'attended'
 }
+function recordedTeachingStatusToKey(value) {
+  return defaultTeachingStatusToKey(value)
+}
 function applyStudentState(item) {
   item.attended = false
   item.absent = false
@@ -412,29 +427,44 @@ function mapStudentRow(item, leaveCountMap, tuitionExtraMap) {
   const extra = tuitionExtraMap.get(String(item.studentId || '')) || {}
   const leaveCount = Number(leaveCountMap.get(String(item.studentId || '')) || 0)
   const studentType = teachingSourceTypeToTagType(item.sourceType)
+  const hasTeachingRecord = Boolean(item.hasTeachingRecord)
+  const locked = Boolean(item.locked)
+  const autoRollCall = Boolean(item.autoRollCall)
+  const effectiveChargingMode = hasTeachingRecord && Number(item.recordedSkuMode || 0) > 0
+    ? Number(item.recordedSkuMode || 0)
+    : Number(item.chargingMode || 0)
+  const defaultAttendanceStatus = hasTeachingRecord
+    ? recordedTeachingStatusToKey(item.studentTeachingStatus)
+    : defaultTeachingStatusToKey(item.defaultStudentTeachingStatus)
+  const recordedQuantity = Number(item.recordedQuantity || 0)
+  const recordedTuitionAccountId = String(item.recordedTuitionAccountId || '').trim()
+  const recordedTuitionAccountName = String(item.recordedTuitionAccountName || '').trim()
   const row = {
     id: String(item.studentId || ''),
     type: studentType,
     studentAccount: String(item.studentName || '-'),
     avatarUrl: String(item.avatar || defaultStudentAvatar),
     bindChildText: item.isBindChild ? '已关注' : '未关注',
-    accountName: String(extra.bestMatchProductName || ''),
+    accountName: recordedTuitionAccountName || String(extra.bestMatchProductName || ''),
     remainingText: formatRemainingText(item.chargingMode, item.quantity, item.paidRemaining),
     remainingQuantity: Number(item.quantity || 0),
     paidRemaining: Number(item.paidRemaining || 0),
     leaveCountText: `已请假：${leaveCount}次`,
-    consumptionMethod: String(item.chargingMode || ''),
-    consumptionMethodText: getConsumptionMethodText(item.chargingMode, studentType),
-    tuitionAccountId: String(item.tuitionAccountId || ''),
+    consumptionMethod: String(effectiveChargingMode || ''),
+    consumptionMethodText: getConsumptionMethodText(effectiveChargingMode, studentType),
+    tuitionAccountId: recordedTuitionAccountId || String(item.tuitionAccountId || ''),
     sourceType: Number(item.sourceType || 0),
-    rawChargingMode: Number(item.chargingMode || 0),
-    recordAttendance: Number(item.chargingMode || 0) === 1,
-    attendanceCount: Number(classTimetableDetail.value?.defaultStudentClassTime || 1),
-    internalNote: '',
-    externalNote: '',
-    defaultAttendanceStatus: defaultTeachingStatusToKey(item.defaultStudentTeachingStatus),
-    canSwitchAccount: Boolean(extra.mutilTuition),
-    canRemove: true,
+    rawChargingMode: effectiveChargingMode,
+    recordAttendance: effectiveChargingMode === 1 && defaultAttendanceStatus !== 'unrecorded',
+    attendanceCount: hasTeachingRecord ? recordedQuantity : Number(classTimetableDetail.value?.defaultStudentClassTime || 1),
+    internalNote: hasTeachingRecord ? String(item.recordedRemark || '') : '',
+    externalNote: hasTeachingRecord ? String(item.recordedExternalRemark || '') : '',
+    defaultAttendanceStatus,
+    canSwitchAccount: !locked && Boolean(extra.mutilTuition),
+    canRemove: !locked,
+    hasTeachingRecord,
+    locked,
+    autoRollCall,
     attended: false,
     absent: false,
     leave: false,
@@ -490,6 +520,13 @@ function applySwitchedAccountOverrides(rows) {
       syncRecordTuitionAccount(row, override)
   })
   return rows
+}
+function getRemoveDisabledReason(record) {
+  if (Boolean(record?.locked) || Boolean(record?.autoRollCall) || Boolean(record?.hasTeachingRecord))
+    return '该学员已自动点名，不可移出'
+  if (record?.canRemove === false)
+    return '当前学员不可移出'
+  return ''
 }
 function clearSwitchedAccountOverrides() {
   switchedAccountOverrideMap.value = new Map()
@@ -617,6 +654,10 @@ function handleBatchEdit() {
   batchEditModal.value = true
 }
 function isBatchEditableStudent(record) {
+  if (!record)
+    return false
+  if (Boolean(record.locked) || Boolean(record.autoRollCall))
+    return false
   return String(record?.type || '') !== '3' && String(record?.type || '') !== '4'
 }
 function matchesBatchEditRange(record, editRange) {
@@ -659,9 +700,12 @@ function buildRollCallStudentQuantity(record) {
     return 0
   return Math.max(parseNumber(record.attendanceCount), 0)
 }
+function shouldSkipRollCallSubmitRecord(record) {
+  return Boolean(record?.locked) || Boolean(record?.autoRollCall) || Boolean(record?.hasTeachingRecord)
+}
 function buildRollCallEstimatePayload() {
   return data.value
-    .filter(record => Number(record?.consumptionMethod || 0) === 1 && buildRollCallStudentQuantity(record) > 0)
+    .filter(record => !shouldSkipRollCallSubmitRecord(record) && Number(record?.consumptionMethod || 0) === 1 && buildRollCallStudentQuantity(record) > 0)
     .map(record => ({
       quantity: buildRollCallStudentQuantity(record),
       tuitionAccountId: String(record?.tuitionAccountId || ''),
@@ -689,7 +733,9 @@ function buildRollCallConfirmPayload() {
       teacherId: String(item?.teacherId || ''),
       type: Number(item?.type || 0),
     })),
-    studentList: data.value.map((record) => {
+    studentList: data.value
+      .filter(record => !shouldSkipRollCallSubmitRecord(record))
+      .map((record) => {
       const quantity = buildRollCallStudentQuantity(record)
       return {
         studentShouldDeduct: quantity,
@@ -705,7 +751,7 @@ function buildRollCallConfirmPayload() {
         amount: 0,
         quantity,
       }
-    }),
+      }),
     subjectId: '0',
     classRoomId: String(meta.classroomId || detail.addressId || '0'),
   }
@@ -731,6 +777,10 @@ async function handleConfirmRollCall() {
     messageService.warning('缺少上课时间，请刷新后重试')
     return
   }
+  if (!Array.isArray(payload.studentList) || payload.studentList.length === 0) {
+    messageService.warning('当前没有需要提交的点名学员')
+    return
+  }
   const mainTeacher = payload.teacherList.find(item => Number(item?.type) === 1)
   const estimatePayload = buildRollCallEstimatePayload()
   submittingRollCall.value = true
@@ -740,6 +790,7 @@ async function handleConfirmRollCall() {
         startTime: payload.startTime,
         endTime: payload.endTime,
         teacherId: String(mainTeacher.teacherId || ''),
+        timetableSourceId: String(payload.timetableSourceId || ''),
       })
       if (checkRes.code !== 200)
         throw new Error(checkRes.message || '上课教师时间冲突校验失败')
@@ -851,8 +902,9 @@ function handleRemoveStudent(record) {
   const scheduleId = String(currentScheduleId.value || '').trim()
   const studentId = String(record?.id || '').trim()
   const name = String(record?.studentAccount || '').trim() || '当前学员'
-  if (!canManageCurrentStudents.value) {
-    messageService.warning('该日程已点名，不可移出')
+  const disabledReason = getRemoveDisabledReason(record)
+  if (disabledReason) {
+    messageService.warning(disabledReason)
     return
   }
   if (!scheduleId || !studentId) {
@@ -1131,11 +1183,16 @@ watch(
                   >临时学员</span>
                 </div>
                 <div class="text-#888">
-                  <div class="text-14px text-#333 mb-2px">
+                <div class="text-14px text-#333 mb-2px">
                     {{ record.studentAccount }} <span
                       class="text-3 px2 py2px rounded-10 ml2px"
                       :class="record.bindChildText === '已关注' ? 'bg-#e6f0ff text-#06f' : 'bg-#f2f3f5 text-#8c8c8c'"
                     >{{ record.bindChildText }}</span>
+                    <br>
+                    <span
+                      v-if="record.autoRollCall"
+                      class="text-3     text-#389e0d"
+                    >已自动点名</span>
                   </div>
                   <div v-if="record.accountName || record.canSwitchAccount">
                     {{ record.accountName }}
@@ -1157,6 +1214,7 @@ watch(
               >
                 <a-checkbox
                   :checked="record.attended" class="status-checkbox attended-checkbox"
+                  :disabled="record.locked"
                   :class="{ 'active-checkbox': record.attended }" @click="() => handleStudentStatusChange(record, 'attended')"
                 >
                   到课
@@ -1170,6 +1228,7 @@ watch(
               >
                 <a-checkbox
                   :checked="record.absent" class="status-checkbox absent-checkbox"
+                  :disabled="record.locked"
                   :class="{ 'active-checkbox': record.absent }" @click="() => handleStudentStatusChange(record, 'absent')"
                 >
                   旷课
@@ -1183,6 +1242,7 @@ watch(
               >
                 <a-checkbox
                   :checked="record.leave" class="status-checkbox leave-checkbox"
+                  :disabled="record.locked"
                   :class="{ 'active-checkbox': record.leave }" @click="() => handleStudentStatusChange(record, 'leave')"
                 >
                   请假
@@ -1196,6 +1256,7 @@ watch(
               >
                 <a-checkbox
                   :checked="record.unrecorded" class="status-checkbox unrecorded-checkbox"
+                  :disabled="record.locked"
                   :class="{ 'active-checkbox': record.unrecorded }"
                   @click="() => handleStudentStatusChange(record, 'unrecorded')"
                 >
@@ -1217,7 +1278,7 @@ watch(
                 class="text-#888 text-3 flex flex-col"
               >
                 <span>记录课时</span>
-                <a-switch v-model:checked="record.recordAttendance" class="w-35px" />
+                <a-switch v-model:checked="record.recordAttendance" :disabled="record.locked" class="w-35px" />
               </div>
             </div>
             <div v-if="column.dataIndex === 'attendanceCount'">
@@ -1226,6 +1287,7 @@ watch(
                   v-model:value="record.attendanceCount"
                   :min="0"
                   :precision="2"
+                  :disabled="record.locked"
                   :status="isRemainingInsufficient(record) ? 'error' : undefined"
                   class="w-80px mr-4px"
                 />课时</span>
@@ -1248,10 +1310,10 @@ watch(
               <span v-else class="text-#888">不计课时</span>
             </div>
             <div v-if="column.dataIndex === 'internalNote'">
-              <a-input v-model:value="record.internalNote" class="w-100px" placeholder="请输入" />
+              <a-input v-model:value="record.internalNote" :disabled="record.locked" class="w-100px" placeholder="请输入" />
             </div>
             <div v-if="column.dataIndex === 'externalNote'">
-              <a-input v-model:value="record.externalNote" class="w-100px" placeholder="请输入" />
+              <a-input v-model:value="record.externalNote" :disabled="record.locked" class="w-100px" placeholder="请输入" />
             </div>
             <div v-else-if="column.dataIndex === 'action'">
               <a-space>
