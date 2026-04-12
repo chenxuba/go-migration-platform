@@ -10,6 +10,11 @@ type CampusDataClearSummary struct {
 	Students                  int `json:"students"`
 	StudentFieldValues        int `json:"studentFieldValues"`
 	StudentChangeRecords      int `json:"studentChangeRecords"`
+	FaceProfiles              int `json:"faceProfiles"`
+	FaceAttendanceSessions    int `json:"faceAttendanceSessions"`
+	FaceAttendanceRecords     int `json:"faceAttendanceRecords"`
+	FaceRollCallTasks         int `json:"faceRollCallTasks"`
+	StudentTeachingRecords    int `json:"studentTeachingRecords"`
 	FollowRecords             int `json:"followRecords"`
 	Orders                    int `json:"orders"`
 	OrderCourseDetails        int `json:"orderCourseDetails"`

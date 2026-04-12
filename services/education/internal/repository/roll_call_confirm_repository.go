@@ -496,10 +496,11 @@ func (repo *Repository) rollCallConfirmLessonHourTuition(quantity float64, accou
 
 func (repo *Repository) applyRollCallLessonHourConsumeTx(ctx context.Context, tx *sql.Tx, instID, operatorID, teachingRecordID int64, quantity, tuition float64, account rollCallConfirmAccount) error {
 	newUsedQuantity := roundMoney(account.UsedQuantity + quantity)
-	newRemainingQuantity := roundMoney(math.Max(account.RemainingQuantity-quantity, 0))
 	newUsedTuition := roundMoney(account.UsedTuition + tuition)
-	newRemainingTuition := roundMoney(math.Max(account.RemainingTuition-tuition, 0))
 	newConfirmedTuition := roundMoney(account.ConfirmedTuition + tuition)
+	// 点名扣减后的剩余值统一按“总量 - 已用量”回算，避免历史脏数据继续向后传染。
+	newRemainingQuantity := roundMoney(math.Max(account.TotalQuantity-newUsedQuantity, 0))
+	newRemainingTuition := roundMoney(math.Max(account.TotalTuition-newUsedTuition, 0))
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE tuition_account

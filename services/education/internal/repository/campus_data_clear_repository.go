@@ -22,6 +22,11 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 	_ = operatorID
 
 	deleteStatements := []string{
+		`DELETE FROM inst_student_face_roll_call_task WHERE inst_id = ?`,
+		`DELETE FROM inst_student_face_attendance_record WHERE inst_id = ?`,
+		`DELETE FROM inst_student_face_attendance_session WHERE inst_id = ?`,
+		`DELETE FROM inst_student_face_profile WHERE inst_id = ?`,
+		`DELETE FROM student_teaching_record WHERE inst_id = ?`,
 		`DELETE FROM teaching_schedule WHERE inst_id = ?`,
 		`DELETE FROM teaching_class_teacher WHERE inst_id = ?`,
 		`DELETE FROM teaching_class_student WHERE inst_id = ?`,
@@ -118,6 +123,31 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 		{
 			target: &summary.StudentChangeRecords,
 			query:  `SELECT COUNT(*) FROM inst_student_record WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.FaceProfiles,
+			query:  `SELECT COUNT(*) FROM inst_student_face_profile WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.FaceAttendanceSessions,
+			query:  `SELECT COUNT(*) FROM inst_student_face_attendance_session WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.FaceAttendanceRecords,
+			query:  `SELECT COUNT(*) FROM inst_student_face_attendance_record WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.FaceRollCallTasks,
+			query:  `SELECT COUNT(*) FROM inst_student_face_roll_call_task WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.StudentTeachingRecords,
+			query:  `SELECT COUNT(*) FROM student_teaching_record WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
 		},
 		{
