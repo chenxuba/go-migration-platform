@@ -228,6 +228,12 @@ function rollCallStatusText(value?: number) {
   return Number(value || 0) === 1 ? '部分点名' : '全部点名'
 }
 
+function rollCallStatusTagClass(value?: number) {
+  return Number(value || 0) === 1
+    ? 'roll-call-status-tag roll-call-status-tag--partial'
+    : 'roll-call-status-tag roll-call-status-tag--full'
+}
+
 function classDisplay(record: Partial<ScheduleTeachingRecordItem> | Record<string, any>) {
   return record.className || record.one2OneName || '-'
 }
@@ -427,7 +433,9 @@ onMounted(() => {
                 {{ formatNumber(displayConsumedQuantity(record), '课时') }}
               </template>
               <template v-if="column.key === 'callStatus'">
-                {{ rollCallStatusText(record.rollCallStatus) }}
+                <span :class="rollCallStatusTagClass(record.rollCallStatus)">
+                  {{ rollCallStatusText(record.rollCallStatus) }}
+                </span>
               </template>
               <template v-if="column.key === 'attendanceRate'">
                 <div class="name">
@@ -484,5 +492,30 @@ onMounted(() => {
     position: absolute;
     width: 4px;
   }
+}
+
+.roll-call-status-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.roll-call-status-tag--full {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.roll-call-status-tag--partial {
+  color: #b45309;
+  background: #fff7ed;
+  border-color: #fed7aa;
 }
 </style>
