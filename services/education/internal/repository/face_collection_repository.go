@@ -403,6 +403,7 @@ func (repo *Repository) ListFaceAttendanceSessions(ctx context.Context, instID i
 	if limit <= 0 {
 		limit = 50
 	}
+	attendanceDate := time.Now().In(time.Local).Format("2006-01-02")
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
 			fas.id,
@@ -441,9 +442,10 @@ func (repo *Repository) ListFaceAttendanceSessions(ctx context.Context, instID i
 		   AND s.inst_id = fas.inst_id
 		   AND s.del_flag = 0
 		WHERE fas.inst_id = ? AND fas.del_flag = 0
+		  AND fas.attendance_date = ?
 		ORDER BY COALESCE(fas.sign_out_time, fas.sign_in_time, fas.update_time) DESC, fas.id DESC
 		LIMIT ?
-	`, model.TeachingScheduleStatusActive, model.TeachingScheduleStudentRosterStatusActive, model.TeachingScheduleStudentRosterStatusRemoved, instID, limit)
+	`, model.TeachingScheduleStatusActive, model.TeachingScheduleStudentRosterStatusActive, model.TeachingScheduleStudentRosterStatusRemoved, instID, attendanceDate, limit)
 	if err != nil {
 		return nil, err
 	}
