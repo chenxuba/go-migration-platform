@@ -3412,9 +3412,7 @@ function buildScheduledLessonDetailState(text, column, record) {
   return {
     modeLabel: text.courseType === 1 ? '1v1' : '班课',
     modeColor: text.courseType === 1 ? '#1677ff' : '#13c2c2',
-    lessonTitle: text.courseType === 1
-      ? `${studentText || '学员'} · ${text.courseName || '课程'}`
-      : scheduleLessonTitle(text),
+    lessonTitle: scheduleLessonTitle(text),
     dateLabel: `${month}月${day}日 ${formatWeek(record.date)} 第${lessonIndex}节`,
     timeLabel: `${column.startTime}-${column.endTime}`,
     batchNo: String(text.batchNo || '').trim(),

@@ -276,6 +276,12 @@ const teacherClassTimeText = computed(() => {
   const value = Number(teachingRecordResult.value?.data?.teacherClassTime ?? classTimetableDetail.value?.defaultTeacherClassTime ?? 0)
   return `教师记录 ${Number.isInteger(value) ? value : value.toFixed(2).replace(/\.?0+$/, '')} 课时`
 })
+const isOneToOneRollCall = computed(() => {
+  const lessonType = Number(classTimetableDetail.value?.lessonType || 0)
+  if (lessonType === 2)
+    return true
+  return Number(teachingRecordResult.value?.data?.timetableSourceType || 0) === 2
+})
 function getConsumptionMethodText(mode, studentType) {
   if (String(studentType || '') === '3')
     return '按课时'
@@ -1258,7 +1264,7 @@ watch(
       <!-- 自定义footer -->
       <template #footer>
         <div class="h-60px flex flex-items-center justify-between px-24px">
-          <a-space :size="20">
+          <a-space v-if="!isOneToOneRollCall" :size="20">
             <a-dropdown>
               <template #overlay>
                 <a-menu @click="handleAddStudent">
@@ -1282,7 +1288,7 @@ watch(
               批量编辑点名数量
             </a-button>
           </a-space>
-          <a-space :size="20">
+          <a-space :size="20" :class="{ 'ml-auto': isOneToOneRollCall }">
             <div class="flex flex-col text-#222 text-16px font-500">
               <span class="mb-4px">共{{ data.length }}名学员</span>
               <span>到课{{ attendanceStats.attended }}人，请假{{ attendanceStats.leave }}人，旷课{{ attendanceStats.absent

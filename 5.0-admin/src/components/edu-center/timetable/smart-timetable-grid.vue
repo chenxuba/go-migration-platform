@@ -158,6 +158,26 @@ function scheduleLessonSubtitle(text) {
   return ''
 }
 
+function scheduleStudentLine(text, studentName, hasNext) {
+  const name = String(studentName || '').trim()
+  if (!name)
+    return ''
+  if (text?.courseType === 1)
+    return `${name}${hasNext ? '、' : ''}`
+  const courseName = String(text?.courseName || '').trim()
+  return `${name}${hasNext ? '、' : ''}${courseName ? `-${courseName}` : ''}`
+}
+
+function scheduleClassLine(text) {
+  const className = String(text?.className || '').trim()
+  const courseName = String(text?.courseName || '').trim()
+  if (text?.courseType === 1)
+    return className || courseName || '课程'
+  if (className && courseName)
+    return `${className}-${courseName}`
+  return className || courseName || '课程'
+}
+
 function scheduleModeLabel(text) {
   if (text?.courseType === 2)
     return text?.isMain === false ? '班课辅教' : '班课主教'
@@ -429,13 +449,13 @@ onUnmounted(() => {
 
               <div v-if="!text.classId" class="st-schedule-cell__body st-schedule-cell__body--students flex flex-1 flex-items-center pl-1">
                 <span v-for="(item, index) in text.studentNames" :key="index">
-                  <div class="flex">{{ item.name }}{{ index !== text.studentNames.length - 1 ? '、' : '' }}-{{ text.courseName }}</div>
+                  <div class="flex">{{ scheduleStudentLine(text, item.name, index !== text.studentNames.length - 1) }}</div>
                 </span>
               </div>
 
               <div v-else class="st-schedule-cell__body st-schedule-cell__body--class flex flex-1 flex-items-center pl-1 line-height-4">
                 <div class="flex">
-                  {{ text.className }}-{{ text.courseName }}
+                  {{ scheduleClassLine(text) }}
                 </div>
               </div>
             </div>
