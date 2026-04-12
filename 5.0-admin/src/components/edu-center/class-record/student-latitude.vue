@@ -915,7 +915,7 @@ onMounted(() => {
                   :phone="record.studentPhone"
                   :show-gender="false"
                   :show-age="false"
-                  default-active-key="0"
+                  default-active-key="1"
                 />
               </template>
               <template v-if="column.key === 'linkClass1v1'">
