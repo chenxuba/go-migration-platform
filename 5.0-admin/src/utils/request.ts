@@ -27,6 +27,7 @@ export interface RequestConfigExtra {
   token?: boolean
   customDev?: boolean
   loading?: boolean
+  silentError?: boolean
 }
 const instance: AxiosInstance = axios.create({
   // baseURL: import.meta.env.VITE_APP_BASE_API ?? '/',
@@ -162,6 +163,7 @@ function normalizeResponse(payload: any): ResponseBody<any> {
 function errorHandler(error: AxiosError): Promise<any> {
   const token = useAuthorization()
   const notification = useNotification()
+  const silentError = Boolean((error.config as any)?.silentError)
 
   // 从管理器中移除出错的请求
   const requestKey = (error.config as any)?.requestKey
@@ -222,6 +224,9 @@ function errorHandler(error: AxiosError): Promise<any> {
           has401Error = false
         },
       })
+    }
+    else if (silentError) {
+      return Promise.reject(error)
     }
     else if (status === 403) {
       notification?.error({

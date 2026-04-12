@@ -36,7 +36,9 @@ export function pageFaceCollectionStudentsApi(data: {
 }
 
 export function getFaceCollectionProfileApi(params: { studentId: string | number }) {
-  return useGet<FaceCollectionProfile>('/api/v1/face-collections/profile', params)
+  return useGet<FaceCollectionProfile>('/api/v1/face-collections/profile', params, {
+    silentError: true,
+  })
 }
 
 export function listFaceCollectionProfilesApi() {
