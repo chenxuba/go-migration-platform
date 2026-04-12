@@ -3,6 +3,7 @@ import dayjs from 'dayjs'
 import { pageFaceAttendanceRecordsApi, type FaceAttendanceRecordItem, type FaceAttendanceRelatedScheduleItem } from '@/api/edu-center/face'
 import faceIcon from '@/assets/images/face.png'
 import StudentAvatar from '@/components/common/StudentAvatar.vue'
+import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 
 const displayArray = ref(['scheduleType', 'createTime', 'lastEditedTime', 'scheduleCallStatus'])
@@ -21,6 +22,9 @@ const pagination = ref({
 const selectedRowKeys = ref<string[]>([])
 const scheduleModalOpen = ref(false)
 const currentScheduleRecord = ref<FaceAttendanceRecordItem | null>(null)
+const rollCallDrawerOpen = ref(false)
+const currentRollCallScheduleId = ref('')
+const currentRollCallLessonDay = ref('')
 const previewVisible = ref(false)
 const previewImage = ref('')
 const previewTitle = ref('')
@@ -108,19 +112,25 @@ const relatedScheduleColumns = [
     title: '上课时间',
     dataIndex: 'classTime',
     key: 'classTime',
-    width: 180,
+    width: 240,
   },
   {
     title: '相关日程',
     dataIndex: 'scheduleName',
     key: 'scheduleName',
-    width: 220,
+    width: 320,
   },
   {
     title: '点名状态',
     dataIndex: 'rollCallStatus',
     key: 'rollCallStatus',
-    width: 120,
+    width: 160,
+  },
+  {
+    title: '操作',
+    dataIndex: 'action',
+    key: 'action',
+    width: 110,
   },
 ]
 
@@ -149,26 +159,40 @@ function isPendingSignOut(record: Partial<FaceAttendanceRecordItem> | Record<str
   return record.action === 'sign_in' && Number(record.sessionStatus) === 1 && !record.signOutTime
 }
 
-function getAttendancePhoto(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
-  if (record.action === 'sign_out')
+function getAttendancePhoto(record: Partial<FaceAttendanceRecordItem> | Record<string, any>, action = String(record.action || '')) {
+  if (action === 'sign_out')
     return String(record.signOutImage || '').trim()
-  if (record.action === 'sign_in')
+  if (action === 'sign_in')
     return String(record.signInImage || '').trim()
   return ''
 }
 
-function getAttendancePhotoTitle(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
-  return record.action === 'sign_out' ? '签退照片' : '签到照片'
+function getAttendancePhotoTitle(action = '') {
+  return action === 'sign_out' ? '签退照片' : '签到照片'
 }
 
-function openAttendancePhoto(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
-  const image = getAttendancePhoto(record)
+function openAttendancePhoto(record: Partial<FaceAttendanceRecordItem> | Record<string, any>, action = String(record.action || '')) {
+  const image = getAttendancePhoto(record, action)
   if (!image)
     return
   previewImage.value = image
-  previewTitle.value = getAttendancePhotoTitle(record)
-  previewTimeText.value = formatDateTime(String(record.actionTime || ''))
+  previewTitle.value = getAttendancePhotoTitle(action)
+  previewTimeText.value = formatDateTime(String(action === 'sign_out' ? record.signOutTime : record.attendanceTime || ''))
   previewVisible.value = true
+}
+
+function getAttendancePrimaryActionLabel(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  if (record.attendanceTime)
+    return '自动签到'
+  return record.actionLabel || '-'
+}
+
+function getAttendanceSecondaryActionLabel(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  if (record.signOutTime)
+    return '自动签退'
+  if (isPendingSignOut(record))
+    return '待签退'
+  return ''
 }
 
 function sexText(value?: number) {
@@ -202,6 +226,7 @@ function getRelatedScheduleItems(record?: Partial<FaceAttendanceRecordItem> | Re
   const relatedSchedules = normalizeStringArray(record.relatedSchedules)
   const length = Math.max(classTimes.length, relatedSchedules.length)
   return Array.from({ length }, (_, index) => ({
+    scheduleId: '',
     classTime: classTimes[index] || '-',
     scheduleName: relatedSchedules[index] || '-',
     rollCallStatus: '-',
@@ -259,9 +284,33 @@ function relatedScheduleRowClassName(record: FaceAttendanceRelatedScheduleItem) 
   return isOverdueUnsignedSchedule(record) ? 'related-schedule-row related-schedule-row--manual' : 'related-schedule-row'
 }
 
+function getRelatedScheduleLessonDay(record?: FaceAttendanceRelatedScheduleItem) {
+  const text = formatSingleLineClassTime(String(record?.classTime || ''))
+  const matched = text.match(/(\d{4}-\d{2}-\d{2})/)
+  return matched?.[1] || ''
+}
+
 function openRelatedScheduleModal(record: Record<string, any>) {
   currentScheduleRecord.value = record as FaceAttendanceRecordItem
   scheduleModalOpen.value = true
+}
+
+function handleGoRollCall(record?: FaceAttendanceRelatedScheduleItem) {
+  const scheduleId = String(record?.scheduleId || '').trim()
+  if (!scheduleId)
+    return
+  currentRollCallScheduleId.value = scheduleId
+  currentRollCallLessonDay.value = getRelatedScheduleLessonDay(record)
+  rollCallDrawerOpen.value = true
+}
+
+async function handleRollCallUpdated() {
+  const currentRecordId = String(currentScheduleRecord.value?.id || '').trim()
+  await loadList()
+  if (currentRecordId) {
+    const nextRecord = dataSource.value.find(item => String(item.id || '').trim() === currentRecordId)
+    currentScheduleRecord.value = nextRecord || null
+  }
 }
 
 function handleCreateTimeFilter(value: unknown) {
@@ -455,28 +504,49 @@ onMounted(() => {
               </template>
               <template v-else-if="column.key === 'signInOutType'">
                 <div class="attendance-action-cell">
-                  <div class="attendance-action-cell__main attendance-action-cell__main--with-icon">
-                    {{ record.actionLabel || '-' }}
+                  <div class="attendance-entry attendance-entry--sign-in">
+                    <span class="attendance-entry__tag">签到</span>
+                    <span class="attendance-entry__text">{{ getAttendancePrimaryActionLabel(record) }}</span>
                     <img
-                      v-if="getAttendancePhoto(record)"
+                      v-if="getAttendancePhoto(record, 'sign_in')"
                       class="attendance-photo-trigger"
                       :src="faceIcon"
                       alt=""
-                      @click="openAttendancePhoto(record)"
+                      @click="openAttendancePhoto(record, 'sign_in')"
                     >
                   </div>
-                  <div v-if="isPendingSignOut(record)" class="attendance-action-cell__sub">
-                    待签退
+                  <div
+                    v-if="getAttendanceSecondaryActionLabel(record)"
+                    class="attendance-entry"
+                    :class="record.signOutTime ? 'attendance-entry--sign-out' : 'attendance-entry--pending'"
+                  >
+                    <span class="attendance-entry__tag">签退</span>
+                    <span class="attendance-entry__text">{{ getAttendanceSecondaryActionLabel(record) }}</span>
+                    <img
+                      v-if="record.signOutTime && getAttendancePhoto(record, 'sign_out')"
+                      class="attendance-photo-trigger"
+                      :src="faceIcon"
+                      alt=""
+                      @click="openAttendancePhoto(record, 'sign_out')"
+                    >
                   </div>
                 </div>
               </template>
               <template v-else-if="column.key === 'signInOutTime'">
                 <div class="attendance-action-cell">
-                  <div class="attendance-action-cell__main attendance-action-cell__time">
-                    {{ formatDateTime(record.actionTime) }}
+                  <div class="attendance-entry attendance-entry--sign-in">
+                    <span class="attendance-entry__tag">签到</span>
+                    <span class="attendance-entry__text attendance-entry__text--time">{{ formatDateTime(record.attendanceTime) }}</span>
                   </div>
-                  <div v-if="isPendingSignOut(record)" class="attendance-action-cell__sub">
-                    -
+                  <div
+                    v-if="record.signOutTime || isPendingSignOut(record)"
+                    class="attendance-entry"
+                    :class="record.signOutTime ? 'attendance-entry--sign-out' : 'attendance-entry--pending'"
+                  >
+                    <span class="attendance-entry__tag">签退</span>
+                    <span class="attendance-entry__text attendance-entry__text--time">
+                      {{ record.signOutTime ? formatDateTime(record.signOutTime) : '待签退' }}
+                    </span>
                   </div>
                 </div>
               </template>
@@ -511,7 +581,7 @@ onMounted(() => {
     <a-modal
       v-model:open="scheduleModalOpen"
       title="相关日程"
-      width="680px"
+      width="920px"
       :footer="null"
       destroy-on-close
     >
@@ -521,28 +591,56 @@ onMounted(() => {
         :data-source="relatedScheduleDataSource"
         :pagination="false"
         :row-class-name="relatedScheduleRowClassName"
+        :scroll="{ x: 860 }"
         size="small"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'classTime'">
-            {{ formatSingleLineClassTime(record.classTime) }}
+            <span class="related-schedule-time">
+              {{ formatSingleLineClassTime(record.classTime) }}
+            </span>
           </template>
           <template v-else-if="column.key === 'scheduleName'">
             <div class="related-schedule-name-cell">
-              <span>{{ record.scheduleName || '-' }}</span>
+              <span class="related-schedule-name-text" :title="record.scheduleName || '-'">{{ record.scheduleName || '-' }}</span>
               <span v-if="isOverdueUnsignedSchedule(record)" class="related-schedule-hint">
                 已过上课时间
               </span>
             </div>
           </template>
           <template v-else-if="column.key === 'rollCallStatus'">
-            <span :class="relatedScheduleStatusClass(record)">
-              {{ relatedScheduleStatusText(record) }}
-            </span>
+            <div class="related-schedule-status-cell">
+              <span :class="relatedScheduleStatusClass(record)">
+                {{ relatedScheduleStatusText(record) }}
+              </span>
+            </div>
+          </template>
+          <template v-else-if="column.key === 'action'">
+            <div class="related-schedule-action-cell">
+              <a-button
+                v-if="isOverdueUnsignedSchedule(record) && record.scheduleId"
+                type="link"
+                size="small"
+                class="px-0"
+                @click="handleGoRollCall(record)"
+              >
+                去点名
+              </a-button>
+              <template v-else>
+                -
+              </template>
+            </div>
           </template>
         </template>
       </a-table>
     </a-modal>
+    <RollCallDrawer
+      v-model:open="rollCallDrawerOpen"
+      :schedule-id="currentRollCallScheduleId"
+      :lesson-day="currentRollCallLessonDay"
+      @updated="handleRollCallUpdated"
+      @confirmed="handleRollCallUpdated"
+    />
     <a-modal v-model:open="previewVisible" :title="previewTitle" :footer="null" @cancel="previewVisible = false">
       <div class="attendance-preview">
         <img alt="attendance" class="attendance-preview__image" :src="previewImage">
@@ -619,7 +717,29 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-width: 0;
+}
+
+.related-schedule-time,
+.related-schedule-status-cell,
+.related-schedule-action-cell {
+  white-space: nowrap;
+}
+
+.related-schedule-name-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1f2937;
+}
+
+.related-schedule-status-cell,
+.related-schedule-action-cell {
+  display: flex;
+  align-items: center;
 }
 
 .related-schedule-hint {
@@ -671,30 +791,57 @@ onMounted(() => {
 .attendance-action-cell {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  line-height: 20px;
-}
-
-.attendance-action-cell__main {
-  color: #222;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.attendance-action-cell__main--with-icon {
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
 }
 
-.attendance-action-cell__time {
+.attendance-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.attendance-entry__tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.attendance-entry__text {
+  color: #334155;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.attendance-entry__text--time {
   font-variant-numeric: tabular-nums;
 }
 
-.attendance-action-cell__sub {
-  color: #8c8c8c;
-  font-size: 12px;
-  line-height: 18px;
+.attendance-entry--sign-in .attendance-entry__tag {
+  color: #1668dc;
+  background: #e8f3ff;
+}
+
+.attendance-entry--sign-out .attendance-entry__tag {
+  color: #1f8f55;
+  background: #edf9f2;
+}
+
+.attendance-entry--pending .attendance-entry__tag {
+  color: #ad6800;
+  background: #fff7e6;
+}
+
+.attendance-entry--pending .attendance-entry__text {
+  color: #935f00;
 }
 
 .attendance-photo-trigger {

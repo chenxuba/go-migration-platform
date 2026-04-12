@@ -31,6 +31,7 @@ export interface FaceAttendanceRecord {
 }
 
 export interface FaceAttendanceRelatedScheduleItem {
+  scheduleId?: string
   classTime?: string
   scheduleName?: string
   rollCallStatus?: string

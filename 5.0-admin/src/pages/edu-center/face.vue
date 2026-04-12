@@ -86,8 +86,6 @@ function getAttendancePrimaryTime(item) {
 function getAttendanceSecondaryTime(item) {
   if (!item)
     return ''
-  if (Number(item.status || 0) === 2)
-    return formatDate(item.signOutTime || item.latestTime)
   return ''
 }
 
@@ -96,8 +94,10 @@ function getAttendanceFooterText(item) {
     return ''
   if (item.hasSchedule === false)
     return '考勤当日无排课计划'
-  if (Number(item?.status || 0) === 2)
-    return '已完成当日考勤'
+  if (Number(item?.status || 0) === 2) {
+    const signOutText = formatFullDate(item.signOutTime || item.latestTime)
+    return signOutText ? `签退时间 ${signOutText}` : ''
+  }
   return '等待签退'
 }
 

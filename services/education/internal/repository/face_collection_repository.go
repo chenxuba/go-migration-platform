@@ -751,28 +751,15 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 			IFNULL(fas.sign_in_image, '') AS sign_in_image,
 			IFNULL(fas.sign_out_image, '') AS sign_out_image,
 			fas.sign_in_time AS sign_in_time,
-			fas.sign_in_time AS action_time,
+			COALESCE(fas.sign_out_time, fas.sign_in_time) AS action_time,
 			fas.sign_out_time AS sign_out_time,
-			'sign_in' AS action
+			CASE
+				WHEN fas.sign_out_time IS NOT NULL THEN 'sign_out'
+				ELSE 'sign_in'
+			END AS action
 		FROM inst_student_face_attendance_session fas
 		WHERE fas.del_flag = 0
 		  AND fas.sign_in_time IS NOT NULL
-		UNION ALL
-		SELECT
-			fas.id AS session_id,
-			fas.inst_id,
-			fas.student_id,
-			DATE_FORMAT(fas.attendance_date, '%Y-%m-%d') AS attendance_date,
-			IFNULL(fas.status, 0) AS session_status,
-			IFNULL(fas.sign_in_image, '') AS sign_in_image,
-			IFNULL(fas.sign_out_image, '') AS sign_out_image,
-			fas.sign_in_time AS sign_in_time,
-			fas.sign_out_time AS action_time,
-			fas.sign_out_time AS sign_out_time,
-			'sign_out' AS action
-		FROM inst_student_face_attendance_session fas
-		WHERE fas.del_flag = 0
-		  AND fas.sign_out_time IS NOT NULL
 	`
 
 	filters := []string{"src.inst_id = ?"}
@@ -892,7 +879,7 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 		); err != nil {
 			return model.PageResult[model.FaceAttendanceRecordItem]{}, err
 		}
-		item.ID = fmt.Sprintf("%d:%s", item.SessionID, action)
+		item.ID = fmt.Sprintf("%d", item.SessionID)
 		item.Action = action
 		item.ActionLabel = faceAttendanceActionLabel(action)
 		item.AttendanceType = "人脸考勤"
@@ -1146,6 +1133,7 @@ func (repo *Repository) loadFaceAttendanceRecordSessionSummaries(ctx context.Con
 				summary.RelatedSchedules = append(summary.RelatedSchedules, relatedScheduleText)
 			}
 			summary.RelatedScheduleItems = append(summary.RelatedScheduleItems, model.FaceAttendanceRelatedScheduleItem{
+				ScheduleID:     fmt.Sprintf("%d", scheduleID),
 				ClassTime:      classTimeText,
 				ScheduleName:   relatedScheduleText,
 				RollCallStatus: strings.TrimSpace(rollCallStatus),

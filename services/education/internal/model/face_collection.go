@@ -132,6 +132,7 @@ type FaceAttendanceRecordFilter struct {
 }
 
 type FaceAttendanceRelatedScheduleItem struct {
+	ScheduleID     string `json:"scheduleId,omitempty"`
 	ClassTime      string `json:"classTime,omitempty"`
 	ScheduleName   string `json:"scheduleName,omitempty"`
 	RollCallStatus string `json:"rollCallStatus,omitempty"`
