@@ -274,7 +274,10 @@ func (repo *Repository) GetStudentTeachingRecordPagedList(ctx context.Context, i
 			updated_staff_name,
 			DATE_FORMAT(record_time, '%Y-%m-%dT%H:%i:%s'),
 			quantity,
-			actual_quantity,
+			CASE
+				WHEN IFNULL(arrear_quantity, 0) > 0 AND IFNULL(actual_tuition, 0) <= 0 THEN 0
+				ELSE IFNULL(actual_quantity, 0)
+			END AS actual_quantity,
 			amount,
 			sku_mode,
 			actual_deduct,
@@ -415,7 +418,12 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 		return model.ScheduleTeachingRecordPagedResult{}, err
 	}
 	if err := repo.db.QueryRowContext(ctx, `
-		SELECT IFNULL(SUM(actual_quantity), 0)
+		SELECT IFNULL(SUM(
+			CASE
+				WHEN IFNULL(arrear_quantity, 0) > 0 AND IFNULL(actual_tuition, 0) <= 0 THEN 0
+				ELSE IFNULL(actual_quantity, 0)
+			END
+		), 0)
 		FROM student_teaching_record
 		WHERE `+studentFragments.whereSQL, studentFragments.args...).Scan(&result.TotalClassTimes); err != nil {
 		return model.ScheduleTeachingRecordPagedResult{}, err
@@ -448,7 +456,12 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 			END AS attendance_rate,
 			SUM(CASE WHEN source_type <> 4 AND status = 1 THEN 1 ELSE 0 END) AS attend_count,
 			SUM(CASE WHEN source_type <> 4 THEN 1 ELSE 0 END) AS should_attend_count,
-			IFNULL(SUM(actual_quantity), 0),
+			IFNULL(SUM(
+				CASE
+					WHEN IFNULL(arrear_quantity, 0) > 0 AND IFNULL(actual_tuition, 0) <= 0 THEN 0
+					ELSE IFNULL(actual_quantity, 0)
+				END
+			), 0),
 			IFNULL(SUM(actual_tuition), 0),
 			MAX(main_teacher_name),
 			MAX(CAST(assistant_teacher_names_json AS CHAR(1000))),
@@ -623,7 +636,10 @@ func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int6
 			str.status,
 			str.source_type,
 			IFNULL(str.quantity, 0),
-			IFNULL(str.actual_quantity, 0),
+			CASE
+				WHEN IFNULL(str.arrear_quantity, 0) > 0 AND IFNULL(str.actual_tuition, 0) <= 0 THEN 0
+				ELSE IFNULL(str.actual_quantity, 0)
+			END,
 			str.remark,
 			str.external_remark,
 			CAST(str.tuition_account_id AS CHAR),

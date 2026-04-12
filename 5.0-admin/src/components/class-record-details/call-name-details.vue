@@ -187,6 +187,14 @@ function formatCurrency(value?: number) {
   return `¥ ${Number(value || 0).toFixed(0)}`
 }
 
+function displayConsumedQuantity(record: Partial<TeachingRecordDetailStudent>) {
+  const arrearQuantity = Number(record.arrearQuantity || 0)
+  const actualTuition = Number(record.actualTuition || 0)
+  if (arrearQuantity > 0 && actualTuition <= 0)
+    return 0
+  return Number(record.actualQuantity || 0)
+}
+
 function sourceTypeText(value?: number) {
   const type = Number(value || 0)
   if (type === 2)
@@ -491,7 +499,7 @@ function handleBillingModeFilter(value: unknown) {
                 {{ isTrialStudent(record) || isTimeChargingMode(record) ? '不记课时' : formatNumber(record.quantity, '课时') }}
               </template>
               <template v-if="column.key === 'useNum'">
-                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(record.actualQuantity, '课时') }}
+                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(displayConsumedQuantity(record), '课时') }}
               </template>
               <template v-if="column.key === 'oweNum'">
                 <span :class="{ 'owe-num-text': hasArrearQuantity(record) }">

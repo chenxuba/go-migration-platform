@@ -239,6 +239,14 @@ function attendanceRateText(record: Partial<ScheduleTeachingRecordItem> | Record
   return `${Math.round(Number(record.attendanceRate || 0) * 100)}%`
 }
 
+function displayConsumedQuantity(record: Partial<ScheduleTeachingRecordItem> | Record<string, any>) {
+  const actualTuition = Number(record.actualTuition || 0)
+  const actualQuantity = Number(record.actualQuantity || 0)
+  if (actualTuition <= 0 && actualQuantity > 0)
+    return 0
+  return actualQuantity
+}
+
 function buildQueryModel() {
   return {
     beginStartTime: filterDateRange.value[0]?.format('YYYY-MM-DD'),
@@ -416,7 +424,7 @@ onMounted(() => {
                 {{ scheduleTypeText(record.timetableSourceType) }}
               </template>
               <template v-if="column.key === 'useNum'">
-                {{ formatNumber(record.actualQuantity, '课时') }}
+                {{ formatNumber(displayConsumedQuantity(record), '课时') }}
               </template>
               <template v-if="column.key === 'callStatus'">
                 {{ rollCallStatusText(record.rollCallStatus) }}

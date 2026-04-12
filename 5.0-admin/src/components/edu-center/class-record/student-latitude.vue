@@ -457,6 +457,14 @@ function hasArrearQuantity(record: Partial<StudentTeachingRecordItem> | Record<s
   return Number(record?.arrearQuantity || 0) > 0
 }
 
+function displayConsumedQuantity(record: Partial<StudentTeachingRecordItem> | Record<string, any>) {
+  const arrearQuantity = Number(record?.arrearQuantity || 0)
+  const actualTuition = Number(record?.actualTuition || 0)
+  if (arrearQuantity > 0 && actualTuition <= 0)
+    return 0
+  return Number(record?.actualQuantity || 0)
+}
+
 function classDisplay(record: Partial<StudentTeachingRecordItem> | Record<string, any>) {
   return record.className || record.one2OneName || '-'
 }

@@ -297,6 +297,14 @@ function hasArrearQuantity(record: Partial<StudentTeachingRecordItem>) {
   return Number(record.arrearQuantity || 0) > 0
 }
 
+function displayConsumedQuantity(record: Partial<StudentTeachingRecordItem>) {
+  const arrearQuantity = Number(record.arrearQuantity || 0)
+  const actualTuition = Number(record.actualTuition || 0)
+  if (arrearQuantity > 0 && actualTuition <= 0)
+    return 0
+  return Number(record.actualQuantity || 0)
+}
+
 function classDisplay(record: Partial<StudentTeachingRecordItem>) {
   return record.className || record.one2OneName || '-'
 }
@@ -561,7 +569,7 @@ watch(
                 {{ isTrialStudent(record) || isTimeChargingMode(record) ? '不记课时' : formatNumber(record.quantity, '课时') }}
               </template>
               <template v-else-if="column.key === 'useNum'">
-                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(record.actualQuantity, '课时') }}
+                {{ isTrialStudent(record) || isTimeChargingMode(record) ? '-' : formatNumber(displayConsumedQuantity(record), '课时') }}
               </template>
               <template v-else-if="column.key === 'oweNum'">
                 <span :class="{ 'owe-num-text': hasArrearQuantity(record) }">
