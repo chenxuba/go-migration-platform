@@ -532,7 +532,8 @@ function startFaceDetection() {
     }
     catch (error) {
       console.error('Face detection error:', error)
-      clearInterval(detectionInterval.value)
+      isFaceDetected.value = false
+      faceDescriptor.value = null
     }
     finally {
       isProcessing = false
@@ -975,7 +976,15 @@ function startAttendance() {
 
   // 设置状态以隐藏准备区域
   isAttendanceStarted.value = true
+  showCooldownMessage.value = false
   speakMessage('开始考勤')
+
+  if (videoStream.value) {
+    startFaceDetection()
+  }
+  else if (isModelLoaded.value) {
+    startVideo()
+  }
 
   // 直接开始人脸识别
   if (faceDescriptor.value) {
