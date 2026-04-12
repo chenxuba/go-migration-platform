@@ -628,6 +628,21 @@ func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int6
 		return model.TeachingRecordDetailResult{}, errors.New("上课记录ID无效")
 	}
 
+	var exists int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT 1
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND teaching_record_id = ?
+		LIMIT 1
+	`, instID, teachingRecordID).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.TeachingRecordDetailResult{}, nil
+		}
+		return model.TeachingRecordDetailResult{}, err
+	}
+
 	var result model.TeachingRecordDetailResult
 	var mainTeacherID int64
 	var mainTeacherName string

@@ -24,6 +24,7 @@ const editRollNameModal = ref(false)
 const loading = ref(false)
 const deleting = ref(false)
 const detailData = ref<TeachingRecordDetailResult | null>(null)
+const hasDetail = computed(() => String(detailData.value?.teachingRecordId || '').trim() !== '')
 
 const openDrawer = computed({
   get: () => props.open,
@@ -122,9 +123,10 @@ async function loadDetail() {
     const res = await getTeachingRecordDetailApi({ teachingRecordId })
     if (seq !== loadSeq)
       return
-    if (res.code !== 200 || !res.result)
+    if (res.code !== 200)
       throw new Error(res.message || '加载上课记录详情失败')
-    detailData.value = res.result
+    const data = res.result
+    detailData.value = data && String(data.teachingRecordId || '').trim() ? data : null
   }
   catch (error: any) {
     if (seq !== loadSeq)
@@ -160,7 +162,7 @@ watch(
     <a-drawer
       v-model:open="openDrawer"
       :push="{ distance: 80 }"
-      :body-style="{ padding: '0', background: '#f7f7fd' }"
+      :body-style="{ padding: '0', background: hasDetail ? '#f7f7fd' : '#fff' }"
       :closable="false"
       width="1165px"
       placement="right"
@@ -179,80 +181,85 @@ watch(
       </template>
 
       <a-spin :spinning="loading">
-        <div class="contenter flex flex-center bg-white px6 py3">
-          <div class="avatarBox w-16 h-16 relative">
-            <img width="64" height="64" class="rounded-100" :src="sourceCover" alt="">
-          </div>
-          <div class="info flex flex-1 ml-4 flex-col">
-            <div class="top flex justify-between flex-center flex-1">
-              <a-space>
-                <div class="name text-5 font-800">
-                  {{ headerTitle }}
-                </div>
-              </a-space>
-              <a-space>
-                <a-button danger ghost @click="handleDelete">
-                  删除
-                </a-button>
-                <a-button type="primary" @click="handleEditRollName">
-                  编辑点名
-                </a-button>
-                <a-button type="primary">
-                  课堂点评
-                </a-button>
-                <a-button type="primary">
-                  课后任务
-                </a-button>
-              </a-space>
+        <template v-if="hasDetail">
+          <div class="contenter flex flex-center bg-white px6 py3">
+            <div class="avatarBox w-16 h-16 relative">
+              <img width="64" height="64" class="rounded-100" :src="sourceCover" alt="">
             </div>
-            <div class="bottom flex-1 flex flex-items-center mt-2">
-              <div class="birthday flex-center">
-                <span class="text-4 text-#222">{{ timeText }}</span>
-                <span class="bg-#e6f0ff text-#06f text-3 px2 py1 rounded-10 ml2">{{ classDurationText }}</span>
+            <div class="info flex flex-1 ml-4 flex-col">
+              <div class="top flex justify-between flex-center flex-1">
+                <a-space>
+                  <div class="name text-5 font-800">
+                    {{ headerTitle }}
+                  </div>
+                </a-space>
+                <a-space>
+                  <a-button danger ghost @click="handleDelete">
+                    删除
+                  </a-button>
+                  <a-button type="primary" @click="handleEditRollName">
+                    编辑点名
+                  </a-button>
+                  <a-button type="primary">
+                    课堂点评
+                  </a-button>
+                  <a-button type="primary">
+                    课后任务
+                  </a-button>
+                </a-space>
+              </div>
+              <div class="bottom flex-1 flex flex-items-center mt-2">
+                <div class="birthday flex-center">
+                  <span class="text-4 text-#222">{{ timeText }}</span>
+                  <span class="bg-#e6f0ff text-#06f text-3 px2 py1 rounded-10 ml2">{{ classDurationText }}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <div class="desc pt-4 bg-white px6 py3 pb0">
-          <a-descriptions :column="4" size="small" :content-style="{ color: '#888' }">
-            <a-descriptions-item label="上课老师">
-              {{ mainTeacherText }}
-            </a-descriptions-item>
-            <a-descriptions-item label="上课助教">
-              {{ assistantTeacherText }}
-            </a-descriptions-item>
-            <a-descriptions-item label="上课教室">
-              {{ detailData?.classRoomName || '-' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="本次上课">
-              {{ teacherClassTimeText }}
-            </a-descriptions-item>
-            <a-descriptions-item label="创建时间">
-              {{ createdText }}
-            </a-descriptions-item>
-            <a-descriptions-item label="科目">
-              {{ detailData?.subjectName || '-' }}
-            </a-descriptions-item>
-            <a-descriptions-item>
-              <span class="text-#06f cursor-pointer" @click="handleEditClassInfo">编辑上课信息</span>
-            </a-descriptions-item>
-          </a-descriptions>
-        </div>
+          <div class="desc pt-4 bg-white px6 py3 pb0">
+            <a-descriptions :column="4" size="small" :content-style="{ color: '#888' }">
+              <a-descriptions-item label="上课老师">
+                {{ mainTeacherText }}
+              </a-descriptions-item>
+              <a-descriptions-item label="上课助教">
+                {{ assistantTeacherText }}
+              </a-descriptions-item>
+              <a-descriptions-item label="上课教室">
+                {{ detailData?.classRoomName || '-' }}
+              </a-descriptions-item>
+              <a-descriptions-item label="本次上课">
+                {{ teacherClassTimeText }}
+              </a-descriptions-item>
+              <a-descriptions-item label="创建时间">
+                {{ createdText }}
+              </a-descriptions-item>
+              <a-descriptions-item label="科目">
+                {{ detailData?.subjectName || '-' }}
+              </a-descriptions-item>
+              <a-descriptions-item>
+                <span class="text-#06f cursor-pointer" @click="handleEditClassInfo">编辑上课信息</span>
+              </a-descriptions-item>
+            </a-descriptions>
+          </div>
 
-        <div class="tabs">
-          <a-tabs
-            v-model:active-key="activeKey"
-            size="large"
-            :tab-bar-style="{ 'border-radius': '0px', 'padding-left': '24px' }"
-          >
-            <a-tab-pane key="0" tab="点名详情">
-              <call-name-details :detail="detailData" :loading="loading" />
-            </a-tab-pane>
-            <a-tab-pane key="1" tab="点名变更记录">
-              <call-name-change-details />
-            </a-tab-pane>
-          </a-tabs>
+          <div class="tabs">
+            <a-tabs
+              v-model:active-key="activeKey"
+              size="large"
+              :tab-bar-style="{ 'border-radius': '0px', 'padding-left': '24px' }"
+            >
+              <a-tab-pane key="0" tab="点名详情">
+                <call-name-details :detail="detailData" :loading="loading" />
+              </a-tab-pane>
+              <a-tab-pane key="1" tab="点名变更记录">
+                <call-name-change-details />
+              </a-tab-pane>
+            </a-tabs>
+          </div>
+        </template>
+        <div v-else class="deleted-empty-state flex flex-center bg-white">
+          <a-empty description="当前上课点名记录已被删除" />
         </div>
       </a-spin>
     </a-drawer>
@@ -340,5 +347,9 @@ watch(
       content: "";
     }
   }
+}
+
+.deleted-empty-state {
+  min-height: calc(100vh - 55px);
 }
 </style>

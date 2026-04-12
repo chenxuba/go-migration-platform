@@ -575,7 +575,6 @@ func (repo *Repository) nextRollCallTeachingRecordIDTx(ctx context.Context, tx *
 	if err := tx.QueryRowContext(ctx, `
 		SELECT IFNULL(GREATEST(MAX(id), MAX(teaching_record_id)), 0) + 1
 		FROM student_teaching_record
-		WHERE del_flag = 0
 	`).Scan(&nextID); err != nil {
 		return 0, err
 	}
