@@ -145,6 +145,10 @@ function formatDateTime(value?: string) {
   return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : '-'
 }
 
+function isPendingSignOut(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  return record.action === 'sign_in' && Number(record.sessionStatus) === 1 && !record.signOutTime
+}
+
 function sexText(value?: number) {
   if (Number(value) === 1)
     return '男'
@@ -335,10 +339,24 @@ onMounted(() => {
                 {{ record.attendanceType || '人脸考勤' }}
               </template>
               <template v-else-if="column.key === 'signInOutType'">
-                {{ record.actionLabel || '-' }}
+                <div class="attendance-action-cell">
+                  <div class="attendance-action-cell__main">
+                    {{ record.actionLabel || '-' }}
+                  </div>
+                  <div v-if="isPendingSignOut(record)" class="attendance-action-cell__sub">
+                    待签退
+                  </div>
+                </div>
               </template>
               <template v-else-if="column.key === 'signInOutTime'">
-                {{ formatDateTime(record.actionTime) }}
+                <div class="attendance-action-cell">
+                  <div class="attendance-action-cell__main attendance-action-cell__time">
+                    {{ formatDateTime(record.actionTime) }}
+                  </div>
+                  <div v-if="isPendingSignOut(record)" class="attendance-action-cell__sub">
+                    -
+                  </div>
+                </div>
               </template>
               <template v-else-if="column.key === 'schedulePlan'">
                 {{ record.hasSchedule ? '有' : '无' }}
@@ -437,5 +455,28 @@ onMounted(() => {
 .roll-call-status--unsigned {
   color: #8a5a00;
   background: #fff6e8;
+}
+
+.attendance-action-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 20px;
+}
+
+.attendance-action-cell__main {
+  color: #222;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.attendance-action-cell__time {
+  font-variant-numeric: tabular-nums;
+}
+
+.attendance-action-cell__sub {
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 18px;
 }
 </style>

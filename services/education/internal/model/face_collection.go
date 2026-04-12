@@ -143,11 +143,13 @@ type FaceAttendanceRecordItem struct {
 	StudentSex           int                                 `json:"studentSex"`
 	IsCollect            bool                                `json:"isCollect"`
 	AttendanceDate       string                              `json:"attendanceDate,omitempty"`
+	SessionStatus        int                                 `json:"sessionStatus"`
 	AttendanceType       string                              `json:"attendanceType,omitempty"`
 	Action               string                              `json:"action"`
 	ActionLabel          string                              `json:"actionLabel,omitempty"`
 	AttendanceTime       *time.Time                          `json:"attendanceTime,omitempty"`
 	ActionTime           *time.Time                          `json:"actionTime,omitempty"`
+	SignOutTime          *time.Time                          `json:"signOutTime,omitempty"`
 	HasSchedule          bool                                `json:"hasSchedule"`
 	ClassTimes           []string                            `json:"classTimes,omitempty"`
 	RelatedSchedules     []string                            `json:"relatedSchedules,omitempty"`

@@ -46,11 +46,13 @@ export interface FaceAttendanceRecordItem {
   studentSex?: number
   isCollect?: boolean
   attendanceDate?: string
+  sessionStatus?: number
   attendanceType?: string
   action?: string
   actionLabel?: string
   attendanceTime?: string
   actionTime?: string
+  signOutTime?: string
   hasSchedule?: boolean
   classTimes?: string[]
   relatedSchedules?: string[]

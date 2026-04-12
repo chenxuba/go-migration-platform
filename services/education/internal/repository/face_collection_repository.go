@@ -745,7 +745,9 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 			fas.inst_id,
 			fas.student_id,
 			DATE_FORMAT(fas.attendance_date, '%Y-%m-%d') AS attendance_date,
+			IFNULL(fas.status, 0) AS session_status,
 			fas.sign_in_time AS action_time,
+			fas.sign_out_time AS sign_out_time,
 			'sign_in' AS action
 		FROM inst_student_face_attendance_session fas
 		WHERE fas.del_flag = 0
@@ -756,7 +758,9 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 			fas.inst_id,
 			fas.student_id,
 			DATE_FORMAT(fas.attendance_date, '%Y-%m-%d') AS attendance_date,
+			IFNULL(fas.status, 0) AS session_status,
 			fas.sign_out_time AS action_time,
+			fas.sign_out_time AS sign_out_time,
 			'sign_out' AS action
 		FROM inst_student_face_attendance_session fas
 		WHERE fas.del_flag = 0
@@ -800,7 +804,9 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 			src.session_id,
 			src.student_id,
 			src.attendance_date,
+			src.session_status,
 			src.action_time,
+			src.sign_out_time,
 			src.action,
 			IFNULL(stu.stu_name, ''),
 			IFNULL(stu.mobile, ''),
@@ -826,17 +832,20 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 	seenSessionIDs := make(map[int64]struct{}, size)
 	for rows.Next() {
 		var (
-			item       model.FaceAttendanceRecordItem
-			actionTime sql.NullTime
-			action     string
-			mobile     string
-			isCollect  int
+			item        model.FaceAttendanceRecordItem
+			actionTime  sql.NullTime
+			signOutTime sql.NullTime
+			action      string
+			mobile      string
+			isCollect   int
 		)
 		if err := rows.Scan(
 			&item.SessionID,
 			&item.StudentID,
 			&item.AttendanceDate,
+			&item.SessionStatus,
 			&actionTime,
+			&signOutTime,
 			&action,
 			&item.StudentName,
 			&mobile,
@@ -856,6 +865,10 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 			t := actionTime.Time
 			item.AttendanceTime = &t
 			item.ActionTime = &t
+		}
+		if signOutTime.Valid {
+			t := signOutTime.Time
+			item.SignOutTime = &t
 		}
 		items = append(items, item)
 		if _, exists := seenSessionIDs[item.SessionID]; !exists {

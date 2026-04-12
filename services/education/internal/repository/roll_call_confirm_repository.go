@@ -45,7 +45,8 @@ type rollCallConfirmAccount struct {
 }
 
 type rollCallConfirmOptions struct {
-	RecordTime *time.Time
+	RecordTime   *time.Time
+	OperatorName string
 }
 
 func (repo *Repository) CheckRollCallTeachingRecordByTeacherAndTime(ctx context.Context, instID int64, dto model.RollCallCheckTeachingRecordByTeacherAndTimeDTO) error {
@@ -205,8 +206,14 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 		return model.RollCallConfirmResult{}, err
 	}
 
-	operatorName := repo.GetStaffNameByID(ctx, &operatorID)
-	if operatorID <= 0 || strings.TrimSpace(operatorName) == "" || strings.HasPrefix(operatorName, "未知(") {
+	operatorName := strings.TrimSpace(options.OperatorName)
+	if operatorName == "" {
+		operatorName = repo.GetStaffNameByID(ctx, &operatorID)
+	}
+	if operatorID <= 0 && operatorName == "" {
+		operatorName = "系统自动点名"
+	}
+	if strings.TrimSpace(operatorName) == "" || strings.HasPrefix(operatorName, "未知(") {
 		operatorName = "系统自动点名"
 	}
 

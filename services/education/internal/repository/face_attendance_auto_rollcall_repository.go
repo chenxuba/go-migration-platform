@@ -437,7 +437,8 @@ func (repo *Repository) confirmFaceAttendanceAutoRollCallTaskTx(ctx context.Cont
 		SubjectID:   "0",
 		ClassRoomID: firstNonEmptyString(rollCallData.Data.ClassroomID, detail.ClassroomID, "0"),
 	}, rollCallConfirmOptions{
-		RecordTime: &recordTime,
+		RecordTime:   &recordTime,
+		OperatorName: "系统自动点名",
 	})
 	if err != nil {
 		return 0, err
