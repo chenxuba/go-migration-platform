@@ -375,7 +375,6 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 						%s,
 						%s
 					FROM student_teaching_record
-					WHERE del_flag = 0
 					GROUP BY inst_id, teaching_record_id
 				) %s ON %s.inst_id = taf.inst_id AND %s.teaching_record_id = taf.teaching_record_id`,
 					recordStudentStartTimeExpr,

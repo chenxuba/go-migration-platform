@@ -95,7 +95,6 @@ func (repo *Repository) buildTuitionAccountFlowTeachingCourseFragments(
 					%s,
 					%s
 				FROM student_teaching_record
-				WHERE del_flag = 0
 				GROUP BY inst_id, teaching_record_id
 			) %s ON %s.inst_id = %s AND %s.teaching_record_id = %s`,
 				recordStudentLessonIDExpr,
