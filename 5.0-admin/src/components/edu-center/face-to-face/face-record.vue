@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
 import { pageFaceAttendanceRecordsApi, type FaceAttendanceRecordItem, type FaceAttendanceRelatedScheduleItem } from '@/api/edu-center/face'
+import faceIcon from '@/assets/images/face.png'
 import StudentAvatar from '@/components/common/StudentAvatar.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 
@@ -17,6 +18,9 @@ const pagination = ref({
 const selectedRowKeys = ref<string[]>([])
 const scheduleModalOpen = ref(false)
 const currentScheduleRecord = ref<FaceAttendanceRecordItem | null>(null)
+const previewVisible = ref(false)
+const previewImage = ref('')
+const previewTitle = ref('')
 
 const allColumns = ref([
   {
@@ -147,6 +151,27 @@ function formatDateTime(value?: string) {
 
 function isPendingSignOut(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
   return record.action === 'sign_in' && Number(record.sessionStatus) === 1 && !record.signOutTime
+}
+
+function getAttendancePhoto(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  if (record.action === 'sign_out')
+    return String(record.signOutImage || '').trim()
+  if (record.action === 'sign_in')
+    return String(record.signInImage || '').trim()
+  return ''
+}
+
+function getAttendancePhotoTitle(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  return record.action === 'sign_out' ? '签退照片' : '签到照片'
+}
+
+function openAttendancePhoto(record: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  const image = getAttendancePhoto(record)
+  if (!image)
+    return
+  previewImage.value = image
+  previewTitle.value = getAttendancePhotoTitle(record)
+  previewVisible.value = true
 }
 
 function sexText(value?: number) {
@@ -340,8 +365,15 @@ onMounted(() => {
               </template>
               <template v-else-if="column.key === 'signInOutType'">
                 <div class="attendance-action-cell">
-                  <div class="attendance-action-cell__main">
+                  <div class="attendance-action-cell__main attendance-action-cell__main--with-icon">
                     {{ record.actionLabel || '-' }}
+                    <img
+                      v-if="getAttendancePhoto(record)"
+                      class="attendance-photo-trigger"
+                      :src="faceIcon"
+                      alt=""
+                      @click="openAttendancePhoto(record)"
+                    >
                   </div>
                   <div v-if="isPendingSignOut(record)" class="attendance-action-cell__sub">
                     待签退
@@ -404,6 +436,9 @@ onMounted(() => {
           </template>
         </template>
       </a-table>
+    </a-modal>
+    <a-modal v-model:open="previewVisible" :title="previewTitle" :footer="null" @cancel="previewVisible = false">
+      <img alt="attendance" style="width: 100%" :src="previewImage">
     </a-modal>
   </div>
 </template>
@@ -475,6 +510,12 @@ onMounted(() => {
   font-weight: 500;
 }
 
+.attendance-action-cell__main--with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .attendance-action-cell__time {
   font-variant-numeric: tabular-nums;
 }
@@ -483,5 +524,12 @@ onMounted(() => {
   color: #8c8c8c;
   font-size: 12px;
   line-height: 18px;
+}
+
+.attendance-photo-trigger {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  flex: 0 0 auto;
 }
 </style>

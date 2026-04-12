@@ -50,6 +50,8 @@ export interface FaceAttendanceRecordItem {
   attendanceType?: string
   action?: string
   actionLabel?: string
+  signInImage?: string
+  signOutImage?: string
   attendanceTime?: string
   actionTime?: string
   signOutTime?: string

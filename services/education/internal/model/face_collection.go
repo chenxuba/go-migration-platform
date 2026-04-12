@@ -147,6 +147,8 @@ type FaceAttendanceRecordItem struct {
 	AttendanceType       string                              `json:"attendanceType,omitempty"`
 	Action               string                              `json:"action"`
 	ActionLabel          string                              `json:"actionLabel,omitempty"`
+	SignInImage          string                              `json:"signInImage,omitempty"`
+	SignOutImage         string                              `json:"signOutImage,omitempty"`
 	AttendanceTime       *time.Time                          `json:"attendanceTime,omitempty"`
 	ActionTime           *time.Time                          `json:"actionTime,omitempty"`
 	SignOutTime          *time.Time                          `json:"signOutTime,omitempty"`
