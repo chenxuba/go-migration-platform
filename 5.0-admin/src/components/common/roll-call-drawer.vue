@@ -33,7 +33,7 @@ const props = defineProps({
     default: '',
   },
 })
-const emit = defineEmits(['update:open', 'updated'])
+const emit = defineEmits(['update:open', 'updated', 'confirmed'])
 const openDrawer = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
@@ -762,8 +762,11 @@ async function handleConfirmRollCall() {
     if (confirmRes.code !== 200)
       throw new Error(confirmRes.message || '点名提交失败')
 
+    const teachingRecordId = String(confirmRes.result?.id || '').trim()
     messageService.success('点名成功')
     rollCallChanged.value = true
+    if (teachingRecordId)
+      emit('confirmed', teachingRecordId)
     openDrawer.value = false
     showRollCallArrearWarning(Array.from(new Set(insufficientNames)))
   }
@@ -842,6 +845,10 @@ function handleRemoveStudent(record) {
   const scheduleId = String(currentScheduleId.value || '').trim()
   const studentId = String(record?.id || '').trim()
   const name = String(record?.studentAccount || '').trim() || '当前学员'
+  if (!canManageCurrentStudents.value) {
+    messageService.warning('该日程已点名，不可移出')
+    return
+  }
   if (!scheduleId || !studentId) {
     messageService.warning('当前学员缺少移出标识，请刷新后重试')
     return

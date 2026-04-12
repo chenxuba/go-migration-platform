@@ -2598,7 +2598,7 @@ func (repo *Repository) RemoveTeachingScheduleStudentCurrent(ctx context.Context
 		return errors.New("当前仅支持班课学员移出本节")
 	}
 	if row.CallStatus == 2 {
-		return errors.New("已点名日程不可移出本节学员")
+		return errors.New("该日程已点名，不可移出")
 	}
 
 	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{

@@ -68,6 +68,7 @@ const studentStore = useStudentStore()
 const openStudentDrawer = ref(false)
 const rollCallDrawerOpen = ref(false)
 const classRecordDrawerOpen = ref(false)
+const currentTeachingRecordId = ref('')
 const activeStudentTabKey = ref('students')
 const addStudentModalOpen = ref(false)
 const addStudentModalTitle = ref('添加补课学员')
@@ -290,6 +291,8 @@ async function handleAddStudentSuccess() {
 }
 
 function handleStudentReschedule(student: Record<string, any>) {
+  if (!canManageCurrentStudents.value)
+    return
   const name = String(student?.studentName || '').trim() || '当前学员'
   messageService.info(`${name} 的班课调课功能待接入`)
 }
@@ -336,6 +339,7 @@ function handleSingleEditClick() {
 
 function goRollCall() {
   if (Number(detailData.value?.callStatus || 1) === 2) {
+    currentTeachingRecordId.value = String(detailData.value?.teachingRecordId || '').trim()
     classRecordDrawerOpen.value = true
     return
   }
@@ -344,13 +348,22 @@ function goRollCall() {
   rollCallDrawerOpen.value = true
 }
 
+async function handleRollCallConfirmed(teachingRecordId?: string) {
+  const nextTeachingRecordId = String(teachingRecordId || '').trim() || String(detailData.value?.teachingRecordId || '').trim()
+  if (nextTeachingRecordId)
+    currentTeachingRecordId.value = nextTeachingRecordId
+  await loadDetail()
+  if (currentTeachingRecordId.value)
+    classRecordDrawerOpen.value = true
+}
+
 function shouldSkipManualErrorMessage(error: any) {
   return Number(error?.response?.status || 0) === 400
 }
 
 function handleStudentRemove(student: Record<string, any>) {
   if (!canManageCurrentStudents.value) {
-    messageService.warning('已点名日程不可移出本节学员')
+    messageService.warning('该日程已点名，不可移出')
     return
   }
   const name = String(student?.studentName || '').trim() || '当前学员'
@@ -697,11 +710,11 @@ watch(
                         详情
                       </button>
                       <span class="student-action-divider" />
-                      <button type="button" class="student-action-link" @click="handleStudentReschedule(record)">
+                      <button type="button" class="student-action-link" :disabled="!canManageCurrentStudents" @click="handleStudentReschedule(record)">
                         调课
                       </button>
                       <span class="student-action-divider" />
-                      <button type="button" class="student-action-link" @click="handleStudentRemove(record)">
+                      <button type="button" class="student-action-link" :disabled="!canManageCurrentStudents" @click="handleStudentRemove(record)">
                         移出本节
                       </button>
                     </div>
@@ -752,11 +765,11 @@ watch(
                         详情
                       </button>
                       <span class="student-action-divider" />
-                      <button type="button" class="student-action-link" @click="handleStudentReschedule(record)">
+                      <button type="button" class="student-action-link" :disabled="!canManageCurrentStudents" @click="handleStudentReschedule(record)">
                         调课
                       </button>
                       <span class="student-action-divider" />
-                      <button type="button" class="student-action-link" @click="handleStudentRemove(record)">
+                      <button type="button" class="student-action-link" :disabled="!canManageCurrentStudents" @click="handleStudentRemove(record)">
                         移出本节
                       </button>
                     </div>
@@ -774,8 +787,9 @@ watch(
       :schedule-id="scheduleId"
       :lesson-day="detailData?.lessonDate || ''"
       @updated="loadDetail"
+      @confirmed="handleRollCallConfirmed"
     />
-    <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="detailData?.teachingRecordId || ''" />
+    <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="currentTeachingRecordId || detailData?.teachingRecordId || ''" />
     <RollCallAddStudentModal
       v-model:open="addStudentModalOpen"
       :title="addStudentModalTitle"
@@ -959,6 +973,15 @@ watch(
 
 .student-action-link:hover {
   color: #0958d9;
+}
+
+.student-action-link:disabled {
+  color: #bfbfbf;
+  cursor: not-allowed;
+}
+
+.student-action-link:disabled:hover {
+  color: #bfbfbf;
 }
 
 .student-action-divider {

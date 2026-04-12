@@ -75,6 +75,7 @@ const detailData = ref<TeachingScheduleDetail | null>(null)
 const popoverPlacement = ref<'rightTop' | 'rightBottom' | 'leftTop' | 'leftBottom'>('rightTop')
 const rollCallDrawerOpen = ref(false)
 const classRecordDrawerOpen = ref(false)
+const currentTeachingRecordId = ref('')
 let detailLoadSeq = 0
 let lastTriggerNode: HTMLElement | null = null
 let hoverPopoverRoot: HTMLElement | null = null
@@ -379,6 +380,7 @@ function handleBatchCopyMenuClick({ key, domEvent }: { key: string | number, dom
 
 function goRollCall() {
   if (Number(detailData.value?.callStatus || 1) === 2) {
+    currentTeachingRecordId.value = String(detailData.value?.teachingRecordId || '').trim()
     closePopover()
     classRecordDrawerOpen.value = true
     return
@@ -387,6 +389,15 @@ function goRollCall() {
     return
   closePopover()
   rollCallDrawerOpen.value = true
+}
+
+async function handleRollCallConfirmed(teachingRecordId?: string) {
+  const nextTeachingRecordId = String(teachingRecordId || '').trim() || String(detailData.value?.teachingRecordId || '').trim()
+  if (nextTeachingRecordId)
+    currentTeachingRecordId.value = nextTeachingRecordId
+  await loadLatestDetail()
+  if (currentTeachingRecordId.value)
+    classRecordDrawerOpen.value = true
 }
 
 watch(
@@ -598,8 +609,9 @@ watch(
     :schedule-id="String(props.scheduleId || '')"
     :lesson-day="detailData?.lessonDate || ''"
     @updated="loadLatestDetail"
+    @confirmed="handleRollCallConfirmed"
   />
-  <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="detailData?.teachingRecordId || ''" />
+  <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="currentTeachingRecordId || detailData?.teachingRecordId || ''" />
 </template>
 
 <style scoped lang="less">

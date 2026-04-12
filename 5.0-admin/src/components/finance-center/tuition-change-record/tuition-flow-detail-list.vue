@@ -6,6 +6,7 @@ import { useTableColumns } from '@/composables/useTableColumns'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
 import { getRecommenderPageApi } from '@/api/enroll-center/intention-student'
 import { getSubTuitionAccountFlowRecordListApi } from '@/api/finance-center/tuition-account-flow'
+import ClassRecordDetails from '@/components/common/class-record-details.vue'
 import messageService from '@/utils/messageService'
 
 const FLOW_TYPE_GROUPS = [
@@ -82,6 +83,8 @@ const courseOptions = ref([])
 const courseFinished = ref(false)
 const dataSource = ref([])
 const loading = ref(false)
+const openClassRecordDrawer = ref(false)
+const currentTeachingRecordId = ref('')
 const pagination = ref({
   current: 1,
   pageSize: 20,
@@ -363,11 +366,13 @@ function handleTableChange(pag) {
 }
 
 function handleOpenClassRecord(record) {
-  if (!record?.teachingRecordId) {
+  const teachingRecordId = String(record?.teachingRecordId || '').trim()
+  if (!teachingRecordId) {
     messageService.info('暂无上课记录详情')
     return
   }
-  messageService.info('上课记录详情待实现')
+  currentTeachingRecordId.value = teachingRecordId
+  openClassRecordDrawer.value = true
 }
 
 onMounted(async () => {
@@ -570,6 +575,7 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+    <ClassRecordDetails v-model:open="openClassRecordDrawer" :teaching-record-id="currentTeachingRecordId" />
   </div>
 </template>
 
