@@ -770,8 +770,24 @@ func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID in
 	}
 	actionTypes := normalizeFaceAttendanceActionTypes(query.QueryModel.ActionTypes)
 	if len(actionTypes) > 0 {
-		filters = append(filters, "src.action IN ("+sqlPlaceholders(len(actionTypes))+")")
-		args = append(args, stringSliceToAny(actionTypes)...)
+		hasSignIn := false
+		hasSignOut := false
+		for _, actionType := range actionTypes {
+			if actionType == model.FaceAttendanceSessionActionSignIn {
+				hasSignIn = true
+			}
+			if actionType == model.FaceAttendanceSessionActionSignOut {
+				hasSignOut = true
+			}
+		}
+		switch {
+		case hasSignIn && hasSignOut:
+			// 聚合后的记录同时承载签到/签退，两个都选时不过滤动作，保留整条会话。
+		case hasSignIn:
+			filters = append(filters, "src.sign_in_time IS NOT NULL")
+		case hasSignOut:
+			filters = append(filters, "src.sign_out_time IS NOT NULL")
+		}
 	}
 	if beginTime, ok := normalizeFaceAttendanceRecordBoundary(query.QueryModel.BeginSignInTime, false); ok {
 		filters = append(filters, "src.sign_in_time >= ?")
