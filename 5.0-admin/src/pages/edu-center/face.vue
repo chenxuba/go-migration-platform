@@ -3,17 +3,27 @@ import { CheckCircleFilled, ExclamationCircleFilled } from '@ant-design/icons-vu
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import * as faceapi from 'face-api.js'
+import * as qiniu from 'qiniu-js'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import {
   deleteFaceCollectionProfileApi,
   getFaceCollectionProfileApi,
+  listFaceAttendanceRecordsApi,
   listFaceCollectionProfilesApi,
   pageFaceCollectionStudentsApi,
+  saveFaceAttendanceRecordApi,
   saveFaceCollectionProfileApi,
 } from '@/api/edu-center/face'
+import { getQiniuToken } from '@/api/qiniu'
 
 const route = useRoute()
+const CAMERA_WIDTH = 600
+const CAMERA_HEIGHT = 450
+const CAMERA_REQUEST_WIDTH = 600
+const CAMERA_REQUEST_HEIGHT = 450
+const CAMERA_MAX_FPS = 24
+const DETECTION_INTERVAL_MS = 120
 const data = ref(null)
 const student = ref(undefined)
 const studentList = ref([])
@@ -27,6 +37,8 @@ const lastAttendanceTimes = ref({})
 const showCooldownMessage = ref(false)
 // formatDate 格式化时间 07-11 12:23
 function formatDate(timestamp) {
+  if (!timestamp)
+    return ''
   return dayjs(timestamp).format('MM-DD HH:mm')
 }
 
@@ -52,6 +64,7 @@ const isAttendanceStarted = ref(false)
 
 // Store detection interval for cleanup
 const detectionInterval = ref(null)
+let cachedCanvasContext = null
 
 // Mock faceapi if not available for testing purposes
 if (typeof faceapi === 'undefined' || !faceapi) {
@@ -217,6 +230,54 @@ function handleStudentDropdownVisibleChange(open) {
     loadStudentList(studentSearchKey.value)
 }
 
+function dataUrlToFile(dataUrl, fileName) {
+  const [meta, content] = String(dataUrl || '').split(',')
+  const mimeMatch = /data:(.*?);base64/.exec(meta || '')
+  const mimeType = mimeMatch?.[1] || 'image/jpeg'
+  const binaryString = atob(content || '')
+  const bytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i += 1) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return new File([bytes], fileName, { type: mimeType })
+}
+
+async function uploadImageToQiniu(file, folder) {
+  const tokenRes = await getQiniuToken()
+  const { token, uuid, buckethostname } = tokenRes.result || {}
+  if (!token || !uuid || !buckethostname) {
+    throw new Error('获取上传凭证失败')
+  }
+
+  const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.jpg'
+  const key = `${folder}/${uuid}${ext}`
+  const config = {
+    useCdnDomain: true,
+    region: qiniu.region.z0,
+  }
+  const putExtra = {
+    fname: file.name,
+    mimeType: file.type,
+  }
+
+  return await new Promise((resolve, reject) => {
+    const observable = qiniu.upload(file, key, token, putExtra, config)
+    observable.subscribe({
+      error(err) {
+        reject(err)
+      },
+      complete(res) {
+        resolve(`${buckethostname}${res.key}`)
+      },
+    })
+  })
+}
+
+async function uploadFaceImageData(dataUrl, folder) {
+  const file = dataUrlToFile(dataUrl, `${folder.replace(/\//g, '-')}-${Date.now()}.jpg`)
+  return await uploadImageToQiniu(file, folder)
+}
+
 // Load face-api.js models
 async function loadModels() {
   try {
@@ -264,8 +325,9 @@ async function startVideo() {
     // Get access to webcam
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
-        width: 600,
-        height: 450,
+        width: { ideal: CAMERA_REQUEST_WIDTH, max: CAMERA_REQUEST_WIDTH },
+        height: { ideal: CAMERA_REQUEST_HEIGHT, max: CAMERA_REQUEST_HEIGHT },
+        frameRate: { ideal: CAMERA_MAX_FPS, max: CAMERA_MAX_FPS },
       },
     })
 
@@ -320,8 +382,6 @@ function endAttendance() {
 
   // 停止视频流
   stopVideo()
-  // 清空本地考勤记录
-  attendanceRecords.value = []
   // 重新启动视频流
   setTimeout(() => {
     startVideo()
@@ -345,12 +405,13 @@ function stopVideo() {
     if (canvasRef.value) {
       canvasRef.value.classList.remove('loaded')
       // 清理 canvas 上下文
-      const ctx = canvasRef.value.getContext('2d')
+      const ctx = cachedCanvasContext || canvasRef.value.getContext('2d')
       if (ctx) {
         ctx.clearRect(0, 0, canvasRef.value.width, canvasRef.value.height)
       }
     }
   }
+  cachedCanvasContext = null
 }
 
 // Face detection loop
@@ -361,6 +422,8 @@ function startFaceDetection() {
   const canvas = canvasRef.value
   const video = videoRef.value
   const displaySize = { width: video.width, height: video.height }
+  const ctx = cachedCanvasContext || canvas.getContext('2d')
+  cachedCanvasContext = ctx
   faceapi.matchDimensions(canvas, displaySize)
 
   // 清理旧的检测循环
@@ -370,44 +433,41 @@ function startFaceDetection() {
 
   let isProcessing = false // 添加处理锁
 
-  // 创建新的检测循环
-  detectionInterval.value = setInterval(async () => {
-    if (!videoRef.value || !canvasRef.value || isProcessing) {
+  const shouldComputeDescriptor = () => (
+    data.value === 1 || (data.value === 2 && isAttendanceStarted.value)
+  )
+
+  const runDetection = async () => {
+    if (!videoRef.value || !canvasRef.value || isProcessing || document.hidden) {
       return
     }
 
     try {
-      isProcessing = true // 设置处理锁
+      isProcessing = true
 
-      // 根据当前模式选择合适的检测级别
       let detections
-      if (data.value === 1 || (data.value === 2 && isAttendanceStarted.value)) {
-        // 采集模式或正在考勤时，需要完整的人脸特征
+      if (shouldComputeDescriptor()) {
         detections = await faceapi
           .detectAllFaces(video)
           .withFaceLandmarks()
           .withFaceDescriptors()
       }
       else {
-        // 其他情况只需要基本的人脸检测
         detections = await faceapi.detectAllFaces(video)
       }
 
       if (detections.length === 1) {
         isFaceDetected.value = true
-        // 只在需要时更新人脸特征描述符
-        if (data.value === 1 || (data.value === 2 && isAttendanceStarted.value)) {
+        if (shouldComputeDescriptor()) {
           faceDescriptor.value = detections[0].descriptor
         }
 
-        // 只在考勤模式且已开始考勤时进行人脸识别
         if (data.value === 2 && !recognizingFace.value && isAttendanceStarted.value && faceDescriptor.value) {
           recognizeFace(faceDescriptor.value)
         }
       }
       else if (detections.length > 1) {
         isFaceDetected.value = false
-        // 使用防抖处理警告消息
         if (!window.faceWarningTimeout) {
           window.faceWarningTimeout = setTimeout(() => {
             message.warning('请确保画面中只有一个人脸')
@@ -417,11 +477,14 @@ function startFaceDetection() {
       }
       else {
         isFaceDetected.value = false
+        if (!shouldComputeDescriptor()) {
+          faceDescriptor.value = null
+        }
       }
 
-      // 优化绘制操作
       requestAnimationFrame(() => {
-        const ctx = canvas.getContext('2d')
+        if (!ctx)
+          return
         ctx.clearRect(0, 0, canvas.width, canvas.height)
 
         if (detections.length > 0) {
@@ -429,40 +492,34 @@ function startFaceDetection() {
           resizedDetections.forEach((detection) => {
             const box = detection.detection ? detection.detection.box : detection.box
 
-            // 绘制人脸框
             ctx.strokeStyle = isFaceDetected.value ? '#00cc33' : '#ff3333'
             ctx.lineWidth = 3
             ctx.beginPath()
             ctx.rect(box.x, box.y, box.width, box.height)
             ctx.stroke()
 
-            // 绘制角标
             const cornerSize = 20
             ctx.strokeStyle = '#ffffff'
             ctx.lineWidth = 4
 
-            // 左上角
             ctx.beginPath()
             ctx.moveTo(box.x, box.y + cornerSize)
             ctx.lineTo(box.x, box.y)
             ctx.lineTo(box.x + cornerSize, box.y)
             ctx.stroke()
 
-            // 右上角
             ctx.beginPath()
             ctx.moveTo(box.x + box.width - cornerSize, box.y)
             ctx.lineTo(box.x + box.width, box.y)
             ctx.lineTo(box.x + box.width, box.y + cornerSize)
             ctx.stroke()
 
-            // 右下角
             ctx.beginPath()
             ctx.moveTo(box.x + box.width, box.y + box.height - cornerSize)
             ctx.lineTo(box.x + box.width, box.y + box.height)
             ctx.lineTo(box.x + box.width - cornerSize, box.y + box.height)
             ctx.stroke()
 
-            // 左下角
             ctx.beginPath()
             ctx.moveTo(box.x + cornerSize, box.y + box.height)
             ctx.lineTo(box.x, box.y + box.height)
@@ -477,9 +534,13 @@ function startFaceDetection() {
       clearInterval(detectionInterval.value)
     }
     finally {
-      isProcessing = false // 释放处理锁
+      isProcessing = false
     }
-  }, 100) // 提高检测频率到100ms
+  }
+
+  // 创建新的检测循环
+  runDetection()
+  detectionInterval.value = setInterval(runDetection, DETECTION_INTERVAL_MS)
 }
 
 // 人脸识别匹配
@@ -532,21 +593,12 @@ async function recognizeFace(currentFaceDescriptor) {
         }
         else {
           showCooldownMessage.value = false
-          message.success(`人脸考勤成功: ${matchedStudent.name}`)
-          speakMessage(`人脸考勤成功: ${matchedStudent.name}`)
-
-          const timestamp = new Date().toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          })
-
-          // 更新最后考勤时间
-          lastAttendanceTimes.value[matchedStudent.id] = now
-          saveAttendanceRecord(bestMatch.studentId, timestamp, matchedStudent.name)
+          const saved = await saveAttendanceRecord(bestMatch.studentId, matchedStudent.name)
+          if (saved) {
+            lastAttendanceTimes.value[matchedStudent.id] = now
+            message.success(`人脸考勤成功: ${matchedStudent.name}`)
+            speakMessage(`人脸考勤成功: ${matchedStudent.name}`)
+          }
         }
       }
     }
@@ -610,13 +662,15 @@ async function captureFace() {
         minute: '2-digit',
         second: '2-digit',
       }) // Store capture time
+      const uploadedFaceImage = await uploadFaceImageData(faceImageData, 'face/collection')
 
       const saveRes = await saveFaceCollectionProfileApi({
         studentId: Number(student.value),
         faceDescriptor: Array.from(faceDescriptor.value || []),
-        faceImage: faceImageData,
+        faceImage: uploadedFaceImage,
       })
       if (saveRes.code === 200) {
+        capturedImageUrl.value = uploadedFaceImage
         studentList.value[studentIndex].status = 1
         await loadCollectedProfiles()
         message.success('人脸采集成功')
@@ -633,18 +687,20 @@ async function captureFace() {
   }
 }
 
-// 加载本地存储的考勤记录
-function loadAttendanceRecords() {
+// 加载考勤记录
+async function loadAttendanceRecords() {
   try {
-    const records = localStorage.getItem('attendanceRecords')
-    if (records) {
-      attendanceRecords.value = JSON.parse(records)
-      // 加载记录后滚动到底部
-      scrollToBottom()
+    const res = await listFaceAttendanceRecordsApi({ limit: 50 })
+    if (res.code !== 200) {
+      attendanceRecords.value = []
+      return
     }
+    attendanceRecords.value = Array.isArray(res.result) ? res.result : []
+    scrollToBottom()
   }
   catch (error) {
     console.error('读取考勤记录失败:', error)
+    attendanceRecords.value = []
   }
 }
 // 滚动到底部
@@ -657,7 +713,7 @@ function scrollToBottom() {
   })
 }
 // 保存考勤记录
-function saveAttendanceRecord(studentId, timestamp, studentName = '') {
+async function saveAttendanceRecord(studentId, studentName = '') {
   try {
     const student = studentList.value.find(s => String(s.id) === String(studentId))
     if (!student && !studentName)
@@ -677,15 +733,20 @@ function saveAttendanceRecord(studentId, timestamp, studentName = '') {
 
     // 转换为base64图像数据
     const faceImageData = canvas.toDataURL('image/jpeg')
-
-    attendanceRecords.value.push({
+    const uploadedFaceImage = await uploadFaceImageData(faceImageData, 'face/attendance')
+    const res = await saveFaceAttendanceRecordApi({
       studentId,
-      studentName: student?.name || studentName,
-      timestamp,
-      faceImage: faceImageData, // 保存人脸图像
+      faceImage: uploadedFaceImage,
     })
-
-    localStorage.setItem('attendanceRecords', JSON.stringify(attendanceRecords.value))
+    if (res.code !== 200 || !res.result) {
+      return false
+    }
+    attendanceRecords.value.unshift({
+      ...res.result,
+      studentName: res.result.studentName || student?.name || studentName,
+      faceImage: res.result.faceImage || uploadedFaceImage,
+      recordTime: res.result.recordTime,
+    })
 
     // 滚动到底部
     scrollToBottom()
@@ -770,9 +831,13 @@ watch(student, async (newVal, oldVal) => {
     }
   }
 
-  if (newVal && isModelLoaded.value && !videoStream.value) {
-    // Start camera when student is selected
-    startVideo()
+  if (newVal && isModelLoaded.value) {
+    if (videoStream.value) {
+      startFaceDetection()
+    }
+    else {
+      startVideo()
+    }
   }
 })
 
@@ -785,18 +850,13 @@ onMounted(async () => {
 
   await loadStudentList()
   await loadCollectedProfiles()
-
-  // 加载考勤记录
-  loadAttendanceRecords()
-
-  // 初始化最后考勤时间
-  const records = localStorage.getItem('attendanceRecords')
-  if (records) {
-    const parsedRecords = JSON.parse(records)
-    parsedRecords.forEach((record) => {
-      lastAttendanceTimes.value[record.studentId] = new Date(record.timestamp).getTime()
-    })
-  }
+  await loadAttendanceRecords()
+  attendanceRecords.value.forEach((record) => {
+    const rawTime = record.recordTime || record.timestamp
+    if (record.studentId && rawTime) {
+      lastAttendanceTimes.value[record.studentId] = new Date(rawTime).getTime()
+    }
+  })
 
   // Load face-api.js models
   loadModels()
@@ -842,11 +902,12 @@ onUnmounted(() => {
   }
 
   if (canvasRef.value) {
-    const ctx = canvasRef.value.getContext('2d')
+    const ctx = cachedCanvasContext || canvasRef.value.getContext('2d')
     if (ctx) {
       ctx.clearRect(0, 0, canvasRef.value.width, canvasRef.value.height)
     }
   }
+  cachedCanvasContext = null
 
   // 重置所有状态
   videoReady.value = false
@@ -876,6 +937,7 @@ function switchMode(mode) {
   if (data.value === 1)
     loadStudentList(studentSearchKey.value)
   loadCollectedProfiles()
+  loadAttendanceRecords()
 
   // 更新界面提示
   if (data.value === 2) {
@@ -1211,7 +1273,7 @@ function startAttendance() {
                   </div>
                   <div class="time text-3 text-#7b889d">
                     <!-- 格式化成 这样的格式 05-11 18:33 -->
-                    {{ formatDate(item.timestamp) }}
+                    {{ formatDate(item.recordTime || item.timestamp) }}
                   </div>
                 </div>
               </div>

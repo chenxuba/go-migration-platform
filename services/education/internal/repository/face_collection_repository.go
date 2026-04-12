@@ -28,6 +28,26 @@ func ensureFaceCollectionTables(ctx context.Context, db *sql.DB) error {
 			KEY idx_inst_student_face_profile_inst (inst_id)
 		)
 	`)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS inst_student_face_attendance_record (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			inst_id BIGINT NOT NULL,
+			student_id BIGINT NOT NULL,
+			student_name VARCHAR(100) NOT NULL DEFAULT '',
+			face_image VARCHAR(1024) NOT NULL DEFAULT '',
+			record_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			KEY idx_inst_student_face_attendance_record_inst_time (inst_id, record_time),
+			KEY idx_inst_student_face_attendance_record_student (student_id)
+		)
+	`)
 	return err
 }
 
@@ -237,4 +257,96 @@ func (repo *Repository) DeleteFaceCollectionProfile(ctx context.Context, instID,
 	}
 
 	return tx.Commit()
+}
+
+func (repo *Repository) ListFaceAttendanceRecords(ctx context.Context, instID int64, limit int) ([]model.FaceAttendanceRecord, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, student_id, IFNULL(student_name, ''), IFNULL(face_image, ''), record_time
+		FROM inst_student_face_attendance_record
+		WHERE inst_id = ? AND del_flag = 0
+		ORDER BY record_time DESC, id DESC
+		LIMIT ?
+	`, instID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.FaceAttendanceRecord, 0, limit)
+	for rows.Next() {
+		var (
+			item       model.FaceAttendanceRecord
+			recordTime sql.NullTime
+		)
+		if err := rows.Scan(&item.ID, &item.StudentID, &item.StudentName, &item.FaceImage, &recordTime); err != nil {
+			return nil, err
+		}
+		if recordTime.Valid {
+			t := recordTime.Time
+			item.RecordTime = &t
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) SaveFaceAttendanceRecord(ctx context.Context, instID, operatorID int64, dto model.FaceAttendanceRecordSaveDTO) (model.FaceAttendanceRecord, error) {
+	if dto.StudentID <= 0 {
+		return model.FaceAttendanceRecord{}, errors.New("invalid studentId")
+	}
+	if strings.TrimSpace(dto.FaceImage) == "" {
+		return model.FaceAttendanceRecord{}, errors.New("faceImage 不能为空")
+	}
+
+	var studentName string
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(stu_name, '')
+		FROM inst_student
+		WHERE id = ? AND inst_id = ? AND del_flag = 0 AND student_status IN (1, 2)
+		LIMIT 1
+	`, dto.StudentID, instID).Scan(&studentName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.FaceAttendanceRecord{}, errors.New("学员不存在或当前状态不支持人脸考勤")
+		}
+		return model.FaceAttendanceRecord{}, err
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		INSERT INTO inst_student_face_attendance_record (
+			inst_id, student_id, student_name, face_image, record_time, create_id, update_id, del_flag
+		) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, 0)
+	`, instID, dto.StudentID, studentName, strings.TrimSpace(dto.FaceImage), operatorID, operatorID)
+	if err != nil {
+		return model.FaceAttendanceRecord{}, err
+	}
+	recordID, err := result.LastInsertId()
+	if err != nil {
+		return model.FaceAttendanceRecord{}, err
+	}
+
+	return repo.GetFaceAttendanceRecordByID(ctx, instID, recordID)
+}
+
+func (repo *Repository) GetFaceAttendanceRecordByID(ctx context.Context, instID, recordID int64) (model.FaceAttendanceRecord, error) {
+	var (
+		item       model.FaceAttendanceRecord
+		recordTime sql.NullTime
+	)
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id, student_id, IFNULL(student_name, ''), IFNULL(face_image, ''), record_time
+		FROM inst_student_face_attendance_record
+		WHERE inst_id = ? AND id = ? AND del_flag = 0
+		LIMIT 1
+	`, instID, recordID).Scan(&item.ID, &item.StudentID, &item.StudentName, &item.FaceImage, &recordTime)
+	if err != nil {
+		return model.FaceAttendanceRecord{}, err
+	}
+	if recordTime.Valid {
+		t := recordTime.Time
+		item.RecordTime = &t
+	}
+	return item, nil
 }

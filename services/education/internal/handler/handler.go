@@ -297,6 +297,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/face-collections/profiles", handler.listFaceCollectionProfiles)
 	mux.HandleFunc("/api/v1/face-collections/save", handler.saveFaceCollectionProfile)
 	mux.HandleFunc("/api/v1/face-collections/delete", handler.deleteFaceCollectionProfile)
+	mux.HandleFunc("/api/v1/face-collections/attendance-records", handler.listFaceAttendanceRecords)
+	mux.HandleFunc("/api/v1/face-collections/attendance-records/save", handler.saveFaceAttendanceRecord)
 }
 
 func (handler *Handler) health(w http.ResponseWriter, r *http.Request) {

@@ -23,6 +23,14 @@ export interface FaceCollectionProfile {
   updatedTime?: string
 }
 
+export interface FaceAttendanceRecord {
+  id: string
+  studentId: string
+  studentName?: string
+  faceImage?: string
+  recordTime?: string
+}
+
 export function pageFaceCollectionStudentsApi(data: {
   pageRequestModel: {
     pageSize: number
@@ -55,4 +63,15 @@ export function saveFaceCollectionProfileApi(data: {
 
 export function deleteFaceCollectionProfileApi(data: { studentId: string | number }) {
   return usePost<boolean>('/api/v1/face-collections/delete', data)
+}
+
+export function listFaceAttendanceRecordsApi(params?: { limit?: number }) {
+  return useGet<FaceAttendanceRecord[]>('/api/v1/face-collections/attendance-records', params)
+}
+
+export function saveFaceAttendanceRecordApi(data: {
+  studentId: string | number
+  faceImage: string
+}) {
+  return usePost<FaceAttendanceRecord>('/api/v1/face-collections/attendance-records/save', data)
 }

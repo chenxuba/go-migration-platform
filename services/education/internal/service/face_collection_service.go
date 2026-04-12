@@ -83,3 +83,32 @@ func (svc *Service) DeleteFaceCollectionProfile(userID, studentID int64) error {
 	}
 	return svc.repo.DeleteFaceCollectionProfile(context.Background(), instID, instUserID, studentID)
 }
+
+func (svc *Service) ListFaceAttendanceRecords(userID int64, limit int) ([]model.FaceAttendanceRecord, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("no institution context")
+		}
+		return nil, err
+	}
+	return svc.repo.ListFaceAttendanceRecords(context.Background(), instID, limit)
+}
+
+func (svc *Service) SaveFaceAttendanceRecord(userID int64, dto model.FaceAttendanceRecordSaveDTO) (model.FaceAttendanceRecord, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.FaceAttendanceRecord{}, errors.New("no institution context")
+		}
+		return model.FaceAttendanceRecord{}, err
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.FaceAttendanceRecord{}, errors.New("no institution user context")
+		}
+		return model.FaceAttendanceRecord{}, err
+	}
+	return svc.repo.SaveFaceAttendanceRecord(context.Background(), instID, instUserID, dto)
+}

@@ -36,3 +36,16 @@ type FaceCollectionProfileSaveDTO struct {
 type FaceCollectionProfileDeleteDTO struct {
 	StudentID int64 `json:"studentId"`
 }
+
+type FaceAttendanceRecord struct {
+	ID          int64      `json:"id"`
+	StudentID   int64      `json:"studentId"`
+	StudentName string     `json:"studentName"`
+	FaceImage   string     `json:"faceImage,omitempty"`
+	RecordTime  *time.Time `json:"recordTime,omitempty"`
+}
+
+type FaceAttendanceRecordSaveDTO struct {
+	StudentID int64  `json:"studentId"`
+	FaceImage string `json:"faceImage"`
+}
