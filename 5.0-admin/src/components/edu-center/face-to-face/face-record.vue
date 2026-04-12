@@ -128,17 +128,7 @@ const relatedScheduleDataSource = computed<FaceAttendanceRelatedScheduleItem[]>(
   const record = currentScheduleRecord.value
   if (!record)
     return []
-  if (Array.isArray(record.relatedScheduleItems) && record.relatedScheduleItems.length) {
-    return record.relatedScheduleItems
-  }
-  const classTimes = normalizeStringArray(record.classTimes)
-  const relatedSchedules = normalizeStringArray(record.relatedSchedules)
-  const length = Math.max(classTimes.length, relatedSchedules.length)
-  return Array.from({ length }, (_, index) => ({
-    classTime: classTimes[index] || '-',
-    scheduleName: relatedSchedules[index] || '-',
-    rollCallStatus: '-',
-  }))
+  return getRelatedScheduleItems(record)
 })
 
 const rowSelection = computed(() => ({
@@ -203,12 +193,70 @@ function formatSingleLineClassTime(value: string) {
   return splitBlockLines(value).join(' ')
 }
 
+function getRelatedScheduleItems(record?: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  if (!record)
+    return []
+  if (Array.isArray(record.relatedScheduleItems) && record.relatedScheduleItems.length)
+    return record.relatedScheduleItems
+  const classTimes = normalizeStringArray(record.classTimes)
+  const relatedSchedules = normalizeStringArray(record.relatedSchedules)
+  const length = Math.max(classTimes.length, relatedSchedules.length)
+  return Array.from({ length }, (_, index) => ({
+    classTime: classTimes[index] || '-',
+    scheduleName: relatedSchedules[index] || '-',
+    rollCallStatus: '-',
+  }))
+}
+
+function parseRelatedScheduleEndTime(value?: string) {
+  const text = formatSingleLineClassTime(String(value || ''))
+  const matched = text.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})\s*~\s*(\d{2}:\d{2})/)
+  if (!matched)
+    return null
+  const [, dateText, _startText, endText] = matched
+  const parsed = dayjs(`${dateText} ${endText}`)
+  return parsed.isValid() ? parsed : null
+}
+
+function isOverdueUnsignedSchedule(record?: FaceAttendanceRelatedScheduleItem) {
+  if (!record || String(record.rollCallStatus || '').trim() !== '未点名')
+    return false
+  const endTime = parseRelatedScheduleEndTime(record.classTime)
+  return !!endTime && endTime.isBefore(dayjs())
+}
+
+function hasOverdueUnsignedSchedules(record?: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  return getRelatedScheduleItems(record).some(item => isOverdueUnsignedSchedule(item))
+}
+
+function faceAttendancePromptText(record?: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  if (hasOverdueUnsignedSchedules(record))
+    return '存在已过时未点名日程，请手动点名'
+  return String(record?.prompt || '-').trim() || '-'
+}
+
+function relatedScheduleStatusText(record?: FaceAttendanceRelatedScheduleItem) {
+  if (isOverdueUnsignedSchedule(record))
+    return '待手动点名'
+  return String(record?.rollCallStatus || '-').trim() || '-'
+}
+
 function rollCallStatusClass(value?: string) {
   if (value === '已点名')
     return 'roll-call-status roll-call-status--signed'
   if (value === '未点名')
     return 'roll-call-status roll-call-status--unsigned'
   return 'roll-call-status'
+}
+
+function relatedScheduleStatusClass(record?: FaceAttendanceRelatedScheduleItem) {
+  if (isOverdueUnsignedSchedule(record))
+    return 'roll-call-status roll-call-status--manual'
+  return rollCallStatusClass(record?.rollCallStatus)
+}
+
+function relatedScheduleRowClassName(record: FaceAttendanceRelatedScheduleItem) {
+  return isOverdueUnsignedSchedule(record) ? 'related-schedule-row related-schedule-row--manual' : 'related-schedule-row'
 }
 
 function openRelatedScheduleModal(record: Record<string, any>) {
@@ -437,16 +485,23 @@ onMounted(() => {
               </template>
               <template v-else-if="column.key === 'linkSchedule'">
                 <template v-if="Array.isArray(record.relatedScheduleItems) ? record.relatedScheduleItems.length : normalizeStringArray(record.relatedSchedules).length">
-                  <a-button type="link" size="small" class="px-0" @click="openRelatedScheduleModal(record)">
-                    查看
-                  </a-button>
+                  <div class="face-record-link-schedule">
+                    <a-button type="link" size="small" class="px-0" @click="openRelatedScheduleModal(record)">
+                      查看
+                    </a-button>
+                    <span v-if="hasOverdueUnsignedSchedules(record)" class="face-record-alert-badge">
+                      待手动点名
+                    </span>
+                  </div>
                 </template>
                 <template v-else>
                   -
                 </template>
               </template>
               <template v-else-if="column.key === 'remarks'">
-                {{ record.prompt || '-' }}
+                <span :class="{ 'face-record-alert-text': hasOverdueUnsignedSchedules(record) }">
+                  {{ faceAttendancePromptText(record) }}
+                </span>
               </template>
             </template>
           </a-table>
@@ -465,15 +520,24 @@ onMounted(() => {
         :columns="relatedScheduleColumns"
         :data-source="relatedScheduleDataSource"
         :pagination="false"
+        :row-class-name="relatedScheduleRowClassName"
         size="small"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'classTime'">
             {{ formatSingleLineClassTime(record.classTime) }}
           </template>
+          <template v-else-if="column.key === 'scheduleName'">
+            <div class="related-schedule-name-cell">
+              <span>{{ record.scheduleName || '-' }}</span>
+              <span v-if="isOverdueUnsignedSchedule(record)" class="related-schedule-hint">
+                已过上课时间
+              </span>
+            </div>
+          </template>
           <template v-else-if="column.key === 'rollCallStatus'">
-            <span :class="rollCallStatusClass(record.rollCallStatus)">
-              {{ record.rollCallStatus || '-' }}
+            <span :class="relatedScheduleStatusClass(record)">
+              {{ relatedScheduleStatusText(record) }}
             </span>
           </template>
         </template>
@@ -542,6 +606,66 @@ onMounted(() => {
 .roll-call-status--unsigned {
   color: #8a5a00;
   background: #fff6e8;
+}
+
+.roll-call-status--manual {
+  color: #cf1322;
+  background: #fff1f0;
+  box-shadow: inset 0 0 0 1px #ffccc7;
+  font-weight: 600;
+}
+
+.related-schedule-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.related-schedule-hint {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #fff7e6;
+  color: #d46b08;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+:deep(.related-schedule-row--manual td) {
+  background: #fffafa !important;
+}
+
+.face-record-link-schedule {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.face-record-alert-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #fff1f0;
+  color: #cf1322;
+  box-shadow: inset 0 0 0 1px #ffccc7;
+  font-size: 12px;
+  line-height: 22px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.face-record-alert-text {
+  color: #cf1322;
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .attendance-action-cell {
