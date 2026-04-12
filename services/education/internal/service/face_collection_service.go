@@ -146,6 +146,17 @@ func (svc *Service) ListFaceAttendanceRecords(userID int64, limit int) ([]model.
 	return svc.repo.ListFaceAttendanceRecords(context.Background(), instID, limit)
 }
 
+func (svc *Service) PageFaceAttendanceRecords(userID int64, query model.FaceAttendanceRecordPagedQueryDTO) (model.PageResult[model.FaceAttendanceRecordItem], error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.PageResult[model.FaceAttendanceRecordItem]{}, errors.New("no institution context")
+		}
+		return model.PageResult[model.FaceAttendanceRecordItem]{}, err
+	}
+	return svc.repo.PageFaceAttendanceRecords(context.Background(), instID, query)
+}
+
 func (svc *Service) SaveFaceAttendanceRecord(userID int64, dto model.FaceAttendanceRecordSaveDTO) (model.FaceAttendanceRecord, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

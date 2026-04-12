@@ -116,6 +116,45 @@ type FaceAttendanceRecord struct {
 	RecordTime  *time.Time `json:"recordTime,omitempty"`
 }
 
+type FaceAttendanceRecordPagedQueryDTO struct {
+	PageRequestModel PageRequestModel           `json:"pageRequestModel"`
+	QueryModel       FaceAttendanceRecordFilter `json:"queryModel"`
+}
+
+type FaceAttendanceRecordFilter struct {
+	StudentID           int64  `json:"studentId"`
+	BeginAttendanceTime string `json:"beginAttendanceTime"`
+	EndAttendanceTime   string `json:"endAttendanceTime"`
+}
+
+type FaceAttendanceRelatedScheduleItem struct {
+	ClassTime      string `json:"classTime,omitempty"`
+	ScheduleName   string `json:"scheduleName,omitempty"`
+	RollCallStatus string `json:"rollCallStatus,omitempty"`
+}
+
+type FaceAttendanceRecordItem struct {
+	ID                   string                              `json:"id"`
+	SessionID            int64                               `json:"sessionId"`
+	StudentID            int64                               `json:"studentId"`
+	StudentName          string                              `json:"studentName"`
+	StudentMobile        string                              `json:"studentMobile,omitempty"`
+	AvatarURL            string                              `json:"avatarUrl,omitempty"`
+	StudentSex           int                                 `json:"studentSex"`
+	IsCollect            bool                                `json:"isCollect"`
+	AttendanceDate       string                              `json:"attendanceDate,omitempty"`
+	AttendanceType       string                              `json:"attendanceType,omitempty"`
+	Action               string                              `json:"action"`
+	ActionLabel          string                              `json:"actionLabel,omitempty"`
+	AttendanceTime       *time.Time                          `json:"attendanceTime,omitempty"`
+	ActionTime           *time.Time                          `json:"actionTime,omitempty"`
+	HasSchedule          bool                                `json:"hasSchedule"`
+	ClassTimes           []string                            `json:"classTimes,omitempty"`
+	RelatedSchedules     []string                            `json:"relatedSchedules,omitempty"`
+	RelatedScheduleItems []FaceAttendanceRelatedScheduleItem `json:"relatedScheduleItems,omitempty"`
+	Prompt               string                              `json:"prompt,omitempty"`
+}
+
 type FaceAttendanceRecordSaveDTO struct {
 	StudentID int64  `json:"studentId"`
 	FaceImage string `json:"faceImage"`

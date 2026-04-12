@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -27,6 +28,20 @@ type faceAttendanceStudentBase struct {
 	StudentID   int64
 	StudentName string
 	AvatarURL   string
+}
+
+type faceAttendanceRecordSessionSummary struct {
+	HasSchedule          bool
+	ClassTimes           []string
+	RelatedSchedules     []string
+	RelatedScheduleItems []model.FaceAttendanceRelatedScheduleItem
+}
+
+type faceAttendanceRecordTaskSummary struct {
+	PendingCount int
+	SuccessCount int
+	SkippedCount int
+	LastError    string
 }
 
 func ensureFaceCollectionTables(ctx context.Context, db *sql.DB) error {
@@ -713,6 +728,173 @@ func (repo *Repository) GetFaceAttendanceSessionByID(ctx context.Context, instID
 	return item, nil
 }
 
+func (repo *Repository) PageFaceAttendanceRecords(ctx context.Context, instID int64, query model.FaceAttendanceRecordPagedQueryDTO) (model.PageResult[model.FaceAttendanceRecordItem], error) {
+	current := query.PageRequestModel.PageIndex
+	size := query.PageRequestModel.PageSize
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+	offset := (current - 1) * size
+
+	baseSQL := `
+		SELECT
+			fas.id AS session_id,
+			fas.inst_id,
+			fas.student_id,
+			DATE_FORMAT(fas.attendance_date, '%Y-%m-%d') AS attendance_date,
+			fas.sign_in_time AS action_time,
+			'sign_in' AS action
+		FROM inst_student_face_attendance_session fas
+		WHERE fas.del_flag = 0
+		  AND fas.sign_in_time IS NOT NULL
+		UNION ALL
+		SELECT
+			fas.id AS session_id,
+			fas.inst_id,
+			fas.student_id,
+			DATE_FORMAT(fas.attendance_date, '%Y-%m-%d') AS attendance_date,
+			fas.sign_out_time AS action_time,
+			'sign_out' AS action
+		FROM inst_student_face_attendance_session fas
+		WHERE fas.del_flag = 0
+		  AND fas.sign_out_time IS NOT NULL
+	`
+
+	filters := []string{"src.inst_id = ?"}
+	args := []any{instID}
+	if query.QueryModel.StudentID > 0 {
+		filters = append(filters, "src.student_id = ?")
+		args = append(args, query.QueryModel.StudentID)
+	}
+	if beginTime, ok := normalizeFaceAttendanceRecordBoundary(query.QueryModel.BeginAttendanceTime, false); ok {
+		filters = append(filters, "src.action_time >= ?")
+		args = append(args, beginTime)
+	}
+	if endTime, ok := normalizeFaceAttendanceRecordBoundary(query.QueryModel.EndAttendanceTime, true); ok {
+		filters = append(filters, "src.action_time <= ?")
+		args = append(args, endTime)
+	}
+	whereClause := strings.Join(filters, " AND ")
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM (`+baseSQL+`) src
+		WHERE `+whereClause, args...).Scan(&total); err != nil {
+		return model.PageResult[model.FaceAttendanceRecordItem]{}, err
+	}
+	if total == 0 {
+		return model.PageResult[model.FaceAttendanceRecordItem]{
+			Items:   []model.FaceAttendanceRecordItem{},
+			Total:   0,
+			Current: current,
+			Size:    size,
+		}, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			src.session_id,
+			src.student_id,
+			src.attendance_date,
+			src.action_time,
+			src.action,
+			IFNULL(stu.stu_name, ''),
+			IFNULL(stu.mobile, ''),
+			IFNULL(stu.avatar_url, ''),
+			IFNULL(stu.stu_sex, 0),
+			IFNULL(stu.is_collect, 0)
+		FROM (`+baseSQL+`) src
+		LEFT JOIN inst_student stu
+			ON stu.id = src.student_id
+		   AND stu.inst_id = src.inst_id
+		   AND IFNULL(stu.del_flag, 0) = 0
+		WHERE `+whereClause+`
+		ORDER BY src.action_time DESC, src.session_id DESC, src.action DESC
+		LIMIT ? OFFSET ?
+	`, append(args, size, offset)...)
+	if err != nil {
+		return model.PageResult[model.FaceAttendanceRecordItem]{}, err
+	}
+	defer rows.Close()
+
+	items := make([]model.FaceAttendanceRecordItem, 0, size)
+	sessionIDs := make([]int64, 0, size)
+	seenSessionIDs := make(map[int64]struct{}, size)
+	for rows.Next() {
+		var (
+			item       model.FaceAttendanceRecordItem
+			actionTime sql.NullTime
+			action     string
+			mobile     string
+			isCollect  int
+		)
+		if err := rows.Scan(
+			&item.SessionID,
+			&item.StudentID,
+			&item.AttendanceDate,
+			&actionTime,
+			&action,
+			&item.StudentName,
+			&mobile,
+			&item.AvatarURL,
+			&item.StudentSex,
+			&isCollect,
+		); err != nil {
+			return model.PageResult[model.FaceAttendanceRecordItem]{}, err
+		}
+		item.ID = fmt.Sprintf("%d:%s", item.SessionID, action)
+		item.Action = action
+		item.ActionLabel = faceAttendanceActionLabel(action)
+		item.AttendanceType = "人脸考勤"
+		item.StudentMobile = maskStudentMobile(mobile)
+		item.IsCollect = isCollect != 0
+		if actionTime.Valid {
+			t := actionTime.Time
+			item.AttendanceTime = &t
+			item.ActionTime = &t
+		}
+		items = append(items, item)
+		if _, exists := seenSessionIDs[item.SessionID]; !exists {
+			seenSessionIDs[item.SessionID] = struct{}{}
+			sessionIDs = append(sessionIDs, item.SessionID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return model.PageResult[model.FaceAttendanceRecordItem]{}, err
+	}
+
+	sessionSummaryMap, err := repo.loadFaceAttendanceRecordSessionSummaries(ctx, instID, sessionIDs)
+	if err != nil {
+		return model.PageResult[model.FaceAttendanceRecordItem]{}, err
+	}
+	taskSummaryMap, err := repo.loadFaceAttendanceRecordTaskSummaries(ctx, instID, sessionIDs)
+	if err != nil {
+		return model.PageResult[model.FaceAttendanceRecordItem]{}, err
+	}
+
+	for index := range items {
+		item := &items[index]
+		if summary, ok := sessionSummaryMap[item.SessionID]; ok {
+			item.HasSchedule = summary.HasSchedule
+			item.ClassTimes = summary.ClassTimes
+			item.RelatedSchedules = summary.RelatedSchedules
+			item.RelatedScheduleItems = summary.RelatedScheduleItems
+		}
+		item.Prompt = buildFaceAttendanceRecordPrompt(item.Action, item.HasSchedule, taskSummaryMap[item.SessionID])
+	}
+
+	return model.PageResult[model.FaceAttendanceRecordItem]{
+		Items:   items,
+		Total:   total,
+		Current: current,
+		Size:    size,
+	}, nil
+}
+
 func (repo *Repository) ListFaceAttendanceRecords(ctx context.Context, instID int64, limit int) ([]model.FaceAttendanceRecord, error) {
 	if limit <= 0 {
 		limit = 50
@@ -803,6 +985,226 @@ func (repo *Repository) GetFaceAttendanceRecordByID(ctx context.Context, instID,
 		item.RecordTime = &t
 	}
 	return item, nil
+}
+
+func (repo *Repository) loadFaceAttendanceRecordSessionSummaries(ctx context.Context, instID int64, sessionIDs []int64) (map[int64]faceAttendanceRecordSessionSummary, error) {
+	result := make(map[int64]faceAttendanceRecordSessionSummary, len(sessionIDs))
+	if len(sessionIDs) == 0 {
+		return result, nil
+	}
+
+	holders := make([]string, 0, len(sessionIDs))
+	args := make([]any, 0, len(sessionIDs)+4)
+	args = append(args, model.TeachingScheduleStatusActive, model.TeachingScheduleStudentRosterStatusRemoved, instID)
+	for _, id := range sessionIDs {
+		holders = append(holders, "?")
+		args = append(args, id)
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			fas.id AS session_id,
+			IFNULL(ts.id, 0) AS schedule_id,
+			IFNULL(CONCAT(DATE_FORMAT(ts.lesson_date, '%Y-%m-%d'), '\n', DATE_FORMAT(ts.lesson_start_at, '%H:%i'), ' ~ ', DATE_FORMAT(ts.lesson_end_at, '%H:%i')), '') AS class_time_text,
+			IFNULL(CASE
+				WHEN TRIM(IFNULL(ts.teaching_class_name, '')) <> '' THEN TRIM(IFNULL(ts.teaching_class_name, ''))
+				WHEN ts.class_type = ? AND TRIM(IFNULL(ts.student_name, '')) <> '' THEN CONCAT(TRIM(IFNULL(ts.student_name, '')), CASE WHEN TRIM(IFNULL(ts.lesson_name, '')) <> '' THEN CONCAT('-', TRIM(IFNULL(ts.lesson_name, ''))) ELSE '' END)
+				ELSE TRIM(IFNULL(ts.lesson_name, ''))
+			END, '') AS related_schedule_text,
+			CASE
+				WHEN ts.id IS NULL OR ts.id = 0 THEN ''
+				WHEN EXISTS (
+					SELECT 1
+					FROM student_teaching_record str
+					WHERE str.inst_id = ts.inst_id
+					  AND IFNULL(str.del_flag, 0) = 0
+					  AND CAST(str.teaching_schedule_id AS CHAR) = CAST(ts.id AS CHAR)
+					LIMIT 1
+				) THEN '已点名'
+				ELSE '未点名'
+			END AS roll_call_status
+		FROM inst_student_face_attendance_session fas
+		LEFT JOIN teaching_schedule ts
+			ON ts.inst_id = fas.inst_id
+		   AND IFNULL(ts.del_flag, 0) = 0
+		   AND ts.status = ?
+		   AND ts.lesson_date = fas.attendance_date
+		   AND (
+			ts.student_id = fas.student_id
+			OR EXISTS (
+				SELECT 1
+				FROM teaching_schedule_student tss
+				WHERE tss.inst_id = ts.inst_id
+				  AND tss.teaching_schedule_id = ts.id
+				  AND tss.student_id = fas.student_id
+				  AND IFNULL(tss.del_flag, 0) = 0
+				  AND IFNULL(tss.roster_status, 0) <> ?
+			)
+		   )
+		WHERE fas.inst_id = ?
+		  AND fas.id IN (`+strings.Join(holders, ",")+`)
+		  AND IFNULL(fas.del_flag, 0) = 0
+		ORDER BY fas.id ASC, ts.lesson_start_at ASC, ts.id ASC
+	`, append([]any{model.TeachingClassTypeOneToOne}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			sessionID           int64
+			scheduleID          int64
+			classTimeText       string
+			relatedScheduleText string
+			rollCallStatus      string
+		)
+		if err := rows.Scan(&sessionID, &scheduleID, &classTimeText, &relatedScheduleText, &rollCallStatus); err != nil {
+			return nil, err
+		}
+		summary := result[sessionID]
+		if scheduleID > 0 {
+			summary.HasSchedule = true
+			classTimeText = strings.TrimSpace(classTimeText)
+			relatedScheduleText = strings.TrimSpace(relatedScheduleText)
+			if classTimeText != "" {
+				summary.ClassTimes = append(summary.ClassTimes, classTimeText)
+			}
+			if relatedScheduleText != "" {
+				summary.RelatedSchedules = append(summary.RelatedSchedules, relatedScheduleText)
+			}
+			summary.RelatedScheduleItems = append(summary.RelatedScheduleItems, model.FaceAttendanceRelatedScheduleItem{
+				ClassTime:      classTimeText,
+				ScheduleName:   relatedScheduleText,
+				RollCallStatus: strings.TrimSpace(rollCallStatus),
+			})
+		}
+		result[sessionID] = summary
+	}
+	return result, rows.Err()
+}
+
+func (repo *Repository) loadFaceAttendanceRecordTaskSummaries(ctx context.Context, instID int64, sessionIDs []int64) (map[int64]faceAttendanceRecordTaskSummary, error) {
+	result := make(map[int64]faceAttendanceRecordTaskSummary, len(sessionIDs))
+	if len(sessionIDs) == 0 {
+		return result, nil
+	}
+
+	holders := make([]string, 0, len(sessionIDs))
+	args := make([]any, 0, len(sessionIDs)+1)
+	args = append(args, instID)
+	for _, id := range sessionIDs {
+		holders = append(holders, "?")
+		args = append(args, id)
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			attendance_session_id,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS pending_count,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS success_count,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS skipped_count,
+			IFNULL(MAX(CASE WHEN status = ? THEN NULLIF(last_error, '') ELSE '' END), '') AS last_error
+		FROM inst_student_face_roll_call_task
+		WHERE inst_id = ?
+		  AND IFNULL(del_flag, 0) = 0
+		  AND attendance_session_id IN (`+strings.Join(holders, ",")+`)
+		GROUP BY attendance_session_id
+	`, append(
+		[]any{
+			faceAttendanceRollCallTaskStatusPending,
+			faceAttendanceRollCallTaskStatusSuccess,
+			faceAttendanceRollCallTaskStatusSkipped,
+			faceAttendanceRollCallTaskStatusSkipped,
+		},
+		args...,
+	)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			sessionID int64
+			item      faceAttendanceRecordTaskSummary
+		)
+		if err := rows.Scan(&sessionID, &item.PendingCount, &item.SuccessCount, &item.SkippedCount, &item.LastError); err != nil {
+			return nil, err
+		}
+		result[sessionID] = item
+	}
+	return result, rows.Err()
+}
+
+func normalizeFaceAttendanceRecordBoundary(value string, endOfDay bool) (time.Time, bool) {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return time.Time{}, false
+	}
+	layouts := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04",
+		"2006-01-02",
+	}
+	for _, layout := range layouts {
+		parsed, err := time.ParseInLocation(layout, text, time.Local)
+		if err != nil {
+			continue
+		}
+		if layout == "2006-01-02" {
+			if endOfDay {
+				return parsed.Add(23*time.Hour + 59*time.Minute + 59*time.Second), true
+			}
+			return parsed, true
+		}
+		return parsed, true
+	}
+	return time.Time{}, false
+}
+
+func splitFaceAttendanceRecordTextBlock(value string) []string {
+	return splitFaceAttendanceRecordDelimited(value, "\n")
+}
+
+func splitFaceAttendanceRecordDelimited(value, delimiter string) []string {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return nil
+	}
+	parts := strings.Split(text, delimiter)
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		result = append(result, trimmed)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func buildFaceAttendanceRecordPrompt(action string, hasSchedule bool, summary faceAttendanceRecordTaskSummary) string {
+	if action == model.FaceAttendanceSessionActionSignOut {
+		return "签退成功"
+	}
+	if !hasSchedule {
+		return "-"
+	}
+	if summary.SuccessCount > 0 {
+		return "点名到课"
+	}
+	if summary.PendingCount > 0 {
+		return "待自动点名"
+	}
+	if strings.TrimSpace(summary.LastError) != "" {
+		return strings.TrimSpace(summary.LastError)
+	}
+	if summary.SkippedCount > 0 {
+		return "未自动点名"
+	}
+	return "待处理"
 }
 
 func (repo *Repository) getFaceAttendanceStudentBase(ctx context.Context, runner faceAttendanceQueryRunner, instID, studentID int64) (faceAttendanceStudentBase, error) {

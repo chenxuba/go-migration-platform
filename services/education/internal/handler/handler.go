@@ -301,6 +301,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/face-collections/attendance-sessions", handler.listFaceAttendanceSessions)
 	mux.HandleFunc("/api/v1/face-collections/attendance-sessions/recognize", handler.recognizeFaceAttendanceSession)
 	mux.HandleFunc("/api/v1/face-collections/attendance-sessions/commit", handler.commitFaceAttendanceSession)
+	mux.HandleFunc("/api/v1/face-collections/attendance-records/page", handler.pageFaceAttendanceRecords)
 	mux.HandleFunc("/api/v1/face-collections/attendance-records", handler.listFaceAttendanceRecords)
 	mux.HandleFunc("/api/v1/face-collections/attendance-records/save", handler.saveFaceAttendanceRecord)
 }

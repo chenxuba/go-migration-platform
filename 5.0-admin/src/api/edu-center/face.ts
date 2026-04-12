@@ -30,6 +30,34 @@ export interface FaceAttendanceRecord {
   recordTime?: string
 }
 
+export interface FaceAttendanceRelatedScheduleItem {
+  classTime?: string
+  scheduleName?: string
+  rollCallStatus?: string
+}
+
+export interface FaceAttendanceRecordItem {
+  id: string
+  sessionId: string
+  studentId: string
+  studentName?: string
+  studentMobile?: string
+  avatarUrl?: string
+  studentSex?: number
+  isCollect?: boolean
+  attendanceDate?: string
+  attendanceType?: string
+  action?: string
+  actionLabel?: string
+  attendanceTime?: string
+  actionTime?: string
+  hasSchedule?: boolean
+  classTimes?: string[]
+  relatedSchedules?: string[]
+  relatedScheduleItems?: FaceAttendanceRelatedScheduleItem[]
+  prompt?: string
+}
+
 export interface FaceCompareResult {
   matched: boolean
   studentId?: string
@@ -133,6 +161,20 @@ export function commitFaceAttendanceSessionApi(data: {
 
 export function listFaceAttendanceRecordsApi(params?: { limit?: number }) {
   return useGet<FaceAttendanceRecord[]>('/api/v1/face-collections/attendance-records', params)
+}
+
+export function pageFaceAttendanceRecordsApi(data: {
+  pageRequestModel: {
+    pageSize: number
+    pageIndex: number
+  }
+  queryModel?: {
+    studentId?: string | number
+    beginAttendanceTime?: string
+    endAttendanceTime?: string
+  }
+}) {
+  return usePost<FaceAttendanceRecordItem[]>('/api/v1/face-collections/attendance-records/page', data)
 }
 
 export function saveFaceAttendanceRecordApi(data: {
