@@ -95,6 +95,46 @@ func (svc *Service) DeleteFaceCollectionProfile(userID, studentID int64) error {
 	return svc.repo.DeleteFaceCollectionProfile(context.Background(), instID, instUserID, studentID)
 }
 
+func (svc *Service) ListFaceAttendanceSessions(userID int64, limit int) ([]model.FaceAttendanceSession, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("no institution context")
+		}
+		return nil, err
+	}
+	return svc.repo.ListFaceAttendanceSessions(context.Background(), instID, limit)
+}
+
+func (svc *Service) RecognizeFaceAttendanceSession(userID int64, dto model.FaceAttendanceSessionRecognizeDTO) (model.FaceAttendanceSessionRecognizeResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.FaceAttendanceSessionRecognizeResult{}, errors.New("no institution context")
+		}
+		return model.FaceAttendanceSessionRecognizeResult{}, err
+	}
+	return svc.repo.RecognizeFaceAttendanceSession(context.Background(), instID, dto)
+}
+
+func (svc *Service) CommitFaceAttendanceSession(userID int64, dto model.FaceAttendanceSessionCommitDTO) (model.FaceAttendanceSession, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.FaceAttendanceSession{}, errors.New("no institution context")
+		}
+		return model.FaceAttendanceSession{}, err
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.FaceAttendanceSession{}, errors.New("no institution user context")
+		}
+		return model.FaceAttendanceSession{}, err
+	}
+	return svc.repo.CommitFaceAttendanceSession(context.Background(), instID, instUserID, dto)
+}
+
 func (svc *Service) ListFaceAttendanceRecords(userID int64, limit int) ([]model.FaceAttendanceRecord, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

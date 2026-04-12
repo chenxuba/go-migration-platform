@@ -37,6 +37,41 @@ export interface FaceCompareResult {
   distance?: number
 }
 
+export interface FaceAttendanceSession {
+  id: string
+  studentId: string
+  studentName?: string
+  avatarUrl?: string
+  attendanceDate?: string
+  status?: number
+  signInTime?: string
+  signInImage?: string
+  signOutTime?: string
+  signOutImage?: string
+  latestAction?: string
+  latestActionLabel?: string
+  latestTime?: string
+  latestImage?: string
+  hasSchedule?: boolean
+  lastLessonEndTime?: string
+}
+
+export interface FaceAttendanceRecognizeResult {
+  matched: boolean
+  studentId?: string
+  studentName?: string
+  avatarUrl?: string
+  distance?: number
+  action?: string
+  actionLabel?: string
+  sessionId?: string
+  needUpload?: boolean
+  message?: string
+  hasSchedule?: boolean
+  lastActionTime?: string
+  lastLessonEndTime?: string
+}
+
 export function pageFaceCollectionStudentsApi(data: {
   pageRequestModel: {
     pageSize: number
@@ -75,6 +110,25 @@ export function saveFaceCollectionProfileApi(data: {
 
 export function deleteFaceCollectionProfileApi(data: { studentId: string | number }) {
   return usePost<boolean>('/api/v1/face-collections/delete', data)
+}
+
+export function listFaceAttendanceSessionsApi(params?: { limit?: number }) {
+  return useGet<FaceAttendanceSession[]>('/api/v1/face-collections/attendance-sessions', params)
+}
+
+export function recognizeFaceAttendanceSessionApi(data: {
+  faceDescriptor: number[]
+}) {
+  return usePost<FaceAttendanceRecognizeResult>('/api/v1/face-collections/attendance-sessions/recognize', data)
+}
+
+export function commitFaceAttendanceSessionApi(data: {
+  studentId: string | number
+  sessionId?: string | number
+  action: string
+  faceImage: string
+}) {
+  return usePost<FaceAttendanceSession>('/api/v1/face-collections/attendance-sessions/commit', data)
 }
 
 export function listFaceAttendanceRecordsApi(params?: { limit?: number }) {

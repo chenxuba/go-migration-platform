@@ -149,6 +149,82 @@ func (handler *Handler) deleteFaceCollectionProfile(w http.ResponseWriter, r *ht
 	httpx.WriteJSON(w, http.StatusOK, true, ctx.RequestID)
 }
 
+func (handler *Handler) listFaceAttendanceSessions(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	limit := 50
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	result, err := handler.service.ListFaceAttendanceSessions(claims.UserID, limit)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	for idx := range result {
+		result[idx].AvatarURL = normalizeStudentAvatar(result[idx].AvatarURL, nil)
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) recognizeFaceAttendanceSession(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var dto model.FaceAttendanceSessionRecognizeDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.RecognizeFaceAttendanceSession(claims.UserID, dto)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result.AvatarURL = normalizeStudentAvatar(result.AvatarURL, nil)
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) commitFaceAttendanceSession(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var dto model.FaceAttendanceSessionCommitDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.CommitFaceAttendanceSession(claims.UserID, dto)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result.AvatarURL = normalizeStudentAvatar(result.AvatarURL, nil)
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) listFaceAttendanceRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

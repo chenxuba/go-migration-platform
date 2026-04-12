@@ -7,13 +7,13 @@ import * as qiniu from 'qiniu-js'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import {
-  compareFaceCollectionApi,
+  commitFaceAttendanceSessionApi,
   deleteFaceCollectionProfileApi,
   getFaceCollectionProfileApi,
-  listFaceAttendanceRecordsApi,
+  listFaceAttendanceSessionsApi,
   listFaceCollectionProfilesApi,
   pageFaceCollectionStudentsApi,
-  saveFaceAttendanceRecordApi,
+  recognizeFaceAttendanceSessionApi,
   saveFaceCollectionProfileApi,
 } from '@/api/edu-center/face'
 import { getQiniuToken } from '@/api/qiniu'
@@ -32,15 +32,38 @@ const studentListLoading = ref(false)
 const studentSearchKey = ref('')
 const collectedProfiles = ref([])
 let studentSearchTimer = null
-// 添加一个ref来跟踪每个学生的最后考勤时间
-const lastAttendanceTimes = ref({})
 // 添加一个ref来控制显示哪个提示
 const showCooldownMessage = ref(false)
+const attendanceBannerText = ref('请勿重复操作')
 // formatDate 格式化时间 07-11 12:23
 function formatDate(timestamp) {
   if (!timestamp)
     return ''
   return dayjs(timestamp).format('MM-DD HH:mm')
+}
+
+function getAttendanceStatusText(item) {
+  if (Number(item?.status || 0) === 2)
+    return '已签退'
+  return '已签到'
+}
+
+function getAttendanceTipText(item) {
+  if (!item)
+    return ''
+  if (Number(item.status || 0) === 2) {
+    const signInText = formatDate(item.signInTime)
+    const signOutText = formatDate(item.signOutTime)
+    if (signInText && signOutText)
+      return `签到时间 ${signInText}，签退时间 ${signOutText}`
+    if (signOutText)
+      return `签退时间 ${signOutText}`
+    return '已完成当日考勤'
+  }
+  const signInText = formatDate(item.signInTime)
+  if (signInText)
+    return `签到时间 ${signInText}，等待签退`
+  return '已完成签到，等待签退'
 }
 
 // 考勤记录
@@ -553,55 +576,57 @@ async function recognizeFace(currentFaceDescriptor) {
   recognizingFace.value = true
 
   try {
-    if (!Array.isArray(collectedProfiles.value) || collectedProfiles.value.length === 0) {
-      await loadCollectedProfiles()
-    }
-    if (!Array.isArray(collectedProfiles.value) || collectedProfiles.value.length === 0) {
-      showCooldownMessage.value = false // 确保显示"脸部与摄像头平视，识别中"
-      message.warning('未找到已采集的人脸数据')
-      setTimeout(() => {
-        recognizingFace.value = false
-      }, 2000)
-      return
-    }
-
-    const compareRes = await compareFaceCollectionApi({
+    const recognizeRes = await recognizeFaceAttendanceSessionApi({
       faceDescriptor: Array.from(currentFaceDescriptor || []),
     })
 
-    if (compareRes.code === 200 && compareRes.result?.matched) {
-      const matchedStudent = studentList.value.find(s => String(s.id) === String(compareRes.result.studentId)) || {
-        id: String(compareRes.result.studentId || ''),
-        name: compareRes.result.studentName || '',
-      }
-
-      if (matchedStudent?.id) {
-        // 检查是否在1分钟内重复考勤
-        const lastAttendanceTime = lastAttendanceTimes.value[matchedStudent.id]
-        const now = Date.now()
-
-        if (lastAttendanceTime && (now - lastAttendanceTime) < 60000) { // 60000ms = 1分钟
-          showCooldownMessage.value = true
-        }
-        else {
-          showCooldownMessage.value = false
-          const saved = await saveAttendanceRecord(compareRes.result.studentId, matchedStudent.name)
-          if (saved) {
-            lastAttendanceTimes.value[matchedStudent.id] = now
-            message.success(`人脸考勤成功: ${matchedStudent.name}`)
-            speakMessage(`人脸考勤成功: ${matchedStudent.name}`)
-          }
-        }
-      }
+    if (recognizeRes.code !== 200 || !recognizeRes.result) {
+      showCooldownMessage.value = false
+      message.warning(recognizeRes.message || '人脸识别失败，请重试')
+      return
     }
-    else {
-      showCooldownMessage.value = false // 确保显示"脸部与摄像头平视，识别中"
-      message.warning('未能识别该人脸，请确保已完成人脸采集')
+
+    const result = recognizeRes.result
+    const matchedStudent = studentList.value.find(s => String(s.id) === String(result.studentId)) || {
+      id: String(result.studentId || ''),
+      name: result.studentName || '',
+      avatarUrl: result.avatarUrl || '',
+    }
+
+    if (!result.matched || !result.studentId) {
+      showCooldownMessage.value = false
+      message.warning(result.message || '未能识别该人脸，请确保已完成人脸采集')
+      return
+    }
+
+    if (!result.needUpload || !['sign_in', 'sign_out'].includes(result.action || '')) {
+      showCooldownMessage.value = true
+      attendanceBannerText.value = result.message || '请勿重复操作'
+      if (result.message) {
+        if (result.action === 'ignore')
+          message.info(result.message)
+        else
+          message.warning(result.message)
+      }
+      return
+    }
+
+    showCooldownMessage.value = false
+    const saved = await saveAttendanceRecord({
+      studentId: result.studentId,
+      studentName: matchedStudent.name,
+      sessionId: result.sessionId,
+      action: result.action,
+    })
+    if (saved) {
+      const successLabel = result.action === 'sign_out' ? '签退' : '签到'
+      message.success(`人脸${successLabel}成功: ${matchedStudent.name}`)
+      speakMessage(`人脸${successLabel}成功: ${matchedStudent.name}`)
     }
   }
   catch (error) {
     console.error('人脸识别失败:', error)
-    showCooldownMessage.value = false // 确保显示"脸部与摄像头平视，识别中"
+    showCooldownMessage.value = false
     message.error('人脸识别失败，请重试')
   }
   finally {
@@ -682,7 +707,7 @@ async function captureFace() {
 // 加载考勤记录
 async function loadAttendanceRecords() {
   try {
-    const res = await listFaceAttendanceRecordsApi({ limit: 50 })
+    const res = await listFaceAttendanceSessionsApi({ limit: 50 })
     if (res.code !== 200) {
       attendanceRecords.value = []
       return
@@ -704,44 +729,53 @@ function scrollToBottom() {
     }
   })
 }
+
+function upsertAttendanceRecord(record) {
+  const currentList = Array.isArray(attendanceRecords.value) ? [...attendanceRecords.value] : []
+  const nextList = currentList.filter(item => String(item.id) !== String(record.id))
+  nextList.unshift(record)
+  attendanceRecords.value = nextList
+  scrollToBottom()
+}
+
+async function captureCurrentAttendanceImage(folder = 'face/attendance') {
+  const canvas = document.createElement('canvas')
+  canvas.width = videoRef.value.videoWidth
+  canvas.height = videoRef.value.videoHeight
+  const ctx = canvas.getContext('2d')
+
+  ctx.translate(canvas.width, 0)
+  ctx.scale(-1, 1)
+  ctx.drawImage(videoRef.value, 0, 0, canvas.width, canvas.height)
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+
+  const faceImageData = canvas.toDataURL('image/jpeg')
+  return await uploadFaceImageData(faceImageData, folder)
+}
+
 // 保存考勤记录
-async function saveAttendanceRecord(studentId, studentName = '') {
+async function saveAttendanceRecord({ studentId, studentName = '', sessionId, action }) {
   try {
     const student = studentList.value.find(s => String(s.id) === String(studentId))
     if (!student && !studentName)
       return false
 
-    // 捕获当前视频帧作为考勤图像
-    const canvas = document.createElement('canvas')
-    canvas.width = videoRef.value.videoWidth
-    canvas.height = videoRef.value.videoHeight
-    const ctx = canvas.getContext('2d')
-
-    // 翻转图像以匹配用户看到的画面
-    ctx.translate(canvas.width, 0)
-    ctx.scale(-1, 1)
-    ctx.drawImage(videoRef.value, 0, 0, canvas.width, canvas.height)
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-
-    // 转换为base64图像数据
-    const faceImageData = canvas.toDataURL('image/jpeg')
-    const uploadedFaceImage = await uploadFaceImageData(faceImageData, 'face/attendance')
-    const res = await saveFaceAttendanceRecordApi({
+    const uploadedFaceImage = await captureCurrentAttendanceImage('face/attendance')
+    const res = await commitFaceAttendanceSessionApi({
       studentId,
+      sessionId,
+      action,
       faceImage: uploadedFaceImage,
     })
     if (res.code !== 200 || !res.result) {
       return false
     }
-    attendanceRecords.value.unshift({
+    upsertAttendanceRecord({
       ...res.result,
       studentName: res.result.studentName || student?.name || studentName,
-      faceImage: res.result.faceImage || uploadedFaceImage,
-      recordTime: res.result.recordTime,
+      latestImage: res.result.latestImage || res.result.signOutImage || res.result.signInImage || uploadedFaceImage,
+      avatarUrl: res.result.avatarUrl || student?.avatarUrl || '',
     })
-
-    // 滚动到底部
-    scrollToBottom()
     return true
   }
   catch (error) {
@@ -843,12 +877,6 @@ onMounted(async () => {
   await loadStudentList()
   await loadCollectedProfiles()
   await loadAttendanceRecords()
-  attendanceRecords.value.forEach((record) => {
-    const rawTime = record.recordTime || record.timestamp
-    if (record.studentId && rawTime) {
-      lastAttendanceTimes.value[record.studentId] = new Date(rawTime).getTime()
-    }
-  })
 
   // Load face-api.js models
   loadModels()
@@ -941,6 +969,8 @@ function switchMode(mode) {
 
   // 重置状态
   recognizingFace.value = false
+  showCooldownMessage.value = false
+  attendanceBannerText.value = '请勿重复操作'
   capturedImageUrl.value = ''
   capturedTime.value = ''
   student.value = undefined
@@ -977,6 +1007,7 @@ function startAttendance() {
   // 设置状态以隐藏准备区域
   isAttendanceStarted.value = true
   showCooldownMessage.value = false
+  attendanceBannerText.value = '请勿重复操作'
   speakMessage('开始考勤')
 
   if (videoStream.value) {
@@ -1103,7 +1134,7 @@ function startAttendance() {
                 </span>
               </div>
             </div>
-            <!-- 1分钟内不能重复刷脸 -->
+            <!-- 重复刷脸或当前无需处理 -->
             <div v-if="isAttendanceStarted && showCooldownMessage" class="absolute top-0 right-0 left-0 z-200">
               <div
                 class="flex flex-center h-40px w-100% text-#fff text-15px font500 "
@@ -1123,7 +1154,7 @@ function startAttendance() {
                     src="https://pcsys.admin.ybc365.com/3551cca2-7ab0-4d9f-bb52-902a88b8cdbd.png"
                   >
                 </span>
-                <span class="mx-12px">{{ isFaceDetected ? '1分钟内不能重复刷脸' : '未检测到人脸，请面对摄像头' }}</span>
+                <span class="mx-12px">{{ isFaceDetected ? attendanceBannerText : '未检测到人脸，请面对摄像头' }}</span>
                 <span class="startAttSpan3">
                   <img
                     class="animationImg w-10px"
@@ -1256,15 +1287,18 @@ function startAttendance() {
                 :key="index" class="flex flex-items-center mb-12px pb-12px border-x-0 border-t-0 border-b border-color-#e6e6e6 border-solid "
               >
                 <div class="left w-40px h-40px">
-                  <img width="40px" height="40px" class="rounded-20 object-cover" :src="item.faceImage" alt="">
+                  <img width="40px" height="40px" class="rounded-20 object-cover" :src="item.latestImage || item.avatarUrl" alt="">
                 </div>
                 <div class="center mx-10px flex-1">
                   <div class="name flex flex-items-center">
                     <span class="text-16px font500 text-#222">{{ item.studentName }}</span>
-                    <span class="bg-#e6f0ff rounded-20 px-10px py-2px text-12px text-#0066ff font500">自动签到</span>
+                    <span class="bg-#e6f0ff rounded-20 px-10px py-2px text-12px text-#0066ff font500">{{ getAttendanceStatusText(item) }}</span>
                   </div>
-                  <div class="tips text-#ff9900 text-3 font-500">
+                  <div v-if="item.hasSchedule === false" class="tips text-#ff9900 text-3 font-500">
                     <ExclamationCircleFilled /> 考勤当日无排课计划
+                  </div>
+                  <div v-if="getAttendanceTipText(item)" class="tips text-#7b889d text-3 font-500 mt-4px">
+                    {{ getAttendanceTipText(item) }}
                   </div>
                 </div>
                 <div class="right flex flex-items-end flex-col">
@@ -1272,8 +1306,7 @@ function startAttendance() {
                     <CheckCircleFilled class="text-#01c38f text-22px" />
                   </div>
                   <div class="time text-3 text-#7b889d">
-                    <!-- 格式化成 这样的格式 05-11 18:33 -->
-                    {{ formatDate(item.recordTime || item.timestamp) }}
+                    {{ formatDate(item.latestTime || item.signOutTime || item.signInTime) }}
                   </div>
                 </div>
               </div>
