@@ -81,7 +81,28 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 				ELSE 0 
 			END) AS total_free_quantity,
 			SUM(ta.total_tuition) AS total_tuition,
-			`+arrearTuitionExpr+`,
+				`+arrearTuitionExpr+`,
+				(
+					SELECT IFNULL(SUM(IFNULL(str.arrear_quantity, 0)), 0)
+					FROM student_teaching_record str
+					WHERE str.inst_id = ?
+						AND str.del_flag = 0
+						AND str.student_id = ?
+						AND str.lesson_id = ic.id
+						AND (
+							CASE
+								WHEN IFNULL(str.sku_mode, 0) = 4 THEN 3
+								ELSE IFNULL(str.sku_mode, 0)
+						END
+					) = (
+						CASE
+							WHEN IFNULL(icq.lesson_model, 0) = 4 THEN 3
+							ELSE IFNULL(icq.lesson_model, 0)
+						END
+					)
+					AND IFNULL(str.arrear_quantity, 0) > 0
+					AND IFNULL(str.has_compensated, 0) = 0
+			) AS lesson_consume_arrear_quantity,
 			SUM(CASE 
 				WHEN IFNULL(ta.status, 0) = 3 THEN 0
 				WHEN icq.lesson_model = 3 THEN ta.remaining_tuition
@@ -120,12 +141,12 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			WHERE del_flag = 0
 			GROUP BY order_id
 		) pay ON pay.order_id = ta.order_id
-		WHERE ta.del_flag = 0
-			AND ta.inst_id = ?
-			AND ta.student_id = ?
-		GROUP BY ic.id, ic.name, ic.teach_method, icq.lesson_model
-		ORDER BY (`+effectiveTuitionAccountStatusSQL+` = 3) ASC, MAX(ta.create_time) DESC
-	`, instID, studentID)
+			WHERE ta.del_flag = 0
+				AND ta.inst_id = ?
+				AND ta.student_id = ?
+			GROUP BY ic.id, ic.name, ic.teach_method, icq.lesson_model
+			ORDER BY (`+effectiveTuitionAccountStatusSQL+` = 3) ASC, MAX(ta.create_time) DESC
+		`, instID, studentID, instID, studentID)
 	if err != nil {
 		return model.TuitionAccountReadingListResult{}, err
 	}
@@ -145,6 +166,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			&item.TotalFreeQuantity,
 			&item.TotalTuition,
 			&item.ArrearTuition,
+			&item.LessonConsumeArrearQuantity,
 			&item.RemainQuantity,
 			&item.Tuition,
 			&item.RemainFreeQuantity,

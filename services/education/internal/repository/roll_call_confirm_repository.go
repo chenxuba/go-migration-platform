@@ -45,8 +45,9 @@ type rollCallConfirmAccount struct {
 }
 
 type rollCallConfirmOptions struct {
-	RecordTime   *time.Time
-	OperatorName string
+	RecordTime     *time.Time
+	OperatorName   string
+	IsAutoRollCall bool
 }
 
 func (repo *Repository) CheckRollCallTeachingRecordByTeacherAndTime(ctx context.Context, instID int64, dto model.RollCallCheckTeachingRecordByTeacherAndTimeDTO) error {
@@ -270,8 +271,16 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 
 		if normalizeRollCallDrawerChargingMode(item.SkuMode) == 1 && quantity > 0 {
 			if hasAccount && account.Status == model.TuitionAccountStatusActive {
-				actualDeduct = math.Min(quantity, math.Max(account.RemainingQuantity, 0))
-				arrearQuantity = roundMoney(math.Max(quantity-actualDeduct, 0))
+				canCoverQuantity := math.Max(account.RemainingQuantity, 0)+0.000001 >= quantity
+				if !canCoverQuantity && options.IsAutoRollCall {
+					actualQuantity = 0
+					actualDeduct = 0
+					actualTuition = 0
+					arrearQuantity = quantity
+				} else {
+					actualDeduct = math.Min(quantity, math.Max(account.RemainingQuantity, 0))
+					arrearQuantity = roundMoney(math.Max(quantity-actualDeduct, 0))
+				}
 				if actualDeduct > 0 {
 					actualTuition = repo.rollCallConfirmLessonHourTuition(actualDeduct, account)
 					if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, actualDeduct, actualTuition, account); err != nil {
@@ -284,8 +293,14 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 					account.ConfirmedTuition = roundMoney(account.ConfirmedTuition + actualTuition)
 					accountMap[strings.TrimSpace(item.TuitionAccountID)] = account
 				}
+				if options.IsAutoRollCall && arrearQuantity > 0 {
+					actualQuantity = 0
+				}
 			} else {
 				arrearQuantity = quantity
+				if options.IsAutoRollCall {
+					actualQuantity = 0
+				}
 			}
 		}
 

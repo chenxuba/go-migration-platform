@@ -142,6 +142,10 @@ function hasArrearTuition(item) {
   return roundMoneyAmount(item?.arrearTuition || 0) > 0
 }
 
+function hasLessonConsumeArrear(item) {
+  return roundMoneyAmount(item?.lessonConsumeArrearQuantity || 0) > 0
+}
+
 function hasConsumedTuitionAccount(item) {
   const chargingMode = Number(item?.lessonChargingMode || 0)
   if (chargingMode === 3) {
@@ -159,8 +163,16 @@ function shouldShowArrearBadge(item) {
   return hasArrearTuition(item) && hasConsumedTuitionAccount(item)
 }
 
+function shouldShowLessonConsumeArrearBadge(item) {
+  return hasLessonConsumeArrear(item)
+}
+
 function getArrearTuitionTooltip(item) {
   return `欠费学费金额：¥ ${formatMoney(item?.arrearTuition || 0)}`
+}
+
+function getLessonConsumeArrearTooltip(item) {
+  return `存在 ${formatCount(item?.lessonConsumeArrearQuantity || 0)} 课时未清算的课消欠费`
 }
 
 function isTuitionAccountClosedByStatus(item) {
@@ -665,6 +677,15 @@ watch(endTheClassDrawerOpen, (value) => {
               <a-space>
                 <span v-if="item.lessonType" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">{{ getLessonTypeText(item.lessonType) }}</span>
                 <span v-if="item.lessonChargingMode" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">{{ getChargingModeText(item.lessonChargingMode) }}</span>
+                <a-tooltip v-if="shouldShowLessonConsumeArrearBadge(item)" placement="top">
+                  <template #title>
+                    {{ getLessonConsumeArrearTooltip(item) }}
+                  </template>
+                  <span class="lesson-consume-arrear-badge">
+                    <span class="lesson-consume-arrear-badge__dot" />
+                    课消欠费
+                  </span>
+                </a-tooltip>
               </a-space>
             </div>
             <div class="remaining-class-hours px3 text-3 text-#888 mt-5 flex justify-between">
@@ -845,6 +866,30 @@ watch(endTheClassDrawerOpen, (value) => {
   font-size: 12px;
   line-height: 16px;
   cursor: pointer;
+}
+
+.lesson-consume-arrear-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #fff1f0;
+  color: #ff4d4f;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  border: 1px solid #ffccc7;
+  cursor: pointer;
+}
+
+.lesson-consume-arrear-badge__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4d4f;
+  box-shadow: 0 0 0 2px rgb(255 77 79 / 14%);
 }
 
 .course-card-body {
