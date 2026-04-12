@@ -18,6 +18,7 @@ const (
 	faceAttendanceRollCallTaskStatusSkipped   = 3
 	faceAttendanceRollCallTaskBatchSize       = 100
 	faceAttendanceRollCallTaskSessionBatchMax = 20
+	faceAttendanceAutoRollCallDelay           = 30 * time.Minute
 )
 
 type faceAttendanceAutoRollCallTask struct {
@@ -223,11 +224,12 @@ func (repo *Repository) enqueueFaceAttendanceAutoRollCallTasksTx(ctx context.Con
 				execute_at, sign_in_time, status, teaching_record_id, last_error, create_id, update_id, del_flag
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, 0)
 			ON DUPLICATE KEY UPDATE
+				execute_at = VALUES(execute_at),
 				sign_in_time = VALUES(sign_in_time),
 				update_id = VALUES(update_id),
 				update_time = CURRENT_TIMESTAMP,
 				del_flag = 0
-		`, instID, sessionID, studentID, attendanceDate, candidate.ScheduleID, candidate.StartAt, signInTime, faceAttendanceRollCallTaskStatusPending, operatorID, operatorID)
+		`, instID, sessionID, studentID, attendanceDate, candidate.ScheduleID, candidate.EndAt.Add(faceAttendanceAutoRollCallDelay), signInTime, faceAttendanceRollCallTaskStatusPending, operatorID, operatorID)
 		if err != nil {
 			return totalAffected, err
 		}
@@ -299,12 +301,6 @@ func (repo *Repository) processFaceAttendanceAutoRollCallTaskByID(ctx context.Co
 	}
 	if !found || !session.SignInTime.Valid {
 		if err := repo.updateFaceAttendanceAutoRollCallTaskStatusTx(ctx, tx, task.ID, operatorID, faceAttendanceRollCallTaskStatusSkipped, 0, "缺少首次签到记录"); err != nil {
-			return false, err
-		}
-		return true, tx.Commit()
-	}
-	if session.SignOutTime.Valid && session.SignOutTime.Time.Before(task.ExecuteAt) {
-		if err := repo.updateFaceAttendanceAutoRollCallTaskStatusTx(ctx, tx, task.ID, operatorID, faceAttendanceRollCallTaskStatusSkipped, 0, "签到后已签退，未自动点名"); err != nil {
 			return false, err
 		}
 		return true, tx.Commit()
