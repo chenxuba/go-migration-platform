@@ -4,6 +4,18 @@ import { computed, ref, watch } from 'vue'
 export function useTableColumns(options) {
   const { storageKey, allColumns, excludeKeys = [], defaultSelectedKeys = [] } = options
 
+  const getColumnOptionLabel = (col) => {
+    if (typeof col?.columnLabel === 'string' && col.columnLabel.trim())
+      return col.columnLabel.trim()
+    if (typeof col?.title === 'string' && col.title.trim())
+      return col.title.trim()
+    if (typeof col?.key === 'string' && col.key.trim())
+      return col.key.trim()
+    if (typeof col?.dataIndex === 'string' && col.dataIndex.trim())
+      return col.dataIndex.trim()
+    return ''
+  }
+
   // 计算所有有效的列键（包括动态列）
   const keysArray = computed(() => {
     const staticKeys = allColumns.value
@@ -56,7 +68,7 @@ export function useTableColumns(options) {
       .filter(col => !excludeKeys.includes(col.key))
       .map(col => ({
         id: col.key,
-        value: col.title,
+        value: getColumnOptionLabel(col),
         disabled: col.required,
       })),
   )

@@ -345,6 +345,7 @@ function handleExportRollCallSheet() {
         >
           <a-tab-pane key="0" :tab="studentTabLabel">
             <ClassStudentList
+              :drawer-open="openDrawer"
               :class-id="String(displayRecord?.id || '')"
               :class-name="displayRecord?.name || ''"
               :lesson-id="String(displayRecord?.lessonId || '')"

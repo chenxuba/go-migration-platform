@@ -14,6 +14,10 @@ import { ParentRelationshipLabel } from '@/enums'
 import messageService from '@/utils/messageService'
 
 const props = defineProps({
+  drawerOpen: {
+    type: Boolean,
+    default: false,
+  },
   classId: {
     type: String,
     default: '',
@@ -433,8 +437,16 @@ function handleAddStudentSuccess() {
 }
 
 watch(
-  () => [props.classId, checked.value],
-  () => {
+  () => [props.classId, checked.value, props.drawerOpen],
+  ([classId, checkedValue, drawerOpen], prev = []) => {
+    const [prevClassId, prevCheckedValue, prevDrawerOpen] = prev
+    if (!drawerOpen)
+      return
+    const openedNow = drawerOpen && !prevDrawerOpen
+    const classChanged = classId !== prevClassId
+    const checkedChanged = checkedValue !== prevCheckedValue
+    if (!openedNow && !classChanged && !checkedChanged)
+      return
     pagination.current = 1
     loadStudentTable()
   },
