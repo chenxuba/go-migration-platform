@@ -501,6 +501,7 @@ type GroupClassStudentTuitionSnapVO struct {
 	RemainQuantity         float64   `json:"remainQuantity"`
 	RemainFreeQuantity     float64   `json:"remainFreeQuantity"`
 	RemainTuition          float64   `json:"remainTuition"`
+	ArrearTuition          float64   `json:"arrearTuition"`
 	LessonChargingMode     int       `json:"lessonChargingMode"`
 	EnableExpireTime       bool      `json:"enableExpireTime"`
 	StartTime              time.Time `json:"startTime"`
@@ -540,6 +541,25 @@ type GroupClassStudentQueryModel struct {
 type GroupClassStudentPagedListBody struct {
 	QueryModel       GroupClassStudentQueryModel `json:"queryModel"`
 	PageRequestModel GroupClassPageRequestModel  `json:"pageRequestModel"`
+}
+
+type GroupClassFinishCoursePreviewQueryModel struct {
+	ID                 string `json:"id"`
+	ClassStudentStatus []int  `json:"classStudentStatus"`
+}
+
+type GroupClassFinishCoursePreviewSortModel struct {
+	OrderByJoinTime  int `json:"orderByJoinTime"`
+	TotalTuition     int `json:"totalTuition"`
+	Tuition          int `json:"tuition"`
+	ConfirmedTuition int `json:"confirmedTuition"`
+	ExpireTime       int `json:"expireTime"`
+}
+
+type GroupClassFinishCoursePreviewBody struct {
+	QueryModel       GroupClassFinishCoursePreviewQueryModel `json:"queryModel"`
+	SortModel        GroupClassFinishCoursePreviewSortModel  `json:"sortModel"`
+	PageRequestModel GroupClassPageRequestModel              `json:"pageRequestModel"`
 }
 
 type GroupClassStudentStatisticsVO struct {

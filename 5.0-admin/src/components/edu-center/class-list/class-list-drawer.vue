@@ -22,7 +22,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:open', 'edit', 'refresh'])
+const emit = defineEmits(['update:open', 'edit', 'refresh', 'finish-course'])
 const activeKey = ref('0')
 
 const openDrawer = computed({
@@ -135,7 +135,7 @@ function handleEditRollName() {
   editRollNameModal.value = true
 }
 
-async function submitCloseClass() {
+async function submitCloseClass(openFinishCourse = false) {
   const classId = String(displayRecord.value?.id || '').trim()
   if (!classId) {
     messageService.error('缺少班级ID')
@@ -147,6 +147,8 @@ async function submitCloseClass() {
       messageService.success('结班成功')
       emit('refresh')
       openDrawer.value = false
+      if (openFinishCourse)
+        emit('finish-course', { ...displayRecord.value, status: 2 })
       return
     }
     messageService.error(res.message || '结班失败')
@@ -162,10 +164,10 @@ async function submitCloseClass() {
 function handleCloseClass() {
   openCloseClassConfirm({
     onOk() {
-      return submitCloseClass()
+      return submitCloseClass(true)
     },
     onCancel() {
-      return submitCloseClass()
+      return submitCloseClass(false)
     },
   })
 }

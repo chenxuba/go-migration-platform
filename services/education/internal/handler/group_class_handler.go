@@ -247,6 +247,29 @@ func (handler *Handler) pageGroupClassStudents(w http.ResponseWriter, r *http.Re
 	httpx.WriteJSON(w, http.StatusOK, res, ctx.RequestID)
 }
 
+func (handler *Handler) pageGroupClassFinishCoursePreview(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var body model.GroupClassFinishCoursePreviewBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	res, err := handler.service.PageGroupClassFinishCoursePreview(claims.UserID, body)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, res, ctx.RequestID)
+}
+
 func (handler *Handler) groupClassStudentTeachingRecordCount(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

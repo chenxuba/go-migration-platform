@@ -165,6 +165,7 @@ export interface GroupClassStudentTuitionAccountInfo {
   remainQuantity: number
   remainFreeQuantity: number
   remainTuition: number
+  arrearTuition: number
   lessonChargingMode: number
   enableExpireTime: boolean
   startTime?: string
@@ -239,6 +240,28 @@ export function pageGroupClassStudentsApi(data: {
   }
 }) {
   return usePost<{ list: GroupClassStudentPagedItem[], total: number }>('/api/v1/group-classes/student-paged-list', data)
+}
+
+export function getGroupClassFinishCoursePreviewApi(data: {
+  queryModel: {
+    id: string
+    classStudentStatus: number[]
+  }
+  sortModel?: {
+    orderByJoinTime?: number
+    totalTuition?: number
+    tuition?: number
+    confirmedTuition?: number
+    expireTime?: number
+  }
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+}) {
+  return usePost<{ list: GroupClassStudentPagedItem[], total: number }>('/api/v1/group-classes/finish-course-preview', data)
 }
 
 export function getGroupClassStudentTeachingRecordCountApi(data: {

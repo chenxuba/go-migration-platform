@@ -13,6 +13,7 @@ import {
 import CreateClassModal from '@/components/common/create-class-modal.vue'
 import ClassAddStudentModal from '@/components/edu-center/class-list/class-add-student-modal.vue'
 import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawer.vue'
+import GroupClassFinishCourseModal from '@/components/edu-center/class-list/group-class-finish-course-modal.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { openCloseClassConfirm } from '@/utils/closeClassConfirm'
 import messageService from '@/utils/messageService'
@@ -29,6 +30,8 @@ const addStudentModalTitle = ref('')
 const addStudentModalLessonName = ref('')
 const addStudentModalClassId = ref('')
 const addStudentModalLessonId = ref('')
+const finishCourseModalOpen = ref(false)
+const finishCourseRecord = ref(null)
 const listLoading = ref(false)
 const dataSource = ref([])
 const selectedRowKeys = ref([])
@@ -465,6 +468,11 @@ async function closeGroupClass(record) {
   }
 }
 
+function openGroupClassFinishCourseModal(record) {
+  finishCourseRecord.value = record || null
+  finishCourseModalOpen.value = true
+}
+
 async function reopenGroupClass(record) {
   const id = String(record?.id || '').trim()
   if (!id) {
@@ -491,8 +499,10 @@ async function reopenGroupClass(record) {
 
 function openGroupClassCloseConfirm(record) {
   openCloseClassConfirm({
-    onOk() {
-      return closeGroupClass(record)
+    async onOk() {
+      await closeGroupClass(record)
+      const latest = dataSource.value.find(item => String(item?.id || '').trim() === String(record?.id || '').trim()) || record
+      openGroupClassFinishCourseModal(latest)
     },
     onCancel() {
       return closeGroupClass(record)
@@ -550,6 +560,16 @@ function handleDrawerEdit(record) {
 }
 
 async function handleDrawerRefresh() {
+  await getClassList(queryState.value)
+  syncCurrentClassRecordFromList()
+}
+
+function handleDrawerFinishCourse(record) {
+  openGroupClassFinishCourseModal(record)
+}
+
+async function handleFinishCourseSuccess() {
+  finishCourseModalOpen.value = false
   await getClassList(queryState.value)
   syncCurrentClassRecordFromList()
 }
@@ -861,7 +881,13 @@ onMounted(async () => {
       v-model:open="classListDrawerFlag"
       :record="currentClassRecord"
       @edit="handleDrawerEdit"
+      @finish-course="handleDrawerFinishCourse"
       @refresh="handleDrawerRefresh"
+    />
+    <GroupClassFinishCourseModal
+      v-model:open="finishCourseModalOpen"
+      :record="finishCourseRecord"
+      @success="handleFinishCourseSuccess"
     />
     <ClassAddStudentModal
       v-model:open="addStudentModalOpen"

@@ -258,12 +258,16 @@ function formatNumber(value?: number) {
 
 function getUsedQuantity(record: Partial<GroupClassStudentPagedItem>) {
   const total = Number(record.totalQuantity || 0)
-  const remain = Number(record.quantity || 0)
-  const free = Number(record.freeQuantity || 0)
-  return Math.max(total - remain - free, 0)
+  return Math.max(total - getRemainQuantity(record), 0)
+}
+
+function getRemainQuantity(record: Partial<GroupClassStudentPagedItem>) {
+  return Number(record.quantity || 0) + Number(record.freeQuantity || 0)
 }
 
 function getClassStatusInfo(record: Partial<GroupClassStudentPagedItem>) {
+  if (Number(record.tuitionAccountStatus || 0) === 3)
+    return { text: '结课', className: 'text-#888 bg-#f5f5f5' }
   if (record.status === 3) {
     if (record.classEndingTime && `${record.classEndingTime}` !== '0001-01-01T00:00:00')
       return { text: '结课', className: 'text-#888 bg-#f5f5f5' }
@@ -569,7 +573,7 @@ watch(
                   <a class="ml-6px" @click="handleSwitchAccount">切换</a>
                 </div>
                 <div class="text-#666">
-                  剩余课时：{{ formatQuantity(record.quantity, record.classStudentTuitionAccountInfo?.lessonChargingMode) }}
+                  剩余课时：{{ formatQuantity(getRemainQuantity(record), record.classStudentTuitionAccountInfo?.lessonChargingMode) }}
                 </div>
                 <div class="text-#666">
                   有效期至：{{ formatExpireDate(record) }}
@@ -595,7 +599,7 @@ watch(
             </template>
 
             <template v-else-if="column.key === 'quantity'">
-              {{ formatQuantity(Number(record.quantity || 0), record.classStudentTuitionAccountInfo?.lessonChargingMode) }}
+              {{ formatQuantity(getRemainQuantity(record), record.classStudentTuitionAccountInfo?.lessonChargingMode) }}
             </template>
 
             <template v-else-if="column.key === 'totalTuition'">

@@ -512,7 +512,7 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 		return out, nil
 	}
 
-	listQuery := `
+	listQuery := fmt.Sprintf(`
 		SELECT
 			CAST(ms.student_id AS CHAR),
 			IFNULL(s.stu_name, ''),
@@ -523,17 +523,47 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			CAST(IFNULL(fp.id, 0) AS CHAR),
 			IFNULL(s.phone_relationship, 0),
 			CAST(IFNULL(ptcs.primary_tuition_account_id, 0) AS CHAR),
-			IFNULL(pta.total_quantity, 0),
-			IFNULL(pta.free_quantity, 0),
-			IFNULL(pta.remaining_quantity, 0),
-			IFNULL(pta.total_tuition, 0),
-			IFNULL(pta.remaining_tuition, 0),
-			IFNULL(pta.status, 0),
-			IFNULL(pta.enable_expire_time, 0),
-			pta.valid_date,
-			pta.expire_time,
-			pta.suspended_time,
-			pta.class_ending_time,
+			IFNULL(ta_agg.total_quantity_display, IFNULL(pta.total_quantity, 0)),
+			IFNULL(ta_agg.total_free_quantity_display, IFNULL(pta.free_quantity, 0)),
+			IFNULL(ta_agg.remain_quantity_display, IFNULL(pta.remaining_quantity, 0)),
+			IFNULL(ta_agg.remain_free_sum, CASE
+				WHEN IFNULL(pta.status, 0) = 3 THEN 0
+				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(pta.free_quantity, 0)
+				WHEN IFNULL(pta.total_quantity, 0) = 0 AND IFNULL(pta.free_quantity, 0) > 0 THEN IFNULL(pta.remaining_quantity, 0)
+				ELSE 0
+			END),
+			IFNULL(ta_agg.sum_total_tuition, IFNULL(pta.total_tuition, 0)),
+			IFNULL(ta_agg.sum_remaining_tuition, CASE
+				WHEN IFNULL(pta.status, 0) = 3 THEN 0
+				ELSE IFNULL(pta.remaining_tuition, 0)
+			END),
+			IFNULL(ta_agg.arrear_tuition, CASE
+				WHEN IFNULL(pta.total_tuition, 0) <= 0 THEN 0
+				WHEN IFNULL(so.is_bad_debt, 0) = 1 THEN 0
+				WHEN IFNULL(so.order_status, 0) = %d THEN 0
+				WHEN IFNULL(so.order_real_amount, 0) <= 0 THEN 0
+				ELSE GREATEST(
+					(CASE
+						WHEN sod.id IS NOT NULL THEN GREATEST(IFNULL(sod.amount, 0) - IFNULL(sod.share_discount, 0), 0)
+						ELSE IFNULL(pta.total_tuition, 0)
+					END)
+					- (
+						IFNULL(pay.paid_amount, 0) * (
+							(CASE
+								WHEN sod.id IS NOT NULL THEN GREATEST(IFNULL(sod.amount, 0) - IFNULL(sod.share_discount, 0), 0)
+								ELSE IFNULL(pta.total_tuition, 0)
+							END) / IFNULL(so.order_real_amount, 0)
+						)
+					),
+					0
+				)
+			END),
+			IFNULL(ta_agg.effective_status, IFNULL(pta.status, 0)),
+			IFNULL(ta_agg.enable_expire_max, IFNULL(pta.enable_expire_time, 0)),
+			COALESCE(ta_agg.valid_date_min, pta.valid_date),
+			COALESCE(ta_agg.expire_time_max, pta.expire_time),
+			COALESCE(ta_agg.suspended_time_max, pta.suspended_time),
+			COALESCE(ta_agg.class_ending_time_max, pta.class_ending_time),
 			COALESCE(
 				NULLIF(ic.name, ''),
 				NULLIF(icq.name, ''),
@@ -584,7 +614,7 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			LEFT JOIN tuition_account ta ON ta.id = tcs.primary_tuition_account_id
 				AND ta.inst_id = tcs.inst_id
 				AND ta.del_flag = 0
-			WHERE ` + memberWhere + `
+			WHERE `+memberWhere+`
 			GROUP BY tcs.student_id
 			ORDER BY join_time DESC, tcs.student_id DESC
 			LIMIT ? OFFSET ?
@@ -593,7 +623,14 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 		INNER JOIN inst_student s ON s.id = ms.student_id AND s.inst_id = ptcs.inst_id AND s.del_flag = 0
 		LEFT JOIN inst_student_face_profile fp ON fp.student_id = ms.student_id AND fp.inst_id = ptcs.inst_id AND fp.del_flag = 0
 		LEFT JOIN tuition_account pta ON pta.id = ptcs.primary_tuition_account_id AND pta.inst_id = ptcs.inst_id AND pta.del_flag = 0
+		LEFT JOIN sale_order so ON so.id = pta.order_id AND so.del_flag = 0
 		LEFT JOIN sale_order_course_detail sod ON sod.id = pta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN (
+			SELECT order_id, SUM(pay_amount) AS paid_amount
+			FROM sale_order_pay_detail
+			WHERE del_flag = 0
+			GROUP BY order_id
+		) pay ON pay.order_id = pta.order_id
 		LEFT JOIN inst_course ic ON ic.id = pta.course_id AND ic.inst_id = ptcs.inst_id AND ic.del_flag = 0
 		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
 			NULLIF(pta.quote_id, 0),
@@ -607,6 +644,97 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 				WHERE qmin.course_id = pta.course_id AND qmin.del_flag = 0
 				ORDER BY qmin.id ASC LIMIT 1)
 		) AND icq.del_flag = 0
+		LEFT JOIN (
+			SELECT
+				ta.inst_id,
+				ta.student_id,
+				ta.course_id,
+				IFNULL(ic2.teach_method, 0) AS teach_method,
+				IFNULL(icq2.lesson_model, 0) AS lesson_model_key,
+				SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.total_tuition, 0)
+					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+					ELSE 0
+				END) AS total_quantity_display,
+				SUM(CASE
+					WHEN IFNULL(icq2.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.free_quantity, 0)
+					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
+					ELSE 0
+				END) AS total_free_quantity_display,
+				SUM(IFNULL(ta.total_tuition, 0)) AS sum_total_tuition,
+				SUM(CASE
+					WHEN IFNULL(ta.status, 0) = 3 THEN 0
+					WHEN IFNULL(icq2.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.remaining_tuition, 0)
+					WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+					ELSE 0
+				END) AS remain_quantity_display,
+				SUM(CASE
+					WHEN IFNULL(ta.status, 0) = 3 THEN 0
+					WHEN IFNULL(icq2.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.free_quantity, 0)
+					WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.remaining_quantity, 0)
+					ELSE 0
+				END) AS remain_free_sum,
+				SUM(CASE
+					WHEN IFNULL(ta.status, 0) = 3 THEN 0
+					ELSE IFNULL(ta.remaining_tuition, 0)
+				END) AS sum_remaining_tuition,
+				SUM(CASE
+					WHEN IFNULL(ta.total_tuition, 0) <= 0 THEN 0
+					WHEN IFNULL(so2.is_bad_debt, 0) = 1 THEN 0
+					WHEN IFNULL(so2.order_status, 0) = %d THEN 0
+					WHEN IFNULL(so2.order_real_amount, 0) <= 0 THEN 0
+					ELSE GREATEST(
+						(CASE
+							WHEN sod2.id IS NOT NULL THEN GREATEST(IFNULL(sod2.amount, 0) - IFNULL(sod2.share_discount, 0), 0)
+							ELSE IFNULL(ta.total_tuition, 0)
+						END)
+						- (
+							IFNULL(pay2.paid_amount, 0) * (
+								(CASE
+									WHEN sod2.id IS NOT NULL THEN GREATEST(IFNULL(sod2.amount, 0) - IFNULL(sod2.share_discount, 0), 0)
+									ELSE IFNULL(ta.total_tuition, 0)
+								END) / IFNULL(so2.order_real_amount, 0)
+							)
+						),
+						0
+					)
+				END) AS arrear_tuition,
+				IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_max,
+				MAX(ta.expire_time) AS expire_time_max,
+				MIN(ta.valid_date) AS valid_date_min,
+				MAX(ta.suspended_time) AS suspended_time_max,
+				MAX(ta.class_ending_time) AS class_ending_time_max,
+				`+effectiveTuitionAccountStatusSQL+` AS effective_status
+			FROM tuition_account ta
+			INNER JOIN inst_course ic2 ON ic2.id = ta.course_id AND ic2.inst_id = ta.inst_id AND ic2.del_flag = 0
+			LEFT JOIN sale_order so2 ON so2.id = ta.order_id AND so2.del_flag = 0
+			LEFT JOIN sale_order_course_detail sod2 ON sod2.id = ta.order_course_detail_id AND sod2.del_flag = 0
+			LEFT JOIN inst_course_quotation icq2 ON icq2.id = COALESCE(
+				NULLIF(ta.quote_id, 0),
+				NULLIF(sod2.quote_id, 0),
+				(SELECT qx.id FROM inst_course_quotation qx
+					WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+						AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+						AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+					ORDER BY qx.id DESC LIMIT 1),
+				(SELECT qmin.id FROM inst_course_quotation qmin
+					WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+					ORDER BY qmin.id ASC LIMIT 1)
+			) AND icq2.del_flag = 0
+			LEFT JOIN (
+				SELECT order_id, SUM(pay_amount) AS paid_amount
+				FROM sale_order_pay_detail
+				WHERE del_flag = 0
+				GROUP BY order_id
+			) pay2 ON pay2.order_id = ta.order_id
+			WHERE ta.del_flag = 0
+				AND ta.inst_id = ?
+			GROUP BY ta.inst_id, ta.student_id, ta.course_id, IFNULL(ic2.teach_method, 0), IFNULL(icq2.lesson_model, 0)
+		) ta_agg ON ta_agg.inst_id = ptcs.inst_id
+			AND ta_agg.student_id = ptcs.student_id
+			AND ta_agg.course_id = pta.course_id
+			AND ta_agg.teach_method = IFNULL(ic.teach_method, 0)
+			AND ta_agg.lesson_model_key = IFNULL(icq.lesson_model, 0)
 		LEFT JOIN inst_channel ch ON ch.id = s.channel_id AND ch.del_flag = 0
 		LEFT JOIN inst_user advisor ON advisor.id = s.advisor_id AND advisor.del_flag = 0
 		LEFT JOIN inst_user manager ON manager.id = s.student_manager_id AND manager.del_flag = 0
@@ -633,11 +761,11 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			GROUP BY str.student_id
 		) tr ON tr.student_id = ms.student_id
 		ORDER BY ms.join_time DESC, ms.student_id DESC
-	`
-	listArgs := make([]any, 0, 1+len(memberArgs)+2+3)
+	`, model.OrderStatusPendingPayment, model.OrderStatusPendingPayment)
+	listArgs := make([]any, 0, 1+len(memberArgs)+2+4)
 	listArgs = append(listArgs, model.TeachingClassTypeNormal)
 	listArgs = append(listArgs, memberArgs...)
-	listArgs = append(listArgs, pageSize, offset, instID, instID, classID)
+	listArgs = append(listArgs, pageSize, offset, instID, instID, instID, classID)
 
 	rows, err := repo.db.QueryContext(ctx, listQuery, listArgs...)
 	if err != nil {
@@ -652,8 +780,8 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			name, avatar, mobile, productName                                         string
 			isBind, enableExpire, isStudentFace                                       int
 			phoneRelationship, status, tuitionAccountStatus, lessonChargingMode       int
-			totalQuantity, totalFreeQuantity, remainQuantity                          float64
-			totalTuition, remainTuition, balance, usedClassTime                       float64
+			totalQuantity, totalFreeQuantity, remainQuantity, remainFreeQuantity      float64
+			totalTuition, remainTuition, arrearTuition, balance, usedClassTime        float64
 			joinTime, validDate, expireTime, suspendedTime, classEndingTime, birthday sql.NullTime
 		)
 		if err := rows.Scan(
@@ -669,8 +797,10 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			&totalQuantity,
 			&totalFreeQuantity,
 			&remainQuantity,
+			&remainFreeQuantity,
 			&totalTuition,
 			&remainTuition,
+			&arrearTuition,
 			&tuitionAccountStatus,
 			&enableExpire,
 			&validDate,
@@ -719,7 +849,7 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 		item.TotalFreeQuantity = totalFreeQuantity
 		item.TotalTuition = totalTuition
 		item.Quantity = remainQuantity
-		item.FreeQuantity = totalFreeQuantity
+		item.FreeQuantity = remainFreeQuantity
 		item.Tuition = remainTuition
 		item.ConfirmedTuition = maxFloat(totalTuition-remainTuition, 0)
 		item.TuitionAccountStatus = tuitionAccountStatus
@@ -746,13 +876,14 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			ProductName:            productName,
 			ProductID:              productID,
 			RemainQuantity:         remainQuantity,
-			RemainFreeQuantity:     totalFreeQuantity,
+			RemainFreeQuantity:     remainFreeQuantity,
 			RemainTuition:          remainTuition,
+			ArrearTuition:          arrearTuition,
 			LessonChargingMode:     lessonChargingMode,
 			EnableExpireTime:       enableExpire != 0,
 			StartTime:              startTime,
 			ExpireTime:             expireAt,
-			IsTuitionAccountActive: tuitionAccountStatus == model.TeachingClassStudentStatusStudying,
+			IsTuitionAccountActive: tuitionAccountStatus == model.TuitionAccountStatusActive,
 			TotalQuantity:          totalQuantity,
 			TotalFreeQuantity:      totalFreeQuantity,
 			TotalTuition:           totalTuition,

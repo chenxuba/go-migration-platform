@@ -838,6 +838,37 @@ func (repo *Repository) reopenRelatedOneToOneClassesByDeductCourseTx(ctx context
 	return nil
 }
 
+func (repo *Repository) reopenRelatedGroupClassesByDeductCourseTx(ctx context.Context, tx *sql.Tx, instID, operatorID, studentID, courseID int64) error {
+	if studentID <= 0 || courseID <= 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_student tcs
+		INNER JOIN teaching_class tc
+			ON tc.id = tcs.teaching_class_id
+			AND tc.inst_id = tcs.inst_id
+			AND tc.class_type = ?
+			AND tc.del_flag = 0
+		LEFT JOIN tuition_account ta_eff ON ta_eff.id = COALESCE(
+			NULLIF(tcs.primary_tuition_account_id, 0),
+			(SELECT MIN(ta0.id)
+			 FROM tuition_account ta0
+			 WHERE ta0.order_course_detail_id = tcs.order_course_detail_id
+			   AND ta0.inst_id = tcs.inst_id
+			   AND ta0.del_flag = 0)
+		) AND ta_eff.inst_id = tcs.inst_id AND ta_eff.del_flag = 0
+		SET tcs.class_student_status = ?,
+		    tcs.update_id = ?,
+		    tcs.update_time = NOW()
+		WHERE tcs.inst_id = ?
+		  AND tcs.del_flag = 0
+		  AND tcs.student_id = ?
+		  AND ta_eff.course_id = ?
+		  AND tcs.class_student_status = ?
+	`, model.TeachingClassTypeNormal, model.TeachingClassStudentStatusStudying, operatorID, instID, studentID, courseID, model.TeachingClassStudentStatusClosed)
+	return err
+}
+
 func (repo *Repository) GetTuitionAccountSubAccountDateInfo(ctx context.Context, instID int64, dto model.TuitionAccountSubAccountDateInfoQueryDTO) (model.TuitionAccountSubAccountDateInfoResult, error) {
 	tuitionAccountID, err := strconv.ParseInt(strings.TrimSpace(dto.TuitionAccountID), 10, 64)
 	if err != nil || tuitionAccountID <= 0 {
@@ -1213,6 +1244,9 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 	}
 
 	if err := repo.reopenRelatedOneToOneClassesByDeductCourseTx(ctx, tx, instID, operatorID, selected.studentID, selected.courseID); err != nil {
+		return 0, err
+	}
+	if err := repo.reopenRelatedGroupClassesByDeductCourseTx(ctx, tx, instID, operatorID, selected.studentID, selected.courseID); err != nil {
 		return 0, err
 	}
 

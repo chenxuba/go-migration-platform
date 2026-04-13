@@ -343,6 +343,37 @@ func (repo *Repository) closeRelatedOneToOneClassesByDeductCourseTx(ctx context.
 	return nil
 }
 
+func (repo *Repository) closeRelatedGroupClassesByDeductCourseTx(ctx context.Context, tx *sql.Tx, instID, operatorID, studentID, courseID int64) error {
+	if studentID <= 0 || courseID <= 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_student tcs
+		INNER JOIN teaching_class tc
+			ON tc.id = tcs.teaching_class_id
+			AND tc.inst_id = tcs.inst_id
+			AND tc.class_type = ?
+			AND tc.del_flag = 0
+		LEFT JOIN tuition_account ta_eff ON ta_eff.id = COALESCE(
+			NULLIF(tcs.primary_tuition_account_id, 0),
+			(SELECT MIN(ta0.id)
+			 FROM tuition_account ta0
+			 WHERE ta0.order_course_detail_id = tcs.order_course_detail_id
+			   AND ta0.inst_id = tcs.inst_id
+			   AND ta0.del_flag = 0)
+		) AND ta_eff.inst_id = tcs.inst_id AND ta_eff.del_flag = 0
+		SET tcs.class_student_status = ?,
+		    tcs.update_id = ?,
+		    tcs.update_time = NOW()
+		WHERE tcs.inst_id = ?
+		  AND tcs.del_flag = 0
+		  AND tcs.student_id = ?
+		  AND ta_eff.course_id = ?
+		  AND tcs.class_student_status <> ?
+	`, model.TeachingClassTypeNormal, model.TeachingClassStudentStatusClosed, operatorID, instID, studentID, courseID, model.TeachingClassStudentStatusClosed)
+	return err
+}
+
 // AddCloseTuitionAccountOrder 手动结课：扣减学费账户剩余、写入 tuition_account_flow（联动课消明细 / 学费变动 / 确认收入列表）
 func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID, operatorID, tuitionAccountID int64, quantity, freeQuantity, tuition float64, remark string) (int64, error) {
 	if tuitionAccountID <= 0 {
@@ -368,22 +399,27 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 	}
 
 	targetSnapshots := []closeTuitionAccountSnapshot{selectedSnap}
+	orderSnap := selectedSnap
 	if !closeOrderMatchesSubmitted(deductQty, tuition, selectedSnap.lessonModel, selectedSnap.remQty, selectedSnap.remTuition) {
 		bucketSnapshots, bucketErr := repo.loadCloseTuitionAccountBucketSnapshotsTx(ctx, tx, instID, selectedSnap)
 		if bucketErr != nil {
 			return 0, bucketErr
 		}
 		bucketRemQty, bucketRemTuition := sumCloseTuitionAccountSnapshots(bucketSnapshots)
-		if len(bucketSnapshots) > 1 && closeOrderMatchesSubmitted(deductQty, tuition, selectedSnap.lessonModel, bucketRemQty, bucketRemTuition) {
+		if len(bucketSnapshots) > 0 && closeOrderMatchesSubmitted(deductQty, tuition, selectedSnap.lessonModel, bucketRemQty, bucketRemTuition) {
 			targetSnapshots = bucketSnapshots
+			orderSnap = bucketSnapshots[0]
 		} else {
+			if len(bucketSnapshots) > 0 {
+				return 0, closeOrderMismatchError(deductQty, tuition, selectedSnap.lessonModel, bucketRemQty, bucketRemTuition)
+			}
 			return 0, closeOrderMismatchError(deductQty, tuition, selectedSnap.lessonModel, selectedSnap.remQty, selectedSnap.remTuition)
 		}
 	}
 
 	now := time.Now()
 	flowID := int64(0)
-	closeOrderID, err := repo.createCloseTuitionAccountOrderTx(ctx, tx, instID, operatorID, selectedSnap, quantity, freeQuantity, tuition, remark, now)
+	closeOrderID, err := repo.createCloseTuitionAccountOrderTx(ctx, tx, instID, operatorID, orderSnap, quantity, freeQuantity, tuition, remark, now)
 	if err != nil {
 		return 0, err
 	}
@@ -399,6 +435,9 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 	}
 
 	if err := repo.closeRelatedOneToOneClassesByDeductCourseTx(ctx, tx, instID, operatorID, selectedSnap.studentID, selectedSnap.courseID); err != nil {
+		return 0, err
+	}
+	if err := repo.closeRelatedGroupClassesByDeductCourseTx(ctx, tx, instID, operatorID, selectedSnap.studentID, selectedSnap.courseID); err != nil {
 		return 0, err
 	}
 

@@ -141,6 +141,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/group-classes/statistics", handler.groupClassStatistics)
 	mux.HandleFunc("/api/v1/group-classes/student-statistics", handler.groupClassStudentStatistics)
 	mux.HandleFunc("/api/v1/group-classes/student-paged-list", handler.pageGroupClassStudents)
+	mux.HandleFunc("/api/v1/group-classes/finish-course-preview", handler.pageGroupClassFinishCoursePreview)
 	mux.HandleFunc("/api/v1/group-classes/student-teaching-record-count", handler.groupClassStudentTeachingRecordCount)
 	mux.HandleFunc("/api/v1/group-classes/students-by-class-ids", handler.listGroupClassStudentsByClassIDs)
 	mux.HandleFunc("/api/v1/group-classes/batch-assign-students", handler.batchAssignGroupClassStudents)

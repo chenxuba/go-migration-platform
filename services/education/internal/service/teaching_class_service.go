@@ -526,6 +526,29 @@ func (svc *Service) PageGroupClassStudents(userID int64, body model.GroupClassSt
 	return svc.repo.PageGroupClassStudents(context.Background(), instID, body)
 }
 
+func (svc *Service) PageGroupClassFinishCoursePreview(userID int64, body model.GroupClassFinishCoursePreviewBody) (model.GroupClassStudentPagedListResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GroupClassStudentPagedListResult{}, errors.New("no institution context")
+		}
+		return model.GroupClassStudentPagedListResult{}, err
+	}
+	statuses := append([]int(nil), body.QueryModel.ClassStudentStatus...)
+	if len(statuses) == 0 {
+		statuses = []int{1}
+	}
+	return svc.repo.PageGroupClassStudents(context.Background(), instID, model.GroupClassStudentPagedListBody{
+		QueryModel: model.GroupClassStudentQueryModel{
+			ID:                            strings.TrimSpace(body.QueryModel.ID),
+			ClassID:                       strings.TrimSpace(body.QueryModel.ID),
+			Status:                        statuses,
+			IgnoreSuspendedTuitionAccount: false,
+		},
+		PageRequestModel: body.PageRequestModel,
+	})
+}
+
 func (svc *Service) GetGroupClassStudentTeachingRecordCount(userID int64, dto model.GroupClassStudentTeachingRecordCountQueryDTO) ([]model.GroupClassStudentTeachingRecordCountVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
