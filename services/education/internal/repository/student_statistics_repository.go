@@ -24,14 +24,25 @@ func (repo *Repository) GetStudentOverviewStatistics(ctx context.Context, instID
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM (
-			SELECT ta.student_id
-			FROM tuition_account ta
-			INNER JOIN inst_student s ON s.id = ta.student_id
-			WHERE ta.inst_id = ? AND ta.del_flag = 0 AND s.del_flag = 0
-			GROUP BY ta.student_id
-			HAVING SUM(IFNULL(ta.total_tuition, 0)) - SUM(IFNULL(ta.paid_tuition, 0)) > 0
+			SELECT DISTINCT so.student_id
+			FROM sale_order so
+			INNER JOIN inst_student s ON s.id = so.student_id AND s.del_flag = 0
+			WHERE so.inst_id = ? AND so.del_flag = 0
+			  AND IFNULL(so.is_bad_debt, 0) = 0
+			  AND so.order_type = ?
+			  AND so.order_status <> ?
+			  AND IFNULL(so.order_real_amount, 0) > (
+				SELECT IFNULL(SUM(pd.pay_amount), 0)
+				FROM sale_order_pay_detail pd
+				WHERE pd.del_flag = 0 AND pd.order_id = so.id
+			  )
+			UNION
+			SELECT DISTINCT str.student_id
+			FROM student_teaching_record str
+			INNER JOIN inst_student s ON s.id = str.student_id AND s.del_flag = 0
+			WHERE str.inst_id = ? AND str.del_flag = 0 AND IFNULL(str.arrear_quantity, 0) > 0
 		) AS arrear_students
-	`, instID).Scan(&result.ArrearStudents); err != nil {
+	`, instID, model.OrderTypeRegistrationRenewal, model.OrderStatusPendingPayment, instID).Scan(&result.ArrearStudents); err != nil {
 		return model.StudentOverviewStatistics{}, err
 	}
 

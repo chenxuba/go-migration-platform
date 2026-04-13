@@ -50,3 +50,104 @@ export function deleteStuCustomFieldApi(data: FieldInfo) {
 export function getStudentOverviewStatisticsApi(data: Record<string, unknown> = {}) {
   return useGet<StudentOverviewStatistics>('/api/v1/students/overview-statistics', data)
 }
+
+export interface StudentRegistrationArrearItem {
+  orderId: string
+  orderNumber: string
+  studentId: string
+  studentName: string
+  sex?: number
+  avatar?: string
+  phone?: string
+  arrearAmount: number
+  orderAmount: number
+  paidAmount: number
+  productName: string
+  createdTime?: string
+}
+
+export interface StudentRegistrationArrearPagedResult {
+  list?: StudentRegistrationArrearItem[]
+  total?: number
+}
+
+export interface StudentRegistrationArrearStatistics {
+  totalArrearAmount?: number
+}
+
+export interface StudentRegistrationArrearQueryParams {
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+  queryModel?: {
+    orderNumber?: string
+    lessonId?: string
+    studentId?: string
+    keyword?: string
+    keywordType?: string
+    createdTimeBegin?: string
+    createdTimeEnd?: string
+  }
+}
+
+export function getStudentRegistrationArrearPagedListApi(data: StudentRegistrationArrearQueryParams) {
+  return usePost<StudentRegistrationArrearPagedResult>('/api/v1/students/registration-arrears/page', data)
+}
+
+export function getStudentRegistrationArrearStatisticsApi(data: StudentRegistrationArrearQueryParams['queryModel'] = {}) {
+  return usePost<StudentRegistrationArrearStatistics>('/api/v1/students/registration-arrears/statistics', { queryModel: data })
+}
+
+export interface StudentLessonArrearItem {
+  studentId: string
+  studentName: string
+  sex?: number
+  avatar?: string
+  phone?: string
+  lessonId: string
+  lessonName: string
+  tuitionAccountId: string
+  lessonChargingMode: number
+  beInArrearsTotal: number
+  recordCount: number
+  advisorStaffId?: string
+  advisorStaffName?: string
+  studentManagerId?: string
+  studentManagerName?: string
+}
+
+export interface StudentLessonArrearPagedResult {
+  list?: StudentLessonArrearItem[]
+  total?: number
+}
+
+export interface StudentLessonArrearStatistics {
+  totalArrearAmount?: number
+  totalArrearTime?: number
+}
+
+export interface StudentLessonArrearQueryParams {
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+  queryModel?: {
+    lessonId?: string
+    studentId?: string
+    keyword?: string
+    keywordType?: string
+  }
+}
+
+export function getStudentLessonArrearPagedListApi(data: StudentLessonArrearQueryParams) {
+  return usePost<StudentLessonArrearPagedResult>('/api/v1/students/lesson-arrears/page', data)
+}
+
+export function getStudentLessonArrearStatisticsApi(data: StudentLessonArrearQueryParams['queryModel'] = {}) {
+  return usePost<StudentLessonArrearStatistics>('/api/v1/students/lesson-arrears/statistics', { queryModel: data })
+}

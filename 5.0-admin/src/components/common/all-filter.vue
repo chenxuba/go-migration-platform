@@ -6736,7 +6736,7 @@ defineExpose({
 }
 
 .home {
-  padding: 12px 12px 6px 12px;
+  padding: 0px 12px 0px 12px;
   background: #ffffff;
   border-radius: 8px;
   align-items: flex-start;
