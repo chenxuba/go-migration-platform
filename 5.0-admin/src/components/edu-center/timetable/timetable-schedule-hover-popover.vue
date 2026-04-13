@@ -193,7 +193,8 @@ const hasBatchSchedule = computed(() => {
   return batchSize > 1 || batchNo !== '' || hasBatchMetaSchedule(detailData.value?.batchMeta)
 })
 const canEditByContext = computed(() => Boolean(String(props.scheduleId || '').trim()) && props.editable)
-const canEditSchedule = computed(() => canEditByContext.value && !isPastSchedule.value)
+const isRolledCallSchedule = computed(() => Number(detailData.value?.callStatus || 1) === 2)
+const canEditSchedule = computed(() => canEditByContext.value && !isPastSchedule.value && !isRolledCallSchedule.value)
 const scheduleEditPayload = computed<ScheduleEditPayload>(() => {
   const batchMeta = detailData.value?.batchMeta
   const batchNo = String(detailData.value?.batchNo || props.batchNo || '').trim() || undefined
@@ -209,7 +210,7 @@ const scheduleEditPayload = computed<ScheduleEditPayload>(() => {
   }
 })
 const editDisabledReason = computed(() => (
-  isPastSchedule.value ? '过去日程不可编辑' : (canEditByContext.value ? '编辑日程' : '当前日程不可编辑')
+  isRolledCallSchedule.value ? '已点名日程不可编辑' : (isPastSchedule.value ? '过去日程不可编辑' : (canEditByContext.value ? '编辑日程' : '当前日程不可编辑'))
 ))
 const rollCallDisabledReason = computed(() => {
   const serverReason = String(detailData.value?.rollCallDisabledReason || '').trim()

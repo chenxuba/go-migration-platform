@@ -759,10 +759,15 @@ function buildRollCallConfirmPayload() {
 function showRollCallArrearWarning(names) {
   if (!Array.isArray(names) || names.length === 0)
     return Promise.resolve()
+  const studentText = names.join('、')
+  const content = names.length === 1
+    ? `学员${studentText}剩余额度不足，本次点名已超记，请前往“学员详情-上课记录”查看详情`
+    : `学员${studentText}剩余额度不足，本次点名已超记，请前往“学员详情-上课记录”查看详情`
   return new Promise((resolve) => {
     Modal.warning({
       title: '超记提醒',
-      content: `以下学员剩余课时不足，已按超记处理：${names.join('、')}`,
+      content,
+      centered: true,
       okText: '我知道了',
       onOk: () => resolve(),
     })

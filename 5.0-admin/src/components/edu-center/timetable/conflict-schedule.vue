@@ -269,11 +269,17 @@ function isPastSchedule(record: Record<string, any>) {
   return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
 }
 
+function isRolledCallSchedule(record: Record<string, any>) {
+  return Number(record.callStatus || 1) === 2
+}
+
 function canEditSchedule(record: Record<string, any>) {
-  return Boolean(String(record.id || '').trim()) && !isPastSchedule(record)
+  return Boolean(String(record.id || '').trim()) && !isPastSchedule(record) && !isRolledCallSchedule(record)
 }
 
 function editDisabledReason(record: Record<string, any>) {
+  if (isRolledCallSchedule(record))
+    return '已点名日程不可编辑'
   return isPastSchedule(record) ? '过去日程不可编辑' : '当前日程不可编辑'
 }
 

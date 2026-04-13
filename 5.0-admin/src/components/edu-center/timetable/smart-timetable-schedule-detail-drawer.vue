@@ -70,6 +70,7 @@ const openStudentDrawer = ref(false)
 const rollCallDrawerOpen = ref(false)
 const classRecordDrawerOpen = ref(false)
 const currentTeachingRecordId = ref('')
+const pendingClassRecordTeachingRecordId = ref('')
 const activeStudentTabKey = ref('students')
 const addStudentModalOpen = ref(false)
 const addStudentModalTitle = ref('添加补课学员')
@@ -164,10 +165,11 @@ const isFutureSchedule = computed(() => {
     return false
   return dayjs(lessonDate).isAfter(dayjs().startOf('day'), 'day')
 })
+const isRolledCallSchedule = computed(() => Number(detailData.value?.callStatus || 1) === 2)
 const editDisabledReason = computed(() => (
-  isPastSchedule.value ? '过去日程不可编辑' : ''
+  isRolledCallSchedule.value ? '已点名日程不可编辑' : (isPastSchedule.value ? '过去日程不可编辑' : '')
 ))
-const canEditSchedule = computed(() => props.editable && !isPastSchedule.value)
+const canEditSchedule = computed(() => props.editable && !isPastSchedule.value && !isRolledCallSchedule.value)
 const rollCallDisabledReason = computed(() => {
   const serverReason = String(detailData.value?.rollCallDisabledReason || '').trim()
   if (serverReason)
@@ -367,14 +369,18 @@ function goRollCall() {
 
 async function handleRollCallConfirmed(teachingRecordId?: string) {
   const nextTeachingRecordId = String(teachingRecordId || '').trim() || String(detailData.value?.teachingRecordId || '').trim()
-  if (nextTeachingRecordId)
-    currentTeachingRecordId.value = nextTeachingRecordId
   detailChanged.value = true
+  pendingClassRecordTeachingRecordId.value = nextTeachingRecordId
   openDrawer.value = false
-  if (currentTeachingRecordId.value) {
-    await nextTick()
-    classRecordDrawerOpen.value = true
-  }
+}
+
+async function handleDrawerAfterOpenChange(open: boolean) {
+  if (open || !pendingClassRecordTeachingRecordId.value)
+    return
+  currentTeachingRecordId.value = pendingClassRecordTeachingRecordId.value
+  pendingClassRecordTeachingRecordId.value = ''
+  await nextTick()
+  classRecordDrawerOpen.value = true
 }
 
 async function handleRollCallUpdated() {
@@ -507,6 +513,7 @@ watch(
     :push="{ distance: 80 }"
     :body-style="{ padding: '0', background: '#f7f7fd' }"
     :closable="false"
+    @after-open-change="handleDrawerAfterOpenChange"
     width="1165px"
     placement="right"
   >

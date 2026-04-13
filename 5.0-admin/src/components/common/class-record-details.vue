@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import { deleteTeachingRecordApi, getTeachingRecordDetailApi, type TeachingRecordDetailResult, type TeachingRecordDetailTeacher } from '@/api/edu-center/class-record'
+import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 import EditClassInfoModal from './edit-class-info-modal.vue'
 import EditRollNameModal from './edit-roll-name-modal.vue'
@@ -24,6 +25,7 @@ const editRollNameModal = ref(false)
 const loading = ref(false)
 const deleting = ref(false)
 const detailData = ref<TeachingRecordDetailResult | null>(null)
+const shouldRefreshOnClose = ref(false)
 const hasDetail = computed(() => String(detailData.value?.teachingRecordId || '').trim() !== '')
 
 const openDrawer = computed({
@@ -78,7 +80,6 @@ async function handleConfirmDelete() {
     messageService.success('删除成功')
     openModal.value = false
     openDrawer.value = false
-    emit('updated')
     emit('deleted')
   }
   catch (error: any) {
@@ -154,6 +155,21 @@ watch(
     await loadDetail()
   },
   { immediate: true },
+)
+
+watch(
+  () => openDrawer.value,
+  (open, previous) => {
+    if (open && !previous)
+      shouldRefreshOnClose.value = true
+    if (!open && previous) {
+      if (shouldRefreshOnClose.value) {
+        emit('updated')
+        emitter.emit(EVENTS.REFRESH_DATA)
+      }
+      shouldRefreshOnClose.value = false
+    }
+  },
 )
 </script>
 
