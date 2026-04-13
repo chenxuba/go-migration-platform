@@ -82,6 +82,7 @@ const currentGroup = ref('A')
 /** 与 matrixDays、表头节次列对齐；切换 A/B 时在新数据返回前不改，避免清空矩阵导致整页高度塌缩抖动 */
 const displayedGroupKey = ref('A')
 const timetableRootRef = ref(null)
+const smartTimetableGridRef = ref(null)
 const allFilterRef = ref(null)
 const classId = ref(null)
 const exportLoading = ref(false)
@@ -2571,6 +2572,11 @@ function closeConflictModalsByFlags(flags = {}) {
 
 async function focusScheduleCell(key) {
   await nextTick()
+  const canvasGridFound = await smartTimetableGridRef.value?.scrollToScheduleCell?.(key)
+  if (canvasGridFound) {
+    setFocusedScheduleCell(key)
+    return true
+  }
   const root = timetableRootRef.value
   if (!root || !key)
     return false
@@ -4123,6 +4129,10 @@ function findEmptyDragCellElement(key) {
 }
 
 function renderEmptyDragCellState(target, state) {
+  if (smartTimetableGridRef.value?.setEmptyDragCellState) {
+    smartTimetableGridRef.value.setEmptyDragCellState(target, state)
+    return
+  }
   const el = findEmptyDragCellElement(target?.key)
   if (!(el instanceof HTMLElement))
     return
@@ -4135,6 +4145,10 @@ function renderEmptyDragCellState(target, state) {
 }
 
 function clearAllEmptyDragCellStates() {
+  if (smartTimetableGridRef.value?.clearEmptyDragCellStates) {
+    smartTimetableGridRef.value.clearEmptyDragCellStates()
+    return
+  }
   if (typeof document === 'undefined')
     return
   document.querySelectorAll('[data-empty-schedule-cell-key]').forEach((node) => {
@@ -4633,6 +4647,9 @@ function collectVisibleEmptyDragTargets() {
 }
 
 function dragValidationViewportRect() {
+  const gridViewportRect = smartTimetableGridRef.value?.getViewportClientRect?.()
+  if (gridViewportRect)
+    return gridViewportRect
   if (timetableRootRef.value instanceof HTMLElement) {
     const rect = timetableRootRef.value.getBoundingClientRect()
     return {
@@ -4673,12 +4690,12 @@ function classifyDragValidationTargets(targets, dragState) {
   const offscreen = []
 
   targets.forEach((target) => {
-    const cellEl = findEmptyDragCellElement(target.key)
-    if (!(cellEl instanceof HTMLElement)) {
+    const rect = smartTimetableGridRef.value?.getEmptyDragCellRect?.(target.key)
+      || findEmptyDragCellElement(target.key)?.getBoundingClientRect?.()
+    if (!rect) {
       offscreen.push(target)
       return
     }
-    const rect = cellEl.getBoundingClientRect()
     const centerX = rect.left + rect.width / 2
     const centerY = rect.top + rect.height / 2
     const inViewport = Boolean(viewportRect)
@@ -4840,6 +4857,14 @@ const dragPreviewStyle = computed(() => {
   const top = Math.max(8, Math.round(dragPointerState.value.y - dragState.offsetY - 22))
   return {
     transform: `translate3d(${left}px, ${top}px, 0)`,
+  }
+})
+
+const dragPreviewScheduleStyle = computed(() => {
+  const dragState = draggingScheduleState.value
+  return {
+    width: `${Math.max(120, Math.round(Number(dragState?.previewWidth || 160)))}px`,
+    minHeight: `${Math.max(44, Math.round(Number(dragState?.previewHeight || 44)))}px`,
   }
 })
 
@@ -5150,19 +5175,31 @@ function handleSchedulePointerDown(event, text, column, record) {
   if (isScheduleDraggable(text)) {
     if (typeof document === 'undefined')
       return
+    const sourceCellKey = scheduleCellKey(column, record)
     const dragElement = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
-    if (!dragElement)
+    const dragStartInfo = event?.__smartTimetableRect
+      ? {
+          rect: event.__smartTimetableRect,
+          offsetX: Number(event?.__smartTimetableOffsetX || 0),
+          offsetY: Number(event?.__smartTimetableOffsetY || 0),
+        }
+      : smartTimetableGridRef.value?.getScheduleDragStartInfo?.(
+          sourceCellKey,
+          Number(event?.clientX || 0),
+          Number(event?.clientY || 0),
+        )
+    const rect = dragStartInfo?.rect || dragElement?.getBoundingClientRect?.()
+    if (!rect)
       return
-
-    const rect = dragElement.getBoundingClientRect()
     pendingScheduleDragStart = {
       startX: Number(event?.clientX || 0),
       startY: Number(event?.clientY || 0),
       dragState: buildDraggingScheduleState(text, column, record),
       element: dragElement,
+      useFloatingPreview: Boolean(event?.__smartTimetableUseFloatingPreview),
       rect,
-      offsetX: Math.max(8, Math.min(rect.width - 8, Number(event?.clientX || 0) - rect.left)),
-      offsetY: Math.max(8, Math.min(rect.height - 8, Number(event?.clientY || 0) - rect.top)),
+      offsetX: dragStartInfo?.offsetX || Math.max(8, Math.min(rect.width - 8, Number(event?.clientX || 0) - rect.left)),
+      offsetY: dragStartInfo?.offsetY || Math.max(8, Math.min(rect.height - 8, Number(event?.clientY || 0) - rect.top)),
     }
 
     customScheduleDragMoveHandler = (moveEvent) => {
@@ -5184,9 +5221,12 @@ function handleSchedulePointerDown(event, text, column, record) {
           sourceCenterY: pendingScheduleDragStart.rect.top + pendingScheduleDragStart.rect.height / 2,
           offsetX: pendingScheduleDragStart.offsetX,
           offsetY: pendingScheduleDragStart.offsetY,
+          useFloatingPreview: pendingScheduleDragStart.useFloatingPreview === true,
         }
-        activateDraggingScheduleElement(pendingScheduleDragStart.element)
-        applyDraggingScheduleElementPosition({ x: moveX, y: moveY })
+        if (!pendingScheduleDragStart.useFloatingPreview && pendingScheduleDragStart.element) {
+          activateDraggingScheduleElement(pendingScheduleDragStart.element)
+          applyDraggingScheduleElementPosition({ x: moveX, y: moveY })
+        }
         suppressScheduledLessonClick()
         activeDragValidationSessionId += 1
         draggingScheduleCellKey.value = pendingScheduleDragStart.dragState.sourceCellKey
@@ -5434,6 +5474,17 @@ async function copyDraggedScheduleToTarget() {
 }
 
 function resolvePointerDragTarget(clientX, clientY) {
+  if (smartTimetableGridRef.value?.resolvePointerDragTarget) {
+    const target = smartTimetableGridRef.value.resolvePointerDragTarget(clientX, clientY)
+    if (!target) {
+      lastResolvedDragTarget = null
+      lastResolvedDragTargetRect = null
+      return null
+    }
+    lastResolvedDragTarget = target
+    lastResolvedDragTargetRect = smartTimetableGridRef.value?.getEmptyDragCellRect?.(target.key) || null
+    return target
+  }
   if (typeof document === 'undefined')
     return null
   if (lastResolvedDragTarget && pointInsideRect(clientX, clientY, lastResolvedDragTargetRect))
@@ -5649,6 +5700,7 @@ watch(dragConflictDetailOpen, (open) => {
       />
     </div>
     <SmartTimetableGrid
+      ref="smartTimetableGridRef"
       :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule || updatingDraggedSchedule"
       :table-data-source="tableDataSource"
       :columns="columns"
@@ -5686,6 +5738,7 @@ watch(dragConflictDetailOpen, (open) => {
       :style="dragPreviewStyle"
     >
       <div
+        v-if="dragPreviewTargetText"
         class="st-drag-preview__target"
         :class="{
           'st-drag-preview__target--invalid': dragHoverState.valid === false,
@@ -5693,6 +5746,26 @@ watch(dragConflictDetailOpen, (open) => {
         }"
       >
         {{ dragPreviewTargetText }}
+      </div>
+      <div
+        v-if="draggingScheduleState.useFloatingPreview"
+        class="st-drag-preview__schedule"
+        :style="dragPreviewScheduleStyle"
+      >
+        <div class="st-drag-preview__schedule-header">
+          {{ draggingScheduleState.sourceStartTime }}-{{ draggingScheduleState.sourceEndTime }}
+          <span class="st-drag-preview__schedule-badge">
+            {{ dragScheduleModeLabel(draggingScheduleState) }}
+          </span>
+        </div>
+        <div class="st-drag-preview__schedule-body">
+          <template v-if="draggingScheduleState.hasClassId">
+            {{ draggingScheduleState.previewClassText }}
+          </template>
+          <template v-else>
+            {{ draggingScheduleState.previewStudentLines.join('') }}
+          </template>
+        </div>
       </div>
     </div>
 
@@ -5771,6 +5844,7 @@ watch(dragConflictDetailOpen, (open) => {
 
 .st-drag-preview__target {
   display: inline-block;
+  margin-bottom: 8px;
   padding: 4px 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.94);
@@ -5792,6 +5866,49 @@ watch(dragConflictDetailOpen, (open) => {
 
 .st-drag-preview__target--invalid {
   color: #cf1322;
+}
+
+.st-drag-preview__schedule {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(78, 109, 255, 0.12);
+  box-shadow:
+    0 18px 40px rgba(31, 35, 41, 0.2),
+    0 8px 18px rgba(31, 35, 41, 0.12);
+}
+
+.st-drag-preview__schedule-header {
+  position: relative;
+  height: 20px;
+  padding-left: 6px;
+  overflow: hidden;
+  background: #06f;
+  color: #fff;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.st-drag-preview__schedule-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 16px;
+  padding: 0 6px;
+  border-bottom-left-radius: 3px;
+  background: rgba(0, 0, 0, 0.5);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.st-drag-preview__schedule-body {
+  min-height: 24px;
+  padding: 6px;
+  color: #002cfd;
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-all;
 }
 
 /* 与班课下拉同量级宽度，避免顶栏把日期区挤换行 */
