@@ -687,10 +687,7 @@ defineExpose({
   }
 }
 
-.filter-wrap {
-  padding-top: 14px;
-  padding-bottom: 10px;
-}
+
 
 .table-head {
   display: flex;
