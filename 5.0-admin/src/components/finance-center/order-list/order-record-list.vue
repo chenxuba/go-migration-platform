@@ -740,7 +740,6 @@ defineExpose({
                 <a-menu>
                   <a-menu-item key="0" @click="handleImportStudentOrder"> 导入学员订单 </a-menu-item>
                   <a-menu-item key="1"> 批量导出 </a-menu-item>
-                  <a-menu-item key="3"> 导出记录 </a-menu-item>
                 </a-menu>
               </template>
               <a-button>
