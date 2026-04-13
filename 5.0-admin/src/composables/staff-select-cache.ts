@@ -9,6 +9,7 @@ interface SharedStaffCacheEntry {
   items: SharedStaffOption[]
   total: number
   updatedAt: number
+  isInitialList?: boolean
   promise?: Promise<{ items: SharedStaffOption[], total: number }>
 }
 
@@ -32,7 +33,7 @@ export async function getCachedInitialStaffList(
     return current.promise
   }
 
-  if (current && current.items.length > 0 && now - current.updatedAt < STAFF_CACHE_TTL) {
+  if (current && current.isInitialList && current.items.length > 0 && now - current.updatedAt < STAFF_CACHE_TTL) {
     return {
       items: current.items,
       total: current.total,
@@ -45,6 +46,7 @@ export async function getCachedInitialStaffList(
         items: result.items,
         total: result.total,
         updatedAt: Date.now(),
+        isInitialList: true,
       })
       return result
     })
@@ -57,6 +59,7 @@ export async function getCachedInitialStaffList(
     items: current?.items || [],
     total: current?.total || 0,
     updatedAt: current?.updatedAt || 0,
+    isInitialList: current?.isInitialList || false,
     promise,
   })
 
@@ -85,5 +88,6 @@ export function mergeCachedStaff(fetchType: string, status: number | undefined, 
     items: merged,
     total: total ?? current?.total ?? merged.length,
     updatedAt: Date.now(),
+    isInitialList: total != null || current?.isInitialList || false,
   })
 }

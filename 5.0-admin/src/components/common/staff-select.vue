@@ -1,6 +1,6 @@
 <template>
   <a-select
-    :value="modelValue"
+    :value="selectValue"
     :placeholder="placeholder"
     :style="{ width: width }"
     :filter-option="false"
@@ -31,7 +31,7 @@
     <a-select-option
       v-for="item in staffOptions"
       :key="item.id"
-      :value="item.id"
+      :value="normalizeOptionValue(item.id)"
       :data="item"
       :label="item.nickName"
       :disabled="props.fetchType === 'approval' && item.status === 2"
@@ -46,7 +46,7 @@
     <a-select-option
       v-if="selectedStaffDisplay && !staffOptions.find(item => sameStaffId(item.id, selectedStaffDisplay.id))"
       :key="selectedStaffDisplay.id"
-      :value="selectedStaffDisplay.id"
+      :value="normalizeOptionValue(selectedStaffDisplay.id)"
       :data="selectedStaffDisplay"
       :label="selectedStaffDisplay.nickName"
     >
@@ -96,14 +96,32 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
-import { getUserListApi } from '@/api/internal-manage/staff-manage'
+import { getInstUserDetail, getUserListApi } from '@/api/internal-manage/staff-manage'
 import { getStaffSummariesApi } from '@/api/finance-center/approval-manage'
 import { findCachedStaff, getCachedInitialStaffList, mergeCachedStaff } from '@/composables/staff-select-cache'
 
 function sameStaffId(a, b) {
   return a != null && b != null && String(a) === String(b)
+}
+
+function hasValidStaffId(value) {
+  return value != null && value !== '' && String(value) !== '0'
+}
+
+function shouldUseStringOptionValue() {
+  if (props.multiple && Array.isArray(props.modelValue)) {
+    const firstValidValue = props.modelValue.find(item => hasValidStaffId(item))
+    return typeof firstValidValue === 'string'
+  }
+  return typeof props.modelValue === 'string'
+}
+
+function normalizeOptionValue(value) {
+  if (!hasValidStaffId(value))
+    return value
+  return shouldUseStringOptionValue() ? String(value) : value
 }
 
 // Props
@@ -172,6 +190,12 @@ const hasLoadedList = ref(false) // 是否已经加载过员工列表
 
 // 当前选中员工的显示信息
 const selectedStaffDisplay = ref(null)
+const selectValue = computed(() => {
+  if (props.multiple && Array.isArray(props.modelValue)) {
+    return props.modelValue.map(item => normalizeOptionValue(item))
+  }
+  return normalizeOptionValue(props.modelValue)
+})
 
 function normalizeStaffItems(res) {
   return props.fetchType === 'approval'
@@ -186,6 +210,23 @@ function normalizeStaffItems(res) {
 
 function effectiveStatus() {
   return props.includeDisabled ? undefined : props.status
+}
+
+function normalizeInstUserDetail(detail) {
+  if (!detail?.id)
+    return null
+
+  let nickName = detail.nickName || detail.name || ''
+  if (detail.disabled && nickName && !nickName.endsWith('（离职）')) {
+    nickName += '（离职）'
+  }
+
+  return {
+    id: detail.id,
+    nickName,
+    mobile: detail.mobile || '',
+    status: detail.disabled ? 2 : 0,
+  }
 }
 
 // 搜索防抖函数
@@ -432,12 +473,27 @@ function handleDropdownVisibleChange(visible) {
 
 // 根据员工ID获取员工信息（用于初始化显示）
 async function getStaffById(staffId) {
-  if (!staffId) return null
+  if (!hasValidStaffId(staffId))
+    return null
   const status = effectiveStatus()
 
   const cachedStaff = findCachedStaff(props.fetchType, status, staffId)
   if (cachedStaff) {
     return cachedStaff
+  }
+
+  if (props.fetchType !== 'approval') {
+    try {
+      const { result } = await getInstUserDetail({ id: staffId })
+      const detailStaff = normalizeInstUserDetail(result)
+      if (detailStaff) {
+        mergeCachedStaff(props.fetchType, status, [detailStaff])
+        return detailStaff
+      }
+    }
+    catch (error) {
+      console.error('通过员工详情获取员工信息失败:', error)
+    }
   }
 
   try {
@@ -597,7 +653,7 @@ watch(() => [props.modelValue, props.presetStaff], async ([newValue]) => {
         staffOptions.value = [staffInfo, ...staffOptions.value]
       }
     }
-  } else if (newValue && !props.multiple) {
+  } else if (hasValidStaffId(newValue) && !props.multiple) {
     function rowFromPresetOrOptions() {
       let row = staffOptions.value.find(item => sameStaffId(item.id, newValue))
       if (row && String(row.nickName || "") !== "加载中...")
@@ -655,7 +711,7 @@ watch(() => [props.modelValue, props.presetStaff], async ([newValue]) => {
         }
       }
     }
-  } else if (!newValue) {
+  } else if (!hasValidStaffId(newValue)) {
     selectedStaffDisplay.value = null
   }
 }, { immediate: true })

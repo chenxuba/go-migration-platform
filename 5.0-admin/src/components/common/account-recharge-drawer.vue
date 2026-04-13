@@ -165,7 +165,9 @@ async function handleStudentSelect(student) {
       residualBalance: rechargeAccount?.residualBalance || 0,
       rechargeAccountStudents: rechargeAccount?.students || [],
     }
-    formState.salesperson = selectedStudent.value.salesPersonId || undefined
+    formState.salesperson = selectedStudent.value.salesPersonId && selectedStudent.value.salesPersonId !== '0'
+      ? selectedStudent.value.salesPersonId
+      : undefined
   }
   catch (error) {
     console.error('加载学员储值信息失败:', error)
