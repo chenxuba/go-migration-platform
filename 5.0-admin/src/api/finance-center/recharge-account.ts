@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { useGet, usePost } from '~/utils/request'
 
 export interface RechargeAccountStudentItem {
@@ -212,6 +214,21 @@ export function getRechargeAccountItemPageApi(data: RechargeAccountItemPageQuery
 
 export function getRechargeAccountStatisticsApi() {
   return useGet<RechargeAccountStatistics>('/api/v1/recharge-accounts/statistics')
+}
+
+export async function exportRechargeAccountItemPageApi(data: {
+  queryModel?: RechargeAccountItemPageQueryParams['queryModel']
+  sortModel?: RechargeAccountItemPageQueryParams['sortModel']
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/recharge-accounts/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
 }
 
 export function buildRechargeAccountImportByStudentTemplateApi() {

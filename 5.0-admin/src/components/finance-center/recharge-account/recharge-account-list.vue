@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { DownOutlined } from '@ant-design/icons-vue'
 import { useRouter } from 'vue-router'
 import { useTableColumns } from '@/composables/useTableColumns'
-import { getRechargeAccountItemPageApi, getRechargeAccountStatisticsApi } from '@/api/finance-center/recharge-account'
+import { exportRechargeAccountItemPageApi, getRechargeAccountItemPageApi, getRechargeAccountStatisticsApi } from '@/api/finance-center/recharge-account'
 import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
 import OrderDetailDrawer from '@/components/common/order-detail-drawer.vue'
@@ -22,6 +22,7 @@ const stuId = ref(undefined)
 const selectedStudentId = ref(undefined)
 const currentAccountRecord = ref({})
 const loading = ref(false)
+const exporting = ref(false)
 const statistics = ref({
   rechargeAccountTotal: 0,
   residualAmountTotal: 0,
@@ -64,7 +65,7 @@ function handleImportExportClick({ key }) {
     return
   }
   if (key === '2') {
-    messageService.info('导出储值账户待接入')
+    handleExportRechargeAccounts()
   }
 }
 
@@ -175,13 +176,35 @@ watch([selectedStudentId, checked], () => {
   fetchRechargeAccountList()
 })
 
+function buildQueryModel() {
+  return {
+    studentId: selectedStudentId.value || undefined,
+    showZeroBalanceAccount: !checked.value,
+  }
+}
+
+function parseAttachmentFilenameFromHeader(cd) {
+  if (!cd)
+    return undefined
+  const utf8Match = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = cd.match(/filename=\"?([^\";]+)\"?/i)
+  return plainMatch?.[1]
+}
+
 async function fetchRechargeAccountList() {
   try {
     loading.value = true
     const { result } = await getRechargeAccountItemPageApi({
       queryModel: {
-        studentId: selectedStudentId.value || undefined,
-        showZeroBalanceAccount: !checked.value,
+        ...buildQueryModel(),
       },
       pageRequestModel: {
         needTotal: true,
@@ -202,6 +225,61 @@ async function fetchRechargeAccountList() {
   }
   finally {
     loading.value = false
+  }
+}
+
+async function handleExportRechargeAccounts() {
+  if (exporting.value)
+    return
+  try {
+    exporting.value = true
+    const res = await exportRechargeAccountItemPageApi({
+      queryModel: buildQueryModel(),
+      sortModel: {
+        orderByUpdatedTime: 0,
+      },
+    })
+    const ct = String(res.headers['content-type'] || '')
+    if (ct.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: ct || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
+      || `储值账户_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error) {
+    console.error('导出储值账户失败:', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exporting.value = false
   }
 }
 
