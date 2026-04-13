@@ -394,17 +394,18 @@ type OneToOneScheduleAvailabilityResult struct {
 }
 
 type TeachingScheduleConflictItem struct {
-	Date           string   `json:"date"`
-	Week           string   `json:"week,omitempty"`
-	Name           string   `json:"name"`
-	ClassTypeText  string   `json:"classTypeText"`
-	TimeText       string   `json:"timeText"`
-	TeacherID      string   `json:"teacherId,omitempty"`
-	TeacherName    string   `json:"teacherName"`
-	AssistantNames []string `json:"assistantNames,omitempty"`
-	ClassroomName  string   `json:"classroomName,omitempty"`
-	StudentNames   []string `json:"studentNames,omitempty"`
-	ConflictTypes  []string `json:"conflictTypes,omitempty"`
+	Date                   string   `json:"date"`
+	Week                   string   `json:"week,omitempty"`
+	Name                   string   `json:"name"`
+	ClassTypeText          string   `json:"classTypeText"`
+	TimeText               string   `json:"timeText"`
+	TeacherID              string   `json:"teacherId,omitempty"`
+	TeacherName            string   `json:"teacherName"`
+	AssistantNames         []string `json:"assistantNames,omitempty"`
+	ClassroomName          string   `json:"classroomName,omitempty"`
+	StudentNames           []string `json:"studentNames,omitempty"`
+	ConflictingStudentNames []string `json:"conflictingStudentNames,omitempty"`
+	ConflictTypes          []string `json:"conflictTypes,omitempty"`
 }
 
 type AssistantScheduleAvailabilityItem struct {

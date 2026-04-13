@@ -79,6 +79,31 @@ function isAttemptedAssistantDanger(name) {
 function isConflictAssistantDanger(item, name) {
   return hasAssistantConflict(item) && attemptedAssistantNameSet.value.has(name)
 }
+
+function studentNamesFor(source) {
+  if (!source)
+    return []
+  if (Array.isArray(source.studentNames) && source.studentNames.length)
+    return normalizeNameList(source.studentNames)
+  return normalizeNameList(source.studentText)
+}
+
+function conflictingStudentNameSetFor(source) {
+  if (!source)
+    return new Set()
+  if (Array.isArray(source.conflictingStudentNames) && source.conflictingStudentNames.length)
+    return new Set(normalizeNameList(source.conflictingStudentNames))
+  return new Set()
+}
+
+function isConflictStudentDanger(item, name) {
+  if (!item?.hasStudentConflict)
+    return false
+  const conflictingSet = conflictingStudentNameSetFor(item)
+  if (!conflictingSet.size)
+    return true
+  return conflictingSet.has(name)
+}
 </script>
 
 <template>
@@ -227,7 +252,20 @@ function isConflictAssistantDanger(item, name) {
                     </span>
                     <span class="st-drag-conflict__sep">｜</span>
                     学员：
-                    <span :class="{ 'st-drag-conflict__danger': item.hasStudentConflict }">{{ item.studentText || '-' }}</span>
+                    <span>
+                      <template v-if="studentNamesFor(item).length">
+                        <template
+                          v-for="(name, index) in studentNamesFor(item)"
+                          :key="`${item.key}-student-${name}-${index}`"
+                        >
+                          <span :class="{ 'st-drag-conflict__danger': isConflictStudentDanger(item, name) }">{{ name }}</span>
+                          <span v-if="index < studentNamesFor(item).length - 1">、</span>
+                        </template>
+                      </template>
+                      <template v-else>
+                        <span :class="{ 'st-drag-conflict__danger': item.hasStudentConflict }">{{ item.studentText || '-' }}</span>
+                      </template>
+                    </span>
                   </div>
 
                   <div v-if="item.classroomName && item.classroomName !== '-'" class="st-drag-conflict__item-meta">

@@ -137,6 +137,7 @@ export interface TeachingScheduleValidationResult {
     assistantNames?: string[]
     classroomName?: string
     studentNames?: string[]
+    conflictingStudentNames?: string[]
     conflictTypes?: string[]
   }>
   existingSchedules?: Array<{
@@ -150,6 +151,7 @@ export interface TeachingScheduleValidationResult {
     assistantNames?: string[]
     classroomName?: string
     studentNames?: string[]
+    conflictingStudentNames?: string[]
     conflictTypes?: string[]
   }>
   conflictTypes?: string[]
@@ -175,6 +177,7 @@ export interface TeachingScheduleValidationItem {
     assistantNames?: string[]
     classroomName?: string
     studentNames?: string[]
+    conflictingStudentNames?: string[]
     conflictTypes?: string[]
   }>
   conflictTypes?: string[]
@@ -199,6 +202,7 @@ export interface OneToOneScheduleAvailabilityItem {
     assistantNames?: string[]
     classroomName?: string
     studentNames?: string[]
+    conflictingStudentNames?: string[]
     conflictTypes?: string[]
   }>
 }
@@ -226,6 +230,7 @@ export interface AssistantScheduleAvailabilityItem {
     assistantNames?: string[]
     classroomName?: string
     studentNames?: string[]
+    conflictingStudentNames?: string[]
     conflictTypes?: string[]
   }>
 }

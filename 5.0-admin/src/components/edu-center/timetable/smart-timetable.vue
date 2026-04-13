@@ -2688,6 +2688,8 @@ function buildConflictJumpItem(item, index = 0, fallbackConflictTypes = ['时间
     classroomName: item?.classroomName || '-',
     assistantText: (item?.assistantNames || []).join('、') || '-',
     studentText: (item?.studentNames || []).join('、') || '-',
+    studentNames: Array.isArray(item?.studentNames) ? item.studentNames : [],
+    conflictingStudentNames: Array.isArray(item?.conflictingStudentNames) ? item.conflictingStudentNames : [],
     conflictTypes,
     hasTeacherConflict: conflictTypes.includes('老师'),
     hasAssistantConflict: conflictTypes.includes('助教'),
