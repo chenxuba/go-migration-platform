@@ -6,7 +6,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import StudentSelect from '@/components/common/student-select.vue'
 import { getCourseCategoryPageApi } from '@/api/edu-center/course-list'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
-import { getLessonIncomePagedListApi, getLessonIncomeStatisticsApi } from '@/api/finance-center/lesson-income'
+import { exportLessonIncomeApi, getLessonIncomePagedListApi, getLessonIncomeStatisticsApi } from '@/api/finance-center/lesson-income'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useTableColumns } from '@/composables/useTableColumns'
 import messageService from '@/utils/messageService'
@@ -64,6 +64,7 @@ function createEmptyFilters() {
 const filterState = reactive(createEmptyFilters())
 
 const loading = ref(false)
+const exporting = ref(false)
 const dataSource = ref([])
 const stats = ref({
   totalCount: 0,
@@ -506,8 +507,78 @@ function handleTableChange(pag) {
   fetchLessonIncomeList()
 }
 
-function handleExport() {
-  messageService.info('导出逻辑待接入')
+function parseAttachmentFilenameFromHeader(cd) {
+  if (!cd) {
+    return undefined
+  }
+  const utf8Match = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = cd.match(/filename="?([^";]+)"?/i)
+  return plainMatch?.[1]
+}
+
+async function handleExport() {
+  if (exporting.value) {
+    return
+  }
+  try {
+    exporting.value = true
+    const res = await exportLessonIncomeApi({
+      queryModel: buildQueryModel(),
+      sortModel: {
+        orderByCreatedTime: 0,
+      },
+    })
+    const ct = String(res.headers['content-type'] || '')
+    if (ct.includes('application/json')) {
+      const text = await (res.data).text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: ct || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const cd = res.headers['content-disposition']
+    const filename = parseAttachmentFilenameFromHeader(cd)
+      || `实际收入明细_${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error) {
+    console.error('导出确认收入明细失败:', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exporting.value = false
+  }
 }
 
 const allColumns = ref([
@@ -680,7 +751,7 @@ onUnmounted(() => {
             共 {{ stats.totalCount }} 条确认收入记录，确认收入金额总计：￥{{ formatMoney(stats.totalTuition) }}
           </div>
           <div class="edit flex">
-            <a-button class="mr-2" @click="handleExport">
+            <a-button class="mr-2" :loading="exporting" @click="handleExport">
               导出数据
             </a-button>
             <customize-code

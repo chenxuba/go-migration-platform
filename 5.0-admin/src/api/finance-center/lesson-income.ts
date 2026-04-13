@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { usePost } from '~/utils/request'
 
 export interface LessonIncomeTeacher {
@@ -83,4 +85,21 @@ export function getLessonIncomePagedListApi(data: LessonIncomeQueryParams) {
 
 export function getLessonIncomeStatisticsApi(data: LessonIncomeQueryModel) {
   return usePost<LessonIncomeStatistics>('/api/v1/lesson-incomes/statistics', data)
+}
+
+export async function exportLessonIncomeApi(data: {
+  queryModel?: LessonIncomeQueryModel
+  sortModel?: {
+    orderByCreatedTime?: number
+  }
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/lesson-incomes/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
 }
