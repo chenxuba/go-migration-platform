@@ -790,6 +790,13 @@ function formatTime(time) {
   return time ? dayjs(time).format('YYYY-MM-DD HH:mm') : '-'
 }
 
+function formatBirthday(value) {
+  if (!value)
+    return '-'
+  const date = dayjs(value)
+  return date.isValid() ? date.format('YYYY-MM-DD') : value
+}
+
 onMounted(() => {
   getEnrolledStudentList()
   getAllStuFields({ filter: 3 })
@@ -1020,7 +1027,7 @@ defineExpose({
                 <clamped-text :text="record.channelName || '-'" />
               </template>
               <template v-if="column.key === 'birthDay'">
-                {{ record.birthDay || '-' }}
+                {{ formatBirthday(record.birthDay) }}
               </template>
               <template v-if="column.key === 'weChatNumber'">
                 <clamped-text :lines="1" :text="record.weChatNumber || '-'" />
