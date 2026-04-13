@@ -37,6 +37,7 @@ const pendingSignOutOptions = [
   { id: '1', value: '含待签退的数据' },
   { id: '0', value: '不含待签退的数据' },
 ]
+const AUTO_ROLL_CALL_DELAY_MINUTES = 30
 
 const allColumns = ref([
   {
@@ -243,26 +244,65 @@ function parseRelatedScheduleEndTime(value?: string) {
   return parsed.isValid() ? parsed : null
 }
 
-function isOverdueUnsignedSchedule(record?: FaceAttendanceRelatedScheduleItem) {
-  if (!record || String(record.rollCallStatus || '').trim() !== '未点名')
-    return false
-  const endTime = parseRelatedScheduleEndTime(record.classTime)
-  return !!endTime && endTime.isBefore(dayjs())
+function isUnsignedSchedule(record?: FaceAttendanceRelatedScheduleItem) {
+  return !!record && String(record.rollCallStatus || '').trim() === '未点名'
 }
 
-function hasOverdueUnsignedSchedules(record?: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
-  return getRelatedScheduleItems(record).some(item => isOverdueUnsignedSchedule(item))
+function getRelatedScheduleRollCallStage(record?: FaceAttendanceRelatedScheduleItem) {
+  if (!isUnsignedSchedule(record))
+    return 'normal'
+  const endTime = parseRelatedScheduleEndTime(record?.classTime)
+  if (!endTime)
+    return 'normal'
+  const now = dayjs()
+  if (endTime.isAfter(now))
+    return 'normal'
+  const autoRollCallDeadline = endTime.add(AUTO_ROLL_CALL_DELAY_MINUTES, 'minute')
+  return autoRollCallDeadline.isAfter(now) ? 'auto-pending' : 'manual'
+}
+
+function isAutoPendingUnsignedSchedule(record?: FaceAttendanceRelatedScheduleItem) {
+  return getRelatedScheduleRollCallStage(record) === 'auto-pending'
+}
+
+function isManualRollCallSchedule(record?: FaceAttendanceRelatedScheduleItem) {
+  return getRelatedScheduleRollCallStage(record) === 'manual'
+}
+
+function hasAutoPendingUnsignedSchedules(record?: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  return getRelatedScheduleItems(record).some(item => isAutoPendingUnsignedSchedule(item))
+}
+
+function hasManualRollCallSchedules(record?: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  return getRelatedScheduleItems(record).some(item => isManualRollCallSchedule(item))
+}
+
+function relatedScheduleBadgeText(record?: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  if (hasManualRollCallSchedules(record))
+    return '待手动点名'
+  if (hasAutoPendingUnsignedSchedules(record))
+    return '待自动点名'
+  return ''
+}
+
+function relatedScheduleBadgeClass(record?: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
+  return hasAutoPendingUnsignedSchedules(record) && !hasManualRollCallSchedules(record)
+    ? 'face-record-alert-badge face-record-alert-badge--auto-pending'
+    : 'face-record-alert-badge'
 }
 
 function faceAttendancePromptText(record?: Partial<FaceAttendanceRecordItem> | Record<string, any>) {
-  if (hasOverdueUnsignedSchedules(record))
-    return '存在已过时未点名日程，请手动点名'
-  return String(record?.prompt || '-').trim() || '-'
+  const prompt = String(record?.prompt || '').trim()
+  if (hasManualRollCallSchedules(record) && (!prompt || prompt === '-' || prompt === '待自动点名' || prompt === '待处理'))
+    return `存在已超过课后${AUTO_ROLL_CALL_DELAY_MINUTES}分钟仍未点名日程，请手动点名`
+  return prompt || '-'
 }
 
 function relatedScheduleStatusText(record?: FaceAttendanceRelatedScheduleItem) {
-  if (isOverdueUnsignedSchedule(record))
+  if (isManualRollCallSchedule(record))
     return '待手动点名'
+  if (isAutoPendingUnsignedSchedule(record))
+    return '待自动点名'
   return String(record?.rollCallStatus || '-').trim() || '-'
 }
 
@@ -275,13 +315,29 @@ function rollCallStatusClass(value?: string) {
 }
 
 function relatedScheduleStatusClass(record?: FaceAttendanceRelatedScheduleItem) {
-  if (isOverdueUnsignedSchedule(record))
+  if (isManualRollCallSchedule(record))
     return 'roll-call-status roll-call-status--manual'
+  if (isAutoPendingUnsignedSchedule(record))
+    return 'roll-call-status roll-call-status--auto-pending'
   return rollCallStatusClass(record?.rollCallStatus)
 }
 
 function relatedScheduleRowClassName(record: FaceAttendanceRelatedScheduleItem) {
-  return isOverdueUnsignedSchedule(record) ? 'related-schedule-row related-schedule-row--manual' : 'related-schedule-row'
+  return isManualRollCallSchedule(record) ? 'related-schedule-row related-schedule-row--manual' : 'related-schedule-row'
+}
+
+function relatedScheduleHintText(record?: FaceAttendanceRelatedScheduleItem) {
+  if (isManualRollCallSchedule(record))
+    return `已超过课后${AUTO_ROLL_CALL_DELAY_MINUTES}分钟`
+  if (isAutoPendingUnsignedSchedule(record))
+    return `课后${AUTO_ROLL_CALL_DELAY_MINUTES}分钟内自动点名`
+  return ''
+}
+
+function relatedScheduleHintClass(record?: FaceAttendanceRelatedScheduleItem) {
+  return isManualRollCallSchedule(record)
+    ? 'related-schedule-hint related-schedule-hint--manual'
+    : 'related-schedule-hint related-schedule-hint--auto-pending'
 }
 
 function getRelatedScheduleLessonDay(record?: FaceAttendanceRelatedScheduleItem) {
@@ -559,8 +615,8 @@ onMounted(() => {
                     <a-button type="link" size="small" class="px-0" @click="openRelatedScheduleModal(record)">
                       查看
                     </a-button>
-                    <span v-if="hasOverdueUnsignedSchedules(record)" class="face-record-alert-badge">
-                      待手动点名
+                    <span v-if="relatedScheduleBadgeText(record)" :class="relatedScheduleBadgeClass(record)">
+                      {{ relatedScheduleBadgeText(record) }}
                     </span>
                   </div>
                 </template>
@@ -569,7 +625,7 @@ onMounted(() => {
                 </template>
               </template>
               <template v-else-if="column.key === 'remarks'">
-                <span :class="{ 'face-record-alert-text': hasOverdueUnsignedSchedules(record) }">
+                <span :class="{ 'face-record-alert-text': hasManualRollCallSchedules(record) }">
                   {{ faceAttendancePromptText(record) }}
                 </span>
               </template>
@@ -603,8 +659,8 @@ onMounted(() => {
           <template v-else-if="column.key === 'scheduleName'">
             <div class="related-schedule-name-cell">
               <span class="related-schedule-name-text" :title="record.scheduleName || '-'">{{ record.scheduleName || '-' }}</span>
-              <span v-if="isOverdueUnsignedSchedule(record)" class="related-schedule-hint">
-                已过上课时间
+              <span v-if="relatedScheduleHintText(record)" :class="relatedScheduleHintClass(record)">
+                {{ relatedScheduleHintText(record) }}
               </span>
             </div>
           </template>
@@ -618,7 +674,7 @@ onMounted(() => {
           <template v-else-if="column.key === 'action'">
             <div class="related-schedule-action-cell">
               <a-button
-                v-if="isOverdueUnsignedSchedule(record) && record.scheduleId"
+                v-if="isManualRollCallSchedule(record) && record.scheduleId"
                 type="link"
                 size="small"
                 class="px-0"
@@ -713,6 +769,12 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.roll-call-status--auto-pending {
+  color: #1668dc;
+  background: #e8f3ff;
+  box-shadow: inset 0 0 0 1px #b7d6ff;
+}
+
 .related-schedule-name-cell {
   display: flex;
   align-items: center;
@@ -756,6 +818,16 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
+.related-schedule-hint--manual {
+  background: #fff1f0;
+  color: #cf1322;
+}
+
+.related-schedule-hint--auto-pending {
+  background: #e8f3ff;
+  color: #1668dc;
+}
+
 :deep(.related-schedule-row--manual td) {
   background: #fffafa !important;
 }
@@ -779,6 +851,12 @@ onMounted(() => {
   line-height: 22px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.face-record-alert-badge--auto-pending {
+  background: #e8f3ff;
+  color: #1668dc;
+  box-shadow: inset 0 0 0 1px #b7d6ff;
 }
 
 .face-record-alert-text {
