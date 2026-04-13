@@ -4408,23 +4408,23 @@ type normalizedAvailabilityScheduleSlot struct {
 }
 
 type scheduleConflictDetailRow struct {
-	ID                     int64
-	StudentID              int64
-	TeacherID              int64
-	ClassroomID            int64
-	ClassType              int
-	TeachingClassID        int64
-	TeachingClassName      string
-	StudentName            string
-	StudentNames           []string
+	ID                      int64
+	StudentID               int64
+	TeacherID               int64
+	ClassroomID             int64
+	ClassType               int
+	TeachingClassID         int64
+	TeachingClassName       string
+	StudentName             string
+	StudentNames            []string
 	ConflictingStudentNames []string
-	TeacherName            string
-	AssistantIDs           []string
-	AssistantNames         []string
-	ClassroomName          string
-	LessonDate             time.Time
-	StartAt                time.Time
-	EndAt                  time.Time
+	TeacherName             string
+	AssistantIDs            []string
+	AssistantNames          []string
+	ClassroomName           string
+	LessonDate              time.Time
+	StartAt                 time.Time
+	EndAt                   time.Time
 }
 
 func (repo *Repository) fillGroupClassStudentNamesForConflictRowsTx(ctx context.Context, tx *sql.Tx, instID int64, rows []scheduleConflictDetailRow) error {
@@ -4465,20 +4465,20 @@ func (repo *Repository) fillGroupClassStudentNamesForConflictRowsTx(ctx context.
 }
 
 type scheduleAvailabilityConflictRow struct {
-	ID                     int64
-	TeacherID              int64
-	ClassType              int
-	TeachingClassName      string
-	StudentName            string
-	StudentNames           []string
+	ID                      int64
+	TeacherID               int64
+	ClassType               int
+	TeachingClassName       string
+	StudentName             string
+	StudentNames            []string
 	ConflictingStudentNames []string
-	TeacherName            string
-	AssistantIDs           []string
-	AssistantNames         []string
-	ClassroomName          string
-	LessonDate             time.Time
-	StartAt                time.Time
-	EndAt                  time.Time
+	TeacherName             string
+	AssistantIDs            []string
+	AssistantNames          []string
+	ClassroomName           string
+	LessonDate              time.Time
+	StartAt                 time.Time
+	EndAt                   time.Time
 }
 
 type teachingScheduleRow struct {
@@ -7001,18 +7001,18 @@ func buildTeachingScheduleConflictItemFromRow(row scheduleConflictDetailRow) mod
 		studentNames = compactStrings([]string{row.StudentName})
 	}
 	return model.TeachingScheduleConflictItem{
-		Name:                   row.TeachingClassName,
-		ClassTypeText:          scheduleClassTypeText(row.ClassType),
-		Date:                   row.LessonDate.Format("2006-01-02"),
-		Week:                   weekDisplay(row.LessonDate),
-		TimeText:               row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
-		TeacherID:              emptyStringIfZero(row.TeacherID),
-		TeacherName:            firstNonEmptyString(row.TeacherName, "-"),
-		AssistantNames:         compactStrings(row.AssistantNames),
-		ClassroomName:          firstNonEmptyString(row.ClassroomName, "-"),
-		StudentNames:           studentNames,
+		Name:                    row.TeachingClassName,
+		ClassTypeText:           scheduleClassTypeText(row.ClassType),
+		Date:                    row.LessonDate.Format("2006-01-02"),
+		Week:                    weekDisplay(row.LessonDate),
+		TimeText:                row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+		TeacherID:               emptyStringIfZero(row.TeacherID),
+		TeacherName:             firstNonEmptyString(row.TeacherName, "-"),
+		AssistantNames:          compactStrings(row.AssistantNames),
+		ClassroomName:           firstNonEmptyString(row.ClassroomName, "-"),
+		StudentNames:            studentNames,
 		ConflictingStudentNames: append([]string{}, row.ConflictingStudentNames...),
-		ConflictTypes:          []string{},
+		ConflictTypes:           []string{},
 	}
 }
 
@@ -7679,18 +7679,18 @@ func appendAvailabilityConflict(existingMap map[int64]model.TeachingScheduleConf
 			studentNames = compactStrings([]string{row.StudentName})
 		}
 		item = model.TeachingScheduleConflictItem{
-			Name:                   row.TeachingClassName,
-			ClassTypeText:          scheduleClassTypeText(row.ClassType),
-			Date:                   row.LessonDate.Format("2006-01-02"),
-			Week:                   weekDisplay(row.LessonDate),
-			TimeText:               row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
-			TeacherID:              emptyStringIfZero(row.TeacherID),
-			TeacherName:            firstNonEmptyString(row.TeacherName, "-"),
-			AssistantNames:         compactStrings(row.AssistantNames),
-			ClassroomName:          firstNonEmptyString(row.ClassroomName, "-"),
-			StudentNames:           studentNames,
+			Name:                    row.TeachingClassName,
+			ClassTypeText:           scheduleClassTypeText(row.ClassType),
+			Date:                    row.LessonDate.Format("2006-01-02"),
+			Week:                    weekDisplay(row.LessonDate),
+			TimeText:                row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+			TeacherID:               emptyStringIfZero(row.TeacherID),
+			TeacherName:             firstNonEmptyString(row.TeacherName, "-"),
+			AssistantNames:          compactStrings(row.AssistantNames),
+			ClassroomName:           firstNonEmptyString(row.ClassroomName, "-"),
+			StudentNames:            studentNames,
 			ConflictingStudentNames: append([]string{}, row.ConflictingStudentNames...),
-			ConflictTypes:          []string{},
+			ConflictTypes:           []string{},
 		}
 	}
 	if !containsString(item.ConflictTypes, conflictType) {
@@ -7724,20 +7724,20 @@ func buildAvailabilityConflictRowsFromDetails(rows []scheduleConflictDetailRow) 
 	result := make([]scheduleAvailabilityConflictRow, 0, len(rows))
 	for _, row := range rows {
 		result = append(result, scheduleAvailabilityConflictRow{
-			ID:                     row.ID,
-			TeacherID:              row.TeacherID,
-			ClassType:              row.ClassType,
-			TeachingClassName:      row.TeachingClassName,
-			StudentName:            row.StudentName,
-			StudentNames:           append([]string{}, row.StudentNames...),
+			ID:                      row.ID,
+			TeacherID:               row.TeacherID,
+			ClassType:               row.ClassType,
+			TeachingClassName:       row.TeachingClassName,
+			StudentName:             row.StudentName,
+			StudentNames:            append([]string{}, row.StudentNames...),
 			ConflictingStudentNames: append([]string{}, row.ConflictingStudentNames...),
-			TeacherName:            row.TeacherName,
-			AssistantIDs:           append([]string{}, row.AssistantIDs...),
-			AssistantNames:         append([]string{}, row.AssistantNames...),
-			ClassroomName:          row.ClassroomName,
-			LessonDate:             row.LessonDate,
-			StartAt:                row.StartAt,
-			EndAt:                  row.EndAt,
+			TeacherName:             row.TeacherName,
+			AssistantIDs:            append([]string{}, row.AssistantIDs...),
+			AssistantNames:          append([]string{}, row.AssistantNames...),
+			ClassroomName:           row.ClassroomName,
+			LessonDate:              row.LessonDate,
+			StartAt:                 row.StartAt,
+			EndAt:                   row.EndAt,
 		})
 	}
 	return result
