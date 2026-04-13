@@ -1,3 +1,6 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
+
 export interface FieldInfo {
   filter: any
   fieldKey: string
@@ -101,6 +104,20 @@ export function getStudentRegistrationArrearStatisticsApi(data: StudentRegistrat
   return usePost<StudentRegistrationArrearStatistics>('/api/v1/students/registration-arrears/statistics', { queryModel: data })
 }
 
+export async function exportStudentRegistrationArrearApi(data: {
+  queryModel?: StudentRegistrationArrearQueryParams['queryModel']
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/students/registration-arrears/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 export interface StudentLessonArrearItem {
   studentId: string
   studentName: string
@@ -150,4 +167,18 @@ export function getStudentLessonArrearPagedListApi(data: StudentLessonArrearQuer
 
 export function getStudentLessonArrearStatisticsApi(data: StudentLessonArrearQueryParams['queryModel'] = {}) {
   return usePost<StudentLessonArrearStatistics>('/api/v1/students/lesson-arrears/statistics', { queryModel: data })
+}
+
+export async function exportStudentLessonArrearApi(data: {
+  queryModel?: StudentLessonArrearQueryParams['queryModel']
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/students/lesson-arrears/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
 }

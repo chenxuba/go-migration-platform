@@ -4,6 +4,8 @@ import type { TableColumnsType } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, onMounted, ref, watch } from 'vue'
 import {
+  exportStudentLessonArrearApi,
+  exportStudentRegistrationArrearApi,
   getStudentLessonArrearPagedListApi,
   getStudentLessonArrearStatisticsApi,
   getStudentRegistrationArrearPagedListApi,
@@ -19,6 +21,7 @@ type ArrearRecord = StudentRegistrationArrearItem | StudentLessonArrearItem
 
 const activeTab = ref<ArrearTabKey>('registration')
 const loading = ref(false)
+const exporting = ref(false)
 const selectedRowKeys = ref<Array<string>>([])
 const allFilterRef = ref<{
   clearQuickFilter?: (id?: string | number, type?: string) => void
@@ -317,8 +320,72 @@ function handleMessageRecord() {
   messageService.info('消息记录功能待接入')
 }
 
-function handleExportData() {
-  messageService.info('导出功能待接入')
+function parseAttachmentFilenameFromHeader(contentDisposition?: string) {
+  if (!contentDisposition)
+    return undefined
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i)
+  return plainMatch?.[1]
+}
+
+async function handleExportData() {
+  if (exporting.value)
+    return
+  try {
+    exporting.value = true
+    const response = activeTab.value === 'registration'
+      ? await exportStudentRegistrationArrearApi({ queryModel: getRegistrationQueryModel() })
+      : await exportStudentLessonArrearApi({ queryModel: getLessonQueryModel() })
+    const contentType = String(response.headers['content-type'] || '')
+    if (contentType.includes('application/json')) {
+      const text = await response.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([response.data], {
+      type: contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const defaultName = `${activeTab.value === 'registration' ? '报名欠费' : '课消欠费'}-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+    const filename = parseAttachmentFilenameFromHeader(response.headers['content-disposition']) || defaultName
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error: any) {
+    console.error('export arrear data failed', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exporting.value = false
+  }
 }
 
 function handleBatchRemind() {
@@ -393,7 +460,7 @@ defineExpose({
                 </a-menu-item>
               </a-menu>
             </template>
-            <a-button>
+            <a-button :loading="exporting">
               导出数据
               <DownOutlined :style="{ fontSize: '10px' }" />
             </a-button>
@@ -539,7 +606,6 @@ defineExpose({
 }
 
 .filter-wrap {
-  border-top: 1px solid #f0f0f0;
   padding-top: 14px;
   padding-bottom: 10px;
 }
