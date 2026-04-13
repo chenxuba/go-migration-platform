@@ -5689,6 +5689,9 @@ func (repo *Repository) listAssistantConflictsByPlanTx(ctx context.Context, tx *
 }
 
 func (repo *Repository) listScheduleConflictDetailsByFieldValuesTx(ctx context.Context, tx *sql.Tx, instID int64, field string, fieldValues []int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64) ([]scheduleConflictDetailRow, error) {
+	if field == "student_id" {
+		return repo.listScheduleConflictDetailsByStudentsTx(ctx, tx, instID, fieldValues, slots, excludeBatchNo, excludeIDs)
+	}
 	if len(fieldValues) == 0 || len(slots) == 0 {
 		return []scheduleConflictDetailRow{}, nil
 	}
@@ -6253,6 +6256,9 @@ func (repo *Repository) countScheduleOverlapTx(ctx context.Context, tx *sql.Tx, 
 }
 
 func (repo *Repository) listScheduleConflictDetailsTx(ctx context.Context, tx *sql.Tx, instID int64, field string, fieldValue int64, slots []normalizedScheduleSlot, excludeBatchNo string, excludeIDs []int64) ([]scheduleConflictDetailRow, error) {
+	if field == "student_id" {
+		return repo.listScheduleConflictDetailsByStudentsTx(ctx, tx, instID, []int64{fieldValue}, slots, excludeBatchNo, excludeIDs)
+	}
 	if fieldValue <= 0 || len(slots) == 0 {
 		return []scheduleConflictDetailRow{}, nil
 	}
@@ -6358,70 +6364,15 @@ func (repo *Repository) listAvailabilityConflictsByStudentTx(ctx context.Context
 	if studentID <= 0 || strings.TrimSpace(startDate) == "" || strings.TrimSpace(endDate) == "" {
 		return []scheduleAvailabilityConflictRow{}, nil
 	}
-	filters := []string{
-		"inst_id = ?",
-		"del_flag = 0",
-		"status = ?",
-		"student_id = ?",
-		"lesson_date >= ?",
-		"lesson_date <= ?",
-	}
-	args := []any{instID, model.TeachingScheduleStatusActive, studentID, startDate, endDate}
-	if len(excludeIDs) > 0 {
-		filters = append(filters, "id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
-		for _, id := range excludeIDs {
-			args = append(args, id)
-		}
-	}
-	rows, err := tx.QueryContext(ctx, `
-		SELECT
-			id,
-			IFNULL(teacher_id, 0),
-			IFNULL(class_type, 0),
-			IFNULL(teaching_class_name, ''),
-			IFNULL(student_name, ''),
-			IFNULL(teacher_name, ''),
-			assistant_ids_json,
-			assistant_names_json,
-			IFNULL(classroom_name, ''),
-			lesson_date,
-			lesson_start_at,
-			lesson_end_at
-		FROM teaching_schedule
-		WHERE `+strings.Join(filters, " AND ")+`
-		ORDER BY lesson_date ASC, lesson_start_at ASC, id ASC
-	`, args...)
+	slots, err := buildFullDayScheduleSlots(startDate, endDate)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := make([]scheduleAvailabilityConflictRow, 0, 16)
-	for rows.Next() {
-		var item scheduleAvailabilityConflictRow
-		var assistantIDsRaw []byte
-		var assistantNamesRaw []byte
-		if err := rows.Scan(
-			&item.ID,
-			&item.TeacherID,
-			&item.ClassType,
-			&item.TeachingClassName,
-			&item.StudentName,
-			&item.TeacherName,
-			&assistantIDsRaw,
-			&assistantNamesRaw,
-			&item.ClassroomName,
-			&item.LessonDate,
-			&item.StartAt,
-			&item.EndAt,
-		); err != nil {
-			return nil, err
-		}
-		item.AssistantIDs = decodeJSONStringArray(assistantIDsRaw)
-		item.AssistantNames = decodeJSONStringArray(assistantNamesRaw)
-		result = append(result, item)
+	rows, err := repo.listScheduleConflictDetailsByStudentsTx(ctx, tx, instID, []int64{studentID}, slots, "", excludeIDs)
+	if err != nil {
+		return nil, err
 	}
-	return result, rows.Err()
+	return buildAvailabilityConflictRowsFromDetails(rows), nil
 }
 
 func (repo *Repository) listAvailabilityConflictsByTeachersTx(ctx context.Context, tx *sql.Tx, instID int64, teacherIDs []int64, startDate, endDate string, excludeIDs []int64) ([]scheduleAvailabilityConflictRow, error) {
@@ -7706,6 +7657,31 @@ func availabilityDateRange(slots []normalizedAvailabilityScheduleSlot) (string, 
 	return start.Format("2006-01-02"), end.Format("2006-01-02")
 }
 
+func buildFullDayScheduleSlots(startDate, endDate string) ([]normalizedScheduleSlot, error) {
+	startAt, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(startDate), time.Local)
+	if err != nil {
+		return nil, err
+	}
+	endAt, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(endDate), time.Local)
+	if err != nil {
+		return nil, err
+	}
+	if endAt.Before(startAt) {
+		return []normalizedScheduleSlot{}, nil
+	}
+
+	result := make([]normalizedScheduleSlot, 0, int(endAt.Sub(startAt).Hours()/24)+1)
+	for current := startAt; !current.After(endAt); current = current.AddDate(0, 0, 1) {
+		dayStart := startOfDay(current)
+		result = append(result, normalizedScheduleSlot{
+			LessonDate: dayStart,
+			StartAt:    dayStart,
+			EndAt:      dayStart.Add(24 * time.Hour),
+		})
+	}
+	return result, nil
+}
+
 func collectAvailabilityTeacherIDs(slots []normalizedAvailabilityScheduleSlot) []int64 {
 	result := make([]int64, 0, len(slots))
 	seen := make(map[int64]struct{}, len(slots))
@@ -7759,6 +7735,30 @@ func buildUnavailableAvailabilityResult(slots []normalizedAvailabilityScheduleSl
 			EndTime:    slot.EndAt.Format("15:04"),
 			Valid:      false,
 			Message:    message,
+		})
+	}
+	return result
+}
+
+func buildAvailabilityConflictRowsFromDetails(rows []scheduleConflictDetailRow) []scheduleAvailabilityConflictRow {
+	if len(rows) == 0 {
+		return []scheduleAvailabilityConflictRow{}
+	}
+	result := make([]scheduleAvailabilityConflictRow, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, scheduleAvailabilityConflictRow{
+			ID:                row.ID,
+			TeacherID:         row.TeacherID,
+			ClassType:         row.ClassType,
+			TeachingClassName: row.TeachingClassName,
+			StudentName:       row.StudentName,
+			TeacherName:       row.TeacherName,
+			AssistantIDs:      append([]string{}, row.AssistantIDs...),
+			AssistantNames:    append([]string{}, row.AssistantNames...),
+			ClassroomName:     row.ClassroomName,
+			LessonDate:        row.LessonDate,
+			StartAt:           row.StartAt,
+			EndAt:             row.EndAt,
 		})
 	}
 	return result
