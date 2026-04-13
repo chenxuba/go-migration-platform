@@ -182,20 +182,20 @@ func buildLessonIncomeExportWorkbook(items []model.LessonIncomeItem) ([]byte, er
 
 func buildLessonIncomeExportRow(item model.LessonIncomeItem) []string {
 	return []string{
-		formatDateTimeValue(item.ConformIncomeTime),
-		formatDateTimeValue(item.CreatedTime),
-		strings.TrimSpace(item.StudentName),
-		strings.TrimSpace(item.StudentPhone),
-		firstNonEmptyString(strings.TrimSpace(item.TeachingCourseName), strings.TrimSpace(item.LessonName)),
-		strings.TrimSpace(item.LessonName),
-		strings.TrimSpace(item.ProductCategoryName),
-		formatLessonIncomeTeachingMethod(item.TeachingMethod),
-		formatLessonIncomeDetailType(item.SourceType),
-		formatLessonIncomeTeacherText(item.Teachers, item.TeacherName),
-		formatLessonIncomeTeacherText(item.AssistantTeachers, item.AssistantName),
-		strings.TrimSpace(item.ClassName),
-		formatLessonIncomeLessonTime(item),
-		formatDateTimeValue(item.RollCallTime),
+		exportPlaceholderText(formatDateTimeValue(item.ConformIncomeTime)),
+		exportPlaceholderText(formatDateTimeValue(item.CreatedTime)),
+		exportPlaceholderText(strings.TrimSpace(item.StudentName)),
+		exportPlaceholderText(strings.TrimSpace(item.StudentPhone)),
+		exportPlaceholderText(strings.TrimSpace(item.TeachingCourseName)),
+		exportPlaceholderText(strings.TrimSpace(item.LessonName)),
+		exportPlaceholderText(strings.TrimSpace(item.ProductCategoryName)),
+		exportPlaceholderText(formatLessonIncomeTeachingMethod(item.TeachingMethod)),
+		exportPlaceholderText(formatLessonIncomeDetailType(item.SourceType)),
+		exportPlaceholderText(formatLessonIncomeTeacherText(item.Teachers, item.TeacherName)),
+		exportPlaceholderText(formatLessonIncomeTeacherText(item.AssistantTeachers, item.AssistantName)),
+		exportPlaceholderText(strings.TrimSpace(item.ClassName)),
+		exportPlaceholderText(formatLessonIncomeLessonTime(item)),
+		exportPlaceholderText(formatDateTimeValue(item.RollCallTime)),
 		formatLessonIncomeConsumption(item),
 		formatAmount(item.Tuition),
 	}
@@ -308,4 +308,11 @@ func formatLessonIncomeConsumption(item model.LessonIncomeItem) string {
 	}
 
 	return strings.TrimSpace(prefix + formatAmount(quantity) + firstNonEmptyString(" "+unit, ""))
+}
+
+func exportPlaceholderText(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return strings.TrimSpace(value)
 }

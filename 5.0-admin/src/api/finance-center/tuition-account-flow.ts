@@ -100,3 +100,18 @@ export async function exportTuitionAccountFlowRecordListApi(data: {
     },
   })
 }
+
+export async function exportSubTuitionAccountFlowRecordListApi(data: {
+  queryModel?: TuitionAccountFlowRecordListQueryParams['queryModel']
+  sortModel?: TuitionAccountFlowRecordListQueryParams['sortModel']
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/tuition-account-flows/sub-export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}

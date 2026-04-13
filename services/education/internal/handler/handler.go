@@ -75,6 +75,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/tuition-account-flows/list", handler.tuitionAccountFlowRecordList)
 	mux.HandleFunc("/api/v1/tuition-account-flows/sub-list", handler.subTuitionAccountFlowRecordList)
 	mux.HandleFunc("/api/v1/tuition-account-flows/export", handler.tuitionAccountFlowRecordExport)
+	mux.HandleFunc("/api/v1/tuition-account-flows/sub-export", handler.subTuitionAccountFlowRecordExport)
 	mux.HandleFunc("/api/v1/lesson-incomes/query-paged-list", handler.lessonIncomeQueryPagedList)
 	mux.HandleFunc("/api/v1/lesson-incomes/statistics", handler.lessonIncomeStatistics)
 	mux.HandleFunc("/api/v1/lesson-incomes/export", handler.lessonIncomeExport)

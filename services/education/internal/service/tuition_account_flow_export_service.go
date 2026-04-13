@@ -14,6 +14,11 @@ const tuitionAccountFlowExportMaxRows = 10000
 const (
 	tuitionAccountFlowExportQuantityColumn = 9
 	tuitionAccountFlowExportTuitionColumn  = 10
+
+	subTuitionAccountFlowExportQuantityColumn        = 7
+	subTuitionAccountFlowExportTuitionColumn         = 8
+	subTuitionAccountFlowExportBalanceQuantityColumn = 9
+	subTuitionAccountFlowExportBalanceTuitionColumn  = 10
 )
 
 var tuitionAccountFlowExportHeaders = []string{
@@ -31,6 +36,24 @@ var tuitionAccountFlowExportHeaders = []string{
 
 var tuitionAccountFlowExportColumnWidths = []float64{
 	20, 14, 14, 18, 20, 12, 12, 14, 12, 18,
+}
+
+var subTuitionAccountFlowExportHeaders = []string{
+	"变动时间",
+	"学员姓名",
+	"学员电话",
+	"上课课程",
+	"扣费账户/课程账户",
+	"变动类型",
+	"变动数量",
+	"变动数量对应学费（元）",
+	"变动后剩余数量",
+	"变动后剩余学费（元）",
+	"订单编号",
+}
+
+var subTuitionAccountFlowExportColumnWidths = []float64{
+	20, 14, 14, 18, 20, 14, 12, 18, 14, 18, 22,
 }
 
 func buildTuitionAccountFlowExportWorkbook(items []model.TuitionAccountFlowRecordItem) ([]byte, error) {
@@ -148,21 +171,170 @@ func buildTuitionAccountFlowExportWorkbook(items []model.TuitionAccountFlowRecor
 	return buffer.Bytes(), nil
 }
 
+func buildSubTuitionAccountFlowExportWorkbook(items []model.SubTuitionAccountFlowRecordItem) ([]byte, error) {
+	file := excelize.NewFile()
+	sheetName := file.GetSheetName(0)
+	numberFormat := "0.00"
+
+	headerStyle, err := file.NewStyle(&excelize.Style{
+		Font: &excelize.Font{
+			Bold:   true,
+			Size:   11,
+			Family: "Microsoft YaHei",
+			Color:  "#222222",
+		},
+		Fill: excelize.Fill{
+			Type:    "pattern",
+			Pattern: 1,
+			Color:   []string{"#F5F7FB"},
+		},
+		Alignment: &excelize.Alignment{
+			Horizontal: "center",
+			Vertical:   "center",
+		},
+		Border: []excelize.Border{
+			{Type: "bottom", Color: "#E5EAF3", Style: 1},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	cellStyle, err := file.NewStyle(&excelize.Style{
+		Font: &excelize.Font{
+			Size:   10,
+			Family: "Microsoft YaHei",
+			Color:  "#333333",
+		},
+		Alignment: &excelize.Alignment{
+			Horizontal: "center",
+			Vertical:   "center",
+			WrapText:   true,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	numberStyle, err := file.NewStyle(&excelize.Style{
+		Font: &excelize.Font{
+			Size:   10,
+			Family: "Microsoft YaHei",
+			Color:  "#333333",
+		},
+		Alignment: &excelize.Alignment{
+			Horizontal: "center",
+			Vertical:   "center",
+		},
+		CustomNumFmt: &numberFormat,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for idx, header := range subTuitionAccountFlowExportHeaders {
+		cell, _ := excelize.CoordinatesToCellName(idx+1, 1)
+		col := columnName(idx + 1)
+		width := 18.0
+		if idx < len(subTuitionAccountFlowExportColumnWidths) {
+			width = subTuitionAccountFlowExportColumnWidths[idx]
+		}
+		file.SetColWidth(sheetName, col, col, width)
+		if err := file.SetCellValue(sheetName, cell, header); err != nil {
+			return nil, err
+		}
+		if err := file.SetCellStyle(sheetName, cell, cell, headerStyle); err != nil {
+			return nil, err
+		}
+	}
+
+	for rowIdx, item := range items {
+		values, quantityValue, tuitionValue, balanceQuantityValue, balanceTuitionValue := buildSubTuitionAccountFlowExportRow(item)
+		for colIdx, value := range values {
+			cell, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+2)
+			switch colIdx + 1 {
+			case subTuitionAccountFlowExportQuantityColumn:
+				if err := file.SetCellValue(sheetName, cell, quantityValue); err != nil {
+					return nil, err
+				}
+				if err := file.SetCellStyle(sheetName, cell, cell, numberStyle); err != nil {
+					return nil, err
+				}
+				continue
+			case subTuitionAccountFlowExportTuitionColumn:
+				if err := file.SetCellValue(sheetName, cell, tuitionValue); err != nil {
+					return nil, err
+				}
+				if err := file.SetCellStyle(sheetName, cell, cell, numberStyle); err != nil {
+					return nil, err
+				}
+				continue
+			case subTuitionAccountFlowExportBalanceQuantityColumn:
+				if err := file.SetCellValue(sheetName, cell, balanceQuantityValue); err != nil {
+					return nil, err
+				}
+				if err := file.SetCellStyle(sheetName, cell, cell, numberStyle); err != nil {
+					return nil, err
+				}
+				continue
+			case subTuitionAccountFlowExportBalanceTuitionColumn:
+				if err := file.SetCellValue(sheetName, cell, balanceTuitionValue); err != nil {
+					return nil, err
+				}
+				if err := file.SetCellStyle(sheetName, cell, cell, numberStyle); err != nil {
+					return nil, err
+				}
+				continue
+			}
+			if err := file.SetCellValue(sheetName, cell, value); err != nil {
+				return nil, err
+			}
+			if err := file.SetCellStyle(sheetName, cell, cell, cellStyle); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	buffer, err := file.WriteToBuffer()
+	if err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
 func buildTuitionAccountFlowExportRow(item model.TuitionAccountFlowRecordItem) ([]string, float64, float64) {
 	quantityValue := signedTuitionAccountFlowValue(item.Quantity, item.SourceType)
 	tuitionValue := signedTuitionAccountFlowValue(item.Tuition, item.SourceType)
 	return []string{
-		formatDateTimeValue(item.CreatedTime),
-		strings.TrimSpace(item.StudentName),
-		strings.TrimSpace(item.StudentPhone),
-		firstNonEmptyString(strings.TrimSpace(item.TeachingCourseName), "-"),
-		strings.TrimSpace(item.ProductName),
-		formatTuitionAccountFlowLessonType(item.LessonType),
-		formatTuitionAccountFlowChargingMode(item.LessonChargingMode),
-		formatTuitionAccountFlowSourceType(item.SourceType),
+		exportPlaceholderText(formatDateTimeValue(item.CreatedTime)),
+		exportPlaceholderText(strings.TrimSpace(item.StudentName)),
+		exportPlaceholderText(strings.TrimSpace(item.StudentPhone)),
+		exportPlaceholderText(strings.TrimSpace(item.TeachingCourseName)),
+		exportPlaceholderText(strings.TrimSpace(item.ProductName)),
+		exportPlaceholderText(formatTuitionAccountFlowLessonType(item.LessonType)),
+		exportPlaceholderText(formatTuitionAccountFlowChargingMode(item.LessonChargingMode)),
+		exportPlaceholderText(formatTuitionAccountFlowSourceType(item.SourceType)),
 		"",
 		"",
 	}, quantityValue, tuitionValue
+}
+
+func buildSubTuitionAccountFlowExportRow(item model.SubTuitionAccountFlowRecordItem) ([]string, float64, float64, float64, float64) {
+	quantityValue := signedTuitionAccountFlowValue(item.Quantity, item.SourceType)
+	tuitionValue := signedTuitionAccountFlowValue(item.Tuition, item.SourceType)
+	return []string{
+		exportPlaceholderText(formatDateTimeValue(item.CreatedTime)),
+		exportPlaceholderText(strings.TrimSpace(item.StudentName)),
+		exportPlaceholderText(strings.TrimSpace(item.StudentPhone)),
+		exportPlaceholderText(strings.TrimSpace(item.TeachingCourseName)),
+		exportPlaceholderText(strings.TrimSpace(item.ProductName)),
+		exportPlaceholderText(formatTuitionAccountFlowSourceType(item.SourceType)),
+		"",
+		"",
+		"",
+		"",
+		exportPlaceholderText(strings.TrimSpace(item.OrderNumber)),
+	}, quantityValue, tuitionValue, item.BalanceQuantity, item.BalanceTuition
 }
 
 func formatTuitionAccountFlowLessonType(value *int) string {

@@ -5,7 +5,7 @@ import { debounce } from 'lodash-es'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
 import { getRecommenderPageApi } from '@/api/enroll-center/intention-student'
-import { getSubTuitionAccountFlowRecordListApi } from '@/api/finance-center/tuition-account-flow'
+import { exportSubTuitionAccountFlowRecordListApi, getSubTuitionAccountFlowRecordListApi } from '@/api/finance-center/tuition-account-flow'
 import ClassRecordDetails from '@/components/common/class-record-details.vue'
 import messageService from '@/utils/messageService'
 
@@ -83,6 +83,7 @@ const courseOptions = ref([])
 const courseFinished = ref(false)
 const dataSource = ref([])
 const loading = ref(false)
+const exporting = ref(false)
 const openClassRecordDrawer = ref(false)
 const currentTeachingRecordId = ref('')
 const pagination = ref({
@@ -325,18 +326,37 @@ function handleStuPhoneSearchChange(value) {
   })
 }
 
+function buildQueryModel() {
+  return {
+    productId: filterState.value.productId || undefined,
+    studentId: filterState.value.studentId || undefined,
+    sourceTypes: selectedSourceTypes.value.length ? selectedSourceTypes.value : undefined,
+    startTime: filterState.value.changeTime?.[0] || undefined,
+    endTime: filterState.value.changeTime?.[1] || undefined,
+    orderNumber: filterState.value.orderNumber || undefined,
+  }
+}
+
+function parseAttachmentFilenameFromHeader(cd) {
+  if (!cd) return undefined
+  const utf8Match = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = cd.match(/filename=\"?([^\";]+)\"?/i)
+  return plainMatch?.[1]
+}
+
 async function fetchFlowDetailList() {
   try {
     loading.value = true
     const { result } = await getSubTuitionAccountFlowRecordListApi({
-      queryModel: {
-        productId: filterState.value.productId || undefined,
-        studentId: filterState.value.studentId || undefined,
-        sourceTypes: selectedSourceTypes.value.length ? selectedSourceTypes.value : undefined,
-        startTime: filterState.value.changeTime?.[0] || undefined,
-        endTime: filterState.value.changeTime?.[1] || undefined,
-        orderNumber: filterState.value.orderNumber || undefined,
-      },
+      queryModel: buildQueryModel(),
       pageRequestModel: {
         needTotal: true,
         pageSize: pagination.value.pageSize,
@@ -363,6 +383,60 @@ function handleTableChange(pag) {
   pagination.value.current = pag.current
   pagination.value.pageSize = pag.pageSize
   fetchFlowDetailList()
+}
+
+async function handleExport() {
+  if (exporting.value) return
+  try {
+    exporting.value = true
+    const res = await exportSubTuitionAccountFlowRecordListApi({
+      queryModel: buildQueryModel(),
+      sortModel: {
+        orderByCreatedTime: 0,
+      },
+    })
+    const ct = String(res.headers['content-type'] || '')
+    if (ct.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: ct || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
+      || `学费变动明细_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error) {
+    console.error('导出学费变动明细失败:', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exporting.value = false
+  }
 }
 
 function handleOpenClassRecord(record) {
@@ -501,7 +575,7 @@ onMounted(async () => {
             当前共计 {{ pagination.total }} 条记录
           </div>
           <div class="edit flex">
-            <a-button class="mr-2">
+            <a-button class="mr-2" :loading="exporting" @click="handleExport">
               导出数据
             </a-button>
             <customize-code
