@@ -316,8 +316,12 @@ async function handleSubmit() {
     }
 
     let startDate
+    let expireDate
     if (lessonChargingMode.value === 2) {
       startDate = formState.startDate
+    }
+    else {
+      expireDate = formState.startDate
     }
 
     submitLoading.value = true
@@ -325,6 +329,7 @@ async function handleSubmit() {
       tuitionAccountId: tuitionAccountId.value,
       closeTuitionAccountOrderId: String(previewData.value.closeTuitionAccountOrderId),
       startDate,
+      expireDate,
     })
     if (res.code !== 200)
       throw new Error(res.message || '撤销结课失败')

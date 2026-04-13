@@ -563,7 +563,11 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			COALESCE(ta_agg.valid_date_min, pta.valid_date),
 			COALESCE(ta_agg.expire_time_max, pta.expire_time),
 			COALESCE(ta_agg.suspended_time_max, pta.suspended_time),
-			COALESCE(ta_agg.class_ending_time_max, pta.class_ending_time),
+			CASE
+				WHEN IFNULL(ta_agg.effective_status, IFNULL(pta.status, 0)) = 3
+					THEN COALESCE(ta_agg.class_ending_time_max, pta.class_ending_time)
+				ELSE NULL
+			END,
 			COALESCE(
 				NULLIF(ic.name, ''),
 				NULLIF(icq.name, ''),

@@ -1154,6 +1154,10 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 			    status = ?,
 			    status_change_time = ?,
 			    class_ending_time = NULL,
+			    enable_expire_time = CASE
+			    	WHEN ? IS NOT NULL THEN 1
+			    	ELSE enable_expire_time
+			    END,
 			    expire_time = COALESCE(?, expire_time),
 			    valid_date = COALESCE(?, valid_date),
 			    end_date = COALESCE(?, end_date),
@@ -1161,7 +1165,7 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 			    update_time = NOW()
 			WHERE id = ? AND inst_id = ? AND del_flag = 0
 		`, newUsedQty, newRemainQty, newUsedTuition, newRemainTuition, newConfirmed,
-			model.TuitionAccountStatusActive, now, expireDateArg, validDateArg, endDateArg, operatorID, flow.tuitionAccountID, instID); err != nil {
+			model.TuitionAccountStatusActive, now, expireDateArg, expireDateArg, validDateArg, endDateArg, operatorID, flow.tuitionAccountID, instID); err != nil {
 			return 0, err
 		}
 
