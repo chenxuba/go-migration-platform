@@ -137,6 +137,111 @@ export function getGroupClassDetailApi(params: { id: string }) {
   return useGet<GroupClassDetailVO>('/api/v1/group-classes/detail', params)
 }
 
+export interface GroupClassStudentQueryModel {
+  id?: string
+  classId?: string
+  status?: number[]
+  ignoreSuspendedTuitionAccount?: boolean
+}
+
+export interface GroupClassStudentStatisticsVO {
+  studentCount: number
+  noneBindCount: number
+  noneFaceCount: number
+}
+
+export interface GroupClassStudentTuitionAccountInfo {
+  tuitionAccountId: string
+  productName: string
+  productId: string
+  remainQuantity: number
+  remainFreeQuantity: number
+  remainTuition: number
+  lessonChargingMode: number
+  enableExpireTime: boolean
+  startTime?: string
+  expireTime?: string
+  isTuitionAccountActive: boolean
+  totalQuantity: number
+  totalFreeQuantity: number
+  totalTuition: number
+}
+
+export interface GroupClassStudentPagedItem {
+  id: string
+  name: string
+  sex: number
+  avatar?: string
+  phone?: string
+  isBind: boolean
+  studentFaceInfoId?: string
+  isStudentFace: boolean
+  phoneRelationship?: number
+  tuitionAccountId?: string
+  classStudentTuitionAccountInfo?: GroupClassStudentTuitionAccountInfo
+  status: number
+  studentStatus: number
+  totalQuantity: number
+  totalFreeQuantity: number
+  totalTuition: number
+  quantity: number
+  freeQuantity: number
+  tuition: number
+  confirmedTuition: number
+  tuitionAccountStatus: number
+  enableExpireTime: boolean
+  expireTime?: string
+  suspendedTime?: string
+  classEndingTime?: string
+  advisorId?: string
+  advisorName?: string
+  studentManagerId?: string
+  studentManagerName?: string
+  customInfo?: unknown[]
+  balance?: number
+  point?: string
+  usedClassTime?: number
+  birthday?: string
+  weChatNumber?: string
+  grade?: string
+  studySchool?: string
+  address?: string
+  interest?: string
+  channelName?: string
+  joinTime?: string
+}
+
+export interface GroupClassStudentTeachingRecordCountItem {
+  studentId: string
+  studentAttendCount: number
+  studentLeaveCount: number
+  studentTruancyCount: number
+}
+
+export function getGroupClassStudentStatisticsApi(queryModel: GroupClassStudentQueryModel) {
+  return usePost<GroupClassStudentStatisticsVO>('/api/v1/group-classes/student-statistics', queryModel)
+}
+
+export function pageGroupClassStudentsApi(data: {
+  queryModel: GroupClassStudentQueryModel
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+}) {
+  return usePost<{ list: GroupClassStudentPagedItem[], total: number }>('/api/v1/group-classes/student-paged-list', data)
+}
+
+export function getGroupClassStudentTeachingRecordCountApi(data: {
+  studentIds: string[]
+  classId: string
+  studentTeachingRecordStatuses?: number[]
+}) {
+  return usePost<GroupClassStudentTeachingRecordCountItem[]>('/api/v1/group-classes/student-teaching-record-count', data)
+}
+
 /** 对标 Class/GetStudentListByClassIds：各班已在班学员 */
 export interface GroupClassStudentInClassBucket {
   classId: string

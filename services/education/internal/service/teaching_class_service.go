@@ -472,6 +472,39 @@ func (svc *Service) AggregateGroupClassStatistics(userID int64, q model.GroupCla
 	return svc.repo.AggregateGroupClassStatistics(context.Background(), instID, q)
 }
 
+func (svc *Service) GetGroupClassStudentStatistics(userID int64, q model.GroupClassStudentQueryModel) (model.GroupClassStudentStatisticsVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GroupClassStudentStatisticsVO{}, errors.New("no institution context")
+		}
+		return model.GroupClassStudentStatisticsVO{}, err
+	}
+	return svc.repo.GetGroupClassStudentStatistics(context.Background(), instID, q)
+}
+
+func (svc *Service) PageGroupClassStudents(userID int64, body model.GroupClassStudentPagedListBody) (model.GroupClassStudentPagedListResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GroupClassStudentPagedListResult{}, errors.New("no institution context")
+		}
+		return model.GroupClassStudentPagedListResult{}, err
+	}
+	return svc.repo.PageGroupClassStudents(context.Background(), instID, body)
+}
+
+func (svc *Service) GetGroupClassStudentTeachingRecordCount(userID int64, dto model.GroupClassStudentTeachingRecordCountQueryDTO) ([]model.GroupClassStudentTeachingRecordCountVO, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("no institution context")
+		}
+		return nil, err
+	}
+	return svc.repo.GetGroupClassStudentTeachingRecordCount(context.Background(), instID, dto)
+}
+
 // ListGroupClassStudentsByClassIDs 对标 Class/GetStudentListByClassIds
 func (svc *Service) ListGroupClassStudentsByClassIDs(userID int64, dto model.GroupClassStudentListByClassIDsRequest) ([]model.GroupClassStudentListBucketVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)

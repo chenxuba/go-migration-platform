@@ -197,6 +197,83 @@ func maskPhoneDisplay(mobile string) string {
 	return string(r[:3]) + "****" + string(r[len(r)-4:])
 }
 
+func normalizeGroupClassStudentStatuses(statuses []int) []int {
+	if len(statuses) == 0 {
+		return []int{model.TeachingClassStudentStatusStudying}
+	}
+	seen := make(map[int]struct{}, len(statuses))
+	out := make([]int, 0, len(statuses))
+	for _, status := range statuses {
+		if status < model.TeachingClassStudentStatusStudying || status > model.TeachingClassStudentStatusClosed {
+			continue
+		}
+		if _, ok := seen[status]; ok {
+			continue
+		}
+		seen[status] = struct{}{}
+		out = append(out, status)
+	}
+	if len(out) == 0 {
+		return []int{model.TeachingClassStudentStatusStudying}
+	}
+	return out
+}
+
+func parseDistinctInt64Strings(values []string) []int64 {
+	out := make([]int64, 0, len(values))
+	seen := make(map[int64]struct{}, len(values))
+	for _, raw := range values {
+		id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func groupClassStudentTimePtr(value sql.NullTime) *time.Time {
+	if !value.Valid || value.Time.Year() <= 1 {
+		return nil
+	}
+	t := value.Time
+	return &t
+}
+
+func resolveGroupClassStudentClassID(q model.GroupClassStudentQueryModel) (int64, error) {
+	classIDStr := strings.TrimSpace(q.ClassID)
+	if classIDStr == "" {
+		classIDStr = strings.TrimSpace(q.ID)
+	}
+	classID, err := strconv.ParseInt(classIDStr, 10, 64)
+	if err != nil || classID <= 0 {
+		return 0, errors.New("classId 无效")
+	}
+	return classID, nil
+}
+
+func buildGroupClassStudentMembershipWhere(instID, classID int64, statuses []int, ignoreSuspended bool) (string, []any) {
+	whereParts := []string{
+		"tcs.inst_id = ?",
+		"tcs.del_flag = 0",
+		"tcs.teaching_class_id = ?",
+	}
+	args := []any{instID, classID}
+	if len(statuses) > 0 {
+		whereParts = append(whereParts, "tcs.class_student_status IN ("+sqlPlaceholders(len(statuses))+")")
+		args = append(args, intSliceToAny(statuses)...)
+	}
+	if ignoreSuspended {
+		whereParts = append(whereParts, "IFNULL(ta.status, 0) <> ?")
+		args = append(args, model.TeachingClassStudentStatusStopped)
+	}
+	return strings.Join(whereParts, " AND "), args
+}
+
 // ListGroupClassStudentsByClassIDs 对标 Class/GetStudentListByClassIds：返回各班已在班学员（集体班）。
 func (repo *Repository) ListGroupClassStudentsByClassIDs(ctx context.Context, instID int64, classIDStrs []string) ([]model.GroupClassStudentListBucketVO, error) {
 	ids := make([]int64, 0, len(classIDStrs))
@@ -343,6 +420,436 @@ func (repo *Repository) ListGroupClassStudentsByClassIDs(ctx context.Context, in
 		})
 	}
 	return out, nil
+}
+
+func (repo *Repository) GetGroupClassStudentStatistics(ctx context.Context, instID int64, q model.GroupClassStudentQueryModel) (model.GroupClassStudentStatisticsVO, error) {
+	classID, err := resolveGroupClassStudentClassID(q)
+	if err != nil {
+		return model.GroupClassStudentStatisticsVO{}, err
+	}
+	statuses := normalizeGroupClassStudentStatuses(q.Status)
+	memberWhere, memberArgs := buildGroupClassStudentMembershipWhere(instID, classID, statuses, q.IgnoreSuspendedTuitionAccount)
+	query := `
+		SELECT
+			COUNT(*),
+			IFNULL(SUM(CASE WHEN IFNULL(s.is_bind_child, 0) = 0 THEN 1 ELSE 0 END), 0),
+			IFNULL(SUM(CASE WHEN fp.id IS NULL THEN 1 ELSE 0 END), 0)
+		FROM (
+			SELECT DISTINCT tcs.student_id
+			FROM teaching_class_student tcs
+			INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id
+				AND tc.inst_id = tcs.inst_id
+				AND tc.class_type = ?
+				AND tc.del_flag = 0
+			LEFT JOIN tuition_account ta ON ta.id = tcs.primary_tuition_account_id
+				AND ta.inst_id = tcs.inst_id
+				AND ta.del_flag = 0
+			WHERE ` + memberWhere + `
+		) ms
+		INNER JOIN inst_student s ON s.id = ms.student_id AND s.inst_id = ? AND s.del_flag = 0
+		LEFT JOIN inst_student_face_profile fp ON fp.student_id = ms.student_id AND fp.inst_id = ? AND fp.del_flag = 0
+	`
+	args := make([]any, 0, 1+len(memberArgs)+2)
+	args = append(args, model.TeachingClassTypeNormal)
+	args = append(args, memberArgs...)
+	args = append(args, instID, instID)
+
+	var out model.GroupClassStudentStatisticsVO
+	if err := repo.db.QueryRowContext(ctx, query, args...).Scan(&out.StudentCount, &out.NoneBindCount, &out.NoneFaceCount); err != nil {
+		return model.GroupClassStudentStatisticsVO{}, err
+	}
+	return out, nil
+}
+
+func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64, body model.GroupClassStudentPagedListBody) (model.GroupClassStudentPagedListResult, error) {
+	classID, err := resolveGroupClassStudentClassID(body.QueryModel)
+	if err != nil {
+		return model.GroupClassStudentPagedListResult{List: []model.GroupClassStudentPagedItemVO{}}, err
+	}
+	statuses := normalizeGroupClassStudentStatuses(body.QueryModel.Status)
+	memberWhere, memberArgs := buildGroupClassStudentMembershipWhere(instID, classID, statuses, body.QueryModel.IgnoreSuspendedTuitionAccount)
+
+	pageSize := body.PageRequestModel.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+	pageIndex := body.PageRequestModel.PageIndex
+	if pageIndex <= 0 {
+		pageIndex = 1
+	}
+	offset := (pageIndex - 1) * pageSize
+	if body.PageRequestModel.SkipCount > 0 {
+		offset = body.PageRequestModel.SkipCount
+	}
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM (
+			SELECT DISTINCT tcs.student_id
+			FROM teaching_class_student tcs
+			INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id
+				AND tc.inst_id = tcs.inst_id
+				AND tc.class_type = ?
+				AND tc.del_flag = 0
+			LEFT JOIN tuition_account ta ON ta.id = tcs.primary_tuition_account_id
+				AND ta.inst_id = tcs.inst_id
+				AND ta.del_flag = 0
+			WHERE ` + memberWhere + `
+		) cnt
+	`
+	countArgs := make([]any, 0, 1+len(memberArgs))
+	countArgs = append(countArgs, model.TeachingClassTypeNormal)
+	countArgs = append(countArgs, memberArgs...)
+
+	out := model.GroupClassStudentPagedListResult{List: []model.GroupClassStudentPagedItemVO{}}
+	if err := repo.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&out.Total); err != nil {
+		return out, err
+	}
+	if out.Total == 0 {
+		return out, nil
+	}
+
+	listQuery := `
+		SELECT
+			CAST(ms.student_id AS CHAR),
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.stu_sex, 0),
+			IFNULL(s.avatar_url, ''),
+			IFNULL(s.mobile, ''),
+			IFNULL(s.is_bind_child, 0),
+			CAST(IFNULL(fp.id, 0) AS CHAR),
+			IFNULL(s.phone_relationship, 0),
+			CAST(IFNULL(ptcs.primary_tuition_account_id, 0) AS CHAR),
+			IFNULL(pta.total_quantity, 0),
+			IFNULL(pta.free_quantity, 0),
+			IFNULL(pta.remaining_quantity, 0),
+			IFNULL(pta.total_tuition, 0),
+			IFNULL(pta.remaining_tuition, 0),
+			IFNULL(pta.status, 0),
+			IFNULL(pta.enable_expire_time, 0),
+			pta.valid_date,
+			pta.expire_time,
+			pta.suspended_time,
+			pta.class_ending_time,
+			COALESCE(
+				NULLIF(ic.name, ''),
+				NULLIF(icq.name, ''),
+				CONCAT('账户', CAST(IFNULL(pta.id, 0) AS CHAR))
+			),
+			CAST(IFNULL(COALESCE(
+				NULLIF(pta.quote_id, 0),
+				NULLIF(sod.quote_id, 0),
+				icq.id
+			), 0) AS CHAR),
+			IFNULL(icq.lesson_model, 0),
+			ms.join_time,
+			ms.class_status,
+			IFNULL(rb.balance, 0),
+			IFNULL(tr.used_class_time, 0),
+			s.birthday,
+			IFNULL(s.wechat_number, ''),
+			IFNULL(s.grade, ''),
+			IFNULL(s.study_school, ''),
+			IFNULL(s.address, ''),
+			IFNULL(s.interest, ''),
+			IFNULL(ch.channel_name, ''),
+			CAST(IFNULL(s.advisor_id, 0) AS CHAR),
+			IFNULL(advisor.nick_name, ''),
+			CAST(IFNULL(s.student_manager_id, 0) AS CHAR),
+			IFNULL(manager.nick_name, ''),
+			IFNULL(s.student_status, 0)
+		FROM (
+			SELECT
+				tcs.student_id,
+				MIN(tcs.create_time) AS join_time,
+				CASE
+					WHEN SUM(CASE WHEN tcs.class_student_status = 1 THEN 1 ELSE 0 END) > 0 THEN 1
+					WHEN SUM(CASE WHEN tcs.class_student_status = 2 THEN 1 ELSE 0 END) > 0 THEN 2
+					WHEN SUM(CASE WHEN tcs.class_student_status = 3 THEN 1 ELSE 0 END) > 0 THEN 3
+					ELSE MAX(IFNULL(tcs.class_student_status, 0))
+				END AS class_status,
+				COALESCE(
+					MAX(CASE WHEN tcs.class_student_status = 1 THEN tcs.id END),
+					MAX(CASE WHEN tcs.class_student_status = 2 THEN tcs.id END),
+					MAX(CASE WHEN tcs.class_student_status = 3 THEN tcs.id END),
+					MAX(tcs.id)
+				) AS selected_tcs_id
+			FROM teaching_class_student tcs
+			INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id
+				AND tc.inst_id = tcs.inst_id
+				AND tc.class_type = ?
+				AND tc.del_flag = 0
+			LEFT JOIN tuition_account ta ON ta.id = tcs.primary_tuition_account_id
+				AND ta.inst_id = tcs.inst_id
+				AND ta.del_flag = 0
+			WHERE ` + memberWhere + `
+			GROUP BY tcs.student_id
+			ORDER BY join_time DESC, tcs.student_id DESC
+			LIMIT ? OFFSET ?
+		) ms
+		INNER JOIN teaching_class_student ptcs ON ptcs.id = ms.selected_tcs_id AND ptcs.del_flag = 0
+		INNER JOIN inst_student s ON s.id = ms.student_id AND s.inst_id = ptcs.inst_id AND s.del_flag = 0
+		LEFT JOIN inst_student_face_profile fp ON fp.student_id = ms.student_id AND fp.inst_id = ptcs.inst_id AND fp.del_flag = 0
+		LEFT JOIN tuition_account pta ON pta.id = ptcs.primary_tuition_account_id AND pta.inst_id = ptcs.inst_id AND pta.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = pta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course ic ON ic.id = pta.course_id AND ic.inst_id = ptcs.inst_id AND ic.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(pta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+				WHERE qx.course_id = pta.course_id AND qx.del_flag = 0
+					AND ABS(IFNULL(qx.quantity, 0) - IFNULL(pta.total_quantity, 0)) < 0.000001
+					AND ABS(IFNULL(qx.price, 0) - IFNULL(pta.total_tuition, 0)) < 0.000001
+				ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+				WHERE qmin.course_id = pta.course_id AND qmin.del_flag = 0
+				ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
+		LEFT JOIN inst_channel ch ON ch.id = s.channel_id AND ch.del_flag = 0
+		LEFT JOIN inst_user advisor ON advisor.id = s.advisor_id AND advisor.del_flag = 0
+		LEFT JOIN inst_user manager ON manager.id = s.student_manager_id AND manager.del_flag = 0
+		LEFT JOIN (
+			SELECT
+				ras.student_id,
+				IFNULL(SUM(IFNULL(ra.recharge_balance, 0) + IFNULL(ra.residual_balance, 0) + IFNULL(ra.giving_balance, 0)), 0) AS balance
+			FROM recharge_account_student ras
+			INNER JOIN recharge_account ra ON ra.id = ras.recharge_account_id
+				AND ra.inst_id = ras.inst_id
+				AND ra.del_flag = 0
+			WHERE ras.inst_id = ? AND ras.del_flag = 0
+			GROUP BY ras.student_id
+		) rb ON rb.student_id = ms.student_id
+		LEFT JOIN (
+			SELECT
+				str.student_id,
+				IFNULL(SUM(CASE
+					WHEN IFNULL(str.actual_quantity, 0) > 0 THEN IFNULL(str.actual_quantity, 0)
+					ELSE IFNULL(str.quantity, 0)
+				END), 0) AS used_class_time
+			FROM student_teaching_record str
+			WHERE str.inst_id = ? AND str.del_flag = 0 AND str.class_id = ?
+			GROUP BY str.student_id
+		) tr ON tr.student_id = ms.student_id
+		ORDER BY ms.join_time DESC, ms.student_id DESC
+	`
+	listArgs := make([]any, 0, 1+len(memberArgs)+2+3)
+	listArgs = append(listArgs, model.TeachingClassTypeNormal)
+	listArgs = append(listArgs, memberArgs...)
+	listArgs = append(listArgs, pageSize, offset, instID, instID, classID)
+
+	rows, err := repo.db.QueryContext(ctx, listQuery, listArgs...)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item model.GroupClassStudentPagedItemVO
+		var (
+			studentFaceInfoID, tuitionAccountID, productID                            string
+			name, avatar, mobile, productName                                         string
+			isBind, enableExpire, isStudentFace                                       int
+			phoneRelationship, status, tuitionAccountStatus, lessonChargingMode       int
+			totalQuantity, totalFreeQuantity, remainQuantity                          float64
+			totalTuition, remainTuition, balance, usedClassTime                       float64
+			joinTime, validDate, expireTime, suspendedTime, classEndingTime, birthday sql.NullTime
+		)
+		if err := rows.Scan(
+			&item.ID,
+			&name,
+			&item.Sex,
+			&avatar,
+			&mobile,
+			&isBind,
+			&studentFaceInfoID,
+			&phoneRelationship,
+			&tuitionAccountID,
+			&totalQuantity,
+			&totalFreeQuantity,
+			&remainQuantity,
+			&totalTuition,
+			&remainTuition,
+			&tuitionAccountStatus,
+			&enableExpire,
+			&validDate,
+			&expireTime,
+			&suspendedTime,
+			&classEndingTime,
+			&productName,
+			&productID,
+			&lessonChargingMode,
+			&joinTime,
+			&status,
+			&balance,
+			&usedClassTime,
+			&birthday,
+			&item.WeChatNumber,
+			&item.Grade,
+			&item.StudySchool,
+			&item.Address,
+			&item.Interest,
+			&item.ChannelName,
+			&item.AdvisorID,
+			&item.AdvisorName,
+			&item.StudentManagerID,
+			&item.StudentManagerName,
+			&item.StudentStatus,
+		); err != nil {
+			return out, err
+		}
+
+		item.Name = name
+		item.Avatar = strings.TrimSpace(avatar)
+		item.Phone = maskPhoneDisplay(mobile)
+		item.IsBind = isBind != 0
+		item.StudentFaceInfoID = studentFaceInfoID
+		isStudentFace = 0
+		if strings.TrimSpace(studentFaceInfoID) != "" && strings.TrimSpace(studentFaceInfoID) != "0" {
+			isStudentFace = 1
+		}
+		item.IsStudentFace = isStudentFace != 0
+		item.PhoneRelationship = phoneRelationship
+		item.TuitionAccountID = tuitionAccountID
+		item.IsCrossSchoolStudent = false
+		item.IsGradeUpgrade = false
+		item.JoinTime = groupClassStudentTimePtr(joinTime)
+		item.Status = status
+		item.TotalQuantity = totalQuantity + totalFreeQuantity
+		item.TotalFreeQuantity = totalFreeQuantity
+		item.TotalTuition = totalTuition
+		item.Quantity = remainQuantity
+		item.FreeQuantity = totalFreeQuantity
+		item.Tuition = remainTuition
+		item.ConfirmedTuition = maxFloat(totalTuition-remainTuition, 0)
+		item.TuitionAccountStatus = tuitionAccountStatus
+		item.EnableExpireTime = enableExpire != 0
+		item.ExpireTime = groupClassStudentTimePtr(expireTime)
+		item.SuspendedTime = groupClassStudentTimePtr(suspendedTime)
+		item.ClassEndingTime = groupClassStudentTimePtr(classEndingTime)
+		item.CustomInfo = []any{}
+		item.Balance = balance
+		item.Point = "0"
+		item.UsedClassTime = usedClassTime
+		item.Birthday = groupClassStudentTimePtr(birthday)
+
+		startTime := time.Time{}
+		if validDate.Valid && validDate.Time.Year() > 1 {
+			startTime = validDate.Time
+		}
+		expireAt := time.Time{}
+		if expireTime.Valid && expireTime.Time.Year() > 1 {
+			expireAt = expireTime.Time
+		}
+		item.ClassStudentTuitionAccountInfo = &model.GroupClassStudentTuitionSnapVO{
+			TuitionAccountID:       tuitionAccountID,
+			ProductName:            productName,
+			ProductID:              productID,
+			RemainQuantity:         remainQuantity,
+			RemainFreeQuantity:     totalFreeQuantity,
+			RemainTuition:          remainTuition,
+			LessonChargingMode:     lessonChargingMode,
+			EnableExpireTime:       enableExpire != 0,
+			StartTime:              startTime,
+			ExpireTime:             expireAt,
+			IsTuitionAccountActive: tuitionAccountStatus == model.TeachingClassStudentStatusStudying,
+			TotalQuantity:          totalQuantity,
+			TotalFreeQuantity:      totalFreeQuantity,
+			TotalTuition:           totalTuition,
+		}
+
+		out.List = append(out.List, item)
+	}
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func (repo *Repository) GetGroupClassStudentTeachingRecordCount(ctx context.Context, instID int64, dto model.GroupClassStudentTeachingRecordCountQueryDTO) ([]model.GroupClassStudentTeachingRecordCountVO, error) {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.ClassID), 10, 64)
+	if err != nil || classID <= 0 {
+		return []model.GroupClassStudentTeachingRecordCountVO{}, errors.New("classId 无效")
+	}
+	studentIDs := parseDistinctInt64Strings(dto.StudentIDs)
+	if len(studentIDs) == 0 {
+		return []model.GroupClassStudentTeachingRecordCountVO{}, nil
+	}
+
+	statuses := make([]int, 0, len(dto.StudentTeachingRecordStatuses))
+	seenStatus := make(map[int]struct{}, len(dto.StudentTeachingRecordStatuses))
+	for _, status := range dto.StudentTeachingRecordStatuses {
+		if status < 1 || status > 4 {
+			continue
+		}
+		if _, ok := seenStatus[status]; ok {
+			continue
+		}
+		seenStatus[status] = struct{}{}
+		statuses = append(statuses, status)
+	}
+
+	query := `
+		SELECT
+			str.student_id,
+			IFNULL(SUM(CASE WHEN str.status = 1 THEN 1 ELSE 0 END), 0),
+			IFNULL(SUM(CASE WHEN str.status = 3 THEN 1 ELSE 0 END), 0),
+			IFNULL(SUM(CASE WHEN str.status = 2 THEN 1 ELSE 0 END), 0)
+		FROM student_teaching_record str
+		WHERE str.inst_id = ? AND str.del_flag = 0 AND str.class_id = ?
+			AND str.student_id IN (` + sqlPlaceholders(len(studentIDs)) + `)
+	`
+	args := make([]any, 0, 2+len(studentIDs)+len(statuses))
+	args = append(args, instID, classID)
+	for _, id := range studentIDs {
+		args = append(args, id)
+	}
+	if len(statuses) > 0 {
+		query += ` AND str.status IN (` + sqlPlaceholders(len(statuses)) + `)`
+		args = append(args, intSliceToAny(statuses)...)
+	}
+	query += ` GROUP BY str.student_id`
+
+	rows, err := repo.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	countMap := make(map[int64]model.GroupClassStudentTeachingRecordCountVO, len(studentIDs))
+	for rows.Next() {
+		var studentID int64
+		var item model.GroupClassStudentTeachingRecordCountVO
+		if err := rows.Scan(&studentID, &item.StudentAttendCount, &item.StudentLeaveCount, &item.StudentTruancyCount); err != nil {
+			return nil, err
+		}
+		item.StudentID = strconv.FormatInt(studentID, 10)
+		countMap[studentID] = item
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]model.GroupClassStudentTeachingRecordCountVO, 0, len(studentIDs))
+	for _, studentID := range studentIDs {
+		item, ok := countMap[studentID]
+		if !ok {
+			item = model.GroupClassStudentTeachingRecordCountVO{
+				StudentID: strconv.FormatInt(studentID, 10),
+			}
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // CreateGroupClass 创建集体班（无班员）

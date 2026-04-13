@@ -267,7 +267,12 @@ function handleExportRollCallSheet() {
           }"
         >
           <a-tab-pane key="0" :tab="studentTabLabel">
-            <ClassStudentList />
+            <ClassStudentList
+              :class-id="String(displayRecord?.id || '')"
+              :class-name="displayRecord?.name || ''"
+              :lesson-id="String(displayRecord?.lessonId || '')"
+              :lesson-name="displayRecord?.lessonName || ''"
+            />
           </a-tab-pane>
           <a-tab-pane key="1" tab="日程">
             <schedule />

@@ -526,6 +526,88 @@ type GroupClassStudentListBucketVO struct {
 	Students []GroupClassStudentInClassItemVO `json:"students"`
 }
 
+type GroupClassStudentQueryModel struct {
+	ID                            string `json:"id"`
+	ClassID                       string `json:"classId"`
+	Status                        []int  `json:"status"`
+	IgnoreSuspendedTuitionAccount bool   `json:"ignoreSuspendedTuitionAccount"`
+}
+
+type GroupClassStudentPagedListBody struct {
+	QueryModel       GroupClassStudentQueryModel `json:"queryModel"`
+	PageRequestModel GroupClassPageRequestModel  `json:"pageRequestModel"`
+}
+
+type GroupClassStudentStatisticsVO struct {
+	StudentCount  int `json:"studentCount"`
+	NoneBindCount int `json:"noneBindCount"`
+	NoneFaceCount int `json:"noneFaceCount"`
+}
+
+type GroupClassStudentPagedItemVO struct {
+	ID                             string                          `json:"id"`
+	Name                           string                          `json:"name"`
+	Sex                            int                             `json:"sex"`
+	Avatar                         string                          `json:"avatar"`
+	Phone                          string                          `json:"phone"`
+	IsBind                         bool                            `json:"isBind"`
+	StudentFaceInfoID              string                          `json:"studentFaceInfoId"`
+	IsStudentFace                  bool                            `json:"isStudentFace"`
+	PhoneRelationship              int                             `json:"phoneRelationship"`
+	TuitionAccountID               string                          `json:"tuitionAccountId"`
+	ClassStudentTuitionAccountInfo *GroupClassStudentTuitionSnapVO `json:"classStudentTuitionAccountInfo"`
+	IsCrossSchoolStudent           bool                            `json:"isCrossSchoolStudent"`
+	IsGradeUpgrade                 bool                            `json:"isGradeUpgrade"`
+	JoinTime                       *time.Time                      `json:"joinTime,omitempty"`
+	Status                         int                             `json:"status"`
+	StudentStatus                  int                             `json:"studentStatus"`
+	TotalQuantity                  float64                         `json:"totalQuantity"`
+	TotalFreeQuantity              float64                         `json:"totalFreeQuantity"`
+	TotalTuition                   float64                         `json:"totalTuition"`
+	Quantity                       float64                         `json:"quantity"`
+	FreeQuantity                   float64                         `json:"freeQuantity"`
+	Tuition                        float64                         `json:"tuition"`
+	ConfirmedTuition               float64                         `json:"confirmedTuition"`
+	TuitionAccountStatus           int                             `json:"tuitionAccountStatus"`
+	EnableExpireTime               bool                            `json:"enableExpireTime"`
+	ExpireTime                     *time.Time                      `json:"expireTime,omitempty"`
+	SuspendedTime                  *time.Time                      `json:"suspendedTime,omitempty"`
+	ClassEndingTime                *time.Time                      `json:"classEndingTime,omitempty"`
+	AdvisorID                      string                          `json:"advisorId"`
+	AdvisorName                    string                          `json:"advisorName"`
+	StudentManagerID               string                          `json:"studentManagerId"`
+	StudentManagerName             string                          `json:"studentManagerName"`
+	CustomInfo                     []any                           `json:"customInfo"`
+	Balance                        float64                         `json:"balance"`
+	Point                          string                          `json:"point"`
+	UsedClassTime                  float64                         `json:"usedClassTime"`
+	Birthday                       *time.Time                      `json:"birthday,omitempty"`
+	WeChatNumber                   string                          `json:"weChatNumber"`
+	Grade                          string                          `json:"grade"`
+	StudySchool                    string                          `json:"studySchool"`
+	Address                        string                          `json:"address"`
+	Interest                       string                          `json:"interest"`
+	ChannelName                    string                          `json:"channelName"`
+}
+
+type GroupClassStudentPagedListResult struct {
+	List  []GroupClassStudentPagedItemVO `json:"list"`
+	Total int                            `json:"total"`
+}
+
+type GroupClassStudentTeachingRecordCountQueryDTO struct {
+	StudentIDs                    []string `json:"studentIds"`
+	ClassID                       string   `json:"classId"`
+	StudentTeachingRecordStatuses []int    `json:"studentTeachingRecordStatuses"`
+}
+
+type GroupClassStudentTeachingRecordCountVO struct {
+	StudentID           string `json:"studentId"`
+	StudentAttendCount  int    `json:"studentAttendCount"`
+	StudentLeaveCount   int    `json:"studentLeaveCount"`
+	StudentTruancyCount int    `json:"studentTruancyCount"`
+}
+
 type TuitionAccountListByLessonIDBody struct {
 	PageRequestModel GroupClassPageRequestModel      `json:"pageRequestModel"`
 	QueryModel       TuitionAccountListByLessonQuery `json:"queryModel"`
