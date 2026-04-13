@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { DownOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import type { TableColumnsType } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, onMounted, ref, watch } from 'vue'
+import { setBadDebtApi } from '@/api/finance-center/order-manage'
 import {
   exportStudentLessonArrearApi,
   exportStudentRegistrationArrearApi,
@@ -22,6 +24,7 @@ type ArrearRecord = StudentRegistrationArrearItem | StudentLessonArrearItem
 const activeTab = ref<ArrearTabKey>('registration')
 const loading = ref(false)
 const exporting = ref(false)
+const batchOperating = ref(false)
 const selectedRowKeys = ref<Array<string>>([])
 const allFilterRef = ref<{
   clearQuickFilter?: (id?: string | number, type?: string) => void
@@ -101,6 +104,8 @@ const rowSelection = computed(() => ({
     selectedRowKeys.value = keys
   },
 }))
+
+const selectedCount = computed(() => selectedRowKeys.value.length)
 
 function genderText(value?: number) {
   return Number(value || 0) === 2 ? '女' : '男'
@@ -392,6 +397,61 @@ function handleBatchRemind() {
   messageService.info('批量提醒功能待接入')
 }
 
+function handleWechatRemind() {
+  if (!selectedCount.value) {
+    messageService.info('请先选择数据')
+    return
+  }
+  messageService.info('微信提醒功能待接入')
+}
+
+function handleSmsRemind() {
+  if (!selectedCount.value) {
+    messageService.info('请先选择数据')
+    return
+  }
+  messageService.info('短信提醒功能待接入')
+}
+
+async function handleBatchSetBadDebt() {
+  if (activeTab.value !== 'registration')
+    return
+  if (!selectedCount.value) {
+    messageService.info('请先选择数据')
+    return
+  }
+  Modal.confirm({
+    title: '批量设为坏账',
+    content: `确认将选中的 ${selectedCount.value} 条报名欠费设为坏账吗？设为坏账后，该订单的欠费将不再追缴。`,
+    okText: '确认',
+    cancelText: '取消',
+    async onOk() {
+      if (batchOperating.value)
+        return
+      batchOperating.value = true
+      try {
+        const results = await Promise.allSettled(
+          selectedRowKeys.value.map(orderId => setBadDebtApi({ orderId })),
+        )
+        const successCount = results.filter(item => item.status === 'fulfilled').length
+        const failCount = results.length - successCount
+        if (successCount > 0) {
+          messageService.success(failCount > 0 ? `已设为坏账 ${successCount} 条，失败 ${failCount} 条` : `已设为坏账 ${successCount} 条`)
+          selectedRowKeys.value = []
+          await getList()
+          return
+        }
+        const firstRejected = results.find(item => item.status === 'rejected')
+        const errorMessage = firstRejected?.status === 'rejected' ? (firstRejected.reason?.message || '批量设为坏账失败') : '批量设为坏账失败'
+        messageService.error(errorMessage)
+      }
+      finally {
+        batchOperating.value = false
+      }
+    },
+  })
+}
+
 function handleRegistrationAction() {
   messageService.info('补费功能待接入')
 }
@@ -465,16 +525,38 @@ defineExpose({
               <DownOutlined :style="{ fontSize: '10px' }" />
             </a-button>
           </a-dropdown>
-          <a-dropdown>
+          <a-dropdown v-if="activeTab === 'registration'">
             <template #overlay>
               <a-menu>
-                <a-menu-item key="batch-remind" @click="handleBatchRemind">
-                  批量发送欠费提醒
+                <a-menu-item key="wechat-remind" @click="handleWechatRemind">
+                  微信提醒
+                </a-menu-item>
+                <a-menu-item key="sms-remind" @click="handleSmsRemind">
+                  短信提醒
+                </a-menu-item>
+                <a-menu-item key="set-bad-debt" @click="handleBatchSetBadDebt">
+                  设为坏账
+                </a-menu-item>
+              </a-menu>
+            </template>
+            <a-button :loading="batchOperating">
+              批量操作{{ selectedCount > 0 ? `(${selectedCount})` : '' }}
+              <DownOutlined :style="{ fontSize: '10px' }" />
+            </a-button>
+          </a-dropdown>
+          <a-dropdown v-else>
+            <template #overlay>
+              <a-menu>
+                <a-menu-item key="wechat-remind" @click="handleWechatRemind">
+                  微信提醒
+                </a-menu-item>
+                <a-menu-item key="sms-remind" @click="handleSmsRemind">
+                  短信提醒
                 </a-menu-item>
               </a-menu>
             </template>
             <a-button>
-              批量发送欠费提醒
+              批量发送欠费提醒{{ selectedCount > 0 ? `(${selectedCount})` : '' }}
               <DownOutlined :style="{ fontSize: '10px' }" />
             </a-button>
           </a-dropdown>
