@@ -103,14 +103,6 @@ const props = defineProps({
     type: Function,
     required: true,
   },
-  draggingScheduleStyle: {
-    type: Object,
-    default: () => ({}),
-  },
-  emptyLessonDragState: {
-    type: Function,
-    required: true,
-  },
   emptyLessonStatusText: {
     type: Function,
     required: true,
@@ -424,7 +416,6 @@ onUnmounted(() => {
                 'st-schedule-cell--dragging': draggingScheduleCellKey === scheduleCellKey(column, record),
               }"
               :title="!isScheduleDraggable(text) ? resolveScheduleDragBlockedMessage(text) : undefined"
-              :style="draggingScheduleCellKey === scheduleCellKey(column, record) ? draggingScheduleStyle : undefined"
               @click="handleScheduleCellClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
               @mousedown.left="handleSchedulePointerDownWithPopoverClose($event, text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
             >
@@ -470,22 +461,16 @@ onUnmounted(() => {
             :data-drag-target-lesson-date="scheduleCellContextRecord(column, record)?.date || ''"
             :data-drag-target-start-time="scheduleCellContextColumn(column, record)?.startTime || ''"
             :data-drag-target-end-time="scheduleCellContextColumn(column, record)?.endTime || ''"
+            :data-default-label="emptyLessonStatusText(text)"
             class="st-empty-cell h-11 rounded-1 text-3 flex-center cursor-pointer"
-            :title="emptyLessonDragState(column, record)?.message || undefined"
             :class="[
-              emptyLessonDragState(column, record)?.checking
-                ? 'st-empty-cell--drag-checking'
-                : emptyLessonDragState(column, record)?.valid === true
-                  ? 'st-empty-cell--drag-valid'
-                  : emptyLessonDragState(column, record)?.valid === false
-                    ? 'st-empty-cell--drag-invalid'
-                    : emptyLessonStatusText(text)
-                      ? (text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a')
-                      : 'st-empty-cell--idle',
+              emptyLessonStatusText(text)
+                ? (text.conflict ? 'bg-#ffe6e6 text-#a31616' : 'bg-#e6ffe6 text-#16a34a')
+                : 'st-empty-cell--idle',
             ]"
             @click="text.conflict ? handleConflictClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record)) : handleScheduleClick(text, scheduleCellContextColumn(column, record), scheduleCellContextRecord(column, record))"
           >
-            {{ emptyLessonDragState(column, record)?.label || emptyLessonStatusText(text) }}
+            {{ emptyLessonStatusText(text) }}
           </div>
         </template>
 
@@ -614,11 +599,9 @@ onUnmounted(() => {
 .st-schedule-cell--floating {
   margin: 0 !important;
   pointer-events: none;
-  box-shadow:
-    0 18px 40px rgba(31, 35, 41, 0.2),
-    0 8px 18px rgba(31, 35, 41, 0.12);
-  transform: rotate(-1deg);
-  z-index: 1200;
+  opacity: 1;
+  box-shadow: none;
+  transform: none;
 }
 
 .st-schedule-cell__badge--conflict {

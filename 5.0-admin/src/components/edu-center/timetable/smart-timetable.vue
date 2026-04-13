@@ -47,8 +47,9 @@ const displayArray = ref([
   'scheduleCallStatus',
 ])
 const SMART_TIMETABLE_VIEW_MODE_KEY = 'smart-timetable-view-mode'
-const DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD = 120
-const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 120
+const DRAG_HOVER_VALIDATE_DEBOUNCE_MS = 90
+const DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD = 24
+const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 24
 
 function getSavedTimeView() {
   if (typeof window === 'undefined')
@@ -796,6 +797,10 @@ let focusedScheduleCellTimer = null
 let pendingScheduleDragStart = null
 let customScheduleDragMoveHandler = null
 let customScheduleDragUpHandler = null
+let dragHoverValidationTimer = null
+let pendingDragHoverValidationKey = ''
+let activeDraggingScheduleElement = null
+let activeDraggingScheduleElementStyleText = ''
 let blockedScheduleDragAttempt = null
 let blockedScheduleDragMoveHandler = null
 let blockedScheduleDragUpHandler = null
@@ -3850,6 +3855,26 @@ function scheduleLessonMeta(text) {
   return courseName || className || '-'
 }
 
+function scheduleStudentLine(text, studentName, hasNext) {
+  const name = String(studentName || '').trim()
+  if (!name)
+    return ''
+  if (text?.courseType === 1)
+    return `${name}${hasNext ? '、' : ''}`
+  const courseName = String(text?.courseName || '').trim()
+  return `${name}${hasNext ? '、' : ''}${courseName ? `-${courseName}` : ''}`
+}
+
+function scheduleClassLine(text) {
+  const className = String(text?.className || '').trim()
+  const courseName = String(text?.courseName || '').trim()
+  if (text?.courseType === 1)
+    return className || courseName || '课程'
+  if (className && courseName)
+    return `${className}-${courseName}`
+  return className || courseName || '课程'
+}
+
 function formatDragDateLabel(date) {
   if (!date)
     return '-'
@@ -3866,6 +3891,7 @@ function flushPendingDragPointer() {
   pendingDragPointerFrame = 0
   if (!pendingDragPointerState)
     return
+  applyDraggingScheduleElementPosition(pendingDragPointerState)
   dragPointerState.value = pendingDragPointerState
 }
 
@@ -3886,6 +3912,50 @@ function cancelPendingDragPointer() {
     window.cancelAnimationFrame(pendingDragPointerFrame)
   pendingDragPointerFrame = 0
   pendingDragPointerState = null
+}
+
+function clearDragHoverValidationTimer() {
+  if (dragHoverValidationTimer)
+    clearTimeout(dragHoverValidationTimer)
+  dragHoverValidationTimer = null
+  pendingDragHoverValidationKey = ''
+}
+
+function activateDraggingScheduleElement(element) {
+  if (!(element instanceof HTMLElement))
+    return
+  activeDraggingScheduleElement = element
+  activeDraggingScheduleElementStyleText = element.style.cssText
+  element.style.position = 'fixed'
+  element.style.margin = '0'
+  element.style.pointerEvents = 'none'
+  element.style.zIndex = '1200'
+  element.style.boxShadow = '0 18px 40px rgba(31, 35, 41, 0.2), 0 8px 18px rgba(31, 35, 41, 0.12)'
+  element.style.transform = 'none'
+  element.style.opacity = '1'
+  element.style.willChange = 'left, top'
+}
+
+function applyDraggingScheduleElementPosition(pointerState) {
+  if (!(activeDraggingScheduleElement instanceof HTMLElement))
+    return
+  const dragState = draggingScheduleState.value
+  if (!dragState?.previewWidth || !dragState?.previewHeight)
+    return
+  const left = Math.round(Number(pointerState?.x || 0) - dragState.offsetX)
+  const top = Math.round(Number(pointerState?.y || 0) - dragState.offsetY)
+  activeDraggingScheduleElement.style.left = `${left}px`
+  activeDraggingScheduleElement.style.top = `${top}px`
+  activeDraggingScheduleElement.style.width = `${Math.round(dragState.previewWidth)}px`
+  activeDraggingScheduleElement.style.height = `${Math.round(dragState.previewHeight)}px`
+}
+
+function clearDraggingScheduleElement() {
+  if (!(activeDraggingScheduleElement instanceof HTMLElement))
+    return
+  activeDraggingScheduleElement.style.cssText = activeDraggingScheduleElementStyleText
+  activeDraggingScheduleElement = null
+  activeDraggingScheduleElementStyleText = ''
 }
 
 function updateDragPointer(event) {
@@ -3911,6 +3981,8 @@ function clearCustomScheduleDragListeners() {
   if (typeof document === 'undefined')
     return
   pendingScheduleDragStart = null
+  clearDragHoverValidationTimer()
+  clearDraggingScheduleElement()
   if (customScheduleDragMoveHandler)
     document.removeEventListener('mousemove', customScheduleDragMoveHandler)
   if (customScheduleDragUpHandler)
@@ -3971,6 +4043,12 @@ function createEmptyDragHoverState() {
   }
 }
 
+function clearDragHoverState() {
+  if (!dragHoverState.value.key && dragHoverState.value.valid == null && !dragHoverState.value.checking)
+    return
+  dragHoverState.value = createEmptyDragHoverState()
+}
+
 function dragHoverStateSignature(value) {
   if (!value)
     return ''
@@ -3994,6 +4072,49 @@ function pointInsideRect(clientX, clientY, rect) {
   if (!rect)
     return false
   return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom
+}
+
+function emptyDragStateClassName(state) {
+  if (state?.checking)
+    return 'st-empty-cell--drag-checking'
+  if (state?.valid === true)
+    return 'st-empty-cell--drag-valid'
+  if (state?.valid === false)
+    return 'st-empty-cell--drag-invalid'
+  return ''
+}
+
+function findEmptyDragCellElement(key) {
+  if (!key || typeof document === 'undefined')
+    return null
+  const selectorValue = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+    ? CSS.escape(String(key))
+    : String(key).replace(/"/g, '\\"')
+  return document.querySelector(`[data-empty-schedule-cell-key="${selectorValue}"]`)
+}
+
+function renderEmptyDragCellState(target, state) {
+  const el = findEmptyDragCellElement(target?.key)
+  if (!(el instanceof HTMLElement))
+    return
+  el.classList.remove('st-empty-cell--drag-checking', 'st-empty-cell--drag-valid', 'st-empty-cell--drag-invalid')
+  const className = emptyDragStateClassName(state)
+  if (className)
+    el.classList.add(className)
+  el.textContent = String(state?.label || el.dataset.defaultLabel || '').trim()
+  el.title = String(state?.message || '').trim()
+}
+
+function clearAllEmptyDragCellStates() {
+  if (typeof document === 'undefined')
+    return
+  document.querySelectorAll('[data-empty-schedule-cell-key]').forEach((node) => {
+    if (!(node instanceof HTMLElement))
+      return
+    node.classList.remove('st-empty-cell--drag-checking', 'st-empty-cell--drag-valid', 'st-empty-cell--drag-invalid')
+    node.textContent = String(node.dataset.defaultLabel || '').trim()
+    node.removeAttribute('title')
+  })
 }
 
 function setDragValidationState(target, payload = {}, options = {}) {
@@ -4024,6 +4145,7 @@ function setDragValidationState(target, payload = {}, options = {}) {
   if (payload?.checking == null && (payload?.valid === true || payload?.valid === false))
     next.checking = false
   dragValidationStateMap.value[key] = next
+  renderEmptyDragCellState(target || next, next)
   if (dragHoverState.value.key === key) {
     const hoverNext = { ...next }
     if (dragHoverStateSignature(dragHoverState.value) !== dragHoverStateSignature(hoverNext))
@@ -4036,6 +4158,7 @@ function resetDragScheduleState() {
   clearCustomScheduleDragListeners()
   clearBlockedScheduleDragAttempt()
   activeDragValidationSessionId += 1
+  clearDragHoverValidationTimer()
   cancelPendingDragPointer()
   lastResolvedDragTarget = null
   lastResolvedDragTargetRect = null
@@ -4046,7 +4169,8 @@ function resetDragScheduleState() {
     y: 0,
     visible: false,
   }
-  dragHoverState.value = createEmptyDragHoverState()
+  clearAllEmptyDragCellStates()
+  clearDragHoverState()
   dragValidationStateMap.value = {}
   dragValidationCache.clear()
   dragValidationPromises.clear()
@@ -4106,6 +4230,7 @@ function buildDraggingScheduleState(text, column, record) {
   return {
     scheduleId: String(text?.scheduleId || '').trim(),
     courseType,
+    isMain: text?.isMain !== false,
     modeLabel: dragScheduleModeLabel(text),
     teachingClassId,
     sourceTeacherId,
@@ -4123,6 +4248,11 @@ function buildDraggingScheduleState(text, column, record) {
     lessonTitle: scheduleLessonTitle(text),
     lessonMeta: scheduleLessonMeta(text),
     studentText: scheduleStudentText(text),
+    previewClassText: scheduleClassLine(text),
+    previewStudentLines: Array.isArray(text?.studentNames)
+      ? text.studentNames.map((item, index) => scheduleStudentLine(text, item?.name, index !== text.studentNames.length - 1)).filter(Boolean)
+      : [],
+    hasClassId: Boolean(text?.classId),
     sourceDate: lessonDate || '',
     sourceStartTime: startTime || '',
     sourceEndTime: endTime || '',
@@ -4603,22 +4733,6 @@ const dragPreviewStyle = computed(() => {
   }
 })
 
-const draggingScheduleStyle = computed(() => {
-  const dragState = draggingScheduleState.value
-  if (!dragState?.previewWidth || !dragState?.previewHeight)
-    return {}
-  const left = Math.round(dragPointerState.value.x - dragState.offsetX)
-  const top = Math.round(dragPointerState.value.y - dragState.offsetY)
-  return {
-    position: 'fixed',
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${Math.round(dragState.previewWidth)}px`,
-    height: `${Math.round(dragState.previewHeight)}px`,
-    zIndex: 1200,
-  }
-})
-
 const dragPreviewTargetText = computed(() => {
   if (!draggingScheduleState.value)
     return ''
@@ -4822,6 +4936,28 @@ async function ensureDragTargetValidation(target, options = {}) {
   return result
 }
 
+function scheduleDragHoverValidation(target, options = {}) {
+  const dragState = options.dragState || draggingScheduleState.value
+  const sessionId = options.sessionId ?? activeDragValidationSessionId
+  if (!dragState || !target?.key)
+    return
+  if (pendingDragHoverValidationKey === target.key && dragHoverValidationTimer)
+    return
+
+  clearDragHoverValidationTimer()
+  pendingDragHoverValidationKey = target.key
+  dragHoverValidationTimer = setTimeout(() => {
+    dragHoverValidationTimer = null
+    pendingDragHoverValidationKey = ''
+    if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
+      return
+    void ensureDragTargetValidation(target, {
+      dragState,
+      sessionId,
+    })
+  }, DRAG_HOVER_VALIDATE_DEBOUNCE_MS)
+}
+
 async function primeDragValidationForVisibleTargets(dragState, sessionId) {
   const remoteTargets = []
 
@@ -4832,6 +4968,14 @@ async function primeDragValidationForVisibleTargets(dragState, sessionId) {
       return
     }
 
+    setDragValidationState(target, {
+      checking: true,
+      valid: null,
+      label: '检测中',
+      message: '正在检测当前空点是否可调',
+      conflictTypes: [],
+      existingSchedules: [],
+    }, { sessionId, dragState })
     remoteTargets.push(target)
   })
 
@@ -4888,6 +5032,7 @@ function handleSchedulePointerDown(event, text, column, record) {
       startX: Number(event?.clientX || 0),
       startY: Number(event?.clientY || 0),
       dragState: buildDraggingScheduleState(text, column, record),
+      element: dragElement,
       rect,
       offsetX: Math.max(8, Math.min(rect.width - 8, Number(event?.clientX || 0) - rect.left)),
       offsetY: Math.max(8, Math.min(rect.height - 8, Number(event?.clientY || 0) - rect.top)),
@@ -4911,13 +5056,16 @@ function handleSchedulePointerDown(event, text, column, record) {
           offsetX: pendingScheduleDragStart.offsetX,
           offsetY: pendingScheduleDragStart.offsetY,
         }
+        activateDraggingScheduleElement(pendingScheduleDragStart.element)
+        applyDraggingScheduleElementPosition({ x: moveX, y: moveY })
         suppressScheduledLessonClick()
         activeDragValidationSessionId += 1
         draggingScheduleCellKey.value = pendingScheduleDragStart.dragState.sourceCellKey
-        dragHoverState.value = createEmptyDragHoverState()
+        clearDragHoverState()
         dragValidationStateMap.value = {}
         dragValidationCache.clear()
         dragValidationPromises.clear()
+        clearAllEmptyDragCellStates()
         const sessionId = activeDragValidationSessionId
         pendingScheduleDragStart = null
         document.body.style.userSelect = 'none'
@@ -4927,11 +5075,26 @@ function handleSchedulePointerDown(event, text, column, record) {
       updateDragPointer(moveEvent)
       const target = resolvePointerDragTarget(moveX, moveY)
       if (!target) {
-        dragHoverState.value = createEmptyDragHoverState()
+        clearDragHoverValidationTimer()
+        clearDragHoverState()
+        return
+      }
+      const localResult = validateDragTargetLocally(draggingScheduleState.value, target)
+      if (localResult) {
+        clearDragHoverValidationTimer()
+        setDragValidationState(target, localResult, {
+          sessionId: activeDragValidationSessionId,
+          dragState: draggingScheduleState.value,
+        })
+        applyDragHoverState(target.key, {
+          ...target,
+          ...localResult,
+        })
         return
       }
       const existingState = dragValidationStateMap.value[target.key]
       if (existingState) {
+        clearDragHoverValidationTimer()
         applyDragHoverState(target.key, {
           ...existingState,
           ...target,
@@ -4954,7 +5117,7 @@ function handleSchedulePointerDown(event, text, column, record) {
         message: '正在检测当前空点是否可调',
         conflictTypes: [],
       })
-      void ensureDragTargetValidation(target, {
+      scheduleDragHoverValidation(target, {
         dragState: draggingScheduleState.value,
         sessionId: activeDragValidationSessionId,
       })
@@ -5382,8 +5545,6 @@ watch(dragConflictDetailOpen, (open) => {
       :handle-schedule-pointer-down="handleSchedulePointerDown"
       :is-schedule-draggable="isScheduleDraggable"
       :resolve-schedule-drag-blocked-message="resolveScheduleDragBlockedMessage"
-      :dragging-schedule-style="draggingScheduleStyle"
-      :empty-lesson-drag-state="emptyLessonDragState"
       :empty-lesson-status-text="emptyLessonStatusText"
       :teacher-lesson-count-label="teacherLessonCountLabel"
       :format-week="formatWeek"
@@ -5481,7 +5642,10 @@ watch(dragConflictDetailOpen, (open) => {
 
 .st-drag-preview__target {
   display: inline-block;
-  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
   max-width: 320px;
   color: #1668ff;
   font-size: 14px;
