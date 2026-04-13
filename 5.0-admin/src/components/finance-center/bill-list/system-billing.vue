@@ -2,8 +2,9 @@
 import { computed, createVNode, onMounted, ref, watch } from 'vue'
 import { CloseOutlined, DeleteOutlined, DownOutlined, ExclamationCircleFilled, ExclamationCircleOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
+import dayjs from 'dayjs'
 import { useTableColumns } from '@/composables/useTableColumns'
-import { cancelConfirmLedgerApi, confirmLedgerApi, getLedgerListApi, getLedgerStatisticsApi } from '@/api/finance-center/ledger'
+import { cancelConfirmLedgerApi, confirmLedgerApi, exportLedgerListApi, getLedgerListApi, getLedgerStatisticsApi } from '@/api/finance-center/ledger'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { getRecommenderPageApi } from '@/api/enroll-center/intention-student'
 import messageService from '@/utils/messageService'
@@ -142,6 +143,8 @@ const currentOrderId = ref('')
 const confirmModalOpen = ref(false)
 const confirmSubmitting = ref(false)
 const confirmTargetLedger = ref(null)
+const selectedLedgerKeys = ref([])
+const exporting = ref(false)
 
 const confirmLedgerModalTitle = computed(() =>
   confirmTargetLedger.value && isLedgerStoredValueRefund(confirmTargetLedger.value)
@@ -191,6 +194,14 @@ const currentLedgerIndex = computed(() => {
 const hasPrevLedger = computed(() => currentLedgerIndex.value > 0)
 const hasNextLedger = computed(() => currentLedgerIndex.value >= 0 && currentLedgerIndex.value < dataSource.value.length - 1)
 const isCurrentLedgerConfirmed = computed(() => currentLedger.value?.ledgerConfirmStatus === 1)
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedLedgerKeys.value,
+  preserveSelectedRowKeys: true,
+  fixed: true,
+  onChange: keys => {
+    selectedLedgerKeys.value = keys.map(key => String(key))
+  },
+}))
 
 function formatOptionValues(values, options) {
   return options
@@ -400,24 +411,29 @@ function handleDeleteLedger(record) {
   messageService.info(`删除账单功能待实现：${record?.ledgerNumber || ''}`)
 }
 
+function buildQueryModel(extraQuery = {}) {
+  return {
+    ...extraQuery,
+    orderNumber: filterState.value.orderNumber || undefined,
+    bankSlipNo: filterState.value.bankSlipNo || undefined,
+    ledgerNumber: filterState.value.ledgerNumber || undefined,
+    orderId: filterState.value.orderId || undefined,
+    studentId: filterState.value.studentId || undefined,
+    sourceTypes: filterState.value.sourceTypes.length ? filterState.value.sourceTypes : undefined,
+    dealStaffId: filterState.value.dealStaffId || undefined,
+    ledgerConfirmStatuses: filterState.value.ledgerConfirmStatuses.length ? filterState.value.ledgerConfirmStatuses : undefined,
+    confirmStaffId: filterState.value.confirmStaffId || undefined,
+    payStartTime: filterState.value.payDate?.[0] || undefined,
+    payEndTime: filterState.value.payDate?.[1] || undefined,
+    confirmStartTime: filterState.value.confirmTime?.[0] || undefined,
+    confirmEndTime: filterState.value.confirmTime?.[1] || undefined,
+  }
+}
+
 function getRequestPayload() {
   return {
     sortModel: {},
-    queryModel: {
-      orderNumber: filterState.value.orderNumber || undefined,
-      bankSlipNo: filterState.value.bankSlipNo || undefined,
-      ledgerNumber: filterState.value.ledgerNumber || undefined,
-      orderId: filterState.value.orderId || undefined,
-      studentId: filterState.value.studentId || undefined,
-      sourceTypes: filterState.value.sourceTypes.length ? filterState.value.sourceTypes : undefined,
-      dealStaffId: filterState.value.dealStaffId || undefined,
-      ledgerConfirmStatuses: filterState.value.ledgerConfirmStatuses.length ? filterState.value.ledgerConfirmStatuses : undefined,
-      confirmStaffId: filterState.value.confirmStaffId || undefined,
-      payStartTime: filterState.value.payDate?.[0] || undefined,
-      payEndTime: filterState.value.payDate?.[1] || undefined,
-      confirmStartTime: filterState.value.confirmTime?.[0] || undefined,
-      confirmEndTime: filterState.value.confirmTime?.[1] || undefined,
-    },
+    queryModel: buildQueryModel(),
     pageRequestModel: {
       needTotal: true,
       pageSize: pagination.value.pageSize,
@@ -512,6 +528,84 @@ async function fetchLedgerStatistics() {
 
 async function fetchAll() {
   await Promise.all([fetchLedgerList(), fetchLedgerStatistics()])
+}
+
+function parseAttachmentFilenameFromHeader(contentDisposition) {
+  const cd = String(contentDisposition || '')
+  if (!cd)
+    return ''
+  const utf8Match = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = cd.match(/filename=\"?([^\";]+)\"?/i)
+  return plainMatch?.[1] || ''
+}
+
+async function handleBatchExport() {
+  if (exporting.value)
+    return
+  if (!selectedLedgerKeys.value.length) {
+    messageService.warning('请先勾选需要导出的账单')
+    return
+  }
+  try {
+    exporting.value = true
+    const res = await exportLedgerListApi({
+      sortModel: {},
+      queryModel: buildQueryModel({
+        ledgerIds: selectedLedgerKeys.value,
+      }),
+    })
+    const contentType = String(res.headers['content-type'] || '')
+    if (contentType.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
+      || `系统账单批量导出-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error) {
+    console.error('批量导出系统账单失败:', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exporting.value = false
+  }
 }
 
 function openLedgerDetail(record) {
@@ -656,15 +750,12 @@ onMounted(async () => {
             <a-dropdown class="mr-2">
               <template #overlay>
                 <a-menu>
-                  <a-menu-item key="1">
+                  <a-menu-item key="1" @click="handleBatchExport">
                     批量导出
-                  </a-menu-item>
-                  <a-menu-item key="3">
-                    导出记录
                   </a-menu-item>
                 </a-menu>
               </template>
-              <a-button>
+              <a-button :loading="exporting">
                 导出数据
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
@@ -684,7 +775,7 @@ onMounted(async () => {
           </div>
           <a-table
             :data-source="dataSource" :pagination="pagination" :columns="filteredColumns"
-            :scroll="{ x: totalWidth }" :loading="loading" row-key="id" size="small" @change="handleTableChange"
+            :row-selection="rowSelection" :scroll="{ x: totalWidth }" :loading="loading" row-key="id" size="small" @change="handleTableChange"
           >
             <template #headerCell="{ column }">
               <template v-if="column.key === 'action'">

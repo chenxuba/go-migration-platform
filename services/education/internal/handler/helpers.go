@@ -178,6 +178,7 @@ func parseOrderManageQueryDTO(raw map[string]any) model.OrderManageQueryDTO {
 		query.QueryModel = model.OrderQueryFilters{
 			Keyword:             asString(qm["keyword"]),
 			KeywordType:         asString(qm["keywordType"]),
+			OrderIDs:            asStringSlice(qm["orderIds"]),
 			OrderStatus:         asIntPtr(qm["orderStatus"]),
 			OrderStatusList:     asIntSlice(qm["orderStatusList"]),
 			OrderType:           asIntPtr(qm["orderType"]),
@@ -211,23 +212,25 @@ func parseOrderDetailListQueryDTO(raw map[string]any) model.OrderDetailListQuery
 	}
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
 		query.QueryModel = model.OrderDetailListFilters{
-			OrderNumber:       asString(qm["orderNumber"]),
-			OrderTypeList:     asIntSlice(firstNonNil(qm["orderTypeList"], qm["tranOrderTypes"])),
-			OrderTagIDs:       asStringSlice(qm["orderTagIds"]),
-			OrderSourceList:   asIntSlice(qm["orderSourceList"]),
-			OrderStatusList:   asIntSlice(firstNonNil(qm["orderStatusList"], qm["orderStatus"])),
-			CourseIDs:         asStringSlice(firstNonNil(qm["courseIds"], qm["productIdList"])),
-			EnrollTypes:       asIntSlice(qm["enrollTypes"]),
-			ProductTypes:      asIntSlice(firstNonNil(qm["productTypes"], qm["types"])),
-			CourseCategoryID:  firstInt64Ptr(qm["courseCategoryId"], qm["productCategoryId"]),
-			SalePersonID:      asString(qm["salePersonId"]),
-			CreatorID:         asString(firstNonNil(qm["creatorId"], qm["staffId"])),
-			DealDateBegin:     coalesceString(qm["dealDateBegin"], qm["startDealTime"]),
-			DealDateEnd:       coalesceString(qm["dealDateEnd"], qm["endDealTime"]),
-			CreatedTimeBegin:  coalesceString(qm["createdTimeBegin"], qm["startTime"]),
-			CreatedTimeEnd:    coalesceString(qm["createdTimeEnd"], qm["endTime"]),
-			OrderArrearStatus: asIntSlice(qm["orderArrearStatus"]),
-			StudentID:         asString(firstNonNil(qm["studentId"], firstString(qm["studentIdList"]))),
+			OrderNumber:         asString(qm["orderNumber"]),
+			OrderTypeList:       asIntSlice(firstNonNil(qm["orderTypeList"], qm["tranOrderTypes"])),
+			OrderTagIDs:         asStringSlice(qm["orderTagIds"]),
+			OrderSourceList:     asIntSlice(qm["orderSourceList"]),
+			OrderStatusList:     asIntSlice(firstNonNil(qm["orderStatusList"], qm["orderStatus"])),
+			CourseIDs:           asStringSlice(firstNonNil(qm["courseIds"], qm["productIdList"])),
+			EnrollTypes:         asIntSlice(qm["enrollTypes"]),
+			ProductTypes:        asIntSlice(firstNonNil(qm["productTypes"], qm["types"])),
+			CourseCategoryID:    firstInt64Ptr(qm["courseCategoryId"], qm["productCategoryId"]),
+			SalePersonID:        asString(qm["salePersonId"]),
+			CreatorID:           asString(firstNonNil(qm["creatorId"], qm["staffId"])),
+			DealDateBegin:       coalesceString(qm["dealDateBegin"], qm["startDealTime"]),
+			DealDateEnd:         coalesceString(qm["dealDateEnd"], qm["endDealTime"]),
+			CreatedTimeBegin:    coalesceString(qm["createdTimeBegin"], qm["startTime"]),
+			CreatedTimeEnd:      coalesceString(qm["createdTimeEnd"], qm["endTime"]),
+			LatestPaidTimeBegin: asString(qm["latestPaidTimeBegin"]),
+			LatestPaidTimeEnd:   asString(qm["latestPaidTimeEnd"]),
+			OrderArrearStatus:   asIntSlice(qm["orderArrearStatus"]),
+			StudentID:           asString(firstNonNil(qm["studentId"], firstString(qm["studentIdList"]))),
 		}
 	}
 	return query
@@ -241,6 +244,7 @@ func parseLedgerListQueryDTO(raw map[string]any) model.LedgerListQueryDTO {
 	}
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
 		query.QueryModel = model.LedgerQueryFilter{
+			LedgerIDs:             asStringSlice(qm["ledgerIds"]),
 			AccountIDs:            asStringSlice(qm["accountIds"]),
 			LedgerConfirmStatuses: asIntSlice(qm["ledgerConfirmStatuses"]),
 			SourceTypes:           asIntSlice(qm["sourceTypes"]),

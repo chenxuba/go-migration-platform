@@ -9,6 +9,7 @@ import { useTableColumns } from "@/composables/useTableColumns";
 import { useStudentListRefresh } from "@/composables/useStudentListRefresh";
 import {
   closeOrderApi,
+  exportOrderListApi,
   getOrderListApi,
   setBadDebtApi,
   cancelBadDebtApi,
@@ -53,6 +54,8 @@ const pagination = ref({
   showQuickJumper: true,
   showTotal: (total) => `共 ${total} 条`,
 });
+const selectedOrderKeys = ref([]);
+const exporting = ref(false);
 
 const queryState = ref({
   keyword: undefined,
@@ -232,6 +235,15 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth } =
     excludeKeys: ["action"],
   });
 
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedOrderKeys.value,
+  preserveSelectedRowKeys: true,
+  fixed: true,
+  onChange: (keys) => {
+    selectedOrderKeys.value = keys.map((key) => String(key));
+  },
+}));
+
 const openDrawer = ref(false);
 function handleSeeStuData() {
   openDrawer.value = true;
@@ -319,6 +331,10 @@ function handleTagMouseEnter(orderId, event) {
   };
 }
 
+function clearSelectedOrders() {
+  selectedOrderKeys.value = [];
+}
+
 function resetQueryState() {
   queryState.value = {
     keyword: undefined,
@@ -343,6 +359,7 @@ function resetQueryState() {
 
 const handleFilterUpdate = debounce(
   (updates, isClearAll = false, id, type) => {
+    clearSelectedOrders();
     if (isClearAll) {
       resetQueryState();
     } else {
@@ -689,8 +706,87 @@ function formatDateOnly(dateStr) {
   return dateStr.substring(0, 10);
 }
 
+function parseAttachmentFilenameFromHeader(cd) {
+  if (!cd) {
+    return undefined;
+  }
+  const utf8Match = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const plainMatch = cd.match(/filename=\"?([^\";]+)\"?/i);
+  return plainMatch?.[1];
+}
+
 function handleImportStudentOrder() {
   router.push("/import-center/starter/order");
+}
+
+async function handleBatchExport() {
+  if (exporting.value) {
+    return;
+  }
+  if (!selectedOrderKeys.value.length) {
+    messageService.warning("请先勾选需要导出的订单");
+    return;
+  }
+
+  try {
+    exporting.value = true;
+    const res = await exportOrderListApi({
+      sortModel: {},
+      queryModel: {
+        ...queryState.value,
+        orderIds: selectedOrderKeys.value,
+      },
+    });
+    const contentType = String(res.headers["content-type"] || "");
+    if (contentType.includes("application/json")) {
+      const text = await res.data.text();
+      try {
+        const payload = JSON.parse(text);
+        messageService.error(payload?.message || "导出失败");
+      } catch {
+        messageService.error("导出失败");
+      }
+      return;
+    }
+
+    const blob = new Blob([res.data], {
+      type:
+        contentType ||
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const filename =
+      parseAttachmentFilenameFromHeader(res.headers["content-disposition"]) ||
+      `订单批量导出-${dayjs().format("YYYYMMDDHHmmss")}.xlsx`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    messageService.success("导出成功");
+  } catch (error) {
+    console.error("批量导出订单失败:", error);
+    const blobText = await error?.response?.data?.text?.();
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText);
+        messageService.error(payload?.message || "导出失败");
+        return;
+      } catch {}
+    }
+    messageService.error(error?.message || "导出失败");
+  } finally {
+    exporting.value = false;
+  }
 }
 
 // 初始化加载
@@ -733,13 +829,26 @@ defineExpose({
             {{ summary.totalPaid.toFixed(2) }} 元，共欠费
             {{ summary.totalArrear.toFixed(2) }} 元，共坏账
             {{ summary.totalBadDebt.toFixed(2) }} 元
+            <span v-if="selectedOrderKeys.length > 0" class="ml-2 text-blue-600">
+              （已选中{{ selectedOrderKeys.length }}条订单）
+              <a-button
+                type="link"
+                size="small"
+                class="p-0 ml-1"
+                @click="clearSelectedOrders"
+              >
+                清空选择
+              </a-button>
+            </span>
           </div>
           <div class="edit flex">
             <a-dropdown class="mr-2">
               <template #overlay>
                 <a-menu>
                   <a-menu-item key="0" @click="handleImportStudentOrder"> 导入学员订单 </a-menu-item>
-                  <a-menu-item key="1"> 批量导出 </a-menu-item>
+                  <a-menu-item key="1" @click="handleBatchExport">
+                    批量导出
+                  </a-menu-item>
                 </a-menu>
               </template>
               <a-button>
@@ -758,8 +867,10 @@ defineExpose({
         <div class="table-content mt-2">
           <a-table
             :data-source="dataSource"
+            row-key="orderId"
             :pagination="pagination"
             :columns="filteredColumns"
+            :row-selection="rowSelection"
             :scroll="{ x: totalWidth }"
             :sticky="{ offsetHeader: 100 }"
             :loading="loading"

@@ -24,12 +24,12 @@ const (
 )
 
 const (
-	LedgerCategoryOrderIncome        = "order-income"
-	LedgerSubCategoryRegistration    = "registration-renewal"
+	LedgerCategoryOrderIncome              = "order-income"
+	LedgerSubCategoryRegistration          = "registration-renewal"
 	LedgerSubCategoryRechargeAccount       = "recharge-account"
 	LedgerSubCategoryRechargeAccountRefund = "recharge-account-refund"
 	LedgerSubCategoryRefundCourse          = "refund-course"
-	LedgerSubCategoryTransferOrder   = "transfer-course"
+	LedgerSubCategoryTransferOrder         = "transfer-course"
 )
 
 type LedgerListQueryDTO struct {
@@ -39,6 +39,7 @@ type LedgerListQueryDTO struct {
 }
 
 type LedgerQueryFilter struct {
+	LedgerIDs             []string `json:"ledgerIds"`
 	AccountIDs            []string `json:"accountIds"`
 	LedgerConfirmStatuses []int    `json:"ledgerConfirmStatuses"`
 	SourceTypes           []int    `json:"sourceTypes"`

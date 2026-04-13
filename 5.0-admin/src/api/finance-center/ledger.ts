@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { usePost } from '~/utils/request'
 
 export interface LedgerRichText {
@@ -70,6 +72,7 @@ export interface LedgerStatistics {
 export interface LedgerQueryParams {
   sortModel?: Record<string, any>
   queryModel?: {
+    ledgerIds?: string[]
     accountIds?: string[]
     ledgerConfirmStatuses?: number[]
     sourceTypes?: number[]
@@ -100,6 +103,21 @@ export function getLedgerListApi(data: LedgerQueryParams) {
 
 export function getLedgerStatisticsApi(data: LedgerQueryParams) {
   return usePost<LedgerStatistics>('/api/v1/ledgers/statistics', data)
+}
+
+export async function exportLedgerListApi(data: {
+  queryModel?: LedgerQueryParams['queryModel']
+  sortModel?: LedgerQueryParams['sortModel']
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/ledgers/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
 }
 
 export function confirmLedgerApi(data: { id: string, confirmRemark?: LedgerRichText }) {

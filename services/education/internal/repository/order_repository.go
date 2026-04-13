@@ -67,6 +67,20 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 			args = append(args, kw, kw, kw)
 		}
 	}
+	if len(q.OrderIDs) > 0 {
+		placeholders := make([]string, 0, len(q.OrderIDs))
+		for _, item := range q.OrderIDs {
+			orderID := strings.TrimSpace(item)
+			if orderID == "" {
+				continue
+			}
+			placeholders = append(placeholders, "?")
+			args = append(args, orderID)
+		}
+		if len(placeholders) > 0 {
+			filters = append(filters, "CAST(so.id AS CHAR) IN ("+strings.Join(placeholders, ",")+")")
+		}
+	}
 	if len(q.OrderStatusList) > 0 {
 		placeholders := make([]string, 0, len(q.OrderStatusList))
 		for _, item := range q.OrderStatusList {
@@ -256,6 +270,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		           WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
 		           ELSE IFNULL(s.mobile, '')
 		       END,
+		       IFNULL(s.mobile, ''),
 		       so.create_time,
 		       IFNULL(so.order_real_amount, 0), IFNULL(so.order_tag_ids, ''), so.order_status, so.order_type, so.order_source, so.create_id,
 		       IFNULL(u.nick_name, ''), so.deal_date, so.sale_person, IFNULL(sale.nick_name, ''), IFNULL(so.internal_remark, ''), IFNULL(so.external_remark, ''), so.update_time,
@@ -286,7 +301,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		var updatedAt sql.NullTime
 		var sex sql.NullInt64
 		var orderTagIDs string
-		if err := rows.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.CreatedTime, &item.Amount, &orderTagIDs, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar, &item.RechargeAccountAmount, &item.RechargeAccountResidualAmount, &item.RechargeAccountGivingAmount); err != nil {
+		if err := rows.Scan(&oid, &item.OrderNumber, &studentID, &item.StudentName, &item.StudentPhone, &item.RawStudentPhone, &item.CreatedTime, &item.Amount, &orderTagIDs, &item.OrderStatus, &item.OrderType, &item.OrderSource, &createID, &item.StaffName, &dealDate, &salePerson, &item.SalePersonName, &item.Remark, &item.ExternalRemark, &updatedAt, &sex, &item.Avatar, &item.RechargeAccountAmount, &item.RechargeAccountResidualAmount, &item.RechargeAccountGivingAmount); err != nil {
 			return model.OrderManageResultVO{}, err
 		}
 		item.OrderID = strconv.FormatInt(oid, 10)
@@ -398,6 +413,7 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 				WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
 				ELSE IFNULL(s.mobile, '')
 			END AS student_phone,
+			IFNULL(s.mobile, '') AS raw_student_phone,
 			IFNULL(s.avatar_url, '') AS student_avatar,
 			s.stu_sex AS sex,
 			so.create_time AS created_time,
@@ -470,6 +486,7 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 				WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
 				ELSE IFNULL(s.mobile, '')
 			END AS student_phone,
+			IFNULL(s.mobile, '') AS raw_student_phone,
 			IFNULL(s.avatar_url, '') AS student_avatar,
 			s.stu_sex AS sex,
 			so.create_time AS created_time,
@@ -540,6 +557,7 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			student_id,
 			student_name,
 			student_phone,
+			raw_student_phone,
 			student_avatar,
 			sex,
 			created_time,
@@ -640,6 +658,7 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 			&studentID,
 			&item.StudentName,
 			&item.StudentPhone,
+			&item.RawStudentPhone,
 			&item.StudentAvatar,
 			&sex,
 			&createdTime,
@@ -925,6 +944,14 @@ func buildOrderDetailCommonFilters(q model.OrderDetailListFilters, args *[]any, 
 	}
 	if end := parseDateEnd(q.CreatedTimeEnd); end != nil {
 		filters = append(filters, "so.create_time <= ?")
+		*args = append(*args, *end)
+	}
+	if begin := parseDateStart(q.LatestPaidTimeBegin); begin != nil {
+		filters = append(filters, "(SELECT MAX(pd.create_time) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id) >= ?")
+		*args = append(*args, *begin)
+	}
+	if end := parseDateEnd(q.LatestPaidTimeEnd); end != nil {
+		filters = append(filters, "(SELECT MAX(pd.create_time) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id) <= ?")
 		*args = append(*args, *end)
 	}
 	if len(q.OrderArrearStatus) > 0 {

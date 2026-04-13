@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -21,6 +23,59 @@ func (svc *Service) GetOrderList(userID int64, query model.OrderManageQueryDTO) 
 	return svc.repo.PageOrders(context.Background(), instID, query)
 }
 
+func (svc *Service) ExportOrders(userID int64, query model.OrderManageQueryDTO) ([]byte, string, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, "", errors.New("no institution context")
+		}
+		return nil, "", err
+	}
+
+	orderIDs := make([]string, 0, len(query.QueryModel.OrderIDs))
+	seen := make(map[string]struct{}, len(query.QueryModel.OrderIDs))
+	for _, item := range query.QueryModel.OrderIDs {
+		orderID := strings.TrimSpace(item)
+		if orderID == "" {
+			continue
+		}
+		if _, ok := seen[orderID]; ok {
+			continue
+		}
+		seen[orderID] = struct{}{}
+		orderIDs = append(orderIDs, orderID)
+	}
+	if len(orderIDs) == 0 {
+		return nil, "", errors.New("请选择需要导出的订单")
+	}
+	if len(orderIDs) > orderExportMaxRows {
+		return nil, "", errors.New("当前最多支持批量导出10000条订单，请减少勾选数量后重试")
+	}
+
+	exportQuery := query
+	exportQuery.QueryModel.OrderIDs = orderIDs
+	exportQuery.PageRequestModel.PageIndex = 1
+	exportQuery.PageRequestModel.PageSize = orderExportMaxRows
+
+	result, err := svc.repo.PageOrders(context.Background(), instID, exportQuery)
+	if err != nil {
+		return nil, "", err
+	}
+	if result.Total == 0 || len(result.List) == 0 {
+		return nil, "", errors.New("没有符合条件的订单可以导出")
+	}
+	if result.Total > orderExportMaxRows {
+		return nil, "", errors.New("当前最多支持批量导出10000条订单，请减少勾选数量后重试")
+	}
+
+	content, err := buildOrderExportWorkbook(result.List)
+	if err != nil {
+		return nil, "", err
+	}
+	fileName := fmt.Sprintf("订单批量导出-%s.xlsx", time.Now().Format("20060102150405"))
+	return content, fileName, nil
+}
+
 func (svc *Service) GetOrderDetailList(userID int64, query model.OrderDetailListQueryDTO) (model.OrderDetailListResultVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
@@ -30,6 +85,38 @@ func (svc *Service) GetOrderDetailList(userID int64, query model.OrderDetailList
 		return model.OrderDetailListResultVO{}, err
 	}
 	return svc.repo.PageOrderDetails(context.Background(), instID, query)
+}
+
+func (svc *Service) ExportOrderDetailList(userID int64, query model.OrderDetailListQueryDTO) ([]byte, string, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, "", errors.New("no institution context")
+		}
+		return nil, "", err
+	}
+
+	exportQuery := query
+	exportQuery.PageRequestModel.PageIndex = 1
+	exportQuery.PageRequestModel.PageSize = orderDetailExportMaxRows
+
+	result, err := svc.repo.PageOrderDetails(context.Background(), instID, exportQuery)
+	if err != nil {
+		return nil, "", err
+	}
+	if result.Total == 0 || len(result.List) == 0 {
+		return nil, "", errors.New("没有符合条件的订单明细可以导出")
+	}
+	if result.Total > orderDetailExportMaxRows {
+		return nil, "", errors.New("当前列表最多支持导出10000条数据，请缩小筛选范围后重试")
+	}
+
+	content, err := buildOrderDetailExportWorkbook(result.List)
+	if err != nil {
+		return nil, "", err
+	}
+	fileName := fmt.Sprintf("订单明细导出-%s.xlsx", time.Now().Format("20060102150405"))
+	return content, fileName, nil
 }
 
 func (svc *Service) GetOrderDetail(userID, orderID int64) (model.OrderDetailVO, error) {

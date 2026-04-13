@@ -64,6 +64,7 @@ export interface OrderQueryParams {
   queryModel?: {
     keyword?: string
     keywordType?: string
+    orderIds?: string[]
     orderStatus?: number
     orderStatusList?: number[]
     orderType?: number
@@ -240,6 +241,8 @@ export interface OrderDetailListQueryParams {
     dealDateEnd?: string
     createdTimeBegin?: string
     createdTimeEnd?: string
+    latestPaidTimeBegin?: string
+    latestPaidTimeEnd?: string
     orderArrearStatus?: number[]
     studentId?: string
   }
@@ -281,6 +284,21 @@ export function getOrderDetailPagedApi(data: OrderDetailListQueryParams) {
   return usePost<OrderDetailListResult>('/api/v1/orders/detail-paged', data)
 }
 
+export async function exportOrderDetailPagedApi(data: {
+  queryModel?: OrderDetailListQueryParams['queryModel']
+  sortModel?: OrderDetailListQueryParams['sortModel']
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/orders/detail-paged/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 // 设为坏账
 export function setBadDebtApi(data: { orderId: string; remark?: string }) {
   return usePost<void>('/api/v1/orders/set-bad-debt', data)
@@ -293,6 +311,21 @@ export function cancelBadDebtApi(data: { orderId: string }) {
 
 export function closeOrderApi(data: { orderId: string }) {
   return usePost<void>('/api/v1/orders/close', data)
+}
+
+export async function exportOrderListApi(data: {
+  queryModel?: OrderQueryParams['queryModel']
+  sortModel?: OrderQueryParams['sortModel']
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/orders/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
 }
 
 export async function downloadOrderReceiptPdfApi(data: { orderId: string | number, template?: 'a4' | 'dot' | 'receipt' }) {

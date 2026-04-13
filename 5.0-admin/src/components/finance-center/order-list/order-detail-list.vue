@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { DownOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 import { useTableColumns } from '@/composables/useTableColumns'
-import { getOrderDetailPagedApi } from '@/api/finance-center/order-manage'
+import { exportOrderDetailPagedApi, getOrderDetailPagedApi } from '@/api/finance-center/order-manage'
 import messageService from '@/utils/messageService'
 import dayjs from 'dayjs'
 
@@ -12,6 +12,7 @@ const defaultCreateTimeVals = ref([currentYearStart, today])
 const defaultOrderStatusVals = ref([1, 3, 7, 8, 6, 2])
 const dataSource = ref([])
 const loading = ref(false)
+const exporting = ref(false)
 const pagination = ref({
   current: 1,
   pageSize: 50,
@@ -275,6 +276,21 @@ function handleTableChange(pag) {
   fetchOrderDetailList()
 }
 
+function parseAttachmentFilenameFromHeader(cd) {
+  if (!cd) return undefined
+  const utf8Match = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = cd.match(/filename=\"?([^\";]+)\"?/i)
+  return plainMatch?.[1]
+}
+
 function formatDate(value) {
   if (!value || String(value).startsWith('0001-01-01'))
     return '-'
@@ -380,6 +396,59 @@ function getRechargeMoneyText(record, value, prefix = '¥ ') {
   return `${prefix}${formatMoney(value)}`
 }
 
+async function handleExport() {
+  if (exporting.value)
+    return
+  try {
+    exporting.value = true
+    const res = await exportOrderDetailPagedApi({
+      queryModel: queryState.value,
+      sortModel: {},
+    })
+    const ct = String(res.headers['content-type'] || '')
+    if (ct.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: ct || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
+      || `订单明细导出-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error) {
+    console.error('导出订单明细失败:', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exporting.value = false
+  }
+}
+
 onMounted(() => {
   resetQueryState()
   fetchOrderDetailList()
@@ -418,10 +487,10 @@ defineExpose({
             <a-dropdown class="mr-2">
               <template #overlay>
                 <a-menu>
-                  <a-menu-item key="1">导出数据</a-menu-item>
+                  <a-menu-item key="1" @click="handleExport">导出数据</a-menu-item>
                 </a-menu>
               </template>
-              <a-button>
+              <a-button :loading="exporting">
                 导出数据
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>

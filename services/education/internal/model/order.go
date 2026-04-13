@@ -38,6 +38,7 @@ type OrderManageQueryDTO struct {
 type OrderQueryFilters struct {
 	Keyword             string   `json:"keyword"`
 	KeywordType         string   `json:"keywordType"`
+	OrderIDs            []string `json:"orderIds"`
 	OrderStatus         *int     `json:"orderStatus"`
 	OrderStatusList     []int    `json:"orderStatusList"`
 	OrderType           *int     `json:"orderType"`
@@ -68,6 +69,7 @@ type OrderManageQueryVO struct {
 	StudentName                   string     `json:"studentName,omitempty"`
 	Sex                           *int       `json:"sex,omitempty"`
 	StudentPhone                  string     `json:"studentPhone,omitempty"`
+	RawStudentPhone               string     `json:"rawStudentPhone,omitempty"`
 	Avatar                        string     `json:"avatar,omitempty"`
 	CreatedTime                   time.Time  `json:"createdTime"`
 	Amount                        float64    `json:"amount"`
@@ -115,23 +117,25 @@ type OrderDetailListQueryDTO struct {
 }
 
 type OrderDetailListFilters struct {
-	OrderNumber       string   `json:"orderNumber"`
-	OrderTypeList     []int    `json:"orderTypeList"`
-	OrderTagIDs       []string `json:"orderTagIds"`
-	OrderSourceList   []int    `json:"orderSourceList"`
-	OrderStatusList   []int    `json:"orderStatusList"`
-	CourseIDs         []string `json:"courseIds"`
-	EnrollTypes       []int    `json:"enrollTypes"`
-	ProductTypes      []int    `json:"productTypes"`
-	CourseCategoryID  *int64   `json:"courseCategoryId"`
-	SalePersonID      string   `json:"salePersonId"`
-	CreatorID         string   `json:"creatorId"`
-	DealDateBegin     string   `json:"dealDateBegin"`
-	DealDateEnd       string   `json:"dealDateEnd"`
-	CreatedTimeBegin  string   `json:"createdTimeBegin"`
-	CreatedTimeEnd    string   `json:"createdTimeEnd"`
-	OrderArrearStatus []int    `json:"orderArrearStatus"`
-	StudentID         string   `json:"studentId"`
+	OrderNumber         string   `json:"orderNumber"`
+	OrderTypeList       []int    `json:"orderTypeList"`
+	OrderTagIDs         []string `json:"orderTagIds"`
+	OrderSourceList     []int    `json:"orderSourceList"`
+	OrderStatusList     []int    `json:"orderStatusList"`
+	CourseIDs           []string `json:"courseIds"`
+	EnrollTypes         []int    `json:"enrollTypes"`
+	ProductTypes        []int    `json:"productTypes"`
+	CourseCategoryID    *int64   `json:"courseCategoryId"`
+	SalePersonID        string   `json:"salePersonId"`
+	CreatorID           string   `json:"creatorId"`
+	DealDateBegin       string   `json:"dealDateBegin"`
+	DealDateEnd         string   `json:"dealDateEnd"`
+	CreatedTimeBegin    string   `json:"createdTimeBegin"`
+	CreatedTimeEnd      string   `json:"createdTimeEnd"`
+	LatestPaidTimeBegin string   `json:"latestPaidTimeBegin"`
+	LatestPaidTimeEnd   string   `json:"latestPaidTimeEnd"`
+	OrderArrearStatus   []int    `json:"orderArrearStatus"`
+	StudentID           string   `json:"studentId"`
 }
 
 type OrderDetailListItemVO struct {
@@ -141,6 +145,7 @@ type OrderDetailListItemVO struct {
 	StudentID                        string     `json:"studentId"`
 	StudentName                      string     `json:"studentName"`
 	StudentPhone                     string     `json:"studentPhone"`
+	RawStudentPhone                  string     `json:"rawStudentPhone"`
 	StudentAvatar                    string     `json:"studentAvatar"`
 	Sex                              *int       `json:"sex,omitempty"`
 	CreatedTime                      *time.Time `json:"createdTime,omitempty"`
