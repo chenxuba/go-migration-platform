@@ -24,6 +24,7 @@ import { useSmartTimetablePicker } from '@/composables/useSmartTimetablePicker'
 import { useUserStore } from '@/stores/user'
 import { loadTeachingScheduleDeleteTargetCount } from './schedule-delete-scope'
 import messageService from '@/utils/messageService'
+import { compactTeachingScheduleAssignments } from '@/utils/teaching-schedule-payload'
 import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   buildQuickHourlySlots,
@@ -46,9 +47,8 @@ const displayArray = ref([
   'scheduleCallStatus',
 ])
 const SMART_TIMETABLE_VIEW_MODE_KEY = 'smart-timetable-view-mode'
-const DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD = 500
-const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 300
-const DRAG_BATCH_VALIDATE_CONCURRENCY = 2
+const DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD = 120
+const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 120
 
 function getSavedTimeView() {
   if (typeof window === 'undefined')
@@ -802,6 +802,8 @@ let blockedScheduleDragUpHandler = null
 let lastBlockedScheduleDragHintAt = 0
 let suppressScheduledLessonClickUntil = 0
 let activeDragValidationSessionId = 0
+let pendingDragPointerFrame = 0
+let pendingDragPointerState = null
 const focusedScheduleCellKey = ref('')
 const isSwapTimeGrid = computed(() => currentTime.value === 'swapWeek')
 const isWeekLikeView = computed(() => currentTime.value === 'week' || currentTime.value === 'swapWeek')
@@ -3858,12 +3860,49 @@ function formatDragTimeLabel(startTime, endTime, separator = '~') {
   return `${startTime}${separator}${endTime}`
 }
 
+function flushPendingDragPointer() {
+  pendingDragPointerFrame = 0
+  if (!pendingDragPointerState)
+    return
+  dragPointerState.value = pendingDragPointerState
+}
+
+function scheduleDragPointerFlush() {
+  if (pendingDragPointerFrame)
+    return
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    pendingDragPointerFrame = window.requestAnimationFrame(() => {
+      flushPendingDragPointer()
+    })
+    return
+  }
+  flushPendingDragPointer()
+}
+
+function cancelPendingDragPointer() {
+  if (pendingDragPointerFrame && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function')
+    window.cancelAnimationFrame(pendingDragPointerFrame)
+  pendingDragPointerFrame = 0
+  pendingDragPointerState = null
+}
+
 function updateDragPointer(event) {
-  dragPointerState.value = {
+  pendingDragPointerState = {
     x: Number(event?.clientX || 0),
     y: Number(event?.clientY || 0),
     visible: true,
   }
+  scheduleDragPointerFlush()
+}
+
+function waitForNextDragFrame() {
+  return new Promise((resolve) => {
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => resolve(true))
+      return
+    }
+    setTimeout(() => resolve(true), 0)
+  })
 }
 
 function clearCustomScheduleDragListeners() {
@@ -3967,6 +4006,7 @@ function resetDragScheduleState() {
   clearCustomScheduleDragListeners()
   clearBlockedScheduleDragAttempt()
   activeDragValidationSessionId += 1
+  cancelPendingDragPointer()
   draggingScheduleState.value = null
   draggingScheduleCellKey.value = ''
   dragPointerState.value = {
@@ -4172,6 +4212,25 @@ function buildDragValidationResultFromValidationItem(target, item) {
   return {
     ...dragConflictStateFromTypes(item.conflictTypes || [], item.message || '当前空点不可调课'),
     existingSchedules: Array.isArray(item.existingSchedules) ? item.existingSchedules : [],
+  }
+}
+
+function buildDragValidationRequestPayload(dragState, assignments) {
+  const compacted = compactTeachingScheduleAssignments(assignments.map(item => ({
+    lessonDate: item.lessonDate,
+    startTime: item.startTime,
+    endTime: item.endTime,
+    teacherId: item.teacherId,
+    assistantIds: item.assistantIds,
+    classroomId: item.classroomId,
+  })))
+
+  return {
+    teacherId: compacted.teacherId,
+    assistantIds: compacted.assistantIds,
+    classroomId: compacted.classroomId,
+    excludeIds: [dragState.scheduleId],
+    schedules: compacted.schedules,
   }
 }
 
@@ -4404,20 +4463,14 @@ async function validateDragTargetsInBatch(targets, options = {}) {
         assignment,
       }
     })
-    const requestPayload = {
-      teacherId: requestTargets[0]?.assignment?.teacherId || '',
-      assistantIds: requestTargets[0]?.assignment?.assistantIds || [],
+    const requestPayload = buildDragValidationRequestPayload(dragState, requestTargets.map(({ target, assignment }) => ({
+      lessonDate: target.lessonDate,
+      startTime: target.startTime,
+      endTime: target.endTime,
+      teacherId: assignment.teacherId,
+      assistantIds: assignment.assistantIds,
       classroomId: dragState.classroomId,
-      excludeIds: [dragState.scheduleId],
-      schedules: requestTargets.map(({ target, assignment }) => ({
-        lessonDate: target.lessonDate,
-        startTime: target.startTime,
-        endTime: target.endTime,
-        teacherId: assignment.teacherId,
-        assistantIds: assignment.assistantIds,
-        classroomId: dragState.classroomId,
-      })),
-    }
+    })))
     const res = isGroupClassDragSchedule(dragState)
       ? await validateGroupClassSchedulesApi({
           groupClassId: dragState.groupClassId,
@@ -4634,20 +4687,14 @@ async function ensureDragTargetValidation(target, options = {}) {
   const promise = (async () => {
     try {
       const assignment = buildDragScheduleAssignment(dragState, target)
-      const requestPayload = {
+      const requestPayload = buildDragValidationRequestPayload(dragState, [{
+        lessonDate: target.lessonDate,
+        startTime: target.startTime,
+        endTime: target.endTime,
         teacherId: assignment.teacherId,
         assistantIds: assignment.assistantIds,
         classroomId: dragState.classroomId,
-        excludeIds: [dragState.scheduleId],
-        schedules: [{
-          lessonDate: target.lessonDate,
-          startTime: target.startTime,
-          endTime: target.endTime,
-          teacherId: assignment.teacherId,
-          assistantIds: assignment.assistantIds,
-          classroomId: dragState.classroomId,
-        }],
-      }
+      }])
       const res = isGroupClassDragSchedule(dragState)
         ? await validateGroupClassSchedulesApi({
             groupClassId: dragState.groupClassId,
@@ -4750,18 +4797,14 @@ async function primeDragValidationForVisibleTargets(dragState, sessionId) {
       return
     }
 
-    setDragValidationState(target, {
-      checking: true,
-      valid: null,
-      label: '检测中',
-      message: '正在检测当前空点是否可调',
-      conflictTypes: [],
-      existingSchedules: [],
-    }, { sessionId, dragState })
     remoteTargets.push(target)
   })
 
   if (!remoteTargets.length)
+    return
+
+  await waitForNextDragFrame()
+  if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
     return
 
   if (remoteTargets.length <= DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD) {
@@ -4776,21 +4819,17 @@ async function primeDragValidationForVisibleTargets(dragState, sessionId) {
   for (let i = 0; i < remoteTargets.length; i += DRAG_BATCH_VALIDATE_CHUNK_SIZE)
     chunks.push(remoteTargets.slice(i, i + DRAG_BATCH_VALIDATE_CHUNK_SIZE))
 
-  let index = 0
-  const workerCount = Math.min(DRAG_BATCH_VALIDATE_CONCURRENCY, chunks.length)
-  const workers = Array.from({ length: workerCount }, async () => {
-    while (index < chunks.length) {
-      if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
-        return
-      const chunk = chunks[index++]
-      await validateDragTargetsInBatch(chunk, {
-        dragState,
-        sessionId,
-      })
-    }
-  })
-
-  await Promise.all(workers)
+  for (const chunk of chunks) {
+    if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
+      return
+    await waitForNextDragFrame()
+    if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
+      return
+    await validateDragTargetsInBatch(chunk, {
+      dragState,
+      sessionId,
+    })
+  }
 }
 
 function emptyLessonDragState(column, record) {
