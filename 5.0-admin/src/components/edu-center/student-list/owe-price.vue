@@ -65,6 +65,7 @@ const lessonFilters = ref({
   lessonId: undefined as string | undefined,
   studentId: undefined as string | undefined,
 })
+const initializedDefaultTab = ref(false)
 
 const registrationColumns: TableColumnsType<StudentRegistrationArrearItem> = [
   { title: '学员/性别', dataIndex: 'student', key: 'student', width: 220 },
@@ -304,6 +305,30 @@ async function getList(id?: string | number, type?: string) {
   }
 }
 
+async function initializeDefaultTab() {
+  loading.value = true
+  try {
+    await loadRegistrationTab()
+    if (registrationSummary.value.total > 0) {
+      initializedDefaultTab.value = true
+      return
+    }
+
+    await loadLessonTab()
+    if (lessonSummary.value.total > 0)
+      activeTab.value = 'lesson'
+
+    initializedDefaultTab.value = true
+  }
+  catch (error) {
+    console.error('initialize arrear tab failed', error)
+    messageService.error(error?.message || '加载欠费学员列表失败')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
 function handleTabChange(key: string) {
   activeTab.value = key as ArrearTabKey
   selectedRowKeys.value = []
@@ -462,6 +487,8 @@ function handleLessonAction() {
 
 watch(activeTab, async () => {
   selectedRowKeys.value = []
+  if (!initializedDefaultTab.value)
+    return
   if (activeTab.value === 'registration' && registrationList.value.length === 0) {
     registrationPagination.value.current = 1
     await getList()
@@ -476,7 +503,7 @@ watch(activeTab, async () => {
 useStudentListRefresh(getList)
 
 onMounted(async () => {
-  await getList()
+  await initializeDefaultTab()
 })
 
 defineExpose({
