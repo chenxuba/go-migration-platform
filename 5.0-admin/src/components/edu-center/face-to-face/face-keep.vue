@@ -90,21 +90,18 @@ const detailConfigMap = {
   pending: {
     title: '今日待考勤',
     note: (total: number) => `共 ${total} 条，今日已排课的学员全部待考勤日程（排除请假学员）`,
-    empty: '今日暂无待考勤学员',
     width: 1180,
     columns: pendingColumns,
   },
   success: {
     title: '今日考勤成功',
     note: (total: number) => `共 ${total} 条，按学员当天考勤记录统计，一名学员当天最多记一条；表示今日已刷脸且已完成点名，不包含纯手动点名`,
-    empty: '暂无考勤成功记录',
     width: 1360,
     columns: successColumns,
   },
   success_unrolled: {
     title: '今日待点名',
     note: (total: number) => `共 ${total} 条，按学员当天考勤记录统计，一名学员当天最多记一条；表示今日已刷脸但仍有日程未完成点名，超过课后${AUTO_ROLL_CALL_DELAY_MINUTES}分钟可直接去点名`,
-    empty: '暂无未点名记录',
     width: 1280,
     columns: successUnrolledColumns,
   },
@@ -615,7 +612,6 @@ onMounted(() => {
         :columns="currentColumns"
         :pagination="tablePagination"
         :scroll="{ x: currentScrollX }"
-        :locale="{ emptyText: currentDetailConfig.empty }"
         size="small"
         @change="handleDetailTableChange"
       >
