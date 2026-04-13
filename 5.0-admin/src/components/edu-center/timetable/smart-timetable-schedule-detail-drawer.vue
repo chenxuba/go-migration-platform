@@ -3,7 +3,7 @@ import { CloseOutlined, DownOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import type { TableColumnsType } from 'ant-design-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import { type TeachingScheduleBatchMeta, type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi, removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
@@ -370,9 +370,11 @@ async function handleRollCallConfirmed(teachingRecordId?: string) {
   if (nextTeachingRecordId)
     currentTeachingRecordId.value = nextTeachingRecordId
   detailChanged.value = true
-  await loadDetail()
-  if (currentTeachingRecordId.value)
+  openDrawer.value = false
+  if (currentTeachingRecordId.value) {
+    await nextTick()
     classRecordDrawerOpen.value = true
+  }
 }
 
 async function handleRollCallUpdated() {

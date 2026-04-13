@@ -189,11 +189,10 @@ function formatCurrency(value?: number) {
 }
 
 function displayConsumedQuantity(record: Partial<TeachingRecordDetailStudent>) {
-  const arrearQuantity = Number(record.arrearQuantity || 0)
-  const actualTuition = Number(record.actualTuition || 0)
-  if (arrearQuantity > 0 && actualTuition <= 0)
-    return 0
-  return Number(record.actualQuantity || 0)
+  const actualDeduct = Number(record.actualDeduct || 0)
+  if (Number.isFinite(actualDeduct) && actualDeduct > 0)
+    return actualDeduct
+  return 0
 }
 
 function sourceTypeText(value?: number) {
@@ -406,7 +405,7 @@ function resolveRowKey(record: Partial<TeachingRecordDetailStudent>) {
       <div class="tab-table">
         <div class="table-title flex justify-between">
           <div class="total">
-            共 {{ summary.total }} 人（到课 {{ summary.arrived }}人，请假 {{ summary.leave }}人，旷课{{ summary.absent }}人）；共记 {{ formatNumber(summary.quantity, '课时') }}，共消耗学费 {{ formatCurrency(summary.tuition) }}
+            共 {{ summary.total }} 人（到课 {{ summary.arrived }}人，请假 {{ summary.leave }}人，旷课{{ summary.absent }}人）；共记 {{ formatNumber(summary.quantity, ' 课时') }}，共消耗学费 {{ formatCurrency(summary.tuition) }}
           </div>
         </div>
         <div class="table-content mt-2">

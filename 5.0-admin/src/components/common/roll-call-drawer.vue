@@ -758,11 +758,14 @@ function buildRollCallConfirmPayload() {
 }
 function showRollCallArrearWarning(names) {
   if (!Array.isArray(names) || names.length === 0)
-    return
-  Modal.warning({
-    title: '超记提醒',
-    content: `以下学员剩余课时不足，已按超记处理：${names.join('、')}`,
-    okText: '我知道了',
+    return Promise.resolve()
+  return new Promise((resolve) => {
+    Modal.warning({
+      title: '超记提醒',
+      content: `以下学员剩余课时不足，已按超记处理：${names.join('、')}`,
+      okText: '我知道了',
+      onOk: () => resolve(),
+    })
   })
 }
 async function handleConfirmRollCall() {
@@ -820,12 +823,16 @@ async function handleConfirmRollCall() {
       throw new Error(confirmRes.message || '点名提交失败')
 
     const teachingRecordId = String(confirmRes.result?.id || '').trim()
+    const uniqueInsufficientNames = Array.from(new Set(insufficientNames))
     messageService.success('点名成功')
     rollCallChanged.value = true
-    if (teachingRecordId)
-      emit('confirmed', teachingRecordId)
+    if (uniqueInsufficientNames.length > 0)
+      await showRollCallArrearWarning(uniqueInsufficientNames)
     openDrawer.value = false
-    showRollCallArrearWarning(Array.from(new Set(insufficientNames)))
+    if (teachingRecordId) {
+      await nextTick()
+      emit('confirmed', teachingRecordId)
+    }
   }
   catch (error) {
     if (!shouldSkipManualErrorMessage(error)) {
