@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -167,5 +168,65 @@ func TestWeChatOfficialVerifyWithKnownSignature(t *testing.T) {
 	}
 	if client.verifySignature(fmt.Sprintf("%s-x", expected), timestamp, nonce) {
 		t.Fatalf("expected altered signature to be invalid")
+	}
+}
+
+func TestWeChatOfficialSubscribeIncludesBindTicketInMiniProgramPagePath(t *testing.T) {
+	var customSendCount int
+	var lastMiniProgramPagePath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/cgi-bin/token"):
+			_, _ = w.Write([]byte(`{"access_token":"token-1","expires_in":7200}`))
+		case strings.HasPrefix(r.URL.Path, "/cgi-bin/message/custom/send"):
+			customSendCount++
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+				if miniProgramPage, ok := payload["miniprogrampage"].(map[string]any); ok {
+					if pagePath, ok := miniProgramPage["pagepath"].(string); ok {
+						lastMiniProgramPagePath = pagePath
+					}
+				}
+			}
+			_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newWeChatOfficialClient(WeChatOfficialConfig{
+		AppID:                   "appid",
+		Secret:                  "secret",
+		Token:                   "token",
+		MiniProgramAppID:        "mini-appid",
+		MiniProgramPagePath:     "pages/index/tabbar",
+		MiniProgramThumbMediaID: "thumb-media-id",
+		MiniProgramTitle:        "绑定学员",
+		TextContent:             "⚠️点击下方推送消息，立即关注学员⬇⬇⬇",
+	})
+	client.apiBaseURL = server.URL
+	client.httpClient = server.Client()
+	client.bindPagePathBuilder = func(ctx context.Context, message weChatEventMessage) (string, error) {
+		return "pages/index/tabbar?bindTicket=bt_test_1", nil
+	}
+
+	body := []byte(`
+<xml>
+  <ToUserName><![CDATA[gh_xxx]]></ToUserName>
+  <FromUserName><![CDATA[openid-3]]></FromUserName>
+  <CreateTime>1712900000</CreateTime>
+  <MsgType><![CDATA[event]]></MsgType>
+  <Event><![CDATA[subscribe]]></Event>
+</xml>`)
+
+	if err := client.handleCallback(context.Background(), body, "req-bind-ticket"); err != nil {
+		t.Fatalf("handle callback: %v", err)
+	}
+	if customSendCount != 2 {
+		t.Fatalf("expected 2 custom message sends, got %d", customSendCount)
+	}
+	if lastMiniProgramPagePath != "pages/index/tabbar?bindTicket=bt_test_1" {
+		t.Fatalf("expected bind ticket page path, got %s", lastMiniProgramPagePath)
 	}
 }

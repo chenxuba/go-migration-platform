@@ -147,6 +147,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureComposeLessonTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensureWeChatOfficialBindingTables(ctx, repo.db); err != nil {
+		return err
+	}
 	if err := EnsureInstConfigUnifiedTimePeriodColumns(ctx, repo.db); err != nil {
 		return err
 	}

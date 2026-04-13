@@ -38,6 +38,9 @@ type weChatOfficialClient struct {
 	httpClient *http.Client
 	apiBaseURL string
 
+	bindPagePathBuilder func(ctx context.Context, message weChatEventMessage) (string, error)
+	subscriptionSyncer  func(ctx context.Context, openID string, subscribed bool) error
+
 	mu             sync.Mutex
 	accessToken    string
 	accessTokenExp time.Time
@@ -152,34 +155,65 @@ func (client *weChatOfficialClient) handleCallback(ctx context.Context, body []b
 
 	switch event {
 	case "scan":
+		if client.subscriptionSyncer != nil {
+			if err := client.subscriptionSyncer(ctx, message.FromUserName, true); err != nil {
+				return err
+			}
+		}
+		pagePath := client.config.MiniProgramPagePath
+		if client.bindPagePathBuilder != nil {
+			value, err := client.bindPagePathBuilder(ctx, message)
+			if err != nil {
+				return err
+			}
+			pagePath = value
+		}
 		logx.Info("wechat official callback sending mini program card for scan event", logx.Entry{
 			"requestId": requestID,
 			"openid":    message.FromUserName,
 			"eventKey":  message.EventKey,
 			"event":     message.Event,
 		})
-		return client.sendFollowMessageBundle(ctx, message.FromUserName)
+		return client.sendFollowMessageBundle(ctx, message.FromUserName, pagePath)
 	case "subscribe":
+		if client.subscriptionSyncer != nil {
+			if err := client.subscriptionSyncer(ctx, message.FromUserName, true); err != nil {
+				return err
+			}
+		}
+		pagePath := client.config.MiniProgramPagePath
+		if client.bindPagePathBuilder != nil {
+			value, err := client.bindPagePathBuilder(ctx, message)
+			if err != nil {
+				return err
+			}
+			pagePath = value
+		}
 		logx.Info("wechat official callback sending mini program card for subscribe event", logx.Entry{
 			"requestId": requestID,
 			"openid":    message.FromUserName,
 			"eventKey":  message.EventKey,
 			"event":     message.Event,
 		})
-		return client.sendFollowMessageBundle(ctx, message.FromUserName)
+		return client.sendFollowMessageBundle(ctx, message.FromUserName, pagePath)
+	case "unsubscribe":
+		if client.subscriptionSyncer != nil {
+			return client.subscriptionSyncer(ctx, message.FromUserName, false)
+		}
+		return nil
 	default:
 		return nil
 	}
 }
 
-func (client *weChatOfficialClient) sendFollowMessageBundle(ctx context.Context, openID string) error {
+func (client *weChatOfficialClient) sendFollowMessageBundle(ctx context.Context, openID, pagePath string) error {
 	if client.canSendTextMessage() {
 		if err := client.sendTextMessage(ctx, openID); err != nil {
 			return err
 		}
 	}
 	if client.canSendMiniProgramCard() {
-		if err := client.sendMiniProgramCard(ctx, openID); err != nil {
+		if err := client.sendMiniProgramCard(ctx, openID, pagePath); err != nil {
 			return err
 		}
 	}
@@ -230,9 +264,12 @@ func (client *weChatOfficialClient) getAccessToken(ctx context.Context) (string,
 	return token, nil
 }
 
-func (client *weChatOfficialClient) sendMiniProgramCard(ctx context.Context, openID string) error {
+func (client *weChatOfficialClient) sendMiniProgramCard(ctx context.Context, openID, pagePath string) error {
 	if !client.canSendMiniProgramCard() {
 		return errors.New("公众号小程序卡片配置不完整")
+	}
+	if strings.TrimSpace(pagePath) == "" {
+		pagePath = client.config.MiniProgramPagePath
 	}
 
 	token, err := client.getAccessToken(ctx)
@@ -246,7 +283,7 @@ func (client *weChatOfficialClient) sendMiniProgramCard(ctx context.Context, ope
 		"miniprogrampage": map[string]any{
 			"title":          client.config.MiniProgramTitle,
 			"appid":          client.config.MiniProgramAppID,
-			"pagepath":       client.config.MiniProgramPagePath,
+			"pagepath":       pagePath,
 			"thumb_media_id": client.config.MiniProgramThumbMediaID,
 		},
 	}

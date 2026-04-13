@@ -37,7 +37,10 @@ func New(store *customization.Store, repo *repository.Repository, tokenManager *
 }
 
 func (svc *Service) ConfigureWeChatOfficial(cfg WeChatOfficialConfig) {
-	svc.wechatOfficial = newWeChatOfficialClient(cfg)
+	client := newWeChatOfficialClient(cfg)
+	client.bindPagePathBuilder = svc.buildWeChatOfficialBindPagePath
+	client.subscriptionSyncer = svc.syncWeChatOfficialSubscription
+	svc.wechatOfficial = client
 }
 
 func (svc *Service) EnsureInfrastructure() error {
