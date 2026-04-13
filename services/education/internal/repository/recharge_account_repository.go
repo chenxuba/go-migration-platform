@@ -398,6 +398,18 @@ func (repo *Repository) GetRechargeAccountExpendIncome(ctx context.Context, inst
 		whereParts = append(whereParts, "CAST(student_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(query.StudentID))
 	}
+	if strings.TrimSpace(query.RechargeAccountID) != "" {
+		whereParts = append(whereParts, "CAST(recharge_account_id AS CHAR) = ?")
+		args = append(args, strings.TrimSpace(query.RechargeAccountID))
+	}
+	if len(query.FlowTypes) > 0 {
+		holders := make([]string, 0, len(query.FlowTypes))
+		for _, item := range query.FlowTypes {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		whereParts = append(whereParts, "flow_type IN ("+strings.Join(holders, ",")+")")
+	}
 	if begin := parseDateStart(query.StartTime); begin != nil {
 		whereParts = append(whereParts, "create_time >= ?")
 		args = append(args, *begin)

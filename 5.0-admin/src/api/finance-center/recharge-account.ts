@@ -352,10 +352,27 @@ export function getRechargeAccountDetailPageApi(data: RechargeAccountDetailPageQ
   return usePost<RechargeAccountDetailPageResult>('/api/v1/recharge-accounts/details/page', data)
 }
 
+export async function exportRechargeAccountDetailPageApi(data: {
+  queryModel?: RechargeAccountDetailPageQueryParams['queryModel']
+  sortModel?: RechargeAccountDetailPageQueryParams['sortModel']
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/recharge-accounts/details/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 export function getRechargeAccountExpendIncomeApi(params: {
   studentId?: string
+  rechargeAccountId?: string
   startTime?: string
   endTime?: string
+  flowTypes?: number[]
 }) {
   return useGet<RechargeAccountExpendIncome>('/api/v1/recharge-accounts/expend-income', params)
 }

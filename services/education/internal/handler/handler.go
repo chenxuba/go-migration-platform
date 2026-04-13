@@ -235,6 +235,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/recharge-accounts/by-student", handler.rechargeAccountByStudent)
 	mux.HandleFunc("/api/v1/recharge-accounts/get", handler.getRechargeAccount)
 	mux.HandleFunc("/api/v1/recharge-accounts/details/page", handler.rechargeAccountDetailPage)
+	mux.HandleFunc("/api/v1/recharge-accounts/details/export", handler.rechargeAccountDetailExport)
 	mux.HandleFunc("/api/v1/recharge-accounts/expend-income", handler.rechargeAccountExpendIncome)
 	mux.HandleFunc("/api/v1/recharge-account-orders/create", handler.createRechargeAccountOrder)
 	mux.HandleFunc("/api/v1/recharge-account-orders/create-refund", handler.createRechargeAccountRefundOrder)

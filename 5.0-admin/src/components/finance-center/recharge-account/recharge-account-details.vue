@@ -5,7 +5,7 @@ import { debounce } from 'lodash-es'
 import dayjs from 'dayjs'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { getRecommenderPageApi } from '@/api/enroll-center/intention-student'
-import { getRechargeAccountDetailPageApi, getRechargeAccountExpendIncomeApi, getRechargeAccountItemPageApi } from '@/api/finance-center/recharge-account'
+import { exportRechargeAccountDetailPageApi, getRechargeAccountDetailPageApi, getRechargeAccountExpendIncomeApi, getRechargeAccountItemPageApi } from '@/api/finance-center/recharge-account'
 import { useStudentStore } from '@/stores/student'
 import messageService from '@/utils/messageService'
 
@@ -51,6 +51,7 @@ const stuPhoneSearchPagination = ref({
 
 const dataSource = ref([])
 const loading = ref(false)
+const exporting = ref(false)
 const summary = ref({
   income: 0,
   expend: 0,
@@ -120,10 +121,6 @@ watch(filterState, () => {
   pagination.value.current = 1
   fetchDetailData()
 }, { deep: true })
-
-onUnmounted(() => {
-  debouncedSearchStuPhone.cancel()
-})
 
 function handleSeeStuData(studentId = '') {
   if (!studentId) {
@@ -215,7 +212,9 @@ function clearSelectableFilters() {
 
 async function getStuPhoneSearchPage(params = { key: undefined, studentStatus: undefined }) {
   try {
-    if (stuPhoneSearchFinished.value && stuPhoneSearchPagination.value.current !== 1) return
+    if (stuPhoneSearchFinished.value && stuPhoneSearchPagination.value.current !== 1) {
+      return
+    }
     stuPhoneSearchLoading.value = true
     const res = await getRecommenderPageApi({
       pageRequestModel: {
@@ -232,8 +231,12 @@ async function getStuPhoneSearchPage(params = { key: undefined, studentStatus: u
     })
     if (res.code === 200) {
       const resultData = Array.isArray(res.result) ? res.result : []
-      if (stuPhoneSearchPagination.value.current === 1) stuPhoneSearchOptions.value = resultData
-      else stuPhoneSearchOptions.value = [...stuPhoneSearchOptions.value, ...resultData]
+      if (stuPhoneSearchPagination.value.current === 1) {
+        stuPhoneSearchOptions.value = resultData
+      }
+      else {
+        stuPhoneSearchOptions.value = [...stuPhoneSearchOptions.value, ...resultData]
+      }
       stuPhoneSearchPagination.value.total = res.total || 0
       stuPhoneSearchFinished.value = stuPhoneSearchOptions.value.length >= stuPhoneSearchPagination.value.total
     }
@@ -247,7 +250,9 @@ async function getStuPhoneSearchPage(params = { key: undefined, studentStatus: u
 }
 
 function dropdownVisibleChangeFun(event) {
-  if (!event) return
+  if (!event) {
+    return
+  }
   stuPhoneSearchPagination.value.current = 1
   stuPhoneSearchOptions.value = []
   stuPhoneSearchFinished.value = false
@@ -260,6 +265,10 @@ const debouncedSearchStuPhone = debounce((value) => {
   stuPhoneSearchOptions.value = []
   getStuPhoneSearchPage({ key: value })
 }, 300)
+
+onUnmounted(() => {
+  debouncedSearchStuPhone.cancel()
+})
 
 function handleSearchStuPhone(value) {
   debouncedSearchStuPhone(value)
@@ -278,15 +287,21 @@ function handleStuPhonePopupScroll(event) {
 
 function handleStuPhoneSearchChange(value) {
   const id = typeof value === 'object' && value !== null ? value.value : value
-  if (id) selectedStudentOption.value = stuPhoneSearchOptions.value.find(user => String(user.id) === String(id)) || null
-  else selectedStudentOption.value = null
+  if (id) {
+    selectedStudentOption.value = stuPhoneSearchOptions.value.find(user => String(user.id) === String(id)) || null
+  }
+  else {
+    selectedStudentOption.value = null
+  }
   nextTick(() => {
     filterState.value.studentId = id || ''
   })
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return '-'
+  if (!dateStr) {
+    return '-'
+  }
   return String(dateStr).replace('T', ' ').slice(0, 16)
 }
 
@@ -295,17 +310,39 @@ function formatMoney(value) {
   return `${num >= 0 ? '+' : ''}${num.toFixed(2)}`
 }
 
+function buildQueryModel() {
+  return {
+    studentId: filterState.value.studentId || undefined,
+    startTime: filterState.value.operationDate?.[0],
+    endTime: filterState.value.operationDate?.[1],
+    flowTypes: filterState.value.flowTypes.length ? filterState.value.flowTypes : undefined,
+  }
+}
+
+function parseAttachmentFilenameFromHeader(cd) {
+  if (!cd) {
+    return undefined
+  }
+  const utf8Match = cd.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = cd.match(/filename="?([^";]+)"?/i)
+  return plainMatch?.[1]
+}
+
 async function fetchDetailData() {
   try {
     loading.value = true
+    const queryModel = buildQueryModel()
     const [listRes, summaryRes] = await Promise.all([
       getRechargeAccountDetailPageApi({
-        queryModel: {
-          studentId: filterState.value.studentId || undefined,
-          startTime: filterState.value.operationDate?.[0],
-          endTime: filterState.value.operationDate?.[1],
-          flowTypes: filterState.value.flowTypes.length ? filterState.value.flowTypes : undefined,
-        },
+        queryModel,
         pageRequestModel: {
           needTotal: true,
           pageSize: pagination.value.pageSize,
@@ -316,11 +353,7 @@ async function fetchDetailData() {
           orderByCreatedTime: 0,
         },
       }),
-      getRechargeAccountExpendIncomeApi({
-        studentId: filterState.value.studentId || undefined,
-        startTime: filterState.value.operationDate?.[0],
-        endTime: filterState.value.operationDate?.[1],
-      }),
+      getRechargeAccountExpendIncomeApi(queryModel),
     ])
 
     dataSource.value = Array.isArray(listRes.result?.list) ? listRes.result.list : []
@@ -336,6 +369,62 @@ async function fetchDetailData() {
   }
   finally {
     loading.value = false
+  }
+}
+
+async function handleExport() {
+  if (exporting.value) {
+    return
+  }
+  try {
+    exporting.value = true
+    const res = await exportRechargeAccountDetailPageApi({
+      queryModel: buildQueryModel(),
+      sortModel: {
+        orderByCreatedTime: 0,
+      },
+    })
+    const ct = String(res.headers['content-type'] || '')
+    if (ct.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: ct || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
+      || `储值账户明细_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error) {
+    console.error('导出储值账户明细失败:', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exporting.value = false
   }
 }
 
@@ -407,10 +496,10 @@ onMounted(() => {
                   </div>
                 </div>
                 <div>
-                  <a-tag v-if="item.studentStatus == 1" :bordered="false" color="processing">
+                  <a-tag v-if="item.studentStatus === 1" :bordered="false" color="processing">
                     在读学员
                   </a-tag>
-                  <a-tag v-if="item.studentStatus == 0" :bordered="false" color="orange">
+                  <a-tag v-if="item.studentStatus === 0" :bordered="false" color="orange">
                     意向学员
                   </a-tag>
                 </div>
@@ -466,7 +555,7 @@ onMounted(() => {
           收入 ￥{{ summary.income.toFixed(2) }}，支出 ￥{{ summary.expend.toFixed(2) }}
         </div>
         <div class="edit flex">
-          <a-button>
+          <a-button :loading="exporting" @click="handleExport">
             导出数据
           </a-button>
         </div>
