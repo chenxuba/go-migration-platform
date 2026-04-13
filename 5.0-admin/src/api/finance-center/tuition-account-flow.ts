@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { usePost } from '~/utils/request'
 
 export interface TuitionAccountFlowRecordItem {
@@ -82,4 +84,19 @@ export function getTuitionAccountFlowRecordListApi(data: TuitionAccountFlowRecor
 
 export function getSubTuitionAccountFlowRecordListApi(data: TuitionAccountFlowRecordListQueryParams) {
   return usePost<SubTuitionAccountFlowRecordListResult>('/api/v1/tuition-account-flows/sub-list', data)
+}
+
+export async function exportTuitionAccountFlowRecordListApi(data: {
+  queryModel?: TuitionAccountFlowRecordListQueryParams['queryModel']
+  sortModel?: TuitionAccountFlowRecordListQueryParams['sortModel']
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/tuition-account-flows/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
 }
