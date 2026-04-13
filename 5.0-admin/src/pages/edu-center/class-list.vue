@@ -1,10 +1,14 @@
 <script setup>
-import { CaretDownOutlined, DownOutlined } from '@ant-design/icons-vue'
+import { CaretDownOutlined, DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { debounce } from 'lodash-es'
+import { createVNode } from 'vue'
 import {
+  closeGroupClassApi,
   groupClassStatisticsApi,
   pageGroupClassesApi,
+  reopenGroupClassApi,
 } from '@/api/edu-center/group-class'
 import CreateClassModal from '@/components/common/create-class-modal.vue'
 import ClassAddStudentModal from '@/components/edu-center/class-list/class-add-student-modal.vue'
@@ -437,8 +441,80 @@ function openAddStudentModal(record) {
   addStudentModalOpen.value = true
 }
 
-function openGroupClassCloseConfirm() {
-  openCloseClassConfirm()
+async function closeGroupClass(record) {
+  const id = String(record?.id || '').trim()
+  if (!id) {
+    messageService.error('缺少班级ID')
+    return Promise.reject(new Error('缺少班级ID'))
+  }
+  try {
+    const res = await closeGroupClassApi({ id })
+    if (res.code === 200) {
+      messageService.success('结班成功')
+      await getClassList(queryState.value)
+      syncCurrentClassRecordFromList()
+      return
+    }
+    messageService.error(res.message || '结班失败')
+    return Promise.reject(new Error(res.message || '结班失败'))
+  }
+  catch (error) {
+    console.error('close group class failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '结班失败')
+    return Promise.reject(error)
+  }
+}
+
+async function reopenGroupClass(record) {
+  const id = String(record?.id || '').trim()
+  if (!id) {
+    messageService.error('缺少班级ID')
+    return
+  }
+  try {
+    const res = await reopenGroupClassApi({ id })
+    if (res.code === 200) {
+      messageService.success('已恢复开班')
+      await getClassList(queryState.value)
+      syncCurrentClassRecordFromList()
+      return
+    }
+    messageService.error(res.message || '恢复开班失败')
+  }
+  catch (error) {
+    console.error('reopen group class failed', error)
+    if (error?.response)
+      return
+    messageService.error('恢复开班失败')
+  }
+}
+
+function openGroupClassCloseConfirm(record) {
+  openCloseClassConfirm({
+    onOk() {
+      return closeGroupClass(record)
+    },
+    onCancel() {
+      return closeGroupClass(record)
+    },
+  })
+}
+
+function openGroupClassReopenConfirm(record) {
+  const id = String(record?.id || '').trim()
+  if (!id) {
+    messageService.error('缺少班级ID')
+    return
+  }
+  Modal.confirm({
+    title: '恢复开班',
+    centered: true,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: '确定将该班课恢复为开班中吗？',
+    async onOk() {
+      await reopenGroupClass(record)
+    },
+  })
 }
 
 function onClassRowMenuClick({ key }, record) {
@@ -448,14 +524,13 @@ function onClassRowMenuClick({ key }, record) {
     return
   }
   if (key === '4') {
-    openGroupClassCloseConfirm()
+    openGroupClassCloseConfirm(record)
     return
   }
   console.log(key, record)
 }
 
-async function afterClassModalSave() {
-  await getClassList(queryState.value)
+function syncCurrentClassRecordFromList() {
   const currentId = String(currentClassRecord.value?.id || '').trim()
   if (!currentId)
     return
@@ -464,9 +539,19 @@ async function afterClassModalSave() {
     currentClassRecord.value = latest
 }
 
+async function afterClassModalSave() {
+  await getClassList(queryState.value)
+  syncCurrentClassRecordFromList()
+}
+
 function handleDrawerEdit(record) {
   editClassRecord.value = record
   createClassModal.value = true
+}
+
+async function handleDrawerRefresh() {
+  await getClassList(queryState.value)
+  syncCurrentClassRecordFromList()
 }
 
 watch(createClassModal, (open) => {
@@ -723,37 +808,42 @@ onMounted(async () => {
               </template>
               <template v-else-if="column.key === 'action'">
                 <span class="flex action">
-                  <a class="mr-3">排课</a>
-                  <a class="mr-3" @click.prevent="openAddStudentModal(record)">添加学员</a>
-                  <div style="cursor: pointer;">
-                    <a-dropdown :trigger="['click']" placement="bottom">
-                      <a @click.prevent>
-                        <div class="intention">
-                          更多
-                          <CaretDownOutlined
-                            class="text-#1677ff"
-                            :style="{ fontSize: '12px' }"
-                          />
-                        </div>
-                      </a>
-                      <template #overlay>
-                        <a-menu style="text-align: center;width: 120px;" @click="(e) => onClassRowMenuClick(e, record)">
-                          <a-menu-item key="1">
-                            上课点名
-                          </a-menu-item>
-                          <a-menu-item key="2">
-                            未排课点名
-                          </a-menu-item>
-                          <a-menu-item key="3">
-                            编辑班级
-                          </a-menu-item>
-                          <a-menu-item key="4" danger>
-                            结班
-                          </a-menu-item>
-                        </a-menu>
-                      </template>
-                    </a-dropdown>
-                  </div>
+                  <template v-if="record.status === 2">
+                    <a @click.prevent="openGroupClassReopenConfirm(record)">恢复开班</a>
+                  </template>
+                  <template v-else>
+                    <a class="mr-3">排课</a>
+                    <a class="mr-3" @click.prevent="openAddStudentModal(record)">添加学员</a>
+                    <div style="cursor: pointer;">
+                      <a-dropdown :trigger="['click']" placement="bottom">
+                        <a @click.prevent>
+                          <div class="intention">
+                            更多
+                            <CaretDownOutlined
+                              class="text-#1677ff"
+                              :style="{ fontSize: '12px' }"
+                            />
+                          </div>
+                        </a>
+                        <template #overlay>
+                          <a-menu style="text-align: center;width: 120px;" @click="(e) => onClassRowMenuClick(e, record)">
+                            <a-menu-item key="1">
+                              上课点名
+                            </a-menu-item>
+                            <a-menu-item key="2">
+                              未排课点名
+                            </a-menu-item>
+                            <a-menu-item key="3">
+                              编辑班级
+                            </a-menu-item>
+                            <a-menu-item key="4" danger>
+                              结班
+                            </a-menu-item>
+                          </a-menu>
+                        </template>
+                      </a-dropdown>
+                    </div>
+                  </template>
                 </span>
               </template>
             </template>
@@ -771,6 +861,7 @@ onMounted(async () => {
       v-model:open="classListDrawerFlag"
       :record="currentClassRecord"
       @edit="handleDrawerEdit"
+      @refresh="handleDrawerRefresh"
     />
     <ClassAddStudentModal
       v-model:open="addStudentModalOpen"

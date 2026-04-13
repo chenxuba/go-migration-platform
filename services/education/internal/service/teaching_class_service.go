@@ -427,6 +427,38 @@ func (svc *Service) UpdateGroupClass(userID int64, dto model.GroupClassUpdateDTO
 	return svc.repo.UpdateGroupClass(context.Background(), instID, operatorID, dto)
 }
 
+// CloseGroupClassOnly 仅结班（更新班级开班状态为已结班）
+func (svc *Service) CloseGroupClassOnly(userID int64, id string) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(id) == "" {
+		return errors.New("班级ID不能为空")
+	}
+	classID, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
+	if err != nil || classID <= 0 {
+		return errors.New("班级ID无效")
+	}
+	return svc.repo.CloseGroupClassOnly(context.Background(), instID, operatorID, classID)
+}
+
+// ReopenGroupClassOnly 恢复开班（已结班 → 开班中）
+func (svc *Service) ReopenGroupClassOnly(userID int64, id string) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(id) == "" {
+		return errors.New("班级ID不能为空")
+	}
+	classID, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
+	if err != nil || classID <= 0 {
+		return errors.New("班级ID无效")
+	}
+	return svc.repo.ReopenGroupClassOnly(context.Background(), instID, operatorID, classID)
+}
+
 func (svc *Service) PageGroupClasses(userID int64, body model.GroupClassListBody) (model.GroupClassListPageResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

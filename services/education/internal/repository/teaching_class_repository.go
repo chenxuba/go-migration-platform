@@ -1994,6 +1994,283 @@ func (repo *Repository) CreateOneToOne(ctx context.Context, instID, operatorID i
 	return classID, nil
 }
 
+type groupClassScheduleBatchAdjustment struct {
+	BatchNo       string
+	AllRows       []teachingScheduleBatchRow
+	RemainingRows []teachingScheduleBatchRow
+	Meta          *model.TeachingScheduleBatchMeta
+}
+
+func filterTeachingScheduleBatchRowsByExcludedIDs(rows []teachingScheduleBatchRow, excluded map[int64]struct{}) []teachingScheduleBatchRow {
+	if len(rows) == 0 {
+		return nil
+	}
+	result := make([]teachingScheduleBatchRow, 0, len(rows))
+	for _, row := range rows {
+		if _, ok := excluded[row.ID]; ok {
+			continue
+		}
+		result = append(result, row)
+	}
+	return result
+}
+
+func (repo *Repository) listActiveUnsignedGroupClassScheduleRowsTx(ctx context.Context, tx *sql.Tx, instID, classID int64) ([]teachingScheduleBatchRow, error) {
+	recordExistsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if err != nil {
+		return nil, err
+	}
+	callStatusExpr := buildTeachingScheduleCallStatusCaseSQL(recordExistsSQL)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			ts.id,
+			IFNULL(ts.batch_no, ''),
+			IFNULL(ts.batch_size, 1),
+			IFNULL(ts.class_type, 0),
+			IFNULL(ts.teaching_class_id, 0),
+			ts.lesson_date,
+			ts.lesson_start_at,
+			ts.lesson_end_at
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ?
+		  AND ts.teaching_class_id = ?
+		  AND ts.class_type = ?
+		  AND ts.del_flag = 0
+		  AND ts.status = ?
+		  AND (`+callStatusExpr+`) = 1
+	`, instID, classID, model.TeachingClassTypeNormal, model.TeachingScheduleStatusActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]teachingScheduleBatchRow, 0)
+	for rows.Next() {
+		var item teachingScheduleBatchRow
+		if err := rows.Scan(
+			&item.ID,
+			&item.BatchNo,
+			&item.BatchSize,
+			&item.ClassType,
+			&item.TeachingClassID,
+			&item.LessonDate,
+			&item.StartAt,
+			&item.EndAt,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sortTeachingScheduleBatchRows(list), nil
+}
+
+func (repo *Repository) cancelUnsignedGroupClassSchedulesTx(ctx context.Context, tx *sql.Tx, instID, operatorID, classID int64) error {
+	targetRows, err := repo.listActiveUnsignedGroupClassScheduleRowsTx(ctx, tx, instID, classID)
+	if err != nil {
+		return err
+	}
+	if len(targetRows) == 0 {
+		return nil
+	}
+
+	targetIDs := teachingScheduleBatchRowIDs(targetRows)
+	if len(targetIDs) == 0 {
+		return nil
+	}
+	if err := repo.ensureTeachingSchedulesNotSignedTx(ctx, tx, instID, targetIDs); err != nil {
+		return err
+	}
+
+	targetIDSet := make(map[int64]struct{}, len(targetIDs))
+	for _, id := range targetIDs {
+		targetIDSet[id] = struct{}{}
+	}
+
+	batchAdjustments := make([]groupClassScheduleBatchAdjustment, 0)
+	visitedBatchNos := make(map[string]struct{})
+	for _, row := range targetRows {
+		batchNo := strings.TrimSpace(row.BatchNo)
+		if batchNo == "" {
+			continue
+		}
+		if _, ok := visitedBatchNos[batchNo]; ok {
+			continue
+		}
+		visitedBatchNos[batchNo] = struct{}{}
+
+		allRows, err := repo.listActiveTeachingScheduleBatchRowsTx(ctx, tx, instID, batchNo)
+		if err != nil {
+			return err
+		}
+		meta, err := repo.loadTeachingScheduleBatchMetaTx(ctx, tx, instID, batchNo, teachingScheduleBatchRowIDs(allRows))
+		if err != nil {
+			return err
+		}
+		batchAdjustments = append(batchAdjustments, groupClassScheduleBatchAdjustment{
+			BatchNo:       batchNo,
+			AllRows:       allRows,
+			RemainingRows: filterTeachingScheduleBatchRowsByExcludedIDs(allRows, targetIDSet),
+			Meta:          meta,
+		})
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE teaching_schedule
+		SET del_flag = 1,
+		    status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND status = ?
+		  AND id IN (`+sqlPlaceholders(len(targetIDs))+`)
+	`, append([]any{
+		model.TeachingScheduleStatusCanceled,
+		operatorID,
+		instID,
+		model.TeachingScheduleStatusActive,
+	}, int64SliceToAny(targetIDs)...)...)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected <= 0 {
+		return nil
+	}
+
+	for _, row := range targetRows {
+		if strings.TrimSpace(row.BatchNo) != "" {
+			continue
+		}
+		if err := repo.deleteTeachingScheduleBatchMetaTx(ctx, tx, instID, "", []int64{row.ID}); err != nil {
+			return err
+		}
+	}
+
+	for _, adjustment := range batchAdjustments {
+		if err := repo.deleteTeachingScheduleBatchMetaTx(ctx, tx, instID, adjustment.BatchNo, nil); err != nil {
+			return err
+		}
+		remainingIDs := teachingScheduleBatchRowIDs(adjustment.RemainingRows)
+		if len(remainingIDs) == 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_schedule
+			SET batch_size = ?,
+			    update_id = ?,
+			    update_time = NOW()
+			WHERE inst_id = ?
+			  AND del_flag = 0
+			  AND id IN (`+sqlPlaceholders(len(remainingIDs))+`)
+		`, append([]any{len(remainingIDs), operatorID, instID}, int64SliceToAny(remainingIDs)...)...); err != nil {
+			return err
+		}
+		if adjustedMeta := adjustTeachingScheduleBatchMetaForSchedules(adjustment.Meta, teachingScheduleBatchRowsToVOs(adjustment.RemainingRows)); adjustedMeta != nil {
+			if err := repo.saveTeachingScheduleBatchMetaTx(
+				ctx,
+				tx,
+				instID,
+				operatorID,
+				adjustment.BatchNo,
+				model.TeachingClassTypeNormal,
+				classID,
+				remainingIDs,
+				adjustedMeta,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	return repo.refreshTeachingClassScheduleCountsTx(ctx, tx, instID, operatorID, []int64{classID})
+}
+
+// CloseGroupClassOnly 将班课标记为已结班，并同步删除未点名日程
+func (repo *Repository) CloseGroupClassOnly(ctx context.Context, instID, operatorID, classID int64) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var currentStatus int
+	err = tx.QueryRowContext(ctx, `
+		SELECT tc.status
+		FROM teaching_class tc
+		WHERE tc.id = ? AND tc.inst_id = ? AND tc.class_type = ? AND tc.del_flag = 0
+	`, classID, instID, model.TeachingClassTypeNormal).Scan(&currentStatus)
+	if err != nil {
+		return err
+	}
+	if currentStatus == model.TeachingClassStatusClosed {
+		return nil
+	}
+	if currentStatus != model.TeachingClassStatusActive {
+		return errors.New("班级状态不允许结班")
+	}
+	if err := repo.cancelUnsignedGroupClassSchedulesTx(ctx, tx, instID, operatorID, classID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class
+		SET status = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0 AND status = ?
+	`, model.TeachingClassStatusClosed, operatorID, classID, instID, model.TeachingClassTypeNormal, model.TeachingClassStatusActive)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
+
+// ReopenGroupClassOnly 将已结班的班课恢复为开班中
+func (repo *Repository) ReopenGroupClassOnly(ctx context.Context, instID, operatorID, classID int64) error {
+	var currentStatus int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT tc.status
+		FROM teaching_class tc
+		WHERE tc.id = ? AND tc.inst_id = ? AND tc.class_type = ? AND tc.del_flag = 0
+	`, classID, instID, model.TeachingClassTypeNormal).Scan(&currentStatus)
+	if err != nil {
+		return err
+	}
+	if currentStatus == model.TeachingClassStatusActive {
+		return nil
+	}
+	if currentStatus != model.TeachingClassStatusClosed {
+		return errors.New("班级状态不允许恢复开班")
+	}
+	res, err := repo.db.ExecContext(ctx, `
+		UPDATE teaching_class
+		SET status = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0 AND status = ?
+	`, model.TeachingClassStatusActive, operatorID, classID, instID, model.TeachingClassTypeNormal, model.TeachingClassStatusClosed)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 // CloseOneToOneOnly 将 1 对 1 班级标记为已结班（不结课、不删日程）
 func (repo *Repository) CloseOneToOneOnly(ctx context.Context, instID, operatorID, classID int64) error {
 	var currentStatus int

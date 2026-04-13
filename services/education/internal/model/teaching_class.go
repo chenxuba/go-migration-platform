@@ -351,6 +351,10 @@ type GroupClassUpdateDTO struct {
 	CopyFromClassID string `json:"copyFromClassId"`
 }
 
+type GroupClassCloseDTO struct {
+	ID string `json:"id"`
+}
+
 type GroupClassCreateResult struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -560,7 +564,6 @@ type GroupClassStudentPagedItemVO struct {
 	IsGradeUpgrade                 bool                            `json:"isGradeUpgrade"`
 	JoinTime                       *time.Time                      `json:"joinTime,omitempty"`
 	Status                         int                             `json:"status"`
-	StudentStatus                  int                             `json:"studentStatus"`
 	TotalQuantity                  float64                         `json:"totalQuantity"`
 	TotalFreeQuantity              float64                         `json:"totalFreeQuantity"`
 	TotalTuition                   float64                         `json:"totalTuition"`

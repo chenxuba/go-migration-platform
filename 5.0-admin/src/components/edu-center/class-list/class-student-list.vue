@@ -10,7 +10,7 @@ import {
   type GroupClassStudentTeachingRecordCountItem,
 } from '@/api/edu-center/group-class'
 import ClassAddStudentModal from './class-add-student-modal.vue'
-import { ParentRelationshipLabel, StudentStatus } from '@/enums'
+import { ParentRelationshipLabel } from '@/enums'
 import messageService from '@/utils/messageService'
 
 const props = defineProps({
@@ -205,7 +205,7 @@ function buildQueryModel() {
   return {
     id: props.classId,
     classId: props.classId,
-    status: checked.value ? [1, 2] : [1],
+    status: checked.value ? [1, 2, 3] : [1],
     ignoreSuspendedTuitionAccount: false,
   }
 }
@@ -263,12 +263,14 @@ function getUsedQuantity(record: Partial<GroupClassStudentPagedItem>) {
   return Math.max(total - remain - free, 0)
 }
 
-function getStudentStatusInfo(studentStatus?: number) {
-  if (studentStatus === StudentStatus.History) {
-    return { text: '历史', className: 'text-#888 bg-#f5f5f5' }
+function getClassStatusInfo(record: Partial<GroupClassStudentPagedItem>) {
+  if (record.status === 3) {
+    if (record.classEndingTime && `${record.classEndingTime}` !== '0001-01-01T00:00:00')
+      return { text: '结课', className: 'text-#888 bg-#f5f5f5' }
+    return { text: '转出', className: 'text-#0c3 bg-#e6ffec' }
   }
-  if (studentStatus === StudentStatus.Intention) {
-    return { text: '意向', className: 'text-#f90 bg-#fff5e6' }
+  if (record.status === 2) {
+    return { text: '停课', className: 'text-#f90 bg-#fff5e6' }
   }
   return { text: '在读', className: 'bg-#e6f0ff text-#06f' }
 }
@@ -447,7 +449,7 @@ watch(
           />
           <div class="flex items-center">
             <a-checkbox v-model:checked="checked">
-              显示停课学员
+              显示转出、停课、结课学员
             </a-checkbox>
             <a-dropdown class="mx-2">
               <template #overlay>
@@ -625,8 +627,8 @@ watch(
             </template>
 
             <template v-else-if="column.key === 'status'">
-              <span class="rounded-2.5 inline-block text-3 pt-0.5 pb-0.5 pl-2 pr-2" :class="getStudentStatusInfo(record.studentStatus).className">
-                {{ getStudentStatusInfo(record.studentStatus).text }}
+              <span class="rounded-2.5 inline-block text-3 pt-0.5 pb-0.5 pl-2 pr-2" :class="getClassStatusInfo(record).className">
+                {{ getClassStatusInfo(record).text }}
               </span>
             </template>
 

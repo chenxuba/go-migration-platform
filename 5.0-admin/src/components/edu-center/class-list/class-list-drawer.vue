@@ -1,11 +1,13 @@
 <script setup>
-import { CloseCircleOutlined, CloseOutlined, ExclamationCircleFilled, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { createVNode } from 'vue'
+import { CloseCircleOutlined, CloseOutlined, ExclamationCircleFilled, ExclamationCircleOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import ClassStudentList from './class-student-list.vue'
 import classRecord from './class-record.vue'
 import schedule from './class-list-schedule.vue'
 import waitingRollCallSchedule from './waiting-roll-call-schedule.vue'
-import { getGroupClassDetailApi } from '@/api/edu-center/group-class'
+import { closeGroupClassApi, getGroupClassDetailApi, reopenGroupClassApi } from '@/api/edu-center/group-class'
 import { openCloseClassConfirm } from '@/utils/closeClassConfirm'
 import messageService from '@/utils/messageService'
 
@@ -20,7 +22,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:open', 'edit'])
+const emit = defineEmits(['update:open', 'edit', 'refresh'])
 const activeKey = ref('0')
 
 const openDrawer = computed({
@@ -133,8 +135,78 @@ function handleEditRollName() {
   editRollNameModal.value = true
 }
 
+async function submitCloseClass() {
+  const classId = String(displayRecord.value?.id || '').trim()
+  if (!classId) {
+    messageService.error('缺少班级ID')
+    return Promise.reject(new Error('缺少班级ID'))
+  }
+  try {
+    const res = await closeGroupClassApi({ id: classId })
+    if (res.code === 200) {
+      messageService.success('结班成功')
+      emit('refresh')
+      openDrawer.value = false
+      return
+    }
+    messageService.error(res.message || '结班失败')
+    return Promise.reject(new Error(res.message || '结班失败'))
+  }
+  catch (error) {
+    console.error('close group class failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '结班失败')
+    return Promise.reject(error)
+  }
+}
+
 function handleCloseClass() {
-  openCloseClassConfirm()
+  openCloseClassConfirm({
+    onOk() {
+      return submitCloseClass()
+    },
+    onCancel() {
+      return submitCloseClass()
+    },
+  })
+}
+
+async function submitReopenClass() {
+  const classId = String(displayRecord.value?.id || '').trim()
+  if (!classId) {
+    messageService.error('缺少班级ID')
+    return
+  }
+  try {
+    const res = await reopenGroupClassApi({ id: classId })
+    if (res.code === 200) {
+      messageService.success('已恢复开班')
+      detailData.value = {
+        ...(detailData.value || {}),
+        status: 1,
+      }
+      emit('refresh')
+      return
+    }
+    messageService.error(res.message || '恢复开班失败')
+  }
+  catch (error) {
+    console.error('reopen group class failed', error)
+    if (error?.response)
+      return
+    messageService.error('恢复开班失败')
+  }
+}
+
+function handleReopenClass() {
+  Modal.confirm({
+    title: '恢复开班',
+    centered: true,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: '确定将该班课恢复为开班中吗？',
+    async onOk() {
+      await submitReopenClass()
+    },
+  })
 }
 
 function handleEditClass() {
@@ -195,7 +267,10 @@ function handleExportRollCallSheet() {
               <a-button @click="handleExportRollCallSheet">
                 导出点名表
               </a-button>
-              <a-button v-if="!isClassClosed" @click="handleCloseClass">
+              <a-button v-if="isClassClosed" @click="handleReopenClass">
+                恢复开班
+              </a-button>
+              <a-button v-else @click="handleCloseClass">
                 结班
               </a-button>
               <a-button v-if="!isClassClosed" type="primary" @click="handleEditClass">

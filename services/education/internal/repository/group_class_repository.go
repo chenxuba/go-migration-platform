@@ -559,8 +559,7 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			CAST(IFNULL(s.advisor_id, 0) AS CHAR),
 			IFNULL(advisor.nick_name, ''),
 			CAST(IFNULL(s.student_manager_id, 0) AS CHAR),
-			IFNULL(manager.nick_name, ''),
-			IFNULL(s.student_status, 0)
+			IFNULL(manager.nick_name, '')
 		FROM (
 			SELECT
 				tcs.student_id,
@@ -696,7 +695,6 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			&item.AdvisorName,
 			&item.StudentManagerID,
 			&item.StudentManagerName,
-			&item.StudentStatus,
 		); err != nil {
 			return out, err
 		}

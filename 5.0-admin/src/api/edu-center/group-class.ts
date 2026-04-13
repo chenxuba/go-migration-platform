@@ -57,6 +57,14 @@ export function updateGroupClassApi(data: {
   })
 }
 
+export function closeGroupClassApi(data: { id: string }) {
+  return usePost<boolean>('/api/v1/group-classes/close', data)
+}
+
+export function reopenGroupClassApi(data: { id: string }) {
+  return usePost<boolean>('/api/v1/group-classes/reopen', data)
+}
+
 /** 对标 QueryClassList */
 export function pageGroupClassesApi(data: {
   queryModel: Record<string, unknown>
@@ -180,7 +188,6 @@ export interface GroupClassStudentPagedItem {
   tuitionAccountId?: string
   classStudentTuitionAccountInfo?: GroupClassStudentTuitionAccountInfo
   status: number
-  studentStatus: number
   totalQuantity: number
   totalFreeQuantity: number
   totalTuition: number
