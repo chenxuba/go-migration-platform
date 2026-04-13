@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
+import type { EnrolledStudentInfo } from './enrolled-student'
 
 export interface FieldInfo {
   filter: any
@@ -181,4 +182,25 @@ export async function exportStudentLessonArrearApi(data: {
       'Accept-Language': 'zh-CN',
     },
   })
+}
+
+export interface PendingAttentionStudentQueryParams {
+  pageRequestModel: {
+    pageSize: number
+    pageIndex: number
+    needTotal?: boolean
+    skipCount?: number
+  }
+  queryModel?: {
+    studentId?: string
+    sexes?: number[]
+    studentStatuses?: number[]
+    classIds?: string[]
+    ageMin?: number
+    ageMax?: number
+  }
+}
+
+export function getPendingAttentionStudentPagedListApi(data: PendingAttentionStudentQueryParams) {
+  return usePost<EnrolledStudentInfo>('/api/v1/students/pending-attention/page', data)
 }

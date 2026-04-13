@@ -121,3 +121,9 @@ func (svc *Service) PageEnrolledStudents(userID int64, query model.EnrolledStude
 	}
 	return svc.repo.PageEnrolledStudents(context.Background(), instID, query)
 }
+
+func (svc *Service) PagePendingAttentionStudents(userID int64, query model.EnrolledStudentQueryDTO) (model.PageResult[model.EnrolledStudent], error) {
+	isBindChild := false
+	query.QueryModel.IsBindChild = &isBindChild
+	return svc.PageEnrolledStudents(userID, query)
+}

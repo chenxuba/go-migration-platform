@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted } from 'vue'
 import { getStudentOverviewStatisticsApi } from '@/api/edu-center/student-list'
+import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
 
 const router = useRouter()
 const currentType = ref(1)
@@ -78,6 +79,7 @@ function handleSelect(selectedItem) {
     ...item,
     selected: item.type === selectedItem.type,
   }))
+  getOverviewStatistics()
 }
 
 // 注意：不需要在这里监听 currentType 变化并刷新数据
@@ -115,6 +117,8 @@ function refreshCurrentTypeData() {
 onMounted(() => {
   getOverviewStatistics()
 })
+
+useStudentListRefresh(getOverviewStatistics)
 
 </script>
 

@@ -1423,6 +1423,28 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 		}
 		filters = append(filters, "s.student_status IN ("+strings.Join(placeholders, ",")+")")
 	}
+	if len(q.ClassIDs) > 0 {
+		placeholders := make([]string, 0, len(q.ClassIDs))
+		for _, item := range q.ClassIDs {
+			trimmed := strings.TrimSpace(item)
+			if trimmed == "" {
+				continue
+			}
+			placeholders = append(placeholders, "?")
+			args = append(args, trimmed)
+		}
+		if len(placeholders) > 0 {
+			filters = append(filters, `EXISTS (
+				SELECT 1
+				FROM teaching_class_student tcs
+				INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id AND tc.inst_id = tcs.inst_id AND tc.del_flag = 0
+				WHERE tcs.inst_id = s.inst_id
+				  AND tcs.student_id = s.id
+				  AND tcs.del_flag = 0
+				  AND CAST(tcs.teaching_class_id AS CHAR) IN (`+strings.Join(placeholders, ",")+`)
+			)`)
+		}
+	}
 	if len(q.Grades) > 0 {
 		placeholders := make([]string, 0, len(q.Grades))
 		for _, item := range q.Grades {
@@ -1498,6 +1520,14 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 	if q.SalespersonID != nil {
 		filters = append(filters, "s.sale_person = ?")
 		args = append(args, *q.SalespersonID)
+	}
+	if q.IsBindChild != nil {
+		bindValue := 0
+		if *q.IsBindChild {
+			bindValue = 1
+		}
+		filters = append(filters, "IFNULL(s.is_bind_child, 0) = ?")
+		args = append(args, bindValue)
 	}
 	whereClause := strings.Join(filters, " AND ")
 

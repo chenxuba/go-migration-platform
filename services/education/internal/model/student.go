@@ -102,7 +102,7 @@ type IntentStudent struct {
 	RechargeAmountTotal           float64        `json:"rechargeAmountTotal"`
 	ResidualAmountTotal           float64        `json:"residualAmountTotal"`
 	GivingAmountTotal             float64        `json:"givingAmountTotal"`
-	IsBindChild                  bool           `json:"isBindChild"`
+	IsBindChild                   bool           `json:"isBindChild"`
 	IsCollect                     bool           `json:"isCollect"`
 	PrimaryCourseCount            int            `json:"primaryCourseCount"`
 	CustomInfo                    []CustomInfo   `json:"customInfo"`
@@ -169,6 +169,7 @@ type EnrolledStudentFilter struct {
 	Mobile            string   `json:"mobile"`
 	Sexes             []int    `json:"sexes"`
 	StudentStatuses   []int    `json:"studentStatuses"`
+	ClassIDs          []string `json:"classIds"`
 	Grades            []string `json:"grades"`
 	ChannelIDs        []int64  `json:"channelIds"`
 	WechatNumber      string   `json:"wechatNumber"`
@@ -186,6 +187,7 @@ type EnrolledStudentFilter struct {
 	InterestSearchKey string   `json:"interestSearchKey"`
 	CreateID          *int64   `json:"createId"`
 	SalespersonID     *int64   `json:"salespersonId"`
+	IsBindChild       *bool    `json:"isBindChild"`
 }
 
 type EnrolledStudent struct {

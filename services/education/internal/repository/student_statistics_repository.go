@@ -14,10 +14,11 @@ func (repo *Repository) GetStudentOverviewStatistics(ctx context.Context, instID
 			COUNT(*) AS total_students,
 			IFNULL(SUM(CASE WHEN student_status = 1 THEN 1 ELSE 0 END), 0) AS reading_students,
 			IFNULL(SUM(CASE WHEN student_status = 2 THEN 1 ELSE 0 END), 0) AS history_students,
-			IFNULL(SUM(CASE WHEN student_status = 0 THEN 1 ELSE 0 END), 0) AS intent_students
+			IFNULL(SUM(CASE WHEN student_status = 0 THEN 1 ELSE 0 END), 0) AS intent_students,
+			IFNULL(SUM(CASE WHEN student_status IN (1, 2) AND IFNULL(is_bind_child, 0) = 0 THEN 1 ELSE 0 END), 0) AS pending_attention_students
 		FROM inst_student
 		WHERE inst_id = ? AND del_flag = 0
-	`, instID).Scan(&result.TotalStudents, &result.ReadingStudents, &result.HistoryStudents, &result.IntentStudents); err != nil {
+	`, instID).Scan(&result.TotalStudents, &result.ReadingStudents, &result.HistoryStudents, &result.IntentStudents, &result.PendingAttentionStudents); err != nil {
 		return model.StudentOverviewStatistics{}, err
 	}
 

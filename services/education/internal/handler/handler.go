@@ -185,6 +185,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/intent-students/detail", handler.intentStudentDetail)
 	mux.HandleFunc("/api/v1/current-students/page", handler.currentStudentsPage)
 	mux.HandleFunc("/api/v1/enrolled-students/page", handler.enrolledStudentsPage)
+	mux.HandleFunc("/api/v1/students/pending-attention/page", handler.pendingAttentionStudentsPage)
 	mux.HandleFunc("/api/v1/students/registration-arrears/page", handler.studentRegistrationArrearPaged)
 	mux.HandleFunc("/api/v1/students/registration-arrears/statistics", handler.studentRegistrationArrearStatistics)
 	mux.HandleFunc("/api/v1/students/registration-arrears/export", handler.studentRegistrationArrearExport)
