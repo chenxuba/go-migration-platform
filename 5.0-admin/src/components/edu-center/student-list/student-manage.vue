@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { getStudentOverviewStatisticsApi } from '@/api/edu-center/student-list'
 import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
 
@@ -7,6 +7,9 @@ const router = useRouter()
 const currentType = ref(1)
 const totalStudents = ref(0)
 const loadingOverview = ref(false)
+const recentMonthGrowthRate = ref(0)
+const recentMonthNewStudents = ref(0)
+const growthIconUrl = 'https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/12087/static/go-up.5c9cb6eb.svg'
 
 // 子组件引用
 const studyingOrHistoryRef = ref(null)
@@ -34,6 +37,8 @@ const itemsList = ref([
 
 function applyOverviewStatistics(data = {}) {
   totalStudents.value = Number(data.totalStudents || 0)
+  recentMonthNewStudents.value = Number(data.recentMonthNewStudents || 0)
+  recentMonthGrowthRate.value = Number(data.recentMonthGrowthRate || 0)
   const countMap = {
     1: Number(data.readingStudents || 0),
     2: Number(data.historyStudents || 0),
@@ -50,6 +55,14 @@ function applyOverviewStatistics(data = {}) {
     num: countMap[item.type] ?? 0,
   }))
 }
+
+const recentGrowthDisplayText = computed(() => {
+  const value = Number(recentMonthGrowthRate.value || 0)
+  const prefix = value > 0 ? '+' : value < 0 ? '-' : ''
+  return `近1个月新增涨幅 ${prefix}${Math.abs(value)}%`
+})
+
+const recentGrowthClass = computed(() => (recentMonthGrowthRate.value < 0 ? 'overview-growth overview-growth--down' : 'overview-growth overview-growth--up'))
 
 async function getOverviewStatistics() {
   loadingOverview.value = true
@@ -132,14 +145,13 @@ useStudentListRefresh(getOverviewStatistics)
           <div class="items one ">
             <div class="items-t">
               <span class="text-3.5 text-#222 font-600">学员总数 {{ totalStudents }}</span>
-              <span class="text-3 text-#0066ff"> <i class="bg-#e6f0ff font-500">近1个月新增涨幅 -</i> <img
-                class="ml--3"
-                src="https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/12087/static/go-up.5c9cb6eb.svg"
-                alt=""
-              ></span>
+              <span :class="recentGrowthClass">
+                <i class="font-500">{{ recentGrowthDisplayText }}</i>
+                <img class="overview-growth__icon" :class="{ 'overview-growth__icon--down': recentMonthGrowthRate < 0 }" :src="growthIconUrl" alt="">
+              </span>
             </div>
             <div class="items-b text-3.25 text-#888 mt-2">
-              当前机构（在读+意向+历史）学员数量
+              当前机构（在读+意向+历史）学员数量，近30天新增 {{ recentMonthNewStudents }} 人
             </div>
           </div>
           <div
@@ -232,10 +244,49 @@ useStudentListRefresh(getOverviewStatistics)
 
           img {
             width: 14px;
-          }
+      }
+
+      .overview-growth {
+        display: inline-flex;
+        align-items: center;
+        font-size: 12px;
+
+        i {
+          font-style: normal;
+          padding: 3px 8px;
+          border-radius: 12px;
+        }
+
+        .overview-growth__icon {
+          width: 16px;
+          height: 16px;
+          margin-left: -6px;
+          margin-right: 0;
+        }
+
+        .overview-growth__icon--down {
+          transform: rotate(180deg);
+        }
+      }
+
+      .overview-growth--up {
+        color: #0066ff;
+
+        i {
+          background: #e6f0ff;
+        }
+      }
+
+      .overview-growth--down {
+        color: #ff4d4f;
+
+        i {
+          background: #fff1f0;
         }
       }
     }
+  }
+}
   }
 
   // .student-list{

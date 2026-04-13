@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"math"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -15,11 +16,30 @@ func (repo *Repository) GetStudentOverviewStatistics(ctx context.Context, instID
 			IFNULL(SUM(CASE WHEN student_status = 1 THEN 1 ELSE 0 END), 0) AS reading_students,
 			IFNULL(SUM(CASE WHEN student_status = 2 THEN 1 ELSE 0 END), 0) AS history_students,
 			IFNULL(SUM(CASE WHEN student_status = 0 THEN 1 ELSE 0 END), 0) AS intent_students,
+			IFNULL(SUM(CASE WHEN create_time >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END), 0) AS recent_month_new_students,
+			IFNULL(SUM(CASE WHEN create_time >= DATE_SUB(NOW(), INTERVAL 60 DAY) AND create_time < DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END), 0) AS previous_month_new_students,
 			IFNULL(SUM(CASE WHEN student_status IN (1, 2) AND IFNULL(is_bind_child, 0) = 0 THEN 1 ELSE 0 END), 0) AS pending_attention_students
 		FROM inst_student
 		WHERE inst_id = ? AND del_flag = 0
-	`, instID).Scan(&result.TotalStudents, &result.ReadingStudents, &result.HistoryStudents, &result.IntentStudents, &result.PendingAttentionStudents); err != nil {
+	`, instID).Scan(
+		&result.TotalStudents,
+		&result.ReadingStudents,
+		&result.HistoryStudents,
+		&result.IntentStudents,
+		&result.RecentMonthNewStudents,
+		&result.PreviousMonthNewStudents,
+		&result.PendingAttentionStudents,
+	); err != nil {
 		return model.StudentOverviewStatistics{}, err
+	}
+
+	switch {
+	case result.PreviousMonthNewStudents > 0:
+		result.RecentMonthGrowthRate = int(math.Round((float64(result.RecentMonthNewStudents-result.PreviousMonthNewStudents) / float64(result.PreviousMonthNewStudents)) * 100))
+	case result.RecentMonthNewStudents > 0:
+		result.RecentMonthGrowthRate = 100
+	default:
+		result.RecentMonthGrowthRate = 0
 	}
 
 	if err := repo.db.QueryRowContext(ctx, `

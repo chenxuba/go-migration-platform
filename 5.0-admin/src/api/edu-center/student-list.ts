@@ -14,6 +14,9 @@ export interface FieldInfo {
 
 export interface StudentOverviewStatistics {
   totalStudents: number
+  recentMonthNewStudents: number
+  previousMonthNewStudents: number
+  recentMonthGrowthRate: number
   readingStudents: number
   historyStudents: number
   intentStudents: number
