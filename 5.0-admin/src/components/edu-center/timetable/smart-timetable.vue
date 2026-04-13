@@ -804,6 +804,8 @@ let suppressScheduledLessonClickUntil = 0
 let activeDragValidationSessionId = 0
 let pendingDragPointerFrame = 0
 let pendingDragPointerState = null
+let lastResolvedDragTarget = null
+let lastResolvedDragTargetRect = null
 const focusedScheduleCellKey = ref('')
 const isSwapTimeGrid = computed(() => currentTime.value === 'swapWeek')
 const isWeekLikeView = computed(() => currentTime.value === 'week' || currentTime.value === 'swapWeek')
@@ -3969,6 +3971,31 @@ function createEmptyDragHoverState() {
   }
 }
 
+function dragHoverStateSignature(value) {
+  if (!value)
+    return ''
+  return JSON.stringify({
+    key: value.key || '',
+    teacherId: value.teacherId || '',
+    teacherName: value.teacherName || '',
+    lessonDate: value.lessonDate || '',
+    startTime: value.startTime || '',
+    endTime: value.endTime || '',
+    checking: value.checking === true,
+    valid: value.valid,
+    label: value.label || '',
+    message: value.message || '',
+    conflictTypes: Array.isArray(value.conflictTypes) ? [...value.conflictTypes] : [],
+    existingScheduleCount: Array.isArray(value.existingSchedules) ? value.existingSchedules.length : 0,
+  })
+}
+
+function pointInsideRect(clientX, clientY, rect) {
+  if (!rect)
+    return false
+  return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom
+}
+
 function setDragValidationState(target, payload = {}, options = {}) {
   const key = String(target?.key || payload?.key || '').trim()
   if (!key)
@@ -3997,8 +4024,11 @@ function setDragValidationState(target, payload = {}, options = {}) {
   if (payload?.checking == null && (payload?.valid === true || payload?.valid === false))
     next.checking = false
   dragValidationStateMap.value[key] = next
-  if (dragHoverState.value.key === key)
-    dragHoverState.value = { ...next }
+  if (dragHoverState.value.key === key) {
+    const hoverNext = { ...next }
+    if (dragHoverStateSignature(dragHoverState.value) !== dragHoverStateSignature(hoverNext))
+      dragHoverState.value = hoverNext
+  }
   return next
 }
 
@@ -4007,6 +4037,8 @@ function resetDragScheduleState() {
   clearBlockedScheduleDragAttempt()
   activeDragValidationSessionId += 1
   cancelPendingDragPointer()
+  lastResolvedDragTarget = null
+  lastResolvedDragTargetRect = null
   draggingScheduleState.value = null
   draggingScheduleCellKey.value = ''
   dragPointerState.value = {
@@ -4639,7 +4671,7 @@ function buildDragConfirmState(dragState, target) {
 function applyDragHoverState(targetKey, payload) {
   if (!targetKey)
     return
-  dragHoverState.value = {
+  const next = {
     key: targetKey,
     checking: false,
     valid: null,
@@ -4648,6 +4680,9 @@ function applyDragHoverState(targetKey, payload) {
     conflictTypes: [],
     ...payload,
   }
+  if (dragHoverStateSignature(dragHoverState.value) === dragHoverStateSignature(next))
+    return
+  dragHoverState.value = next
 }
 
 async function ensureDragTargetValidation(target, options = {}) {
@@ -5109,17 +5144,25 @@ async function copyDraggedScheduleToTarget() {
 function resolvePointerDragTarget(clientX, clientY) {
   if (typeof document === 'undefined')
     return null
+  if (lastResolvedDragTarget && pointInsideRect(clientX, clientY, lastResolvedDragTargetRect))
+    return lastResolvedDragTarget
   const el = document.elementFromPoint(clientX, clientY)
   const targetEl = el instanceof HTMLElement
     ? el.closest('[data-empty-schedule-cell-key]')
     : null
-  if (!(targetEl instanceof HTMLElement))
+  if (!(targetEl instanceof HTMLElement)) {
+    lastResolvedDragTarget = null
+    lastResolvedDragTargetRect = null
     return null
+  }
 
   const key = String(targetEl.dataset.emptyScheduleCellKey || '').trim()
-  if (!key)
+  if (!key) {
+    lastResolvedDragTarget = null
+    lastResolvedDragTargetRect = null
     return null
-  return {
+  }
+  lastResolvedDragTarget = {
     key,
     teacherId: String(targetEl.dataset.dragTargetTeacherId || '').trim(),
     teacherName: String(targetEl.dataset.dragTargetTeacherName || '').trim() || '-',
@@ -5127,6 +5170,8 @@ function resolvePointerDragTarget(clientX, clientY) {
     startTime: String(targetEl.dataset.dragTargetStartTime || '').trim(),
     endTime: String(targetEl.dataset.dragTargetEndTime || '').trim(),
   }
+  lastResolvedDragTargetRect = targetEl.getBoundingClientRect()
+  return lastResolvedDragTarget
 }
 
 // 添加监听，当模式切换时清空之前的选择
