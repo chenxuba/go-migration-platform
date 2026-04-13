@@ -5418,6 +5418,7 @@ watch(dragConflictDetailOpen, (open) => {
       @copy-current="payload => openScheduledLessonBatchPlanCopy('current', payload)"
       @edit="openScheduledLessonBatchPlanEdit"
       @edit-current="payload => openScheduledLessonBatchPlanEdit('current', payload)"
+      @updated="handleBatchPlanUpdated"
     />
 
     <ScheduleBatchPlanEditModal

@@ -168,3 +168,63 @@ type FaceAttendanceRecordSaveDTO struct {
 	StudentID int64  `json:"studentId"`
 	FaceImage string `json:"faceImage"`
 }
+
+const (
+	FaceAttendanceTodayStatisticTypePending         = "pending"
+	FaceAttendanceTodayStatisticTypeSuccess         = "success"
+	FaceAttendanceTodayStatisticTypeSuccessUnrolled = "success_unrolled"
+)
+
+type FaceAttendanceTodayStatistics struct {
+	PendingCount         int `json:"pendingCount"`
+	SuccessCount         int `json:"successCount"`
+	SuccessUnrolledCount int `json:"successUnrolledCount"`
+}
+
+type FaceAttendanceTodayDetailQueryDTO struct {
+	PageRequestModel PageRequestModel                `json:"pageRequestModel"`
+	QueryModel       FaceAttendanceTodayDetailFilter `json:"queryModel"`
+}
+
+type FaceAttendanceTodayDetailFilter struct {
+	Type      string `json:"type"`
+	SearchKey string `json:"searchKey"`
+}
+
+type FaceAttendanceTodayDetailItem struct {
+	ID                   string                              `json:"id"`
+	Type                 string                              `json:"type,omitempty"`
+	ScheduleID           string                              `json:"scheduleId,omitempty"`
+	SessionID            int64                               `json:"sessionId,omitempty"`
+	StudentID            int64                               `json:"studentId"`
+	StudentName          string                              `json:"studentName"`
+	StudentMobile        string                              `json:"studentMobile,omitempty"`
+	AvatarURL            string                              `json:"avatarUrl,omitempty"`
+	StudentSex           int                                 `json:"studentSex"`
+	IsCollect            bool                                `json:"isCollect"`
+	AttendanceTime       *time.Time                          `json:"attendanceTime,omitempty"`
+	AttendanceType       string                              `json:"attendanceType,omitempty"`
+	HasFaceSession       bool                                `json:"hasFaceSession"`
+	SessionStatus        int                                 `json:"sessionStatus"`
+	SignInTime           *time.Time                          `json:"signInTime,omitempty"`
+	SignOutTime          *time.Time                          `json:"signOutTime,omitempty"`
+	SignInImage          string                              `json:"signInImage,omitempty"`
+	SignOutImage         string                              `json:"signOutImage,omitempty"`
+	HasSchedule          bool                                `json:"hasSchedule"`
+	ClassTime            string                              `json:"classTime,omitempty"`
+	LessonStartAt        *time.Time                          `json:"lessonStartAt,omitempty"`
+	LessonEndAt          *time.Time                          `json:"lessonEndAt,omitempty"`
+	ScheduleName         string                              `json:"scheduleName,omitempty"`
+	RelatedScheduleItems []FaceAttendanceRelatedScheduleItem `json:"relatedScheduleItems,omitempty"`
+	Prompt               string                              `json:"prompt,omitempty"`
+	CanManualRollCall    bool                                `json:"canManualRollCall"`
+}
+
+type FaceAttendanceTodaySuccessRecordQueryDTO struct {
+	PageRequestModel PageRequestModel                       `json:"pageRequestModel"`
+	QueryModel       FaceAttendanceTodaySuccessRecordFilter `json:"queryModel"`
+}
+
+type FaceAttendanceTodaySuccessRecordFilter struct {
+	SearchKey string `json:"searchKey"`
+}

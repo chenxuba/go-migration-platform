@@ -1970,6 +1970,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
       @copy-current="payload => openBatchPlanEdit(currentDetailSchedule, 'current', payload, 'copy')"
       @edit="handleScheduleDetailEdit"
       @edit-current="handleScheduleDetailEditCurrent"
+      @updated="handleBatchPlanUpdated"
     />
     <ScheduleBatchPlanEditModal
       v-model:open="scheduleBatchPlanEditOpen"

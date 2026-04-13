@@ -174,3 +174,36 @@ func (svc *Service) SaveFaceAttendanceRecord(userID int64, dto model.FaceAttenda
 	}
 	return svc.repo.SaveFaceAttendanceRecord(context.Background(), instID, instUserID, dto)
 }
+
+func (svc *Service) GetFaceAttendanceTodayStatistics(userID int64) (model.FaceAttendanceTodayStatistics, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.FaceAttendanceTodayStatistics{}, errors.New("no institution context")
+		}
+		return model.FaceAttendanceTodayStatistics{}, err
+	}
+	return svc.repo.GetFaceAttendanceTodayStatistics(context.Background(), instID)
+}
+
+func (svc *Service) PageFaceAttendanceTodayDetails(userID int64, query model.FaceAttendanceTodayDetailQueryDTO) (model.PageResult[model.FaceAttendanceTodayDetailItem], error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.PageResult[model.FaceAttendanceTodayDetailItem]{}, errors.New("no institution context")
+		}
+		return model.PageResult[model.FaceAttendanceTodayDetailItem]{}, err
+	}
+	return svc.repo.PageFaceAttendanceTodayDetails(context.Background(), instID, query)
+}
+
+func (svc *Service) PageFaceAttendanceTodaySuccessRecords(userID int64, query model.FaceAttendanceTodaySuccessRecordQueryDTO) (model.PageResult[model.FaceAttendanceRecordItem], error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.PageResult[model.FaceAttendanceRecordItem]{}, errors.New("no institution context")
+		}
+		return model.PageResult[model.FaceAttendanceRecordItem]{}, err
+	}
+	return svc.repo.PageFaceAttendanceTodaySuccessRecords(context.Background(), instID, query)
+}

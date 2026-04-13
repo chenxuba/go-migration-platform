@@ -19,6 +19,7 @@ const allFilterRef = ref()
 const createClassModal = ref(false)
 const editClassRecord = ref(null)
 const classListDrawerFlag = ref(false)
+const currentClassRecord = ref(null)
 const addStudentModalOpen = ref(false)
 const addStudentModalTitle = ref('')
 const addStudentModalLessonName = ref('')
@@ -423,7 +424,8 @@ function createClass() {
   createClassModal.value = true
 }
 
-function openClassListDrawer() {
+function openClassListDrawer(record) {
+  currentClassRecord.value = record || null
   classListDrawerFlag.value = true
 }
 
@@ -452,8 +454,19 @@ function onClassRowMenuClick({ key }, record) {
   console.log(key, record)
 }
 
-function afterClassModalSave() {
-  getClassList(queryState.value)
+async function afterClassModalSave() {
+  await getClassList(queryState.value)
+  const currentId = String(currentClassRecord.value?.id || '').trim()
+  if (!currentId)
+    return
+  const latest = dataSource.value.find(item => String(item?.id || '').trim() === currentId)
+  if (latest)
+    currentClassRecord.value = latest
+}
+
+function handleDrawerEdit(record) {
+  editClassRecord.value = record
+  createClassModal.value = true
 }
 
 watch(createClassModal, (open) => {
@@ -652,7 +665,7 @@ onMounted(async () => {
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'name'">
-                <a-button type="link"  @click="openClassListDrawer">
+                <a-button type="link" @click="openClassListDrawer(record)">
                   {{ record.name || '-' }}
                 </a-button>
               </template>
@@ -754,7 +767,11 @@ onMounted(async () => {
       @created="afterClassModalSave"
       @updated="afterClassModalSave"
     />
-    <ClassListDrawer v-model:open="classListDrawerFlag" />
+    <ClassListDrawer
+      v-model:open="classListDrawerFlag"
+      :record="currentClassRecord"
+      @edit="handleDrawerEdit"
+    />
     <ClassAddStudentModal
       v-model:open="addStudentModalOpen"
       :title="addStudentModalTitle"

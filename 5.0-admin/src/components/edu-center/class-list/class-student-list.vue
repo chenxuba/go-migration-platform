@@ -2,7 +2,6 @@
 import { DownOutlined } from '@ant-design/icons-vue'
 import ClassAddStudentModal from './class-add-student-modal.vue'
 
-const displayArray = ref(['classEndingTime'])
 const checked = ref(false)
 const columns = ref([
   {
@@ -86,10 +85,7 @@ function addStudent() {
 </script>
 
 <template>
-  <div class="m-12px">
-    <!-- 筛选条件 -->
-    <all-filter :display-array="displayArray" />
-  </div>
+<div>
   <div class="m-12px">
     <div class="bg-#fff pt-18px px-20px rounded-10px">
       <div class="flex justify-between items-center">
@@ -216,6 +212,7 @@ function addStudent() {
       </a-table>
     </div>
     <ClassAddStudentModal v-model:open="addStudentVisible" title="视知觉康复班级" />
+  </div>
   </div>
 </template>
 

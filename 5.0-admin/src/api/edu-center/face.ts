@@ -37,6 +37,41 @@ export interface FaceAttendanceRelatedScheduleItem {
   rollCallStatus?: string
 }
 
+export interface FaceAttendanceTodayStatistics {
+  pendingCount?: number
+  successCount?: number
+  successUnrolledCount?: number
+}
+
+export interface FaceAttendanceTodayDetailItem {
+  id: string
+  type?: string
+  scheduleId?: string
+  sessionId?: string | number
+  studentId: string | number
+  studentName?: string
+  studentMobile?: string
+  avatarUrl?: string
+  studentSex?: number
+  isCollect?: boolean
+  attendanceTime?: string
+  attendanceType?: string
+  hasFaceSession?: boolean
+  sessionStatus?: number
+  signInTime?: string
+  signOutTime?: string
+  signInImage?: string
+  signOutImage?: string
+  hasSchedule?: boolean
+  classTime?: string
+  lessonStartAt?: string
+  lessonEndAt?: string
+  scheduleName?: string
+  relatedScheduleItems?: FaceAttendanceRelatedScheduleItem[]
+  prompt?: string
+  canManualRollCall?: boolean
+}
+
 export interface FaceAttendanceRecordItem {
   id: string
   sessionId: string
@@ -162,6 +197,23 @@ export function commitFaceAttendanceSessionApi(data: {
   faceImage: string
 }) {
   return usePost<FaceAttendanceSession>('/api/v1/face-collections/attendance-sessions/commit', data)
+}
+
+export function getFaceAttendanceTodayStatisticsApi() {
+  return useGet<FaceAttendanceTodayStatistics>('/api/v1/face-collections/today-statistics')
+}
+
+export function pageFaceAttendanceTodayDetailsApi(data: {
+  pageRequestModel: {
+    pageSize: number
+    pageIndex: number
+  }
+  queryModel?: {
+    type?: string
+    searchKey?: string
+  }
+}) {
+  return usePost<FaceAttendanceTodayDetailItem[]>('/api/v1/face-collections/today-statistics/page', data)
 }
 
 export function listFaceAttendanceRecordsApi(params?: { limit?: number }) {

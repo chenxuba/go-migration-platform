@@ -64,6 +64,7 @@ const openDrawer = computed({
 
 const loading = ref(false)
 const detailData = ref<TeachingScheduleDetail | null>(null)
+const detailChanged = ref(false)
 const studentStore = useStudentStore()
 const openStudentDrawer = ref(false)
 const rollCallDrawerOpen = ref(false)
@@ -298,6 +299,7 @@ function handleAddStudentMenuClick({ key }) {
 }
 
 async function handleAddStudentSuccess() {
+  detailChanged.value = true
   await loadDetail()
   emit('updated')
 }
@@ -367,9 +369,20 @@ async function handleRollCallConfirmed(teachingRecordId?: string) {
   const nextTeachingRecordId = String(teachingRecordId || '').trim() || String(detailData.value?.teachingRecordId || '').trim()
   if (nextTeachingRecordId)
     currentTeachingRecordId.value = nextTeachingRecordId
+  detailChanged.value = true
   await loadDetail()
   if (currentTeachingRecordId.value)
     classRecordDrawerOpen.value = true
+}
+
+async function handleRollCallUpdated() {
+  detailChanged.value = true
+  await loadDetail()
+}
+
+async function handleClassRecordUpdated() {
+  detailChanged.value = true
+  await loadDetail()
 }
 
 function shouldSkipManualErrorMessage(error: any) {
@@ -408,6 +421,7 @@ function handleStudentRemove(student: Record<string, any>) {
         if (res.code !== 200)
           throw new Error(res.message || '移出本节失败')
         messageService.success(`已将${name}移出本节`)
+        detailChanged.value = true
         await loadDetail()
         emit('updated')
       }
@@ -459,11 +473,16 @@ watch(
   () => `${openDrawer.value}|${scheduleId.value}`,
   async () => {
     if (!openDrawer.value) {
+      if (detailChanged.value) {
+        detailChanged.value = false
+        emit('updated')
+      }
       detailData.value = null
       loading.value = false
       activeStudentTabKey.value = 'students'
       return
     }
+    detailChanged.value = false
     activeStudentTabKey.value = 'students'
     await loadDetail()
   },
@@ -826,10 +845,10 @@ watch(
       v-model:open="rollCallDrawerOpen"
       :schedule-id="scheduleId"
       :lesson-day="detailData?.lessonDate || ''"
-      @updated="loadDetail"
+      @updated="handleRollCallUpdated"
       @confirmed="handleRollCallConfirmed"
     />
-    <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="currentTeachingRecordId || detailData?.teachingRecordId || ''" @updated="loadDetail" />
+    <ClassRecordDetails v-model:open="classRecordDrawerOpen" :teaching-record-id="currentTeachingRecordId || detailData?.teachingRecordId || ''" @updated="handleClassRecordUpdated" />
     <RollCallAddStudentModal
       v-model:open="addStudentModalOpen"
       :title="addStudentModalTitle"

@@ -352,4 +352,5 @@ watch(
 .deleted-empty-state {
   min-height: calc(100vh - 55px);
 }
+
 </style>
