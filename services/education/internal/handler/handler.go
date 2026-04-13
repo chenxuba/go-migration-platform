@@ -24,6 +24,7 @@ func New(svc *service.Service) *Handler {
 
 func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/health", handler.health)
+	mux.HandleFunc("/api/v1/wechat/official/callback", handler.wechatOfficialCallback)
 	mux.HandleFunc("/api/v1/students", handler.students)
 	mux.HandleFunc("/api/v1/students/detail", handler.studentDetailView)
 	mux.HandleFunc("/api/v1/orders", handler.orders)

@@ -61,6 +61,16 @@ func main() {
 		mqClient = nil
 	}
 	svc := service.New(store, repo, tokenManager, esClient, mqClient, qiniuClient)
+	svc.ConfigureWeChatOfficial(service.WeChatOfficialConfig{
+		AppID:                   cfg.WeChatOfficialAppID,
+		Secret:                  cfg.WeChatOfficialSecret,
+		Token:                   cfg.WeChatOfficialToken,
+		MiniProgramAppID:        cfg.WeChatOfficialMiniProgramAppID,
+		MiniProgramPagePath:     cfg.WeChatOfficialMiniProgramPagePath,
+		MiniProgramThumbMediaID: cfg.WeChatOfficialMiniProgramThumbMediaID,
+		MiniProgramTitle:        cfg.WeChatOfficialMiniProgramTitle,
+		TextContent:             cfg.WeChatOfficialTextContent,
+	})
 	svc.StartBackgroundJobs(context.Background())
 	h := handler.New(svc)
 
