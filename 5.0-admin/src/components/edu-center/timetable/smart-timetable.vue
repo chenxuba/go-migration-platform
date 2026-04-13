@@ -50,6 +50,8 @@ const SMART_TIMETABLE_VIEW_MODE_KEY = 'smart-timetable-view-mode'
 const DRAG_HOVER_VALIDATE_DEBOUNCE_MS = 90
 const DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD = 24
 const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 24
+const DRAG_PRIORITY_NEAR_RADIUS = 240
+const DRAG_LAZY_VALIDATE_DELAY_MS = 32
 
 function getSavedTimeView() {
   if (typeof window === 'undefined')
@@ -799,6 +801,7 @@ let customScheduleDragMoveHandler = null
 let customScheduleDragUpHandler = null
 let dragHoverValidationTimer = null
 let pendingDragHoverValidationKey = ''
+let dragLazyValidationTimer = null
 let activeDraggingScheduleElement = null
 let activeDraggingScheduleElementStyleText = ''
 let blockedScheduleDragAttempt = null
@@ -3921,6 +3924,31 @@ function clearDragHoverValidationTimer() {
   pendingDragHoverValidationKey = ''
 }
 
+function clearDragLazyValidationTimer() {
+  if (!dragLazyValidationTimer)
+    return
+  if (typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function')
+    window.cancelIdleCallback(dragLazyValidationTimer)
+  else
+    clearTimeout(dragLazyValidationTimer)
+  dragLazyValidationTimer = null
+}
+
+function scheduleDragLazyValidation(task) {
+  clearDragLazyValidationTimer()
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    dragLazyValidationTimer = window.requestIdleCallback(() => {
+      dragLazyValidationTimer = null
+      void task()
+    }, { timeout: DRAG_LAZY_VALIDATE_DELAY_MS * 4 })
+    return
+  }
+  dragLazyValidationTimer = setTimeout(() => {
+    dragLazyValidationTimer = null
+    void task()
+  }, DRAG_LAZY_VALIDATE_DELAY_MS)
+}
+
 function activateDraggingScheduleElement(element) {
   if (!(element instanceof HTMLElement))
     return
@@ -3982,6 +4010,7 @@ function clearCustomScheduleDragListeners() {
     return
   pendingScheduleDragStart = null
   clearDragHoverValidationTimer()
+  clearDragLazyValidationTimer()
   clearDraggingScheduleElement()
   if (customScheduleDragMoveHandler)
     document.removeEventListener('mousemove', customScheduleDragMoveHandler)
@@ -4159,6 +4188,7 @@ function resetDragScheduleState() {
   clearBlockedScheduleDragAttempt()
   activeDragValidationSessionId += 1
   clearDragHoverValidationTimer()
+  clearDragLazyValidationTimer()
   cancelPendingDragPointer()
   lastResolvedDragTarget = null
   lastResolvedDragTargetRect = null
@@ -4602,6 +4632,86 @@ function collectVisibleEmptyDragTargets() {
   return targets
 }
 
+function dragValidationViewportRect() {
+  if (timetableRootRef.value instanceof HTMLElement) {
+    const rect = timetableRootRef.value.getBoundingClientRect()
+    return {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+    }
+  }
+  if (typeof window !== 'undefined') {
+    return {
+      left: 0,
+      top: 0,
+      right: window.innerWidth,
+      bottom: window.innerHeight,
+    }
+  }
+  return null
+}
+
+function dragValidationAnchorPoint(dragState) {
+  if (dragPointerState.value.visible)
+    return { x: dragPointerState.value.x, y: dragPointerState.value.y }
+  if (dragState?.sourceCenterX != null && dragState?.sourceCenterY != null) {
+    return {
+      x: Number(dragState.sourceCenterX),
+      y: Number(dragState.sourceCenterY),
+    }
+  }
+  return null
+}
+
+function classifyDragValidationTargets(targets, dragState) {
+  const viewportRect = dragValidationViewportRect()
+  const anchor = dragValidationAnchorPoint(dragState)
+  const visibleNear = []
+  const visibleRest = []
+  const offscreen = []
+
+  targets.forEach((target) => {
+    const cellEl = findEmptyDragCellElement(target.key)
+    if (!(cellEl instanceof HTMLElement)) {
+      offscreen.push(target)
+      return
+    }
+    const rect = cellEl.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    const inViewport = Boolean(viewportRect)
+      && rect.right >= viewportRect.left
+      && rect.left <= viewportRect.right
+      && rect.bottom >= viewportRect.top
+      && rect.top <= viewportRect.bottom
+    const distance = anchor
+      ? Math.hypot(centerX - anchor.x, centerY - anchor.y)
+      : Number.POSITIVE_INFINITY
+
+    if (inViewport && distance <= DRAG_PRIORITY_NEAR_RADIUS) {
+      visibleNear.push({ target, distance })
+      return
+    }
+    if (inViewport) {
+      visibleRest.push({ target, distance })
+      return
+    }
+    offscreen.push({ target, distance })
+  })
+
+  const sortByDistance = (list) => list
+    .sort((a, b) => a.distance - b.distance)
+    .map(item => item.target)
+
+  return {
+    visibleNear: sortByDistance(visibleNear),
+    visibleRest: sortByDistance(visibleRest),
+    offscreen: sortByDistance(offscreen),
+  }
+}
+
 function applyDragValidationResult(target, result, options = {}) {
   const dragState = options.dragState || draggingScheduleState.value
   if (dragState)
@@ -4985,30 +5095,47 @@ async function primeDragValidationForVisibleTargets(dragState, sessionId) {
   await waitForNextDragFrame()
   if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
     return
+  const { visibleNear, visibleRest, offscreen } = classifyDragValidationTargets(remoteTargets, dragState)
+  const orderedTargets = [...visibleNear, ...visibleRest, ...offscreen]
+  if (!orderedTargets.length)
+    return
 
-  if (remoteTargets.length <= DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD) {
-    await validateDragTargetsInBatch(remoteTargets, {
+  const firstWaveCount = Math.min(
+    orderedTargets.length,
+    Math.max(DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD, visibleNear.length || 0),
+  )
+  const firstWaveTargets = orderedTargets.slice(0, firstWaveCount)
+  const remainingTargets = orderedTargets.slice(firstWaveCount)
+
+  for (let i = 0; i < firstWaveTargets.length; i += DRAG_BATCH_VALIDATE_CHUNK_SIZE) {
+    if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
+      return
+    const chunk = firstWaveTargets.slice(i, i + DRAG_BATCH_VALIDATE_CHUNK_SIZE)
+    await validateDragTargetsInBatch(chunk, {
       dragState,
       sessionId,
     })
-    return
+    await waitForNextDragFrame()
   }
 
-  const chunks = []
-  for (let i = 0; i < remoteTargets.length; i += DRAG_BATCH_VALIDATE_CHUNK_SIZE)
-    chunks.push(remoteTargets.slice(i, i + DRAG_BATCH_VALIDATE_CHUNK_SIZE))
+  if (!remainingTargets.length)
+    return
 
-  for (const chunk of chunks) {
+  const runRemainingValidation = async () => {
     if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
       return
-    await waitForNextDragFrame()
-    if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState.scheduleId)
+    const chunk = remainingTargets.splice(0, DRAG_BATCH_VALIDATE_CHUNK_SIZE)
+    if (!chunk.length)
       return
     await validateDragTargetsInBatch(chunk, {
       dragState,
       sessionId,
     })
+    if (remainingTargets.length)
+      scheduleDragLazyValidation(runRemainingValidation)
   }
+
+  scheduleDragLazyValidation(runRemainingValidation)
 }
 
 function emptyLessonDragState(column, record) {
@@ -5053,6 +5180,8 @@ function handleSchedulePointerDown(event, text, column, record) {
           ...pendingScheduleDragStart.dragState,
           previewWidth: pendingScheduleDragStart.rect.width,
           previewHeight: pendingScheduleDragStart.rect.height,
+          sourceCenterX: pendingScheduleDragStart.rect.left + pendingScheduleDragStart.rect.width / 2,
+          sourceCenterY: pendingScheduleDragStart.rect.top + pendingScheduleDragStart.rect.height / 2,
           offsetX: pendingScheduleDragStart.offsetX,
           offsetY: pendingScheduleDragStart.offsetY,
         }
