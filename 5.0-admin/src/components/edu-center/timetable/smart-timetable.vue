@@ -4753,7 +4753,7 @@ async function primeDragValidationForVisibleTargets(dragState, sessionId) {
     setDragValidationState(target, {
       checking: true,
       valid: null,
-      label: '检测中...',
+      label: '检测中',
       message: '正在检测当前空点是否可调',
       conflictTypes: [],
       existingSchedules: [],
@@ -4867,7 +4867,7 @@ function handleSchedulePointerDown(event, text, column, record) {
       setDragValidationState(target, {
         checking: true,
         valid: null,
-        label: '检测中...',
+        label: '检测中',
         message: '正在检测当前空点是否可调',
         conflictTypes: [],
         existingSchedules: [],
@@ -4876,7 +4876,7 @@ function handleSchedulePointerDown(event, text, column, record) {
         ...target,
         checking: true,
         valid: null,
-        label: '检测中...',
+        label: '检测中',
         message: '正在检测当前空点是否可调',
         conflictTypes: [],
       })
