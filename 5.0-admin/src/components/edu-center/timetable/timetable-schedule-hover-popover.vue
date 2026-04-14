@@ -729,8 +729,12 @@ onUnmounted(() => {
   max-width: min(344px, 90vw);
   min-height: 273px;
   background: #fff;
+  border: 1px solid rgba(22, 109, 255, 0.08);
   border-radius: 8px;
   overflow: hidden;
+  box-shadow:
+    0 18px 40px rgba(15, 23, 42, 0.12),
+    0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
 .st-schedule-hover-card__header {
