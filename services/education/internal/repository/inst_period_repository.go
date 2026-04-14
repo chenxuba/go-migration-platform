@@ -170,6 +170,9 @@ func (repo *Repository) ReplaceInstPeriodConfig(ctx context.Context, instID int6
 	if payload.Version <= 0 {
 		payload.Version = 1
 	}
+	if err := repo.NormalizeInstPeriodPayloadBoundTeachers(ctx, instID, payload); err != nil {
+		return err
+	}
 
 	tx, err := repo.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
@@ -287,9 +290,10 @@ func validateBoundTeacherGroupsRetainedTx(ctx context.Context, tx *sql.Tx, instI
 	}
 
 	rows, err := tx.QueryContext(ctx, `
-		SELECT g.group_uuid, g.name, COUNT(t.id) AS teacher_count
+		SELECT g.group_uuid, g.name, COUNT(DISTINCT u.id) AS teacher_count
 		FROM inst_period_group g
 		LEFT JOIN inst_period_group_teacher t ON t.group_id = g.id
+		LEFT JOIN inst_user u ON u.id = t.teacher_user_id AND u.inst_id = g.inst_id AND u.del_flag = 0
 		WHERE g.inst_id = ? AND g.del_flag = 0
 		GROUP BY g.id, g.group_uuid, g.name
 	`, instID)
@@ -347,7 +351,7 @@ func (repo *Repository) GetLatestInstPeriodPayload(ctx context.Context, instID i
 	if err := repo.ensureInitialInstPeriodVersion(ctx, instID); err != nil {
 		return nil, err
 	}
-	return repo.loadInstPeriodPayloadBySQL(ctx, `
+	return repo.loadInstPeriodPayloadBySQL(ctx, instID, `
 		SELECT payload_json
 		FROM inst_period_config_version
 		WHERE inst_id = ?
@@ -361,7 +365,7 @@ func (repo *Repository) GetInstPeriodPayloadForDate(ctx context.Context, instID 
 		return nil, err
 	}
 	weekStart := mondayOfInstPeriodWeek(targetDate).Format("2006-01-02")
-	payload, err := repo.loadInstPeriodPayloadBySQL(ctx, `
+	payload, err := repo.loadInstPeriodPayloadBySQL(ctx, instID, `
 		SELECT payload_json
 		FROM inst_period_config_version
 		WHERE inst_id = ? AND effective_week_start <= ?
@@ -543,7 +547,7 @@ func (repo *Repository) getCurrentInstPeriodConfigJSONFromTables(ctx context.Con
 		if err != nil {
 			return nil, err
 		}
-		teachers, err := repo.listPeriodTeachersForGroup(ctx, g.dbID)
+		teachers, err := repo.listPeriodTeachersForGroup(ctx, instID, g.dbID)
 		if err != nil {
 			return nil, err
 		}
@@ -593,13 +597,14 @@ func (repo *Repository) listPeriodSlotsForGroup(ctx context.Context, groupID int
 	return list, rows.Err()
 }
 
-func (repo *Repository) listPeriodTeachersForGroup(ctx context.Context, groupID int64) ([]any, error) {
+func (repo *Repository) listPeriodTeachersForGroup(ctx context.Context, instID, groupID int64) ([]any, error) {
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT teacher_user_id, teacher_name
-		FROM inst_period_group_teacher
-		WHERE group_id = ?
-		ORDER BY id ASC
-	`, groupID)
+		SELECT t.teacher_user_id, IFNULL(u.nick_name, ''), IFNULL(u.disabled, 0)
+		FROM inst_period_group_teacher t
+		INNER JOIN inst_user u ON u.id = t.teacher_user_id AND u.inst_id = ? AND u.del_flag = 0
+		WHERE t.group_id = ?
+		ORDER BY t.id ASC
+	`, instID, groupID)
 	if err != nil {
 		return nil, err
 	}
@@ -608,12 +613,13 @@ func (repo *Repository) listPeriodTeachersForGroup(ctx context.Context, groupID 
 	for rows.Next() {
 		var uid int64
 		var name string
-		if err := rows.Scan(&uid, &name); err != nil {
+		var disabled bool
+		if err := rows.Scan(&uid, &name, &disabled); err != nil {
 			return nil, err
 		}
 		list = append(list, map[string]any{
 			"id":   strconv.FormatInt(uid, 10),
-			"name": name,
+			"name": formatInstPeriodBoundTeacherName(uid, name, disabled),
 		})
 	}
 	return list, rows.Err()
@@ -629,6 +635,7 @@ func (repo *Repository) ListPeriodTeacherUserIDsByGroupUUID(ctx context.Context,
 		SELECT t.teacher_user_id
 		FROM inst_period_group_teacher t
 		INNER JOIN inst_period_group g ON g.id = t.group_id AND g.inst_id = ? AND g.del_flag = 0 AND g.group_uuid = ?
+		INNER JOIN inst_user u ON u.id = t.teacher_user_id AND u.inst_id = g.inst_id AND u.del_flag = 0
 		ORDER BY t.id ASC
 	`, instID, u)
 	if err != nil {
@@ -650,6 +657,22 @@ func (repo *Repository) ListPeriodTeacherUserIDsByGroupUUID(ctx context.Context,
 
 func (repo *Repository) ListPeriodTeacherUserIDsByGroupUUIDForDate(ctx context.Context, instID int64, groupUUID string, targetDate time.Time) ([]int64, error) {
 	return repo.ListPeriodTeacherUserIDsByGroupUUID(ctx, instID, groupUUID)
+}
+
+func (repo *Repository) HasPeriodGroupUUID(ctx context.Context, instID int64, groupUUID string) (bool, error) {
+	u := strings.TrimSpace(groupUUID)
+	if u == "" {
+		return false, nil
+	}
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM inst_period_group
+		WHERE inst_id = ? AND del_flag = 0 AND group_uuid = ?
+	`, instID, u).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // ClearInstConfigLegacyUnifiedPeriodJSON 主数据已在关系表时清空 legacy 列，避免双源
@@ -776,7 +799,7 @@ func (repo *Repository) ensureInitialInstPeriodVersion(ctx context.Context, inst
 	return repo.UpsertInstPeriodConfigVersion(ctx, instID, baseStart, payload)
 }
 
-func (repo *Repository) loadInstPeriodPayloadBySQL(ctx context.Context, query string, args ...any) (*instPeriodFilePayload, error) {
+func (repo *Repository) loadInstPeriodPayloadBySQL(ctx context.Context, instID int64, query string, args ...any) (*instPeriodFilePayload, error) {
 	var raw string
 	err := repo.db.QueryRowContext(ctx, query, args...).Scan(&raw)
 	if err != nil {
@@ -785,7 +808,14 @@ func (repo *Repository) loadInstPeriodPayloadBySQL(ctx context.Context, query st
 		}
 		return nil, err
 	}
-	return ParseUnifiedPeriodPayloadFromAny(raw)
+	payload, err := ParseUnifiedPeriodPayloadFromAny(raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := repo.NormalizeInstPeriodPayloadBoundTeachers(ctx, instID, payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
 }
 
 func mondayOfInstPeriodWeek(value time.Time) time.Time {
@@ -915,4 +945,104 @@ func uniquePositiveInt64s(list []int64) []int64 {
 		out = append(out, item)
 	}
 	return out
+}
+
+type instPeriodBoundTeacherMeta struct {
+	Name     string
+	Disabled bool
+}
+
+func formatInstPeriodBoundTeacherName(id int64, name string, disabled bool) string {
+	label := strings.TrimSpace(name)
+	if label == "" {
+		label = strconv.FormatInt(id, 10)
+	}
+	if disabled && !strings.HasSuffix(label, "（离职）") {
+		label += "（离职）"
+	}
+	return label
+}
+
+func sanitizeInstPeriodPayloadBoundTeachers(payload *instPeriodFilePayload, teachersByID map[int64]instPeriodBoundTeacherMeta) {
+	if payload == nil {
+		return
+	}
+	for gi := range payload.Groups {
+		group := &payload.Groups[gi]
+		if len(group.BoundTeachers) == 0 {
+			continue
+		}
+		seen := make(map[int64]struct{}, len(group.BoundTeachers))
+		sanitized := make([]instPeriodBoundTeacherJSON, 0, len(group.BoundTeachers))
+		for _, teacher := range group.BoundTeachers {
+			id, err := strconv.ParseInt(strings.TrimSpace(teacher.ID), 10, 64)
+			if err != nil || id <= 0 {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			meta, ok := teachersByID[id]
+			if !ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			sanitized = append(sanitized, instPeriodBoundTeacherJSON{
+				ID:   strconv.FormatInt(id, 10),
+				Name: formatInstPeriodBoundTeacherName(id, meta.Name, meta.Disabled),
+			})
+		}
+		group.BoundTeachers = sanitized
+	}
+}
+
+func (repo *Repository) loadInstPeriodBoundTeacherMeta(ctx context.Context, instID int64, teacherUserIDs []int64) (map[int64]instPeriodBoundTeacherMeta, error) {
+	result := make(map[int64]instPeriodBoundTeacherMeta)
+	ids := uniquePositiveInt64s(teacherUserIDs)
+	if len(ids) == 0 {
+		return result, nil
+	}
+	args := make([]any, 0, 1+len(ids))
+	args = append(args, instID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(nick_name, ''), IFNULL(disabled, 0)
+		FROM inst_user
+		WHERE inst_id = ? AND del_flag = 0 AND id IN (`+sqlPlaceholders(len(ids))+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var name string
+		var disabled bool
+		if err := rows.Scan(&id, &name, &disabled); err != nil {
+			return nil, err
+		}
+		result[id] = instPeriodBoundTeacherMeta{
+			Name:     strings.TrimSpace(name),
+			Disabled: disabled,
+		}
+	}
+	return result, rows.Err()
+}
+
+func (repo *Repository) NormalizeInstPeriodPayloadBoundTeachers(ctx context.Context, instID int64, payload *InstPeriodFilePayloadAlias) error {
+	if payload == nil {
+		return nil
+	}
+	teacherIDs := make([]int64, 0)
+	for _, group := range payload.Groups {
+		teacherIDs = append(teacherIDs, collectTeacherIDsFromInstPeriodGroup(group)...)
+	}
+	teachersByID, err := repo.loadInstPeriodBoundTeacherMeta(ctx, instID, teacherIDs)
+	if err != nil {
+		return err
+	}
+	sanitizeInstPeriodPayloadBoundTeachers(payload, teachersByID)
+	return nil
 }

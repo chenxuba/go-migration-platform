@@ -394,6 +394,13 @@ func (svc *Service) resolveMatrixTeacherAllowList(ctx context.Context, instID in
 			}
 			return m, ordered, nil
 		}
+		exists, err := svc.repo.HasPeriodGroupUUID(ctx, instID, u)
+		if err != nil {
+			return nil, nil, err
+		}
+		if exists {
+			return map[int64]struct{}{}, []int64{}, nil
+		}
 	}
 	ordered := uniquePositiveTeacherIDs(query.MatrixTeacherIDs)
 	if len(ordered) > 0 {

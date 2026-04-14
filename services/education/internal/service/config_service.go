@@ -220,6 +220,9 @@ func (svc *Service) SetInstConfig(userID int64, payload map[string]any) (InstCon
 
 func (svc *Service) resolveInstPeriodUpdateResult(ctx context.Context, instID int64, periodPayload *repository.InstPeriodFilePayloadAlias) (InstConfigUpdateResult, error) {
 	result := InstConfigUpdateResult{Success: true}
+	if err := svc.repo.NormalizeInstPeriodPayloadBoundTeachers(ctx, instID, periodPayload); err != nil {
+		return result, err
+	}
 	latestPayload, err := svc.repo.GetLatestInstPeriodPayload(ctx, instID)
 	if err != nil {
 		return result, err

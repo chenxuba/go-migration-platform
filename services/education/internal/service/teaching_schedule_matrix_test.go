@@ -315,6 +315,7 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesDisabledTeacherFromPeriodG
 				SELECT t.teacher_user_id
 				FROM inst_period_group_teacher t
 				INNER JOIN inst_period_group g ON g.id = t.group_id AND g.inst_id = ? AND g.del_flag = 0 AND g.group_uuid = ?
+				INNER JOIN inst_user u ON u.id = t.teacher_user_id AND u.inst_id = g.inst_id AND u.del_flag = 0
 				ORDER BY t.id ASC
 			`,
 			args:    []any{instID, groupUUID},
@@ -365,6 +366,130 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesDisabledTeacherFromPeriodG
 		}
 		if day.ScheduleListVoList[0].TeacherName != "孙悟空（离职）" {
 			t.Fatalf("expected disabled teacher display name with suffix, got %q", day.ScheduleListVoList[0].TeacherName)
+		}
+	}
+}
+
+func TestListTeachingSchedulesByTeacherMatrix_ExistingEmptyPeriodGroupShowsNoTeacherColumns(t *testing.T) {
+	userID := int64(701)
+	instID := int64(801)
+	groupUUID := "group-c"
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		findInstIDExpectation(userID, instID),
+		{
+			query: `
+				SELECT id,
+					COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name
+				FROM inst_user
+				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0
+				ORDER BY id ASC
+			`,
+			args:    []any{instID},
+			columns: []string{"id", "display_name"},
+			rows: [][]driver.Value{
+				{int64(11), "陈瑞"},
+				{int64(12), "许晶晶"},
+			},
+		},
+		{
+			query: `
+				SELECT
+					id,
+					IFNULL(batch_no, ''),
+					IFNULL(batch_size, 1),
+					IFNULL(class_type, 0),
+					IFNULL(teaching_class_id, 0),
+					IFNULL(teaching_class_name, ''),
+					IFNULL(student_id, 0),
+					IFNULL(student_name, ''),
+					IFNULL(lesson_id, 0),
+					IFNULL(lesson_name, ''),
+					IFNULL(teacher_id, 0),
+					IFNULL(teacher_name, ''),
+					assistant_ids_json,
+					assistant_names_json,
+					IFNULL(classroom_id, 0),
+					IFNULL(classroom_name, ''),
+					lesson_date,
+					lesson_start_at,
+					lesson_end_at,
+					IFNULL(status, 0)
+				FROM teaching_schedule ts
+				WHERE ts.inst_id = ? AND ts.del_flag = 0 AND ts.status = ? AND ts.lesson_date >= ? AND ts.lesson_date <= ?
+				ORDER BY ts.lesson_start_at ASC, ts.id ASC
+			`,
+			args: []any{
+				instID,
+				model.TeachingScheduleStatusActive,
+				"2026-04-13",
+				"2026-04-19",
+			},
+			columns: []string{
+				"id",
+				"batch_no",
+				"batch_size",
+				"class_type",
+				"teaching_class_id",
+				"teaching_class_name",
+				"student_id",
+				"student_name",
+				"lesson_id",
+				"lesson_name",
+				"teacher_id",
+				"teacher_name",
+				"assistant_ids_json",
+				"assistant_names_json",
+				"classroom_id",
+				"classroom_name",
+				"lesson_date",
+				"lesson_start_at",
+				"lesson_end_at",
+				"status",
+			},
+			rows: [][]driver.Value{},
+		},
+		{
+			query: `
+				SELECT t.teacher_user_id
+				FROM inst_period_group_teacher t
+				INNER JOIN inst_period_group g ON g.id = t.group_id AND g.inst_id = ? AND g.del_flag = 0 AND g.group_uuid = ?
+				INNER JOIN inst_user u ON u.id = t.teacher_user_id AND u.inst_id = g.inst_id AND u.del_flag = 0
+				ORDER BY t.id ASC
+			`,
+			args:    []any{instID, groupUUID},
+			columns: []string{"teacher_user_id"},
+			rows:    [][]driver.Value{},
+		},
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM inst_period_group
+				WHERE inst_id = ? AND del_flag = 0 AND group_uuid = ?
+			`,
+			args:    []any{instID, groupUUID},
+			columns: []string{"count"},
+			rows: [][]driver.Value{
+				{int64(1)},
+			},
+		},
+	})
+	defer cleanup()
+
+	matrix, err := svc.ListTeachingSchedulesByTeacherMatrix(userID, model.TeachingScheduleListQueryDTO{
+		StartDate:       "2026-04-13",
+		EndDate:         "2026-04-19",
+		PeriodGroupUUID: groupUUID,
+	})
+	if err != nil {
+		t.Fatalf("ListTeachingSchedulesByTeacherMatrix returned error: %v", err)
+	}
+	if len(matrix) != 7 {
+		t.Fatalf("expected 7 matrix days, got %d", len(matrix))
+	}
+	for _, day := range matrix {
+		if len(day.ScheduleListVoList) != 0 {
+			t.Fatalf("expected empty teacher columns for existing empty period group on %s, got %d", day.ScheduleDate, len(day.ScheduleListVoList))
 		}
 	}
 }
