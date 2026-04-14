@@ -145,6 +145,59 @@ export function getGroupClassDetailApi(params: { id: string }) {
   return useGet<GroupClassDetailVO>('/api/v1/group-classes/detail', params)
 }
 
+export interface GroupClassDrawerScheduleItem {
+  key: string
+  classId: string
+  detailScheduleId: string
+  batchNo?: string
+  scheduleCount: number
+  completedCount: number
+  type: number
+  repeatRule: string
+  dateRangeText: string
+  timeText: string
+  weekdayText: string
+  teacherName: string
+  assistantText: string
+  classroomName: string
+  lessonName: string
+  batchMeta?: {
+    schedulingMode?: string
+    repeatRule?: string
+    holidayPolicy?: string
+    selectedWeekdays?: string[]
+    scheduleStartDate?: string
+    freeSelectedDates?: string[]
+    plannedClassCount?: number
+  }
+}
+
+export interface GroupClassDrawerWaitingRollCallScheduleItem {
+  id: string
+  batchNo?: string
+  batchSize: number
+  classId: string
+  lessonName: string
+  lessonDate: string
+  startAt: string
+  endAt: string
+  teacherName: string
+  assistantText: string
+  classroomName: string
+  callStatus: number
+  callStatusText?: string
+  canRollCall?: boolean
+  rollCallDisabledReason?: string
+}
+
+export function getGroupClassDrawerSchedulesApi(data: { classId: string }) {
+  return usePost<{ list: GroupClassDrawerScheduleItem[], total: number }>('/api/v1/group-classes/schedules', data)
+}
+
+export function getGroupClassDrawerWaitingRollCallSchedulesApi(data: { classId: string }) {
+  return usePost<{ list: GroupClassDrawerWaitingRollCallScheduleItem[], total: number }>('/api/v1/group-classes/waiting-roll-call-schedules', data)
+}
+
 export interface GroupClassStudentQueryModel {
   id?: string
   classId?: string

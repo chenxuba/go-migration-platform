@@ -353,13 +353,13 @@ function handleExportRollCallSheet() {
             />
           </a-tab-pane>
           <a-tab-pane key="1" tab="日程">
-            <schedule />
+            <schedule :open="openDrawer" :class-id="String(displayRecord?.id || '')" :class-name="displayRecord?.name || ''" />
           </a-tab-pane>
           <a-tab-pane key="2" tab="待点名日程">
-            <waitingRollCallSchedule />
+            <waitingRollCallSchedule :open="openDrawer" :class-id="String(displayRecord?.id || '')" :class-name="displayRecord?.name || ''" />
           </a-tab-pane>
           <a-tab-pane key="3" tab="上课记录">
-            <classRecord />
+            <classRecord :open="openDrawer" :class-id="String(displayRecord?.id || '')" :class-name="displayRecord?.name || ''" />
           </a-tab-pane>
         </a-tabs>
       </div>

@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -504,6 +506,175 @@ func (svc *Service) AggregateGroupClassStatistics(userID int64, q model.GroupCla
 	return svc.repo.AggregateGroupClassStatistics(context.Background(), instID, q)
 }
 
+func (svc *Service) ListGroupClassDrawerSchedules(userID int64, dto model.GroupClassDrawerSchedulesQueryDTO) (model.GroupClassDrawerScheduleListResult, error) {
+	var zero model.GroupClassDrawerScheduleListResult
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.ClassID), 10, 64)
+	if err != nil || classID <= 0 {
+		return zero, errors.New("classId 无效")
+	}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return zero, errors.New("no institution context")
+		}
+		return zero, err
+	}
+	ctx := context.Background()
+	schedules, err := svc.repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
+		GroupClassIDs: []int64{classID},
+		SortDirection: "asc",
+	})
+	if err != nil {
+		return zero, err
+	}
+	if err := svc.repo.FillTeachingScheduleCallStatus(ctx, instID, schedules); err != nil {
+		return zero, err
+	}
+	if len(schedules) == 0 {
+		return model.GroupClassDrawerScheduleListResult{
+			List:  []model.GroupClassDrawerScheduleVO{},
+			Total: 0,
+		}, nil
+	}
+
+	grouped := make(map[string][]model.TeachingScheduleVO)
+	order := make([]string, 0, len(schedules))
+	for _, item := range schedules {
+		key := strings.TrimSpace(item.BatchNo)
+		if key == "" {
+			key = "single:" + strings.TrimSpace(item.ID)
+		}
+		if _, ok := grouped[key]; !ok {
+			order = append(order, key)
+		}
+		grouped[key] = append(grouped[key], item)
+	}
+
+	result := make([]model.GroupClassDrawerScheduleVO, 0, len(grouped))
+	for _, key := range order {
+		groupItems := grouped[key]
+		if len(groupItems) == 0 {
+			continue
+		}
+		sort.SliceStable(groupItems, func(i, j int) bool {
+			if groupItems[i].StartAt.Equal(groupItems[j].StartAt) {
+				return strings.TrimSpace(groupItems[i].ID) < strings.TrimSpace(groupItems[j].ID)
+			}
+			return groupItems[i].StartAt.Before(groupItems[j].StartAt)
+		})
+		first := groupItems[0]
+		last := groupItems[len(groupItems)-1]
+		batchNo := strings.TrimSpace(first.BatchNo)
+		repeatRule := "单次"
+		weekdayText := weekdayTextFromDate(first.LessonDate)
+		var batchMeta *model.TeachingScheduleBatchMeta
+		if batchNo != "" {
+			ids := make([]string, 0, len(groupItems))
+			for _, item := range groupItems {
+				ids = append(ids, item.ID)
+			}
+			batchDetail, detailErr := svc.repo.GetTeachingScheduleBatchDetail(ctx, instID, model.TeachingScheduleBatchDetailQueryDTO{
+				BatchNo: batchNo,
+				IDs:     ids,
+			})
+			if detailErr == nil {
+				batchMeta = batchDetail.BatchMeta
+			}
+		}
+		if batchMeta != nil {
+			repeatRule = formatBatchRepeatRule(batchMeta)
+			weekdayText = formatBatchWeekdayText(batchMeta, first.LessonDate)
+		}
+		if batchNo != "" && repeatRule == "单次" && len(groupItems) > 1 {
+			repeatRule = "重复排课"
+		}
+
+		completedCount := 0
+		for _, item := range groupItems {
+			if item.CallStatus == 2 {
+				completedCount++
+			}
+		}
+
+		result = append(result, model.GroupClassDrawerScheduleVO{
+			Key:              key,
+			ClassID:          strconv.FormatInt(classID, 10),
+			DetailScheduleID: first.ID,
+			BatchNo:          batchNo,
+			ScheduleCount:    len(groupItems),
+			CompletedCount:   completedCount,
+			Type:             groupScheduleType(batchMeta, len(groupItems)),
+			RepeatRule:       repeatRule,
+			DateRangeText:    buildScheduleDateRangeText(first.LessonDate, last.LessonDate),
+			TimeText:         buildScheduleTimeText(first.StartAt, first.EndAt),
+			WeekdayText:      weekdayText,
+			TeacherName:      first.TeacherName,
+			AssistantText:    joinAssistantNames(groupItems),
+			ClassroomName:    first.ClassroomName,
+			LessonName:       first.LessonName,
+			BatchMeta:        batchMeta,
+		})
+	}
+	return model.GroupClassDrawerScheduleListResult{
+		List:  result,
+		Total: len(result),
+	}, nil
+}
+
+func (svc *Service) ListGroupClassDrawerWaitingRollCallSchedules(userID int64, dto model.GroupClassDrawerSchedulesQueryDTO) (model.GroupClassDrawerWaitingRollCallScheduleListResult, error) {
+	var zero model.GroupClassDrawerWaitingRollCallScheduleListResult
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.ClassID), 10, 64)
+	if err != nil || classID <= 0 {
+		return zero, errors.New("classId 无效")
+	}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return zero, errors.New("no institution context")
+		}
+		return zero, err
+	}
+	ctx := context.Background()
+	schedules, err := svc.repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
+		GroupClassIDs: []int64{classID},
+		SortDirection: "asc",
+	})
+	if err != nil {
+		return zero, err
+	}
+	if err := svc.repo.FillTeachingScheduleCallStatus(ctx, instID, schedules); err != nil {
+		return zero, err
+	}
+
+	result := make([]model.GroupClassDrawerWaitingRollCallScheduleVO, 0, len(schedules))
+	for _, item := range schedules {
+		if item.CallStatus == 2 {
+			continue
+		}
+		result = append(result, model.GroupClassDrawerWaitingRollCallScheduleVO{
+			ID:                     item.ID,
+			BatchNo:                item.BatchNo,
+			BatchSize:              item.BatchSize,
+			ClassID:                item.TeachingClassID,
+			LessonName:             item.LessonName,
+			LessonDate:             item.LessonDate,
+			StartAt:                item.StartAt,
+			EndAt:                  item.EndAt,
+			TeacherName:            item.TeacherName,
+			AssistantText:          strings.Join(item.AssistantNames, "、"),
+			ClassroomName:          item.ClassroomName,
+			CallStatus:             item.CallStatus,
+			CallStatusText:         item.CallStatusText,
+			CanRollCall:            item.CanRollCall,
+			RollCallDisabledReason: item.RollCallDisabledReason,
+		})
+	}
+	return model.GroupClassDrawerWaitingRollCallScheduleListResult{
+		List:  result,
+		Total: len(result),
+	}, nil
+}
+
 func (svc *Service) GetGroupClassStudentStatistics(userID int64, q model.GroupClassStudentQueryModel) (model.GroupClassStudentStatisticsVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
@@ -645,4 +816,110 @@ func (svc *Service) PageTuitionAccountsByLessonID(userID int64, body model.Tuiti
 		return zero, err
 	}
 	return model.TuitionAccountListByLessonIDResult{List: list, Total: total}, nil
+}
+
+func formatBatchRepeatRule(meta *model.TeachingScheduleBatchMeta) string {
+	if meta == nil {
+		return "单次"
+	}
+	switch strings.TrimSpace(strings.ToLower(meta.RepeatRule)) {
+	case "daily":
+		return "每天重复"
+	case "weekly":
+		return "每周重复"
+	case "biweekly":
+		return "隔周重复"
+	case "alternateday":
+		return "隔天重复"
+	case "alternate_day":
+		return "隔天重复"
+	case "none", "":
+		if strings.EqualFold(strings.TrimSpace(meta.SchedulingMode), "free") && len(meta.FreeSelectedDates) > 1 {
+			return "自由排课"
+		}
+		return "单次"
+	default:
+		return meta.RepeatRule
+	}
+}
+
+func formatBatchWeekdayText(meta *model.TeachingScheduleBatchMeta, fallbackDate string) string {
+	if meta != nil && len(meta.SelectedWeekdays) > 0 {
+		return strings.Join(meta.SelectedWeekdays, "、")
+	}
+	if meta != nil {
+		switch strings.TrimSpace(strings.ToLower(meta.RepeatRule)) {
+		case "daily":
+			return "每天"
+		case "alternateday", "alternate_day":
+			return "隔天"
+		}
+	}
+	return weekdayTextFromDate(fallbackDate)
+}
+
+func weekdayTextFromDate(dateText string) string {
+	t, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(dateText), time.Local)
+	if err != nil {
+		return "-"
+	}
+	weeks := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+	return weeks[int(t.Weekday())]
+}
+
+func buildScheduleDateRangeText(startDate, endDate string) string {
+	startDate = strings.TrimSpace(startDate)
+	endDate = strings.TrimSpace(endDate)
+	if startDate == "" {
+		return "-"
+	}
+	if endDate == "" || startDate == endDate {
+		return startDate
+	}
+	return startDate + "~" + endDate
+}
+
+func buildScheduleTimeText(startAt, endAt time.Time) string {
+	if startAt.IsZero() || endAt.IsZero() {
+		return "-"
+	}
+	return startAt.Format("15:04") + "~" + endAt.Format("15:04")
+}
+
+func joinAssistantNames(items []model.TeachingScheduleVO) string {
+	names := make([]string, 0, 4)
+	seen := make(map[string]struct{})
+	for _, item := range items {
+		for _, name := range item.AssistantNames {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return "-"
+	}
+	return strings.Join(names, "、")
+}
+
+func groupScheduleType(meta *model.TeachingScheduleBatchMeta, scheduleCount int) int {
+	if scheduleCount > 1 {
+		return 1
+	}
+	if meta == nil {
+		return 2
+	}
+	if strings.TrimSpace(strings.ToLower(meta.RepeatRule)) != "" && !strings.EqualFold(strings.TrimSpace(meta.RepeatRule), "none") {
+		return 1
+	}
+	if len(meta.FreeSelectedDates) > 1 {
+		return 1
+	}
+	return 2
 }

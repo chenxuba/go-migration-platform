@@ -476,6 +476,57 @@ type GroupClassStatisticsVO struct {
 	StudentPersonTime int `json:"studentPersonTime"`
 }
 
+type GroupClassDrawerSchedulesQueryDTO struct {
+	ClassID string `json:"classId"`
+}
+
+type GroupClassDrawerScheduleVO struct {
+	Key              string                     `json:"key"`
+	ClassID          string                     `json:"classId"`
+	DetailScheduleID string                     `json:"detailScheduleId"`
+	BatchNo          string                     `json:"batchNo,omitempty"`
+	ScheduleCount    int                        `json:"scheduleCount"`
+	CompletedCount   int                        `json:"completedCount"`
+	Type             int                        `json:"type"`
+	RepeatRule       string                     `json:"repeatRule"`
+	DateRangeText    string                     `json:"dateRangeText"`
+	TimeText         string                     `json:"timeText"`
+	WeekdayText      string                     `json:"weekdayText"`
+	TeacherName      string                     `json:"teacherName"`
+	AssistantText    string                     `json:"assistantText"`
+	ClassroomName    string                     `json:"classroomName"`
+	LessonName       string                     `json:"lessonName"`
+	BatchMeta        *TeachingScheduleBatchMeta `json:"batchMeta,omitempty"`
+}
+
+type GroupClassDrawerScheduleListResult struct {
+	List  []GroupClassDrawerScheduleVO `json:"list"`
+	Total int                          `json:"total"`
+}
+
+type GroupClassDrawerWaitingRollCallScheduleVO struct {
+	ID                     string    `json:"id"`
+	BatchNo                string    `json:"batchNo,omitempty"`
+	BatchSize              int       `json:"batchSize"`
+	ClassID                string    `json:"classId"`
+	LessonName             string    `json:"lessonName"`
+	LessonDate             string    `json:"lessonDate"`
+	StartAt                time.Time `json:"startAt"`
+	EndAt                  time.Time `json:"endAt"`
+	TeacherName            string    `json:"teacherName"`
+	AssistantText          string    `json:"assistantText"`
+	ClassroomName          string    `json:"classroomName"`
+	CallStatus             int       `json:"callStatus"`
+	CallStatusText         string    `json:"callStatusText,omitempty"`
+	CanRollCall            bool      `json:"canRollCall"`
+	RollCallDisabledReason string    `json:"rollCallDisabledReason,omitempty"`
+}
+
+type GroupClassDrawerWaitingRollCallScheduleListResult struct {
+	List  []GroupClassDrawerWaitingRollCallScheduleVO `json:"list"`
+	Total int                                         `json:"total"`
+}
+
 // --- 集体班添加学员：对标 Class/GetStudentListByClassIds + TuitionAccount/GetTuitionAccountListByLessonId ---
 
 type GroupClassStudentListByClassIDsRequest struct {

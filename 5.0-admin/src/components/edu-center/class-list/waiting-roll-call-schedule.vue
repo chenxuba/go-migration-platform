@@ -1,96 +1,269 @@
-<script setup>
+<script setup lang="ts">
+import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
+import dayjs, { type Dayjs } from 'dayjs'
+import type { TableColumnsType } from 'ant-design-vue'
+import { computed, h, ref, watch } from 'vue'
+import { cancelTeachingScheduleScopedApi } from '@/api/edu-center/teaching-schedule'
+import { getGroupClassDrawerWaitingRollCallSchedulesApi, type GroupClassDrawerWaitingRollCallScheduleItem } from '@/api/edu-center/group-class'
+import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
+import SmartTimetableScheduleDetailDrawer from '@/components/edu-center/timetable/smart-timetable-schedule-detail-drawer.vue'
+import messageService from '@/utils/messageService'
+
+const props = withDefaults(defineProps<{
+  open?: boolean
+  classId?: string
+  className?: string
+}>(), {
+  open: false,
+  classId: '',
+  className: '',
+})
+
 const displayArray = ref(['classEndingTime'])
-const columns = [
+const columns: TableColumnsType<GroupClassDrawerWaitingRollCallScheduleItem> = [
   {
     title: '上课日期/时段',
-    dataIndex: 'date',
-    key: 'date',
-    // 排序
-    sorter: (a, b) => a.date.localeCompare(b.date),
-    width: 120,
+    dataIndex: 'lessonDate',
+    key: 'lessonDate',
+    width: 180,
   },
   {
     title: '课程名称',
-    dataIndex: 'courseName',
-    key: 'courseName',
-    width: 140,
+    dataIndex: 'lessonName',
+    key: 'lessonName',
+    width: 180,
   },
   {
     title: '上课教师',
-    dataIndex: 'teacher',
-    key: 'teacher',
-    width: 80,
+    dataIndex: 'teacherName',
+    key: 'teacherName',
+    width: 110,
   },
   {
     title: '上课助教',
-    dataIndex: 'assistant',
-    key: 'assistant',
-    width: 80,
+    dataIndex: 'assistantText',
+    key: 'assistantText',
+    width: 120,
   },
   {
     title: '上课教室',
-    dataIndex: 'classroom',
-    key: 'classroom',
-    width: 80,
+    dataIndex: 'classroomName',
+    key: 'classroomName',
+    width: 120,
   },
   {
     title: '操作',
     dataIndex: 'action',
     key: 'action',
-    width: 100,
+    width: 150,
+    fixed: 'right',
   },
 ]
 
-const data = [
-  {
-    date: '2025-05-13(周五)',
-    courseName: '课程名称',
-    teacher: '张三',
-    assistant: '李四',
-    classroom: '101',
+const loading = ref(false)
+const deleting = ref(false)
+const rawList = ref<GroupClassDrawerWaitingRollCallScheduleItem[]>([])
+const dateRange = ref<[Dayjs, Dayjs] | null>(null)
+const rollCallOpen = ref(false)
+const currentScheduleId = ref('')
+const currentLessonDay = ref('')
+const detailOpen = ref(false)
+const detailState = ref<Record<string, any> | null>(null)
+
+const filteredList = computed(() => {
+  if (!dateRange.value)
+    return rawList.value
+  const [start, end] = dateRange.value
+  return rawList.value.filter((item) => {
+    const current = dayjs(String(item.lessonDate || '').trim())
+    if (!current.isValid())
+      return false
+    return (current.isAfter(start, 'day') || current.isSame(start, 'day'))
+      && (current.isBefore(end, 'day') || current.isSame(end, 'day'))
+  })
+})
+
+const totalWidth = computed(() =>
+  columns.reduce((sum, item) => sum + Number(item.width || 0), 0),
+)
+
+async function loadList() {
+  const classId = String(props.classId || '').trim()
+  if (!props.open || !classId) {
+    rawList.value = []
+    return
+  }
+  loading.value = true
+  try {
+    const res = await getGroupClassDrawerWaitingRollCallSchedulesApi({ classId })
+    if (res.code !== 200)
+      throw new Error(res.message || '加载待点名日程失败')
+    rawList.value = Array.isArray(res.result?.list) ? res.result.list : []
+  }
+  catch (error: any) {
+    rawList.value = []
+    messageService.error(error?.response?.data?.message || error?.message || '加载待点名日程失败')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+function handleClassEndingTimeFilter(value: unknown) {
+  if (!Array.isArray(value) || value.length < 2) {
+    dateRange.value = null
+    return
+  }
+  const start = dayjs(String(value[0] || ''))
+  const end = dayjs(String(value[1] || ''))
+  if (!start.isValid() || !end.isValid()) {
+    dateRange.value = null
+    return
+  }
+  dateRange.value = [start.startOf('day'), end.endOf('day')]
+}
+
+function handleRollCall(record: GroupClassDrawerWaitingRollCallScheduleItem | Record<string, any>) {
+  if (!record.canRollCall) {
+    messageService.info(record.rollCallDisabledReason || '当前日程暂不可点名')
+    return
+  }
+  currentScheduleId.value = String(record.id || '').trim()
+  currentLessonDay.value = String(record.lessonDate || '').trim()
+  if (!currentScheduleId.value)
+    return
+  rollCallOpen.value = true
+}
+
+function handleViewDetail(record: GroupClassDrawerWaitingRollCallScheduleItem | Record<string, any>) {
+  detailState.value = {
+    scheduleId: record.id,
+    id: record.id,
+    batchNo: record.batchNo,
+    batchSize: record.batchSize,
+    lessonTitle: record.lessonName || props.className || '日程详情',
+    assistantText: record.assistantText,
+    classroomName: record.classroomName,
+    teacherName: record.teacherName,
+  }
+  detailOpen.value = true
+}
+
+function handleCreateUnscheduledRollCall() {
+  messageService.info('创建未排课点名功能待接入')
+}
+
+function handleDelete(record: GroupClassDrawerWaitingRollCallScheduleItem | Record<string, any>) {
+  const scheduleId = String(record.id || '').trim()
+  if (!scheduleId || deleting.value)
+    return
+  Modal.confirm({
+    title: '删除待点名日程',
+    icon: h(ExclamationCircleOutlined),
+    content: '删除后不可恢复，确定删除这条待点名日程吗？',
+    async onOk() {
+      deleting.value = true
+      try {
+        const res = await cancelTeachingScheduleScopedApi({
+          id: scheduleId,
+          scope: 'current',
+        })
+        if (res.code !== 200)
+          throw new Error(res.message || '删除待点名日程失败')
+        messageService.success('删除成功')
+        await loadList()
+      }
+      catch (error: any) {
+        messageService.error(error?.response?.data?.message || error?.message || '删除待点名日程失败')
+        throw error
+      }
+      finally {
+        deleting.value = false
+      }
+    },
+  })
+}
+
+watch(
+  () => `${props.open}|${String(props.classId || '').trim()}`,
+  () => {
+    loadList()
   },
-  {
-    date: '2025-05-14(周六)',
-    courseName: '课程名称',
-    teacher: '张三',
-    assistant: '李四',
-    classroom: '101',
-  },
-]
+  { immediate: true },
+)
 </script>
 
 <template>
   <div class="m-12px">
-    <!-- 筛选条件 -->
-    <all-filter :display-array="displayArray" />
+    <all-filter :display-array="displayArray" @update:class-ending-time-filter="handleClassEndingTimeFilter" />
   </div>
   <div class="m-12px">
     <div class="bg-#fff pt-18px px-20px rounded-10px">
       <div class="flex justify-between items-center">
-        <custom-title title="当前共计 3 条待点名日程" font-size="14px" class="pb-12px" />
-        <a-button type="primary" class="mb-12px">
+        <custom-title :title="`当前共计 ${filteredList.length} 条待点名日程`" font-size="14px" class="pb-12px" />
+        <a-button type="primary" class="mb-12px" @click="handleCreateUnscheduledRollCall">
           创建未排课点名
         </a-button>
       </div>
-      <a-table :columns="columns" size="small" :data-source="data" :pagination="false">
-        <template #bodyCell="{ column, record }">
-          <!-- 重复规则 -->
-          <template v-if="column.dataIndex === 'date'">
-            <div>{{ record.date }}</div>
-            <div>08:00 ～ 08:30</div>
+      <a-table
+        row-key="id"
+        size="small"
+        :loading="loading"
+        :columns="columns"
+        :data-source="filteredList"
+        :pagination="false"
+        :scroll="{ x: totalWidth }"
+      >
+        <template #headerCell="{ column }">
+          <template v-if="column.key === 'lessonDate'">
+            上课日期/时段
+            <a-popover title="上课日期/时段">
+              <template #content>
+                <div>展示当前班级尚未完成点名的有效日程</div>
+              </template>
+              <ExclamationCircleOutlined />
+            </a-popover>
           </template>
-          <!-- 操作 -->
+        </template>
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.dataIndex === 'lessonDate'">
+            <div>{{ dayjs(record.lessonDate).isValid() ? `${dayjs(record.lessonDate).format('YYYY-MM-DD')}(${['周日','周一','周二','周三','周四','周五','周六'][dayjs(record.lessonDate).day()]})` : '-' }}</div>
+            <div>{{ `${dayjs(record.startAt).isValid() ? dayjs(record.startAt).format('HH:mm') : '--:--'} ～ ${dayjs(record.endAt).isValid() ? dayjs(record.endAt).format('HH:mm') : '--:--'}` }}</div>
+          </template>
+          <template v-if="column.dataIndex === 'lessonName'">
+            {{ record.lessonName || '-' }}
+          </template>
+          <template v-if="column.dataIndex === 'teacherName'">
+            {{ record.teacherName || '-' }}
+          </template>
+          <template v-if="column.dataIndex === 'assistantText'">
+            {{ record.assistantText || '-' }}
+          </template>
+          <template v-if="column.dataIndex === 'classroomName'">
+            {{ record.classroomName || '-' }}
+          </template>
           <template v-if="column.dataIndex === 'action'">
             <a-space :size="12">
-              <a>点名</a>
-              <a>详情</a>
-              <a>删除</a>
+              <a @click="handleRollCall(record)">点名</a>
+              <a @click="handleViewDetail(record)">详情</a>
+              <a @click="handleDelete(record)">删除</a>
             </a-space>
           </template>
         </template>
       </a-table>
     </div>
+    <RollCallDrawer
+      v-model:open="rollCallOpen"
+      :schedule-id="currentScheduleId"
+      :lesson-day="currentLessonDay"
+      @updated="loadList"
+      @confirmed="loadList"
+    />
+    <SmartTimetableScheduleDetailDrawer
+      v-model:open="detailOpen"
+      :detail="detailState"
+      @updated="loadList"
+    />
   </div>
 </template>
-
-<style lang="less" scoped></style>
