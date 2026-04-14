@@ -1944,14 +1944,16 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
           </CanvasHorizontalScheduleBoard>
         </div>
         <div v-if="scheduleLoading" class="schedule-loading-mask" />
-        <div v-if="scheduleLoading" class="schedule-loading-float">
-          <div class="schedule-loading-card">
-            <a-spin size="large" />
-            <div class="schedule-loading-text">
-              课表加载中...
+        <Teleport to="body">
+          <div v-if="scheduleLoading" class="schedule-loading-float">
+            <div class="schedule-loading-card">
+              <a-spin size="large" />
+              <div class="schedule-loading-text">
+                课表加载中...
+              </div>
             </div>
           </div>
-        </div>
+        </Teleport>
       </div>
     </div>
     <SmartTimetableScheduleDetailDrawer
@@ -2082,10 +2084,11 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 
 .schedule-loading-float {
   position: fixed;
-  left: 50%;
-  top: 50%;
+  inset: 0;
   z-index: 1200;
-  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
 }
 

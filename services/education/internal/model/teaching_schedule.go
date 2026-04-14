@@ -130,6 +130,11 @@ type TeachingScheduleListQueryDTO struct {
 	MatrixTeacherIDs []int64 `json:"matrixTeacherIds,omitempty"`
 }
 
+type TeachingScheduleConflictPageQueryDTO struct {
+	TeachingScheduleListQueryDTO
+	PageRequestModel PageRequestModel `json:"pageRequestModel"`
+}
+
 type TeachingScheduleConflictDetailQueryDTO struct {
 	ID string `json:"id"`
 }

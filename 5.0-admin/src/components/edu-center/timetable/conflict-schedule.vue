@@ -3,7 +3,7 @@ import dayjs from 'dayjs'
 import { Modal } from 'ant-design-vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { TeachingScheduleItem } from '@/api/edu-center/teaching-schedule'
-import { cancelTeachingScheduleScopedApi, listTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { cancelTeachingScheduleScopedApi, pageConflictTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
@@ -107,6 +107,15 @@ const selectedConflictTypes = ref<ConflictType[]>([])
 const loading = ref(false)
 const deletingId = ref('')
 const scheduleRows = ref<TeachingScheduleItem[]>([])
+const tablePagination = ref({
+  current: 1,
+  pageSize: 50,
+  total: 0,
+  showSizeChanger: true,
+  showQuickJumper: true,
+  pageSizeOptions: ['20', '50', '100', '200'],
+  hideOnSinglePage: false,
+})
 const scheduleBatchPlanEditOpen = ref(false)
 const currentBatchPlanSchedule = ref<TeachingScheduleItem | null>(null)
 const scheduleBatchPlanEditScope = ref<'batch' | 'current'>('batch')
@@ -120,7 +129,7 @@ function syncSelectedConflictTypes() {
 }
 
 const conflictRows = computed(() => {
-  return scheduleRows.value.filter(item => item?.conflict)
+  return scheduleRows.value
 })
 
 function handleCreateTimeFilter(value: unknown) {
@@ -133,12 +142,26 @@ function handleCreateTimeFilter(value: unknown) {
   else {
     queryRange.value = [...defaultCreateTimeVals]
   }
+  tablePagination.value.current = 1
   void loadConflictSchedules()
 }
 
 function handleConflictTypeFilter(value: unknown) {
   selectedConflictKeys.value = normalizeFilterValues(value) as ConflictFilterKey[]
   syncSelectedConflictTypes()
+  tablePagination.value.current = 1
+  void loadConflictSchedules()
+}
+
+function handleTableChange(pageInfo: { current?: number, pageSize?: number }) {
+  const nextCurrent = Number(pageInfo?.current || 1)
+  const nextPageSize = Number(pageInfo?.pageSize || tablePagination.value.pageSize || 50)
+  const pageSizeChanged = nextPageSize !== tablePagination.value.pageSize
+  tablePagination.value = {
+    ...tablePagination.value,
+    current: pageSizeChanged ? 1 : nextCurrent,
+    pageSize: nextPageSize,
+  }
   void loadConflictSchedules()
 }
 
@@ -147,21 +170,42 @@ async function loadConflictSchedules() {
   const token = ++requestToken
   loading.value = true
   try {
-    const res = await listTeachingSchedulesApi({
+    const res = await pageConflictTeachingSchedulesApi({
       startDate,
       endDate,
       sortDirection: 'desc',
       conflictTypes: selectedConflictTypes.value.join(',') || undefined,
+      pageIndex: tablePagination.value.current,
+      pageSize: tablePagination.value.pageSize,
     })
     if (token !== requestToken)
       return
-    scheduleRows.value = res.code === 200 && Array.isArray(res.result) ? res.result : []
+    const pageResult = res.code === 200 && res.data && Array.isArray(res.data.items) ? res.data : null
+    const items = pageResult
+      ? pageResult.items
+      : (Array.isArray(res.result) ? res.result : [])
+    const total = Number(pageResult?.total ?? res.total ?? items.length)
+    const current = Number(pageResult?.current ?? res.current ?? tablePagination.value.current ?? 1)
+    const pageSize = Number(pageResult?.size ?? res.size ?? tablePagination.value.pageSize ?? 50)
+    scheduleRows.value = items
+    tablePagination.value = {
+      ...tablePagination.value,
+      current,
+      pageSize,
+      total,
+    }
+
+    if (!items.length && total > 0 && current > 1) {
+      tablePagination.value.current = current - 1
+      void loadConflictSchedules()
+    }
   }
   catch (error) {
     if (token !== requestToken)
       return
     console.error('load conflict schedules failed', error)
     scheduleRows.value = []
+    tablePagination.value.total = 0
     messageService.error(error?.response?.data?.message || error?.message || '加载冲突日程失败')
   }
   finally {
@@ -437,7 +481,7 @@ function confirmDelete(record: Record<string, any>) {
     <div class="conflict-board mt-2 bg-white rounded-4">
       <div class="conflict-board__head">
         <div class="conflict-board__title">
-          共 {{ conflictRows.length }} 条冲突日程
+          共 {{ tablePagination.total }} 条冲突日程
         </div>
       </div>
 
@@ -446,8 +490,9 @@ function confirmDelete(record: Record<string, any>) {
         size="small"
         :columns="tableColumns"
         :data-source="conflictRows"
-        :pagination="false"
+        :pagination="tablePagination"
         :loading="loading"
+        @change="handleTableChange"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'dateTime'">

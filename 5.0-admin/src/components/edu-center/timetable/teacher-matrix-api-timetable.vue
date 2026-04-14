@@ -2054,14 +2054,16 @@ const unsignedLessons = computed(() =>
       </div>
       <div v-if="loading" class="tm-api-loading-mask">
       </div>
-      <div v-if="loading" class="tm-api-loading-float">
-        <div class="tm-api-loading-card">
-          <a-spin size="large" />
-          <div class="tm-api-loading-text">
-            课表加载中...
+      <Teleport to="body">
+        <div v-if="loading" class="tm-api-loading-float">
+          <div class="tm-api-loading-card">
+            <a-spin size="large" />
+            <div class="tm-api-loading-text">
+              课表加载中...
+            </div>
           </div>
         </div>
-      </div>
+      </Teleport>
     </div>
 
     <SmartTimetableScheduleDetailDrawer
@@ -2272,10 +2274,11 @@ const unsignedLessons = computed(() =>
 
 .tm-api-loading-float {
   position: fixed;
-  left: 50%;
-  top: 50%;
+  inset: 0;
   z-index: 1200;
-  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   pointer-events: none;
 }
 

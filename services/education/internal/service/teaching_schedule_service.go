@@ -175,6 +175,57 @@ func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingSche
 	return schedules, nil
 }
 
+func (svc *Service) PageConflictTeachingSchedules(userID int64, query model.TeachingScheduleConflictPageQueryDTO) (model.PageResult[model.TeachingScheduleVO], error) {
+	pageIndex := query.PageRequestModel.PageIndex
+	if pageIndex <= 0 {
+		pageIndex = 1
+	}
+	pageSize := query.PageRequestModel.PageSize
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+
+	schedules, err := svc.ListTeachingSchedules(userID, query.TeachingScheduleListQueryDTO)
+	if err != nil {
+		return model.PageResult[model.TeachingScheduleVO]{}, err
+	}
+
+	conflicts := make([]model.TeachingScheduleVO, 0, len(schedules))
+	for _, item := range schedules {
+		if item.Conflict {
+			conflicts = append(conflicts, item)
+		}
+	}
+
+	total := len(conflicts)
+	offset := (pageIndex - 1) * pageSize
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > total {
+		offset = total
+	}
+	end := offset + pageSize
+	if end > total {
+		end = total
+	}
+
+	items := make([]model.TeachingScheduleVO, 0, end-offset)
+	if offset < end {
+		items = append(items, conflicts[offset:end]...)
+	}
+
+	return model.PageResult[model.TeachingScheduleVO]{
+		Items:   items,
+		Total:   total,
+		Current: pageIndex,
+		Size:    pageSize,
+	}, nil
+}
+
 // ListTeachingSchedulesByTeacherMatrix 按「日期 × 教师」矩阵返回课表（结构对齐旧版机构总课表 scheduleListVoList）
 func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query model.TeachingScheduleListQueryDTO) ([]model.TeachingScheduleMatrixDayVO, error) {
 	if strings.TrimSpace(query.StartDate) == "" || strings.TrimSpace(query.EndDate) == "" {

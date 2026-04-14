@@ -115,6 +115,13 @@ export interface TeachingScheduleDetail {
   leaveStudents?: TeachingScheduleDetailStudent[]
 }
 
+export interface TeachingSchedulePageResult<T> {
+  items: T[]
+  total: number
+  current: number
+  size: number
+}
+
 export interface CreateOneToOneSchedulesResult {
   batchNo?: string
   count: number
@@ -420,6 +427,26 @@ export function listTeachingSchedulesApi(params: {
   callStatuses?: string
 }) {
   return useGet<TeachingScheduleItem[]>('/api/v1/teaching-schedules', params)
+}
+
+export function pageConflictTeachingSchedulesApi(params: {
+  startDate: string
+  endDate: string
+  sortDirection?: 'asc' | 'desc'
+  classType?: number
+  studentId?: string
+  conflictTypes?: string
+  scheduleTeacherIds?: string
+  classroomIds?: string
+  groupClassIds?: string
+  oneToOneClassIds?: string
+  lessonIds?: string
+  scheduleTypes?: string
+  callStatuses?: string
+  pageIndex?: number
+  pageSize?: number
+}) {
+  return useGet<TeachingSchedulePageResult<TeachingScheduleItem>>('/api/v1/teaching-schedules/conflicts', params)
 }
 
 /** 旧版机构总课表矩阵接口返回的教师列 */

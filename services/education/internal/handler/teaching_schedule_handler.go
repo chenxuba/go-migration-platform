@@ -130,6 +130,37 @@ func parseTeachingScheduleListQuery(r *http.Request) model.TeachingScheduleListQ
 	return query
 }
 
+func parseTeachingScheduleConflictPageQuery(r *http.Request) model.TeachingScheduleConflictPageQueryDTO {
+	query := model.TeachingScheduleConflictPageQueryDTO{
+		TeachingScheduleListQueryDTO: parseTeachingScheduleListQuery(r),
+		PageRequestModel: model.PageRequestModel{
+			PageIndex: 1,
+			PageSize:  50,
+		},
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("pageIndex")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+			query.PageRequestModel.PageIndex = value
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("current")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+			query.PageRequestModel.PageIndex = value
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("pageSize")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+			query.PageRequestModel.PageSize = value
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("size")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
+			query.PageRequestModel.PageSize = value
+		}
+	}
+	return query
+}
+
 func (handler *Handler) createOneToOneSchedules(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -443,6 +474,25 @@ func (handler *Handler) teachingSchedules(w http.ResponseWriter, r *http.Request
 	}
 	query := parseTeachingScheduleListQuery(r)
 	result, err := handler.service.ListTeachingSchedules(claims.UserID, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) teachingScheduleConflicts(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query := parseTeachingScheduleConflictPageQuery(r)
+	result, err := handler.service.PageConflictTeachingSchedules(claims.UserID, query)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
