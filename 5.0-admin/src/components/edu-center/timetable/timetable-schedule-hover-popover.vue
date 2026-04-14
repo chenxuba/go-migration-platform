@@ -475,6 +475,7 @@ watch(
     currentTeachingRecordId.value = ''
     detailData.value = detailCache.get(currentScheduleId.value) || null
     nextTick(() => scheduleFloatingCardPositionUpdate())
+    void loadLatestDetail(true)
   },
   { immediate: true },
 )
