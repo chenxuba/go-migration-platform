@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { CopyOutlined, EditOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { computed, getCurrentInstance, ref, watch } from 'vue'
+import { computed, getCurrentInstance, nextTick, onMounted, onUnmounted, onUpdated, ref, watch } from 'vue'
 import { type TeachingScheduleBatchMeta, type TeachingScheduleDetail, type TeachingScheduleDetailStudent, getTeachingScheduleDetailApi } from '@/api/edu-center/teaching-schedule'
 import ClassRecordDetails from '@/components/common/class-record-details.vue'
 import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
@@ -18,6 +18,8 @@ const props = withDefaults(defineProps<{
   editable?: boolean
   batchNo?: string
   batchSize?: number
+  lessonDate?: string
+  callStatusKey?: string
   modeLabel?: string
   lessonTitle?: string
   teacherName?: string
@@ -36,6 +38,8 @@ const props = withDefaults(defineProps<{
   editable: true,
   batchNo: '',
   batchSize: 0,
+  lessonDate: '',
+  callStatusKey: 'unsigned',
   modeLabel: '课程',
   lessonTitle: '课程',
   teacherName: '-',
@@ -61,9 +65,6 @@ const emit = defineEmits<{
 }>()
 
 const instance = getCurrentInstance()
-const popoverInnerStyle = {
-  padding: '0px',
-}
 const hoverActionTooltipStyle = {
   zIndex: 1301,
 }
@@ -72,20 +73,23 @@ const popoverSafeHeight = 332
 const innerOpen = ref(false)
 const detailLoading = ref(false)
 const detailData = ref<TeachingScheduleDetail | null>(null)
-const popoverPlacement = ref<'rightTop' | 'rightBottom' | 'leftTop' | 'leftBottom'>('rightTop')
+const detailCache = new Map<string, TeachingScheduleDetail>()
+const triggerWrapperRef = ref<HTMLElement | null>(null)
+const floatingCardRef = ref<HTMLElement | null>(null)
+const floatingCardStyle = ref<Record<string, string>>({
+  left: '-9999px',
+  top: '-9999px',
+})
 const rollCallDrawerOpen = ref(false)
 const classRecordDrawerOpen = ref(false)
 const currentTeachingRecordId = ref('')
 let detailLoadSeq = 0
-let lastTriggerNode: HTMLElement | null = null
-let hoverPopoverRoot: HTMLElement | null = null
+let floatingPositionFrame = 0
 const isOpenControlled = computed(() => {
   const vnodeProps = instance?.vnode.props
   return Boolean(vnodeProps && Object.prototype.hasOwnProperty.call(vnodeProps, 'open'))
 })
-const popoverOpenProps = computed(() => (
-  { open: isOpenControlled.value ? props.open : innerOpen.value }
-))
+const currentScheduleId = computed(() => String(props.scheduleId || '').trim())
 const currentOpen = computed(() => (isOpenControlled.value ? Boolean(props.open) : innerOpen.value))
 
 function formatWeek(date: string) {
@@ -135,6 +139,14 @@ function hasBatchMetaSchedule(meta?: TeachingScheduleBatchMeta | null) {
     || (schedulingMode === 'repeat' && repeatRule !== '' && repeatRule !== 'none')
 }
 
+function resolveCallStatusKeyFromNumber(status?: number | null) {
+  if (Number(status || 0) === 2)
+    return 'signed'
+  if (Number(status || 0) === 3)
+    return 'partial'
+  return 'unsigned'
+}
+
 const activeStudents = computed(() => detailData.value?.students || [])
 const trialStudents = computed(() => {
   if (!detailData.value)
@@ -175,14 +187,22 @@ const displayTimeText = computed(() => {
   const endTime = dayjs(detailData.value.endAt).format('HH:mm')
   return `${startTime} ~ ${endTime}(${weekText}) ${dateText}`
 })
+const currentLessonDate = computed(() => String(detailData.value?.lessonDate || props.lessonDate || '').trim())
+const currentCallStatusKey = computed(() => {
+  if (detailData.value)
+    return resolveCallStatusKeyFromNumber(detailData.value.callStatus)
+  return String(props.callStatusKey || 'unsigned').trim() || 'unsigned'
+})
+const hasInternalDrawerOpen = computed(() => rollCallDrawerOpen.value || classRecordDrawerOpen.value)
+const showFloatingCard = computed(() => currentOpen.value && !hasInternalDrawerOpen.value)
 const isPastSchedule = computed(() => {
-  const lessonDate = String(detailData.value?.lessonDate || '').trim()
+  const lessonDate = currentLessonDate.value
   if (!lessonDate)
     return false
   return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
 })
 const isFutureSchedule = computed(() => {
-  const lessonDate = String(detailData.value?.lessonDate || '').trim()
+  const lessonDate = currentLessonDate.value
   if (!lessonDate)
     return false
   return dayjs(lessonDate).isAfter(dayjs().startOf('day'), 'day')
@@ -193,7 +213,7 @@ const hasBatchSchedule = computed(() => {
   return batchSize > 1 || batchNo !== '' || hasBatchMetaSchedule(detailData.value?.batchMeta)
 })
 const canEditByContext = computed(() => Boolean(String(props.scheduleId || '').trim()) && props.editable)
-const isRolledCallSchedule = computed(() => Number(detailData.value?.callStatus || 1) === 2)
+const isRolledCallSchedule = computed(() => currentCallStatusKey.value === 'signed')
 const canEditSchedule = computed(() => canEditByContext.value && !isPastSchedule.value && !isRolledCallSchedule.value)
 const scheduleEditPayload = computed<ScheduleEditPayload>(() => {
   const batchMeta = detailData.value?.batchMeta
@@ -219,40 +239,65 @@ const rollCallDisabledReason = computed(() => {
   return isFutureSchedule.value ? '未到日期，不可点名' : ''
 })
 const canRollCall = computed(() => {
-  if (Number(detailData.value?.callStatus || 1) === 2)
+  if (currentCallStatusKey.value === 'signed')
     return true
   if (typeof detailData.value?.canRollCall === 'boolean')
     return detailData.value.canRollCall
   return !isFutureSchedule.value
 })
-const rollCallButtonText = computed(() => (Number(detailData.value?.callStatus || 1) === 2 ? '点名详情' : '去点名'))
+const rollCallButtonText = computed(() => (currentCallStatusKey.value === 'signed' ? '点名详情' : '去点名'))
 
-async function loadLatestDetail() {
-  const scheduleId = String(props.scheduleId || '').trim()
+async function loadLatestDetail(force = true) {
+  const scheduleId = currentScheduleId.value
   if (!scheduleId) {
     detailData.value = null
-    return
+    return null
   }
+  const cached = detailCache.get(scheduleId)
+  if (cached)
+    detailData.value = cached
+  else if (!detailData.value || String(detailData.value.id || '').trim() !== scheduleId)
+    detailData.value = null
+  if (cached && !force)
+    return cached
   const seq = ++detailLoadSeq
   detailLoading.value = true
   try {
     const res = await getTeachingScheduleDetailApi({ id: scheduleId })
     if (seq !== detailLoadSeq)
-      return
+      return detailData.value
     if (res.code !== 200 || !res.result)
       throw new Error(res.message || '加载日程详情失败')
     detailData.value = res.result
+    detailCache.set(scheduleId, res.result)
+    return res.result
   }
   catch (error) {
     if (seq !== detailLoadSeq)
-      return
-    detailData.value = null
+      return detailData.value
+    if (!cached)
+      detailData.value = null
     console.error('load hover schedule detail failed', error)
+    return detailData.value
   }
   finally {
     if (seq === detailLoadSeq)
       detailLoading.value = false
   }
+}
+
+async function ensureDetailLoaded() {
+  const scheduleId = currentScheduleId.value
+  if (!scheduleId)
+    return null
+  if (String(detailData.value?.id || '').trim() === scheduleId)
+    return detailData.value
+  const cached = detailCache.get(scheduleId)
+  if (cached) {
+    detailData.value = cached
+    return cached
+  }
+  return await loadLatestDetail(true)
 }
 
 function closePopover() {
@@ -261,57 +306,22 @@ function closePopover() {
   emit('openChange', false)
 }
 
-function resolvePopoverPlacement(triggerNode = lastTriggerNode) {
-  if (typeof window === 'undefined' || !triggerNode)
-    return
-
-  const rect = triggerNode.getBoundingClientRect()
-  const spaceRight = window.innerWidth - rect.right
-  const spaceLeft = rect.left
-  const placeOnRight = spaceRight >= popoverSafeWidth || spaceRight >= spaceLeft
-
-  const topAlignedSpace = window.innerHeight - rect.top
-  const bottomAlignedSpace = rect.bottom
-  const alignToTop = topAlignedSpace >= popoverSafeHeight || topAlignedSpace >= bottomAlignedSpace
-
-  if (placeOnRight)
-    popoverPlacement.value = alignToTop ? 'rightTop' : 'rightBottom'
-  else
-    popoverPlacement.value = alignToTop ? 'leftTop' : 'leftBottom'
+function getTriggerNode() {
+  const wrapper = triggerWrapperRef.value
+  if (!wrapper)
+    return null
+  const firstChild = wrapper.firstElementChild
+  return firstChild instanceof HTMLElement ? firstChild : wrapper
 }
 
-function resolvePopoverContainer(triggerNode?: HTMLElement) {
-  if (triggerNode instanceof HTMLElement) {
-    lastTriggerNode = triggerNode
-    resolvePopoverPlacement(triggerNode)
-  }
-  if (typeof document === 'undefined')
-    return undefined as unknown as HTMLElement
-  if (hoverPopoverRoot?.isConnected)
-    return hoverPopoverRoot
-  const existingRoot = document.getElementById('timetable-hover-popover-root')
-  if (existingRoot) {
-    hoverPopoverRoot = existingRoot
-    return existingRoot
-  }
-  const root = document.createElement('div')
-  root.id = 'timetable-hover-popover-root'
-  root.style.position = 'fixed'
-  root.style.left = '0'
-  root.style.top = '0'
-  root.style.width = '0'
-  root.style.height = '0'
-  root.style.zIndex = '1080'
-  root.style.overflow = 'visible'
-  document.body.appendChild(root)
-  hoverPopoverRoot = root
-  return root
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
 }
 
 function resolveTooltipContainer() {
   if (typeof document === 'undefined')
     return undefined as unknown as HTMLElement
-  return document.body
+  return floatingCardRef.value || document.body
 }
 
 function resolveDropdownContainer(triggerNode?: HTMLElement) {
@@ -320,20 +330,65 @@ function resolveDropdownContainer(triggerNode?: HTMLElement) {
     if (card instanceof HTMLElement)
       return card
   }
-  if (hoverPopoverRoot?.isConnected)
-    return hoverPopoverRoot
   if (typeof document === 'undefined')
     return undefined as unknown as HTMLElement
-  return document.body
+  return floatingCardRef.value || document.body
 }
 
-function handleOpenChange(value: boolean) {
-  if (value && typeof window !== 'undefined') {
-    window.requestAnimationFrame(() => resolvePopoverPlacement())
+function updateFloatingCardPosition() {
+  if (!showFloatingCard.value || typeof window === 'undefined')
+    return
+  const triggerNode = getTriggerNode()
+  if (!triggerNode)
+    return
+  const triggerRect = triggerNode.getBoundingClientRect()
+  const cardWidth = Math.max(344, Number(floatingCardRef.value?.offsetWidth || 0))
+  const cardHeight = Math.max(273, Number(floatingCardRef.value?.offsetHeight || 0))
+  const gap = 2
+  const overlap = 6
+  const viewportPadding = 8
+
+  const spaceRight = window.innerWidth - triggerRect.right
+  const spaceLeft = triggerRect.left
+  const placeOnRight = spaceRight >= cardWidth + gap || spaceRight >= spaceLeft
+
+  const topAlignedSpace = window.innerHeight - triggerRect.top
+  const bottomAlignedSpace = triggerRect.bottom
+  const alignToTop = topAlignedSpace >= cardHeight || topAlignedSpace >= bottomAlignedSpace
+
+  const preferredLeft = placeOnRight
+    ? triggerRect.right + gap - overlap
+    : triggerRect.left - cardWidth - gap + overlap
+  const preferredTop = alignToTop
+    ? triggerRect.top
+    : triggerRect.bottom - cardHeight
+
+  floatingCardStyle.value = {
+    left: `${Math.round(clamp(preferredLeft, viewportPadding, Math.max(viewportPadding, window.innerWidth - cardWidth - viewportPadding)))}px`,
+    top: `${Math.round(clamp(preferredTop, viewportPadding, Math.max(viewportPadding, window.innerHeight - cardHeight - viewportPadding)))}px`,
   }
-  if (!isOpenControlled.value)
-    innerOpen.value = value
-  emit('openChange', value)
+}
+
+function scheduleFloatingCardPositionUpdate() {
+  if (typeof window === 'undefined')
+    return
+  if (floatingPositionFrame)
+    window.cancelAnimationFrame(floatingPositionFrame)
+  floatingPositionFrame = window.requestAnimationFrame(() => {
+    floatingPositionFrame = 0
+    updateFloatingCardPosition()
+  })
+}
+
+function handleCardMouseEnter() {
+  emit('openChange', true)
+  scheduleFloatingCardPositionUpdate()
+}
+
+function handleCardMouseLeave() {
+  if (hasInternalDrawerOpen.value)
+    return
+  closePopover()
 }
 
 function openDetail() {
@@ -341,54 +396,63 @@ function openDetail() {
   emit('detail')
 }
 
-function openEdit() {
+async function openEdit() {
+  if (hasBatchSchedule.value)
+    await ensureDetailLoaded()
   closePopover()
   emit('edit', scheduleEditPayload.value)
 }
 
-function openEditCurrent() {
+async function openEditCurrent() {
+  if (hasBatchSchedule.value)
+    await ensureDetailLoaded()
   closePopover()
   emit('edit-current', scheduleEditPayload.value)
 }
 
-function openCopy() {
+async function openCopy() {
+  if (hasBatchSchedule.value)
+    await ensureDetailLoaded()
   closePopover()
   emit('copy', scheduleEditPayload.value)
 }
 
-function openCopyCurrent() {
+async function openCopyCurrent() {
+  if (hasBatchSchedule.value)
+    await ensureDetailLoaded()
   closePopover()
   emit('copy-current', scheduleEditPayload.value)
 }
 
-function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
+async function handleBatchEditMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
   domEvent?.stopPropagation()
   if (!canEditSchedule.value)
     return
   if (String(key) === 'current')
-    openEditCurrent()
+    await openEditCurrent()
   else
-    openEdit()
+    await openEdit()
 }
 
-function handleBatchCopyMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
+async function handleBatchCopyMenuClick({ key, domEvent }: { key: string | number, domEvent?: Event }) {
   domEvent?.stopPropagation()
   if (String(key) === 'current')
-    openCopyCurrent()
+    await openCopyCurrent()
   else
-    openCopy()
+    await openCopy()
 }
 
-function goRollCall() {
-  if (Number(detailData.value?.callStatus || 1) === 2) {
-    currentTeachingRecordId.value = String(detailData.value?.teachingRecordId || '').trim()
-    closePopover()
+async function goRollCall() {
+  if (currentCallStatusKey.value === 'signed') {
+    const detail = await ensureDetailLoaded()
+    currentTeachingRecordId.value = String(detail?.teachingRecordId || '').trim()
+    if (!currentTeachingRecordId.value)
+      return
     classRecordDrawerOpen.value = true
     return
   }
   if (!canRollCall.value)
     return
-  closePopover()
   rollCallDrawerOpen.value = true
 }
 
@@ -402,213 +466,242 @@ async function handleRollCallConfirmed(teachingRecordId?: string) {
 }
 
 watch(
-  () => `${currentOpen.value}|${String(props.scheduleId || '').trim()}`,
-  async () => {
+  () => `${currentOpen.value}|${currentScheduleId.value}`,
+  () => {
     if (!currentOpen.value) {
       detailLoading.value = false
       return
     }
-    await loadLatestDetail()
+    currentTeachingRecordId.value = ''
+    detailData.value = detailCache.get(currentScheduleId.value) || null
+    nextTick(() => scheduleFloatingCardPositionUpdate())
   },
   { immediate: true },
 )
+
+watch(
+  hasInternalDrawerOpen,
+  (open, previousOpen) => {
+    if (!open && previousOpen)
+      closePopover()
+  },
+)
+
+onMounted(() => {
+  if (typeof window === 'undefined')
+    return
+  window.addEventListener('resize', scheduleFloatingCardPositionUpdate)
+  window.addEventListener('scroll', scheduleFloatingCardPositionUpdate, true)
+})
+
+onUpdated(() => {
+  if (showFloatingCard.value)
+    scheduleFloatingCardPositionUpdate()
+})
+
+onUnmounted(() => {
+  if (typeof window === 'undefined')
+    return
+  if (floatingPositionFrame)
+    window.cancelAnimationFrame(floatingPositionFrame)
+  window.removeEventListener('resize', scheduleFloatingCardPositionUpdate)
+  window.removeEventListener('scroll', scheduleFloatingCardPositionUpdate, true)
+})
 </script>
 
 <template>
-  <a-popover
-    trigger="hover"
-    :placement="popoverPlacement"
-    overlay-class-name="st-schedule-cell-popover"
-    :overlay-inner-style="popoverInnerStyle"
-    :get-popup-container="resolvePopoverContainer"
-    :mouse-enter-delay="0.12"
-    :mouse-leave-delay="0.06"
-    v-bind="popoverOpenProps"
-    @open-change="handleOpenChange"
-  >
-    <template #content>
-      <a-spin :spinning="detailLoading">
-        <div class="st-schedule-hover-card">
-          <div class="st-schedule-hover-card__header">
-            <div class="st-schedule-hover-card__hero">
-              <div class="st-schedule-hover-card__badge-shell">
-                <div class="st-schedule-hover-card__badge">
-                  {{ modeLabel }}
-                </div>
-              </div>
+  <div ref="triggerWrapperRef" class="st-schedule-hover-trigger">
+    <slot />
+  </div>
 
-              <div class="st-schedule-hover-card__hero-main">
-                <div class="st-schedule-hover-card__hero-top">
-                  <div class="st-schedule-hover-card__title" :title="displayLessonTitle">
-                    {{ displayLessonTitle }}
-                  </div>
-                  <button
-                    type="button"
-                    class="st-schedule-hover-card__detail-link"
-                    @click.stop="openDetail"
-                  >
-                    详情
-                  </button>
+  <Teleport to="body">
+    <div
+      v-if="currentOpen"
+      ref="floatingCardRef"
+      v-show="showFloatingCard"
+      class="st-schedule-hover-floating"
+      :style="floatingCardStyle"
+      @mouseenter="handleCardMouseEnter"
+      @mouseleave="handleCardMouseLeave"
+    >
+      <div class="st-schedule-hover-card">
+        <div class="st-schedule-hover-card__header">
+          <div class="st-schedule-hover-card__hero">
+            <div class="st-schedule-hover-card__badge-shell">
+              <div class="st-schedule-hover-card__badge">
+                {{ modeLabel }}
+              </div>
+            </div>
+
+            <div class="st-schedule-hover-card__hero-main">
+              <div class="st-schedule-hover-card__hero-top">
+                <div class="st-schedule-hover-card__title" :title="displayLessonTitle">
+                  {{ displayLessonTitle }}
                 </div>
-                <div class="st-schedule-hover-card__time" :title="displayTimeText">
-                  {{ displayTimeText }}
-                </div>
+                <button
+                  type="button"
+                  class="st-schedule-hover-card__detail-link"
+                  @click.stop="openDetail"
+                >
+                  详情
+                </button>
+              </div>
+              <div class="st-schedule-hover-card__time" :title="displayTimeText">
+                {{ displayTimeText }}
               </div>
             </div>
           </div>
+        </div>
 
-          <div class="st-schedule-hover-card__body">
-            <div class="st-schedule-hover-card__row">
-              <span>上课教师：</span>
-              <strong :title="displayTeacherName">{{ displayTeacherName }}</strong>
-            </div>
-            <div class="st-schedule-hover-card__row">
-              <span>课程：</span>
-              <strong :title="displayCourseName">{{ displayCourseName }}</strong>
-            </div>
-            <div class="st-schedule-hover-card__row">
-              <span>上课助教：</span>
-              <strong :title="displayAssistantText">{{ displayAssistantText }}</strong>
-            </div>
-            <div class="st-schedule-hover-card__row">
-              <span>上课学员：</span>
-              <strong class="st-schedule-hover-card__value--primary" :title="displayStudentText">{{ displayStudentText }}</strong>
-            </div>
-            <div class="st-schedule-hover-card__row">
-              <span>试听学员：</span>
-              <strong :title="displayTrialStudentText">{{ displayTrialStudentText }}</strong>
-            </div>
-            <div class="st-schedule-hover-card__row">
-              <span>请假学员：</span>
-              <strong :title="displayLeaveStudentText">{{ displayLeaveStudentText }}</strong>
-            </div>
-            <div class="st-schedule-hover-card__row">
-              <span>对内备注：</span>
-              <strong :title="displayRemarkText">{{ displayRemarkText }}</strong>
-            </div>
-            <div v-if="conflictText" class="st-schedule-hover-card__row st-schedule-hover-card__row--danger">
-              <span>冲突说明：</span>
-              <strong :title="conflictText">{{ conflictText }}</strong>
-            </div>
+        <div class="st-schedule-hover-card__body">
+          <div class="st-schedule-hover-card__row">
+            <span>上课教师：</span>
+            <strong :title="displayTeacherName">{{ displayTeacherName }}</strong>
           </div>
+          <div class="st-schedule-hover-card__row">
+            <span>课程：</span>
+            <strong :title="displayCourseName">{{ displayCourseName }}</strong>
+          </div>
+          <div class="st-schedule-hover-card__row">
+            <span>上课助教：</span>
+            <strong :title="displayAssistantText">{{ displayAssistantText }}</strong>
+          </div>
+          <div class="st-schedule-hover-card__row">
+            <span>上课学员：</span>
+            <strong class="st-schedule-hover-card__value--primary" :title="displayStudentText">{{ displayStudentText }}</strong>
+          </div>
+          <div class="st-schedule-hover-card__row">
+            <span>试听学员：</span>
+            <strong :title="displayTrialStudentText">{{ displayTrialStudentText }}</strong>
+          </div>
+          <div class="st-schedule-hover-card__row">
+            <span>请假学员：</span>
+            <strong :title="displayLeaveStudentText">{{ displayLeaveStudentText }}</strong>
+          </div>
+          <div class="st-schedule-hover-card__row">
+            <span>对内备注：</span>
+            <strong :title="displayRemarkText">{{ displayRemarkText }}</strong>
+          </div>
+          <div v-if="conflictText" class="st-schedule-hover-card__row st-schedule-hover-card__row--danger">
+            <span>冲突说明：</span>
+            <strong :title="conflictText">{{ conflictText }}</strong>
+          </div>
+        </div>
 
-          <div class="st-schedule-hover-card__footer">
-            <div class="st-schedule-hover-card__actions">
-              <a-dropdown
-                v-if="hasBatchSchedule && canEditSchedule"
-                :trigger="['click']"
-                placement="topLeft"
-                :get-popup-container="resolveDropdownContainer"
+        <div class="st-schedule-hover-card__footer">
+          <div class="st-schedule-hover-card__actions">
+            <a-dropdown
+              v-if="hasBatchSchedule && canEditSchedule"
+              :trigger="['click']"
+              placement="topLeft"
+              :get-popup-container="resolveDropdownContainer"
+            >
+              <template #overlay>
+                <a-menu :selectable="false" @click="handleBatchEditMenuClick">
+                  <a-menu-item key="current">
+                    仅编辑此日程
+                  </a-menu-item>
+                  <a-menu-item key="future">
+                    编辑以后日程
+                  </a-menu-item>
+                </a-menu>
+              </template>
+
+              <button
+                type="button"
+                class="st-schedule-hover-card__icon-btn"
+                @click.stop
               >
-                <template #overlay>
-                  <a-menu :selectable="false" @click="handleBatchEditMenuClick">
-                    <a-menu-item key="current">
-                      仅编辑此日程
-                    </a-menu-item>
-                    <a-menu-item key="future">
-                      编辑以后日程
-                    </a-menu-item>
-                  </a-menu>
-                </template>
-
-                <button
-                  type="button"
-                  class="st-schedule-hover-card__icon-btn"
-                  @click.stop
-                >
-                  <EditOutlined />
-                </button>
-              </a-dropdown>
-              <a-tooltip
-                v-else
-                :title="editDisabledReason"
-                placement="top"
-                :auto-adjust-overflow="false"
-                :get-popup-container="resolveTooltipContainer"
-                :overlay-style="hoverActionTooltipStyle"
-              >
-                <button
-                  type="button"
-                  class="st-schedule-hover-card__icon-btn"
-                  :disabled="!canEditSchedule"
-                  @click.stop="canEditSchedule && openEdit()"
-                >
-                  <EditOutlined />
-                </button>
-              </a-tooltip>
-
-              <a-dropdown
-                v-if="showCopyAction && hasBatchSchedule"
-                :trigger="['click']"
-                placement="topLeft"
-                :get-popup-container="resolveDropdownContainer"
-              >
-                <template #overlay>
-                  <a-menu :selectable="false" @click="handleBatchCopyMenuClick">
-                    <a-menu-item key="current">
-                      仅复制当前课程
-                    </a-menu-item>
-                    <a-menu-item key="future">
-                      复制后续全部课程
-                    </a-menu-item>
-                  </a-menu>
-                </template>
-
-                <button
-                  type="button"
-                  class="st-schedule-hover-card__icon-btn"
-                  @click.stop
-                >
-                  <CopyOutlined />
-                </button>
-              </a-dropdown>
-              <a-tooltip
-                v-else-if="showCopyAction"
-                title="仅复制当前课程"
-                placement="top"
-                :auto-adjust-overflow="false"
-                :get-popup-container="resolveTooltipContainer"
-                :overlay-style="hoverActionTooltipStyle"
-              >
-                <button
-                  type="button"
-                  class="st-schedule-hover-card__icon-btn"
-                  @click.stop="openCopyCurrent()"
-                >
-                  <CopyOutlined />
-                </button>
-              </a-tooltip>
-            </div>
-
+                <EditOutlined />
+              </button>
+            </a-dropdown>
             <a-tooltip
-              :title="rollCallDisabledReason || null"
+              v-else
+              :title="editDisabledReason"
               placement="top"
               :auto-adjust-overflow="false"
               :get-popup-container="resolveTooltipContainer"
               :overlay-style="hoverActionTooltipStyle"
             >
-              <span class="st-schedule-hover-card__primary-wrap">
-                <button
-                  type="button"
-                  class="st-schedule-hover-card__primary-btn"
-                  :disabled="!canRollCall"
-                  @click.stop="goRollCall"
-                >
-                  {{ rollCallButtonText }}
-                </button>
-              </span>
+              <button
+                type="button"
+                class="st-schedule-hover-card__icon-btn"
+                :disabled="!canEditSchedule"
+                @click.stop="canEditSchedule && openEdit()"
+              >
+                <EditOutlined />
+              </button>
+            </a-tooltip>
+
+            <a-dropdown
+              v-if="showCopyAction && hasBatchSchedule"
+              :trigger="['click']"
+              placement="topLeft"
+              :get-popup-container="resolveDropdownContainer"
+            >
+              <template #overlay>
+                <a-menu :selectable="false" @click="handleBatchCopyMenuClick">
+                  <a-menu-item key="current">
+                    仅复制当前课程
+                  </a-menu-item>
+                  <a-menu-item key="future">
+                    复制后续全部课程
+                  </a-menu-item>
+                </a-menu>
+              </template>
+
+              <button
+                type="button"
+                class="st-schedule-hover-card__icon-btn"
+                @click.stop
+              >
+                <CopyOutlined />
+              </button>
+            </a-dropdown>
+            <a-tooltip
+              v-else-if="showCopyAction"
+              title="仅复制当前课程"
+              placement="top"
+              :auto-adjust-overflow="false"
+              :get-popup-container="resolveTooltipContainer"
+              :overlay-style="hoverActionTooltipStyle"
+            >
+              <button
+                type="button"
+                class="st-schedule-hover-card__icon-btn"
+                @click.stop="openCopyCurrent()"
+              >
+                <CopyOutlined />
+              </button>
             </a-tooltip>
           </div>
-        </div>
-      </a-spin>
-    </template>
 
-    <slot />
-  </a-popover>
+          <a-tooltip
+            :title="rollCallDisabledReason || null"
+            placement="top"
+            :auto-adjust-overflow="false"
+            :get-popup-container="resolveTooltipContainer"
+            :overlay-style="hoverActionTooltipStyle"
+          >
+            <span class="st-schedule-hover-card__primary-wrap">
+              <button
+                type="button"
+                class="st-schedule-hover-card__primary-btn"
+                :disabled="!canRollCall"
+                @click.stop="goRollCall"
+              >
+                {{ rollCallButtonText }}
+              </button>
+            </span>
+          </a-tooltip>
+        </div>
+      </div>
+    </div>
+  </Teleport>
   <RollCallDrawer
     v-model:open="rollCallDrawerOpen"
     :schedule-id="String(props.scheduleId || '')"
-    :lesson-day="detailData?.lessonDate || ''"
+    :lesson-day="detailData?.lessonDate || lessonDate || ''"
     @updated="loadLatestDetail"
     @confirmed="handleRollCallConfirmed"
   />
@@ -616,17 +709,14 @@ watch(
 </template>
 
 <style scoped lang="less">
-:deep(.st-schedule-cell-popover .ant-popover-inner) {
-  padding: 0 !important;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow:
-    0 14px 32px rgba(15, 23, 42, 0.14),
-    0 4px 12px rgba(15, 23, 42, 0.08);
+.st-schedule-hover-trigger {
+  display: contents;
 }
 
-:deep(.st-schedule-cell-popover .ant-popover-inner-content) {
-  padding: 0 !important;
+.st-schedule-hover-floating {
+  position: fixed;
+  z-index: 1080;
+  pointer-events: auto;
 }
 
 .st-schedule-hover-card {

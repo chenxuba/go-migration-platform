@@ -1154,7 +1154,7 @@ function clearScheduleHover() {
   openSchedulePopoverKey.value = ''
 }
 
-function scheduleCloseHover(delay = 90) {
+function scheduleCloseHover(delay = 24) {
   clearHoverCloseTimer()
   hoverCloseTimer = setTimeout(() => {
     clearScheduleHover()
@@ -1245,7 +1245,7 @@ function handleSchedulePopoverOpenChange(entry, open) {
     hoveredScheduleRect.value = contentRectToViewRect(entry)
   }
   else if (hoveredScheduleCellKey.value === key) {
-    scheduleCloseHover(120)
+    scheduleCloseHover(32)
   }
 }
 
@@ -1316,14 +1316,14 @@ function handleCanvasMouseMove(event) {
   const point = resolveCanvasPoint(event?.clientX, event?.clientY)
   if (!point) {
     setCanvasCursor('default')
-    scheduleCloseHover()
+    scheduleCloseHover(24)
     return
   }
 
   const entry = resolveEntryFromViewPoint(point.x, point.y)
   if (!entry) {
     setCanvasCursor('default')
-    scheduleCloseHover()
+    scheduleCloseHover(24)
     return
   }
 
@@ -1334,12 +1334,12 @@ function handleCanvasMouseMove(event) {
   }
 
   setCanvasCursor('pointer')
-  scheduleCloseHover()
+  scheduleCloseHover(24)
 }
 
 function handleCanvasLeave() {
   setCanvasCursor('default')
-  scheduleCloseHover(110)
+  scheduleCloseHover(32)
 }
 
 function handleCanvasMouseDown(event) {
@@ -1489,6 +1489,8 @@ defineExpose({
               :editable="Boolean(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.scheduleId) && !(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.courseType === 1 && scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.isMain === false)"
               :batch-no="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.batchNo || '')"
               :batch-size="Number(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.batchSize || 0)"
+              :lesson-date="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.lessonDate || '')"
+              :call-status-key="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.callStatusKey || 'unsigned')"
               :mode-label="scheduleModeShortLabel(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
               :lesson-title="scheduleLessonTitle(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
               :teacher-name="scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.teacherName || scheduleCellEntryMap.get(hoveredScheduleCellKey)?.record?.name || '-'"
@@ -1517,7 +1519,7 @@ defineExpose({
                   cursor: isScheduleDraggable(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) ? 'grab' : 'pointer',
                 }"
                 @mouseenter="setHoveredScheduleEntry(scheduleCellEntryMap.get(hoveredScheduleCellKey))"
-                @mouseleave="scheduleCloseHover(110)"
+                @mouseleave="scheduleCloseHover(240)"
                 @click="handleScheduleCellClickByEntry(scheduleCellEntryMap.get(hoveredScheduleCellKey))"
                 @mousedown.left="handleSchedulePointerDownByEntry($event, scheduleCellEntryMap.get(hoveredScheduleCellKey))"
               />

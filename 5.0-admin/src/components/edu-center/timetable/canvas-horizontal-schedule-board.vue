@@ -754,7 +754,7 @@ defineExpose({
               height: `${hoveredEventRect.height}px`,
             }"
             @mouseenter="setHoveredEvent(eventMap.get(hoveredEventKey))"
-            @mouseleave="scheduleCloseHover(120)"
+            @mouseleave="scheduleCloseHover(240)"
             @click="emitDetailFromHover"
           />
         </TimetableScheduleHoverPopover>
