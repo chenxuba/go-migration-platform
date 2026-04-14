@@ -33,6 +33,8 @@ const props = withDefaults(defineProps<{
   timeText?: string
   conflictText?: string
   showCopyAction?: boolean
+  floatingGap?: number
+  floatingOverlap?: number
 }>(), {
   scheduleId: '',
   editable: true,
@@ -53,6 +55,8 @@ const props = withDefaults(defineProps<{
   timeText: '-',
   conflictText: '',
   showCopyAction: true,
+  floatingGap: 2,
+  floatingOverlap: 6,
 })
 
 const emit = defineEmits<{
@@ -344,8 +348,8 @@ function updateFloatingCardPosition() {
   const triggerRect = triggerNode.getBoundingClientRect()
   const cardWidth = Math.max(344, Number(floatingCardRef.value?.offsetWidth || 0))
   const cardHeight = Math.max(273, Number(floatingCardRef.value?.offsetHeight || 0))
-  const gap = 2
-  const overlap = 6
+  const gap = Math.max(0, Number(props.floatingGap || 0))
+  const overlap = Math.max(0, Number(props.floatingOverlap || 0))
   const viewportPadding = 8
 
   const spaceRight = window.innerWidth - triggerRect.right

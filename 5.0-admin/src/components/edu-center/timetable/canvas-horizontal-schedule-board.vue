@@ -785,6 +785,8 @@ defineExpose({
         <TimetableScheduleHoverPopover
           v-if="hoveredEventKey && hoveredEventRect && eventMap.get(hoveredEventKey)"
           :open="openPopoverKey === hoveredEventKey"
+          :floating-gap="10"
+          :floating-overlap="0"
           :schedule-id="String(eventMap.get(hoveredEventKey)?.popover?.scheduleId || '')"
           :editable="Boolean(eventMap.get(hoveredEventKey)?.popover?.editable)"
           :batch-no="String(eventMap.get(hoveredEventKey)?.popover?.batchNo || '')"

@@ -1537,6 +1537,8 @@ defineExpose({
           <TimetableScheduleHoverPopover
             v-if="hoveredScheduleCellKey && hoveredScheduleRect && scheduleCellEntryMap.get(hoveredScheduleCellKey)"
             :open="!draggingScheduleCellKey && openSchedulePopoverKey === hoveredScheduleCellKey"
+            :floating-gap="6"
+            :floating-overlap="0"
             :schedule-id="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.scheduleId || '')"
             :editable="Boolean(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.scheduleId) && !(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.courseType === 1 && scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.isMain === false)"
             :batch-no="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.batchNo || '')"
