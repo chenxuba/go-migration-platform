@@ -404,6 +404,7 @@ type TeachingScheduleConflictItem struct {
 	Name                    string   `json:"name"`
 	ClassTypeText           string   `json:"classTypeText"`
 	TimeText                string   `json:"timeText"`
+	PeriodGroupUUID         string   `json:"periodGroupUuid,omitempty"`
 	TeacherID               string   `json:"teacherId,omitempty"`
 	TeacherName             string   `json:"teacherName"`
 	AssistantNames          []string `json:"assistantNames,omitempty"`

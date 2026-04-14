@@ -139,6 +139,7 @@ export interface TeachingScheduleValidationResult {
     date: string
     week?: string
     timeText: string
+    periodGroupUuid?: string
     teacherId?: string
     teacherName: string
     assistantNames?: string[]
@@ -153,6 +154,7 @@ export interface TeachingScheduleValidationResult {
     date: string
     week?: string
     timeText: string
+    periodGroupUuid?: string
     teacherId?: string
     teacherName: string
     assistantNames?: string[]

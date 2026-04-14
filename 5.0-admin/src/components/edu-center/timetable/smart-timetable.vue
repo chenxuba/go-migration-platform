@@ -2506,9 +2506,28 @@ function findVisibleConflictScheduleGroupKey(item) {
   return lessonMatched ? currentGroup.value : ''
 }
 
+function findConflictScheduleGroupByUUID(periodGroupUuid) {
+  const targetUUID = String(periodGroupUuid || '').trim()
+  if (!targetUUID)
+    return null
+  const index = sortedPeriodGroups.value.findIndex(group => String(group?.id || '').trim() === targetUUID)
+  if (index < 0)
+    return null
+  const key = periodGroupKeyForIndex(index)
+  const label = groupOptions.value.find(opt => opt.key === key)?.label || sortedPeriodGroups.value[index]?.name || key
+  return { key, label }
+}
+
 function resolveConflictScheduleGroupInfo(item) {
   const teacherId = String(item?.teacherId || '').trim()
   const timeRange = parseConflictTimeRange(item?.timeText)
+  const actualGroup = findConflictScheduleGroupByUUID(item?.periodGroupUuid)
+  if (actualGroup) {
+    return {
+      keys: [actualGroup.key],
+      labels: [actualGroup.label],
+    }
+  }
   const visibleGroupKey = findVisibleConflictScheduleGroupKey(item)
   if (visibleGroupKey) {
     const visibleGroupLabel = groupOptions.value.find(opt => opt.key === visibleGroupKey)?.label || activeGroupLabel.value
@@ -2535,14 +2554,12 @@ function resolveConflictScheduleGroupInfo(item) {
   const exactTeacherMatches = teacherId
     ? matches.filter(match => match.teacherMatched)
     : []
-  const fallbackMatches = exactTeacherMatches.length
-    ? exactTeacherMatches
-    : matches.length === 1
-      ? matches
-      : matches.filter(match => match.key === currentGroup.value)
-  const unique = fallbackMatches.filter((match, index, arr) =>
-    arr.findIndex(x => x.key === match.key) === index,
-  )
+  const preferredMatch = exactTeacherMatches.find(match => match.key === currentGroup.value)
+    || exactTeacherMatches[0]
+    || (matches.length === 1 ? matches[0] : null)
+    || matches.find(match => match.key === currentGroup.value)
+    || matches[0]
+  const unique = preferredMatch ? [preferredMatch] : []
   return {
     keys: unique.map(match => match.key),
     labels: unique.map(match => match.label),

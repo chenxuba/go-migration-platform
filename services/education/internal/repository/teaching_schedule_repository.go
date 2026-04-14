@@ -4422,6 +4422,7 @@ type scheduleConflictDetailRow struct {
 	AssistantIDs            []string
 	AssistantNames          []string
 	ClassroomName           string
+	PeriodGroupUUID         string
 	LessonDate              time.Time
 	StartAt                 time.Time
 	EndAt                   time.Time
@@ -4476,6 +4477,7 @@ type scheduleAvailabilityConflictRow struct {
 	AssistantIDs            []string
 	AssistantNames          []string
 	ClassroomName           string
+	PeriodGroupUUID         string
 	LessonDate              time.Time
 	StartAt                 time.Time
 	EndAt                   time.Time
@@ -7006,6 +7008,7 @@ func buildTeachingScheduleConflictItemFromRow(row scheduleConflictDetailRow) mod
 		Date:                    row.LessonDate.Format("2006-01-02"),
 		Week:                    weekDisplay(row.LessonDate),
 		TimeText:                row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+		PeriodGroupUUID:         strings.TrimSpace(row.PeriodGroupUUID),
 		TeacherID:               emptyStringIfZero(row.TeacherID),
 		TeacherName:             firstNonEmptyString(row.TeacherName, "-"),
 		AssistantNames:          compactStrings(row.AssistantNames),
@@ -7684,6 +7687,7 @@ func appendAvailabilityConflict(existingMap map[int64]model.TeachingScheduleConf
 			Date:                    row.LessonDate.Format("2006-01-02"),
 			Week:                    weekDisplay(row.LessonDate),
 			TimeText:                row.StartAt.Format("15:04") + "~" + row.EndAt.Format("15:04"),
+			PeriodGroupUUID:         strings.TrimSpace(row.PeriodGroupUUID),
 			TeacherID:               emptyStringIfZero(row.TeacherID),
 			TeacherName:             firstNonEmptyString(row.TeacherName, "-"),
 			AssistantNames:          compactStrings(row.AssistantNames),
@@ -7735,6 +7739,7 @@ func buildAvailabilityConflictRowsFromDetails(rows []scheduleConflictDetailRow) 
 			AssistantIDs:            append([]string{}, row.AssistantIDs...),
 			AssistantNames:          append([]string{}, row.AssistantNames...),
 			ClassroomName:           row.ClassroomName,
+			PeriodGroupUUID:         row.PeriodGroupUUID,
 			LessonDate:              row.LessonDate,
 			StartAt:                 row.StartAt,
 			EndAt:                   row.EndAt,
