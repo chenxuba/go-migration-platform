@@ -52,6 +52,7 @@ const DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD = 24
 const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 24
 const DRAG_PRIORITY_NEAR_RADIUS = 240
 const DRAG_LAZY_VALIDATE_DELAY_MS = 32
+const DRAG_START_PREWARM_DELAY_MS = 220
 
 function getSavedTimeView() {
   if (typeof window === 'undefined')
@@ -809,6 +810,7 @@ let customScheduleDragUpHandler = null
 let dragHoverValidationTimer = null
 let pendingDragHoverValidationKey = ''
 let dragLazyValidationTimer = null
+let dragStartPrewarmTimer = null
 let activeDraggingScheduleElement = null
 let activeDraggingScheduleElementStyleText = ''
 let blockedScheduleDragAttempt = null
@@ -3946,6 +3948,23 @@ function clearDragLazyValidationTimer() {
   dragLazyValidationTimer = null
 }
 
+function clearDragStartPrewarmTimer() {
+  if (!dragStartPrewarmTimer)
+    return
+  clearTimeout(dragStartPrewarmTimer)
+  dragStartPrewarmTimer = null
+}
+
+function scheduleDragStartPrewarm(dragState, sessionId) {
+  clearDragStartPrewarmTimer()
+  dragStartPrewarmTimer = setTimeout(() => {
+    dragStartPrewarmTimer = null
+    if (sessionId !== activeDragValidationSessionId || draggingScheduleState.value?.scheduleId !== dragState?.scheduleId)
+      return
+    void primeDragValidationForVisibleTargets(dragState, sessionId)
+  }, DRAG_START_PREWARM_DELAY_MS)
+}
+
 function scheduleDragLazyValidation(task) {
   clearDragLazyValidationTimer()
   if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
@@ -4023,6 +4042,7 @@ function clearCustomScheduleDragListeners() {
   pendingScheduleDragStart = null
   clearDragHoverValidationTimer()
   clearDragLazyValidationTimer()
+  clearDragStartPrewarmTimer()
   clearDraggingScheduleElement()
   if (customScheduleDragMoveHandler)
     document.removeEventListener('mousemove', customScheduleDragMoveHandler)
@@ -5108,15 +5128,6 @@ async function primeDragValidationForVisibleTargets(dragState, sessionId) {
       setDragValidationState(target, localResult, { sessionId, dragState })
       return
     }
-
-    setDragValidationState(target, {
-      checking: true,
-      valid: null,
-      label: '检测中',
-      message: '正在检测当前空点是否可调',
-      conflictTypes: [],
-      existingSchedules: [],
-    }, { sessionId, dragState })
     remoteTargets.push(target)
   })
 
@@ -5175,6 +5186,41 @@ function emptyLessonDragState(column, record) {
     || (dragHoverState.value.key === target.key ? dragHoverState.value : null)
 }
 
+function beginPendingScheduleDrag(pointerX, pointerY) {
+  if (draggingScheduleState.value || !pendingScheduleDragStart || typeof document === 'undefined')
+    return false
+
+  draggingScheduleState.value = {
+    ...pendingScheduleDragStart.dragState,
+    previewWidth: pendingScheduleDragStart.rect.width,
+    previewHeight: pendingScheduleDragStart.rect.height,
+    sourceCenterX: pendingScheduleDragStart.rect.left + pendingScheduleDragStart.rect.width / 2,
+    sourceCenterY: pendingScheduleDragStart.rect.top + pendingScheduleDragStart.rect.height / 2,
+    offsetX: pendingScheduleDragStart.offsetX,
+    offsetY: pendingScheduleDragStart.offsetY,
+    useFloatingPreview: pendingScheduleDragStart.useFloatingPreview === true,
+  }
+  if (!pendingScheduleDragStart.useFloatingPreview && pendingScheduleDragStart.element) {
+    activateDraggingScheduleElement(pendingScheduleDragStart.element)
+    applyDraggingScheduleElementPosition({ x: pointerX, y: pointerY })
+  }
+  activeDragValidationSessionId += 1
+  draggingScheduleCellKey.value = pendingScheduleDragStart.dragState.sourceCellKey
+  clearDragHoverState()
+  dragValidationStateMap.value = {}
+  dragValidationCache.clear()
+  dragValidationPromises.clear()
+  clearAllEmptyDragCellStates()
+  const sessionId = activeDragValidationSessionId
+  const nextDragState = draggingScheduleState.value
+  pendingScheduleDragStart = null
+  document.body.style.userSelect = 'none'
+  updateDragPointer({ clientX: pointerX, clientY: pointerY })
+  if (nextDragState)
+    scheduleDragStartPrewarm(nextDragState, sessionId)
+  return true
+}
+
 function handleSchedulePointerDown(event, text, column, record) {
   clearCustomScheduleDragListeners()
   clearBlockedScheduleDragAttempt()
@@ -5207,6 +5253,7 @@ function handleSchedulePointerDown(event, text, column, record) {
       offsetX: dragStartInfo?.offsetX || Math.max(8, Math.min(rect.width - 8, Number(event?.clientX || 0) - rect.left)),
       offsetY: dragStartInfo?.offsetY || Math.max(8, Math.min(rect.height - 8, Number(event?.clientY || 0) - rect.top)),
     }
+    beginPendingScheduleDrag(Number(event?.clientX || 0), Number(event?.clientY || 0))
 
     customScheduleDragMoveHandler = (moveEvent) => {
       const moveX = Number(moveEvent?.clientX || 0)
@@ -5214,37 +5261,8 @@ function handleSchedulePointerDown(event, text, column, record) {
       if (!draggingScheduleState.value) {
         if (!pendingScheduleDragStart)
           return
-        const deltaX = Math.abs(moveX - pendingScheduleDragStart.startX)
-        const deltaY = Math.abs(moveY - pendingScheduleDragStart.startY)
-        if (deltaX < 4 && deltaY < 4)
-          return
-
-        draggingScheduleState.value = {
-          ...pendingScheduleDragStart.dragState,
-          previewWidth: pendingScheduleDragStart.rect.width,
-          previewHeight: pendingScheduleDragStart.rect.height,
-          sourceCenterX: pendingScheduleDragStart.rect.left + pendingScheduleDragStart.rect.width / 2,
-          sourceCenterY: pendingScheduleDragStart.rect.top + pendingScheduleDragStart.rect.height / 2,
-          offsetX: pendingScheduleDragStart.offsetX,
-          offsetY: pendingScheduleDragStart.offsetY,
-          useFloatingPreview: pendingScheduleDragStart.useFloatingPreview === true,
-        }
-        if (!pendingScheduleDragStart.useFloatingPreview && pendingScheduleDragStart.element) {
-          activateDraggingScheduleElement(pendingScheduleDragStart.element)
-          applyDraggingScheduleElementPosition({ x: moveX, y: moveY })
-        }
         suppressScheduledLessonClick()
-        activeDragValidationSessionId += 1
-        draggingScheduleCellKey.value = pendingScheduleDragStart.dragState.sourceCellKey
-        clearDragHoverState()
-        dragValidationStateMap.value = {}
-        dragValidationCache.clear()
-        dragValidationPromises.clear()
-        clearAllEmptyDragCellStates()
-        const sessionId = activeDragValidationSessionId
-        pendingScheduleDragStart = null
-        document.body.style.userSelect = 'none'
-        void primeDragValidationForVisibleTargets(draggingScheduleState.value, sessionId)
+        beginPendingScheduleDrag(moveX, moveY)
       }
 
       updateDragPointer(moveEvent)

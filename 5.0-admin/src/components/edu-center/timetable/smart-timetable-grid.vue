@@ -160,6 +160,8 @@ const hoveredScheduleCellKey = ref('')
 const hoveredScheduleRect = ref(null)
 const emptyDragCellStateMap = ref({})
 const scheduleCellPressState = ref(null)
+let pendingEmptyDragCellStateMap = {}
+let emptyDragCellStateFlushFrame = 0
 
 let resizeObserver = null
 let pendingFrame = 0
@@ -610,18 +612,42 @@ function setEmptyDragCellState(target, state) {
   const key = String(target?.key || state?.key || '').trim()
   if (!key)
     return
-  emptyDragCellStateMap.value = {
-    ...emptyDragCellStateMap.value,
-    [key]: {
-      ...(target || {}),
-      ...(state || {}),
-      key,
-    },
+  pendingEmptyDragCellStateMap[key] = {
+    ...(emptyDragCellStateMap.value[key] || {}),
+    ...(pendingEmptyDragCellStateMap[key] || {}),
+    ...(target || {}),
+    ...(state || {}),
+    key,
   }
-  scheduleRender()
+  if (!emptyDragCellStateFlushFrame && typeof window !== 'undefined') {
+    emptyDragCellStateFlushFrame = window.requestAnimationFrame(() => {
+      emptyDragCellStateFlushFrame = 0
+      if (Object.keys(pendingEmptyDragCellStateMap).length) {
+        emptyDragCellStateMap.value = {
+          ...emptyDragCellStateMap.value,
+          ...pendingEmptyDragCellStateMap,
+        }
+        pendingEmptyDragCellStateMap = {}
+      }
+      scheduleRender()
+    })
+  }
+  else if (!emptyDragCellStateFlushFrame) {
+    emptyDragCellStateMap.value = {
+      ...emptyDragCellStateMap.value,
+      [key]: pendingEmptyDragCellStateMap[key],
+    }
+    pendingEmptyDragCellStateMap = {}
+    scheduleRender()
+  }
 }
 
 function clearEmptyDragCellStates() {
+  pendingEmptyDragCellStateMap = {}
+  if (emptyDragCellStateFlushFrame && typeof window !== 'undefined') {
+    window.cancelAnimationFrame(emptyDragCellStateFlushFrame)
+    emptyDragCellStateFlushFrame = 0
+  }
   emptyDragCellStateMap.value = {}
   scheduleRender()
 }
@@ -1447,6 +1473,8 @@ onUnmounted(() => {
   clearScheduleCellPressTracking()
   if (pendingFrame)
     window.cancelAnimationFrame(pendingFrame)
+  if (emptyDragCellStateFlushFrame)
+    window.cancelAnimationFrame(emptyDragCellStateFlushFrame)
   window.removeEventListener('resize', updateViewportMetrics)
 })
 
