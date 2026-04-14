@@ -16,13 +16,11 @@ var instConfigBooleanFields = map[string]struct{}{
 	"enableStudentManager":     {},
 	"limitSameWeChat":          {},
 	"limitImportSameWeChat":    {},
-	"enableQuickUnifiedPeriod": {},
 }
 
 func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) error {
 	return ensureColumnsOnTable(ctx, db, "inst_config", map[string]string{
-		"enable_quick_unified_period": "enable_quick_unified_period TINYINT(1) NOT NULL DEFAULT 0",
-		"unified_time_period_json":    "unified_time_period_json LONGTEXT NULL",
+		"unified_time_period_json": "unified_time_period_json LONGTEXT NULL",
 	})
 }
 
@@ -110,9 +108,8 @@ func (repo *Repository) UpdateInstConfig(ctx context.Context, instID int64, payl
 		"enableViceSellStaff":     "enable_vice_sell_staff",
 		"enableAdvisor":           "enable_advisor",
 		"enableStudentManager":    "enable_student_manager",
-		"limitSameWeChat":           "limit_same_weChat",
-		"limitImportSameWeChat":     "limit_import_same_weChat",
-		"enableQuickUnifiedPeriod":  "enable_quick_unified_period",
+		"limitSameWeChat":       "limit_same_weChat",
+		"limitImportSameWeChat": "limit_import_same_weChat",
 		// unifiedTimePeriodJson 已改为 inst_period_* 表存储，勿再通过本方法写入 LONGTEXT
 	}
 

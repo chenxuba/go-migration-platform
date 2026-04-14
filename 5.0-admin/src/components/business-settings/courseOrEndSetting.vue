@@ -2,22 +2,20 @@
 import { QuestionCircleOutlined, RightOutlined } from '@ant-design/icons-vue'
 import CreateCombinedCourseModal from '~/components/common/create-combined-course-modal.vue'
 import InstUnifiedPeriodEditDrawer from '@/components/business-settings/inst-unified-period-edit-drawer.vue'
-import { useUserStore } from '@/stores/user'
-import { setInstConfigApi } from '@/api/common/config'
+import { getInstPeriodConfigApi } from '@/api/common/config'
 import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   parseUnifiedTimePeriodConfig,
   slotCountActive,
   configGroupsSorted,
 } from '@/utils/unified-time-period'
-import messageService from '@/utils/messageService'
 
 const combinedCourseModalOpen = ref(false)
-const userStore = useUserStore()
 const unifiedPeriodEditOpen = ref(false)
+const unifiedPeriodConfigRaw = ref(null)
 
 const unifiedPeriodDisplay = computed(() => {
-  const parsed = parseUnifiedTimePeriodConfig(userStore.instConfig?.unifiedTimePeriodJson)
+  const parsed = parseUnifiedTimePeriodConfig(unifiedPeriodConfigRaw.value)
   const cfg = parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG
   return configGroupsSorted(cfg)
 })
@@ -30,40 +28,19 @@ function groupLeadingLetter(g) {
   return (g.name || '').trim().charAt(0) || '—'
 }
 
-async function persistQuickUnified(checked) {
-  toggleValue10.value = checked
+async function refreshUnifiedPeriods() {
   try {
-    await setInstConfigApi({
-      ...userStore.instConfig,
-      enableQuickUnifiedPeriod: checked,
-    })
-    await userStore.getInstConfig()
+    const res = await getInstPeriodConfigApi()
+    unifiedPeriodConfigRaw.value = res.result?.unifiedTimePeriodJson ?? null
   }
   catch (e) {
-    console.error(e)
-    messageService.error('保存失败')
-    toggleValue10.value = !checked
+    console.warn('getInstPeriodConfig', e)
   }
 }
 
 onMounted(async () => {
-  try {
-    if (!userStore.instConfig)
-      await userStore.getInstConfig()
-    toggleValue10.value = Boolean(userStore.instConfig?.enableQuickUnifiedPeriod)
-  }
-  catch (e) {
-    console.warn('getInstConfig', e)
-  }
+  await refreshUnifiedPeriods()
 })
-
-watch(
-  () => userStore.instConfig?.enableQuickUnifiedPeriod,
-  (v) => {
-    if (userStore.instConfig && typeof v !== 'undefined')
-      toggleValue10.value = Boolean(v)
-  },
-)
 
 const activeKey = ref('')
 const activeKey2 = ref('')
@@ -77,7 +54,6 @@ const toggleValue5 = ref(false)
 const toggleValue6 = ref(true)
 const toggleValue8 = ref(true)
 const toggleValue9 = ref(true)
-const toggleValue10 = ref(true)
 </script>
 
 <template>
@@ -352,23 +328,6 @@ const toggleValue10 = ref(true)
     <div class="flex justify-between items-center px-16px mt-12px">
       <span class="text-#666 text-12px">上课时段设置</span>
     </div>
-    <div class="bg-white settings-item mt-10px">
-      <div class="item-content">
-        <div class="item-title" style="font-size: 16px;">
-          快捷选择学校统一时段
-        </div>
-        <div class="item-description ">
-          开启后，可在排课时快捷选择学校统一上课时段
-        </div>
-      </div>
-      <div class="item-status ml-12px">
-        <a-switch
-          :checked="toggleValue10"
-          @update:checked="persistQuickUnified"
-          @click.stop
-        />
-      </div>
-    </div>
     <!-- 学校统一上课时间段 -->
     <div class="settings-item bg-white">
       <div class="item-content">
@@ -430,6 +389,7 @@ const toggleValue10 = ref(true)
 
     <InstUnifiedPeriodEditDrawer
       v-model:open="unifiedPeriodEditOpen"
+      @saved="refreshUnifiedPeriods"
     />
   </div>
 </template>

@@ -312,6 +312,18 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesDisabledTeacherFromPeriodG
 		},
 		{
 			query: `
+				SELECT payload_json
+				FROM inst_period_config_version
+				WHERE inst_id = ? AND effective_week_start <= ?
+				ORDER BY effective_week_start DESC, id DESC
+				LIMIT 1
+			`,
+			args:    []any{instID, "2026-04-06"},
+			columns: []string{"payload_json"},
+			rows:    [][]driver.Value{},
+		},
+		{
+			query: `
 				SELECT t.teacher_user_id
 				FROM inst_period_group_teacher t
 				INNER JOIN inst_period_group g ON g.id = t.group_id AND g.inst_id = ? AND g.del_flag = 0 AND g.group_uuid = ?
@@ -451,6 +463,18 @@ func TestListTeachingSchedulesByTeacherMatrix_ExistingEmptyPeriodGroupShowsNoTea
 		},
 		{
 			query: `
+				SELECT payload_json
+				FROM inst_period_config_version
+				WHERE inst_id = ? AND effective_week_start <= ?
+				ORDER BY effective_week_start DESC, id DESC
+				LIMIT 1
+			`,
+			args:    []any{instID, "2026-04-13"},
+			columns: []string{"payload_json"},
+			rows:    [][]driver.Value{},
+		},
+		{
+			query: `
 				SELECT t.teacher_user_id
 				FROM inst_period_group_teacher t
 				INNER JOIN inst_period_group g ON g.id = t.group_id AND g.inst_id = ? AND g.del_flag = 0 AND g.group_uuid = ?
@@ -490,6 +514,151 @@ func TestListTeachingSchedulesByTeacherMatrix_ExistingEmptyPeriodGroupShowsNoTea
 	for _, day := range matrix {
 		if len(day.ScheduleListVoList) != 0 {
 			t.Fatalf("expected empty teacher columns for existing empty period group on %s, got %d", day.ScheduleDate, len(day.ScheduleListVoList))
+		}
+	}
+}
+
+func TestListTeachingSchedulesByTeacherMatrix_UsesHistoricalPeriodGroupVersionTeacherBindings(t *testing.T) {
+	userID := int64(711)
+	instID := int64(811)
+	groupUUID := "group-c"
+	historicalTeacherID := int64(22)
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		findInstIDExpectation(userID, instID),
+		{
+			query: `
+				SELECT id,
+					COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name
+				FROM inst_user
+				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0
+				ORDER BY id ASC
+			`,
+			args:    []any{instID},
+			columns: []string{"id", "display_name"},
+			rows:    [][]driver.Value{},
+		},
+		{
+			query: `
+				SELECT
+					id,
+					IFNULL(batch_no, ''),
+					IFNULL(batch_size, 1),
+					IFNULL(class_type, 0),
+					IFNULL(teaching_class_id, 0),
+					IFNULL(teaching_class_name, ''),
+					IFNULL(student_id, 0),
+					IFNULL(student_name, ''),
+					IFNULL(lesson_id, 0),
+					IFNULL(lesson_name, ''),
+					IFNULL(teacher_id, 0),
+					IFNULL(teacher_name, ''),
+					assistant_ids_json,
+					assistant_names_json,
+					IFNULL(classroom_id, 0),
+					IFNULL(classroom_name, ''),
+					lesson_date,
+					lesson_start_at,
+					lesson_end_at,
+					IFNULL(status, 0)
+				FROM teaching_schedule ts
+				WHERE ts.inst_id = ? AND ts.del_flag = 0 AND ts.status = ? AND ts.lesson_date >= ? AND ts.lesson_date <= ?
+				ORDER BY ts.lesson_start_at ASC, ts.id ASC
+			`,
+			args: []any{
+				instID,
+				model.TeachingScheduleStatusActive,
+				"2026-04-06",
+				"2026-04-12",
+			},
+			columns: []string{
+				"id",
+				"batch_no",
+				"batch_size",
+				"class_type",
+				"teaching_class_id",
+				"teaching_class_name",
+				"student_id",
+				"student_name",
+				"lesson_id",
+				"lesson_name",
+				"teacher_id",
+				"teacher_name",
+				"assistant_ids_json",
+				"assistant_names_json",
+				"classroom_id",
+				"classroom_name",
+				"lesson_date",
+				"lesson_start_at",
+				"lesson_end_at",
+				"status",
+			},
+			rows: [][]driver.Value{},
+		},
+		{
+			query: `
+				SELECT payload_json
+				FROM inst_period_config_version
+				WHERE inst_id = ? AND effective_week_start <= ?
+				ORDER BY effective_week_start DESC, id DESC
+				LIMIT 1
+			`,
+			args:    []any{instID, "2026-04-06"},
+			columns: []string{"payload_json"},
+			rows: [][]driver.Value{
+				{`{"version":1,"groups":[{"id":"group-c","name":"C组","sort":2,"slots":[{"index":1,"start":"09:20","end":"10:00","enabled":true}],"boundTeachers":[{"id":"22","name":"许晶晶"}]}]}`},
+			},
+		},
+		{
+			query: `
+				SELECT id, IFNULL(nick_name, ''), IFNULL(disabled, 0)
+				FROM inst_user
+				WHERE inst_id = ? AND del_flag = 0 AND id IN (?)
+			`,
+			args:    []any{instID, historicalTeacherID},
+			columns: []string{"id", "nick_name", "disabled"},
+			rows: [][]driver.Value{
+				{historicalTeacherID, "许晶晶", false},
+			},
+		},
+		{
+			query: `
+				SELECT id,
+					COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name,
+					IFNULL(disabled, 0) AS disabled
+				FROM inst_user
+				WHERE inst_id = ? AND del_flag = 0 AND id IN (?)
+				ORDER BY id ASC
+			`,
+			args:    []any{instID, historicalTeacherID},
+			columns: []string{"id", "display_name", "disabled"},
+			rows: [][]driver.Value{
+				{historicalTeacherID, "许晶晶", false},
+			},
+		},
+	})
+	defer cleanup()
+
+	matrix, err := svc.ListTeachingSchedulesByTeacherMatrix(userID, model.TeachingScheduleListQueryDTO{
+		StartDate:       "2026-04-06",
+		EndDate:         "2026-04-12",
+		PeriodGroupUUID: groupUUID,
+	})
+	if err != nil {
+		t.Fatalf("ListTeachingSchedulesByTeacherMatrix returned error: %v", err)
+	}
+	if len(matrix) != 7 {
+		t.Fatalf("expected 7 matrix days, got %d", len(matrix))
+	}
+	for _, day := range matrix {
+		if len(day.ScheduleListVoList) != 1 {
+			t.Fatalf("expected one historical teacher column on %s, got %d", day.ScheduleDate, len(day.ScheduleListVoList))
+		}
+		if day.ScheduleListVoList[0].TeacherID != historicalTeacherID {
+			t.Fatalf("expected historical teacher %d on %s, got %d", historicalTeacherID, day.ScheduleDate, day.ScheduleListVoList[0].TeacherID)
+		}
+		if day.ScheduleListVoList[0].TeacherName != "许晶晶" {
+			t.Fatalf("expected historical teacher name on %s, got %q", day.ScheduleDate, day.ScheduleListVoList[0].TeacherName)
 		}
 	}
 }

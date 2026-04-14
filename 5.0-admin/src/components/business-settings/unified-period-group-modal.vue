@@ -3,8 +3,7 @@
  * 单个时段组新增/编辑，保存机构统一时段配置
  */
 import UnifiedPeriodGroupForm from '@/components/business-settings/unified-period-group-form.vue'
-import { previewInstPeriodEffectiveApi, setInstConfigApi } from '@/api/common/config'
-import { useUserStore } from '@/stores/user'
+import { getInstPeriodConfigApi, previewInstPeriodEffectiveApi, setInstConfigApi } from '@/api/common/config'
 import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   buildQuickHourlySlots,
@@ -26,7 +25,6 @@ const emit = defineEmits<{
   (e: 'saved'): void
 }>()
 
-const userStore = useUserStore()
 const saving = ref(false)
 const previewLoading = ref(false)
 const previewWeekStart = ref('')
@@ -34,6 +32,7 @@ const previewAppliedToday = ref<boolean | null>(null)
 const formRef = ref<InstanceType<typeof UnifiedPeriodGroupForm> | null>(null)
 
 const localGroup = ref<UnifiedPeriodGroup>(emptyNewGroup())
+const baseConfig = ref<UnifiedTimePeriodConfig>(cloneConfig(DEFAULT_UNIFIED_TIME_PERIOD_CONFIG))
 
 const modalTitle = computed(() =>
   props.mode === 'create' ? '添加时段组' : '编辑时段组',
@@ -77,9 +76,7 @@ function cloneConfig(c: UnifiedTimePeriodConfig): UnifiedTimePeriodConfig {
 }
 
 function loadBaseConfig(): UnifiedTimePeriodConfig {
-  const raw = userStore.instConfig?.unifiedTimePeriodJson
-  const parsed = parseUnifiedTimePeriodConfig(raw)
-  return cloneConfig(parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG)
+  return cloneConfig(baseConfig.value)
 }
 
 function validateFullConfig(cfg: UnifiedTimePeriodConfig): string | null {
@@ -139,11 +136,27 @@ async function refreshEffectivePreview() {
   }
 }
 
+async function loadBaseConfigFromServer() {
+  const res = await getInstPeriodConfigApi()
+  const parsed = parseUnifiedTimePeriodConfig(res.result?.unifiedTimePeriodJson)
+  baseConfig.value = cloneConfig(parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG)
+}
+
 watch(
   () => props.open,
   (open) => {
     if (!open)
       return
+    void (async () => {
+      try {
+        await loadBaseConfigFromServer()
+      }
+      catch (e) {
+        console.error('load inst period config failed', e)
+        messageService.error('加载时段配置失败')
+        close()
+        return
+      }
     if (props.mode === 'create') {
       localGroup.value = emptyNewGroup()
       void refreshEffectivePreview()
@@ -163,6 +176,7 @@ watch(
     }
     localGroup.value = cloneGroup(g)
     void refreshEffectivePreview()
+    })()
   },
 )
 
@@ -215,10 +229,8 @@ async function handleSave() {
   saving.value = true
   try {
     const res = await setInstConfigApi({
-      ...(userStore.instConfig as unknown as Record<string, unknown>),
       unifiedTimePeriodJson: cfg,
     } as never)
-    await userStore.getInstConfig()
     const appliedWeek = res.result?.periodWeekStart
     if (appliedWeek) {
       messageService.success(res.result?.periodAppliedToday

@@ -656,7 +656,34 @@ func (repo *Repository) ListPeriodTeacherUserIDsByGroupUUID(ctx context.Context,
 }
 
 func (repo *Repository) ListPeriodTeacherUserIDsByGroupUUIDForDate(ctx context.Context, instID int64, groupUUID string, targetDate time.Time) ([]int64, error) {
-	return repo.ListPeriodTeacherUserIDsByGroupUUID(ctx, instID, groupUUID)
+	u := strings.TrimSpace(groupUUID)
+	if u == "" {
+		return nil, nil
+	}
+	weekStart := mondayOfInstPeriodWeek(targetDate).Format("2006-01-02")
+	payload, err := repo.loadInstPeriodPayloadBySQL(ctx, instID, `
+		SELECT payload_json
+		FROM inst_period_config_version
+		WHERE inst_id = ? AND effective_week_start <= ?
+		ORDER BY effective_week_start DESC, id DESC
+		LIMIT 1
+	`, instID, weekStart)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return repo.ListPeriodTeacherUserIDsByGroupUUID(ctx, instID, u)
+		}
+		return nil, err
+	}
+	if payload == nil {
+		return repo.ListPeriodTeacherUserIDsByGroupUUID(ctx, instID, u)
+	}
+	for _, group := range payload.Groups {
+		if strings.TrimSpace(group.ID) != u {
+			continue
+		}
+		return collectTeacherIDsFromInstPeriodGroup(group), nil
+	}
+	return []int64{}, nil
 }
 
 func (repo *Repository) HasPeriodGroupUUID(ctx context.Context, instID int64, groupUUID string) (bool, error) {

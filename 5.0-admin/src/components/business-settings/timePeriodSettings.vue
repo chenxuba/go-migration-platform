@@ -4,24 +4,21 @@ import { Modal } from 'ant-design-vue'
 import type { TableColumnType } from 'ant-design-vue'
 import { debounce } from 'lodash-es'
 import UnifiedPeriodGroupModal from '@/components/business-settings/unified-period-group-modal.vue'
-import { repairInstPeriodVersionsApi, type InstConfig, setInstConfigApi } from '@/api/common/config'
+import { getInstPeriodConfigApi, previewInstPeriodEffectiveApi, repairInstPeriodVersionsApi, setInstConfigApi } from '@/api/common/config'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
-import { useUserStore } from '@/stores/user'
 import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
-  configGroupsSorted,
-  parseUnifiedTimePeriodConfig,
-  slotCountActive,
   type UnifiedPeriodGroup,
   type UnifiedPeriodSlot,
   type UnifiedTimePeriodConfig,
+  configGroupsSorted,
+  parseUnifiedTimePeriodConfig,
 } from '@/utils/unified-time-period'
 import messageService from '@/utils/messageService'
 
-const userStore = useUserStore()
 const loading = ref(false)
 const repairing = ref(false)
-const quickUnifiedEnabled = ref(false)
+const periodConfigRaw = ref<unknown>(null)
 
 const groupModalOpen = ref(false)
 const groupModalMode = ref<'create' | 'edit'>('edit')
@@ -29,7 +26,7 @@ const editingGroupId = ref<string | null>(null)
 const effectiveRuleText = '生效规则：历史周不会被覆盖；如果本周没有老师排课，新时段从本周生效，否则从下周生效。'
 
 const periodGroups = computed<UnifiedPeriodGroup[]>(() => {
-  const parsed = parseUnifiedTimePeriodConfig(userStore.instConfig?.unifiedTimePeriodJson)
+  const parsed = parseUnifiedTimePeriodConfig(periodConfigRaw.value)
   const cfg = parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG
   return configGroupsSorted(cfg)
 })
@@ -111,7 +108,7 @@ function hasBoundTeachers(g: UnifiedPeriodGroupLike): boolean {
 }
 
 function loadBaseConfig(): UnifiedTimePeriodConfig {
-  const raw = userStore.instConfig?.unifiedTimePeriodJson
+  const raw = periodConfigRaw.value
   const parsed = parseUnifiedTimePeriodConfig(raw)
   return cloneConfig(parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG)
 }
@@ -119,12 +116,12 @@ function loadBaseConfig(): UnifiedTimePeriodConfig {
 async function refreshFromServer() {
   loading.value = true
   try {
-    await userStore.getInstConfig()
-    quickUnifiedEnabled.value = Boolean(userStore.instConfig?.enableQuickUnifiedPeriod)
+    const res = await getInstPeriodConfigApi()
+    periodConfigRaw.value = res.result?.unifiedTimePeriodJson ?? null
   }
   catch (e) {
-    console.error('load inst config failed', e)
-    messageService.error('获取机构配置失败')
+    console.error('load inst period config failed', e)
+    messageService.error('获取时段配置失败')
   }
   finally {
     loading.value = false
@@ -134,32 +131,6 @@ async function refreshFromServer() {
 onMounted(() => {
   void refreshFromServer()
 })
-
-watch(
-  () => userStore.instConfig?.enableQuickUnifiedPeriod,
-  (v) => {
-    if (userStore.instConfig && typeof v !== 'undefined')
-      quickUnifiedEnabled.value = Boolean(v)
-  },
-)
-
-async function onQuickUnifiedChange(checked: boolean) {
-  const prev = quickUnifiedEnabled.value
-  quickUnifiedEnabled.value = checked
-  try {
-    await setInstConfigApi({
-      ...(userStore.instConfig as InstConfig),
-      enableQuickUnifiedPeriod: checked,
-    })
-    await userStore.getInstConfig()
-    messageService.success('已保存')
-  }
-  catch (e) {
-    console.error(e)
-    messageService.error('保存失败')
-    quickUnifiedEnabled.value = prev
-  }
-}
 
 function openCreateGroup() {
   groupModalMode.value = 'create'
@@ -211,9 +182,17 @@ function repairPeriodVersions() {
 const bindModalOpen = ref(false)
 const bindGroupId = ref<string | null>(null)
 const bindSaving = ref(false)
+const bindInitialTeacherIds = ref<string[]>([])
 const bindTeacherIds = ref<string[]>([])
+const bindPreviewLoading = ref(false)
+const bindPreviewWeekStart = ref('')
+const bindPreviewAppliedToday = ref<boolean | null>(null)
 
-type StaffRow = { id: string, nickName: string, mobile: string }
+interface StaffRow {
+  id: string
+  nickName: string
+  mobile: string
+}
 const staffList = ref<StaffRow[]>([])
 const bindStaffCache = new Map<string, StaffRow>()
 const staffLoading = ref(false)
@@ -241,6 +220,28 @@ const bindModalTitle = computed(() => {
   const g = periodGroups.value.find(x => x.id === bindGroupId.value)
   const name = g?.name?.trim() || '该时段组'
   return `关联老师 — ${name}`
+})
+
+function normalizeTeacherIdList(ids: string[]) {
+  return Array.from(new Set((Array.isArray(ids) ? ids : []).map(id => String(id || '').trim()).filter(Boolean))).sort()
+}
+
+const bindSelectionChanged = computed(() => {
+  const initial = normalizeTeacherIdList(bindInitialTeacherIds.value)
+  const selected = normalizeTeacherIdList(bindTeacherIds.value)
+  if (initial.length !== selected.length)
+    return true
+  return initial.some((id, index) => id !== selected[index])
+})
+
+const bindEffectivePreviewText = computed(() => {
+  if (!bindSelectionChanged.value)
+    return '当前未修改关联老师，保存后不会变更生效周。'
+  if (!bindPreviewWeekStart.value)
+    return '正在计算本次关联老师修改会从哪一周开始生效...'
+  return bindPreviewAppliedToday.value
+    ? `本次预计从 ${bindPreviewWeekStart.value} 开始生效。`
+    : `本次预计从 ${bindPreviewWeekStart.value} 开始生效；在此之前已排课的周不受影响。`
 })
 
 function cacheBindStaffRows(rows: StaffRow[]) {
@@ -290,23 +291,16 @@ async function loadStaffForBind() {
 function openBindTeachers(record: UnifiedPeriodGroupLike) {
   bindStaffCache.clear()
   bindGroupId.value = String(record.id || '')
-  bindTeacherIds.value = normalizedBoundTeachers(record).map(t => String(t.id))
+  const currentTeacherIds = normalizedBoundTeachers(record).map(t => String(t.id))
+  bindInitialTeacherIds.value = currentTeacherIds
+  bindTeacherIds.value = currentTeacherIds
+  bindPreviewWeekStart.value = ''
+  bindPreviewAppliedToday.value = null
   bindPagination.current = 1
   bindPagination.total = 0
   bindStaffKeyword.value = ''
   bindModalOpen.value = true
   void loadStaffForBind()
-}
-
-function closeBindModal() {
-  debouncedSearchBindStaff.cancel()
-  bindModalOpen.value = false
-  bindGroupId.value = null
-  bindTeacherIds.value = []
-  bindStaffKeyword.value = ''
-  bindPagination.current = 1
-  bindPagination.total = 0
-  staffList.value = []
 }
 
 function selectAllFilteredStaff() {
@@ -354,39 +348,123 @@ watch(bindStaffKeyword, () => {
   debouncedSearchBindStaff()
 })
 
-async function saveBindTeachers() {
+function buildBindEditingConfig(): UnifiedTimePeriodConfig | null {
   if (!bindGroupId.value)
+    return null
+  const cfg = loadBaseConfig()
+  const g = cfg.groups.find(x => x.id === bindGroupId.value)
+  if (!g)
+    return null
+  const prev = g.boundTeachers || []
+  const prevName = new Map(prev.map(t => [String(t.id), t.name]))
+  g.boundTeachers = bindTeacherIds.value.map(id => ({
+    id: String(id),
+    name: bindStaffCache.get(String(id))?.nickName || prevName.get(String(id)) || String(id),
+  }))
+  return cfg
+}
+
+async function refreshBindEffectivePreview() {
+  if (!bindSelectionChanged.value) {
+    bindPreviewWeekStart.value = ''
+    bindPreviewAppliedToday.value = null
     return
-  bindSaving.value = true
+  }
+  const cfg = buildBindEditingConfig()
+  if (!cfg) {
+    bindPreviewWeekStart.value = ''
+    bindPreviewAppliedToday.value = null
+    return
+  }
+  bindPreviewLoading.value = true
   try {
-    const cfg = loadBaseConfig()
-    const g = cfg.groups.find(x => x.id === bindGroupId.value)
-    if (!g) {
-      messageService.error('未找到该时段组，请刷新后重试')
-      throw new Error('group missing')
-    }
-    const prev = g.boundTeachers || []
-    const prevName = new Map(prev.map(t => [String(t.id), t.name]))
-    g.boundTeachers = bindTeacherIds.value.map(id => ({
-      id: String(id),
-      name: bindStaffCache.get(String(id))?.nickName || prevName.get(String(id)) || String(id),
-    }))
-    const res = await setInstConfigApi({
-      ...(userStore.instConfig as InstConfig),
+    const res = await previewInstPeriodEffectiveApi({
       unifiedTimePeriodJson: cfg,
     })
+    bindPreviewWeekStart.value = String(res.result?.periodWeekStart || '').trim()
+    bindPreviewAppliedToday.value = typeof res.result?.periodAppliedToday === 'boolean' ? res.result.periodAppliedToday : null
+  }
+  catch (e) {
+    console.error('preview bind teachers effective failed', e)
+    bindPreviewWeekStart.value = ''
+    bindPreviewAppliedToday.value = null
+  }
+  finally {
+    bindPreviewLoading.value = false
+  }
+}
+
+const debouncedRefreshBindEffectivePreview = debounce(() => {
+  if (!bindModalOpen.value)
+    return
+  void refreshBindEffectivePreview()
+}, 250)
+
+watch(
+  () => bindModalOpen.value
+    ? JSON.stringify({
+        groupId: bindGroupId.value,
+        teacherIds: bindTeacherIds.value,
+      })
+    : '',
+  () => {
+    if (!bindModalOpen.value)
+      return
+    debouncedRefreshBindEffectivePreview()
+  },
+)
+
+function closeBindModal() {
+  debouncedSearchBindStaff.cancel()
+  debouncedRefreshBindEffectivePreview.cancel()
+  bindModalOpen.value = false
+  bindGroupId.value = null
+  bindInitialTeacherIds.value = []
+  bindTeacherIds.value = []
+  bindPreviewWeekStart.value = ''
+  bindPreviewAppliedToday.value = null
+  bindStaffKeyword.value = ''
+  bindPagination.current = 1
+  bindPagination.total = 0
+  staffList.value = []
+}
+
+async function saveBindTeachers() {
+  if (!bindSelectionChanged.value) {
+    messageService.info('关联老师未修改')
+    closeBindModal()
+    return
+  }
+  const cfg = buildBindEditingConfig()
+  if (!cfg) {
+    messageService.error('未找到该时段组，请刷新后重试')
+    return
+  }
+  bindSaving.value = true
+  try {
+    const res = await setInstConfigApi({
+      unifiedTimePeriodJson: cfg,
+    } as never)
     if (res.code !== 200) {
       messageService.error(res.message || '保存失败')
       throw new Error(res.message || 'save failed')
     }
-    await userStore.getInstConfig()
-    messageService.success('已保存关联老师')
+    await refreshFromServer()
+    const appliedWeek = res.result?.periodWeekStart
+    if (appliedWeek) {
+      messageService.success(res.result?.periodAppliedToday
+        ? `已保存关联老师，并从本周 ${appliedWeek} 生效`
+        : `已保存关联老师，将从 ${appliedWeek} 这一周开始生效，之前已排课周不受影响`)
+    }
+    else {
+      messageService.success('已保存关联老师')
+    }
     closeBindModal()
   }
   catch (e) {
     console.error(e)
-    if (!(e instanceof Error && e.message === 'group missing') && !(e instanceof Error && e.message === 'save failed'))
-      messageService.error('保存失败')
+    if (!(e instanceof Error && e.message === 'save failed'))
+      messageService.error((e as any)?.response?.data?.message || (e as Error)?.message || '保存失败')
     throw e
   }
   finally {
@@ -414,11 +492,12 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
       try {
         const cfg = loadBaseConfig()
         cfg.groups = cfg.groups.filter(g => g.id !== String(item.id || ''))
-        cfg.groups.forEach((g, i) => { g.sort = i })
-        const res = await setInstConfigApi({
-          ...(userStore.instConfig as InstConfig),
-          unifiedTimePeriodJson: cfg,
+        cfg.groups.forEach((g, i) => {
+          g.sort = i
         })
+        const res = await setInstConfigApi({
+          unifiedTimePeriodJson: cfg,
+        } as never)
         if (res.code !== 200) {
           messageService.error(res.message || '删除失败')
           return
@@ -454,14 +533,6 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
             添加时段组
           </a-button>
         </div>
-      </div>
-
-      <div class="period-panel__switch-row">
-        <span class="period-panel__switch-label">快捷排课统一时段</span>
-        <a-switch
-          :checked="quickUnifiedEnabled"
-          @change="onQuickUnifiedChange"
-        />
       </div>
 
       <div class="period-panel__tip">
@@ -569,6 +640,9 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
             </a-button>
           </a-space>
         </div>
+        <div class="bind-teachers-preview">
+          {{ bindPreviewLoading ? '正在计算预计生效日期...' : bindEffectivePreviewText }}
+        </div>
         <a-table
           class="bind-teachers-table"
           size="small"
@@ -649,23 +723,6 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
 .period-panel__edit {
   flex-shrink: 0;
   border-radius: 6px;
-}
-
-.period-panel__switch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: #fafafa;
-}
-
-.period-panel__switch-label {
-  font-size: 13px;
-  color: #4b5563;
-  font-weight: 500;
 }
 
 .period-panel__tip {
@@ -763,6 +820,17 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
 .bind-teachers-toolbar__search {
   width: 220px;
   max-width: 100%;
+}
+
+.bind-teachers-preview {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff9ef;
+  border: 1px solid #ffe2b8;
+  color: #8a5a15;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .bind-teachers-table {

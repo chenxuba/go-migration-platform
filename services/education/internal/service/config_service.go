@@ -223,11 +223,11 @@ func (svc *Service) resolveInstPeriodUpdateResult(ctx context.Context, instID in
 	if err := svc.repo.NormalizeInstPeriodPayloadBoundTeachers(ctx, instID, periodPayload); err != nil {
 		return result, err
 	}
-	latestPayload, err := svc.repo.GetLatestInstPeriodPayload(ctx, instID)
+	currentPayload, err := svc.repo.GetInstPeriodPayloadForDate(ctx, instID, time.Now())
 	if err != nil {
 		return result, err
 	}
-	affectedTeacherIDs := repository.CollectAffectedTeacherUserIDs(latestPayload, periodPayload)
+	affectedTeacherIDs := repository.CollectAffectedTeacherUserIDs(currentPayload, periodPayload)
 	effectiveWeekStart, appliedToday, err := svc.repo.ResolveInstPeriodEffectiveWeekStart(ctx, instID, time.Now(), affectedTeacherIDs)
 	if err != nil {
 		return result, err

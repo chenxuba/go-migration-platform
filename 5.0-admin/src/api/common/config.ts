@@ -81,7 +81,6 @@ export interface InstConfig {
   enableSubject: string
   enableSubjectOnlineSaleFilter: string
   enableTeachingBillRemindSms: string
-  enableQuickUnifiedPeriod?: boolean
   unifiedTimePeriodJson?: unknown
   enableTimetableTimeConfig: string
   enableTranOrderFinishedSendMessage: string
