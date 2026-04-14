@@ -284,7 +284,7 @@ func (repo *Repository) SaveInstUser(ctx context.Context, instID int64, dto mode
 	userResult, err := tx.ExecContext(ctx, `
 		INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, is_admin, del_flag, create_time)
 		VALUES (UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, NOW())
-	`, username, passwordHash, strings.TrimSpace(dto.Mobile), strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.NickName), dto.UserType, boolValue(dto.Admin), boolValue(dto.Admin))
+	`, username, passwordHash, strings.TrimSpace(dto.Mobile), strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.NickName), dto.UserType, boolValue(dto.Admin))
 	if err != nil {
 		return 0, err
 	}
