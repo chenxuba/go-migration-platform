@@ -754,6 +754,11 @@ function drawHeader(ctx, visibleWidth) {
 
     ctx.fillStyle = HEADER_BG
     ctx.fillRect(x, 0, columnMeta.width, HEADER_HEIGHT)
+    ctx.strokeStyle = GRID_LINE
+    ctx.beginPath()
+    ctx.moveTo(x + 0.5, 0)
+    ctx.lineTo(x + 0.5, HEADER_HEIGHT)
+    ctx.stroke()
     ctx.strokeStyle = STRONG_GRID_LINE
     ctx.beginPath()
     ctx.moveTo(x + columnMeta.width + 0.5, 0)
