@@ -107,6 +107,8 @@ const hoveredEventRect = ref<{ left: number, top: number, width: number, height:
 let pendingFrame = 0
 let resizeObserver: ResizeObserver | null = null
 let hoverCloseTimer: number | null = null
+const textMeasureCache = new Map<string, number>()
+const ellipsisCache = new Map<string, string>()
 
 const eventMap = computed(() => {
   const map = new Map<string, ScheduleBoardEvent>()
@@ -125,6 +127,21 @@ const overlayColumns = computed(() =>
     ...column,
     viewLeft: props.timeAxisWidth + column.left - scrollLeft.value,
   })),
+)
+
+const searchableEvents = computed(() =>
+  props.events
+    .map((event, index) => ({
+      event,
+      index,
+      left: Number(event.left || 0),
+      right: Number(event.left || 0) + Number(event.width || 0),
+    }))
+    .sort((a, b) => a.left - b.left || a.index - b.index),
+)
+
+const maxEventWidth = computed(() =>
+  props.events.reduce((max, event) => Math.max(max, Number(event.width || 0)), 0),
 )
 
 function clamp(value: number, min: number, max: number) {
@@ -215,16 +232,38 @@ function handlePopoverOpenChange(event: ScheduleBoardEvent | null | undefined, o
     scheduleCloseHover(32)
 }
 
+function rememberCacheValue<T>(cache: Map<string, T>, key: string, value: T) {
+  if (cache.size >= 4000)
+    cache.clear()
+  cache.set(key, value)
+  return value
+}
+
+function measureTextWidth(ctx: CanvasRenderingContext2D, text: string) {
+  const cacheKey = `${ctx.font}\n${text}`
+  const cached = textMeasureCache.get(cacheKey)
+  if (cached != null)
+    return cached
+  return rememberCacheValue(textMeasureCache, cacheKey, ctx.measureText(text).width)
+}
+
 function ellipsisText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
   const input = String(text || '')
   if (!input)
     return ''
-  if (ctx.measureText(input).width <= maxWidth)
+  const safeMaxWidth = Math.max(0, Math.floor(maxWidth))
+  if (!safeMaxWidth)
+    return ''
+  const cacheKey = `${ctx.font}\n${safeMaxWidth}\n${input}`
+  const cached = ellipsisCache.get(cacheKey)
+  if (cached != null)
+    return cached
+  if (measureTextWidth(ctx, input) <= safeMaxWidth)
     return input
   let output = input
-  while (output.length > 1 && ctx.measureText(`${output}…`).width > maxWidth)
+  while (output.length > 1 && measureTextWidth(ctx, `${output}…`) > safeMaxWidth)
     output = output.slice(0, -1)
-  return `${output}…`
+  return rememberCacheValue(ellipsisCache, cacheKey, `${output}…`)
 }
 
 function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
@@ -273,10 +312,29 @@ function visibleColumns(viewportWidth: number) {
 function visibleEvents(viewportWidth: number) {
   const bodyLeft = scrollLeft.value
   const bodyRight = scrollLeft.value + Math.max(0, viewportWidth - props.timeAxisWidth)
-  return props.events.filter((event) => {
-    const right = event.left + event.width
-    return right >= bodyLeft && event.left <= bodyRight
-  })
+  const searchable = searchableEvents.value
+  if (!searchable.length)
+    return []
+  const searchStart = bodyLeft - maxEventWidth.value
+  let low = 0
+  let high = searchable.length
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (searchable[middle].left < searchStart)
+      low = middle + 1
+    else
+      high = middle
+  }
+  const result: Array<{ event: ScheduleBoardEvent, index: number }> = []
+  for (let index = Math.max(0, low - 1); index < searchable.length; index += 1) {
+    const item = searchable[index]
+    if (item.left > bodyRight)
+      break
+    if (item.right >= bodyLeft)
+      result.push({ event: item.event, index: item.index })
+  }
+  result.sort((a, b) => a.index - b.index)
+  return result.map(item => item.event)
 }
 
 function drawTimeAxis(ctx: CanvasRenderingContext2D, viewportWidth: number) {
@@ -376,7 +434,7 @@ function eventBadgeWidth(ctx: CanvasRenderingContext2D, event: ScheduleBoardEven
   const text = String(event.badgeText || '').trim()
   if (!text)
     return 0
-  const baseWidth = Math.max(34, ctx.measureText(text).width + 16)
+  const baseWidth = Math.max(34, measureTextWidth(ctx, text) + 16)
   if (event.badgeVariant === 'group' || event.badgeVariant === 'oneToOne' || event.badgeVariant === 'conflict')
     return baseWidth
   return baseWidth
@@ -669,7 +727,6 @@ watch(
     updateHoveredEventRect()
     scheduleRender()
   },
-  { deep: true },
 )
 
 watch(scrollLeft, () => {
@@ -691,6 +748,8 @@ onUnmounted(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
   clearHoverCloseTimer()
+  textMeasureCache.clear()
+  ellipsisCache.clear()
   if (pendingFrame)
     window.cancelAnimationFrame(pendingFrame)
 })

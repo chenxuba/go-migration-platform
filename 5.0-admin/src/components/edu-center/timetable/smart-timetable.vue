@@ -52,6 +52,7 @@ const DRAG_BATCH_VALIDATE_SINGLE_REQUEST_THRESHOLD = 24
 const DRAG_BATCH_VALIDATE_CHUNK_SIZE = 24
 const DRAG_PRIORITY_NEAR_RADIUS = 240
 const DRAG_LAZY_VALIDATE_DELAY_MS = 32
+const SMART_AUX_BOOTSTRAP_DELAY_MS = 180
 const DRAG_START_PREWARM_DELAY_MS = 220
 
 function getSavedTimeView() {
@@ -804,6 +805,7 @@ const dragValidationPromises = new Map()
 let matrixLoadSeq = 0
 let pendingConflictJump = null
 let focusedScheduleCellTimer = null
+let smartAuxBootstrapTimer = null
 let pendingScheduleDragStart = null
 let customScheduleDragMoveHandler = null
 let customScheduleDragUpHandler = null
@@ -1451,17 +1453,47 @@ function refreshTimetableRelatedData() {
   void loadSchedulingClassrooms()
 }
 
+function clearSmartAuxBootstrapTimer() {
+  if (!smartAuxBootstrapTimer)
+    return
+  clearTimeout(smartAuxBootstrapTimer)
+  smartAuxBootstrapTimer = null
+}
+
+function scheduleSmartAuxBootstrap() {
+  clearSmartAuxBootstrapTimer()
+  if (typeof window === 'undefined') {
+    void fetchOneToOneOptionsForTimetable()
+    void fetchAssistantOptions()
+    void loadClassOptions()
+    void loadSchedulingClassrooms()
+    return
+  }
+  smartAuxBootstrapTimer = window.setTimeout(() => {
+    smartAuxBootstrapTimer = null
+    const run = () => {
+      void fetchOneToOneOptionsForTimetable()
+      void fetchAssistantOptions()
+      void loadClassOptions()
+      void loadSchedulingClassrooms()
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(() => run(), { timeout: 1200 })
+      return
+    }
+    run()
+  }, SMART_AUX_BOOTSTRAP_DELAY_MS)
+}
+
 onMounted(() => {
   void loadTimetableMatrix()
-  void fetchOneToOneOptionsForTimetable()
-  void fetchAssistantOptions()
-  void loadClassOptions()
-  void loadSchedulingClassrooms()
+  scheduleSmartAuxBootstrap()
   emitter.on(EVENTS.REFRESH_DATA, refreshTimetableRelatedData)
 })
 
 onUnmounted(() => {
   emitter.off(EVENTS.REFRESH_DATA, refreshTimetableRelatedData)
+  clearSmartAuxBootstrapTimer()
   clearCustomScheduleDragListeners()
   clearBlockedScheduleDragAttempt()
   if (focusedScheduleCellTimer)

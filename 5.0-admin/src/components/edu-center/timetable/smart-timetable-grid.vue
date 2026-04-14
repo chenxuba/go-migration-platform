@@ -170,6 +170,8 @@ let scheduleCellPressMoveHandler = null
 let scheduleCellPressUpHandler = null
 let suppressedScheduleCellClickKey = ''
 let suppressedScheduleCellClickUntil = 0
+const textMeasureCache = new Map()
+const ellipsisCache = new Map()
 
 const fixedColumns = computed(() =>
   props.columns.filter(column => !props.isScheduleColumn(column)),
@@ -433,16 +435,38 @@ function scheduleStudentSummary(text) {
   return `${names.length}人，${names.join('、')}`
 }
 
+function rememberCacheValue(cache, key, value) {
+  if (cache.size >= 6000)
+    cache.clear()
+  cache.set(key, value)
+  return value
+}
+
+function measureTextWidth(ctx, text) {
+  const cacheKey = `${ctx.font}\n${text}`
+  const cached = textMeasureCache.get(cacheKey)
+  if (cached != null)
+    return cached
+  return rememberCacheValue(textMeasureCache, cacheKey, ctx.measureText(text).width)
+}
+
 function ellipsisText(ctx, text, maxWidth) {
   const input = String(text || '')
   if (!input)
     return ''
-  if (ctx.measureText(input).width <= maxWidth)
+  const safeMaxWidth = Math.max(0, Math.floor(maxWidth))
+  if (!safeMaxWidth)
+    return ''
+  const cacheKey = `${ctx.font}\n${safeMaxWidth}\n${input}`
+  const cached = ellipsisCache.get(cacheKey)
+  if (cached != null)
+    return cached
+  if (measureTextWidth(ctx, input) <= safeMaxWidth)
     return input
   let output = input
-  while (output.length > 1 && ctx.measureText(`${output}…`).width > maxWidth)
+  while (output.length > 1 && measureTextWidth(ctx, `${output}…`) > safeMaxWidth)
     output = output.slice(0, -1)
-  return `${output}…`
+  return rememberCacheValue(ellipsisCache, cacheKey, `${output}…`)
 }
 
 function drawRoundedRect(ctx, x, y, width, height, radius) {
@@ -1014,7 +1038,7 @@ function drawScheduleCell(ctx, entry, viewRect) {
     ? '冲突'
     : (text?.courseType === 1 ? '1v1' : `班课(${text?.isMain ? '主教' : '辅教'})`)
   ctx.font = '500 10px sans-serif'
-  const badgeWidth = Math.min(innerWidth - 10, Math.max(26, ctx.measureText(badgeText).width + 12))
+  const badgeWidth = Math.min(innerWidth - 10, Math.max(26, measureTextWidth(ctx, badgeText) + 12))
   const badgeX = innerX + innerWidth - badgeWidth
   const badgeY = innerY
 
@@ -1436,7 +1460,6 @@ watch(
     updateHoveredScheduleRect()
     scheduleRender()
   },
-  { deep: true },
 )
 
 watch(
@@ -1471,6 +1494,8 @@ onUnmounted(() => {
   resizeObserver = null
   clearHoverCloseTimer()
   clearScheduleCellPressTracking()
+  textMeasureCache.clear()
+  ellipsisCache.clear()
   if (pendingFrame)
     window.cancelAnimationFrame(pendingFrame)
   if (emptyDragCellStateFlushFrame)

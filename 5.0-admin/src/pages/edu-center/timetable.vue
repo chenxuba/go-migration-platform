@@ -73,18 +73,18 @@ function handleClearCurrentWeek() {
   <div class="home">
     <div class="tabs">
       <a-tabs
-        v-model:active-key="activeKey" :animated="false" :tab-bar-style="{
+        v-model:active-key="activeKey" :animated="{ inkBar: true, tabPane: false }" :tab-bar-style="{
           'border-bottom-left-radius': '0px',
           'border-bottom-right-radius': '0px',
         }"
       >
-        <a-tab-pane key="1" tab="智慧课表">
+        <a-tab-pane key="1" tab="智慧课表" force-render>
           <smart-timetable @week-range-change="value => updateWeekRange('1', value)" />
         </a-tab-pane>
-        <a-tab-pane key="2" tab="时间课表">
+        <a-tab-pane key="2" tab="时间课表" force-render>
           <time-timetable @week-range-change="value => updateWeekRange('2', value)" />
         </a-tab-pane>
-        <a-tab-pane key="4" tab="教师矩阵">
+        <a-tab-pane key="4" tab="教师矩阵" force-render>
           <TeacherMatrixApiTimetable @week-range-change="value => updateWeekRange('4', value)" />
         </a-tab-pane>
         <a-tab-pane key="3" tab="冲突日程">
