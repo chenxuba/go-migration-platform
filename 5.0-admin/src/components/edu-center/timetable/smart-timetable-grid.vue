@@ -1491,80 +1491,78 @@ defineExpose({
 </script>
 
 <template>
-  <a-spin :spinning="spinning">
-    <div ref="shellRef" class="st-canvas-grid">
-      <div
-        ref="viewportRef"
-        class="st-canvas-grid__viewport"
-        :style="{ height: `${viewportHeight}px` }"
-        @scroll.passive="handleViewportScroll"
-      >
-        <div class="st-canvas-grid__sticky-layer">
-          <canvas
-            ref="canvasRef"
-            class="st-canvas-grid__canvas"
-            @mousemove="handleCanvasMouseMove"
-            @mouseleave="handleCanvasLeave"
-            @mousedown.left="handleCanvasMouseDown"
-            @click="handleCanvasClick"
-          />
-
-          <div class="st-canvas-grid__overlay">
-            <TimetableScheduleHoverPopover
-              v-if="hoveredScheduleCellKey && hoveredScheduleRect && scheduleCellEntryMap.get(hoveredScheduleCellKey)"
-              :open="!draggingScheduleCellKey && openSchedulePopoverKey === hoveredScheduleCellKey"
-              :schedule-id="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.scheduleId || '')"
-              :editable="Boolean(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.scheduleId) && !(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.courseType === 1 && scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.isMain === false)"
-              :batch-no="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.batchNo || '')"
-              :batch-size="Number(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.batchSize || 0)"
-              :lesson-date="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.lessonDate || '')"
-              :call-status-key="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.callStatusKey || 'unsigned')"
-              :mode-label="scheduleModeShortLabel(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
-              :lesson-title="scheduleLessonTitle(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
-              :teacher-name="scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.teacherName || scheduleCellEntryMap.get(hoveredScheduleCellKey)?.record?.name || '-'"
-              :course-name="scheduleLessonSubtitle(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) || scheduleLessonTitle(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
-              :assistant-text="scheduleAssistantSummary(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
-              :student-text="scheduleStudentSummary(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
-              :time-text="scheduleHeaderTimeText(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.column, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.record)"
-              :conflict-text="scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.scheduledConflict ? scheduleConflictText(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) : ''"
-              @open-change="handleSchedulePopoverOpenChange(scheduleCellEntryMap.get(hoveredScheduleCellKey), $event)"
-              @detail="openScheduledLessonDetail(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord)"
-              @copy="payload => openScheduledLessonCopy(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord, payload)"
-              @copy-current="payload => openScheduledLessonCopyCurrent(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord, payload)"
-              @edit="payload => openScheduledLessonEdit(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord, payload)"
-              @edit-current="payload => openScheduledLessonEditCurrent(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord, payload)"
-            >
-              <div
-                ref="hoverScheduleAnchorRef"
-                class="st-canvas-grid__hover-anchor"
-                :data-schedule-cell-key="hoveredScheduleCellKey"
-                :title="!isScheduleDraggable(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) ? resolveScheduleDragBlockedMessage(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) : undefined"
-                :style="{
-                  left: `${hoveredScheduleRect.left}px`,
-                  top: `${hoveredScheduleRect.top}px`,
-                  width: `${hoveredScheduleRect.width}px`,
-                  height: `${hoveredScheduleRect.height}px`,
-                  cursor: isScheduleDraggable(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) ? 'grab' : 'pointer',
-                }"
-                @mouseenter="setHoveredScheduleEntry(scheduleCellEntryMap.get(hoveredScheduleCellKey))"
-                @mouseleave="scheduleCloseHover(240)"
-                @click="handleScheduleCellClickByEntry(scheduleCellEntryMap.get(hoveredScheduleCellKey))"
-                @mousedown.left="handleSchedulePointerDownByEntry($event, scheduleCellEntryMap.get(hoveredScheduleCellKey))"
-              />
-            </TimetableScheduleHoverPopover>
-          </div>
-        </div>
-
-        <div
-          class="st-canvas-grid__spacer"
-          :style="{
-            width: `${totalGridWidth}px`,
-            height: `${totalGridHeight}px`,
-          }"
+  <div ref="shellRef" class="st-canvas-grid">
+    <div
+      ref="viewportRef"
+      class="st-canvas-grid__viewport"
+      :style="{ height: `${viewportHeight}px` }"
+      @scroll.passive="handleViewportScroll"
+    >
+      <div class="st-canvas-grid__sticky-layer">
+        <canvas
+          ref="canvasRef"
+          class="st-canvas-grid__canvas"
+          @mousemove="handleCanvasMouseMove"
+          @mouseleave="handleCanvasLeave"
+          @mousedown.left="handleCanvasMouseDown"
+          @click="handleCanvasClick"
         />
+
+        <div class="st-canvas-grid__overlay">
+          <TimetableScheduleHoverPopover
+            v-if="hoveredScheduleCellKey && hoveredScheduleRect && scheduleCellEntryMap.get(hoveredScheduleCellKey)"
+            :open="!draggingScheduleCellKey && openSchedulePopoverKey === hoveredScheduleCellKey"
+            :schedule-id="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.scheduleId || '')"
+            :editable="Boolean(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.scheduleId) && !(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.courseType === 1 && scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.isMain === false)"
+            :batch-no="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.batchNo || '')"
+            :batch-size="Number(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.batchSize || 0)"
+            :lesson-date="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.lessonDate || '')"
+            :call-status-key="String(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.callStatusKey || 'unsigned')"
+            :mode-label="scheduleModeShortLabel(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
+            :lesson-title="scheduleLessonTitle(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
+            :teacher-name="scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.teacherName || scheduleCellEntryMap.get(hoveredScheduleCellKey)?.record?.name || '-'"
+            :course-name="scheduleLessonSubtitle(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) || scheduleLessonTitle(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
+            :assistant-text="scheduleAssistantSummary(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
+            :student-text="scheduleStudentSummary(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text)"
+            :time-text="scheduleHeaderTimeText(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.column, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.record)"
+            :conflict-text="scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text?.scheduledConflict ? scheduleConflictText(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) : ''"
+            @open-change="handleSchedulePopoverOpenChange(scheduleCellEntryMap.get(hoveredScheduleCellKey), $event)"
+            @detail="openScheduledLessonDetail(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord)"
+            @copy="payload => openScheduledLessonCopy(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord, payload)"
+            @copy-current="payload => openScheduledLessonCopyCurrent(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord, payload)"
+            @edit="payload => openScheduledLessonEdit(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord, payload)"
+            @edit-current="payload => openScheduledLessonEditCurrent(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextColumn, scheduleCellEntryMap.get(hoveredScheduleCellKey)?.contextRecord, payload)"
+          >
+            <div
+              ref="hoverScheduleAnchorRef"
+              class="st-canvas-grid__hover-anchor"
+              :data-schedule-cell-key="hoveredScheduleCellKey"
+              :title="!isScheduleDraggable(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) ? resolveScheduleDragBlockedMessage(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) : undefined"
+              :style="{
+                left: `${hoveredScheduleRect.left}px`,
+                top: `${hoveredScheduleRect.top}px`,
+                width: `${hoveredScheduleRect.width}px`,
+                height: `${hoveredScheduleRect.height}px`,
+                cursor: isScheduleDraggable(scheduleCellEntryMap.get(hoveredScheduleCellKey)?.text) ? 'grab' : 'pointer',
+              }"
+              @mouseenter="setHoveredScheduleEntry(scheduleCellEntryMap.get(hoveredScheduleCellKey))"
+              @mouseleave="scheduleCloseHover(240)"
+              @click="handleScheduleCellClickByEntry(scheduleCellEntryMap.get(hoveredScheduleCellKey))"
+              @mousedown.left="handleSchedulePointerDownByEntry($event, scheduleCellEntryMap.get(hoveredScheduleCellKey))"
+            />
+          </TimetableScheduleHoverPopover>
+        </div>
       </div>
+
+      <div
+        class="st-canvas-grid__spacer"
+        :style="{
+          width: `${totalGridWidth}px`,
+          height: `${totalGridHeight}px`,
+        }"
+      />
     </div>
-  </a-spin>
+  </div>
 </template>
 
 <style scoped lang="less">

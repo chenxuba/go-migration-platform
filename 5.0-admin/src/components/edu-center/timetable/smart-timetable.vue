@@ -5787,7 +5787,7 @@ watch(
       <SmartTimetableGrid
         ref="smartTimetableGridRef"
         :viewport-height="timetableGridHeight"
-        :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule || updatingDraggedSchedule"
+        :spinning="false"
         :table-data-source="tableDataSource"
         :columns="columns"
         :is-swap-time-grid="isSwapTimeGrid"
@@ -5817,6 +5817,15 @@ watch(
         :format-week="formatWeek"
         :format-date="formatDate"
       />
+      <div v-if="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule || updatingDraggedSchedule" class="st-grid-loading-mask" />
+      <div v-if="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule || updatingDraggedSchedule" class="st-grid-loading-float">
+        <div class="st-grid-loading-card">
+          <a-spin size="large" />
+          <div class="st-grid-loading-text">
+            课表加载中...
+          </div>
+        </div>
+      </div>
     </div>
 
     <div
@@ -5928,7 +5937,42 @@ watch(
 }
 
 .st-grid-shell {
+  position: relative;
   min-height: 0;
+}
+
+.st-grid-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.st-grid-loading-float {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 1200;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.st-grid-loading-card {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(22, 119, 255, 0.08);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+}
+
+.st-grid-loading-text {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .st-drag-preview {

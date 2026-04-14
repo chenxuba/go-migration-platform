@@ -1792,11 +1792,8 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
         </div>
       </div>
 
-      <div class="schedule-card" :class="{ 'schedule-card--loading': scheduleLoading }">
-        <a-spin
-          :spinning="scheduleLoading"
-          class="schedule-area-spin"
-        >
+      <div class="schedule-card">
+        <div class="schedule-area-content">
           <div class="schedule-sticky-shell">
             <div class="schedule-summary">
               <div class="schedule-summary__left">
@@ -1945,7 +1942,16 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
               </template>
             </template>
           </CanvasHorizontalScheduleBoard>
-        </a-spin>
+        </div>
+        <div v-if="scheduleLoading" class="schedule-loading-mask" />
+        <div v-if="scheduleLoading" class="schedule-loading-float">
+          <div class="schedule-loading-card">
+            <a-spin size="large" />
+            <div class="schedule-loading-text">
+              课表加载中...
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <SmartTimetableScheduleDetailDrawer
@@ -2032,17 +2038,12 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 }
 
 .schedule-card {
+  position: relative;
+  min-height: 420px;
   overflow: visible;
   border-top: none;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
-}
-
-.schedule-card--loading {
-  .schedule-sticky-shell,
-  .schedule-board {
-    pointer-events: none;
-  }
 }
 
 .toolbar-today-week-btn {
@@ -2066,37 +2067,44 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
   color: #222;
 }
 
-/* 课表区域轻量 loading（替代 v-loading 黑色半透明蒙层） */
-.schedule-area-spin {
+.schedule-area-content {
   display: block;
   width: 100%;
+}
 
-  :deep(.ant-spin-nested-loading) {
-    width: 100%;
-  }
+.schedule-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  min-height: 420px;
+  background: rgba(255, 255, 255, 0.28);
+}
 
-  :deep(.ant-spin-container) {
-    overflow: visible;
-  }
+.schedule-loading-float {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 1200;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
 
-  :deep(.ant-spin-container.ant-spin-blur) {
-    pointer-events: none;
-  }
+.schedule-loading-card {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(22, 119, 255, 0.08);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+}
 
-  :deep(.ant-spin-blur) {
-    opacity: 0.72;
-    filter: none;
-    -webkit-filter: none;
-  }
-
-  :deep(.ant-spin) {
-    max-height: none;
-    z-index: 60;
-  }
-
-  :deep(.ant-spin-dot) {
-    font-size: 14px;
-  }
+.schedule-loading-text {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .schedule-sticky-shell {

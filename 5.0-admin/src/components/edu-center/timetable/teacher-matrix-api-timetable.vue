@@ -1896,7 +1896,7 @@ const unsignedLessons = computed(() =>
     </a-modal>
 
     <div class="tm-api-card">
-      <a-spin :spinning="loading" :delay="120" size="small" class="tm-api-spin">
+      <div class="tm-api-content">
         <div class="tm-sticky-shell">
           <div class="tm-api-summary">
             <TimetableScheduleSummary
@@ -2051,7 +2051,17 @@ const unsignedLessons = computed(() =>
           @edit-current="openBatchPlanEdit($event.event.raw?.raw || $event.event.raw, 'current', $event.value)"
           @conflict="openEventConflictDetail($event.raw)"
         />
-      </a-spin>
+      </div>
+      <div v-if="loading" class="tm-api-loading-mask">
+      </div>
+      <div v-if="loading" class="tm-api-loading-float">
+        <div class="tm-api-loading-card">
+          <a-spin size="large" />
+          <div class="tm-api-loading-text">
+            课表加载中...
+          </div>
+        </div>
+      </div>
     </div>
 
     <SmartTimetableScheduleDetailDrawer
@@ -2240,22 +2250,51 @@ const unsignedLessons = computed(() =>
 }
 
 .tm-api-card {
+  position: relative;
   border-top: none;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
+  min-height: 420px;
 }
 
-.tm-api-spin {
+.tm-api-content {
   display: block;
   width: 100%;
+}
 
-  :deep(.ant-spin-nested-loading) {
-    width: 100%;
-  }
+.tm-api-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  min-height: 420px;
+  background: rgba(255, 255, 255, 0.28);
+}
 
-  :deep(.ant-spin-container) {
-    overflow: visible;
-  }
+.tm-api-loading-float {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 1200;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.tm-api-loading-card {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(22, 119, 255, 0.08);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+}
+
+.tm-api-loading-text {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 /* 与时间课表 .schedule-sticky-shell 一致：统计 + 表头随页面滚动吸顶 */
