@@ -4,11 +4,11 @@ import { CopyOutlined, DownloadOutlined, LeftOutlined, RightOutlined } from '@an
 import { Modal, message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import CanvasHorizontalScheduleBoard from './canvas-horizontal-schedule-board.vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import SmartTimetableScheduleDetailDrawer from './smart-timetable-schedule-detail-drawer.vue'
-import TimetableScheduleHoverPopover from './timetable-schedule-hover-popover.vue'
 import TimetableScheduleSummary from './timetable-schedule-summary.vue'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
@@ -95,8 +95,7 @@ const scheduleConflictValidation = ref(null)
 const scheduleConflictLoading = ref(false)
 
 const headerDatesRef = ref<HTMLElement | null>(null)
-const bodyScrollRef = ref<HTMLElement | null>(null)
-let syncingScroll = false
+const bodyCanvasRef = ref<any>(null)
 let matrixLoadSeq = 0
 
 const filterStudentId = ref<string | undefined>(undefined)
@@ -530,18 +529,17 @@ function getDayColumnRange(dayIndex: number) {
  */
 function updateFloatingDatePositions(scrollLeftOverride?: number) {
   const headerEl = headerDatesRef.value
-  const boardEl = bodyScrollRef.value
   const groups = dateTeacherGroups.value
   if (!headerEl || !groups.length) {
     floatingDateStyles.value = {}
     return
   }
   const scrollLeft
-    = scrollLeftOverride ?? boardEl?.scrollLeft ?? headerEl.scrollLeft
+    = scrollLeftOverride ?? bodyCanvasRef.value?.getScrollLeft?.() ?? headerEl.scrollLeft
   const containerWidth
     = headerEl.clientWidth > 0
       ? headerEl.clientWidth
-      : Math.max(300, (boardEl?.clientWidth ?? 800) - 100)
+      : Math.max(300, (Number(bodyCanvasRef.value?.getViewportWidth?.() || 800)) - 100)
   const pillW = floatingDatePillWidth
   const next: Record<string, FloatingDateStyle> = {}
 
@@ -607,8 +605,8 @@ function floatingPillStyle(dateKey: string): Record<string, string> {
   }
 }
 
-const timelineStart = 8 * 60
-const timelineEnd = 22 * 60
+const DEFAULT_TIMELINE_START = 8 * 60
+const DEFAULT_TIMELINE_END = 22 * 60
 const timelineTopPadding = 18
 const timelineBottomPadding = 28
 
@@ -1040,34 +1038,24 @@ async function loadMatrix() {
     if (seq === matrixLoadSeq) {
       loading.value = false
       await nextTick()
-      syncScroll(bodyScrollRef.value, headerDatesRef.value)
-      updateFloatingDatePositions(bodyScrollRef.value?.scrollLeft ?? 0)
+      if (headerDatesRef.value)
+        headerDatesRef.value.scrollLeft = Number(bodyCanvasRef.value?.getScrollLeft?.() || 0)
+      updateFloatingDatePositions(bodyCanvasRef.value?.getScrollLeft?.() ?? 0)
     }
   }
 }
 
-function syncScroll(source: HTMLElement | null, target: HTMLElement | null) {
-  if (!source || !target || syncingScroll)
-    return
-  syncingScroll = true
-  target.scrollLeft = source.scrollLeft
-  requestAnimationFrame(() => {
-    syncingScroll = false
-  })
-}
-
 function handleHeaderScroll(event: Event) {
   const header = event.target as HTMLElement
-  syncScroll(header, bodyScrollRef.value)
-  updateFloatingDatePositions(
-    bodyScrollRef.value?.scrollLeft ?? header.scrollLeft,
-  )
+  const nextLeft = Number(header?.scrollLeft || 0)
+  bodyCanvasRef.value?.setScrollLeft?.(nextLeft)
+  updateFloatingDatePositions(nextLeft)
 }
 
-function handleBoardScroll(event: Event) {
-  const board = event.target as HTMLElement
-  syncScroll(board, headerDatesRef.value)
-  updateFloatingDatePositions(board.scrollLeft)
+function handleBoardScroll(scrollLeft: number) {
+  if (headerDatesRef.value && Math.abs(headerDatesRef.value.scrollLeft - scrollLeft) > 1)
+    headerDatesRef.value.scrollLeft = scrollLeft
+  updateFloatingDatePositions(scrollLeft)
 }
 
 onMounted(() => {
@@ -1246,6 +1234,42 @@ const internalSchedules = computed((): CellSchedule[] => {
   return out
 })
 
+function floorToHour(minutes: number) {
+  return Math.floor(minutes / 60) * 60
+}
+
+function ceilToHour(minutes: number) {
+  return Math.ceil(minutes / 60) * 60
+}
+
+const timelineBounds = computed(() => {
+  if (!internalSchedules.value.length) {
+    return {
+      start: DEFAULT_TIMELINE_START,
+      end: DEFAULT_TIMELINE_END,
+    }
+  }
+
+  let minStart = Number.POSITIVE_INFINITY
+  let maxEnd = Number.NEGATIVE_INFINITY
+  internalSchedules.value.forEach((item) => {
+    minStart = Math.min(minStart, item.startMinutes)
+    maxEnd = Math.max(maxEnd, item.endMinutes)
+  })
+
+  if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) {
+    return {
+      start: DEFAULT_TIMELINE_START,
+      end: DEFAULT_TIMELINE_END,
+    }
+  }
+
+  const start = floorToHour(minStart)
+  const end = Math.max(start + 60, ceilToHour(maxEnd))
+
+  return { start, end }
+})
+
 const flatColumns = computed(() => {
   const cols: Array<{
     dateKey: string
@@ -1270,8 +1294,8 @@ const flatColumns = computed(() => {
 
 const hourMarks = computed(() =>
   Array.from(
-    { length: timelineEnd / 60 - timelineStart / 60 + 1 },
-    (_, i) => timelineStart + i * 60,
+    { length: timelineBounds.value.end / 60 - timelineBounds.value.start / 60 + 1 },
+    (_, i) => timelineBounds.value.start + i * 60,
   ),
 )
 
@@ -1283,7 +1307,7 @@ const timelineHeight = computed(
 )
 
 function minuteOffset(minutes: number) {
-  return timelineTopPadding + ((minutes - timelineStart) / 60) * HOUR_ROW_HEIGHT_PX
+  return timelineTopPadding + ((minutes - timelineBounds.value.start) / 60) * HOUR_ROW_HEIGHT_PX
 }
 
 function computeOverlapPeak(items: { startMinutes: number, endMinutes: number }[]) {
@@ -1394,43 +1418,103 @@ const gridTemplateStyleHeader = computed(() => {
 
 watch(gridTemplateStyleHeader, () => nextTick(() => updateFloatingDatePositions()))
 
-const gridTemplateStyle = computed(() => {
-  const n = flatColumns.value.length
-  if (!n) {
-    return {
-      gridTemplateColumns: `${timeColWidth}px`,
-      width: '100%' as const,
-      minWidth: '100%' as const,
-    }
-  }
-  const tracks = flatColumns.value.map((col) => {
+const matrixCanvasColumns = computed(() => {
+  let left = 0
+  return flatColumns.value.map((col, index) => {
     const entry = layoutsByCell.value.get(`${col.dateKey}|${col.teacherKey}`)
-    const w = Math.max(teacherColWidth, entry?.colWidth ?? teacherColWidth)
-    return `${w}px`
+    const width = Math.max(teacherColWidth, entry?.colWidth ?? teacherColWidth)
+    const column = {
+      key: `${col.dateKey}|${col.teacherKey}`,
+      left,
+      width,
+      background: col.count === 0 ? '#f9fafb' : isActiveDate(col.dateKey) ? '#f3f9ff' : '#ffffff',
+      dividerWidth: index < flatColumns.value.length - 1 && flatColumns.value[index + 1].dateKey !== col.dateKey ? 2 : 1,
+      dividerColor: index < flatColumns.value.length - 1 && flatColumns.value[index + 1].dateKey !== col.dateKey ? '#a8b8cc' : '#dde5f0',
+      showCurrentLine: showCurrentTimeLine.value && col.dateKey === todayKey.value,
+    }
+    left += width
+    return column
   })
-  return {
-    gridTemplateColumns: `${timeColWidth}px ${tracks.join(' ')}`,
-    width: 'max-content' as const,
-    minWidth: '100%' as const,
-  }
 })
 
-function eventStyle(event: CellSchedule, col: { dateKey: string, teacherKey: string }) {
-  const entry = layoutsByCell.value.get(`${col.dateKey}|${col.teacherKey}`)
-  const colWidth = entry?.colWidth ?? teacherColWidth
-  const leftOffset
-    = (event.displayColumnIndex || 0) * (scheduleCardMinWidth + scheduleCardGap)
-      + scheduleColumnHorizontalInset
-  return {
-    top: `${minuteOffset(event.startMinutes)}px`,
-    height: `${Math.max(
-      82,
-      ((event.endMinutes - event.startMinutes) / 60) * HOUR_ROW_HEIGHT_PX,
-    )}px`,
-    left: `${leftOffset}px`,
-    width: `${Math.min(scheduleCardMinWidth, colWidth - scheduleColumnHorizontalInset * 2)}px`,
-  }
-}
+const matrixCanvasEvents = computed(() =>
+  flatColumns.value.flatMap((col) => {
+    const entry = layoutsByCell.value.get(`${col.dateKey}|${col.teacherKey}`)
+    const colWidth = Math.max(teacherColWidth, entry?.colWidth ?? teacherColWidth)
+    const column = matrixCanvasColumns.value.find(item => item.key === `${col.dateKey}|${col.teacherKey}`)
+    const baseLeft = Number(column?.left || 0)
+    return (entry?.layouts ?? []).map((event) => {
+      const leftOffset
+        = (event.displayColumnIndex || 0) * (scheduleCardMinWidth + scheduleCardGap)
+          + scheduleColumnHorizontalInset
+      return {
+        key: String(event.id),
+        id: String(event.id),
+        columnKey: `${col.dateKey}|${col.teacherKey}`,
+        left: baseLeft + leftOffset,
+        top: minuteOffset(event.startMinutes),
+        width: Math.min(scheduleCardMinWidth, colWidth - scheduleColumnHorizontalInset * 2),
+        height: Math.max(
+          82,
+          ((event.endMinutes - event.startMinutes) / 60) * HOUR_ROW_HEIGHT_PX,
+        ),
+        timeLabel: event.timeText || `${event.startAt.format('HH:mm')} - ${event.endAt.format('HH:mm')}`,
+        title: event.title,
+        metaPrimary: event.course,
+        metaSecondary: event.teacher,
+        badgeText: event.raw?.conflict ? '冲突' : scheduleBadgeText(event.classType),
+        badgeVariant: event.raw?.conflict
+          ? 'conflict' as const
+          : event.classType === 1
+            ? 'group' as const
+            : 'oneToOne' as const,
+        badgeTooltip: conflictBadgeTitle(event),
+        topBackground: '#1677ff',
+        bodyBackground: '#ffffff',
+        titleColor: '#0f172a',
+        metaPrimaryColor: '#334155',
+        metaSecondaryColor: '#64748b',
+        popover: {
+          scheduleId: String(event.id || ''),
+          editable: true,
+          batchNo: String(event.raw?.batchNo || ''),
+          batchSize: Number(event.raw?.batchSize || 0),
+          modeLabel: scheduleBadgeText(event.classType),
+          lessonTitle: scheduleHoverTitle(event.raw),
+          teacherName: event.teacher,
+          courseName: event.course,
+          assistantText: scheduleAssistantText(event.raw),
+          studentText: scheduleStudentSummary(event.raw),
+          classroomName: event.classroom,
+          timeText: scheduleTimeTextFromEvent(event),
+          conflictText: scheduleConflictSummary(event.raw),
+        },
+        raw: event,
+      }
+    })
+  }),
+)
+
+const matrixCanvasMarks = computed(() =>
+  hourMarks.value.map(mark => ({
+    key: String(mark),
+    top: minuteOffset(mark),
+    label: formatClock(mark),
+  })),
+)
+
+const matrixCanvasCurrentLine = computed(() => (
+  showCurrentTimeLine.value
+    ? {
+        top: minuteOffset(currentTimeMinutes.value),
+        label: currentTimeLabel.value,
+      }
+    : null
+))
+
+const matrixCanvasBodyWidth = computed(() =>
+  matrixCanvasColumns.value.reduce((sum, item) => sum + item.width, 0),
+)
 
 function isActiveDate(dateKey: string) {
   return dateKey === todayKey.value
@@ -1446,8 +1530,8 @@ const currentTimeMinutes = computed(() => now.value.hour() * 60 + now.value.minu
 const currentTimeLabel = computed(() => now.value.format('HH:mm'))
 const showCurrentTimeLine = computed(() => {
   if (
-    currentTimeMinutes.value < timelineStart
-    || currentTimeMinutes.value > timelineEnd
+    currentTimeMinutes.value < timelineBounds.value.start
+    || currentTimeMinutes.value > timelineBounds.value.end
   ) {
     return false
   }
@@ -1946,125 +2030,25 @@ const unsignedLessons = computed(() =>
           本周暂无数据
         </div>
 
-        <div
+        <CanvasHorizontalScheduleBoard
           v-if="matrixDays.length"
-          ref="bodyScrollRef"
+          ref="bodyCanvasRef"
           class="tm-schedule-board"
+          :columns="matrixCanvasColumns"
+          :events="matrixCanvasEvents"
+          :time-axis-width="timeColWidth"
+          :timeline-height="timelineHeight"
+          :time-marks="matrixCanvasMarks"
+          :current-line="matrixCanvasCurrentLine"
+          :total-body-width="matrixCanvasBodyWidth"
           @scroll="handleBoardScroll"
-        >
-          <div class="tm-board-grid" :style="gridTemplateStyle">
-            <div class="tm-time-axis">
-              <div
-                v-for="mark in hourMarks"
-                :key="mark"
-                class="tm-time-label"
-                :style="{ top: `${minuteOffset(mark)}px` }"
-              >
-                <span>{{ formatClock(mark) }}</span>
-              </div>
-              <div
-                v-if="showCurrentTimeLine"
-                class="tm-now-line"
-                :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-              >
-                <span class="tm-now-line__text">{{ currentTimeLabel }}</span>
-              </div>
-            </div>
-
-            <div
-              v-for="(col, ci) in flatColumns"
-              :key="`${col.dateKey}-${col.teacherKey}`"
-              class="tm-column"
-              :class="{
-                'tm-column--active': isActiveDate(col.dateKey),
-                'tm-column--no-class': col.count === 0,
-                'tm-column--has-class': col.count > 0,
-                'tm-column--day-divider':
-                  ci < flatColumns.length - 1 && flatColumns[ci + 1].dateKey !== col.dateKey,
-              }"
-            >
-              <div
-                class="tm-column__body"
-                :style="{ height: `${timelineHeight}px` }"
-              >
-                <div
-                  v-for="mark in hourMarks"
-                  :key="`${col.dateKey}-${col.teacherKey}-${mark}`"
-                  class="tm-column__line"
-                  :style="{ top: `${minuteOffset(mark)}px` }"
-                />
-                <div
-                  v-if="showCurrentTimeLine && col.dateKey === todayKey"
-                  class="tm-now-marker"
-                  :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-                />
-
-                <TimetableScheduleHoverPopover
-                  v-for="event in (layoutsByCell.get(`${col.dateKey}|${col.teacherKey}`)?.layouts ?? [])"
-                  :key="event.id"
-                  :schedule-id="String(event.id || '')"
-                  :batch-no="String(event.raw?.batchNo || '')"
-                  :batch-size="Number(event.raw?.batchSize || 0)"
-                  :mode-label="scheduleBadgeText(event.classType)"
-                  :lesson-title="scheduleHoverTitle(event.raw)"
-                  :teacher-name="event.teacher"
-                  :course-name="event.course"
-                  :assistant-text="scheduleAssistantText(event.raw)"
-                  :student-text="scheduleStudentSummary(event.raw)"
-                  :classroom-name="event.classroom"
-                  :time-text="scheduleTimeTextFromEvent(event)"
-                  :conflict-text="scheduleConflictSummary(event.raw)"
-                  @detail="openScheduleEdit(event)"
-                  @copy="payload => openBatchPlanEdit(event.raw, 'batch', payload, 'copy')"
-                  @copy-current="payload => openBatchPlanEdit(event.raw, 'current', payload, 'copy')"
-                  @edit="payload => openBatchPlanEdit(event.raw, 'batch', payload)"
-                  @edit-current="payload => openBatchPlanEdit(event.raw, 'current', payload)"
-                >
-                  <div
-                    class="tm-event"
-                    :class="{ 'tm-event--conflict': event.raw?.conflict }"
-                    :style="eventStyle(event, col)"
-                    @click="openScheduleEdit(event)"
-                  >
-                    <div class="tm-event__top">
-                      <div class="tm-event__time">
-                        {{ event.timeText }}
-                      </div>
-                      <div class="tm-event__badges">
-                        <a-tooltip v-if="event.raw?.conflict" :title="conflictBadgeTitle(event)" placement="top" @click.stop>
-                          <span
-                            class="tm-event__badge tm-event__badge--conflict"
-                            @click.stop="openEventConflictDetail(event)"
-                          >
-                            冲突
-                          </span>
-                        </a-tooltip>
-                        <span
-                          v-else-if="event.classType === 1 || event.classType === 2"
-                          class="tm-event__badge"
-                          :class="event.classType === 1 ? 'tm-event__badge--group-class' : 'tm-event__badge--one-to-one'"
-                        >
-                          {{ scheduleBadgeText(event.classType) }}
-                        </span>
-                      </div>
-                    </div>
-                    <div class="tm-event__body">
-                      <div class="tm-event__title">
-                        {{ event.title }}
-                      </div>
-                      <div class="tm-event__meta">
-                        {{ event.course }}
-                      </div>
-                      <div class="tm-event__meta tm-event__meta--muted">
-                        {{ event.teacher }}
-                      </div>
-                    </div>
-                  </div>
-                </TimetableScheduleHoverPopover>
-              </div>
-            </div>
-          </div>
-        </div>
+          @detail="openScheduleEdit($event.raw)"
+          @copy="openBatchPlanEdit($event.event.raw?.raw || $event.event.raw, 'batch', $event.value, 'copy')"
+          @copy-current="openBatchPlanEdit($event.event.raw?.raw || $event.event.raw, 'current', $event.value, 'copy')"
+          @edit="openBatchPlanEdit($event.event.raw?.raw || $event.event.raw, 'batch', $event.value)"
+          @edit-current="openBatchPlanEdit($event.event.raw?.raw || $event.event.raw, 'current', $event.value)"
+          @conflict="openEventConflictDetail($event.raw)"
+        />
       </a-spin>
     </div>
 

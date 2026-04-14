@@ -3,11 +3,11 @@ import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import CanvasHorizontalScheduleBoard from './canvas-horizontal-schedule-board.vue'
 import CreateSchedulePopover from './create-schedule-popover.vue'
 import ScheduleBatchPlanEditModal from './schedule-batch-plan-edit-modal.vue'
 import ScheduleConflictModal from './schedule-conflict-modal.vue'
 import SmartTimetableScheduleDetailDrawer from './smart-timetable-schedule-detail-drawer.vue'
-import TimetableScheduleHoverPopover from './timetable-schedule-hover-popover.vue'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
@@ -390,9 +390,8 @@ const scheduleConflictLoading = ref(false)
 const locatingConflictItemKey = ref('')
 const focusedScheduleId = ref('')
 const headerScrollRef = ref(null)
-const boardScrollRef = ref(null)
+const boardCanvasRef = ref(null)
 const scheduleViewportWidth = ref(0)
-let syncingScroll = false
 let scheduleLoadSeq = 0
 let focusedScheduleTimer = null
 let pendingConflictJump = null
@@ -404,8 +403,8 @@ const floatingDateStyles = ref({})
 let layoutResizeObserver = null
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
-const timelineStart = 8 * 60
-const timelineEnd = 22 * 60
+const DEFAULT_TIMELINE_START = 8 * 60
+const DEFAULT_TIMELINE_END = 22 * 60
 const timelineTopPadding = 18
 const hourRowHeight = 96
 const timelineBottomPadding = 28
@@ -643,8 +642,8 @@ const currentTimeMinutes = computed(
 const currentTimeLabel = computed(() => now.value.format('HH:mm'))
 const showCurrentTimeLine = computed(() => {
   if (
-    currentTimeMinutes.value < timelineStart
-    || currentTimeMinutes.value > timelineEnd
+    currentTimeMinutes.value < timelineBounds.value.start
+    || currentTimeMinutes.value > timelineBounds.value.end
   ) {
     return false
   }
@@ -700,7 +699,7 @@ async function loadSchedules() {
       scheduleLoading.value = false
       await nextTick()
       updateScheduleViewportWidth()
-      updateFloatingDatePositions(boardScrollRef.value?.scrollLeft ?? headerScrollRef.value?.scrollLeft ?? 0)
+      updateFloatingDatePositions(boardCanvasRef.value?.getScrollLeft?.() ?? headerScrollRef.value?.scrollLeft ?? 0)
       await flushPendingConflictJump()
     }
   }
@@ -740,6 +739,45 @@ const mockSchedules = computed(() =>
   })),
 )
 
+function floorToHour(minutes) {
+  return Math.floor(minutes / 60) * 60
+}
+
+function ceilToHour(minutes) {
+  return Math.ceil(minutes / 60) * 60
+}
+
+const timelineBounds = computed(() => {
+  if (!mockSchedules.value.length) {
+    return {
+      start: DEFAULT_TIMELINE_START,
+      end: DEFAULT_TIMELINE_END,
+    }
+  }
+
+  let minStart = Number.POSITIVE_INFINITY
+  let maxEnd = Number.NEGATIVE_INFINITY
+
+  mockSchedules.value.forEach((item) => {
+    const startMinutes = item.startAt.hour() * 60 + item.startAt.minute()
+    const endMinutes = item.endAt.hour() * 60 + item.endAt.minute()
+    minStart = Math.min(minStart, startMinutes)
+    maxEnd = Math.max(maxEnd, endMinutes)
+  })
+
+  if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) {
+    return {
+      start: DEFAULT_TIMELINE_START,
+      end: DEFAULT_TIMELINE_END,
+    }
+  }
+
+  const start = floorToHour(minStart)
+  const end = Math.max(start + 60, ceilToHour(maxEnd))
+
+  return { start, end }
+})
+
 const headerSummaries = computed(() =>
   displayDates.value.map((date) => {
     const key = date.format('YYYY-MM-DD')
@@ -760,8 +798,8 @@ const unsignedCount = computed(
 
 const hourMarks = computed(() =>
   Array.from(
-    { length: timelineEnd / 60 - timelineStart / 60 + 1 },
-    (_, index) => timelineStart + index * 60,
+    { length: timelineBounds.value.end / 60 - timelineBounds.value.start / 60 + 1 },
+    (_, index) => timelineBounds.value.start + index * 60,
   ),
 )
 
@@ -781,7 +819,7 @@ const timelineHeight = computed(
 )
 
 function minuteOffset(minutes) {
-  return timelineTopPadding + ((minutes - timelineStart) / 60) * hourRowHeight
+  return timelineTopPadding + ((minutes - timelineBounds.value.start) / 60) * hourRowHeight
 }
 
 function normalizeScheduleItem(item) {
@@ -886,7 +924,7 @@ function computeOverlapPeak(items = []) {
 
 function updateScheduleViewportWidth() {
   const headerWidth = Number(headerScrollRef.value?.clientWidth || 0)
-  const boardWidth = Number(boardScrollRef.value?.clientWidth || 0)
+  const boardWidth = Number(boardCanvasRef.value?.getViewportWidth?.() || 0)
   scheduleViewportWidth.value = Math.max(headerWidth, boardWidth, 0)
 }
 
@@ -958,17 +996,16 @@ function getDayColumnLeftAndWidth(dayIndex) {
 /** 以表体 scrollLeft 参与计算；可视宽度取表头滚动容器（与教师矩阵一致）。 */
 function updateFloatingDatePositions(scrollLeftOverride) {
   const headerEl = headerScrollRef.value
-  const boardEl = boardScrollRef.value
   const items = headerSummaries.value
   if (!headerEl || !items.length) {
     floatingDateStyles.value = {}
     return
   }
-  const scrollLeft = scrollLeftOverride ?? boardEl?.scrollLeft ?? headerEl.scrollLeft
+  const scrollLeft = scrollLeftOverride ?? boardCanvasRef.value?.getScrollLeft?.() ?? headerEl.scrollLeft
   const containerWidth
     = headerEl.clientWidth > 0
       ? headerEl.clientWidth
-      : Math.max(300, (boardEl?.clientWidth ?? 800) - 100)
+      : Math.max(300, (Number(boardCanvasRef.value?.getViewportWidth?.() || 800)) - 100)
   const pillW = floatingDatePillWidth
   const next = {}
 
@@ -1121,31 +1158,107 @@ const layoutsByDate = computed(() => {
   return map
 })
 
-function eventStyle(item) {
-  const leftOffset
-    = (item.displayColumnIndex || 0) * (scheduleCardMinWidth + scheduleCardGap)
-      + scheduleColumnHorizontalInset
-  return {
-    top: `${minuteOffset(item.startMinutes)}px`,
-    height: `${Math.max(
-      scheduleCardMinHeight,
-      ((item.endMinutes - item.startMinutes) / 60) * hourRowHeight,
-    )}px`,
-    left: `${leftOffset}px`,
-    width: `${scheduleCardMinWidth}px`,
-  }
-}
+const timeCanvasColumns = computed(() => {
+  let left = 0
+  return headerSummaries.value.map((item, index) => {
+    const width = dateColumnWidths.value.get(item.key) || baseDateColumnWidth
+    const column = {
+      key: item.key,
+      left,
+      width,
+      background: isActiveColumn(item.key) ? '#f3f9ff' : '#ffffff',
+      dividerWidth: index < headerSummaries.value.length - 1 ? 2 : 1,
+      dividerColor: index < headerSummaries.value.length - 1 ? '#a8b8cc' : '#dde5f0',
+      showCurrentLine: showCurrentTimeLine.value && item.key === todayKey.value,
+    }
+    left += width
+    return column
+  })
+})
 
-function eventClass(item) {
-  return {
-    'schedule-event': true,
-    'schedule-event--unsigned': item.status === 'unsigned',
-    'schedule-event--signed': item.status === 'signed',
-    'schedule-event--partial': item.status === 'partial',
-    'schedule-event--conflict': item.conflict,
-    'schedule-event--focused': focusedScheduleId.value === String(item.id),
-  }
-}
+const timeCanvasEvents = computed(() =>
+  timeCanvasColumns.value.flatMap((column) => {
+    const list = layoutsByDate.value.get(column.key) || []
+    return list.map((event) => {
+      const leftOffset
+        = (event.displayColumnIndex || 0) * (scheduleCardMinWidth + scheduleCardGap)
+          + scheduleColumnHorizontalInset
+      const metaSecondary = [
+        String(event.teacher || '').trim(),
+        String(event.classroom || '').trim() && event.classroom !== '-' ? String(event.classroom || '').trim() : '',
+      ].filter(Boolean).join(' · ')
+      const topBackground = event.status === 'signed'
+        ? '#98a2b3'
+        : event.status === 'partial'
+          ? '#f59e0b'
+          : '#1677ff'
+      const bodyBackground = event.status === 'signed'
+        ? '#f5f7fa'
+        : event.status === 'partial'
+          ? '#fff4e5'
+          : '#ffffff'
+      return {
+        key: String(event.id),
+        id: String(event.id),
+        columnKey: column.key,
+        left: column.left + leftOffset,
+        top: minuteOffset(event.startMinutes),
+        width: scheduleCardMinWidth,
+        height: Math.max(
+          scheduleCardMinHeight,
+          ((event.endMinutes - event.startMinutes) / 60) * hourRowHeight,
+        ),
+        timeLabel: event.timeText,
+        title: event.title,
+        metaPrimary: event.course,
+        metaSecondary,
+        badgeText: event.conflict ? '冲突' : scheduleBadgeText(event.classType),
+        badgeVariant: event.conflict ? 'conflict' : event.classType === 1 ? 'group' : 'oneToOne',
+        badgeTooltip: conflictBadgeTooltip(event),
+        topBackground,
+        bodyBackground,
+        titleColor: '#0f172a',
+        metaPrimaryColor: '#334155',
+        metaSecondaryColor: '#64748b',
+        focused: focusedScheduleId.value === String(event.id),
+        popover: {
+          scheduleId: String(event.id || ''),
+          editable: true,
+          batchNo: String(event.raw?.batchNo || ''),
+          batchSize: Number(event.raw?.batchSize || 0),
+          modeLabel: scheduleBadgeText(event.classType),
+          lessonTitle: scheduleHoverTitle(event.raw),
+          teacherName: event.teacher,
+          courseName: event.course,
+          assistantText: scheduleAssistantText(event.raw),
+          studentText: scheduleStudentSummary(event.raw),
+          classroomName: event.classroom,
+          timeText: scheduleTimeTextFromEvent(event),
+          conflictText: scheduleConflictSummary(event.raw),
+        },
+        raw: event,
+      }
+    })
+  }),
+)
+
+const timeCanvasMarks = computed(() =>
+  hourMarks.value.map((mark, index) => ({
+    key: String(mark),
+    top: minuteOffset(mark),
+    label: formatClock(mark),
+    muted: index !== 0 && isMutedTimeLabel(mark),
+  })),
+)
+
+const timeCanvasCurrentLine = computed(() => (
+  showCurrentTimeLine.value
+    ? {
+        top: minuteOffset(currentTimeMinutes.value),
+        label: currentTimeLabel.value,
+      }
+    : null
+))
 
 function parseConflictTimeRange(timeText) {
   const matched = String(timeText || '').trim().match(/(\d{2}:\d{2})\s*[~-]\s*(\d{2}:\d{2})/)
@@ -1176,20 +1289,12 @@ function closeScheduleConflictModalIfOpen(shouldClose) {
 
 async function focusScheduleEvent(scheduleId) {
   await nextTick()
-  const root = boardScrollRef.value
   const targetId = String(scheduleId || '').trim()
-  if (!root || !targetId)
+  if (!targetId)
     return false
-  const eventNode = Array.from(root.querySelectorAll('[data-schedule-event-id]')).find(
-    el => el.getAttribute('data-schedule-event-id') === targetId,
-  )
-  if (!eventNode)
+  const found = await boardCanvasRef.value?.scrollToEvent?.(targetId)
+  if (!found)
     return false
-  eventNode.scrollIntoView({
-    behavior: 'smooth',
-    block: 'center',
-    inline: 'center',
-  })
   setFocusedSchedule(targetId)
   return true
 }
@@ -1498,31 +1603,21 @@ function createSlotStyle(startMinutes, endMinutes) {
   }
 }
 
-function syncScroll(source, target) {
-  if (!source || !target || syncingScroll)
-    return
-  syncingScroll = true
-  target.scrollLeft = source.scrollLeft
-  requestAnimationFrame(() => {
-    syncingScroll = false
-  })
-}
-
 function handleHeaderScroll(event) {
-  syncScroll(event.target, boardScrollRef.value)
-  updateFloatingDatePositions(
-    boardScrollRef.value?.scrollLeft ?? event.target.scrollLeft,
-  )
+  const nextLeft = Number(event.target?.scrollLeft || 0)
+  boardCanvasRef.value?.setScrollLeft?.(nextLeft)
+  updateFloatingDatePositions(nextLeft)
 }
 
-function handleBoardScroll(event) {
-  syncScroll(event.target, headerScrollRef.value)
-  updateFloatingDatePositions(event.target.scrollLeft)
+function handleBoardScroll(scrollLeft) {
+  if (headerScrollRef.value && Math.abs(headerScrollRef.value.scrollLeft - scrollLeft) > 1)
+    headerScrollRef.value.scrollLeft = scrollLeft
+  updateFloatingDatePositions(scrollLeft)
 }
 
 watch(
-  [() => headerScrollRef.value, () => boardScrollRef.value],
-  ([headerEl, boardEl]) => {
+  () => headerScrollRef.value,
+  (headerEl) => {
     if (layoutResizeObserver) {
       layoutResizeObserver.disconnect()
       layoutResizeObserver = null
@@ -1540,8 +1635,6 @@ watch(
     })
     if (headerEl)
       layoutResizeObserver.observe(headerEl)
-    if (boardEl && boardEl !== headerEl)
-      layoutResizeObserver.observe(boardEl)
 
     nextTick(() => {
       updateScheduleViewportWidth()
@@ -1790,171 +1883,66 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
             </div>
           </div>
 
-          <div
-            ref="boardScrollRef"
+          <CanvasHorizontalScheduleBoard
+            ref="boardCanvasRef"
             class="schedule-board"
+            :columns="timeCanvasColumns"
+            :events="timeCanvasEvents"
+            :time-axis-width="timeHeaderTimeColWidth"
+            :timeline-height="timelineHeight"
+            :time-marks="timeCanvasMarks"
+            :current-line="timeCanvasCurrentLine"
+            :total-body-width="totalGridWidth - timeHeaderTimeColWidth"
             @scroll="handleBoardScroll"
+            @detail="openScheduleEdit($event.raw)"
+            @copy="openBatchPlanEdit($event.event.raw?.raw || $event.event.raw, 'batch', $event.value, 'copy')"
+            @copy-current="openBatchPlanEdit($event.event.raw?.raw || $event.event.raw, 'current', $event.value, 'copy')"
+            @edit="openBatchPlanEdit($event.event.raw?.raw || $event.event.raw, 'batch', $event.value)"
+            @edit-current="openBatchPlanEdit($event.event.raw?.raw || $event.event.raw, 'current', $event.value)"
+            @conflict="openEventConflictDetail($event.raw)"
           >
-            <div class="schedule-grid" :style="gridTemplateStyle">
-              <div class="schedule-time-axis">
-                <div
-                  v-for="(mark, index) in hourMarks"
-                  :key="mark"
-                  class="schedule-time-axis__label"
-                  :class="{
-                    'schedule-time-axis__label--first': index === 0,
-                    'schedule-time-axis__label--muted': isMutedTimeLabel(mark),
-                  }"
-                  :style="{ top: `${minuteOffset(mark)}px` }"
-                >
-                  <span class="schedule-time-axis__text">{{
-                    formatClock(mark)
-                  }}</span>
-                </div>
-                <div
-                  v-if="showCurrentTimeLine"
-                  class="schedule-now-axis"
-                  :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-                >
-                  <span class="schedule-now-axis__text">{{
-                    currentTimeLabel
-                  }}</span>
-                  <span class="schedule-now-axis__dot" />
-                </div>
-              </div>
-
-              <div
-                v-for="(item, di) in headerSummaries"
-                :key="`${item.key}-body`"
-                class="schedule-column"
-                :class="{
-                  'schedule-column--active': isActiveColumn(item.key),
-                  'schedule-column--day-divider':
-                    di < headerSummaries.length - 1,
-                }"
+            <template #overlay="{ columns }">
+              <template
+                v-for="column in columns"
+                :key="`${column.key}-overlay`"
               >
-                <div
-                  class="schedule-column__body"
-                  :style="{ height: `${timelineHeight}px` }"
+                <template
+                  v-for="slot in hoverSlots"
+                  :key="`${column.key}-${slot.key}`"
                 >
                   <div
-                    v-for="mark in hourMarks"
-                    :key="`${item.key}-${mark}`"
-                    class="schedule-column__line"
-                    :style="{ top: `${minuteOffset(mark)}px` }"
-                  />
-                  <template
-                    v-for="slot in hoverSlots"
-                    :key="`${item.key}-${slot.key}`"
-                  >
-                    <div
-                      v-if="
-                        isFutureSlot(
-                          item.key,
+                    v-if="
+                      isFutureSlot(
+                        column.key,
+                        slot.startMinutes,
+                        slot.endMinutes,
+                      )
+                        && !hasEventInSlot(
+                          column.key,
                           slot.startMinutes,
                           slot.endMinutes,
                         )
-                          && !hasEventInSlot(
-                            item.key,
-                            slot.startMinutes,
-                            slot.endMinutes,
-                          )
-                      "
-                      class="schedule-create-slot"
-                      :style="createSlotStyle(slot.startMinutes, slot.endMinutes)"
-                    >
-                      <CreateSchedulePopover trigger="click">
-                        <button
-                          type="button"
-                          class="schedule-create-slot__trigger"
-                        >
-                          点击创建排课日程
-                        </button>
-                      </CreateSchedulePopover>
-                    </div>
-                  </template>
-                  <div
-                    v-if="showCurrentTimeLine"
-                    class="schedule-now-line"
-                    :style="{ top: `${minuteOffset(currentTimeMinutes)}px` }"
-                  />
-
-                  <TimetableScheduleHoverPopover
-                    v-for="event in layoutsByDate.get(item.key) || []"
-                    :key="event.id"
-                    :schedule-id="String(event.id || '')"
-                    :batch-no="String(event.raw?.batchNo || '')"
-                    :batch-size="Number(event.raw?.batchSize || 0)"
-                    :mode-label="scheduleBadgeText(event.classType)"
-                    :lesson-title="scheduleHoverTitle(event.raw)"
-                    :teacher-name="event.teacher"
-                    :course-name="event.course"
-                    :assistant-text="scheduleAssistantText(event.raw)"
-                    :student-text="scheduleStudentSummary(event.raw)"
-                    :classroom-name="event.classroom"
-                    :time-text="scheduleTimeTextFromEvent(event)"
-                    :conflict-text="scheduleConflictSummary(event.raw)"
-                    @detail="openScheduleDetail(event)"
-                    @copy="payload => openBatchPlanEdit(event.raw, 'batch', payload, 'copy')"
-                    @copy-current="payload => openBatchPlanEdit(event.raw, 'current', payload, 'copy')"
-                    @edit="payload => openBatchPlanEdit(event.raw, 'batch', payload)"
-                    @edit-current="payload => openBatchPlanEdit(event.raw, 'current', payload)"
+                    "
+                    class="schedule-create-slot"
+                    :style="{
+                      ...createSlotStyle(slot.startMinutes, slot.endMinutes),
+                      left: `${column.viewLeft}px`,
+                      width: `${column.width}px`,
+                    }"
                   >
-                    <div
-                      :class="eventClass(event)"
-                      :style="eventStyle(event)"
-                      :data-schedule-event-id="String(event.id)"
-                      @click="openScheduleEdit(event)"
-                    >
-                      <div class="schedule-event__top">
-                        <div class="schedule-event__time">
-                          {{ event.timeText }}
-                        </div>
-                        <div class="schedule-event__badges">
-                          <a-tooltip v-if="event.conflict" :title="conflictBadgeTooltip(event)" placement="top" @click.stop>
-                            <span
-                              class="schedule-event__badge schedule-event__badge--conflict"
-                              @click.stop="openEventConflictDetail(event)"
-                            >
-                              冲突
-                            </span>
-                          </a-tooltip>
-                          <span
-                            v-else
-                            class="schedule-event__badge"
-                            :class="event.classType === 1 ? 'schedule-event__badge--group-class' : 'schedule-event__badge--one-to-one'"
-                          >
-                            {{ scheduleBadgeText(event.classType) }}
-                          </span>
-                          <span v-if="event.hasTrial" class="schedule-event__badge">
-                            试听
-                          </span>
-                        </div>
-                      </div>
-                      <div class="schedule-event__body">
-                        <div class="schedule-event__title">
-                          {{ event.title }}
-                        </div>
-                        <div class="schedule-event__meta schedule-event__meta__course">
-                          {{ event.course }}
-                        </div>
-                        <div
-                          class="schedule-event__meta schedule-event__meta--muted"
-                        >
-                          {{ event.teacher }}
-                          <template
-                            v-if="event.classroom && event.classroom !== '-'"
-                          >
-                            · {{ event.classroom }}
-                          </template>
-                        </div>
-                      </div>
-                    </div>
-                  </TimetableScheduleHoverPopover>
-                </div>
-              </div>
-            </div>
-          </div>
+                    <CreateSchedulePopover trigger="click">
+                      <button
+                        type="button"
+                        class="schedule-create-slot__trigger"
+                      >
+                        点击创建排课日程
+                      </button>
+                    </CreateSchedulePopover>
+                  </div>
+                </template>
+              </template>
+            </template>
+          </CanvasHorizontalScheduleBoard>
         </a-spin>
       </div>
     </div>
@@ -2531,9 +2519,8 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
 
 .schedule-create-slot {
   position: absolute;
-  left: 0;
-  right: 0;
   z-index: 1;
+  pointer-events: none;
 }
 
 .schedule-create-slot__trigger {
@@ -2548,6 +2535,7 @@ watch(gridTemplateStyle, () => nextTick(() => updateFloatingDatePositions()))
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+  pointer-events: auto;
   transition: color 0.18s ease, border-color 0.18s ease,
     background-color 0.18s ease;
 }

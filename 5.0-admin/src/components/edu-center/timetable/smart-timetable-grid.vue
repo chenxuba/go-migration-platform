@@ -939,6 +939,10 @@ function drawScheduleCell(ctx, entry, viewRect) {
   }
 
   ctx.save()
+  drawRoundedRect(ctx, innerX, innerY, innerWidth, innerHeight, CELL_RADIUS)
+  ctx.clip()
+
+  ctx.save()
   drawRoundedRect(ctx, innerX, innerY, innerWidth, BLOCK_HEADER_HEIGHT, CELL_RADIUS)
   ctx.clip()
   ctx.fillStyle = style.header
@@ -986,6 +990,8 @@ function drawScheduleCell(ctx, entry, viewRect) {
   else {
     ctx.fillText(ellipsisText(ctx, scheduleClassLine(text), bodyWidth), innerX + 6, innerY + 26)
   }
+
+  ctx.restore()
 
   if (String(props.focusedScheduleCellKey || '').trim() === entry.key) {
     drawRoundedRect(ctx, innerX - 1, innerY - 1, innerWidth + 2, innerHeight + 2, CELL_RADIUS + 1)
