@@ -1146,6 +1146,22 @@ function syncCanvasSize() {
   return ctx
 }
 
+function clampViewportScrollPosition() {
+  const viewport = viewportRef.value
+  if (!(viewport instanceof HTMLElement))
+    return
+  const maxScrollTop = Math.max(0, totalGridHeight.value - viewportHeight.value)
+  const maxScrollLeft = Math.max(0, totalGridWidth.value - viewport.clientWidth)
+  const nextTop = clamp(scrollTop.value, 0, maxScrollTop)
+  const nextLeft = clamp(scrollLeft.value, 0, maxScrollLeft)
+  if (viewport.scrollTop !== nextTop)
+    viewport.scrollTop = nextTop
+  if (viewport.scrollLeft !== nextLeft)
+    viewport.scrollLeft = nextLeft
+  scrollTop.value = nextTop
+  scrollLeft.value = nextLeft
+}
+
 function renderFrame() {
   pendingFrame = 0
   const ctx = syncCanvasSize()
@@ -1175,6 +1191,10 @@ function updateViewportMetrics() {
   if (Number(props.viewportHeight || 0) > 0) {
     viewportWidth.value = viewport.clientWidth
     viewportHeight.value = Math.max(180, Number(props.viewportHeight || 0))
+    nextTick(() => {
+      clampViewportScrollPosition()
+      scheduleRender()
+    })
     return
   }
   const parentHeight = shell.parentElement instanceof HTMLElement
@@ -1183,12 +1203,20 @@ function updateViewportMetrics() {
   if (parentHeight > 0) {
     viewportWidth.value = viewport.clientWidth
     viewportHeight.value = Math.max(180, parentHeight)
+    nextTick(() => {
+      clampViewportScrollPosition()
+      scheduleRender()
+    })
     return
   }
   const shellRect = shell.getBoundingClientRect()
   const available = Math.max(VIEWPORT_MIN_HEIGHT, Math.min(VIEWPORT_MAX_HEIGHT, Math.floor(window.innerHeight - shellRect.top - VIEWPORT_BOTTOM_GAP)))
   viewportWidth.value = viewport.clientWidth
   viewportHeight.value = Math.max(180, available)
+  nextTick(() => {
+    clampViewportScrollPosition()
+    scheduleRender()
+  })
 }
 
 function clearHoverCloseTimer() {

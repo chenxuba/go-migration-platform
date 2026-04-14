@@ -5680,10 +5680,7 @@ function measureTimetablePageHeight() {
   const nextHeight = Math.max(360, Math.floor(window.innerHeight - rect.top - 8))
   timetablePageHeight.value = nextHeight
 
-  const filterHeight = timetableFilterRef.value instanceof HTMLElement ? timetableFilterRef.value.offsetHeight : 0
-  const toolbarHeight = timetableToolbarRef.value instanceof HTMLElement ? timetableToolbarRef.value.offsetHeight : 0
-  const summaryHeight = timetableSummaryRef.value instanceof HTMLElement ? timetableSummaryRef.value.offsetHeight : 0
-  timetableGridHeight.value = Math.max(240, nextHeight - filterHeight)
+  timetableGridHeight.value = Math.max(240, nextHeight)
 }
 
 function scheduleMeasureTimetablePageHeight() {
