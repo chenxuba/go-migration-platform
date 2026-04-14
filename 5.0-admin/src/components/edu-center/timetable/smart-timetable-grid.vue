@@ -23,6 +23,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  viewportHeight: {
+    type: Number,
+    default: 0,
+  },
   draggingScheduleCellKey: {
     type: String,
     default: '',
@@ -148,6 +152,7 @@ const viewportRef = ref(null)
 const canvasRef = ref(null)
 const hoverScheduleAnchorRef = ref(null)
 const viewportHeight = ref(420)
+const viewportWidth = ref(0)
 const scrollTop = ref(0)
 const scrollLeft = ref(0)
 const openSchedulePopoverKey = ref('')
@@ -188,9 +193,24 @@ const fixedColumnMetas = computed(() => {
 })
 
 const scheduleColumnMetas = computed(() => {
+  const baseWidths = scheduleColumns.value.map(column => Number(column?.width || 160))
+  const baseTotalWidth = baseWidths.reduce((sum, width) => sum + width, 0)
+  const targetBodyWidth = Math.max(
+    baseTotalWidth,
+    Math.max(0, viewportWidth.value - fixedLeftWidth.value),
+  )
   let left = 0
   return scheduleColumns.value.map((column, index) => {
-    const width = Number(column?.width || 160)
+    const baseWidth = baseWidths[index] || 0
+    const accumulatedBaseWidth = baseWidths
+      .slice(0, index + 1)
+      .reduce((sum, width) => sum + width, 0)
+    const width = index === scheduleColumns.value.length - 1
+      ? Math.max(baseWidth, targetBodyWidth - left)
+      : Math.max(
+          baseWidth,
+          Math.round(accumulatedBaseWidth * targetBodyWidth / Math.max(baseTotalWidth, 1)) - left,
+        )
     const meta = {
       column,
       index,
@@ -1094,14 +1114,26 @@ function scheduleRender() {
 
 function updateViewportMetrics() {
   const shell = shellRef.value
-  if (!(shell instanceof HTMLElement) || typeof window === 'undefined')
+  const viewport = viewportRef.value
+  if (!(shell instanceof HTMLElement) || !(viewport instanceof HTMLElement) || typeof window === 'undefined')
     return
+  if (Number(props.viewportHeight || 0) > 0) {
+    viewportWidth.value = viewport.clientWidth
+    viewportHeight.value = Math.max(180, Number(props.viewportHeight || 0))
+    return
+  }
+  const parentHeight = shell.parentElement instanceof HTMLElement
+    ? shell.parentElement.clientHeight
+    : 0
+  if (parentHeight > 0) {
+    viewportWidth.value = viewport.clientWidth
+    viewportHeight.value = Math.max(180, parentHeight)
+    return
+  }
   const shellRect = shell.getBoundingClientRect()
   const available = Math.max(VIEWPORT_MIN_HEIGHT, Math.min(VIEWPORT_MAX_HEIGHT, Math.floor(window.innerHeight - shellRect.top - VIEWPORT_BOTTOM_GAP)))
-  const contentHeight = totalGridHeight.value + 2
-  viewportHeight.value = contentHeight <= available
-    ? Math.max(contentHeight, 180)
-    : available
+  viewportWidth.value = viewport.clientWidth
+  viewportHeight.value = Math.max(180, available)
 }
 
 function clearHoverCloseTimer() {
@@ -1376,6 +1408,14 @@ watch(
   { deep: true },
 )
 
+watch(
+  () => props.viewportHeight,
+  () => {
+    updateViewportMetrics()
+    scheduleRender()
+  },
+)
+
 watch(emptyDragCellStateMap, () => {
   scheduleRender()
 }, { deep: true })
@@ -1495,6 +1535,8 @@ defineExpose({
 <style scoped lang="less">
 .st-canvas-grid {
   position: relative;
+  height: 100%;
+  min-height: 0;
 }
 
 .st-canvas-grid__viewport {

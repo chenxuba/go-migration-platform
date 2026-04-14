@@ -82,8 +82,13 @@ const currentGroup = ref('A')
 /** 与 matrixDays、表头节次列对齐；切换 A/B 时在新数据返回前不改，避免清空矩阵导致整页高度塌缩抖动 */
 const displayedGroupKey = ref('A')
 const timetableRootRef = ref(null)
+const timetableFilterRef = ref(null)
+const timetableToolbarRef = ref(null)
+const timetableSummaryRef = ref(null)
 const smartTimetableGridRef = ref(null)
 const allFilterRef = ref(null)
+const timetablePageHeight = ref(0)
+const timetableGridHeight = ref(0)
 const classId = ref(null)
 const exportLoading = ref(false)
 const filterStudentId = ref(undefined)
@@ -98,6 +103,7 @@ const schedulingClassroomList = ref([])
 const schedulingClassroomLoading = ref(false)
 const selectedOneToOneClassroomId = ref(undefined)
 const selectedClassClassroomId = ref(undefined)
+let timetablePageResizeRaf = 0
 
 const scheduleTypeOptions = [
   { id: 'group_class', value: '班级日程' },
@@ -5616,11 +5622,69 @@ watch(dragConflictDetailOpen, (open) => {
     }
   }
 })
+
+function measureTimetablePageHeight() {
+  if (!(timetableRootRef.value instanceof HTMLElement) || typeof window === 'undefined')
+    return
+  const rect = timetableRootRef.value.getBoundingClientRect()
+  const nextHeight = Math.max(360, Math.floor(window.innerHeight - rect.top - 8))
+  timetablePageHeight.value = nextHeight
+
+  const filterHeight = timetableFilterRef.value instanceof HTMLElement ? timetableFilterRef.value.offsetHeight : 0
+  const toolbarHeight = timetableToolbarRef.value instanceof HTMLElement ? timetableToolbarRef.value.offsetHeight : 0
+  const summaryHeight = timetableSummaryRef.value instanceof HTMLElement ? timetableSummaryRef.value.offsetHeight : 0
+  timetableGridHeight.value = Math.max(240, nextHeight - filterHeight)
+}
+
+function scheduleMeasureTimetablePageHeight() {
+  if (typeof window === 'undefined')
+    return
+  if (timetablePageResizeRaf)
+    window.cancelAnimationFrame(timetablePageResizeRaf)
+  timetablePageResizeRaf = window.requestAnimationFrame(() => {
+    timetablePageResizeRaf = 0
+    measureTimetablePageHeight()
+  })
+}
+
+onMounted(() => {
+  nextTick(() => {
+    measureTimetablePageHeight()
+  })
+  if (typeof window !== 'undefined')
+    window.addEventListener('resize', scheduleMeasureTimetablePageHeight)
+})
+
+onUnmounted(() => {
+  if (typeof window !== 'undefined')
+    window.removeEventListener('resize', scheduleMeasureTimetablePageHeight)
+  if (typeof window !== 'undefined' && timetablePageResizeRaf)
+    window.cancelAnimationFrame(timetablePageResizeRaf)
+  timetablePageResizeRaf = 0
+})
+
+watch(
+  () => [
+    currentModel.value,
+    currentTime.value,
+    currentGroup.value,
+    String(oneToOneRecordId.value || ''),
+    String(classId.value || ''),
+  ],
+  () => {
+    nextTick(() => {
+      measureTimetablePageHeight()
+    })
+  },
+)
 </script>
 
 <template>
-  <div ref="timetableRootRef">
-    <div class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
+  <div
+    ref="timetableRootRef"
+    class="st-page-shell"
+  >
+    <div ref="timetableFilterRef" class="filter-wrap bg-white pl-3 pr-3 rounded-4 rounded-lt-0 rounded-rt-0">
       <all-filter
         ref="allFilterRef"
         :display-array="displayArray"
@@ -5662,75 +5726,80 @@ watch(dragConflictDetailOpen, (open) => {
         @update:stu-phone-search-filter="handleStuPhoneFilter"
       />
     </div>
-    <SmartTimetableToolbar
-      v-model:current-model="currentModel"
-      v-model:one-to-one-record-id="oneToOneRecordId"
-      v-model:one-to-one-picker-open="oneToOnePickerOpen"
-      v-model:class-id="classId"
-      v-model:class-picker-open="classPickerOpen"
-      v-model:current-time="currentTime"
-      v-model:current-week="currentWeek"
-      v-model:current-group="currentGroup"
-      :one-to-one-list-loading="oneToOneListLoading"
-      :one-to-one-data="oneToOneData"
-      :render-one-to-one-dropdown="renderOneToOneDropdown"
-      :filter-one-to-one-option="filterOneToOneOption"
-      :render-class-dropdown="renderClassDropdown"
-      :class-data="classData"
-      :class-list-loading="classListLoading"
-      :time-view-options="timeViewOptions"
-      :format-date-range="formatDateRange"
-      :is-week-like-view="isWeekLikeView"
-      :group-options="groupOptions"
-      :on-one-to-one-change="handle1v1"
-      :on-one-to-one-dropdown-visible-change="handleOneToOneDropdownVisibleChange"
-      :on-class-change="handleClassSelectionChange"
-      :on-class-dropdown-visible-change="handleClassDropdownVisibleChange"
-      :on-class-search="loadClassOptions"
-      :on-prev="handlePrev"
-      :on-next="handleNext"
-      :on-this-week="handleThisWeek"
-      :on-export="exportSmartTimetable"
-      :export-loading="exportLoading"
-    />
-    <div class="st-summary-shell">
+    <div ref="timetableToolbarRef">
+      <SmartTimetableToolbar
+        v-model:current-model="currentModel"
+        v-model:one-to-one-record-id="oneToOneRecordId"
+        v-model:one-to-one-picker-open="oneToOnePickerOpen"
+        v-model:class-id="classId"
+        v-model:class-picker-open="classPickerOpen"
+        v-model:current-time="currentTime"
+        v-model:current-week="currentWeek"
+        v-model:current-group="currentGroup"
+        :one-to-one-list-loading="oneToOneListLoading"
+        :one-to-one-data="oneToOneData"
+        :render-one-to-one-dropdown="renderOneToOneDropdown"
+        :filter-one-to-one-option="filterOneToOneOption"
+        :render-class-dropdown="renderClassDropdown"
+        :class-data="classData"
+        :class-list-loading="classListLoading"
+        :time-view-options="timeViewOptions"
+        :format-date-range="formatDateRange"
+        :is-week-like-view="isWeekLikeView"
+        :group-options="groupOptions"
+        :on-one-to-one-change="handle1v1"
+        :on-one-to-one-dropdown-visible-change="handleOneToOneDropdownVisibleChange"
+        :on-class-change="handleClassSelectionChange"
+        :on-class-dropdown-visible-change="handleClassDropdownVisibleChange"
+        :on-class-search="loadClassOptions"
+        :on-prev="handlePrev"
+        :on-next="handleNext"
+        :on-this-week="handleThisWeek"
+        :on-export="exportSmartTimetable"
+        :export-loading="exportLoading"
+      />
+    </div>
+    <div ref="timetableSummaryRef" class="st-summary-shell">
       <TimetableScheduleSummary
         :total="smartTimetableTotalSchedules"
         :unsigned-count="smartTimetableUnsignedSchedules"
       />
     </div>
-    <SmartTimetableGrid
-      ref="smartTimetableGridRef"
-      :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule || updatingDraggedSchedule"
-      :table-data-source="tableDataSource"
-      :columns="columns"
-      :is-swap-time-grid="isSwapTimeGrid"
-      :focused-schedule-cell-key="focusedScheduleCellKey"
-      :dragging-schedule-cell-key="draggingScheduleCellKey"
-      :is-schedule-column="isScheduleColumn"
-      :schedule-cell-key="scheduleCellKey"
-      :schedule-cell-start-time="scheduleCellStartTime"
-      :schedule-cell-end-time="scheduleCellEndTime"
-      :schedule-cell-context-column="scheduleCellContextColumn"
-      :schedule-cell-context-record="scheduleCellContextRecord"
-      :has-scheduled-lesson="hasScheduledLesson"
-      :open-scheduled-lesson-detail="openScheduledLessonDetail"
-      :open-scheduled-lesson-edit="openScheduledLessonEdit"
-      :open-scheduled-lesson-edit-current="openScheduledLessonEditCurrent"
-      :open-scheduled-lesson-copy="openScheduledLessonCopy"
-      :open-scheduled-lesson-copy-current="openScheduledLessonCopyCurrent"
-      :open-scheduled-conflict-detail="openScheduledConflictDetail"
-      :handle-conflict-click="handleConflictClick"
-      :handle-schedule-click="handleScheduleClick"
-      :consume-scheduled-lesson-click-suppressed="consumeScheduledLessonClickSuppressed"
-      :handle-schedule-pointer-down="handleSchedulePointerDown"
-      :is-schedule-draggable="isScheduleDraggable"
-      :resolve-schedule-drag-blocked-message="resolveScheduleDragBlockedMessage"
-      :empty-lesson-status-text="emptyLessonStatusText"
-      :teacher-lesson-count-label="teacherLessonCountLabel"
-      :format-week="formatWeek"
-      :format-date="formatDate"
-    />
+    <div class="st-grid-shell" :style="timetableGridHeight > 0 ? { height: `${timetableGridHeight}px` } : undefined">
+      <SmartTimetableGrid
+        ref="smartTimetableGridRef"
+        :viewport-height="timetableGridHeight"
+        :spinning="timetableLoading || oneToOneAvailabilityLoading || creatingOneToOneSchedule || updatingDraggedSchedule"
+        :table-data-source="tableDataSource"
+        :columns="columns"
+        :is-swap-time-grid="isSwapTimeGrid"
+        :focused-schedule-cell-key="focusedScheduleCellKey"
+        :dragging-schedule-cell-key="draggingScheduleCellKey"
+        :is-schedule-column="isScheduleColumn"
+        :schedule-cell-key="scheduleCellKey"
+        :schedule-cell-start-time="scheduleCellStartTime"
+        :schedule-cell-end-time="scheduleCellEndTime"
+        :schedule-cell-context-column="scheduleCellContextColumn"
+        :schedule-cell-context-record="scheduleCellContextRecord"
+        :has-scheduled-lesson="hasScheduledLesson"
+        :open-scheduled-lesson-detail="openScheduledLessonDetail"
+        :open-scheduled-lesson-edit="openScheduledLessonEdit"
+        :open-scheduled-lesson-edit-current="openScheduledLessonEditCurrent"
+        :open-scheduled-lesson-copy="openScheduledLessonCopy"
+        :open-scheduled-lesson-copy-current="openScheduledLessonCopyCurrent"
+        :open-scheduled-conflict-detail="openScheduledConflictDetail"
+        :handle-conflict-click="handleConflictClick"
+        :handle-schedule-click="handleScheduleClick"
+        :consume-scheduled-lesson-click-suppressed="consumeScheduledLessonClickSuppressed"
+        :handle-schedule-pointer-down="handleSchedulePointerDown"
+        :is-schedule-draggable="isScheduleDraggable"
+        :resolve-schedule-drag-blocked-message="resolveScheduleDragBlockedMessage"
+        :empty-lesson-status-text="emptyLessonStatusText"
+        :teacher-lesson-count-label="teacherLessonCountLabel"
+        :format-week="formatWeek"
+        :format-date="formatDate"
+      />
+    </div>
 
     <div
       v-if="draggingScheduleState && dragPointerState.visible"
@@ -5834,6 +5903,16 @@ watch(dragConflictDetailOpen, (open) => {
 </template>
 
 <style lang="less" scoped>
+.st-page-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.st-grid-shell {
+  min-height: 0;
+}
+
 .st-drag-preview {
   position: fixed;
   top: 0;
