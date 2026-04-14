@@ -986,26 +986,7 @@ function buildLessonsForRow(slots, legacyList, currentTeacherId) {
   for (const leg of list) {
     const st = normalizeHHMM(leg.scheduleStartTime)
     const et = normalizeHHMM(leg.scheduleEndTime)
-    const sm = minutesFromHHMM(st)
-    const em = minutesFromHHMM(et)
     let idx = lessons.findIndex(l => l.startTime === st && l.endTime === et)
-    if (idx < 0 && sm != null && em != null) {
-      let best = -1
-      let bestOverlap = 0
-      lessons.forEach((l, i) => {
-        const ls = minutesFromHHMM(l.startTime)
-        const le = minutesFromHHMM(l.endTime)
-        if (ls == null || le == null)
-          return
-        const ov = Math.min(le, em) - Math.max(ls, sm)
-        if (ov > bestOverlap) {
-          bestOverlap = ov
-          best = i
-        }
-      })
-      if (best >= 0 && bestOverlap > 0)
-        idx = best
-    }
     if (idx < 0)
       continue
 
@@ -2495,54 +2476,76 @@ function parseConflictTimeRange(timeText) {
 function findBestSlotForTimeRange(slots, timeRange) {
   if (!timeRange)
     return null
-  const exact = (Array.isArray(slots) ? slots : []).find(slot =>
+  return (Array.isArray(slots) ? slots : []).find(slot =>
     slot.start === timeRange.startTime && slot.end === timeRange.endTime,
   )
-  if (exact)
-    return exact
+}
 
-  const targetStart = minutesFromHHMM(timeRange.startTime)
-  const targetEnd = minutesFromHHMM(timeRange.endTime)
-  if (targetStart == null || targetEnd == null)
-    return null
+function isTeacherBoundToPeriodGroup(group, teacherId) {
+  const targetTeacherId = String(teacherId || '').trim()
+  if (!targetTeacherId)
+    return false
+  const boundTeachers = Array.isArray(group?.boundTeachers) ? group.boundTeachers : []
+  return boundTeachers.some(item => String(item?.id ?? '').trim() === targetTeacherId)
+}
 
-  let bestSlot = null
-  let bestOverlap = 0
-  ;(Array.isArray(slots) ? slots : []).forEach((slot) => {
-    const slotStart = minutesFromHHMM(slot?.start)
-    const slotEnd = minutesFromHHMM(slot?.end)
-    if (slotStart == null || slotEnd == null)
-      return
-    const overlap = Math.min(slotEnd, targetEnd) - Math.max(slotStart, targetStart)
-    if (overlap > bestOverlap) {
-      bestOverlap = overlap
-      bestSlot = slot
-    }
-  })
-  return bestOverlap > 0 ? bestSlot : null
+function findVisibleConflictScheduleGroupKey(item) {
+  const teacherId = String(item?.teacherId || '').trim()
+  const date = String(item?.date || '').trim()
+  const timeRange = parseConflictTimeRange(item?.timeText)
+  if (!teacherId || !date || !timeRange)
+    return ''
+  const matchedRow = dataSource.value.find(row => row.teacherId === teacherId && row.date === date)
+  if (!matchedRow)
+    return ''
+  const lessonMatched = (matchedRow.lessons || []).some(lesson =>
+    hasScheduledLesson(lesson)
+    && lesson.startTime === timeRange.startTime
+    && lesson.endTime === timeRange.endTime,
+  )
+  return lessonMatched ? currentGroup.value : ''
 }
 
 function resolveConflictScheduleGroupInfo(item) {
   const teacherId = String(item?.teacherId || '').trim()
   const timeRange = parseConflictTimeRange(item?.timeText)
+  const visibleGroupKey = findVisibleConflictScheduleGroupKey(item)
+  if (visibleGroupKey) {
+    const visibleGroupLabel = groupOptions.value.find(opt => opt.key === visibleGroupKey)?.label || activeGroupLabel.value
+    return {
+      keys: visibleGroupKey ? [visibleGroupKey] : [],
+      labels: visibleGroupLabel ? [visibleGroupLabel] : [],
+    }
+  }
+
   const matches = groupOptions.value
     .map((opt) => {
       const group = periodGroupForKey(opt.key)
-      const teacherMatched = !teacherId || !(group?.boundTeachers?.length)
-        || group.boundTeachers.some(t => String(t.id) === teacherId)
       const timeMatched = !timeRange || Boolean(findBestSlotForTimeRange(slotsForGroupKey(opt.key), timeRange))
-      return teacherMatched && timeMatched
-        ? { key: opt.key, label: opt.label }
+      return timeMatched
+        ? {
+            key: opt.key,
+            label: opt.label,
+            teacherMatched: isTeacherBoundToPeriodGroup(group, teacherId),
+          }
         : null
     })
     .filter(Boolean)
 
-  const unique = matches.filter((item, index, arr) =>
-    arr.findIndex(x => x.key === item.key) === index,
+  const exactTeacherMatches = teacherId
+    ? matches.filter(match => match.teacherMatched)
+    : []
+  const fallbackMatches = exactTeacherMatches.length
+    ? exactTeacherMatches
+    : matches.length === 1
+      ? matches
+      : matches.filter(match => match.key === currentGroup.value)
+  const unique = fallbackMatches.filter((match, index, arr) =>
+    arr.findIndex(x => x.key === match.key) === index,
   )
   return {
-    keys: unique.map(item => item.key),
-    labels: unique.map(item => item.label),
+    keys: unique.map(match => match.key),
+    labels: unique.map(match => match.label),
   }
 }
 
