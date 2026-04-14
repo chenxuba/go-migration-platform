@@ -17,6 +17,8 @@ interface ScheduleBoardPopover {
   editable?: boolean
   batchNo?: string
   batchSize?: number
+  lessonDate?: string
+  callStatusKey?: string
   modeLabel?: string
   lessonTitle?: string
   teacherName?: string
@@ -135,7 +137,7 @@ function clearHoverCloseTimer() {
   hoverCloseTimer = null
 }
 
-function scheduleCloseHover(delay = 100) {
+function scheduleCloseHover(delay = 24) {
   clearHoverCloseTimer()
   hoverCloseTimer = window.setTimeout(() => {
     hoveredEventKey.value = ''
@@ -210,7 +212,7 @@ function handlePopoverOpenChange(event: ScheduleBoardEvent | null | undefined, o
     return
   }
   if (hoveredEventKey.value === key)
-    scheduleCloseHover(120)
+    scheduleCloseHover(32)
 }
 
 function ellipsisText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
@@ -580,7 +582,7 @@ function conflictBadgeHit(pointX: number, pointY: number, event: ScheduleBoardEv
 function handleCanvasMouseMove(event: MouseEvent) {
   const resolved = resolveEventFromPoint(event.clientX, event.clientY)
   if (!resolved?.event) {
-    scheduleCloseHover()
+    scheduleCloseHover(24)
     if (canvasRef.value)
       canvasRef.value.style.cursor = 'default'
     return
@@ -594,7 +596,7 @@ function handleCanvasMouseMove(event: MouseEvent) {
 function handleCanvasMouseLeave() {
   if (canvasRef.value)
     canvasRef.value.style.cursor = 'default'
-  scheduleCloseHover(120)
+  scheduleCloseHover(32)
 }
 
 function handleCanvasClick(event: MouseEvent) {
@@ -728,6 +730,8 @@ defineExpose({
           :editable="Boolean(eventMap.get(hoveredEventKey)?.popover?.editable)"
           :batch-no="String(eventMap.get(hoveredEventKey)?.popover?.batchNo || '')"
           :batch-size="Number(eventMap.get(hoveredEventKey)?.popover?.batchSize || 0)"
+          :lesson-date="String(eventMap.get(hoveredEventKey)?.popover?.lessonDate || '')"
+          :call-status-key="String(eventMap.get(hoveredEventKey)?.popover?.callStatusKey || 'unsigned')"
           :mode-label="eventMap.get(hoveredEventKey)?.popover?.modeLabel || ''"
           :lesson-title="eventMap.get(hoveredEventKey)?.popover?.lessonTitle || ''"
           :teacher-name="eventMap.get(hoveredEventKey)?.popover?.teacherName || ''"

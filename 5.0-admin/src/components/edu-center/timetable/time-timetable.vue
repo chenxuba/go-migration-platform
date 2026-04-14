@@ -1226,6 +1226,8 @@ const timeCanvasEvents = computed(() =>
           editable: true,
           batchNo: String(event.raw?.batchNo || ''),
           batchSize: Number(event.raw?.batchSize || 0),
+          lessonDate: String(event.raw?.lessonDate || event.raw?.scheduleDate || event.dateKey || ''),
+          callStatusKey: String(event.status || 'unsigned'),
           modeLabel: scheduleBadgeText(event.classType),
           lessonTitle: scheduleHoverTitle(event.raw),
           teacherName: event.teacher,

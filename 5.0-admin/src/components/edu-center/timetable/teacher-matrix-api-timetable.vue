@@ -1479,6 +1479,8 @@ const matrixCanvasEvents = computed(() =>
           editable: true,
           batchNo: String(event.raw?.batchNo || ''),
           batchSize: Number(event.raw?.batchSize || 0),
+          lessonDate: String(event.raw?.lessonDate || event.dateKey || ''),
+          callStatusKey: Number(event.raw?.callStatus) === 2 ? 'signed' : Number(event.raw?.callStatus) === 3 ? 'partial' : 'unsigned',
           modeLabel: scheduleBadgeText(event.classType),
           lessonTitle: scheduleHoverTitle(event.raw),
           teacherName: event.teacher,
