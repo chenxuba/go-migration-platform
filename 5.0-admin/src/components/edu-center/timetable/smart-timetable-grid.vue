@@ -1102,8 +1102,8 @@ function drawBodyGrid(ctx, visibleWidth, visibleHeight) {
     const y = HEADER_HEIGHT + rowIndex * ROW_HEIGHT - scrollTop.value
     ctx.strokeStyle = GRID_LINE
     ctx.beginPath()
-    ctx.moveTo(fixedLeftWidth.value, y + 0.5)
-    ctx.lineTo(visibleWidth, y + 0.5)
+    ctx.moveTo(fixedLeftWidth.value, y + ROW_HEIGHT + 0.5)
+    ctx.lineTo(visibleWidth, y + ROW_HEIGHT + 0.5)
     ctx.stroke()
 
     visibleColumns.forEach((columnMeta) => {
