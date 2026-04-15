@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { useGet, usePost } from '~/utils/request'
 
 /** 对标 CheckClassName：true = 名称已存在 */
@@ -202,6 +204,19 @@ export interface GroupClassDetailVO extends GroupClassRow {
 
 export function getGroupClassDetailApi(params: { id: string }) {
   return useGet<GroupClassDetailVO>('/api/v1/group-classes/detail', params)
+}
+
+export async function downloadGroupClassRollCallSheetApi(params: { classId: string }) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/group-classes/export-roll-call-sheet', {
+    params,
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
 }
 
 export interface GroupClassDrawerScheduleItem {

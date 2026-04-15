@@ -7,21 +7,39 @@ import (
 )
 
 var instConfigBooleanFields = map[string]struct{}{
-	"enablePublicPool":         {},
-	"enableCollectorStaff":     {},
-	"enablePhoneSellStaff":     {},
-	"enableForeground":         {},
-	"enableViceSellStaff":      {},
-	"enableAdvisor":            {},
-	"enableStudentManager":     {},
-	"limitSameWeChat":          {},
-	"limitImportSameWeChat":    {},
+	"enablePublicPool":      {},
+	"enableCollectorStaff":  {},
+	"enablePhoneSellStaff":  {},
+	"enableForeground":      {},
+	"enableViceSellStaff":   {},
+	"enableAdvisor":         {},
+	"enableStudentManager":  {},
+	"limitSameWeChat":       {},
+	"limitImportSameWeChat": {},
 }
 
 func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) error {
 	return ensureColumnsOnTable(ctx, db, "inst_config", map[string]string{
-		"unified_time_period_json": "unified_time_period_json LONGTEXT NULL",
+		"unified_time_period_json":             "unified_time_period_json LONGTEXT NULL",
+		"group_class_roll_call_sheet_template": "group_class_roll_call_sheet_template VARCHAR(64) NULL",
 	})
+}
+
+func (repo *Repository) GetGroupClassRollCallSheetTemplateKey(ctx context.Context, instID int64) (string, error) {
+	var key string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(group_class_roll_call_sheet_template, '')
+		FROM inst_config
+		WHERE inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, instID).Scan(&key)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(key), nil
 }
 
 func (repo *Repository) GetInstConfig(ctx context.Context, instID int64) (map[string]any, error) {
@@ -98,18 +116,19 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 
 func (repo *Repository) UpdateInstConfig(ctx context.Context, instID int64, payload map[string]any) error {
 	allowed := map[string]string{
-		"addIntentionStudentRule": "add_intention_student_rule",
-		"addImportStudentRule":    "add_import_student_rule",
-		"enablePublicPool":        "enable_public_pool",
-		"unfollowedTime":          "unfollowed_time",
-		"enableCollectorStaff":    "enable_collector_staff",
-		"enablePhoneSellStaff":    "enable_phone_sell_staff",
-		"enableForeground":        "enable_foreground",
-		"enableViceSellStaff":     "enable_vice_sell_staff",
-		"enableAdvisor":           "enable_advisor",
-		"enableStudentManager":    "enable_student_manager",
-		"limitSameWeChat":       "limit_same_weChat",
-		"limitImportSameWeChat": "limit_import_same_weChat",
+		"addIntentionStudentRule":         "add_intention_student_rule",
+		"addImportStudentRule":            "add_import_student_rule",
+		"enablePublicPool":                "enable_public_pool",
+		"groupClassRollCallSheetTemplate": "group_class_roll_call_sheet_template",
+		"unfollowedTime":                  "unfollowed_time",
+		"enableCollectorStaff":            "enable_collector_staff",
+		"enablePhoneSellStaff":            "enable_phone_sell_staff",
+		"enableForeground":                "enable_foreground",
+		"enableViceSellStaff":             "enable_vice_sell_staff",
+		"enableAdvisor":                   "enable_advisor",
+		"enableStudentManager":            "enable_student_manager",
+		"limitSameWeChat":                 "limit_same_weChat",
+		"limitImportSameWeChat":           "limit_import_same_weChat",
 		// unifiedTimePeriodJson 已改为 inst_period_* 表存储，勿再通过本方法写入 LONGTEXT
 	}
 

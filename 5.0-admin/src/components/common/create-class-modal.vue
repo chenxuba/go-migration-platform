@@ -953,6 +953,7 @@ function resolveSelectPopupContainer(triggerNode) {
             :status="0"
             :allow-clear="true"
             :preset-staff="teacherPresetForSelect"
+            :get-popup-container="resolveSelectPopupContainer"
           />
         </a-form-item>
         <a-form-item
@@ -968,6 +969,7 @@ function resolveSelectPopupContainer(triggerNode) {
             :status="0"
             :allow-clear="true"
             :preset-staff="defaultTeacherPresetForSelect"
+            :get-popup-container="resolveSelectPopupContainer"
           />
         </a-form-item>
         <!-- 上课教室 -->

@@ -7,6 +7,7 @@
     :allow-clear="allowClear"
     :loading="initialLoading"
     :mode="multiple ? 'multiple' : undefined"
+    :get-popup-container="getPopupContainer"
     show-search
     option-label-prop="label"
     @update:value="handleValueChange"
@@ -170,6 +171,10 @@ const props = defineProps({
   fetchType: {
     type: String,
     default: 'inst-user',
+  },
+  getPopupContainer: {
+    type: Function,
+    default: triggerNode => triggerNode?.parentNode || document.body,
   },
 })
 

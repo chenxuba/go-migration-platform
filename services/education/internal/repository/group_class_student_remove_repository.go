@@ -95,6 +95,10 @@ func (repo *Repository) removeGroupClassStudentTx(ctx context.Context, tx *sql.T
 	if len(targetMembershipIDs) == 0 {
 		return errors.New("学员已不在当前班级中")
 	}
+	accountIDs, err := repo.loadGroupClassMembershipTuitionAccountIDsTx(ctx, tx, instID, targetMembershipIDs)
+	if err != nil {
+		return err
+	}
 
 	studentName, err := repo.resolveGroupClassStudentNameTx(ctx, tx, instID, studentID)
 	if err != nil {
@@ -151,7 +155,43 @@ func (repo *Repository) removeGroupClassStudentTx(ctx context.Context, tx *sql.T
 			return err
 		}
 	}
+	if err := repo.syncGroupClassAssignedFlagForTuitionAccountsTx(ctx, tx, instID, operatorID, accountIDs); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (repo *Repository) loadGroupClassMembershipTuitionAccountIDsTx(ctx context.Context, tx *sql.Tx, instID int64, membershipIDs []int64) ([]int64, error) {
+	membershipIDs = uniquePositiveInt64s(membershipIDs)
+	if len(membershipIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT IFNULL(primary_tuition_account_id, 0)
+		FROM teaching_class_student
+		WHERE inst_id = ?
+		  AND id IN (`+sqlPlaceholders(len(membershipIDs))+`)
+		  AND del_flag = 0
+	`, append([]any{instID}, int64SliceToAny(membershipIDs)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	accountIDs := make([]int64, 0, len(membershipIDs))
+	for rows.Next() {
+		var accountID int64
+		if err := rows.Scan(&accountID); err != nil {
+			return nil, err
+		}
+		if accountID > 0 {
+			accountIDs = append(accountIDs, accountID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return uniquePositiveInt64s(accountIDs), nil
 }
 
 func (repo *Repository) loadActiveGroupClassStudentMembershipIDsTx(ctx context.Context, tx *sql.Tx, instID, classID, studentID int64) ([]int64, error) {

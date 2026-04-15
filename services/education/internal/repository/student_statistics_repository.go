@@ -99,7 +99,21 @@ func (repo *Repository) GetStudentOverviewStatistics(ctx context.Context, instID
 			  AND ta.status IN (1, 2)
 			  AND ic.teach_method = 1
 			GROUP BY s.id, ic.id, ic.teach_method, icq.lesson_model
-			HAVING IFNULL(MAX(ta.assigned_class), 0) = 0
+			HAVING MAX(GREATEST(
+				IFNULL(ta.assigned_class, 0),
+				CASE WHEN EXISTS (
+					SELECT 1
+					FROM teaching_class_student tcs
+					INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id
+						AND tc.inst_id = tcs.inst_id
+						AND tc.class_type = 1
+						AND tc.del_flag = 0
+					WHERE tcs.inst_id = ta.inst_id
+					  AND tcs.primary_tuition_account_id = ta.id
+					  AND tcs.del_flag = 0
+					  AND IFNULL(tcs.class_student_status, 1) IN (1, 2)
+				) THEN 1 ELSE 0 END
+			)) = 0
 		) pending_class_students
 	`, instID).Scan(&result.PendingClassStudents); err != nil {
 		return model.StudentOverviewStatistics{}, err

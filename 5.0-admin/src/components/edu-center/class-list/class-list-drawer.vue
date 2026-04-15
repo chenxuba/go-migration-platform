@@ -9,7 +9,7 @@ import ClassEntryExitRecord from './class-entry-exit-record.vue'
 import ClassOperationLog from './class-operation-log.vue'
 import schedule from './class-list-schedule.vue'
 import waitingRollCallSchedule from './waiting-roll-call-schedule.vue'
-import { closeGroupClassApi, getGroupClassDetailApi, reopenGroupClassApi } from '@/api/edu-center/group-class'
+import { closeGroupClassApi, downloadGroupClassRollCallSheetApi, getGroupClassDetailApi, reopenGroupClassApi } from '@/api/edu-center/group-class'
 import { openCloseClassConfirm } from '@/utils/closeClassConfirm'
 import messageService from '@/utils/messageService'
 
@@ -38,6 +38,7 @@ const openDrawer = computed({
 
 const detailData = ref(null)
 let detailReqSeq = 0
+const exportingRollCallSheet = ref(false)
 
 function loadClassDetail() {
   if (!props.open) {
@@ -224,8 +225,80 @@ function handleEditClass() {
   emit('edit', displayRecord.value)
 }
 
-function handleExportRollCallSheet() {
-  messageService.info('导出点名表功能待实现')
+function parseAttachmentFilenameFromHeader(contentDisposition) {
+  const text = String(contentDisposition || '')
+  if (!text)
+    return ''
+  const utf8Match = text.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = text.match(/filename="?([^";]+)"?/i)
+  return plainMatch?.[1] || ''
+}
+
+async function handleExportRollCallSheet() {
+  const classId = String(displayRecord.value?.id || '').trim()
+  if (!classId) {
+    messageService.error('缺少班级ID')
+    return
+  }
+  if (exportingRollCallSheet.value)
+    return
+
+  exportingRollCallSheet.value = true
+  try {
+    const res = await downloadGroupClassRollCallSheetApi({ classId })
+    const contentType = String(res.headers['content-type'] || '')
+    if (contentType.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+
+    const blob = new Blob([res.data], {
+      type: contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
+      || `${String(displayRecord.value?.name || '班级').trim() || '班级'}-点名表-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error) {
+    console.error('export group class roll call sheet failed', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exportingRollCallSheet.value = false
+  }
 }
 
 function handleStudentListChanged() {
@@ -273,7 +346,7 @@ function handleStudentListChanged() {
               </span>
             </a-space>
             <a-space>
-              <a-button @click="handleExportRollCallSheet">
+              <a-button :loading="exportingRollCallSheet" @click="handleExportRollCallSheet">
                 导出点名表
               </a-button>
               <a-button v-if="isClassClosed" @click="handleReopenClass">

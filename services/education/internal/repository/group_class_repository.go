@@ -2274,6 +2274,43 @@ type batchAssignPair struct {
 	courseID         int64
 }
 
+func (repo *Repository) syncGroupClassAssignedFlagForTuitionAccountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, accountIDs []int64) error {
+	accountIDs = uniquePositiveInt64s(accountIDs)
+	if len(accountIDs) == 0 {
+		return nil
+	}
+	args := []any{
+		model.TeachingClassTypeNormal,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStopped,
+		operatorID,
+		instID,
+	}
+	args = append(args, int64SliceToAny(accountIDs)...)
+	_, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account ta
+		SET assigned_class = CASE WHEN EXISTS (
+			SELECT 1
+			FROM teaching_class_student tcs
+			INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id
+				AND tc.inst_id = tcs.inst_id
+				AND tc.class_type = ?
+				AND tc.del_flag = 0
+			WHERE tcs.inst_id = ta.inst_id
+			  AND tcs.primary_tuition_account_id = ta.id
+			  AND tcs.del_flag = 0
+			  AND IFNULL(tcs.class_student_status, ?) IN (?, ?)
+		) THEN 1 ELSE 0 END,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE ta.inst_id = ?
+		  AND ta.id IN (`+sqlPlaceholders(len(accountIDs))+`)
+		  AND ta.del_flag = 0
+	`, args...)
+	return err
+}
+
 // BatchAssignGroupClassStudents 对标 Class/BatchAssignStudents：按学费账户将学员编入集体班。
 func (repo *Repository) BatchAssignGroupClassStudents(ctx context.Context, instID, operatorID int64, classIDs []int64, students []model.BatchAssignGroupClassStudentItem, enforceClassAssign bool) error {
 	if len(classIDs) == 0 {
@@ -2470,6 +2507,17 @@ func (repo *Repository) BatchAssignGroupClassStudents(ctx context.Context, instI
 			if err := repo.syncGroupClassStudentAddHistoryTx(ctx, tx, instID, operatorID, classID, item.rowID, operateTime); err != nil {
 				return err
 			}
+		}
+
+		accountIDs := make([]int64, 0, len(toInsert)+len(toReopen))
+		for _, p := range toInsert {
+			accountIDs = append(accountIDs, p.tuitionAccountID)
+		}
+		for _, item := range toReopen {
+			accountIDs = append(accountIDs, item.pair.tuitionAccountID)
+		}
+		if err := repo.syncGroupClassAssignedFlagForTuitionAccountsTx(ctx, tx, instID, operatorID, accountIDs); err != nil {
+			return err
 		}
 	}
 	return tx.Commit()

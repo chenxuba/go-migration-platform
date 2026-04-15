@@ -1691,6 +1691,19 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 	havingParts := make([]string, 0, 8)
 	havingArgs := make([]any, 0, 8)
 	remainExpr := `SUM(CASE WHEN icq.lesson_model = 3 THEN ta.remaining_tuition WHEN ta.total_quantity > 0 THEN ta.remaining_quantity ELSE 0 END)`
+	assignedClassExistsExpr := `CASE WHEN EXISTS (
+		SELECT 1
+		FROM teaching_class_student tcs
+		INNER JOIN teaching_class tc ON tc.id = tcs.teaching_class_id
+			AND tc.inst_id = tcs.inst_id
+			AND tc.class_type = 1
+			AND tc.del_flag = 0
+		WHERE tcs.inst_id = ta.inst_id
+		  AND tcs.primary_tuition_account_id = ta.id
+		  AND tcs.del_flag = 0
+		  AND IFNULL(tcs.class_student_status, 1) IN (1, 2)
+	) THEN 1 ELSE 0 END`
+	assignedClassExpr := `MAX(GREATEST(IFNULL(ta.assigned_class, 0), ` + assignedClassExistsExpr + `))`
 	hasAssignedClassCourseExpr := `EXISTS (
 		SELECT 1
 		FROM tuition_account ta2
@@ -1699,10 +1712,24 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 		  AND ta2.del_flag = 0
 		  AND ta2.status IN (1, 2)
 		  AND ic2.teach_method = 1
-		  AND IFNULL(ta2.assigned_class, 0) = 1
+		  AND GREATEST(
+			IFNULL(ta2.assigned_class, 0),
+			CASE WHEN EXISTS (
+				SELECT 1
+				FROM teaching_class_student tcs2
+				INNER JOIN teaching_class tc2 ON tc2.id = tcs2.teaching_class_id
+					AND tc2.inst_id = tcs2.inst_id
+					AND tc2.class_type = 1
+					AND tc2.del_flag = 0
+				WHERE tcs2.inst_id = ta2.inst_id
+				  AND tcs2.primary_tuition_account_id = ta2.id
+				  AND tcs2.del_flag = 0
+				  AND IFNULL(tcs2.class_student_status, 1) IN (1, 2)
+			) THEN 1 ELSE 0 END
+		  ) = 1
 	)`
 	if q.AssignedClass != nil {
-		havingParts = append(havingParts, "IFNULL(MAX(ta.assigned_class), 0) = ?")
+		havingParts = append(havingParts, assignedClassExpr+" = ?")
 		havingArgs = append(havingArgs, boolValue(q.AssignedClass))
 	}
 	if q.HasAssignedClassCourse != nil {
@@ -1801,7 +1828,7 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			SUM(ta.remaining_tuition) AS tuition,
 			SUM(ta.confirmed_tuition) AS confirmed_tuition,
 			MAX(ta.status) AS tuition_account_status,
-			IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
+			`+assignedClassExpr+` AS assigned_class,
 			`+hasAssignedClassCourseExpr+` AS has_assigned_class_course,
 			IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
 			MAX(ta.expire_time) AS expire_time,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"go-migration-platform/pkg/httpx"
@@ -309,6 +310,29 @@ func (handler *Handler) getGroupClassDetail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, res, ctx.RequestID)
+}
+
+func (handler *Handler) exportGroupClassRollCallSheet(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	classID := strings.TrimSpace(r.URL.Query().Get("classId"))
+	buf, filename, err := handler.service.ExportGroupClassRollCallSheetExcel(claims.UserID, classID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(filename))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf)
 }
 
 func (handler *Handler) listGroupClassDrawerSchedules(w http.ResponseWriter, r *http.Request) {
