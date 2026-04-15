@@ -549,6 +549,8 @@ watch(
 .phone-cell .sub-text {
   margin: 0 0 1px;
   line-height: 14px;
+  font-size: 13px;
+  color: #4e4e4e;
 }
 
 .phone-cell .phone-text {
