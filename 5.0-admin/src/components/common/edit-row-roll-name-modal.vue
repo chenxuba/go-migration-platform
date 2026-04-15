@@ -93,7 +93,7 @@ function syncFormState() {
   const student = props.student
   syncingFormState.value = true
   const status = Number(student?.status ?? 1)
-  formState.status = [1, 2, 3].includes(status) ? status : 1
+  formState.status = [1, 2, 3, 4].includes(status) ? status : 1
   formState.editRecord = student && String(student.studentTeachingRecordId || '').trim()
     ? Number(student.quantity ?? 0)
     : undefined
@@ -232,16 +232,18 @@ function closeFun() {
                 旷课
               </a-radio>
               <a-radio v-if="showUnrecordedOption" :value="4">
-                未记录
+                <span class="inline-flex items-center">
+                  <span>未记录</span>
+                  <a-popover title="未记录" trigger="hover">
+                    <template #content>
+                      <div class="w-220px leading-22px">
+                        学员为“未记录”状态时，无法记录课时，也不会发送家长端消息提醒。
+                      </div>
+                    </template>
+                    <ExclamationCircleOutlined class="ml-6px text-#999 cursor-pointer" @click.stop />
+                  </a-popover>
+                </span>
               </a-radio>
-              <a-popover v-if="showUnrecordedOption" title="未记录" trigger="hover">
-                <template #content>
-                  <div class="w-220px leading-22px">
-                    学员为“未记录”状态时，无法记录课时，也不会发送家长端消息提醒。
-                  </div>
-                </template>
-                <ExclamationCircleOutlined class="ml-6px text-#999 cursor-pointer" />
-              </a-popover>
             </a-radio-group>
           </a-form-item>
 

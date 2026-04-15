@@ -1153,6 +1153,16 @@ func (repo *Repository) revertTeachingRecordConsumeTx(ctx context.Context, tx *s
 			?, ?, ?, ?, NOW(), ?, ?, ?, ?,
 			?, NOW(), ?, NOW(), 0
 		)
+		ON DUPLICATE KEY UPDATE
+			quantity = round(IFNULL(quantity, 0) + VALUES(quantity), 2),
+			tuition = round(IFNULL(tuition, 0) + VALUES(tuition), 2),
+			balance_quantity = VALUES(balance_quantity),
+			balance_tuition = VALUES(balance_tuition),
+			order_number = VALUES(order_number),
+			teaching_record_id = VALUES(teaching_record_id),
+			update_id = VALUES(update_id),
+			update_time = VALUES(update_time),
+			del_flag = VALUES(del_flag)
 	`,
 		instID,
 		account.ID,
