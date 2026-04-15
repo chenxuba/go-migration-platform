@@ -882,15 +882,77 @@ func (repo *Repository) PageTuitionAccountsByLessonForGroupAdd(ctx context.Conte
 					AND tcs.student_id = ta.student_id
 					AND tcs.del_flag = 0
 					AND IFNULL(tcs.class_student_status, ?) IN (?, ?)
-			) THEN 1 ELSE 0 END
+			) THEN 1 ELSE 0 END,
+			CASE WHEN ? > 0 AND EXISTS (
+				SELECT 1
+				FROM teaching_class_student tcs_other
+				INNER JOIN teaching_class tc_other
+					ON tc_other.id = tcs_other.teaching_class_id
+					AND tc_other.inst_id = tcs_other.inst_id
+					AND tc_other.class_type = ?
+					AND tc_other.status = ?
+					AND tc_other.del_flag = 0
+				WHERE tcs_other.inst_id = ta.inst_id
+					AND tcs_other.teaching_class_id <> ?
+					AND tcs_other.student_id = ta.student_id
+					AND tcs_other.del_flag = 0
+					AND IFNULL(tcs_other.class_student_status, ?) IN (?, ?)
+					AND (
+						IFNULL(tcs_other.primary_tuition_account_id, 0) = ta.id
+						OR (
+							IFNULL(ta.order_course_detail_id, 0) > 0
+							AND IFNULL(tcs_other.order_course_detail_id, 0) = IFNULL(ta.order_course_detail_id, 0)
+						)
+					)
+			) THEN 1 ELSE 0 END,
+			CASE WHEN ? > 0 THEN IFNULL((
+				SELECT GROUP_CONCAT(
+					DISTINCT IFNULL(NULLIF(TRIM(tc_other.name), ''), CONCAT('班级', CAST(tc_other.id AS CHAR)))
+					ORDER BY tc_other.id ASC
+					SEPARATOR '、'
+				)
+				FROM teaching_class_student tcs_other
+				INNER JOIN teaching_class tc_other
+					ON tc_other.id = tcs_other.teaching_class_id
+					AND tc_other.inst_id = tcs_other.inst_id
+					AND tc_other.class_type = ?
+					AND tc_other.status = ?
+					AND tc_other.del_flag = 0
+				WHERE tcs_other.inst_id = ta.inst_id
+					AND tcs_other.teaching_class_id <> ?
+					AND tcs_other.student_id = ta.student_id
+					AND tcs_other.del_flag = 0
+					AND IFNULL(tcs_other.class_student_status, ?) IN (?, ?)
+					AND (
+						IFNULL(tcs_other.primary_tuition_account_id, 0) = ta.id
+						OR (
+							IFNULL(ta.order_course_detail_id, 0) > 0
+							AND IFNULL(tcs_other.order_course_detail_id, 0) = IFNULL(ta.order_course_detail_id, 0)
+						)
+					)
+			), '') ELSE '' END
 	` + baseFrom + `
 		ORDER BY ta.id DESC
 		LIMIT ? OFFSET ?
 	`
-	dataArgs := make([]any, 0, 5+len(argsBase)+2)
+	dataArgs := make([]any, 0, 20+len(argsBase)+2)
 	dataArgs = append(
 		dataArgs,
 		currentClassID,
+		currentClassID,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStopped,
+		currentClassID,
+		model.TeachingClassTypeNormal,
+		model.TeachingClassStatusActive,
+		currentClassID,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStopped,
+		currentClassID,
+		model.TeachingClassTypeNormal,
+		model.TeachingClassStatusActive,
 		currentClassID,
 		model.TeachingClassStudentStatusStudying,
 		model.TeachingClassStudentStatusStudying,
@@ -915,7 +977,8 @@ func (repo *Repository) PageTuitionAccountsByLessonForGroupAdd(ctx context.Conte
 		var productName string
 		var productID string
 		var startT sql.NullTime
-		var activeRaw, assignedRaw int
+		var activeRaw, assignedRaw, assignedOtherRaw int
+		var assignedOtherText sql.NullString
 		if err := rows.Scan(
 			&row.TuitionAccountID,
 			&row.StudentID,
@@ -932,6 +995,8 @@ func (repo *Repository) PageTuitionAccountsByLessonForGroupAdd(ctx context.Conte
 			&startT,
 			&activeRaw,
 			&assignedRaw,
+			&assignedOtherRaw,
+			&assignedOtherText,
 		); err != nil {
 			return nil, 0, err
 		}
@@ -943,6 +1008,10 @@ func (repo *Repository) PageTuitionAccountsByLessonForGroupAdd(ctx context.Conte
 		row.Phone = maskPhoneDisplay(row.Phone)
 		row.IsTuitionAccountActive = activeRaw != 0
 		row.AssignedClass = assignedRaw != 0
+		row.AssignedOtherClass = assignedOtherRaw != 0
+		if assignedOtherText.Valid {
+			row.AssignedOtherClassText = strings.TrimSpace(assignedOtherText.String)
+		}
 		row.IsCrossSchoolStudent = false
 		if avatar.Valid && strings.TrimSpace(avatar.String) != "" {
 			a := strings.TrimSpace(avatar.String)

@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { CloseOutlined, InfoCircleFilled } from '@ant-design/icons-vue'
-import dayjs, { type Dayjs } from 'dayjs'
+import dayjs from 'dayjs'
 import type { TableColumnsType } from 'ant-design-vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { ParentRelationshipLabel } from '@/enums'
 import {
   pageGroupClassEntryExitRecordsApi,
-  updateGroupClassEntryExitRecordTimeApi,
   type GroupClassEntryExitRecordItem,
 } from '@/api/edu-center/group-class'
 import messageService from '@/utils/messageService'
@@ -65,17 +63,9 @@ const columns: TableColumnsType<GroupClassEntryExitRecordItem> = [
     key: 'operateTime',
     width: 180,
   },
-  {
-    title: '操作',
-    dataIndex: 'action',
-    key: 'action',
-    width: 100,
-    fixed: 'right',
-  },
 ]
 
 const loading = ref(false)
-const saving = ref(false)
 const allFilterKey = ref(0)
 const dataSource = ref<GroupClassEntryExitRecordItem[]>([])
 const filterStudentId = ref<string>()
@@ -87,10 +77,6 @@ const pagination = reactive({
   pageSize: 20,
   total: 0,
 })
-
-const editModalOpen = ref(false)
-const editingRecord = ref<GroupClassEntryExitRecordItem | null>(null)
-const editDate = ref<Dayjs | null>(null)
 
 let loadSeq = 0
 
@@ -105,11 +91,6 @@ const tablePagination = computed(() => ({
   showSizeChanger: true,
   showQuickJumper: true,
   showTotal: (total: number) => `共 ${total} 条`,
-}))
-
-const editDateBounds = computed(() => ({
-  previous: editingRecord.value?.previousRecordTime ? dayjs(editingRecord.value.previousRecordTime) : null,
-  next: editingRecord.value?.nextRecordTime ? dayjs(editingRecord.value.nextRecordTime) : null,
 }))
 
 async function loadList() {
@@ -254,70 +235,10 @@ function getStudentAvatar(value?: string) {
   return avatar || defaultAvatarUrl
 }
 
-function openEditModal(record: GroupClassEntryExitRecordItem | Record<string, any>) {
-  editingRecord.value = record as GroupClassEntryExitRecordItem
-  editDate.value = dayjs(String(record.entryExitTime || ''))
-  editModalOpen.value = true
-}
-
-function resetEditModalState() {
-  editModalOpen.value = false
-  editingRecord.value = null
-  editDate.value = null
-}
-
-function closeEditModal() {
-  if (saving.value)
-    return
-  resetEditModalState()
-}
-
-function disabledEditDate(current: Dayjs) {
-  if (!current)
-    return false
-  const currentDay = current.startOf('day')
-  if (currentDay.isAfter(dayjs().endOf('day')))
-    return true
-  const previous = editDateBounds.value.previous
-  if (previous && !currentDay.isAfter(previous.startOf('day')))
-    return true
-  const next = editDateBounds.value.next
-  if (next && !currentDay.isBefore(next.startOf('day')))
-    return true
-  return false
-}
-
-async function submitEdit() {
-  const record = editingRecord.value
-  if (!record || !editDate.value) {
-    messageService.warning('请选择出入班日期')
-    return
-  }
-  saving.value = true
-  try {
-    const res = await updateGroupClassEntryExitRecordTimeApi({
-      id: record.id,
-      entryExitTime: editDate.value.format('YYYY-MM-DD'),
-    })
-    if (res.code !== 200)
-      throw new Error(res.message || '调整出入班日期失败')
-    messageService.success('调整成功')
-    resetEditModalState()
-    await loadList()
-  }
-  catch (error: any) {
-    messageService.error(error?.response?.data?.message || error?.message || '调整出入班日期失败')
-  }
-  finally {
-    saving.value = false
-  }
-}
-
 watch(
   () => `${props.open}|${String(props.classId || '').trim()}`,
   () => {
     resetFilters()
-    closeEditModal()
     allFilterKey.value += 1
     loadList()
   },
@@ -394,86 +315,13 @@ watch(
           <template v-else-if="column.dataIndex === 'operatorName'">
             {{ record.operatorName || '-' }}
           </template>
-          <template v-else-if="column.dataIndex === 'action'">
-            <a @click="openEditModal(record)">编辑</a>
-          </template>
         </template>
       </a-table>
     </div>
-
-    <a-modal
-      v-model:open="editModalOpen"
-      centered
-      class="modal-content-box"
-      :keyboard="false"
-      :closable="false"
-      :mask-closable="false"
-      :confirm-loading="saving"
-      :width="600"
-      destroy-on-close
-      @ok="submitEdit"
-      @cancel="closeEditModal"
-    >
-      <template #title>
-        <div class="text-5 flex justify-between flex-center">
-          <span>编辑出入班时间</span>
-          <a-button type="text" class="close-btn" @click="closeEditModal">
-            <template #icon>
-              <CloseOutlined class="text-5 close-icon" />
-            </template>
-          </a-button>
-        </div>
-      </template>
-      <a-alert class="edit-modal__alert" type="info" show-icon>
-        <template #icon>
-          <InfoCircleFilled />
-        </template>
-        <template #message>
-          如果学员有多条记录，日期调整范围只能在本次记录的上一条记录与下一条记录的日期范围之间进行调整
-        </template>
-      </a-alert>
-      <div class="edit-modal__content">
-        <a-date-picker
-          v-model:value="editDate"
-          style="width: 100%;"
-          format="YYYY-MM-DD"
-          placeholder="请选择出入班日期"
-          :disabled-date="disabledEditDate"
-        />
-      </div>
-      <template #footer>
-        <a-button @click="closeEditModal">
-          取消
-        </a-button>
-        <a-button type="primary" :loading="saving" @click="submitEdit">
-          确定
-        </a-button>
-      </template>
-    </a-modal>
   </div>
 </template>
 
 <style lang="less" scoped>
-@keyframes icon-rotate {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(180deg);
-  }
-}
-
-.close-btn {
-  &:hover {
-    background: transparent;
-
-    .close-icon {
-      animation: icon-rotate 0.3s linear;
-    }
-  }
-}
-
 .group-class-history-tab {
   padding: 12px;
 }
@@ -560,27 +408,6 @@ watch(
 .type-tag {
   margin-inline-end: 0;
   border-radius: 999px;
-}
-
-.edit-modal__content {
-  padding: 24px;
-}
-
-.edit-modal__alert {
-  border: none;
-  border-radius: 0;
-  background: #e6f0ff;
-  color: #1677ff;
-}
-
-:deep(.edit-modal__alert .ant-alert-message) {
-  color: #1677ff;
-  font-size: 14px;
-  line-height: 22px;
-}
-
-:deep(.edit-modal__alert .ant-alert-icon) {
-  color: #1677ff;
 }
 
 :deep(.ant-table-wrapper) {

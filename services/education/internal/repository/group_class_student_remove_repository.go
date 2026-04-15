@@ -174,39 +174,34 @@ func (repo *Repository) RemoveGroupClassStudent(ctx context.Context, instID, ope
 		return err
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE teaching_class_entry_exit_record
-		SET del_flag = 1,
-		    update_id = ?,
-		    update_time = NOW()
-		WHERE inst_id = ?
-		  AND teaching_class_id = ?
-		  AND student_id = ?
-		  AND del_flag = 0
-	`, operatorID, instID, classID, studentID); err != nil {
-		return err
-	}
-
+	operateTime := time.Now()
 	operationContent := strings.TrimSpace(studentName) + "移出班级，在班状态为：转出"
 	for _, membershipID := range targetMembershipIDs {
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO teaching_class_operation_log (
-				uuid, version, inst_id, teaching_class_id, teaching_class_student_id, student_id,
-				operation_type, operation_content, operator_id, operate_time,
-				create_id, create_time, update_id, update_time, del_flag
-			) VALUES (
-				UUID(), 0, ?, ?, ?, ?,
-				?, ?, ?, NOW(),
-				?, NOW(), ?, NOW(), 0
-			)
-			ON DUPLICATE KEY UPDATE
-				operation_content = VALUES(operation_content),
-				operator_id = VALUES(operator_id),
-				operate_time = VALUES(operate_time),
-				update_id = VALUES(update_id),
-				update_time = NOW(),
-				del_flag = 0
-		`, instID, classID, membershipID, studentID, model.GroupClassOperationTypeRemoveStudent, operationContent, operatorID, operatorID, operatorID); err != nil {
+		if err := repo.appendGroupClassEntryExitRecordTx(
+			ctx,
+			tx,
+			instID,
+			operatorID,
+			classID,
+			membershipID,
+			studentID,
+			model.GroupClassEntryExitStatusOut,
+			operateTime,
+		); err != nil {
+			return err
+		}
+		if err := repo.appendGroupClassOperationLogTx(
+			ctx,
+			tx,
+			instID,
+			operatorID,
+			classID,
+			membershipID,
+			studentID,
+			model.GroupClassOperationTypeRemoveStudent,
+			operationContent,
+			operateTime,
+		); err != nil {
 			return err
 		}
 	}

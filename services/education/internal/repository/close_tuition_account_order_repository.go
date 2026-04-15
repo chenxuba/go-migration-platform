@@ -347,7 +347,51 @@ func (repo *Repository) closeRelatedGroupClassesByDeductCourseTx(ctx context.Con
 	if studentID <= 0 || courseID <= 0 {
 		return nil
 	}
-	_, err := tx.ExecContext(ctx, `
+	rows, err := tx.QueryContext(ctx, `
+		SELECT tcs.teaching_class_id, tcs.id
+		FROM teaching_class_student tcs
+		INNER JOIN teaching_class tc
+			ON tc.id = tcs.teaching_class_id
+			AND tc.inst_id = tcs.inst_id
+			AND tc.class_type = ?
+			AND tc.del_flag = 0
+		LEFT JOIN tuition_account ta_eff ON ta_eff.id = COALESCE(
+			NULLIF(tcs.primary_tuition_account_id, 0),
+			(SELECT MIN(ta0.id)
+			 FROM tuition_account ta0
+			 WHERE ta0.order_course_detail_id = tcs.order_course_detail_id
+			   AND ta0.inst_id = tcs.inst_id
+			   AND ta0.del_flag = 0)
+		) AND ta_eff.inst_id = tcs.inst_id AND ta_eff.del_flag = 0
+		WHERE tcs.inst_id = ?
+		  AND tcs.del_flag = 0
+		  AND tcs.student_id = ?
+		  AND ta_eff.course_id = ?
+		  AND tcs.class_student_status <> ?
+	`, model.TeachingClassTypeNormal, instID, studentID, courseID, model.TeachingClassStudentStatusClosed)
+	if err != nil {
+		return err
+	}
+	type statusChangeTarget struct {
+		classID      int64
+		membershipID int64
+	}
+	targets := make([]statusChangeTarget, 0, 4)
+	for rows.Next() {
+		var item statusChangeTarget
+		if err := rows.Scan(&item.classID, &item.membershipID); err != nil {
+			rows.Close()
+			return err
+		}
+		targets = append(targets, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	_, err = tx.ExecContext(ctx, `
 		UPDATE teaching_class_student tcs
 		INNER JOIN teaching_class tc
 			ON tc.id = tcs.teaching_class_id
@@ -371,7 +415,26 @@ func (repo *Repository) closeRelatedGroupClassesByDeductCourseTx(ctx context.Con
 		  AND ta_eff.course_id = ?
 		  AND tcs.class_student_status <> ?
 	`, model.TeachingClassTypeNormal, model.TeachingClassStudentStatusClosed, operatorID, instID, studentID, courseID, model.TeachingClassStudentStatusClosed)
-	return err
+	if err != nil {
+		return err
+	}
+
+	operateTime := time.Now()
+	for _, item := range targets {
+		if err := repo.syncGroupClassStudentStatusChangeHistoryTx(
+			ctx,
+			tx,
+			instID,
+			operatorID,
+			item.classID,
+			item.membershipID,
+			model.TeachingClassStudentStatusClosed,
+			operateTime,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AddCloseTuitionAccountOrder 手动结课：扣减学费账户剩余、写入 tuition_account_flow（联动课消明细 / 学费变动 / 确认收入列表）

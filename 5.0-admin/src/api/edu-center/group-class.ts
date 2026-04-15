@@ -227,8 +227,6 @@ export interface GroupClassEntryExitRecordItem {
   operatorId: string
   operatorName: string
   operateTime: string
-  previousRecordTime?: string
-  nextRecordTime?: string
 }
 
 export function pageGroupClassOperationLogsApi(data: {
@@ -266,13 +264,6 @@ export function pageGroupClassEntryExitRecordsApi(data: {
   }
 }) {
   return usePost<{ list: GroupClassEntryExitRecordItem[], total: number, studentCount: number }>('/api/v1/group-classes/entry-exit-record-paged-list', data)
-}
-
-export function updateGroupClassEntryExitRecordTimeApi(data: {
-  id: string
-  entryExitTime: string
-}) {
-  return usePost<boolean>('/api/v1/group-classes/entry-exit-record/update-time', data)
 }
 
 export interface GroupClassStudentQueryModel {

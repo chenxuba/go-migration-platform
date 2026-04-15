@@ -701,14 +701,6 @@ func (svc *Service) PageGroupClassEntryExitRecords(userID int64, body model.Grou
 	return svc.repo.PageGroupClassEntryExitRecords(context.Background(), instID, body)
 }
 
-func (svc *Service) UpdateGroupClassEntryExitRecordTime(userID int64, dto model.GroupClassEntryExitRecordUpdateDTO) error {
-	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
-	if err != nil {
-		return err
-	}
-	return svc.repo.UpdateGroupClassEntryExitRecordTime(context.Background(), instID, operatorID, dto)
-}
-
 func (svc *Service) GetGroupClassStudentStatistics(userID int64, q model.GroupClassStudentQueryModel) (model.GroupClassStudentStatisticsVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

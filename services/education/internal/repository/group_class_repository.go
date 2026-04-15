@@ -1914,8 +1914,9 @@ func (repo *Repository) BatchAssignGroupClassStudents(ctx context.Context, instI
 			return fmt.Errorf("超出班级最大学员数（maxCount=%d）", maxCount)
 		}
 
+		operateTime := time.Now()
 		for _, p := range toInsert {
-			_, err := tx.ExecContext(ctx, `
+			res, err := tx.ExecContext(ctx, `
 				INSERT INTO teaching_class_student (
 					uuid, version, inst_id, teaching_class_id, student_id, order_id, order_course_detail_id, quote_id,
 					primary_tuition_account_id, class_student_status, class_time, student_class_time, teacher_class_time,
@@ -1927,6 +1928,13 @@ func (repo *Repository) BatchAssignGroupClassStudents(ctx context.Context, instI
 			`, instID, classID, p.studentID, p.orderID, p.ocdID, p.quoteID, p.tuitionAccountID, model.TeachingClassStudentStatusStudying,
 				defStuTime, defStuTime, defTeachTime, recordMode, operatorID, operatorID)
 			if err != nil {
+				return err
+			}
+			membershipID, err := res.LastInsertId()
+			if err != nil {
+				return err
+			}
+			if err := repo.syncGroupClassStudentAddHistoryTx(ctx, tx, instID, operatorID, classID, membershipID, operateTime); err != nil {
 				return err
 			}
 		}
@@ -1955,6 +1963,9 @@ func (repo *Repository) BatchAssignGroupClassStudents(ctx context.Context, instI
 				return err
 			}
 			if err := repo.restoreGroupClassStudentUnrolledSchedulesTx(ctx, tx, instID, operatorID, classID, item.pair.studentID); err != nil {
+				return err
+			}
+			if err := repo.syncGroupClassStudentAddHistoryTx(ctx, tx, instID, operatorID, classID, item.rowID, operateTime); err != nil {
 				return err
 			}
 		}

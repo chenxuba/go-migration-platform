@@ -213,6 +213,8 @@ export interface TuitionAccountByLessonRow {
   tuitionAccountId: string
   studentName: string
   assignedClass: boolean
+  assignedOtherClass?: boolean
+  assignedOtherClassText?: string
   quantity: number
   avatar?: string | null
   phone: string

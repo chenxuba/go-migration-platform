@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -30,14 +31,14 @@ func ensureGroupClassHistoryTables(ctx context.Context, db *sql.DB) error {
 			update_id BIGINT NOT NULL DEFAULT 0,
 			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			del_flag TINYINT(1) NOT NULL DEFAULT 0,
-			UNIQUE KEY uk_teaching_class_operation_log_unique (inst_id, teaching_class_student_id, operation_type),
+			KEY idx_teaching_class_operation_log_member_type (inst_id, teaching_class_student_id, operation_type, operate_time),
 			KEY idx_teaching_class_operation_log_class (inst_id, teaching_class_id, operate_time),
 			KEY idx_teaching_class_operation_log_student (inst_id, student_id, operate_time)
 		)
 	`); err != nil {
 		return err
 	}
-	_, err := db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS teaching_class_entry_exit_record (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			uuid VARCHAR(64) NULL,
@@ -55,11 +56,60 @@ func ensureGroupClassHistoryTables(ctx context.Context, db *sql.DB) error {
 			update_id BIGINT NOT NULL DEFAULT 0,
 			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			del_flag TINYINT(1) NOT NULL DEFAULT 0,
-			UNIQUE KEY uk_teaching_class_entry_exit_unique (inst_id, teaching_class_student_id, entry_exit_status),
+			KEY idx_teaching_class_entry_exit_member_status (inst_id, teaching_class_student_id, entry_exit_status, entry_exit_time),
 			KEY idx_teaching_class_entry_exit_class (inst_id, teaching_class_id, entry_exit_time),
 			KEY idx_teaching_class_entry_exit_student (inst_id, student_id, entry_exit_time)
 		)
-	`)
+	`); err != nil {
+		return err
+	}
+	return ensureGroupClassHistoryAppendOnlyMigration(ctx, db)
+}
+
+func ensureGroupClassHistoryAppendOnlyMigration(ctx context.Context, db *sql.DB) error {
+	if err := dropTableIndexIfExists(ctx, db, "teaching_class_operation_log", "uk_teaching_class_operation_log_unique"); err != nil {
+		return err
+	}
+	if err := ensureTableIndexExists(ctx, db, "teaching_class_operation_log", "idx_teaching_class_operation_log_member_type",
+		`ALTER TABLE teaching_class_operation_log ADD KEY idx_teaching_class_operation_log_member_type (inst_id, teaching_class_student_id, operation_type, operate_time)`); err != nil {
+		return err
+	}
+	if err := dropTableIndexIfExists(ctx, db, "teaching_class_entry_exit_record", "uk_teaching_class_entry_exit_unique"); err != nil {
+		return err
+	}
+	return ensureTableIndexExists(ctx, db, "teaching_class_entry_exit_record", "idx_teaching_class_entry_exit_member_status",
+		`ALTER TABLE teaching_class_entry_exit_record ADD KEY idx_teaching_class_entry_exit_member_status (inst_id, teaching_class_student_id, entry_exit_status, entry_exit_time)`)
+}
+
+func dropTableIndexIfExists(ctx context.Context, db *sql.DB, tableName, indexName string) error {
+	var count int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.statistics
+		WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?
+	`, tableName, indexName).Scan(&count); err != nil {
+		return err
+	}
+	if count <= 0 {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s DROP INDEX %s", tableName, indexName))
+	return err
+}
+
+func ensureTableIndexExists(ctx context.Context, db *sql.DB, tableName, indexName, ddl string) error {
+	var count int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.statistics
+		WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?
+	`, tableName, indexName).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, ddl)
 	return err
 }
 
@@ -100,6 +150,189 @@ func teachingClassStudentStatusTextForLog(status int) string {
 	default:
 		return "在读"
 	}
+}
+
+func groupClassStudentDisplayName(studentName string, studentID int64) string {
+	if value := strings.TrimSpace(studentName); value != "" {
+		return value
+	}
+	return fmt.Sprintf("学员%d", studentID)
+}
+
+func groupClassTuitionAccountDisplayName(courseName string, tuitionAccountID int64) string {
+	if value := strings.TrimSpace(courseName); value != "" {
+		return value
+	}
+	return fmt.Sprintf("账户%d", tuitionAccountID)
+}
+
+func groupClassAddOperationContent(studentName string, studentID, tuitionAccountID int64, courseName string) string {
+	return fmt.Sprintf(
+		"%s入班，学费账户为：%s",
+		groupClassStudentDisplayName(studentName, studentID),
+		groupClassTuitionAccountDisplayName(courseName, tuitionAccountID),
+	)
+}
+
+func groupClassStatusChangeOperationContent(studentName string, studentID int64, targetStatus int) string {
+	return fmt.Sprintf(
+		"%s在班状态变更为：%s",
+		groupClassStudentDisplayName(studentName, studentID),
+		teachingClassStudentStatusTextForLog(targetStatus),
+	)
+}
+
+func (repo *Repository) appendGroupClassOperationLogTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	instID, operatorID, classID, teachingClassStudentID, studentID int64,
+	operationType int,
+	operationContent string,
+	operateTime time.Time,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO teaching_class_operation_log (
+			uuid, version, inst_id, teaching_class_id, teaching_class_student_id, student_id,
+			operation_type, operation_content, operator_id, operate_time,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?,
+			?, ?, ?, ?,
+			?, ?, ?, ?, 0
+		)
+	`, instID, classID, teachingClassStudentID, studentID,
+		operationType, operationContent, operatorID, operateTime,
+		operatorID, operateTime, operatorID, operateTime)
+	return err
+}
+
+func (repo *Repository) appendGroupClassEntryExitRecordTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	instID, operatorID, classID, teachingClassStudentID, studentID int64,
+	entryExitStatus int,
+	entryExitTime time.Time,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO teaching_class_entry_exit_record (
+			uuid, version, inst_id, teaching_class_id, teaching_class_student_id, student_id,
+			entry_exit_status, entry_exit_time, operator_id, operate_time,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, ?, ?,
+			?, ?, ?, ?,
+			?, ?, ?, ?, 0
+		)
+	`, instID, classID, teachingClassStudentID, studentID,
+		entryExitStatus, entryExitTime, operatorID, entryExitTime,
+		operatorID, entryExitTime, operatorID, entryExitTime)
+	return err
+}
+
+func (repo *Repository) syncGroupClassStudentAddHistoryTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	instID, operatorID, classID, teachingClassStudentID int64,
+	operateTime time.Time,
+) error {
+	var (
+		studentID        int64
+		tuitionAccountID int64
+		studentName      string
+		courseName       string
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			tcs.student_id,
+			IFNULL(tcs.primary_tuition_account_id, 0),
+			IFNULL(s.stu_name, ''),
+			IFNULL(ic.name, '')
+		FROM teaching_class_student tcs
+		LEFT JOIN inst_student s ON s.id = tcs.student_id AND s.inst_id = tcs.inst_id AND s.del_flag = 0
+		LEFT JOIN tuition_account ta ON ta.id = tcs.primary_tuition_account_id AND ta.inst_id = tcs.inst_id AND ta.del_flag = 0
+		LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.inst_id = ta.inst_id AND ic.del_flag = 0
+		WHERE tcs.inst_id = ?
+		  AND tcs.teaching_class_id = ?
+		  AND tcs.id = ?
+		  AND tcs.del_flag = 0
+		LIMIT 1
+	`, instID, classID, teachingClassStudentID).Scan(
+		&studentID,
+		&tuitionAccountID,
+		&studentName,
+		&courseName,
+	)
+	if err != nil {
+		return err
+	}
+
+	operationContent := groupClassAddOperationContent(studentName, studentID, tuitionAccountID, courseName)
+
+	if err := repo.appendGroupClassOperationLogTx(
+		ctx,
+		tx,
+		instID,
+		operatorID,
+		classID,
+		teachingClassStudentID,
+		studentID,
+		model.GroupClassOperationTypeAddStudent,
+		operationContent,
+		operateTime,
+	); err != nil {
+		return err
+	}
+	return repo.appendGroupClassEntryExitRecordTx(
+		ctx,
+		tx,
+		instID,
+		operatorID,
+		classID,
+		teachingClassStudentID,
+		studentID,
+		model.GroupClassEntryExitStatusIn,
+		operateTime,
+	)
+}
+
+func (repo *Repository) syncGroupClassStudentStatusChangeHistoryTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	instID, operatorID, classID, teachingClassStudentID int64,
+	targetStatus int,
+	operateTime time.Time,
+) error {
+	var (
+		studentID   int64
+		studentName string
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			tcs.student_id,
+			IFNULL(s.stu_name, '')
+		FROM teaching_class_student tcs
+		LEFT JOIN inst_student s ON s.id = tcs.student_id AND s.inst_id = tcs.inst_id AND s.del_flag = 0
+		WHERE tcs.inst_id = ?
+		  AND tcs.teaching_class_id = ?
+		  AND tcs.id = ?
+		  AND tcs.del_flag = 0
+		LIMIT 1
+	`, instID, classID, teachingClassStudentID).Scan(&studentID, &studentName)
+	if err != nil {
+		return err
+	}
+	return repo.appendGroupClassOperationLogTx(
+		ctx,
+		tx,
+		instID,
+		operatorID,
+		classID,
+		teachingClassStudentID,
+		studentID,
+		model.GroupClassOperationTypeStatusChange,
+		groupClassStatusChangeOperationContent(studentName, studentID, targetStatus),
+		operateTime,
+	)
 }
 
 func normalizeGroupClassOperationTypes(types []int) []int {
@@ -186,6 +419,29 @@ func (repo *Repository) ensureGroupClassHistoryBackfilled(ctx context.Context, i
 
 func (repo *Repository) backfillGroupClassHistoryTx(ctx context.Context, tx *sql.Tx, instID, classID int64) error {
 	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_operation_log log
+		INNER JOIN teaching_class_student tcs
+			ON tcs.id = log.teaching_class_student_id
+			AND tcs.inst_id = log.inst_id
+			AND tcs.del_flag = 0
+		LEFT JOIN inst_student s ON s.id = tcs.student_id AND s.inst_id = tcs.inst_id AND s.del_flag = 0
+		LEFT JOIN tuition_account ta ON ta.id = tcs.primary_tuition_account_id AND ta.inst_id = tcs.inst_id AND ta.del_flag = 0
+		LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.inst_id = ta.inst_id AND ic.del_flag = 0
+		SET log.operation_content = CONCAT(
+			COALESCE(NULLIF(s.stu_name, ''), CONCAT('学员', CAST(tcs.student_id AS CHAR))),
+			'入班，学费账户为：',
+			COALESCE(NULLIF(ic.name, ''), CONCAT('账户', CAST(IFNULL(ta.id, 0) AS CHAR)))
+		),
+		    log.update_time = NOW()
+		WHERE log.inst_id = ?
+		  AND log.teaching_class_id = ?
+		  AND log.operation_type = ?
+		  AND log.del_flag = 0
+	`, instID, classID, model.GroupClassOperationTypeAddStudent); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO teaching_class_entry_exit_record (
 			uuid, version, inst_id, teaching_class_id, teaching_class_student_id, student_id,
 			entry_exit_status, entry_exit_time, operator_id, operate_time,
@@ -260,14 +516,7 @@ func (repo *Repository) backfillGroupClassHistoryTx(ctx context.Context, tx *sql
 			CONCAT(
 				COALESCE(NULLIF(s.stu_name, ''), CONCAT('学员', CAST(tcs.student_id AS CHAR))),
 				'入班，学费账户为：',
-				COALESCE(NULLIF(ic.name, ''), CONCAT('账户', CAST(IFNULL(ta.id, 0) AS CHAR))),
-				'，在班状态为：',
-				CASE IFNULL(tcs.class_student_status, 1)
-					WHEN ? THEN '在读'
-					WHEN ? THEN '停课'
-					WHEN ? THEN '结课'
-					ELSE '在读'
-				END
+				COALESCE(NULLIF(ic.name, ''), CONCAT('账户', CAST(IFNULL(ta.id, 0) AS CHAR)))
 			),
 			IFNULL(tcs.create_id, 0),
 			tcs.create_time,
@@ -284,9 +533,6 @@ func (repo *Repository) backfillGroupClassHistoryTx(ctx context.Context, tx *sql
 			AND log.id IS NULL
 	`,
 		model.GroupClassOperationTypeAddStudent,
-		model.TeachingClassStudentStatusStudying,
-		model.TeachingClassStudentStatusStopped,
-		model.TeachingClassStudentStatusClosed,
 		model.GroupClassOperationTypeAddStudent,
 		instID,
 		classID,
@@ -302,14 +548,11 @@ func (repo *Repository) backfillGroupClassHistoryTx(ctx context.Context, tx *sql
 		)
 		SELECT
 			UUID(), 0, tcs.inst_id, tcs.teaching_class_id, tcs.id, tcs.student_id,
-			CASE
-				WHEN IFNULL(tcs.class_student_status, 1) = ? THEN ?
-				ELSE ?
-			END,
+			?,
 			CASE
 				WHEN IFNULL(tcs.class_student_status, 1) = ? THEN CONCAT(
 					COALESCE(NULLIF(s.stu_name, ''), CONCAT('学员', CAST(tcs.student_id AS CHAR))),
-					'移出班级，在班状态为：结课'
+					'在班状态变更为：结课'
 				)
 				ELSE CONCAT(
 					COALESCE(NULLIF(s.stu_name, ''), CONCAT('学员', CAST(tcs.student_id AS CHAR))),
@@ -324,24 +567,23 @@ func (repo *Repository) backfillGroupClassHistoryTx(ctx context.Context, tx *sql
 			0
 		FROM teaching_class_student tcs
 		LEFT JOIN inst_student s ON s.id = tcs.student_id AND s.inst_id = tcs.inst_id AND s.del_flag = 0
-		LEFT JOIN teaching_class_operation_log log
-			ON log.inst_id = tcs.inst_id
-			AND log.teaching_class_student_id = tcs.id
-			AND log.operation_type = CASE
-				WHEN IFNULL(tcs.class_student_status, 1) = ? THEN ?
-				ELSE ?
-			END
+		LEFT JOIN teaching_class_operation_log statusLog
+			ON statusLog.inst_id = tcs.inst_id
+			AND statusLog.teaching_class_student_id = tcs.id
+			AND statusLog.operation_type = ?
+		LEFT JOIN teaching_class_operation_log removeLog
+			ON removeLog.inst_id = tcs.inst_id
+			AND removeLog.teaching_class_student_id = tcs.id
+			AND removeLog.operation_type = ?
 		WHERE tcs.inst_id = ? AND tcs.teaching_class_id = ? AND tcs.del_flag = 0
 			AND IFNULL(tcs.class_student_status, 1) IN (?, ?)
-			AND log.id IS NULL
+			AND statusLog.id IS NULL
+			AND removeLog.id IS NULL
 	`,
-		model.TeachingClassStudentStatusClosed,
-		model.GroupClassOperationTypeRemoveStudent,
 		model.GroupClassOperationTypeStatusChange,
 		model.TeachingClassStudentStatusClosed,
-		model.TeachingClassStudentStatusClosed,
-		model.GroupClassOperationTypeRemoveStudent,
 		model.GroupClassOperationTypeStatusChange,
+		model.GroupClassOperationTypeRemoveStudent,
 		instID,
 		classID,
 		model.TeachingClassStudentStatusStopped,
@@ -530,31 +772,7 @@ func (repo *Repository) PageGroupClassEntryExitRecords(ctx context.Context, inst
 			rec.entry_exit_time,
 			CAST(IFNULL(rec.operator_id, 0) AS CHAR),
 			IFNULL(op.nick_name, ''),
-			rec.operate_time,
-			(
-				SELECT MAX(prev.entry_exit_time)
-				FROM teaching_class_entry_exit_record prev
-				WHERE prev.inst_id = rec.inst_id
-					AND prev.teaching_class_id = rec.teaching_class_id
-					AND prev.student_id = rec.student_id
-					AND prev.del_flag = 0
-					AND (
-						prev.entry_exit_time < rec.entry_exit_time
-						OR (prev.entry_exit_time = rec.entry_exit_time AND prev.id < rec.id)
-					)
-			),
-			(
-				SELECT MIN(next.entry_exit_time)
-				FROM teaching_class_entry_exit_record next
-				WHERE next.inst_id = rec.inst_id
-					AND next.teaching_class_id = rec.teaching_class_id
-					AND next.student_id = rec.student_id
-					AND next.del_flag = 0
-					AND (
-						next.entry_exit_time > rec.entry_exit_time
-						OR (next.entry_exit_time = rec.entry_exit_time AND next.id > rec.id)
-					)
-			)
+			rec.operate_time
 		FROM teaching_class_entry_exit_record rec
 		LEFT JOIN inst_student s ON s.id = rec.student_id AND s.inst_id = rec.inst_id AND s.del_flag = 0
 		LEFT JOIN inst_user op ON op.id = rec.operator_id AND op.inst_id = rec.inst_id AND op.del_flag = 0
@@ -569,11 +787,9 @@ func (repo *Repository) PageGroupClassEntryExitRecords(ctx context.Context, inst
 
 	for rows.Next() {
 		var (
-			item               model.GroupClassEntryExitRecordItemVO
-			avatar             string
-			mobile             string
-			previousRecordTime sql.NullTime
-			nextRecordTime     sql.NullTime
+			item   model.GroupClassEntryExitRecordItemVO
+			avatar string
+			mobile string
 		)
 		if err := rows.Scan(
 			&item.ID,
@@ -587,126 +803,16 @@ func (repo *Repository) PageGroupClassEntryExitRecords(ctx context.Context, inst
 			&item.OperatorID,
 			&item.OperatorName,
 			&item.OperateTime,
-			&previousRecordTime,
-			&nextRecordTime,
 		); err != nil {
 			return out, err
 		}
 		item.Avatar = strings.TrimSpace(avatar)
 		item.Phone = maskPhoneDisplay(mobile)
 		item.EntryExitStatusText = groupClassEntryExitStatusText(item.EntryExitStatus)
-		if previousRecordTime.Valid {
-			t := previousRecordTime.Time
-			item.PreviousRecordTime = &t
-		}
-		if nextRecordTime.Valid {
-			t := nextRecordTime.Time
-			item.NextRecordTime = &t
-		}
 		out.List = append(out.List, item)
 	}
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
 	return out, nil
-}
-
-func (repo *Repository) UpdateGroupClassEntryExitRecordTime(ctx context.Context, instID, operatorID int64, dto model.GroupClassEntryExitRecordUpdateDTO) error {
-	recordID, err := strconv.ParseInt(strings.TrimSpace(dto.ID), 10, 64)
-	if err != nil || recordID <= 0 {
-		return errors.New("id 无效")
-	}
-	entryExitDate, err := parseDayStart(dto.EntryExitTime)
-	if err != nil {
-		return errors.New("entryExitTime 无效")
-	}
-
-	tx, err := repo.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	var (
-		currentTime            time.Time
-		classID                int64
-		studentID              int64
-		entryExitStatus        int
-		teachingClassStudentID int64
-	)
-	err = tx.QueryRowContext(ctx, `
-		SELECT teaching_class_id, student_id, entry_exit_status, entry_exit_time, teaching_class_student_id
-		FROM teaching_class_entry_exit_record
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
-		LIMIT 1
-	`, recordID, instID).Scan(&classID, &studentID, &entryExitStatus, &currentTime, &teachingClassStudentID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return errors.New("出入班记录不存在")
-		}
-		return err
-	}
-
-	targetTime := time.Date(
-		entryExitDate.Year(),
-		entryExitDate.Month(),
-		entryExitDate.Day(),
-		currentTime.Hour(),
-		currentTime.Minute(),
-		currentTime.Second(),
-		currentTime.Nanosecond(),
-		currentTime.Location(),
-	)
-
-	var previousTime sql.NullTime
-	if err := tx.QueryRowContext(ctx, `
-		SELECT MAX(prev.entry_exit_time)
-		FROM teaching_class_entry_exit_record prev
-		WHERE prev.inst_id = ? AND prev.teaching_class_id = ? AND prev.student_id = ? AND prev.del_flag = 0
-			AND (
-				prev.entry_exit_time < ?
-				OR (prev.entry_exit_time = ? AND prev.id < ?)
-			)
-	`, instID, classID, studentID, currentTime, currentTime, recordID).Scan(&previousTime); err != nil {
-		return err
-	}
-	if previousTime.Valid && !targetTime.After(previousTime.Time) {
-		return errors.New("日期调整范围只能在上一条记录与下一条记录之间")
-	}
-
-	var nextTime sql.NullTime
-	if err := tx.QueryRowContext(ctx, `
-		SELECT MIN(next.entry_exit_time)
-		FROM teaching_class_entry_exit_record next
-		WHERE next.inst_id = ? AND next.teaching_class_id = ? AND next.student_id = ? AND next.del_flag = 0
-			AND (
-				next.entry_exit_time > ?
-				OR (next.entry_exit_time = ? AND next.id > ?)
-			)
-	`, instID, classID, studentID, currentTime, currentTime, recordID).Scan(&nextTime); err != nil {
-		return err
-	}
-	if nextTime.Valid && !targetTime.Before(nextTime.Time) {
-		return errors.New("日期调整范围只能在上一条记录与下一条记录之间")
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE teaching_class_entry_exit_record
-		SET entry_exit_time = ?, operator_id = ?, operate_time = NOW(), update_id = ?, update_time = NOW()
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, targetTime, operatorID, operatorID, recordID, instID); err != nil {
-		return err
-	}
-
-	if entryExitStatus == model.GroupClassEntryExitStatusIn && teachingClassStudentID > 0 {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE teaching_class_student
-			SET create_time = ?, update_id = ?, update_time = NOW()
-			WHERE id = ? AND inst_id = ? AND del_flag = 0
-		`, targetTime, operatorID, teachingClassStudentID, instID); err != nil {
-			return err
-		}
-	}
-
-	return tx.Commit()
 }

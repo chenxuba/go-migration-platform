@@ -586,31 +586,24 @@ type GroupClassEntryExitRecordPagedListBody struct {
 }
 
 type GroupClassEntryExitRecordItemVO struct {
-	ID                  string     `json:"id"`
-	StudentID           string     `json:"studentId"`
-	StudentName         string     `json:"studentName"`
-	Avatar              string     `json:"avatar"`
-	Phone               string     `json:"phone"`
-	PhoneRelationship   int        `json:"phoneRelationship"`
-	EntryExitStatus     int        `json:"entryExitStatus"`
-	EntryExitStatusText string     `json:"entryExitStatusText"`
-	EntryExitTime       time.Time  `json:"entryExitTime"`
-	OperatorID          string     `json:"operatorId"`
-	OperatorName        string     `json:"operatorName"`
-	OperateTime         time.Time  `json:"operateTime"`
-	PreviousRecordTime  *time.Time `json:"previousRecordTime,omitempty"`
-	NextRecordTime      *time.Time `json:"nextRecordTime,omitempty"`
+	ID                  string    `json:"id"`
+	StudentID           string    `json:"studentId"`
+	StudentName         string    `json:"studentName"`
+	Avatar              string    `json:"avatar"`
+	Phone               string    `json:"phone"`
+	PhoneRelationship   int       `json:"phoneRelationship"`
+	EntryExitStatus     int       `json:"entryExitStatus"`
+	EntryExitStatusText string    `json:"entryExitStatusText"`
+	EntryExitTime       time.Time `json:"entryExitTime"`
+	OperatorID          string    `json:"operatorId"`
+	OperatorName        string    `json:"operatorName"`
+	OperateTime         time.Time `json:"operateTime"`
 }
 
 type GroupClassEntryExitRecordPagedListResult struct {
 	List         []GroupClassEntryExitRecordItemVO `json:"list"`
 	Total        int                               `json:"total"`
 	StudentCount int                               `json:"studentCount"`
-}
-
-type GroupClassEntryExitRecordUpdateDTO struct {
-	ID            string `json:"id"`
-	EntryExitTime string `json:"entryExitTime"`
 }
 
 // --- 集体班添加学员：对标 Class/GetStudentListByClassIds + TuitionAccount/GetTuitionAccountListByLessonId ---
@@ -799,6 +792,8 @@ type TuitionAccountByLessonRowVO struct {
 	TuitionAccountID       string    `json:"tuitionAccountId"`
 	StudentName            string    `json:"studentName"`
 	AssignedClass          bool      `json:"assignedClass"`
+	AssignedOtherClass     bool      `json:"assignedOtherClass"`
+	AssignedOtherClassText string    `json:"assignedOtherClassText"`
 	Quantity               float64   `json:"quantity"`
 	Avatar                 *string   `json:"avatar"`
 	Phone                  string    `json:"phone"`

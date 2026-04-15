@@ -142,7 +142,6 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/group-classes/waiting-roll-call-schedules", handler.listGroupClassDrawerWaitingRollCallSchedules)
 	mux.HandleFunc("/api/v1/group-classes/operation-log-paged-list", handler.pageGroupClassOperationLogs)
 	mux.HandleFunc("/api/v1/group-classes/entry-exit-record-paged-list", handler.pageGroupClassEntryExitRecords)
-	mux.HandleFunc("/api/v1/group-classes/entry-exit-record/update-time", handler.updateGroupClassEntryExitRecordTime)
 	mux.HandleFunc("/api/v1/group-classes/statistics", handler.groupClassStatistics)
 	mux.HandleFunc("/api/v1/group-classes/student-statistics", handler.groupClassStudentStatistics)
 	mux.HandleFunc("/api/v1/group-classes/student-paged-list", handler.pageGroupClassStudents)

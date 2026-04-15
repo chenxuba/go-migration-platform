@@ -102,6 +102,8 @@ function staticRows() {
       remainingQuantity: '8天',
       classStatus: '未分班',
       classStatusType: 2,
+      assignedOtherClass: false,
+      assignedOtherClassText: '',
       disabled: false,
     },
   ]
@@ -142,6 +144,9 @@ function mapTuitionRows(list, inClass) {
   return list.map((item) => {
     const sid = String(item.studentId || '')
     const inThis = item.assignedClass === true || inClass.has(sid)
+    const assignedOtherClass = !inThis && item.assignedOtherClass === true
+    const classStatus = inThis ? '已分班' : assignedOtherClass ? '已在其他班' : '未分班'
+    const classStatusType = inThis ? 1 : assignedOtherClass ? 3 : 2
     const { label: ageLabel, years: ageYears } = ageLabelFromBirthday(item.birthday)
     return {
       id: `${sid}-${item.tuitionAccountId}`,
@@ -156,8 +161,10 @@ function mapTuitionRows(list, inClass) {
       gender: sexToGenderKey(item.sex),
       remainingQuantity: formatRemainQuantity(item.quantity, item.lessonChargingMode),
       lessonChargingMode: item.lessonChargingMode,
-      classStatus: inThis ? '已分班' : '未分班',
-      classStatusType: inThis ? 1 : 2,
+      classStatus,
+      classStatusType,
+      assignedOtherClass,
+      assignedOtherClassText: item.assignedOtherClassText || '',
       disabled: inThis,
     }
   })
@@ -304,7 +311,7 @@ const columns = computed(() => [
     title: '分班状态',
     dataIndex: 'classStatus',
     key: 'classStatus',
-    width: 140,
+    width: 180,
   },
 ])
 
@@ -664,14 +671,31 @@ function isRemainingZero(v) {
               </span>
             </template>
             <template v-else-if="column.dataIndex === 'classStatus'">
-              <div class="flex items-center">
+              <a-tooltip
+                v-if="record.classStatusType === 3 && record.assignedOtherClassText"
+                :title="`已在：${record.assignedOtherClassText}`"
+              >
+                <div class="flex items-center leading-18px cursor-help">
+                  <span
+                    class="inline-block h-6px w-6px rounded-full shrink-0"
+                    :class="record.classStatusType === 1 ? 'bg-#1677ff' : record.classStatusType === 3 ? 'bg-#722ed1' : 'bg-#fa8c16'"
+                  />
+                  <span
+                    class="text-3.5 px-1"
+                    :class="record.classStatusType === 1 ? 'text-#1677ff' : record.classStatusType === 3 ? 'text-#722ed1' : 'text-#fa8c16'"
+                  >
+                    {{ record.classStatus }}
+                  </span>
+                </div>
+              </a-tooltip>
+              <div v-else class="flex items-center leading-18px">
                 <span
                   class="inline-block h-6px w-6px rounded-full shrink-0"
-                  :class="record.classStatusType === 1 ? 'bg-#1677ff' : 'bg-#fa8c16'"
+                  :class="record.classStatusType === 1 ? 'bg-#1677ff' : record.classStatusType === 3 ? 'bg-#722ed1' : 'bg-#fa8c16'"
                 />
                 <span
                   class="text-3.5 px-1"
-                  :class="record.classStatusType === 1 ? 'text-#1677ff' : ' text-#fa8c16'"
+                  :class="record.classStatusType === 1 ? 'text-#1677ff' : record.classStatusType === 3 ? 'text-#722ed1' : 'text-#fa8c16'"
                 >
                   {{ record.classStatus }}
                 </span>
