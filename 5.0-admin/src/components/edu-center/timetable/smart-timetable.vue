@@ -809,6 +809,7 @@ let smartAuxBootstrapTimer = null
 let pendingScheduleDragStart = null
 let customScheduleDragMoveHandler = null
 let customScheduleDragUpHandler = null
+const SCHEDULE_DRAG_START_THRESHOLD = 6
 let dragHoverValidationTimer = null
 let pendingDragHoverValidationKey = ''
 let dragLazyValidationTimer = null
@@ -5305,13 +5306,16 @@ function handleSchedulePointerDown(event, text, column, record) {
       offsetX: dragStartInfo?.offsetX || Math.max(8, Math.min(rect.width - 8, Number(event?.clientX || 0) - rect.left)),
       offsetY: dragStartInfo?.offsetY || Math.max(8, Math.min(rect.height - 8, Number(event?.clientY || 0) - rect.top)),
     }
-    beginPendingScheduleDrag(Number(event?.clientX || 0), Number(event?.clientY || 0))
 
     customScheduleDragMoveHandler = (moveEvent) => {
       const moveX = Number(moveEvent?.clientX || 0)
       const moveY = Number(moveEvent?.clientY || 0)
       if (!draggingScheduleState.value) {
         if (!pendingScheduleDragStart)
+          return
+        const deltaX = Math.abs(moveX - pendingScheduleDragStart.startX)
+        const deltaY = Math.abs(moveY - pendingScheduleDragStart.startY)
+        if (deltaX < SCHEDULE_DRAG_START_THRESHOLD && deltaY < SCHEDULE_DRAG_START_THRESHOLD)
           return
         suppressScheduledLessonClick()
         beginPendingScheduleDrag(moveX, moveY)
