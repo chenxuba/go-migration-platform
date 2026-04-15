@@ -14,6 +14,7 @@ import {
 import CreateClassModal from '@/components/common/create-class-modal.vue'
 import ClassAddStudentModal from '@/components/edu-center/class-list/class-add-student-modal.vue'
 import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawer.vue'
+import GroupClassUnscheduledRollCallModal from '@/components/edu-center/class-list/group-class-unscheduled-roll-call-modal.vue'
 import GroupClassFinishCourseModal from '@/components/edu-center/class-list/group-class-finish-course-modal.vue'
 import GroupClassScheduleModal from '@/components/edu-center/timetable/group-class-schedule-modal.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
@@ -37,6 +38,8 @@ const finishCourseModalOpen = ref(false)
 const finishCourseRecord = ref(null)
 const scheduleModalOpen = ref(false)
 const scheduleModalClassId = ref('')
+const unscheduledRollCallModalOpen = ref(false)
+const unscheduledRollCallClassId = ref('')
 const listLoading = ref(false)
 const dataSource = ref([])
 const selectedRowKeys = ref([])
@@ -486,6 +489,20 @@ function openScheduleModal(record) {
   scheduleModalOpen.value = true
 }
 
+function openUnscheduledRollCallModal(record) {
+  const classId = String(record?.id || '').trim()
+  if (!classId) {
+    messageService.warning('当前班级信息不完整，暂不可创建未排课点名')
+    return
+  }
+  if (Number(record?.studentCount || 0) <= 0) {
+    messageService.warning(`${String(record?.name || '当前班级').trim() || '当前班级'}暂无在班学员，不能创建未排课点名`)
+    return
+  }
+  unscheduledRollCallClassId.value = classId
+  unscheduledRollCallModalOpen.value = true
+}
+
 async function closeGroupClass(record) {
   const id = String(record?.id || '').trim()
   if (!id) {
@@ -572,6 +589,10 @@ function openGroupClassReopenConfirm(record) {
 function onClassRowMenuClick({ key }, record) {
   if (key === '1') {
     openClassListDrawer(record, '2')
+    return
+  }
+  if (key === '2') {
+    openUnscheduledRollCallModal(record)
     return
   }
   if (key === '3') {
@@ -956,6 +977,12 @@ onMounted(async () => {
       v-model:open="scheduleModalOpen"
       :initial-group-class-id="scheduleModalClassId"
       @updated="afterClassModalSave"
+    />
+    <GroupClassUnscheduledRollCallModal
+      v-model:open="unscheduledRollCallModalOpen"
+      :class-id="unscheduledRollCallClassId"
+      @updated="afterClassModalSave"
+      @confirmed="afterClassModalSave"
     />
   </div>
 </template>

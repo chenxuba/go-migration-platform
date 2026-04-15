@@ -61,6 +61,7 @@ func (repo *Repository) CheckRollCallTeachingRecordByTeacherAndTime(ctx context.
 		return nil
 	}
 	excludeScheduleID, _ := strconv.ParseInt(strings.TrimSpace(dto.TimetableSourceID), 10, 64)
+	excludeTeachingRecordID, _ := strconv.ParseInt(strings.TrimSpace(dto.ExcludeTeachingRecordID), 10, 64)
 	startTime, err := parseRollCallConfirmDateTime(dto.StartTime)
 	if err != nil {
 		return err
@@ -87,6 +88,10 @@ func (repo *Repository) CheckRollCallTeachingRecordByTeacherAndTime(ctx context.
 	if excludeScheduleID > 0 {
 		query += " AND teaching_schedule_id <> ?"
 		args = append(args, excludeScheduleID)
+	}
+	if excludeTeachingRecordID > 0 {
+		query += " AND teaching_record_id <> ?"
+		args = append(args, excludeTeachingRecordID)
 	}
 	if err := repo.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return err
@@ -154,10 +159,6 @@ func (repo *Repository) ConfirmRollCall(ctx context.Context, instID, operatorID 
 }
 
 func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, dto model.RollCallConfirmDTO, options rollCallConfirmOptions) (model.RollCallConfirmResult, error) {
-	scheduleID, err := strconv.ParseInt(strings.TrimSpace(dto.TimetableSourceID), 10, 64)
-	if err != nil || scheduleID <= 0 {
-		return model.RollCallConfirmResult{}, errors.New("缺少日程信息")
-	}
 	startTime, err := parseRollCallConfirmDateTime(dto.StartTime)
 	if err != nil {
 		return model.RollCallConfirmResult{}, err
@@ -171,6 +172,10 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 	}
 	if len(dto.StudentList) == 0 {
 		return model.RollCallConfirmResult{}, errors.New("暂无可提交的点名学员")
+	}
+	scheduleID, _ := strconv.ParseInt(strings.TrimSpace(dto.TimetableSourceID), 10, 64)
+	if scheduleID <= 0 {
+		return repo.confirmGroupClassUnscheduledRollCallTx(ctx, tx, instID, operatorID, dto, startTime, endTime, options)
 	}
 
 	detail, classMeta, err := repo.loadRollCallDrawerContext(ctx, instID, dto.TimetableSourceID)
@@ -395,6 +400,376 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 		ID:   strconv.FormatInt(teachingRecordID, 10),
 		Name: "",
 	}, nil
+}
+
+func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, dto model.RollCallConfirmDTO, startTime, endTime time.Time, options rollCallConfirmOptions) (model.RollCallConfirmResult, error) {
+	if parseRollCallConfirmInt64(dto.SourceID) <= 0 || dto.SourceType != 1 {
+		return model.RollCallConfirmResult{}, errors.New("未排课点名仅支持班课")
+	}
+
+	classID := parseRollCallConfirmInt64(dto.SourceID)
+	classDetail, err := repo.GetGroupClassByID(ctx, instID, classID)
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	if classDetail.Status == model.TeachingClassStatusClosed {
+		return model.RollCallConfirmResult{}, errors.New("已结班班级不可点名")
+	}
+
+	mainTeacherID, assistantIDs := extractRollCallConfirmTeacherIDs(dto.TeacherList, classDetail.DefaultTeacherID)
+	classTeachers, _, mainTeacherName, assistantNames, err := repo.buildRollCallTeacherEntriesForIDs(ctx, mainTeacherID, assistantIDs)
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+
+	classroomID := strings.TrimSpace(dto.ClassRoomID)
+	if classroomID == "" || classroomID == "0" {
+		classroomID = strings.TrimSpace(classDetail.ClassroomID)
+	}
+	classroomName, err := repo.loadRollCallDrawerClassroomName(ctx, instID, classroomID, classDetail.ClassroomName)
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+
+	syntheticDetail := model.TeachingScheduleDetailVO{
+		ID:                "0",
+		ClassType:         model.TeachingClassTypeNormal,
+		TeachingClassID:   classDetail.ID,
+		TeachingClassName: classDetail.Name,
+		LessonID:          classDetail.LessonID,
+		LessonName:        classDetail.LessonName,
+		TeacherID:         strconv.FormatInt(mainTeacherID, 10),
+		TeacherName:       mainTeacherName,
+		AssistantIDs:      assistantIDs,
+		AssistantNames:    assistantNames,
+		ClassroomID:       firstNonEmptyString(classroomID, "0"),
+		ClassroomName:     classroomName,
+		LessonDate:        startTime.Format("2006-01-02"),
+		StartAt:           startTime,
+		EndAt:             endTime,
+		CanRollCall:       true,
+		Remark:            classDetail.Remark,
+	}
+
+	membershipsByClassID, err := repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, tx, instID, []int64{classID})
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	existingSummary, err := repo.loadRollCallExistingGroupClassUnscheduledRecordSummaryTx(
+		ctx,
+		tx,
+		instID,
+		classID,
+		classDetail.LessonID,
+		startTime,
+		endTime,
+	)
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	roster := buildGroupClassScheduleRosterFromMembershipsAndOverrides(
+		membershipsByClassID[classID],
+		nil,
+		time.Now(),
+	)
+	allowedStudentIDs := make(map[string]struct{}, len(roster.Active))
+	classMemberStudentIDs := make(map[string]struct{}, len(roster.Active))
+	for _, item := range roster.Active {
+		if item.StudentID <= 0 {
+			continue
+		}
+		studentIDText := strconv.FormatInt(item.StudentID, 10)
+		allowedStudentIDs[studentIDText] = struct{}{}
+		classMemberStudentIDs[studentIDText] = struct{}{}
+	}
+	for studentID := range existingSummary.StudentIDSet {
+		if studentID <= 0 {
+			continue
+		}
+		allowedStudentIDs[strconv.FormatInt(studentID, 10)] = struct{}{}
+	}
+
+	studentIDs := make([]int64, 0, len(dto.StudentList))
+	accountIDs := make([]int64, 0, len(dto.StudentList))
+	for _, item := range dto.StudentList {
+		studentIDText := strings.TrimSpace(item.StudentID)
+		_, inAllowedStudentIDs := allowedStudentIDs[studentIDText]
+		if !inAllowedStudentIDs && !isRollCallConfirmScheduleOnlySourceType(item.SourceType) {
+			return model.RollCallConfirmResult{}, errors.New("当前学员不在本次点名班级中")
+		}
+		if inAllowedStudentIDs && isRollCallConfirmScheduleOnlySourceType(item.SourceType) {
+			studentID, _ := strconv.ParseInt(studentIDText, 10, 64)
+			if _, exists := existingSummary.StudentIDSet[studentID]; !exists {
+				if _, ok := classMemberStudentIDs[studentIDText]; ok && item.SourceType == 4 {
+					return model.RollCallConfirmResult{}, errors.New("班级在班学员不可作为试听学员添加")
+				}
+				return model.RollCallConfirmResult{}, errors.New("该学员已在本次点名名单中")
+			}
+		}
+		studentID, err := strconv.ParseInt(studentIDText, 10, 64)
+		if err != nil || studentID <= 0 {
+			return model.RollCallConfirmResult{}, errors.New("学员信息无效")
+		}
+		studentIDs = append(studentIDs, studentID)
+		accountID, err := strconv.ParseInt(strings.TrimSpace(item.TuitionAccountID), 10, 64)
+		if err == nil && accountID > 0 {
+			accountIDs = append(accountIDs, accountID)
+		}
+	}
+
+	profileMap, err := repo.loadRollCallConfirmStudentProfileMap(ctx, instID, uniquePositiveInt64s(studentIDs))
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	accountMap, err := repo.loadRollCallConfirmAccountMap(ctx, instID, uniquePositiveInt64s(accountIDs))
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+
+	operatorName := strings.TrimSpace(options.OperatorName)
+	if operatorName == "" {
+		operatorName = repo.GetStaffNameByID(ctx, &operatorID)
+	}
+	if operatorID <= 0 && operatorName == "" {
+		operatorName = "系统自动点名"
+	}
+	if strings.TrimSpace(operatorName) == "" || strings.HasPrefix(operatorName, "未知(") {
+		operatorName = "系统自动点名"
+	}
+
+	pendingStudents := make([]model.RollCallConfirmStudent, 0, len(dto.StudentList))
+	for _, item := range dto.StudentList {
+		studentID, _ := strconv.ParseInt(strings.TrimSpace(item.StudentID), 10, 64)
+		if studentID > 0 {
+			if _, exists := existingSummary.StudentIDSet[studentID]; exists {
+				continue
+			}
+		}
+		pendingStudents = append(pendingStudents, item)
+	}
+	if len(pendingStudents) == 0 {
+		if existingSummary.TeachingRecordID > 0 {
+			return model.RollCallConfirmResult{
+				ID:   strconv.FormatInt(existingSummary.TeachingRecordID, 10),
+				Name: "",
+			}, nil
+		}
+		return model.RollCallConfirmResult{}, errors.New("暂无可提交的点名学员")
+	}
+
+	teachingRecordID := existingSummary.TeachingRecordID
+	if teachingRecordID <= 0 {
+		teachingRecordID, err = repo.nextRollCallTeachingRecordIDTx(ctx, tx)
+		if err != nil {
+			return model.RollCallConfirmResult{}, err
+		}
+	}
+
+	classMeta := rollCallDrawerContext{
+		ClassID:                    classDetail.ID,
+		ClassName:                  classDetail.Name,
+		DefaultStudentClassTime:    classDetail.DefaultStudentClassTime,
+		DefaultTeacherClassTime:    classDetail.DefaultTeacherClassTime,
+		DefaultClassTimeRecordMode: classDetail.DefaultClassTimeRecordMode,
+		LessonPrice:                classDetail.LessonPrice,
+		LessonType:                 classDetail.LessonType,
+		Teachers:                   classTeachers,
+	}
+
+	teacherNamesJSON, teacherIDsJSON := rollCallConfirmTeacherJSON(syntheticDetail.AssistantNames, syntheticDetail.AssistantIDs)
+	teachingContentImagesJSON, err := json.Marshal(dto.TeachingContentImages)
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+	classTeacherNamesJSON, currentClassTeacherNamesJSON, oneToOneTeacherNamesJSON := rollCallConfirmClassTeacherJSON(syntheticDetail, classMeta)
+	emptyIDsJSON, _ := json.Marshal([]string{})
+	recordTime := startTime
+	if options.RecordTime != nil && !options.RecordTime.IsZero() {
+		recordTime = *options.RecordTime
+	}
+
+	insertedCount := 0
+	for _, item := range pendingStudents {
+		studentID, _ := strconv.ParseInt(strings.TrimSpace(item.StudentID), 10, 64)
+		profile := profileMap[studentID]
+		account, hasAccount := accountMap[strings.TrimSpace(item.TuitionAccountID)]
+
+		status := normalizeRollCallConfirmStudentStatus(item.Status)
+		quantity := normalizeRollCallConfirmQuantity(item)
+		if status != 1 {
+			quantity = 0
+		}
+
+		actualQuantity := quantity
+		actualDeduct := 0.0
+		actualTuition := 0.0
+		arrearQuantity := 0.0
+		tuitionAccountName := ""
+		if hasAccount {
+			tuitionAccountName = firstNonEmptyString(strings.TrimSpace(account.ProductName), strings.TrimSpace(syntheticDetail.LessonName))
+		}
+
+		if normalizeRollCallDrawerChargingMode(item.SkuMode) == 1 && quantity > 0 {
+			if hasAccount && account.Status == model.TuitionAccountStatusActive {
+				canCoverQuantity := math.Max(account.RemainingQuantity, 0)+0.000001 >= quantity
+				if !canCoverQuantity && options.IsAutoRollCall {
+					actualQuantity = 0
+					actualDeduct = 0
+					actualTuition = 0
+					arrearQuantity = quantity
+				} else {
+					actualDeduct = math.Min(quantity, math.Max(account.RemainingQuantity, 0))
+					arrearQuantity = roundMoney(math.Max(quantity-actualDeduct, 0))
+				}
+				if actualDeduct > 0 {
+					actualTuition = repo.rollCallConfirmLessonHourTuition(actualDeduct, account)
+					if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, actualDeduct, actualTuition, account); err != nil {
+						return model.RollCallConfirmResult{}, err
+					}
+					account.UsedQuantity = roundMoney(account.UsedQuantity + actualDeduct)
+					account.RemainingQuantity = roundMoney(math.Max(account.RemainingQuantity-actualDeduct, 0))
+					account.UsedTuition = roundMoney(account.UsedTuition + actualTuition)
+					account.RemainingTuition = roundMoney(math.Max(account.RemainingTuition-actualTuition, 0))
+					account.ConfirmedTuition = roundMoney(account.ConfirmedTuition + actualTuition)
+					accountMap[strings.TrimSpace(item.TuitionAccountID)] = account
+				}
+				if options.IsAutoRollCall && arrearQuantity > 0 {
+					actualQuantity = 0
+				}
+			} else {
+				arrearQuantity = quantity
+				if options.IsAutoRollCall {
+					actualQuantity = 0
+				}
+			}
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO student_teaching_record (
+				inst_id, teaching_record_id, teaching_schedule_id, timetable_source_type, timetable_source_id,
+				student_id, student_name, student_phone, avatar_url, source_type, current_student_status, status, is_late,
+				class_id, class_name, one_to_one_id, one_to_one_name, lesson_id, lesson_name, subject_id, subject_name,
+				teaching_content, teaching_content_images_json, classroom_id, classroom_name, main_teacher_id, main_teacher_name,
+				teacher_employee_type, assistant_teacher_ids_json, assistant_teacher_names_json, class_teacher_ids_json, class_teacher_names_json,
+				roll_call_class_teacher_ids_json, roll_call_class_teacher_names_json, current_class_teacher_ids_json, current_class_teacher_names_json,
+				one2one_teacher_ids_json, one2one_teacher_names_json, tuition_account_id, tuition_account_name, sku_mode, quantity, actual_quantity,
+				amount, actual_deduct, actual_tuition, arrear_quantity, teacher_class_time, remark, external_remark, is_auto_roll_call, has_compensated,
+				advisor_staff_id, advisor_staff_name, student_manager_id, student_manager_name, start_time, end_time, teaching_record_created_time,
+				record_time, updated_staff_id, updated_staff_name, updated_time, create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?,
+				?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, ?, ?, ?, ?,
+				?, ?, ?, NOW(), ?, NOW(), ?, NOW(), 0
+			)
+		`,
+			instID, teachingRecordID, 0, dto.TimetableSourceType, 0,
+			studentID, firstNonEmptyString(strings.TrimSpace(item.StudentName), profile.StudentName), profile.StudentPhone, firstNonEmptyString(profile.AvatarURL, defaultStudentAvatarURL()),
+			item.SourceType, profile.StudentStatus, status, false,
+			classID, classMeta.ClassName, 0, "", parseRollCallConfirmInt64(syntheticDetail.LessonID), syntheticDetail.LessonName, parseRollCallConfirmInt64(dto.SubjectID), "",
+			strings.TrimSpace(dto.TeachingContent), teachingContentImagesJSON, parseRollCallConfirmInt64(classroomID), classroomName,
+			mainTeacherID, mainTeacherName, 0, teacherIDsJSON, teacherNamesJSON, emptyIDsJSON, classTeacherNamesJSON,
+			emptyIDsJSON, classTeacherNamesJSON, emptyIDsJSON, currentClassTeacherNamesJSON, emptyIDsJSON, oneToOneTeacherNamesJSON,
+			parseRollCallConfirmInt64(item.TuitionAccountID), tuitionAccountName, normalizeRollCallDrawerChargingMode(item.SkuMode), quantity, actualQuantity,
+			roundMoney(item.Amount), actualDeduct, actualTuition, arrearQuantity, dto.TeacherClassTime, strings.TrimSpace(item.Remark), strings.TrimSpace(item.ExternalRemark), options.IsAutoRollCall, false,
+			profile.AdvisorStaffID, profile.AdvisorStaffName, profile.StudentManagerID, profile.StudentManagerName, startTime, endTime, recordTime,
+			recordTime, operatorID, operatorName, operatorID, operatorID,
+		); err != nil {
+			return model.RollCallConfirmResult{}, err
+		}
+		insertedCount++
+	}
+
+	if insertedCount == 0 && len(existingSummary.StudentIDSet) == 0 {
+		return model.RollCallConfirmResult{}, errors.New("暂无可提交的点名学员")
+	}
+
+	return model.RollCallConfirmResult{
+		ID:   strconv.FormatInt(teachingRecordID, 10),
+		Name: "",
+	}, nil
+}
+
+func extractRollCallConfirmTeacherIDs(teachers []model.RollCallConfirmTeacher, fallbackTeacherID string) (int64, []string) {
+	mainTeacherID := parseRollCallConfirmInt64(fallbackTeacherID)
+	assistantIDs := make([]string, 0, len(teachers))
+	seenAssistants := make(map[string]struct{}, len(teachers))
+	for _, item := range teachers {
+		teacherIDText := strings.TrimSpace(item.TeacherID)
+		if teacherIDText == "" || teacherIDText == "0" {
+			continue
+		}
+		if item.Type == 1 && mainTeacherID <= 0 {
+			mainTeacherID = parseRollCallConfirmInt64(teacherIDText)
+			continue
+		}
+		if item.Type == 1 {
+			mainTeacherID = parseRollCallConfirmInt64(teacherIDText)
+			continue
+		}
+		if _, ok := seenAssistants[teacherIDText]; ok {
+			continue
+		}
+		seenAssistants[teacherIDText] = struct{}{}
+		assistantIDs = append(assistantIDs, teacherIDText)
+	}
+	return mainTeacherID, assistantIDs
+}
+
+func (repo *Repository) loadRollCallExistingGroupClassUnscheduledRecordSummaryTx(ctx context.Context, tx *sql.Tx, instID, classID int64, lessonID string, startTime, endTime time.Time) (rollCallExistingScheduleRecordSummary, error) {
+	parsedLessonID, err := strconv.ParseInt(strings.TrimSpace(lessonID), 10, 64)
+	if err != nil || parsedLessonID <= 0 {
+		return rollCallExistingScheduleRecordSummary{
+			StudentIDSet: make(map[int64]struct{}),
+		}, nil
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			IFNULL(student_id, 0),
+			IFNULL(teaching_record_id, 0)
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND IFNULL(teaching_schedule_id, 0) = 0
+		  AND IFNULL(class_id, 0) = ?
+		  AND IFNULL(one_to_one_id, 0) = 0
+		  AND IFNULL(lesson_id, 0) = ?
+		  AND start_time = ?
+		  AND end_time = ?
+		  AND del_flag = 0
+		ORDER BY id ASC
+	`, instID, classID, parsedLessonID, startTime, endTime)
+	if err != nil {
+		return rollCallExistingScheduleRecordSummary{}, err
+	}
+	defer rows.Close()
+
+	result := rollCallExistingScheduleRecordSummary{
+		StudentIDSet: make(map[int64]struct{}),
+	}
+	for rows.Next() {
+		var studentID int64
+		var teachingRecordID int64
+		if err := rows.Scan(&studentID, &teachingRecordID); err != nil {
+			return rollCallExistingScheduleRecordSummary{}, err
+		}
+		if result.TeachingRecordID <= 0 && teachingRecordID > 0 {
+			result.TeachingRecordID = teachingRecordID
+		}
+		if studentID > 0 {
+			result.StudentIDSet[studentID] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return rollCallExistingScheduleRecordSummary{}, err
+	}
+	return result, nil
 }
 
 func (repo *Repository) loadRollCallExistingScheduleRecordSummaryTx(ctx context.Context, tx *sql.Tx, instID, scheduleID int64) (rollCallExistingScheduleRecordSummary, error) {
@@ -670,6 +1045,15 @@ func normalizeRollCallConfirmStudentStatus(status int) int {
 		return status
 	default:
 		return 1
+	}
+}
+
+func isRollCallConfirmScheduleOnlySourceType(sourceType int) bool {
+	switch sourceType {
+	case 2, 3, 4:
+		return true
+	default:
+		return false
 	}
 }
 

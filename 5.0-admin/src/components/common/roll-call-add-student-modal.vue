@@ -3,23 +3,33 @@ import type { TableColumnsType } from 'ant-design-vue'
 import { CloseOutlined } from '@ant-design/icons-vue'
 import { debounce } from 'lodash-es'
 import { addTeachingScheduleStudentsCurrentApi, pageTeachingScheduleStudentCandidatesApi, type TeachingScheduleStudentCandidate } from '@/api/edu-center/teaching-schedule'
+import { pageGroupClassUnscheduledRollCallStudentCandidatesApi, previewAddGroupClassUnscheduledRollCallStudentsApi, type RollCallTeachingRecordStudent } from '@/api/edu-center/roll-call'
 import messageService from '@/utils/messageService'
+
+interface UnscheduledRollCallQuery {
+  classId?: string
+  startTime?: string
+  endTime?: string
+  currentStudentIds?: string[]
+}
 
 const props = withDefaults(defineProps<{
   open?: boolean
   title?: string
   scheduleId?: string
   studentType?: number
+  unscheduledQuery?: UnscheduledRollCallQuery | null
 }>(), {
   open: false,
   title: '添加学员',
   scheduleId: '',
   studentType: 4,
+  unscheduledQuery: null,
 })
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
-  (e: 'success'): void
+  (e: 'success', payload?: { students?: RollCallTeachingRecordStudent[] }): void
 }>()
 
 const openModal = computed({
@@ -41,7 +51,28 @@ const paginationState = reactive({
   total: 0,
 })
 
-const isDynamicMode = computed(() => Boolean(String(props.scheduleId || '').trim()))
+const normalizedScheduleId = computed(() => String(props.scheduleId || '').trim())
+const normalizedUnscheduledQuery = computed<Required<UnscheduledRollCallQuery> | null>(() => {
+  const raw = props.unscheduledQuery
+  if (!raw)
+    return null
+  const classId = String(raw.classId || '').trim()
+  const startTime = String(raw.startTime || '').trim()
+  const endTime = String(raw.endTime || '').trim()
+  if (!classId || !startTime || !endTime)
+    return null
+  return {
+    classId,
+    startTime,
+    endTime,
+    currentStudentIds: Array.isArray(raw.currentStudentIds)
+      ? raw.currentStudentIds.map(item => String(item || '').trim()).filter(Boolean)
+      : [],
+  }
+})
+const isScheduleMode = computed(() => Boolean(normalizedScheduleId.value))
+const isUnscheduledMode = computed(() => !isScheduleMode.value && Boolean(normalizedUnscheduledQuery.value))
+const canQuery = computed(() => isScheduleMode.value || isUnscheduledMode.value)
 
 const columns = computed<TableColumnsType<TeachingScheduleStudentCandidate>>(() => [
   {
@@ -63,7 +94,7 @@ const columns = computed<TableColumnsType<TeachingScheduleStudentCandidate>>(() 
 ])
 
 const tablePagination = computed(() => {
-  if (!isDynamicMode.value)
+  if (!canQuery.value)
     return false
   return {
     current: paginationState.current,
@@ -114,42 +145,43 @@ function getStudentStatusTagClass(status?: number) {
   }
 }
 
-function staticRows(): TeachingScheduleStudentCandidate[] {
-  return [
-    {
-      studentId: 'static-1',
-      studentName: '演示学员',
-      phone: '176****1111',
-      maskedPhone: '176****1111',
-      phoneRelationshipText: '妈妈',
-    },
-  ]
-}
-
 function shouldSkipManualErrorMessage(error: any) {
   return Number(error?.response?.status || 0) === 400
 }
 
 async function loadTableData() {
-  if (!isDynamicMode.value) {
-    data.value = staticRows()
-    paginationState.total = data.value.length
+  if (!canQuery.value) {
+    data.value = []
+    paginationState.total = 0
     return
   }
 
   listLoading.value = true
   try {
-    const res = await pageTeachingScheduleStudentCandidatesApi({
-      pageRequestModel: {
-        pageIndex: paginationState.current,
-        pageSize: paginationState.pageSize,
-      },
-      queryModel: {
-        scheduleId: String(props.scheduleId || '').trim(),
-        studentType: Number(props.studentType || 0),
-        keyword: keyword.value.trim() || undefined,
-      },
-    })
+    const res = isScheduleMode.value
+      ? await pageTeachingScheduleStudentCandidatesApi({
+          pageRequestModel: {
+            pageIndex: paginationState.current,
+            pageSize: paginationState.pageSize,
+          },
+          queryModel: {
+            scheduleId: normalizedScheduleId.value,
+            studentType: Number(props.studentType || 0),
+            keyword: keyword.value.trim() || undefined,
+          },
+        })
+      : await pageGroupClassUnscheduledRollCallStudentCandidatesApi({
+          pageRequestModel: {
+            pageIndex: paginationState.current,
+            pageSize: paginationState.pageSize,
+          },
+          queryModel: {
+            classId: normalizedUnscheduledQuery.value?.classId || '',
+            studentType: Number(props.studentType || 0),
+            keyword: keyword.value.trim() || undefined,
+            currentStudentIds: normalizedUnscheduledQuery.value?.currentStudentIds || [],
+          },
+        })
     if (res.code !== 200) {
       data.value = []
       paginationState.total = 0
@@ -226,24 +258,45 @@ async function handleSubmit() {
     messageService.warning('请选择学员')
     return
   }
-  if (!isDynamicMode.value) {
-    messageService.info('当前页面暂未接入真实添加逻辑')
+  if (!canQuery.value) {
+    messageService.info('当前页面缺少添加学员上下文')
     return
   }
 
   submitLoading.value = true
   try {
-    const res = await addTeachingScheduleStudentsCurrentApi({
-      scheduleId: String(props.scheduleId || '').trim(),
+    const selectedStudentIds = selectedRows.value.map(item => String(item.studentId || '')).filter(Boolean)
+    if (isScheduleMode.value) {
+      const res = await addTeachingScheduleStudentsCurrentApi({
+        scheduleId: normalizedScheduleId.value,
+        studentType: Number(props.studentType || 0),
+        studentIds: selectedStudentIds,
+      })
+      if (res.code !== 200) {
+        messageService.error(res.message || '添加学员失败')
+        return
+      }
+      messageService.success('添加学员成功')
+      emit('success')
+      closeFun()
+      return
+    }
+
+    const res = await previewAddGroupClassUnscheduledRollCallStudentsApi({
+      classId: normalizedUnscheduledQuery.value?.classId || '',
+      startTime: normalizedUnscheduledQuery.value?.startTime || '',
+      endTime: normalizedUnscheduledQuery.value?.endTime || '',
       studentType: Number(props.studentType || 0),
-      studentIds: selectedRows.value.map(item => String(item.studentId || '')).filter(Boolean),
+      studentIds: selectedStudentIds,
     })
     if (res.code !== 200) {
       messageService.error(res.message || '添加学员失败')
       return
     }
-    messageService.success('添加学员成功')
-    emit('success')
+    messageService.success('已加入本次待点名学员')
+    emit('success', {
+      students: Array.isArray(res.result?.students) ? res.result.students : [],
+    })
     closeFun()
   }
   catch (error: any) {

@@ -7,6 +7,7 @@ import { computed, h, ref, watch } from 'vue'
 import { cancelTeachingScheduleScopedApi } from '@/api/edu-center/teaching-schedule'
 import { getGroupClassDrawerWaitingRollCallSchedulesApi, type GroupClassDrawerWaitingRollCallScheduleItem } from '@/api/edu-center/group-class'
 import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
+import GroupClassUnscheduledRollCallModal from '@/components/edu-center/class-list/group-class-unscheduled-roll-call-modal.vue'
 import SmartTimetableScheduleDetailDrawer from '@/components/edu-center/timetable/smart-timetable-schedule-detail-drawer.vue'
 import messageService from '@/utils/messageService'
 
@@ -68,6 +69,7 @@ const dateRange = ref<[Dayjs, Dayjs] | null>(null)
 const allFilterKey = ref(0)
 const defaultScheduleDateVals = ref<string[]>([])
 const rollCallOpen = ref(false)
+const unscheduledRollCallOpen = ref(false)
 const currentScheduleId = ref('')
 const currentLessonDay = ref('')
 const detailOpen = ref(false)
@@ -182,7 +184,12 @@ function handleViewDetail(record: GroupClassDrawerWaitingRollCallScheduleItem | 
 }
 
 function handleCreateUnscheduledRollCall() {
-  messageService.info('创建未排课点名功能待接入')
+  const classId = String(props.classId || '').trim()
+  if (!classId) {
+    messageService.warning('当前班级信息不完整，暂不可创建未排课点名')
+    return
+  }
+  unscheduledRollCallOpen.value = true
 }
 
 function handleDelete(record: GroupClassDrawerWaitingRollCallScheduleItem | Record<string, any>) {
@@ -303,6 +310,12 @@ watch(
       v-model:open="detailOpen"
       :detail="detailState"
       @updated="loadList"
+    />
+    <GroupClassUnscheduledRollCallModal
+      v-model:open="unscheduledRollCallOpen"
+      :class-id="props.classId"
+      @updated="loadList"
+      @confirmed="loadList"
     />
   </div>
 </template>

@@ -15,7 +15,8 @@ import GroupClassScheduleConflictWorkbenchModal from './group-class-schedule-con
 import { type ClassroomItem, listClassroomsApi } from '@/api/business-settings/classroom'
 import { getInstPeriodConfigApi } from '@/api/common/config'
 import { type GroupClassDetailVO, type GroupClassRow, listGroupClassStudentsByClassIdsApi, pageGroupClassesApi, getGroupClassDetailApi } from '@/api/edu-center/group-class'
-import type { TeachingScheduleValidationResult } from '@/api/edu-center/teaching-schedule'
+import type { GroupClassUnscheduledRollCallContextParams } from '@/api/edu-center/roll-call'
+import type { CreateGroupClassSchedulesResult, TeachingScheduleValidationResult } from '@/api/edu-center/teaching-schedule'
 import { checkGroupClassAssistantScheduleAvailabilityApi, createGroupClassSchedulesApi, replaceTeachingScheduleBatchApi, validateGroupClassSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import StaffSelect from '@/components/common/staff-select.vue'
@@ -137,10 +138,12 @@ interface GroupClassRecord {
 const props = withDefaults(defineProps<{
   open: boolean
   mode?: 'create' | 'editBatch'
+  scenario?: 'default' | 'unscheduledRollCall'
   batchPlanPreset?: GroupClassBatchPlanModalPreset | null
   initialGroupClassId?: string
 }>(), {
   mode: 'create',
+  scenario: 'default',
   batchPlanPreset: null,
   initialGroupClassId: '',
 })
@@ -148,6 +151,8 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'updated'): void
+  (e: 'created', value: CreateGroupClassSchedulesResult): void
+  (e: 'startRollCall', value: GroupClassUnscheduledRollCallContextParams): void
 }>()
 
 const modalOpen = computed({
@@ -156,6 +161,7 @@ const modalOpen = computed({
 })
 
 const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
+const isUnscheduledRollCallMode = computed(() => props.scenario === 'unscheduledRollCall')
 const isInitialGroupClassLocked = computed(() =>
   !isBatchPlanEditMode.value
   && !props.batchPlanPreset
@@ -184,7 +190,8 @@ const isSingleScheduleEditMode = computed(() => {
     : []
   return !batchNo && scheduleIds.length === 1
 })
-const showSchedulingModeSection = computed(() => !isBatchPlanEditMode.value && !isCopyPresetMode.value)
+const isSingleSessionMode = computed(() => isSingleScheduleEditMode.value || isUnscheduledRollCallMode.value)
+const showSchedulingModeSection = computed(() => !isUnscheduledRollCallMode.value && !isBatchPlanEditMode.value && !isCopyPresetMode.value)
 
 const weekDayOptions = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 const weekdayToNumber: Record<string, number> = {
@@ -819,23 +826,23 @@ const selectedGroupClassSummary = computed<SummaryItem[]>(() => [
 
 const selectedWeekdaysText = computed(() => selectedWeekdays.value.join(' / '))
 
-const schoolSlotFieldLabelText = computed(() => isSingleScheduleEditMode.value ? '课表节次' : '课表节次（可多选）')
+const schoolSlotFieldLabelText = computed(() => isSingleSessionMode.value ? '课表节次' : '课表节次（可多选）')
 const schoolSlotTooltipText = computed(() =>
-  isSingleScheduleEditMode.value
-    ? '单个班课日程编辑时仅允许选择一个课表节次，保存后会更新当前这节班课。'
+  isSingleSessionMode.value
+    ? (isUnscheduledRollCallMode.value ? '未排课点名仅允许选择一个课表节次，用来快速带出本次上课时间，不会生成班课日程。' : '单个班课日程编辑时仅允许选择一个课表节次，保存后会更新当前这节班课。')
     : '同一上课日内按所选「第几节课」各生成一节班课日程；重复排课时每个上课日都会生成这些节。',
 )
 const schoolSlotPlaceholderText = computed(() =>
-  isSingleScheduleEditMode.value ? '请选择一个课表节次' : '同一天内可勾选多节，例如上午 + 下午',
+  isSingleSessionMode.value ? '请选择一个课表节次' : '同一天内可勾选多节，例如上午 + 下午',
 )
 const schoolTimeSlotSelectValue = computed<string | string[] | undefined>({
   get() {
-    if (isSingleScheduleEditMode.value)
+    if (isSingleSessionMode.value)
       return selectedSchoolTimeSlots.value[0]
     return selectedSchoolTimeSlots.value
   },
   set(value) {
-    if (isSingleScheduleEditMode.value) {
+    if (isSingleSessionMode.value) {
       const normalized = String(value || '').trim()
       selectedSchoolTimeSlots.value = normalized ? [normalized] : []
       return
@@ -926,18 +933,28 @@ const timeModeText = computed(() => {
   return `${prefix}${head} · ${blocksDesc}`
 })
 
-const overviewItems = computed<SummaryItem[]>(() => [
-  { label: '排课方式', value: schedulingMode.value === 'repeat' ? '重复排课' : '自由排课' },
-  { label: '日期设置', value: schedulingMode.value === 'free' ? freeSelectedDatesText.value : rangeText.value },
-  { label: '重复规则', value: repeatRuleText.value },
-  { label: '上课时间', value: timeModeText.value },
-  { label: '上课老师', value: selectedTeacherText.value },
-  { label: '上课助教', value: selectedAssistantText.value },
-  { label: '上课教室', value: scheduledClassroomText.value },
-  { label: '班级学员', value: selectedGroupClassStudentText.value },
-])
+const overviewItems = computed<SummaryItem[]>(() => {
+  const items: SummaryItem[] = [
+    { label: '日期设置', value: schedulingMode.value === 'free' ? freeSelectedDatesText.value : rangeText.value },
+    { label: '上课时间', value: timeModeText.value },
+    { label: '上课老师', value: selectedTeacherText.value },
+    { label: '上课助教', value: selectedAssistantText.value },
+    { label: '上课教室', value: scheduledClassroomText.value },
+    { label: '班级学员', value: selectedGroupClassStudentText.value },
+  ]
+  if (!isUnscheduledRollCallMode.value) {
+    items.unshift({ label: '排课方式', value: schedulingMode.value === 'repeat' ? '重复排课' : '自由排课' })
+    items.splice(2, 0, { label: '重复规则', value: repeatRuleText.value })
+  }
+  return items
+})
 
-const overviewTooltipLabels = new Set(['日期设置', '重复规则', '上课时间', '上课教室', '班级学员'])
+const overviewTooltipLabels = computed(() => {
+  const labels = ['日期设置', '上课时间', '上课教室', '班级学员']
+  if (!isUnscheduledRollCallMode.value)
+    labels.push('重复规则')
+  return new Set(labels)
+})
 
 function isHoliday(date: Dayjs) {
   return schoolHolidaySet.has(date.format('YYYY-MM-DD'))
@@ -1125,49 +1142,60 @@ const previewHelperText = computed(() => {
   return `已完成预检，可确认${isBatchPlanEditMode.value ? '保存' : '创建'}。正式提交时服务端仍会再校验一次。`
 })
 
-const modalTitleText = computed(() => isBatchPlanEditMode.value ? '编辑班级日程' : '创建班级日程')
-const modalSubtitleText = computed(() =>
-  isSingleScheduleEditMode.value
-    ? '回显当前班课日程信息，可调整本节的日期与时间资源。'
-    : (
-  isBatchPlanEditMode.value
+const modalTitleText = computed(() => isUnscheduledRollCallMode.value ? '未排课点名' : (isBatchPlanEditMode.value ? '编辑班级日程' : '创建班级日程'))
+const modalSubtitleText = computed(() => {
+  if (isUnscheduledRollCallMode.value)
+    return '本次仅配置未排课点名信息，校验通过后将直接进入点名抽屉，不会创建班课日程。'
+  if (isSingleScheduleEditMode.value)
+    return '回显当前班课日程信息，可调整本节的日期与时间资源。'
+  return isBatchPlanEditMode.value
     ? '回显当前班课批次的生成条件，调整后会整体替换这批日程。'
     : '参考班级基础信息快速批量排课，先把规则配置清楚，再确认创建。'
-      ),
-)
+})
 const summaryCardTitleText = computed(() => isSingleScheduleEditMode.value ? '当前日程' : (isBatchPlanEditMode.value ? '当前批次' : '当前班级'))
-const summaryCardDescText = computed(() =>
-  isSingleScheduleEditMode.value
-    ? '来自当前日程的基础信息与编辑摘要。'
-    : (isBatchPlanEditMode.value ? '来自当前批次的基础信息与规则摘要。' : '来自当前班级档案的基础信息与创建摘要。'),
-)
-const overviewCardTitleText = computed(() => isSingleScheduleEditMode.value ? '编辑摘要' : (isBatchPlanEditMode.value ? '规则摘要' : '创建摘要'))
-const formCardDescText = computed(() =>
-  isSingleScheduleEditMode.value
-    ? '当前为单节班课编辑，可调整开始日期与时间资源，其他日期规则已锁定。'
-    : (isBatchPlanEditMode.value ? '回显当前批次的生成条件，调整后整体替换本批次。' : '按顺序完成排课方式、日期规则和时间资源。'),
-)
-const reviewTitleText = computed(() => isSingleScheduleEditMode.value ? '预计保存结果' : (isBatchPlanEditMode.value ? '预计替换清单' : '预计排课清单'))
-const reviewSubtitleText = computed(() =>
-  isSingleScheduleEditMode.value
-    ? '先确认本次将保存的班课日程，再执行保存。'
-    : (isBatchPlanEditMode.value ? '先确认本次将替换出的班课日程，再执行整体保存。' : '先确认本次将创建的班课日程，再执行批量创建。'),
-)
+const summaryCardDescText = computed(() => {
+  if (isUnscheduledRollCallMode.value)
+    return '来自当前班级档案的基础信息，将用于本次未排课点名。'
+  if (isSingleScheduleEditMode.value)
+    return '来自当前日程的基础信息与编辑摘要。'
+  return isBatchPlanEditMode.value ? '来自当前批次的基础信息与规则摘要。' : '来自当前班级档案的基础信息与创建摘要。'
+})
+const overviewCardTitleText = computed(() => isUnscheduledRollCallMode.value ? '点名摘要' : (isSingleScheduleEditMode.value ? '编辑摘要' : (isBatchPlanEditMode.value ? '规则摘要' : '创建摘要')))
+const formCardDescText = computed(() => {
+  if (isUnscheduledRollCallMode.value)
+    return '班级固定为当前班级，本次只做点名信息配置，不会创建班课日程，并保留老师、教室与学员冲突校验。'
+  if (isSingleScheduleEditMode.value)
+    return '当前为单节班课编辑，可调整开始日期与时间资源，其他日期规则已锁定。'
+  return isBatchPlanEditMode.value ? '回显当前批次的生成条件，调整后整体替换本批次。' : '按顺序完成排课方式、日期规则和时间资源。'
+})
+const reviewTitleText = computed(() => isUnscheduledRollCallMode.value ? '预计点名信息' : (isSingleScheduleEditMode.value ? '预计保存结果' : (isBatchPlanEditMode.value ? '预计替换清单' : '预计排课清单')))
+const reviewSubtitleText = computed(() => {
+  if (isUnscheduledRollCallMode.value)
+    return '先确认本次点名使用的日期、时间和老师信息，确认后会直接进入点名抽屉。'
+  if (isSingleScheduleEditMode.value)
+    return '先确认本次将保存的班课日程，再执行保存。'
+  return isBatchPlanEditMode.value ? '先确认本次将替换出的班课日程，再执行整体保存。' : '先确认本次将创建的班课日程，再执行批量创建。'
+})
 const selectedRecordPlaceholderText = computed(() => {
   if (groupClassLoading.value)
     return '正在加载班级数据...'
+  if (isUnscheduledRollCallMode.value)
+    return '当前点名班级'
   return isSingleScheduleEditMode.value ? '当前日程对应的班级' : (isBatchPlanEditMode.value ? '当前批次对应的班级' : '请选择班级')
 })
+const selectedRecordLabelText = computed(() => isUnscheduledRollCallMode.value ? '班级名称' : '选择班级')
 const datePlanEndHintText = computed(() =>
-  isSingleScheduleEditMode.value ? '单节日程的结束日期与开始日期保持一致' : '根据计划上课次数与重复规则自动推算',
+  isSingleSessionMode.value ? '单节日程的结束日期与开始日期保持一致' : '根据计划上课次数与重复规则自动推算',
 )
 const datePlanFooterHintText = computed(() =>
-  isSingleScheduleEditMode.value ? '当前为单节班课编辑，开始日期可以调整，计划次数固定为 1。' : '可自由填写节数；结束日期由开始日期、重复规则与本次数推算。',
+  isUnscheduledRollCallMode.value ? '未排课点名仅记录本次点名时间，开始日期可以调整，但不会生成班课日程。' : (isSingleScheduleEditMode.value ? '当前为单节班课编辑，开始日期可以调整，计划次数固定为 1。' : '可自由填写节数；结束日期由开始日期、重复规则与本次数推算。'),
 )
 
 const footerTipText = computed(() => {
   if (selectedGroupClass.value?.remark)
     return `班级备注：${selectedGroupClass.value.remark}`
+  if (isUnscheduledRollCallMode.value)
+    return '确认后将直接打开上课点名抽屉，不会创建班课日程。'
   if (isSingleScheduleEditMode.value)
     return '保存后会更新当前这节班课日程。'
   return isBatchPlanEditMode.value
@@ -1176,6 +1204,8 @@ const footerTipText = computed(() => {
 })
 
 const actionButtonText = computed(() => {
+  if (isUnscheduledRollCallMode.value)
+    return '去点名'
   if (isSingleScheduleEditMode.value)
     return '保存班课日程'
   if (isBatchPlanEditMode.value)
@@ -1417,6 +1447,35 @@ function buildScheduleCreatePayload(options: {
   }
 }
 
+function buildUnscheduledRollCallPayload(options: {
+  assistantIds?: string[]
+  plans?: BatchCreatePlan[]
+} = {}): GroupClassUnscheduledRollCallContextParams | null {
+  const plans = Array.isArray(options.plans) && options.plans.length ? options.plans : previewPlans.value
+  const targetPlan = plans[0]
+  const classId = String(selectedGroupClass.value?.id || '').trim()
+  const teacherId = String(targetPlan?.teacherId || selectedTeacherIdNormalized.value || '').trim()
+  if (!classId || !targetPlan?.date || !targetPlan?.startTime || !targetPlan?.endTime || !teacherId)
+    return null
+  const assistantIds = Array.isArray(options.assistantIds)
+    ? options.assistantIds.map(id => String(id || '').trim()).filter(Boolean)
+    : (Array.isArray(targetPlan?.assistantIds) && targetPlan.assistantIds.length
+        ? targetPlan.assistantIds.map(id => String(id || '').trim()).filter(Boolean)
+        : selectedAssistantValues.value.map(id => String(id || '').trim()).filter(Boolean))
+  const classroomId = String(targetPlan?.classroomId || normalizedSelectedClassroomId.value || '').trim()
+  const startTime = `${targetPlan.date}T${targetPlan.startTime}`
+  const endTime = `${targetPlan.date}T${targetPlan.endTime}`
+  return {
+    classId,
+    lessonDay: targetPlan.date,
+    startTime,
+    endTime,
+    teacherId,
+    assistantIds,
+    classroomId: classroomId || undefined,
+  }
+}
+
 async function validatePreviewSchedules() {
   if (!selectedGroupClass.value?.id || previewPlans.value.length === 0)
     return
@@ -1466,6 +1525,18 @@ async function confirmBatchCreate(options: {
 } = {}) {
   if (!selectedGroupClass.value?.id)
     return
+  if (isUnscheduledRollCallMode.value) {
+    const payload = buildUnscheduledRollCallPayload(options)
+    if (!payload) {
+      messageService.warning('当前点名信息不完整，请检查上课日期、时间和老师')
+      return
+    }
+    previewModalOpen.value = false
+    conflictModalOpen.value = false
+    modalOpen.value = false
+    emit('startRollCall', payload)
+    return
+  }
   const isSoftConflictCreate = Array.isArray(options.plans)
     ? options.plans.some(item => item.allowStudentConflict === true)
     : previewPlans.value.some(item => item.allowStudentConflict === true)
@@ -1495,6 +1566,8 @@ async function confirmBatchCreate(options: {
           ? `已创建 ${count} 节班课日程，并保留学员冲突标记`
           : `已创建 ${count} 节班课日程`,
       )
+      if (res.result)
+        emit('created', res.result)
     }
     emitter.emit(EVENTS.REFRESH_DATA)
     emit('updated')
@@ -1578,7 +1651,7 @@ async function applyBatchPlanPreset(preset?: GroupClassBatchPlanModalPreset | nu
     const matchedSlots = findPresetGroupAndSlotKeys(preset.timeBlocks)
     currentGroup.value = matchedSlots.group
     await nextTick()
-    selectedSchoolTimeSlots.value = isSingleScheduleEditMode.value ? matchedSlots.slotKeys.slice(0, 1) : matchedSlots.slotKeys
+    selectedSchoolTimeSlots.value = isSingleSessionMode.value ? matchedSlots.slotKeys.slice(0, 1) : matchedSlots.slotKeys
     selectedTeacherDisplay.value = resolveStaffDisplayById(teacherId)
 
     const assistantIds = Array.isArray(preset.assistantIds)
@@ -1851,8 +1924,9 @@ watch(
     }
     const valid = new Set(options.map(item => item.value))
     const next = selectedSchoolTimeSlots.value.filter(value => valid.has(value))
-    if (!scheduleSlotKeysEqual(next, selectedSchoolTimeSlots.value))
-      selectedSchoolTimeSlots.value = next
+    const normalizedNext = isSingleSessionMode.value ? next.slice(0, 1) : next
+    if (!scheduleSlotKeysEqual(normalizedNext, selectedSchoolTimeSlots.value))
+      selectedSchoolTimeSlots.value = normalizedNext
   },
   { immediate: true },
 )
@@ -1981,6 +2055,13 @@ watch(scheduleStartDate, () => {
 
 watch(modalOpen, async (value) => {
   if (value) {
+    if (isUnscheduledRollCallMode.value) {
+      schedulingMode.value = 'repeat'
+      repeatRule.value = 'none'
+      holidayPolicy.value = 'include'
+      plannedClassCount.value = 1
+      selectedWeekdays.value = []
+    }
     selectedGroupClassId.value = undefined
     selectedTeacher.value = undefined
     selectedTeacherDisplay.value = null
@@ -2103,7 +2184,7 @@ watch(
             <div class="planner-inline__group planner-inline__group--record">
               <span class="planner-label planner-label--inline">
                 <TeamOutlined />
-                选择班级
+                {{ selectedRecordLabelText }}
               </span>
               <a-select
                 v-model:value="selectedGroupClassId"
@@ -2231,7 +2312,7 @@ watch(
             <section class="planner-card planner-card--form">
               <div class="planner-card__head">
                 <div class="planner-card__title">
-                  排课设置
+                  {{ isUnscheduledRollCallMode ? '点名设置' : '排课设置' }}
                 </div>
                 <div class="planner-card__desc">
                   {{ formCardDescText }}
@@ -2286,7 +2367,7 @@ watch(
                         v-model:value="plannedClassCount"
                         :min="1"
                         :precision="0"
-                        :disabled="isSingleScheduleEditMode"
+                        :disabled="isSingleSessionMode"
                         size="large"
                         class="planner-control"
                       />
@@ -2363,7 +2444,7 @@ watch(
                     </div>
                   </div>
 
-                  <div v-if="schedulingMode === 'repeat' && !isSingleScheduleEditMode" class="planner-field planner-field--full">
+                  <div v-if="schedulingMode === 'repeat' && !isSingleSessionMode" class="planner-field planner-field--full">
                     <span class="planner-label planner-label--required">
                       重复规则
                     </span>
@@ -2410,7 +2491,7 @@ watch(
                     </div>
                   </div>
 
-                  <div v-if="!isSingleScheduleEditMode" class="planner-field planner-field--full">
+                  <div v-if="!isSingleSessionMode && !isUnscheduledRollCallMode" class="planner-field planner-field--full">
                     <span class="planner-label planner-label--required">
                       节假日
                       <a-tooltip title="当前示例会按学校节假日配置过滤 2026-05-01 至 2026-05-03。">
@@ -2522,7 +2603,7 @@ watch(
                     <span class="planner-control-tooltip-wrap">
                       <a-select
                         v-model:value="schoolTimeSlotSelectValue"
-                        :mode="isSingleScheduleEditMode ? undefined : 'multiple'"
+                        :mode="isSingleSessionMode ? undefined : 'multiple'"
                         size="large"
                         option-label-prop="label"
                         allow-clear

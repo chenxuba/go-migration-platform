@@ -1,4 +1,4 @@
-import type { TeachingScheduleItem } from './teaching-schedule'
+import type { TeachingScheduleItem, TeachingScheduleStudentCandidate } from './teaching-schedule'
 import type { StudentLessonTuitionAccountsResult } from './one-to-one'
 import { usePost } from '~/utils/request'
 
@@ -121,6 +121,7 @@ export interface RollCallTeachingRecordMeta {
   timetableSourceType: number
   tag: number
   timetableSourceId: string
+  teachingRecordId?: string
   startTime: string
   endTime: string
   teacherClassTime: number
@@ -197,6 +198,49 @@ export interface RollCallCheckTeachingRecordByTeacherAndTimeParams {
   endTime: string
   teacherId: string
   timetableSourceId?: string
+  excludeTeachingRecordId?: string
+}
+
+export interface GroupClassUnscheduledRollCallContextParams {
+  classId: string
+  lessonDay: string
+  startTime: string
+  endTime: string
+  teacherId: string
+  assistantIds?: string[]
+  classroomId?: string
+}
+
+export interface GroupClassUnscheduledRollCallContextResult {
+  detail?: RollCallClassTimetableDetail
+  record?: RollCallTeachingRecordStudentListResult
+}
+
+export interface GroupClassUnscheduledRollCallStudentCandidatesParams {
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+  queryModel: {
+    classId: string
+    studentType: number
+    keyword?: string
+    currentStudentIds?: string[]
+  }
+}
+
+export interface GroupClassUnscheduledRollCallPreviewAddStudentsParams {
+  classId: string
+  startTime: string
+  endTime: string
+  studentType: number
+  studentIds: string[]
+}
+
+export interface GroupClassUnscheduledRollCallPreviewAddStudentsResult {
+  students?: RollCallTeachingRecordStudent[]
 }
 
 export interface RollCallEstimateTuitionInfo {
@@ -244,6 +288,7 @@ export interface RollCallConfirmParams {
   teachingContentImages: string[]
   timetableSourceType: number
   timetableSourceId: string
+  teachingRecordId?: string
   sourceId: string
   sourceType: number
   lessonId: string
@@ -268,6 +313,18 @@ export function getRollCallClassTimetableApi(data: RollCallClassTimetableParams)
 
 export function getRollCallTeachingRecordStudentListApi(data: RollCallTeachingRecordStudentListParams) {
   return usePost<RollCallTeachingRecordStudentListResult>('/api/v1/roll-call/teaching-record/student-list', data)
+}
+
+export function getGroupClassUnscheduledRollCallContextApi(data: GroupClassUnscheduledRollCallContextParams) {
+  return usePost<GroupClassUnscheduledRollCallContextResult>('/api/v1/roll-call/group-class/unscheduled-context', data)
+}
+
+export function pageGroupClassUnscheduledRollCallStudentCandidatesApi(data: GroupClassUnscheduledRollCallStudentCandidatesParams) {
+  return usePost<{ list: TeachingScheduleStudentCandidate[], total: number }>('/api/v1/roll-call/group-class/unscheduled-students/candidates', data)
+}
+
+export function previewAddGroupClassUnscheduledRollCallStudentsApi(data: GroupClassUnscheduledRollCallPreviewAddStudentsParams) {
+  return usePost<GroupClassUnscheduledRollCallPreviewAddStudentsResult>('/api/v1/roll-call/group-class/unscheduled-students/preview-add', data)
 }
 
 export function getRollCallStudentLeaveCountApi(data: RollCallStudentLeaveCountParams) {

@@ -135,6 +135,7 @@ type RollCallTeachingRecordMetaVO struct {
 	TimetableSourceType int     `json:"timetableSourceType"`
 	Tag                 int     `json:"tag"`
 	TimetableSourceID   string  `json:"timetableSourceId"`
+	TeachingRecordID    string  `json:"teachingRecordId,omitempty"`
 	StartTime           string  `json:"startTime"`
 	EndTime             string  `json:"endTime"`
 	TeacherClassTime    float64 `json:"teacherClassTime"`
@@ -202,10 +203,50 @@ type RollCallStudentTuitionExtraInfoVO struct {
 }
 
 type RollCallCheckTeachingRecordByTeacherAndTimeDTO struct {
-	StartTime         string `json:"startTime"`
-	EndTime           string `json:"endTime"`
-	TeacherID         string `json:"teacherId"`
-	TimetableSourceID string `json:"timetableSourceId"`
+	StartTime               string `json:"startTime"`
+	EndTime                 string `json:"endTime"`
+	TeacherID               string `json:"teacherId"`
+	TimetableSourceID       string `json:"timetableSourceId"`
+	ExcludeTeachingRecordID string `json:"excludeTeachingRecordId"`
+}
+
+type GroupClassUnscheduledRollCallContextQueryDTO struct {
+	ClassID      string   `json:"classId"`
+	LessonDay    string   `json:"lessonDay"`
+	StartTime    string   `json:"startTime"`
+	EndTime      string   `json:"endTime"`
+	TeacherID    string   `json:"teacherId"`
+	AssistantIDs []string `json:"assistantIds"`
+	ClassroomID  string   `json:"classroomId"`
+}
+
+type GroupClassUnscheduledRollCallContextResult struct {
+	Detail RollCallClassTimetableDetailVO          `json:"detail"`
+	Record RollCallTeachingRecordStudentListResult `json:"record"`
+}
+
+type GroupClassUnscheduledRollCallStudentCandidateQueryDTO struct {
+	PageRequestModel PageRequestModel                                        `json:"pageRequestModel"`
+	QueryModel       GroupClassUnscheduledRollCallStudentCandidateQueryModel `json:"queryModel"`
+}
+
+type GroupClassUnscheduledRollCallStudentCandidateQueryModel struct {
+	ClassID           string   `json:"classId"`
+	StudentType       int      `json:"studentType"`
+	Keyword           string   `json:"keyword"`
+	CurrentStudentIDs []string `json:"currentStudentIds"`
+}
+
+type GroupClassUnscheduledRollCallPreviewAddStudentsDTO struct {
+	ClassID     string   `json:"classId"`
+	StartTime   string   `json:"startTime"`
+	EndTime     string   `json:"endTime"`
+	StudentType int      `json:"studentType"`
+	StudentIDs  []string `json:"studentIds"`
+}
+
+type GroupClassUnscheduledRollCallPreviewAddStudentsResult struct {
+	Students []RollCallTeachingRecordStudentVO `json:"students"`
 }
 
 type RollCallEstimateTuitionInfo struct {

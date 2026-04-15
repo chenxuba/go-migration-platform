@@ -114,6 +114,567 @@ func (repo *Repository) GetRollCallTeachingRecordStudentList(ctx context.Context
 		})
 	}
 
+	return repo.buildRollCallTeachingRecordStudentListResultFromSources(
+		ctx,
+		instID,
+		detail,
+		classMeta,
+		firstNonEmptyString(strings.TrimSpace(dto.TimetableSourceID), detail.ID),
+		detail.StartAt,
+		detail.EndAt,
+		firstNonEmptyString(detail.ClassroomID, "0"),
+		existingRecordMap,
+		sources,
+		firstNonEmptyString(detail.TeachingRecordID, "0"),
+	)
+}
+
+func (repo *Repository) GetGroupClassUnscheduledRollCallContext(ctx context.Context, instID int64, dto model.GroupClassUnscheduledRollCallContextQueryDTO) (model.GroupClassUnscheduledRollCallContextResult, error) {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.ClassID), 10, 64)
+	if err != nil || classID <= 0 {
+		return model.GroupClassUnscheduledRollCallContextResult{}, errors.New("班级无效")
+	}
+	startTime, err := parseRollCallConfirmDateTime(dto.StartTime)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallContextResult{}, err
+	}
+	endTime, err := parseRollCallConfirmDateTime(dto.EndTime)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallContextResult{}, err
+	}
+	if !endTime.After(startTime) {
+		return model.GroupClassUnscheduledRollCallContextResult{}, errors.New("上课时间不合法")
+	}
+
+	classDetail, err := repo.GetGroupClassByID(ctx, instID, classID)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallContextResult{}, err
+	}
+	if classDetail.Status == model.TeachingClassStatusClosed {
+		return model.GroupClassUnscheduledRollCallContextResult{}, errors.New("已结班班级不可点名")
+	}
+
+	teacherID := strings.TrimSpace(dto.TeacherID)
+	if teacherID == "" || teacherID == "0" {
+		teacherID = strings.TrimSpace(classDetail.DefaultTeacherID)
+	}
+	parsedTeacherID, err := strconv.ParseInt(teacherID, 10, 64)
+	if err != nil || parsedTeacherID <= 0 {
+		return model.GroupClassUnscheduledRollCallContextResult{}, errors.New("上课教师无效")
+	}
+
+	assistantIDs := normalizeStringIDs(dto.AssistantIDs)
+	classroomID := strings.TrimSpace(dto.ClassroomID)
+	if classroomID == "" || classroomID == "0" {
+		classroomID = strings.TrimSpace(classDetail.ClassroomID)
+	}
+	classroomName, err := repo.loadRollCallDrawerClassroomName(ctx, instID, classroomID, classDetail.ClassroomName)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallContextResult{}, err
+	}
+
+	classTeacherVOs, teachingRecordTeachers, teacherName, assistantNames, err := repo.buildRollCallTeacherEntriesForIDs(ctx, parsedTeacherID, assistantIDs)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallContextResult{}, err
+	}
+
+	membershipsByClassID, err := repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, repo.db, instID, []int64{classID})
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallContextResult{}, err
+	}
+	memberships := membershipsByClassID[classID]
+	roster := buildGroupClassScheduleRosterFromMembershipsAndOverrides(
+		memberships,
+		nil,
+		time.Now(),
+	)
+	existingRecordMap, teachingRecordID, err := repo.loadRollCallExistingGroupClassUnscheduledRecordMap(
+		ctx,
+		instID,
+		classID,
+		classDetail.LessonID,
+		startTime,
+		endTime,
+	)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallContextResult{}, err
+	}
+	appendExistingUnscheduledRollCallStudents(&roster, memberships, existingRecordMap)
+
+	syntheticDetail := model.TeachingScheduleDetailVO{
+		ID:                "0",
+		ClassType:         model.TeachingClassTypeNormal,
+		TeachingClassID:   classDetail.ID,
+		TeachingClassName: classDetail.Name,
+		LessonID:          classDetail.LessonID,
+		LessonName:        classDetail.LessonName,
+		TeacherID:         teacherID,
+		TeacherName:       teacherName,
+		AssistantIDs:      assistantIDs,
+		AssistantNames:    assistantNames,
+		ClassroomID:       firstNonEmptyString(classroomID, "0"),
+		ClassroomName:     classroomName,
+		LessonDate:        startTime.Format("2006-01-02"),
+		StartAt:           startTime,
+		EndAt:             endTime,
+		CanRollCall:       true,
+		Remark:            classDetail.Remark,
+	}
+
+	sources := make([]rollCallDrawerStudentSource, 0, len(roster.Active))
+	students := make([]model.RollCallClassTimetableStudentVO, 0, len(roster.Active))
+	for _, student := range roster.Active {
+		sourceStudent := model.TeachingScheduleDetailStudentVO{
+			StudentID:           strconv.FormatInt(student.StudentID, 10),
+			StudentName:         student.StudentName,
+			AvatarURL:           student.AvatarURL,
+			Phone:               student.Phone,
+			PhoneRelationship:   student.PhoneRelationship,
+			ScheduleStudentType: student.ScheduleStudentType,
+		}
+		sources = append(sources, rollCallDrawerStudentSource{
+			Student:               sourceStudent,
+			DefaultTeachingStatus: 1,
+		})
+		students = append(students, model.RollCallClassTimetableStudentVO{
+			SourceType:                   rollCallClassTimetableSourceType(student.ScheduleStudentType),
+			SourceID:                     "0",
+			StudentID:                    sourceStudent.StudentID,
+			StudentName:                  sourceStudent.StudentName,
+			StudentAvatar:                strings.TrimSpace(sourceStudent.AvatarURL),
+			StudentPhone:                 maskStudentMobile(strings.TrimSpace(sourceStudent.Phone)),
+			StudentPhoneRelationshipType: sourceStudent.PhoneRelationship,
+		})
+	}
+
+	classMeta := rollCallDrawerContext{
+		ClassID:                    classDetail.ID,
+		ClassName:                  classDetail.Name,
+		DefaultStudentClassTime:    classDetail.DefaultStudentClassTime,
+		DefaultTeacherClassTime:    classDetail.DefaultTeacherClassTime,
+		DefaultClassTimeRecordMode: classDetail.DefaultClassTimeRecordMode,
+		LessonPrice:                classDetail.LessonPrice,
+		LessonType:                 classDetail.LessonType,
+		Teachers:                   classTeacherVOs,
+		TeachingRecordTeachers:     teachingRecordTeachers,
+	}
+
+	recordResult, err := repo.buildRollCallTeachingRecordStudentListResultFromSources(
+		ctx,
+		instID,
+		syntheticDetail,
+		classMeta,
+		"0",
+		startTime,
+		endTime,
+		firstNonEmptyString(classroomID, "0"),
+		existingRecordMap,
+		sources,
+		teachingRecordID,
+	)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallContextResult{}, err
+	}
+
+	lessonDay := strings.TrimSpace(dto.LessonDay)
+	if lessonDay == "" {
+		lessonDay = startTime.Format("2006-01-02T00:00:00")
+	}
+
+	return model.GroupClassUnscheduledRollCallContextResult{
+		Detail: model.RollCallClassTimetableDetailVO{
+			ID:                         "0",
+			ClassID:                    classDetail.ID,
+			ClassName:                  classDetail.Name,
+			ClassTimes:                 classDetail.DefaultStudentClassTime,
+			DefaultStudentClassTime:    classDetail.DefaultStudentClassTime,
+			DefaultTeacherClassTime:    classDetail.DefaultTeacherClassTime,
+			DefaultClassTimeRecordMode: classDetail.DefaultClassTimeRecordMode,
+			LessonPrice:                classDetail.LessonPrice,
+			Teachers:                   classTeacherVOs,
+			AddressType:                0,
+			AddressID:                  firstNonEmptyString(classroomID, "0"),
+			AddressName:                classroomName,
+			LessonID:                   classDetail.LessonID,
+			LessonName:                 classDetail.LessonName,
+			LessonType:                 classDetail.LessonType,
+			StartMinutes:               startTime.Hour()*60 + startTime.Minute(),
+			EndMinutes:                 endTime.Hour()*60 + endTime.Minute(),
+			RepeatSpan:                 0,
+			WeekDays:                   0,
+			StartDate:                  startTime.Format("2006-01-02T15:04:05"),
+			EndDate:                    endTime.Format("2006-01-02T15:04:05"),
+			LessonCount:                1,
+			Remark:                     classDetail.Remark,
+			ExternalRemark:             "",
+			LessonDays: []model.RollCallClassTimetableLessonDayVO{{
+				LessonDay:        lessonDay,
+				IsFinished:       false,
+				LessonDayIndex:   0,
+				Students:         students,
+				RemoveStudent:    []model.RollCallClassTimetableStudentVO{},
+				TeachingRecordID: teachingRecordID,
+			}},
+			IsBookLesson:     false,
+			SubjectID:        "0",
+			SubjectName:      "",
+			IsOrgCreated:     false,
+			SchoolID:         "",
+			SchoolName:       "",
+			IsOpenLiveRecord: false,
+			IsOpenLive:       false,
+		},
+		Record: recordResult,
+	}, nil
+}
+
+func (repo *Repository) PageGroupClassUnscheduledRollCallStudentCandidates(ctx context.Context, instID int64, dto model.GroupClassUnscheduledRollCallStudentCandidateQueryDTO) (model.TeachingScheduleStudentCandidatePagedResult, error) {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.QueryModel.ClassID), 10, 64)
+	if err != nil || classID <= 0 {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("班级无效")
+	}
+	studentType := normalizeTeachingScheduleStudentType(dto.QueryModel.StudentType)
+	if !isScheduleOnlyStudentType(studentType) {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("学员类型无效")
+	}
+
+	pageIndex := dto.PageRequestModel.PageIndex
+	if pageIndex <= 0 {
+		pageIndex = 1
+	}
+	pageSize := dto.PageRequestModel.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (pageIndex - 1) * pageSize
+	if dto.PageRequestModel.SkipCount > 0 {
+		offset = dto.PageRequestModel.SkipCount
+	}
+
+	classDetail, err := repo.GetGroupClassByID(ctx, instID, classID)
+	if err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	if classDetail.Status == model.TeachingClassStatusClosed {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("已结班班级不可添加点名学员")
+	}
+
+	excludeIDs := parseStringIDs(dto.QueryModel.CurrentStudentIDs)
+	filters := []string{
+		"s.inst_id = ?",
+		"s.del_flag = 0",
+	}
+	args := []any{instID}
+	if candidateStatuses := teachingScheduleCandidateAllowedStudentStatuses(studentType); len(candidateStatuses) > 0 {
+		filters = append(filters, "IFNULL(s.student_status, 0) IN ("+sqlPlaceholders(len(candidateStatuses))+")")
+		args = append(args, intSliceToAny(candidateStatuses)...)
+	}
+	if keyword := strings.TrimSpace(dto.QueryModel.Keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		filters = append(filters, "(IFNULL(s.stu_name, '') LIKE ? OR IFNULL(s.mobile, '') LIKE ?)")
+		args = append(args, like, like)
+	}
+	if len(excludeIDs) > 0 {
+		filters = append(filters, "s.id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
+		args = append(args, int64SliceToAny(excludeIDs)...)
+	}
+
+	whereClause := strings.Join(filters, " AND ")
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM inst_student s
+		WHERE `+whereClause, args...).Scan(&total); err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			s.id,
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.avatar_url, ''),
+			IFNULL(s.mobile, ''),
+			IFNULL(s.phone_relationship, 0),
+			IFNULL(s.student_status, 0)
+		FROM inst_student s
+		WHERE `+whereClause+`
+		ORDER BY s.id DESC
+		LIMIT ? OFFSET ?
+	`, append(args, pageSize, offset)...)
+	if err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	defer rows.Close()
+
+	result := model.TeachingScheduleStudentCandidatePagedResult{
+		List:  make([]model.TeachingScheduleStudentCandidateVO, 0),
+		Total: total,
+	}
+	for rows.Next() {
+		var (
+			studentID         int64
+			studentName       string
+			avatarURL         string
+			phone             string
+			phoneRelationship int
+			studentStatus     int
+		)
+		if err := rows.Scan(&studentID, &studentName, &avatarURL, &phone, &phoneRelationship, &studentStatus); err != nil {
+			return model.TeachingScheduleStudentCandidatePagedResult{}, err
+		}
+		phone = strings.TrimSpace(phone)
+		result.List = append(result.List, model.TeachingScheduleStudentCandidateVO{
+			StudentID:             strconv.FormatInt(studentID, 10),
+			StudentName:           firstNonEmptyString(strings.TrimSpace(studentName), "-"),
+			AvatarURL:             strings.TrimSpace(avatarURL),
+			Phone:                 "",
+			MaskedPhone:           maskPhoneLocal(phone),
+			PhoneRelationship:     phoneRelationship,
+			PhoneRelationshipText: studentPhoneRelationshipText(phoneRelationship),
+			StudentStatus:         studentStatus,
+			StudentStatusText:     teachingScheduleCandidateStudentStatusText(studentStatus),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) PreviewAddGroupClassUnscheduledRollCallStudents(ctx context.Context, instID int64, dto model.GroupClassUnscheduledRollCallPreviewAddStudentsDTO) (model.GroupClassUnscheduledRollCallPreviewAddStudentsResult, error) {
+	classID, err := strconv.ParseInt(strings.TrimSpace(dto.ClassID), 10, 64)
+	if err != nil || classID <= 0 {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, errors.New("班级无效")
+	}
+	studentType := normalizeTeachingScheduleStudentType(dto.StudentType)
+	if !isScheduleOnlyStudentType(studentType) {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, errors.New("学员类型无效")
+	}
+	studentIDs := parseStringIDs(dto.StudentIDs)
+	if len(studentIDs) == 0 {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, errors.New("请至少选择一位学员")
+	}
+	startTime, err := parseRollCallConfirmDateTime(dto.StartTime)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, err
+	}
+	endTime, err := parseRollCallConfirmDateTime(dto.EndTime)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, err
+	}
+	if !endTime.After(startTime) {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, errors.New("上课时间不合法")
+	}
+
+	classDetail, err := repo.GetGroupClassByID(ctx, instID, classID)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, err
+	}
+	if classDetail.Status == model.TeachingClassStatusClosed {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, errors.New("已结班班级不可添加点名学员")
+	}
+
+	membershipsByClassID, err := repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, repo.db, instID, []int64{classID})
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, err
+	}
+	associatedSet := buildAssociatedGroupClassStudentSet(
+		membershipsByClassID[classID],
+		nil,
+		time.Now(),
+	)
+	if studentType == model.TeachingScheduleStudentTypeTrial {
+		for _, studentID := range studentIDs {
+			if _, ok := associatedSet[studentID]; ok {
+				return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, errors.New("班级在班学员不可作为试听学员添加")
+			}
+		}
+	}
+
+	type studentRow struct {
+		StudentID         int64
+		StudentName       string
+		AvatarURL         string
+		Phone             string
+		PhoneRelationship int
+		StudentStatus     int
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			s.id,
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.avatar_url, ''),
+			IFNULL(s.mobile, ''),
+			IFNULL(s.phone_relationship, 0),
+			IFNULL(s.student_status, 0)
+		FROM inst_student s
+		WHERE s.inst_id = ?
+		  AND s.del_flag = 0
+		  AND s.id IN (`+sqlPlaceholders(len(studentIDs))+`)
+	`, append([]any{instID}, int64SliceToAny(studentIDs)...)...)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, err
+	}
+	defer rows.Close()
+
+	studentMap := make(map[int64]studentRow, len(studentIDs))
+	for rows.Next() {
+		var item studentRow
+		if err := rows.Scan(
+			&item.StudentID,
+			&item.StudentName,
+			&item.AvatarURL,
+			&item.Phone,
+			&item.PhoneRelationship,
+			&item.StudentStatus,
+		); err != nil {
+			return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, err
+		}
+		studentMap[item.StudentID] = item
+	}
+	if err := rows.Err(); err != nil {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, err
+	}
+	if len(studentMap) != len(studentIDs) {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, errors.New("存在无效学员，请刷新后重试")
+	}
+
+	if candidateStatuses := teachingScheduleCandidateAllowedStudentStatuses(studentType); len(candidateStatuses) > 0 {
+		allowedStatusSet := make(map[int]struct{}, len(candidateStatuses))
+		for _, status := range candidateStatuses {
+			allowedStatusSet[status] = struct{}{}
+		}
+		for _, studentID := range studentIDs {
+			current := studentMap[studentID]
+			if _, ok := allowedStatusSet[current.StudentStatus]; !ok {
+				return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, errors.New("所选学员状态不可添加到本次点名")
+			}
+		}
+	}
+
+	sources := make([]rollCallDrawerStudentSource, 0, len(studentIDs))
+	for _, studentID := range studentIDs {
+		current := studentMap[studentID]
+		sources = append(sources, rollCallDrawerStudentSource{
+			Student: model.TeachingScheduleDetailStudentVO{
+				StudentID:           strconv.FormatInt(studentID, 10),
+				StudentName:         firstNonEmptyString(strings.TrimSpace(current.StudentName), "-"),
+				AvatarURL:           strings.TrimSpace(current.AvatarURL),
+				Phone:               strings.TrimSpace(current.Phone),
+				PhoneRelationship:   current.PhoneRelationship,
+				ScheduleStudentType: studentType,
+			},
+			DefaultTeachingStatus: 1,
+		})
+	}
+
+	syntheticDetail := model.TeachingScheduleDetailVO{
+		ID:                "0",
+		ClassType:         model.TeachingClassTypeNormal,
+		TeachingClassID:   classDetail.ID,
+		TeachingClassName: classDetail.Name,
+		LessonID:          classDetail.LessonID,
+		LessonName:        classDetail.LessonName,
+		ClassroomID:       firstNonEmptyString(classDetail.ClassroomID, "0"),
+		ClassroomName:     classDetail.ClassroomName,
+		LessonDate:        startTime.Format("2006-01-02"),
+		StartAt:           startTime,
+		EndAt:             endTime,
+		CanRollCall:       true,
+		Remark:            classDetail.Remark,
+	}
+	classMeta := rollCallDrawerContext{
+		ClassID:                    classDetail.ID,
+		ClassName:                  classDetail.Name,
+		DefaultStudentClassTime:    classDetail.DefaultStudentClassTime,
+		DefaultTeacherClassTime:    classDetail.DefaultTeacherClassTime,
+		DefaultClassTimeRecordMode: classDetail.DefaultClassTimeRecordMode,
+		LessonPrice:                classDetail.LessonPrice,
+		LessonType:                 classDetail.LessonType,
+	}
+
+	recordResult, err := repo.buildRollCallTeachingRecordStudentListResultFromSources(
+		ctx,
+		instID,
+		syntheticDetail,
+		classMeta,
+		"0",
+		startTime,
+		endTime,
+		firstNonEmptyString(classDetail.ClassroomID, "0"),
+		map[int64]rollCallExistingStudentRecord{},
+		sources,
+		"0",
+	)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, err
+	}
+
+	return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{
+		Students: recordResult.Students,
+	}, nil
+}
+
+func appendExistingUnscheduledRollCallStudents(roster *groupClassScheduleRoster, memberships []groupClassStudentMembership, existingRecordMap map[int64]rollCallExistingStudentRecord) {
+	if roster == nil || len(existingRecordMap) == 0 {
+		return
+	}
+	existingActiveIDs := make(map[int64]struct{}, len(roster.Active))
+	for _, student := range roster.Active {
+		if student.StudentID > 0 {
+			existingActiveIDs[student.StudentID] = struct{}{}
+		}
+	}
+
+	membershipMap := make(map[int64]groupClassStudentMembership, len(memberships))
+	for _, membership := range memberships {
+		if membership.StudentID <= 0 {
+			continue
+		}
+		if _, ok := membershipMap[membership.StudentID]; ok {
+			continue
+		}
+		membershipMap[membership.StudentID] = membership
+	}
+
+	for studentID := range existingRecordMap {
+		if studentID <= 0 {
+			continue
+		}
+		if _, ok := existingActiveIDs[studentID]; ok {
+			continue
+		}
+		membership := membershipMap[studentID]
+		roster.Active = append(roster.Active, groupClassScheduleStudent{
+			StudentID:           studentID,
+			StudentName:         firstNonEmptyString(strings.TrimSpace(membership.StudentName), "该学员"),
+			AvatarURL:           strings.TrimSpace(membership.AvatarURL),
+			Phone:               strings.TrimSpace(membership.Phone),
+			PhoneRelationship:   membership.PhoneRelationship,
+			ClassStatus:         normalizeTeachingClassStudentStatus(membership.ClassStatus),
+			ScheduleStudentType: model.TeachingScheduleStudentTypeClassMember,
+			RosterStatus:        model.TeachingScheduleStudentRosterStatusActive,
+		})
+	}
+}
+
+func (repo *Repository) buildRollCallTeachingRecordStudentListResultFromSources(
+	ctx context.Context,
+	instID int64,
+	detail model.TeachingScheduleDetailVO,
+	classMeta rollCallDrawerContext,
+	timetableSourceID string,
+	startTime time.Time,
+	endTime time.Time,
+	classroomID string,
+	existingRecordMap map[int64]rollCallExistingStudentRecord,
+	sources []rollCallDrawerStudentSource,
+	teachingRecordID string,
+) (model.RollCallTeachingRecordStudentListResult, error) {
+
 	studentIDs := make([]int64, 0, len(sources))
 	for _, source := range sources {
 		studentID, err := strconv.ParseInt(strings.TrimSpace(source.Student.StudentID), 10, 64)
@@ -213,15 +774,160 @@ func (repo *Repository) GetRollCallTeachingRecordStudentList(ctx context.Context
 			LessonID:            detail.LessonID,
 			TimetableSourceType: rollCallTeachingRecordSourceCategory(detail.ClassType),
 			Tag:                 1,
-			TimetableSourceID:   detail.ID,
-			StartTime:           detail.StartAt.Format("2006-01-02T15:04:05"),
-			EndTime:             detail.EndAt.Format("2006-01-02T15:04:05"),
+			TimetableSourceID:   firstNonEmptyString(strings.TrimSpace(timetableSourceID), detail.ID, "0"),
+			TeachingRecordID:    firstNonEmptyString(strings.TrimSpace(teachingRecordID), "0"),
+			StartTime:           startTime.Format("2006-01-02T15:04:05"),
+			EndTime:             endTime.Format("2006-01-02T15:04:05"),
 			TeacherClassTime:    classMeta.DefaultTeacherClassTime,
-			ClassroomID:         firstNonEmptyString(detail.ClassroomID, "0"),
+			ClassroomID:         firstNonEmptyString(classroomID, "0"),
 		},
 		Teachers: classMeta.TeachingRecordTeachers,
 		Students: students,
 	}, nil
+}
+
+func (repo *Repository) loadRollCallExistingGroupClassUnscheduledRecordMap(ctx context.Context, instID, classID int64, lessonID string, startTime, endTime time.Time) (map[int64]rollCallExistingStudentRecord, string, error) {
+	parsedLessonID, err := strconv.ParseInt(strings.TrimSpace(lessonID), 10, 64)
+	if err != nil || parsedLessonID <= 0 {
+		return map[int64]rollCallExistingStudentRecord{}, "0", nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			IFNULL(teaching_record_id, 0),
+			IFNULL(student_id, 0),
+			IFNULL(status, 0),
+			IFNULL(quantity, 0),
+			IFNULL(remark, ''),
+			IFNULL(external_remark, ''),
+			CAST(IFNULL(tuition_account_id, 0) AS CHAR),
+			IFNULL(tuition_account_name, ''),
+			IFNULL(sku_mode, 0),
+			IFNULL(is_auto_roll_call, 0)
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND IFNULL(teaching_schedule_id, 0) = 0
+		  AND IFNULL(class_id, 0) = ?
+		  AND IFNULL(one_to_one_id, 0) = 0
+		  AND IFNULL(lesson_id, 0) = ?
+		  AND start_time = ?
+		  AND end_time = ?
+		ORDER BY id ASC
+	`, instID, classID, parsedLessonID, startTime, endTime)
+	if err != nil {
+		return nil, "0", err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]rollCallExistingStudentRecord)
+	teachingRecordID := int64(0)
+	for rows.Next() {
+		var item rollCallExistingStudentRecord
+		var autoRollCall int
+		if err := rows.Scan(
+			&item.TeachingRecordID,
+			&item.StudentID,
+			&item.Status,
+			&item.Quantity,
+			&item.Remark,
+			&item.ExternalRemark,
+			&item.TuitionAccountID,
+			&item.TuitionAccountName,
+			&item.SkuMode,
+			&autoRollCall,
+		); err != nil {
+			return nil, "0", err
+		}
+		item.IsAutoRollCall = autoRollCall != 0
+		if item.TeachingRecordID > 0 && teachingRecordID <= 0 {
+			teachingRecordID = item.TeachingRecordID
+		}
+		if item.StudentID > 0 {
+			result[item.StudentID] = item
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "0", err
+	}
+	if teachingRecordID <= 0 {
+		return result, "0", nil
+	}
+	return result, strconv.FormatInt(teachingRecordID, 10), nil
+}
+
+func (repo *Repository) loadRollCallDrawerClassroomName(ctx context.Context, instID int64, classroomID string, fallbackName string) (string, error) {
+	parsedClassroomID, err := strconv.ParseInt(strings.TrimSpace(classroomID), 10, 64)
+	if strings.TrimSpace(classroomID) == "" || strings.TrimSpace(classroomID) == "0" {
+		return strings.TrimSpace(fallbackName), nil
+	}
+	if err != nil || parsedClassroomID <= 0 {
+		return "", errors.New("上课教室无效")
+	}
+
+	var name string
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(name, '')
+		FROM inst_classroom
+		WHERE id = ?
+		  AND inst_id = ?
+		  AND del_flag = 0
+		LIMIT 1
+	`, parsedClassroomID, instID).Scan(&name); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New("上课教室无效")
+		}
+		return "", err
+	}
+	return strings.TrimSpace(name), nil
+}
+
+func (repo *Repository) buildRollCallTeacherEntriesForIDs(ctx context.Context, teacherID int64, assistantIDs []string) ([]model.RollCallClassTimetableTeacherVO, []model.RollCallTeachingRecordTeacherVO, string, []string, error) {
+	teacherName := strings.TrimSpace(repo.GetStaffNameByID(ctx, &teacherID))
+	if teacherID <= 0 || teacherName == "" {
+		return nil, nil, "", nil, errors.New("上课教师无效")
+	}
+
+	classTeachers := []model.RollCallClassTimetableTeacherVO{{
+		TeacherID:     strconv.FormatInt(teacherID, 10),
+		TeacherDuty:   1,
+		TeacherName:   teacherName,
+		TeacherStatus: 1,
+	}}
+	recordTeachers := []model.RollCallTeachingRecordTeacherVO{{
+		TeacherID: strconv.FormatInt(teacherID, 10),
+		Type:      1,
+	}}
+
+	assistantNames := make([]string, 0, len(assistantIDs))
+	seen := map[int64]struct{}{teacherID: {}}
+	for _, raw := range assistantIDs {
+		assistantID, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || assistantID <= 0 {
+			continue
+		}
+		if _, ok := seen[assistantID]; ok {
+			continue
+		}
+		seen[assistantID] = struct{}{}
+		assistantName := strings.TrimSpace(repo.GetStaffNameByID(ctx, &assistantID))
+		if assistantName == "" {
+			return nil, nil, "", nil, errors.New("上课助教无效")
+		}
+		classTeachers = append(classTeachers, model.RollCallClassTimetableTeacherVO{
+			TeacherID:     strconv.FormatInt(assistantID, 10),
+			TeacherDuty:   3,
+			TeacherName:   assistantName,
+			TeacherStatus: 1,
+		})
+		recordTeachers = append(recordTeachers, model.RollCallTeachingRecordTeacherVO{
+			TeacherID: strconv.FormatInt(assistantID, 10),
+			Type:      3,
+		})
+		assistantNames = append(assistantNames, assistantName)
+	}
+
+	return classTeachers, recordTeachers, teacherName, assistantNames, nil
 }
 
 func (repo *Repository) loadRollCallExistingStudentRecordMap(ctx context.Context, instID int64, scheduleIDText string) (map[int64]rollCallExistingStudentRecord, error) {

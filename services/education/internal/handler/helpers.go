@@ -931,10 +931,51 @@ func parseRollCallStudentTuitionAccountsQueryDTO(raw map[string]any) model.Stude
 
 func parseRollCallCheckTeachingRecordByTeacherAndTimeDTO(raw map[string]any) model.RollCallCheckTeachingRecordByTeacherAndTimeDTO {
 	return model.RollCallCheckTeachingRecordByTeacherAndTimeDTO{
-		StartTime:         asString(raw["startTime"]),
-		EndTime:           asString(raw["endTime"]),
-		TeacherID:         asString(raw["teacherId"]),
-		TimetableSourceID: asString(raw["timetableSourceId"]),
+		StartTime:               asString(raw["startTime"]),
+		EndTime:                 asString(raw["endTime"]),
+		TeacherID:               asString(raw["teacherId"]),
+		TimetableSourceID:       asString(raw["timetableSourceId"]),
+		ExcludeTeachingRecordID: asString(raw["excludeTeachingRecordId"]),
+	}
+}
+
+func parseGroupClassUnscheduledRollCallContextQueryDTO(raw map[string]any) model.GroupClassUnscheduledRollCallContextQueryDTO {
+	return model.GroupClassUnscheduledRollCallContextQueryDTO{
+		ClassID:      asString(raw["classId"]),
+		LessonDay:    asString(raw["lessonDay"]),
+		StartTime:    asString(raw["startTime"]),
+		EndTime:      asString(raw["endTime"]),
+		TeacherID:    asString(raw["teacherId"]),
+		AssistantIDs: asStringSlice(raw["assistantIds"]),
+		ClassroomID:  asString(raw["classroomId"]),
+	}
+}
+
+func parseGroupClassUnscheduledRollCallStudentCandidateQueryDTO(raw map[string]any) model.GroupClassUnscheduledRollCallStudentCandidateQueryDTO {
+	query := model.GroupClassUnscheduledRollCallStudentCandidateQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 10)
+		query.PageRequestModel.SkipCount = asInt(page["skipCount"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.GroupClassUnscheduledRollCallStudentCandidateQueryModel{
+			ClassID:           asString(qm["classId"]),
+			StudentType:       asInt(qm["studentType"], 0),
+			Keyword:           asString(qm["keyword"]),
+			CurrentStudentIDs: asStringSlice(qm["currentStudentIds"]),
+		}
+	}
+	return query
+}
+
+func parseGroupClassUnscheduledRollCallPreviewAddStudentsDTO(raw map[string]any) model.GroupClassUnscheduledRollCallPreviewAddStudentsDTO {
+	return model.GroupClassUnscheduledRollCallPreviewAddStudentsDTO{
+		ClassID:     asString(raw["classId"]),
+		StartTime:   asString(raw["startTime"]),
+		EndTime:     asString(raw["endTime"]),
+		StudentType: asInt(raw["studentType"], 0),
+		StudentIDs:  asStringSlice(raw["studentIds"]),
 	}
 }
 

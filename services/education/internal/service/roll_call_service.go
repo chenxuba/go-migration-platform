@@ -103,6 +103,30 @@ func (svc *Service) GetRollCallTeachingRecordStudentList(userID int64, dto model
 	return svc.repo.GetRollCallTeachingRecordStudentList(context.Background(), instID, dto)
 }
 
+func (svc *Service) GetGroupClassUnscheduledRollCallContext(userID int64, dto model.GroupClassUnscheduledRollCallContextQueryDTO) (model.GroupClassUnscheduledRollCallContextResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallContextResult{}, err
+	}
+	return svc.repo.GetGroupClassUnscheduledRollCallContext(context.Background(), instID, dto)
+}
+
+func (svc *Service) PageGroupClassUnscheduledRollCallStudentCandidates(userID int64, dto model.GroupClassUnscheduledRollCallStudentCandidateQueryDTO) (model.TeachingScheduleStudentCandidatePagedResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	return svc.repo.PageGroupClassUnscheduledRollCallStudentCandidates(context.Background(), instID, dto)
+}
+
+func (svc *Service) PreviewAddGroupClassUnscheduledRollCallStudents(userID int64, dto model.GroupClassUnscheduledRollCallPreviewAddStudentsDTO) (model.GroupClassUnscheduledRollCallPreviewAddStudentsResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.GroupClassUnscheduledRollCallPreviewAddStudentsResult{}, err
+	}
+	return svc.repo.PreviewAddGroupClassUnscheduledRollCallStudents(context.Background(), instID, dto)
+}
+
 func (svc *Service) GetRollCallStudentLeaveCount(userID int64, dto model.RollCallStudentLeaveCountQueryDTO) ([]model.RollCallStudentLeaveCountVO, error) {
 	instID, err := svc.rollCallInstID(userID)
 	if err != nil {

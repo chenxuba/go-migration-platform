@@ -3,6 +3,7 @@ package model
 type PageRequestModel struct {
 	PageIndex int `json:"pageIndex"`
 	PageSize  int `json:"pageSize"`
+	SkipCount int `json:"skipCount"`
 }
 
 type SortModel struct {

@@ -32,6 +32,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  unscheduledContext: {
+    type: Object,
+    default: null,
+  },
 })
 const emit = defineEmits(['update:open', 'updated', 'confirmed'])
 const openDrawer = computed({
@@ -39,6 +43,22 @@ const openDrawer = computed({
   set: value => emit('update:open', value),
 })
 const currentScheduleId = computed(() => String(props.scheduleId || '').trim())
+const currentUnscheduledContext = computed(() => props.unscheduledContext || null)
+const hasUnscheduledContext = computed(() =>
+  Boolean(currentUnscheduledContext.value?.detail && currentUnscheduledContext.value?.record),
+)
+const isUnscheduledMode = computed(() => hasUnscheduledContext.value && !currentScheduleId.value)
+const supportsScheduleMutations = computed(() => !isUnscheduledMode.value)
+const currentUnscheduledContextKey = computed(() => {
+  const detail = currentUnscheduledContext.value?.detail || {}
+  const meta = currentUnscheduledContext.value?.record?.data || {}
+  return [
+    String(detail.classId || meta.sourceId || '').trim(),
+    String(detail.lessonId || meta.lessonId || '').trim(),
+    String(meta.startTime || '').trim(),
+    String(meta.endTime || '').trim(),
+  ].join('#')
+})
 const currentLessonDay = computed(() => {
   const text = String(props.lessonDay || '').trim()
   if (!text)
@@ -61,6 +81,8 @@ const loading = ref(false)
 const classTimetableDetail = ref(null)
 const teachingRecordResult = ref(null)
 const data = ref([])
+const unscheduledExtraStudents = ref([])
+const activeUnscheduledContextKey = ref('')
 const rollCallChanged = ref(false)
 let loadSeq = 0
 // 定义列
@@ -462,6 +484,7 @@ function mapStudentRow(item, leaveCountMap, tuitionExtraMap) {
     defaultAttendanceStatus,
     canSwitchAccount: !locked && Boolean(extra.mutilTuition),
     canRemove: !locked,
+    unscheduledLocalAdded: Boolean(item.unscheduledLocalAdded),
     hasTeachingRecord,
     locked,
     autoRollCall,
@@ -493,9 +516,9 @@ function syncRecordTuitionAccount(record, acc) {
   record.recordAttendance = mode === 1
 }
 function studentAccountOverrideKey(studentId) {
+  const contextKey = String(currentScheduleId.value || '').trim() || String(currentUnscheduledContextKey.value || '').trim() || String(currentLessonDay.value || '').trim()
   return [
-    String(currentScheduleId.value || '').trim(),
-    String(currentLessonDay.value || '').trim(),
+    contextKey,
     String(studentId || '').trim(),
   ].join('#')
 }
@@ -512,6 +535,14 @@ function getStudentAccountOverride(studentId) {
   if (!key)
     return null
   return switchedAccountOverrideMap.value.get(key) || null
+}
+function deleteStudentAccountOverride(studentId) {
+  const key = studentAccountOverrideKey(studentId)
+  if (!key || !switchedAccountOverrideMap.value.has(key))
+    return
+  const nextMap = new Map(switchedAccountOverrideMap.value)
+  nextMap.delete(key)
+  switchedAccountOverrideMap.value = nextMap
 }
 function applySwitchedAccountOverrides(rows) {
   rows.forEach((row) => {
@@ -531,23 +562,132 @@ function getRemoveDisabledReason(record) {
 function clearSwitchedAccountOverrides() {
   switchedAccountOverrideMap.value = new Map()
 }
+function normalizeRollCallStudentId(student) {
+  return String(student?.studentId || '').trim()
+}
+function normalizeUnscheduledExtraStudents(students) {
+  if (!Array.isArray(students))
+    return []
+  return students
+    .map(item => ({
+      ...item,
+      unscheduledLocalAdded: true,
+    }))
+    .filter(item => normalizeRollCallStudentId(item))
+}
+function ensureUnscheduledContextState() {
+  if (!isUnscheduledMode.value) {
+    activeUnscheduledContextKey.value = ''
+    unscheduledExtraStudents.value = []
+    return
+  }
+  const nextKey = String(currentUnscheduledContextKey.value || '').trim()
+  if (nextKey && nextKey !== activeUnscheduledContextKey.value)
+    unscheduledExtraStudents.value = []
+  activeUnscheduledContextKey.value = nextKey
+}
+function buildMergedUnscheduledRecord(record) {
+  if (!isUnscheduledMode.value)
+    return record
+  const baseStudents = Array.isArray(record?.students) ? record.students : []
+  const mergedStudents = baseStudents.map(item => ({ ...item }))
+  const existingStudentIds = new Set(mergedStudents.map(item => normalizeRollCallStudentId(item)).filter(Boolean))
+  unscheduledExtraStudents.value.forEach((item) => {
+    const studentId = normalizeRollCallStudentId(item)
+    if (!studentId || existingStudentIds.has(studentId))
+      return
+    mergedStudents.push({ ...item })
+    existingStudentIds.add(studentId)
+  })
+  return {
+    ...record,
+    students: mergedStudents,
+  }
+}
+function mergeUnscheduledExtraStudents(students) {
+  const nextStudents = normalizeUnscheduledExtraStudents(students)
+  if (!nextStudents.length)
+    return
+  const merged = [...unscheduledExtraStudents.value]
+  const existingStudentIds = new Set(merged.map(item => normalizeRollCallStudentId(item)).filter(Boolean))
+  nextStudents.forEach((item) => {
+    const studentId = normalizeRollCallStudentId(item)
+    if (!studentId || existingStudentIds.has(studentId))
+      return
+    merged.push(item)
+    existingStudentIds.add(studentId)
+  })
+  unscheduledExtraStudents.value = merged
+}
+function removeUnscheduledExtraStudent(studentId) {
+  const normalizedStudentId = String(studentId || '').trim()
+  if (!normalizedStudentId)
+    return
+  unscheduledExtraStudents.value = unscheduledExtraStudents.value.filter(item => normalizeRollCallStudentId(item) !== normalizedStudentId)
+  deleteStudentAccountOverride(normalizedStudentId)
+}
 function shouldSkipManualErrorMessage(error) {
   return Number(error?.response?.status || 0) === 400
 }
+function resetDrawerState() {
+  classTimetableDetail.value = null
+  teachingRecordResult.value = null
+  data.value = []
+  unscheduledExtraStudents.value = []
+  activeUnscheduledContextKey.value = ''
+  headerStatus.value = ''
+  closeSwitchAccountModal()
+  clearSwitchedAccountOverrides()
+}
+async function applyRollCallContext(detail, record, seq) {
+  const effectiveRecord = buildMergedUnscheduledRecord(record)
+  classTimetableDetail.value = detail
+  teachingRecordResult.value = effectiveRecord
+  const studentIds = Array.isArray(effectiveRecord?.students) ? effectiveRecord.students.map(item => String(item.studentId || '')).filter(Boolean) : []
+  const lessonId = String(effectiveRecord?.data?.lessonId || detail?.lessonId || '')
+  const [leaveCountRes, tuitionExtraRes] = await Promise.all([
+    getRollCallStudentLeaveCountApi({
+      studentIds,
+      lessonId,
+    }),
+    getRollCallStudentTuitionExtraInfoApi({
+      studentIds,
+      lessonId,
+    }),
+  ])
+  if (seq !== loadSeq)
+    return
+  if (leaveCountRes.code !== 200)
+    throw new Error(leaveCountRes.message || '加载请假次数失败')
+  if (tuitionExtraRes.code !== 200)
+    throw new Error(tuitionExtraRes.message || '加载扣费补充信息失败')
+
+  const leaveCountMap = new Map((Array.isArray(leaveCountRes.result) ? leaveCountRes.result : []).map(item => [String(item.studentId || ''), Number(item.leaveCount || 0)]))
+  const tuitionExtraMap = new Map((Array.isArray(tuitionExtraRes.result) ? tuitionExtraRes.result : []).map(item => [String(item.studentId || ''), item]))
+  data.value = applySwitchedAccountOverrides((Array.isArray(effectiveRecord?.students) ? effectiveRecord.students : []).map(item =>
+    mapStudentRow(item, leaveCountMap, tuitionExtraMap),
+  ))
+  syncHeaderStatus()
+}
 async function loadDetail() {
-  if (!openDrawer.value || !currentScheduleId.value) {
-    classTimetableDetail.value = null
-    teachingRecordResult.value = null
-    data.value = []
-    headerStatus.value = ''
-    closeSwitchAccountModal()
-    clearSwitchedAccountOverrides()
+  if (!openDrawer.value || (!currentScheduleId.value && !hasUnscheduledContext.value)) {
+    resetDrawerState()
     return
   }
 
   const seq = ++loadSeq
   loading.value = true
   try {
+    if (hasUnscheduledContext.value) {
+      ensureUnscheduledContextState()
+      await applyRollCallContext(
+        currentUnscheduledContext.value.detail,
+        currentUnscheduledContext.value.record,
+        seq,
+      )
+      return
+    }
+
     const classTimetableRes = await getRollCallClassTimetableApi({
       id: currentScheduleId.value,
       lessonDay: currentLessonDay.value || undefined,
@@ -557,19 +697,18 @@ async function loadDetail() {
     if (classTimetableRes.code !== 200 || !classTimetableRes.result?.detail)
       throw new Error(classTimetableRes.message || '加载点名课表失败')
 
-    classTimetableDetail.value = classTimetableRes.result.detail
-    const lessonDay = String(classTimetableRes.result.detail.lessonDays?.[0]?.lessonDay || currentLessonDay.value || '')
-    const classId = String(classTimetableRes.result.detail.classId || '')
-    const lessonId = String(classTimetableRes.result.detail.lessonId || '')
-
+    const detail = classTimetableRes.result.detail
+    const lessonDay = String(detail.lessonDays?.[0]?.lessonDay || currentLessonDay.value || '')
+    const classId = String(detail.classId || '')
+    const lessonId = String(detail.lessonId || '')
     const recordRes = await getRollCallTeachingRecordStudentListApi({
       timetableSourceId: currentScheduleId.value,
       timetableSourceType: 1,
       classId,
       lessonId,
       one2OneId: '0',
-      startDate: String(classTimetableRes.result.detail.startDate || '0001-01-01T00:00:00'),
-      endDate: String(classTimetableRes.result.detail.endDate || '0001-01-01T00:00:00'),
+      startDate: String(detail.startDate || '0001-01-01T00:00:00'),
+      endDate: String(detail.endDate || '0001-01-01T00:00:00'),
       lessonDay,
     })
     if (seq !== loadSeq)
@@ -577,39 +716,12 @@ async function loadDetail() {
     if (recordRes.code !== 200 || !recordRes.result)
       throw new Error(recordRes.message || '加载点名学员失败')
 
-    teachingRecordResult.value = recordRes.result
-    const studentIds = Array.isArray(recordRes.result.students) ? recordRes.result.students.map(item => String(item.studentId || '')).filter(Boolean) : []
-    const [leaveCountRes, tuitionExtraRes] = await Promise.all([
-      getRollCallStudentLeaveCountApi({
-        studentIds,
-        lessonId,
-      }),
-      getRollCallStudentTuitionExtraInfoApi({
-        studentIds,
-        lessonId,
-      }),
-    ])
-    if (seq !== loadSeq)
-      return
-    if (leaveCountRes.code !== 200)
-      throw new Error(leaveCountRes.message || '加载请假次数失败')
-    if (tuitionExtraRes.code !== 200)
-      throw new Error(tuitionExtraRes.message || '加载扣费补充信息失败')
-
-    const leaveCountMap = new Map((Array.isArray(leaveCountRes.result) ? leaveCountRes.result : []).map(item => [String(item.studentId || ''), Number(item.leaveCount || 0)]))
-    const tuitionExtraMap = new Map((Array.isArray(tuitionExtraRes.result) ? tuitionExtraRes.result : []).map(item => [String(item.studentId || ''), item]))
-    data.value = applySwitchedAccountOverrides((Array.isArray(recordRes.result.students) ? recordRes.result.students : []).map(item =>
-      mapStudentRow(item, leaveCountMap, tuitionExtraMap),
-    ))
-    syncHeaderStatus()
+    await applyRollCallContext(detail, recordRes.result, seq)
   }
   catch (error) {
     if (seq !== loadSeq)
       return
-    classTimetableDetail.value = null
-    teachingRecordResult.value = null
-    data.value = []
-    headerStatus.value = ''
+    resetDrawerState()
     messageService.error(error?.response?.data?.message || error?.message || '加载点名详情失败')
   }
   finally {
@@ -620,6 +732,10 @@ async function loadDetail() {
 // 编辑上课信息
 const editClassInfoModal = ref(false)
 function handleEditClassInfo() {
+  if (!supportsScheduleMutations.value) {
+    messageService.info('未排课点名请返回上一步调整上课信息')
+    return
+  }
   editClassInfoModal.value = true
 }
 
@@ -630,8 +746,8 @@ const addStudentType = ref(4)
 // 添加学员
 function handleAddStudent({ key }) {
   if (key === '1') {
-    messageService.info('补课学员功能暂未开发')
-    return
+    addStudentModalTitle.value = '添加补课学员'
+    addStudentType.value = 4
   }
   else if (key === '2') {
     addStudentModalTitle.value = '添加临时学员'
@@ -643,7 +759,12 @@ function handleAddStudent({ key }) {
   }
   addStudentModal.value = true
 }
-async function handleAddStudentSuccess() {
+async function handleAddStudentSuccess(payload) {
+  if (isUnscheduledMode.value) {
+    mergeUnscheduledExtraStudents(payload?.students)
+    await loadDetail()
+    return
+  }
   rollCallChanged.value = true
   emit('updated')
   await loadDetail()
@@ -722,6 +843,7 @@ function buildRollCallConfirmPayload() {
     teachingContentImages: [],
     timetableSourceType: Number(meta.timetableSourceType || 0),
     timetableSourceId: String(meta.timetableSourceId || currentScheduleId.value || ''),
+    teachingRecordId: String(meta.teachingRecordId || ''),
     sourceId: String(meta.sourceId || detail.classId || ''),
     sourceType: Number(meta.sourceType || 0),
     lessonId: String(meta.lessonId || detail.lessonId || ''),
@@ -799,6 +921,7 @@ async function handleConfirmRollCall() {
         endTime: payload.endTime,
         teacherId: String(mainTeacher.teacherId || ''),
         timetableSourceId: String(payload.timetableSourceId || ''),
+        excludeTeachingRecordId: String(payload.teachingRecordId || ''),
       })
       if (checkRes.code !== 200)
         throw new Error(checkRes.message || '上课教师时间冲突校验失败')
@@ -919,6 +1042,24 @@ function handleRemoveStudent(record) {
     messageService.warning(disabledReason)
     return
   }
+  if (!supportsScheduleMutations.value) {
+    if (!record?.unscheduledLocalAdded) {
+      messageService.info('未排课点名仅支持移出本次新增学员')
+      return
+    }
+    Modal.confirm({
+      title: '移出本节学员',
+      content: `移出后仅影响当前未排课点名抽屉，确认移出“${name}”吗？`,
+      okText: '确认移出',
+      cancelText: '取消',
+      onOk() {
+        removeUnscheduledExtraStudent(studentId)
+        messageService.success(`已将${name}移出本次点名`)
+        loadDetail()
+      },
+    })
+    return
+  }
   if (!scheduleId || !studentId) {
     messageService.warning('当前学员缺少移出标识，请刷新后重试')
     return
@@ -941,6 +1082,7 @@ function handleRemoveStudent(record) {
         })
         if (res.code !== 200)
           throw new Error(res.message || '移出本节失败')
+        deleteStudentAccountOverride(studentId)
         messageService.success(`已将${name}移出本节`)
         rollCallChanged.value = true
         emit('updated')
@@ -960,13 +1102,13 @@ function handleRemoveStudent(record) {
 }
 
 useStudentListRefresh(() => {
-  if (openDrawer.value && currentScheduleId.value) {
+  if (openDrawer.value && (currentScheduleId.value || hasUnscheduledContext.value)) {
     loadDetail()
   }
 })
 
 watch(
-  () => `${openDrawer.value}|${currentScheduleId.value}|${currentLessonDay.value}`,
+  () => `${openDrawer.value}|${currentScheduleId.value}|${currentLessonDay.value}|${String(currentUnscheduledContext.value?.record?.data?.sourceId || '')}|${String(currentUnscheduledContext.value?.record?.data?.startTime || '')}|${String(currentUnscheduledContext.value?.record?.data?.endTime || '')}`,
   () => {
     loadDetail()
   },
@@ -1046,7 +1188,7 @@ watch(
           <a-descriptions-item label="本次上课">
             {{ teacherClassTimeText }}
           </a-descriptions-item>
-          <a-descriptions-item>
+          <a-descriptions-item v-if="supportsScheduleMutations">
             <span class="text-#06f cursor-pointer" @click="handleEditClassInfo">编辑上课信息</span>
           </a-descriptions-item>
         </a-descriptions>
@@ -1329,7 +1471,7 @@ watch(
             </div>
             <div v-else-if="column.dataIndex === 'action'">
               <a-space>
-                <a v-if="record.canRemove" @click="handleRemoveStudent(record)">移出</a>
+                <a v-if="record.canRemove && (supportsScheduleMutations || record.unscheduledLocalAdded)" @click="handleRemoveStudent(record)">移出</a>
               </a-space>
             </div>
           </template>
@@ -1461,6 +1603,14 @@ watch(
       :title="addStudentModalTitle"
       :schedule-id="currentScheduleId"
       :student-type="addStudentType"
+      :unscheduled-query="isUnscheduledMode
+        ? {
+            classId: String(classTimetableDetail?.classId || teachingRecordResult?.data?.sourceId || ''),
+            startTime: String(teachingRecordResult?.data?.startTime || ''),
+            endTime: String(teachingRecordResult?.data?.endTime || ''),
+            currentStudentIds: data.map(item => String(item?.id || '')).filter(Boolean),
+          }
+        : null"
       @success="handleAddStudentSuccess"
     />
     <!-- 批量编辑 -->
