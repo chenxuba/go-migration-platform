@@ -11,6 +11,7 @@ import {
   type GroupClassStudentTeachingRecordCountItem,
 } from '@/api/edu-center/group-class'
 import ClassAddStudentModal from './class-add-student-modal.vue'
+import ClassMoveStudentModal from './class-move-student-modal.vue'
 import { ParentRelationshipLabel } from '@/enums'
 import messageService from '@/utils/messageService'
 
@@ -41,7 +42,9 @@ const emit = defineEmits(['changed'])
 const checked = ref(false)
 const loading = ref(false)
 const addStudentVisible = ref(false)
+const moveStudentVisible = ref(false)
 const removeStudentVisible = ref(false)
+const movingStudent = ref<GroupClassStudentPagedItem | null>(null)
 const removing = ref(false)
 const removingStudent = ref<GroupClassStudentPagedItem | null>(null)
 const dataSource = ref<GroupClassStudentPagedItem[]>([])
@@ -402,8 +405,9 @@ function handleBatchAction() {
   messageService.info('批量操作待实现')
 }
 
-function handleMoveClass() {
-  messageService.info('调至其他班待实现')
+function handleMoveClass(record: GroupClassStudentPagedItem | Record<string, any>) {
+  movingStudent.value = record as GroupClassStudentPagedItem
+  moveStudentVisible.value = true
 }
 
 function handleRemoveClass(record: GroupClassStudentPagedItem | Record<string, any>) {
@@ -477,6 +481,15 @@ function handleTableChange(pageInfo: { current?: number, pageSize?: number }) {
 
 function handleAddStudentSuccess() {
   addStudentVisible.value = false
+  emit('changed')
+  loadStudentTable()
+}
+
+function handleMoveStudentSuccess() {
+  if (dataSource.value.length === 1 && pagination.current > 1)
+    pagination.current -= 1
+  moveStudentVisible.value = false
+  movingStudent.value = null
   emit('changed')
   loadStudentTable()
 }
@@ -700,7 +713,7 @@ watch(
 
             <template v-else-if="column.key === 'action'">
               <a-space v-if="Number(record.status || 0) !== 3" :size="12">
-                <a @click="handleMoveClass">调至其他班</a>
+                <a @click="handleMoveClass(record)">调至其他班</a>
                 <a @click="handleRemoveClass(record)">移出本班</a>
               </a-space>
               <span v-else class="text-#bbb">-</span>
@@ -716,6 +729,15 @@ watch(
         :class-id="classId"
         :lesson-id="lessonId"
         @success="handleAddStudentSuccess"
+      />
+
+      <ClassMoveStudentModal
+        v-model:open="moveStudentVisible"
+        :current-class-id="classId"
+        :lesson-id="lessonId"
+        :lesson-name="lessonName"
+        :student="movingStudent"
+        @success="handleMoveStudentSuccess"
       />
 
       <a-modal

@@ -452,3 +452,25 @@ func (handler *Handler) removeGroupClassStudent(w http.ResponseWriter, r *http.R
 	}
 	httpx.WriteJSON(w, http.StatusOK, true, ctx.RequestID)
 }
+
+func (handler *Handler) moveGroupClassStudent(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var dto model.GroupClassMoveStudentDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.MoveGroupClassStudent(claims.UserID, dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, true, ctx.RequestID)
+}

@@ -430,3 +430,11 @@ export function removeGroupClassStudentApi(data: {
 }) {
   return usePost<boolean>('/api/v1/group-classes/remove-student', data)
 }
+
+export function moveGroupClassStudentApi(data: {
+  fromClassId: string
+  toClassId: string
+  studentId: string
+}) {
+  return usePost<boolean>('/api/v1/group-classes/move-student', data)
+}

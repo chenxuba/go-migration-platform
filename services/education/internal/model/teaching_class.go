@@ -624,6 +624,12 @@ type GroupClassRemoveStudentDTO struct {
 	StudentID string `json:"studentId"`
 }
 
+type GroupClassMoveStudentDTO struct {
+	FromClassID string `json:"fromClassId"`
+	ToClassID   string `json:"toClassId"`
+	StudentID   string `json:"studentId"`
+}
+
 type BatchAssignGroupClassStudentItem struct {
 	StudentID        string `json:"studentId"`
 	TuitionAccountID string `json:"tuitionAccountId"`

@@ -808,6 +808,23 @@ func (svc *Service) RemoveGroupClassStudent(userID int64, dto model.GroupClassRe
 	return svc.repo.RemoveGroupClassStudent(context.Background(), instID, operatorID, dto)
 }
 
+func (svc *Service) MoveGroupClassStudent(userID int64, dto model.GroupClassMoveStudentDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(dto.FromClassID) == "" {
+		return errors.New("fromClassId 不能为空")
+	}
+	if strings.TrimSpace(dto.ToClassID) == "" {
+		return errors.New("toClassId 不能为空")
+	}
+	if strings.TrimSpace(dto.StudentID) == "" {
+		return errors.New("studentId 不能为空")
+	}
+	return svc.repo.MoveGroupClassStudent(context.Background(), instID, operatorID, dto)
+}
+
 // PageTuitionAccountsByLessonID 对标 TuitionAccount/GetTuitionAccountListByLessonId（集体班添加学员）
 func (svc *Service) PageTuitionAccountsByLessonID(userID int64, body model.TuitionAccountListByLessonIDBody) (model.TuitionAccountListByLessonIDResult, error) {
 	var zero model.TuitionAccountListByLessonIDResult
