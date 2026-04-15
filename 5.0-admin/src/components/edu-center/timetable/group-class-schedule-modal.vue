@@ -138,9 +138,11 @@ const props = withDefaults(defineProps<{
   open: boolean
   mode?: 'create' | 'editBatch'
   batchPlanPreset?: GroupClassBatchPlanModalPreset | null
+  initialGroupClassId?: string
 }>(), {
   mode: 'create',
   batchPlanPreset: null,
+  initialGroupClassId: '',
 })
 
 const emit = defineEmits<{
@@ -1995,6 +1997,8 @@ watch(modalOpen, async (value) => {
     await loadEffectivePeriodConfig()
     if (props.batchPlanPreset)
       await applyBatchPlanPreset(props.batchPlanPreset)
+    else if (String(props.initialGroupClassId || '').trim())
+      selectedGroupClassId.value = String(props.initialGroupClassId || '').trim()
     await nextTick()
     scrollPlannerShellToTop()
     requestAnimationFrame(() => scrollPlannerShellToTop())
@@ -2013,6 +2017,17 @@ watch(
     if (!open || !preset || !groupClassRecords.value.length)
       return
     await applyBatchPlanPreset(preset)
+  },
+)
+
+watch(
+  () => [modalOpen.value, props.initialGroupClassId, !!props.batchPlanPreset, groupClassRecords.value.length] as const,
+  ([open, initialGroupClassId, hasPreset, optionCount]) => {
+    if (!open || hasPreset || optionCount <= 0)
+      return
+    const normalizedId = String(initialGroupClassId || '').trim()
+    if (normalizedId && selectedGroupClassId.value !== normalizedId)
+      selectedGroupClassId.value = normalizedId
   },
 )
 </script>

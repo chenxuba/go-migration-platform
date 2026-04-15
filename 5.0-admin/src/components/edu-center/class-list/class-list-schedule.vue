@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue'
 import scheduleClassRepeatImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleClassSingleImage from '@/assets/images/timetable/schedule-free.png'
 import { getGroupClassDrawerSchedulesApi, type GroupClassDrawerScheduleItem } from '@/api/edu-center/group-class'
+import GroupClassScheduleModal from '@/components/edu-center/timetable/group-class-schedule-modal.vue'
 import SmartTimetableScheduleDetailDrawer from '@/components/edu-center/timetable/smart-timetable-schedule-detail-drawer.vue'
 import messageService from '@/utils/messageService'
 
@@ -68,6 +69,7 @@ const loading = ref(false)
 const dataSource = ref<GroupClassDrawerScheduleItem[]>([])
 const detailOpen = ref(false)
 const detailState = ref<Record<string, any> | null>(null)
+const scheduleModalOpen = ref(false)
 
 const totalWidth = computed(() =>
   columns.reduce((sum, item) => sum + Number(item.width || 0), 0),
@@ -111,7 +113,11 @@ function handleViewDetail(record: GroupClassDrawerScheduleItem | Record<string, 
 }
 
 function handleQuickSchedule() {
-  messageService.info('一键排课功能待接入')
+  if (!String(props.classId || '').trim()) {
+    messageService.warning('当前班级信息不完整，暂不可排课')
+    return
+  }
+  scheduleModalOpen.value = true
 }
 
 watch(
@@ -199,6 +205,11 @@ watch(
     <SmartTimetableScheduleDetailDrawer
       v-model:open="detailOpen"
       :detail="detailState"
+      @updated="loadList"
+    />
+    <GroupClassScheduleModal
+      v-model:open="scheduleModalOpen"
+      :initial-group-class-id="String(props.classId || '')"
       @updated="loadList"
     />
   </div>
