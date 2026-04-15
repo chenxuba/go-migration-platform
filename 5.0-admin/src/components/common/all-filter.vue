@@ -177,6 +177,14 @@ const props = defineProps({
     type: String,
     default: '搜索纬度',
   },
+  orNotFenClassLabel: {
+    type: String,
+    default: '是否分班',
+  },
+  orNotFenClassOptionsOverride: {
+    type: Array,
+    default: () => [],
+  },
   createUserLabel: {
     type: String,
     default: '创建人',
@@ -1495,6 +1503,8 @@ const selectCurrentStatusVals = ref([])
 
 // 是否分班
 const orNotFenClassOptions = computed(() => {
+  if (Array.isArray(props.orNotFenClassOptionsOverride) && props.orNotFenClassOptionsOverride.length > 0)
+    return props.orNotFenClassOptionsOverride
   if (props.oneToOneMode) {
     return [
       { id: 0, value: '未分配' },
@@ -3271,7 +3281,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'orNotFenClass',
-      label: props.oneToOneMode ? '班主任分配状态' : '是否分班',
+      label: props.oneToOneMode ? '班主任分配状态' : props.orNotFenClassLabel,
       show: props.displayArray.includes('orNotFenClass'),
       values: orNotFenClassOptions.value.filter(opt =>
         selectOrNotFenClassVals.value.includes(opt.id),
@@ -6277,7 +6287,7 @@ defineExpose({
 
               <!-- 是否分班 -->
               <checkbox-filter v-if="filterType === 'orNotFenClass'" :ref="(el) => handleRef(el, 'orNotFenClass')"
-                v-model:checked-values="selectOrNotFenClassVals" :options="orNotFenClassOptions" :label="props.oneToOneMode ? '班主任分配状态' : '是否分班'"
+                v-model:checked-values="selectOrNotFenClassVals" :options="orNotFenClassOptions" :label="props.oneToOneMode ? '班主任分配状态' : props.orNotFenClassLabel"
                 type="checkbox" @change="handleOrNotFenClassChange" />
 
               <!-- 渠道分类 -->

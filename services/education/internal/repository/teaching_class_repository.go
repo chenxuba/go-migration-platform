@@ -2239,6 +2239,80 @@ func (repo *Repository) CloseGroupClassOnly(ctx context.Context, instID, operato
 	return tx.Commit()
 }
 
+func (repo *Repository) BatchCloseGroupClasses(ctx context.Context, instID, operatorID int64, classIDs []int64) error {
+	classIDs = uniquePositiveInt64s(classIDs)
+	if len(classIDs) == 0 {
+		return nil
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, status
+		FROM teaching_class
+		WHERE inst_id = ? AND class_type = ? AND del_flag = 0
+		  AND id IN (`+sqlPlaceholders(len(classIDs))+`)
+	`, append([]any{instID, model.TeachingClassTypeNormal}, int64SliceToAny(classIDs)...)...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	activeIDs := make([]int64, 0, len(classIDs))
+	for rows.Next() {
+		var (
+			classID int64
+			status  int
+		)
+		if err := rows.Scan(&classID, &status); err != nil {
+			return err
+		}
+		if status == model.TeachingClassStatusActive {
+			activeIDs = append(activeIDs, classID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(activeIDs) == 0 {
+		return errors.New("请选择开班中的班级")
+	}
+
+	for _, classID := range activeIDs {
+		if err := repo.cancelUnsignedGroupClassSchedulesTx(ctx, tx, instID, operatorID, classID); err != nil {
+			return err
+		}
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class
+		SET status = ?, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND class_type = ? AND del_flag = 0 AND status = ?
+		  AND id IN (`+sqlPlaceholders(len(activeIDs))+`)
+	`, append([]any{
+		model.TeachingClassStatusClosed,
+		operatorID,
+		instID,
+		model.TeachingClassTypeNormal,
+		model.TeachingClassStatusActive,
+	}, int64SliceToAny(activeIDs)...)...)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected <= 0 {
+		return errors.New("请选择开班中的班级")
+	}
+	return tx.Commit()
+}
+
 // ReopenGroupClassOnly 将已结班的班课恢复为开班中
 func (repo *Repository) ReopenGroupClassOnly(ctx context.Context, instID, operatorID, classID int64) error {
 	var currentStatus int

@@ -1912,6 +1912,314 @@ func (repo *Repository) loadGroupClassTeachers(ctx context.Context, instID int64
 	return out, rows.Err()
 }
 
+type groupClassBatchTeacherState struct {
+	Status           int
+	DefaultTeacherID int64
+	TeacherIDs       []int64
+}
+
+func (repo *Repository) loadGroupClassBatchTeacherStatesTx(ctx context.Context, tx *sql.Tx, instID int64, classIDs []int64) (map[int64]*groupClassBatchTeacherState, error) {
+	result := make(map[int64]*groupClassBatchTeacherState)
+	classIDs = uniquePositiveInt64s(classIDs)
+	if len(classIDs) == 0 {
+		return result, nil
+	}
+
+	classRows, err := tx.QueryContext(ctx, `
+		SELECT id, status, IFNULL(default_teacher_id, 0)
+		FROM teaching_class
+		WHERE inst_id = ? AND class_type = ? AND del_flag = 0
+		  AND id IN (`+sqlPlaceholders(len(classIDs))+`)
+	`, append([]any{instID, model.TeachingClassTypeNormal}, int64SliceToAny(classIDs)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer classRows.Close()
+	for classRows.Next() {
+		var (
+			classID          int64
+			status           int
+			defaultTeacherID int64
+		)
+		if err := classRows.Scan(&classID, &status, &defaultTeacherID); err != nil {
+			return nil, err
+		}
+		result[classID] = &groupClassBatchTeacherState{
+			Status:           status,
+			DefaultTeacherID: defaultTeacherID,
+			TeacherIDs:       []int64{},
+		}
+	}
+	if err := classRows.Err(); err != nil {
+		return nil, err
+	}
+
+	teacherRows, err := tx.QueryContext(ctx, `
+		SELECT teaching_class_id, teacher_id
+		FROM teaching_class_teacher
+		WHERE inst_id = ? AND del_flag = 0
+		  AND teaching_class_id IN (`+sqlPlaceholders(len(classIDs))+`)
+		ORDER BY is_default DESC, id ASC
+	`, append([]any{instID}, int64SliceToAny(classIDs)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer teacherRows.Close()
+	for teacherRows.Next() {
+		var (
+			classID   int64
+			teacherID int64
+		)
+		if err := teacherRows.Scan(&classID, &teacherID); err != nil {
+			return nil, err
+		}
+		state := result[classID]
+		if state == nil {
+			continue
+		}
+		state.TeacherIDs = append(state.TeacherIDs, teacherID)
+	}
+	if err := teacherRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (repo *Repository) rewriteGroupClassTeachersTx(ctx context.Context, tx *sql.Tx, instID, operatorID, classID int64, teacherIDs []int64, defaultTeacherID int64, operateTime time.Time) error {
+	teacherIDs = uniquePositiveInt64s(teacherIDs)
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE teaching_class_teacher
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND teaching_class_id = ? AND del_flag = 0
+	`, operatorID, instID, classID); err != nil {
+		return err
+	}
+
+	for _, teacherID := range teacherIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO teaching_class_teacher (
+				uuid, version, inst_id, teaching_class_id, teacher_id, status, is_default,
+				create_id, create_time, update_id, update_time, del_flag
+			) VALUES (
+				UUID(), 0, ?, ?, ?, 1, ?, ?, ?, ?, ?, 0
+			)
+			ON DUPLICATE KEY UPDATE
+				status = VALUES(status),
+				is_default = VALUES(is_default),
+				del_flag = 0,
+				update_id = VALUES(update_id),
+				update_time = VALUES(update_time)
+		`, instID, classID, teacherID, boolToTinyInt(defaultTeacherID > 0 && teacherID == defaultTeacherID), operatorID, operateTime, operatorID, operateTime); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) BatchAssignGroupClassTeacher(ctx context.Context, instID, operatorID int64, classTeacherIDs []int64, classIDs []int64) error {
+	classTeacherIDs = uniquePositiveInt64s(classTeacherIDs)
+	classIDs = uniquePositiveInt64s(classIDs)
+	if len(classTeacherIDs) == 0 {
+		return errors.New("请选择班主任")
+	}
+	if len(classIDs) == 0 {
+		return nil
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	states, err := repo.loadGroupClassBatchTeacherStatesTx(ctx, tx, instID, classIDs)
+	if err != nil {
+		return err
+	}
+
+	operateTime := time.Now()
+	updatedCount := 0
+	for _, classID := range classIDs {
+		state := states[classID]
+		if state == nil || state.Status != model.TeachingClassStatusActive {
+			continue
+		}
+
+		finalDefaultTeacherID := state.DefaultTeacherID
+		finalTeacherIDs := make([]int64, 0, len(state.TeacherIDs)+len(classTeacherIDs)+1)
+		finalTeacherIDs = append(finalTeacherIDs, state.TeacherIDs...)
+		finalTeacherIDs = append(finalTeacherIDs, classTeacherIDs...)
+		finalTeacherIDs = mergeAdvisorTeachersWithDefault(finalTeacherIDs, finalDefaultTeacherID)
+
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_class
+			SET advisor_id = ?, default_teacher_id = ?, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0 AND status = ?
+		`, classTeacherIDs[0], finalDefaultTeacherID, operatorID, classID, instID, model.TeachingClassTypeNormal, model.TeachingClassStatusActive); err != nil {
+			return err
+		}
+
+		if err := repo.rewriteGroupClassTeachersTx(ctx, tx, instID, operatorID, classID, finalTeacherIDs, finalDefaultTeacherID, operateTime); err != nil {
+			return err
+		}
+		updatedCount++
+	}
+
+	if updatedCount == 0 {
+		return errors.New("请选择开班中的班级")
+	}
+	return tx.Commit()
+}
+
+func (repo *Repository) BatchReplaceGroupClassTeacher(ctx context.Context, instID, operatorID int64, classTeacherIDs []int64, classIDs []int64) error {
+	classTeacherIDs = uniquePositiveInt64s(classTeacherIDs)
+	classIDs = uniquePositiveInt64s(classIDs)
+	if len(classTeacherIDs) == 0 {
+		return errors.New("请选择班主任")
+	}
+	if len(classIDs) == 0 {
+		return nil
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	states, err := repo.loadGroupClassBatchTeacherStatesTx(ctx, tx, instID, classIDs)
+	if err != nil {
+		return err
+	}
+
+	operateTime := time.Now()
+	updatedCount := 0
+	for _, classID := range classIDs {
+		state := states[classID]
+		if state == nil || state.Status != model.TeachingClassStatusActive {
+			continue
+		}
+
+		finalDefaultTeacherID := state.DefaultTeacherID
+		if finalDefaultTeacherID > 0 {
+			keepCurrentDefault := false
+			for _, teacherID := range classTeacherIDs {
+				if teacherID == finalDefaultTeacherID {
+					keepCurrentDefault = true
+					break
+				}
+			}
+			if !keepCurrentDefault {
+				finalDefaultTeacherID = classTeacherIDs[0]
+			}
+		}
+
+		finalTeacherIDs := mergeAdvisorTeachersWithDefault(classTeacherIDs, finalDefaultTeacherID)
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_class
+			SET advisor_id = ?, default_teacher_id = ?, update_id = ?, update_time = NOW()
+			WHERE id = ? AND inst_id = ? AND class_type = ? AND del_flag = 0 AND status = ?
+		`, classTeacherIDs[0], finalDefaultTeacherID, operatorID, classID, instID, model.TeachingClassTypeNormal, model.TeachingClassStatusActive); err != nil {
+			return err
+		}
+
+		if err := repo.rewriteGroupClassTeachersTx(ctx, tx, instID, operatorID, classID, finalTeacherIDs, finalDefaultTeacherID, operateTime); err != nil {
+			return err
+		}
+		updatedCount++
+	}
+
+	if updatedCount == 0 {
+		return errors.New("请选择开班中的班级")
+	}
+	return tx.Commit()
+}
+
+func (repo *Repository) BatchUpdateGroupClassClassTime(ctx context.Context, instID, operatorID int64, ids []int64, dto model.GroupClassBatchClassTimeDTO) error {
+	ids = uniquePositiveInt64s(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+
+	recordMode := dto.DefaultClassTimeRecordMode
+	if recordMode <= 0 {
+		recordMode = 1
+	}
+	studentClassTime := dto.DefaultStudentClassTime
+	if studentClassTime <= 0 {
+		studentClassTime = 1
+	}
+	teacherClassTime := dto.DefaultTeacherClassTime
+	if teacherClassTime < 0 {
+		teacherClassTime = 0
+	}
+
+	res, err := repo.db.ExecContext(ctx, `
+		UPDATE teaching_class
+		SET default_student_class_time = ?, default_teacher_class_time = ?, default_class_time_record_mode = ?,
+			update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND class_type = ? AND del_flag = 0 AND status = ?
+		  AND id IN (`+sqlPlaceholders(len(ids))+`)
+	`, append([]any{
+		studentClassTime,
+		teacherClassTime,
+		recordMode,
+		operatorID,
+		instID,
+		model.TeachingClassTypeNormal,
+		model.TeachingClassStatusActive,
+	}, int64SliceToAny(ids)...)...)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected <= 0 {
+		return errors.New("请选择开班中的班级")
+	}
+	return nil
+}
+
+func (repo *Repository) BatchUpdateGroupClassMaxCount(ctx context.Context, instID, operatorID int64, ids []int64, dto model.GroupClassBatchMaxCountDTO) error {
+	ids = uniquePositiveInt64s(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+
+	maxCount := dto.MaxCount
+	if maxCount < 0 {
+		maxCount = 0
+	}
+
+	res, err := repo.db.ExecContext(ctx, `
+		UPDATE teaching_class
+		SET max_count = ?, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND class_type = ? AND del_flag = 0 AND status = ?
+		  AND id IN (`+sqlPlaceholders(len(ids))+`)
+	`, append([]any{
+		maxCount,
+		operatorID,
+		instID,
+		model.TeachingClassTypeNormal,
+		model.TeachingClassStatusActive,
+	}, int64SliceToAny(ids)...)...)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected <= 0 {
+		return errors.New("请选择开班中的班级")
+	}
+	return nil
+}
+
 // AggregateGroupClassStatistics 对标 QueryClassStatisticsInfo
 // 在读学员 = 满足筛选的班级下、在读/停课班员的去重学员数；在读人次 = 班员条数合计（同人多班计多次）。
 func (repo *Repository) AggregateGroupClassStatistics(ctx context.Context, instID int64, q model.GroupClassListQueryModel) (model.GroupClassStatisticsVO, error) {

@@ -6,12 +6,18 @@ import { debounce } from 'lodash-es'
 import { createVNode, onMounted } from 'vue'
 import { listClassroomsApi } from '@/api/business-settings/classroom'
 import {
+  batchAssignGroupClassTeacherApi,
+  batchCloseGroupClassesApi,
+  batchReplaceGroupClassTeacherApi,
+  batchUpdateGroupClassClassTimeApi,
+  batchUpdateGroupClassMaxCountApi,
   closeGroupClassApi,
   groupClassStatisticsApi,
   pageGroupClassesApi,
   reopenGroupClassApi,
 } from '@/api/edu-center/group-class'
 import CreateClassModal from '@/components/common/create-class-modal.vue'
+import StaffSelect from '@/components/common/staff-select.vue'
 import ClassAddStudentModal from '@/components/edu-center/class-list/class-add-student-modal.vue'
 import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawer.vue'
 import GroupClassUnscheduledRollCallModal from '@/components/edu-center/class-list/group-class-unscheduled-roll-call-modal.vue'
@@ -44,6 +50,36 @@ const listLoading = ref(false)
 const dataSource = ref([])
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
+const batchActionRows = ref([])
+
+const batchTeacherModalOpen = ref(false)
+const batchTeacherModalTitle = ref('批量分配班主任')
+const batchTeacherAction = ref('assign')
+const batchTeacherSubmitting = ref(false)
+const batchTeacherForm = reactive({
+  teacherIds: [],
+})
+
+const batchClassTimeModalOpen = ref(false)
+const batchClassTimeSubmitting = ref(false)
+const batchClassTimeForm = reactive({
+  defaultClassTimeRecordMode: 1,
+  defaultStudentClassTime: 1,
+  defaultTeacherClassTime: 0,
+})
+
+const batchMaxCountModalOpen = ref(false)
+const batchMaxCountSubmitting = ref(false)
+const batchMaxCountForm = reactive({
+  maxCount: undefined,
+})
+
+function syncBatchMaxCountInput(value) {
+  if (value == null || value === '' || Number(value) <= 0)
+    batchMaxCountForm.maxCount = undefined
+  else
+    batchMaxCountForm.maxCount = Number(value)
+}
 
 const displayArray = ref([
   'customSearch',
@@ -93,6 +129,23 @@ const pagination = reactive({
   total: 0,
   showSizeChanger: true,
   showTotal: total => `共 ${total} 条`,
+})
+
+const batchClassTimeUnitLabel = computed(() =>
+  Number(batchClassTimeForm.defaultClassTimeRecordMode) === 2 ? '课时/小时' : '课时',
+)
+
+const batchClassTimeHint = computed(() =>
+  Number(batchClassTimeForm.defaultClassTimeRecordMode) === 2
+    ? '每次点名，学员和上课教师记录的课时会根据日程时长自动计算课时（点名时支持调整）'
+    : '每次点名，学员和上课教师记录的课时数默认为此数值（点名时支持调整）',
+)
+
+const batchSelectionSummary = computed(() => {
+  const rows = batchActionRows.value
+  const count = rows.length
+  const names = rows.map(item => item?.name).filter(Boolean).join('，')
+  return { count, names }
 })
 
 const queryState = ref({
@@ -198,6 +251,7 @@ const handleFilterUpdate = debounce((updates = {}, isClearAll = false, id, type)
   pagination.current = 1
   selectedRows.value = []
   selectedRowKeys.value = []
+  batchActionRows.value = []
   getClassList(queryState.value, id, type)
 }, 200, { leading: true, trailing: false })
 
@@ -404,6 +458,7 @@ async function getClassList(newQueryParams = {}, id, type) {
 function onTableChange(pageInfo) {
   pagination.current = pageInfo.current
   pagination.pageSize = pageInfo.pageSize
+  batchActionRows.value = []
   getClassList(queryState.value)
 }
 
@@ -596,6 +651,201 @@ function openGroupClassReopenConfirm(record) {
   })
 }
 
+function resetSelection() {
+  selectedRows.value = []
+  selectedRowKeys.value = []
+  batchActionRows.value = []
+}
+
+function getCurrentBatchRows() {
+  return batchActionRows.value.length > 0 ? batchActionRows.value : selectedRows.value
+}
+
+function collectBatchRows(actionLabel, { activeOnly = true } = {}) {
+  if (selectedRows.value.length <= 0) {
+    messageService.warning('请先选择班级')
+    return []
+  }
+
+  const rows = activeOnly
+    ? selectedRows.value.filter(item => Number(item?.status) === defaultOpenClassStatus)
+    : [...selectedRows.value]
+
+  if (rows.length <= 0) {
+    messageService.warning(`请选择开班中的班级后再${actionLabel}`)
+    return []
+  }
+
+  const ignoredCount = selectedRows.value.length - rows.length
+  if (ignoredCount > 0 && activeOnly)
+    messageService.warning(`已自动忽略 ${ignoredCount} 个已结班班级`)
+
+  return rows
+}
+
+function openBatchCloseConfirm() {
+  const rows = collectBatchRows('批量结班')
+  if (rows.length <= 0)
+    return
+  batchActionRows.value = rows
+
+  Modal.confirm({
+    title: '批量结班',
+    centered: true,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `已选 ${rows.length} 个班级。确认后将同步删除这些班级未点名的后续日程，且不可恢复，请谨慎操作。`,
+    okText: '确定',
+    cancelText: '取消',
+    async onOk() {
+      const currentRows = getCurrentBatchRows()
+      try {
+        const res = await batchCloseGroupClassesApi({
+          ids: currentRows.map(item => String(item.id)),
+        })
+        if (res.code !== 200)
+          throw new Error(res.message || '批量结班失败')
+        messageService.success('批量结班成功')
+        resetSelection()
+        await getClassList(queryState.value)
+        syncCurrentClassRecordFromList()
+      }
+      catch (error) {
+        console.error('batch close group classes failed', error)
+        messageService.error(error?.message || '批量结班失败')
+      }
+    },
+  })
+}
+
+function openBatchAction(action) {
+  if (action === 'close') {
+    openBatchCloseConfirm()
+    return
+  }
+
+  const actionLabelMap = {
+    assign: '批量分配班主任',
+    replace: '批量替换班主任',
+    classTime: '批量修改记录课时',
+    maxCount: '批量修改满班人数',
+  }
+  const rows = collectBatchRows(actionLabelMap[action] || '批量操作')
+  if (rows.length <= 0)
+    return
+  batchActionRows.value = rows
+
+  if (action === 'assign' || action === 'replace') {
+    batchTeacherAction.value = action
+    batchTeacherModalTitle.value = action === 'assign' ? '批量分配班主任' : '批量替换班主任'
+    batchTeacherForm.teacherIds = []
+    batchTeacherModalOpen.value = true
+    return
+  }
+
+  if (action === 'classTime') {
+    const current = rows[0]
+    batchClassTimeForm.defaultClassTimeRecordMode = Number(current?.defaultClassTimeRecordMode || 1)
+    batchClassTimeForm.defaultStudentClassTime = Number(current?.defaultStudentClassTime ?? 1) || 1
+    batchClassTimeForm.defaultTeacherClassTime = Number(current?.defaultTeacherClassTime ?? 0) || 0
+    batchClassTimeModalOpen.value = true
+    return
+  }
+
+  if (action === 'maxCount') {
+    const current = rows[0]
+    syncBatchMaxCountInput(current?.maxCount)
+    batchMaxCountModalOpen.value = true
+  }
+}
+
+async function submitBatchTeacher() {
+  const teacherIds = Array.isArray(batchTeacherForm.teacherIds)
+    ? batchTeacherForm.teacherIds.filter(id => id !== undefined && id !== null && `${id}` !== '')
+    : []
+  if (teacherIds.length === 0) {
+    messageService.warning('请选择班主任')
+    return
+  }
+
+  const currentRows = getCurrentBatchRows()
+  batchTeacherSubmitting.value = true
+  try {
+    const api = batchTeacherAction.value === 'replace'
+      ? batchReplaceGroupClassTeacherApi
+      : batchAssignGroupClassTeacherApi
+    const res = await api({
+      ids: currentRows.map(item => String(item.id)),
+      teacherIds: teacherIds.map(id => String(id)),
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '批量更新班主任失败')
+    batchTeacherModalOpen.value = false
+    messageService.success(`${batchTeacherModalTitle.value}成功`)
+    resetSelection()
+    await getClassList(queryState.value)
+    syncCurrentClassRecordFromList()
+  }
+  catch (error) {
+    console.error('batch update group class teachers failed', error)
+    messageService.error(error?.message || '批量更新班主任失败')
+  }
+  finally {
+    batchTeacherSubmitting.value = false
+  }
+}
+
+async function submitBatchClassTime() {
+  const currentRows = getCurrentBatchRows()
+  batchClassTimeSubmitting.value = true
+  try {
+    const res = await batchUpdateGroupClassClassTimeApi({
+      ids: currentRows.map(item => String(item.id)),
+      defaultStudentClassTime: Number(batchClassTimeForm.defaultStudentClassTime || 0),
+      defaultTeacherClassTime: Number(batchClassTimeForm.defaultTeacherClassTime || 0),
+      defaultClassTimeRecordMode: Number(batchClassTimeForm.defaultClassTimeRecordMode || 1),
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '批量修改记录课时失败')
+    batchClassTimeModalOpen.value = false
+    messageService.success('批量修改记录课时成功')
+    resetSelection()
+    await getClassList(queryState.value)
+    syncCurrentClassRecordFromList()
+  }
+  catch (error) {
+    console.error('batch update group class class time failed', error)
+    messageService.error(error?.message || '批量修改记录课时失败')
+  }
+  finally {
+    batchClassTimeSubmitting.value = false
+  }
+}
+
+async function submitBatchMaxCount() {
+  const currentRows = getCurrentBatchRows()
+  batchMaxCountSubmitting.value = true
+  try {
+    const res = await batchUpdateGroupClassMaxCountApi({
+      ids: currentRows.map(item => String(item.id)),
+      maxCount: Number(batchMaxCountForm.maxCount || 0),
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '批量修改满班人数失败')
+    batchMaxCountModalOpen.value = false
+    messageService.success('批量修改满班人数成功')
+    resetSelection()
+    await getClassList(queryState.value)
+    syncCurrentClassRecordFromList()
+  }
+  catch (error) {
+    console.error('batch update group class max count failed', error)
+    messageService.error(error?.message || '批量修改满班人数失败')
+  }
+  finally {
+    batchMaxCountSubmitting.value = false
+  }
+}
+
 function onClassRowMenuClick({ key }, record) {
   if (key === '1') {
     openClassListDrawer(record, '2')
@@ -769,6 +1019,7 @@ const rowSelection = computed(() => ({
   onChange: (keys, rows) => {
     selectedRowKeys.value = keys
     selectedRows.value = rows
+    batchActionRows.value = []
   },
 }))
 
@@ -806,11 +1057,39 @@ onMounted(async () => {
         <div class="table-title flex justify-between">
           <div class="total">
             总计 {{ stats.classCount }} 个班级，{{ stats.openClassCount }} 个开班中，在读学员 {{ stats.studentCount }} 人，在读人次 {{ stats.studentPersonTime }} 人
+            <span v-if="selectedRowKeys.length > 0" class="ml-2 text-blue-600">
+              （已选 {{ selectedRowKeys.length }} 条）
+              <a-button type="link" size="small" class="p-0 ml-1" @click="resetSelection">
+                清空选择
+              </a-button>
+            </span>
           </div>
           <div class="edit flex">
-            <a-button class="mr-2">
-              批量结班
-            </a-button>
+            <a-dropdown class="mr-2">
+              <template #overlay>
+                <a-menu @click="({ key }) => openBatchAction(key)">
+                  <a-menu-item key="close">
+                    批量结班
+                  </a-menu-item>
+                  <a-menu-item key="assign">
+                    批量分配班主任
+                  </a-menu-item>
+                  <a-menu-item key="replace">
+                    批量替换班主任
+                  </a-menu-item>
+                  <a-menu-item key="classTime">
+                    批量修改记录课时
+                  </a-menu-item>
+                  <a-menu-item key="maxCount">
+                    批量修改满班人数
+                  </a-menu-item>
+                </a-menu>
+              </template>
+              <a-button>
+                批量操作
+                <DownOutlined :style="{ fontSize: '10px' }" />
+              </a-button>
+            </a-dropdown>
             <a-dropdown class="mr-2">
               <template #overlay>
                 <a-menu>
@@ -996,6 +1275,122 @@ onMounted(async () => {
       @updated="afterClassModalSave"
       @confirmed="afterClassModalSave"
     />
+    <a-modal
+      v-model:open="batchTeacherModalOpen"
+      :title="batchTeacherModalTitle"
+      :confirm-loading="batchTeacherSubmitting"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="submitBatchTeacher"
+    >
+      <div v-if="batchSelectionSummary.count" class="batch-class-summary">
+        <div class="batch-class-summary-line">
+          已选 <strong>{{ batchSelectionSummary.count }}</strong> 个班级
+        </div>
+        <div class="batch-class-summary-names">
+          {{ batchSelectionSummary.names || '—' }}
+        </div>
+      </div>
+      <a-form layout="vertical">
+        <a-form-item label="班主任" required>
+          <StaffSelect
+            v-model="batchTeacherForm.teacherIds"
+            placeholder="请选择班主任（可多选）"
+            width="100%"
+            :status="0"
+            :multiple="true"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+    <a-modal
+      v-model:open="batchClassTimeModalOpen"
+      title="批量修改记录课时"
+      width="640px"
+      :confirm-loading="batchClassTimeSubmitting"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="submitBatchClassTime"
+    >
+      <div v-if="batchSelectionSummary.count" class="batch-class-summary">
+        <div class="batch-class-summary-line">
+          已选 <strong>{{ batchSelectionSummary.count }}</strong> 个班级
+        </div>
+        <div class="batch-class-summary-names">
+          {{ batchSelectionSummary.names || '—' }}
+        </div>
+      </div>
+      <a-form layout="vertical" class="batch-class-time-form">
+        <a-form-item label="课时记录方式" required>
+          <a-radio-group v-model:value="batchClassTimeForm.defaultClassTimeRecordMode" class="custom-radio">
+            <a-radio :value="1">
+              按固定课时记录
+            </a-radio>
+            <a-radio :value="2">
+              按上课时长记录
+            </a-radio>
+          </a-radio-group>
+        </a-form-item>
+        <a-form-item>
+          <template #label>
+            <span><span class="batch-class-required">*</span> 默认记录学员</span>
+          </template>
+          <div class="one-to-one-class-time-inputs">
+            <span class="one-to-one-ct-group">
+              <a-input-number
+                v-model:value="batchClassTimeForm.defaultStudentClassTime"
+                :min="0"
+                :precision="2"
+                style="width: 120px"
+              />
+              <span class="one-to-one-ct-unit">{{ batchClassTimeUnitLabel }}</span>
+            </span>
+            <span class="one-to-one-ct-group">
+              <span class="one-to-one-ct-sep">，上课教师课时</span>
+              <a-input-number
+                v-model:value="batchClassTimeForm.defaultTeacherClassTime"
+                :min="0"
+                :precision="2"
+                style="width: 120px"
+              />
+              <span class="one-to-one-ct-unit">{{ batchClassTimeUnitLabel }}</span>
+            </span>
+          </div>
+          <div class="batch-class-time-hint">
+            {{ batchClassTimeHint }}
+          </div>
+        </a-form-item>
+      </a-form>
+    </a-modal>
+    <a-modal
+      v-model:open="batchMaxCountModalOpen"
+      title="批量修改满班人数"
+      :confirm-loading="batchMaxCountSubmitting"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="submitBatchMaxCount"
+    >
+      <div v-if="batchSelectionSummary.count" class="batch-class-summary">
+        <div class="batch-class-summary-line">
+          已选 <strong>{{ batchSelectionSummary.count }}</strong> 个班级
+        </div>
+        <div class="batch-class-summary-names">
+          {{ batchSelectionSummary.names || '—' }}
+        </div>
+      </div>
+      <a-form layout="vertical">
+        <a-form-item label="满班人数">
+          <a-input-number
+            :value="batchMaxCountForm.maxCount"
+            :min="0"
+            :precision="0"
+            placeholder="不限"
+            style="width: 160px"
+            @update:value="syncBatchMaxCountInput"
+          />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -1045,5 +1440,59 @@ onMounted(async () => {
     color: rgba(0, 0, 0, 0.25);
     cursor: not-allowed;
   }
+}
+
+.batch-class-summary {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f8fbff;
+  border: 1px solid #e6f0ff;
+}
+
+.batch-class-summary-line {
+  color: #1f1f1f;
+  font-weight: 500;
+}
+
+.batch-class-summary-names {
+  margin-top: 6px;
+  color: #666;
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.batch-class-required {
+  color: #ff4d4f;
+  margin-right: 2px;
+}
+
+.one-to-one-class-time-inputs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.one-to-one-ct-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #262626;
+}
+
+.one-to-one-ct-unit {
+  color: #8c8c8c;
+}
+
+.one-to-one-ct-sep {
+  color: #595959;
+}
+
+.batch-class-time-hint {
+  margin-top: 8px;
+  color: #8c8c8c;
+  font-size: 13px;
 }
 </style>

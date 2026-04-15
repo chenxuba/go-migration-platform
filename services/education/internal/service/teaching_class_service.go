@@ -429,6 +429,77 @@ func (svc *Service) UpdateGroupClass(userID int64, dto model.GroupClassUpdateDTO
 	return svc.repo.UpdateGroupClass(context.Background(), instID, operatorID, dto)
 }
 
+func (svc *Service) BatchCloseGroupClasses(userID int64, dto model.GroupClassBatchCloseDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	ids := parseTeachingClassIDs(dto.IDs)
+	if len(ids) == 0 {
+		return errors.New("请选择班级")
+	}
+	return svc.repo.BatchCloseGroupClasses(context.Background(), instID, operatorID, ids)
+}
+
+func (svc *Service) BatchAssignGroupClassTeacher(userID int64, dto model.GroupClassBatchAssignTeacherDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	ids := parseTeachingClassIDs(dto.IDs)
+	if len(ids) == 0 {
+		return errors.New("请选择班级")
+	}
+	teacherIDs := parseTeachingClassIDs(dto.TeacherIDs)
+	if len(teacherIDs) == 0 {
+		return errors.New("请选择班主任")
+	}
+	return svc.repo.BatchAssignGroupClassTeacher(context.Background(), instID, operatorID, teacherIDs, ids)
+}
+
+func (svc *Service) BatchReplaceGroupClassTeacher(userID int64, dto model.GroupClassBatchAssignTeacherDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	ids := parseTeachingClassIDs(dto.IDs)
+	if len(ids) == 0 {
+		return errors.New("请选择班级")
+	}
+	teacherIDs := parseTeachingClassIDs(dto.TeacherIDs)
+	if len(teacherIDs) == 0 {
+		return errors.New("请选择班主任")
+	}
+	return svc.repo.BatchReplaceGroupClassTeacher(context.Background(), instID, operatorID, teacherIDs, ids)
+}
+
+func (svc *Service) BatchUpdateGroupClassClassTime(userID int64, dto model.GroupClassBatchClassTimeDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	ids := parseTeachingClassIDs(dto.IDs)
+	if len(ids) == 0 {
+		return errors.New("请选择班级")
+	}
+	if dto.DefaultClassTimeRecordMode <= 0 {
+		dto.DefaultClassTimeRecordMode = 1
+	}
+	return svc.repo.BatchUpdateGroupClassClassTime(context.Background(), instID, operatorID, ids, dto)
+}
+
+func (svc *Service) BatchUpdateGroupClassMaxCount(userID int64, dto model.GroupClassBatchMaxCountDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	ids := parseTeachingClassIDs(dto.IDs)
+	if len(ids) == 0 {
+		return errors.New("请选择班级")
+	}
+	return svc.repo.BatchUpdateGroupClassMaxCount(context.Background(), instID, operatorID, ids, dto)
+}
+
 // CloseGroupClassOnly 仅结班（更新班级开班状态为已结班）
 func (svc *Service) CloseGroupClassOnly(userID int64, id string) error {
 	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)

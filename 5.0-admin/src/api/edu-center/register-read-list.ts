@@ -19,6 +19,7 @@ export interface RegisterReadInfo {
   confirmedTuition?: number
   tuitionAccountStatus?: number
   assignedClass?: boolean
+  hasAssignedClassCourse?: boolean
   enableExpireTime?: boolean
   expireTime?: string
   planSuspendTime?: string
@@ -59,8 +60,11 @@ export interface RegisterReadQueryParams {
     toSuspendedTime?: string
     fromClosedTime?: string
     toClosedTime?: string
+    createdTimeBegin?: string
+    createdTimeEnd?: string
     isSetExpireTime?: boolean
     assignedClass?: boolean
+    hasAssignedClassCourse?: boolean
     studentId?: string
     lessonType?: number
     remainLessonChargingMode?: number

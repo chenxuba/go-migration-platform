@@ -87,5 +87,23 @@ func (repo *Repository) GetStudentOverviewStatistics(ctx context.Context, instID
 		return model.StudentOverviewStatistics{}, err
 	}
 
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM (
+			SELECT 1
+			FROM tuition_account ta
+			INNER JOIN inst_student s ON s.id = ta.student_id AND s.del_flag = 0
+			INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+			LEFT JOIN inst_course_quotation icq ON ta.quote_id = icq.id
+			WHERE ta.inst_id = ? AND ta.del_flag = 0
+			  AND ta.status IN (1, 2)
+			  AND ic.teach_method = 1
+			GROUP BY s.id, ic.id, ic.teach_method, icq.lesson_model
+			HAVING IFNULL(MAX(ta.assigned_class), 0) = 0
+		) pending_class_students
+	`, instID).Scan(&result.PendingClassStudents); err != nil {
+		return model.StudentOverviewStatistics{}, err
+	}
+
 	return result, nil
 }

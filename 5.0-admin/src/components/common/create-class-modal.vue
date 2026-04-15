@@ -527,6 +527,8 @@ watch(
       editDetailReqSeq += 1;
       editDetailLoading.value = false;
       resetFormToCreateDefaults();
+      if (props.editRecord?.lessonId)
+        applyEditRecord(props.editRecord);
       return;
     }
     applyEditRecord(props.editRecord);

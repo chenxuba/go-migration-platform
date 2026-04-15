@@ -1671,6 +1671,14 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 		whereParts = append(whereParts, "CAST(s.sale_person AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(q.SalespersonID))
 	}
+	if from := parseDateStart(q.CreatedTimeBegin); from != nil {
+		whereParts = append(whereParts, "ta.create_time >= ?")
+		args = append(args, *from)
+	}
+	if to := parseDateEnd(q.CreatedTimeEnd); to != nil {
+		whereParts = append(whereParts, "ta.create_time <= ?")
+		args = append(args, *to)
+	}
 	if len(q.ProductIDs) > 0 {
 		placeholders := make([]string, 0, len(q.ProductIDs))
 		for _, item := range q.ProductIDs {
@@ -1683,9 +1691,23 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 	havingParts := make([]string, 0, 8)
 	havingArgs := make([]any, 0, 8)
 	remainExpr := `SUM(CASE WHEN icq.lesson_model = 3 THEN ta.remaining_tuition WHEN ta.total_quantity > 0 THEN ta.remaining_quantity ELSE 0 END)`
+	hasAssignedClassCourseExpr := `EXISTS (
+		SELECT 1
+		FROM tuition_account ta2
+		INNER JOIN inst_course ic2 ON ta2.course_id = ic2.id AND ic2.del_flag = 0
+		WHERE ta2.student_id = s.id
+		  AND ta2.del_flag = 0
+		  AND ta2.status IN (1, 2)
+		  AND ic2.teach_method = 1
+		  AND IFNULL(ta2.assigned_class, 0) = 1
+	)`
 	if q.AssignedClass != nil {
 		havingParts = append(havingParts, "IFNULL(MAX(ta.assigned_class), 0) = ?")
 		havingArgs = append(havingArgs, boolValue(q.AssignedClass))
+	}
+	if q.HasAssignedClassCourse != nil {
+		havingParts = append(havingParts, hasAssignedClassCourseExpr+" = ?")
+		havingArgs = append(havingArgs, boolValue(q.HasAssignedClassCourse))
 	}
 	if q.IsSetExpireTime != nil {
 		havingParts = append(havingParts, "IFNULL(MAX(ta.enable_expire_time), 0) = ?")
@@ -1780,6 +1802,7 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			SUM(ta.confirmed_tuition) AS confirmed_tuition,
 			MAX(ta.status) AS tuition_account_status,
 			IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
+			`+hasAssignedClassCourseExpr+` AS has_assigned_class_course,
 			IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
 			MAX(ta.expire_time) AS expire_time,
 			MAX(ta.plan_suspend_time) AS plan_suspend_time,
@@ -1815,27 +1838,28 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 	for rows.Next() {
 		var item model.RegistrationListItem
 		var (
-			sex                   sql.NullInt64
-			lessonType            sql.NullInt64
-			lessonChargingMode    sql.NullInt64
-			handleType            sql.NullInt64
-			tuitionAccountStatus  sql.NullInt64
-			assignedClass         bool
-			enableExpireTime      bool
-			canTransfer           bool
-			advisorStaffID        sql.NullInt64
-			studentManagerID      sql.NullInt64
-			hasGradeUpgrade       bool
-			expireTime            sql.NullTime
-			planSuspendTime       sql.NullTime
-			planResumeTime        sql.NullTime
-			changeStatusTime      sql.NullTime
-			createTime            sql.NullTime
-			suspendedTime         sql.NullTime
-			classEndingTime       sql.NullTime
-			lastestTeachingRecord sql.NullTime
-			validDate             sql.NullTime
-			endDate               sql.NullTime
+			sex                    sql.NullInt64
+			lessonType             sql.NullInt64
+			lessonChargingMode     sql.NullInt64
+			handleType             sql.NullInt64
+			tuitionAccountStatus   sql.NullInt64
+			assignedClass          bool
+			hasAssignedClassCourse bool
+			enableExpireTime       bool
+			canTransfer            bool
+			advisorStaffID         sql.NullInt64
+			studentManagerID       sql.NullInt64
+			hasGradeUpgrade        bool
+			expireTime             sql.NullTime
+			planSuspendTime        sql.NullTime
+			planResumeTime         sql.NullTime
+			changeStatusTime       sql.NullTime
+			createTime             sql.NullTime
+			suspendedTime          sql.NullTime
+			classEndingTime        sql.NullTime
+			lastestTeachingRecord  sql.NullTime
+			validDate              sql.NullTime
+			endDate                sql.NullTime
 		)
 		if err := rows.Scan(
 			&item.TuitionAccountID,
@@ -1858,6 +1882,7 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			&item.ConfirmedTuition,
 			&tuitionAccountStatus,
 			&assignedClass,
+			&hasAssignedClassCourse,
 			&enableExpireTime,
 			&expireTime,
 			&planSuspendTime,
@@ -1913,6 +1938,7 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			item.StudentManagerID = &value
 		}
 		item.AssignedClass = assignedClass
+		item.HasAssignedClassCourse = hasAssignedClassCourse
 		item.EnableExpireTime = enableExpireTime
 		item.CanTransferTuitionAccount = canTransfer
 		item.HasGradeUpgrade = hasGradeUpgrade

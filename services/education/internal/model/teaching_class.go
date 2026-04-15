@@ -367,6 +367,27 @@ type GroupClassCloseDTO struct {
 	ID string `json:"id"`
 }
 
+type GroupClassBatchCloseDTO struct {
+	IDs []string `json:"ids"`
+}
+
+type GroupClassBatchAssignTeacherDTO struct {
+	IDs        []string `json:"ids"`
+	TeacherIDs []string `json:"teacherIds"`
+}
+
+type GroupClassBatchClassTimeDTO struct {
+	IDs                        []string `json:"ids"`
+	DefaultStudentClassTime    float64  `json:"defaultStudentClassTime"`
+	DefaultTeacherClassTime    float64  `json:"defaultTeacherClassTime"`
+	DefaultClassTimeRecordMode int      `json:"defaultClassTimeRecordMode"`
+}
+
+type GroupClassBatchMaxCountDTO struct {
+	IDs      []string `json:"ids"`
+	MaxCount int      `json:"maxCount"`
+}
+
 type GroupClassCreateResult struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

@@ -61,8 +61,49 @@ export function closeGroupClassApi(data: { id: string }) {
   return usePost<boolean>('/api/v1/group-classes/close', data)
 }
 
+export interface GroupClassBatchIDsParams {
+  ids: string[]
+}
+
+export interface GroupClassBatchTeacherParams {
+  ids: string[]
+  teacherIds: string[]
+}
+
+export interface GroupClassBatchClassTimeParams {
+  ids: string[]
+  defaultStudentClassTime: number
+  defaultTeacherClassTime: number
+  defaultClassTimeRecordMode: number
+}
+
+export interface GroupClassBatchMaxCountParams {
+  ids: string[]
+  maxCount: number
+}
+
+export function batchCloseGroupClassesApi(data: GroupClassBatchIDsParams) {
+  return usePost('/api/v1/group-classes/batch-close', data)
+}
+
 export function reopenGroupClassApi(data: { id: string }) {
   return usePost<boolean>('/api/v1/group-classes/reopen', data)
+}
+
+export function batchAssignGroupClassTeacherApi(data: GroupClassBatchTeacherParams) {
+  return usePost('/api/v1/group-classes/batch-assign-class-teacher', data)
+}
+
+export function batchReplaceGroupClassTeacherApi(data: GroupClassBatchTeacherParams) {
+  return usePost('/api/v1/group-classes/batch-replace-class-teacher', data)
+}
+
+export function batchUpdateGroupClassClassTimeApi(data: GroupClassBatchClassTimeParams) {
+  return usePost('/api/v1/group-classes/batch-update-class-time', data)
+}
+
+export function batchUpdateGroupClassMaxCountApi(data: GroupClassBatchMaxCountParams) {
+  return usePost('/api/v1/group-classes/batch-update-max-count', data)
 }
 
 /** 对标 QueryClassList */

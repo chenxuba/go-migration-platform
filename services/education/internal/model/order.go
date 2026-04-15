@@ -396,8 +396,11 @@ type RegistrationListFilters struct {
 	ToSuspendedTime            string   `json:"toSuspendedTime"`
 	FromClosedTime             string   `json:"fromClosedTime"`
 	ToClosedTime               string   `json:"toClosedTime"`
+	CreatedTimeBegin           string   `json:"createdTimeBegin"`
+	CreatedTimeEnd             string   `json:"createdTimeEnd"`
 	IsSetExpireTime            *bool    `json:"isSetExpireTime"`
 	AssignedClass              *bool    `json:"assignedClass"`
+	HasAssignedClassCourse     *bool    `json:"hasAssignedClassCourse"`
 	StudentID                  string   `json:"studentId"`
 	LessonType                 *int     `json:"lessonType"`
 	RemainLessonChargingMode   *int     `json:"remainLessonChargingMode"`
@@ -440,6 +443,7 @@ type RegistrationListItem struct {
 	ConfirmedTuition          float64                   `json:"confirmedTuition"`
 	TuitionAccountStatus      *int                      `json:"tuitionAccountStatus,omitempty"`
 	AssignedClass             bool                      `json:"assignedClass"`
+	HasAssignedClassCourse    bool                      `json:"hasAssignedClassCourse"`
 	EnableExpireTime          bool                      `json:"enableExpireTime"`
 	ExpireTime                *time.Time                `json:"expireTime,omitempty"`
 	PlanSuspendTime           *time.Time                `json:"planSuspendTime,omitempty"`
