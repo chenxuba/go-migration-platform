@@ -609,7 +609,7 @@ func (svc *Service) ListGroupClassDrawerSchedules(userID int64, dto model.GroupC
 		}
 		if batchMeta != nil {
 			repeatRule = formatBatchRepeatRule(batchMeta)
-			weekdayText = formatBatchWeekdayText(batchMeta, first.LessonDate)
+			weekdayText = formatBatchWeekdayText(batchMeta, groupItems, first.LessonDate)
 		}
 		if batchNo != "" && repeatRule == "单次" && len(groupItems) > 1 {
 			repeatRule = "重复排课"
@@ -924,19 +924,49 @@ func formatBatchRepeatRule(meta *model.TeachingScheduleBatchMeta) string {
 	}
 }
 
-func formatBatchWeekdayText(meta *model.TeachingScheduleBatchMeta, fallbackDate string) string {
-	if meta != nil && len(meta.SelectedWeekdays) > 0 {
-		return strings.Join(meta.SelectedWeekdays, "、")
-	}
+func formatBatchWeekdayText(meta *model.TeachingScheduleBatchMeta, schedules []model.TeachingScheduleVO, fallbackDate string) string {
+	repeatRule := ""
 	if meta != nil {
-		switch strings.TrimSpace(strings.ToLower(meta.RepeatRule)) {
-		case "daily":
-			return "每天"
-		case "alternateday", "alternate_day":
-			return "隔天"
+		repeatRule = strings.TrimSpace(strings.ToLower(meta.RepeatRule))
+	}
+	switch repeatRule {
+	case "daily", "alternateday", "alternate_day":
+		if text := weekdayTextFromSchedules(schedules); text != "" {
+			return text
+		}
+	case "weekly", "biweekly":
+		if meta != nil && len(meta.SelectedWeekdays) > 0 {
+			return strings.Join(meta.SelectedWeekdays, "、")
+		}
+	default:
+		if text := weekdayTextFromSchedules(schedules); text != "" {
+			return text
+		}
+		if meta != nil && len(meta.SelectedWeekdays) > 0 {
+			return strings.Join(meta.SelectedWeekdays, "、")
 		}
 	}
 	return weekdayTextFromDate(fallbackDate)
+}
+
+func weekdayTextFromSchedules(schedules []model.TeachingScheduleVO) string {
+	if len(schedules) == 0 {
+		return ""
+	}
+	seen := make(map[string]struct{}, len(schedules))
+	labels := make([]string, 0, len(schedules))
+	for _, item := range schedules {
+		label := weekdayTextFromDate(item.LessonDate)
+		if label == "" || label == "-" {
+			continue
+		}
+		if _, ok := seen[label]; ok {
+			continue
+		}
+		seen[label] = struct{}{}
+		labels = append(labels, label)
+	}
+	return strings.Join(labels, "、")
 }
 
 func weekdayTextFromDate(dateText string) string {

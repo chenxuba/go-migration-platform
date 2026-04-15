@@ -165,8 +165,8 @@ async function loadScheduleActionContext(record: GroupClassDrawerScheduleItem, m
     throw new Error('当前日程缺少标识，请刷新后重试')
 
   const res = await getTeachingScheduleBatchDetailApi({
-    id: scheduleId || undefined,
     batchNo: batchNo || undefined,
+    id: batchNo ? undefined : (scheduleId || undefined),
   })
   if (res.code !== 200 || !res.result)
     throw new Error(res.message || '加载日程详情失败')
