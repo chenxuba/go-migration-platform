@@ -109,6 +109,10 @@ function getRemainingScheduleCount(record?: Partial<GroupClassDrawerScheduleItem
   return Math.max(0, Number(record?.scheduleCount || 0) - Number(record?.completedCount || 0))
 }
 
+function canOperateRecord(record?: Partial<GroupClassDrawerScheduleItem> | null) {
+  return getRemainingScheduleCount(record) > 0
+}
+
 function getEditActionText(record?: Partial<GroupClassDrawerScheduleItem> | null) {
   return '编辑'
 }
@@ -117,8 +121,18 @@ function getViewActionTooltip(record?: Partial<GroupClassDrawerScheduleItem> | n
   return hasBatchScheduleRecord(record) ? '查看最近一节日程详情' : '查看日程详情'
 }
 
+function getEditActionDisabledReason(record?: Partial<GroupClassDrawerScheduleItem> | null) {
+  return hasBatchScheduleRecord(record) ? '当前批次已无可编辑的后续日程' : '当前日程不可编辑'
+}
+
 function getEditActionTooltip(record?: Partial<GroupClassDrawerScheduleItem> | null) {
-  return resolveScheduleScope(record) === 'future' ? '编辑以后日程' : '编辑日程'
+  return canOperateRecord(record)
+    ? (resolveScheduleScope(record) === 'future' ? '编辑以后日程' : '编辑日程')
+    : getEditActionDisabledReason(record)
+}
+
+function getDeleteActionDisabledReason(record?: Partial<GroupClassDrawerScheduleItem> | null) {
+  return hasBatchScheduleRecord(record) ? '当前批次已无可删除的后续日程' : '当前日程不可删除'
 }
 
 function hasBatchScheduleRecord(record?: Partial<GroupClassDrawerScheduleItem> | null) {
@@ -441,10 +455,14 @@ watch(
               <a-tooltip :title="getViewActionTooltip(record)">
                 <a @click="handleViewDetail(record)">详情</a>
               </a-tooltip>
-              <a-tooltip v-if="getRemainingScheduleCount(record) > 0" :title="getEditActionTooltip(record)">
-                <a @click="handleEdit(record)">{{ getEditActionText(record) }}</a>
+              <a-tooltip :title="getEditActionTooltip(record)">
+                <a v-if="canOperateRecord(record)" @click="handleEdit(record)">{{ getEditActionText(record) }}</a>
+                <span v-else class="class-list-schedule__action class-list-schedule__action--disabled">{{ getEditActionText(record) }}</span>
               </a-tooltip>
-              <a v-if="getRemainingScheduleCount(record) > 0" @click="handleDelete(record)">删除</a>
+              <a-tooltip :title="canOperateRecord(record) ? '删除日程' : getDeleteActionDisabledReason(record)">
+                <a v-if="canOperateRecord(record)" @click="handleDelete(record)">删除</a>
+                <span v-else class="class-list-schedule__action class-list-schedule__action--disabled">删除</span>
+              </a-tooltip>
             </a-space>
           </template>
         </template>
@@ -453,8 +471,8 @@ watch(
     <SmartTimetableScheduleDetailDrawer
       v-model:open="detailOpen"
       :detail="detailState"
-      :editable="getRemainingScheduleCount(currentDetailRecord) > 0"
-      :deletable="getRemainingScheduleCount(currentDetailRecord) > 0"
+      :editable="Boolean(currentDetailRecord)"
+      :deletable="Boolean(currentDetailRecord)"
       :deleting="deleting"
       @delete="handleDelete(undefined, 'current')"
       @delete-current="handleDelete(undefined, 'current')"
@@ -474,3 +492,16 @@ watch(
     />
   </div>
 </template>
+
+<style scoped>
+.class-list-schedule__action {
+  color: #1677ff;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.class-list-schedule__action--disabled {
+  color: #bfbfbf;
+  cursor: not-allowed;
+}
+</style>
