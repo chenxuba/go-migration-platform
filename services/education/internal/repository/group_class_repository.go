@@ -1370,6 +1370,200 @@ func buildGroupClassFilters(instID int64, q model.GroupClassListQueryModel) (str
 	return cond, args
 }
 
+func (repo *Repository) PageMoveGroupClassCandidates(ctx context.Context, instID, currentClassID, studentID int64, q model.GroupClassMoveStudentCandidateQueryModel, page model.GroupClassPageRequestModel) (model.GroupClassListPageResult, error) {
+	queryModel := model.GroupClassListQueryModel{
+		Statues:   []int{model.TeachingClassStatusActive},
+		LessonIDs: []string{strings.TrimSpace(q.LessonID)},
+		ClassName: strings.TrimSpace(q.ClassName),
+		TeacherID: strings.TrimSpace(q.TeacherID),
+	}
+
+	out := model.GroupClassListPageResult{List: []model.GroupClassListItemVO{}}
+	pageSize := page.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+	pageIndex := page.PageIndex
+	if pageIndex <= 0 {
+		pageIndex = 1
+	}
+	offset := (pageIndex - 1) * pageSize
+	if page.SkipCount > 0 {
+		offset = page.SkipCount
+	}
+
+	recordExistsSQL, err := repo.buildTeachingScheduleRecordExistsSQL(ctx)
+	if err != nil {
+		recordExistsSQL = ""
+	}
+
+	where, args := buildGroupClassFilters(instID, queryModel)
+	where += " AND tc.id <> ?"
+	args = append(args, currentClassID)
+	where += ` AND NOT EXISTS (
+		SELECT 1
+		FROM teaching_class_student tcs
+		WHERE tcs.inst_id = tc.inst_id
+		  AND tcs.teaching_class_id = tc.id
+		  AND tcs.student_id = ?
+		  AND tcs.del_flag = 0
+		  AND IFNULL(tcs.class_student_status, ?) IN (?, ?)
+	)`
+	args = append(
+		args,
+		studentID,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStopped,
+	)
+
+	countQ := `SELECT COUNT(*) FROM teaching_class tc WHERE ` + where
+	if err := repo.db.QueryRowContext(ctx, countQ, args...).Scan(&out.Total); err != nil {
+		return out, err
+	}
+	if out.Total == 0 {
+		return out, nil
+	}
+
+	listQ := `
+		SELECT
+			tc.id, tc.name, tc.course_id, tc.compose_lesson_id, tc.max_count, tc.status,
+			` + buildTeachingClassScheduledCountSQL("tc", strconv.Itoa(model.TeachingClassTypeNormal)) + `,
+			` + buildTeachingClassFinishedCountSQL("tc", strconv.Itoa(model.TeachingClassTypeNormal), recordExistsSQL, "IFNULL(tc.finished_lesson_count, 0)") + `,
+			tc.class_room_name,
+			tc.default_teacher_id, tc.remark, tc.create_time,
+			IFNULL(creator.nick_name, ''),
+			COALESCE(NULLIF(icl.name, ''), NULLIF(ic.name, ''), '') AS lesson_display_name,
+			IFNULL(dt.nick_name, ''),
+			IFNULL((
+				SELECT SUM(IFNULL(tcs.class_time, 0))
+				FROM teaching_class_student tcs
+				WHERE tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+			), 0),
+			IFNULL((
+				SELECT COUNT(*)
+				FROM teaching_class_student tcs
+				WHERE tcs.teaching_class_id = tc.id AND tcs.inst_id = tc.inst_id AND tcs.del_flag = 0
+				  AND tcs.class_student_status IN (?, ?)
+			), 0),
+			tc.default_student_class_time, tc.default_teacher_class_time, tc.default_class_time_record_mode,
+			tc.closed_time
+		FROM teaching_class tc
+		LEFT JOIN inst_course ic ON ic.id = tc.course_id AND ic.del_flag = 0
+		LEFT JOIN inst_compose_lesson icl ON icl.id = tc.compose_lesson_id AND icl.del_flag = 0
+		LEFT JOIN inst_user creator ON creator.id = tc.create_id AND creator.del_flag = 0
+		LEFT JOIN inst_user dt ON dt.id = tc.default_teacher_id AND dt.del_flag = 0
+		WHERE ` + where + `
+		ORDER BY tc.create_time DESC, tc.id DESC
+		LIMIT ? OFFSET ?
+	`
+	listArgs := make([]any, 0, 2+len(args)+2)
+	listArgs = append(listArgs, model.TeachingClassStudentStatusStudying, model.TeachingClassStudentStatusStopped)
+	listArgs = append(listArgs, args...)
+	listArgs = append(listArgs, pageSize, offset)
+
+	rows, err := repo.db.QueryContext(ctx, listQ, listArgs...)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+
+	type rowRec struct {
+		id, courseID, composeID, maxCount, status   int64
+		sched, finished                             int
+		classRoom, remark, lessonName, createdStaff string
+		defTID                                      int64
+		name                                        string
+		created                                     time.Time
+		defTName                                    string
+		classTimeSum                                float64
+		stuCnt                                      int
+		defaultStuTime, defaultTeachTime            float64
+		recordMode                                  int
+		closed                                      sql.NullTime
+	}
+	ids := make([]int64, 0, pageSize)
+	recs := make([]rowRec, 0, pageSize)
+	for rows.Next() {
+		var r rowRec
+		if err := rows.Scan(
+			&r.id, &r.name, &r.courseID, &r.composeID, &r.maxCount, &r.status,
+			&r.sched, &r.finished, &r.classRoom, &r.defTID, &r.remark, &r.created,
+			&r.createdStaff, &r.lessonName, &r.defTName, &r.classTimeSum, &r.stuCnt,
+			&r.defaultStuTime, &r.defaultTeachTime, &r.recordMode, &r.closed,
+		); err != nil {
+			return out, err
+		}
+		ids = append(ids, r.id)
+		recs = append(recs, r)
+	}
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+
+	teacherMap, err := repo.loadGroupClassTeachers(ctx, instID, ids)
+	if err != nil {
+		return out, err
+	}
+
+	for _, r := range recs {
+		lid := r.courseID
+		if r.composeID > 0 {
+			lid = r.composeID
+		}
+		lessonIDStr := strconv.FormatInt(lid, 10)
+		closedT := time.Time{}
+		if r.closed.Valid {
+			closedT = r.closed.Time
+		}
+		item := model.GroupClassListItemVO{
+			ID:               strconv.FormatInt(r.id, 10),
+			Name:             r.name,
+			ClassTime:        r.classTimeSum,
+			LessonID:         lessonIDStr,
+			LessonName:       r.lessonName,
+			IsMultiProduct:   r.composeID > 0,
+			StudentCount:     r.stuCnt,
+			LockStudentCount: 0,
+			MaxCount:         int(r.maxCount),
+			Teachers:         teacherMap[r.id],
+			DefaultTeacherID: strconv.FormatInt(r.defTID, 10),
+			DefaultTeacherName: func() string {
+				if r.defTName != "" {
+					return r.defTName
+				}
+				for _, t := range teacherMap[r.id] {
+					if t.ID == strconv.FormatInt(r.defTID, 10) {
+						return t.Name
+					}
+				}
+				return ""
+			}(),
+			ClassRoomName:    r.classRoom,
+			ClassLessonTimes: []any{},
+			IsScheduled:      r.sched > 0,
+			ClassLessonDayInfos: model.GroupClassLessonDayInfoVO{
+				LessonDayCount:         r.sched,
+				CompleteLessonDayCount: r.finished,
+			},
+			Status:                     int(r.status),
+			ClosedTime:                 closedT,
+			CreatedTime:                r.created,
+			CreatedStaffName:           r.createdStaff,
+			Remark:                     r.remark,
+			ClassProperties:            []any{},
+			DefaultStudentClassTime:    r.defaultStuTime,
+			DefaultTeacherClassTime:    r.defaultTeachTime,
+			DefaultClassTimeRecordMode: r.recordMode,
+		}
+		out.List = append(out.List, item)
+	}
+	return out, nil
+}
+
 // PageGroupClassList 对标 QueryClassList
 func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q model.GroupClassListQueryModel, page model.GroupClassPageRequestModel) (model.GroupClassListPageResult, error) {
 	out := model.GroupClassListPageResult{List: []model.GroupClassListItemVO{}}

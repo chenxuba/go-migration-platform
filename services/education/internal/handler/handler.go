@@ -137,6 +137,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/group-classes/close", handler.closeGroupClass)
 	mux.HandleFunc("/api/v1/group-classes/reopen", handler.reopenGroupClass)
 	mux.HandleFunc("/api/v1/group-classes/page", handler.pageGroupClasses)
+	mux.HandleFunc("/api/v1/group-classes/move-student-candidates", handler.pageMoveGroupClassCandidates)
 	mux.HandleFunc("/api/v1/group-classes/detail", handler.getGroupClassDetail)
 	mux.HandleFunc("/api/v1/group-classes/schedules", handler.listGroupClassDrawerSchedules)
 	mux.HandleFunc("/api/v1/group-classes/waiting-roll-call-schedules", handler.listGroupClassDrawerWaitingRollCallSchedules)

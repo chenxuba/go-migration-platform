@@ -3,9 +3,8 @@ import { InfoCircleFilled, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'
 import {
   getGroupClassDrawerSchedulesApi,
-  listGroupClassStudentsByClassIdsApi,
   moveGroupClassStudentApi,
-  pageGroupClassesApi,
+  pageMoveGroupClassCandidatesApi,
   type GroupClassDrawerScheduleItem,
   type GroupClassRow,
 } from '@/api/edu-center/group-class'
@@ -56,26 +55,11 @@ const selectedTargetClassId = ref('')
 const allCandidates = ref<GroupClassRow[]>([])
 const scheduleSummaryMap = ref<Record<string, string>>({})
 const filterDisplayArray = ['classTeacher']
+let loadRequestSeq = 0
 
 const studentId = computed(() => String(props.student?.id || '').trim())
 const studentName = computed(() => String(props.student?.name || '').trim() || '该学员')
 const bannerText = computed(() => `${studentName.value}等1位学员将调整至以下为“${String(props.lessonName || '').trim() || '当前课程'}”下的班级，请选择`)
-
-const filteredCandidates = computed(() => {
-  const teacherId = String(selectedTeacherId.value || '').trim()
-  const keyword = classNameKeyword.value.trim().toLowerCase()
-  return allCandidates.value.filter((item) => {
-    if (teacherId) {
-      const matchedTeacher = Array.isArray(item.teachers)
-        && item.teachers.some(teacher => String(teacher?.id || '').trim() === teacherId)
-      if (!matchedTeacher)
-        return false
-    }
-    if (keyword && !String(item.name || '').trim().toLowerCase().includes(keyword))
-      return false
-    return true
-  })
-})
 
 const rowSelection = computed(() => ({
   type: 'radio' as const,
@@ -90,6 +74,7 @@ function handleRowClick(record: GroupClassRow) {
 }
 
 function resetState() {
+  loadRequestSeq += 1
   loading.value = false
   confirming.value = false
   selectedTeacherId.value = undefined
@@ -138,12 +123,13 @@ function formatScheduleSummary(list: GroupClassDrawerScheduleItem[]) {
   return segments.join('；') || '-'
 }
 
-async function ensureScheduleSummaries(classIds: string[]) {
-  const pendingIds = classIds.filter(id => id && !scheduleSummaryMap.value[id])
-  if (!pendingIds.length)
-    return
-  const nextSummaryMap = { ...scheduleSummaryMap.value }
-  await Promise.all(pendingIds.map(async (classId) => {
+async function buildScheduleSummaryMap(classIds: string[]) {
+  const nextSummaryMap: Record<string, string> = {}
+  await Promise.all(classIds.filter(Boolean).map(async (classId) => {
+    if (scheduleSummaryMap.value[classId]) {
+      nextSummaryMap[classId] = scheduleSummaryMap.value[classId]
+      return
+    }
     try {
       const res = await getGroupClassDrawerSchedulesApi({ classId })
       if (res.code !== 200) {
@@ -157,10 +143,11 @@ async function ensureScheduleSummaries(classIds: string[]) {
       nextSummaryMap[classId] = '-'
     }
   }))
-  scheduleSummaryMap.value = nextSummaryMap
+  return nextSummaryMap
 }
 
 async function loadCandidates() {
+  const currentRequestSeq = ++loadRequestSeq
   const currentClassId = String(props.currentClassId || '').trim()
   const currentLessonId = String(props.lessonId || '').trim()
   const currentStudentId = studentId.value
@@ -172,10 +159,13 @@ async function loadCandidates() {
 
   loading.value = true
   try {
-    const listRes = await pageGroupClassesApi({
+    const listRes = await pageMoveGroupClassCandidatesApi({
       queryModel: {
-        lessonIds: [currentLessonId],
-        statues: [1],
+        currentClassId,
+        studentId: currentStudentId,
+        lessonId: currentLessonId,
+        className: classNameKeyword.value.trim() || undefined,
+        teacherId: String(selectedTeacherId.value || '').trim() || undefined,
       },
       pageRequestModel: {
         needTotal: true,
@@ -188,54 +178,48 @@ async function loadCandidates() {
       throw new Error(listRes.message || '获取可调整班级失败')
     }
 
-    const rawList = (Array.isArray(listRes.result?.list) ? listRes.result.list : [])
-      .filter(item => String(item?.id || '').trim() !== currentClassId)
+    if (currentRequestSeq !== loadRequestSeq)
+      return
 
+    const rawList = Array.isArray(listRes.result?.list) ? listRes.result.list : []
     if (!rawList.length) {
       allCandidates.value = []
       scheduleSummaryMap.value = {}
       return
     }
 
-    const memberRes = await listGroupClassStudentsByClassIdsApi({
-      classIds: rawList.map(item => String(item.id || '').trim()).filter(Boolean),
-    })
-    if (memberRes.code !== 200) {
-      throw new Error(memberRes.message || '获取班级学员失败')
-    }
-
-    const occupiedClassIds = new Set<string>()
-    ;(Array.isArray(memberRes.result) ? memberRes.result : []).forEach((bucket) => {
-      const classId = String(bucket?.classId || '').trim()
-      if (!classId || !Array.isArray(bucket?.students))
-        return
-      if (bucket.students.some(item => String(item?.id || '').trim() === currentStudentId))
-        occupiedClassIds.add(classId)
-    })
-
-    const nextCandidates = rawList.filter(item => !occupiedClassIds.has(String(item.id || '').trim()))
-    allCandidates.value = nextCandidates
-    await ensureScheduleSummaries(nextCandidates.map(item => String(item.id || '').trim()))
+    allCandidates.value = rawList
+    const nextSummaryMap = await buildScheduleSummaryMap(rawList.map(item => String(item.id || '').trim()))
+    if (currentRequestSeq !== loadRequestSeq)
+      return
+    scheduleSummaryMap.value = nextSummaryMap
   }
   catch (error: any) {
+    if (currentRequestSeq !== loadRequestSeq)
+      return
     console.error('load move class candidates failed', error)
     allCandidates.value = []
     scheduleSummaryMap.value = {}
     messageService.error(error?.response?.data?.message || error?.message || '获取可调整班级失败')
   }
   finally {
-    loading.value = false
+    if (currentRequestSeq === loadRequestSeq)
+      loading.value = false
   }
 }
 
 function handleClassTeacherFilterChange(value?: string, _isClearAll?: boolean, id?: string | number, type?: string) {
   selectedTeacherId.value = value ? String(value).trim() : undefined
   syncAllFilterClear(id, type)
+  if (props.open)
+    loadCandidates()
 }
 
 function handleClassNameSearch(value?: string, id?: string | number, type?: string) {
   classNameKeyword.value = String(value || '').trim()
   syncAllFilterClear(id, type)
+  if (props.open)
+    loadCandidates()
 }
 
 async function handleConfirm() {
@@ -278,7 +262,7 @@ watch(
   },
 )
 
-watch(filteredCandidates, (list) => {
+watch(allCandidates, (list) => {
   if (!selectedTargetClassId.value)
     return
   const exists = list.some(item => String(item?.id || '').trim() === selectedTargetClassId.value)
@@ -323,7 +307,7 @@ watch(filteredCandidates, (list) => {
         row-key="id"
         size="small"
         :loading="loading"
-        :data-source="filteredCandidates"
+        :data-source="allCandidates"
         :pagination="false"
         :row-selection="rowSelection"
         :scroll="{ y: 320 }"

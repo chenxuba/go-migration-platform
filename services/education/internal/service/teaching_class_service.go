@@ -472,6 +472,30 @@ func (svc *Service) PageGroupClasses(userID int64, body model.GroupClassListBody
 	return svc.repo.PageGroupClassList(context.Background(), instID, body.QueryModel, body.PageRequestModel)
 }
 
+func (svc *Service) PageMoveGroupClassCandidates(userID int64, body model.GroupClassMoveStudentCandidateListBody) (model.GroupClassListPageResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GroupClassListPageResult{}, errors.New("no institution context")
+		}
+		return model.GroupClassListPageResult{}, err
+	}
+
+	currentClassID, err := strconv.ParseInt(strings.TrimSpace(body.QueryModel.CurrentClassID), 10, 64)
+	if err != nil || currentClassID <= 0 {
+		return model.GroupClassListPageResult{}, errors.New("currentClassId 无效")
+	}
+	studentID, err := strconv.ParseInt(strings.TrimSpace(body.QueryModel.StudentID), 10, 64)
+	if err != nil || studentID <= 0 {
+		return model.GroupClassListPageResult{}, errors.New("studentId 无效")
+	}
+	if strings.TrimSpace(body.QueryModel.LessonID) == "" {
+		return model.GroupClassListPageResult{}, errors.New("lessonId 不能为空")
+	}
+
+	return svc.repo.PageMoveGroupClassCandidates(context.Background(), instID, currentClassID, studentID, body.QueryModel, body.PageRequestModel)
+}
+
 func (svc *Service) GetGroupClassDetail(userID int64, classIDStr string) (model.GroupClassDetailVO, error) {
 	var zero model.GroupClassDetailVO
 	classID, err := strconv.ParseInt(strings.TrimSpace(classIDStr), 10, 64)

@@ -78,6 +78,24 @@ export function pageGroupClassesApi(data: {
   return usePost<{ list: GroupClassRow[], total: number }>('/api/v1/group-classes/page', data)
 }
 
+export function pageMoveGroupClassCandidatesApi(data: {
+  queryModel: {
+    currentClassId: string
+    studentId: string
+    lessonId: string
+    className?: string
+    teacherId?: string
+  }
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+}) {
+  return usePost<{ list: GroupClassRow[], total: number }>('/api/v1/group-classes/move-student-candidates', data)
+}
+
 /** 对标 QueryClassStatisticsInfo（请求体与 queryModel 字段一致） */
 export function groupClassStatisticsApi(queryModel: Record<string, unknown>) {
   return usePost<{

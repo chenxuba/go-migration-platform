@@ -630,6 +630,19 @@ type GroupClassMoveStudentDTO struct {
 	StudentID   string `json:"studentId"`
 }
 
+type GroupClassMoveStudentCandidateQueryModel struct {
+	CurrentClassID string `json:"currentClassId"`
+	StudentID      string `json:"studentId"`
+	LessonID       string `json:"lessonId"`
+	ClassName      string `json:"className"`
+	TeacherID      string `json:"teacherId"`
+}
+
+type GroupClassMoveStudentCandidateListBody struct {
+	QueryModel       GroupClassMoveStudentCandidateQueryModel `json:"queryModel"`
+	PageRequestModel GroupClassPageRequestModel               `json:"pageRequestModel"`
+}
+
 type BatchAssignGroupClassStudentItem struct {
 	StudentID        string `json:"studentId"`
 	TuitionAccountID string `json:"tuitionAccountId"`
