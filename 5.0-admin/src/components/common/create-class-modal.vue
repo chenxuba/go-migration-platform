@@ -693,6 +693,12 @@ function closeFun() {
   resetFormToCreateDefaults();
   openModal.value = false;
 }
+
+function resolveModalContainer() {
+  if (typeof document === "undefined")
+    return undefined;
+  return document.body;
+}
 </script>
 
 <template>
@@ -701,10 +707,12 @@ function closeFun() {
     v-model:open="openModal"
     centered
     class="modal-content-box"
+    :get-container="resolveModalContainer"
     :keyboard="false"
     :closable="false"
     :mask-closable="false"
     :width="800"
+    :z-index="1300"
   >
     <template #title>
       <div class="text-5 flex justify-between flex-center">
