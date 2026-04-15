@@ -83,6 +83,7 @@ type groupClassRollCallTemplateData struct {
 	TemplateKey        string
 	ClassDetail        model.GroupClassDetailVO
 	TeachingSchedules  []model.TeachingScheduleVO
+	TeachingBatchMetas map[string]model.TeachingScheduleBatchMeta
 	ScheduleRecords    model.ScheduleTeachingRecordPagedResult
 	StudentRecords     model.StudentTeachingRecordPagedResult
 	CurrentClassRoster []model.GroupClassStudentPagedItemVO
@@ -97,14 +98,14 @@ type groupClassRollCallSheetTemplate interface {
 type groupClassGenericRollCallSheetTemplate struct{}
 
 type groupClassGenericRollCallWorkbookStyles struct {
-	Title          int
-	Legend         int
-	Header         int
-	LeaveHeader    int
-	Cell           int
-	CountCell      int
-	DayCell        int
-	LeaveDayCell   int
+	Title        int
+	Legend       int
+	Header       int
+	LeaveHeader  int
+	Cell         int
+	CountCell    int
+	DayCell      int
+	LeaveDayCell int
 }
 
 type groupClassGenericRollCallSessionColumn struct {
@@ -183,6 +184,10 @@ func (svc *Service) ExportGroupClassRollCallSheetExcel(userID int64, classID str
 	if len(classSchedules) == 0 {
 		return nil, "", errors.New("当前班级暂无排课记录可导出")
 	}
+	batchMetaMap, err := svc.loadTeachingScheduleBatchMetaMapForExport(ctx, instID, classSchedules)
+	if err != nil {
+		return nil, "", err
+	}
 
 	schedules, err := svc.loadAllGroupClassScheduleRecordsForExport(ctx, instID, classID)
 	if err != nil {
@@ -213,6 +218,7 @@ func (svc *Service) ExportGroupClassRollCallSheetExcel(userID int64, classID str
 		TemplateKey:        templateKey,
 		ClassDetail:        detail,
 		TeachingSchedules:  classSchedules,
+		TeachingBatchMetas: batchMetaMap,
 		ScheduleRecords:    schedules,
 		StudentRecords:     students,
 		CurrentClassRoster: roster,
@@ -301,6 +307,26 @@ func (svc *Service) loadAllGroupClassTeachingSchedulesForExport(ctx context.Cont
 		return nil, errors.New("当前班级最多支持导出5000条排课记录，请缩小范围后重试")
 	}
 	return schedules, nil
+}
+
+func (svc *Service) loadTeachingScheduleBatchMetaMapForExport(ctx context.Context, instID int64, schedules []model.TeachingScheduleVO) (map[string]model.TeachingScheduleBatchMeta, error) {
+	batchNos := make([]string, 0, len(schedules))
+	seen := make(map[string]struct{}, len(schedules))
+	for _, item := range schedules {
+		batchNo := strings.TrimSpace(item.BatchNo)
+		if batchNo == "" {
+			continue
+		}
+		if _, ok := seen[batchNo]; ok {
+			continue
+		}
+		seen[batchNo] = struct{}{}
+		batchNos = append(batchNos, batchNo)
+	}
+	if len(batchNos) == 0 {
+		return map[string]model.TeachingScheduleBatchMeta{}, nil
+	}
+	return svc.repo.GetTeachingScheduleBatchMetaMap(ctx, instID, batchNos)
 }
 
 func (svc *Service) loadAllGroupClassStudentRecordsForExport(ctx context.Context, instID int64, classID string) (model.StudentTeachingRecordPagedResult, error) {
@@ -718,10 +744,21 @@ func fillGroupClassGenericRollCallSheet(file *excelize.File, sheetName string, s
 }
 
 func buildGroupClassGenericRollCallMonthlySheets(data groupClassRollCallTemplateData) []groupClassGenericRollCallMonthlySheet {
+	teachingScheduleGroups := make(map[string][]model.TeachingScheduleVO)
 	recordGroups := make(map[string][]model.StudentTeachingRecordItem)
 	scheduleGroups := make(map[string][]model.ScheduleTeachingRecordItem)
 	monthStartMap := make(map[string]time.Time)
 
+	for _, item := range data.TeachingSchedules {
+		startAt := item.StartAt
+		if startAt.IsZero() {
+			continue
+		}
+		monthStart := time.Date(startAt.Year(), startAt.Month(), 1, 0, 0, 0, 0, startAt.Location())
+		key := monthStart.Format("2006-01")
+		teachingScheduleGroups[key] = append(teachingScheduleGroups[key], item)
+		monthStartMap[key] = monthStart
+	}
 	for _, item := range data.StudentRecords.List {
 		startAt, ok := parseExportDateTimeString(item.StartTime)
 		if !ok {
@@ -742,16 +779,6 @@ func buildGroupClassGenericRollCallMonthlySheets(data groupClassRollCallTemplate
 		scheduleGroups[key] = append(scheduleGroups[key], item)
 		monthStartMap[key] = monthStart
 	}
-	for _, item := range data.TeachingSchedules {
-		startAt := item.StartAt
-		if startAt.IsZero() {
-			continue
-		}
-		monthStart := time.Date(startAt.Year(), startAt.Month(), 1, 0, 0, 0, 0, startAt.Location())
-		key := monthStart.Format("2006-01")
-		monthStartMap[key] = monthStart
-	}
-
 	monthKeys := make([]string, 0, len(monthStartMap))
 	for key := range monthStartMap {
 		monthKeys = append(monthKeys, key)
@@ -771,7 +798,7 @@ func buildGroupClassGenericRollCallMonthlySheets(data groupClassRollCallTemplate
 	sheets := make([]groupClassGenericRollCallMonthlySheet, 0, len(monthKeys))
 	for _, monthKey := range monthKeys {
 		monthStart := monthStartMap[monthKey]
-		sheet := buildGroupClassGenericRollCallMonthlySheet(data, monthStart, recordGroups[monthKey], scheduleGroups[monthKey], rosterMap)
+		sheet := buildGroupClassGenericRollCallMonthlySheet(data, monthStart, teachingScheduleGroups[monthKey], recordGroups[monthKey], scheduleGroups[monthKey], rosterMap)
 		if len(sheet.Rows) == 0 && len(sheet.Sessions) == 0 {
 			continue
 		}
@@ -780,7 +807,7 @@ func buildGroupClassGenericRollCallMonthlySheets(data groupClassRollCallTemplate
 	return sheets
 }
 
-func buildGroupClassGenericRollCallMonthlySheet(data groupClassRollCallTemplateData, monthStart time.Time, monthRecords []model.StudentTeachingRecordItem, monthSchedules []model.ScheduleTeachingRecordItem, rosterMap map[string]model.GroupClassStudentPagedItemVO) groupClassGenericRollCallMonthlySheet {
+func buildGroupClassGenericRollCallMonthlySheet(data groupClassRollCallTemplateData, monthStart time.Time, monthTeachingSchedules []model.TeachingScheduleVO, monthRecords []model.StudentTeachingRecordItem, monthSchedules []model.ScheduleTeachingRecordItem, rosterMap map[string]model.GroupClassStudentPagedItemVO) groupClassGenericRollCallMonthlySheet {
 	location := monthStart.Location()
 	if location == nil {
 		location = time.Local
@@ -929,7 +956,7 @@ func buildGroupClassGenericRollCallMonthlySheet(data groupClassRollCallTemplateD
 		sheetRows = append(sheetRows, item.row)
 	}
 
-	scheduleSummary := buildGroupClassMonthlyScheduleSummary(monthSchedules, monthRecords)
+	scheduleSummary := buildGroupClassMonthlyScheduleSummary(monthTeachingSchedules, data.TeachingBatchMetas)
 	classroomName := strings.TrimSpace(data.ClassDetail.ClassroomName)
 	if classroomName == "" {
 		classroomName = "未设置"
@@ -1141,44 +1168,66 @@ func canonicalGroupClassSessionKey(startAt, endAt time.Time) string {
 	return "time:" + startAt.In(time.Local).Format("2006-01-02 15:04") + "|" + endAt.In(time.Local).Format("2006-01-02 15:04")
 }
 
-func buildGroupClassMonthlyScheduleSummary(schedules []model.ScheduleTeachingRecordItem, records []model.StudentTeachingRecordItem) string {
-	type slot struct {
-		weekday string
-		time    string
-	}
-	order := make([]slot, 0, 8)
-	seen := make(map[string]struct{}, 8)
-	appendSlot := func(startAt, endAt time.Time) {
-		weekday := formatWeekdayCN(startAt)
-		timeText := fmt.Sprintf("%s-%s", startAt.Format("15:04"), endAt.Format("15:04"))
-		key := weekday + "|" + timeText
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		order = append(order, slot{weekday: weekday, time: timeText})
+func buildGroupClassMonthlyScheduleSummary(schedules []model.TeachingScheduleVO, batchMetaMap map[string]model.TeachingScheduleBatchMeta) string {
+	type scheduleGroup struct {
+		BatchNo   string
+		StartTime string
+		EndTime   string
+		StartAt   time.Time
+		EndAt     time.Time
+		Dates     []time.Time
 	}
 
+	groupOrder := make([]string, 0, len(schedules))
+	groupMap := make(map[string]*scheduleGroup, len(schedules))
 	for _, item := range schedules {
-		startAt, startOK := parseExportDateTimeString(item.StartTime)
-		endAt, endOK := parseExportDateTimeString(item.EndTime)
-		if !startOK || !endOK {
+		if item.StartAt.IsZero() || item.EndAt.IsZero() {
 			continue
 		}
-		appendSlot(startAt, endAt)
-	}
-	for _, item := range records {
-		startAt, startOK := parseExportDateTimeString(item.StartTime)
-		endAt, endOK := parseExportDateTimeString(item.EndTime)
-		if !startOK || !endOK {
-			continue
+		batchNo := strings.TrimSpace(item.BatchNo)
+		startText := item.StartAt.Format("15:04")
+		endText := item.EndAt.Format("15:04")
+		groupKey := firstNonEmptyString(batchNo, "__single__") + "|" + startText + "|" + endText
+		group, ok := groupMap[groupKey]
+		if !ok {
+			group = &scheduleGroup{
+				BatchNo:   batchNo,
+				StartTime: startText,
+				EndTime:   endText,
+				StartAt:   item.StartAt,
+				EndAt:     item.EndAt,
+				Dates:     make([]time.Time, 0, 8),
+			}
+			groupMap[groupKey] = group
+			groupOrder = append(groupOrder, groupKey)
 		}
-		appendSlot(startAt, endAt)
+		group.Dates = append(group.Dates, item.StartAt)
+		if item.StartAt.Before(group.StartAt) {
+			group.StartAt = item.StartAt
+			group.EndAt = item.EndAt
+		}
 	}
 
-	parts := make([]string, 0, len(order))
-	for _, item := range order {
-		parts = append(parts, item.weekday+" "+item.time)
+	showTimeText := len(groupOrder) > 1
+	parts := make([]string, 0, len(groupOrder))
+	for _, groupKey := range groupOrder {
+		group := groupMap[groupKey]
+		if group == nil || len(group.Dates) == 0 {
+			continue
+		}
+		sort.Slice(group.Dates, func(i, j int) bool {
+			return group.Dates[i].Before(group.Dates[j])
+		})
+		rangeText := group.Dates[0].Format("2006-01-02")
+		if len(group.Dates) > 1 {
+			rangeText += "~" + group.Dates[len(group.Dates)-1].Format("2006-01-02")
+		}
+		repeatText := inferGroupClassScheduleRepeatText(group.Dates, batchMetaMap[strings.TrimSpace(group.BatchNo)])
+		part := strings.TrimSpace(repeatText + " " + rangeText)
+		if showTimeText {
+			part = strings.TrimSpace(part + " " + group.StartTime + "-" + group.EndTime)
+		}
+		parts = append(parts, part)
 	}
 	return strings.Join(parts, "；")
 }
@@ -1198,6 +1247,55 @@ func buildGroupClassRollCallOpenDateText(detail model.GroupClassDetailVO, schedu
 		return ""
 	}
 	return openDate.Format("2006-01-02")
+}
+
+func inferGroupClassScheduleRepeatText(dates []time.Time, meta model.TeachingScheduleBatchMeta) string {
+	if text := strings.TrimSpace(formatBatchRepeatRule(&meta)); text != "" && text != "单次" {
+		return text
+	}
+	if len(dates) <= 1 {
+		return "单次"
+	}
+	uniqueDates := make([]time.Time, 0, len(dates))
+	seen := make(map[string]struct{}, len(dates))
+	for _, item := range dates {
+		day := time.Date(item.Year(), item.Month(), item.Day(), 0, 0, 0, 0, item.Location())
+		key := day.Format("2006-01-02")
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		uniqueDates = append(uniqueDates, day)
+	}
+	if len(uniqueDates) <= 1 {
+		return "单次"
+	}
+	sort.Slice(uniqueDates, func(i, j int) bool {
+		return uniqueDates[i].Before(uniqueDates[j])
+	})
+
+	allEqual := true
+	firstGap := int(uniqueDates[1].Sub(uniqueDates[0]).Hours() / 24)
+	for index := 1; index < len(uniqueDates); index++ {
+		gap := int(uniqueDates[index].Sub(uniqueDates[index-1]).Hours() / 24)
+		if gap != firstGap {
+			allEqual = false
+			break
+		}
+	}
+	if allEqual {
+		switch firstGap {
+		case 1:
+			return "每天重复"
+		case 2:
+			return "隔天重复"
+		case 7:
+			return "每周重复"
+		case 14:
+			return "隔周重复"
+		}
+	}
+	return "重复排课"
 }
 
 func formatWeekdayCN(value time.Time) string {

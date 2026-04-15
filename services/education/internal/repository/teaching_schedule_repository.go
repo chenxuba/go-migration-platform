@@ -627,6 +627,62 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 	return items, nil
 }
 
+func (repo *Repository) GetTeachingScheduleBatchMetaMap(ctx context.Context, instID int64, batchNos []string) (map[string]model.TeachingScheduleBatchMeta, error) {
+	result := make(map[string]model.TeachingScheduleBatchMeta)
+	normalizedBatchNos := compactStrings(batchNos)
+	if len(normalizedBatchNos) == 0 {
+		return result, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			batch_no,
+			meta_json
+		FROM teaching_schedule_batch_meta
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND batch_no IN (`+sqlPlaceholders(len(normalizedBatchNos))+`)
+		ORDER BY update_time DESC, id DESC
+	`, append([]any{instID}, stringSliceToAny(normalizedBatchNos)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			batchNo string
+			rawMeta []byte
+		)
+		if err := rows.Scan(&batchNo, &rawMeta); err != nil {
+			return nil, err
+		}
+		batchNo = strings.TrimSpace(batchNo)
+		if batchNo == "" {
+			continue
+		}
+		if _, exists := result[batchNo]; exists {
+			continue
+		}
+
+		meta := model.TeachingScheduleBatchMeta{}
+		if len(rawMeta) > 0 {
+			if err := json.Unmarshal(rawMeta, &meta); err != nil {
+				return nil, err
+			}
+		}
+		if normalized := normalizeTeachingScheduleBatchMeta(&meta); normalized != nil {
+			result[batchNo] = *normalized
+		} else {
+			result[batchNo] = model.TeachingScheduleBatchMeta{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func normalizeTeachingScheduleTypeFilters(list []string) map[string]struct{} {
 	result := make(map[string]struct{})
 	for _, item := range list {
