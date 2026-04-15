@@ -15,10 +15,12 @@ const props = withDefaults(defineProps<{
   open?: boolean
   classId?: string
   className?: string
+  studentCount?: number
 }>(), {
   open: false,
   classId: '',
   className: '',
+  studentCount: 0,
 })
 
 const displayArray = ref(['scheduleDate'])
@@ -97,6 +99,14 @@ function isSameDateRange(nextRange: [Dayjs, Dayjs] | null) {
 const totalWidth = computed(() =>
   columns.reduce((sum, item) => sum + Number(item.width || 0), 0),
 )
+const unscheduledRollCallDisabledReason = computed(() => {
+  if (!String(props.classId || '').trim())
+    return '当前班级信息不完整，暂不可创建未排课点名'
+  if (Number(props.studentCount || 0) <= 0)
+    return `${String(props.className || '当前班级').trim() || '当前班级'}暂无在班学员，不能创建未排课点名`
+  return ''
+})
+const canCreateUnscheduledRollCall = computed(() => !unscheduledRollCallDisabledReason.value)
 
 async function loadList() {
   const classId = String(props.classId || '').trim()
@@ -184,9 +194,8 @@ function handleViewDetail(record: GroupClassDrawerWaitingRollCallScheduleItem | 
 }
 
 function handleCreateUnscheduledRollCall() {
-  const classId = String(props.classId || '').trim()
-  if (!classId) {
-    messageService.warning('当前班级信息不完整，暂不可创建未排课点名')
+  if (unscheduledRollCallDisabledReason.value) {
+    messageService.warning(unscheduledRollCallDisabledReason.value)
     return
   }
   unscheduledRollCallOpen.value = true
@@ -248,9 +257,13 @@ watch(
     <div class="bg-#fff pt-18px px-20px rounded-10px">
       <div class="flex justify-between items-center">
         <custom-title :title="`当前共计 ${rawList.length} 条待点名日程`" font-size="14px" class="pb-12px" />
-        <a-button type="primary" class="mb-12px" @click="handleCreateUnscheduledRollCall">
-          创建未排课点名
-        </a-button>
+        <a-tooltip :title="unscheduledRollCallDisabledReason || undefined">
+          <span>
+            <a-button type="primary" class="mb-12px" :disabled="!canCreateUnscheduledRollCall" @click="handleCreateUnscheduledRollCall">
+              创建未排课点名
+            </a-button>
+          </span>
+        </a-tooltip>
       </div>
       <a-table
         row-key="id"

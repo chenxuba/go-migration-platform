@@ -489,18 +489,28 @@ function openScheduleModal(record) {
   scheduleModalOpen.value = true
 }
 
-function openUnscheduledRollCallModal(record) {
+function getUnscheduledRollCallDisabledReason(record) {
   const classId = String(record?.id || '').trim()
-  if (!classId) {
-    messageService.warning('当前班级信息不完整，暂不可创建未排课点名')
+  if (!classId)
+    return '当前班级信息不完整，暂不可创建未排课点名'
+  if (Number(record?.studentCount || 0) <= 0)
+    return `${String(record?.name || '当前班级').trim() || '当前班级'}暂无在班学员，不能创建未排课点名`
+  return ''
+}
+
+function openUnscheduledRollCallModal(record) {
+  const disabledReason = getUnscheduledRollCallDisabledReason(record)
+  if (disabledReason) {
+    messageService.warning(disabledReason)
     return
   }
-  if (Number(record?.studentCount || 0) <= 0) {
-    messageService.warning(`${String(record?.name || '当前班级').trim() || '当前班级'}暂无在班学员，不能创建未排课点名`)
-    return
-  }
+  const classId = String(record?.id || '').trim()
   unscheduledRollCallClassId.value = classId
   unscheduledRollCallModalOpen.value = true
+}
+
+function isUnscheduledRollCallDisabled(record) {
+  return Boolean(getUnscheduledRollCallDisabledReason(record))
 }
 
 async function closeGroupClass(record) {
@@ -910,7 +920,7 @@ onMounted(async () => {
                     <a class="mr-3" @click.prevent="openScheduleModal(record)">排课</a>
                     <a class="mr-3" @click.prevent="openAddStudentModal(record)">添加学员</a>
                     <div style="cursor: pointer;">
-                      <a-dropdown :trigger="['click']" placement="bottom">
+                      <a-dropdown :trigger="['hover']" placement="bottom">
                         <a @click.prevent>
                           <div class="intention">
                             更多
@@ -925,8 +935,10 @@ onMounted(async () => {
                             <a-menu-item key="1">
                               上课点名
                             </a-menu-item>
-                            <a-menu-item key="2">
-                              未排课点名
+                            <a-menu-item key="2" :class="{ 'menu-item-disabled': isUnscheduledRollCallDisabled(record) }">
+                              <a-tooltip :title="getUnscheduledRollCallDisabledReason(record) || undefined" placement="left">
+                                <span class="menu-item-label">未排课点名</span>
+                              </a-tooltip>
                             </a-menu-item>
                             <a-menu-item key="3">
                               编辑班级
@@ -1020,6 +1032,18 @@ onMounted(async () => {
     width: 6px;
     margin-right: 4px;
     background: var(--pro-ant-color-primary);
+  }
+}
+
+.menu-item-label {
+  display: inline-block;
+  width: 100%;
+}
+
+.menu-item-disabled {
+  :deep(.ant-dropdown-menu-title-content) {
+    color: rgba(0, 0, 0, 0.25);
+    cursor: not-allowed;
   }
 }
 </style>

@@ -373,8 +373,6 @@ watch(allCandidates, (list) => {
   font-size: 14px;
 }
 
-.move-class-modal__filter-wrap {
-}
 
 .move-class-modal__filter-wrap :deep(.selectBox) {
   margin-bottom: 0;

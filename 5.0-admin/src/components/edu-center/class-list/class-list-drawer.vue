@@ -364,7 +364,12 @@ function handleStudentListChanged() {
             <schedule :open="openDrawer" :class-id="String(displayRecord?.id || '')" :class-name="displayRecord?.name || ''" />
           </a-tab-pane>
           <a-tab-pane key="2" tab="待点名日程">
-            <waitingRollCallSchedule :open="openDrawer" :class-id="String(displayRecord?.id || '')" :class-name="displayRecord?.name || ''" />
+            <waitingRollCallSchedule
+              :open="openDrawer"
+              :class-id="String(displayRecord?.id || '')"
+              :class-name="displayRecord?.name || ''"
+              :student-count="Number(displayRecord?.studentCount || 0)"
+            />
           </a-tab-pane>
           <a-tab-pane key="3" tab="上课记录">
             <classRecord :open="openDrawer" :class-id="String(displayRecord?.id || '')" :class-name="displayRecord?.name || ''" />
