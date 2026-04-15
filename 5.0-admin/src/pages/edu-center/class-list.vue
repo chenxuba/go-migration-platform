@@ -147,7 +147,7 @@ async function loadClassroomFilterOptions() {
 
 /**
  * 课程筛选项仍从当前列表结果合并；教室筛选项以机构教室列表为主，
- * 再补充当前列表里的实际上课教室，兼容历史数据。
+ * 当前列表仅补充班级默认教室，避免页面内筛选项丢失。
  */
 function mergeCustomFilterOptionsFromClassList(list) {
   if (!Array.isArray(list) || list.length === 0)
@@ -159,13 +159,8 @@ function mergeCustomFilterOptionsFromClassList(list) {
   const roomMap = new Map((roomItem?.optionsList || []).map(o => [o.id, o]))
 
   for (const item of list) {
-    const roomNames = Array.isArray(item.classRoomNames) && item.classRoomNames.length
-      ? item.classRoomNames
-      : [item.classRoomName]
-    for (const rawRoomName of roomNames) {
-      const roomName = String(rawRoomName || '').trim()
-      if (!roomName || roomMap.has(roomName))
-        continue
+    const roomName = String(item.classRoomName || '').trim()
+    if (roomName && !roomMap.has(roomName)) {
       roomMap.set(roomName, {
         id: roomName,
         value: roomName,

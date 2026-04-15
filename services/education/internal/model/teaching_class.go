@@ -429,7 +429,6 @@ type GroupClassListItemVO struct {
 	DefaultTeacherID           string                    `json:"defaultTeacherId"`
 	DefaultTeacherName         string                    `json:"defaultTeacherName"`
 	ClassRoomName              string                    `json:"classRoomName"`
-	ClassRoomNames             []string                  `json:"classRoomNames,omitempty"`
 	ClassLessonTimes           []any                     `json:"classLessonTimes"`
 	IsScheduled                bool                      `json:"isScheduled"`
 	ClassLessonDayInfos        GroupClassLessonDayInfoVO `json:"classLessonDayInfos"`
