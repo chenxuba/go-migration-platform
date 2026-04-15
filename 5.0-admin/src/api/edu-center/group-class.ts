@@ -432,3 +432,10 @@ export function batchAssignGroupClassStudentsApi(data: {
     validateStatus: status => (status >= 200 && status < 300) || status === 400,
   })
 }
+
+export function removeGroupClassStudentApi(data: {
+  classId: string
+  studentId: string
+}) {
+  return usePost<boolean>('/api/v1/group-classes/remove-student', data)
+}

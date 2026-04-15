@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { DownOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { computed, reactive, ref, watch } from 'vue'
 import {
   getGroupClassStudentStatisticsApi,
   getGroupClassStudentTeachingRecordCountApi,
   pageGroupClassStudentsApi,
+  removeGroupClassStudentApi,
   type GroupClassStudentPagedItem,
   type GroupClassStudentTeachingRecordCountItem,
 } from '@/api/edu-center/group-class'
@@ -35,10 +36,14 @@ const props = defineProps({
     default: '',
   },
 })
+const emit = defineEmits(['changed'])
 
 const checked = ref(false)
 const loading = ref(false)
 const addStudentVisible = ref(false)
+const removeStudentVisible = ref(false)
+const removing = ref(false)
+const removingStudent = ref<GroupClassStudentPagedItem | null>(null)
 const dataSource = ref<GroupClassStudentPagedItem[]>([])
 const stats = ref({
   studentCount: 0,
@@ -401,8 +406,47 @@ function handleMoveClass() {
   messageService.info('调至其他班待实现')
 }
 
-function handleRemoveClass() {
-  messageService.info('移出本班待实现')
+function handleRemoveClass(record: GroupClassStudentPagedItem | Record<string, any>) {
+  removingStudent.value = record as GroupClassStudentPagedItem
+  removeStudentVisible.value = true
+}
+
+function closeRemoveStudentModal() {
+  if (removing.value)
+    return
+  removeStudentVisible.value = false
+  removingStudent.value = null
+}
+
+async function confirmRemoveStudent() {
+  const classId = String(props.classId || '').trim()
+  const studentId = String(removingStudent.value?.id || '').trim()
+  if (!classId || !studentId) {
+    messageService.error('缺少班级或学员信息')
+    return
+  }
+  removing.value = true
+  try {
+    const res = await removeGroupClassStudentApi({
+      classId,
+      studentId,
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '移出本班失败')
+    messageService.success('已移出本班')
+    if (dataSource.value.length === 1 && pagination.current > 1)
+      pagination.current -= 1
+    removeStudentVisible.value = false
+    removingStudent.value = null
+    emit('changed')
+    await loadStudentTable()
+  }
+  catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || '移出本班失败')
+  }
+  finally {
+    removing.value = false
+  }
 }
 
 function handleSwitchAccount() {
@@ -433,6 +477,7 @@ function handleTableChange(pageInfo: { current?: number, pageSize?: number }) {
 
 function handleAddStudentSuccess() {
   addStudentVisible.value = false
+  emit('changed')
   loadStudentTable()
 }
 
@@ -654,10 +699,11 @@ watch(
             </template>
 
             <template v-else-if="column.key === 'action'">
-              <a-space :size="12">
+              <a-space v-if="Number(record.status || 0) !== 3" :size="12">
                 <a @click="handleMoveClass">调至其他班</a>
-                <a @click="handleRemoveClass">移出本班</a>
+                <a @click="handleRemoveClass(record)">移出本班</a>
               </a-space>
+              <span v-else class="text-#bbb">-</span>
             </template>
           </template>
         </a-table>
@@ -671,8 +717,79 @@ watch(
         :lesson-id="lessonId"
         @success="handleAddStudentSuccess"
       />
+
+      <a-modal
+        v-model:open="removeStudentVisible"
+        centered
+        :footer="false"
+        :closable="false"
+        :mask-closable="false"
+        :keyboard="false"
+        :width="520"
+      >
+        <div class="remove-student-modal">
+          <div class="remove-student-modal__title">
+            <ExclamationCircleOutlined class="remove-student-modal__icon" />
+            <span>学员移出此班级？</span>
+          </div>
+          <div class="remove-student-modal__desc">
+            将{{ removingStudent?.name || '-' }}移出此班级
+          </div>
+          <div class="remove-student-modal__note">
+            <div>1.若班级有未点名排课日程，日程中的学员也会移出</div>
+            <div>2.此学员在当前班级的出入班记录将清空</div>
+            <div>3.已点名的历史课程不受影响</div>
+          </div>
+          <div class="remove-student-modal__footer">
+            <a-button :disabled="removing" @click="closeRemoveStudentModal">
+              取消
+            </a-button>
+            <a-button type="primary" :loading="removing" @click="confirmRemoveStudent">
+              确认
+            </a-button>
+          </div>
+        </div>
+      </a-modal>
     </div>
   </div>
 </template>
 
-<style lang="less" scoped></style>
+<style lang="less" scoped>
+.remove-student-modal {
+  padding: 8px 4px 0;
+}
+
+.remove-student-modal__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #1f2329;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.remove-student-modal__icon {
+  color: #ff4d4f;
+  font-size: 20px;
+}
+
+.remove-student-modal__desc {
+  margin: 14px 0 18px 32px;
+  color: #4e5969;
+  line-height: 22px;
+}
+
+.remove-student-modal__note {
+  margin-left: 32px;
+  color: #86909c;
+  line-height: 28px;
+}
+
+.remove-student-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 28px;
+}
+</style>

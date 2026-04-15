@@ -5067,6 +5067,10 @@ func buildAssociatedGroupClassStudentNameMap(memberships []groupClassStudentMemb
 		if normalizeTeachingScheduleStudentType(override.StudentType) != model.TeachingScheduleStudentTypeClassMember {
 			continue
 		}
+		if normalizeTeachingScheduleStudentRosterStatus(override.RosterStatus) == model.TeachingScheduleStudentRosterStatusRemoved {
+			delete(result, override.StudentID)
+			continue
+		}
 		result[override.StudentID] = firstNonEmptyString(strings.TrimSpace(override.StudentName), result[override.StudentID], "该学员")
 	}
 	return result

@@ -202,6 +202,29 @@ const singleCoursePagination = ref({
 });
 const singleCourseFinished = ref(false);
 
+function extractPagedItems(res) {
+  const candidates = [res?.result, res?.data];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate))
+      return candidate;
+    if (Array.isArray(candidate?.items))
+      return candidate.items;
+    if (Array.isArray(candidate?.list))
+      return candidate.list;
+  }
+  return [];
+}
+
+function extractPagedTotal(res, fallbackLength = 0) {
+  const total
+    = res?.total
+      ?? res?.data?.total
+      ?? res?.result?.total
+      ?? res?.data?.pages?.total
+      ?? res?.result?.pages?.total;
+  return Number(total ?? fallbackLength ?? 0);
+}
+
 async function getSingleCourseListPage() {
   if (singleCourseLoading.value || singleCourseMoreLoading.value)
     return;
@@ -234,7 +257,7 @@ async function getSingleCourseListPage() {
       },
     });
     if (res.code === 200) {
-      const list = res.result || [];
+      const list = extractPagedItems(res);
       const mapped = list.map((item) => ({
         label: item.name || item.title || String(item.id),
         value: String(item.id),
@@ -247,7 +270,7 @@ async function getSingleCourseListPage() {
         const extra = mapped.filter((o) => !existing.has(o.value));
         singleCourseOptions.value = [...singleCourseOptions.value, ...extra];
       }
-      singleCoursePagination.value.total = Number(res.total || 0);
+      singleCoursePagination.value.total = extractPagedTotal(res, list.length);
       const reachedEndByTotal =
         singleCoursePagination.value.total > 0
         && singleCourseOptions.value.length >= singleCoursePagination.value.total;
@@ -699,6 +722,10 @@ function resolveModalContainer() {
     return undefined;
   return document.body;
 }
+
+function resolveSelectPopupContainer(triggerNode) {
+  return triggerNode?.parentNode || document.body;
+}
 </script>
 
 <template>
@@ -780,6 +807,8 @@ function resolveModalContainer() {
             :loading="singleCourseLoading"
             placeholder="请选择课程"
             option-filter-prop="label"
+            option-label-prop="label"
+            :get-popup-container="resolveSelectPopupContainer"
             @dropdown-visible-change="onSingleCourseDropdownVisible"
             @search="onSingleCourseSearch"
             @popup-scroll="onSingleCoursePopupScroll"
@@ -788,6 +817,7 @@ function resolveModalContainer() {
               v-for="opt in singleCourseOptions"
               :key="opt.value"
               :value="opt.value"
+              :label="opt.label"
             >
               {{ opt.label }}
             </a-select-option>
@@ -809,6 +839,16 @@ function resolveModalContainer() {
                 没有更多了
               </div>
             </a-select-option>
+            <a-select-option
+              v-else-if="!singleCourseLoading && singleCourseOptions.length === 0"
+              key="__single_course_empty__"
+              disabled
+              :label="undefined"
+            >
+              <div class="text-center text-#999 text-12px py-1">
+                暂无课程
+              </div>
+            </a-select-option>
           </a-select>
         </a-form-item>
         <!-- 选择组合课程 -->
@@ -828,6 +868,7 @@ function resolveModalContainer() {
               placeholder="请选择组合课程"
               option-filter-prop="label"
               option-label-prop="label"
+              :get-popup-container="resolveSelectPopupContainer"
               @dropdown-visible-change="onComposeDropdownVisible"
               @search="onComposeSearch"
               @popup-scroll="onComposePopupScroll"
@@ -934,6 +975,7 @@ function resolveModalContainer() {
             :loading="classroomLoading"
             placeholder="请选择上课教室"
             allow-clear
+            :get-popup-container="resolveSelectPopupContainer"
           >
             <a-select-option
               v-for="item in classroomOptions"

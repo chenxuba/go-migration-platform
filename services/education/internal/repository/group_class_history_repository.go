@@ -200,7 +200,6 @@ func (repo *Repository) backfillGroupClassHistoryTx(ctx context.Context, tx *sql
 			ON rec.inst_id = tcs.inst_id
 			AND rec.teaching_class_student_id = tcs.id
 			AND rec.entry_exit_status = ?
-			AND rec.del_flag = 0
 		WHERE tcs.inst_id = ? AND tcs.teaching_class_id = ? AND tcs.del_flag = 0
 			AND rec.id IS NULL
 	`, model.GroupClassEntryExitStatusIn, model.GroupClassEntryExitStatusIn, instID, classID); err != nil {
@@ -233,7 +232,6 @@ func (repo *Repository) backfillGroupClassHistoryTx(ctx context.Context, tx *sql
 			ON rec.inst_id = tcs.inst_id
 			AND rec.teaching_class_student_id = tcs.id
 			AND rec.entry_exit_status = ?
-			AND rec.del_flag = 0
 		WHERE tcs.inst_id = ? AND tcs.teaching_class_id = ? AND tcs.del_flag = 0
 			AND IFNULL(tcs.class_student_status, 1) IN (?, ?)
 			AND rec.id IS NULL
@@ -282,7 +280,6 @@ func (repo *Repository) backfillGroupClassHistoryTx(ctx context.Context, tx *sql
 			ON log.inst_id = tcs.inst_id
 			AND log.teaching_class_student_id = tcs.id
 			AND log.operation_type = ?
-			AND log.del_flag = 0
 		WHERE tcs.inst_id = ? AND tcs.teaching_class_id = ? AND tcs.del_flag = 0
 			AND log.id IS NULL
 	`,
@@ -334,7 +331,6 @@ func (repo *Repository) backfillGroupClassHistoryTx(ctx context.Context, tx *sql
 				WHEN IFNULL(tcs.class_student_status, 1) = ? THEN ?
 				ELSE ?
 			END
-			AND log.del_flag = 0
 		WHERE tcs.inst_id = ? AND tcs.teaching_class_id = ? AND tcs.del_flag = 0
 			AND IFNULL(tcs.class_student_status, 1) IN (?, ?)
 			AND log.id IS NULL

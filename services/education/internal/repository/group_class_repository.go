@@ -318,11 +318,20 @@ func (repo *Repository) ListGroupClassStudentsByClassIDs(ctx context.Context, in
 			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
 			 ORDER BY qmin.id ASC LIMIT 1)
 		) AND icq.del_flag = 0
-		WHERE tcs.inst_id = ? AND tcs.del_flag = 0 AND tcs.teaching_class_id IN (` + ph + `)
+		WHERE tcs.inst_id = ? AND tcs.del_flag = 0
+			AND IFNULL(tcs.class_student_status, ?) IN (?, ?)
+			AND tcs.teaching_class_id IN (` + ph + `)
 		ORDER BY tcs.teaching_class_id ASC, tcs.id ASC
 	`
-	args := make([]any, 0, 2+len(ids))
-	args = append(args, model.TeachingClassTypeNormal, instID)
+	args := make([]any, 0, 5+len(ids))
+	args = append(
+		args,
+		model.TeachingClassTypeNormal,
+		instID,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStopped,
+	)
 	for _, id := range ids {
 		args = append(args, id)
 	}
@@ -1859,29 +1868,49 @@ func (repo *Repository) BatchAssignGroupClassStudents(ctx context.Context, instI
 		if err := tx.QueryRowContext(ctx, `
 			SELECT COUNT(*) FROM teaching_class_student
 			WHERE inst_id = ? AND teaching_class_id = ? AND del_flag = 0
-		`, instID, classID).Scan(&currentCnt); err != nil {
+			  AND IFNULL(class_student_status, ?) IN (?, ?)
+		`, instID, classID, model.TeachingClassStudentStatusStudying, model.TeachingClassStudentStatusStudying, model.TeachingClassStudentStatusStopped).Scan(&currentCnt); err != nil {
 			return err
 		}
 
+		type reopenPair struct {
+			rowID int64
+			pair  batchAssignPair
+		}
 		toInsert := make([]batchAssignPair, 0, len(pairs))
+		toReopen := make([]reopenPair, 0, len(pairs))
 		for _, p := range pairs {
 			if _, ok := allowed[p.courseID]; !ok {
 				return errors.New("所选报读与班级关联课程不一致")
 			}
-			var exists int
-			if err := tx.QueryRowContext(ctx, `
-				SELECT COUNT(*) FROM teaching_class_student
+			var (
+				existingRowID  int64
+				existingStatus int
+			)
+			err := tx.QueryRowContext(ctx, `
+				SELECT id, IFNULL(class_student_status, ?)
+				FROM teaching_class_student
 				WHERE inst_id = ? AND teaching_class_id = ? AND student_id = ? AND order_course_detail_id = ? AND del_flag = 0
-			`, instID, classID, p.studentID, p.ocdID).Scan(&exists); err != nil {
-				return err
-			}
-			if exists > 0 {
+				ORDER BY id ASC
+				LIMIT 1
+			`, model.TeachingClassStudentStatusStudying, instID, classID, p.studentID, p.ocdID).Scan(&existingRowID, &existingStatus)
+			if errors.Is(err, sql.ErrNoRows) {
+				toInsert = append(toInsert, p)
 				continue
 			}
-			toInsert = append(toInsert, p)
+			if err != nil {
+				return err
+			}
+			if existingStatus == model.TeachingClassStudentStatusClosed {
+				toReopen = append(toReopen, reopenPair{
+					rowID: existingRowID,
+					pair:  p,
+				})
+				continue
+			}
 		}
 
-		if !enforceClassAssign && maxCount > 0 && int64(currentCnt+len(toInsert)) > maxCount {
+		if !enforceClassAssign && maxCount > 0 && int64(currentCnt+len(toInsert)+len(toReopen)) > maxCount {
 			return fmt.Errorf("超出班级最大学员数（maxCount=%d）", maxCount)
 		}
 
@@ -1901,6 +1930,103 @@ func (repo *Repository) BatchAssignGroupClassStudents(ctx context.Context, instI
 				return err
 			}
 		}
+
+		for _, item := range toReopen {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE teaching_class_student
+				SET order_id = ?,
+				    order_course_detail_id = ?,
+				    quote_id = ?,
+				    primary_tuition_account_id = ?,
+				    class_student_status = ?,
+				    class_time = ?,
+				    student_class_time = ?,
+				    teacher_class_time = ?,
+				    class_time_record_mode = ?,
+				    update_id = ?,
+				    update_time = NOW()
+				WHERE inst_id = ?
+				  AND id = ?
+				  AND del_flag = 0
+			`, item.pair.orderID, item.pair.ocdID, item.pair.quoteID, item.pair.tuitionAccountID,
+				model.TeachingClassStudentStatusStudying,
+				defStuTime, defStuTime, defTeachTime, recordMode,
+				operatorID, instID, item.rowID); err != nil {
+				return err
+			}
+			if err := repo.restoreGroupClassStudentUnrolledSchedulesTx(ctx, tx, instID, operatorID, classID, item.pair.studentID); err != nil {
+				return err
+			}
+		}
 	}
 	return tx.Commit()
+}
+
+func (repo *Repository) restoreGroupClassStudentUnrolledSchedulesTx(ctx context.Context, tx *sql.Tx, instID, operatorID, classID, studentID int64) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, lesson_start_at
+		FROM teaching_schedule
+		WHERE inst_id = ?
+		  AND teaching_class_id = ?
+		  AND class_type = ?
+		  AND status = ?
+		  AND del_flag = 0
+		ORDER BY id ASC
+	`, instID, classID, model.TeachingClassTypeNormal, model.TeachingScheduleStatusActive)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	metas := make([]teachingScheduleRollCallMeta, 0, 16)
+	for rows.Next() {
+		var scheduleID int64
+		var startAt time.Time
+		if err := rows.Scan(&scheduleID, &startAt); err != nil {
+			return err
+		}
+		if scheduleID <= 0 {
+			continue
+		}
+		metas = append(metas, teachingScheduleRollCallMeta{
+			ScheduleID: scheduleID,
+			ClassType:  model.TeachingClassTypeNormal,
+			ClassID:    classID,
+			StartAt:    startAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(metas) == 0 {
+		return nil
+	}
+
+	statusByID, err := repo.computeTeachingScheduleCallStatusMap(ctx, tx, instID, metas)
+	if err != nil {
+		return err
+	}
+
+	for _, meta := range metas {
+		if normalizeTeachingScheduleCallStatus(statusByID[meta.ScheduleID]) != 1 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO teaching_schedule_student (
+				inst_id, teaching_schedule_id, teaching_class_id, student_id,
+				student_type, roster_status, create_id, update_id, del_flag
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+			ON DUPLICATE KEY UPDATE
+				teaching_class_id = VALUES(teaching_class_id),
+				student_type = VALUES(student_type),
+				roster_status = VALUES(roster_status),
+				update_id = VALUES(update_id),
+				update_time = CURRENT_TIMESTAMP,
+				del_flag = 0
+		`, instID, meta.ScheduleID, classID, studentID, model.TeachingScheduleStudentTypeClassMember, model.TeachingScheduleStudentRosterStatusActive, operatorID, operatorID); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

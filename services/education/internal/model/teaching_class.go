@@ -626,6 +626,11 @@ type BatchAssignGroupClassStudentsRequest struct {
 	EnforceClassAssign bool                               `json:"enforceClassAssign"`
 }
 
+type GroupClassRemoveStudentDTO struct {
+	ClassID   string `json:"classId"`
+	StudentID string `json:"studentId"`
+}
+
 type BatchAssignGroupClassStudentItem struct {
 	StudentID        string `json:"studentId"`
 	TuitionAccountID string `json:"tuitionAccountId"`

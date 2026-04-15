@@ -36,44 +36,48 @@ const openDrawer = computed({
   set: value => emit('update:open', value),
 })
 
+const detailData = ref(null)
+let detailReqSeq = 0
+
+function loadClassDetail() {
+  if (!props.open) {
+    detailReqSeq += 1
+    detailData.value = null
+    return
+  }
+  const classId = String(props.record?.id || '').trim()
+  if (!classId) {
+    detailReqSeq += 1
+    detailData.value = null
+    return
+  }
+  const seq = ++detailReqSeq
+  getGroupClassDetailApi({ id: classId })
+    .then((res) => {
+      if (seq !== detailReqSeq)
+        return
+      if (res.code === 200 && res.result)
+        detailData.value = res.result
+      else
+        messageService.error(res.message || '加载班级详情失败')
+    })
+    .catch((error) => {
+      if (seq !== detailReqSeq)
+        return
+      console.error('load group class detail failed', error)
+      messageService.error(error?.response?.data?.message || error?.message || '加载班级详情失败')
+    })
+}
+
 watch(() => openDrawer.value, (newVal) => {
   if (newVal)
     activeKey.value = String(props.initialActiveKey || '0')
 })
 
-const detailData = ref(null)
-let detailReqSeq = 0
-
 watch(
   () => [props.open, props.record],
   () => {
-    if (!props.open) {
-      detailReqSeq += 1
-      detailData.value = null
-      return
-    }
-    const classId = String(props.record?.id || '').trim()
-    if (!classId) {
-      detailReqSeq += 1
-      detailData.value = null
-      return
-    }
-    const seq = ++detailReqSeq
-    getGroupClassDetailApi({ id: classId })
-      .then((res) => {
-        if (seq !== detailReqSeq)
-          return
-        if (res.code === 200 && res.result)
-          detailData.value = res.result
-        else
-          messageService.error(res.message || '加载班级详情失败')
-      })
-      .catch((error) => {
-        if (seq !== detailReqSeq)
-          return
-        console.error('load group class detail failed', error)
-        messageService.error(error?.response?.data?.message || error?.message || '加载班级详情失败')
-      })
+    loadClassDetail()
   },
   { immediate: true, flush: 'sync' },
 )
@@ -223,6 +227,11 @@ function handleEditClass() {
 function handleExportRollCallSheet() {
   messageService.info('导出点名表功能待实现')
 }
+
+function handleStudentListChanged() {
+  loadClassDetail()
+  emit('refresh')
+}
 </script>
 
 <template>
@@ -348,6 +357,7 @@ function handleExportRollCallSheet() {
               :class-name="displayRecord?.name || ''"
               :lesson-id="String(displayRecord?.lessonId || '')"
               :lesson-name="displayRecord?.lessonName || ''"
+              @changed="handleStudentListChanged"
             />
           </a-tab-pane>
           <a-tab-pane key="1" tab="日程">

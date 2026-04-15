@@ -877,14 +877,25 @@ func (repo *Repository) PageTuitionAccountsByLessonForGroupAdd(ctx context.Conte
 			CASE WHEN IFNULL(ta.status, 0) = 1 THEN 1 ELSE 0 END,
 			CASE WHEN ? > 0 AND EXISTS (
 				SELECT 1 FROM teaching_class_student tcs
-				WHERE tcs.inst_id = ta.inst_id AND tcs.teaching_class_id = ? AND tcs.student_id = ta.student_id AND tcs.del_flag = 0
+				WHERE tcs.inst_id = ta.inst_id
+					AND tcs.teaching_class_id = ?
+					AND tcs.student_id = ta.student_id
+					AND tcs.del_flag = 0
+					AND IFNULL(tcs.class_student_status, ?) IN (?, ?)
 			) THEN 1 ELSE 0 END
 	` + baseFrom + `
 		ORDER BY ta.id DESC
 		LIMIT ? OFFSET ?
 	`
-	dataArgs := make([]any, 0, 2+len(argsBase)+2)
-	dataArgs = append(dataArgs, currentClassID, currentClassID)
+	dataArgs := make([]any, 0, 5+len(argsBase)+2)
+	dataArgs = append(
+		dataArgs,
+		currentClassID,
+		currentClassID,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStudying,
+		model.TeachingClassStudentStatusStopped,
+	)
 	dataArgs = append(dataArgs, argsBase...)
 	dataArgs = append(dataArgs, pageSize, offset)
 

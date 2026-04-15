@@ -328,7 +328,7 @@ func TestBuildGroupClassScheduleRosterFromMembershipsAndOverrides_SplitsLeaveAnd
 	}
 }
 
-func TestBuildAssociatedGroupClassStudentSet_IncludesRemovedClassMemberOverrides(t *testing.T) {
+func TestBuildAssociatedGroupClassStudentSet_ExcludesRemovedClassMemberOverrides(t *testing.T) {
 	scheduleStartAt := time.Date(2026, 4, 9, 10, 0, 0, 0, time.Local)
 	got := buildAssociatedGroupClassStudentSet(
 		[]groupClassStudentMembership{
@@ -358,8 +358,8 @@ func TestBuildAssociatedGroupClassStudentSet_IncludesRemovedClassMemberOverrides
 	if _, ok := got[1]; !ok {
 		t.Fatalf("expected studying class member to be marked as associated, got %#v", got)
 	}
-	if _, ok := got[2]; !ok {
-		t.Fatalf("expected removed class-member override to still be marked as associated, got %#v", got)
+	if _, ok := got[2]; ok {
+		t.Fatalf("expected removed class-member override to be excluded from associated set, got %#v", got)
 	}
 	if _, ok := got[3]; ok {
 		t.Fatalf("expected trial override to not be marked as associated, got %#v", got)
