@@ -303,6 +303,14 @@ function formatCurrency(value?: number) {
   return `￥${Number(value || 0).toFixed(2)}`
 }
 
+function formatMinuteDateTime(value?: string) {
+  const text = String(value || '').trim()
+  if (!text)
+    return '-'
+  const date = dayjs(text)
+  return date.isValid() ? date.format('YYYY-MM-DD HH:mm') : text
+}
+
 function attendanceRateText(record: ScheduleTeachingRecordItem | Record<string, any>) {
   const shouldAttend = Number(record.shouldAttendCount || 0)
   if (shouldAttend <= 0)
@@ -415,7 +423,7 @@ watch(
             -
           </template>
           <template v-if="column.dataIndex === 'rollCallTime'">
-            {{ record.updatedTime || record.createdTime || '-' }}
+            {{ formatMinuteDateTime(record.updatedTime || record.createdTime) }}
           </template>
           <template v-if="column.dataIndex === 'action'">
             <a-space :size="12">
