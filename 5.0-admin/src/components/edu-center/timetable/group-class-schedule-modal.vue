@@ -2549,6 +2549,7 @@ watch(
                       v-model="selectedTeacher"
                       size="large"
                       placeholder="请选择上课教师"
+                      popup-class-name="planner-record-select-dropdown"
                       width="100%"
                       :multiple="false"
                       :status="0"
