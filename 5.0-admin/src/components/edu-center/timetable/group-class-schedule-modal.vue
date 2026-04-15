@@ -338,7 +338,14 @@ function scrollPlannerShellToTop() {
     el.scrollTop = 0
 }
 
-function scheduleSlotSelectGetPopupContainer() {
+/**
+ * 统一挂到当前 Modal wrap，避免编辑弹窗里不同控件各自走默认容器，
+ * 造成有的弹层被 Drawer/Mask 压住、有的又被滚动容器误判为点外部。
+ */
+function scheduleSlotSelectGetPopupContainer(triggerNode?: HTMLElement) {
+  const modalWrap = triggerNode?.closest('.ant-modal-wrap')
+  if (modalWrap instanceof HTMLElement)
+    return modalWrap
   return document.body
 }
 
@@ -2196,6 +2203,7 @@ watch(
                 show-search
                 option-filter-prop="label"
                 option-label-prop="label"
+                :get-popup-container="scheduleSlotSelectGetPopupContainer"
                 popup-class-name="planner-record-select-dropdown"
                 :allow-clear="!isInitialGroupClassLocked"
                 :loading="groupClassLoading || groupClassDetailLoading"
@@ -2360,6 +2368,8 @@ watch(
                         size="large"
                         class="planner-control"
                         :allow-clear="false"
+                        :get-popup-container="scheduleSlotSelectGetPopupContainer"
+                        popup-class-name="planner-date-picker-dropdown"
                       />
                     </label>
 
@@ -2414,6 +2424,7 @@ watch(
                         v-model:open="freeCalendarOpen"
                         trigger="click"
                         placement="bottomLeft"
+                        :get-popup-container="scheduleSlotSelectGetPopupContainer"
                         overlay-class-name="planner-free-calendar-popover"
                       >
                         <template #content>
@@ -2549,6 +2560,7 @@ watch(
                       v-model="selectedTeacher"
                       size="large"
                       placeholder="请选择上课教师"
+                      :get-popup-container="scheduleSlotSelectGetPopupContainer"
                       popup-class-name="planner-record-select-dropdown"
                       width="100%"
                       :multiple="false"
@@ -2571,6 +2583,8 @@ watch(
                       allow-clear
                       placeholder="不选则默认班级教室"
                       :options="classroomOptions"
+                      :get-popup-container="scheduleSlotSelectGetPopupContainer"
+                      popup-class-name="planner-classroom-select-dropdown"
                       class="planner-control"
                     />
                   </label>
@@ -2657,6 +2671,7 @@ watch(
                       allow-clear
                       option-label-prop="label"
                       :filter-option="filterAssistantOption"
+                      :get-popup-container="scheduleSlotSelectGetPopupContainer"
                       popup-class-name="planner-assistant-select-dropdown"
                       class="planner-control planner-multi-slot-select planner-assistant-select"
                       @change="handleAssistantChange"
@@ -4418,8 +4433,14 @@ button.planner-chip.planner-chip--active {
 
 <style lang="less">
 .planner-record-select-dropdown.ant-select-dropdown,
+.planner-classroom-select-dropdown.ant-select-dropdown,
 .planner-schedule-slot-select-dropdown.ant-select-dropdown,
 .planner-assistant-select-dropdown.ant-select-dropdown {
+  z-index: 3000 !important;
+}
+
+.planner-date-picker-dropdown.ant-picker-dropdown,
+.planner-free-calendar-popover.ant-popover {
   z-index: 3000 !important;
 }
 
@@ -4462,6 +4483,8 @@ button.planner-chip.planner-chip--active {
 .planner-slot-option,
 .planner-staff-option {
   display: flex;
+  width: 100%;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -4478,15 +4501,21 @@ button.planner-chip.planner-chip--active {
 
 .planner-staff-option__main {
   display: flex;
+  flex: 1;
   min-width: 0;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
+  text-align: left;
 }
 
 .planner-staff-option__mobile {
+  display: block;
+  width: 100%;
   color: #98a2b3;
   font-size: 12px;
   line-height: 1.4;
+  text-align: left;
 }
 
 .planner-slot-option__status {
@@ -4561,26 +4590,35 @@ button.planner-chip.planner-chip--active {
 
 .planner-record-select-dropdown .planner-option {
   display: flex;
+  width: 100%;
+  min-width: 0;
   flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
+  text-align: left;
 }
 
 .planner-record-select-dropdown .planner-option__title {
+  display: block;
+  width: 100%;
   overflow: hidden;
   color: #1f2329;
   font-size: 14px;
   font-weight: 600;
   line-height: 1.45;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .planner-record-select-dropdown .planner-option__meta {
   display: flex;
+  width: 100%;
   gap: 10px;
   overflow: hidden;
   color: #7d8898;
   font-size: 12px;
   line-height: 1.5;
+  text-align: left;
 }
 </style>
