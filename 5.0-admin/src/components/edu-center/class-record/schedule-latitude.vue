@@ -335,6 +335,10 @@ function attendanceRateText(record: Partial<ScheduleTeachingRecordItem> | Record
   return `${Math.round(Number(record.attendanceRate || 0) * 100)}%`
 }
 
+function attendanceRateSummaryText(record: Partial<ScheduleTeachingRecordItem> | Record<string, any>) {
+  return `实到${Number(record.attendCount || 0)}人 / 应到${Number(record.shouldAttendCount || 0)}人`
+}
+
 function displayConsumedQuantity(record: Partial<ScheduleTeachingRecordItem> | Record<string, any>) {
   const actualTuition = Number(record.actualTuition || 0)
   const actualQuantity = Number(record.actualQuantity || 0)
@@ -755,12 +759,10 @@ onMounted(() => {
                 </span>
               </template>
               <template v-if="column.key === 'attendanceRate'">
-                <div class="name">
-                  <div class="text-#000">
-                    {{ attendanceRateText(record) }}
-                  </div>
-                  <div class="text-3 text-#888 flex flex-items-center">
-                    实到{{ record.attendCount || 0 }}人 / 应到{{ record.shouldAttendCount || 0 }}人
+                <div class="leading-20px">
+                  <div>{{ attendanceRateText(record) }}</div>
+                  <div class="text-3 text-#888 whitespace-nowrap">
+                    {{ attendanceRateSummaryText(record) }}
                   </div>
                 </div>
               </template>
