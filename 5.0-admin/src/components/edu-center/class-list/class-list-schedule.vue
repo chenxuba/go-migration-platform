@@ -113,6 +113,10 @@ function getEditActionText(record?: Partial<GroupClassDrawerScheduleItem> | null
   return '编辑'
 }
 
+function getViewActionTooltip(record?: Partial<GroupClassDrawerScheduleItem> | null) {
+  return hasBatchScheduleRecord(record) ? '查看最近一节日程详情' : '查看日程详情'
+}
+
 function getEditActionTooltip(record?: Partial<GroupClassDrawerScheduleItem> | null) {
   return resolveScheduleScope(record) === 'future' ? '编辑以后日程' : '编辑日程'
 }
@@ -138,8 +142,15 @@ function isPastSchedule(item?: Partial<TeachingScheduleItem> | null) {
 
 function resolveViewAnchor(list: TeachingScheduleItem[]) {
   const sorted = sortTeachingScheduleItemsByTimeline(list)
-  const pending = sorted.filter(item => !isRolledCallSchedule(item))
-  return pending[0] || sorted[0] || null
+  const upcomingPending = sorted.find(item => !isRolledCallSchedule(item) && !isPastSchedule(item))
+  if (upcomingPending)
+    return upcomingPending
+
+  const latestPending = [...sorted].reverse().find(item => !isRolledCallSchedule(item))
+  if (latestPending)
+    return latestPending
+
+  return sorted[sorted.length - 1] || null
 }
 
 function resolveActionAnchor(list: TeachingScheduleItem[], scope: ScheduleScope, mode: ScheduleActionMode) {
@@ -427,7 +438,9 @@ watch(
           </template>
           <template v-if="column.dataIndex === 'action'">
             <a-space :size="12">
-              <a @click="handleViewDetail(record)">详情</a>
+              <a-tooltip :title="getViewActionTooltip(record)">
+                <a @click="handleViewDetail(record)">详情</a>
+              </a-tooltip>
               <a-tooltip v-if="getRemainingScheduleCount(record) > 0" :title="getEditActionTooltip(record)">
                 <a @click="handleEdit(record)">{{ getEditActionText(record) }}</a>
               </a-tooltip>

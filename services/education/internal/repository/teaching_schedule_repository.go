@@ -2255,6 +2255,9 @@ func (repo *Repository) GetTeachingScheduleBatchDetail(ctx context.Context, inst
 	if len(items) == 0 {
 		return model.TeachingScheduleBatchDetailVO{}, errors.New("未找到该批次日程")
 	}
+	if err := repo.FillTeachingScheduleCallStatus(ctx, instID, items); err != nil {
+		return model.TeachingScheduleBatchDetailVO{}, err
+	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].LessonDate == items[j].LessonDate {
 			if items[i].StartAt.Equal(items[j].StartAt) {
