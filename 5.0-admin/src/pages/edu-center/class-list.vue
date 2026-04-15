@@ -3,7 +3,8 @@ import { CaretDownOutlined, DownOutlined, ExclamationCircleOutlined } from '@ant
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { debounce } from 'lodash-es'
-import { createVNode } from 'vue'
+import { createVNode, onMounted } from 'vue'
+import { listClassroomsApi } from '@/api/business-settings/classroom'
 import {
   closeGroupClassApi,
   groupClassStatisticsApi,
@@ -118,9 +119,35 @@ function updateCustomSearchOptions(id, optionsList) {
     : item)
 }
 
+async function loadClassroomFilterOptions() {
+  try {
+    const res = await listClassroomsApi()
+    if (res.code !== 200) {
+      messageService.error(res.message || '获取教室列表失败')
+      return
+    }
+    const roomMap = new Map()
+    for (const item of Array.isArray(res.result) ? res.result : []) {
+      const roomName = String(item?.name || '').trim()
+      if (!roomName || roomMap.has(roomName))
+        continue
+      roomMap.set(roomName, {
+        id: roomName,
+        value: roomName,
+      })
+    }
+    if (roomMap.size > 0)
+      updateCustomSearchOptions('classRoomName', Array.from(roomMap.values()))
+  }
+  catch (error) {
+    console.error('load classroom filter options failed', error)
+    messageService.error(error?.message || '获取教室列表失败')
+  }
+}
+
 /**
- * 不再单独请求课程/组合课/额外班级 page：从当前列表结果合并筛选项，随翻页、换筛选累积。
- * （未出现在已加载班级里的课程/教室不会出现在下拉里，若需要全量可后续做懒加载或独立轻量接口。）
+ * 课程筛选项仍从当前列表结果合并；教室筛选项以机构教室列表为主，
+ * 再补充当前列表里的实际上课教室，兼容历史数据。
  */
 function mergeCustomFilterOptionsFromClassList(list) {
   if (!Array.isArray(list) || list.length === 0)
@@ -132,8 +159,13 @@ function mergeCustomFilterOptionsFromClassList(list) {
   const roomMap = new Map((roomItem?.optionsList || []).map(o => [o.id, o]))
 
   for (const item of list) {
-    const roomName = String(item.classRoomName || '').trim()
-    if (roomName && !roomMap.has(roomName)) {
+    const roomNames = Array.isArray(item.classRoomNames) && item.classRoomNames.length
+      ? item.classRoomNames
+      : [item.classRoomName]
+    for (const rawRoomName of roomNames) {
+      const roomName = String(rawRoomName || '').trim()
+      if (!roomName || roomMap.has(roomName))
+        continue
       roomMap.set(roomName, {
         id: roomName,
         value: roomName,
@@ -715,7 +747,10 @@ const rowSelection = computed(() => ({
 }))
 
 onMounted(async () => {
-  await getClassList(queryState.value)
+  await Promise.all([
+    loadClassroomFilterOptions(),
+    getClassList(queryState.value),
+  ])
 })
 </script>
 

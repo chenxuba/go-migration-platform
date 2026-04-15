@@ -276,10 +276,10 @@ function getRemainQuantity(record: Partial<GroupClassStudentPagedItem>) {
 
 function getClassStatusInfo(record: Partial<GroupClassStudentPagedItem>) {
   if (Number(record.tuitionAccountStatus || 0) === 3)
-    return { text: '结课', className: 'text-#888 bg-#f5f5f5' }
+    return { text: '结课', className: 'text-#b42318 bg-#fff1f3' }
   if (record.status === 3) {
     if (record.classEndingTime && `${record.classEndingTime}` !== '0001-01-01T00:00:00')
-      return { text: '结课', className: 'text-#888 bg-#f5f5f5' }
+      return { text: '结课', className: 'text-#b42318 bg-#fff1f3' }
     return { text: '转出', className: 'text-#0c3 bg-#e6ffec' }
   }
   if (record.status === 2) {

@@ -111,6 +111,7 @@ export interface GroupClassRow {
   defaultTeacherId: string
   defaultTeacherName: string
   classRoomName: string
+  classRoomNames?: string[]
   classLessonTimes: unknown[]
   isScheduled: boolean
   classLessonDayInfos: {

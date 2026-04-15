@@ -256,6 +256,41 @@ func resolveGroupClassStudentClassID(q model.GroupClassStudentQueryModel) (int64
 	return classID, nil
 }
 
+func buildGroupClassScheduleClassroomNamesSQL(classAlias string) string {
+	return `(
+		SELECT GROUP_CONCAT(DISTINCT TRIM(ts.classroom_name) ORDER BY TRIM(ts.classroom_name) SEPARATOR '\n')
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ` + classAlias + `.inst_id
+		  AND ts.teaching_class_id = ` + classAlias + `.id
+		  AND ts.class_type = ` + strconv.Itoa(model.TeachingClassTypeNormal) + `
+		  AND ts.del_flag = 0
+		  AND ts.status = ` + strconv.Itoa(model.TeachingScheduleStatusActive) + `
+		  AND TRIM(IFNULL(ts.classroom_name, '')) <> ''
+	)`
+}
+
+func buildMergedGroupClassRoomNames(defaultRoomName, scheduleRoomNames string) []string {
+	out := make([]string, 0, 4)
+	seen := make(map[string]struct{}, 4)
+	appendRoom := func(raw string) {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+
+	appendRoom(defaultRoomName)
+	for _, part := range strings.Split(scheduleRoomNames, "\n") {
+		appendRoom(part)
+	}
+	return out
+}
+
 func buildGroupClassStudentMembershipWhere(instID, classID int64, statuses []int, ignoreSuspended bool) (string, []any) {
 	whereParts := []string{
 		"tcs.inst_id = ?",
@@ -1327,8 +1362,22 @@ func buildGroupClassFilters(instID int64, q model.GroupClassListQueryModel) (str
 		}
 	}
 	if s := strings.TrimSpace(q.ClassRoomName); s != "" {
-		cond += " AND tc.class_room_name LIKE ?"
-		args = append(args, "%"+s+"%")
+		keyword := "%" + s + "%"
+		cond += ` AND (
+			tc.class_room_name LIKE ?
+			OR EXISTS (
+				SELECT 1
+				FROM teaching_schedule ts
+				WHERE ts.inst_id = tc.inst_id
+				  AND ts.teaching_class_id = tc.id
+				  AND ts.class_type = ` + strconv.Itoa(model.TeachingClassTypeNormal) + `
+				  AND ts.del_flag = 0
+				  AND ts.status = ` + strconv.Itoa(model.TeachingScheduleStatusActive) + `
+				  AND TRIM(IFNULL(ts.classroom_name, '')) <> ''
+				  AND ts.classroom_name LIKE ?
+			)
+		)`
+		args = append(args, keyword, keyword)
 	}
 	if q.IsMultiProduct != nil {
 		if *q.IsMultiProduct {
@@ -1410,6 +1459,7 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 			` + buildTeachingClassScheduledCountSQL("tc", strconv.Itoa(model.TeachingClassTypeNormal)) + `,
 			` + buildTeachingClassFinishedCountSQL("tc", strconv.Itoa(model.TeachingClassTypeNormal), recordExistsSQL, "IFNULL(tc.finished_lesson_count, 0)") + `,
 			tc.class_room_name,
+			IFNULL(` + buildGroupClassScheduleClassroomNamesSQL("tc") + `, ''),
 			tc.default_teacher_id, tc.remark, tc.create_time,
 			IFNULL(creator.nick_name, ''),
 			COALESCE(NULLIF(icl.name, ''), NULLIF(ic.name, ''), '') AS lesson_display_name,
@@ -1449,18 +1499,19 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 	defer rows.Close()
 
 	type rowRec struct {
-		id, courseID, composeID, maxCount, status   int64
-		sched, finished                             int
-		classRoom, remark, lessonName, createdStaff string
-		defTID                                      int64
-		name                                        string
-		created                                     time.Time
-		defTName                                    string
-		classTimeSum                                float64
-		stuCnt                                      int
-		defaultStuTime, defaultTeachTime            float64
-		recordMode                                  int
-		closed                                      sql.NullTime
+		id, courseID, composeID, maxCount, status int64
+		sched, finished                           int
+		classRoom, scheduleClassRooms             string
+		remark, lessonName, createdStaff          string
+		defTID                                    int64
+		name                                      string
+		created                                   time.Time
+		defTName                                  string
+		classTimeSum                              float64
+		stuCnt                                    int
+		defaultStuTime, defaultTeachTime          float64
+		recordMode                                int
+		closed                                    sql.NullTime
 	}
 	var ids []int64
 	var recs []rowRec
@@ -1468,7 +1519,7 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 		var r rowRec
 		if err := rows.Scan(
 			&r.id, &r.name, &r.courseID, &r.composeID, &r.maxCount, &r.status,
-			&r.sched, &r.finished, &r.classRoom, &r.defTID, &r.remark, &r.created,
+			&r.sched, &r.finished, &r.classRoom, &r.scheduleClassRooms, &r.defTID, &r.remark, &r.created,
 			&r.createdStaff, &r.lessonName, &r.defTName, &r.classTimeSum, &r.stuCnt,
 			&r.defaultStuTime, &r.defaultTeachTime, &r.recordMode, &r.closed,
 		); err != nil {
@@ -1497,6 +1548,7 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 		if r.closed.Valid {
 			closedT = r.closed.Time
 		}
+		classRoomNames := buildMergedGroupClassRoomNames(r.classRoom, r.scheduleClassRooms)
 		item := model.GroupClassListItemVO{
 			ID:               strconv.FormatInt(r.id, 10),
 			Name:             r.name,
@@ -1520,7 +1572,8 @@ func (repo *Repository) PageGroupClassList(ctx context.Context, instID int64, q 
 				}
 				return ""
 			}(),
-			ClassRoomName:    r.classRoom,
+			ClassRoomName:    strings.Join(classRoomNames, "、"),
+			ClassRoomNames:   classRoomNames,
 			ClassLessonTimes: []any{},
 			IsScheduled:      r.sched > 0,
 			ClassLessonDayInfos: model.GroupClassLessonDayInfoVO{

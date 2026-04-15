@@ -46,7 +46,7 @@ const columns: TableColumnsType<GroupClassOperationLogItem> = [
     title: '操作内容',
     dataIndex: 'operationContent',
     key: 'operationContent',
-    width: 520,
+    width: 420,
   },
   {
     title: '操作人',
@@ -215,6 +215,21 @@ function formatDateTime(value?: string) {
   return date.isValid() ? date.format('YYYY-MM-DD HH:mm') : '-'
 }
 
+function getOperationTypeTagClass(type?: number) {
+  switch (Number(type)) {
+    case 1:
+      return 'type-tag type-tag--account'
+    case 2:
+      return 'type-tag type-tag--status'
+    case 3:
+      return 'type-tag type-tag--remove'
+    case 4:
+      return 'type-tag type-tag--add'
+    default:
+      return 'type-tag'
+  }
+}
+
 watch(
   () => `${props.open}|${String(props.classId || '').trim()}`,
   () => {
@@ -269,7 +284,7 @@ watch(
             </div>
           </template>
           <template v-else-if="column.dataIndex === 'operationTypeText'">
-            <a-tag class="type-tag" color="blue">
+            <a-tag :class="getOperationTypeTagClass(record.operationType)" :bordered="false">
               {{ record.operationTypeText || '-' }}
             </a-tag>
           </template>
@@ -316,6 +331,33 @@ watch(
 .type-tag {
   margin-inline-end: 0;
   border-radius: 999px;
+  padding-inline: 10px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.type-tag--account {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.type-tag--status {
+  color: #c2410c;
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+
+.type-tag--remove {
+  color: #b42318;
+  background: #fff1f3;
+  border-color: #fda4af;
+}
+
+.type-tag--add {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #86efac;
 }
 
 .content-cell {
