@@ -14,6 +14,7 @@ import CreateClassModal from '@/components/common/create-class-modal.vue'
 import ClassAddStudentModal from '@/components/edu-center/class-list/class-add-student-modal.vue'
 import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawer.vue'
 import GroupClassFinishCourseModal from '@/components/edu-center/class-list/group-class-finish-course-modal.vue'
+import GroupClassScheduleModal from '@/components/edu-center/timetable/group-class-schedule-modal.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { openCloseClassConfirm } from '@/utils/closeClassConfirm'
 import messageService from '@/utils/messageService'
@@ -25,6 +26,7 @@ const createClassModal = ref(false)
 const editClassRecord = ref(null)
 const classListDrawerFlag = ref(false)
 const currentClassRecord = ref(null)
+const classListDrawerInitialTab = ref('0')
 const addStudentModalOpen = ref(false)
 const addStudentModalTitle = ref('')
 const addStudentModalLessonName = ref('')
@@ -32,6 +34,8 @@ const addStudentModalClassId = ref('')
 const addStudentModalLessonId = ref('')
 const finishCourseModalOpen = ref(false)
 const finishCourseRecord = ref(null)
+const scheduleModalOpen = ref(false)
+const scheduleModalClassId = ref('')
 const listLoading = ref(false)
 const dataSource = ref([])
 const selectedRowKeys = ref([])
@@ -431,8 +435,9 @@ function createClass() {
   createClassModal.value = true
 }
 
-function openClassListDrawer(record) {
+function openClassListDrawer(record, initialActiveKey = '0') {
   currentClassRecord.value = record || null
+  classListDrawerInitialTab.value = String(initialActiveKey || '0')
   classListDrawerFlag.value = true
 }
 
@@ -442,6 +447,16 @@ function openAddStudentModal(record) {
   addStudentModalClassId.value = String(record?.id ?? '').trim()
   addStudentModalLessonId.value = String(record?.lessonId ?? '').trim()
   addStudentModalOpen.value = true
+}
+
+function openScheduleModal(record) {
+  const classId = String(record?.id || '').trim()
+  if (!classId) {
+    messageService.warning('当前班级信息不完整，暂不可排课')
+    return
+  }
+  scheduleModalClassId.value = classId
+  scheduleModalOpen.value = true
 }
 
 async function closeGroupClass(record) {
@@ -528,6 +543,10 @@ function openGroupClassReopenConfirm(record) {
 }
 
 function onClassRowMenuClick({ key }, record) {
+  if (key === '1') {
+    openClassListDrawer(record, '2')
+    return
+  }
   if (key === '3') {
     editClassRecord.value = record
     createClassModal.value = true
@@ -577,6 +596,11 @@ async function handleFinishCourseSuccess() {
 watch(createClassModal, (open) => {
   if (!open)
     editClassRecord.value = null
+})
+
+watch(scheduleModalOpen, (open) => {
+  if (!open)
+    scheduleModalClassId.value = ''
 })
 
 const allColumns = ref([
@@ -832,7 +856,7 @@ onMounted(async () => {
                     <a @click.prevent="openGroupClassReopenConfirm(record)">恢复开班</a>
                   </template>
                   <template v-else>
-                    <a class="mr-3">排课</a>
+                    <a class="mr-3" @click.prevent="openScheduleModal(record)">排课</a>
                     <a class="mr-3" @click.prevent="openAddStudentModal(record)">添加学员</a>
                     <div style="cursor: pointer;">
                       <a-dropdown :trigger="['click']" placement="bottom">
@@ -879,6 +903,7 @@ onMounted(async () => {
     />
     <ClassListDrawer
       v-model:open="classListDrawerFlag"
+      :initial-active-key="classListDrawerInitialTab"
       :record="currentClassRecord"
       @edit="handleDrawerEdit"
       @finish-course="handleDrawerFinishCourse"
@@ -896,6 +921,11 @@ onMounted(async () => {
       :class-id="addStudentModalClassId"
       :lesson-id="addStudentModalLessonId"
       @success="afterClassModalSave"
+    />
+    <GroupClassScheduleModal
+      v-model:open="scheduleModalOpen"
+      :initial-group-class-id="scheduleModalClassId"
+      @updated="afterClassModalSave"
     />
   </div>
 </template>

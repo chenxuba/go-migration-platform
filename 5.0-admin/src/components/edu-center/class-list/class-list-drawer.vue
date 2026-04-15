@@ -16,6 +16,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  initialActiveKey: {
+    type: String,
+    default: '0',
+  },
   record: {
     type: Object,
     default: () => ({}),
@@ -32,7 +36,7 @@ const openDrawer = computed({
 
 watch(() => openDrawer.value, (newVal) => {
   if (newVal)
-    activeKey.value = '0'
+    activeKey.value = String(props.initialActiveKey || '0')
 })
 
 const detailData = ref(null)
