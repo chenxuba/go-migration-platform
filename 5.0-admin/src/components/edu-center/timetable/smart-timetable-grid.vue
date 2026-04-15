@@ -787,6 +787,77 @@ function emptyCellPaintStyle(entry) {
   }
 }
 
+function normalizeConflictPreviewText(value) {
+  return String(value || '').trim()
+}
+
+function parseConflictPreviewTimeText(value) {
+  const matched = normalizeConflictPreviewText(value).match(/(\d{2}:\d{2}\s*[~-]\s*\d{2}:\d{2})/)
+  if (!matched)
+    return ''
+  return matched[1].replace(/\s+/g, '')
+}
+
+function conflictPreviewBadgeText(item) {
+  const classTypeText = normalizeConflictPreviewText(item?.classTypeText)
+  if (classTypeText.includes('1对1'))
+    return '1v1'
+  if (classTypeText.includes('班'))
+    return '班课'
+  return '冲突'
+}
+
+function conflictPreviewTitle(item) {
+  const studentNames = Array.isArray(item?.studentNames)
+    ? item.studentNames.map(name => normalizeConflictPreviewText(name)).filter(Boolean)
+    : []
+  const lessonName = normalizeConflictPreviewText(item?.name)
+  if (studentNames.length && lessonName)
+    return `${studentNames.join('、')}-${lessonName}`
+  if (lessonName)
+    return lessonName
+  if (studentNames.length)
+    return studentNames.join('、')
+  return normalizeConflictPreviewText(item?.classTypeText) || '冲突课程'
+}
+
+function resolveConflictPreview(entry) {
+  const currentTeacherId = String(entry?.record?.teacherId || '').trim()
+  const existingSchedules = Array.isArray(entry?.text?.conflictReason?.existingSchedules)
+    ? entry.text.conflictReason.existingSchedules
+    : []
+  if (!existingSchedules.length)
+    return null
+
+  const sameTeacherSchedules = currentTeacherId
+    ? existingSchedules.filter(item => String(item?.teacherId || '').trim() === currentTeacherId)
+    : []
+  const slotStart = normalizeConflictPreviewText(entry?.text?.startTime)
+  const slotEnd = normalizeConflictPreviewText(entry?.text?.endTime)
+  const slotTimeText = slotStart && slotEnd ? `${slotStart}-${slotEnd}` : ''
+  const candidateSchedules = sameTeacherSchedules.filter((item) => {
+    const parsed = parseConflictPreviewTimeText(item?.timeText).replace('~', '-')
+    return Boolean(slotTimeText) && parsed === slotTimeText
+  })
+  if (!candidateSchedules.length)
+    return null
+
+  const exactMatch = candidateSchedules.find((item) => {
+    const parsed = parseConflictPreviewTimeText(item?.timeText)
+    return parsed === `${slotStart}-${slotEnd}` || parsed === `${slotStart}~${slotEnd}`
+  })
+  const primary = exactMatch || candidateSchedules[0]
+  if (!primary)
+    return null
+
+  return {
+    timeText: parseConflictPreviewTimeText(primary?.timeText) || `${slotStart}-${slotEnd}`,
+    badgeText: conflictPreviewBadgeText(primary),
+    title: conflictPreviewTitle(primary),
+    extraCount: Math.max(0, candidateSchedules.length - 1),
+  }
+}
+
 function drawHeader(ctx, visibleWidth) {
   ctx.fillStyle = HEADER_BG
   ctx.fillRect(0, 0, visibleWidth, HEADER_HEIGHT)
@@ -969,6 +1040,63 @@ function drawEmptyCell(ctx, entry, viewRect) {
   const innerWidth = Math.max(0, viewRect.width - CELL_PADDING * 2)
   const innerHeight = Math.max(0, viewRect.height - CELL_PADDING * 2)
   const paint = emptyCellPaintStyle(entry)
+  const conflictPreview = entry?.text?.conflict ? resolveConflictPreview(entry) : null
+
+  if (conflictPreview) {
+    drawRoundedRect(ctx, innerX, innerY, innerWidth, innerHeight, CELL_RADIUS)
+    ctx.fillStyle = '#ffe8e8'
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255, 77, 79, 0.28)'
+    ctx.stroke()
+
+    ctx.save()
+    drawRoundedRect(ctx, innerX, innerY, innerWidth, innerHeight, CELL_RADIUS)
+    ctx.clip()
+
+    ctx.save()
+    drawRoundedRect(ctx, innerX, innerY, innerWidth, BLOCK_HEADER_HEIGHT, CELL_RADIUS)
+    ctx.clip()
+    ctx.fillStyle = '#ff7875'
+    ctx.fillRect(innerX, innerY, innerWidth, BLOCK_HEADER_HEIGHT + 2)
+    ctx.restore()
+
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '12px sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(
+      ellipsisText(ctx, conflictPreview.timeText, Math.max(0, innerWidth - 48)),
+      innerX + 6,
+      innerY + BLOCK_HEADER_HEIGHT / 2,
+    )
+
+    const badgeText = conflictPreview.extraCount > 0
+      ? `冲突+${conflictPreview.extraCount}`
+      : conflictPreview.badgeText
+    ctx.font = '500 10px sans-serif'
+    const badgeWidth = Math.min(innerWidth - 10, Math.max(30, measureTextWidth(ctx, badgeText) + 12))
+    const badgeX = innerX + innerWidth - badgeWidth
+    const badgeY = innerY
+    drawRoundedRect(ctx, badgeX, badgeY, badgeWidth, BADGE_HEIGHT, 3)
+    ctx.fillStyle = 'rgba(127, 29, 29, 0.2)'
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + BADGE_HEIGHT / 2)
+
+    ctx.fillStyle = '#a61d24'
+    ctx.font = '13px sans-serif'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    ctx.fillText(
+      ellipsisText(ctx, conflictPreview.title, Math.max(0, innerWidth - 12)),
+      innerX + 6,
+      innerY + 26,
+    )
+    ctx.restore()
+    return
+  }
 
   if (paint.fill !== 'transparent') {
     drawRoundedRect(ctx, innerX, innerY, innerWidth, innerHeight, CELL_RADIUS)
