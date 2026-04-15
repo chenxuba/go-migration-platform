@@ -5,6 +5,8 @@ import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import ClassStudentList from './class-student-list.vue'
 import classRecord from './class-record.vue'
+import ClassEntryExitRecord from './class-entry-exit-record.vue'
+import ClassOperationLog from './class-operation-log.vue'
 import schedule from './class-list-schedule.vue'
 import waitingRollCallSchedule from './waiting-roll-call-schedule.vue'
 import { closeGroupClassApi, getGroupClassDetailApi, reopenGroupClassApi } from '@/api/edu-center/group-class'
@@ -356,6 +358,12 @@ function handleExportRollCallSheet() {
           </a-tab-pane>
           <a-tab-pane key="3" tab="上课记录">
             <classRecord :open="openDrawer" :class-id="String(displayRecord?.id || '')" :class-name="displayRecord?.name || ''" />
+          </a-tab-pane>
+          <a-tab-pane key="4" tab="操作日志">
+            <ClassOperationLog :open="openDrawer" :class-id="String(displayRecord?.id || '')" :class-name="displayRecord?.name || ''" />
+          </a-tab-pane>
+          <a-tab-pane key="5" tab="出入班记录">
+            <ClassEntryExitRecord :open="openDrawer" :class-id="String(displayRecord?.id || '')" :class-name="displayRecord?.name || ''" />
           </a-tab-pane>
         </a-tabs>
       </div>

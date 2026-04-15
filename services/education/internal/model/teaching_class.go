@@ -18,6 +18,18 @@ const (
 	TeachingClassStudentStatusClosed   = 3
 )
 
+const (
+	GroupClassOperationTypeSwitchTuitionAccount = 1
+	GroupClassOperationTypeStatusChange         = 2
+	GroupClassOperationTypeRemoveStudent        = 3
+	GroupClassOperationTypeAddStudent           = 4
+)
+
+const (
+	GroupClassEntryExitStatusIn  = 1
+	GroupClassEntryExitStatusOut = 2
+)
+
 type OneToOneListQueryDTO struct {
 	PageRequestModel PageRequestModel       `json:"pageRequestModel"`
 	QueryModel       OneToOneListQueryModel `json:"queryModel"`
@@ -527,6 +539,78 @@ type GroupClassDrawerWaitingRollCallScheduleVO struct {
 type GroupClassDrawerWaitingRollCallScheduleListResult struct {
 	List  []GroupClassDrawerWaitingRollCallScheduleVO `json:"list"`
 	Total int                                         `json:"total"`
+}
+
+type GroupClassOperationLogQueryModel struct {
+	ClassID        string `json:"classId"`
+	StudentID      string `json:"studentId"`
+	OperatorID     string `json:"operatorId"`
+	OperateStartAt string `json:"operateStartAt"`
+	OperateEndAt   string `json:"operateEndAt"`
+	OperationTypes []int  `json:"operationTypes"`
+}
+
+type GroupClassOperationLogPagedListBody struct {
+	QueryModel       GroupClassOperationLogQueryModel `json:"queryModel"`
+	PageRequestModel GroupClassPageRequestModel       `json:"pageRequestModel"`
+}
+
+type GroupClassOperationLogItemVO struct {
+	ID                string    `json:"id"`
+	OperateTime       time.Time `json:"operateTime"`
+	StudentID         string    `json:"studentId"`
+	StudentName       string    `json:"studentName"`
+	OperationType     int       `json:"operationType"`
+	OperationTypeText string    `json:"operationTypeText"`
+	OperationContent  string    `json:"operationContent"`
+	OperatorID        string    `json:"operatorId"`
+	OperatorName      string    `json:"operatorName"`
+}
+
+type GroupClassOperationLogPagedListResult struct {
+	List  []GroupClassOperationLogItemVO `json:"list"`
+	Total int                            `json:"total"`
+}
+
+type GroupClassEntryExitRecordQueryModel struct {
+	ClassID           string `json:"classId"`
+	StudentID         string `json:"studentId"`
+	RecordStartDate   string `json:"recordStartDate"`
+	RecordEndDate     string `json:"recordEndDate"`
+	EntryExitStatuses []int  `json:"entryExitStatuses"`
+}
+
+type GroupClassEntryExitRecordPagedListBody struct {
+	QueryModel       GroupClassEntryExitRecordQueryModel `json:"queryModel"`
+	PageRequestModel GroupClassPageRequestModel          `json:"pageRequestModel"`
+}
+
+type GroupClassEntryExitRecordItemVO struct {
+	ID                  string     `json:"id"`
+	StudentID           string     `json:"studentId"`
+	StudentName         string     `json:"studentName"`
+	Avatar              string     `json:"avatar"`
+	Phone               string     `json:"phone"`
+	PhoneRelationship   int        `json:"phoneRelationship"`
+	EntryExitStatus     int        `json:"entryExitStatus"`
+	EntryExitStatusText string     `json:"entryExitStatusText"`
+	EntryExitTime       time.Time  `json:"entryExitTime"`
+	OperatorID          string     `json:"operatorId"`
+	OperatorName        string     `json:"operatorName"`
+	OperateTime         time.Time  `json:"operateTime"`
+	PreviousRecordTime  *time.Time `json:"previousRecordTime,omitempty"`
+	NextRecordTime      *time.Time `json:"nextRecordTime,omitempty"`
+}
+
+type GroupClassEntryExitRecordPagedListResult struct {
+	List         []GroupClassEntryExitRecordItemVO `json:"list"`
+	Total        int                               `json:"total"`
+	StudentCount int                               `json:"studentCount"`
+}
+
+type GroupClassEntryExitRecordUpdateDTO struct {
+	ID            string `json:"id"`
+	EntryExitTime string `json:"entryExitTime"`
 }
 
 // --- 集体班添加学员：对标 Class/GetStudentListByClassIds + TuitionAccount/GetTuitionAccountListByLessonId ---

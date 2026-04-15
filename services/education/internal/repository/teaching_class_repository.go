@@ -229,6 +229,9 @@ func ensureTeachingClassTables(ctx context.Context, db *sql.DB) error {
 	}); err != nil {
 		return err
 	}
+	if err := ensureGroupClassHistoryTables(ctx, db); err != nil {
+		return err
+	}
 	return ensureTeachingClassStudentOCUniqueMigration(ctx, db)
 }
 

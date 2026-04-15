@@ -448,6 +448,14 @@ const props = defineProps({
     type: String,
     default: '最近编辑时间',
   },
+  classEndingTimeLabel: {
+    type: String,
+    default: '结课时间',
+  },
+  classStopTimeLabel: {
+    type: String,
+    default: '停课时间',
+  },
   billingModeLabel: {
     type: String,
     default: '收费方式',
@@ -3066,7 +3074,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'classEndingTime',
-      label: '结课时间',
+      label: props.classEndingTimeLabel,
       show: props.displayArray.includes('classEndingTime'),
       values:
         classEndingTimeVals.value.length === 2
@@ -3080,7 +3088,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'classStopTime',
-      label: '停课时间',
+      label: props.classStopTimeLabel,
       show: props.displayArray.includes('classStopTime'),
       values:
         classStopTimeVals.value.length === 2
@@ -3482,6 +3490,26 @@ const selectedConditions = computed(() => {
 function shouldClearWholeCondition(type) {
   return Array.isArray(props.wholeConditionClearTypes)
     && props.wholeConditionClearTypes.includes(type)
+}
+
+function shouldRemoveWholeCondition(type, id) {
+  return shouldClearWholeCondition(type) || id === '__ALL__'
+}
+
+function shouldUseWholeClearToken(type, values) {
+  if (shouldClearWholeCondition(type))
+    return true
+  if (!Array.isArray(values) || values.length <= 1)
+    return false
+  return [
+    'scheduleTeacher',
+    'assistantTeacher',
+    'scheduleClassroom',
+    'scheduleType',
+    'studentIdentity',
+    'classStatus',
+    'oneToOneTeacher',
+  ].includes(type)
 }
 // watch(selectDptVals, () => {
 //   dptName.value = getNameById(selectDptVals.value)
@@ -4051,7 +4079,7 @@ function removeCondition(type, id) {
       searchKeyOneToOne.value = undefined
       break
     case 'scheduleTeacher':
-      if (shouldClearWholeCondition(type)) {
+      if (shouldRemoveWholeCondition(type, id)) {
         scheduleTeacherVals.value = []
         emit('update:scheduleTeacherFilter', [], false, id, type)
         break
@@ -4060,7 +4088,7 @@ function removeCondition(type, id) {
       emit('update:scheduleTeacherFilter', [...scheduleTeacherVals.value], false, id, type)
       break
     case 'assistantTeacher':
-      if (shouldClearWholeCondition(type)) {
+      if (shouldRemoveWholeCondition(type, id)) {
         assistantTeacherVals.value = []
         emit('update:assistantTeacherFilter', [], false, id, type)
         break
@@ -4069,7 +4097,7 @@ function removeCondition(type, id) {
       emit('update:assistantTeacherFilter', [...assistantTeacherVals.value], false, id, type)
       break
     case 'scheduleClassroom':
-      if (shouldClearWholeCondition(type)) {
+      if (shouldRemoveWholeCondition(type, id)) {
         scheduleClassroomVals.value = []
         emit('update:scheduleClassroomFilter', [], false, id, type)
         break
@@ -4094,7 +4122,7 @@ function removeCondition(type, id) {
       emit('update:scheduleDateFilter', [], false, id, type)
       break
     case 'scheduleType':
-      if (shouldClearWholeCondition(type)) {
+      if (shouldRemoveWholeCondition(type, id)) {
         scheduleTypeVals.value = []
         emit('update:scheduleTypeFilter', [], false, id, type)
         break
@@ -4103,7 +4131,7 @@ function removeCondition(type, id) {
       emit('update:scheduleTypeFilter', [...scheduleTypeVals.value], false, id, type)
       break
     case 'studentIdentity':
-      if (shouldClearWholeCondition(type)) {
+      if (shouldRemoveWholeCondition(type, id)) {
         studentIdentityVals.value = []
         emit('update:studentIdentityFilter', [], false, id, type)
         break
@@ -4112,7 +4140,7 @@ function removeCondition(type, id) {
       emit('update:studentIdentityFilter', [...studentIdentityVals.value], false, id, type)
       break
     case 'classStatus':
-      if (shouldClearWholeCondition(type)) {
+      if (shouldRemoveWholeCondition(type, id)) {
         classStatusVals.value = []
         emit('update:classStatusFilter', [], false, id, type)
         break
@@ -4233,7 +4261,7 @@ function removeCondition(type, id) {
       emit('update:classTeacherFilter', undefined, false, id, type)
       break
     case 'oneToOneTeacher':
-      if (shouldClearWholeCondition(type)) {
+      if (shouldRemoveWholeCondition(type, id)) {
         oneToOneTeacherVals.value = []
         emit('update:oneToOneTeacherFilter', [], false, id, type)
         break
@@ -6130,11 +6158,11 @@ defineExpose({
 
               <!-- 结课时间 -->
               <checkbox-filter v-if="filterType === 'classEndingTime'" v-model:checked-values="classEndingTimeVals"
-                label="结课时间" type="dateTimeQuick" @date-picker-change="handleCreateTimeChange" />
+                :label="classEndingTimeLabel" type="dateTimeQuick" @date-picker-change="handleCreateTimeChange" />
 
               <!-- 停课时间 -->
               <checkbox-filter v-if="filterType === 'classStopTime'" v-model:checked-values="classStopTimeVals"
-                label="停课时间" type="dateTimeQuick" @date-picker-change="handleCreateTimeChange" />
+                :label="classStopTimeLabel" type="dateTimeQuick" @date-picker-change="handleCreateTimeChange" />
 
               <!-- 意向课程 -->
               <checkbox-filter v-if="filterType === 'intentionCourse'" :ref="(el) => handleRef(el, 'yiXiangcourse')"
@@ -6635,7 +6663,7 @@ defineExpose({
                 <span v-for="(value, index) in condition.values" :key="value.id" class="value-item ">
                   {{ value.value ?? value.name }}
                   <CloseOutlined v-if="index === condition.values.length - 1" class="close-icon"
-                    @click.stop="removeCondition(condition.type, value.id)" />
+                    @click.stop="removeCondition(condition.type, shouldUseWholeClearToken(condition.type, condition.values) ? '__ALL__' : value.id)" />
                   <span v-else class="separator">、</span>
                 </span>
               </div>

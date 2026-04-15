@@ -202,6 +202,79 @@ export function getGroupClassDrawerWaitingRollCallSchedulesApi(data: {
   return usePost<{ list: GroupClassDrawerWaitingRollCallScheduleItem[], total: number }>('/api/v1/group-classes/waiting-roll-call-schedules', data)
 }
 
+export interface GroupClassOperationLogItem {
+  id: string
+  operateTime: string
+  studentId: string
+  studentName: string
+  operationType: number
+  operationTypeText: string
+  operationContent: string
+  operatorId: string
+  operatorName: string
+}
+
+export interface GroupClassEntryExitRecordItem {
+  id: string
+  studentId: string
+  studentName: string
+  avatar?: string
+  phone?: string
+  phoneRelationship?: number
+  entryExitStatus: number
+  entryExitStatusText: string
+  entryExitTime: string
+  operatorId: string
+  operatorName: string
+  operateTime: string
+  previousRecordTime?: string
+  nextRecordTime?: string
+}
+
+export function pageGroupClassOperationLogsApi(data: {
+  queryModel: {
+    classId: string
+    studentId?: string
+    operatorId?: string
+    operateStartAt?: string
+    operateEndAt?: string
+    operationTypes?: number[]
+  }
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+}) {
+  return usePost<{ list: GroupClassOperationLogItem[], total: number }>('/api/v1/group-classes/operation-log-paged-list', data)
+}
+
+export function pageGroupClassEntryExitRecordsApi(data: {
+  queryModel: {
+    classId: string
+    studentId?: string
+    recordStartDate?: string
+    recordEndDate?: string
+    entryExitStatuses?: number[]
+  }
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+}) {
+  return usePost<{ list: GroupClassEntryExitRecordItem[], total: number, studentCount: number }>('/api/v1/group-classes/entry-exit-record-paged-list', data)
+}
+
+export function updateGroupClassEntryExitRecordTimeApi(data: {
+  id: string
+  entryExitTime: string
+}) {
+  return usePost<boolean>('/api/v1/group-classes/entry-exit-record/update-time', data)
+}
+
 export interface GroupClassStudentQueryModel {
   id?: string
   classId?: string

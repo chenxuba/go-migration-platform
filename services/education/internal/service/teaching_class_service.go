@@ -679,6 +679,36 @@ func (svc *Service) ListGroupClassDrawerWaitingRollCallSchedules(userID int64, d
 	}, nil
 }
 
+func (svc *Service) PageGroupClassOperationLogs(userID int64, body model.GroupClassOperationLogPagedListBody) (model.GroupClassOperationLogPagedListResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GroupClassOperationLogPagedListResult{}, errors.New("no institution context")
+		}
+		return model.GroupClassOperationLogPagedListResult{}, err
+	}
+	return svc.repo.PageGroupClassOperationLogs(context.Background(), instID, body)
+}
+
+func (svc *Service) PageGroupClassEntryExitRecords(userID int64, body model.GroupClassEntryExitRecordPagedListBody) (model.GroupClassEntryExitRecordPagedListResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GroupClassEntryExitRecordPagedListResult{}, errors.New("no institution context")
+		}
+		return model.GroupClassEntryExitRecordPagedListResult{}, err
+	}
+	return svc.repo.PageGroupClassEntryExitRecords(context.Background(), instID, body)
+}
+
+func (svc *Service) UpdateGroupClassEntryExitRecordTime(userID int64, dto model.GroupClassEntryExitRecordUpdateDTO) error {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return err
+	}
+	return svc.repo.UpdateGroupClassEntryExitRecordTime(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) GetGroupClassStudentStatistics(userID int64, q model.GroupClassStudentQueryModel) (model.GroupClassStudentStatisticsVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
