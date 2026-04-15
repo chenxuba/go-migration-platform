@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
+import { CloseCircleOutlined, ExclamationCircleFilled, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import type { TableColumnsType } from 'ant-design-vue'
-import { computed, h, ref, watch } from 'vue'
-import { deleteTeachingRecordApi, getScheduleTeachingRecordPagedListApi, type ScheduleTeachingRecordItem } from '@/api/edu-center/class-record'
+import { computed, ref, watch } from 'vue'
+import { deleteTeachingRecordApi, getScheduleTeachingRecordPagedListApi, getTeachingRecordDetailApi, type ScheduleTeachingRecordItem, type TeachingRecordDetailResult } from '@/api/edu-center/class-record'
 import ClassRecordDetails from '@/components/common/class-record-details.vue'
-import RollCallDrawer from '@/components/common/roll-call-drawer.vue'
+import EditRollNameModal from '@/components/common/edit-roll-name-modal.vue'
 import messageService from '@/utils/messageService'
 
 const props = withDefaults(defineProps<{
@@ -110,9 +109,11 @@ const scheduleDateRange = ref<[Dayjs, Dayjs] | null>(null)
 const createDateRange = ref<[Dayjs, Dayjs] | null>(null)
 const recordDrawerOpen = ref(false)
 const currentTeachingRecordId = ref('')
-const rollCallOpen = ref(false)
-const currentScheduleId = ref('')
-const currentLessonDay = ref('')
+const deleteModalOpen = ref(false)
+const deletingTeachingRecordId = ref('')
+const editRollNameOpen = ref(false)
+const editRollNameLoading = ref(false)
+const editRollNameDetail = ref<TeachingRecordDetailResult | null>(null)
 
 const totalWidth = computed(() =>
   columns.reduce((acc, col) => acc + Number(col.width || 0), 0),
@@ -187,14 +188,32 @@ function handleClassStopTimeFilter(value: unknown) {
   createDateRange.value = normalizeDayRange(value)
 }
 
-function handleEditRollCall(record: ScheduleTeachingRecordItem | Record<string, any>) {
-  currentScheduleId.value = String(record.timetableSourceId || '').trim()
-  currentLessonDay.value = String(record.startTime || '').trim()
-  if (!currentScheduleId.value) {
-    messageService.info('当前记录缺少对应日程，暂不可编辑点名')
+async function handleEditRollCall(record: ScheduleTeachingRecordItem | Record<string, any>) {
+  const teachingRecordId = String(record.teachingRecordId || '').trim()
+  if (!teachingRecordId) {
+    messageService.info('当前记录缺少上课记录，暂不可编辑点名')
     return
   }
-  rollCallOpen.value = true
+  if (editRollNameLoading.value)
+    return
+  editRollNameLoading.value = true
+  try {
+    const res = await getTeachingRecordDetailApi({ teachingRecordId })
+    if (res.code !== 200)
+      throw new Error(res.message || '加载编辑点名详情失败')
+    const detail = res.result
+    if (!detail || !String(detail.teachingRecordId || '').trim())
+      throw new Error('当前上课记录不存在')
+    editRollNameDetail.value = detail
+    editRollNameOpen.value = true
+  }
+  catch (error: any) {
+    editRollNameDetail.value = null
+    messageService.error(error?.response?.data?.message || error?.message || '加载编辑点名详情失败')
+  }
+  finally {
+    editRollNameLoading.value = false
+  }
 }
 
 function handleViewDetail(record: ScheduleTeachingRecordItem | Record<string, any>) {
@@ -208,29 +227,43 @@ function handleDelete(record: ScheduleTeachingRecordItem | Record<string, any>) 
   const teachingRecordId = String(record.teachingRecordId || '').trim()
   if (!teachingRecordId || deleting.value)
     return
-  Modal.confirm({
-    title: '删除上课记录',
-    icon: h(ExclamationCircleOutlined),
-    content: '删除后不可恢复，且会回退当前记录对应的点名状态，确定删除吗？',
-    async onOk() {
-      deleting.value = true
-      try {
-        const res = await deleteTeachingRecordApi({ teachingRecordId })
-        if (res.code !== 200 || res.result !== true)
-          throw new Error(res.message || '删除上课记录失败')
-        messageService.success('删除成功')
-        await loadList()
-      }
-      catch (error: any) {
-        messageService.error(error?.response?.data?.message || error?.message || '删除上课记录失败')
-        throw error
-      }
-      finally {
-        deleting.value = false
-      }
-    },
-  })
+  deletingTeachingRecordId.value = teachingRecordId
+  deleteModalOpen.value = true
 }
+
+async function handleConfirmDelete() {
+  const teachingRecordId = deletingTeachingRecordId.value
+  if (!teachingRecordId || deleting.value)
+    return
+  deleting.value = true
+  try {
+    const res = await deleteTeachingRecordApi({ teachingRecordId })
+    if (res.code !== 200 || res.result !== true)
+      throw new Error(res.message || '删除上课记录失败')
+    messageService.success('删除成功')
+    deleteModalOpen.value = false
+    deletingTeachingRecordId.value = ''
+    await loadList()
+  }
+  catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || '删除上课记录失败')
+  }
+  finally {
+    deleting.value = false
+  }
+}
+
+function handleCancelDelete() {
+  if (deleting.value)
+    return
+  deleteModalOpen.value = false
+  deletingTeachingRecordId.value = ''
+}
+
+watch(editRollNameOpen, (open) => {
+  if (!open)
+    editRollNameDetail.value = null
+})
 
 function normalizeDayRange(value: unknown) {
   if (!Array.isArray(value) || value.length < 2)
@@ -385,13 +418,49 @@ watch(
         </template>
       </a-table>
     </div>
-    <ClassRecordDetails v-model:open="recordDrawerOpen" :teaching-record-id="currentTeachingRecordId" @updated="loadList" @deleted="loadList" />
-    <RollCallDrawer
-      v-model:open="rollCallOpen"
-      :schedule-id="currentScheduleId"
-      :lesson-day="currentLessonDay"
+    <ClassRecordDetails
+      v-model:open="recordDrawerOpen"
+      :teaching-record-id="currentTeachingRecordId"
       @updated="loadList"
-      @confirmed="loadList"
+      @deleted="loadList"
     />
+    <EditRollNameModal
+      v-model:open="editRollNameOpen"
+      :detail="editRollNameDetail"
+    />
+    <a-modal
+      v-model:open="deleteModalOpen"
+      centered
+      :footer="false"
+      :closable="false"
+      :mask-closable="false"
+      :keyboard="false"
+      width="440px"
+    >
+      <div class="text-18px mb-12px font500">
+        <CloseCircleOutlined class="text-#f00 mr2 text-5" /> 删除上课点名记录？
+      </div>
+      <div class="pl-30px text-#666">
+        <div>1.删除后已点名扣费学员将会返还学费，并减少对应的已确认收入;</div>
+        <div>2.若包含试听学员，已试听状态将变成已取消状态，并删除上课记录；若包含补课学员，已补课状态将变成已安排或未安排状态，并删除上课记录;</div>
+        <div>3.删除上课点名记录后，所对应的日程中的学员点名状态变成未点名;</div>
+        <div>4.删除上课点名记录后，日程状态从已点名变成未点名。</div>
+        <div class="text-#f00 mt-12px">
+          <ExclamationCircleFilled /> 此操作不可撤销，请谨慎操作
+        </div>
+      </div>
+      <a-space class="mt-24px flex justify-end">
+        <a-button danger ghost :loading="deleting" @click="handleConfirmDelete">
+          删除
+        </a-button>
+        <a-button
+          class="text-#666"
+          :disabled="deleting"
+          @click="handleCancelDelete"
+        >
+          再想想
+        </a-button>
+      </a-space>
+    </a-modal>
   </div>
 </template>

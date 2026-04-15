@@ -476,9 +476,6 @@ watch(
                   <a-menu-item key="2" @click="handleBatchAction">
                     批量移出本班
                   </a-menu-item>
-                  <a-menu-item key="3" @click="handleBatchAction">
-                    批量升期
-                  </a-menu-item>
                 </a-menu>
               </template>
               <a-button>

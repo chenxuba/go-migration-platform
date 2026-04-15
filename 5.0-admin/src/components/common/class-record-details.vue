@@ -13,8 +13,10 @@ import EditRollNameModal from './edit-roll-name-modal.vue'
 const props = withDefaults(defineProps<{
   open: boolean
   teachingRecordId?: string
+  initialAction?: string
 }>(), {
   teachingRecordId: '',
+  initialAction: '',
 })
 
 const emit = defineEmits(['update:open', 'updated', 'deleted'])
@@ -34,6 +36,7 @@ const openDrawer = computed({
 })
 
 const currentTeachingRecordId = computed(() => String(props.teachingRecordId || '').trim())
+const currentInitialAction = computed(() => String(props.initialAction || '').trim())
 const sourceCover = computed(() => (Number(detailData.value?.timetableSourceType || 0) === 2 ? scheduleOneToOneImage : scheduleClassImage))
 const headerTitle = computed(() => detailData.value?.sourceName || detailData.value?.lessonName || '-')
 const teacherList = computed(() => Array.isArray(detailData.value?.teacherList) ? detailData.value?.teacherList || [] : [])
@@ -158,11 +161,25 @@ watch(
 )
 
 watch(
+  () => [openDrawer.value, currentInitialAction.value, hasDetail.value] as const,
+  ([open, action, detailReady]) => {
+    if (!open || !detailReady)
+      return
+    if (action === 'edit-roll-call')
+      editRollNameModal.value = true
+  },
+  { immediate: true },
+)
+
+watch(
   () => openDrawer.value,
   (open, previous) => {
     if (open && !previous)
       shouldRefreshOnClose.value = true
     if (!open && previous) {
+      editRollNameModal.value = false
+      editClassInfoModal.value = false
+      openModal.value = false
       if (shouldRefreshOnClose.value) {
         emit('updated')
         emitter.emit(EVENTS.REFRESH_DATA)

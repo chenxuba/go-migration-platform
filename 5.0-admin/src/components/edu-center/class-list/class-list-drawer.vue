@@ -215,10 +215,6 @@ function handleEditClass() {
   emit('edit', displayRecord.value)
 }
 
-function handleQuickUpgrade() {
-  messageService.info('快捷升班功能待实现')
-}
-
 function handleExportRollCallSheet() {
   messageService.info('导出点名表功能待实现')
 }
@@ -263,9 +259,6 @@ function handleExportRollCallSheet() {
               </span>
             </a-space>
             <a-space>
-              <a-button @click="handleQuickUpgrade">
-                快捷升班
-              </a-button>
               <a-button @click="handleExportRollCallSheet">
                 导出点名表
               </a-button>
