@@ -371,11 +371,13 @@ watch(
             </div>
           </template>
           <template v-else-if="column.dataIndex === 'phone'">
-            <div class="sub-text">
-              {{ getRelationText(record.phoneRelationship) }}
-            </div>
-            <div class="phone-text">
-              {{ record.phone || '-' }}
+            <div class="phone-cell">
+              <div class="sub-text">
+                {{ getRelationText(record.phoneRelationship) }}
+              </div>
+              <div class="phone-text">
+                {{ record.phone || '-' }}
+              </div>
             </div>
           </template>
           <template v-else-if="column.dataIndex === 'entryExitStatusText'">
@@ -534,6 +536,23 @@ watch(
 .phone-text {
   color: #1f2329;
   line-height: 22px;
+}
+
+.phone-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  line-height: 1;
+}
+
+.phone-cell .sub-text {
+  margin: 0 0 1px;
+  line-height: 14px;
+}
+
+.phone-cell .phone-text {
+  line-height: 16px;
 }
 
 .type-tag {
