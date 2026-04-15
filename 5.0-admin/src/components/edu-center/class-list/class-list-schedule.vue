@@ -1,11 +1,27 @@
 <script setup lang="ts">
 import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import type { TableColumnsType } from 'ant-design-vue'
+import { Modal } from 'ant-design-vue'
+import dayjs from 'dayjs'
 import { computed, ref, watch } from 'vue'
 import scheduleClassRepeatImage from '@/assets/images/timetable/schedule-class-repeat-local.png'
 import scheduleClassSingleImage from '@/assets/images/timetable/schedule-class-single.png'
 import { getGroupClassDrawerSchedulesApi, type GroupClassDrawerScheduleItem } from '@/api/edu-center/group-class'
+import {
+  cancelTeachingScheduleScopedApi,
+  getTeachingScheduleBatchDetailApi,
+  type TeachingScheduleBatchDetail,
+  type TeachingScheduleItem,
+} from '@/api/edu-center/teaching-schedule'
+import {
+  inferGroupClassBatchPlanPreset,
+  type GroupClassBatchPlanModalPreset,
+} from '@/components/edu-center/timetable/group-class-batch-plan-preset'
 import GroupClassScheduleModal from '@/components/edu-center/timetable/group-class-schedule-modal.vue'
+import {
+  loadTeachingScheduleDeleteTargetCount,
+  sortTeachingScheduleItemsByTimeline,
+} from '@/components/edu-center/timetable/schedule-delete-scope'
 import SmartTimetableScheduleDetailDrawer from '@/components/edu-center/timetable/smart-timetable-schedule-detail-drawer.vue'
 import messageService from '@/utils/messageService'
 
@@ -18,6 +34,15 @@ const props = withDefaults(defineProps<{
   classId: '',
   className: '',
 })
+
+type ScheduleActionMode = 'view' | 'edit' | 'copy' | 'delete'
+type ScheduleScope = 'current' | 'future'
+
+interface ResolvedScheduleActionContext {
+  detail: TeachingScheduleBatchDetail
+  anchor: TeachingScheduleItem
+  scope: ScheduleScope
+}
 
 const columns: TableColumnsType<GroupClassDrawerScheduleItem> = [
   {
@@ -60,7 +85,7 @@ const columns: TableColumnsType<GroupClassDrawerScheduleItem> = [
     title: '操作',
     dataIndex: 'action',
     key: 'action',
-    width: 80,
+    width: 220,
     fixed: 'right',
   },
 ]
@@ -69,11 +94,116 @@ const loading = ref(false)
 const dataSource = ref<GroupClassDrawerScheduleItem[]>([])
 const detailOpen = ref(false)
 const detailState = ref<Record<string, any> | null>(null)
+const currentDetailRecord = ref<GroupClassDrawerScheduleItem | null>(null)
 const scheduleModalOpen = ref(false)
+const scheduleModalMode = ref<'create' | 'editBatch'>('create')
+const scheduleBatchPlanPreset = ref<GroupClassBatchPlanModalPreset | null>(null)
+const resolvingAction = ref(false)
+const deleting = ref(false)
 
 const totalWidth = computed(() =>
   columns.reduce((sum, item) => sum + Number(item.width || 0), 0),
 )
+
+function getRemainingScheduleCount(record?: Partial<GroupClassDrawerScheduleItem> | null) {
+  return Math.max(0, Number(record?.scheduleCount || 0) - Number(record?.completedCount || 0))
+}
+
+function getEditActionText(record?: Partial<GroupClassDrawerScheduleItem> | null) {
+  return '编辑'
+}
+
+function getEditActionTooltip(record?: Partial<GroupClassDrawerScheduleItem> | null) {
+  return resolveScheduleScope(record) === 'future' ? '编辑以后日程' : '编辑日程'
+}
+
+function hasBatchScheduleRecord(record?: Partial<GroupClassDrawerScheduleItem> | null) {
+  return Number(record?.scheduleCount || 0) > 1 || String(record?.batchNo || '').trim() !== ''
+}
+
+function resolveScheduleScope(record?: Partial<GroupClassDrawerScheduleItem> | null): ScheduleScope {
+  return hasBatchScheduleRecord(record) && getRemainingScheduleCount(record) > 1 ? 'future' : 'current'
+}
+
+function isRolledCallSchedule(item?: Partial<TeachingScheduleItem> | null) {
+  return Number(item?.callStatus || 1) === 2
+}
+
+function isPastSchedule(item?: Partial<TeachingScheduleItem> | null) {
+  const lessonDate = String(item?.lessonDate || '').trim()
+  if (!lessonDate)
+    return false
+  return dayjs(lessonDate).isBefore(dayjs().startOf('day'), 'day')
+}
+
+function resolveViewAnchor(list: TeachingScheduleItem[]) {
+  const sorted = sortTeachingScheduleItemsByTimeline(list)
+  const pending = sorted.filter(item => !isRolledCallSchedule(item))
+  return pending[0] || sorted[0] || null
+}
+
+function resolveActionAnchor(list: TeachingScheduleItem[], scope: ScheduleScope, mode: ScheduleActionMode) {
+  const sorted = sortTeachingScheduleItemsByTimeline(list)
+  const pending = sorted.filter(item => !isRolledCallSchedule(item))
+  if (!pending.length)
+    return null
+  if (scope === 'current')
+    return pending[0]
+
+  const todayOrFuture = pending.find(item => !isPastSchedule(item))
+  if (todayOrFuture)
+    return todayOrFuture
+  if (mode === 'delete' || mode === 'view')
+    return pending[0]
+  return null
+}
+
+async function loadScheduleActionContext(record: GroupClassDrawerScheduleItem, mode: ScheduleActionMode): Promise<ResolvedScheduleActionContext> {
+  const scheduleId = String(record?.detailScheduleId || '').trim()
+  const batchNo = String(record?.batchNo || '').trim()
+  if (!scheduleId && !batchNo)
+    throw new Error('当前日程缺少标识，请刷新后重试')
+
+  const res = await getTeachingScheduleBatchDetailApi({
+    id: scheduleId || undefined,
+    batchNo: batchNo || undefined,
+  })
+  if (res.code !== 200 || !res.result)
+    throw new Error(res.message || '加载日程详情失败')
+
+  const detail = res.result
+  const scope = resolveScheduleScope(record)
+  const anchor = mode === 'view'
+    ? resolveViewAnchor(detail.schedules || [])
+    : resolveActionAnchor(detail.schedules || [], scope, mode)
+  if (!anchor) {
+    if (mode === 'edit')
+      throw new Error(scope === 'future' ? '当前批次暂无可编辑的后续日程' : '过去日程不可编辑')
+    if (mode === 'copy')
+      throw new Error(scope === 'future' ? '当前批次暂无可复制的后续日程' : '当前日程不可复制')
+    if (mode === 'delete')
+      throw new Error(scope === 'future' ? '当前批次暂无可删除的后续日程' : '当前日程不可删除')
+    throw new Error('当前日程暂无可查看内容')
+  }
+
+  return {
+    detail,
+    anchor,
+    scope,
+  }
+}
+
+function openScheduleCreateModal(preset: GroupClassBatchPlanModalPreset) {
+  scheduleModalMode.value = 'create'
+  scheduleBatchPlanPreset.value = preset
+  scheduleModalOpen.value = true
+}
+
+function openScheduleEditModal(preset: GroupClassBatchPlanModalPreset) {
+  scheduleModalMode.value = 'editBatch'
+  scheduleBatchPlanPreset.value = preset
+  scheduleModalOpen.value = true
+}
 
 async function loadList() {
   const classId = String(props.classId || '').trim()
@@ -97,19 +227,27 @@ async function loadList() {
   }
 }
 
-function handleViewDetail(record: GroupClassDrawerScheduleItem | Record<string, any>) {
-  detailState.value = {
-    scheduleId: record.detailScheduleId,
-    id: record.detailScheduleId,
-    batchNo: record.batchNo,
-    batchSize: record.scheduleCount,
-    lessonTitle: record.lessonName || props.className || '日程详情',
-    assistantText: record.assistantText,
-    classroomName: record.classroomName,
-    teacherName: record.teacherName,
-    batchMeta: record.batchMeta,
+async function handleViewDetail(record: GroupClassDrawerScheduleItem | Record<string, any>) {
+  const target = record as GroupClassDrawerScheduleItem
+  currentDetailRecord.value = target
+  try {
+    const { detail, anchor } = await loadScheduleActionContext(target, 'view')
+    detailState.value = {
+      scheduleId: anchor.id,
+      id: anchor.id,
+      batchNo: detail.batchNo || target.batchNo,
+      batchSize: detail.batchSize || target.scheduleCount,
+      lessonTitle: target.lessonName || props.className || '日程详情',
+      assistantText: target.assistantText,
+      classroomName: target.classroomName,
+      teacherName: target.teacherName,
+      batchMeta: detail.batchMeta || target.batchMeta,
+    }
+    detailOpen.value = true
   }
-  detailOpen.value = true
+  catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || '加载日程详情失败')
+  }
 }
 
 function handleQuickSchedule() {
@@ -117,7 +255,100 @@ function handleQuickSchedule() {
     messageService.warning('当前班级信息不完整，暂不可排课')
     return
   }
+  scheduleModalMode.value = 'create'
+  scheduleBatchPlanPreset.value = null
   scheduleModalOpen.value = true
+}
+
+async function openSchedulePreset(record: GroupClassDrawerScheduleItem | Record<string, any>, mode: 'edit' | 'copy', scopeOverride?: ScheduleScope) {
+  if (resolvingAction.value)
+    return
+  resolvingAction.value = true
+  try {
+    const target = record as GroupClassDrawerScheduleItem
+    const { detail, anchor, scope } = await loadScheduleActionContext(target, mode)
+    const preset = inferGroupClassBatchPlanPreset(detail, anchor.id)
+    preset.editScope = (scopeOverride || scope) === 'future' ? 'batch' : 'current'
+    if (mode === 'edit')
+      openScheduleEditModal(preset)
+    else
+      openScheduleCreateModal(preset)
+  }
+  catch (error: any) {
+    messageService.warning(error?.response?.data?.message || error?.message || (mode === 'edit' ? '打开编辑失败' : '打开复制失败'))
+  }
+  finally {
+    resolvingAction.value = false
+  }
+}
+
+async function handleEdit(record: GroupClassDrawerScheduleItem | Record<string, any> | null | undefined, scopeOverride?: ScheduleScope) {
+  const target = (record as GroupClassDrawerScheduleItem | null | undefined) || currentDetailRecord.value
+  if (!target)
+    return
+  await openSchedulePreset(target, 'edit', scopeOverride)
+}
+
+async function handleCopy(record: GroupClassDrawerScheduleItem | Record<string, any> | null | undefined, scopeOverride?: ScheduleScope) {
+  const target = (record as GroupClassDrawerScheduleItem | null | undefined) || currentDetailRecord.value
+  if (!target)
+    return
+  await openSchedulePreset(target, 'copy', scopeOverride)
+}
+
+async function handleDelete(record: GroupClassDrawerScheduleItem | Record<string, any> | null | undefined, scopeOverride?: ScheduleScope) {
+  const target = (record as GroupClassDrawerScheduleItem | null | undefined) || currentDetailRecord.value
+  if (!target || resolvingAction.value || deleting.value)
+    return
+
+  resolvingAction.value = true
+  try {
+    const { anchor, scope } = await loadScheduleActionContext(target, 'delete')
+    const finalScope = scopeOverride || scope
+    let deleteCount = 1
+    if (finalScope === 'future') {
+      deleteCount = await loadTeachingScheduleDeleteTargetCount({
+        id: anchor.id,
+        batchNo: anchor.batchNo,
+      }, 'future')
+    }
+
+    Modal.confirm({
+      title: finalScope === 'future' ? '删除后续全部日程?' : '删除日程?',
+      content: finalScope === 'future'
+        ? `后续 ${deleteCount} 个日程将被全部删除，删除后不可恢复，请谨慎操作`
+        : '删除后将不可恢复，请谨慎操作',
+      okText: '删除',
+      cancelText: '取消',
+      async onOk() {
+        deleting.value = true
+        try {
+          const res = await cancelTeachingScheduleScopedApi({
+            id: anchor.id,
+            scope: finalScope,
+          })
+          if (res.code !== 200)
+            throw new Error(res.message || '删除日程失败')
+          detailOpen.value = false
+          messageService.success(finalScope === 'future' ? `已删除后续 ${deleteCount} 节班课日程` : '已删除班课日程')
+          await loadList()
+        }
+        catch (error: any) {
+          messageService.error(error?.response?.data?.message || error?.message || '删除日程失败')
+          throw error
+        }
+        finally {
+          deleting.value = false
+        }
+      },
+    })
+  }
+  catch (error: any) {
+    messageService.warning(error?.response?.data?.message || error?.message || '删除日程失败')
+  }
+  finally {
+    resolvingAction.value = false
+  }
 }
 
 watch(
@@ -197,6 +428,10 @@ watch(
           <template v-if="column.dataIndex === 'action'">
             <a-space :size="12">
               <a @click="handleViewDetail(record)">详情</a>
+              <a-tooltip v-if="getRemainingScheduleCount(record) > 0" :title="getEditActionTooltip(record)">
+                <a @click="handleEdit(record)">{{ getEditActionText(record) }}</a>
+              </a-tooltip>
+              <a v-if="getRemainingScheduleCount(record) > 0" @click="handleDelete(record)">删除</a>
             </a-space>
           </template>
         </template>
@@ -205,11 +440,23 @@ watch(
     <SmartTimetableScheduleDetailDrawer
       v-model:open="detailOpen"
       :detail="detailState"
+      :editable="getRemainingScheduleCount(currentDetailRecord) > 0"
+      :deletable="getRemainingScheduleCount(currentDetailRecord) > 0"
+      :deleting="deleting"
+      @delete="handleDelete(undefined, 'current')"
+      @delete-current="handleDelete(undefined, 'current')"
+      @delete-future="handleDelete(undefined, 'future')"
+      @copy="handleCopy(undefined, 'future')"
+      @copy-current="handleCopy(undefined, 'current')"
+      @edit="handleEdit(undefined, 'future')"
+      @edit-current="handleEdit(undefined, 'current')"
       @updated="loadList"
     />
     <GroupClassScheduleModal
       v-model:open="scheduleModalOpen"
-      :initial-group-class-id="String(props.classId || '')"
+      :mode="scheduleModalMode"
+      :batch-plan-preset="scheduleBatchPlanPreset"
+      :initial-group-class-id="scheduleModalMode === 'create' ? String(props.classId || '') : ''"
       @updated="loadList"
     />
   </div>

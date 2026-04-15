@@ -160,6 +160,9 @@ const modalOpen = computed({
   set: value => emit('update:open', value),
 })
 
+const plannerModalZIndex = 1400
+const plannerPreviewModalZIndex = 1500
+
 const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
 const isUnscheduledRollCallMode = computed(() => props.scenario === 'unscheduledRollCall')
 const isInitialGroupClassLocked = computed(() =>
@@ -2125,6 +2128,7 @@ watch(
       centered
       class="group-class-schedule-modal"
       :width="1140"
+      :z-index="plannerModalZIndex"
       :body-style="{ padding: '0' }"
       :keyboard="false"
       :closable="false"
@@ -2701,6 +2705,7 @@ watch(
       class="planner-review-modal"
       :footer="null"
       :width="980"
+      :z-index="plannerPreviewModalZIndex"
       :body-style="{ padding: '0 24px 16px' }"
       :keyboard="false"
       :mask-closable="false"
