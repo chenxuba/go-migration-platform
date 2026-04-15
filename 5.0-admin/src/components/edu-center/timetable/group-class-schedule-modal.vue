@@ -156,6 +156,11 @@ const modalOpen = computed({
 })
 
 const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
+const isInitialGroupClassLocked = computed(() =>
+  !isBatchPlanEditMode.value
+  && !props.batchPlanPreset
+  && !!String(props.initialGroupClassId || '').trim(),
+)
 const isCopyPresetMode = computed(() => props.mode === 'create' && !!props.batchPlanPreset)
 const isCopyCurrentPresetMode = computed(() => {
   if (!isCopyPresetMode.value || !props.batchPlanPreset)
@@ -2107,9 +2112,9 @@ watch(
                 option-filter-prop="label"
                 option-label-prop="label"
                 popup-class-name="planner-record-select-dropdown"
-                allow-clear
+                :allow-clear="!isInitialGroupClassLocked"
                 :loading="groupClassLoading || groupClassDetailLoading"
-                :disabled="isBatchPlanEditMode || groupClassLoading || !groupClassSelectOptions.length"
+                :disabled="isBatchPlanEditMode || isInitialGroupClassLocked || groupClassLoading || !groupClassSelectOptions.length"
                 :not-found-content="groupClassLoading ? '正在加载班级数据...' : '暂无班级数据'"
                 :placeholder="selectedRecordPlaceholderText"
                 class="planner-control planner-control--record"

@@ -522,6 +522,8 @@ func (svc *Service) ListGroupClassDrawerSchedules(userID int64, dto model.GroupC
 	ctx := context.Background()
 	schedules, err := svc.repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
 		GroupClassIDs: []int64{classID},
+		StartDate:     strings.TrimSpace(dto.StartDate),
+		EndDate:       strings.TrimSpace(dto.EndDate),
 		SortDirection: "asc",
 	})
 	if err != nil {
@@ -637,6 +639,8 @@ func (svc *Service) ListGroupClassDrawerWaitingRollCallSchedules(userID int64, d
 	ctx := context.Background()
 	schedules, err := svc.repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
 		GroupClassIDs: []int64{classID},
+		StartDate:     strings.TrimSpace(dto.StartDate),
+		EndDate:       strings.TrimSpace(dto.EndDate),
 		SortDirection: "asc",
 	})
 	if err != nil {

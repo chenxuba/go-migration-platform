@@ -194,7 +194,11 @@ export function getGroupClassDrawerSchedulesApi(data: { classId: string }) {
   return usePost<{ list: GroupClassDrawerScheduleItem[], total: number }>('/api/v1/group-classes/schedules', data)
 }
 
-export function getGroupClassDrawerWaitingRollCallSchedulesApi(data: { classId: string }) {
+export function getGroupClassDrawerWaitingRollCallSchedulesApi(data: {
+  classId: string
+  startDate?: string
+  endDate?: string
+}) {
   return usePost<{ list: GroupClassDrawerWaitingRollCallScheduleItem[], total: number }>('/api/v1/group-classes/waiting-roll-call-schedules', data)
 }
 

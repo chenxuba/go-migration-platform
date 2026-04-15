@@ -20,7 +20,7 @@ const props = withDefaults(defineProps<{
   className: '',
 })
 
-const displayArray = ref(['classEndingTime'])
+const displayArray = ref(['scheduleDate'])
 const columns: TableColumnsType<GroupClassDrawerWaitingRollCallScheduleItem> = [
   {
     title: '上课日期/时段',
@@ -65,24 +65,32 @@ const loading = ref(false)
 const deleting = ref(false)
 const rawList = ref<GroupClassDrawerWaitingRollCallScheduleItem[]>([])
 const dateRange = ref<[Dayjs, Dayjs] | null>(null)
+const allFilterKey = ref(0)
+const defaultScheduleDateVals = ref<string[]>([])
 const rollCallOpen = ref(false)
 const currentScheduleId = ref('')
 const currentLessonDay = ref('')
 const detailOpen = ref(false)
 const detailState = ref<Record<string, any> | null>(null)
+let loadSeq = 0
 
-const filteredList = computed(() => {
-  if (!dateRange.value)
-    return rawList.value
-  const [start, end] = dateRange.value
-  return rawList.value.filter((item) => {
-    const current = dayjs(String(item.lessonDate || '').trim())
-    if (!current.isValid())
-      return false
-    return (current.isAfter(start, 'day') || current.isSame(start, 'day'))
-      && (current.isBefore(end, 'day') || current.isSame(end, 'day'))
-  })
-})
+function todayRange() {
+  const today = dayjs().startOf('day')
+  return [today, today.endOf('day')] as [Dayjs, Dayjs]
+}
+
+function todayRangeValues() {
+  const today = dayjs().format('YYYY-MM-DD')
+  return [today, today]
+}
+
+function isSameDateRange(nextRange: [Dayjs, Dayjs] | null) {
+  if (!dateRange.value && !nextRange)
+    return true
+  if (!dateRange.value || !nextRange)
+    return false
+  return dateRange.value[0].isSame(nextRange[0], 'day') && dateRange.value[1].isSame(nextRange[1], 'day')
+}
 
 const totalWidth = computed(() =>
   columns.reduce((sum, item) => sum + Number(item.width || 0), 0),
@@ -94,34 +102,57 @@ async function loadList() {
     rawList.value = []
     return
   }
+  const currentSeq = ++loadSeq
   loading.value = true
   try {
-    const res = await getGroupClassDrawerWaitingRollCallSchedulesApi({ classId })
+    const res = await getGroupClassDrawerWaitingRollCallSchedulesApi({
+      classId,
+      startDate: dateRange.value?.[0]?.format('YYYY-MM-DD'),
+      endDate: dateRange.value?.[1]?.format('YYYY-MM-DD'),
+    })
+    if (currentSeq !== loadSeq)
+      return
     if (res.code !== 200)
       throw new Error(res.message || '加载待点名日程失败')
     rawList.value = Array.isArray(res.result?.list) ? res.result.list : []
   }
   catch (error: any) {
+    if (currentSeq !== loadSeq)
+      return
     rawList.value = []
     messageService.error(error?.response?.data?.message || error?.message || '加载待点名日程失败')
   }
   finally {
-    loading.value = false
+    if (currentSeq === loadSeq)
+      loading.value = false
   }
 }
 
-function handleClassEndingTimeFilter(value: unknown) {
+function handleScheduleDateFilter(value: unknown) {
   if (!Array.isArray(value) || value.length < 2) {
+    if (isSameDateRange(null))
+      return
     dateRange.value = null
+    if (props.open && String(props.classId || '').trim())
+      loadList()
     return
   }
   const start = dayjs(String(value[0] || ''))
   const end = dayjs(String(value[1] || ''))
   if (!start.isValid() || !end.isValid()) {
+    if (isSameDateRange(null))
+      return
     dateRange.value = null
+    if (props.open && String(props.classId || '').trim())
+      loadList()
     return
   }
-  dateRange.value = [start.startOf('day'), end.endOf('day')]
+  const nextRange: [Dayjs, Dayjs] = [start.startOf('day'), end.endOf('day')]
+  if (isSameDateRange(nextRange))
+    return
+  dateRange.value = nextRange
+  if (props.open && String(props.classId || '').trim())
+    loadList()
 }
 
 function handleRollCall(record: GroupClassDrawerWaitingRollCallScheduleItem | Record<string, any>) {
@@ -188,6 +219,9 @@ function handleDelete(record: GroupClassDrawerWaitingRollCallScheduleItem | Reco
 watch(
   () => `${props.open}|${String(props.classId || '').trim()}`,
   () => {
+    dateRange.value = todayRange()
+    defaultScheduleDateVals.value = todayRangeValues()
+    allFilterKey.value += 1
     loadList()
   },
   { immediate: true },
@@ -196,12 +230,17 @@ watch(
 
 <template>
   <div class="m-12px">
-    <all-filter :display-array="displayArray" @update:class-ending-time-filter="handleClassEndingTimeFilter" />
+    <all-filter
+      :key="allFilterKey"
+      :display-array="displayArray"
+      :default-schedule-date-vals="defaultScheduleDateVals"
+      @update:schedule-date-filter="handleScheduleDateFilter"
+    />
   </div>
   <div class="m-12px">
     <div class="bg-#fff pt-18px px-20px rounded-10px">
       <div class="flex justify-between items-center">
-        <custom-title :title="`当前共计 ${filteredList.length} 条待点名日程`" font-size="14px" class="pb-12px" />
+        <custom-title :title="`当前共计 ${rawList.length} 条待点名日程`" font-size="14px" class="pb-12px" />
         <a-button type="primary" class="mb-12px" @click="handleCreateUnscheduledRollCall">
           创建未排课点名
         </a-button>
@@ -211,7 +250,7 @@ watch(
         size="small"
         :loading="loading"
         :columns="columns"
-        :data-source="filteredList"
+        :data-source="rawList"
         :pagination="false"
         :scroll="{ x: totalWidth }"
       >

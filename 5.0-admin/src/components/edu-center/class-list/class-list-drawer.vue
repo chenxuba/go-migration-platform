@@ -80,7 +80,6 @@ const displayRecord = computed(() => ({
 
 const isClassClosed = computed(() => Number(displayRecord.value?.status || 0) === 2)
 const studentTabLabel = computed(() => `学员(${Number(displayRecord.value?.studentCount || 0)})`)
-
 function formatCreatedTime(value) {
   if (!value || `${value}`.startsWith('0001-01-01'))
     return '-'
@@ -334,7 +333,7 @@ function handleExportRollCallSheet() {
         <a-tabs
           v-model:active-key="activeKey" size="large" :tab-bar-style="{
             'border-radius': '0px', 'padding-left': '24px',
-          }"
+          }" destroy-inactive-tab-pane
         >
           <a-tab-pane key="0" :tab="studentTabLabel">
             <ClassStudentList

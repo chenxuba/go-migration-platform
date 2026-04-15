@@ -477,7 +477,9 @@ type GroupClassStatisticsVO struct {
 }
 
 type GroupClassDrawerSchedulesQueryDTO struct {
-	ClassID string `json:"classId"`
+	ClassID   string `json:"classId"`
+	StartDate string `json:"startDate"`
+	EndDate   string `json:"endDate"`
 }
 
 type GroupClassDrawerScheduleVO struct {
