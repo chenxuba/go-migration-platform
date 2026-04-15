@@ -216,6 +216,20 @@ async function handleEditRollCall(record: ScheduleTeachingRecordItem | Record<st
   }
 }
 
+async function handleEditRollNameUpdated() {
+  const teachingRecordId = String(editRollNameDetail.value?.teachingRecordId || '').trim()
+  if (teachingRecordId) {
+    try {
+      const res = await getTeachingRecordDetailApi({ teachingRecordId })
+      if (res.code === 200 && res.result)
+        editRollNameDetail.value = res.result
+    }
+    catch {
+    }
+  }
+  await loadList()
+}
+
 function handleViewDetail(record: ScheduleTeachingRecordItem | Record<string, any>) {
   currentTeachingRecordId.value = String(record.teachingRecordId || '').trim()
   if (!currentTeachingRecordId.value)
@@ -444,6 +458,7 @@ watch(
     <EditRollNameModal
       v-model:open="editRollNameOpen"
       :detail="editRollNameDetail"
+      @updated="handleEditRollNameUpdated"
     />
     <a-modal
       v-model:open="deleteModalOpen"

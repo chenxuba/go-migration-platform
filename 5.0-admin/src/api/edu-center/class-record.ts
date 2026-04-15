@@ -135,12 +135,21 @@ export interface TeachingRecordDetailResult {
   timetableSourceType?: number
   classRoomName?: string
   classRoomId?: string
+  defaultStudentClassTime?: number
   timetableSourceId?: string
   lessonName?: string
   teachingContent?: string
   subjectId?: string
   subjectName?: string
   teachingContentImages?: string[]
+}
+
+export interface UpdateStudentTeachingRecordParams {
+  studentTeachingRecordId: string
+  status: number
+  quantity: number
+  remark?: string
+  externalRemark?: string
 }
 
 export interface ScheduleTeachingRecordItem {
@@ -202,6 +211,10 @@ export function getScheduleTeachingRecordPagedListApi(data: ClassRecordPagedPara
 
 export function getTeachingRecordDetailApi(params: { teachingRecordId: string }) {
   return useGet<TeachingRecordDetailResult>('/api/v1/class-records/detail', params)
+}
+
+export function updateStudentTeachingRecordApi(data: UpdateStudentTeachingRecordParams) {
+  return usePost<boolean>('/api/v1/class-records/student/update', data)
 }
 
 export function deleteTeachingRecordApi(data: { teachingRecordId: string }) {

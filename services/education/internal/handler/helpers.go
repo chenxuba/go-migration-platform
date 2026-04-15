@@ -1112,6 +1112,16 @@ func parseStudentTeachingRecordPagedQueryDTO(raw map[string]any) model.StudentTe
 	return query
 }
 
+func parseUpdateStudentTeachingRecordDTO(raw map[string]any) model.UpdateStudentTeachingRecordDTO {
+	return model.UpdateStudentTeachingRecordDTO{
+		StudentTeachingRecordID: asString(raw["studentTeachingRecordId"]),
+		Status:                  asInt(raw["status"], 0),
+		Quantity:                asFloat64(firstNonNil(raw["quantity"], raw["editRecord"])),
+		Remark:                  asString(raw["remark"]),
+		ExternalRemark:          asString(raw["externalRemark"]),
+	}
+}
+
 func parseScheduleTeachingRecordPagedQueryDTO(raw map[string]any) model.ScheduleTeachingRecordPagedQueryDTO {
 	query := model.ScheduleTeachingRecordPagedQueryDTO{}
 	if page, ok := raw["pageRequestModel"].(map[string]any); ok {

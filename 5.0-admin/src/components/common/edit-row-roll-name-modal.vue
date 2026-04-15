@@ -1,17 +1,22 @@
 <script setup lang="ts">
 import { CloseOutlined } from '@ant-design/icons-vue'
-import type { TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
+import { updateStudentTeachingRecordApi, type TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
 import messageService from '@/utils/messageService'
 
 const props = withDefaults(defineProps<{
   open: boolean
   student?: TeachingRecordDetailStudent | null
+  defaultQuantity?: number
 }>(), {
   student: null,
+  defaultQuantity: 0,
 })
 
-const emit = defineEmits(['update:open'])
+const emit = defineEmits(['update:open', 'saved'])
 const formRef = ref()
+const submitting = ref(false)
+const syncingFormState = ref(false)
+const previousStatus = ref(1)
 
 const openModal = computed({
   get: () => props.open,
@@ -19,7 +24,7 @@ const openModal = computed({
 })
 
 const formState = reactive({
-  status: 0,
+  status: 1,
   editRecord: undefined as number | undefined,
   internalNote: '',
   externalNote: '',
@@ -58,15 +63,44 @@ const leftQuantityText = computed(() => {
   return `${text}课时`
 })
 const quantityDisabled = computed(() => Number(props.student?.sourceType || 0) === 4 || Number(props.student?.skuMode || 0) === 2)
+const effectiveQuantityDisabled = computed(() => quantityDisabled.value)
+const quantityHintText = computed(() => {
+  if (quantityDisabled.value)
+    return '当前学员课消方式不记录课时'
+  return ''
+})
+
+function normalizeQuantity(value?: number) {
+  const num = Number(value || 0)
+  if (!Number.isFinite(num))
+    return 0
+  return num
+}
+
+function resolveDefaultQuantity() {
+  const defaultQuantity = normalizeQuantity(props.defaultQuantity)
+  if (defaultQuantity > 0)
+    return defaultQuantity
+  const currentQuantity = normalizeQuantity(props.student?.quantity)
+  if (currentQuantity > 0)
+    return currentQuantity
+  return 1
+}
 
 function syncFormState() {
   const student = props.student
-  formState.status = Number(student?.status ?? 0)
+  syncingFormState.value = true
+  const status = Number(student?.status ?? 1)
+  formState.status = [1, 2, 3].includes(status) ? status : 1
   formState.editRecord = student && String(student.studentTeachingRecordId || '').trim()
     ? Number(student.quantity ?? 0)
     : undefined
   formState.internalNote = String(student?.remark || '')
   formState.externalNote = String(student?.externalRemark || '')
+  previousStatus.value = formState.status
+  nextTick(() => {
+    syncingFormState.value = false
+  })
 }
 
 watch(
@@ -79,18 +113,55 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => formState.status,
+  (status) => {
+    if (!openModal.value || syncingFormState.value)
+      return
+    const nextStatus = Number(status || 1)
+    if (nextStatus === 1 && previousStatus.value !== 1 && normalizeQuantity(formState.editRecord) <= 0)
+      formState.editRecord = resolveDefaultQuantity()
+    if ((nextStatus === 2 || nextStatus === 3) && previousStatus.value === 1)
+      formState.editRecord = 0
+    previousStatus.value = nextStatus
+  },
+)
+
 async function handleSubmit() {
+  const studentTeachingRecordId = String(props.student?.studentTeachingRecordId || '').trim()
+  if (!studentTeachingRecordId) {
+    messageService.info('当前学员暂无点名记录，暂不支持在此处编辑')
+    return
+  }
+  if (submitting.value)
+    return
   try {
     await formRef.value?.validate()
-    messageService.info('编辑点名保存接口暂未接入，当前先支持真实数据回显')
+    submitting.value = true
+    const res = await updateStudentTeachingRecordApi({
+      studentTeachingRecordId,
+      status: Number(formState.status || 1),
+      quantity: effectiveQuantityDisabled.value ? 0 : Number(formState.editRecord || 0),
+      remark: String(formState.internalNote || '').trim(),
+      externalRemark: String(formState.externalNote || '').trim(),
+    })
+    if (res.code !== 200 || res.result !== true)
+      throw new Error(res.message || '编辑点名保存失败')
+    messageService.success('编辑点名成功')
+    emit('saved')
     openModal.value = false
   }
-  catch {
+  catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || '编辑点名保存失败')
+  }
+  finally {
+    submitting.value = false
   }
 }
 
 function closeFun() {
-  formRef.value?.resetFields()
+  if (submitting.value)
+    return
   openModal.value = false
 }
 </script>
@@ -147,9 +218,6 @@ function closeFun() {
         <a-form ref="formRef" :model="formState" :label-col="{ span: 4 }" :wrapper-col="{ span: 18 }">
           <a-form-item label="编辑状态" name="status" :rules="[{ required: true, message: '请选择编辑状态' }]" class="mb-40px">
             <a-radio-group v-model:value="formState.status" class="custom-radio">
-              <a-radio :value="0">
-                未点名
-              </a-radio>
               <a-radio :value="1">
                 到课
               </a-radio>
@@ -159,19 +227,16 @@ function closeFun() {
               <a-radio :value="2">
                 旷课
               </a-radio>
-              <a-radio :value="4">
-                未记录
-              </a-radio>
             </a-radio-group>
           </a-form-item>
 
           <a-form-item label="编辑记录" name="editRecord">
             <div class="flex flex-items-center">
-              <a-input-number v-model:value="formState.editRecord" :precision="2" :min="0" :max="100" :disabled="quantityDisabled" />
+              <a-input-number v-model:value="formState.editRecord" :precision="2" :min="0" :max="100" :disabled="effectiveQuantityDisabled" />
               <span class="ml-4px">课时</span>
             </div>
-            <div v-if="quantityDisabled" class="text-12px text-#888 mt-6px">
-              当前学员课消方式不记录课时
+            <div v-if="quantityHintText" class="text-12px text-#888 mt-6px">
+              {{ quantityHintText }}
             </div>
           </a-form-item>
 
@@ -186,10 +251,10 @@ function closeFun() {
       </div>
     </div>
     <template #footer>
-      <a-button danger ghost @click="closeFun">
+      <a-button danger ghost :disabled="submitting" @click="closeFun">
         取消
       </a-button>
-      <a-button type="primary" ghost @click="handleSubmit">
+      <a-button type="primary" ghost :loading="submitting" @click="handleSubmit">
         确定
       </a-button>
     </template>

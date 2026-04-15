@@ -199,6 +199,10 @@ function rollNameCountText(record: Partial<TeachingRecordDetailStudent>) {
 }
 
 function handleEdit(record: Record<string, any>) {
+  if (!hasTeachingRecord(record as TeachingRecordDetailStudent)) {
+    messageService.info('当前学员暂无点名记录，暂不支持在此处编辑')
+    return
+  }
   selectedStudent.value = record as TeachingRecordDetailStudent
   editRowRollNameModals.value = true
 }
@@ -246,6 +250,10 @@ watch(openDrawer, (value) => {
     editRollNameAddStuModals.value = false
   }
 })
+
+function handleRowSaved() {
+  emit('updated')
+}
 </script>
 
 <template>
@@ -375,6 +383,8 @@ watch(openDrawer, (value) => {
     <EditRowRollNameModal
       v-model:open="editRowRollNameModals"
       :student="selectedStudent"
+      :default-quantity="Number(detail?.defaultStudentClassTime || 0)"
+      @saved="handleRowSaved"
     />
     <EditRollNameAddStuModal
       v-model:open="editRollNameAddStuModals"
