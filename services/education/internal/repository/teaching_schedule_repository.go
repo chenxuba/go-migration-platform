@@ -3026,6 +3026,9 @@ func (repo *Repository) ReplaceTeachingScheduleBatch(ctx context.Context, instID
 	if len(existing) == 0 {
 		return model.CreateOneToOneSchedulesResult{}, errors.New("未找到可替换的日程")
 	}
+	if err := repo.FillTeachingScheduleCallStatus(ctx, instID, existing); err != nil {
+		return model.CreateOneToOneSchedulesResult{}, err
+	}
 	if err := ensureTeachingScheduleVOsEditable(existing); err != nil {
 		return model.CreateOneToOneSchedulesResult{}, err
 	}
@@ -6796,6 +6799,9 @@ func teachingScheduleRollCallPermission(lessonDate time.Time) (bool, string) {
 func ensureTeachingScheduleVOsEditable(list []model.TeachingScheduleVO) error {
 	todayStart := startOfDay(time.Now())
 	for _, item := range list {
+		if normalizeTeachingScheduleCallStatus(item.CallStatus) == 2 {
+			return errors.New("已点名日程不可编辑")
+		}
 		lessonDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(item.LessonDate), time.Local)
 		if err != nil {
 			if item.StartAt.IsZero() {

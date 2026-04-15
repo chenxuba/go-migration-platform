@@ -135,6 +135,39 @@ function getDeleteActionDisabledReason(record?: Partial<GroupClassDrawerSchedule
   return hasBatchScheduleRecord(record) ? '当前批次已无可删除的后续日程' : '当前日程不可删除'
 }
 
+function compactWeekdayLabel(value?: string) {
+  const text = String(value || '').trim()
+  return text.startsWith('周') ? text.slice(1) : text
+}
+
+function formatRepeatWeekdayText(prefix: string, weekdays?: string[]) {
+  const labels = (Array.isArray(weekdays) ? weekdays : [])
+    .map(item => compactWeekdayLabel(item))
+    .filter(Boolean)
+  return labels.length ? `${prefix}${labels.join('、')}` : prefix
+}
+
+function getTimeRuleText(record?: Partial<GroupClassDrawerScheduleItem> | null) {
+  const repeatRule = String(record?.repeatRule || '').trim()
+  const metaRepeatRule = String(record?.batchMeta?.repeatRule || '').trim().toLowerCase()
+  const schedulingMode = String(record?.batchMeta?.schedulingMode || '').trim().toLowerCase()
+  const selectedWeekdays = Array.isArray(record?.batchMeta?.selectedWeekdays)
+    ? record.batchMeta.selectedWeekdays
+    : []
+
+  if (metaRepeatRule === 'daily' || repeatRule === '每天重复')
+    return '每天'
+  if (metaRepeatRule === 'alternateday' || metaRepeatRule === 'alternate_day' || repeatRule === '隔天重复')
+    return '隔天'
+  if (metaRepeatRule === 'weekly' || repeatRule === '每周重复')
+    return formatRepeatWeekdayText('每周', selectedWeekdays)
+  if (metaRepeatRule === 'biweekly' || repeatRule === '隔周重复')
+    return formatRepeatWeekdayText('隔周', selectedWeekdays)
+  if (schedulingMode === 'free' && hasBatchScheduleRecord(record))
+    return '自由排课'
+  return String(record?.weekdayText || '-').trim() || '-'
+}
+
 function hasBatchScheduleRecord(record?: Partial<GroupClassDrawerScheduleItem> | null) {
   return Number(record?.scheduleCount || 0) > 1 || String(record?.batchNo || '').trim() !== ''
 }
@@ -435,7 +468,7 @@ watch(
           <template v-if="column.dataIndex === 'timeText'">
             <div>{{ record.timeText || '-' }}</div>
             <div class="text-#888">
-              {{ record.weekdayText || '-' }}
+              {{ getTimeRuleText(record) }}
             </div>
           </template>
           <template v-if="column.dataIndex === 'status'">
