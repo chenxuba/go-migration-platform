@@ -188,6 +188,9 @@ type ScheduleTeachingRecordItem struct {
 	AttendanceRate      float64 `json:"attendanceRate"`
 	AttendCount         int     `json:"attendCount"`
 	ShouldAttendCount   int     `json:"shouldAttendCount"`
+	LeaveCount          int     `json:"leaveCount"`
+	AbsentCount         int     `json:"absentCount"`
+	UnrecordedCount     int     `json:"unrecordedCount"`
 	ActualQuantity      float64 `json:"actualQuantity"`
 	ActualTuition       float64 `json:"actualTuition"`
 	TeacherName         string  `json:"teacherName"`

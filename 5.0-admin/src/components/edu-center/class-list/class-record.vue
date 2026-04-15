@@ -414,13 +414,13 @@ watch(
             {{ Number(record.attendCount || 0) }}
           </template>
           <template v-if="column.dataIndex === 'leave'">
-            -
+            {{ Number(record.leaveCount || 0) }}
           </template>
           <template v-if="column.dataIndex === 'absent'">
-            -
+            {{ Number(record.absentCount || 0) }}
           </template>
           <template v-if="column.dataIndex === 'unrecorded'">
-            -
+            {{ Number(record.unrecordedCount || 0) }}
           </template>
           <template v-if="column.dataIndex === 'rollCallTime'">
             {{ formatMinuteDateTime(record.updatedTime || record.createdTime) }}

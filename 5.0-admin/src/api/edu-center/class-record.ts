@@ -158,6 +158,9 @@ export interface ScheduleTeachingRecordItem {
   attendanceRate?: number
   attendCount?: number
   shouldAttendCount?: number
+  leaveCount?: number
+  absentCount?: number
+  unrecordedCount?: number
   actualQuantity?: number
   actualTuition?: number
   teacherName?: string

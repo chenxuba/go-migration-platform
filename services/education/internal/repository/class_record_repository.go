@@ -526,11 +526,14 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 			MAX(subject_name),
 			CASE WHEN SUM(CASE WHEN status = 4 THEN 1 ELSE 0 END) > 0 THEN 1 ELSE 2 END AS roll_call_status,
 			CASE
-				WHEN SUM(CASE WHEN source_type <> 4 THEN 1 ELSE 0 END) = 0 THEN 0
-				ELSE SUM(CASE WHEN source_type <> 4 AND status = 1 THEN 1 ELSE 0 END) / SUM(CASE WHEN source_type <> 4 THEN 1 ELSE 0 END)
+				WHEN SUM(CASE WHEN status IN (1, 2, 3) THEN 1 ELSE 0 END) = 0 THEN 0
+				ELSE SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) / SUM(CASE WHEN status IN (1, 2, 3) THEN 1 ELSE 0 END)
 			END AS attendance_rate,
-			SUM(CASE WHEN source_type <> 4 AND status = 1 THEN 1 ELSE 0 END) AS attend_count,
-			SUM(CASE WHEN source_type <> 4 THEN 1 ELSE 0 END) AS should_attend_count,
+			SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS attend_count,
+			SUM(CASE WHEN status IN (1, 2, 3) THEN 1 ELSE 0 END) AS should_attend_count,
+			SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS leave_count,
+			SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS absent_count,
+			SUM(CASE WHEN status = 4 THEN 1 ELSE 0 END) AS unrecorded_count,
 			IFNULL(SUM(
 				CASE
 					WHEN IFNULL(arrear_quantity, 0) > 0 AND IFNULL(actual_tuition, 0) <= 0 THEN 0
@@ -579,6 +582,9 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 			&item.AttendanceRate,
 			&item.AttendCount,
 			&item.ShouldAttendCount,
+			&item.LeaveCount,
+			&item.AbsentCount,
+			&item.UnrecordedCount,
 			&item.ActualQuantity,
 			&item.ActualTuition,
 			&item.TeacherName,
@@ -676,10 +682,10 @@ func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int6
 			CASE WHEN MAX(one_to_one_id) > 0 THEN 2 ELSE 1 END AS lesson_type,
 			DATE_FORMAT(MAX(start_time), '%Y-%m-%dT%H:%i:%s'),
 			DATE_FORMAT(MAX(end_time), '%Y-%m-%dT%H:%i:%s'),
-			SUM(CASE WHEN source_type <> 4 AND status IN (1, 2, 3) THEN 1 ELSE 0 END) AS should_attendance_count,
+			SUM(CASE WHEN status IN (1, 2, 3) THEN 1 ELSE 0 END) AS should_attendance_count,
 			SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END) AS actual_attendance_count,
-			SUM(CASE WHEN source_type <> 4 AND status = 3 THEN 1 ELSE 0 END) AS leave_count,
-			SUM(CASE WHEN source_type <> 4 AND status = 2 THEN 1 ELSE 0 END) AS truancy_count,
+			SUM(CASE WHEN status = 3 THEN 1 ELSE 0 END) AS leave_count,
+			SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END) AS truancy_count,
 			IFNULL(MAX(teacher_class_time), 0),
 			IFNULL(SUM(quantity), 0),
 			IFNULL(SUM(actual_tuition), 0),
@@ -1259,16 +1265,16 @@ func (repo *Repository) fillScheduleTeachingRecordStats(ctx context.Context, ins
 			continue
 		}
 		items[i].RollCallStatus = classRecordRollCallStatus(statusByID[scheduleID])
-		switch {
-		case meta.ClassType == model.TeachingClassTypeNormal && meta.ClassID > 0:
-			items[i].ShouldAttendCount = len(rosterByScheduleID[scheduleID].activeIDs())
-		case meta.StudentID > 0:
-			items[i].ShouldAttendCount = 1
-		}
-		if items[i].ShouldAttendCount > 0 {
-			items[i].AttendanceRate = float64(items[i].AttendCount) / float64(items[i].ShouldAttendCount)
-		} else {
-			items[i].AttendanceRate = 0
+		if items[i].ShouldAttendCount <= 0 {
+			switch {
+			case meta.ClassType == model.TeachingClassTypeNormal && meta.ClassID > 0:
+				items[i].ShouldAttendCount = len(rosterByScheduleID[scheduleID].activeIDs())
+			case meta.StudentID > 0:
+				items[i].ShouldAttendCount = 1
+			}
+			if items[i].ShouldAttendCount > 0 {
+				items[i].AttendanceRate = float64(items[i].AttendCount) / float64(items[i].ShouldAttendCount)
+			}
 		}
 	}
 	return nil
@@ -1290,19 +1296,21 @@ func (repo *Repository) fillTeachingRecordDetailAttendanceStats(ctx context.Cont
 	if !ok {
 		return nil
 	}
-	switch {
-	case meta.ClassType == model.TeachingClassTypeNormal && meta.ClassID > 0:
-		rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, repo.db, instID, []effectiveGroupClassScheduleMeta{{
-			ScheduleID: meta.ScheduleID,
-			ClassID:    meta.ClassID,
-			StartAt:    meta.StartAt,
-		}})
-		if err != nil {
-			return err
+	if detail.ShouldAttendanceCount <= 0 {
+		switch {
+		case meta.ClassType == model.TeachingClassTypeNormal && meta.ClassID > 0:
+			rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, repo.db, instID, []effectiveGroupClassScheduleMeta{{
+				ScheduleID: meta.ScheduleID,
+				ClassID:    meta.ClassID,
+				StartAt:    meta.StartAt,
+			}})
+			if err != nil {
+				return err
+			}
+			detail.ShouldAttendanceCount = len(rosterByScheduleID[scheduleID].activeIDs())
+		case meta.StudentID > 0:
+			detail.ShouldAttendanceCount = 1
 		}
-		detail.ShouldAttendanceCount = len(rosterByScheduleID[scheduleID].activeIDs())
-	case meta.StudentID > 0:
-		detail.ShouldAttendanceCount = 1
 	}
 	return nil
 }
