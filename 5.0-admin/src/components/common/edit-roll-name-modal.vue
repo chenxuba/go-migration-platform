@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import type { TeachingRecordDetailResult, TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
 import messageService from '@/utils/messageService'
 import EditRollNameAddStuModal from './edit-roll-name-add-stu-modal.vue'
@@ -271,6 +271,11 @@ function handleRowSaved() {
           <div class="text-5">
             编辑点名
           </div>
+          <a-button type="text" class="close-btn" @click="openDrawer = false">
+            <template #icon>
+              <CloseOutlined class="text-5 close-icon" />
+            </template>
+          </a-button>
         </div>
       </template>
       <div class="search px-24px py-12px bg-white">
@@ -471,6 +476,16 @@ function handleRowSaved() {
 .rotate-icon {
   display: inline-block;
   transition: transform 0.3s ease;
+}
+
+.close-btn {
+  &:hover {
+    background: transparent;
+
+    .close-icon {
+      animation: icon-rotate 0.3s linear;
+    }
+  }
 }
 
 .h-40px:hover .rotate-icon {

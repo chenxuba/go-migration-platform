@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CloseOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { updateStudentTeachingRecordApi, type TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
 import messageService from '@/utils/messageService'
 
@@ -64,6 +64,8 @@ const leftQuantityText = computed(() => {
 })
 const quantityDisabled = computed(() => Number(props.student?.sourceType || 0) === 4 || Number(props.student?.skuMode || 0) === 2)
 const effectiveQuantityDisabled = computed(() => quantityDisabled.value)
+const showUnrecordedOption = computed(() => Number(props.student?.status || 0) === 4 || Number(formState.status || 0) === 4)
+const showEditRecord = computed(() => Number(formState.status || 1) !== 4)
 const quantityHintText = computed(() => {
   if (quantityDisabled.value)
     return '当前学员课消方式不记录课时'
@@ -119,6 +121,8 @@ watch(
     if (!openModal.value || syncingFormState.value)
       return
     const nextStatus = Number(status || 1)
+    if (nextStatus === 4)
+      formState.editRecord = 0
     if (nextStatus === 1 && previousStatus.value !== 1 && normalizeQuantity(formState.editRecord) <= 0)
       formState.editRecord = resolveDefaultQuantity()
     if ((nextStatus === 2 || nextStatus === 3) && previousStatus.value === 1)
@@ -227,10 +231,21 @@ function closeFun() {
               <a-radio :value="2">
                 旷课
               </a-radio>
+              <a-radio v-if="showUnrecordedOption" :value="4">
+                未记录
+              </a-radio>
+              <a-popover v-if="showUnrecordedOption" title="未记录" trigger="hover">
+                <template #content>
+                  <div class="w-220px leading-22px">
+                    学员为“未记录”状态时，无法记录课时，也不会发送家长端消息提醒。
+                  </div>
+                </template>
+                <ExclamationCircleOutlined class="ml-6px text-#999 cursor-pointer" />
+              </a-popover>
             </a-radio-group>
           </a-form-item>
 
-          <a-form-item label="编辑记录" name="editRecord">
+          <a-form-item v-if="showEditRecord" label="编辑记录" name="editRecord">
             <div class="flex flex-items-center">
               <a-input-number v-model:value="formState.editRecord" :precision="2" :min="0" :max="100" :disabled="effectiveQuantityDisabled" />
               <span class="ml-4px">课时</span>
