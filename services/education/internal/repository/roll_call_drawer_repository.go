@@ -1409,9 +1409,43 @@ func (repo *Repository) listRollCallDrawerStudentAccountsByCourseScope(ctx conte
 	}
 
 	if len(accounts) == 0 {
+		allAccounts, err := repo.listRollCallDrawerAllStudentAccounts(ctx, instID, studentID)
+		if err != nil {
+			return nil, -1, err
+		}
+		for _, account := range filterRollCallDrawerAccountsByCourseScope(allAccounts, courseScope) {
+			accounts = appendRollCallDrawerAccount(accounts, account, seen)
+		}
+	}
+
+	if len(accounts) == 0 {
 		return nil, -1, nil
 	}
 	return accounts, pickBestRollCallDrawerAccountIndex(accounts), nil
+}
+
+func filterRollCallDrawerAccountsByCourseScope(accounts []model.StudentLessonTuitionAccountItem, courseScope []int64) []model.StudentLessonTuitionAccountItem {
+	if len(accounts) == 0 || len(courseScope) == 0 {
+		return nil
+	}
+	allowedCourseIDSet := make(map[string]struct{}, len(courseScope))
+	for _, courseID := range courseScope {
+		if courseID <= 0 {
+			continue
+		}
+		allowedCourseIDSet[strconv.FormatInt(courseID, 10)] = struct{}{}
+	}
+	if len(allowedCourseIDSet) == 0 {
+		return nil
+	}
+	result := make([]model.StudentLessonTuitionAccountItem, 0, len(accounts))
+	for _, account := range accounts {
+		if _, ok := allowedCourseIDSet[strings.TrimSpace(account.LessonID)]; !ok {
+			continue
+		}
+		result = append(result, account)
+	}
+	return result
 }
 
 func (repo *Repository) listRollCallDrawerAllStudentAccounts(ctx context.Context, instID, studentID int64) ([]model.StudentLessonTuitionAccountItem, error) {

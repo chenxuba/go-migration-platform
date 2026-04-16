@@ -1385,7 +1385,7 @@ func (repo *Repository) createEditableStudentTeachingRecordTx(ctx context.Contex
 	if err != nil || studentID <= 0 {
 		return studentTeachingRecordEditableRow{}, errors.New("缺少有效的学员")
 	}
-	if dto.SourceType != 2 && dto.SourceType != 3 && dto.SourceType != 4 {
+	if dto.SourceType != 2 && dto.SourceType != 3 && dto.SourceType != 4 && dto.SourceType != 5 {
 		return studentTeachingRecordEditableRow{}, errors.New("当前仅支持追加学员直接点名")
 	}
 
@@ -1450,7 +1450,7 @@ func (repo *Repository) createEditableStudentTeachingRecordTx(ctx context.Contex
 	if !foundRosterStudent {
 		return studentTeachingRecordEditableRow{}, errors.New("当前学员不在本节可追加名单中")
 	}
-	if !isScheduleOnlyStudentType(rosterStudent.ScheduleStudentType) || rollCallTeachingRecordSourceType(rosterStudent.ScheduleStudentType) != dto.SourceType {
+	if rollCallTeachingRecordSourceType(rosterStudent.ScheduleStudentType) != dto.SourceType {
 		return studentTeachingRecordEditableRow{}, errors.New("当前学员不支持通过编辑点名追加")
 	}
 
@@ -1596,6 +1596,8 @@ func (repo *Repository) ensureEditableStudentScheduleLinkTx(ctx context.Context,
 
 func editableScheduleStudentTypeFromSourceType(sourceType int) (int, error) {
 	switch sourceType {
+	case 5:
+		return model.TeachingScheduleStudentTypeClassMember, nil
 	case 2:
 		return model.TeachingScheduleStudentTypeTemporary, nil
 	case 3, 7:

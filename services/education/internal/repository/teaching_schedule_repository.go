@@ -2594,9 +2594,6 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("日程ID无效")
 	}
 	studentType := normalizeTeachingScheduleStudentType(dto.QueryModel.StudentType)
-	if !isScheduleOnlyStudentType(studentType) {
-		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("学员类型无效")
-	}
 	if studentType == model.TeachingScheduleStudentTypeMakeup {
 		return model.TeachingScheduleStudentCandidatePagedResult{
 			List:  make([]model.TeachingScheduleStudentCandidateVO, 0),
@@ -2702,6 +2699,19 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 		}
 	}
 
+	if studentType == model.TeachingScheduleStudentTypeClassMember {
+		return repo.pageTeachingScheduleClassMemberCandidates(
+			ctx,
+			instID,
+			row.ID,
+			row.TeachingClassID,
+			row.StartAt,
+			strings.TrimSpace(dto.QueryModel.Keyword),
+			pageIndex,
+			pageSize,
+		)
+	}
+
 	if requiresLessonScopedTeachingScheduleCandidates(studentType) {
 		return repo.pageTeachingScheduleStudentCandidatesByLessonScope(
 			ctx,
@@ -2792,6 +2802,196 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 	}
 	if err := rows.Err(); err != nil {
 		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) pageTeachingScheduleClassMemberCandidates(
+	ctx context.Context,
+	instID, scheduleID, classID int64,
+	startAt time.Time,
+	keyword string,
+	pageIndex int,
+	pageSize int,
+) (model.TeachingScheduleStudentCandidatePagedResult, error) {
+	result := model.TeachingScheduleStudentCandidatePagedResult{
+		List: make([]model.TeachingScheduleStudentCandidateVO, 0),
+	}
+	if classID <= 0 {
+		return result, nil
+	}
+
+	membershipMap, err := repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, repo.db, instID, []int64{classID})
+	if err != nil {
+		return result, err
+	}
+	referenceAt := resolveGroupClassRosterReferenceAt(startAt, time.Time{})
+	associatedSet := buildAssociatedGroupClassStudentSet(membershipMap[classID], nil, referenceAt)
+	existingStudentIDSet, err := repo.loadScheduleCandidateExistingRecordStudentIDSet(ctx, instID, scheduleID)
+	if err != nil {
+		return result, err
+	}
+	deletedCandidateMap, err := repo.loadScheduleDeletedClassMemberCandidateMap(ctx, instID, scheduleID)
+	if err != nil {
+		return result, err
+	}
+
+	keyword = strings.TrimSpace(strings.ToLower(keyword))
+	candidateMap := make(map[int64]model.TeachingScheduleStudentCandidateVO)
+	for _, membership := range membershipMap[classID] {
+		if membership.StudentID <= 0 {
+			continue
+		}
+		if _, exists := existingStudentIDSet[membership.StudentID]; exists {
+			continue
+		}
+		if _, associated := associatedSet[membership.StudentID]; !associated {
+			if _, hadDeletedHistory := deletedCandidateMap[membership.StudentID]; !hadDeletedHistory {
+				continue
+			}
+		}
+		name := firstNonEmptyString(strings.TrimSpace(membership.StudentName), "-")
+		phone := strings.TrimSpace(membership.Phone)
+		if keyword != "" && !strings.Contains(strings.ToLower(name), keyword) && !strings.Contains(strings.ToLower(phone), keyword) {
+			continue
+		}
+		candidateMap[membership.StudentID] = model.TeachingScheduleStudentCandidateVO{
+			StudentID:             strconv.FormatInt(membership.StudentID, 10),
+			StudentName:           name,
+			AvatarURL:             strings.TrimSpace(membership.AvatarURL),
+			Phone:                 "",
+			MaskedPhone:           maskPhoneLocal(phone),
+			PhoneRelationship:     membership.PhoneRelationship,
+			PhoneRelationshipText: studentPhoneRelationshipText(membership.PhoneRelationship),
+			StudentStatus:         model.InstStudentStatusEnrolled,
+			StudentStatusText:     teachingScheduleCandidateStudentStatusText(model.InstStudentStatusEnrolled),
+		}
+	}
+	for studentID, candidate := range deletedCandidateMap {
+		if studentID <= 0 {
+			continue
+		}
+		if _, exists := existingStudentIDSet[studentID]; exists {
+			continue
+		}
+		if keyword != "" && !strings.Contains(strings.ToLower(candidate.StudentName), keyword) && !strings.Contains(strings.ToLower(candidate.MaskedPhone), keyword) {
+			continue
+		}
+		if _, exists := candidateMap[studentID]; exists {
+			continue
+		}
+		candidateMap[studentID] = candidate
+	}
+	candidates := make([]model.TeachingScheduleStudentCandidateVO, 0, len(candidateMap))
+	for _, candidate := range candidateMap {
+		candidates = append(candidates, candidate)
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		leftID, _ := strconv.ParseInt(candidates[i].StudentID, 10, 64)
+		rightID, _ := strconv.ParseInt(candidates[j].StudentID, 10, 64)
+		return leftID > rightID
+	})
+	result.Total = len(candidates)
+	if result.Total == 0 {
+		return result, nil
+	}
+	offset := (pageIndex - 1) * pageSize
+	if offset >= result.Total {
+		return result, nil
+	}
+	end := offset + pageSize
+	if end > result.Total {
+		end = result.Total
+	}
+	result.List = candidates[offset:end]
+	return result, nil
+}
+
+func (repo *Repository) loadScheduleCandidateExistingRecordStudentIDSet(ctx context.Context, instID, scheduleID int64) (map[int64]struct{}, error) {
+	result := make(map[int64]struct{})
+	if scheduleID <= 0 {
+		return result, nil
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(student_id, 0)
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND teaching_schedule_id = ?
+		  AND del_flag = 0
+	`, instID, scheduleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var studentID int64
+		if err := rows.Scan(&studentID); err != nil {
+			return nil, err
+		}
+		if studentID > 0 {
+			result[studentID] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) loadScheduleDeletedClassMemberCandidateMap(ctx context.Context, instID, scheduleID int64) (map[int64]model.TeachingScheduleStudentCandidateVO, error) {
+	result := make(map[int64]model.TeachingScheduleStudentCandidateVO)
+	if scheduleID <= 0 {
+		return result, nil
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			IFNULL(student_id, 0),
+			IFNULL(student_name, ''),
+			IFNULL(avatar_url, ''),
+			IFNULL(student_phone, '')
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND teaching_schedule_id = ?
+		  AND source_type = ?
+		  AND del_flag = 1
+		ORDER BY id DESC
+	`, instID, scheduleID, rollCallTeachingRecordSourceType(model.TeachingScheduleStudentTypeClassMember))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			studentID   int64
+			studentName string
+			avatarURL   string
+			phone       string
+		)
+		if err := rows.Scan(&studentID, &studentName, &avatarURL, &phone); err != nil {
+			return nil, err
+		}
+		if studentID <= 0 {
+			continue
+		}
+		if _, exists := result[studentID]; exists {
+			continue
+		}
+		phone = strings.TrimSpace(phone)
+		result[studentID] = model.TeachingScheduleStudentCandidateVO{
+			StudentID:             strconv.FormatInt(studentID, 10),
+			StudentName:           firstNonEmptyString(strings.TrimSpace(studentName), "-"),
+			AvatarURL:             strings.TrimSpace(avatarURL),
+			Phone:                 "",
+			MaskedPhone:           maskPhoneLocal(phone),
+			PhoneRelationship:     0,
+			PhoneRelationshipText: "",
+			StudentStatus:         model.InstStudentStatusEnrolled,
+			StudentStatusText:     teachingScheduleCandidateStudentStatusText(model.InstStudentStatusEnrolled),
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

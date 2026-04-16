@@ -214,7 +214,11 @@ function handleEdit(record: Record<string, any>) {
 }
 
 function handleAddStudentMenuClick({ key }: { key: string | number }) {
-  if (key === 'temporary') {
+  if (key === 'class') {
+    addStudentModalTitle.value = '添加班级学员'
+    addStudentType.value = 1
+  }
+  else if (key === 'temporary') {
     addStudentModalTitle.value = '添加临时学员'
     addStudentType.value = 2
   }
@@ -391,6 +395,9 @@ function handleRowSaved() {
           </a-button>
           <template #overlay>
             <a-menu @click="handleAddStudentMenuClick">
+              <a-menu-item key="class">
+                班级学员
+              </a-menu-item>
               <a-menu-item key="makeup">
                 补课学员
               </a-menu-item>
