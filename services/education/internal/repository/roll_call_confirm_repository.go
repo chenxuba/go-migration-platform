@@ -321,15 +321,6 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 				}
 				if actualDeduct > 0 {
 					actualTuition = repo.rollCallConfirmLessonHourTuition(actualDeduct, account)
-					if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, actualDeduct, actualTuition, account); err != nil {
-						return model.RollCallConfirmResult{}, err
-					}
-					account.UsedQuantity = roundMoney(account.UsedQuantity + actualDeduct)
-					account.RemainingQuantity = roundMoney(math.Max(account.RemainingQuantity-actualDeduct, 0))
-					account.UsedTuition = roundMoney(account.UsedTuition + actualTuition)
-					account.RemainingTuition = roundMoney(math.Max(account.RemainingTuition-actualTuition, 0))
-					account.ConfirmedTuition = roundMoney(account.ConfirmedTuition + actualTuition)
-					accountMap[strings.TrimSpace(item.TuitionAccountID)] = account
 				}
 				if options.IsAutoRollCall && arrearQuantity > 0 {
 					actualQuantity = 0
@@ -349,7 +340,7 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 		} else {
 			recordClassName = classMeta.ClassName
 		}
-		if _, err := tx.ExecContext(ctx, `
+		result, err := tx.ExecContext(ctx, `
 			INSERT INTO student_teaching_record (
 				inst_id, teaching_record_id, teaching_schedule_id, timetable_source_type, timetable_source_id,
 				student_id, student_name, student_phone, avatar_url, source_type, current_student_status, status, is_late,
@@ -386,8 +377,24 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 			roundMoney(item.Amount), actualDeduct, actualTuition, arrearQuantity, dto.TeacherClassTime, strings.TrimSpace(item.Remark), strings.TrimSpace(item.ExternalRemark), options.IsAutoRollCall, false,
 			profile.AdvisorStaffID, profile.AdvisorStaffName, profile.StudentManagerID, profile.StudentManagerName, startTime, endTime, recordTime,
 			recordTime, operatorID, operatorName, operatorID, operatorID,
-		); err != nil {
+		)
+		if err != nil {
 			return model.RollCallConfirmResult{}, err
+		}
+		insertedStudentTeachingRecordID, err := result.LastInsertId()
+		if err != nil || insertedStudentTeachingRecordID <= 0 {
+			return model.RollCallConfirmResult{}, errors.New("点名记录创建失败")
+		}
+		if actualDeduct > 0 {
+			if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, actualTuition, account); err != nil {
+				return model.RollCallConfirmResult{}, err
+			}
+			account.UsedQuantity = roundMoney(account.UsedQuantity + actualDeduct)
+			account.RemainingQuantity = roundMoney(math.Max(account.RemainingQuantity-actualDeduct, 0))
+			account.UsedTuition = roundMoney(account.UsedTuition + actualTuition)
+			account.RemainingTuition = roundMoney(math.Max(account.RemainingTuition-actualTuition, 0))
+			account.ConfirmedTuition = roundMoney(account.ConfirmedTuition + actualTuition)
+			accountMap[strings.TrimSpace(item.TuitionAccountID)] = account
 		}
 		insertedCount++
 	}
@@ -623,15 +630,6 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 				}
 				if actualDeduct > 0 {
 					actualTuition = repo.rollCallConfirmLessonHourTuition(actualDeduct, account)
-					if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, actualDeduct, actualTuition, account); err != nil {
-						return model.RollCallConfirmResult{}, err
-					}
-					account.UsedQuantity = roundMoney(account.UsedQuantity + actualDeduct)
-					account.RemainingQuantity = roundMoney(math.Max(account.RemainingQuantity-actualDeduct, 0))
-					account.UsedTuition = roundMoney(account.UsedTuition + actualTuition)
-					account.RemainingTuition = roundMoney(math.Max(account.RemainingTuition-actualTuition, 0))
-					account.ConfirmedTuition = roundMoney(account.ConfirmedTuition + actualTuition)
-					accountMap[strings.TrimSpace(item.TuitionAccountID)] = account
 				}
 				if options.IsAutoRollCall && arrearQuantity > 0 {
 					actualQuantity = 0
@@ -644,7 +642,7 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 			}
 		}
 
-		if _, err := tx.ExecContext(ctx, `
+		result, err := tx.ExecContext(ctx, `
 			INSERT INTO student_teaching_record (
 				inst_id, teaching_record_id, teaching_schedule_id, timetable_source_type, timetable_source_id,
 				student_id, student_name, student_phone, avatar_url, source_type, current_student_status, status, is_late,
@@ -680,8 +678,24 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 			roundMoney(item.Amount), actualDeduct, actualTuition, arrearQuantity, dto.TeacherClassTime, strings.TrimSpace(item.Remark), strings.TrimSpace(item.ExternalRemark), options.IsAutoRollCall, false,
 			profile.AdvisorStaffID, profile.AdvisorStaffName, profile.StudentManagerID, profile.StudentManagerName, startTime, endTime, recordTime,
 			recordTime, operatorID, operatorName, operatorID, operatorID,
-		); err != nil {
+		)
+		if err != nil {
 			return model.RollCallConfirmResult{}, err
+		}
+		insertedStudentTeachingRecordID, err := result.LastInsertId()
+		if err != nil || insertedStudentTeachingRecordID <= 0 {
+			return model.RollCallConfirmResult{}, errors.New("点名记录创建失败")
+		}
+		if actualDeduct > 0 {
+			if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, actualTuition, account); err != nil {
+				return model.RollCallConfirmResult{}, err
+			}
+			account.UsedQuantity = roundMoney(account.UsedQuantity + actualDeduct)
+			account.RemainingQuantity = roundMoney(math.Max(account.RemainingQuantity-actualDeduct, 0))
+			account.UsedTuition = roundMoney(account.UsedTuition + actualTuition)
+			account.RemainingTuition = roundMoney(math.Max(account.RemainingTuition-actualTuition, 0))
+			account.ConfirmedTuition = roundMoney(account.ConfirmedTuition + actualTuition)
+			accountMap[strings.TrimSpace(item.TuitionAccountID)] = account
 		}
 		insertedCount++
 	}
@@ -966,13 +980,16 @@ func (repo *Repository) rollCallConfirmLessonHourTuition(quantity float64, accou
 	return roundMoney(account.TotalTuition * quantity / account.TotalQuantity)
 }
 
-func (repo *Repository) applyRollCallLessonHourConsumeTx(ctx context.Context, tx *sql.Tx, instID, operatorID, teachingRecordID int64, quantity, tuition float64, account rollCallConfirmAccount) error {
+func (repo *Repository) applyRollCallLessonHourConsumeTx(ctx context.Context, tx *sql.Tx, instID, operatorID, teachingRecordID, flowSourceID int64, quantity, tuition float64, account rollCallConfirmAccount) error {
 	newUsedQuantity := roundMoney(account.UsedQuantity + quantity)
 	newUsedTuition := roundMoney(account.UsedTuition + tuition)
 	newConfirmedTuition := roundMoney(account.ConfirmedTuition + tuition)
 	// 点名扣减后的剩余值统一按“总量 - 已用量”回算，避免历史脏数据继续向后传染。
 	newRemainingQuantity := roundMoney(math.Max(account.TotalQuantity-newUsedQuantity, 0))
 	newRemainingTuition := roundMoney(math.Max(account.TotalTuition-newUsedTuition, 0))
+	if flowSourceID <= 0 {
+		flowSourceID = teachingRecordID
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE tuition_account
@@ -1016,7 +1033,7 @@ func (repo *Repository) applyRollCallLessonHourConsumeTx(ctx context.Context, tx
 		account.LessonType,
 		1,
 		model.TuitionAccountFlowSourceConsume,
-		teachingRecordID,
+		flowSourceID,
 		teachingRecordID,
 		account.OrderNumber,
 		quantity,

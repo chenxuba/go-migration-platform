@@ -1268,6 +1268,10 @@ func (repo *Repository) revertTeachingRecordConsumeTx(ctx context.Context, tx *s
 	newConfirmedTuition := math.Max(roundMoney(account.ConfirmedTuition-row.ActualTuition), 0)
 	newRemainingQuantity := roundMoney(math.Max(account.TotalQuantity-newUsedQuantity, 0))
 	newRemainingTuition := roundMoney(math.Max(account.TotalTuition-newUsedTuition, 0))
+	flowSourceID := row.StudentTeachingRecordID
+	if flowSourceID <= 0 {
+		flowSourceID = teachingRecordID
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE tuition_account
@@ -1311,7 +1315,7 @@ func (repo *Repository) revertTeachingRecordConsumeTx(ctx context.Context, tx *s
 		account.LessonType,
 		normalizeRollCallDrawerChargingMode(account.LessonChargingMode),
 		model.TuitionAccountFlowSourceConsumeReturn,
-		teachingRecordID,
+		flowSourceID,
 		teachingRecordID,
 		account.OrderNumber,
 		roundMoney(row.ActualDeduct),
@@ -1811,7 +1815,7 @@ func (repo *Repository) insertEditedStudentTeachingRecordFlowTx(ctx context.Cont
 	if flowQuantity <= 0 && almostEqualFloat(flowTuition, 0) {
 		return nil
 	}
-	sourceID, err := repo.nextEditedStudentTeachingRecordFlowSourceIDTx(ctx, tx, instID, row.TuitionAccountID, sourceType, row.StudentTeachingRecordID)
+	sourceID, err := repo.nextEditedStudentTeachingRecordFlowSourceIDTx(ctx, tx, instID, account.ID, sourceType, row.StudentTeachingRecordID)
 	if err != nil {
 		return err
 	}
