@@ -413,7 +413,14 @@ function handleScroll(e) {
             <a-spin :spinning="spinning">
               <a-checkbox-group v-model:value="checkedValues" class="vertical-checkbox-group " @change="handleCheckboxGroupChange">
                 <a-checkbox v-for="item in filteredOptions" :key="item.id" :value="item.id">
-                  {{ item.value }}
+                  <div class="checkbox-option-content">
+                    <div class="checkbox-option-title">
+                      {{ item.value ?? item.name ?? item.stuName ?? item.nickName }}
+                    </div>
+                    <div v-if="item.mobile ?? item.phone" class="checkbox-option-subtitle">
+                      {{ item.mobile ?? item.phone }}
+                    </div>
+                  </div>
                 </a-checkbox>
               </a-checkbox-group>
               <div v-if="finished && filteredOptions.length > 0" class="no-more-data">
@@ -844,6 +851,21 @@ function handleScroll(e) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.checkbox-option-content {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.4;
+}
+
+.checkbox-option-title {
+  color: #333;
+}
+
+.checkbox-option-subtitle {
+  font-size: 12px;
+  color: #999;
 }
 
 :deep(.ant-dropdown-menu-item.check-item) {

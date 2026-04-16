@@ -588,6 +588,27 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 			DATE_FORMAT(MAX(start_time), '%Y-%m-%dT%H:%i:%s'),
 			DATE_FORMAT(MAX(end_time), '%Y-%m-%dT%H:%i:%s'),
 			MAX(timetable_source_type),
+			MAX(
+				CASE
+					WHEN LENGTH(TRIM(one_to_one_name)) > 0 THEN one_to_one_name
+					WHEN LENGTH(TRIM(class_name)) > 0 THEN class_name
+					ELSE lesson_name
+				END
+			) AS source_name,
+			CASE
+				WHEN MAX(one_to_one_id) > 0 THEN 2
+				WHEN MAX(class_id) > 0 THEN 1
+				WHEN MAX(timetable_source_type) = 3 THEN 3
+				ELSE 0
+			END AS source_type,
+			CAST(
+				CASE
+					WHEN MAX(one_to_one_id) > 0 THEN MAX(one_to_one_id)
+					WHEN MAX(class_id) > 0 THEN MAX(class_id)
+					ELSE 0
+				END AS CHAR
+			) AS source_id,
+			CAST(MAX(lesson_id) AS CHAR),
 			MAX(class_name),
 			MAX(one_to_one_name),
 			MAX(lesson_name),
@@ -610,9 +631,21 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 				END
 			), 0),
 			IFNULL(SUM(actual_tuition), 0),
+			CAST(MAX(main_teacher_id) AS CHAR),
 			MAX(main_teacher_name),
 			MAX(CAST(assistant_teacher_names_json AS CHAR(1000))),
+			MAX(classroom_name),
 			MAX(teacher_class_time),
+			SUM(CASE
+				WHEN status IN (1, 2, 3) AND LENGTH(TRIM(IFNULL(external_remark, ''))) > 0 THEN 1
+				ELSE 0
+			END) AS comment_count,
+			SUM(CASE
+				WHEN status IN (1, 2, 3) AND LENGTH(TRIM(IFNULL(external_remark, ''))) = 0 THEN 1
+				ELSE 0
+			END) AS un_comment_count,
+			0 AS read_count,
+			0 AS unread_count,
 			DATE_FORMAT(MAX(teaching_record_created_time), '%Y-%m-%d %H:%i:%s'),
 			DATE_FORMAT(MAX(updated_time), '%Y-%m-%d %H:%i:%s')
 		FROM student_teaching_record
@@ -642,6 +675,10 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 			&item.StartTime,
 			&item.EndTime,
 			&item.TimetableSourceType,
+			&item.SourceName,
+			&item.SourceType,
+			&item.SourceID,
+			&item.LessonID,
 			&item.ClassName,
 			&item.One2OneName,
 			&item.LessonName,
@@ -656,9 +693,15 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 			&item.UnrecordedCount,
 			&item.ActualQuantity,
 			&item.ActualTuition,
+			&item.TeacherID,
 			&item.TeacherName,
 			&rawAssistants,
+			&item.ClassRoomName,
 			&item.TeacherClassTime,
+			&item.CommentCount,
+			&item.UnCommentCount,
+			&item.ReadCount,
+			&item.UnReadCount,
 			&item.CreatedTime,
 			&item.UpdatedTime,
 		); err != nil {

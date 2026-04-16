@@ -207,6 +207,10 @@ type ScheduleTeachingRecordItem struct {
 	StartTime           string  `json:"startTime"`
 	EndTime             string  `json:"endTime"`
 	TimetableSourceType int     `json:"timetableSourceType"`
+	SourceName          string  `json:"sourceName"`
+	SourceType          int     `json:"sourceType"`
+	SourceID            string  `json:"sourceId"`
+	LessonID            string  `json:"lessonId"`
 	ClassName           string  `json:"className"`
 	One2OneName         string  `json:"one2OneName"`
 	LessonName          string  `json:"lessonName"`
@@ -221,9 +225,15 @@ type ScheduleTeachingRecordItem struct {
 	UnrecordedCount     int     `json:"unrecordedCount"`
 	ActualQuantity      float64 `json:"actualQuantity"`
 	ActualTuition       float64 `json:"actualTuition"`
+	TeacherID           string  `json:"teacherId"`
 	TeacherName         string  `json:"teacherName"`
 	Assistants          string  `json:"assistants"`
+	ClassRoomName       string  `json:"classRoomName"`
 	TeacherClassTime    float64 `json:"teacherClassTime"`
+	CommentCount        int     `json:"commentCount"`
+	UnCommentCount      int     `json:"unCommentCount"`
+	ReadCount           int     `json:"readCount"`
+	UnReadCount         int     `json:"unReadCount"`
 	CreatedTime         string  `json:"createdTime"`
 	UpdatedTime         string  `json:"updatedTime"`
 }
@@ -234,6 +244,53 @@ type ScheduleTeachingRecordPagedResult struct {
 	TotalTuition      float64                      `json:"totalTuition"`
 	List              []ScheduleTeachingRecordItem `json:"list"`
 	Total             int                          `json:"total"`
+}
+
+type ClassCommentPagedQueryDTO struct {
+	PageRequestModel RollCallPageRequestModel `json:"pageRequestModel"`
+	SortModel        ClassCommentSortModel    `json:"sortModel"`
+	QueryModel       ClassCommentQueryModel   `json:"queryModel"`
+}
+
+type ClassCommentSortModel struct {
+	StartTime int `json:"startTime"`
+}
+
+type ClassCommentQueryModel struct {
+	TeachingStartTime   string   `json:"teachingStartTime"`
+	TeachingEndTime     string   `json:"teachingEndTime"`
+	TeachingRecordTypes []int    `json:"teachingRecordTypes"`
+	LessonID            string   `json:"lessonId"`
+	TeacherIDs          []string `json:"teacherIds"`
+	ClassID             string   `json:"classId"`
+	One2OneID           string   `json:"one2OneId"`
+	ClassTeacherIDs     []string `json:"classTeacherIds"`
+	One2OneTeacherIDs   []string `json:"one2OneTeacherIds"`
+}
+
+type ClassCommentPagedItem struct {
+	TeachingRecordID string `json:"teachingRecordId"`
+	SourceName       string `json:"sourceName"`
+	SourceType       int    `json:"sourceType"`
+	SourceID         string `json:"sourceId"`
+	LessonID         string `json:"lessonId"`
+	LessonName       string `json:"lessonName"`
+	CreatedTime      string `json:"createdTime"`
+	TeacherID        string `json:"teacherId"`
+	TeacherName      string `json:"teacherName"`
+	StartTime        string `json:"startTime"`
+	EndTime          string `json:"endTime"`
+	ReadCount        int    `json:"readCount"`
+	UnReadCount      int    `json:"unReadCount"`
+	CommentCount     int    `json:"commentCount"`
+	UnCommentCount   int    `json:"unCommentCount"`
+	Assistants       string `json:"assistants"`
+	ClassRoomName    string `json:"classRoomName"`
+}
+
+type ClassCommentPagedResult struct {
+	List  []ClassCommentPagedItem `json:"list"`
+	Total int                     `json:"total"`
 }
 
 type ClassRecordExportCreateRequest struct {

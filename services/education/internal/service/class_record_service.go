@@ -22,6 +22,71 @@ func (svc *Service) GetScheduleTeachingRecordPagedList(userID int64, dto model.S
 	return svc.repo.GetScheduleTeachingRecordPagedList(context.Background(), instID, dto)
 }
 
+func (svc *Service) GetClassCommentPagedList(userID int64, dto model.ClassCommentPagedQueryDTO) (model.ClassCommentPagedResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.ClassCommentPagedResult{}, err
+	}
+
+	queryModel := model.StudentTeachingRecordQueryModel{
+		BeginStartTime:       dto.QueryModel.TeachingStartTime,
+		EndStartTime:         dto.QueryModel.TeachingEndTime,
+		TeacherIDs:           dto.QueryModel.TeacherIDs,
+		LessonIDs:            nil,
+		ClassIDs:             nil,
+		One2OneIDs:           nil,
+		TimetableSourceTypes: dto.QueryModel.TeachingRecordTypes,
+		ScheduleCallStatus:   intPtr(2),
+	}
+	if lessonID := dto.QueryModel.LessonID; lessonID != "" {
+		queryModel.LessonIDs = []string{lessonID}
+	}
+	if classID := dto.QueryModel.ClassID; classID != "" {
+		queryModel.ClassIDs = []string{classID}
+	}
+	if one2OneID := dto.QueryModel.One2OneID; one2OneID != "" {
+		queryModel.One2OneIDs = []string{one2OneID}
+	}
+
+	pageResult, err := svc.repo.GetScheduleTeachingRecordPagedList(context.Background(), instID, model.ScheduleTeachingRecordPagedQueryDTO{
+		PageRequestModel: dto.PageRequestModel,
+		SortModel: model.ScheduleTeachingRecordSortModel{
+			StartTime: dto.SortModel.StartTime,
+		},
+		QueryModel: queryModel,
+	})
+	if err != nil {
+		return model.ClassCommentPagedResult{}, err
+	}
+
+	result := model.ClassCommentPagedResult{
+		List:  make([]model.ClassCommentPagedItem, 0, len(pageResult.List)),
+		Total: pageResult.Total,
+	}
+	for _, item := range pageResult.List {
+		result.List = append(result.List, model.ClassCommentPagedItem{
+			TeachingRecordID: item.TeachingRecordID,
+			SourceName:       item.SourceName,
+			SourceType:       item.SourceType,
+			SourceID:         item.SourceID,
+			LessonID:         item.LessonID,
+			LessonName:       item.LessonName,
+			CreatedTime:      item.CreatedTime,
+			TeacherID:        item.TeacherID,
+			TeacherName:      item.TeacherName,
+			StartTime:        item.StartTime,
+			EndTime:          item.EndTime,
+			ReadCount:        item.ReadCount,
+			UnReadCount:      item.UnReadCount,
+			CommentCount:     item.CommentCount,
+			UnCommentCount:   item.UnCommentCount,
+			Assistants:       item.Assistants,
+			ClassRoomName:    item.ClassRoomName,
+		})
+	}
+	return result, nil
+}
+
 func (svc *Service) GetTeachingRecordDetail(userID int64, query model.TeachingRecordDetailQueryDTO) (model.TeachingRecordDetailResult, error) {
 	instID, err := svc.rollCallInstID(userID)
 	if err != nil {

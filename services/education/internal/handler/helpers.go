@@ -1182,6 +1182,33 @@ func parseScheduleTeachingRecordPagedQueryDTO(raw map[string]any) model.Schedule
 	return query
 }
 
+func parseClassCommentPagedQueryDTO(raw map[string]any) model.ClassCommentPagedQueryDTO {
+	query := model.ClassCommentPagedQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.NeedTotal = derefBoolValue(asBoolPtr(page["needTotal"]))
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 50)
+		query.PageRequestModel.SkipCount = asInt(page["skipCount"], 0)
+	}
+	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.StartTime = asInt(sortModel["startTime"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.ClassCommentQueryModel{
+			TeachingStartTime:   asString(firstNonNil(qm["teachingStartTime"], qm["beginStartTime"])),
+			TeachingEndTime:     asString(firstNonNil(qm["teachingEndTime"], qm["endStartTime"])),
+			TeachingRecordTypes: asIntSlice(firstNonNil(qm["teachingRecordTypes"], qm["timetableSourceTypes"])),
+			LessonID:            asString(firstNonNil(qm["lessonId"], firstString(qm["lessonIds"]))),
+			TeacherIDs:          asStringSlice(qm["teacherIds"]),
+			ClassID:             asString(firstNonNil(qm["classId"], firstString(qm["classIds"]))),
+			One2OneID:           asString(firstNonNil(qm["one2OneId"], qm["one2oneId"], qm["oneToOneId"], firstString(qm["one2OneIds"]), firstString(qm["oneToOneIds"]))),
+			ClassTeacherIDs:     asStringSlice(qm["classTeacherIds"]),
+			One2OneTeacherIDs:   asStringSlice(firstNonNil(qm["one2OneTeacherIds"], qm["one2oneTeacherIds"], qm["oneToOneTeacherIds"])),
+		}
+	}
+	return query
+}
+
 func parseDeleteTeachingRecordDTO(raw map[string]any) model.DeleteTeachingRecordDTO {
 	return model.DeleteTeachingRecordDTO{
 		TeachingRecordID: asString(raw["teachingRecordId"]),

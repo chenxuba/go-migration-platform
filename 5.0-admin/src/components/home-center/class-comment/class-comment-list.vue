@@ -1,23 +1,76 @@
-<script setup>
+<script setup lang="ts">
+import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import dayjs, { type Dayjs } from 'dayjs'
+import { computed, onMounted, ref, watch } from 'vue'
+import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
+import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import {
-  ExclamationCircleOutlined,
-} from '@ant-design/icons-vue'
-import classReviewDrawer from './classReviewDrawer.vue'
+  getClassCommentPagedListApi,
+  type ClassCommentItem,
+} from '@/api/edu-center/class-record'
+import { pageGroupClassesApi } from '@/api/edu-center/group-class'
+import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
+import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
+import { getUserListApi } from '@/api/internal-manage/staff-manage'
+import ClassRecordDetails from '@/components/common/class-record-details.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
+import messageService from '@/utils/messageService'
+
+interface FilterOption {
+  id: string
+  value: string
+}
 
 const displayArray = ref([
-  'intention',
-  'followStatus',
-  'sex',
-  'createUser',
-  'createTime',
-  'intentionCourse',
-  'reference',
-  'studentStatus',
-  'classEndingTime',
-  'classStopTime',
+  'scheduleCourse',
+  'scheduleTeacher',
+  'scheduleClass',
+  'scheduleOneToOne',
+  'scheduleDate',
+  'scheduleType',
 ])
-const dataSource = ref([{ key: 1 }, { key: 2 }])
+
+const scheduleTypeOptions = [
+  { id: '1', value: '班级' },
+  { id: '2', value: '1对1' },
+]
+
+const loading = ref(false)
+const dataSource = ref<ClassCommentItem[]>([])
+const recordDrawerOpen = ref(false)
+const currentTeachingRecordId = ref('')
+const sortStartTime = ref(2)
+
+const filterDateRange = ref<[Dayjs, Dayjs] | null>(null)
+const filterLessonId = ref<string | undefined>(undefined)
+const filterTeacherIds = ref<string[]>([])
+const filterClassId = ref<string | undefined>(undefined)
+const filterOneToOneId = ref<string | undefined>(undefined)
+const filterScheduleTypes = ref<string[]>([])
+
+const pagination = ref({
+  current: 1,
+  pageSize: 50,
+  total: 0,
+})
+
+const courseOptions = ref<FilterOption[]>([])
+const courseFinished = ref(false)
+const classOptions = ref<FilterOption[]>([])
+const classFinished = ref(false)
+const oneToOneOptions = ref<FilterOption[]>([])
+const oneToOneFinished = ref(false)
+const teacherOptions = ref<FilterOption[]>([])
+const teacherFinished = ref(false)
+
+const classPagination = ref({ current: 1, pageSize: 20, total: 0 })
+const oneToOnePagination = ref({ current: 1, pageSize: 20, total: 0 })
+const teacherPagination = ref({ current: 1, pageSize: 20, total: 0 })
+
+const classSearchKey = ref('')
+const oneToOneSearchKey = ref('')
+const teacherSearchKey = ref('')
+
 const allColumns = ref([
   {
     title: '上课日期/时段',
@@ -25,12 +78,9 @@ const allColumns = ref([
     key: 'classDateTime',
     fixed: 'left',
     width: 160,
-    // 排序 ，默认倒序
-    sorter: {
-      compare: (a, b) => a.classDateTime - b.classDateTime,
-    },
-    defaultSortOrder: 'descend', // 设置默认排序顺序为降序
-    required: true, // 新增必选标识
+    sorter: true,
+    defaultSortOrder: 'descend',
+    required: true,
   },
   {
     title: '类型',
@@ -42,7 +92,7 @@ const allColumns = ref([
     title: '所属班级/1对1',
     key: 'linkClassOr1v1',
     dataIndex: 'linkClassOr1v1',
-    width: 160,
+    width: 200,
   },
   {
     title: '所属课程',
@@ -51,7 +101,7 @@ const allColumns = ref([
     width: 160,
   },
   {
-    title: '上课老师',
+    title: '上课教师',
     key: 'teacher',
     dataIndex: 'teacher',
     width: 130,
@@ -60,19 +110,19 @@ const allColumns = ref([
     title: '点评统计',
     key: 'commentStatistics',
     dataIndex: 'commentStatistics',
-    width: 130,
+    width: 110,
   },
   {
     title: '已读/未读',
     dataIndex: 'readOrUnread',
     key: 'readOrUnread',
-    width: 150,
+    width: 120,
   },
   {
     title: '上课助教',
     dataIndex: 'subTeacher',
     key: 'subTeacher',
-    width: 130,
+    width: 150,
   },
   {
     title: '上课教室',
@@ -88,58 +138,391 @@ const allColumns = ref([
     width: 140,
   },
 ])
-const { selectedValues, columnOptions, filteredColumns, totalWidth }
-  = useTableColumns({
-    storageKey: 'class-comment-list', // 本地存储键名
-    allColumns, // 原始列配置
-    excludeKeys: ['action'], // 需要排除的列键
+
+const { filteredColumns, totalWidth } = useTableColumns({
+  storageKey: 'class-comment-list',
+  allColumns,
+  excludeKeys: ['action'],
+})
+
+const tablePagination = computed(() => ({
+  current: pagination.value.current,
+  pageSize: pagination.value.pageSize,
+  total: pagination.value.total,
+  showSizeChanger: true,
+  showQuickJumper: true,
+  showTotal: (total: number) => `共 ${total} 条`,
+}))
+
+function normalizeFilterValue(value: unknown) {
+  if (Array.isArray(value))
+    return value.length ? String(value[0] ?? '').trim() || undefined : undefined
+  const text = String(value ?? '').trim()
+  return text || undefined
+}
+
+function normalizeFilterValues(value: unknown) {
+  if (!Array.isArray(value))
+    return []
+  return value.map(item => String(item ?? '').trim()).filter(Boolean)
+}
+
+function mergeFilterOptions(previous: FilterOption[], incoming: FilterOption[], selectedValues: string | string[] | undefined = []) {
+  const selectedSet = new Set((Array.isArray(selectedValues) ? selectedValues : [selectedValues]).map(value => String(value || '')).filter(Boolean))
+  const map = new Map<string, FilterOption>()
+  previous.forEach((item) => {
+    if (selectedSet.has(item.id))
+      map.set(item.id, item)
   })
-
-const openDrawer = ref(false)
-function handleSeeStuData() {
-  openDrawer.value = true
-}
-const openOrderDetailDrawer = ref(false)
-function handleOrderDetail() {
-  openOrderDetailDrawer.value = true
+  incoming.forEach((item) => {
+    if (item.id)
+      map.set(item.id, item)
+  })
+  return [...map.values()]
 }
 
-const openClassReviewDrawer = ref(false)
-const classReviewDrawerType = ref(1)
-
-function handelComment(type) {
-  classReviewDrawerType.value = type
-  openClassReviewDrawer.value = true
+function formatDateTime(record: Partial<ClassCommentItem>) {
+  const start = dayjs(record.startTime)
+  const end = dayjs(record.endTime)
+  if (!start.isValid() || !end.isValid()) {
+    return {
+      dateText: '-',
+      timeText: '--:--～--:--',
+    }
+  }
+  const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][start.day()] || ''
+  return {
+    dateText: `${start.format('YYYY-MM-DD')}（${weekday}）`,
+    timeText: `${start.format('HH:mm')}～${end.format('HH:mm')}`,
+  }
 }
+
+function sourceTypeText(record: Partial<ClassCommentItem>) {
+  const sourceType = Number(record.sourceType || 0)
+  if (sourceType === 2)
+    return '1对1'
+  if (sourceType === 3)
+    return '试听'
+  return '班级'
+}
+
+function sourceTypeImage(record: Partial<ClassCommentItem>) {
+  const sourceType = Number(record.sourceType || 0)
+  if (sourceType === 2)
+    return scheduleOneToOneImage
+  if (sourceType === 1)
+    return scheduleClassImage
+  return ''
+}
+
+function commentStatisticsText(record: Partial<ClassCommentItem>) {
+  return `${Number(record.commentCount || 0)}/${Number(record.unCommentCount || 0)}`
+}
+
+function hasReadStatistics(record: Partial<ClassCommentItem>) {
+  return Number(record.readCount || 0) + Number(record.unReadCount || 0) > 0
+}
+
+function handleOpenRecord(record?: Partial<ClassCommentItem>) {
+  currentTeachingRecordId.value = String(record?.teachingRecordId || '').trim()
+  if (!currentTeachingRecordId.value)
+    return
+  recordDrawerOpen.value = true
+}
+
+function handleViewPending() {
+  messageService.info('暂未开发')
+}
+
+function buildQueryModel() {
+  return {
+    teachingStartTime: filterDateRange.value?.[0]?.format('YYYY-MM-DD'),
+    teachingEndTime: filterDateRange.value?.[1]?.format('YYYY-MM-DD'),
+    teachingRecordTypes: filterScheduleTypes.value.length
+      ? filterScheduleTypes.value.map(item => Number(item)).filter(Boolean)
+      : [1, 2],
+    lessonId: filterLessonId.value,
+    teacherIds: filterTeacherIds.value.length ? filterTeacherIds.value : undefined,
+    classId: filterClassId.value,
+    one2OneId: filterOneToOneId.value,
+    classTeacherIds: [],
+    one2OneTeacherIds: [],
+  }
+}
+
+async function loadCourseOptions(searchKey = '') {
+  try {
+    const res = await getCourseIdAndNameApi({
+      searchKey: searchKey || '',
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result) ? res.result : []).map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.name || item.value || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    courseOptions.value = mergeFilterOptions(courseOptions.value, resultData, filterLessonId.value)
+    courseFinished.value = true
+  }
+  catch (error) {
+    console.error('load class comment courses failed', error)
+  }
+}
+
+async function loadClassOptions(searchKey = '', reset = true) {
+  if (reset) {
+    classPagination.value.current = 1
+    classFinished.value = false
+  }
+  classSearchKey.value = searchKey
+  try {
+    const res = await pageGroupClassesApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: classPagination.value.pageSize,
+        pageIndex: classPagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        className: searchKey || undefined,
+      },
+    })
+    if (res.code !== 200)
+      return
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    const resultData = list.map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.name || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    classOptions.value = reset
+      ? mergeFilterOptions(classOptions.value, resultData, filterClassId.value)
+      : mergeFilterOptions(classOptions.value, [...classOptions.value, ...resultData], filterClassId.value)
+    classPagination.value.total = Number(res.result?.total || resultData.length || 0)
+    classFinished.value = classOptions.value.length >= classPagination.value.total
+  }
+  catch (error) {
+    console.error('load class comment classes failed', error)
+  }
+}
+
+async function loadOneToOneOptions(searchKey = '', reset = true) {
+  if (reset) {
+    oneToOnePagination.value.current = 1
+    oneToOneFinished.value = false
+  }
+  oneToOneSearchKey.value = searchKey
+  try {
+    const res = await getOneToOneListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: oneToOnePagination.value.pageSize,
+        pageIndex: oneToOnePagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        searchKey: searchKey || undefined,
+      },
+    })
+    if (res.code !== 200)
+      return
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    const resultData = list.map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.name || item.studentName || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    oneToOneOptions.value = reset
+      ? mergeFilterOptions(oneToOneOptions.value, resultData, filterOneToOneId.value)
+      : mergeFilterOptions(oneToOneOptions.value, [...oneToOneOptions.value, ...resultData], filterOneToOneId.value)
+    oneToOnePagination.value.total = Number(res.result?.total || resultData.length || 0)
+    oneToOneFinished.value = oneToOneOptions.value.length >= oneToOnePagination.value.total
+  }
+  catch (error) {
+    console.error('load class comment one to one failed', error)
+  }
+}
+
+async function loadTeacherOptions(searchKey = '', reset = true) {
+  if (reset) {
+    teacherPagination.value.current = 1
+    teacherFinished.value = false
+  }
+  teacherSearchKey.value = searchKey
+  try {
+    const res = await getUserListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: teacherPagination.value.pageSize,
+        pageIndex: teacherPagination.value.current,
+        skipCount: 0,
+      },
+      queryModel: {
+        searchKey: searchKey || undefined,
+      },
+      sortModel: {},
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result) ? res.result : []).map(item => ({
+      id: String(item.id ?? ''),
+      value: String(item.nickName || item.name || item.value || item.id || '').trim(),
+      mobile: String(item.mobile || item.phone || '').trim() || undefined,
+    })).filter(item => item.id && item.value)
+    teacherOptions.value = reset
+      ? mergeFilterOptions(teacherOptions.value, resultData, filterTeacherIds.value)
+      : mergeFilterOptions(teacherOptions.value, [...teacherOptions.value, ...resultData], filterTeacherIds.value)
+    teacherPagination.value.total = Number(res.total || resultData.length || 0)
+    teacherFinished.value = teacherOptions.value.length >= teacherPagination.value.total
+  }
+  catch (error) {
+    console.error('load class comment teachers failed', error)
+  }
+}
+
+async function loadList() {
+  loading.value = true
+  try {
+    const res = await getClassCommentPagedListApi({
+      queryModel: buildQueryModel(),
+      pageRequestModel: {
+        needTotal: true,
+        pageIndex: pagination.value.current,
+        pageSize: pagination.value.pageSize,
+        skipCount: (pagination.value.current - 1) * pagination.value.pageSize,
+      },
+      sortModel: {
+        startTime: sortStartTime.value,
+      },
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '获取课堂点评列表失败')
+    dataSource.value = Array.isArray(res.result?.list) ? res.result.list : []
+    pagination.value.total = Number(res.result?.total || 0)
+  }
+  catch (error: any) {
+    console.error('load class comment list failed', error)
+    dataSource.value = []
+    pagination.value.total = 0
+    messageService.error(error?.response?.data?.message || error?.message || '获取课堂点评列表失败')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+function handleScheduleDateFilter(value: unknown) {
+  if (!Array.isArray(value) || value.length < 2) {
+    filterDateRange.value = null
+    return
+  }
+  const start = dayjs(String(value[0] || ''))
+  const end = dayjs(String(value[1] || ''))
+  if (!start.isValid() || !end.isValid()) {
+    filterDateRange.value = null
+    return
+  }
+  filterDateRange.value = [start, end]
+}
+
+function handleLessonFilter(value: unknown) {
+  filterLessonId.value = normalizeFilterValue(value)
+}
+
+function handleTeacherFilter(value: unknown) {
+  filterTeacherIds.value = normalizeFilterValues(value)
+}
+
+function handleClassFilter(value: unknown) {
+  filterClassId.value = normalizeFilterValue(value)
+}
+
+function handleOneToOneFilter(value: unknown) {
+  filterOneToOneId.value = normalizeFilterValue(value)
+}
+
+function handleScheduleTypeFilter(value: unknown) {
+  filterScheduleTypes.value = Array.isArray(value) ? value.map(item => String(item || '')).filter(Boolean) : []
+}
+
+function handleTableChange(page: { current?: number, pageSize?: number }, _filters: any, sorter: any) {
+  pagination.value.current = Number(page?.current || 1)
+  pagination.value.pageSize = Number(page?.pageSize || pagination.value.pageSize)
+  if (sorter?.order === 'ascend')
+    sortStartTime.value = 1
+  else
+    sortStartTime.value = 2
+  loadList()
+}
+
+watch(
+  [
+    filterDateRange,
+    filterLessonId,
+    filterTeacherIds,
+    filterClassId,
+    filterOneToOneId,
+    filterScheduleTypes,
+  ],
+  () => {
+    pagination.value.current = 1
+    loadList()
+  },
+  { deep: true },
+)
+
+onMounted(() => {
+  loadList()
+})
 </script>
 
 <template>
   <div>
-    <!-- 学员筛选条件 -->
     <div class="filter-wrap bg-white pl-3 pr-3 rounded-lb-4 rounded-rb-4">
       <all-filter
         :display-array="displayArray"
+        :schedule-date-disable-future="true"
+        :schedule-course-options="courseOptions"
+        :schedule-course-finished="courseFinished"
+        :on-schedule-course-dropdown-visible-change="() => loadCourseOptions()"
+        :on-schedule-course-search="loadCourseOptions"
+        :schedule-teacher-options="teacherOptions"
+        :schedule-teacher-finished="teacherFinished"
+        :on-schedule-teacher-dropdown-visible-change="() => loadTeacherOptions('', true)"
+        :on-schedule-teacher-search="keyword => loadTeacherOptions(keyword, true)"
+        :on-schedule-teacher-load-more="() => { teacherPagination.current += 1; return loadTeacherOptions(teacherSearchKey, false) }"
+        :schedule-class-options="classOptions"
+        :schedule-class-finished="classFinished"
+        :on-schedule-class-dropdown-visible-change="() => loadClassOptions('', true)"
+        :on-schedule-class-search="keyword => loadClassOptions(keyword, true)"
+        :on-schedule-class-load-more="() => { classPagination.current += 1; return loadClassOptions(classSearchKey, false) }"
+        :schedule-one-to-one-options="oneToOneOptions"
+        :schedule-one-to-one-finished="oneToOneFinished"
+        :on-schedule-one-to-one-dropdown-visible-change="() => loadOneToOneOptions('', true)"
+        :on-schedule-one-to-one-search="keyword => loadOneToOneOptions(keyword, true)"
+        :on-schedule-one-to-one-load-more="() => { oneToOnePagination.current += 1; return loadOneToOneOptions(oneToOneSearchKey, false) }"
+        :schedule-course-label="'课程'"
+        :schedule-class-label="'班级'"
+        :schedule-one-to-one-label="'1对1'"
+        :schedule-type-label="'类型'"
+        :schedule-type-options="scheduleTypeOptions"
+        :whole-condition-clear-types="['scheduleTeacher', 'scheduleType']"
         :is-quick-show="false"
+        @update:schedule-date-filter="handleScheduleDateFilter"
+        @update:schedule-course-filter="handleLessonFilter"
+        @update:schedule-teacher-filter="handleTeacherFilter"
+        @update:schedule-class-filter="handleClassFilter"
+        @update:schedule-one-to-one-filter="handleOneToOneFilter"
+        @update:schedule-type-filter="handleScheduleTypeFilter"
       />
     </div>
     <div class="student-list mt-3 pt-3 pb-3 pl-6 pr-6 bg-white rounded-4">
       <div class="tab-table">
         <div class="table-title flex justify-between">
           <div class="total">
-            共 {{ dataSource.length }} 条数据
+            共 {{ pagination.total }} 条数据
           </div>
-          <div class="edit flex">
-            <!-- 自定义字段 -->
-            <!-- <customize-code
-              v-model:checkedValues="selectedValues"
-              :options="columnOptions"
-              :total="allColumns.length - 1"
-              :num="selectedValues.length - 1"
-            /> -->
-          </div>
+          <div class="edit flex" />
         </div>
         <div class="table-content mt-2">
-          <!-- <div class="tip mb2 text-#06f"> <ExclamationCircleFilled />  </div> -->
           <a-alert
             class="mb2 text-#06f"
             message="家长分享课评，机构就可获得转介绍线索"
@@ -148,11 +531,14 @@ function handelComment(type) {
             closable
           />
           <a-table
+            row-key="teachingRecordId"
+            :loading="loading"
             :data-source="dataSource"
-            :pagination="dataSource.length > 10"
+            :pagination="tablePagination"
             :columns="filteredColumns"
             :scroll="{ x: totalWidth }"
             size="small"
+            @change="handleTableChange"
           >
             <template #headerCell="{ column }">
               <template v-if="column.key === 'commentStatistics'">
@@ -168,64 +554,71 @@ function handelComment(type) {
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'classDateTime'">
                 <div class="text-#222">
-                  2025-04-01（周二）
+                  {{ formatDateTime(record).dateText }}
                 </div>
                 <div class="text-#222">
-                  15:00～16:00
+                  {{ formatDateTime(record).timeText }}
                 </div>
               </template>
               <template v-if="column.key === 'type'">
                 <div class="justify-between flex-center">
-                  <span>一对一</span>
+                  <span>{{ sourceTypeText(record) }}</span>
                   <img
+                    v-if="sourceTypeImage(record)"
+                    class="type-tag-image"
                     height="45"
-                    src="https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/12083/static/one2one-tag.03fd85df.svg"
+                    :src="sourceTypeImage(record)"
                     alt=""
                   >
                 </div>
               </template>
               <template v-if="column.key === 'linkClassOr1v1'">
                 <div class="text-#222">
-                  妞妞-一对一认知课
+                  {{ record.sourceName || '-' }}
                 </div>
               </template>
               <template v-if="column.key === 'linkCourse'">
                 <div class="text-#222">
-                  一对一认知课
+                  {{ record.lessonName || '-' }}
                 </div>
               </template>
               <template v-if="column.key === 'teacher'">
                 <div class="text-#222">
-                  商老师
+                  {{ record.teacherName || '-' }}
                 </div>
               </template>
               <template v-if="column.key === 'commentStatistics'">
                 <div class="text-#222">
-                  0/1
+                  {{ commentStatisticsText(record) }}
                 </div>
               </template>
               <template v-if="column.key === 'readOrUnread'">
-                <div class="text-#222">
-                  已读0人
-                </div>
-                <div class="text-#888 text-3">
-                  未读2人
+                <template v-if="hasReadStatistics(record)">
+                  <div class="text-#222">
+                    已读{{ Number(record.readCount || 0) }}人
+                  </div>
+                  <div class="text-#888 text-3">
+                    未读{{ Number(record.unReadCount || 0) }}人
+                  </div>
+                </template>
+                <div v-else class="text-#222">
+                  -
                 </div>
               </template>
               <template v-if="column.key === 'subTeacher'">
                 <div class="text-#222">
-                  何红武
+                  {{ record.assistants || '-' }}
                 </div>
               </template>
               <template v-if="column.key === 'classRoom'">
                 <div class="text-#222">
-                  -
+                  {{ record.classRoomName || '-' }}
                 </div>
               </template>
               <template v-if="column.key === 'action'">
                 <a-space :size="14">
-                  <a class="font500" @click="handelComment('1')">去点评{{ record.a }}</a>
-                  <a class="font500" @click="handelComment('0')">查看{{ record.a }}</a>
+                  <a class="font500" @click="handleOpenRecord(record)">去点评</a>
+                  <a class="font500" @click="handleViewPending">查看</a>
                 </a-space>
               </template>
             </template>
@@ -233,15 +626,16 @@ function handelComment(type) {
         </div>
       </div>
     </div>
-    <student-info-drawer v-model:open="openDrawer" />
-    <order-detail-drawer
-      v-model:open="openOrderDetailDrawer"
+    <ClassRecordDetails
+      v-model:open="recordDrawerOpen"
+      :teaching-record-id="currentTeachingRecordId"
+      @updated="loadList"
+      @deleted="loadList"
     />
-    <classReviewDrawer v-model="openClassReviewDrawer" :type="classReviewDrawerType" />
   </div>
 </template>
 
-  <style lang="less" scoped>
+<style lang="less" scoped>
 .total {
   position: relative;
   padding-left: 10px;
@@ -264,6 +658,10 @@ function handelComment(type) {
 .tip {
   padding: 10px 24px 10px 14px;
   background: #e6f0ff;
+}
+
+.type-tag-image {
+  opacity: 0.4;
 }
 
 .upNew {

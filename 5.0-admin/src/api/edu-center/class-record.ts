@@ -175,6 +175,10 @@ export interface ScheduleTeachingRecordItem {
   startTime?: string
   endTime?: string
   timetableSourceType: number
+  sourceName?: string
+  sourceType?: number
+  sourceId?: string
+  lessonId?: string
   className?: string
   one2OneName?: string
   lessonName?: string
@@ -189,9 +193,15 @@ export interface ScheduleTeachingRecordItem {
   unrecordedCount?: number
   actualQuantity?: number
   actualTuition?: number
+  teacherId?: string
   teacherName?: string
   assistants?: string
+  classRoomName?: string
   teacherClassTime?: number
+  commentCount?: number
+  unCommentCount?: number
+  readCount?: number
+  unReadCount?: number
   createdTime?: string
   updatedTime?: string
 }
@@ -201,6 +211,56 @@ export interface ScheduleTeachingRecordPagedResult {
   totalTeacherTimes?: number
   totalTuition?: number
   list?: ScheduleTeachingRecordItem[]
+  total?: number
+}
+
+export interface ClassCommentQueryModel {
+  teachingStartTime?: string
+  teachingEndTime?: string
+  teachingRecordTypes?: number[]
+  lessonId?: string
+  teacherIds?: string[]
+  classId?: string
+  one2OneId?: string
+  classTeacherIds?: string[]
+  one2OneTeacherIds?: string[]
+}
+
+export interface ClassCommentItem {
+  teachingRecordId: string
+  sourceName?: string
+  sourceType?: number
+  sourceId?: string
+  lessonId?: string
+  lessonName?: string
+  createdTime?: string
+  teacherId?: string
+  teacherName?: string
+  startTime?: string
+  endTime?: string
+  readCount?: number
+  unReadCount?: number
+  commentCount?: number
+  unCommentCount?: number
+  assistants?: string
+  classRoomName?: string
+}
+
+export interface ClassCommentPagedParams {
+  queryModel: ClassCommentQueryModel
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+  sortModel?: {
+    startTime?: number
+  }
+}
+
+export interface ClassCommentPagedResult {
+  list?: ClassCommentItem[]
   total?: number
 }
 
@@ -241,6 +301,10 @@ export function getStudentTeachingRecordPagedListApi(data: ClassRecordPagedParam
 
 export function getScheduleTeachingRecordPagedListApi(data: ClassRecordPagedParams) {
   return usePost<ScheduleTeachingRecordPagedResult>('/api/v1/class-records/schedule-paged-list', data)
+}
+
+export function getClassCommentPagedListApi(data: ClassCommentPagedParams) {
+  return usePost<ClassCommentPagedResult>('/api/v1/class-comments/paged-list', data)
 }
 
 export function getTeachingRecordDetailApi(params: { teachingRecordId: string }) {
