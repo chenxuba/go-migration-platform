@@ -1148,6 +1148,16 @@ func parseUpdateStudentTeachingRecordDTO(raw map[string]any) model.UpdateStudent
 	}
 }
 
+func parseUpdateTeachingRecordClassInfoDTO(raw map[string]any) model.UpdateTeachingRecordClassInfoDTO {
+	return model.UpdateTeachingRecordClassInfoDTO{
+		TeachingRecordID: asString(raw["teachingRecordId"]),
+		TeacherID:        asString(raw["teacherId"]),
+		AssistantIDs:     asStringSlice(raw["assistantIds"]),
+		ClassRoomID:      asString(firstNonNil(raw["classRoomId"], raw["classroomId"])),
+		TeacherClassTime: asFloat64(firstNonNil(raw["teacherClassTime"], raw["teacherRecordHour"])),
+	}
+}
+
 func parseDeleteStudentTeachingRecordDTO(raw map[string]any) model.DeleteStudentTeachingRecordDTO {
 	return model.DeleteStudentTeachingRecordDTO{
 		StudentTeachingRecordID: asString(raw["studentTeachingRecordId"]),

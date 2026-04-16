@@ -157,6 +157,14 @@ export interface UpdateStudentTeachingRecordParams {
   externalRemark?: string
 }
 
+export interface UpdateTeachingRecordClassInfoParams {
+  teachingRecordId: string
+  teacherId: string
+  assistantIds?: string[]
+  classRoomId?: string
+  teacherClassTime: number
+}
+
 export interface DeleteStudentTeachingRecordParams {
   studentTeachingRecordId: string
 }
@@ -237,6 +245,10 @@ export function getScheduleTeachingRecordPagedListApi(data: ClassRecordPagedPara
 
 export function getTeachingRecordDetailApi(params: { teachingRecordId: string }) {
   return useGet<TeachingRecordDetailResult>('/api/v1/class-records/detail', params)
+}
+
+export function updateTeachingRecordClassInfoApi(data: UpdateTeachingRecordClassInfoParams) {
+  return usePost<boolean>('/api/v1/class-records/update-class-info', data)
 }
 
 export function exportClassRecordsApi(data: {

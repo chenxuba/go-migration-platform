@@ -995,6 +995,139 @@ func (repo *Repository) DeleteTeachingRecord(ctx context.Context, instID, operat
 	return true, nil
 }
 
+func (repo *Repository) UpdateTeachingRecordClassInfo(ctx context.Context, instID, operatorID int64, dto model.UpdateTeachingRecordClassInfoDTO) (bool, error) {
+	teachingRecordID, err := strconv.ParseInt(strings.TrimSpace(dto.TeachingRecordID), 10, 64)
+	if err != nil || teachingRecordID <= 0 {
+		return false, errors.New("上课记录ID无效")
+	}
+	if dto.TeacherClassTime < 0 {
+		return false, errors.New("教师记录课时不能小于0")
+	}
+
+	teacherID, err := parseOptionalPositiveID(dto.TeacherID)
+	if err != nil || teacherID <= 0 {
+		return false, errors.New("请选择上课教师")
+	}
+
+	assistantIDs := make([]int64, 0, len(dto.AssistantIDs))
+	assistantIDSet := make(map[int64]struct{}, len(dto.AssistantIDs))
+	for _, rawID := range dto.AssistantIDs {
+		assistantID, parseErr := parseOptionalPositiveID(rawID)
+		if parseErr != nil {
+			return false, errors.New("上课助教无效")
+		}
+		if assistantID <= 0 {
+			continue
+		}
+		if assistantID == teacherID {
+			return false, errors.New("上课教师与上课助教不可为同一个人，请重新选择")
+		}
+		if _, exists := assistantIDSet[assistantID]; exists {
+			continue
+		}
+		assistantIDSet[assistantID] = struct{}{}
+		assistantIDs = append(assistantIDs, assistantID)
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	var exists int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT 1
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND teaching_record_id = ?
+		  AND del_flag = 0
+		LIMIT 1
+	`, instID, teachingRecordID).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, errors.New("未找到上课记录")
+		}
+		return false, err
+	}
+
+	teacherName, teacherEmployeeType, err := repo.loadTeachingRecordClassInfoStaffByIDTx(ctx, tx, instID, teacherID)
+	if err != nil {
+		return false, err
+	}
+
+	assistantNames := make([]string, 0, len(assistantIDs))
+	for _, assistantID := range assistantIDs {
+		assistantName, _, loadErr := repo.loadTeachingRecordClassInfoStaffByIDTx(ctx, tx, instID, assistantID)
+		if loadErr != nil {
+			return false, loadErr
+		}
+		assistantNames = append(assistantNames, assistantName)
+	}
+
+	classroomID, classroomName, _, err := repo.resolveClassroomByIDTx(ctx, tx, instID, dto.ClassRoomID)
+	if err != nil {
+		if strings.Contains(err.Error(), "不存在") {
+			return false, err
+		}
+		return false, errors.New("上课教室无效")
+	}
+
+	assistantIDsJSON, _ := json.Marshal(stringIDsFromInt64(assistantIDs))
+	assistantNamesJSON, _ := json.Marshal(assistantNames)
+	currentTeacherIDsJSON, _ := json.Marshal(append([]string{strconv.FormatInt(teacherID, 10)}, stringIDsFromInt64(assistantIDs)...))
+	currentTeacherNamesJSON, _ := json.Marshal(append([]string{teacherName}, assistantNames...))
+
+	operatorName := firstNonEmptyString(repo.GetStaffNameByID(ctx, &operatorID), "系统")
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE student_teaching_record
+		SET main_teacher_id = ?,
+		    main_teacher_name = ?,
+		    teacher_employee_type = ?,
+		    assistant_teacher_ids_json = ?,
+		    assistant_teacher_names_json = ?,
+		    classroom_id = ?,
+		    classroom_name = ?,
+		    teacher_class_time = ?,
+		    roll_call_class_teacher_ids_json = ?,
+		    roll_call_class_teacher_names_json = ?,
+		    current_class_teacher_ids_json = ?,
+		    current_class_teacher_names_json = ?,
+		    updated_staff_id = ?,
+		    updated_staff_name = ?,
+		    updated_time = NOW(),
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE inst_id = ?
+		  AND teaching_record_id = ?
+		  AND del_flag = 0
+	`,
+		teacherID,
+		teacherName,
+		teacherEmployeeType,
+		nullJSONBytes(assistantIDsJSON),
+		nullJSONBytes(assistantNamesJSON),
+		classroomID,
+		classroomName,
+		roundMoney(dto.TeacherClassTime),
+		nullJSONBytes(currentTeacherIDsJSON),
+		nullJSONBytes(currentTeacherNamesJSON),
+		nullJSONBytes(currentTeacherIDsJSON),
+		nullJSONBytes(currentTeacherNamesJSON),
+		operatorID,
+		operatorName,
+		operatorID,
+		instID,
+		teachingRecordID,
+	); err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (repo *Repository) UpdateStudentTeachingRecord(ctx context.Context, instID, operatorID int64, dto model.UpdateStudentTeachingRecordDTO) (bool, error) {
 	studentTeachingRecordID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentTeachingRecordID), 10, 64)
 	status, err := normalizeEditableStudentTeachingRecordStatus(dto.Status)
@@ -1197,6 +1330,34 @@ func isScheduleOnlyTeachingRecordSourceType(sourceType int) bool {
 	default:
 		return false
 	}
+}
+
+func (repo *Repository) loadTeachingRecordClassInfoStaffByIDTx(ctx context.Context, tx *sql.Tx, instID, staffID int64) (string, int, error) {
+	if staffID <= 0 {
+		return "", 0, errors.New("员工ID无效")
+	}
+	var (
+		name         string
+		employeeType int
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(nick_name, ''), IFNULL(user_type, 0)
+		FROM inst_user
+		WHERE id = ?
+		  AND inst_id = ?
+		  AND del_flag = 0
+		LIMIT 1
+	`, staffID, instID).Scan(&name, &employeeType); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", 0, errors.New("存在无效员工，请刷新后重试")
+		}
+		return "", 0, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = strconv.FormatInt(staffID, 10)
+	}
+	return name, employeeType, nil
 }
 
 func (repo *Repository) removeScheduleOnlyStudentFromScheduleTx(ctx context.Context, tx *sql.Tx, instID, operatorID, scheduleID, studentID int64) error {

@@ -12,6 +12,14 @@ type TeachingRecordDetailQueryDTO struct {
 	TeachingRecordID string `json:"teachingRecordId"`
 }
 
+type UpdateTeachingRecordClassInfoDTO struct {
+	TeachingRecordID string   `json:"teachingRecordId"`
+	TeacherID        string   `json:"teacherId"`
+	AssistantIDs     []string `json:"assistantIds"`
+	ClassRoomID      string   `json:"classRoomId"`
+	TeacherClassTime float64  `json:"teacherClassTime"`
+}
+
 type UpdateStudentTeachingRecordDTO struct {
 	StudentTeachingRecordID string  `json:"studentTeachingRecordId"`
 	TeachingRecordID        string  `json:"teachingRecordId"`

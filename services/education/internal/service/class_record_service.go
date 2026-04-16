@@ -30,6 +30,18 @@ func (svc *Service) GetTeachingRecordDetail(userID int64, query model.TeachingRe
 	return svc.repo.GetTeachingRecordDetail(context.Background(), instID, query)
 }
 
+func (svc *Service) UpdateTeachingRecordClassInfo(userID int64, dto model.UpdateTeachingRecordClassInfoDTO) (bool, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return false, err
+	}
+	operatorID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		return false, err
+	}
+	return svc.repo.UpdateTeachingRecordClassInfo(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) ExportClassRecords(userID int64, req model.ClassRecordExportCreateRequest) (model.ClassRecordExportRecord, error) {
 	return svc.exportClassRecords(userID, req)
 }

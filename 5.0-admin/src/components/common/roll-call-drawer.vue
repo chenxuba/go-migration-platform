@@ -338,6 +338,34 @@ const teacherClassTimeText = computed(() => {
   const value = Number(teachingRecordResult.value?.data?.teacherClassTime ?? classTimetableDetail.value?.defaultTeacherClassTime ?? 0)
   return `教师记录 ${Number.isInteger(value) ? value : value.toFixed(2).replace(/\.?0+$/, '')} 课时`
 })
+const editClassInfoDetail = computed(() => {
+  const meta = teachingRecordResult.value?.data || {}
+  const detail = classTimetableDetail.value || {}
+  const teachers = Array.isArray(detail?.teachers) ? detail.teachers : []
+  const mainTeacher = teachers.find(item => Number(item.teacherDuty) === 1) || teachers[0]
+  const teacherList = teachers
+    .filter(item => String(item?.teacherId || '').trim())
+    .map((item, index) => ({
+      teacherId: String(item.teacherId || ''),
+      teacherName: String(item.teacherName || '').trim(),
+      type: Number(item.teacherDuty) === 1 || (!mainTeacher && index === 0) ? 1 : 3,
+      status: Number(item.teacherStatus || 0),
+      quantity: 0,
+    }))
+
+  return {
+    teachingRecordId: String(meta.teachingRecordId || ''),
+    sourceName: String(meta.sourceName || detail.className || ''),
+    lessonName: String(detail.lessonName || ''),
+    startTime: String(meta.startTime || ''),
+    endTime: String(meta.endTime || ''),
+    teacherClassTime: Number(meta.teacherClassTime || detail.defaultTeacherClassTime || 0),
+    timetableSourceType: Number(meta.timetableSourceType || 0),
+    classRoomId: String(meta.classroomId || detail.addressId || '0'),
+    classRoomName: String(detail.addressName || ''),
+    teacherList,
+  }
+})
 const isOneToOneRollCall = computed(() => {
   const lessonType = Number(classTimetableDetail.value?.lessonType || 0)
   if (lessonType === 2)
@@ -818,6 +846,12 @@ function handleEditClassInfo() {
     return
   }
   editClassInfoModal.value = true
+}
+
+async function handleEditClassInfoUpdated() {
+  rollCallChanged.value = true
+  emit('updated')
+  await loadDetail()
 }
 
 // 添加学员modal
@@ -1698,7 +1732,7 @@ watch(
     </a-modal>
     <student-info-drawer v-model:open="openStudentDrawer" />
     <!-- 编辑上课信息 -->
-    <EditClassInfoModal v-model:open="editClassInfoModal" />
+    <EditClassInfoModal v-model:open="editClassInfoModal" :detail="editClassInfoDetail" @updated="handleEditClassInfoUpdated" />
     <!-- 添加学员modal -->
     <roll-call-add-student-modal
       v-model:open="addStudentModal"

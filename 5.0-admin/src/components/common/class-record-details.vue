@@ -148,6 +148,11 @@ async function handleRollNameUpdated() {
   await loadDetail()
 }
 
+async function handleClassInfoUpdated() {
+  shouldRefreshOnClose.value = true
+  await loadDetail()
+}
+
 watch(
   () => `${openDrawer.value}|${currentTeachingRecordId.value}`,
   async () => {
@@ -329,7 +334,7 @@ watch(
       </a-space>
     </a-modal>
 
-    <EditClassInfoModal v-model:open="editClassInfoModal" />
+    <EditClassInfoModal v-model:open="editClassInfoModal" :detail="detailData" @updated="handleClassInfoUpdated" />
     <EditRollNameModal v-model:open="editRollNameModal" :detail="detailData" @updated="handleRollNameUpdated" />
   </div>
 </template>
