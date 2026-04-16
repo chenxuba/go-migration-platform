@@ -49,12 +49,15 @@ type StudentTeachingRecordQueryModel struct {
 	StudentID                     string   `json:"studentId"`
 	TeacherIDs                    []string `json:"teacherIds"`
 	AssistantTeacherIDs           []string `json:"assistantTeacherIds"`
+	ClassTeacherIDs               []string `json:"classTeacherIds"`
+	One2OneTeacherIDs             []string `json:"one2OneTeacherIds"`
 	One2OneIDs                    []string `json:"one2OneIds"`
 	TimetableSourceTypes          []int    `json:"timetableSourceTypes"`
 	StudentSourceTypes            []int    `json:"studentSourceTypes"`
 	LessonChargingModeEnums       []int    `json:"lessonChargingModeEnums"`
 	StudentTeachingRecordStatuses []int    `json:"studentTeachingRecordStatuses"`
 	ScheduleCallStatus            *int     `json:"scheduleCallStatus,omitempty"`
+	IsComment                     *bool    `json:"isComment"`
 	IsArrear                      *bool    `json:"isArrear"`
 	LessonIDs                     []string `json:"lessonIds"`
 	ClassIDs                      []string `json:"classIds"`
@@ -291,6 +294,60 @@ type ClassCommentPagedItem struct {
 type ClassCommentPagedResult struct {
 	List  []ClassCommentPagedItem `json:"list"`
 	Total int                     `json:"total"`
+}
+
+type ClassCommentStudentPagedQueryDTO struct {
+	PageRequestModel RollCallPageRequestModel      `json:"pageRequestModel"`
+	SortModel        ClassCommentSortModel         `json:"sortModel"`
+	QueryModel       ClassCommentStudentQueryModel `json:"queryModel"`
+}
+
+type ClassCommentStudentQueryModel struct {
+	TeachingStartTime   string   `json:"teachingStartTime"`
+	TeachingEndTime     string   `json:"teachingEndTime"`
+	TeachingRecordTypes []int    `json:"teachingRecordTypes"`
+	LessonID            string   `json:"lessonId"`
+	TeacherIDs          []string `json:"teacherIds"`
+	AssistantTeacherIDs []string `json:"assistantTeacherIds"`
+	ClassID             string   `json:"classId"`
+	One2OneID           string   `json:"one2OneId"`
+	IsComment           *bool    `json:"isComment"`
+	IsRead              *bool    `json:"isRead"`
+	IsParentFeedback    *bool    `json:"isParentFeedback"`
+	ClassTeacherIDs     []string `json:"classTeacherIds"`
+	One2OneTeacherIDs   []string `json:"one2OneTeacherIds"`
+	StudentID           string   `json:"studentId"`
+}
+
+type ClassCommentStudentPagedItem struct {
+	TeachingRecordID        string `json:"teachingRecordId"`
+	StudentTeachingRecordID string `json:"studentTeachingRecordId"`
+	SourceName              string `json:"sourceName"`
+	SourceType              int    `json:"sourceType"`
+	SourceID                string `json:"sourceId"`
+	LessonID                string `json:"lessonId"`
+	LessonName              string `json:"lessonName"`
+	TeacherID               string `json:"teacherId"`
+	TeacherName             string `json:"teacherName"`
+	StartTime               string `json:"startTime"`
+	EndTime                 string `json:"endTime"`
+	Avatar                  string `json:"avatar"`
+	StudentName             string `json:"studentName"`
+	StudentID               string `json:"studentId"`
+	StudentPhone            string `json:"studentPhone"`
+	IsComment               bool   `json:"isComment"`
+	IsRead                  *bool  `json:"isRead"`
+	Assistants              string `json:"assistants"`
+	ClassRoomName           string `json:"classRoomName"`
+	IsParentFeedback        bool   `json:"isParentFeedback"`
+	ParentFeedbackType      int    `json:"parentFeedbackType"`
+	ParentFeedbackGrade     int    `json:"parentFeedbackGrade"`
+	ParentFeedbackContent   string `json:"parentFeedbackContent"`
+}
+
+type ClassCommentStudentPagedResult struct {
+	List  []ClassCommentStudentPagedItem `json:"list"`
+	Total int                            `json:"total"`
 }
 
 type ClassRecordExportCreateRequest struct {

@@ -1082,12 +1082,15 @@ func parseStudentTeachingRecordQueryModel(raw map[string]any) model.StudentTeach
 		StudentID:                     asString(raw["studentId"]),
 		TeacherIDs:                    asStringSlice(raw["teacherIds"]),
 		AssistantTeacherIDs:           asStringSlice(raw["assistantTeacherIds"]),
+		ClassTeacherIDs:               asStringSlice(raw["classTeacherIds"]),
+		One2OneTeacherIDs:             asStringSlice(firstNonNil(raw["one2OneTeacherIds"], raw["one2oneTeacherIds"], raw["oneToOneTeacherIds"])),
 		One2OneIDs:                    coalesceStringSlice(raw["one2OneIds"], raw["one2oneIds"], raw["oneToOneIds"]),
 		TimetableSourceTypes:          asIntSlice(raw["timetableSourceTypes"]),
 		StudentSourceTypes:            asIntSlice(raw["studentSourceTypes"]),
 		LessonChargingModeEnums:       asIntSlice(raw["lessonChargingModeEnums"]),
 		StudentTeachingRecordStatuses: asIntSlice(raw["studentTeachingRecordStatuses"]),
 		ScheduleCallStatus:            asIntPtr(firstNonNil(raw["scheduleCallStatus"], raw["rollCallStatus"])),
+		IsComment:                     asBoolPtr(raw["isComment"]),
 		IsArrear:                      asBoolPtr(raw["isArrear"]),
 		LessonIDs:                     coalesceStringSlice(raw["lessonIds"], raw["lessonId"]),
 		ClassIDs:                      asStringSlice(raw["classIds"]),
@@ -1204,6 +1207,38 @@ func parseClassCommentPagedQueryDTO(raw map[string]any) model.ClassCommentPagedQ
 			One2OneID:           asString(firstNonNil(qm["one2OneId"], qm["one2oneId"], qm["oneToOneId"], firstString(qm["one2OneIds"]), firstString(qm["oneToOneIds"]))),
 			ClassTeacherIDs:     asStringSlice(qm["classTeacherIds"]),
 			One2OneTeacherIDs:   asStringSlice(firstNonNil(qm["one2OneTeacherIds"], qm["one2oneTeacherIds"], qm["oneToOneTeacherIds"])),
+		}
+	}
+	return query
+}
+
+func parseClassCommentStudentPagedQueryDTO(raw map[string]any) model.ClassCommentStudentPagedQueryDTO {
+	query := model.ClassCommentStudentPagedQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.NeedTotal = derefBoolValue(asBoolPtr(page["needTotal"]))
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 50)
+		query.PageRequestModel.SkipCount = asInt(page["skipCount"], 0)
+	}
+	if sortModel, ok := raw["sortModel"].(map[string]any); ok {
+		query.SortModel.StartTime = asInt(sortModel["startTime"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel = model.ClassCommentStudentQueryModel{
+			TeachingStartTime:   asString(firstNonNil(qm["teachingStartTime"], qm["beginStartTime"])),
+			TeachingEndTime:     asString(firstNonNil(qm["teachingEndTime"], qm["endStartTime"])),
+			TeachingRecordTypes: asIntSlice(firstNonNil(qm["teachingRecordTypes"], qm["timetableSourceTypes"])),
+			LessonID:            asString(firstNonNil(qm["lessonId"], firstString(qm["lessonIds"]))),
+			TeacherIDs:          asStringSlice(qm["teacherIds"]),
+			AssistantTeacherIDs: asStringSlice(qm["assistantTeacherIds"]),
+			ClassID:             asString(firstNonNil(qm["classId"], firstString(qm["classIds"]))),
+			One2OneID:           asString(firstNonNil(qm["one2OneId"], qm["one2oneId"], qm["oneToOneId"], firstString(qm["one2OneIds"]), firstString(qm["oneToOneIds"]))),
+			IsComment:           asBoolPtr(qm["isComment"]),
+			IsRead:              asBoolPtr(qm["isRead"]),
+			IsParentFeedback:    asBoolPtr(qm["isParentFeedback"]),
+			ClassTeacherIDs:     asStringSlice(qm["classTeacherIds"]),
+			One2OneTeacherIDs:   asStringSlice(firstNonNil(qm["one2OneTeacherIds"], qm["one2oneTeacherIds"], qm["oneToOneTeacherIds"])),
+			StudentID:           asString(qm["studentId"]),
 		}
 	}
 	return query

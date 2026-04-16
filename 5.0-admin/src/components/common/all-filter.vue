@@ -416,6 +416,30 @@ const props = defineProps({
     type: String,
     default: '点名状态',
   },
+  commentStatusOptions: {
+    type: Array,
+    default: () => [],
+  },
+  commentStatusLabel: {
+    type: String,
+    default: '是否点评',
+  },
+  readStatusOptions: {
+    type: Array,
+    default: () => [],
+  },
+  readStatusLabel: {
+    type: String,
+    default: '已读/未读',
+  },
+  parentFeedbackStatusOptions: {
+    type: Array,
+    default: () => [],
+  },
+  parentFeedbackStatusLabel: {
+    type: String,
+    default: '课评反馈',
+  },
   oneToOneTeacherOptions: {
     type: Array,
     default: () => [],
@@ -476,6 +500,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  lockedConditionTypes: {
+    type: Array,
+    default: () => [],
+  },
   // 年级选项数据
   gradeOptionsData: {
     type: Array,
@@ -514,6 +542,7 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:scheduleTeacherFilter', 'update:scheduleClassroomFilter', 'update:scheduleClassFilter',
   'update:scheduleOneToOneFilter', 'update:scheduleCourseFilter', 'update:scheduleTypeFilter',
   'update:scheduleCallStatusFilter',
+  'update:commentStatusFilter', 'update:readStatusFilter', 'update:parentFeedbackStatusFilter',
   'update:scheduleDateFilter',
   'update:teacherRoleFilter',
   'update:assistantTeacherFilter',
@@ -607,6 +636,9 @@ const scheduleDateVals = ref([])
 const scheduleTypeVals = ref([])
 const studentIdentityVals = ref([])
 const classStatusVals = ref([])
+const commentStatusVals = ref(undefined)
+const readStatusVals = ref(undefined)
+const parentFeedbackStatusVals = ref(undefined)
 const oneToOneTeacherVals = ref([])
 const scheduleCallStatusVals = ref(undefined)
 const searchInputKey = ref(undefined)
@@ -2581,6 +2613,24 @@ const selectedConditions = computed(() => {
       values: props.scheduleCallStatusOptions.filter(opt => opt.id === scheduleCallStatusVals.value),
     },
     {
+      type: 'commentStatus',
+      label: props.commentStatusLabel,
+      show: props.displayArray.includes('commentStatus'),
+      values: props.commentStatusOptions.filter(opt => opt.id === commentStatusVals.value),
+    },
+    {
+      type: 'readStatus',
+      label: props.readStatusLabel,
+      show: props.displayArray.includes('readStatus'),
+      values: props.readStatusOptions.filter(opt => opt.id === readStatusVals.value),
+    },
+    {
+      type: 'parentFeedbackStatus',
+      label: props.parentFeedbackStatusLabel,
+      show: props.displayArray.includes('parentFeedbackStatus'),
+      values: props.parentFeedbackStatusOptions.filter(opt => opt.id === parentFeedbackStatusVals.value),
+    },
+    {
       type: 'stuPhoneSearchNew',
       label: '学员/电话',
       show: true,
@@ -3502,6 +3552,11 @@ function shouldClearWholeCondition(type) {
     && props.wholeConditionClearTypes.includes(type)
 }
 
+function shouldLockCondition(type) {
+  return Array.isArray(props.lockedConditionTypes)
+    && props.lockedConditionTypes.includes(type)
+}
+
 function shouldRemoveWholeCondition(type, id) {
   return shouldClearWholeCondition(type) || id === '__ALL__'
 }
@@ -3648,6 +3703,9 @@ watch(studentIdentityVals, () => (lastUpdated.studentIdentity = Date.now()))
 watch(classStatusVals, () => (lastUpdated.classStatus = Date.now()))
 watch(oneToOneTeacherVals, () => (lastUpdated.oneToOneTeacher = Date.now()))
 watch(scheduleCallStatusVals, () => (lastUpdated.scheduleCallStatus = Date.now()))
+watch(commentStatusVals, () => (lastUpdated.commentStatus = Date.now()))
+watch(readStatusVals, () => (lastUpdated.readStatus = Date.now()))
+watch(parentFeedbackStatusVals, () => (lastUpdated.parentFeedbackStatus = Date.now()))
 watch(selectTeacher, () => {
   lastUpdated.teacherSelect = Date.now()
   emitTeacherRoleFilter()
@@ -3872,12 +3930,17 @@ const clearAll = debounce(() => {
     emit('update:scheduleClassFilter', undefined, true)
     emit('update:scheduleOneToOneFilter', undefined, true)
     emit('update:scheduleCourseFilter', undefined, true)
-    emit('update:scheduleDateFilter', undefined, true)
+    if (!shouldLockCondition('scheduleDate')) {
+      emit('update:scheduleDateFilter', undefined, true)
+    }
     emit('update:scheduleTypeFilter', undefined, true)
     emit('update:studentIdentityFilter', undefined, true)
     emit('update:classStatusFilter', undefined, true)
     emit('update:oneToOneTeacherFilter', undefined, true)
     emit('update:scheduleCallStatusFilter', undefined, true)
+    emit('update:commentStatusFilter', undefined, true)
+    emit('update:readStatusFilter', undefined, true)
+    emit('update:parentFeedbackStatusFilter', undefined, true)
   })
 
   resetNotFollowDays()
@@ -3940,10 +4003,15 @@ const clearAll = debounce(() => {
   scheduleClassVals.value = undefined
   scheduleOneToOneVals.value = undefined
   scheduleCourseVals.value = undefined
-  scheduleDateVals.value = []
+  if (!shouldLockCondition('scheduleDate')) {
+    scheduleDateVals.value = []
+  }
   scheduleTypeVals.value = []
   studentIdentityVals.value = []
   classStatusVals.value = []
+  commentStatusVals.value = undefined
+  readStatusVals.value = undefined
+  parentFeedbackStatusVals.value = undefined
   oneToOneTeacherVals.value = []
   scheduleCallStatusVals.value = undefined
   // 重置推荐人相关状态 - 独立处理
@@ -4041,6 +4109,9 @@ const clearAll = debounce(() => {
 // 移除单个条件
 function removeCondition(type, id) {
   console.log(type, id)
+
+  if (shouldLockCondition(type))
+    return
 
   // 处理自定义搜索字段
   if (type.startsWith('customSearch_')) {
@@ -4161,6 +4232,18 @@ function removeCondition(type, id) {
     case 'scheduleCallStatus':
       scheduleCallStatusVals.value = undefined
       emit('update:scheduleCallStatusFilter', undefined, false, id, type)
+      break
+    case 'commentStatus':
+      commentStatusVals.value = undefined
+      emit('update:commentStatusFilter', undefined, false, id, type)
+      break
+    case 'readStatus':
+      readStatusVals.value = undefined
+      emit('update:readStatusFilter', undefined, false, id, type)
+      break
+    case 'parentFeedbackStatus':
+      parentFeedbackStatusVals.value = undefined
+      emit('update:parentFeedbackStatusFilter', undefined, false, id, type)
       break
     case 'stuPhoneSearch':
       searchKeyStuPhone.value = undefined
@@ -4725,7 +4808,9 @@ function clearQuickFilter(id, type) {
       scheduleCourseVals.value = undefined
       break
     case 'scheduleDate':
-      scheduleDateVals.value = []
+      if (!shouldLockCondition('scheduleDate')) {
+        scheduleDateVals.value = []
+      }
       break
     case 'scheduleType':
       scheduleTypeVals.value = []
@@ -4738,6 +4823,15 @@ function clearQuickFilter(id, type) {
       break
     case 'scheduleCallStatus':
       scheduleCallStatusVals.value = undefined
+      break
+    case 'commentStatus':
+      commentStatusVals.value = undefined
+      break
+    case 'readStatus':
+      readStatusVals.value = undefined
+      break
+    case 'parentFeedbackStatus':
+      parentFeedbackStatusVals.value = undefined
       break
     case 'stuPhoneSearch':
       stuPhoneSearchVals.value = null
@@ -5425,6 +5519,42 @@ function setScheduleCallStatusFilter(value = undefined, shouldEmit = false) {
   }
 }
 
+function setCommentStatusFilter(value = undefined, shouldEmit = false) {
+  const normalized = value === undefined || value === null || String(value).trim() === ''
+    ? undefined
+    : String(value).trim()
+  commentStatusVals.value = normalized
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:commentStatusFilter', commentStatusVals.value)
+    })
+  }
+}
+
+function setReadStatusFilter(value = undefined, shouldEmit = false) {
+  const normalized = value === undefined || value === null || String(value).trim() === ''
+    ? undefined
+    : String(value).trim()
+  readStatusVals.value = normalized
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:readStatusFilter', readStatusVals.value)
+    })
+  }
+}
+
+function setParentFeedbackStatusFilter(value = undefined, shouldEmit = false) {
+  const normalized = value === undefined || value === null || String(value).trim() === ''
+    ? undefined
+    : String(value).trim()
+  parentFeedbackStatusVals.value = normalized
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:parentFeedbackStatusFilter', parentFeedbackStatusVals.value)
+    })
+  }
+}
+
 function setStuPhoneSearchFilter(value = undefined, shouldEmit = false) {
   const normalized = value === undefined || value === null || String(value).trim() === ''
     ? undefined
@@ -5493,6 +5623,24 @@ function handleClassStatusChange(e) {
 function handleScheduleCallStatusChange(e) {
   nextTick(() => {
     emit('update:scheduleCallStatusFilter', e)
+  })
+}
+
+function handleCommentStatusChange(e) {
+  nextTick(() => {
+    emit('update:commentStatusFilter', e)
+  })
+}
+
+function handleReadStatusChange(e) {
+  nextTick(() => {
+    emit('update:readStatusFilter', e)
+  })
+}
+
+function handleParentFeedbackStatusChange(e) {
+  nextTick(() => {
+    emit('update:parentFeedbackStatusFilter', e)
   })
 }
 
@@ -5789,6 +5937,9 @@ defineExpose({
   setScheduleDateFilter,
   setScheduleTypeFilter,
   setScheduleCallStatusFilter,
+  setCommentStatusFilter,
+  setReadStatusFilter,
+  setParentFeedbackStatusFilter,
   setStuPhoneSearchFilter,
   updateStaffSearchData,
   getOrderedConditions: () => orderedConditions.value,
@@ -6069,6 +6220,21 @@ defineExpose({
                 v-model:checked-values="scheduleCallStatusVals" category="noSearchRadio"
                 :placeholder="`请选择${scheduleCallStatusLabel}`" :options="scheduleCallStatusOptions" :label="scheduleCallStatusLabel" type="radio"
                 @radio-change="handleScheduleCallStatusChange" />
+
+              <checkbox-filter v-if="filterType === 'commentStatus'"
+                v-model:checked-values="commentStatusVals" category="noSearchRadio"
+                :placeholder="`请选择${commentStatusLabel}`" :options="commentStatusOptions" :label="commentStatusLabel" type="radio"
+                @radio-change="handleCommentStatusChange" />
+
+              <checkbox-filter v-if="filterType === 'readStatus'"
+                v-model:checked-values="readStatusVals" category="noSearchRadio"
+                :placeholder="`请选择${readStatusLabel}`" :options="readStatusOptions" :label="readStatusLabel" type="radio"
+                @radio-change="handleReadStatusChange" />
+
+              <checkbox-filter v-if="filterType === 'parentFeedbackStatus'"
+                v-model:checked-values="parentFeedbackStatusVals" category="noSearchRadio"
+                :placeholder="`请选择${parentFeedbackStatusLabel}`" :options="parentFeedbackStatusOptions" :label="parentFeedbackStatusLabel" type="radio"
+                @radio-change="handleParentFeedbackStatusChange" />
 
               <!-- 班级名称（多选） -->
               <checkbox-filter v-if="filterType === 'className'" :ref="(el) => handleRef(el, 'className')"
@@ -6672,9 +6838,9 @@ defineExpose({
               <div class="condition-values">
                 <span v-for="(value, index) in condition.values" :key="value.id" class="value-item ">
                   {{ value.value ?? value.name }}
-                  <CloseOutlined v-if="index === condition.values.length - 1" class="close-icon"
+                  <CloseOutlined v-if="index === condition.values.length - 1 && !shouldLockCondition(condition.type)" class="close-icon"
                     @click.stop="removeCondition(condition.type, shouldUseWholeClearToken(condition.type, condition.values) ? '__ALL__' : value.id)" />
-                  <span v-else class="separator">、</span>
+                  <span v-else-if="index !== condition.values.length - 1" class="separator">、</span>
                 </span>
               </div>
             </div>

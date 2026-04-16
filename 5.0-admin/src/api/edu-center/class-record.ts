@@ -264,6 +264,67 @@ export interface ClassCommentPagedResult {
   total?: number
 }
 
+export interface ClassCommentStudentQueryModel {
+  isParentFeedback?: boolean
+  teachingStartTime?: string
+  teachingEndTime?: string
+  teachingRecordTypes?: number[]
+  lessonId?: string
+  teacherIds?: string[]
+  assistantTeacherIds?: string[]
+  classId?: string
+  one2OneId?: string
+  isComment?: boolean
+  isRead?: boolean
+  classTeacherIds?: string[]
+  one2OneTeacherIds?: string[]
+  studentId?: string
+}
+
+export interface ClassCommentStudentItem {
+  teachingRecordId: string
+  studentTeachingRecordId: string
+  sourceName?: string
+  sourceType?: number
+  sourceId?: string
+  lessonId?: string
+  lessonName?: string
+  teacherId?: string
+  teacherName?: string
+  startTime?: string
+  endTime?: string
+  avatar?: string
+  studentName?: string
+  studentId?: string
+  studentPhone?: string
+  isComment?: boolean
+  isRead?: boolean | null
+  assistants?: string
+  classRoomName?: string
+  isParentFeedback?: boolean
+  parentFeedbackType?: number
+  parentFeedbackGrade?: number
+  parentFeedbackContent?: string
+}
+
+export interface ClassCommentStudentPagedParams {
+  queryModel: ClassCommentStudentQueryModel
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+  sortModel?: {
+    startTime?: number
+  }
+}
+
+export interface ClassCommentStudentPagedResult {
+  list?: ClassCommentStudentItem[]
+  total?: number
+}
+
 export interface ClassRecordExportConditionItem {
   label: string
   value: string
@@ -305,6 +366,10 @@ export function getScheduleTeachingRecordPagedListApi(data: ClassRecordPagedPara
 
 export function getClassCommentPagedListApi(data: ClassCommentPagedParams) {
   return usePost<ClassCommentPagedResult>('/api/v1/class-comments/paged-list', data)
+}
+
+export function getClassCommentStudentPagedListApi(data: ClassCommentStudentPagedParams) {
+  return usePost<ClassCommentStudentPagedResult>('/api/v1/class-comments/student-paged-list', data)
 }
 
 export function getTeachingRecordDetailApi(params: { teachingRecordId: string }) {

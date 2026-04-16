@@ -243,6 +243,16 @@ func (repo *Repository) buildStudentTeachingRecordQuery(dto model.StudentTeachin
 			whereParts = append(whereParts, filter)
 		}
 	}
+	if len(query.ClassTeacherIDs) > 0 {
+		if filter := buildJSONArrayAnyMatch("class_teacher_ids_json", normalizeStringIDs(query.ClassTeacherIDs)); filter != "" {
+			whereParts = append(whereParts, filter)
+		}
+	}
+	if len(query.One2OneTeacherIDs) > 0 {
+		if filter := buildJSONArrayAnyMatch("one2one_teacher_ids_json", normalizeStringIDs(query.One2OneTeacherIDs)); filter != "" {
+			whereParts = append(whereParts, filter)
+		}
+	}
 	if len(query.One2OneIDs) > 0 {
 		values := normalizeStringIDs(query.One2OneIDs)
 		if len(values) > 0 {
@@ -296,6 +306,13 @@ func (repo *Repository) buildStudentTeachingRecordQuery(dto model.StudentTeachin
 			whereParts = append(whereParts, "arrear_quantity > 0")
 		} else {
 			whereParts = append(whereParts, "arrear_quantity <= 0")
+		}
+	}
+	if query.IsComment != nil {
+		if *query.IsComment {
+			whereParts = append(whereParts, "LENGTH(TRIM(IFNULL(external_remark, ''))) > 0")
+		} else {
+			whereParts = append(whereParts, "LENGTH(TRIM(IFNULL(external_remark, ''))) = 0")
 		}
 	}
 	if len(query.LessonIDs) > 0 {
@@ -524,6 +541,138 @@ func (repo *Repository) GetStudentTeachingRecordPagedList(ctx context.Context, i
 		result.List = append(result.List, item)
 	}
 	return result, rows.Err()
+}
+
+func (repo *Repository) GetClassCommentStudentPagedList(ctx context.Context, instID int64, dto model.ClassCommentStudentPagedQueryDTO) (model.ClassCommentStudentPagedResult, error) {
+	queryModel := model.StudentTeachingRecordQueryModel{
+		BeginStartTime:       dto.QueryModel.TeachingStartTime,
+		EndStartTime:         dto.QueryModel.TeachingEndTime,
+		StudentID:            strings.TrimSpace(dto.QueryModel.StudentID),
+		TeacherIDs:           dto.QueryModel.TeacherIDs,
+		AssistantTeacherIDs:  dto.QueryModel.AssistantTeacherIDs,
+		ClassTeacherIDs:      dto.QueryModel.ClassTeacherIDs,
+		One2OneTeacherIDs:    dto.QueryModel.One2OneTeacherIDs,
+		TimetableSourceTypes: dto.QueryModel.TeachingRecordTypes,
+		IsComment:            dto.QueryModel.IsComment,
+	}
+	if lessonID := strings.TrimSpace(dto.QueryModel.LessonID); lessonID != "" {
+		queryModel.LessonIDs = []string{lessonID}
+	}
+	if classID := strings.TrimSpace(dto.QueryModel.ClassID); classID != "" {
+		queryModel.ClassIDs = []string{classID}
+	}
+	if one2OneID := strings.TrimSpace(dto.QueryModel.One2OneID); one2OneID != "" {
+		queryModel.One2OneIDs = []string{one2OneID}
+	}
+
+	fragments := repo.buildStudentTeachingRecordQuery(model.StudentTeachingRecordPagedQueryDTO{
+		PageRequestModel: dto.PageRequestModel,
+		SortModel: model.StudentTeachingRecordSortModel{
+			StartTime: dto.SortModel.StartTime,
+		},
+		QueryModel: queryModel,
+	}, instID)
+	_, pageSize, offset := normalizeRollCallPage(dto.PageRequestModel)
+
+	var result model.ClassCommentStudentPagedResult
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM student_teaching_record
+		WHERE `+fragments.whereSQL, fragments.args...).Scan(&result.Total); err != nil {
+		return model.ClassCommentStudentPagedResult{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			CAST(teaching_record_id AS CHAR),
+			CAST(id AS CHAR),
+			CASE
+				WHEN LENGTH(TRIM(one_to_one_name)) > 0 THEN one_to_one_name
+				WHEN LENGTH(TRIM(class_name)) > 0 THEN class_name
+				ELSE lesson_name
+			END AS source_name,
+			CASE
+				WHEN one_to_one_id > 0 THEN 2
+				WHEN class_id > 0 THEN 1
+				WHEN timetable_source_type = 3 THEN 3
+				ELSE 0
+			END AS source_type,
+			CAST(
+				CASE
+					WHEN one_to_one_id > 0 THEN one_to_one_id
+					WHEN class_id > 0 THEN class_id
+					ELSE 0
+				END AS CHAR
+			) AS source_id,
+			CAST(lesson_id AS CHAR),
+			lesson_name,
+			CAST(main_teacher_id AS CHAR),
+			main_teacher_name,
+			DATE_FORMAT(start_time, '%Y-%m-%dT%H:%i:%s'),
+			DATE_FORMAT(end_time, '%Y-%m-%dT%H:%i:%s'),
+			avatar_url,
+			student_name,
+			CAST(student_id AS CHAR),
+			student_phone,
+			CASE WHEN LENGTH(TRIM(IFNULL(external_remark, ''))) > 0 THEN 1 ELSE 0 END AS is_comment,
+			CASE WHEN LENGTH(TRIM(IFNULL(external_remark, ''))) > 0 THEN 0 ELSE NULL END AS is_read,
+			CAST(IFNULL(assistant_teacher_names_json, JSON_ARRAY()) AS CHAR),
+			classroom_name
+		FROM student_teaching_record
+		WHERE `+fragments.whereSQL+`
+		ORDER BY `+fragments.orderBy+`
+		LIMIT ? OFFSET ?
+	`, append(fragments.args, pageSize, offset)...)
+	if err != nil {
+		return model.ClassCommentStudentPagedResult{}, err
+	}
+	defer rows.Close()
+
+	result.List = make([]model.ClassCommentStudentPagedItem, 0, pageSize)
+	for rows.Next() {
+		var (
+			item          model.ClassCommentStudentPagedItem
+			rawAssistants string
+			rawIsRead     sql.NullInt64
+		)
+		if err := rows.Scan(
+			&item.TeachingRecordID,
+			&item.StudentTeachingRecordID,
+			&item.SourceName,
+			&item.SourceType,
+			&item.SourceID,
+			&item.LessonID,
+			&item.LessonName,
+			&item.TeacherID,
+			&item.TeacherName,
+			&item.StartTime,
+			&item.EndTime,
+			&item.Avatar,
+			&item.StudentName,
+			&item.StudentID,
+			&item.StudentPhone,
+			&item.IsComment,
+			&rawIsRead,
+			&rawAssistants,
+			&item.ClassRoomName,
+		); err != nil {
+			return model.ClassCommentStudentPagedResult{}, err
+		}
+		if rawIsRead.Valid {
+			read := rawIsRead.Int64 != 0
+			item.IsRead = &read
+		}
+		item.Assistants = normalizeJSONStringListText(rawAssistants)
+		item.IsParentFeedback = false
+		item.ParentFeedbackType = 0
+		item.ParentFeedbackGrade = 0
+		item.ParentFeedbackContent = ""
+		result.List = append(result.List, item)
+	}
+	if err := rows.Err(); err != nil {
+		return model.ClassCommentStudentPagedResult{}, err
+	}
+	return result, nil
 }
 
 func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, instID int64, dto model.ScheduleTeachingRecordPagedQueryDTO) (model.ScheduleTeachingRecordPagedResult, error) {

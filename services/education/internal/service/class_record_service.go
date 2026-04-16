@@ -87,6 +87,37 @@ func (svc *Service) GetClassCommentPagedList(userID int64, dto model.ClassCommen
 	return result, nil
 }
 
+func (svc *Service) GetClassCommentStudentPagedList(userID int64, dto model.ClassCommentStudentPagedQueryDTO) (model.ClassCommentStudentPagedResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.ClassCommentStudentPagedResult{}, err
+	}
+
+	if dto.QueryModel.IsRead != nil && *dto.QueryModel.IsRead {
+		return model.ClassCommentStudentPagedResult{
+			List:  []model.ClassCommentStudentPagedItem{},
+			Total: 0,
+		}, nil
+	}
+	if dto.QueryModel.IsParentFeedback != nil && *dto.QueryModel.IsParentFeedback {
+		return model.ClassCommentStudentPagedResult{
+			List:  []model.ClassCommentStudentPagedItem{},
+			Total: 0,
+		}, nil
+	}
+	if dto.QueryModel.IsRead != nil && !*dto.QueryModel.IsRead {
+		if dto.QueryModel.IsComment != nil && !*dto.QueryModel.IsComment {
+			return model.ClassCommentStudentPagedResult{
+				List:  []model.ClassCommentStudentPagedItem{},
+				Total: 0,
+			}, nil
+		}
+		dto.QueryModel.IsComment = boolPtr(true)
+	}
+
+	return svc.repo.GetClassCommentStudentPagedList(context.Background(), instID, dto)
+}
+
 func (svc *Service) GetTeachingRecordDetail(userID int64, query model.TeachingRecordDetailQueryDTO) (model.TeachingRecordDetailResult, error) {
 	instID, err := svc.rollCallInstID(userID)
 	if err != nil {
@@ -153,4 +184,8 @@ func (svc *Service) DeleteTeachingRecord(userID int64, dto model.DeleteTeachingR
 		return false, err
 	}
 	return svc.repo.DeleteTeachingRecord(context.Background(), instID, operatorID, dto)
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
