@@ -194,7 +194,7 @@ watch(
   <div>
     <a-drawer
       v-model:open="openDrawer"
-      :push="{ distance: 80 }"
+      :push="false"
       :body-style="{ padding: '0', background: hasDetail ? '#f7f7fd' : '#fff' }"
       :closable="false"
       width="1165px"

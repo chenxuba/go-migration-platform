@@ -510,7 +510,7 @@ watch(
 <template>
   <a-drawer
     v-model:open="openDrawer"
-    :push="{ distance: 80 }"
+    :push="false"
     :body-style="{ padding: '0', background: '#f7f7fd' }"
     :closable="false"
     @after-open-change="handleDrawerAfterOpenChange"
@@ -693,7 +693,7 @@ watch(
         >
           <a-tab-pane key="students" tab="学员名单">
             <a-card :title="studentCardTitle" :bordered="false">
-              <template v-if="!isOneToOne" #extra>
+              <template v-if="!isOneToOne && canManageCurrentStudents" #extra>
                 <a-dropdown
                   placement="bottomRight"
                   :trigger="['hover']"

@@ -307,7 +307,7 @@ function handleRowSaved() {
   <div>
     <a-drawer
       v-model:open="openDrawer"
-      :push="{ distance: 80 }"
+      :push="false"
       :body-style="{ padding: '0', background: '#f7f7fd' }"
       :closable="false"
       width="1165px"
