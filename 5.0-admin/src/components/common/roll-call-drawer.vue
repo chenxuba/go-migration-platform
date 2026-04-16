@@ -166,9 +166,12 @@ const totalWidth = computed(() =>
 const userName = ref('')
 // 修改为独立的状态控制
 const headerStatus = ref('')
+function isTemporarilySkippedRecord(record) {
+  return temporarilySkippedStudentIds.value.has(String(record?.id || '').trim())
+}
 // 根据表头状态设置每个学生的状态
 function isStudentRollCallLocked(record) {
-  return Boolean(record?.locked || record?.autoRollCall || record?.hasTeachingRecord)
+  return Boolean(record?.locked || record?.autoRollCall || record?.hasTeachingRecord || isTemporarilySkippedRecord(record))
 }
 function setAllStudentStatus(status) {
   data.value.forEach((item) => {
@@ -257,11 +260,12 @@ function handleStudentStatusChange(record, status) {
 }
 // 计算出席统计
 const attendanceStats = computed(() => {
+  const effectiveRows = data.value.filter(student => !isTemporarilySkippedRecord(student))
   return {
-    attended: data.value.filter(student => student.attended).length,
-    absent: data.value.filter(student => student.absent).length,
-    leave: data.value.filter(student => student.leave).length,
-    unrecorded: data.value.filter(student => student.unrecorded).length,
+    attended: effectiveRows.filter(student => student.attended).length,
+    absent: effectiveRows.filter(student => student.absent).length,
+    leave: effectiveRows.filter(student => student.leave).length,
+    unrecorded: effectiveRows.filter(student => student.unrecorded).length,
   }
 })
 const filteredData = computed(() => {
@@ -558,13 +562,23 @@ function markStudentTemporarilySkipped(studentId) {
   nextSet.add(key)
   temporarilySkippedStudentIds.value = nextSet
 }
+function cancelStudentTemporarilySkipped(studentId) {
+  const key = String(studentId || '').trim()
+  if (!key || !temporarilySkippedStudentIds.value.has(key))
+    return
+  const nextSet = new Set(temporarilySkippedStudentIds.value)
+  nextSet.delete(key)
+  temporarilySkippedStudentIds.value = nextSet
+}
 function removeLocalRollCallStudent(studentId) {
   const key = String(studentId || '').trim()
   if (!key)
     return
   markStudentTemporarilySkipped(key)
-  deleteStudentAccountOverride(key)
-  data.value = data.value.filter(item => String(item?.id || '').trim() !== key)
+  syncHeaderStatus()
+}
+function restoreLocalRollCallStudent(studentId) {
+  cancelStudentTemporarilySkipped(studentId)
   syncHeaderStatus()
 }
 function applySwitchedAccountOverrides(rows) {
@@ -593,9 +607,14 @@ function isRecordedRemoveDisabled(record) {
   return Boolean(record?.autoRollCall || record?.hasTeachingRecord)
 }
 function getRemoveActionText(record) {
+  if (isTemporarilySkippedRecord(record))
+    return '取消'
   if (isRecordedRemoveDisabled(record))
     return '已点名'
   return '移出'
+}
+function getRollCallRowClassName(record) {
+  return isTemporarilySkippedRecord(record) ? 'roll-call-row--skipped' : ''
 }
 function clearSwitchedAccountOverrides() {
   switchedAccountOverrideMap.value = new Map()
@@ -705,7 +724,7 @@ async function applyRollCallContext(detail, record, seq) {
   const tuitionExtraMap = new Map((Array.isArray(tuitionExtraRes.result) ? tuitionExtraRes.result : []).map(item => [String(item.studentId || ''), item]))
   data.value = applySwitchedAccountOverrides((Array.isArray(effectiveRecord?.students) ? effectiveRecord.students : []).map(item =>
     mapStudentRow(item, leaveCountMap, tuitionExtraMap),
-  ).filter(item => !isTemporarilySkippedStudent(item?.id)))
+  ))
   syncHeaderStatus()
 }
 async function loadDetail() {
@@ -861,7 +880,7 @@ function buildRollCallStudentQuantity(record) {
   return Math.max(parseNumber(record.attendanceCount), 0)
 }
 function shouldSkipRollCallSubmitRecord(record) {
-  return Boolean(record?.locked) || Boolean(record?.autoRollCall) || Boolean(record?.hasTeachingRecord)
+  return Boolean(record?.locked) || Boolean(record?.autoRollCall) || Boolean(record?.hasTeachingRecord) || isTemporarilySkippedRecord(record)
 }
 function buildRollCallEstimatePayload() {
   return data.value
@@ -1075,23 +1094,23 @@ function submitSwitchAccount() {
 function handleRemoveStudent(record) {
   const studentId = String(record?.id || '').trim()
   const name = String(record?.studentAccount || '').trim() || '当前学员'
+  if (isTemporarilySkippedRecord(record)) {
+    restoreLocalRollCallStudent(studentId)
+    messageService.success(`已恢复${name}参与本次点名`)
+    return
+  }
   const disabledReason = getRemoveDisabledReason(record)
   if (disabledReason) {
     messageService.warning(disabledReason)
     return
   }
   if (!supportsScheduleMutations.value) {
-    if (!record?.unscheduledLocalAdded) {
-      messageService.info('未排课点名仅支持移出本次新增学员')
-      return
-    }
     Modal.confirm({
       title: '设为暂不点名',
       content: `设为暂不点名后，“${name}”本次不会提交点名，且不会移出日程。确认继续吗？`,
       okText: '确认',
       cancelText: '取消',
       onOk() {
-        removeUnscheduledExtraStudent(studentId)
         removeLocalRollCallStudent(studentId)
         messageService.success(`已将${name}设为暂不点名`)
       },
@@ -1219,6 +1238,7 @@ watch(
         <!-- 带序号 -->
         <a-table
           :columns="columns" :data-source="filteredData" row-key="id" class="mt-12px" :pagination="false"
+          :row-class-name="getRollCallRowClassName"
           :scroll="{ x: totalWidth }"
         >
           <template #headerCell="{ column }">
@@ -1362,7 +1382,7 @@ watch(
                     class=" flex bg-#888 text-#fff w-120% justify-center ml--8px text-10px rounded-10"
                   >临时学员</span>
                 </div>
-                <div class="text-#888">
+                <div class="text-#888 student-account-meta" :class="{ 'student-account-meta--skipped': isTemporarilySkippedRecord(record) }">
                 <div class="text-14px text-#333 mb-2px">
                     {{ record.studentAccount }} <span
                       class="text-3 px2 py2px rounded-10 ml2px"
@@ -1383,6 +1403,9 @@ watch(
                   </div>
                   <div class="text-#f90">
                     {{ record.leaveCountText }}
+                  </div>
+                  <div v-if="isTemporarilySkippedRecord(record)" class="student-account-meta__overlay">
+                    暂不点名
                   </div>
                 </div>
               </div>
@@ -1496,8 +1519,12 @@ watch(
               <a-input v-model:value="record.externalNote" :disabled="isStudentRollCallLocked(record)" class="w-100px" placeholder="请输入" />
             </div>
             <div v-else-if="column.dataIndex === 'action'">
+              <a
+                v-if="record.canRemove && (supportsScheduleMutations || record.unscheduledLocalAdded) && isTemporarilySkippedRecord(record)"
+                @click="handleRemoveStudent(record)"
+              >{{ getRemoveActionText(record) }}</a>
               <span
-                v-if="record.canRemove && (supportsScheduleMutations || record.unscheduledLocalAdded) && getRemoveDisabledReason(record)"
+                v-else-if="record.canRemove && (supportsScheduleMutations || record.unscheduledLocalAdded) && getRemoveDisabledReason(record)"
                 class="action-link-disabled"
               >{{ getRemoveActionText(record) }}</span>
               <a-tooltip
@@ -1927,6 +1954,48 @@ watch(
   display: inline-flex;
   align-items: center;
   width: fit-content;
+}
+
+.student-account-meta {
+  position: relative;
+}
+
+.student-account-meta--skipped {
+  min-height: 74px;
+}
+
+.student-account-meta__overlay {
+  position: absolute;
+  left: -68px;
+  right: 0;
+  top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 68px;
+  min-height: 52px;
+  color: #fa8c16;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(1px);
+  border-radius: 10px;
+}
+
+:deep(.roll-call-row--skipped > td) {
+  position: relative;
+}
+
+:deep(.roll-call-row--skipped > td::after) {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.46);
+  pointer-events: none;
+}
+
+:deep(.roll-call-row--skipped > td:last-child::after) {
+  right: 0;
 }
 
 .roll-call-switch-account-modal :deep(.ant-radio-wrapper) {
