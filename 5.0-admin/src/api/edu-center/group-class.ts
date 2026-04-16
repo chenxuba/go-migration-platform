@@ -121,6 +121,20 @@ export function pageGroupClassesApi(data: {
   return usePost<{ list: GroupClassRow[], total: number }>('/api/v1/group-classes/page', data)
 }
 
+export async function exportGroupClassesApi(data: {
+  queryModel?: Record<string, unknown>
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/group-classes/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 export function pageMoveGroupClassCandidatesApi(data: {
   queryModel: {
     currentClassId: string

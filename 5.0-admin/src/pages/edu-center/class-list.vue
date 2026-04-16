@@ -12,6 +12,7 @@ import {
   batchUpdateGroupClassClassTimeApi,
   batchUpdateGroupClassMaxCountApi,
   closeGroupClassApi,
+  exportGroupClassesApi,
   groupClassStatisticsApi,
   pageGroupClassesApi,
   reopenGroupClassApi,
@@ -47,6 +48,7 @@ const scheduleModalClassId = ref('')
 const unscheduledRollCallModalOpen = ref(false)
 const unscheduledRollCallClassId = ref('')
 const listLoading = ref(false)
+const exportingData = ref(false)
 const dataSource = ref([])
 const selectedRowKeys = ref([])
 const selectedRows = ref([])
@@ -390,6 +392,77 @@ function buildQueryModel(source = {}) {
   }
 
   return queryModel
+}
+
+function parseAttachmentFilenameFromHeader(contentDisposition) {
+  const text = String(contentDisposition || '')
+  if (!text)
+    return ''
+  const utf8Match = text.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = text.match(/filename="?([^";]+)"?/i)
+  return plainMatch?.[1] || ''
+}
+
+async function handleExportData() {
+  if (exportingData.value)
+    return
+  exportingData.value = true
+  try {
+    const res = await exportGroupClassesApi({
+      queryModel: buildQueryModel(queryState.value),
+    })
+    const contentType = String(res.headers['content-type'] || '')
+    if (contentType.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
+      || `班级导出-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error) {
+    console.error('export group classes failed', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exportingData.value = false
+  }
 }
 
 async function getClassList(newQueryParams = {}, id, type) {
@@ -1090,25 +1163,9 @@ onMounted(async () => {
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
             </a-dropdown>
-            <a-dropdown class="mr-2">
-              <template #overlay>
-                <a-menu>
-                  <a-menu-item key="0">
-                    导入班级
-                  </a-menu-item>
-                  <a-menu-item key="1">
-                    批量导出
-                  </a-menu-item>
-                  <a-menu-item key="2">
-                    导出记录
-                  </a-menu-item>
-                </a-menu>
-              </template>
-              <a-button>
-                导出数据
-                <DownOutlined :style="{ fontSize: '10px' }" />
-              </a-button>
-            </a-dropdown>
+            <a-button class="mr-2" :loading="exportingData" @click="handleExportData">
+              导出数据
+            </a-button>
             <a-button type="primary" class="mr-2" @click="createClass">
               创建班级
             </a-button>
