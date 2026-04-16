@@ -156,7 +156,7 @@ const queryState = ref({
   fromClosedTime: undefined,
   toClosedTime: undefined,
   isSetExpireTime: undefined,
-  assignedClass: undefined,
+  assignedClass: false,
   lessonType: undefined,
   remainLessonChargingMode: undefined,
   fromRemainQuantity: undefined,
@@ -182,6 +182,8 @@ function resetQueryState() {
   Object.keys(queryState.value).forEach((key) => {
     if (key === 'statusList') {
       queryState.value.statusList = [1, 2]
+    } else if (key === 'assignedClass') {
+      queryState.value.assignedClass = false
     } else {
       queryState.value[key] = undefined
     }
@@ -243,6 +245,13 @@ const filterFieldMapping = {
   remainingFilter: 'remaining',
 }
 
+function hasSelectValue(values, target) {
+  if (!Array.isArray(values))
+    return false
+  const normalizedTarget = String(target)
+  return values.some(item => String(item) === normalizedTarget)
+}
+
 // 生成所有过滤器的更新处理器（对标学员管理页）
 const filterUpdateHandlers = computed(() => {
   const handlers = {}
@@ -251,12 +260,14 @@ const filterUpdateHandlers = computed(() => {
       // 分班状态：0-未分班，1-已分班
       if (fieldName === 'assignedClass') {
         if (Array.isArray(val) && val.length > 0) {
-          if (val.includes(0) && val.includes(1)) {
+          if (hasSelectValue(val, 0) && hasSelectValue(val, 1)) {
             handleFilterUpdate({ assignedClass: undefined }, isClearAll, id, type)
-          } else if (val.includes(0)) {
+          } else if (hasSelectValue(val, 0)) {
             handleFilterUpdate({ assignedClass: false }, isClearAll, id, type)
-          } else if (val.includes(1)) {
+          } else if (hasSelectValue(val, 1)) {
             handleFilterUpdate({ assignedClass: true }, isClearAll, id, type)
+          } else {
+            handleFilterUpdate({ assignedClass: undefined }, isClearAll, id, type)
           }
         } else {
           handleFilterUpdate({ assignedClass: undefined }, isClearAll, id, type)
