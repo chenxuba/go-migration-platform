@@ -144,6 +144,18 @@ export interface TeachingRecordDetailResult {
   teachingContentImages?: string[]
 }
 
+export interface TeachingRecordChangeLogItem {
+  id: string
+  changeTime?: string
+  changeUser?: string
+  changeContent?: string
+}
+
+export interface TeachingRecordChangeLogPagedResult {
+  list?: TeachingRecordChangeLogItem[]
+  total?: number
+}
+
 export interface UpdateStudentTeachingRecordParams {
   studentTeachingRecordId?: string
   teachingRecordId?: string
@@ -218,6 +230,20 @@ export function getScheduleTeachingRecordPagedListApi(data: ClassRecordPagedPara
 
 export function getTeachingRecordDetailApi(params: { teachingRecordId: string }) {
   return useGet<TeachingRecordDetailResult>('/api/v1/class-records/detail', params)
+}
+
+export function getTeachingRecordChangeLogPagedListApi(data: {
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+  queryModel: {
+    teachingRecordId: string
+  }
+}) {
+  return usePost<TeachingRecordChangeLogPagedResult>('/api/v1/class-records/change-log-paged-list', data)
 }
 
 export function updateStudentTeachingRecordApi(data: UpdateStudentTeachingRecordParams) {

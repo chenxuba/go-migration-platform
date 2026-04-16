@@ -10,6 +10,15 @@ type TeachingRecordDetailQueryDTO struct {
 	TeachingRecordID string `json:"teachingRecordId"`
 }
 
+type TeachingRecordChangeLogQueryModel struct {
+	TeachingRecordID string `json:"teachingRecordId"`
+}
+
+type TeachingRecordChangeLogPagedQueryDTO struct {
+	PageRequestModel RollCallPageRequestModel          `json:"pageRequestModel"`
+	QueryModel       TeachingRecordChangeLogQueryModel `json:"queryModel"`
+}
+
 type UpdateStudentTeachingRecordDTO struct {
 	StudentTeachingRecordID string  `json:"studentTeachingRecordId"`
 	TeachingRecordID        string  `json:"teachingRecordId"`
@@ -176,6 +185,18 @@ type TeachingRecordDetailResult struct {
 	SubjectID               string                        `json:"subjectId"`
 	SubjectName             string                        `json:"subjectName"`
 	TeachingContentImages   []string                      `json:"teachingContentImages"`
+}
+
+type TeachingRecordChangeLogItem struct {
+	ID            string `json:"id"`
+	ChangeTime    string `json:"changeTime"`
+	ChangeUser    string `json:"changeUser"`
+	ChangeContent string `json:"changeContent"`
+}
+
+type TeachingRecordChangeLogPagedResult struct {
+	List  []TeachingRecordChangeLogItem `json:"list"`
+	Total int                           `json:"total"`
 }
 
 type ScheduleTeachingRecordPagedQueryDTO struct {

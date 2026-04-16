@@ -202,6 +202,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/class-records/student-paged-list", handler.studentTeachingRecordPagedList)
 	mux.HandleFunc("/api/v1/class-records/schedule-paged-list", handler.scheduleTeachingRecordPagedList)
 	mux.HandleFunc("/api/v1/class-records/detail", handler.teachingRecordDetail)
+	mux.HandleFunc("/api/v1/class-records/change-log-paged-list", handler.teachingRecordChangeLogPagedList)
 	mux.HandleFunc("/api/v1/class-records/student/update", handler.updateStudentTeachingRecord)
 	mux.HandleFunc("/api/v1/class-records/student/delete", handler.deleteStudentTeachingRecord)
 	mux.HandleFunc("/api/v1/class-records/delete", handler.deleteTeachingRecord)

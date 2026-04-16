@@ -1112,6 +1112,20 @@ func parseStudentTeachingRecordPagedQueryDTO(raw map[string]any) model.StudentTe
 	return query
 }
 
+func parseTeachingRecordChangeLogPagedQueryDTO(raw map[string]any) model.TeachingRecordChangeLogPagedQueryDTO {
+	query := model.TeachingRecordChangeLogPagedQueryDTO{}
+	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
+		query.PageRequestModel.NeedTotal = derefBoolValue(asBoolPtr(page["needTotal"]))
+		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
+		query.PageRequestModel.PageSize = asInt(page["pageSize"], 50)
+		query.PageRequestModel.SkipCount = asInt(page["skipCount"], 0)
+	}
+	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel.TeachingRecordID = asString(qm["teachingRecordId"])
+	}
+	return query
+}
+
 func parseUpdateStudentTeachingRecordDTO(raw map[string]any) model.UpdateStudentTeachingRecordDTO {
 	return model.UpdateStudentTeachingRecordDTO{
 		StudentTeachingRecordID: asString(raw["studentTeachingRecordId"]),

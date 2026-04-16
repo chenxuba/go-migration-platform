@@ -1,11 +1,21 @@
-<script setup>
-const displayArray = ref(['intention', 'followStatus', 'sex'])
-const dataSource = ref([{ key: 1 }, { key: 2 }])
-const openDrawer = ref(false)
-function handleSeeStuData() {
-  openDrawer.value = true
-}
-const allColumns = ref([
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { getTeachingRecordChangeLogPagedListApi, type TeachingRecordChangeLogItem } from '@/api/edu-center/class-record'
+import messageService from '@/utils/messageService'
+
+const props = withDefaults(defineProps<{
+  teachingRecordId?: string
+  refreshToken?: number
+}>(), {
+  teachingRecordId: '',
+  refreshToken: 0,
+})
+
+const dataSource = ref<TeachingRecordChangeLogItem[]>([])
+const loading = ref(false)
+const total = ref(0)
+
+const allColumns = ref<any[]>([
   {
     title: '变更时间',
     dataIndex: 'changeTime',
@@ -24,56 +34,37 @@ const allColumns = ref([
     dataIndex: 'changeContent',
   },
 ])
-const rowSelection = {
-  onChange: (selectedRowKeys, selectedRows) => {
-    console.log(`selectedRowKeys: ${selectedRowKeys}`, 'selectedRows: ', selectedRows)
-  },
-}
-const defaultStudentStatus = ref(1)
-// 从本地存储读取已保存的列配置
+
 const savedSelected = localStorage.getItem('call-name-change-details')
 const keysArray = allColumns.value
-  .map(column => column?.key) // 可选链操作符
-  .filter(key => typeof key !== 'undefined') // 过滤未定义的值
+  .map(column => column?.key)
+  .filter(key => typeof key !== 'undefined')
 const initialSelectedValues = savedSelected
   ? JSON.parse(savedSelected)
   : keysArray
 
-// 选中的列（初始化包含重要字段）
 const selectedValues = ref(initialSelectedValues)
-// 生成字段选择选项（排除操作列）
 const columnOptions = computed(() =>
   allColumns.value
     .filter(col => col.key !== 'action')
     .map(col => ({
       id: col.key,
       value: col.title,
-      disabled: col.required, // 禁用必选字段
+      disabled: col.required,
     })),
 )
-// 过滤后的列（自动包含必选列）
-const filteredColumns = computed(() => {
-  const requiredColumns = allColumns.value.filter(col => col.required)
-  const optionalColumns = allColumns.value
-    .filter(col =>
-      selectedValues.value.includes(col.key)
-      && !col.required,
-    )
 
-  // 保持固定列顺序：left -> normal -> right
-  return [
-    ...requiredColumns.filter(col => col.fixed === 'left'),
-    ...optionalColumns,
-    ...requiredColumns.filter(col => col.fixed === 'right'),
-  ]
+const filteredColumns = computed(() => {
+  return allColumns.value.filter((col: any) =>
+    col.required || selectedValues.value.includes(col.key),
+  )
 })
-// 强制包含必选字段的监听
+
 watch(selectedValues, (newVal) => {
   const requiredKeys = allColumns.value
     .filter(col => col.required)
     .map(col => col.key)
 
-  // 自动补全必选字段
   if (!requiredKeys.every(k => newVal.includes(k))) {
     selectedValues.value = Array.from(new Set([
       ...newVal.filter(v => !requiredKeys.includes(v)),
@@ -81,13 +72,62 @@ watch(selectedValues, (newVal) => {
     ]))
   }
 }, { deep: true })
-// 自动保存列配置到本地存储
+
 watch(selectedValues, (newVal) => {
   localStorage.setItem('call-name-change-details', JSON.stringify(newVal))
 }, { deep: true })
-// 表格总宽度计算
+
 const totalWidth = computed(() =>
-  filteredColumns.value.reduce((acc, column) => acc + (column.width || 0), 0),
+  filteredColumns.value.reduce((acc: number, column: any) => acc + Number(column.width || 0), 0),
+)
+
+const tablePagination = computed(() => (dataSource.value.length > 10 ? { hideOnSinglePage: true } : false) as any)
+
+async function loadChangeLogs() {
+  const teachingRecordId = String(props.teachingRecordId || '').trim()
+  if (!teachingRecordId) {
+    dataSource.value = []
+    total.value = 0
+    return
+  }
+
+  loading.value = true
+  try {
+    const res = await getTeachingRecordChangeLogPagedListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: 1000,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+      queryModel: {
+        teachingRecordId,
+      },
+    })
+
+    if (res.code !== 200) {
+      throw new Error(res.message || '加载点名变更记录失败')
+    }
+
+    dataSource.value = Array.isArray(res.result?.list) ? res.result.list : []
+    total.value = Number(res.result?.total || 0)
+  }
+  catch (error: any) {
+    dataSource.value = []
+    total.value = 0
+    messageService.error(error?.response?.data?.message || error?.message || '加载点名变更记录失败')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+watch(
+  () => [props.teachingRecordId, props.refreshToken] as const,
+  () => {
+    loadChangeLogs()
+  },
+  { immediate: true },
 )
 </script>
 
@@ -97,34 +137,37 @@ const totalWidth = computed(() =>
       <div class="tab-table">
         <div class="table-title flex justify-between">
           <div class="total">
-            共 <span class="text-4 mx-2 text-#06f">{{ dataSource.length }}</span> 条记录
+            共 <span class="text-4 mx-2 text-#06f">{{ total }}</span> 条记录
           </div>
         </div>
         <div class="table-content mt-2">
           <a-table
-            :data-source="dataSource" :pagination="dataSource.length > 10" :columns="filteredColumns"
-            :scroll="{ x: totalWidth }" size="small"
+            :data-source="dataSource"
+            :loading="loading"
+            :pagination="tablePagination"
+            :columns="filteredColumns"
+            :scroll="{ x: totalWidth }"
+            size="small"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'changeUser'">
                 <div class="text-#666">
-                  陈瑞
+                  {{ record.changeUser || '-' }}
                 </div>
               </template>
               <template v-if="column.key === 'changeTime'">
                 <div class="text-#666">
-                  2025-04-14 08:49
-                </div>{{ record.a }}
+                  {{ record.changeTime || '-' }}
+                </div>
               </template>
               <template v-if="column.key === 'changeContent'">
-                <span class="text-#666">编辑学员-妞妞 【请假（不记课时）】改为【到课（记1课时）】</span>
+                <span class="text-#666">{{ record.changeContent || '-' }}</span>
               </template>
             </template>
           </a-table>
         </div>
       </div>
     </div>
-    <student-info-drawer v-model:open="openDrawer" />
   </div>
 </template>
 

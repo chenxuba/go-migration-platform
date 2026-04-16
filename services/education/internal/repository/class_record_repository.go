@@ -36,6 +36,7 @@ type studentTeachingRecordEditableRow struct {
 	TeachingRecordID        int64
 	TeachingScheduleID      int64
 	StudentID               int64
+	StudentName             string
 	SourceType              int
 	TuitionAccountID        int64
 	Status                  int
@@ -185,7 +186,7 @@ func ensureStudentTeachingRecordTables(ctx context.Context, db *sql.DB) error {
 			return alterErr
 		}
 	}
-	return nil
+	return ensureStudentTeachingRecordChangeLogTables(ctx, db)
 }
 
 type classRecordStudentQueryFragments struct {
@@ -1104,6 +1105,30 @@ func (repo *Repository) UpdateStudentTeachingRecord(ctx context.Context, instID,
 		return false, err
 	}
 
+	if row.Status != status || !almostEqualFloat(row.Quantity, quantity) || row.StudentTeachingRecordID <= 0 {
+		logAction := teachingRecordChangeActionEdit
+		beforeStatus := row.Status
+		beforeQuantity := row.Quantity
+		if strings.TrimSpace(dto.StudentTeachingRecordID) == "" || row.Status == teachingRecordDetailStudentStatusPendingRollCall && almostEqualFloat(row.Quantity, 0) {
+			logAction = teachingRecordChangeActionAdd
+			beforeStatus = teachingRecordDetailStudentStatusPendingRollCall
+			beforeQuantity = 0
+		}
+		if err := repo.insertStudentTeachingRecordChangeLogTx(ctx, tx, instID, operatorID, operatorName, studentTeachingRecordChangeLogPayload{
+			TeachingRecordID:        row.TeachingRecordID,
+			StudentTeachingRecordID: studentTeachingRecordID,
+			StudentID:               row.StudentID,
+			StudentName:             row.StudentName,
+			Action:                  logAction,
+			BeforeStatus:            beforeStatus,
+			BeforeQuantity:          beforeQuantity,
+			AfterStatus:             status,
+			AfterQuantity:           quantity,
+		}); err != nil {
+			return false, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
@@ -1167,6 +1192,20 @@ func (repo *Repository) DeleteStudentTeachingRecord(ctx context.Context, instID,
 		if err := repo.removeScheduleOnlyStudentFromScheduleTx(ctx, tx, instID, operatorID, row.TeachingScheduleID, row.StudentID); err != nil {
 			return false, err
 		}
+	}
+
+	if err := repo.insertStudentTeachingRecordChangeLogTx(ctx, tx, instID, operatorID, operatorName, studentTeachingRecordChangeLogPayload{
+		TeachingRecordID:        row.TeachingRecordID,
+		StudentTeachingRecordID: row.StudentTeachingRecordID,
+		StudentID:               row.StudentID,
+		StudentName:             row.StudentName,
+		Action:                  teachingRecordChangeActionRemove,
+		BeforeStatus:            row.Status,
+		BeforeQuantity:          row.Quantity,
+		AfterStatus:             teachingRecordDetailStudentStatusPendingRollCall,
+		AfterQuantity:           0,
+	}); err != nil {
+		return false, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -1336,6 +1375,7 @@ func (repo *Repository) loadStudentTeachingRecordForUpdateTx(ctx context.Context
 			IFNULL(teaching_record_id, 0),
 			IFNULL(teaching_schedule_id, 0),
 			IFNULL(student_id, 0),
+			IFNULL(student_name, ''),
 			IFNULL(source_type, 0),
 			IFNULL(tuition_account_id, 0),
 			IFNULL(status, 0),
@@ -1356,6 +1396,7 @@ func (repo *Repository) loadStudentTeachingRecordForUpdateTx(ctx context.Context
 		&row.TeachingRecordID,
 		&row.TeachingScheduleID,
 		&row.StudentID,
+		&row.StudentName,
 		&row.SourceType,
 		&row.TuitionAccountID,
 		&row.Status,

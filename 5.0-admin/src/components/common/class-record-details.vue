@@ -28,6 +28,7 @@ const loading = ref(false)
 const deleting = ref(false)
 const detailData = ref<TeachingRecordDetailResult | null>(null)
 const shouldRefreshOnClose = ref(false)
+const changeLogRefreshToken = ref(0)
 const hasDetail = computed(() => String(detailData.value?.teachingRecordId || '').trim() !== '')
 
 const openDrawer = computed({
@@ -142,6 +143,11 @@ async function loadDetail() {
     if (seq === loadSeq)
       loading.value = false
   }
+}
+
+async function handleRollNameUpdated() {
+  await loadDetail()
+  changeLogRefreshToken.value += 1
 }
 
 watch(
@@ -286,7 +292,7 @@ watch(
                 <call-name-details :detail="detailData" :loading="loading" />
               </a-tab-pane>
               <a-tab-pane key="1" tab="点名变更记录">
-                <call-name-change-details />
+                <call-name-change-details :teaching-record-id="detailData?.teachingRecordId" :refresh-token="changeLogRefreshToken" />
               </a-tab-pane>
             </a-tabs>
           </div>
@@ -329,7 +335,7 @@ watch(
     </a-modal>
 
     <EditClassInfoModal v-model:open="editClassInfoModal" />
-    <EditRollNameModal v-model:open="editRollNameModal" :detail="detailData" @updated="loadDetail" />
+    <EditRollNameModal v-model:open="editRollNameModal" :detail="detailData" @updated="handleRollNameUpdated" />
   </div>
 </template>
 
