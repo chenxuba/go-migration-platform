@@ -55,8 +55,9 @@ export const useAppStore = defineStore('app', () => {
     components: {},
   })
   const locale = ref<string>(lsLocaleState.value)
-  const toggleLocale = (locale: string) => {
-    lsLocaleState.value = locale
+  const toggleLocale = (nextLocale: string) => {
+    locale.value = nextLocale
+    lsLocaleState.value = nextLocale
   }
   const toggleCompact = (isCompact = true) => {
     // 判断是否存在compactAlgorithm

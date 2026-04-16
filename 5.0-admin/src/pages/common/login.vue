@@ -1,62 +1,77 @@
 <script setup>
-import { MobileOutlined, LockOutlined, EyeOutlined, EyeInvisibleOutlined, SafetyOutlined } from '@ant-design/icons-vue';
-import { AxiosError } from 'axios';
-import QRCode from 'qrcode';
-import { loginApi } from '~/api/common/login';
-import { getQueryParam } from '~/utils/tools';
-import { useMessage, useNotification } from '@/composables/global-config';
-import { useRouter } from 'vue-router';
-import { useAuthorization } from '@/composables/authorization';
+import { MobileOutlined, LockOutlined, EyeInvisibleOutlined, SafetyOutlined } from '@ant-design/icons-vue'
+import { AxiosError } from 'axios'
+import QRCode from 'qrcode'
+import SelectLang from '@/components/select-lang/index.vue'
+import { useAuthorization } from '@/composables/authorization'
+import { useMessage, useNotification } from '@/composables/global-config'
+import { loginApi } from '~/api/common/login'
+import { useRouter } from 'vue-router'
 
-const activeKey = ref(0); // 0: 密码登录, 1: 短信登录
-const mode = ref(true); // input: 密码登录, qrcode: 扫码登录
-const formRef = ref();
+const { t } = useI18nLocale()
+const activeKey = ref(0) // 0: 密码登录, 1: 短信登录
+const mode = ref(true) // input: 密码登录, qrcode: 扫码登录
+const formRef = ref()
 const formState = reactive({
   username: '',
   password: '',
   verifyCode: '',
-});
-const agreeToTerms = ref(true);
-const message = useMessage();
-const notification = useNotification();
-const router = useRouter();
-const token = useAuthorization();
-const submitLoading = ref(false);
-const errorAlert = ref(false);
-const qrCodeUrl = ref(''); // 存储生成的二维码URL
+})
+const agreeToTerms = ref(true)
+const message = useMessage()
+const notification = useNotification()
+const router = useRouter()
+const token = useAuthorization()
+const submitLoading = ref(false)
+const errorAlert = ref(false)
+const qrCodeUrl = ref('') // 存储生成的二维码URL
+
+const usernameRules = computed(() => [{
+  required: true,
+  message: t('pages.login.mobile.required', '请输入手机号'),
+}])
+
+const passwordRules = computed(() => [{
+  required: true,
+  message: t('pages.login.password.required.simple', '请输入密码'),
+}])
+
+const verifyCodeRules = computed(() => [{
+  required: true,
+  message: t('pages.login.verifyCode.required', '请输入验证码'),
+}])
 
 // 生成二维码
 async function generateQRCode() {
   try {
-    const currentUrl = window.location.href;
+    const currentUrl = window.location.href
     const qrCodeDataUrl = await QRCode.toDataURL(currentUrl, {
       width: 200,
       margin: 2,
       color: {
         dark: '#000000',
-        light: '#FFFFFF'
-      }
-    });
-    qrCodeUrl.value = qrCodeDataUrl;
-  } catch (error) {
-    console.error('生成二维码失败:', error);
-    message.error('生成二维码失败');
+        light: '#FFFFFF',
+      },
+    })
+    qrCodeUrl.value = qrCodeDataUrl
+  }
+  catch (error) {
+    console.error('generate qrcode failed:', error)
+    message.error(t('pages.login.qrcode.generateFailed', '生成二维码失败'))
   }
 }
 
 // 监听mode变化，当切换到二维码模式时生成二维码
 watch(mode, (newMode) => {
-  if (!newMode) {
-    generateQRCode();
-  }
-});
+  if (!newMode)
+    generateQRCode()
+})
 
 // 组件挂载时，如果当前是二维码模式则生成二维码
 onMounted(() => {
-  if (!mode.value) {
-    generateQRCode();
-  }
-});
+  if (!mode.value)
+    generateQRCode()
+})
 
 function getLoginParams() {
   if (activeKey.value === 0) {
@@ -64,51 +79,57 @@ function getLoginParams() {
       username: formState.username,
       password: formState.password,
       type: 'account',
-    };
-  } else {
+    }
+  }
+  else {
     return {
       mobile: formState.username,
       code: formState.verifyCode,
       type: 'mobile',
-    };
+    }
   }
 }
 
 async function onSubmit() {
   if (!agreeToTerms.value) {
-    message.warning('请先阅读并同意《用户协议》和《隐私条款》');
-    return;
+    message.warning(t('pages.login.agreement.warning', '请先阅读并同意《用户协议》和《隐私条款》'))
+    return
   }
-  submitLoading.value = true;
+  submitLoading.value = true
   try {
-    await formRef.value?.validate();
-    const params = getLoginParams();
-    const { result } = await loginApi(params);
+    await formRef.value?.validate()
+    const params = getLoginParams()
+    const { result } = await loginApi(params)
     if (result) {
-      token.value = result?.token;
+      token.value = result?.token
       notification.success({
-        message: '登录成功',
-        description: '欢迎回来！',
+        message: t('pages.login.notification.success.title', '登录成功'),
+        description: t('pages.login.notification.success.description', '欢迎回来！'),
         duration: 1,
-      });
+      })
       router.push({ path: "/" })
-    } else {
-      submitLoading.value = false;
     }
-  } catch (e) {
-    if (e instanceof AxiosError) errorAlert.value = true;
-    submitLoading.value = false;
+    else {
+      submitLoading.value = false
+    }
+  }
+  catch (e) {
+    if (e instanceof AxiosError)
+      errorAlert.value = true
+    submitLoading.value = false
   }
 }
 
 function changeQrCode() {
   mode.value = !mode.value
 }
-
 </script>
 
 <template>
   <div class="login-page flex">
+    <div class="login-page__lang-switch">
+      <SelectLang />
+    </div>
     <div class="main-content flex">
       <div class="content flex">
         <div class="left">
@@ -121,10 +142,14 @@ function changeQrCode() {
           <div class="switchLogin">
             <div class="switchBtn" v-if="mode" @click="changeQrCode"></div>
             <div class="switchBtn other" v-if="!mode" @click="changeQrCode"></div>
-            <div class="switchTooltip" v-if="mode">App 扫码登录</div>
-            <div class="switchTooltip other" v-if="!mode">其他登录方式</div>
+            <div class="switchTooltip" v-if="mode">
+              {{ t('pages.login.switch.qrcode', 'App 扫码登录') }}
+            </div>
+            <div class="switchTooltip other" v-if="!mode">
+              {{ t('pages.login.switch.other', '其他登录方式') }}
+            </div>
           </div>
-          <a-form ref='formRef' v-if="mode" :model="formState" autocomplete="off">
+          <a-form ref="formRef" v-if="mode" :model="formState" autocomplete="off">
             <div class="login-phone-wrap">
               <div class="phoneBox">
                 <div class="phoneBg"></div>
@@ -133,27 +158,26 @@ function changeQrCode() {
                     'border-bottom-left-radius': '0px',
                     'border-bottom-right-radius': '0px',
                   }">
-
-                    <a-tab-pane :key="0" tab="密码登录">
+                    <a-tab-pane :key="0" :tab="t('pages.login.passwordLogin.tab', '密码登录')">
                     </a-tab-pane>
-                    <a-tab-pane :key="1" tab="短信登陆">
+                    <a-tab-pane :key="1" :tab="t('pages.login.smsLogin.tab', '短信登录')">
                     </a-tab-pane>
                   </a-tabs>
                 </div>
-                <a-form-item name="username" :rules="[{ required: true, message: '请输入手机号' }]">
+                <a-form-item name="username" :rules="usernameRules">
                   <div class="inputBox">
                     <a-input :bordered="false" autocomplete="off" class="w-300px bg-#f2f3f9"
-                      v-model:value="formState.username" placeholder="请输入手机号">
+                      v-model:value="formState.username" :placeholder="t('pages.login.mobile.placeholder', '请输入手机号')">
                       <template #prefix>
                         <MobileOutlined />
                       </template>
                     </a-input>
                   </div>
                 </a-form-item>
-                <a-form-item name="password" :rules="[{ required: true, message: '请输入密码' }]" v-if="activeKey === 0">
+                <a-form-item name="password" :rules="passwordRules" v-if="activeKey === 0">
                   <div class="inputBox">
                     <a-input :bordered="false" type="password" autocomplete='off' class="w-300px bg-#f2f3f9"
-                      v-model:value="formState.password" placeholder="请输入密码">
+                      v-model:value="formState.password" :placeholder="t('pages.login.password.placeholder.simple', '请输入密码')">
                       <template #prefix>
                         <LockOutlined />
                       </template>
@@ -164,27 +188,29 @@ function changeQrCode() {
                   </div>
                 </a-form-item>
                 <!-- 验证码 -->
-                <a-form-item name="verifyCode" :rules="[{ required: true, message: '请输入验证码' }]" v-else>
+                <a-form-item name="verifyCode" :rules="verifyCodeRules" v-else>
                   <div class="inputBox">
                     <a-input :bordered="false" class="w-300px bg-#f2f3f9" v-model:value="formState.verifyCode"
-                      placeholder="请输入验证码">
+                      :placeholder="t('pages.login.verifyCode.placeholder', '请输入验证码')">
                       <template #prefix>
                         <SafetyOutlined />
                       </template>
                       <template #suffix>
-                        <span class="text-#06f cursor-pointer">获取验证码</span>
+                        <span class="text-#06f cursor-pointer">{{ t('pages.login.verifyCode.action', '获取验证码') }}</span>
                       </template>
                     </a-input>
                   </div>
                 </a-form-item>
                 <div class="submitBox">
-                  <a-button type="primary" class="w-300px" :loading="submitLoading" @click="onSubmit">立即登录</a-button>
+                  <a-button type="primary" class="w-300px" :loading="submitLoading" @click="onSubmit">
+                    {{ t('pages.login.submit.immediately', '立即登录') }}
+                  </a-button>
                   <a-checkbox v-model:checked="agreeToTerms" class="agreement-checkbox">
                     <span class="agreement-text">
-                      已阅读并同意校宝的
-                      <a href="#" class="link">《用户协议》</a>
-                      与
-                      <a href="#" class="link">《隐私条款》</a>
+                      {{ t('pages.login.agreement.prefix', '已阅读并同意校宝的') }}
+                      <a href="#" class="link">《{{ t('pages.login.agreement.userAgreement', '用户协议') }}》</a>
+                      {{ t('pages.login.agreement.and', '与') }}
+                      <a href="#" class="link">《{{ t('pages.login.agreement.privacy', '隐私条款') }}》</a>
                     </span>
                   </a-checkbox>
                 </div>
@@ -193,39 +219,39 @@ function changeQrCode() {
           </a-form>
 
           <div class="top2 flex" v-if="!mode">
-            <div class="title">扫码登录</div>
+            <div class="title">{{ t('pages.login.qrcode.title', '扫码登录') }}</div>
             <div class="login-qrcode-wrap">
               <div class="image">
-                <img :src="qrCodeUrl" alt="二维码" v-if="qrCodeUrl" draggable="false"
+                <img :src="qrCodeUrl" :alt="t('pages.login.qrcode.alt', '二维码')" v-if="qrCodeUrl" draggable="false"
                   style="width: 100%; height: 100%; object-fit: contain; user-select: none;">
                 <div v-else
                   style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: #999; font-size: 14px;">
-                  正在生成二维码...
+                  {{ t('pages.login.qrcode.loading', '正在生成二维码...') }}
                 </div>
               </div>
             </div>
             <div class="desc">
-              打开「云校 App」扫描二维码登录
+              {{ t('pages.login.qrcode.description', '打开「云校 App」扫描二维码登录') }}
             </div>
           </div>
 
           <div class="bottom2 flex" v-if="mode">
             <div class="download flex">
               <div class="e-icon"></div>
-              下载「云校 App」
+              {{ t('pages.login.downloadApp', '下载「云校 App」') }}
             </div>
             <div class="tel flex">
-              咨询热线:
+              {{ t('pages.login.hotline', '咨询热线:') }}
               <span class="number">021-80392253</span>
             </div>
           </div>
           <div class="bottom2 flex" v-if="!mode">
             <div class="download flex other">
               <div class="e-icon"></div>
-              下载「云校 App」
+              {{ t('pages.login.downloadApp', '下载「云校 App」') }}
             </div>
             <div class="tel other flex">
-              咨询热线:
+              {{ t('pages.login.hotline', '咨询热线:') }}
               <span class="number">021-80392253</span>
             </div>
           </div>
@@ -235,8 +261,7 @@ function changeQrCode() {
     </div>
     <div class="footer">
       <span><a target="_blank" href="https://beian.miit.gov.cn"
-          rel="noreferrer"><span class="beian-icon"></span>沪ICP备15044463号-1 &nbsp; 型号:YBC-IRTS-DE &nbsp;&nbsp;</a>已通过 ISO27001:2013
-        信息安全认证</span>
+          rel="noreferrer"><span class="beian-icon"></span>沪ICP备15044463号-1 &nbsp; 型号:YBC-IRTS-DE &nbsp;&nbsp;</a>{{ t('pages.login.footer.certification', '已通过 ISO27001:2013 信息安全认证') }}</span>
     </div>
   </div>
 </template>
@@ -244,6 +269,7 @@ function changeQrCode() {
 
 <style lang="less" scoped>
 .login-page {
+  position: relative;
   flex-direction: column;
   justify-content: center;
   align-content: flex-start;
@@ -252,6 +278,17 @@ function changeQrCode() {
   height: 100%;
   min-height: 100vh;
   background-color: #eff5ff;
+
+  .login-page__lang-switch {
+    position: absolute;
+    top: 18px;
+    right: 24px;
+    z-index: 10;
+    padding: 4px 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  }
 
   .main-content {
     flex: 1 1;

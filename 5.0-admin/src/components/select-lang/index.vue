@@ -28,6 +28,14 @@ function handleClick({ key }: any) {
           </template>
           English
         </a-menu-item>
+        <a-menu-item key="ms-MY">
+          <template #icon>
+            <span>
+              🇲🇾
+            </span>
+          </template>
+          Bahasa Melayu
+        </a-menu-item>
       </a-menu>
     </template>
   </a-dropdown>
