@@ -2597,6 +2597,12 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 	if !isScheduleOnlyStudentType(studentType) {
 		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("学员类型无效")
 	}
+	if studentType == model.TeachingScheduleStudentTypeMakeup {
+		return model.TeachingScheduleStudentCandidatePagedResult{
+			List:  make([]model.TeachingScheduleStudentCandidateVO, 0),
+			Total: 0,
+		}, nil
+	}
 
 	pageIndex := dto.PageRequestModel.PageIndex
 	if pageIndex <= 0 {

@@ -376,7 +376,7 @@ function handleRowSaved() {
         </div>
       </template>
       <div class="search px-24px py-12px bg-white flex items-center gap-12px">
-        <a-input v-model:value="searchKeyword" placeholder="搜索学员" class="h-48px rounded-12px flex-1">
+        <a-input v-model:value="searchKeyword" placeholder="搜索学员" class="h-42px rounded-12px flex-1">
           <template #prefix>
             <img
               src="https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/12181/static/magnifying.2bcc08ab.svg"
@@ -386,7 +386,7 @@ function handleRowSaved() {
           </template>
         </a-input>
         <a-dropdown v-if="canAddCurrentStudents" placement="bottomRight" :trigger="['hover']">
-          <a-button class="h-48px px-18px">
+          <a-button class="h-42px px-18px">
             <span>添加学员</span>
           </a-button>
           <template #overlay>

@@ -111,22 +111,30 @@ const tablePagination = computed(() => {
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
   onChange: (keys: (string | number)[], rows: TeachingScheduleStudentCandidate[]) => {
-    selectedRowKeys.value = keys.map(key => String(key))
-    selectedRows.value = rows
+    const lastKey = String(keys[keys.length - 1] || '').trim()
+    const lastRow = rows.find(item => String(item.studentId || '').trim() === lastKey)
+    if (!lastKey || !lastRow) {
+      selectedRowKeys.value = []
+      selectedRows.value = []
+      return
+    }
+    selectedRowKeys.value = [lastKey]
+    selectedRows.value = [lastRow]
   },
+  hideSelectAll: true,
 }))
 
 function toggleRowSelection(record: TeachingScheduleStudentCandidate) {
   const studentId = String(record?.studentId || '').trim()
   if (!studentId)
     return
-  const nextSelectedMap = new Map(selectedRows.value.map(item => [String(item.studentId || ''), item]))
-  if (nextSelectedMap.has(studentId))
-    nextSelectedMap.delete(studentId)
-  else
-    nextSelectedMap.set(studentId, record)
-  selectedRows.value = Array.from(nextSelectedMap.values())
-  selectedRowKeys.value = selectedRows.value.map(item => String(item.studentId || '')).filter(Boolean)
+  if (selectedRowKeys.value.includes(studentId)) {
+    selectedRows.value = []
+    selectedRowKeys.value = []
+    return
+  }
+  selectedRows.value = [record]
+  selectedRowKeys.value = [studentId]
 }
 
 function handleRowClick(record: TeachingScheduleStudentCandidate, event: MouseEvent) {
