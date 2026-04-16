@@ -255,15 +255,8 @@ watch(
   </div>
   <div class="m-12px">
     <div class="bg-#fff pt-18px px-20px rounded-10px">
-      <div class="flex justify-between items-center">
+      <div>
         <custom-title :title="`当前共计 ${rawList.length} 条待点名日程`" font-size="14px" class="pb-12px" />
-        <a-tooltip :title="unscheduledRollCallDisabledReason || undefined">
-          <span>
-            <a-button type="primary" class="mb-12px" :disabled="!canCreateUnscheduledRollCall" @click="handleCreateUnscheduledRollCall">
-              创建未排课点名
-            </a-button>
-          </span>
-        </a-tooltip>
       </div>
       <a-table
         row-key="id"

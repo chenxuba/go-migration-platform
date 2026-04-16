@@ -1201,9 +1201,6 @@ onMounted(async () => {
           <a-button class="mr-3" @click="handleOpenBatchRollCall">
             批量点名
           </a-button>
-          <a-button class="mr-3" type="primary" @click="handleOpenCreateUnscheduledRollCall">
-            创建未排课点名
-          </a-button>
           <customize-code
             v-model:checked-values="selectedValues"
             :options="columnOptions"
