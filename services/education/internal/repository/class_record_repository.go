@@ -36,6 +36,7 @@ type studentTeachingRecordEditableRow struct {
 	TeachingRecordID        int64
 	TeachingScheduleID      int64
 	StudentID               int64
+	SourceType              int
 	TuitionAccountID        int64
 	Status                  int
 	SkuMode                 int
@@ -45,6 +46,43 @@ type studentTeachingRecordEditableRow struct {
 	ActualTuition           float64
 	TuitionAccountName      string
 	LessonName              string
+}
+
+type teachingRecordCreateBaseRow struct {
+	TeachingRecordID              int64
+	TeachingScheduleID            int64
+	TimetableSourceType           int
+	TimetableSourceID             int64
+	ClassID                       int64
+	ClassName                     string
+	OneToOneID                    int64
+	OneToOneName                  string
+	LessonID                      int64
+	LessonName                    string
+	SubjectID                     int64
+	SubjectName                   string
+	TeachingContent               string
+	TeachingContentImagesJSON     string
+	ClassroomID                   int64
+	ClassroomName                 string
+	MainTeacherID                 int64
+	MainTeacherName               string
+	TeacherEmployeeType           int
+	AssistantTeacherIDsJSON       string
+	AssistantTeacherNamesJSON     string
+	ClassTeacherIDsJSON           string
+	ClassTeacherNamesJSON         string
+	RollCallClassTeacherIDsJSON   string
+	RollCallClassTeacherNamesJSON string
+	CurrentClassTeacherIDsJSON    string
+	CurrentClassTeacherNamesJSON  string
+	One2OneTeacherIDsJSON         string
+	One2OneTeacherNamesJSON       string
+	TeacherClassTime              float64
+	StartTime                     time.Time
+	EndTime                       time.Time
+	TeachingRecordCreatedTime     time.Time
+	RecordTime                    time.Time
 }
 
 func classRecordRollCallStatus(status int) int {
@@ -866,6 +904,10 @@ func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int6
 	if err := rows.Err(); err != nil {
 		return model.TeachingRecordDetailResult{}, err
 	}
+	result.StudentList, err = repo.mergeTeachingRecordDetailStudentList(ctx, instID, result.TimetableSourceID, result.StudentList)
+	if err != nil {
+		return model.TeachingRecordDetailResult{}, err
+	}
 	if err := repo.fillTeachingRecordDetailAttendanceStats(ctx, instID, &result); err != nil {
 		return model.TeachingRecordDetailResult{}, err
 	}
@@ -940,10 +982,6 @@ func (repo *Repository) DeleteTeachingRecord(ctx context.Context, instID, operat
 
 func (repo *Repository) UpdateStudentTeachingRecord(ctx context.Context, instID, operatorID int64, dto model.UpdateStudentTeachingRecordDTO) (bool, error) {
 	studentTeachingRecordID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentTeachingRecordID), 10, 64)
-	if err != nil || studentTeachingRecordID <= 0 {
-		return false, errors.New("缺少有效的点名记录")
-	}
-
 	status, err := normalizeEditableStudentTeachingRecordStatus(dto.Status)
 	if err != nil {
 		return false, err
@@ -955,9 +993,18 @@ func (repo *Repository) UpdateStudentTeachingRecord(ctx context.Context, instID,
 	}
 	defer tx.Rollback()
 
-	row, err := repo.loadStudentTeachingRecordForUpdateTx(ctx, tx, instID, studentTeachingRecordID)
-	if err != nil {
-		return false, err
+	var row studentTeachingRecordEditableRow
+	if studentTeachingRecordID > 0 {
+		row, err = repo.loadStudentTeachingRecordForUpdateTx(ctx, tx, instID, studentTeachingRecordID)
+		if err != nil {
+			return false, err
+		}
+	} else {
+		row, err = repo.createEditableStudentTeachingRecordTx(ctx, tx, instID, operatorID, dto)
+		if err != nil {
+			return false, err
+		}
+		studentTeachingRecordID = row.StudentTeachingRecordID
 	}
 
 	operatorName := firstNonEmptyString(repo.GetStaffNameByID(ctx, &operatorID), "系统")
@@ -1116,11 +1163,48 @@ func (repo *Repository) DeleteStudentTeachingRecord(ctx context.Context, instID,
 	`, operatorID, operatorName, operatorID, instID, studentTeachingRecordID); err != nil {
 		return false, err
 	}
+	if isScheduleOnlyTeachingRecordSourceType(row.SourceType) {
+		if err := repo.removeScheduleOnlyStudentFromScheduleTx(ctx, tx, instID, operatorID, row.TeachingScheduleID, row.StudentID); err != nil {
+			return false, err
+		}
+	}
 
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+func isScheduleOnlyTeachingRecordSourceType(sourceType int) bool {
+	switch sourceType {
+	case 2, 3, 4, 7:
+		return true
+	default:
+		return false
+	}
+}
+
+func (repo *Repository) removeScheduleOnlyStudentFromScheduleTx(ctx context.Context, tx *sql.Tx, instID, operatorID, scheduleID, studentID int64) error {
+	if scheduleID <= 0 || studentID <= 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		UPDATE teaching_schedule_student
+		SET roster_status = ?,
+		    update_id = ?,
+		    update_time = CURRENT_TIMESTAMP,
+		    del_flag = 0
+		WHERE inst_id = ?
+		  AND teaching_schedule_id = ?
+		  AND student_id = ?
+		  AND del_flag = 0
+		  AND student_type IN (?, ?, ?)
+	`, model.TeachingScheduleStudentRosterStatusRemoved, operatorID, instID, scheduleID, studentID,
+		model.TeachingScheduleStudentTypeTemporary,
+		model.TeachingScheduleStudentTypeTrial,
+		model.TeachingScheduleStudentTypeMakeup,
+	)
+	return err
 }
 
 func (repo *Repository) loadTeachingRecordDeleteRowsTx(ctx context.Context, tx *sql.Tx, instID, teachingRecordID int64) ([]teachingRecordDeleteStudentRow, error) {
@@ -1248,6 +1332,7 @@ func (repo *Repository) loadStudentTeachingRecordForUpdateTx(ctx context.Context
 			IFNULL(teaching_record_id, 0),
 			IFNULL(teaching_schedule_id, 0),
 			IFNULL(student_id, 0),
+			IFNULL(source_type, 0),
 			IFNULL(tuition_account_id, 0),
 			IFNULL(status, 0),
 			IFNULL(sku_mode, 0),
@@ -1267,6 +1352,7 @@ func (repo *Repository) loadStudentTeachingRecordForUpdateTx(ctx context.Context
 		&row.TeachingRecordID,
 		&row.TeachingScheduleID,
 		&row.StudentID,
+		&row.SourceType,
 		&row.TuitionAccountID,
 		&row.Status,
 		&row.SkuMode,
@@ -1282,6 +1368,327 @@ func (repo *Repository) loadStudentTeachingRecordForUpdateTx(ctx context.Context
 			return studentTeachingRecordEditableRow{}, errors.New("未找到要编辑的点名记录")
 		}
 		return studentTeachingRecordEditableRow{}, err
+	}
+	return row, nil
+}
+
+func (repo *Repository) createEditableStudentTeachingRecordTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, dto model.UpdateStudentTeachingRecordDTO) (studentTeachingRecordEditableRow, error) {
+	teachingRecordID, err := strconv.ParseInt(strings.TrimSpace(dto.TeachingRecordID), 10, 64)
+	if err != nil || teachingRecordID <= 0 {
+		return studentTeachingRecordEditableRow{}, errors.New("缺少有效的上课记录")
+	}
+	studentID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentID), 10, 64)
+	if err != nil || studentID <= 0 {
+		return studentTeachingRecordEditableRow{}, errors.New("缺少有效的学员")
+	}
+	if dto.SourceType != 2 && dto.SourceType != 3 && dto.SourceType != 4 {
+		return studentTeachingRecordEditableRow{}, errors.New("当前仅支持追加学员直接点名")
+	}
+
+	var existingID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND teaching_record_id = ?
+		  AND student_id = ?
+		  AND del_flag = 0
+		LIMIT 1
+		FOR UPDATE
+	`, instID, teachingRecordID, studentID).Scan(&existingID)
+	if err == nil && existingID > 0 {
+		return repo.loadStudentTeachingRecordForUpdateTx(ctx, tx, instID, existingID)
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return studentTeachingRecordEditableRow{}, err
+	}
+
+	baseRow, err := repo.loadTeachingRecordCreateBaseRowTx(ctx, tx, instID, teachingRecordID)
+	if err != nil {
+		return studentTeachingRecordEditableRow{}, err
+	}
+	if baseRow.TeachingScheduleID <= 0 || baseRow.ClassID <= 0 {
+		return studentTeachingRecordEditableRow{}, errors.New("当前仅支持班课追加学员直接点名")
+	}
+
+	scheduleMetaMap, err := repo.loadClassRecordScheduleMetaMap(ctx, instID, []int64{baseRow.TeachingScheduleID})
+	if err != nil {
+		return studentTeachingRecordEditableRow{}, err
+	}
+	meta, ok := scheduleMetaMap[baseRow.TeachingScheduleID]
+	if !ok || meta.ClassType != model.TeachingClassTypeNormal || meta.ClassID <= 0 {
+		return studentTeachingRecordEditableRow{}, errors.New("当前仅支持班课追加学员直接点名")
+	}
+
+	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{
+		ScheduleID: meta.ScheduleID,
+		ClassID:    meta.ClassID,
+		StartAt:    meta.StartAt,
+	}})
+	if err != nil {
+		return studentTeachingRecordEditableRow{}, err
+	}
+	rosterStudent, foundRosterStudent := rosterByScheduleID[baseRow.TeachingScheduleID].associatedStudent(studentID)
+	if !foundRosterStudent {
+		if err := repo.ensureEditableStudentScheduleLinkTx(ctx, tx, instID, operatorID, meta, studentID, dto.SourceType); err != nil {
+			return studentTeachingRecordEditableRow{}, err
+		}
+		rosterByScheduleID, err = repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{
+			ScheduleID: meta.ScheduleID,
+			ClassID:    meta.ClassID,
+			StartAt:    meta.StartAt,
+		}})
+		if err != nil {
+			return studentTeachingRecordEditableRow{}, err
+		}
+		rosterStudent, foundRosterStudent = rosterByScheduleID[baseRow.TeachingScheduleID].associatedStudent(studentID)
+	}
+	if !foundRosterStudent {
+		return studentTeachingRecordEditableRow{}, errors.New("当前学员不在本节可追加名单中")
+	}
+	if !isScheduleOnlyStudentType(rosterStudent.ScheduleStudentType) || rollCallTeachingRecordSourceType(rosterStudent.ScheduleStudentType) != dto.SourceType {
+		return studentTeachingRecordEditableRow{}, errors.New("当前学员不支持通过编辑点名追加")
+	}
+
+	detail, _, err := repo.loadRollCallDrawerContext(ctx, instID, strconv.FormatInt(baseRow.TeachingScheduleID, 10))
+	if err != nil {
+		return studentTeachingRecordEditableRow{}, err
+	}
+	account, hasAccount, err := repo.pickRollCallDrawerStudentAccount(ctx, instID, studentID, detail, rosterStudent.ScheduleStudentType)
+	if err != nil {
+		return studentTeachingRecordEditableRow{}, err
+	}
+	profileMap, err := repo.loadRollCallConfirmStudentProfileMap(ctx, instID, []int64{studentID})
+	if err != nil {
+		return studentTeachingRecordEditableRow{}, err
+	}
+	profile := profileMap[studentID]
+
+	tuitionAccountID := int64(0)
+	tuitionAccountName := ""
+	skuMode := 0
+	if hasAccount {
+		tuitionAccountID, _ = strconv.ParseInt(strings.TrimSpace(account.ID), 10, 64)
+		tuitionAccountName = firstNonEmptyString(strings.TrimSpace(account.ProductName), strings.TrimSpace(baseRow.LessonName))
+		skuMode = rollCallAccountChargingMode(account)
+	}
+	operatorName := firstNonEmptyString(repo.GetStaffNameByID(ctx, &operatorID), "系统")
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO student_teaching_record (
+			inst_id, teaching_record_id, teaching_schedule_id, timetable_source_type, timetable_source_id,
+			student_id, student_name, student_phone, avatar_url, source_type, current_student_status, status, is_late,
+			class_id, class_name, one_to_one_id, one_to_one_name, lesson_id, lesson_name, subject_id, subject_name,
+			teaching_content, teaching_content_images_json, classroom_id, classroom_name, main_teacher_id, main_teacher_name,
+			teacher_employee_type, assistant_teacher_ids_json, assistant_teacher_names_json, class_teacher_ids_json, class_teacher_names_json,
+			roll_call_class_teacher_ids_json, roll_call_class_teacher_names_json, current_class_teacher_ids_json, current_class_teacher_names_json,
+			one2one_teacher_ids_json, one2one_teacher_names_json, tuition_account_id, tuition_account_name, sku_mode, quantity, actual_quantity,
+			amount, actual_deduct, actual_tuition, arrear_quantity, teacher_class_time, remark, external_remark, is_auto_roll_call, has_compensated,
+			advisor_staff_id, advisor_staff_name, student_manager_id, student_manager_name, start_time, end_time, teaching_record_created_time,
+			record_time, updated_staff_id, updated_staff_name, updated_time, create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?,
+			?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?, ?, ?, ?,
+			?, ?, ?, NOW(), ?, NOW(), ?, NOW(), 0
+		)
+	`,
+		instID, baseRow.TeachingRecordID, baseRow.TeachingScheduleID, baseRow.TimetableSourceType, baseRow.TimetableSourceID,
+		studentID, firstNonEmptyString(strings.TrimSpace(rosterStudent.StudentName), strings.TrimSpace(profile.StudentName), "该学员"), strings.TrimSpace(profile.StudentPhone), firstNonEmptyString(strings.TrimSpace(profile.AvatarURL), strings.TrimSpace(rosterStudent.AvatarURL), defaultStudentAvatarURL()), rollCallTeachingRecordSourceType(rosterStudent.ScheduleStudentType), profile.StudentStatus, teachingRecordDetailStudentStatusPendingRollCall, false,
+		baseRow.ClassID, baseRow.ClassName, baseRow.OneToOneID, baseRow.OneToOneName, baseRow.LessonID, baseRow.LessonName, baseRow.SubjectID, baseRow.SubjectName,
+		baseRow.TeachingContent, baseRow.TeachingContentImagesJSON, baseRow.ClassroomID, baseRow.ClassroomName, baseRow.MainTeacherID, baseRow.MainTeacherName,
+		baseRow.TeacherEmployeeType, baseRow.AssistantTeacherIDsJSON, baseRow.AssistantTeacherNamesJSON, baseRow.ClassTeacherIDsJSON, baseRow.ClassTeacherNamesJSON,
+		baseRow.RollCallClassTeacherIDsJSON, baseRow.RollCallClassTeacherNamesJSON, baseRow.CurrentClassTeacherIDsJSON, baseRow.CurrentClassTeacherNamesJSON,
+		baseRow.One2OneTeacherIDsJSON, baseRow.One2OneTeacherNamesJSON, tuitionAccountID, tuitionAccountName, skuMode, 0, 0,
+		0, 0, 0, 0, baseRow.TeacherClassTime, "", "", false, false,
+		profile.AdvisorStaffID, profile.AdvisorStaffName, profile.StudentManagerID, profile.StudentManagerName, baseRow.StartTime, baseRow.EndTime, baseRow.TeachingRecordCreatedTime,
+		baseRow.RecordTime, operatorID, operatorName, operatorID, operatorID,
+	)
+	if err != nil {
+		return studentTeachingRecordEditableRow{}, err
+	}
+	insertedID, err := result.LastInsertId()
+	if err != nil || insertedID <= 0 {
+		return studentTeachingRecordEditableRow{}, errors.New("创建点名记录失败")
+	}
+	return repo.loadStudentTeachingRecordForUpdateTx(ctx, tx, instID, insertedID)
+}
+
+func (repo *Repository) ensureEditableStudentScheduleLinkTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, meta classRecordScheduleMeta, studentID int64, sourceType int) error {
+	if meta.ScheduleID <= 0 || meta.ClassID <= 0 || studentID <= 0 {
+		return errors.New("缺少有效的追加学员信息")
+	}
+	studentType, err := editableScheduleStudentTypeFromSourceType(sourceType)
+	if err != nil {
+		return err
+	}
+
+	var exists int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM inst_student
+		WHERE inst_id = ?
+		  AND id = ?
+		  AND del_flag = 0
+		LIMIT 1
+	`, instID, studentID).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("存在无效学员，请刷新后重试")
+		}
+		return err
+	}
+
+	membershipMap, err := repo.loadGroupClassStudentMembershipMapWithQueryer(ctx, tx, instID, []int64{meta.ClassID})
+	if err != nil {
+		return err
+	}
+	overrideMap, err := repo.loadTeachingScheduleStudentOverrideMap(ctx, tx, instID, []int64{meta.ScheduleID})
+	if err != nil {
+		return err
+	}
+	referenceAt := resolveGroupClassRosterReferenceAt(meta.StartAt, time.Time{})
+	classMemberSet := buildAssociatedGroupClassStudentSet(
+		membershipMap[meta.ClassID],
+		overrideMap[meta.ScheduleID],
+		referenceAt,
+	)
+	classMemberNameMap := buildAssociatedGroupClassStudentNameMap(
+		membershipMap[meta.ClassID],
+		overrideMap[meta.ScheduleID],
+		referenceAt,
+	)
+	if studentType == model.TeachingScheduleStudentTypeTrial {
+		if _, ok := classMemberSet[studentID]; ok {
+			return fmt.Errorf("%s为日程班级的关联学员，无法作为试听学员进行添加", firstNonEmptyString(strings.TrimSpace(classMemberNameMap[studentID]), "该学员"))
+		}
+	}
+
+	persistStudentType := studentType
+	if _, ok := classMemberSet[studentID]; ok {
+		persistStudentType = model.TeachingScheduleStudentTypeClassMember
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO teaching_schedule_student (
+			inst_id, teaching_schedule_id, teaching_class_id, student_id,
+			student_type, roster_status, create_id, update_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			teaching_class_id = VALUES(teaching_class_id),
+			student_type = VALUES(student_type),
+			roster_status = VALUES(roster_status),
+			update_id = VALUES(update_id),
+			update_time = CURRENT_TIMESTAMP,
+			del_flag = 0
+	`, instID, meta.ScheduleID, meta.ClassID, studentID, persistStudentType, model.TeachingScheduleStudentRosterStatusActive, operatorID, operatorID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func editableScheduleStudentTypeFromSourceType(sourceType int) (int, error) {
+	switch sourceType {
+	case 2:
+		return model.TeachingScheduleStudentTypeTemporary, nil
+	case 3, 7:
+		return model.TeachingScheduleStudentTypeMakeup, nil
+	case 4:
+		return model.TeachingScheduleStudentTypeTrial, nil
+	default:
+		return 0, errors.New("当前仅支持追加学员直接点名")
+	}
+}
+
+func (repo *Repository) loadTeachingRecordCreateBaseRowTx(ctx context.Context, tx *sql.Tx, instID, teachingRecordID int64) (teachingRecordCreateBaseRow, error) {
+	var row teachingRecordCreateBaseRow
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			IFNULL(teaching_record_id, 0),
+			IFNULL(teaching_schedule_id, 0),
+			IFNULL(timetable_source_type, 0),
+			IFNULL(timetable_source_id, 0),
+			IFNULL(class_id, 0),
+			IFNULL(class_name, ''),
+			IFNULL(one_to_one_id, 0),
+			IFNULL(one_to_one_name, ''),
+			IFNULL(lesson_id, 0),
+			IFNULL(lesson_name, ''),
+			IFNULL(subject_id, 0),
+			IFNULL(subject_name, ''),
+			IFNULL(teaching_content, ''),
+			CAST(IFNULL(teaching_content_images_json, JSON_ARRAY()) AS CHAR),
+			IFNULL(classroom_id, 0),
+			IFNULL(classroom_name, ''),
+			IFNULL(main_teacher_id, 0),
+			IFNULL(main_teacher_name, ''),
+			IFNULL(teacher_employee_type, 0),
+			CAST(IFNULL(assistant_teacher_ids_json, JSON_ARRAY()) AS CHAR),
+			CAST(IFNULL(assistant_teacher_names_json, JSON_ARRAY()) AS CHAR),
+			CAST(IFNULL(class_teacher_ids_json, JSON_ARRAY()) AS CHAR),
+			CAST(IFNULL(class_teacher_names_json, JSON_ARRAY()) AS CHAR),
+			CAST(IFNULL(roll_call_class_teacher_ids_json, JSON_ARRAY()) AS CHAR),
+			CAST(IFNULL(roll_call_class_teacher_names_json, JSON_ARRAY()) AS CHAR),
+			CAST(IFNULL(current_class_teacher_ids_json, JSON_ARRAY()) AS CHAR),
+			CAST(IFNULL(current_class_teacher_names_json, JSON_ARRAY()) AS CHAR),
+			CAST(IFNULL(one2one_teacher_ids_json, JSON_ARRAY()) AS CHAR),
+			CAST(IFNULL(one2one_teacher_names_json, JSON_ARRAY()) AS CHAR),
+			IFNULL(teacher_class_time, 0),
+			start_time,
+			end_time,
+			teaching_record_created_time,
+			record_time
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND teaching_record_id = ?
+		  AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+		FOR UPDATE
+	`, instID, teachingRecordID).Scan(
+		&row.TeachingRecordID,
+		&row.TeachingScheduleID,
+		&row.TimetableSourceType,
+		&row.TimetableSourceID,
+		&row.ClassID,
+		&row.ClassName,
+		&row.OneToOneID,
+		&row.OneToOneName,
+		&row.LessonID,
+		&row.LessonName,
+		&row.SubjectID,
+		&row.SubjectName,
+		&row.TeachingContent,
+		&row.TeachingContentImagesJSON,
+		&row.ClassroomID,
+		&row.ClassroomName,
+		&row.MainTeacherID,
+		&row.MainTeacherName,
+		&row.TeacherEmployeeType,
+		&row.AssistantTeacherIDsJSON,
+		&row.AssistantTeacherNamesJSON,
+		&row.ClassTeacherIDsJSON,
+		&row.ClassTeacherNamesJSON,
+		&row.RollCallClassTeacherIDsJSON,
+		&row.RollCallClassTeacherNamesJSON,
+		&row.CurrentClassTeacherIDsJSON,
+		&row.CurrentClassTeacherNamesJSON,
+		&row.One2OneTeacherIDsJSON,
+		&row.One2OneTeacherNamesJSON,
+		&row.TeacherClassTime,
+		&row.StartTime,
+		&row.EndTime,
+		&row.TeachingRecordCreatedTime,
+		&row.RecordTime,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return teachingRecordCreateBaseRow{}, errors.New("未找到上课记录")
+		}
+		return teachingRecordCreateBaseRow{}, err
 	}
 	return row, nil
 }
@@ -1482,6 +1889,10 @@ func (repo *Repository) mergeTeachingRecordDetailStudentList(ctx context.Context
 	if !ok || meta.ClassType != model.TeachingClassTypeNormal || meta.ClassID <= 0 {
 		return existing, nil
 	}
+	detail, _, err := repo.loadRollCallDrawerContext(ctx, instID, scheduleIDText)
+	if err != nil {
+		return nil, err
+	}
 
 	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, repo.db, instID, []effectiveGroupClassScheduleMeta{{
 		ScheduleID: meta.ScheduleID,
@@ -1516,8 +1927,12 @@ func (repo *Repository) mergeTeachingRecordDetailStudentList(ctx context.Context
 		}
 		if record, ok := recordByStudentID[student.StudentID]; ok {
 			result = append(result, record)
-		} else {
-			result = append(result, buildPendingTeachingRecordDetailStudent(student))
+		} else if isScheduleOnlyStudentType(student.ScheduleStudentType) {
+			pendingStudent, err := repo.buildPendingTeachingRecordDetailStudent(ctx, instID, detail, student)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, pendingStudent)
 		}
 		appendedStudentIDs[student.StudentID] = struct{}{}
 	}
@@ -1682,12 +2097,25 @@ func (repo *Repository) fillTeachingRecordDetailAttendanceStats(ctx context.Cont
 		case meta.StudentID > 0:
 			detail.ShouldAttendanceCount = 1
 		}
+	} else if meta.ClassType == model.TeachingClassTypeNormal && meta.ClassID > 0 {
+		rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, repo.db, instID, []effectiveGroupClassScheduleMeta{{
+			ScheduleID: meta.ScheduleID,
+			ClassID:    meta.ClassID,
+			StartAt:    meta.StartAt,
+		}})
+		if err != nil {
+			return err
+		}
+		rosterCount := len(rosterByScheduleID[scheduleID].activeIDs())
+		if rosterCount > detail.ShouldAttendanceCount {
+			detail.ShouldAttendanceCount = rosterCount
+		}
 	}
 	return nil
 }
 
-func buildPendingTeachingRecordDetailStudent(student groupClassScheduleStudent) model.TeachingRecordDetailStudent {
-	return model.TeachingRecordDetailStudent{
+func (repo *Repository) buildPendingTeachingRecordDetailStudent(ctx context.Context, instID int64, detail model.TeachingScheduleDetailVO, student groupClassScheduleStudent) (model.TeachingRecordDetailStudent, error) {
+	result := model.TeachingRecordDetailStudent{
 		StudentID:      emptyStringIfZero(student.StudentID),
 		StudentName:    firstNonEmptyString(strings.TrimSpace(student.StudentName), "该学员"),
 		StudentPhone:   strings.TrimSpace(student.Phone),
@@ -1701,6 +2129,18 @@ func buildPendingTeachingRecordDetailStudent(student groupClassScheduleStudent) 
 		ActualTuition:  0,
 		ArrearQuantity: 0,
 	}
+	account, ok, err := repo.pickRollCallDrawerStudentAccount(ctx, instID, student.StudentID, detail, student.ScheduleStudentType)
+	if err != nil {
+		return model.TeachingRecordDetailStudent{}, err
+	}
+	if ok {
+		result.TuitionAccountID = strings.TrimSpace(account.ID)
+		result.TuitionAccountName = firstNonEmptyString(strings.TrimSpace(account.ProductName), strings.TrimSpace(account.LessonName), strings.TrimSpace(detail.LessonName))
+		result.IsTuitionAccountActive = account.IsTuitionAccountActive
+		result.LeftQuantity = roundMoney(math.Max(account.Quantity+account.FreeQuantity, 0))
+		result.SkuMode = rollCallAccountChargingMode(account)
+	}
+	return result, nil
 }
 
 func buildTeachingRecordDetailTeachers(mainTeacherID int64, mainTeacherName, rawAssistantTeacherIDs, rawAssistantTeacherNames string) []model.TeachingRecordDetailTeacher {

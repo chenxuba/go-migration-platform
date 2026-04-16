@@ -2,7 +2,9 @@
 import { CloseOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { deleteStudentTeachingRecordApi, type TeachingRecordDetailResult, type TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
+import type { TeachingScheduleStudentCandidate } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
+import EditRollNameAddStuModal from './edit-roll-name-add-stu-modal.vue'
 import EditRowRollNameModal from './edit-row-roll-name-modal.vue'
 
 const props = withDefaults(defineProps<{
@@ -23,6 +25,9 @@ const searchKeyword = ref('')
 const editRowRollNameModals = ref(false)
 const selectedStudent = ref<TeachingRecordDetailStudent | null>(null)
 const removingStudentTeachingRecordId = ref('')
+const addStudentModalOpen = ref(false)
+const addStudentModalTitle = ref('添加补课学员')
+const addStudentType = ref(4)
 
 const columns = ref<any[]>([
   {
@@ -80,6 +85,10 @@ const columns = ref<any[]>([
 
 const totalWidth = computed(() => columns.value.reduce((acc, column) => acc + Number(column.width || 0), 0))
 const rawStudents = computed(() => Array.isArray(props.detail?.studentList) ? props.detail?.studentList || [] : [])
+const fallbackChargingMode = computed(() => {
+  const matched = rawStudents.value.find(item => Number(item?.skuMode || 0) > 0)
+  return Number(matched?.skuMode || 0)
+})
 const recordedStudentCount = computed(() => rawStudents.value.filter(item => hasTeachingRecord(item)).length)
 const filteredStudents = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
@@ -91,6 +100,7 @@ const filteredStudents = computed(() => {
     return name.includes(keyword) || phone.includes(keyword)
   })
 })
+const canAddCurrentStudents = computed(() => Number(props.detail?.sourceType || 0) === 1 && String(props.detail?.timetableSourceId || '').trim() !== '')
 
 function resolveRowKey(record: Partial<TeachingRecordDetailStudent>) {
   const teachingRecordId = String(record.studentTeachingRecordId || '').trim()
@@ -199,11 +209,70 @@ function rollNameCountText(record: Partial<TeachingRecordDetailStudent>) {
 }
 
 function handleEdit(record: Record<string, any>) {
-  if (!hasTeachingRecord(record as TeachingRecordDetailStudent)) {
-    messageService.info('当前学员暂无点名记录，暂不支持在此处编辑')
-    return
-  }
   selectedStudent.value = record as TeachingRecordDetailStudent
+  editRowRollNameModals.value = true
+}
+
+function handleAddStudentMenuClick({ key }: { key: string | number }) {
+  if (key === 'temporary') {
+    addStudentModalTitle.value = '添加临时学员'
+    addStudentType.value = 2
+  }
+  else if (key === 'trial') {
+    addStudentModalTitle.value = '添加试听学员'
+    addStudentType.value = 3
+  }
+  else {
+    addStudentModalTitle.value = '添加补课学员'
+    addStudentType.value = 4
+  }
+  addStudentModalOpen.value = true
+}
+
+function scheduleStudentTypeToSourceType(studentType?: number) {
+  const type = Number(studentType || 0)
+  if (type === 2)
+    return 2
+  if (type === 3)
+    return 4
+  if (type === 4)
+    return 3
+  return 5
+}
+
+function buildPendingStudent(candidate: TeachingScheduleStudentCandidate): TeachingRecordDetailStudent {
+  return {
+    studentTeachingRecordId: '',
+    studentId: String(candidate.studentId || '').trim(),
+    studentName: String(candidate.studentName || '').trim(),
+    studentPhone: String(candidate.phone || '').trim(),
+    avatar: String(candidate.avatarUrl || '').trim(),
+    status: 0,
+    sourceType: scheduleStudentTypeToSourceType(addStudentType.value),
+    quantity: 0,
+    actualQuantity: 0,
+    remark: '',
+    externalRemark: '',
+    tuitionAccountId: '',
+    tuitionAccountName: '',
+    isTuitionAccountActive: false,
+    leftQuantity: 0,
+    skuMode: 0,
+    amount: 0,
+    actualDeduct: 0,
+    actualTuition: 0,
+    arrearQuantity: 0,
+    recordTime: '',
+    updatedTime: '',
+    updatedStaffName: '',
+  }
+}
+
+function handleAddStudentSuccess(payload?: { candidates?: TeachingScheduleStudentCandidate[] }) {
+  const candidates = Array.isArray(payload?.candidates) ? payload?.candidates : []
+  if (!candidates.length)
+    return
+  selectedStudent.value = buildPendingStudent(candidates[0])
   editRowRollNameModals.value = true
 }
 
@@ -266,6 +335,7 @@ watch(openDrawer, (value) => {
     searchKeyword.value = ''
     selectedStudent.value = null
     editRowRollNameModals.value = false
+    addStudentModalOpen.value = false
   }
 })
 
@@ -280,6 +350,7 @@ watch(
 function handleRowSaved() {
   emit('updated')
 }
+
 </script>
 
 <template>
@@ -304,8 +375,8 @@ function handleRowSaved() {
           </a-button>
         </div>
       </template>
-      <div class="search px-24px py-12px bg-white">
-        <a-input v-model:value="searchKeyword" placeholder="搜索学员" class="h-48px rounded-12px">
+      <div class="search px-24px py-12px bg-white flex items-center gap-12px">
+        <a-input v-model:value="searchKeyword" placeholder="搜索学员" class="h-48px rounded-12px flex-1">
           <template #prefix>
             <img
               src="https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/12181/static/magnifying.2bcc08ab.svg"
@@ -314,6 +385,24 @@ function handleRowSaved() {
             >
           </template>
         </a-input>
+        <a-dropdown v-if="canAddCurrentStudents" placement="bottomRight" :trigger="['hover']">
+          <a-button class="h-48px px-18px">
+            <span>添加学员</span>
+          </a-button>
+          <template #overlay>
+            <a-menu @click="handleAddStudentMenuClick">
+              <a-menu-item key="makeup">
+                补课学员
+              </a-menu-item>
+              <a-menu-item key="temporary">
+                临时学员
+              </a-menu-item>
+              <a-menu-item key="trial">
+                试听学员
+              </a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
       </div>
       <div class="contenter bg-white">
           <a-table
@@ -393,8 +482,18 @@ function handleRowSaved() {
     <EditRowRollNameModal
       v-model:open="editRowRollNameModals"
       :student="selectedStudent"
+      :teaching-record-id="String(detail?.teachingRecordId || '')"
+      :lesson-id="String(detail?.lessonId || '')"
+      :fallback-charging-mode="fallbackChargingMode"
       :default-quantity="Number(detail?.defaultStudentClassTime || 0)"
       @saved="handleRowSaved"
+    />
+    <EditRollNameAddStuModal
+      v-model:open="addStudentModalOpen"
+      :title="addStudentModalTitle"
+      :schedule-id="String(detail?.timetableSourceId || '')"
+      :student-type="addStudentType"
+      @success="handleAddStudentSuccess"
     />
   </div>
 </template>

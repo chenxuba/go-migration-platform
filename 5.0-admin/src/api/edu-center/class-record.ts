@@ -145,7 +145,10 @@ export interface TeachingRecordDetailResult {
 }
 
 export interface UpdateStudentTeachingRecordParams {
-  studentTeachingRecordId: string
+  studentTeachingRecordId?: string
+  teachingRecordId?: string
+  studentId?: string
+  sourceType?: number
   status: number
   quantity: number
   remark?: string

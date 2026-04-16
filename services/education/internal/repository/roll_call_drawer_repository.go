@@ -363,6 +363,19 @@ func (repo *Repository) PageGroupClassUnscheduledRollCallStudentCandidates(ctx c
 	}
 
 	excludeIDs := parseStringIDs(dto.QueryModel.CurrentStudentIDs)
+	if requiresLessonScopedTeachingScheduleCandidates(studentType) {
+		return repo.pageTeachingScheduleStudentCandidatesByLessonScope(
+			ctx,
+			instID,
+			strings.TrimSpace(classDetail.LessonID),
+			studentType,
+			strings.TrimSpace(dto.QueryModel.Keyword),
+			excludeIDs,
+			pageIndex,
+			pageSize,
+		)
+	}
+
 	filters := []string{
 		"s.inst_id = ?",
 		"s.del_flag = 0",

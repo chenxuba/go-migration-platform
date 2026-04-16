@@ -18,18 +18,20 @@ const props = withDefaults(defineProps<{
   title?: string
   scheduleId?: string
   studentType?: number
+  deferScheduleCommit?: boolean
   unscheduledQuery?: UnscheduledRollCallQuery | null
 }>(), {
   open: false,
   title: '添加学员',
   scheduleId: '',
   studentType: 4,
+  deferScheduleCommit: false,
   unscheduledQuery: null,
 })
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
-  (e: 'success', payload?: { students?: RollCallTeachingRecordStudent[] }): void
+  (e: 'success', payload?: { students?: RollCallTeachingRecordStudent[], studentIds?: string[], candidates?: TeachingScheduleStudentCandidate[] }): void
 }>()
 
 const openModal = computed({
@@ -267,6 +269,18 @@ async function handleSubmit() {
   try {
     const selectedStudentIds = selectedRows.value.map(item => String(item.studentId || '')).filter(Boolean)
     if (isScheduleMode.value) {
+      if (props.deferScheduleCommit) {
+        if (selectedRows.value.length > 1) {
+          messageService.warning('编辑点名场景下每次仅支持添加1位学员')
+          return
+        }
+        emit('success', {
+          studentIds: selectedStudentIds,
+          candidates: selectedRows.value,
+        })
+        closeFun()
+        return
+      }
       const res = await addTeachingScheduleStudentsCurrentApi({
         scheduleId: normalizedScheduleId.value,
         studentType: Number(props.studentType || 0),
@@ -277,7 +291,7 @@ async function handleSubmit() {
         return
       }
       messageService.success('添加学员成功')
-      emit('success')
+      emit('success', { studentIds: selectedStudentIds })
       closeFun()
       return
     }
@@ -296,6 +310,7 @@ async function handleSubmit() {
     messageService.success('已加入本次待点名学员')
     emit('success', {
       students: Array.isArray(res.result?.students) ? res.result.students : [],
+      studentIds: selectedStudentIds,
     })
     closeFun()
   }

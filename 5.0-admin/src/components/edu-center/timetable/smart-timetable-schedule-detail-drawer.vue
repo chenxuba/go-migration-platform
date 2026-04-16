@@ -281,13 +281,9 @@ function hasBatchMetaSchedule(meta?: TeachingScheduleBatchMeta | null) {
 }
 
 function handleAddStudentMenuClick({ key }) {
-  if (!canManageCurrentStudents.value) {
-    messageService.warning('已点名日程不可添加学员')
-    return
-  }
   if (key === 'makeup') {
-    messageService.info('补课学员功能暂未开发')
-    return
+    addStudentModalTitle.value = '添加补课学员'
+    addStudentType.value = 4
   }
   else if (key === 'temporary') {
     addStudentModalTitle.value = '添加临时学员'
@@ -693,7 +689,7 @@ watch(
         >
           <a-tab-pane key="students" tab="学员名单">
             <a-card :title="studentCardTitle" :bordered="false">
-              <template v-if="!isOneToOne && canManageCurrentStudents" #extra>
+              <template v-if="!isOneToOne" #extra>
                 <a-dropdown
                   placement="bottomRight"
                   :trigger="['hover']"

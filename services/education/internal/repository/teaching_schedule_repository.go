@@ -2615,6 +2615,7 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 		ID              int64
 		ClassType       int
 		TeachingClassID int64
+		LessonID        string
 		StartAt         time.Time
 		CallStatus      int
 	}
@@ -2624,6 +2625,7 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 			ts.id,
 			IFNULL(ts.class_type, 0),
 			IFNULL(ts.teaching_class_id, 0),
+			CAST(IFNULL(ts.lesson_id, 0) AS CHAR),
 			ts.lesson_start_at,
 			1
 		FROM teaching_schedule ts
@@ -2636,6 +2638,7 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 		&row.ID,
 		&row.ClassType,
 		&row.TeachingClassID,
+		&row.LessonID,
 		&row.StartAt,
 		&row.CallStatus,
 	)
@@ -2658,9 +2661,6 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 		return model.TeachingScheduleStudentCandidatePagedResult{}, err
 	}
 	row.CallStatus = normalizeTeachingScheduleCallStatus(statusByID[row.ID])
-	if isTeachingScheduleFullyRolled(row.CallStatus) {
-		return model.TeachingScheduleStudentCandidatePagedResult{}, errors.New("已点名日程不可添加本节学员")
-	}
 
 	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, repo.db, instID, []effectiveGroupClassScheduleMeta{{
 		ScheduleID: row.ID,
@@ -2694,6 +2694,19 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 			seenExclude[student.StudentID] = struct{}{}
 			excludeIDs = append(excludeIDs, student.StudentID)
 		}
+	}
+
+	if requiresLessonScopedTeachingScheduleCandidates(studentType) {
+		return repo.pageTeachingScheduleStudentCandidatesByLessonScope(
+			ctx,
+			instID,
+			strings.TrimSpace(row.LessonID),
+			studentType,
+			strings.TrimSpace(dto.QueryModel.Keyword),
+			excludeIDs,
+			pageIndex,
+			pageSize,
+		)
 	}
 
 	filters := []string{
@@ -2746,6 +2759,131 @@ func (repo *Repository) PageTeachingScheduleStudentCandidates(ctx context.Contex
 		List:  make([]model.TeachingScheduleStudentCandidateVO, 0),
 		Total: total,
 	}
+	for rows.Next() {
+		var (
+			studentID         int64
+			studentName       string
+			avatarURL         string
+			phone             string
+			phoneRelationship int
+			studentStatus     int
+		)
+		if err := rows.Scan(&studentID, &studentName, &avatarURL, &phone, &phoneRelationship, &studentStatus); err != nil {
+			return model.TeachingScheduleStudentCandidatePagedResult{}, err
+		}
+		phone = strings.TrimSpace(phone)
+		result.List = append(result.List, model.TeachingScheduleStudentCandidateVO{
+			StudentID:             strconv.FormatInt(studentID, 10),
+			StudentName:           firstNonEmptyString(strings.TrimSpace(studentName), "-"),
+			AvatarURL:             strings.TrimSpace(avatarURL),
+			Phone:                 "",
+			MaskedPhone:           maskPhoneLocal(phone),
+			PhoneRelationship:     phoneRelationship,
+			PhoneRelationshipText: studentPhoneRelationshipText(phoneRelationship),
+			StudentStatus:         studentStatus,
+			StudentStatusText:     teachingScheduleCandidateStudentStatusText(studentStatus),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	return result, nil
+}
+
+func requiresLessonScopedTeachingScheduleCandidates(studentType int) bool {
+	switch normalizeTeachingScheduleStudentType(studentType) {
+	case model.TeachingScheduleStudentTypeTemporary, model.TeachingScheduleStudentTypeMakeup:
+		return true
+	default:
+		return false
+	}
+}
+
+func (repo *Repository) pageTeachingScheduleStudentCandidatesByLessonScope(
+	ctx context.Context,
+	instID int64,
+	lessonID string,
+	studentType int,
+	keyword string,
+	excludeIDs []int64,
+	pageIndex int,
+	pageSize int,
+) (model.TeachingScheduleStudentCandidatePagedResult, error) {
+	result := model.TeachingScheduleStudentCandidatePagedResult{
+		List: make([]model.TeachingScheduleStudentCandidateVO, 0),
+	}
+	lessonID = strings.TrimSpace(lessonID)
+	if lessonID == "" {
+		return result, nil
+	}
+
+	courseScope, _, err := repo.ResolveGroupClassLessonCourseScope(ctx, instID, lessonID)
+	if err != nil {
+		return result, err
+	}
+	courseScope = uniquePositiveInt64s(courseScope)
+	if len(courseScope) == 0 {
+		return result, nil
+	}
+
+	filters := []string{
+		"ta.inst_id = ?",
+		"ta.del_flag = 0",
+		"IFNULL(ta.status, 0) = 1",
+		"ic.teach_method = 1",
+		"ta.course_id IN (" + sqlPlaceholders(len(courseScope)) + ")",
+	}
+	args := make([]any, 0, 4+len(courseScope))
+	args = append(args, instID)
+	args = append(args, int64SliceToAny(courseScope)...)
+	if candidateStatuses := teachingScheduleCandidateAllowedStudentStatuses(studentType); len(candidateStatuses) > 0 {
+		filters = append(filters, "IFNULL(s.student_status, 0) IN ("+sqlPlaceholders(len(candidateStatuses))+")")
+		args = append(args, intSliceToAny(candidateStatuses)...)
+	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		filters = append(filters, "(IFNULL(s.stu_name, '') LIKE ? OR IFNULL(s.mobile, '') LIKE ?)")
+		args = append(args, like, like)
+	}
+	if len(excludeIDs) > 0 {
+		filters = append(filters, "ta.student_id NOT IN ("+sqlPlaceholders(len(excludeIDs))+")")
+		args = append(args, int64SliceToAny(uniquePositiveInt64s(excludeIDs))...)
+	}
+
+	whereClause := strings.Join(filters, " AND ")
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT ta.student_id)
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.inst_id = ta.inst_id AND ic.del_flag = 0
+		INNER JOIN inst_student s ON s.id = ta.student_id AND s.inst_id = ta.inst_id AND s.del_flag = 0
+		WHERE `+whereClause, args...).Scan(&result.Total); err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	if result.Total == 0 {
+		return result, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			ta.student_id,
+			MAX(IFNULL(s.stu_name, '')),
+			MAX(IFNULL(s.avatar_url, '')),
+			MAX(IFNULL(s.mobile, '')),
+			MAX(IFNULL(s.phone_relationship, 0)),
+			MAX(IFNULL(s.student_status, 0))
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.inst_id = ta.inst_id AND ic.del_flag = 0
+		INNER JOIN inst_student s ON s.id = ta.student_id AND s.inst_id = ta.inst_id AND s.del_flag = 0
+		WHERE `+whereClause+`
+		GROUP BY ta.student_id
+		ORDER BY MAX(IFNULL(ta.create_time, NOW())) DESC, ta.student_id DESC
+		LIMIT ? OFFSET ?
+	`, append(args, pageSize, (pageIndex-1)*pageSize)...)
+	if err != nil {
+		return model.TeachingScheduleStudentCandidatePagedResult{}, err
+	}
+	defer rows.Close()
+
 	for rows.Next() {
 		var (
 			studentID         int64
@@ -2953,9 +3091,6 @@ func (repo *Repository) AddTeachingScheduleStudentsCurrent(ctx context.Context, 
 		return err
 	}
 	row.CallStatus = normalizeTeachingScheduleCallStatus(statusByID[row.ID])
-	if isTeachingScheduleFullyRolled(row.CallStatus) {
-		return errors.New("已点名日程不可添加本节学员")
-	}
 
 	rosterByScheduleID, err := repo.loadEffectiveGroupClassScheduleRosterMap(ctx, tx, instID, []effectiveGroupClassScheduleMeta{{
 		ScheduleID: row.ID,

@@ -281,6 +281,16 @@ const attendanceStats = computed(() => {
     unrecorded: effectiveRows.filter(student => student.unrecorded).length,
   }
 })
+const pendingStatusStudents = computed(() =>
+  data.value.filter(record =>
+    !shouldSkipRollCallSubmitRecord(record) && !hasSelectedRollCallStatus(record),
+  ),
+)
+const canConfirmRollCall = computed(() =>
+  !submittingRollCall.value
+  && data.value.length > 0
+  && pendingStatusStudents.value.length === 0,
+)
 const filteredData = computed(() => {
   const keyword = String(userName.value || '').trim()
   if (!keyword)
@@ -973,6 +983,12 @@ async function handleConfirmRollCall() {
     messageService.warning('当前没有可提交的点名学员')
     return
   }
+  if (pendingStatusStudents.value.length > 0) {
+    const firstStudent = pendingStatusStudents.value[0]
+    const name = String(firstStudent?.studentAccount || '').trim() || '当前学员'
+    messageService.warning(`${name}尚未选择点名状态`)
+    return
+  }
   const payload = buildRollCallConfirmPayload()
   if (!payload.startTime || !payload.endTime) {
     messageService.warning('缺少上课时间，请刷新后重试')
@@ -1591,7 +1607,13 @@ watch(
               }}人，未记录{{
                 attendanceStats.unrecorded }}人</span>
             </div>
-            <a-button type="primary" class="h-48px text-18px w-140px font500" :loading="submittingRollCall" @click="handleConfirmRollCall">
+            <a-button
+              type="primary"
+              class="h-48px text-18px w-140px font500"
+              :loading="submittingRollCall"
+              :disabled="!canConfirmRollCall"
+              @click="handleConfirmRollCall"
+            >
               确认点名
             </a-button>
           </a-space>
