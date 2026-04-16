@@ -220,7 +220,7 @@ function closeFun() {
       </div>
       <div class="contenter scrollbar" style="margin: 0 24px 24px 24px;">
         <a-form ref="formRef" :model="formState" :label-col="{ span: 4 }" :wrapper-col="{ span: 18 }">
-          <a-form-item label="编辑状态" name="status" :rules="[{ required: true, message: '请选择编辑状态' }]" class="mb-40px">
+          <a-form-item label="编辑状态" name="status" :rules="[{ required: true, message: '请选择编辑状态' }]">
             <a-radio-group v-model:value="formState.status" class="custom-radio">
               <a-radio :value="1">
                 到课
