@@ -162,6 +162,9 @@ const modalOpen = computed({
 
 const plannerModalZIndex = 1400
 const plannerPreviewModalZIndex = 1500
+const plannerTooltipOverlayStyle = {
+  zIndex: plannerPreviewModalZIndex + 20,
+}
 
 const isBatchPlanEditMode = computed(() => props.mode === 'editBatch')
 const isUnscheduledRollCallMode = computed(() => props.scenario === 'unscheduledRollCall')
@@ -273,6 +276,10 @@ function slotsForGroupKey(key: PeriodGroupKey) {
   const idx = periodGroupIndexForKey(key)
   const current = groups[idx] || groups[0]
   return [...current.slots].filter(item => item.enabled !== false).sort((a, b) => a.index - b.index)
+}
+
+function getTooltipPopupContainer() {
+  return document.body
 }
 
 function periodGroupIndexForKey(key: PeriodGroupKey) {
@@ -1055,6 +1062,8 @@ const blockedReason = computed(() => {
     return '请先选择上课教师。'
   if (schedulingMode.value === 'free' && freeSelectedDatesSorted.value.length === 0)
     return '请至少选择一个上课日期。'
+  if (isUnscheduledRollCallMode.value && scheduleStartDate.value.isAfter(dayjs(), 'day'))
+    return '未排课点名不能选择未来日期。'
   const planned = Math.floor(Number(plannedClassCount.value) || 0)
   if (schedulingMode.value !== 'free' && planned < 1)
     return '请填写计划上课次数（至少为 1）。'
@@ -1200,6 +1209,12 @@ const datePlanEndHintText = computed(() =>
 const datePlanFooterHintText = computed(() =>
   isUnscheduledRollCallMode.value ? '未排课点名仅记录本次点名时间，开始日期可以调整，但不会生成班课日程。' : (isSingleScheduleEditMode.value ? '当前为单节班课编辑，开始日期可以调整，计划次数固定为 1。' : '可自由填写节数；结束日期由开始日期、重复规则与本次数推算。'),
 )
+
+function disableFutureDateForUnscheduledRollCall(current: Dayjs) {
+  if (!isUnscheduledRollCallMode.value)
+    return false
+  return current.endOf('day').isAfter(dayjs().endOf('day'))
+}
 
 const footerTipText = computed(() => {
   if (selectedGroupClass.value?.remark)
@@ -2289,7 +2304,12 @@ watch(
                   class="planner-summary-list__row"
                 >
                   <span>{{ item.label }}</span>
-                  <a-tooltip v-if="overviewTooltipLabels.has(item.label)" :title="item.value">
+                  <a-tooltip
+                    v-if="overviewTooltipLabels.has(item.label)"
+                    :title="item.value"
+                    :get-popup-container="getTooltipPopupContainer"
+                    :overlay-style="plannerTooltipOverlayStyle"
+                  >
                     <span class="planner-summary-list__value-wrap">
                       <strong class="planner-summary-list__value">{{ item.value }}</strong>
                     </span>
@@ -2368,6 +2388,7 @@ watch(
                         size="large"
                         class="planner-control"
                         :allow-clear="false"
+                        :disabled-date="disableFutureDateForUnscheduledRollCall"
                         :get-popup-container="scheduleSlotSelectGetPopupContainer"
                         popup-class-name="planner-date-picker-dropdown"
                       />
@@ -2509,7 +2530,11 @@ watch(
                   <div v-if="!isSingleSessionMode && !isUnscheduledRollCallMode" class="planner-field planner-field--full">
                     <span class="planner-label planner-label--required">
                       节假日
-                      <a-tooltip title="当前示例会按学校节假日配置过滤 2026-05-01 至 2026-05-03。">
+                      <a-tooltip
+                        title="当前示例会按学校节假日配置过滤 2026-05-01 至 2026-05-03。"
+                        :get-popup-container="getTooltipPopupContainer"
+                        :overlay-style="plannerTooltipOverlayStyle"
+                      >
                         <QuestionCircleOutlined class="planner-label__tip" />
                       </a-tooltip>
                     </span>
@@ -2594,7 +2619,11 @@ watch(
                       <span class="planner-label planner-label--required planner-label--with-inline-tip">
                         <ClockCircleOutlined />
                         {{ schoolSlotFieldLabelText }}
-                        <a-tooltip :title="schoolSlotTooltipText">
+                        <a-tooltip
+                          :title="schoolSlotTooltipText"
+                          :get-popup-container="getTooltipPopupContainer"
+                          :overlay-style="plannerTooltipOverlayStyle"
+                        >
                           <QuestionCircleOutlined class="planner-label__tip" />
                         </a-tooltip>
                       </span>
@@ -2614,7 +2643,11 @@ watch(
                             {{ opt.label }}
                           </a-radio-button>
                         </a-radio-group>
-                        <a-tooltip title="节次来自机构「时段设置」当前组。选择上课教师后，若该老师仅绑定一个时段组，将自动切换并锁定组别；绑定多个组时可自由切换。">
+                        <a-tooltip
+                          title="节次来自机构「时段设置」当前组。选择上课教师后，若该老师仅绑定一个时段组，将自动切换并锁定组别；绑定多个组时可自由切换。"
+                          :get-popup-container="getTooltipPopupContainer"
+                          :overlay-style="plannerTooltipOverlayStyle"
+                        >
                           <QuestionCircleOutlined class="planner-label__tip planner-period-group-wrap__tip" />
                         </a-tooltip>
                       </span>

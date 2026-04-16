@@ -94,6 +94,7 @@ const batchRollCallSelecting = ref(false)
 const batchRollCallSubmitting = ref(false)
 const batchRollCallResultOpen = ref(false)
 const openDrawer = ref(false)
+const createUnscheduledRollCallOpen = ref(false)
 const currentRollCallScheduleId = ref('')
 const currentRollCallLessonDay = ref('')
 const allFilterRef = ref<AllFilterExpose | null>(null)
@@ -508,6 +509,10 @@ function handleRollCall(record?: Partial<TeachingScheduleItem> | Record<string, 
   currentRollCallScheduleId.value = String(record?.id || '').trim()
   currentRollCallLessonDay.value = String(record?.lessonDate || '').trim()
   openDrawer.value = true
+}
+
+function handleOpenCreateUnscheduledRollCall() {
+  createUnscheduledRollCallOpen.value = true
 }
 
 async function refreshAfterRollCall() {
@@ -1196,7 +1201,7 @@ onMounted(async () => {
           <a-button class="mr-3" @click="handleOpenBatchRollCall">
             批量点名
           </a-button>
-          <a-button class="mr-3" type="primary">
+          <a-button class="mr-3" type="primary" @click="handleOpenCreateUnscheduledRollCall">
             创建未排课点名
           </a-button>
           <customize-code
@@ -1257,6 +1262,8 @@ onMounted(async () => {
       @updated="refreshAfterRollCall"
       @confirmed="refreshAfterRollCall"
     />
+
+    <create-unscheduled-roll-call-modal v-model:open="createUnscheduledRollCallOpen" />
 
     <a-modal
       v-model:open="batchRollCallSelecting"
