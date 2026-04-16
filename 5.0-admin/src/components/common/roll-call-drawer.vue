@@ -173,6 +173,17 @@ function isTemporarilySkippedRecord(record) {
 function isStudentRollCallLocked(record) {
   return Boolean(record?.locked || record?.autoRollCall || record?.hasTeachingRecord || isTemporarilySkippedRecord(record))
 }
+function syncStudentQuantityByStatus(record, status) {
+  if (!record)
+    return
+  if (status === 'leave' || status === 'unrecorded') {
+    record.attendanceCount = 0
+    return
+  }
+  if (status === 'attended' && Number(record.attendanceCount || 0) <= 0) {
+    record.attendanceCount = Number(classTimetableDetail.value?.defaultStudentClassTime || 1)
+  }
+}
 function setAllStudentStatus(status) {
   data.value.forEach((item) => {
     if (isStudentRollCallLocked(item))
@@ -185,6 +196,7 @@ function setAllStudentStatus(status) {
     // 设置选中的状态
     if (status) {
       item[status] = true
+      syncStudentQuantityByStatus(item, status)
     }
   })
 }
@@ -237,6 +249,7 @@ function handleStudentStatusChange(record, status) {
 
     // 设置新状态
     record[status] = true
+    syncStudentQuantityByStatus(record, status)
   }
 
   // 检查表头状态，只有全部学生选中同一状态时才改变表头状态
@@ -1108,6 +1121,7 @@ function handleRemoveStudent(record) {
     Modal.confirm({
       title: '设为暂不点名',
       content: `设为暂不点名后，“${name}”本次不会提交点名，且不会移出日程。确认继续吗？`,
+      centered: true,
       okText: '确认',
       cancelText: '取消',
       onOk() {
@@ -1124,6 +1138,7 @@ function handleRemoveStudent(record) {
   Modal.confirm({
     title: '设为暂不点名',
     content: `设为暂不点名后，“${name}”本次不会提交点名，且不会移出本节日程。确认继续吗？`,
+    centered: true,
     okText: '确认',
     cancelText: '取消',
     onOk() {
