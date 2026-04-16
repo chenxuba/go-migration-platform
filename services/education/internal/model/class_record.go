@@ -18,6 +18,10 @@ type UpdateStudentTeachingRecordDTO struct {
 	ExternalRemark          string  `json:"externalRemark"`
 }
 
+type DeleteStudentTeachingRecordDTO struct {
+	StudentTeachingRecordID string `json:"studentTeachingRecordId"`
+}
+
 type DeleteTeachingRecordDTO struct {
 	TeachingRecordID string `json:"teachingRecordId"`
 }

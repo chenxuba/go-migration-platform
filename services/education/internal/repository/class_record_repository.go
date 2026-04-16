@@ -866,10 +866,6 @@ func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int6
 	if err := rows.Err(); err != nil {
 		return model.TeachingRecordDetailResult{}, err
 	}
-	result.StudentList, err = repo.mergeTeachingRecordDetailStudentList(ctx, instID, result.TimetableSourceID, result.StudentList)
-	if err != nil {
-		return model.TeachingRecordDetailResult{}, err
-	}
 	if err := repo.fillTeachingRecordDetailAttendanceStats(ctx, instID, &result); err != nil {
 		return model.TeachingRecordDetailResult{}, err
 	}
@@ -1058,6 +1054,66 @@ func (repo *Repository) UpdateStudentTeachingRecord(ctx context.Context, instID,
 		  AND id = ?
 		  AND del_flag = 0
 	`, status, quantity, quantity, actualDeduct, actualTuition, arrearQuantity, strings.TrimSpace(dto.Remark), strings.TrimSpace(dto.ExternalRemark), tuitionAccountName, operatorID, operatorName, operatorID, instID, studentTeachingRecordID); err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (repo *Repository) DeleteStudentTeachingRecord(ctx context.Context, instID, operatorID int64, dto model.DeleteStudentTeachingRecordDTO) (bool, error) {
+	studentTeachingRecordID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentTeachingRecordID), 10, 64)
+	if err != nil || studentTeachingRecordID <= 0 {
+		return false, errors.New("缺少有效的点名记录")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	row, err := repo.loadStudentTeachingRecordForUpdateTx(ctx, tx, instID, studentTeachingRecordID)
+	if err != nil {
+		return false, err
+	}
+
+	if row.TuitionAccountID > 0 && row.ActualDeduct > 0 {
+		accountMap, err := repo.loadRollCallConfirmAccountMapTx(ctx, tx, instID, []int64{row.TuitionAccountID})
+		if err != nil {
+			return false, err
+		}
+		account, ok := accountMap[strconv.FormatInt(row.TuitionAccountID, 10)]
+		if !ok {
+			return false, errors.New("原扣费课程账户不存在，暂不可移出本节")
+		}
+		if err := repo.revertTeachingRecordConsumeTx(ctx, tx, instID, operatorID, row.TeachingRecordID, teachingRecordDeleteStudentRow{
+			StudentTeachingRecordID: row.StudentTeachingRecordID,
+			TeachingScheduleID:      row.TeachingScheduleID,
+			StudentID:               row.StudentID,
+			TuitionAccountID:        row.TuitionAccountID,
+			ActualDeduct:            row.ActualDeduct,
+			ActualTuition:           row.ActualTuition,
+		}, account); err != nil {
+			return false, err
+		}
+	}
+
+	operatorName := firstNonEmptyString(repo.GetStaffNameByID(ctx, &operatorID), "系统")
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE student_teaching_record
+		SET del_flag = 1,
+		    updated_staff_id = ?,
+		    updated_staff_name = ?,
+		    updated_time = NOW(),
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE inst_id = ?
+		  AND id = ?
+		  AND del_flag = 0
+	`, operatorID, operatorName, operatorID, instID, studentTeachingRecordID); err != nil {
 		return false, err
 	}
 

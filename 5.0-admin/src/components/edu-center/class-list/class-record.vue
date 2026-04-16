@@ -221,10 +221,17 @@ async function handleEditRollNameUpdated() {
   if (teachingRecordId) {
     try {
       const res = await getTeachingRecordDetailApi({ teachingRecordId })
-      if (res.code === 200 && res.result)
+      if (res.code === 200 && res.result && String(res.result.teachingRecordId || '').trim()) {
         editRollNameDetail.value = res.result
+      }
+      else {
+        editRollNameDetail.value = null
+        editRollNameOpen.value = false
+      }
     }
     catch {
+      editRollNameDetail.value = null
+      editRollNameOpen.value = false
     }
   }
   await loadList()

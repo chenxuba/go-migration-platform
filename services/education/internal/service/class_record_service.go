@@ -42,6 +42,18 @@ func (svc *Service) UpdateStudentTeachingRecord(userID int64, dto model.UpdateSt
 	return svc.repo.UpdateStudentTeachingRecord(context.Background(), instID, operatorID, dto)
 }
 
+func (svc *Service) DeleteStudentTeachingRecord(userID int64, dto model.DeleteStudentTeachingRecordDTO) (bool, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return false, err
+	}
+	operatorID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		return false, err
+	}
+	return svc.repo.DeleteStudentTeachingRecord(context.Background(), instID, operatorID, dto)
+}
+
 func (svc *Service) DeleteTeachingRecord(userID int64, dto model.DeleteTeachingRecordDTO) (bool, error) {
 	instID, err := svc.rollCallInstID(userID)
 	if err != nil {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CloseOutlined, DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import type { TeachingRecordDetailResult, TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
+import { Modal } from 'ant-design-vue'
+import { deleteStudentTeachingRecordApi, type TeachingRecordDetailResult, type TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
 import messageService from '@/utils/messageService'
 import EditRollNameAddStuModal from './edit-roll-name-add-stu-modal.vue'
 import EditRowRollNameModal from './edit-row-roll-name-modal.vue'
@@ -24,6 +25,7 @@ const editRowRollNameModals = ref(false)
 const selectedStudent = ref<TeachingRecordDetailStudent | null>(null)
 const editRollNameAddStuModals = ref(false)
 const addStudentModalTitle = ref('')
+const removingStudentTeachingRecordId = ref('')
 
 const columns = ref<any[]>([
   {
@@ -81,6 +83,7 @@ const columns = ref<any[]>([
 
 const totalWidth = computed(() => columns.value.reduce((acc, column) => acc + Number(column.width || 0), 0))
 const rawStudents = computed(() => Array.isArray(props.detail?.studentList) ? props.detail?.studentList || [] : [])
+const recordedStudentCount = computed(() => rawStudents.value.filter(item => hasTeachingRecord(item)).length)
 const filteredStudents = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
   if (!keyword)
@@ -226,20 +229,56 @@ function handleAddStudent(info: { key: string | number }) {
 }
 
 function getRemoveDisabledReason(record: Partial<TeachingRecordDetailStudent>) {
-  if (hasTeachingRecord(record))
-    return '该学员已点名，不可移出本节'
+  if (!hasTeachingRecord(record))
+    return '当前学员暂无点名记录，无需移出点名'
   return ''
 }
 
 function handleRemoveStudent(record: Record<string, any>) {
   const student = record as TeachingRecordDetailStudent
   const name = String(student?.studentName || '').trim() || '当前学员'
+  const studentTeachingRecordId = String(student?.studentTeachingRecordId || '').trim()
   const disabledReason = getRemoveDisabledReason(student)
   if (disabledReason) {
     messageService.warning(disabledReason)
     return
   }
-  messageService.info(`“${name}”的移出本节功能暂未接入，当前先保留静态入口`)
+  if (!studentTeachingRecordId) {
+    messageService.warning('当前学员缺少点名记录标识，请刷新后重试')
+    return
+  }
+  let removing = false
+  Modal.confirm({
+    title: '移出点名记录',
+    content: `移出后仅删除“${name}”本节的点名记录，并按实际课消退还。确认继续吗？`,
+    okText: '确认移出',
+    cancelText: '取消',
+    async onOk() {
+      if (removing || removingStudentTeachingRecordId.value === studentTeachingRecordId)
+        return
+      removing = true
+      removingStudentTeachingRecordId.value = studentTeachingRecordId
+      try {
+        messageService.clear()
+        const res = await deleteStudentTeachingRecordApi({ studentTeachingRecordId })
+        if (res.code !== 200 || res.result !== true)
+          throw new Error(res.message || '移出点名记录失败')
+        messageService.success(`已移出${name}的点名记录`)
+        if (recordedStudentCount.value <= 1)
+          openDrawer.value = false
+        emit('updated')
+      }
+      catch (error: any) {
+        messageService.error(error?.response?.data?.message || error?.message || '移出点名记录失败')
+        throw error
+      }
+      finally {
+        removing = false
+        if (removingStudentTeachingRecordId.value === studentTeachingRecordId)
+          removingStudentTeachingRecordId.value = ''
+      }
+    },
+  })
 }
 
 watch(openDrawer, (value) => {
@@ -250,6 +289,14 @@ watch(openDrawer, (value) => {
     editRollNameAddStuModals.value = false
   }
 })
+
+watch(
+  () => String(props.detail?.teachingRecordId || '').trim(),
+  (teachingRecordId) => {
+    if (openDrawer.value && !teachingRecordId)
+      openDrawer.value = false
+  },
+)
 
 function handleRowSaved() {
   emit('updated')
@@ -356,7 +403,7 @@ function handleRowSaved() {
             <div v-if="column.dataIndex === 'action'">
               <a-space :size="20">
                 <a @click="handleEdit(record)">编辑</a>
-                <a @click="handleRemoveStudent(record)">移出</a>
+                <a :class="{ 'action-link-disabled': !hasTeachingRecord(record) }" @click="handleRemoveStudent(record)">移出</a>
               </a-space>
             </div>
           </template>
@@ -490,5 +537,9 @@ function handleRowSaved() {
 
 .h-40px:hover .rotate-icon {
   transform: rotate(180deg);
+}
+
+.action-link-disabled {
+  color: #bfbfbf;
 }
 </style>

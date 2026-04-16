@@ -13,7 +13,6 @@ import {
   getRollCallStudentTuitionExtraInfoApi,
   getRollCallTeachingRecordStudentListApi,
 } from '@/api/edu-center/roll-call'
-import { removeTeachingScheduleStudentCurrentApi } from '@/api/edu-center/teaching-schedule'
 import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
 import { useStudentStore } from '@/stores/student'
 import emitter, { EVENTS } from '@/utils/eventBus'
@@ -83,6 +82,7 @@ const teachingRecordResult = ref(null)
 const data = ref([])
 const unscheduledExtraStudents = ref([])
 const activeUnscheduledContextKey = ref('')
+const temporarilySkippedStudentIds = ref(new Set())
 const rollCallChanged = ref(false)
 let loadSeq = 0
 // 定义列
@@ -154,7 +154,7 @@ const columns = ref(
       title: '操作',
       dataIndex: 'action',
       fixed: 'right',
-      width: 80,
+      width: 110,
       key: 'action',
     },
   ],
@@ -167,9 +167,12 @@ const userName = ref('')
 // 修改为独立的状态控制
 const headerStatus = ref('')
 // 根据表头状态设置每个学生的状态
+function isStudentRollCallLocked(record) {
+  return Boolean(record?.locked || record?.autoRollCall || record?.hasTeachingRecord)
+}
 function setAllStudentStatus(status) {
   data.value.forEach((item) => {
-    if (item.locked)
+    if (isStudentRollCallLocked(item))
       return
     // 重置所有状态
     item.attended = false
@@ -183,7 +186,7 @@ function setAllStudentStatus(status) {
   })
 }
 function syncHeaderStatus() {
-  const editableRows = data.value.filter(item => !item.locked)
+  const editableRows = data.value.filter(item => !isStudentRollCallLocked(item))
   if (!editableRows.length) {
     headerStatus.value = ''
     return
@@ -215,7 +218,7 @@ function handleHeaderStatusChange(status) {
 }
 // 处理单个学生状态变更
 function handleStudentStatusChange(record, status) {
-  if (record?.locked)
+  if (isStudentRollCallLocked(record))
     return
   // 判断是否是取消选择当前状态
   if (record[status]) {
@@ -234,7 +237,7 @@ function handleStudentStatusChange(record, status) {
   }
 
   // 检查表头状态，只有全部学生选中同一状态时才改变表头状态
-  const editableRows = data.value.filter(item => !item.locked)
+  const editableRows = data.value.filter(item => !isStudentRollCallLocked(item))
   const allSelected = editableRows.length > 0 && editableRows.every(item => item[status])
   const anySelected = editableRows.some(item => item[status])
 
@@ -544,6 +547,26 @@ function deleteStudentAccountOverride(studentId) {
   nextMap.delete(key)
   switchedAccountOverrideMap.value = nextMap
 }
+function isTemporarilySkippedStudent(studentId) {
+  return temporarilySkippedStudentIds.value.has(String(studentId || '').trim())
+}
+function markStudentTemporarilySkipped(studentId) {
+  const key = String(studentId || '').trim()
+  if (!key)
+    return
+  const nextSet = new Set(temporarilySkippedStudentIds.value)
+  nextSet.add(key)
+  temporarilySkippedStudentIds.value = nextSet
+}
+function removeLocalRollCallStudent(studentId) {
+  const key = String(studentId || '').trim()
+  if (!key)
+    return
+  markStudentTemporarilySkipped(key)
+  deleteStudentAccountOverride(key)
+  data.value = data.value.filter(item => String(item?.id || '').trim() !== key)
+  syncHeaderStatus()
+}
 function applySwitchedAccountOverrides(rows) {
   rows.forEach((row) => {
     const override = getStudentAccountOverride(row?.id)
@@ -552,12 +575,27 @@ function applySwitchedAccountOverrides(rows) {
   })
   return rows
 }
+function hasSelectedRollCallStatus(record) {
+  return Boolean(record?.attended || record?.absent || record?.leave || record?.unrecorded)
+}
 function getRemoveDisabledReason(record) {
-  if (Boolean(record?.locked) || Boolean(record?.autoRollCall) || Boolean(record?.hasTeachingRecord))
+  if (Boolean(record?.locked))
+    return '当前学员不可移出'
+  if (Boolean(record?.autoRollCall))
     return '该学员已自动点名，不可移出'
+  if (Boolean(record?.hasTeachingRecord))
+    return '该学员已点名，不可移出'
   if (record?.canRemove === false)
     return '当前学员不可移出'
   return ''
+}
+function isRecordedRemoveDisabled(record) {
+  return Boolean(record?.autoRollCall || record?.hasTeachingRecord)
+}
+function getRemoveActionText(record) {
+  if (isRecordedRemoveDisabled(record))
+    return '已点名'
+  return '移出'
 }
 function clearSwitchedAccountOverrides() {
   switchedAccountOverrideMap.value = new Map()
@@ -635,6 +673,7 @@ function resetDrawerState() {
   data.value = []
   unscheduledExtraStudents.value = []
   activeUnscheduledContextKey.value = ''
+  temporarilySkippedStudentIds.value = new Set()
   headerStatus.value = ''
   closeSwitchAccountModal()
   clearSwitchedAccountOverrides()
@@ -666,7 +705,7 @@ async function applyRollCallContext(detail, record, seq) {
   const tuitionExtraMap = new Map((Array.isArray(tuitionExtraRes.result) ? tuitionExtraRes.result : []).map(item => [String(item.studentId || ''), item]))
   data.value = applySwitchedAccountOverrides((Array.isArray(effectiveRecord?.students) ? effectiveRecord.students : []).map(item =>
     mapStudentRow(item, leaveCountMap, tuitionExtraMap),
-  ))
+  ).filter(item => !isTemporarilySkippedStudent(item?.id)))
   syncHeaderStatus()
 }
 async function loadDetail() {
@@ -777,7 +816,7 @@ function handleBatchEdit() {
 function isBatchEditableStudent(record) {
   if (!record)
     return false
-  if (Boolean(record.locked) || Boolean(record.autoRollCall))
+  if (isStudentRollCallLocked(record))
     return false
   return String(record?.type || '') !== '3' && String(record?.type || '') !== '4'
 }
@@ -1034,7 +1073,6 @@ function submitSwitchAccount() {
   closeSwitchAccountModal()
 }
 function handleRemoveStudent(record) {
-  const scheduleId = String(currentScheduleId.value || '').trim()
   const studentId = String(record?.id || '').trim()
   const name = String(record?.studentAccount || '').trim() || '当前学员'
   const disabledReason = getRemoveDisabledReason(record)
@@ -1048,55 +1086,30 @@ function handleRemoveStudent(record) {
       return
     }
     Modal.confirm({
-      title: '移出本节学员',
-      content: `移出后仅影响当前未排课点名抽屉，确认移出“${name}”吗？`,
-      okText: '确认移出',
+      title: '设为暂不点名',
+      content: `设为暂不点名后，“${name}”本次不会提交点名，且不会移出日程。确认继续吗？`,
+      okText: '确认',
       cancelText: '取消',
       onOk() {
         removeUnscheduledExtraStudent(studentId)
-        messageService.success(`已将${name}移出本次点名`)
-        loadDetail()
+        removeLocalRollCallStudent(studentId)
+        messageService.success(`已将${name}设为暂不点名`)
       },
     })
     return
   }
-  if (!scheduleId || !studentId) {
+  if (!studentId) {
     messageService.warning('当前学员缺少移出标识，请刷新后重试')
     return
   }
-  let removing = false
   Modal.confirm({
-    title: '移出本节学员',
-    content: `移出后仅影响本节课，不会影响班级成员和后续未开课。确认移出“${name}”吗？`,
-    okText: '确认移出',
+    title: '设为暂不点名',
+    content: `设为暂不点名后，“${name}”本次不会提交点名，且不会移出本节日程。确认继续吗？`,
+    okText: '确认',
     cancelText: '取消',
-    async onOk() {
-      if (removing)
-        return
-      removing = true
-      try {
-        messageService.clear()
-        const res = await removeTeachingScheduleStudentCurrentApi({
-          scheduleId,
-          studentId,
-        })
-        if (res.code !== 200)
-          throw new Error(res.message || '移出本节失败')
-        deleteStudentAccountOverride(studentId)
-        messageService.success(`已将${name}移出本节`)
-        rollCallChanged.value = true
-        emit('updated')
-        await loadDetail()
-      }
-      catch (error) {
-        if (!shouldSkipManualErrorMessage(error)) {
-          messageService.error(error?.response?.data?.message || error?.message || '移出本节失败')
-        }
-        throw error
-      }
-      finally {
-        removing = false
-      }
+    onOk() {
+      removeLocalRollCallStudent(studentId)
+      messageService.success(`已将${name}设为暂不点名`)
     },
   })
 }
@@ -1311,6 +1324,19 @@ watch(
                 </div>
               </a-popover>
             </div>
+            <div v-if="column.dataIndex === 'action'">
+              <a-popover title="移出说明">
+                <template #content>
+                  <div class="w-260px">
+                    移出表示本次暂不点名，仅在当前点名抽屉内生效，不会移出日程，也不会影响后续课程。
+                  </div>
+                </template>
+                <div class="text-#333 font-800">
+                  {{ column.title }}
+                  <ExclamationCircleOutlined class="cursor-pointer mr-4px" />
+                </div>
+              </a-popover>
+            </div>
           </template>
           <template #bodyCell="{ column, record, index }">
             <div v-if="column.dataIndex === 'index'">
@@ -1368,7 +1394,7 @@ watch(
               >
                 <a-checkbox
                   :checked="record.attended" class="status-checkbox attended-checkbox"
-                  :disabled="record.locked"
+                  :disabled="isStudentRollCallLocked(record)"
                   :class="{ 'active-checkbox': record.attended }" @click="() => handleStudentStatusChange(record, 'attended')"
                 >
                   到课
@@ -1382,7 +1408,7 @@ watch(
               >
                 <a-checkbox
                   :checked="record.absent" class="status-checkbox absent-checkbox"
-                  :disabled="record.locked"
+                  :disabled="isStudentRollCallLocked(record)"
                   :class="{ 'active-checkbox': record.absent }" @click="() => handleStudentStatusChange(record, 'absent')"
                 >
                   旷课
@@ -1396,7 +1422,7 @@ watch(
               >
                 <a-checkbox
                   :checked="record.leave" class="status-checkbox leave-checkbox"
-                  :disabled="record.locked"
+                  :disabled="isStudentRollCallLocked(record)"
                   :class="{ 'active-checkbox': record.leave }" @click="() => handleStudentStatusChange(record, 'leave')"
                 >
                   请假
@@ -1410,7 +1436,7 @@ watch(
               >
                 <a-checkbox
                   :checked="record.unrecorded" class="status-checkbox unrecorded-checkbox"
-                  :disabled="record.locked"
+                  :disabled="isStudentRollCallLocked(record)"
                   :class="{ 'active-checkbox': record.unrecorded }"
                   @click="() => handleStudentStatusChange(record, 'unrecorded')"
                 >
@@ -1432,7 +1458,7 @@ watch(
                 class="text-#888 text-3 flex flex-col"
               >
                 <span>记录课时</span>
-                <a-switch v-model:checked="record.recordAttendance" :disabled="record.locked" class="w-35px" />
+                <a-switch v-model:checked="record.recordAttendance" :disabled="isStudentRollCallLocked(record)" class="w-35px" />
               </div>
             </div>
             <div v-if="column.dataIndex === 'attendanceCount'">
@@ -1441,7 +1467,7 @@ watch(
                   v-model:value="record.attendanceCount"
                   :min="0"
                   :precision="2"
-                  :disabled="record.locked"
+                  :disabled="isStudentRollCallLocked(record)"
                   :status="isRemainingInsufficient(record) ? 'error' : undefined"
                   class="w-80px mr-4px"
                 />课时</span>
@@ -1464,15 +1490,27 @@ watch(
               <span v-else class="text-#888">不计课时</span>
             </div>
             <div v-if="column.dataIndex === 'internalNote'">
-              <a-input v-model:value="record.internalNote" :disabled="record.locked" class="w-100px" placeholder="请输入" />
+              <a-input v-model:value="record.internalNote" :disabled="isStudentRollCallLocked(record)" class="w-100px" placeholder="请输入" />
             </div>
             <div v-if="column.dataIndex === 'externalNote'">
-              <a-input v-model:value="record.externalNote" :disabled="record.locked" class="w-100px" placeholder="请输入" />
+              <a-input v-model:value="record.externalNote" :disabled="isStudentRollCallLocked(record)" class="w-100px" placeholder="请输入" />
             </div>
             <div v-else-if="column.dataIndex === 'action'">
-              <a-space>
-                <a v-if="record.canRemove && (supportsScheduleMutations || record.unscheduledLocalAdded)" @click="handleRemoveStudent(record)">移出</a>
-              </a-space>
+              <span
+                v-if="record.canRemove && (supportsScheduleMutations || record.unscheduledLocalAdded) && getRemoveDisabledReason(record)"
+                class="action-link-disabled"
+              >{{ getRemoveActionText(record) }}</span>
+              <a-tooltip
+                v-else-if="record.canRemove && (supportsScheduleMutations || record.unscheduledLocalAdded)"
+                placement="topRight"
+              >
+                <template #title>
+                  本次暂不点名，不会移出日程
+                </template>
+                <span class="action-tooltip-trigger">
+                  <a @click="handleRemoveStudent(record)">移出</a>
+                </span>
+              </a-tooltip>
             </div>
           </template>
         </a-table>
@@ -1878,6 +1916,17 @@ watch(
 
 .roll-call-switch-account-modal__empty {
   padding: 40px 0 36px;
+}
+
+.action-link-disabled {
+  color: #bfbfbf;
+  cursor: not-allowed;
+}
+
+.action-tooltip-trigger {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
 }
 
 .roll-call-switch-account-modal :deep(.ant-radio-wrapper) {

@@ -152,6 +152,10 @@ export interface UpdateStudentTeachingRecordParams {
   externalRemark?: string
 }
 
+export interface DeleteStudentTeachingRecordParams {
+  studentTeachingRecordId: string
+}
+
 export interface ScheduleTeachingRecordItem {
   teachingRecordId: string
   timetableSourceId?: string
@@ -215,6 +219,10 @@ export function getTeachingRecordDetailApi(params: { teachingRecordId: string })
 
 export function updateStudentTeachingRecordApi(data: UpdateStudentTeachingRecordParams) {
   return usePost<boolean>('/api/v1/class-records/student/update', data)
+}
+
+export function deleteStudentTeachingRecordApi(data: DeleteStudentTeachingRecordParams) {
+  return usePost<boolean>('/api/v1/class-records/student/delete', data)
 }
 
 export function deleteTeachingRecordApi(data: { teachingRecordId: string }) {
