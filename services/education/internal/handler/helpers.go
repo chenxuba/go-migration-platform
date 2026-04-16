@@ -1091,6 +1091,8 @@ func parseStudentTeachingRecordQueryModel(raw map[string]any) model.StudentTeach
 		IsArrear:                      asBoolPtr(raw["isArrear"]),
 		LessonIDs:                     coalesceStringSlice(raw["lessonIds"], raw["lessonId"]),
 		ClassIDs:                      asStringSlice(raw["classIds"]),
+		StudentTeachingRecordIDs:      asStringSlice(raw["studentTeachingRecordIds"]),
+		TeachingRecordIDs:             asStringSlice(raw["teachingRecordIds"]),
 	}
 }
 
@@ -1112,18 +1114,25 @@ func parseStudentTeachingRecordPagedQueryDTO(raw map[string]any) model.StudentTe
 	return query
 }
 
-func parseTeachingRecordChangeLogPagedQueryDTO(raw map[string]any) model.TeachingRecordChangeLogPagedQueryDTO {
-	query := model.TeachingRecordChangeLogPagedQueryDTO{}
-	if page, ok := raw["pageRequestModel"].(map[string]any); ok {
-		query.PageRequestModel.NeedTotal = derefBoolValue(asBoolPtr(page["needTotal"]))
-		query.PageRequestModel.PageIndex = asInt(page["pageIndex"], 1)
-		query.PageRequestModel.PageSize = asInt(page["pageSize"], 50)
-		query.PageRequestModel.SkipCount = asInt(page["skipCount"], 0)
+func parseClassRecordExportCreateRequest(raw map[string]any) model.ClassRecordExportCreateRequest {
+	req := model.ClassRecordExportCreateRequest{
+		ExportType: asString(firstNonNil(raw["exportType"], raw["reportType"])),
+		RecordIDs:  asStringSlice(firstNonNil(raw["recordIds"], raw["ids"])),
 	}
-	if qm, ok := raw["queryModel"].(map[string]any); ok {
-		query.QueryModel.TeachingRecordID = asString(qm["teachingRecordId"])
+	if items, ok := raw["queryConditions"].([]any); ok {
+		req.QueryConditions = make([]model.ExportConditionItem, 0, len(items))
+		for _, item := range items {
+			rawItem, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			req.QueryConditions = append(req.QueryConditions, model.ExportConditionItem{
+				Label: asString(rawItem["label"]),
+				Value: asString(rawItem["value"]),
+			})
+		}
 	}
-	return query
+	return req
 }
 
 func parseUpdateStudentTeachingRecordDTO(raw map[string]any) model.UpdateStudentTeachingRecordDTO {

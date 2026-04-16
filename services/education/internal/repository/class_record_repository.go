@@ -186,7 +186,7 @@ func ensureStudentTeachingRecordTables(ctx context.Context, db *sql.DB) error {
 			return alterErr
 		}
 	}
-	return ensureStudentTeachingRecordChangeLogTables(ctx, db)
+	return nil
 }
 
 type classRecordStudentQueryFragments struct {
@@ -309,6 +309,20 @@ func (repo *Repository) buildStudentTeachingRecordQuery(dto model.StudentTeachin
 		values := normalizeStringIDs(query.ClassIDs)
 		if len(values) > 0 {
 			whereParts = append(whereParts, "CAST(class_id AS CHAR) IN ("+sqlPlaceholders(len(values))+")")
+			args = append(args, stringSliceToAny(values)...)
+		}
+	}
+	if len(query.StudentTeachingRecordIDs) > 0 {
+		values := normalizeStringIDs(query.StudentTeachingRecordIDs)
+		if len(values) > 0 {
+			whereParts = append(whereParts, "CAST(id AS CHAR) IN ("+sqlPlaceholders(len(values))+")")
+			args = append(args, stringSliceToAny(values)...)
+		}
+	}
+	if len(query.TeachingRecordIDs) > 0 {
+		values := normalizeStringIDs(query.TeachingRecordIDs)
+		if len(values) > 0 {
+			whereParts = append(whereParts, "CAST(teaching_record_id AS CHAR) IN ("+sqlPlaceholders(len(values))+")")
 			args = append(args, stringSliceToAny(values)...)
 		}
 	}
@@ -1105,30 +1119,6 @@ func (repo *Repository) UpdateStudentTeachingRecord(ctx context.Context, instID,
 		return false, err
 	}
 
-	if row.Status != status || !almostEqualFloat(row.Quantity, quantity) || row.StudentTeachingRecordID <= 0 {
-		logAction := teachingRecordChangeActionEdit
-		beforeStatus := row.Status
-		beforeQuantity := row.Quantity
-		if strings.TrimSpace(dto.StudentTeachingRecordID) == "" || row.Status == teachingRecordDetailStudentStatusPendingRollCall && almostEqualFloat(row.Quantity, 0) {
-			logAction = teachingRecordChangeActionAdd
-			beforeStatus = teachingRecordDetailStudentStatusPendingRollCall
-			beforeQuantity = 0
-		}
-		if err := repo.insertStudentTeachingRecordChangeLogTx(ctx, tx, instID, operatorID, operatorName, studentTeachingRecordChangeLogPayload{
-			TeachingRecordID:        row.TeachingRecordID,
-			StudentTeachingRecordID: studentTeachingRecordID,
-			StudentID:               row.StudentID,
-			StudentName:             row.StudentName,
-			Action:                  logAction,
-			BeforeStatus:            beforeStatus,
-			BeforeQuantity:          beforeQuantity,
-			AfterStatus:             status,
-			AfterQuantity:           quantity,
-		}); err != nil {
-			return false, err
-		}
-	}
-
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
@@ -1192,20 +1182,6 @@ func (repo *Repository) DeleteStudentTeachingRecord(ctx context.Context, instID,
 		if err := repo.removeScheduleOnlyStudentFromScheduleTx(ctx, tx, instID, operatorID, row.TeachingScheduleID, row.StudentID); err != nil {
 			return false, err
 		}
-	}
-
-	if err := repo.insertStudentTeachingRecordChangeLogTx(ctx, tx, instID, operatorID, operatorName, studentTeachingRecordChangeLogPayload{
-		TeachingRecordID:        row.TeachingRecordID,
-		StudentTeachingRecordID: row.StudentTeachingRecordID,
-		StudentID:               row.StudentID,
-		StudentName:             row.StudentName,
-		Action:                  teachingRecordChangeActionRemove,
-		BeforeStatus:            row.Status,
-		BeforeQuantity:          row.Quantity,
-		AfterStatus:             teachingRecordDetailStudentStatusPendingRollCall,
-		AfterQuantity:           0,
-	}); err != nil {
-		return false, err
 	}
 
 	if err := tx.Commit(); err != nil {

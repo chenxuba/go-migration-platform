@@ -6,9 +6,17 @@ import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
 import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
-import { getStudentTeachingRecordPagedListApi, type StudentTeachingRecordItem } from '@/api/edu-center/class-record'
+import {
+  downloadClassRecordExportRecordApi,
+  exportClassRecordsApi,
+  getStudentTeachingRecordPagedListApi,
+  type ClassRecordExportConditionItem,
+  type StudentTeachingRecordItem,
+} from '@/api/edu-center/class-record'
 import StudentAvatar from '@/components/common/StudentAvatar.vue'
+import ExportRecordModal from '@/components/edu-center/class-record/export-record-modal.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
+import messageService from '@/utils/messageService'
 
 interface FilterOption {
   id: string
@@ -89,6 +97,9 @@ const pagination = ref({
   pageSize: 50,
   total: 0,
 })
+const selectedRowKeys = ref<string[]>([])
+const exportLoading = ref(false)
+const exportRecordModalOpen = ref(false)
 
 const courseOptions = ref<FilterOption[]>([])
 const courseFinished = ref(false)
@@ -277,9 +288,12 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth } = useTableC
   excludeKeys: ['action'],
 })
 
-const rowSelection = {
-  onChange: (_selectedRowKeys: (string | number)[], _selectedRows: StudentTeachingRecordItem[]) => {},
-}
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (_selectedRowKeys: (string | number)[], _selectedRows: StudentTeachingRecordItem[]) => {
+    selectedRowKeys.value = _selectedRowKeys.map(item => String(item))
+  },
+}))
 
 const tablePagination = computed(() => ({
   current: pagination.value.current,
@@ -467,6 +481,148 @@ function displayConsumedQuantity(record: Partial<StudentTeachingRecordItem> | Re
 
 function classDisplay(record: Partial<StudentTeachingRecordItem> | Record<string, any>) {
   return record.className || record.one2OneName || '-'
+}
+
+function triggerBlobDownload(response: any, fallbackName: string) {
+  const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/octet-stream' })
+  const disposition = response.headers['content-disposition'] || ''
+  const matched = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  const fileName = matched ? decodeURIComponent(matched[1]) : fallbackName
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+function getSingleOptionLabel(options: FilterOption[], value?: string) {
+  const target = String(value || '').trim()
+  if (!target)
+    return ''
+  return options.find(item => item.id === target)?.value || target
+}
+
+function getMultipleOptionLabel(options: FilterOption[], values: string[]) {
+  if (!values.length)
+    return ''
+  return values.map(value => getSingleOptionLabel(options, value)).filter(Boolean).join('、')
+}
+
+function buildExportConditionItems(): ClassRecordExportConditionItem[] {
+  const items: ClassRecordExportConditionItem[] = []
+  if (filterDateRange.value?.length === 2) {
+    items.push({
+      label: '上课日期',
+      value: `${filterDateRange.value[0].format('YYYY-MM-DD')} 至 ${filterDateRange.value[1].format('YYYY-MM-DD')}`,
+    })
+  }
+  if (filterUpdatedDateRange.value?.length === 2) {
+    items.push({
+      label: '点名更新时间',
+      value: `${filterUpdatedDateRange.value[0].format('YYYY-MM-DD')} 至 ${filterUpdatedDateRange.value[1].format('YYYY-MM-DD')}`,
+    })
+  }
+  if (filterLessonId.value) {
+    items.push({
+      label: '关联课程',
+      value: getSingleOptionLabel(courseOptions.value, filterLessonId.value),
+    })
+  }
+  if (filterTeacherIds.value.length) {
+    items.push({
+      label: '上课教师',
+      value: getMultipleOptionLabel(teacherOptions.value, filterTeacherIds.value),
+    })
+  }
+  if (filterAssistantTeacherIds.value.length) {
+    items.push({
+      label: '上课助教',
+      value: getMultipleOptionLabel(assistantTeacherOptions.value, filterAssistantTeacherIds.value),
+    })
+  }
+  if (filterClassId.value) {
+    items.push({
+      label: '班级名称',
+      value: getSingleOptionLabel(classOptions.value, filterClassId.value),
+    })
+  }
+  if (filterOneToOneId.value) {
+    items.push({
+      label: '1对1',
+      value: getSingleOptionLabel(oneToOneOptions.value, filterOneToOneId.value),
+    })
+  }
+  if (filterScheduleTypes.value.length) {
+    items.push({
+      label: '日程类型',
+      value: scheduleTypeOptions.filter(item => filterScheduleTypes.value.includes(item.id)).map(item => item.value).join('、'),
+    })
+  }
+  if (filterStudentIdentityValues.value.length) {
+    items.push({
+      label: '学员身份',
+      value: studentIdentityOptions.filter(item => filterStudentIdentityValues.value.includes(item.id)).map(item => item.value).join('、'),
+    })
+  }
+  if (filterClassStatusValues.value.length) {
+    items.push({
+      label: '上课状态',
+      value: classStatusOptions.filter(item => filterClassStatusValues.value.includes(item.id)).map(item => item.value).join('、'),
+    })
+  }
+  if (filterLessonChargingModeValues.value.length) {
+    items.push({
+      label: '课消方式',
+      value: lessonChargingModeOptions.filter(item => filterLessonChargingModeValues.value.includes(Number(item.id))).map(item => item.value).join('、'),
+    })
+  }
+  if (filterIsArrear.value === true) {
+    items.push({
+      label: '拖欠数量',
+      value: '仅显示有拖欠数据的记录',
+    })
+  }
+  return items.filter(item => item.value)
+}
+
+async function handleBatchExport() {
+  if (!selectedRowKeys.value.length) {
+    messageService.info('请先勾选需要导出的上课记录')
+    return
+  }
+  exportLoading.value = true
+  try {
+    const res = await exportClassRecordsApi({
+      exportType: 'student',
+      recordIds: selectedRowKeys.value,
+      queryConditions: buildExportConditionItems(),
+    })
+    const record = res.result || res.data
+    if (!record?.id) {
+      throw new Error(res.message || '导出失败')
+    }
+    const response = await downloadClassRecordExportRecordApi(record.id, 'student')
+    triggerBlobDownload(response, record.fileName || `上课记录-按学员批量导出-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`)
+    messageService.success('导出成功')
+  }
+  catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || '导出失败，请稍后重试')
+  }
+  finally {
+    exportLoading.value = false
+  }
+}
+
+function handleExportAction({ key }: { key: string | number }) {
+  if (String(key) === '1') {
+    handleBatchExport()
+    return
+  }
+  if (String(key) === '3')
+    exportRecordModalOpen.value = true
 }
 
 function buildQueryModel() {
@@ -850,12 +1006,9 @@ onMounted(() => {
             共 {{ summary.total }} 条记录 ，共记录 {{ formatNumber(summary.totalClassTimes, '课时') }}，共消耗学费 {{ formatCurrency(summary.totalTuition) }}
           </div>
           <div class="edit flex">
-            <a-button class="mr-2">
-              变更日志
-            </a-button>
             <a-dropdown class="mr-2">
               <template #overlay>
-                <a-menu>
+                <a-menu @click="handleExportAction">
                   <a-menu-item key="1">
                     批量导出
                   </a-menu-item>
@@ -864,7 +1017,7 @@ onMounted(() => {
                   </a-menu-item>
                 </a-menu>
               </template>
-              <a-button>
+              <a-button :loading="exportLoading">
                 导出数据
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
@@ -1003,6 +1156,7 @@ onMounted(() => {
       </div>
     </div>
     <class-record-details v-model:open="openClassRecordDrawer" :teaching-record-id="currentTeachingRecordId" @updated="loadList" />
+    <export-record-modal v-model:open="exportRecordModalOpen" export-type="student" />
   </div>
 </template>
 

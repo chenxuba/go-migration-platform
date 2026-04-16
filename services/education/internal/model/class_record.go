@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 type StudentTeachingRecordPagedQueryDTO struct {
 	PageRequestModel RollCallPageRequestModel        `json:"pageRequestModel"`
 	SortModel        StudentTeachingRecordSortModel  `json:"sortModel"`
@@ -8,15 +10,6 @@ type StudentTeachingRecordPagedQueryDTO struct {
 
 type TeachingRecordDetailQueryDTO struct {
 	TeachingRecordID string `json:"teachingRecordId"`
-}
-
-type TeachingRecordChangeLogQueryModel struct {
-	TeachingRecordID string `json:"teachingRecordId"`
-}
-
-type TeachingRecordChangeLogPagedQueryDTO struct {
-	PageRequestModel RollCallPageRequestModel          `json:"pageRequestModel"`
-	QueryModel       TeachingRecordChangeLogQueryModel `json:"queryModel"`
 }
 
 type UpdateStudentTeachingRecordDTO struct {
@@ -57,6 +50,8 @@ type StudentTeachingRecordQueryModel struct {
 	IsArrear                      *bool    `json:"isArrear"`
 	LessonIDs                     []string `json:"lessonIds"`
 	ClassIDs                      []string `json:"classIds"`
+	StudentTeachingRecordIDs      []string `json:"studentTeachingRecordIds"`
+	TeachingRecordIDs             []string `json:"teachingRecordIds"`
 }
 
 type StudentTeachingRecordSortModel struct {
@@ -187,18 +182,6 @@ type TeachingRecordDetailResult struct {
 	TeachingContentImages   []string                      `json:"teachingContentImages"`
 }
 
-type TeachingRecordChangeLogItem struct {
-	ID            string `json:"id"`
-	ChangeTime    string `json:"changeTime"`
-	ChangeUser    string `json:"changeUser"`
-	ChangeContent string `json:"changeContent"`
-}
-
-type TeachingRecordChangeLogPagedResult struct {
-	List  []TeachingRecordChangeLogItem `json:"list"`
-	Total int                           `json:"total"`
-}
-
 type ScheduleTeachingRecordPagedQueryDTO struct {
 	PageRequestModel RollCallPageRequestModel        `json:"pageRequestModel"`
 	SortModel        ScheduleTeachingRecordSortModel `json:"sortModel"`
@@ -243,4 +226,22 @@ type ScheduleTeachingRecordPagedResult struct {
 	TotalTuition      float64                      `json:"totalTuition"`
 	List              []ScheduleTeachingRecordItem `json:"list"`
 	Total             int                          `json:"total"`
+}
+
+type ClassRecordExportCreateRequest struct {
+	ExportType      string                `json:"exportType"`
+	RecordIDs       []string              `json:"recordIds"`
+	QueryConditions []ExportConditionItem `json:"queryConditions"`
+}
+
+type ClassRecordExportRecord struct {
+	ID              int64                 `json:"id"`
+	ExportType      string                `json:"exportType"`
+	FileName        string                `json:"fileName"`
+	ExporterName    string                `json:"exporterName"`
+	TotalRows       int                   `json:"totalRows"`
+	QueryConditions []ExportConditionItem `json:"queryConditions"`
+	CreatedTime     *time.Time            `json:"createdTime,omitempty"`
+	ExpiresAt       *time.Time            `json:"expiresAt,omitempty"`
+	DownloadURL     string                `json:"downloadUrl,omitempty"`
 }

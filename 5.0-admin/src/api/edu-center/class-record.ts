@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { useGet, usePost } from '~/utils/request'
 
 export interface ClassRecordQueryModel {
@@ -144,18 +146,6 @@ export interface TeachingRecordDetailResult {
   teachingContentImages?: string[]
 }
 
-export interface TeachingRecordChangeLogItem {
-  id: string
-  changeTime?: string
-  changeUser?: string
-  changeContent?: string
-}
-
-export interface TeachingRecordChangeLogPagedResult {
-  list?: TeachingRecordChangeLogItem[]
-  total?: number
-}
-
 export interface UpdateStudentTeachingRecordParams {
   studentTeachingRecordId?: string
   teachingRecordId?: string
@@ -206,6 +196,23 @@ export interface ScheduleTeachingRecordPagedResult {
   total?: number
 }
 
+export interface ClassRecordExportConditionItem {
+  label: string
+  value: string
+}
+
+export interface ClassRecordExportRecord {
+  id: number
+  exportType: string
+  fileName: string
+  exporterName: string
+  totalRows: number
+  queryConditions: ClassRecordExportConditionItem[]
+  createdTime?: string
+  expiresAt?: string
+  downloadUrl?: string
+}
+
 export interface ClassRecordPagedParams {
   queryModel: ClassRecordQueryModel
   pageRequestModel: {
@@ -232,18 +239,30 @@ export function getTeachingRecordDetailApi(params: { teachingRecordId: string })
   return useGet<TeachingRecordDetailResult>('/api/v1/class-records/detail', params)
 }
 
-export function getTeachingRecordChangeLogPagedListApi(data: {
-  pageRequestModel: {
-    needTotal?: boolean
-    pageSize: number
-    pageIndex: number
-    skipCount?: number
-  }
-  queryModel: {
-    teachingRecordId: string
-  }
+export function exportClassRecordsApi(data: {
+  exportType: string
+  recordIds: string[]
+  queryConditions: ClassRecordExportConditionItem[]
 }) {
-  return usePost<TeachingRecordChangeLogPagedResult>('/api/v1/class-records/change-log-paged-list', data)
+  return usePost<ClassRecordExportRecord>('/api/v1/class-records/export', data)
+}
+
+export function getClassRecordExportRecordsApi(exportType: string) {
+  return useGet<ClassRecordExportRecord[]>('/api/v1/class-records/export-records', { exportType })
+}
+
+export async function downloadClassRecordExportRecordApi(recordId: number | string, exportType: string) {
+  const token = useAuthorization()
+  const response = await axios.get('/api/v1/class-records/export-records/download', {
+    params: { recordId, exportType },
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+  return response
 }
 
 export function updateStudentTeachingRecordApi(data: UpdateStudentTeachingRecordParams) {

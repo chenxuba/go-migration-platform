@@ -267,7 +267,6 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 	}
 
 	teachingRecordID := existingSummary.TeachingRecordID
-	isAppendingToExistingRecord := teachingRecordID > 0
 	if teachingRecordID <= 0 {
 		teachingRecordID, err = repo.nextRollCallTeachingRecordIDTx(ctx, tx)
 		if err != nil {
@@ -385,21 +384,6 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 		insertedStudentTeachingRecordID, err := result.LastInsertId()
 		if err != nil || insertedStudentTeachingRecordID <= 0 {
 			return model.RollCallConfirmResult{}, errors.New("点名记录创建失败")
-		}
-		if isAppendingToExistingRecord {
-			if err := repo.insertStudentTeachingRecordChangeLogTx(ctx, tx, instID, operatorID, operatorName, studentTeachingRecordChangeLogPayload{
-				TeachingRecordID:        teachingRecordID,
-				StudentTeachingRecordID: insertedStudentTeachingRecordID,
-				StudentID:               studentID,
-				StudentName:             firstNonEmptyString(strings.TrimSpace(item.StudentName), profile.StudentName),
-				Action:                  teachingRecordChangeActionAdd,
-				BeforeStatus:            teachingRecordDetailStudentStatusPendingRollCall,
-				BeforeQuantity:          0,
-				AfterStatus:             status,
-				AfterQuantity:           quantity,
-			}); err != nil {
-				return model.RollCallConfirmResult{}, err
-			}
 		}
 		if actualDeduct > 0 {
 			if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, actualTuition, account); err != nil {
@@ -581,7 +565,6 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 	}
 
 	teachingRecordID := existingSummary.TeachingRecordID
-	isAppendingToExistingRecord := teachingRecordID > 0
 	if teachingRecordID <= 0 {
 		teachingRecordID, err = repo.nextRollCallTeachingRecordIDTx(ctx, tx)
 		if err != nil {
@@ -702,21 +685,6 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 		insertedStudentTeachingRecordID, err := result.LastInsertId()
 		if err != nil || insertedStudentTeachingRecordID <= 0 {
 			return model.RollCallConfirmResult{}, errors.New("点名记录创建失败")
-		}
-		if isAppendingToExistingRecord {
-			if err := repo.insertStudentTeachingRecordChangeLogTx(ctx, tx, instID, operatorID, operatorName, studentTeachingRecordChangeLogPayload{
-				TeachingRecordID:        teachingRecordID,
-				StudentTeachingRecordID: insertedStudentTeachingRecordID,
-				StudentID:               studentID,
-				StudentName:             firstNonEmptyString(strings.TrimSpace(item.StudentName), profile.StudentName),
-				Action:                  teachingRecordChangeActionAdd,
-				BeforeStatus:            teachingRecordDetailStudentStatusPendingRollCall,
-				BeforeQuantity:          0,
-				AfterStatus:             status,
-				AfterQuantity:           quantity,
-			}); err != nil {
-				return model.RollCallConfirmResult{}, err
-			}
 		}
 		if actualDeduct > 0 {
 			if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, actualTuition, account); err != nil {

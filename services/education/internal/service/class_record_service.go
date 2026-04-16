@@ -30,12 +30,16 @@ func (svc *Service) GetTeachingRecordDetail(userID int64, query model.TeachingRe
 	return svc.repo.GetTeachingRecordDetail(context.Background(), instID, query)
 }
 
-func (svc *Service) GetTeachingRecordChangeLogPagedList(userID int64, dto model.TeachingRecordChangeLogPagedQueryDTO) (model.TeachingRecordChangeLogPagedResult, error) {
-	instID, err := svc.rollCallInstID(userID)
-	if err != nil {
-		return model.TeachingRecordChangeLogPagedResult{}, err
-	}
-	return svc.repo.GetTeachingRecordChangeLogPagedList(context.Background(), instID, dto)
+func (svc *Service) ExportClassRecords(userID int64, req model.ClassRecordExportCreateRequest) (model.ClassRecordExportRecord, error) {
+	return svc.exportClassRecords(userID, req)
+}
+
+func (svc *Service) ListClassRecordExportRecords(userID int64, exportType string) ([]model.ClassRecordExportRecord, error) {
+	return svc.listClassRecordExportRecords(userID, exportType)
+}
+
+func (svc *Service) LoadClassRecordExportRecord(userID int64, recordIDRaw, exportType string) (string, string, []byte, error) {
+	return svc.loadClassRecordExportRecord(userID, recordIDRaw, exportType)
 }
 
 func (svc *Service) UpdateStudentTeachingRecord(userID int64, dto model.UpdateStudentTeachingRecordDTO) (bool, error) {

@@ -28,7 +28,6 @@ const loading = ref(false)
 const deleting = ref(false)
 const detailData = ref<TeachingRecordDetailResult | null>(null)
 const shouldRefreshOnClose = ref(false)
-const changeLogRefreshToken = ref(0)
 const hasDetail = computed(() => String(detailData.value?.teachingRecordId || '').trim() !== '')
 
 const openDrawer = computed({
@@ -147,7 +146,6 @@ async function loadDetail() {
 
 async function handleRollNameUpdated() {
   await loadDetail()
-  changeLogRefreshToken.value += 1
 }
 
 watch(
@@ -290,9 +288,6 @@ watch(
             >
               <a-tab-pane key="0" tab="点名详情">
                 <call-name-details :detail="detailData" :loading="loading" />
-              </a-tab-pane>
-              <a-tab-pane key="1" tab="点名变更记录">
-                <call-name-change-details :teaching-record-id="detailData?.teachingRecordId" :refresh-token="changeLogRefreshToken" />
               </a-tab-pane>
             </a-tabs>
           </div>

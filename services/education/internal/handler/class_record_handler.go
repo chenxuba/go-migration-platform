@@ -2,7 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"go-migration-platform/pkg/httpx"
 	"go-migration-platform/pkg/tenant"
@@ -81,7 +84,7 @@ func (handler *Handler) teachingRecordDetail(w http.ResponseWriter, r *http.Requ
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
-func (handler *Handler) teachingRecordChangeLogPagedList(w http.ResponseWriter, r *http.Request) {
+func (handler *Handler) exportClassRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
 	if !ok {
@@ -98,12 +101,61 @@ func (handler *Handler) teachingRecordChangeLogPagedList(w http.ResponseWriter, 
 		return
 	}
 
-	result, err := handler.service.GetTeachingRecordChangeLogPagedList(claims.UserID, parseTeachingRecordChangeLogPagedQueryDTO(raw))
+	result, err := handler.service.ExportClassRecords(claims.UserID, parseClassRecordExportCreateRequest(raw))
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) listClassRecordExportRecords(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	exportType := strings.TrimSpace(r.URL.Query().Get("exportType"))
+	result, err := handler.service.ListClassRecordExportRecords(claims.UserID, exportType)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) downloadClassRecordExportRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	fileName, contentType, data, err := handler.service.LoadClassRecordExportRecord(
+		claims.UserID,
+		strings.TrimSpace(r.URL.Query().Get("recordId")),
+		strings.TrimSpace(r.URL.Query().Get("exportType")),
+	)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.QueryEscape(fileName)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func (handler *Handler) updateStudentTeachingRecord(w http.ResponseWriter, r *http.Request) {
