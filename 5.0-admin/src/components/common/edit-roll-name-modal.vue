@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { CloseOutlined, DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { deleteStudentTeachingRecordApi, type TeachingRecordDetailResult, type TeachingRecordDetailStudent } from '@/api/edu-center/class-record'
 import messageService from '@/utils/messageService'
-import EditRollNameAddStuModal from './edit-roll-name-add-stu-modal.vue'
 import EditRowRollNameModal from './edit-row-roll-name-modal.vue'
 
 const props = withDefaults(defineProps<{
@@ -23,8 +22,6 @@ const openDrawer = computed({
 const searchKeyword = ref('')
 const editRowRollNameModals = ref(false)
 const selectedStudent = ref<TeachingRecordDetailStudent | null>(null)
-const editRollNameAddStuModals = ref(false)
-const addStudentModalTitle = ref('')
 const removingStudentTeachingRecordId = ref('')
 
 const columns = ref<any[]>([
@@ -210,24 +207,6 @@ function handleEdit(record: Record<string, any>) {
   editRowRollNameModals.value = true
 }
 
-function handleAddStudent(info: { key: string | number }) {
-  const key = String(info.key)
-  if (key === '1') {
-    messageService.info('补课学员功能暂未开发')
-    return
-  }
-  if (key === '2') {
-    addStudentModalTitle.value = '添加临时学员'
-  }
-  else if (key === '3') {
-    addStudentModalTitle.value = '添加试听学员'
-  }
-  else {
-    addStudentModalTitle.value = '添加学员'
-  }
-  editRollNameAddStuModals.value = true
-}
-
 function getRemoveDisabledReason(record: Partial<TeachingRecordDetailStudent>) {
   if (!hasTeachingRecord(record))
     return '当前学员暂无点名记录，无需移出点名'
@@ -251,6 +230,7 @@ function handleRemoveStudent(record: Record<string, any>) {
   Modal.confirm({
     title: '移出点名记录',
     content: `移出后仅删除“${name}”本节的点名记录，并按实际课消退还。确认继续吗？`,
+    centered: true,
     okText: '确认移出',
     cancelText: '取消',
     async onOk() {
@@ -286,7 +266,6 @@ watch(openDrawer, (value) => {
     searchKeyword.value = ''
     selectedStudent.value = null
     editRowRollNameModals.value = false
-    editRollNameAddStuModals.value = false
   }
 })
 
@@ -409,27 +388,6 @@ function handleRowSaved() {
           </template>
         </a-table>
       </div>
-      <template #footer>
-        <a-dropdown>
-          <template #overlay>
-            <a-menu @click="handleAddStudent">
-              <a-menu-item key="1">
-                添加补课学员
-              </a-menu-item>
-              <a-menu-item key="2">
-                添加临时学员
-              </a-menu-item>
-              <a-menu-item key="3">
-                添加试听学员
-              </a-menu-item>
-            </a-menu>
-          </template>
-          <a-button type="primary" ghost class="h-40px w-120px text-16px ml-12px">
-            添加学员
-            <DownOutlined class="text-12px rotate-icon" />
-          </a-button>
-        </a-dropdown>
-      </template>
     </a-drawer>
 
     <EditRowRollNameModal
@@ -437,10 +395,6 @@ function handleRowSaved() {
       :student="selectedStudent"
       :default-quantity="Number(detail?.defaultStudentClassTime || 0)"
       @saved="handleRowSaved"
-    />
-    <EditRollNameAddStuModal
-      v-model:open="editRollNameAddStuModals"
-      :default-title="addStudentModalTitle"
     />
   </div>
 </template>
@@ -520,11 +474,6 @@ function handleRowSaved() {
   background: #f6f7f8;
 }
 
-.rotate-icon {
-  display: inline-block;
-  transition: transform 0.3s ease;
-}
-
 .close-btn {
   &:hover {
     background: transparent;
@@ -533,10 +482,6 @@ function handleRowSaved() {
       animation: icon-rotate 0.3s linear;
     }
   }
-}
-
-.h-40px:hover .rotate-icon {
-  transform: rotate(180deg);
 }
 
 .action-link-disabled {
