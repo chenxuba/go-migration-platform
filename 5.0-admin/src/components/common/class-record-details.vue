@@ -6,6 +6,7 @@ import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import { deleteTeachingRecordApi, getTeachingRecordDetailApi, type TeachingRecordDetailResult, type TeachingRecordDetailTeacher } from '@/api/edu-center/class-record'
+import ClassReviewDrawer from '@/components/home-center/class-comment/classReviewDrawer.vue'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 import EditClassInfoModal from './edit-class-info-modal.vue'
@@ -26,6 +27,7 @@ const activeKey = ref('0')
 const openModal = ref(false)
 const editClassInfoModal = ref(false)
 const editRollNameModal = ref(false)
+const reviewDrawerOpen = ref(false)
 const loading = ref(false)
 const deleting = ref(false)
 const detailData = ref<TeachingRecordDetailResult | null>(null)
@@ -66,6 +68,17 @@ const createdText = computed(() => {
   const time = dayjs(rawTime).isValid() ? dayjs(rawTime).format('YYYY-MM-DD HH:mm') : rawTime
   return time || '-'
 })
+const reviewRecord = computed(() => ({
+  teachingRecordId: currentTeachingRecordId.value,
+  sourceType: detailData.value?.sourceType,
+  sourceName: detailData.value?.sourceName,
+  lessonName: detailData.value?.lessonName,
+  teacherName: mainTeacherText.value,
+  assistants: assistantTeacherText.value === '-' ? '' : assistantTeacherText.value,
+  classRoomName: detailData.value?.classRoomName,
+  startTime: detailData.value?.startTime,
+  endTime: detailData.value?.endTime,
+}))
 
 let loadSeq = 0
 
@@ -101,6 +114,12 @@ function handleEditClassInfo() {
 
 function handleEditRollName() {
   editRollNameModal.value = true
+}
+
+function handleOpenReviewDrawer() {
+  if (!currentTeachingRecordId.value)
+    return
+  reviewDrawerOpen.value = true
 }
 
 function formatTeacherNames(list: TeachingRecordDetailTeacher[]) {
@@ -244,8 +263,8 @@ watch(
                   <a-button type="primary" @click="handleEditRollName">
                     编辑点名
                   </a-button>
-                  <a-button type="primary">
-                    课堂点评
+                  <a-button type="primary" @click="handleOpenReviewDrawer">
+                    康复记录
                   </a-button>
                   <a-button type="primary">
                     课后任务
@@ -335,6 +354,11 @@ watch(
         </a-button>
       </a-space>
     </a-modal>
+
+    <ClassReviewDrawer
+      v-model="reviewDrawerOpen"
+      :record="reviewRecord"
+    />
 
     <EditClassInfoModal v-model:open="editClassInfoModal" :detail="detailData" @updated="handleClassInfoUpdated" />
     <EditRollNameModal v-model:open="editRollNameModal" :detail="detailData" @updated="handleRollNameUpdated" />

@@ -97,8 +97,8 @@ const pendingStudents = computed<ReviewStudentItem[]>(() => {
 })
 
 const commentStatisticsText = computed(() => `${reviewedStudents.value.length}/${studentList.value.length}`)
-const pendingSummaryText = computed(() => `共 ${pendingStudents.value.length} 位待点评学员`)
-const reviewedSummaryText = computed(() => `共 ${reviewedStudents.value.length} 位已点评学员`)
+const pendingSummaryText = computed(() => `共 ${pendingStudents.value.length} 位待记录学员`)
+const reviewedSummaryText = computed(() => `共 ${reviewedStudents.value.length} 位已记录学员`)
 
 const headerTimeText = computed(() => {
   const start = dayjs(detailData.value?.startTime || props.record?.startTime)
@@ -225,7 +225,7 @@ async function loadDetail() {
   try {
     const res = await getTeachingRecordDetailApi({ teachingRecordId })
     if (res.code !== 200)
-      throw new Error(res.message || '加载课堂点评详情失败')
+      throw new Error(res.message || '加载康复记录详情失败')
     const data = res.result
     detailData.value = data && String(data.teachingRecordId || '').trim() ? data : null
     syncCourseContent()
@@ -234,7 +234,7 @@ async function loadDetail() {
     detailData.value = null
     courseContent.value = ''
     editingCourseContent.value = ''
-    messageService.error(error?.response?.data?.message || error?.message || '加载课堂点评详情失败')
+    messageService.error(error?.response?.data?.message || error?.message || '加载康复记录详情失败')
   }
   finally {
     loading.value = false
@@ -292,7 +292,7 @@ watch(
       <template #title>
         <div class="custom-header flex justify-between h-4 flex-items-center">
           <div class="text-5">
-            课堂点评详情
+            康复记录详情
           </div>
           <a-button type="text" class="close-btn" @click="open = false">
             <template #icon>
@@ -339,7 +339,7 @@ watch(
             <a-descriptions-item label="所属课程">
               {{ courseName }}
             </a-descriptions-item>
-            <a-descriptions-item label="点评统计">
+            <a-descriptions-item label="记录统计">
               {{ commentStatisticsText }}
             </a-descriptions-item>
             <a-descriptions-item label="上课内容">
@@ -357,7 +357,7 @@ watch(
             size="large"
             :tab-bar-style="{ 'border-radius': '0px', 'padding-left': '24px' }"
           >
-            <a-tab-pane :key="'0'" :tab="`已点评（${reviewedStudents.length}）`">
+            <a-tab-pane :key="'0'" :tab="`已记录（${reviewedStudents.length}）`">
               <div class="tab-pane-wrap p-12px">
                 <div class="tab-pane-card bg-white rounded-15px px-20px pt-12px" :class="{ 'tab-pane-card--empty': reviewedStudents.length === 0 }">
                   <template v-if="reviewedStudents.length > 0">
@@ -392,22 +392,22 @@ watch(
                       </template>
                     </a-table>
                   </template>
-                  <a-empty v-else :image="simpleImage" description="暂无已点评学员" />
+                  <a-empty v-else :image="simpleImage" description="暂无已记录学员" />
                 </div>
               </div>
             </a-tab-pane>
-            <a-tab-pane :key="'1'" :tab="`待点评（${pendingStudents.length}）`">
+            <a-tab-pane :key="'1'" :tab="`待记录（${pendingStudents.length}）`">
               <div class="tab-pane-wrap p-12px">
                 <div class="tab-pane-card bg-white rounded-15px px-20px pt-12px">
                   <custom-title class="mb-16px" :title="pendingSummaryText" font-size="14px">
                     <template #right>
                       <a-tooltip>
                         <template #title>
-                          未勾选学员时，直接点击批量点评将会默认选中到课学员
+                          未勾选学员时，直接点击批量记录将会默认选中到课学员
                         </template>
                         <a-button type="primary" class="px-14px" @click="handleBatchReview">
                           <InfoCircleOutlined />
-                          批量点评
+                          批量记录
                         </a-button>
                       </a-tooltip>
                     </template>
@@ -443,7 +443,7 @@ watch(
                       </template>
                       <template v-else-if="column.key === 'action'">
                         <a-button type="link" class="text-14px text-#06f px-0" @click="handlePendingReview">
-                          去点评
+                          去记录
                         </a-button>
                       </template>
                     </template>

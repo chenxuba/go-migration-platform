@@ -46,8 +46,8 @@ const scheduleTypeOptions = [
 ]
 
 const commentStatusOptions = [
-  { id: '1', value: '已点评' },
-  { id: '0', value: '未点评' },
+  { id: '1', value: '已记录' },
+  { id: '0', value: '未记录' },
 ]
 
 const readStatusOptions = [
@@ -521,7 +521,7 @@ async function loadList() {
       },
     })
     if (res.code !== 200)
-      throw new Error(res.message || '获取课堂点评明细失败')
+      throw new Error(res.message || '获取康复记录明细失败')
     dataSource.value = Array.isArray(res.result?.list) ? res.result.list : []
     pagination.value.total = Number(res.result?.total || 0)
   }
@@ -529,7 +529,7 @@ async function loadList() {
     console.error('load class comment detail failed', error)
     dataSource.value = []
     pagination.value.total = 0
-    messageService.error(error?.response?.data?.message || error?.message || '获取课堂点评明细失败')
+    messageService.error(error?.response?.data?.message || error?.message || '获取康复记录明细失败')
   }
   finally {
     loading.value = false
@@ -756,7 +756,7 @@ onMounted(() => {
                   :class="record.isComment ? 'bg-#e6f4ff text-#1677ff' : 'bg-#fff7e6 text-#fa8c16'"
                   class="text-3 px2 py1 rounded-10"
                 >
-                  {{ record.isComment ? '已点评' : '未点评' }}
+                  {{ record.isComment ? '已记录' : '未记录' }}
                 </span>
               </template>
               <template v-if="column.key === 'readStatus'">
@@ -791,7 +791,7 @@ onMounted(() => {
               </template>
               <template v-if="column.key === 'action'">
                 <a-space :size="14">
-                  <a class="font500" @click="handleOpenReviewDrawer(record)">去点评</a>
+                  <a class="font500" @click="handleOpenReviewDrawer(record)">去记录</a>
                   <a class="font500" @click="handleViewPending">查看</a>
                 </a-space>
               </template>

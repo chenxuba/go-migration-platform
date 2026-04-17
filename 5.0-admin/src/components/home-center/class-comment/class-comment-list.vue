@@ -107,7 +107,7 @@ const allColumns = ref([
     width: 130,
   },
   {
-    title: '点评统计',
+    title: '记录统计',
     key: 'commentStatistics',
     dataIndex: 'commentStatistics',
     width: 110,
@@ -392,7 +392,7 @@ async function loadList() {
       },
     })
     if (res.code !== 200)
-      throw new Error(res.message || '获取课堂点评列表失败')
+      throw new Error(res.message || '获取康复记录列表失败')
     dataSource.value = Array.isArray(res.result?.list) ? res.result.list : []
     pagination.value.total = Number(res.result?.total || 0)
   }
@@ -400,7 +400,7 @@ async function loadList() {
     console.error('load class comment list failed', error)
     dataSource.value = []
     pagination.value.total = 0
-    messageService.error(error?.response?.data?.message || error?.message || '获取课堂点评列表失败')
+    messageService.error(error?.response?.data?.message || error?.message || '获取康复记录列表失败')
   }
   finally {
     loading.value = false
@@ -543,7 +543,7 @@ onMounted(() => {
                 <span class="mr-1">{{ column.title }}</span>
                 <a-tooltip color="#666">
                   <template #title>
-                    已点评人数/应点评人数
+                    已记录人数/应记录人数
                   </template>
                   <ExclamationCircleOutlined />
                 </a-tooltip>
@@ -615,7 +615,7 @@ onMounted(() => {
               </template>
               <template v-if="column.key === 'action'">
                 <a-space :size="14">
-                  <a class="font500" @click="handleOpenReviewDrawer(record)">去点评</a>
+                  <a class="font500" @click="handleOpenReviewDrawer(record)">去记录</a>
                   <a class="font500" @click="handleViewPending">查看</a>
                 </a-space>
               </template>

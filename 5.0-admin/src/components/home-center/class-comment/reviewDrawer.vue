@@ -17,7 +17,7 @@ const open = defineModel({
       <template #title>
         <div class="custom-header flex justify-between h-4 flex-items-center">
           <div class="text-5">
-            课堂点评详情
+            康复记录详情
           </div>
           <a-button type="text" class="close-btn" @click="open = false">
             <template #icon>
@@ -68,7 +68,7 @@ const open = defineModel({
             </div>
             <div class="flex">
               <div class="w-120px text-right">
-                课堂点评模版：
+                康复记录模版：
               </div>
               <div class="flex items-center">
                 <span>综合总分</span>

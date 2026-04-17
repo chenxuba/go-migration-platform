@@ -314,7 +314,7 @@ export default [
         name: 'ClassComment',
         component: () => import('~/pages/home-center/class-comment.vue'),
         meta: {
-          title: '课堂点评',
+          title: '康复记录',
         },
       },
       {

@@ -50,7 +50,7 @@ const settingsList = ref([
     path: '/profile-type-settings',
   },
   {
-    title: '课堂点评设置',
+    title: '康复记录设置',
     description: '家长反馈、老师点评等相关设置',
     path: '/evaluation-settings',
   },

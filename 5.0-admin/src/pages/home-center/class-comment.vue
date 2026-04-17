@@ -13,10 +13,10 @@ const activeKey = ref('1')
           'border-bottom-right-radius': '0px',
         }"
       >
-        <a-tab-pane key="1" tab="课堂点评">
+        <a-tab-pane key="1" tab="康复记录">
           <class-comment-list />
         </a-tab-pane>
-        <a-tab-pane key="2" tab="课堂点评明细">
+        <a-tab-pane key="2" tab="康复记录明细">
           <class-comment-details />
         </a-tab-pane>
       </a-tabs>
