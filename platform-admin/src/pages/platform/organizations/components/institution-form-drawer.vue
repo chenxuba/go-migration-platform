@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
-import type { InstitutionGeocodePayload, InstitutionMutationPayload, InstitutionProfile } from '@/api/platform/institutions'
+import type {
+  InstitutionDetail,
+  InstitutionGeocodePayload,
+  InstitutionMutationPayload,
+  InstitutionProfile,
+} from '@/api/platform/institutions'
 import { CloseOutlined } from '@ant-design/icons-vue'
 import * as qiniu from 'qiniu-js'
 import {
@@ -10,6 +15,7 @@ import {
   getInstitutionDetailApi,
   updateInstitutionApi,
 } from '@/api/platform/institutions'
+import { regionData } from '@/constants/region-data'
 import { getQiniuToken } from '@/api/qiniu'
 import { debounce } from 'lodash-es'
 import messageService from '@/utils/messageService'
@@ -31,8 +37,11 @@ interface InstitutionFormState {
   loginName: string
   mobile: string
   principal: string
+  provinceCode?: string
   province: string
+  cityCode?: string
   city: string
+  regionCode?: string
   region: string
   address: string
   lng?: number
@@ -49,6 +58,12 @@ interface InstitutionFormState {
   galleryImages: string[]
 }
 
+interface RegionSelection {
+  provinceCode?: string
+  cityCode?: string
+  regionCode?: string
+}
+
 const geocodeSourceMap: Record<string, string> = {
   same_address: '同地址匹配',
   amap: '高德解析',
@@ -58,6 +73,90 @@ const geocodeSourceMap: Record<string, string> = {
   province_average: '省份均值',
 }
 
+const directCountyCityLabels = new Set([
+  '市辖区',
+  '县',
+  '省直辖县级行政区划',
+  '自治区直辖县级行政区划',
+])
+
+function normalizeRegionCode(value?: number | string | null) {
+  const raw = String(value ?? '').trim()
+  if (!raw || raw === '0')
+    return ''
+
+  if (raw.length >= 6)
+    return raw
+
+  if (raw.length === 2)
+    return `${raw}0000`
+
+  if (raw.length === 4)
+    return `${raw}00`
+
+  return raw
+}
+
+function matchCityName(provinceName: string, optionName: string, currentName: string) {
+  const name = String(currentName || '').trim()
+  if (!name)
+    return false
+
+  if (optionName === name)
+    return true
+
+  if (optionName === '市辖区' && name === provinceName)
+    return true
+
+  if ((optionName === '省直辖县级行政区划' || optionName === '自治区直辖县级行政区划') && name === '直辖县级')
+    return true
+
+  return false
+}
+
+function findRegionSelectionByNames(provinceName: string, cityName: string, regionName: string): RegionSelection | null {
+  const provinceOption = regionData.find(item => item.label === String(provinceName || '').trim())
+  if (!provinceOption)
+    return null
+
+  const provinceChildren = provinceOption.children || []
+  const cityOption = provinceChildren.find(item => matchCityName(provinceOption.label, item.label, cityName))
+    || (provinceChildren.length === 1 ? provinceChildren[0] : undefined)
+
+  if (!cityOption) {
+    return {
+      provinceCode: provinceOption.value,
+      cityCode: '',
+      regionCode: '',
+    }
+  }
+
+  const regionOption = (cityOption.children || []).find(item => item.label === String(regionName || '').trim())
+
+  return {
+    provinceCode: provinceOption.value,
+    cityCode: cityOption.value,
+    regionCode: regionOption?.value || '',
+  }
+}
+
+function resolveRegionSelection(detail: InstitutionDetail): RegionSelection {
+  const provinceCode = normalizeRegionCode(detail.provinceCode)
+  const cityCode = normalizeRegionCode(detail.cityCode)
+  const regionCode = normalizeRegionCode(detail.regionCode)
+
+  if (provinceCode || cityCode || regionCode) {
+    return {
+      provinceCode,
+      cityCode,
+      regionCode,
+    }
+  }
+
+  return findRegionSelectionByNames(detail.province, detail.city, detail.region || '')
+    || { provinceCode: '', cityCode: '', regionCode: '' }
+}
+
 function createInitialFormState(): InstitutionFormState {
   return {
     organCode: '',
@@ -65,8 +164,11 @@ function createInitialFormState(): InstitutionFormState {
     loginName: '',
     mobile: '',
     principal: '',
+    provinceCode: undefined,
     province: '',
+    cityCode: undefined,
     city: '',
+    regionCode: undefined,
     region: '',
     address: '',
     lng: undefined,
@@ -107,6 +209,12 @@ const modalTitle = computed(() => (isEdit.value ? '编辑机构' : '创建机构
 const geocodeSourceLabel = computed(() => geocodeSourceMap[geocodeSource.value] || '')
 const hasLogo = computed(() => !!String(formState.logo || '').trim())
 const logoInitial = computed(() => String(formState.organName || '').trim().slice(0, 1) || '机')
+const provinceOptions = computed(() => regionData.map(({ value, label }) => ({ value, label })))
+const selectedProvinceOption = computed(() => regionData.find(item => item.value === formState.provinceCode))
+const cityOptions = computed(() => (selectedProvinceOption.value?.children || []).map(({ value, label }) => ({ value, label })))
+const selectedCityOption = computed(() => selectedProvinceOption.value?.children?.find(item => item.value === formState.cityCode))
+const regionOptions = computed(() => (selectedCityOption.value?.children || []).map(({ value, label }) => ({ value, label })))
+const selectedRegionOption = computed(() => selectedCityOption.value?.children?.find(item => item.value === formState.regionCode))
 
 const rules: Record<string, Rule[]> = {
   organName: [{ required: true, message: '请输入机构名称', trigger: 'blur' }],
@@ -116,8 +224,9 @@ const rules: Record<string, Rule[]> = {
     { pattern: /^\d{11}$/, message: '联系电话需为 11 位手机号', trigger: 'blur' },
   ],
   principal: [{ required: true, message: '请输入负责人姓名', trigger: 'blur' }],
-  province: [{ required: true, message: '请输入省份', trigger: 'blur' }],
-  city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
+  provinceCode: [{ required: true, message: '请选择省份', trigger: 'change' }],
+  cityCode: [{ required: true, message: '请选择城市', trigger: 'change' }],
+  regionCode: [{ required: true, message: '请选择区县', trigger: 'change' }],
   address: [{ required: true, message: '请输入详细地址', trigger: 'blur' }],
 }
 
@@ -139,11 +248,59 @@ function closeModal() {
   emit('update:open', false)
 }
 
+function syncRegionLabels(fallback?: Partial<Pick<InstitutionFormState, 'province' | 'city' | 'region'>>) {
+  formState.province = selectedProvinceOption.value?.label || String(fallback?.province || '').trim()
+  formState.city = selectedCityOption.value?.label || String(fallback?.city || '').trim()
+  formState.region = selectedRegionOption.value?.label || String(fallback?.region || '').trim()
+}
+
+function applyRegionSelection(selection: Partial<RegionSelection>, fallback?: Partial<Pick<InstitutionFormState, 'province' | 'city' | 'region'>>) {
+  formState.provinceCode = selection.provinceCode ? String(selection.provinceCode) : undefined
+  formState.cityCode = selection.cityCode ? String(selection.cityCode) : undefined
+  formState.regionCode = selection.regionCode ? String(selection.regionCode) : undefined
+  syncRegionLabels(fallback)
+}
+
+function handleProvinceChange(value?: string | number) {
+  formState.provinceCode = value ? String(value) : undefined
+  formState.cityCode = undefined
+  formState.regionCode = undefined
+  syncRegionLabels()
+}
+
+function handleCityChange(value?: string | number) {
+  formState.cityCode = value ? String(value) : undefined
+  formState.regionCode = undefined
+  syncRegionLabels()
+}
+
+function handleRegionChange(value?: string | number) {
+  formState.regionCode = value ? String(value) : undefined
+  syncRegionLabels()
+}
+
+function buildGeocodeLocation() {
+  const province = formState.province.trim()
+  let city = formState.city.trim()
+  let region = formState.region.trim()
+
+  if (city === '市辖区') {
+    city = province
+  }
+  else if (directCountyCityLabels.has(city)) {
+    city = region || province
+    region = ''
+  }
+
+  return { province, city, region }
+}
+
 function buildAddressKey() {
+  const location = buildGeocodeLocation()
   return [
-    formState.province.trim(),
-    formState.city.trim(),
-    formState.region.trim(),
+    location.province,
+    location.city,
+    location.region,
     formState.address.trim(),
   ].join('|')
 }
@@ -156,8 +313,7 @@ function hasResolvedCoordinate() {
 }
 
 function buildGeocodePayload(): InstitutionGeocodePayload | null {
-  const province = formState.province.trim()
-  const city = formState.city.trim()
+  const { province, city, region } = buildGeocodeLocation()
   const address = formState.address.trim()
   if (!province || !city || !address)
     return null
@@ -165,7 +321,7 @@ function buildGeocodePayload(): InstitutionGeocodePayload | null {
   return {
     province,
     city,
-    region: formState.region.trim() || undefined,
+    region: region || undefined,
     address,
   }
 }
@@ -274,7 +430,7 @@ async function resolveCoordinates(manual = false) {
   const payload = buildGeocodePayload()
   if (!payload) {
     if (manual)
-      messageService.warning('请先填写完整的省市和详细地址')
+      messageService.warning('请先选择完整的省市区并填写详细地址')
     return false
   }
 
@@ -330,9 +486,11 @@ async function loadInstitutionDetail(id: number) {
     formState.loginName = String(detail.loginName || '')
     formState.mobile = String(detail.mobile || '')
     formState.principal = String(detail.principal || '')
-    formState.province = String(detail.province || '')
-    formState.city = String(detail.city || '')
-    formState.region = String(detail.region || '')
+    applyRegionSelection(resolveRegionSelection(detail), {
+      province: String(detail.province || ''),
+      city: String(detail.city || ''),
+      region: String(detail.region || ''),
+    })
     formState.address = String(detail.address || '')
     formState.lng = Number(detail.lng || 0) || undefined
     formState.lat = Number(detail.lat || 0) || undefined
@@ -415,8 +573,11 @@ function buildPayload(): InstitutionMutationPayload {
     loginName: formState.loginName.trim(),
     mobile: formState.mobile.trim(),
     principal: formState.principal.trim(),
+    provinceCode: formState.provinceCode ? Number(formState.provinceCode) : undefined,
     province: formState.province.trim(),
+    cityCode: formState.cityCode ? Number(formState.cityCode) : undefined,
     city: formState.city.trim(),
+    regionCode: formState.regionCode ? Number(formState.regionCode) : undefined,
     region: formState.region.trim() || undefined,
     address: formState.address.trim(),
     lng: hasResolvedCoordinate() ? Number(formState.lng) : undefined,
@@ -565,26 +726,49 @@ async function submitForm() {
 
           <div class="system-grid">
             <div class="system-grid__item">
-              <a-form-item label="省份：" name="province">
-                <a-input v-model:value="formState.province" :maxlength="32" placeholder="请输入省份" />
+              <a-form-item label="省份：" name="provinceCode">
+                <a-select
+                  v-model:value="formState.provinceCode"
+                  :options="provinceOptions"
+                  show-search
+                  option-filter-prop="label"
+                  placeholder="请选择省份"
+                  @change="handleProvinceChange"
+                />
               </a-form-item>
             </div>
 
             <div class="system-grid__item">
-              <a-form-item label="城市：" name="city">
-                <a-input v-model:value="formState.city" :maxlength="32" placeholder="请输入城市" />
+              <a-form-item label="城市：" name="cityCode">
+                <a-select
+                  v-model:value="formState.cityCode"
+                  :options="cityOptions"
+                  :disabled="!formState.provinceCode"
+                  show-search
+                  option-filter-prop="label"
+                  placeholder="请选择城市"
+                  @change="handleCityChange"
+                />
               </a-form-item>
             </div>
 
             <div class="system-grid__item">
-              <a-form-item label="区县：">
-                <a-input v-model:value="formState.region" :maxlength="32" placeholder="请输入区县" />
+              <a-form-item label="区县：" name="regionCode">
+                <a-select
+                  v-model:value="formState.regionCode"
+                  :options="regionOptions"
+                  :disabled="!formState.cityCode"
+                  show-search
+                  option-filter-prop="label"
+                  placeholder="请选择区县"
+                  @change="handleRegionChange"
+                />
               </a-form-item>
             </div>
 
             <div class="system-grid__item">
-              <a-form-item label="机构电话：">
-                <a-input v-model:value="formState.concatPhone" :maxlength="40" placeholder="请输入机构电话" />
+              <a-form-item label="机构简称：">
+                <a-input v-model:value="formState.organLabel" :maxlength="127" placeholder="请输入机构简称" />
               </a-form-item>
             </div>
 
@@ -608,49 +792,6 @@ async function submitForm() {
                   <span v-if="geocodeSourceLabel">{{ geocodeSourceLabel }}</span>
                   <span v-if="geocodeResolvedAddress">{{ geocodeResolvedAddress }}</span>
                 </div>
-              </a-form-item>
-            </div>
-
-            <div class="system-grid__item">
-              <a-form-item label="固定电话：">
-                <a-input v-model:value="formState.fixedPhone" :maxlength="255" placeholder="请输入固定电话" />
-              </a-form-item>
-            </div>
-
-            <div class="system-grid__item">
-              <a-form-item label="机构简称：">
-                <a-input v-model:value="formState.organLabel" :maxlength="127" placeholder="请输入机构简称" />
-              </a-form-item>
-            </div>
-
-            <div class="system-grid__item">
-              <a-form-item label="营业时间：">
-                <a-input v-model:value="formState.businessTime" :maxlength="255" placeholder="例如：周一至周日 09:00 - 21:00" />
-              </a-form-item>
-            </div>
-
-            <div class="system-grid__item">
-              <a-form-item label="宣传视频：">
-                <a-input v-model:value="formState.video" :maxlength="2000" placeholder="请输入视频地址" />
-              </a-form-item>
-            </div>
-
-            <div class="system-grid__item system-grid__item--full">
-              <a-form-item label="展示图地址：">
-                <a-select
-                  v-model:value="formState.galleryImages"
-                  mode="tags"
-                  :options="[]"
-                  :max-tag-count="6"
-                  :token-separators="[',', '，']"
-                  placeholder="输入图片地址后回车，可填写多个"
-                />
-              </a-form-item>
-            </div>
-
-            <div class="system-grid__item system-grid__item--full">
-              <a-form-item label="机构简介：">
-                <a-textarea v-model:value="formState.description" :rows="4" :maxlength="2000" placeholder="请输入机构简介" />
               </a-form-item>
             </div>
 

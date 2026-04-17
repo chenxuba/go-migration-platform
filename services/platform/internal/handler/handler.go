@@ -790,11 +790,20 @@ func validateInstitutionMutation(input model.InstitutionMutation) string {
 	if strings.TrimSpace(input.Principal) == "" {
 		return "principal is required"
 	}
+	if input.ProvinceCode == nil || *input.ProvinceCode <= 0 {
+		return "provinceCode is required"
+	}
 	if strings.TrimSpace(input.Province) == "" {
 		return "province is required"
 	}
+	if input.CityCode == nil || *input.CityCode <= 0 {
+		return "cityCode is required"
+	}
 	if strings.TrimSpace(input.City) == "" {
 		return "city is required"
+	}
+	if input.RegionCode == nil || *input.RegionCode <= 0 {
+		return "regionCode is required"
 	}
 	if strings.TrimSpace(input.Address) == "" {
 		return "address is required"

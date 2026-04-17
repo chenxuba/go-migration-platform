@@ -22,8 +22,11 @@ export interface InstitutionDetail {
   loginName: string
   mobile: string
   principal?: string
+  provinceCode?: number
   province: string
+  cityCode?: number
   city: string
+  regionCode?: number
   region?: string
   address?: string
   concatPhone?: string
@@ -73,8 +76,11 @@ export interface InstitutionMutationPayload {
   loginName: string
   mobile: string
   principal?: string
+  provinceCode?: number
   province: string
+  cityCode?: number
   city: string
+  regionCode?: number
   region?: string
   address?: string
   concatPhone?: string
