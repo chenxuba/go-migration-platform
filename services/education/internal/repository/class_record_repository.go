@@ -1115,6 +1115,10 @@ func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int6
 	if err != nil {
 		return model.TeachingRecordDetailResult{}, err
 	}
+	result.StudentList, err = repo.fillTeachingRecordDetailStudentProfiles(ctx, instID, result.StudentList)
+	if err != nil {
+		return model.TeachingRecordDetailResult{}, err
+	}
 	if err := repo.fillTeachingRecordDetailAttendanceStats(ctx, instID, &result); err != nil {
 		return model.TeachingRecordDetailResult{}, err
 	}
@@ -2326,6 +2330,89 @@ func (repo *Repository) mergeTeachingRecordDetailStudentList(ctx context.Context
 	}
 
 	return result, nil
+}
+
+func (repo *Repository) fillTeachingRecordDetailStudentProfiles(ctx context.Context, instID int64, students []model.TeachingRecordDetailStudent) ([]model.TeachingRecordDetailStudent, error) {
+	if len(students) == 0 {
+		return students, nil
+	}
+
+	studentIDs := make([]int64, 0, len(students))
+	seen := make(map[int64]struct{}, len(students))
+	for _, item := range students {
+		studentID, err := strconv.ParseInt(strings.TrimSpace(item.StudentID), 10, 64)
+		if err != nil || studentID <= 0 {
+			continue
+		}
+		if _, ok := seen[studentID]; ok {
+			continue
+		}
+		seen[studentID] = struct{}{}
+		studentIDs = append(studentIDs, studentID)
+	}
+	if len(studentIDs) == 0 {
+		return students, nil
+	}
+
+	type studentProfile struct {
+		Sex      *int
+		Birthday string
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			id,
+			stu_sex,
+			birthday
+		FROM inst_student
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND id IN (`+sqlPlaceholders(len(studentIDs))+`)
+	`, append([]any{instID}, int64SliceToAny(studentIDs)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	profileByStudentID := make(map[int64]studentProfile, len(studentIDs))
+	for rows.Next() {
+		var (
+			studentID int64
+			sex       sql.NullInt64
+			birthday  sql.NullTime
+		)
+		if err := rows.Scan(&studentID, &sex, &birthday); err != nil {
+			return nil, err
+		}
+
+		profile := studentProfile{}
+		if sex.Valid {
+			value := int(sex.Int64)
+			profile.Sex = &value
+		}
+		if birthday.Valid && birthday.Time.Year() > 1 {
+			profile.Birthday = birthday.Time.Format("2006-01-02")
+		}
+		profileByStudentID[studentID] = profile
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i := range students {
+		studentID, err := strconv.ParseInt(strings.TrimSpace(students[i].StudentID), 10, 64)
+		if err != nil || studentID <= 0 {
+			continue
+		}
+		profile, ok := profileByStudentID[studentID]
+		if !ok {
+			continue
+		}
+		students[i].Sex = profile.Sex
+		students[i].Birthday = profile.Birthday
+	}
+
+	return students, nil
 }
 
 func (repo *Repository) loadClassRecordScheduleMetaMap(ctx context.Context, instID int64, scheduleIDs []int64) (map[int64]classRecordScheduleMeta, error) {

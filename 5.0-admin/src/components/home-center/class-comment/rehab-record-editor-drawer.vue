@@ -11,7 +11,9 @@ interface RehabRecordStudent {
   status?: string
   gender?: string | number
   sex?: string | number
+  stuSex?: string | number
   birthday?: string
+  birthDay?: string
   birthDate?: string
 }
 
@@ -92,15 +94,18 @@ function normalizeTextValue(value?: string | number | null) {
 }
 
 function resolveGenderValue() {
-  const rawValue = props.student?.gender ?? props.student?.sex
+  const rawValue = props.student?.gender ?? props.student?.sex ?? props.student?.stuSex
   if (rawValue === undefined || rawValue === null || rawValue === '')
     return undefined
 
   if (rawValue === 1 || rawValue === '1' || rawValue === '男')
     return '男'
 
-  if (rawValue === 2 || rawValue === '2' || rawValue === '女')
+  if (rawValue === 0 || rawValue === '0' || rawValue === '女')
     return '女'
+
+  if (rawValue === 2 || rawValue === '2' || rawValue === '未知')
+    return undefined
 
   return normalizeTextValue(rawValue) || undefined
 }
@@ -115,7 +120,7 @@ function normalizeDateValue(value?: string | null) {
 function hydrateBasicInfo() {
   formModel.studentName = normalizeTextValue(props.student?.name)
   formModel.gender = resolveGenderValue()
-  formModel.birthDate = normalizeDateValue(props.student?.birthDate || props.student?.birthday)
+  formModel.birthDate = normalizeDateValue(props.student?.birthDate || props.student?.birthDay || props.student?.birthday)
   formModel.className = normalizeTextValue(props.session?.sourceName)
   formModel.teacherName = normalizeTextValue(props.session?.teacherName)
   formModel.trainingDate = normalizeDateValue(props.session?.startTime)

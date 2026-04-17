@@ -94,6 +94,8 @@ export interface TeachingRecordDetailStudent {
   studentName: string
   studentPhone?: string
   avatar?: string
+  sex?: number
+  birthday?: string
   status: number
   sourceType: number
   quantity?: number

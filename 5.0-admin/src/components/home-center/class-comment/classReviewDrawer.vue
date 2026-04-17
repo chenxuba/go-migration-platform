@@ -15,6 +15,8 @@ interface ReviewStudentItem {
   avatar: string
   attentionText: string
   status: '到课' | '请假' | '旷课' | '未记录'
+  sex?: number
+  birthday?: string
   readText?: string
 }
 
@@ -214,6 +216,8 @@ function mapReviewStudent(student: Partial<TeachingRecordDetailStudent>): Review
     avatar: String(student.avatar || '').trim() || defaultAvatar,
     attentionText: '未关注',
     status: resolveStudentStatus(student.status),
+    sex: typeof student.sex === 'number' ? student.sex : undefined,
+    birthday: String(student.birthday || '').trim() || undefined,
   }
 }
 

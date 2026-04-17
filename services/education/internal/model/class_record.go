@@ -141,6 +141,8 @@ type TeachingRecordDetailStudent struct {
 	StudentName             string  `json:"studentName"`
 	StudentPhone            string  `json:"studentPhone"`
 	Avatar                  string  `json:"avatar"`
+	Sex                     *int    `json:"sex,omitempty"`
+	Birthday                string  `json:"birthday,omitempty"`
 	Status                  int     `json:"status"`
 	SourceType              int     `json:"sourceType"`
 	Quantity                float64 `json:"quantity"`
