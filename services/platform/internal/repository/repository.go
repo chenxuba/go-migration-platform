@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 	"go-migration-platform/services/platform/internal/model"
@@ -176,6 +177,30 @@ func normalizedInstitutionProfile(profile *model.InstitutionProfile) model.Insti
 		Video:         strings.TrimSpace(profile.Video),
 		GalleryImages: trimStringSlice(profile.GalleryImages),
 	}
+}
+
+func normalizeInstitutionOrganLabel(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+
+	legacyValue := true
+	for _, char := range trimmed {
+		if char == ',' || unicode.IsSpace(char) {
+			continue
+		}
+		if char < '0' || char > '9' {
+			legacyValue = false
+			break
+		}
+	}
+
+	if legacyValue {
+		return ""
+	}
+
+	return trimmed
 }
 
 func (repo *Repository) PageDicts(ctx context.Context, current, size int, keyword string) (model.PageResult[model.Dict], error) {
@@ -519,6 +544,7 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 	); err != nil {
 		return model.InstitutionDetail{}, err
 	}
+	detail.Profile.OrganLabel = normalizeInstitutionOrganLabel(detail.Profile.OrganLabel)
 	detail.Profile.GalleryImages = unmarshalStringSlice(galleryImagesRaw)
 
 	return detail, nil

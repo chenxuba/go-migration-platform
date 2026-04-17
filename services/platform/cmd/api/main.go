@@ -10,6 +10,7 @@ import (
 	"go-migration-platform/pkg/config"
 	"go-migration-platform/pkg/customization"
 	"go-migration-platform/pkg/logx"
+	"go-migration-platform/pkg/qiniux"
 	"go-migration-platform/pkg/tenant"
 	"go-migration-platform/services/platform/internal/handler"
 	"go-migration-platform/services/platform/internal/repository"
@@ -39,7 +40,18 @@ func main() {
 		panic(err)
 	}
 	tokenManager := authx.NewTokenManager(cfg.TokenSecret)
-	svc := service.New(store, repo, tokenManager, cfg.AmapWebServiceKey)
+	qiniuClient := qiniux.New(qiniux.Config{
+		AccessKey:      cfg.QiniuAccessKey,
+		SecretKey:      cfg.QiniuSecretKey,
+		Bucket:         cfg.QiniuBucket,
+		BucketHost:     cfg.QiniuBucketHost,
+		ExpiresSeconds: qiniux.ParseInt64(cfg.QiniuExpires, 72000),
+		ImageMaxSize:   qiniux.ParseInt64(cfg.QiniuImageMaxSize, 10485760),
+		ImageMimeTypes: cfg.QiniuImageMimeTypes,
+		VideoMaxSize:   qiniux.ParseInt64(cfg.QiniuVideoMaxSize, 104857600),
+		VideoMimeTypes: cfg.QiniuVideoMimeTypes,
+	})
+	svc := service.New(store, repo, tokenManager, cfg.AmapWebServiceKey, qiniuClient)
 	h := handler.New(svc)
 
 	mux := http.NewServeMux()

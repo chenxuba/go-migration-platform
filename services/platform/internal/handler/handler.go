@@ -26,6 +26,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/health", handler.health)
 	mux.HandleFunc("/api/v1/tenant/features", handler.features)
 	mux.HandleFunc("/api/v1/tenant/customization-summary", handler.customizationSummary)
+	mux.HandleFunc("/api/v1/qiniu/upload-token", handler.qiniuUploadToken)
+	mux.HandleFunc("/api/v1/qiniu/video-upload-token", handler.qiniuVideoUploadToken)
 	mux.HandleFunc("/api/v1/platform/institutions", handler.institutions)
 	mux.HandleFunc("/api/v1/platform/institutions/detail", handler.institutionDetail)
 	mux.HandleFunc("/api/v1/platform/institutions/geocode", handler.geocodeInstitution)
@@ -84,6 +86,42 @@ func (handler *Handler) features(w http.ResponseWriter, r *http.Request) {
 func (handler *Handler) customizationSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	httpx.WriteJSON(w, http.StatusOK, handler.service.CustomizationSummary(ctx), ctx.RequestID)
+}
+
+func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.GetQiniuUploadToken()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) qiniuVideoUploadToken(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.GetQiniuVideoUploadToken()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
 func (handler *Handler) institutions(w http.ResponseWriter, r *http.Request) {

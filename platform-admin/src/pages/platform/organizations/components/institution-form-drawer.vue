@@ -17,7 +17,6 @@ import {
 } from '@/api/platform/institutions'
 import { regionData } from '@/constants/region-data'
 import { getQiniuToken } from '@/api/qiniu'
-import { debounce } from 'lodash-es'
 import messageService from '@/utils/messageService'
 
 const props = defineProps<{
@@ -238,7 +237,6 @@ function resetForm() {
   lastResolvedAddressKey.value = ''
   uploadingLogo.value = false
   logoUploadProgress.value = 0
-  debouncedResolveCoordinates.cancel()
   nextTick(() => {
     formRef.value?.clearValidate?.()
   })
@@ -465,10 +463,6 @@ async function resolveCoordinates(manual = false) {
   }
 }
 
-const debouncedResolveCoordinates = debounce(() => {
-  void resolveCoordinates(false)
-}, 700)
-
 async function loadInstitutionDetail(id: number) {
   detailLoading.value = true
   suspendAutoResolve.value = true
@@ -556,14 +550,14 @@ watch(
       return
     }
 
-    if (value === lastResolvedAddressKey.value)
+    if (value === lastResolvedAddressKey.value && hasResolvedCoordinate())
       return
 
     formState.lng = undefined
     formState.lat = undefined
     geocodeSource.value = ''
     geocodeResolvedAddress.value = ''
-    debouncedResolveCoordinates()
+    lastResolvedAddressKey.value = ''
   },
 )
 
@@ -600,9 +594,8 @@ async function submitForm() {
   }
 
   if (!hasResolvedCoordinate()) {
-    const resolved = await resolveCoordinates(true)
-    if (!resolved)
-      return
+    messageService.warning('请先手动点击获取坐标')
+    return
   }
 
   submitting.value = true

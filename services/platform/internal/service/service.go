@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"go-migration-platform/pkg/authx"
 	"go-migration-platform/pkg/customization"
+	"go-migration-platform/pkg/qiniux"
 	"go-migration-platform/pkg/tenant"
 	"go-migration-platform/services/platform/internal/model"
 	"go-migration-platform/services/platform/internal/repository"
@@ -15,14 +17,16 @@ type Service struct {
 	repo         *repository.Repository
 	tokenManager *authx.TokenManager
 	amapWebKey   string
+	qiniuClient  *qiniux.Client
 }
 
-func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, amapWebKey string) *Service {
+func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, amapWebKey string, qiniuClient *qiniux.Client) *Service {
 	return &Service{
 		store:        store,
 		repo:         repo,
 		tokenManager: tokenManager,
 		amapWebKey:   amapWebKey,
+		qiniuClient:  qiniuClient,
 	}
 }
 
@@ -49,6 +53,20 @@ func (svc *Service) CustomizationSummary(ctx tenant.Context) map[string]any {
 
 func (svc *Service) ParseToken(token string) (authx.Claims, error) {
 	return svc.tokenManager.Parse(token)
+}
+
+func (svc *Service) GetQiniuUploadToken() (qiniux.TokenVO, error) {
+	if svc.qiniuClient == nil {
+		return qiniux.TokenVO{}, errors.New("qiniu not configured")
+	}
+	return svc.qiniuClient.ImageUploadToken()
+}
+
+func (svc *Service) GetQiniuVideoUploadToken() (qiniux.TokenVO, error) {
+	if svc.qiniuClient == nil {
+		return qiniux.TokenVO{}, errors.New("qiniu not configured")
+	}
+	return svc.qiniuClient.VideoUploadToken()
 }
 
 func (svc *Service) PageDicts(current, size int, keyword string) (model.PageResult[model.Dict], error) {
