@@ -146,6 +146,11 @@ const columns: TableColumnsType<InstitutionItem> = [
     width: 220,
   },
   {
+    title: '开通类型',
+    key: 'openType',
+    width: 160,
+  },
+  {
     title: '注册时间',
     key: 'registerTime',
     width: 180,
@@ -153,7 +158,7 @@ const columns: TableColumnsType<InstitutionItem> = [
   {
     title: '过期时间',
     key: 'expireEndTime',
-    width: 180,
+    width: 160,
   },
   {
     title: '状态',
@@ -227,6 +232,10 @@ function formatDateMinute(value?: string) {
     return raw.slice(0, 16)
 
   return raw
+}
+
+function getInstitutionOpenTypeLabel(record: Partial<InstitutionItem>) {
+  return Number(record.openType) === 1 ? '体验版' : '正式版'
 }
 
 function getInstitutionStatusValue(record: Partial<InstitutionItem>) {
@@ -504,6 +513,17 @@ onMounted(() => {
                 </a-tooltip>
                 <div v-else class="cell-sub contact-address">
                   未填写机构地址
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="column.key === 'openType'">
+              <div class="info-cell">
+                <div class="cell-title cell-title--sm">
+                  {{ getInstitutionOpenTypeLabel(record) }}
+                </div>
+                <div class="cell-sub">
+                  开通类型
                 </div>
               </div>
             </template>

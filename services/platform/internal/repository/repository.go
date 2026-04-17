@@ -97,6 +97,20 @@ func New(db *sql.DB) (*Repository, error) {
 }
 
 func (repo *Repository) ensureInstitutionSchema(ctx context.Context) error {
+	if err := repo.ensureColumnType(ctx, "org_institution", "expire_start_time", "datetime", `
+		ALTER TABLE org_institution
+		MODIFY COLUMN expire_start_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '账号有效期起始时间'
+	`); err != nil {
+		return err
+	}
+
+	if err := repo.ensureColumnType(ctx, "org_institution", "expire_end_time", "datetime", `
+		ALTER TABLE org_institution
+		MODIFY COLUMN expire_end_time DATETIME NULL DEFAULT NULL COMMENT '账号有效期结束'
+	`); err != nil {
+		return err
+	}
+
 	if err := repo.ensureColumnExists(ctx, "org_institution", "open_type", `
 		ALTER TABLE org_institution
 		ADD COLUMN open_type TINYINT NOT NULL DEFAULT 2 COMMENT '开通类型：1体验版 2正式版'
@@ -154,6 +168,27 @@ func (repo *Repository) ensureColumnExists(ctx context.Context, tableName, colum
 	if count > 0 {
 		return nil
 	}
+	_, err := repo.db.ExecContext(ctx, ddl)
+	return err
+}
+
+func (repo *Repository) ensureColumnType(ctx context.Context, tableName, columnName, expectedType, ddl string) error {
+	var dataType string
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT DATA_TYPE
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = ?
+		  AND COLUMN_NAME = ?
+		LIMIT 1
+	`, tableName, columnName).Scan(&dataType); err != nil {
+		return err
+	}
+
+	if strings.EqualFold(strings.TrimSpace(dataType), strings.TrimSpace(expectedType)) {
+		return nil
+	}
+
 	_, err := repo.db.ExecContext(ctx, ddl)
 	return err
 }

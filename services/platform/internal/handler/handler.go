@@ -219,7 +219,7 @@ func (handler *Handler) createInstitution(w http.ResponseWriter, r *http.Request
 
 	id, err := handler.service.CreateInstitution(input, creatorID)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "create institution failed", ctx.RequestID)
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": id}, ctx.RequestID)
@@ -264,7 +264,7 @@ func (handler *Handler) updateInstitution(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := handler.service.UpdateInstitution(input, updaterID); err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "update institution failed", ctx.RequestID)
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
