@@ -426,6 +426,9 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 		       IFNULL(oi.login_name, ''),
 		       IFNULL(oi.mobile, ''),
 		       IFNULL(oi.principal, ''),
+		       IFNULL(oi.province, ''),
+		       IFNULL(oi.city, ''),
+		       IFNULL(oi.region, ''),
 		       IFNULL(oi.address, ''),
 		       IFNULL(oi.logo, ''),
 		       IFNULL(oi.enabled, 0),
@@ -435,7 +438,7 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 		FROM org_institution oi
 		LEFT JOIN inst_user iu ON iu.inst_id = oi.id
 		WHERE `+whereClause+`
-		GROUP BY oi.id, oi.organ_name, oi.organ_code, oi.login_name, oi.mobile, oi.principal, oi.address, oi.logo, oi.enabled
+		GROUP BY oi.id, oi.organ_name, oi.organ_code, oi.login_name, oi.mobile, oi.principal, oi.province, oi.city, oi.region, oi.address, oi.logo, oi.enabled
 		ORDER BY oi.id DESC
 		LIMIT ? OFFSET ?`, listArgs...)
 	if err != nil {
@@ -453,6 +456,9 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 			&item.LoginName,
 			&item.Mobile,
 			&item.Principal,
+			&item.Province,
+			&item.City,
+			&item.Region,
 			&item.Address,
 			&item.Logo,
 			&item.Enabled,

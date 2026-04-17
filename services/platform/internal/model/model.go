@@ -115,6 +115,9 @@ type Institution struct {
 	LoginName        string `json:"loginName,omitempty"`
 	Mobile           string `json:"mobile,omitempty"`
 	Principal        string `json:"principal,omitempty"`
+	Province         string `json:"province,omitempty"`
+	City             string `json:"city,omitempty"`
+	Region           string `json:"region,omitempty"`
 	Address          string `json:"address,omitempty"`
 	Logo             string `json:"logo,omitempty"`
 	Enabled          bool   `json:"enabled"`

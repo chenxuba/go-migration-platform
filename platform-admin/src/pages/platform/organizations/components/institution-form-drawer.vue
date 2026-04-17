@@ -227,6 +227,16 @@ const rules: Record<string, Rule[]> = {
   cityCode: [{ required: true, message: '请选择城市', trigger: 'change' }],
   regionCode: [{ required: true, message: '请选择区县', trigger: 'change' }],
   address: [{ required: true, message: '请输入详细地址', trigger: 'blur' }],
+  lng: [{
+    required: true,
+    trigger: 'change',
+    validator: async () => {
+      if (hasResolvedCoordinate())
+        return Promise.resolve()
+
+      return Promise.reject(new Error('请先获取坐标'))
+    },
+  }],
 }
 
 function resetForm() {
@@ -446,6 +456,7 @@ async function resolveCoordinates(manual = false) {
     geocodeSource.value = String(res.result.source || '')
     geocodeResolvedAddress.value = String(res.result.resolvedAddress || '')
     lastResolvedAddressKey.value = buildAddressKey()
+    await formRef.value?.validateFields?.(['lng']).catch(() => undefined)
 
     if (manual)
       messageService.success('机构坐标已更新')
@@ -454,8 +465,9 @@ async function resolveCoordinates(manual = false) {
   }
   catch (error: any) {
     console.error('resolve institution coordinates failed', error)
+    const errorMessage = String(error?.response?.data?.message || error?.message || '').trim()
     if (manual)
-      messageService.error(error?.message || '未获取到机构坐标')
+      messageService.error(errorMessage || '未获取到机构坐标')
     return false
   }
   finally {
@@ -558,6 +570,9 @@ watch(
     geocodeSource.value = ''
     geocodeResolvedAddress.value = ''
     lastResolvedAddressKey.value = ''
+    nextTick(() => {
+      formRef.value?.validateFields?.(['lng']).catch(() => undefined)
+    })
   },
 )
 
@@ -772,7 +787,7 @@ async function submitForm() {
             </div>
 
             <div class="system-grid__item system-grid__item--full">
-              <a-form-item label="坐标定位：">
+              <a-form-item label="坐标定位：" name="lng" required>
                 <div class="coordinate-inline">
                   <a-input class="coordinate-inline__field" :value="formatCoordinate(formState.lng)" disabled placeholder="自动获取经度" />
                   <a-input class="coordinate-inline__field" :value="formatCoordinate(formState.lat)" disabled placeholder="自动获取纬度" />

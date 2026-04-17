@@ -21,6 +21,7 @@ func (svc *Service) resolveInstitutionCoordinate(ctx context.Context, input mode
 		Region:   strings.TrimSpace(input.Region),
 		Address:  strings.TrimSpace(input.Address),
 	}
+	var amapErr error
 
 	if result, ok, err := svc.repo.FindInstitutionCoordinateByAddress(ctx, query); err != nil {
 		return model.InstitutionGeocodeResult{}, err
@@ -28,7 +29,9 @@ func (svc *Service) resolveInstitutionCoordinate(ctx context.Context, input mode
 		return result, nil
 	}
 
-	if result, ok := svc.resolveInstitutionCoordinateByAmap(ctx, query); ok {
+	if result, ok, err := svc.resolveInstitutionCoordinateByAmap(ctx, query); err != nil {
+		amapErr = err
+	} else if ok {
 		return result, nil
 	}
 
@@ -42,13 +45,17 @@ func (svc *Service) resolveInstitutionCoordinate(ctx context.Context, input mode
 		return result, nil
 	}
 
-	return model.InstitutionGeocodeResult{}, fmt.Errorf("unable to resolve coordinates")
+	if amapErr != nil {
+		return model.InstitutionGeocodeResult{}, amapErr
+	}
+
+	return model.InstitutionGeocodeResult{}, fmt.Errorf("地址解析失败，请检查省市区和详细地址是否准确")
 }
 
-func (svc *Service) resolveInstitutionCoordinateByAmap(ctx context.Context, query model.InstitutionGeocodeQuery) (model.InstitutionGeocodeResult, bool) {
+func (svc *Service) resolveInstitutionCoordinateByAmap(ctx context.Context, query model.InstitutionGeocodeQuery) (model.InstitutionGeocodeResult, bool, error) {
 	key := strings.TrimSpace(svc.amapWebKey)
 	if key == "" {
-		return model.InstitutionGeocodeResult{}, false
+		return model.InstitutionGeocodeResult{}, false, nil
 	}
 
 	params := url.Values{}
@@ -58,47 +65,55 @@ func (svc *Service) resolveInstitutionCoordinateByAmap(ctx context.Context, quer
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://restapi.amap.com/v3/geocode/geo?"+params.Encode(), nil)
 	if err != nil {
-		return model.InstitutionGeocodeResult{}, false
+		return model.InstitutionGeocodeResult{}, false, nil
 	}
 
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return model.InstitutionGeocodeResult{}, false
+		return model.InstitutionGeocodeResult{}, false, nil
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return model.InstitutionGeocodeResult{}, false
+		return model.InstitutionGeocodeResult{}, false, nil
 	}
 
 	var payload struct {
 		Status   string `json:"status"`
+		Info     string `json:"info"`
+		Infocode string `json:"infocode"`
 		Geocodes []struct {
 			Location         string `json:"location"`
 			FormattedAddress string `json:"formatted_address"`
 		} `json:"geocodes"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return model.InstitutionGeocodeResult{}, false
+		return model.InstitutionGeocodeResult{}, false, nil
 	}
-	if payload.Status != "1" || len(payload.Geocodes) == 0 {
-		return model.InstitutionGeocodeResult{}, false
+	if payload.Status != "1" {
+		if payload.Infocode == "10009" || strings.EqualFold(strings.TrimSpace(payload.Info), "USERKEY_PLAT_NOMATCH") {
+			return model.InstitutionGeocodeResult{}, false, fmt.Errorf("当前高德 Key 与 Web 服务平台类型不匹配，请更换为 Web 服务 Key")
+		}
+		return model.InstitutionGeocodeResult{}, false, nil
+	}
+	if len(payload.Geocodes) == 0 {
+		return model.InstitutionGeocodeResult{}, false, nil
 	}
 
 	parts := strings.Split(payload.Geocodes[0].Location, ",")
 	if len(parts) != 2 {
-		return model.InstitutionGeocodeResult{}, false
+		return model.InstitutionGeocodeResult{}, false, nil
 	}
 
 	lng, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
 	if err != nil {
-		return model.InstitutionGeocodeResult{}, false
+		return model.InstitutionGeocodeResult{}, false, nil
 	}
 	lat, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
 	if err != nil {
-		return model.InstitutionGeocodeResult{}, false
+		return model.InstitutionGeocodeResult{}, false, nil
 	}
 
 	return model.InstitutionGeocodeResult{
@@ -106,7 +121,7 @@ func (svc *Service) resolveInstitutionCoordinateByAmap(ctx context.Context, quer
 		Lat:             lat,
 		Source:          "amap",
 		ResolvedAddress: strings.TrimSpace(payload.Geocodes[0].FormattedAddress),
-	}, true
+	}, true, nil
 }
 
 func (svc *Service) resolveInstitutionCoordinateByNominatim(ctx context.Context, query model.InstitutionGeocodeQuery) (model.InstitutionGeocodeResult, bool) {

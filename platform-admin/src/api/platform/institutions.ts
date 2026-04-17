@@ -7,6 +7,9 @@ export interface InstitutionItem {
   loginName?: string
   mobile?: string
   principal?: string
+  province?: string
+  city?: string
+  region?: string
   address?: string
   logo?: string
   enabled: boolean
@@ -118,7 +121,11 @@ export function getInstitutionDetailApi(params: { id: number }) {
 }
 
 export function geocodeInstitutionApi(data: InstitutionGeocodePayload) {
-  return usePost<InstitutionGeocodeResult, InstitutionGeocodePayload>('/api/v1/platform/institutions/geocode', data)
+  return usePost<InstitutionGeocodeResult, InstitutionGeocodePayload>(
+    '/api/v1/platform/institutions/geocode',
+    data,
+    { silentError: true },
+  )
 }
 
 export function createInstitutionApi(data: InstitutionMutationPayload) {

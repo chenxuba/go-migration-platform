@@ -70,7 +70,7 @@ func Load(name, defaultPort string) ServiceConfig {
 		QiniuImageMimeTypes:                   envOrDefault("QINIU_IMAGE_MIME_TYPES", "image/*"),
 		QiniuVideoMaxSize:                     envOrDefault("QINIU_VIDEO_MAX_SIZE", "104857600"),
 		QiniuVideoMimeTypes:                   envOrDefault("QINIU_VIDEO_MIME_TYPES", "video/*"),
-		AmapWebServiceKey:                     envOrDefault("AMAP_WEB_SERVICE_KEY", ""),
+		AmapWebServiceKey:                     envOrDefault("AMAP_WEB_SERVICE_KEY", "b421b58b636dbe9a3e4e26ca7c9e5771"),
 		WeChatOfficialAppID:                   envOrDefault("WECHAT_OFFICIAL_APP_ID", "wxf11b8b60b6608df8"),
 		WeChatOfficialSecret:                  envOrDefault("WECHAT_OFFICIAL_SECRET", "23c548a859478a4060314b67871e7bcc"),
 		WeChatOfficialToken:                   envOrDefault("WECHAT_OFFICIAL_TOKEN", "ybc365"),

@@ -13,11 +13,17 @@ import InstitutionFormDrawer from './components/institution-form-drawer.vue'
 import messageService from '@/utils/messageService'
 
 const displayArray = ['customSearch', 'enableStatus']
+const directCountyCityLabels = new Set([
+  '市辖区',
+  '县',
+  '省直辖县级行政区划',
+  '自治区直辖县级行政区划',
+])
 
 const customSearchFilters = [
   {
     id: 'keyword',
-    fieldKey: '机构名称 / 机构ID',
+    fieldKey: '机构名称',
     fieldType: 1,
   },
   {
@@ -109,6 +115,27 @@ function normalizeLogo(logo?: string) {
 
 function getInitial(name?: string) {
   return String(name || '').trim().slice(0, 1) || '机'
+}
+
+function buildInstitutionAddress(record: Partial<InstitutionItem>) {
+  const province = String(record.province || '').trim()
+  const rawCity = String(record.city || '').trim()
+  const city = !rawCity || rawCity === province || directCountyCityLabels.has(rawCity) ? '' : rawCity
+  const segments = [
+    province,
+    city,
+    String(record.region || '').trim(),
+    String(record.address || '').trim(),
+  ].filter(Boolean)
+
+  const deduped: string[] = []
+  for (const segment of segments) {
+    if (deduped[deduped.length - 1] === segment)
+      continue
+    deduped.push(segment)
+  }
+
+  return deduped.join('')
 }
 
 function getRowClassName(record: Partial<InstitutionItem>) {
@@ -299,10 +326,10 @@ onMounted(() => {
             <template v-else-if="column.key === 'account'">
               <div class="info-cell">
                 <div class="cell-title cell-title--sm">
-                  {{ record.loginName || '--' }}
+                  {{ record.mobile || '--' }}
                 </div>
                 <div class="cell-sub">
-                  登录账号
+                  登录手机号
                 </div>
               </div>
             </template>
@@ -312,8 +339,13 @@ onMounted(() => {
                 <div class="cell-title cell-title--sm">
                   {{ record.mobile || '--' }}
                 </div>
-                <div class="cell-sub contact-address">
-                  {{ record.address || '未填写机构地址' }}
+                <a-tooltip v-if="buildInstitutionAddress(record)" :title="buildInstitutionAddress(record)" placement="topLeft">
+                  <div class="cell-sub contact-address">
+                    {{ buildInstitutionAddress(record) }}
+                  </div>
+                </a-tooltip>
+                <div v-else class="cell-sub contact-address">
+                  未填写机构地址
                 </div>
               </div>
             </template>
@@ -400,8 +432,7 @@ onMounted(() => {
   color: #262626;
   display: flex;
   align-items: center;
-  min-height: 24px;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 24px;
 }
@@ -466,12 +497,12 @@ onMounted(() => {
 }
 
 .contact-address {
-  display: -webkit-box;
+  display: block;
+  width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  word-break: break-word;
+  white-space: nowrap;
+  word-break: normal;
 }
 
 .status-text {

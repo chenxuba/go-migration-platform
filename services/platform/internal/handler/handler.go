@@ -287,7 +287,7 @@ func (handler *Handler) geocodeInstitution(w http.ResponseWriter, r *http.Reques
 
 	result, err := handler.service.ResolveInstitutionCoordinate(input)
 	if err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, "unable to resolve coordinates from address", ctx.RequestID)
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
