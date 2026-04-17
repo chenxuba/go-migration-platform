@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { CloseOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { Empty } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
@@ -35,6 +36,7 @@ const editingCourseContent = ref(courseContent.value)
 const selectedRowKeys = ref<string[]>([])
 
 const defaultAvatar = 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png?x-oss-process=image/resize,w_120'
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
 const sourceCover = computed(() => Number(props.record?.sourceType || 0) === 2 ? scheduleOneToOneImage : scheduleClassImage)
 const headerTitle = computed(() => {
@@ -239,7 +241,7 @@ watch(
           <a-tab-pane :key="'0'" :tab="`已点评（${reviewedStudents.length}）`">
             <div class="p-12px">
               <div class="bg-white rounded-15px p-20px">
-                <a-empty description="暂无已点评学员" />
+                <a-empty :image="simpleImage" description="暂无已点评学员" />
               </div>
             </div>
           </a-tab-pane>
