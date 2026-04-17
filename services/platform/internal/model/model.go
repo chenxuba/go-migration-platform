@@ -224,3 +224,31 @@ type InstitutionPage struct {
 	Size    int                 `json:"size"`
 	Summary *InstitutionSummary `json:"summary,omitempty"`
 }
+
+type InstitutionRenewalRecord struct {
+	ID                  int64  `json:"id"`
+	InstitutionID       int64  `json:"institutionId"`
+	BeforeOpenType      int    `json:"beforeOpenType"`
+	BeforeOpenDuration  string `json:"beforeOpenDuration,omitempty"`
+	BeforeExpireEndTime string `json:"beforeExpireEndTime,omitempty"`
+	AfterOpenType       int    `json:"afterOpenType"`
+	RenewDuration       string `json:"renewDuration,omitempty"`
+	RenewStartTime      string `json:"renewStartTime,omitempty"`
+	AfterExpireEndTime  string `json:"afterExpireEndTime,omitempty"`
+	OperatorID          int64  `json:"operatorId,omitempty"`
+	CreateTime          string `json:"createTime,omitempty"`
+}
+
+type InstitutionRenewalMutation struct {
+	InstitutionID *int64 `json:"institutionId"`
+	OpenType      *int   `json:"openType"`
+	OpenDuration  string `json:"openDuration"`
+}
+
+type InstitutionRenewalResult struct {
+	InstitutionID   int64  `json:"institutionId"`
+	OpenType        int    `json:"openType"`
+	OpenDuration    string `json:"openDuration,omitempty"`
+	ExpireStartTime string `json:"expireStartTime,omitempty"`
+	ExpireEndTime   string `json:"expireEndTime,omitempty"`
+}

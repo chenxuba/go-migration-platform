@@ -34,6 +34,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/institutions/create", handler.createInstitution)
 	mux.HandleFunc("/api/v1/platform/institutions/update", handler.updateInstitution)
 	mux.HandleFunc("/api/v1/platform/institutions/status", handler.updateInstitutionStatus)
+	mux.HandleFunc("/api/v1/platform/institutions/renewal-records", handler.institutionRenewalRecords)
+	mux.HandleFunc("/api/v1/platform/institutions/renew", handler.renewInstitution)
 	mux.HandleFunc("/api/v1/platform/dicts", handler.dicts)
 	mux.HandleFunc("/api/v1/platform/dicts/create", handler.createDict)
 	mux.HandleFunc("/api/v1/platform/dicts/update", handler.updateDict)
@@ -199,7 +201,7 @@ func (handler *Handler) createInstitution(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
-	if message := validateInstitutionMutation(input); message != "" {
+	if message := validateInstitutionMutation(input, true); message != "" {
 		httpx.WriteError(w, http.StatusBadRequest, message, ctx.RequestID)
 		return
 	}
@@ -245,7 +247,7 @@ func (handler *Handler) updateInstitution(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
 		return
 	}
-	if message := validateInstitutionMutation(input); message != "" {
+	if message := validateInstitutionMutation(input, false); message != "" {
 		httpx.WriteError(w, http.StatusBadRequest, message, ctx.RequestID)
 		return
 	}
@@ -333,6 +335,70 @@ func (handler *Handler) updateInstitutionStatus(w http.ResponseWriter, r *http.R
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) institutionRenewalRecords(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	institutionID := int64(parseInt(r.URL.Query().Get("institutionId"), 0))
+	if institutionID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "institutionId is required", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.ListInstitutionRenewalRecords(institutionID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "load institution renewal records failed", ctx.RequestID)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) renewInstitution(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.InstitutionRenewalMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if message := validateInstitutionRenewalMutation(input); message != "" {
+		httpx.WriteError(w, http.StatusBadRequest, message, ctx.RequestID)
+		return
+	}
+
+	var operatorID *int64
+	if claims.UserID > 0 {
+		operatorID = &claims.UserID
+	}
+
+	result, err := handler.service.RenewInstitution(input, operatorID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
 func (handler *Handler) dicts(w http.ResponseWriter, r *http.Request) {
@@ -816,7 +882,7 @@ func (handler *Handler) requireManage(w http.ResponseWriter, r *http.Request, ct
 	return claims, true
 }
 
-func validateInstitutionMutation(input model.InstitutionMutation) string {
+func validateInstitutionMutation(input model.InstitutionMutation, requirePackage bool) string {
 	if strings.TrimSpace(input.OrganName) == "" {
 		return "organName is required"
 	}
@@ -851,21 +917,36 @@ func validateInstitutionMutation(input model.InstitutionMutation) string {
 	if strings.TrimSpace(input.Address) == "" {
 		return "address is required"
 	}
-	if input.OpenType == nil || (*input.OpenType != 1 && *input.OpenType != 2) {
+	openType := 0
+	if input.OpenType != nil {
+		if *input.OpenType != 1 && *input.OpenType != 2 {
+			return "openType is invalid"
+		}
+		openType = *input.OpenType
+	} else if requirePackage {
 		return "openType is required"
 	}
+
 	duration := strings.TrimSpace(input.OpenDuration)
 	if duration == "" {
-		return "openDuration is required"
+		if requirePackage {
+			return "openDuration is required"
+		}
+		return ""
 	}
-	if *input.OpenType == 1 {
+
+	if openType == 0 {
+		return "openType is required"
+	}
+
+	if openType == 1 {
 		switch duration {
 		case "3d", "5d", "7d":
 		default:
 			return "openDuration is invalid"
 		}
 	}
-	if *input.OpenType == 2 {
+	if openType == 2 {
 		switch duration {
 		case "1y", "2y", "3y", "5y", "99y":
 		default:
@@ -873,6 +954,36 @@ func validateInstitutionMutation(input model.InstitutionMutation) string {
 		}
 	}
 	return ""
+}
+
+func validateInstitutionRenewalMutation(input model.InstitutionRenewalMutation) string {
+	if input.InstitutionID == nil || *input.InstitutionID <= 0 {
+		return "institutionId is required"
+	}
+	if input.OpenType == nil || (*input.OpenType != 1 && *input.OpenType != 2) {
+		return "请选择开通类型"
+	}
+
+	duration := strings.TrimSpace(input.OpenDuration)
+	if duration == "" {
+		return "请选择续期时长"
+	}
+
+	if *input.OpenType == 1 {
+		switch duration {
+		case "3d", "5d", "7d":
+			return ""
+		default:
+			return "续期时长不合法"
+		}
+	}
+
+	switch duration {
+	case "1y", "2y", "3y", "5y", "99y":
+		return ""
+	default:
+		return "续期时长不合法"
+	}
 }
 
 func validateInstitutionGeocodeQuery(input model.InstitutionGeocodeQuery) string {

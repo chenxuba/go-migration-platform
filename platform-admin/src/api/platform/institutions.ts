@@ -125,6 +125,34 @@ export interface InstitutionGeocodeResult {
   resolvedAddress?: string
 }
 
+export interface InstitutionRenewalRecord {
+  id: number
+  institutionId: number
+  beforeOpenType: number
+  beforeOpenDuration?: string
+  beforeExpireEndTime?: string
+  afterOpenType: number
+  renewDuration?: string
+  renewStartTime?: string
+  afterExpireEndTime?: string
+  operatorId?: number
+  createTime?: string
+}
+
+export interface InstitutionRenewalMutationPayload {
+  institutionId: number
+  openType: number
+  openDuration: string
+}
+
+export interface InstitutionRenewalResult {
+  institutionId: number
+  openType: number
+  openDuration?: string
+  expireStartTime?: string
+  expireEndTime?: string
+}
+
 export function pageInstitutionsApi(params: InstitutionPageParams) {
   return useGet<InstitutionItem[], InstitutionPageParams>('/api/v1/platform/institutions', params) as Promise<
     ResponseBody<InstitutionItem[]> & { data?: InstitutionPagePayload }
@@ -153,4 +181,18 @@ export function updateInstitutionApi(data: InstitutionMutationPayload & { id: nu
 
 export function updateInstitutionStatusApi(data: { id: number, enabled: boolean }) {
   return usePost<boolean, { id: number, enabled: boolean }>('/api/v1/platform/institutions/status', data)
+}
+
+export function getInstitutionRenewalRecordsApi(params: { institutionId: number }) {
+  return useGet<InstitutionRenewalRecord[], { institutionId: number }>(
+    '/api/v1/platform/institutions/renewal-records',
+    params,
+  )
+}
+
+export function renewInstitutionApi(data: InstitutionRenewalMutationPayload) {
+  return usePost<InstitutionRenewalResult, InstitutionRenewalMutationPayload>(
+    '/api/v1/platform/institutions/renew',
+    data,
+  )
 }

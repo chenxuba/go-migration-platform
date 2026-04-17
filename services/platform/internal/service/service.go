@@ -149,6 +149,14 @@ func (svc *Service) UpdateInstitutionStatus(id int64, enabled bool, updaterID *i
 	return svc.repo.UpdateInstitutionStatus(context.Background(), id, enabled, updaterID)
 }
 
+func (svc *Service) ListInstitutionRenewalRecords(institutionID int64) ([]model.InstitutionRenewalRecord, error) {
+	return svc.repo.ListInstitutionRenewalRecords(context.Background(), institutionID)
+}
+
+func (svc *Service) RenewInstitution(input model.InstitutionRenewalMutation, operatorID *int64) (model.InstitutionRenewalResult, error) {
+	return svc.repo.RenewInstitution(context.Background(), input, operatorID)
+}
+
 func (svc *Service) ResolveInstitutionCoordinate(input model.InstitutionGeocodeQuery) (model.InstitutionGeocodeResult, error) {
 	return svc.resolveInstitutionCoordinate(context.Background(), input)
 }

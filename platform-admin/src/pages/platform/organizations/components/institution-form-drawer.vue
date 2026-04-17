@@ -37,7 +37,7 @@ interface InstitutionFormState {
   mobile: string
   principal: string
   openType?: number
-  openDuration: string
+  openDuration?: string
   provinceCode?: string
   province: string
   cityCode?: string
@@ -236,6 +236,12 @@ const openDurationOptionMap: Record<number, { value: string, label: string }[]> 
 }
 const openDurationOptions = computed(() => openDurationOptionMap[Number(formState.openType) || 2] || openDurationOptionMap[2])
 
+function resolveOpenDurationValue(openType: number, preferred?: string) {
+  const options = openDurationOptionMap[openType] || []
+  const matched = options.find(item => item.value === String(preferred || '').trim())
+  return matched?.value || options[0]?.value || ''
+}
+
 const rules: Record<string, Rule[]> = {
   organName: [{ required: true, message: '请输入机构名称', trigger: 'blur' }],
   loginName: [{ required: true, message: '请输入登录账号', trigger: 'blur' }],
@@ -244,8 +250,33 @@ const rules: Record<string, Rule[]> = {
     { pattern: /^\d{11}$/, message: '联系电话需为 11 位手机号', trigger: 'blur' },
   ],
   principal: [{ required: true, message: '请输入负责人姓名', trigger: 'blur' }],
-  openType: [{ required: true, message: '请选择开通类型', trigger: 'change' }],
-  openDuration: [{ required: true, message: '请选择开通时长', trigger: 'change' }],
+  openType: [{
+    trigger: 'change',
+    validator: async () => {
+      if (isEdit.value || formState.openType)
+        return Promise.resolve()
+
+      return Promise.reject(new Error('请选择开通类型'))
+    },
+  }],
+  openDuration: [{
+    trigger: 'change',
+    validator: async () => {
+      if (isEdit.value)
+        return Promise.resolve()
+
+      const duration = String(formState.openDuration || '').trim()
+      const nextType = Number(formState.openType || 0)
+      if (!duration)
+        return Promise.reject(new Error('请选择开通时长'))
+
+      const availableDurations = openDurationOptionMap[nextType || 2] || []
+      if (!availableDurations.some(item => item.value === duration))
+        return Promise.reject(new Error('请选择有效的开通时长'))
+
+      return Promise.resolve()
+    },
+  }],
   provinceCode: [{ required: true, message: '请选择省份', trigger: 'change' }],
   cityCode: [{ required: true, message: '请选择城市', trigger: 'change' }],
   regionCode: [{ required: true, message: '请选择区县', trigger: 'change' }],
@@ -313,7 +344,9 @@ function handleRegionChange(value?: string | number) {
 function handleOpenTypeChange(value?: number | string) {
   formState.openType = value ? Number(value) : undefined
   const availableDurations = openDurationOptionMap[Number(formState.openType) || 2] || []
-  if (!availableDurations.some(item => item.value === formState.openDuration))
+  const currentDuration = String(formState.openDuration || '').trim()
+
+  if (!currentDuration || !availableDurations.some(item => item.value === currentDuration))
     formState.openDuration = availableDurations[0]?.value || ''
 }
 
@@ -535,9 +568,7 @@ async function loadInstitutionDetail(id: number) {
     formState.logo = String(detail.logo || '')
     formState.enabled = !!detail.enabled
     formState.openType = Number(detail.openType || 2) || 2
-    formState.openDuration = String(detail.openDuration || '')
-      || openDurationOptionMap[Number(formState.openType) || 2]?.[0]?.value
-      || '1y'
+    formState.openDuration = resolveOpenDurationValue(formState.openType, String(detail.openDuration || '').trim())
     formState.businessTime = String(detail.profile?.businessTime || '')
     formState.description = String(detail.profile?.description || '')
     formState.video = String(detail.profile?.video || '')
@@ -609,13 +640,11 @@ watch(
 )
 
 function buildPayload(): InstitutionMutationPayload {
-  return {
+  const payload: InstitutionMutationPayload = {
     organName: formState.organName.trim(),
     loginName: formState.loginName.trim(),
     mobile: formState.mobile.trim(),
     principal: formState.principal.trim(),
-    openType: formState.openType ? Number(formState.openType) : undefined,
-    openDuration: formState.openDuration,
     provinceCode: formState.provinceCode ? Number(formState.provinceCode) : undefined,
     province: formState.province.trim(),
     cityCode: formState.cityCode ? Number(formState.cityCode) : undefined,
@@ -632,6 +661,13 @@ function buildPayload(): InstitutionMutationPayload {
     enabled: !!formState.enabled,
     profile: buildProfilePayload(),
   }
+
+  if (!isEdit.value) {
+    payload.openType = formState.openType ? Number(formState.openType) : undefined
+    payload.openDuration = String(formState.openDuration || '').trim()
+  }
+
+  return payload
 }
 
 async function submitForm() {
@@ -840,6 +876,7 @@ async function submitForm() {
                     <a-select
                       v-model:value="formState.openType"
                       :options="openTypeOptions"
+                      :disabled="isEdit"
                       placeholder="请选择开通类型"
                       @change="handleOpenTypeChange"
                     />
@@ -851,7 +888,7 @@ async function submitForm() {
                     <a-select
                       v-model:value="formState.openDuration"
                       :options="openDurationOptions"
-                      :disabled="!formState.openType"
+                      :disabled="isEdit || !formState.openType"
                       placeholder="请选择开通时长"
                     />
                   </a-form-item>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import AllFilter from '@/components/common/all-filter.vue'
 import {
   pageInstitutionsApi,
@@ -11,6 +11,7 @@ import {
 } from '@/api/platform/institutions'
 import { regionData } from '@/constants/region-data'
 import InstitutionFormDrawer from './components/institution-form-drawer.vue'
+import InstitutionRenewalModal from './components/institution-renewal-modal.vue'
 import messageService from '@/utils/messageService'
 
 const displayArray = ['customSearch', 'enableStatus']
@@ -35,6 +36,8 @@ const statusSubmittingId = ref<number | null>(null)
 const dataSource = ref<InstitutionItem[]>([])
 const institutionDrawerOpen = ref(false)
 const editingInstitutionId = ref<number | null>(null)
+const institutionRenewalOpen = ref(false)
+const renewingInstitutionId = ref<number | null>(null)
 const summary = ref<InstitutionSummary>({
   totalCount: 0,
   enabledCount: 0,
@@ -170,7 +173,7 @@ const columns: TableColumnsType<InstitutionItem> = [
   {
     title: '操作',
     key: 'action',
-    width: 160,
+    width: 220,
     fixed: 'right' as const,
   },
 ]
@@ -295,9 +298,18 @@ function openEditDrawer(record: Partial<InstitutionItem>) {
   institutionDrawerOpen.value = true
 }
 
+function openRenewalModal(record: Partial<InstitutionItem>) {
+  renewingInstitutionId.value = Number(record.id || 0) || null
+  institutionRenewalOpen.value = true
+}
+
 function handleDrawerSaved() {
   institutionDrawerOpen.value = false
   editingInstitutionId.value = null
+  fetchInstitutions()
+}
+
+function handleRenewalSaved() {
   fetchInstitutions()
 }
 
@@ -427,6 +439,16 @@ const filterUpdateHandlers = {
 
 onMounted(() => {
   fetchInstitutions()
+})
+
+watch(institutionDrawerOpen, (open) => {
+  if (!open)
+    editingInstitutionId.value = null
+})
+
+watch(institutionRenewalOpen, (open) => {
+  if (!open)
+    renewingInstitutionId.value = null
 })
 </script>
 
@@ -562,6 +584,9 @@ onMounted(() => {
                 <a-button type="link" class="action-cell__link" @click="openEditDrawer(record)">
                   编辑
                 </a-button>
+                <a-button type="link" class="action-cell__link" @click="openRenewalModal(record)">
+                  续期
+                </a-button>
                 <a-popconfirm
                   v-if="canToggleInstitutionStatus(record)"
                   :title="getToggleTargetEnabled(record) ? '确定启用该机构？' : '确定停用该机构？'"
@@ -588,6 +613,11 @@ onMounted(() => {
       v-model:open="institutionDrawerOpen"
       :institution-id="editingInstitutionId"
       @saved="handleDrawerSaved"
+    />
+    <InstitutionRenewalModal
+      v-model:open="institutionRenewalOpen"
+      :institution-id="renewingInstitutionId"
+      @renewed="handleRenewalSaved"
     />
   </div>
 </template>

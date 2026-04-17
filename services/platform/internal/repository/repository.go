@@ -93,6 +93,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureInstitutionProfileSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensureInstitutionRenewalSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	return repo, nil
 }
 
@@ -240,6 +243,29 @@ func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) erro
 			OR NULLIF(TRIM(IFNULL(oi.video, '')), '') IS NOT NULL
 			OR oi.inst_images IS NOT NULL
 		  )
+	`)
+	return err
+}
+
+func (repo *Repository) ensureInstitutionRenewalSchema(ctx context.Context) error {
+	_, err := repo.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS org_institution_renewal_record (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			institution_id BIGINT NOT NULL,
+			before_open_type TINYINT NOT NULL DEFAULT 2,
+			before_open_duration VARCHAR(16) NOT NULL DEFAULT '',
+			before_expire_end_time DATETIME DEFAULT NULL,
+			after_open_type TINYINT NOT NULL DEFAULT 2,
+			renew_duration VARCHAR(16) NOT NULL DEFAULT '',
+			renew_start_time DATETIME NOT NULL,
+			after_expire_end_time DATETIME NOT NULL,
+			operator_id BIGINT DEFAULT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) DEFAULT 0,
+			PRIMARY KEY (id),
+			KEY idx_org_institution_renewal_record_inst_del_time (institution_id, del_flag, create_time)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`)
 	return err
 }
@@ -505,6 +531,31 @@ func normalizeInstitutionOpenType(value *int) int {
 	return 2
 }
 
+func institutionStoredOpenType(value sql.NullInt64) int {
+	if !value.Valid {
+		return 0
+	}
+
+	switch int(value.Int64) {
+	case 1:
+		return 1
+	case 2:
+		return 2
+	default:
+		return 0
+	}
+}
+
+func resolveInstitutionUpdateOpenType(value *int, currentType int) int {
+	if value != nil {
+		return normalizeInstitutionOpenType(value)
+	}
+	if currentType == 1 || currentType == 2 {
+		return currentType
+	}
+	return 2
+}
+
 func normalizeInstitutionOpenDuration(openType int, raw string) string {
 	value := strings.TrimSpace(raw)
 	switch openType {
@@ -544,6 +595,24 @@ func buildInstitutionExpireEndTime(start time.Time, duration string) time.Time {
 	default:
 		return start.AddDate(1, 0, 0)
 	}
+}
+
+func buildInstitutionRenewalWindow(currentOpenType, nextOpenType int, currentExpireEnd sql.NullTime, duration string) (sql.NullTime, sql.NullTime, error) {
+	if currentOpenType == 2 && nextOpenType == 1 {
+		return sql.NullTime{}, sql.NullTime{}, fmt.Errorf("正式版机构不支持改回体验版，如需续期请选择正式版时长")
+	}
+
+	now := time.Now()
+	effectiveEnd := now
+	if currentExpireEnd.Valid && currentExpireEnd.Time.After(now) {
+		effectiveEnd = currentExpireEnd.Time
+	}
+
+	if currentOpenType == 1 && nextOpenType == 2 {
+		return sql.NullTime{Time: now, Valid: true}, sql.NullTime{Time: buildInstitutionExpireEndTime(effectiveEnd, duration), Valid: true}, nil
+	}
+
+	return sql.NullTime{Time: effectiveEnd, Valid: true}, sql.NullTime{Time: buildInstitutionExpireEndTime(effectiveEnd, duration), Valid: true}, nil
 }
 
 func institutionStatusValue(enabled bool, expireEnd sql.NullTime) int {
@@ -871,14 +940,17 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		return err
 	}
 
-	openType := normalizeInstitutionOpenType(input.OpenType)
-	openDuration := normalizeInstitutionOpenDuration(openType, input.OpenDuration)
+	currentType := institutionStoredOpenType(currentOpenType)
+	if currentType == 0 {
+		currentType = 2
+	}
+	currentDuration := normalizeInstitutionOpenDuration(currentType, currentOpenDuration.String)
 	expireStart := currentExpireStart
 	expireEnd := currentExpireEnd
-	if !currentOpenType.Valid || int(currentOpenType.Int64) != openType || !currentOpenDuration.Valid || strings.TrimSpace(currentOpenDuration.String) != openDuration || !currentExpireStart.Valid || !currentExpireEnd.Valid {
+	if !expireStart.Valid || !expireEnd.Valid {
 		nextExpireStart := time.Now()
 		expireStart = sql.NullTime{Time: nextExpireStart, Valid: true}
-		expireEnd = sql.NullTime{Time: buildInstitutionExpireEndTime(nextExpireStart, openDuration), Valid: true}
+		expireEnd = sql.NullTime{Time: buildInstitutionExpireEndTime(nextExpireStart, currentDuration), Valid: true}
 	}
 	statusValue := institutionStatusValue(enabled, expireEnd)
 
@@ -918,8 +990,8 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		strings.TrimSpace(input.OrganName),
 		strings.TrimSpace(input.LoginName),
 		strings.TrimSpace(input.Mobile),
-		openType,
-		openDuration,
+		currentType,
+		currentDuration,
 		nullableTimeValue(expireStart),
 		nullableTimeValue(expireEnd),
 		strings.TrimSpace(input.Principal),
@@ -984,6 +1056,164 @@ func (repo *Repository) UpdateInstitutionStatus(ctx context.Context, id int64, e
 		WHERE id = ? AND del_flag = 0
 	`, enabled, statusValue, updaterValue, id)
 	return err
+}
+
+func (repo *Repository) ListInstitutionRenewalRecords(ctx context.Context, institutionID int64) ([]model.InstitutionRenewalRecord, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id,
+		       institution_id,
+		       IFNULL(before_open_type, 2),
+		       IFNULL(before_open_duration, ''),
+		       IFNULL(DATE_FORMAT(before_expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(after_open_type, 2),
+		       IFNULL(renew_duration, ''),
+		       IFNULL(DATE_FORMAT(renew_start_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(after_expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(operator_id, 0),
+		       IFNULL(DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM org_institution_renewal_record
+		WHERE institution_id = ? AND del_flag = 0
+		ORDER BY id DESC
+	`, institutionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.InstitutionRenewalRecord, 0, 16)
+	for rows.Next() {
+		var item model.InstitutionRenewalRecord
+		if err := rows.Scan(
+			&item.ID,
+			&item.InstitutionID,
+			&item.BeforeOpenType,
+			&item.BeforeOpenDuration,
+			&item.BeforeExpireEndTime,
+			&item.AfterOpenType,
+			&item.RenewDuration,
+			&item.RenewStartTime,
+			&item.AfterExpireEndTime,
+			&item.OperatorID,
+			&item.CreateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	return items, rows.Err()
+}
+
+func (repo *Repository) RenewInstitution(ctx context.Context, input model.InstitutionRenewalMutation, operatorID *int64) (model.InstitutionRenewalResult, error) {
+	if input.InstitutionID == nil {
+		return model.InstitutionRenewalResult{}, fmt.Errorf("institutionId is required")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.InstitutionRenewalResult{}, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var currentOpenType sql.NullInt64
+	var currentOpenDuration sql.NullString
+	var currentExpireEnd sql.NullTime
+	var currentEnabled bool
+	if err = tx.QueryRowContext(ctx, `
+		SELECT IFNULL(open_type, 2),
+		       IFNULL(open_duration, ''),
+		       expire_end_time,
+		       IFNULL(enabled, 0)
+		FROM org_institution
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+		FOR UPDATE
+	`, *input.InstitutionID).Scan(&currentOpenType, &currentOpenDuration, &currentExpireEnd, &currentEnabled); err != nil {
+		return model.InstitutionRenewalResult{}, err
+	}
+
+	beforeOpenType := institutionStoredOpenType(currentOpenType)
+	if beforeOpenType == 0 {
+		beforeOpenType = 2
+	}
+	beforeOpenDuration := normalizeInstitutionOpenDuration(beforeOpenType, currentOpenDuration.String)
+	nextOpenType := normalizeInstitutionOpenType(input.OpenType)
+	renewDuration := normalizeInstitutionOpenDuration(nextOpenType, input.OpenDuration)
+
+	renewStart, renewEnd, err := buildInstitutionRenewalWindow(beforeOpenType, nextOpenType, currentExpireEnd, renewDuration)
+	if err != nil {
+		return model.InstitutionRenewalResult{}, err
+	}
+
+	operatorValue := nullableInt64Value(operatorID)
+	statusValue := institutionStatusValue(currentEnabled, renewEnd)
+
+	if _, err = tx.ExecContext(ctx, `
+		UPDATE org_institution
+		SET open_type = ?,
+		    open_duration = ?,
+		    expire_start_time = ?,
+		    expire_end_time = ?,
+		    status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`,
+		nextOpenType,
+		renewDuration,
+		nullableTimeValue(renewStart),
+		nullableTimeValue(renewEnd),
+		statusValue,
+		operatorValue,
+		*input.InstitutionID,
+	); err != nil {
+		return model.InstitutionRenewalResult{}, err
+	}
+
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO org_institution_renewal_record (
+			institution_id,
+			before_open_type,
+			before_open_duration,
+			before_expire_end_time,
+			after_open_type,
+			renew_duration,
+			renew_start_time,
+			after_expire_end_time,
+			operator_id,
+			create_time,
+			update_time,
+			del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+	`,
+		*input.InstitutionID,
+		beforeOpenType,
+		beforeOpenDuration,
+		nullableTimeValue(currentExpireEnd),
+		nextOpenType,
+		renewDuration,
+		nullableTimeValue(renewStart),
+		nullableTimeValue(renewEnd),
+		operatorValue,
+	); err != nil {
+		return model.InstitutionRenewalResult{}, err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return model.InstitutionRenewalResult{}, err
+	}
+
+	return model.InstitutionRenewalResult{
+		InstitutionID:   *input.InstitutionID,
+		OpenType:        nextOpenType,
+		OpenDuration:    renewDuration,
+		ExpireStartTime: renewStart.Time.Format("2006-01-02 15:04:05"),
+		ExpireEndTime:   renewEnd.Time.Format("2006-01-02 15:04:05"),
+	}, nil
 }
 
 func (repo *Repository) FindInstitutionCoordinateByAddress(ctx context.Context, query model.InstitutionGeocodeQuery) (model.InstitutionGeocodeResult, bool, error) {
