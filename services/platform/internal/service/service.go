@@ -109,6 +109,26 @@ func (svc *Service) PageModules(current, size int, name string, moduleType int) 
 	return svc.repo.PageModules(context.Background(), current, size, name, moduleType)
 }
 
+func (svc *Service) PageInstitutions(current, size int, keyword, mobile string, enabled *bool) (model.InstitutionPage, error) {
+	return svc.repo.PageInstitutions(context.Background(), current, size, keyword, mobile, enabled)
+}
+
+func (svc *Service) GetInstitutionDetail(id int64) (model.InstitutionDetail, error) {
+	return svc.repo.GetInstitutionDetail(context.Background(), id)
+}
+
+func (svc *Service) CreateInstitution(input model.InstitutionMutation, creatorID *int64) (int64, error) {
+	return svc.repo.CreateInstitution(context.Background(), input, creatorID)
+}
+
+func (svc *Service) UpdateInstitution(input model.InstitutionMutation, updaterID *int64) error {
+	return svc.repo.UpdateInstitution(context.Background(), input, updaterID)
+}
+
+func (svc *Service) UpdateInstitutionStatus(id int64, enabled bool, updaterID *int64) error {
+	return svc.repo.UpdateInstitutionStatus(context.Background(), id, enabled, updaterID)
+}
+
 func (svc *Service) CreateNotice(input model.NoticeMutation, creatorID *int64) (int64, error) {
 	return svc.repo.CreateNotice(context.Background(), input, creatorID)
 }

@@ -1,0 +1,552 @@
+<script setup>
+import { computed, reactive, ref, watch } from 'vue'
+import { CloseOutlined } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
+import { addSuspendResumeTuitionAccountOrderApi, getTuitionAccountSubAccountDateInfoApi } from '@/api/edu-center/tuition-account'
+import messageService from '@/utils/messageService'
+
+const props = defineProps({
+  open: {
+    type: Boolean,
+    default: false,
+  },
+  record: {
+    type: Object,
+    default: () => ({}),
+  },
+})
+
+const emit = defineEmits(['update:open', 'success'])
+
+const formRef = ref()
+const infoLoading = ref(false)
+const submitLoading = ref(false)
+const subAccountList = ref([])
+
+const openModal = computed({
+  get: () => props.open,
+  set: value => emit('update:open', value),
+})
+
+const ZERO_TIME = '0001-01-01T00:00:00'
+
+const formState = reactive({
+  resumeDate: undefined,
+  expireType: 2,
+  expireTime: undefined,
+  remark: '',
+})
+
+watch(
+  () => props.open,
+  async (value) => {
+    if (!value)
+      return
+    formState.resumeDate = props.record?.planResumeTime ? dayjs(props.record.planResumeTime).format('YYYY-MM-DD') : undefined
+    const mode = Number(props.record?.lessonChargingMode || 0)
+    if (mode === 1) {
+      formState.expireType = props.record?.enableExpireTime ? 2 : 3
+      formState.expireTime = props.record?.expireTime ? dayjs(props.record.expireTime).format('YYYY-MM-DD') : undefined
+    }
+    else {
+      formState.expireType = 0
+      formState.expireTime = undefined
+    }
+    formState.remark = ''
+    await loadSubAccountInfo()
+  },
+)
+
+const lessonChargingMode = computed(() => Number(props.record?.lessonChargingMode || 0))
+
+const courseName = computed(() => props.record?.lessonName || props.record?.productName || '-')
+
+const summaryTags = computed(() => {
+  const tags = []
+  const lessonType = Number(props.record?.lessonType || 0)
+  if (lessonType === 1)
+    tags.push('班级授课')
+  else if (lessonType === 2)
+    tags.push('1v1授课')
+
+  if (lessonChargingMode.value === 1)
+    tags.push('课时')
+  else if (lessonChargingMode.value === 2)
+    tags.push('时段')
+  else if (lessonChargingMode.value === 3)
+    tags.push('金额')
+  return tags
+})
+
+const remainQuantityText = computed(() => {
+  if (lessonChargingMode.value === 2) {
+    const paidDays = subAccountList.value
+      .filter(item => !item?.isFree)
+      .reduce((sum, item) => sum + Number(item?.remainDays || 0), 0)
+    const freeDays = subAccountList.value
+      .filter(item => item?.isFree)
+      .reduce((sum, item) => sum + Number(item?.remainDays || 0), 0)
+    if (paidDays > 0 && freeDays > 0)
+      return `${formatCount(paidDays)}天 + 赠${formatCount(freeDays)}天`
+    if (paidDays > 0)
+      return `${formatCount(paidDays)}天`
+    if (freeDays > 0)
+      return `赠${formatCount(freeDays)}天`
+    return `${formatCount(Number(props.record?.remainQuantity || 0) + Number(props.record?.remainFreeQuantity || 0))}天`
+  }
+  return `${formatCount(Number(props.record?.remainQuantity || 0) + Number(props.record?.remainFreeQuantity || 0))}${lessonChargingMode.value === 3 ? '元' : '课时'}`
+})
+
+const remainTuitionText = computed(() => `¥ ${formatMoney(props.record?.tuition || 0)}`)
+
+const originalValidityText = computed(() => {
+  if (lessonChargingMode.value !== 2)
+    return formatDate(props.record?.expireTime)
+  // 原有效时段只与日期区间有关，不能按 remainDays 过滤：停课后子账户剩余天数可能为 0，但时段并未被业务清空
+  const lines = subAccountList.value
+    .map((item) => {
+      const start = formatDate(item?.startDate || item?.activedAt)
+      const end = formatDate(item?.endDate)
+      if (start === '-' || end === '-')
+        return ''
+      return `${start} ~ ${end}`
+    })
+    .filter(Boolean)
+  const uniqueLines = Array.from(new Set(lines))
+  if (uniqueLines.length)
+    return uniqueLines.join('，')
+  const start = formatDate(props.record?.validDate || props.record?.activedAt)
+  const end = formatDate(props.record?.endDate || props.record?.expireTime)
+  if (start === '-' || end === '-')
+    return '-'
+  return `${start} ~ ${end}`
+})
+
+const suspendDateText = computed(() => {
+  const suspendDate = props.record?.changeStatusTime || props.record?.suspendedTime || props.record?.planSuspendTime
+  const date = formatDate(suspendDate)
+  if (date === '-')
+    return '-'
+  const diffDays = Math.max(dayjs().startOf('day').diff(dayjs(suspendDate).startOf('day'), 'day'), 0)
+  return `${date}（至今已停课${diffDays}天）`
+})
+
+const suspendRemarkText = computed(() => '-')
+const alreadySetResumeDateText = computed(() => {
+  const date = formatDate(formState.resumeDate || props.record?.planResumeTime)
+  return date !== '-' ? `已设置复课日期： ${date}` : ''
+})
+
+/** 仅「按课时」复课需选择现有效期至；按时段/按金额等不走该逻辑 */
+const shouldShowExpireOptions = computed(() => lessonChargingMode.value === 1)
+
+const resumeDateRules = computed(() => [{ required: true, message: '请选择日期' }])
+
+const expireTimeRules = computed(() => (
+  Number(formState.expireType) === 1 ? [{ required: true, message: '请选择日期' }] : []
+))
+
+async function loadSubAccountInfo() {
+  const tuitionAccountId = String(props.record?.id || props.record?.tuitionAccountId || '')
+  if (!tuitionAccountId) {
+    subAccountList.value = []
+    return
+  }
+  infoLoading.value = true
+  try {
+    const res = await getTuitionAccountSubAccountDateInfoApi({ tuitionAccountId })
+    if (res.code !== 200)
+      throw new Error(res.message || '加载账期明细失败')
+    subAccountList.value = Array.isArray(res.result?.list) ? res.result.list : []
+  }
+  catch (error) {
+    subAccountList.value = []
+    messageService.error(error?.message || '加载账期明细失败')
+  }
+  finally {
+    infoLoading.value = false
+  }
+}
+
+function formatDate(value) {
+  if (!value || `${value}`.startsWith('0001-01-01'))
+    return '-'
+  const parsed = dayjs(value)
+  if (!parsed.isValid())
+    return '-'
+  return parsed.format('YYYY-MM-DD')
+}
+
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function formatCount(value) {
+  const num = Number(value || 0)
+  if (Number.isInteger(num))
+    return String(num)
+  return num.toFixed(2)
+}
+
+function disabledResumeDate(current) {
+  if (!current)
+    return false
+  if (current.endOf('day').isBefore(dayjs().startOf('day')))
+    return true
+  const suspendDate = props.record?.changeStatusTime || props.record?.suspendedTime || props.record?.planSuspendTime
+  if (!suspendDate)
+    return false
+  return current.endOf('day').isBefore(dayjs(suspendDate).startOf('day'))
+}
+
+function disabledExpireDate(current) {
+  if (!current)
+    return false
+  if (current.endOf('day').isBefore(dayjs().startOf('day')))
+    return true
+  if (!formState.resumeDate)
+    return false
+  return current.endOf('day').isBefore(dayjs(formState.resumeDate).startOf('day'))
+}
+
+function toPayloadDateTime(value) {
+  if (!value)
+    return ZERO_TIME
+  const parsed = dayjs(value).startOf('day')
+  if (!parsed.isValid())
+    return ZERO_TIME
+  return parsed.format('YYYY-MM-DDTHH:mm:ssZ')
+}
+
+function resolveExpireTimePayload() {
+  if (Number(formState.expireType) === 1) {
+    return formState.expireTime || ZERO_TIME
+  }
+  return ZERO_TIME
+}
+
+async function handleSubmit() {
+  try {
+    await formRef.value?.validate?.()
+    const tuitionAccountId = String(props.record?.id || props.record?.tuitionAccountId || '')
+    if (!tuitionAccountId) {
+      messageService.error('缺少学费账户ID')
+      return
+    }
+    submitLoading.value = true
+    const useExpireOptions = lessonChargingMode.value === 1
+    const res = await addSuspendResumeTuitionAccountOrderApi({
+      tuitionAccountId,
+      type: 2,
+      expireTime: useExpireOptions ? resolveExpireTimePayload() : ZERO_TIME,
+      expireType: useExpireOptions ? Number(formState.expireType) : 0,
+      remark: formState.remark?.trim() || '',
+      suspendDate: ZERO_TIME,
+      resumeDate: toPayloadDateTime(formState.resumeDate),
+    })
+    if (res.code !== 200)
+      throw new Error(res.message || '复课失败')
+    messageService.success('复课设置成功')
+    emit('success', {
+      result: res.result,
+      record: props.record,
+    })
+    closeFun()
+  }
+  catch (error) {
+    if (error?.errorFields)
+      return
+    messageService.error(error?.message || '复课失败')
+  }
+  finally {
+    submitLoading.value = false
+  }
+}
+
+function closeFun() {
+  formRef.value?.resetFields?.()
+  openModal.value = false
+}
+</script>
+
+<template>
+  <a-modal
+    v-model:open="openModal"
+    centered
+    class="modal-content-box"
+    :keyboard="false"
+    :closable="false"
+    :mask-closable="false"
+    :width="800"
+    :destroy-on-close="true"
+  >
+    <template #title>
+      <div class="text-5 flex justify-between flex-center">
+        <span>复课</span>
+        <a-button type="text" class="close-btn" @click="closeFun">
+          <template #icon>
+            <CloseOutlined class="text-5 close-icon" />
+          </template>
+        </a-button>
+      </div>
+    </template>
+    <div class="contenter scrollbar">
+      <a-spin :spinning="infoLoading">
+        <div class="resume-card">
+          <div class="text-20px font-800 mb-4px">
+            {{ courseName }}
+          </div>
+          <a-space v-if="summaryTags.length">
+            <span
+              v-for="tag in summaryTags"
+              :key="tag"
+              class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10"
+            >
+              {{ tag }}
+            </span>
+          </a-space>
+          <a-descriptions class="mt-20px" :column="2" size="small" :content-style="{ color: '#888' }">
+            <a-descriptions-item label="剩余天数">
+              {{ remainQuantityText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="剩余学费">
+              {{ remainTuitionText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="原有效时段" :span="2">
+              {{ originalValidityText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="停课日期">
+              {{ suspendDateText }}
+            </a-descriptions-item>
+            <a-descriptions-item label="停课备注" :span="2">
+              {{ suspendRemarkText }}
+            </a-descriptions-item>
+          </a-descriptions>
+          <a-divider class="my-16px" />
+          <a-form ref="formRef" :model="formState" :label-col="{ span: 4 }" :wrapper-col="{ span: 18 }">
+            <a-form-item label="复课日期" name="resumeDate" :rules="resumeDateRules" required>
+              <div class="flex items-center gap-16px">
+                <a-date-picker
+                  v-model:value="formState.resumeDate"
+                  value-format="YYYY-MM-DD"
+                  class="w-200px"
+                  placeholder="请选择日期"
+                  :disabled-date="disabledResumeDate"
+                />
+                <span v-if="alreadySetResumeDateText" class="text-#f90 text-13px">
+                  {{ alreadySetResumeDateText }}
+                </span>
+              </div>
+            </a-form-item>
+            <a-form-item v-if="shouldShowExpireOptions" label="现有效期至" required>
+              <div class="resume-expire-row">
+                <a-radio-group v-model:value="formState.expireType" class="custom-radio resume-expire-radio-group">
+                  <a-radio :value="3">
+                    不限制
+                  </a-radio>
+                  <span class="resume-expire-inline">
+                    <a-radio :value="1">
+                      设置有效期至
+                    </a-radio>
+                    <a-form-item
+                      v-if="Number(formState.expireType) === 1"
+                      name="expireTime"
+                      :rules="expireTimeRules"
+                      :no-style="true"
+                      class="resume-expire-time-item"
+                    >
+                      <a-date-picker
+                        v-model:value="formState.expireTime"
+                        value-format="YYYY-MM-DD"
+                        class="resume-expire-date-picker w-130px"
+                        placeholder="请选择日期"
+                        :disabled-date="disabledExpireDate"
+                      />
+                    </a-form-item>
+                  </span>
+                  <span class="resume-expire-inline resume-expire-inline--auto">
+                    <a-radio :value="2">
+                      自动顺延
+                    </a-radio>
+                    <a-tooltip
+                      placement="top"
+                      color="#ffffff"
+                      overlay-class-name="resume-expire-tooltip-wrap"
+                    >
+                      <template #title>
+                        <div class="resume-expire-tooltip-inner">
+                          <div class="resume-expire-tooltip-inner__title">
+                            自动顺延
+                          </div>
+                          <div class="resume-expire-tooltip-inner__divider" />
+                          <div>现有效期至 = 原有效期 + 已停课时间</div>
+                          <div>如：现有效期至（2026-12-15）= 原有效期至（2026-12-12）+ 已停课 3 天</div>
+                        </div>
+                      </template>
+                      <span class="resume-expire-help-icon">?</span>
+                    </a-tooltip>
+                  </span>
+                </a-radio-group>
+              </div>
+            </a-form-item>
+            <a-form-item label="复课备注">
+              <a-input v-model:value="formState.remark" placeholder="请输入" />
+            </a-form-item>
+          </a-form>
+        </div>
+      </a-spin>
+    </div>
+    <template #footer>
+      <a-button @click="closeFun">
+        关闭
+      </a-button>
+      <a-button type="primary" :loading="submitLoading" @click="handleSubmit">
+        确定
+      </a-button>
+    </template>
+  </a-modal>
+</template>
+
+<style lang="less" scoped>
+@keyframes icon-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+.close-btn {
+  &:hover {
+    background: transparent;
+
+    .close-icon {
+      animation: icon-rotate 0.3s linear;
+    }
+  }
+}
+
+.contenter {
+  padding: 24px;
+  margin: 24px;
+  border-radius: 14px;
+  background: #fafafa;
+}
+
+.resume-card {
+  padding: 24px;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.resume-expire-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+}
+
+.resume-expire-radio-group.ant-radio-group {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0 16px;
+  max-width: 100%;
+}
+
+.resume-expire-inline {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+
+
+.resume-expire-time-item {
+  margin-bottom: 0 !important;
+}
+
+.resume-expire-date-picker {
+  flex-shrink: 0;
+}
+
+.resume-expire-help-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  color: #8c8c8c;
+}
+
+/* 镂空单选（选中为空心圆环 + 中心点） */
+.custom-radio :deep(.ant-radio-wrapper:hover .ant-radio),
+.custom-radio :deep(.ant-radio:hover .ant-radio-inner),
+.custom-radio :deep(.ant-radio-input:focus + .ant-radio-inner) {
+  border-color: var(--pro-ant-color-primary, #1677ff);
+}
+
+.custom-radio :deep(.ant-radio-inner) {
+  background-color: transparent;
+  border-color: #d9d9d9;
+}
+
+.custom-radio :deep(.ant-radio-checked .ant-radio-inner) {
+  background-color: transparent;
+  border-color: var(--pro-ant-color-primary, #1677ff);
+}
+
+.custom-radio :deep(.ant-radio-inner::after) {
+  background-color: var(--pro-ant-color-primary, #1677ff);
+  transform: scale(0.5);
+}
+</style>
+
+<style>
+.modal-content-box .ant-modal-header {
+  padding: 10px 16px !important;
+  margin-bottom: 0;
+}
+
+.modal-content-box .ant-modal-body {
+  padding: 0 !important;
+}
+
+.resume-expire-tooltip-wrap .ant-tooltip-inner {
+  color: rgba(0, 0, 0, 0.88) !important;
+  text-align: left;
+  padding: 12px 14px;
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+}
+
+.resume-expire-tooltip-inner {
+  max-width: 320px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.resume-expire-tooltip-inner__title {
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+  margin-bottom: 8px;
+}
+
+.resume-expire-tooltip-inner__divider {
+  height: 1px;
+  background: rgba(0, 0, 0, 0.06);
+  margin-bottom: 8px;
+}
+</style>

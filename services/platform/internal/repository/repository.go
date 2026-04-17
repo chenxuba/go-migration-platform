@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"go-migration-platform/services/platform/internal/model"
 )
 
@@ -19,6 +20,33 @@ type rawMenu struct {
 	Name      string
 	PID       int64
 	Introduce string
+}
+
+func buildInstitutionWhereClause(keyword, mobile string, enabled *bool) (string, []any) {
+	filters := []string{"oi.del_flag = 0"}
+	args := make([]any, 0, 4)
+
+	if trimmed := strings.TrimSpace(keyword); trimmed != "" {
+		like := "%" + trimmed + "%"
+		filters = append(filters, "(CAST(oi.id AS CHAR) LIKE ? OR oi.organ_name LIKE ?)")
+		args = append(args, like, like)
+	}
+
+	if trimmed := strings.TrimSpace(mobile); trimmed != "" {
+		filters = append(filters, "oi.mobile LIKE ?")
+		args = append(args, "%"+trimmed+"%")
+	}
+
+	if enabled != nil {
+		filters = append(filters, "IFNULL(oi.enabled, 0) = ?")
+		if *enabled {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
+	}
+
+	return strings.Join(filters, " AND "), args
 }
 
 func New(db *sql.DB) *Repository {
@@ -212,6 +240,296 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 		Current: current,
 		Size:    size,
 	}, rows.Err()
+}
+
+func (repo *Repository) PageInstitutions(ctx context.Context, current, size int, keyword, mobile string, enabled *bool) (model.InstitutionPage, error) {
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	offset := (current - 1) * size
+
+	whereClause, args := buildInstitutionWhereClause(keyword, mobile, enabled)
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM org_institution oi WHERE "+whereClause, args...).Scan(&total); err != nil {
+		return model.InstitutionPage{}, err
+	}
+
+	var summary model.InstitutionSummary
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),
+		       COALESCE(SUM(CASE WHEN IFNULL(oi.enabled, 0) = 1 THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN IFNULL(oi.enabled, 0) = 0 THEN 1 ELSE 0 END), 0)
+		FROM org_institution oi
+		WHERE `+whereClause, args...).Scan(&summary.TotalCount, &summary.EnabledCount, &summary.DisabledCount); err != nil {
+		return model.InstitutionPage{}, err
+	}
+
+	listArgs := append(append([]any{}, args...), size, offset)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT oi.id,
+		       IFNULL(oi.organ_name, ''),
+		       IFNULL(oi.organ_code, ''),
+		       IFNULL(oi.login_name, ''),
+		       IFNULL(oi.mobile, ''),
+		       IFNULL(oi.principal, ''),
+		       IFNULL(oi.address, ''),
+		       IFNULL(oi.logo, ''),
+		       IFNULL(oi.enabled, 0),
+		       COUNT(DISTINCT CASE WHEN iu.del_flag = 0 THEN iu.id END) AS staff_count,
+		       COUNT(DISTINCT CASE WHEN iu.del_flag = 0 AND IFNULL(iu.disabled, 0) = 0 THEN iu.id END) AS active_staff_count,
+		       COUNT(DISTINCT CASE WHEN iu.del_flag = 0 AND IFNULL(iu.is_admin, 0) = 1 THEN iu.id END) AS admin_count
+		FROM org_institution oi
+		LEFT JOIN inst_user iu ON iu.inst_id = oi.id
+		WHERE `+whereClause+`
+		GROUP BY oi.id, oi.organ_name, oi.organ_code, oi.login_name, oi.mobile, oi.principal, oi.address, oi.logo, oi.enabled
+		ORDER BY oi.id DESC
+		LIMIT ? OFFSET ?`, listArgs...)
+	if err != nil {
+		return model.InstitutionPage{}, err
+	}
+	defer rows.Close()
+
+	items := make([]model.Institution, 0, size)
+	for rows.Next() {
+		var item model.Institution
+		if err := rows.Scan(
+			&item.ID,
+			&item.OrganName,
+			&item.OrganCode,
+			&item.LoginName,
+			&item.Mobile,
+			&item.Principal,
+			&item.Address,
+			&item.Logo,
+			&item.Enabled,
+			&item.StaffCount,
+			&item.ActiveStaffCount,
+			&item.AdminCount,
+		); err != nil {
+			return model.InstitutionPage{}, err
+		}
+		items = append(items, item)
+	}
+
+	return model.InstitutionPage{
+		Items:   items,
+		Total:   total,
+		Current: current,
+		Size:    size,
+		Summary: &summary,
+	}, rows.Err()
+}
+
+func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (model.InstitutionDetail, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT id,
+		       IFNULL(organ_name, ''),
+		       IFNULL(organ_code, ''),
+		       IFNULL(login_name, ''),
+		       IFNULL(mobile, ''),
+		       IFNULL(principal, ''),
+		       IFNULL(province, ''),
+		       IFNULL(city, ''),
+		       IFNULL(region, ''),
+		       IFNULL(address, ''),
+		       IFNULL(concat_phone, ''),
+		       IFNULL(fixed_phone, ''),
+		       IFNULL(remark, ''),
+		       IFNULL(logo, ''),
+		       IFNULL(enabled, 0),
+		       IFNULL(status, 1)
+		FROM org_institution
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, id)
+
+	var detail model.InstitutionDetail
+	if err := row.Scan(
+		&detail.ID,
+		&detail.OrganName,
+		&detail.OrganCode,
+		&detail.LoginName,
+		&detail.Mobile,
+		&detail.Principal,
+		&detail.Province,
+		&detail.City,
+		&detail.Region,
+		&detail.Address,
+		&detail.ConcatPhone,
+		&detail.FixedPhone,
+		&detail.Remark,
+		&detail.Logo,
+		&detail.Enabled,
+		&detail.Status,
+	); err != nil {
+		return model.InstitutionDetail{}, err
+	}
+
+	return detail, nil
+}
+
+func (repo *Repository) CreateInstitution(ctx context.Context, input model.InstitutionMutation, creatorID *int64) (int64, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	nextCode, err := repo.nextInstitutionCode(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+
+	creatorValue := nullableInt64Value(creatorID)
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO org_institution (
+			uuid, organ_name, organ_type, mobile, organ_code, login_name,
+			province, city, region, logo, principal, address, status, enabled,
+			concat_phone, fixed_phone, version, create_id, create_time, update_id, update_time, del_flag, remark, account_num
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NOW(), ?, NOW(), 0, ?, 5)
+	`,
+		uuid.NewString(),
+		strings.TrimSpace(input.OrganName),
+		1,
+		strings.TrimSpace(input.Mobile),
+		nextCode,
+		strings.TrimSpace(input.LoginName),
+		strings.TrimSpace(input.Province),
+		strings.TrimSpace(input.City),
+		strings.TrimSpace(input.Region),
+		strings.TrimSpace(input.Logo),
+		strings.TrimSpace(input.Principal),
+		strings.TrimSpace(input.Address),
+		1,
+		enabled,
+		strings.TrimSpace(input.ConcatPhone),
+		strings.TrimSpace(input.FixedPhone),
+		creatorValue,
+		creatorValue,
+		strings.TrimSpace(input.Remark),
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+
+	return id, nil
+}
+
+func (repo *Repository) UpdateInstitution(ctx context.Context, input model.InstitutionMutation, updaterID *int64) error {
+	if input.ID == nil {
+		return fmt.Errorf("id is required")
+	}
+
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+
+	updaterValue := nullableInt64Value(updaterID)
+
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE org_institution
+		SET organ_name = ?,
+		    login_name = ?,
+		    mobile = ?,
+		    principal = ?,
+		    province = ?,
+		    city = ?,
+		    region = ?,
+		    address = ?,
+		    concat_phone = ?,
+		    fixed_phone = ?,
+		    remark = ?,
+		    logo = ?,
+		    enabled = ?,
+		    status = CASE
+		        WHEN ? = 0 THEN 2
+		        WHEN status = 2 THEN 1
+		        ELSE status
+		    END,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`,
+		strings.TrimSpace(input.OrganName),
+		strings.TrimSpace(input.LoginName),
+		strings.TrimSpace(input.Mobile),
+		strings.TrimSpace(input.Principal),
+		strings.TrimSpace(input.Province),
+		strings.TrimSpace(input.City),
+		strings.TrimSpace(input.Region),
+		strings.TrimSpace(input.Address),
+		strings.TrimSpace(input.ConcatPhone),
+		strings.TrimSpace(input.FixedPhone),
+		strings.TrimSpace(input.Remark),
+		strings.TrimSpace(input.Logo),
+		enabled,
+		enabled,
+		updaterValue,
+		*input.ID,
+	)
+	return err
+}
+
+func (repo *Repository) UpdateInstitutionStatus(ctx context.Context, id int64, enabled bool, updaterID *int64) error {
+	updaterValue := nullableInt64Value(updaterID)
+
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE org_institution
+		SET enabled = ?,
+		    status = CASE
+		        WHEN ? = 0 THEN 2
+		        WHEN status = 2 THEN 1
+		        ELSE status
+		    END,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, enabled, enabled, updaterValue, id)
+	return err
+}
+
+func (repo *Repository) nextInstitutionCode(ctx context.Context, tx *sql.Tx) (string, error) {
+	var next int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(CAST(SUBSTRING(organ_code, 3) AS UNSIGNED)), 0) + 1
+		FROM org_institution
+		WHERE organ_code LIKE 'I-%'
+	`).Scan(&next); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("I-%05d", next), nil
+}
+
+func nullableInt64Value(value *int64) any {
+	if value == nil || *value <= 0 {
+		return nil
+	}
+	return *value
 }
 
 func (repo *Repository) CreateDict(ctx context.Context, input model.DictMutation, creatorID *int64) (int64, error) {

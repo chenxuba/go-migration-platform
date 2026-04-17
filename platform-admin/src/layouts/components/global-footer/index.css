@@ -1,0 +1,30 @@
+.ant-pro-global-footer {
+  padding: 0 16px;
+  text-align: center;
+}
+.ant-pro-global-footer-links {
+  margin-bottom: 8px;
+}
+.ant-pro-global-footer-links a {
+  color: rgba(0, 0, 0, 0.45);
+  transition: all 0.3s;
+}
+.ant-pro-global-footer-links a:not(:last-child) {
+  margin-right: 40px;
+}
+.ant-pro-global-footer-links a:hover {
+  color: rgba(0, 0, 0, 0.85);
+}
+.ant-pro-global-footer-copyright {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+}
+[data-theme='dark'] .ant-pro-global-footer-links a {
+  color: rgba(229, 224, 216, 0.45);
+}
+[data-theme='dark'] .ant-pro-global-footer-links a:hover {
+  color: rgba(229, 224, 216, 0.85);
+}
+[data-theme='dark'] .ant-pro-global-footer-copyright {
+  color: rgba(229, 224, 216, 0.45);
+}

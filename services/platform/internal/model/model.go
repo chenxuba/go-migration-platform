@@ -107,3 +107,73 @@ type PageResult[T any] struct {
 	Current int `json:"current"`
 	Size    int `json:"size"`
 }
+
+type Institution struct {
+	ID               int64  `json:"id"`
+	OrganName        string `json:"organName"`
+	OrganCode        string `json:"organCode,omitempty"`
+	LoginName        string `json:"loginName,omitempty"`
+	Mobile           string `json:"mobile,omitempty"`
+	Principal        string `json:"principal,omitempty"`
+	Address          string `json:"address,omitempty"`
+	Logo             string `json:"logo,omitempty"`
+	Enabled          bool   `json:"enabled"`
+	StaffCount       int    `json:"staffCount"`
+	ActiveStaffCount int    `json:"activeStaffCount"`
+	AdminCount       int    `json:"adminCount"`
+}
+
+type InstitutionDetail struct {
+	ID          int64  `json:"id"`
+	OrganName   string `json:"organName"`
+	OrganCode   string `json:"organCode"`
+	LoginName   string `json:"loginName"`
+	Mobile      string `json:"mobile"`
+	Principal   string `json:"principal,omitempty"`
+	Province    string `json:"province"`
+	City        string `json:"city"`
+	Region      string `json:"region,omitempty"`
+	Address     string `json:"address,omitempty"`
+	ConcatPhone string `json:"concatPhone,omitempty"`
+	FixedPhone  string `json:"fixedPhone,omitempty"`
+	Remark      string `json:"remark,omitempty"`
+	Logo        string `json:"logo,omitempty"`
+	Enabled     bool   `json:"enabled"`
+	Status      int    `json:"status"`
+}
+
+type InstitutionMutation struct {
+	ID          *int64 `json:"id"`
+	OrganName   string `json:"organName"`
+	LoginName   string `json:"loginName"`
+	Mobile      string `json:"mobile"`
+	Principal   string `json:"principal"`
+	Province    string `json:"province"`
+	City        string `json:"city"`
+	Region      string `json:"region"`
+	Address     string `json:"address"`
+	ConcatPhone string `json:"concatPhone"`
+	FixedPhone  string `json:"fixedPhone"`
+	Remark      string `json:"remark"`
+	Logo        string `json:"logo"`
+	Enabled     *bool  `json:"enabled"`
+}
+
+type InstitutionStatusMutation struct {
+	ID      *int64 `json:"id"`
+	Enabled *bool  `json:"enabled"`
+}
+
+type InstitutionSummary struct {
+	TotalCount    int `json:"totalCount"`
+	EnabledCount  int `json:"enabledCount"`
+	DisabledCount int `json:"disabledCount"`
+}
+
+type InstitutionPage struct {
+	Items   []Institution       `json:"items"`
+	Total   int                 `json:"total"`
+	Current int                 `json:"current"`
+	Size    int                 `json:"size"`
+	Summary *InstitutionSummary `json:"summary,omitempty"`
+}

@@ -1,0 +1,404 @@
+<script setup>
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import dateFiltering from '../../components/dateFiltering.vue'
+
+// 数据简报
+const reportList = [
+  {
+    title: '应续人次', // 标题
+    value: 0, // 数值
+    briefing: true, // 是否环比、同比
+    popover_title: '应续人次', // 弹出框标题
+    popover_content: '应续记录数', // 弹出框内容
+    chain: '', // 环比
+    onYear: '', // 同比
+  },
+  {
+    title: '实续人次',
+    value: 0,
+    briefing: true,
+    popover_title: '实续人次',
+    popover_content: '实续记录数',
+    chain: '',
+    onYear: '',
+  },
+  {
+    title: '人次续费率',
+    value: '-',
+    briefing: true,
+    popover_title: '人次续费率',
+    popover_content: '实续人次/应续人次 *100%',
+    chain: '',
+    onYear: '',
+  },
+  {
+    title: '人次未续率',
+    value: '-',
+    briefing: true,
+    popover_title: '人次未续率',
+    popover_content: '(应续人次-实续人次)/应续人次 *100%',
+    chain: '',
+    onYear: '',
+  },
+]
+
+// 日期选择组件
+const dateFilter = ref(null)
+// 是否显示同比、环比
+const showComparison = ref(false)
+// 图表类型
+const activeIcon = ref(0)
+// 图表数据类型
+const dataType = ref(0)
+// 图表数据类型列表
+const dataTypeList = [
+  {
+    title: '订单实收总额',
+    value: 0,
+    popover_title: '订单实收总额',
+    popover_content: '业绩分配记录数<br />时间：业绩分配时间<br />条件：不包含作废订单关联业绩',
+  },
+  {
+    title: '业绩分配记录数',
+    value: 1,
+    popover_title: '业绩分配记录数',
+    popover_content: '业绩分配记录数<br />时间：业绩分配时间<br />条件：不包含作废订单关联业绩',
+  },
+  {
+    title: '已分配业绩金额',
+    value: 2,
+    popover_title: '已分配业绩金额',
+    popover_content: '业绩分配金额<br />时间：业绩分配时间<br />条件：不包含作废订单关联业绩',
+  },
+]
+// 表格列
+const allColumns = ref([
+  {
+    title: '课程',
+    dataIndex: 'courseName',
+    key: 'courseName',
+    fixed: 'left',
+    width: 160,
+    sorter: (a, b) => a.courseName.localeCompare(b.courseName),
+    required: true, // 新增必选标识
+  },
+  {
+    title: '课程类别',
+    dataIndex: 'courseCategory',
+    key: 'courseCategory',
+    width: 160,
+    sorter: (a, b) => a.courseCategory.localeCompare(b.courseCategory),
+  },
+  {
+    title: '班级名称',
+    dataIndex: 'className',
+    key: 'className',
+    width: 160,
+    sorter: (a, b) => a.className.localeCompare(b.className),
+  },
+  {
+    title: '班级老师',
+    dataIndex: 'classTeacher',
+    key: 'classTeacher',
+    width: 160,
+    sorter: (a, b) => a.classTeacher.localeCompare(b.classTeacher),
+  },
+  {
+    title: '应续人次',
+    dataIndex: 'expectedRenewalCount',
+    key: 'expectedRenewalCount',
+    width: 160,
+    sorter: (a, b) => a.expectedRenewalCount - b.expectedRenewalCount,
+  },
+  {
+    title: '实续人次',
+    dataIndex: 'actualRenewalCount',
+    key: 'actualRenewalCount',
+    width: 160,
+    sorter: (a, b) => a.actualRenewalCount - b.actualRenewalCount,
+  },
+  {
+    title: '人次续费率',
+    dataIndex: 'countRenewalRate',
+    key: 'countRenewalRate',
+    width: 160,
+    sorter: (a, b) => a.countRenewalRate - b.countRenewalRate,
+  },
+  {
+    title: '人次未续率',
+    dataIndex: 'countNonRenewalRate',
+    key: 'countNonRenewalRate',
+    width: 160,
+    sorter: (a, b) => a.countNonRenewalRate - b.countNonRenewalRate,
+  },
+  {
+    title: '应续人数',
+    dataIndex: 'expectedRenewalPersons',
+    key: 'expectedRenewalPersons',
+    width: 160,
+    sorter: (a, b) => a.expectedRenewalPersons - b.expectedRenewalPersons,
+  },
+  {
+    title: '实续人数',
+    dataIndex: 'actualRenewalPersons',
+    key: 'actualRenewalPersons',
+    width: 160,
+    sorter: (a, b) => a.actualRenewalPersons - b.actualRenewalPersons,
+  },
+  {
+    title: '人数续费率',
+    dataIndex: 'personRenewalRate',
+    key: 'personRenewalRate',
+    width: 160,
+    sorter: (a, b) => a.personRenewalRate - b.personRenewalRate,
+  },
+])
+// 表格数据
+const dataSource = ref([
+  {
+    courseName: '少儿英语基础班',
+    courseCategory: '英语',
+    className: '英语基础1班',
+    classTeacher: '王老师',
+    expectedRenewalCount: 20,
+    actualRenewalCount: 15,
+    countRenewalRate: 75.0,
+    countNonRenewalRate: 25.0,
+    expectedRenewalPersons: 18,
+    actualRenewalPersons: 14,
+    personRenewalRate: 77.8,
+  },
+  {
+    courseName: '少儿英语进阶班',
+    courseCategory: '英语',
+    className: '英语进阶1班',
+    classTeacher: '李老师',
+    expectedRenewalCount: 25,
+    actualRenewalCount: 20,
+    countRenewalRate: 80.0,
+    countNonRenewalRate: 20.0,
+    expectedRenewalPersons: 22,
+    actualRenewalPersons: 18,
+    personRenewalRate: 81.8,
+  },
+  {
+    courseName: '少儿数学思维班',
+    courseCategory: '数学',
+    className: '数学思维1班',
+    classTeacher: '张老师',
+    expectedRenewalCount: 18,
+    actualRenewalCount: 12,
+    countRenewalRate: 66.7,
+    countNonRenewalRate: 33.3,
+    expectedRenewalPersons: 16,
+    actualRenewalPersons: 11,
+    personRenewalRate: 68.8,
+  },
+])
+// 图表数据源
+const { selectedValues, columnOptions, filteredColumns, totalWidth }
+  = useTableColumns({
+    storageKey: 'enrollmentDataOverviewSummarizedOverTime', // 本地存储键名
+    allColumns, // 原始列配置
+    excludeKeys: [], // 需要排除的列键
+  })
+// 日期选择
+function handleDateChange({ date }) {
+  dateFilter.value = date
+  console.log(dateFilter.value)
+}
+</script>
+
+<template>
+  <div>
+    <!-- 日期选择组件 -->
+    <date-filtering @change="handleDateChange" />
+    <!-- 数据简报 -->
+    <div class="card-white">
+      <div class="flex justify-between ml-2">
+        <div class="total font-bold">
+          数据简报
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="font-size-14px">计算同比、环比：</span>
+          <a-switch v-model:checked="showComparison" />
+        </div>
+      </div>
+      <div class="flex align-center p-12px gap-24px">
+        <div v-for="(item, index) in reportList" :key="index" class="flex-1 p-12px bg-#fbfcff border-radius-12px">
+          <div class="block_top flex align-center gap-1">
+            <span class="text-#888 font-size-12px whitespace-nowrap">{{ item.title }}</span>
+            <a-popover color="#fff" :title="item.popover_title">
+              <template #content>
+                <div v-html="item.popover_content" />
+              </template>
+              <QuestionCircleOutlined class="text-#888 font-size-12px" />
+            </a-popover>
+          </div>
+          <div class="block_bottom">
+            <div class="font-size-24px font-bold" style="font-family: 'DIN Alternate'">
+              {{ item.value }}
+            </div>
+          </div>
+          <!-- 分割线 -->
+          <template v-if="item.briefing && showComparison">
+            <div class="line" />
+            <div class="font-size-12px text-#111">
+              <div class="flex align-center gap-2">
+                <span>环比</span>
+                <span>{{ item.chain || '-' }}</span>
+              </div>
+              <div class="flex align-center gap-2">
+                <span>同比</span>
+                <span>{{ item.onYear || '-' }}</span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+    <!-- 趋势分析 -->
+    <!-- <div class="card-white">
+      <div class="flex justify-between ml-2">
+        <div class="total font-bold">
+          趋势分析
+        </div>
+        <div class="flex items-center gap-4">
+          <a-tooltip>
+            <template #title>
+              柱状图
+            </template>
+            <BarChartOutlined
+              class="font-size-16px" :class="activeIcon === 0 ? 'text-#1890ff' : 'text-#888'"
+              @click="activeIcon = 0"
+            />
+          </a-tooltip>
+          <a-tooltip>
+            <template #title>
+              趋势图
+            </template>
+            <LineChartOutlined
+              class="font-size-16px" :class="activeIcon === 1 ? 'text-#1890ff' : 'text-#888'"
+              @click="activeIcon = 1"
+            />
+          </a-tooltip>
+        </div>
+      </div>
+      <div class="py-12px ">
+        <div class="flex items-center ml-6">
+          <div>数据类型：</div>
+          <a-radio-group v-model:value="dataType" class="custom-radio">
+            <a-radio v-for="(item, index) in dataTypeList" :key="index" :value="index">
+              {{ item.title }}
+              <a-popover color="#fff" :title="item.popover_title">
+                <template #content>
+                  <div v-html="item.popover_content" />
+                </template>
+                <QuestionCircleOutlined class="text-#888 font-size-12px" />
+              </a-popover>
+            </a-radio>
+          </a-radio-group>
+        </div>
+        <div class="px-44px py-24px">
+          <charColumn v-if="activeIcon === 0" />
+          <charLine v-if="activeIcon === 1" />
+        </div>
+      </div>
+    </div> -->
+    <!-- 数据说明 -->
+    <div class="card-white" style="padding-left: 24px;">
+      <custom-title title="数据明细" font-size="15px" font-weight="500" />
+      <div class="flex justify-between align-center py-8px">
+        <span>共计1条数据</span>
+        <a-button ghost type="primary">
+          下载报表
+        </a-button>
+      </div>
+      <div class="table-content mt-2">
+        <a-table
+          :data-source="dataSource" :pagination="false" :columns="filteredColumns"
+          :scroll="{ x: totalWidth }" size="small"
+        >
+          <template #summary>
+            <a-table-summary fixed>
+              <a-table-summary-row class="summary-row">
+                <a-table-summary-cell index="0">
+                  总计
+                </a-table-summary-cell>
+                <a-table-summary-cell v-for="(col, index) in allColumns.slice(1)" :key="index" :index="index + 1">
+                  {{ dataSource.reduce((sum, record) => sum + (Number(record[col.dataIndex]) || 0), 0) }}
+                </a-table-summary-cell>
+              </a-table-summary-row>
+            </a-table-summary>
+          </template>
+        </a-table>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style lang="less" scoped>
+.card-white {
+  background: #fff;
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 12px;
+
+  .total {
+    position: relative;
+    padding-left: 10px;
+    color: #222;
+    display: flex;
+    align-items: center;
+
+    &::before {
+      display: inline-block;
+      background: var(--pro-ant-color-primary);
+      border-radius: 2px;
+      content: "";
+      height: 12px;
+      left: 0;
+      position: absolute;
+      width: 4px;
+    }
+  }
+}
+
+.line {
+  background-color: #eee;
+  height: 1px;
+  margin: 8px 0;
+}
+
+:deep(.summary-row) {
+  background-color: #f0f7ff;
+  font-weight: bold;
+
+  td,
+  th {
+    background-color: #f0f7ff !important;
+  }
+}
+
+/* 自定义镂空样式 */
+.custom-radio ::v-deep(.ant-radio-wrapper:hover .ant-radio),
+.custom-radio ::v-deep(.ant-radio:hover .ant-radio-inner),
+.custom-radio ::v-deep(.ant-radio-input:focus + .ant-radio-inner) {
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio ::v-deep(.ant-radio-inner) {
+  background-color: transparent;
+  border-color: #d9d9d9;
+}
+
+.custom-radio ::v-deep(.ant-radio-checked .ant-radio-inner) {
+  background-color: transparent;
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio ::v-deep(.ant-radio-inner::after) {
+  background-color: var(--pro-ant-color-primary);
+  transform: scale(0.5);
+}
+</style>

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -25,6 +26,11 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/health", handler.health)
 	mux.HandleFunc("/api/v1/tenant/features", handler.features)
 	mux.HandleFunc("/api/v1/tenant/customization-summary", handler.customizationSummary)
+	mux.HandleFunc("/api/v1/platform/institutions", handler.institutions)
+	mux.HandleFunc("/api/v1/platform/institutions/detail", handler.institutionDetail)
+	mux.HandleFunc("/api/v1/platform/institutions/create", handler.createInstitution)
+	mux.HandleFunc("/api/v1/platform/institutions/update", handler.updateInstitution)
+	mux.HandleFunc("/api/v1/platform/institutions/status", handler.updateInstitutionStatus)
 	mux.HandleFunc("/api/v1/platform/dicts", handler.dicts)
 	mux.HandleFunc("/api/v1/platform/dicts/create", handler.createDict)
 	mux.HandleFunc("/api/v1/platform/dicts/update", handler.updateDict)
@@ -77,6 +83,176 @@ func (handler *Handler) features(w http.ResponseWriter, r *http.Request) {
 func (handler *Handler) customizationSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	httpx.WriteJSON(w, http.StatusOK, handler.service.CustomizationSummary(ctx), ctx.RequestID)
+}
+
+func (handler *Handler) institutions(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.PageInstitutions(
+		parseInt(r.URL.Query().Get("current"), 1),
+		parseInt(r.URL.Query().Get("size"), 10),
+		r.URL.Query().Get("keyword"),
+		r.URL.Query().Get("mobile"),
+		parseBoolPtr(r.URL.Query().Get("enabled")),
+	)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "load institutions failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) institutionDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	id := int64(parseInt(r.URL.Query().Get("id"), 0))
+	if id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.GetInstitutionDetail(id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "load institution detail failed", ctx.RequestID)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) createInstitution(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.InstitutionMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if message := validateInstitutionMutation(input); message != "" {
+		httpx.WriteError(w, http.StatusBadRequest, message, ctx.RequestID)
+		return
+	}
+	if input.Enabled == nil {
+		defaultEnabled := true
+		input.Enabled = &defaultEnabled
+	}
+
+	var creatorID *int64
+	if claims.UserID > 0 {
+		creatorID = &claims.UserID
+	}
+
+	id, err := handler.service.CreateInstitution(input, creatorID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "create institution failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": id}, ctx.RequestID)
+}
+
+func (handler *Handler) updateInstitution(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.InstitutionMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if input.ID == nil || *input.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	if message := validateInstitutionMutation(input); message != "" {
+		httpx.WriteError(w, http.StatusBadRequest, message, ctx.RequestID)
+		return
+	}
+	if input.Enabled == nil {
+		defaultEnabled := true
+		input.Enabled = &defaultEnabled
+	}
+
+	var updaterID *int64
+	if claims.UserID > 0 {
+		updaterID = &claims.UserID
+	}
+
+	if err := handler.service.UpdateInstitution(input, updaterID); err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "update institution failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) updateInstitutionStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.InstitutionStatusMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if input.ID == nil || *input.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	if input.Enabled == nil {
+		httpx.WriteError(w, http.StatusBadRequest, "enabled is required", ctx.RequestID)
+		return
+	}
+
+	var updaterID *int64
+	if claims.UserID > 0 {
+		updaterID = &claims.UserID
+	}
+
+	if err := handler.service.UpdateInstitutionStatus(*input.ID, *input.Enabled, updaterID); err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "update institution status failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
 }
 
 func (handler *Handler) dicts(w http.ResponseWriter, r *http.Request) {
@@ -548,6 +724,41 @@ func (handler *Handler) requireAuth(w http.ResponseWriter, r *http.Request, ctx 
 	return claims, true
 }
 
+func (handler *Handler) requireManage(w http.ResponseWriter, r *http.Request, ctx tenant.Context) (authx.Claims, bool) {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return authx.Claims{}, false
+	}
+	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return authx.Claims{}, false
+	}
+	return claims, true
+}
+
+func validateInstitutionMutation(input model.InstitutionMutation) string {
+	if strings.TrimSpace(input.OrganName) == "" {
+		return "organName is required"
+	}
+	if strings.TrimSpace(input.LoginName) == "" {
+		return "loginName is required"
+	}
+	mobile := strings.TrimSpace(input.Mobile)
+	if mobile == "" {
+		return "mobile is required"
+	}
+	if len(mobile) != 11 {
+		return "mobile must be 11 digits"
+	}
+	if strings.TrimSpace(input.Province) == "" {
+		return "province is required"
+	}
+	if strings.TrimSpace(input.City) == "" {
+		return "city is required"
+	}
+	return ""
+}
+
 func parseInt(raw string, fallback int) int {
 	if raw == "" {
 		return fallback
@@ -557,6 +768,26 @@ func parseInt(raw string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func parseBoolPtr(raw string) *bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	value, err := strconv.ParseBool(trimmed)
+	if err == nil {
+		return &value
+	}
+	if trimmed == "0" {
+		f := false
+		return &f
+	}
+	if trimmed == "1" {
+		t := true
+		return &t
+	}
+	return nil
 }
 
 func (handler *Handler) readIDPayload(w http.ResponseWriter, r *http.Request, ctx tenant.Context) (int64, bool) {
