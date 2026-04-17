@@ -34,6 +34,7 @@ const editContentModalOpen = ref(false)
 const courseContent = ref('感统器材抓取与追视训练')
 const editingCourseContent = ref(courseContent.value)
 const selectedRowKeys = ref<string[]>([])
+const statusFilteredValues = ref<string[]>(['到课'])
 
 const defaultAvatar = 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png?x-oss-process=image/resize,w_120'
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
@@ -108,7 +109,7 @@ const rowSelection = computed(() => ({
   },
 }))
 
-const pendingColumns = [
+const pendingColumns = computed(() => [
   {
     title: '学员/性别',
     dataIndex: 'name',
@@ -120,6 +121,7 @@ const pendingColumns = [
     dataIndex: 'status',
     key: 'status',
     width: 260,
+    filteredValue: statusFilteredValues.value,
     filters: [
       { text: '到课', value: '到课' },
       { text: '请假', value: '请假' },
@@ -133,7 +135,14 @@ const pendingColumns = [
     key: 'action',
     width: 180,
   },
-]
+])
+
+function handlePendingTableChange(_: unknown, filters: Record<string, (string | number | boolean)[] | null>) {
+  const nextValues = Array.isArray(filters?.status)
+    ? filters.status.map(item => String(item)).filter(Boolean)
+    : []
+  statusFilteredValues.value = nextValues
+}
 
 function handlePendingReview() {
   messageService.info('暂未开发')
@@ -160,6 +169,7 @@ watch(
       return
     activeKey.value = String(tabType ?? '1')
     selectedRowKeys.value = []
+    statusFilteredValues.value = ['到课']
   },
   { immediate: true },
 )
@@ -240,28 +250,27 @@ watch(
         >
           <a-tab-pane :key="'0'" :tab="`已点评（${reviewedStudents.length}）`">
             <div class="p-12px">
-              <div class="bg-white rounded-15px p-20px">
+              <div class="bg-white rounded-15px px-20px pt-12px">
                 <a-empty :image="simpleImage" description="暂无已点评学员" />
               </div>
             </div>
           </a-tab-pane>
           <a-tab-pane :key="'1'" :tab="`待点评（${pendingStudents.length}）`">
             <div class="p-12px">
-              <div class="bg-white rounded-15px p-20px">
-                <div class="flex justify-between items-center mb-16px">
-                  <div class="text-15px text-#222">
-                    {{ pendingSummaryText }}
-                  </div>
-                  <a-tooltip>
-                    <template #title>
-                      未勾选学员时，直接点击批量点评将会默认选中到课学员
-                    </template>
-                    <a-button type="primary" class="px-14px" @click="handleBatchReview">
-                      <InfoCircleOutlined />
-                      批量点评
-                    </a-button>
-                  </a-tooltip>
-                </div>
+              <div class="bg-white rounded-15px px-20px pt-12px">
+                <custom-title class="mb-16px" :title="pendingSummaryText" font-size="14px">
+                  <template #right>
+                    <a-tooltip>
+                      <template #title>
+                        未勾选学员时，直接点击批量点评将会默认选中到课学员
+                      </template>
+                      <a-button type="primary" class="px-14px" @click="handleBatchReview">
+                        <InfoCircleOutlined />
+                        批量点评
+                      </a-button>
+                    </a-tooltip>
+                  </template>
+                </custom-title>
                 <a-table
                   row-key="id"
                   :pagination="false"
@@ -269,6 +278,7 @@ watch(
                   :columns="pendingColumns"
                   :data-source="pendingStudents"
                   size="small"
+                  @change="handlePendingTableChange"
                 >
                   <template #bodyCell="{ column, record }">
                     <template v-if="column.key === 'name'">
@@ -276,9 +286,9 @@ watch(
                         <img width="36" height="36" class="mr-8px rounded-100" :src="record.avatar" alt="">
                         <div class="flex items-center flex-wrap">
                           <span class="text-#222 mr-6px">{{ record.name }}</span>
-                          <a-tag :bordered="false" color="default">
+                          <span class="inline-flex h-24px items-center rounded-10px bg-#eee px-8px text-12px text-#888">
                             {{ record.attentionText }}
-                          </a-tag>
+                          </span>
                         </div>
                       </div>
                     </template>
