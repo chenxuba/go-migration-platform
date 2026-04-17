@@ -69,6 +69,17 @@ const availableOpenTypeOptions = computed(() => {
   return openTypeOptions
 })
 const openDurationOptions = computed(() => openDurationOptionMap[Number(formState.openType) || 2] || openDurationOptionMap[2])
+const previewExpireEndTime = computed(() => {
+  const duration = String(formState.openDuration || '').trim()
+  if (!duration)
+    return '--'
+
+  const currentExpireEnd = parseDateTime(detail.value?.expireEndTime)
+  const now = new Date()
+  const effectiveEnd = currentExpireEnd && currentExpireEnd.getTime() > now.getTime() ? currentExpireEnd : now
+
+  return formatDateMinute(formatDateTime(addDuration(effectiveEnd, duration)))
+})
 
 const columns: TableColumnsType<InstitutionRenewalRecord> = [
   {
@@ -127,6 +138,62 @@ function formatDateMinute(value?: string) {
     return '--'
 
   return raw.length >= 16 ? raw.slice(0, 16) : raw
+}
+
+function parseDateTime(value?: string) {
+  const raw = String(value || '').trim()
+  if (!raw)
+    return null
+
+  const normalized = raw.replace(/-/g, '/')
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime()))
+    return null
+
+  return parsed
+}
+
+function formatDateTime(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const date = String(value.getDate()).padStart(2, '0')
+  const hours = String(value.getHours()).padStart(2, '0')
+  const minutes = String(value.getMinutes()).padStart(2, '0')
+  const seconds = String(value.getSeconds()).padStart(2, '0')
+  return `${year}-${month}-${date} ${hours}:${minutes}:${seconds}`
+}
+
+function addDuration(source: Date, duration: string) {
+  const result = new Date(source.getTime())
+
+  switch (duration) {
+    case '3d':
+      result.setDate(result.getDate() + 3)
+      break
+    case '5d':
+      result.setDate(result.getDate() + 5)
+      break
+    case '7d':
+      result.setDate(result.getDate() + 7)
+      break
+    case '2y':
+      result.setFullYear(result.getFullYear() + 2)
+      break
+    case '3y':
+      result.setFullYear(result.getFullYear() + 3)
+      break
+    case '5y':
+      result.setFullYear(result.getFullYear() + 5)
+      break
+    case '99y':
+      result.setFullYear(result.getFullYear() + 99)
+      break
+    default:
+      result.setFullYear(result.getFullYear() + 1)
+      break
+  }
+
+  return result
 }
 
 function getOpenTypeLabel(value?: number) {
@@ -283,78 +350,63 @@ watch(
 
     <a-spin :spinning="loading">
       <div class="institution-renewal__content scrollbar">
-        <div class="renewal-section">
-          <div class="renewal-section__title">
-            当前信息
-          </div>
-          <div class="renewal-summary">
-            <div class="renewal-summary__item">
-              <div class="renewal-summary__label">
-                机构名称
-              </div>
-              <div class="renewal-summary__value renewal-summary__value--wide" :title="detail?.organName || '--'">
-                {{ detail?.organName || '--' }}
-              </div>
+        <div class="renewal-toolbar">
+          <div class="renewal-toolbar__row">
+            <div class="renewal-toolbar__caption">
+              当前信息
             </div>
+            <div class="renewal-facts">
+              <div class="renewal-fact renewal-fact--wide">
+                <span class="renewal-fact__label">机构名称</span>
+                <span class="renewal-fact__value renewal-fact__value--ellipsis" :title="detail?.organName || '--'">
+                  {{ detail?.organName || '--' }}
+                </span>
+              </div>
 
-            <div class="renewal-summary__item">
-              <div class="renewal-summary__label">
-                当前开通类型
+              <div class="renewal-fact">
+                <span class="renewal-fact__label">当前开通类型</span>
+                <span class="renewal-fact__value">{{ getOpenTypeLabel(detail?.openType) }}</span>
               </div>
-              <div class="renewal-summary__value">
-                {{ getOpenTypeLabel(detail?.openType) }}
-              </div>
-            </div>
 
-            <div class="renewal-summary__item">
-              <div class="renewal-summary__label">
-                当前开通时长
-              </div>
-              <div class="renewal-summary__value">
-                {{ getOpenDurationLabel(Number(detail?.openType || 2), detail?.openDuration) }}
-              </div>
-            </div>
-
-            <div class="renewal-summary__item">
-              <div class="renewal-summary__label">
-                当前到期时间
-              </div>
-              <div class="renewal-summary__value">
-                {{ formatDateMinute(detail?.expireEndTime) }}
+              <div class="renewal-fact">
+                <span class="renewal-fact__label">当前到期时间</span>
+                <span class="renewal-fact__value">{{ formatDateMinute(detail?.expireEndTime) }}</span>
               </div>
             </div>
           </div>
-        </div>
 
-        <div class="renewal-section">
-          <div class="renewal-section__title">
-            续期设置
+          <div class="renewal-toolbar__row renewal-toolbar__row--form">
+            <div class="renewal-toolbar__caption">
+              续期设置
+            </div>
+            <a-form ref="formRef" layout="inline" :model="formState" :rules="rules" class="renewal-inline-form">
+              <a-form-item label="开通类型" name="openType">
+                <a-select
+                  v-model:value="formState.openType"
+                  :options="availableOpenTypeOptions"
+                  class="renewal-inline-form__select"
+                  placeholder="请选择开通类型"
+                  @change="handleOpenTypeChange"
+                />
+              </a-form-item>
+
+              <a-form-item label="续期时长" name="openDuration">
+                <a-select
+                  v-model:value="formState.openDuration"
+                  :options="openDurationOptions"
+                  :disabled="!formState.openType"
+                  class="renewal-inline-form__select"
+                  placeholder="请选择续期时长"
+                />
+              </a-form-item>
+
+              <a-form-item label="续后到期时间" class="renewal-inline-form__preview-item">
+                <div class="renewal-inline-preview">
+                  {{ previewExpireEndTime }}
+                </div>
+              </a-form-item>
+            </a-form>
           </div>
-          <a-form ref="formRef" layout="vertical" :model="formState" :rules="rules">
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item label="开通类型：" name="openType">
-                  <a-select
-                    v-model:value="formState.openType"
-                    :options="availableOpenTypeOptions"
-                    placeholder="请选择开通类型"
-                    @change="handleOpenTypeChange"
-                  />
-                </a-form-item>
-              </a-col>
-
-              <a-col :xs="24" :md="12">
-                <a-form-item label="续期时长：" name="openDuration">
-                  <a-select
-                    v-model:value="formState.openDuration"
-                    :options="openDurationOptions"
-                    :disabled="!formState.openType"
-                    placeholder="请选择续期时长"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </a-form>
         </div>
 
         <div class="renewal-section renewal-section--records">
@@ -425,13 +477,133 @@ watch(
 
 .institution-renewal__content {
   max-height: calc(100vh - 155px);
-  padding: 24px 40px 0 !important;
+  padding: 20px 32px 0 !important;
   overflow: auto;
 }
 
+.renewal-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px 18px;
+  background: #fff;
+  border: 1px solid #edf1f7;
+  border-radius: 14px;
+}
+
+.renewal-toolbar__row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.renewal-toolbar__caption {
+  color: #262626;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.renewal-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.renewal-fact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 12px;
+  background: #fafbfc;
+  border: 1px solid #f0f2f5;
+  border-radius: 10px;
+}
+
+.renewal-fact--wide {
+  flex: 1 1 320px;
+}
+
+.renewal-fact__label {
+  flex-shrink: 0;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.renewal-fact__value {
+  color: #262626;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.renewal-fact__value--ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.renewal-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 12px;
+  width: 100%;
+}
+
+.renewal-inline-form :deep(.ant-form-item) {
+  margin-right: 0;
+  margin-bottom: 0;
+}
+
+.renewal-inline-form__select {
+  width: 152px;
+}
+
+.renewal-inline-form__preview-item {
+  flex: 1 1 0;
+  min-width: 260px;
+}
+
+.renewal-inline-form__preview-item :deep(.ant-form-item-control) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.renewal-inline-form__preview-item :deep(.ant-form-item-control-input) {
+  min-height: 32px;
+  width: 100%;
+}
+
+.renewal-inline-form__preview-item :deep(.ant-form-item-control-input-content) {
+  width: 100%;
+}
+
+.renewal-inline-preview {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 11px;
+  color: #262626;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fafbfc;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .renewal-section {
-  margin-bottom: 16px;
-  padding: 20px 22px 18px;
+  margin-bottom: 14px;
+  padding: 16px 18px 12px;
   background: #fff;
   border: 1px solid #edf1f7;
   border-radius: 14px;
@@ -443,36 +615,6 @@ watch(
   font-size: 15px;
   font-weight: 600;
   line-height: 22px;
-}
-
-.renewal-summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 24px;
-}
-
-.renewal-summary__item {
-  min-width: 0;
-}
-
-.renewal-summary__label {
-  margin-bottom: 6px;
-  color: #8c8c8c;
-  font-size: 12px;
-  line-height: 20px;
-}
-
-.renewal-summary__value {
-  color: #262626;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-.renewal-summary__value--wide {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .renewal-section--records {
@@ -501,12 +643,29 @@ watch(
 
 @media (max-width: 768px) {
   .institution-renewal__content {
-    padding: 20px 20px 0 !important;
+    padding: 16px 16px 0 !important;
   }
 
-  .renewal-summary {
+  .renewal-toolbar {
+    padding: 14px;
+  }
+
+  .renewal-toolbar__row {
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 8px;
+  }
+
+  .renewal-inline-form {
+    width: 100%;
+  }
+
+  .renewal-inline-form__select {
+    width: 100%;
+  }
+
+  .renewal-inline-preview {
+    min-width: 0;
+    width: 100%;
   }
 }
 </style>

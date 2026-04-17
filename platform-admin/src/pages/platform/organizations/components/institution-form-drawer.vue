@@ -869,7 +869,7 @@ async function submitForm() {
               </a-form-item>
             </div>
 
-            <div class="system-grid__item system-grid__item--full">
+            <div v-if="!isEdit" class="system-grid__item system-grid__item--full">
               <a-row :gutter="24">
                 <a-col :xs="24" :md="12">
                   <a-form-item label="开通类型：" name="openType">
