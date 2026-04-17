@@ -28,6 +28,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/tenant/customization-summary", handler.customizationSummary)
 	mux.HandleFunc("/api/v1/platform/institutions", handler.institutions)
 	mux.HandleFunc("/api/v1/platform/institutions/detail", handler.institutionDetail)
+	mux.HandleFunc("/api/v1/platform/institutions/geocode", handler.geocodeInstitution)
 	mux.HandleFunc("/api/v1/platform/institutions/create", handler.createInstitution)
 	mux.HandleFunc("/api/v1/platform/institutions/update", handler.updateInstitution)
 	mux.HandleFunc("/api/v1/platform/institutions/status", handler.updateInstitutionStatus)
@@ -163,6 +164,10 @@ func (handler *Handler) createInstitution(w http.ResponseWriter, r *http.Request
 		defaultEnabled := true
 		input.Enabled = &defaultEnabled
 	}
+	if err := handler.ensureInstitutionCoordinates(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
 
 	var creatorID *int64
 	if claims.UserID > 0 {
@@ -205,6 +210,10 @@ func (handler *Handler) updateInstitution(w http.ResponseWriter, r *http.Request
 		defaultEnabled := true
 		input.Enabled = &defaultEnabled
 	}
+	if err := handler.ensureInstitutionCoordinates(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
 
 	var updaterID *int64
 	if claims.UserID > 0 {
@@ -216,6 +225,34 @@ func (handler *Handler) updateInstitution(w http.ResponseWriter, r *http.Request
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) geocodeInstitution(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.InstitutionGeocodeQuery
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if message := validateInstitutionGeocodeQuery(input); message != "" {
+		httpx.WriteError(w, http.StatusBadRequest, message, ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.ResolveInstitutionCoordinate(input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "unable to resolve coordinates from address", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
 func (handler *Handler) updateInstitutionStatus(w http.ResponseWriter, r *http.Request) {
@@ -750,13 +787,61 @@ func validateInstitutionMutation(input model.InstitutionMutation) string {
 	if len(mobile) != 11 {
 		return "mobile must be 11 digits"
 	}
+	if strings.TrimSpace(input.Principal) == "" {
+		return "principal is required"
+	}
 	if strings.TrimSpace(input.Province) == "" {
 		return "province is required"
 	}
 	if strings.TrimSpace(input.City) == "" {
 		return "city is required"
 	}
+	if strings.TrimSpace(input.Address) == "" {
+		return "address is required"
+	}
 	return ""
+}
+
+func validateInstitutionGeocodeQuery(input model.InstitutionGeocodeQuery) string {
+	if strings.TrimSpace(input.Province) == "" {
+		return "province is required"
+	}
+	if strings.TrimSpace(input.City) == "" {
+		return "city is required"
+	}
+	if strings.TrimSpace(input.Address) == "" {
+		return "address is required"
+	}
+	return ""
+}
+
+func (handler *Handler) ensureInstitutionCoordinates(input *model.InstitutionMutation) error {
+	if input == nil || strings.TrimSpace(input.Address) == "" {
+		return nil
+	}
+	if hasInstitutionCoordinates(input.Lng, input.Lat) {
+		return nil
+	}
+
+	result, err := handler.service.ResolveInstitutionCoordinate(model.InstitutionGeocodeQuery{
+		Province: input.Province,
+		City:     input.City,
+		Region:   input.Region,
+		Address:  input.Address,
+	})
+	if err != nil {
+		return err
+	}
+	input.Lng = &result.Lng
+	input.Lat = &result.Lat
+	return nil
+}
+
+func hasInstitutionCoordinates(lng, lat *float64) bool {
+	if lng == nil || lat == nil {
+		return false
+	}
+	return *lng != 0 || *lat != 0
 }
 
 func parseInt(raw string, fallback int) int {

@@ -14,13 +14,15 @@ type Service struct {
 	store        *customization.Store
 	repo         *repository.Repository
 	tokenManager *authx.TokenManager
+	amapWebKey   string
 }
 
-func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager) *Service {
+func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, amapWebKey string) *Service {
 	return &Service{
 		store:        store,
 		repo:         repo,
 		tokenManager: tokenManager,
+		amapWebKey:   amapWebKey,
 	}
 }
 
@@ -127,6 +129,10 @@ func (svc *Service) UpdateInstitution(input model.InstitutionMutation, updaterID
 
 func (svc *Service) UpdateInstitutionStatus(id int64, enabled bool, updaterID *int64) error {
 	return svc.repo.UpdateInstitutionStatus(context.Background(), id, enabled, updaterID)
+}
+
+func (svc *Service) ResolveInstitutionCoordinate(input model.InstitutionGeocodeQuery) (model.InstitutionGeocodeResult, error) {
+	return svc.resolveInstitutionCoordinate(context.Background(), input)
 }
 
 func (svc *Service) CreateNotice(input model.NoticeMutation, creatorID *int64) (int64, error) {

@@ -123,45 +123,73 @@ type Institution struct {
 	AdminCount       int    `json:"adminCount"`
 }
 
+type InstitutionProfile struct {
+	OrganLabel    string   `json:"organLabel,omitempty"`
+	Description   string   `json:"description,omitempty"`
+	BusinessTime  string   `json:"businessTime,omitempty"`
+	Video         string   `json:"video,omitempty"`
+	GalleryImages []string `json:"galleryImages,omitempty"`
+}
+
 type InstitutionDetail struct {
-	ID          int64  `json:"id"`
-	OrganName   string `json:"organName"`
-	OrganCode   string `json:"organCode"`
-	LoginName   string `json:"loginName"`
-	Mobile      string `json:"mobile"`
-	Principal   string `json:"principal,omitempty"`
-	Province    string `json:"province"`
-	City        string `json:"city"`
-	Region      string `json:"region,omitempty"`
-	Address     string `json:"address,omitempty"`
-	ConcatPhone string `json:"concatPhone,omitempty"`
-	FixedPhone  string `json:"fixedPhone,omitempty"`
-	Remark      string `json:"remark,omitempty"`
-	Logo        string `json:"logo,omitempty"`
-	Enabled     bool   `json:"enabled"`
-	Status      int    `json:"status"`
+	ID          int64              `json:"id"`
+	OrganName   string             `json:"organName"`
+	OrganCode   string             `json:"organCode"`
+	LoginName   string             `json:"loginName"`
+	Mobile      string             `json:"mobile"`
+	Principal   string             `json:"principal,omitempty"`
+	Province    string             `json:"province"`
+	City        string             `json:"city"`
+	Region      string             `json:"region,omitempty"`
+	Address     string             `json:"address,omitempty"`
+	ConcatPhone string             `json:"concatPhone,omitempty"`
+	FixedPhone  string             `json:"fixedPhone,omitempty"`
+	Remark      string             `json:"remark,omitempty"`
+	Logo        string             `json:"logo,omitempty"`
+	Enabled     bool               `json:"enabled"`
+	Status      int                `json:"status"`
+	Lng         float64            `json:"lng,omitempty"`
+	Lat         float64            `json:"lat,omitempty"`
+	Profile     InstitutionProfile `json:"profile"`
 }
 
 type InstitutionMutation struct {
-	ID          *int64 `json:"id"`
-	OrganName   string `json:"organName"`
-	LoginName   string `json:"loginName"`
-	Mobile      string `json:"mobile"`
-	Principal   string `json:"principal"`
-	Province    string `json:"province"`
-	City        string `json:"city"`
-	Region      string `json:"region"`
-	Address     string `json:"address"`
-	ConcatPhone string `json:"concatPhone"`
-	FixedPhone  string `json:"fixedPhone"`
-	Remark      string `json:"remark"`
-	Logo        string `json:"logo"`
-	Enabled     *bool  `json:"enabled"`
+	ID          *int64              `json:"id"`
+	OrganName   string              `json:"organName"`
+	LoginName   string              `json:"loginName"`
+	Mobile      string              `json:"mobile"`
+	Principal   string              `json:"principal"`
+	Province    string              `json:"province"`
+	City        string              `json:"city"`
+	Region      string              `json:"region"`
+	Address     string              `json:"address"`
+	ConcatPhone string              `json:"concatPhone"`
+	FixedPhone  string              `json:"fixedPhone"`
+	Remark      string              `json:"remark"`
+	Logo        string              `json:"logo"`
+	Enabled     *bool               `json:"enabled"`
+	Lng         *float64            `json:"lng,omitempty"`
+	Lat         *float64            `json:"lat,omitempty"`
+	Profile     *InstitutionProfile `json:"profile,omitempty"`
 }
 
 type InstitutionStatusMutation struct {
 	ID      *int64 `json:"id"`
 	Enabled *bool  `json:"enabled"`
+}
+
+type InstitutionGeocodeQuery struct {
+	Province string `json:"province"`
+	City     string `json:"city"`
+	Region   string `json:"region"`
+	Address  string `json:"address"`
+}
+
+type InstitutionGeocodeResult struct {
+	Lng             float64 `json:"lng"`
+	Lat             float64 `json:"lat"`
+	Source          string  `json:"source"`
+	ResolvedAddress string  `json:"resolvedAddress,omitempty"`
 }
 
 type InstitutionSummary struct {

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -49,8 +50,132 @@ func buildInstitutionWhereClause(keyword, mobile string, enabled *bool) (string,
 	return strings.Join(filters, " AND "), args
 }
 
-func New(db *sql.DB) *Repository {
-	return &Repository{db: db}
+func New(db *sql.DB) (*Repository, error) {
+	repo := &Repository{db: db}
+	if err := repo.ensureInstitutionProfileSchema(context.Background()); err != nil {
+		return nil, err
+	}
+	return repo, nil
+}
+
+func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) error {
+	if _, err := repo.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS org_institution_profile (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			institution_id BIGINT NOT NULL,
+			organ_label VARCHAR(127) DEFAULT NULL,
+			description TEXT DEFAULT NULL,
+			business_time VARCHAR(255) DEFAULT NULL,
+			video VARCHAR(2000) DEFAULT NULL,
+			gallery_images JSON DEFAULT NULL,
+			create_id BIGINT DEFAULT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_id BIGINT DEFAULT NULL,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_org_institution_profile_inst (institution_id),
+			KEY idx_org_institution_profile_inst_del (institution_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+	`); err != nil {
+		return err
+	}
+
+	_, err := repo.db.ExecContext(ctx, `
+		INSERT INTO org_institution_profile (
+			institution_id, organ_label, description, business_time, video, gallery_images,
+			create_id, create_time, update_id, update_time, del_flag
+		)
+		SELECT oi.id,
+		       NULLIF(TRIM(IFNULL(oi.organ_label, '')), ''),
+		       NULLIF(TRIM(IFNULL(oi.description, '')), ''),
+		       NULLIF(TRIM(IFNULL(oi.business_time, '')), ''),
+		       NULLIF(TRIM(IFNULL(oi.video, '')), ''),
+		       oi.inst_images,
+		       oi.create_id,
+		       COALESCE(oi.create_time, NOW()),
+		       oi.update_id,
+		       COALESCE(oi.update_time, NOW()),
+		       0
+		FROM org_institution oi
+		LEFT JOIN org_institution_profile oip ON oip.institution_id = oi.id AND oip.del_flag = 0
+		WHERE oi.del_flag = 0
+		  AND oip.id IS NULL
+		  AND (
+			NULLIF(TRIM(IFNULL(oi.organ_label, '')), '') IS NOT NULL
+			OR NULLIF(TRIM(IFNULL(oi.description, '')), '') IS NOT NULL
+			OR NULLIF(TRIM(IFNULL(oi.business_time, '')), '') IS NOT NULL
+			OR NULLIF(TRIM(IFNULL(oi.video, '')), '') IS NOT NULL
+			OR oi.inst_images IS NOT NULL
+		  )
+	`)
+	return err
+}
+
+func trimStringSlice(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+func marshalStringSlice(values []string) string {
+	cleanValues := trimStringSlice(values)
+	if len(cleanValues) == 0 {
+		return "[]"
+	}
+	payload, err := json.Marshal(cleanValues)
+	if err != nil {
+		return "[]"
+	}
+	return string(payload)
+}
+
+func unmarshalStringSlice(raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "null" {
+		return nil
+	}
+
+	var direct []string
+	if err := json.Unmarshal([]byte(trimmed), &direct); err == nil {
+		return trimStringSlice(direct)
+	}
+
+	var generic []map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &generic); err == nil {
+		result := make([]string, 0, len(generic))
+		for _, item := range generic {
+			for _, key := range []string{"url", "fileUrl", "src", "value"} {
+				if rawValue, ok := item[key].(string); ok && strings.TrimSpace(rawValue) != "" {
+					result = append(result, strings.TrimSpace(rawValue))
+					break
+				}
+			}
+		}
+		return trimStringSlice(result)
+	}
+
+	return nil
+}
+
+func normalizedInstitutionProfile(profile *model.InstitutionProfile) model.InstitutionProfile {
+	if profile == nil {
+		return model.InstitutionProfile{}
+	}
+
+	return model.InstitutionProfile{
+		OrganLabel:    strings.TrimSpace(profile.OrganLabel),
+		Description:   strings.TrimSpace(profile.Description),
+		BusinessTime:  strings.TrimSpace(profile.BusinessTime),
+		Video:         strings.TrimSpace(profile.Video),
+		GalleryImages: trimStringSlice(profile.GalleryImages),
+	}
 }
 
 func (repo *Repository) PageDicts(ctx context.Context, current, size int, keyword string) (model.PageResult[model.Dict], error) {
@@ -326,28 +451,41 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 
 func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (model.InstitutionDetail, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT id,
-		       IFNULL(organ_name, ''),
-		       IFNULL(organ_code, ''),
-		       IFNULL(login_name, ''),
-		       IFNULL(mobile, ''),
-		       IFNULL(principal, ''),
-		       IFNULL(province, ''),
-		       IFNULL(city, ''),
-		       IFNULL(region, ''),
-		       IFNULL(address, ''),
-		       IFNULL(concat_phone, ''),
-		       IFNULL(fixed_phone, ''),
-		       IFNULL(remark, ''),
-		       IFNULL(logo, ''),
-		       IFNULL(enabled, 0),
-		       IFNULL(status, 1)
-		FROM org_institution
-		WHERE id = ? AND del_flag = 0
+		SELECT oi.id,
+		       IFNULL(oi.organ_name, ''),
+		       IFNULL(oi.organ_code, ''),
+		       IFNULL(oi.login_name, ''),
+		       IFNULL(oi.mobile, ''),
+		       IFNULL(oi.principal, ''),
+		       IFNULL(oi.province, ''),
+		       IFNULL(oi.city, ''),
+		       IFNULL(oi.region, ''),
+		       IFNULL(oi.address, ''),
+		       IFNULL(oi.concat_phone, ''),
+		       IFNULL(oi.fixed_phone, ''),
+		       IFNULL(oi.remark, ''),
+		       IFNULL(oi.logo, ''),
+		       IFNULL(oi.enabled, 0),
+		       IFNULL(oi.status, 1),
+		       IFNULL(oi.lng, 0),
+		       IFNULL(oi.lat, 0),
+		       IFNULL(NULLIF(oip.organ_label, ''), IFNULL(oi.organ_label, '')),
+		       IFNULL(NULLIF(oip.description, ''), IFNULL(oi.description, '')),
+		       IFNULL(NULLIF(oip.business_time, ''), IFNULL(oi.business_time, '')),
+		       IFNULL(NULLIF(oip.video, ''), IFNULL(oi.video, '')),
+		       CASE
+		           WHEN oip.gallery_images IS NOT NULL THEN CAST(oip.gallery_images AS CHAR)
+		           WHEN oi.inst_images IS NOT NULL THEN CAST(oi.inst_images AS CHAR)
+		           ELSE '[]'
+		       END
+		FROM org_institution oi
+		LEFT JOIN org_institution_profile oip ON oip.institution_id = oi.id AND oip.del_flag = 0
+		WHERE oi.id = ? AND oi.del_flag = 0
 		LIMIT 1
 	`, id)
 
 	var detail model.InstitutionDetail
+	var galleryImagesRaw string
 	if err := row.Scan(
 		&detail.ID,
 		&detail.OrganName,
@@ -365,9 +503,17 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		&detail.Logo,
 		&detail.Enabled,
 		&detail.Status,
+		&detail.Lng,
+		&detail.Lat,
+		&detail.Profile.OrganLabel,
+		&detail.Profile.Description,
+		&detail.Profile.BusinessTime,
+		&detail.Profile.Video,
+		&galleryImagesRaw,
 	); err != nil {
 		return model.InstitutionDetail{}, err
 	}
+	detail.Profile.GalleryImages = unmarshalStringSlice(galleryImagesRaw)
 
 	return detail, nil
 }
@@ -394,13 +540,16 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 	}
 
 	creatorValue := nullableInt64Value(creatorID)
+	profile := normalizedInstitutionProfile(input.Profile)
+	galleryImagesJSON := marshalStringSlice(profile.GalleryImages)
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO org_institution (
 			uuid, organ_name, organ_type, mobile, organ_code, login_name,
-			province, city, region, logo, principal, address, status, enabled,
-			concat_phone, fixed_phone, version, create_id, create_time, update_id, update_time, del_flag, remark, account_num
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NOW(), ?, NOW(), 0, ?, 5)
+			province, city, region, logo, principal, address, lng, lat,
+			organ_label, description, business_time, video, inst_images,
+			status, enabled, concat_phone, fixed_phone, version, create_id, create_time, update_id, update_time, del_flag, remark, account_num
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NOW(), ?, NOW(), 0, ?, 5)
 	`,
 		uuid.NewString(),
 		strings.TrimSpace(input.OrganName),
@@ -414,10 +563,18 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		strings.TrimSpace(input.Logo),
 		strings.TrimSpace(input.Principal),
 		strings.TrimSpace(input.Address),
+		nullableFloat64Value(input.Lng),
+		nullableFloat64Value(input.Lat),
+		profile.OrganLabel,
+		profile.Description,
+		profile.BusinessTime,
+		profile.Video,
+		galleryImagesJSON,
 		1,
 		enabled,
 		strings.TrimSpace(input.ConcatPhone),
 		strings.TrimSpace(input.FixedPhone),
+		0,
 		creatorValue,
 		creatorValue,
 		strings.TrimSpace(input.Remark),
@@ -428,6 +585,10 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 
 	id, err := result.LastInsertId()
 	if err != nil {
+		return 0, err
+	}
+
+	if err = repo.upsertInstitutionProfileTx(ctx, tx, id, profile, creatorValue, creatorValue); err != nil {
 		return 0, err
 	}
 
@@ -449,8 +610,20 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 	}
 
 	updaterValue := nullableInt64Value(updaterID)
+	profile := normalizedInstitutionProfile(input.Profile)
+	galleryImagesJSON := marshalStringSlice(profile.GalleryImages)
 
-	_, err := repo.db.ExecContext(ctx, `
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	_, err = tx.ExecContext(ctx, `
 		UPDATE org_institution
 		SET organ_name = ?,
 		    login_name = ?,
@@ -464,6 +637,13 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		    fixed_phone = ?,
 		    remark = ?,
 		    logo = ?,
+		    lng = COALESCE(?, lng),
+		    lat = COALESCE(?, lat),
+		    organ_label = ?,
+		    description = ?,
+		    business_time = ?,
+		    video = ?,
+		    inst_images = ?,
 		    enabled = ?,
 		    status = CASE
 		        WHEN ? = 0 THEN 2
@@ -486,12 +666,31 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		strings.TrimSpace(input.FixedPhone),
 		strings.TrimSpace(input.Remark),
 		strings.TrimSpace(input.Logo),
+		nullableFloat64Value(input.Lng),
+		nullableFloat64Value(input.Lat),
+		profile.OrganLabel,
+		profile.Description,
+		profile.BusinessTime,
+		profile.Video,
+		galleryImagesJSON,
 		enabled,
 		enabled,
 		updaterValue,
 		*input.ID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if err = repo.upsertInstitutionProfileTx(ctx, tx, *input.ID, profile, nil, updaterValue); err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (repo *Repository) UpdateInstitutionStatus(ctx context.Context, id int64, enabled bool, updaterID *int64) error {
@@ -512,6 +711,125 @@ func (repo *Repository) UpdateInstitutionStatus(ctx context.Context, id int64, e
 	return err
 }
 
+func (repo *Repository) FindInstitutionCoordinateByAddress(ctx context.Context, query model.InstitutionGeocodeQuery) (model.InstitutionGeocodeResult, bool, error) {
+	filters := []string{"del_flag = 0", "lng IS NOT NULL", "lat IS NOT NULL"}
+	args := make([]any, 0, 4)
+
+	if trimmed := strings.TrimSpace(query.Province); trimmed != "" {
+		filters = append(filters, "province = ?")
+		args = append(args, trimmed)
+	}
+	if trimmed := strings.TrimSpace(query.City); trimmed != "" {
+		filters = append(filters, "city = ?")
+		args = append(args, trimmed)
+	}
+	if trimmed := strings.TrimSpace(query.Region); trimmed != "" {
+		filters = append(filters, "region = ?")
+		args = append(args, trimmed)
+	}
+	if trimmed := strings.TrimSpace(query.Address); trimmed != "" {
+		filters = append(filters, "address = ?")
+		args = append(args, trimmed)
+	}
+
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(lng, 0),
+		       IFNULL(lat, 0),
+		       CONCAT(IFNULL(province, ''), IFNULL(city, ''), IFNULL(region, ''), IFNULL(address, ''))
+		FROM org_institution
+		WHERE `+strings.Join(filters, " AND ")+`
+		ORDER BY update_time DESC, id DESC
+		LIMIT 1
+	`, args...)
+
+	var result model.InstitutionGeocodeResult
+	if err := row.Scan(&result.Lng, &result.Lat, &result.ResolvedAddress); err != nil {
+		if err == sql.ErrNoRows {
+			return model.InstitutionGeocodeResult{}, false, nil
+		}
+		return model.InstitutionGeocodeResult{}, false, err
+	}
+
+	result.Source = "same_address"
+	return result, true, nil
+}
+
+func (repo *Repository) FindInstitutionCoordinateFallback(ctx context.Context, query model.InstitutionGeocodeQuery) (model.InstitutionGeocodeResult, bool, error) {
+	candidates := []struct {
+		source  string
+		filters []string
+		args    []any
+		label   string
+	}{}
+
+	if region := strings.TrimSpace(query.Region); region != "" {
+		candidates = append(candidates, struct {
+			source  string
+			filters []string
+			args    []any
+			label   string
+		}{
+			source:  "region_average",
+			filters: []string{"province = ?", "city = ?", "region = ?"},
+			args:    []any{strings.TrimSpace(query.Province), strings.TrimSpace(query.City), region},
+			label:   strings.TrimSpace(query.Province) + strings.TrimSpace(query.City) + region,
+		})
+	}
+
+	candidates = append(candidates,
+		struct {
+			source  string
+			filters []string
+			args    []any
+			label   string
+		}{
+			source:  "city_average",
+			filters: []string{"province = ?", "city = ?"},
+			args:    []any{strings.TrimSpace(query.Province), strings.TrimSpace(query.City)},
+			label:   strings.TrimSpace(query.Province) + strings.TrimSpace(query.City),
+		},
+		struct {
+			source  string
+			filters []string
+			args    []any
+			label   string
+		}{
+			source:  "province_average",
+			filters: []string{"province = ?"},
+			args:    []any{strings.TrimSpace(query.Province)},
+			label:   strings.TrimSpace(query.Province),
+		},
+	)
+
+	for _, candidate := range candidates {
+		filters := append([]string{"del_flag = 0", "lng IS NOT NULL", "lat IS NOT NULL"}, candidate.filters...)
+		row := repo.db.QueryRowContext(ctx, `
+			SELECT ROUND(AVG(lng), 6),
+			       ROUND(AVG(lat), 6)
+			FROM org_institution
+			WHERE `+strings.Join(filters, " AND ")+`
+		`, candidate.args...)
+
+		var lng sql.NullFloat64
+		var lat sql.NullFloat64
+		if err := row.Scan(&lng, &lat); err != nil {
+			return model.InstitutionGeocodeResult{}, false, err
+		}
+		if !lng.Valid || !lat.Valid {
+			continue
+		}
+
+		return model.InstitutionGeocodeResult{
+			Lng:             lng.Float64,
+			Lat:             lat.Float64,
+			Source:          candidate.source,
+			ResolvedAddress: candidate.label,
+		}, true, nil
+	}
+
+	return model.InstitutionGeocodeResult{}, false, nil
+}
+
 func (repo *Repository) nextInstitutionCode(ctx context.Context, tx *sql.Tx) (string, error) {
 	var next int
 	if err := tx.QueryRowContext(ctx, `
@@ -525,8 +843,43 @@ func (repo *Repository) nextInstitutionCode(ctx context.Context, tx *sql.Tx) (st
 	return fmt.Sprintf("I-%05d", next), nil
 }
 
+func (repo *Repository) upsertInstitutionProfileTx(ctx context.Context, tx *sql.Tx, institutionID int64, profile model.InstitutionProfile, creatorID, updaterID any) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO org_institution_profile (
+			institution_id, organ_label, description, business_time, video, gallery_images,
+			create_id, create_time, update_id, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
+		ON DUPLICATE KEY UPDATE
+			organ_label = VALUES(organ_label),
+			description = VALUES(description),
+			business_time = VALUES(business_time),
+			video = VALUES(video),
+			gallery_images = VALUES(gallery_images),
+			update_id = VALUES(update_id),
+			update_time = NOW(),
+			del_flag = 0
+	`,
+		institutionID,
+		profile.OrganLabel,
+		profile.Description,
+		profile.BusinessTime,
+		profile.Video,
+		marshalStringSlice(profile.GalleryImages),
+		creatorID,
+		updaterID,
+	)
+	return err
+}
+
 func nullableInt64Value(value *int64) any {
 	if value == nil || *value <= 0 {
+		return nil
+	}
+	return *value
+}
+
+func nullableFloat64Value(value *float64) any {
+	if value == nil {
 		return nil
 	}
 	return *value

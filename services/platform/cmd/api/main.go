@@ -34,9 +34,12 @@ func main() {
 		panic(err)
 	}
 
-	repo := repository.New(db)
+	repo, err := repository.New(db)
+	if err != nil {
+		panic(err)
+	}
 	tokenManager := authx.NewTokenManager(cfg.TokenSecret)
-	svc := service.New(store, repo, tokenManager)
+	svc := service.New(store, repo, tokenManager, cfg.AmapWebServiceKey)
 	h := handler.New(svc)
 
 	mux := http.NewServeMux()

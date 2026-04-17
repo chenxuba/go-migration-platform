@@ -32,6 +32,17 @@ export interface InstitutionDetail {
   logo?: string
   enabled: boolean
   status: number
+  lng?: number
+  lat?: number
+  profile: InstitutionProfile
+}
+
+export interface InstitutionProfile {
+  organLabel?: string
+  description?: string
+  businessTime?: string
+  video?: string
+  galleryImages?: string[]
 }
 
 export interface InstitutionSummary {
@@ -71,6 +82,23 @@ export interface InstitutionMutationPayload {
   remark?: string
   logo?: string
   enabled?: boolean
+  lng?: number
+  lat?: number
+  profile?: InstitutionProfile
+}
+
+export interface InstitutionGeocodePayload {
+  province: string
+  city: string
+  region?: string
+  address: string
+}
+
+export interface InstitutionGeocodeResult {
+  lng: number
+  lat: number
+  source: string
+  resolvedAddress?: string
 }
 
 export function pageInstitutionsApi(params: InstitutionPageParams) {
@@ -81,6 +109,10 @@ export function pageInstitutionsApi(params: InstitutionPageParams) {
 
 export function getInstitutionDetailApi(params: { id: number }) {
   return useGet<InstitutionDetail, { id: number }>('/api/v1/platform/institutions/detail', params)
+}
+
+export function geocodeInstitutionApi(data: InstitutionGeocodePayload) {
+  return usePost<InstitutionGeocodeResult, InstitutionGeocodePayload>('/api/v1/platform/institutions/geocode', data)
 }
 
 export function createInstitutionApi(data: InstitutionMutationPayload) {
