@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Empty } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, ref, watch } from 'vue'
 import { downloadClassRecordExportRecordApi, getClassRecordExportRecordsApi, type ClassRecordExportRecord } from '@/api/edu-center/class-record'
@@ -13,6 +14,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits(['update:open'])
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
 const modalOpen = computed({
   get: () => props.open,
@@ -127,7 +129,7 @@ watch(
           </div>
         </div>
       </div>
-      <a-empty v-else description="暂无导出记录" />
+      <a-empty v-else :image="simpleImage" description="暂无导出记录" />
     </a-spin>
   </a-modal>
 </template>

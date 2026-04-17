@@ -3,7 +3,7 @@ import { computed, createVNode, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import { CloseOutlined, DownOutlined, ExclamationCircleFilled, EyeInvisibleOutlined, EyeOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
+import { Empty, Modal } from 'ant-design-vue'
 import { useWindowSize } from '@vueuse/core'
 import { useUserStore } from '@/stores/user'
 import { getStudentPhoneNumberApi } from '~/api/common/config'
@@ -28,6 +28,7 @@ const props = defineProps({
 const emit = defineEmits(['update:open', 'updated', 'closed'])
 const router = useRouter()
 const userStore = useUserStore()
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
 const openDrawer = computed({
   get: () => props.open,
@@ -1183,7 +1184,7 @@ function isHandledApprovalFlow(flow) {
           <a-spin size="large" tip="加载订单详情中..." />
         </div>
 
-        <a-empty v-else-if="!detail" description="暂无订单数据" />
+        <a-empty v-else-if="!detail" :image="simpleImage" description="暂无订单数据" />
 
         <template v-else>
           <div class="flex flex-items-start justify-between mb-5">
@@ -1481,6 +1482,7 @@ function isHandledApprovalFlow(flow) {
 
             <a-empty
               v-if="!isRechargeOrderDetail && !isRefundRechargeOrderDetail && !orderItems.length"
+              :image="simpleImage"
               description="暂无订单明细"
             />
 
@@ -1525,6 +1527,7 @@ function isHandledApprovalFlow(flow) {
 
             <a-empty
               v-if="!paymentRecords.length"
+              :image="simpleImage"
               :description="isRefundOrderPaymentSection ? '暂无退款记录' : '暂无支付记录'"
             />
 

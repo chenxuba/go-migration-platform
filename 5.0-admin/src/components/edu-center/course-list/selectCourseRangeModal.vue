@@ -1,8 +1,10 @@
 <script setup>
 import { CloseOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { Empty } from 'ant-design-vue'
 import { debounce } from 'lodash-es'
 import { getCoursePageApi } from '~@/api/edu-center/course-list'
 
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const props = defineProps({
   open: {
     type: Boolean,
@@ -394,7 +396,7 @@ function closeFun() {
               
               <!-- 空状态 -->
               <div v-if="!loading && courseList.length === 0" class="empty-state">
-                <a-empty description="暂无课程数据" />
+                <a-empty :image="simpleImage" description="暂无课程数据" />
               </div>
             </a-spin>
           </div>

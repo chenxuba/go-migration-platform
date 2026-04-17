@@ -2,7 +2,7 @@
 import { computed, createVNode, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import { CloseOutlined, DownOutlined, ExclamationCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
+import { Empty, Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
 import StaffSelect from '@/components/common/staff-select.vue'
@@ -34,6 +34,7 @@ import { addCloseTuitionAccountOrderApi } from '@/api/edu-center/tuition-account
 import { Sex, SexLabel, TeachingMethod, TeachingMethodLabel } from '@/enums'
 
 const router = useRouter()
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const allFilterRef = ref()
 const loading = ref(false)
 const dataSource = ref([])
@@ -1787,6 +1788,7 @@ onMounted(() => {
             <a-empty
               v-if="!switchAccountLoading && switchAccountOptions.length === 0"
               class="switch-account-modal__empty"
+              :image="simpleImage"
               description="暂无可切换账户"
             />
           </a-radio-group>

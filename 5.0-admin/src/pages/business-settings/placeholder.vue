@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { Empty } from 'ant-design-vue'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const title = computed(() => String(route.meta?.title ?? '业务设置'))
 </script>
 
@@ -14,7 +16,7 @@ const title = computed(() => String(route.meta?.title ?? '业务设置'))
     <p class="business-settings-placeholder__desc">
       页面建设中，后续将在此配置相关业务项。
     </p>
-    <a-empty description="敬请期待" />
+    <a-empty :image="simpleImage" description="敬请期待" />
   </div>
 </template>
 

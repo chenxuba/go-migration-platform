@@ -24,6 +24,7 @@ import { calculateAge } from '@/utils/date'
 import { ParentRelationshipLabel, IntentionLevel, IntentionLevelLabel, IntentionLevelStyle, FollowUpStatus, FollowUpStatusLabel, FollowUpStatusStyle, Sex, SexLabel, StudentStatus, StudentStatusLabel } from '@/enums'
 import dayjs from 'dayjs'
 import { Empty } from 'ant-design-vue'
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const props = defineProps({
   open: {
     type: Boolean,
@@ -1031,7 +1032,7 @@ async function handlePhoneToggle() {
               <a-divider v-if="item.id !== studentChangeInfo[studentChangeInfo.length - 1].id" class="my-0px" />
             </div>
             <div v-if="studentChangeInfo.length === 0">
-              <a-empty description="暂无变更记录" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
+              <a-empty description="暂无变更记录" :image="simpleImage" />
             </div>
           </div>
         </a-spin>

@@ -1,6 +1,6 @@
 <script setup>
 import { ExclamationCircleOutlined, LeftOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
+import { Empty, Modal } from 'ant-design-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { createVNode } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -13,6 +13,7 @@ import { batchSaveIntentionStudentImportTaskRecordsApi, deleteIntentionStudentIm
 
 const router = useRouter()
 const route = useRoute()
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const importId = computed(() => String(route.params.id || ''))
 const session = reactive({
   importId: importId.value,
@@ -586,7 +587,7 @@ onMounted(() => {
                 </tr>
                 <tr v-if="displayedRows.length === 0">
                   <td :colspan="session.columns.length + 2" class="empty-table-cell">
-                    <a-empty />
+                    <a-empty :image="simpleImage" />
                   </td>
                 </tr>
               </tbody>

@@ -8,6 +8,7 @@ import { deleteDepart, getListTreeDepartApi, getUserListApi } from '~@/api/inter
 import messageService from '~@/utils/messageService'
 import StaffList from '~@/components/internal-manage/staff-manage/staff-list.vue'
 
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const searchValue = ref('')
 const isOpen = ref(true)
 function handleCloseLeft() {
@@ -326,7 +327,7 @@ onMounted(() => {
                 </template>
               </a-tree>
               <div v-if="treeData.length == 0" class="h-200px flex items-center justify-center">
-                <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" />
+                <a-empty :image="simpleImage" />
               </div>
             </a-spin>
           </div>

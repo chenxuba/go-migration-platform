@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { CloseCircleOutlined, CloseOutlined, ExclamationCircleFilled } from '@ant-design/icons-vue'
+import { Empty } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
@@ -20,6 +21,7 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits(['update:open', 'updated', 'deleted'])
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const activeKey = ref('0')
 const openModal = ref(false)
 const editClassInfoModal = ref(false)
@@ -298,7 +300,7 @@ watch(
           </div>
         </template>
         <div v-else class="deleted-empty-state flex flex-center bg-white">
-          <a-empty description="当前上课点名记录已被删除" />
+          <a-empty :image="simpleImage" description="当前上课点名记录已被删除" />
         </div>
       </a-spin>
     </a-drawer>

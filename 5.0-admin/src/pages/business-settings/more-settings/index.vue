@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Empty } from 'ant-design-vue'
 import { ref } from 'vue'
 import type { InstConfig } from '~@/api/common/config'
 import { setInstConfigApi } from '~@/api/common/config'
@@ -10,6 +11,7 @@ type MainTabKey = 'risk-warning' | 'inventory' | 'system' | 'print' | 'campus-in
 type SystemTabKey = 'peer-info' | 'campus-data-clear'
 
 const userStore = useUserStore()
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
 const activeMainTab = ref<MainTabKey>('system')
 const activeSystemTab = ref<SystemTabKey>('campus-data-clear')
@@ -98,7 +100,7 @@ onMounted(() => {
             <div class="settings-placeholder-card__desc">
               {{ getPlaceholder('risk-warning').description }}
             </div>
-            <a-empty description="功能建设中" />
+            <a-empty :image="simpleImage" description="功能建设中" />
           </div>
         </div>
       </a-tab-pane>
@@ -112,7 +114,7 @@ onMounted(() => {
             <div class="settings-placeholder-card__desc">
               {{ getPlaceholder('inventory').description }}
             </div>
-            <a-empty description="功能建设中" />
+            <a-empty :image="simpleImage" description="功能建设中" />
           </div>
         </div>
       </a-tab-pane>
@@ -160,7 +162,7 @@ onMounted(() => {
             <div class="settings-placeholder-card__desc">
               {{ getPlaceholder('print').description }}
             </div>
-            <a-empty description="功能建设中" />
+            <a-empty :image="simpleImage" description="功能建设中" />
           </div>
         </div>
       </a-tab-pane>
@@ -174,7 +176,7 @@ onMounted(() => {
             <div class="settings-placeholder-card__desc">
               {{ getPlaceholder('campus-info').description }}
             </div>
-            <a-empty description="功能建设中" />
+            <a-empty :image="simpleImage" description="功能建设中" />
           </div>
         </div>
       </a-tab-pane>

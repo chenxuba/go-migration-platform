@@ -3,6 +3,7 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 import { InfoCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { getProcessContentPageApi } from '~@/api/edu-center/registr-renewal'
 import { Empty } from 'ant-design-vue'
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 // Props
 const props = defineProps({
   open: {
@@ -497,7 +498,7 @@ defineExpose({
             
             <!-- 空数据提示 -->
             <div v-else-if="!loading && allCourseList.length === 0" class="empty-container">
-              <a-empty description="暂无数据" :image="Empty.PRESENTED_IMAGE_SIMPLE" />
+              <a-empty description="暂无数据" :image="simpleImage" />
             </div>
           </a-list>
         </div>

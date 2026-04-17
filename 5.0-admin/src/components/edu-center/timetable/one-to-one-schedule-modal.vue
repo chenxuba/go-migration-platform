@@ -9,6 +9,7 @@ import {
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
+import { Empty } from 'ant-design-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, nextTick, ref, watch } from 'vue'
 import type { BatchPlanModalPreset } from './batch-plan-preset'
@@ -2569,6 +2570,7 @@ function invertWeekdays() {
 
         <section v-else class="planner-card planner-card--empty-state">
           <a-empty
+            :image="simpleImage"
             :description="oneToOneLoading ? '正在加载1对1数据...' : '请选择1对1后查看档案并继续排课'"
           />
         </section>
@@ -4366,3 +4368,4 @@ button.planner-chip.planner-chip--active {
   white-space: nowrap;
 }
 </style>
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE

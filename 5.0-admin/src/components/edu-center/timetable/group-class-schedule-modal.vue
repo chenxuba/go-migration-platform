@@ -8,6 +8,7 @@ import {
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
+import { Empty } from 'ant-design-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { computed, nextTick, ref, watch } from 'vue'
 import type { GroupClassBatchPlanModalPreset } from './group-class-batch-plan-preset'
@@ -37,6 +38,7 @@ type SchedulingMode = 'repeat' | 'free'
 type RepeatRule = 'none' | 'weekly' | 'biweekly' | 'daily' | 'alternateDay'
 type HolidayPolicy = 'include' | 'filter'
 type PeriodGroupKey = string
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
 interface PreviewItem {
   date: string
@@ -2742,6 +2744,7 @@ watch(
 
         <section v-else class="planner-card planner-card--empty-state">
           <a-empty
+            :image="simpleImage"
             :description="groupClassLoading ? '正在加载班级数据...' : '请选择班级后查看档案并继续排课'"
           />
         </section>

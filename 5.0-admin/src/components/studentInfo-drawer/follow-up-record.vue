@@ -1,5 +1,6 @@
 <script setup>
 import { CheckOutlined } from '@ant-design/icons-vue'
+import { Empty } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { debounce } from 'lodash-es'
 import { createStudentFollowUpApi, getFollowUpRecordPagedApi, updateFollowRecordApi, updateVisitStatusApi } from '~@/api/enroll-center/intention-student'
@@ -7,6 +8,7 @@ import { FollowMethodLabel } from '@/enums'
 import { messageService } from '@/utils/messageService'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const props = defineProps({
   studentId: {
     type: [Number, String],
@@ -482,9 +484,7 @@ defineExpose({
           />
 
           <div v-else-if="list.length === 0" class="empty-container">
-            <a-empty
-              image="https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/12283/static/no-data.88c62015.png"
-            >
+            <a-empty :image="simpleImage">
               <template #description>
                 <span class="text-#888">没有跟进信息</span>
               </template>

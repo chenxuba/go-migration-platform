@@ -1,6 +1,6 @@
 <script setup>
 import { CloseOutlined, DownOutlined, ExclamationCircleFilled, ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
+import { Empty, Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import EditClassInfoModal from './edit-class-info-modal.vue'
 import {
@@ -18,6 +18,7 @@ import { useStudentStore } from '@/stores/student'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const props = defineProps({
   open: {
     type: Boolean,
@@ -1724,6 +1725,7 @@ watch(
             <a-empty
               v-if="!switchAccountLoading && switchAccountOptions.length === 0"
               class="roll-call-switch-account-modal__empty"
+              :image="simpleImage"
               description="暂无可切换的扣费课程账户"
             />
           </a-radio-group>
