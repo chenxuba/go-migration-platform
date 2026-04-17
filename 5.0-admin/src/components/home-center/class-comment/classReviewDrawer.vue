@@ -6,6 +6,7 @@ import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import { getTeachingRecordDetailApi, type TeachingRecordDetailResult, type TeachingRecordDetailStudent, type TeachingRecordDetailTeacher } from '@/api/edu-center/class-record'
+import RehabRecordEditorDrawer from '@/components/home-center/class-comment/rehab-record-editor-drawer.vue'
 import messageService from '@/utils/messageService'
 
 interface ReviewStudentItem {
@@ -47,10 +48,12 @@ const loading = ref(false)
 const detailData = ref<TeachingRecordDetailResult | null>(null)
 const activeKey = ref('1')
 const editContentModalOpen = ref(false)
+const editorDrawerOpen = ref(false)
 const courseContent = ref('')
 const editingCourseContent = ref(courseContent.value)
 const selectedRowKeys = ref<string[]>([])
 const statusFilteredValues = ref<string[]>(['到课'])
+const currentEditingStudent = ref<ReviewStudentItem | null>(null)
 
 const defaultAvatar = 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png?x-oss-process=image/resize,w_120'
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
@@ -116,6 +119,14 @@ const classDurationText = computed(() => {
     return '60分钟'
   return `${Math.max(end.diff(start, 'minute'), 0)}分钟`
 })
+const editorSession = computed(() => ({
+  sourceName: headerTitle.value,
+  lessonName: courseName.value,
+  teacherName: mainTeacherText.value,
+  classRoomName: classRoomText.value,
+  startTime: detailData.value?.startTime || props.record?.startTime,
+  endTime: detailData.value?.endTime || props.record?.endTime,
+}))
 
 const reviewedColumns = [
   {
@@ -241,8 +252,9 @@ async function loadDetail() {
   }
 }
 
-function handlePendingReview() {
-  messageService.info('暂未开发')
+function handlePendingReview(student: ReviewStudentItem) {
+  currentEditingStudent.value = student
+  editorDrawerOpen.value = true
 }
 
 function handleBatchReview() {
@@ -267,6 +279,8 @@ watch(
       loading.value = false
       courseContent.value = ''
       editingCourseContent.value = ''
+      editorDrawerOpen.value = false
+      currentEditingStudent.value = null
       activeKey.value = '1'
       selectedRowKeys.value = []
       statusFilteredValues.value = ['到课']
@@ -442,7 +456,7 @@ watch(
                         </a-tag>
                       </template>
                       <template v-else-if="column.key === 'action'">
-                        <a-button type="link" class="text-14px text-#06f px-0" @click="handlePendingReview">
+                        <a-button type="link" class="text-14px text-#06f px-0" @click="handlePendingReview(record as ReviewStudentItem)">
                           去记录
                         </a-button>
                       </template>
@@ -479,6 +493,12 @@ watch(
         />
       </div>
     </a-modal>
+
+    <RehabRecordEditorDrawer
+      v-model="editorDrawerOpen"
+      :student="currentEditingStudent"
+      :session="editorSession"
+    />
   </div>
 </template>
 
