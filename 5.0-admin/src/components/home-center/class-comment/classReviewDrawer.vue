@@ -5,7 +5,6 @@ import dayjs from 'dayjs'
 import { computed, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
-import type { ClassCommentStudentItem } from '@/api/edu-center/class-record'
 import messageService from '@/utils/messageService'
 
 interface ReviewStudentItem {
@@ -17,9 +16,22 @@ interface ReviewStudentItem {
   readText?: string
 }
 
+interface ReviewDrawerRecord {
+  sourceType?: string | number
+  sourceName?: string
+  lessonName?: string
+  teacherName?: string
+  assistants?: string
+  classRoomName?: string
+  startTime?: string
+  endTime?: string
+  studentName?: string
+  avatar?: string
+}
+
 const props = withDefaults(defineProps<{
   type?: string | number
-  record?: Partial<ClassCommentStudentItem> | null
+  record?: Partial<ReviewDrawerRecord> | null
 }>(), {
   type: '1',
   record: null,
@@ -180,6 +192,7 @@ watch(
     <a-drawer
       v-model:open="open"
       :body-style="{ padding: '0', background: '#f7f7fd' }"
+      :closable='false'
       width="1165px"
     >
       <template #title>

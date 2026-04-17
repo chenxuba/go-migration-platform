@@ -12,7 +12,7 @@ import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
-import ClassRecordDetails from '@/components/common/class-record-details.vue'
+import ClassReviewDrawer from '@/components/home-center/class-comment/classReviewDrawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import messageService from '@/utils/messageService'
 
@@ -37,8 +37,8 @@ const scheduleTypeOptions = [
 
 const loading = ref(false)
 const dataSource = ref<ClassCommentItem[]>([])
-const recordDrawerOpen = ref(false)
-const currentTeachingRecordId = ref('')
+const reviewDrawerOpen = ref(false)
+const currentReviewRecord = ref<Partial<ClassCommentItem> | null>(null)
 const sortStartTime = ref(2)
 
 const filterDateRange = ref<[Dayjs, Dayjs] | null>(null)
@@ -223,11 +223,9 @@ function hasReadStatistics(record: Partial<ClassCommentItem>) {
   return Number(record.readCount || 0) + Number(record.unReadCount || 0) > 0
 }
 
-function handleOpenRecord(record?: Partial<ClassCommentItem>) {
-  currentTeachingRecordId.value = String(record?.teachingRecordId || '').trim()
-  if (!currentTeachingRecordId.value)
-    return
-  recordDrawerOpen.value = true
+function handleOpenReviewDrawer(record?: Partial<ClassCommentItem>) {
+  currentReviewRecord.value = record ? { ...record } : null
+  reviewDrawerOpen.value = true
 }
 
 function handleViewPending() {
@@ -617,7 +615,7 @@ onMounted(() => {
               </template>
               <template v-if="column.key === 'action'">
                 <a-space :size="14">
-                  <a class="font500" @click="handleOpenRecord(record)">去点评</a>
+                  <a class="font500" @click="handleOpenReviewDrawer(record)">去点评</a>
                   <a class="font500" @click="handleViewPending">查看</a>
                 </a-space>
               </template>
@@ -626,11 +624,9 @@ onMounted(() => {
         </div>
       </div>
     </div>
-    <ClassRecordDetails
-      v-model:open="recordDrawerOpen"
-      :teaching-record-id="currentTeachingRecordId"
-      @updated="loadList"
-      @deleted="loadList"
+    <ClassReviewDrawer
+      v-model="reviewDrawerOpen"
+      :record="currentReviewRecord"
     />
   </div>
 </template>
