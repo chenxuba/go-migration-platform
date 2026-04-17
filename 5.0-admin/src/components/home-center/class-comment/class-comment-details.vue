@@ -12,6 +12,7 @@ import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { getCourseIdAndNameApi } from '@/api/edu-center/registr-renewal'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import StudentAvatar from '@/components/common/StudentAvatar.vue'
+import ClassReviewDrawer from '@/components/home-center/class-comment/classReviewDrawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import messageService from '@/utils/messageService'
 
@@ -61,6 +62,8 @@ const parentFeedbackStatusOptions = [
 
 const loading = ref(false)
 const dataSource = ref<ClassCommentStudentItem[]>([])
+const reviewDrawerOpen = ref(false)
+const currentReviewRecord = ref<Partial<ClassCommentStudentItem> | null>(null)
 const sortStartTime = ref(2)
 
 const filterDateRange = ref<[Dayjs, Dayjs]>([monthStart, today])
@@ -305,6 +308,11 @@ function parentFeedbackText(record: Partial<ClassCommentStudentItem>) {
 function parentFeedbackGradeText(record: Partial<ClassCommentStudentItem>) {
   const grade = Number(record.parentFeedbackGrade || 0)
   return grade > 0 ? `${grade}分` : '-'
+}
+
+function handleOpenReviewDrawer(record?: Partial<ClassCommentStudentItem>) {
+  currentReviewRecord.value = record ? { ...record } : null
+  reviewDrawerOpen.value = true
 }
 
 function handleViewPending() {
@@ -783,7 +791,7 @@ onMounted(() => {
               </template>
               <template v-if="column.key === 'action'">
                 <a-space :size="14">
-                  <a class="font500" @click="handleViewPending">去点评</a>
+                  <a class="font500" @click="handleOpenReviewDrawer(record)">去点评</a>
                   <a class="font500" @click="handleViewPending">查看</a>
                 </a-space>
               </template>
@@ -792,6 +800,11 @@ onMounted(() => {
         </div>
       </div>
     </div>
+    <ClassReviewDrawer
+      v-model="reviewDrawerOpen"
+      :record="currentReviewRecord"
+      type="1"
+    />
   </div>
 </template>
 

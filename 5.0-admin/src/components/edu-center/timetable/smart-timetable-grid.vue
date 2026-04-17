@@ -1,4 +1,5 @@
 <script setup>
+import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import TimetableScheduleHoverPopover from './timetable-schedule-hover-popover.vue'
 
@@ -146,6 +147,11 @@ const CELL_FONT = '14px sans-serif'
 const CELL_SUB_FONT = '12px sans-serif'
 const BLOCK_HEADER_HEIGHT = 20
 const BADGE_HEIGHT = 16
+const TODAY_KEY = dayjs().format('YYYY-MM-DD')
+const TODAY_HEADER_BG = '#f5f9ff'
+const TODAY_COLUMN_BG = '#f7fbff'
+const TODAY_ACCENT = '#1677ff'
+const TODAY_TEXT = '#0958d9'
 
 const shellRef = ref(null)
 const viewportRef = ref(null)
@@ -304,6 +310,10 @@ function buildCellEntry(rowMeta, columnMeta) {
     contextColumn,
     contextRecord,
   }
+}
+
+function isTodayScheduleColumn(column) {
+  return String(column?.date || '').trim() === TODAY_KEY
 }
 
 const scheduleCellEntryMap = computed(() => {
@@ -873,8 +883,14 @@ function drawHeader(ctx, visibleWidth) {
     if (x > visibleWidth || x + columnMeta.width < fixedLeftWidth.value)
       return
 
-    ctx.fillStyle = HEADER_BG
+    const isTodayColumn = props.isSwapTimeGrid && isTodayScheduleColumn(columnMeta.column)
+
+    ctx.fillStyle = isTodayColumn ? TODAY_HEADER_BG : HEADER_BG
     ctx.fillRect(x, 0, columnMeta.width, HEADER_HEIGHT)
+    if (isTodayColumn) {
+      ctx.fillStyle = TODAY_ACCENT
+      ctx.fillRect(x, 0, columnMeta.width, 4)
+    }
     ctx.strokeStyle = GRID_LINE
     ctx.beginPath()
     ctx.moveTo(x + 0.5, 0)
@@ -886,7 +902,7 @@ function drawHeader(ctx, visibleWidth) {
     ctx.lineTo(x + columnMeta.width + 0.5, HEADER_HEIGHT)
     ctx.stroke()
 
-    ctx.fillStyle = TEXT_PRIMARY
+    ctx.fillStyle = isTodayColumn ? TODAY_TEXT : TEXT_PRIMARY
     ctx.font = HEADER_FONT
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -901,7 +917,7 @@ function drawHeader(ctx, visibleWidth) {
 
     if (props.isSwapTimeGrid && columnMeta.column?.date) {
       ctx.fillText(String(columnMeta.column?.title || ''), x + columnMeta.width / 2, 18)
-      ctx.fillStyle = TEXT_SECONDARY
+      ctx.fillStyle = isTodayColumn ? TODAY_ACCENT : TEXT_SECONDARY
       ctx.font = SUB_HEADER_FONT
       ctx.fillText(String(columnMeta.column?.dateText || ''), x + columnMeta.width / 2, 36)
       return
@@ -1219,6 +1235,10 @@ function drawBodyGrid(ctx, visibleWidth, visibleHeight) {
 
   visibleColumns.forEach((columnMeta) => {
     const x = fixedLeftWidth.value + columnMeta.left - scrollLeft.value
+    if (props.isSwapTimeGrid && isTodayScheduleColumn(columnMeta.column)) {
+      ctx.fillStyle = TODAY_COLUMN_BG
+      ctx.fillRect(x, HEADER_HEIGHT, columnMeta.width, Math.max(0, visibleHeight - HEADER_HEIGHT))
+    }
     ctx.strokeStyle = GRID_LINE
     ctx.beginPath()
     ctx.moveTo(x + 0.5, HEADER_HEIGHT)
