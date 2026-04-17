@@ -33,6 +33,8 @@ import {
   parseUnifiedTimePeriodConfig,
 } from '@/utils/unified-time-period'
 
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
+
 type PreviewTone = 'pending' | 'blocked'
 type ScheduleType = 'oneToOne' | 'studentLesson'
 type SchedulingMode = 'repeat' | 'free'
@@ -4368,4 +4370,3 @@ button.planner-chip.planner-chip--active {
   white-space: nowrap;
 }
 </style>
-const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
