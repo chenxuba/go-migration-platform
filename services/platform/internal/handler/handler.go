@@ -961,7 +961,7 @@ func validateInstitutionRenewalMutation(input model.InstitutionRenewalMutation) 
 		return "institutionId is required"
 	}
 	if input.OpenType == nil || (*input.OpenType != 1 && *input.OpenType != 2) {
-		return "请选择开通类型"
+		return "请选择开通版本"
 	}
 
 	duration := strings.TrimSpace(input.OpenDuration)

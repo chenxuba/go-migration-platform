@@ -90,7 +90,7 @@ const customSearchFilters = computed(() => [
   },
   {
     id: 'openType',
-    fieldKey: '开通类型',
+    fieldKey: '开通版本',
     fieldType: 4,
     optionsList: institutionOpenTypeOptions,
   },
@@ -137,6 +137,7 @@ const columns: TableColumnsType<InstitutionItem> = [
     dataIndex: 'organName',
     key: 'organName',
     width: 220,
+    fixed: 'left' as const,
   },
   {
     title: '账号信息',
@@ -149,7 +150,7 @@ const columns: TableColumnsType<InstitutionItem> = [
     width: 220,
   },
   {
-    title: '开通类型',
+    title: '开通版本',
     key: 'openType',
     width: 160,
   },
@@ -545,7 +546,7 @@ watch(institutionRenewalOpen, (open) => {
                   {{ getInstitutionOpenTypeLabel(record) }}
                 </div>
                 <div class="cell-sub">
-                  开通类型
+                  开通版本
                 </div>
               </div>
             </template>

@@ -37,12 +37,18 @@ const openModal = computed({
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 const submitting = ref(false)
+const renewConfirmOpen = ref(false)
 const detail = ref<InstitutionDetail>()
 const records = ref<InstitutionRenewalRecord[]>([])
 const formState = reactive<RenewalFormState>({
   openType: undefined,
   openDuration: undefined,
 })
+const renewActionLocks = reactive({
+  openConfirm: false,
+  submitRenewal: false,
+})
+const renewActionLockTimers: Partial<Record<'openConfirm' | 'submitRenewal', ReturnType<typeof setTimeout>>> = {}
 
 const openTypeOptions = [
   { value: 1, label: '体验版' },
@@ -69,6 +75,8 @@ const availableOpenTypeOptions = computed(() => {
   return openTypeOptions
 })
 const openDurationOptions = computed(() => openDurationOptionMap[Number(formState.openType) || 2] || openDurationOptionMap[2])
+const confirmOpenTypeLabel = computed(() => getOpenTypeLabel(formState.openType))
+const confirmOpenDurationLabel = computed(() => getOpenDurationLabel(Number(formState.openType || 2), formState.openDuration))
 const previewExpireEndTime = computed(() => {
   const duration = String(formState.openDuration || '').trim()
   if (!duration)
@@ -124,12 +132,32 @@ const columns: TableColumnsType<InstitutionRenewalRecord> = [
 ]
 
 const rules: Record<string, Rule[]> = {
-  openType: [{ required: true, message: '请选择开通类型', trigger: 'change' }],
+  openType: [{ required: true, message: '请选择开通版本', trigger: 'change' }],
   openDuration: [{ required: true, message: '请选择续期时长', trigger: 'change' }],
 }
 
 function closeModal() {
   emit('update:open', false)
+}
+
+function acquireRenewActionLock(key: 'openConfirm' | 'submitRenewal', delay = 600) {
+  if (renewActionLocks[key])
+    return false
+
+  renewActionLocks[key] = true
+  if (renewActionLockTimers[key])
+    clearTimeout(renewActionLockTimers[key])
+
+  renewActionLockTimers[key] = setTimeout(() => {
+    renewActionLocks[key] = false
+    renewActionLockTimers[key] = undefined
+  }, delay)
+
+  return true
+}
+
+function closeRenewConfirm() {
+  renewConfirmOpen.value = false
 }
 
 function formatDateMinute(value?: string) {
@@ -211,6 +239,7 @@ function resolveDurationValue(openType: number, preferred?: string) {
 }
 
 function resetState() {
+  renewConfirmOpen.value = false
   detail.value = undefined
   records.value = []
   formState.openType = undefined
@@ -278,7 +307,28 @@ function buildPayload(): InstitutionRenewalMutationPayload | null {
   }
 }
 
+async function openRenewConfirm() {
+  if (loading.value || submitting.value || renewConfirmOpen.value)
+    return
+  if (!acquireRenewActionLock('openConfirm'))
+    return
+
+  try {
+    await formRef.value?.validate()
+  }
+  catch {
+    return
+  }
+
+  renewConfirmOpen.value = true
+}
+
 async function submitRenewal() {
+  if (submitting.value)
+    return
+  if (!acquireRenewActionLock('submitRenewal'))
+    return
+
   try {
     await formRef.value?.validate()
   }
@@ -299,6 +349,7 @@ async function submitRenewal() {
     }
 
     messageService.success('机构续期成功')
+    renewConfirmOpen.value = false
     emit('renewed')
     await loadData(payload.institutionId)
   }
@@ -310,6 +361,13 @@ async function submitRenewal() {
     submitting.value = false
   }
 }
+
+onBeforeUnmount(() => {
+  Object.values(renewActionLockTimers).forEach((timer) => {
+    if (timer)
+      clearTimeout(timer)
+  })
+})
 
 watch(
   () => [props.open, props.institutionId] as const,
@@ -356,15 +414,15 @@ watch(
               当前信息
             </div>
             <div class="renewal-facts">
-              <div class="renewal-fact renewal-fact--wide">
-                <span class="renewal-fact__label">机构名称</span>
-                <span class="renewal-fact__value renewal-fact__value--ellipsis" :title="detail?.organName || '--'">
+              <div class="renewal-fact renewal-fact--wide renewal-fact--field">
+                <span class="renewal-fact__label renewal-fact__label--field">机构名称</span>
+                <span class="renewal-fact__field" :title="detail?.organName || '--'">
                   {{ detail?.organName || '--' }}
                 </span>
               </div>
 
               <div class="renewal-fact">
-                <span class="renewal-fact__label">当前开通类型</span>
+                <span class="renewal-fact__label">当前开通版本</span>
                 <span class="renewal-fact__value">{{ getOpenTypeLabel(detail?.openType) }}</span>
               </div>
 
@@ -380,12 +438,12 @@ watch(
               续期设置
             </div>
             <a-form ref="formRef" layout="inline" :model="formState" :rules="rules" class="renewal-inline-form">
-              <a-form-item label="开通类型" name="openType">
+              <a-form-item label="开通版本" name="openType">
                 <a-select
                   v-model:value="formState.openType"
                   :options="availableOpenTypeOptions"
                   class="renewal-inline-form__select"
-                  placeholder="请选择开通类型"
+                  placeholder="请选择开通版本"
                   @change="handleOpenTypeChange"
                 />
               </a-form-item>
@@ -456,10 +514,55 @@ watch(
       <a-button danger ghost @click="closeModal">
         关闭
       </a-button>
-      <a-button type="primary" ghost :loading="submitting" @click="submitRenewal">
+      <a-button type="primary" ghost :loading="submitting" @click="openRenewConfirm">
         确定续期
       </a-button>
     </template>
+  </a-modal>
+
+  <a-modal
+    v-model:open="renewConfirmOpen"
+    centered
+    destroy-on-close
+    :keyboard="false"
+    :mask-closable="false"
+    :confirm-loading="submitting"
+    title="确认续期"
+    ok-text="确认续期"
+    cancel-text="取消"
+    width="420px"
+    @cancel="closeRenewConfirm"
+    @ok="submitRenewal"
+  >
+    <div class="renew-confirm">
+      <div class="renew-confirm__text">
+        请确认本次续期信息，确认后将立即生效。
+      </div>
+
+      <div class="renew-confirm__panel">
+        <div class="renew-confirm__item">
+          <span class="renew-confirm__label">机构名称</span>
+          <span class="renew-confirm__value" :title="detail?.organName || '--'">
+            {{ detail?.organName || '--' }}
+          </span>
+        </div>
+
+        <div class="renew-confirm__item">
+          <span class="renew-confirm__label">开通版本</span>
+          <span class="renew-confirm__value">{{ confirmOpenTypeLabel }}</span>
+        </div>
+
+        <div class="renew-confirm__item">
+          <span class="renew-confirm__label">续期时长</span>
+          <span class="renew-confirm__value">{{ confirmOpenDurationLabel }}</span>
+        </div>
+
+        <div class="renew-confirm__item">
+          <span class="renew-confirm__label">续后到期时间</span>
+          <span class="renew-confirm__value">{{ previewExpireEndTime }}</span>
+        </div>
+      </div>
+    </div>
   </a-modal>
 </template>
 
@@ -528,6 +631,13 @@ watch(
   flex: 1 1 320px;
 }
 
+.renewal-fact--field {
+  gap: 12px;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
 .renewal-fact__label {
   flex-shrink: 0;
   color: #8c8c8c;
@@ -535,11 +645,33 @@ watch(
   line-height: 20px;
 }
 
+.renewal-fact__label--field {
+  line-height: 32px;
+}
+
 .renewal-fact__value {
   color: #262626;
   font-size: 13px;
   font-weight: 600;
   line-height: 20px;
+}
+
+.renewal-fact__field {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 11px;
+  color: #262626;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fafbfc;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .renewal-fact__value--ellipsis {
@@ -599,6 +731,50 @@ watch(
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.renew-confirm {
+  padding-top: 4px;
+}
+
+.renew-confirm__text {
+  margin-bottom: 14px;
+  color: #595959;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.renew-confirm__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: #fafbfc;
+  border: 1px solid #edf1f7;
+  border-radius: 10px;
+}
+
+.renew-confirm__item {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.renew-confirm__label {
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.renew-confirm__value {
+  color: #262626;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .renewal-section {

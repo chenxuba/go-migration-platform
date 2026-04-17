@@ -256,7 +256,7 @@ const rules: Record<string, Rule[]> = {
       if (isEdit.value || formState.openType)
         return Promise.resolve()
 
-      return Promise.reject(new Error('请选择开通类型'))
+      return Promise.reject(new Error('请选择开通版本'))
     },
   }],
   openDuration: [{
@@ -872,12 +872,12 @@ async function submitForm() {
             <div v-if="!isEdit" class="system-grid__item system-grid__item--full">
               <a-row :gutter="24">
                 <a-col :xs="24" :md="12">
-                  <a-form-item label="开通类型：" name="openType">
+                  <a-form-item label="开通版本：" name="openType">
                     <a-select
                       v-model:value="formState.openType"
                       :options="openTypeOptions"
                       :disabled="isEdit"
-                      placeholder="请选择开通类型"
+                      placeholder="请选择开通版本"
                       @change="handleOpenTypeChange"
                     />
                   </a-form-item>
