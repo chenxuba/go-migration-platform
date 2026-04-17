@@ -121,13 +121,17 @@ type Institution struct {
 	Address          string `json:"address,omitempty"`
 	Logo             string `json:"logo,omitempty"`
 	Enabled          bool   `json:"enabled"`
+	Status           int    `json:"status"`
+	OpenType         int    `json:"openType"`
+	OpenDuration     string `json:"openDuration,omitempty"`
+	RegisterTime     string `json:"registerTime,omitempty"`
+	ExpireEndTime    string `json:"expireEndTime,omitempty"`
 	StaffCount       int    `json:"staffCount"`
 	ActiveStaffCount int    `json:"activeStaffCount"`
 	AdminCount       int    `json:"adminCount"`
 }
 
 type InstitutionProfile struct {
-	OrganLabel    string   `json:"organLabel,omitempty"`
 	Description   string   `json:"description,omitempty"`
 	BusinessTime  string   `json:"businessTime,omitempty"`
 	Video         string   `json:"video,omitempty"`
@@ -135,28 +139,32 @@ type InstitutionProfile struct {
 }
 
 type InstitutionDetail struct {
-	ID           int64              `json:"id"`
-	OrganName    string             `json:"organName"`
-	OrganCode    string             `json:"organCode"`
-	LoginName    string             `json:"loginName"`
-	Mobile       string             `json:"mobile"`
-	Principal    string             `json:"principal,omitempty"`
-	ProvinceCode int64              `json:"provinceCode,omitempty"`
-	Province     string             `json:"province"`
-	CityCode     int64              `json:"cityCode,omitempty"`
-	City         string             `json:"city"`
-	RegionCode   int64              `json:"regionCode,omitempty"`
-	Region       string             `json:"region,omitempty"`
-	Address      string             `json:"address,omitempty"`
-	ConcatPhone  string             `json:"concatPhone,omitempty"`
-	FixedPhone   string             `json:"fixedPhone,omitempty"`
-	Remark       string             `json:"remark,omitempty"`
-	Logo         string             `json:"logo,omitempty"`
-	Enabled      bool               `json:"enabled"`
-	Status       int                `json:"status"`
-	Lng          float64            `json:"lng,omitempty"`
-	Lat          float64            `json:"lat,omitempty"`
-	Profile      InstitutionProfile `json:"profile"`
+	ID              int64              `json:"id"`
+	OrganName       string             `json:"organName"`
+	OrganCode       string             `json:"organCode"`
+	LoginName       string             `json:"loginName"`
+	Mobile          string             `json:"mobile"`
+	Principal       string             `json:"principal,omitempty"`
+	ProvinceCode    int64              `json:"provinceCode,omitempty"`
+	Province        string             `json:"province"`
+	CityCode        int64              `json:"cityCode,omitempty"`
+	City            string             `json:"city"`
+	RegionCode      int64              `json:"regionCode,omitempty"`
+	Region          string             `json:"region,omitempty"`
+	Address         string             `json:"address,omitempty"`
+	ConcatPhone     string             `json:"concatPhone,omitempty"`
+	FixedPhone      string             `json:"fixedPhone,omitempty"`
+	Remark          string             `json:"remark,omitempty"`
+	Logo            string             `json:"logo,omitempty"`
+	Enabled         bool               `json:"enabled"`
+	Status          int                `json:"status"`
+	OpenType        int                `json:"openType"`
+	OpenDuration    string             `json:"openDuration,omitempty"`
+	ExpireStartTime string             `json:"expireStartTime,omitempty"`
+	ExpireEndTime   string             `json:"expireEndTime,omitempty"`
+	Lng             float64            `json:"lng,omitempty"`
+	Lat             float64            `json:"lat,omitempty"`
+	Profile         InstitutionProfile `json:"profile"`
 }
 
 type InstitutionMutation struct {
@@ -177,6 +185,8 @@ type InstitutionMutation struct {
 	Remark       string              `json:"remark"`
 	Logo         string              `json:"logo"`
 	Enabled      *bool               `json:"enabled"`
+	OpenType     *int                `json:"openType,omitempty"`
+	OpenDuration string              `json:"openDuration"`
 	Lng          *float64            `json:"lng,omitempty"`
 	Lat          *float64            `json:"lat,omitempty"`
 	Profile      *InstitutionProfile `json:"profile,omitempty"`

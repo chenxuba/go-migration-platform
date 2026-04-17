@@ -78,6 +78,14 @@ const props = defineProps({
     type: [Boolean, Number],
     default: null,
   },
+  enableStatusLabel: {
+    type: String,
+    default: '启用状态',
+  },
+  enableStatusOptionsOverride: {
+    type: Array,
+    default: () => [],
+  },
   defaultOrNotFenClass: {
     type: Array,
     default: () => {
@@ -216,6 +224,10 @@ const props = defineProps({
   customIsDisplayList: {
     type: Array,
     default: () => [],
+  },
+  customSearchValues: {
+    type: Object,
+    default: () => ({}),
   },
   // 课程属性开启列表
   courseAttributeList: {
@@ -1507,6 +1519,11 @@ const enableStatusOptions = ref([
   { id: 0, value: '停用' },
 ])
 const enableStatusVals = ref(null)
+const resolvedEnableStatusOptions = computed(() => (
+  Array.isArray(props.enableStatusOptionsOverride) && props.enableStatusOptionsOverride.length
+    ? props.enableStatusOptionsOverride
+    : enableStatusOptions.value
+))
 const orderSourceOptions = ref([
   { id: 1, value: '线下办理' },
   { id: 2, value: '微校报名' },
@@ -1593,6 +1610,25 @@ const recommendedVals = ref([])
 
 // 自定义的文本输入框值 - 修改为对象，以存储不同字段的值
 const searchInputVals = ref({})
+
+function syncCustomSearchValues() {
+  const nextValues = {}
+  if (props.customIsDisplayList && props.customIsDisplayList.length > 0) {
+    props.customIsDisplayList.forEach((item) => {
+      const externalValue = props.customSearchValues?.[item.id]
+      nextValues[item.id] = externalValue ?? ''
+    })
+  }
+  searchInputVals.value = nextValues
+}
+
+watch(
+  () => [props.customIsDisplayList, props.customSearchValues],
+  () => {
+    syncCustomSearchValues()
+  },
+  { deep: true, immediate: true },
+)
 
 // 剩余数量相关变量
 const remainingModeOptions = [
@@ -2906,9 +2942,9 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'enableStatus',
-      label: '启用状态',
+      label: props.enableStatusLabel,
       show: props.displayArray.includes('enableStatus'),
-      values: enableStatusOptions.value.filter(
+      values: resolvedEnableStatusOptions.value.filter(
         opt => opt.id === enableStatusVals.value,
       ),
     },
@@ -6273,8 +6309,8 @@ defineExpose({
                 :options="resolvedIsArrearsOptions" :label="isArrearsLabel" type="radio" @radio-change="handleIsArrearsChange" />
 
               <checkbox-filter v-if="filterType === 'enableStatus'" :ref="(el) => handleRef(el, 'enableStatus')"
-                v-model:checked-values="enableStatusVals" category="noSearchRadio" placeholder="请选择启用状态"
-                :options="enableStatusOptions" label="启用状态" type="radio" @radio-change="handleEnableStatusChange" />
+                v-model:checked-values="enableStatusVals" category="noSearchRadio" :placeholder="`请选择${props.enableStatusLabel}`"
+                :options="resolvedEnableStatusOptions" :label="props.enableStatusLabel" type="radio" @radio-change="handleEnableStatusChange" />
 
               <!-- 最近上课时间（复用下次跟进时间组件） -->
               <checkbox-filter v-if="filterType === 'lastClassTime'" v-model:checked-values="lastClassTimeVals"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import AllFilter from '@/components/common/all-filter.vue'
 import {
   pageInstitutionsApi,
@@ -9,29 +9,26 @@ import {
   type InstitutionItem,
   type InstitutionSummary,
 } from '@/api/platform/institutions'
+import { regionData } from '@/constants/region-data'
 import InstitutionFormDrawer from './components/institution-form-drawer.vue'
 import messageService from '@/utils/messageService'
 
 const displayArray = ['customSearch', 'enableStatus']
+const institutionStatusOptions = [
+  { id: 1, value: '启用' },
+  { id: 2, value: '停用' },
+  { id: 4, value: '过期' },
+]
+const institutionOpenTypeOptions = [
+  { id: 1, value: '体验版' },
+  { id: 2, value: '正式版' },
+]
 const directCountyCityLabels = new Set([
   '市辖区',
   '县',
   '省直辖县级行政区划',
   '自治区直辖县级行政区划',
 ])
-
-const customSearchFilters = [
-  {
-    id: 'keyword',
-    fieldKey: '机构名称',
-    fieldType: 1,
-  },
-  {
-    id: 'mobile',
-    fieldKey: '联系电话',
-    fieldType: 1,
-  },
-]
 
 const listLoading = ref(false)
 const statusSubmittingId = ref<number | null>(null)
@@ -47,12 +44,81 @@ const summary = ref<InstitutionSummary>({
 const filters = reactive<{
   keyword?: string
   mobile?: string
-  enabled?: boolean
+  status?: number
+  openType?: number
+  provinceCode?: string
+  cityCode?: string
+  regionCode?: string
 }>({
   keyword: undefined,
   mobile: undefined,
-  enabled: undefined,
+  status: undefined,
+  openType: undefined,
+  provinceCode: undefined,
+  cityCode: undefined,
+  regionCode: undefined,
 })
+
+const provinceFilterOptions = computed(() => regionData.map(item => ({
+  id: item.value,
+  value: item.label,
+})))
+const selectedProvinceFilter = computed(() => regionData.find(item => item.value === filters.provinceCode))
+const cityFilterOptions = computed(() => (selectedProvinceFilter.value?.children || []).map(item => ({
+  id: item.value,
+  value: item.label,
+})))
+const selectedCityFilter = computed(() => selectedProvinceFilter.value?.children?.find(item => item.value === filters.cityCode))
+const regionFilterOptions = computed(() => (selectedCityFilter.value?.children || []).map(item => ({
+  id: item.value,
+  value: item.label,
+})))
+
+const customSearchFilters = computed(() => [
+  {
+    id: 'keyword',
+    fieldKey: '机构名称',
+    fieldType: 1,
+  },
+  {
+    id: 'mobile',
+    fieldKey: '联系电话',
+    fieldType: 1,
+  },
+  {
+    id: 'openType',
+    fieldKey: '开通类型',
+    fieldType: 4,
+    optionsList: institutionOpenTypeOptions,
+  },
+  {
+    id: 'provinceCode',
+    fieldKey: '省份',
+    fieldType: 4,
+    optionsList: provinceFilterOptions.value,
+  },
+  {
+    id: 'cityCode',
+    fieldKey: '城市',
+    fieldType: 4,
+    optionsList: cityFilterOptions.value,
+  },
+  {
+    id: 'regionCode',
+    fieldKey: '区县',
+    fieldType: 4,
+    optionsList: regionFilterOptions.value,
+  },
+])
+
+const customSearchValues = computed(() => ({
+  keyword: filters.keyword ?? '',
+  mobile: filters.mobile ?? '',
+  openType: filters.openType ?? '',
+  provinceCode: filters.provinceCode ?? '',
+  cityCode: filters.cityCode ?? '',
+  regionCode: filters.regionCode ?? '',
+}))
 
 const pagination = reactive({
   current: 1,
@@ -80,10 +146,20 @@ const columns: TableColumnsType<InstitutionItem> = [
     width: 220,
   },
   {
+    title: '注册时间',
+    key: 'registerTime',
+    width: 180,
+  },
+  {
+    title: '过期时间',
+    key: 'expireEndTime',
+    width: 180,
+  },
+  {
     title: '状态',
-    dataIndex: 'enabled',
-    key: 'enabled',
-    width: 120,
+    dataIndex: 'status',
+    key: 'status',
+    width: 140,
     align: 'center' as const,
   },
   {
@@ -99,7 +175,11 @@ let requestSerial = 0
 function resetFilters() {
   filters.keyword = undefined
   filters.mobile = undefined
-  filters.enabled = undefined
+  filters.status = undefined
+  filters.openType = undefined
+  filters.provinceCode = undefined
+  filters.cityCode = undefined
+  filters.regionCode = undefined
 }
 
 function normalizeLogo(logo?: string) {
@@ -138,8 +218,62 @@ function buildInstitutionAddress(record: Partial<InstitutionItem>) {
   return deduped.join('')
 }
 
+function formatDateMinute(value?: string) {
+  const raw = String(value || '').trim()
+  if (!raw)
+    return '--'
+
+  if (raw.length >= 16)
+    return raw.slice(0, 16)
+
+  return raw
+}
+
+function getInstitutionStatusValue(record: Partial<InstitutionItem>) {
+  const rawStatus = Number(record.status || 0)
+  if (rawStatus === 1 || rawStatus === 4)
+    return rawStatus
+
+  if (rawStatus === 2 || rawStatus === 3)
+    return 2
+
+  return record.enabled ? 1 : 2
+}
+
+function getInstitutionStatusMeta(record: Partial<InstitutionItem>) {
+  const status = getInstitutionStatusValue(record)
+  if (status === 1) {
+    return {
+      value: 1,
+      text: '启用',
+      className: 'status-text--enabled',
+    }
+  }
+  if (status === 4) {
+    return {
+      value: 4,
+      text: '过期',
+      className: 'status-text--expired',
+    }
+  }
+  return {
+    value: 2,
+    text: '停用',
+    className: 'status-text--disabled',
+  }
+}
+
+function canToggleInstitutionStatus(record: Partial<InstitutionItem>) {
+  const status = getInstitutionStatusValue(record)
+  return status === 1 || status === 2
+}
+
+function getToggleTargetEnabled(record: Partial<InstitutionItem>) {
+  return getInstitutionStatusValue(record) !== 1
+}
+
 function getRowClassName(record: Partial<InstitutionItem>) {
-  return record.enabled ? 'institution-row' : 'institution-row institution-row--disabled'
+  return getInstitutionStatusValue(record) === 1 ? 'institution-row' : 'institution-row institution-row--disabled'
 }
 
 function openCreateDrawer() {
@@ -191,7 +325,11 @@ async function fetchInstitutions() {
       size: pagination.pageSize,
       keyword: filters.keyword,
       mobile: filters.mobile,
-      enabled: filters.enabled,
+      status: filters.status,
+      openType: filters.openType,
+      provinceCode: filters.provinceCode ? Number(filters.provinceCode) : undefined,
+      cityCode: filters.cityCode ? Number(filters.cityCode) : undefined,
+      regionCode: filters.regionCode ? Number(filters.regionCode) : undefined,
     })
 
     if (currentRequest !== requestSerial)
@@ -207,8 +345,8 @@ async function fetchInstitutions() {
     pagination.total = Number(response.total || 0)
     summary.value = response.data?.summary || {
       totalCount: pagination.total,
-      enabledCount: list.filter(item => item.enabled).length,
-      disabledCount: list.filter(item => !item.enabled).length,
+      enabledCount: list.filter(item => getInstitutionStatusValue(item) === 1).length,
+      disabledCount: list.filter(item => getInstitutionStatusValue(item) !== 1).length,
     }
   }
   catch (error: any) {
@@ -243,6 +381,23 @@ const filterUpdateHandlers = {
 
       if (fieldId === 'mobile')
         filters.mobile = value
+
+      if (fieldId === 'openType')
+        filters.openType = value ? Number(value) : undefined
+
+      if (fieldId === 'provinceCode') {
+        filters.provinceCode = value
+        filters.cityCode = undefined
+        filters.regionCode = undefined
+      }
+
+      if (fieldId === 'cityCode') {
+        filters.cityCode = value
+        filters.regionCode = undefined
+      }
+
+      if (fieldId === 'regionCode')
+        filters.regionCode = value
     }
 
     pagination.current = 1
@@ -253,7 +408,7 @@ const filterUpdateHandlers = {
       resetFilters()
     }
     else {
-      filters.enabled = value === 1 ? true : value === 0 ? false : undefined
+      filters.status = value ? Number(value) : undefined
     }
 
     pagination.current = 1
@@ -273,6 +428,9 @@ onMounted(() => {
         :display-array="displayArray"
         :is-quick-show="false"
         :custom-is-display-list="customSearchFilters"
+        :custom-search-values="customSearchValues"
+        enable-status-label="机构状态"
+        :enable-status-options-override="institutionStatusOptions"
         v-on="filterUpdateHandlers"
       />
     </div>
@@ -300,7 +458,7 @@ onMounted(() => {
           :data-source="dataSource"
           :loading="listLoading"
           :pagination="pagination"
-          :scroll="{ x: 920 }"
+          :scroll="{ x: 1280 }"
           :row-class-name="getRowClassName"
           row-key="id"
           size="small"
@@ -350,10 +508,32 @@ onMounted(() => {
               </div>
             </template>
 
-            <template v-else-if="column.key === 'enabled'">
-              <span class="status-text" :class="record.enabled ? 'status-text--enabled' : 'status-text--disabled'">
+            <template v-else-if="column.key === 'registerTime'">
+              <div class="info-cell">
+                <div class="cell-title cell-title--sm">
+                  {{ formatDateMinute(record.registerTime) }}
+                </div>
+                <div class="cell-sub">
+                  注册时间
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="column.key === 'expireEndTime'">
+              <div class="info-cell">
+                <div class="cell-title cell-title--sm">
+                  {{ formatDateMinute(record.expireEndTime) }}
+                </div>
+                <div class="cell-sub">
+                  账号到期时间
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="column.key === 'status'">
+              <span class="status-text" :class="getInstitutionStatusMeta(record).className">
                 <span class="status-text__dot" />
-                {{ record.enabled ? '启用中' : '已停用' }}
+                {{ getInstitutionStatusMeta(record).text }}
               </span>
             </template>
 
@@ -363,17 +543,18 @@ onMounted(() => {
                   编辑
                 </a-button>
                 <a-popconfirm
-                  :title="record.enabled ? '确定停用该机构？' : '确定启用该机构？'"
+                  v-if="canToggleInstitutionStatus(record)"
+                  :title="getToggleTargetEnabled(record) ? '确定启用该机构？' : '确定停用该机构？'"
                   ok-text="确定"
                   cancel-text="取消"
-                  @confirm="toggleInstitutionStatus(record, !record.enabled)"
+                  @confirm="toggleInstitutionStatus(record, getToggleTargetEnabled(record))"
                 >
                   <a-button
                     type="link"
                     class="action-cell__link"
                     :loading="statusSubmittingId === Number(record.id)"
                   >
-                    {{ record.enabled ? '停用' : '启用' }}
+                    {{ getToggleTargetEnabled(record) ? '启用' : '停用' }}
                   </a-button>
                 </a-popconfirm>
               </div>

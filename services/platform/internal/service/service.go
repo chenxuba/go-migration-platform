@@ -129,8 +129,8 @@ func (svc *Service) PageModules(current, size int, name string, moduleType int) 
 	return svc.repo.PageModules(context.Background(), current, size, name, moduleType)
 }
 
-func (svc *Service) PageInstitutions(current, size int, keyword, mobile string, enabled *bool) (model.InstitutionPage, error) {
-	return svc.repo.PageInstitutions(context.Background(), current, size, keyword, mobile, enabled)
+func (svc *Service) PageInstitutions(current, size int, keyword, mobile string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (model.InstitutionPage, error) {
+	return svc.repo.PageInstitutions(context.Background(), current, size, keyword, mobile, enabled, status, openType, provinceCode, cityCode, regionCode)
 }
 
 func (svc *Service) GetInstitutionDetail(id int64) (model.InstitutionDetail, error) {

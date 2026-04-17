@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"unicode"
+	"time"
 
 	"github.com/google/uuid"
 	"go-migration-platform/services/platform/internal/model"
@@ -24,9 +24,18 @@ type rawMenu struct {
 	Introduce string
 }
 
-func buildInstitutionWhereClause(keyword, mobile string, enabled *bool) (string, []any) {
+func institutionStatusExpr(alias string) string {
+	return "CASE " +
+		"WHEN IFNULL(" + alias + ".status, 0) = 4 THEN 4 " +
+		"WHEN " + alias + ".expire_end_time IS NOT NULL AND " + alias + ".expire_end_time < NOW() THEN 4 " +
+		"WHEN IFNULL(" + alias + ".status, CASE WHEN IFNULL(" + alias + ".enabled, 0) = 1 THEN 1 ELSE 2 END) = 1 AND IFNULL(" + alias + ".enabled, 0) = 1 THEN 1 " +
+		"ELSE 2 END"
+}
+
+func buildInstitutionWhereClause(keyword, mobile string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (string, []any) {
 	filters := []string{"oi.del_flag = 0"}
-	args := make([]any, 0, 4)
+	args := make([]any, 0, 8)
+	statusExpr := institutionStatusExpr("oi")
 
 	if trimmed := strings.TrimSpace(keyword); trimmed != "" {
 		like := "%" + trimmed + "%"
@@ -48,15 +57,105 @@ func buildInstitutionWhereClause(keyword, mobile string, enabled *bool) (string,
 		}
 	}
 
+	if status != nil && *status > 0 {
+		filters = append(filters, statusExpr+" = ?")
+		args = append(args, *status)
+	}
+
+	if openType != nil && *openType > 0 {
+		filters = append(filters, "IFNULL(oi.open_type, 2) = ?")
+		args = append(args, *openType)
+	}
+
+	if provinceCode != nil && *provinceCode > 0 {
+		filters = append(filters, "IFNULL(oi.province_code, 0) = ?")
+		args = append(args, *provinceCode)
+	}
+
+	if cityCode != nil && *cityCode > 0 {
+		filters = append(filters, "IFNULL(oi.city_code, 0) = ?")
+		args = append(args, *cityCode)
+	}
+
+	if regionCode != nil && *regionCode > 0 {
+		filters = append(filters, "IFNULL(oi.region_code, 0) = ?")
+		args = append(args, *regionCode)
+	}
+
 	return strings.Join(filters, " AND "), args
 }
 
 func New(db *sql.DB) (*Repository, error) {
 	repo := &Repository{db: db}
+	if err := repo.ensureInstitutionSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.ensureInstitutionProfileSchema(context.Background()); err != nil {
 		return nil, err
 	}
 	return repo, nil
+}
+
+func (repo *Repository) ensureInstitutionSchema(ctx context.Context) error {
+	if err := repo.ensureColumnExists(ctx, "org_institution", "open_type", `
+		ALTER TABLE org_institution
+		ADD COLUMN open_type TINYINT NOT NULL DEFAULT 2 COMMENT '开通类型：1体验版 2正式版'
+		AFTER login_name
+	`); err != nil {
+		return err
+	}
+
+	if err := repo.ensureColumnExists(ctx, "org_institution", "open_duration", `
+		ALTER TABLE org_institution
+		ADD COLUMN open_duration VARCHAR(16) NOT NULL DEFAULT '1y' COMMENT '开通时长编码'
+		AFTER open_type
+	`); err != nil {
+		return err
+	}
+
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE org_institution
+		SET open_type = CASE
+		        WHEN IFNULL(open_type, 0) IN (1, 2) THEN open_type
+		        WHEN expire_end_time IS NOT NULL
+		          AND TIMESTAMPDIFF(DAY, COALESCE(expire_start_time, create_time, NOW()), expire_end_time) <= 7 THEN 1
+		        ELSE 2
+		    END,
+		    open_duration = CASE
+		        WHEN NULLIF(TRIM(IFNULL(open_duration, '')), '') IS NOT NULL THEN open_duration
+		        ELSE CASE
+		            WHEN expire_end_time IS NULL THEN '99y'
+		            WHEN TIMESTAMPDIFF(DAY, COALESCE(expire_start_time, create_time, NOW()), expire_end_time) <= 4 THEN '3d'
+		            WHEN TIMESTAMPDIFF(DAY, COALESCE(expire_start_time, create_time, NOW()), expire_end_time) <= 6 THEN '5d'
+		            WHEN TIMESTAMPDIFF(DAY, COALESCE(expire_start_time, create_time, NOW()), expire_end_time) <= 8 THEN '7d'
+		            WHEN TIMESTAMPDIFF(DAY, COALESCE(expire_start_time, create_time, NOW()), expire_end_time) <= 548 THEN '1y'
+		            WHEN TIMESTAMPDIFF(DAY, COALESCE(expire_start_time, create_time, NOW()), expire_end_time) <= 913 THEN '2y'
+		            WHEN TIMESTAMPDIFF(DAY, COALESCE(expire_start_time, create_time, NOW()), expire_end_time) <= 1461 THEN '3y'
+		            WHEN TIMESTAMPDIFF(DAY, COALESCE(expire_start_time, create_time, NOW()), expire_end_time) <= 3650 THEN '5y'
+		            ELSE '99y'
+		        END
+		    END
+		WHERE del_flag = 0
+	`)
+	return err
+}
+
+func (repo *Repository) ensureColumnExists(ctx context.Context, tableName, columnName, ddl string) error {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = ?
+		  AND COLUMN_NAME = ?
+	`, tableName, columnName).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err := repo.db.ExecContext(ctx, ddl)
+	return err
 }
 
 func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) error {
@@ -64,7 +163,6 @@ func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) erro
 		CREATE TABLE IF NOT EXISTS org_institution_profile (
 			id BIGINT NOT NULL AUTO_INCREMENT,
 			institution_id BIGINT NOT NULL,
-			organ_label VARCHAR(127) DEFAULT NULL,
 			description TEXT DEFAULT NULL,
 			business_time VARCHAR(255) DEFAULT NULL,
 			video VARCHAR(2000) DEFAULT NULL,
@@ -84,11 +182,10 @@ func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) erro
 
 	_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO org_institution_profile (
-			institution_id, organ_label, description, business_time, video, gallery_images,
+			institution_id, description, business_time, video, gallery_images,
 			create_id, create_time, update_id, update_time, del_flag
 		)
 		SELECT oi.id,
-		       NULLIF(TRIM(IFNULL(oi.organ_label, '')), ''),
 		       NULLIF(TRIM(IFNULL(oi.description, '')), ''),
 		       NULLIF(TRIM(IFNULL(oi.business_time, '')), ''),
 		       NULLIF(TRIM(IFNULL(oi.video, '')), ''),
@@ -103,8 +200,7 @@ func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) erro
 		WHERE oi.del_flag = 0
 		  AND oip.id IS NULL
 		  AND (
-			NULLIF(TRIM(IFNULL(oi.organ_label, '')), '') IS NOT NULL
-			OR NULLIF(TRIM(IFNULL(oi.description, '')), '') IS NOT NULL
+			NULLIF(TRIM(IFNULL(oi.description, '')), '') IS NOT NULL
 			OR NULLIF(TRIM(IFNULL(oi.business_time, '')), '') IS NOT NULL
 			OR NULLIF(TRIM(IFNULL(oi.video, '')), '') IS NOT NULL
 			OR oi.inst_images IS NOT NULL
@@ -171,36 +267,11 @@ func normalizedInstitutionProfile(profile *model.InstitutionProfile) model.Insti
 	}
 
 	return model.InstitutionProfile{
-		OrganLabel:    strings.TrimSpace(profile.OrganLabel),
 		Description:   strings.TrimSpace(profile.Description),
 		BusinessTime:  strings.TrimSpace(profile.BusinessTime),
 		Video:         strings.TrimSpace(profile.Video),
 		GalleryImages: trimStringSlice(profile.GalleryImages),
 	}
-}
-
-func normalizeInstitutionOrganLabel(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return ""
-	}
-
-	legacyValue := true
-	for _, char := range trimmed {
-		if char == ',' || unicode.IsSpace(char) {
-			continue
-		}
-		if char < '0' || char > '9' {
-			legacyValue = false
-			break
-		}
-	}
-
-	if legacyValue {
-		return ""
-	}
-
-	return trimmed
 }
 
 func (repo *Repository) PageDicts(ctx context.Context, current, size int, keyword string) (model.PageResult[model.Dict], error) {
@@ -392,7 +463,65 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 	}, rows.Err()
 }
 
-func (repo *Repository) PageInstitutions(ctx context.Context, current, size int, keyword, mobile string, enabled *bool) (model.InstitutionPage, error) {
+func normalizeInstitutionOpenType(value *int) int {
+	if value != nil && *value == 1 {
+		return 1
+	}
+	return 2
+}
+
+func normalizeInstitutionOpenDuration(openType int, raw string) string {
+	value := strings.TrimSpace(raw)
+	switch openType {
+	case 1:
+		switch value {
+		case "3d", "5d", "7d":
+			return value
+		default:
+			return "7d"
+		}
+	default:
+		switch value {
+		case "1y", "2y", "3y", "5y", "99y":
+			return value
+		default:
+			return "1y"
+		}
+	}
+}
+
+func buildInstitutionExpireEndTime(start time.Time, duration string) time.Time {
+	switch strings.TrimSpace(duration) {
+	case "3d":
+		return start.AddDate(0, 0, 3)
+	case "5d":
+		return start.AddDate(0, 0, 5)
+	case "7d":
+		return start.AddDate(0, 0, 7)
+	case "2y":
+		return start.AddDate(2, 0, 0)
+	case "3y":
+		return start.AddDate(3, 0, 0)
+	case "5y":
+		return start.AddDate(5, 0, 0)
+	case "99y":
+		return start.AddDate(99, 0, 0)
+	default:
+		return start.AddDate(1, 0, 0)
+	}
+}
+
+func institutionStatusValue(enabled bool, expireEnd sql.NullTime) int {
+	if !enabled {
+		return 2
+	}
+	if expireEnd.Valid && expireEnd.Time.Before(time.Now()) {
+		return 4
+	}
+	return 1
+}
+
+func (repo *Repository) PageInstitutions(ctx context.Context, current, size int, keyword, mobile string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (model.InstitutionPage, error) {
 	if current <= 0 {
 		current = 1
 	}
@@ -401,7 +530,8 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 	}
 	offset := (current - 1) * size
 
-	whereClause, args := buildInstitutionWhereClause(keyword, mobile, enabled)
+	whereClause, args := buildInstitutionWhereClause(keyword, mobile, enabled, status, openType, provinceCode, cityCode, regionCode)
+	statusExpr := institutionStatusExpr("oi")
 
 	var total int
 	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM org_institution oi WHERE "+whereClause, args...).Scan(&total); err != nil {
@@ -411,8 +541,8 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 	var summary model.InstitutionSummary
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*),
-		       COALESCE(SUM(CASE WHEN IFNULL(oi.enabled, 0) = 1 THEN 1 ELSE 0 END), 0),
-		       COALESCE(SUM(CASE WHEN IFNULL(oi.enabled, 0) = 0 THEN 1 ELSE 0 END), 0)
+		       COALESCE(SUM(CASE WHEN `+statusExpr+` = 1 THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN `+statusExpr+` <> 1 THEN 1 ELSE 0 END), 0)
 		FROM org_institution oi
 		WHERE `+whereClause, args...).Scan(&summary.TotalCount, &summary.EnabledCount, &summary.DisabledCount); err != nil {
 		return model.InstitutionPage{}, err
@@ -432,13 +562,18 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 		       IFNULL(oi.address, ''),
 		       IFNULL(oi.logo, ''),
 		       IFNULL(oi.enabled, 0),
+		       `+statusExpr+`,
+		       IFNULL(oi.open_type, 2),
+		       IFNULL(oi.open_duration, ''),
+		       IFNULL(DATE_FORMAT(oi.create_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(oi.expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       COUNT(DISTINCT CASE WHEN iu.del_flag = 0 THEN iu.id END) AS staff_count,
 		       COUNT(DISTINCT CASE WHEN iu.del_flag = 0 AND IFNULL(iu.disabled, 0) = 0 THEN iu.id END) AS active_staff_count,
 		       COUNT(DISTINCT CASE WHEN iu.del_flag = 0 AND IFNULL(iu.is_admin, 0) = 1 THEN iu.id END) AS admin_count
 		FROM org_institution oi
 		LEFT JOIN inst_user iu ON iu.inst_id = oi.id
 		WHERE `+whereClause+`
-		GROUP BY oi.id, oi.organ_name, oi.organ_code, oi.login_name, oi.mobile, oi.principal, oi.province, oi.city, oi.region, oi.address, oi.logo, oi.enabled
+		GROUP BY oi.id, oi.organ_name, oi.organ_code, oi.login_name, oi.mobile, oi.principal, oi.province, oi.city, oi.region, oi.address, oi.logo, oi.enabled, oi.status, oi.open_type, oi.open_duration, oi.create_time, oi.expire_end_time
 		ORDER BY oi.id DESC
 		LIMIT ? OFFSET ?`, listArgs...)
 	if err != nil {
@@ -462,6 +597,11 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 			&item.Address,
 			&item.Logo,
 			&item.Enabled,
+			&item.Status,
+			&item.OpenType,
+			&item.OpenDuration,
+			&item.RegisterTime,
+			&item.ExpireEndTime,
 			&item.StaffCount,
 			&item.ActiveStaffCount,
 			&item.AdminCount,
@@ -500,10 +640,13 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		       IFNULL(oi.remark, ''),
 		       IFNULL(oi.logo, ''),
 		       IFNULL(oi.enabled, 0),
-		       IFNULL(oi.status, 1),
+		       `+institutionStatusExpr("oi")+`,
+		       IFNULL(oi.open_type, 2),
+		       IFNULL(oi.open_duration, ''),
+		       IFNULL(DATE_FORMAT(oi.expire_start_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(oi.expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(oi.lng, 0),
 		       IFNULL(oi.lat, 0),
-		       IFNULL(NULLIF(oip.organ_label, ''), IFNULL(oi.organ_label, '')),
 		       IFNULL(NULLIF(oip.description, ''), IFNULL(oi.description, '')),
 		       IFNULL(NULLIF(oip.business_time, ''), IFNULL(oi.business_time, '')),
 		       IFNULL(NULLIF(oip.video, ''), IFNULL(oi.video, '')),
@@ -540,9 +683,12 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		&detail.Logo,
 		&detail.Enabled,
 		&detail.Status,
+		&detail.OpenType,
+		&detail.OpenDuration,
+		&detail.ExpireStartTime,
+		&detail.ExpireEndTime,
 		&detail.Lng,
 		&detail.Lat,
-		&detail.Profile.OrganLabel,
 		&detail.Profile.Description,
 		&detail.Profile.BusinessTime,
 		&detail.Profile.Video,
@@ -550,7 +696,6 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 	); err != nil {
 		return model.InstitutionDetail{}, err
 	}
-	detail.Profile.OrganLabel = normalizeInstitutionOrganLabel(detail.Profile.OrganLabel)
 	detail.Profile.GalleryImages = unmarshalStringSlice(galleryImagesRaw)
 
 	return detail, nil
@@ -576,6 +721,11 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
+	openType := normalizeInstitutionOpenType(input.OpenType)
+	openDuration := normalizeInstitutionOpenDuration(openType, input.OpenDuration)
+	expireStart := time.Now()
+	expireEnd := buildInstitutionExpireEndTime(expireStart, openDuration)
+	statusValue := institutionStatusValue(enabled, sql.NullTime{Time: expireEnd, Valid: true})
 
 	creatorValue := nullableInt64Value(creatorID)
 	profile := normalizedInstitutionProfile(input.Profile)
@@ -584,10 +734,11 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO org_institution (
 			uuid, organ_name, organ_type, mobile, organ_code, login_name,
+			open_type, open_duration, expire_start_time, expire_end_time,
 			province_code, province, city_code, city, region_code, region, logo, principal, address, lng, lat,
-			organ_label, description, business_time, video, inst_images,
+			description, business_time, video, inst_images,
 			status, enabled, concat_phone, fixed_phone, version, create_id, create_time, update_id, update_time, del_flag, remark, account_num
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NOW(), ?, NOW(), 0, ?, 5)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NOW(), ?, NOW(), 0, ?, 5)
 	`,
 		uuid.NewString(),
 		strings.TrimSpace(input.OrganName),
@@ -595,6 +746,10 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		strings.TrimSpace(input.Mobile),
 		nextCode,
 		strings.TrimSpace(input.LoginName),
+		openType,
+		openDuration,
+		expireStart,
+		expireEnd,
 		nullableInt64Value(input.ProvinceCode),
 		strings.TrimSpace(input.Province),
 		nullableInt64Value(input.CityCode),
@@ -606,12 +761,11 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		strings.TrimSpace(input.Address),
 		nullableFloat64Value(input.Lng),
 		nullableFloat64Value(input.Lat),
-		profile.OrganLabel,
 		profile.Description,
 		profile.BusinessTime,
 		profile.Video,
 		galleryImagesJSON,
-		1,
+		statusValue,
 		enabled,
 		strings.TrimSpace(input.ConcatPhone),
 		strings.TrimSpace(input.FixedPhone),
@@ -629,8 +783,10 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		return 0, err
 	}
 
-	if err = repo.upsertInstitutionProfileTx(ctx, tx, id, profile, creatorValue, creatorValue); err != nil {
-		return 0, err
+	if input.Profile != nil {
+		if err = repo.upsertInstitutionProfileTx(ctx, tx, id, profile, creatorValue, creatorValue); err != nil {
+			return 0, err
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -664,11 +820,42 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		}
 	}()
 
+	var currentOpenType sql.NullInt64
+	var currentOpenDuration sql.NullString
+	var currentExpireStart sql.NullTime
+	var currentExpireEnd sql.NullTime
+	if err = tx.QueryRowContext(ctx, `
+		SELECT IFNULL(open_type, 2),
+		       IFNULL(open_duration, ''),
+		       expire_start_time,
+		       expire_end_time
+		FROM org_institution
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, *input.ID).Scan(&currentOpenType, &currentOpenDuration, &currentExpireStart, &currentExpireEnd); err != nil {
+		return err
+	}
+
+	openType := normalizeInstitutionOpenType(input.OpenType)
+	openDuration := normalizeInstitutionOpenDuration(openType, input.OpenDuration)
+	expireStart := currentExpireStart
+	expireEnd := currentExpireEnd
+	if !currentOpenType.Valid || int(currentOpenType.Int64) != openType || !currentOpenDuration.Valid || strings.TrimSpace(currentOpenDuration.String) != openDuration || !currentExpireStart.Valid || !currentExpireEnd.Valid {
+		nextExpireStart := time.Now()
+		expireStart = sql.NullTime{Time: nextExpireStart, Valid: true}
+		expireEnd = sql.NullTime{Time: buildInstitutionExpireEndTime(nextExpireStart, openDuration), Valid: true}
+	}
+	statusValue := institutionStatusValue(enabled, expireEnd)
+
 	_, err = tx.ExecContext(ctx, `
 		UPDATE org_institution
 		SET organ_name = ?,
 		    login_name = ?,
 		    mobile = ?,
+		    open_type = ?,
+		    open_duration = ?,
+		    expire_start_time = ?,
+		    expire_end_time = ?,
 		    principal = ?,
 		    province_code = ?,
 		    province = ?,
@@ -683,17 +870,12 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		    logo = ?,
 		    lng = COALESCE(?, lng),
 		    lat = COALESCE(?, lat),
-		    organ_label = ?,
 		    description = ?,
 		    business_time = ?,
 		    video = ?,
 		    inst_images = ?,
 		    enabled = ?,
-		    status = CASE
-		        WHEN ? = 0 THEN 2
-		        WHEN status = 2 THEN 1
-		        ELSE status
-		    END,
+		    status = ?,
 		    update_id = ?,
 		    update_time = NOW()
 		WHERE id = ? AND del_flag = 0
@@ -701,6 +883,10 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		strings.TrimSpace(input.OrganName),
 		strings.TrimSpace(input.LoginName),
 		strings.TrimSpace(input.Mobile),
+		openType,
+		openDuration,
+		nullableTimeValue(expireStart),
+		nullableTimeValue(expireEnd),
 		strings.TrimSpace(input.Principal),
 		nullableInt64Value(input.ProvinceCode),
 		strings.TrimSpace(input.Province),
@@ -715,13 +901,12 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		strings.TrimSpace(input.Logo),
 		nullableFloat64Value(input.Lng),
 		nullableFloat64Value(input.Lat),
-		profile.OrganLabel,
 		profile.Description,
 		profile.BusinessTime,
 		profile.Video,
 		galleryImagesJSON,
 		enabled,
-		enabled,
+		statusValue,
 		updaterValue,
 		*input.ID,
 	)
@@ -729,8 +914,10 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		return err
 	}
 
-	if err = repo.upsertInstitutionProfileTx(ctx, tx, *input.ID, profile, nil, updaterValue); err != nil {
-		return err
+	if input.Profile != nil {
+		if err = repo.upsertInstitutionProfileTx(ctx, tx, *input.ID, profile, nil, updaterValue); err != nil {
+			return err
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -742,19 +929,25 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 
 func (repo *Repository) UpdateInstitutionStatus(ctx context.Context, id int64, enabled bool, updaterID *int64) error {
 	updaterValue := nullableInt64Value(updaterID)
+	var expireEnd sql.NullTime
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT expire_end_time
+		FROM org_institution
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, id).Scan(&expireEnd); err != nil {
+		return err
+	}
+	statusValue := institutionStatusValue(enabled, expireEnd)
 
 	_, err := repo.db.ExecContext(ctx, `
 		UPDATE org_institution
 		SET enabled = ?,
-		    status = CASE
-		        WHEN ? = 0 THEN 2
-		        WHEN status = 2 THEN 1
-		        ELSE status
-		    END,
+		    status = ?,
 		    update_id = ?,
 		    update_time = NOW()
 		WHERE id = ? AND del_flag = 0
-	`, enabled, enabled, updaterValue, id)
+	`, enabled, statusValue, updaterValue, id)
 	return err
 }
 
@@ -893,11 +1086,10 @@ func (repo *Repository) nextInstitutionCode(ctx context.Context, tx *sql.Tx) (st
 func (repo *Repository) upsertInstitutionProfileTx(ctx context.Context, tx *sql.Tx, institutionID int64, profile model.InstitutionProfile, creatorID, updaterID any) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO org_institution_profile (
-			institution_id, organ_label, description, business_time, video, gallery_images,
+			institution_id, description, business_time, video, gallery_images,
 			create_id, create_time, update_id, update_time, del_flag
-		) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
+		) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
 		ON DUPLICATE KEY UPDATE
-			organ_label = VALUES(organ_label),
 			description = VALUES(description),
 			business_time = VALUES(business_time),
 			video = VALUES(video),
@@ -907,7 +1099,6 @@ func (repo *Repository) upsertInstitutionProfileTx(ctx context.Context, tx *sql.
 			del_flag = 0
 	`,
 		institutionID,
-		profile.OrganLabel,
 		profile.Description,
 		profile.BusinessTime,
 		profile.Video,
@@ -930,6 +1121,13 @@ func nullableFloat64Value(value *float64) any {
 		return nil
 	}
 	return *value
+}
+
+func nullableTimeValue(value sql.NullTime) any {
+	if !value.Valid {
+		return nil
+	}
+	return value.Time
 }
 
 func (repo *Repository) CreateDict(ctx context.Context, input model.DictMutation, creatorID *int64) (int64, error) {

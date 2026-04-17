@@ -141,6 +141,11 @@ func (handler *Handler) institutions(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("keyword"),
 		r.URL.Query().Get("mobile"),
 		parseBoolPtr(r.URL.Query().Get("enabled")),
+		parseIntPtr(r.URL.Query().Get("status")),
+		parseIntPtr(r.URL.Query().Get("openType")),
+		parseIntPtr(r.URL.Query().Get("provinceCode")),
+		parseIntPtr(r.URL.Query().Get("cityCode")),
+		parseIntPtr(r.URL.Query().Get("regionCode")),
 	)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load institutions failed", ctx.RequestID)
@@ -846,6 +851,27 @@ func validateInstitutionMutation(input model.InstitutionMutation) string {
 	if strings.TrimSpace(input.Address) == "" {
 		return "address is required"
 	}
+	if input.OpenType == nil || (*input.OpenType != 1 && *input.OpenType != 2) {
+		return "openType is required"
+	}
+	duration := strings.TrimSpace(input.OpenDuration)
+	if duration == "" {
+		return "openDuration is required"
+	}
+	if *input.OpenType == 1 {
+		switch duration {
+		case "3d", "5d", "7d":
+		default:
+			return "openDuration is invalid"
+		}
+	}
+	if *input.OpenType == 2 {
+		switch duration {
+		case "1y", "2y", "3y", "5y", "99y":
+		default:
+			return "openDuration is invalid"
+		}
+	}
 	return ""
 }
 
@@ -920,6 +946,18 @@ func parseBoolPtr(raw string) *bool {
 		return &t
 	}
 	return nil
+}
+
+func parseIntPtr(raw string) *int {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	value, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return nil
+	}
+	return &value
 }
 
 func (handler *Handler) readIDPayload(w http.ResponseWriter, r *http.Request, ctx tenant.Context) (int64, bool) {

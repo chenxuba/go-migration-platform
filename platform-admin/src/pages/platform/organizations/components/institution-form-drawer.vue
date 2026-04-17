@@ -36,6 +36,8 @@ interface InstitutionFormState {
   loginName: string
   mobile: string
   principal: string
+  openType?: number
+  openDuration: string
   provinceCode?: string
   province: string
   cityCode?: string
@@ -50,7 +52,6 @@ interface InstitutionFormState {
   logo: string
   remark: string
   enabled: boolean
-  organLabel: string
   businessTime: string
   description: string
   video: string
@@ -163,6 +164,8 @@ function createInitialFormState(): InstitutionFormState {
     loginName: '',
     mobile: '',
     principal: '',
+    openType: 2,
+    openDuration: '1y',
     provinceCode: undefined,
     province: '',
     cityCode: undefined,
@@ -177,7 +180,6 @@ function createInitialFormState(): InstitutionFormState {
     logo: '',
     remark: '',
     enabled: true,
-    organLabel: '',
     businessTime: '',
     description: '',
     video: '',
@@ -214,6 +216,25 @@ const cityOptions = computed(() => (selectedProvinceOption.value?.children || []
 const selectedCityOption = computed(() => selectedProvinceOption.value?.children?.find(item => item.value === formState.cityCode))
 const regionOptions = computed(() => (selectedCityOption.value?.children || []).map(({ value, label }) => ({ value, label })))
 const selectedRegionOption = computed(() => selectedCityOption.value?.children?.find(item => item.value === formState.regionCode))
+const openTypeOptions = [
+  { value: 1, label: '体验版' },
+  { value: 2, label: '正式版' },
+]
+const openDurationOptionMap: Record<number, { value: string, label: string }[]> = {
+  1: [
+    { value: '3d', label: '3天' },
+    { value: '5d', label: '5天' },
+    { value: '7d', label: '7天' },
+  ],
+  2: [
+    { value: '1y', label: '1年' },
+    { value: '2y', label: '2年' },
+    { value: '3y', label: '3年' },
+    { value: '5y', label: '5年' },
+    { value: '99y', label: '99年' },
+  ],
+}
+const openDurationOptions = computed(() => openDurationOptionMap[Number(formState.openType) || 2] || openDurationOptionMap[2])
 
 const rules: Record<string, Rule[]> = {
   organName: [{ required: true, message: '请输入机构名称', trigger: 'blur' }],
@@ -223,6 +244,8 @@ const rules: Record<string, Rule[]> = {
     { pattern: /^\d{11}$/, message: '联系电话需为 11 位手机号', trigger: 'blur' },
   ],
   principal: [{ required: true, message: '请输入负责人姓名', trigger: 'blur' }],
+  openType: [{ required: true, message: '请选择开通类型', trigger: 'change' }],
+  openDuration: [{ required: true, message: '请选择开通时长', trigger: 'change' }],
   provinceCode: [{ required: true, message: '请选择省份', trigger: 'change' }],
   cityCode: [{ required: true, message: '请选择城市', trigger: 'change' }],
   regionCode: [{ required: true, message: '请选择区县', trigger: 'change' }],
@@ -287,6 +310,13 @@ function handleRegionChange(value?: string | number) {
   syncRegionLabels()
 }
 
+function handleOpenTypeChange(value?: number | string) {
+  formState.openType = value ? Number(value) : undefined
+  const availableDurations = openDurationOptionMap[Number(formState.openType) || 2] || []
+  if (!availableDurations.some(item => item.value === formState.openDuration))
+    formState.openDuration = availableDurations[0]?.value || ''
+}
+
 function buildGeocodeLocation() {
   const province = formState.province.trim()
   let city = formState.city.trim()
@@ -346,7 +376,6 @@ function buildProfilePayload(): InstitutionProfile | undefined {
     .filter(Boolean)
 
   const profile: InstitutionProfile = {
-    organLabel: formState.organLabel.trim() || undefined,
     businessTime: formState.businessTime.trim() || undefined,
     description: formState.description.trim() || undefined,
     video: formState.video.trim() || undefined,
@@ -505,7 +534,10 @@ async function loadInstitutionDetail(id: number) {
     formState.remark = String(detail.remark || '')
     formState.logo = String(detail.logo || '')
     formState.enabled = !!detail.enabled
-    formState.organLabel = String(detail.profile?.organLabel || '')
+    formState.openType = Number(detail.openType || 2) || 2
+    formState.openDuration = String(detail.openDuration || '')
+      || openDurationOptionMap[Number(formState.openType) || 2]?.[0]?.value
+      || '1y'
     formState.businessTime = String(detail.profile?.businessTime || '')
     formState.description = String(detail.profile?.description || '')
     formState.video = String(detail.profile?.video || '')
@@ -582,6 +614,8 @@ function buildPayload(): InstitutionMutationPayload {
     loginName: formState.loginName.trim(),
     mobile: formState.mobile.trim(),
     principal: formState.principal.trim(),
+    openType: formState.openType ? Number(formState.openType) : undefined,
+    openDuration: formState.openDuration,
     provinceCode: formState.provinceCode ? Number(formState.provinceCode) : undefined,
     province: formState.province.trim(),
     cityCode: formState.cityCode ? Number(formState.cityCode) : undefined,
@@ -775,12 +809,6 @@ async function submitForm() {
             </div>
 
             <div class="system-grid__item">
-              <a-form-item label="机构简称：">
-                <a-input v-model:value="formState.organLabel" :maxlength="127" placeholder="请输入机构简称" />
-              </a-form-item>
-            </div>
-
-            <div class="system-grid__item system-grid__item--full">
               <a-form-item label="详细地址：" name="address">
                 <a-input v-model:value="formState.address" :maxlength="256" placeholder="请输入详细地址，用于自动获取经纬度" />
               </a-form-item>
@@ -790,10 +818,12 @@ async function submitForm() {
               <a-form-item label="坐标定位：" name="lng" required>
                 <div class="coordinate-inline">
                   <a-input class="coordinate-inline__field" :value="formatCoordinate(formState.lng)" disabled placeholder="自动获取经度" />
-                  <a-input class="coordinate-inline__field" :value="formatCoordinate(formState.lat)" disabled placeholder="自动获取纬度" />
-                  <a-button :loading="geocoding" @click="resolveCoordinates(true)">
-                    获取坐标
-                  </a-button>
+                  <div class="coordinate-inline__action">
+                    <a-input class="coordinate-inline__field" :value="formatCoordinate(formState.lat)" disabled placeholder="自动获取纬度" />
+                    <a-button :loading="geocoding" @click="resolveCoordinates(true)">
+                      获取坐标
+                    </a-button>
+                  </div>
                 </div>
 
                 <div v-if="geocodeSourceLabel || geocodeResolvedAddress" class="coordinate-extra">
@@ -801,6 +831,32 @@ async function submitForm() {
                   <span v-if="geocodeResolvedAddress">{{ geocodeResolvedAddress }}</span>
                 </div>
               </a-form-item>
+            </div>
+
+            <div class="system-grid__item system-grid__item--full">
+              <a-row :gutter="24">
+                <a-col :xs="24" :md="12">
+                  <a-form-item label="开通类型：" name="openType">
+                    <a-select
+                      v-model:value="formState.openType"
+                      :options="openTypeOptions"
+                      placeholder="请选择开通类型"
+                      @change="handleOpenTypeChange"
+                    />
+                  </a-form-item>
+                </a-col>
+
+                <a-col :xs="24" :md="12">
+                  <a-form-item label="开通时长：" name="openDuration">
+                    <a-select
+                      v-model:value="formState.openDuration"
+                      :options="openDurationOptions"
+                      :disabled="!formState.openType"
+                      placeholder="请选择开通时长"
+                    />
+                  </a-form-item>
+                </a-col>
+              </a-row>
             </div>
 
             <div class="system-grid__item system-grid__item--full">
@@ -882,15 +938,26 @@ async function submitForm() {
 }
 
 .coordinate-inline {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, calc((100% - 24px) / 2)) minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 0 24px;
   width: 100%;
 }
 
 .coordinate-inline__field {
-  flex: 1;
   min-width: 0;
+}
+
+.coordinate-inline__action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.coordinate-inline__action .coordinate-inline__field {
+  flex: 1;
 }
 
 .coordinate-extra {
@@ -943,6 +1010,11 @@ async function submitForm() {
   }
 
   .coordinate-inline {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .coordinate-inline__action {
     flex-direction: column;
     align-items: stretch;
   }

@@ -1,7 +1,6 @@
 CREATE TABLE IF NOT EXISTS org_institution_profile (
   id BIGINT NOT NULL AUTO_INCREMENT,
   institution_id BIGINT NOT NULL,
-  organ_label VARCHAR(127) DEFAULT NULL,
   description TEXT DEFAULT NULL,
   business_time VARCHAR(255) DEFAULT NULL,
   video VARCHAR(2000) DEFAULT NULL,
@@ -18,7 +17,6 @@ CREATE TABLE IF NOT EXISTS org_institution_profile (
 
 INSERT INTO org_institution_profile (
   institution_id,
-  organ_label,
   description,
   business_time,
   video,
@@ -30,7 +28,6 @@ INSERT INTO org_institution_profile (
   del_flag
 )
 SELECT oi.id,
-       NULLIF(TRIM(IFNULL(oi.organ_label, '')), ''),
        NULLIF(TRIM(IFNULL(oi.description, '')), ''),
        NULLIF(TRIM(IFNULL(oi.business_time, '')), ''),
        NULLIF(TRIM(IFNULL(oi.video, '')), ''),
@@ -45,8 +42,7 @@ LEFT JOIN org_institution_profile oip ON oip.institution_id = oi.id AND oip.del_
 WHERE oi.del_flag = 0
   AND oip.id IS NULL
   AND (
-    NULLIF(TRIM(IFNULL(oi.organ_label, '')), '') IS NOT NULL
-    OR NULLIF(TRIM(IFNULL(oi.description, '')), '') IS NOT NULL
+    NULLIF(TRIM(IFNULL(oi.description, '')), '') IS NOT NULL
     OR NULLIF(TRIM(IFNULL(oi.business_time, '')), '') IS NOT NULL
     OR NULLIF(TRIM(IFNULL(oi.video, '')), '') IS NOT NULL
     OR oi.inst_images IS NOT NULL

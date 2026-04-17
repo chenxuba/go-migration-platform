@@ -13,6 +13,11 @@ export interface InstitutionItem {
   address?: string
   logo?: string
   enabled: boolean
+  status?: number
+  openType?: number
+  openDuration?: string
+  registerTime?: string
+  expireEndTime?: string
   staffCount: number
   activeStaffCount: number
   adminCount: number
@@ -38,13 +43,16 @@ export interface InstitutionDetail {
   logo?: string
   enabled: boolean
   status: number
+  openType: number
+  openDuration?: string
+  expireStartTime?: string
+  expireEndTime?: string
   lng?: number
   lat?: number
   profile: InstitutionProfile
 }
 
 export interface InstitutionProfile {
-  organLabel?: string
   description?: string
   businessTime?: string
   video?: string
@@ -71,6 +79,11 @@ export interface InstitutionPageParams {
   keyword?: string
   mobile?: string
   enabled?: boolean
+  status?: number
+  openType?: number
+  provinceCode?: number
+  cityCode?: number
+  regionCode?: number
 }
 
 export interface InstitutionMutationPayload {
@@ -91,6 +104,8 @@ export interface InstitutionMutationPayload {
   remark?: string
   logo?: string
   enabled?: boolean
+  openType?: number
+  openDuration?: string
   lng?: number
   lat?: number
   profile?: InstitutionProfile
