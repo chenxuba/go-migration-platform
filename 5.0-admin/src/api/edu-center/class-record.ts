@@ -100,6 +100,8 @@ export interface TeachingRecordDetailStudent {
   actualQuantity?: number
   remark?: string
   externalRemark?: string
+  isComment?: boolean
+  isParentRead?: boolean | null
   tuitionAccountId?: string
   tuitionAccountName?: string
   isTuitionAccountActive?: boolean
