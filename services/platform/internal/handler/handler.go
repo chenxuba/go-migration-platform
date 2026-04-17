@@ -919,7 +919,7 @@ func validateInstitutionMutation(input model.InstitutionMutation, requirePackage
 	}
 	openType := 0
 	if input.OpenType != nil {
-		if *input.OpenType != 1 && *input.OpenType != 2 {
+		if *input.OpenType != 1 && *input.OpenType != 2 && *input.OpenType != 3 && *input.OpenType != 4 {
 			return "openType is invalid"
 		}
 		openType = *input.OpenType
@@ -946,7 +946,7 @@ func validateInstitutionMutation(input model.InstitutionMutation, requirePackage
 			return "openDuration is invalid"
 		}
 	}
-	if openType == 2 {
+	if openType == 2 || openType == 3 || openType == 4 {
 		switch duration {
 		case "1y", "2y", "3y", "5y", "99y":
 		default:
@@ -960,7 +960,7 @@ func validateInstitutionRenewalMutation(input model.InstitutionRenewalMutation) 
 	if input.InstitutionID == nil || *input.InstitutionID <= 0 {
 		return "institutionId is required"
 	}
-	if input.OpenType == nil || (*input.OpenType != 1 && *input.OpenType != 2) {
+	if input.OpenType == nil || (*input.OpenType != 1 && *input.OpenType != 2 && *input.OpenType != 3 && *input.OpenType != 4) {
 		return "请选择开通版本"
 	}
 

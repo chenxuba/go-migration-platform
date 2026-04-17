@@ -218,7 +218,9 @@ const regionOptions = computed(() => (selectedCityOption.value?.children || []).
 const selectedRegionOption = computed(() => selectedCityOption.value?.children?.find(item => item.value === formState.regionCode))
 const openTypeOptions = [
   { value: 1, label: '体验版' },
-  { value: 2, label: '正式版' },
+  { value: 2, label: '基础版' },
+  { value: 3, label: '高级版' },
+  { value: 4, label: '旗舰版' },
 ]
 const openDurationOptionMap: Record<number, { value: string, label: string }[]> = {
   1: [
@@ -227,6 +229,20 @@ const openDurationOptionMap: Record<number, { value: string, label: string }[]> 
     { value: '7d', label: '7天' },
   ],
   2: [
+    { value: '1y', label: '1年' },
+    { value: '2y', label: '2年' },
+    { value: '3y', label: '3年' },
+    { value: '5y', label: '5年' },
+    { value: '99y', label: '99年' },
+  ],
+  3: [
+    { value: '1y', label: '1年' },
+    { value: '2y', label: '2年' },
+    { value: '3y', label: '3年' },
+    { value: '5y', label: '5年' },
+    { value: '99y', label: '99年' },
+  ],
+  4: [
     { value: '1y', label: '1年' },
     { value: '2y', label: '2年' },
     { value: '3y', label: '3年' },

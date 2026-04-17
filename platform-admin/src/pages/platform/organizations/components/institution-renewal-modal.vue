@@ -52,7 +52,9 @@ const renewActionLockTimers: Partial<Record<'openConfirm' | 'submitRenewal', Ret
 
 const openTypeOptions = [
   { value: 1, label: '体验版' },
-  { value: 2, label: '正式版' },
+  { value: 2, label: '基础版' },
+  { value: 3, label: '高级版' },
+  { value: 4, label: '旗舰版' },
 ]
 const openDurationOptionMap: Record<number, { value: string, label: string }[]> = {
   1: [
@@ -67,11 +69,25 @@ const openDurationOptionMap: Record<number, { value: string, label: string }[]> 
     { value: '5y', label: '5年' },
     { value: '99y', label: '99年' },
   ],
+  3: [
+    { value: '1y', label: '1年' },
+    { value: '2y', label: '2年' },
+    { value: '3y', label: '3年' },
+    { value: '5y', label: '5年' },
+    { value: '99y', label: '99年' },
+  ],
+  4: [
+    { value: '1y', label: '1年' },
+    { value: '2y', label: '2年' },
+    { value: '3y', label: '3年' },
+    { value: '5y', label: '5年' },
+    { value: '99y', label: '99年' },
+  ],
 }
 
 const availableOpenTypeOptions = computed(() => {
-  if (Number(detail.value?.openType || 2) === 2)
-    return openTypeOptions.filter(item => item.value === 2)
+  if (Number(detail.value?.openType || 2) >= 2)
+    return openTypeOptions.filter(item => item.value !== 1)
   return openTypeOptions
 })
 const openDurationOptions = computed(() => openDurationOptionMap[Number(formState.openType) || 2] || openDurationOptionMap[2])
@@ -225,7 +241,8 @@ function addDuration(source: Date, duration: string) {
 }
 
 function getOpenTypeLabel(value?: number) {
-  return Number(value) === 1 ? '体验版' : '正式版'
+  const currentValue = Number(value || 0)
+  return openTypeOptions.find(item => item.value === currentValue)?.label || '基础版'
 }
 
 function getOpenDurationLabel(openType: number, value?: string) {

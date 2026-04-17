@@ -116,7 +116,7 @@ func (repo *Repository) ensureInstitutionSchema(ctx context.Context) error {
 
 	if err := repo.ensureColumnExists(ctx, "org_institution", "open_type", `
 		ALTER TABLE org_institution
-		ADD COLUMN open_type TINYINT NOT NULL DEFAULT 2 COMMENT '开通类型：1体验版 2正式版'
+		ADD COLUMN open_type TINYINT NOT NULL DEFAULT 2 COMMENT '开通版本：1体验版 2基础版 3高级版 4旗舰版'
 		AFTER login_name
 	`); err != nil {
 		return err
@@ -133,7 +133,7 @@ func (repo *Repository) ensureInstitutionSchema(ctx context.Context) error {
 	_, err := repo.db.ExecContext(ctx, `
 		UPDATE org_institution
 		SET open_type = CASE
-		        WHEN IFNULL(open_type, 0) IN (1, 2) THEN open_type
+		        WHEN IFNULL(open_type, 0) IN (1, 2, 3, 4) THEN open_type
 		        WHEN expire_end_time IS NOT NULL
 		          AND TIMESTAMPDIFF(DAY, COALESCE(expire_start_time, create_time, NOW()), expire_end_time) <= 7 THEN 1
 		        ELSE 2
@@ -525,10 +525,16 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 }
 
 func normalizeInstitutionOpenType(value *int) int {
-	if value != nil && *value == 1 {
-		return 1
+	if value == nil {
+		return 2
 	}
-	return 2
+
+	switch *value {
+	case 1, 2, 3, 4:
+		return *value
+	default:
+		return 2
+	}
 }
 
 func institutionStoredOpenType(value sql.NullInt64) int {
@@ -541,6 +547,10 @@ func institutionStoredOpenType(value sql.NullInt64) int {
 		return 1
 	case 2:
 		return 2
+	case 3:
+		return 3
+	case 4:
+		return 4
 	default:
 		return 0
 	}
@@ -550,7 +560,7 @@ func resolveInstitutionUpdateOpenType(value *int, currentType int) int {
 	if value != nil {
 		return normalizeInstitutionOpenType(value)
 	}
-	if currentType == 1 || currentType == 2 {
+	if currentType >= 1 && currentType <= 4 {
 		return currentType
 	}
 	return 2
@@ -598,8 +608,8 @@ func buildInstitutionExpireEndTime(start time.Time, duration string) time.Time {
 }
 
 func buildInstitutionRenewalWindow(currentOpenType, nextOpenType int, currentExpireEnd sql.NullTime, duration string) (sql.NullTime, sql.NullTime, error) {
-	if currentOpenType == 2 && nextOpenType == 1 {
-		return sql.NullTime{}, sql.NullTime{}, fmt.Errorf("正式版机构不支持改回体验版，如需续期请选择正式版时长")
+	if currentOpenType >= 2 && nextOpenType == 1 {
+		return sql.NullTime{}, sql.NullTime{}, fmt.Errorf("已开通基础版、高级版或旗舰版的机构不支持降为体验版")
 	}
 
 	now := time.Now()
@@ -608,7 +618,7 @@ func buildInstitutionRenewalWindow(currentOpenType, nextOpenType int, currentExp
 		effectiveEnd = currentExpireEnd.Time
 	}
 
-	if currentOpenType == 1 && nextOpenType == 2 {
+	if currentOpenType != nextOpenType {
 		return sql.NullTime{Time: now, Valid: true}, sql.NullTime{Time: buildInstitutionExpireEndTime(effectiveEnd, duration), Valid: true}, nil
 	}
 

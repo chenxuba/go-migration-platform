@@ -22,7 +22,9 @@ const institutionStatusOptions = [
 ]
 const institutionOpenTypeOptions = [
   { id: 1, value: '体验版' },
-  { id: 2, value: '正式版' },
+  { id: 2, value: '基础版' },
+  { id: 3, value: '高级版' },
+  { id: 4, value: '旗舰版' },
 ]
 const directCountyCityLabels = new Set([
   '市辖区',
@@ -239,7 +241,8 @@ function formatDateMinute(value?: string) {
 }
 
 function getInstitutionOpenTypeLabel(record: Partial<InstitutionItem>) {
-  return Number(record.openType) === 1 ? '体验版' : '正式版'
+  const currentValue = Number(record.openType || 0)
+  return institutionOpenTypeOptions.find(item => item.id === currentValue)?.value || '基础版'
 }
 
 function getInstitutionStatusValue(record: Partial<InstitutionItem>) {
