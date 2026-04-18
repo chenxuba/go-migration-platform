@@ -75,7 +75,9 @@ const {
   clearAllSelected,
   updateData,
   setDefaultCheckedByIds,
-} = useRolePermissions(initialPermissionData, treeLoading)
+} = useRolePermissions(initialPermissionData, treeLoading, {
+  enforceGroupExclusive: false,
+})
 
 const openModal = computed({
   get: () => props.open,

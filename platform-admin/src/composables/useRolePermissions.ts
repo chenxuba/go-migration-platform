@@ -27,7 +27,17 @@ export interface AuthorityGroup {
   children: AuthorityChild[]
 }
 
-export function useRolePermissions(initialData: AuthorityGroup[] = [], loading: Ref<boolean>) {
+interface RolePermissionOptions {
+  enforceGroupExclusive?: boolean
+}
+
+export function useRolePermissions(
+  initialData: AuthorityGroup[] = [],
+  loading: Ref<boolean>,
+  options: RolePermissionOptions = {},
+) {
+  const enforceGroupExclusive = options.enforceGroupExclusive !== false
+
   // 基础数据
   const boxList = ref<AuthorityGroup[]>(initialData)
   const searchValue = ref('')
@@ -277,6 +287,14 @@ export function useRolePermissions(initialData: AuthorityGroup[] = [], loading: 
         child.checked = true
         child.indeterminate = false
 
+        if (!enforceGroupExclusive) {
+          child.children.forEach((authority) => {
+            authority.checked = true
+          })
+          updateChildStatus(child)
+          return
+        }
+
         // 处理每个子级的互斥情况
         const groupCodeMap = new Map<string, Authority[]>()
 
@@ -330,6 +348,15 @@ export function useRolePermissions(initialData: AuthorityGroup[] = [], loading: 
   const handleChildChange = (child: AuthorityChild, parent: AuthorityGroup) => {
     // 如果是选中操作
     if (child.checked) {
+      if (!enforceGroupExclusive) {
+        child.children.forEach((authority) => {
+          authority.checked = true
+        })
+        updateChildStatus(child)
+        updateParentStatus(parent)
+        return
+      }
+
       // 先处理互斥的情况：找出所有有groupCode的authority，按groupCode分组
       const groupCodeMap = new Map<string, Authority[]>()
       child.children.forEach((authority) => {
@@ -376,7 +403,7 @@ export function useRolePermissions(initialData: AuthorityGroup[] = [], loading: 
   // 权限点选择处理
   const handleAuthorityChange = (authority: Authority, child: AuthorityChild, parent: AuthorityGroup) => {
     // 如果有相同的 groupCode，则互斥选择
-    if (authority.groupCode && authority.checked) {
+    if (enforceGroupExclusive && authority.groupCode && authority.checked) {
       child.children.forEach((item) => {
         if (item.groupCode === authority.groupCode && item.id !== authority.id) {
           item.checked = false
@@ -418,9 +445,17 @@ export function useRolePermissions(initialData: AuthorityGroup[] = [], loading: 
     boxList.value.forEach((parent) => {
       parent.children.forEach((child) => {
         // 先收集所有在menuIds中的权限项
-        const authoritiesToCheck = child.children.filter(authority => 
+        const authoritiesToCheck = child.children.filter(authority =>
           menuIds.includes(authority.id)
         )
+
+        if (!enforceGroupExclusive) {
+          child.children.forEach((authority) => {
+            authority.checked = menuIds.includes(authority.id)
+          })
+          updateChildStatus(child)
+          return
+        }
 
         // 按groupCode分组
         const groupCodeMap = new Map<string, Authority[]>()
@@ -432,7 +467,8 @@ export function useRolePermissions(initialData: AuthorityGroup[] = [], loading: 
               groupCodeMap.set(authority.groupCode, [])
             }
             groupCodeMap.get(authority.groupCode)!.push(authority)
-          } else {
+          }
+          else {
             ungroupedAuthorities.push(authority)
           }
         })
