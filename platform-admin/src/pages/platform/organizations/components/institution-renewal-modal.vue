@@ -583,7 +583,7 @@ watch(
   </a-modal>
 </template>
 
-<style scoped>
+<style scoped lang="less">
 .institution-renewal__titlebar {
   display: flex;
   align-items: center;

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +22,67 @@ type rawMenu struct {
 	ID        int64
 	Name      string
 	PID       int64
+	Sort      int64
 	Introduce string
+}
+
+var defaultInstitutionVersionModules = []struct {
+	Name  string
+	Price float64
+}{
+	{Name: "体验版", Price: 0},
+	{Name: "基础版", Price: 999},
+	{Name: "高级版", Price: 2999},
+	{Name: "旗舰版", Price: 9999},
+}
+
+func institutionOpenTypeModuleName(openType int) string {
+	switch openType {
+	case 1:
+		return "体验版"
+	case 2:
+		return "基础版"
+	case 3:
+		return "高级版"
+	case 4:
+		return "旗舰版"
+	default:
+		return "基础版"
+	}
+}
+
+func sanitizeInstitutionMenuScope(selectedMenuIDs, moduleMenuIDs []int64) ([]int64, error) {
+	if len(selectedMenuIDs) == 0 {
+		return nil, nil
+	}
+
+	moduleSet := make(map[int64]struct{}, len(moduleMenuIDs))
+	for _, id := range moduleMenuIDs {
+		if id > 0 {
+			moduleSet[id] = struct{}{}
+		}
+	}
+
+	result := make([]int64, 0, len(selectedMenuIDs))
+	seen := make(map[int64]struct{}, len(selectedMenuIDs))
+	for _, id := range selectedMenuIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, exists := moduleSet[id]; !exists {
+			return nil, fmt.Errorf("存在超出版本范围的权限菜单")
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+
+	if len(result) == 0 {
+		return nil, fmt.Errorf("请至少选择一个机构权限")
+	}
+	return result, nil
 }
 
 func institutionStatusExpr(alias string) string {
@@ -94,6 +155,9 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	if err := repo.ensureInstitutionRenewalSchema(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := repo.ensureVersionModuleSchema(context.Background()); err != nil {
 		return nil, err
 	}
 	return repo, nil
@@ -268,6 +332,38 @@ func (repo *Repository) ensureInstitutionRenewalSchema(ctx context.Context) erro
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`)
 	return err
+}
+
+func (repo *Repository) ensureVersionModuleSchema(ctx context.Context) error {
+	if _, err := repo.db.ExecContext(ctx, `
+		UPDATE sys_module
+		SET name = '体验版'
+		WHERE del_flag = 0 AND type = 1 AND name = '试用版'
+	`); err != nil {
+		return err
+	}
+
+	for _, item := range defaultInstitutionVersionModules {
+		var count int
+		if err := repo.db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM sys_module
+			WHERE del_flag = 0 AND type = 1 AND name = ?
+		`, item.Name).Scan(&count); err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+		if _, err := repo.db.ExecContext(ctx, `
+			INSERT INTO sys_module (uuid, version, name, type, price, create_time, update_time, del_flag, remark)
+			VALUES (?, 0, ?, 1, ?, NOW(), NOW(), 0, '')
+		`, uuid.NewString(), item.Name, item.Price); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func trimStringSlice(values []string) []string {
@@ -497,10 +593,21 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id, IFNULL(name, ''), IFNULL(type, 0), IFNULL(price, 0)
-		FROM sys_module
-		WHERE `+whereClause+`
-		ORDER BY id DESC
+		SELECT m.id,
+		       IFNULL(m.name, ''),
+		       IFNULL(m.type, 0),
+		       IFNULL(m.price, 0),
+		       IFNULL(m.remark, ''),
+		       COUNT(DISTINCT CASE WHEN smm.del_flag = 0 THEN smm.menu_id END) AS menu_count,
+		       COUNT(DISTINCT CASE WHEN om.del_flag = 0 THEN om.org_id END) AS org_count,
+		       IFNULL(DATE_FORMAT(m.create_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(m.update_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM sys_module m
+		LEFT JOIN sys_module_menu smm ON smm.module_id = m.id
+		LEFT JOIN org_module om ON om.module_id = m.id
+		WHERE `+strings.ReplaceAll(whereClause, "del_flag", "m.del_flag")+`
+		GROUP BY m.id, m.name, m.type, m.price, m.remark, m.create_time, m.update_time
+		ORDER BY m.id DESC
 		LIMIT ? OFFSET ?`, append(args, size, offset)...)
 	if err != nil {
 		return model.PageResult[model.Module]{}, err
@@ -510,7 +617,17 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 	items := make([]model.Module, 0, size)
 	for rows.Next() {
 		var item model.Module
-		if err := rows.Scan(&item.ID, &item.Name, &item.Type, &item.Price); err != nil {
+		if err := rows.Scan(
+			&item.ID,
+			&item.Name,
+			&item.Type,
+			&item.Price,
+			&item.Remark,
+			&item.MenuCount,
+			&item.OrgCount,
+			&item.CreateTime,
+			&item.UpdateTime,
+		); err != nil {
 			return model.PageResult[model.Module]{}, err
 		}
 		items = append(items, item)
@@ -903,6 +1020,25 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		}
 	}
 
+	if moduleID, lookupErr := repo.findInstitutionVersionModuleIDTx(ctx, tx, openType); lookupErr != nil {
+		return 0, lookupErr
+	} else if moduleID > 0 {
+		if err = repo.bindInstitutionModuleTx(
+			ctx,
+			tx,
+			id,
+			moduleID,
+			sql.NullTime{Time: expireEnd, Valid: true},
+			statusValue,
+			creatorID,
+			nil,
+			true,
+			false,
+		); err != nil {
+			return 0, err
+		}
+	}
+
 	if err = tx.Commit(); err != nil {
 		return 0, err
 	}
@@ -1065,6 +1201,17 @@ func (repo *Repository) UpdateInstitutionStatus(ctx context.Context, id int64, e
 		    update_time = NOW()
 		WHERE id = ? AND del_flag = 0
 	`, enabled, statusValue, updaterValue, id)
+	if err != nil {
+		return err
+	}
+
+	_, err = repo.db.ExecContext(ctx, `
+		UPDATE org_module
+		SET status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE org_id = ? AND del_flag = 0
+	`, statusValue, updaterValue, id)
 	return err
 }
 
@@ -1211,6 +1358,25 @@ func (repo *Repository) RenewInstitution(ctx context.Context, input model.Instit
 		operatorValue,
 	); err != nil {
 		return model.InstitutionRenewalResult{}, err
+	}
+
+	if moduleID, lookupErr := repo.findInstitutionVersionModuleIDTx(ctx, tx, nextOpenType); lookupErr != nil {
+		return model.InstitutionRenewalResult{}, lookupErr
+	} else if moduleID > 0 {
+		if err = repo.bindInstitutionModuleTx(
+			ctx,
+			tx,
+			*input.InstitutionID,
+			moduleID,
+			renewEnd,
+			statusValue,
+			operatorID,
+			nil,
+			true,
+			false,
+		); err != nil {
+			return model.InstitutionRenewalResult{}, err
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -1477,14 +1643,39 @@ func (repo *Repository) DeleteDictValue(ctx context.Context, id int64) error {
 
 func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64) (model.ModuleDetailVO, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(name, ''), IFNULL(price, 0)
-		FROM sys_module
-		WHERE id = ? AND del_flag = 0
+		SELECT m.id,
+		       IFNULL(m.uuid, ''),
+		       IFNULL(m.version, 0),
+		       IFNULL(m.name, ''),
+		       IFNULL(m.type, 0),
+		       IFNULL(m.price, 0),
+		       IFNULL(m.remark, ''),
+		       COUNT(DISTINCT CASE WHEN smm.del_flag = 0 THEN smm.menu_id END) AS menu_count,
+		       COUNT(DISTINCT CASE WHEN om.del_flag = 0 THEN om.org_id END) AS org_count,
+		       IFNULL(DATE_FORMAT(m.create_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(m.update_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM sys_module m
+		LEFT JOIN sys_module_menu smm ON smm.module_id = m.id
+		LEFT JOIN org_module om ON om.module_id = m.id
+		WHERE m.id = ? AND m.del_flag = 0
+		GROUP BY m.id, m.uuid, m.version, m.name, m.type, m.price, m.remark, m.create_time, m.update_time
 		LIMIT 1
 	`, moduleID)
 
 	var detail model.ModuleDetailVO
-	if err := row.Scan(&detail.ModuleID, &detail.UUID, &detail.Version, &detail.ModuleName, &detail.Price); err != nil {
+	if err := row.Scan(
+		&detail.ModuleID,
+		&detail.UUID,
+		&detail.Version,
+		&detail.ModuleName,
+		&detail.ModuleType,
+		&detail.Price,
+		&detail.Remark,
+		&detail.MenuCount,
+		&detail.OrgCount,
+		&detail.CreateTime,
+		&detail.UpdateTime,
+	); err != nil {
 		return model.ModuleDetailVO{}, err
 	}
 
@@ -1504,6 +1695,7 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64) (mo
 			return model.ModuleDetailVO{}, err
 		}
 		selected[id] = struct{}{}
+		detail.SelectedMenuIDs = append(detail.SelectedMenuIDs, id)
 	}
 	menuMap, err := repo.collectModuleMenus(ctx, selected)
 	if err != nil {
@@ -1531,13 +1723,13 @@ func (repo *Repository) collectModuleMenus(ctx context.Context, selected map[int
 			continue
 		}
 		row := repo.db.QueryRowContext(ctx, `
-			SELECT id, IFNULL(menu_name, ''), IFNULL(pid, 0), IFNULL(introduce, '')
+			SELECT id, IFNULL(menu_name, ''), IFNULL(pid, 0), IFNULL(sort, 0), IFNULL(introduce, '')
 			FROM sso_menu
 			WHERE id = ? AND del_flag = 0 AND own_type = 2
 			LIMIT 1
 		`, id)
 		var item rawMenu
-		if err := row.Scan(&item.ID, &item.Name, &item.PID, &item.Introduce); err != nil {
+		if err := row.Scan(&item.ID, &item.Name, &item.PID, &item.Sort, &item.Introduce); err != nil {
 			if err == sql.ErrNoRows {
 				continue
 			}
@@ -1553,11 +1745,21 @@ func (repo *Repository) collectModuleMenus(ctx context.Context, selected map[int
 }
 
 func buildModuleTree(items []rawMenu, selected map[int64]struct{}, pid int64) []model.ModuleMenu {
-	result := make([]model.ModuleMenu, 0)
+	childrenItems := make([]rawMenu, 0)
 	for _, item := range items {
-		if item.PID != pid {
-			continue
+		if item.PID == pid {
+			childrenItems = append(childrenItems, item)
 		}
+	}
+	sort.SliceStable(childrenItems, func(i, j int) bool {
+		if childrenItems[i].Sort == childrenItems[j].Sort {
+			return childrenItems[i].ID < childrenItems[j].ID
+		}
+		return childrenItems[i].Sort < childrenItems[j].Sort
+	})
+
+	result := make([]model.ModuleMenu, 0, len(childrenItems))
+	for _, item := range childrenItems {
 		children := buildModuleTree(items, selected, item.ID)
 		menu := model.ModuleMenu{
 			MenuID:    strconv.FormatInt(item.ID, 10),
@@ -1580,6 +1782,79 @@ func buildModuleTree(items []rawMenu, selected map[int64]struct{}, pid int64) []
 		result = append(result, menu)
 	}
 	return result
+}
+
+func (repo *Repository) ListModuleMenuTree(ctx context.Context, moduleType int) ([]model.ModuleMenu, error) {
+	selected, err := repo.listScopedInstitutionMenuIDs(ctx, moduleType)
+	if err != nil {
+		return nil, err
+	}
+	if len(selected) == 0 {
+		return []model.ModuleMenu{}, nil
+	}
+
+	menuMap, err := repo.collectModuleMenus(ctx, selected)
+	if err != nil {
+		return nil, err
+	}
+	rawMenus := make([]rawMenu, 0, len(menuMap))
+	for _, item := range menuMap {
+		rawMenus = append(rawMenus, item)
+	}
+	return buildModuleTree(rawMenus, selected, 0), nil
+}
+
+func (repo *Repository) listScopedInstitutionMenuIDs(ctx context.Context, moduleType int) (map[int64]struct{}, error) {
+	menuIDs, err := repo.queryMenuIDSet(ctx, `
+		SELECT DISTINCT scoped.menu_id
+		FROM (
+			SELECT smm.menu_id
+			FROM sys_module sm
+			JOIN sys_module_menu smm ON smm.module_id = sm.id AND smm.del_flag = 0
+			JOIN sso_menu m ON m.id = smm.menu_id AND m.del_flag = 0 AND m.own_type = 2
+			WHERE sm.del_flag = 0 AND sm.type = ?
+
+			UNION
+
+			SELECT rm.menu_id
+			FROM sso_role r
+			JOIN sso_role_menu rm ON rm.role_id = r.id
+			JOIN sso_menu m ON m.id = rm.menu_id AND m.del_flag = 0 AND m.own_type = 2
+			WHERE r.del_flag = 0 AND r.role_type = 2 AND r.is_admin = 1
+		) scoped
+	`, moduleType)
+	if err != nil {
+		return nil, err
+	}
+	if len(menuIDs) > 0 {
+		return menuIDs, nil
+	}
+
+	return repo.queryMenuIDSet(ctx, `
+		SELECT id
+		FROM sso_menu
+		WHERE del_flag = 0 AND own_type = 2
+	`)
+}
+
+func (repo *Repository) queryMenuIDSet(ctx context.Context, query string, args ...any) (map[int64]struct{}, error) {
+	rows, err := repo.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]struct{})
+	for rows.Next() {
+		var menuID int64
+		if err := rows.Scan(&menuID); err != nil {
+			return nil, err
+		}
+		if menuID > 0 {
+			result[menuID] = struct{}{}
+		}
+	}
+	return result, rows.Err()
 }
 
 func (repo *Repository) IncreaseModuleMenus(ctx context.Context, input model.ModulePermissionMutation) error {
@@ -1648,6 +1923,118 @@ func (repo *Repository) DecreaseModuleMenus(ctx context.Context, input model.Mod
 		return nil
 	}
 	return repo.deleteRoleMenus(ctx, roleIDs, removeMenus)
+}
+
+func (repo *Repository) ReplaceModuleMenus(ctx context.Context, input model.ModulePermissionMutation) error {
+	if input.ID == nil || *input.ID <= 0 {
+		return fmt.Errorf("id is required")
+	}
+
+	currentMenus, err := repo.getModuleMenuIDs(ctx, *input.ID)
+	if err != nil {
+		return err
+	}
+
+	currentSet := make(map[int64]struct{}, len(currentMenus))
+	for _, id := range currentMenus {
+		currentSet[id] = struct{}{}
+	}
+
+	nextSet := make(map[int64]struct{}, len(input.MenuIDs))
+	nextMenus := make([]int64, 0, len(input.MenuIDs))
+	for _, id := range input.MenuIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, exists := nextSet[id]; exists {
+			continue
+		}
+		nextSet[id] = struct{}{}
+		nextMenus = append(nextMenus, id)
+	}
+
+	addMenus := make([]int64, 0)
+	for _, id := range nextMenus {
+		if _, exists := currentSet[id]; !exists {
+			addMenus = append(addMenus, id)
+		}
+	}
+
+	removeMenus := make([]int64, 0)
+	for _, id := range currentMenus {
+		if _, exists := nextSet[id]; !exists {
+			removeMenus = append(removeMenus, id)
+		}
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if len(addMenus) > 0 {
+		for _, menuID := range addMenus {
+			if _, err = tx.ExecContext(ctx, `
+				INSERT INTO sys_module_menu (module_id, menu_id, create_time, del_flag, version)
+				VALUES (?, ?, NOW(), 0, 0)
+			`, *input.ID, menuID); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(removeMenus) > 0 {
+		placeholders := make([]string, 0, len(removeMenus))
+		args := make([]any, 0, len(removeMenus)+1)
+		args = append(args, *input.ID)
+		for _, id := range removeMenus {
+			placeholders = append(placeholders, "?")
+			args = append(args, id)
+		}
+		if _, err = tx.ExecContext(ctx, `
+			DELETE FROM sys_module_menu
+			WHERE module_id = ? AND menu_id IN (`+strings.Join(placeholders, ",")+`)
+		`, args...); err != nil {
+			return err
+		}
+	}
+
+	roleIDs, err := repo.getRoleIDsByModuleTx(ctx, tx, *input.ID, true)
+	if err != nil {
+		return err
+	}
+
+	if len(removeMenus) > 0 && len(roleIDs) > 0 {
+		if err = repo.deleteRoleMenusTx(ctx, tx, roleIDs, removeMenus); err != nil {
+			return err
+		}
+	}
+
+	if len(addMenus) > 0 && len(roleIDs) > 0 {
+		adminRoleIDs := roleIDs
+		if input.IsAllRole == nil || !*input.IsAllRole {
+			adminRoleIDs, err = repo.getRoleIDsByModuleTx(ctx, tx, *input.ID, false)
+			if err != nil {
+				return err
+			}
+		}
+		if len(adminRoleIDs) > 0 {
+			if err = repo.insertIgnoreRoleMenusTx(ctx, tx, adminRoleIDs, addMenus); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (repo *Repository) getModuleMenuIDs(ctx context.Context, moduleID int64) ([]int64, error) {
@@ -1723,10 +2110,50 @@ func (repo *Repository) getRoleIDsByModule(ctx context.Context, moduleID int64, 
 	return items, rows.Err()
 }
 
+func (repo *Repository) getRoleIDsByModuleTx(ctx context.Context, tx *sql.Tx, moduleID int64, allRoles bool) ([]int64, error) {
+	query := `
+		SELECT r.id
+		FROM sso_role r
+		LEFT JOIN org_module m ON r.org_id = m.org_id
+		WHERE m.module_id = ? AND IFNULL(m.del_flag, 0) = 0 AND r.del_flag = 0`
+	if !allRoles {
+		query += " AND r.is_admin = 1"
+	}
+	rows, err := tx.QueryContext(ctx, query, moduleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]int64, 0, 16)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	return items, rows.Err()
+}
+
 func (repo *Repository) insertIgnoreRoleMenus(ctx context.Context, roleIDs, menuIDs []int64) error {
 	for _, roleID := range roleIDs {
 		for _, menuID := range menuIDs {
 			if _, err := repo.db.ExecContext(ctx, `
+				INSERT IGNORE INTO sso_role_menu (role_id, menu_id)
+				VALUES (?, ?)
+			`, roleID, menuID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) insertIgnoreRoleMenusTx(ctx context.Context, tx *sql.Tx, roleIDs, menuIDs []int64) error {
+	for _, roleID := range roleIDs {
+		for _, menuID := range menuIDs {
+			if _, err := tx.ExecContext(ctx, `
 				INSERT IGNORE INTO sso_role_menu (role_id, menu_id)
 				VALUES (?, ?)
 			`, roleID, menuID); err != nil {
@@ -1760,11 +2187,34 @@ func (repo *Repository) deleteRoleMenus(ctx context.Context, roleIDs, menuIDs []
 	return err
 }
 
+func (repo *Repository) deleteRoleMenusTx(ctx context.Context, tx *sql.Tx, roleIDs, menuIDs []int64) error {
+	if len(roleIDs) == 0 || len(menuIDs) == 0 {
+		return nil
+	}
+	rolePlaceholders := make([]string, 0, len(roleIDs))
+	menuPlaceholders := make([]string, 0, len(menuIDs))
+	args := make([]any, 0, len(roleIDs)+len(menuIDs))
+	for _, id := range roleIDs {
+		rolePlaceholders = append(rolePlaceholders, "?")
+		args = append(args, id)
+	}
+	for _, id := range menuIDs {
+		menuPlaceholders = append(menuPlaceholders, "?")
+		args = append(args, id)
+	}
+	_, err := tx.ExecContext(ctx, `
+		DELETE FROM sso_role_menu
+		WHERE role_id IN (`+strings.Join(rolePlaceholders, ",")+`)
+		  AND menu_id IN (`+strings.Join(menuPlaceholders, ",")+`)
+	`, args...)
+	return err
+}
+
 func (repo *Repository) CreateModule(ctx context.Context, input model.ModuleMutation) (int64, error) {
 	result, err := repo.db.ExecContext(ctx, `
-		INSERT INTO sys_module (name, type, price, del_flag, create_time, version)
-		VALUES (?, ?, ?, 0, NOW(), 0)
-	`, strings.TrimSpace(input.Name), input.Type, input.Price)
+		INSERT INTO sys_module (uuid, name, type, price, remark, del_flag, create_time, update_time, version)
+		VALUES (?, ?, ?, ?, ?, 0, NOW(), NOW(), 0)
+	`, uuid.NewString(), strings.TrimSpace(input.Name), input.Type, input.Price, strings.TrimSpace(input.Remark))
 	if err != nil {
 		return 0, err
 	}
@@ -1786,10 +2236,346 @@ func (repo *Repository) UpdateModuleBasic(ctx context.Context, input model.Modul
 	}
 	_, err := repo.db.ExecContext(ctx, `
 		UPDATE sys_module
-		SET name = ?, type = ?, price = ?, update_time = NOW()
+		SET name = ?, type = ?, price = ?, remark = ?, update_time = NOW()
 		WHERE id = ? AND del_flag = 0
-	`, strings.TrimSpace(input.Name), input.Type, input.Price, *input.ID)
+	`, strings.TrimSpace(input.Name), input.Type, input.Price, strings.TrimSpace(input.Remark), *input.ID)
 	return err
+}
+
+func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input model.InstitutionPermissionMutation, operatorID *int64) error {
+	if input.InstitutionID == nil || *input.InstitutionID <= 0 {
+		return fmt.Errorf("institutionId is required")
+	}
+	if input.ModuleID == nil || *input.ModuleID <= 0 {
+		return fmt.Errorf("moduleId is required")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var expireEnd sql.NullTime
+	var statusValue sql.NullInt64
+	if err = tx.QueryRowContext(ctx, `
+		SELECT expire_end_time, IFNULL(status, 0)
+		FROM org_institution
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+		FOR UPDATE
+	`, *input.InstitutionID).Scan(&expireEnd, &statusValue); err != nil {
+		return err
+	}
+
+	if err = repo.bindInstitutionModuleTx(
+		ctx,
+		tx,
+		*input.InstitutionID,
+		*input.ModuleID,
+		expireEnd,
+		int(statusValue.Int64),
+		operatorID,
+		input.MenuIDs,
+		true,
+		true,
+	); err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (repo *Repository) GetInstitutionPermissionDetail(ctx context.Context, institutionID int64) (model.InstitutionPermissionDetail, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT oi.id,
+		       IFNULL(oi.organ_name, ''),
+		       IFNULL(oi.mobile, ''),
+		       IFNULL(oi.open_type, 2),
+		       IFNULL(oi.open_duration, ''),
+		       `+institutionStatusExpr("oi")+`,
+		       IFNULL(DATE_FORMAT(oi.expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(om.module_id, 0),
+		       IFNULL(sm.name, ''),
+		       IFNULL(sr.id, 0),
+		       IFNULL(sr.role_name, '')
+		FROM org_institution oi
+		LEFT JOIN org_module om ON om.org_id = oi.id AND om.del_flag = 0
+		LEFT JOIN sys_module sm ON sm.id = om.module_id AND sm.del_flag = 0
+		LEFT JOIN sso_role sr ON sr.org_id = oi.id AND sr.role_type = 2 AND sr.is_admin = 1 AND sr.del_flag = 0
+		WHERE oi.id = ? AND oi.del_flag = 0
+		LIMIT 1
+	`, institutionID)
+
+	var detail model.InstitutionPermissionDetail
+	if err := row.Scan(
+		&detail.InstitutionID,
+		&detail.OrganName,
+		&detail.Mobile,
+		&detail.OpenType,
+		&detail.OpenDuration,
+		&detail.Status,
+		&detail.ExpireEndTime,
+		&detail.CurrentModuleID,
+		&detail.CurrentModuleName,
+		&detail.AdminRoleID,
+		&detail.AdminRoleName,
+	); err != nil {
+		return model.InstitutionPermissionDetail{}, err
+	}
+
+	if detail.CurrentModuleID > 0 {
+		menuIDs, err := repo.getModuleMenuIDs(ctx, detail.CurrentModuleID)
+		if err != nil {
+			return model.InstitutionPermissionDetail{}, err
+		}
+		detail.TemplateMenuIDs = menuIDs
+	}
+
+	if detail.AdminRoleID > 0 {
+		effectiveMenuIDs, err := repo.getRoleMenuIDsByRoleAndOwnType(ctx, detail.AdminRoleID, 2)
+		if err != nil {
+			return model.InstitutionPermissionDetail{}, err
+		}
+		detail.EffectiveMenuIDs = effectiveMenuIDs
+	}
+
+	return detail, nil
+}
+
+func (repo *Repository) bindInstitutionModuleTx(ctx context.Context, tx *sql.Tx, institutionID, moduleID int64, expireEnd sql.NullTime, status int, operatorID *int64, customMenuIDs []int64, syncMenus bool, strict bool) error {
+	if err := repo.upsertOrgModuleTx(ctx, tx, institutionID, moduleID, expireEnd, status, operatorID); err != nil {
+		return err
+	}
+	if !syncMenus {
+		return nil
+	}
+
+	moduleMenuIDs, err := repo.getModuleMenuIDsTx(ctx, tx, moduleID)
+	if err != nil {
+		return err
+	}
+
+	finalMenuIDs := moduleMenuIDs
+	if len(customMenuIDs) > 0 {
+		scopedMenuIDs, scopeErr := sanitizeInstitutionMenuScope(customMenuIDs, moduleMenuIDs)
+		if scopeErr != nil {
+			return scopeErr
+		}
+		finalMenuIDs = scopedMenuIDs
+	}
+
+	adminRoleID, _, err := repo.getInstitutionAdminRoleTx(ctx, tx, institutionID)
+	if err != nil {
+		if err == sql.ErrNoRows && !strict {
+			return nil
+		}
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("机构管理员角色不存在，请先初始化机构账号")
+		}
+		return err
+	}
+
+	if err := repo.replaceRoleMenusTx(ctx, tx, adminRoleID, finalMenuIDs); err != nil {
+		return err
+	}
+
+	return repo.deleteInstitutionMenusOutsideScopeTx(ctx, tx, institutionID, finalMenuIDs)
+}
+
+func (repo *Repository) upsertOrgModuleTx(ctx context.Context, tx *sql.Tx, institutionID, moduleID int64, expireEnd sql.NullTime, status int, operatorID *int64) error {
+	updaterValue := nullableInt64Value(operatorID)
+
+	var existingID int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM org_module
+		WHERE org_id = ? AND del_flag = 0
+		ORDER BY id DESC
+		LIMIT 1
+		FOR UPDATE
+	`, institutionID).Scan(&existingID)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+
+	if err == sql.ErrNoRows {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO org_module (uuid, version, org_id, module_id, expire_time, status, create_id, create_time, update_id, update_time, del_flag, remark)
+			VALUES (?, 0, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, '')
+		`, uuid.NewString(), institutionID, moduleID, nullableTimeValue(expireEnd), status, updaterValue, updaterValue)
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE org_module
+		SET module_id = ?,
+		    expire_time = ?,
+		    status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ?
+	`, moduleID, nullableTimeValue(expireEnd), status, updaterValue, existingID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE org_module
+		SET del_flag = 1,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE org_id = ? AND del_flag = 0 AND id <> ?
+	`, updaterValue, institutionID, existingID)
+	return err
+}
+
+func (repo *Repository) getModuleMenuIDsTx(ctx context.Context, tx *sql.Tx, moduleID int64) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT menu_id
+		FROM sys_module_menu
+		WHERE module_id = ? AND del_flag = 0
+	`, moduleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]int64, 0, 32)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) getInstitutionAdminRoleTx(ctx context.Context, tx *sql.Tx, institutionID int64) (int64, string, error) {
+	var roleID int64
+	var roleName string
+	err := tx.QueryRowContext(ctx, `
+		SELECT id, IFNULL(role_name, '')
+		FROM sso_role
+		WHERE org_id = ? AND role_type = 2 AND is_admin = 1 AND del_flag = 0
+		LIMIT 1
+	`, institutionID).Scan(&roleID, &roleName)
+	if err != nil {
+		return 0, "", err
+	}
+	return roleID, roleName, nil
+}
+
+func (repo *Repository) replaceRoleMenusTx(ctx context.Context, tx *sql.Tx, roleID int64, menuIDs []int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM sso_role_menu
+		WHERE role_id = ?
+	`, roleID); err != nil {
+		return err
+	}
+
+	if len(menuIDs) == 0 {
+		return nil
+	}
+
+	for _, menuID := range menuIDs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO sso_role_menu (role_id, menu_id)
+			VALUES (?, ?)
+		`, roleID, menuID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) deleteInstitutionMenusOutsideScopeTx(ctx context.Context, tx *sql.Tx, institutionID int64, allowedMenuIDs []int64) error {
+	if len(allowedMenuIDs) == 0 {
+		_, err := tx.ExecContext(ctx, `
+			DELETE rm
+			FROM sso_role_menu rm
+			JOIN sso_role r ON r.id = rm.role_id
+			JOIN sso_menu m ON m.id = rm.menu_id
+			WHERE r.org_id = ? AND r.del_flag = 0 AND m.own_type = 2
+		`, institutionID)
+		return err
+	}
+
+	placeholders := make([]string, 0, len(allowedMenuIDs))
+	args := make([]any, 0, len(allowedMenuIDs)+1)
+	args = append(args, institutionID)
+	for _, menuID := range allowedMenuIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, menuID)
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		DELETE rm
+		FROM sso_role_menu rm
+		JOIN sso_role r ON r.id = rm.role_id
+		JOIN sso_menu m ON m.id = rm.menu_id
+		WHERE r.org_id = ? AND r.del_flag = 0 AND m.own_type = 2
+		  AND rm.menu_id NOT IN (`+strings.Join(placeholders, ",")+`)
+	`, args...)
+	return err
+}
+
+func (repo *Repository) getRoleMenuIDsByRoleAndOwnType(ctx context.Context, roleID int64, ownType int) ([]int64, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT rm.menu_id
+		FROM sso_role_menu rm
+		JOIN sso_menu m ON m.id = rm.menu_id
+		WHERE rm.role_id = ? AND m.del_flag = 0 AND m.own_type = ?
+		ORDER BY rm.menu_id
+	`, roleID, ownType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]int64, 0, 32)
+	for rows.Next() {
+		var menuID int64
+		if err := rows.Scan(&menuID); err != nil {
+			return nil, err
+		}
+		items = append(items, menuID)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) findInstitutionVersionModuleIDTx(ctx context.Context, tx *sql.Tx, openType int) (int64, error) {
+	moduleName := institutionOpenTypeModuleName(openType)
+	if strings.TrimSpace(moduleName) == "" {
+		return 0, nil
+	}
+
+	var moduleID sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_module
+		WHERE del_flag = 0 AND type = 1 AND name = ?
+		ORDER BY id ASC
+		LIMIT 1
+	`, moduleName).Scan(&moduleID); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	if !moduleID.Valid || moduleID.Int64 <= 0 {
+		return 0, nil
+	}
+	return moduleID.Int64, nil
 }
 
 func (repo *Repository) CreateNotice(ctx context.Context, input model.NoticeMutation, creatorID *int64) (int64, error) {

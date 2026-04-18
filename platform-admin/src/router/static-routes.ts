@@ -20,6 +20,16 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/platform/versions',
+    name: 'PlatformVersions',
+    component: () => import('~/pages/platform/versions/index.vue'),
+    meta: {
+      title: '版本管理',
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+    },
+  },
+  {
     path: '/login',
     component: () => import('~/pages/common/login.vue'),
     meta: {

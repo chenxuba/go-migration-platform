@@ -20,6 +20,14 @@ const routes: RouteRecordRaw[] = [
           title: '机构列表',
         },
       },
+      {
+        path: '/platform/versions',
+        name: 'PlatformVersions',
+        component: () => import('~/pages/platform/versions/index.vue'),
+        meta: {
+          title: '版本管理',
+        },
+      },
     ],
   },
 ]

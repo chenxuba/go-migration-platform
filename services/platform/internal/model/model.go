@@ -64,12 +64,19 @@ type NoticeMutation struct {
 }
 
 type ModuleDetailVO struct {
-	ModuleID   int64        `json:"moduleId"`
-	UUID       string       `json:"uuid,omitempty"`
-	Version    int64        `json:"version,omitempty"`
-	ModuleName string       `json:"moduleName"`
-	Price      float64      `json:"price"`
-	MenuIDs    []ModuleMenu `json:"menuIds"`
+	ModuleID        int64        `json:"moduleId"`
+	UUID            string       `json:"uuid,omitempty"`
+	Version         int64        `json:"version,omitempty"`
+	ModuleName      string       `json:"moduleName"`
+	ModuleType      int          `json:"moduleType"`
+	Price           float64      `json:"price"`
+	Remark          string       `json:"remark,omitempty"`
+	MenuCount       int          `json:"menuCount"`
+	OrgCount        int          `json:"orgCount"`
+	CreateTime      string       `json:"createTime,omitempty"`
+	UpdateTime      string       `json:"updateTime,omitempty"`
+	SelectedMenuIDs []int64      `json:"selectedMenuIds,omitempty"`
+	MenuIDs         []ModuleMenu `json:"menuIds"`
 }
 
 type ModulePermissionMutation struct {
@@ -83,6 +90,7 @@ type ModuleMutation struct {
 	Name    string   `json:"name"`
 	Type    *int     `json:"type"`
 	Price   *float64 `json:"price"`
+	Remark  string   `json:"remark"`
 	MenuIDs []int64  `json:"menuIds"`
 }
 
@@ -95,10 +103,15 @@ type ModuleMenu struct {
 }
 
 type Module struct {
-	ID    int64   `json:"id"`
-	Name  string  `json:"name"`
-	Type  int     `json:"type"`
-	Price float64 `json:"price"`
+	ID         int64   `json:"id"`
+	Name       string  `json:"name"`
+	Type       int     `json:"type"`
+	Price      float64 `json:"price"`
+	Remark     string  `json:"remark,omitempty"`
+	MenuCount  int     `json:"menuCount"`
+	OrgCount   int     `json:"orgCount"`
+	CreateTime string  `json:"createTime,omitempty"`
+	UpdateTime string  `json:"updateTime,omitempty"`
 }
 
 type PageResult[T any] struct {
@@ -251,4 +264,26 @@ type InstitutionRenewalResult struct {
 	OpenDuration    string `json:"openDuration,omitempty"`
 	ExpireStartTime string `json:"expireStartTime,omitempty"`
 	ExpireEndTime   string `json:"expireEndTime,omitempty"`
+}
+
+type InstitutionPermissionDetail struct {
+	InstitutionID     int64   `json:"institutionId"`
+	OrganName         string  `json:"organName"`
+	Mobile            string  `json:"mobile,omitempty"`
+	OpenType          int     `json:"openType"`
+	OpenDuration      string  `json:"openDuration,omitempty"`
+	Status            int     `json:"status"`
+	ExpireEndTime     string  `json:"expireEndTime,omitempty"`
+	CurrentModuleID   int64   `json:"currentModuleId,omitempty"`
+	CurrentModuleName string  `json:"currentModuleName,omitempty"`
+	AdminRoleID       int64   `json:"adminRoleId,omitempty"`
+	AdminRoleName     string  `json:"adminRoleName,omitempty"`
+	TemplateMenuIDs   []int64 `json:"templateMenuIds,omitempty"`
+	EffectiveMenuIDs  []int64 `json:"effectiveMenuIds,omitempty"`
+}
+
+type InstitutionPermissionMutation struct {
+	InstitutionID *int64  `json:"institutionId"`
+	ModuleID      *int64  `json:"moduleId,omitempty"`
+	MenuIDs       []int64 `json:"menuIds,omitempty"`
 }

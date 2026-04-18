@@ -11,6 +11,7 @@ import {
 } from '@/api/platform/institutions'
 import { regionData } from '@/constants/region-data'
 import InstitutionFormDrawer from './components/institution-form-drawer.vue'
+import InstitutionPermissionModal from './components/institution-permission-modal.vue'
 import InstitutionRenewalModal from './components/institution-renewal-modal.vue'
 import messageService from '@/utils/messageService'
 
@@ -38,6 +39,8 @@ const statusSubmittingId = ref<number | null>(null)
 const dataSource = ref<InstitutionItem[]>([])
 const institutionDrawerOpen = ref(false)
 const editingInstitutionId = ref<number | null>(null)
+const institutionPermissionOpen = ref(false)
+const permissionInstitutionId = ref<number | null>(null)
 const institutionRenewalOpen = ref(false)
 const renewingInstitutionId = ref<number | null>(null)
 const summary = ref<InstitutionSummary>({
@@ -176,7 +179,7 @@ const columns: TableColumnsType<InstitutionItem> = [
   {
     title: '操作',
     key: 'action',
-    width: 220,
+    width: 280,
     fixed: 'right' as const,
   },
 ]
@@ -307,6 +310,11 @@ function openRenewalModal(record: Partial<InstitutionItem>) {
   institutionRenewalOpen.value = true
 }
 
+function openPermissionModal(record: Partial<InstitutionItem>) {
+  permissionInstitutionId.value = Number(record.id || 0) || null
+  institutionPermissionOpen.value = true
+}
+
 function handleDrawerSaved() {
   institutionDrawerOpen.value = false
   editingInstitutionId.value = null
@@ -314,6 +322,10 @@ function handleDrawerSaved() {
 }
 
 function handleRenewalSaved() {
+  fetchInstitutions()
+}
+
+function handlePermissionSaved() {
   fetchInstitutions()
 }
 
@@ -450,6 +462,11 @@ watch(institutionDrawerOpen, (open) => {
     editingInstitutionId.value = null
 })
 
+watch(institutionPermissionOpen, (open) => {
+  if (!open)
+    permissionInstitutionId.value = null
+})
+
 watch(institutionRenewalOpen, (open) => {
   if (!open)
     renewingInstitutionId.value = null
@@ -493,7 +510,7 @@ watch(institutionRenewalOpen, (open) => {
           :data-source="dataSource"
           :loading="listLoading"
           :pagination="pagination"
-          :scroll="{ x: 1280 }"
+          :scroll="{ x: 1360 }"
           :row-class-name="getRowClassName"
           row-key="id"
           size="small"
@@ -588,6 +605,9 @@ watch(institutionRenewalOpen, (open) => {
                 <a-button type="link" class="action-cell__link" @click="openEditDrawer(record)">
                   编辑
                 </a-button>
+                <a-button type="link" class="action-cell__link" @click="openPermissionModal(record)">
+                  权限
+                </a-button>
                 <a-button type="link" class="action-cell__link" @click="openRenewalModal(record)">
                   续期
                 </a-button>
@@ -622,6 +642,11 @@ watch(institutionRenewalOpen, (open) => {
       v-model:open="institutionRenewalOpen"
       :institution-id="renewingInstitutionId"
       @renewed="handleRenewalSaved"
+    />
+    <InstitutionPermissionModal
+      v-model:open="institutionPermissionOpen"
+      :institution-id="permissionInstitutionId"
+      @saved="handlePermissionSaved"
     />
   </div>
 </template>

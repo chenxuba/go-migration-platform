@@ -34,6 +34,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/institutions/create", handler.createInstitution)
 	mux.HandleFunc("/api/v1/platform/institutions/update", handler.updateInstitution)
 	mux.HandleFunc("/api/v1/platform/institutions/status", handler.updateInstitutionStatus)
+	mux.HandleFunc("/api/v1/platform/institutions/permission-detail", handler.institutionPermissionDetail)
+	mux.HandleFunc("/api/v1/platform/institutions/permission-version", handler.replaceInstitutionPermissionVersion)
 	mux.HandleFunc("/api/v1/platform/institutions/renewal-records", handler.institutionRenewalRecords)
 	mux.HandleFunc("/api/v1/platform/institutions/renew", handler.renewInstitution)
 	mux.HandleFunc("/api/v1/platform/dicts", handler.dicts)
@@ -49,9 +51,11 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/notices/update", handler.updateNotice)
 	mux.HandleFunc("/api/v1/platform/notices/delete", handler.deleteNotice)
 	mux.HandleFunc("/api/v1/platform/modules", handler.modules)
+	mux.HandleFunc("/api/v1/platform/modules/menu-tree", handler.moduleMenuTree)
 	mux.HandleFunc("/api/v1/platform/modules/detail", handler.moduleDetail)
 	mux.HandleFunc("/api/v1/platform/modules/increase", handler.increaseModuleMenus)
 	mux.HandleFunc("/api/v1/platform/modules/decrease", handler.decreaseModuleMenus)
+	mux.HandleFunc("/api/v1/platform/modules/permissions", handler.replaceModuleMenus)
 	mux.HandleFunc("/api/v1/platform/modules/create", handler.createModule)
 	mux.HandleFunc("/api/v1/platform/modules/update", handler.updateModule)
 
@@ -68,9 +72,11 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sysNoticeInfo/update", handler.updateNotice)
 	mux.HandleFunc("/sysNoticeInfo/delete", handler.deleteNotice)
 	mux.HandleFunc("/sysModule/page", handler.modules)
+	mux.HandleFunc("/sysModule/menuTree", handler.moduleMenuTree)
 	mux.HandleFunc("/sysModule/getModuleDetail", handler.moduleDetail)
 	mux.HandleFunc("/sysModule/increase", handler.increaseModuleMenus)
 	mux.HandleFunc("/sysModule/decrease", handler.decreaseModuleMenus)
+	mux.HandleFunc("/sysModule/saveMenus", handler.replaceModuleMenus)
 	mux.HandleFunc("/sysModule/save", handler.createModule)
 	mux.HandleFunc("/sysModule/update", handler.updateModule)
 }
@@ -334,6 +340,77 @@ func (handler *Handler) updateInstitutionStatus(w http.ResponseWriter, r *http.R
 		httpx.WriteError(w, http.StatusInternalServerError, "update institution status failed", ctx.RequestID)
 		return
 	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) institutionPermissionDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	institutionID := int64(parseInt(r.URL.Query().Get("institutionId"), 0))
+	if institutionID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "institutionId is required", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.GetInstitutionPermissionDetail(institutionID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "load institution permission detail failed", ctx.RequestID)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) replaceInstitutionPermissionVersion(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.InstitutionPermissionMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if input.InstitutionID == nil || *input.InstitutionID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "institutionId is required", ctx.RequestID)
+		return
+	}
+	if input.ModuleID == nil || *input.ModuleID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "moduleId is required", ctx.RequestID)
+		return
+	}
+
+	var operatorID *int64
+	if claims.UserID > 0 {
+		operatorID = &claims.UserID
+	}
+
+	if err := handler.service.ReplaceInstitutionModule(input, operatorID); err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
 }
 
@@ -736,6 +813,29 @@ func (handler *Handler) modules(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) moduleMenuTree(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	moduleType := parseInt(r.URL.Query().Get("type"), 1)
+	if moduleType <= 0 {
+		moduleType = 1
+	}
+
+	result, err := handler.service.ListModuleMenuTree(moduleType)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "load module menu tree failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) moduleDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	if _, ok := handler.requireAuth(w, r, ctx); !ok {
@@ -799,6 +899,31 @@ func (handler *Handler) decreaseModuleMenus(w http.ResponseWriter, r *http.Reque
 	}
 	if err := handler.service.DecreaseModuleMenus(input); err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "decrease module menus failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) replaceModuleMenus(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var input model.ModulePermissionMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if input.ID == nil || *input.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	if err := handler.service.ReplaceModuleMenus(input); err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "replace module menus failed", ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)

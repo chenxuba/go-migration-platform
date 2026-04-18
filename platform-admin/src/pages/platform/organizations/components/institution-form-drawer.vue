@@ -933,7 +933,7 @@ async function submitForm() {
   </a-modal>
 </template>
 
-<style scoped>
+<style scoped lang="less">
 .institution-modal__titlebar {
   display: flex;
   align-items: center;
@@ -1048,6 +1048,15 @@ async function submitForm() {
   }
 }
 
+:deep(.createStu-modal-content-box.institution-create-modal .ant-modal-header) {
+  padding: 10px 16px !important;
+  margin-bottom: 0;
+}
+
+:deep(.createStu-modal-content-box.institution-create-modal .ant-modal-body) {
+  padding: 0 !important;
+}
+
 @media (max-width: 992px) {
   .institution-content {
     padding: 20px 20px 0 !important;
@@ -1078,16 +1087,5 @@ async function submitForm() {
     flex-direction: column;
     align-items: flex-start;
   }
-}
-</style>
-
-<style>
-.createStu-modal-content-box .ant-modal-header {
-  padding: 10px 16px !important;
-  margin-bottom: 0;
-}
-
-.createStu-modal-content-box .ant-modal-body {
-  padding: 0 !important;
 }
 </style>

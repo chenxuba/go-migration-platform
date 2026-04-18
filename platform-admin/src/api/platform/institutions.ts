@@ -153,6 +153,22 @@ export interface InstitutionRenewalResult {
   expireEndTime?: string
 }
 
+export interface InstitutionPermissionDetail {
+  institutionId: number
+  organName: string
+  mobile?: string
+  openType: number
+  openDuration?: string
+  status: number
+  expireEndTime?: string
+  currentModuleId?: number
+  currentModuleName?: string
+  adminRoleId?: number
+  adminRoleName?: string
+  templateMenuIds?: number[]
+  effectiveMenuIds?: number[]
+}
+
 export function pageInstitutionsApi(params: InstitutionPageParams) {
   return useGet<InstitutionItem[], InstitutionPageParams>('/api/v1/platform/institutions', params) as Promise<
     ResponseBody<InstitutionItem[]> & { data?: InstitutionPagePayload }
@@ -193,6 +209,20 @@ export function getInstitutionRenewalRecordsApi(params: { institutionId: number 
 export function renewInstitutionApi(data: InstitutionRenewalMutationPayload) {
   return usePost<InstitutionRenewalResult, InstitutionRenewalMutationPayload>(
     '/api/v1/platform/institutions/renew',
+    data,
+  )
+}
+
+export function getInstitutionPermissionDetailApi(params: { institutionId: number }) {
+  return useGet<InstitutionPermissionDetail, { institutionId: number }>(
+    '/api/v1/platform/institutions/permission-detail',
+    params,
+  )
+}
+
+export function replaceInstitutionPermissionVersionApi(data: { institutionId: number, moduleId: number, menuIds?: number[] }) {
+  return usePost<boolean, { institutionId: number, moduleId: number, menuIds?: number[] }>(
+    '/api/v1/platform/institutions/permission-version',
     data,
   )
 }

@@ -105,12 +105,20 @@ func (svc *Service) GetModuleDetail(moduleID int64) (model.ModuleDetailVO, error
 	return svc.repo.GetModuleDetail(context.Background(), moduleID)
 }
 
+func (svc *Service) ListModuleMenuTree(moduleType int) ([]model.ModuleMenu, error) {
+	return svc.repo.ListModuleMenuTree(context.Background(), moduleType)
+}
+
 func (svc *Service) IncreaseModuleMenus(input model.ModulePermissionMutation) error {
 	return svc.repo.IncreaseModuleMenus(context.Background(), input)
 }
 
 func (svc *Service) DecreaseModuleMenus(input model.ModulePermissionMutation) error {
 	return svc.repo.DecreaseModuleMenus(context.Background(), input)
+}
+
+func (svc *Service) ReplaceModuleMenus(input model.ModulePermissionMutation) error {
+	return svc.repo.ReplaceModuleMenus(context.Background(), input)
 }
 
 func (svc *Service) CreateModule(input model.ModuleMutation) (int64, error) {
@@ -147,6 +155,14 @@ func (svc *Service) UpdateInstitution(input model.InstitutionMutation, updaterID
 
 func (svc *Service) UpdateInstitutionStatus(id int64, enabled bool, updaterID *int64) error {
 	return svc.repo.UpdateInstitutionStatus(context.Background(), id, enabled, updaterID)
+}
+
+func (svc *Service) GetInstitutionPermissionDetail(institutionID int64) (model.InstitutionPermissionDetail, error) {
+	return svc.repo.GetInstitutionPermissionDetail(context.Background(), institutionID)
+}
+
+func (svc *Service) ReplaceInstitutionModule(input model.InstitutionPermissionMutation, operatorID *int64) error {
+	return svc.repo.ReplaceInstitutionModule(context.Background(), input, operatorID)
 }
 
 func (svc *Service) ListInstitutionRenewalRecords(institutionID int64) ([]model.InstitutionRenewalRecord, error) {

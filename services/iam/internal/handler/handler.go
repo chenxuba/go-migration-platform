@@ -54,6 +54,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sso/isLogin", handler.isLogin)
 	mux.HandleFunc("/sso/logout", handler.logout)
 	mux.HandleFunc("/sso/menuList", handler.menuList)
+	mux.HandleFunc("/sso/menu/list", handler.menuTree)
 	mux.HandleFunc("/sso/roleList", handler.roleList)
 	mux.HandleFunc("/sso/role/saveRole", handler.saveRole)
 	mux.HandleFunc("/sso/role/updateRole", handler.updateRole)
