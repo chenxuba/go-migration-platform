@@ -101,6 +101,8 @@ var institutionMenuSeeds = []institutionMenuSeed{
 				Description: "公有池线索流转与设置权限。",
 				Authorities: []institutionMenuSeedAuthority{
 					{Name: "设置公有池", Code: "INST_AUTH_ENROLL_PUBLIC_POOL_SETTING", Sort: 10, Weight: 0, Remark: "支持开启关闭公有池并设置流转规则。"},
+					{Name: "批量认领", Code: "INST_AUTH_ENROLL_PUBLIC_POOL_CLAIM", Sort: 20, Weight: 0, Remark: "支持认领公有池内的线索。"},
+					{Name: "批量分配", Code: "INST_AUTH_ENROLL_PUBLIC_POOL_ASSIGN", Sort: 30, Weight: 0, Remark: "支持分配公有池内的线索。"},
 				},
 			},
 			{
@@ -110,6 +112,10 @@ var institutionMenuSeeds = []institutionMenuSeed{
 				Title:       "跟进记录",
 				Description: "跟进记录查看与处理权限。",
 				Authorities: []institutionMenuSeedAuthority{
+					{Name: "查看所有跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_ALL", Sort: 10, Weight: 10, GroupCode: "gp560001", Remark: "支持查看机构内全部跟进记录。"},
+					{Name: "仅查看我的跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_MY", Sort: 20, Weight: 0, GroupCode: "gp560001", Remark: "仅查看采单员、前台、电话销售、副销售员、销售员、班主任为自己的跟进记录。"},
+					{Name: "在PC端查看本部门及以下作为销售员的跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_DEPT", Sort: 30, Weight: 0, Remark: "可在PC端查看销售员为本部门及下级部门员工的跟进记录。"},
+					{Name: "编辑跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_EDIT", Sort: 40, Weight: 0, Remark: "支持新增、编辑跟进记录以及更新回访状态。"},
 					{Name: "导出跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_EXPORT", Sort: 60, Weight: 0, Remark: "支持导出跟进记录。"},
 				},
 			},
@@ -685,6 +691,16 @@ var institutionRouteAuthoritySeeds = []institutionRouteAuthoritySeed{
 			{Name: "导出意向学员", Code: "INST_AUTH_ENROLL_INTENTION_EXPORT", Sort: 90, Remark: "可在PC意向学员列表中导出学员数据。", MatchCodes: []string{"ExportProspectiveStudent"}},
 			{Name: "分配销售员", Code: "INST_AUTH_ENROLL_INTENTION_ASSIGN_SALES", Sort: 100, Remark: "支持批量分配和单独分配销售员。", MatchCodes: []string{"AssignSalespeople"}},
 			{Name: "批量转入公有池", Code: "INST_AUTH_ENROLL_INTENTION_TRANSFER_PUBLIC_POOL", Sort: 110, Remark: "支持将意向学员批量转入公有池。", MatchCodes: []string{"TransferPublicPool"}},
+		},
+	},
+	{
+		RouteCode: "INST_ROUTE_ENROLL_FOLLOW",
+		Authorities: []institutionRouteAuthority{
+			{Name: "查看所有跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_ALL", Sort: 10, Weight: 10, GroupCode: "gp560001", Remark: "支持查看机构内全部跟进记录。", MatchNames: []string{"查看所有跟进记录"}},
+			{Name: "仅查看我的跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_MY", Sort: 20, GroupCode: "gp560001", Remark: "仅查看采单员、前台、电话销售、副销售员、销售员、班主任为自己的跟进记录。", MatchNames: []string{"仅查看我的跟进记录"}},
+			{Name: "在PC端查看本部门及以下作为销售员的跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_DEPT", Sort: 30, Remark: "可在PC端查看销售员为本部门及下级部门员工的跟进记录。", MatchNames: []string{"在PC端查看本部门及以下作为销售员的跟进记录"}},
+			{Name: "编辑跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_EDIT", Sort: 40, Remark: "支持新增、编辑跟进记录以及更新回访状态。", MatchNames: []string{"编辑跟进记录"}},
+			{Name: "导出跟进记录", Code: "INST_AUTH_ENROLL_FOLLOW_EXPORT", Sort: 50, Remark: "支持导出跟进记录。", MatchNames: []string{"导出跟进记录"}},
 		},
 	},
 	{

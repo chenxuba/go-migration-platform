@@ -151,6 +151,19 @@ export const AccessEnum = {
   enroll_intention_export: action('INST_AUTH_ENROLL_INTENTION_EXPORT', '招生中心', '意向学员', '导出意向学员'),
   enroll_intention_assign_sales: action('INST_AUTH_ENROLL_INTENTION_ASSIGN_SALES', '招生中心', '意向学员', '分配销售员'),
   enroll_intention_transfer_public_pool: action('INST_AUTH_ENROLL_INTENTION_TRANSFER_PUBLIC_POOL', '招生中心', '意向学员', '批量转入公有池'),
+  enroll_public_pool_setting: action('INST_AUTH_ENROLL_PUBLIC_POOL_SETTING', '招生中心', '公有池', '设置公有池'),
+  enroll_public_pool_claim: action('INST_AUTH_ENROLL_PUBLIC_POOL_CLAIM', '招生中心', '公有池', '批量认领'),
+  enroll_public_pool_assign: action('INST_AUTH_ENROLL_PUBLIC_POOL_ASSIGN', '招生中心', '公有池', '批量分配'),
+
+  // 招生中心 / 跟进记录
+  enroll_follow_view_all: action('INST_AUTH_ENROLL_FOLLOW_ALL', '招生中心', '跟进记录', '查看所有跟进记录'),
+  enroll_follow_view_my: action('INST_AUTH_ENROLL_FOLLOW_MY', '招生中心', '跟进记录', '仅查看我的跟进记录'),
+  enroll_follow_view_dept: action('INST_AUTH_ENROLL_FOLLOW_DEPT', '招生中心', '跟进记录', '在PC端查看本部门及以下作为销售员的跟进记录'),
+  enroll_follow_edit: action('INST_AUTH_ENROLL_FOLLOW_EDIT', '招生中心', '跟进记录', '编辑跟进记录'),
+  enroll_follow_export: action('INST_AUTH_ENROLL_FOLLOW_EXPORT', '招生中心', '跟进记录', '导出跟进记录'),
+
+  // 业务设置 / 招生设置
+  setting_enroll_intention_input: action('INST_AUTH_BIZ_SETTING_ENROLL_INTENTION_INPUT', '业务设置', '招生设置', '意向学员录入设置'),
 
   // 敏感数据 / 导入导出可见范围
   sensitive_export_all: action('INST_AUTH_SENSITIVE_EXPORT_ALL', '敏感数据', '导入导出可见范围', '可查看所有导出记录'),

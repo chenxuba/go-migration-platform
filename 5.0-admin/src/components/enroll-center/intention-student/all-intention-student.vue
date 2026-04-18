@@ -33,6 +33,7 @@ const { hasAccess } = useAccess()
 
 const canManageIntentionStudent = computed(() => hasAccess(AccessEnum.enroll_intention_manage))
 const canEditIntentionFollowStatus = computed(() => hasAccess(AccessEnum.enroll_intention_follow_status))
+const canEditFollowRecord = computed(() => hasAccess(AccessEnum.enroll_follow_edit))
 const canImportIntentionStudent = computed(() => hasAccess(AccessEnum.enroll_intention_import))
 const canExportIntentionStudent = computed(() => hasAccess(AccessEnum.enroll_intention_export))
 const canViewIntentionExportRecords = computed(() => canExportIntentionStudent.value)
@@ -496,6 +497,9 @@ function handleAddStu() {
 }
 const openAddFollowUpModal = ref(false)
 function handleAddFollowUp(record) {
+  if (!canEditFollowRecord.value)
+    return
+
   selectStuInfo.value = record
   openAddFollowUpModal.value = true
 }
@@ -1770,7 +1774,7 @@ defineExpose({
             </template>
             <template v-else-if="column.key === 'action'">
               <a-space>
-                <a @click="handleAddFollowUp(record)">添加跟进</a>
+                <a v-if="canEditFollowRecord" @click="handleAddFollowUp(record)">添加跟进</a>
                 <a>试听</a>
                 <div style="cursor: pointer;">
                   <a-dropdown placement="bottomRight" :arrow="true">

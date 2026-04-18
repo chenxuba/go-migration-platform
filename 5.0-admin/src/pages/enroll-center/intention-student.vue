@@ -19,8 +19,10 @@ const { hasAccess } = useAccess()
 const canViewAllIntention = computed(() => hasAccess(AccessEnum.enroll_intention_view_all))
 const canViewMyIntention = computed(() => hasAccess(AccessEnum.enroll_intention_view_my))
 const canViewDeptIntention = computed(() => hasAccess(AccessEnum.enroll_intention_view_dept))
-const canUsePublicPool = computed(() =>
-  publicDataIsShow.value && hasAccess(AccessEnum.enroll_intention_transfer_public_pool),
+const canViewPublicPool = computed(() =>
+  hasAccess(AccessEnum.enroll_public_pool_setting)
+  || hasAccess(AccessEnum.enroll_public_pool_claim)
+  || hasAccess(AccessEnum.enroll_public_pool_assign),
 )
 const primaryIntentionTabKey = computed(() => {
   if (canViewAllIntention.value || canViewMyIntention.value)
@@ -74,7 +76,7 @@ watch(
   { immediate: true },
 )
 
-watch(canUsePublicPool, (visible) => {
+watch(canViewPublicPool, (visible) => {
   if (!visible && activeKey.value === '2')
     activeKey.value = '1'
 }, { immediate: true })
@@ -163,7 +165,7 @@ onMounted(async () => {
             <a-empty :image="simpleImage" description="暂无可查看的意向学员权限" />
           </div>
         </a-tab-pane>
-        <a-tab-pane v-if="canUsePublicPool" key="2" tab="公有池">
+        <a-tab-pane v-if="canViewPublicPool" key="2" tab="公有池">
           <public-pool ref="publicPoolRef" />
         </a-tab-pane>
         <a-tab-pane key="3" tab="渠道管理">

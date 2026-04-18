@@ -9,8 +9,13 @@ import emitter, { EVENTS } from '~@/utils/eventBus'
 import { FollowMethodLabel, ParentRelationshipLabel, StudentStatusLabel } from '@/enums'
 import { handleDateRangeParams } from '~@/utils/dateRangeParams'
 import { useUserStore } from '~@/stores/user'
+import { AccessEnum } from '@/constants/access'
+import { useAccess } from '@/composables/access'
 
 const dataSource = ref([])
+const { hasAccess } = useAccess()
+const canExportFollowRecord = computed(() => hasAccess(AccessEnum.enroll_follow_export))
+const canEditFollowRecord = computed(() => hasAccess(AccessEnum.enroll_follow_edit))
 const allColumns = ref([
   {
     title: '学员/性别',
@@ -408,6 +413,9 @@ function handleSeeStuData() {
 }
 
 const handleMarkAsVisited = debounce(async (item) => {
+  if (!canEditFollowRecord.value)
+    return
+
   try {
     loading.value = true
     const res = await updateVisitStatusApi({
@@ -429,6 +437,9 @@ const handleMarkAsVisited = debounce(async (item) => {
 })
 
 const handleMarkAsUnvisited = debounce(async (item) => {
+  if (!canEditFollowRecord.value)
+    return
+
   try {
     loading.value = true
     const res = await updateVisitStatusApi({
@@ -478,7 +489,7 @@ onUnmounted(() => {
           当前共{{ dataSource.length || 0 }}条跟进记录, 跟进学员 1 人，0 条已标记回访，1 条未回访
         </div>
         <div class="edit flex overflow-x-auto">
-          <a-button class="mr-2">
+          <a-button v-if="canExportFollowRecord" class="mr-2">
             导出数据
           </a-button>
           <!-- 自定义字段 -->
@@ -586,18 +597,21 @@ onUnmounted(() => {
             </template>
             <template v-else-if="column.key === 'action'">
               <span class="flex action">
-                <a-popconfirm
-                  v-if="isFollowUpNotVisited(record)" title="标记为已回访？"
-                  @confirm="handleMarkAsVisited(record)"
-                >
-                  <a>标记已回访</a>
-                </a-popconfirm>
-                <a-popconfirm
-                  v-else-if="isFollowUpVisited(record)" title="取消标记已回访？"
-                  @confirm="handleMarkAsUnvisited(record)"
-                >
-                  <a>取消回访</a>
-                </a-popconfirm>
+                <template v-if="canEditFollowRecord">
+                  <a-popconfirm
+                    v-if="isFollowUpNotVisited(record)" title="标记为已回访？"
+                    @confirm="handleMarkAsVisited(record)"
+                  >
+                    <a>标记已回访</a>
+                  </a-popconfirm>
+                  <a-popconfirm
+                    v-else-if="isFollowUpVisited(record)" title="取消标记已回访？"
+                    @confirm="handleMarkAsUnvisited(record)"
+                  >
+                    <a>取消回访</a>
+                  </a-popconfirm>
+                  <span v-else>-</span>
+                </template>
                 <span v-else>-</span>
               </span>
             </template>

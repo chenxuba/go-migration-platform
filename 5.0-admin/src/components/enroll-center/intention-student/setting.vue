@@ -3,6 +3,8 @@ import { ExclamationCircleFilled, FormOutlined, RightOutlined } from '@ant-desig
 import { computed, onMounted, ref } from 'vue'
 import { setInstConfigApi } from '~@/api/common/config'
 import { useUserStore } from '~@/stores/user'
+import { AccessEnum } from '@/constants/access'
+import { useAccess } from '@/composables/access'
 
 const emit = defineEmits(['diaplayPublicData'])
 const openModel = ref(false)
@@ -15,7 +17,10 @@ const tempUnfollowedTime = ref(1)
 
 // Get the user store
 const userStore = useUserStore()
+const { hasAccess } = useAccess()
 const instConfig = ref({})
+const canEditIntentionInput = computed(() => hasAccess(AccessEnum.setting_enroll_intention_input))
+const canEditPublicPoolSetting = computed(() => hasAccess(AccessEnum.enroll_public_pool_setting))
 
 function changeSwitch(e) {
   emit('diaplayPublicData', e)
@@ -51,6 +56,9 @@ async function updateConfig(loadingRef, configUpdates = null) {
 }
 
 async function handleSetConfig(e) {
+  if (!canEditIntentionInput.value)
+    return
+
   // Determine which setting was changed and set its loading state
   let loadingRef = null
   const name = e.target?.name
@@ -72,6 +80,9 @@ async function handleSetConfig(e) {
 }
 
 async function handleSetPublicConfig(e) {
+  if (!canEditPublicPoolSetting.value)
+    return
+
   if (!instConfig.value.enablePublicPool) {
     openModel.value = true
     tempUnfollowedTime.value = 1
@@ -87,11 +98,17 @@ async function handleSetPublicConfig(e) {
 }
 
 function handleSetting() {
+  if (!canEditPublicPoolSetting.value)
+    return
+
   openModel.value = true
   tempUnfollowedTime.value = instConfig.value.unfollowedTime || 1
 }
 
 async function handleOkModal() {
+  if (!canEditPublicPoolSetting.value)
+    return
+
   const success = await updateConfig(enablePublicPoolLoading, {
     enablePublicPool: true,
     unfollowedTime: tempUnfollowedTime.value,
@@ -150,7 +167,7 @@ onMounted(async () => {
               <td>
                 <a-radio-group
                   v-model:value="instConfig.addIntentionStudentRule" class="custom-radio"
-                  name="radioGroup1" @change="handleSetConfig"
+                  name="radioGroup1" :disabled="!canEditIntentionInput" @change="handleSetConfig"
                 >
                   <a-spin :spinning="intentionLoading">
                     <a-space class="flex flex-wrap">
@@ -173,6 +190,7 @@ onMounted(async () => {
                 <a-spin :spinning="intentionWxLoading" style="width: 200px;">
                   <a-checkbox
                     v-model:checked="instConfig.limitSameWeChat" name="intentionWx"
+                    :disabled="!canEditIntentionInput"
                     @change="handleSetConfig"
                   >
                     限制录入微信号相同的学员
@@ -187,7 +205,7 @@ onMounted(async () => {
               <td>
                 <a-radio-group
                   v-model:value="instConfig.addImportStudentRule" class="custom-radio"
-                  name="radioGroup2" @change="handleSetConfig"
+                  name="radioGroup2" :disabled="!canEditIntentionInput" @change="handleSetConfig"
                 >
                   <a-spin :spinning="importLoading">
                     <a-space class="flex flex-wrap">
@@ -210,6 +228,7 @@ onMounted(async () => {
                 <a-spin :spinning="importWxLoading" style="width: 200px;">
                   <a-checkbox
                     v-model:checked="instConfig.limitImportSameWeChat" name="importWx"
+                    :disabled="!canEditIntentionInput"
                     @change="handleSetConfig"
                   >
                     限制录入微信号相同的学员
@@ -251,7 +270,7 @@ onMounted(async () => {
                     <span class="flex flex-start justify-start text-#666">
                       <a-switch
                         class="mr-2" :checked="instConfig.enablePublicPool" checked-children="开"
-                        un-checked-children="关" @click="handleSetPublicConfig"
+                        un-checked-children="关" :disabled="!canEditPublicPoolSetting" @click="handleSetPublicConfig"
                       />
                       开启后，系统会自动将没有销售员的意向学员汇总到公有池，方便管理和再次分配</span>
                   </div>
@@ -259,7 +278,7 @@ onMounted(async () => {
                     未跟进时间超过 <span class="day">{{
                       instConfig.unfollowedTime }}</span>
                     天的意向学员将自动进入公有池
-                    <FormOutlined class="icon" @click="handleSetting" />
+                    <FormOutlined v-if="canEditPublicPoolSetting" class="icon" @click="handleSetting" />
                   </div>
                 </a-spin>
               </td>
@@ -270,12 +289,19 @@ onMounted(async () => {
     </div>
   </div>
   <!-- 未跟进天数进公有池设置model -->
-  <a-modal v-model:open="openModel" centered title="未跟进天数设置" width="437px" @ok="handleOkModal">
+  <a-modal
+    v-model:open="openModel"
+    centered
+    title="未跟进天数设置"
+    width="437px"
+    :ok-button-props="{ disabled: !canEditPublicPoolSetting, loading: enablePublicPoolLoading }"
+    @ok="handleOkModal"
+  >
     <div class="setting-wrap">
       <div class="settingPoolCont flex flex-center justify-start">
         未跟进<a-input-number
           v-model:value="tempUnfollowedTime"
-          class="w-34 ml-2 mr-2" :min="1"
+          class="w-34 ml-2 mr-2" :min="1" :disabled="!canEditPublicPoolSetting"
         /> 天
       </div>
       <div class="setting-tip mt-3 text-#888">

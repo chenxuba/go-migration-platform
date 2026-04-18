@@ -44,7 +44,7 @@ var VisibleRouteCatalog = []RouteCatalogGroup{
 		Children: []RouteCatalogChild{
 			{Name: "招生自测", Code: "INST_ROUTE_ENROLL_SELF_TEST", Sort: 10, Introduce: "招生自测。", MatchNames: []string{"招生自测"}, UseDirectChildren: false},
 			{Name: "超级裂变", Code: "INST_ROUTE_ENROLL_CAMPAIGN", Sort: 20, Introduce: "超级裂变。", MatchNames: []string{"超级裂变", "招生宝"}, AggregateNodeNames: []string{"招生表单"}, UseDirectChildren: true},
-			{Name: "意向学员", Code: "INST_ROUTE_ENROLL_INTENTION", Sort: 30, Introduce: "意向学员。", MatchNames: []string{"意向学员"}, UseDirectChildren: true},
+			{Name: "意向学员", Code: "INST_ROUTE_ENROLL_INTENTION", Sort: 30, Introduce: "意向学员。", MatchNames: []string{"意向学员"}, AggregateNodeNames: []string{"公有池"}, UseDirectChildren: true},
 			{Name: "跟进记录", Code: "INST_ROUTE_ENROLL_FOLLOW", Sort: 40, Introduce: "跟进记录。", MatchNames: []string{"跟进记录"}, UseDirectChildren: true},
 			{Name: "试听管理", Code: "INST_ROUTE_ENROLL_TRIAL", Sort: 50, Introduce: "试听管理。", MatchNames: []string{"试听管理", "试听记录"}, UseDirectChildren: true},
 		},

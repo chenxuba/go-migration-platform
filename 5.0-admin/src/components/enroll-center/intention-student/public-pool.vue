@@ -14,8 +14,14 @@ import { FollowUpStatus, FollowUpStatusLabel, FollowUpStatusStyle, IntentionLeve
 import DeleteConfirmModal from '@/components/common/DeleteConfirmModal.vue'
 import { handleDateRangeParams } from '~@/utils/dateRangeParams'
 import { useUserStore } from '~@/stores/user'
+import { AccessEnum } from '@/constants/access'
+import { useAccess } from '@/composables/access'
 
 const userStore = useUserStore()
+const { hasAccess } = useAccess()
+const canPublicPoolAssign = computed(() => hasAccess(AccessEnum.enroll_public_pool_assign))
+const canPublicPoolClaim = computed(() => hasAccess(AccessEnum.enroll_public_pool_claim))
+const canOperatePublicPool = computed(() => canPublicPoolAssign.value || canPublicPoolClaim.value)
 
 const displayArray = ref(['customSearch', 'stuPhoneSearch', 'intention', 'intentionCourse',
   'lastFollowTime', 'nextFollowTime', 'createTime', 'age'])
@@ -231,6 +237,9 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
 
 // 批量分配销售
 function handleBatchAssign() {
+  if (!canPublicPoolAssign.value)
+    return
+
   const allSelectedRowsArray = Array.from(allSelectedRows.value.values())
   
   if (allSelectedRowsArray.length === 0) {
@@ -248,6 +257,9 @@ function handleBatchAssign() {
 
 // 批量认领
 function handleBatchClaim() {
+  if (!canPublicPoolClaim.value)
+    return
+
   const allSelectedRowsArray = Array.from(allSelectedRows.value.values())
   
   if (allSelectedRowsArray.length === 0) {
@@ -285,53 +297,52 @@ function handleBatchClaim() {
   })
 }
 
-const rowSelection = {
-  selectedRowKeys: selectedRowKeys,
-  onChange: (keys, rows) => {
-    // 更新当前页的选中状态
-    selectedRowKeys.value = keys
-    selectedRows.value = rows
+const rowSelection = computed(() => {
+  if (!canOperatePublicPool.value)
+    return undefined
 
-    // 跨页选择逻辑：更新全局选中状态
-    // 1. 先从全局状态中移除当前页面的所有数据
-    dataSource.value.forEach(item => {
-      allSelectedRows.value.delete(item.id)
-      allSelectedRowKeys.value.delete(item.id)
-    })
+  return {
+    selectedRowKeys: selectedRowKeys.value,
+    onChange: (keys, rows) => {
+      selectedRowKeys.value = keys
+      selectedRows.value = rows
 
-    // 2. 将当前页面选中的数据添加到全局状态
-    rows.forEach(row => {
-      allSelectedRows.value.set(row.id, row)
-      allSelectedRowKeys.value.add(row.id)
-    })
-  },
-  onSelect: (record, selected, selectedRows, nativeEvent) => {
-    // 单行选择时的处理
-    if (selected) {
-      allSelectedRows.value.set(record.id, record)
-      allSelectedRowKeys.value.add(record.id)
-    } else {
-      allSelectedRows.value.delete(record.id)
-      allSelectedRowKeys.value.delete(record.id)
-    }
-  },
-  onSelectAll: (selected, selectedRows, changeRows) => {
-    // 全选/取消全选时的处理
-    if (selected) {
-      // 全选当前页
-      changeRows.forEach(row => {
+      dataSource.value.forEach((item) => {
+        allSelectedRows.value.delete(item.id)
+        allSelectedRowKeys.value.delete(item.id)
+      })
+
+      rows.forEach((row) => {
         allSelectedRows.value.set(row.id, row)
         allSelectedRowKeys.value.add(row.id)
       })
-    } else {
-      // 取消全选当前页
-      changeRows.forEach(row => {
-        allSelectedRows.value.delete(row.id)
-        allSelectedRowKeys.value.delete(row.id)
-      })
-    }
+    },
+    onSelect: (record, selected) => {
+      if (selected) {
+        allSelectedRows.value.set(record.id, record)
+        allSelectedRowKeys.value.add(record.id)
+      }
+      else {
+        allSelectedRows.value.delete(record.id)
+        allSelectedRowKeys.value.delete(record.id)
+      }
+    },
+    onSelectAll: (selected, _selectedRows, changeRows) => {
+      if (selected) {
+        changeRows.forEach((row) => {
+          allSelectedRows.value.set(row.id, row)
+          allSelectedRowKeys.value.add(row.id)
+        })
+      }
+      else {
+        changeRows.forEach((row) => {
+          allSelectedRows.value.delete(row.id)
+          allSelectedRowKeys.value.delete(row.id)
+        })
+      }
+    },
   }
-}
+})
 const loading = ref(false)
 const assignSalesRef = ref(null)
 
@@ -716,10 +727,10 @@ defineExpose({
           </span>
         </div>
         <div class="edit flex overflow-x-auto">
-          <a-button type="primary" class="mr-2" @click="handleBatchAssign">
+          <a-button v-if="canPublicPoolAssign" type="primary" class="mr-2" @click="handleBatchAssign">
             批量分配
           </a-button>
-          <a-button class="mr-2" @click="handleBatchClaim">
+          <a-button v-if="canPublicPoolClaim" class="mr-2" @click="handleBatchClaim">
             批量认领
           </a-button>
           <!-- 自定义字段 -->

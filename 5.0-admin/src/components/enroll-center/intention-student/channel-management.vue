@@ -3,8 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { debounce } from 'lodash-es'
 import messageService from '~@/utils/messageService'
 import { adjustChannelApi, createChannelApi, getChannelCategoryListApi, getChannelPCPageApi, updateChannelApi, updateChannelStatusApi } from '~@/api/enroll-center/intention-student'
+import { AccessEnum } from '@/constants/access'
+import { useAccess } from '@/composables/access'
 
 const allFilterRef = ref(null)
+const { hasAccess } = useAccess()
+const canEditChannel = computed(() => hasAccess(AccessEnum.enroll_intention_channel_edit))
 const dataSource = ref([])
 const queryParams = ref({
   pageNo: 1,
@@ -78,19 +82,21 @@ const allColumns = ref([
 ])
 const selectedRowsData = ref([])
 const selectedRowsKeys = ref([])
-const rowSelection = computed(() => ({
-  selectedRowKeys: selectedRowsKeys.value,
-  onChange: (selectedRowKeys, selectedRows) => {
-    // console.log(`selectedRowKeys: ${selectedRowKeys}`, 'selectedRows: ', selectedRows);
-    selectedRowsKeys.value = selectedRowKeys
-    selectedRowsData.value = selectedRows
-    // const rawData = selectedRows.map(row => toRaw(row))
-    // console.log('原始数组数据:', rawData);
-  },
-  getCheckboxProps: record => ({
-    disabled: record.isDefault, // Column configuration not to be checked
-  }),
-}))
+const rowSelection = computed(() => {
+  if (!canEditChannel.value)
+    return undefined
+
+  return {
+    selectedRowKeys: selectedRowsKeys.value,
+    onChange: (selectedRowKeys, selectedRows) => {
+      selectedRowsKeys.value = selectedRowKeys
+      selectedRowsData.value = selectedRows
+    },
+    getCheckboxProps: record => ({
+      disabled: record.isDefault,
+    }),
+  }
+})
 // 动态计算横向滚动宽度
 const totalWidth = computed(() => {
   return allColumns.value.reduce((acc, column) => acc + (column.width || 0), 0)
@@ -99,15 +105,24 @@ const totalWidth = computed(() => {
 const displayArray = ref(['channelCategoryType', 'channelStatus', 'channelType'])
 const openModal = ref(false)
 function createChannel() {
+  if (!canEditChannel.value)
+    return
+
   modalType.value = 'create'
   openModal.value = true
 }
 const categoryManagementModal = ref(false)
 const batchAdjustChannelModal = ref(false)
 function categoryManagement() {
+  if (!canEditChannel.value)
+    return
+
   categoryManagementModal.value = true
 }
 function batchAdjustChannel() {
+  if (!canEditChannel.value)
+    return
+
   if (selectedRowsKeys.value.length === 0) {
     messageService.error(`请选择要调整的渠道`)
     return
@@ -165,6 +180,9 @@ async function getData(id, type) {
 }
 const getChannelList = getData
 const handleDisableChannel = debounce(async (record) => {
+  if (!canEditChannel.value)
+    return
+
   try {
     const res = await updateChannelStatusApi({
       id: record.id,
@@ -182,6 +200,9 @@ const handleDisableChannel = debounce(async (record) => {
   }
 }, 300, { leading: true, trailing: false })
 const handleEnableChannel = debounce(async (record) => {
+  if (!canEditChannel.value)
+    return
+
   try {
     const res = await updateChannelStatusApi({
       id: record.id,
@@ -222,6 +243,9 @@ onMounted(() => {
 })
 // 创建渠道
 async function createChannelFun(formState) {
+  if (!canEditChannel.value)
+    return
+
   if (modalType.value === 'create') {
     try {
       if (formState.isClassification == '1') {
@@ -259,6 +283,9 @@ const modalType = ref('create')
 const data = ref({})
 // 编辑渠道
 function editChannel(record) {
+  if (!canEditChannel.value)
+    return
+
   if (record.categoryId == 0) {
     record.categoryId = undefined
   }
@@ -315,6 +342,9 @@ async function getChannelCategoryList() {
 }
 // 确认调整
 async function adjustChannel(categoryId) {
+  if (!canEditChannel.value)
+    return
+
   // console.log('categoryId: ', categoryId);
   try {
     // 调用接口
@@ -338,6 +368,9 @@ async function adjustChannel(categoryId) {
 }
 const propCategoryId = ref(0)
 function handleAdjustChannel(record) {
+  if (!canEditChannel.value)
+    return
+
   // console.log('record: ', record);
   // 打开批量调整渠道弹窗
   batchAdjustChannelModal.value = true
@@ -361,13 +394,13 @@ function handleAdjustChannel(record) {
           共{{ pagination.total }}个渠道
         </div>
         <div class="edit flex">
-          <a-button type="primary" class="mr-2" @click="createChannel">
+          <a-button v-if="canEditChannel" type="primary" class="mr-2" @click="createChannel">
             创建渠道
           </a-button>
-          <a-button class="mr-2" @click="categoryManagement">
+          <a-button v-if="canEditChannel" class="mr-2" @click="categoryManagement">
             分类管理
           </a-button>
-          <a-button class="mr-2" @click="batchAdjustChannel">
+          <a-button v-if="canEditChannel" class="mr-2" @click="batchAdjustChannel">
             批量调整渠道
           </a-button>
         </div>
@@ -412,7 +445,10 @@ function handleAdjustChannel(record) {
               <span v-if="record.remark"> {{ record.remark }}</span>
               <span v-if="!record.remark">-</span>
             </template>
-            <template v-if="column.key === 'action' && !record.isDefault">
+            <template v-if="column.key === 'action' && !canEditChannel">
+              <span>-</span>
+            </template>
+            <template v-else-if="column.key === 'action' && !record.isDefault">
               <a-space :size="15">
                 <a @click="editChannel(record)">编辑</a>
                 <a @click="handleAdjustChannel(record)">调整</a>
@@ -420,7 +456,7 @@ function handleAdjustChannel(record) {
                 <a v-if="record.isDisabled" @click="handleEnableChannel(record)">启用</a>
               </a-space>
             </template>
-            <template v-if="column.key === 'action' && record.isDefault">
+            <template v-else-if="column.key === 'action' && record.isDefault">
               <div class="text-#bbb text-14px cursor-not-allowed">
                 系统默认，不支持操作
               </div>
