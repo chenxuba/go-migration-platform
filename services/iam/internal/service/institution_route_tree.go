@@ -81,12 +81,7 @@ func buildVisibleInstitutionMenuTree(menus []model.Menu) []model.MenuTreeNode {
 			}
 
 			for _, leafName := range child.AggregateLeafNames {
-				for _, item := range nameIndex[strings.TrimSpace(leafName)] {
-					if item.PID == 0 {
-						continue
-					}
-					leafMap[item.ID] = item
-				}
+				appendAggregateLeavesByName(leafMap, nameIndex, childrenByPID, byID, groupMenu.ID, childMenu.ID, leafName)
 			}
 
 			leafItems := make([]model.Menu, 0, len(leafMap))
@@ -134,6 +129,36 @@ func matchVisibleMenuNode(parentID int64, code string, names []string, codeIndex
 	}
 
 	return model.Menu{}, false
+}
+
+func appendAggregateLeavesByName(target map[int64]model.Menu, nameIndex map[string][]model.Menu, childrenByPID map[int64][]model.Menu, byID map[int64]model.Menu, ancestorID, excludeID int64, leafName string) {
+	for _, item := range nameIndex[strings.TrimSpace(leafName)] {
+		if item.ID == excludeID || item.PID == 0 {
+			continue
+		}
+		if len(childrenByPID[item.ID]) > 0 {
+			continue
+		}
+		if !isMenuDescendantOf(item.ID, ancestorID, byID) {
+			continue
+		}
+		target[item.ID] = item
+	}
+}
+
+func isMenuDescendantOf(id, ancestorID int64, byID map[int64]model.Menu) bool {
+	currentID := id
+	for currentID > 0 {
+		item, ok := byID[currentID]
+		if !ok {
+			return false
+		}
+		if item.PID == ancestorID {
+			return true
+		}
+		currentID = item.PID
+	}
+	return false
 }
 
 func appendDirectChildren(target map[int64]model.Menu, items []model.Menu) {

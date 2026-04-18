@@ -1,14 +1,14 @@
 package institutionmenu
 
 type RouteCatalogGroup struct {
-	Name         string
-	Code         string
-	Path         string
-	Sort         int
-	Introduce    string
-	MatchNames   []string
-	Children     []RouteCatalogChild
-	UseAsLeaf    bool
+	Name       string
+	Code       string
+	Path       string
+	Sort       int
+	Introduce  string
+	MatchNames []string
+	Children   []RouteCatalogChild
+	UseAsLeaf  bool
 }
 
 type RouteCatalogChild struct {
@@ -25,15 +25,6 @@ type RouteCatalogChild struct {
 }
 
 var VisibleRouteCatalog = []RouteCatalogGroup{
-	{
-		Name:       "首页",
-		Code:       "INST_ROUTE_HOME",
-		Path:       "/dashboard",
-		Sort:       10,
-		Introduce:  "机构首页。",
-		MatchNames: []string{"首页"},
-		UseAsLeaf:  true,
-	},
 	{
 		Name:       "品牌中心",
 		Code:       "INST_GROUP_BRAND",

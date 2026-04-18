@@ -14,10 +14,12 @@ func buildVisibleInstitutionModuleTree(items []rawMenu, selected map[int64]struc
 		return nil
 	}
 
+	byID := make(map[int64]rawMenu, len(items))
 	childrenByPID := make(map[int64][]rawMenu, len(items))
 	codeIndex := make(map[string][]rawMenu)
 	nameIndex := make(map[string][]rawMenu)
 	for _, item := range items {
+		byID[item.ID] = item
 		childrenByPID[item.PID] = append(childrenByPID[item.PID], item)
 
 		code := strings.TrimSpace(item.Code)
@@ -91,12 +93,7 @@ func buildVisibleInstitutionModuleTree(items []rawMenu, selected map[int64]struc
 			}
 
 			for _, leafName := range child.AggregateLeafNames {
-				for _, item := range nameIndex[strings.TrimSpace(leafName)] {
-					if item.PID == 0 {
-						continue
-					}
-					leafMap[item.ID] = item
-				}
+				appendAggregateRawLeavesByName(leafMap, nameIndex, childrenByPID, byID, groupMenu.ID, childMenu.ID, leafName)
 			}
 
 			leafItems := make([]rawMenu, 0, len(leafMap))
@@ -171,6 +168,36 @@ func matchVisibleRawMenu(parentID int64, code string, names []string, codeIndex 
 	}
 
 	return rawMenu{}, false
+}
+
+func appendAggregateRawLeavesByName(target map[int64]rawMenu, nameIndex map[string][]rawMenu, childrenByPID map[int64][]rawMenu, byID map[int64]rawMenu, ancestorID, excludeID int64, leafName string) {
+	for _, item := range nameIndex[strings.TrimSpace(leafName)] {
+		if item.ID == excludeID || item.PID == 0 {
+			continue
+		}
+		if len(childrenByPID[item.ID]) > 0 {
+			continue
+		}
+		if !isRawMenuDescendantOf(item.ID, ancestorID, byID) {
+			continue
+		}
+		target[item.ID] = item
+	}
+}
+
+func isRawMenuDescendantOf(id, ancestorID int64, byID map[int64]rawMenu) bool {
+	currentID := id
+	for currentID > 0 {
+		item, ok := byID[currentID]
+		if !ok {
+			return false
+		}
+		if item.PID == ancestorID {
+			return true
+		}
+		currentID = item.PID
+	}
+	return false
 }
 
 func appendDirectRawChildren(target map[int64]rawMenu, items []rawMenu) {

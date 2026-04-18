@@ -708,10 +708,22 @@ func (repo *Repository) ensureInstitutionMenuCatalog(ctx context.Context) error 
 		}
 	}
 
-	return repo.ensureVisibleInstitutionRouteCatalog(ctx)
+	if err := repo.ensureVisibleInstitutionRouteCatalog(ctx); err != nil {
+		return err
+	}
+
+	if err := repo.syncInstitutionPermissionDisplayText(ctx); err != nil {
+		return err
+	}
+
+	return repo.normalizeInstitutionMenuAliases(ctx)
 }
 
 func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context) error {
+	if err := repo.removeDeprecatedInstitutionMenus(ctx); err != nil {
+		return err
+	}
+
 	routeMenuIDs := make([]int64, 0, 64)
 	for _, group := range institutionmenu.VisibleRouteCatalog {
 		groupID, err := repo.upsertInstitutionMenuNode(ctx, institutionMenuNodeSpec{
@@ -760,6 +772,131 @@ func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context
 	return repo.ensureInstitutionAdminRoleMenus(ctx, routeMenuIDs)
 }
 
+func (repo *Repository) removeDeprecatedInstitutionMenus(ctx context.Context) error {
+	rootIDs, err := repo.findDeprecatedInstitutionMenuRootIDs(ctx)
+	if err != nil {
+		return err
+	}
+	if len(rootIDs) == 0 {
+		return nil
+	}
+
+	menuIDs, err := repo.collectInstitutionMenuDescendantIDs(ctx, rootIDs)
+	if err != nil {
+		return err
+	}
+	if len(menuIDs) == 0 {
+		return nil
+	}
+
+	args := make([]any, 0, len(menuIDs))
+	placeholders := make([]string, 0, len(menuIDs))
+	for _, id := range menuIDs {
+		args = append(args, id)
+		placeholders = append(placeholders, "?")
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM sys_module_menu
+		WHERE menu_id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...); err != nil {
+		return err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM sso_role_menu
+		WHERE menu_id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...); err != nil {
+		return err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM sso_menu
+		WHERE id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (repo *Repository) findDeprecatedInstitutionMenuRootIDs(ctx context.Context) ([]int64, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id
+		FROM sso_menu
+		WHERE del_flag = 0
+		  AND own_type = 2
+		  AND (
+			menu_code = 'INST_ROUTE_HOME'
+			OR (IFNULL(pid, 0) = 0 AND TRIM(IFNULL(menu_name, '')) = '首页')
+		  )
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return readAllMenuIDs(rows)
+}
+
+func (repo *Repository) collectInstitutionMenuDescendantIDs(ctx context.Context, rootIDs []int64) ([]int64, error) {
+	seen := make(map[int64]struct{}, len(rootIDs))
+	queue := make([]int64, 0, len(rootIDs))
+	for _, id := range rootIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		queue = append(queue, id)
+	}
+
+	for len(queue) > 0 {
+		levelIDs := append([]int64(nil), queue...)
+		queue = queue[:0]
+
+		args := make([]any, 0, len(levelIDs))
+		placeholders := make([]string, 0, len(levelIDs))
+		for _, id := range levelIDs {
+			args = append(args, id)
+			placeholders = append(placeholders, "?")
+		}
+
+		rows, err := repo.db.QueryContext(ctx, `
+			SELECT id
+			FROM sso_menu
+			WHERE del_flag = 0
+			  AND own_type = 2
+			  AND pid IN (`+strings.Join(placeholders, ",")+`)
+		`, args...)
+		if err != nil {
+			return nil, err
+		}
+
+		childIDs, err := readAllMenuIDs(rows)
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, childID := range childIDs {
+			if _, exists := seen[childID]; exists {
+				continue
+			}
+			seen[childID] = struct{}{}
+			queue = append(queue, childID)
+		}
+	}
+
+	result := make([]int64, 0, len(seen))
+	for id := range seen {
+		result = append(result, id)
+	}
+	return result, nil
+}
+
 func (repo *Repository) ensureInstitutionAdminRoleMenus(ctx context.Context, menuIDs []int64) error {
 	if len(menuIDs) == 0 {
 		return nil
@@ -802,6 +939,244 @@ func (repo *Repository) ensureInstitutionAdminRoleMenus(ctx context.Context, men
 				return err
 			}
 		}
+	}
+
+	return nil
+}
+
+type institutionMenuCopyPatch struct {
+	Code      string
+	Name      string
+	Introduce string
+	Remark    string
+}
+
+var institutionMenuCopyPatches = []institutionMenuCopyPatch{
+	{
+		Code:      "Onlyviewmyschedule",
+		Name:      "仅查看我的课表",
+		Introduce: "仅可查看上课教师/上课助教为自己的课表",
+		Remark:    "仅可查看上课教师/上课助教为自己的课表",
+	},
+	{
+		Code:      "Viewallclassroomreviews",
+		Name:      "查看所有康复记录",
+		Introduce: "支持查看所有员工的康复记录和康复记录明细",
+		Remark:    "支持查看所有员工的康复记录和康复记录明细",
+	},
+	{
+		Code:      "INST_AUTH_HOME_CLASS_REVIEW_MY",
+		Name:      "查看分配给我的康复记录",
+		Introduce: "查看上课教师、上课助教、班主任为自己的康复记录和康复记录明细",
+		Remark:    "查看上课教师、上课助教、班主任为自己的康复记录和康复记录明细",
+	},
+	{
+		Code:      "INST_AUTH_HOME_CLASS_REVIEW_WRITE",
+		Name:      "写康复记录",
+		Introduce: "可以写康复记录并编辑康复记录",
+		Remark:    "可以写康复记录并编辑康复记录",
+	},
+	{
+		Code:      "INST_AUTH_HOME_CLASS_REVIEW_FEEDBACK",
+		Name:      "课评反馈查看",
+		Introduce: "可在康复记录和康复记录明细中查看课评反馈",
+		Remark:    "可在康复记录和康复记录明细中查看课评反馈",
+	},
+}
+
+func (repo *Repository) syncInstitutionPermissionDisplayText(ctx context.Context) error {
+	for _, patch := range institutionMenuCopyPatches {
+		if strings.TrimSpace(patch.Code) == "" {
+			continue
+		}
+
+		if _, err := repo.db.ExecContext(ctx, `
+			UPDATE sso_menu
+			SET menu_name = ?,
+			    introduce = ?,
+			    remark = ?,
+			    update_id = 'system',
+			    update_time = NOW()
+			WHERE del_flag = 0
+			  AND own_type = 2
+			  AND menu_code = ?
+		`, patch.Name, patch.Introduce, patch.Remark, patch.Code); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+type institutionMenuAliasSpec struct {
+	CanonicalCode string
+	AliasCodes    []string
+}
+
+var institutionMenuAliasSpecs = []institutionMenuAliasSpec{
+	{
+		CanonicalCode: "INST_AUTH_ORG_MANAGE_ROLE_MANAGE",
+		AliasCodes:    []string{"RoleManagement", "Roles"},
+	},
+}
+
+func (repo *Repository) normalizeInstitutionMenuAliases(ctx context.Context) error {
+	for _, spec := range institutionMenuAliasSpecs {
+		canonicalID, err := repo.findMenuIDByCode(ctx, spec.CanonicalCode)
+		if err != nil {
+			return err
+		}
+		if canonicalID <= 0 {
+			continue
+		}
+
+		aliasIDs, err := repo.findMenuIDsByCodes(ctx, spec.AliasCodes)
+		if err != nil {
+			return err
+		}
+		if len(aliasIDs) == 0 {
+			continue
+		}
+
+		filteredAliasIDs := make([]int64, 0, len(aliasIDs))
+		for _, aliasID := range aliasIDs {
+			if aliasID > 0 && aliasID != canonicalID {
+				filteredAliasIDs = append(filteredAliasIDs, aliasID)
+			}
+		}
+		if len(filteredAliasIDs) == 0 {
+			continue
+		}
+
+		if err := repo.mergeInstitutionMenuRelations(ctx, canonicalID, filteredAliasIDs); err != nil {
+			return err
+		}
+		if err := repo.deleteInstitutionMenusByIDs(ctx, filteredAliasIDs); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (repo *Repository) findMenuIDsByCodes(ctx context.Context, codes []string) ([]int64, error) {
+	filteredCodes := make([]string, 0, len(codes))
+	for _, code := range codes {
+		code = strings.TrimSpace(code)
+		if code != "" {
+			filteredCodes = append(filteredCodes, code)
+		}
+	}
+	if len(filteredCodes) == 0 {
+		return nil, nil
+	}
+
+	args := make([]any, 0, len(filteredCodes))
+	placeholders := make([]string, 0, len(filteredCodes))
+	for _, code := range filteredCodes {
+		args = append(args, code)
+		placeholders = append(placeholders, "?")
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id
+		FROM sso_menu
+		WHERE del_flag = 0
+		  AND own_type = 2
+		  AND menu_code IN (`+strings.Join(placeholders, ",")+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return readAllMenuIDs(rows)
+}
+
+func (repo *Repository) mergeInstitutionMenuRelations(ctx context.Context, canonicalID int64, aliasIDs []int64) error {
+	args := make([]any, 0, len(aliasIDs)+2)
+	placeholders := make([]string, 0, len(aliasIDs))
+	for _, aliasID := range aliasIDs {
+		args = append(args, aliasID)
+		placeholders = append(placeholders, "?")
+	}
+
+	roleArgs := append([]any{canonicalID}, args...)
+	roleArgs = append(roleArgs, canonicalID)
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO sso_role_menu (role_id, menu_id)
+		SELECT DISTINCT rm.role_id, ?
+		FROM sso_role_menu rm
+		WHERE rm.menu_id IN (`+strings.Join(placeholders, ",")+`)
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM sso_role_menu existing
+			WHERE existing.role_id = rm.role_id
+			  AND existing.menu_id = ?
+		  )
+	`, roleArgs...); err != nil {
+		return err
+	}
+
+	moduleArgs := append([]any{canonicalID}, args...)
+	moduleArgs = append(moduleArgs, canonicalID)
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO sys_module_menu (module_id, menu_id, create_time, del_flag, version)
+		SELECT DISTINCT smm.module_id, ?, NOW(), 0, 0
+		FROM sys_module_menu smm
+		WHERE smm.menu_id IN (`+strings.Join(placeholders, ",")+`)
+		  AND IFNULL(smm.del_flag, 0) = 0
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM sys_module_menu existing
+			WHERE existing.module_id = smm.module_id
+			  AND existing.menu_id = ?
+			  AND IFNULL(existing.del_flag, 0) = 0
+		  )
+	`, moduleArgs...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (repo *Repository) deleteInstitutionMenusByIDs(ctx context.Context, menuIDs []int64) error {
+	if len(menuIDs) == 0 {
+		return nil
+	}
+
+	args := make([]any, 0, len(menuIDs))
+	placeholders := make([]string, 0, len(menuIDs))
+	for _, id := range menuIDs {
+		if id <= 0 {
+			continue
+		}
+		args = append(args, id)
+		placeholders = append(placeholders, "?")
+	}
+	if len(placeholders) == 0 {
+		return nil
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM sys_module_menu
+		WHERE menu_id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...); err != nil {
+		return err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM sso_role_menu
+		WHERE menu_id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...); err != nil {
+		return err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM sso_menu
+		WHERE id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...); err != nil {
+		return err
 	}
 
 	return nil
