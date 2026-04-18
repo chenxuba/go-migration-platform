@@ -78,6 +78,7 @@ func buildVisibleInstitutionModuleTree(items []rawMenu, selected map[int64]struc
 			if child.UseDirectChildren {
 				appendDirectRawChildren(leafMap, childrenByPID[childMenu.ID])
 			}
+			appendPageUseRawChildren(leafMap, childrenByPID[childMenu.ID])
 
 			for _, sourceCode := range child.AggregateNodeCodes {
 				sourceMenu, matched := matchVisibleRawMenu(groupMenu.ID, sourceCode, nil, codeIndex, nameIndex)
@@ -216,6 +217,15 @@ func isRawMenuDescendantOf(id, ancestorID int64, byID map[int64]rawMenu) bool {
 func appendDirectRawChildren(target map[int64]rawMenu, items []rawMenu) {
 	for _, item := range items {
 		target[item.ID] = item
+	}
+}
+
+func appendPageUseRawChildren(target map[int64]rawMenu, items []rawMenu) {
+	for _, item := range items {
+		code := institutionmenu.NormalizeCode(item.Code)
+		if strings.HasPrefix(code, "perm:") && strings.HasSuffix(code, "Use") {
+			target[item.ID] = item
+		}
 	}
 }
 

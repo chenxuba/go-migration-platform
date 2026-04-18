@@ -63,6 +63,7 @@ func buildVisibleInstitutionMenuTree(menus []model.Menu) []model.MenuTreeNode {
 			if child.UseDirectChildren {
 				appendDirectChildren(leafMap, childrenByPID[childMenu.ID])
 			}
+			appendPageUseChildren(leafMap, childrenByPID[childMenu.ID])
 
 			for _, sourceCode := range child.AggregateNodeCodes {
 				sourceMenu, matched := matchVisibleMenuNode(groupMenu.ID, sourceCode, nil, codeIndex, nameIndex)
@@ -164,6 +165,15 @@ func isMenuDescendantOf(id, ancestorID int64, byID map[int64]model.Menu) bool {
 func appendDirectChildren(target map[int64]model.Menu, items []model.Menu) {
 	for _, item := range items {
 		target[item.ID] = item
+	}
+}
+
+func appendPageUseChildren(target map[int64]model.Menu, items []model.Menu) {
+	for _, item := range items {
+		code := institutionmenu.NormalizeCode(item.MenuCode)
+		if strings.HasPrefix(code, "perm:") && strings.HasSuffix(code, "Use") {
+			target[item.ID] = item
+		}
 	}
 }
 
