@@ -4,6 +4,16 @@ import { basicRouteMap } from './router-modules'
 
 export default [
   {
+    path: '/dashboard',
+    name: 'Homepage',
+    parentKeys: [],
+    meta: {
+      title: '首页',
+      icon: 'HomeOutlined',
+    },
+    component: () => import('~/pages/dashboard/homepage/index.vue'),
+  },
+  {
     path: '/dashboard/analysis',
     redirect: '/dashboard/analysis1',
     name: 'Dashboard',
