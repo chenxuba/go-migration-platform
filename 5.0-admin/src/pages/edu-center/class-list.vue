@@ -24,7 +24,7 @@ import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawe
 import GroupClassUnscheduledRollCallModal from '@/components/edu-center/class-list/group-class-unscheduled-roll-call-modal.vue'
 import GroupClassFinishCourseModal from '@/components/edu-center/class-list/group-class-finish-course-modal.vue'
 import GroupClassScheduleModal from '@/components/edu-center/timetable/group-class-schedule-modal.vue'
-import { useInstitutionPermission } from '@/composables/institution-permission'
+import { AccessEnum, AccessGroup } from '@/constants/access'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { openCloseClassConfirm } from '@/utils/closeClassConfirm'
 import messageService from '@/utils/messageService'
@@ -126,14 +126,10 @@ const stats = ref({
   studentPersonTime: 0,
 })
 
-const { hasActionAccess } = useInstitutionPermission('INST_ROUTE_EDU_CLASS')
-const canManageClassLifecycle = computed(() =>
-  hasActionAccess(['INST_AUTH_EDU_CLASS_MANAGE_WITH_STUDENTS', 'INST_AUTH_EDU_CLASS_MANAGE']),
-)
-const canAdjustClassStudents = computed(() =>
-  hasActionAccess(['INST_AUTH_EDU_CLASS_MANAGE_WITH_STUDENTS', 'INST_AUTH_EDU_CLASS_ADJUST_STUDENTS']),
-)
-const canEditClassMaxCount = computed(() => hasActionAccess('INST_AUTH_EDU_CLASS_MAX_COUNT'))
+const { hasAccess } = useAccess()
+const canManageClassLifecycle = computed(() => hasAccess(AccessGroup.INST_AUTH_EDU_CLASS_MANAGE))
+const canAdjustClassStudents = computed(() => hasAccess(AccessGroup.INST_AUTH_EDU_CLASS_ADJUST))
+const canEditClassMaxCount = computed(() => hasAccess(AccessEnum.INST_AUTH_EDU_CLASS_MAX_COUNT))
 const canBatchClassAction = computed(() =>
   canManageClassLifecycle.value || canAdjustClassStudents.value || canEditClassMaxCount.value,
 )

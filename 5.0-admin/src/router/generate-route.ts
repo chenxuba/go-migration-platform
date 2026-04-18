@@ -1,8 +1,7 @@
 import { isUrl, toArray } from '@v-c/utils'
 import type { RouteRecordRaw } from 'vue-router'
 import { omit } from 'lodash'
-import { getRouteMenusApi, type InstitutionMenuNode } from '~@/api/common/menu'
-import { basicRouteMap, getRouterModule } from './router-modules'
+import { basicRouteMap } from './router-modules'
 import type { MenuData, MenuDataItem } from '~@/layouts/basic-layout/typing'
 import dynamicRoutes from '~@/router/dynamic-routes'
 import { ROOT_ROUTE_REDIRECT_PATH } from '~@/router/constant'
@@ -202,83 +201,8 @@ export function genRoutes(routes: RouteRecordRaw[], parent?: MenuDataItem) {
   return menuData
 }
 
-/**
- * 请求后端的数据获取到的菜单的信息，默认数据是拉平的，需要对数据进行树结构的整理
- */
-export function generateTreeRoutes(menus: MenuData) {
-  const routeDataMap = new Map<string | number, RouteRecordRaw>()
-  const menuDataMap = new Map<string | number, MenuDataItem>()
-  for (const menuItem of menus) {
-    if (!menuItem.id)
-      continue
-    const route = {
-      path: menuItem.path,
-      name: menuItem.name || getCacheKey(),
-      component: getRouterModule(menuItem.component!),
-      redirect: menuItem.redirect || undefined,
-      meta: {
-        title: menuItem?.title as string,
-        icon: menuItem?.icon as string,
-        keepAlive: menuItem?.keepAlive,
-        id: menuItem?.id,
-        parentId: menuItem?.parentId,
-        affix: menuItem?.affix,
-        parentKeys: menuItem?.parentKeys,
-        url: menuItem?.url,
-        hideInMenu: menuItem?.hideInMenu,
-        hideChildrenInMenu: menuItem?.hideChildrenInMenu,
-        hideInBreadcrumb: menuItem?.hideInBreadcrumb,
-        target: menuItem?.target,
-        locale: menuItem?.locale,
-      },
-    } as RouteRecordRaw
-    const menu = formatMenu(route)
-    routeDataMap.set(menuItem.id, route)
-    menuDataMap.set(menuItem.id, menu)
-  }
-  const routeData: RouteRecordRaw[] = []
-  const menuData: MenuData = []
-
-  for (const menuItem of menus) {
-    if (!menuItem.id)
-      continue
-    const currentRoute = routeDataMap.get(menuItem.id)
-    const currentItem = menuDataMap.get(menuItem.id)
-    if (!menuItem.parentId) {
-      if (currentRoute && currentItem) {
-        routeData.push(currentRoute)
-        menuData.push(currentItem)
-      }
-    }
-    else {
-      const pRoute = routeDataMap.get(menuItem.parentId)
-      const pItem = menuDataMap.get(menuItem.parentId)
-      if (currentItem && currentRoute && pRoute && pItem) {
-        if (pRoute.children && pItem.children) {
-          pRoute.children.push(currentRoute)
-          pItem.children.push(currentItem)
-        }
-        else {
-          pItem.children = [currentItem]
-          pRoute.children = [currentRoute]
-        }
-      }
-    }
-  }
-  return {
-    menuData,
-    routeData,
-  }
-}
-
-/**
- * 通过前端数据中的dynamic-routes动态生成菜单和数据
- */
-
 export async function generateRoutes() {
   const { hasAccess } = useAccess()
-  const { result } = await getRouteMenusApi()
-  const permissionTree = Array.isArray(result) ? result : []
   const accessMap = buildRouteAccessMap(dynamicRoutes)
   const accessRoutes = filterRoutesByAccess(dynamicRoutes, hasAccess, accessMap)
   const menuData = genRoutes(accessRoutes)
@@ -286,7 +210,6 @@ export async function generateRoutes() {
   return {
     menuData,
     routeData: accessRoutes,
-    permissionTree,
     homePath: findFirstAccessibleRoutePath(accessRoutes),
   }
 }

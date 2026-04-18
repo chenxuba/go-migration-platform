@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { AccessEnum } from '~/utils/constant'
+import type { AccessCodeLike } from '~/constants/access'
 
 defineProps<{
-  access: string | number | (string | number)[] | AccessEnum
+  access: AccessCodeLike
 }>()
 const { hasAccess } = useAccess()
 </script>

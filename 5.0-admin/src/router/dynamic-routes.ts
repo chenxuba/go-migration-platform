@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
+import { AccessEnum } from '~@/constants/access'
 import { basicRouteMap } from './router-modules'
 
 export default [

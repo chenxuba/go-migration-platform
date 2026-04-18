@@ -1,4 +1,5 @@
 import 'vue-router'
+import type { AccessCodeLike } from '~@/constants/access'
 
 declare module 'vue-router'{
   import type { RouteRecordRaw } from 'vue-router'
@@ -17,7 +18,7 @@ declare module 'vue-router'{
     affix?: boolean
     id?: string | number
     parentId?: string | number | null
-    access?: (string | number)[]
+    access?: AccessCodeLike
     locale?: string
     parentName?: string
     parentComps?: RouteRecordRaw['component'][]

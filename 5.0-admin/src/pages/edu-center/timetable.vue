@@ -4,26 +4,21 @@ import { Modal } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
 import TeacherMatrixApiTimetable from '@/components/edu-center/timetable/teacher-matrix-api-timetable.vue'
 import { clearWeekTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
-import { useInstitutionPermission } from '@/composables/institution-permission'
+import { AccessEnum, AccessGroup } from '@/constants/access'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
 const activeKey = ref('1')
 const clearingWeek = ref(false)
-const { hasActionAccess } = useInstitutionPermission('INST_ROUTE_EDU_TIMETABLE')
+const { hasAccess } = useAccess()
 const weekRanges = ref({
   1: { startDate: '', endDate: '' },
   2: { startDate: '', endDate: '' },
   4: { startDate: '', endDate: '' },
 })
 
-const canManageTimetable = computed(() =>
-  hasActionAccess([
-    'INST_AUTH_EDU_TIMETABLE_ALL_CLASS_OPERATION',
-    'INST_AUTH_EDU_TIMETABLE_OWN_CLASS_OPERATION',
-  ]),
-)
-const canViewConflictSchedule = computed(() => hasActionAccess('INST_AUTH_EDU_TIMETABLE_CONFLICT_LIST'))
+const canManageTimetable = computed(() => hasAccess(AccessGroup.INST_AUTH_EDU_TIMETABLE_MANAGE))
+const canViewConflictSchedule = computed(() => hasAccess(AccessEnum.INST_AUTH_EDU_TIMETABLE_CONFLICT_LIST))
 
 const currentWeekRange = computed(() => weekRanges.value[activeKey.value] || { startDate: '', endDate: '' })
 const canClearCurrentWeek = computed(() =>

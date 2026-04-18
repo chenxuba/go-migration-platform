@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue'
 import { Empty } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { useInstitutionPermission } from '@/composables/institution-permission'
+import { AccessEnum } from '@/constants/access'
 
 const activeKey = ref('1')
 const activeKey2 = ref('1')
@@ -14,13 +14,13 @@ const publicPoolRef = ref(null)
 // 子组件引用
 const allIntentionStudentRef = ref(null)
 const dptIntentionStudentRef = ref(null)
-const { hasActionAccess } = useInstitutionPermission('INST_ROUTE_ENROLL_INTENTION')
+const { hasAccess } = useAccess()
 
-const canViewAllIntention = computed(() => hasActionAccess('INST_AUTH_ENROLL_INTENTION_ALL'))
-const canViewMyIntention = computed(() => hasActionAccess('INST_AUTH_ENROLL_INTENTION_MY'))
-const canViewDeptIntention = computed(() => hasActionAccess('INST_AUTH_ENROLL_INTENTION_DEPT'))
+const canViewAllIntention = computed(() => hasAccess(AccessEnum.INST_AUTH_ENROLL_INTENTION_ALL))
+const canViewMyIntention = computed(() => hasAccess(AccessEnum.INST_AUTH_ENROLL_INTENTION_MY))
+const canViewDeptIntention = computed(() => hasAccess(AccessEnum.INST_AUTH_ENROLL_INTENTION_DEPT))
 const canUsePublicPool = computed(() =>
-  publicDataIsShow.value && hasActionAccess('INST_AUTH_ENROLL_INTENTION_TRANSFER_PUBLIC_POOL'),
+  publicDataIsShow.value && hasAccess(AccessEnum.INST_AUTH_ENROLL_INTENTION_TRANSFER_PUBLIC_POOL),
 )
 const primaryIntentionTabKey = computed(() => {
   if (canViewAllIntention.value || canViewMyIntention.value)
