@@ -17,8 +17,8 @@ const weekRanges = ref({
   4: { startDate: '', endDate: '' },
 })
 
-const canManageTimetable = computed(() => hasAccess(AccessGroup.INST_AUTH_EDU_TIMETABLE_MANAGE))
-const canViewConflictSchedule = computed(() => hasAccess(AccessEnum.INST_AUTH_EDU_TIMETABLE_CONFLICT_LIST))
+const canManageTimetable = computed(() => hasAccess(AccessGroup.edu_timetable_manage))
+const canViewConflictSchedule = computed(() => hasAccess(AccessEnum.edu_timetable_conflict_list))
 
 const currentWeekRange = computed(() => weekRanges.value[activeKey.value] || { startDate: '', endDate: '' })
 const canClearCurrentWeek = computed(() =>

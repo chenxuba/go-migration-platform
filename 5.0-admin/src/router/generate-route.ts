@@ -1,6 +1,7 @@
 import { isUrl, toArray } from '@v-c/utils'
 import type { RouteRecordRaw } from 'vue-router'
 import { omit } from 'lodash'
+import { normalizeAccessCode } from '~@/constants/access'
 import { basicRouteMap } from './router-modules'
 import type { MenuData, MenuDataItem } from '~@/layouts/basic-layout/typing'
 import dynamicRoutes from '~@/router/dynamic-routes'
@@ -87,7 +88,7 @@ function cloneRoute(route: RouteRecordRaw, children?: RouteRecordRaw[]) {
 function normalizeAccessList(access?: RouteRecordRaw['meta'] extends infer T ? T extends { access?: infer U } ? U : never : never) {
   return toArray(access as any)
     .flat(1)
-    .map(item => String(item || '').trim())
+    .map(item => String(normalizeAccessCode(item) || '').trim())
     .filter(Boolean)
 }
 

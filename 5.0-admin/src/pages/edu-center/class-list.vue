@@ -127,9 +127,9 @@ const stats = ref({
 })
 
 const { hasAccess } = useAccess()
-const canManageClassLifecycle = computed(() => hasAccess(AccessGroup.INST_AUTH_EDU_CLASS_MANAGE))
-const canAdjustClassStudents = computed(() => hasAccess(AccessGroup.INST_AUTH_EDU_CLASS_ADJUST))
-const canEditClassMaxCount = computed(() => hasAccess(AccessEnum.INST_AUTH_EDU_CLASS_MAX_COUNT))
+const canManageClassLifecycle = computed(() => hasAccess(AccessGroup.edu_class_manage))
+const canAdjustClassStudents = computed(() => hasAccess(AccessGroup.edu_class_adjust))
+const canEditClassMaxCount = computed(() => hasAccess(AccessEnum.edu_class_edit_max_count))
 const canBatchClassAction = computed(() =>
   canManageClassLifecycle.value || canAdjustClassStudents.value || canEditClassMaxCount.value,
 )

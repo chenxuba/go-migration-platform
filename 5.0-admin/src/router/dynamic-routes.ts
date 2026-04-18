@@ -10,7 +10,6 @@ export default [
     meta: {
       title: '品牌中心',
       icon: 'DashboardOutlined',
-      // access: [AccessEnum.ADMIN], // 配置只允许管理员访问
     },
     component: basicRouteMap.RouteView,
     children: [
@@ -20,8 +19,7 @@ export default [
         component: () => import('~/pages/dashboard/analysis/index.vue'),
         meta: {
           title: '专属公众号',
-          access: [AccessEnum.INST_ROUTE_BRAND_OFFICIAL],
-          // access: [AccessEnum.ADMIN], // 配置只允许管理员访问
+          access: [AccessEnum.brand_official],
         },
       },
       {
@@ -31,8 +29,7 @@ export default [
         component: () => import('~/pages/dashboard/monitor/index.vue'),
         meta: {
           title: '专属小程序',
-          access: [AccessEnum.INST_ROUTE_BRAND_MINIAPP],
-          // access: [AccessEnum.ADMIN], // 配置只允许管理员访问
+          access: [AccessEnum.brand_miniapp],
 
         },
       },
@@ -42,9 +39,8 @@ export default [
         component: () => import('~/pages/dashboard/workplace/index.vue'),
         meta: {
           title: '微机构',
-          access: [AccessEnum.INST_ROUTE_BRAND_MICRO],
+          access: [AccessEnum.brand_micro],
           new: true,
-          // access: [AccessEnum.ADMIN], // 配置只允许管理员访问
 
         },
       },
@@ -57,7 +53,6 @@ export default [
     meta: {
       title: '招生中心',
       icon: 'FormOutlined',
-      // access: [AccessEnum.USER, AccessEnum.ADMIN], // 配置只允许用户访问
     },
     component: basicRouteMap.RouteView,
     children: [
@@ -67,7 +62,7 @@ export default [
         component: () => import('~/pages/enroll-center/self-testing-scale.vue'),
         meta: {
           title: '招生自测',
-          access: [AccessEnum.INST_ROUTE_ENROLL_SELF_TEST],
+          access: [AccessEnum.enroll_self_test],
           // locale: 'menu.form.basic-form',
         },
       },
@@ -77,7 +72,7 @@ export default [
         component: () => import('~/pages/form/basic-form/index.vue'),
         meta: {
           title: '超级裂变',
-          access: [AccessEnum.INST_ROUTE_ENROLL_CAMPAIGN],
+          access: [AccessEnum.enroll_campaign],
           // locale: 'menu.form.basic-form',
         },
       },
@@ -87,7 +82,7 @@ export default [
         component: () => import('~/pages/enroll-center/intention-student.vue'),
         meta: {
           title: '意向学员',
-          access: [AccessEnum.INST_ROUTE_ENROLL_INTENTION],
+          access: [AccessEnum.enroll_intention],
         },
       },
       {
@@ -96,7 +91,7 @@ export default [
         component: () => import('~/pages/enroll-center/follow-up-list.vue'),
         meta: {
           title: '跟进记录',
-          access: [AccessEnum.INST_ROUTE_ENROLL_FOLLOW],
+          access: [AccessEnum.enroll_follow],
         },
       },
       {
@@ -105,7 +100,7 @@ export default [
         component: () => import('~/pages/enroll-center/try-listening.vue'),
         meta: {
           title: '试听管理',
-          access: [AccessEnum.INST_ROUTE_ENROLL_TRIAL],
+          access: [AccessEnum.enroll_trial],
         },
       },
     ],
@@ -125,7 +120,7 @@ export default [
         component: () => import('~/pages/edu-center/registr-renewal.vue'),
         meta: {
           title: '报名续费',
-          access: [AccessEnum.INST_ROUTE_EDU_SIGN],
+          access: [AccessEnum.edu_sign],
         },
       },
       {
@@ -145,7 +140,7 @@ export default [
         component: () => import('~/pages/edu-center/student-list.vue'),
         meta: {
           title: '学员管理',
-          access: [AccessEnum.INST_ROUTE_EDU_STUDENT],
+          access: [AccessEnum.edu_student],
         },
       },
       {
@@ -154,7 +149,7 @@ export default [
         component: () => import('~/pages/edu-center/register-read-list.vue'),
         meta: {
           title: '报读列表',
-          access: [AccessEnum.INST_ROUTE_EDU_ENROLL_LIST],
+          access: [AccessEnum.edu_enroll_list],
         },
       },
       {
@@ -163,7 +158,7 @@ export default [
         component: () => import('~/pages/edu-center/class-list.vue'),
         meta: {
           title: '班级管理',
-          access: [AccessEnum.INST_ROUTE_EDU_CLASS],
+          access: [AccessEnum.edu_class],
         },
       },
       {
@@ -172,7 +167,7 @@ export default [
         component: () => import('~/pages/edu-center/oneToOne.vue'),
         meta: {
           title: '一对一',
-          access: [AccessEnum.INST_ROUTE_EDU_ONE_TO_ONE],
+          access: [AccessEnum.edu_one_to_one],
         },
       },
       {
@@ -181,7 +176,7 @@ export default [
         component: () => import('~/pages/edu-center/timetable.vue'),
         meta: {
           title: '课表',
-          access: [AccessEnum.INST_ROUTE_EDU_TIMETABLE],
+          access: [AccessEnum.edu_timetable],
         },
       },
       {
@@ -190,7 +185,7 @@ export default [
         component: () => import('~/pages/edu-center/roll-call-list.vue'),
         meta: {
           title: '上课点名',
-          access: [AccessEnum.INST_ROUTE_EDU_ROLL_CALL],
+          access: [AccessEnum.edu_roll_call],
         },
       },
       {
@@ -199,7 +194,7 @@ export default [
         component: () => import('~/pages/edu-center/class-record.vue'),
         meta: {
           title: '上课记录',
-          access: [AccessEnum.INST_ROUTE_EDU_RECORD],
+          access: [AccessEnum.edu_record],
         },
       },
       {
@@ -208,7 +203,7 @@ export default [
         component: () => import('~/pages/edu-center/makeup-a-missedlesson.vue'),
         meta: {
           title: '补课',
-          access: [AccessEnum.INST_ROUTE_EDU_MAKEUP],
+          access: [AccessEnum.edu_makeup],
         },
       },
       {
@@ -217,7 +212,7 @@ export default [
         component: () => import('~/pages/edu-center/face-to-face.vue'),
         meta: {
           title: '人脸考勤',
-          access: [AccessEnum.INST_ROUTE_EDU_FACE],
+          access: [AccessEnum.edu_face],
           new: true,
         },
       },
@@ -228,7 +223,7 @@ export default [
         component: () => import('~/pages/edu-center/course-list.vue'),
         meta: {
           title: '课程商品',
-          access: [AccessEnum.INST_ROUTE_EDU_COURSE],
+          access: [AccessEnum.edu_course],
         },
       },
     ],
@@ -248,7 +243,7 @@ export default [
         component: () => import('~/pages/teacher-center/assessment-calendar.vue'),
         meta: {
           title: '评估量表',
-          access: [AccessEnum.INST_ROUTE_TEACHER_SCALE],
+          access: [AccessEnum.teacher_scale],
         },
       },
       {
@@ -257,7 +252,7 @@ export default [
         component: () => import('~/pages/exception/403.vue'),
         meta: {
           title: '交互训练',
-          access: [AccessEnum.INST_ROUTE_TEACHER_INTERACTIVE],
+          access: [AccessEnum.teacher_interactive],
         },
       },
       {
@@ -266,7 +261,7 @@ export default [
         component: () => import('~/pages/exception/403.vue'),
         meta: {
           title: '教案中心',
-          access: [AccessEnum.INST_ROUTE_TEACHER_PLAN],
+          access: [AccessEnum.teacher_plan],
         },
       },
       {
@@ -275,7 +270,7 @@ export default [
         component: () => import('~/pages/teacher-center/evaluationRecord.vue'),
         meta: {
           title: '评估记录',
-          access: [AccessEnum.INST_ROUTE_TEACHER_RECORD],
+          access: [AccessEnum.teacher_record],
         },
       },
       {
@@ -284,7 +279,7 @@ export default [
         component: () => import('~/pages/exception/403.vue'),
         meta: {
           title: '交互记录',
-          access: [AccessEnum.INST_ROUTE_TEACHER_INTERACTIVE_RECORD],
+          access: [AccessEnum.teacher_interactive_record],
         },
       },
       {
@@ -293,7 +288,7 @@ export default [
         component: () => import('~/pages/exception/403.vue'),
         meta: {
           title: '作业记录',
-          access: [AccessEnum.INST_ROUTE_TEACHER_HOMEWORK_RECORD],
+          access: [AccessEnum.teacher_homework_record],
         },
       },
       {
@@ -302,7 +297,7 @@ export default [
         component: () => import('~/pages/exception/403.vue'),
         meta: {
           title: '康复小结',
-          access: [AccessEnum.INST_ROUTE_TEACHER_RECOVERY_SUMMARY],
+          access: [AccessEnum.teacher_recovery_summary],
         },
       },
       {
@@ -311,7 +306,7 @@ export default [
         component: () => import('~/pages/exception/403.vue'),
         meta: {
           title: '康复档案',
-          access: [AccessEnum.INST_ROUTE_TEACHER_RECOVERY_ARCHIVE],
+          access: [AccessEnum.teacher_recovery_archive],
         },
       },
     ],
@@ -332,7 +327,7 @@ export default [
         component: () => import('~/pages/home-center/class-comment.vue'),
         meta: {
           title: '康复记录',
-          access: [AccessEnum.INST_ROUTE_HOME_RECOVERY],
+          access: [AccessEnum.home_recovery],
         },
       },
       {
@@ -341,7 +336,7 @@ export default [
         component: () => import('~/pages/home-center/homework.vue'),
         meta: {
           title: '课后任务',
-          access: [AccessEnum.INST_ROUTE_HOME_HOMEWORK],
+          access: [AccessEnum.home_homework],
         },
       },
       {
@@ -350,7 +345,7 @@ export default [
         component: () => import('~/pages/home-center/notice-list.vue'),
         meta: {
           title: '通知公告',
-          access: [AccessEnum.INST_ROUTE_HOME_NOTICE],
+          access: [AccessEnum.home_notice],
         },
       },
       {
@@ -359,7 +354,7 @@ export default [
         component: () => import('~/pages/home-center/leave-list.vue'),
         meta: {
           title: '请假管理',
-          access: [AccessEnum.INST_ROUTE_HOME_LEAVE],
+          access: [AccessEnum.home_leave],
         },
       },
     ],
@@ -380,7 +375,7 @@ export default [
         component: () => import('~/pages/finance-center/order-list.vue'),
         meta: {
           title: '订单管理',
-          access: [AccessEnum.INST_ROUTE_FINANCE_ORDER],
+          access: [AccessEnum.finance_order],
         },
       },
       {
@@ -389,7 +384,7 @@ export default [
         component: () => import('~/pages/finance-center/approve-management.vue'),
         meta: {
           title: '审批管理',
-          access: [AccessEnum.INST_ROUTE_FINANCE_APPROVAL],
+          access: [AccessEnum.finance_approval],
         },
       },
       {
@@ -398,7 +393,7 @@ export default [
         component: () => import('~/pages/form/basic-form/index.vue'),
         meta: {
           title: '报名优惠',
-          access: [AccessEnum.INST_ROUTE_FINANCE_DISCOUNT],
+          access: [AccessEnum.finance_discount],
         },
       },
       // {
@@ -415,7 +410,7 @@ export default [
         component: () => import('~/pages/finance-center/performance-management.vue'),
         meta: {
           title: '业绩管理',
-          access: [AccessEnum.INST_ROUTE_FINANCE_PERFORMANCE],
+          access: [AccessEnum.finance_performance],
         },
       },
       {
@@ -434,7 +429,7 @@ export default [
         component: () => import('~/pages/finance-center/bill-list.vue'),
         meta: {
           title: '账单管理',
-          access: [AccessEnum.INST_ROUTE_FINANCE_BILL],
+          access: [AccessEnum.finance_bill],
         },
       },
       {
@@ -443,7 +438,7 @@ export default [
         component: () => import('~/pages/finance-center/payroll-list.vue'),
         meta: {
           title: '工资管理',
-          access: [AccessEnum.INST_ROUTE_FINANCE_PAYROLL],
+          access: [AccessEnum.finance_payroll],
         },
       },
       {
@@ -452,7 +447,7 @@ export default [
         component: () => import('~/pages/finance-center/income-details.vue'),
         meta: {
           title: '确认收入明细',
-          access: [AccessEnum.INST_ROUTE_FINANCE_INCOME_DETAIL],
+          access: [AccessEnum.finance_income_detail],
         },
       },
       {
@@ -461,7 +456,7 @@ export default [
         component: () => import('~/pages/finance-center/tuition-change-record.vue'),
         meta: {
           title: '学费变动记录',
-          access: [AccessEnum.INST_ROUTE_FINANCE_TUITION_CHANGE],
+          access: [AccessEnum.finance_tuition_change],
         },
       },
       {
@@ -470,7 +465,7 @@ export default [
         component: () => import('~/pages/finance-center/recharge-account.vue'),
         meta: {
           title: '储值账户',
-          access: [AccessEnum.INST_ROUTE_FINANCE_RECHARGE],
+          access: [AccessEnum.finance_recharge],
         },
       },
     ],
@@ -490,7 +485,7 @@ export default [
         component: () => import('~/pages/exception/403.vue'),
         meta: {
           title: '数据大屏',
-          access: [AccessEnum.INST_ROUTE_DATA_SCREEN],
+          access: [AccessEnum.data_screen],
         },
       },
       {
@@ -499,7 +494,7 @@ export default [
         component: () => import('~/pages/dataCenter/enrollmentData/index.vue'),
         meta: {
           title: '招生数据',
-          access: [AccessEnum.INST_ROUTE_DATA_ENROLL],
+          access: [AccessEnum.data_enroll],
         },
       },
       {
@@ -508,7 +503,7 @@ export default [
         component: () => import('~/pages/dataCenter/academicAffairsData/index.vue'),
         meta: {
           title: '教务数据',
-          access: [AccessEnum.INST_ROUTE_DATA_EDU],
+          access: [AccessEnum.data_edu],
         },
       },
       {
@@ -517,7 +512,7 @@ export default [
         component: () => import('~/pages/dataCenter/courseHourStatistics/index.vue'),
         meta: {
           title: '课时统计',
-          access: [AccessEnum.INST_ROUTE_DATA_HOURS],
+          access: [AccessEnum.data_hours],
         },
       },
       {
@@ -526,7 +521,7 @@ export default [
         component: () => import('~/pages/exception/403.vue'),
         meta: {
           title: '家校数据',
-          access: [AccessEnum.INST_ROUTE_DATA_HOME],
+          access: [AccessEnum.data_home],
         },
       },
       {
@@ -535,7 +530,7 @@ export default [
         component: () => import('~/pages/dataCenter/financialData/index.vue'),
         meta: {
           title: '财务数据',
-          access: [AccessEnum.INST_ROUTE_DATA_FINANCE],
+          access: [AccessEnum.data_finance],
         },
       },
       {
@@ -544,7 +539,7 @@ export default [
         component: () => import('~/pages/dataCenter/reportManagement/index.vue'),
         meta: {
           title: '报表管理',
-          access: [AccessEnum.INST_ROUTE_DATA_REPORT],
+          access: [AccessEnum.data_report],
         },
       },
     ],
@@ -564,7 +559,7 @@ export default [
         component: () => import('~/pages/internal-manage/staff-manage.vue'),
         meta: {
           title: '员工管理',
-          access: [AccessEnum.INST_ROUTE_INTERNAL_STAFF],
+          access: [AccessEnum.internal_staff],
         },
       },
       {
@@ -573,7 +568,7 @@ export default [
         component: () => import('~/pages/internal-manage/role-manage.vue'),
         meta: {
           title: '角色管理',
-          access: [AccessEnum.INST_ROUTE_INTERNAL_ROLE],
+          access: [AccessEnum.internal_role],
         },
       },
     ],
@@ -594,7 +589,7 @@ export default [
         component: () => import('~/pages/business-settings/placeholder.vue'),
         meta: {
           title: '招生设置',
-          access: [AccessEnum.INST_ROUTE_SETTING_ENROLL],
+          access: [AccessEnum.setting_enroll],
         },
       },
       {
@@ -603,7 +598,7 @@ export default [
         component: () => import('~/pages/business-settings/academic/index.vue'),
         meta: {
           title: '教务设置',
-          access: [AccessEnum.INST_ROUTE_SETTING_EDU],
+          access: [AccessEnum.setting_edu],
         },
       },
       {
@@ -612,7 +607,7 @@ export default [
         component: () => import('~/pages/business-settings/placeholder.vue'),
         meta: {
           title: '家校设置',
-          access: [AccessEnum.INST_ROUTE_SETTING_HOME],
+          access: [AccessEnum.setting_home],
         },
       },
       {
@@ -621,7 +616,7 @@ export default [
         component: () => import('~/pages/business-settings/placeholder.vue'),
         meta: {
           title: '财务设置',
-          access: [AccessEnum.INST_ROUTE_SETTING_FINANCE],
+          access: [AccessEnum.setting_finance],
         },
       },
       {
@@ -630,7 +625,7 @@ export default [
         component: () => import('~/pages/business-settings/more-settings/index.vue'),
         meta: {
           title: '更多设置',
-          access: [AccessEnum.INST_ROUTE_SETTING_MORE],
+          access: [AccessEnum.setting_more],
         },
       },
     ],

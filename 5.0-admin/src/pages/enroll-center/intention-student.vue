@@ -16,11 +16,11 @@ const allIntentionStudentRef = ref(null)
 const dptIntentionStudentRef = ref(null)
 const { hasAccess } = useAccess()
 
-const canViewAllIntention = computed(() => hasAccess(AccessEnum.INST_AUTH_ENROLL_INTENTION_ALL))
-const canViewMyIntention = computed(() => hasAccess(AccessEnum.INST_AUTH_ENROLL_INTENTION_MY))
-const canViewDeptIntention = computed(() => hasAccess(AccessEnum.INST_AUTH_ENROLL_INTENTION_DEPT))
+const canViewAllIntention = computed(() => hasAccess(AccessEnum.enroll_intention_view_all))
+const canViewMyIntention = computed(() => hasAccess(AccessEnum.enroll_intention_view_my))
+const canViewDeptIntention = computed(() => hasAccess(AccessEnum.enroll_intention_view_dept))
 const canUsePublicPool = computed(() =>
-  publicDataIsShow.value && hasAccess(AccessEnum.INST_AUTH_ENROLL_INTENTION_TRANSFER_PUBLIC_POOL),
+  publicDataIsShow.value && hasAccess(AccessEnum.enroll_intention_transfer_public_pool),
 )
 const primaryIntentionTabKey = computed(() => {
   if (canViewAllIntention.value || canViewMyIntention.value)
