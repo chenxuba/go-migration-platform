@@ -78,6 +78,8 @@ export interface InstitutionPageParams {
   size?: number
   keyword?: string
   mobile?: string
+  registerTimeBegin?: string
+  registerTimeEnd?: string
   enabled?: boolean
   status?: number
   openType?: number

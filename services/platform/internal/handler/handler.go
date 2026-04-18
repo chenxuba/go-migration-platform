@@ -149,6 +149,8 @@ func (handler *Handler) institutions(w http.ResponseWriter, r *http.Request) {
 		parseInt(r.URL.Query().Get("size"), 10),
 		r.URL.Query().Get("keyword"),
 		r.URL.Query().Get("mobile"),
+		r.URL.Query().Get("registerTimeBegin"),
+		r.URL.Query().Get("registerTimeEnd"),
 		parseBoolPtr(r.URL.Query().Get("enabled")),
 		parseIntPtr(r.URL.Query().Get("status")),
 		parseIntPtr(r.URL.Query().Get("openType")),

@@ -1,26 +1,19 @@
 <script setup lang="ts">
-import type { PermissionTreeNode } from '../../shared/permission-tree'
+import type { TableColumnsType } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
+import type {
+  InstitutionPermissionDetail,
+  InstitutionVersionChangeRecord,
+} from '@/api/platform/institutions'
+import type { VersionItem } from '@/api/platform/versions'
 import PlatformModalShell from '../../shared/platform-modal-shell.vue'
 import {
   getInstitutionPermissionDetailApi,
+  getInstitutionVersionChangeRecordsApi,
   replaceInstitutionPermissionVersionApi,
-  type InstitutionPermissionDetail,
 } from '@/api/platform/institutions'
-import {
-  getVersionDetailApi,
-  getVersionMenuTreeApi,
-  pageVersionsApi,
-  type VersionItem,
-} from '@/api/platform/versions'
-import {
-  buildPermissionTreeData,
-  collectAllKeys,
-  collectExpandKeysByKeyword,
-  collectLeafKeysBySelectedSet,
-  countLeafNodes,
-} from '../../shared/permission-tree'
-import { sortVersionsByDisplayOrder } from '../../shared/version-order'
+import { pageVersionsApi } from '@/api/platform/versions'
+import { filterSystemDefaultVersions, sortVersionsByDisplayOrder } from '../../shared/version-order'
 import messageService from '@/utils/messageService'
 
 const props = defineProps<{
@@ -58,27 +51,50 @@ const openModal = computed({
   set: value => emit('update:open', value),
 })
 
-const detailLoading = ref(false)
+const loading = ref(false)
 const submitting = ref(false)
-const menuTreeLoading = ref(false)
-const versionLoading = ref(false)
-const treeKeyword = ref('')
-const expandedKeys = ref<number[]>([])
-const baseMenuTree = ref<PermissionTreeNode[]>([])
-const versionOptions = ref<VersionItem[]>([])
 const detail = ref<InstitutionPermissionDetail | null>(null)
+const versionOptions = ref<VersionItem[]>([])
+const versionChangeRecords = ref<InstitutionVersionChangeRecord[]>([])
 const selectedModuleId = ref<number | undefined>()
-const templateCheckedKeys = ref<number[]>([])
-const editableCheckedKeys = ref<number[]>([])
-const editableHalfCheckedKeys = ref<number[]>([])
 
-const rootExpandedKeys = computed(() => baseMenuTree.value.map(node => Number(node.key)))
-const totalLeafCount = computed(() => countLeafNodes(baseMenuTree.value))
-const templateLeafCount = computed(() => collectLeafKeysBySelectedSet(baseMenuTree.value, templateCheckedKeys.value).length)
-const editableLeafCount = computed(() => collectLeafKeysBySelectedSet(baseMenuTree.value, [...editableCheckedKeys.value, ...editableHalfCheckedKeys.value]).length)
+const columns: TableColumnsType<InstitutionVersionChangeRecord> = [
+  {
+    title: '切换时间',
+    dataIndex: 'createTime',
+    key: 'createTime',
+    width: 180,
+  },
+  {
+    title: '切换前版本',
+    dataIndex: 'beforeVersionName',
+    key: 'beforeVersionName',
+    width: 140,
+  },
+  {
+    title: '切换后版本',
+    dataIndex: 'afterVersionName',
+    key: 'afterVersionName',
+    width: 140,
+  },
+  {
+    title: '操作人',
+    dataIndex: 'operatorName',
+    key: 'operatorName',
+    width: 140,
+  },
+]
+
+const currentVersionName = computed(() => {
+  const moduleName = String(detail.value?.currentModuleName || '').trim()
+  if (moduleName)
+    return moduleName
+  return getOpenTypeLabel(detail.value?.openType)
+})
+
 const versionSelectOptions = computed(() => {
   const currentOpenType = Number(detail.value?.openType || 0)
-  return versionOptions.value
+  return filterSystemDefaultVersions(versionOptions.value)
     .filter((item) => {
       const mappedOpenType = getVersionOpenTypeByName(item.name)
       if (!mappedOpenType || !currentOpenType)
@@ -89,11 +105,12 @@ const versionSelectOptions = computed(() => {
     })
     .map(item => ({ value: item.id, label: item.name }))
 })
-const versionChangeHint = computed(() => {
+
+const changeHint = computed(() => {
   const currentOpenType = Number(detail.value?.openType || 0)
   if (currentOpenType === 1)
-    return '体验版升级正式版本仍需通过续期处理，这里仅维护当前版本对应的权限范围。'
-  return '在有效期内切换基础版、高级版、旗舰版时，这里会同步更新机构开通版本，但不会改动到期时间。'
+    return '体验版如需升级正式版本，请继续走续期流程。'
+  return '切换版本后会立即生效，并自动记录切换日志，不会改动当前到期时间。'
 })
 
 function closeModal() {
@@ -128,229 +145,112 @@ function getVersionOpenTypeByName(name?: string) {
   return standardVersionOpenTypeMap[String(name || '').trim()] || 0
 }
 
-function isSameMenuScope(left: number[] = [], right: number[] = []) {
-  if (left.length !== right.length)
-    return false
-
-  const rightSet = new Set(right.map(item => Number(item)))
-  return left.every(item => rightSet.has(Number(item)))
+function getVersionLabelByRecord(record: Partial<InstitutionVersionChangeRecord>, key: 'before' | 'after') {
+  const versionName = key === 'before' ? record.beforeVersionName : record.afterVersionName
+  const openType = key === 'before' ? record.beforeOpenType : record.afterOpenType
+  const normalizedName = String(versionName || '').trim()
+  return normalizedName || getOpenTypeLabel(openType)
 }
 
-const syncStatusText = computed(() => {
-  if (!detail.value?.currentModuleId || !detail.value?.effectiveMenuIds?.length)
-    return '未同步'
-  return isSameMenuScope(detail.value.templateMenuIds || [], detail.value.effectiveMenuIds || []) ? '已同步' : '未同步'
-})
+function resolveSelectedModuleId(detailData: InstitutionPermissionDetail, versions: VersionItem[]) {
+  const systemVersions = filterSystemDefaultVersions(versions)
+  const currentModuleId = Number(detailData.currentModuleId || 0)
+  if (currentModuleId && systemVersions.some(item => Number(item.id) === currentModuleId))
+    return currentModuleId
 
-const editableTreeData = computed(() => {
-  const allowedKeySet = new Set((templateCheckedKeys.value || []).map(item => Number(item)))
-  if (!allowedKeySet.size)
-    return baseMenuTree.value
+  const currentOpenType = Number(detailData.openType || 0)
+  return systemVersions.find(item => getVersionOpenTypeByName(item.name) === currentOpenType)?.id
+}
 
-  const mapNodes = (nodes: PermissionTreeNode[]): PermissionTreeNode[] => nodes.map(node => ({
-    ...node,
-    disableCheckbox: !allowedKeySet.has(Number(node.key)),
-    children: Array.isArray(node.children) ? mapNodes(node.children) : undefined,
-  }))
-
-  return mapNodes(baseMenuTree.value)
-})
-
-async function ensureMenuTreeLoaded() {
-  if (baseMenuTree.value.length)
-    return
-
-  menuTreeLoading.value = true
+async function loadData(institutionId: number) {
+  loading.value = true
   try {
-    const res = await getVersionMenuTreeApi({ type: 1 })
-    if (res.code !== 200) {
-      messageService.error(res.message || '获取权限树失败')
+    const [detailRes, versionRes, recordRes] = await Promise.all([
+      getInstitutionPermissionDetailApi({ institutionId }),
+      pageVersionsApi({
+        current: 1,
+        size: 200,
+        type: 1,
+      }),
+      getInstitutionVersionChangeRecordsApi({ institutionId }),
+    ])
+
+    if (detailRes.code !== 200 || !detailRes.result) {
+      messageService.error(detailRes.message || '获取机构版本信息失败')
       return
     }
-    baseMenuTree.value = buildPermissionTreeData(res.result || [])
-    expandedKeys.value = rootExpandedKeys.value
+    if (versionRes.code !== 200) {
+      messageService.error(versionRes.message || '获取版本列表失败')
+      return
+    }
+    if (recordRes.code !== 200) {
+      messageService.error(recordRes.message || '获取版本切换日志失败')
+      return
+    }
+
+    const versions = sortVersionsByDisplayOrder(Array.isArray(versionRes.result) ? versionRes.result : [])
+    detail.value = detailRes.result
+    versionOptions.value = versions
+    versionChangeRecords.value = Array.isArray(recordRes.result) ? recordRes.result : []
+    selectedModuleId.value = resolveSelectedModuleId(detailRes.result, versions)
   }
   catch (error: any) {
-    console.error('load version menu tree failed', error)
-    messageService.error(error?.message || '获取权限树失败')
+    console.error('load institution version change data failed', error)
+    messageService.error(error?.message || '获取机构版本信息失败')
   }
   finally {
-    menuTreeLoading.value = false
+    loading.value = false
   }
 }
 
-async function loadVersionOptions() {
-  versionLoading.value = true
-  try {
-    const res = await pageVersionsApi({
-      current: 1,
-      size: 200,
-      type: 1,
-    })
-    if (res.code !== 200) {
-      messageService.error(res.message || '获取版本列表失败')
-      return
-    }
-    versionOptions.value = sortVersionsByDisplayOrder(Array.isArray(res.result) ? res.result : [])
-  }
-  catch (error: any) {
-    console.error('load version options failed', error)
-    messageService.error(error?.message || '获取版本列表失败')
-  }
-  finally {
-    versionLoading.value = false
-  }
-}
-
-async function loadTemplateDetail(moduleId?: number) {
-  const targetId = Number(moduleId || 0)
-  if (!targetId) {
-    templateCheckedKeys.value = []
-    return
-  }
-
-  try {
-    const res = await getVersionDetailApi({ moduleId: targetId })
-    if (res.code !== 200 || !res.result) {
-      messageService.error(res.message || '获取版本权限失败')
-      return
-    }
-    templateCheckedKeys.value = Array.isArray(res.result.selectedMenuIds)
-      ? res.result.selectedMenuIds.map(item => Number(item))
-      : []
-  }
-  catch (error: any) {
-    console.error('load template detail failed', error)
-    messageService.error(error?.message || '获取版本权限失败')
-  }
-}
-
-async function loadDetail(institutionId: number) {
-  detailLoading.value = true
-  try {
-    const res = await getInstitutionPermissionDetailApi({ institutionId })
-    if (res.code !== 200 || !res.result) {
-      messageService.error(res.message || '获取机构权限失败')
-      return
-    }
-    detail.value = res.result
-    selectedModuleId.value = Number(res.result.currentModuleId || 0) || undefined
-    templateCheckedKeys.value = Array.isArray(res.result.templateMenuIds)
-      ? res.result.templateMenuIds.map(item => Number(item))
-      : []
-    editableCheckedKeys.value = collectLeafKeysBySelectedSet(baseMenuTree.value, res.result.effectiveMenuIds || [])
-    editableHalfCheckedKeys.value = []
-    expandedKeys.value = treeKeyword.value
-      ? collectExpandKeysByKeyword(baseMenuTree.value, treeKeyword.value)
-      : rootExpandedKeys.value
-  }
-  catch (error: any) {
-    console.error('load institution permission detail failed', error)
-    messageService.error(error?.message || '获取机构权限失败')
-  }
-  finally {
-    detailLoading.value = false
-  }
-}
-
-async function submitVersionBinding() {
+async function submitVersionChange() {
   const institutionId = Number(props.institutionId || 0)
   const moduleId = Number(selectedModuleId.value || 0)
   if (!institutionId || !moduleId)
     return
 
+  if (Number(detail.value?.currentModuleId || 0) === moduleId) {
+    messageService.warning('当前已是该版本，无需重复切换')
+    return
+  }
+
   submitting.value = true
   try {
-    const menuIds = Array.from(new Set([...editableCheckedKeys.value, ...editableHalfCheckedKeys.value]))
-      .map(item => Number(item))
-      .filter(item => item > 0)
-
-    if (!menuIds.length) {
-      messageService.warning('请至少选择一个机构权限')
-      return
-    }
-
-    const res = await replaceInstitutionPermissionVersionApi({ institutionId, moduleId, menuIds })
+    const res = await replaceInstitutionPermissionVersionApi({
+      institutionId,
+      moduleId,
+    })
     if (res.code !== 200) {
-      messageService.error(res.message || '保存机构版本与权限失败')
+      messageService.error(res.message || '机构版本切换失败')
       return
     }
-    messageService.success('机构版本与权限保存成功')
-    await loadDetail(institutionId)
+
+    messageService.success('机构版本切换成功')
     emit('saved')
+    await loadData(institutionId)
   }
   catch (error: any) {
-    console.error('replace institution permission version failed', error)
-    messageService.error(error?.message || '保存机构版本与权限失败')
+    console.error('change institution version failed', error)
+    messageService.error(error?.message || '机构版本切换失败')
   }
   finally {
     submitting.value = false
   }
 }
 
-function handleEditableTreeCheck(value: any, info: any) {
-  editableCheckedKeys.value = Array.isArray(value) ? value.map(Number) : (value?.checked || []).map(Number)
-  editableHalfCheckedKeys.value = (info?.halfCheckedKeys || []).map((key: string | number) => Number(key))
-}
-
-function applyTemplateScope() {
-  editableCheckedKeys.value = collectLeafKeysBySelectedSet(baseMenuTree.value, templateCheckedKeys.value)
-  editableHalfCheckedKeys.value = []
-}
-
-function handleExpandedKeysChange(keys: Array<string | number>) {
-  expandedKeys.value = (keys || []).map(key => Number(key))
-}
-
-function expandAllTree() {
-  expandedKeys.value = collectAllKeys(baseMenuTree.value)
-}
-
-function collapseTree() {
-  expandedKeys.value = rootExpandedKeys.value
-}
-
-watch(
-  () => treeKeyword.value,
-  (keyword) => {
-    expandedKeys.value = keyword
-      ? collectExpandKeysByKeyword(baseMenuTree.value, keyword)
-      : rootExpandedKeys.value
-  },
-)
-
-watch(
-  () => selectedModuleId.value,
-  async (moduleId, previousId) => {
-    if (!openModal.value)
-      return
-    if (!moduleId)
-      return
-    if (moduleId === previousId && templateCheckedKeys.value.length)
-      return
-    await loadTemplateDetail(moduleId)
-    if (Number(moduleId) !== Number(detail.value?.currentModuleId || 0))
-      applyTemplateScope()
-  },
-)
-
 watch(
   () => [props.open, props.institutionId] as const,
-  async ([open, institutionId]) => {
+  ([open, institutionId]) => {
     if (!open) {
       detail.value = null
+      versionOptions.value = []
+      versionChangeRecords.value = []
       selectedModuleId.value = undefined
-      templateCheckedKeys.value = []
-      editableCheckedKeys.value = []
-      editableHalfCheckedKeys.value = []
-      treeKeyword.value = ''
-      expandedKeys.value = rootExpandedKeys.value
       return
     }
 
-    await Promise.all([ensureMenuTreeLoaded(), loadVersionOptions()])
     if (institutionId)
-      await loadDetail(Number(institutionId))
+      void loadData(Number(institutionId))
   },
   { immediate: true },
 )
@@ -359,133 +259,101 @@ watch(
 <template>
   <PlatformModalShell
     v-model:open="openModal"
-    :width="1260"
-    title="机构权限"
+    :width="980"
+    title="切换版本"
     modal-class="institution-permission-modal"
   >
-    <a-spin :spinning="detailLoading || menuTreeLoading || versionLoading">
-      <div class="permission-modal">
-        <div class="permission-overview">
-          <div class="permission-overview__main">
-            <div class="permission-overview__name">
+    <a-spin :spinning="loading">
+      <div class="version-switch-modal">
+        <div class="version-switch-overview">
+          <div class="version-switch-overview__main">
+            <div class="version-switch-overview__name">
               {{ detail?.organName || '--' }}
             </div>
-            <div class="permission-overview__meta">
+            <div class="version-switch-overview__meta">
               <span>登录账号：{{ detail?.mobile || '--' }}</span>
-              <span>开通版本：{{ getOpenTypeLabel(detail?.openType) }}</span>
+              <span>当前版本：{{ currentVersionName }}</span>
               <span>过期时间：{{ formatDateMinute(detail?.expireEndTime) }}</span>
             </div>
           </div>
 
-          <div class="permission-overview__chips">
-            <span class="status-chip" :class="getStatusClass(detail?.status)">
-              {{ getStatusLabel(detail?.status) }}
-            </span>
-            <span class="status-chip" :class="syncStatusText === '已同步' ? 'status-chip--sync' : 'status-chip--warning'">
-              {{ syncStatusText }}
-            </span>
-          </div>
+          <span class="status-chip" :class="getStatusClass(detail?.status)">
+            {{ getStatusLabel(detail?.status) }}
+          </span>
         </div>
 
-        <div class="permission-summary">
-          <div class="summary-card">
-            <span class="summary-card__label">权限版本</span>
-            <span class="summary-card__value">{{ detail?.currentModuleName || '--' }}</span>
+        <div class="version-switch-panel">
+          <div class="switch-inline-field">
+            <div class="switch-inline-field__label">
+              当前版本
+            </div>
+            <div class="switch-inline-field__value" :title="currentVersionName">
+              {{ currentVersionName }}
+            </div>
           </div>
-          <div class="summary-card">
-            <span class="summary-card__label">管理员角色</span>
-            <span class="summary-card__value">{{ detail?.adminRoleName || '--' }}</span>
-          </div>
-          <div class="summary-card">
-            <span class="summary-card__label">模板菜单</span>
-            <span class="summary-card__value">{{ templateLeafCount }} / {{ totalLeafCount }}</span>
-          </div>
-          <div class="summary-card">
-            <span class="summary-card__label">机构权限</span>
-            <span class="summary-card__value">{{ editableLeafCount }} / {{ totalLeafCount }}</span>
-          </div>
-        </div>
 
-        <div class="permission-action">
-          <div class="permission-action__main">
+          <div class="switch-inline-field">
+            <div class="switch-inline-field__label">
+              当前到期时间
+            </div>
+            <div class="switch-inline-field__value">
+              {{ formatDateMinute(detail?.expireEndTime) }}
+            </div>
+          </div>
+
+          <div class="switch-inline-field switch-inline-field--select">
+            <div class="switch-inline-field__label">
+              目标版本
+            </div>
             <a-select
               v-model:value="selectedModuleId"
-              class="permission-action__select"
-              placeholder="请选择权限版本"
+              class="switch-inline-field__control"
+              placeholder="请选择目标版本"
               :options="versionSelectOptions"
             />
-            <div class="permission-action__hint">
-              {{ versionChangeHint }}
-            </div>
           </div>
-          <a-button type="primary" :loading="submitting" @click="submitVersionBinding">
-            保存版本与权限
-          </a-button>
-        </div>
 
-        <div class="permission-toolbar">
-          <a-input
-            v-model:value="treeKeyword"
-            allow-clear
-            placeholder="搜索菜单名称"
-            class="permission-toolbar__search"
-          />
-
-          <div class="permission-toolbar__actions">
-            <a-button type="link" class="permission-toolbar__link" @click="expandAllTree">
-              展开全部
-            </a-button>
-            <a-button type="link" class="permission-toolbar__link" @click="collapseTree">
-              收起层级
-            </a-button>
+          <div class="switch-inline-note">
+            <div class="switch-inline-note__label">
+              说明
+            </div>
+            <div class="switch-inline-note__text">
+              {{ changeHint }}
+            </div>
           </div>
         </div>
 
-        <div class="permission-panels">
-          <div class="permission-panel">
-            <div class="permission-panel__header">
-              <span class="permission-panel__title">版本权限</span>
-              <span class="permission-panel__meta">{{ templateLeafCount }} 项</span>
-            </div>
-            <div class="permission-panel__body tree-readonly">
-              <a-empty v-if="!menuTreeLoading && !baseMenuTree.length" description="暂无菜单" />
-              <a-tree
-                v-else
-                :tree-data="baseMenuTree"
-                :checked-keys="templateCheckedKeys"
-                :expanded-keys="expandedKeys"
-                checkable
-                check-strictly
-                block-node
-                @update:expanded-keys="handleExpandedKeysChange"
-              />
-            </div>
+        <div class="version-switch-log">
+          <div class="version-switch-log__title">
+            切换日志
           </div>
+          <a-table
+            :columns="columns"
+            :data-source="versionChangeRecords"
+            :pagination="false"
+            :scroll="{ x: 600 }"
+            row-key="id"
+            size="small"
+            class="version-switch-table"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'createTime'">
+                {{ formatDateMinute(record.createTime) }}
+              </template>
 
-          <div class="permission-panel">
-            <div class="permission-panel__header">
-              <span class="permission-panel__title">机构权限设置</span>
-              <div class="permission-panel__actions">
-                <span class="permission-panel__meta">{{ editableLeafCount }} 项</span>
-                <a-button type="link" class="permission-panel__reset" @click="applyTemplateScope">
-                  重置为版本权限
-                </a-button>
-              </div>
-            </div>
-            <div class="permission-panel__body">
-              <a-empty v-if="!menuTreeLoading && !editableTreeData.length" description="暂无菜单" />
-              <a-tree
-                v-else
-                :tree-data="editableTreeData"
-                :checked-keys="editableCheckedKeys"
-                :expanded-keys="expandedKeys"
-                checkable
-                block-node
-                @check="handleEditableTreeCheck"
-                @update:expanded-keys="handleExpandedKeysChange"
-              />
-            </div>
-          </div>
+              <template v-else-if="column.key === 'beforeVersionName'">
+                {{ getVersionLabelByRecord(record, 'before') }}
+              </template>
+
+              <template v-else-if="column.key === 'afterVersionName'">
+                {{ getVersionLabelByRecord(record, 'after') }}
+              </template>
+
+              <template v-else-if="column.key === 'operatorName'">
+                {{ record.operatorName || '--' }}
+              </template>
+            </template>
+          </a-table>
         </div>
       </div>
     </a-spin>
@@ -494,57 +362,52 @@ watch(
       <a-button @click="closeModal">
         关闭
       </a-button>
+      <a-button type="primary" :loading="submitting" @click="submitVersionChange">
+        确认切换
+      </a-button>
     </template>
   </PlatformModalShell>
 </template>
 
 <style scoped lang="less">
-.permission-modal {
+.version-switch-modal {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding-top: 8px;
+  gap: 12px;
+  padding-top: 4px;
 }
 
-.permission-overview {
+.version-switch-overview {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 22px;
+  padding: 16px 18px;
   border: 1px solid #e8edf5;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(22, 119, 255, 0.05) 0%, #fff 120px);
-  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.05);
+  background: #fff;
 }
 
-.permission-overview__main {
+.version-switch-overview__main {
   min-width: 0;
 }
 
-.permission-overview__name {
-  color: #1f2329;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 30px;
+.version-switch-overview__name {
+  color: #262626;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
 }
 
-.permission-overview__meta {
+.version-switch-overview__meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 8px;
-  color: #667085;
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.permission-overview__chips {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px 12px;
+  margin-top: 6px;
+  color: #595959;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .status-chip {
@@ -573,203 +436,128 @@ watch(
   color: #c2410c;
 }
 
-.status-chip--sync {
-  background: rgba(22, 119, 255, 0.12);
-  color: #1677ff;
-}
-
-.status-chip--warning {
-  background: rgba(250, 173, 20, 0.16);
-  color: #ad6800;
-}
-
-.permission-summary {
+.version-switch-panel {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.summary-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(260px, 1.2fr);
+  gap: 10px 14px;
   padding: 16px 18px;
-  border: 1px solid #e8edf5;
-  border-radius: 16px;
-  background: #fff;
-}
-
-.summary-card__label {
-  color: #667085;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.summary-card__value {
-  color: #1f2329;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-.permission-action,
-.permission-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.permission-action {
-  padding: 18px 20px;
   border: 1px solid #e8edf5;
   border-radius: 18px;
   background: #fff;
 }
 
-.permission-action__main {
+.switch-inline-field {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
+}
+
+.switch-inline-field--select {
+  min-width: 0;
+}
+
+.switch-inline-field__label {
+  flex-shrink: 0;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.switch-inline-field__value {
+  display: flex;
+  align-items: center;
   flex: 1 1 auto;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 12px;
+  color: #262626;
+  font-size: 13px;
+  line-height: 20px;
+  background: #fafafa;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.permission-action__select {
-  width: 340px;
-  max-width: 100%;
+.switch-inline-field__control {
+  width: 100%;
+  min-width: 0;
 }
 
-.permission-action__hint {
+.switch-inline-note {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.switch-inline-note__label {
+  flex-shrink: 0;
   color: #8c8c8c;
   font-size: 12px;
   line-height: 20px;
 }
 
-.permission-toolbar__search {
-  width: 320px;
+.switch-inline-note__text {
+  min-width: 0;
+  color: #595959;
+  font-size: 12px;
+  line-height: 20px;
 }
 
-.permission-toolbar__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.permission-toolbar__link {
-  padding: 0;
-}
-
-.permission-panels {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.permission-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 520px;
+.version-switch-log {
+  padding: 16px 18px 6px;
   border: 1px solid #e8edf5;
   border-radius: 18px;
   background: #fff;
-  overflow: hidden;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
 }
 
-.permission-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 18px 20px 12px;
-  border-bottom: 1px solid #edf1f7;
+.version-switch-log__title {
+  margin-bottom: 10px;
+  color: #262626;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
 }
 
-.permission-panel__title {
-  color: #1f2329;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 24px;
+:deep(.switch-inline-field__control .ant-select-selector) {
+  min-height: 36px !important;
+  padding-top: 1px !important;
+  padding-bottom: 1px !important;
+  border-radius: 8px !important;
 }
 
-.permission-panel__meta {
-  color: #667085;
-  font-size: 12px;
-  line-height: 18px;
+:deep(.version-switch-table .ant-table-thead > tr > th) {
+  background: #fafafa !important;
+  color: #262626;
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.permission-panel__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+:deep(.version-switch-table .ant-table-tbody > tr > td) {
+  color: #262626;
+  font-size: 13px;
+  line-height: 20px;
 }
 
-.permission-panel__reset {
-  padding: 0;
-}
-
-.permission-panel__body {
-  flex: 1;
-  min-height: 0;
-  padding: 12px 14px 18px;
-  overflow: auto;
-}
-
-.permission-panel__body :deep(.ant-tree-checkbox) {
-  margin-block-start: 0;
-}
-
-.permission-panel__body :deep(.ant-tree) {
-  padding: 6px 6px 0;
-}
-
-.permission-panel__body :deep(.ant-tree-treenode) {
-  padding: 4px 0;
-}
-
-.permission-panel__body :deep(.ant-tree-node-content-wrapper) {
-  min-height: 34px;
-  border-radius: 10px;
-}
-
-.permission-panel__body :deep(.ant-tree-checkbox + span) {
-  color: #1f2329;
-}
-
-.permission-panel__body :deep(.ant-tree-checkbox-disabled + span) {
-  color: #b0b8c4;
-}
-
-.tree-readonly {
-  pointer-events: none;
-}
-
-@media (max-width: 1180px) {
-  .permission-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+@media (max-width: 960px) {
+  .version-switch-overview {
+    align-items: flex-start;
   }
 
-  .permission-panels {
+  .version-switch-panel {
     grid-template-columns: 1fr;
   }
-}
 
-@media (max-width: 860px) {
-  .permission-overview,
-  .permission-action,
-  .permission-toolbar {
+  .switch-inline-field {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .permission-action__select,
-  .permission-toolbar__search {
-    width: 100%;
-  }
-
-  .permission-summary {
-    grid-template-columns: 1fr;
+    gap: 6px;
   }
 }
 </style>

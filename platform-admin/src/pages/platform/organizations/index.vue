@@ -15,7 +15,7 @@ import InstitutionPermissionModal from './components/institution-permission-moda
 import InstitutionRenewalModal from './components/institution-renewal-modal.vue'
 import messageService from '@/utils/messageService'
 
-const displayArray = ['customSearch', 'enableStatus']
+const displayArray = ['customSearch', 'createTime', 'enableStatus']
 const institutionStatusOptions = [
   { id: 1, value: '启用' },
   { id: 2, value: '停用' },
@@ -52,6 +52,7 @@ const summary = ref<InstitutionSummary>({
 const filters = reactive<{
   keyword?: string
   mobile?: string
+  registerTime?: string[]
   status?: number
   openType?: number
   provinceCode?: string
@@ -60,6 +61,7 @@ const filters = reactive<{
 }>({
   keyword: undefined,
   mobile: undefined,
+  registerTime: undefined,
   status: undefined,
   openType: undefined,
   provinceCode: undefined,
@@ -189,6 +191,7 @@ let requestSerial = 0
 function resetFilters() {
   filters.keyword = undefined
   filters.mobile = undefined
+  filters.registerTime = undefined
   filters.status = undefined
   filters.openType = undefined
   filters.provinceCode = undefined
@@ -362,6 +365,8 @@ async function fetchInstitutions() {
       size: pagination.pageSize,
       keyword: filters.keyword,
       mobile: filters.mobile,
+      registerTimeBegin: filters.registerTime?.[0],
+      registerTimeEnd: filters.registerTime?.[1],
       status: filters.status,
       openType: filters.openType,
       provinceCode: filters.provinceCode ? Number(filters.provinceCode) : undefined,
@@ -440,6 +445,20 @@ const filterUpdateHandlers = {
     pagination.current = 1
     fetchInstitutions()
   },
+  'update:createTimeFilter': (value: string[] | undefined, isClearAll: boolean) => {
+    if (isClearAll) {
+      resetFilters()
+    }
+    else {
+      const normalized = Array.isArray(value)
+        ? value.map(item => String(item || '').trim()).filter(Boolean)
+        : []
+      filters.registerTime = normalized.length === 2 ? normalized : undefined
+    }
+
+    pagination.current = 1
+    fetchInstitutions()
+  },
   'update:enableStatusFilter': (value: number | undefined, isClearAll: boolean) => {
     if (isClearAll) {
       resetFilters()
@@ -479,6 +498,7 @@ watch(institutionRenewalOpen, (open) => {
       <AllFilter
         :display-array="displayArray"
         :is-quick-show="false"
+        create-time-label="注册时间"
         :custom-is-display-list="customSearchFilters"
         :custom-search-values="customSearchValues"
         enable-status-label="机构状态"
@@ -606,7 +626,7 @@ watch(institutionRenewalOpen, (open) => {
                   编辑
                 </a-button>
                 <a-button type="link" class="action-cell__link" @click="openPermissionModal(record)">
-                  版本权限
+                  切换版本
                 </a-button>
                 <a-button type="link" class="action-cell__link" @click="openRenewalModal(record)">
                   续期

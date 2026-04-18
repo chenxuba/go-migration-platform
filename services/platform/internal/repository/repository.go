@@ -112,7 +112,7 @@ func institutionStatusExpr(alias string) string {
 		"ELSE 2 END"
 }
 
-func buildInstitutionWhereClause(keyword, mobile string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (string, []any) {
+func buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (string, []any) {
 	filters := []string{"oi.del_flag = 0"}
 	args := make([]any, 0, 8)
 	statusExpr := institutionStatusExpr("oi")
@@ -126,6 +126,16 @@ func buildInstitutionWhereClause(keyword, mobile string, enabled *bool, status, 
 	if trimmed := strings.TrimSpace(mobile); trimmed != "" {
 		filters = append(filters, "oi.mobile LIKE ?")
 		args = append(args, "%"+trimmed+"%")
+	}
+
+	if trimmed := strings.TrimSpace(registerTimeBegin); trimmed != "" {
+		filters = append(filters, "oi.create_time >= ?")
+		args = append(args, trimmed+" 00:00:00")
+	}
+
+	if trimmed := strings.TrimSpace(registerTimeEnd); trimmed != "" {
+		filters = append(filters, "oi.create_time <= ?")
+		args = append(args, trimmed+" 23:59:59")
 	}
 
 	if enabled != nil {
@@ -802,7 +812,7 @@ func institutionStatusValue(enabled bool, expireEnd sql.NullTime) int {
 	return 1
 }
 
-func (repo *Repository) PageInstitutions(ctx context.Context, current, size int, keyword, mobile string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (model.InstitutionPage, error) {
+func (repo *Repository) PageInstitutions(ctx context.Context, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (model.InstitutionPage, error) {
 	if current <= 0 {
 		current = 1
 	}
@@ -811,7 +821,7 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 	}
 	offset := (current - 1) * size
 
-	whereClause, args := buildInstitutionWhereClause(keyword, mobile, enabled, status, openType, provinceCode, cityCode, regionCode)
+	whereClause, args := buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTimeEnd, enabled, status, openType, provinceCode, cityCode, regionCode)
 	statusExpr := institutionStatusExpr("oi")
 
 	var total int
@@ -1322,7 +1332,7 @@ func (repo *Repository) ListInstitutionVersionChangeRecords(ctx context.Context,
 		       IFNULL(r.after_module_id, 0),
 		       IFNULL(r.after_version_name, ''),
 		       IFNULL(r.operator_id, 0),
-		       IFNULL(NULLIF(TRIM(u.nick_name), ''), NULLIF(TRIM(u.username), ''), ''),
+		       COALESCE(NULLIF(TRIM(u.nick_name), ''), NULLIF(TRIM(u.username), ''), ''),
 		       IFNULL(DATE_FORMAT(r.create_time, '%Y-%m-%d %H:%i:%s'), '')
 		FROM org_institution_version_change_record r
 		LEFT JOIN sso_user u ON u.id = r.operator_id AND u.del_flag = 0
