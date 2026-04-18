@@ -546,6 +546,58 @@ func (svc *Service) MenuByCode(claims authx.Claims, menuCode string, ownType *in
 	}
 }
 
+func (svc *Service) MenuAccessCheck(claims authx.Claims, menuCode string, ownType *int) (model.MenuAccessCheck, error) {
+	menuCode = strings.TrimSpace(menuCode)
+	if menuCode == "" {
+		return model.MenuAccessCheck{}, errors.New("menuCode is required")
+	}
+
+	resolvedOwnType := 2
+	if claims.LoginType == "manage" {
+		resolvedOwnType = 0
+	}
+	if ownType != nil {
+		resolvedOwnType = *ownType
+	}
+	if claims.LoginType == "org" {
+		resolvedOwnType = 2
+	}
+
+	if resolvedOwnType == 2 {
+		menuCode = institutionmenu.NormalizeCode(menuCode)
+	}
+
+	allowed := false
+	switch claims.LoginType {
+	case "org":
+		orgID, err := svc.repo.ResolveActiveInstitutionID(context.Background(), claims.UserID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return model.MenuAccessCheck{MenuCode: menuCode, Allowed: false}, nil
+			}
+			return model.MenuAccessCheck{}, err
+		}
+		allowed, err = svc.repo.InstitutionUserHasMenuCode(context.Background(), claims.UserID, orgID, roleTypeFromLoginType(claims.LoginType), menuCode)
+		if err != nil {
+			return model.MenuAccessCheck{}, err
+		}
+	default:
+		orgID, err := svc.resolveOrgID(claims, nil)
+		if err != nil {
+			return model.MenuAccessCheck{}, err
+		}
+		allowed, err = svc.repo.UserHasMenuCode(context.Background(), claims.UserID, orgID, resolvedOwnType, roleTypeFromLoginType(claims.LoginType), menuCode)
+		if err != nil {
+			return model.MenuAccessCheck{}, err
+		}
+	}
+
+	return model.MenuAccessCheck{
+		MenuCode: menuCode,
+		Allowed:  allowed,
+	}, nil
+}
+
 func (svc *Service) PageInstRoles(claims authx.Claims, query model.RoleQueryDTO) (model.RolePage, error) {
 	orgID, err := svc.resolveOrgID(claims, nil)
 	if err != nil {

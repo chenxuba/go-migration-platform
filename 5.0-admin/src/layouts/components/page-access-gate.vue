@@ -2,7 +2,7 @@
 import { LockOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
-import { getMenuByCodeApi } from '@/api/common/menu'
+import { getMenuAccessCheckApi, getMenuByCodeApi } from '@/api/common/menu'
 import { resolveRoutePageAccess } from '~@/router/access-meta'
 
 const props = defineProps<{
@@ -10,30 +10,40 @@ const props = defineProps<{
 }>()
 
 const { hasAccess } = useAccess()
-const accessDeniedImageCache = new Map<string, string>()
 
 const pageTitle = computed(() => String(props.route.meta?.title || '当前页面'))
 const pageAccess = computed(() => resolveRoutePageAccess(props.route))
-const canUsePage = computed(() => pageAccess.value.length === 0 || hasAccess(pageAccess.value))
+const localCanUsePage = computed(() => pageAccess.value.length === 0 || hasAccess(pageAccess.value))
 const pagePermissionCode = computed(() => String(pageAccess.value[0] || '').trim())
 const accessDeniedImage = ref('')
+const canUsePage = ref(true)
+const isCheckingPageAccess = ref(false)
+const isResolvingAccessDeniedImage = ref(false)
+let pageAccessRequestSeed = 0
 
 function handleApply() {
   message.info(`请联系管理员开通“${pageTitle.value}”页面功能权限`)
 }
 
-async function loadAccessDeniedImage(permissionCode: string) {
+function preloadImage(src: string) {
+  return new Promise<string>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(src)
+    image.onerror = () => reject(new Error('load access denied image failed'))
+    image.src = src
+  })
+}
+
+async function loadAccessDeniedImage(permissionCode: string, requestId: number) {
   const code = String(permissionCode || '').trim()
   if (!code) {
     accessDeniedImage.value = ''
+    isResolvingAccessDeniedImage.value = false
     return
   }
 
-  if (accessDeniedImageCache.has(code)) {
-    accessDeniedImage.value = accessDeniedImageCache.get(code) || ''
-    return
-  }
-
+  accessDeniedImage.value = ''
+  isResolvingAccessDeniedImage.value = true
   try {
     const res = await getMenuByCodeApi({
       menuCode: code,
@@ -42,33 +52,89 @@ async function loadAccessDeniedImage(permissionCode: string) {
       silentError: true,
     })
     const imageUrl = String(res.result?.accessDeniedImage || '').trim()
-    accessDeniedImageCache.set(code, imageUrl)
-    if (pagePermissionCode.value === code && !canUsePage.value)
-      accessDeniedImage.value = imageUrl
+    const readyImageUrl = imageUrl ? await preloadImage(imageUrl) : ''
+    if (pageAccessRequestSeed === requestId && pagePermissionCode.value === code && !canUsePage.value)
+      accessDeniedImage.value = readyImageUrl
   }
   catch {
-    accessDeniedImageCache.set(code, '')
-    if (pagePermissionCode.value === code)
+    if (pageAccessRequestSeed === requestId && pagePermissionCode.value === code)
       accessDeniedImage.value = ''
+  }
+  finally {
+    if (pageAccessRequestSeed === requestId)
+      isResolvingAccessDeniedImage.value = false
   }
 }
 
 watch(
-  [canUsePage, pagePermissionCode],
-  ([allowed, permissionCode]) => {
-    if (allowed || !permissionCode) {
-      accessDeniedImage.value = ''
+  [() => props.route.fullPath, pagePermissionCode],
+  async ([, permissionCode]) => {
+    const requestId = ++pageAccessRequestSeed
+    canUsePage.value = false
+    accessDeniedImage.value = ''
+    isResolvingAccessDeniedImage.value = false
+
+    if (!permissionCode) {
+      canUsePage.value = true
+      isCheckingPageAccess.value = false
       return
     }
-    void loadAccessDeniedImage(permissionCode)
+
+    isCheckingPageAccess.value = true
+
+    try {
+      const res = await getMenuAccessCheckApi({
+        menuCode: permissionCode,
+        ownType: 2,
+      }, {
+        silentError: true,
+      })
+      if (pageAccessRequestSeed !== requestId)
+        return
+
+      const allowed = !!res.result?.allowed
+      canUsePage.value = allowed
+      if (allowed) {
+        accessDeniedImage.value = ''
+        return
+      }
+
+      await loadAccessDeniedImage(permissionCode, requestId)
+    }
+    catch {
+      if (pageAccessRequestSeed !== requestId)
+        return
+
+      const allowed = localCanUsePage.value
+      canUsePage.value = allowed
+      if (!allowed)
+        await loadAccessDeniedImage(permissionCode, requestId)
+    }
+    finally {
+      if (pageAccessRequestSeed !== requestId)
+        return
+      isCheckingPageAccess.value = false
+    }
   },
   { immediate: true },
 )
+
+const shouldShowPosterLayout = computed(() => {
+  return isCheckingPageAccess.value || isResolvingAccessDeniedImage.value || !!accessDeniedImage.value
+})
+
+const shouldShowLoadingState = computed(() => {
+  return isCheckingPageAccess.value || isResolvingAccessDeniedImage.value
+})
 </script>
 
 <template>
   <slot v-if="canUsePage" />
-  <div v-else class="page-access-state" :class="{ 'page-access-state--poster': !!accessDeniedImage }">
+  <div
+    v-else
+    class="page-access-state"
+    :class="{ 'page-access-state--poster': shouldShowPosterLayout }"
+  >
     <div v-if="accessDeniedImage" class="page-access-poster-card">
       <img class="page-access-poster-card__image" :src="accessDeniedImage" :alt="pageTitle">
     </div>
@@ -77,6 +143,10 @@ watch(
       <a-button type="primary" class="page-access-poster-button" @click="handleApply">
         申请使用
       </a-button>
+    </div>
+
+    <div v-else-if="shouldShowLoadingState" class="page-access-poster-loading" aria-hidden="true">
+      <div class="page-access-poster-loading__shimmer" />
     </div>
 
     <div v-else class="page-access-card">
@@ -127,6 +197,27 @@ watch(
 .page-access-poster-card {
   width: 100%;
   overflow: hidden;
+}
+
+.page-access-poster-loading {
+  position: relative;
+  width: 100%;
+  min-height: calc(100vh - 140px);
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(238, 243, 255, 0.9) 0%, rgba(246, 248, 255, 0.92) 100%);
+}
+
+.page-access-poster-loading__shimmer {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.62) 34%,
+      rgba(255, 255, 255, 0) 68%);
+  transform: translateX(-100%);
+  animation: page-access-poster-shimmer 1.2s ease-in-out infinite;
 }
 
 .page-access-poster-card__image {
@@ -226,9 +317,19 @@ watch(
   }
 }
 
+@keyframes page-access-poster-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @media (max-width: 768px) {
   .page-access-state--poster {
     padding: 8px 0 92px;
+  }
+
+  .page-access-poster-loading {
+    min-height: calc(100vh - 120px);
   }
 
   .page-access-floating-action {

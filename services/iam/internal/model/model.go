@@ -164,6 +164,11 @@ type MenuTreeNode struct {
 	Children []MenuTreeNode `json:"children"`
 }
 
+type MenuAccessCheck struct {
+	MenuCode string `json:"menuCode"`
+	Allowed  bool   `json:"allowed"`
+}
+
 type RoleQueryDTO struct {
 	PageRequestModel PageRequestModel   `json:"pageRequestModel"`
 	QueryModel       RoleQueryCondition `json:"queryModel"`

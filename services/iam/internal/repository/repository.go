@@ -51,6 +51,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureMenuSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensureAccessCheckIndexes(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.migrateLegacyInstitutionMenuCodes(context.Background()); err != nil {
 		return nil, err
 	}
@@ -75,12 +78,76 @@ func (repo *Repository) ensureColumnExists(ctx context.Context, tableName, colum
 	return err
 }
 
+func (repo *Repository) ensureIndexExists(ctx context.Context, tableName, indexName, ddl string) error {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = ?
+		  AND INDEX_NAME = ?
+	`, tableName, indexName).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err := repo.db.ExecContext(ctx, ddl)
+	return err
+}
+
 func (repo *Repository) ensureMenuSchema(ctx context.Context) error {
 	return repo.ensureColumnExists(ctx, "sso_menu", "access_denied_image", `
 		ALTER TABLE sso_menu
 		ADD COLUMN access_denied_image VARCHAR(2000) DEFAULT NULL COMMENT '页面无权限展示图片'
 		AFTER introduce
 	`)
+}
+
+func (repo *Repository) ensureAccessCheckIndexes(ctx context.Context) error {
+	steps := []struct {
+		table string
+		index string
+		ddl   string
+	}{
+		{
+			table: "sso_menu",
+			index: "idx_sso_menu_own_code_del",
+			ddl:   "CREATE INDEX idx_sso_menu_own_code_del ON sso_menu (own_type, menu_code(191), del_flag)",
+		},
+		{
+			table: "sso_role",
+			index: "idx_sso_role_org_type_del",
+			ddl:   "CREATE INDEX idx_sso_role_org_type_del ON sso_role (org_id, role_type, del_flag, id)",
+		},
+		{
+			table: "org_module",
+			index: "idx_org_module_org_del_id",
+			ddl:   "CREATE INDEX idx_org_module_org_del_id ON org_module (org_id, del_flag, id)",
+		},
+		{
+			table: "sys_module_menu",
+			index: "idx_sys_module_menu_mod_del_menu",
+			ddl:   "CREATE INDEX idx_sys_module_menu_mod_del_menu ON sys_module_menu (module_id, del_flag, menu_id)",
+		},
+		{
+			table: "sys_module",
+			index: "idx_sys_module_type_name_del",
+			ddl:   "CREATE INDEX idx_sys_module_type_name_del ON sys_module (type, name(191), del_flag)",
+		},
+		{
+			table: "inst_user",
+			index: "idx_inst_user_user_del_dis_inst",
+			ddl:   "CREATE INDEX idx_inst_user_user_del_dis_inst ON inst_user (user_id, del_flag, disabled, inst_id)",
+		},
+	}
+
+	for _, step := range steps {
+		if err := repo.ensureIndexExists(ctx, step.table, step.index, step.ddl); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username string) (model.User, error) {
@@ -262,6 +329,33 @@ func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64
 		info.DeptIDs = []int64{}
 	}
 	return info, nil
+}
+
+func (repo *Repository) ResolveActiveInstitutionID(ctx context.Context, userID int64) (int64, error) {
+	var instID sql.NullInt64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT u.inst_id
+		FROM inst_user u
+		JOIN org_institution i ON i.id = u.inst_id
+		WHERE u.user_id = ?
+		  AND u.del_flag = 0
+		  AND u.disabled = 0
+		  AND i.del_flag = 0
+		  AND i.enabled = 1
+		  AND i.expire_end_time > NOW()
+		  AND i.organ_type != 2
+		  AND i.organ_type != 10
+		  AND i.organ_type != 11
+		ORDER BY u.id
+		LIMIT 1
+	`, userID).Scan(&instID)
+	if err != nil {
+		return 0, err
+	}
+	if !instID.Valid || instID.Int64 <= 0 {
+		return 0, sql.ErrNoRows
+	}
+	return instID.Int64, nil
 }
 
 func (repo *Repository) MarkInstitutionUserActivated(ctx context.Context, instUserID int64) error {
@@ -695,7 +789,7 @@ func (repo *Repository) GetMenuByCode(ctx context.Context, ownType int, menuCode
 		FROM sso_menu
 		WHERE del_flag = 0
 		  AND own_type = ?
-		  AND TRIM(IFNULL(menu_code, '')) IN (` + strings.Repeat("?,", len(candidates)-1) + `?)
+		  AND menu_code IN (` + strings.Repeat("?,", len(candidates)-1) + `?)
 		ORDER BY id ASC
 		LIMIT 1
 	`
@@ -735,6 +829,97 @@ func (repo *Repository) GetScopedMenuByCode(ctx context.Context, instID int64, o
 	return item, nil
 }
 
+func (repo *Repository) UserHasMenuCode(ctx context.Context, userID, orgID int64, ownType, roleType int, menuCode string) (bool, error) {
+	if userID <= 0 || orgID <= 0 {
+		return false, nil
+	}
+
+	menu, err := repo.GetScopedMenuByCode(ctx, orgID, ownType, menuCode)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM sso_user_role ur
+		JOIN sso_role r ON r.id = ur.role_id
+		JOIN sso_role_menu rm ON rm.role_id = r.id
+		WHERE ur.user_id = ?
+		  AND r.del_flag = 0
+		  AND r.org_id = ?
+		  AND r.role_type = ?
+		  AND rm.menu_id = ?
+	`, userID, orgID, roleType, menu.ID).Scan(&count); err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+func (repo *Repository) InstitutionUserHasMenuCode(ctx context.Context, userID, orgID int64, roleType int, menuCode string) (bool, error) {
+	menuCode = normalizeInstitutionMenuCodeForOwnType(menuCode, 2)
+	if menuCode == "" || userID <= 0 || orgID <= 0 {
+		return false, nil
+	}
+
+	var marker int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT 1
+		FROM sso_user_role ur
+		JOIN sso_role r ON r.id = ur.role_id
+		JOIN sso_role_menu rm ON rm.role_id = r.id
+		JOIN sso_menu m ON m.id = rm.menu_id
+		JOIN sys_module_menu smm ON smm.menu_id = m.id
+		WHERE ur.user_id = ?
+		  AND r.del_flag = 0
+		  AND r.org_id = ?
+		  AND r.role_type = ?
+		  AND m.del_flag = 0
+		  AND m.own_type = 2
+		  AND m.menu_code = ?
+		  AND (smm.del_flag = 0 OR smm.del_flag IS NULL)
+		  AND smm.module_id = COALESCE(
+		    (
+		      SELECT om.module_id
+		      FROM org_module om
+		      WHERE om.org_id = ?
+		        AND om.del_flag = 0
+		      ORDER BY om.id DESC
+		      LIMIT 1
+		    ),
+		    (
+		      SELECT sm.id
+		      FROM org_institution oi
+		      JOIN sys_module sm
+		        ON sm.del_flag = 0
+		       AND sm.type = 1
+		       AND sm.name = CASE IFNULL(oi.open_type, 0)
+		         WHEN 1 THEN '体验版'
+		         WHEN 2 THEN '基础版'
+		         WHEN 3 THEN '高级版'
+		         WHEN 4 THEN '旗舰版'
+		         ELSE ''
+		       END
+		      WHERE oi.id = ?
+		        AND oi.del_flag = 0
+		      LIMIT 1
+		    )
+		  )
+		LIMIT 1
+	`, userID, orgID, roleType, menuCode, orgID, orgID).Scan(&marker)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return marker == 1, nil
+}
+
 func (repo *Repository) MenuCodeExists(ctx context.Context, ownType int, menuCode string, excludeID *int64) (bool, error) {
 	candidates := menuCodeCandidates(ownType, menuCode)
 	if len(candidates) == 0 {
@@ -744,7 +929,7 @@ func (repo *Repository) MenuCodeExists(ctx context.Context, ownType int, menuCod
 	filters := []string{"del_flag = 0", "own_type = ?"}
 	args := []any{ownType}
 	if len(candidates) == 1 {
-		filters = append(filters, "TRIM(IFNULL(menu_code, '')) = ?")
+		filters = append(filters, "menu_code = ?")
 		args = append(args, candidates[0])
 	} else {
 		placeholders := make([]string, 0, len(candidates))
@@ -752,7 +937,7 @@ func (repo *Repository) MenuCodeExists(ctx context.Context, ownType int, menuCod
 			placeholders = append(placeholders, "?")
 			args = append(args, candidate)
 		}
-		filters = append(filters, "TRIM(IFNULL(menu_code, '')) IN ("+strings.Join(placeholders, ",")+")")
+		filters = append(filters, "menu_code IN ("+strings.Join(placeholders, ",")+")")
 	}
 	if excludeID != nil && *excludeID > 0 {
 		filters = append(filters, "id <> ?")
@@ -1027,7 +1212,7 @@ func (repo *Repository) getInstitutionScopedMenuIDSet(ctx context.Context, instI
 		FROM sys_module_menu smm
 		JOIN sso_menu m ON m.id = smm.menu_id
 		WHERE smm.module_id = ?
-		  AND IFNULL(smm.del_flag, 0) = 0
+		  AND (smm.del_flag = 0 OR smm.del_flag IS NULL)
 		  AND m.del_flag = 0
 		  AND m.own_type = ?
 	`, moduleID, ownType)
