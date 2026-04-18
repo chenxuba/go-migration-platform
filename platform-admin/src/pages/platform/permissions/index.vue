@@ -27,109 +27,81 @@
             </template>
             新增
           </a-button>
-          <a-button @click="toggleExpandAll">
-            展开 / 折叠
-          </a-button>
         </a-space>
       </div>
 
-      <a-spin :spinning="loading">
-        <div class="permission-tree-panel">
-          <div
-            v-if="tableData.length"
-            ref="treeBodyRef"
-            class="permission-tree-body"
-          >
-            <div class="permission-tree-header">
-              <span>菜单名称</span>
-              <span>权限标识</span>
-              <span>层级</span>
-              <span>排序</span>
-              <span>权重</span>
-              <span>描述</span>
-              <span class="permission-tree-header__actions">操作</span>
+      <a-table
+        v-model:expandedRowKeys="expandedRowKeys"
+        class="permission-table"
+        :columns="columns"
+        :data-source="tableData"
+        :loading="loading"
+        :pagination="false"
+        :scroll="{ x: 1280 }"
+        table-layout="fixed"
+        size="middle"
+        row-key="id"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'menuName'">
+            <span class="menu-name-text" :title="toPermissionRecord(record).menuName || '--'">
+              {{ toPermissionRecord(record).menuName || '--' }}
+            </span>
+          </template>
+
+          <template v-else-if="column.key === 'menuCode'">
+            <span class="ellipsis-text" :title="toPermissionRecord(record).displayMenuCode">
+              {{ toPermissionRecord(record).displayMenuCode }}
+            </span>
+          </template>
+
+          <template v-else-if="column.key === 'levelLabel'">
+            <a-tag :color="toPermissionRecord(record).levelTagColor">
+              {{ toPermissionRecord(record).levelLabel }}
+            </a-tag>
+          </template>
+
+          <template v-else-if="column.key === 'introduce'">
+            <span class="ellipsis-text" :title="toPermissionRecord(record).introduceText">
+              {{ toPermissionRecord(record).introduceText }}
+            </span>
+          </template>
+
+          <template v-else-if="column.key === 'actions'">
+            <div class="action-cell">
+              <a-button
+                v-if="hasPermission(AccessEnum.menuPermissions_update)"
+                type="link"
+                size="small"
+                @click="openDrawer('edit', toPermissionRecord(record))"
+              >
+                修改
+              </a-button>
+              <a-button
+                v-if="hasPermission(AccessEnum.menuPermissions_add) && Number(toPermissionRecord(record).depth || 1) < 3"
+                type="link"
+                size="small"
+                @click="handleAddChild(toPermissionRecord(record))"
+              >
+                新增
+              </a-button>
+              <a-popconfirm
+                v-if="hasPermission(AccessEnum.menuPermissions_delete)"
+                title="确定要删除该权限吗？"
+                @confirm="handleDeleteByRecord(toPermissionRecord(record))"
+              >
+                <a-button type="link" size="small" danger>
+                  删除
+                </a-button>
+              </a-popconfirm>
             </div>
+          </template>
 
-            <div v-for="row in flatRows" :key="row.record.id" class="permission-tree-node">
-              <div class="permission-tree-row">
-                <div class="permission-tree-row__name">
-                  <div class="permission-tree-name-cell" :style="getIndentStyle(row.depth)">
-                    <button
-                      v-if="row.hasChildren"
-                      type="button"
-                      class="permission-tree-switcher"
-                      :class="{ 'is-expanded': row.isExpanded }"
-                      @click.stop="toggleRowExpand(row.record)"
-                    >
-                      <RightOutlined />
-                    </button>
-                    <span v-else class="permission-tree-switcher permission-tree-switcher--placeholder" />
-                    <span class="menu-name-text" :title="row.record.menuName || '--'">
-                      {{ row.record.menuName || '--' }}
-                    </span>
-                  </div>
-                </div>
-
-                <div class="permission-tree-row__code">
-                  <span class="ellipsis-text" :title="row.record.displayMenuCode">
-                    {{ row.record.displayMenuCode }}
-                  </span>
-                </div>
-
-                <div class="permission-tree-row__level">
-                  <a-tag :color="row.record.levelTagColor">
-                    {{ row.record.levelLabel }}
-                  </a-tag>
-                </div>
-
-                <div class="permission-tree-row__sort">
-                  {{ row.record.sort ?? '--' }}
-                </div>
-
-                <div class="permission-tree-row__weight">
-                  {{ row.record.weight ?? '--' }}
-                </div>
-
-                <div class="permission-tree-row__intro">
-                  <span class="ellipsis-text" :title="row.record.introduceText">
-                    {{ row.record.introduceText }}
-                  </span>
-                </div>
-
-                <div class="permission-tree-row__actions" @click.stop>
-                  <a-button
-                    v-if="hasPermission(AccessEnum.menuPermissions_update)"
-                    type="link"
-                    size="small"
-                    @click.stop="openDrawer('edit', row.record)"
-                  >
-                    修改
-                  </a-button>
-                  <a-button
-                    v-if="hasPermission(AccessEnum.menuPermissions_add) && Number(row.record.depth || 1) < 3"
-                    type="link"
-                    size="small"
-                    @click.stop="handleAddChild(row.record)"
-                  >
-                    新增
-                  </a-button>
-                  <a-popconfirm
-                    v-if="hasPermission(AccessEnum.menuPermissions_delete)"
-                    title="确定要删除该权限吗？"
-                    @confirm="handleDeleteByRecord(row.record)"
-                  >
-                    <a-button type="link" size="small" danger @click.stop>
-                      删除
-                    </a-button>
-                  </a-popconfirm>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <a-empty v-else description="暂无权限数据" />
-        </div>
-      </a-spin>
+          <template v-else>
+            {{ (toPermissionRecord(record) as any)[column.dataIndex as string] ?? '--' }}
+          </template>
+        </template>
+      </a-table>
     </a-card>
 
     <PlatformModalShell
@@ -231,7 +203,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
-import { PlusOutlined, RightOutlined } from '@ant-design/icons-vue'
+import type { TableColumnsType } from 'ant-design-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import {
   createPermissionApi,
   deletePermissionApi,
@@ -261,12 +234,6 @@ interface PermissionRecord extends PermissionMenuItem {
 }
 
 type FormMode = 'add' | 'edit' | null
-interface FlatPermissionRow {
-  record: PermissionRecord
-  depth: number
-  hasChildren: boolean
-  isExpanded: boolean
-}
 
 const { hasAccess } = useAccess()
 
@@ -280,7 +247,6 @@ const keywordInput = ref('')
 const searchKeyword = ref('')
 const expandedRowKeys = ref<number[]>([])
 const loading = ref(false)
-const treeBodyRef = ref<HTMLDivElement | null>(null)
 
 const currentPortal = ref<PortalEnum>(PortalEnum.INSTITUTION)
 const portalOptions = [
@@ -303,6 +269,50 @@ const formData = reactive<PermissionMutationPayload>({
   introduce: '',
   ownType: PortalEnum.INSTITUTION,
 })
+
+const columns: TableColumnsType<PermissionRecord> = [
+  {
+    title: '菜单名称',
+    dataIndex: 'menuName',
+    key: 'menuName',
+    width: 260,
+  },
+  {
+    title: '权限标识',
+    dataIndex: 'displayMenuCode',
+    key: 'menuCode',
+    width: 220,
+  },
+  {
+    title: '层级',
+    key: 'levelLabel',
+    width: 110,
+  },
+  {
+    title: '排序',
+    dataIndex: 'sort',
+    key: 'sort',
+    width: 90,
+  },
+  {
+    title: '权重',
+    dataIndex: 'weight',
+    key: 'weight',
+    width: 90,
+  },
+  {
+    title: '描述',
+    dataIndex: 'introduce',
+    key: 'introduce',
+    width: 320,
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 168,
+    fixed: 'right',
+  },
+]
 
 const compactPhrases = [
   { from: ['ONE', 'TO', 'ONE'], to: 'o2o' },
@@ -580,6 +590,8 @@ const tableData = computed<PermissionRecord[]>(() => {
   return filterTree(treeData.value)
 })
 
+const toPermissionRecord = (record: Record<string, any>) => record as PermissionRecord
+
 const collectExpandableIds = (list: PermissionRecord[]): number[] => {
   const ids: number[] = []
   list.forEach((item) => {
@@ -592,30 +604,6 @@ const collectExpandableIds = (list: PermissionRecord[]): number[] => {
 }
 
 const expandableRowKeys = computed<number[]>(() => collectExpandableIds(tableData.value))
-const expandedKeySet = computed(() => new Set(expandedRowKeys.value.map(key => Number(key))))
-const flatRows = computed<FlatPermissionRow[]>(() => {
-  const rows: FlatPermissionRow[] = []
-
-  const walk = (list: PermissionRecord[]) => {
-    list.forEach((item) => {
-      const hasChildren = Boolean(item.children?.length)
-      const isExpanded = expandedKeySet.value.has(Number(item.id))
-
-      rows.push({
-        record: item,
-        depth: item.depth,
-        hasChildren,
-        isExpanded,
-      })
-
-      if (hasChildren && isExpanded)
-        walk(item.children!)
-    })
-  }
-
-  walk(tableData.value)
-  return rows
-})
 
 const buildNodeMap = (list: PermissionRecord[]) => {
   const map = new Map<number, PermissionRecord>()
@@ -630,11 +618,6 @@ const buildNodeMap = (list: PermissionRecord[]) => {
   return map
 }
 
-const resetTreeScroll = () => {
-  if (treeBodyRef.value)
-    treeBodyRef.value.scrollTop = 0
-}
-
 const loadTree = async () => {
   loading.value = true
   try {
@@ -646,7 +629,6 @@ const loadTree = async () => {
     const normalizedTree = normalizeTree(Array.isArray(res.result) ? res.result : [])
     treeData.value = normalizedTree
     nodeMap.value = buildNodeMap(normalizedTree)
-    resetTreeScroll()
   }
   catch (error: any) {
     messageService.error(error?.message || '加载权限树失败')
@@ -735,42 +717,12 @@ const handleSearch = () => {
   searchKeyword.value = keywordInput.value.trim()
   if (!searchKeyword.value)
     expandedRowKeys.value = []
-  resetTreeScroll()
 }
 
 const handleReset = () => {
   keywordInput.value = ''
   searchKeyword.value = ''
   expandedRowKeys.value = []
-  resetTreeScroll()
-}
-
-const toggleExpandAll = () => {
-  if (expandedRowKeys.value.length) {
-    expandedRowKeys.value = []
-    return
-  }
-
-  expandedRowKeys.value = [...expandableRowKeys.value]
-}
-
-const toggleRowExpand = (record: PermissionRecord) => {
-  if (!record.children?.length)
-    return
-
-  const targetId = Number(record.id)
-  const nextKeys = new Set(expandedRowKeys.value.map(key => Number(key)))
-  if (nextKeys.has(targetId))
-    nextKeys.delete(targetId)
-  else
-    nextKeys.add(targetId)
-  expandedRowKeys.value = Array.from(nextKeys)
-}
-
-const getIndentStyle = (depth: number) => {
-  return {
-    paddingLeft: `${Math.max(0, depth - 1) * 24}px`,
-  }
 }
 
 const handleSubmit = async () => {
@@ -881,136 +833,6 @@ onMounted(() => {
     margin-bottom: 16px;
   }
 
-  .permission-tree-panel {
-    border: 1px solid #f0f0f0;
-    border-radius: 8px;
-    background: #fff;
-    overflow: hidden;
-  }
-
-  .permission-tree-header,
-  .permission-tree-row {
-    display: grid;
-    grid-template-columns: minmax(300px, 2.1fr) 200px 108px 88px 88px minmax(320px, 2.3fr) 220px;
-    column-gap: 16px;
-    align-items: center;
-    min-width: 1388px;
-  }
-
-  .permission-tree-header {
-    min-height: 44px;
-    padding: 0 16px;
-    border-bottom: 1px solid #f0f0f0;
-    background: #fafafa;
-    color: rgba(0, 0, 0, 0.85);
-    font-size: 13px;
-    font-weight: 500;
-    line-height: 20px;
-  }
-
-  .permission-tree-header > span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .permission-tree-body {
-    position: relative;
-    z-index: 0;
-    overflow: auto;
-    background: #fff;
-    isolation: isolate;
-    scrollbar-width: thin;
-    scrollbar-color: #d9d9d9 transparent;
-  }
-
-  .permission-tree-node {
-    min-height: 56px;
-    min-width: 1388px;
-    border-bottom: 1px solid #f0f0f0;
-  }
-
-  .permission-tree-row {
-    min-height: 56px;
-    padding: 10px 16px;
-    color: #000;
-    font-size: 13px;
-    line-height: 20px;
-  }
-
-  .permission-tree-name-cell {
-    display: flex;
-    align-items: flex-start;
-    min-width: 0;
-  }
-
-  .permission-tree-switcher {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 20px;
-    width: 20px;
-    height: 20px;
-    margin-right: 6px;
-    border: none;
-    background: transparent;
-    color: rgba(0, 0, 0, 0.45);
-    cursor: pointer;
-    padding: 0;
-    transition: transform 0.16s ease, color 0.16s ease;
-  }
-
-  .permission-tree-switcher.is-expanded {
-    color: rgba(0, 0, 0, 0.72);
-    transform: rotate(90deg);
-  }
-
-  .permission-tree-switcher--placeholder {
-    visibility: hidden;
-    cursor: default;
-  }
-
-  .permission-tree-row__name,
-  .permission-tree-row__code,
-  .permission-tree-row__level,
-  .permission-tree-row__sort,
-  .permission-tree-row__weight,
-  .permission-tree-row__intro,
-  .permission-tree-row__actions {
-    min-width: 0;
-  }
-
-  .permission-tree-header__actions,
-  .permission-tree-row__level,
-  .permission-tree-row__sort,
-  .permission-tree-row__weight {
-    display: flex;
-    align-items: center;
-  }
-
-  .permission-tree-header__actions,
-  .permission-tree-row__actions {
-    position: sticky;
-    right: 0;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-    white-space: nowrap;
-    box-shadow: -10px 0 12px -12px rgba(15, 23, 42, 0.18);
-  }
-
-  .permission-tree-header__actions {
-    background: #fafafa;
-    z-index: 2;
-  }
-
-  .permission-tree-row__actions {
-    background: #fff;
-  }
-
   .ellipsis-text {
     display: inline-block;
     max-width: 100%;
@@ -1019,6 +841,13 @@ onMounted(() => {
     text-overflow: ellipsis;
     white-space: nowrap;
     vertical-align: bottom;
+  }
+
+  .action-cell {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
   }
 
   :deep(.ant-card),
@@ -1036,18 +865,38 @@ onMounted(() => {
     font-family: inherit;
   }
 
-  .permission-tree-body::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  :deep(.permission-table .ant-table-container) {
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    overflow: hidden;
   }
 
-  .permission-tree-body::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.18);
+  :deep(.permission-table .ant-table-thead > tr > th) {
+    padding: 12px 16px;
+    background: #fafafa !important;
+    color: #262626;
+    font-size: 14px;
+    font-weight: 500;
+    border-bottom: 1px solid #f0f0f0;
   }
 
-  .permission-tree-body::-webkit-scrollbar-track {
-    background: transparent;
+  :deep(.permission-table .ant-table-tbody > tr > td) {
+    padding: 14px 16px;
+    border-bottom: 1px solid #f5f5f5;
+    vertical-align: middle;
+    color: #000;
+  }
+
+  :deep(.permission-table .ant-table-tbody > tr:hover > td) {
+    background: #fcfcfc;
+  }
+
+  :deep(.permission-table .ant-table-cell-fix-right) {
+    background: #fff;
+  }
+
+  :deep(.permission-table .ant-table-thead > tr > th.ant-table-cell-fix-right) {
+    background: #fafafa !important;
   }
 }
 </style>
