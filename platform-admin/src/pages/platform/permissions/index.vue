@@ -518,19 +518,23 @@ const normalizePermissionCode = (code: string | number | null | undefined) => {
   const raw = String(code ?? '').trim()
   if (!raw)
     return ''
-  if (raw.startsWith('g:'))
-    return `g:${normalizeCamelSuffix(raw.slice('g:'.length))}`
-  if (raw.startsWith('r:'))
-    return `r:${normalizeCamelSuffix(raw.slice('r:'.length))}`
-  if (raw.startsWith('a:'))
-    return `a:${normalizeCamelSuffix(raw.slice('a:'.length))}`
-  if (raw.startsWith('INST_GROUP_'))
-    return `g:${toCompactCamel(raw.slice('INST_GROUP_'.length))}`
-  if (raw.startsWith('INST_ROUTE_'))
-    return `r:${toCompactCamel(raw.slice('INST_ROUTE_'.length))}`
-  if (raw.startsWith('INST_AUTH_'))
-    return `a:${toCompactCamel(raw.slice('INST_AUTH_'.length))}`
+  if (raw.startsWith('grp:'))
+    return `grp:${normalizeCamelSuffix(raw.slice('grp:'.length))}`
+  if (raw.startsWith('page:'))
+    return `page:${normalizeCamelSuffix(raw.slice('page:'.length))}`
+  if (raw.startsWith('perm:'))
+    return `perm:${normalizeCamelSuffix(raw.slice('perm:'.length))}`
   return raw
+}
+
+const isLegacyInstitutionPermissionCode = (code: string | number | null | undefined) => {
+  const raw = String(code ?? '').trim()
+  return /^INST_(GROUP|ROUTE|AUTH)_/.test(raw)
+}
+
+const isCurrentInstitutionPermissionCode = (code: string | number | null | undefined) => {
+  const raw = normalizePermissionCode(code)
+  return /^(grp|page|perm):/.test(raw)
 }
 
 const normalizeTree = (list: PermissionMenuItem[] = [], depth = 1): PermissionRecord[] => {
@@ -728,6 +732,16 @@ const handleReset = () => {
 const handleSubmit = async () => {
   if (!String(formData.menuName || '').trim() || !String(formData.menuCode || '').trim()) {
     messageService.error('请填写权限名称和编码')
+    return
+  }
+
+  if (currentPortal.value === PortalEnum.INSTITUTION && isLegacyInstitutionPermissionCode(formData.menuCode)) {
+    messageService.error('机构端权限标识请使用 grp:/page:/perm: 新 code')
+    return
+  }
+
+  if (currentPortal.value === PortalEnum.INSTITUTION && !isCurrentInstitutionPermissionCode(formData.menuCode)) {
+    messageService.error('机构端权限标识必须使用 grp:/page:/perm: 前缀')
     return
   }
 

@@ -45,8 +45,12 @@ func menuCodeCandidates(ownType int, menuCode string) []string {
 	return []string{menuCode}
 }
 
-func New(db *sql.DB) *Repository {
-	return &Repository{db: db}
+func New(db *sql.DB) (*Repository, error) {
+	repo := &Repository{db: db}
+	if err := repo.migrateLegacyInstitutionMenuCodes(context.Background()); err != nil {
+		return nil, err
+	}
+	return repo, nil
 }
 
 func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username string) (model.User, error) {

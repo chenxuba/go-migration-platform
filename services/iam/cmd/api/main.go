@@ -34,7 +34,10 @@ func main() {
 		panic(err)
 	}
 
-	repo := repository.New(db)
+	repo, err := repository.New(db)
+	if err != nil {
+		panic(err)
+	}
 	tokenManager := authx.NewTokenManager(cfg.TokenSecret)
 	svc := service.New(store, repo, tokenManager)
 	h := handler.New(svc, cfg.TokenCookieName)

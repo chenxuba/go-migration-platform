@@ -258,7 +258,13 @@ func (svc *Service) CreateMenu(claims authx.Claims, input model.Menu) (model.Men
 		return model.Menu{}, errors.New("ownType is invalid")
 	}
 	if ownType == 2 {
+		if institutionmenu.IsLegacyCode(menuCode) {
+			return model.Menu{}, errors.New("机构端权限标识请使用 grp:/page:/perm: 新 code")
+		}
 		menuCode = institutionmenu.NormalizeCode(menuCode)
+		if !strings.HasPrefix(menuCode, "grp:") && !strings.HasPrefix(menuCode, "page:") && !strings.HasPrefix(menuCode, "perm:") {
+			return model.Menu{}, errors.New("机构端权限标识必须使用 grp:/page:/perm: 前缀")
+		}
 	}
 
 	level := 0
@@ -337,7 +343,13 @@ func (svc *Service) UpdateMenu(claims authx.Claims, input model.Menu) (model.Men
 		return model.Menu{}, errors.New("ownType is invalid")
 	}
 	if ownType == 2 {
+		if institutionmenu.IsLegacyCode(menuCode) {
+			return model.Menu{}, errors.New("机构端权限标识请使用 grp:/page:/perm: 新 code")
+		}
 		menuCode = institutionmenu.NormalizeCode(menuCode)
+		if !strings.HasPrefix(menuCode, "grp:") && !strings.HasPrefix(menuCode, "page:") && !strings.HasPrefix(menuCode, "perm:") {
+			return model.Menu{}, errors.New("机构端权限标识必须使用 grp:/page:/perm: 前缀")
+		}
 	}
 
 	if input.PID == input.ID {

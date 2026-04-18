@@ -6,12 +6,9 @@ import (
 )
 
 const (
-	groupCodePrefix       = "grp:"
-	routeCodePrefix       = "page:"
-	authCodePrefix        = "perm:"
-	legacyGroupCodePrefix = "INST_GROUP_"
-	legacyRouteCodePrefix = "INST_ROUTE_"
-	legacyAuthCodePrefix  = "INST_AUTH_"
+	groupCodePrefix = "grp:"
+	routeCodePrefix = "page:"
+	authCodePrefix  = "perm:"
 )
 
 var compactPhraseRules = []struct {
@@ -383,12 +380,6 @@ func NormalizeCode(code string) string {
 		return routeCodePrefix + normalizeCamelSuffix(strings.TrimPrefix(trimmed, routeCodePrefix))
 	case strings.HasPrefix(trimmed, authCodePrefix):
 		return authCodePrefix + normalizeCamelSuffix(strings.TrimPrefix(trimmed, authCodePrefix))
-	case strings.HasPrefix(trimmed, legacyGroupCodePrefix):
-		return groupCodePrefix + upperSnakeToCompactCamel(strings.TrimPrefix(trimmed, legacyGroupCodePrefix))
-	case strings.HasPrefix(trimmed, legacyRouteCodePrefix):
-		return routeCodePrefix + upperSnakeToCompactCamel(strings.TrimPrefix(trimmed, legacyRouteCodePrefix))
-	case strings.HasPrefix(trimmed, legacyAuthCodePrefix):
-		return authCodePrefix + upperSnakeToCompactCamel(strings.TrimPrefix(trimmed, legacyAuthCodePrefix))
 	default:
 		return trimmed
 	}
@@ -400,9 +391,9 @@ func DeriveCode(level int, currentCode, menuName, parentCode string) string {
 	parentCode = strings.TrimSpace(parentCode)
 
 	switch {
-	case strings.HasPrefix(currentCode, legacyGroupCodePrefix),
-		strings.HasPrefix(currentCode, legacyRouteCodePrefix),
-		strings.HasPrefix(currentCode, legacyAuthCodePrefix):
+	case strings.HasPrefix(currentCode, groupCodePrefix),
+		strings.HasPrefix(currentCode, routeCodePrefix),
+		strings.HasPrefix(currentCode, authCodePrefix):
 		return NormalizeCode(currentCode)
 	}
 

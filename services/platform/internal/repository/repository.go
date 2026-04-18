@@ -152,6 +152,9 @@ func buildInstitutionWhereClause(keyword, mobile string, enabled *bool, status, 
 
 func New(db *sql.DB) (*Repository, error) {
 	repo := &Repository{db: db}
+	if err := repo.migrateLegacyInstitutionMenuCodes(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.ensureInstitutionSchema(context.Background()); err != nil {
 		return nil, err
 	}
