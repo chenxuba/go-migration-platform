@@ -553,10 +553,10 @@ func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType 
 		args = append(args, *ownType)
 	}
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(url_path, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(remark, ''), IFNULL(introduce, '')
+		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(url_path, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, '')
 		FROM sso_menu
 		WHERE `+strings.Join(filters, " AND ")+`
-		ORDER BY sort ASC, id ASC
+		ORDER BY IFNULL(sort, 0) ASC, IFNULL(weight, 0) DESC, id ASC
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -565,7 +565,7 @@ func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType 
 	items := make([]model.Menu, 0, 64)
 	for rows.Next() {
 		var item model.Menu
-		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.URLPath, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Remark, &item.Introduce); err != nil {
+		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.URLPath, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -575,13 +575,13 @@ func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType 
 
 func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownType int) ([]model.Menu, error) {
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT m.id, IFNULL(m.menu_name, ''), IFNULL(m.icon, ''), IFNULL(m.url_path, ''), IFNULL(m.menu_code, ''), m.menu_type, m.own_type, IFNULL(m.pid, 0), m.sort, IFNULL(m.remark, ''), IFNULL(m.introduce, '')
+		SELECT m.id, IFNULL(m.menu_name, ''), IFNULL(m.icon, ''), IFNULL(m.url_path, ''), IFNULL(m.menu_code, ''), m.menu_type, m.own_type, IFNULL(m.pid, 0), m.sort, IFNULL(m.weight, 0), IFNULL(m.group_code, ''), IFNULL(m.remark, ''), IFNULL(m.introduce, '')
 		FROM sso_role r
 		JOIN sso_role_menu rm ON r.id = rm.role_id
 		JOIN sso_menu m ON rm.menu_id = m.id
 		WHERE r.del_flag = 0 AND m.del_flag = 0
 		  AND r.is_admin = 1 AND r.org_id = ? AND m.own_type = ?
-		ORDER BY m.sort ASC, m.id ASC
+		ORDER BY IFNULL(m.sort, 0) ASC, IFNULL(m.weight, 0) DESC, m.id ASC
 	`, instID, ownType)
 	if err != nil {
 		return nil, err
@@ -590,7 +590,7 @@ func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownTy
 	items := make([]model.Menu, 0, 64)
 	for rows.Next() {
 		var item model.Menu
-		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.URLPath, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Remark, &item.Introduce); err != nil {
+		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.URLPath, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -983,7 +983,7 @@ func (repo *Repository) collectMenusWithParents(ctx context.Context, selected ma
 			continue
 		}
 		query := `
-			SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(url_path, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(remark, ''), IFNULL(introduce, '')
+			SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(url_path, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, '')
 			FROM sso_menu
 			WHERE id = ? AND del_flag = 0`
 		args := []any{id}
@@ -993,7 +993,7 @@ func (repo *Repository) collectMenusWithParents(ctx context.Context, selected ma
 		}
 		row := repo.db.QueryRowContext(ctx, query, args...)
 		var item model.Menu
-		if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.URLPath, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Remark, &item.Introduce); err != nil {
+		if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.URLPath, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
 			if err == sql.ErrNoRows {
 				continue
 			}

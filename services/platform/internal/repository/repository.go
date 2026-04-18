@@ -21,8 +21,12 @@ type Repository struct {
 type rawMenu struct {
 	ID        int64
 	Name      string
+	Code      string
 	PID       int64
 	Sort      int64
+	Weight    int64
+	MenuType  int64
+	GroupCode string
 	Introduce string
 }
 
@@ -158,6 +162,9 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	if err := repo.ensureVersionModuleSchema(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := repo.ensureInstitutionMenuCatalog(context.Background()); err != nil {
 		return nil, err
 	}
 	return repo, nil
@@ -1697,15 +1704,15 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64) (mo
 		selected[id] = struct{}{}
 		detail.SelectedMenuIDs = append(detail.SelectedMenuIDs, id)
 	}
-	menuMap, err := repo.collectModuleMenus(ctx, selected)
+	if err := selectedRows.Err(); err != nil {
+		return model.ModuleDetailVO{}, err
+	}
+
+	rawMenus, err := repo.listInstitutionMenus(ctx)
 	if err != nil {
 		return model.ModuleDetailVO{}, err
 	}
-	rawMenus := make([]rawMenu, 0, len(menuMap))
-	for _, item := range menuMap {
-		rawMenus = append(rawMenus, item)
-	}
-	detail.MenuIDs = buildModuleTree(rawMenus, selected, 0)
+	detail.MenuIDs = buildVisibleInstitutionModuleTree(rawMenus, selected)
 	return detail, nil
 }
 
@@ -1723,13 +1730,13 @@ func (repo *Repository) collectModuleMenus(ctx context.Context, selected map[int
 			continue
 		}
 		row := repo.db.QueryRowContext(ctx, `
-			SELECT id, IFNULL(menu_name, ''), IFNULL(pid, 0), IFNULL(sort, 0), IFNULL(introduce, '')
+			SELECT id, IFNULL(menu_name, ''), IFNULL(menu_code, ''), IFNULL(pid, 0), IFNULL(sort, 0), IFNULL(weight, 0), IFNULL(menu_type, 0), IFNULL(group_code, ''), IFNULL(introduce, '')
 			FROM sso_menu
 			WHERE id = ? AND del_flag = 0 AND own_type = 2
 			LIMIT 1
 		`, id)
 		var item rawMenu
-		if err := row.Scan(&item.ID, &item.Name, &item.PID, &item.Sort, &item.Introduce); err != nil {
+		if err := row.Scan(&item.ID, &item.Name, &item.Code, &item.PID, &item.Sort, &item.Weight, &item.MenuType, &item.GroupCode, &item.Introduce); err != nil {
 			if err == sql.ErrNoRows {
 				continue
 			}
@@ -1753,7 +1760,10 @@ func buildModuleTree(items []rawMenu, selected map[int64]struct{}, pid int64) []
 	}
 	sort.SliceStable(childrenItems, func(i, j int) bool {
 		if childrenItems[i].Sort == childrenItems[j].Sort {
-			return childrenItems[i].ID < childrenItems[j].ID
+			if childrenItems[i].Weight == childrenItems[j].Weight {
+				return childrenItems[i].ID < childrenItems[j].ID
+			}
+			return childrenItems[i].Weight > childrenItems[j].Weight
 		}
 		return childrenItems[i].Sort < childrenItems[j].Sort
 	})
@@ -1765,6 +1775,9 @@ func buildModuleTree(items []rawMenu, selected map[int64]struct{}, pid int64) []
 			MenuID:    strconv.FormatInt(item.ID, 10),
 			MenuName:  item.Name,
 			Introduce: item.Introduce,
+			MenuType:  item.MenuType,
+			GroupCode: item.GroupCode,
+			Weight:    item.Weight,
 			Children:  children,
 		}
 		if len(children) == 0 {
@@ -1785,23 +1798,43 @@ func buildModuleTree(items []rawMenu, selected map[int64]struct{}, pid int64) []
 }
 
 func (repo *Repository) ListModuleMenuTree(ctx context.Context, moduleType int) ([]model.ModuleMenu, error) {
-	selected, err := repo.listScopedInstitutionMenuIDs(ctx, moduleType)
+	_ = moduleType
+	rawMenus, err := repo.listInstitutionMenus(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if len(selected) == 0 {
+	if len(rawMenus) == 0 {
 		return []model.ModuleMenu{}, nil
 	}
 
-	menuMap, err := repo.collectModuleMenus(ctx, selected)
+	selected := make(map[int64]struct{}, len(rawMenus))
+	for _, item := range rawMenus {
+		selected[item.ID] = struct{}{}
+	}
+	return buildVisibleInstitutionModuleTree(rawMenus, selected), nil
+}
+
+func (repo *Repository) listInstitutionMenus(ctx context.Context) ([]rawMenu, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(menu_name, ''), IFNULL(menu_code, ''), IFNULL(pid, 0), IFNULL(sort, 0), IFNULL(weight, 0), IFNULL(menu_type, 0), IFNULL(group_code, ''), IFNULL(introduce, '')
+		FROM sso_menu
+		WHERE del_flag = 0 AND own_type = 2
+		ORDER BY IFNULL(level, 0) ASC, IFNULL(sort, 0) ASC, IFNULL(weight, 0) DESC, id ASC
+	`)
 	if err != nil {
 		return nil, err
 	}
-	rawMenus := make([]rawMenu, 0, len(menuMap))
-	for _, item := range menuMap {
-		rawMenus = append(rawMenus, item)
+	defer rows.Close()
+
+	items := make([]rawMenu, 0, 256)
+	for rows.Next() {
+		var item rawMenu
+		if err := rows.Scan(&item.ID, &item.Name, &item.Code, &item.PID, &item.Sort, &item.Weight, &item.MenuType, &item.GroupCode, &item.Introduce); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
 	}
-	return buildModuleTree(rawMenus, selected, 0), nil
+	return items, rows.Err()
 }
 
 func (repo *Repository) listScopedInstitutionMenuIDs(ctx context.Context, moduleType int) (map[int64]struct{}, error) {

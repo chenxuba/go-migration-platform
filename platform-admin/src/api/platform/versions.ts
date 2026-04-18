@@ -31,6 +31,9 @@ export interface MenuTreeNode {
   menuId?: string | number
   menuName: string
   introduce?: string
+  menuType?: number
+  groupCode?: string
+  weight?: number
   isSelect?: boolean
   checked?: boolean
   children?: MenuTreeNode[]

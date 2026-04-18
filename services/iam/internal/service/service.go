@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -239,6 +240,9 @@ func (svc *Service) MenuTree(menuName string, ownType *int) ([]model.MenuTreeNod
 	if err != nil {
 		return nil, err
 	}
+	if ownType != nil && *ownType == 2 {
+		return buildVisibleInstitutionMenuTree(menus), nil
+	}
 	return buildMenuTree(menus), nil
 }
 
@@ -250,6 +254,9 @@ func (svc *Service) InstMenuTree(claims authx.Claims, ownType int) ([]model.Menu
 	menus, err := svc.repo.ListMenusByInst(context.Background(), orgID, ownType)
 	if err != nil {
 		return nil, err
+	}
+	if ownType == 2 {
+		return buildVisibleInstitutionMenuTree(menus), nil
 	}
 	return buildMenuTree(menus), nil
 }
@@ -463,7 +470,43 @@ func buildMenuTree(menus []model.Menu) []model.MenuTreeNode {
 		}
 		roots = append(roots, *node)
 	}
+	sortMenuTreeNodes(roots)
 	return roots
+}
+
+func sortMenuTreeNodes(nodes []model.MenuTreeNode) {
+	sort.SliceStable(nodes, func(i, j int) bool {
+		leftSort := 0
+		if nodes[i].Sort != nil {
+			leftSort = *nodes[i].Sort
+		}
+		rightSort := 0
+		if nodes[j].Sort != nil {
+			rightSort = *nodes[j].Sort
+		}
+		if leftSort == rightSort {
+			leftWeight := 0
+			if nodes[i].Weight != nil {
+				leftWeight = *nodes[i].Weight
+			}
+			rightWeight := 0
+			if nodes[j].Weight != nil {
+				rightWeight = *nodes[j].Weight
+			}
+			if leftWeight == rightWeight {
+				return nodes[i].ID < nodes[j].ID
+			}
+			return leftWeight > rightWeight
+		}
+		return leftSort < rightSort
+	})
+
+	for index := range nodes {
+		if len(nodes[index].Children) == 0 {
+			continue
+		}
+		sortMenuTreeNodes(nodes[index].Children)
+	}
 }
 
 func buildCheckedTree(flat []model.MenuTreeVO) []model.MenuTreeVO {

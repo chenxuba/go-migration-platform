@@ -99,6 +99,9 @@ type ModuleMenu struct {
 	MenuName  string       `json:"menuName"`
 	IsSelect  bool         `json:"isSelect"`
 	Introduce string       `json:"introduce,omitempty"`
+	MenuType  int64        `json:"menuType,omitempty"`
+	GroupCode string       `json:"groupCode,omitempty"`
+	Weight    int64        `json:"weight,omitempty"`
 	Children  []ModuleMenu `json:"children,omitempty"`
 }
 

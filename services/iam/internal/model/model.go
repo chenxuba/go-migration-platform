@@ -150,6 +150,8 @@ type Menu struct {
 	OwnType   *int   `json:"ownType,omitempty"`
 	PID       int64  `json:"pid"`
 	Sort      *int   `json:"sort,omitempty"`
+	Weight    *int   `json:"weight,omitempty"`
+	GroupCode string `json:"groupCode,omitempty"`
 	Remark    string `json:"remark,omitempty"`
 	Introduce string `json:"introduce,omitempty"`
 	Level     *int   `json:"level,omitempty"`
