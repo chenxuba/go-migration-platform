@@ -688,11 +688,9 @@ function handleImportExportAction({ key }) {
 function buildFixedExportConditions(conditionMap = new Map()) {
   return [
     { label: '意向度', value: conditionMap.get('意向度') || '全部' },
-    { label: '跟进状态', value: conditionMap.get('跟进状态') || '全部' },
     { label: '性别', value: conditionMap.get('性别') || '全部' },
     { label: '最近跟进', value: conditionMap.get('最近跟进') || '-' },
     { label: '下次跟进', value: conditionMap.get('下次跟进') || '-' },
-    { label: '创建时间', value: conditionMap.get('创建时间') || '-' },
   ]
 }
 
@@ -818,7 +816,15 @@ function triggerBlobDownload(response) {
 function getExportRecordDisplayConditions(record) {
   const recordConditions = Array.isArray(record?.queryConditions) ? record.queryConditions : []
   const conditionMap = new Map(recordConditions.map(item => [item.label, item.value]))
-  return buildFixedExportConditions(conditionMap)
+  const fixedConditions = buildFixedExportConditions(conditionMap)
+  const hiddenLabels = new Set(['导出范围'])
+  const extraConditions = recordConditions.filter(item =>
+    item?.label
+    && item?.value
+    && !hiddenLabels.has(item.label)
+    && !fixedConditions.some(fixed => fixed.label === item.label),
+  )
+  return [...fixedConditions, ...extraConditions]
 }
 
 async function handleViewExportRecord() {
@@ -2161,8 +2167,8 @@ defineExpose({
 
 .export-record-meta {
   color: #262626;
-  font-size: 15px;
-  line-height: 24px;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .export-record-body {
@@ -2178,13 +2184,13 @@ defineExpose({
 
 .export-record-title {
   color: #262626;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
 }
 
 .export-record-expire {
   color: #1668dc;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .export-record-grid {
@@ -2195,8 +2201,8 @@ defineExpose({
 
 .export-record-item {
   color: #262626;
-  font-size: 15px;
-  line-height: 24px;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .export-record-item-label {
