@@ -1035,7 +1035,7 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 			province_code, province, city_code, city, region_code, region, logo, principal, address, lng, lat,
 			description, business_time, video, inst_images,
 			status, enabled, concat_phone, fixed_phone, version, create_id, create_time, update_id, update_time, del_flag, remark, account_num
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NOW(), ?, NOW(), 0, ?, 5)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NOW(), ?, NOW(), 0, ?, 5)
 	`,
 		uuid.NewString(),
 		strings.TrimSpace(input.OrganName),
@@ -1066,7 +1066,6 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		enabled,
 		strings.TrimSpace(input.ConcatPhone),
 		strings.TrimSpace(input.FixedPhone),
-		0,
 		creatorValue,
 		creatorValue,
 		strings.TrimSpace(input.Remark),
