@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import AllFilter from '@/components/common/all-filter.vue'
 import {
@@ -184,7 +184,7 @@ const columns: TableColumnsType<InstitutionItem> = [
   {
     title: '操作',
     key: 'action',
-    width: 360,
+    width: 220,
     fixed: 'right' as const,
   },
 ]
@@ -638,19 +638,13 @@ watch(institutionRenewalOpen, (open) => {
             </template>
 
             <template v-else-if="column.key === 'action'">
-              <div class="action-cell">
-                <a-button size="small" class="action-pill action-pill--neutral" @click="openEditDrawer(record)">
+              <div class="action-cell action-cell--text">
+                <a class="action-link" @click="openEditDrawer(record)">
                   编辑
-                </a-button>
-                <a-button size="small" class="action-pill action-pill--accent" @click="openPermissionModal(record)">
-                  机构权限
-                </a-button>
-                <a-button size="small" class="action-pill action-pill--accent-soft" @click="openVersionModal(record)">
-                  切换版本
-                </a-button>
-                <a-button size="small" class="action-pill action-pill--neutral" @click="openRenewalModal(record)">
+                </a>
+                <a class="action-link" @click="openRenewalModal(record)">
                   续期
-                </a-button>
+                </a>
                 <a-popconfirm
                   v-if="canToggleInstitutionStatus(record)"
                   :title="getToggleTargetEnabled(record) ? '确定启用该机构？' : '确定停用该机构？'"
@@ -658,15 +652,26 @@ watch(institutionRenewalOpen, (open) => {
                   cancel-text="取消"
                   @confirm="toggleInstitutionStatus(record, getToggleTargetEnabled(record))"
                 >
-                  <a-button
-                    size="small"
-                    class="action-pill"
-                    :class="getToggleTargetEnabled(record) ? 'action-pill--success' : 'action-pill--danger'"
-                    :loading="statusSubmittingId === Number(record.id)"
-                  >
+                  <a class="action-link" :class="getToggleTargetEnabled(record) ? 'action-link--success' : 'action-link--danger'">
                     {{ getToggleTargetEnabled(record) ? '启用' : '停用' }}
-                  </a-button>
+                  </a>
                 </a-popconfirm>
+                <a-dropdown placement="bottomRight" :trigger="['click']">
+                  <a class="action-link action-more-link">
+                    更多
+                    <DownOutlined class="action-more-link__arrow" />
+                  </a>
+                  <template #overlay>
+                    <a-menu class="action-more-menu">
+                      <a-menu-item key="permission" @click="openPermissionModal(record)">
+                        机构权限
+                      </a-menu-item>
+                      <a-menu-item key="version" @click="openVersionModal(record)">
+                        切换版本
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
               </div>
             </template>
           </template>
@@ -844,71 +849,53 @@ watch(institutionRenewalOpen, (open) => {
 
 .action-cell {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding-right: 4px;
+  white-space: nowrap;
 }
 
-.action-pill {
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid #e7ecf3;
-  background: #fff;
-  box-shadow: none;
-  color: #4e5969;
-  font-size: 12px;
-  font-weight: 500;
+.action-cell--text {
+  gap: 12px;
 }
 
-.action-pill:hover,
-.action-pill:focus {
-  color: #1668dc;
-  border-color: #bfd7ff;
-  background: #f7fbff;
+.action-link {
+  color: #1677ff;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s ease;
 }
 
-.action-pill--neutral {
-  color: #4e5969;
+.action-link:hover {
+  color: #4096ff;
 }
 
-.action-pill--accent {
-  color: #1668dc;
-  border-color: #d8e8ff;
-  background: #eff6ff;
-}
-
-.action-pill--accent-soft {
-  color: #245bdb;
-  border-color: #e1e9ff;
-  background: #f5f8ff;
-}
-
-.action-pill--success {
+.action-link--success {
   color: #15803d;
-  border-color: #ccebd8;
-  background: #f3fcf6;
 }
 
-.action-pill--danger {
-  color: #c2410c;
-  border-color: #f4d8ca;
-  background: #fff7f2;
+.action-link--success:hover {
+  color: #16a34a;
 }
 
-.action-pill--success:hover,
-.action-pill--success:focus {
-  color: #15803d;
-  border-color: #9fd7b4;
-  background: #eefbf3;
+.action-link--danger {
+  color: #d46b08;
 }
 
-.action-pill--danger:hover,
-.action-pill--danger:focus {
-  color: #c2410c;
-  border-color: #e8b79e;
-  background: #fff2ea;
+.action-link--danger:hover {
+  color: #fa8c16;
+}
+
+.action-more-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.action-more-link__arrow {
+  font-size: 10px;
 }
 
 :deep(.organization-table .ant-table) {
@@ -933,6 +920,10 @@ watch(institutionRenewalOpen, (open) => {
   text-align: left;
 }
 
+:deep(.organization-table .ant-table-cell-fix-right-last) {
+  background: #fff;
+}
+
 :deep(.organization-table .ant-table-tbody > tr > td) {
   padding: 16px;
   border-bottom: 1px solid #f5f5f5;
@@ -947,8 +938,27 @@ watch(institutionRenewalOpen, (open) => {
   background: #fcfcfc;
 }
 
+:deep(.organization-table .institution-row--disabled > td.ant-table-cell-fix-right-last) {
+  background: #fcfcfc;
+}
+
 :deep(.organization-table .ant-pagination) {
   margin: 16px 8px 0;
+}
+
+:deep(.action-more-menu.ant-dropdown-menu) {
+  min-width: 124px;
+  padding: 8px 0;
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(15, 35, 95, 0.12);
+}
+
+:deep(.action-more-menu .ant-dropdown-menu-item) {
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 0;
+  font-size: 14px;
+  color: #262626;
 }
 
 :deep(.filter-wrap .filter-section) {
