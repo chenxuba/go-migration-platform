@@ -140,10 +140,23 @@ export const AccessEnum = {
   setting_more: route('INST_ROUTE_SETTING_MORE', '业务设置', '更多设置'),
 
   // 招生中心 / 意向学员
+  enroll_intention_follow_status: action('INST_AUTH_ENROLL_INTENTION_FOLLOW_STATUS', '招生中心', '意向学员', '编辑学员跟进状态'),
   enroll_intention_view_all: action('INST_AUTH_ENROLL_INTENTION_ALL', '招生中心', '意向学员', '查看所有的意向学员'),
   enroll_intention_view_my: action('INST_AUTH_ENROLL_INTENTION_MY', '招生中心', '意向学员', '仅查看我的意向学员'),
   enroll_intention_view_dept: action('INST_AUTH_ENROLL_INTENTION_DEPT', '招生中心', '意向学员', '在PC端查看本部门及以下作为销售员的意向学员'),
+  enroll_intention_manage: action('INST_AUTH_ENROLL_INTENTION_MANAGE', '招生中心', '意向学员', '管理意向学员'),
+  enroll_intention_detail: action('INST_AUTH_ENROLL_INTENTION_DETAIL', '招生中心', '意向学员', '意向学员详情'),
+  enroll_intention_channel_edit: action('INST_AUTH_ENROLL_INTENTION_CHANNEL_EDIT', '招生中心', '意向学员', '意向学员渠道编辑'),
+  enroll_intention_import: action('INST_AUTH_ENROLL_INTENTION_IMPORT', '招生中心', '意向学员', '导入意向学员'),
+  enroll_intention_export: action('INST_AUTH_ENROLL_INTENTION_EXPORT', '招生中心', '意向学员', '导出意向学员'),
+  enroll_intention_assign_sales: action('INST_AUTH_ENROLL_INTENTION_ASSIGN_SALES', '招生中心', '意向学员', '分配销售员'),
   enroll_intention_transfer_public_pool: action('INST_AUTH_ENROLL_INTENTION_TRANSFER_PUBLIC_POOL', '招生中心', '意向学员', '批量转入公有池'),
+
+  // 敏感数据 / 导入导出可见范围
+  sensitive_export_all: action('INST_AUTH_SENSITIVE_EXPORT_ALL', '敏感数据', '导入导出可见范围', '可查看所有导出记录'),
+  sensitive_export_my: action('INST_AUTH_SENSITIVE_EXPORT_MY', '敏感数据', '导入导出可见范围', '仅查看我的导出记录'),
+  sensitive_import_all: action('INST_AUTH_SENSITIVE_IMPORT_ALL', '敏感数据', '导入导出可见范围', '可查看所有导入记录'),
+  sensitive_import_my: action('INST_AUTH_SENSITIVE_IMPORT_MY', '敏感数据', '导入导出可见范围', '仅查看我的导入记录'),
 
   // 教务中心 / 班级管理
   edu_class_manage_with_students: action('INST_AUTH_EDU_CLASS_MANAGE_WITH_STUDENTS', '教务中心', '班级管理', '新建/编辑/结班/调整班级学员'),

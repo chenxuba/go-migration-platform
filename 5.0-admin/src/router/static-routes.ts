@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
+import { AccessEnum } from '@/constants/access'
 
 const Layout = () => import('~/layouts/index.vue')
 
@@ -16,6 +17,14 @@ export default [
     component: () => import('~/pages/exception/401.vue'),
     meta: {
       title: '授权已过期',
+    },
+  },
+  {
+    path: '/403',
+    name: 'Error403',
+    component: () => import('~/pages/exception/403.vue'),
+    meta: {
+      title: '暂无访问权限',
     },
   },
   {
@@ -57,6 +66,7 @@ export default [
     component: () => import('~/pages/import-center/intention-student/import-intention-student.vue'),
     meta: {
       title: '导入意向学员',
+      access: [AccessEnum.enroll_intention_import],
     },
   },
   {
@@ -72,6 +82,7 @@ export default [
     component: () => import('~/pages/import-center/intention-student/import-intention-student-starter.vue'),
     meta: {
       title: '导入意向学员',
+      access: [AccessEnum.enroll_intention_import],
     },
   },
   {
@@ -174,6 +185,7 @@ export default [
     component: () => import('~/pages/import-center/intention-student/import-intention-student-edit.vue'),
     meta: {
       title: '导入意向学员编辑',
+      access: [AccessEnum.enroll_intention_import],
     },
   },
   {
@@ -182,6 +194,7 @@ export default [
     component: () => import('~/pages/import-center/intention-student/import-intention-student-record.vue'),
     meta: {
       title: '意向学员导入记录',
+      access: [AccessEnum.enroll_intention_import],
     },
   },
   {
@@ -190,6 +203,7 @@ export default [
     component: () => import('~/pages/import-center/intention-student/import-intention-student-record-detail.vue'),
     meta: {
       title: '意向学员导入记录详情',
+      access: [AccessEnum.enroll_intention_import],
     },
   },
   {

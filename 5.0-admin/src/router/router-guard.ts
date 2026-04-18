@@ -4,6 +4,7 @@ import { useMetaTitle } from '~/composables/meta-title'
 import { setRouteEmitter } from '~@/utils/route-listener'
 import { useModalStore } from '~/stores/modal'
 import { useLayoutMenu } from '~/stores/layout-menu'
+import { useAccess } from '@/composables/access'
 
 const allowList = ['/login', '/error', '/401', '/404', '/403','/502']
 const loginPath = '/login'
@@ -39,6 +40,20 @@ router.beforeEach(async (to, from, next) => {
   setRouteEmitter(to)
   const userStore = useUserStore()
   const token = useAuthorization()
+  const { hasAccess } = useAccess()
+
+  const ensureRouteAccess = () => {
+    const routeAccess = to.meta?.access
+    if (!routeAccess || to.path === '/403')
+      return true
+    if (hasAccess(routeAccess))
+      return true
+    next({
+      path: '/403',
+      replace: true,
+    })
+    return false
+  }
 
   if (!token.value) {
     //  如果token不存在就跳转到登录页面
@@ -86,6 +101,10 @@ router.beforeEach(async (to, from, next) => {
         return
       }
     }
+  }
+  if (token.value && !allowList.includes(to.path) && !to.path.startsWith('/redirect')) {
+    if (!ensureRouteAccess())
+      return
   }
   next()
 })

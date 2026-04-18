@@ -2,10 +2,10 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { debounce } from 'lodash-es'
-import { CaretDownOutlined, CaretUpOutlined, DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
+import { CaretDownOutlined, CaretUpOutlined, DownOutlined, ExclamationCircleOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { Empty, Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import { addIntendedStudentApi, batchDeleteIntendedStudentApi, batchAssignSalespersonApi, batchTransferToPublicPoolApi, createStudentFollowUpApi, getFollowUpCountApi, getIntentStudentListApi, updateIntendedStudentApi, updateStatusApi } from '~@/api/enroll-center/intention-student'
+import { addIntendedStudentApi, batchDeleteIntendedStudentApi, batchAssignSalespersonApi, batchTransferToPublicPoolApi, createStudentFollowUpApi, downloadIntentionStudentExportRecordApi, exportIntentionStudentsApi, getFollowUpCountApi, getIntentStudentListApi, getIntentionStudentExportRecordsApi, updateIntendedStudentApi, updateStatusApi } from '~@/api/enroll-center/intention-student'
 import { useStudentFields } from '~@/composables/useStudentFields'
 import messageService from '~@/utils/messageService'
 import { useTableColumns } from '@/composables/useTableColumns'
@@ -15,6 +15,8 @@ import { FollowUpStatus, FollowUpStatusLabel, FollowUpStatusStyle, IntentionLeve
 import DeleteConfirmModal from '@/components/common/DeleteConfirmModal.vue'
 import { handleDateRangeParams } from '~@/utils/dateRangeParams'
 import { useUserStore } from '~@/stores/user'
+import { AccessEnum } from '@/constants/access'
+import { useAccess } from '@/composables/access'
 
 const props = defineProps({
   publicDataIsShow: {
@@ -23,8 +25,73 @@ const props = defineProps({
   },
 })
 
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
+
 const userStore = useUserStore()
 const router = useRouter()
+const { hasAccess } = useAccess()
+
+const canManageIntentionStudent = computed(() => hasAccess(AccessEnum.enroll_intention_manage))
+const canEditIntentionFollowStatus = computed(() => hasAccess(AccessEnum.enroll_intention_follow_status))
+const canImportIntentionStudent = computed(() => hasAccess(AccessEnum.enroll_intention_import))
+const canExportIntentionStudent = computed(() => hasAccess(AccessEnum.enroll_intention_export))
+const canViewIntentionExportRecords = computed(() => canExportIntentionStudent.value)
+const canAssignIntentionSales = computed(() => hasAccess(AccessEnum.enroll_intention_assign_sales))
+const canTransferIntentionPublicPool = computed(() =>
+  props.publicDataIsShow && hasAccess(AccessEnum.enroll_intention_transfer_public_pool),
+)
+const visibleImportExportActions = computed(() => {
+  const items = []
+  if (canImportIntentionStudent.value) {
+    items.push({
+      key: '1',
+      label: '导入意向学员',
+    })
+  }
+  if (canExportIntentionStudent.value) {
+    items.push({
+      key: '2',
+      label: '批量导出',
+    })
+  }
+  if (canViewIntentionExportRecords.value) {
+    items.push({
+      key: '3',
+      label: '导出记录',
+    })
+  }
+  return items
+})
+const showImportExportDropdown = computed(() => visibleImportExportActions.value.length > 0)
+const importExportButtonText = computed(() => {
+  if (visibleImportExportActions.value.length === 1)
+    return visibleImportExportActions.value[0].label
+  return '导出/导入学员'
+})
+const visibleBatchActions = computed(() => {
+  const items = []
+  if (canAssignIntentionSales.value) {
+    items.push({
+      key: '1',
+      label: '批量分配销售',
+    })
+  }
+  if (canManageIntentionStudent.value) {
+    items.push({
+      key: '3',
+      label: '批量删除学员',
+    })
+  }
+  if (canTransferIntentionPublicPool.value) {
+    items.push({
+      key: '4',
+      label: '批量转入公有池',
+      class: 'whitespace-nowrap',
+    })
+  }
+  return items
+})
+const showBatchDropdown = computed(() => visibleBatchActions.value.length > 0)
 
 const displayArray = ref(['customSearch', 'intention', 'intentionCourse', 'salesPerson', 'hasSalesPerson', 'followStatus', 'lastFollowTime', 'nextFollowTime', 'notFollowDays', 'createTime', 'age', 'recommended', 'recommend', 'assignTime', 'trialPurchaseStatus', 'createUser'])
 
@@ -43,6 +110,82 @@ const allSelectedRowKeys = ref(new Set()) // 使用Set存储所有选中的key
 const btnLoading = ref(false)
 const selectStuInfo = ref({})
 const dataSource = ref([])
+const exportModalVisible = ref(false)
+const exportRecordModalVisible = ref(false)
+const exportMode = ref('all')
+const exportReportType = ref('student')
+const exportFileType = ref('excel')
+const exportSubmitting = ref(false)
+const exportRecordsLoading = ref(false)
+const exportRecords = ref([])
+const exportModalConditionItems = ref([])
+const exportConditionItems = ref([])
+const exportPreviewColumns = [
+  { title: '学员姓名', dataIndex: 'stuName', key: 'stuName', width: 140 },
+  { title: '学员年龄', dataIndex: 'age', key: 'age', width: 120 },
+  { title: '学员生日', dataIndex: 'birthDay', key: 'birthDay', width: 140 },
+  { title: '学员性别', dataIndex: 'sex', key: 'sex', width: 120 },
+  { title: '学员电话', dataIndex: 'mobile', key: 'mobile', width: 150 },
+  { title: '电话关系', dataIndex: 'relation', key: 'relation', width: 120 },
+  { title: '微信', dataIndex: 'wechat', key: 'wechat', width: 150 },
+  { title: '转介绍推荐人', dataIndex: 'referralRecommender', key: 'referralRecommender', width: 150 },
+  { title: '学员备注', dataIndex: 'remark', key: 'remark', width: 140 },
+  { title: '意向度', dataIndex: 'intentionLevel', key: 'intentionLevel', width: 120 },
+  { title: '意向课程', dataIndex: 'lessons', key: 'lessons', width: 160 },
+  { title: '渠道分类', dataIndex: 'channelCategory', key: 'channelCategory', width: 120 },
+  { title: '渠道', dataIndex: 'channel', key: 'channel', width: 120 },
+  { title: '销售员', dataIndex: 'salesperson', key: 'salesperson', width: 120 },
+  { title: '跟进状态', dataIndex: 'followUpStatus', key: 'followUpStatus', width: 120 },
+  { title: '最近跟进', dataIndex: 'latestFollowTime', key: 'latestFollowTime', width: 180 },
+  { title: '下次跟进时间', dataIndex: 'nextFollowTime', key: 'nextFollowTime', width: 180 },
+  { title: '创建时间', dataIndex: 'createTime', key: 'createTime', width: 180 },
+  { title: '创建人', dataIndex: 'creator', key: 'creator', width: 120 },
+  { title: '是否被推荐', dataIndex: 'isRecommended', key: 'isRecommended', width: 120 },
+  { title: '推荐人', dataIndex: 'recommender', key: 'recommender', width: 120 },
+  { title: '最近试听课程', dataIndex: 'latestTrialCourse', key: 'latestTrialCourse', width: 160 },
+  { title: '最近试听时间', dataIndex: 'latestTrialTime', key: 'latestTrialTime', width: 180 },
+  { title: '分配销售时间', dataIndex: 'salesAssignedTime', key: 'salesAssignedTime', width: 180 },
+  { title: '体验课购买状态', dataIndex: 'trialPurchaseStatus', key: 'trialPurchaseStatus', width: 160 },
+  { title: '公有池倒计时', dataIndex: 'publicPoolCountdown', key: 'publicPoolCountdown', width: 140 },
+  { title: '最近沟通内容', dataIndex: 'latestCommunication', key: 'latestCommunication', width: 160 },
+]
+const exportPreviewRows = [
+  {
+    stuName: '王小明',
+    age: '18周岁',
+    birthDay: '2010-01-01',
+    sex: '男',
+    mobile: '18818888888',
+    relation: '母亲',
+    wechat: '18818888888',
+    referralRecommender: '李晨',
+    remark: '测试学员',
+    intentionLevel: '高',
+    lessons: '钢琴课',
+    channelCategory: '推广',
+    channel: '转介绍',
+    salesperson: '孙勇',
+    followUpStatus: '',
+    latestFollowTime: '2023-02-14 10:36:35',
+    nextFollowTime: '2023-02-18',
+    createTime: '2022-10-18 14:46:50',
+    creator: '王老师',
+    isRecommended: '是',
+    recommender: '王同学',
+    latestTrialCourse: '钢琴课',
+    latestTrialTime: '2023-02-14 09:36:35',
+    salesAssignedTime: '2023-02-14 09:36:35',
+    trialPurchaseStatus: '未购买',
+    publicPoolCountdown: '3天',
+    latestCommunication: '推广',
+  },
+]
+const exportFieldCount = computed(() => exportPreviewColumns.length)
+const exportQuerySummary = computed(() => {
+  if (exportModalConditionItems.value.length === 0)
+    return ['当前列表全部数据']
+  return exportModalConditionItems.value.map(item => `${item.label}：${item.value}`)
+})
 const allColumns = ref([
   {
     title: '学员/性别/年龄',
@@ -533,8 +676,178 @@ function handleBatchOperation({ key }) {
 }
 
 function handleImportExportAction({ key }) {
-  if (key === '1') {
+  if (key === '1' && canImportIntentionStudent.value) {
     router.push('/import-center/starter/intentionStudent')
+  }
+  else if (key === '2' && canExportIntentionStudent.value) {
+    openExportModal()
+  }
+  else if (key === '3' && canViewIntentionExportRecords.value) {
+    openExportRecordModal()
+  }
+}
+
+function syncExportConditions() {
+  const conditions = allFilterRef.value?.getOrderedConditions?.() || []
+  const mappedConditions = conditions
+    .map((item) => {
+      const values = Array.isArray(item.values) ? item.values : []
+      const displayValue = values.length > 0
+        ? values.map(valueItem => `${valueItem?.value || ''}`.replace(' 至 ', ' ~ ')).filter(Boolean).join('、')
+        : '全部'
+      return {
+        label: item.label,
+        value: displayValue || '全部',
+      }
+    })
+    .filter(item => item.label && item.value)
+
+  if (mappedConditions.length === 0) {
+    exportModalConditionItems.value = [{
+      label: '导出范围',
+      value: '当前列表全部数据',
+    }]
+    exportConditionItems.value = [{
+      label: '导出范围',
+      value: '当前列表全部数据',
+    }]
+    return
+  }
+
+  exportModalConditionItems.value = mappedConditions
+  exportConditionItems.value = mappedConditions
+}
+
+function buildExportQueryModel() {
+  const dateRangeMappings = {
+    createTime: {
+      begin: 'createTimeBegin',
+      end: 'createTimeEnd',
+    },
+    salesAssignedTime: {
+      begin: 'salesAssignedTimeBegin',
+      end: 'salesAssignedTimeEnd',
+    },
+    birthday: {
+      begin: 'birthDayBegin',
+      end: 'birthDayEnd',
+    },
+    lastFollowTime: {
+      begin: 'followUpTimeBegin',
+      end: 'followUpTimeEnd',
+    },
+    nextFollowTime: {
+      begin: 'nextFollowUpTimeBegin',
+      end: 'nextFollowUpTimeEnd',
+    },
+    age: {
+      begin: 'ageMin',
+      end: 'ageMax',
+    },
+  }
+  const normalizedQuery = handleDateRangeParams({ ...queryState.value }, dateRangeMappings)
+  const originalFields = ['age', 'createTime', 'salesAssignedTime', 'birthday', 'lastFollowTime', 'nextFollowTime']
+  return Object.fromEntries(
+    Object.entries(normalizedQuery)
+      .filter(([key, value]) => value !== undefined && value !== null && value !== '' && !originalFields.includes(key) && (!Array.isArray(value) || value.length > 0)),
+  )
+}
+
+async function openExportModal() {
+  syncExportConditions()
+  exportModalVisible.value = true
+}
+
+async function openExportRecordModal() {
+  syncExportConditions()
+  exportRecordModalVisible.value = true
+  await loadExportRecords()
+}
+
+async function loadExportRecords() {
+  exportRecordsLoading.value = true
+  try {
+    const res = await getIntentionStudentExportRecordsApi()
+    exportRecords.value = res.result || res.data || []
+  }
+  catch (error) {
+    console.error('load intention export records failed', error)
+    messageService.error('获取导出记录失败')
+  }
+  finally {
+    exportRecordsLoading.value = false
+  }
+}
+
+async function downloadExportRecord(record) {
+  try {
+    const response = await downloadIntentionStudentExportRecordApi(record.id)
+    triggerBlobDownload(response)
+  }
+  catch (error) {
+    console.error('download intention export record failed', error)
+    messageService.error('下载失败，请稍后重试')
+  }
+}
+
+function triggerBlobDownload(response) {
+  const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/octet-stream' })
+  const disposition = response.headers['content-disposition'] || ''
+  const matched = disposition.match(/filename\*=UTF-8''([^;]+)/i)
+  const fileName = matched ? decodeURIComponent(matched[1]) : `意向学员批量导出-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+  const url = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(url)
+}
+
+function getExportRecordDisplayConditions(record) {
+  const items = Array.isArray(record?.queryConditions) ? record.queryConditions : []
+  if (items.length > 0)
+    return items
+  return [{
+    label: '导出范围',
+    value: '当前列表全部数据',
+  }]
+}
+
+async function handleViewExportRecord() {
+  exportModalVisible.value = false
+  await openExportRecordModal()
+}
+
+async function handleSubmitExport() {
+  if (pagination.value.total === 0 || dataSource.value.length === 0) {
+    messageService.error('没有符合条件的意向学员可以导出')
+    return
+  }
+  exportSubmitting.value = true
+  try {
+    syncExportConditions()
+    const res = await exportIntentionStudentsApi({
+      queryModel: buildExportQueryModel(),
+      sortModel: sortModel.value,
+      queryConditions: exportConditionItems.value,
+    })
+    const record = res.result || res.data
+    if (!record?.id)
+      throw new Error(res.message || '导出失败')
+    const response = await downloadIntentionStudentExportRecordApi(record.id)
+    triggerBlobDownload(response)
+    exportModalVisible.value = false
+    if (canViewIntentionExportRecords.value)
+      await openExportRecordModal()
+  }
+  catch (error) {
+    console.error('export intention students failed', error)
+    messageService.error(error?.message || '导出失败，请稍后重试')
+  }
+  finally {
+    exportSubmitting.value = false
   }
 }
 
@@ -1176,28 +1489,22 @@ defineExpose({
           </span>
         </div>
         <div class="edit flex overflow-x-auto">
-          <a-button type="primary" class="mr-2" @click="handleAddStu">
+          <a-button v-if="canManageIntentionStudent" type="primary" class="mr-2" @click="handleAddStu">
             创建学员
           </a-button>
           <a-button type="primary" class="mr-2">
             安排试听
           </a-button>
-          <a-dropdown class="mr-2">
+          <a-dropdown v-if="showImportExportDropdown" class="mr-2">
             <template #overlay>
               <a-menu @click="handleImportExportAction">
-                <a-menu-item key="1">
-                  导入意向学员
-                </a-menu-item>
-                <a-menu-item key="2">
-                  批量导出
-                </a-menu-item>
-                <a-menu-item key="3">
-                  导出记录
+                <a-menu-item v-for="item in visibleImportExportActions" :key="item.key">
+                  {{ item.label }}
                 </a-menu-item>
               </a-menu>
             </template>
             <a-button>
-              导出/导入学员
+              {{ importExportButtonText }}
               <DownOutlined :style="{ fontSize: '10px' }" />
             </a-button>
           </a-dropdown>
@@ -1209,20 +1516,11 @@ defineExpose({
               群发短信
             </a-button>
           </a-tooltip>
-          <a-dropdown class="mr-2">
+          <a-dropdown v-if="showBatchDropdown" class="mr-2">
             <template #overlay>
               <a-menu @click="handleBatchOperation">
-                <a-menu-item key="1">
-                  批量分配销售
-                </a-menu-item>
-                <!-- <a-menu-item key="2">
-                  批量编辑学员
-                </a-menu-item> -->
-                <a-menu-item key="3">
-                  批量删除学员
-                </a-menu-item>
-                <a-menu-item key="4" class="whitespace-nowrap">
-                  批量转入公有池
+                <a-menu-item v-for="item in visibleBatchActions" :key="item.key" :class="item.class">
+                  {{ item.label }}
                 </a-menu-item>
               </a-menu>
             </template>
@@ -1295,8 +1593,15 @@ defineExpose({
             </template>
             <!-- 意向度 -->
             <template v-if="column.key === 'intentionLevel'">
-              <div style="cursor: pointer;">
-                <a-dropdown :trigger="['click']" :open="openDropdowns.has(record.id)"
+              <div :style="{ cursor: canManageIntentionStudent ? 'pointer' : 'default' }">
+                <template v-if="!canManageIntentionStudent">
+                  <div class="intention">
+                    <span class="intentionTag"
+                      :style="{ background: IntentionLevelStyle[record.intentLevel]?.color }" />
+                    {{ IntentionLevelLabel[record.intentLevel] || IntentionLevelLabel[IntentionLevel.Unknown] }}
+                  </div>
+                </template>
+                <a-dropdown v-else :trigger="['click']" :open="openDropdowns.has(record.id)"
                   @update:open="(val) => handleDropdownVisibleChange(val, record.id, 'intention')">
                   <div @click.prevent="toggleDropdown(record.id)">
                     <div class="intention">
@@ -1341,8 +1646,15 @@ defineExpose({
             </template>
             <!-- 跟进状态 -->
             <template v-if="column.key === 'status'">
-              <div style="cursor: pointer;">
-                <a-dropdown :trigger="['click']" :open="openStatusDropdowns.has(record.id)"
+              <div :style="{ cursor: canEditIntentionFollowStatus ? 'pointer' : 'default' }">
+                <template v-if="!canEditIntentionFollowStatus">
+                  <div class="intention">
+                    <span class="statusTag" :class="getStatusConfig(record.followUpStatus).className">
+                      {{ getStatusConfig(record.followUpStatus).text }}
+                    </span>
+                  </div>
+                </template>
+                <a-dropdown v-else :trigger="['click']" :open="openStatusDropdowns.has(record.id)"
                   @update:open="(val) => handleDropdownVisibleChange(val, record.id, 'status')">
                   <div @click.prevent="toggleStatusDropdown(record.id)">
                     <div class="intention">
@@ -1458,16 +1770,16 @@ defineExpose({
                         <a-menu-item key="1">
                           报名
                         </a-menu-item>
-                        <a-menu-item key="2">
+                        <a-menu-item v-if="canAssignIntentionSales" key="2">
                           分配销售
                         </a-menu-item>
-                        <a-menu-item key="5" v-if="record.salePerson == userStore.userInfo.instUserId">
+                        <a-menu-item key="5" v-if="canTransferIntentionPublicPool && record.salePerson == userStore.userInfo.instUserId">
                           放弃
                         </a-menu-item>
-                        <a-menu-item key="3">
+                        <a-menu-item v-if="canManageIntentionStudent" key="3">
                           编辑
                         </a-menu-item>
-                        <a-menu-item key="4">
+                        <a-menu-item v-if="canManageIntentionStudent" key="4">
                           删除
                         </a-menu-item>
                       </a-menu>
@@ -1493,6 +1805,139 @@ defineExpose({
   <DeleteConfirmModal v-model:open="openDeleteModal"
     :student-names="(selectedRows || []).map(row => row.stuName).join('、')" :student-count="selectedRows?.length || 0"
     :loading="btnLoading" @confirm="handleBatchDelete" @cancel="openDeleteModal = false" />
+  <a-modal
+    v-model:open="exportModalVisible"
+    title="批量导出"
+    :footer="null"
+    :width="820"
+    class="student-export-modal"
+    destroy-on-close
+  >
+    <div class="export-tip-bar">
+      <InfoCircleOutlined class="export-tip-icon" />
+      <span>当前列表最多支持导出 10000 条数据。若超出，请前往【数据中心-报表管理-明细表】导出</span>
+    </div>
+
+    <div class="export-modal-content">
+      <div class="export-row">
+        <div class="export-label">
+          查询条件：
+        </div>
+        <div class="export-query-box">
+          <div v-for="item in exportQuerySummary" :key="item" class="export-query-line">
+            {{ item }}
+          </div>
+        </div>
+      </div>
+
+      <div class="export-row export-row--compact">
+        <div class="export-label">
+          导出方式：
+        </div>
+        <a-radio-group v-model:value="exportMode" class="custom-radio export-radio-group">
+          <a-radio value="all">
+            全部导出
+          </a-radio>
+        </a-radio-group>
+      </div>
+
+      <div class="export-row export-row--compact">
+        <div class="export-label">
+          报表类型：
+        </div>
+        <a-radio-group v-model:value="exportReportType" class="custom-radio export-radio-group">
+          <a-radio value="student">
+            学员维度
+          </a-radio>
+        </a-radio-group>
+      </div>
+
+      <div class="export-row export-row--stacked">
+        <div class="export-label">
+          导出范例：
+        </div>
+        <div class="export-preview-title">
+          共{{ exportFieldCount }}个字段
+        </div>
+        <div class="export-preview-card">
+          <div class="export-preview-scroll">
+            <a-table
+              :data-source="exportPreviewRows"
+              :columns="exportPreviewColumns"
+              :pagination="false"
+              size="small"
+              :scroll="{ x: 4200 }"
+              row-key="stuName"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div class="export-row export-row--compact">
+        <div class="export-label">
+          生成类型：
+        </div>
+        <a-radio-group v-model:value="exportFileType" class="custom-radio export-radio-group">
+          <a-radio value="excel">
+            EXCEL格式文件
+          </a-radio>
+        </a-radio-group>
+      </div>
+    </div>
+
+    <div class="export-modal-footer">
+      <a-button v-if="canViewIntentionExportRecords" @click="handleViewExportRecord">
+        查看导出记录
+      </a-button>
+      <a-button type="primary" class="ml-3" :loading="exportSubmitting" @click="handleSubmitExport">
+        导出
+      </a-button>
+    </div>
+  </a-modal>
+
+  <a-modal
+    v-model:open="exportRecordModalVisible"
+    title="导出记录"
+    :footer="null"
+    :width="800"
+    class="student-export-record-modal"
+    destroy-on-close
+  >
+    <a-spin :spinning="exportRecordsLoading">
+      <div v-if="exportRecords.length > 0" class="export-record-list">
+        <div v-for="record in exportRecords" :key="record.id" class="export-record-card">
+          <div class="export-record-header">
+            <div class="export-record-meta">
+              <span>报表生成时间：{{ record.createdTime ? dayjs(record.createdTime).format('YYYY-MM-DD HH:mm:ss') : '-' }}</span>
+              <span class="ml-6">导出人：{{ record.exporterName || '-' }}</span>
+            </div>
+            <a-button @click="downloadExportRecord(record)">
+              下载
+            </a-button>
+          </div>
+          <div class="export-record-body">
+            <div class="export-record-top">
+              <div class="export-record-title">
+                查询条件
+              </div>
+              <div class="export-record-expire">
+                请在一周内下载，过期将失效
+              </div>
+            </div>
+            <div class="export-record-grid">
+              <div v-for="item in getExportRecordDisplayConditions(record)" :key="`${record.id}-${item.label}-${item.value}`" class="export-record-item">
+                <span class="export-record-item-label">{{ item.label }}：</span>
+                <span>{{ item.value }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="!exportRecordsLoading" class="export-record-empty">
+        <a-empty :image="simpleImage" description="暂无数据" />
+      </div>
+    </a-spin>
+  </a-modal>
 </template>
 
 <style lang="less" scoped>
@@ -1557,6 +2002,215 @@ defineExpose({
     }
   }
 
+}
+
+:deep(.student-export-modal .ant-modal-body),
+:deep(.student-export-record-modal .ant-modal-body) {
+  padding-top: 0;
+}
+
+.export-tip-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -24px;
+  padding: 12px 20px;
+  background: #eaf3ff;
+  color: #1668dc;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.export-tip-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+}
+
+.export-modal-content {
+  padding-top: 22px;
+}
+
+.export-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.export-row--compact {
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.export-row--block {
+  display: flex;
+  align-items: center;
+}
+
+.export-row--stacked {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  row-gap: 12px;
+  align-items: start;
+}
+
+.export-label {
+  flex-shrink: 0;
+  width: 88px;
+  color: #595959;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.export-query-box {
+  flex: 1;
+  min-height: 56px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #f5f7fb;
+  color: #262626;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.export-query-line + .export-query-line {
+  margin-top: 6px;
+}
+
+.export-radio-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.export-radio-group :deep(.ant-radio-wrapper) {
+  margin-right: 24px;
+  color: #262626;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.export-preview-title {
+  flex: 1;
+  color: #262626;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.export-preview-card {
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid #edf0f5;
+  border-radius: 12px;
+  margin-top: 0;
+}
+
+.export-row--stacked .export-preview-card {
+  grid-column: 2;
+}
+
+.export-preview-scroll {
+  overflow-x: auto;
+}
+
+.export-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.export-record-list {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.export-record-empty {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.export-record-card {
+  border: 1px solid #edf0f5;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  margin-bottom: 16px;
+}
+
+.export-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.export-record-meta {
+  color: #262626;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.export-record-body {
+  padding: 18px 24px 20px;
+}
+
+.export-record-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.export-record-title {
+  color: #262626;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.export-record-expire {
+  color: #1668dc;
+  font-size: 14px;
+}
+
+.export-record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 40px;
+}
+
+.export-record-item {
+  color: #262626;
+  font-size: 15px;
+  line-height: 24px;
+}
+
+.export-record-item-label {
+  color: #595959;
+}
+
+.custom-radio ::v-deep(.ant-radio-wrapper:hover .ant-radio),
+.custom-radio ::v-deep(.ant-radio:hover .ant-radio-inner),
+.custom-radio ::v-deep(.ant-radio-input:focus + .ant-radio-inner) {
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio ::v-deep(.ant-radio-inner) {
+  background-color: transparent;
+  border-color: #d9d9d9;
+}
+
+.custom-radio ::v-deep(.ant-radio-checked .ant-radio-inner) {
+  background-color: transparent;
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio ::v-deep(.ant-radio-inner::after) {
+  background-color: var(--pro-ant-color-primary);
+  transform: scale(0.5);
 }
 
 .hover {

@@ -129,6 +129,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureEnrolledStudentExportTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensureIntentStudentExportTables(ctx, repo.db); err != nil {
+		return err
+	}
 	if err := ensureFaceCollectionTables(ctx, repo.db); err != nil {
 		return err
 	}

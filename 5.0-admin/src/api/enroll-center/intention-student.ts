@@ -1,3 +1,6 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
+
 export interface ChannelInfo {
   categoryId: number
   categoryName: string
@@ -114,6 +117,28 @@ export interface IntentionStudentImportTaskListResult {
   total: number
 }
 
+export interface ExportConditionItem {
+  label: string
+  value: string
+}
+
+export interface IntentionStudentExportRecord {
+  id: number
+  fileName: string
+  exporterName: string
+  totalRows: number
+  queryConditions: ExportConditionItem[]
+  createdTime?: string
+  expiresAt?: string
+  downloadUrl?: string
+}
+
+export interface IntentionStudentExportRequest {
+  queryModel: Record<string, any>
+  sortModel?: Record<string, any>
+  queryConditions: ExportConditionItem[]
+}
+
 export function buildIntentionStudentImportTemplateApi(data: Record<string, unknown> = {}) {
   return useGet<string>('/api/v1/intent-students/import-template', data)
 }
@@ -168,6 +193,28 @@ export function batchSaveIntentionStudentImportTaskRecordsApi(data: { taskId: st
 
 export function startIntentionStudentImportTaskApi(data: { taskId: string }) {
   return usePost<boolean>('/api/v1/intent-students/import-tasks/start', data)
+}
+
+export function exportIntentionStudentsApi(data: IntentionStudentExportRequest) {
+  return usePost<IntentionStudentExportRecord>('/api/v1/intent-students/export', data)
+}
+
+export function getIntentionStudentExportRecordsApi() {
+  return useGet<IntentionStudentExportRecord[]>('/api/v1/intent-students/export-records')
+}
+
+export async function downloadIntentionStudentExportRecordApi(recordId: number | string) {
+  const token = useAuthorization()
+  const response = await axios.get('/api/v1/intent-students/export-records/download', {
+    params: { recordId },
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+  return response
 }
 
 // 获取渠道列表
