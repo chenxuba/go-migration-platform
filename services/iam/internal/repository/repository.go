@@ -224,8 +224,17 @@ func (repo *Repository) GetUserRoleIDs(ctx context.Context, userID, orgID int64,
 }
 
 func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int64, ownType, roleType int) ([]string, error) {
+	scopedMenuIDs := map[int64]struct{}{}
+	if ownType == 2 && orgID > 0 {
+		var err error
+		scopedMenuIDs, err = repo.getInstitutionScopedMenuIDSet(ctx, orgID, ownType)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT DISTINCT m.menu_code
+		SELECT DISTINCT m.id, m.menu_code
 		FROM sso_user u
 		LEFT JOIN sso_user_role ur ON u.id = ur.user_id
 		LEFT JOIN sso_role_menu rm ON ur.role_id = rm.role_id
@@ -251,9 +260,15 @@ func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int6
 	items := make([]string, 0, 16)
 	seen := map[string]struct{}{}
 	for rows.Next() {
+		var menuID int64
 		var item sql.NullString
-		if err := rows.Scan(&item); err != nil {
+		if err := rows.Scan(&menuID, &item); err != nil {
 			return nil, err
+		}
+		if len(scopedMenuIDs) > 0 {
+			if _, ok := scopedMenuIDs[menuID]; !ok {
+				continue
+			}
 		}
 		if !item.Valid || strings.TrimSpace(item.String) == "" {
 			continue
@@ -574,6 +589,12 @@ func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType 
 }
 
 func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownType int) ([]model.Menu, error) {
+	if scopedMenuIDs, err := repo.getInstitutionScopedMenuIDSet(ctx, instID, ownType); err != nil {
+		return nil, err
+	} else if len(scopedMenuIDs) > 0 {
+		return repo.listMenusByIDSet(ctx, scopedMenuIDs)
+	}
+
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT m.id, IFNULL(m.menu_name, ''), IFNULL(m.icon, ''), IFNULL(m.url_path, ''), IFNULL(m.menu_code, ''), m.menu_type, m.own_type, IFNULL(m.pid, 0), m.sort, IFNULL(m.weight, 0), IFNULL(m.group_code, ''), IFNULL(m.remark, ''), IFNULL(m.introduce, '')
 		FROM sso_role r
@@ -596,6 +617,154 @@ func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownTy
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (repo *Repository) listMenusByIDSet(ctx context.Context, menuIDs map[int64]struct{}) ([]model.Menu, error) {
+	if len(menuIDs) == 0 {
+		return []model.Menu{}, nil
+	}
+
+	placeholders := make([]string, 0, len(menuIDs))
+	args := make([]any, 0, len(menuIDs))
+	for menuID := range menuIDs {
+		if menuID <= 0 {
+			continue
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, menuID)
+	}
+	if len(placeholders) == 0 {
+		return []model.Menu{}, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(url_path, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, '')
+		FROM sso_menu
+		WHERE del_flag = 0 AND id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY IFNULL(sort, 0) ASC, IFNULL(weight, 0) DESC, id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.Menu, 0, len(menuIDs))
+	for rows.Next() {
+		var item model.Menu
+		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.URLPath, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) getInstitutionScopedMenuIDSet(ctx context.Context, instID int64, ownType int) (map[int64]struct{}, error) {
+	if instID <= 0 || ownType <= 0 {
+		return nil, nil
+	}
+
+	moduleID, err := repo.getInstitutionBoundModuleID(ctx, instID)
+	if err != nil {
+		return nil, err
+	}
+	if moduleID <= 0 {
+		return nil, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT DISTINCT smm.menu_id
+		FROM sys_module_menu smm
+		JOIN sso_menu m ON m.id = smm.menu_id
+		WHERE smm.module_id = ?
+		  AND IFNULL(smm.del_flag, 0) = 0
+		  AND m.del_flag = 0
+		  AND m.own_type = ?
+	`, moduleID, ownType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]struct{})
+	for rows.Next() {
+		var menuID int64
+		if err := rows.Scan(&menuID); err != nil {
+			return nil, err
+		}
+		if menuID > 0 {
+			result[menuID] = struct{}{}
+		}
+	}
+	return result, rows.Err()
+}
+
+func (repo *Repository) getInstitutionBoundModuleID(ctx context.Context, instID int64) (int64, error) {
+	var moduleID sql.NullInt64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT module_id
+		FROM org_module
+		WHERE org_id = ? AND del_flag = 0
+		ORDER BY id DESC
+		LIMIT 1
+	`, instID).Scan(&moduleID)
+	if err == nil && moduleID.Valid && moduleID.Int64 > 0 {
+		return moduleID.Int64, nil
+	}
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+
+	var openType sql.NullInt64
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(open_type, 2)
+		FROM org_institution
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, instID).Scan(&openType); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	moduleName := institutionOpenTypeModuleName(int(openType.Int64))
+	if strings.TrimSpace(moduleName) == "" {
+		return 0, nil
+	}
+
+	var fallbackModuleID sql.NullInt64
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_module
+		WHERE del_flag = 0 AND type = 1 AND name = ?
+		ORDER BY id ASC
+		LIMIT 1
+	`, moduleName).Scan(&fallbackModuleID); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if !fallbackModuleID.Valid || fallbackModuleID.Int64 <= 0 {
+		return 0, nil
+	}
+	return fallbackModuleID.Int64, nil
+}
+
+func institutionOpenTypeModuleName(openType int) string {
+	switch openType {
+	case 1:
+		return "体验版"
+	case 2:
+		return "基础版"
+	case 3:
+		return "高级版"
+	case 4:
+		return "旗舰版"
+	default:
+		return ""
+	}
 }
 
 func (repo *Repository) PageRolesByOrg(ctx context.Context, orgID int64, query model.RoleQueryDTO) (model.RolePage, error) {
