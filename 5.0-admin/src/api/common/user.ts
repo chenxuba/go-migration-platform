@@ -10,6 +10,8 @@ export interface UserInfo {
   instId: number | string
   instUserId: number | string
   deptIds: number[]
+  openType?: number
+  versionName?: string
 }
 
 export function getUserInfoApi() {

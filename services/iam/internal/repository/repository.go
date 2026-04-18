@@ -113,7 +113,16 @@ func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (mo
 func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64) (model.InstUserInfo, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT u.id, u.user_id, u.inst_id, u.nick_name, IFNULL(u.avatar, ''), i.organ_name, IFNULL(u.username, ''), IFNULL(u.mobile, ''),
-		       IFNULL(i.logo, ''), IFNULL(u.is_manage, 0), IFNULL(u.is_admin, 0), IFNULL(u.disabled, 0)
+		       IFNULL(i.logo, ''), IFNULL(u.is_manage, 0), IFNULL(u.is_admin, 0), IFNULL(u.disabled, 0),
+		       IFNULL(i.open_type, 0),
+		       IFNULL((
+		           SELECT sm.name
+		           FROM org_module om
+		           LEFT JOIN sys_module sm ON sm.id = om.module_id AND sm.del_flag = 0
+		           WHERE om.org_id = u.inst_id AND om.del_flag = 0
+		           ORDER BY om.id DESC
+		           LIMIT 1
+		       ), '')
 		FROM inst_user u
 		LEFT JOIN org_institution i ON u.inst_id = i.id
 		WHERE u.del_flag = 0 AND u.disabled = 0
@@ -139,8 +148,13 @@ func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64
 		&info.Manage,
 		&info.Admin,
 		&info.Disabled,
+		&info.OpenType,
+		&info.VersionName,
 	); err != nil {
 		return model.InstUserInfo{}, err
+	}
+	if strings.TrimSpace(info.VersionName) == "" && info.OpenType > 0 {
+		info.VersionName = institutionOpenTypeModuleName(info.OpenType)
 	}
 
 	deptRows, err := repo.db.QueryContext(ctx, `

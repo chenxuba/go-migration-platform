@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InstitutionVersionChip from '../institution-version-chip.vue'
 import { useLayoutState } from '../../basic-layout/context'
 
 const { logo, title, layout, isMobile } = useLayoutState()
@@ -12,7 +13,10 @@ const cls = computed(() => ({
   <div :class="cls">
     <a c-primary>
       <img :src="logo">
-      <h1 v-if="!isMobile">{{ title }}</h1>
+      <div v-if="!isMobile" class="ant-pro-brand-meta">
+        <h1>{{ title }}</h1>
+        <InstitutionVersionChip />
+      </div>
     </a>
   </div>
 </template>

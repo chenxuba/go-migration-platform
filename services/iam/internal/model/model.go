@@ -37,6 +37,8 @@ type InstUserInfo struct {
 	InstUserID   int64    `json:"instUserId"`
 	UserID       int64    `json:"userId"`
 	InstID       int64    `json:"instId"`
+	OpenType     int      `json:"openType,omitempty"`
+	VersionName  string   `json:"versionName,omitempty"`
 	NickName     string   `json:"nickName"`
 	Avatar       string   `json:"avatar,omitempty"`
 	OrgName      string   `json:"orgName"`

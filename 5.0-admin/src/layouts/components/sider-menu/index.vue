@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue'
 import type { CSSProperties } from 'vue'
+import InstitutionVersionChip from '../institution-version-chip.vue'
 import { useLayoutState } from '../../basic-layout/context'
 import Menu from '../menu/index.vue'
 
@@ -74,7 +75,10 @@ const logoCls = computed(() => {
     <div v-if="showLogo" class="ant-pro-sider-logo" :class="logoCls">
       <a class="font500">
         <img :src="logo" alt="logo">
-        <h1 v-if="!collapsed || isMobile">{{ title }} </h1>
+        <div v-if="!collapsed || isMobile" class="ant-pro-sider-brand-meta">
+          <h1>{{ title }}</h1>
+          <InstitutionVersionChip />
+        </div>
       </a>
     </div>
     <div class="flex-1 of-x-hidden of-y-auto scrollbar">
