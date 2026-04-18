@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import {
-  CloseOutlined,
   DownOutlined,
   SearchOutlined,
   UpOutlined,
@@ -21,6 +20,7 @@ import {
   useRolePermissions,
 } from '@/composables/useRolePermissions'
 import messageService from '@/utils/messageService'
+import PlatformModalShell from '../../shared/platform-modal-shell.vue'
 
 const props = defineProps<{
   open: boolean
@@ -401,27 +401,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <a-modal
+  <PlatformModalShell
     v-model:open="openModal"
-    centered
-    destroy-on-close
-    :keyboard="false"
-    :closable="false"
-    :mask-closable="false"
     :width="1240"
-    class="createStu-modal-content-box platform-version-modal"
+    :title="modalTitle"
+    modal-class="platform-version-modal"
+    scrollable
   >
-    <template #title>
-      <div class="version-modal__titlebar">
-        <span>{{ modalTitle }}</span>
-        <a-button type="text" class="close-btn" @click="closeModal">
-          <template #icon>
-            <CloseOutlined class="close-icon" />
-          </template>
-        </a-button>
-      </div>
-    </template>
-
     <a-spin :spinning="detailLoading">
       <div class="version-modal">
         <div class="version-modal__aside">
@@ -592,45 +578,10 @@ onBeforeUnmount(() => {
         保存版本
       </a-button>
     </template>
-  </a-modal>
+  </PlatformModalShell>
 </template>
 
 <style scoped lang="less">
-:deep(.createStu-modal-content-box.platform-version-modal .ant-modal-content) {
-  border-radius: 22px;
-  overflow: hidden;
-  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.14);
-}
-
-:deep(.createStu-modal-content-box.platform-version-modal .ant-modal-header) {
-  padding: 24px 28px 14px;
-  margin-bottom: 0;
-  border-bottom: none;
-}
-
-:deep(.createStu-modal-content-box.platform-version-modal .ant-modal-body) {
-  padding: 0 28px 0;
-  max-height: calc(100vh - 220px);
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
-:deep(.createStu-modal-content-box.platform-version-modal .ant-modal-footer) {
-  padding: 18px 28px 24px;
-  border-top: none;
-}
-
-.version-modal__titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  color: #1f2329;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 32px;
-}
-
 .version-modal {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
@@ -919,31 +870,6 @@ onBeforeUnmount(() => {
   background: rgba(22, 119, 255, 0.14);
   color: #1677ff;
   font-weight: 700;
-}
-
-.close-btn {
-  width: 40px;
-  height: 40px;
-  color: #1f2329;
-  font-size: 22px;
-}
-
-.close-btn:hover {
-  background: transparent;
-}
-
-.close-btn:hover .close-icon {
-  animation: icon-rotate 0.3s linear;
-}
-
-@keyframes icon-rotate {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(180deg);
-  }
 }
 
 @media (max-width: 1100px) {

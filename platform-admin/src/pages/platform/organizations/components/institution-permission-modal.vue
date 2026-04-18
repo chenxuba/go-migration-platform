@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { PermissionTreeNode } from '../../shared/permission-tree'
-import { CloseOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'
+import PlatformModalShell from '../../shared/platform-modal-shell.vue'
 import {
   getInstitutionPermissionDetailApi,
   replaceInstitutionPermissionVersionApi,
@@ -327,27 +327,12 @@ watch(
 </script>
 
 <template>
-  <a-modal
+  <PlatformModalShell
     v-model:open="openModal"
-    centered
-    destroy-on-close
-    :keyboard="false"
-    :closable="false"
-    :mask-closable="false"
     :width="1260"
-    class="createStu-modal-content-box institution-permission-modal"
+    title="机构权限"
+    modal-class="institution-permission-modal"
   >
-    <template #title>
-      <div class="permission-modal__titlebar">
-        <span>机构权限</span>
-        <a-button type="text" class="close-btn" @click="closeModal">
-          <template #icon>
-            <CloseOutlined class="close-icon" />
-          </template>
-        </a-button>
-      </div>
-    </template>
-
     <a-spin :spinning="detailLoading || menuTreeLoading || versionLoading">
       <div class="permission-modal">
         <div class="permission-overview">
@@ -475,42 +460,10 @@ watch(
         关闭
       </a-button>
     </template>
-  </a-modal>
+  </PlatformModalShell>
 </template>
 
 <style scoped lang="less">
-:deep(.createStu-modal-content-box.institution-permission-modal .ant-modal-content) {
-  border-radius: 22px;
-  overflow: hidden;
-  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.14);
-}
-
-:deep(.createStu-modal-content-box.institution-permission-modal .ant-modal-header) {
-  padding: 24px 28px 14px;
-  margin-bottom: 0;
-  border-bottom: none;
-}
-
-:deep(.createStu-modal-content-box.institution-permission-modal .ant-modal-body) {
-  padding: 0 28px 0;
-}
-
-:deep(.createStu-modal-content-box.institution-permission-modal .ant-modal-footer) {
-  padding: 18px 28px 24px;
-  border-top: none;
-}
-
-.permission-modal__titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  color: #1f2329;
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 32px;
-}
-
 .permission-modal {
   display: flex;
   flex-direction: column;
@@ -740,31 +693,6 @@ watch(
 
 .tree-readonly {
   pointer-events: none;
-}
-
-.close-btn {
-  width: 40px;
-  height: 40px;
-  color: #1f2329;
-  font-size: 22px;
-}
-
-.close-btn:hover {
-  background: transparent;
-}
-
-.close-btn:hover .close-icon {
-  animation: icon-rotate 0.3s linear;
-}
-
-@keyframes icon-rotate {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(180deg);
-  }
 }
 
 @media (max-width: 1180px) {

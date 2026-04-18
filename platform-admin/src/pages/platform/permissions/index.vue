@@ -105,130 +105,109 @@
       </a-table>
     </a-card>
 
-    <a-modal
+    <PlatformModalShell
       v-model:open="drawerVisible"
-      centered
-      destroy-on-close
-      :keyboard="false"
-      :closable="false"
-      :mask-closable="false"
-      :width="760"
-      class="createStu-modal-content-box permission-form-modal"
-      @cancel="closeFormModal"
+      :width="900"
+      :title="formMode === 'edit' ? '编辑权限' : '新增权限'"
+      modal-class="permission-form-modal"
+      scrollable
+      @close="closeFormModal"
     >
-      <template #title>
-        <div class="permission-form-modal__titlebar">
-          <span>{{ formMode === 'edit' ? '编辑权限' : '新增权限' }}</span>
-          <a-button type="text" class="close-btn" @click="closeFormModal">
-            <template #icon>
-              <CloseOutlined class="close-icon" />
-            </template>
-          </a-button>
-        </div>
-      </template>
-
-      <div class="permission-form-modal__body scrollbar">
-        <div class="permission-form-card">
-          <a-form :model="formData" layout="vertical" class="permission-form">
-            <div class="permission-form-grid">
-              <div class="permission-form-grid__item permission-form-grid__item--full">
-                <a-form-item label="权限名称" required>
-                  <a-input v-model:value="formData.menuName" placeholder="请输入权限名称" />
-                </a-form-item>
-              </div>
-
-              <div class="permission-form-grid__item permission-form-grid__item--full">
-                <a-form-item label="权限编码" required>
-                  <a-input
-                    v-model:value="formData.menuCode"
-                    :disabled="formMode === 'edit'"
-                    placeholder="例如 systemModel:menuPermissions"
-                  />
-                </a-form-item>
-              </div>
-
-              <div class="permission-form-grid__item">
-                <a-form-item label="排序">
-                  <a-input-number v-model:value="formData.sort" :min="0" style="width: 100%" />
-                </a-form-item>
-              </div>
-
-              <div class="permission-form-grid__item">
-                <a-form-item label="权重">
-                  <a-input-number v-model:value="formData.weight" :min="0" style="width: 100%" />
-                </a-form-item>
-              </div>
-
-              <div class="permission-form-grid__item">
-                <a-form-item label="父级菜单">
-                  <a-input :value="parentName" disabled />
-                </a-form-item>
-              </div>
-
-              <div class="permission-form-grid__item">
-                <a-form-item label="所属端口">
-                  <a-tag :color="currentPortal === PortalEnum.PLATFORM ? 'blue' : 'green'">
-                    {{ currentPortal === PortalEnum.PLATFORM ? '平台端' : '机构端' }}
-                  </a-tag>
-                </a-form-item>
-              </div>
-
-              <div class="permission-form-grid__item permission-form-grid__item--full">
-                <a-form-item label="备注">
-                  <a-input v-model:value="formData.remark" placeholder="请输入备注" />
-                </a-form-item>
-              </div>
-
-              <div class="permission-form-grid__item permission-form-grid__item--full">
-                <a-form-item label="权限描述">
-                  <a-textarea
-                    v-model:value="formData.introduce"
-                    :rows="4"
-                    placeholder="请输入权限描述"
-                  />
-                </a-form-item>
-              </div>
+      <div class="permission-form-card">
+        <a-form :model="formData" layout="vertical" class="permission-form">
+          <div class="permission-form-grid">
+            <div class="permission-form-grid__item">
+              <a-form-item label="权限名称" required>
+                <a-input v-model:value="formData.menuName" placeholder="请输入权限名称" />
+              </a-form-item>
             </div>
-          </a-form>
-        </div>
+
+            <div class="permission-form-grid__item">
+              <a-form-item label="权限编码" required>
+                <a-input
+                  v-model:value="formData.menuCode"
+                  :disabled="formMode === 'edit'"
+                  placeholder="例如 systemModel:menuPermissions"
+                />
+              </a-form-item>
+            </div>
+
+            <div class="permission-form-grid__item">
+              <a-form-item label="排序">
+                <a-input-number v-model:value="formData.sort" :min="0" style="width: 100%" />
+              </a-form-item>
+            </div>
+
+            <div class="permission-form-grid__item">
+              <a-form-item label="权重">
+                <a-input-number v-model:value="formData.weight" :min="0" style="width: 100%" />
+              </a-form-item>
+            </div>
+
+            <div class="permission-form-grid__item">
+              <a-form-item label="父级菜单">
+                <a-input :value="parentName" disabled />
+              </a-form-item>
+            </div>
+
+            <div class="permission-form-grid__item">
+              <a-form-item label="所属端口">
+                <a-tag :color="currentPortal === PortalEnum.PLATFORM ? 'blue' : 'green'">
+                  {{ currentPortal === PortalEnum.PLATFORM ? '平台端' : '机构端' }}
+                </a-tag>
+              </a-form-item>
+            </div>
+
+            <div class="permission-form-grid__item permission-form-grid__item--full">
+              <a-form-item label="备注">
+                <a-input v-model:value="formData.remark" placeholder="请输入备注" />
+              </a-form-item>
+            </div>
+
+            <div class="permission-form-grid__item permission-form-grid__item--full">
+              <a-form-item label="权限描述">
+                <a-textarea
+                  v-model:value="formData.introduce"
+                  :rows="3"
+                  placeholder="请输入权限描述"
+                />
+              </a-form-item>
+            </div>
+          </div>
+        </a-form>
       </div>
 
       <template #footer>
         <div class="permission-form-modal__footer">
-          <div class="permission-form-modal__footer-left">
-            <a-popconfirm
-              v-if="formMode === 'edit' && hasPermission(AccessEnum.menuPermissions_delete)"
-              title="确定要删除该权限吗？"
-              @confirm="handleDelete"
-            >
-              <a-button danger ghost>
-                删除
-              </a-button>
-            </a-popconfirm>
-          </div>
-
-          <div class="permission-form-modal__footer-right">
-            <a-button @click="closeFormModal">
-              取消
+          <a-popconfirm
+            v-if="formMode === 'edit' && hasPermission(AccessEnum.menuPermissions_delete)"
+            title="确定要删除该权限吗？"
+            @confirm="handleDelete"
+          >
+            <a-button danger ghost>
+              删除
             </a-button>
-            <a-button
-              v-if="hasPermission(formMode === 'edit' ? AccessEnum.menuPermissions_update : AccessEnum.menuPermissions_add)"
-              type="primary"
-              @click="handleSubmit"
-            >
-              保存
-            </a-button>
-          </div>
+          </a-popconfirm>
+          <a-button @click="closeFormModal">
+            取消
+          </a-button>
+          <a-button
+            v-if="hasPermission(formMode === 'edit' ? AccessEnum.menuPermissions_update : AccessEnum.menuPermissions_add)"
+            type="primary"
+            @click="handleSubmit"
+          >
+            保存
+          </a-button>
         </div>
       </template>
-    </a-modal>
+    </PlatformModalShell>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import type { TableColumnsType } from 'ant-design-vue'
-import { CloseOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import {
   createPermissionApi,
   deletePermissionApi,
@@ -239,6 +218,7 @@ import {
 } from '@/api/platform/permissions'
 import messageService from '@/utils/messageService'
 import { AccessEnum } from '~@/utils/constant'
+import PlatformModalShell from '../shared/platform-modal-shell.vue'
 
 enum PortalEnum {
   PLATFORM = 0,
@@ -644,114 +624,6 @@ onMounted(() => {
     white-space: nowrap;
   }
 
-  :deep(.createStu-modal-content-box.permission-form-modal .ant-modal-content) {
-    border-radius: 22px;
-    overflow: hidden;
-    box-shadow: 0 18px 46px rgba(15, 23, 42, 0.14);
-  }
-
-  :deep(.createStu-modal-content-box.permission-form-modal .ant-modal-header) {
-    padding: 24px 28px 14px;
-    margin-bottom: 0;
-    border-bottom: none;
-  }
-
-  :deep(.createStu-modal-content-box.permission-form-modal .ant-modal-body) {
-    padding: 0 28px 0;
-  }
-
-  :deep(.createStu-modal-content-box.permission-form-modal .ant-modal-footer) {
-    padding: 18px 28px 24px;
-    border-top: none;
-  }
-
-  .permission-form-modal__titlebar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    color: #1f2329;
-    font-size: 20px;
-    font-weight: 700;
-    line-height: 32px;
-  }
-
-  .permission-form-modal__body {
-    max-height: calc(100vh - 220px);
-    padding-top: 8px;
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-
-  .permission-form-card {
-    border: 1px solid #e8edf5;
-    border-radius: 18px;
-    background:
-      linear-gradient(180deg, rgba(22, 119, 255, 0.06) 0%, rgba(22, 119, 255, 0) 132px),
-      #fff;
-    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
-    padding: 20px 22px 4px;
-  }
-
-  .permission-form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 24px;
-  }
-
-  .permission-form-grid__item {
-    min-width: 0;
-  }
-
-  .permission-form-grid__item--full {
-    grid-column: 1 / -1;
-  }
-
-  .permission-form {
-    :deep(.ant-form-item) {
-      margin-bottom: 18px;
-    }
-  }
-
-  .permission-form-modal__footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-
-  .permission-form-modal__footer-left,
-  .permission-form-modal__footer-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .close-btn {
-    width: 40px;
-    height: 40px;
-    color: #1f2329;
-    font-size: 22px;
-  }
-
-  .close-btn:hover {
-    background: transparent;
-  }
-
-  .close-btn:hover .close-icon {
-    animation: icon-rotate 0.3s linear;
-  }
-
-  @keyframes icon-rotate {
-    from {
-      transform: rotate(0deg);
-    }
-
-    to {
-      transform: rotate(180deg);
-    }
-  }
-
   :deep(.ant-table-tbody > tr > td) {
     color: #000;
   }
@@ -775,26 +647,58 @@ onMounted(() => {
   :deep(.ant-form-item-label > label) {
     font-family: inherit;
   }
+}
+</style>
 
-  @media (max-width: 768px) {
-    .permission-form-grid {
-      grid-template-columns: 1fr;
-      gap: 0;
-    }
+<style scoped lang="less">
+.permission-form-card {
+  margin-top: 8px;
+  border: 1px solid #e8edf5;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(22, 119, 255, 0.06) 0%, rgba(22, 119, 255, 0) 132px),
+    #fff;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
+  padding: 20px 22px 6px;
+}
 
-    .permission-form-grid__item--full {
-      grid-column: auto;
-    }
+.permission-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 20px;
+}
 
-    .permission-form-modal__footer {
-      flex-direction: column;
-      align-items: stretch;
-    }
+.permission-form-grid__item {
+  min-width: 0;
+}
 
-    .permission-form-modal__footer-left,
-    .permission-form-modal__footer-right {
-      justify-content: flex-end;
-    }
+.permission-form-grid__item--full {
+  grid-column: 1 / -1;
+}
+
+.permission-form :deep(.ant-form-item) {
+  margin-bottom: 16px;
+}
+
+.permission-form-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .permission-form-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .permission-form-grid__item--full {
+    grid-column: auto;
+  }
+
+  .permission-form-modal__footer {
+    flex-wrap: wrap;
   }
 }
 </style>
