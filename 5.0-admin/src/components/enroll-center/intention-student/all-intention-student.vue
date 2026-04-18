@@ -39,7 +39,7 @@ const canExportIntentionStudent = computed(() => hasAccess(AccessEnum.enroll_int
 const canViewIntentionExportRecords = computed(() => canExportIntentionStudent.value)
 const canAssignIntentionSales = computed(() => hasAccess(AccessEnum.enroll_intention_assign_sales))
 const canTransferIntentionPublicPool = computed(() =>
-  props.publicDataIsShow && hasAccess(AccessEnum.enroll_intention_transfer_public_pool),
+  hasAccess(AccessEnum.enroll_intention_transfer_public_pool),
 )
 const visibleImportExportActions = computed(() => {
   const items = []

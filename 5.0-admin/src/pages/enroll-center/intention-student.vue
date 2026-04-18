@@ -19,6 +19,10 @@ const { hasAccess } = useAccess()
 const canViewAllIntention = computed(() => hasAccess(AccessEnum.enroll_intention_view_all))
 const canViewMyIntention = computed(() => hasAccess(AccessEnum.enroll_intention_view_my))
 const canViewDeptIntention = computed(() => hasAccess(AccessEnum.enroll_intention_view_dept))
+const canEditPublicPoolSetting = computed(() => hasAccess(AccessEnum.enroll_public_pool_setting))
+const canUseAutoPublicPoolLogic = computed(() =>
+  canEditPublicPoolSetting.value && publicDataIsShow.value,
+)
 const canViewPublicPool = computed(() =>
   hasAccess(AccessEnum.enroll_public_pool_setting)
   || hasAccess(AccessEnum.enroll_public_pool_claim)
@@ -93,7 +97,10 @@ function refreshIntentionStudentData() {
 }
 
 onMounted(async () => {
-  await userStore.getInstConfig()
+  await Promise.all([
+    userStore.getUserInfo(),
+    userStore.getInstConfig(),
+  ])
   instConfig.value = userStore.instConfig
   if (instConfig.value) {
     publicDataIsShow.value = instConfig.value.enablePublicPool
@@ -105,7 +112,7 @@ onMounted(async () => {
   <div class="home">
     <div class="tabs">
       <a-tabs 
-        v-model:active-key="activeKey" :animated="publicDataIsShow" :tab-bar-style="{
+        v-model:active-key="activeKey" :animated="canUseAutoPublicPoolLogic" :tab-bar-style="{
           'border-bottom-left-radius': '0px',
           'border-bottom-right-radius': '0px',
         }"
@@ -137,7 +144,7 @@ onMounted(async () => {
                 </span>
               </template>
               <div class="tab-content">
-                <all-intention-student ref="allIntentionStudentRef" :public-data-is-show="publicDataIsShow" />
+                <all-intention-student ref="allIntentionStudentRef" :public-data-is-show="canUseAutoPublicPoolLogic" />
               </div>
             </a-tab-pane>
             <a-tab-pane v-if="canViewDeptIntention" key="2">
@@ -157,7 +164,7 @@ onMounted(async () => {
                 </span>
               </template>
               <div class="tab-content">
-                <dpt-intention-student ref="dptIntentionStudentRef" :public-data-is-show="publicDataIsShow"/>
+                <dpt-intention-student ref="dptIntentionStudentRef" :public-data-is-show="canUseAutoPublicPoolLogic"/>
               </div>
             </a-tab-pane>
           </a-tabs>

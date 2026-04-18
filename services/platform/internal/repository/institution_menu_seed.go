@@ -1111,6 +1111,14 @@ var institutionMenuAliasSpecs = []institutionMenuAliasSpec{
 		CanonicalCode: "INST_AUTH_ORG_MANAGE_ROLE_MANAGE",
 		AliasCodes:    []string{"RoleManagement", "Roles"},
 	},
+	{
+		CanonicalCode: "INST_AUTH_ENROLL_PUBLIC_POOL_CLAIM",
+		AliasCodes:    []string{"Batchclaim"},
+	},
+	{
+		CanonicalCode: "INST_AUTH_ENROLL_PUBLIC_POOL_ASSIGN",
+		AliasCodes:    []string{"Batchallocation"},
+	},
 }
 
 func (repo *Repository) normalizeInstitutionMenuAliases(ctx context.Context) error {
@@ -1297,19 +1305,19 @@ func (repo *Repository) ensureInstitutionMenuNode(ctx context.Context, spec inst
 	if id, err := repo.findMenuIDByCode(ctx, spec.Code); err != nil {
 		return 0, err
 	} else if id > 0 {
-		return id, nil
+		return id, repo.updateInstitutionMenuNode(ctx, id, spec)
 	}
 
 	if id, err := repo.findMenuIDByExactPath(ctx, spec); err != nil {
 		return 0, err
 	} else if id > 0 {
-		return id, nil
+		return id, repo.updateInstitutionMenuNode(ctx, id, spec)
 	}
 
 	if id, err := repo.findUniqueMenuIDByNames(ctx, spec.MatchNames, spec.Level); err != nil {
 		return 0, err
 	} else if id > 0 {
-		return id, nil
+		return id, repo.updateInstitutionMenuNode(ctx, id, spec)
 	}
 
 	id, err := repo.insertInstitutionMenuNode(ctx, spec)

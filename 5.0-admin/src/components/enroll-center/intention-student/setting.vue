@@ -251,7 +251,7 @@ onMounted(async () => {
       </a>
     </div>
   </div>
-  <div class="tab-content mt-2">
+  <div v-if="canEditPublicPoolSetting" class="tab-content mt-2">
     <!-- 意向学员录入设置 -->
     <div class="setting">
       <div class="title mb-2.5">
@@ -290,6 +290,7 @@ onMounted(async () => {
   </div>
   <!-- 未跟进天数进公有池设置model -->
   <a-modal
+    v-if="canEditPublicPoolSetting"
     v-model:open="openModel"
     centered
     title="未跟进天数设置"
