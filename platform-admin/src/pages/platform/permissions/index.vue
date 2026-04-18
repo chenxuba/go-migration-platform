@@ -152,9 +152,7 @@
 
             <div class="permission-form-grid__item">
               <a-form-item label="所属端口">
-                <a-tag :color="currentPortal === PortalEnum.PLATFORM ? 'blue' : 'green'">
-                  {{ currentPortal === PortalEnum.PLATFORM ? '平台端' : '机构端' }}
-                </a-tag>
+                <a-input :value="currentPortal === PortalEnum.PLATFORM ? '平台端' : '机构端'" disabled />
               </a-form-item>
             </div>
 
