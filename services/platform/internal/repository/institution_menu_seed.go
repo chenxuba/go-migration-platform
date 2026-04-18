@@ -37,6 +37,23 @@ type institutionMenuSeedAuthority struct {
 	Remark    string
 }
 
+type institutionRouteAuthoritySeed struct {
+	RouteCode   string
+	Authorities []institutionRouteAuthority
+}
+
+type institutionRouteAuthority struct {
+	Name       string
+	Code       string
+	Sort       int
+	Weight     int
+	MenuType   int
+	GroupCode  string
+	Remark     string
+	MatchNames []string
+	MatchCodes []string
+}
+
 type institutionMenuLookup struct {
 	ID   int64
 	Name string
@@ -124,15 +141,15 @@ var institutionMenuSeeds = []institutionMenuSeed{
 		ParentDesc: "家校沟通与服务相关权限。",
 		Children: []institutionMenuSeedChild{
 			{
-				Name:        "课堂点评",
+				Name:        "康复记录",
 				Code:        "INST_GROUP_HOME_CLASS_REVIEW",
 				Sort:        10,
-				Title:       "课堂点评",
-				Description: "课堂点评查看、编辑与反馈权限。",
+				Title:       "康复记录",
+				Description: "康复记录查看、编辑与反馈权限。",
 				Authorities: []institutionMenuSeedAuthority{
-					{Name: "查看分配给我的课堂点评", Code: "INST_AUTH_HOME_CLASS_REVIEW_MY", Sort: 20, Weight: 0, GroupCode: "gp900051", Remark: "查看上课教师、上课助教、班主任为自己的课堂点评和课堂点评明细。"},
-					{Name: "写点评", Code: "INST_AUTH_HOME_CLASS_REVIEW_WRITE", Sort: 30, Weight: 0, Remark: "可以写点评并编辑课堂点评。"},
-					{Name: "课评反馈查看", Code: "INST_AUTH_HOME_CLASS_REVIEW_FEEDBACK", Sort: 40, Weight: 0, Remark: "可在课堂点评和课堂点评明细中查看课评反馈。"},
+					{Name: "查看分配给我的康复记录", Code: "INST_AUTH_HOME_CLASS_REVIEW_MY", Sort: 20, Weight: 0, GroupCode: "gp900051", Remark: "查看上课教师、上课助教、班主任为自己的康复记录和康复记录明细。"},
+					{Name: "写康复记录", Code: "INST_AUTH_HOME_CLASS_REVIEW_WRITE", Sort: 30, Weight: 0, Remark: "可以写康复记录并编辑康复记录。"},
+					{Name: "课评反馈查看", Code: "INST_AUTH_HOME_CLASS_REVIEW_FEEDBACK", Sort: 40, Weight: 0, Remark: "可在康复记录和康复记录明细中查看课评反馈。"},
 				},
 			},
 			{
@@ -653,9 +670,55 @@ var institutionMenuSeeds = []institutionMenuSeed{
 	},
 }
 
+var institutionRouteAuthoritySeeds = []institutionRouteAuthoritySeed{
+	{
+		RouteCode: "INST_ROUTE_ENROLL_INTENTION",
+		Authorities: []institutionRouteAuthority{
+			{Name: "编辑学员跟进状态", Code: "INST_AUTH_ENROLL_INTENTION_FOLLOW_STATUS", Sort: 10, Remark: "支持编辑意向学员的跟进状态。"},
+			{Name: "查看所有的意向学员", Code: "INST_AUTH_ENROLL_INTENTION_ALL", Sort: 20, Weight: 10, GroupCode: "groupProspectiveStudent", Remark: "可查看校区内所有的意向学员。", MatchCodes: []string{"ViewAllProspectiveStudent"}},
+			{Name: "仅查看我的意向学员", Code: "INST_AUTH_ENROLL_INTENTION_MY", Sort: 30, GroupCode: "groupProspectiveStudent", Remark: "仅查看采单员、前台、电话销售、副销售员、销售员、班主任为自己的意向学员。", MatchCodes: []string{"OnlyViewMyProspectiveStudent"}},
+			{Name: "在PC端查看本部门及以下作为销售员的意向学员", Code: "INST_AUTH_ENROLL_INTENTION_DEPT", Sort: 40, Remark: "可在PC端查看销售员为本部门及下级部门员工的意向学员。", MatchCodes: []string{"PCProspectiveStudent"}},
+			{Name: "管理意向学员", Code: "INST_AUTH_ENROLL_INTENTION_MANAGE", Sort: 50, Remark: "可以在报名续费、意向学员页面新增和编辑意向学员。", MatchCodes: []string{"ManagementProspectiveStudent"}},
+			{Name: "意向学员详情", Code: "INST_AUTH_ENROLL_INTENTION_DETAIL", Sort: 60, Remark: "支持查看意向学员详情。", MatchCodes: []string{"ProspectiveStudentDetail"}},
+			{Name: "意向学员渠道编辑", Code: "INST_AUTH_ENROLL_INTENTION_CHANNEL_EDIT", Sort: 70, Remark: "可以编辑意向学员渠道字段。", MatchCodes: []string{"ProspectiveStudentEdit"}},
+			{Name: "导入意向学员", Code: "INST_AUTH_ENROLL_INTENTION_IMPORT", Sort: 80, Remark: "支持批量导入意向学员数据。", MatchCodes: []string{"ImportProspectiveStudent"}},
+			{Name: "导出意向学员", Code: "INST_AUTH_ENROLL_INTENTION_EXPORT", Sort: 90, Remark: "可在PC意向学员列表中导出学员数据。", MatchCodes: []string{"ExportProspectiveStudent"}},
+			{Name: "分配销售员", Code: "INST_AUTH_ENROLL_INTENTION_ASSIGN_SALES", Sort: 100, Remark: "支持批量分配和单独分配销售员。", MatchCodes: []string{"AssignSalespeople"}},
+			{Name: "批量转入公有池", Code: "INST_AUTH_ENROLL_INTENTION_TRANSFER_PUBLIC_POOL", Sort: 110, Remark: "支持将意向学员批量转入公有池。", MatchCodes: []string{"TransferPublicPool"}},
+		},
+	},
+	{
+		RouteCode: "INST_ROUTE_EDU_CLASS",
+		Authorities: []institutionRouteAuthority{
+			{Name: "查看所有的班级", Code: "INST_AUTH_EDU_CLASS_ALL", Sort: 10, Weight: 10, GroupCode: "groupViewallclasses", Remark: "可查看校区内所有的班级。", MatchCodes: []string{"Viewallclasses"}},
+			{Name: "仅查看我的班级", Code: "INST_AUTH_EDU_CLASS_MY", Sort: 20, GroupCode: "groupViewallclasses", Remark: "仅查看我作为班主任的班级。", MatchCodes: []string{"Onlyviewmyclass"}},
+			{Name: "导入班级", Code: "INST_AUTH_EDU_CLASS_IMPORT", Sort: 30, Remark: "支持导入班级。", MatchCodes: []string{"ImportClass"}},
+			{Name: "新建/编辑/结班/调整班级学员", Code: "INST_AUTH_EDU_CLASS_MANAGE_WITH_STUDENTS", Sort: 40, Remark: "可以新建班级、编辑班级、结班，并调整班级学员。", MatchCodes: []string{"NewEditCloseAdjustClassStudents"}},
+			{Name: "新建/编辑班级以及结班操作", Code: "INST_AUTH_EDU_CLASS_MANAGE", Sort: 50, Remark: "可以新建班级、编辑班级并进行结班操作。", MatchCodes: []string{"NewEditClassandClosingOperations"}},
+			{Name: "调整班级学员", Code: "INST_AUTH_EDU_CLASS_ADJUST_STUDENTS", Sort: 60, Remark: "可以对班级新增学员、移出学员并调整学员至其他班级。", MatchCodes: []string{"Adjustclassstudents"}},
+			{Name: "编辑满班人数", Code: "INST_AUTH_EDU_CLASS_MAX_COUNT", Sort: 70, Remark: "支持修改班级满班人数。", MatchCodes: []string{"Editthenumberoffullclassmembers"}},
+			{Name: "批量升期", Code: "INST_AUTH_EDU_CLASS_BATCH_PROMOTION", Sort: 80, Remark: "支持在班级内对学员进行批量升期报名操作。", MatchNames: []string{" 批量升期", "批量升期"}, MatchCodes: []string{"Batchupgradeperiod"}},
+		},
+	},
+	{
+		RouteCode: "INST_ROUTE_EDU_TIMETABLE",
+		Authorities: []institutionRouteAuthority{
+			{Name: "查看所有的课表", Code: "INST_AUTH_EDU_TIMETABLE_ALL", Sort: 10, Weight: 10, GroupCode: "groupViewallclassschedules", Remark: "可以查看校区内所有的课表。", MatchCodes: []string{"Viewallclassschedules"}},
+			{Name: "仅查看我的课表", Code: "INST_AUTH_EDU_TIMETABLE_MY", Sort: 20, GroupCode: "groupViewallclassschedules", Remark: "仅可查看上课教师/上课助教为自己的课表。", MatchCodes: []string{"Onlyviewmyschedule"}},
+			{Name: "新建/编辑/删除日程/添加补课学员时可选择所有班级/1v1", Code: "INST_AUTH_EDU_TIMETABLE_ALL_CLASS_OPERATION", Sort: 30, GroupCode: "groupallclasses", Remark: "可以新建、编辑、删除日程，添加补课学员，并选择所有班级/1v1。", MatchCodes: []string{"allclasses"}},
+			{Name: "新建/编辑/删除日程/添加补课学员时可选择自己的班级/1v1", Code: "INST_AUTH_EDU_TIMETABLE_OWN_CLASS_OPERATION", Sort: 40, GroupCode: "groupallclasses", Remark: "可以新建、编辑、删除日程，添加补课学员，并选择自己的班级/1v1。", MatchCodes: []string{"ownclass"}},
+			{Name: "日程列表", Code: "INST_AUTH_EDU_TIMETABLE_LIST", Sort: 50, Remark: "支持PC端查看日程列表。", MatchCodes: []string{"ScheduleList"}},
+			{Name: "冲突日程列表", Code: "INST_AUTH_EDU_TIMETABLE_CONFLICT_LIST", Sort: 60, Remark: "支持PC端查看日程冲突列表。", MatchCodes: []string{"Conflictschedulelist"}},
+			{Name: "导入日程", Code: "INST_AUTH_EDU_TIMETABLE_IMPORT", Sort: 70, Remark: "支持导入日程。", MatchCodes: []string{"Importschedule"}},
+			{Name: "日程导出", Code: "INST_AUTH_EDU_TIMETABLE_EXPORT", Sort: 80, Remark: "支持PC端导出日程表和日程列表。", MatchCodes: []string{"Scheduleexport"}},
+			{Name: "课表展示配置", Code: "INST_AUTH_EDU_TIMETABLE_DISPLAY_CONFIG", Sort: 90, Remark: "支持配置看板时间区间和颜色设置。", MatchCodes: []string{"Scheduledisplayconfiguration"}},
+		},
+	},
+}
+
 func (repo *Repository) ensureInstitutionMenuCatalog(ctx context.Context) error {
 	for _, parent := range institutionMenuSeeds {
-		parentID, err := repo.upsertInstitutionMenuNode(ctx, institutionMenuNodeSpec{
+		parentID, err := repo.ensureInstitutionMenuNode(ctx, institutionMenuNodeSpec{
 			Name:       parent.ParentName,
 			Code:       parent.ParentCode,
 			PID:        0,
@@ -672,7 +735,7 @@ func (repo *Repository) ensureInstitutionMenuCatalog(ctx context.Context) error 
 		}
 
 		for _, child := range parent.Children {
-			childID, err := repo.upsertInstitutionMenuNode(ctx, institutionMenuNodeSpec{
+			childID, err := repo.ensureInstitutionMenuNode(ctx, institutionMenuNodeSpec{
 				Name:       child.Name,
 				Code:       child.Code,
 				PID:        parentID,
@@ -689,7 +752,7 @@ func (repo *Repository) ensureInstitutionMenuCatalog(ctx context.Context) error 
 			}
 
 			for _, authority := range child.Authorities {
-				if _, err := repo.upsertInstitutionMenuNode(ctx, institutionMenuNodeSpec{
+				if _, err := repo.ensureInstitutionMenuNode(ctx, institutionMenuNodeSpec{
 					Name:       authority.Name,
 					Code:       authority.Code,
 					PID:        childID,
@@ -712,7 +775,11 @@ func (repo *Repository) ensureInstitutionMenuCatalog(ctx context.Context) error 
 		return err
 	}
 
-	if err := repo.syncInstitutionPermissionDisplayText(ctx); err != nil {
+	if err := repo.ensureVisibleRouteAuthorityCatalog(ctx); err != nil {
+		return err
+	}
+
+	if err := repo.clearInstitutionMenuURLPaths(ctx); err != nil {
 		return err
 	}
 
@@ -726,7 +793,7 @@ func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context
 
 	routeMenuIDs := make([]int64, 0, 64)
 	for _, group := range institutionmenu.VisibleRouteCatalog {
-		groupID, err := repo.upsertInstitutionMenuNode(ctx, institutionMenuNodeSpec{
+		groupID, err := repo.ensureInstitutionMenuNode(ctx, institutionMenuNodeSpec{
 			Name:       group.Name,
 			Code:       group.Code,
 			PID:        0,
@@ -734,7 +801,6 @@ func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context
 			Sort:       group.Sort,
 			Weight:     group.Sort,
 			MenuType:   0,
-			URLPath:    group.Path,
 			Introduce:  strings.TrimSpace(group.Introduce),
 			Remark:     strings.TrimSpace(group.Introduce),
 			MatchNames: uniqueMenuNames(append([]string{group.Name}, group.MatchNames...)...),
@@ -749,7 +815,7 @@ func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context
 		}
 
 		for _, child := range group.Children {
-			childID, err := repo.upsertInstitutionMenuNode(ctx, institutionMenuNodeSpec{
+			childID, err := repo.ensureInstitutionMenuNode(ctx, institutionMenuNodeSpec{
 				Name:       child.Name,
 				Code:       child.Code,
 				PID:        groupID,
@@ -757,7 +823,6 @@ func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context
 				Sort:       child.Sort,
 				Weight:     child.Sort,
 				MenuType:   0,
-				URLPath:    child.Path,
 				Introduce:  strings.TrimSpace(child.Introduce),
 				Remark:     strings.TrimSpace(child.Introduce),
 				MatchNames: uniqueMenuNames(append([]string{child.Name}, child.MatchNames...)...),
@@ -770,6 +835,82 @@ func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context
 	}
 
 	return repo.ensureInstitutionAdminRoleMenus(ctx, routeMenuIDs)
+}
+
+func (repo *Repository) ensureVisibleRouteAuthorityCatalog(ctx context.Context) error {
+	for _, seed := range institutionRouteAuthoritySeeds {
+		routeID, err := repo.findMenuIDByCode(ctx, seed.RouteCode)
+		if err != nil {
+			return err
+		}
+		if routeID <= 0 {
+			continue
+		}
+
+		for _, authority := range seed.Authorities {
+			if _, err := repo.ensureVisibleRouteAuthorityNode(ctx, routeID, authority); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (repo *Repository) clearInstitutionMenuURLPaths(ctx context.Context) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sso_menu
+		SET url_path = NULL,
+		    update_id = 'system',
+		    update_time = NOW()
+		WHERE own_type = 2
+		  AND del_flag = 0
+		  AND NULLIF(TRIM(IFNULL(url_path, '')), '') IS NOT NULL
+	`)
+	return err
+}
+
+func (repo *Repository) ensureVisibleRouteAuthorityNode(ctx context.Context, routeID int64, authority institutionRouteAuthority) (int64, error) {
+	spec := institutionMenuNodeSpec{
+		Name:      authority.Name,
+		Code:      authority.Code,
+		PID:       routeID,
+		Level:     3,
+		Sort:      authority.Sort,
+		Weight:    authority.Weight,
+		MenuType:  authority.MenuType,
+		GroupCode: strings.TrimSpace(authority.GroupCode),
+		Introduce: strings.TrimSpace(authority.Remark),
+		Remark:    strings.TrimSpace(authority.Remark),
+	}
+
+	if id, err := repo.findDirectChildMenuIDByCode(ctx, routeID, authority.Code); err != nil {
+		return 0, err
+	} else if id > 0 {
+		return id, nil
+	}
+
+	for _, legacyCode := range authority.MatchCodes {
+		if id, err := repo.findDirectChildMenuIDByCode(ctx, routeID, legacyCode); err != nil {
+			return 0, err
+		} else if id > 0 {
+			return id, repo.updateInstitutionMenuNode(ctx, id, spec)
+		}
+	}
+
+	names := uniqueMenuNames(append([]string{authority.Name}, authority.MatchNames...)...)
+	if id, err := repo.findDirectChildMenuIDByNames(ctx, routeID, names); err != nil {
+		return 0, err
+	} else if id > 0 {
+		return id, repo.updateInstitutionMenuNode(ctx, id, spec)
+	}
+
+	id, err := repo.insertInstitutionMenuNode(ctx, spec)
+	if err != nil {
+		return 0, err
+	}
+
+	return id, repo.copyInstitutionModuleBindings(ctx, routeID, id)
 }
 
 func (repo *Repository) removeDeprecatedInstitutionMenus(ctx context.Context) error {
@@ -938,70 +1079,6 @@ func (repo *Repository) ensureInstitutionAdminRoleMenus(ctx context.Context, men
 			`, roleID, menuID, roleID, menuID); err != nil {
 				return err
 			}
-		}
-	}
-
-	return nil
-}
-
-type institutionMenuCopyPatch struct {
-	Code      string
-	Name      string
-	Introduce string
-	Remark    string
-}
-
-var institutionMenuCopyPatches = []institutionMenuCopyPatch{
-	{
-		Code:      "Onlyviewmyschedule",
-		Name:      "仅查看我的课表",
-		Introduce: "仅可查看上课教师/上课助教为自己的课表",
-		Remark:    "仅可查看上课教师/上课助教为自己的课表",
-	},
-	{
-		Code:      "Viewallclassroomreviews",
-		Name:      "查看所有康复记录",
-		Introduce: "支持查看所有员工的康复记录和康复记录明细",
-		Remark:    "支持查看所有员工的康复记录和康复记录明细",
-	},
-	{
-		Code:      "INST_AUTH_HOME_CLASS_REVIEW_MY",
-		Name:      "查看分配给我的康复记录",
-		Introduce: "查看上课教师、上课助教、班主任为自己的康复记录和康复记录明细",
-		Remark:    "查看上课教师、上课助教、班主任为自己的康复记录和康复记录明细",
-	},
-	{
-		Code:      "INST_AUTH_HOME_CLASS_REVIEW_WRITE",
-		Name:      "写康复记录",
-		Introduce: "可以写康复记录并编辑康复记录",
-		Remark:    "可以写康复记录并编辑康复记录",
-	},
-	{
-		Code:      "INST_AUTH_HOME_CLASS_REVIEW_FEEDBACK",
-		Name:      "课评反馈查看",
-		Introduce: "可在康复记录和康复记录明细中查看课评反馈",
-		Remark:    "可在康复记录和康复记录明细中查看课评反馈",
-	},
-}
-
-func (repo *Repository) syncInstitutionPermissionDisplayText(ctx context.Context) error {
-	for _, patch := range institutionMenuCopyPatches {
-		if strings.TrimSpace(patch.Code) == "" {
-			continue
-		}
-
-		if _, err := repo.db.ExecContext(ctx, `
-			UPDATE sso_menu
-			SET menu_name = ?,
-			    introduce = ?,
-			    remark = ?,
-			    update_id = 'system',
-			    update_time = NOW()
-			WHERE del_flag = 0
-			  AND own_type = 2
-			  AND menu_code = ?
-		`, patch.Name, patch.Introduce, patch.Remark, patch.Code); err != nil {
-			return err
 		}
 	}
 
@@ -1191,13 +1268,12 @@ type institutionMenuNodeSpec struct {
 	Weight     int
 	MenuType   int
 	GroupCode  string
-	URLPath    string
 	Introduce  string
 	Remark     string
 	MatchNames []string
 }
 
-func (repo *Repository) upsertInstitutionMenuNode(ctx context.Context, spec institutionMenuNodeSpec) (int64, error) {
+func (repo *Repository) ensureInstitutionMenuNode(ctx context.Context, spec institutionMenuNodeSpec) (int64, error) {
 	if strings.TrimSpace(spec.Name) == "" {
 		return 0, fmt.Errorf("menu name is required")
 	}
@@ -1205,19 +1281,19 @@ func (repo *Repository) upsertInstitutionMenuNode(ctx context.Context, spec inst
 	if id, err := repo.findMenuIDByCode(ctx, spec.Code); err != nil {
 		return 0, err
 	} else if id > 0 {
-		return id, repo.updateInstitutionMenuNode(ctx, id, spec)
+		return id, nil
 	}
 
 	if id, err := repo.findMenuIDByExactPath(ctx, spec); err != nil {
 		return 0, err
 	} else if id > 0 {
-		return id, repo.updateInstitutionMenuNode(ctx, id, spec)
+		return id, nil
 	}
 
 	if id, err := repo.findUniqueMenuIDByNames(ctx, spec.MatchNames, spec.Level); err != nil {
 		return 0, err
 	} else if id > 0 {
-		return id, repo.updateInstitutionMenuNode(ctx, id, spec)
+		return id, nil
 	}
 
 	id, err := repo.insertInstitutionMenuNode(ctx, spec)
@@ -1285,6 +1361,42 @@ func (repo *Repository) findChildMenuID(ctx context.Context, pid int64, name str
 	return readSingleMenuID(rows)
 }
 
+func (repo *Repository) findDirectChildMenuIDByCode(ctx context.Context, pid int64, code string) (int64, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return 0, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id
+		FROM sso_menu
+		WHERE del_flag = 0
+		  AND own_type = 2
+		  AND pid = ?
+		  AND menu_code = ?
+	`, pid, code)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	return readSingleMenuID(rows)
+}
+
+func (repo *Repository) findDirectChildMenuIDByNames(ctx context.Context, pid int64, names []string) (int64, error) {
+	for _, name := range names {
+		id, err := repo.findChildMenuID(ctx, pid, name)
+		if err != nil {
+			return 0, err
+		}
+		if id > 0 {
+			return id, nil
+		}
+	}
+
+	return 0, nil
+}
+
 func (repo *Repository) findUniqueMenuIDByNames(ctx context.Context, names []string, level int) (int64, error) {
 	candidates := make(map[int64]struct{})
 	for _, name := range names {
@@ -1327,7 +1439,7 @@ func (repo *Repository) updateInstitutionMenuNode(ctx context.Context, id int64,
 	_, err := repo.db.ExecContext(ctx, `
 		UPDATE sso_menu
 		SET menu_name = ?,
-		    url_path = ?,
+		    url_path = NULL,
 		    menu_code = ?,
 		    pid = ?,
 		    sort = ?,
@@ -1343,7 +1455,29 @@ func (repo *Repository) updateInstitutionMenuNode(ctx context.Context, id int64,
 		    update_id = 'system',
 		    update_time = NOW()
 		WHERE id = ?
-	`, spec.Name, emptyToNullString(spec.URLPath), spec.Code, spec.PID, spec.Sort, spec.Introduce, spec.Level, spec.Weight, emptyToNullString(spec.GroupCode), spec.MenuType, spec.Remark, id)
+	`, spec.Name, spec.Code, spec.PID, spec.Sort, spec.Introduce, spec.Level, spec.Weight, emptyToNullString(spec.GroupCode), spec.MenuType, spec.Remark, id)
+	return err
+}
+
+func (repo *Repository) copyInstitutionModuleBindings(ctx context.Context, sourceMenuID, targetMenuID int64) error {
+	if sourceMenuID <= 0 || targetMenuID <= 0 || sourceMenuID == targetMenuID {
+		return nil
+	}
+
+	_, err := repo.db.ExecContext(ctx, `
+		INSERT INTO sys_module_menu (module_id, menu_id, del_flag)
+		SELECT smm.module_id, ?, 0
+		FROM sys_module_menu smm
+		WHERE smm.menu_id = ?
+		  AND IFNULL(smm.del_flag, 0) = 0
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM sys_module_menu existing
+		    WHERE existing.module_id = smm.module_id
+		      AND existing.menu_id = ?
+		      AND IFNULL(existing.del_flag, 0) = 0
+		  )
+	`, targetMenuID, sourceMenuID, targetMenuID)
 	return err
 }
 
@@ -1354,8 +1488,8 @@ func (repo *Repository) insertInstitutionMenuNode(ctx context.Context, spec inst
 			introduce, own_type, level, weight, group_code, create_id, create_time,
 			update_id, update_time, del_flag, remark
 		)
-		VALUES (?, 0, ?, ?, ?, ?, ?, ?, 1, ?, 2, ?, ?, ?, 'system', NOW(), 'system', NOW(), 0, ?)
-	`, uuid.NewString(), spec.Name, emptyToNullString(spec.URLPath), spec.Code, spec.MenuType, spec.PID, spec.Sort, spec.Introduce, spec.Level, spec.Weight, emptyToNullString(spec.GroupCode), spec.Remark)
+		VALUES (?, 0, ?, NULL, ?, ?, ?, ?, 1, ?, 2, ?, ?, ?, 'system', NOW(), 'system', NOW(), 0, ?)
+	`, uuid.NewString(), spec.Name, spec.Code, spec.MenuType, spec.PID, spec.Sort, spec.Introduce, spec.Level, spec.Weight, emptyToNullString(spec.GroupCode), spec.Remark)
 	if err != nil {
 		return 0, err
 	}

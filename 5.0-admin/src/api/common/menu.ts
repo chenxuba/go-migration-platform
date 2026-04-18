@@ -1,5 +1,14 @@
-import type { MenuData } from '~@/layouts/basic-layout/typing'
+export interface InstitutionMenuNode {
+  id?: number | string
+  menuName: string
+  menuCode?: string
+  urlPath?: string
+  remark?: string
+  introduce?: string
+  groupCode?: string
+  children?: InstitutionMenuNode[]
+}
 
 export function getRouteMenusApi() {
-  return useGet<MenuData>('/sso/menu')
+  return useGet<InstitutionMenuNode[]>('/sso/menu')
 }

@@ -1,16 +1,42 @@
 <script setup>
 import { ref, watch } from 'vue'
+import { Empty } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { useInstitutionPermission } from '@/composables/institution-permission'
 
 const activeKey = ref('1')
 const activeKey2 = ref('1')
 const userStore = useUserStore()
 const instConfig = ref(userStore.instConfig)
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const publicDataIsShow = ref(false)
 const publicPoolRef = ref(null)
 // 子组件引用
 const allIntentionStudentRef = ref(null)
 const dptIntentionStudentRef = ref(null)
+const { hasActionAccess } = useInstitutionPermission('INST_ROUTE_ENROLL_INTENTION')
+
+const canViewAllIntention = computed(() => hasActionAccess('INST_AUTH_ENROLL_INTENTION_ALL'))
+const canViewMyIntention = computed(() => hasActionAccess('INST_AUTH_ENROLL_INTENTION_MY'))
+const canViewDeptIntention = computed(() => hasActionAccess('INST_AUTH_ENROLL_INTENTION_DEPT'))
+const canUsePublicPool = computed(() =>
+  publicDataIsShow.value && hasActionAccess('INST_AUTH_ENROLL_INTENTION_TRANSFER_PUBLIC_POOL'),
+)
+const primaryIntentionTabKey = computed(() => {
+  if (canViewAllIntention.value || canViewMyIntention.value)
+    return '1'
+  if (canViewDeptIntention.value)
+    return '2'
+  return ''
+})
+const primaryIntentionTabLabel = computed(() =>
+  canViewAllIntention.value ? '全部意向学员' : '我的意向学员',
+)
+const primaryIntentionTabTip = computed(() =>
+  canViewAllIntention.value
+    ? '查看机构内所有的意向学员'
+    : '仅查看采单员/前台/电话销售/副销售员/销售员/班主任为自己的意向学员',
+)
 
 function diaplayPublicDataFun(e) {
   publicDataIsShow.value = e
@@ -35,6 +61,23 @@ watch(activeKey2, (newKey, oldKey) => {
     refreshIntentionStudentData()
   }
 })
+
+watch(
+  [primaryIntentionTabKey, canViewDeptIntention],
+  ([primaryKey, deptVisible]) => {
+    const availableKeys = [primaryKey, deptVisible ? '2' : ''].filter(Boolean)
+    if (availableKeys.length === 0)
+      return
+    if (!availableKeys.includes(activeKey2.value))
+      activeKey2.value = availableKeys[0]
+  },
+  { immediate: true },
+)
+
+watch(canUsePublicPool, (visible) => {
+  if (!visible && activeKey.value === '2')
+    activeKey.value = '1'
+}, { immediate: true })
 
 // 刷新意向学员数据
 function refreshIntentionStudentData() {
@@ -68,23 +111,24 @@ onMounted(async () => {
         <!-- force-render 强制渲染 -->
         <a-tab-pane  key="1" tab="意向学员">
           <a-tabs
+            v-if="primaryIntentionTabKey"
             v-model:active-key="activeKey2" animated :tab-bar-style="{
               'height': '46px',
               'border-top-left-radius': '0px',
               'border-top-right-radius': '0px',
             }" class="twoTab"
           >
-            <a-tab-pane key="1">
+            <a-tab-pane v-if="primaryIntentionTabKey === '1'" key="1">
               <template #tab>
                 <span class="custom-tab">
-                  全部意向学员
+                  {{ primaryIntentionTabLabel }}
                   <a-tooltip
                     :overlay-style="{
                       maxWidth: '300px', // 最大宽度
                       whiteSpace: 'normal', // 允许换行
                     }"
                   >
-                    <template #title>查看机构内所有的意向学员</template>
+                    <template #title>{{ primaryIntentionTabTip }}</template>
 
                     <QuestionCircleOutlined />
                   </a-tooltip>
@@ -94,7 +138,7 @@ onMounted(async () => {
                 <all-intention-student ref="allIntentionStudentRef" :public-data-is-show="publicDataIsShow" />
               </div>
             </a-tab-pane>
-            <a-tab-pane key="2">
+            <a-tab-pane v-if="canViewDeptIntention" key="2">
               <template #tab>
                 <span class="custom-tab">
                   部门意向学员
@@ -115,8 +159,11 @@ onMounted(async () => {
               </div>
             </a-tab-pane>
           </a-tabs>
+          <div v-else class="tab-empty bg-white rounded-b-4 h-260px flex items-center justify-center">
+            <a-empty :image="simpleImage" description="暂无可查看的意向学员权限" />
+          </div>
         </a-tab-pane>
-        <a-tab-pane v-if="publicDataIsShow" key="2" tab="公有池">
+        <a-tab-pane v-if="canUsePublicPool" key="2" tab="公有池">
           <public-pool ref="publicPoolRef" />
         </a-tab-pane>
         <a-tab-pane key="3" tab="渠道管理">

@@ -24,6 +24,7 @@ import ClassListDrawer from '@/components/edu-center/class-list/class-list-drawe
 import GroupClassUnscheduledRollCallModal from '@/components/edu-center/class-list/group-class-unscheduled-roll-call-modal.vue'
 import GroupClassFinishCourseModal from '@/components/edu-center/class-list/group-class-finish-course-modal.vue'
 import GroupClassScheduleModal from '@/components/edu-center/timetable/group-class-schedule-modal.vue'
+import { useInstitutionPermission } from '@/composables/institution-permission'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { openCloseClassConfirm } from '@/utils/closeClassConfirm'
 import messageService from '@/utils/messageService'
@@ -124,6 +125,18 @@ const stats = ref({
   studentCount: 0,
   studentPersonTime: 0,
 })
+
+const { hasActionAccess } = useInstitutionPermission('INST_ROUTE_EDU_CLASS')
+const canManageClassLifecycle = computed(() =>
+  hasActionAccess(['INST_AUTH_EDU_CLASS_MANAGE_WITH_STUDENTS', 'INST_AUTH_EDU_CLASS_MANAGE']),
+)
+const canAdjustClassStudents = computed(() =>
+  hasActionAccess(['INST_AUTH_EDU_CLASS_MANAGE_WITH_STUDENTS', 'INST_AUTH_EDU_CLASS_ADJUST_STUDENTS']),
+)
+const canEditClassMaxCount = computed(() => hasActionAccess('INST_AUTH_EDU_CLASS_MAX_COUNT'))
+const canBatchClassAction = computed(() =>
+  canManageClassLifecycle.value || canAdjustClassStudents.value || canEditClassMaxCount.value,
+)
 
 const pagination = reactive({
   current: 1,
@@ -1138,7 +1151,7 @@ onMounted(async () => {
             </span>
           </div>
           <div class="edit flex">
-            <a-dropdown class="mr-2">
+            <a-dropdown v-if="canBatchClassAction" class="mr-2">
               <template #overlay>
                 <a-menu @click="({ key }) => openBatchAction(key)">
                   <a-menu-item key="close">
@@ -1166,7 +1179,7 @@ onMounted(async () => {
             <a-button class="mr-2" :loading="exportingData" @click="handleExportData">
               导出数据
             </a-button>
-            <a-button type="primary" class="mr-2" @click="createClass">
+            <a-button v-if="canManageClassLifecycle" type="primary" class="mr-2" @click="createClass">
               创建班级
             </a-button>
             <customize-code
@@ -1250,11 +1263,11 @@ onMounted(async () => {
               <template v-else-if="column.key === 'action'">
                 <span class="flex action">
                   <template v-if="record.status === 2">
-                    <a @click.prevent="openGroupClassReopenConfirm(record)">恢复开班</a>
+                    <a v-if="canManageClassLifecycle" @click.prevent="openGroupClassReopenConfirm(record)">恢复开班</a>
                   </template>
                   <template v-else>
-                    <a class="mr-3" @click.prevent="openScheduleModal(record)">排课</a>
-                    <a class="mr-3" @click.prevent="openAddStudentModal(record)">添加学员</a>
+                    <a v-if="canManageClassLifecycle" class="mr-3" @click.prevent="openScheduleModal(record)">排课</a>
+                    <a v-if="canAdjustClassStudents" class="mr-3" @click.prevent="openAddStudentModal(record)">添加学员</a>
                     <div style="cursor: pointer;">
                       <a-dropdown :trigger="['hover']" placement="bottom">
                         <a @click.prevent>
@@ -1276,10 +1289,10 @@ onMounted(async () => {
                                 <span class="menu-item-label">未排课点名</span>
                               </a-tooltip>
                             </a-menu-item>
-                            <a-menu-item key="3">
+                            <a-menu-item v-if="canManageClassLifecycle" key="3">
                               编辑班级
                             </a-menu-item>
-                            <a-menu-item key="4" danger>
+                            <a-menu-item v-if="canManageClassLifecycle" key="4" danger>
                               结班
                             </a-menu-item>
                           </a-menu>

@@ -146,7 +146,6 @@ type Menu struct {
 	ID        int64  `json:"id"`
 	MenuName  string `json:"menuName"`
 	Icon      string `json:"icon,omitempty"`
-	URLPath   string `json:"urlPath,omitempty"`
 	MenuCode  string `json:"menuCode,omitempty"`
 	MenuType  *int   `json:"menuType,omitempty"`
 	OwnType   *int   `json:"ownType,omitempty"`

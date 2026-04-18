@@ -1,27 +1,43 @@
 <script setup>
 import { DeleteOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import TeacherMatrixApiTimetable from '@/components/edu-center/timetable/teacher-matrix-api-timetable.vue'
 import { clearWeekTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
+import { useInstitutionPermission } from '@/composables/institution-permission'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
 const activeKey = ref('1')
 const clearingWeek = ref(false)
+const { hasActionAccess } = useInstitutionPermission('INST_ROUTE_EDU_TIMETABLE')
 const weekRanges = ref({
   1: { startDate: '', endDate: '' },
   2: { startDate: '', endDate: '' },
   4: { startDate: '', endDate: '' },
 })
 
+const canManageTimetable = computed(() =>
+  hasActionAccess([
+    'INST_AUTH_EDU_TIMETABLE_ALL_CLASS_OPERATION',
+    'INST_AUTH_EDU_TIMETABLE_OWN_CLASS_OPERATION',
+  ]),
+)
+const canViewConflictSchedule = computed(() => hasActionAccess('INST_AUTH_EDU_TIMETABLE_CONFLICT_LIST'))
+
 const currentWeekRange = computed(() => weekRanges.value[activeKey.value] || { startDate: '', endDate: '' })
 const canClearCurrentWeek = computed(() =>
   activeKey.value !== '3'
   && !!currentWeekRange.value.startDate
   && !!currentWeekRange.value.endDate
+  && canManageTimetable.value
   && !clearingWeek.value,
 )
+
+watch(canViewConflictSchedule, (visible) => {
+  if (!visible && activeKey.value === '3')
+    activeKey.value = '1'
+}, { immediate: true })
 
 function updateWeekRange(tabKey, value) {
   weekRanges.value = {
@@ -87,12 +103,12 @@ function handleClearCurrentWeek() {
         <a-tab-pane key="4" tab="教师矩阵" force-render>
           <TeacherMatrixApiTimetable @week-range-change="value => updateWeekRange('4', value)" />
         </a-tab-pane>
-        <a-tab-pane key="3" tab="冲突日程">
+        <a-tab-pane v-if="canViewConflictSchedule" key="3" tab="冲突日程">
           <conflict-schedule />
         </a-tab-pane>
       </a-tabs>
       <a-button
-        v-if="activeKey !== '3'"
+        v-if="canManageTimetable && activeKey !== '3'"
         class="timetable-clear-week-btn"
         :loading="clearingWeek"
         :disabled="!canClearCurrentWeek"
