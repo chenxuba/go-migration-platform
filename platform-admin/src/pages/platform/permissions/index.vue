@@ -45,7 +45,7 @@
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'menuName'">
-            <span class="ellipsis-text" :title="record.menuName || '--'">
+            <span class="menu-name-text" :title="record.menuName || '--'">
               {{ record.menuName || '--' }}
             </span>
           </template>
@@ -649,6 +649,15 @@ onMounted(() => {
 </style>
 
 <style scoped lang="less">
+.menu-name-text {
+  color: #000;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 22px;
+  vertical-align: middle;
+}
+
 .permission-form-card {
   margin-top: 8px;
   border: 1px solid #e8edf5;
