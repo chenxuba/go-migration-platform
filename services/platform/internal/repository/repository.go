@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go-migration-platform/pkg/institutionmenu"
 	"go-migration-platform/services/platform/internal/model"
 )
 
@@ -102,6 +103,11 @@ func sanitizeInstitutionMenuScope(selectedMenuIDs, moduleMenuIDs []int64) ([]int
 		return nil, fmt.Errorf("请至少选择一个机构权限")
 	}
 	return result, nil
+}
+
+func isInstitutionBaseMenuCode(menuCode string) bool {
+	normalized := institutionmenu.NormalizeCode(menuCode)
+	return strings.HasPrefix(normalized, "grp:") || strings.HasPrefix(normalized, "page:")
 }
 
 func institutionStatusExpr(alias string) string {
@@ -2643,7 +2649,10 @@ func (repo *Repository) bindInstitutionModuleTx(ctx context.Context, tx *sql.Tx,
 		if scopeErr != nil {
 			return scopeErr
 		}
-		finalMenuIDs = scopedMenuIDs
+		finalMenuIDs, err = repo.mergeInstitutionBaseMenusTx(ctx, tx, moduleMenuIDs, scopedMenuIDs)
+		if err != nil {
+			return err
+		}
 	}
 
 	adminRoleID, _, err := repo.getInstitutionAdminRoleTx(ctx, tx, institutionID)
@@ -2662,6 +2671,74 @@ func (repo *Repository) bindInstitutionModuleTx(ctx context.Context, tx *sql.Tx,
 	}
 
 	return repo.deleteInstitutionMenusOutsideScopeTx(ctx, tx, institutionID, finalMenuIDs)
+}
+
+func (repo *Repository) mergeInstitutionBaseMenusTx(ctx context.Context, tx *sql.Tx, moduleMenuIDs, customMenuIDs []int64) ([]int64, error) {
+	if len(moduleMenuIDs) == 0 {
+		return customMenuIDs, nil
+	}
+
+	placeholders := make([]string, 0, len(moduleMenuIDs))
+	args := make([]any, 0, len(moduleMenuIDs))
+	for _, menuID := range moduleMenuIDs {
+		if menuID <= 0 {
+			continue
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, menuID)
+	}
+	if len(placeholders) == 0 {
+		return customMenuIDs, nil
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, IFNULL(menu_code, '')
+		FROM sso_menu
+		WHERE del_flag = 0 AND id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	merged := make([]int64, 0, len(moduleMenuIDs))
+	seen := make(map[int64]struct{}, len(moduleMenuIDs))
+
+	for rows.Next() {
+		var menuID int64
+		var menuCode string
+		if err := rows.Scan(&menuID, &menuCode); err != nil {
+			return nil, err
+		}
+		if menuID <= 0 || !isInstitutionBaseMenuCode(menuCode) {
+			continue
+		}
+		if _, exists := seen[menuID]; exists {
+			continue
+		}
+		seen[menuID] = struct{}{}
+		merged = append(merged, menuID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for _, menuID := range customMenuIDs {
+		if menuID <= 0 {
+			continue
+		}
+		if _, exists := seen[menuID]; exists {
+			continue
+		}
+		seen[menuID] = struct{}{}
+		merged = append(merged, menuID)
+	}
+
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i] < merged[j]
+	})
+
+	return merged, nil
 }
 
 func (repo *Repository) upsertOrgModuleTx(ctx context.Context, tx *sql.Tx, institutionID, moduleID int64, expireEnd sql.NullTime, status int, operatorID *int64) error {

@@ -1,12 +1,16 @@
-import { isUrl, toArray } from '@v-c/utils'
+import { isUrl } from '@v-c/utils'
 import type { RouteRecordRaw } from 'vue-router'
 import { omit } from 'lodash'
-import { normalizeAccessCode } from '~@/constants/access'
 import { basicRouteMap } from './router-modules'
 import type { MenuData, MenuDataItem } from '~@/layouts/basic-layout/typing'
 import dynamicRoutes from '~@/router/dynamic-routes'
 import { ROOT_ROUTE_REDIRECT_PATH } from '~@/router/constant'
 import { i18n } from '~@/locales'
+import {
+  buildRouteAccessMap,
+  normalizeRouteAccessPath,
+  resolveMenuAccessMeta,
+} from './access-meta'
 
 let cache_key = 1
 
@@ -39,38 +43,6 @@ function formatMenu(route: RouteRecordRaw, path?: string) {
   }
 }
 
-function normalizePath(path?: string) {
-  const raw = String(path || '').trim()
-  if (!raw)
-    return ''
-
-  const withoutQuery = raw.split('?')[0]?.split('#')[0] || ''
-  if (!withoutQuery)
-    return ''
-
-  if (withoutQuery === '/')
-    return '/'
-
-  return withoutQuery.replace(/\/+$/, '')
-}
-
-function normalizeRouteAccessPath(path?: string) {
-  const normalized = normalizePath(path)
-  if (!normalized || normalized === '/')
-    return normalized
-
-  const segments = normalized.split('/').filter(Boolean)
-  const staticSegments = []
-
-  for (const segment of segments) {
-    if (segment.startsWith(':'))
-      break
-    staticSegments.push(segment)
-  }
-
-  return `/${staticSegments.join('/')}`
-}
-
 function cloneRoute(route: RouteRecordRaw, children?: RouteRecordRaw[]) {
   const nextRoute = {
     ...route,
@@ -85,51 +57,6 @@ function cloneRoute(route: RouteRecordRaw, children?: RouteRecordRaw[]) {
   return nextRoute
 }
 
-function normalizeAccessList(access?: RouteRecordRaw['meta'] extends infer T ? T extends { access?: infer U } ? U : never : never) {
-  return toArray(access as any)
-    .flat(1)
-    .map(item => String(normalizeAccessCode(item) || '').trim())
-    .filter(Boolean)
-}
-
-function buildRouteAccessMap(routes: RouteRecordRaw[]) {
-  const accessMap = new Map<string, string[]>()
-
-  function walk(items: RouteRecordRaw[]) {
-    items.forEach((route) => {
-      const routePath = normalizeRouteAccessPath(route.path)
-      const routeAccess = normalizeAccessList(route.meta?.access as any)
-      if (routePath && routeAccess.length > 0)
-        accessMap.set(routePath, routeAccess)
-      if (route.children?.length)
-        walk(route.children)
-    })
-  }
-
-  walk(routes)
-  return accessMap
-}
-
-function resolveRouteAccess(route: RouteRecordRaw, accessMap: Map<string, string[]>, inheritedAccess: string[] = []) {
-  const ownAccess = normalizeAccessList(route.meta?.access as any)
-  if (ownAccess.length > 0)
-    return ownAccess
-
-  const parentKeys = Array.isArray(route.meta?.parentKeys)
-    ? route.meta.parentKeys
-    : route.meta?.parentKeys
-      ? [route.meta.parentKeys]
-      : []
-
-  for (const key of parentKeys) {
-    const access = accessMap.get(normalizeRouteAccessPath(String(key)))
-    if (access?.length)
-      return access
-  }
-
-  return inheritedAccess
-}
-
 function filterRoutesByAccess(
   routes: RouteRecordRaw[],
   hasAccess: (roles: (string | number)[] | string | number) => boolean,
@@ -137,7 +64,7 @@ function filterRoutesByAccess(
   inheritedAccess: string[] = [],
 ) {
   return routes.reduce<RouteRecordRaw[]>((items, route) => {
-    const routeAccess = resolveRouteAccess(route, accessMap, inheritedAccess)
+    const routeAccess = resolveMenuAccessMeta(route.meta, accessMap, inheritedAccess)
     const nextChildren = route.children?.length
       ? filterRoutesByAccess(route.children, hasAccess, accessMap, routeAccess)
       : undefined

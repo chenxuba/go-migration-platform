@@ -51,6 +51,9 @@ func buildVisibleInstitutionModuleTree(items []rawMenu, selected map[int64]struc
 
 		if group.UseAsLeaf {
 			_, groupNode.IsSelect = selected[groupMenu.ID]
+			if !groupNode.IsSelect {
+				continue
+			}
 			result = append(result, groupNode)
 			continue
 		}
@@ -103,6 +106,9 @@ func buildVisibleInstitutionModuleTree(items []rawMenu, selected map[int64]struc
 			sortVisibleRawLeaves(leafItems)
 
 			for _, leaf := range leafItems {
+				if _, ok := selected[leaf.ID]; !ok {
+					continue
+				}
 				leafNode := model.ModuleMenu{
 					MenuID:    formatMenuID(leaf.ID),
 					MenuName:  leaf.Name,
@@ -128,6 +134,10 @@ func buildVisibleInstitutionModuleTree(items []rawMenu, selected map[int64]struc
 				childNode.IsSelect = allSelected
 			}
 
+			if len(childNode.Children) == 0 && !childNode.IsSelect {
+				continue
+			}
+
 			groupNode.Children = append(groupNode.Children, childNode)
 		}
 
@@ -139,6 +149,9 @@ func buildVisibleInstitutionModuleTree(items []rawMenu, selected map[int64]struc
 			}
 		}
 		groupNode.IsSelect = allSelected
+		if len(groupNode.Children) == 0 && !groupNode.IsSelect {
+			continue
+		}
 		result = append(result, groupNode)
 	}
 

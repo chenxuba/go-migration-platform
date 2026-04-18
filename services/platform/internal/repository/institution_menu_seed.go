@@ -68,6 +68,51 @@ type institutionMenuCatalogRow struct {
 	path  []string
 }
 
+type visibleRouteLeaf struct {
+	Code string
+	Name string
+}
+
+func listVisibleRouteLeaves() []visibleRouteLeaf {
+	result := make([]visibleRouteLeaf, 0, 64)
+	for _, group := range institutionmenu.VisibleRouteCatalog {
+		if group.UseAsLeaf {
+			result = append(result, visibleRouteLeaf{
+				Code: group.Code,
+				Name: group.Name,
+			})
+			continue
+		}
+
+		for _, child := range group.Children {
+			result = append(result, visibleRouteLeaf{
+				Code: child.Code,
+				Name: child.Name,
+			})
+		}
+	}
+	return result
+}
+
+func buildRoutePageUseAuthority(routeCode, routeName string) institutionRouteAuthority {
+	normalizedRouteCode := institutionmenu.NormalizeCode(routeCode)
+	pageUseCode := normalizedRouteCode
+	if strings.HasPrefix(pageUseCode, "page:") {
+		pageUseCode = fmt.Sprintf("perm:%sUse", strings.TrimPrefix(pageUseCode, "page:"))
+	}
+
+	routeName = strings.TrimSpace(routeName)
+
+	return institutionRouteAuthority{
+		Name:     "页面功能访问",
+		Code:     pageUseCode,
+		Sort:     5,
+		Weight:   0,
+		MenuType: 0,
+		Remark:   fmt.Sprintf("支持使用%s页面功能；未分配时进入页面仅展示“申请使用”。", routeName),
+	}
+}
+
 var institutionMenuSeeds = []institutionMenuSeed{
 	{
 		ParentName: "品牌中心",
@@ -875,6 +920,20 @@ func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context
 }
 
 func (repo *Repository) ensureVisibleRouteAuthorityCatalog(ctx context.Context) error {
+	for _, leaf := range listVisibleRouteLeaves() {
+		routeID, err := repo.findMenuIDByCode(ctx, leaf.Code)
+		if err != nil {
+			return err
+		}
+		if routeID <= 0 {
+			continue
+		}
+
+		if _, err := repo.ensureVisibleRouteAuthorityNode(ctx, routeID, buildRoutePageUseAuthority(leaf.Code, leaf.Name)); err != nil {
+			return err
+		}
+	}
+
 	for _, seed := range institutionRouteAuthoritySeeds {
 		routeID, err := repo.findMenuIDByCode(ctx, seed.RouteCode)
 		if err != nil {

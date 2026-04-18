@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -306,8 +307,7 @@ func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int6
 	}
 	defer rows.Close()
 
-	items := make([]string, 0, 16)
-	seen := map[string]struct{}{}
+	selectedMenuIDs := make(map[int64]struct{}, 32)
 	for rows.Next() {
 		var menuID int64
 		var item sql.NullString
@@ -319,10 +319,40 @@ func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int6
 				continue
 			}
 		}
-		if !item.Valid || strings.TrimSpace(item.String) == "" {
-			continue
+		selectedMenuIDs[menuID] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(selectedMenuIDs) == 0 {
+		return []string{}, nil
+	}
+
+	menuMap, err := repo.collectMenusWithParents(ctx, selectedMenuIDs, &ownType)
+	if err != nil {
+		return nil, err
+	}
+	if len(menuMap) == 0 {
+		return []string{}, nil
+	}
+
+	menus := make([]model.Menu, 0, len(menuMap))
+	for _, menu := range menuMap {
+		menus = append(menus, menu)
+	}
+	sort.SliceStable(menus, func(i, j int) bool {
+		return menus[i].ID < menus[j].ID
+	})
+
+	items := make([]string, 0, len(menus))
+	seen := map[string]struct{}{}
+	for _, menu := range menus {
+		if len(scopedMenuIDs) > 0 {
+			if _, ok := scopedMenuIDs[menu.ID]; !ok {
+				continue
+			}
 		}
-		menuCode := normalizeInstitutionMenuCodeForOwnType(item.String, ownType)
+		menuCode := normalizeInstitutionMenuCodeForOwnType(menu.MenuCode, ownType)
 		if menuCode == "" {
 			continue
 		}
@@ -332,7 +362,7 @@ func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int6
 		seen[menuCode] = struct{}{}
 		items = append(items, menuCode)
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 func (repo *Repository) ListManageUsers(ctx context.Context, current, size int, username, mobile string) (model.UserPage, error) {

@@ -5,6 +5,7 @@ import { setRouteEmitter } from '~@/utils/route-listener'
 import { useModalStore } from '~/stores/modal'
 import { useLayoutMenu } from '~/stores/layout-menu'
 import { useAccess } from '@/composables/access'
+import { resolveRouteMenuAccess } from './access-meta'
 
 const allowList = ['/login', '/error', '/401', '/404', '/403','/502']
 const loginPath = '/login'
@@ -43,8 +44,8 @@ router.beforeEach(async (to, from, next) => {
   const { hasAccess } = useAccess()
 
   const ensureRouteAccess = () => {
-    const routeAccess = to.meta?.access
-    if (!routeAccess || to.path === '/403')
+    const routeAccess = resolveRouteMenuAccess(to)
+    if (!routeAccess || routeAccess.length === 0 || to.path === '/403')
       return true
     if (hasAccess(routeAccess))
       return true

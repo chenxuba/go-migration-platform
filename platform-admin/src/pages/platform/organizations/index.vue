@@ -13,6 +13,7 @@ import { regionData } from '@/constants/region-data'
 import InstitutionFormDrawer from './components/institution-form-drawer.vue'
 import InstitutionPermissionModal from './components/institution-permission-modal.vue'
 import InstitutionRenewalModal from './components/institution-renewal-modal.vue'
+import InstitutionVersionModal from './components/institution-version-modal.vue'
 import messageService from '@/utils/messageService'
 
 const displayArray = ['customSearch', 'createTime', 'enableStatus']
@@ -41,6 +42,8 @@ const institutionDrawerOpen = ref(false)
 const editingInstitutionId = ref<number | null>(null)
 const institutionPermissionOpen = ref(false)
 const permissionInstitutionId = ref<number | null>(null)
+const institutionVersionOpen = ref(false)
+const versionInstitutionId = ref<number | null>(null)
 const institutionRenewalOpen = ref(false)
 const renewingInstitutionId = ref<number | null>(null)
 const summary = ref<InstitutionSummary>({
@@ -181,7 +184,7 @@ const columns: TableColumnsType<InstitutionItem> = [
   {
     title: '操作',
     key: 'action',
-    width: 280,
+    width: 360,
     fixed: 'right' as const,
   },
 ]
@@ -318,6 +321,11 @@ function openPermissionModal(record: Partial<InstitutionItem>) {
   institutionPermissionOpen.value = true
 }
 
+function openVersionModal(record: Partial<InstitutionItem>) {
+  versionInstitutionId.value = Number(record.id || 0) || null
+  institutionVersionOpen.value = true
+}
+
 function handleDrawerSaved() {
   institutionDrawerOpen.value = false
   editingInstitutionId.value = null
@@ -329,6 +337,10 @@ function handleRenewalSaved() {
 }
 
 function handlePermissionSaved() {
+  fetchInstitutions()
+}
+
+function handleVersionSaved() {
   fetchInstitutions()
 }
 
@@ -486,6 +498,11 @@ watch(institutionPermissionOpen, (open) => {
     permissionInstitutionId.value = null
 })
 
+watch(institutionVersionOpen, (open) => {
+  if (!open)
+    versionInstitutionId.value = null
+})
+
 watch(institutionRenewalOpen, (open) => {
   if (!open)
     renewingInstitutionId.value = null
@@ -622,13 +639,16 @@ watch(institutionRenewalOpen, (open) => {
 
             <template v-else-if="column.key === 'action'">
               <div class="action-cell">
-                <a-button type="link" class="action-cell__link" @click="openEditDrawer(record)">
+                <a-button size="small" class="action-pill action-pill--neutral" @click="openEditDrawer(record)">
                   编辑
                 </a-button>
-                <a-button type="link" class="action-cell__link" @click="openPermissionModal(record)">
+                <a-button size="small" class="action-pill action-pill--accent" @click="openPermissionModal(record)">
+                  机构权限
+                </a-button>
+                <a-button size="small" class="action-pill action-pill--accent-soft" @click="openVersionModal(record)">
                   切换版本
                 </a-button>
-                <a-button type="link" class="action-cell__link" @click="openRenewalModal(record)">
+                <a-button size="small" class="action-pill action-pill--neutral" @click="openRenewalModal(record)">
                   续期
                 </a-button>
                 <a-popconfirm
@@ -639,8 +659,9 @@ watch(institutionRenewalOpen, (open) => {
                   @confirm="toggleInstitutionStatus(record, getToggleTargetEnabled(record))"
                 >
                   <a-button
-                    type="link"
-                    class="action-cell__link"
+                    size="small"
+                    class="action-pill"
+                    :class="getToggleTargetEnabled(record) ? 'action-pill--success' : 'action-pill--danger'"
                     :loading="statusSubmittingId === Number(record.id)"
                   >
                     {{ getToggleTargetEnabled(record) ? '启用' : '停用' }}
@@ -667,6 +688,11 @@ watch(institutionRenewalOpen, (open) => {
       v-model:open="institutionPermissionOpen"
       :institution-id="permissionInstitutionId"
       @saved="handlePermissionSaved"
+    />
+    <InstitutionVersionModal
+      v-model:open="institutionVersionOpen"
+      :institution-id="versionInstitutionId"
+      @saved="handleVersionSaved"
     />
   </div>
 </template>
@@ -818,21 +844,71 @@ watch(institutionRenewalOpen, (open) => {
 
 .action-cell {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
+  gap: 8px;
+  padding-right: 4px;
 }
 
-.action-cell__link {
-  padding-inline: 0;
-  height: auto;
-  color: #1677ff;
-  font-size: 14px;
+.action-pill {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #e7ecf3;
+  background: #fff;
+  box-shadow: none;
+  color: #4e5969;
+  font-size: 12px;
   font-weight: 500;
 }
 
-.action-cell__link:hover,
-.action-cell__link:focus {
-  color: #4096ff;
+.action-pill:hover,
+.action-pill:focus {
+  color: #1668dc;
+  border-color: #bfd7ff;
+  background: #f7fbff;
+}
+
+.action-pill--neutral {
+  color: #4e5969;
+}
+
+.action-pill--accent {
+  color: #1668dc;
+  border-color: #d8e8ff;
+  background: #eff6ff;
+}
+
+.action-pill--accent-soft {
+  color: #245bdb;
+  border-color: #e1e9ff;
+  background: #f5f8ff;
+}
+
+.action-pill--success {
+  color: #15803d;
+  border-color: #ccebd8;
+  background: #f3fcf6;
+}
+
+.action-pill--danger {
+  color: #c2410c;
+  border-color: #f4d8ca;
+  background: #fff7f2;
+}
+
+.action-pill--success:hover,
+.action-pill--success:focus {
+  color: #15803d;
+  border-color: #9fd7b4;
+  background: #eefbf3;
+}
+
+.action-pill--danger:hover,
+.action-pill--danger:focus {
+  color: #c2410c;
+  border-color: #e8b79e;
+  background: #fff2ea;
 }
 
 :deep(.organization-table .ant-table) {

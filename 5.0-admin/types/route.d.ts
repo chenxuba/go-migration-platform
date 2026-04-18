@@ -23,5 +23,7 @@ declare module 'vue-router'{
     parentName?: string
     parentComps?: RouteRecordRaw['component'][]
     originPath?: string
+    menuAccess?: AccessCodeLike
+    pageAccess?: AccessCodeLike
   }
 }

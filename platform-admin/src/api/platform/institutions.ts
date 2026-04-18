@@ -247,5 +247,6 @@ export function replaceInstitutionPermissionVersionApi(data: { institutionId: nu
   return usePost<boolean, { institutionId: number, moduleId: number, menuIds?: number[] }>(
     '/api/v1/platform/institutions/permission-version',
     data,
+    { silentError: true },
   )
 }

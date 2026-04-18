@@ -256,6 +256,13 @@ export function normalizeInstitutionAccessCode(code: string | number | null | un
   return raw
 }
 
+export function buildPageUsePermissionCode(routeCode: string | number | null | undefined) {
+  const normalized = normalizeInstitutionAccessCode(routeCode)
+  if (!normalized || !normalized.startsWith(INSTITUTION_ROUTE_PREFIX))
+    return ''
+  return `${INSTITUTION_AUTH_PREFIX}${normalized.slice(INSTITUTION_ROUTE_PREFIX.length)}Use`
+}
+
 function system(code: string, title: string) {
   return new AccessItem(code, title, {
     type: 'system',
