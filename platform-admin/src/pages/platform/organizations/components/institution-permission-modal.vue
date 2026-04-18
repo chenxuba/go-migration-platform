@@ -191,6 +191,19 @@ function getStatusClass(value?: number) {
   return 'status-chip--disabled'
 }
 
+function getVersionBadgeClass(name?: string) {
+  const normalized = String(name || '').trim()
+  if (normalized.includes('旗舰'))
+    return 'version-badge--flagship'
+  if (normalized.includes('高级'))
+    return 'version-badge--advanced'
+  if (normalized.includes('基础'))
+    return 'version-badge--basic'
+  if (normalized.includes('体验'))
+    return 'version-badge--trial'
+  return 'version-badge--basic'
+}
+
 function resolveRequestErrorMessage(error: unknown, fallback: string) {
   const axiosError = error as AxiosError<{ message?: string }>
   return axiosError?.response?.data?.message || (error as any)?.message || fallback
@@ -479,7 +492,9 @@ onBeforeUnmount(() => {
             <div class="info-card">
               <div class="info-card__head">
                 <span class="info-card__label">当前版本</span>
-                <span class="info-card__value">{{ currentVersionName }}</span>
+                <span class="info-card__value version-badge" :class="getVersionBadgeClass(currentVersionName)">
+                  {{ currentVersionName }}
+                </span>
               </div>
               <div class="info-card__meta">
                 <div class="info-card__item info-card__item--inline">
@@ -740,6 +755,76 @@ onBeforeUnmount(() => {
   font-weight: 700;
   line-height: 26px;
   white-space: nowrap;
+}
+
+.version-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.version-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.version-badge--trial {
+  color: #475569;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
+  border-color: #dbe3ee;
+}
+
+.version-badge--trial::before {
+  background: #94a3b8;
+}
+
+.version-badge--basic {
+  color: #245bdb;
+  background: linear-gradient(135deg, #eff5ff 0%, #e0ecff 100%);
+  border-color: #cdddff;
+}
+
+.version-badge--basic::before {
+  background: #3b82f6;
+}
+
+.version-badge--advanced {
+  color: #1d4ed8;
+  background: linear-gradient(135deg, #eef4ff 0%, #dce9ff 100%);
+  border-color: #c8dbff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    0 6px 16px rgba(59, 130, 246, 0.08);
+}
+
+.version-badge--advanced::before {
+  background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
+}
+
+.version-badge--flagship {
+  color: #7a4b00;
+  background: linear-gradient(135deg, #fff7e7 0%, #ffe7b3 48%, #fff2d3 100%);
+  border-color: #f3d28b;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 6px 18px rgba(214, 158, 46, 0.12);
+}
+
+.version-badge--flagship::before {
+  background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.14);
 }
 
 .info-card__meta {
