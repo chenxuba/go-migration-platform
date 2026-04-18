@@ -477,18 +477,16 @@ onBeforeUnmount(() => {
         <div class="permission-layout">
           <div ref="infoPanelRef" class="permission-info-panel">
             <div class="info-card">
-              <div class="info-card__label">
-                当前版本
+              <div class="info-card__head">
+                <span class="info-card__label">当前版本</span>
+                <span class="info-card__value">{{ currentVersionName }}</span>
               </div>
-              <div class="info-card__value">
-                {{ currentVersionName }}
-              </div>
-              <div class="info-card__grid">
-                <div class="info-card__item">
+              <div class="info-card__meta">
+                <div class="info-card__item info-card__item--inline">
                   <span class="info-card__item-label">账号状态</span>
                   <span class="info-card__item-value">{{ getStatusLabel(detail?.status) }}</span>
                 </div>
-                <div class="info-card__item">
+                <div class="info-card__item info-card__item--stack">
                   <span class="info-card__item-label">到期时间</span>
                   <span class="info-card__item-value">{{ formatDateMinute(detail?.expireEndTime) }}</span>
                 </div>
@@ -707,7 +705,7 @@ onBeforeUnmount(() => {
 .permission-info-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .info-card,
@@ -719,8 +717,15 @@ onBeforeUnmount(() => {
 }
 
 .info-card {
-  padding: 18px;
+  padding: 16px 18px;
   background: linear-gradient(180deg, #fafcff 0%, #ffffff 100%);
+}
+
+.info-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .info-card__label {
@@ -730,59 +735,80 @@ onBeforeUnmount(() => {
 }
 
 .info-card__value {
-  margin-top: 6px;
   color: #1f2329;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 30px;
+  line-height: 26px;
+  white-space: nowrap;
 }
 
-.info-card__grid {
+.info-card__meta {
   display: grid;
-  gap: 10px;
-  margin-top: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .info-card__item {
-  padding: 10px 12px;
+  min-width: 0;
+  padding: 8px 10px;
   border: 1px solid #eef2f7;
   border-radius: 12px;
   background: rgba(250, 250, 250, 0.9);
 }
 
+.info-card__item--inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-card__item--stack {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-card__item--stack .info-card__item-value {
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .info-card__item-label {
-  display: block;
+  flex-shrink: 0;
   color: #8c8c8c;
   font-size: 12px;
   line-height: 18px;
 }
 
 .info-card__item-value {
-  display: block;
-  margin-top: 4px;
+  min-width: 0;
+  color: #262626;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.info-note {
+  padding: 14px 16px;
+  background: #f8fbff;
+}
+
+.info-note__title {
   color: #262626;
   font-size: 13px;
   font-weight: 600;
   line-height: 20px;
 }
 
-.info-note {
-  padding: 16px 18px;
-  background: #f8fbff;
-}
-
-.info-note__title {
-  color: #262626;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
 .info-note__text {
-  margin-top: 8px;
+  margin-top: 6px;
   color: #5b6475;
   font-size: 12px;
-  line-height: 20px;
+  line-height: 18px;
 }
 
 .info-stats {
@@ -793,7 +819,7 @@ onBeforeUnmount(() => {
 }
 
 .info-stats__item {
-  padding: 16px 14px;
+  padding: 12px 14px;
 }
 
 .info-stats__item + .info-stats__item {
@@ -809,11 +835,11 @@ onBeforeUnmount(() => {
 
 .info-stats__value {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: #1f2329;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
-  line-height: 30px;
+  line-height: 28px;
 }
 
 .permission-panel {
@@ -832,7 +858,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 18px 10px;
+  padding: 12px 18px 8px;
   border-bottom: 1px solid #eef2f7;
 }
 
@@ -842,24 +868,25 @@ onBeforeUnmount(() => {
 
 .permission-panel__title {
   color: #262626;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 22px;
+  line-height: 20px;
 }
 
 .permission-panel__meta {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 4px;
+  margin-top: 2px;
   color: #8c8c8c;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
 }
 
 .permission-panel__link {
   flex-shrink: 0;
   padding-inline: 0;
+  height: 24px;
 }
 
 .permission-panel__toolbar {
@@ -867,7 +894,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 18px 12px;
+  padding: 10px 18px 12px 1px;
   border-bottom: 1px solid #f2f4f7;
 }
 
@@ -978,6 +1005,14 @@ onBeforeUnmount(() => {
   .permission-panel {
     height: auto !important;
     min-height: 480px;
+  }
+}
+
+@media (max-width: 768px) {
+  .info-card__head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
   }
 }
 </style>
