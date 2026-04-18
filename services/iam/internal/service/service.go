@@ -519,6 +519,33 @@ func (svc *Service) CurrentMenuTree(claims authx.Claims) ([]model.MenuTreeNode, 
 	}
 }
 
+func (svc *Service) MenuByCode(claims authx.Claims, menuCode string, ownType *int) (model.Menu, error) {
+	menuCode = strings.TrimSpace(menuCode)
+	if menuCode == "" {
+		return model.Menu{}, errors.New("menuCode is required")
+	}
+
+	resolvedOwnType := 2
+	if claims.LoginType == "manage" {
+		resolvedOwnType = 0
+	}
+	if ownType != nil {
+		resolvedOwnType = *ownType
+	}
+	if claims.LoginType == "org" {
+		resolvedOwnType = 2
+	}
+
+	switch claims.LoginType {
+	case "manage":
+		return svc.repo.GetMenuByCode(context.Background(), resolvedOwnType, menuCode)
+	case "org":
+		return svc.repo.GetMenuByCode(context.Background(), resolvedOwnType, menuCode)
+	default:
+		return model.Menu{}, errors.New("unsupported login type")
+	}
+}
+
 func (svc *Service) PageInstRoles(claims authx.Claims, query model.RoleQueryDTO) (model.RolePage, error) {
 	orgID, err := svc.resolveOrgID(claims, nil)
 	if err != nil {

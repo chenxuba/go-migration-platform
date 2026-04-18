@@ -170,6 +170,45 @@
                 />
               </a-form-item>
             </div>
+
+            <div v-if="showAccessDeniedImageField" class="permission-form-grid__item permission-form-grid__item--full">
+              <a-form-item>
+                <div class="access-denied-image-field">
+                  <div class="access-denied-image-field__header">
+                    <div class="access-denied-image-field__title">
+                      无权限展示图
+                    </div>
+
+                    <div class="access-denied-image-field__actions">
+                      <a-upload
+                        accept=".jpg,.jpeg,.png,.webp"
+                        :show-upload-list="false"
+                        :custom-request="handleAccessDeniedImageUpload"
+                        :before-upload="beforeAccessDeniedImageUpload"
+                      >
+                        <a-button type="primary" :loading="accessDeniedImageUploading">
+                          上传图片
+                        </a-button>
+                      </a-upload>
+                      <a-button v-if="formData.accessDeniedImage" @click="clearAccessDeniedImage">
+                        清空图片
+                      </a-button>
+                    </div>
+                  </div>
+
+                  <div class="access-denied-image-field__preview" :class="{ 'is-empty': !formData.accessDeniedImage }">
+                    <img
+                      v-if="formData.accessDeniedImage"
+                      :src="formData.accessDeniedImage"
+                      alt="无权限展示图"
+                    >
+                    <div v-else class="access-denied-image-field__placeholder">
+                      机构端未开通该页面功能时，将优先展示这里上传的图片。
+                    </div>
+                  </div>
+                </div>
+              </a-form-item>
+            </div>
           </div>
         </a-form>
       </div>
@@ -202,9 +241,11 @@
 </template>
 
 <script setup lang="ts">
+import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import type { TableColumnsType } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
+import * as qiniu from 'qiniu-js'
 import {
   createPermissionApi,
   deletePermissionApi,
@@ -213,6 +254,7 @@ import {
   type PermissionMenuItem,
   type PermissionMutationPayload,
 } from '@/api/platform/permissions'
+import { getQiniuToken } from '@/api/qiniu'
 import messageService from '@/utils/messageService'
 import { AccessEnum } from '~@/utils/constant'
 import PlatformModalShell from '../shared/platform-modal-shell.vue'
@@ -257,6 +299,7 @@ const portalOptions = [
 const formMode = ref<FormMode>(null)
 const drawerVisible = ref(false)
 const parentName = ref<string>('根菜单')
+const accessDeniedImageUploading = ref(false)
 
 const formData = reactive<PermissionMutationPayload>({
   id: undefined,
@@ -267,6 +310,7 @@ const formData = reactive<PermissionMutationPayload>({
   weight: 0,
   remark: '',
   introduce: '',
+  accessDeniedImage: '',
   ownType: PortalEnum.INSTITUTION,
 })
 
@@ -596,6 +640,25 @@ const tableData = computed<PermissionRecord[]>(() => {
 
 const toPermissionRecord = (record: Record<string, any>) => record as PermissionRecord
 
+const currentParentNode = computed(() => {
+  const pid = Number(formData.pid || 0)
+  if (pid <= 0)
+    return undefined
+  return nodeMap.value.get(pid)
+})
+
+const showAccessDeniedImageField = computed(() => {
+  const normalizedCode = normalizePermissionCode(formData.menuCode)
+  const menuName = String(formData.menuName || '').trim()
+  const parentCode = normalizePermissionCode(currentParentNode.value?.menuCode)
+
+  if (menuName === '页面功能访问')
+    return true
+  if (/^perm:[a-z][a-zA-Z0-9]*Use$/.test(normalizedCode))
+    return true
+  return parentCode.startsWith('page:') && menuName.includes('页面功能')
+})
+
 const collectExpandableIds = (list: PermissionRecord[]): number[] => {
   const ids: number[] = []
   list.forEach((item) => {
@@ -659,6 +722,7 @@ const resetForm = () => {
   formData.weight = 0
   formData.remark = ''
   formData.introduce = ''
+  formData.accessDeniedImage = ''
   formData.ownType = currentPortal.value
   parentName.value = '根菜单'
 }
@@ -707,6 +771,7 @@ const openDrawer = (mode: FormMode, node?: PermissionRecord) => {
     formData.weight = Number(node.weight || 0)
     formData.remark = node.remark || ''
     formData.introduce = node.introduce || ''
+    formData.accessDeniedImage = node.accessDeniedImage || ''
     formData.ownType = Number(node.ownType || currentPortal.value)
   }
   formMode.value = mode
@@ -727,6 +792,69 @@ const handleReset = () => {
   keywordInput.value = ''
   searchKeyword.value = ''
   expandedRowKeys.value = []
+}
+
+function beforeAccessDeniedImageUpload(file: File) {
+  if (!file.type.startsWith('image/')) {
+    messageService.error('只能上传图片文件')
+    return false
+  }
+  if (file.size / 1024 / 1024 >= 5) {
+    messageService.error('图片大小不能超过 5MB')
+    return false
+  }
+  return true
+}
+
+async function handleAccessDeniedImageUpload(options: UploadRequestOption) {
+  const rawFile = options.file as File
+  if (!rawFile || !beforeAccessDeniedImageUpload(rawFile)) {
+    options.onError?.(new Error('invalid file'))
+    return
+  }
+
+  accessDeniedImageUploading.value = true
+  try {
+    const tokenRes: any = await getQiniuToken()
+    const { token, uuid, buckethostname } = tokenRes.result || {}
+    if (!token || !uuid || !buckethostname)
+      throw new Error('获取上传凭证失败')
+
+    const ext = rawFile.name.includes('.') ? rawFile.name.slice(rawFile.name.lastIndexOf('.')) : '.png'
+    const key = `permission/access-denied/${uuid}${ext}`
+    const config = {
+      useCdnDomain: true,
+      region: qiniu.region.z0,
+    }
+    const putExtra = {
+      fname: rawFile.name,
+      mimeType: rawFile.type,
+    }
+
+    const observable = qiniu.upload(rawFile, key, token, putExtra, config)
+    observable.subscribe({
+      error(error) {
+        messageService.error(error?.message || '上传图片失败')
+        accessDeniedImageUploading.value = false
+        options.onError?.(error)
+      },
+      complete(result) {
+        formData.accessDeniedImage = `${buckethostname}${result.key}`
+        accessDeniedImageUploading.value = false
+        messageService.success('图片上传成功')
+        options.onSuccess?.(result as any)
+      },
+    })
+  }
+  catch (error: any) {
+    accessDeniedImageUploading.value = false
+    messageService.error(error?.message || '上传图片失败')
+    options.onError?.(error)
+  }
+}
+
+const clearAccessDeniedImage = () => {
+  formData.accessDeniedImage = ''
 }
 
 const handleSubmit = async () => {
@@ -754,6 +882,7 @@ const handleSubmit = async () => {
     weight: Number(formData.weight || 0),
     remark: String(formData.remark || '').trim(),
     introduce: String(formData.introduce || '').trim(),
+    accessDeniedImage: String(formData.accessDeniedImage || '').trim(),
     ownType: currentPortal.value,
   }
 
@@ -961,6 +1090,62 @@ onMounted(() => {
   gap: 12px;
 }
 
+.access-denied-image-field {
+  width: 100%;
+}
+
+.access-denied-image-field__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.access-denied-image-field__title {
+  color: #1f2329;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.access-denied-image-field__preview {
+  width: 100%;
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid #dfe5f0;
+  border-radius: 14px;
+  background: #f7f9fc;
+}
+
+.access-denied-image-field__preview.is-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.access-denied-image-field__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.access-denied-image-field__placeholder {
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.access-denied-image-field__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 @media (max-width: 768px) {
   .permission-form-grid {
     grid-template-columns: 1fr;
@@ -973,6 +1158,20 @@ onMounted(() => {
 
   .permission-form-modal__footer {
     flex-wrap: wrap;
+  }
+
+  .access-denied-image-field__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .access-denied-image-field__preview {
+    min-height: 180px;
+  }
+
+  .access-denied-image-field__actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 </style>

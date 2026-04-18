@@ -48,10 +48,39 @@ func menuCodeCandidates(ownType int, menuCode string) []string {
 
 func New(db *sql.DB) (*Repository, error) {
 	repo := &Repository{db: db}
+	if err := repo.ensureMenuSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.migrateLegacyInstitutionMenuCodes(context.Background()); err != nil {
 		return nil, err
 	}
 	return repo, nil
+}
+
+func (repo *Repository) ensureColumnExists(ctx context.Context, tableName, columnName, ddl string) error {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = ?
+		  AND COLUMN_NAME = ?
+	`, tableName, columnName).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err := repo.db.ExecContext(ctx, ddl)
+	return err
+}
+
+func (repo *Repository) ensureMenuSchema(ctx context.Context) error {
+	return repo.ensureColumnExists(ctx, "sso_menu", "access_denied_image", `
+		ALTER TABLE sso_menu
+		ADD COLUMN access_denied_image VARCHAR(2000) DEFAULT NULL COMMENT '页面无权限展示图片'
+		AFTER introduce
+	`)
 }
 
 func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username string) (model.User, error) {
@@ -641,17 +670,68 @@ func (repo *Repository) DeleteDepart(ctx context.Context, id int64) error {
 
 func (repo *Repository) GetMenuByID(ctx context.Context, id int64) (model.Menu, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, ''), level
+		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, ''), IFNULL(access_denied_image, ''), level
 		FROM sso_menu
 		WHERE id = ? AND del_flag = 0
 		LIMIT 1
 	`, id)
 
 	var item model.Menu
-	if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.Level); err != nil {
+	if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.AccessDeniedImage, &item.Level); err != nil {
 		return model.Menu{}, err
 	}
 	normalizeMenuModel(&item)
+	return item, nil
+}
+
+func (repo *Repository) GetMenuByCode(ctx context.Context, ownType int, menuCode string) (model.Menu, error) {
+	candidates := menuCodeCandidates(ownType, menuCode)
+	if len(candidates) == 0 {
+		return model.Menu{}, sql.ErrNoRows
+	}
+
+	query := `
+		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, ''), IFNULL(access_denied_image, ''), level
+		FROM sso_menu
+		WHERE del_flag = 0
+		  AND own_type = ?
+		  AND TRIM(IFNULL(menu_code, '')) IN (` + strings.Repeat("?,", len(candidates)-1) + `?)
+		ORDER BY id ASC
+		LIMIT 1
+	`
+	args := make([]any, 0, len(candidates)+1)
+	args = append(args, ownType)
+	for _, candidate := range candidates {
+		args = append(args, candidate)
+	}
+
+	row := repo.db.QueryRowContext(ctx, query, args...)
+	var item model.Menu
+	if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.AccessDeniedImage, &item.Level); err != nil {
+		return model.Menu{}, err
+	}
+	normalizeMenuModel(&item)
+	return item, nil
+}
+
+func (repo *Repository) GetScopedMenuByCode(ctx context.Context, instID int64, ownType int, menuCode string) (model.Menu, error) {
+	item, err := repo.GetMenuByCode(ctx, ownType, menuCode)
+	if err != nil {
+		return model.Menu{}, err
+	}
+	if ownType != 2 || instID <= 0 {
+		return item, nil
+	}
+
+	scopedMenuIDs, err := repo.getInstitutionScopedMenuIDSet(ctx, instID, ownType)
+	if err != nil {
+		return model.Menu{}, err
+	}
+	if len(scopedMenuIDs) > 0 {
+		if _, ok := scopedMenuIDs[item.ID]; !ok {
+			return model.Menu{}, sql.ErrNoRows
+		}
+	}
 	return item, nil
 }
 
@@ -743,10 +823,10 @@ func (repo *Repository) CreateMenu(ctx context.Context, input model.Menu, operat
 		INSERT INTO sso_menu (
 			uuid, version, menu_name, url_path, menu_code, menu_type, pid, sort, is_system,
 			introduce, own_type, level, weight, group_code, create_id, create_time,
-			update_id, update_time, del_flag, remark
+			update_id, update_time, del_flag, remark, access_denied_image
 		)
-		VALUES (?, 0, ?, NULL, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, ?)
-	`, buildUUID(time.Now().UnixNano()), input.MenuName, input.MenuCode, menuType, input.PID, sortValue, input.Introduce, ownType, levelValue, weightValue, emptyToNullString(input.GroupCode), operator, operator, input.Remark)
+		VALUES (?, 0, ?, NULL, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, ?, ?)
+	`, buildUUID(time.Now().UnixNano()), input.MenuName, input.MenuCode, menuType, input.PID, sortValue, input.Introduce, ownType, levelValue, weightValue, emptyToNullString(input.GroupCode), operator, operator, input.Remark, emptyToNullString(input.AccessDeniedImage))
 	if err != nil {
 		return model.Menu{}, err
 	}
@@ -799,10 +879,11 @@ func (repo *Repository) UpdateMenu(ctx context.Context, input model.Menu, operat
 		    weight = ?,
 		    group_code = ?,
 		    remark = ?,
+		    access_denied_image = ?,
 		    update_id = ?,
 		    update_time = NOW()
 		WHERE id = ? AND del_flag = 0
-	`, input.MenuName, input.MenuCode, menuType, input.PID, sortValue, input.Introduce, ownType, levelValue, weightValue, emptyToNullString(input.GroupCode), input.Remark, operator, input.ID)
+	`, input.MenuName, input.MenuCode, menuType, input.PID, sortValue, input.Introduce, ownType, levelValue, weightValue, emptyToNullString(input.GroupCode), input.Remark, emptyToNullString(input.AccessDeniedImage), operator, input.ID)
 	return err
 }
 
@@ -834,7 +915,7 @@ func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType 
 		args = append(args, *ownType)
 	}
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, '')
+		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, ''), IFNULL(access_denied_image, '')
 		FROM sso_menu
 		WHERE `+strings.Join(filters, " AND ")+`
 		ORDER BY IFNULL(sort, 0) ASC, IFNULL(weight, 0) DESC, id ASC
@@ -846,7 +927,7 @@ func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType 
 	items := make([]model.Menu, 0, 64)
 	for rows.Next() {
 		var item model.Menu
-		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
+		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.AccessDeniedImage); err != nil {
 			return nil, err
 		}
 		normalizeMenuModel(&item)
@@ -863,7 +944,7 @@ func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownTy
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT m.id, IFNULL(m.menu_name, ''), IFNULL(m.icon, ''), IFNULL(m.menu_code, ''), m.menu_type, m.own_type, IFNULL(m.pid, 0), m.sort, IFNULL(m.weight, 0), IFNULL(m.group_code, ''), IFNULL(m.remark, ''), IFNULL(m.introduce, '')
+		SELECT m.id, IFNULL(m.menu_name, ''), IFNULL(m.icon, ''), IFNULL(m.menu_code, ''), m.menu_type, m.own_type, IFNULL(m.pid, 0), m.sort, IFNULL(m.weight, 0), IFNULL(m.group_code, ''), IFNULL(m.remark, ''), IFNULL(m.introduce, ''), IFNULL(m.access_denied_image, '')
 		FROM sso_role r
 		JOIN sso_role_menu rm ON r.id = rm.role_id
 		JOIN sso_menu m ON rm.menu_id = m.id
@@ -878,7 +959,7 @@ func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownTy
 	items := make([]model.Menu, 0, 64)
 	for rows.Next() {
 		var item model.Menu
-		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
+		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.AccessDeniedImage); err != nil {
 			return nil, err
 		}
 		normalizeMenuModel(&item)
@@ -906,7 +987,7 @@ func (repo *Repository) listMenusByIDSet(ctx context.Context, menuIDs map[int64]
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, '')
+		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, ''), IFNULL(access_denied_image, '')
 		FROM sso_menu
 		WHERE del_flag = 0 AND id IN (`+strings.Join(placeholders, ",")+`)
 		ORDER BY IFNULL(sort, 0) ASC, IFNULL(weight, 0) DESC, id ASC
@@ -919,7 +1000,7 @@ func (repo *Repository) listMenusByIDSet(ctx context.Context, menuIDs map[int64]
 	items := make([]model.Menu, 0, len(menuIDs))
 	for rows.Next() {
 		var item model.Menu
-		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
+		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.AccessDeniedImage); err != nil {
 			return nil, err
 		}
 		normalizeMenuModel(&item)
@@ -1421,7 +1502,7 @@ func (repo *Repository) collectMenusWithParents(ctx context.Context, selected ma
 			continue
 		}
 		query := `
-			SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, '')
+			SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, ''), IFNULL(access_denied_image, '')
 			FROM sso_menu
 			WHERE id = ? AND del_flag = 0`
 		args := []any{id}
@@ -1431,7 +1512,7 @@ func (repo *Repository) collectMenusWithParents(ctx context.Context, selected ma
 		}
 		row := repo.db.QueryRowContext(ctx, query, args...)
 		var item model.Menu
-		if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
+		if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.AccessDeniedImage); err != nil {
 			if err == sql.ErrNoRows {
 				continue
 			}

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -39,6 +40,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/departs/update", handler.updateDepart)
 	mux.HandleFunc("/api/v1/departs/delete", handler.deleteDepart)
 	mux.HandleFunc("/api/v1/menus/tree", handler.menuTree)
+	mux.HandleFunc("/api/v1/menus/by-code", handler.menuByCode)
 	mux.HandleFunc("/api/v1/menus/create", handler.createMenu)
 	mux.HandleFunc("/api/v1/menus/update", handler.updateMenu)
 	mux.HandleFunc("/api/v1/menus/delete", handler.deleteMenu)
@@ -58,6 +60,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sso/logout", handler.logout)
 	mux.HandleFunc("/sso/menuList", handler.menuList)
 	mux.HandleFunc("/sso/menu/list", handler.menuTree)
+	mux.HandleFunc("/sso/menu/by-code", handler.menuByCode)
 	mux.HandleFunc("/sso/menu/create", handler.createMenu)
 	mux.HandleFunc("/sso/menu/update", handler.updateMenu)
 	mux.HandleFunc("/sso/menu/delete", handler.deleteMenu)
@@ -74,6 +77,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sysDepart/update", handler.updateDepart)
 	mux.HandleFunc("/sysDepart/delete", handler.deleteDepart)
 	mux.HandleFunc("/menu/list", handler.menuTree)
+	mux.HandleFunc("/menu/by-code", handler.menuByCode)
 	mux.HandleFunc("/menu/create", handler.createMenu)
 	mux.HandleFunc("/menu/update", handler.updateMenu)
 	mux.HandleFunc("/menu/delete", handler.deleteMenu)
@@ -321,6 +325,34 @@ func (handler *Handler) menuTree(w http.ResponseWriter, r *http.Request) {
 	ownType := parseIntPtr(r.URL.Query().Get("ownType"))
 	result, err := handler.service.MenuTree(r.URL.Query().Get("menuName"), ownType)
 	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) menuByCode(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	menuCode := strings.TrimSpace(r.URL.Query().Get("menuCode"))
+	if menuCode == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "menuCode is required", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.MenuByCode(claims, menuCode, parseIntPtr(r.URL.Query().Get("ownType")))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "menu not found", ctx.RequestID)
+			return
+		}
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}

@@ -7,6 +7,7 @@ export interface PermissionMenuItem {
   weight?: number
   remark?: string
   introduce?: string
+  accessDeniedImage?: string
   ownType?: number
   children?: PermissionMenuItem[]
 }
@@ -20,6 +21,7 @@ export interface PermissionMutationPayload {
   weight?: number
   remark?: string
   introduce?: string
+  accessDeniedImage?: string
   ownType?: number
 }
 
