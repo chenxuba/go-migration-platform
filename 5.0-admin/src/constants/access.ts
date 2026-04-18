@@ -37,6 +37,231 @@ export class AccessItem {
   }
 }
 
+const INSTITUTION_GROUP_PREFIX = 'grp:'
+const INSTITUTION_ROUTE_PREFIX = 'page:'
+const INSTITUTION_AUTH_PREFIX = 'perm:'
+
+const COMPACT_PHRASES = [
+  { from: ['ONE', 'TO', 'ONE'], to: 'o2o' },
+  { from: ['VALUE', 'ADDED'], to: 'va' },
+  { from: ['THIRD', 'PARTY'], to: 'tp' },
+  { from: ['DATA', 'CENTER'], to: 'dc' },
+] as const
+
+const COMPACT_TOKEN_MAP: Record<string, string> = {
+  ADDED: 'add',
+  AI: 'ai',
+  ALBUM: 'alb',
+  ALL: 'all',
+  APPROVAL: 'apv',
+  ARCHIVE: 'arc',
+  ASSESSMENT: 'asm',
+  ASSIGN: 'asn',
+  ATTR: 'atr',
+  AUTO: 'ato',
+  BASIC: 'bsc',
+  BILL: 'bil',
+  BIZ: 'biz',
+  BRAND: 'brd',
+  BUSY: 'bsy',
+  CALL: 'cal',
+  CAMPAIGN: 'camp',
+  CASHIER: 'csh',
+  CATEGORY: 'ctg',
+  CENTER: 'ctr',
+  CHANGE: 'chg',
+  CHANNEL: 'chn',
+  CLAIM: 'clm',
+  CLEAR: 'clr',
+  CLASS: 'cls',
+  CLOCK: 'clk',
+  COLLECTION: 'col',
+  CONVERT: 'cvt',
+  COUNT: 'cnt',
+  COURSE: 'crs',
+  CREATE: 'crt',
+  DATA: 'dat',
+  DELETE: 'del',
+  DEPT: 'dept',
+  DETAIL: 'dtl',
+  DISCOUNT: 'dct',
+  EDU: 'edu',
+  EDIT: 'edt',
+  EFFECTIVE: 'eff',
+  ENROLL: 'enr',
+  EXAM: 'exm',
+  EXPORT: 'exp',
+  FACE: 'fac',
+  FEEDBACK: 'fdb',
+  FINANCE: 'fin',
+  FOLLOW: 'flw',
+  FORM: 'frm',
+  GOODS: 'gds',
+  GRADE: 'grd',
+  GROWTH: 'grw',
+  HOME: 'home',
+  HOMEWORK: 'hwk',
+  HOURS: 'hrs',
+  IMPORT: 'imp',
+  INCOME: 'inc',
+  INFO: 'info',
+  INTERNAL: 'intl',
+  INTENTION: 'int',
+  INTERACTIVE: 'iact',
+  INVENTORY: 'inv',
+  LEAVE: 'lev',
+  LIST: 'lst',
+  LOCKED: 'lck',
+  MAKEUP: 'mkp',
+  MANAGE: 'mng',
+  MAX: 'max',
+  MICRO: 'mic',
+  MINIAPP: 'mini',
+  MORE: 'mor',
+  MY: 'my',
+  NOTICE: 'ntc',
+  OFFICIAL: 'off',
+  OPERATE: 'opr',
+  OPERATION: 'opn',
+  ORDER: 'ord',
+  ORG: 'org',
+  OVERVIEW: 'ovw',
+  PARTY: 'pty',
+  PAYROLL: 'pay',
+  PERFORMANCE: 'pfm',
+  PERSONAL: 'psn',
+  PHONE: 'phn',
+  PLAN: 'pln',
+  POINT: 'pnt',
+  POOL: 'pol',
+  PRINT: 'prt',
+  PROMOTION: 'prm',
+  PUBLIC: 'pub',
+  RECHARGE: 'rch',
+  RECORD: 'rec',
+  RECOVERY: 'rcv',
+  REFUND: 'rfd',
+  RELATION: 'rel',
+  REPLY: 'rpy',
+  REPORT: 'rpt',
+  REVIEW: 'rvw',
+  ROLE: 'role',
+  ROLL: 'rol',
+  RULE: 'rul',
+  SAFE: 'saf',
+  SALES: 'sls',
+  SCALE: 'scl',
+  SCHOOL: 'sch',
+  SCORE: 'scr',
+  SCREEN: 'scr',
+  SELF: 'self',
+  SEND: 'snd',
+  SENSITIVE: 'sns',
+  SETTING: 'set',
+  SIGN: 'sgn',
+  SMS: 'sms',
+  STAFF: 'stf',
+  STATUS: 'sts',
+  STUDENT: 'stu',
+  STUDENTS: 'stus',
+  STYLE: 'sty',
+  SUMMARY: 'sum',
+  SUPERVISE: 'sup',
+  TARGET: 'tgt',
+  TEACHER: 'tch',
+  TEMPLATE: 'tpl',
+  TEST: 'tst',
+  THIRD: 'thd',
+  TIMETABLE: 'tbl',
+  TRIAL: 'trl',
+  TUITION: 'tui',
+  UPDATE: 'upd',
+  VALUE: 'val',
+  VIEW: 'view',
+  WARNING: 'wrn',
+  WITH: 'wth',
+  WRITE: 'wrt',
+}
+
+function abbreviateToken(token: string) {
+  const upper = String(token || '').trim().toUpperCase()
+  if (!upper)
+    return ''
+  if (COMPACT_TOKEN_MAP[upper])
+    return COMPACT_TOKEN_MAP[upper]
+  return upper.toLowerCase().slice(0, 3)
+}
+
+function compactParts(parts: string[]) {
+  const normalizedParts = parts
+    .map(part => String(part || '').trim().toUpperCase())
+    .filter(Boolean)
+
+  const result: string[] = []
+  for (let index = 0; index < normalizedParts.length; index += 1) {
+    let matched = false
+    for (const phrase of COMPACT_PHRASES) {
+      const current = normalizedParts.slice(index, index + phrase.from.length)
+      if (current.length === phrase.from.length && current.every((item, i) => item === phrase.from[i])) {
+        result.push(phrase.to)
+        index += phrase.from.length - 1
+        matched = true
+        break
+      }
+    }
+    if (!matched)
+      result.push(abbreviateToken(normalizedParts[index]))
+  }
+  return result
+}
+
+function upperSnakeToCompactCamel(value: string) {
+  const parts = String(value || '')
+    .trim()
+    .split(/[_:\-\s]+/)
+    .filter(Boolean)
+
+  return compactParts(parts).reduce((result, part, index) => {
+    if (!part)
+      return result
+    if (index === 0)
+      return `${result}${part}`
+    return `${result}${part.charAt(0).toUpperCase()}${part.slice(1)}`
+  }, '')
+}
+
+function normalizeCamelSuffix(value: string) {
+  const raw = String(value || '').trim()
+  if (!raw)
+    return ''
+  if (/[_:\-\s]/.test(raw))
+    return upperSnakeToCompactCamel(raw)
+  return raw.charAt(0).toLowerCase() + raw.slice(1)
+}
+
+export function normalizeInstitutionAccessCode(code: string | number | null | undefined) {
+  if (code == null)
+    return ''
+
+  const raw = String(code).trim()
+  if (!raw)
+    return ''
+
+  if (raw.startsWith(INSTITUTION_GROUP_PREFIX))
+    return `${INSTITUTION_GROUP_PREFIX}${normalizeCamelSuffix(raw.slice(INSTITUTION_GROUP_PREFIX.length))}`
+  if (raw.startsWith(INSTITUTION_ROUTE_PREFIX))
+    return `${INSTITUTION_ROUTE_PREFIX}${normalizeCamelSuffix(raw.slice(INSTITUTION_ROUTE_PREFIX.length))}`
+  if (raw.startsWith(INSTITUTION_AUTH_PREFIX))
+    return `${INSTITUTION_AUTH_PREFIX}${normalizeCamelSuffix(raw.slice(INSTITUTION_AUTH_PREFIX.length))}`
+  if (raw.startsWith('INST_GROUP_'))
+    return `${INSTITUTION_GROUP_PREFIX}${upperSnakeToCompactCamel(raw.slice('INST_GROUP_'.length))}`
+  if (raw.startsWith('INST_ROUTE_'))
+    return `${INSTITUTION_ROUTE_PREFIX}${upperSnakeToCompactCamel(raw.slice('INST_ROUTE_'.length))}`
+  if (raw.startsWith('INST_AUTH_'))
+    return `${INSTITUTION_AUTH_PREFIX}${upperSnakeToCompactCamel(raw.slice('INST_AUTH_'.length))}`
+  return raw
+}
+
 function system(code: string, title: string) {
   return new AccessItem(code, title, {
     type: 'system',
@@ -46,7 +271,7 @@ function system(code: string, title: string) {
 }
 
 function route(code: string, menu: string, page: string) {
-  return new AccessItem(code, page, {
+  return new AccessItem(normalizeInstitutionAccessCode(code), page, {
     type: 'route',
     menu,
     page,
@@ -54,7 +279,7 @@ function route(code: string, menu: string, page: string) {
 }
 
 function action(code: string, menu: string, page: string, actionName: string) {
-  return new AccessItem(code, actionName, {
+  return new AccessItem(normalizeInstitutionAccessCode(code), actionName, {
     type: 'action',
     menu,
     page,
@@ -196,7 +421,7 @@ export function normalizeAccessCode(value: AccessValueLike | null | undefined): 
     return ''
   if (isAccessItem(value))
     return value.code
-  return value
+  return normalizeInstitutionAccessCode(value)
 }
 
 export const AccessCodeMap = Object.values(AccessEnum).reduce<Record<string, AccessItem>>((items, item) => {
@@ -209,7 +434,7 @@ export function getAccessItem(value: AccessValueLike | null | undefined) {
     return undefined
   if (isAccessItem(value))
     return value
-  return typeof value === 'string' ? AccessCodeMap[value] : undefined
+  return typeof value === 'string' ? AccessCodeMap[normalizeInstitutionAccessCode(value)] : undefined
 }
 
 export function getAccessLabel(value: AccessValueLike | null | undefined) {

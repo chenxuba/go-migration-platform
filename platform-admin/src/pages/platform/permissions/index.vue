@@ -9,10 +9,11 @@
             @change="handlePortalChange"
           />
           <a-input
-            v-model:value="searchKeyword"
+            v-model:value="keywordInput"
             placeholder="请输入菜单名称或标识"
             allow-clear
             style="width: 260px"
+            @pressEnter="handleSearch"
           />
           <a-button type="primary" @click="handleSearch">
             搜索
@@ -32,77 +33,103 @@
         </a-space>
       </div>
 
-      <a-table
-        v-model:expandedRowKeys="expandedRowKeys"
-        :columns="columns"
-        :data-source="tableData"
-        :loading="loading"
-        :pagination="false"
-        :scroll="{ x: 1230 }"
-        table-layout="fixed"
-        size="middle"
-        row-key="id"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'menuName'">
-            <span class="menu-name-text" :title="record.menuName || '--'">
-              {{ record.menuName || '--' }}
-            </span>
-          </template>
+      <a-spin :spinning="loading">
+        <div class="permission-tree-panel">
+          <div
+            v-if="tableData.length"
+            ref="treeBodyRef"
+            class="permission-tree-body"
+          >
+            <div class="permission-tree-header">
+              <span>菜单名称</span>
+              <span>权限标识</span>
+              <span>层级</span>
+              <span>排序</span>
+              <span>权重</span>
+              <span>描述</span>
+              <span class="permission-tree-header__actions">操作</span>
+            </div>
 
-          <template v-else-if="column.key === 'menuCode'">
-            <span class="ellipsis-text" :title="record.menuCode || '--'">
-              {{ record.menuCode || '--' }}
-            </span>
-          </template>
+            <div v-for="row in flatRows" :key="row.record.id" class="permission-tree-node">
+              <div class="permission-tree-row">
+                <div class="permission-tree-row__name">
+                  <div class="permission-tree-name-cell" :style="getIndentStyle(row.depth)">
+                    <button
+                      v-if="row.hasChildren"
+                      type="button"
+                      class="permission-tree-switcher"
+                      :class="{ 'is-expanded': row.isExpanded }"
+                      @click.stop="toggleRowExpand(row.record)"
+                    >
+                      <RightOutlined />
+                    </button>
+                    <span v-else class="permission-tree-switcher permission-tree-switcher--placeholder" />
+                    <span class="menu-name-text" :title="row.record.menuName || '--'">
+                      {{ row.record.menuName || '--' }}
+                    </span>
+                  </div>
+                </div>
 
-          <template v-else-if="column.key === 'levelLabel'">
-            <a-tag :color="getLevelTagColor(normalizeRecord(record))">
-              {{ getLevelLabel(normalizeRecord(record)) }}
-            </a-tag>
-          </template>
+                <div class="permission-tree-row__code">
+                  <span class="ellipsis-text" :title="row.record.displayMenuCode">
+                    {{ row.record.displayMenuCode }}
+                  </span>
+                </div>
 
-          <template v-else-if="column.key === 'introduce'">
-            <span class="ellipsis-text" :title="getIntroduceText(normalizeRecord(record))">
-              {{ getIntroduceText(normalizeRecord(record)) }}
-            </span>
-          </template>
+                <div class="permission-tree-row__level">
+                  <a-tag :color="row.record.levelTagColor">
+                    {{ row.record.levelLabel }}
+                  </a-tag>
+                </div>
 
-          <template v-else-if="column.key === 'actions'">
-            <a-space class="action-cell">
-              <a-button
-                v-if="hasPermission(AccessEnum.menuPermissions_update)"
-                type="link"
-                size="small"
-                @click="openDrawer('edit', normalizeRecord(record))"
-              >
-                修改
-              </a-button>
-              <a-button
-                v-if="hasPermission(AccessEnum.menuPermissions_add) && Number(normalizeRecord(record).depth || 1) < 3"
-                type="link"
-                size="small"
-                @click="handleAddChild(normalizeRecord(record))"
-              >
-                新增
-              </a-button>
-              <a-popconfirm
-                v-if="hasPermission(AccessEnum.menuPermissions_delete)"
-                title="确定要删除该权限吗？"
-                @confirm="handleDeleteByRecord(normalizeRecord(record))"
-              >
-                <a-button type="link" size="small" danger>
-                  删除
-                </a-button>
-              </a-popconfirm>
-            </a-space>
-          </template>
+                <div class="permission-tree-row__sort">
+                  {{ row.record.sort ?? '--' }}
+                </div>
 
-          <template v-else>
-            {{ getColumnValue(record, column.dataIndex) ?? '--' }}
-          </template>
-        </template>
-      </a-table>
+                <div class="permission-tree-row__weight">
+                  {{ row.record.weight ?? '--' }}
+                </div>
+
+                <div class="permission-tree-row__intro">
+                  <span class="ellipsis-text" :title="row.record.introduceText">
+                    {{ row.record.introduceText }}
+                  </span>
+                </div>
+
+                <div class="permission-tree-row__actions" @click.stop>
+                  <a-button
+                    v-if="hasPermission(AccessEnum.menuPermissions_update)"
+                    type="link"
+                    size="small"
+                    @click.stop="openDrawer('edit', row.record)"
+                  >
+                    修改
+                  </a-button>
+                  <a-button
+                    v-if="hasPermission(AccessEnum.menuPermissions_add) && Number(row.record.depth || 1) < 3"
+                    type="link"
+                    size="small"
+                    @click.stop="handleAddChild(row.record)"
+                  >
+                    新增
+                  </a-button>
+                  <a-popconfirm
+                    v-if="hasPermission(AccessEnum.menuPermissions_delete)"
+                    title="确定要删除该权限吗？"
+                    @confirm="handleDeleteByRecord(row.record)"
+                  >
+                    <a-button type="link" size="small" danger @click.stop>
+                      删除
+                    </a-button>
+                  </a-popconfirm>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <a-empty v-else description="暂无权限数据" />
+        </div>
+      </a-spin>
     </a-card>
 
     <PlatformModalShell
@@ -203,9 +230,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
-import type { TableColumnsType } from 'ant-design-vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { PlusOutlined, RightOutlined } from '@ant-design/icons-vue'
 import {
   createPermissionApi,
   deletePermissionApi,
@@ -225,10 +251,22 @@ enum PortalEnum {
 
 interface PermissionRecord extends PermissionMenuItem {
   children?: PermissionRecord[]
-  depth?: number
+  key: number
+  depth: number
+  displayMenuCode: string
+  levelLabel: string
+  levelTagColor: string
+  introduceText: string
+  searchText: string
 }
 
 type FormMode = 'add' | 'edit' | null
+interface FlatPermissionRow {
+  record: PermissionRecord
+  depth: number
+  hasChildren: boolean
+  isExpanded: boolean
+}
 
 const { hasAccess } = useAccess()
 
@@ -236,54 +274,13 @@ const hasPermission = (permissionCode: string) => {
   return hasAccess([permissionCode, AccessEnum.superAdmin])
 }
 
-const columns: TableColumnsType<PermissionRecord> = [
-  {
-    title: '菜单名称',
-    dataIndex: 'menuName',
-    key: 'menuName',
-    width: 240,
-  },
-  {
-    title: '权限标识',
-    dataIndex: 'menuCode',
-    key: 'menuCode',
-    width: 220,
-  },
-  {
-    title: '层级',
-    key: 'levelLabel',
-    width: 100,
-  },
-  {
-    title: '排序',
-    dataIndex: 'sort',
-    key: 'sort',
-    width: 80,
-  },
-  {
-    title: '权重',
-    dataIndex: 'weight',
-    key: 'weight',
-    width: 80,
-  },
-  {
-    title: '描述',
-    dataIndex: 'introduce',
-    key: 'introduce',
-    width: 320,
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 190,
-    fixed: 'right',
-  },
-]
-
-const treeData = ref<PermissionRecord[]>([])
+const treeData = shallowRef<PermissionRecord[]>([])
+const nodeMap = shallowRef<Map<number, PermissionRecord>>(new Map())
+const keywordInput = ref('')
 const searchKeyword = ref('')
 const expandedRowKeys = ref<number[]>([])
 const loading = ref(false)
+const treeBodyRef = ref<HTMLDivElement | null>(null)
 
 const currentPortal = ref<PortalEnum>(PortalEnum.INSTITUTION)
 const portalOptions = [
@@ -307,49 +304,268 @@ const formData = reactive<PermissionMutationPayload>({
   ownType: PortalEnum.INSTITUTION,
 })
 
+const compactPhrases = [
+  { from: ['ONE', 'TO', 'ONE'], to: 'o2o' },
+  { from: ['VALUE', 'ADDED'], to: 'va' },
+  { from: ['THIRD', 'PARTY'], to: 'tp' },
+  { from: ['DATA', 'CENTER'], to: 'dc' },
+]
+
+const compactTokenMap: Record<string, string> = {
+  ADDED: 'add',
+  AI: 'ai',
+  ALBUM: 'alb',
+  ALL: 'all',
+  APPROVAL: 'apv',
+  ARCHIVE: 'arc',
+  ASSESSMENT: 'asm',
+  ASSIGN: 'asn',
+  ATTR: 'atr',
+  AUTO: 'ato',
+  BASIC: 'bsc',
+  BILL: 'bil',
+  BIZ: 'biz',
+  BRAND: 'brd',
+  BUSY: 'bsy',
+  CALL: 'cal',
+  CAMPAIGN: 'camp',
+  CASHIER: 'csh',
+  CATEGORY: 'ctg',
+  CENTER: 'ctr',
+  CHANGE: 'chg',
+  CHANNEL: 'chn',
+  CLAIM: 'clm',
+  CLEAR: 'clr',
+  CLASS: 'cls',
+  CLOCK: 'clk',
+  COLLECTION: 'col',
+  CONVERT: 'cvt',
+  COUNT: 'cnt',
+  COURSE: 'crs',
+  CREATE: 'crt',
+  DATA: 'dat',
+  DELETE: 'del',
+  DEPT: 'dept',
+  DETAIL: 'dtl',
+  DISCOUNT: 'dct',
+  EDU: 'edu',
+  EDIT: 'edt',
+  EFFECTIVE: 'eff',
+  ENROLL: 'enr',
+  EXAM: 'exm',
+  EXPORT: 'exp',
+  FACE: 'fac',
+  FEEDBACK: 'fdb',
+  FINANCE: 'fin',
+  FOLLOW: 'flw',
+  FORM: 'frm',
+  GOODS: 'gds',
+  GRADE: 'grd',
+  GROWTH: 'grw',
+  HOME: 'home',
+  HOMEWORK: 'hwk',
+  HOURS: 'hrs',
+  IMPORT: 'imp',
+  INCOME: 'inc',
+  INFO: 'info',
+  INTERNAL: 'intl',
+  INTENTION: 'int',
+  INTERACTIVE: 'iact',
+  INVENTORY: 'inv',
+  LEAVE: 'lev',
+  LIST: 'lst',
+  LOCKED: 'lck',
+  MAKEUP: 'mkp',
+  MANAGE: 'mng',
+  MAX: 'max',
+  MICRO: 'mic',
+  MINIAPP: 'mini',
+  MORE: 'mor',
+  MY: 'my',
+  NOTICE: 'ntc',
+  OFFICIAL: 'off',
+  OPERATE: 'opr',
+  OPERATION: 'opn',
+  ORDER: 'ord',
+  ORG: 'org',
+  OVERVIEW: 'ovw',
+  PARTY: 'pty',
+  PAYROLL: 'pay',
+  PERFORMANCE: 'pfm',
+  PERSONAL: 'psn',
+  PHONE: 'phn',
+  PLAN: 'pln',
+  POINT: 'pnt',
+  POOL: 'pol',
+  PRINT: 'prt',
+  PROMOTION: 'prm',
+  PUBLIC: 'pub',
+  RECHARGE: 'rch',
+  RECORD: 'rec',
+  RECOVERY: 'rcv',
+  REFUND: 'rfd',
+  RELATION: 'rel',
+  REPLY: 'rpy',
+  REPORT: 'rpt',
+  REVIEW: 'rvw',
+  ROLE: 'role',
+  ROLL: 'rol',
+  RULE: 'rul',
+  SAFE: 'saf',
+  SALES: 'sls',
+  SCALE: 'scl',
+  SCHOOL: 'sch',
+  SCORE: 'scr',
+  SCREEN: 'scr',
+  SELF: 'self',
+  SEND: 'snd',
+  SENSITIVE: 'sns',
+  SETTING: 'set',
+  SIGN: 'sgn',
+  SMS: 'sms',
+  STAFF: 'stf',
+  STATUS: 'sts',
+  STUDENT: 'stu',
+  STUDENTS: 'stus',
+  STYLE: 'sty',
+  SUMMARY: 'sum',
+  SUPERVISE: 'sup',
+  TARGET: 'tgt',
+  TEACHER: 'tch',
+  TEMPLATE: 'tpl',
+  TEST: 'tst',
+  THIRD: 'thd',
+  TIMETABLE: 'tbl',
+  TRIAL: 'trl',
+  TUITION: 'tui',
+  UPDATE: 'upd',
+  VALUE: 'val',
+  VIEW: 'view',
+  WARNING: 'wrn',
+  WITH: 'wth',
+  WRITE: 'wrt',
+}
+
+const abbreviateToken = (token: string) => {
+  const upper = String(token || '').trim().toUpperCase()
+  if (!upper)
+    return ''
+  if (compactTokenMap[upper])
+    return compactTokenMap[upper]
+  return upper.toLowerCase().slice(0, 3)
+}
+
+const compactParts = (parts: string[]) => {
+  const normalizedParts = parts
+    .map(part => String(part || '').trim().toUpperCase())
+    .filter(Boolean)
+
+  const result: string[] = []
+  for (let index = 0; index < normalizedParts.length; index += 1) {
+    let matched = false
+    for (const phrase of compactPhrases) {
+      const current = normalizedParts.slice(index, index + phrase.from.length)
+      if (current.length === phrase.from.length && current.every((item, currentIndex) => item === phrase.from[currentIndex])) {
+        result.push(phrase.to)
+        index += phrase.from.length - 1
+        matched = true
+        break
+      }
+    }
+
+    if (!matched)
+      result.push(abbreviateToken(normalizedParts[index]))
+  }
+
+  return result
+}
+
+const toCompactCamel = (value: string) => {
+  return compactParts(
+    String(value || '')
+      .trim()
+      .split(/[_:\-\s]+/)
+      .filter(Boolean),
+  ).reduce((result, part, index) => {
+    if (!part)
+      return result
+    if (index === 0)
+      return `${result}${part}`
+    return `${result}${part.charAt(0).toUpperCase()}${part.slice(1)}`
+  }, '')
+}
+
+const normalizeCamelSuffix = (value: string) => {
+  const raw = String(value || '').trim()
+  if (!raw)
+    return ''
+  if (/[_:\-\s]/.test(raw))
+    return toCompactCamel(raw)
+  return raw.charAt(0).toLowerCase() + raw.slice(1)
+}
+
+const normalizePermissionCode = (code: string | number | null | undefined) => {
+  const raw = String(code ?? '').trim()
+  if (!raw)
+    return ''
+  if (raw.startsWith('g:'))
+    return `g:${normalizeCamelSuffix(raw.slice('g:'.length))}`
+  if (raw.startsWith('r:'))
+    return `r:${normalizeCamelSuffix(raw.slice('r:'.length))}`
+  if (raw.startsWith('a:'))
+    return `a:${normalizeCamelSuffix(raw.slice('a:'.length))}`
+  if (raw.startsWith('INST_GROUP_'))
+    return `g:${toCompactCamel(raw.slice('INST_GROUP_'.length))}`
+  if (raw.startsWith('INST_ROUTE_'))
+    return `r:${toCompactCamel(raw.slice('INST_ROUTE_'.length))}`
+  if (raw.startsWith('INST_AUTH_'))
+    return `a:${toCompactCamel(raw.slice('INST_AUTH_'.length))}`
+  return raw
+}
+
 const normalizeTree = (list: PermissionMenuItem[] = [], depth = 1): PermissionRecord[] => {
   return list.map((item) => {
     const children = Array.isArray(item.children) ? normalizeTree(item.children, depth + 1) : []
+    const displayMenuCode = normalizePermissionCode(item.menuCode) || '--'
+    const introduceText = String(item.introduce || item.remark || '').trim() || '--'
+    const levelLabel = depth <= 1 ? '1级菜单' : depth === 2 ? '2级界面' : '3级权限'
+    const levelTagColor = depth <= 1 ? 'blue' : depth === 2 ? 'green' : 'orange'
+    const menuName = String(item.menuName || '')
     return {
       ...item,
+      key: Number(item.id),
+      menuCode: displayMenuCode,
       sort: Number(item.sort || 0),
       weight: Number(item.weight || 0),
       pid: Number(item.pid || 0),
       ownType: Number(item.ownType || currentPortal.value),
       depth,
+      displayMenuCode,
+      levelLabel,
+      levelTagColor,
+      introduceText,
+      searchText: `${menuName.toLowerCase()} ${displayMenuCode.toLowerCase()}`,
       children,
     }
   })
 }
 
-const normalizeRecord = (record: Record<string, any>) => record as PermissionRecord
-
-const getColumnValue = (record: Record<string, any>, dataIndex: string | number | readonly (string | number)[] | undefined) => {
-  if (typeof dataIndex === 'string' || typeof dataIndex === 'number')
-    return record[dataIndex]
-  return undefined
-}
-
-const getIntroduceText = (record: PermissionRecord) => {
-  const introduce = String(record.introduce || '').trim()
-  if (introduce)
-    return introduce
-
-  return '--'
-}
-
 const tableData = computed<PermissionRecord[]>(() => {
-  const keyword = searchKeyword.value.trim().toLowerCase()
-  if (!keyword)
+  const rawKeyword = searchKeyword.value.trim()
+  if (!rawKeyword)
     return treeData.value
+
+  const keyword = rawKeyword.toLowerCase()
+  const normalizedKeyword = normalizePermissionCode(rawKeyword).toLowerCase()
+  const keywordSet = new Set([keyword, normalizedKeyword].filter(Boolean))
 
   const filterTree = (list: PermissionRecord[]): PermissionRecord[] => {
     const result: PermissionRecord[] = []
     list.forEach((item) => {
       const children = item.children ? filterTree(item.children) : []
       const hit
-        = String(item.menuName || '').toLowerCase().includes(keyword)
-          || String(item.menuCode || '').toLowerCase().includes(keyword)
+        = Array.from(keywordSet).some(currentKeyword =>
+          item.searchText.includes(currentKeyword))
 
       if (hit || children.length) {
         result.push({
@@ -364,6 +580,61 @@ const tableData = computed<PermissionRecord[]>(() => {
   return filterTree(treeData.value)
 })
 
+const collectExpandableIds = (list: PermissionRecord[]): number[] => {
+  const ids: number[] = []
+  list.forEach((item) => {
+    if (item.children?.length) {
+      ids.push(Number(item.id))
+      ids.push(...collectExpandableIds(item.children))
+    }
+  })
+  return ids
+}
+
+const expandableRowKeys = computed<number[]>(() => collectExpandableIds(tableData.value))
+const expandedKeySet = computed(() => new Set(expandedRowKeys.value.map(key => Number(key))))
+const flatRows = computed<FlatPermissionRow[]>(() => {
+  const rows: FlatPermissionRow[] = []
+
+  const walk = (list: PermissionRecord[]) => {
+    list.forEach((item) => {
+      const hasChildren = Boolean(item.children?.length)
+      const isExpanded = expandedKeySet.value.has(Number(item.id))
+
+      rows.push({
+        record: item,
+        depth: item.depth,
+        hasChildren,
+        isExpanded,
+      })
+
+      if (hasChildren && isExpanded)
+        walk(item.children!)
+    })
+  }
+
+  walk(tableData.value)
+  return rows
+})
+
+const buildNodeMap = (list: PermissionRecord[]) => {
+  const map = new Map<number, PermissionRecord>()
+  const travel = (nodes: PermissionRecord[]) => {
+    nodes.forEach((item) => {
+      map.set(Number(item.id), item)
+      if (item.children?.length)
+        travel(item.children)
+    })
+  }
+  travel(list)
+  return map
+}
+
+const resetTreeScroll = () => {
+  if (treeBodyRef.value)
+    treeBodyRef.value.scrollTop = 0
+}
+
 const loadTree = async () => {
   loading.value = true
   try {
@@ -372,7 +643,10 @@ const loadTree = async () => {
       messageService.error(res.message || '加载权限树失败')
       return
     }
-    treeData.value = normalizeTree(Array.isArray(res.result) ? res.result : [])
+    const normalizedTree = normalizeTree(Array.isArray(res.result) ? res.result : [])
+    treeData.value = normalizedTree
+    nodeMap.value = buildNodeMap(normalizedTree)
+    resetTreeScroll()
   }
   catch (error: any) {
     messageService.error(error?.message || '加载权限树失败')
@@ -384,6 +658,7 @@ const loadTree = async () => {
 
 const handlePortalChange = async (value: number) => {
   currentPortal.value = value as PortalEnum
+  keywordInput.value = ''
   searchKeyword.value = ''
   expandedRowKeys.value = []
   await loadTree()
@@ -424,19 +699,6 @@ const handleAddChild = (parent?: PermissionRecord) => {
   drawerVisible.value = true
 }
 
-const findNodeById = (list: PermissionRecord[], id: number): PermissionRecord | null => {
-  for (const item of list) {
-    if (Number(item.id) === id)
-      return item
-    if (item.children && item.children.length) {
-      const found = findNodeById(item.children, id)
-      if (found)
-        return found
-    }
-  }
-  return null
-}
-
 const openDrawer = (mode: FormMode, node?: PermissionRecord) => {
   if (mode === 'edit') {
     if (!node) {
@@ -450,11 +712,11 @@ const openDrawer = (mode: FormMode, node?: PermissionRecord) => {
       parentName.value = '根菜单'
     }
     else {
-      const parentNode = findNodeById(treeData.value, Number(node.pid))
+      const parentNode = nodeMap.value.get(Number(node.pid))
       parentName.value = parentNode ? parentNode.menuName : ''
     }
     formData.menuName = node.menuName
-    formData.menuCode = node.menuCode
+    formData.menuCode = node.displayMenuCode
     formData.sort = Number(node.sort || 0)
     formData.weight = Number(node.weight || 0)
     formData.remark = node.remark || ''
@@ -470,29 +732,44 @@ const closeFormModal = () => {
 }
 
 const handleSearch = () => {
+  searchKeyword.value = keywordInput.value.trim()
+  if (!searchKeyword.value)
+    expandedRowKeys.value = []
+  resetTreeScroll()
 }
 
-const handleReset = async () => {
+const handleReset = () => {
+  keywordInput.value = ''
   searchKeyword.value = ''
-  await loadTree()
-}
-
-const collectIds = (list: PermissionRecord[]): number[] => {
-  const ids: number[] = []
-  list.forEach((item) => {
-    ids.push(Number(item.id))
-    if (item.children && item.children.length)
-      ids.push(...collectIds(item.children))
-  })
-  return ids
+  expandedRowKeys.value = []
+  resetTreeScroll()
 }
 
 const toggleExpandAll = () => {
   if (expandedRowKeys.value.length) {
     expandedRowKeys.value = []
+    return
   }
-  else {
-    expandedRowKeys.value = collectIds(tableData.value)
+
+  expandedRowKeys.value = [...expandableRowKeys.value]
+}
+
+const toggleRowExpand = (record: PermissionRecord) => {
+  if (!record.children?.length)
+    return
+
+  const targetId = Number(record.id)
+  const nextKeys = new Set(expandedRowKeys.value.map(key => Number(key)))
+  if (nextKeys.has(targetId))
+    nextKeys.delete(targetId)
+  else
+    nextKeys.add(targetId)
+  expandedRowKeys.value = Array.from(nextKeys)
+}
+
+const getIndentStyle = (depth: number) => {
+  return {
+    paddingLeft: `${Math.max(0, depth - 1) * 24}px`,
   }
 }
 
@@ -506,7 +783,7 @@ const handleSubmit = async () => {
     id: formData.id || undefined,
     pid: Number(formData.pid || 0),
     menuName: String(formData.menuName || '').trim(),
-    menuCode: String(formData.menuCode || '').trim(),
+    menuCode: normalizePermissionCode(formData.menuCode),
     sort: Number(formData.sort || 0),
     weight: Number(formData.weight || 0),
     remark: String(formData.remark || '').trim(),
@@ -573,23 +850,19 @@ const handleDeleteByRecord = async (record: PermissionRecord) => {
   }
 }
 
-const getLevelLabel = (record: PermissionRecord) => {
-  const level = Number(record.depth || 1)
-  if (level <= 1)
-    return '1级菜单'
-  if (level === 2)
-    return '2级界面'
-  return '3级权限'
-}
+watch(
+  [tableData, searchKeyword],
+  () => {
+    if (searchKeyword.value) {
+      expandedRowKeys.value = [...expandableRowKeys.value]
+      return
+    }
 
-const getLevelTagColor = (record: PermissionRecord) => {
-  const level = Number(record.depth || 1)
-  if (level <= 1)
-    return 'blue'
-  if (level === 2)
-    return 'green'
-  return 'orange'
-}
+    const availableKeys = new Set(expandableRowKeys.value.map(key => Number(key)))
+    expandedRowKeys.value = expandedRowKeys.value.filter(key => availableKeys.has(Number(key)))
+  },
+  { flush: 'post' },
+)
 
 onMounted(() => {
   loadTree()
@@ -608,6 +881,136 @@ onMounted(() => {
     margin-bottom: 16px;
   }
 
+  .permission-tree-panel {
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .permission-tree-header,
+  .permission-tree-row {
+    display: grid;
+    grid-template-columns: minmax(300px, 2.1fr) 200px 108px 88px 88px minmax(320px, 2.3fr) 220px;
+    column-gap: 16px;
+    align-items: center;
+    min-width: 1388px;
+  }
+
+  .permission-tree-header {
+    min-height: 44px;
+    padding: 0 16px;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fafafa;
+    color: rgba(0, 0, 0, 0.85);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+  }
+
+  .permission-tree-header > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .permission-tree-body {
+    position: relative;
+    z-index: 0;
+    overflow: auto;
+    background: #fff;
+    isolation: isolate;
+    scrollbar-width: thin;
+    scrollbar-color: #d9d9d9 transparent;
+  }
+
+  .permission-tree-node {
+    min-height: 56px;
+    min-width: 1388px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .permission-tree-row {
+    min-height: 56px;
+    padding: 10px 16px;
+    color: #000;
+    font-size: 13px;
+    line-height: 20px;
+  }
+
+  .permission-tree-name-cell {
+    display: flex;
+    align-items: flex-start;
+    min-width: 0;
+  }
+
+  .permission-tree-switcher {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    margin-right: 6px;
+    border: none;
+    background: transparent;
+    color: rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.16s ease, color 0.16s ease;
+  }
+
+  .permission-tree-switcher.is-expanded {
+    color: rgba(0, 0, 0, 0.72);
+    transform: rotate(90deg);
+  }
+
+  .permission-tree-switcher--placeholder {
+    visibility: hidden;
+    cursor: default;
+  }
+
+  .permission-tree-row__name,
+  .permission-tree-row__code,
+  .permission-tree-row__level,
+  .permission-tree-row__sort,
+  .permission-tree-row__weight,
+  .permission-tree-row__intro,
+  .permission-tree-row__actions {
+    min-width: 0;
+  }
+
+  .permission-tree-header__actions,
+  .permission-tree-row__level,
+  .permission-tree-row__sort,
+  .permission-tree-row__weight {
+    display: flex;
+    align-items: center;
+  }
+
+  .permission-tree-header__actions,
+  .permission-tree-row__actions {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    white-space: nowrap;
+    box-shadow: -10px 0 12px -12px rgba(15, 23, 42, 0.18);
+  }
+
+  .permission-tree-header__actions {
+    background: #fafafa;
+    z-index: 2;
+  }
+
+  .permission-tree-row__actions {
+    background: #fff;
+  }
+
   .ellipsis-text {
     display: inline-block;
     max-width: 100%;
@@ -618,18 +1021,6 @@ onMounted(() => {
     vertical-align: bottom;
   }
 
-  .action-cell {
-    white-space: nowrap;
-  }
-
-  :deep(.ant-table-tbody > tr > td) {
-    color: #000;
-  }
-
-  :deep(.ant-table-thead > tr > th) {
-    color: #000;
-  }
-
   :deep(.ant-card),
   :deep(.ant-card-head),
   :deep(.ant-card-body),
@@ -637,7 +1028,6 @@ onMounted(() => {
   :deep(.ant-segmented),
   :deep(.ant-input),
   :deep(.ant-btn),
-  :deep(.ant-table),
   :deep(.ant-tag),
   :deep(.ant-drawer),
   :deep(.ant-form),
@@ -645,17 +1035,31 @@ onMounted(() => {
   :deep(.ant-form-item-label > label) {
     font-family: inherit;
   }
+
+  .permission-tree-body::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .permission-tree-body::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  .permission-tree-body::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 </style>
 
 <style scoped lang="less">
 .menu-name-text {
+  display: block;
   color: #000;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
   line-height: 22px;
   vertical-align: middle;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .permission-form-card {

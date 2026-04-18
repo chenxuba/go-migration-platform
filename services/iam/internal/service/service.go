@@ -10,6 +10,7 @@ import (
 
 	"go-migration-platform/pkg/authx"
 	"go-migration-platform/pkg/customization"
+	"go-migration-platform/pkg/institutionmenu"
 	"go-migration-platform/pkg/tenant"
 	"go-migration-platform/services/iam/internal/model"
 	"go-migration-platform/services/iam/internal/repository"
@@ -256,6 +257,9 @@ func (svc *Service) CreateMenu(claims authx.Claims, input model.Menu) (model.Men
 	if ownType < 0 {
 		return model.Menu{}, errors.New("ownType is invalid")
 	}
+	if ownType == 2 {
+		menuCode = institutionmenu.NormalizeCode(menuCode)
+	}
 
 	level := 0
 	if input.PID > 0 {
@@ -331,6 +335,9 @@ func (svc *Service) UpdateMenu(claims authx.Claims, input model.Menu) (model.Men
 	}
 	if ownType < 0 {
 		return model.Menu{}, errors.New("ownType is invalid")
+	}
+	if ownType == 2 {
+		menuCode = institutionmenu.NormalizeCode(menuCode)
 	}
 
 	if input.PID == input.ID {

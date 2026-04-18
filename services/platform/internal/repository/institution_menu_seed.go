@@ -59,6 +59,15 @@ type institutionMenuLookup struct {
 	Name string
 }
 
+type institutionMenuCatalogRow struct {
+	ID    int64
+	PID   int64
+	Level int
+	Name  string
+	Code  string
+	path  []string
+}
+
 var institutionMenuSeeds = []institutionMenuSeed{
 	{
 		ParentName: "品牌中心",
@@ -704,6 +713,14 @@ var institutionRouteAuthoritySeeds = []institutionRouteAuthoritySeed{
 		},
 	},
 	{
+		RouteCode: "INST_ROUTE_EDU_SIGN",
+		Authorities: []institutionRouteAuthority{
+			{Name: "可为所有学员报名续费", Code: "INST_AUTH_EDU_SIGN_ALL_STUDENT", Sort: 10, GroupCode: "gp200010", Remark: "可为所有学员报名续费。", MatchNames: []string{"可为所有学员报名续费"}, MatchCodes: []string{"Canregisterandrenewforallstudents"}},
+			{Name: "仅可为我的学员报名续费", Code: "INST_AUTH_EDU_SIGN_MY_STUDENT", Sort: 20, GroupCode: "gp200010", Remark: "仅可为采单员、前台、电话销售、副销售员、销售员、班主任、学管师、顾问为自己的学员报名续费。", MatchNames: []string{"仅可为我的学员报名续费"}, MatchCodes: []string{"Onlymystudentscanapplyforrenewal"}},
+			{Name: "整单优惠设置", Code: "INST_AUTH_EDU_SIGN_ORDER_DISCOUNT", Sort: 30, Remark: "支持设置整单优惠。", MatchNames: []string{"整单优惠设置"}, MatchCodes: []string{"Wholeorderdiscountsetting"}},
+		},
+	},
+	{
 		RouteCode: "INST_ROUTE_EDU_CLASS",
 		Authorities: []institutionRouteAuthority{
 			{Name: "查看所有的班级", Code: "INST_AUTH_EDU_CLASS_ALL", Sort: 10, Weight: 10, GroupCode: "groupViewallclasses", Remark: "可查看校区内所有的班级。", MatchCodes: []string{"Viewallclasses"}},
@@ -799,7 +816,11 @@ func (repo *Repository) ensureInstitutionMenuCatalog(ctx context.Context) error 
 		return err
 	}
 
-	return repo.normalizeInstitutionMenuAliases(ctx)
+	if err := repo.cleanupInstitutionMenuCatalog(ctx); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context) error {
@@ -889,7 +910,7 @@ func (repo *Repository) clearInstitutionMenuURLPaths(ctx context.Context) error 
 func (repo *Repository) ensureVisibleRouteAuthorityNode(ctx context.Context, routeID int64, authority institutionRouteAuthority) (int64, error) {
 	spec := institutionMenuNodeSpec{
 		Name:      authority.Name,
-		Code:      authority.Code,
+		Code:      institutionmenu.NormalizeCode(authority.Code),
 		PID:       routeID,
 		Level:     3,
 		Sort:      authority.Sort,
@@ -1101,188 +1122,6 @@ func (repo *Repository) ensureInstitutionAdminRoleMenus(ctx context.Context, men
 	return nil
 }
 
-type institutionMenuAliasSpec struct {
-	CanonicalCode string
-	AliasCodes    []string
-}
-
-var institutionMenuAliasSpecs = []institutionMenuAliasSpec{
-	{
-		CanonicalCode: "INST_AUTH_ORG_MANAGE_ROLE_MANAGE",
-		AliasCodes:    []string{"RoleManagement", "Roles"},
-	},
-	{
-		CanonicalCode: "INST_AUTH_ENROLL_PUBLIC_POOL_CLAIM",
-		AliasCodes:    []string{"Batchclaim"},
-	},
-	{
-		CanonicalCode: "INST_AUTH_ENROLL_PUBLIC_POOL_ASSIGN",
-		AliasCodes:    []string{"Batchallocation"},
-	},
-}
-
-func (repo *Repository) normalizeInstitutionMenuAliases(ctx context.Context) error {
-	for _, spec := range institutionMenuAliasSpecs {
-		canonicalID, err := repo.findMenuIDByCode(ctx, spec.CanonicalCode)
-		if err != nil {
-			return err
-		}
-		if canonicalID <= 0 {
-			continue
-		}
-
-		aliasIDs, err := repo.findMenuIDsByCodes(ctx, spec.AliasCodes)
-		if err != nil {
-			return err
-		}
-		if len(aliasIDs) == 0 {
-			continue
-		}
-
-		filteredAliasIDs := make([]int64, 0, len(aliasIDs))
-		for _, aliasID := range aliasIDs {
-			if aliasID > 0 && aliasID != canonicalID {
-				filteredAliasIDs = append(filteredAliasIDs, aliasID)
-			}
-		}
-		if len(filteredAliasIDs) == 0 {
-			continue
-		}
-
-		if err := repo.mergeInstitutionMenuRelations(ctx, canonicalID, filteredAliasIDs); err != nil {
-			return err
-		}
-		if err := repo.deleteInstitutionMenusByIDs(ctx, filteredAliasIDs); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (repo *Repository) findMenuIDsByCodes(ctx context.Context, codes []string) ([]int64, error) {
-	filteredCodes := make([]string, 0, len(codes))
-	for _, code := range codes {
-		code = strings.TrimSpace(code)
-		if code != "" {
-			filteredCodes = append(filteredCodes, code)
-		}
-	}
-	if len(filteredCodes) == 0 {
-		return nil, nil
-	}
-
-	args := make([]any, 0, len(filteredCodes))
-	placeholders := make([]string, 0, len(filteredCodes))
-	for _, code := range filteredCodes {
-		args = append(args, code)
-		placeholders = append(placeholders, "?")
-	}
-
-	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id
-		FROM sso_menu
-		WHERE del_flag = 0
-		  AND own_type = 2
-		  AND menu_code IN (`+strings.Join(placeholders, ",")+`)
-	`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	return readAllMenuIDs(rows)
-}
-
-func (repo *Repository) mergeInstitutionMenuRelations(ctx context.Context, canonicalID int64, aliasIDs []int64) error {
-	args := make([]any, 0, len(aliasIDs)+2)
-	placeholders := make([]string, 0, len(aliasIDs))
-	for _, aliasID := range aliasIDs {
-		args = append(args, aliasID)
-		placeholders = append(placeholders, "?")
-	}
-
-	roleArgs := append([]any{canonicalID}, args...)
-	roleArgs = append(roleArgs, canonicalID)
-	if _, err := repo.db.ExecContext(ctx, `
-		INSERT INTO sso_role_menu (role_id, menu_id)
-		SELECT DISTINCT rm.role_id, ?
-		FROM sso_role_menu rm
-		WHERE rm.menu_id IN (`+strings.Join(placeholders, ",")+`)
-		  AND NOT EXISTS (
-			SELECT 1
-			FROM sso_role_menu existing
-			WHERE existing.role_id = rm.role_id
-			  AND existing.menu_id = ?
-		  )
-	`, roleArgs...); err != nil {
-		return err
-	}
-
-	moduleArgs := append([]any{canonicalID}, args...)
-	moduleArgs = append(moduleArgs, canonicalID)
-	if _, err := repo.db.ExecContext(ctx, `
-		INSERT INTO sys_module_menu (module_id, menu_id, create_time, del_flag, version)
-		SELECT DISTINCT smm.module_id, ?, NOW(), 0, 0
-		FROM sys_module_menu smm
-		WHERE smm.menu_id IN (`+strings.Join(placeholders, ",")+`)
-		  AND IFNULL(smm.del_flag, 0) = 0
-		  AND NOT EXISTS (
-			SELECT 1
-			FROM sys_module_menu existing
-			WHERE existing.module_id = smm.module_id
-			  AND existing.menu_id = ?
-			  AND IFNULL(existing.del_flag, 0) = 0
-		  )
-	`, moduleArgs...); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (repo *Repository) deleteInstitutionMenusByIDs(ctx context.Context, menuIDs []int64) error {
-	if len(menuIDs) == 0 {
-		return nil
-	}
-
-	args := make([]any, 0, len(menuIDs))
-	placeholders := make([]string, 0, len(menuIDs))
-	for _, id := range menuIDs {
-		if id <= 0 {
-			continue
-		}
-		args = append(args, id)
-		placeholders = append(placeholders, "?")
-	}
-	if len(placeholders) == 0 {
-		return nil
-	}
-
-	if _, err := repo.db.ExecContext(ctx, `
-		DELETE FROM sys_module_menu
-		WHERE menu_id IN (`+strings.Join(placeholders, ",")+`)
-	`, args...); err != nil {
-		return err
-	}
-
-	if _, err := repo.db.ExecContext(ctx, `
-		DELETE FROM sso_role_menu
-		WHERE menu_id IN (`+strings.Join(placeholders, ",")+`)
-	`, args...); err != nil {
-		return err
-	}
-
-	if _, err := repo.db.ExecContext(ctx, `
-		DELETE FROM sso_menu
-		WHERE id IN (`+strings.Join(placeholders, ",")+`)
-	`, args...); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 type institutionMenuNodeSpec struct {
 	Name       string
 	Code       string
@@ -1301,6 +1140,7 @@ func (repo *Repository) ensureInstitutionMenuNode(ctx context.Context, spec inst
 	if strings.TrimSpace(spec.Name) == "" {
 		return 0, fmt.Errorf("menu name is required")
 	}
+	spec.Code = institutionmenu.NormalizeCode(spec.Code)
 
 	if id, err := repo.findMenuIDByCode(ctx, spec.Code); err != nil {
 		return 0, err
@@ -1391,14 +1231,17 @@ func (repo *Repository) findDirectChildMenuIDByCode(ctx context.Context, pid int
 		return 0, nil
 	}
 
-	rows, err := repo.db.QueryContext(ctx, `
+	normalized := institutionmenu.NormalizeCode(code)
+	query := `
 		SELECT id
 		FROM sso_menu
 		WHERE del_flag = 0
 		  AND own_type = 2
 		  AND pid = ?
-		  AND menu_code = ?
-	`, pid, code)
+		  AND menu_code IN (?, ?)
+		LIMIT 1
+	`
+	rows, err := repo.db.QueryContext(ctx, query, pid, code, normalized)
 	if err != nil {
 		return 0, err
 	}
@@ -1573,4 +1416,378 @@ func emptyToNullString(value string) any {
 		return nil
 	}
 	return value
+}
+
+func (row *institutionMenuCatalogRow) pathParts(rowsByID map[int64]*institutionMenuCatalogRow) []string {
+	if row == nil {
+		return nil
+	}
+	if row.path != nil {
+		return row.path
+	}
+	if row.PID <= 0 {
+		row.path = []string{row.Name}
+		return row.path
+	}
+
+	parent := rowsByID[row.PID]
+	if parent == nil {
+		row.path = []string{row.Name}
+		return row.path
+	}
+
+	parentPath := append([]string(nil), parent.pathParts(rowsByID)...)
+	row.path = append(parentPath, row.Name)
+	return row.path
+}
+
+func (row *institutionMenuCatalogRow) pathKey(rowsByID map[int64]*institutionMenuCatalogRow) string {
+	return institutionMenuPathKey(row.pathParts(rowsByID))
+}
+
+func (row *institutionMenuCatalogRow) topName(rowsByID map[int64]*institutionMenuCatalogRow) string {
+	parts := row.pathParts(rowsByID)
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[0]
+}
+
+func institutionMenuPathKey(parts []string) string {
+	trimmed := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		trimmed = append(trimmed, part)
+	}
+	return strings.Join(trimmed, " / ")
+}
+
+func buildInstitutionCanonicalCodeMap() map[string]string {
+	codes := make(map[string]string, 256)
+	routePathByCode := make(map[string][2]string, 64)
+
+	for _, parent := range institutionMenuSeeds {
+		parentPath := []string{parent.ParentName}
+		codes[institutionMenuPathKey(parentPath)] = institutionmenu.NormalizeCode(parent.ParentCode)
+		for _, child := range parent.Children {
+			childPath := append(append([]string(nil), parentPath...), child.Name)
+			codes[institutionMenuPathKey(childPath)] = institutionmenu.NormalizeCode(child.Code)
+			for _, authority := range child.Authorities {
+				authorityPath := append(append([]string(nil), childPath...), authority.Name)
+				codes[institutionMenuPathKey(authorityPath)] = institutionmenu.NormalizeCode(authority.Code)
+			}
+		}
+	}
+
+	for _, group := range institutionmenu.VisibleRouteCatalog {
+		groupPath := []string{group.Name}
+		codes[institutionMenuPathKey(groupPath)] = institutionmenu.NormalizeCode(group.Code)
+		for _, child := range group.Children {
+			childPath := append(append([]string(nil), groupPath...), child.Name)
+			codes[institutionMenuPathKey(childPath)] = institutionmenu.NormalizeCode(child.Code)
+			routePathByCode[child.Code] = [2]string{group.Name, child.Name}
+		}
+	}
+
+	for _, seed := range institutionRouteAuthoritySeeds {
+		routePath, exists := routePathByCode[seed.RouteCode]
+		if !exists {
+			continue
+		}
+		for _, authority := range seed.Authorities {
+			authorityPath := []string{routePath[0], routePath[1], authority.Name}
+			codes[institutionMenuPathKey(authorityPath)] = institutionmenu.NormalizeCode(authority.Code)
+		}
+	}
+
+	return codes
+}
+
+func buildInstitutionCanonicalPathIndex(codes map[string]string) map[string][]string {
+	index := make(map[string][]string, len(codes))
+	for pathKey := range codes {
+		parts := strings.Split(pathKey, " / ")
+		if len(parts) == 0 {
+			continue
+		}
+		key := fmt.Sprintf("%s|%d|%s", parts[0], len(parts), parts[len(parts)-1])
+		index[key] = append(index[key], pathKey)
+	}
+	return index
+}
+
+func (repo *Repository) cleanupInstitutionMenuCatalog(ctx context.Context) error {
+	canonicalCodes := buildInstitutionCanonicalCodeMap()
+	canonicalPaths := buildInstitutionCanonicalPathIndex(canonicalCodes)
+
+	for pass := 0; pass < 12; pass++ {
+		rows, rowsByID, err := repo.loadInstitutionMenuCatalogRows(ctx)
+		if err != nil {
+			return err
+		}
+
+		changedCode, err := repo.rewriteInstitutionMenuCodes(ctx, rows, rowsByID, canonicalCodes)
+		if err != nil {
+			return err
+		}
+
+		changedDuplicate, err := repo.mergeDuplicateInstitutionMenuPaths(ctx, rows, rowsByID, canonicalCodes)
+		if err != nil {
+			return err
+		}
+
+		changedMisplaced, err := repo.mergeMisplacedInstitutionMenus(ctx, rows, rowsByID, canonicalPaths)
+		if err != nil {
+			return err
+		}
+
+		if !changedCode && !changedDuplicate && !changedMisplaced {
+			return nil
+		}
+	}
+
+	return nil
+}
+
+func (repo *Repository) loadInstitutionMenuCatalogRows(ctx context.Context) ([]*institutionMenuCatalogRow, map[int64]*institutionMenuCatalogRow, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(pid, 0), IFNULL(level, 0), TRIM(IFNULL(menu_name, '')), TRIM(IFNULL(menu_code, ''))
+		FROM sso_menu
+		WHERE own_type = 2 AND del_flag = 0
+		ORDER BY IFNULL(level, 0), IFNULL(sort, 0), id
+	`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	items := make([]*institutionMenuCatalogRow, 0, 256)
+	itemsByID := make(map[int64]*institutionMenuCatalogRow, 256)
+	for rows.Next() {
+		item := &institutionMenuCatalogRow{}
+		if err := rows.Scan(&item.ID, &item.PID, &item.Level, &item.Name, &item.Code); err != nil {
+			return nil, nil, err
+		}
+		items = append(items, item)
+		itemsByID[item.ID] = item
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return items, itemsByID, nil
+}
+
+func (repo *Repository) rewriteInstitutionMenuCodes(ctx context.Context, rows []*institutionMenuCatalogRow, rowsByID map[int64]*institutionMenuCatalogRow, canonicalCodes map[string]string) (bool, error) {
+	desiredCodes := make(map[int64]string, len(rows))
+	changed := false
+
+	for _, row := range rows {
+		pathKey := row.pathKey(rowsByID)
+		desired := strings.TrimSpace(canonicalCodes[pathKey])
+		parentCode := ""
+		if parent := rowsByID[row.PID]; parent != nil {
+			parentCode = strings.TrimSpace(desiredCodes[parent.ID])
+			if parentCode == "" {
+				parentCode = strings.TrimSpace(parent.Code)
+			}
+		}
+		if desired == "" {
+			desired = institutionmenu.DeriveCode(row.Level, row.Code, row.Name, parentCode)
+		}
+		desired = strings.TrimSpace(institutionmenu.NormalizeCode(desired))
+		if desired == "" {
+			desiredCodes[row.ID] = row.Code
+			continue
+		}
+
+		desiredCodes[row.ID] = desired
+		if desired == row.Code {
+			continue
+		}
+
+		if _, err := repo.db.ExecContext(ctx, `
+			UPDATE sso_menu
+			SET menu_code = ?,
+			    update_id = 'system',
+			    update_time = NOW()
+			WHERE id = ?
+		`, desired, row.ID); err != nil {
+			return false, err
+		}
+		row.Code = desired
+		changed = true
+	}
+
+	return changed, nil
+}
+
+func (repo *Repository) mergeDuplicateInstitutionMenuPaths(ctx context.Context, rows []*institutionMenuCatalogRow, rowsByID map[int64]*institutionMenuCatalogRow, canonicalCodes map[string]string) (bool, error) {
+	grouped := make(map[string][]*institutionMenuCatalogRow, len(rows))
+	for _, row := range rows {
+		key := fmt.Sprintf("%d|%d|%s", row.PID, row.Level, row.Name)
+		grouped[key] = append(grouped[key], row)
+	}
+
+	changed := false
+	for _, group := range grouped {
+		if len(group) <= 1 {
+			continue
+		}
+
+		keeper := pickInstitutionMenuKeeper(group, rowsByID, canonicalCodes)
+		for _, row := range group {
+			if row.ID == keeper.ID {
+				continue
+			}
+			if err := repo.mergeInstitutionMenuNode(ctx, keeper.ID, row.ID); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+
+	return changed, nil
+}
+
+func (repo *Repository) mergeMisplacedInstitutionMenus(ctx context.Context, rows []*institutionMenuCatalogRow, rowsByID map[int64]*institutionMenuCatalogRow, canonicalPaths map[string][]string) (bool, error) {
+	pathToRow := make(map[string]*institutionMenuCatalogRow, len(rows))
+	for _, row := range rows {
+		pathToRow[row.pathKey(rowsByID)] = row
+	}
+
+	removed := make(map[int64]struct{}, 16)
+	changed := false
+	for _, row := range rows {
+		if row.Level <= 1 {
+			continue
+		}
+		if _, exists := removed[row.ID]; exists {
+			continue
+		}
+
+		currentPath := row.pathKey(rowsByID)
+		pathKey := fmt.Sprintf("%s|%d|%s", row.topName(rowsByID), row.Level, row.Name)
+		targetPaths := canonicalPaths[pathKey]
+		if len(targetPaths) != 1 {
+			continue
+		}
+		targetPath := targetPaths[0]
+		if targetPath == currentPath {
+			continue
+		}
+
+		target := pathToRow[targetPath]
+		if target == nil || target.ID == row.ID {
+			continue
+		}
+		if _, exists := removed[target.ID]; exists {
+			continue
+		}
+
+		if err := repo.mergeInstitutionMenuNode(ctx, target.ID, row.ID); err != nil {
+			return false, err
+		}
+		removed[row.ID] = struct{}{}
+		changed = true
+	}
+
+	return changed, nil
+}
+
+func pickInstitutionMenuKeeper(group []*institutionMenuCatalogRow, rowsByID map[int64]*institutionMenuCatalogRow, canonicalCodes map[string]string) *institutionMenuCatalogRow {
+	if len(group) == 0 {
+		return nil
+	}
+
+	keeper := group[0]
+	canonicalCode := canonicalCodes[group[0].pathKey(rowsByID)]
+	for _, row := range group {
+		switch {
+		case canonicalCode != "" && row.Code == canonicalCode:
+			return row
+		case canonicalCode == "" && isCanonicalMenuCode(row.Level, row.Code) && !isCanonicalMenuCode(keeper.Level, keeper.Code):
+			keeper = row
+		case canonicalCode == "" && isCanonicalMenuCode(row.Level, row.Code) == isCanonicalMenuCode(keeper.Level, keeper.Code) && row.ID < keeper.ID:
+			keeper = row
+		case canonicalCode != "" && keeper.Code != canonicalCode && row.ID < keeper.ID:
+			keeper = row
+		}
+	}
+	return keeper
+}
+
+func isCanonicalMenuCode(level int, code string) bool {
+	switch level {
+	case 1:
+		return strings.HasPrefix(strings.TrimSpace(code), "grp:")
+	case 2:
+		return strings.HasPrefix(strings.TrimSpace(code), "page:")
+	case 3:
+		return strings.HasPrefix(strings.TrimSpace(code), "perm:")
+	default:
+		return false
+	}
+}
+
+func (repo *Repository) mergeInstitutionMenuNode(ctx context.Context, keepID, removeID int64) error {
+	if keepID <= 0 || removeID <= 0 || keepID == removeID {
+		return nil
+	}
+
+	if err := repo.copyInstitutionModuleBindings(ctx, removeID, keepID); err != nil {
+		return err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO sso_role_menu (role_id, menu_id)
+		SELECT rm.role_id, ?
+		FROM sso_role_menu rm
+		WHERE rm.menu_id = ?
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM sso_role_menu existing
+		    WHERE existing.role_id = rm.role_id
+		      AND existing.menu_id = ?
+		  )
+	`, keepID, removeID, keepID); err != nil {
+		return err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		UPDATE sso_menu
+		SET pid = ?,
+		    update_id = 'system',
+		    update_time = NOW()
+		WHERE own_type = 2
+		  AND del_flag = 0
+		  AND pid = ?
+	`, keepID, removeID); err != nil {
+		return err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM sso_role_menu
+		WHERE menu_id = ?
+	`, removeID); err != nil {
+		return err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM sys_module_menu
+		WHERE menu_id = ?
+	`, removeID); err != nil {
+		return err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM sso_menu
+		WHERE id = ?
+	`, removeID); err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -7,11 +7,42 @@ import (
 	"strings"
 	"time"
 
+	"go-migration-platform/pkg/institutionmenu"
 	"go-migration-platform/services/iam/internal/model"
 )
 
 type Repository struct {
 	db *sql.DB
+}
+
+func normalizeInstitutionMenuCodeForOwnType(menuCode string, ownType int) string {
+	menuCode = strings.TrimSpace(menuCode)
+	if ownType == 2 {
+		return institutionmenu.NormalizeCode(menuCode)
+	}
+	return menuCode
+}
+
+func normalizeMenuModel(item *model.Menu) {
+	if item == nil {
+		return
+	}
+	ownType := 0
+	if item.OwnType != nil {
+		ownType = *item.OwnType
+	}
+	item.MenuCode = normalizeInstitutionMenuCodeForOwnType(item.MenuCode, ownType)
+}
+
+func menuCodeCandidates(ownType int, menuCode string) []string {
+	menuCode = strings.TrimSpace(menuCode)
+	if menuCode == "" {
+		return nil
+	}
+	if ownType == 2 {
+		return []string{institutionmenu.NormalizeCode(menuCode)}
+	}
+	return []string{menuCode}
 }
 
 func New(db *sql.DB) *Repository {
@@ -287,11 +318,15 @@ func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int6
 		if !item.Valid || strings.TrimSpace(item.String) == "" {
 			continue
 		}
-		if _, ok := seen[item.String]; ok {
+		menuCode := normalizeInstitutionMenuCodeForOwnType(item.String, ownType)
+		if menuCode == "" {
 			continue
 		}
-		seen[item.String] = struct{}{}
-		items = append(items, item.String)
+		if _, ok := seen[menuCode]; ok {
+			continue
+		}
+		seen[menuCode] = struct{}{}
+		items = append(items, menuCode)
 	}
 	return items, rows.Err()
 }
@@ -582,12 +617,29 @@ func (repo *Repository) GetMenuByID(ctx context.Context, id int64) (model.Menu, 
 	if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.Level); err != nil {
 		return model.Menu{}, err
 	}
+	normalizeMenuModel(&item)
 	return item, nil
 }
 
 func (repo *Repository) MenuCodeExists(ctx context.Context, ownType int, menuCode string, excludeID *int64) (bool, error) {
-	filters := []string{"del_flag = 0", "own_type = ?", "TRIM(IFNULL(menu_code, '')) = ?"}
-	args := []any{ownType, strings.TrimSpace(menuCode)}
+	candidates := menuCodeCandidates(ownType, menuCode)
+	if len(candidates) == 0 {
+		return false, nil
+	}
+
+	filters := []string{"del_flag = 0", "own_type = ?"}
+	args := []any{ownType}
+	if len(candidates) == 1 {
+		filters = append(filters, "TRIM(IFNULL(menu_code, '')) = ?")
+		args = append(args, candidates[0])
+	} else {
+		placeholders := make([]string, 0, len(candidates))
+		for _, candidate := range candidates {
+			placeholders = append(placeholders, "?")
+			args = append(args, candidate)
+		}
+		filters = append(filters, "TRIM(IFNULL(menu_code, '')) IN ("+strings.Join(placeholders, ",")+")")
+	}
 	if excludeID != nil && *excludeID > 0 {
 		filters = append(filters, "id <> ?")
 		args = append(args, *excludeID)
@@ -763,6 +815,7 @@ func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType 
 		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
 			return nil, err
 		}
+		normalizeMenuModel(&item)
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -794,6 +847,7 @@ func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownTy
 		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
 			return nil, err
 		}
+		normalizeMenuModel(&item)
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -834,6 +888,7 @@ func (repo *Repository) listMenusByIDSet(ctx context.Context, menuIDs map[int64]
 		if err := rows.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce); err != nil {
 			return nil, err
 		}
+		normalizeMenuModel(&item)
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -1348,6 +1403,7 @@ func (repo *Repository) collectMenusWithParents(ctx context.Context, selected ma
 			}
 			return nil, err
 		}
+		normalizeMenuModel(&item)
 		menuMap[item.ID] = item
 		if item.PID > 0 {
 			pending = append(pending, item.PID)

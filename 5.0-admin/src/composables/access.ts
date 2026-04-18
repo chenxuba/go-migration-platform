@@ -5,7 +5,9 @@ export function useAccess() {
   const userStore = useUserStore()
   const roles = computed(() => userStore.roles)
   const hasAccess = (roles: AccessCodeLike) => {
-    const accessRoles = userStore.roles
+    const accessRoles = (userStore.roles ?? [])
+      .map(item => normalizeAccessCode(item))
+      .filter(Boolean)
     const roleArr = toArray(roles)
       .flat(1)
       .map(item => normalizeAccessCode(item))
