@@ -687,6 +687,17 @@ function handleImportExportAction({ key }) {
   }
 }
 
+function buildFixedExportConditions(conditionMap = new Map()) {
+  return [
+    { label: '意向度', value: conditionMap.get('意向度') || '全部' },
+    { label: '跟进状态', value: conditionMap.get('跟进状态') || '全部' },
+    { label: '性别', value: conditionMap.get('性别') || '全部' },
+    { label: '最近跟进', value: conditionMap.get('最近跟进') || '-' },
+    { label: '下次跟进', value: conditionMap.get('下次跟进') || '-' },
+    { label: '创建时间', value: conditionMap.get('创建时间') || '-' },
+  ]
+}
+
 function syncExportConditions() {
   const conditions = allFilterRef.value?.getOrderedConditions?.() || []
   const mappedConditions = conditions
@@ -702,20 +713,21 @@ function syncExportConditions() {
     })
     .filter(item => item.label && item.value)
 
+  const conditionMap = new Map(mappedConditions.map(item => [item.label, item.value]))
+  const fixedConditions = buildFixedExportConditions(conditionMap)
+  const extraConditions = mappedConditions.filter(item => !fixedConditions.some(fixed => fixed.label === item.label))
+
   if (mappedConditions.length === 0) {
     exportModalConditionItems.value = [{
       label: '导出范围',
       value: '当前列表全部数据',
     }]
-    exportConditionItems.value = [{
-      label: '导出范围',
-      value: '当前列表全部数据',
-    }]
+    exportConditionItems.value = fixedConditions
     return
   }
 
   exportModalConditionItems.value = mappedConditions
-  exportConditionItems.value = mappedConditions
+  exportConditionItems.value = [...fixedConditions, ...extraConditions]
 }
 
 function buildExportQueryModel() {
@@ -806,13 +818,9 @@ function triggerBlobDownload(response) {
 }
 
 function getExportRecordDisplayConditions(record) {
-  const items = Array.isArray(record?.queryConditions) ? record.queryConditions : []
-  if (items.length > 0)
-    return items
-  return [{
-    label: '导出范围',
-    value: '当前列表全部数据',
-  }]
+  const recordConditions = Array.isArray(record?.queryConditions) ? record.queryConditions : []
+  const conditionMap = new Map(recordConditions.map(item => [item.label, item.value]))
+  return buildFixedExportConditions(conditionMap)
 }
 
 async function handleViewExportRecord() {
