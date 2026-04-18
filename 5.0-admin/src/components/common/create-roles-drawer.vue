@@ -110,6 +110,12 @@ function handleAuthorityChange(authority: Authority, child: AuthorityChild, pare
   clearPermissionValidation()
 }
 
+function isLastVisibleAuthority(parentIndex: number, childIndex: number, authorityIndex: number, parent: AuthorityGroup, child: AuthorityChild) {
+  return parentIndex === filteredBoxList.value.length - 1
+    && childIndex === getFilteredChildren(parent).length - 1
+    && authorityIndex === getFilteredchildren(child, parent).length - 1
+}
+
 // 包装清空已选函数
 function handleClearAllSelected() {
   clearAllSelected()
@@ -637,7 +643,7 @@ const drawerWidth = computed(() => {
                     </div>
                   </div>
                   <template v-if="isParentExpanded(item.id)">
-                    <div v-for="child in getFilteredChildren(item)" :key="child.id">
+                    <div v-for="(child, childIndex) in getFilteredChildren(item)" :key="child.id">
                       <div
                         class="text-14px text-#222 font-400 h-40px flex items-center justify-between shadow-box pl-38px">
                         <div>
@@ -661,9 +667,7 @@ const drawerWidth = computed(() => {
                           <div
                             class="text-12px text-#222 font-400 min-h-58px py-6px flex items-center justify-between shadow-box bg-#fcfcfc"
                             :class="{
-                              'last-child':
-                                idx
-                                === getFilteredchildren(child, item).length - 1,
+                              'last-child': isLastVisibleAuthority(index, childIndex, idx, item, child),
                             }">
                             <div class="flex items-center pl-60px">
                               <a-checkbox v-model:checked="authority.checked" @change="

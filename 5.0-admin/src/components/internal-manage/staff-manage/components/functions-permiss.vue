@@ -7,6 +7,7 @@ import {
 } from '@ant-design/icons-vue'
 import { Empty } from 'ant-design-vue'
 import {
+  type AuthorityChild,
   type AuthorityGroup,
   useRolePermissions,
 } from '@/composables/useRolePermissions'
@@ -98,6 +99,12 @@ const selectedPermissionCount = computed(() => {
 
   return { functionCount, dataCount }
 })
+
+function isLastVisibleAuthority(parentIndex: number, childIndex: number, authorityIndex: number, parent: AuthorityGroup, child: AuthorityChild) {
+  return parentIndex === filteredBoxList.value.length - 1
+    && childIndex === getFilteredChildren(parent).length - 1
+    && authorityIndex === getFilteredchildren(child, parent).length - 1
+}
 
 // 获取权限列表
 async function getMenuList() {
@@ -257,7 +264,7 @@ watch(
               </div>
             </div>
             <template v-if="isParentExpanded(item.id)">
-              <div v-for="child in getFilteredChildren(item)" :key="child.id">
+              <div v-for="(child, childIndex) in getFilteredChildren(item)" :key="child.id">
                 <div class="text-14px text-#222 font-400 h-40px flex items-center justify-between shadow-box pl-16px">
                   <div>
                     <span class="font-500" v-html="highlightText(child.menuName, searchValue)" />
@@ -267,10 +274,7 @@ watch(
                   <div v-for="(authority, idx) in getFilteredchildren(child, item)" :key="authority.id">
                                         <div
                       class="text-12px text-#222 font-400 min-h-58px py-6px flex items-center justify-between shadow-box bg-#fcfcfc"
-                      :class="{
-                        'last-child':
-                          idx === getFilteredchildren(child, item).length - 1,
-                      }">
+                      :class="{ 'last-child': isLastVisibleAuthority(index, childIndex, idx, item, child) }">
                       <div class="flex items-center pl-16px">
                         <div class="w-16px h-16px flex items-center justify-center">
                           <CheckOutlined :class="authority.checked ? 'text-#06f' : 'text-#fcfcfc'" class="text-16px mt--8px" />
