@@ -606,7 +606,7 @@ watch(institutionRenewalOpen, (open) => {
                   编辑
                 </a-button>
                 <a-button type="link" class="action-cell__link" @click="openPermissionModal(record)">
-                  权限
+                  版本权限
                 </a-button>
                 <a-button type="link" class="action-cell__link" @click="openRenewalModal(record)">
                   续期

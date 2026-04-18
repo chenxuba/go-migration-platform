@@ -169,6 +169,10 @@ func (svc *Service) ListInstitutionRenewalRecords(institutionID int64) ([]model.
 	return svc.repo.ListInstitutionRenewalRecords(context.Background(), institutionID)
 }
 
+func (svc *Service) ListInstitutionVersionChangeRecords(institutionID int64) ([]model.InstitutionVersionChangeRecord, error) {
+	return svc.repo.ListInstitutionVersionChangeRecords(context.Background(), institutionID)
+}
+
 func (svc *Service) RenewInstitution(input model.InstitutionRenewalMutation, operatorID *int64) (model.InstitutionRenewalResult, error) {
 	return svc.repo.RenewInstitution(context.Background(), input, operatorID)
 }

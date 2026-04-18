@@ -37,6 +37,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/institutions/permission-detail", handler.institutionPermissionDetail)
 	mux.HandleFunc("/api/v1/platform/institutions/permission-version", handler.replaceInstitutionPermissionVersion)
 	mux.HandleFunc("/api/v1/platform/institutions/renewal-records", handler.institutionRenewalRecords)
+	mux.HandleFunc("/api/v1/platform/institutions/version-change-records", handler.institutionVersionChangeRecords)
 	mux.HandleFunc("/api/v1/platform/institutions/renew", handler.renewInstitution)
 	mux.HandleFunc("/api/v1/platform/dicts", handler.dicts)
 	mux.HandleFunc("/api/v1/platform/dicts/create", handler.createDict)
@@ -433,6 +434,31 @@ func (handler *Handler) institutionRenewalRecords(w http.ResponseWriter, r *http
 	result, err := handler.service.ListInstitutionRenewalRecords(institutionID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load institution renewal records failed", ctx.RequestID)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) institutionVersionChangeRecords(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	institutionID := int64(parseInt(r.URL.Query().Get("institutionId"), 0))
+	if institutionID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "institutionId is required", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.ListInstitutionVersionChangeRecords(institutionID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "load institution version change records failed", ctx.RequestID)
 		return
 	}
 

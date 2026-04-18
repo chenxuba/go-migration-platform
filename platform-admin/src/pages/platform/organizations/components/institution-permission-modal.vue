@@ -40,6 +40,13 @@ const openTypeLabelMap: Record<number, string> = {
   4: '旗舰版',
 }
 
+const standardVersionOpenTypeMap: Record<string, number> = {
+  体验版: 1,
+  基础版: 2,
+  高级版: 3,
+  旗舰版: 4,
+}
+
 const statusLabelMap: Record<number, string> = {
   1: '启用',
   2: '停用',
@@ -69,6 +76,25 @@ const rootExpandedKeys = computed(() => baseMenuTree.value.map(node => Number(no
 const totalLeafCount = computed(() => countLeafNodes(baseMenuTree.value))
 const templateLeafCount = computed(() => collectLeafKeysBySelectedSet(baseMenuTree.value, templateCheckedKeys.value).length)
 const editableLeafCount = computed(() => collectLeafKeysBySelectedSet(baseMenuTree.value, [...editableCheckedKeys.value, ...editableHalfCheckedKeys.value]).length)
+const versionSelectOptions = computed(() => {
+  const currentOpenType = Number(detail.value?.openType || 0)
+  return versionOptions.value
+    .filter((item) => {
+      const mappedOpenType = getVersionOpenTypeByName(item.name)
+      if (!mappedOpenType || !currentOpenType)
+        return true
+      if (currentOpenType === 1)
+        return mappedOpenType === 1
+      return mappedOpenType >= 2
+    })
+    .map(item => ({ value: item.id, label: item.name }))
+})
+const versionChangeHint = computed(() => {
+  const currentOpenType = Number(detail.value?.openType || 0)
+  if (currentOpenType === 1)
+    return '体验版升级正式版本仍需通过续期处理，这里仅维护当前版本对应的权限范围。'
+  return '在有效期内切换基础版、高级版、旗舰版时，这里会同步更新机构开通版本，但不会改动到期时间。'
+})
 
 function closeModal() {
   emit('update:open', false)
@@ -96,6 +122,10 @@ function getStatusClass(value?: number) {
   if (normalized === 4)
     return 'status-chip--expired'
   return 'status-chip--disabled'
+}
+
+function getVersionOpenTypeByName(name?: string) {
+  return standardVersionOpenTypeMap[String(name || '').trim()] || 0
 }
 
 function isSameMenuScope(left: number[] = [], right: number[] = []) {
@@ -242,16 +272,16 @@ async function submitVersionBinding() {
 
     const res = await replaceInstitutionPermissionVersionApi({ institutionId, moduleId, menuIds })
     if (res.code !== 200) {
-      messageService.error(res.message || '同步机构权限失败')
+      messageService.error(res.message || '保存机构版本与权限失败')
       return
     }
-    messageService.success('机构权限同步成功')
+    messageService.success('机构版本与权限保存成功')
     await loadDetail(institutionId)
     emit('saved')
   }
   catch (error: any) {
     console.error('replace institution permission version failed', error)
-    messageService.error(error?.message || '同步机构权限失败')
+    messageService.error(error?.message || '保存机构版本与权限失败')
   }
   finally {
     submitting.value = false
@@ -377,14 +407,19 @@ watch(
         </div>
 
         <div class="permission-action">
-          <a-select
-            v-model:value="selectedModuleId"
-            class="permission-action__select"
-            placeholder="请选择权限版本"
-            :options="versionOptions.map(item => ({ value: item.id, label: item.name }))"
-          />
+          <div class="permission-action__main">
+            <a-select
+              v-model:value="selectedModuleId"
+              class="permission-action__select"
+              placeholder="请选择权限版本"
+              :options="versionSelectOptions"
+            />
+            <div class="permission-action__hint">
+              {{ versionChangeHint }}
+            </div>
+          </div>
           <a-button type="primary" :loading="submitting" @click="submitVersionBinding">
-            同步权限
+            保存版本与权限
           </a-button>
         </div>
 
@@ -592,8 +627,23 @@ watch(
   background: #fff;
 }
 
+.permission-action__main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .permission-action__select {
   width: 340px;
+  max-width: 100%;
+}
+
+.permission-action__hint {
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .permission-toolbar__search {

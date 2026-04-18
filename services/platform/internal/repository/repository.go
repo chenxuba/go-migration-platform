@@ -55,6 +55,21 @@ func institutionOpenTypeModuleName(openType int) string {
 	}
 }
 
+func institutionModuleNameOpenType(moduleName string) int {
+	switch strings.TrimSpace(moduleName) {
+	case "体验版":
+		return 1
+	case "基础版":
+		return 2
+	case "高级版":
+		return 3
+	case "旗舰版":
+		return 4
+	default:
+		return 0
+	}
+}
+
 func sanitizeInstitutionMenuScope(selectedMenuIDs, moduleMenuIDs []int64) ([]int64, error) {
 	if len(selectedMenuIDs) == 0 {
 		return nil, nil
@@ -162,6 +177,9 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	if err := repo.ensureInstitutionRenewalSchema(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := repo.ensureInstitutionVersionChangeSchema(context.Background()); err != nil {
 		return nil, err
 	}
 	if err := repo.ensureVersionModuleSchema(context.Background()); err != nil {
@@ -339,6 +357,28 @@ func (repo *Repository) ensureInstitutionRenewalSchema(ctx context.Context) erro
 			del_flag TINYINT(1) DEFAULT 0,
 			PRIMARY KEY (id),
 			KEY idx_org_institution_renewal_record_inst_del_time (institution_id, del_flag, create_time)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+	`)
+	return err
+}
+
+func (repo *Repository) ensureInstitutionVersionChangeSchema(ctx context.Context) error {
+	_, err := repo.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS org_institution_version_change_record (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			institution_id BIGINT NOT NULL,
+			before_open_type TINYINT NOT NULL DEFAULT 2,
+			before_module_id BIGINT DEFAULT NULL,
+			before_version_name VARCHAR(64) NOT NULL DEFAULT '',
+			after_open_type TINYINT NOT NULL DEFAULT 2,
+			after_module_id BIGINT DEFAULT NULL,
+			after_version_name VARCHAR(64) NOT NULL DEFAULT '',
+			operator_id BIGINT DEFAULT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) DEFAULT 0,
+			PRIMARY KEY (id),
+			KEY idx_org_institution_version_change_record_inst_del_time (institution_id, del_flag, create_time)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`)
 	return err
@@ -1271,6 +1311,53 @@ func (repo *Repository) ListInstitutionRenewalRecords(ctx context.Context, insti
 	return items, rows.Err()
 }
 
+func (repo *Repository) ListInstitutionVersionChangeRecords(ctx context.Context, institutionID int64) ([]model.InstitutionVersionChangeRecord, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT r.id,
+		       r.institution_id,
+		       IFNULL(r.before_open_type, 2),
+		       IFNULL(r.before_module_id, 0),
+		       IFNULL(r.before_version_name, ''),
+		       IFNULL(r.after_open_type, 2),
+		       IFNULL(r.after_module_id, 0),
+		       IFNULL(r.after_version_name, ''),
+		       IFNULL(r.operator_id, 0),
+		       IFNULL(NULLIF(TRIM(u.nick_name), ''), NULLIF(TRIM(u.username), ''), ''),
+		       IFNULL(DATE_FORMAT(r.create_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM org_institution_version_change_record r
+		LEFT JOIN sso_user u ON u.id = r.operator_id AND u.del_flag = 0
+		WHERE r.institution_id = ? AND r.del_flag = 0
+		ORDER BY r.id DESC
+	`, institutionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.InstitutionVersionChangeRecord, 0, 16)
+	for rows.Next() {
+		var item model.InstitutionVersionChangeRecord
+		if err := rows.Scan(
+			&item.ID,
+			&item.InstitutionID,
+			&item.BeforeOpenType,
+			&item.BeforeModuleID,
+			&item.BeforeVersionName,
+			&item.AfterOpenType,
+			&item.AfterModuleID,
+			&item.AfterVersionName,
+			&item.OperatorID,
+			&item.OperatorName,
+			&item.CreateTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	return items, rows.Err()
+}
+
 func (repo *Repository) RenewInstitution(ctx context.Context, input model.InstitutionRenewalMutation, operatorID *int64) (model.InstitutionRenewalResult, error) {
 	if input.InstitutionID == nil {
 		return model.InstitutionRenewalResult{}, fmt.Errorf("institutionId is required")
@@ -1563,6 +1650,20 @@ func (repo *Repository) upsertInstitutionProfileTx(ctx context.Context, tx *sql.
 func nullableInt64Value(value *int64) any {
 	if value == nil || *value <= 0 {
 		return nil
+	}
+	return *value
+}
+
+func nullableInt64(number int64) any {
+	if number <= 0 {
+		return nil
+	}
+	return number
+}
+
+func nullableInt64Deref(value *int64) int64 {
+	if value == nil || *value <= 0 {
+		return 0
 	}
 	return *value
 }
@@ -2296,16 +2397,62 @@ func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input mode
 		}
 	}()
 
+	var currentOpenType sql.NullInt64
+	var currentOpenDuration sql.NullString
 	var expireEnd sql.NullTime
 	var statusValue sql.NullInt64
 	if err = tx.QueryRowContext(ctx, `
-		SELECT expire_end_time, IFNULL(status, 0)
+		SELECT IFNULL(open_type, 2),
+		       IFNULL(open_duration, ''),
+		       expire_end_time,
+		       IFNULL(status, 0)
 		FROM org_institution
 		WHERE id = ? AND del_flag = 0
 		LIMIT 1
 		FOR UPDATE
-	`, *input.InstitutionID).Scan(&expireEnd, &statusValue); err != nil {
+	`, *input.InstitutionID).Scan(&currentOpenType, &currentOpenDuration, &expireEnd, &statusValue); err != nil {
 		return err
+	}
+
+	currentModuleID, currentModuleName, lookupCurrentModuleErr := repo.getInstitutionCurrentModuleTx(ctx, tx, *input.InstitutionID)
+	if lookupCurrentModuleErr != nil {
+		return lookupCurrentModuleErr
+	}
+
+	moduleName, lookupErr := repo.getModuleNameTx(ctx, tx, *input.ModuleID)
+	if lookupErr != nil {
+		return lookupErr
+	}
+
+	nextOpenType := institutionModuleNameOpenType(moduleName)
+	storedOpenType := institutionStoredOpenType(currentOpenType)
+	if storedOpenType == 0 {
+		storedOpenType = 2
+	}
+	if nextOpenType > 0 {
+		if storedOpenType >= 2 && nextOpenType == 1 {
+			return fmt.Errorf("已开通基础版、高级版或旗舰版的机构不支持降为体验版")
+		}
+		if storedOpenType == 1 && nextOpenType >= 2 {
+			return fmt.Errorf("体验版升级正式版本请通过续期操作处理")
+		}
+
+		nextOpenDuration := normalizeInstitutionOpenDuration(nextOpenType, currentOpenDuration.String)
+		if _, err = tx.ExecContext(ctx, `
+			UPDATE org_institution
+			SET open_type = ?,
+			    open_duration = ?,
+			    update_id = ?,
+			    update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`,
+			nextOpenType,
+			nextOpenDuration,
+			nullableInt64Value(operatorID),
+			*input.InstitutionID,
+		); err != nil {
+			return err
+		}
 	}
 
 	if err = repo.bindInstitutionModuleTx(
@@ -2323,10 +2470,91 @@ func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input mode
 		return err
 	}
 
+	shouldWriteVersionChangeLog := nextOpenType > 0 && (currentModuleID != *input.ModuleID || storedOpenType != nextOpenType)
+	if shouldWriteVersionChangeLog {
+		beforeVersionName := strings.TrimSpace(currentModuleName)
+		if beforeVersionName == "" {
+			beforeVersionName = institutionOpenTypeModuleName(storedOpenType)
+		}
+		if err = repo.insertInstitutionVersionChangeRecordTx(ctx, tx, model.InstitutionVersionChangeRecord{
+			InstitutionID:     *input.InstitutionID,
+			BeforeOpenType:    storedOpenType,
+			BeforeModuleID:    currentModuleID,
+			BeforeVersionName: beforeVersionName,
+			AfterOpenType:     nextOpenType,
+			AfterModuleID:     *input.ModuleID,
+			AfterVersionName:  moduleName,
+			OperatorID:        nullableInt64Deref(operatorID),
+		}); err != nil {
+			return err
+		}
+	}
+
 	if err = tx.Commit(); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (repo *Repository) getModuleNameTx(ctx context.Context, tx *sql.Tx, moduleID int64) (string, error) {
+	var moduleName sql.NullString
+	if err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(name, '')
+		FROM sys_module
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, moduleID).Scan(&moduleName); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(moduleName.String), nil
+}
+
+func (repo *Repository) getInstitutionCurrentModuleTx(ctx context.Context, tx *sql.Tx, institutionID int64) (int64, string, error) {
+	var moduleID sql.NullInt64
+	var moduleName sql.NullString
+	err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(om.module_id, 0), IFNULL(sm.name, '')
+		FROM org_module om
+		LEFT JOIN sys_module sm ON sm.id = om.module_id AND sm.del_flag = 0
+		WHERE om.org_id = ? AND om.del_flag = 0
+		ORDER BY om.id DESC
+		LIMIT 1
+	`, institutionID).Scan(&moduleID, &moduleName)
+	if err == sql.ErrNoRows {
+		return 0, "", nil
+	}
+	if err != nil {
+		return 0, "", err
+	}
+	return moduleID.Int64, strings.TrimSpace(moduleName.String), nil
+}
+
+func (repo *Repository) insertInstitutionVersionChangeRecordTx(ctx context.Context, tx *sql.Tx, record model.InstitutionVersionChangeRecord) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO org_institution_version_change_record (
+			institution_id,
+			before_open_type,
+			before_module_id,
+			before_version_name,
+			after_open_type,
+			after_module_id,
+			after_version_name,
+			operator_id,
+			create_time,
+			update_time,
+			del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+	`,
+		record.InstitutionID,
+		record.BeforeOpenType,
+		nullableInt64(record.BeforeModuleID),
+		strings.TrimSpace(record.BeforeVersionName),
+		record.AfterOpenType,
+		nullableInt64(record.AfterModuleID),
+		strings.TrimSpace(record.AfterVersionName),
+		nullableInt64(record.OperatorID),
+	)
+	return err
 }
 
 func (repo *Repository) GetInstitutionPermissionDetail(ctx context.Context, institutionID int64) (model.InstitutionPermissionDetail, error) {

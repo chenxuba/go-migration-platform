@@ -153,6 +153,20 @@ export interface InstitutionRenewalResult {
   expireEndTime?: string
 }
 
+export interface InstitutionVersionChangeRecord {
+  id: number
+  institutionId: number
+  beforeOpenType: number
+  beforeModuleId?: number
+  beforeVersionName?: string
+  afterOpenType: number
+  afterModuleId?: number
+  afterVersionName?: string
+  operatorId?: number
+  operatorName?: string
+  createTime?: string
+}
+
 export interface InstitutionPermissionDetail {
   institutionId: number
   organName: string
@@ -210,6 +224,13 @@ export function renewInstitutionApi(data: InstitutionRenewalMutationPayload) {
   return usePost<InstitutionRenewalResult, InstitutionRenewalMutationPayload>(
     '/api/v1/platform/institutions/renew',
     data,
+  )
+}
+
+export function getInstitutionVersionChangeRecordsApi(params: { institutionId: number }) {
+  return useGet<InstitutionVersionChangeRecord[], { institutionId: number }>(
+    '/api/v1/platform/institutions/version-change-records',
+    params,
   )
 }
 

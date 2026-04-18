@@ -269,6 +269,20 @@ type InstitutionRenewalResult struct {
 	ExpireEndTime   string `json:"expireEndTime,omitempty"`
 }
 
+type InstitutionVersionChangeRecord struct {
+	ID                int64  `json:"id"`
+	InstitutionID     int64  `json:"institutionId"`
+	BeforeOpenType    int    `json:"beforeOpenType"`
+	BeforeModuleID    int64  `json:"beforeModuleId,omitempty"`
+	BeforeVersionName string `json:"beforeVersionName,omitempty"`
+	AfterOpenType     int    `json:"afterOpenType"`
+	AfterModuleID     int64  `json:"afterModuleId,omitempty"`
+	AfterVersionName  string `json:"afterVersionName,omitempty"`
+	OperatorID        int64  `json:"operatorId,omitempty"`
+	OperatorName      string `json:"operatorName,omitempty"`
+	CreateTime        string `json:"createTime,omitempty"`
+}
+
 type InstitutionPermissionDetail struct {
 	InstitutionID     int64   `json:"institutionId"`
 	OrganName         string  `json:"organName"`
