@@ -22,6 +22,8 @@ import messageService from '~@/utils/messageService'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import { calculateAge } from '@/utils/date'
 import { ParentRelationshipLabel, IntentionLevel, IntentionLevelLabel, IntentionLevelStyle, FollowUpStatus, FollowUpStatusLabel, FollowUpStatusStyle, Sex, SexLabel, StudentStatus, StudentStatusLabel } from '@/enums'
+import { useAccess } from '@/composables/access'
+import { AccessEnum } from '@/constants/access'
 import dayjs from 'dayjs'
 import { Empty } from 'ant-design-vue'
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
@@ -82,12 +84,14 @@ async function handleSubmitDelete() {
 
 const studentStore = useStudentStore()
 const userStore = useUserStore()
+const { hasAccess } = useAccess()
 const { systemDefaultIsDisplayList, getAllStuFields } = useStudentFields()
 const studentId = computed(() => studentStore.studentId)
 const studentDetail = ref({})
 const oneToOneClassTeacherNames = ref([])
 const router = useRouter()
 const hasFaceCollected = computed(() => !!studentDetail.value?.isCollect)
+const canEditIntentionFollowStatus = computed(() => hasAccess(AccessEnum.enroll_intention_follow_status))
 
 // 判断是否是自己的学员
 const isMyStudent = computed(() => {
@@ -545,6 +549,9 @@ function toggleIntentionDropdown() {
 
 // 切换跟进状态下拉框
 function toggleStatusDropdown() {
+  if (!canEditIntentionFollowStatus.value) {
+    return
+  }
   openIntentionDropdown.value = false
   openStatusDropdown.value = !openStatusDropdown.value
 }
@@ -604,6 +611,10 @@ const debouncedStatusChange = debounce(async (status) => {
 
 // 处理跟进状态修改
 async function handleStatusChange(status) {
+  if (!canEditIntentionFollowStatus.value) {
+    openStatusDropdown.value = false
+    return
+  }
   if (studentDetail.value.followUpStatus === status) {
     openStatusDropdown.value = false
     return
@@ -850,8 +861,15 @@ async function handlePhoneToggle() {
             {{ studentDetail.channelName || '-' }}
           </a-descriptions-item>
           <a-descriptions-item label="跟进状态">
-            <div style="cursor: pointer;">
-              <a-dropdown :trigger="['click']" :open="openStatusDropdown"
+            <div :style="{ cursor: canEditIntentionFollowStatus ? 'pointer' : 'default' }">
+              <template v-if="!canEditIntentionFollowStatus">
+                <div class="intention">
+                  <span class="statusTag" :class="getStatusConfig(studentDetail?.followUpStatus).className">
+                    {{ getStatusConfig(studentDetail?.followUpStatus).text }}
+                  </span>
+                </div>
+              </template>
+              <a-dropdown v-else :trigger="['click']" :open="openStatusDropdown"
                 @update:open="(val) => handleDropdownVisibleChange(val, 'status')">
                 <div @click.prevent="toggleStatusDropdown">
                   <div class="intention">

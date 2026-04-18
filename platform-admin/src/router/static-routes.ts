@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
+import { AccessEnum } from '~@/utils/constant'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -27,6 +28,17 @@ const routes: RouteRecordRaw[] = [
       title: '版本管理',
       hideInMenu: true,
       hideInBreadcrumb: true,
+    },
+  },
+  {
+    path: '/platform/permissions',
+    name: 'PlatformPermissions',
+    component: () => import('~/pages/platform/permissions/index.vue'),
+    meta: {
+      title: '权限管理',
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+      access: [AccessEnum.systemModel_menuPermissions],
     },
   },
   {

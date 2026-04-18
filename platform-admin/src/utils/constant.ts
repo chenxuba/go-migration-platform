@@ -1,5 +1,12 @@
 export enum AccessEnum {
+  superAdmin = 'super:admin',
   structureModel = 'structureModel',
+  structureModel_department = 'structureModel:department',
+  systemModel = 'systemModel',
+  systemModel_menuPermissions = 'systemModel:menuPermissions',
+  menuPermissions_add = 'menuPermissions:add',
+  menuPermissions_update = 'menuPermissions:update',
+  menuPermissions_delete = 'menuPermissions:delete',
   USER = 'USER',
   // structureModel = 'structureModel',
 }

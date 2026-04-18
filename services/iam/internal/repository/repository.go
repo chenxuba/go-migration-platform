@@ -570,6 +570,172 @@ func (repo *Repository) DeleteDepart(ctx context.Context, id int64) error {
 	return err
 }
 
+func (repo *Repository) GetMenuByID(ctx context.Context, id int64) (model.Menu, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, ''), level
+		FROM sso_menu
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, id)
+
+	var item model.Menu
+	if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.Level); err != nil {
+		return model.Menu{}, err
+	}
+	return item, nil
+}
+
+func (repo *Repository) MenuCodeExists(ctx context.Context, ownType int, menuCode string, excludeID *int64) (bool, error) {
+	filters := []string{"del_flag = 0", "own_type = ?", "TRIM(IFNULL(menu_code, '')) = ?"}
+	args := []any{ownType, strings.TrimSpace(menuCode)}
+	if excludeID != nil && *excludeID > 0 {
+		filters = append(filters, "id <> ?")
+		args = append(args, *excludeID)
+	}
+
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM sso_menu
+		WHERE `+strings.Join(filters, " AND "), args...).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (repo *Repository) MaxMenuSort(ctx context.Context, ownType int, pid int64) (int, error) {
+	var maxSort int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(MAX(sort), 0)
+		FROM sso_menu
+		WHERE del_flag = 0 AND own_type = ? AND IFNULL(pid, 0) = ?
+	`, ownType, pid).Scan(&maxSort); err != nil {
+		return 0, err
+	}
+	return maxSort + 1, nil
+}
+
+func (repo *Repository) CountChildMenus(ctx context.Context, id int64) (int, error) {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM sso_menu
+		WHERE del_flag = 0 AND IFNULL(pid, 0) = ?
+	`, id).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (repo *Repository) CreateMenu(ctx context.Context, input model.Menu, operatorID int64) (model.Menu, error) {
+	menuType := 0
+	if input.MenuType != nil {
+		menuType = *input.MenuType
+	}
+	ownType := 0
+	if input.OwnType != nil {
+		ownType = *input.OwnType
+	}
+	sortValue := 0
+	if input.Sort != nil {
+		sortValue = *input.Sort
+	}
+	weightValue := 0
+	if input.Weight != nil {
+		weightValue = *input.Weight
+	}
+	levelValue := 0
+	if input.Level != nil {
+		levelValue = *input.Level
+	}
+	operator := strconv.FormatInt(operatorID, 10)
+	if strings.TrimSpace(operator) == "" || operator == "0" {
+		operator = "system"
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		INSERT INTO sso_menu (
+			uuid, version, menu_name, url_path, menu_code, menu_type, pid, sort, is_system,
+			introduce, own_type, level, weight, group_code, create_id, create_time,
+			update_id, update_time, del_flag, remark
+		)
+		VALUES (?, 0, ?, NULL, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0, ?)
+	`, buildUUID(time.Now().UnixNano()), input.MenuName, input.MenuCode, menuType, input.PID, sortValue, input.Introduce, ownType, levelValue, weightValue, emptyToNullString(input.GroupCode), operator, operator, input.Remark)
+	if err != nil {
+		return model.Menu{}, err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return model.Menu{}, err
+	}
+	return repo.GetMenuByID(ctx, id)
+}
+
+func (repo *Repository) UpdateMenu(ctx context.Context, input model.Menu, operatorID int64) error {
+	menuType := 0
+	if input.MenuType != nil {
+		menuType = *input.MenuType
+	}
+	ownType := 0
+	if input.OwnType != nil {
+		ownType = *input.OwnType
+	}
+	sortValue := 0
+	if input.Sort != nil {
+		sortValue = *input.Sort
+	}
+	weightValue := 0
+	if input.Weight != nil {
+		weightValue = *input.Weight
+	}
+	levelValue := 0
+	if input.Level != nil {
+		levelValue = *input.Level
+	}
+	operator := strconv.FormatInt(operatorID, 10)
+	if strings.TrimSpace(operator) == "" || operator == "0" {
+		operator = "system"
+	}
+
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sso_menu
+		SET menu_name = ?,
+		    url_path = NULL,
+		    menu_code = ?,
+		    menu_type = ?,
+		    pid = ?,
+		    sort = ?,
+		    is_system = 1,
+		    introduce = ?,
+		    own_type = ?,
+		    level = ?,
+		    weight = ?,
+		    group_code = ?,
+		    remark = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, input.MenuName, input.MenuCode, menuType, input.PID, sortValue, input.Introduce, ownType, levelValue, weightValue, emptyToNullString(input.GroupCode), input.Remark, operator, input.ID)
+	return err
+}
+
+func (repo *Repository) DeleteMenu(ctx context.Context, id, operatorID int64) error {
+	operator := strconv.FormatInt(operatorID, 10)
+	if strings.TrimSpace(operator) == "" || operator == "0" {
+		operator = "system"
+	}
+
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sso_menu
+		SET del_flag = 1,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, operator, id)
+	return err
+}
+
 func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType *int) ([]model.Menu, error) {
 	filters := []string{"del_flag = 0"}
 	args := make([]any, 0, 2)
@@ -1279,4 +1445,12 @@ func prependSuperAdmin(items []string) []string {
 
 func buildUUID(seed int64) string {
 	return strings.ReplaceAll(time.Unix(0, seed).UTC().Format("20060102150405.000000000"), ".", "")
+}
+
+func emptyToNullString(value string) any {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return trimmed
 }

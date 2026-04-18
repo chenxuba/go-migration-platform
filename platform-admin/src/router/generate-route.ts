@@ -156,7 +156,7 @@ export async function generateRoutes() {
 
   return {
     menuData,
-    routeData: dynamicRoutes,
+    routeData: accessRoutes,
   }
 }
 

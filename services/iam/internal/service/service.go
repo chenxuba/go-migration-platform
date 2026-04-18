@@ -235,6 +235,206 @@ func (svc *Service) DeleteDepart(id int64) error {
 	return svc.repo.DeleteDepart(context.Background(), id)
 }
 
+func (svc *Service) CreateMenu(claims authx.Claims, input model.Menu) (model.Menu, error) {
+	if claims.LoginType != "manage" {
+		return model.Menu{}, errors.New("forbidden")
+	}
+
+	menuName := strings.TrimSpace(input.MenuName)
+	menuCode := strings.TrimSpace(input.MenuCode)
+	if menuName == "" {
+		return model.Menu{}, errors.New("menuName is required")
+	}
+	if menuCode == "" {
+		return model.Menu{}, errors.New("menuCode is required")
+	}
+
+	ownType := 0
+	if input.OwnType != nil {
+		ownType = *input.OwnType
+	}
+	if ownType < 0 {
+		return model.Menu{}, errors.New("ownType is invalid")
+	}
+
+	level := 0
+	if input.PID > 0 {
+		parent, err := svc.repo.GetMenuByID(context.Background(), input.PID)
+		if err != nil {
+			return model.Menu{}, errors.New("parent menu not found")
+		}
+		if parent.OwnType != nil && *parent.OwnType != ownType {
+			return model.Menu{}, errors.New("parent menu ownType mismatch")
+		}
+		level = 1
+		if parent.Level != nil && *parent.Level >= 0 {
+			level = *parent.Level + 1
+		}
+	}
+
+	exists, err := svc.repo.MenuCodeExists(context.Background(), ownType, menuCode, nil)
+	if err != nil {
+		return model.Menu{}, err
+	}
+	if exists {
+		return model.Menu{}, errors.New("menuCode already exists")
+	}
+
+	if input.Sort == nil {
+		sortValue, err := svc.repo.MaxMenuSort(context.Background(), ownType, input.PID)
+		if err != nil {
+			return model.Menu{}, err
+		}
+		input.Sort = &sortValue
+	}
+	if input.Weight == nil {
+		weightValue := 0
+		input.Weight = &weightValue
+	}
+	menuType := 0
+	input.MenuType = &menuType
+	input.Level = &level
+	input.OwnType = &ownType
+	input.MenuName = menuName
+	input.MenuCode = menuCode
+	return svc.repo.CreateMenu(context.Background(), input, claims.UserID)
+}
+
+func (svc *Service) UpdateMenu(claims authx.Claims, input model.Menu) (model.Menu, error) {
+	if claims.LoginType != "manage" {
+		return model.Menu{}, errors.New("forbidden")
+	}
+	if input.ID <= 0 {
+		return model.Menu{}, errors.New("id is required")
+	}
+
+	current, err := svc.repo.GetMenuByID(context.Background(), input.ID)
+	if err != nil {
+		return model.Menu{}, errors.New("menu not found")
+	}
+
+	menuName := strings.TrimSpace(input.MenuName)
+	menuCode := strings.TrimSpace(input.MenuCode)
+	if menuName == "" {
+		return model.Menu{}, errors.New("menuName is required")
+	}
+	if menuCode == "" {
+		return model.Menu{}, errors.New("menuCode is required")
+	}
+
+	ownType := 0
+	if current.OwnType != nil {
+		ownType = *current.OwnType
+	}
+	if input.OwnType != nil {
+		ownType = *input.OwnType
+	}
+	if ownType < 0 {
+		return model.Menu{}, errors.New("ownType is invalid")
+	}
+
+	if input.PID == input.ID {
+		return model.Menu{}, errors.New("parent menu is invalid")
+	}
+
+	level := 0
+	if input.PID > 0 {
+		parent, err := svc.repo.GetMenuByID(context.Background(), input.PID)
+		if err != nil {
+			return model.Menu{}, errors.New("parent menu not found")
+		}
+		if parent.OwnType != nil && *parent.OwnType != ownType {
+			return model.Menu{}, errors.New("parent menu ownType mismatch")
+		}
+
+		ancestorID := parent.ID
+		for ancestorID > 0 {
+			if ancestorID == input.ID {
+				return model.Menu{}, errors.New("parent menu is invalid")
+			}
+			ancestor, err := svc.repo.GetMenuByID(context.Background(), ancestorID)
+			if err != nil {
+				break
+			}
+			if ancestor.PID <= 0 {
+				break
+			}
+			ancestorID = ancestor.PID
+		}
+
+		level = 1
+		if parent.Level != nil && *parent.Level >= 0 {
+			level = *parent.Level + 1
+		}
+	}
+
+	exists, err := svc.repo.MenuCodeExists(context.Background(), ownType, menuCode, &input.ID)
+	if err != nil {
+		return model.Menu{}, err
+	}
+	if exists {
+		return model.Menu{}, errors.New("menuCode already exists")
+	}
+
+	if input.Sort == nil {
+		sortValue := 0
+		if current.Sort != nil {
+			sortValue = *current.Sort
+		} else {
+			sortValue, err = svc.repo.MaxMenuSort(context.Background(), ownType, input.PID)
+			if err != nil {
+				return model.Menu{}, err
+			}
+		}
+		input.Sort = &sortValue
+	}
+	if input.Weight == nil {
+		weightValue := 0
+		if current.Weight != nil {
+			weightValue = *current.Weight
+		}
+		input.Weight = &weightValue
+	}
+
+	menuType := 0
+	if current.MenuType != nil {
+		menuType = *current.MenuType
+	}
+	input.MenuType = &menuType
+	input.Level = &level
+	input.OwnType = &ownType
+	input.MenuName = menuName
+	input.MenuCode = menuCode
+	if strings.TrimSpace(input.GroupCode) == "" {
+		input.GroupCode = current.GroupCode
+	}
+
+	if err := svc.repo.UpdateMenu(context.Background(), input, claims.UserID); err != nil {
+		return model.Menu{}, err
+	}
+	return svc.repo.GetMenuByID(context.Background(), input.ID)
+}
+
+func (svc *Service) DeleteMenu(claims authx.Claims, id int64) error {
+	if claims.LoginType != "manage" {
+		return errors.New("forbidden")
+	}
+	if id <= 0 {
+		return errors.New("id is required")
+	}
+	if _, err := svc.repo.GetMenuByID(context.Background(), id); err != nil {
+		return errors.New("menu not found")
+	}
+	count, err := svc.repo.CountChildMenus(context.Background(), id)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return errors.New("有子节点无法删除，请先删除子节点")
+	}
+	return svc.repo.DeleteMenu(context.Background(), id, claims.UserID)
+}
+
 func (svc *Service) MenuTree(menuName string, ownType *int) ([]model.MenuTreeNode, error) {
 	menus, err := svc.repo.ListMenus(context.Background(), menuName, ownType)
 	if err != nil {

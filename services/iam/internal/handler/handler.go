@@ -39,6 +39,9 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/departs/update", handler.updateDepart)
 	mux.HandleFunc("/api/v1/departs/delete", handler.deleteDepart)
 	mux.HandleFunc("/api/v1/menus/tree", handler.menuTree)
+	mux.HandleFunc("/api/v1/menus/create", handler.createMenu)
+	mux.HandleFunc("/api/v1/menus/update", handler.updateMenu)
+	mux.HandleFunc("/api/v1/menus/delete", handler.deleteMenu)
 	mux.HandleFunc("/api/v1/menus/inst-tree", handler.instMenuTree)
 	mux.HandleFunc("/api/v1/menus/inst-codes", handler.instMenuCodes)
 	mux.HandleFunc("/api/v1/menus/current", handler.currentMenuTree)
@@ -55,6 +58,9 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sso/logout", handler.logout)
 	mux.HandleFunc("/sso/menuList", handler.menuList)
 	mux.HandleFunc("/sso/menu/list", handler.menuTree)
+	mux.HandleFunc("/sso/menu/create", handler.createMenu)
+	mux.HandleFunc("/sso/menu/update", handler.updateMenu)
+	mux.HandleFunc("/sso/menu/delete", handler.deleteMenu)
 	mux.HandleFunc("/sso/roleList", handler.roleList)
 	mux.HandleFunc("/sso/role/saveRole", handler.saveRole)
 	mux.HandleFunc("/sso/role/updateRole", handler.updateRole)
@@ -68,6 +74,9 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sysDepart/update", handler.updateDepart)
 	mux.HandleFunc("/sysDepart/delete", handler.deleteDepart)
 	mux.HandleFunc("/menu/list", handler.menuTree)
+	mux.HandleFunc("/menu/create", handler.createMenu)
+	mux.HandleFunc("/menu/update", handler.updateMenu)
+	mux.HandleFunc("/menu/delete", handler.deleteMenu)
 	mux.HandleFunc("/menu", handler.currentMenuTree)
 	mux.HandleFunc("/menu/instList", handler.instMenuTree)
 	mux.HandleFunc("/menu/instListMenu", handler.instMenuCodes)
@@ -316,6 +325,90 @@ func (handler *Handler) menuTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) createMenu(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.Menu
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.CreateMenu(claims, input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) updateMenu(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.Menu
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.UpdateMenu(claims, input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) deleteMenu(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	id, ok := handler.readIDPayload(w, r, ctx)
+	if !ok {
+		return
+	}
+	if err := handler.service.DeleteMenu(claims, id); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
 }
 
 func (handler *Handler) currentMenuTree(w http.ResponseWriter, r *http.Request) {

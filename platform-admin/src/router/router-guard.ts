@@ -39,6 +39,7 @@ router.beforeEach(async (to, from, next) => {
   setRouteEmitter(to)
   const userStore = useUserStore()
   const token = useAuthorization()
+  const { hasAccess } = useAccess()
 
   if (!token.value) {
     //  如果token不存在就跳转到登录页面
@@ -62,6 +63,13 @@ router.beforeEach(async (to, from, next) => {
         // 获取路由菜单的信息
         const currentRoute = await userStore.generateDynamicRoutes()
         router.addRoute(currentRoute)
+        if (to.meta?.access && !hasAccess(to.meta.access)) {
+          next({
+            path: '/403',
+            replace: true,
+          })
+          return
+        }
         next({
           ...to,
           replace: true,
@@ -86,6 +94,14 @@ router.beforeEach(async (to, from, next) => {
         return
       }
     }
+  }
+
+  if (token.value && to.meta?.access && !hasAccess(to.meta.access)) {
+    next({
+      path: '/403',
+      replace: true,
+    })
+    return
   }
   next()
 })
