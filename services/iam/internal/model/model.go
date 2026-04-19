@@ -286,6 +286,7 @@ type DefaultRoleDetailVO struct {
 	Version     int64          `json:"version,omitempty"`
 	RoleName    string         `json:"roleName"`
 	Description string         `json:"description,omitempty"`
+	IsAdmin     *bool          `json:"isAdmin,omitempty"`
 	IsDefault   *bool          `json:"isDefault,omitempty"`
 	UpdateName  string         `json:"updateName,omitempty"`
 	MenuIDs     []MenuTreeNode `json:"menuIds"`

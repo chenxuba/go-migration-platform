@@ -13,6 +13,7 @@ export interface DefaultRoleDetail {
   roleId: number
   roleName: string
   description?: string
+  isAdmin?: boolean
   isDefault?: boolean
   menuIds?: MenuTreeNode[]
 }

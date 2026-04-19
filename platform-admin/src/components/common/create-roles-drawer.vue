@@ -165,9 +165,8 @@ async function getMenuList() {
       // console.log("处理后的数据:", processedData);
       updateData(processedData)
       if (props.roleId) {
-        //  根据角色id查询详情，获取最后一级权限id
-        loading.value = true
-        getRoleDetail()
+        // 根据角色id查询详情，获取最后一级权限id
+        await getRoleDetail()
       }
       else {
         formState.roleId = null
@@ -176,6 +175,8 @@ async function getMenuList() {
   }
   catch (error) {
     console.log(error)
+  }
+  finally {
     loading.value = false
   }
 }

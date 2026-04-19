@@ -710,7 +710,7 @@ func (svc *Service) DeleteDefaultRole(claims authx.Claims, req model.DeleteDefau
 		return model.DeleteDefaultRoleResult{}, errors.New("仅支持删除平台默认角色")
 	}
 	if role.Admin {
-		return model.DeleteDefaultRoleResult{}, errors.New("管理员角色不可删除")
+		return model.DeleteDefaultRoleResult{}, errors.New("超级管理员角色不允许删除")
 	}
 
 	detachedUsers, err := svc.repo.DeleteDefaultRole(ctx, role.ID)
@@ -733,6 +733,9 @@ func (svc *Service) UpdateRole(claims authx.Claims, req model.SaveRoleRequest) e
 	role, err := svc.repo.GetRoleByID(ctx, *req.RoleID)
 	if err != nil {
 		return err
+	}
+	if role.Admin {
+		return errors.New("超级管理员角色不允许编辑")
 	}
 	switch claims.LoginType {
 	case "manage":

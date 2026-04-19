@@ -14,7 +14,7 @@ const props = defineProps({
   },
   details: {
     type: Object,
-    default: {},
+    default: () => ({}),
   },
 })
 const emit = defineEmits(['update:open', 'onEditSuccess'])
@@ -66,6 +66,11 @@ const createRolesDrawerOpen = ref(false)
 // 本地角色详情数据，用于在编辑后更新显示
 const localDetails = ref({})
 
+const isSuperAdminRole = computed(() => Boolean(localDetails.value?.isAdmin ?? localDetails.value?.admin))
+const isSuperAdminRoleName = computed(() => String(localDetails.value?.roleName || '').trim() === '超级管理员')
+const isEditLockedRole = computed(() => isSuperAdminRole.value || isSuperAdminRoleName.value)
+const canEditRole = computed(() => localDetails.value?.isDefault != null && !localDetails.value?.isDefault && !isEditLockedRole.value)
+
 // 监听 props.details 变化，同步到本地数据
 watch(
   () => props.details,
@@ -80,6 +85,9 @@ watch(
 
 // 编辑角色按钮点击事件
 function handleEditRole() {
+  if (!canEditRole.value) {
+    return
+  }
   createRolesDrawerOpen.value = true
 }
 
@@ -152,7 +160,7 @@ watch(
         <div class="p-24px pb-0">
           <div class="flex justify-between items-center mb-10px">
             <span class="text-20px font500">{{ localDetails.roleName }}</span>
-            <a-button v-if="localDetails.isDefault != null" type="primary" :disabled="localDetails.isDefault"
+            <a-button v-if="localDetails.isDefault != null" type="primary" :disabled="!canEditRole"
               @click="handleEditRole">
               编辑
             </a-button>
@@ -161,7 +169,7 @@ watch(
           <div class="flex justify-between items-center mt-8px text-#666 mb-10px">
             <span>所属机构：<span class="text-#222">{{ orgName }}</span>
             </span>
-            <span v-if="!localDetails.isDefault && localDetails.updateName">最近编辑时间：<span class="text-#222">{{
+            <span v-if="canEditRole && localDetails.updateName">最近编辑时间：<span class="text-#222">{{
               dayjs(localDetails.updateTime).format("YYYY-MM-DD HH:mm") }}
                 {{ localDetails.updateName || "-" }}</span></span>
           </div>

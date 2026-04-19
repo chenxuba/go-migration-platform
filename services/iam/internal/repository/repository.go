@@ -1016,7 +1016,13 @@ func (repo *Repository) CreateMenu(ctx context.Context, input model.Menu, operat
 		operator = "system"
 	}
 
-	result, err := repo.db.ExecContext(ctx, `
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Menu{}, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO sso_menu (
 			uuid, version, menu_name, url_path, menu_code, menu_type, pid, sort, is_system,
 			introduce, own_type, level, weight, group_code, create_id, create_time,
@@ -1030,6 +1036,14 @@ func (repo *Repository) CreateMenu(ctx context.Context, input model.Menu, operat
 
 	id, err := result.LastInsertId()
 	if err != nil {
+		return model.Menu{}, err
+	}
+	if ownType == 2 {
+		if err := repo.bindInstitutionSuperAdminRoleMenuTx(ctx, tx, id); err != nil {
+			return model.Menu{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return model.Menu{}, err
 	}
 	return repo.GetMenuByID(ctx, id)
@@ -1090,13 +1104,83 @@ func (repo *Repository) DeleteMenu(ctx context.Context, id, operatorID int64) er
 		operator = "system"
 	}
 
-	_, err := repo.db.ExecContext(ctx, `
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var ownType int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(own_type, 0)
+		FROM sso_menu
+		WHERE id = ? AND del_flag = 0
+		FOR UPDATE
+	`, id).Scan(&ownType); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE sso_menu
 		SET del_flag = 1,
 		    update_id = ?,
 		    update_time = NOW()
 		WHERE id = ? AND del_flag = 0
-	`, operator, id)
+	`, operator, id); err != nil {
+		return err
+	}
+
+	if ownType == 2 {
+		if err := repo.unbindInstitutionSuperAdminRoleMenuTx(ctx, tx, id); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (repo *Repository) bindInstitutionSuperAdminRoleMenuTx(ctx context.Context, tx *sql.Tx, menuID int64) error {
+	if menuID <= 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_role_menu (role_id, menu_id)
+		SELECT sr.id, ?
+		FROM sso_role sr
+		WHERE sr.del_flag = 0
+		  AND sr.role_type = 2
+		  AND sr.is_admin = 1
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM sso_role_menu rm
+		    WHERE rm.role_id = sr.id
+		      AND rm.menu_id = ?
+		  )
+	`, menuID, menuID)
+	return err
+}
+
+func (repo *Repository) unbindInstitutionSuperAdminRoleMenuTx(ctx context.Context, tx *sql.Tx, menuID int64) error {
+	if menuID <= 0 {
+		return nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE rm
+		FROM sso_role_menu rm
+		JOIN sso_role sr ON sr.id = rm.role_id
+		WHERE rm.menu_id = ?
+		  AND sr.del_flag = 0
+		  AND sr.role_type = 2
+		  AND sr.is_admin = 1
+	`, menuID); err != nil {
+		return err
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		DELETE FROM sys_module_menu
+		WHERE menu_id = ?
+	`, menuID)
 	return err
 }
 
@@ -1725,13 +1809,13 @@ func (repo *Repository) DeleteDefaultRole(ctx context.Context, roleID int64) (in
 
 func (repo *Repository) GetDefaultRoleDetail(ctx context.Context, roleID int64) (model.DefaultRoleDetailVO, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(role_name, ''), IFNULL(description, ''), IFNULL(is_default, 0)
+		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(role_name, ''), IFNULL(description, ''), IFNULL(is_admin, 0), IFNULL(is_default, 0)
 		FROM sso_role
 		WHERE id = ? AND del_flag = 0
 		LIMIT 1
 	`, roleID)
 	var detail model.DefaultRoleDetailVO
-	if err := row.Scan(&detail.RoleID, &detail.UUID, &detail.Version, &detail.RoleName, &detail.Description, &detail.IsDefault); err != nil {
+	if err := row.Scan(&detail.RoleID, &detail.UUID, &detail.Version, &detail.RoleName, &detail.Description, &detail.IsAdmin, &detail.IsDefault); err != nil {
 		return model.DefaultRoleDetailVO{}, err
 	}
 	menuIDs, err := repo.GetMenuIDsByRole(ctx, roleID, nil)

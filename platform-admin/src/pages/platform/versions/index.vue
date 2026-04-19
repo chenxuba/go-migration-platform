@@ -361,9 +361,10 @@ watch(versionModalOpen, (open) => {
 
 .version-header__title {
   color: #1f2329;
-  font-size: 24px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 34px;
+  margin-left: 4px;
 }
 
 .version-header__actions {

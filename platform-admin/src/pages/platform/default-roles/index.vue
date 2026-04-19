@@ -70,11 +70,17 @@
                 编辑权限
               </a-button>
               <a-popconfirm
-                title="删除后会自动解除机构员工对该默认角色的绑定，不影响机构已复制的自定义角色，确定删除吗？"
+                overlay-class-name="default-role-delete-popconfirm"
+                :overlay-style="deletePopconfirmOverlayStyle"
                 ok-text="确认删除"
                 cancel-text="取消"
                 @confirm="handleDeleteRole(toRoleRecord(record))"
               >
+                <template #title>
+                  <div class="default-role-delete-popconfirm__title">
+                    删除后会自动解除机构员工对该默认角色的绑定，不影响机构已复制的自定义角色，确定删除吗？
+                  </div>
+                </template>
                 <a-button type="link" size="small" danger :loading="deleting">
                   删除
                 </a-button>
@@ -246,11 +252,17 @@
         <div class="role-modal-footer">
           <a-popconfirm
             v-if="modalMode === 'edit'"
-            title="删除后会自动解除机构员工对该默认角色的绑定，不影响机构已复制的自定义角色，确定删除吗？"
+            overlay-class-name="default-role-delete-popconfirm"
+            :overlay-style="deletePopconfirmOverlayStyle"
             ok-text="确认删除"
             cancel-text="取消"
             @confirm="handleDeleteByModal"
           >
+            <template #title>
+              <div class="default-role-delete-popconfirm__title">
+                删除后会自动解除机构员工对该默认角色的绑定，不影响机构已复制的自定义角色，确定删除吗？
+              </div>
+            </template>
             <a-button danger ghost :loading="deleting">
               删除
             </a-button>
@@ -335,6 +347,10 @@ const permissionTypeMap = ref<Map<number, number>>(new Map())
 const modalOpen = ref(false)
 const modalMode = ref<ModalMode>('create')
 const submitting = ref(false)
+const deletePopconfirmOverlayStyle = {
+  width: '360px',
+  maxWidth: 'calc(100vw - 32px)',
+}
 
 const initialPermissionData: AuthorityGroup[] = []
 const {
@@ -376,7 +392,7 @@ const columns: TableColumnsType<DefaultRoleRecord> = [
     title: '角色名称',
     dataIndex: 'roleName',
     key: 'roleName',
-    width: 240,
+    width: 200,
   },
   {
     title: '角色类型',
@@ -813,7 +829,7 @@ onMounted(async () => {
 
   .ellipsis-text {
     display: inline-block;
-    max-width: 200px;
+    max-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1104,6 +1120,22 @@ onMounted(async () => {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+:deep(.default-role-delete-popconfirm .ant-popover-inner) {
+  max-width: 520px;
+}
+
+:deep(.default-role-delete-popconfirm .ant-popover-message-title) {
+  white-space: normal;
+  line-height: 22px;
+}
+
+.default-role-delete-popconfirm__title {
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 22px;
 }
 
 @media (max-width: 1200px) {

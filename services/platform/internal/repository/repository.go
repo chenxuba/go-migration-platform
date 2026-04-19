@@ -36,8 +36,14 @@ type rawMenu struct {
 	Introduce string
 }
 
-// defaultInstitutionBootstrapPassword is the initial login password for the institution admin (login_name).
-const defaultInstitutionBootstrapPassword = "123456"
+const (
+	// defaultInstitutionBootstrapPassword is the initial login password for the institution admin (login_name).
+	defaultInstitutionBootstrapPassword = "123456"
+	// defaultInstitutionAdminRoleName is the hidden super-admin role name for institution side.
+	defaultInstitutionAdminRoleName = "超级管理员"
+	// defaultInstitutionAdminRoleDescription is the fixed description for the hidden super-admin role.
+	defaultInstitutionAdminRoleDescription = "系统内置角色，拥有机构全部权限"
+)
 
 var defaultInstitutionVersionModules = []struct {
 	Name  string
@@ -212,7 +218,115 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureInstitutionMenuCatalog(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.migrateInstitutionSuperAdminRole(context.Background()); err != nil {
+		return nil, err
+	}
 	return repo, nil
+}
+
+func (repo *Repository) migrateInstitutionSuperAdminRole(ctx context.Context) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_role (uuid, version, role_name, description, org_id, role_type, is_admin, is_default, del_flag, create_time, update_time)
+		SELECT UUID(), 0, ?, ?, oi.id, 2, 1, 0, 0, NOW(), NOW()
+		FROM org_institution oi
+		WHERE oi.del_flag = 0
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM sso_role sr
+		    WHERE sr.org_id = oi.id
+		      AND sr.role_type = 2
+		      AND sr.is_admin = 1
+		      AND sr.del_flag = 0
+		  )
+	`, defaultInstitutionAdminRoleName, defaultInstitutionAdminRoleDescription); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sso_role
+		SET role_name = ?, description = ?, update_time = NOW()
+		WHERE del_flag = 0
+		  AND role_type = 2
+		  AND is_admin = 1
+		  AND (
+		    TRIM(REPLACE(REPLACE(IFNULL(role_name, ''), '\r', ''), '\n', '')) <> ?
+		    OR TRIM(REPLACE(REPLACE(IFNULL(description, ''), '\r', ''), '\n', '')) <> ?
+		  )
+	`, defaultInstitutionAdminRoleName, defaultInstitutionAdminRoleDescription, defaultInstitutionAdminRoleName, defaultInstitutionAdminRoleDescription); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_user_role (user_id, role_id)
+		SELECT iu.user_id, sr.id
+		FROM inst_user iu
+		JOIN sso_role sr
+		  ON sr.org_id = iu.inst_id
+		 AND sr.role_type = 2
+		 AND sr.is_admin = 1
+		 AND sr.del_flag = 0
+		WHERE iu.del_flag = 0
+		  AND iu.is_admin = 1
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM sso_user_role sur
+		    WHERE sur.user_id = iu.user_id
+		      AND sur.role_id = sr.id
+		  )
+	`); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE sur
+		FROM sso_user_role sur
+		JOIN sso_role sr ON sr.id = sur.role_id
+		JOIN inst_user iu ON iu.user_id = sur.user_id
+		WHERE iu.del_flag = 0
+		  AND iu.is_admin = 1
+		  AND sr.del_flag = 0
+		  AND sr.role_type = 2
+		  AND IFNULL(sr.is_admin, 0) = 0
+		  AND TRIM(REPLACE(REPLACE(IFNULL(sr.role_name, ''), '\r', ''), '\n', '')) = '校区管理员'
+		  AND (sr.org_id = 0 OR sr.org_id = iu.inst_id)
+	`); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_role_menu (role_id, menu_id)
+		SELECT sr.id, smm.menu_id
+		FROM sso_role sr
+		JOIN org_module om
+		  ON om.org_id = sr.org_id
+		 AND om.del_flag = 0
+		JOIN sys_module_menu smm
+		  ON smm.module_id = om.module_id
+		 AND smm.del_flag = 0
+		JOIN sso_menu m
+		  ON m.id = smm.menu_id
+		 AND m.del_flag = 0
+		 AND m.own_type = 2
+		WHERE sr.del_flag = 0
+		  AND sr.role_type = 2
+		  AND sr.is_admin = 1
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM sso_role_menu rm
+		    WHERE rm.role_id = sr.id
+		      AND rm.menu_id = smm.menu_id
+		  )
+	`); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (repo *Repository) ensureInstitutionSchema(ctx context.Context) error {
@@ -1115,6 +1229,7 @@ func (repo *Repository) ensureInstitutionBootstrapAdminTx(
 	if loginName == "" {
 		return nil
 	}
+	organName = strings.TrimSpace(organName)
 	hash, err := bcrypt.GenerateFromPassword([]byte(defaultInstitutionBootstrapPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -1123,24 +1238,26 @@ func (repo *Repository) ensureInstitutionBootstrapAdminTx(
 	mobile = strings.TrimSpace(mobile)
 	nick := strings.TrimSpace(principal)
 	if nick == "" {
-		nick = strings.TrimSpace(organName)
+		nick = organName
 	}
 	if nick == "" {
 		nick = loginName
 	}
 
 	var roleID int64
+	var roleName string
+	var roleDescription string
 	err = tx.QueryRowContext(ctx, `
-		SELECT id
+		SELECT id, IFNULL(role_name, ''), IFNULL(description, '')
 		FROM sso_role
 		WHERE org_id = ? AND role_type = 2 AND is_admin = 1 AND del_flag = 0
 		LIMIT 1
-	`, institutionID).Scan(&roleID)
+	`, institutionID).Scan(&roleID, &roleName, &roleDescription)
 	if err == sql.ErrNoRows {
 		res, insErr := tx.ExecContext(ctx, `
 			INSERT INTO sso_role (uuid, version, role_name, description, org_id, role_type, is_admin, is_default, del_flag, create_time, update_time)
-			VALUES (?, 0, '机构管理员', '', ?, 2, 1, 0, 0, NOW(), NOW())
-		`, uuid.NewString(), institutionID)
+			VALUES (?, 0, ?, ?, ?, 2, 1, 0, 0, NOW(), NOW())
+		`, uuid.NewString(), defaultInstitutionAdminRoleName, defaultInstitutionAdminRoleDescription, institutionID)
 		if insErr != nil {
 			return insErr
 		}
@@ -1149,8 +1266,21 @@ func (repo *Repository) ensureInstitutionBootstrapAdminTx(
 			return insErr
 		}
 		roleID = newID
+		roleName = defaultInstitutionAdminRoleName
+		roleDescription = defaultInstitutionAdminRoleDescription
 	} else if err != nil {
 		return err
+	}
+	normalizedRoleName := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(roleName, "\r", ""), "\n", ""))
+	normalizedRoleDescription := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(roleDescription, "\r", ""), "\n", ""))
+	if normalizedRoleName != defaultInstitutionAdminRoleName || normalizedRoleDescription != defaultInstitutionAdminRoleDescription {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE sso_role
+			SET role_name = ?, description = ?, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, defaultInstitutionAdminRoleName, defaultInstitutionAdminRoleDescription, roleID); err != nil {
+			return err
+		}
 	}
 
 	var userID int64
@@ -1194,19 +1324,56 @@ func (repo *Repository) ensureInstitutionBootstrapAdminTx(
 		}
 	}
 
-	var instUserCount int
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(1) FROM inst_user WHERE del_flag = 0 AND user_id = ? AND inst_id = ?
-	`, userID, institutionID).Scan(&instUserCount); err != nil {
-		return err
-	}
-	if instUserCount == 0 {
+	var instUserID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM inst_user
+		WHERE del_flag = 0 AND user_id = ? AND inst_id = ?
+		LIMIT 1
+	`, userID, institutionID).Scan(&instUserID)
+	if err == sql.ErrNoRows {
 		userType := 1
-		if _, err := tx.ExecContext(ctx, `
+		res, insErr := tx.ExecContext(ctx, `
 			INSERT INTO inst_user (uuid, version, user_id, inst_id, nick_name, username, avatar, mobile, is_admin, disabled, user_type, activated_status, del_flag, create_time)
 			VALUES (?, 0, ?, ?, ?, ?, '', ?, 1, 0, ?, 0, 0, NOW())
-		`, uuid.NewString(), userID, institutionID, nick, loginName, mobile, userType); err != nil {
+		`, uuid.NewString(), userID, institutionID, nick, loginName, mobile, userType)
+		if insErr != nil {
+			return insErr
+		}
+		newInstUserID, insErr := res.LastInsertId()
+		if insErr != nil {
+			return insErr
+		}
+		instUserID = newInstUserID
+	} else if err != nil {
+		return err
+	}
+
+	rootDeptID, err := repo.ensureInstitutionRootDepartTx(ctx, tx, institutionID, organName)
+	if err != nil {
+		return err
+	}
+	if rootDeptID > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE sso_user
+			SET dept_id = ?, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, rootDeptID, userID); err != nil {
 			return err
+		}
+		if instUserID > 0 {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO inst_user_dept (uuid, version, inst_user_id, dept_id, del_flag, create_time)
+				SELECT ?, 0, ?, ?, 0, NOW()
+				FROM DUAL
+				WHERE NOT EXISTS (
+					SELECT 1
+					FROM inst_user_dept
+					WHERE inst_user_id = ? AND dept_id = ? AND del_flag = 0
+				)
+			`, uuid.NewString(), instUserID, rootDeptID, instUserID, rootDeptID); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -1220,6 +1387,51 @@ func (repo *Repository) ensureInstitutionBootstrapAdminTx(
 	}
 
 	return nil
+}
+
+func (repo *Repository) ensureInstitutionRootDepartTx(ctx context.Context, tx *sql.Tx, institutionID int64, organName string) (int64, error) {
+	trimmedName := strings.TrimSpace(organName)
+	if trimmedName == "" {
+		trimmedName = "默认部门"
+	}
+
+	var deptID int64
+	var deptName string
+	err := tx.QueryRowContext(ctx, `
+		SELECT id, IFNULL(depart_name, '')
+		FROM sys_depart
+		WHERE org_id = ? AND pid = 0 AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, institutionID).Scan(&deptID, &deptName)
+	if err == sql.ErrNoRows {
+		res, insErr := tx.ExecContext(ctx, `
+			INSERT INTO sys_depart (depart_name, depart_code, depart_man, depart_concat, org_id, pid, is_enable, sort, remark, del_flag, create_time)
+			VALUES (?, '', '', '', ?, 0, 1, 1, '', 0, NOW())
+		`, trimmedName, institutionID)
+		if insErr != nil {
+			return 0, insErr
+		}
+		newID, insErr := res.LastInsertId()
+		if insErr != nil {
+			return 0, insErr
+		}
+		return newID, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	if strings.TrimSpace(deptName) == "" {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE sys_depart
+			SET depart_name = ?, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, trimmedName, deptID); err != nil {
+			return 0, err
+		}
+	}
+	return deptID, nil
 }
 
 func (repo *Repository) CreateInstitution(ctx context.Context, input model.InstitutionMutation, creatorID *int64) (int64, error) {
@@ -1509,7 +1721,7 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 				return err
 			}
 			if conflictEmployeeCount > 0 {
-				return fmt.Errorf("该手机号已被本机构员工使用，不能设置为机构管理员手机号")
+				return fmt.Errorf("该手机号已被本机构员工使用，不能设置为超级管理员手机号")
 			}
 
 			if _, err = tx.ExecContext(ctx, `
@@ -1533,7 +1745,7 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 				return err
 			}
 		} else if err == sql.ErrNoRows {
-			return fmt.Errorf("机构登录账号未绑定到机构管理员，无法同步管理员手机号")
+			return fmt.Errorf("机构登录账号未绑定到超级管理员，无法同步管理员手机号")
 		}
 	}
 
@@ -3020,7 +3232,7 @@ func (repo *Repository) bindInstitutionModuleTx(ctx context.Context, tx *sql.Tx,
 			return nil
 		}
 		if err == sql.ErrNoRows {
-			return fmt.Errorf("机构管理员角色不存在，请先初始化机构账号")
+			return fmt.Errorf("超级管理员角色不存在，请先初始化机构账号")
 		}
 		return err
 	}

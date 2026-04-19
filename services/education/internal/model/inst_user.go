@@ -76,6 +76,7 @@ type InstUserRoleDetail struct {
 	RoleID                   int64  `json:"roleId"`
 	RoleName                 string `json:"roleName"`
 	Description              string `json:"description,omitempty"`
+	IsAdmin                  bool   `json:"isAdmin"`
 	FunctionalAuthorityCount int    `json:"functionalAuthorityCount"`
 	DataAuthorityCount       int    `json:"dataAuthorityCount"`
 }

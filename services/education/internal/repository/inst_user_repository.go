@@ -115,34 +115,34 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 	countArgs := append([]any{}, args...)
 	var total int
 	if err := repo.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT iu.id)
-		FROM inst_user iu
-		LEFT JOIN org_institution oi ON oi.id = iu.inst_id
-		LEFT JOIN inst_user_dept iud ON iud.inst_user_id = iu.id AND iud.del_flag = 0
-		LEFT JOIN sys_depart sd ON sd.id = iud.dept_id AND sd.del_flag = 0
-		LEFT JOIN sso_user_role sur ON sur.user_id = iu.user_id
-		LEFT JOIN sso_role sr ON sr.id = sur.role_id AND sr.del_flag = 0 AND (sr.org_id = iu.inst_id OR sr.org_id = 0)
-		WHERE `+whereClause, countArgs...).Scan(&total); err != nil {
+			SELECT COUNT(DISTINCT iu.id)
+			FROM inst_user iu
+			LEFT JOIN org_institution oi ON oi.id = iu.inst_id
+			LEFT JOIN inst_user_dept iud ON iud.inst_user_id = iu.id AND iud.del_flag = 0
+			LEFT JOIN sys_depart sd ON sd.id = iud.dept_id AND sd.del_flag = 0
+			LEFT JOIN sso_user_role sur ON sur.user_id = iu.user_id
+			LEFT JOIN sso_role sr ON sr.id = sur.role_id AND sr.del_flag = 0 AND (sr.org_id = iu.inst_id OR sr.org_id = 0)
+			WHERE `+whereClause, countArgs...).Scan(&total); err != nil {
 		return model.PageResult[model.InstUserQueryVO]{}, err
 	}
 
 	listArgs := append(args, size, offset)
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT iu.id, IFNULL(iu.uuid, ''), IFNULL(iu.version, 0), iu.inst_id, IFNULL(oi.organ_name, ''), IFNULL(iu.avatar, ''),
-		       IFNULL(iu.nick_name, ''), IFNULL(iu.mobile, ''),
-		       IFNULL(GROUP_CONCAT(DISTINCT sd.depart_name ORDER BY sd.id SEPARATOR ','), ''),
-		       IFNULL(GROUP_CONCAT(DISTINCT sr.id ORDER BY sr.id SEPARATOR ','), ''),
-		       IFNULL(GROUP_CONCAT(DISTINCT sr.role_name ORDER BY sr.id SEPARATOR ','), ''),
-		       IFNULL(iu.disabled, 0), iu.user_type, iu.create_time, IFNULL(iu.is_admin, 0), IFNULL(iu.activated_status, 0)
-		FROM inst_user iu
-		LEFT JOIN org_institution oi ON oi.id = iu.inst_id
-		LEFT JOIN inst_user_dept iud ON iud.inst_user_id = iu.id AND iud.del_flag = 0
-		LEFT JOIN sys_depart sd ON sd.id = iud.dept_id AND sd.del_flag = 0
-		LEFT JOIN sso_user_role sur ON sur.user_id = iu.user_id
-		LEFT JOIN sso_role sr ON sr.id = sur.role_id AND sr.del_flag = 0 AND (sr.org_id = iu.inst_id OR sr.org_id = 0)
-		WHERE `+whereClause+`
-		GROUP BY iu.id, iu.uuid, iu.version, iu.inst_id, oi.organ_name, iu.avatar, iu.nick_name, iu.mobile, iu.disabled, iu.user_type, iu.create_time, iu.is_admin, iu.activated_status
-		ORDER BY iu.create_time DESC
+			SELECT iu.id, IFNULL(iu.uuid, ''), IFNULL(iu.version, 0), iu.inst_id, IFNULL(oi.organ_name, ''), IFNULL(iu.avatar, ''),
+			       IFNULL(iu.nick_name, ''), IFNULL(iu.mobile, ''),
+			       IFNULL(GROUP_CONCAT(DISTINCT sd.depart_name ORDER BY sd.id SEPARATOR ','), ''),
+			       IFNULL(GROUP_CONCAT(DISTINCT sr.id ORDER BY IFNULL(sr.is_admin, 0) DESC, sr.id SEPARATOR ','), ''),
+			       IFNULL(GROUP_CONCAT(DISTINCT sr.role_name ORDER BY IFNULL(sr.is_admin, 0) DESC, sr.id SEPARATOR ','), ''),
+			       IFNULL(iu.disabled, 0), iu.user_type, iu.create_time, IFNULL(iu.is_admin, 0), IFNULL(iu.activated_status, 0)
+			FROM inst_user iu
+			LEFT JOIN org_institution oi ON oi.id = iu.inst_id
+			LEFT JOIN inst_user_dept iud ON iud.inst_user_id = iu.id AND iud.del_flag = 0
+			LEFT JOIN sys_depart sd ON sd.id = iud.dept_id AND sd.del_flag = 0
+			LEFT JOIN sso_user_role sur ON sur.user_id = iu.user_id
+			LEFT JOIN sso_role sr ON sr.id = sur.role_id AND sr.del_flag = 0 AND (sr.org_id = iu.inst_id OR sr.org_id = 0)
+			WHERE `+whereClause+`
+			GROUP BY iu.id, iu.uuid, iu.version, iu.inst_id, oi.organ_name, iu.avatar, iu.nick_name, iu.mobile, iu.disabled, iu.user_type, iu.create_time, iu.is_admin, iu.activated_status
+			ORDER BY iu.create_time DESC
 		LIMIT ? OFFSET ?`, listArgs...)
 	if err != nil {
 		return model.PageResult[model.InstUserQueryVO]{}, err
@@ -231,12 +231,20 @@ func (repo *Repository) GetInstUserDetail(ctx context.Context, instUserID, instI
 	}
 
 	roleRows, err := repo.db.QueryContext(ctx, `
-		SELECT sr.id, IFNULL(sr.role_name, ''), IFNULL(sr.description, ''), 0, 0
+		SELECT sr.id,
+		       IFNULL(sr.role_name, ''),
+		       IFNULL(sr.description, ''),
+		       IFNULL(sr.is_admin, 0),
+		       COUNT(DISTINCT IF(IFNULL(sm.menu_type, 0) = 0, sm.id, NULL)),
+		       COUNT(DISTINCT IF(IFNULL(sm.menu_type, 0) = 1, sm.id, NULL))
 		FROM sso_user_role sur
 		LEFT JOIN sso_role sr ON sr.id = sur.role_id
 		LEFT JOIN inst_user iu ON iu.user_id = sur.user_id
+		LEFT JOIN sso_role_menu srm ON srm.role_id = sr.id
+		LEFT JOIN sso_menu sm ON sm.id = srm.menu_id AND sm.del_flag = 0 AND sm.own_type = 2
 		WHERE iu.id = ? AND sr.del_flag = 0 AND (sr.org_id = ? OR sr.org_id = 0)
-		ORDER BY sr.id
+		GROUP BY sr.id, sr.role_name, sr.description, sr.is_admin
+		ORDER BY IFNULL(sr.is_admin, 0) DESC, sr.id
 	`, instUserID, instID)
 	if err != nil {
 		return model.InstUserDetailVO{}, err
@@ -244,7 +252,7 @@ func (repo *Repository) GetInstUserDetail(ctx context.Context, instUserID, instI
 	defer roleRows.Close()
 	for roleRows.Next() {
 		var role model.InstUserRoleDetail
-		if err := roleRows.Scan(&role.RoleID, &role.RoleName, &role.Description, &role.FunctionalAuthorityCount, &role.DataAuthorityCount); err != nil {
+		if err := roleRows.Scan(&role.RoleID, &role.RoleName, &role.Description, &role.IsAdmin, &role.FunctionalAuthorityCount, &role.DataAuthorityCount); err != nil {
 			return model.InstUserDetailVO{}, err
 		}
 		detail.Roles = append(detail.Roles, role)
@@ -363,7 +371,19 @@ func (repo *Repository) UpdateInstUser(ctx context.Context, instID int64, dto mo
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM sso_user_role WHERE user_id = ?`, ssoUserID); err != nil {
+	if _, err := tx.ExecContext(ctx, `
+		DELETE sur
+		FROM sso_user_role sur
+		LEFT JOIN sso_role sr ON sr.id = sur.role_id
+		WHERE sur.user_id = ?
+		  AND (
+		    sr.id IS NULL
+		    OR (
+		      IFNULL(sr.is_admin, 0) = 0
+		      AND (IFNULL(sr.org_id, 0) = 0 OR sr.org_id = ?)
+		    )
+		  )
+	`, ssoUserID, instID); err != nil {
 		return err
 	}
 	for _, roleID := range dto.RoleIDs {
@@ -674,7 +694,19 @@ func (repo *Repository) BatchModifyInstUserRole(ctx context.Context, instID int6
 		if err := tx.QueryRowContext(ctx, `SELECT user_id FROM inst_user WHERE id = ? AND inst_id = ? AND del_flag = 0`, instUserID, instID).Scan(&ssoUserID); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM sso_user_role WHERE user_id = ?`, ssoUserID); err != nil {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE sur
+			FROM sso_user_role sur
+			LEFT JOIN sso_role sr ON sr.id = sur.role_id
+			WHERE sur.user_id = ?
+			  AND (
+			    sr.id IS NULL
+			    OR (
+			      IFNULL(sr.is_admin, 0) = 0
+			      AND (IFNULL(sr.org_id, 0) = 0 OR sr.org_id = ?)
+			    )
+			  )
+		`, ssoUserID, instID); err != nil {
 			return err
 		}
 		for _, roleID := range roleIDs {

@@ -188,6 +188,9 @@ async function getRoleDetail() {
       // 将isDefault值传递给父组件
       const updatedDetails = {
         ...props.details,
+        roleName: res.result.roleName || props.details.roleName || '',
+        description: res.result.description || props.details.description || '',
+        isAdmin: Boolean(res.result.isAdmin),
         isDefault: res.result.isDefault || false,
         updateName: res.result.updateName || '',
         updateTime: res.result.updateTime || ''
