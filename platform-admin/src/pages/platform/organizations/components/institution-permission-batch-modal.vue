@@ -57,7 +57,7 @@ const moduleName = ref('')
 const scopedMenuIds = ref<number[]>([])
 const permissionOwnedCountMap = ref<Record<number, number>>({})
 const mismatchMessage = ref('')
-const applyMode = ref<BatchApplyMode>('add-only')
+const applyMode = ref<BatchApplyMode>('remove-only')
 const targetInstitutions = ref<BatchTargetInstitution[]>([])
 const checkedTargetInstitutionIds = ref<number[]>([])
 const hasQueriedTargets = ref(false)
@@ -212,7 +212,7 @@ function resetState() {
   scopedMenuIds.value = []
   permissionOwnedCountMap.value = {}
   mismatchMessage.value = ''
-  applyMode.value = 'add-only'
+  applyMode.value = 'remove-only'
   searchValue.value = ''
   resetTargetQuery()
   updateData([])
@@ -1318,7 +1318,9 @@ watch(
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
   gap: 14px;
+  height: 560px;
   min-height: 560px;
+  max-height: 560px;
 }
 
 .permission-panel,
@@ -1335,11 +1337,13 @@ watch(
 
 .permission-panel__header,
 .target-panel__header {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  height: 62px;
   gap: 12px;
-  padding: 12px 16px 10px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--panel-border-soft);
   background: #fcfdff;
 }
@@ -1377,10 +1381,6 @@ watch(
   color: #4b628b;
 }
 
-.target-panel__header {
-  min-height: 58px;
-}
-
 .target-panel__rule {
   flex-shrink: 0;
   min-height: 24px;
@@ -1398,25 +1398,37 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
+  box-sizing: border-box;
+  height: 52px;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--panel-border-soft);
 }
 
+.permission-panel__toolbar {
+  flex-wrap: nowrap;
+}
+
 .permission-panel__stats {
+  flex: 1;
+  min-width: 0;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .permission-panel__tools {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .permission-panel__tools :deep(.ant-input-affix-wrapper) {
-  width: 286px;
+  width: 240px;
 }
 
 .permission-panel__body,
@@ -1665,6 +1677,8 @@ watch(
 
   .batch-content {
     grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    max-height: none;
   }
 
   .target-panel {
@@ -1673,6 +1687,13 @@ watch(
 }
 
 @media (max-width: 1024px) {
+  .permission-panel__header,
+  .target-panel__header {
+    height: auto;
+    min-height: 62px;
+    padding: 12px 16px 10px;
+  }
+
   .batch-overview__steps {
     grid-template-columns: 1fr;
     gap: 8px;
@@ -1681,6 +1702,13 @@ watch(
   .permission-panel__toolbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .permission-panel__toolbar,
+  .target-panel__toolbar {
+    height: auto;
+    min-height: 48px;
+    padding: 8px 16px;
   }
 
   .permission-panel__tools {
