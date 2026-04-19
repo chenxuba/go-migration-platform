@@ -106,6 +106,10 @@ const props = defineProps({
       return []
     },
   },
+  defaultCommentStatusVal: {
+    type: [String, Number],
+    default: null,
+  },
   scheduleDateDisableFuture: {
     type: Boolean,
     default: false,
@@ -646,6 +650,7 @@ const selectInputKey = ref(undefined)
 const teacherType = ref(1)
 const selectTeacher = ref(undefined)
 const scheduleDateDefaultApplied = ref(false)
+const commentStatusDefaultApplied = ref(false)
 const teacherSearchOptions = ref([])
 const teacherSearchPagination = ref({
   current: 1,
@@ -5335,6 +5340,26 @@ watch(
     }
     scheduleDateVals.value = normalized
     scheduleDateDefaultApplied.value = true
+  },
+  { immediate: true, deep: false },
+)
+
+watch(
+  () => props.defaultCommentStatusVal,
+  (newVal) => {
+    if (commentStatusDefaultApplied.value)
+      return
+    const normalized = newVal === undefined || newVal === null || String(newVal).trim() === ''
+      ? undefined
+      : String(newVal).trim()
+    if (!normalized)
+      return
+    if (commentStatusVals.value === normalized) {
+      commentStatusDefaultApplied.value = true
+      return
+    }
+    commentStatusVals.value = normalized
+    commentStatusDefaultApplied.value = true
   },
   { immediate: true, deep: false },
 )

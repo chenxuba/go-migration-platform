@@ -12,6 +12,7 @@ import StudentClassRecord from '@/components/studentInfo-drawer/student-class-re
 import OrderRecord from '@/components/studentInfo-drawer/order-record.vue'
 import TryListeningRecord from '@/components/studentInfo-drawer/try-listening-record.vue'
 import FollowUpRecord from '@/components/studentInfo-drawer/follow-up-record.vue'
+import StudentRehabRecord from '@/components/studentInfo-drawer/student-rehab-record.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { useStudentFields } from '@/composables/useStudentFields'
 import { batchAssignSalespersonApi, batchDeleteIntendedStudentApi, batchTransferToPublicPoolApi, getIntentStudentDetailApi, listStudentChangeInfoApi, updateIntendedStudentApi, updateStatusApi } from '@/api/enroll-center/intention-student'
@@ -935,7 +936,11 @@ async function handlePhoneToggle() {
             3
           </a-tab-pane>
           <a-tab-pane key="7" tab="康复记录">
-            3
+            <StudentRehabRecord
+              :student-id="studentId"
+              :open="openDrawer"
+              :active="activeKey === '7'"
+            />
           </a-tab-pane>
           <a-tab-pane key="8" tab="作业记录">
             3
