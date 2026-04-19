@@ -56,6 +56,7 @@ const detailData = ref<TeachingRecordDetailResult | null>(null)
 const activeKey = ref('1')
 const editContentModalOpen = ref(false)
 const editorDrawerOpen = ref(false)
+const editorMode = ref<'create' | 'view' | 'edit'>('create')
 const courseContent = ref('')
 const editingCourseContent = ref(courseContent.value)
 const selectedRowKeys = ref<string[]>([])
@@ -147,6 +148,11 @@ const reviewedColumns = [
     dataIndex: 'status',
     key: 'status',
     width: 260,
+  },
+  {
+    title: '操作',
+    key: 'action',
+    width: 180,
   },
 ]
 
@@ -264,6 +270,19 @@ async function loadDetail() {
 }
 
 function handlePendingReview(student: ReviewStudentItem) {
+  editorMode.value = 'create'
+  currentEditingStudent.value = student
+  editorDrawerOpen.value = true
+}
+
+function handleViewReviewed(student: ReviewStudentItem) {
+  editorMode.value = 'view'
+  currentEditingStudent.value = student
+  editorDrawerOpen.value = true
+}
+
+function handleEditReviewed(student: ReviewStudentItem) {
+  editorMode.value = 'edit'
   currentEditingStudent.value = student
   editorDrawerOpen.value = true
 }
@@ -297,6 +316,7 @@ watch(
       courseContent.value = ''
       editingCourseContent.value = ''
       editorDrawerOpen.value = false
+      editorMode.value = 'create'
       currentEditingStudent.value = null
       activeKey.value = '1'
       selectedRowKeys.value = []
@@ -420,6 +440,16 @@ watch(
                             {{ record.status }}
                           </a-tag>
                         </template>
+                        <template v-else-if="column.key === 'action'">
+                          <a-space :size="14">
+                            <a-button type="link" class="text-14px text-#06f px-0" @click="handleViewReviewed(record as ReviewStudentItem)">
+                              查看
+                            </a-button>
+                            <a-button type="link" class="text-14px text-#06f px-0" @click="handleEditReviewed(record as ReviewStudentItem)">
+                              编辑
+                            </a-button>
+                          </a-space>
+                        </template>
                       </template>
                     </a-table>
                   </template>
@@ -513,6 +543,7 @@ watch(
 
     <RehabRecordEditorDrawer
       v-model="editorDrawerOpen"
+      :mode="editorMode"
       :student-teaching-record-id="currentEditingStudent?.studentTeachingRecordId"
       :student="currentEditingStudent"
       :session="editorSession"

@@ -39,11 +39,13 @@ interface RehabRecordParentFeedback {
 
 const props = withDefaults(defineProps<{
   studentTeachingRecordId?: string
+  mode?: 'create' | 'view' | 'edit'
   student?: Partial<RehabRecordStudent> | null
   session?: Partial<RehabRecordSession> | null
   parentFeedback?: Partial<RehabRecordParentFeedback> | null
 }>(), {
   studentTeachingRecordId: '',
+  mode: 'create',
   student: null,
   session: null,
   parentFeedback: null,
@@ -181,6 +183,16 @@ const showParentFeedbackSection = computed(() => {
 const currentStudentTeachingRecordId = computed(() => {
   return normalizeTextValue(props.studentTeachingRecordId || props.student?.id)
 })
+const isReadonly = computed(() => props.mode === 'view')
+const isEditMode = computed(() => props.mode === 'edit')
+const drawerTitle = computed(() => {
+  if (props.mode === 'view')
+    return '查看康复训练记录'
+  if (props.mode === 'edit')
+    return '编辑康复训练记录'
+  return '康复训练记录'
+})
+const publishButtonText = computed(() => isEditMode.value ? '更新记录' : '发布记录')
 
 function handleAddTrainingModule() {
   trainingModules.value.push(createTrainingModule())
@@ -245,7 +257,47 @@ function buildContentPayload(): RehabRecordContent {
   }
 }
 
-async function loadDraftIfNeeded() {
+function applySnapshotByMode(options: {
+  draft?: StudentRehabRecordSnapshot | null
+  published?: StudentRehabRecordSnapshot | null
+  currentLoad: number
+}) {
+  const { draft, published, currentLoad } = options
+  if (props.mode === 'view') {
+    applySnapshot(published || draft)
+    return
+  }
+
+  if (draft?.content) {
+    const title = draft.updatedTime ? '检测到未发布草稿' : '检测到草稿'
+    const content = draft.updatedTime
+      ? `检测到 ${draft.updatedTime} 保存的草稿，是否恢复并继续编辑？`
+      : '检测到未发布草稿，是否恢复并继续编辑？'
+    Modal.confirm({
+      title,
+      content,
+      okText: '恢复草稿',
+      cancelText: props.mode === 'edit' && published?.content ? '使用已发布内容' : '暂不恢复',
+      onOk: () => {
+        if (!open.value || currentLoad !== loadSequence.value)
+          return
+        applySnapshot(draft)
+      },
+      onCancel: () => {
+        if (!open.value || currentLoad !== loadSequence.value)
+          return
+        if (props.mode === 'edit' && published?.content)
+          applySnapshot(published)
+      },
+    })
+    return
+  }
+
+  if (props.mode === 'edit' && published?.content)
+    applySnapshot(published)
+}
+
+async function loadRecordIfNeeded() {
   const studentTeachingRecordId = currentStudentTeachingRecordId.value
   if (!open.value || !studentTeachingRecordId)
     return
@@ -257,29 +309,14 @@ async function loadDraftIfNeeded() {
     if (!open.value || currentLoad !== loadSequence.value)
       return
     if (res.code !== 200)
-      throw new Error(res.message || '加载康复记录草稿失败')
+      throw new Error(res.message || '加载康复记录失败')
 
     const draft = res.result?.hasDraft ? res.result?.draft : null
-    if (draft?.content) {
-      const title = draft.updatedTime ? '检测到未发布草稿' : '检测到草稿'
-      const content = draft.updatedTime
-        ? `检测到 ${draft.updatedTime} 保存的草稿，是否恢复并继续编辑？`
-        : '检测到未发布草稿，是否恢复并继续编辑？'
-      Modal.confirm({
-        title,
-        content,
-        okText: '恢复草稿',
-        cancelText: '暂不恢复',
-        onOk: () => {
-          if (!open.value || currentLoad !== loadSequence.value)
-            return
-          applySnapshot(draft)
-        },
-      })
-    }
+    const published = res.result?.hasPublished ? res.result?.published : null
+    applySnapshotByMode({ draft, published, currentLoad })
   }
   catch (error: any) {
-    messageService.error(error?.response?.data?.message || error?.message || '加载康复记录草稿失败')
+    messageService.error(error?.response?.data?.message || error?.message || '加载康复记录失败')
   }
   finally {
     if (currentLoad === loadSequence.value)
@@ -288,6 +325,8 @@ async function loadDraftIfNeeded() {
 }
 
 async function handleSaveDraft() {
+  if (isReadonly.value)
+    return
   const studentTeachingRecordId = currentStudentTeachingRecordId.value
   if (!studentTeachingRecordId) {
     messageService.warning('缺少有效的学员记录')
@@ -313,6 +352,8 @@ async function handleSaveDraft() {
 }
 
 async function handlePublish() {
+  if (isReadonly.value)
+    return
   const studentTeachingRecordId = currentStudentTeachingRecordId.value
   if (!studentTeachingRecordId) {
     messageService.warning('缺少有效的学员记录')
@@ -340,7 +381,7 @@ async function handlePublish() {
 }
 
 watch(
-  [() => open.value, currentStudentTeachingRecordId, () => props.student, () => props.session, () => props.parentFeedback],
+  [() => open.value, () => props.mode, currentStudentTeachingRecordId, () => props.student, () => props.session, () => props.parentFeedback],
   async ([isOpen]) => {
     if (!isOpen) {
       loadSequence.value += 1
@@ -350,7 +391,7 @@ watch(
       return
     }
     hydrateDefaultForm()
-    await loadDraftIfNeeded()
+    await loadRecordIfNeeded()
   },
   { deep: true, immediate: true },
 )
@@ -368,7 +409,7 @@ watch(
     <template #title>
       <div class="custom-header flex justify-between h-4 flex-items-center">
         <div class="text-5">
-          康复训练记录
+          {{ drawerTitle }}
         </div>
         <a-button type="text" class="close-btn" @click="open = false">
           <template #icon>
@@ -391,7 +432,7 @@ watch(
                 <a-col :xs="24" :sm="12" :lg="8">
                   <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">姓名</div>
-                    <a-input v-model:value="formModel.studentName" placeholder="请输入学员姓名" />
+                    <a-input v-model:value="formModel.studentName" :disabled="isReadonly" placeholder="请输入学员姓名" />
                   </div>
                 </a-col>
                 <a-col :xs="24" :sm="12" :lg="8">
@@ -400,6 +441,7 @@ watch(
                     <a-select
                       v-model:value="formModel.gender"
                       :options="genderOptions"
+                      :disabled="isReadonly"
                       allow-clear
                       style="width: 100%;"
                       placeholder="请选择性别"
@@ -411,6 +453,7 @@ watch(
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">出生年月</div>
                     <a-date-picker
                       v-model:value="formModel.birthDate"
+                      :disabled="isReadonly"
                       value-format="YYYY-MM-DD"
                       style="width: 100%;"
                       placeholder="请选择出生年月"
@@ -420,13 +463,13 @@ watch(
                 <a-col :xs="24" :sm="12" :lg="8">
                   <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">班别</div>
-                    <a-input v-model:value="formModel.className" placeholder="请输入班别" />
+                    <a-input v-model:value="formModel.className" :disabled="isReadonly" placeholder="请输入班别" />
                   </div>
                 </a-col>
                 <a-col :xs="24" :sm="12" :lg="8">
                   <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">任教老师</div>
-                    <a-input v-model:value="formModel.teacherName" placeholder="请输入任教老师" />
+                    <a-input v-model:value="formModel.teacherName" :disabled="isReadonly" placeholder="请输入任教老师" />
                   </div>
                 </a-col>
                 <a-col :xs="24" :sm="12" :lg="8">
@@ -434,6 +477,7 @@ watch(
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">训练日期</div>
                     <a-date-picker
                       v-model:value="formModel.trainingDate"
+                      :disabled="isReadonly"
                       value-format="YYYY-MM-DD"
                       style="width: 100%;"
                       placeholder="请选择训练日期"
@@ -450,6 +494,7 @@ watch(
             <div class="mt-14px">
               <a-textarea
                 v-model:value="formModel.trainingTarget"
+                :disabled="isReadonly"
                 :auto-size="{ minRows: 4, maxRows: 6 }"
                 placeholder="请输入本次训练目标"
               />
@@ -461,7 +506,7 @@ watch(
               <div class="text-15px leading-22px font-600 text-#222">
                 训练项目
               </div>
-              <a-button type="dashed" size="small" @click="handleAddTrainingModule">
+              <a-button v-if="!isReadonly" type="dashed" size="small" @click="handleAddTrainingModule">
                 新增项目
               </a-button>
             </div>
@@ -477,11 +522,12 @@ watch(
                   <div class="flex items-center justify-between gap-12px mb-12px">
                     <a-input
                       v-model:value="item.title"
+                      :disabled="isReadonly"
                       class="flex-1"
                       placeholder="请输入训练项目名称"
                     />
                     <a-button
-                      v-if="trainingModules.length > 1"
+                      v-if="!isReadonly && trainingModules.length > 1"
                       type="link"
                       danger
                       class="px-0"
@@ -493,6 +539,7 @@ watch(
 
                   <a-textarea
                     v-model:value="item.content"
+                    :disabled="isReadonly"
                     :auto-size="{ minRows: 5, maxRows: 8 }"
                     placeholder="请输入训练项目内容"
                   />
@@ -510,6 +557,7 @@ watch(
                 <div class="mt-14px">
                   <a-textarea
                     v-model:value="formModel.performance"
+                    :disabled="isReadonly"
                     :auto-size="{ minRows: 7, maxRows: 10 }"
                     placeholder="请输入学生综合表现"
                   />
@@ -525,6 +573,7 @@ watch(
                 <div class="mt-14px">
                   <a-textarea
                     v-model:value="formModel.suggestion"
+                    :disabled="isReadonly"
                     :auto-size="{ minRows: 7, maxRows: 10 }"
                     placeholder="请输入康复建议"
                   />
@@ -541,6 +590,7 @@ watch(
             <div class="mt-14px">
               <a-textarea
                 v-model:value="formModel.parentFeedback"
+                :disabled="isReadonly"
                 :auto-size="{ minRows: 4, maxRows: 6 }"
                 placeholder="请输入家长意见反馈"
               />
@@ -552,6 +602,7 @@ watch(
                   <div class="mb-10px text-12px leading-18px text-#8c8c8c">家长签名</div>
                   <a-input
                     v-model:value="formModel.parentSignature"
+                    :disabled="isReadonly"
                     placeholder="请输入家长签名"
                   />
                 </div>
@@ -561,6 +612,7 @@ watch(
                   <div class="mb-10px text-12px leading-18px text-#8c8c8c">日期</div>
                   <a-date-picker
                     v-model:value="formModel.feedbackDate"
+                    :disabled="isReadonly"
                     value-format="YYYY-MM-DD"
                     style="width: 100%;"
                     placeholder="请选择日期"
@@ -576,23 +628,25 @@ watch(
       <div class="flex justify-end px-20px pt-12px pb-16px bg-white border-t border-solid border-#eef0f5">
         <a-space>
           <a-button :disabled="Boolean(submittingAction)" @click="open = false">
-            取消
+            {{ isReadonly ? '关闭' : '取消' }}
           </a-button>
-          <a-button
-            :loading="submittingAction === 'draft'"
-            :disabled="submittingAction === 'publish'"
-            @click="handleSaveDraft"
-          >
-            保存草稿
-          </a-button>
-          <a-button
-            type="primary"
-            :loading="submittingAction === 'publish'"
-            :disabled="submittingAction === 'draft'"
-            @click="handlePublish"
-          >
-            发布记录
-          </a-button>
+          <template v-if="!isReadonly">
+            <a-button
+              :loading="submittingAction === 'draft'"
+              :disabled="submittingAction === 'publish'"
+              @click="handleSaveDraft"
+            >
+              保存草稿
+            </a-button>
+            <a-button
+              type="primary"
+              :loading="submittingAction === 'publish'"
+              :disabled="submittingAction === 'draft'"
+              @click="handlePublish"
+            >
+              {{ publishButtonText }}
+            </a-button>
+          </template>
         </a-space>
       </div>
     </div>
