@@ -291,13 +291,27 @@ function getInstitutionStatusMeta(record: Partial<InstitutionItem>) {
   }
 }
 
+function isInstitutionExpired(record: Partial<InstitutionItem>) {
+  return getInstitutionStatusValue(record) === 4
+}
+
+function isInstitutionExpiredByTime(record: Partial<InstitutionItem>) {
+  const raw = String(record.expireEndTime || '').trim()
+  if (!raw)
+    return false
+  const expireAt = new Date(raw.replace(/-/g, '/'))
+  if (Number.isNaN(expireAt.getTime()))
+    return false
+  return expireAt.getTime() < Date.now()
+}
+
 function canToggleInstitutionStatus(record: Partial<InstitutionItem>) {
   const status = getInstitutionStatusValue(record)
-  return status === 1 || status === 2
+  return status === 1 || status === 2 || status === 4
 }
 
 function getToggleTargetEnabled(record: Partial<InstitutionItem>) {
-  return getInstitutionStatusValue(record) !== 1
+  return getInstitutionStatusValue(record) === 2
 }
 
 function getRowClassName(record: Partial<InstitutionItem>) {
@@ -376,7 +390,10 @@ async function toggleInstitutionStatus(record: Partial<InstitutionItem>, enabled
       messageService.error(res.message || '更新机构状态失败')
       return
     }
-    messageService.success(enabled ? '机构已启用' : '机构已停用')
+    const nextMessage = enabled
+      ? (isInstitutionExpiredByTime(record) ? '机构已启用，当前状态为过期' : '机构已启用')
+      : '机构已停用'
+    messageService.success(nextMessage)
     await fetchInstitutions()
   }
   catch (error: any) {
@@ -667,7 +684,7 @@ watch(institutionRenewalOpen, (open) => {
 
             <template v-else-if="column.key === 'expireEndTime'">
               <div class="info-cell">
-                <div class="cell-title cell-title--sm">
+                <div class="cell-title cell-title--sm" :class="{ 'cell-title--expired': isInstitutionExpiredByTime(record) }">
                   {{ formatDateMinute(record.expireEndTime) }}
                 </div>
                 <div class="cell-sub">
@@ -853,6 +870,10 @@ watch(institutionRenewalOpen, (open) => {
   font-weight: 500;
 }
 
+.cell-title--expired {
+  color: #ff4d4f;
+}
+
 .cell-sub {
   color: #8c8c8c;
   font-size: 12px;
@@ -902,6 +923,14 @@ watch(institutionRenewalOpen, (open) => {
 
 .status-text--disabled .status-text__dot {
   background: #bfbfbf;
+}
+
+.status-text--expired {
+  color: #ff4d4f;
+}
+
+.status-text--expired .status-text__dot {
+  background: #ff4d4f;
 }
 
 .action-cell {

@@ -126,10 +126,10 @@ func isInstitutionBaseMenuCode(menuCode string) bool {
 
 func institutionStatusExpr(alias string) string {
 	return "CASE " +
+		"WHEN IFNULL(" + alias + ".enabled, 0) = 0 THEN 2 " +
 		"WHEN IFNULL(" + alias + ".status, 0) = 4 THEN 4 " +
 		"WHEN " + alias + ".expire_end_time IS NOT NULL AND " + alias + ".expire_end_time < NOW() THEN 4 " +
-		"WHEN IFNULL(" + alias + ".status, CASE WHEN IFNULL(" + alias + ".enabled, 0) = 1 THEN 1 ELSE 2 END) = 1 AND IFNULL(" + alias + ".enabled, 0) = 1 THEN 1 " +
-		"ELSE 2 END"
+		"ELSE 1 END"
 }
 
 func buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (string, []any) {
