@@ -30,6 +30,8 @@ export interface LoginInstitutionOptionModel {
   mobile: string
   logo?: string
   admin: boolean
+  institutionStatus?: string
+  institutionReadonly?: boolean
 }
 
 export interface LoginResultModel {
@@ -44,6 +46,7 @@ export function loginApi(params: LoginParams | LoginMobileParams) {
     // customDev: true,
     // 是否开启全局请求loading
     loading: true,
+    silentError: true,
   })
 }
 
@@ -54,6 +57,7 @@ export function loginInstitutionOptionsApi(params: LoginInstitutionOptionParams)
   }, {
     token: false,
     loading: false,
+    silentError: true,
   })
 }
 

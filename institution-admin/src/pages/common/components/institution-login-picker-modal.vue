@@ -1,5 +1,5 @@
 <script setup>
-import { useMessage } from '@/composables/global-config'
+import messageService from '@/utils/messageService'
 
 const props = defineProps({
   open: {
@@ -19,7 +19,6 @@ const props = defineProps({
 const emit = defineEmits(['update:open', 'confirm', 'cancel'])
 
 const { t } = useI18nLocale()
-const message = useMessage()
 const selectedInstitutionKey = ref('')
 
 const openProxy = computed({
@@ -61,6 +60,32 @@ function getOrgInitial(orgName) {
   return value.slice(0, 1).toUpperCase()
 }
 
+function getInstitutionStatusLabel(item) {
+  switch (String(item?.institutionStatus || '').trim()) {
+    case 'disabled':
+      return '已停用'
+    case 'trial_expired':
+      return '体验版已到期'
+    case 'expired_readonly':
+      return '已到期·只读'
+    default:
+      return ''
+  }
+}
+
+function getInstitutionStatusClass(item) {
+  switch (String(item?.institutionStatus || '').trim()) {
+    case 'disabled':
+      return 'ipm-item__tag--danger'
+    case 'trial_expired':
+      return 'ipm-item__tag--warning'
+    case 'expired_readonly':
+      return 'ipm-item__tag--readonly'
+    default:
+      return ''
+  }
+}
+
 function handleCancel() {
   emit('update:open', false)
   emit('cancel')
@@ -68,7 +93,7 @@ function handleCancel() {
 
 function handleConfirm() {
   if (!selectedInstitutionOption.value) {
-    message.warning(t('pages.login.institutionPicker.required', '请选择要登录的机构'))
+    messageService.warning(t('pages.login.institutionPicker.required', '请选择要登录的机构'))
     return
   }
   emit('confirm', selectedInstitutionOption.value)
@@ -132,6 +157,11 @@ function selectOption(item) {
             <span class="ipm-item__row">
               <span class="ipm-item__org">{{ item.orgName || t('pages.login.institutionPicker.unknownOrg', '未命名机构') }}</span>
               <span v-if="item.admin" class="ipm-item__tag">{{ t('pages.login.institutionPicker.admin', '超级管理员') }}</span>
+              <span
+                v-if="getInstitutionStatusLabel(item)"
+                class="ipm-item__tag"
+                :class="getInstitutionStatusClass(item)"
+              >{{ getInstitutionStatusLabel(item) }}</span>
             </span>
             <span class="ipm-item__sub">{{ item.nickName || t('pages.login.institutionPicker.noName', '未设置姓名') }}</span>
             <span class="ipm-item__detail">
@@ -359,9 +389,27 @@ function selectOption(item) {
 
   .ipm-item__tag {
     flex-shrink: 0;
+    padding: 0 8px;
+    border-radius: 999px;
     font-size: 12px;
     line-height: 20px;
     color: var(--ipm-secondary);
+    background: rgba(15, 23, 42, 0.05);
+  }
+
+  .ipm-item__tag--danger {
+    color: #b42318;
+    background: rgba(217, 45, 32, 0.12);
+  }
+
+  .ipm-item__tag--warning {
+    color: #b54708;
+    background: rgba(247, 144, 9, 0.14);
+  }
+
+  .ipm-item__tag--readonly {
+    color: #9a6700;
+    background: rgba(234, 179, 8, 0.14);
   }
 
   .ipm-item__sub {

@@ -6,7 +6,8 @@ import { useRouter } from 'vue-router'
 import InstitutionLoginPickerModal from './components/institution-login-picker-modal.vue'
 import SelectLang from '@/components/select-lang/index.vue'
 import { useAuthorization } from '@/composables/authorization'
-import { useMessage, useNotification } from '@/composables/global-config'
+import { useNotification } from '@/composables/global-config'
+import messageService from '@/utils/messageService'
 import { loginApi, loginInstitutionOptionsApi } from '~/api/common/login'
 
 const { t } = useI18nLocale()
@@ -19,12 +20,12 @@ const formState = reactive({
   verifyCode: '',
 })
 const agreeToTerms = ref(true)
-const message = useMessage()
 const notification = useNotification()
 const router = useRouter()
 const token = useAuthorization()
 const submitLoading = ref(false)
 const errorAlert = ref(false)
+const loginErrorMessage = ref('')
 const qrCodeUrl = ref('') // 存储生成的二维码URL
 const institutionPickerOpen = ref(false)
 const institutionOptions = ref([])
@@ -62,7 +63,7 @@ async function generateQRCode() {
   }
   catch (error) {
     console.error('generate qrcode failed:', error)
-    message.error(t('pages.login.qrcode.generateFailed', '生成二维码失败'))
+    messageService.error(t('pages.login.qrcode.generateFailed', '生成二维码失败'))
   }
 }
 
@@ -102,6 +103,23 @@ function resetInstitutionPicker() {
   institutionConfirmLoading.value = false
 }
 
+function clearLoginError() {
+  errorAlert.value = false
+  loginErrorMessage.value = ''
+}
+
+function resolveLoginErrorMessage(error) {
+  if (error instanceof AxiosError) {
+    const responseMessage = String(error.response?.data?.message || '').trim()
+    if (responseMessage)
+      return responseMessage
+    const fallbackMessage = String(error.message || '').trim()
+    if (fallbackMessage)
+      return fallbackMessage
+  }
+  return t('pages.login.submit.failed', '登录失败，请稍后重试')
+}
+
 async function performLogin(params) {
   const { result } = await loginApi(params)
   if (!result) {
@@ -111,6 +129,7 @@ async function performLogin(params) {
   }
 
   token.value = result?.token
+  clearLoginError()
   submitLoading.value = false
   institutionConfirmLoading.value = false
   resetInstitutionPicker()
@@ -138,6 +157,7 @@ async function queryInstitutionOptions(params) {
 }
 
 function openInstitutionPicker(options, params) {
+  clearLoginError()
   institutionOptions.value = options
   pendingLoginParams.value = params
   institutionPickerOpen.value = true
@@ -145,7 +165,7 @@ function openInstitutionPicker(options, params) {
 
 async function confirmInstitutionLogin(selectedInstitutionOption) {
   if (!selectedInstitutionOption || !pendingLoginParams.value) {
-    message.warning(t('pages.login.institutionPicker.required', '请选择要登录的机构'))
+    messageService.warning(t('pages.login.institutionPicker.required', '请选择要登录的机构'))
     return
   }
 
@@ -158,17 +178,20 @@ async function confirmInstitutionLogin(selectedInstitutionOption) {
     })
   }
   catch (e) {
-    if (e instanceof AxiosError)
-      errorAlert.value = true
+    loginErrorMessage.value = resolveLoginErrorMessage(e)
+    errorAlert.value = true
+    if (loginErrorMessage.value)
+      messageService.error(loginErrorMessage.value)
     institutionConfirmLoading.value = false
   }
 }
 
 async function onSubmit() {
   if (!agreeToTerms.value) {
-    message.warning(t('pages.login.agreement.warning', '请先阅读并同意《用户协议》和《隐私条款》'))
+    messageService.warning(t('pages.login.agreement.warning', '请先阅读并同意《用户协议》和《隐私条款》'))
     return
   }
+  clearLoginError()
   submitLoading.value = true
   try {
     await formRef.value?.validate()
@@ -190,8 +213,8 @@ async function onSubmit() {
     await performLogin(params)
   }
   catch (e) {
-    if (e instanceof AxiosError)
-      errorAlert.value = true
+    loginErrorMessage.value = resolveLoginErrorMessage(e)
+    errorAlert.value = true
     submitLoading.value = false
   }
 }
@@ -199,6 +222,14 @@ async function onSubmit() {
 function changeQrCode() {
   mode.value = !mode.value
 }
+
+watch(
+  () => [formState.username, formState.password, formState.verifyCode, activeKey.value],
+  () => {
+    if (errorAlert.value)
+      clearLoginError()
+  },
+)
 </script>
 
 <template>
@@ -283,6 +314,13 @@ function changeQrCode() {
                     </a-input>
                   </div>
                 </a-form-item>
+                <a-alert
+                  v-if="errorAlert && loginErrorMessage"
+                  class="login-error-alert"
+                  type="error"
+                  show-icon
+                  :message="loginErrorMessage"
+                />
                 <div class="submitBox">
                   <a-button type="primary" class="w-300px" :loading="submitLoading" @click="onSubmit">
                     {{ t('pages.login.submit.immediately', '立即登录') }}
@@ -514,6 +552,12 @@ function changeQrCode() {
             padding-top: 5vw;
             max-width: 500px;
             margin: 0 auto;
+
+            .login-error-alert {
+              width: 300px;
+              margin: 0 auto 12px;
+              border-radius: 12px;
+            }
 
             .phoneBg {
               width: 100%;

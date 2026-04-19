@@ -90,7 +90,16 @@ router.beforeEach(async (to, from, next) => {
           next({
             path: '/401',
           })
+          return
         }
+        token.value = null
+        next({
+          path: loginPath,
+          query: {
+            redirect: encodeURIComponent(to.fullPath),
+          },
+        })
+        return
       }
     }
     else {

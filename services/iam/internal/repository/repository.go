@@ -236,8 +236,6 @@ func (repo *Repository) FindInstitutionLoginUser(ctx context.Context, identifier
 		  AND iu.disabled = 0
 		  AND iu.inst_id = ?
 		  AND i.del_flag = 0
-		  AND i.enabled = 1
-		  AND i.expire_end_time > NOW()
 		  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
 	`
 	args := []any{instID}
@@ -290,7 +288,13 @@ func (repo *Repository) ListInstitutionLoginOptions(ctx context.Context, identif
 		       COALESCE(NULLIF(TRIM(iu.nick_name), ''), NULLIF(TRIM(su.nick_name), ''), ''),
 		       COALESCE(NULLIF(TRIM(iu.mobile), ''), NULLIF(TRIM(su.mobile), ''), ''),
 		       IFNULL(i.logo, ''),
-		       IFNULL(iu.is_admin, 0)
+		       IFNULL(iu.is_admin, 0),
+		       IFNULL(i.open_type, 0),
+		       IFNULL(i.enabled, 0),
+		       CASE
+		         WHEN i.expire_end_time IS NOT NULL AND i.expire_end_time <= NOW() THEN 1
+		         ELSE 0
+		       END
 		FROM sso_user su
 		JOIN inst_user iu ON iu.user_id = su.id
 		JOIN org_institution i ON i.id = iu.inst_id
@@ -298,8 +302,6 @@ func (repo *Repository) ListInstitutionLoginOptions(ctx context.Context, identif
 		  AND iu.del_flag = 0
 		  AND iu.disabled = 0
 		  AND i.del_flag = 0
-		  AND i.enabled = 1
-		  AND i.expire_end_time > NOW()
 		  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
 		  AND (
 			su.username = ?
@@ -317,9 +319,14 @@ func (repo *Repository) ListInstitutionLoginOptions(ctx context.Context, identif
 	items := make([]model.InstitutionLoginOption, 0, 4)
 	for rows.Next() {
 		var item model.InstitutionLoginOption
-		if err := rows.Scan(&item.UserID, &item.InstID, &item.OrgName, &item.LoginName, &item.NickName, &item.Mobile, &item.Logo, &item.Admin); err != nil {
+		var openType int
+		var enabled bool
+		var expired bool
+		if err := rows.Scan(&item.UserID, &item.InstID, &item.OrgName, &item.LoginName, &item.NickName, &item.Mobile, &item.Logo, &item.Admin, &openType, &enabled, &expired); err != nil {
 			return nil, err
 		}
+		item.InstitutionStatus = model.ResolveInstitutionStatus(enabled, expired, openType)
+		item.InstitutionReadonly = item.InstitutionStatus == model.InstitutionStatusExpiredReadonly
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -328,6 +335,20 @@ func (repo *Repository) ListInstitutionLoginOptions(ctx context.Context, identif
 	if len(items) == 0 {
 		return []model.InstitutionLoginOption{}, nil
 	}
+	sort.SliceStable(items, func(i, j int) bool {
+		leftPriority := institutionStatusPriority(items[i].InstitutionStatus)
+		rightPriority := institutionStatusPriority(items[j].InstitutionStatus)
+		if leftPriority != rightPriority {
+			return leftPriority < rightPriority
+		}
+		if items[i].Admin != items[j].Admin {
+			return items[i].Admin
+		}
+		if items[i].InstID != items[j].InstID {
+			return items[i].InstID < items[j].InstID
+		}
+		return items[i].UserID < items[j].UserID
+	})
 	return items, nil
 }
 
@@ -399,6 +420,11 @@ func (repo *Repository) GetInstitutionUserInfoByInst(ctx context.Context, userID
 		SELECT u.id, u.user_id, u.inst_id, u.nick_name, IFNULL(u.avatar, ''), i.organ_name, IFNULL(u.username, ''), IFNULL(u.mobile, ''),
 		       IFNULL(i.logo, ''), IFNULL(u.is_manage, 0), IFNULL(u.is_admin, 0), IFNULL(u.disabled, 0),
 		       IFNULL(i.open_type, 0),
+		       IFNULL(i.enabled, 0),
+		       CASE
+		         WHEN i.expire_end_time IS NOT NULL AND i.expire_end_time <= NOW() THEN 1
+		         ELSE 0
+		       END,
 		       IFNULL((
 		           SELECT sm.name
 		           FROM org_module om
@@ -410,8 +436,7 @@ func (repo *Repository) GetInstitutionUserInfoByInst(ctx context.Context, userID
 		FROM inst_user u
 		LEFT JOIN org_institution i ON u.inst_id = i.id
 		WHERE u.del_flag = 0 AND u.disabled = 0
-		  AND i.del_flag = 0 AND i.enabled = 1
-		  AND i.expire_end_time > NOW()
+		  AND i.del_flag = 0
 		  AND u.user_id = ?
 		  AND u.inst_id = ?
 		  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
@@ -434,6 +459,8 @@ func (repo *Repository) GetInstitutionUserInfoByInst(ctx context.Context, userID
 		&info.Admin,
 		&info.Disabled,
 		&info.OpenType,
+		&info.InstitutionEnabled,
+		&info.InstitutionExpired,
 		&info.VersionName,
 	); err != nil {
 		return model.InstUserInfo{}, err
@@ -441,6 +468,8 @@ func (repo *Repository) GetInstitutionUserInfoByInst(ctx context.Context, userID
 	if strings.TrimSpace(info.VersionName) == "" && info.OpenType > 0 {
 		info.VersionName = institutionOpenTypeModuleName(info.OpenType)
 	}
+	info.InstitutionStatus = model.ResolveInstitutionStatus(info.InstitutionEnabled, info.InstitutionExpired, info.OpenType)
+	info.InstitutionReadonly = info.InstitutionStatus == model.InstitutionStatusExpiredReadonly
 
 	deptRows, err := repo.db.QueryContext(ctx, `
 		SELECT dept_id
@@ -506,7 +535,11 @@ func (repo *Repository) ResolveActiveInstitutionID(ctx context.Context, userID i
 			  AND u.disabled = 0
 			  AND i.del_flag = 0
 			  AND i.enabled = 1
-			  AND i.expire_end_time > NOW()
+			  AND (
+			    i.expire_end_time > NOW()
+			    OR IFNULL(i.open_type, 0) <> 1
+			    OR i.expire_end_time IS NULL
+			  )
 			  AND i.organ_type != 2
 			  AND i.organ_type != 10
 			  AND i.organ_type != 11
@@ -530,7 +563,11 @@ func (repo *Repository) ResolveActiveInstitutionID(ctx context.Context, userID i
 		  AND u.disabled = 0
 		  AND i.del_flag = 0
 		  AND i.enabled = 1
-		  AND i.expire_end_time > NOW()
+		  AND (
+		    i.expire_end_time > NOW()
+		    OR IFNULL(i.open_type, 0) <> 1
+		    OR i.expire_end_time IS NULL
+		  )
 		  AND i.organ_type != 2
 		  AND i.organ_type != 10
 		  AND i.organ_type != 11
@@ -557,6 +594,21 @@ func (repo *Repository) MarkInstitutionUserActivated(ctx context.Context, instUs
 		WHERE id = ? AND del_flag = 0 AND IFNULL(activated_status, 0) = 0
 	`, instUserID)
 	return err
+}
+
+func institutionStatusPriority(status string) int {
+	switch status {
+	case model.InstitutionStatusNormal:
+		return 0
+	case model.InstitutionStatusExpiredReadonly:
+		return 1
+	case model.InstitutionStatusDisabled:
+		return 2
+	case model.InstitutionStatusTrialExpired:
+		return 3
+	default:
+		return 4
+	}
 }
 
 func (repo *Repository) GetUserRoleIDs(ctx context.Context, userID, orgID int64, roleType int) ([]string, error) {

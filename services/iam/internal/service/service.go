@@ -1066,6 +1066,9 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 			}
 			return nil, nil, nil, nil, nil, err
 		}
+		if message := model.InstitutionStatusMessage(info.InstitutionStatus); message != "" {
+			return nil, nil, nil, nil, nil, errors.New(message)
+		}
 		if err := svc.repo.MarkInstitutionUserActivated(context.Background(), info.InstUserID); err != nil {
 			return nil, nil, nil, nil, nil, err
 		}

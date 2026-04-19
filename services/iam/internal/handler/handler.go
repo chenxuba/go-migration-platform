@@ -166,7 +166,7 @@ func (handler *Handler) me(w http.ResponseWriter, r *http.Request) {
 
 	session, err := handler.service.CurrentSession(ctx, claims)
 	if err != nil {
-		httpx.WriteError(w, http.StatusUnauthorized, "session invalid", ctx.RequestID)
+		writeSessionError(w, err, ctx.RequestID)
 		return
 	}
 
@@ -714,7 +714,7 @@ func (handler *Handler) menuList(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := handler.service.CurrentSession(ctx, claims)
 	if err != nil {
-		httpx.WriteError(w, http.StatusUnauthorized, "session invalid", ctx.RequestID)
+		writeSessionError(w, err, ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, session.MenuCodeList, ctx.RequestID)
@@ -728,7 +728,7 @@ func (handler *Handler) roleList(w http.ResponseWriter, r *http.Request) {
 	}
 	session, err := handler.service.CurrentSession(ctx, claims)
 	if err != nil {
-		httpx.WriteError(w, http.StatusUnauthorized, "session invalid", ctx.RequestID)
+		writeSessionError(w, err, ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, session.RoleList, ctx.RequestID)
@@ -916,6 +916,21 @@ func parseInt(raw string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func writeSessionError(w http.ResponseWriter, err error, requestID string) {
+	if err == nil {
+		httpx.WriteError(w, http.StatusUnauthorized, "session invalid", requestID)
+		return
+	}
+
+	switch err.Error() {
+	case model.InstitutionStatusMessage(model.InstitutionStatusDisabled),
+		model.InstitutionStatusMessage(model.InstitutionStatusTrialExpired):
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), requestID)
+	default:
+		httpx.WriteError(w, http.StatusUnauthorized, "session invalid", requestID)
+	}
 }
 
 func asInt(value any, fallback int) int {

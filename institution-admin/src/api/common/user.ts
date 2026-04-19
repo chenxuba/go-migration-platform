@@ -12,6 +12,8 @@ export interface UserInfo {
   deptIds: number[]
   openType?: number
   versionName?: string
+  institutionStatus?: string
+  institutionReadonly?: boolean
 }
 
 export function getUserInfoApi() {

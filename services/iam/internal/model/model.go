@@ -16,14 +16,16 @@ type InstitutionLoginOptionsRequest struct {
 }
 
 type InstitutionLoginOption struct {
-	UserID    int64  `json:"userId"`
-	InstID    int64  `json:"instId"`
-	OrgName   string `json:"orgName"`
-	LoginName string `json:"loginName"`
-	NickName  string `json:"nickName"`
-	Mobile    string `json:"mobile"`
-	Logo      string `json:"logo,omitempty"`
-	Admin     bool   `json:"admin"`
+	UserID              int64  `json:"userId"`
+	InstID              int64  `json:"instId"`
+	OrgName             string `json:"orgName"`
+	LoginName           string `json:"loginName"`
+	NickName            string `json:"nickName"`
+	Mobile              string `json:"mobile"`
+	Logo                string `json:"logo,omitempty"`
+	Admin               bool   `json:"admin"`
+	InstitutionStatus   string `json:"institutionStatus,omitempty"`
+	InstitutionReadonly bool   `json:"institutionReadonly"`
 }
 
 type User struct {
@@ -52,22 +54,57 @@ type ManageUserInfo struct {
 }
 
 type InstUserInfo struct {
-	InstUserID   int64    `json:"instUserId"`
-	UserID       int64    `json:"userId"`
-	InstID       int64    `json:"instId"`
-	OpenType     int      `json:"openType,omitempty"`
-	VersionName  string   `json:"versionName,omitempty"`
-	NickName     string   `json:"nickName"`
-	Avatar       string   `json:"avatar,omitempty"`
-	OrgName      string   `json:"orgName"`
-	Username     string   `json:"username,omitempty"`
-	Mobile       string   `json:"mobile,omitempty"`
-	Logo         string   `json:"logo,omitempty"`
-	Manage       bool     `json:"manage"`
-	Admin        bool     `json:"admin"`
-	Disabled     bool     `json:"disabled"`
-	DeptIDs      []int64  `json:"deptIds"`
-	MenuCodeList []string `json:"menuCodeList"`
+	InstUserID           int64    `json:"instUserId"`
+	UserID               int64    `json:"userId"`
+	InstID               int64    `json:"instId"`
+	OpenType             int      `json:"openType,omitempty"`
+	VersionName          string   `json:"versionName,omitempty"`
+	NickName             string   `json:"nickName"`
+	Avatar               string   `json:"avatar,omitempty"`
+	OrgName              string   `json:"orgName"`
+	Username             string   `json:"username,omitempty"`
+	Mobile               string   `json:"mobile,omitempty"`
+	Logo                 string   `json:"logo,omitempty"`
+	Manage               bool     `json:"manage"`
+	Admin                bool     `json:"admin"`
+	Disabled             bool     `json:"disabled"`
+	InstitutionEnabled   bool     `json:"-"`
+	InstitutionExpired   bool     `json:"-"`
+	InstitutionStatus    string   `json:"institutionStatus,omitempty"`
+	InstitutionReadonly  bool     `json:"institutionReadonly"`
+	DeptIDs              []int64  `json:"deptIds"`
+	MenuCodeList         []string `json:"menuCodeList"`
+}
+
+const (
+	InstitutionStatusNormal          = "normal"
+	InstitutionStatusDisabled        = "disabled"
+	InstitutionStatusTrialExpired    = "trial_expired"
+	InstitutionStatusExpiredReadonly = "expired_readonly"
+)
+
+func ResolveInstitutionStatus(enabled, expired bool, openType int) string {
+	if !enabled {
+		return InstitutionStatusDisabled
+	}
+	if expired {
+		if openType == 1 {
+			return InstitutionStatusTrialExpired
+		}
+		return InstitutionStatusExpiredReadonly
+	}
+	return InstitutionStatusNormal
+}
+
+func InstitutionStatusMessage(status string) string {
+	switch status {
+	case InstitutionStatusDisabled:
+		return "该机构已被停用"
+	case InstitutionStatusTrialExpired:
+		return "该机构已到期，请联系售后"
+	default:
+		return ""
+	}
 }
 
 type LoginResult struct {

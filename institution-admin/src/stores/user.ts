@@ -25,6 +25,8 @@ export const useUserStore = defineStore('user', () => {
   const roles = computed(() => userInfo.value?.menuCodeList)
   const instUserId = computed(() => userInfo.value?.instUserId)
   const deptIds = computed(() => userInfo.value?.deptIds)
+  const institutionStatus = computed(() => userInfo.value?.institutionStatus ?? 'normal')
+  const institutionReadonly = computed(() => Boolean(userInfo.value?.institutionReadonly))
 
   function normalizeUserInfo(result: any): UserInfo {
     if (!result)
@@ -40,6 +42,8 @@ export const useUserStore = defineStore('user', () => {
       orgName: result.orgName ?? '',
       instId: result.instId ?? '',
       instUserId: result.instUserId ?? '',
+      institutionStatus: result.institutionStatus ?? 'normal',
+      institutionReadonly: Boolean(result.institutionReadonly),
     }
   }
 
@@ -109,6 +113,8 @@ export const useUserStore = defineStore('user', () => {
     nickname,
     isAdmin,
     instUserId,
-    deptIds
+    deptIds,
+    institutionStatus,
+    institutionReadonly,
   }
 })

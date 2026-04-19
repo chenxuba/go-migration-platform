@@ -224,7 +224,11 @@ func (repo *Repository) FindInstIDByUserID(ctx context.Context, userID int64) (i
 			LEFT JOIN org_institution i ON u.inst_id = i.id
 			WHERE u.del_flag = 0 AND u.disabled = 0
 			  AND i.del_flag = 0 AND i.enabled = 1
-			  AND i.expire_end_time > NOW()
+			  AND (
+			    i.expire_end_time > NOW()
+			    OR IFNULL(i.open_type, 0) <> 1
+			    OR i.expire_end_time IS NULL
+			  )
 			  AND u.user_id = ?
 			  AND u.inst_id = ?
 			  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
@@ -244,7 +248,11 @@ func (repo *Repository) FindInstIDByUserID(ctx context.Context, userID int64) (i
 		LEFT JOIN org_institution i ON u.inst_id = i.id
 		WHERE u.del_flag = 0 AND u.disabled = 0
 		  AND i.del_flag = 0 AND i.enabled = 1
-		  AND i.expire_end_time > NOW()
+		  AND (
+		    i.expire_end_time > NOW()
+		    OR IFNULL(i.open_type, 0) <> 1
+		    OR i.expire_end_time IS NULL
+		  )
 		  AND u.user_id = ?
 		  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
 		ORDER BY u.id
@@ -274,7 +282,11 @@ func (repo *Repository) FindInstUserIDByUserID(ctx context.Context, userID int64
 			LEFT JOIN org_institution i ON u.inst_id = i.id
 			WHERE u.del_flag = 0 AND u.disabled = 0
 			  AND i.del_flag = 0 AND i.enabled = 1
-			  AND i.expire_end_time > NOW()
+			  AND (
+			    i.expire_end_time > NOW()
+			    OR IFNULL(i.open_type, 0) <> 1
+			    OR i.expire_end_time IS NULL
+			  )
 			  AND u.user_id = ?
 			  AND u.inst_id = ?
 			  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
@@ -294,7 +306,11 @@ func (repo *Repository) FindInstUserIDByUserID(ctx context.Context, userID int64
 		LEFT JOIN org_institution i ON u.inst_id = i.id
 		WHERE u.del_flag = 0 AND u.disabled = 0
 		  AND i.del_flag = 0 AND i.enabled = 1
-		  AND i.expire_end_time > NOW()
+		  AND (
+		    i.expire_end_time > NOW()
+		    OR IFNULL(i.open_type, 0) <> 1
+		    OR i.expire_end_time IS NULL
+		  )
 		  AND u.user_id = ?
 		  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
 		ORDER BY u.id
