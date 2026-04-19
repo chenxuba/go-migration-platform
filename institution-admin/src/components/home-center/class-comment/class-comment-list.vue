@@ -653,9 +653,14 @@ onMounted(() => {
             共 {{ pagination.total }} 条数据
           </div>
           <div class="edit flex">
-            <a-button type="primary" :loading="exportingWord" @click="handleExportWord">
-              导出 Word
-            </a-button>
+            <a-tooltip>
+              <template #title>
+                请先筛选上课日期和学员后再导出
+              </template>
+              <a-button class="export-word-btn" :loading="exportingWord" @click="handleExportWord">
+                导出 Word
+              </a-button>
+            </a-tooltip>
           </div>
         </div>
         <div class="table-content mt-2">
@@ -787,6 +792,28 @@ onMounted(() => {
 .tip {
   padding: 10px 24px 10px 14px;
   background: #e6f0ff;
+}
+
+.export-word-btn {
+  color: var(--pro-ant-color-primary);
+  background: #fff;
+  border-color: var(--pro-ant-color-primary);
+  box-shadow: none;
+
+  &:hover,
+  &:focus {
+    color: var(--pro-ant-color-primary);
+    background: #fff;
+    border-color: var(--pro-ant-color-primary);
+    box-shadow: none;
+  }
+
+  &:active {
+    color: var(--pro-ant-color-primary);
+    background: #f7fbff;
+    border-color: var(--pro-ant-color-primary);
+    box-shadow: none;
+  }
 }
 
 .type-tag-image {

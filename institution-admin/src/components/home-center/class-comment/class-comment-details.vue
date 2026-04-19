@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import {
+  exportClassCommentWordApi,
   getClassCommentStudentPagedListApi,
   type ClassCommentStudentItem,
 } from '@/api/edu-center/class-record'
@@ -61,6 +62,7 @@ const parentFeedbackStatusOptions = [
 ]
 
 const loading = ref(false)
+const exportingWord = ref(false)
 const dataSource = ref<ClassCommentStudentItem[]>([])
 const reviewDrawerOpen = ref(false)
 const currentReviewRecord = ref<Partial<ClassCommentStudentItem> | null>(null)
@@ -148,7 +150,7 @@ const allColumns = ref([
     width: 170,
   },
   {
-    title: '是否点评',
+    title: '是否记录',
     key: 'isComment',
     dataIndex: 'isComment',
     width: 100,
@@ -160,21 +162,9 @@ const allColumns = ref([
     width: 120,
   },
   {
-    title: '课评反馈',
+    title: '家长反馈',
     dataIndex: 'parentFeedback',
     key: 'parentFeedback',
-    width: 120,
-  },
-  {
-    title: '反馈分数',
-    dataIndex: 'parentFeedbackGrade',
-    key: 'parentFeedbackGrade',
-    width: 120,
-  },
-  {
-    title: '反馈评论',
-    dataIndex: 'parentFeedbackContent',
-    key: 'parentFeedbackContent',
     width: 120,
   },
   {
@@ -297,18 +287,7 @@ function readStatusText(record: Partial<ClassCommentStudentItem>) {
 }
 
 function parentFeedbackText(record: Partial<ClassCommentStudentItem>) {
-  const hasFeedbackData = record.isParentFeedback === true
-    || Number(record.parentFeedbackType || 0) > 0
-    || Number(record.parentFeedbackGrade || 0) > 0
-    || String(record.parentFeedbackContent || '').trim() !== ''
-  if (!hasFeedbackData)
-    return '-'
   return record.isParentFeedback ? '已反馈' : '-'
-}
-
-function parentFeedbackGradeText(record: Partial<ClassCommentStudentItem>) {
-  const grade = Number(record.parentFeedbackGrade || 0)
-  return grade > 0 ? `${grade}分` : '-'
 }
 
 function openReviewDrawer(record: Partial<ClassCommentStudentItem> | undefined, initialActiveKey: '0' | '1') {
@@ -344,6 +323,23 @@ function buildQueryModel() {
     one2OneTeacherIds: [],
     studentId: filterStudentId.value,
   }
+}
+
+function parseAttachmentFilenameFromHeader(headerValue?: string) {
+  const header = String(headerValue || '')
+  if (!header)
+    return ''
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = header.match(/filename="?([^";]+)"?/i)
+  return plainMatch?.[1] || ''
 }
 
 async function loadCourseOptions(searchKey = '') {
@@ -542,6 +538,85 @@ async function loadList() {
   }
 }
 
+async function handleExportWord() {
+  if (exportingWord.value)
+    return
+  if (!filterStudentId.value) {
+    messageService.warning('导出前请选择学员')
+    return
+  }
+  if (!filterDateRange.value || filterDateRange.value.length < 2) {
+    messageService.warning('导出前请选择上课日期')
+    return
+  }
+  const [start, end] = filterDateRange.value
+  if (start.startOf('day').isAfter(end.startOf('day'))) {
+    messageService.warning('上课日期筛选范围不正确')
+    return
+  }
+  if (end.startOf('day').isAfter(start.startOf('day').add(1, 'month'))) {
+    messageService.warning('导出时间范围最大支持一个月')
+    return
+  }
+  if (pagination.value.total <= 0) {
+    messageService.warning('暂无可导出的康复记录')
+    return
+  }
+
+  exportingWord.value = true
+  try {
+    const res = await exportClassCommentWordApi({
+      queryModel: buildQueryModel(),
+      sortModel: {
+        startTime: sortStartTime.value,
+      },
+    })
+    const contentType = String(res.headers['content-type'] || '')
+    if (contentType.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: contentType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+    const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
+      || `康复记录-${dayjs().format('YYYYMMDDHHmmss')}.docx`
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error: any) {
+    console.error('export rehab record details failed', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exportingWord.value = false
+  }
+}
+
 function handleScheduleDateFilter(value: unknown) {
   if (!Array.isArray(value) || value.length < 2)
     return
@@ -672,11 +747,11 @@ onMounted(() => {
         :schedule-one-to-one-label="'1对1'"
         :schedule-type-label="'类型'"
         :schedule-type-options="scheduleTypeOptions"
-        :comment-status-label="'是否点评'"
+        :comment-status-label="'是否记录'"
         :comment-status-options="commentStatusOptions"
         :read-status-label="'已读/未读'"
         :read-status-options="readStatusOptions"
-        :parent-feedback-status-label="'课评反馈'"
+        :parent-feedback-status-label="'家长反馈'"
         :parent-feedback-status-options="parentFeedbackStatusOptions"
         :is-quick-show="false"
         @update:schedule-date-filter="handleScheduleDateFilter"
@@ -698,7 +773,16 @@ onMounted(() => {
           <div class="total">
             共 {{ pagination.total }} 条数据
           </div>
-          <div class="edit flex" />
+          <div class="edit flex">
+            <a-tooltip>
+              <template #title>
+                请先筛选上课日期和学员后再导出
+              </template>
+              <a-button class="export-word-btn" :loading="exportingWord" @click="handleExportWord">
+                导出 Word
+              </a-button>
+            </a-tooltip>
+          </div>
         </div>
         <div class="table-content mt-2">
           <a-table
@@ -775,16 +859,6 @@ onMounted(() => {
                   {{ parentFeedbackText(record) }}
                 </div>
               </template>
-              <template v-if="column.key === 'parentFeedbackGrade'">
-                <div class="text-#222">
-                  {{ parentFeedbackGradeText(record) }}
-                </div>
-              </template>
-              <template v-if="column.key === 'parentFeedbackContent'">
-                <div class="text-#222">
-                  {{ displayText(record.parentFeedbackContent) }}
-                </div>
-              </template>
               <template v-if="column.key === 'subTeacher'">
                 <div class="text-#222">
                   {{ displayText(record.assistants) }}
@@ -839,6 +913,28 @@ onMounted(() => {
 .tip {
   padding: 10px 24px 10px 14px;
   background: #e6f0ff;
+}
+
+.export-word-btn {
+  color: var(--pro-ant-color-primary);
+  background: #fff;
+  border-color: var(--pro-ant-color-primary);
+  box-shadow: none;
+
+  &:hover,
+  &:focus {
+    color: var(--pro-ant-color-primary);
+    background: #fff;
+    border-color: var(--pro-ant-color-primary);
+    box-shadow: none;
+  }
+
+  &:active {
+    color: var(--pro-ant-color-primary);
+    background: #f7fbff;
+    border-color: var(--pro-ant-color-primary);
+    box-shadow: none;
+  }
 }
 
 .type-tag-image {

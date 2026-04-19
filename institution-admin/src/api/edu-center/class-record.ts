@@ -351,8 +351,6 @@ export interface ClassCommentStudentItem {
   classRoomName?: string
   isParentFeedback?: boolean
   parentFeedbackType?: number
-  parentFeedbackGrade?: number
-  parentFeedbackContent?: string
 }
 
 export interface ClassCommentStudentPagedParams {
@@ -421,7 +419,7 @@ export function getClassCommentStudentPagedListApi(data: ClassCommentStudentPage
 }
 
 export async function exportClassCommentWordApi(data: {
-  queryModel: ClassCommentQueryModel
+  queryModel: ClassCommentQueryModel | ClassCommentStudentQueryModel
   sortModel?: {
     startTime?: number
   }

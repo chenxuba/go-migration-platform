@@ -665,8 +665,6 @@ func (repo *Repository) GetClassCommentStudentPagedList(ctx context.Context, ins
 		item.Assistants = normalizeJSONStringListText(rawAssistants)
 		item.IsParentFeedback = false
 		item.ParentFeedbackType = 0
-		item.ParentFeedbackGrade = 0
-		item.ParentFeedbackContent = ""
 		result.List = append(result.List, item)
 	}
 	if err := rows.Err(); err != nil {

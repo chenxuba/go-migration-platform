@@ -345,8 +345,6 @@ type ClassCommentStudentPagedItem struct {
 	ClassRoomName           string `json:"classRoomName"`
 	IsParentFeedback        bool   `json:"isParentFeedback"`
 	ParentFeedbackType      int    `json:"parentFeedbackType"`
-	ParentFeedbackGrade     int    `json:"parentFeedbackGrade"`
-	ParentFeedbackContent   string `json:"parentFeedbackContent"`
 }
 
 type ClassCommentStudentPagedResult struct {
