@@ -87,10 +87,16 @@ const openModal = computed({
 const isEdit = computed(() => Number(props.versionId || 0) > 0)
 const modalTitle = computed(() => (isEdit.value ? '编辑版本' : '新建版本'))
 const totalLeafCount = computed(() => {
-  return collectAuthorityIDSet(false).size
+  return boxList.value.reduce((sum, parent) => {
+    return sum + parent.children.reduce((childSum, child) => childSum + child.children.length, 0)
+  }, 0)
 })
 const selectedLeafCount = computed(() => {
-  return collectAuthorityIDSet(true).size
+  return boxList.value.reduce((sum, parent) => {
+    return sum + parent.children.reduce((childSum, child) => {
+      return childSum + child.children.filter(authority => authority.checked).length
+    }, 0)
+  }, 0)
 })
 const hasSelectedPermissions = computed(() => {
   return boxList.value.some(parent =>
@@ -212,25 +218,6 @@ function collectSelectedMenuIDs() {
   })
 
   return Array.from(selectedIDs)
-}
-
-function collectAuthorityIDSet(checkedOnly = false) {
-  const authorityIDs = new Set<number>()
-
-  boxList.value.forEach((parent) => {
-    parent.children.forEach((child) => {
-      child.children.forEach((authority) => {
-        const authorityID = Number(authority.id)
-        if (!Number.isFinite(authorityID) || authorityID <= 0)
-          return
-        if (checkedOnly && !authority.checked)
-          return
-        authorityIDs.add(authorityID)
-      })
-    })
-  })
-
-  return authorityIDs
 }
 
 function resetState() {

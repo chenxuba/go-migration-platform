@@ -426,7 +426,6 @@ var institutionMenuSeeds = []institutionMenuSeed{
 					{Name: "校区员工管理", Code: "perm:orgMngStfMng", Sort: 20, Weight: 0, Remark: "在所属校区内创建新员工、批量编辑员工信息以及管理角色权限。"},
 					{Name: "校区部门管理", Code: "perm:orgMngDepaMng", Sort: 30, Weight: 0, Remark: "在所属校区内新增、编辑和删除部门。"},
 					{Name: "管理督办", Code: "perm:orgMngSup", Sort: 40, Weight: 0, Remark: "可以查看工作台的管理督办。"},
-					{Name: "角色管理", Code: "perm:orgMngRoleMng", Sort: 50, Weight: 0, Remark: "支持创建和编辑角色。"},
 					{Name: "导出员工", Code: "perm:orgMngStfExp", Sort: 60, Weight: 0, Remark: "支持导出员工信息。"},
 					{Name: "查看员工忙碌时段", Code: "perm:orgMngBsyView", Sort: 70, Weight: 0, Remark: "可查看员工忙碌时段。"},
 					{Name: "管理员工忙碌时段", Code: "perm:orgMngBsyMng", Sort: 80, Weight: 0, Remark: "可设置、编辑和撤销员工忙碌时段。"},
