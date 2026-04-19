@@ -1,7 +1,13 @@
 <script setup lang="ts">
 const userStore = useUserStore()
 
-const visible = computed(() => userStore.institutionStatus === 'expired_readonly')
+const visible = computed(() => ['expired_readonly', 'warning'].includes(userStore.institutionStatus))
+const bannerMessage = computed(() => {
+  if (userStore.institutionStatus === 'warning') {
+    return '当前机构授权将在30天内到期，请及时联系售后续期。当前系统功能可正常使用，避免到期后影响业务操作。'
+  }
+  return '当前机构授权已到期，系统已切换为只读模式。您仍可查看数据，但编辑、创建、删除等操作已关闭，如需恢复请联系售后。'
+})
 </script>
 
 <template>
@@ -10,7 +16,7 @@ const visible = computed(() => userStore.institutionStatus === 'expired_readonly
       banner
       show-icon
       type="warning"
-      message="当前机构授权已到期，系统已切换为只读模式。您仍可查看数据，但编辑、创建、删除等操作已关闭，如需恢复请联系售后。"
+      :message="bannerMessage"
     />
   </div>
 </template>

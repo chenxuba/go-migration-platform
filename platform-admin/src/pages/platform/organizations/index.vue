@@ -20,6 +20,7 @@ import messageService from '@/utils/messageService'
 const displayArray = ['customSearch', 'createTime', 'enableStatus']
 const institutionStatusOptions = [
   { id: 1, value: '启用' },
+  { id: 3, value: '预警' },
   { id: 2, value: '停用' },
   { id: 4, value: '过期' },
 ]
@@ -257,15 +258,31 @@ function getInstitutionOpenTypeLabel(record: Partial<InstitutionItem>) {
   return institutionOpenTypeOptions.find(item => item.id === currentValue)?.value || '基础版'
 }
 
-function getInstitutionStatusValue(record: Partial<InstitutionItem>) {
-  const rawStatus = Number(record.status || 0)
-  if (rawStatus === 1 || rawStatus === 4)
-    return rawStatus
+function getInstitutionExpireAt(record: Partial<InstitutionItem>) {
+  const raw = String(record.expireEndTime || '').trim()
+  if (!raw)
+    return null
+  const expireAt = new Date(raw.replace(/-/g, '/'))
+  if (Number.isNaN(expireAt.getTime()))
+    return null
+  return expireAt
+}
 
-  if (rawStatus === 2 || rawStatus === 3)
+function getInstitutionStatusValue(record: Partial<InstitutionItem>) {
+  if (record.enabled === false)
     return 2
 
-  return record.enabled ? 1 : 2
+  if (isInstitutionExpiredByTime(record))
+    return 4
+
+  if (isInstitutionWarningByTime(record))
+    return 3
+
+  if (record.enabled === true)
+    return 1
+
+  const rawStatus = Number(record.status || 0)
+  return [1, 2, 3, 4].includes(rawStatus) ? rawStatus : 1
 }
 
 function getInstitutionStatusMeta(record: Partial<InstitutionItem>) {
@@ -284,6 +301,13 @@ function getInstitutionStatusMeta(record: Partial<InstitutionItem>) {
       className: 'status-text--expired',
     }
   }
+  if (status === 3) {
+    return {
+      value: 3,
+      text: '预警',
+      className: 'status-text--warning',
+    }
+  }
   return {
     value: 2,
     text: '停用',
@@ -296,18 +320,27 @@ function isInstitutionExpired(record: Partial<InstitutionItem>) {
 }
 
 function isInstitutionExpiredByTime(record: Partial<InstitutionItem>) {
-  const raw = String(record.expireEndTime || '').trim()
-  if (!raw)
-    return false
-  const expireAt = new Date(raw.replace(/-/g, '/'))
-  if (Number.isNaN(expireAt.getTime()))
+  const expireAt = getInstitutionExpireAt(record)
+  if (!expireAt)
     return false
   return expireAt.getTime() < Date.now()
 }
 
+function isInstitutionWarningByTime(record: Partial<InstitutionItem>) {
+  const expireAt = getInstitutionExpireAt(record)
+  if (!expireAt)
+    return false
+  const now = new Date()
+  if (expireAt.getTime() < now.getTime())
+    return false
+  const warningDeadline = new Date(now)
+  warningDeadline.setMonth(warningDeadline.getMonth() + 1)
+  return expireAt.getTime() <= warningDeadline.getTime()
+}
+
 function canToggleInstitutionStatus(record: Partial<InstitutionItem>) {
   const status = getInstitutionStatusValue(record)
-  return status === 1 || status === 2 || status === 4
+  return status === 1 || status === 2 || status === 3 || status === 4
 }
 
 function getToggleTargetEnabled(record: Partial<InstitutionItem>) {
@@ -315,7 +348,8 @@ function getToggleTargetEnabled(record: Partial<InstitutionItem>) {
 }
 
 function getRowClassName(record: Partial<InstitutionItem>) {
-  return getInstitutionStatusValue(record) === 1 ? 'institution-row' : 'institution-row institution-row--disabled'
+  const status = getInstitutionStatusValue(record)
+  return status === 2 || status === 4 ? 'institution-row institution-row--disabled' : 'institution-row'
 }
 
 function openCreateDrawer() {
@@ -391,7 +425,11 @@ async function toggleInstitutionStatus(record: Partial<InstitutionItem>, enabled
       return
     }
     const nextMessage = enabled
-      ? (isInstitutionExpiredByTime(record) ? '机构已启用，当前状态为过期' : '机构已启用')
+      ? (
+          isInstitutionExpiredByTime(record)
+            ? '机构已启用，当前状态为过期'
+            : (isInstitutionWarningByTime(record) ? '机构已启用，当前状态为预警' : '机构已启用')
+        )
       : '机构已停用'
     messageService.success(nextMessage)
     await fetchInstitutions()
@@ -436,8 +474,8 @@ async function fetchInstitutions() {
     pagination.total = Number(response.total || 0)
     summary.value = response.data?.summary || {
       totalCount: pagination.total,
-      enabledCount: list.filter(item => getInstitutionStatusValue(item) === 1).length,
-      disabledCount: list.filter(item => getInstitutionStatusValue(item) !== 1).length,
+      enabledCount: list.filter(item => [1, 3].includes(getInstitutionStatusValue(item))).length,
+      disabledCount: list.filter(item => [2, 4].includes(getInstitutionStatusValue(item))).length,
     }
   }
   catch (error: any) {
@@ -923,6 +961,14 @@ watch(institutionRenewalOpen, (open) => {
 
 .status-text--disabled .status-text__dot {
   background: #bfbfbf;
+}
+
+.status-text--warning {
+  color: #d97706;
+}
+
+.status-text--warning .status-text__dot {
+  background: #f59e0b;
 }
 
 .status-text--expired {

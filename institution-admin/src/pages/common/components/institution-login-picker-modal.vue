@@ -62,6 +62,8 @@ function getOrgInitial(orgName) {
 
 function getInstitutionStatusLabel(item) {
   switch (String(item?.institutionStatus || '').trim()) {
+    case 'warning':
+      return '即将到期'
     case 'disabled':
       return '已停用'
     case 'trial_expired':
@@ -75,6 +77,8 @@ function getInstitutionStatusLabel(item) {
 
 function getInstitutionStatusClass(item) {
   switch (String(item?.institutionStatus || '').trim()) {
+    case 'warning':
+      return 'ipm-item__tag--warning'
     case 'disabled':
       return 'ipm-item__tag--danger'
     case 'trial_expired':

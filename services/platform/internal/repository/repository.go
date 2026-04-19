@@ -127,8 +127,8 @@ func isInstitutionBaseMenuCode(menuCode string) bool {
 func institutionStatusExpr(alias string) string {
 	return "CASE " +
 		"WHEN IFNULL(" + alias + ".enabled, 0) = 0 THEN 2 " +
-		"WHEN IFNULL(" + alias + ".status, 0) = 4 THEN 4 " +
 		"WHEN " + alias + ".expire_end_time IS NOT NULL AND " + alias + ".expire_end_time < NOW() THEN 4 " +
+		"WHEN " + alias + ".expire_end_time IS NOT NULL AND " + alias + ".expire_end_time <= DATE_ADD(NOW(), INTERVAL 1 MONTH) THEN 3 " +
 		"ELSE 1 END"
 }
 
@@ -960,8 +960,8 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 	var summary model.InstitutionSummary
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*),
-		       COALESCE(SUM(CASE WHEN `+statusExpr+` = 1 THEN 1 ELSE 0 END), 0),
-		       COALESCE(SUM(CASE WHEN `+statusExpr+` <> 1 THEN 1 ELSE 0 END), 0)
+		       COALESCE(SUM(CASE WHEN `+statusExpr+` IN (1, 3) THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN `+statusExpr+` IN (2, 4) THEN 1 ELSE 0 END), 0)
 		FROM org_institution oi
 		WHERE `+whereClause, args...).Scan(&summary.TotalCount, &summary.EnabledCount, &summary.DisabledCount); err != nil {
 		return model.InstitutionPage{}, err

@@ -70,6 +70,7 @@ type InstUserInfo struct {
 	Disabled             bool     `json:"disabled"`
 	InstitutionEnabled   bool     `json:"-"`
 	InstitutionExpired   bool     `json:"-"`
+	InstitutionWarning   bool     `json:"-"`
 	InstitutionStatus    string   `json:"institutionStatus,omitempty"`
 	InstitutionReadonly  bool     `json:"institutionReadonly"`
 	DeptIDs              []int64  `json:"deptIds"`
@@ -78,12 +79,13 @@ type InstUserInfo struct {
 
 const (
 	InstitutionStatusNormal          = "normal"
+	InstitutionStatusWarning         = "warning"
 	InstitutionStatusDisabled        = "disabled"
 	InstitutionStatusTrialExpired    = "trial_expired"
 	InstitutionStatusExpiredReadonly = "expired_readonly"
 )
 
-func ResolveInstitutionStatus(enabled, expired bool, openType int) string {
+func ResolveInstitutionStatus(enabled, expired, warning bool, openType int) string {
 	if !enabled {
 		return InstitutionStatusDisabled
 	}
@@ -92,6 +94,9 @@ func ResolveInstitutionStatus(enabled, expired bool, openType int) string {
 			return InstitutionStatusTrialExpired
 		}
 		return InstitutionStatusExpiredReadonly
+	}
+	if warning {
+		return InstitutionStatusWarning
 	}
 	return InstitutionStatusNormal
 }

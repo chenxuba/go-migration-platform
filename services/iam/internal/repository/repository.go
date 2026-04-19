@@ -294,6 +294,12 @@ func (repo *Repository) ListInstitutionLoginOptions(ctx context.Context, identif
 		       CASE
 		         WHEN i.expire_end_time IS NOT NULL AND i.expire_end_time <= NOW() THEN 1
 		         ELSE 0
+		       END,
+		       CASE
+		         WHEN i.expire_end_time IS NOT NULL
+		              AND i.expire_end_time > NOW()
+		              AND i.expire_end_time <= DATE_ADD(NOW(), INTERVAL 1 MONTH) THEN 1
+		         ELSE 0
 		       END
 		FROM sso_user su
 		JOIN inst_user iu ON iu.user_id = su.id
@@ -322,10 +328,11 @@ func (repo *Repository) ListInstitutionLoginOptions(ctx context.Context, identif
 		var openType int
 		var enabled bool
 		var expired bool
-		if err := rows.Scan(&item.UserID, &item.InstID, &item.OrgName, &item.LoginName, &item.NickName, &item.Mobile, &item.Logo, &item.Admin, &openType, &enabled, &expired); err != nil {
+		var warning bool
+		if err := rows.Scan(&item.UserID, &item.InstID, &item.OrgName, &item.LoginName, &item.NickName, &item.Mobile, &item.Logo, &item.Admin, &openType, &enabled, &expired, &warning); err != nil {
 			return nil, err
 		}
-		item.InstitutionStatus = model.ResolveInstitutionStatus(enabled, expired, openType)
+		item.InstitutionStatus = model.ResolveInstitutionStatus(enabled, expired, warning, openType)
 		item.InstitutionReadonly = item.InstitutionStatus == model.InstitutionStatusExpiredReadonly
 		items = append(items, item)
 	}
@@ -425,6 +432,12 @@ func (repo *Repository) GetInstitutionUserInfoByInst(ctx context.Context, userID
 		         WHEN i.expire_end_time IS NOT NULL AND i.expire_end_time <= NOW() THEN 1
 		         ELSE 0
 		       END,
+		       CASE
+		         WHEN i.expire_end_time IS NOT NULL
+		              AND i.expire_end_time > NOW()
+		              AND i.expire_end_time <= DATE_ADD(NOW(), INTERVAL 1 MONTH) THEN 1
+		         ELSE 0
+		       END,
 		       IFNULL((
 		           SELECT sm.name
 		           FROM org_module om
@@ -461,6 +474,7 @@ func (repo *Repository) GetInstitutionUserInfoByInst(ctx context.Context, userID
 		&info.OpenType,
 		&info.InstitutionEnabled,
 		&info.InstitutionExpired,
+		&info.InstitutionWarning,
 		&info.VersionName,
 	); err != nil {
 		return model.InstUserInfo{}, err
@@ -468,7 +482,7 @@ func (repo *Repository) GetInstitutionUserInfoByInst(ctx context.Context, userID
 	if strings.TrimSpace(info.VersionName) == "" && info.OpenType > 0 {
 		info.VersionName = institutionOpenTypeModuleName(info.OpenType)
 	}
-	info.InstitutionStatus = model.ResolveInstitutionStatus(info.InstitutionEnabled, info.InstitutionExpired, info.OpenType)
+	info.InstitutionStatus = model.ResolveInstitutionStatus(info.InstitutionEnabled, info.InstitutionExpired, info.InstitutionWarning, info.OpenType)
 	info.InstitutionReadonly = info.InstitutionStatus == model.InstitutionStatusExpiredReadonly
 
 	deptRows, err := repo.db.QueryContext(ctx, `
@@ -600,14 +614,16 @@ func institutionStatusPriority(status string) int {
 	switch status {
 	case model.InstitutionStatusNormal:
 		return 0
-	case model.InstitutionStatusExpiredReadonly:
+	case model.InstitutionStatusWarning:
 		return 1
-	case model.InstitutionStatusDisabled:
+	case model.InstitutionStatusExpiredReadonly:
 		return 2
-	case model.InstitutionStatusTrialExpired:
+	case model.InstitutionStatusDisabled:
 		return 3
-	default:
+	case model.InstitutionStatusTrialExpired:
 		return 4
+	default:
+		return 5
 	}
 }
 
