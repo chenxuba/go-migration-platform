@@ -420,23 +420,7 @@ const filteredRoleList = computed(() => {
 })
 
 const selectedPermissionStats = computed(() => {
-  let functional = 0
-  let data = 0
-
-  boxList.value.forEach((parent) => {
-    parent.children.forEach((child) => {
-      child.children.forEach((authority) => {
-        if (!authority.checked)
-          return
-        if (Number(authority.type) === 1)
-          data += 1
-        else
-          functional += 1
-      })
-    })
-  })
-
-  return { functional, data }
+  return calcPermissionStatsByMenuIDs(collectSelectedPermissionIDs())
 })
 
 const hasSelectedPermissions = computed(() => {
