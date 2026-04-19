@@ -84,6 +84,7 @@ func buildRehabRecordWordExportView(row repository.RehabRecordWordExportRow, bas
 		row.SourceName,
 		row.LessonName,
 	)
+	className = formatExportClassName(className)
 	teacherName := firstNonEmptyExportValue(content.TeacherName, row.TeacherName)
 	trainingDate := firstNonEmptyExportValue(content.TrainingDate, formatExportDateOnly(row.StartTime))
 
@@ -137,7 +138,7 @@ func normalizeRehabRecordExportContent(content model.RehabRecordContent) model.R
 
 func buildClassCommentWordDocument(items []rehabRecordWordExportView) string {
 	var builder strings.Builder
-	builder.WriteString(`<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><meta name="ProgId" content="Word.Document"><meta name="Generator" content="Microsoft Word 15"><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]--><style>@page Section1{size:595.3pt 841.9pt;mso-page-orientation:portrait;margin:72pt 90pt 72pt 90pt;} div.Section1{page:Section1;} body{margin:0;color:#000;background:#fff;font-family:"SimSun","Songti SC",serif;font-size:10.5pt;} .page{width:415.3pt;margin:0 auto;page-break-after:always;} .page:last-child{page-break-after:auto;} .title{margin:0 0 10pt;text-align:center;font-size:22pt;font-weight:700;letter-spacing:1pt;line-height:1.2;} .sheet{width:100%;border-collapse:collapse;table-layout:fixed;} .sheet td{border:1pt solid #000;padding:6pt 5pt;vertical-align:middle;line-height:1.6;word-break:break-word;font-size:10.5pt;} .label{font-weight:400;text-align:center;} .label-multi{font-weight:400;text-align:center;line-height:1.35;} .center{text-align:center;} .left{text-align:left;} .top{vertical-align:top;} .nowrap{white-space:nowrap;word-break:keep-all;} .date-center{text-align:center;mso-paragraph-align:center;} .training-content{padding:0 !important;} .training-item-label{font-weight:400;text-align:center;} .target-block{min-height:72pt;} .summary-block{min-height:84pt;} .advice-block{min-height:72pt;} .feedback-block{min-height:86pt;} .signature-block{height:56pt;} .signature-layout{position:relative;width:100%;min-height:40pt;font-size:10.5pt;} .signature-left-block{display:block;padding-right:120pt;text-align:left;} .signature-right-block{position:absolute;right:0;top:50%;margin-top:-8pt;text-align:right;white-space:nowrap;word-break:keep-all;} .signature-content{display:block;min-height:40pt;line-height:40pt;} .signature-prefix{display:inline-block;vertical-align:middle;} .signature-image{display:inline-block;max-width:130pt;max-height:34pt;vertical-align:middle;} .signature-placeholder{display:inline-block;min-width:130pt;height:20pt;vertical-align:middle;} .date-inline{display:inline-block;white-space:nowrap;word-break:keep-all;} .date-inline span{display:inline-block;min-width:18pt;text-align:center;} .training-list{margin:0;padding:0;list-style:none;} .training-list li{margin:0;padding:5pt 6pt;border-top:1pt solid #000;line-height:1.6;} .training-list li:first-child{border-top:none;} .training-row{display:flex;} .training-name{width:78pt;flex:0 0 78pt;border-right:1pt solid #000;display:flex;align-items:center;justify-content:center;padding:5pt 4pt;box-sizing:border-box;} .training-text{flex:1;padding:5pt 6pt;box-sizing:border-box;} .training-head{font-weight:400;text-align:center;} .date-label{white-space:nowrap;word-break:keep-all;font-size:10.5pt;}</style></head><body>`)
+	builder.WriteString(`<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><meta name="ProgId" content="Word.Document"><meta name="Generator" content="Microsoft Word 15"><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]--><style>@page Section1{size:595.3pt 841.9pt;mso-page-orientation:portrait;margin:72pt 90pt 72pt 90pt;} div.Section1{page:Section1;} body{margin:0;color:#000;background:#fff;font-family:"SimSun","Songti SC",serif;font-size:10.5pt;} .page{width:415.3pt;margin:0 auto;page-break-after:always;} .page:last-child{page-break-after:auto;} .title{margin:0 0 10pt;text-align:center;font-size:22pt;font-weight:700;letter-spacing:1pt;line-height:1.2;} .sheet{width:100%;border-collapse:collapse;table-layout:fixed;} .sheet td{border:1pt solid #000;padding:6pt 5pt;vertical-align:middle;line-height:1.6;word-break:break-word;font-size:10.5pt;} .label{font-weight:400;text-align:center;} .label-multi{font-weight:400;text-align:center;line-height:1.35;} .center{text-align:center;} .left{text-align:left;} .top{vertical-align:top;} .nowrap{white-space:nowrap;word-break:keep-all;} .date-center{text-align:center;mso-paragraph-align:center;} .training-content{padding:0 !important;} .training-item-label{font-weight:400;text-align:center;} .target-block{min-height:72pt;} .summary-block{min-height:84pt;} .advice-block{min-height:96pt;} .feedback-block{min-height:60pt;} .signature-row{height:20pt;mso-height-source:userset;mso-height-rule:exactly;} .signature-block{height:20pt;padding:0 5pt 1pt !important;line-height:1 !important;vertical-align:bottom !important;} .signature-layout{width:100%;height:16pt;overflow:hidden;font-size:10.5pt;line-height:16pt;} .signature-right-block{float:right;text-align:right;white-space:nowrap;word-break:keep-all;line-height:16pt;} .signature-left-block{display:block;overflow:hidden;white-space:nowrap;line-height:16pt;} .signature-content{display:inline-block;line-height:16pt;white-space:nowrap;vertical-align:bottom;} .signature-prefix{display:inline-block;vertical-align:bottom;} .signature-image{display:inline-block;height:16pt;width:auto;max-width:100pt;vertical-align:bottom;} .signature-placeholder{display:inline-block;min-width:100pt;height:10pt;vertical-align:bottom;} .date-inline{display:inline-block;white-space:nowrap;word-break:keep-all;line-height:16pt;vertical-align:bottom;} .date-inline span{display:inline-block;min-width:18pt;text-align:center;} .training-list{margin:0;padding:0;list-style:none;} .training-list li{margin:0;padding:5pt 6pt;border-top:1pt solid #000;line-height:1.6;} .training-list li:first-child{border-top:none;} .training-row{display:flex;} .training-name{width:78pt;flex:0 0 78pt;border-right:1pt solid #000;display:flex;align-items:center;justify-content:center;padding:5pt 4pt;box-sizing:border-box;} .training-text{flex:1;padding:5pt 6pt;box-sizing:border-box;} .training-head{font-weight:400;text-align:center;} .date-label{white-space:nowrap;word-break:keep-all;font-size:10.5pt;}</style></head><body>`)
 	for _, item := range items {
 		builder.WriteString(`<div class="Section1 page">`)
 		builder.WriteString(`<h1 class="title">个别训练记录表</h1>`)
@@ -158,9 +159,9 @@ func buildClassCommentWordDocument(items []rehabRecordWordExportView) string {
 		builder.WriteString(`<tr><td class="label-multi">训练<br>项目</td><td colspan="7" class="training-head">训练内容</td></tr>`)
 		builder.WriteString(buildTrainingItemRows(item.TrainingItems))
 		builder.WriteString(`<tr><td class="label-multi">学生<br>综合<br>表现</td><td colspan="7" class="left top summary-block">` + renderWordText(item.Performance) + `</td></tr>`)
-		builder.WriteString(`<tr><td class="label-multi">康复<br>建议</td><td colspan="7" class="left top advice-block">` + renderWordText(item.Suggestion) + `</td></tr>`)
-		builder.WriteString(`<tr><td class="label-multi" rowspan="2">家长<br>意见<br>反馈</td><td colspan="7" class="left top feedback-block">` + renderWordText(item.ParentFeedback) + `</td></tr>`)
-		builder.WriteString(`<tr><td colspan="7" class="left signature-block">` + renderSignatureDateRow(item) + `</td></tr>`)
+		builder.WriteString(`<tr style="height:96pt;mso-height-rule:at-least;"><td class="label-multi">康复<br>建议</td><td colspan="7" class="left top advice-block" style="height:96pt;">` + renderWordText(item.Suggestion) + `</td></tr>`)
+		builder.WriteString(`<tr style="height:60pt;mso-height-rule:at-least;"><td class="label-multi" rowspan="2">家长<br>意见<br>反馈</td><td colspan="7" class="left top feedback-block" style="height:60pt;">` + renderWordText(item.ParentFeedback) + `</td></tr>`)
+		builder.WriteString(`<tr class="signature-row" style="height:20pt;mso-height-source:userset;mso-height-rule:exactly;"><td colspan="7" class="left signature-block" valign="bottom" style="height:20pt;vertical-align:bottom;padding:0 5pt 1pt 5pt;">` + renderSignatureDateRow(item) + `</td></tr>`)
 		builder.WriteString(`</table></div>`)
 	}
 	builder.WriteString(`</body></html>`)
@@ -253,8 +254,8 @@ func renderFeedbackDateHTML(value string) string {
 func renderSignatureDateRow(item rehabRecordWordExportView) string {
 	var builder strings.Builder
 	builder.WriteString(`<div class="signature-layout">`)
-	builder.WriteString(`<div class="signature-left-block"><div class="signature-content"><span class="signature-prefix">家长签名：</span>` + renderSignatureHTML(item) + `</div></div>`)
-	builder.WriteString(`<div class="signature-right-block"><span class="date-inline">` + renderFeedbackDateHTML(item.FeedbackDate) + `</span></div>`)
+	builder.WriteString(`<span class="signature-right-block"><span class="date-inline">` + renderFeedbackDateHTML(item.FeedbackDate) + `</span></span>`)
+	builder.WriteString(`<span class="signature-left-block"><span class="signature-content"><span class="signature-prefix">家长签名：</span>` + renderSignatureHTML(item) + `</span></span>`)
 	builder.WriteString(`</div>`)
 	return builder.String()
 }
@@ -309,6 +310,24 @@ func formatDisplayDateForDocument(raw string) string {
 		}
 	}
 	return value
+}
+
+func formatExportClassName(value string) string {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return ""
+	}
+	for _, separator := range []string{"-", " - ", "－", "—", "——"} {
+		if index := strings.Index(text, separator); index >= 0 {
+			prefix := strings.TrimRight(text[:index+len(separator)], " ")
+			suffix := strings.TrimLeft(text[index+len(separator):], " ")
+			if suffix == "" {
+				return text
+			}
+			return prefix + "\n" + suffix
+		}
+	}
+	return text
 }
 
 func firstNonEmptyExportValue(values ...string) string {
