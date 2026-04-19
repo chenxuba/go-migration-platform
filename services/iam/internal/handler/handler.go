@@ -627,7 +627,8 @@ func (handler *Handler) defaultRoleDetail(w http.ResponseWriter, r *http.Request
 
 func (handler *Handler) roleStaff(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	roleID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("roleId")), 10, 64)
@@ -635,7 +636,7 @@ func (handler *Handler) roleStaff(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid roleId", ctx.RequestID)
 		return
 	}
-	result, err := handler.service.GetStaffByRoleID(roleID)
+	result, err := handler.service.GetStaffByRoleID(claims, roleID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

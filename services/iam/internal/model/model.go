@@ -293,7 +293,13 @@ type DefaultRoleDetailVO struct {
 }
 
 type InstUserSimple struct {
-	ID       int64  `json:"id"`
-	UserID   *int64 `json:"userId,omitempty"`
-	NickName string `json:"nickName"`
+	ID              int64      `json:"id"`
+	UserID          *int64     `json:"userId,omitempty"`
+	NickName        string     `json:"nickName"`
+	Mobile          string     `json:"mobile,omitempty"`
+	Disabled        bool       `json:"disabled"`
+	CreateTime      *time.Time `json:"createTime,omitempty"`
+	ActivatedStatus bool       `json:"activatedStatus"`
+	IsAdmin         bool       `json:"isAdmin"`
+	RoleName        string     `json:"roleName,omitempty"`
 }

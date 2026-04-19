@@ -384,14 +384,22 @@ func (repo *Repository) MarkInstitutionUserActivated(ctx context.Context, instUs
 }
 
 func (repo *Repository) GetUserRoleIDs(ctx context.Context, userID, orgID int64, roleType int) ([]string, error) {
-	rows, err := repo.db.QueryContext(ctx, `
+	query := `
 		SELECT DISTINCT CAST(r.id AS CHAR)
 		FROM sso_user u
 		LEFT JOIN sso_user_role ur ON u.id = ur.user_id
 		LEFT JOIN sso_role r ON ur.role_id = r.id AND r.del_flag = 0
 		WHERE u.id = ? AND u.del_flag = 0 AND r.del_flag = 0
-		  AND r.org_id = ? AND r.role_type = ?
-	`, userID, orgID, roleType)
+		  AND r.role_type = ?`
+	args := []any{userID, roleType}
+	if roleType == 2 && orgID > 0 {
+		query += ` AND (r.org_id = ? OR IFNULL(r.org_id, 0) = 0)`
+		args = append(args, orgID)
+	} else {
+		query += ` AND r.org_id = ?`
+		args = append(args, orgID)
+	}
+	rows, err := repo.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +426,7 @@ func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int6
 		}
 	}
 
-	rows, err := repo.db.QueryContext(ctx, `
+	query := `
 		SELECT DISTINCT m.id, m.menu_code
 		FROM sso_user u
 		LEFT JOIN sso_user_role ur ON u.id = ur.user_id
@@ -432,11 +440,19 @@ func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int6
 		    SELECT 1
 		    FROM sso_role r
 		    WHERE r.id = rm.role_id
-		      AND r.org_id = ?
 		      AND r.del_flag = 0
-		      AND r.role_type = ?
-		  )
-	`, userID, ownType, orgID, roleType)
+		      AND r.role_type = ?`
+	args := []any{userID, ownType, roleType}
+	if roleType == 2 && orgID > 0 {
+		query += ` AND (r.org_id = ? OR IFNULL(r.org_id, 0) = 0)`
+		args = append(args, orgID)
+	} else {
+		query += ` AND r.org_id = ?`
+		args = append(args, orgID)
+	}
+	query += `
+		  )`
+	rows, err := repo.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -854,18 +870,27 @@ func (repo *Repository) UserHasMenuCode(ctx context.Context, userID, orgID int64
 		return false, err
 	}
 
-	var count int
-	if err := repo.db.QueryRowContext(ctx, `
+	query := `
 		SELECT COUNT(1)
 		FROM sso_user_role ur
 		JOIN sso_role r ON r.id = ur.role_id
 		JOIN sso_role_menu rm ON rm.role_id = r.id
 		WHERE ur.user_id = ?
 		  AND r.del_flag = 0
-		  AND r.org_id = ?
-		  AND r.role_type = ?
-		  AND rm.menu_id = ?
-	`, userID, orgID, roleType, menu.ID).Scan(&count); err != nil {
+		  AND r.role_type = ?`
+	args := []any{userID, roleType}
+	if roleType == 2 && orgID > 0 {
+		query += ` AND (r.org_id = ? OR IFNULL(r.org_id, 0) = 0)`
+		args = append(args, orgID)
+	} else {
+		query += ` AND r.org_id = ?`
+		args = append(args, orgID)
+	}
+	query += ` AND rm.menu_id = ?`
+	args = append(args, menu.ID)
+
+	var count int
+	if err := repo.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
 		return false, err
 	}
 
@@ -878,8 +903,7 @@ func (repo *Repository) InstitutionUserHasMenuCode(ctx context.Context, userID, 
 		return false, nil
 	}
 
-	var marker int
-	err := repo.db.QueryRowContext(ctx, `
+	query := `
 		SELECT 1
 		FROM sso_user_role ur
 		JOIN sso_role r ON r.id = ur.role_id
@@ -888,8 +912,16 @@ func (repo *Repository) InstitutionUserHasMenuCode(ctx context.Context, userID, 
 		JOIN sys_module_menu smm ON smm.menu_id = m.id
 		WHERE ur.user_id = ?
 		  AND r.del_flag = 0
-		  AND r.org_id = ?
-		  AND r.role_type = ?
+		  AND r.role_type = ?`
+	args := []any{userID, roleType}
+	if roleType == 2 && orgID > 0 {
+		query += ` AND (r.org_id = ? OR IFNULL(r.org_id, 0) = 0)`
+		args = append(args, orgID)
+	} else {
+		query += ` AND r.org_id = ?`
+		args = append(args, orgID)
+	}
+	query += `
 		  AND m.del_flag = 0
 		  AND m.own_type = 2
 		  AND m.menu_code = ?
@@ -921,8 +953,11 @@ func (repo *Repository) InstitutionUserHasMenuCode(ctx context.Context, userID, 
 		      LIMIT 1
 		    )
 		  )
-		LIMIT 1
-	`, userID, orgID, roleType, menuCode, orgID, orgID).Scan(&marker)
+		LIMIT 1`
+	args = append(args, menuCode, orgID, orgID)
+
+	var marker int
+	err := repo.db.QueryRowContext(ctx, query, args...).Scan(&marker)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -1838,14 +1873,30 @@ func (repo *Repository) GetDefaultRoleDetail(ctx context.Context, roleID int64) 
 	return detail, nil
 }
 
-func (repo *Repository) GetStaffByRoleID(ctx context.Context, roleID int64) ([]model.InstUserSimple, error) {
-	rows, err := repo.db.QueryContext(ctx, `
-		SELECT IFNULL(iu.id, 0), iu.user_id, IFNULL(iu.nick_name, '')
+func (repo *Repository) GetStaffByRoleID(ctx context.Context, roleID int64, orgID *int64) ([]model.InstUserSimple, error) {
+	query := `
+		SELECT iu.id,
+		       iu.user_id,
+		       IFNULL(NULLIF(iu.nick_name, ''), IFNULL(su.nick_name, '')),
+		       IFNULL(NULLIF(iu.mobile, ''), IFNULL(su.mobile, '')),
+		       IFNULL(iu.disabled, 0),
+		       iu.create_time,
+		       IFNULL(iu.activated_status, 0),
+		       IFNULL(iu.is_admin, 0),
+		       IFNULL(sr.role_name, '')
 		FROM sso_user_role ur
-		LEFT JOIN inst_user iu ON iu.user_id = ur.user_id AND iu.del_flag = 0
-		WHERE ur.role_id = ?
-		ORDER BY iu.id ASC
-	`, roleID)
+		JOIN sso_role sr ON sr.id = ur.role_id AND sr.del_flag = 0
+		JOIN inst_user iu ON iu.user_id = ur.user_id AND iu.del_flag = 0
+		LEFT JOIN sso_user su ON su.id = ur.user_id AND su.del_flag = 0
+		WHERE ur.role_id = ?`
+	args := []any{roleID}
+	if orgID != nil && *orgID > 0 {
+		query += ` AND iu.inst_id = ?`
+		args = append(args, *orgID)
+	}
+	query += ` ORDER BY iu.id ASC`
+
+	rows, err := repo.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1853,7 +1904,17 @@ func (repo *Repository) GetStaffByRoleID(ctx context.Context, roleID int64) ([]m
 	items := make([]model.InstUserSimple, 0, 16)
 	for rows.Next() {
 		var item model.InstUserSimple
-		if err := rows.Scan(&item.ID, &item.UserID, &item.NickName); err != nil {
+		if err := rows.Scan(
+			&item.ID,
+			&item.UserID,
+			&item.NickName,
+			&item.Mobile,
+			&item.Disabled,
+			&item.CreateTime,
+			&item.ActivatedStatus,
+			&item.IsAdmin,
+			&item.RoleName,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

@@ -618,8 +618,16 @@ func (svc *Service) GetDefaultRoleDetail(roleID int64) (model.DefaultRoleDetailV
 	return svc.repo.GetDefaultRoleDetail(context.Background(), roleID)
 }
 
-func (svc *Service) GetStaffByRoleID(roleID int64) ([]model.InstUserSimple, error) {
-	return svc.repo.GetStaffByRoleID(context.Background(), roleID)
+func (svc *Service) GetStaffByRoleID(claims authx.Claims, roleID int64) ([]model.InstUserSimple, error) {
+	var orgID *int64
+	if claims.LoginType == "org" {
+		resolvedOrgID, err := svc.resolveOrgID(claims, nil)
+		if err != nil {
+			return nil, err
+		}
+		orgID = &resolvedOrgID
+	}
+	return svc.repo.GetStaffByRoleID(context.Background(), roleID, orgID)
 }
 
 func (svc *Service) SaveRole(claims authx.Claims, req model.SaveRoleRequest) error {
