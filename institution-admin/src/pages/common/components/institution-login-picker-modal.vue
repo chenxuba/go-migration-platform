@@ -251,7 +251,7 @@ function selectOption(item) {
     appearance: none;
     box-sizing: border-box;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
     width: 100%;
     margin: 0;
@@ -283,9 +283,9 @@ function selectOption(item) {
 
   .ipm-item__radio {
     flex-shrink: 0;
+    align-self: center;
     width: 16px;
     height: 16px;
-    margin-top: 3px;
     border-radius: 50%;
     border: 1px solid rgba(0, 0, 0, 0.25);
     position: relative;
@@ -309,16 +309,18 @@ function selectOption(item) {
 
   .ipm-item__avatar {
     flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
+    align-self: center;
+    width: 62px;
+    height: 62px;
+    aspect-ratio: 1;
+    border-radius: 6px;
     overflow: hidden;
     background: var(--ipm-fill);
     border: 1px solid var(--ipm-border);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
+    font-size: 20px;
     font-weight: 600;
     color: var(--ipm-secondary);
   }
