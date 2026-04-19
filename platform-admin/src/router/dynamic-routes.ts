@@ -4,12 +4,12 @@ import { AccessEnum } from '~@/utils/constant'
 
 const routes: RouteRecordRaw[] = [
   {
-    path: '/platform',
+    path: '/platform/customers',
     redirect: '/platform/organizations',
-    name: 'PlatformCenter',
+    name: 'PlatformCustomerCenter',
     meta: {
-      title: '总控管理',
-      icon: 'BankOutlined',
+      title: '客户管理',
+      icon: 'TeamOutlined',
     },
     component: basicRouteMap.RouteView,
     children: [
@@ -21,6 +21,18 @@ const routes: RouteRecordRaw[] = [
           title: '机构列表',
         },
       },
+    ],
+  },
+  {
+    path: '/platform/system-config',
+    redirect: '/platform/versions',
+    name: 'PlatformSystemConfigCenter',
+    meta: {
+      title: '系统配置',
+      icon: 'SettingOutlined',
+    },
+    component: basicRouteMap.RouteView,
+    children: [
       {
         path: '/platform/versions',
         name: 'PlatformVersions',
