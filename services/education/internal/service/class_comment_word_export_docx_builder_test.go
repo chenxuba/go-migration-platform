@@ -46,6 +46,15 @@ func TestBuildClassCommentWordDocx(t *testing.T) {
 			t.Fatalf("generated document.xml missing %q", expected)
 		}
 	}
+	if strings.Count(documentXML, "<w:tbl>") < 2 {
+		t.Fatalf("generated document.xml missing nested signature table: %s", documentXML)
+	}
+	if !strings.Contains(documentXML, `<w:gridCol w:w="980"/><w:gridCol w:w="2200"/><w:gridCol w:w="4470"/>`) {
+		t.Fatalf("generated document.xml missing expected signature table columns: %s", documentXML)
+	}
+	if !strings.Contains(documentXML, `<w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>`) {
+		t.Fatalf("generated document.xml missing borderless signature table: %s", documentXML)
+	}
 	if !strings.Contains(relsXML, classCommentWordExportImageRelationshipType) {
 		t.Fatalf("generated document rels missing image relationship: %s", relsXML)
 	}

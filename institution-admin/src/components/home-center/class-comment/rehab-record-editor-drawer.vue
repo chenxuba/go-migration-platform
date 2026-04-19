@@ -865,7 +865,7 @@ watch(
   align-items: center;
   justify-content: flex-start;
   gap: 16px;
-  min-height: 45px;
+  min-height: 60px;
 }
 
 :deep(.parent-signature-image) {

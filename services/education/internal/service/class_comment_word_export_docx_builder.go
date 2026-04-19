@@ -34,13 +34,16 @@ const (
 	classCommentWordExportContentTypesPath = "[Content_Types].xml"
 
 	classCommentWordExportImageRelationshipType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
-	classCommentWordExportSignatureTabPos       = 7000
 	classCommentWordExportSignatureHeightEMU    = 482600
 	classCommentWordExportSignatureMaxWidthEMU  = 1270000
 	classCommentWordExportParagraphBefore       = 60
 	classCommentWordExportParagraphAfter        = 60
 	classCommentWordExportTitleBefore           = 0
 	classCommentWordExportTitleAfter            = 80
+	classCommentWordExportSignatureTableWidth   = 7650
+	classCommentWordExportSignatureLabelWidth   = 980
+	classCommentWordExportSignatureImageWidth   = 2200
+	classCommentWordExportSignatureDateWidth    = classCommentWordExportSignatureTableWidth - classCommentWordExportSignatureLabelWidth - classCommentWordExportSignatureImageWidth
 )
 
 var wordTCVerticalAlignRegexp = regexp.MustCompile(`<w:vAlign\b[^>]*w:val="[^"]*"[^>]*/>`)
@@ -280,44 +283,79 @@ func buildClassCommentTrainingRows(firstTemplateRow, repeatTemplateRow string, i
 }
 
 func buildClassCommentSignatureRow(rowXML string, item rehabRecordWordExportView, state *classCommentWordDocxBuildState) (string, error) {
-	signatureParagraph, err := buildClassCommentSignatureParagraph(item, state)
+	signatureTableXML, err := buildClassCommentSignatureTableXML(item, state)
 	if err != nil {
 		return "", err
 	}
 
-	return replaceCellContent(rowXML, 1, []string{signatureParagraph}, "center"), nil
+	return replaceCellContent(rowXML, 1, []string{signatureTableXML, buildWordParagraphXML("", "left", "", 0)}, "center"), nil
 }
 
-func buildClassCommentSignatureParagraph(item rehabRecordWordExportView, state *classCommentWordDocxBuildState) (string, error) {
-	var builder strings.Builder
-	builder.WriteString(`<w:p><w:pPr><w:tabs><w:tab w:pos="`)
-	builder.WriteString(strconv.Itoa(classCommentWordExportSignatureTabPos))
-	builder.WriteString(`" w:val="right"/></w:tabs><w:jc w:val="both"/>`)
-	builder.WriteString(defaultWordParagraphRunPropsXML())
-	builder.WriteString(`</w:pPr>`)
-	builder.WriteString(buildWordTextRunXML("家长签名："))
-
-	signatureXML, err := buildClassCommentSignatureContentXML(item, state)
+func buildClassCommentSignatureTableXML(item rehabRecordWordExportView, state *classCommentWordDocxBuildState) (string, error) {
+	signatureContentXML, err := buildClassCommentSignatureContentBlockXML(item, state)
 	if err != nil {
 		return "", err
 	}
-	builder.WriteString(signatureXML)
-	builder.WriteString(`<w:r><w:tab/></w:r>`)
-	builder.WriteString(buildWordTextRunXML(formatDocxFeedbackDateText(item.FeedbackDate)))
-	builder.WriteString(`</w:p>`)
+
+	var builder strings.Builder
+	builder.WriteString(`<w:tbl><w:tblPr><w:tblW w:w="`)
+	builder.WriteString(strconv.Itoa(classCommentWordExportSignatureTableWidth))
+	builder.WriteString(`" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>`)
+	builder.WriteString(`<w:gridCol w:w="`)
+	builder.WriteString(strconv.Itoa(classCommentWordExportSignatureLabelWidth))
+	builder.WriteString(`"/><w:gridCol w:w="`)
+	builder.WriteString(strconv.Itoa(classCommentWordExportSignatureImageWidth))
+	builder.WriteString(`"/><w:gridCol w:w="`)
+	builder.WriteString(strconv.Itoa(classCommentWordExportSignatureDateWidth))
+	builder.WriteString(`"/></w:tblGrid><w:tr>`)
+	builder.WriteString(buildWordTableCellXML(classCommentWordExportSignatureLabelWidth, buildWordParagraphXML("家长签名：", "left", "", 0), "center"))
+	builder.WriteString(buildWordTableCellXML(classCommentWordExportSignatureImageWidth, signatureContentXML, "center"))
+	builder.WriteString(buildWordTableCellXML(classCommentWordExportSignatureDateWidth, buildWordParagraphXML(formatDocxFeedbackDateText(item.FeedbackDate), "right", "", 0), "center"))
+	builder.WriteString(`</w:tr></w:tbl>`)
 	return builder.String(), nil
 }
 
-func buildClassCommentSignatureContentXML(item rehabRecordWordExportView, state *classCommentWordDocxBuildState) (string, error) {
+func buildClassCommentSignatureContentBlockXML(item rehabRecordWordExportView, state *classCommentWordDocxBuildState) (string, error) {
 	if asset, ok := tryAppendClassCommentSignatureImage(item.ParentSignatureImage, state); ok {
-		return buildWordDrawingRunXML(asset), nil
+		return buildWordRunsParagraphXML(buildWordDrawingRunXML(asset), "left"), nil
 	}
 
 	text := strings.TrimSpace(item.ParentSignatureText)
 	if text == "" {
-		return "", nil
+		return buildWordParagraphXML("", "left", "", 0), nil
 	}
-	return buildWordTextRunXML(text), nil
+	return buildWordParagraphXML(text, "left", "", 0), nil
+}
+
+func buildWordTableCellXML(width int, contentXML, verticalAlign string) string {
+	var builder strings.Builder
+	builder.WriteString(`<w:tc><w:tcPr><w:tcW w:w="`)
+	builder.WriteString(strconv.Itoa(width))
+	builder.WriteString(`" w:type="dxa"/>`)
+	if verticalAlign != "" {
+		builder.WriteString(`<w:vAlign w:val="`)
+		builder.WriteString(verticalAlign)
+		builder.WriteString(`"/>`)
+	}
+	builder.WriteString(`</w:tcPr>`)
+	builder.WriteString(contentXML)
+	builder.WriteString(`</w:tc>`)
+	return builder.String()
+}
+
+func buildWordRunsParagraphXML(runsXML, align string) string {
+	var builder strings.Builder
+	builder.WriteString(`<w:p><w:pPr>`)
+	if align != "" {
+		builder.WriteString(`<w:jc w:val="`)
+		builder.WriteString(align)
+		builder.WriteString(`"/>`)
+	}
+	builder.WriteString(defaultWordParagraphRunPropsXML())
+	builder.WriteString(`</w:pPr>`)
+	builder.WriteString(runsXML)
+	builder.WriteString(`</w:p>`)
+	return builder.String()
 }
 
 func tryAppendClassCommentSignatureImage(raw string, state *classCommentWordDocxBuildState) (classCommentWordDocxMedia, bool) {
