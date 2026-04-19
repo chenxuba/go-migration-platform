@@ -153,8 +153,8 @@ async function confirmInstitutionLogin(selectedInstitutionOption) {
   try {
     await performLogin({
       ...pendingLoginParams.value,
-      institutionId: selectedInstitutionOption.value.instId,
-      userId: selectedInstitutionOption.value.userId,
+      institutionId: selectedInstitutionOption.instId,
+      userId: selectedInstitutionOption.userId,
     })
   }
   catch (e) {

@@ -1,5 +1,5 @@
 <script setup>
-import { BankOutlined } from '@ant-design/icons-vue'
+import { BankOutlined, CheckOutlined } from '@ant-design/icons-vue'
 import { useMessage } from '@/composables/global-config'
 
 const props = defineProps({
@@ -74,6 +74,10 @@ function handleConfirm() {
   }
   emit('confirm', selectedInstitutionOption.value)
 }
+
+function selectOption(item) {
+  selectedInstitutionKey.value = getInstitutionOptionKey(item)
+}
 </script>
 
 <template>
@@ -81,596 +85,614 @@ function handleConfirm() {
     v-model:open="openProxy"
     centered
     :mask-closable="false"
-    :width="680"
+    :width="720"
     wrap-class-name="institution-picker-modal"
     @cancel="handleCancel"
   >
     <template #title>
-      <div class="institution-picker-title">
-        {{ t('pages.login.institutionPicker.title', '选择登录机构') }}
+      <div class="ipm-head">
+        <div class="ipm-head__title">
+          {{ t('pages.login.institutionPicker.title', '选择登录机构') }}
+        </div>
+        <p class="ipm-head__sub">
+          {{ t('pages.login.institutionPicker.summary', '该登录账号关联多个机构') }}
+        </p>
       </div>
     </template>
-    <div class="institution-picker-shell">
-      <div class="institution-picker-summary">
-        <div class="institution-picker-summary__accent" />
-        <div class="institution-picker-summary__content">
-          <div class="institution-picker-summary__eyebrow">
+
+    <div class="ipm-body">
+      <section class="ipm-intro" aria-labelledby="ipm-intro-heading">
+        <div class="ipm-intro__main">
+          <span id="ipm-intro-heading" class="ipm-intro__kicker">
             {{ t('pages.login.institutionPicker.eyebrow', '多机构登录识别') }}
-          </div>
-          <div class="institution-picker-summary__title">
-            {{ t('pages.login.institutionPicker.summary', '该登录账号关联多个机构') }}
-          </div>
-          <div class="institution-picker-summary__desc">
+          </span>
+          <p class="ipm-intro__text">
             {{ t('pages.login.institutionPicker.description', '请选择本次要进入的机构，确认后将直接登录对应后台。') }}
-          </div>
+          </p>
         </div>
-        <div class="institution-picker-summary__badge">
-          <strong>{{ options.length }}</strong>
-          <span>{{ t('pages.login.institutionPicker.countUnit', '个机构') }}</span>
+        <div class="ipm-intro__stat" aria-live="polite">
+          <span class="ipm-intro__stat-num">{{ options.length }}</span>
+          <span class="ipm-intro__stat-label">{{ t('pages.login.institutionPicker.countUnit', '个机构') }}</span>
         </div>
-      </div>
-      <div class="institution-picker-list">
-        <div
+      </section>
+
+      <div class="ipm-list" role="listbox" :aria-label="t('pages.login.institutionPicker.title', '选择登录机构')">
+        <button
           v-for="item in options"
           :key="getInstitutionOptionKey(item)"
-          class="institution-picker-card"
-          :class="{ 'is-active': selectedInstitutionKey === getInstitutionOptionKey(item) }"
-          @click="selectedInstitutionKey = getInstitutionOptionKey(item)"
+          type="button"
+          class="ipm-card"
+          :class="{ 'is-selected': selectedInstitutionKey === getInstitutionOptionKey(item) }"
+          :aria-selected="selectedInstitutionKey === getInstitutionOptionKey(item)"
+          @click="selectOption(item)"
         >
-          <div class="institution-picker-card__top">
-            <div class="institution-picker-card__identity">
-              <div class="institution-picker-card__logo">
-                <img
-                  v-if="item.logo"
-                  :src="item.logo"
-                  :alt="item.orgName || t('pages.login.institutionPicker.unknownOrg', '机构 logo')"
-                >
-                <span v-else>{{ getOrgInitial(item.orgName) }}</span>
+          <span class="ipm-card__accent" aria-hidden="true" />
+          <div class="ipm-card__row">
+            <div class="ipm-card__avatar" aria-hidden="true">
+              <img
+                v-if="item.logo"
+                :src="item.logo"
+                :alt="item.orgName || t('pages.login.institutionPicker.unknownOrg', '机构 logo')"
+              >
+              <span v-else class="ipm-card__avatar-fallback">{{ getOrgInitial(item.orgName) }}</span>
+            </div>
+            <div class="ipm-card__core">
+              <div class="ipm-card__title-line">
+                <span class="ipm-card__org">
+                  <BankOutlined class="ipm-card__org-icon" />
+                  <span class="ipm-card__org-name">{{ item.orgName || t('pages.login.institutionPicker.unknownOrg', '未命名机构') }}</span>
+                </span>
+                <span v-if="item.admin" class="ipm-card__role">
+                  {{ t('pages.login.institutionPicker.admin', '超级管理员') }}
+                </span>
               </div>
-              <div class="institution-picker-card__heading">
-                <div class="institution-picker-card__title-row">
-                  <div class="institution-picker-card__name">
-                    <BankOutlined />
-                    <span>{{ item.orgName || t('pages.login.institutionPicker.unknownOrg', '未命名机构') }}</span>
-                  </div>
-                  <a-tag v-if="item.admin">
-                    {{ t('pages.login.institutionPicker.admin', '超级管理员') }}
-                  </a-tag>
-                </div>
-                <div class="institution-picker-card__nick">
-                  {{ item.nickName || t('pages.login.institutionPicker.noName', '未设置姓名') }}
-                </div>
+              <div class="ipm-card__user">
+                {{ item.nickName || t('pages.login.institutionPicker.noName', '未设置姓名') }}
+              </div>
+              <div class="ipm-card__chips">
+                <span class="ipm-chip">
+                  <span class="ipm-chip__label">{{ t('pages.login.institutionPicker.loginName', '登录账号') }}</span>
+                  <span class="ipm-chip__value">{{ item.loginName || '--' }}</span>
+                </span>
+                <span class="ipm-chip">
+                  <span class="ipm-chip__label">{{ t('pages.login.institutionPicker.mobile', '手机号') }}</span>
+                  <span class="ipm-chip__value">{{ maskMobile(item.mobile) || '--' }}</span>
+                </span>
               </div>
             </div>
-            <div class="institution-picker-card__status">
-              <div class="institution-picker-card__radio">
-                <span class="institution-picker-card__radio-dot" />
-              </div>
-              <span class="institution-picker-card__status-text">
+            <div class="ipm-card__pick">
+              <span
+                class="ipm-card__pick-ring"
+                :class="{ 'is-on': selectedInstitutionKey === getInstitutionOptionKey(item) }"
+              >
+                <CheckOutlined v-if="selectedInstitutionKey === getInstitutionOptionKey(item)" class="ipm-card__pick-check" />
+              </span>
+              <span class="ipm-card__pick-label">
                 {{ selectedInstitutionKey === getInstitutionOptionKey(item) ? t('pages.login.institutionPicker.selected', '当前进入') : t('pages.login.institutionPicker.select', '点击选择') }}
               </span>
             </div>
           </div>
-          <div class="institution-picker-card__meta-row">
-            <div class="institution-picker-card__meta-item">
-              <label>{{ t('pages.login.institutionPicker.loginName', '登录账号') }}</label>
-              <span>{{ item.loginName || '--' }}</span>
-            </div>
-            <div class="institution-picker-card__meta-divider" />
-            <div class="institution-picker-card__meta-item">
-              <label>{{ t('pages.login.institutionPicker.mobile', '手机号') }}</label>
-              <span>{{ maskMobile(item.mobile) || '--' }}</span>
-            </div>
-          </div>
-        </div>
+        </button>
       </div>
     </div>
+
     <template #footer>
-      <a-button @click="handleCancel">
-        {{ t('common.cancel', '取消') }}
-      </a-button>
-      <a-button type="primary" :loading="confirmLoading" @click="handleConfirm">
-        {{ t('pages.login.institutionPicker.confirm', '确认登录') }}
-      </a-button>
+      <div class="ipm-footer">
+        <a-button class="ipm-footer__btn" size="large" @click="handleCancel">
+          {{ t('common.cancel', '取消') }}
+        </a-button>
+        <a-button
+          class="ipm-footer__btn ipm-footer__btn--primary"
+          type="primary"
+          size="large"
+          :loading="confirmLoading"
+          @click="handleConfirm"
+        >
+          {{ t('pages.login.institutionPicker.confirm', '确认登录') }}
+        </a-button>
+      </div>
     </template>
   </a-modal>
 </template>
 
 <style lang="less">
+/* Modern institution picker — self-contained under wrap class */
 .institution-picker-modal {
+  --ipm-bg: #ffffff;
+  --ipm-surface: #ffffff;
+  --ipm-ink: #1f2329;
+  --ipm-muted: #86909c;
+  --ipm-line: #e5e6eb;
+  --ipm-subtle: #f7f8fa;
+  --ipm-accent: var(--pro-ant-color-primary, #1677ff);
+  --ipm-accent-soft: rgba(22, 119, 255, 0.08);
+  --ipm-accent-line: rgba(22, 119, 255, 0.22);
+  --ipm-radius: 18px;
+  --ipm-radius-sm: 12px;
+
   .ant-modal-content {
-    border-radius: 28px;
     padding: 0;
     overflow: hidden;
-    background:
-      linear-gradient(180deg, rgba(248, 251, 255, 0.95) 0%, #ffffff 14%),
-      #fff;
-    box-shadow: 0 28px 88px rgba(15, 23, 42, 0.18);
+    border-radius: var(--ipm-radius);
+    border: 1px solid var(--ipm-line);
+    background: var(--ipm-bg);
+    box-shadow: 0 18px 48px rgba(31, 35, 41, 0.12);
   }
 
   .ant-modal-header {
-    padding: 26px 30px 0;
-    margin-bottom: 0;
-    border-bottom: none;
-    background: transparent;
+    margin: 0;
+    padding: 24px 24px 18px;
+    border-bottom: 1px solid var(--ipm-line);
+    background: var(--ipm-surface);
+  }
+
+  .ant-modal-title {
+    width: 100%;
   }
 
   .ant-modal-close {
-    top: 18px;
-    inset-inline-end: 22px;
-    color: #94a3b8;
-    border-radius: 14px;
-    transition: all 0.2s ease;
+    top: 16px;
+    inset-inline-end: 16px;
+    color: #8c8c8c;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    transition: color 0.2s ease, background 0.2s ease;
   }
 
   .ant-modal-close:hover {
-    color: #334155;
-    background: rgba(148, 163, 184, 0.12);
+    color: #4e5969;
+    background: var(--ipm-subtle);
   }
 
   .ant-modal-body {
-    padding: 20px 30px 12px;
+    padding: 20px 24px 8px;
+    background: var(--ipm-surface);
   }
 
   .ant-modal-footer {
-    padding: 18px 30px 26px;
-    border-top: 1px solid rgba(148, 163, 184, 0.14);
+    margin: 0;
+    padding: 16px 24px 20px;
+    border-top: 1px solid var(--ipm-line);
+    background: var(--ipm-surface);
+  }
+
+  .ant-modal-footer .ant-btn + .ant-btn {
+    margin-inline-start: 12px;
+  }
+
+  /* —— Header —— */
+  .ipm-head__title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ipm-ink);
+    line-height: 1.4;
+    padding-right: 28px;
+  }
+
+  .ipm-head__sub {
+    margin: 6px 0 0;
+    max-width: 520px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ipm-muted);
+    font-weight: 400;
+  }
+
+  /* —— Body —— */
+  .ipm-intro {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    border-radius: var(--ipm-radius-sm);
+    background: var(--ipm-subtle);
+    border: 1px solid #f0f0f0;
+  }
+
+  .ipm-intro__main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ipm-intro__kicker {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: #4e5969;
+    line-height: 1.4;
+  }
+
+  .ipm-intro__text {
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ipm-muted);
+  }
+
+  .ipm-intro__stat {
+    flex-shrink: 0;
+    align-self: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 88px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #fff;
+    border: 1px solid var(--ipm-line);
+  }
+
+  .ipm-intro__stat-num {
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--ipm-ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ipm-intro__stat-label {
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ipm-muted);
+  }
+
+  /* —— List —— */
+  .ipm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 380px;
+    overflow-y: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+  }
+
+  .ipm-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .ipm-list::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(100, 116, 139, 0.35);
+  }
+
+  /* —— Card (button) —— */
+  .ipm-card {
+    appearance: none;
+    box-sizing: border-box;
+    display: block;
+    margin: 0;
+    font: inherit;
+    width: 100%;
+    position: relative;
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--ipm-radius-sm);
+    background: var(--ipm-surface);
+    border: 1px solid #eaedf1;
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease,
+      background 0.2s ease;
+  }
+
+  .ipm-card:focus-visible {
+    outline: 2px solid var(--ipm-accent);
+    outline-offset: 2px;
+  }
+
+  .ipm-card__accent {
+    position: absolute;
+    left: 0;
+    top: 12px;
+    bottom: 12px;
+    width: 2px;
+    border-radius: 999px;
+    background: transparent;
+    transition: background 0.2s ease;
+  }
+
+  .ipm-card:hover {
+    border-color: #d6e4ff;
     background: #fff;
   }
 
-  .ant-tag {
-    margin-inline-end: 0;
-    border-radius: 999px;
-    border-color: rgba(59, 130, 246, 0.10);
-    background: rgba(59, 130, 246, 0.05);
-    color: #2563eb;
-    font-weight: 500;
+  .ipm-card.is-selected {
+    border-color: var(--ipm-accent-line);
+    background: #f8fbff;
+    box-shadow: 0 0 0 3px var(--ipm-accent-soft);
   }
 
-  .ant-btn {
-    height: 44px;
-    min-width: 116px;
-    padding: 0 24px;
-    border-radius: 16px;
-    font-weight: 600;
+  .ipm-card.is-selected .ipm-card__accent {
+    background: var(--ipm-accent);
   }
 
-  .ant-btn-default {
-    border-color: rgba(148, 163, 184, 0.24);
-    color: #334155;
-    box-shadow: none;
-  }
-
-  .ant-btn-primary {
-    box-shadow: 0 12px 22px rgba(37, 99, 235, 0.18);
-  }
-
-  .institution-picker-title {
-    font-size: 25px;
-    font-weight: 700;
-    color: #0f172a;
-    line-height: 36px;
-  }
-
-  .institution-picker-shell {
+  .ipm-card__row {
     display: flex;
-    flex-direction: column;
-    gap: 16px;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px 16px 16px 18px;
   }
 
-  .institution-picker-summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-    padding: 18px 20px;
-    border-radius: 22px;
-    border: 1px solid rgba(59, 130, 246, 0.10);
-    background:
-      linear-gradient(135deg, rgba(248, 251, 255, 1) 0%, rgba(255, 255, 255, 1) 68%),
-      #fff;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  }
-
-  .institution-picker-summary__accent {
-    width: 4px;
-    align-self: stretch;
-    border-radius: 999px;
-    background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
-    box-shadow: 0 0 0 6px rgba(96, 165, 250, 0.08);
-    flex: 0 0 auto;
-  }
-
-  .institution-picker-summary__content {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  .institution-picker-summary__eyebrow {
-    font-size: 12px;
-    line-height: 20px;
-    font-weight: 600;
-    color: #3b82f6;
-    letter-spacing: 0.08em;
-  }
-
-  .institution-picker-summary__title {
-    margin-top: 4px;
-    font-size: 18px;
-    line-height: 28px;
-    font-weight: 600;
-    color: #0f172a;
-  }
-
-  .institution-picker-summary__desc {
-    margin-top: 6px;
-    max-width: 400px;
-    font-size: 13px;
-    line-height: 22px;
-    color: #64748b;
-  }
-
-  .institution-picker-summary__badge {
-    flex: 0 0 auto;
-    min-width: 96px;
-    padding: 12px 14px;
-    border-radius: 18px;
-    background: rgba(255, 255, 255, 0.92);
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    text-align: center;
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
-  }
-
-  .institution-picker-summary__badge strong {
-    display: block;
-    font-size: 24px;
-    line-height: 30px;
-    font-weight: 700;
-    color: #0f172a;
-  }
-
-  .institution-picker-summary__badge span {
-    display: block;
-    margin-top: 4px;
-    font-size: 11px;
-    line-height: 18px;
-    color: #64748b;
-  }
-
-  .institution-picker-list {
-    max-height: 392px;
-    overflow-y: auto;
-    padding-right: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .institution-picker-list::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  .institution-picker-list::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: rgba(148, 163, 184, 0.48);
-    border: 2px solid transparent;
-    background-clip: padding-box;
-  }
-
-  .institution-picker-list::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .institution-picker-card {
-    position: relative;
-    padding: 16px 18px 14px;
-    border-radius: 22px;
-    border: 1px solid rgba(226, 232, 240, 0.9);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(251, 252, 254, 1) 100%);
-    cursor: pointer;
-    transition: all 0.24s ease;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
-  }
-
-  .institution-picker-card:hover {
-    transform: translateY(-1px);
-    border-color: rgba(59, 130, 246, 0.18);
-    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
-  }
-
-  .institution-picker-card.is-active {
-    border-color: rgba(59, 130, 246, 0.28);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 1) 0%, rgba(247, 250, 255, 1) 100%);
-    box-shadow: 0 16px 34px rgba(59, 130, 246, 0.10);
-  }
-
-  .institution-picker-card.is-active::before {
-    position: absolute;
-    inset: 0;
-    border-radius: 22px;
-    padding: 1px;
-    background: linear-gradient(180deg, rgba(96, 165, 250, 0.36), rgba(37, 99, 235, 0.14));
-    content: "";
-    -webkit-mask:
-      linear-gradient(#fff 0 0) content-box,
-      linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
-  }
-
-  .institution-picker-card__top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-  }
-
-  .institution-picker-card__identity {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-
-  .institution-picker-card__logo {
+  .ipm-card__avatar {
+    flex-shrink: 0;
     width: 48px;
     height: 48px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, #2563eb 0%, #60a5fa 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #eef4ff;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
-    color: #fff;
-    font-size: 18px;
-    font-weight: 700;
-    flex: 0 0 auto;
+    border: 1px solid #deebff;
   }
 
-  .institution-picker-card__logo img {
+  .ipm-card__avatar img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
 
-  .institution-picker-card__heading {
-    min-width: 0;
-    flex: 1 1 auto;
+  .ipm-card__avatar-fallback {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ipm-accent);
   }
 
-  .institution-picker-card__title-row {
+  .ipm-card__core {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ipm-card__title-line {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     min-width: 0;
-    flex-wrap: wrap;
   }
 
-  .institution-picker-card__name {
-    display: flex;
+  .ipm-card__org {
+    display: inline-flex;
     align-items: center;
     gap: 6px;
     min-width: 0;
     font-size: 15px;
     font-weight: 600;
-    color: #0f172a;
-    line-height: 24px;
+    color: var(--ipm-ink);
+    line-height: 1.35;
   }
 
-  .institution-picker-card__name span {
+  .ipm-card__org-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: #94a3b8;
+  }
+
+  .ipm-card__org-name {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .institution-picker-card__nick {
-    margin-top: 5px;
-    min-width: 0;
+  .ipm-card__role {
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: #4e5969;
+    background: #f7f8fa;
+    border: 1px solid var(--ipm-line);
+  }
+
+  .ipm-card__user {
+    margin-top: 4px;
     font-size: 13px;
-    color: #7c8aa5;
-    line-height: 20px;
+    color: var(--ipm-muted);
+    line-height: 1.4;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .institution-picker-card__status {
-    flex: 0 0 auto;
+  .ipm-card__chips {
     display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .ipm-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    background: #fff;
+    border: 1px solid #eff0f1;
+    max-width: 100%;
+  }
+
+  .ipm-chip__label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ipm-muted);
+  }
+
+  .ipm-chip__value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ipm-ink);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+  }
+
+  .ipm-card__pick {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 6px;
+    padding-top: 2px;
+    min-width: 72px;
   }
 
-  .institution-picker-card__radio {
-    position: relative;
+  .ipm-card__pick-ring {
     width: 22px;
     height: 22px;
     border-radius: 999px;
-    border: 1.5px solid rgba(148, 163, 184, 0.32);
+    border: 1.5px solid #d0d7de;
     background: #fff;
-    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   }
 
-  .institution-picker-card__radio-dot {
-    position: absolute;
-    inset: 4px;
-    border-radius: 999px;
-    background: transparent;
-    transition: all 0.2s ease;
+  .ipm-card__pick-ring.is-on {
+    border-color: var(--ipm-accent);
+    background: var(--ipm-accent-soft);
+    box-shadow: none;
   }
 
-  .institution-picker-card__status-text {
+  .ipm-card__pick-check {
     font-size: 12px;
-    line-height: 18px;
+    color: var(--ipm-accent);
+  }
+
+  .ipm-card__pick-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ipm-muted);
+    text-align: center;
+    line-height: 1.3;
+    max-width: 72px;
+  }
+
+  .ipm-card.is-selected .ipm-card__pick-label {
+    color: #4e5969;
+  }
+
+  /* —— Footer —— */
+  .ipm-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .ipm-footer__btn.ant-btn {
+    min-width: 104px;
+    height: 40px;
+    padding: 0 22px;
+    border-radius: 10px;
     font-weight: 600;
-    color: #64748b;
-  }
-
-  .institution-picker-card.is-active .institution-picker-card__radio {
-    border-color: rgba(59, 130, 246, 0.42);
-    box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.10);
-  }
-
-  .institution-picker-card.is-active .institution-picker-card__radio-dot {
-    background: linear-gradient(180deg, #60a5fa 0%, #2563eb 100%);
-  }
-
-  .institution-picker-card.is-active .institution-picker-card__status-text {
-    color: #2563eb;
-  }
-
-  .institution-picker-card__meta-row {
-    display: flex;
-    align-items: stretch;
-    gap: 0;
-    margin-top: 14px;
-    border-radius: 16px;
-    background: rgba(248, 250, 252, 0.9);
-    border: 1px solid rgba(226, 232, 240, 0.72);
-    overflow: hidden;
-  }
-
-  .institution-picker-card__meta-item {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-    flex: 1 1 0;
-    padding: 11px 14px 12px;
-  }
-
-  .institution-picker-card__meta-divider {
-    width: 1px;
-    background: rgba(226, 232, 240, 0.92);
-    flex: 0 0 auto;
-  }
-
-  .institution-picker-card__meta-item label {
-    font-size: 12px;
-    line-height: 18px;
-    color: #64748b;
-  }
-
-  .institution-picker-card__meta-item span {
-    min-width: 0;
     font-size: 14px;
-    line-height: 22px;
-    font-weight: 600;
-    color: #1e293b;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .ipm-footer__btn.ant-btn-default {
+    border-color: rgba(15, 23, 42, 0.12);
+    color: #475569;
+    background: #fff;
+  }
+
+  .ipm-footer__btn--primary.ant-btn-primary {
+    box-shadow: none;
   }
 }
 
 @media (max-width: 768px) {
   .institution-picker-modal {
     .ant-modal {
-      max-width: calc(100vw - 24px);
-      margin: 0 auto;
+      max-width: calc(100vw - 20px);
+      margin: 12px auto;
     }
 
-    .ant-modal-header,
-    .ant-modal-body,
+    .ant-modal-header {
+      padding: 20px 18px 16px;
+    }
+
+    .ipm-head__title {
+      font-size: 19px;
+      padding-right: 28px;
+    }
+
+    .ipm-head__sub {
+      font-size: 13px;
+    }
+
+    .ant-modal-body {
+      padding: 16px 16px 6px;
+    }
+
     .ant-modal-footer {
-      padding-left: 18px;
-      padding-right: 18px;
+      padding: 14px 16px 18px;
     }
 
-    .institution-picker-title {
-      font-size: 22px;
-      line-height: 32px;
-    }
-
-    .institution-picker-summary {
+    .ipm-intro {
       flex-direction: column;
-      gap: 14px;
-      padding: 18px;
-      align-items: flex-start;
+      align-items: stretch;
     }
 
-    .institution-picker-summary__accent {
-      width: 100%;
-      height: 4px;
-      min-height: 4px;
-      box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.06);
-    }
-
-    .institution-picker-summary__badge {
-      width: 100%;
-      display: flex;
-      align-items: baseline;
+    .ipm-intro__stat {
+      flex-direction: row;
       justify-content: space-between;
+      align-items: center;
+      min-width: unset;
     }
 
-    .institution-picker-card__top {
-      align-items: flex-start;
-      flex-direction: column;
+    .ipm-intro__stat-num {
+      font-size: 24px;
     }
 
-    .institution-picker-card__status {
-      align-self: flex-end;
+    .ipm-card__row {
+      flex-wrap: wrap;
     }
 
-    .institution-picker-card__meta-row {
-      flex-direction: column;
+    .ipm-card__pick {
+      width: 100%;
+      flex-direction: row;
+      justify-content: flex-end;
+      padding-top: 0;
+      min-width: unset;
     }
 
-    .institution-picker-card__meta-divider {
-      width: auto;
-      height: 1px;
+    .ipm-card__pick-label {
+      max-width: none;
+      text-align: right;
+    }
+
+    .ipm-chip__value {
+      max-width: none;
     }
   }
 }
 
 @media (max-width: 480px) {
   .institution-picker-modal {
-    .ant-modal-header {
-      padding-top: 20px;
+    .ipm-footer {
+      flex-direction: column-reverse;
+      align-items: stretch;
     }
 
-    .ant-modal-footer {
-      padding-bottom: 18px;
-    }
-
-    .institution-picker-summary__title {
-      font-size: 16px;
-      line-height: 24px;
-    }
-
-    .institution-picker-card {
-      padding: 16px 14px 14px;
-    }
-
-    .institution-picker-card__identity {
-      gap: 12px;
-    }
-
-    .institution-picker-card__logo {
-      width: 44px;
-      height: 44px;
-      border-radius: 14px;
-      font-size: 18px;
-    }
-
-    .institution-picker-card__name {
-      font-size: 15px;
-      line-height: 24px;
-    }
-
-    .institution-picker-card__status {
+    .ipm-footer__btn.ant-btn {
       width: 100%;
-      justify-content: flex-end;
     }
 
-    .institution-picker-card__meta-item span {
-      font-size: 14px;
+    .ant-modal-footer .ant-btn + .ant-btn {
+      margin-inline-start: 0;
     }
   }
 }
