@@ -265,6 +265,13 @@ func (svc *Service) CreateMenu(claims authx.Claims, input model.Menu) (model.Men
 		if !strings.HasPrefix(menuCode, "grp:") && !strings.HasPrefix(menuCode, "page:") && !strings.HasPrefix(menuCode, "perm:") {
 			return model.Menu{}, errors.New("机构端权限标识必须使用 grp:/page:/perm: 前缀")
 		}
+		defaultRoleIDs, err := svc.repo.FilterInstitutionDefaultRoleIDs(context.Background(), input.DefaultRoleIDs)
+		if err != nil {
+			return model.Menu{}, err
+		}
+		input.DefaultRoleIDs = defaultRoleIDs
+	} else {
+		input.DefaultRoleIDs = nil
 	}
 
 	level := 0
@@ -350,6 +357,13 @@ func (svc *Service) UpdateMenu(claims authx.Claims, input model.Menu) (model.Men
 		if !strings.HasPrefix(menuCode, "grp:") && !strings.HasPrefix(menuCode, "page:") && !strings.HasPrefix(menuCode, "perm:") {
 			return model.Menu{}, errors.New("机构端权限标识必须使用 grp:/page:/perm: 前缀")
 		}
+		defaultRoleIDs, err := svc.repo.FilterInstitutionDefaultRoleIDs(context.Background(), input.DefaultRoleIDs)
+		if err != nil {
+			return model.Menu{}, err
+		}
+		input.DefaultRoleIDs = defaultRoleIDs
+	} else {
+		input.DefaultRoleIDs = nil
 	}
 
 	if input.PID == input.ID {

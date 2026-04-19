@@ -1077,6 +1077,9 @@ func (repo *Repository) CreateMenu(ctx context.Context, input model.Menu, operat
 		if err := repo.bindInstitutionSuperAdminRoleMenuTx(ctx, tx, id); err != nil {
 			return model.Menu{}, err
 		}
+		if err := repo.syncInstitutionDefaultRoleMenuTx(ctx, tx, id, input.DefaultRoleIDs); err != nil {
+			return model.Menu{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return model.Menu{}, err
@@ -1110,7 +1113,13 @@ func (repo *Repository) UpdateMenu(ctx context.Context, input model.Menu, operat
 		operator = "system"
 	}
 
-	_, err := repo.db.ExecContext(ctx, `
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE sso_menu
 		SET menu_name = ?,
 		    url_path = NULL,
@@ -1129,8 +1138,17 @@ func (repo *Repository) UpdateMenu(ctx context.Context, input model.Menu, operat
 		    update_id = ?,
 		    update_time = NOW()
 		WHERE id = ? AND del_flag = 0
-	`, input.MenuName, input.MenuCode, menuType, input.PID, sortValue, input.Introduce, ownType, levelValue, weightValue, emptyToNullString(input.GroupCode), input.Remark, emptyToNullString(input.AccessDeniedImage), operator, input.ID)
-	return err
+	`, input.MenuName, input.MenuCode, menuType, input.PID, sortValue, input.Introduce, ownType, levelValue, weightValue, emptyToNullString(input.GroupCode), input.Remark, emptyToNullString(input.AccessDeniedImage), operator, input.ID); err != nil {
+		return err
+	}
+
+	if ownType == 2 && input.DefaultRoleIDs != nil {
+		if err := repo.syncInstitutionDefaultRoleMenuTx(ctx, tx, input.ID, input.DefaultRoleIDs); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (repo *Repository) DeleteMenu(ctx context.Context, id, operatorID int64) error {
@@ -1171,6 +1189,13 @@ func (repo *Repository) DeleteMenu(ctx context.Context, id, operatorID int64) er
 		}
 	}
 
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM sso_role_menu
+		WHERE menu_id = ?
+	`, id); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }
 
@@ -1192,6 +1217,71 @@ func (repo *Repository) bindInstitutionSuperAdminRoleMenuTx(ctx context.Context,
 		      AND rm.menu_id = ?
 		  )
 	`, menuID, menuID)
+	return err
+}
+
+func (repo *Repository) syncInstitutionDefaultRoleMenuTx(ctx context.Context, tx *sql.Tx, menuID int64, roleIDs []int64) error {
+	if menuID <= 0 {
+		return nil
+	}
+
+	if len(roleIDs) == 0 {
+		_, err := tx.ExecContext(ctx, `
+			DELETE rm
+			FROM sso_role_menu rm
+			JOIN sso_role sr ON sr.id = rm.role_id
+			WHERE rm.menu_id = ?
+			  AND sr.del_flag = 0
+			  AND sr.org_id = 0
+			  AND sr.role_type = 2
+			  AND IFNULL(sr.is_admin, 0) = 0
+		`, menuID)
+		return err
+	}
+
+	placeholders := make([]string, 0, len(roleIDs))
+	args := make([]any, 0, len(roleIDs)+1)
+	args = append(args, menuID)
+	for _, roleID := range roleIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, roleID)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE rm
+		FROM sso_role_menu rm
+		JOIN sso_role sr ON sr.id = rm.role_id
+		WHERE rm.menu_id = ?
+		  AND sr.del_flag = 0
+		  AND sr.org_id = 0
+		  AND sr.role_type = 2
+		  AND IFNULL(sr.is_admin, 0) = 0
+		  AND sr.id NOT IN (`+strings.Join(placeholders, ",")+`)
+	`, args...); err != nil {
+		return err
+	}
+
+	insertArgs := make([]any, 0, len(roleIDs)+2)
+	insertArgs = append(insertArgs, menuID)
+	for _, roleID := range roleIDs {
+		insertArgs = append(insertArgs, roleID)
+	}
+	insertArgs = append(insertArgs, menuID)
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_role_menu (role_id, menu_id)
+		SELECT sr.id, ?
+		FROM sso_role sr
+		WHERE sr.del_flag = 0
+		  AND sr.org_id = 0
+		  AND sr.role_type = 2
+		  AND IFNULL(sr.is_admin, 0) = 0
+		  AND sr.id IN (`+strings.Join(placeholders, ",")+`)
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM sso_role_menu rm
+		    WHERE rm.role_id = sr.id
+		      AND rm.menu_id = ?
+		  )
+	`, insertArgs...)
 	return err
 }
 
@@ -1249,7 +1339,15 @@ func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType 
 		normalizeMenuModel(&item)
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if ownType != nil && *ownType == 2 {
+		if err := repo.attachInstitutionDefaultRoleIDs(ctx, items); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownType int) ([]model.Menu, error) {
@@ -1322,7 +1420,10 @@ func (repo *Repository) listMenusByIDSet(ctx context.Context, menuIDs map[int64]
 		normalizeMenuModel(&item)
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (repo *Repository) getInstitutionScopedMenuIDSet(ctx context.Context, instID int64, ownType int) (map[int64]struct{}, error) {
@@ -2010,6 +2111,131 @@ func parseCSVInt64(raw string) []int64 {
 		}
 	}
 	return result
+}
+
+func normalizeInt64IDs(values []int64) []int64 {
+	if len(values) == 0 {
+		return []int64{}
+	}
+	seen := make(map[int64]struct{}, len(values))
+	result := make([]int64, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i] < result[j]
+	})
+	return result
+}
+
+func (repo *Repository) FilterInstitutionDefaultRoleIDs(ctx context.Context, roleIDs []int64) ([]int64, error) {
+	roleIDs = normalizeInt64IDs(roleIDs)
+	if len(roleIDs) == 0 {
+		return []int64{}, nil
+	}
+
+	placeholders := make([]string, 0, len(roleIDs))
+	args := make([]any, 0, len(roleIDs))
+	for _, roleID := range roleIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, roleID)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id
+		FROM sso_role
+		WHERE del_flag = 0
+		  AND org_id = 0
+		  AND role_type = 2
+		  AND IFNULL(is_admin, 0) = 0
+		  AND id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]int64, 0, len(roleIDs))
+	for rows.Next() {
+		var roleID int64
+		if err := rows.Scan(&roleID); err != nil {
+			return nil, err
+		}
+		result = append(result, roleID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) attachInstitutionDefaultRoleIDs(ctx context.Context, items []model.Menu) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	menuIDs := make([]int64, 0, len(items))
+	for _, item := range items {
+		if item.ID > 0 {
+			menuIDs = append(menuIDs, item.ID)
+		}
+	}
+	menuIDs = normalizeInt64IDs(menuIDs)
+	if len(menuIDs) == 0 {
+		return nil
+	}
+
+	placeholders := make([]string, 0, len(menuIDs))
+	args := make([]any, 0, len(menuIDs))
+	for _, menuID := range menuIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, menuID)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT rm.menu_id, sr.id
+		FROM sso_role_menu rm
+		JOIN sso_role sr ON sr.id = rm.role_id
+		WHERE sr.del_flag = 0
+		  AND sr.org_id = 0
+		  AND sr.role_type = 2
+		  AND IFNULL(sr.is_admin, 0) = 0
+		  AND rm.menu_id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY rm.menu_id ASC, sr.id ASC
+	`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	bindings := make(map[int64][]int64, len(menuIDs))
+	for rows.Next() {
+		var menuID int64
+		var roleID int64
+		if err := rows.Scan(&menuID, &roleID); err != nil {
+			return err
+		}
+		bindings[menuID] = append(bindings[menuID], roleID)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for index := range items {
+		items[index].DefaultRoleIDs = bindings[items[index].ID]
+		if items[index].DefaultRoleIDs == nil {
+			items[index].DefaultRoleIDs = []int64{}
+		}
+	}
+	return nil
 }
 
 func (repo *Repository) getUserRoleSummary(ctx context.Context, userID, orgID int64, roleType int) (string, string, error) {
