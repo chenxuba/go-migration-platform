@@ -29,12 +29,15 @@ const open = defineModel({
 
 const userStore = useUserStore()
 const safeSelectRoleList = computed(() => Array.isArray(selectRoleList.value) ? selectRoleList.value : [])
+const safeRoleInfos = computed(() => Array.isArray(roleInfos.value) ? roleInfos.value : [])
+const safeDetailRoleInfos = computed(() => Array.isArray(detailRoleInfos.value) ? detailRoleInfos.value : [])
 
 // 角色详情相关
 const roleDetailsOpen = ref(false)
 const currentRoleId = ref(null)
 const currentRoleDetails = ref({})
 const roleInfos = ref([])
+const detailRoleInfos = ref([])
 const selectRoleList = ref([])
 const detailInfo = ref({})
 const form = ref(null)
@@ -52,6 +55,49 @@ const formState = reactive({
   avatar: '',
 })
 
+const displayRoleInfos = computed(() => {
+  const merged = new Map()
+
+  safeRoleInfos.value.forEach((roleInfo) => {
+    const roleID = Number(roleInfo.id || roleInfo.roleId || 0)
+    if (roleID > 0) {
+      merged.set(roleID, {
+        ...roleInfo,
+        id: roleID,
+      })
+    }
+  })
+
+  safeDetailRoleInfos.value.forEach((roleInfo) => {
+    const roleID = Number(roleInfo.id || roleInfo.roleId || 0)
+    if (roleID > 0) {
+      merged.set(roleID, {
+        ...merged.get(roleID),
+        ...roleInfo,
+        id: roleID,
+      })
+    }
+  })
+
+  return Array.from(merged.values()).sort((left, right) => {
+    const leftAdmin = Number(left.isAdmin || left.admin || 0)
+    const rightAdmin = Number(right.isAdmin || right.admin || 0)
+    if (leftAdmin !== rightAdmin)
+      return rightAdmin - leftAdmin
+    return Number(left.id || 0) - Number(right.id || 0)
+  })
+})
+
+const displaySelectedRoleIds = computed(() => {
+  const ids = new Set(safeSelectRoleList.value.map(id => Number(id)).filter(id => Number.isFinite(id) && id > 0))
+  safeDetailRoleInfos.value.forEach((roleInfo) => {
+    const roleID = Number(roleInfo.id || roleInfo.roleId || 0)
+    if (roleID > 0)
+      ids.add(roleID)
+  })
+  return Array.from(ids)
+})
+
 // 修改手机号相关状态
 const changeMobileOpen = ref(false)
 const changeMobileLoading = ref(false)
@@ -66,7 +112,7 @@ const mobileValidationState = ref({
 
 // 打开角色详情抽屉
 function roleDetailsFunc(roleInfo) {
-  currentRoleId.value = roleInfo.id
+  currentRoleId.value = Number(roleInfo.id || roleInfo.roleId || 0)
   currentRoleDetails.value = roleInfo
   roleDetailsOpen.value = true
 }
@@ -76,6 +122,12 @@ async function fetchUserDetail() {
   try {
     const { result } = await getInstUserDetail({ id: props.detail.id })
     detailInfo.value = result
+    detailRoleInfos.value = Array.isArray(result.roles)
+      ? result.roles.map(roleInfo => ({
+          ...roleInfo,
+          id: Number(roleInfo.id || roleInfo.roleId || 0),
+        }))
+      : []
 
     // 更新表单数据
     Object.keys(formState).forEach(key => {
@@ -84,8 +136,15 @@ async function fetchUserDetail() {
       }
     })
 
-    formState.roleIds = Array.isArray(result.roleIds) ? result.roleIds : []
-    selectRoleList.value = Array.isArray(result.roleIds) ? result.roleIds : []
+    const editableRoleIDs = Array.isArray(result.roles)
+      ? result.roles
+          .filter(roleInfo => !roleInfo?.isAdmin)
+          .map(roleInfo => Number(roleInfo.roleId || roleInfo.id || 0))
+          .filter(roleID => Number.isFinite(roleID) && roleID > 0)
+      : (Array.isArray(result.roleIds) ? result.roleIds : [])
+
+    formState.roleIds = editableRoleIDs
+    selectRoleList.value = editableRoleIDs
   } catch (error) {
     messageService.error('获取员工详情失败')
     console.error('获取员工详情失败:', error)
@@ -168,6 +227,7 @@ function handleSelectRoleSuccess(roleIds) {
 function cancel() {
   open.value = false
   form.value?.resetFields()
+  detailRoleInfos.value = []
   selectRoleList.value = []
 }
 
@@ -352,11 +412,17 @@ watch(
 
             <!-- 任职角色 -->
             <a-form-item style="margin: 0;" class="position" name="roleIds"
-              :rules="[{ required: true, message: '请设置任职角色' }]">
+              :rules="[{ validator: (_rule, value) => {
+                if (detailInfo.isAdmin)
+                  return Promise.resolve()
+                if (Array.isArray(value) && value.length > 0)
+                  return Promise.resolve()
+                return Promise.reject(new Error('请设置任职角色'))
+              } }]">
               <template #label>
                 <div class="flex items-center">
                   <div>任职角色：</div>
-                  <a-button type="primary" @click="addEmployeesOpen = true">编辑</a-button>
+                  <a-button type="primary" :disabled="detailInfo.isAdmin" @click="addEmployeesOpen = true">编辑</a-button>
                 </div>
               </template>
             </a-form-item>
@@ -416,13 +482,13 @@ watch(
       </a-form>
 
       <!-- 角色列表展示 -->
-      <template v-if="safeSelectRoleList.length !== 0">
+      <template v-if="displaySelectedRoleIds.length !== 0">
         <div class="border-1px border-solid border-gray-200 rounded-10px mt-10px">
           <div class="p15px">
             <custom-title title="总机构" font-size="16px" font-weight="500" />
           </div>
-          <template v-for="roleInfo in roleInfos" :key="roleInfo.id">
-            <div v-if="safeSelectRoleList.includes(roleInfo.id)" class="border-t-1px border-#eee border-solid border-0px">
+          <template v-for="roleInfo in displayRoleInfos" :key="roleInfo.id">
+            <div v-if="displaySelectedRoleIds.includes(roleInfo.id)" class="border-t-1px border-#eee border-solid border-0px">
               <div class="flex justify-between px-25px py-15px">
                 <div class="flex items-start gap-10px">
                   <div>

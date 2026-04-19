@@ -28,6 +28,11 @@ export function getMenuListApi(data) {
   return useGet('/sso/menu/instList', data)
 }
 
+// 获取全量机构权限树 /menu/list
+export function getFullMenuListApi(data) {
+  return useGet('/sso/menu/list', data)
+}
+
 // 机构后台获取默认角色 /role/getDefaultRole
 export function getDefaultRole(data) {
   return useGet('/sso/role/getRoleTemplate', data)

@@ -1543,6 +1543,104 @@ type roleExtraInfo struct {
 	CreateName               string
 }
 
+func (repo *Repository) listInstitutionStatMenus(ctx context.Context) ([]institutionmenu.VisibleStatMenu, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id,
+		       IFNULL(pid, 0),
+		       IFNULL(menu_code, ''),
+		       IFNULL(menu_name, ''),
+		       IFNULL(menu_type, 0),
+		       IFNULL(sort, 0),
+		       IFNULL(weight, 0)
+		FROM sso_menu
+		WHERE del_flag = 0 AND own_type = 2
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]institutionmenu.VisibleStatMenu, 0, 512)
+	for rows.Next() {
+		var item institutionmenu.VisibleStatMenu
+		if err := rows.Scan(&item.ID, &item.PID, &item.MenuCode, &item.MenuName, &item.MenuType, &item.Sort, &item.Weight); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) countInstitutionRoleVisibleAuthorities(ctx context.Context, roleMenuIDs map[int64][]int64) (map[int64]roleExtraInfo, error) {
+	if len(roleMenuIDs) == 0 {
+		return map[int64]roleExtraInfo{}, nil
+	}
+
+	menus, err := repo.listInstitutionStatMenus(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[int64]roleExtraInfo, len(roleMenuIDs))
+	for roleID, menuIDs := range roleMenuIDs {
+		selected := make(map[int64]struct{}, len(menuIDs))
+		for _, menuID := range menuIDs {
+			if menuID > 0 {
+				selected[menuID] = struct{}{}
+			}
+		}
+		functionalCount, dataCount := institutionmenu.CountVisibleLeafAuthorities(menus, selected)
+		result[roleID] = roleExtraInfo{
+			FunctionalAuthorityCount: functionalCount,
+			DataAuthorityCount:       dataCount,
+		}
+	}
+	return result, nil
+}
+
+func (repo *Repository) getInstitutionRoleMenuIDMap(ctx context.Context, roleIDs []int64) (map[int64][]int64, error) {
+	if len(roleIDs) == 0 {
+		return map[int64][]int64{}, nil
+	}
+
+	placeholders := make([]string, 0, len(roleIDs))
+	args := make([]any, 0, len(roleIDs))
+	for _, roleID := range roleIDs {
+		if roleID <= 0 {
+			continue
+		}
+		placeholders = append(placeholders, "?")
+		args = append(args, roleID)
+	}
+	if len(placeholders) == 0 {
+		return map[int64][]int64{}, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT rm.role_id, rm.menu_id
+		FROM sso_role_menu rm
+		JOIN sso_menu sm ON sm.id = rm.menu_id
+		WHERE rm.role_id IN (`+strings.Join(placeholders, ",")+`)
+		  AND sm.del_flag = 0
+		  AND sm.own_type = 2
+		ORDER BY rm.role_id, rm.menu_id
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64][]int64, len(roleIDs))
+	for rows.Next() {
+		var roleID, menuID int64
+		if err := rows.Scan(&roleID, &menuID); err != nil {
+			return nil, err
+		}
+		result[roleID] = append(result[roleID], menuID)
+	}
+	return result, rows.Err()
+}
+
 func (repo *Repository) GetRoleExtraInfo(ctx context.Context, roleIDs []int64, instID int64) (map[int64]roleExtraInfo, error) {
 	if len(roleIDs) == 0 {
 		return map[int64]roleExtraInfo{}, nil
@@ -1553,26 +1651,20 @@ func (repo *Repository) GetRoleExtraInfo(ctx context.Context, roleIDs []int64, i
 		placeholders = append(placeholders, "?")
 		args = append(args, id)
 	}
-	args = append(args, instID)
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT r.id,
-		       COUNT(DISTINCT IF(m.menu_type = 0, m.id, NULL)) AS functional_count,
-		       COUNT(DISTINCT IF(m.menu_type = 1, m.id, NULL)) AS data_count,
-		       IFNULL(GROUP_CONCAT(DISTINCT m.id), '') AS menu_ids,
 		       COUNT(DISTINCT IF(u.id IS NOT NULL, u.id, NULL)) AS staff_count,
 		       IFNULL(GROUP_CONCAT(DISTINCT IF(u.id IS NOT NULL, u.nick_name, NULL)), '') AS staff_names,
 		       IFNULL(u2.nick_name, '') AS update_name,
 		       IFNULL(u3.nick_name, '') AS create_name
 		FROM sso_role r
-		LEFT JOIN sso_role_menu rm ON r.id = rm.role_id
-		LEFT JOIN sso_menu m ON rm.menu_id = m.id
 		LEFT JOIN sso_user_role ur ON r.id = ur.role_id
 		LEFT JOIN inst_user u ON u.user_id = ur.user_id AND u.inst_id = ? AND u.del_flag = 0
 		LEFT JOIN inst_user u2 ON u2.user_id = r.update_id AND u2.inst_id = ? AND u2.del_flag = 0
 		LEFT JOIN inst_user u3 ON u3.user_id = r.create_id AND u3.inst_id = ? AND u3.del_flag = 0
 		WHERE r.id IN (`+strings.Join(placeholders, ",")+`)
 		GROUP BY r.id, u2.nick_name, u3.nick_name
-	`, append([]any{instID, instID, instID}, args[:len(args)-1]...)...)
+	`, append([]any{instID, instID, instID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1581,29 +1673,48 @@ func (repo *Repository) GetRoleExtraInfo(ctx context.Context, roleIDs []int64, i
 	result := make(map[int64]roleExtraInfo, len(roleIDs))
 	for rows.Next() {
 		var (
-			roleID          int64
-			functionalCount int
-			dataCount       int
-			menuIDsRaw      string
-			staffCount      int
-			staffNamesRaw   string
-			updateName      string
-			createName      string
+			roleID        int64
+			staffCount    int
+			staffNamesRaw string
+			updateName    string
+			createName    string
 		)
-		if err := rows.Scan(&roleID, &functionalCount, &dataCount, &menuIDsRaw, &staffCount, &staffNamesRaw, &updateName, &createName); err != nil {
+		if err := rows.Scan(&roleID, &staffCount, &staffNamesRaw, &updateName, &createName); err != nil {
 			return nil, err
 		}
 		result[roleID] = roleExtraInfo{
-			FunctionalAuthorityCount: functionalCount,
-			DataAuthorityCount:       dataCount,
-			MenuIDs:                  parseCSVInt64(menuIDsRaw),
-			StaffCount:               staffCount,
-			StaffNames:               splitCSV(staffNamesRaw),
-			UpdateName:               updateName,
-			CreateName:               createName,
+			StaffCount: staffCount,
+			StaffNames: splitCSV(staffNamesRaw),
+			UpdateName: updateName,
+			CreateName: createName,
 		}
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	roleMenuIDs, err := repo.getInstitutionRoleMenuIDMap(ctx, roleIDs)
+	if err != nil {
+		return nil, err
+	}
+	for roleID, menuIDs := range roleMenuIDs {
+		extra := result[roleID]
+		extra.MenuIDs = menuIDs
+		result[roleID] = extra
+	}
+
+	countMap, err := repo.countInstitutionRoleVisibleAuthorities(ctx, roleMenuIDs)
+	if err != nil {
+		return nil, err
+	}
+	for roleID, counts := range countMap {
+		extra := result[roleID]
+		extra.FunctionalAuthorityCount = counts.FunctionalAuthorityCount
+		extra.DataAuthorityCount = counts.DataAuthorityCount
+		result[roleID] = extra
+	}
+
+	return result, nil
 }
 
 func (repo *Repository) GetMenuIDsByRole(ctx context.Context, roleID int64, ownType *int) ([]int64, error) {
@@ -1759,13 +1870,8 @@ func (repo *Repository) GetSystemDefaultRoles(ctx context.Context, roleType *int
 		       IFNULL(r.uuid, ''),
 		       IFNULL(r.version, 0),
 		       IFNULL(r.role_name, ''),
-		       IFNULL(r.is_default, 0),
-		       COUNT(DISTINCT IF(m.menu_type = 0, m.id, NULL)) AS functional_count,
-		       COUNT(DISTINCT IF(m.menu_type = 1, m.id, NULL)) AS data_count,
-		       IFNULL(GROUP_CONCAT(DISTINCT m.id), '') AS menu_ids
+		       IFNULL(r.is_default, 0)
 		FROM sso_role r
-		LEFT JOIN sso_role_menu rm ON r.id = rm.role_id
-		LEFT JOIN sso_menu m ON rm.menu_id = m.id
 		WHERE r.del_flag = 0 AND r.org_id = 0`
 	args := make([]any, 0, 1)
 	if roleType != nil && *roleType > 0 {
@@ -1782,25 +1888,55 @@ func (repo *Repository) GetSystemDefaultRoles(ctx context.Context, roleType *int
 	}
 	defer rows.Close()
 	items := make([]model.RoleTemplateVO, 0, 16)
+	roleMenuIDs := make(map[int64][]int64, 16)
 	for rows.Next() {
 		var item model.RoleTemplateVO
-		var menuIDsRaw string
 		if err := rows.Scan(
 			&item.RoleID,
 			&item.UUID,
 			&item.Version,
 			&item.RoleName,
 			&item.IsDefault,
-			&item.FunctionalAuthorityCount,
-			&item.DataAuthorityCount,
-			&menuIDsRaw,
 		); err != nil {
 			return nil, err
 		}
-		item.RoleIDs = parseCSVInt64(menuIDsRaw)
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	menuIDMap, err := repo.getInstitutionRoleMenuIDMap(ctx, roleTypeScopedRoleIDs(items))
+	if err != nil {
+		return nil, err
+	}
+	for index := range items {
+		items[index].RoleIDs = menuIDMap[items[index].RoleID]
+		roleMenuIDs[items[index].RoleID] = items[index].RoleIDs
+	}
+
+	countMap, err := repo.countInstitutionRoleVisibleAuthorities(ctx, roleMenuIDs)
+	if err != nil {
+		return nil, err
+	}
+	for index := range items {
+		if counts, ok := countMap[items[index].RoleID]; ok {
+			items[index].FunctionalAuthorityCount = counts.FunctionalAuthorityCount
+			items[index].DataAuthorityCount = counts.DataAuthorityCount
+		}
+	}
+
+	return items, nil
+}
+
+func roleTypeScopedRoleIDs(items []model.RoleTemplateVO) []int64 {
+	roleIDs := make([]int64, 0, len(items))
+	for _, item := range items {
+		if item.RoleID > 0 {
+			roleIDs = append(roleIDs, item.RoleID)
+		}
+	}
+	return roleIDs
 }
 
 func (repo *Repository) DeleteDefaultRole(ctx context.Context, roleID int64) (int, error) {

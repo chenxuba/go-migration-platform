@@ -31,3 +31,28 @@ func TestBuildVisibleInstitutionMenuTreeIncludesPageUseChild(t *testing.T) {
 		t.Fatalf("expected page use code, got %q", tree[0].Children[0].Children[0].MenuCode)
 	}
 }
+
+func TestBuildVisibleInstitutionMenuTreeUsesDirectRoleChildren(t *testing.T) {
+	sort10 := 10
+	sort20 := 20
+	sort5 := 5
+	weight10 := 10
+	weight0 := 0
+
+	tree := buildVisibleInstitutionMenuTree([]model.Menu{
+		{ID: 398, PID: 0, MenuName: "内部管理", MenuCode: "grp:intl", Sort: &sort10, Weight: &weight10},
+		{ID: 532, PID: 398, MenuName: "角色管理", MenuCode: "page:intlRole", Sort: &sort20, Weight: &weight10},
+		{ID: 584, PID: 532, MenuName: "页面功能访问", MenuCode: "perm:intlRoleUse", Sort: &sort5, Weight: &weight0},
+		{ID: 600, PID: 532, MenuName: "角色管理", MenuCode: "perm:orgMngRoleMng", Sort: &sort10, Weight: &weight0},
+	})
+
+	if len(tree) != 1 || len(tree[0].Children) != 1 {
+		t.Fatalf("expected 1 role page node, got %+v", tree)
+	}
+	if len(tree[0].Children[0].Children) != 2 {
+		t.Fatalf("expected role page to expose 2 direct children, got %d", len(tree[0].Children[0].Children))
+	}
+	if tree[0].Children[0].Children[0].ID != 584 || tree[0].Children[0].Children[1].ID != 600 {
+		t.Fatalf("expected role page to contain page-use and role-manage child, got %+v", tree[0].Children[0].Children)
+	}
+}

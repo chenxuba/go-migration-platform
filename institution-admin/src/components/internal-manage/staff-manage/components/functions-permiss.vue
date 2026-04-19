@@ -13,7 +13,8 @@ import {
 } from '@/composables/useRolePermissions'
 import {
   getDefaultRoleDetailApi,
-  getMenuListApi,
+  getFullMenuListApi,
+  roleList,
 } from '~@/api/internal-manage/role-manage'
 
 // 定义props接收角色ID
@@ -32,30 +33,6 @@ const props = defineProps({
 const emit = defineEmits(['update:details'])
 
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
-
-// 递归获取最后一级checked为true的权限ID
-function getLastLevelCheckedIds(permissions: any[]): number[] {
-  const result: number[] = []
-
-  const traverse = (nodes: any[]) => {
-    nodes.forEach((node) => {
-      // 如果没有children或children为空数组，说明是最后一级
-      if (!node.children || node.children.length === 0) {
-        // 如果当前节点checked为true，添加到结果中
-        if (node.checked === true) {
-          result.push(node.menuId)
-        }
-      }
-      else {
-        // 如果有子节点，继续递归遍历
-        traverse(node.children)
-      }
-    })
-  }
-
-  traverse(permissions)
-  return result
-}
 
 const loading = ref(false)
 // 权限数据
@@ -110,7 +87,7 @@ function isLastVisibleAuthority(parentIndex: number, childIndex: number, authori
 async function getMenuList() {
   loading.value = true
   try {
-    const res = await getMenuListApi({ ownType: 'INSTITUTION' })
+    const res = await getFullMenuListApi({ ownType: 2 })
     // console.log('API原始数据:', res)
     if (res.code === 200) {
       // 递归给数据添加checked和indeterminate属性
@@ -174,26 +151,23 @@ async function getMenuList() {
 // 获取角色详情
 async function getRoleDetail() {
   try {
-    const res = await getDefaultRoleDetailApi({ roleId: props.roleId })
-    if (res.code === 200) {
-      // console.log('角色详情:', res.result)
-      // 获取最后一级权限id
-      const lastLevelPermissionIds = getLastLevelCheckedIds(
-        res.result.menuIds || [],
-      )
-      // console.log('最后一级checked权限IDs:', lastLevelPermissionIds)
+    const [detailRes, roleMenuRes] = await Promise.all([
+      getDefaultRoleDetailApi({ roleId: props.roleId }),
+      roleList({ roleId: props.roleId, ownType: 2 }),
+    ])
+    if (detailRes.code === 200) {
       // 设置权限树的选中状态
-      setDefaultCheckedByIds(lastLevelPermissionIds)
+      setDefaultCheckedByIds(Array.isArray(roleMenuRes?.result) ? roleMenuRes.result : [])
 
       // 将isDefault值传递给父组件
       const updatedDetails = {
         ...props.details,
-        roleName: res.result.roleName || props.details.roleName || '',
-        description: res.result.description || props.details.description || '',
-        isAdmin: Boolean(res.result.isAdmin),
-        isDefault: res.result.isDefault || false,
-        updateName: res.result.updateName || '',
-        updateTime: res.result.updateTime || ''
+        roleName: detailRes.result.roleName || props.details.roleName || '',
+        description: detailRes.result.description || props.details.description || '',
+        isAdmin: Boolean(detailRes.result.isAdmin),
+        isDefault: detailRes.result.isDefault || false,
+        updateName: detailRes.result.updateName || '',
+        updateTime: detailRes.result.updateTime || '',
       }
       emit('update:details', updatedDetails)
     }

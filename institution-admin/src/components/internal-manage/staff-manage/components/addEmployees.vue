@@ -302,7 +302,7 @@ onMounted(async () => {
                     <div>
                       <span class="text-#06f font-500">{{ roleInfo.functionalAuthorityCount }}</span>
                       <span>个功能权限,</span>
-                      <span class="text-#06f font-500">{{ roleInfo.dataAuthorityCount || 1 }}</span>
+                      <span class="text-#06f font-500">{{ roleInfo.dataAuthorityCount || 0 }}</span>
                       <span>个数据权限</span>
                     </div>
                     <div v-if="roleInfo.description">

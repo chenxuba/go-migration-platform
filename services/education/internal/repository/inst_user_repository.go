@@ -6,8 +6,94 @@ import (
 	"fmt"
 	"strings"
 
+	"go-migration-platform/pkg/institutionmenu"
 	"go-migration-platform/services/education/internal/model"
 )
+
+func insertUserRoleIfNotExists(ctx context.Context, tx *sql.Tx, userID, roleID int64) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_user_role (user_id, role_id)
+		SELECT ?, ?
+		FROM DUAL
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM sso_user_role
+			WHERE user_id = ? AND role_id = ?
+		)
+	`, userID, roleID, userID, roleID)
+	return err
+}
+
+func (repo *Repository) listInstitutionStatMenus(ctx context.Context) ([]institutionmenu.VisibleStatMenu, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id,
+		       IFNULL(pid, 0),
+		       IFNULL(menu_code, ''),
+		       IFNULL(menu_name, ''),
+		       IFNULL(menu_type, 0),
+		       IFNULL(sort, 0),
+		       IFNULL(weight, 0)
+		FROM sso_menu
+		WHERE del_flag = 0 AND own_type = 2
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]institutionmenu.VisibleStatMenu, 0, 512)
+	for rows.Next() {
+		var item institutionmenu.VisibleStatMenu
+		if err := rows.Scan(&item.ID, &item.PID, &item.MenuCode, &item.MenuName, &item.MenuType, &item.Sort, &item.Weight); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) getInstitutionRoleMenuIDMap(ctx context.Context, roleIDs []int64) (map[int64][]int64, error) {
+	if len(roleIDs) == 0 {
+		return map[int64][]int64{}, nil
+	}
+
+	args := make([]any, 0, len(roleIDs))
+	placeholders := make([]string, 0, len(roleIDs))
+	for _, roleID := range roleIDs {
+		if roleID <= 0 {
+			continue
+		}
+		args = append(args, roleID)
+		placeholders = append(placeholders, "?")
+	}
+	if len(placeholders) == 0 {
+		return map[int64][]int64{}, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT rm.role_id, rm.menu_id
+		FROM sso_role_menu rm
+		JOIN sso_menu sm ON sm.id = rm.menu_id
+		WHERE rm.role_id IN (`+strings.Join(placeholders, ",")+`)
+		  AND sm.del_flag = 0
+		  AND sm.own_type = 2
+		ORDER BY rm.role_id, rm.menu_id
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64][]int64, len(roleIDs))
+	for rows.Next() {
+		var roleID, menuID int64
+		if err := rows.Scan(&roleID, &menuID); err != nil {
+			return nil, err
+		}
+		result[roleID] = append(result[roleID], menuID)
+	}
+	return result, rows.Err()
+}
 
 func (repo *Repository) ListInstDeptIDsWithChildren(ctx context.Context, instID, deptID int64) ([]int64, error) {
 	rows, err := repo.db.QueryContext(ctx, `
@@ -234,14 +320,10 @@ func (repo *Repository) GetInstUserDetail(ctx context.Context, instUserID, instI
 		SELECT sr.id,
 		       IFNULL(sr.role_name, ''),
 		       IFNULL(sr.description, ''),
-		       IFNULL(sr.is_admin, 0),
-		       COUNT(DISTINCT IF(IFNULL(sm.menu_type, 0) = 0, sm.id, NULL)),
-		       COUNT(DISTINCT IF(IFNULL(sm.menu_type, 0) = 1, sm.id, NULL))
+		       IFNULL(sr.is_admin, 0)
 		FROM sso_user_role sur
 		LEFT JOIN sso_role sr ON sr.id = sur.role_id
 		LEFT JOIN inst_user iu ON iu.user_id = sur.user_id
-		LEFT JOIN sso_role_menu srm ON srm.role_id = sr.id
-		LEFT JOIN sso_menu sm ON sm.id = srm.menu_id AND sm.del_flag = 0 AND sm.own_type = 2
 		WHERE iu.id = ? AND sr.del_flag = 0 AND (sr.org_id = ? OR sr.org_id = 0)
 		GROUP BY sr.id, sr.role_name, sr.description, sr.is_admin
 		ORDER BY IFNULL(sr.is_admin, 0) DESC, sr.id
@@ -250,15 +332,37 @@ func (repo *Repository) GetInstUserDetail(ctx context.Context, instUserID, instI
 		return model.InstUserDetailVO{}, err
 	}
 	defer roleRows.Close()
+	statMenus, err := repo.listInstitutionStatMenus(ctx)
+	if err != nil {
+		return model.InstUserDetailVO{}, err
+	}
 	for roleRows.Next() {
 		var role model.InstUserRoleDetail
-		if err := roleRows.Scan(&role.RoleID, &role.RoleName, &role.Description, &role.IsAdmin, &role.FunctionalAuthorityCount, &role.DataAuthorityCount); err != nil {
+		if err := roleRows.Scan(&role.RoleID, &role.RoleName, &role.Description, &role.IsAdmin); err != nil {
 			return model.InstUserDetailVO{}, err
 		}
 		detail.Roles = append(detail.Roles, role)
 		detail.RoleIDs = append(detail.RoleIDs, role.RoleID)
 	}
-	return detail, roleRows.Err()
+	if err := roleRows.Err(); err != nil {
+		return model.InstUserDetailVO{}, err
+	}
+
+	roleMenuIDMap, err := repo.getInstitutionRoleMenuIDMap(ctx, detail.RoleIDs)
+	if err != nil {
+		return model.InstUserDetailVO{}, err
+	}
+	for index := range detail.Roles {
+		selected := make(map[int64]struct{})
+		for _, menuID := range roleMenuIDMap[detail.Roles[index].RoleID] {
+			if menuID > 0 {
+				selected[menuID] = struct{}{}
+			}
+		}
+		detail.Roles[index].FunctionalAuthorityCount, detail.Roles[index].DataAuthorityCount = institutionmenu.CountVisibleLeafAuthorities(statMenus, selected)
+	}
+
+	return detail, nil
 }
 
 func (repo *Repository) CheckPhoneUsed(ctx context.Context, instID int64, mobile string, excludeInstUserID *int64) (bool, error) {
@@ -322,7 +426,7 @@ func (repo *Repository) SaveInstUser(ctx context.Context, instID int64, dto mode
 		}
 	}
 	for _, roleID := range dto.RoleIDs {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sso_user_role (user_id, role_id) VALUES (?, ?)`, ssoUserID, roleID); err != nil {
+		if err := insertUserRoleIfNotExists(ctx, tx, ssoUserID, roleID); err != nil {
 			return 0, err
 		}
 	}
@@ -387,7 +491,7 @@ func (repo *Repository) UpdateInstUser(ctx context.Context, instID int64, dto mo
 		return err
 	}
 	for _, roleID := range dto.RoleIDs {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sso_user_role (user_id, role_id) VALUES (?, ?)`, ssoUserID, roleID); err != nil {
+		if err := insertUserRoleIfNotExists(ctx, tx, ssoUserID, roleID); err != nil {
 			return err
 		}
 	}
@@ -710,7 +814,7 @@ func (repo *Repository) BatchModifyInstUserRole(ctx context.Context, instID int6
 			return err
 		}
 		for _, roleID := range roleIDs {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO sso_user_role (user_id, role_id) VALUES (?, ?)`, ssoUserID, roleID); err != nil {
+			if err := insertUserRoleIfNotExists(ctx, tx, ssoUserID, roleID); err != nil {
 				return err
 			}
 		}

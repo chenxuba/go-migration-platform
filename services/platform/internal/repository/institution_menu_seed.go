@@ -329,34 +329,6 @@ var institutionMenuSeeds = []institutionMenuSeed{
 		ParentDesc: "经营分析与数据报表相关权限。",
 	},
 	{
-		ParentName: "个人数据",
-		ParentCode: "grp:psnDat",
-		ParentSort: 700,
-		ParentDesc: "个人维度的数据查看权限。",
-		Children: []institutionMenuSeedChild{
-			{
-				Name:        "销售跟进数据",
-				Code:        "grp:psnDatSls",
-				Sort:        30,
-				Title:       "销售跟进数据",
-				Description: "销售跟进数据查看权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "可见跟进、意向、试听统计", Code: "perm:psnDatSlsOvw", Sort: 20, Weight: 0, Remark: "支持查看个人的跟进记录、新增意向和新增试听统计数据。"},
-				},
-			},
-			{
-				Name:        "我的审批数据",
-				Code:        "grp:psnDatApv",
-				Sort:        40,
-				Title:       "我的审批数据",
-				Description: "个人审批数据查看权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "可见审批数据", Code: "perm:psnDatApv", Sort: 10, Weight: 0, Remark: "支持查看个人的审批数据。"},
-				},
-			},
-		},
-	},
-	{
 		ParentName: "内部管理",
 		ParentCode: "grp:intl",
 		ParentSort: 800,
@@ -387,68 +359,6 @@ var institutionMenuSeeds = []institutionMenuSeed{
 					{Name: "修改目标", Code: "perm:intlTgtUpd", Sort: 30, Weight: 0, Remark: "可修改校区目标。"},
 					{Name: "删除目标", Code: "perm:intlTgtDel", Sort: 40, Weight: 0, Remark: "可删除校区目标。"},
 					{Name: "导出目标达成详情", Code: "perm:intlTgtExp", Sort: 50, Weight: 0, Remark: "可导出目标达成详情。"},
-				},
-			},
-		},
-	},
-	{
-		ParentName: "机构配置",
-		ParentCode: "grp:set",
-		ParentSort: 900,
-		ParentDesc: "机构基础配置相关权限。",
-		Children: []institutionMenuSeedChild{
-			{
-				Name:        "机构管理",
-				Code:        "grp:setOrg",
-				Sort:        10,
-				Title:       "机构管理",
-				Description: "机构基础资料配置权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "校区信息管理", Code: "perm:setOrgInfo", Sort: 10, Weight: 0, Remark: "支持校区基础信息管理。"},
-				},
-			},
-		},
-	},
-	{
-		ParentName: "机构管理",
-		ParentCode: "grp:orgMng",
-		ParentSort: 920,
-		ParentDesc: "机构内部组织与服务管理权限。",
-		Children: []institutionMenuSeedChild{
-			{
-				Name:        "员工管理",
-				Code:        "grp:orgMngStf",
-				Sort:        10,
-				Title:       "员工管理",
-				Description: "员工、部门、角色等组织管理权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "查看校区部门和员工", Code: "perm:orgMngStfView", Sort: 10, Weight: 0, Remark: "查看校区下的部门和所有员工。"},
-					{Name: "校区员工管理", Code: "perm:orgMngStfMng", Sort: 20, Weight: 0, Remark: "在所属校区内创建新员工、批量编辑员工信息以及管理角色权限。"},
-					{Name: "校区部门管理", Code: "perm:orgMngDepaMng", Sort: 30, Weight: 0, Remark: "在所属校区内新增、编辑和删除部门。"},
-					{Name: "管理督办", Code: "perm:orgMngSup", Sort: 40, Weight: 0, Remark: "可以查看工作台的管理督办。"},
-					{Name: "导出员工", Code: "perm:orgMngStfExp", Sort: 60, Weight: 0, Remark: "支持导出员工信息。"},
-					{Name: "查看员工忙碌时段", Code: "perm:orgMngBsyView", Sort: 70, Weight: 0, Remark: "可查看员工忙碌时段。"},
-					{Name: "管理员工忙碌时段", Code: "perm:orgMngBsyMng", Sort: 80, Weight: 0, Remark: "可设置、编辑和撤销员工忙碌时段。"},
-				},
-			},
-			{
-				Name:        "订购中心",
-				Code:        "grp:orgMngOrd",
-				Sort:        20,
-				Title:       "订购中心",
-				Description: "已购服务查看权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "查看已购服务", Code: "perm:orgMngOrdView", Sort: 10, Weight: 0, Remark: "查看已购服务剩余详情及到期时间。"},
-				},
-			},
-			{
-				Name:        "AI 风险预警",
-				Code:        "grp:orgMngAiWrn",
-				Sort:        30,
-				Title:       "AI 风险预警",
-				Description: "AI 风险预警查看权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "查看预警通知", Code: "perm:orgMngAiWrnView", Sort: 10, Weight: 0, Remark: "支持查看风险预警通知信息。"},
 				},
 			},
 		},
@@ -554,87 +464,6 @@ var institutionMenuSeeds = []institutionMenuSeed{
 				Authorities: []institutionMenuSeedAuthority{
 					{Name: "风险预警设置", Code: "perm:bizSetMorWrn", Sort: 10, Weight: 0, Remark: "支持编辑风险预警设置。"},
 					{Name: "校区数据清空", Code: "perm:bizSetMorClr", Sort: 20, Weight: 0, Remark: "可以在业务设置中清空校区数据。"},
-				},
-			},
-		},
-	},
-	{
-		ParentName: "敏感数据",
-		ParentCode: "grp:sns",
-		ParentSort: 960,
-		ParentDesc: "敏感数据查看范围控制权限。",
-		Children: []institutionMenuSeedChild{
-			{
-				Name:        "手机号码可见",
-				Code:        "grp:snsPhn",
-				Sort:        10,
-				Title:       "手机号码可见",
-				Description: "手机号查看与呼出权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "可见员工手机号", Code: "perm:snsPhnStf", Sort: 10, Weight: 0, Remark: "可以查看员工的完整手机号。"},
-					{Name: "可见手机号码", Code: "perm:snsPhnView", Sort: 20, Weight: 0, MenuType: 1, Remark: "可以查看并拨打手机号码，包括数据明细报表。"},
-					{Name: "本机呼出", Code: "perm:snsPhnCal", Sort: 30, Weight: 0, Remark: "支持快捷将手机号填写到本机拨号盘进行拨打。"},
-				},
-			},
-			{
-				Name:        "导入导出可见范围",
-				Code:        "grp:snsImpExp",
-				Sort:        20,
-				Title:       "导入导出可见范围",
-				Description: "导入导出记录查看范围权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "可查看所有导出记录", Code: "perm:snsExpAll", Sort: 10, Weight: 10, GroupCode: "gp5000010", Remark: "拥有页面导出权限时可查看对应页面的所有导出记录。"},
-					{Name: "仅查看我的导出记录", Code: "perm:snsExpMy", Sort: 20, Weight: 0, GroupCode: "gp5000010", Remark: "拥有页面导出权限时仅可查看导出人为自己的导出记录。"},
-					{Name: "可查看所有导入记录", Code: "perm:snsImpAll", Sort: 30, Weight: 10, GroupCode: "gp5000030", Remark: "拥有页面导入权限时可查看对应页面的所有导入记录。"},
-					{Name: "仅查看我的导入记录", Code: "perm:snsImpMy", Sort: 40, Weight: 0, GroupCode: "gp5000030", Remark: "拥有页面导入权限时仅可查看导入人为自己的导入记录。"},
-				},
-			},
-		},
-	},
-	{
-		ParentName: "增值服务",
-		ParentCode: "grp:va",
-		ParentSort: 980,
-		ParentDesc: "增值服务功能查看与管理权限。",
-		Children: []institutionMenuSeedChild{
-			{
-				Name:        "收银宝",
-				Code:        "grp:vaCsh",
-				Sort:        10,
-				Title:       "收银宝",
-				Description: "收银宝服务权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "查看收银宝", Code: "perm:vaCshView", Sort: 10, Weight: 0, Remark: "支持查看收银宝。"},
-				},
-			},
-			{
-				Name:        "安心宝",
-				Code:        "grp:vaSaf",
-				Sort:        20,
-				Title:       "安心宝",
-				Description: "安心宝服务权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "查看安心宝", Code: "perm:vaSafView", Sort: 10, Weight: 0, Remark: "支持查看安心宝。"},
-				},
-			},
-			{
-				Name:        "赛事考级",
-				Code:        "grp:vaExm",
-				Sort:        30,
-				Title:       "赛事考级",
-				Description: "赛事考级服务权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "赛事考级管理", Code: "perm:vaExmMng", Sort: 10, Weight: 0, Remark: "支持操作赛事考级申办、作品管理等权限。"},
-				},
-			},
-			{
-				Name:        "校宝商学",
-				Code:        "grp:vaSchBiz",
-				Sort:        40,
-				Title:       "校宝商学",
-				Description: "校宝商学服务权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "查看校宝商学", Code: "perm:vaSchBizView", Sort: 10, Weight: 0, Remark: "支持查看校宝商学。"},
 				},
 			},
 		},
@@ -765,6 +594,12 @@ var institutionRouteAuthoritySeeds = []institutionRouteAuthoritySeed{
 		},
 	},
 	{
+		RouteCode: "page:intlRole",
+		Authorities: []institutionRouteAuthority{
+			{Name: "角色管理", Code: "perm:orgMngRoleMng", Sort: 10, Remark: "支持创建和编辑角色。", MatchNames: []string{"角色管理"}},
+		},
+	},
+	{
 		RouteCode: "page:eduCls",
 		Authorities: []institutionRouteAuthority{
 			{Name: "查看所有的班级", Code: "perm:eduClsAll", Sort: 10, Weight: 10, GroupCode: "groupViewallclasses", Remark: "可查看校区内所有的班级。", MatchCodes: []string{"Viewallclasses"}},
@@ -827,9 +662,12 @@ func (repo *Repository) ensureInstitutionMenuCatalog(ctx context.Context) error 
 			if err != nil {
 				return err
 			}
+			if err := repo.copyInstitutionModuleBindings(ctx, parentID, childID); err != nil {
+				return err
+			}
 
 			for _, authority := range child.Authorities {
-				if _, err := repo.ensureInstitutionMenuNode(ctx, institutionMenuNodeSpec{
+				authorityID, err := repo.ensureInstitutionMenuNode(ctx, institutionMenuNodeSpec{
 					Name:       authority.Name,
 					Code:       authority.Code,
 					PID:        childID,
@@ -841,7 +679,11 @@ func (repo *Repository) ensureInstitutionMenuCatalog(ctx context.Context) error 
 					Introduce:  strings.TrimSpace(authority.Remark),
 					Remark:     strings.TrimSpace(authority.Remark),
 					MatchNames: uniqueMenuNames(authority.Name),
-				}); err != nil {
+				})
+				if err != nil {
+					return err
+				}
+				if err := repo.copyInstitutionModuleBindings(ctx, childID, authorityID); err != nil {
 					return err
 				}
 			}
@@ -909,6 +751,9 @@ func (repo *Repository) ensureVisibleInstitutionRouteCatalog(ctx context.Context
 				MatchNames: uniqueMenuNames(append([]string{child.Name}, child.MatchNames...)...),
 			})
 			if err != nil {
+				return err
+			}
+			if err := repo.copyInstitutionModuleBindings(ctx, groupID, childID); err != nil {
 				return err
 			}
 			routeMenuIDs = append(routeMenuIDs, childID)
