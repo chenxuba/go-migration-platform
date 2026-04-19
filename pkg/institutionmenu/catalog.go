@@ -19,6 +19,7 @@ type RouteCatalogChild struct {
 	AggregateNodeNames []string
 	AggregateNodeCodes []string
 	AggregateLeafNames []string
+	ExcludeLeafCodes   []string
 	UseDirectChildren  bool
 }
 
@@ -140,7 +141,7 @@ var VisibleRouteCatalog = []RouteCatalogGroup{
 		Introduce:  "内部运营与协同管理权限。",
 		MatchNames: []string{"内部管理"},
 		Children: []RouteCatalogChild{
-			{Name: "员工管理", Code: "page:intlStf", Sort: 10, Introduce: "员工管理。", MatchNames: []string{"员工管理"}, UseDirectChildren: true},
+			{Name: "员工管理", Code: "page:intlStf", Sort: 10, Introduce: "员工管理。", MatchNames: []string{"员工管理"}, ExcludeLeafCodes: []string{"perm:orgMngRoleMng"}, UseDirectChildren: true},
 			{Name: "角色管理", Code: "page:intlRole", Sort: 20, Introduce: "角色管理。", MatchNames: []string{"角色管理"}, AggregateLeafNames: []string{"角色管理"}, UseDirectChildren: false},
 		},
 	},

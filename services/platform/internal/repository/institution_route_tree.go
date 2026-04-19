@@ -99,6 +99,7 @@ func buildVisibleInstitutionModuleTree(items []rawMenu, selected map[int64]struc
 			for _, leafName := range child.AggregateLeafNames {
 				appendAggregateRawLeavesByName(leafMap, nameIndex, childrenByPID, byID, groupMenu.ID, childMenu.ID, leafName)
 			}
+			removeExcludedRawLeaves(leafMap, child.ExcludeLeafCodes)
 
 			leafItems := make([]rawMenu, 0, len(leafMap))
 			for _, item := range leafMap {
@@ -225,6 +226,30 @@ func appendPageUseRawChildren(target map[int64]rawMenu, items []rawMenu) {
 		code := institutionmenu.NormalizeCode(item.Code)
 		if strings.HasPrefix(code, "perm:") && strings.HasSuffix(code, "Use") {
 			target[item.ID] = item
+		}
+	}
+}
+
+func removeExcludedRawLeaves(target map[int64]rawMenu, codes []string) {
+	if len(target) == 0 || len(codes) == 0 {
+		return
+	}
+
+	excluded := make(map[string]struct{}, len(codes))
+	for _, code := range codes {
+		normalized := institutionmenu.NormalizeCode(code)
+		if normalized == "" {
+			continue
+		}
+		excluded[normalized] = struct{}{}
+	}
+	if len(excluded) == 0 {
+		return
+	}
+
+	for id, item := range target {
+		if _, ok := excluded[institutionmenu.NormalizeCode(item.Code)]; ok {
+			delete(target, id)
 		}
 	}
 }

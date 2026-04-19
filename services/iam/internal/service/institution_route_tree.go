@@ -84,6 +84,7 @@ func buildVisibleInstitutionMenuTree(menus []model.Menu) []model.MenuTreeNode {
 			for _, leafName := range child.AggregateLeafNames {
 				appendAggregateLeavesByName(leafMap, nameIndex, childrenByPID, byID, groupMenu.ID, childMenu.ID, leafName)
 			}
+			removeExcludedLeaves(leafMap, child.ExcludeLeafCodes)
 
 			leafItems := make([]model.Menu, 0, len(leafMap))
 			for _, item := range leafMap {
@@ -173,6 +174,30 @@ func appendPageUseChildren(target map[int64]model.Menu, items []model.Menu) {
 		code := institutionmenu.NormalizeCode(item.MenuCode)
 		if strings.HasPrefix(code, "perm:") && strings.HasSuffix(code, "Use") {
 			target[item.ID] = item
+		}
+	}
+}
+
+func removeExcludedLeaves(target map[int64]model.Menu, codes []string) {
+	if len(target) == 0 || len(codes) == 0 {
+		return
+	}
+
+	excluded := make(map[string]struct{}, len(codes))
+	for _, code := range codes {
+		normalized := institutionmenu.NormalizeCode(code)
+		if normalized == "" {
+			continue
+		}
+		excluded[normalized] = struct{}{}
+	}
+	if len(excluded) == 0 {
+		return
+	}
+
+	for id, item := range target {
+		if _, ok := excluded[institutionmenu.NormalizeCode(item.MenuCode)]; ok {
+			delete(target, id)
 		}
 	}
 }

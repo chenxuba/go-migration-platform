@@ -97,17 +97,11 @@ const scopeHint = computed(() => {
 })
 
 const totalLeafCount = computed(() => {
-  return boxList.value.reduce((sum, parent) => {
-    return sum + parent.children.reduce((childSum, child) => childSum + child.children.length, 0)
-  }, 0)
+  return collectAuthorityIDSet(false).size
 })
 
 const selectedLeafCount = computed(() => {
-  return boxList.value.reduce((sum, parent) => {
-    return sum + parent.children.reduce((childSum, child) => {
-      return childSum + child.children.filter(authority => authority.checked).length
-    }, 0)
-  }, 0)
+  return collectAuthorityIDSet(true).size
 })
 
 const hasSelectedPermissions = computed(() => {
@@ -172,6 +166,25 @@ function formatDateMinute(value?: string) {
   if (!raw)
     return '--'
   return raw.length >= 16 ? raw.slice(0, 16) : raw
+}
+
+function collectAuthorityIDSet(checkedOnly = false) {
+  const authorityIDs = new Set<number>()
+
+  boxList.value.forEach((parent) => {
+    parent.children.forEach((child) => {
+      child.children.forEach((authority) => {
+        const authorityID = Number(authority.id)
+        if (!Number.isFinite(authorityID) || authorityID <= 0)
+          return
+        if (checkedOnly && !authority.checked)
+          return
+        authorityIDs.add(authorityID)
+      })
+    })
+  })
+
+  return authorityIDs
 }
 
 function getOpenTypeLabel(value?: number) {
