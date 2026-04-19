@@ -586,17 +586,18 @@ watch(
               <a-row :gutter="[12, 12]" class="mt-16px">
                 <a-col :xs="24" :lg="12">
                   <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
-                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">家长签名</div>
-                    <a-image
-                      v-if="signatureImageSrc"
-                      :src="signatureImageSrc"
-                      width="100%"
-                    />
-                    <a-input
-                      v-else
-                      :value="formModel.parentSignature || '未填写'"
-                      disabled
-                    />
+                    <div class="parent-signature-row">
+                      <div class="text-12px leading-18px text-#8c8c8c">家长签名</div>
+                      <div v-if="signatureImageSrc" class="parent-signature-preview">
+                        <a-image
+                          :src="signatureImageSrc"
+                          class="parent-signature-image"
+                        />
+                      </div>
+                      <span v-else class="text-14px leading-22px text-#262626">
+                        {{ formModel.parentSignature || '未填写' }}
+                      </span>
+                    </div>
                   </div>
                 </a-col>
                 <a-col :xs="24" :lg="12">
@@ -851,5 +852,30 @@ watch(
       animation: icon-rotate 0.3s linear;
     }
   }
+}
+
+.parent-signature-preview {
+  display: flex;
+  align-items: center;
+  min-height: 45px;
+}
+
+.parent-signature-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  min-height: 45px;
+}
+
+:deep(.parent-signature-image) {
+  max-width: 110px;
+}
+
+:deep(.parent-signature-image .ant-image-img) {
+  width: auto;
+  max-width: 100%;
+  max-height: 45px;
+  object-fit: contain;
 }
 </style>

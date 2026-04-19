@@ -35,10 +35,12 @@ const (
 
 	classCommentWordExportImageRelationshipType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 	classCommentWordExportSignatureTabPos       = 7000
-	classCommentWordExportSignatureHeightEMU    = 203200
+	classCommentWordExportSignatureHeightEMU    = 482600
 	classCommentWordExportSignatureMaxWidthEMU  = 1270000
 	classCommentWordExportParagraphBefore       = 60
 	classCommentWordExportParagraphAfter        = 60
+	classCommentWordExportTitleBefore           = 0
+	classCommentWordExportTitleAfter            = 80
 )
 
 var wordTCVerticalAlignRegexp = regexp.MustCompile(`<w:vAlign\b[^>]*w:val="[^"]*"[^>]*/>`)
@@ -46,6 +48,7 @@ var wordTCWidthRegexp = regexp.MustCompile(`<w:tcW\b[^>]*w:w="[^"]+"[^>]*/>`)
 var wordGridColWidthRegexp = regexp.MustCompile(`<w:gridCol\b[^>]*w:w="[^"]+"[^>]*/>`)
 var wordTCNoWrapRegexp = regexp.MustCompile(`<w:noWrap\b[^>]*/>`)
 var wordTRHeightRegexp = regexp.MustCompile(`<w:trHeight\b[^>]*w:val="[^"]+"[^>]*/>`)
+var wordSpacingRegexp = regexp.MustCompile(`<w:spacing\b[^>]*/>`)
 
 var classCommentWordExportFirstRowWidths = []int{866, 1396, 726, 620, 1214, 1435, 484, 1775}
 
@@ -139,6 +142,7 @@ func buildClassCommentWordDocx(items []rehabRecordWordExportView) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
+	titleXML = adjustClassCommentTitleParagraph(titleXML)
 
 	rels, err := parseDocxRelationships(entries[classCommentWordExportDocumentRelsPath])
 	if err != nil {
@@ -235,7 +239,7 @@ func buildClassCommentRecordTableXML(tableXML string, item rehabRecordWordExport
 	row1 := replaceCellContent(children[3], 1, buildWordParagraphs(strings.TrimSpace(item.TeacherName), "left", "", 240), "")
 	row1 = replaceCellContent(row1, 3, buildWordParagraphs(strings.TrimSpace(item.TrainingDate), "left", "", 240), "")
 
-	row2 := replaceCellContent(children[4], 1, buildWordParagraphs(strings.TrimSpace(item.TrainingTarget), "left", "", 240), "top")
+	row2 := replaceCellContent(children[4], 1, buildWordParagraphs(strings.TrimSpace(item.TrainingTarget), "left", "", 240), "center")
 	row3 := children[5]
 
 	trainingRows := buildClassCommentTrainingRows(children[6], children[7], item.TrainingItems)
@@ -243,7 +247,7 @@ func buildClassCommentRecordTableXML(tableXML string, item rehabRecordWordExport
 	row7 := setWordTableRowHeight(children[9], 1120)
 	row7 = replaceCellContent(row7, 1, buildWordParagraphs(strings.TrimSpace(item.Suggestion), "left", "", 240), "center")
 	row8 := setWordTableRowHeight(children[10], 1120)
-	row8 = replaceCellContent(row8, 1, buildWordParagraphs(strings.TrimSpace(item.ParentFeedback), "left", "", 240), "top")
+	row8 = replaceCellContent(row8, 1, buildWordParagraphs(strings.TrimSpace(item.ParentFeedback), "left", "", 240), "center")
 	row9, err := buildClassCommentSignatureRow(children[11], item, state)
 	if err != nil {
 		return "", err
@@ -269,7 +273,7 @@ func buildClassCommentTrainingRows(firstTemplateRow, repeatTemplateRow string, i
 			templateRow = firstTemplateRow
 		}
 		rowXML := replaceCellContent(templateRow, 0, buildWordParagraphs(formatTrainingItemTitle(item.Title), "center", "", 240), "")
-		rowXML = replaceCellContent(rowXML, 1, buildWordParagraphs(strings.TrimSpace(item.Content), "left", "", 240), "top")
+		rowXML = replaceCellContent(rowXML, 1, buildWordParagraphs(strings.TrimSpace(item.Content), "left", "", 240), "center")
 		rows = append(rows, rowXML)
 	}
 	return rows
@@ -281,7 +285,7 @@ func buildClassCommentSignatureRow(rowXML string, item rehabRecordWordExportView
 		return "", err
 	}
 
-	return replaceCellContent(rowXML, 1, []string{signatureParagraph}, ""), nil
+	return replaceCellContent(rowXML, 1, []string{signatureParagraph}, "center"), nil
 }
 
 func buildClassCommentSignatureParagraph(item rehabRecordWordExportView, state *classCommentWordDocxBuildState) (string, error) {
@@ -568,6 +572,14 @@ func formatDocxFeedbackDateText(raw string) string {
 		return "年      月      日"
 	}
 	return formatDisplayDateForDocument(text)
+}
+
+func adjustClassCommentTitleParagraph(titleXML string) string {
+	spacingXML := `<w:spacing w:before="` + strconv.Itoa(classCommentWordExportTitleBefore) + `" w:after="` + strconv.Itoa(classCommentWordExportTitleAfter) + `" />`
+	if wordSpacingRegexp.MatchString(titleXML) {
+		return wordSpacingRegexp.ReplaceAllString(titleXML, spacingXML)
+	}
+	return strings.Replace(titleXML, `</w:pPr>`, spacingXML+`</w:pPr>`, 1)
 }
 
 func formatTrainingItemTitle(raw string) string {
