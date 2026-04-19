@@ -1059,7 +1059,7 @@ watch(institutionRenewalOpen, (open) => {
 :deep(.filter-wrap .standard-filters) {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  /* gap: 10px;  */
 }
 
 :deep(.filter-wrap .selectBox .label) {
