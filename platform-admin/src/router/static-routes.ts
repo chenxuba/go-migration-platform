@@ -31,6 +31,16 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/platform/default-roles',
+    name: 'PlatformDefaultRoles',
+    component: () => import('~/pages/platform/default-roles/index.vue'),
+    meta: {
+      title: '默认角色',
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+    },
+  },
+  {
     path: '/platform/permissions',
     name: 'PlatformPermissions',
     component: () => import('~/pages/platform/permissions/index.vue'),

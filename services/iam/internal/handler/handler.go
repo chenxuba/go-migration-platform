@@ -68,8 +68,14 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sso/menu/delete", handler.deleteMenu)
 	mux.HandleFunc("/sso/roleList", handler.roleList)
 	mux.HandleFunc("/sso/role/saveRole", handler.saveRole)
+	mux.HandleFunc("/sso/role/saveDefaultRole", handler.saveDefaultRole)
+	mux.HandleFunc("/sso/role/deleteDefaultRole", handler.deleteDefaultRole)
 	mux.HandleFunc("/sso/role/updateRole", handler.updateRole)
 	mux.HandleFunc("/sso/role/instMenuList", handler.instMenuList)
+	mux.HandleFunc("/sso/role/menuList", handler.roleMenuIDs)
+	mux.HandleFunc("/sso/role/getRoleTemplate", handler.roleTemplates)
+	mux.HandleFunc("/sso/role/getDefaultRoleDetail", handler.defaultRoleDetail)
+	mux.HandleFunc("/sso/role/getStaffListByRoleId", handler.roleStaff)
 	mux.HandleFunc("/sso/role/roleMenuCompare", handler.roleMenuCompare)
 	mux.HandleFunc("/sysLoginLog/page", handler.loginLogs)
 	mux.HandleFunc("/sysDepart/listTree", handler.departTree)
@@ -592,7 +598,8 @@ func (handler *Handler) roleTemplates(w http.ResponseWriter, r *http.Request) {
 	if _, ok := handler.requireAuth(w, r, ctx); !ok {
 		return
 	}
-	result, err := handler.service.GetRoleTemplates()
+	roleType := parseIntPtr(r.URL.Query().Get("roleType"))
+	result, err := handler.service.GetRoleTemplates(roleType)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
@@ -729,9 +736,64 @@ func (handler *Handler) saveRole(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
 }
 
+func (handler *Handler) saveDefaultRole(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.SaveDefaultRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(req.RoleName) == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "roleName is required", ctx.RequestID)
+		return
+	}
+	if err := handler.service.SaveDefaultRole(claims, req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) deleteDefaultRole(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var req model.DeleteDefaultRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.RoleID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "roleId is required", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.DeleteDefaultRole(claims, req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) updateRole(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	_, ok := handler.requireAuth(w, r, ctx)
+	claims, ok := handler.requireAuth(w, r, ctx)
 	if !ok {
 		return
 	}
@@ -744,7 +806,7 @@ func (handler *Handler) updateRole(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
-	if err := handler.service.UpdateRole(req); err != nil {
+	if err := handler.service.UpdateRole(claims, req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}

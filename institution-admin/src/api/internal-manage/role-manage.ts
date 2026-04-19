@@ -30,7 +30,10 @@ export function getMenuListApi(data) {
 
 // 机构后台获取默认角色 /role/getDefaultRole
 export function getDefaultRole(data) {
-  return useGet('/sso/role/getRoleTemplate', data)
+  return useGet('/sso/role/getRoleTemplate', {
+    ...(data || {}),
+    roleType: 2,
+  })
 }
 
 // 角色权限对比 /role/roleMenuCompare

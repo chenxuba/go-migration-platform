@@ -829,19 +829,10 @@ onBeforeUnmount(() => {
 
 .permission-row__toggle {
   flex-shrink: 0;
-  padding: 2px 12px;
-  border: 1px solid #d7dce3;
-  border-radius: 999px;
-  color: #667085;
-  font-size: 12px;
-  line-height: 20px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.permission-row__toggle:hover {
-  border-color: #1677ff;
   color: #1677ff;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
 }
 
 .permission-authority {

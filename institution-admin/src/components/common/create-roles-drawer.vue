@@ -358,11 +358,11 @@ async function getRoleTemplateList() {
     if (res.code === 200) {
       // 转换API数据格式为组件所需格式
       roleTemplates.value = (res.result || []).map((item, index) => ({
-        key: item.id || `role_${index}`,
+        key: item.roleId || `role_${index}`,
         label: `${item.roleName || item.name || '未命名角色'}${item.isDefault ? '（系统默认）' : ''}`,
         isSystem: item.isDefault || false,
         checked: false,
-        roleId: item.id,
+        roleId: item.roleId,
         description: item.description,
         menuIds: item.roleIds || []
       }))

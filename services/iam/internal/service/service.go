@@ -610,8 +610,8 @@ func (svc *Service) RoleMenuIDs(roleID int64, ownType *int) ([]int64, error) {
 	return svc.repo.GetMenuIDsByRole(context.Background(), roleID, ownType)
 }
 
-func (svc *Service) GetRoleTemplates() ([]model.RoleTemplateVO, error) {
-	return svc.repo.GetSystemDefaultRoles(context.Background())
+func (svc *Service) GetRoleTemplates(roleType *int) ([]model.RoleTemplateVO, error) {
+	return svc.repo.GetSystemDefaultRoles(context.Background(), roleType)
 }
 
 func (svc *Service) GetDefaultRoleDetail(roleID int64) (model.DefaultRoleDetailVO, error) {
@@ -653,7 +653,79 @@ func (svc *Service) SaveRole(claims authx.Claims, req model.SaveRoleRequest) err
 	return svc.repo.SetRoleMenus(ctx, roleID, req.MenuIDs)
 }
 
-func (svc *Service) UpdateRole(req model.SaveRoleRequest) error {
+func (svc *Service) SaveDefaultRole(claims authx.Claims, req model.SaveDefaultRoleRequest) error {
+	if claims.LoginType != "manage" {
+		return errors.New("无权限")
+	}
+	if strings.TrimSpace(req.RoleName) == "" {
+		return errors.New("角色名称不能为空")
+	}
+
+	roleType := 2
+	if req.RoleType != nil && *req.RoleType > 0 {
+		roleType = *req.RoleType
+	}
+
+	ctx := context.Background()
+	exists, err := svc.repo.RoleNameExistsByOrgAndType(ctx, 0, roleType, req.RoleName)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return errors.New("角色名已存在，请重试")
+	}
+
+	role := model.Role{
+		RoleName:    strings.TrimSpace(req.RoleName),
+		Description: strings.TrimSpace(req.Description),
+		OrgID:       0,
+		RoleType:    roleType,
+		Admin:       false,
+		IsDefault:   false,
+	}
+	roleID, err := svc.repo.CreateRole(ctx, role)
+	if err != nil {
+		return err
+	}
+	return svc.repo.SetRoleMenus(ctx, roleID, req.MenuIDs)
+}
+
+func (svc *Service) DeleteDefaultRole(claims authx.Claims, req model.DeleteDefaultRoleRequest) (model.DeleteDefaultRoleResult, error) {
+	if claims.LoginType != "manage" {
+		return model.DeleteDefaultRoleResult{}, errors.New("无权限")
+	}
+	if req.RoleID <= 0 {
+		return model.DeleteDefaultRoleResult{}, errors.New("roleId is required")
+	}
+
+	ctx := context.Background()
+	role, err := svc.repo.GetRoleByID(ctx, req.RoleID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.DeleteDefaultRoleResult{}, errors.New("角色不存在")
+		}
+		return model.DeleteDefaultRoleResult{}, err
+	}
+	if role.OrgID != 0 {
+		return model.DeleteDefaultRoleResult{}, errors.New("仅支持删除平台默认角色")
+	}
+	if role.Admin {
+		return model.DeleteDefaultRoleResult{}, errors.New("管理员角色不可删除")
+	}
+
+	detachedUsers, err := svc.repo.DeleteDefaultRole(ctx, role.ID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.DeleteDefaultRoleResult{}, errors.New("角色不存在")
+		}
+		return model.DeleteDefaultRoleResult{}, err
+	}
+	return model.DeleteDefaultRoleResult{
+		DetachedUsers: detachedUsers,
+	}, nil
+}
+
+func (svc *Service) UpdateRole(claims authx.Claims, req model.SaveRoleRequest) error {
 	if req.RoleID == nil || *req.RoleID <= 0 {
 		return errors.New("roleId is required")
 	}
@@ -661,6 +733,19 @@ func (svc *Service) UpdateRole(req model.SaveRoleRequest) error {
 	role, err := svc.repo.GetRoleByID(ctx, *req.RoleID)
 	if err != nil {
 		return err
+	}
+	switch claims.LoginType {
+	case "manage":
+	case "org":
+		orgID, err := svc.resolveOrgID(claims, nil)
+		if err != nil {
+			return err
+		}
+		if role.OrgID != orgID || role.OrgID <= 0 {
+			return errors.New("无权限")
+		}
+	default:
+		return errors.New("无权限")
 	}
 	role.RoleName = strings.TrimSpace(req.RoleName)
 	role.Description = strings.TrimSpace(req.Description)

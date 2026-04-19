@@ -57,7 +57,19 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.migrateLegacyInstitutionMenuCodes(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.migrateLegacySystemDefaultRoleTypes(context.Background()); err != nil {
+		return nil, err
+	}
 	return repo, nil
+}
+
+func (repo *Repository) migrateLegacySystemDefaultRoleTypes(ctx context.Context) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sso_role
+		SET role_type = 2, update_time = NOW()
+		WHERE del_flag = 0 AND org_id = 0 AND role_type IS NULL
+	`)
+	return err
 }
 
 func (repo *Repository) ensureColumnExists(ctx context.Context, tableName, columnName, ddl string) error {
@@ -1503,6 +1515,18 @@ func (repo *Repository) RoleNameExists(ctx context.Context, orgID int64, name st
 	return count > 0, nil
 }
 
+func (repo *Repository) RoleNameExistsByOrgAndType(ctx context.Context, orgID int64, roleType int, name string) (bool, error) {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM sso_role
+		WHERE del_flag = 0 AND org_id = ? AND role_type = ? AND role_name = ?
+	`, orgID, roleType, strings.TrimSpace(name)).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (repo *Repository) CreateRole(ctx context.Context, input model.Role) (int64, error) {
 	result, err := repo.db.ExecContext(ctx, `
 		INSERT INTO sso_role (uuid, version, role_name, description, org_id, role_type, is_admin, is_default, del_flag, create_time, update_time)
@@ -1597,13 +1621,30 @@ func (repo *Repository) GetAdminRoleIDByInst(ctx context.Context, instID int64, 
 	return id.Int64, nil
 }
 
-func (repo *Repository) GetSystemDefaultRoles(ctx context.Context) ([]model.RoleTemplateVO, error) {
-	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(role_name, ''), IFNULL(is_default, 0)
-		FROM sso_role
-		WHERE del_flag = 0 AND org_id = 0
-		ORDER BY id ASC
-	`)
+func (repo *Repository) GetSystemDefaultRoles(ctx context.Context, roleType *int) ([]model.RoleTemplateVO, error) {
+	query := `
+		SELECT r.id,
+		       IFNULL(r.uuid, ''),
+		       IFNULL(r.version, 0),
+		       IFNULL(r.role_name, ''),
+		       IFNULL(r.is_default, 0),
+		       COUNT(DISTINCT IF(m.menu_type = 0, m.id, NULL)) AS functional_count,
+		       COUNT(DISTINCT IF(m.menu_type = 1, m.id, NULL)) AS data_count,
+		       IFNULL(GROUP_CONCAT(DISTINCT m.id), '') AS menu_ids
+		FROM sso_role r
+		LEFT JOIN sso_role_menu rm ON r.id = rm.role_id
+		LEFT JOIN sso_menu m ON rm.menu_id = m.id
+		WHERE r.del_flag = 0 AND r.org_id = 0`
+	args := make([]any, 0, 1)
+	if roleType != nil && *roleType > 0 {
+		query += " AND r.role_type = ?"
+		args = append(args, *roleType)
+	}
+	query += `
+		GROUP BY r.id, r.uuid, r.version, r.role_name, r.is_default
+		ORDER BY r.id ASC`
+
+	rows, err := repo.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1611,13 +1652,75 @@ func (repo *Repository) GetSystemDefaultRoles(ctx context.Context) ([]model.Role
 	items := make([]model.RoleTemplateVO, 0, 16)
 	for rows.Next() {
 		var item model.RoleTemplateVO
-		if err := rows.Scan(&item.RoleID, &item.UUID, &item.Version, &item.RoleName, &item.IsDefault); err != nil {
+		var menuIDsRaw string
+		if err := rows.Scan(
+			&item.RoleID,
+			&item.UUID,
+			&item.Version,
+			&item.RoleName,
+			&item.IsDefault,
+			&item.FunctionalAuthorityCount,
+			&item.DataAuthorityCount,
+			&menuIDsRaw,
+		); err != nil {
 			return nil, err
 		}
-		item.RoleIDs, _ = repo.GetMenuIDsByRole(ctx, item.RoleID, nil)
+		item.RoleIDs = parseCSVInt64(menuIDsRaw)
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (repo *Repository) DeleteDefaultRole(ctx context.Context, roleID int64) (int, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var detachedUsers int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT user_id)
+		FROM sso_user_role
+		WHERE role_id = ?
+	`, roleID).Scan(&detachedUsers); err != nil {
+		return 0, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM sso_user_role
+		WHERE role_id = ?
+	`, roleID); err != nil {
+		return 0, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM sso_role_menu
+		WHERE role_id = ?
+	`, roleID); err != nil {
+		return 0, err
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE sso_role
+		SET del_flag = 1, update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, roleID)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if affected <= 0 {
+		return 0, sql.ErrNoRows
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return detachedUsers, nil
 }
 
 func (repo *Repository) GetDefaultRoleDetail(ctx context.Context, roleID int64) (model.DefaultRoleDetailVO, error) {

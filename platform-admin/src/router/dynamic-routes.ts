@@ -34,6 +34,14 @@ const routes: RouteRecordRaw[] = [
     component: basicRouteMap.RouteView,
     children: [
       {
+        path: '/platform/default-roles',
+        name: 'PlatformDefaultRoles',
+        component: () => import('~/pages/platform/default-roles/index.vue'),
+        meta: {
+          title: '默认角色',
+        },
+      },
+      {
         path: '/platform/versions',
         name: 'PlatformVersions',
         component: () => import('~/pages/platform/versions/index.vue'),

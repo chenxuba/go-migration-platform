@@ -233,6 +233,21 @@ type SaveRoleRequest struct {
 	MenuIDs      []int64 `json:"menuIds,omitempty"`
 }
 
+type SaveDefaultRoleRequest struct {
+	RoleName    string  `json:"roleName"`
+	Description string  `json:"description"`
+	MenuIDs     []int64 `json:"menuIds,omitempty"`
+	RoleType    *int    `json:"roleType,omitempty"`
+}
+
+type DeleteDefaultRoleRequest struct {
+	RoleID int64 `json:"roleId"`
+}
+
+type DeleteDefaultRoleResult struct {
+	DetachedUsers int `json:"detachedUsers"`
+}
+
 type InstMenuListRequest struct {
 	RoleType *int   `json:"roleType,omitempty"`
 	InstID   *int64 `json:"instId,omitempty"`
@@ -255,12 +270,14 @@ type MenuTreeVO struct {
 }
 
 type RoleTemplateVO struct {
-	RoleID    int64   `json:"roleId"`
-	UUID      string  `json:"uuid,omitempty"`
-	Version   int64   `json:"version,omitempty"`
-	RoleName  string  `json:"roleName"`
-	IsDefault *bool   `json:"isDefault,omitempty"`
-	RoleIDs   []int64 `json:"roleIds,omitempty"`
+	RoleID                   int64   `json:"roleId"`
+	UUID                     string  `json:"uuid,omitempty"`
+	Version                  int64   `json:"version,omitempty"`
+	RoleName                 string  `json:"roleName"`
+	IsDefault                *bool   `json:"isDefault,omitempty"`
+	RoleIDs                  []int64 `json:"roleIds,omitempty"`
+	FunctionalAuthorityCount int     `json:"functionalAuthorityCount,omitempty"`
+	DataAuthorityCount       int     `json:"dataAuthorityCount,omitempty"`
 }
 
 type DefaultRoleDetailVO struct {
