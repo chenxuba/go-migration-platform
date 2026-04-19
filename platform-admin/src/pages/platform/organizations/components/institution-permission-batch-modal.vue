@@ -160,6 +160,12 @@ const queryRuleLabel = computed(() => {
     : '筛出至少拥有 1 项所选权限的机构'
 })
 
+const queryRuleHint = computed(() => {
+  return applyMode.value === 'add-only'
+    ? '仅新增模式会筛出“缺少所选权限”的机构'
+    : '仅移除模式会筛出“已拥有所选权限”的机构'
+})
+
 const canQueryTargets = computed(() => {
   return !mismatchMessage.value && selectedActionMenuIds.value.length > 0 && !loading.value && !treeLoading.value
 })
@@ -174,6 +180,16 @@ const targetEmptyDescription = computed(() => {
   if (!hasQueriedTargets.value)
     return '点击“查询命中机构”后，这里会显示可操作机构'
   return `暂无机构满足条件：${queryRuleLabel.value}`
+})
+
+const noMatchGuidance = computed(() => {
+  if (!hasQueriedTargets.value || matchedInstitutionCount.value > 0 || !selectedActionMenuIds.value.length)
+    return ''
+
+  if (applyMode.value === 'add-only')
+    return '当前机构已拥有这些权限，所以“仅新增勾选”筛不出来。若要批量取消，请切换到“仅移除勾选”后重新查询。'
+
+  return '当前机构不拥有这些权限，所以“仅移除勾选”筛不出来。若要批量新增，请切换到“仅新增勾选”后重新查询。'
 })
 
 function closeModal() {
@@ -385,6 +401,10 @@ function getTargetActionMeta(item: BatchTargetInstitution) {
     text: `将移除 ${item.ownedCount} 项`,
     className: 'target-item__action--remove',
   }
+}
+
+function switchApplyMode(mode: BatchApplyMode) {
+  applyMode.value = mode
 }
 
 function isTargetChecked(institutionId: number) {
@@ -687,7 +707,7 @@ watch(
 <template>
   <PlatformModalShell
     v-model:open="openModal"
-    :width="1320"
+    :width="1180"
     title="批量机构权限配置"
     modal-class="institution-permission-batch-modal"
     scrollable
@@ -741,6 +761,9 @@ watch(
             >
               {{ queryButtonText }}
             </a-button>
+          </div>
+          <div class="batch-overview__rule">
+            {{ queryRuleHint }}
           </div>
           <div class="batch-overview__metrics">
             <div class="overview-metric">
@@ -934,6 +957,37 @@ watch(
             </div>
 
             <div class="target-panel__body">
+              <a-alert
+                v-if="noMatchGuidance"
+                type="info"
+                show-icon
+                class="target-panel__alert"
+              >
+                <template #message>
+                  {{ noMatchGuidance }}
+                </template>
+                <template #description>
+                  <a-button
+                    v-if="applyMode === 'add-only'"
+                    type="link"
+                    size="small"
+                    class="target-panel__switch-btn"
+                    @click="switchApplyMode('remove-only')"
+                  >
+                    切到仅移除勾选
+                  </a-button>
+                  <a-button
+                    v-else
+                    type="link"
+                    size="small"
+                    class="target-panel__switch-btn"
+                    @click="switchApplyMode('add-only')"
+                  >
+                    切到仅新增勾选
+                  </a-button>
+                </template>
+              </a-alert>
+
               <a-empty
                 v-if="!matchedInstitutionCount"
                 :image="simpleImage"
@@ -1116,6 +1170,16 @@ watch(
   min-width: 116px;
 }
 
+.batch-overview__rule {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #f5f9ff;
+  color: #4872a8;
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .batch-overview__metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1196,7 +1260,7 @@ watch(
 
 .batch-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 376px;
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
   gap: 14px;
   min-height: 560px;
 }
@@ -1281,7 +1345,7 @@ watch(
 }
 
 .permission-panel__tools :deep(.ant-input-affix-wrapper) {
-  width: 320px;
+  width: 286px;
 }
 
 .permission-panel__body,
@@ -1427,6 +1491,15 @@ watch(
   line-height: 18px;
 }
 
+.target-panel__alert {
+  margin-bottom: 10px;
+}
+
+.target-panel__switch-btn {
+  padding-inline: 0;
+  height: 22px;
+}
+
 .target-list {
   display: flex;
   flex-direction: column;
@@ -1546,6 +1619,10 @@ watch(
 
   .batch-overview__mode-left {
     flex-wrap: wrap;
+  }
+
+  .target-panel__summary {
+    margin-top: 6px;
   }
 }
 
