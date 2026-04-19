@@ -95,8 +95,11 @@ const selectedInstitutionNames = computed(() => {
   return Array.from(new Set(names))
 })
 
-const selectedInstitutionNamePreview = computed(() => selectedInstitutionNames.value.slice(0, 8))
-const hasMoreNames = computed(() => selectedInstitutionNames.value.length > selectedInstitutionNamePreview.value.length)
+const selectedInstitutionPreviewLimit = 6
+const selectedInstitutionNamePreview = computed(() => selectedInstitutionNames.value.slice(0, selectedInstitutionPreviewLimit))
+const hiddenInstitutionNames = computed(() => selectedInstitutionNames.value.slice(selectedInstitutionPreviewLimit))
+const hiddenInstitutionCount = computed(() => hiddenInstitutionNames.value.length)
+const hasMoreNames = computed(() => hiddenInstitutionCount.value > 0)
 
 const currentModuleName = computed(() => {
   const normalized = String(moduleName.value || '').trim()
@@ -804,14 +807,31 @@ watch(
           </div>
           <div class="batch-overview__tags-head">
             <span class="batch-overview__tags-title">已选机构池</span>
-            <span v-if="hasMoreNames" class="batch-overview__more">
-              等 {{ selectedInstitutionNames.length }} 家机构
+            <span class="batch-overview__more">
+              共 {{ selectedInstitutionNames.length }} 家
             </span>
           </div>
           <div class="batch-overview__tags">
             <a-tag v-for="name in selectedInstitutionNamePreview" :key="name" class="batch-overview__tag">
               {{ name }}
             </a-tag>
+            <a-popover v-if="hasMoreNames" trigger="click" placement="bottomLeft" overlay-class-name="batch-more-popover">
+              <template #content>
+                <div class="batch-overview__more-popover">
+                  <div class="batch-overview__more-popover-title">
+                    其余 {{ hiddenInstitutionCount }} 家机构
+                  </div>
+                  <div class="batch-overview__more-popover-list">
+                    <a-tag v-for="name in hiddenInstitutionNames" :key="`hidden-${name}`" class="batch-overview__more-popover-tag">
+                      {{ name }}
+                    </a-tag>
+                  </div>
+                </div>
+              </template>
+              <a-tag class="batch-overview__more-tag">
+                +{{ hiddenInstitutionCount }} 家
+              </a-tag>
+            </a-popover>
           </div>
         </div>
 
@@ -937,23 +957,25 @@ watch(
                 <div class="target-panel__title">
                   命中机构
                 </div>
-                <div class="target-panel__meta">
-                  {{ queryRuleLabel }}
-                </div>
-                <div class="target-panel__summary">
-                  <span class="target-panel__summary-item">命中 {{ matchedInstitutionCount }} 家</span>
-                  <span class="target-panel__summary-item">待执行 {{ checkedTargetCount }} 家</span>
-                </div>
+              </div>
+              <div class="target-panel__rule">
+                {{ queryRuleLabel }}
               </div>
             </div>
 
             <div class="target-panel__toolbar">
-              <a-button type="link" :disabled="!matchedInstitutionCount" @click="selectAllMatchedTargets">
-                全选命中
-              </a-button>
-              <a-button type="link" :disabled="!checkedTargetCount" @click="clearMatchedTargets">
-                清空勾选
-              </a-button>
+              <div class="target-panel__summary">
+                <span class="target-panel__summary-item">命中 {{ matchedInstitutionCount }} 家</span>
+                <span class="target-panel__summary-item">待执行 {{ checkedTargetCount }} 家</span>
+              </div>
+              <div class="target-panel__actions">
+                <a-button type="link" :disabled="!matchedInstitutionCount" @click="selectAllMatchedTargets">
+                  全选命中
+                </a-button>
+                <a-button type="link" :disabled="!checkedTargetCount" @click="clearMatchedTargets">
+                  清空勾选
+                </a-button>
+              </div>
             </div>
 
             <div class="target-panel__body">
@@ -1253,6 +1275,40 @@ watch(
   color: #4d5a71;
 }
 
+.batch-overview__more-tag {
+  margin: 0;
+  border: 1px dashed #b8c9e4;
+  border-radius: 999px;
+  background: #fff;
+  color: #4b628b;
+  cursor: pointer;
+}
+
+.batch-overview__more-popover {
+  width: 340px;
+  max-width: 48vw;
+}
+
+.batch-overview__more-popover-title {
+  color: #4b5568;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.batch-overview__more-popover-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 220px;
+  margin-top: 8px;
+  overflow: auto;
+}
+
+.batch-overview__more-popover-tag {
+  margin: 0;
+}
+
 .batch-overview__more {
   color: var(--text-tertiary);
   font-size: 12px;
@@ -1301,8 +1357,7 @@ watch(
   line-height: 20px;
 }
 
-.permission-panel__meta,
-.target-panel__meta {
+.permission-panel__meta {
   margin-top: 3px;
   color: var(--text-tertiary);
   font-size: 12px;
@@ -1320,6 +1375,22 @@ watch(
   padding-inline: 0;
   height: 24px;
   color: #4b628b;
+}
+
+.target-panel__header {
+  min-height: 58px;
+}
+
+.target-panel__rule {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid #dbe7f7;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #4b628b;
+  font-size: 12px;
+  line-height: 22px;
 }
 
 .permission-panel__toolbar,
@@ -1475,7 +1546,8 @@ watch(
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .target-panel__summary-item {
@@ -1489,6 +1561,13 @@ watch(
   color: #4b628b;
   font-size: 11px;
   line-height: 18px;
+}
+
+.target-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .target-panel__alert {
@@ -1621,8 +1700,13 @@ watch(
     flex-wrap: wrap;
   }
 
-  .target-panel__summary {
-    margin-top: 6px;
+  .target-panel__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .target-panel__actions {
+    justify-content: flex-end;
   }
 }
 
