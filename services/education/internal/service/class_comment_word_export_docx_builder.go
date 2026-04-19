@@ -44,6 +44,10 @@ const (
 var wordTCVerticalAlignRegexp = regexp.MustCompile(`<w:vAlign\b[^>]*w:val="[^"]*"[^>]*/>`)
 var wordTCWidthRegexp = regexp.MustCompile(`<w:tcW\b[^>]*w:w="[^"]+"[^>]*/>`)
 var wordGridColWidthRegexp = regexp.MustCompile(`<w:gridCol\b[^>]*w:w="[^"]+"[^>]*/>`)
+var wordTCNoWrapRegexp = regexp.MustCompile(`<w:noWrap\b[^>]*/>`)
+var wordTRHeightRegexp = regexp.MustCompile(`<w:trHeight\b[^>]*w:val="[^"]+"[^>]*/>`)
+
+var classCommentWordExportFirstRowWidths = []int{866, 1396, 726, 620, 1214, 1435, 484, 1775}
 
 type docxRelationships struct {
 	XMLName       xml.Name           `xml:"Relationships"`
@@ -210,14 +214,18 @@ func buildClassCommentRecordTableXML(tableXML string, item rehabRecordWordExport
 		return "", errors.New("康复记录模板结构不正确")
 	}
 
-	children[1] = setWordTableGridColumnWidth(children[1], 3, 620)
-	children[1] = setWordTableGridColumnWidth(children[1], 5, 1195)
-	children[1] = setWordTableGridColumnWidth(children[1], 7, 1775)
-	children[2] = setRowCellWidth(children[2], 3, 620)
-	children[2] = setRowCellWidth(children[2], 5, 1195)
-	children[2] = setRowCellWidth(children[2], 7, 1775)
-	children[3] = setRowCellWidth(children[3], 1, 2862)
-	children[3] = setRowCellWidth(children[3], 3, 3454)
+	for index, width := range classCommentWordExportFirstRowWidths {
+		children[1] = setWordTableGridColumnWidth(children[1], index, width)
+	}
+	children[2] = setRowCellWidth(children[2], 1, classCommentWordExportFirstRowWidths[1])
+	children[2] = setRowCellWidth(children[2], 3, classCommentWordExportFirstRowWidths[3])
+	children[2] = setRowCellWidth(children[2], 4, classCommentWordExportFirstRowWidths[4])
+	children[2] = setRowCellWidth(children[2], 5, classCommentWordExportFirstRowWidths[5])
+	children[2] = setRowCellWidth(children[2], 7, classCommentWordExportFirstRowWidths[7])
+	children[2] = setRowCellNoWrap(children[2], 5, true)
+	children[3] = setRowCellWidth(children[3], 1, sumWordTableWidths(classCommentWordExportFirstRowWidths, 1, 3))
+	children[3] = setRowCellWidth(children[3], 2, classCommentWordExportFirstRowWidths[4])
+	children[3] = setRowCellWidth(children[3], 3, sumWordTableWidths(classCommentWordExportFirstRowWidths, 5, 7))
 
 	row0 := replaceCellContent(children[2], 1, buildWordParagraphs(strings.TrimSpace(item.StudentName), "left", "", 240), "")
 	row0 = replaceCellContent(row0, 3, buildWordParagraphs(strings.TrimSpace(item.Gender), "center", "", 240), "")
@@ -232,8 +240,10 @@ func buildClassCommentRecordTableXML(tableXML string, item rehabRecordWordExport
 
 	trainingRows := buildClassCommentTrainingRows(children[6], children[7], item.TrainingItems)
 	row6 := replaceCellContent(children[8], 1, buildWordParagraphs(strings.TrimSpace(item.Performance), "left", "", 240), "center")
-	row7 := replaceCellContent(children[9], 1, buildWordParagraphs(strings.TrimSpace(item.Suggestion), "left", "", 240), "center")
-	row8 := replaceCellContent(children[10], 1, buildWordParagraphs(strings.TrimSpace(item.ParentFeedback), "left", "", 240), "top")
+	row7 := setWordTableRowHeight(children[9], 1120)
+	row7 = replaceCellContent(row7, 1, buildWordParagraphs(strings.TrimSpace(item.Suggestion), "left", "", 240), "center")
+	row8 := setWordTableRowHeight(children[10], 1120)
+	row8 = replaceCellContent(row8, 1, buildWordParagraphs(strings.TrimSpace(item.ParentFeedback), "left", "", 240), "top")
 	row9, err := buildClassCommentSignatureRow(children[11], item, state)
 	if err != nil {
 		return "", err
@@ -660,6 +670,30 @@ func setRowCellWidth(rowXML string, targetCellIndex int, width int) string {
 	return startTag + strings.Join(children, "") + endTag
 }
 
+func setRowCellNoWrap(rowXML string, targetCellIndex int, enabled bool) string {
+	startTag, innerXML, endTag, err := splitXMLContainer(rowXML, "w:tr")
+	if err != nil {
+		return rowXML
+	}
+	children, err := splitTopLevelXML(innerXML)
+	if err != nil {
+		return rowXML
+	}
+
+	cellIndex := 0
+	for index, child := range children {
+		if !xmlFragmentHasStartTag(child, "w:tc") {
+			continue
+		}
+		if cellIndex == targetCellIndex {
+			children[index] = setWordTableCellNoWrap(child, enabled)
+			break
+		}
+		cellIndex++
+	}
+	return startTag + strings.Join(children, "") + endTag
+}
+
 func replaceWordTableCellContent(cellXML string, paragraphs []string, verticalAlign string) string {
 	startTag, innerXML, endTag, err := splitXMLContainer(cellXML, "w:tc")
 	if err != nil {
@@ -700,6 +734,31 @@ func setWordTableCellWidth(cellXML string, width int) string {
 	return wordTCWidthRegexp.ReplaceAllString(cellXML, `<w:tcW w:w="`+strconv.Itoa(width)+`" w:type="dxa" />`)
 }
 
+func setWordTableCellNoWrap(cellXML string, enabled bool) string {
+	startTag, innerXML, endTag, err := splitXMLContainer(cellXML, "w:tc")
+	if err != nil {
+		return cellXML
+	}
+	children, err := splitTopLevelXML(innerXML)
+	if err != nil {
+		return cellXML
+	}
+	if len(children) == 0 || !xmlFragmentHasStartTag(children[0], "w:tcPr") {
+		return cellXML
+	}
+
+	tcPr := children[0]
+	switch {
+	case enabled && wordTCNoWrapRegexp.MatchString(tcPr):
+	case enabled:
+		tcPr = strings.Replace(tcPr, `</w:tcPr>`, `<w:noWrap/></w:tcPr>`, 1)
+	default:
+		tcPr = wordTCNoWrapRegexp.ReplaceAllString(tcPr, "")
+	}
+	children[0] = tcPr
+	return startTag + strings.Join(children, "") + endTag
+}
+
 func setWordTableGridColumnWidth(gridXML string, targetColumnIndex int, width int) string {
 	matches := wordGridColWidthRegexp.FindAllStringIndex(gridXML, -1)
 	if targetColumnIndex < 0 || targetColumnIndex >= len(matches) {
@@ -708,6 +767,24 @@ func setWordTableGridColumnWidth(gridXML string, targetColumnIndex int, width in
 
 	match := matches[targetColumnIndex]
 	return gridXML[:match[0]] + `<w:gridCol w:w="` + strconv.Itoa(width) + `" />` + gridXML[match[1]:]
+}
+
+func setWordTableRowHeight(rowXML string, height int) string {
+	return wordTRHeightRegexp.ReplaceAllString(rowXML, `<w:trHeight w:val="`+strconv.Itoa(height)+`" w:hRule="atLeast" />`)
+}
+
+func sumWordTableWidths(widths []int, start, end int) int {
+	total := 0
+	if start < 0 {
+		start = 0
+	}
+	if end >= len(widths) {
+		end = len(widths) - 1
+	}
+	for index := start; index <= end; index++ {
+		total += widths[index]
+	}
+	return total
 }
 
 func extractTemplateDocumentParts(documentXML string) (string, string, string, string, error) {
