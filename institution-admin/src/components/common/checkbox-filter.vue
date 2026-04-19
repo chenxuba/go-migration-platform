@@ -449,7 +449,7 @@ function handleScroll(e) {
       <a-menu>
         <a-menu-item class="top-item">
           <!-- 搜索栏 -->
-          <div v-if="category == 'course' || category == 'teacher'" class="flex justify-center w-120px px-8px">
+          <div v-if="category == 'course' || category == 'teacher'" class="flex justify-center w-150px px-8px">
             <a-input v-model:value="searchPeo" class="mt-1 mb-2 w-100%" allow-clear :placeholder="placeholder" />
           </div>
           <div v-if="category == 'stu'" class="flex justify-center px-8px">

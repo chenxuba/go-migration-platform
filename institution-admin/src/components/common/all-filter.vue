@@ -500,6 +500,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  classNameOptionsData: {
+    type: Array,
+    default: () => [],
+  },
   wholeConditionClearTypes: {
     type: Array,
     default: () => [],
@@ -651,6 +655,8 @@ const teacherType = ref(1)
 const selectTeacher = ref(undefined)
 const scheduleDateDefaultApplied = ref(false)
 const commentStatusDefaultApplied = ref(false)
+const currentStatusDefaultApplied = ref(false)
+const orNotFenClassDefaultApplied = ref(false)
 const teacherSearchOptions = ref([])
 const teacherSearchPagination = ref({
   current: 1,
@@ -4650,6 +4656,9 @@ function removeCondition(type, id) {
       // 只通知父组件清除报读课程筛选，真正清空本地选中值放在 clearQuickFilter 里，等接口成功后再处理
       emit('update:enrolledCourseFilter', [], false, id, type)
       break
+    case 'className':
+      emit('update:classNameFilter', [], false, id, type)
+      break
     default:
 
       break
@@ -5025,6 +5034,9 @@ function clearQuickFilter(id, type) {
     case 'enrolledCourse':
       enrolledCourseVals.value = []
       break
+    case 'className':
+      classNameVals.value = []
+      break
     default:
       break
   }
@@ -5272,6 +5284,24 @@ watch(userDeptIds, (newDeptIds) => {
 
 // 使用 watchEffect 监听 props 变化并自动更新相应的值
 watchEffect(() => {
+  classNameOptions.value = Array.isArray(props.classNameOptionsData)
+    ? props.classNameOptionsData.map((item) => {
+        if (typeof item === 'string' || typeof item === 'number') {
+          const value = String(item).trim()
+          return {
+            id: value,
+            value,
+          }
+        }
+
+        return {
+          id: item?.id,
+          value: item?.value ?? item?.name ?? item?.label ?? '',
+          ...item,
+        }
+      }).filter(item => item.id !== undefined && item.id !== null && String(item.value || '').trim())
+    : []
+
   // 先同步父组件传入的部门 id（不能用 if(props.selectDptVals)，0 也是合法 id）
   if (props.selectDptVals !== undefined && props.selectDptVals !== null) {
     selectDptVals.value = props.selectDptVals
@@ -5285,14 +5315,6 @@ watchEffect(() => {
     // console.log('默认账号状态', props.defaultAccountStatus)
     selectAccountStatusVals.value = props.defaultAccountStatus
     // emit('update:channelAccountStatus', props.defaultAccountStatus)
-  }
-
-  if (props.defaultCurrentStatus) {
-    selectCurrentStatusVals.value = props.defaultCurrentStatus
-  }
-
-  if (props.defaultOrNotFenClass) {
-    selectOrNotFenClassVals.value = props.defaultOrNotFenClass
   }
 
   if (props.defaultCreateTimeVals) {
@@ -5340,6 +5362,48 @@ watch(
     }
     scheduleDateVals.value = normalized
     scheduleDateDefaultApplied.value = true
+  },
+  { immediate: true, deep: false },
+)
+
+watch(
+  () => props.defaultCurrentStatus,
+  (newVal) => {
+    if (currentStatusDefaultApplied.value)
+      return
+    const normalized = Array.isArray(newVal) ? newVal.map(item => Number(item)).filter(item => !Number.isNaN(item)) : []
+    if (!normalized.length)
+      return
+    if (
+      selectCurrentStatusVals.value.length === normalized.length
+      && selectCurrentStatusVals.value.every((item, index) => Number(item) === normalized[index])
+    ) {
+      currentStatusDefaultApplied.value = true
+      return
+    }
+    selectCurrentStatusVals.value = normalized
+    currentStatusDefaultApplied.value = true
+  },
+  { immediate: true, deep: false },
+)
+
+watch(
+  () => props.defaultOrNotFenClass,
+  (newVal) => {
+    if (orNotFenClassDefaultApplied.value)
+      return
+    const normalized = Array.isArray(newVal) ? newVal.map(item => Number(item)).filter(item => !Number.isNaN(item)) : []
+    if (!normalized.length)
+      return
+    if (
+      selectOrNotFenClassVals.value.length === normalized.length
+      && selectOrNotFenClassVals.value.every((item, index) => Number(item) === normalized[index])
+    ) {
+      orNotFenClassDefaultApplied.value = true
+      return
+    }
+    selectOrNotFenClassVals.value = normalized
+    orNotFenClassDefaultApplied.value = true
   },
   { immediate: true, deep: false },
 )
@@ -5593,6 +5657,17 @@ function setStuPhoneSearchFilter(value = undefined, shouldEmit = false) {
   if (shouldEmit) {
     nextTick(() => {
       emit('update:stuPhoneSearchFilter', normalized)
+    })
+  }
+}
+
+function setOrNotFenClassFilter(values = [], shouldEmit = false) {
+  selectOrNotFenClassVals.value = Array.isArray(values)
+    ? values.map(item => Number(item)).filter(item => !Number.isNaN(item))
+    : []
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:orNotFenClassFilter', [...selectOrNotFenClassVals.value])
     })
   }
 }
@@ -5966,6 +6041,7 @@ defineExpose({
   setReadStatusFilter,
   setParentFeedbackStatusFilter,
   setStuPhoneSearchFilter,
+  setOrNotFenClassFilter,
   updateStaffSearchData,
   getOrderedConditions: () => orderedConditions.value,
   // 新增：暴露部门数据获取方法

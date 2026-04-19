@@ -4,6 +4,7 @@ import { debounce } from 'lodash-es'
 import { DownOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { getRegisterReadListApi } from '~@/api/edu-center/register-read-list'
+import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
 import { useTableColumns } from '@/composables/useTableColumns'
@@ -43,6 +44,7 @@ const dataSource = ref([])
 const loading = ref(false)
 const selectedRows = ref([])
 const selectedRowKeys = ref([])
+const classNameOptionsData = ref([])
 const totalStats = ref({
   totalRemainedTuition: 0,
   totalConfirmedTuition: 0,
@@ -145,6 +147,7 @@ const rowSelection = {
 
 const defaultOrNotFenClass = ref([0])
 const defaultCurrentStatus = ref([1,2])
+const classNameDrivenAssignedClass = ref(false)
 
 // 存储所有查询条件
 const queryState = ref({
@@ -190,6 +193,47 @@ function resetQueryState() {
   })
 }
 
+async function loadClassNameOptions() {
+  try {
+    const lessonIds = Array.isArray(queryState.value.productIds)
+      ? queryState.value.productIds.map(item => String(item ?? '').trim()).filter(Boolean)
+      : []
+
+    const res = await pageGroupClassesApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: 200,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+      queryModel: {
+        lessonIds: lessonIds.length ? lessonIds : undefined,
+      },
+    })
+
+    if (res.code !== 200) {
+      throw new Error(res.message || '获取班级筛选项失败')
+    }
+
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    const optionMap = new Map()
+
+    list.forEach((item) => {
+      const id = String(item?.id ?? '').trim()
+      const value = String(item?.name ?? '').trim()
+      if (!id || !value || optionMap.has(id))
+        return
+      optionMap.set(id, { id, value })
+    })
+
+    classNameOptionsData.value = [...optionMap.values()]
+  }
+  catch (error) {
+    console.error('获取报读列表班级筛选项失败:', error)
+    classNameOptionsData.value = []
+  }
+}
+
 // 分页参数
 const pagination = ref({
   current: 1,
@@ -206,6 +250,7 @@ const pagination = ref({
 const handleFilterUpdate = debounce((updates, isClearAll = false, id, type) => {
   if (isClearAll) {
     // 清除所有条件，恢复默认状态
+    classNameDrivenAssignedClass.value = false
     resetQueryState()
   } else {
     Object.entries(updates).forEach(([key, value]) => {
@@ -216,6 +261,7 @@ const handleFilterUpdate = debounce((updates, isClearAll = false, id, type) => {
   pagination.value.current = 1
   selectedRows.value = []
   selectedRowKeys.value = []
+  void loadClassNameOptions()
   // 将最新的查询条件传入，方便在接口里做时间/区间字段转换
   getRegisterReadList(queryState.value, id, type)
 }, 300, { leading: true, trailing: false })
@@ -259,6 +305,7 @@ const filterUpdateHandlers = computed(() => {
     handlers[`update:${eventKey}`] = (val, isClearAll, id, type) => {
       // 分班状态：0-未分班，1-已分班
       if (fieldName === 'assignedClass') {
+        classNameDrivenAssignedClass.value = false
         if (Array.isArray(val) && val.length > 0) {
           if (hasSelectValue(val, 0) && hasSelectValue(val, 1)) {
             handleFilterUpdate({ assignedClass: undefined }, isClearAll, id, type)
@@ -271,6 +318,34 @@ const filterUpdateHandlers = computed(() => {
           }
         } else {
           handleFilterUpdate({ assignedClass: undefined }, isClearAll, id, type)
+        }
+        return
+      }
+
+      if (fieldName === 'classIds') {
+        const normalizedClassIds = Array.isArray(val) && val.length > 0
+          ? val.map(item => String(item ?? '').trim()).filter(Boolean)
+          : undefined
+
+        if (normalizedClassIds?.length) {
+          classNameDrivenAssignedClass.value = true
+          allFilterRef.value?.setOrNotFenClassFilter?.([1], false)
+          handleFilterUpdate({
+            classIds: normalizedClassIds,
+            assignedClass: true,
+          }, isClearAll, id, type)
+        } else {
+          const nextUpdates = {
+            classIds: undefined,
+          }
+
+          if (classNameDrivenAssignedClass.value) {
+            classNameDrivenAssignedClass.value = false
+            allFilterRef.value?.setOrNotFenClassFilter?.([0], false)
+            nextUpdates.assignedClass = false
+          }
+
+          handleFilterUpdate(nextUpdates, isClearAll, id, type)
         }
         return
       }
@@ -497,6 +572,7 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
   })
 
 onMounted(() => {
+  loadClassNameOptions()
   getRegisterReadList()
 })
 
@@ -515,6 +591,7 @@ useStudentListRefresh(getRegisterReadList)
         :display-array="displayArray"
         :is-quick-show="false"
         :is-show-search-stu-phonefilter="true"
+        :class-name-options-data="classNameOptionsData"
         v-on="filterUpdateHandlers"
       />
     </div>
