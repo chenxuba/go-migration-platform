@@ -11,6 +11,7 @@ import messageService from '@/utils/messageService'
 
 interface ReviewStudentItem {
   id: string
+  studentTeachingRecordId: string
   name: string
   avatar: string
   attentionText: string
@@ -41,6 +42,10 @@ const props = withDefaults(defineProps<{
   type: '1',
   record: null,
 })
+
+const emit = defineEmits<{
+  (e: 'updated'): void
+}>()
 
 const open = defineModel<boolean>({
   default: false,
@@ -210,8 +215,10 @@ function hasComment(student: Partial<TeachingRecordDetailStudent>) {
 }
 
 function mapReviewStudent(student: Partial<TeachingRecordDetailStudent>): ReviewStudentItem {
+  const studentTeachingRecordId = String(student.studentTeachingRecordId || '').trim()
   return {
-    id: String(student.studentTeachingRecordId || student.studentId || student.studentName || Math.random()).trim(),
+    id: studentTeachingRecordId || String(student.studentId || student.studentName || Math.random()).trim(),
+    studentTeachingRecordId,
     name: String(student.studentName || '-').trim() || '-',
     avatar: String(student.avatar || '').trim() || defaultAvatar,
     attentionText: '未关注',
@@ -259,6 +266,12 @@ async function loadDetail() {
 function handlePendingReview(student: ReviewStudentItem) {
   currentEditingStudent.value = student
   editorDrawerOpen.value = true
+}
+
+async function handleEditorPublished() {
+  currentEditingStudent.value = null
+  await loadDetail()
+  emit('updated')
 }
 
 function handleBatchReview() {
@@ -500,8 +513,10 @@ watch(
 
     <RehabRecordEditorDrawer
       v-model="editorDrawerOpen"
+      :student-teaching-record-id="currentEditingStudent?.studentTeachingRecordId"
       :student="currentEditingStudent"
       :session="editorSession"
+      @published="handleEditorPublished"
     />
   </div>
 </template>

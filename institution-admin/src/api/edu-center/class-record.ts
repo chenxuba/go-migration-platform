@@ -150,6 +150,49 @@ export interface TeachingRecordDetailResult {
   teachingContentImages?: string[]
 }
 
+export interface RehabRecordTemplateMeta {
+  templateCode?: string
+  templateName?: string
+  templateVersion?: number
+  templateScope?: string
+  templateAssignmentId?: string
+}
+
+export interface RehabRecordTrainingItem {
+  title?: string
+  content?: string
+}
+
+export interface RehabRecordContent {
+  studentName?: string
+  gender?: string
+  birthDate?: string
+  className?: string
+  teacherName?: string
+  trainingDate?: string
+  trainingTarget?: string
+  trainingItems?: RehabRecordTrainingItem[]
+  performance?: string
+  suggestion?: string
+  parentFeedback?: string
+  parentSignature?: string
+  feedbackDate?: string
+}
+
+export interface StudentRehabRecordSnapshot {
+  template?: RehabRecordTemplateMeta
+  content?: RehabRecordContent
+  updatedTime?: string
+  updatedStaffName?: string
+}
+
+export interface StudentRehabRecordDetailResult {
+  hasDraft?: boolean
+  draft?: StudentRehabRecordSnapshot | null
+  hasPublished?: boolean
+  published?: StudentRehabRecordSnapshot | null
+}
+
 export interface UpdateStudentTeachingRecordParams {
   studentTeachingRecordId?: string
   teachingRecordId?: string
@@ -378,6 +421,26 @@ export function getClassCommentStudentPagedListApi(data: ClassCommentStudentPage
 
 export function getTeachingRecordDetailApi(params: { teachingRecordId: string }) {
   return useGet<TeachingRecordDetailResult>('/api/v1/class-records/detail', params)
+}
+
+export function getStudentRehabRecordDetailApi(params: { studentTeachingRecordId: string }) {
+  return useGet<StudentRehabRecordDetailResult>('/api/v1/class-records/student/rehab-record', params)
+}
+
+export function saveStudentRehabRecordDraftApi(data: {
+  studentTeachingRecordId: string
+  template?: RehabRecordTemplateMeta
+  content: RehabRecordContent
+}) {
+  return usePost<boolean>('/api/v1/class-records/student/rehab-record/draft', data)
+}
+
+export function publishStudentRehabRecordApi(data: {
+  studentTeachingRecordId: string
+  template?: RehabRecordTemplateMeta
+  content: RehabRecordContent
+}) {
+  return usePost<boolean>('/api/v1/class-records/student/rehab-record/publish', data)
 }
 
 export function updateTeachingRecordClassInfoApi(data: UpdateTeachingRecordClassInfoParams) {

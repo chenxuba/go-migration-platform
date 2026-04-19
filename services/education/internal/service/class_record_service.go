@@ -126,6 +126,14 @@ func (svc *Service) GetTeachingRecordDetail(userID int64, query model.TeachingRe
 	return svc.repo.GetTeachingRecordDetail(context.Background(), instID, query)
 }
 
+func (svc *Service) GetStudentRehabRecordDetail(userID int64, query model.StudentRehabRecordQueryDTO) (model.StudentRehabRecordDetailResult, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return model.StudentRehabRecordDetailResult{}, err
+	}
+	return svc.repo.GetStudentRehabRecordDetail(context.Background(), instID, query)
+}
+
 func (svc *Service) UpdateTeachingRecordClassInfo(userID int64, dto model.UpdateTeachingRecordClassInfoDTO) (bool, error) {
 	instID, err := svc.rollCallInstID(userID)
 	if err != nil {
@@ -160,6 +168,30 @@ func (svc *Service) UpdateStudentTeachingRecord(userID int64, dto model.UpdateSt
 		return false, err
 	}
 	return svc.repo.UpdateStudentTeachingRecord(context.Background(), instID, operatorID, dto)
+}
+
+func (svc *Service) SaveStudentRehabRecordDraft(userID int64, dto model.SaveStudentRehabRecordDraftDTO) (bool, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return false, err
+	}
+	operatorID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		return false, err
+	}
+	return svc.repo.SaveStudentRehabRecordDraft(context.Background(), instID, operatorID, dto)
+}
+
+func (svc *Service) PublishStudentRehabRecord(userID int64, dto model.PublishStudentRehabRecordDTO) (bool, error) {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
+		return false, err
+	}
+	operatorID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		return false, err
+	}
+	return svc.repo.PublishStudentRehabRecord(context.Background(), instID, operatorID, dto)
 }
 
 func (svc *Service) DeleteStudentTeachingRecord(userID int64, dto model.DeleteStudentTeachingRecordDTO) (bool, error) {

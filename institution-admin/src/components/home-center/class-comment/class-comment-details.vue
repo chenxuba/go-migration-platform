@@ -804,6 +804,7 @@ onMounted(() => {
       v-model="reviewDrawerOpen"
       :record="currentReviewRecord"
       type="1"
+      @updated="loadList"
     />
   </div>
 </template>

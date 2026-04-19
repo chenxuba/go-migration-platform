@@ -310,9 +310,9 @@ func (repo *Repository) buildStudentTeachingRecordQuery(dto model.StudentTeachin
 	}
 	if query.IsComment != nil {
 		if *query.IsComment {
-			whereParts = append(whereParts, "LENGTH(TRIM(IFNULL(external_remark, ''))) > 0")
+			whereParts = append(whereParts, studentTeachingRecordHasCommentSQL("student_teaching_record"))
 		} else {
-			whereParts = append(whereParts, "LENGTH(TRIM(IFNULL(external_remark, ''))) = 0")
+			whereParts = append(whereParts, "NOT "+studentTeachingRecordHasCommentSQL("student_teaching_record"))
 		}
 	}
 	if len(query.LessonIDs) > 0 {
@@ -614,8 +614,8 @@ func (repo *Repository) GetClassCommentStudentPagedList(ctx context.Context, ins
 			student_name,
 			CAST(student_id AS CHAR),
 			student_phone,
-			CASE WHEN LENGTH(TRIM(IFNULL(external_remark, ''))) > 0 THEN 1 ELSE 0 END AS is_comment,
-			CASE WHEN LENGTH(TRIM(IFNULL(external_remark, ''))) > 0 THEN 0 ELSE NULL END AS is_read,
+			CASE WHEN `+studentTeachingRecordHasCommentSQL("student_teaching_record")+` THEN 1 ELSE 0 END AS is_comment,
+			CASE WHEN `+studentTeachingRecordHasCommentSQL("student_teaching_record")+` THEN 0 ELSE NULL END AS is_read,
 			CAST(IFNULL(assistant_teacher_names_json, JSON_ARRAY()) AS CHAR),
 			classroom_name
 		FROM student_teaching_record
@@ -786,11 +786,11 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 			MAX(classroom_name),
 			MAX(teacher_class_time),
 			SUM(CASE
-				WHEN status IN (1, 2, 3) AND LENGTH(TRIM(IFNULL(external_remark, ''))) > 0 THEN 1
+				WHEN status IN (1, 2, 3) AND ` + studentTeachingRecordHasCommentSQL("student_teaching_record") + ` THEN 1
 				ELSE 0
 			END) AS comment_count,
 			SUM(CASE
-				WHEN status IN (1, 2, 3) AND LENGTH(TRIM(IFNULL(external_remark, ''))) = 0 THEN 1
+				WHEN status IN (1, 2, 3) AND NOT ` + studentTeachingRecordHasCommentSQL("student_teaching_record") + ` THEN 1
 				ELSE 0
 			END) AS un_comment_count,
 			0 AS read_count,
@@ -1058,7 +1058,8 @@ func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int6
 			IFNULL(str.arrear_quantity, 0),
 			DATE_FORMAT(str.record_time, '%Y-%m-%d %H:%i:%s'),
 			DATE_FORMAT(str.updated_time, '%Y-%m-%d %H:%i:%s'),
-			str.updated_staff_name
+			str.updated_staff_name,
+			CASE WHEN `+studentTeachingRecordHasCommentSQL("str")+` THEN 1 ELSE 0 END AS is_comment
 		FROM student_teaching_record str
 		LEFT JOIN tuition_account ta
 			ON ta.id = str.tuition_account_id
@@ -1102,6 +1103,7 @@ func (repo *Repository) GetTeachingRecordDetail(ctx context.Context, instID int6
 			&item.RecordTime,
 			&item.UpdatedTime,
 			&item.UpdatedStaffName,
+			&item.IsComment,
 		); err != nil {
 			return model.TeachingRecordDetailResult{}, err
 		}

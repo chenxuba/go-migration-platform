@@ -1151,6 +1151,73 @@ func parseUpdateStudentTeachingRecordDTO(raw map[string]any) model.UpdateStudent
 	}
 }
 
+func parseRehabRecordTemplateMeta(raw map[string]any) model.RehabRecordTemplateMeta {
+	return model.RehabRecordTemplateMeta{
+		TemplateCode:         asString(raw["templateCode"]),
+		TemplateName:         asString(raw["templateName"]),
+		TemplateVersion:      asInt(raw["templateVersion"], 0),
+		TemplateScope:        asString(raw["templateScope"]),
+		TemplateAssignmentID: asString(raw["templateAssignmentId"]),
+	}
+}
+
+func parseRehabRecordContent(raw map[string]any) model.RehabRecordContent {
+	content := model.RehabRecordContent{
+		StudentName:     asString(raw["studentName"]),
+		Gender:          asString(raw["gender"]),
+		BirthDate:       asString(raw["birthDate"]),
+		ClassName:       asString(raw["className"]),
+		TeacherName:     asString(raw["teacherName"]),
+		TrainingDate:    asString(raw["trainingDate"]),
+		TrainingTarget:  asString(raw["trainingTarget"]),
+		Performance:     asString(raw["performance"]),
+		Suggestion:      asString(raw["suggestion"]),
+		ParentFeedback:  asString(raw["parentFeedback"]),
+		ParentSignature: asString(raw["parentSignature"]),
+		FeedbackDate:    asString(raw["feedbackDate"]),
+	}
+	if items, ok := raw["trainingItems"].([]any); ok {
+		content.TrainingItems = make([]model.RehabRecordTrainingItem, 0, len(items))
+		for _, item := range items {
+			row, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			content.TrainingItems = append(content.TrainingItems, model.RehabRecordTrainingItem{
+				Title:   asString(firstNonNil(row["title"], row["name"])),
+				Content: asString(firstNonNil(row["content"], row["value"])),
+			})
+		}
+	}
+	return content
+}
+
+func parseSaveStudentRehabRecordDraftDTO(raw map[string]any) model.SaveStudentRehabRecordDraftDTO {
+	dto := model.SaveStudentRehabRecordDraftDTO{
+		StudentTeachingRecordID: asString(raw["studentTeachingRecordId"]),
+	}
+	if templateRaw, ok := raw["template"].(map[string]any); ok {
+		dto.Template = parseRehabRecordTemplateMeta(templateRaw)
+	}
+	if contentRaw, ok := raw["content"].(map[string]any); ok {
+		dto.Content = parseRehabRecordContent(contentRaw)
+	}
+	return dto
+}
+
+func parsePublishStudentRehabRecordDTO(raw map[string]any) model.PublishStudentRehabRecordDTO {
+	dto := model.PublishStudentRehabRecordDTO{
+		StudentTeachingRecordID: asString(raw["studentTeachingRecordId"]),
+	}
+	if templateRaw, ok := raw["template"].(map[string]any); ok {
+		dto.Template = parseRehabRecordTemplateMeta(templateRaw)
+	}
+	if contentRaw, ok := raw["content"].(map[string]any); ok {
+		dto.Content = parseRehabRecordContent(contentRaw)
+	}
+	return dto
+}
+
 func parseUpdateTeachingRecordClassInfoDTO(raw map[string]any) model.UpdateTeachingRecordClassInfoDTO {
 	return model.UpdateTeachingRecordClassInfoDTO{
 		TeachingRecordID: asString(raw["teachingRecordId"]),

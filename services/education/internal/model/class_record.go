@@ -161,6 +161,7 @@ type TeachingRecordDetailStudent struct {
 	RecordTime              string  `json:"recordTime"`
 	UpdatedTime             string  `json:"updatedTime"`
 	UpdatedStaffName        string  `json:"updatedStaffName"`
+	IsComment               bool    `json:"isComment"`
 }
 
 type TeachingRecordDetailResult struct {

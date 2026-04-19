@@ -627,6 +627,7 @@ onMounted(() => {
     <ClassReviewDrawer
       v-model="reviewDrawerOpen"
       :record="currentReviewRecord"
+      @updated="loadList"
     />
   </div>
 </template>
