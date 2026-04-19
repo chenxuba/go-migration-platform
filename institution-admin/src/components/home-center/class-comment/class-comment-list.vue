@@ -50,6 +50,7 @@ const filterTeacherIds = ref<string[]>([])
 const filterClassId = ref<string | undefined>(undefined)
 const filterOneToOneId = ref<string | undefined>(undefined)
 const filterScheduleTypes = ref<string[]>([])
+const filterStudentId = ref<string | undefined>(undefined)
 
 const pagination = ref({
   current: 1,
@@ -274,6 +275,7 @@ function buildQueryModel() {
     one2OneId: filterOneToOneId.value,
     classTeacherIds: [],
     one2OneTeacherIds: [],
+    studentId: filterStudentId.value,
   }
 }
 
@@ -456,6 +458,23 @@ async function loadList() {
 async function handleExportWord() {
   if (exportingWord.value)
     return
+  if (!filterStudentId.value) {
+    messageService.warning('导出前请选择学员')
+    return
+  }
+  if (!filterDateRange.value || filterDateRange.value.length < 2) {
+    messageService.warning('导出前请选择上课日期')
+    return
+  }
+  const [start, end] = filterDateRange.value
+  if (start.startOf('day').isAfter(end.startOf('day'))) {
+    messageService.warning('上课日期筛选范围不正确')
+    return
+  }
+  if (end.startOf('day').isAfter(start.startOf('day').add(1, 'month'))) {
+    messageService.warning('导出时间范围最大支持一个月')
+    return
+  }
   if (pagination.value.total <= 0) {
     messageService.warning('暂无可导出的康复记录')
     return
@@ -482,10 +501,10 @@ async function handleExportWord() {
       return
     }
     const blob = new Blob([res.data], {
-      type: contentType || 'application/msword',
+      type: contentType || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     })
     const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
-      || `康复记录-${dayjs().format('YYYYMMDDHHmmss')}.doc`
+      || `康复记录-${dayjs().format('YYYYMMDDHHmmss')}.docx`
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -549,6 +568,10 @@ function handleScheduleTypeFilter(value: unknown) {
   filterScheduleTypes.value = Array.isArray(value) ? value.map(item => String(item || '')).filter(Boolean) : []
 }
 
+function handleStudentFilter(value: unknown) {
+  filterStudentId.value = normalizeFilterValue(value)
+}
+
 function handleTableChange(page: { current?: number, pageSize?: number }, _filters: any, sorter: any) {
   pagination.value.current = Number(page?.current || 1)
   pagination.value.pageSize = Number(page?.pageSize || pagination.value.pageSize)
@@ -567,6 +590,7 @@ watch(
     filterClassId,
     filterOneToOneId,
     filterScheduleTypes,
+    filterStudentId,
   ],
   () => {
     pagination.value.current = 1
@@ -586,6 +610,7 @@ onMounted(() => {
       <all-filter
         :display-array="displayArray"
         :schedule-date-disable-future="true"
+        :is-show-search-stu-phonefilter="true"
         :schedule-course-options="courseOptions"
         :schedule-course-finished="courseFinished"
         :on-schedule-course-dropdown-visible-change="() => loadCourseOptions()"
@@ -618,6 +643,7 @@ onMounted(() => {
         @update:schedule-class-filter="handleClassFilter"
         @update:schedule-one-to-one-filter="handleOneToOneFilter"
         @update:schedule-type-filter="handleScheduleTypeFilter"
+        @update:stu-phone-search-filter="handleStudentFilter"
       />
     </div>
     <div class="student-list mt-3 pt-3 pb-3 pl-6 pr-6 bg-white rounded-4">

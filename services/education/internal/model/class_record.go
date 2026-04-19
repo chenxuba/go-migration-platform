@@ -272,6 +272,7 @@ type ClassCommentQueryModel struct {
 	One2OneID           string   `json:"one2OneId"`
 	ClassTeacherIDs     []string `json:"classTeacherIds"`
 	One2OneTeacherIDs   []string `json:"one2OneTeacherIds"`
+	StudentID           string   `json:"studentId"`
 }
 
 type ClassCommentPagedItem struct {

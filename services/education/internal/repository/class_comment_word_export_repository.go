@@ -15,6 +15,7 @@ type RehabRecordWordExportRow struct {
 	SourceName              string
 	LessonName              string
 	TeacherName             string
+	Assistants              string
 	ClassRoomName           string
 	StartTime               string
 	EndTime                 string
@@ -31,6 +32,7 @@ func (repo *Repository) ListPublishedRehabRecordWordExportRows(ctx context.Conte
 	queryModel := model.StudentTeachingRecordQueryModel{
 		BeginStartTime:       strings.TrimSpace(dto.QueryModel.TeachingStartTime),
 		EndStartTime:         strings.TrimSpace(dto.QueryModel.TeachingEndTime),
+		StudentID:            strings.TrimSpace(dto.QueryModel.StudentID),
 		TeacherIDs:           dto.QueryModel.TeacherIDs,
 		ClassTeacherIDs:      dto.QueryModel.ClassTeacherIDs,
 		One2OneTeacherIDs:    dto.QueryModel.One2OneTeacherIDs,
@@ -77,6 +79,7 @@ func (repo *Repository) ListPublishedRehabRecordWordExportRows(ctx context.Conte
 			END AS source_name,
 			lesson_name,
 			main_teacher_name,
+			CAST(IFNULL(assistant_teacher_names_json, JSON_ARRAY()) AS CHAR),
 			classroom_name,
 			DATE_FORMAT(start_time, '%Y-%m-%d %H:%i:%s'),
 			DATE_FORMAT(end_time, '%Y-%m-%d %H:%i:%s'),
@@ -119,9 +122,10 @@ func (repo *Repository) ListPublishedRehabRecordWordExportRows(ctx context.Conte
 	result := make([]RehabRecordWordExportRow, 0, minInt(total, limit))
 	for rows.Next() {
 		var (
-			item     RehabRecordWordExportRow
-			sex      sql.NullInt64
-			birthday sql.NullTime
+			item          RehabRecordWordExportRow
+			rawAssistants string
+			sex           sql.NullInt64
+			birthday      sql.NullTime
 		)
 		if err := rows.Scan(
 			&item.StudentTeachingRecordID,
@@ -130,6 +134,7 @@ func (repo *Repository) ListPublishedRehabRecordWordExportRows(ctx context.Conte
 			&item.SourceName,
 			&item.LessonName,
 			&item.TeacherName,
+			&rawAssistants,
 			&item.ClassRoomName,
 			&item.StartTime,
 			&item.EndTime,
@@ -139,6 +144,7 @@ func (repo *Repository) ListPublishedRehabRecordWordExportRows(ctx context.Conte
 		); err != nil {
 			return nil, 0, err
 		}
+		item.Assistants = normalizeJSONStringListText(rawAssistants)
 		if sex.Valid {
 			value := int(sex.Int64)
 			item.Sex = &value

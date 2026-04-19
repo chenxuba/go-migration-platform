@@ -31,7 +31,10 @@ func (svc *Service) GetClassCommentPagedList(userID int64, dto model.ClassCommen
 	queryModel := model.StudentTeachingRecordQueryModel{
 		BeginStartTime:       dto.QueryModel.TeachingStartTime,
 		EndStartTime:         dto.QueryModel.TeachingEndTime,
+		StudentID:            dto.QueryModel.StudentID,
 		TeacherIDs:           dto.QueryModel.TeacherIDs,
+		ClassTeacherIDs:      dto.QueryModel.ClassTeacherIDs,
+		One2OneTeacherIDs:    dto.QueryModel.One2OneTeacherIDs,
 		LessonIDs:            nil,
 		ClassIDs:             nil,
 		One2OneIDs:           nil,

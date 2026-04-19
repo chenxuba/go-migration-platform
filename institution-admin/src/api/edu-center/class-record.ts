@@ -271,6 +271,7 @@ export interface ClassCommentQueryModel {
   one2OneId?: string
   classTeacherIds?: string[]
   one2OneTeacherIds?: string[]
+  studentId?: string
 }
 
 export interface ClassCommentItem {

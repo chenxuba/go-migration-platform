@@ -33,6 +33,10 @@ type rehabRecordWordExportView struct {
 }
 
 func (svc *Service) ExportClassCommentWord(userID int64, baseURL string, dto model.ClassCommentPagedQueryDTO) (string, string, []byte, error) {
+	if err := validateClassCommentWordExportQuery(dto.QueryModel); err != nil {
+		return "", "", nil, err
+	}
+
 	instID, err := svc.rollCallInstID(userID)
 	if err != nil {
 		return "", "", nil, err
@@ -58,9 +62,13 @@ func (svc *Service) ExportClassCommentWord(userID int64, baseURL string, dto mod
 		views = append(views, view)
 	}
 
-	fileName := fmt.Sprintf("个别训练记录表-%s.doc", time.Now().Format("20060102150405"))
-	content := buildClassCommentWordDocument(views)
-	return fileName, "application/msword; charset=utf-8", []byte(content), nil
+	content, err := buildClassCommentWordDocx(views)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	fileName := fmt.Sprintf("个别训练记录表-%s.docx", time.Now().Format("20060102150405"))
+	return fileName, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", content, nil
 }
 
 func buildRehabRecordWordExportView(row repository.RehabRecordWordExportRow, baseURL string) (rehabRecordWordExportView, error) {
@@ -85,7 +93,7 @@ func buildRehabRecordWordExportView(row repository.RehabRecordWordExportRow, bas
 		row.LessonName,
 	)
 	className = formatExportClassName(className)
-	teacherName := firstNonEmptyExportValue(content.TeacherName, row.TeacherName)
+	teacherName := mergeExportTeacherNames(content.TeacherName, row.TeacherName, row.Assistants)
 	trainingDate := firstNonEmptyExportValue(content.TrainingDate, formatExportDateOnly(row.StartTime))
 
 	return rehabRecordWordExportView{

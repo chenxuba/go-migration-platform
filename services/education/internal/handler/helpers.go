@@ -1274,6 +1274,7 @@ func parseClassCommentPagedQueryDTO(raw map[string]any) model.ClassCommentPagedQ
 			One2OneID:           asString(firstNonNil(qm["one2OneId"], qm["one2oneId"], qm["oneToOneId"], firstString(qm["one2OneIds"]), firstString(qm["oneToOneIds"]))),
 			ClassTeacherIDs:     asStringSlice(qm["classTeacherIds"]),
 			One2OneTeacherIDs:   asStringSlice(firstNonNil(qm["one2OneTeacherIds"], qm["one2oneTeacherIds"], qm["oneToOneTeacherIds"])),
+			StudentID:           asString(qm["studentId"]),
 		}
 	}
 	return query
