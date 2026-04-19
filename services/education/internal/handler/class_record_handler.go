@@ -112,6 +112,37 @@ func (handler *Handler) classCommentStudentPagedList(w http.ResponseWriter, r *h
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) exportClassCommentWord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var raw map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+
+	fileName, contentType, data, err := handler.service.ExportClassCommentWord(claims.UserID, resolveRequestBaseURL(r), parseClassCommentPagedQueryDTO(raw))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.QueryEscape(fileName)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
 func (handler *Handler) teachingRecordDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -303,6 +334,26 @@ func (handler *Handler) downloadClassRecordExportRecord(w http.ResponseWriter, r
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.QueryEscape(fileName)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+func resolveRequestBaseURL(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+
+	scheme := "http"
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") || r.TLS != nil {
+		scheme = "https"
+	}
+
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = strings.TrimSpace(r.Host)
+	}
+	if host == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s://%s", scheme, host)
 }
 
 func (handler *Handler) updateStudentTeachingRecord(w http.ResponseWriter, r *http.Request) {

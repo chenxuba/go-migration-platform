@@ -117,7 +117,6 @@ func (svc *Service) GetClassCommentStudentPagedList(userID int64, dto model.Clas
 
 	return svc.repo.GetClassCommentStudentPagedList(context.Background(), instID, dto)
 }
-
 func (svc *Service) GetTeachingRecordDetail(userID int64, query model.TeachingRecordDetailQueryDTO) (model.TeachingRecordDetailResult, error) {
 	instID, err := svc.rollCallInstID(userID)
 	if err != nil {

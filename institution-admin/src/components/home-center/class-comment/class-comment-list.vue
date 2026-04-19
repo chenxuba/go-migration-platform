@@ -5,6 +5,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import scheduleClassImage from '@/assets/images/timetable/schedule-class.png'
 import scheduleOneToOneImage from '@/assets/images/timetable/schedule-one2one.png'
 import {
+  exportClassCommentWordApi,
   getClassCommentPagedListApi,
   type ClassCommentItem,
 } from '@/api/edu-center/class-record'
@@ -36,6 +37,7 @@ const scheduleTypeOptions = [
 ]
 
 const loading = ref(false)
+const exportingWord = ref(false)
 const dataSource = ref<ClassCommentItem[]>([])
 const reviewDrawerOpen = ref(false)
 const currentReviewRecord = ref<Partial<ClassCommentItem> | null>(null)
@@ -275,6 +277,23 @@ function buildQueryModel() {
   }
 }
 
+function parseAttachmentFilenameFromHeader(headerValue?: string) {
+  const header = String(headerValue || '')
+  if (!header)
+    return ''
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    }
+    catch {
+      return utf8Match[1]
+    }
+  }
+  const plainMatch = header.match(/filename="?([^";]+)"?/i)
+  return plainMatch?.[1] || ''
+}
+
 async function loadCourseOptions(searchKey = '') {
   try {
     const res = await getCourseIdAndNameApi({
@@ -434,6 +453,68 @@ async function loadList() {
   }
 }
 
+async function handleExportWord() {
+  if (exportingWord.value)
+    return
+  if (pagination.value.total <= 0) {
+    messageService.warning('暂无可导出的康复记录')
+    return
+  }
+
+  exportingWord.value = true
+  try {
+    const res = await exportClassCommentWordApi({
+      queryModel: buildQueryModel(),
+      sortModel: {
+        startTime: sortStartTime.value,
+      },
+    })
+    const contentType = String(res.headers['content-type'] || '')
+    if (contentType.includes('application/json')) {
+      const text = await res.data.text()
+      try {
+        const payload = JSON.parse(text)
+        messageService.error(payload?.message || '导出失败')
+      }
+      catch {
+        messageService.error('导出失败')
+      }
+      return
+    }
+    const blob = new Blob([res.data], {
+      type: contentType || 'application/msword',
+    })
+    const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
+      || `康复记录-${dayjs().format('YYYYMMDDHHmmss')}.doc`
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    messageService.success('导出成功')
+  }
+  catch (error: any) {
+    console.error('export rehab records failed', error)
+    const blobText = await error?.response?.data?.text?.()
+    if (blobText) {
+      try {
+        const payload = JSON.parse(blobText)
+        messageService.error(payload?.message || '导出失败')
+        return
+      }
+      catch {
+      }
+    }
+    messageService.error(error?.message || '导出失败')
+  }
+  finally {
+    exportingWord.value = false
+  }
+}
+
 function handleScheduleDateFilter(value: unknown) {
   if (!Array.isArray(value) || value.length < 2) {
     filterDateRange.value = null
@@ -545,7 +626,11 @@ onMounted(() => {
           <div class="total">
             共 {{ pagination.total }} 条数据
           </div>
-          <div class="edit flex" />
+          <div class="edit flex">
+            <a-button type="primary" :loading="exportingWord" @click="handleExportWord">
+              导出 Word
+            </a-button>
+          </div>
         </div>
         <div class="table-content mt-2">
           <a-table

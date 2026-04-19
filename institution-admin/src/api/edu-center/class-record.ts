@@ -419,6 +419,23 @@ export function getClassCommentStudentPagedListApi(data: ClassCommentStudentPage
   return usePost<ClassCommentStudentPagedResult>('/api/v1/class-comments/student-paged-list', data)
 }
 
+export async function exportClassCommentWordApi(data: {
+  queryModel: ClassCommentQueryModel
+  sortModel?: {
+    startTime?: number
+  }
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/class-comments/export-word', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 export function getTeachingRecordDetailApi(params: { teachingRecordId: string }) {
   return useGet<TeachingRecordDetailResult>('/api/v1/class-records/detail', params)
 }
