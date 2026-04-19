@@ -264,3 +264,11 @@ export function replaceInstitutionPermissionVersionApi(data: { institutionId: nu
     { silentError: true },
   )
 }
+
+export function replaceInstitutionPermissionVersionBatchApi(data: { institutionIds: number[], moduleId: number, menuIds?: number[] }) {
+  return usePost<boolean, { institutionIds: number[], moduleId: number, menuIds?: number[] }>(
+    '/api/v1/platform/institutions/permission-version/batch',
+    data,
+    { silentError: true },
+  )
+}

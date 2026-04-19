@@ -310,3 +310,9 @@ type InstitutionPermissionMutation struct {
 	ModuleID      *int64  `json:"moduleId,omitempty"`
 	MenuIDs       []int64 `json:"menuIds,omitempty"`
 }
+
+type InstitutionPermissionBatchMutation struct {
+	InstitutionIDs []int64 `json:"institutionIds"`
+	ModuleID       *int64  `json:"moduleId,omitempty"`
+	MenuIDs        []int64 `json:"menuIds,omitempty"`
+}

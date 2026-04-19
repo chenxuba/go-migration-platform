@@ -11,6 +11,7 @@ import {
 } from '@/api/platform/institutions'
 import { regionData } from '@/constants/region-data'
 import InstitutionFormDrawer from './components/institution-form-drawer.vue'
+import InstitutionPermissionBatchModal from './components/institution-permission-batch-modal.vue'
 import InstitutionPermissionModal from './components/institution-permission-modal.vue'
 import InstitutionRenewalModal from './components/institution-renewal-modal.vue'
 import InstitutionVersionModal from './components/institution-version-modal.vue'
@@ -42,6 +43,8 @@ const institutionDrawerOpen = ref(false)
 const editingInstitutionId = ref<number | null>(null)
 const institutionPermissionOpen = ref(false)
 const permissionInstitutionId = ref<number | null>(null)
+const institutionPermissionBatchOpen = ref(false)
+const selectedInstitutionIds = ref<number[]>([])
 const institutionVersionOpen = ref(false)
 const versionInstitutionId = ref<number | null>(null)
 const institutionRenewalOpen = ref(false)
@@ -321,9 +324,21 @@ function openPermissionModal(record: Partial<InstitutionItem>) {
   institutionPermissionOpen.value = true
 }
 
+function openBatchPermissionModal() {
+  if (!selectedInstitutionIds.value.length) {
+    messageService.warning('请先勾选机构后再批量配置权限')
+    return
+  }
+  institutionPermissionBatchOpen.value = true
+}
+
 function openVersionModal(record: Partial<InstitutionItem>) {
   versionInstitutionId.value = Number(record.id || 0) || null
   institutionVersionOpen.value = true
+}
+
+function clearSelectedInstitutions() {
+  selectedInstitutionIds.value = []
 }
 
 function handleDrawerSaved() {
@@ -337,6 +352,11 @@ function handleRenewalSaved() {
 }
 
 function handlePermissionSaved() {
+  fetchInstitutions()
+}
+
+function handleBatchPermissionSaved() {
+  institutionPermissionBatchOpen.value = false
   fetchInstitutions()
 }
 
@@ -421,6 +441,18 @@ function handleTableChange(page: { current?: number, pageSize?: number }) {
   fetchInstitutions()
 }
 
+const rowSelection = computed(() => {
+  return {
+    selectedRowKeys: selectedInstitutionIds.value,
+    preserveSelectedRowKeys: true,
+    onChange: (keys: Array<string | number>) => {
+      selectedInstitutionIds.value = keys
+        .map(key => Number(key))
+        .filter(key => Number.isFinite(key) && key > 0)
+    },
+  }
+})
+
 const filterUpdateHandlers = {
   'update:customSearchInputFilter': (payload: any, isClearAll: boolean, id?: string) => {
     if (isClearAll) {
@@ -498,6 +530,11 @@ watch(institutionPermissionOpen, (open) => {
     permissionInstitutionId.value = null
 })
 
+watch(institutionPermissionBatchOpen, (open) => {
+  if (!open)
+    selectedInstitutionIds.value = []
+})
+
 watch(institutionVersionOpen, (open) => {
   if (!open)
     versionInstitutionId.value = null
@@ -532,12 +569,20 @@ watch(institutionRenewalOpen, (open) => {
           </div>
         </div>
 
-        <a-button type="primary" @click="openCreateDrawer">
-          <template #icon>
-            <PlusOutlined />
-          </template>
-          新建机构
-        </a-button>
+        <div class="table-title__actions">
+          <a-button :disabled="!selectedInstitutionIds.length" @click="openBatchPermissionModal">
+            批量权限配置
+          </a-button>
+          <a-button type="link" :disabled="!selectedInstitutionIds.length" @click="clearSelectedInstitutions">
+            清空已选
+          </a-button>
+          <a-button type="primary" @click="openCreateDrawer">
+            <template #icon>
+              <PlusOutlined />
+            </template>
+            新建机构
+          </a-button>
+        </div>
       </div>
 
       <div class="table-content">
@@ -547,6 +592,7 @@ watch(institutionRenewalOpen, (open) => {
           :data-source="dataSource"
           :loading="listLoading"
           :pagination="pagination"
+          :row-selection="rowSelection"
           :scroll="{ x: 1360 }"
           :row-class-name="getRowClassName"
           row-key="id"
@@ -694,6 +740,11 @@ watch(institutionRenewalOpen, (open) => {
       :institution-id="permissionInstitutionId"
       @saved="handlePermissionSaved"
     />
+    <InstitutionPermissionBatchModal
+      v-model:open="institutionPermissionBatchOpen"
+      :institution-ids="selectedInstitutionIds"
+      @saved="handleBatchPermissionSaved"
+    />
     <InstitutionVersionModal
       v-model:open="institutionVersionOpen"
       :institution-id="versionInstitutionId"
@@ -735,6 +786,12 @@ watch(institutionRenewalOpen, (open) => {
 
 .table-title__left {
   min-width: 0;
+}
+
+.table-title__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .total {

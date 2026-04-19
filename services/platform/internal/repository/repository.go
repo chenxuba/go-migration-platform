@@ -2699,6 +2699,25 @@ func (repo *Repository) UpdateModuleBasic(ctx context.Context, input model.Modul
 	return err
 }
 
+func normalizeInstitutionIDs(institutionIDs []int64) []int64 {
+	if len(institutionIDs) == 0 {
+		return []int64{}
+	}
+	seen := make(map[int64]struct{}, len(institutionIDs))
+	normalized := make([]int64, 0, len(institutionIDs))
+	for _, institutionID := range institutionIDs {
+		if institutionID <= 0 {
+			continue
+		}
+		if _, exists := seen[institutionID]; exists {
+			continue
+		}
+		seen[institutionID] = struct{}{}
+		normalized = append(normalized, institutionID)
+	}
+	return normalized
+}
+
 func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input model.InstitutionPermissionMutation, operatorID *int64) error {
 	if input.InstitutionID == nil || *input.InstitutionID <= 0 {
 		return fmt.Errorf("institutionId is required")
@@ -2712,16 +2731,55 @@ func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input mode
 		return err
 	}
 	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
+		_ = tx.Rollback()
 	}()
 
+	if err := repo.replaceInstitutionModuleTx(ctx, tx, *input.InstitutionID, *input.ModuleID, input.MenuIDs, operatorID); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (repo *Repository) ReplaceInstitutionModulesBatch(ctx context.Context, input model.InstitutionPermissionBatchMutation, operatorID *int64) error {
+	if input.ModuleID == nil || *input.ModuleID <= 0 {
+		return fmt.Errorf("moduleId is required")
+	}
+
+	institutionIDs := normalizeInstitutionIDs(input.InstitutionIDs)
+	if len(institutionIDs) == 0 {
+		return fmt.Errorf("institutionIds is required")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	for _, institutionID := range institutionIDs {
+		if err := repo.replaceInstitutionModuleTx(ctx, tx, institutionID, *input.ModuleID, input.MenuIDs, operatorID); err != nil {
+			return fmt.Errorf("机构 %d 处理失败: %w", institutionID, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (repo *Repository) replaceInstitutionModuleTx(ctx context.Context, tx *sql.Tx, institutionID, moduleID int64, customMenuIDs []int64, operatorID *int64) error {
 	var currentOpenType sql.NullInt64
 	var currentOpenDuration sql.NullString
 	var expireEnd sql.NullTime
 	var statusValue sql.NullInt64
-	if err = tx.QueryRowContext(ctx, `
+	if err := tx.QueryRowContext(ctx, `
 		SELECT IFNULL(open_type, 2),
 		       IFNULL(open_duration, ''),
 		       expire_end_time,
@@ -2730,16 +2788,16 @@ func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input mode
 		WHERE id = ? AND del_flag = 0
 		LIMIT 1
 		FOR UPDATE
-	`, *input.InstitutionID).Scan(&currentOpenType, &currentOpenDuration, &expireEnd, &statusValue); err != nil {
+	`, institutionID).Scan(&currentOpenType, &currentOpenDuration, &expireEnd, &statusValue); err != nil {
 		return err
 	}
 
-	currentModuleID, currentModuleName, lookupCurrentModuleErr := repo.getInstitutionCurrentModuleTx(ctx, tx, *input.InstitutionID)
+	currentModuleID, currentModuleName, lookupCurrentModuleErr := repo.getInstitutionCurrentModuleTx(ctx, tx, institutionID)
 	if lookupCurrentModuleErr != nil {
 		return lookupCurrentModuleErr
 	}
 
-	moduleName, lookupErr := repo.getModuleNameTx(ctx, tx, *input.ModuleID)
+	moduleName, lookupErr := repo.getModuleNameTx(ctx, tx, moduleID)
 	if lookupErr != nil {
 		return lookupErr
 	}
@@ -2758,7 +2816,7 @@ func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input mode
 		}
 
 		nextOpenDuration := normalizeInstitutionOpenDuration(nextOpenType, currentOpenDuration.String)
-		if _, err = tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE org_institution
 			SET open_type = ?,
 			    open_duration = ?,
@@ -2769,40 +2827,40 @@ func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input mode
 			nextOpenType,
 			nextOpenDuration,
 			nullableInt64Value(operatorID),
-			*input.InstitutionID,
+			institutionID,
 		); err != nil {
 			return err
 		}
 	}
 
-	if err = repo.bindInstitutionModuleTx(
+	if err := repo.bindInstitutionModuleTx(
 		ctx,
 		tx,
-		*input.InstitutionID,
-		*input.ModuleID,
+		institutionID,
+		moduleID,
 		expireEnd,
 		int(statusValue.Int64),
 		operatorID,
-		input.MenuIDs,
+		customMenuIDs,
 		true,
 		true,
 	); err != nil {
 		return err
 	}
 
-	shouldWriteVersionChangeLog := nextOpenType > 0 && (currentModuleID != *input.ModuleID || storedOpenType != nextOpenType)
+	shouldWriteVersionChangeLog := nextOpenType > 0 && (currentModuleID != moduleID || storedOpenType != nextOpenType)
 	if shouldWriteVersionChangeLog {
 		beforeVersionName := strings.TrimSpace(currentModuleName)
 		if beforeVersionName == "" {
 			beforeVersionName = institutionOpenTypeModuleName(storedOpenType)
 		}
-		if err = repo.insertInstitutionVersionChangeRecordTx(ctx, tx, model.InstitutionVersionChangeRecord{
-			InstitutionID:     *input.InstitutionID,
+		if err := repo.insertInstitutionVersionChangeRecordTx(ctx, tx, model.InstitutionVersionChangeRecord{
+			InstitutionID:     institutionID,
 			BeforeOpenType:    storedOpenType,
 			BeforeModuleID:    currentModuleID,
 			BeforeVersionName: beforeVersionName,
 			AfterOpenType:     nextOpenType,
-			AfterModuleID:     *input.ModuleID,
+			AfterModuleID:     moduleID,
 			AfterVersionName:  moduleName,
 			OperatorID:        nullableInt64Deref(operatorID),
 		}); err != nil {
@@ -2810,9 +2868,6 @@ func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input mode
 		}
 	}
 
-	if err = tx.Commit(); err != nil {
-		return err
-	}
 	return nil
 }
 

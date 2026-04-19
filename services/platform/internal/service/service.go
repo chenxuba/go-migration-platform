@@ -169,6 +169,10 @@ func (svc *Service) ReplaceInstitutionModule(input model.InstitutionPermissionMu
 	return svc.repo.ReplaceInstitutionModule(context.Background(), input, operatorID)
 }
 
+func (svc *Service) ReplaceInstitutionModulesBatch(input model.InstitutionPermissionBatchMutation, operatorID *int64) error {
+	return svc.repo.ReplaceInstitutionModulesBatch(context.Background(), input, operatorID)
+}
+
 func (svc *Service) ListInstitutionRenewalRecords(institutionID int64) ([]model.InstitutionRenewalRecord, error) {
 	return svc.repo.ListInstitutionRenewalRecords(context.Background(), institutionID)
 }

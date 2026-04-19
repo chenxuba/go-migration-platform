@@ -37,6 +37,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/institutions/status", handler.updateInstitutionStatus)
 	mux.HandleFunc("/api/v1/platform/institutions/permission-detail", handler.institutionPermissionDetail)
 	mux.HandleFunc("/api/v1/platform/institutions/permission-version", handler.replaceInstitutionPermissionVersion)
+	mux.HandleFunc("/api/v1/platform/institutions/permission-version/batch", handler.replaceInstitutionPermissionVersionBatch)
 	mux.HandleFunc("/api/v1/platform/institutions/renewal-records", handler.institutionRenewalRecords)
 	mux.HandleFunc("/api/v1/platform/institutions/version-change-records", handler.institutionVersionChangeRecords)
 	mux.HandleFunc("/api/v1/platform/institutions/renew", handler.renewInstitution)
@@ -436,6 +437,48 @@ func (handler *Handler) replaceInstitutionPermissionVersion(w http.ResponseWrite
 	}
 
 	if err := handler.service.ReplaceInstitutionModule(input, operatorID); err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) replaceInstitutionPermissionVersionBatch(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.InstitutionPermissionBatchMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if len(input.InstitutionIDs) == 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "institutionIds is required", ctx.RequestID)
+		return
+	}
+	if input.ModuleID == nil || *input.ModuleID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "moduleId is required", ctx.RequestID)
+		return
+	}
+
+	var operatorID *int64
+	if claims.UserID > 0 {
+		operatorID = &claims.UserID
+	}
+
+	if err := handler.service.ReplaceInstitutionModulesBatch(input, operatorID); err != nil {
 		if err == sql.ErrNoRows {
 			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
 			return
