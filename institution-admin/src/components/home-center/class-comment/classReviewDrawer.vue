@@ -37,9 +37,11 @@ interface ReviewDrawerRecord {
 
 const props = withDefaults(defineProps<{
   type?: string | number
+  initialActiveKey?: string | number
   record?: Partial<ReviewDrawerRecord> | null
 }>(), {
   type: '1',
+  initialActiveKey: '',
   record: null,
 })
 
@@ -67,6 +69,14 @@ const defaultAvatar = 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.p
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
 const currentTeachingRecordId = computed(() => String(props.record?.teachingRecordId || '').trim())
+const resolvedInitialActiveKey = computed(() => {
+  const explicitValue = String(props.initialActiveKey ?? '').trim()
+  if (explicitValue === '0' || explicitValue === '1')
+    return explicitValue
+
+  const fallbackValue = String(props.type ?? '1').trim()
+  return fallbackValue === '0' ? '0' : '1'
+})
 const teacherList = computed(() => Array.isArray(detailData.value?.teacherList) ? detailData.value?.teacherList || [] : [])
 const studentList = computed(() => Array.isArray(detailData.value?.studentList) ? detailData.value?.studentList || [] : [])
 
@@ -308,7 +318,7 @@ function handleSaveContent() {
 }
 
 watch(
-  () => `${open.value}|${props.type}|${currentTeachingRecordId.value}`,
+  () => `${open.value}|${resolvedInitialActiveKey.value}|${currentTeachingRecordId.value}`,
   async () => {
     if (!open.value) {
       detailData.value = null
@@ -318,12 +328,12 @@ watch(
       editorDrawerOpen.value = false
       editorMode.value = 'create'
       currentEditingStudent.value = null
-      activeKey.value = '1'
+      activeKey.value = resolvedInitialActiveKey.value
       selectedRowKeys.value = []
       statusFilteredValues.value = ['到课']
       return
     }
-    activeKey.value = String(props.type ?? '1')
+    activeKey.value = resolvedInitialActiveKey.value
     selectedRowKeys.value = []
     statusFilteredValues.value = ['到课']
     await loadDetail()

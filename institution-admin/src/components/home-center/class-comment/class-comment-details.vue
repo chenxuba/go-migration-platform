@@ -64,6 +64,7 @@ const loading = ref(false)
 const dataSource = ref<ClassCommentStudentItem[]>([])
 const reviewDrawerOpen = ref(false)
 const currentReviewRecord = ref<Partial<ClassCommentStudentItem> | null>(null)
+const currentReviewTab = ref<'0' | '1'>('1')
 const sortStartTime = ref(2)
 
 const filterDateRange = ref<[Dayjs, Dayjs]>([monthStart, today])
@@ -310,13 +311,18 @@ function parentFeedbackGradeText(record: Partial<ClassCommentStudentItem>) {
   return grade > 0 ? `${grade}分` : '-'
 }
 
-function handleOpenReviewDrawer(record?: Partial<ClassCommentStudentItem>) {
+function openReviewDrawer(record: Partial<ClassCommentStudentItem> | undefined, initialActiveKey: '0' | '1') {
   currentReviewRecord.value = record ? { ...record } : null
+  currentReviewTab.value = initialActiveKey
   reviewDrawerOpen.value = true
 }
 
-function handleViewPending() {
-  messageService.info('暂未开发')
+function handleOpenReviewDrawer(record?: Partial<ClassCommentStudentItem>) {
+  openReviewDrawer(record, '1')
+}
+
+function handleViewReviewDrawer(record?: Partial<ClassCommentStudentItem>) {
+  openReviewDrawer(record, '0')
 }
 
 function buildQueryModel() {
@@ -791,8 +797,8 @@ onMounted(() => {
               </template>
               <template v-if="column.key === 'action'">
                 <a-space :size="14">
-                  <a class="font500" @click="handleOpenReviewDrawer(record)">去记录</a>
-                  <a class="font500" @click="handleViewPending">查看</a>
+                  <a v-if="!record.isComment" class="font500" @click="handleOpenReviewDrawer(record)">去记录</a>
+                  <a class="font500" @click="handleViewReviewDrawer(record)">查看</a>
                 </a-space>
               </template>
             </template>
@@ -802,6 +808,7 @@ onMounted(() => {
     </div>
     <ClassReviewDrawer
       v-model="reviewDrawerOpen"
+      :initial-active-key="currentReviewTab"
       :record="currentReviewRecord"
       type="1"
       @updated="loadList"

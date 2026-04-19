@@ -39,6 +39,7 @@ const loading = ref(false)
 const dataSource = ref<ClassCommentItem[]>([])
 const reviewDrawerOpen = ref(false)
 const currentReviewRecord = ref<Partial<ClassCommentItem> | null>(null)
+const currentReviewTab = ref<'0' | '1'>('1')
 const sortStartTime = ref(2)
 
 const filterDateRange = ref<[Dayjs, Dayjs] | null>(null)
@@ -216,20 +217,46 @@ function sourceTypeImage(record: Partial<ClassCommentItem>) {
 }
 
 function commentStatisticsText(record: Partial<ClassCommentItem>) {
-  return `${Number(record.commentCount || 0)}/${Number(record.unCommentCount || 0)}`
+  const commentCount = Number(record.commentCount || 0)
+  const unCommentCount = Number(record.unCommentCount || 0)
+  return `${commentCount}/${commentCount + unCommentCount}`
+}
+
+function isFullyCommented(record: Partial<ClassCommentItem>) {
+  const commentCount = Number(record.commentCount || 0)
+  const unCommentCount = Number(record.unCommentCount || 0)
+  return commentCount + unCommentCount > 0 && unCommentCount === 0
 }
 
 function hasReadStatistics(record: Partial<ClassCommentItem>) {
-  return Number(record.readCount || 0) + Number(record.unReadCount || 0) > 0
+  return Number(record.readCount || 0) + Number(record.unReadCount || 0) > 0 || Number(record.commentCount || 0) > 0
 }
 
-function handleOpenReviewDrawer(record?: Partial<ClassCommentItem>) {
+function displayReadCount(record: Partial<ClassCommentItem>) {
+  return Number(record.readCount || 0)
+}
+
+function displayUnreadCount(record: Partial<ClassCommentItem>) {
+  const readCount = displayReadCount(record)
+  const unReadCount = Number(record.unReadCount || 0)
+  const commentCount = Number(record.commentCount || 0)
+  if (readCount + unReadCount > 0)
+    return unReadCount
+  return commentCount
+}
+
+function openReviewDrawer(record: Partial<ClassCommentItem> | undefined, initialActiveKey: '0' | '1') {
   currentReviewRecord.value = record ? { ...record } : null
+  currentReviewTab.value = initialActiveKey
   reviewDrawerOpen.value = true
 }
 
-function handleViewPending() {
-  messageService.info('暂未开发')
+function handleOpenReviewDrawer(record?: Partial<ClassCommentItem>) {
+  openReviewDrawer(record, '1')
+}
+
+function handleViewReviewDrawer(record?: Partial<ClassCommentItem>) {
+  openReviewDrawer(record, '0')
 }
 
 function buildQueryModel() {
@@ -521,13 +548,6 @@ onMounted(() => {
           <div class="edit flex" />
         </div>
         <div class="table-content mt-2">
-          <a-alert
-            class="mb2 text-#06f"
-            message="家长分享课评，机构就可获得转介绍线索"
-            type="info"
-            show-icon
-            closable
-          />
           <a-table
             row-key="teachingRecordId"
             :loading="loading"
@@ -593,10 +613,10 @@ onMounted(() => {
               <template v-if="column.key === 'readOrUnread'">
                 <template v-if="hasReadStatistics(record)">
                   <div class="text-#222">
-                    已读{{ Number(record.readCount || 0) }}人
+                    已读{{ displayReadCount(record) }}人
                   </div>
                   <div class="text-#888 text-3">
-                    未读{{ Number(record.unReadCount || 0) }}人
+                    未读{{ displayUnreadCount(record) }}人
                   </div>
                 </template>
                 <div v-else class="text-#222">
@@ -615,8 +635,8 @@ onMounted(() => {
               </template>
               <template v-if="column.key === 'action'">
                 <a-space :size="14">
-                  <a class="font500" @click="handleOpenReviewDrawer(record)">去记录</a>
-                  <a class="font500" @click="handleViewPending">查看</a>
+                  <a v-if="!isFullyCommented(record)" class="font500" @click="handleOpenReviewDrawer(record)">去记录</a>
+                  <a class="font500" @click="handleViewReviewDrawer(record)">查看</a>
                 </a-space>
               </template>
             </template>
@@ -626,6 +646,7 @@ onMounted(() => {
     </div>
     <ClassReviewDrawer
       v-model="reviewDrawerOpen"
+      :initial-active-key="currentReviewTab"
       :record="currentReviewRecord"
       @updated="loadList"
     />

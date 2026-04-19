@@ -794,7 +794,10 @@ func (repo *Repository) GetScheduleTeachingRecordPagedList(ctx context.Context, 
 				ELSE 0
 			END) AS un_comment_count,
 			0 AS read_count,
-			0 AS unread_count,
+			SUM(CASE
+				WHEN status IN (1, 2, 3) AND ` + studentTeachingRecordHasCommentSQL("student_teaching_record") + ` THEN 1
+				ELSE 0
+			END) AS unread_count,
 			DATE_FORMAT(MAX(teaching_record_created_time), '%Y-%m-%d %H:%i:%s'),
 			DATE_FORMAT(MAX(updated_time), '%Y-%m-%d %H:%i:%s')
 		FROM student_teaching_record

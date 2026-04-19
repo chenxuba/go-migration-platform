@@ -168,18 +168,6 @@ function hydrateDefaultForm() {
   resetTrainingModules()
 }
 
-const showParentFeedbackSection = computed(() => {
-  return Boolean(
-    normalizeTextValue(props.parentFeedback?.content || props.parentFeedback?.parentFeedbackContent)
-    || normalizeTextValue(props.parentFeedback?.signature || props.parentFeedback?.parentSignature)
-    || normalizeDateValue(props.parentFeedback?.date || props.parentFeedback?.feedbackDate),
-  ) || Boolean(
-    normalizeTextValue(formModel.parentFeedback)
-    || normalizeTextValue(formModel.parentSignature)
-    || normalizeDateValue(formModel.feedbackDate),
-  )
-})
-
 const currentStudentTeachingRecordId = computed(() => {
   return normalizeTextValue(props.studentTeachingRecordId || props.student?.id)
 })
@@ -193,6 +181,20 @@ const drawerTitle = computed(() => {
   return '康复训练记录'
 })
 const publishButtonText = computed(() => isEditMode.value ? '更新记录' : '发布记录')
+const signatureImageSrc = computed(() => {
+  const value = normalizeTextValue(formModel.parentSignature)
+  if (!value)
+    return ''
+  if (/^data:image\//i.test(value))
+    return value
+  if (/^(https?:)?\/\//i.test(value))
+    return value
+  if (value.startsWith('/'))
+    return value
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(value))
+    return value
+  return ''
+})
 
 function handleAddTrainingModule() {
   trainingModules.value.push(createTrainingModule())
@@ -422,7 +424,7 @@ watch(
     <div class="h-full flex flex-col min-h-0">
       <a-spin class="flex-1 min-h-0" :spinning="loading">
         <div class="flex-1 min-h-0 overflow-auto p-12px">
-          <div class="flex flex-col gap-16px">
+          <div v-if="isReadonly" class="flex flex-col gap-16px">
             <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
               <div class="text-15px leading-22px font-600 text-#222">
                 基础信息
@@ -432,7 +434,7 @@ watch(
                 <a-col :xs="24" :sm="12" :lg="8">
                   <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">姓名</div>
-                    <a-input v-model:value="formModel.studentName" :disabled="isReadonly" placeholder="请输入学员姓名" />
+                    <a-input v-model:value="formModel.studentName" disabled placeholder="请输入学员姓名" />
                   </div>
                 </a-col>
                 <a-col :xs="24" :sm="12" :lg="8">
@@ -441,7 +443,7 @@ watch(
                     <a-select
                       v-model:value="formModel.gender"
                       :options="genderOptions"
-                      :disabled="isReadonly"
+                      disabled
                       allow-clear
                       style="width: 100%;"
                       placeholder="请选择性别"
@@ -453,7 +455,7 @@ watch(
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">出生年月</div>
                     <a-date-picker
                       v-model:value="formModel.birthDate"
-                      :disabled="isReadonly"
+                      disabled
                       value-format="YYYY-MM-DD"
                       style="width: 100%;"
                       placeholder="请选择出生年月"
@@ -463,13 +465,13 @@ watch(
                 <a-col :xs="24" :sm="12" :lg="8">
                   <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">班别</div>
-                    <a-input v-model:value="formModel.className" :disabled="isReadonly" placeholder="请输入班别" />
+                    <a-input v-model:value="formModel.className" disabled placeholder="请输入班别" />
                   </div>
                 </a-col>
                 <a-col :xs="24" :sm="12" :lg="8">
                   <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">任教老师</div>
-                    <a-input v-model:value="formModel.teacherName" :disabled="isReadonly" placeholder="请输入任教老师" />
+                    <a-input v-model:value="formModel.teacherName" disabled placeholder="请输入任教老师" />
                   </div>
                 </a-col>
                 <a-col :xs="24" :sm="12" :lg="8">
@@ -477,7 +479,7 @@ watch(
                     <div class="mb-10px text-12px leading-18px text-#8c8c8c">训练日期</div>
                     <a-date-picker
                       v-model:value="formModel.trainingDate"
-                      :disabled="isReadonly"
+                      disabled
                       value-format="YYYY-MM-DD"
                       style="width: 100%;"
                       placeholder="请选择训练日期"
@@ -487,141 +489,318 @@ watch(
               </a-row>
             </div>
 
-          <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
-            <div class="text-15px leading-22px font-600 text-#222">
-              训练目标
+            <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+              <div class="text-15px leading-22px font-600 text-#222">
+                训练目标
+              </div>
+              <div class="mt-14px">
+                <a-textarea
+                  v-model:value="formModel.trainingTarget"
+                  disabled
+                  :auto-size="{ minRows: 4, maxRows: 6 }"
+                  placeholder="请输入本次训练目标"
+                />
+              </div>
             </div>
-            <div class="mt-14px">
-              <a-textarea
-                v-model:value="formModel.trainingTarget"
-                :disabled="isReadonly"
-                :auto-size="{ minRows: 4, maxRows: 6 }"
-                placeholder="请输入本次训练目标"
-              />
-            </div>
-          </div>
 
-          <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
-            <div class="flex items-center justify-between gap-12px">
+            <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
               <div class="text-15px leading-22px font-600 text-#222">
                 训练项目
               </div>
-              <a-button v-if="!isReadonly" type="dashed" size="small" @click="handleAddTrainingModule">
-                新增项目
-              </a-button>
-            </div>
 
-            <a-row :gutter="[12, 12]" class="mt-14px">
-              <a-col
-                v-for="(item, index) in trainingModules"
-                :key="item.id"
-                :xs="24"
-                :lg="getTrainingModuleColSpan(index)"
-              >
-                <div class="h-full rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-16px">
-                  <div class="flex items-center justify-between gap-12px mb-12px">
-                    <a-input
-                      v-model:value="item.title"
-                      :disabled="isReadonly"
-                      class="flex-1"
-                      placeholder="请输入训练项目名称"
+              <a-row :gutter="[12, 12]" class="mt-14px">
+                <a-col
+                  v-for="(item, index) in trainingModules"
+                  :key="item.id"
+                  :xs="24"
+                  :lg="getTrainingModuleColSpan(index)"
+                >
+                  <div class="h-full rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-16px">
+                    <div class="flex items-center justify-between gap-12px mb-12px">
+                      <a-input
+                        v-model:value="item.title"
+                        disabled
+                        class="flex-1"
+                        placeholder="请输入训练项目名称"
+                      />
+                    </div>
+
+                    <a-textarea
+                      v-model:value="item.content"
+                      disabled
+                      :auto-size="{ minRows: 5, maxRows: 8 }"
+                      placeholder="请输入训练项目内容"
                     />
-                    <a-button
-                      v-if="!isReadonly && trainingModules.length > 1"
-                      type="link"
-                      danger
-                      class="px-0"
-                      @click="handleRemoveTrainingModule(item.id)"
-                    >
-                      删除
-                    </a-button>
                   </div>
-
-                  <a-textarea
-                    v-model:value="item.content"
-                    :disabled="isReadonly"
-                    :auto-size="{ minRows: 5, maxRows: 8 }"
-                    placeholder="请输入训练项目内容"
-                  />
-                </div>
-              </a-col>
-            </a-row>
-          </div>
-
-          <a-row :gutter="[16, 16]">
-            <a-col :xs="24" :lg="12">
-              <div class="h-full rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
-                <div class="text-15px leading-22px font-600 text-#222">
-                  学生综合表现
-                </div>
-                <div class="mt-14px">
-                  <a-textarea
-                    v-model:value="formModel.performance"
-                    :disabled="isReadonly"
-                    :auto-size="{ minRows: 7, maxRows: 10 }"
-                    placeholder="请输入学生综合表现"
-                  />
-                </div>
-              </div>
-            </a-col>
-
-            <a-col :xs="24" :lg="12">
-              <div class="h-full rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
-                <div class="text-15px leading-22px font-600 text-#222">
-                  康复建议
-                </div>
-                <div class="mt-14px">
-                  <a-textarea
-                    v-model:value="formModel.suggestion"
-                    :disabled="isReadonly"
-                    :auto-size="{ minRows: 7, maxRows: 10 }"
-                    placeholder="请输入康复建议"
-                  />
-                </div>
-              </div>
-            </a-col>
-          </a-row>
-
-          <div v-if="showParentFeedbackSection" class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
-            <div class="text-15px leading-22px font-600 text-#222">
-              家长意见反馈
+                </a-col>
+              </a-row>
             </div>
 
-            <div class="mt-14px">
-              <a-textarea
-                v-model:value="formModel.parentFeedback"
-                :disabled="isReadonly"
-                :auto-size="{ minRows: 4, maxRows: 6 }"
-                placeholder="请输入家长意见反馈"
-              />
-            </div>
-
-            <a-row :gutter="[12, 12]" class="mt-16px">
+            <a-row :gutter="[16, 16]">
               <a-col :xs="24" :lg="12">
-                <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
-                  <div class="mb-10px text-12px leading-18px text-#8c8c8c">家长签名</div>
-                  <a-input
-                    v-model:value="formModel.parentSignature"
-                    :disabled="isReadonly"
-                    placeholder="请输入家长签名"
-                  />
+                <div class="h-full rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+                  <div class="text-15px leading-22px font-600 text-#222">
+                    学生综合表现
+                  </div>
+                  <div class="mt-14px">
+                    <a-textarea
+                      v-model:value="formModel.performance"
+                      disabled
+                      :auto-size="{ minRows: 7, maxRows: 10 }"
+                      placeholder="请输入学生综合表现"
+                    />
+                  </div>
                 </div>
               </a-col>
               <a-col :xs="24" :lg="12">
-                <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
-                  <div class="mb-10px text-12px leading-18px text-#8c8c8c">日期</div>
-                  <a-date-picker
-                    v-model:value="formModel.feedbackDate"
-                    :disabled="isReadonly"
-                    value-format="YYYY-MM-DD"
-                    style="width: 100%;"
-                    placeholder="请选择日期"
-                  />
+                <div class="h-full rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+                  <div class="text-15px leading-22px font-600 text-#222">
+                    康复建议
+                  </div>
+                  <div class="mt-14px">
+                    <a-textarea
+                      v-model:value="formModel.suggestion"
+                      disabled
+                      :auto-size="{ minRows: 7, maxRows: 10 }"
+                      placeholder="请输入康复建议"
+                    />
+                  </div>
                 </div>
               </a-col>
             </a-row>
+
+            <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+              <div class="text-15px leading-22px font-600 text-#222">
+                家长意见反馈
+              </div>
+
+              <div class="mt-14px">
+                <a-textarea
+                  :value="formModel.parentFeedback || '未填写'"
+                  disabled
+                  :auto-size="{ minRows: 4, maxRows: 6 }"
+                  placeholder="请输入家长意见反馈"
+                />
+              </div>
+
+              <a-row :gutter="[12, 12]" class="mt-16px">
+                <a-col :xs="24" :lg="12">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">家长签名</div>
+                    <a-image
+                      v-if="signatureImageSrc"
+                      :src="signatureImageSrc"
+                      width="100%"
+                    />
+                    <a-input
+                      v-else
+                      :value="formModel.parentSignature || '未填写'"
+                      disabled
+                    />
+                  </div>
+                </a-col>
+                <a-col :xs="24" :lg="12">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">反馈时间</div>
+                    <a-input
+                      :value="formModel.feedbackDate || '未填写'"
+                      disabled
+                    />
+                  </div>
+                </a-col>
+              </a-row>
+            </div>
           </div>
-        </div>
+
+          <div v-else class="flex flex-col gap-16px">
+            <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+              <div class="text-15px leading-22px font-600 text-#222">
+                基础信息
+              </div>
+
+              <a-row :gutter="[12, 12]" class="mt-14px">
+                <a-col :xs="24" :sm="12" :lg="8">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">姓名</div>
+                    <a-input v-model:value="formModel.studentName" placeholder="请输入学员姓名" />
+                  </div>
+                </a-col>
+                <a-col :xs="24" :sm="12" :lg="8">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">性别</div>
+                    <a-select
+                      v-model:value="formModel.gender"
+                      :options="genderOptions"
+                      allow-clear
+                      style="width: 100%;"
+                      placeholder="请选择性别"
+                    />
+                  </div>
+                </a-col>
+                <a-col :xs="24" :sm="12" :lg="8">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">出生年月</div>
+                    <a-date-picker
+                      v-model:value="formModel.birthDate"
+                      value-format="YYYY-MM-DD"
+                      style="width: 100%;"
+                      placeholder="请选择出生年月"
+                    />
+                  </div>
+                </a-col>
+                <a-col :xs="24" :sm="12" :lg="8">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">班别</div>
+                    <a-input v-model:value="formModel.className" placeholder="请输入班别" />
+                  </div>
+                </a-col>
+                <a-col :xs="24" :sm="12" :lg="8">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">任教老师</div>
+                    <a-input v-model:value="formModel.teacherName" placeholder="请输入任教老师" />
+                  </div>
+                </a-col>
+                <a-col :xs="24" :sm="12" :lg="8">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">训练日期</div>
+                    <a-date-picker
+                      v-model:value="formModel.trainingDate"
+                      value-format="YYYY-MM-DD"
+                      style="width: 100%;"
+                      placeholder="请选择训练日期"
+                    />
+                  </div>
+                </a-col>
+              </a-row>
+            </div>
+
+            <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+              <div class="text-15px leading-22px font-600 text-#222">
+                训练目标
+              </div>
+              <div class="mt-14px">
+                <a-textarea
+                  v-model:value="formModel.trainingTarget"
+                  :auto-size="{ minRows: 4, maxRows: 6 }"
+                  placeholder="请输入本次训练目标"
+                />
+              </div>
+            </div>
+
+            <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+              <div class="flex items-center justify-between gap-12px">
+                <div class="text-15px leading-22px font-600 text-#222">
+                  训练项目
+                </div>
+                <a-button type="dashed" size="small" @click="handleAddTrainingModule">
+                  新增项目
+                </a-button>
+              </div>
+
+              <a-row :gutter="[12, 12]" class="mt-14px">
+                <a-col
+                  v-for="(item, index) in trainingModules"
+                  :key="item.id"
+                  :xs="24"
+                  :lg="getTrainingModuleColSpan(index)"
+                >
+                  <div class="h-full rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-16px">
+                    <div class="flex items-center justify-between gap-12px mb-12px">
+                      <a-input
+                        v-model:value="item.title"
+                        class="flex-1"
+                        placeholder="请输入训练项目名称"
+                      />
+                      <a-button
+                        v-if="trainingModules.length > 1"
+                        type="link"
+                        danger
+                        class="px-0"
+                        @click="handleRemoveTrainingModule(item.id)"
+                      >
+                        删除
+                      </a-button>
+                    </div>
+
+                    <a-textarea
+                      v-model:value="item.content"
+                      :auto-size="{ minRows: 5, maxRows: 8 }"
+                      placeholder="请输入训练项目内容"
+                    />
+                  </div>
+                </a-col>
+              </a-row>
+            </div>
+
+            <a-row :gutter="[16, 16]">
+              <a-col :xs="24" :lg="12">
+                <div class="h-full rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+                  <div class="text-15px leading-22px font-600 text-#222">
+                    学生综合表现
+                  </div>
+                  <div class="mt-14px">
+                    <a-textarea
+                      v-model:value="formModel.performance"
+                      :auto-size="{ minRows: 7, maxRows: 10 }"
+                      placeholder="请输入学生综合表现"
+                    />
+                  </div>
+                </div>
+              </a-col>
+
+              <a-col :xs="24" :lg="12">
+                <div class="h-full rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+                  <div class="text-15px leading-22px font-600 text-#222">
+                    康复建议
+                  </div>
+                  <div class="mt-14px">
+                    <a-textarea
+                      v-model:value="formModel.suggestion"
+                      :auto-size="{ minRows: 7, maxRows: 10 }"
+                      placeholder="请输入康复建议"
+                    />
+                  </div>
+                </div>
+              </a-col>
+            </a-row>
+
+            <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
+              <div class="text-15px leading-22px font-600 text-#222">
+                家长意见反馈
+              </div>
+
+              <div class="mt-14px">
+                <a-textarea
+                  v-model:value="formModel.parentFeedback"
+                  :auto-size="{ minRows: 4, maxRows: 6 }"
+                  placeholder="请输入家长意见反馈"
+                />
+              </div>
+
+              <a-row :gutter="[12, 12]" class="mt-16px">
+                <a-col :xs="24" :lg="12">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">家长签名</div>
+                    <a-input
+                      v-model:value="formModel.parentSignature"
+                      placeholder="请输入家长签名图片地址"
+                    />
+                  </div>
+                </a-col>
+                <a-col :xs="24" :lg="12">
+                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
+                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">日期</div>
+                    <a-date-picker
+                      v-model:value="formModel.feedbackDate"
+                      value-format="YYYY-MM-DD"
+                      style="width: 100%;"
+                      placeholder="请选择日期"
+                    />
+                  </div>
+                </a-col>
+              </a-row>
+            </div>
+          </div>
         </div>
       </a-spin>
 
