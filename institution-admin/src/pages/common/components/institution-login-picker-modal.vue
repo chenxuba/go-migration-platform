@@ -1,5 +1,4 @@
 <script setup>
-import { BankOutlined, CheckOutlined } from '@ant-design/icons-vue'
 import { useMessage } from '@/composables/global-config'
 
 const props = defineProps({
@@ -85,373 +84,260 @@ function selectOption(item) {
     v-model:open="openProxy"
     centered
     :mask-closable="false"
-    :width="720"
+    :width="600"
     wrap-class-name="institution-picker-modal"
     @cancel="handleCancel"
   >
     <template #title>
-      <div class="ipm-head">
-        <div class="ipm-head__title">
-          {{ t('pages.login.institutionPicker.title', '选择登录机构') }}
-        </div>
-        <p class="ipm-head__sub">
-          {{ t('pages.login.institutionPicker.summary', '该登录账号关联多个机构') }}
-        </p>
-      </div>
+      <span class="ipm-title">{{ t('pages.login.institutionPicker.title', '选择登录机构') }}</span>
     </template>
 
-    <div class="ipm-body">
-      <section class="ipm-intro" aria-labelledby="ipm-intro-heading">
-        <div class="ipm-intro__main">
-          <span id="ipm-intro-heading" class="ipm-intro__kicker">
-            {{ t('pages.login.institutionPicker.eyebrow', '多机构登录识别') }}
+    <div class="ipm">
+      <header class="ipm-header">
+        <p class="ipm-header__line">
+          {{ t('pages.login.institutionPicker.summary', '该登录账号关联多个机构') }}
+        </p>
+        <p class="ipm-header__meta">
+          <span>{{ t('pages.login.institutionPicker.description', '请选择本次要进入的机构，确认后将直接登录对应后台。') }}</span>
+          <span class="ipm-header__count" aria-live="polite">
+            {{ options.length }}{{ t('pages.login.institutionPicker.countUnit', '个机构') }}
           </span>
-          <p class="ipm-intro__text">
-            {{ t('pages.login.institutionPicker.description', '请选择本次要进入的机构，确认后将直接登录对应后台。') }}
-          </p>
-        </div>
-        <div class="ipm-intro__stat" aria-live="polite">
-          <span class="ipm-intro__stat-num">{{ options.length }}</span>
-          <span class="ipm-intro__stat-label">{{ t('pages.login.institutionPicker.countUnit', '个机构') }}</span>
-        </div>
-      </section>
+        </p>
+      </header>
 
-      <div class="ipm-list" role="listbox" :aria-label="t('pages.login.institutionPicker.title', '选择登录机构')">
+      <div
+        class="ipm-list"
+        role="listbox"
+        :aria-label="t('pages.login.institutionPicker.title', '选择登录机构')"
+      >
         <button
           v-for="item in options"
           :key="getInstitutionOptionKey(item)"
           type="button"
-          class="ipm-card"
+          class="ipm-item"
           :class="{ 'is-selected': selectedInstitutionKey === getInstitutionOptionKey(item) }"
           :aria-selected="selectedInstitutionKey === getInstitutionOptionKey(item)"
           @click="selectOption(item)"
         >
-          <span class="ipm-card__accent" aria-hidden="true" />
-          <div class="ipm-card__row">
-            <div class="ipm-card__avatar" aria-hidden="true">
-              <img
-                v-if="item.logo"
-                :src="item.logo"
-                :alt="item.orgName || t('pages.login.institutionPicker.unknownOrg', '机构 logo')"
-              >
-              <span v-else class="ipm-card__avatar-fallback">{{ getOrgInitial(item.orgName) }}</span>
-            </div>
-            <div class="ipm-card__core">
-              <div class="ipm-card__title-line">
-                <span class="ipm-card__org">
-                  <BankOutlined class="ipm-card__org-icon" />
-                  <span class="ipm-card__org-name">{{ item.orgName || t('pages.login.institutionPicker.unknownOrg', '未命名机构') }}</span>
-                </span>
-                <span v-if="item.admin" class="ipm-card__role">
-                  {{ t('pages.login.institutionPicker.admin', '超级管理员') }}
-                </span>
-              </div>
-              <div class="ipm-card__user">
-                {{ item.nickName || t('pages.login.institutionPicker.noName', '未设置姓名') }}
-              </div>
-              <div class="ipm-card__chips">
-                <span class="ipm-chip">
-                  <span class="ipm-chip__label">{{ t('pages.login.institutionPicker.loginName', '登录账号') }}</span>
-                  <span class="ipm-chip__value">{{ item.loginName || '--' }}</span>
-                </span>
-                <span class="ipm-chip">
-                  <span class="ipm-chip__label">{{ t('pages.login.institutionPicker.mobile', '手机号') }}</span>
-                  <span class="ipm-chip__value">{{ maskMobile(item.mobile) || '--' }}</span>
-                </span>
-              </div>
-            </div>
-            <div class="ipm-card__pick">
-              <span
-                class="ipm-card__pick-ring"
-                :class="{ 'is-on': selectedInstitutionKey === getInstitutionOptionKey(item) }"
-              >
-                <CheckOutlined v-if="selectedInstitutionKey === getInstitutionOptionKey(item)" class="ipm-card__pick-check" />
-              </span>
-              <span class="ipm-card__pick-label">
-                {{ selectedInstitutionKey === getInstitutionOptionKey(item) ? t('pages.login.institutionPicker.selected', '当前进入') : t('pages.login.institutionPicker.select', '点击选择') }}
-              </span>
-            </div>
-          </div>
+          <span class="ipm-item__radio" aria-hidden="true" />
+          <span class="ipm-item__avatar" aria-hidden="true">
+            <img
+              v-if="item.logo"
+              :src="item.logo"
+              :alt="item.orgName || t('pages.login.institutionPicker.unknownOrg', '机构 logo')"
+            >
+            <span v-else>{{ getOrgInitial(item.orgName) }}</span>
+          </span>
+          <span class="ipm-item__body">
+            <span class="ipm-item__row">
+              <span class="ipm-item__org">{{ item.orgName || t('pages.login.institutionPicker.unknownOrg', '未命名机构') }}</span>
+              <span v-if="item.admin" class="ipm-item__tag">{{ t('pages.login.institutionPicker.admin', '超级管理员') }}</span>
+            </span>
+            <span class="ipm-item__sub">{{ item.nickName || t('pages.login.institutionPicker.noName', '未设置姓名') }}</span>
+            <span class="ipm-item__detail">
+              <span>{{ item.loginName || '--' }}</span>
+              <span class="ipm-item__sep" aria-hidden="true" />
+              <span>{{ maskMobile(item.mobile) || '--' }}</span>
+            </span>
+          </span>
         </button>
       </div>
     </div>
 
     <template #footer>
-      <div class="ipm-footer">
-        <a-button class="ipm-footer__btn" size="large" @click="handleCancel">
-          {{ t('common.cancel', '取消') }}
-        </a-button>
-        <a-button
-          class="ipm-footer__btn ipm-footer__btn--primary"
-          type="primary"
-          size="large"
-          :loading="confirmLoading"
-          @click="handleConfirm"
-        >
-          {{ t('pages.login.institutionPicker.confirm', '确认登录') }}
-        </a-button>
-      </div>
+      <a-button @click="handleCancel">
+        {{ t('common.cancel', '取消') }}
+      </a-button>
+      <a-button type="primary" :loading="confirmLoading" @click="handleConfirm">
+        {{ t('pages.login.institutionPicker.confirm', '确认登录') }}
+      </a-button>
     </template>
   </a-modal>
 </template>
 
 <style lang="less">
-/* Modern institution picker — self-contained under wrap class */
 .institution-picker-modal {
-  --ipm-bg: #ffffff;
-  --ipm-surface: #ffffff;
-  --ipm-ink: #1f2329;
-  --ipm-muted: #86909c;
-  --ipm-line: #e5e6eb;
-  --ipm-subtle: #f7f8fa;
-  --ipm-accent: var(--pro-ant-color-primary, #1677ff);
-  --ipm-accent-soft: rgba(22, 119, 255, 0.08);
-  --ipm-accent-line: rgba(22, 119, 255, 0.22);
-  --ipm-radius: 18px;
-  --ipm-radius-sm: 12px;
+  --ipm-text: rgba(0, 0, 0, 0.88);
+  --ipm-secondary: rgba(0, 0, 0, 0.45);
+  --ipm-tertiary: rgba(0, 0, 0, 0.35);
+  --ipm-border: rgba(0, 0, 0, 0.06);
+  --ipm-fill: rgba(0, 0, 0, 0.02);
+  --ipm-primary: var(--pro-ant-color-primary, #1677ff);
 
   .ant-modal-content {
     padding: 0;
+    border-radius: 12px;
     overflow: hidden;
-    border-radius: var(--ipm-radius);
-    border: 1px solid var(--ipm-line);
-    background: var(--ipm-bg);
-    box-shadow: 0 18px 48px rgba(31, 35, 41, 0.12);
+    box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
   }
 
   .ant-modal-header {
     margin: 0;
-    padding: 24px 24px 18px;
-    border-bottom: 1px solid var(--ipm-line);
-    background: var(--ipm-surface);
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--ipm-border);
   }
 
   .ant-modal-title {
-    width: 100%;
+    margin: 0;
   }
 
   .ant-modal-close {
-    top: 16px;
-    inset-inline-end: 16px;
-    color: #8c8c8c;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    transition: color 0.2s ease, background 0.2s ease;
-  }
-
-  .ant-modal-close:hover {
-    color: #4e5969;
-    background: var(--ipm-subtle);
+    top: 18px;
+    inset-inline-end: 18px;
+    color: var(--ipm-secondary);
   }
 
   .ant-modal-body {
-    padding: 20px 24px 8px;
-    background: var(--ipm-surface);
+    padding: 0;
   }
 
   .ant-modal-footer {
     margin: 0;
-    padding: 16px 24px 20px;
-    border-top: 1px solid var(--ipm-line);
-    background: var(--ipm-surface);
+    padding: 12px 24px 16px;
+    border-top: 1px solid var(--ipm-border);
   }
 
-  .ant-modal-footer .ant-btn + .ant-btn {
-    margin-inline-start: 12px;
-  }
-
-  /* —— Header —— */
-  .ipm-head__title {
-    font-size: 20px;
+  .ipm-title {
+    font-size: 16px;
     font-weight: 600;
-    color: var(--ipm-ink);
-    line-height: 1.4;
-    padding-right: 28px;
+    line-height: 24px;
+    color: var(--ipm-text);
   }
 
-  .ipm-head__sub {
-    margin: 6px 0 0;
-    max-width: 520px;
-    font-size: 13px;
-    line-height: 1.6;
-    color: var(--ipm-muted);
-    font-weight: 400;
+  .ipm-header {
+    padding: 16px 24px 0;
   }
 
-  /* —— Body —— */
-  .ipm-intro {
+  .ipm-header__line {
+    margin: 0;
+    font-size: 14px;
+    line-height: 22px;
+    color: var(--ipm-text);
+  }
+
+  .ipm-header__meta {
+    margin: 8px 0 0;
     display: flex;
-    align-items: stretch;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 14px 16px;
-    margin-bottom: 14px;
-    border-radius: var(--ipm-radius-sm);
-    background: var(--ipm-subtle);
-    border: 1px solid #f0f0f0;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 16px;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--ipm-secondary);
   }
 
-  .ipm-intro__main {
-    flex: 1;
+  .ipm-header__meta > span:first-child {
+    flex: 1 1 200px;
     min-width: 0;
   }
 
-  .ipm-intro__kicker {
-    display: inline-block;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0;
-    color: #4e5969;
-    line-height: 1.4;
-  }
-
-  .ipm-intro__text {
-    margin: 6px 0 0;
-    font-size: 13px;
-    line-height: 1.6;
-    color: var(--ipm-muted);
-  }
-
-  .ipm-intro__stat {
+  .ipm-header__count {
     flex-shrink: 0;
-    align-self: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-width: 88px;
-    padding: 10px 14px;
-    border-radius: 12px;
-    background: #fff;
-    border: 1px solid var(--ipm-line);
-  }
-
-  .ipm-intro__stat-num {
-    font-size: 26px;
-    font-weight: 700;
-    line-height: 1;
-    color: var(--ipm-ink);
     font-variant-numeric: tabular-nums;
-  }
-
-  .ipm-intro__stat-label {
-    margin-top: 4px;
+    color: var(--ipm-tertiary);
     font-size: 12px;
-    font-weight: 500;
-    color: var(--ipm-muted);
   }
 
-  /* —— List —— */
   .ipm-list {
+    padding: 16px 24px 20px;
+    max-height: 360px;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    max-height: 380px;
-    overflow-y: auto;
-    padding-bottom: 4px;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+    gap: 8px;
   }
 
-  .ipm-list::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .ipm-list::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: rgba(100, 116, 139, 0.35);
-  }
-
-  /* —— Card (button) —— */
-  .ipm-card {
+  .ipm-item {
     appearance: none;
     box-sizing: border-box;
-    display: block;
-    margin: 0;
-    font: inherit;
-    width: 100%;
-    position: relative;
-    text-align: left;
-    cursor: pointer;
-    border-radius: var(--ipm-radius-sm);
-    background: var(--ipm-surface);
-    border: 1px solid #eaedf1;
-    transition:
-      border-color 0.2s ease,
-      box-shadow 0.2s ease,
-      background 0.2s ease;
-  }
-
-  .ipm-card:focus-visible {
-    outline: 2px solid var(--ipm-accent);
-    outline-offset: 2px;
-  }
-
-  .ipm-card__accent {
-    position: absolute;
-    left: 0;
-    top: 12px;
-    bottom: 12px;
-    width: 2px;
-    border-radius: 999px;
-    background: transparent;
-    transition: background 0.2s ease;
-  }
-
-  .ipm-card:hover {
-    border-color: #d6e4ff;
-    background: #fff;
-  }
-
-  .ipm-card.is-selected {
-    border-color: var(--ipm-accent-line);
-    background: #f8fbff;
-    box-shadow: 0 0 0 3px var(--ipm-accent-soft);
-  }
-
-  .ipm-card.is-selected .ipm-card__accent {
-    background: var(--ipm-accent);
-  }
-
-  .ipm-card__row {
     display: flex;
     align-items: flex-start;
-    gap: 14px;
-    padding: 16px 16px 16px 18px;
+    gap: 12px;
+    width: 100%;
+    margin: 0;
+    padding: 12px 14px;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+    border: 1px solid var(--ipm-border);
+    border-radius: 8px;
+    background: #fff;
+    transition: border-color 0.15s ease, background 0.15s ease;
   }
 
-  .ipm-card__avatar {
+  .ipm-item:hover {
+    border-color: rgba(0, 0, 0, 0.12);
+    background: var(--ipm-fill);
+  }
+
+  .ipm-item.is-selected {
+    border-color: var(--ipm-primary);
+    background: rgba(22, 119, 255, 0.04);
+  }
+
+  .ipm-item:focus-visible {
+    outline: 2px solid var(--ipm-primary);
+    outline-offset: 1px;
+  }
+
+  .ipm-item__radio {
     flex-shrink: 0;
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
+    width: 16px;
+    height: 16px;
+    margin-top: 3px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    position: relative;
+  }
+
+  .ipm-item.is-selected .ipm-item__radio {
+    border-color: var(--ipm-primary);
+  }
+
+  .ipm-item.is-selected .ipm-item__radio::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    margin: -4px 0 0 -4px;
+    border-radius: 50%;
+    background: var(--ipm-primary);
+  }
+
+  .ipm-item__avatar {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
     overflow: hidden;
-    background: #eef4ff;
+    background: var(--ipm-fill);
+    border: 1px solid var(--ipm-border);
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid #deebff;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ipm-secondary);
   }
 
-  .ipm-card__avatar img {
+  .ipm-item__avatar img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
 
-  .ipm-card__avatar-fallback {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--ipm-accent);
-  }
-
-  .ipm-card__core {
+  .ipm-item__body {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
-  .ipm-card__title-line {
+  .ipm-item__row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -459,240 +345,79 @@ function selectOption(item) {
     min-width: 0;
   }
 
-  .ipm-card__org {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--ipm-ink);
-    line-height: 1.35;
-  }
-
-  .ipm-card__org-icon {
-    flex-shrink: 0;
+  .ipm-item__org {
     font-size: 14px;
-    color: #94a3b8;
-  }
-
-  .ipm-card__org-name {
-    min-width: 0;
+    font-weight: 500;
+    line-height: 22px;
+    color: var(--ipm-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .ipm-card__role {
+  .ipm-item__tag {
     flex-shrink: 0;
     font-size: 12px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 999px;
-    color: #4e5969;
-    background: #f7f8fa;
-    border: 1px solid var(--ipm-line);
+    line-height: 20px;
+    color: var(--ipm-secondary);
   }
 
-  .ipm-card__user {
-    margin-top: 4px;
+  .ipm-item__sub {
     font-size: 13px;
-    color: var(--ipm-muted);
-    line-height: 1.4;
+    line-height: 20px;
+    color: var(--ipm-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .ipm-card__chips {
+  .ipm-item__detail {
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--ipm-tertiary);
+    font-variant-numeric: tabular-nums;
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 12px;
+    gap: 0 6px;
+    min-width: 0;
   }
 
-  .ipm-chip {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 6px;
-    padding: 7px 10px;
-    border-radius: 10px;
-    background: #fff;
-    border: 1px solid #eff0f1;
+  .ipm-item__detail > span:first-child,
+  .ipm-item__detail > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     max-width: 100%;
   }
 
-  .ipm-chip__label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--ipm-muted);
-  }
-
-  .ipm-chip__value {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ipm-ink);
-    font-variant-numeric: tabular-nums;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 180px;
-  }
-
-  .ipm-card__pick {
+  .ipm-item__sep {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--ipm-tertiary);
+    opacity: 0.5;
     flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    padding-top: 2px;
-    min-width: 72px;
-  }
-
-  .ipm-card__pick-ring {
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    border: 1.5px solid #d0d7de;
-    background: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
-  }
-
-  .ipm-card__pick-ring.is-on {
-    border-color: var(--ipm-accent);
-    background: var(--ipm-accent-soft);
-    box-shadow: none;
-  }
-
-  .ipm-card__pick-check {
-    font-size: 12px;
-    color: var(--ipm-accent);
-  }
-
-  .ipm-card__pick-label {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--ipm-muted);
-    text-align: center;
-    line-height: 1.3;
-    max-width: 72px;
-  }
-
-  .ipm-card.is-selected .ipm-card__pick-label {
-    color: #4e5969;
-  }
-
-  /* —— Footer —— */
-  .ipm-footer {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .ipm-footer__btn.ant-btn {
-    min-width: 104px;
-    height: 40px;
-    padding: 0 22px;
-    border-radius: 10px;
-    font-weight: 600;
-    font-size: 14px;
-  }
-
-  .ipm-footer__btn.ant-btn-default {
-    border-color: rgba(15, 23, 42, 0.12);
-    color: #475569;
-    background: #fff;
-  }
-
-  .ipm-footer__btn--primary.ant-btn-primary {
-    box-shadow: none;
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 576px) {
   .institution-picker-modal {
     .ant-modal {
-      max-width: calc(100vw - 20px);
-      margin: 12px auto;
+      max-width: calc(100vw - 32px);
     }
 
-    .ant-modal-header {
-      padding: 20px 18px 16px;
+    .ipm-header,
+    .ipm-list {
+      padding-left: 16px;
+      padding-right: 16px;
     }
 
-    .ipm-head__title {
-      font-size: 19px;
-      padding-right: 28px;
-    }
-
-    .ipm-head__sub {
-      font-size: 13px;
-    }
-
-    .ant-modal-body {
-      padding: 16px 16px 6px;
-    }
-
+    .ant-modal-header,
     .ant-modal-footer {
-      padding: 14px 16px 18px;
-    }
-
-    .ipm-intro {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .ipm-intro__stat {
-      flex-direction: row;
-      justify-content: space-between;
-      align-items: center;
-      min-width: unset;
-    }
-
-    .ipm-intro__stat-num {
-      font-size: 24px;
-    }
-
-    .ipm-card__row {
-      flex-wrap: wrap;
-    }
-
-    .ipm-card__pick {
-      width: 100%;
-      flex-direction: row;
-      justify-content: flex-end;
-      padding-top: 0;
-      min-width: unset;
-    }
-
-    .ipm-card__pick-label {
-      max-width: none;
-      text-align: right;
-    }
-
-    .ipm-chip__value {
-      max-width: none;
-    }
-  }
-}
-
-@media (max-width: 480px) {
-  .institution-picker-modal {
-    .ipm-footer {
-      flex-direction: column-reverse;
-      align-items: stretch;
-    }
-
-    .ipm-footer__btn.ant-btn {
-      width: 100%;
-    }
-
-    .ant-modal-footer .ant-btn + .ant-btn {
-      margin-inline-start: 0;
+      padding-left: 16px;
+      padding-right: 16px;
     }
   }
 }
