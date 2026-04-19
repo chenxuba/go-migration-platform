@@ -1228,9 +1228,7 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		return 0, err
 	}
 	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
+		_ = tx.Rollback()
 	}()
 
 	if err = repo.ensureInstitutionLoginNameAvailableTx(ctx, tx, strings.TrimSpace(input.LoginName), nil); err != nil {
@@ -1370,9 +1368,7 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		return err
 	}
 	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
+		_ = tx.Rollback()
 	}()
 
 	var currentLoginName string
