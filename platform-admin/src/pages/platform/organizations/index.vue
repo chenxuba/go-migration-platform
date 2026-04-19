@@ -619,10 +619,10 @@ watch(institutionRenewalOpen, (open) => {
             <template v-else-if="column.key === 'account'">
               <div class="info-cell">
                 <div class="cell-title cell-title--sm">
-                  {{ record.mobile || '--' }}
+                  {{ record.loginName || '--' }}
                 </div>
                 <div class="cell-sub">
-                  登录手机号
+                  登录账号
                 </div>
               </div>
             </template>

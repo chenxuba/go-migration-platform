@@ -1493,7 +1493,7 @@ func (repo *Repository) PageRolesByOrg(ctx context.Context, orgID int64, query m
 		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(role_name, ''), sort, role_type, org_id, IFNULL(is_admin, 0), IFNULL(is_default, 0), IFNULL(description, '')
 		FROM sso_role
 		WHERE `+whereClause+`
-		ORDER BY is_default DESC, update_time DESC, id DESC
+		ORDER BY is_default DESC, id DESC
 		LIMIT ? OFFSET ?`, append(args, size, offset)...)
 	if err != nil {
 		return model.RolePage{}, err

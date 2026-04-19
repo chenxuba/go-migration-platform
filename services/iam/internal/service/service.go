@@ -689,7 +689,7 @@ func (svc *Service) SaveDefaultRole(claims authx.Claims, req model.SaveDefaultRo
 		OrgID:       0,
 		RoleType:    roleType,
 		Admin:       false,
-		IsDefault:   false,
+		IsDefault:   true,
 	}
 	roleID, err := svc.repo.CreateRole(ctx, role)
 	if err != nil {

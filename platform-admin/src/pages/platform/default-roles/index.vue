@@ -582,7 +582,7 @@ async function loadRoleList() {
     }
 
     const rows = Array.isArray(res.result) ? res.result.map(mapRoleTemplateItem) : []
-    roleList.value = rows.sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.roleId - right.roleId)
+    roleList.value = rows.sort((left, right) => right.roleId - left.roleId)
   }
   catch (error: any) {
     messageService.error(error?.message || '加载默认角色失败')
