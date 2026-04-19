@@ -53,7 +53,31 @@ type StudentStatusSnapshot struct {
 }
 
 func New(db *sql.DB) *Repository {
-	return &Repository{db: db}
+	repo := &Repository{db: db}
+	_ = repo.ensureCurrentInstitutionColumn(context.Background())
+	return repo
+}
+
+func (repo *Repository) ensureCurrentInstitutionColumn(ctx context.Context) error {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'sso_user'
+		  AND COLUMN_NAME = 'current_inst_id'
+	`).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		ALTER TABLE sso_user
+		ADD COLUMN current_inst_id BIGINT NULL DEFAULT NULL COMMENT '当前登录机构ID'
+		AFTER dept_id
+	`)
+	return err
 }
 
 func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
@@ -183,6 +207,37 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 }
 
 func (repo *Repository) FindInstIDByUserID(ctx context.Context, userID int64) (int64, error) {
+	var currentInstID sql.NullInt64
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT current_inst_id
+		FROM sso_user
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, userID).Scan(&currentInstID); err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if currentInstID.Valid && currentInstID.Int64 > 0 {
+		var preferred int64
+		err := repo.db.QueryRowContext(ctx, `
+			SELECT u.inst_id
+			FROM inst_user u
+			LEFT JOIN org_institution i ON u.inst_id = i.id
+			WHERE u.del_flag = 0 AND u.disabled = 0
+			  AND i.del_flag = 0 AND i.enabled = 1
+			  AND i.expire_end_time > NOW()
+			  AND u.user_id = ?
+			  AND u.inst_id = ?
+			  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
+			LIMIT 1
+		`, userID, currentInstID.Int64).Scan(&preferred)
+		if err != nil && err != sql.ErrNoRows {
+			return 0, err
+		}
+		if err == nil && preferred > 0 {
+			return preferred, nil
+		}
+	}
+
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT u.inst_id
 		FROM inst_user u
@@ -202,6 +257,37 @@ func (repo *Repository) FindInstIDByUserID(ctx context.Context, userID int64) (i
 }
 
 func (repo *Repository) FindInstUserIDByUserID(ctx context.Context, userID int64) (int64, error) {
+	var currentInstID sql.NullInt64
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT current_inst_id
+		FROM sso_user
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, userID).Scan(&currentInstID); err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if currentInstID.Valid && currentInstID.Int64 > 0 {
+		var preferred int64
+		err := repo.db.QueryRowContext(ctx, `
+			SELECT u.id
+			FROM inst_user u
+			LEFT JOIN org_institution i ON u.inst_id = i.id
+			WHERE u.del_flag = 0 AND u.disabled = 0
+			  AND i.del_flag = 0 AND i.enabled = 1
+			  AND i.expire_end_time > NOW()
+			  AND u.user_id = ?
+			  AND u.inst_id = ?
+			  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
+			LIMIT 1
+		`, userID, currentInstID.Int64).Scan(&preferred)
+		if err != nil && err != sql.ErrNoRows {
+			return 0, err
+		}
+		if err == nil && preferred > 0 {
+			return preferred, nil
+		}
+	}
+
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT u.id
 		FROM inst_user u

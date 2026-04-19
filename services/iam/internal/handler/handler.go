@@ -30,6 +30,7 @@ func New(svc *service.Service, tokenCookieName string) *Handler {
 func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/health", handler.health)
 	mux.HandleFunc("/api/v1/auth/login", handler.login)
+	mux.HandleFunc("/api/v1/auth/login-institutions", handler.loginInstitutions)
 	mux.HandleFunc("/api/v1/auth/me", handler.me)
 	mux.HandleFunc("/api/v1/users", handler.users)
 	mux.HandleFunc("/api/v1/login-logs", handler.loginLogs)
@@ -56,6 +57,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/tenants/current", handler.currentTenant)
 
 	mux.HandleFunc("/sso/doLogin", handler.login)
+	mux.HandleFunc("/sso/loginInstitutions", handler.loginInstitutions)
 	mux.HandleFunc("/sso/info", handler.me)
 	mux.HandleFunc("/sso/isLogin", handler.isLogin)
 	mux.HandleFunc("/sso/logout", handler.logout)
@@ -131,6 +133,27 @@ func (handler *Handler) login(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) loginInstitutions(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var req model.InstitutionLoginOptionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid login payload", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.ListInstitutionLoginOptions(req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 

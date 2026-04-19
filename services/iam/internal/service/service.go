@@ -36,7 +36,9 @@ func (svc *Service) CurrentTenant(ctx tenant.Context) customization.TenantProfil
 }
 
 func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent, userIP string) (model.LoginResult, error) {
-	if strings.TrimSpace(req.Username) == "" || strings.TrimSpace(req.Password) == "" {
+	identifier := strings.TrimSpace(req.Username)
+	password := strings.TrimSpace(req.Password)
+	if identifier == "" || password == "" {
 		return model.LoginResult{}, errors.New("用户名和密码不能为空")
 	}
 
@@ -44,7 +46,44 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 		// keep Java-compatible default of manage when 0 is explicitly passed
 	}
 
-	user, err := svc.repo.FindUserByUsernameOrMobile(context.Background(), strings.TrimSpace(req.Username))
+	loginType := normalizeLoginType(req.LoginType)
+	selectedOrgID := int64(0)
+	if req.InstitutionID != nil && *req.InstitutionID > 0 {
+		selectedOrgID = *req.InstitutionID
+	}
+
+	var selectedUserID *int64
+	if req.UserID != nil && *req.UserID > 0 {
+		selectedUserID = req.UserID
+	}
+
+	var user model.User
+	var err error
+	switch loginType {
+	case "org":
+		if selectedOrgID == 0 {
+			options, listErr := svc.repo.ListInstitutionLoginOptions(context.Background(), identifier)
+			if listErr != nil {
+				return model.LoginResult{}, listErr
+			}
+			if len(options) > 1 {
+				return model.LoginResult{}, errors.New("当前手机号关联多个机构，请先选择机构后登录")
+			}
+			if len(options) == 1 {
+				selectedOrgID = options[0].InstID
+				if options[0].UserID > 0 {
+					selectedUserID = &options[0].UserID
+				}
+			}
+		}
+		if selectedOrgID > 0 {
+			user, err = svc.repo.FindInstitutionLoginUser(context.Background(), identifier, selectedOrgID, selectedUserID)
+		} else {
+			user, err = svc.repo.FindUserByUsernameOrMobile(context.Background(), identifier)
+		}
+	default:
+		user, err = svc.repo.FindUserByUsernameOrMobile(context.Background(), identifier)
+	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.LoginResult{}, errors.New("登录失败,用户名或密码错误")
@@ -52,14 +91,23 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 		return model.LoginResult{}, err
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return model.LoginResult{}, errors.New("登录失败,用户名或密码错误")
 	}
 
-	loginType := normalizeLoginType(req.LoginType)
-	userInfo, roles, menus, orgID, orgName, err := svc.loadLoginContext(ctx, user, loginType)
+	userInfo, roles, menus, orgID, orgName, err := svc.loadLoginContext(ctx, user, loginType, selectedOrgID)
 	if err != nil {
 		return model.LoginResult{}, err
+	}
+	if orgID != nil && *orgID > 0 {
+		if err := svc.repo.SetUserCurrentInstitution(context.Background(), user.ID, orgID); err != nil {
+			return model.LoginResult{}, err
+		}
+	}
+
+	tokenOrgID := int64(0)
+	if orgID != nil && *orgID > 0 {
+		tokenOrgID = *orgID
 	}
 
 	token, err := svc.tokenManager.Generate(authx.Claims{
@@ -67,6 +115,7 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 		Username:  firstNonEmpty(user.Username, user.Mobile),
 		LoginType: loginType,
 		TenantID:  ctx.TenantID,
+		OrgID:     tokenOrgID,
 	}, 30*24*time.Hour)
 	if err != nil {
 		return model.LoginResult{}, err
@@ -81,6 +130,7 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 		LoginType: loginType,
 		User:      userInfo,
 		TenantID:  ctx.TenantID,
+		OrgID:     tokenOrgID,
 	}, nil
 }
 
@@ -94,9 +144,14 @@ func (svc *Service) CurrentSession(ctx tenant.Context, claims authx.Claims) (mod
 		return model.SessionInfo{}, err
 	}
 
-	userInfo, roles, menus, _, _, err := svc.loadLoginContext(ctx, user, claims.LoginType)
+	userInfo, roles, menus, orgID, _, err := svc.loadLoginContext(ctx, user, claims.LoginType, claims.OrgID)
 	if err != nil {
 		return model.SessionInfo{}, err
+	}
+
+	sessionOrgID := claims.OrgID
+	if orgID != nil && *orgID > 0 {
+		sessionOrgID = *orgID
 	}
 
 	return model.SessionInfo{
@@ -104,10 +159,22 @@ func (svc *Service) CurrentSession(ctx tenant.Context, claims authx.Claims) (mod
 		Username:     claims.Username,
 		LoginType:    claims.LoginType,
 		TenantID:     claims.TenantID,
+		OrgID:        sessionOrgID,
 		RoleList:     roles,
 		MenuCodeList: menus,
 		User:         userInfo,
 	}, nil
+}
+
+func (svc *Service) ListInstitutionLoginOptions(req model.InstitutionLoginOptionsRequest) ([]model.InstitutionLoginOption, error) {
+	if normalizeLoginType(req.LoginType) != "org" {
+		return []model.InstitutionLoginOption{}, nil
+	}
+	identifier := strings.TrimSpace(req.Identifier)
+	if identifier == "" {
+		return []model.InstitutionLoginOption{}, errors.New("登录账号不能为空")
+	}
+	return svc.repo.ListInstitutionLoginOptions(context.Background(), identifier)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -570,7 +637,7 @@ func (svc *Service) MenuAccessCheck(claims authx.Claims, menuCode string, ownTyp
 	allowed := false
 	switch claims.LoginType {
 	case "org":
-		orgID, err := svc.repo.ResolveActiveInstitutionID(context.Background(), claims.UserID)
+		orgID, err := svc.resolveOrgID(claims, nil)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return model.MenuAccessCheck{MenuCode: menuCode, Allowed: false}, nil
@@ -960,16 +1027,15 @@ func (svc *Service) resolveOrgID(claims authx.Claims, orgID *int64) (int64, erro
 		return 1, nil
 	}
 	if claims.LoginType == "org" {
-		info, err := svc.repo.GetInstitutionUserInfo(context.Background(), claims.UserID)
-		if err != nil {
-			return 0, err
+		if claims.OrgID > 0 {
+			return claims.OrgID, nil
 		}
-		return info.InstID, nil
+		return svc.repo.ResolveActiveInstitutionID(context.Background(), claims.UserID)
 	}
 	return 0, errors.New("unsupported login type")
 }
 
-func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginType string) (any, []string, []string, *int64, *string, error) {
+func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginType string, selectedOrgID int64) (any, []string, []string, *int64, *string, error) {
 	switch loginType {
 	case "manage":
 		if user.UserType != nil && *user.UserType != 0 {
@@ -985,7 +1051,15 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 		}
 		return info, roleList, info.MenuCodeList, nil, nil, nil
 	case "org":
-		info, err := svc.repo.GetInstitutionUserInfo(context.Background(), user.ID)
+		var (
+			info model.InstUserInfo
+			err  error
+		)
+		if selectedOrgID > 0 {
+			info, err = svc.repo.GetInstitutionUserInfoByInst(context.Background(), user.ID, selectedOrgID)
+		} else {
+			info, err = svc.repo.GetInstitutionUserInfo(context.Background(), user.ID)
+		}
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, nil, nil, nil, nil, errors.New("无权限")

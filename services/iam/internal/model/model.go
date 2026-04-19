@@ -3,9 +3,27 @@ package model
 import "time"
 
 type LoginRequest struct {
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	LoginType int    `json:"loginType"`
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	LoginType     int    `json:"loginType"`
+	InstitutionID *int64 `json:"institutionId,omitempty"`
+	UserID        *int64 `json:"userId,omitempty"`
+}
+
+type InstitutionLoginOptionsRequest struct {
+	Identifier string `json:"identifier"`
+	LoginType  int    `json:"loginType"`
+}
+
+type InstitutionLoginOption struct {
+	UserID    int64  `json:"userId"`
+	InstID    int64  `json:"instId"`
+	OrgName   string `json:"orgName"`
+	LoginName string `json:"loginName"`
+	NickName  string `json:"nickName"`
+	Mobile    string `json:"mobile"`
+	Logo      string `json:"logo,omitempty"`
+	Admin     bool   `json:"admin"`
 }
 
 type User struct {
@@ -57,6 +75,7 @@ type LoginResult struct {
 	LoginType string `json:"loginType"`
 	User      any    `json:"user"`
 	TenantID  string `json:"tenantId"`
+	OrgID     int64  `json:"orgId,omitempty"`
 }
 
 type SessionInfo struct {
@@ -64,6 +83,7 @@ type SessionInfo struct {
 	Username     string   `json:"username"`
 	LoginType    string   `json:"loginType"`
 	TenantID     string   `json:"tenantId"`
+	OrgID        int64    `json:"orgId,omitempty"`
 	RoleList     []string `json:"roleList"`
 	MenuCodeList []string `json:"menuCodeList"`
 	User         any      `json:"user"`

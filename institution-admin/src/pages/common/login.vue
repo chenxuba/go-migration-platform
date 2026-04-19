@@ -1,12 +1,13 @@
 <script setup>
-import { MobileOutlined, LockOutlined, EyeInvisibleOutlined, SafetyOutlined } from '@ant-design/icons-vue'
+import { EyeInvisibleOutlined, LockOutlined, MobileOutlined, SafetyOutlined } from '@ant-design/icons-vue'
 import { AxiosError } from 'axios'
 import QRCode from 'qrcode'
+import { useRouter } from 'vue-router'
+import InstitutionLoginPickerModal from './components/institution-login-picker-modal.vue'
 import SelectLang from '@/components/select-lang/index.vue'
 import { useAuthorization } from '@/composables/authorization'
 import { useMessage, useNotification } from '@/composables/global-config'
-import { loginApi } from '~/api/common/login'
-import { useRouter } from 'vue-router'
+import { loginApi, loginInstitutionOptionsApi } from '~/api/common/login'
 
 const { t } = useI18nLocale()
 const activeKey = ref(0) // 0: 密码登录, 1: 短信登录
@@ -25,6 +26,10 @@ const token = useAuthorization()
 const submitLoading = ref(false)
 const errorAlert = ref(false)
 const qrCodeUrl = ref('') // 存储生成的二维码URL
+const institutionPickerOpen = ref(false)
+const institutionOptions = ref([])
+const pendingLoginParams = ref(null)
+const institutionConfirmLoading = ref(false)
 
 const usernameRules = computed(() => [{
   required: true,
@@ -76,17 +81,86 @@ onMounted(() => {
 function getLoginParams() {
   if (activeKey.value === 0) {
     return {
-      username: formState.username,
-      password: formState.password,
+      username: String(formState.username || '').trim(),
+      password: String(formState.password || '').trim(),
       type: 'account',
     }
   }
   else {
     return {
-      mobile: formState.username,
-      code: formState.verifyCode,
+      mobile: String(formState.username || '').trim(),
+      code: String(formState.verifyCode || '').trim(),
       type: 'mobile',
     }
+  }
+}
+
+function resetInstitutionPicker() {
+  institutionPickerOpen.value = false
+  institutionOptions.value = []
+  pendingLoginParams.value = null
+  institutionConfirmLoading.value = false
+}
+
+async function performLogin(params) {
+  const { result } = await loginApi(params)
+  if (!result) {
+    submitLoading.value = false
+    institutionConfirmLoading.value = false
+    return
+  }
+
+  token.value = result?.token
+  submitLoading.value = false
+  institutionConfirmLoading.value = false
+  resetInstitutionPicker()
+  notification.success({
+    message: t('pages.login.notification.success.title', '登录成功'),
+    description: t('pages.login.notification.success.description', '欢迎回来！'),
+    duration: 1,
+  })
+  router.push({ path: '/' })
+}
+
+async function queryInstitutionOptions(params) {
+  if (activeKey.value !== 0)
+    return []
+
+  const identifier = String(params?.username || params?.mobile || '').trim()
+  if (!identifier)
+    return []
+
+  const { result } = await loginInstitutionOptionsApi({
+    identifier,
+    loginType: 2,
+  })
+  return Array.isArray(result) ? result : []
+}
+
+function openInstitutionPicker(options, params) {
+  institutionOptions.value = options
+  pendingLoginParams.value = params
+  institutionPickerOpen.value = true
+}
+
+async function confirmInstitutionLogin(selectedInstitutionOption) {
+  if (!selectedInstitutionOption || !pendingLoginParams.value) {
+    message.warning(t('pages.login.institutionPicker.required', '请选择要登录的机构'))
+    return
+  }
+
+  institutionConfirmLoading.value = true
+  try {
+    await performLogin({
+      ...pendingLoginParams.value,
+      institutionId: selectedInstitutionOption.value.instId,
+      userId: selectedInstitutionOption.value.userId,
+    })
+  }
+  catch (e) {
+    if (e instanceof AxiosError)
+      errorAlert.value = true
+    institutionConfirmLoading.value = false
   }
 }
 
@@ -99,19 +173,21 @@ async function onSubmit() {
   try {
     await formRef.value?.validate()
     const params = getLoginParams()
-    const { result } = await loginApi(params)
-    if (result) {
-      token.value = result?.token
-      notification.success({
-        message: t('pages.login.notification.success.title', '登录成功'),
-        description: t('pages.login.notification.success.description', '欢迎回来！'),
-        duration: 1,
-      })
-      router.push({ path: "/" })
-    }
-    else {
+    const options = await queryInstitutionOptions(params)
+    if (options.length > 1) {
+      openInstitutionPicker(options, params)
       submitLoading.value = false
+      return
     }
+    if (options.length === 1) {
+      await performLogin({
+        ...params,
+        institutionId: options[0].instId,
+        userId: options[0].userId,
+      })
+      return
+    }
+    await performLogin(params)
   }
   catch (e) {
     if (e instanceof AxiosError)
@@ -134,50 +210,54 @@ function changeQrCode() {
       <div class="content flex">
         <div class="left">
           <div class="top flex">
-            <div class="e-logo"></div>
+            <div class="e-logo" />
           </div>
-          <div class="bg-box"></div>
+          <div class="bg-box" />
         </div>
         <div class="right flex" :class="mode ? 'phone' : 'qrcode'">
           <div class="switchLogin">
-            <div class="switchBtn" v-if="mode" @click="changeQrCode"></div>
-            <div class="switchBtn other" v-if="!mode" @click="changeQrCode"></div>
-            <div class="switchTooltip" v-if="mode">
+            <div v-if="mode" class="switchBtn" @click="changeQrCode" />
+            <div v-if="!mode" class="switchBtn other" @click="changeQrCode" />
+            <div v-if="mode" class="switchTooltip">
               {{ t('pages.login.switch.qrcode', 'App 扫码登录') }}
             </div>
-            <div class="switchTooltip other" v-if="!mode">
+            <div v-if="!mode" class="switchTooltip other">
               {{ t('pages.login.switch.other', '其他登录方式') }}
             </div>
           </div>
-          <a-form ref="formRef" v-if="mode" :model="formState" autocomplete="off">
+          <a-form v-if="mode" ref="formRef" :model="formState" autocomplete="off">
             <div class="login-phone-wrap">
               <div class="phoneBox">
-                <div class="phoneBg"></div>
+                <div class="phoneBg" />
                 <div class="loginTabContainer">
-                  <a-tabs v-model:activeKey="activeKey" :tab-bar-style="{
-                    'border-bottom-left-radius': '0px',
-                    'border-bottom-right-radius': '0px',
-                  }">
-                    <a-tab-pane :key="0" :tab="t('pages.login.passwordLogin.tab', '密码登录')">
-                    </a-tab-pane>
-                    <a-tab-pane :key="1" :tab="t('pages.login.smsLogin.tab', '短信登录')">
-                    </a-tab-pane>
+                  <a-tabs
+                    v-model:active-key="activeKey" :tab-bar-style="{
+                      'border-bottom-left-radius': '0px',
+                      'border-bottom-right-radius': '0px',
+                    }"
+                  >
+                    <a-tab-pane :key="0" :tab="t('pages.login.passwordLogin.tab', '密码登录')" />
+                    <a-tab-pane :key="1" :tab="t('pages.login.smsLogin.tab', '短信登录')" />
                   </a-tabs>
                 </div>
                 <a-form-item name="username" :rules="usernameRules">
                   <div class="inputBox">
-                    <a-input :bordered="false" autocomplete="off" class="w-300px bg-#f2f3f9"
-                      v-model:value="formState.username" :placeholder="t('pages.login.mobile.placeholder', '请输入手机号')">
+                    <a-input
+                      v-model:value="formState.username" :bordered="false" autocomplete="off"
+                      class="w-300px bg-#f2f3f9" :placeholder="t('pages.login.mobile.placeholder', '请输入手机号')"
+                    >
                       <template #prefix>
                         <MobileOutlined />
                       </template>
                     </a-input>
                   </div>
                 </a-form-item>
-                <a-form-item name="password" :rules="passwordRules" v-if="activeKey === 0">
+                <a-form-item v-if="activeKey === 0" name="password" :rules="passwordRules">
                   <div class="inputBox">
-                    <a-input :bordered="false" type="password" autocomplete='off' class="w-300px bg-#f2f3f9"
-                      v-model:value="formState.password" :placeholder="t('pages.login.password.placeholder.simple', '请输入密码')">
+                    <a-input
+                      v-model:value="formState.password" :bordered="false" type="password" autocomplete="off"
+                      class="w-300px bg-#f2f3f9" :placeholder="t('pages.login.password.placeholder.simple', '请输入密码')"
+                    >
                       <template #prefix>
                         <LockOutlined />
                       </template>
@@ -188,10 +268,12 @@ function changeQrCode() {
                   </div>
                 </a-form-item>
                 <!-- 验证码 -->
-                <a-form-item name="verifyCode" :rules="verifyCodeRules" v-else>
+                <a-form-item v-else name="verifyCode" :rules="verifyCodeRules">
                   <div class="inputBox">
-                    <a-input :bordered="false" class="w-300px bg-#f2f3f9" v-model:value="formState.verifyCode"
-                      :placeholder="t('pages.login.verifyCode.placeholder', '请输入验证码')">
+                    <a-input
+                      v-model:value="formState.verifyCode" :bordered="false" class="w-300px bg-#f2f3f9"
+                      :placeholder="t('pages.login.verifyCode.placeholder', '请输入验证码')"
+                    >
                       <template #prefix>
                         <SafetyOutlined />
                       </template>
@@ -218,14 +300,20 @@ function changeQrCode() {
             </div>
           </a-form>
 
-          <div class="top2 flex" v-if="!mode">
-            <div class="title">{{ t('pages.login.qrcode.title', '扫码登录') }}</div>
+          <div v-if="!mode" class="top2 flex">
+            <div class="title">
+              {{ t('pages.login.qrcode.title', '扫码登录') }}
+            </div>
             <div class="login-qrcode-wrap">
               <div class="image">
-                <img :src="qrCodeUrl" :alt="t('pages.login.qrcode.alt', '二维码')" v-if="qrCodeUrl" draggable="false"
-                  style="width: 100%; height: 100%; object-fit: contain; user-select: none;">
-                <div v-else
-                  style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: #999; font-size: 14px;">
+                <img
+                  v-if="qrCodeUrl" :src="qrCodeUrl" :alt="t('pages.login.qrcode.alt', '二维码')" draggable="false"
+                  style="width: 100%; height: 100%; object-fit: contain; user-select: none;"
+                >
+                <div
+                  v-else
+                  style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; color: #999; font-size: 14px;"
+                >
                   {{ t('pages.login.qrcode.loading', '正在生成二维码...') }}
                 </div>
               </div>
@@ -235,9 +323,9 @@ function changeQrCode() {
             </div>
           </div>
 
-          <div class="bottom2 flex" v-if="mode">
+          <div v-if="mode" class="bottom2 flex">
             <div class="download flex">
-              <div class="e-icon"></div>
+              <div class="e-icon" />
               {{ t('pages.login.downloadApp', '下载「云校 App」') }}
             </div>
             <div class="tel flex">
@@ -245,9 +333,9 @@ function changeQrCode() {
               <span class="number">021-80392253</span>
             </div>
           </div>
-          <div class="bottom2 flex" v-if="!mode">
+          <div v-if="!mode" class="bottom2 flex">
             <div class="download flex other">
-              <div class="e-icon"></div>
+              <div class="e-icon" />
               {{ t('pages.login.downloadApp', '下载「云校 App」') }}
             </div>
             <div class="tel other flex">
@@ -257,15 +345,23 @@ function changeQrCode() {
           </div>
         </div>
       </div>
-      <div class="more-link"></div>
+      <div class="more-link" />
     </div>
+    <InstitutionLoginPickerModal
+      v-model:open="institutionPickerOpen"
+      :options="institutionOptions"
+      :confirm-loading="institutionConfirmLoading"
+      @confirm="confirmInstitutionLogin"
+      @cancel="resetInstitutionPicker"
+    />
     <div class="footer">
-      <span><a target="_blank" href="https://beian.miit.gov.cn"
-          rel="noreferrer"><span class="beian-icon"></span>沪ICP备15044463号-1 &nbsp; 型号:YBC-IRTS-DE &nbsp;&nbsp;</a>{{ t('pages.login.footer.certification', '已通过 ISO27001:2013 信息安全认证') }}</span>
+      <span><a
+        target="_blank" href="https://beian.miit.gov.cn"
+        rel="noreferrer"
+      ><span class="beian-icon" />沪ICP备15044463号-1 &nbsp; 型号:YBC-IRTS-DE &nbsp;&nbsp;</a>{{ t('pages.login.footer.certification', '已通过 ISO27001:2013 信息安全认证') }}</span>
     </div>
   </div>
 </template>
-
 
 <style lang="less" scoped>
 .login-page {
@@ -624,8 +720,6 @@ function changeQrCode() {
             font-size: 16px;
             align-items: center;
 
-
-
             .e-icon {
               background: url("https://pcsys.admin.ybc365.com/572acdf9-e563-48b0-8517-d5779448bad7.png") 100% 100% no-repeat;
               background-size: contain;
@@ -812,6 +906,7 @@ function changeQrCode() {
       }
     }
   }
+
 }
 
 @media (max-width: 480px) {
@@ -868,5 +963,6 @@ function changeQrCode() {
       }
     }
   }
+
 }
 </style>

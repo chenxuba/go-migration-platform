@@ -17,6 +17,7 @@ type Claims struct {
 	Username  string
 	LoginType string
 	TenantID  string
+	OrgID     int64
 }
 
 type TokenManager struct {
@@ -29,7 +30,7 @@ func NewTokenManager(secret string) *TokenManager {
 
 func (manager *TokenManager) Generate(claims Claims, ttl time.Duration) (string, error) {
 	expiresAt := time.Now().Add(ttl).Unix()
-	payload := fmt.Sprintf("%d|%s|%s|%s|%d", claims.UserID, claims.Username, claims.LoginType, claims.TenantID, expiresAt)
+	payload := fmt.Sprintf("%d|%s|%s|%s|%d|%d", claims.UserID, claims.Username, claims.LoginType, claims.TenantID, claims.OrgID, expiresAt)
 	signature := signPayload(payload, manager.secret)
 	raw := payload + "|" + signature
 	return base64.RawURLEncoding.EncodeToString([]byte(raw)), nil
@@ -42,12 +43,12 @@ func (manager *TokenManager) Parse(token string) (Claims, error) {
 	}
 
 	parts := strings.Split(string(decoded), "|")
-	if len(parts) != 6 {
+	if len(parts) != 7 {
 		return Claims{}, errors.New("invalid token format")
 	}
 
-	payload := strings.Join(parts[:5], "|")
-	if !hmac.Equal([]byte(parts[5]), []byte(signPayload(payload, manager.secret))) {
+	payload := strings.Join(parts[:6], "|")
+	if !hmac.Equal([]byte(parts[6]), []byte(signPayload(payload, manager.secret))) {
 		return Claims{}, errors.New("invalid token signature")
 	}
 
@@ -56,7 +57,12 @@ func (manager *TokenManager) Parse(token string) (Claims, error) {
 		return Claims{}, err
 	}
 
-	expiresAt, err := strconv.ParseInt(parts[4], 10, 64)
+	orgID, err := strconv.ParseInt(parts[4], 10, 64)
+	if err != nil {
+		return Claims{}, err
+	}
+
+	expiresAt, err := strconv.ParseInt(parts[5], 10, 64)
 	if err != nil {
 		return Claims{}, err
 	}
@@ -70,6 +76,7 @@ func (manager *TokenManager) Parse(token string) (Claims, error) {
 		Username:  parts[1],
 		LoginType: parts[2],
 		TenantID:  parts[3],
+		OrgID:     orgID,
 	}, nil
 }
 

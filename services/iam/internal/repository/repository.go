@@ -54,6 +54,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureAccessCheckIndexes(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensureCurrentInstitutionSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.migrateLegacyInstitutionMenuCodes(context.Background()); err != nil {
 		return nil, err
 	}
@@ -162,6 +165,14 @@ func (repo *Repository) ensureAccessCheckIndexes(ctx context.Context) error {
 	return nil
 }
 
+func (repo *Repository) ensureCurrentInstitutionSchema(ctx context.Context) error {
+	return repo.ensureColumnExists(ctx, "sso_user", "current_inst_id", `
+		ALTER TABLE sso_user
+		ADD COLUMN current_inst_id BIGINT NULL DEFAULT NULL COMMENT '当前登录机构ID'
+		AFTER dept_id
+	`)
+}
+
 func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username string) (model.User, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT id, IFNULL(username, ''), IFNULL(password, ''), IFNULL(mobile, ''), IFNULL(nick_name, ''), user_type, dept_id, IFNULL(is_admin, 0)
@@ -213,6 +224,127 @@ func (repo *Repository) FindUserByID(ctx context.Context, userID int64) (model.U
 	return user, nil
 }
 
+func (repo *Repository) FindInstitutionLoginUser(ctx context.Context, identifier string, instID int64, userID *int64) (model.User, error) {
+	identifier = strings.TrimSpace(identifier)
+	query := `
+		SELECT su.id, IFNULL(su.username, ''), IFNULL(su.password, ''), IFNULL(su.mobile, ''), IFNULL(su.nick_name, ''), su.user_type, su.dept_id, IFNULL(su.is_admin, 0)
+		FROM sso_user su
+		JOIN inst_user iu ON iu.user_id = su.id
+		JOIN org_institution i ON i.id = iu.inst_id
+		WHERE su.del_flag = 0
+		  AND iu.del_flag = 0
+		  AND iu.disabled = 0
+		  AND iu.inst_id = ?
+		  AND i.del_flag = 0
+		  AND i.enabled = 1
+		  AND i.expire_end_time > NOW()
+		  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
+	`
+	args := []any{instID}
+	if userID != nil && *userID > 0 {
+		query += ` AND su.id = ?`
+		args = append(args, *userID)
+	}
+	if identifier != "" {
+		query += ` AND (
+			su.username = ?
+			OR IFNULL(iu.username, '') = ?
+			OR su.mobile = ?
+			OR IFNULL(iu.mobile, '') = ?
+		)`
+		args = append(args, identifier, identifier, identifier, identifier)
+	}
+	query += `
+		ORDER BY iu.is_admin DESC, iu.id ASC
+		LIMIT 1
+	`
+
+	var user model.User
+	var userType sql.NullInt64
+	var deptID sql.NullInt64
+	if err := repo.db.QueryRowContext(ctx, query, args...).Scan(&user.ID, &user.Username, &user.Password, &user.Mobile, &user.NickName, &userType, &deptID, &user.IsAdmin); err != nil {
+		return model.User{}, err
+	}
+	if userType.Valid {
+		value := int(userType.Int64)
+		user.UserType = &value
+	}
+	if deptID.Valid {
+		value := deptID.Int64
+		user.DeptID = &value
+	}
+	return user, nil
+}
+
+func (repo *Repository) ListInstitutionLoginOptions(ctx context.Context, identifier string) ([]model.InstitutionLoginOption, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return []model.InstitutionLoginOption{}, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT su.id,
+		       iu.inst_id,
+		       IFNULL(i.organ_name, ''),
+		       COALESCE(NULLIF(TRIM(iu.username), ''), NULLIF(TRIM(su.username), ''), ''),
+		       COALESCE(NULLIF(TRIM(iu.nick_name), ''), NULLIF(TRIM(su.nick_name), ''), ''),
+		       COALESCE(NULLIF(TRIM(iu.mobile), ''), NULLIF(TRIM(su.mobile), ''), ''),
+		       IFNULL(i.logo, ''),
+		       IFNULL(iu.is_admin, 0)
+		FROM sso_user su
+		JOIN inst_user iu ON iu.user_id = su.id
+		JOIN org_institution i ON i.id = iu.inst_id
+		WHERE su.del_flag = 0
+		  AND iu.del_flag = 0
+		  AND iu.disabled = 0
+		  AND i.del_flag = 0
+		  AND i.enabled = 1
+		  AND i.expire_end_time > NOW()
+		  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
+		  AND (
+			su.username = ?
+			OR IFNULL(iu.username, '') = ?
+			OR su.mobile = ?
+			OR IFNULL(iu.mobile, '') = ?
+		  )
+		ORDER BY iu.is_admin DESC, iu.inst_id ASC, iu.id ASC
+	`, identifier, identifier, identifier, identifier)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.InstitutionLoginOption, 0, 4)
+	for rows.Next() {
+		var item model.InstitutionLoginOption
+		if err := rows.Scan(&item.UserID, &item.InstID, &item.OrgName, &item.LoginName, &item.NickName, &item.Mobile, &item.Logo, &item.Admin); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return []model.InstitutionLoginOption{}, nil
+	}
+	return items, nil
+}
+
+func (repo *Repository) SetUserCurrentInstitution(ctx context.Context, userID int64, instID *int64) error {
+	var currentInst any
+	if instID != nil && *instID > 0 {
+		currentInst = *instID
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sso_user
+		SET current_inst_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, currentInst, userID)
+	return err
+}
+
 func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (model.ManageUserInfo, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT u.id, IFNULL(u.username, ''), IFNULL(u.mobile, ''), IFNULL(u.nick_name, ''), u.dept_id, IFNULL(d.depart_name, ''), IFNULL(u.is_admin, 0)
@@ -255,6 +387,14 @@ func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (mo
 }
 
 func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64) (model.InstUserInfo, error) {
+	instID, err := repo.ResolveActiveInstitutionID(ctx, userID)
+	if err != nil {
+		return model.InstUserInfo{}, err
+	}
+	return repo.GetInstitutionUserInfoByInst(ctx, userID, instID)
+}
+
+func (repo *Repository) GetInstitutionUserInfoByInst(ctx context.Context, userID, instID int64) (model.InstUserInfo, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT u.id, u.user_id, u.inst_id, u.nick_name, IFNULL(u.avatar, ''), i.organ_name, IFNULL(u.username, ''), IFNULL(u.mobile, ''),
 		       IFNULL(i.logo, ''), IFNULL(u.is_manage, 0), IFNULL(u.is_admin, 0), IFNULL(u.disabled, 0),
@@ -273,10 +413,11 @@ func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64
 		  AND i.del_flag = 0 AND i.enabled = 1
 		  AND i.expire_end_time > NOW()
 		  AND u.user_id = ?
+		  AND u.inst_id = ?
 		  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
 		ORDER BY u.id
 		LIMIT 1
-	`, userID)
+	`, userID, instID)
 
 	var info model.InstUserInfo
 	if err := row.Scan(
@@ -344,6 +485,41 @@ func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64
 }
 
 func (repo *Repository) ResolveActiveInstitutionID(ctx context.Context, userID int64) (int64, error) {
+	var currentInstID sql.NullInt64
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT current_inst_id
+		FROM sso_user
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, userID).Scan(&currentInstID); err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if currentInstID.Valid && currentInstID.Int64 > 0 {
+		var preferred sql.NullInt64
+		err := repo.db.QueryRowContext(ctx, `
+			SELECT u.inst_id
+			FROM inst_user u
+			JOIN org_institution i ON i.id = u.inst_id
+			WHERE u.user_id = ?
+			  AND u.inst_id = ?
+			  AND u.del_flag = 0
+			  AND u.disabled = 0
+			  AND i.del_flag = 0
+			  AND i.enabled = 1
+			  AND i.expire_end_time > NOW()
+			  AND i.organ_type != 2
+			  AND i.organ_type != 10
+			  AND i.organ_type != 11
+			LIMIT 1
+		`, userID, currentInstID.Int64).Scan(&preferred)
+		if err != nil && err != sql.ErrNoRows {
+			return 0, err
+		}
+		if err == nil && preferred.Valid && preferred.Int64 > 0 {
+			return preferred.Int64, nil
+		}
+	}
+
 	var instID sql.NullInt64
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT u.inst_id

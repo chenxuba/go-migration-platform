@@ -3,6 +3,8 @@ export interface LoginParams {
   password: string
   loginType?: number
   type?: 'account'
+  institutionId?: number
+  userId?: number
 }
 
 export interface LoginMobileParams {
@@ -10,6 +12,24 @@ export interface LoginMobileParams {
   code: string
   loginType?: number
   type: 'mobile'
+  institutionId?: number
+  userId?: number
+}
+
+export interface LoginInstitutionOptionParams {
+  identifier: string
+  loginType?: number
+}
+
+export interface LoginInstitutionOptionModel {
+  userId: number
+  instId: number
+  orgName: string
+  loginName: string
+  nickName: string
+  mobile: string
+  logo?: string
+  admin: boolean
 }
 
 export interface LoginResultModel {
@@ -24,6 +44,16 @@ export function loginApi(params: LoginParams | LoginMobileParams) {
     // customDev: true,
     // 是否开启全局请求loading
     loading: true,
+  })
+}
+
+export function loginInstitutionOptionsApi(params: LoginInstitutionOptionParams) {
+  return usePost<LoginInstitutionOptionModel[], LoginInstitutionOptionParams>('/sso/sso/loginInstitutions', {
+    ...params,
+    loginType: params.loginType ?? 2,
+  }, {
+    token: false,
+    loading: false,
   })
 }
 
