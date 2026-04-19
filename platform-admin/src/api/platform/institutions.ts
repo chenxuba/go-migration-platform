@@ -185,6 +185,12 @@ export interface InstitutionPermissionDetail {
   effectiveMenuIds?: number[]
 }
 
+export interface InstitutionLoginNameAvailability {
+  loginName: string
+  available: boolean
+  message?: string
+}
+
 export function pageInstitutionsApi(params: InstitutionPageParams) {
   return useGet<InstitutionItem[], InstitutionPageParams>('/api/v1/platform/institutions', params) as Promise<
     ResponseBody<InstitutionItem[]> & { data?: InstitutionPagePayload }
@@ -193,6 +199,14 @@ export function pageInstitutionsApi(params: InstitutionPageParams) {
 
 export function getInstitutionDetailApi(params: { id: number }) {
   return useGet<InstitutionDetail, { id: number }>('/api/v1/platform/institutions/detail', params)
+}
+
+export function checkInstitutionLoginNameApi(params: { loginName: string, institutionId?: number }) {
+  return useGet<InstitutionLoginNameAvailability, { loginName: string, institutionId?: number }>(
+    '/api/v1/platform/institutions/login-name-available',
+    params,
+    { silentError: true },
+  )
 }
 
 export function geocodeInstitutionApi(data: InstitutionGeocodePayload) {

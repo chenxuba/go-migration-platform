@@ -30,6 +30,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/qiniu/video-upload-token", handler.qiniuVideoUploadToken)
 	mux.HandleFunc("/api/v1/platform/institutions", handler.institutions)
 	mux.HandleFunc("/api/v1/platform/institutions/detail", handler.institutionDetail)
+	mux.HandleFunc("/api/v1/platform/institutions/login-name-available", handler.institutionLoginNameAvailable)
 	mux.HandleFunc("/api/v1/platform/institutions/geocode", handler.geocodeInstitution)
 	mux.HandleFunc("/api/v1/platform/institutions/create", handler.createInstitution)
 	mux.HandleFunc("/api/v1/platform/institutions/update", handler.updateInstitution)
@@ -191,6 +192,35 @@ func (handler *Handler) institutionDetail(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) institutionLoginNameAvailable(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	loginName := strings.TrimSpace(r.URL.Query().Get("loginName"))
+	if loginName == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "loginName is required", ctx.RequestID)
+		return
+	}
+
+	var institutionID *int64
+	if value := int64(parseInt(r.URL.Query().Get("institutionId"), 0)); value > 0 {
+		institutionID = &value
+	}
+
+	result, err := handler.service.CheckInstitutionLoginNameAvailable(loginName, institutionID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 

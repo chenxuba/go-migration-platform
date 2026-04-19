@@ -10,6 +10,7 @@ import type {
 import { CloseOutlined } from '@ant-design/icons-vue'
 import * as qiniu from 'qiniu-js'
 import {
+  checkInstitutionLoginNameApi,
   createInstitutionApi,
   geocodeInstitutionApi,
   getInstitutionDetailApi,
@@ -252,6 +253,38 @@ const openDurationOptionMap: Record<number, { value: string, label: string }[]> 
 }
 const openDurationOptions = computed(() => openDurationOptionMap[Number(formState.openType) || 2] || openDurationOptionMap[2])
 
+async function checkLoginNameAvailability(loginName: string) {
+  const trimmed = String(loginName || '').trim()
+  if (!trimmed) {
+    return { available: false, message: '请输入登录账号' }
+  }
+
+  const institutionID = Number(formState.id || props.institutionId || 0)
+  try {
+    const res = await checkInstitutionLoginNameApi({
+      loginName: trimmed,
+      institutionId: institutionID > 0 ? institutionID : undefined,
+    })
+    if (res.code !== 200 || !res.result) {
+      return {
+        available: false,
+        message: String(res.message || '登录账号校验失败，请稍后重试').trim(),
+      }
+    }
+
+    return {
+      available: !!res.result.available,
+      message: String(res.result.message || '').trim(),
+    }
+  }
+  catch (error: any) {
+    return {
+      available: false,
+      message: String(error?.response?.data?.message || error?.message || '登录账号校验失败，请稍后重试').trim(),
+    }
+  }
+}
+
 function resolveOpenDurationValue(openType: number, preferred?: string) {
   const options = openDurationOptionMap[openType] || []
   const matched = options.find(item => item.value === String(preferred || '').trim())
@@ -260,7 +293,26 @@ function resolveOpenDurationValue(openType: number, preferred?: string) {
 
 const rules: Record<string, Rule[]> = {
   organName: [{ required: true, message: '请输入机构名称', trigger: 'blur' }],
-  loginName: [{ required: true, message: '请输入登录账号', trigger: 'blur' }],
+  loginName: [
+    { required: true, message: '请输入登录账号', trigger: 'blur' },
+    {
+      trigger: 'blur',
+      validator: async (_rule, value) => {
+        if (isEdit.value)
+          return Promise.resolve()
+
+        const loginName = String(value || '').trim()
+        if (!loginName)
+          return Promise.resolve()
+
+        const result = await checkLoginNameAvailability(loginName)
+        if (result.available)
+          return Promise.resolve()
+
+        return Promise.reject(new Error(result.message || '登录账号已存在，请更换'))
+      },
+    },
+  ],
   mobile: [
     { required: true, message: '请输入联系人电话', trigger: 'blur' },
     { pattern: /^\d{11}$/, message: '联系电话需为 11 位手机号', trigger: 'blur' },
@@ -793,7 +845,7 @@ async function submitForm() {
 
                   <a-col :xs="24" :md="12">
                     <a-form-item label="登录账号：" name="loginName">
-                      <a-input v-model:value="formState.loginName" :maxlength="22" placeholder="请输入登录账号" />
+                      <a-input v-model:value="formState.loginName" :maxlength="22" :disabled="isEdit" placeholder="请输入登录账号" />
                     </a-form-item>
                   </a-col>
 

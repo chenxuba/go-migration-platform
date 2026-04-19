@@ -13,10 +13,15 @@ import (
 	"github.com/google/uuid"
 	"go-migration-platform/pkg/institutionmenu"
 	"go-migration-platform/services/platform/internal/model"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Repository struct {
 	db *sql.DB
+}
+
+type loginNameQueryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 type rawMenu struct {
@@ -30,6 +35,9 @@ type rawMenu struct {
 	GroupCode string
 	Introduce string
 }
+
+// defaultInstitutionBootstrapPassword is the initial login password for the institution admin (login_name).
+const defaultInstitutionBootstrapPassword = "123456"
 
 var defaultInstitutionVersionModules = []struct {
 	Name  string
@@ -998,6 +1006,222 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 	return detail, nil
 }
 
+func (repo *Repository) CheckInstitutionLoginNameAvailable(ctx context.Context, loginName string, excludeInstitutionID *int64) (model.InstitutionLoginNameAvailability, error) {
+	available, message, err := repo.checkInstitutionLoginNameAvailable(ctx, repo.db, loginName, excludeInstitutionID)
+	if err != nil {
+		return model.InstitutionLoginNameAvailability{}, err
+	}
+	return model.InstitutionLoginNameAvailability{
+		LoginName: strings.TrimSpace(loginName),
+		Available: available,
+		Message:   message,
+	}, nil
+}
+
+func (repo *Repository) ensureInstitutionLoginNameAvailableTx(ctx context.Context, tx *sql.Tx, loginName string, excludeInstitutionID *int64) error {
+	available, message, err := repo.checkInstitutionLoginNameAvailable(ctx, tx, loginName, excludeInstitutionID)
+	if err != nil {
+		return err
+	}
+	if available {
+		return nil
+	}
+	if strings.TrimSpace(message) == "" {
+		message = "登录账号已存在，请更换"
+	}
+	return fmt.Errorf("%s", message)
+}
+
+func (repo *Repository) checkInstitutionLoginNameAvailable(ctx context.Context, queryer loginNameQueryer, loginName string, excludeInstitutionID *int64) (bool, string, error) {
+	loginName = strings.TrimSpace(loginName)
+	if loginName == "" {
+		return false, "登录账号不能为空", nil
+	}
+
+	findInstitutionSQL := `
+		SELECT id
+		FROM org_institution
+		WHERE del_flag = 0 AND login_name = ?
+	`
+	findInstitutionArgs := []any{loginName}
+	if excludeInstitutionID != nil && *excludeInstitutionID > 0 {
+		findInstitutionSQL += " AND id <> ?"
+		findInstitutionArgs = append(findInstitutionArgs, *excludeInstitutionID)
+	}
+	findInstitutionSQL += " ORDER BY id LIMIT 1"
+
+	var occupiedInstitutionID int64
+	err := queryer.QueryRowContext(ctx, findInstitutionSQL, findInstitutionArgs...).Scan(&occupiedInstitutionID)
+	if err != nil && err != sql.ErrNoRows {
+		return false, "", err
+	}
+	if err == nil {
+		return false, "登录账号已存在，请更换", nil
+	}
+
+	var userID int64
+	err = queryer.QueryRowContext(ctx, `
+		SELECT id
+		FROM sso_user
+		WHERE del_flag = 0 AND username = ?
+		ORDER BY id
+		LIMIT 1
+	`, loginName).Scan(&userID)
+	if err != nil && err != sql.ErrNoRows {
+		return false, "", err
+	}
+	if err == sql.ErrNoRows {
+		return true, "", nil
+	}
+
+	if excludeInstitutionID != nil && *excludeInstitutionID > 0 {
+		currentInstitutionID := *excludeInstitutionID
+
+		var sameInstitutionCount int
+		if err := queryer.QueryRowContext(ctx, `
+			SELECT COUNT(1)
+			FROM inst_user
+			WHERE del_flag = 0 AND user_id = ? AND inst_id = ?
+		`, userID, currentInstitutionID).Scan(&sameInstitutionCount); err != nil {
+			return false, "", err
+		}
+
+		var otherInstitutionCount int
+		if err := queryer.QueryRowContext(ctx, `
+			SELECT COUNT(1)
+			FROM inst_user
+			WHERE del_flag = 0 AND user_id = ? AND inst_id <> ?
+		`, userID, currentInstitutionID).Scan(&otherInstitutionCount); err != nil {
+			return false, "", err
+		}
+
+		if sameInstitutionCount > 0 && otherInstitutionCount == 0 {
+			return true, "", nil
+		}
+	}
+
+	return false, "登录账号已存在，请更换", nil
+}
+
+// ensureInstitutionBootstrapAdminTx creates the org-scoped admin role, SSO user (login_name), inst_user link,
+// and assigns the admin role. The SSO password is always set to defaultInstitutionBootstrapPassword ("123456").
+func (repo *Repository) ensureInstitutionBootstrapAdminTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	institutionID int64,
+	loginName, mobile, organName, principal string,
+) error {
+	loginName = strings.TrimSpace(loginName)
+	if loginName == "" {
+		return nil
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(defaultInstitutionBootstrapPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	hashStr := string(hash)
+	mobile = strings.TrimSpace(mobile)
+	nick := strings.TrimSpace(principal)
+	if nick == "" {
+		nick = strings.TrimSpace(organName)
+	}
+	if nick == "" {
+		nick = loginName
+	}
+
+	var roleID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM sso_role
+		WHERE org_id = ? AND role_type = 2 AND is_admin = 1 AND del_flag = 0
+		LIMIT 1
+	`, institutionID).Scan(&roleID)
+	if err == sql.ErrNoRows {
+		res, insErr := tx.ExecContext(ctx, `
+			INSERT INTO sso_role (uuid, version, role_name, description, org_id, role_type, is_admin, is_default, del_flag, create_time, update_time)
+			VALUES (?, 0, '机构管理员', '', ?, 2, 1, 0, 0, NOW(), NOW())
+		`, uuid.NewString(), institutionID)
+		if insErr != nil {
+			return insErr
+		}
+		newID, insErr := res.LastInsertId()
+		if insErr != nil {
+			return insErr
+		}
+		roleID = newID
+	} else if err != nil {
+		return err
+	}
+
+	var userID int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id FROM sso_user WHERE del_flag = 0 AND username = ? LIMIT 1
+	`, loginName).Scan(&userID)
+	if err == sql.ErrNoRows {
+		userType := 1
+		res, insErr := tx.ExecContext(ctx, `
+			INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, is_admin, del_flag, create_time)
+			VALUES (?, 0, ?, ?, ?, '', ?, ?, 1, 0, NOW())
+		`, uuid.NewString(), loginName, hashStr, mobile, nick, userType)
+		if insErr != nil {
+			return insErr
+		}
+		newUID, insErr := res.LastInsertId()
+		if insErr != nil {
+			return insErr
+		}
+		userID = newUID
+	} else if err != nil {
+		return err
+	} else {
+		var otherCount int
+		if qErr := tx.QueryRowContext(ctx, `
+			SELECT COUNT(1) FROM inst_user WHERE del_flag = 0 AND user_id = ? AND inst_id <> ?
+		`, userID, institutionID).Scan(&otherCount); qErr != nil {
+			return qErr
+		}
+		if otherCount > 0 {
+			return fmt.Errorf("登录名 %s 已被其他机构占用", loginName)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE sso_user
+			SET password = ?,
+			    mobile = CASE WHEN NULLIF(?, '') IS NULL THEN mobile ELSE ? END,
+			    nick_name = CASE WHEN NULLIF(?, '') IS NULL THEN nick_name ELSE ? END
+			WHERE id = ? AND del_flag = 0
+		`, hashStr, mobile, mobile, nick, nick, userID); err != nil {
+			return err
+		}
+	}
+
+	var instUserCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(1) FROM inst_user WHERE del_flag = 0 AND user_id = ? AND inst_id = ?
+	`, userID, institutionID).Scan(&instUserCount); err != nil {
+		return err
+	}
+	if instUserCount == 0 {
+		userType := 1
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO inst_user (uuid, version, user_id, inst_id, nick_name, username, avatar, mobile, is_admin, disabled, user_type, activated_status, del_flag, create_time)
+			VALUES (?, 0, ?, ?, ?, ?, '', ?, 1, 0, ?, 0, 0, NOW())
+		`, uuid.NewString(), userID, institutionID, nick, loginName, mobile, userType); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_user_role (user_id, role_id)
+		SELECT ?, ?
+		FROM DUAL
+		WHERE NOT EXISTS (SELECT 1 FROM sso_user_role WHERE user_id = ? AND role_id = ?)
+	`, userID, roleID, userID, roleID); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (repo *Repository) CreateInstitution(ctx context.Context, input model.InstitutionMutation, creatorID *int64) (int64, error) {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1008,6 +1232,10 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 			_ = tx.Rollback()
 		}
 	}()
+
+	if err = repo.ensureInstitutionLoginNameAvailableTx(ctx, tx, strings.TrimSpace(input.LoginName), nil); err != nil {
+		return 0, err
+	}
 
 	nextCode, err := repo.nextInstitutionCode(ctx, tx)
 	if err != nil {
@@ -1085,6 +1313,18 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		}
 	}
 
+	if err = repo.ensureInstitutionBootstrapAdminTx(
+		ctx,
+		tx,
+		id,
+		strings.TrimSpace(input.LoginName),
+		strings.TrimSpace(input.Mobile),
+		strings.TrimSpace(input.OrganName),
+		strings.TrimSpace(input.Principal),
+	); err != nil {
+		return 0, err
+	}
+
 	if moduleID, lookupErr := repo.findInstitutionVersionModuleIDTx(ctx, tx, openType); lookupErr != nil {
 		return 0, lookupErr
 	} else if moduleID > 0 {
@@ -1135,20 +1375,27 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		}
 	}()
 
+	var currentLoginName string
 	var currentOpenType sql.NullInt64
 	var currentOpenDuration sql.NullString
 	var currentExpireStart sql.NullTime
 	var currentExpireEnd sql.NullTime
 	if err = tx.QueryRowContext(ctx, `
-		SELECT IFNULL(open_type, 2),
+		SELECT IFNULL(login_name, ''),
+		       IFNULL(open_type, 2),
 		       IFNULL(open_duration, ''),
 		       expire_start_time,
 		       expire_end_time
 		FROM org_institution
 		WHERE id = ? AND del_flag = 0
 		LIMIT 1
-	`, *input.ID).Scan(&currentOpenType, &currentOpenDuration, &currentExpireStart, &currentExpireEnd); err != nil {
+	`, *input.ID).Scan(&currentLoginName, &currentOpenType, &currentOpenDuration, &currentExpireStart, &currentExpireEnd); err != nil {
 		return err
+	}
+	currentLoginName = strings.TrimSpace(currentLoginName)
+	requestedLoginName := strings.TrimSpace(input.LoginName)
+	if requestedLoginName != "" && requestedLoginName != currentLoginName {
+		return fmt.Errorf("编辑机构不支持修改登录账号")
 	}
 
 	currentType := institutionStoredOpenType(currentOpenType)
@@ -1199,7 +1446,7 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 		WHERE id = ? AND del_flag = 0
 	`,
 		strings.TrimSpace(input.OrganName),
-		strings.TrimSpace(input.LoginName),
+		currentLoginName,
 		strings.TrimSpace(input.Mobile),
 		currentType,
 		currentDuration,
@@ -1230,6 +1477,68 @@ func (repo *Repository) UpdateInstitution(ctx context.Context, input model.Insti
 	)
 	if err != nil {
 		return err
+	}
+
+	updatedMobile := strings.TrimSpace(input.Mobile)
+	if updatedMobile != "" {
+		var loginUserID int64
+		err = tx.QueryRowContext(ctx, `
+			SELECT iu.user_id
+			FROM inst_user iu
+			JOIN sso_user su ON su.id = iu.user_id AND su.del_flag = 0
+			WHERE iu.inst_id = ?
+			  AND iu.del_flag = 0
+			  AND su.username = ?
+			ORDER BY iu.is_admin DESC, iu.id ASC
+			LIMIT 1
+		`, *input.ID, currentLoginName).Scan(&loginUserID)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if err == nil && loginUserID > 0 {
+			var conflictEmployeeCount int
+			if err = tx.QueryRowContext(ctx, `
+				SELECT COUNT(1)
+				FROM inst_user iu
+				LEFT JOIN sso_user su ON su.id = iu.user_id AND su.del_flag = 0
+				WHERE iu.inst_id = ?
+				  AND iu.del_flag = 0
+				  AND iu.is_admin = 0
+				  AND iu.user_id <> ?
+				  AND (
+				      iu.mobile = ?
+				      OR IFNULL(su.mobile, '') = ?
+				  )
+			`, *input.ID, loginUserID, updatedMobile, updatedMobile).Scan(&conflictEmployeeCount); err != nil {
+				return err
+			}
+			if conflictEmployeeCount > 0 {
+				return fmt.Errorf("该手机号已被本机构员工使用，不能设置为机构管理员手机号")
+			}
+
+			if _, err = tx.ExecContext(ctx, `
+				UPDATE inst_user
+				SET mobile = ?,
+				    update_time = NOW()
+				WHERE inst_id = ?
+				  AND user_id = ?
+				  AND del_flag = 0
+			`, updatedMobile, *input.ID, loginUserID); err != nil {
+				return err
+			}
+
+			if _, err = tx.ExecContext(ctx, `
+				UPDATE sso_user
+				SET mobile = ?,
+				    update_time = NOW()
+				WHERE id = ?
+				  AND del_flag = 0
+			`, updatedMobile, loginUserID); err != nil {
+				return err
+			}
+		} else if err == sql.ErrNoRows {
+			return fmt.Errorf("机构登录账号未绑定到机构管理员，无法同步管理员手机号")
+		}
 	}
 
 	if input.Profile != nil {

@@ -145,6 +145,10 @@ func (svc *Service) GetInstitutionDetail(id int64) (model.InstitutionDetail, err
 	return svc.repo.GetInstitutionDetail(context.Background(), id)
 }
 
+func (svc *Service) CheckInstitutionLoginNameAvailable(loginName string, institutionID *int64) (model.InstitutionLoginNameAvailability, error) {
+	return svc.repo.CheckInstitutionLoginNameAvailable(context.Background(), loginName, institutionID)
+}
+
 func (svc *Service) CreateInstitution(input model.InstitutionMutation, creatorID *int64) (int64, error) {
 	return svc.repo.CreateInstitution(context.Background(), input, creatorID)
 }

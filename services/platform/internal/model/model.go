@@ -208,6 +208,12 @@ type InstitutionMutation struct {
 	Profile      *InstitutionProfile `json:"profile,omitempty"`
 }
 
+type InstitutionLoginNameAvailability struct {
+	LoginName string `json:"loginName"`
+	Available bool   `json:"available"`
+	Message   string `json:"message,omitempty"`
+}
+
 type InstitutionStatusMutation struct {
 	ID      *int64 `json:"id"`
 	Enabled *bool  `json:"enabled"`
