@@ -143,21 +143,20 @@ type DepartTreeNode struct {
 }
 
 type Menu struct {
-	ID                int64   `json:"id"`
-	MenuName          string  `json:"menuName"`
-	Icon              string  `json:"icon,omitempty"`
-	MenuCode          string  `json:"menuCode,omitempty"`
-	MenuType          *int    `json:"menuType,omitempty"`
-	OwnType           *int    `json:"ownType,omitempty"`
-	PID               int64   `json:"pid"`
-	Sort              *int    `json:"sort,omitempty"`
-	Weight            *int    `json:"weight,omitempty"`
-	GroupCode         string  `json:"groupCode,omitempty"`
-	Remark            string  `json:"remark,omitempty"`
-	Introduce         string  `json:"introduce,omitempty"`
-	AccessDeniedImage string  `json:"accessDeniedImage,omitempty"`
-	Level             *int    `json:"level,omitempty"`
-	DefaultRoleIDs    []int64 `json:"defaultRoleIds,omitempty"`
+	ID                int64  `json:"id"`
+	MenuName          string `json:"menuName"`
+	Icon              string `json:"icon,omitempty"`
+	MenuCode          string `json:"menuCode,omitempty"`
+	MenuType          *int   `json:"menuType,omitempty"`
+	OwnType           *int   `json:"ownType,omitempty"`
+	PID               int64  `json:"pid"`
+	Sort              *int   `json:"sort,omitempty"`
+	Weight            *int   `json:"weight,omitempty"`
+	GroupCode         string `json:"groupCode,omitempty"`
+	Remark            string `json:"remark,omitempty"`
+	Introduce         string `json:"introduce,omitempty"`
+	AccessDeniedImage string `json:"accessDeniedImage,omitempty"`
+	Level             *int   `json:"level,omitempty"`
 }
 
 type MenuTreeNode struct {

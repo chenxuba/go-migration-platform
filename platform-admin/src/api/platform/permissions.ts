@@ -9,7 +9,6 @@ export interface PermissionMenuItem {
   introduce?: string
   accessDeniedImage?: string
   ownType?: number
-  defaultRoleIds?: number[]
   children?: PermissionMenuItem[]
 }
 
@@ -24,7 +23,6 @@ export interface PermissionMutationPayload {
   introduce?: string
   accessDeniedImage?: string
   ownType?: number
-  defaultRoleIds?: number[]
 }
 
 export function getPermissionTreeApi(params: { ownType?: number, menuName?: string } = {}) {

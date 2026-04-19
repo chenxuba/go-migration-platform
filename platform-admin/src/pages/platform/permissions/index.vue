@@ -210,23 +210,6 @@
               </a-form-item>
             </div>
 
-            <div v-if="showDefaultRoleSyncField" class="permission-form-grid__item permission-form-grid__item--full">
-              <a-form-item label="同步默认角色">
-                <a-select
-                  v-model:value="formData.defaultRoleIds"
-                  mode="multiple"
-                  allow-clear
-                  show-search
-                  option-filter-prop="label"
-                  :options="defaultRoleOptions"
-                  :loading="defaultRolesLoading"
-                  placeholder="可选：保存时同步到这些默认角色"
-                />
-                <div class="permission-form-help">
-                  保存时会按当前勾选结果覆盖同步：已勾选的默认角色会新增或保留该权限，未勾选的会移除；超级管理员始终自动同步，无需勾选，也不会重复追加。
-                </div>
-              </a-form-item>
-            </div>
           </div>
         </a-form>
       </div>
@@ -272,10 +255,6 @@ import {
   type PermissionMenuItem,
   type PermissionMutationPayload,
 } from '@/api/platform/permissions'
-import {
-  getDefaultRoleTemplatesApi,
-  type DefaultRoleTemplateItem,
-} from '@/api/platform/default-roles'
 import { getQiniuToken } from '@/api/qiniu'
 import messageService from '@/utils/messageService'
 import { AccessEnum } from '~@/utils/constant'
@@ -311,8 +290,6 @@ const keywordInput = ref('')
 const searchKeyword = ref('')
 const expandedRowKeys = ref<number[]>([])
 const loading = ref(false)
-const defaultRolesLoading = ref(false)
-const defaultRoleOptions = ref<{ label: string, value: number }[]>([])
 
 const currentPortal = ref<PortalEnum>(PortalEnum.INSTITUTION)
 const portalOptions = [
@@ -336,7 +313,6 @@ const formData = reactive<PermissionMutationPayload>({
   introduce: '',
   accessDeniedImage: '',
   ownType: PortalEnum.INSTITUTION,
-  defaultRoleIds: [],
 })
 
 const columns: TableColumnsType<PermissionRecord> = [
@@ -684,8 +660,6 @@ const showAccessDeniedImageField = computed(() => {
   return parentCode.startsWith('page:') && menuName.includes('页面功能')
 })
 
-const showDefaultRoleSyncField = computed(() => currentPortal.value === PortalEnum.INSTITUTION)
-
 const collectExpandableIds = (list: PermissionRecord[]): number[] => {
   const ids: number[] = []
   list.forEach((item) => {
@@ -732,56 +706,12 @@ const loadTree = async () => {
   }
 }
 
-const mapDefaultRoleOption = (item: DefaultRoleTemplateItem) => {
-  const roleId = Number(item.roleId || 0)
-  if (roleId <= 0)
-    return undefined
-  return {
-    label: String(item.roleName || '').trim(),
-    value: roleId,
-  }
-}
-
-const loadDefaultRoleOptions = async () => {
-  if (currentPortal.value !== PortalEnum.INSTITUTION) {
-    defaultRoleOptions.value = []
-    return
-  }
-
-  defaultRolesLoading.value = true
-  try {
-    const res = await getDefaultRoleTemplatesApi({ roleType: currentPortal.value })
-    if (res.code !== 200) {
-      messageService.error(res.message || '加载默认角色失败')
-      defaultRoleOptions.value = []
-      return
-    }
-    defaultRoleOptions.value = (Array.isArray(res.result) ? res.result : [])
-      .map(mapDefaultRoleOption)
-      .filter((item): item is { label: string, value: number } => Boolean(item))
-  }
-  catch (error: any) {
-    messageService.error(error?.message || '加载默认角色失败')
-    defaultRoleOptions.value = []
-  }
-  finally {
-    defaultRolesLoading.value = false
-  }
-}
-
-const loadPageData = async () => {
-  await Promise.all([
-    loadTree(),
-    loadDefaultRoleOptions(),
-  ])
-}
-
 const handlePortalChange = async (value: number) => {
   currentPortal.value = value as PortalEnum
   keywordInput.value = ''
   searchKeyword.value = ''
   expandedRowKeys.value = []
-  await loadPageData()
+  await loadTree()
 }
 
 const resetForm = () => {
@@ -795,7 +725,6 @@ const resetForm = () => {
   formData.introduce = ''
   formData.accessDeniedImage = ''
   formData.ownType = currentPortal.value
-  formData.defaultRoleIds = []
   parentName.value = '根菜单'
 }
 
@@ -845,7 +774,6 @@ const openDrawer = (mode: FormMode, node?: PermissionRecord) => {
     formData.introduce = node.introduce || ''
     formData.accessDeniedImage = node.accessDeniedImage || ''
     formData.ownType = Number(node.ownType || currentPortal.value)
-    formData.defaultRoleIds = Array.isArray(node.defaultRoleIds) ? [...node.defaultRoleIds] : []
   }
   formMode.value = mode
   drawerVisible.value = true
@@ -930,14 +858,6 @@ const clearAccessDeniedImage = () => {
   formData.accessDeniedImage = ''
 }
 
-const normalizeSelectedDefaultRoleIDs = (values: Array<number | string> = []) => {
-  return Array.from(new Set(
-    values
-      .map(item => Number(item))
-      .filter(item => Number.isFinite(item) && item > 0),
-  )).sort((a, b) => a - b)
-}
-
 const handleSubmit = async () => {
   if (!String(formData.menuName || '').trim() || !String(formData.menuCode || '').trim()) {
     messageService.error('请填写权限名称和编码')
@@ -965,9 +885,6 @@ const handleSubmit = async () => {
     introduce: String(formData.introduce || '').trim(),
     accessDeniedImage: String(formData.accessDeniedImage || '').trim(),
     ownType: currentPortal.value,
-    defaultRoleIds: showDefaultRoleSyncField.value
-      ? normalizeSelectedDefaultRoleIDs(formData.defaultRoleIds || [])
-      : undefined,
   }
 
   try {
@@ -1044,7 +961,7 @@ watch(
 )
 
 onMounted(() => {
-  loadPageData()
+  loadTree()
 })
 </script>
 
@@ -1165,13 +1082,6 @@ onMounted(() => {
 
 .permission-form :deep(.ant-form-item) {
   margin-bottom: 16px;
-}
-
-.permission-form-help {
-  margin-top: 6px;
-  color: #8c8c8c;
-  font-size: 12px;
-  line-height: 20px;
 }
 
 .permission-form-modal__footer {
