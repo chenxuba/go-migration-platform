@@ -5303,7 +5303,6 @@ func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, inst
 	ids := make([]int64, 0, len(items))
 	itemIndex := make(map[int64][]int, len(items))
 	metas := make([]teachingScheduleRollCallMeta, 0, len(items))
-	hasGroupClass := false
 	for index, item := range items {
 		id, err := strconv.ParseInt(strings.TrimSpace(item.ID), 10, 64)
 		if err != nil || id <= 0 {
@@ -5320,9 +5319,6 @@ func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, inst
 				StudentID:  studentID,
 				StartAt:    item.StartAt,
 			})
-			if item.ClassType == model.TeachingClassTypeNormal && classID > 0 {
-				hasGroupClass = true
-			}
 		}
 		itemIndex[id] = append(itemIndex[id], index)
 	}
@@ -5330,17 +5326,6 @@ func (repo *Repository) FillTeachingScheduleCallStatus(ctx context.Context, inst
 		for i := range items {
 			items[i].CallStatus = 1
 			items[i].CallStatusText = teachingScheduleCallStatusText(1)
-		}
-		return nil
-	}
-
-	if !hasGroupClass {
-		for _, id := range ids {
-			for _, index := range itemIndex[id] {
-				status := normalizeTeachingScheduleCallStatus(items[index].CallStatus)
-				items[index].CallStatus = status
-				items[index].CallStatusText = teachingScheduleCallStatusText(status)
-			}
 		}
 		return nil
 	}
