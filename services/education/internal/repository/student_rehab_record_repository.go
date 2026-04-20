@@ -174,6 +174,28 @@ func parseTemplateAssignmentID(raw string) int64 {
 	return value
 }
 
+func parseStudentRehabRecordSnapshot(template model.RehabRecordTemplateMeta, contentJSON, updatedStaffName string, updatedTime sql.NullTime) (*model.StudentRehabRecordSnapshot, error) {
+	text := strings.TrimSpace(contentJSON)
+	if text == "" {
+		return nil, nil
+	}
+
+	var content model.RehabRecordContent
+	if err := json.Unmarshal([]byte(text), &content); err != nil {
+		return nil, err
+	}
+
+	snapshot := &model.StudentRehabRecordSnapshot{
+		Template:         template,
+		Content:          content,
+		UpdatedStaffName: strings.TrimSpace(updatedStaffName),
+	}
+	if updatedTime.Valid {
+		snapshot.UpdatedTime = updatedTime.Time.Format("2006-01-02 15:04:05")
+	}
+	return snapshot, nil
+}
+
 func (repo *Repository) GetStudentRehabRecordDetail(ctx context.Context, instID int64, query model.StudentRehabRecordQueryDTO) (model.StudentRehabRecordDetailResult, error) {
 	studentTeachingRecordID, err := strconv.ParseInt(strings.TrimSpace(query.StudentTeachingRecordID), 10, 64)
 	if err != nil || studentTeachingRecordID <= 0 {
@@ -192,6 +214,9 @@ func (repo *Repository) GetStudentRehabRecordDetail(ctx context.Context, instID 
 		publishedContentJSON sql.NullString
 		publishedTime        sql.NullTime
 		publishedStaffName   string
+		studentID            int64
+		lessonID             int64
+		startTime            sql.NullTime
 	)
 
 	if err := repo.db.QueryRowContext(ctx, `
@@ -206,7 +231,10 @@ func (repo *Repository) GetStudentRehabRecordDetail(ctx context.Context, instID 
 			IFNULL(srr.draft_saved_staff_name, ''),
 			IFNULL(srr.published_content_json, ''),
 			srr.published_time,
-			IFNULL(srr.published_staff_name, '')
+			IFNULL(srr.published_staff_name, ''),
+			IFNULL(str.student_id, 0),
+			IFNULL(str.lesson_id, 0),
+			str.start_time
 		FROM student_teaching_record str
 		LEFT JOIN student_rehab_record srr
 			ON srr.inst_id = str.inst_id
@@ -228,6 +256,9 @@ func (repo *Repository) GetStudentRehabRecordDetail(ctx context.Context, instID 
 		&publishedContentJSON,
 		&publishedTime,
 		&publishedStaffName,
+		&studentID,
+		&lessonID,
+		&startTime,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.StudentRehabRecordDetailResult{}, errors.New("未找到对应的康复记录学员")
@@ -253,34 +284,97 @@ func (repo *Repository) GetStudentRehabRecordDetail(ctx context.Context, instID 
 	}
 
 	result := model.StudentRehabRecordDetailResult{}
-	if text := strings.TrimSpace(draftContentJSON.String); text != "" {
-		var content model.RehabRecordContent
-		if err := json.Unmarshal([]byte(text), &content); err != nil {
-			return model.StudentRehabRecordDetailResult{}, err
-		}
+	if draft, err := parseStudentRehabRecordSnapshot(template, draftContentJSON.String, draftSavedStaffName, draftSavedTime); err != nil {
+		return model.StudentRehabRecordDetailResult{}, err
+	} else if draft != nil {
 		result.HasDraft = true
-		result.Draft = &model.StudentRehabRecordSnapshot{
-			Template:         template,
-			Content:          content,
-			UpdatedStaffName: strings.TrimSpace(draftSavedStaffName),
-		}
-		if draftSavedTime.Valid {
-			result.Draft.UpdatedTime = draftSavedTime.Time.Format("2006-01-02 15:04:05")
-		}
+		result.Draft = draft
 	}
-	if text := strings.TrimSpace(publishedContentJSON.String); text != "" {
-		var content model.RehabRecordContent
-		if err := json.Unmarshal([]byte(text), &content); err != nil {
+	if published, err := parseStudentRehabRecordSnapshot(template, publishedContentJSON.String, publishedStaffName, publishedTime); err != nil {
+		return model.StudentRehabRecordDetailResult{}, err
+	} else if published != nil {
+		result.HasPublished = true
+		result.Published = published
+	}
+
+	if studentID > 0 && lessonID > 0 && startTime.Valid {
+		var (
+			previousContentJSON    sql.NullString
+			previousPublishedTime  sql.NullTime
+			previousStaffName      string
+			previousTemplateCode   string
+			previousTemplateName   string
+			previousTemplateScope  string
+			previousTemplateVerion int
+			previousAssignmentID   int64
+		)
+
+		err := repo.db.QueryRowContext(ctx, `
+			SELECT
+				IFNULL(srr.template_code, ''),
+				IFNULL(srr.template_name, ''),
+				IFNULL(srr.template_version, 0),
+				IFNULL(srr.template_scope, ''),
+				IFNULL(srr.template_assignment_id, 0),
+				IFNULL(srr.published_content_json, ''),
+				srr.published_time,
+				IFNULL(srr.published_staff_name, '')
+			FROM student_rehab_record srr
+			INNER JOIN student_teaching_record str
+				ON str.inst_id = srr.inst_id
+			   AND str.id = srr.student_teaching_record_id
+			   AND str.del_flag = 0
+			WHERE srr.inst_id = ?
+			  AND srr.del_flag = 0
+			  AND str.student_id = ?
+			  AND IFNULL(str.lesson_id, 0) = ?
+			  AND str.id <> ?
+			  AND LENGTH(TRIM(IFNULL(srr.published_content_json, ''))) > 0
+			  AND (
+				str.start_time < ?
+				OR (str.start_time = ? AND str.id < ?)
+			  )
+			ORDER BY str.start_time DESC, srr.published_time DESC, str.id DESC
+			LIMIT 1
+		`, instID, studentID, lessonID, studentTeachingRecordID, startTime.Time, startTime.Time, studentTeachingRecordID).Scan(
+			&previousTemplateCode,
+			&previousTemplateName,
+			&previousTemplateVerion,
+			&previousTemplateScope,
+			&previousAssignmentID,
+			&previousContentJSON,
+			&previousPublishedTime,
+			&previousStaffName,
+		)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return model.StudentRehabRecordDetailResult{}, err
 		}
-		result.HasPublished = true
-		result.Published = &model.StudentRehabRecordSnapshot{
-			Template:         template,
-			Content:          content,
-			UpdatedStaffName: strings.TrimSpace(publishedStaffName),
-		}
-		if publishedTime.Valid {
-			result.Published.UpdatedTime = publishedTime.Time.Format("2006-01-02 15:04:05")
+		if err == nil {
+			previousTemplate := defaultStudentRehabRecordTemplate()
+			if strings.TrimSpace(previousTemplateCode) != "" {
+				previousTemplate.TemplateCode = strings.TrimSpace(previousTemplateCode)
+			}
+			if strings.TrimSpace(previousTemplateName) != "" {
+				previousTemplate.TemplateName = strings.TrimSpace(previousTemplateName)
+			}
+			if previousTemplateVerion > 0 {
+				previousTemplate.TemplateVersion = previousTemplateVerion
+			}
+			if strings.TrimSpace(previousTemplateScope) != "" {
+				previousTemplate.TemplateScope = strings.TrimSpace(previousTemplateScope)
+			}
+			if previousAssignmentID > 0 {
+				previousTemplate.TemplateAssignmentID = strconv.FormatInt(previousAssignmentID, 10)
+			}
+
+			previousPublished, err := parseStudentRehabRecordSnapshot(previousTemplate, previousContentJSON.String, previousStaffName, previousPublishedTime)
+			if err != nil {
+				return model.StudentRehabRecordDetailResult{}, err
+			}
+			if previousPublished != nil {
+				result.HasPreviousPublished = true
+				result.PreviousPublished = previousPublished
+			}
 		}
 	}
 	return result, nil

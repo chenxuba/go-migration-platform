@@ -75,6 +75,7 @@ const trainingModules = ref<TrainingModuleItem[]>([])
 const loading = ref(false)
 const submittingAction = ref<'draft' | 'publish' | ''>('')
 const loadSequence = ref(0)
+const previousPublishedSnapshot = ref<StudentRehabRecordSnapshot | null>(null)
 
 const formModel = reactive({
   studentName: '',
@@ -181,6 +182,9 @@ const drawerTitle = computed(() => {
   return '康复训练记录'
 })
 const publishButtonText = computed(() => isEditMode.value ? '更新记录' : '发布记录')
+const canReusePreviousPublished = computed(() => {
+  return !isReadonly.value && Boolean(previousPublishedSnapshot.value?.content)
+})
 const signatureImageSrc = computed(() => {
   const value = normalizeTextValue(formModel.parentSignature)
   if (!value)
@@ -236,6 +240,17 @@ function applyContent(content?: Partial<RehabRecordContent> | null) {
 
 function applySnapshot(snapshot?: StudentRehabRecordSnapshot | null) {
   applyContent(snapshot?.content)
+}
+
+function applyReusableContent(snapshot?: StudentRehabRecordSnapshot | null) {
+  const content = snapshot?.content
+  if (!content)
+    return
+
+  formModel.trainingTarget = normalizeTextValue(content.trainingTarget)
+  formModel.performance = normalizeTextValue(content.performance)
+  formModel.suggestion = normalizeTextValue(content.suggestion)
+  resetTrainingModules(content.trainingItems)
 }
 
 function buildContentPayload(): RehabRecordContent {
@@ -315,9 +330,11 @@ async function loadRecordIfNeeded() {
 
     const draft = res.result?.hasDraft ? res.result?.draft : null
     const published = res.result?.hasPublished ? res.result?.published : null
+    previousPublishedSnapshot.value = res.result?.hasPreviousPublished ? (res.result?.previousPublished || null) : null
     applySnapshotByMode({ draft, published, currentLoad })
   }
   catch (error: any) {
+    previousPublishedSnapshot.value = null
     messageService.error(error?.response?.data?.message || error?.message || '加载康复记录失败')
   }
   finally {
@@ -382,6 +399,24 @@ async function handlePublish() {
   }
 }
 
+function handleReusePreviousPublished() {
+  if (!canReusePreviousPublished.value || !previousPublishedSnapshot.value) {
+    messageService.warning('同课程暂无可复用的已发布康复记录')
+    return
+  }
+
+  Modal.confirm({
+    title: '复用上一篇',
+    content: '将使用同课程最近一篇已发布康复记录覆盖当前训练内容，基础信息和家长反馈会保留当前值。',
+    okText: '确认复用',
+    cancelText: '取消',
+    onOk: () => {
+      applyReusableContent(previousPublishedSnapshot.value)
+      messageService.success('已复用上一篇康复记录')
+    },
+  })
+}
+
 watch(
   [() => open.value, () => props.mode, currentStudentTeachingRecordId, () => props.student, () => props.session, () => props.parentFeedback],
   async ([isOpen]) => {
@@ -389,6 +424,7 @@ watch(
       loadSequence.value += 1
       loading.value = false
       submittingAction.value = ''
+      previousPublishedSnapshot.value = null
       resetTrainingModules()
       return
     }
@@ -615,8 +651,18 @@ watch(
 
           <div v-else class="flex flex-col gap-16px">
             <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
-              <div class="text-15px leading-22px font-600 text-#222">
-                基础信息
+              <div class="flex items-center justify-between gap-12px">
+                <div class="text-15px leading-22px font-600 text-#222">
+                  基础信息
+                </div>
+                <a-button
+                  type="primary"
+                  ghost
+                  :disabled="!canReusePreviousPublished"
+                  @click="handleReusePreviousPublished"
+                >
+                  复用上一篇
+                </a-button>
               </div>
 
               <a-row :gutter="[12, 12]" class="mt-14px">
@@ -765,42 +811,6 @@ watch(
               </a-col>
             </a-row>
 
-            <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
-              <div class="text-15px leading-22px font-600 text-#222">
-                家长意见反馈
-              </div>
-
-              <div class="mt-14px">
-                <a-textarea
-                  v-model:value="formModel.parentFeedback"
-                  :auto-size="{ minRows: 4, maxRows: 6 }"
-                  placeholder="请输入家长意见反馈"
-                />
-              </div>
-
-              <a-row :gutter="[12, 12]" class="mt-16px">
-                <a-col :xs="24" :lg="12">
-                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
-                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">家长签名</div>
-                    <a-input
-                      v-model:value="formModel.parentSignature"
-                      placeholder="请输入家长签名图片地址"
-                    />
-                  </div>
-                </a-col>
-                <a-col :xs="24" :lg="12">
-                  <div class="rounded-12px border border-solid border-#edf0f5 bg-#fafbfc p-14px">
-                    <div class="mb-10px text-12px leading-18px text-#8c8c8c">日期</div>
-                    <a-date-picker
-                      v-model:value="formModel.feedbackDate"
-                      value-format="YYYY-MM-DD"
-                      style="width: 100%;"
-                      placeholder="请选择日期"
-                    />
-                  </div>
-                </a-col>
-              </a-row>
-            </div>
           </div>
         </div>
       </a-spin>

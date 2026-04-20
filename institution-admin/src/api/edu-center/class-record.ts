@@ -191,6 +191,8 @@ export interface StudentRehabRecordDetailResult {
   draft?: StudentRehabRecordSnapshot | null
   hasPublished?: boolean
   published?: StudentRehabRecordSnapshot | null
+  hasPreviousPublished?: boolean
+  previousPublished?: StudentRehabRecordSnapshot | null
 }
 
 export interface UpdateStudentTeachingRecordParams {

@@ -53,8 +53,10 @@ type StudentRehabRecordSnapshot struct {
 }
 
 type StudentRehabRecordDetailResult struct {
-	HasDraft     bool                        `json:"hasDraft"`
-	Draft        *StudentRehabRecordSnapshot `json:"draft,omitempty"`
-	HasPublished bool                        `json:"hasPublished"`
-	Published    *StudentRehabRecordSnapshot `json:"published,omitempty"`
+	HasDraft             bool                        `json:"hasDraft"`
+	Draft                *StudentRehabRecordSnapshot `json:"draft,omitempty"`
+	HasPublished         bool                        `json:"hasPublished"`
+	Published            *StudentRehabRecordSnapshot `json:"published,omitempty"`
+	HasPreviousPublished bool                        `json:"hasPreviousPublished"`
+	PreviousPublished    *StudentRehabRecordSnapshot `json:"previousPublished,omitempty"`
 }
