@@ -211,7 +211,7 @@ watch(() => formState.publishAt, (publishAtValue) => {
           </div>
         </a-form-item>
 
-        <a-form-item label="选择班级/学员" name="students" :rules="[{ required: true, message: '情选择班级/学员' }]">
+        <a-form-item label="选择班级/学员" name="students" :rules="[{ required: true, message: '请选择班级/学员' }]">
           <a-button type="primary" ghost>
             选择班级/学员
           </a-button>
@@ -441,7 +441,6 @@ watch(() => formState.publishAt, (publishAtValue) => {
   display: inline-flex;
   align-items: flex-start;
   flex-wrap: wrap;
-  gap: 12px;
 }
 
 ::v-deep(.ant-upload-list-item-container) {
