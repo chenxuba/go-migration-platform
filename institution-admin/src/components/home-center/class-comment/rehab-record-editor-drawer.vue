@@ -3,7 +3,8 @@ import { CloseOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, reactive, ref, watch } from 'vue'
-import { getStudentRehabRecordDetailApi, publishStudentRehabRecordApi, saveStudentRehabRecordDraftApi, type RehabRecordContent, type RehabRecordTrainingItem, type StudentRehabRecordSnapshot } from '@/api/edu-center/class-record'
+import { getStudentRehabRecordDetailApi, publishStudentRehabRecordApi, saveStudentRehabRecordDraftApi, type RehabRecordContent, type RehabRecordMediaItem, type RehabRecordTrainingItem, type StudentRehabRecordSnapshot } from '@/api/edu-center/class-record'
+import RehabRecordMediaUpload from './rehab-record-media-upload.vue'
 import messageService from '@/utils/messageService'
 
 interface RehabRecordStudent {
@@ -85,8 +86,11 @@ const formModel = reactive({
   teacherName: '',
   trainingDate: undefined as string | undefined,
   trainingTarget: '',
+  trainingMediaList: [] as RehabRecordMediaItem[],
   performance: '',
+  performanceMediaList: [] as RehabRecordMediaItem[],
   suggestion: '',
+  suggestionMediaList: [] as RehabRecordMediaItem[],
   parentFeedback: '',
   parentSignature: '',
   feedbackDate: undefined as string | undefined,
@@ -94,6 +98,46 @@ const formModel = reactive({
 
 function normalizeTextValue(value?: string | number | null) {
   return String(value ?? '').trim()
+}
+
+function inferMediaType(url: string) {
+  if (/\.(mp4|mov|webm|ogg|m4v)(\?.*)?$/i.test(url))
+    return 'video'
+  return 'image'
+}
+
+function normalizeMediaList(items?: RehabRecordMediaItem[] | null) {
+  return Array.isArray(items)
+    ? items
+        .map((item) => {
+          const url = normalizeTextValue(item?.url)
+          if (!url)
+            return null
+
+          const rawMediaType = normalizeTextValue(item?.mediaType).toLowerCase()
+          const mediaType = rawMediaType === 'image' || rawMediaType === 'video'
+            ? rawMediaType
+            : inferMediaType(url)
+          const size = Number(item?.size || 0)
+          return {
+            mediaType,
+            url,
+            fileName: normalizeTextValue(item?.fileName),
+            size: Number.isFinite(size) && size > 0 ? size : undefined,
+          } satisfies RehabRecordMediaItem
+        })
+        .filter(Boolean) as RehabRecordMediaItem[]
+    : []
+}
+
+function resolveTrainingMediaList(content?: Partial<RehabRecordContent> | null) {
+  const mediaList = normalizeMediaList(content?.trainingMediaList)
+  if (mediaList.length > 0)
+    return mediaList
+
+  return Array.isArray(content?.trainingItems)
+    ? normalizeMediaList(content.trainingItems.flatMap(item => item?.mediaList || []))
+    : []
 }
 
 function createTrainingModule(title = '', content = '') {
@@ -164,8 +208,11 @@ function hydrateDefaultForm() {
   hydrateBasicInfo()
   hydrateParentFeedback()
   formModel.trainingTarget = ''
+  formModel.trainingMediaList = []
   formModel.performance = ''
+  formModel.performanceMediaList = []
   formModel.suggestion = ''
+  formModel.suggestionMediaList = []
   resetTrainingModules()
 }
 
@@ -230,8 +277,11 @@ function applyContent(content?: Partial<RehabRecordContent> | null) {
   formModel.teacherName = normalizeTextValue(content.teacherName) || formModel.teacherName
   formModel.trainingDate = normalizeDateValue(content.trainingDate) || formModel.trainingDate
   formModel.trainingTarget = normalizeTextValue(content.trainingTarget)
+  formModel.trainingMediaList = resolveTrainingMediaList(content)
   formModel.performance = normalizeTextValue(content.performance)
+  formModel.performanceMediaList = normalizeMediaList(content.performanceMediaList)
   formModel.suggestion = normalizeTextValue(content.suggestion)
+  formModel.suggestionMediaList = normalizeMediaList(content.suggestionMediaList)
   formModel.parentFeedback = normalizeTextValue(content.parentFeedback)
   formModel.parentSignature = normalizeTextValue(content.parentSignature)
   formModel.feedbackDate = normalizeDateValue(content.feedbackDate)
@@ -248,8 +298,11 @@ function applyReusableContent(snapshot?: StudentRehabRecordSnapshot | null) {
     return
 
   formModel.trainingTarget = normalizeTextValue(content.trainingTarget)
+  formModel.trainingMediaList = resolveTrainingMediaList(content)
   formModel.performance = normalizeTextValue(content.performance)
+  formModel.performanceMediaList = normalizeMediaList(content.performanceMediaList)
   formModel.suggestion = normalizeTextValue(content.suggestion)
+  formModel.suggestionMediaList = normalizeMediaList(content.suggestionMediaList)
   resetTrainingModules(content.trainingItems)
 }
 
@@ -262,12 +315,15 @@ function buildContentPayload(): RehabRecordContent {
     teacherName: normalizeTextValue(formModel.teacherName),
     trainingDate: normalizeTextValue(formModel.trainingDate),
     trainingTarget: normalizeTextValue(formModel.trainingTarget),
+    trainingMediaList: normalizeMediaList(formModel.trainingMediaList),
     trainingItems: trainingModules.value.map(item => ({
       title: normalizeTextValue(item.title),
       content: normalizeTextValue(item.content),
     })),
     performance: normalizeTextValue(formModel.performance),
+    performanceMediaList: normalizeMediaList(formModel.performanceMediaList),
     suggestion: normalizeTextValue(formModel.suggestion),
+    suggestionMediaList: normalizeMediaList(formModel.suggestionMediaList),
     parentFeedback: normalizeTextValue(formModel.parentFeedback),
     parentSignature: normalizeTextValue(formModel.parentSignature),
     feedbackDate: normalizeTextValue(formModel.feedbackDate),
@@ -570,6 +626,13 @@ watch(
                   </div>
                 </a-col>
               </a-row>
+
+              <div v-if="formModel.trainingMediaList.length > 0" class="mt-14px">
+                <RehabRecordMediaUpload
+                  :model-value="formModel.trainingMediaList"
+                  disabled
+                />
+              </div>
             </div>
 
             <a-row :gutter="[16, 16]">
@@ -585,6 +648,13 @@ watch(
                       :auto-size="{ minRows: 7, maxRows: 10 }"
                       placeholder="请输入学生综合表现"
                     />
+
+                    <div v-if="formModel.performanceMediaList.length > 0" class="mt-14px">
+                      <RehabRecordMediaUpload
+                        :model-value="formModel.performanceMediaList"
+                        disabled
+                      />
+                    </div>
                   </div>
                 </div>
               </a-col>
@@ -600,6 +670,13 @@ watch(
                       :auto-size="{ minRows: 7, maxRows: 10 }"
                       placeholder="请输入康复建议"
                     />
+
+                    <div v-if="formModel.suggestionMediaList.length > 0" class="mt-14px">
+                      <RehabRecordMediaUpload
+                        :model-value="formModel.suggestionMediaList"
+                        disabled
+                      />
+                    </div>
                   </div>
                 </div>
               </a-col>
@@ -777,6 +854,10 @@ watch(
                   </div>
                 </a-col>
               </a-row>
+
+              <div class="mt-14px">
+                <RehabRecordMediaUpload v-model="formModel.trainingMediaList" />
+              </div>
             </div>
 
             <a-row :gutter="[16, 16]">
@@ -791,6 +872,10 @@ watch(
                       :auto-size="{ minRows: 7, maxRows: 10 }"
                       placeholder="请输入学生综合表现"
                     />
+
+                    <div class="mt-14px">
+                      <RehabRecordMediaUpload v-model="formModel.performanceMediaList" />
+                    </div>
                   </div>
                 </div>
               </a-col>
@@ -806,6 +891,10 @@ watch(
                       :auto-size="{ minRows: 7, maxRows: 10 }"
                       placeholder="请输入康复建议"
                     />
+
+                    <div class="mt-14px">
+                      <RehabRecordMediaUpload v-model="formModel.suggestionMediaList" />
+                    </div>
                   </div>
                 </div>
               </a-col>

@@ -1161,20 +1161,56 @@ func parseRehabRecordTemplateMeta(raw map[string]any) model.RehabRecordTemplateM
 	}
 }
 
+func parseRehabRecordMediaList(raw any) []model.RehabRecordMediaItem {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	result := make([]model.RehabRecordMediaItem, 0, len(items))
+	for _, item := range items {
+		switch value := item.(type) {
+		case string:
+			url := asString(value)
+			if url == "" {
+				continue
+			}
+			result = append(result, model.RehabRecordMediaItem{
+				URL: url,
+			})
+		case map[string]any:
+			url := asString(firstNonNil(value["url"], value["path"]))
+			if url == "" {
+				continue
+			}
+			result = append(result, model.RehabRecordMediaItem{
+				MediaType: asString(firstNonNil(value["mediaType"], value["type"])),
+				URL:       url,
+				FileName:  asString(firstNonNil(value["fileName"], value["name"])),
+				Size:      int64(asInt(firstNonNil(value["size"], value["fileSize"]), 0)),
+			})
+		}
+	}
+	return result
+}
+
 func parseRehabRecordContent(raw map[string]any) model.RehabRecordContent {
 	content := model.RehabRecordContent{
-		StudentName:     asString(raw["studentName"]),
-		Gender:          asString(raw["gender"]),
-		BirthDate:       asString(raw["birthDate"]),
-		ClassName:       asString(raw["className"]),
-		TeacherName:     asString(raw["teacherName"]),
-		TrainingDate:    asString(raw["trainingDate"]),
-		TrainingTarget:  asString(raw["trainingTarget"]),
-		Performance:     asString(raw["performance"]),
-		Suggestion:      asString(raw["suggestion"]),
-		ParentFeedback:  asString(raw["parentFeedback"]),
-		ParentSignature: asString(raw["parentSignature"]),
-		FeedbackDate:    asString(raw["feedbackDate"]),
+		StudentName:          asString(raw["studentName"]),
+		Gender:               asString(raw["gender"]),
+		BirthDate:            asString(raw["birthDate"]),
+		ClassName:            asString(raw["className"]),
+		TeacherName:          asString(raw["teacherName"]),
+		TrainingDate:         asString(raw["trainingDate"]),
+		TrainingTarget:       asString(raw["trainingTarget"]),
+		TrainingMediaList:    parseRehabRecordMediaList(raw["trainingMediaList"]),
+		Performance:          asString(raw["performance"]),
+		PerformanceMediaList: parseRehabRecordMediaList(raw["performanceMediaList"]),
+		Suggestion:           asString(raw["suggestion"]),
+		SuggestionMediaList:  parseRehabRecordMediaList(raw["suggestionMediaList"]),
+		ParentFeedback:       asString(raw["parentFeedback"]),
+		ParentSignature:      asString(raw["parentSignature"]),
+		FeedbackDate:         asString(raw["feedbackDate"]),
 	}
 	if items, ok := raw["trainingItems"].([]any); ok {
 		content.TrainingItems = make([]model.RehabRecordTrainingItem, 0, len(items))
@@ -1184,8 +1220,9 @@ func parseRehabRecordContent(raw map[string]any) model.RehabRecordContent {
 				continue
 			}
 			content.TrainingItems = append(content.TrainingItems, model.RehabRecordTrainingItem{
-				Title:   asString(firstNonNil(row["title"], row["name"])),
-				Content: asString(firstNonNil(row["content"], row["value"])),
+				Title:     asString(firstNonNil(row["title"], row["name"])),
+				Content:   asString(firstNonNil(row["content"], row["value"])),
+				MediaList: parseRehabRecordMediaList(row["mediaList"]),
 			})
 		}
 	}

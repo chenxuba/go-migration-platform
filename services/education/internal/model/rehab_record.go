@@ -13,24 +13,35 @@ type RehabRecordTemplateMeta struct {
 }
 
 type RehabRecordTrainingItem struct {
-	Title   string `json:"title"`
-	Content string `json:"content"`
+	Title     string                 `json:"title"`
+	Content   string                 `json:"content"`
+	MediaList []RehabRecordMediaItem `json:"mediaList,omitempty"`
+}
+
+type RehabRecordMediaItem struct {
+	MediaType string `json:"mediaType"`
+	URL       string `json:"url"`
+	FileName  string `json:"fileName"`
+	Size      int64  `json:"size"`
 }
 
 type RehabRecordContent struct {
-	StudentName     string                    `json:"studentName"`
-	Gender          string                    `json:"gender"`
-	BirthDate       string                    `json:"birthDate"`
-	ClassName       string                    `json:"className"`
-	TeacherName     string                    `json:"teacherName"`
-	TrainingDate    string                    `json:"trainingDate"`
-	TrainingTarget  string                    `json:"trainingTarget"`
-	TrainingItems   []RehabRecordTrainingItem `json:"trainingItems"`
-	Performance     string                    `json:"performance"`
-	Suggestion      string                    `json:"suggestion"`
-	ParentFeedback  string                    `json:"parentFeedback"`
-	ParentSignature string                    `json:"parentSignature"`
-	FeedbackDate    string                    `json:"feedbackDate"`
+	StudentName          string                    `json:"studentName"`
+	Gender               string                    `json:"gender"`
+	BirthDate            string                    `json:"birthDate"`
+	ClassName            string                    `json:"className"`
+	TeacherName          string                    `json:"teacherName"`
+	TrainingDate         string                    `json:"trainingDate"`
+	TrainingTarget       string                    `json:"trainingTarget"`
+	TrainingItems        []RehabRecordTrainingItem `json:"trainingItems"`
+	TrainingMediaList    []RehabRecordMediaItem    `json:"trainingMediaList,omitempty"`
+	Performance          string                    `json:"performance"`
+	PerformanceMediaList []RehabRecordMediaItem    `json:"performanceMediaList,omitempty"`
+	Suggestion           string                    `json:"suggestion"`
+	SuggestionMediaList  []RehabRecordMediaItem    `json:"suggestionMediaList,omitempty"`
+	ParentFeedback       string                    `json:"parentFeedback"`
+	ParentSignature      string                    `json:"parentSignature"`
+	FeedbackDate         string                    `json:"feedbackDate"`
 }
 
 type SaveStudentRehabRecordDraftDTO struct {

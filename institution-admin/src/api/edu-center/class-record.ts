@@ -161,6 +161,14 @@ export interface RehabRecordTemplateMeta {
 export interface RehabRecordTrainingItem {
   title?: string
   content?: string
+  mediaList?: RehabRecordMediaItem[]
+}
+
+export interface RehabRecordMediaItem {
+  mediaType?: 'image' | 'video' | string
+  url?: string
+  fileName?: string
+  size?: number
 }
 
 export interface RehabRecordContent {
@@ -172,8 +180,11 @@ export interface RehabRecordContent {
   trainingDate?: string
   trainingTarget?: string
   trainingItems?: RehabRecordTrainingItem[]
+  trainingMediaList?: RehabRecordMediaItem[]
   performance?: string
+  performanceMediaList?: RehabRecordMediaItem[]
   suggestion?: string
+  suggestionMediaList?: RehabRecordMediaItem[]
   parentFeedback?: string
   parentSignature?: string
   feedbackDate?: string

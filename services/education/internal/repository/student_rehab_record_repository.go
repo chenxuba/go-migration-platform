@@ -115,6 +115,44 @@ func resolveStudentRehabRecordTemplate(template model.RehabRecordTemplateMeta) m
 	return resolved
 }
 
+func sanitizeRehabRecordMediaList(items []model.RehabRecordMediaItem) []model.RehabRecordMediaItem {
+	if len(items) == 0 {
+		return nil
+	}
+
+	result := make([]model.RehabRecordMediaItem, 0, len(items))
+	for _, item := range items {
+		url := strings.TrimSpace(item.URL)
+		if url == "" {
+			continue
+		}
+
+		mediaType := strings.ToLower(strings.TrimSpace(item.MediaType))
+		if mediaType != "image" && mediaType != "video" {
+			lowerURL := strings.ToLower(url)
+			switch {
+			case strings.Contains(lowerURL, ".mp4"), strings.Contains(lowerURL, ".mov"), strings.Contains(lowerURL, ".webm"), strings.Contains(lowerURL, ".ogg"), strings.Contains(lowerURL, ".m4v"):
+				mediaType = "video"
+			default:
+				mediaType = "image"
+			}
+		}
+
+		size := item.Size
+		if size < 0 {
+			size = 0
+		}
+
+		result = append(result, model.RehabRecordMediaItem{
+			MediaType: mediaType,
+			URL:       url,
+			FileName:  strings.TrimSpace(item.FileName),
+			Size:      size,
+		})
+	}
+	return result
+}
+
 func sanitizeStudentRehabRecordContent(content model.RehabRecordContent) model.RehabRecordContent {
 	content.StudentName = strings.TrimSpace(content.StudentName)
 	content.Gender = strings.TrimSpace(content.Gender)
@@ -123,22 +161,27 @@ func sanitizeStudentRehabRecordContent(content model.RehabRecordContent) model.R
 	content.TeacherName = strings.TrimSpace(content.TeacherName)
 	content.TrainingDate = strings.TrimSpace(content.TrainingDate)
 	content.TrainingTarget = strings.TrimSpace(content.TrainingTarget)
+	content.TrainingMediaList = sanitizeRehabRecordMediaList(content.TrainingMediaList)
 	content.Performance = strings.TrimSpace(content.Performance)
 	content.Suggestion = strings.TrimSpace(content.Suggestion)
 	content.ParentFeedback = strings.TrimSpace(content.ParentFeedback)
 	content.ParentSignature = strings.TrimSpace(content.ParentSignature)
 	content.FeedbackDate = strings.TrimSpace(content.FeedbackDate)
+	content.PerformanceMediaList = sanitizeRehabRecordMediaList(content.PerformanceMediaList)
+	content.SuggestionMediaList = sanitizeRehabRecordMediaList(content.SuggestionMediaList)
 
 	items := make([]model.RehabRecordTrainingItem, 0, len(content.TrainingItems))
 	for _, item := range content.TrainingItems {
 		title := strings.TrimSpace(item.Title)
 		body := strings.TrimSpace(item.Content)
-		if title == "" && body == "" {
+		mediaList := sanitizeRehabRecordMediaList(item.MediaList)
+		if title == "" && body == "" && len(mediaList) == 0 {
 			continue
 		}
 		items = append(items, model.RehabRecordTrainingItem{
-			Title:   title,
-			Content: body,
+			Title:     title,
+			Content:   body,
+			MediaList: mediaList,
 		})
 	}
 	content.TrainingItems = items
