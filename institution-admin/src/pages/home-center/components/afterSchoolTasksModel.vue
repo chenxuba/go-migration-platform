@@ -25,6 +25,7 @@ const studentPickerLoading = ref(false)
 const classTargetList = ref([])
 const oneToOneTargetList = ref([])
 const expandedClassIds = ref([])
+const expandedOneToOneIds = ref([])
 const draftSelectedStudents = ref([])
 const studentPickerRequestSeq = ref(0)
 const formState = reactive({
@@ -156,6 +157,16 @@ function toggleClassExpanded(classId) {
   expandedClassIds.value.push(normalizedId)
 }
 
+function toggleOneToOneExpanded(itemId) {
+  const normalizedId = String(itemId || '')
+  const index = expandedOneToOneIds.value.indexOf(normalizedId)
+  if (index >= 0) {
+    expandedOneToOneIds.value.splice(index, 1)
+    return
+  }
+  expandedOneToOneIds.value.push(normalizedId)
+}
+
 function handleSelectClassStudent(classItem, student) {
   toggleDraftStudent(buildClassStudentSelection(classItem, student))
 }
@@ -259,6 +270,7 @@ async function loadOneToOneTargets(currentSeq) {
   if (res.code !== 200)
     throw new Error(res.message || '获取1对1列表失败')
   oneToOneTargetList.value = Array.isArray(res.result?.list) ? res.result.list : []
+  expandedOneToOneIds.value = oneToOneTargetList.value.slice(0, 1).map(item => String(item?.id || ''))
 }
 
 async function loadStudentPickerData() {
@@ -267,6 +279,7 @@ async function loadStudentPickerData() {
   try {
     if (studentPickerType.value === 'class') {
       oneToOneTargetList.value = []
+      expandedOneToOneIds.value = []
       await loadClassTargets(currentSeq)
     }
     else {
@@ -278,6 +291,7 @@ async function loadStudentPickerData() {
   catch (error) {
     classTargetList.value = []
     oneToOneTargetList.value = []
+    expandedOneToOneIds.value = []
     messageService.error(error?.response?.data?.message || error?.message || '加载班级/学员失败')
   }
   finally {
@@ -361,6 +375,7 @@ watch(() => studentPickerOpen.value, (open) => {
     classTargetList.value = []
     oneToOneTargetList.value = []
     expandedClassIds.value = []
+    expandedOneToOneIds.value = []
     if (studentPickerSearchTimer) {
       clearTimeout(studentPickerSearchTimer)
       studentPickerSearchTimer = undefined
@@ -659,19 +674,22 @@ watch(() => studentPickerKeyword.value, () => {
                     class="afterSchoolTasksModel__student-group"
                   >
                     <div class="afterSchoolTasksModel__student-group-header">
-                      <div class="afterSchoolTasksModel__student-group-header-main" @click="handleSelectSource('class', classItem)">
-                        <span class="afterSchoolTasksModel__student-checkbox" :class="{ 'is-selected': isSourceSelected('class', classItem.id) }">
-                          <CheckOutlined v-if="isSourceSelected('class', classItem.id)" />
-                        </span>
+                      <span
+                        class="afterSchoolTasksModel__student-checkbox afterSchoolTasksModel__student-checkbox--button"
+                        :class="{ 'is-selected': isSourceSelected('class', classItem.id) }"
+                        @click.stop="handleSelectSource('class', classItem)"
+                      >
+                        <CheckOutlined v-if="isSourceSelected('class', classItem.id)" />
+                      </span>
+                      <div class="afterSchoolTasksModel__student-group-header-main" @click="toggleClassExpanded(classItem.id)">
                         <span class="afterSchoolTasksModel__student-group-title">
                           {{ classItem.name }}（{{ getSelectedCountBySource('class', classItem.id) }}/{{ classItem.students?.length || 0 }}）
                         </span>
+                        <CaretDownOutlined
+                          class="afterSchoolTasksModel__student-group-arrow afterSchoolTasksModel__student-group-arrow--inline"
+                          :class="{ 'is-collapsed': !expandedClassIds.includes(String(classItem.id || '')) }"
+                        />
                       </div>
-                      <CaretDownOutlined
-                        class="afterSchoolTasksModel__student-group-arrow"
-                        :class="{ 'is-collapsed': !expandedClassIds.includes(String(classItem.id || '')) }"
-                        @click.stop="toggleClassExpanded(classItem.id)"
-                      />
                     </div>
 
                     <div v-show="expandedClassIds.includes(String(classItem.id || ''))" class="afterSchoolTasksModel__student-list">
@@ -708,17 +726,25 @@ watch(() => studentPickerKeyword.value, () => {
                     class="afterSchoolTasksModel__student-group afterSchoolTasksModel__student-group--plain"
                   >
                     <div class="afterSchoolTasksModel__student-group-header afterSchoolTasksModel__student-group-header--plain">
-                      <div class="afterSchoolTasksModel__student-group-header-main" @click="handleSelectSource('one_to_one', item)">
-                        <span class="afterSchoolTasksModel__student-checkbox" :class="{ 'is-selected': isSourceSelected('one_to_one', item.id) }">
-                          <CheckOutlined v-if="isSourceSelected('one_to_one', item.id)" />
-                        </span>
+                      <span
+                        class="afterSchoolTasksModel__student-checkbox afterSchoolTasksModel__student-checkbox--button"
+                        :class="{ 'is-selected': isSourceSelected('one_to_one', item.id) }"
+                        @click.stop="handleSelectSource('one_to_one', item)"
+                      >
+                        <CheckOutlined v-if="isSourceSelected('one_to_one', item.id)" />
+                      </span>
+                      <div class="afterSchoolTasksModel__student-group-header-main" @click="toggleOneToOneExpanded(item.id)">
                         <span class="afterSchoolTasksModel__student-group-title">
                           {{ item.name || item.lessonName || item.studentName || '1对1' }}（{{ isDraftStudentSelected(buildOneToOneSelection(item)) ? 1 : 0 }}/1）
                         </span>
+                        <CaretDownOutlined
+                          class="afterSchoolTasksModel__student-group-arrow afterSchoolTasksModel__student-group-arrow--inline"
+                          :class="{ 'is-collapsed': !expandedOneToOneIds.includes(String(item.id || '')) }"
+                        />
                       </div>
                     </div>
 
-                    <div class="afterSchoolTasksModel__student-list">
+                    <div v-show="expandedOneToOneIds.includes(String(item.id || ''))" class="afterSchoolTasksModel__student-list">
                       <div
                         class="afterSchoolTasksModel__student-row"
                         @click="handleSelectOneToOne(item)"
@@ -841,7 +867,7 @@ watch(() => studentPickerKeyword.value, () => {
 .afterSchoolTasksModel__student-group-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   color: #262626;
   font-size: 16px;
@@ -854,10 +880,11 @@ watch(() => studentPickerKeyword.value, () => {
 }
 
 .afterSchoolTasksModel__student-group-header-main {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
   min-width: 0;
+  flex: none;
   cursor: pointer;
 }
 
@@ -865,12 +892,15 @@ watch(() => studentPickerKeyword.value, () => {
   color: #999;
   font-size: 12px;
   flex: none;
-  cursor: pointer;
   transition: transform 0.2s ease;
 
   &.is-collapsed {
     transform: rotate(-90deg);
   }
+}
+
+.afterSchoolTasksModel__student-group-arrow--inline {
+  margin-left: 2px;
 }
 
 .afterSchoolTasksModel__student-group-title {
@@ -912,6 +942,10 @@ watch(() => studentPickerKeyword.value, () => {
     border-color: var(--pro-ant-color-primary);
     background: var(--pro-ant-color-primary);
   }
+}
+
+.afterSchoolTasksModel__student-checkbox--button {
+  cursor: pointer;
 }
 
 .afterSchoolTasksModel__student-radio {
