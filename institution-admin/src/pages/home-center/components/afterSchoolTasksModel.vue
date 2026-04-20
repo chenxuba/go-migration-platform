@@ -30,7 +30,7 @@ interface StudentPickerSelection {
 }
 
 const props = withDefaults(defineProps<{
-  mode?: 'create' | 'edit'
+  mode?: 'create' | 'edit' | 'copy'
   homeworkId?: string
 }>(), {
   mode: 'create',
@@ -115,6 +115,7 @@ function createDefaultFormState() {
 const formState = reactive(createDefaultFormState())
 
 const isEditMode = computed(() => props.mode === 'edit')
+const shouldLoadDetail = computed(() => (props.mode === 'edit' || props.mode === 'copy') && !!props.homeworkId)
 const dialogTitle = computed(() => props.mode === 'edit' ? '编辑课后任务' : '新建课后任务')
 const selectedStudentButtonText = computed(() => formState.students.length > 0 ? `已选班级/学员（${formState.students.length}）` : '选择班级/学员')
 const selectedStudentPreviewText = computed(() =>
@@ -189,7 +190,7 @@ async function initializeForm() {
   await nextTick()
   formRef.value?.clearValidate?.()
 
-  if (props.mode === 'edit' && props.homeworkId) {
+  if (shouldLoadDetail.value && props.homeworkId) {
     detailLoading.value = true
     try {
       const res = await getHomeworkDetailApi(props.homeworkId)
@@ -198,7 +199,7 @@ async function initializeForm() {
         open.value = false
         return
       }
-      applyDetailToForm(res.result)
+      applyDetailToForm(res.result, { resetPublishRule: props.mode === 'copy' })
     }
     catch (error) {
       console.error('get homework detail failed', error)
@@ -215,11 +216,27 @@ async function initializeForm() {
   captureInitialSnapshot()
 }
 
-function applyDetailToForm(detail: HomeworkDetail) {
+function resetPublishRuleConfig() {
+  formState.rule = 1
+  formState.publishAt = undefined
+  formState.deadlineAt = undefined
+  formState.dateRange = undefined
+  formState.time = undefined
+  formState.taskDurationHours = undefined
+  formState.weeks = []
+}
+
+function applyDetailToForm(detail: HomeworkDetail, options: { resetPublishRule?: boolean } = {}) {
   formState.title = detail.title || ''
   formState.content = detail.content || ''
   formState.students = (Array.isArray(detail.selectedStudents) ? detail.selectedStudents : []).map(item => transformSelectionFromDetail(item))
   formState.mediaList = homeworkAttachmentsToMedia(detail.attachments || [])
+
+  if (options.resetPublishRule) {
+    resetPublishRuleConfig()
+    return
+  }
+
   formState.rule = detail.publishRule === 2 ? 2 : 1
 
   if (formState.rule === 2 && detail.repeatRule) {

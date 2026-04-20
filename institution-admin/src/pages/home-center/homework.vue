@@ -25,7 +25,7 @@ const loading = ref(false)
 const tableData = ref<HomeworkListItem[]>([])
 
 const modalOpen = ref(false)
-const modalMode = ref<'create' | 'edit'>('create')
+const modalMode = ref<'create' | 'edit' | 'copy'>('create')
 const currentHomeworkId = ref('')
 
 const quickCounts = reactive({
@@ -147,7 +147,7 @@ const allColumns = ref([
     dataIndex: 'action',
     key: 'action',
     fixed: 'right',
-    width: 120,
+    width: 160,
   },
 ])
 
@@ -492,6 +492,12 @@ function openEditModal(record: Partial<HomeworkListItem> & Record<string, any>) 
   modalOpen.value = true
 }
 
+function openCopyModal(record: Partial<HomeworkListItem> & Record<string, any>) {
+  modalMode.value = 'copy'
+  currentHomeworkId.value = String(record.id || '')
+  modalOpen.value = true
+}
+
 function handleModalSuccess() {
   modalOpen.value = false
   void refreshData()
@@ -659,6 +665,7 @@ onMounted(() => {
           <template v-else-if="column.key === 'action'">
             <a-space :size="12">
               <a class="font-500" @click="openEditModal(record)">编辑</a>
+              <a class="font-500" @click="openCopyModal(record)">复制</a>
               <a class="font-500 text-#ff4d4f" @click="handleDelete(record)">删除</a>
             </a-space>
           </template>

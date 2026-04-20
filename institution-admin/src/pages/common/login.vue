@@ -327,7 +327,7 @@ watch(
                   </a-button>
                   <a-checkbox v-model:checked="agreeToTerms" class="agreement-checkbox">
                     <span class="agreement-text">
-                      {{ t('pages.login.agreement.prefix', '已阅读并同意校宝的') }}
+                      {{ t('pages.login.agreement.prefix', '已阅读并同意云宝的') }}
                       <a href="#" class="link">《{{ t('pages.login.agreement.userAgreement', '用户协议') }}》</a>
                       {{ t('pages.login.agreement.and', '与') }}
                       <a href="#" class="link">《{{ t('pages.login.agreement.privacy', '隐私条款') }}》</a>

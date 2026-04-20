@@ -36,7 +36,7 @@ export default {
   'pages.login.verifyCode.placeholder': '请输入验证码',
   'pages.login.verifyCode.action': '获取验证码',
   'pages.login.submit.immediately': '立即登录',
-  'pages.login.agreement.prefix': '已阅读并同意校宝的',
+  'pages.login.agreement.prefix': '已阅读并同意云宝的',
   'pages.login.agreement.userAgreement': '用户协议',
   'pages.login.agreement.and': '与',
   'pages.login.agreement.privacy': '隐私条款',
