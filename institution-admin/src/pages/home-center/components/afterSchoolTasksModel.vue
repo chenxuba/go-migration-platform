@@ -1,5 +1,5 @@
 <script setup>
-import { CaretDownOutlined, CloseOutlined, PictureOutlined, PlayCircleOutlined, QuestionCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { CaretDownOutlined, CheckOutlined, CloseOutlined, PictureOutlined, PlayCircleOutlined, QuestionCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { pageGroupClassesApi, pageGroupClassStudentsApi } from '@/api/edu-center/group-class'
@@ -82,7 +82,9 @@ function handleOpenChange(value, show) {
 }
 
 function cloneSelectedStudents(list) {
-  return Array.isArray(list) ? list.map(item => ({ ...item })) : []
+  return Array.isArray(list)
+    ? list.filter(item => String(item?.selectionType || 'student') === 'student').map(item => ({ ...item, selectionType: 'student' }))
+    : []
 }
 
 function buildSelectedStudentKey(item) {
@@ -96,7 +98,8 @@ function isDraftStudentSelected(item) {
 
 function getSelectedCountBySource(sourceType, sourceId) {
   return draftSelectedStudents.value.filter(item =>
-    String(item?.sourceType || '') === sourceType && String(item?.sourceId || '') === String(sourceId || '')).length
+    String(item?.sourceType || '') === sourceType
+    && String(item?.sourceId || '') === String(sourceId || '')).length
 }
 
 function buildClassStudentSelection(classItem, student) {
@@ -121,6 +124,16 @@ function buildOneToOneSelection(item) {
     tuitionAccountId: String(item?.tuitionAccountId || item?.tuitionAccount?.id || ''),
     isBind: item?.isBind !== false,
   }
+}
+
+function isSourceSelected(sourceType, sourceId) {
+  if (sourceType === 'one_to_one') {
+    return getSelectedCountBySource(sourceType, sourceId) > 0
+  }
+
+  const targetClass = classTargetList.value.find(item => String(item?.id || '') === String(sourceId || ''))
+  const total = Array.isArray(targetClass?.students) ? targetClass.students.length : 0
+  return total > 0 && getSelectedCountBySource(sourceType, sourceId) === total
 }
 
 function toggleDraftStudent(item) {
@@ -149,6 +162,27 @@ function handleSelectClassStudent(classItem, student) {
 
 function handleSelectOneToOne(item) {
   toggleDraftStudent(buildOneToOneSelection(item))
+}
+
+function handleSelectSource(sourceType, item) {
+  if (sourceType === 'one_to_one') {
+    toggleDraftStudent(buildOneToOneSelection(item))
+    return
+  }
+
+  const students = Array.isArray(item?.students) ? item.students : []
+  const allSelected = students.length > 0 && students.every(student => isDraftStudentSelected(buildClassStudentSelection(item, student)))
+  if (allSelected) {
+    const selectedKeys = new Set(students.map(student => buildSelectedStudentKey(buildClassStudentSelection(item, student))))
+    draftSelectedStudents.value = draftSelectedStudents.value.filter(selectedItem => !selectedKeys.has(buildSelectedStudentKey(selectedItem)))
+    return
+  }
+
+  students.forEach((student) => {
+    const selection = buildClassStudentSelection(item, student)
+    if (!isDraftStudentSelected(selection))
+      draftSelectedStudents.value.push(selection)
+  })
 }
 
 function handleInviteFollow() {
@@ -572,7 +606,6 @@ watch(() => studentPickerKeyword.value, () => {
       centered
       class="afterSchoolTasksModel__student-picker-modal"
       :body-style="{ padding: 0 }"
-      :footer="false"
       :keyboard="false"
       :closable="false"
       :mask-closable="false"
@@ -625,14 +658,20 @@ watch(() => studentPickerKeyword.value, () => {
                     :key="classItem.id"
                     class="afterSchoolTasksModel__student-group"
                   >
-                    <div class="afterSchoolTasksModel__student-group-header" @click="toggleClassExpanded(classItem.id)">
+                    <div class="afterSchoolTasksModel__student-group-header">
+                      <div class="afterSchoolTasksModel__student-group-header-main" @click="handleSelectSource('class', classItem)">
+                        <span class="afterSchoolTasksModel__student-checkbox" :class="{ 'is-selected': isSourceSelected('class', classItem.id) }">
+                          <CheckOutlined v-if="isSourceSelected('class', classItem.id)" />
+                        </span>
+                        <span class="afterSchoolTasksModel__student-group-title">
+                          {{ classItem.name }}（{{ getSelectedCountBySource('class', classItem.id) }}/{{ classItem.students?.length || 0 }}）
+                        </span>
+                      </div>
                       <CaretDownOutlined
                         class="afterSchoolTasksModel__student-group-arrow"
                         :class="{ 'is-collapsed': !expandedClassIds.includes(String(classItem.id || '')) }"
+                        @click.stop="toggleClassExpanded(classItem.id)"
                       />
-                      <span class="afterSchoolTasksModel__student-group-title">
-                        {{ classItem.name }}（{{ getSelectedCountBySource('class', classItem.id) }}/{{ classItem.students?.length || 0 }}）
-                      </span>
                     </div>
 
                     <div v-show="expandedClassIds.includes(String(classItem.id || ''))" class="afterSchoolTasksModel__student-list">
@@ -642,7 +681,9 @@ watch(() => studentPickerKeyword.value, () => {
                         class="afterSchoolTasksModel__student-row"
                         @click="handleSelectClassStudent(classItem, student)"
                       >
-                        <span class="afterSchoolTasksModel__student-radio" :class="{ 'is-selected': isDraftStudentSelected(buildClassStudentSelection(classItem, student)) }" />
+                        <span class="afterSchoolTasksModel__student-radio" :class="{ 'is-selected': isDraftStudentSelected(buildClassStudentSelection(classItem, student)) }">
+                          <CheckOutlined v-if="isDraftStudentSelected(buildClassStudentSelection(classItem, student))" />
+                        </span>
                         <span class="afterSchoolTasksModel__student-name">
                           {{ student.name }}
                         </span>
@@ -667,9 +708,14 @@ watch(() => studentPickerKeyword.value, () => {
                     class="afterSchoolTasksModel__student-group afterSchoolTasksModel__student-group--plain"
                   >
                     <div class="afterSchoolTasksModel__student-group-header afterSchoolTasksModel__student-group-header--plain">
-                      <span class="afterSchoolTasksModel__student-group-title">
-                        {{ item.name || item.lessonName || item.studentName || '1对1' }}（{{ isDraftStudentSelected(buildOneToOneSelection(item)) ? 1 : 0 }}/1）
-                      </span>
+                      <div class="afterSchoolTasksModel__student-group-header-main" @click="handleSelectSource('one_to_one', item)">
+                        <span class="afterSchoolTasksModel__student-checkbox" :class="{ 'is-selected': isSourceSelected('one_to_one', item.id) }">
+                          <CheckOutlined v-if="isSourceSelected('one_to_one', item.id)" />
+                        </span>
+                        <span class="afterSchoolTasksModel__student-group-title">
+                          {{ item.name || item.lessonName || item.studentName || '1对1' }}（{{ isDraftStudentSelected(buildOneToOneSelection(item)) ? 1 : 0 }}/1）
+                        </span>
+                      </div>
                     </div>
 
                     <div class="afterSchoolTasksModel__student-list">
@@ -677,7 +723,9 @@ watch(() => studentPickerKeyword.value, () => {
                         class="afterSchoolTasksModel__student-row"
                         @click="handleSelectOneToOne(item)"
                       >
-                        <span class="afterSchoolTasksModel__student-radio" :class="{ 'is-selected': isDraftStudentSelected(buildOneToOneSelection(item)) }" />
+                        <span class="afterSchoolTasksModel__student-radio" :class="{ 'is-selected': isDraftStudentSelected(buildOneToOneSelection(item)) }">
+                          <CheckOutlined v-if="isDraftStudentSelected(buildOneToOneSelection(item))" />
+                        </span>
                         <span class="afterSchoolTasksModel__student-name">
                           {{ item.studentName || item.name || '-' }}
                         </span>
@@ -689,17 +737,19 @@ watch(() => studentPickerKeyword.value, () => {
               </template>
             </div>
           </a-spin>
-
-          <div class="afterSchoolTasksModel__student-picker-footer">
-            <a-button @click="closeStudentPicker">
-              关闭
-            </a-button>
-            <a-button type="primary" @click="handleCompleteStudentPicker">
-              完成
-            </a-button>
-          </div>
         </div>
       </div>
+
+      <template #footer>
+        <div class="afterSchoolTasksModel__student-picker-footer">
+          <a-button @click="closeStudentPicker">
+            关闭
+          </a-button>
+          <a-button type="primary" @click="handleCompleteStudentPicker">
+            完成
+          </a-button>
+        </div>
+      </template>
     </a-modal>
   </div>
 </template>
@@ -791,21 +841,31 @@ watch(() => studentPickerKeyword.value, () => {
 .afterSchoolTasksModel__student-group-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
   color: #262626;
   font-size: 16px;
   line-height: 24px;
   font-weight: 600;
-  cursor: pointer;
 }
 
 .afterSchoolTasksModel__student-group-header--plain {
   cursor: default;
 }
 
+.afterSchoolTasksModel__student-group-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
 .afterSchoolTasksModel__student-group-arrow {
   color: #999;
   font-size: 12px;
+  flex: none;
+  cursor: pointer;
   transition: transform 0.2s ease;
 
   &.is-collapsed {
@@ -830,31 +890,42 @@ watch(() => studentPickerKeyword.value, () => {
   cursor: pointer;
 }
 
+.afterSchoolTasksModel__student-checkbox,
 .afterSchoolTasksModel__student-radio {
-  position: relative;
-  width: 16px;
-  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
   flex: none;
   border: 1px solid #d9d9d9;
-  border-radius: 50%;
   background: #fff;
+  color: #fff;
+  font-size: 12px;
   transition: all 0.2s ease;
+}
+
+.afterSchoolTasksModel__student-checkbox {
+  border-radius: 4px;
 
   &.is-selected {
     border-color: var(--pro-ant-color-primary);
-
-    &::after {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--pro-ant-color-primary);
-      transform: translate(-50%, -50%);
-      content: '';
-    }
+    background: var(--pro-ant-color-primary);
   }
+}
+
+.afterSchoolTasksModel__student-radio {
+  border-radius: 50%;
+
+  &.is-selected {
+    border-color: var(--pro-ant-color-primary);
+    background: var(--pro-ant-color-primary);
+  }
+}
+
+:deep(.afterSchoolTasksModel__student-checkbox .anticon),
+:deep(.afterSchoolTasksModel__student-radio .anticon) {
+  transform: scale(0.85);
 }
 
 .afterSchoolTasksModel__student-name {
