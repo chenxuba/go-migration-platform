@@ -1,6 +1,9 @@
 <script setup>
-import { PictureOutlined, PlayCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CaretDownOutlined, CloseOutlined, PictureOutlined, PlayCircleOutlined, QuestionCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
+import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
+import { pageGroupClassesApi, pageGroupClassStudentsApi } from '@/api/edu-center/group-class'
+import messageService from '@/utils/messageService'
 
 const props = defineProps({
   title: {
@@ -15,6 +18,15 @@ const open = defineModel({
 
 const confirmLoading = ref(false)
 const formRef = ref(null)
+const studentPickerOpen = ref(false)
+const studentPickerType = ref('class')
+const studentPickerKeyword = ref('')
+const studentPickerLoading = ref(false)
+const classTargetList = ref([])
+const oneToOneTargetList = ref([])
+const expandedClassIds = ref([])
+const draftSelectedStudents = ref([])
+const studentPickerRequestSeq = ref(0)
 const formState = reactive({
   title: '',
   content: '',
@@ -31,6 +43,15 @@ const formState = reactive({
 })
 
 const activeFile = ref(undefined)
+let studentPickerSearchTimer = undefined
+
+const studentPickerTabs = [
+  { key: 'class', label: '班级' },
+  { key: 'one_to_one', label: '1对1' },
+]
+
+const studentPickerPlaceholder = computed(() => studentPickerType.value === 'class' ? '搜索班级名称' : '搜索1对1名称')
+const selectedStudentButtonText = computed(() => formState.students.length > 0 ? `已选班级/学员(${formState.students.length})` : '选择班级/学员')
 
 const weeks = [{ label: '星期一', value: 1 }, { label: '星期二', value: 2 }, { label: '星期三', value: 3 }, { label: '星期四', value: 4 }, { label: '星期五', value: 5 }, { label: '星期六', value: 6 }, { label: '星期日', value: 7 }]
 const dateOptions = [{ label: '00:00', value: '00:00' }, { label: '01:00', value: '01:00' }, { label: '02:00', value: '02:00' }, { label: '03:00', value: '03:00' }, { label: '04:00', value: '04:00' }, { label: '05:00', value: '05:00' }, { label: '06:00', value: '06:00' }, { label: '07:00', value: '07:00' }, { label: '08:00', value: '08:00' }, { label: '09:00', value: '09:00' }, { label: '10:00', value: '10:00' }, { label: '11:00', value: '11:00' }, { label: '12:00', value: '12:00' }, { label: '13:00', value: '13:00' }, { label: '14:00', value: '14:00' }, { label: '15:00', value: '15:00' }, { label: '16:00', value: '16:00' }, { label: '17:00', value: '17:00' }, { label: '18:00', value: '18:00' }, { label: '19:00', value: '19:00' }, { label: '20:00', value: '20:00' }, { label: '21:00', value: '21:00' }, { label: '22:00', value: '22:00' }, { label: '23:00', value: '23:00' }]
@@ -58,6 +79,190 @@ function handleOpenChange(value, show) {
   else {
     activeFile.value = undefined
   }
+}
+
+function cloneSelectedStudents(list) {
+  return Array.isArray(list) ? list.map(item => ({ ...item })) : []
+}
+
+function buildSelectedStudentKey(item) {
+  return `${String(item?.sourceType || '')}:${String(item?.sourceId || '')}:${String(item?.studentId || '')}`
+}
+
+function isDraftStudentSelected(item) {
+  const key = buildSelectedStudentKey(item)
+  return draftSelectedStudents.value.some(selectedItem => buildSelectedStudentKey(selectedItem) === key)
+}
+
+function getSelectedCountBySource(sourceType, sourceId) {
+  return draftSelectedStudents.value.filter(item =>
+    String(item?.sourceType || '') === sourceType && String(item?.sourceId || '') === String(sourceId || '')).length
+}
+
+function buildClassStudentSelection(classItem, student) {
+  return {
+    sourceType: 'class',
+    sourceId: String(classItem?.id || ''),
+    sourceName: String(classItem?.name || ''),
+    studentId: String(student?.id || ''),
+    studentName: String(student?.name || ''),
+    tuitionAccountId: String(student?.classStudentTuitionAccountInfo?.tuitionAccountId || student?.tuitionAccountId || ''),
+    isBind: student?.isBind !== false,
+  }
+}
+
+function buildOneToOneSelection(item) {
+  return {
+    sourceType: 'one_to_one',
+    sourceId: String(item?.id || ''),
+    sourceName: String(item?.name || item?.lessonName || item?.studentName || '1对1'),
+    studentId: String(item?.studentId || item?.id || ''),
+    studentName: String(item?.studentName || item?.name || ''),
+    tuitionAccountId: String(item?.tuitionAccountId || item?.tuitionAccount?.id || ''),
+    isBind: item?.isBind !== false,
+  }
+}
+
+function toggleDraftStudent(item) {
+  const key = buildSelectedStudentKey(item)
+  const index = draftSelectedStudents.value.findIndex(selectedItem => buildSelectedStudentKey(selectedItem) === key)
+  if (index >= 0) {
+    draftSelectedStudents.value.splice(index, 1)
+    return
+  }
+  draftSelectedStudents.value.push({ ...item })
+}
+
+function toggleClassExpanded(classId) {
+  const normalizedId = String(classId || '')
+  const index = expandedClassIds.value.indexOf(normalizedId)
+  if (index >= 0) {
+    expandedClassIds.value.splice(index, 1)
+    return
+  }
+  expandedClassIds.value.push(normalizedId)
+}
+
+function handleSelectClassStudent(classItem, student) {
+  toggleDraftStudent(buildClassStudentSelection(classItem, student))
+}
+
+function handleSelectOneToOne(item) {
+  toggleDraftStudent(buildOneToOneSelection(item))
+}
+
+function handleInviteFollow() {
+  messageService.info('邀请关注功能待接入')
+}
+
+async function loadClassTargets(currentSeq) {
+  const res = await pageGroupClassesApi({
+    queryModel: {
+      className: String(studentPickerKeyword.value || '').trim() || undefined,
+      statues: [1],
+    },
+    pageRequestModel: {
+      needTotal: true,
+      pageSize: 50,
+      pageIndex: 1,
+      skipCount: 0,
+    },
+  })
+  if (currentSeq !== studentPickerRequestSeq.value)
+    return
+  if (res.code !== 200)
+    throw new Error(res.message || '获取班级列表失败')
+
+  const classes = Array.isArray(res.result?.list) ? res.result.list : []
+  const classRows = await Promise.all(classes.map(async (item) => {
+    const classId = String(item?.id || '')
+    try {
+      const stuRes = await pageGroupClassStudentsApi({
+        queryModel: {
+          classId,
+          status: [1],
+        },
+        pageRequestModel: {
+          needTotal: true,
+          pageSize: Math.max(Number(item?.studentCount || 0), 50),
+          pageIndex: 1,
+          skipCount: 0,
+        },
+      })
+      return {
+        ...item,
+        students: stuRes.code === 200 && Array.isArray(stuRes.result?.list) ? stuRes.result.list : [],
+      }
+    }
+    catch {
+      return {
+        ...item,
+        students: [],
+      }
+    }
+  }))
+  if (currentSeq !== studentPickerRequestSeq.value)
+    return
+  classTargetList.value = classRows
+  expandedClassIds.value = classRows.filter(item => Array.isArray(item.students) && item.students.length > 0).slice(0, 1).map(item => String(item.id || ''))
+}
+
+async function loadOneToOneTargets(currentSeq) {
+  const res = await getOneToOneListApi({
+    queryModel: {
+      searchKey: String(studentPickerKeyword.value || '').trim() || undefined,
+      status: [1],
+    },
+    pageRequestModel: {
+      needTotal: true,
+      pageSize: 50,
+      pageIndex: 1,
+      skipCount: 0,
+    },
+  })
+  if (currentSeq !== studentPickerRequestSeq.value)
+    return
+  if (res.code !== 200)
+    throw new Error(res.message || '获取1对1列表失败')
+  oneToOneTargetList.value = Array.isArray(res.result?.list) ? res.result.list : []
+}
+
+async function loadStudentPickerData() {
+  const currentSeq = ++studentPickerRequestSeq.value
+  studentPickerLoading.value = true
+  try {
+    if (studentPickerType.value === 'class') {
+      oneToOneTargetList.value = []
+      await loadClassTargets(currentSeq)
+    }
+    else {
+      classTargetList.value = []
+      expandedClassIds.value = []
+      await loadOneToOneTargets(currentSeq)
+    }
+  }
+  catch (error) {
+    classTargetList.value = []
+    oneToOneTargetList.value = []
+    messageService.error(error?.response?.data?.message || error?.message || '加载班级/学员失败')
+  }
+  finally {
+    if (currentSeq === studentPickerRequestSeq.value)
+      studentPickerLoading.value = false
+  }
+}
+
+function openStudentPicker() {
+  studentPickerOpen.value = true
+}
+
+function closeStudentPicker() {
+  studentPickerOpen.value = false
+}
+
+function handleCompleteStudentPicker() {
+  formState.students = cloneSelectedStudents(draftSelectedStudents.value)
+  closeStudentPicker()
 }
 
 function handleOk() {
@@ -112,6 +317,42 @@ watch(() => formState.publishAt, (publishAtValue) => {
   const deadlineAt = dayjs(formState.deadlineAt)
   if (publishAt.isValid() && deadlineAt.isValid() && !deadlineAt.isAfter(publishAt, 'day'))
     formState.deadlineAt = undefined
+})
+
+watch(() => studentPickerOpen.value, (open) => {
+  if (!open) {
+    studentPickerRequestSeq.value += 1
+    studentPickerLoading.value = false
+    studentPickerKeyword.value = ''
+    classTargetList.value = []
+    oneToOneTargetList.value = []
+    expandedClassIds.value = []
+    if (studentPickerSearchTimer) {
+      clearTimeout(studentPickerSearchTimer)
+      studentPickerSearchTimer = undefined
+    }
+    return
+  }
+
+  draftSelectedStudents.value = cloneSelectedStudents(formState.students)
+  loadStudentPickerData()
+})
+
+watch(() => studentPickerType.value, () => {
+  if (!studentPickerOpen.value)
+    return
+  studentPickerKeyword.value = ''
+  loadStudentPickerData()
+})
+
+watch(() => studentPickerKeyword.value, () => {
+  if (!studentPickerOpen.value)
+    return
+  if (studentPickerSearchTimer)
+    clearTimeout(studentPickerSearchTimer)
+  studentPickerSearchTimer = setTimeout(() => {
+    loadStudentPickerData()
+  }, 300)
 })
 </script>
 
@@ -212,8 +453,8 @@ watch(() => formState.publishAt, (publishAtValue) => {
         </a-form-item>
 
         <a-form-item label="选择班级/学员" name="students" :rules="[{ required: true, message: '请选择班级/学员' }]">
-          <a-button type="primary" ghost>
-            选择班级/学员
+          <a-button type="primary" ghost @click="openStudentPicker">
+            {{ selectedStudentButtonText }}
           </a-button>
         </a-form-item>
         <a-form-item label="发布规则" :required="true">
@@ -325,6 +566,141 @@ watch(() => formState.publishAt, (publishAtValue) => {
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <a-modal
+      v-model:open="studentPickerOpen"
+      centered
+      class="afterSchoolTasksModel__student-picker-modal"
+      :body-style="{ padding: 0 }"
+      :footer="false"
+      :keyboard="false"
+      :closable="false"
+      :mask-closable="false"
+      width="800px"
+      destroy-on-close
+    >
+      <template #title>
+        <div class="afterSchoolTasksModel__student-picker-title">
+          <span>选择班级/学员</span>
+          <a-button type="text" class="afterSchoolTasksModel__student-picker-close" @click="closeStudentPicker">
+            <template #icon>
+              <CloseOutlined />
+            </template>
+          </a-button>
+        </div>
+      </template>
+
+      <div class="afterSchoolTasksModel__student-picker">
+        <div class="afterSchoolTasksModel__student-picker-sidebar">
+          <div
+            v-for="item in studentPickerTabs"
+            :key="item.key"
+            :class="{ 'is-active': studentPickerType === item.key }"
+            class="afterSchoolTasksModel__student-picker-tab"
+            @click="studentPickerType = item.key"
+          >
+            {{ item.label }}
+          </div>
+        </div>
+
+        <div class="afterSchoolTasksModel__student-picker-main">
+          <div class="afterSchoolTasksModel__student-picker-toolbar">
+            <a-input
+              v-model:value="studentPickerKeyword"
+              :placeholder="studentPickerPlaceholder"
+              allow-clear
+            >
+              <template #prefix>
+                <SearchOutlined />
+              </template>
+            </a-input>
+          </div>
+
+          <a-spin :spinning="studentPickerLoading" class="afterSchoolTasksModel__student-picker-spin">
+            <div class="afterSchoolTasksModel__student-picker-content">
+              <template v-if="studentPickerType === 'class'">
+                <template v-if="classTargetList.length > 0">
+                  <div
+                    v-for="classItem in classTargetList"
+                    :key="classItem.id"
+                    class="afterSchoolTasksModel__student-group"
+                  >
+                    <div class="afterSchoolTasksModel__student-group-header" @click="toggleClassExpanded(classItem.id)">
+                      <CaretDownOutlined
+                        class="afterSchoolTasksModel__student-group-arrow"
+                        :class="{ 'is-collapsed': !expandedClassIds.includes(String(classItem.id || '')) }"
+                      />
+                      <span class="afterSchoolTasksModel__student-group-title">
+                        {{ classItem.name }}（{{ getSelectedCountBySource('class', classItem.id) }}/{{ classItem.students?.length || 0 }}）
+                      </span>
+                    </div>
+
+                    <div v-show="expandedClassIds.includes(String(classItem.id || ''))" class="afterSchoolTasksModel__student-list">
+                      <div
+                        v-for="student in classItem.students || []"
+                        :key="student.id"
+                        class="afterSchoolTasksModel__student-row"
+                        @click="handleSelectClassStudent(classItem, student)"
+                      >
+                        <span class="afterSchoolTasksModel__student-radio" :class="{ 'is-selected': isDraftStudentSelected(buildClassStudentSelection(classItem, student)) }" />
+                        <span class="afterSchoolTasksModel__student-name">
+                          {{ student.name }}
+                        </span>
+                        <template v-if="student.isBind === false">
+                          <span class="afterSchoolTasksModel__student-warning">
+                            未关注家校平台，无法发送通知
+                          </span>
+                          <a class="afterSchoolTasksModel__student-link" @click.stop="handleInviteFollow">邀请关注</a>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <a-empty v-else description="暂无班级数据" />
+              </template>
+
+              <template v-else>
+                <template v-if="oneToOneTargetList.length > 0">
+                  <div
+                    v-for="item in oneToOneTargetList"
+                    :key="item.id"
+                    class="afterSchoolTasksModel__student-group afterSchoolTasksModel__student-group--plain"
+                  >
+                    <div class="afterSchoolTasksModel__student-group-header afterSchoolTasksModel__student-group-header--plain">
+                      <span class="afterSchoolTasksModel__student-group-title">
+                        {{ item.name || item.lessonName || item.studentName || '1对1' }}（{{ isDraftStudentSelected(buildOneToOneSelection(item)) ? 1 : 0 }}/1）
+                      </span>
+                    </div>
+
+                    <div class="afterSchoolTasksModel__student-list">
+                      <div
+                        class="afterSchoolTasksModel__student-row"
+                        @click="handleSelectOneToOne(item)"
+                      >
+                        <span class="afterSchoolTasksModel__student-radio" :class="{ 'is-selected': isDraftStudentSelected(buildOneToOneSelection(item)) }" />
+                        <span class="afterSchoolTasksModel__student-name">
+                          {{ item.studentName || item.name || '-' }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <a-empty v-else description="暂无1对1数据" />
+              </template>
+            </div>
+          </a-spin>
+
+          <div class="afterSchoolTasksModel__student-picker-footer">
+            <a-button @click="closeStudentPicker">
+              关闭
+            </a-button>
+            <a-button type="primary" @click="handleCompleteStudentPicker">
+              完成
+            </a-button>
+          </div>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -336,6 +712,177 @@ watch(() => formState.publishAt, (publishAtValue) => {
 </style>
 
 <style scoped lang="less">
+.afterSchoolTasksModel__student-picker-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.afterSchoolTasksModel__student-picker-close {
+  margin-right: -8px;
+}
+
+.afterSchoolTasksModel__student-picker {
+  display: flex;
+  height: 650px;
+}
+
+.afterSchoolTasksModel__student-picker-sidebar {
+  width: 160px;
+  border-right: 1px solid #f0f0f0;
+  background: #fff;
+}
+
+.afterSchoolTasksModel__student-picker-tab {
+  position: relative;
+  padding: 22px 28px;
+  color: #595959;
+  font-size: 16px;
+  line-height: 24px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &.is-active {
+    background: #f2f8ff;
+    color: var(--pro-ant-color-primary);
+    font-weight: 600;
+
+    &::before {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      width: 4px;
+      height: 14px;
+      border-radius: 2px;
+      background: var(--pro-ant-color-primary);
+      transform: translateY(-50%);
+      content: '';
+    }
+  }
+}
+
+.afterSchoolTasksModel__student-picker-main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.afterSchoolTasksModel__student-picker-toolbar {
+  padding: 16px 24px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.afterSchoolTasksModel__student-picker-spin {
+  flex: 1;
+  min-height: 0;
+}
+
+.afterSchoolTasksModel__student-picker-content {
+  height: 100%;
+  overflow: auto;
+  padding: 18px 24px 20px;
+}
+
+.afterSchoolTasksModel__student-group + .afterSchoolTasksModel__student-group {
+  margin-top: 18px;
+}
+
+.afterSchoolTasksModel__student-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #262626;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.afterSchoolTasksModel__student-group-header--plain {
+  cursor: default;
+}
+
+.afterSchoolTasksModel__student-group-arrow {
+  color: #999;
+  font-size: 12px;
+  transition: transform 0.2s ease;
+
+  &.is-collapsed {
+    transform: rotate(-90deg);
+  }
+}
+
+.afterSchoolTasksModel__student-group-title {
+  color: #262626;
+}
+
+.afterSchoolTasksModel__student-list {
+  padding-top: 8px;
+  padding-left: 24px;
+}
+
+.afterSchoolTasksModel__student-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.afterSchoolTasksModel__student-radio {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 1px solid #d9d9d9;
+  border-radius: 50%;
+  background: #fff;
+  transition: all 0.2s ease;
+
+  &.is-selected {
+    border-color: var(--pro-ant-color-primary);
+
+    &::after {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--pro-ant-color-primary);
+      transform: translate(-50%, -50%);
+      content: '';
+    }
+  }
+}
+
+.afterSchoolTasksModel__student-name {
+  color: #262626;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.afterSchoolTasksModel__student-warning {
+  color: #fa8c16;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.afterSchoolTasksModel__student-link {
+  color: var(--pro-ant-color-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.afterSchoolTasksModel__student-picker-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
 .afterSchoolTasksModel__upload-form-item {
   margin-top: -14px;
   margin-bottom: 12px;
@@ -411,6 +958,22 @@ watch(() => formState.publishAt, (publishAtValue) => {
 
 :deep(.afterSchoolTasksModel__content-textarea.ant-input-textarea-show-count::after) {
   margin-top: 2px;
+}
+
+:deep(.afterSchoolTasksModel__student-picker-modal .ant-modal-header) {
+  margin-bottom: 0;
+}
+
+:deep(.afterSchoolTasksModel__student-picker-modal .ant-modal-body) {
+  padding: 0 !important;
+}
+
+:deep(.afterSchoolTasksModel__student-picker-spin.ant-spin-nested-loading) {
+  height: 100%;
+}
+
+:deep(.afterSchoolTasksModel__student-picker-spin .ant-spin-container) {
+  height: 100%;
 }
 
 .week-day {
