@@ -109,6 +109,10 @@ const columns: TableColumnsType<GovernmentAccountItem> = [
 
 let requestSerial = 0
 
+function resolveRequestErrorMessage(error: any, fallback: string) {
+  return String(error?.response?.data?.message || error?.message || fallback).trim() || fallback
+}
+
 function resetFilters() {
   filters.username = undefined
   filters.mobile = undefined
@@ -200,7 +204,7 @@ async function toggleGovernmentAccountStatus(record: GovernmentAccountItem) {
   }
   catch (error: any) {
     console.error('toggle government account status failed', error)
-    messageService.error(error?.message || `${getToggleActionLabel(record)}政府账户失败`)
+    messageService.error(resolveRequestErrorMessage(error, `${getToggleActionLabel(record)}政府账户失败`))
   }
   finally {
     if (statusUpdatingId.value === accountId)
@@ -236,7 +240,7 @@ async function fetchGovernmentAccounts() {
     if (currentRequest !== requestSerial)
       return
     console.error('fetch government accounts failed', error)
-    messageService.error(error?.message || '获取政府账户失败')
+    messageService.error(resolveRequestErrorMessage(error, '获取政府账户失败'))
   }
   finally {
     if (currentRequest === requestSerial)

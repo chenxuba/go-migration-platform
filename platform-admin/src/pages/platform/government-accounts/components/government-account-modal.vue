@@ -8,6 +8,7 @@ import type {
   GovernmentRoleOption,
 } from '@/api/platform/government-accounts'
 import {
+  checkGovernmentUsernameAvailableApi,
   createGovernmentAccountApi,
   getGovernmentAccountDetailApi,
   getGovernmentRoleOptionsApi,
@@ -83,6 +84,12 @@ const formState = reactive<GovernmentAccountFormState>(createInitialFormState())
 
 const isEdit = computed(() => Number(props.accountId || 0) > 0)
 const modalTitle = computed(() => (isEdit.value ? '编辑政府账户' : '新建政府账户'))
+const accountEnabled = computed({
+  get: () => !formState.disabled,
+  set: value => {
+    formState.disabled = !value
+  },
+})
 const selectedLevelLabel = computed(() => levelOptions.find(item => item.value === formState.level)?.label || '--')
 const filteredRoleOptions = computed(() => roleOptions.value.filter(item => item.level === formState.level))
 const provinceOptions = computed(() => regionData.map(item => ({
@@ -118,6 +125,8 @@ const rules: Record<string, Rule[]> = {
     {
       validator: async (_rule, value) => {
         const text = String(value || '').trim()
+        if (!text)
+          return Promise.resolve()
         if (!/^1\d{10}$/.test(text))
           return Promise.reject(new Error('请输入正确的手机号'))
         return Promise.resolve()
@@ -130,9 +139,25 @@ const rules: Record<string, Rule[]> = {
     {
       validator: async (_rule, value) => {
         const text = String(value || '').trim()
+        if (!text)
+          return Promise.resolve()
         if (/\s/.test(text))
           return Promise.reject(new Error('登录账号不能包含空格'))
         return Promise.resolve()
+      },
+      trigger: 'blur',
+    },
+    {
+      validator: async (_rule, value) => {
+        const text = String(value || '').trim()
+        if (!text)
+          return Promise.resolve()
+
+        const result = await checkGovernmentUsernameAvailability(text)
+        if (result.available)
+          return Promise.resolve()
+
+        return Promise.reject(new Error(result.message || '登录账号已存在，请更换'))
       },
       trigger: 'blur',
     },
@@ -153,6 +178,44 @@ const rules: Record<string, Rule[]> = {
   roleId: [
     { required: true, message: '请选择监管角色', trigger: 'change' },
   ],
+}
+
+function resolveRequestErrorMessage(error: any, fallback: string) {
+  return String(error?.response?.data?.message || error?.message || fallback).trim() || fallback
+}
+
+async function checkGovernmentUsernameAvailability(username: string) {
+  const trimmed = String(username || '').trim()
+  if (!trimmed) {
+    return {
+      available: false,
+      message: '登录账号不能为空',
+    }
+  }
+
+  try {
+    const res = await checkGovernmentUsernameAvailableApi({
+      username: trimmed,
+      userId: props.accountId ? Number(props.accountId) : undefined,
+    })
+    if (res.code !== 200 || !res.result) {
+      return {
+        available: false,
+        message: String(res.message || '登录账号校验失败，请稍后重试').trim(),
+      }
+    }
+
+    return {
+      available: !!res.result.available,
+      message: String(res.result.message || '').trim(),
+    }
+  }
+  catch (error: any) {
+    return {
+      available: false,
+      message: resolveRequestErrorMessage(error, '登录账号校验失败，请稍后重试'),
+    }
+  }
 }
 
 function resetScopePicker() {
@@ -269,7 +332,7 @@ async function loadRoleOptions() {
   }
   catch (error: any) {
     console.error('load government roles failed', error)
-    messageService.error(error?.message || '获取监管角色失败')
+    messageService.error(resolveRequestErrorMessage(error, '获取监管角色失败'))
     roleOptions.value = []
   }
   finally {
@@ -302,7 +365,7 @@ async function loadDetail(accountId: number) {
   }
   catch (error: any) {
     console.error('load government account detail failed', error)
-    messageService.error(error?.message || '获取政府账户详情失败')
+    messageService.error(resolveRequestErrorMessage(error, '获取政府账户详情失败'))
   }
   finally {
     detailLoading.value = false
@@ -378,7 +441,7 @@ async function submitForm() {
   }
   catch (error: any) {
     console.error('submit government account failed', error)
-    messageService.error(error?.message || (isEdit.value ? '更新政府账户失败' : '创建政府账户失败'))
+    messageService.error(resolveRequestErrorMessage(error, isEdit.value ? '更新政府账户失败' : '创建政府账户失败'))
   }
   finally {
     submitting.value = false
@@ -427,7 +490,11 @@ watch(() => props.open, async (open) => {
                 <a-input v-model:value="formState.username" :maxlength="30" placeholder="请输入登录账号" />
               </a-form-item>
 
-              <a-form-item :label="isEdit ? '重置密码' : '初始密码'" name="password">
+              <a-form-item name="password">
+                <template #label>
+                  <span v-if="!isEdit" class="password-label password-label--required">初始密码</span>
+                  <span v-else>重置密码</span>
+                </template>
                 <a-input-password
                   v-model:value="formState.password"
                   :maxlength="20"
@@ -435,11 +502,11 @@ watch(() => props.open, async (open) => {
                 />
               </a-form-item>
 
-              <a-form-item label="账号状态">
+              <a-form-item v-if="isEdit" label="账号状态">
                 <a-switch
-                  v-model:checked="formState.disabled"
-                  checked-children="停用"
-                  un-checked-children="启用"
+                  v-model:checked="accountEnabled"
+                  checked-children="启用"
+                  un-checked-children="停用"
                 />
               </a-form-item>
             </a-form>
@@ -469,7 +536,10 @@ watch(() => props.open, async (open) => {
                 />
               </a-form-item>
 
-              <a-form-item label="监管角色" name="roleId">
+              <a-form-item name="roleId">
+                <template #label>
+                  <span class="form-label-required">监管角色</span>
+                </template>
                 <a-select
                   v-model:value="formState.roleId"
                   :loading="roleLoading"
@@ -481,7 +551,7 @@ watch(() => props.open, async (open) => {
 
             <div class="scope-panel">
               <div class="scope-panel__head">
-                <div class="scope-panel__title">
+                <div class="scope-panel__title" :class="{ 'scope-panel__title--required': formState.level !== 'super' }">
                   管辖范围
                 </div>
                 <div class="scope-panel__subtitle">
@@ -569,14 +639,18 @@ watch(() => props.open, async (open) => {
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 18px;
   padding-top: 8px;
+  align-items: stretch;
 }
 
 .government-account-modal__aside,
 .government-account-modal__main {
   min-width: 0;
+  display: flex;
 }
 
 .gov-card {
+  width: 100%;
+  height: 100%;
   border: 1px solid #e8edf5;
   border-radius: 18px;
   background: #fff;
@@ -607,7 +681,7 @@ watch(() => props.open, async (open) => {
   font-size: 18px;
   font-weight: 700;
   line-height: 28px;
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
 
 .gov-card__meta {
@@ -635,6 +709,22 @@ watch(() => props.open, async (open) => {
   color: #1f2329;
   font-size: 15px;
   font-weight: 600;
+}
+
+.scope-panel__title--required {
+  position: relative;
+  padding-left: 12px;
+}
+
+.scope-panel__title--required::before {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  color: #ff4d4f;
+  font-size: 14px;
+  line-height: 1;
+  transform: translateY(-46%);
+  content: '*';
 }
 
 .scope-panel__subtitle {
@@ -670,6 +760,7 @@ watch(() => props.open, async (open) => {
 }
 
 .scope-panel__empty {
+  margin-top: 16px;
   padding: 18px 16px;
   border: 1px dashed #d7deea;
   border-radius: 14px;
@@ -686,6 +777,24 @@ watch(() => props.open, async (open) => {
 :deep(.government-account-modal-shell .ant-form-item-label > label) {
   color: #1f2329;
   font-weight: 600;
+}
+
+.form-label-required,
+.password-label--required {
+  position: relative;
+  padding-left: 12px;
+}
+
+.form-label-required::before,
+.password-label--required::before {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  color: #ff4d4f;
+  font-size: 14px;
+  line-height: 1;
+  transform: translateY(-46%);
+  content: '*';
 }
 
 @media (max-width: 1100px) {

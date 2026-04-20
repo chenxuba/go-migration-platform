@@ -77,6 +77,12 @@ export interface GovernmentAccountMutationPayload {
   scopes: GovernmentAccountScopeItem[]
 }
 
+export interface GovernmentUsernameAvailability {
+  username: string
+  available: boolean
+  message?: string
+}
+
 export function pageGovernmentAccountsApi(params: GovernmentAccountPageParams) {
   return useGet<GovernmentAccountItem[], GovernmentAccountPageParams>('/sso/governmentUsers', params) as Promise<
     ResponseBody<GovernmentAccountItem[]> & { data?: GovernmentAccountPagePayload }
@@ -85,6 +91,14 @@ export function pageGovernmentAccountsApi(params: GovernmentAccountPageParams) {
 
 export function getGovernmentRoleOptionsApi() {
   return useGet<GovernmentRoleOption[]>('/sso/governmentRoles', undefined, { silentError: true })
+}
+
+export function checkGovernmentUsernameAvailableApi(params: { username: string, userId?: number }) {
+  return useGet<GovernmentUsernameAvailability, { username: string, userId?: number }>(
+    '/sso/governmentUsernameAvailable',
+    params,
+    { silentError: true },
+  )
 }
 
 export function getGovernmentAccountDetailApi(params: { id: number }) {

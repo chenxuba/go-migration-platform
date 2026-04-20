@@ -205,6 +205,12 @@ type GovernmentUserStatusRequest struct {
 	Disabled bool  `json:"disabled"`
 }
 
+type GovernmentUsernameAvailability struct {
+	Username  string `json:"username"`
+	Available bool   `json:"available"`
+	Message   string `json:"message,omitempty"`
+}
+
 type LoginLogSearchDTO struct {
 	UserType  *int   `json:"userType"`
 	StartTime string `json:"startTime"`

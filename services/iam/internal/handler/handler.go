@@ -34,6 +34,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/auth/me", handler.me)
 	mux.HandleFunc("/api/v1/users", handler.users)
 	mux.HandleFunc("/api/v1/government-users", handler.governmentUsers)
+	mux.HandleFunc("/api/v1/government-users/username-available", handler.governmentUsernameAvailable)
 	mux.HandleFunc("/api/v1/government-users/detail", handler.governmentUserDetail)
 	mux.HandleFunc("/api/v1/government-users/create", handler.createGovernmentUser)
 	mux.HandleFunc("/api/v1/government-users/update", handler.updateGovernmentUser)
@@ -68,6 +69,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sso/isLogin", handler.isLogin)
 	mux.HandleFunc("/sso/logout", handler.logout)
 	mux.HandleFunc("/sso/governmentUsers", handler.governmentUsers)
+	mux.HandleFunc("/sso/governmentUsernameAvailable", handler.governmentUsernameAvailable)
 	mux.HandleFunc("/sso/governmentUserDetail", handler.governmentUserDetail)
 	mux.HandleFunc("/sso/governmentUserCreate", handler.createGovernmentUser)
 	mux.HandleFunc("/sso/governmentUserUpdate", handler.updateGovernmentUser)
@@ -222,6 +224,36 @@ func (handler *Handler) governmentUsers(w http.ResponseWriter, r *http.Request) 
 	result, err := handler.service.ListGovernmentUsers(current, size, r.URL.Query().Get("username"), r.URL.Query().Get("mobile"))
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load government users failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) governmentUsernameAvailable(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	username := strings.TrimSpace(r.URL.Query().Get("username"))
+	if username == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "username is required", ctx.RequestID)
+		return
+	}
+
+	userID := parseInt64Ptr(r.URL.Query().Get("userId"))
+	result, err := handler.service.CheckGovernmentUsernameAvailable(username, userID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)

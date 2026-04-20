@@ -241,6 +241,10 @@ func (svc *Service) ListGovernmentRoleOptions() ([]model.GovernmentRoleOption, e
 	return items, nil
 }
 
+func (svc *Service) CheckGovernmentUsernameAvailable(username string, userID *int64) (model.GovernmentUsernameAvailability, error) {
+	return svc.repo.CheckGovernmentUsernameAvailable(context.Background(), username, userID)
+}
+
 func (svc *Service) GetGovernmentUserDetail(id int64) (model.GovernmentUserDetail, error) {
 	if id <= 0 {
 		return model.GovernmentUserDetail{}, errors.New("id is required")

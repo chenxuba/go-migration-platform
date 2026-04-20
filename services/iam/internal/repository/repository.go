@@ -17,6 +17,10 @@ type Repository struct {
 	db *sql.DB
 }
 
+type usernameAvailabilityQueryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 func normalizeInstitutionMenuCodeForOwnType(menuCode string, ownType int) string {
 	menuCode = strings.TrimSpace(menuCode)
 	if ownType == 2 {
@@ -68,6 +72,9 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	if err := repo.migrateLegacySystemDefaultRoleTypes(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := repo.ensureGovernmentRoleSeeds(context.Background()); err != nil {
 		return nil, err
 	}
 	return repo, nil
@@ -225,6 +232,57 @@ func (repo *Repository) ensureGovernmentUserScopeSchema(ctx context.Context) err
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 	`)
 	return err
+}
+
+func (repo *Repository) ensureGovernmentRoleSeeds(ctx context.Context) error {
+	type governmentRoleSeed struct {
+		name        string
+		description string
+		isAdmin     bool
+	}
+
+	seeds := []governmentRoleSeed{
+		{
+			name:        "超级监管员",
+			description: "政府端默认角色，拥有全部监管层级视角",
+			isAdmin:     true,
+		},
+		{
+			name:        "省级监管员",
+			description: "政府端默认角色，用于省级监管账号",
+		},
+		{
+			name:        "市级监管员",
+			description: "政府端默认角色，用于市级监管账号",
+		},
+		{
+			name:        "区县监管员",
+			description: "政府端默认角色，用于区县级监管账号",
+		},
+	}
+
+	for _, seed := range seeds {
+		var count int
+		if err := repo.db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM sso_role
+			WHERE del_flag = 0 AND org_id = 1 AND role_type = 3 AND role_name = ?
+		`, seed.name).Scan(&count); err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+
+		if _, err := repo.db.ExecContext(ctx, `
+			INSERT INTO sso_role (uuid, version, role_name, description, org_id, role_type, is_admin, is_default, del_flag, create_time, update_time)
+			VALUES (?, 0, ?, ?, 1, 3, ?, 1, 0, NOW(), NOW())
+		`, buildUUID(time.Now().UnixNano()), seed.name, seed.description, seed.isAdmin); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username string) (model.User, error) {
@@ -1152,18 +1210,72 @@ func (repo *Repository) GetGovernmentUserProfile(ctx context.Context, userID int
 	return disabled, level, nil
 }
 
+func (repo *Repository) CheckGovernmentUsernameAvailable(ctx context.Context, username string, excludeUserID *int64) (model.GovernmentUsernameAvailability, error) {
+	available, message, err := repo.checkGovernmentUsernameAvailable(ctx, repo.db, username, excludeUserID)
+	if err != nil {
+		return model.GovernmentUsernameAvailability{}, err
+	}
+	return model.GovernmentUsernameAvailability{
+		Username:  strings.TrimSpace(username),
+		Available: available,
+		Message:   message,
+	}, nil
+}
+
+func (repo *Repository) checkGovernmentUsernameAvailable(ctx context.Context, queryer usernameAvailabilityQueryer, username string, excludeUserID *int64) (bool, string, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return false, "登录账号不能为空", nil
+	}
+
+	var institutionID int64
+	err := queryer.QueryRowContext(ctx, `
+		SELECT id
+		FROM org_institution
+		WHERE del_flag = 0 AND login_name = ?
+		ORDER BY id
+		LIMIT 1
+	`, username).Scan(&institutionID)
+	if err != nil && err != sql.ErrNoRows {
+		return false, "", err
+	}
+	if err == nil {
+		return false, "登录账号已存在，请更换", nil
+	}
+
+	var userID int64
+	err = queryer.QueryRowContext(ctx, `
+		SELECT id
+		FROM sso_user
+		WHERE del_flag = 0 AND username = ?
+		ORDER BY id
+		LIMIT 1
+	`, username).Scan(&userID)
+	if err != nil && err != sql.ErrNoRows {
+		return false, "", err
+	}
+	if err == sql.ErrNoRows {
+		return true, "", nil
+	}
+	if excludeUserID != nil && *excludeUserID > 0 && userID == *excludeUserID {
+		return true, "", nil
+	}
+
+	return false, "登录账号已存在，请更换", nil
+}
+
 func (repo *Repository) CreateGovernmentUser(ctx context.Context, input model.GovernmentUserMutationRequest, operatorID int64) (int64, error) {
 	role, err := repo.getGovernmentRoleByID(ctx, input.RoleID)
 	if err != nil {
 		return 0, err
 	}
 	if input.Username != "" {
-		exists, err := repo.consoleUsernameExists(ctx, input.Username, nil)
+		availability, err := repo.CheckGovernmentUsernameAvailable(ctx, input.Username, nil)
 		if err != nil {
 			return 0, err
 		}
-		if exists {
-			return 0, errors.New("登录账号已存在")
+		if !availability.Available {
+			return 0, errors.New(firstNonEmptyString(availability.Message, "登录账号已存在"))
 		}
 	}
 	existsMobile, err := repo.consoleMobileExists(ctx, input.Mobile, nil)
@@ -1218,12 +1330,12 @@ func (repo *Repository) UpdateGovernmentUser(ctx context.Context, input model.Go
 	if err != nil {
 		return err
 	}
-	existsUsername, err := repo.consoleUsernameExists(ctx, input.Username, &userID)
+	availability, err := repo.CheckGovernmentUsernameAvailable(ctx, input.Username, &userID)
 	if err != nil {
 		return err
 	}
-	if existsUsername {
-		return errors.New("登录账号已存在")
+	if !availability.Available {
+		return errors.New(firstNonEmptyString(availability.Message, "登录账号已存在"))
 	}
 	existsMobile, err := repo.consoleMobileExists(ctx, input.Mobile, &userID)
 	if err != nil {
@@ -1536,6 +1648,15 @@ func governmentScopeDisplayName(item model.GovernmentUserScope) string {
 		}
 		return strings.TrimSpace(item.ProvinceName)
 	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (repo *Repository) PageLoginLogs(ctx context.Context, current, size int, search model.LoginLogSearchDTO) (model.LoginLogPage, error) {
