@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { CloseOutlined } from '@ant-design/icons-vue'
+import { QuillEditor } from '@vueup/vue-quill'
+import '@vueup/vue-quill/dist/vue-quill.snow.css'
 import { Empty, Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import createNoticeModel from './components/createNoticeModel.vue'
+import NoticePhonePreviewModal from './components/noticePhonePreviewModal.vue'
 import {
   listNoticeTemplatesApi,
   pageNoticesApi,
@@ -20,7 +23,13 @@ const displayArray = ref(['commentStatus', 'createUser', 'applyTime'])
 const createNoticeOpen = ref(false)
 const createTemplate = ref<NoticeTemplateItem | null>(null)
 const templateLibraryOpen = ref(false)
+const templatePreviewOpen = ref(false)
+const templatePreviewLoading = ref(false)
+const previewTemplate = ref<NoticeTemplateItem | null>(null)
+const previewTemplateHtml = ref('')
+const previewTemplateOpenedAt = ref('')
 const templateViewportRef = ref<HTMLElement | null>(null)
+const templatePreviewEditorRef = ref<any>()
 const visibleTemplateCount = ref(0)
 const noticeTemplateLoading = ref(false)
 const noticeTemplates = ref<NoticeTemplateItem[]>([])
@@ -78,6 +87,10 @@ const tablePagination = computed(() => ({
   showTotal: (total: number) => `共 ${total} 条`,
 }))
 
+const previewTemplateTitle = computed(() => String(previewTemplate.value?.title || '').trim() || '未填写通知标题')
+const previewTemplateTag = computed(() => String(previewTemplate.value?.tag || '').trim() || '通知模板')
+const previewTemplatePublishText = computed(() => previewTemplateOpenedAt.value ? dayjs(previewTemplateOpenedAt.value).format('MM-DD HH:mm') : dayjs().format('MM-DD HH:mm'))
+
 function updateVisibleTemplateCount() {
   const containerWidth = Number(templateViewportRef.value?.clientWidth || 0)
   if (!noticeTemplates.value.length) {
@@ -117,9 +130,85 @@ function getNoticeTemplateStyle(item: NoticeTemplateItem) {
   }
 }
 
-function previewNoticeTemplate(item: NoticeTemplateItem) {
-  const target = String(item.coverUrl || '').trim() || defaultTemplateCover
-  window.open(target, '_blank', 'noopener,noreferrer')
+function parseTemplateDeltaContent(rawContent?: string | null) {
+  const text = String(rawContent || '').trim()
+  if (!text || (!text.startsWith('[') && !text.startsWith('{') && !text.startsWith('"')))
+    return null
+
+  const normalizeParsed = (parsed: any) => {
+    if (Array.isArray(parsed))
+      return { ops: parsed }
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.ops))
+      return parsed
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(text)
+    const normalized = normalizeParsed(parsed)
+    if (normalized)
+      return normalized
+    if (typeof parsed === 'string')
+      return normalizeParsed(JSON.parse(parsed))
+  }
+  catch {
+    return null
+  }
+
+  return null
+}
+
+function getTemplatePreviewEditorInstance() {
+  const editor = templatePreviewEditorRef.value
+  return editor?.getQuill?.() || editor?.$?.exposed?.getQuill?.() || editor?.quill || null
+}
+
+async function resolveTemplatePreviewHtml(item: NoticeTemplateItem) {
+  const rawContent = String(item.content || '').trim()
+  if (!rawContent)
+    return ''
+
+  const parsedDelta = parseTemplateDeltaContent(rawContent)
+  if (!parsedDelta)
+    return rawContent
+
+  await nextTick()
+  const quill = getTemplatePreviewEditorInstance()
+  if (!quill)
+    return ''
+
+  quill.setText?.('')
+  quill.setContents?.(parsedDelta)
+  const html = String(quill.root?.innerHTML || '').trim()
+  return html === '<p><br></p>' ? '' : html
+}
+
+async function previewNoticeTemplate(item: NoticeTemplateItem) {
+  previewTemplate.value = item
+  previewTemplateHtml.value = ''
+  previewTemplateOpenedAt.value = dayjs().format('YYYY-MM-DD HH:mm:ss')
+  templatePreviewOpen.value = true
+  templatePreviewLoading.value = true
+  try {
+    previewTemplateHtml.value = await resolveTemplatePreviewHtml(item)
+  }
+  catch (error) {
+    console.error('preview notice template failed', error)
+    previewTemplateHtml.value = String(item.content || '').trim()
+  }
+  finally {
+    templatePreviewLoading.value = false
+  }
+}
+
+function closeTemplatePreview() {
+  templatePreviewOpen.value = false
+}
+
+function handleTemplatePreviewClosed() {
+  previewTemplate.value = null
+  previewTemplateHtml.value = ''
+  previewTemplateOpenedAt.value = ''
 }
 
 function openTemplateLibrary() {
@@ -529,6 +618,17 @@ onBeforeUnmount(() => {
       @success="handleCreateSuccess"
     />
 
+    <NoticePhonePreviewModal
+      v-model="templatePreviewOpen"
+      :loading="templatePreviewLoading"
+      :title="previewTemplateTitle"
+      :content-html="previewTemplateHtml"
+      :cover-url="previewTemplate?.coverUrl || defaultTemplateCover"
+      :primary-text="previewTemplateTag"
+      :publish-text="previewTemplatePublishText"
+      @after-close="handleTemplatePreviewClosed"
+    />
+
     <a-modal
       v-model:open="templateLibraryOpen"
       centered
@@ -598,6 +698,14 @@ onBeforeUnmount(() => {
         </a-spin>
       </div>
     </a-modal>
+
+    <div class="noticeTemplatePreview__editor" aria-hidden="true">
+      <QuillEditor
+        ref="templatePreviewEditorRef"
+        theme="snow"
+        content-type="html"
+      />
+    </div>
   </div>
 </template>
 
@@ -820,6 +928,17 @@ onBeforeUnmount(() => {
 
 .noticeTable__actionDisabled {
   color: #b7bfcc;
+}
+
+.noticeTemplatePreview__editor {
+  position: fixed;
+  left: -9999px;
+  top: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
 }
 
 .templatePreview {

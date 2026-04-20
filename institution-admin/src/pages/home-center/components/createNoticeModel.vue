@@ -4,7 +4,8 @@ import '@vueup/vue-quill/dist/vue-quill.snow.css'
 import { CloseOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import { computed, h, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import NoticePhonePreviewModal from './noticePhonePreviewModal.vue'
 import NoticeScopePickerModel from './noticeScopePickerModel.vue'
 import NoticeStudentPickerModel from './noticeStudentPickerModel.vue'
 import type { NoticePickerCompletePayload, NoticePickerSelection, NoticePickerSource } from './notice-picker.types'
@@ -37,6 +38,7 @@ const openDrawer = ref(false)
 const rulesModalOpen = ref(false)
 const scopePickerOpen = ref(false)
 const studentPickerOpen = ref(false)
+const previewOpen = ref(false)
 const pendingTemplateContent = ref('')
 
 const formState = reactive({
@@ -63,6 +65,8 @@ const editorOption = {
 }
 
 const selectedTargetButtonText = computed(() => formState.selectedStudents.length > 0 ? `已选班级/学员（${formState.selectedStudents.length}）` : '选择班级/学员')
+const previewMetaPrimary = computed(() => String(props.selectedTemplate?.tag || '').trim() || '通知预览')
+const previewPublishText = computed(() => dayjs().format('MM-DD HH:mm'))
 const selectedStudentPreviewText = computed(() => {
   const names = Array.from(new Set(formState.selectedStudents.map(item => String(item.studentName || '').trim()).filter(Boolean)))
   if (names.length <= 8)
@@ -163,23 +167,12 @@ function handleDrawerClose() {
   openDrawer.value = false
   scopePickerOpen.value = false
   studentPickerOpen.value = false
+  previewOpen.value = false
   open.value = false
 }
 
 function handlePreview() {
-  const html = String(formState.content || '').trim()
-  Modal.info({
-    title: '通知预览',
-    width: 720,
-    content: h('div', { class: 'notice-preview-content' }, [
-      h('div', { class: 'notice-preview-title' }, String(formState.title || '').trim() || '未填写标题'),
-      h('div', {
-        class: 'notice-preview-body',
-        innerHTML: html || '未填写通知内容',
-      }),
-    ]),
-    okText: '关闭',
-  })
+  previewOpen.value = true
 }
 
 async function syncSelectedRange(payload: NoticePickerCompletePayload) {
@@ -669,10 +662,19 @@ watch(() => openDrawer.value, async (visible) => {
       :selected-sources="formState.selectedSources"
       @complete="handleStudentPickerComplete"
     />
+
+    <NoticePhonePreviewModal
+      v-model="previewOpen"
+      :title="formState.title"
+      :content-html="formState.content"
+      :cover-url="props.selectedTemplate?.coverUrl || ''"
+      :primary-text="previewMetaPrimary"
+      :publish-text="previewPublishText"
+    />
   </div>
 </template>
 
-<style>
+<style scoped lang="less">
 .noticeModel {
   padding-bottom: 0;
   text-align: left;
@@ -680,24 +682,6 @@ watch(() => openDrawer.value, async (visible) => {
   vertical-align: middle;
 }
 
-.notice-preview-content {
-  max-height: 56vh;
-  overflow-y: auto;
-}
-
-.notice-preview-title {
-  font-weight: 600;
-  font-size: 18px;
-  margin-bottom: 12px;
-}
-
-.notice-preview-body {
-  line-height: 1.8;
-  color: #444;
-}
-</style>
-
-<style scoped lang="less">
 .close-btn {
   &:hover {
     background: transparent;
