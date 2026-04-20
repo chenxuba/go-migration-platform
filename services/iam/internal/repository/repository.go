@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,6 +56,12 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	if err := repo.ensureCurrentInstitutionSchema(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := repo.ensureGovernmentUserProfileSchema(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := repo.ensureGovernmentUserScopeSchema(context.Background()); err != nil {
 		return nil, err
 	}
 	if err := repo.migrateLegacyInstitutionMenuCodes(context.Background()); err != nil {
@@ -171,6 +178,53 @@ func (repo *Repository) ensureCurrentInstitutionSchema(ctx context.Context) erro
 		ADD COLUMN current_inst_id BIGINT NULL DEFAULT NULL COMMENT '当前登录机构ID'
 		AFTER dept_id
 	`)
+}
+
+func (repo *Repository) ensureGovernmentUserProfileSchema(ctx context.Context) error {
+	_, err := repo.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS government_user_profile (
+			id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			uuid VARCHAR(64) NOT NULL DEFAULT '',
+			version BIGINT NOT NULL DEFAULT 0,
+			user_id BIGINT NOT NULL,
+			level VARCHAR(32) NOT NULL DEFAULT '',
+			disabled TINYINT(1) NOT NULL DEFAULT 0,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			UNIQUE KEY uk_government_user_profile_user_del (user_id, del_flag),
+			KEY idx_government_user_profile_level_del (level, del_flag),
+			KEY idx_government_user_profile_disabled_del (disabled, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`)
+	return err
+}
+
+func (repo *Repository) ensureGovernmentUserScopeSchema(ctx context.Context) error {
+	_, err := repo.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS government_user_scope (
+			id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			uuid VARCHAR(64) NOT NULL DEFAULT '',
+			version BIGINT NOT NULL DEFAULT 0,
+			user_id BIGINT NOT NULL,
+			scope_level VARCHAR(32) NOT NULL DEFAULT '',
+			province_code VARCHAR(32) NOT NULL DEFAULT '',
+			province_name VARCHAR(64) NOT NULL DEFAULT '',
+			city_code VARCHAR(32) NOT NULL DEFAULT '',
+			city_name VARCHAR(64) NOT NULL DEFAULT '',
+			district_code VARCHAR(32) NOT NULL DEFAULT '',
+			district_name VARCHAR(64) NOT NULL DEFAULT '',
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			KEY idx_government_user_scope_user_del (user_id, del_flag),
+			KEY idx_government_user_scope_level_del (scope_level, del_flag),
+			KEY idx_government_user_scope_code_del (province_code, city_code, district_code, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+	`)
+	return err
 }
 
 func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username string) (model.User, error) {
@@ -773,8 +827,128 @@ func (repo *Repository) ListManageUsers(ctx context.Context, current, size int, 
 }
 
 func (repo *Repository) ListGovernmentUsers(ctx context.Context, current, size int, username, mobile string) (model.UserPage, error) {
-	loginUserType := 3
-	return repo.listConsoleUsers(ctx, current, size, username, mobile, 3, &loginUserType)
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	offset := (current - 1) * size
+
+	filters := []string{"a.del_flag = 0", "gr.user_id IS NOT NULL"}
+	args := make([]any, 0, 6)
+	if strings.TrimSpace(username) != "" {
+		filters = append(filters, "(a.username LIKE ? OR a.nick_name LIKE ?)")
+		keyword := "%" + strings.TrimSpace(username) + "%"
+		args = append(args, keyword, keyword)
+	}
+	if strings.TrimSpace(mobile) != "" {
+		filters = append(filters, "a.mobile LIKE ?")
+		args = append(args, "%"+strings.TrimSpace(mobile)+"%")
+	}
+	whereClause := strings.Join(filters, " AND ")
+
+	countArgs := append([]any{}, args...)
+	countRow := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM sso_user a
+		LEFT JOIN (
+			SELECT ur.user_id
+			FROM sso_user_role ur
+			JOIN sso_role r ON ur.role_id = r.id
+			WHERE r.del_flag = 0 AND r.role_type = 3 AND r.org_id = 1
+			GROUP BY ur.user_id
+		) gr ON a.id = gr.user_id
+		WHERE `+whereClause, countArgs...)
+
+	var total int
+	if err := countRow.Scan(&total); err != nil {
+		return model.UserPage{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT a.id,
+		       IFNULL(a.username, ''),
+		       IFNULL(a.mobile, ''),
+		       IFNULL(a.nick_name, ''),
+		       '',
+		       IFNULL(gr.role_ids, ''),
+		       IFNULL(gr.role_names, ''),
+		       IFNULL(gr.has_admin, 0),
+		       IFNULL(gp.disabled, 0),
+		       IFNULL(gp.level, ''),
+		       IFNULL(gs.scope_text, ''),
+		       IFNULL(DATE_FORMAT(ll.last_login_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM sso_user a
+		LEFT JOIN (
+			SELECT ur.user_id,
+			       GROUP_CONCAT(DISTINCT CAST(r.id AS CHAR) ORDER BY r.id SEPARATOR ',') AS role_ids,
+			       GROUP_CONCAT(DISTINCT r.role_name ORDER BY r.role_name SEPARATOR '、') AS role_names,
+			       MAX(IFNULL(r.is_admin, 0)) AS has_admin
+			FROM sso_user_role ur
+			JOIN sso_role r ON ur.role_id = r.id
+			WHERE r.del_flag = 0 AND r.role_type = 3 AND r.org_id = 1
+			GROUP BY ur.user_id
+		) gr ON a.id = gr.user_id
+		LEFT JOIN government_user_profile gp ON a.id = gp.user_id AND gp.del_flag = 0
+		LEFT JOIN (
+			SELECT user_id,
+			       GROUP_CONCAT(
+			         DISTINCT CASE
+			           WHEN scope_level = 'province' THEN province_name
+			           WHEN scope_level = 'city' THEN CONCAT(province_name, '-', city_name)
+			           WHEN scope_level = 'district' THEN CONCAT(province_name, '-', city_name, '-', district_name)
+			           ELSE '全部辖区'
+			         END
+			         ORDER BY province_code, city_code, district_code
+			         SEPARATOR '、'
+			       ) AS scope_text
+			FROM government_user_scope
+			WHERE del_flag = 0
+			GROUP BY user_id
+		) gs ON a.id = gs.user_id
+		LEFT JOIN (
+			SELECT user_id, MAX(create_time) AS last_login_time
+			FROM sys_login_log
+			WHERE del_flag = 0 AND result = 1 AND user_type = 3
+			GROUP BY user_id
+		) ll ON a.id = ll.user_id
+		WHERE `+whereClause+`
+		ORDER BY a.id DESC
+		LIMIT ? OFFSET ?`, append(args, size, offset)...)
+	if err != nil {
+		return model.UserPage{}, err
+	}
+	defer rows.Close()
+
+	items := make([]model.UserPageItem, 0, size)
+	for rows.Next() {
+		var item model.UserPageItem
+		if err := rows.Scan(
+			&item.ID,
+			&item.Username,
+			&item.Mobile,
+			&item.NickName,
+			&item.DeptName,
+			&item.RoleID,
+			&item.RoleName,
+			&item.IsAdmin,
+			&item.Disabled,
+			&item.Level,
+			&item.Scope,
+			&item.LastLoginTime,
+		); err != nil {
+			return model.UserPage{}, err
+		}
+		items = append(items, item)
+	}
+
+	return model.UserPage{
+		Items:   items,
+		Total:   total,
+		Current: current,
+		Size:    size,
+	}, rows.Err()
 }
 
 func (repo *Repository) listConsoleUsers(ctx context.Context, current, size int, username, mobile string, roleType int, loginUserType *int) (model.UserPage, error) {
@@ -880,6 +1054,488 @@ func (repo *Repository) listConsoleUsers(ctx context.Context, current, size int,
 		Current: current,
 		Size:    size,
 	}, rows.Err()
+}
+
+func (repo *Repository) ListGovernmentRoleOptions(ctx context.Context) ([]model.GovernmentRoleOption, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(role_name, ''), IFNULL(is_admin, 0)
+		FROM sso_role
+		WHERE del_flag = 0 AND role_type = 3 AND org_id = 1
+		ORDER BY is_admin DESC, id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.GovernmentRoleOption, 0, 8)
+	for rows.Next() {
+		var item model.GovernmentRoleOption
+		if err := rows.Scan(&item.RoleID, &item.RoleName, &item.IsAdmin); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) GetGovernmentUserDetail(ctx context.Context, userID int64) (model.GovernmentUserDetail, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT a.id,
+		       IFNULL(a.username, ''),
+		       IFNULL(a.mobile, ''),
+		       IFNULL(a.nick_name, ''),
+		       IFNULL(gp.disabled, 0),
+		       IFNULL(NULLIF(gp.level, ''), CASE WHEN IFNULL(gr.is_admin, 0) = 1 THEN 'super' ELSE '' END),
+		       IFNULL(gr.role_id, 0),
+		       IFNULL(gr.role_name, ''),
+		       IFNULL(DATE_FORMAT(ll.last_login_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM sso_user a
+		LEFT JOIN government_user_profile gp ON a.id = gp.user_id AND gp.del_flag = 0
+		LEFT JOIN (
+			SELECT ur.user_id,
+			       CAST(SUBSTRING_INDEX(GROUP_CONCAT(CAST(r.id AS CHAR) ORDER BY r.is_admin DESC, r.id ASC SEPARATOR ','), ',', 1) AS SIGNED) AS role_id,
+			       SUBSTRING_INDEX(GROUP_CONCAT(r.role_name ORDER BY r.is_admin DESC, r.id ASC SEPARATOR ','), ',', 1) AS role_name,
+			       MAX(IFNULL(r.is_admin, 0)) AS is_admin
+			FROM sso_user_role ur
+			JOIN sso_role r ON ur.role_id = r.id
+			WHERE r.del_flag = 0 AND r.role_type = 3 AND r.org_id = 1
+			GROUP BY ur.user_id
+		) gr ON a.id = gr.user_id
+		LEFT JOIN (
+			SELECT user_id, MAX(create_time) AS last_login_time
+			FROM sys_login_log
+			WHERE del_flag = 0 AND result = 1 AND user_type = 3
+			GROUP BY user_id
+		) ll ON a.id = ll.user_id
+		WHERE a.id = ? AND a.del_flag = 0 AND gr.role_id IS NOT NULL
+	`, userID)
+
+	var detail model.GovernmentUserDetail
+	if err := row.Scan(
+		&detail.ID,
+		&detail.Username,
+		&detail.Mobile,
+		&detail.NickName,
+		&detail.Disabled,
+		&detail.Level,
+		&detail.RoleID,
+		&detail.RoleName,
+		&detail.LastLoginTime,
+	); err != nil {
+		return model.GovernmentUserDetail{}, err
+	}
+
+	scopes, err := repo.listGovernmentUserScopes(ctx, userID)
+	if err != nil {
+		return model.GovernmentUserDetail{}, err
+	}
+	detail.Scopes = scopes
+	return detail, nil
+}
+
+func (repo *Repository) GetGovernmentUserProfile(ctx context.Context, userID int64) (bool, string, error) {
+	var disabled bool
+	var level string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(disabled, 0), IFNULL(level, '')
+		FROM government_user_profile
+		WHERE user_id = ? AND del_flag = 0
+		LIMIT 1
+	`, userID).Scan(&disabled, &level)
+	if err == sql.ErrNoRows {
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	return disabled, level, nil
+}
+
+func (repo *Repository) CreateGovernmentUser(ctx context.Context, input model.GovernmentUserMutationRequest, operatorID int64) (int64, error) {
+	role, err := repo.getGovernmentRoleByID(ctx, input.RoleID)
+	if err != nil {
+		return 0, err
+	}
+	if input.Username != "" {
+		exists, err := repo.consoleUsernameExists(ctx, input.Username, nil)
+		if err != nil {
+			return 0, err
+		}
+		if exists {
+			return 0, errors.New("登录账号已存在")
+		}
+	}
+	existsMobile, err := repo.consoleMobileExists(ctx, input.Mobile, nil)
+	if err != nil {
+		return 0, err
+	}
+	if existsMobile {
+		return 0, errors.New("手机号已存在")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, is_admin, del_flag, create_time, update_time)
+		VALUES (?, 0, ?, ?, ?, '', ?, 0, ?, 0, NOW(), NOW())
+	`, buildUUID(time.Now().UnixNano()), input.Username, input.Password, input.Mobile, input.NickName, role.IsAdmin)
+	if err != nil {
+		return 0, err
+	}
+	userID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	if err := repo.upsertGovernmentUserProfileTx(ctx, tx, userID, input.Level, input.Disabled, operatorID); err != nil {
+		return 0, err
+	}
+	if err := repo.replaceGovernmentUserRoleTx(ctx, tx, userID, input.RoleID); err != nil {
+		return 0, err
+	}
+	if err := repo.replaceGovernmentUserScopesTx(ctx, tx, userID, input.Scopes); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
+func (repo *Repository) UpdateGovernmentUser(ctx context.Context, input model.GovernmentUserMutationRequest, operatorID int64) error {
+	if input.ID == nil || *input.ID <= 0 {
+		return errors.New("账号不存在")
+	}
+	userID := *input.ID
+
+	role, err := repo.getGovernmentRoleByID(ctx, input.RoleID)
+	if err != nil {
+		return err
+	}
+	existsUsername, err := repo.consoleUsernameExists(ctx, input.Username, &userID)
+	if err != nil {
+		return err
+	}
+	if existsUsername {
+		return errors.New("登录账号已存在")
+	}
+	existsMobile, err := repo.consoleMobileExists(ctx, input.Mobile, &userID)
+	if err != nil {
+		return err
+	}
+	if existsMobile {
+		return errors.New("手机号已存在")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var count int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM sso_user
+		WHERE id = ? AND del_flag = 0
+	`, userID).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("账号不存在")
+	}
+
+	if strings.TrimSpace(input.Password) != "" {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE sso_user
+			SET username = ?,
+			    password = ?,
+			    mobile = ?,
+			    nick_name = ?,
+			    is_admin = ?,
+			    update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, input.Username, input.Password, input.Mobile, input.NickName, role.IsAdmin, userID)
+	} else {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE sso_user
+			SET username = ?,
+			    mobile = ?,
+			    nick_name = ?,
+			    is_admin = ?,
+			    update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, input.Username, input.Mobile, input.NickName, role.IsAdmin, userID)
+	}
+	if err != nil {
+		return err
+	}
+
+	if err := repo.upsertGovernmentUserProfileTx(ctx, tx, userID, input.Level, input.Disabled, operatorID); err != nil {
+		return err
+	}
+	if err := repo.replaceGovernmentUserRoleTx(ctx, tx, userID, input.RoleID); err != nil {
+		return err
+	}
+	if err := repo.replaceGovernmentUserScopesTx(ctx, tx, userID, input.Scopes); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (repo *Repository) UpdateGovernmentUserStatus(ctx context.Context, userID int64, disabled bool, operatorID int64) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var count int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM sso_user a
+		WHERE a.id = ? AND a.del_flag = 0
+	`, userID).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("账号不存在")
+	}
+
+	var level string
+	err = tx.QueryRowContext(ctx, `
+		SELECT IFNULL(level, '')
+		FROM government_user_profile
+		WHERE user_id = ? AND del_flag = 0
+		LIMIT 1
+	`, userID).Scan(&level)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err := repo.upsertGovernmentUserProfileTx(ctx, tx, userID, level, disabled, operatorID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (repo *Repository) listGovernmentUserScopes(ctx context.Context, userID int64) ([]model.GovernmentUserScope, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id,
+		       IFNULL(scope_level, ''),
+		       IFNULL(province_code, ''),
+		       IFNULL(province_name, ''),
+		       IFNULL(city_code, ''),
+		       IFNULL(city_name, ''),
+		       IFNULL(district_code, ''),
+		       IFNULL(district_name, '')
+		FROM government_user_scope
+		WHERE user_id = ? AND del_flag = 0
+		ORDER BY province_code ASC, city_code ASC, district_code ASC, id ASC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.GovernmentUserScope, 0, 8)
+	for rows.Next() {
+		var item model.GovernmentUserScope
+		if err := rows.Scan(
+			&item.ID,
+			&item.ScopeLevel,
+			&item.ProvinceCode,
+			&item.ProvinceName,
+			&item.CityCode,
+			&item.CityName,
+			&item.DistrictCode,
+			&item.DistrictName,
+		); err != nil {
+			return nil, err
+		}
+		item.DisplayName = governmentScopeDisplayName(item)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) getGovernmentRoleByID(ctx context.Context, roleID int64) (model.GovernmentRoleOption, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT id, IFNULL(role_name, ''), IFNULL(is_admin, 0)
+		FROM sso_role
+		WHERE id = ? AND del_flag = 0 AND role_type = 3 AND org_id = 1
+		LIMIT 1
+	`, roleID)
+	var item model.GovernmentRoleOption
+	if err := row.Scan(&item.RoleID, &item.RoleName, &item.IsAdmin); err != nil {
+		if err == sql.ErrNoRows {
+			return model.GovernmentRoleOption{}, errors.New("监管角色不存在")
+		}
+		return model.GovernmentRoleOption{}, err
+	}
+	return item, nil
+}
+
+func (repo *Repository) consoleUsernameExists(ctx context.Context, username string, excludeUserID *int64) (bool, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return false, nil
+	}
+	query := `
+		SELECT COUNT(*)
+		FROM sso_user
+		WHERE del_flag = 0 AND username = ?`
+	args := []any{username}
+	if excludeUserID != nil && *excludeUserID > 0 {
+		query += ` AND id <> ?`
+		args = append(args, *excludeUserID)
+	}
+	var count int
+	if err := repo.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (repo *Repository) consoleMobileExists(ctx context.Context, mobile string, excludeUserID *int64) (bool, error) {
+	mobile = strings.TrimSpace(mobile)
+	if mobile == "" {
+		return false, nil
+	}
+	query := `
+		SELECT COUNT(*)
+		FROM sso_user
+		WHERE del_flag = 0 AND mobile = ?`
+	args := []any{mobile}
+	if excludeUserID != nil && *excludeUserID > 0 {
+		query += ` AND id <> ?`
+		args = append(args, *excludeUserID)
+	}
+	var count int
+	if err := repo.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (repo *Repository) upsertGovernmentUserProfileTx(ctx context.Context, tx *sql.Tx, userID int64, level string, disabled bool, operatorID int64) error {
+	var profileID int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM government_user_profile
+		WHERE user_id = ? AND del_flag = 0
+		LIMIT 1
+	`, userID).Scan(&profileID)
+	if err == sql.ErrNoRows {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO government_user_profile (uuid, version, user_id, level, disabled, del_flag, create_id, update_id, create_time, update_time)
+			VALUES (?, 0, ?, ?, ?, 0, ?, ?, NOW(), NOW())
+		`, buildUUID(time.Now().UnixNano()), userID, strings.TrimSpace(level), disabled, operatorID, operatorID)
+		return err
+	}
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE government_user_profile
+		SET level = ?,
+		    disabled = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, strings.TrimSpace(level), disabled, operatorID, profileID)
+	return err
+}
+
+func (repo *Repository) replaceGovernmentUserRoleTx(ctx context.Context, tx *sql.Tx, userID, roleID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		DELETE ur
+		FROM sso_user_role ur
+		JOIN sso_role r ON ur.role_id = r.id
+		WHERE ur.user_id = ? AND r.del_flag = 0 AND r.role_type = 3 AND r.org_id = 1
+	`, userID); err != nil {
+		return err
+	}
+
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_user_role (user_id, role_id)
+		VALUES (?, ?)
+	`, userID, roleID)
+	return err
+}
+
+func (repo *Repository) replaceGovernmentUserScopesTx(ctx context.Context, tx *sql.Tx, userID int64, scopes []model.GovernmentUserScope) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE government_user_scope
+		SET del_flag = 1,
+		    update_time = NOW()
+		WHERE user_id = ? AND del_flag = 0
+	`, userID); err != nil {
+		return err
+	}
+	if len(scopes) == 0 {
+		return nil
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO government_user_scope (
+			uuid, version, user_id, scope_level,
+			province_code, province_name, city_code, city_name, district_code, district_name,
+			del_flag, create_time, update_time
+		)
+		VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW(), NOW())
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, scope := range scopes {
+		if _, err := stmt.ExecContext(
+			ctx,
+			buildUUID(time.Now().UnixNano()),
+			userID,
+			scope.ScopeLevel,
+			scope.ProvinceCode,
+			scope.ProvinceName,
+			scope.CityCode,
+			scope.CityName,
+			scope.DistrictCode,
+			scope.DistrictName,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func governmentScopeDisplayName(item model.GovernmentUserScope) string {
+	switch strings.TrimSpace(item.ScopeLevel) {
+	case "province":
+		return strings.TrimSpace(item.ProvinceName)
+	case "city":
+		return strings.Trim(strings.Join([]string{strings.TrimSpace(item.ProvinceName), strings.TrimSpace(item.CityName)}, "-"), "-")
+	case "district":
+		return strings.Trim(strings.Join([]string{strings.TrimSpace(item.ProvinceName), strings.TrimSpace(item.CityName), strings.TrimSpace(item.DistrictName)}, "-"), "-")
+	case "super":
+		return "全部辖区"
+	default:
+		if strings.TrimSpace(item.DistrictName) != "" {
+			return strings.Trim(strings.Join([]string{strings.TrimSpace(item.ProvinceName), strings.TrimSpace(item.CityName), strings.TrimSpace(item.DistrictName)}, "-"), "-")
+		}
+		if strings.TrimSpace(item.CityName) != "" {
+			return strings.Trim(strings.Join([]string{strings.TrimSpace(item.ProvinceName), strings.TrimSpace(item.CityName)}, "-"), "-")
+		}
+		return strings.TrimSpace(item.ProvinceName)
+	}
 }
 
 func (repo *Repository) PageLoginLogs(ctx context.Context, current, size int, search model.LoginLogSearchDTO) (model.LoginLogPage, error) {

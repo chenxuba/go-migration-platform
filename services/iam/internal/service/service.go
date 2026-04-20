@@ -18,10 +18,11 @@ import (
 )
 
 const (
-	platformInvalidAccountMessage   = "当前账号不是总控端账号，请使用总部或总控账号登录"
-	platformRoleMissingMessage      = "当前账号未分配总控角色，请联系系统管理员开通总控权限"
-	governmentInvalidAccountMessage = "当前账号不是政府端账号，请使用总控端创建并分配监管角色的账号登录"
-	governmentRoleMissingMessage    = "当前账号未分配政府端角色，请联系总控管理员开通G端权限"
+	platformInvalidAccountMessage    = "当前账号不是总控端账号，请使用总部或总控账号登录"
+	platformRoleMissingMessage       = "当前账号未分配总控角色，请联系系统管理员开通总控权限"
+	governmentInvalidAccountMessage  = "当前账号不是政府端账号，请使用总控端创建并分配监管角色的账号登录"
+	governmentRoleMissingMessage     = "当前账号未分配政府端角色，请联系总控管理员开通G端权限"
+	governmentDisabledAccountMessage = "当前政府端账号已停用，请联系总控管理员启用后再登录"
 )
 
 type Service struct {
@@ -203,12 +204,18 @@ func (svc *Service) ListGovernmentUsers(current, size int, username, mobile stri
 		return model.UserPage{}, err
 	}
 	for index := range page.Items {
-		page.Items[index].Level = resolveGovernmentLevel(page.Items[index].RoleName, page.Items[index].IsAdmin)
+		levelCode := normalizeGovernmentLevel(page.Items[index].Level)
+		if levelCode == "" {
+			levelCode = inferGovernmentLevel(page.Items[index].RoleName, page.Items[index].IsAdmin)
+		}
+		page.Items[index].Level = governmentLevelLabel(levelCode)
 		if strings.TrimSpace(page.Items[index].Scope) == "" {
 			page.Items[index].Scope = "--"
 		}
 		if strings.TrimSpace(page.Items[index].Status) == "" {
-			if strings.TrimSpace(page.Items[index].LastLoginTime) == "" {
+			if page.Items[index].Disabled {
+				page.Items[index].Status = "停用"
+			} else if strings.TrimSpace(page.Items[index].LastLoginTime) == "" {
 				page.Items[index].Status = "未登录"
 			} else {
 				page.Items[index].Status = "正常"
@@ -218,9 +225,100 @@ func (svc *Service) ListGovernmentUsers(current, size int, username, mobile stri
 	return page, nil
 }
 
-func resolveGovernmentLevel(roleNames string, isAdmin bool) string {
+func (svc *Service) ListGovernmentRoleOptions() ([]model.GovernmentRoleOption, error) {
+	items, err := svc.repo.ListGovernmentRoleOptions(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	for index := range items {
+		levelCode := normalizeGovernmentLevel(items[index].Level)
+		if levelCode == "" {
+			levelCode = inferGovernmentLevel(items[index].RoleName, items[index].IsAdmin)
+		}
+		items[index].Level = levelCode
+		items[index].LevelLabel = governmentLevelLabel(levelCode)
+	}
+	return items, nil
+}
+
+func (svc *Service) GetGovernmentUserDetail(id int64) (model.GovernmentUserDetail, error) {
+	if id <= 0 {
+		return model.GovernmentUserDetail{}, errors.New("id is required")
+	}
+	detail, err := svc.repo.GetGovernmentUserDetail(context.Background(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GovernmentUserDetail{}, errors.New("账号不存在")
+		}
+		return model.GovernmentUserDetail{}, err
+	}
+	levelCode := normalizeGovernmentLevel(detail.Level)
+	if levelCode == "" {
+		levelCode = inferGovernmentLevel(detail.RoleName, false)
+	}
+	detail.Level = levelCode
+	detail.LevelLabel = governmentLevelLabel(levelCode)
+	return detail, nil
+}
+
+func (svc *Service) CreateGovernmentUser(claims authx.Claims, req model.GovernmentUserMutationRequest) (int64, error) {
+	if claims.LoginType != "manage" {
+		return 0, errors.New("无权限")
+	}
+	sanitized, err := sanitizeGovernmentUserMutation(req, true)
+	if err != nil {
+		return 0, err
+	}
+	if err := svc.validateGovernmentRoleLevel(sanitized.RoleID, sanitized.Level); err != nil {
+		return 0, err
+	}
+	if sanitized.Password != "" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(sanitized.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return 0, errors.New("密码加密失败")
+		}
+		sanitized.Password = string(hashedPassword)
+	}
+	return svc.repo.CreateGovernmentUser(context.Background(), sanitized, claims.UserID)
+}
+
+func (svc *Service) UpdateGovernmentUser(claims authx.Claims, req model.GovernmentUserMutationRequest) error {
+	if claims.LoginType != "manage" {
+		return errors.New("无权限")
+	}
+	if req.ID == nil || *req.ID <= 0 {
+		return errors.New("id is required")
+	}
+	sanitized, err := sanitizeGovernmentUserMutation(req, false)
+	if err != nil {
+		return err
+	}
+	if err := svc.validateGovernmentRoleLevel(sanitized.RoleID, sanitized.Level); err != nil {
+		return err
+	}
+	if sanitized.Password != "" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(sanitized.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return errors.New("密码加密失败")
+		}
+		sanitized.Password = string(hashedPassword)
+	}
+	return svc.repo.UpdateGovernmentUser(context.Background(), sanitized, claims.UserID)
+}
+
+func (svc *Service) UpdateGovernmentUserStatus(claims authx.Claims, req model.GovernmentUserStatusRequest) error {
+	if claims.LoginType != "manage" {
+		return errors.New("无权限")
+	}
+	if req.ID <= 0 {
+		return errors.New("id is required")
+	}
+	return svc.repo.UpdateGovernmentUserStatus(context.Background(), req.ID, req.Disabled, claims.UserID)
+}
+
+func inferGovernmentLevel(roleNames string, isAdmin bool) string {
 	if isAdmin {
-		return "超级监管"
+		return "super"
 	}
 	levels := make(map[string]struct{}, 3)
 	parts := strings.FieldsFunc(roleNames, func(r rune) bool {
@@ -230,23 +328,161 @@ func resolveGovernmentLevel(roleNames string, isAdmin bool) string {
 		name := strings.TrimSpace(part)
 		switch {
 		case strings.Contains(name, "省"):
-			levels["省级"] = struct{}{}
+			levels["province"] = struct{}{}
 		case strings.Contains(name, "市"):
-			levels["市级"] = struct{}{}
+			levels["city"] = struct{}{}
 		case strings.Contains(name, "区"), strings.Contains(name, "县"):
-			levels["区县级"] = struct{}{}
+			levels["district"] = struct{}{}
 		}
 	}
 	if len(levels) == 0 {
-		return "--"
+		return ""
 	}
 	if len(levels) > 1 {
-		return "多层级"
+		return "mixed"
 	}
 	for level := range levels {
 		return level
 	}
-	return "--"
+	return ""
+}
+
+func normalizeGovernmentLevel(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "super", "超级监管":
+		return "super"
+	case "province", "省级":
+		return "province"
+	case "city", "市级":
+		return "city"
+	case "district", "区县级", "区级", "县级":
+		return "district"
+	case "mixed", "多层级":
+		return "mixed"
+	default:
+		return ""
+	}
+}
+
+func governmentLevelLabel(level string) string {
+	switch normalizeGovernmentLevel(level) {
+	case "super":
+		return "超级监管"
+	case "province":
+		return "省级"
+	case "city":
+		return "市级"
+	case "district":
+		return "区县级"
+	case "mixed":
+		return "多层级"
+	default:
+		return "--"
+	}
+}
+
+func sanitizeGovernmentUserMutation(req model.GovernmentUserMutationRequest, creating bool) (model.GovernmentUserMutationRequest, error) {
+	req.Username = strings.TrimSpace(req.Username)
+	req.Password = strings.TrimSpace(req.Password)
+	req.Mobile = strings.TrimSpace(req.Mobile)
+	req.NickName = strings.TrimSpace(req.NickName)
+	req.Level = normalizeGovernmentLevel(req.Level)
+
+	if req.NickName == "" {
+		return req, errors.New("姓名不能为空")
+	}
+	if req.Mobile == "" {
+		return req, errors.New("手机号不能为空")
+	}
+	if len(req.Mobile) != 11 || strings.Trim(req.Mobile, "0123456789") != "" || !strings.HasPrefix(req.Mobile, "1") {
+		return req, errors.New("请输入正确的手机号")
+	}
+	if req.Username == "" {
+		return req, errors.New("登录账号不能为空")
+	}
+	if strings.ContainsAny(req.Username, " \t\r\n") {
+		return req, errors.New("登录账号不能包含空格")
+	}
+	if creating && req.Password == "" {
+		return req, errors.New("初始密码不能为空")
+	}
+	if req.Password != "" && len(req.Password) < 6 {
+		return req, errors.New("密码长度不能少于6位")
+	}
+	if req.RoleID <= 0 {
+		return req, errors.New("请选择监管角色")
+	}
+	if req.Level == "" {
+		return req, errors.New("请选择监管层级")
+	}
+
+	seen := make(map[string]struct{}, len(req.Scopes))
+	normalizedScopes := make([]model.GovernmentUserScope, 0, len(req.Scopes))
+	if req.Level != "super" && len(req.Scopes) == 0 {
+		return req, errors.New("请至少添加一个管辖范围")
+	}
+	for _, scope := range req.Scopes {
+		scope.ScopeLevel = req.Level
+		scope.ProvinceCode = strings.TrimSpace(scope.ProvinceCode)
+		scope.ProvinceName = strings.TrimSpace(scope.ProvinceName)
+		scope.CityCode = strings.TrimSpace(scope.CityCode)
+		scope.CityName = strings.TrimSpace(scope.CityName)
+		scope.DistrictCode = strings.TrimSpace(scope.DistrictCode)
+		scope.DistrictName = strings.TrimSpace(scope.DistrictName)
+		scope.DisplayName = strings.TrimSpace(scope.DisplayName)
+
+		switch req.Level {
+		case "super":
+			normalizedScopes = nil
+		case "province":
+			if scope.ProvinceCode == "" || scope.ProvinceName == "" {
+				return req, errors.New("省级范围数据不完整")
+			}
+		case "city":
+			if scope.ProvinceCode == "" || scope.ProvinceName == "" || scope.CityCode == "" || scope.CityName == "" {
+				return req, errors.New("市级范围数据不完整")
+			}
+		case "district":
+			if scope.ProvinceCode == "" || scope.ProvinceName == "" || scope.CityCode == "" || scope.CityName == "" || scope.DistrictCode == "" || scope.DistrictName == "" {
+				return req, errors.New("区县级范围数据不完整")
+			}
+		default:
+			return req, errors.New("监管层级不正确")
+		}
+
+		if req.Level == "super" {
+			continue
+		}
+		key := strings.Join([]string{scope.ScopeLevel, scope.ProvinceCode, scope.CityCode, scope.DistrictCode}, "|")
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalizedScopes = append(normalizedScopes, scope)
+	}
+	req.Scopes = normalizedScopes
+	return req, nil
+}
+
+func (svc *Service) validateGovernmentRoleLevel(roleID int64, level string) error {
+	options, err := svc.repo.ListGovernmentRoleOptions(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, item := range options {
+		if item.RoleID != roleID {
+			continue
+		}
+		roleLevel := normalizeGovernmentLevel(item.Level)
+		if roleLevel == "" {
+			roleLevel = inferGovernmentLevel(item.RoleName, item.IsAdmin)
+		}
+		if roleLevel != "" && roleLevel != normalizeGovernmentLevel(level) {
+			return errors.New("监管角色与监管层级不匹配")
+		}
+		return nil
+	}
+	return errors.New("监管角色不存在")
 }
 
 func (svc *Service) PageLoginLogs(current, size int, search model.LoginLogSearchDTO) (model.LoginLogPage, error) {
@@ -1131,6 +1367,13 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 	case "government":
 		if user.UserType != nil && *user.UserType != 0 {
 			return nil, nil, nil, nil, nil, errors.New(governmentInvalidAccountMessage)
+		}
+		disabled, _, err := svc.repo.GetGovernmentUserProfile(context.Background(), user.ID)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+		if disabled {
+			return nil, nil, nil, nil, nil, errors.New(governmentDisabledAccountMessage)
 		}
 		info, err := svc.repo.GetGovernmentUserInfo(context.Background(), user.ID)
 		if err != nil {

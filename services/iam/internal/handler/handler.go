@@ -34,6 +34,11 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/auth/me", handler.me)
 	mux.HandleFunc("/api/v1/users", handler.users)
 	mux.HandleFunc("/api/v1/government-users", handler.governmentUsers)
+	mux.HandleFunc("/api/v1/government-users/detail", handler.governmentUserDetail)
+	mux.HandleFunc("/api/v1/government-users/create", handler.createGovernmentUser)
+	mux.HandleFunc("/api/v1/government-users/update", handler.updateGovernmentUser)
+	mux.HandleFunc("/api/v1/government-users/status", handler.governmentUserStatus)
+	mux.HandleFunc("/api/v1/government-roles", handler.governmentRoles)
 	mux.HandleFunc("/api/v1/login-logs", handler.loginLogs)
 	mux.HandleFunc("/api/v1/departs/tree", handler.departTree)
 	mux.HandleFunc("/api/v1/departs/list", handler.departs)
@@ -63,6 +68,11 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sso/isLogin", handler.isLogin)
 	mux.HandleFunc("/sso/logout", handler.logout)
 	mux.HandleFunc("/sso/governmentUsers", handler.governmentUsers)
+	mux.HandleFunc("/sso/governmentUserDetail", handler.governmentUserDetail)
+	mux.HandleFunc("/sso/governmentUserCreate", handler.createGovernmentUser)
+	mux.HandleFunc("/sso/governmentUserUpdate", handler.updateGovernmentUser)
+	mux.HandleFunc("/sso/governmentUserStatus", handler.governmentUserStatus)
+	mux.HandleFunc("/sso/governmentRoles", handler.governmentRoles)
 	mux.HandleFunc("/sso/menuList", handler.menuList)
 	mux.HandleFunc("/sso/menu/list", handler.menuTree)
 	mux.HandleFunc("/sso/menu/by-code", handler.menuByCode)
@@ -215,6 +225,118 @@ func (handler *Handler) governmentUsers(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) governmentUserDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+
+	id := parseInt64(r.URL.Query().Get("id"), 0)
+	result, err := handler.service.GetGovernmentUserDetail(id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) governmentRoles(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.ListGovernmentRoleOptions()
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "load government roles failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) createGovernmentUser(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var req model.GovernmentUserMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+
+	id, err := handler.service.CreateGovernmentUser(claims, req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]int64{"id": id}, ctx.RequestID)
+}
+
+func (handler *Handler) updateGovernmentUser(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var req model.GovernmentUserMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+
+	if err := handler.service.UpdateGovernmentUser(claims, req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) governmentUserStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var req model.GovernmentUserStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+
+	if err := handler.service.UpdateGovernmentUserStatus(claims, req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
 }
 
 func (handler *Handler) loginLogs(w http.ResponseWriter, r *http.Request) {
@@ -968,6 +1090,18 @@ func parseInt(raw string, fallback int) int {
 		return fallback
 	}
 	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func parseInt64(raw string, fallback int64) int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || value <= 0 {
 		return fallback
 	}

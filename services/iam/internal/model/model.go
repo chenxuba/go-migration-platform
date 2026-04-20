@@ -140,6 +140,7 @@ type UserPageItem struct {
 	RoleID        string `json:"roleId,omitempty"`
 	RoleName      string `json:"roleName,omitempty"`
 	IsAdmin       bool   `json:"isAdmin"`
+	Disabled      bool   `json:"disabled"`
 	Status        string `json:"status,omitempty"`
 	Level         string `json:"level,omitempty"`
 	Scope         string `json:"scope,omitempty"`
@@ -151,6 +152,57 @@ type UserPage struct {
 	Total   int            `json:"total"`
 	Current int            `json:"current"`
 	Size    int            `json:"size"`
+}
+
+type GovernmentRoleOption struct {
+	RoleID     int64  `json:"roleId"`
+	RoleName   string `json:"roleName"`
+	Level      string `json:"level"`
+	LevelLabel string `json:"levelLabel,omitempty"`
+	IsAdmin    bool   `json:"isAdmin"`
+}
+
+type GovernmentUserScope struct {
+	ID           int64  `json:"id,omitempty"`
+	ScopeLevel   string `json:"scopeLevel"`
+	ProvinceCode string `json:"provinceCode,omitempty"`
+	ProvinceName string `json:"provinceName,omitempty"`
+	CityCode     string `json:"cityCode,omitempty"`
+	CityName     string `json:"cityName,omitempty"`
+	DistrictCode string `json:"districtCode,omitempty"`
+	DistrictName string `json:"districtName,omitempty"`
+	DisplayName  string `json:"displayName,omitempty"`
+}
+
+type GovernmentUserDetail struct {
+	ID            int64                 `json:"id"`
+	Username      string                `json:"username"`
+	Mobile        string                `json:"mobile"`
+	NickName      string                `json:"nickName"`
+	Disabled      bool                  `json:"disabled"`
+	Level         string                `json:"level"`
+	LevelLabel    string                `json:"levelLabel,omitempty"`
+	RoleID        int64                 `json:"roleId"`
+	RoleName      string                `json:"roleName,omitempty"`
+	LastLoginTime string                `json:"lastLoginTime,omitempty"`
+	Scopes        []GovernmentUserScope `json:"scopes"`
+}
+
+type GovernmentUserMutationRequest struct {
+	ID       *int64                `json:"id,omitempty"`
+	Username string                `json:"username"`
+	Password string                `json:"password,omitempty"`
+	Mobile   string                `json:"mobile"`
+	NickName string                `json:"nickName"`
+	Disabled bool                  `json:"disabled"`
+	Level    string                `json:"level"`
+	RoleID   int64                 `json:"roleId"`
+	Scopes   []GovernmentUserScope `json:"scopes"`
+}
+
+type GovernmentUserStatusRequest struct {
+	ID       int64 `json:"id"`
+	Disabled bool  `json:"disabled"`
 }
 
 type LoginLogSearchDTO struct {

@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import AllFilter from '@/components/common/all-filter.vue'
 import {
   pageGovernmentAccountsApi,
   type GovernmentAccountItem,
+  updateGovernmentAccountStatusApi,
 } from '@/api/platform/government-accounts'
 import messageService from '@/utils/messageService'
+import GovernmentAccountModal from './components/government-account-modal.vue'
 
 const displayArray = ['customSearch']
 
 const listLoading = ref(false)
 const dataSource = ref<GovernmentAccountItem[]>([])
+const modalOpen = ref(false)
+const editingAccountId = ref<number | null>(null)
+const statusUpdatingId = ref<number | null>(null)
 
 const filters = reactive<{
   username?: string
@@ -95,7 +101,7 @@ const columns: TableColumnsType<GovernmentAccountItem> = [
   {
     title: '操作',
     key: 'action',
-    width: 100,
+    width: 132,
     fixed: 'right' as const,
     align: 'center' as const,
   },
@@ -131,6 +137,8 @@ function getStatusColor(status?: string) {
     return 'success'
   if (value === '未登录')
     return 'warning'
+  if (value === '停用')
+    return 'default'
   return 'default'
 }
 
@@ -147,6 +155,61 @@ function getLevelColor(level?: string) {
   if (value === '多层级')
     return 'purple'
   return 'default'
+}
+
+function getNextDisabled(record: GovernmentAccountItem) {
+  return !Boolean(record.disabled)
+}
+
+function getToggleActionLabel(record: GovernmentAccountItem) {
+  return getNextDisabled(record) ? '停用' : '启用'
+}
+
+function getToggleConfirmTitle(record: GovernmentAccountItem) {
+  return `确定${getToggleActionLabel(record)}该政府账户？`
+}
+
+function openCreateModal() {
+  editingAccountId.value = null
+  modalOpen.value = true
+}
+
+function openEditModal(record: GovernmentAccountItem) {
+  editingAccountId.value = Number(record.id || 0) || null
+  modalOpen.value = true
+}
+
+async function toggleGovernmentAccountStatus(record: GovernmentAccountItem) {
+  const accountId = Number(record.id || 0)
+  if (!accountId)
+    return
+
+  statusUpdatingId.value = accountId
+  try {
+    const targetDisabled = getNextDisabled(record)
+    const res = await updateGovernmentAccountStatusApi({
+      id: accountId,
+      disabled: targetDisabled,
+    })
+    if (res.code !== 200) {
+      messageService.error(res.message || `${getToggleActionLabel(record)}政府账户失败`)
+      return
+    }
+    messageService.success(`${getToggleActionLabel(record)}成功`)
+    await fetchGovernmentAccounts()
+  }
+  catch (error: any) {
+    console.error('toggle government account status failed', error)
+    messageService.error(error?.message || `${getToggleActionLabel(record)}政府账户失败`)
+  }
+  finally {
+    if (statusUpdatingId.value === accountId)
+      statusUpdatingId.value = null
+  }
+}
+
+function handleModalSaved() {
+  fetchGovernmentAccounts()
 }
 
 async function fetchGovernmentAccounts() {
@@ -235,6 +298,15 @@ onMounted(() => {
             管辖范围后续会跟随区域权限配置同步展示
           </div>
         </div>
+
+        <div class="table-title__actions">
+          <a-button type="primary" @click="openCreateModal">
+            <template #icon>
+              <PlusOutlined />
+            </template>
+            新建政府账户
+          </a-button>
+        </div>
       </div>
 
       <div class="table-content">
@@ -281,8 +353,34 @@ onMounted(() => {
               </a-tooltip>
             </template>
 
+            <template v-else-if="column.key === 'scope'">
+              <a-tooltip :title="normalizeText(toGovernmentAccount(record).scope)" placement="topLeft">
+                <div class="ellipsis-text">
+                  {{ normalizeText(toGovernmentAccount(record).scope) }}
+                </div>
+              </a-tooltip>
+            </template>
+
             <template v-else-if="column.key === 'action'">
-              <span class="action-placeholder">--</span>
+              <div class="action-cell action-cell--text">
+                <a class="action-link" @click="openEditModal(toGovernmentAccount(record))">
+                  编辑
+                </a>
+                <a-popconfirm
+                  :title="getToggleConfirmTitle(toGovernmentAccount(record))"
+                  ok-text="确定"
+                  cancel-text="取消"
+                  :ok-button-props="{ loading: statusUpdatingId === Number(toGovernmentAccount(record).id || 0) }"
+                  @confirm="toggleGovernmentAccountStatus(toGovernmentAccount(record))"
+                >
+                  <a
+                    class="action-link"
+                    :class="getNextDisabled(toGovernmentAccount(record)) ? 'action-link--danger' : 'action-link--success'"
+                  >
+                    {{ getToggleActionLabel(toGovernmentAccount(record)) }}
+                  </a>
+                </a-popconfirm>
+              </div>
             </template>
 
             <template v-else>
@@ -292,6 +390,12 @@ onMounted(() => {
         </a-table>
       </div>
     </div>
+
+    <GovernmentAccountModal
+      v-model:open="modalOpen"
+      :account-id="editingAccountId"
+      @saved="handleModalSaved"
+    />
   </div>
 </template>
 
@@ -323,6 +427,12 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.table-title__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .total {
@@ -384,8 +494,45 @@ onMounted(() => {
   text-align: center;
 }
 
-.action-placeholder {
-  color: #b0b7c3;
+.action-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.action-cell--text {
+  gap: 12px;
+}
+
+.action-link {
+  color: #1677ff;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+.action-link:hover {
+  color: #4096ff;
+}
+
+.action-link--success {
+  color: #15803d;
+}
+
+.action-link--success:hover {
+  color: #16a34a;
+}
+
+.action-link--danger {
+  color: #d46b08;
+}
+
+.action-link--danger:hover {
+  color: #fa8c16;
 }
 
 :deep(.account-table .ant-table-thead > tr > th) {
