@@ -1,642 +1,239 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
 import { CloseOutlined } from '@ant-design/icons-vue'
-import dayjs from 'dayjs'
-import { getLeaveDetailApi } from '@/api/home-center/leave'
-import messageService from '@/utils/messageService'
 
 const open = defineModel({
   type: Boolean,
   default: false,
 })
 
-const props = defineProps({
-  leaveId: {
-    type: [String, Number],
-    default: '',
-  },
+// 这里可以添加请假详情的数据，实际使用时可能需要从props或API获取
+const leaveInfo = reactive({
+  studentName: '浩楠',
+  studentPhone: '159****0001',
+  startTime: '2025-05-20 12:42',
+  endTime: '2025-05-21 23:59',
+  leaveTitle: '请假课节 (1)',
+  leaveClasses: [
+    {
+      time: '11:00 ~ 11:45',
+      className: '浩楠-高级音语课',
+      courseName: '高级音语课',
+      teacherName: '何红武',
+    },
+  ],
+  leaveProcess: [
+    {
+      name: '何红武 (代办)',
+      status: '发起',
+      time: '2025-05-20 10:43',
+    },
+    {
+      name: '系统自动执行',
+      status: '已通过',
+      time: '2025-05-20 10:43',
+    },
+  ],
 })
-
-const emit = defineEmits(['closed'])
-
-const defaultStudentAvatar = 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png?x-oss-process=image/resize,w_120'
-
-const loading = ref(false)
-const detail = ref(createEmptyDetail())
-
-const statusStyleMap = {
-  1: {
-    color: '#1677ff',
-    background: '#e6f4ff',
-  },
-  2: {
-    color: '#389e0d',
-    background: '#f6ffed',
-  },
-  3: {
-    color: '#cf1322',
-    background: '#fff1f0',
-  },
-  4: {
-    color: '#8c8c8c',
-    background: '#f5f5f5',
-  },
-}
-
-const summaryItems = computed(() => [
-  { label: '开始时间', value: formatDateTime(detail.value.startTime) },
-  { label: '结束时间', value: formatDateTime(detail.value.endTime) },
-  { label: '请假类型', value: detail.value.leaveTypeText || '-' },
-  { label: '发起人', value: formatInitiateStaffName(detail.value.operatorName || detail.value.initiateStaffName, detail.value.isAgent) },
-  { label: '处理状态', value: detail.value.statusText || '-' },
-  { label: '审批人', value: formatApproverName(detail.value.approverName || detail.value.currentApproverName, detail.value.status) },
-  { label: '申请时间', value: formatDateTime(detail.value.applyTime) },
-  { label: '备注', value: detail.value.remark || '-' },
-])
-
-function createEmptyDetail() {
-  return {
-    id: '',
-    studentName: '',
-    studentPhone: '',
-    studentAvatarUrl: '',
-    startTime: '',
-    endTime: '',
-    isAgent: true,
-    leaveTypeText: '',
-    reason: '',
-    proofMaterials: [],
-    remark: '',
-    status: 1,
-    statusText: '',
-    initiateStaffName: '',
-    operatorName: '',
-    currentApproverName: '',
-    approverName: '',
-    applyTime: '',
-    schedules: [],
-    processes: [],
-  }
-}
-
-function resetDetail() {
-  detail.value = createEmptyDetail()
-}
-
-function formatDateTime(value) {
-  if (!value || String(value).startsWith('0001-01-01'))
-    return '-'
-  const parsed = dayjs(value)
-  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : String(value).replace('T', ' ').slice(0, 16)
-}
-
-function formatTimeOnly(value) {
-  if (!value)
-    return '--:--'
-  const parsed = dayjs(value)
-  return parsed.isValid() ? parsed.format('HH:mm') : '--:--'
-}
-
-function formatInitiateStaffName(name, isAgent) {
-  const normalized = String(name || '').trim()
-  if (!normalized)
-    return '-'
-  if (!isAgent)
-    return normalized
-  if (normalized.includes('（代办）') || normalized.includes('(代办)'))
-    return normalized
-  return `${normalized}（代办）`
-}
-
-function formatApproverName(name, status) {
-  const normalized = String(name || '').trim()
-  if (normalized)
-    return normalized
-  if (Number(status) === 2)
-    return '系统自动执行'
-  return '-'
-}
-
-function formatScheduleTitle(item) {
-  return item.teachingClassName || item.lessonName || '-'
-}
-
-function getStatusStyle(status) {
-  return statusStyleMap[status] || statusStyleMap[4]
-}
-
-function getProcessBadge(process) {
-  if (process.pending) {
-    return {
-      text: '待处理',
-      color: '#1677ff',
-      background: '#e6f4ff',
-    }
-  }
-
-  if (process.actionType === 1) {
-    return {
-      text: process.status || '发起',
-      color: '#1677ff',
-      background: '#e6f4ff',
-    }
-  }
-
-  if (process.actionType === 2 || process.actionType === 5) {
-    return {
-      text: process.status || '已通过',
-      color: '#389e0d',
-      background: '#f6ffed',
-    }
-  }
-
-  if (process.actionType === 3) {
-    return {
-      text: process.status || '已拒绝',
-      color: '#cf1322',
-      background: '#fff1f0',
-    }
-  }
-
-  return {
-    text: process.status || '-',
-    color: '#8c8c8c',
-    background: '#f5f5f5',
-  }
-}
-
-function getProcessDotClass(process) {
-  if (process.pending)
-    return 'pending'
-  if (process.actionType === 3)
-    return 'danger'
-  if (process.actionType === 2 || process.actionType === 5)
-    return 'success'
-  return 'primary'
-}
-
-async function fetchLeaveDetail() {
-  if (!props.leaveId)
-    return
-
-  try {
-    loading.value = true
-    const res = await getLeaveDetailApi({ id: String(props.leaveId) })
-    if (res.code === 200) {
-      detail.value = {
-        ...createEmptyDetail(),
-        ...(res.result || {}),
-        proofMaterials: Array.isArray(res.result?.proofMaterials) ? res.result.proofMaterials : [],
-        schedules: Array.isArray(res.result?.schedules) ? res.result.schedules : [],
-        processes: Array.isArray(res.result?.processes) ? res.result.processes : [],
-      }
-    }
-  }
-  catch (error) {
-    console.error('获取请假详情失败:', error)
-    messageService.error('获取请假详情失败')
-  }
-  finally {
-    loading.value = false
-  }
-}
-
-watch(
-  () => [open.value, props.leaveId],
-  ([visible, leaveId]) => {
-    if (visible && leaveId) {
-      fetchLeaveDetail()
-      return
-    }
-
-    if (!visible) {
-      resetDetail()
-    }
-  },
-  { immediate: true },
-)
-
-function handleClose() {
-  open.value = false
-  emit('closed')
-}
 </script>
 
 <template>
   <a-drawer
-    v-model:open="open"
-    width="860"
-    :body-style="{ padding: '24px 28px', background: '#f7f8fa' }"
-    :keyboard="false"
-    :mask-closable="false"
-    :closable="false"
+    v-model:open="open" :body-style="{ padding: '0', background: '#fff' }" :keyboard="false"
+    :mask-closable="false" :closable="false" width="800px"
   >
+    <!-- 自定义头部 -->
     <template #title>
-      <div class="drawer-header">
-        <span class="drawer-title">请假详情</span>
-        <a-button type="text" class="close-btn" @click="handleClose">
+      <div class="custom-header flex justify-between h-4 flex-items-center">
+        <div class="text-5">
+          请假详情
+        </div>
+        <a-button type="text" class="close-btn" @click="open = false">
           <template #icon>
-            <CloseOutlined class="text-5" />
+            <CloseOutlined class="text-5 close-icon" />
           </template>
         </a-button>
       </div>
     </template>
-
-    <a-spin :spinning="loading">
-      <div class="detail-page">
-        <div class="hero-card">
-          <div class="hero-main">
-            <img class="hero-avatar" :src="detail.studentAvatarUrl || defaultStudentAvatar" alt="">
-            <div class="hero-info">
-              <div class="hero-name">
-                {{ detail.studentName || '-' }}
-              </div>
-              <div class="hero-phone">
-                {{ detail.studentPhone || '-' }}
-              </div>
+    <!-- 自定义内容 -->
+    <div class="custom-content py-20px px-30px">
+      <!-- 学生信息区域 -->
+      <div class="student-info flex items-center justify-between mb-10px">
+        <div class="flex items-center">
+          <div class="avatar-container mr-15px">
+            <div class="avatarBox w-16 h-16 relative">
+              <img
+                width="64" height="64" class=" rounded-100"
+                src="https://cdn.schoolpal.cn/schoolpal/next-erp/avator_female.png?x-oss-process=image/resize,w_192"
+                alt=""
+              >
+              <svg width="24px" height="24px" viewBox="0 0 24 24" style="position: absolute; bottom: 0px; right: 0px;">
+                <g id="\u9875\u9762-2" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+                  <g id="\u753B\u677F\u5907\u4EFD-24" transform="translate(-1529.000000, -266.000000)">
+                    <g id="\u7F16\u7EC4" transform="translate(1529.000000, 266.000000)">
+                      <g id="\u7537" fill="#FF3333">
+                        <circle id="\u692D\u5706\u5F62" cx="12" cy="12" r="12" />
+                      </g>
+                      <g id="\u65B0/\u7B26\u53F7/\u5973\u751F" transform="translate(4.000000, 3.722662)" fill="#FFFFFF">
+                        <path
+                          id="\u5F62\u72B6\u7ED3\u5408"
+                          d="M14.0392198,1.98464807 C14.3104172,2.25584549 14.3104172,2.6955434 14.0392198,2.96674082 L12.7581282,4.24782197 L13.8356011,5.32529291 C14.1067985,5.59649034 14.1067985,6.03618824 13.8356011,6.30738566 C13.5644037,6.57858309 13.1247058,6.57858309 12.8535084,6.30738566 L11.7760417,5.22990846 L11.0422043,5.9637881 C11.6729795,6.80471314 12.0529934,7.84453862 12.0712783,8.97229681 L12.0719697,9.05764313 C12.0719697,11.9079764 9.76131807,14.218628 6.91098485,14.218628 C4.06065162,14.218628 1.75,11.9079764 1.75,9.05764313 C1.75,6.20730991 4.06065162,3.89665829 6.91098485,3.89665829 C8.09991052,3.89665829 9.19493833,4.29868287 10.067543,4.9742068 L10.7939552,4.24782197 L9.9295504,3.3834277 C9.65835297,3.11223027 9.65835297,2.67253237 9.9295504,2.40133495 C10.2007478,2.13013752 10.6404457,2.13013752 10.9116432,2.40133495 L11.7760417,3.26573548 L13.0571271,1.98464807 C13.3283245,1.71345064 13.7680224,1.71345064 14.0392198,1.98464807 Z M6.91098485,5.28554717 C4.82771378,5.28554717 3.13888889,6.97437206 3.13888889,9.05764313 C3.13888889,11.1409142 4.82771378,12.8297391 6.91098485,12.8297391 C8.97342321,12.8297391 10.6492649,11.1745218 10.6825755,9.12002164 L10.6830492,9.06119427 L10.6824968,8.99148152 L10.6821047,8.97066975 C10.664377,8.18243978 10.4051064,7.43717494 9.94528363,6.81616198 L9.93114482,6.79719028 L9.62321654,6.38666775 L9.21733473,6.07245915 C8.5679879,5.56976952 7.7753284,5.29115293 6.93642036,5.28563087 L6.91098485,5.28554717 Z"
+                          transform="translate(7.996309, 7.999939) scale(-1, -1) translate(-7.996309, -7.999939) "
+                        />
+                      </g>
+                    </g>
+                  </g>
+                </g>
+              </svg>
             </div>
           </div>
-          <span class="status-chip" :style="getStatusStyle(detail.status)">
-            {{ detail.statusText || '-' }}
-          </span>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title">
-            基本信息
-          </div>
-          <div class="summary-grid">
-            <div v-for="item in summaryItems" :key="item.label" class="summary-item">
-              <div class="summary-label">
-                {{ item.label }}
-              </div>
-              <div class="summary-value">
-                {{ item.value }}
-              </div>
+          <div class="info-container">
+            <div class="name text-20px font-medium mb-5px">
+              {{ leaveInfo.studentName }}
             </div>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title">
-            请假原因
-          </div>
-          <div class="section-text">
-            {{ detail.reason || '未填写请假原因' }}
+            <div class="phone text-16px font-450">
+              {{ leaveInfo.studentPhone }}
+            </div>
           </div>
         </div>
-
-        <div class="section-card">
-          <div class="section-header">
-            <div class="section-title">
-              请假课节
-            </div>
-            <div class="section-extra">
-              共 {{ detail.schedules.length }} 节
-            </div>
-          </div>
-          <div v-if="detail.schedules.length" class="schedule-list">
-            <div v-for="item in detail.schedules" :key="item.scheduleId" class="schedule-item">
-              <div class="schedule-time">
-                {{ formatDateTime(item.startTime) }} - {{ formatTimeOnly(item.endTime) }}
-              </div>
-              <div class="schedule-name">
-                {{ formatScheduleTitle(item) }}
-              </div>
-              <div class="schedule-meta">
-                <span>课程：{{ item.lessonName || '-' }}</span>
-                <span>教师：{{ item.teacherName || '-' }}</span>
-              </div>
-            </div>
-          </div>
-          <a-empty v-else description="暂无课节信息" />
-        </div>
-
-        <div class="section-card">
-          <div class="section-title">
-            请假佐证材料
-          </div>
-          <div v-if="detail.proofMaterials.length" class="proof-list">
-            <a-image
-              v-for="(url, index) in detail.proofMaterials"
-              :key="`${url}-${index}`"
-              :src="url"
-              :width="88"
-              :height="88"
-              class="proof-image"
-            />
-          </div>
-          <a-empty v-else description="未上传佐证材料" />
-        </div>
-
-        <div class="section-card">
-          <div class="section-title">
-            请假流程
-          </div>
-          <div v-if="detail.processes.length" class="process-list">
-            <div
-              v-for="(item, index) in detail.processes"
-              :key="`${item.actionType}-${index}-${item.name}`"
-              class="process-item"
-            >
-              <div class="process-line" :class="{ hidden: index === detail.processes.length - 1 }" />
-              <div class="process-dot" :class="getProcessDotClass(item)" />
-              <div class="process-card">
-                <div class="process-top">
-                  <div class="process-name">
-                    {{ item.name || '-' }}
-                  </div>
-                  <span class="process-badge" :style="getProcessBadge(item)">
-                    {{ getProcessBadge(item).text }}
-                  </span>
-                </div>
-                <div class="process-time">
-                  {{ item.pending ? '待审批中' : formatDateTime(item.actionTime) }}
-                </div>
-                <div v-if="item.remark" class="process-remark">
-                  {{ item.remark }}
-                </div>
-              </div>
-            </div>
-          </div>
-          <a-empty v-else description="暂无流程记录" />
+        <div>
+          <img
+            width="96" height="96" src="https://pcsys.admin.ybc365.com/5efd9ae5-3728-47df-86bc-0f6493f3bfaa.png"
+            alt=""
+          >
         </div>
       </div>
-    </a-spin>
+
+      <!-- 请假时间信息 -->
+      <div class="time-info flex items-center gap-25% mb-25px">
+        <div class="flex items-center gap-1 text-14px">
+          <div class="label ">
+            开始时间：
+          </div>
+          <div class="value text-#999">
+            {{ leaveInfo.startTime }}
+          </div>
+        </div>
+        <div class="flex items-center gap-1 .dark:">
+          <div class="label">
+            结束时间：
+          </div>
+          <div class="value text-#999">
+            {{ leaveInfo.endTime }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 请假课节 -->
+      <div class=" mb-20px">
+        <div class="text-20px font-700 mb-15px">
+          {{ leaveInfo.leaveTitle }}
+        </div>
+
+        <div class="bg-#fafafa rounded-8px p-15px">
+          <div v-for="(item, index) in leaveInfo.leaveClasses" :key="index" class="class-item">
+            <div class="time-label flex items-center mb-10px">
+              <div class="dot w-6px h-6px rounded-full bg-#0066ff mr-8px" />
+              <div class="time text-15px font-medium">
+                {{ item.time }}
+              </div>
+              <div class="class-name text-14px font-medium ml-10px">
+                {{ item.className }}
+              </div>
+            </div>
+
+            <div class="pl-2px">
+              <div class="px-10px border-0px border-l-1px border-l-#e5e6eb border-solid">
+                <div class="course mb-8px text-#999">
+                  <span class="label text-14px ">上课课程：</span>
+                  <span class="value text-14px ml-5px">{{ item.courseName }}</span>
+                </div>
+                <div class="text-#999">
+                  <span class="label text-14px">上课教师：</span>
+                  <span class="value text-14px ml-5px">{{ item.teacherName }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 请假流程 -->
+      <div class="">
+        <div class="text-20px font-700 mb-15px">
+          请假流程
+        </div>
+
+        <div class="process-timeline">
+          <div
+            v-for="(item, index) in leaveInfo.leaveProcess" :key="index" class="process-item flex relative pb-20px"
+            :class="{ 'last-item': index === leaveInfo.leaveProcess.length - 1 }"
+          >
+            <div class="flex items-center gap-20px flex-1">
+              <div
+                :class="{ 'bg-#0066ff line': index === 0, 'bg-#00cc66': index !== 0 }"
+                class=" p-8px text-12px text-#fff  rounded-50% w-28px h-28px flex items-center justify-center"
+              >
+                {{ index === 0 ? '发' : '批' }}
+              </div>
+              <div class="flex items-center justify-between bg-#f6f6f6 rounded-8px p-15px py-20px flex-1">
+                <div class="flex items-center gap-20px">
+                  <span class="text-16px font-500">{{ item.name }}</span>
+                  <div class="text-12px font-400 py-3px px-8px rounded-8px " :class="index === 0 ? 'info' : 'success'">
+                    {{ item.status }}
+                  </div>
+                </div>
+                <div class="text-#999">
+                  {{ index === 0 ? '发起时间' : '处理时间' }}：{{ item.time }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </a-drawer>
 </template>
 
 <style lang="less" scoped>
-.drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.close-btn {
+  &:hover {
+    background: transparent;
+  }
 }
 
-.drawer-title {
-  color: #1f1f1f;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.close-btn:hover {
-  background: transparent;
-}
-
-.detail-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: calc(100vh - 120px);
-}
-
-.hero-card,
-.section-card {
-  background: #fff;
-  border-radius: 14px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-}
-
-.hero-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px 22px;
-}
-
-.hero-main {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.hero-avatar {
-  width: 64px;
-  height: 64px;
-  border-radius: 999px;
-  object-fit: cover;
-}
-
-.hero-name {
-  color: #1f1f1f;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 28px;
-}
-
-.hero-phone {
-  margin-top: 4px;
-  color: #8c8c8c;
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.status-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 84px;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 24px;
-}
-
-.section-card {
-  padding: 20px 22px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.section-title {
-  color: #1f1f1f;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 24px;
-}
-
-.section-extra {
-  color: #8c8c8c;
-  font-size: 12px;
-}
-
-.section-text {
-  margin-top: 12px;
-  color: #595959;
-  font-size: 14px;
-  line-height: 24px;
-  white-space: pre-wrap;
-}
-
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 16px;
-  margin-top: 14px;
-}
-
-.summary-item {
-  padding: 12px 14px;
-  background: #fafbfc;
-  border-radius: 10px;
-}
-
-.summary-label {
-  color: #8c8c8c;
-  font-size: 12px;
-  line-height: 20px;
-}
-
-.summary-value {
-  margin-top: 4px;
-  color: #1f1f1f;
-  font-size: 14px;
-  line-height: 22px;
-  word-break: break-all;
-}
-
-.schedule-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.schedule-item {
-  padding: 14px;
-  background: #fafbfc;
-  border-radius: 10px;
-}
-
-.schedule-time {
-  color: #1f1f1f;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-.schedule-name {
-  margin-top: 4px;
-  color: #1f1f1f;
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.schedule-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-top: 8px;
-  color: #8c8c8c;
-  font-size: 12px;
-  line-height: 20px;
-}
-
-.proof-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.proof-image {
-  overflow: hidden;
-  border-radius: 10px;
-}
-
-.process-list {
-  margin-top: 14px;
+.custom-content {
+  height: calc(100vh - 56px);
+  overflow-y: auto;
 }
 
 .process-item {
+  &.last-item {
+    padding-bottom: 0;
+  }
+}
+
+.info {
+  color: #0066ff;
+  background-color: #e6f0ff;
+}
+
+.success {
+  color: #00cc66;
+  background-color: #e6ffed;
+}
+
+.line {
   position: relative;
-  padding-left: 28px;
-  padding-bottom: 16px;
-}
-
-.process-line {
-  position: absolute;
-  top: 16px;
-  left: 7px;
-  width: 2px;
-  height: calc(100% - 4px);
-  background: #d9d9d9;
-}
-
-.process-line.hidden {
-  display: none;
-}
-
-.process-dot {
-  position: absolute;
-  top: 4px;
-  left: 0;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  border: 3px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
-}
-
-.process-dot.primary {
-  background: #1677ff;
-}
-
-.process-dot.success {
-  background: #52c41a;
-}
-
-.process-dot.danger {
-  background: #ff4d4f;
-}
-
-.process-dot.pending {
-  background: #faad14;
-}
-
-.process-card {
-  padding: 14px 16px;
-  background: #fafbfc;
-  border-radius: 10px;
-}
-
-.process-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.process-name {
-  color: #1f1f1f;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-.process-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 20px;
-}
-
-.process-time,
-.process-remark {
-  margin-top: 8px;
-  color: #8c8c8c;
-  font-size: 12px;
-  line-height: 20px;
+  &::before {
+    content: '';
+    display: block;
+    position: absolute;
+    max-height: 80px;
+    height: 40px;
+    width: 1px;
+    background-color: #ccc;
+    // bottom: 0;
+    top:33px;
+  }
 }
 </style>
