@@ -1,256 +1,753 @@
-<script setup>
+<script setup lang="ts">
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
+import { Modal, Tooltip } from 'ant-design-vue'
+import dayjs from 'dayjs'
 import afterSchoolTasksModel from './components/afterSchoolTasksModel.vue'
+import { pageGroupClassSelectionApi } from '@/api/edu-center/group-class'
+import { pageOneToOneSelectionApi } from '@/api/edu-center/one-to-one'
+import {
+  deleteHomeworkApi,
+  homeworkStatisticsApi,
+  pageHomeworksApi,
+  type HomeworkListItem,
+} from '@/api/home-center/homework'
 import { useTableColumns } from '@/composables/useTableColumns'
+import messageService from '@/utils/messageService'
+
+interface FilterOption {
+  id: string
+  value: string
+}
+
+const allFilterRef = ref()
+const loading = ref(false)
+const tableData = ref<HomeworkListItem[]>([])
+
+const modalOpen = ref(false)
+const modalMode = ref<'create' | 'edit'>('create')
+const currentHomeworkId = ref('')
+
+const quickCounts = reactive({
+  unevaluatedCount: 0,
+  unsubmittedCount: 0,
+})
 
 const displayArray = ref([
-  'intention',
-  'followStatus',
-  'sex',
+  'scheduleClass',
+  'scheduleOneToOne',
   'createUser',
   'applyTime',
-  'intentionCourse',
-  'reference',
-  'studentStatus',
   'classEndingTime',
-  'classStopTime',
 ])
-const dataSource = ref([{ key: 1 }, { key: 2 }])
-const defaultCreateTimeVals = ref(['2025-04-01', '2025-04-13'])
+
+const queryState = reactive({
+  classId: undefined as string | undefined,
+  one2OneId: undefined as string | undefined,
+  teacherIds: undefined as string[] | undefined,
+  publishRange: [] as string[],
+  endRange: [] as string[],
+  hasUnevaluated: undefined as boolean | undefined,
+  hasUnsubmitted: undefined as boolean | undefined,
+})
+
+const sortState = reactive({
+  publishTime: 0,
+})
+
+const pagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50', '100'],
+  showQuickJumper: true,
+  showTotal: (total: number) => `共 ${total} 条`,
+})
+
+const scheduleClassOptions = ref<FilterOption[]>([])
+const scheduleOneToOneOptions = ref<FilterOption[]>([])
+const scheduleClassFinished = ref(false)
+const scheduleOneToOneFinished = ref(false)
+const scheduleClassPagination = reactive({ current: 1, pageSize: 50, total: 0 })
+const scheduleOneToOnePagination = reactive({ current: 1, pageSize: 50, total: 0 })
+const scheduleClassSearchKey = ref('')
+const scheduleOneToOneSearchKey = ref('')
+
+const customQuickFilters = computed(() => [
+  { id: 1, name: '待全部批改', count: quickCounts.unevaluatedCount },
+  { id: 2, name: '待全部提交', count: quickCounts.unsubmittedCount },
+])
+
 const allColumns = ref([
   {
-    title: '任务名称（班级/1v1）',
+    title: '任务名称（班级/1对1）',
     dataIndex: 'homeworkName',
     key: 'homeworkName',
-    width: 180,
+    width: 240,
   },
   {
     title: '发布内容',
     dataIndex: 'publishContent',
     key: 'publishContent',
-    width: 180,
+    width: 260,
   },
   {
-    title: '提交任务率',
+    title: () => h('span', { class: 'homework-column-title' }, [
+      '提交任务率',
+      h(Tooltip, { title: '已交学员数/学员总数' }, {
+        default: () => h(QuestionCircleOutlined, { class: 'homework-column-title__icon' }),
+      }),
+    ]),
     dataIndex: 'submitRate',
     key: 'submitRate',
     width: 150,
   },
-
   {
-    title: '待批改数量',
+    title: '待点评数量',
     dataIndex: 'pendingCorrectionNum',
     key: 'pendingCorrectionNum',
-    width: 150,
+    width: 130,
+  },
+  {
+    title: '未读',
+    dataIndex: 'unreadCount',
+    key: 'unreadCount',
+    width: 100,
   },
   {
     title: '发布人',
     dataIndex: 'publishUser',
     key: 'publishUser',
-    width: 150,
+    width: 120,
   },
   {
     title: '发布时间',
     dataIndex: 'publishTime',
     key: 'publishTime',
-    width: 150,
-    // 排序 ，默认倒序
-    sorter: {
-      compare: (a, b) => a.publishTime - b.publishTime,
-    },
+    width: 160,
+    sorter: true,
     defaultSortOrder: 'descend',
+  },
+  {
+    title: '截止时间',
+    dataIndex: 'deadlineTime',
+    key: 'deadlineTime',
+    width: 160,
   },
   {
     title: '操作',
     dataIndex: 'action',
     key: 'action',
     fixed: 'right',
-    width: 130,
+    width: 120,
   },
 ])
 
-const { selectedValues, columnOptions, filteredColumns, totalWidth }
-  = useTableColumns({
-    storageKey: 'homework', // 本地存储键名
-    allColumns, // 原始列配置
-    excludeKeys: ['action'], // 需要排除的列键
+const { filteredColumns, totalWidth } = useTableColumns({
+  storageKey: 'home-center-homework',
+  allColumns,
+  excludeKeys: ['action'],
+})
+
+const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+function normalizeSingleValue(value: unknown) {
+  if (Array.isArray(value))
+    return value.length ? String(value[0] || '').trim() || undefined : undefined
+  const text = String(value ?? '').trim()
+  return text || undefined
+}
+
+function normalizeDateRange(value: unknown) {
+  if (!Array.isArray(value) || value.length !== 2)
+    return []
+  const list = value.map(item => String(item || '').trim()).filter(Boolean)
+  return list.length === 2 ? list : []
+}
+
+function mergeFilterOptions(previous: FilterOption[], incoming: FilterOption[], selectedValues: string | string[] | undefined = []) {
+  const selectedSet = new Set((Array.isArray(selectedValues) ? selectedValues : [selectedValues]).map(value => String(value || '')).filter(Boolean))
+  const optionMap = new Map<string, FilterOption>()
+  previous.forEach((item) => {
+    if (selectedSet.has(item.id))
+      optionMap.set(item.id, item)
   })
-const openDrawer = ref(false)
-
-const schoolTasksModel = ref(false)
-
-function handleCreateTask(record) {
-  schoolTasksModel.value = true
-  schoolTasksModelTitle.value = '新建课后任务'
+  incoming.forEach((item) => {
+    if (item.id)
+      optionMap.set(item.id, item)
+  })
+  return [...optionMap.values()]
 }
 
-function handleEdit(record) {
-  schoolTasksModel.value = true
-  schoolTasksModelTitle.value = '编辑课后任务'
+function resetQueryState() {
+  queryState.classId = undefined
+  queryState.one2OneId = undefined
+  queryState.teacherIds = undefined
+  queryState.publishRange = []
+  queryState.endRange = []
+  queryState.hasUnevaluated = undefined
+  queryState.hasUnsubmitted = undefined
 }
 
-function handleSeeStuData() {
-  openDrawer.value = true
+function buildQueryModel(includeQuick = true) {
+  return {
+    classId: queryState.classId,
+    one2OneId: queryState.one2OneId,
+    teacherIds: queryState.teacherIds,
+    publishStartTime: queryState.publishRange[0],
+    publishEndTime: queryState.publishRange[1],
+    endStartTime: queryState.endRange[0],
+    endEndTime: queryState.endRange[1],
+    hasUnevaluated: includeQuick ? queryState.hasUnevaluated : undefined,
+    hasUnsubmitted: includeQuick ? queryState.hasUnsubmitted : undefined,
+  }
 }
-const openOrderDetailDrawer = ref(false)
-function handleOrderDetail() {
-  openOrderDetailDrawer.value = true
+
+async function fetchHomeworkList() {
+  loading.value = true
+  try {
+    const res = await pageHomeworksApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: pagination.pageSize,
+        pageIndex: pagination.current,
+        skipCount: (pagination.current - 1) * pagination.pageSize,
+      },
+      sortModel: {
+        publishTime: sortState.publishTime,
+      },
+      queryModel: buildQueryModel(true),
+    })
+    if (res.code !== 200) {
+      messageService.error(res.message || '获取课后任务列表失败')
+      return
+    }
+    tableData.value = Array.isArray(res.result?.list) ? res.result.list : []
+    pagination.total = Number(res.result?.total || 0)
+  }
+  catch (error) {
+    console.error('fetch homework list failed', error)
+    messageService.error('获取课后任务列表失败')
+  }
+  finally {
+    loading.value = false
+  }
 }
+
+async function fetchHomeworkStatistics() {
+  try {
+    const res = await homeworkStatisticsApi(buildQueryModel(false))
+    if (res.code !== 200) {
+      quickCounts.unevaluatedCount = 0
+      quickCounts.unsubmittedCount = 0
+      return
+    }
+    quickCounts.unevaluatedCount = Number(res.result?.unevaluatedCount || 0)
+    quickCounts.unsubmittedCount = Number(res.result?.unsubmittedCount || 0)
+  }
+  catch (error) {
+    console.error('fetch homework statistics failed', error)
+    quickCounts.unevaluatedCount = 0
+    quickCounts.unsubmittedCount = 0
+  }
+}
+
+async function refreshData() {
+  await Promise.all([fetchHomeworkList(), fetchHomeworkStatistics()])
+}
+
+async function loadScheduleClassOptions(searchKey = '', reset = true) {
+  if (reset) {
+    scheduleClassPagination.current = 1
+    scheduleClassFinished.value = false
+  }
+  scheduleClassSearchKey.value = searchKey
+  try {
+    const res = await pageGroupClassSelectionApi({
+      queryModel: {
+        className: searchKey || undefined,
+        status: [1],
+      },
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: scheduleClassPagination.pageSize,
+        pageIndex: scheduleClassPagination.current,
+        skipCount: 0,
+      },
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result?.list) ? res.result.list : []).map(item => ({
+      id: String(item.id || ''),
+      value: String(item.name || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    scheduleClassOptions.value = reset
+      ? mergeFilterOptions(scheduleClassOptions.value, resultData, queryState.classId)
+      : mergeFilterOptions(scheduleClassOptions.value, [...scheduleClassOptions.value, ...resultData], queryState.classId)
+    scheduleClassPagination.total = Number(res.result?.total || resultData.length || 0)
+    scheduleClassFinished.value = scheduleClassOptions.value.length >= scheduleClassPagination.total
+  }
+  catch (error) {
+    console.error('load homework class options failed', error)
+  }
+}
+
+async function loadScheduleOneToOneOptions(searchKey = '', reset = true) {
+  if (reset) {
+    scheduleOneToOnePagination.current = 1
+    scheduleOneToOneFinished.value = false
+  }
+  scheduleOneToOneSearchKey.value = searchKey
+  try {
+    const res = await pageOneToOneSelectionApi({
+      queryModel: {
+        searchKey: searchKey || undefined,
+        status: [1],
+      },
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: scheduleOneToOnePagination.pageSize,
+        pageIndex: scheduleOneToOnePagination.current,
+        skipCount: 0,
+      },
+    })
+    if (res.code !== 200)
+      return
+    const resultData = (Array.isArray(res.result?.list) ? res.result.list : []).map(item => ({
+      id: String(item.id || ''),
+      value: String(item.name || `${item.studentName || ''} - ${item.lessonName || ''}` || item.id || '').trim(),
+    })).filter(item => item.id && item.value)
+    scheduleOneToOneOptions.value = reset
+      ? mergeFilterOptions(scheduleOneToOneOptions.value, resultData, queryState.one2OneId)
+      : mergeFilterOptions(scheduleOneToOneOptions.value, [...scheduleOneToOneOptions.value, ...resultData], queryState.one2OneId)
+    scheduleOneToOnePagination.total = Number(res.result?.total || resultData.length || 0)
+    scheduleOneToOneFinished.value = scheduleOneToOneOptions.value.length >= scheduleOneToOnePagination.total
+  }
+  catch (error) {
+    console.error('load homework one-to-one options failed', error)
+  }
+}
+
+async function onScheduleClassDropdownVisibleChange() {
+  await loadScheduleClassOptions('', true)
+}
+
+async function onScheduleClassSearch(keyword: string) {
+  await loadScheduleClassOptions(keyword || '', true)
+}
+
+async function loadMoreScheduleClass() {
+  if (scheduleClassFinished.value)
+    return
+  scheduleClassPagination.current += 1
+  await loadScheduleClassOptions(scheduleClassSearchKey.value, false)
+}
+
+async function onScheduleOneToOneDropdownVisibleChange() {
+  await loadScheduleOneToOneOptions('', true)
+}
+
+async function onScheduleOneToOneSearch(keyword: string) {
+  await loadScheduleOneToOneOptions(keyword || '', true)
+}
+
+async function loadMoreScheduleOneToOne() {
+  if (scheduleOneToOneFinished.value)
+    return
+  scheduleOneToOnePagination.current += 1
+  await loadScheduleOneToOneOptions(scheduleOneToOneSearchKey.value, false)
+}
+
+function handleFilterUpdate(updates: Partial<typeof queryState> = {}, isClearAll = false) {
+  if (isClearAll) {
+    resetQueryState()
+  }
+  else {
+    Object.assign(queryState, updates)
+  }
+  pagination.current = 1
+  void refreshData()
+}
+
+function handleQuickFilterChange(value: unknown, isClearAll?: boolean) {
+  if (isClearAll) {
+    handleFilterUpdate({}, true)
+    return
+  }
+  if (value === 'unevaluated') {
+    handleFilterUpdate({
+      hasUnevaluated: true,
+      hasUnsubmitted: undefined,
+    })
+    return
+  }
+  if (value === 'unsubmitted') {
+    handleFilterUpdate({
+      hasUnevaluated: undefined,
+      hasUnsubmitted: true,
+    })
+    return
+  }
+  handleFilterUpdate({
+    hasUnevaluated: undefined,
+    hasUnsubmitted: undefined,
+  })
+}
+
+function handleScheduleClassFilter(value: unknown, isClearAll?: boolean) {
+  handleFilterUpdate({ classId: normalizeSingleValue(value) }, isClearAll)
+}
+
+function handleScheduleOneToOneFilter(value: unknown, isClearAll?: boolean) {
+  handleFilterUpdate({ one2OneId: normalizeSingleValue(value) }, isClearAll)
+}
+
+function handleCreateUserFilter(value: unknown, isClearAll?: boolean) {
+  const current = normalizeSingleValue(value)
+  handleFilterUpdate({ teacherIds: current ? [current] : undefined }, isClearAll)
+}
+
+function handlePublishTimeFilter(value: unknown, isClearAll?: boolean) {
+  handleFilterUpdate({ publishRange: normalizeDateRange(value) }, isClearAll)
+}
+
+function handleDeadlineTimeFilter(value: unknown, isClearAll?: boolean) {
+  handleFilterUpdate({ endRange: normalizeDateRange(value) }, isClearAll)
+}
+
+function handleTableChange(pageInfo: { current?: number, pageSize?: number }, _filters: unknown, sorter: { order?: string } | Array<{ order?: string }>) {
+  pagination.current = Number(pageInfo.current || pagination.current)
+  pagination.pageSize = Number(pageInfo.pageSize || pagination.pageSize)
+  if (!Array.isArray(sorter))
+    sortState.publishTime = sorter?.order === 'ascend' ? 1 : 0
+  void fetchHomeworkList()
+}
+
+function formatDateText(value?: string) {
+  if (!value)
+    return '--'
+  const current = dayjs(value)
+  if (!current.isValid())
+    return '--'
+  return `${current.format('YYYY-MM-DD')}（${WEEKDAY_LABELS[current.day()] || '--'}）`
+}
+
+function formatTimeText(value?: string) {
+  if (!value)
+    return '--'
+  const current = dayjs(value)
+  if (!current.isValid())
+    return '--'
+  return current.format('HH:mm')
+}
+
+function formatSubmitRate(record: Partial<HomeworkListItem> & Record<string, any>) {
+  const total = Number(record.studentCount || 0)
+  const submitted = Number(record.submittedCount || 0)
+  if (total <= 0)
+    return '0%'
+  return `${Math.round((submitted / total) * 100)}%`
+}
+
+function openCreateModal() {
+  modalMode.value = 'create'
+  currentHomeworkId.value = ''
+  modalOpen.value = true
+}
+
+function openEditModal(record: Partial<HomeworkListItem> & Record<string, any>) {
+  modalMode.value = 'edit'
+  currentHomeworkId.value = String(record.id || '')
+  modalOpen.value = true
+}
+
+function handleModalSuccess() {
+  modalOpen.value = false
+  void refreshData()
+}
+
+function handleDelete(record: Partial<HomeworkListItem> & Record<string, any>) {
+  Modal.confirm({
+    title: '删除课后任务',
+    content: `删除后不可恢复，确认删除「${record.title || '该任务'}」吗？`,
+    okText: '确认删除',
+    cancelText: '取消',
+    async onOk() {
+      const res = await deleteHomeworkApi({ id: String(record.id || '') })
+      if (res.code !== 200) {
+        messageService.error(res.message || '删除课后任务失败')
+        return
+      }
+      messageService.success('删除成功')
+      await refreshData()
+    },
+  })
+}
+
+onMounted(() => {
+  void refreshData()
+})
 </script>
 
 <template>
-  <div>
-    <!-- 学员筛选条件 -->
-    <div class="filter-wrap bg-white pl-3 pr-3 rounded-lb-4 rounded-rb-4">
+  <div class="homework-page">
+    <div class="filter-wrap bg-white rounded-4 px-4 py-3">
       <all-filter
+        ref="allFilterRef"
         :display-array="displayArray"
-        :default-create-time-vals="defaultCreateTimeVals"
+        :custom-quick-filters="customQuickFilters"
+        :custom-quick-filter-values="{ 1: 'unevaluated', 2: 'unsubmitted' }"
+        :schedule-class-options="scheduleClassOptions"
+        :schedule-class-finished="scheduleClassFinished"
+        :on-schedule-class-dropdown-visible-change="onScheduleClassDropdownVisibleChange"
+        :on-schedule-class-search="onScheduleClassSearch"
+        :on-schedule-class-load-more="loadMoreScheduleClass"
+        :schedule-one-to-one-options="scheduleOneToOneOptions"
+        :schedule-one-to-one-finished="scheduleOneToOneFinished"
+        :on-schedule-one-to-one-dropdown-visible-change="onScheduleOneToOneDropdownVisibleChange"
+        :on-schedule-one-to-one-search="onScheduleOneToOneSearch"
+        :on-schedule-one-to-one-load-more="loadMoreScheduleOneToOne"
+        create-user-label="发布人"
+        create-user-placeholder="请输入发布人"
+        apply-time-label="发布时间"
+        class-ending-time-label="截止时间"
+        schedule-class-label="班级"
+        schedule-one-to-one-label="1对1"
+        is-quick-show
+        @update:quick-filter="handleQuickFilterChange"
+        @update:schedule-class-filter="handleScheduleClassFilter"
+        @update:schedule-one-to-one-filter="handleScheduleOneToOneFilter"
+        @update:create-user-filter="handleCreateUserFilter"
+        @update:apply-time-filter="handlePublishTimeFilter"
+        @update:class-ending-time-filter="handleDeadlineTimeFilter"
       />
     </div>
-    <div class="student-list mt-3 pt-3 pb-3 pl-6 pr-6 bg-white rounded-4">
-      <div class="tab-table">
-        <div class="table-title flex justify-between">
-          <div class="total">
-            共 {{ dataSource.length }} 个课后任务
+
+    <div class="homework-panel bg-white rounded-4 mt-3 px-5 py-4">
+      <div class="homework-panel__header">
+        <div class="homework-panel__summary">
+          <div class="homework-panel__title">
+            共 {{ pagination.total }} 个课后任务
           </div>
-          <div class="edit flex">
-            <a-space>
-              <a-button type="primary" @click="handleCreateTask">
-                新建课后任务
-              </a-button>
-            </a-space>
-            <!-- 自定义字段 -->
-            <!-- <customize-code v-model:checkedValues="selectedValues" :options="columnOptions"
-                :total="allColumns.length - 1" :num="selectedValues.length - 1" /> -->
+          <div class="homework-panel__metrics">
+            <span class="homework-panel__metric">待全部批改 {{ quickCounts.unevaluatedCount }}</span>
+            <span class="homework-panel__metric">待全部提交 {{ quickCounts.unsubmittedCount }}</span>
           </div>
         </div>
-        <div class="table-content mt-2">
-          <a-table
-            :data-source="dataSource"
-            :pagination="dataSource.length > 10"
-            :columns="filteredColumns"
-            :scroll="{ x: totalWidth }"
-            size="small"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'homeworkName'">
-                <div class="text-#222">
-                  4-16 语文作业
-                </div>
-                <div class="text-#888 text-3">
-                  陈陈-一对一认知课
-                </div>
-              </template>
-              <template v-if="column.key === 'publishContent'">
-                <div class="text-#222 w-60%">
-                  <clamped-text :lines="2" text="完成【静夜思】诗词抄写10遍，并完成背诵，家长录制背诵视频上传" />
-                </div>
-              </template>
-              <template v-if="column.key === 'submitRate'">
-                <div class="text-#222">
-                  100%
-                </div>
-                <div class="text-#888 text-3">
-                  已交1人 / 应交1人
-                </div>
-              </template>
-              <template v-if="column.key === 'pendingCorrectionNum'">
-                <div class="text-#222 text-#f90">
-                  1 人待批改
-                </div>
-              </template>
-              <template v-if="column.key === 'publishUser'">
-                <div class="text-#222">
-                  陈瑞
-                </div>
-              </template>
-              <template v-if="column.key === 'publishTime'">
-                <div class="text-#222">
-                  2025-04-16 (周三)
-                </div>
-                <div class="text-#888 text-3">
-                  18:12
-                </div>
-              </template>
-              <template v-if="column.key === 'action'">
-                <a-space :size="14">
-                  <a class="font500" @click="handleEdit(record)">编辑{{ record.a }}</a>
-                  <a class="font500" @click="handleCreateTask(record)">复制</a>
-                  <a class="font500">删除</a>
-                </a-space>
-              </template>
-            </template>
-          </a-table>
-        </div>
+
+        <a-button type="primary" @click="openCreateModal">
+          新建课后任务
+        </a-button>
       </div>
+
+      <a-table
+        row-key="id"
+        class="mt-4"
+        size="small"
+        :loading="loading"
+        :data-source="tableData"
+        :columns="filteredColumns"
+        :pagination="pagination"
+        :scroll="{ x: totalWidth }"
+        @change="handleTableChange"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'homeworkName'">
+            <div class="homework-name-cell">
+              <div class="homework-name-cell__title">
+                {{ record.title || '-' }}
+              </div>
+              <div class="homework-name-cell__meta">
+                <span class="homework-source-tag" :class="record.sourceType === 2 ? 'is-one-to-one' : ''">
+                  {{ record.sourceType === 2 ? '1对1' : '班级' }}
+                </span>
+                <span class="homework-name-cell__source">{{ record.sourceName || '-' }}</span>
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'publishContent'">
+            <div class="homework-content-cell">
+              <clamped-text :lines="2" :text="record.content || '-'" />
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'submitRate'">
+            <div class="homework-metric-cell">
+              <div class="homework-metric-cell__value">
+                {{ formatSubmitRate(record) }}
+              </div>
+              <div class="homework-metric-cell__desc">
+                已交{{ record.submittedCount || 0 }}人 / 应交{{ record.studentCount || 0 }}人
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'pendingCorrectionNum'">
+            <span :class="record.unevaluatedCount > 0 ? 'text-#fa8c16 font-500' : 'text-#8c8c8c'">
+              {{ record.unevaluatedCount || 0 }} 人
+            </span>
+          </template>
+
+          <template v-else-if="column.key === 'unreadCount'">
+            <span :class="record.unreadCount > 0 ? 'text-#ff4d4f font-500' : 'text-#8c8c8c'">
+              {{ record.unreadCount || 0 }} 人
+            </span>
+          </template>
+
+          <template v-else-if="column.key === 'publishUser'">
+            <span>{{ record.createdStaffName || '-' }}</span>
+          </template>
+
+          <template v-else-if="column.key === 'publishTime'">
+            <div class="homework-datetime-cell">
+              <div>{{ formatDateText(record.publishTime) }}</div>
+              <div class="homework-datetime-cell__time">
+                {{ formatTimeText(record.publishTime) }}
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'deadlineTime'">
+            <div class="homework-datetime-cell">
+              <div>{{ formatDateText(record.endTime) }}</div>
+              <div class="homework-datetime-cell__time">
+                {{ formatTimeText(record.endTime) }}
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="column.key === 'action'">
+            <a-space :size="12">
+              <a class="font-500" @click="openEditModal(record)">编辑</a>
+              <a class="font-500 text-#ff4d4f" @click="handleDelete(record)">删除</a>
+            </a-space>
+          </template>
+        </template>
+      </a-table>
     </div>
-    <student-info-drawer v-model:open="openDrawer" />
-    <order-detail-drawer
-      v-model:open="openOrderDetailDrawer"
+
+    <afterSchoolTasksModel
+      v-model="modalOpen"
+      :mode="modalMode"
+      :homework-id="currentHomeworkId"
+      @success="handleModalSuccess"
     />
-    <afterSchoolTasksModel v-model="schoolTasksModel" :title="schoolTasksModelTitle" />
   </div>
 </template>
 
-  <style lang="less" scoped>
-.total {
-  position: relative;
-  padding-left: 10px;
-  color: #222;
-  display: flex;
-  align-items: center;
-
-  &::before {
-    display: inline-block;
-    background: var(--pro-ant-color-primary);
-    border-radius: 2px;
-    content: "";
-    height: 12px;
-    left: 0;
-    position: absolute;
-    width: 4px;
+<style scoped lang="less">
+.homework-page {
+  .homework-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
   }
-}
-span.dot {
-  border-radius: 50%;
-  display: inline-block;
-  height: 6px;
-  position: relative;
-  vertical-align: middle;
-  width: 6px;
-  margin-right: 4px;
-  background: #0c3;
-}
 
-.tip {
-  padding: 10px 24px 10px 14px;
-  background: #e6f0ff;
-  color: #333;
-
-  a {
-    color: var(--pro-ant-color-primary);
+  .homework-panel__summary {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    min-width: 0;
   }
-}
 
-.upNew {
-  position: relative;
+  .homework-panel__title {
+    position: relative;
+    padding-left: 10px;
+    color: #262626;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 24px;
 
-  &::before {
-    position: absolute;
-    top: -12px;
-    left: -22px;
-    z-index: 999;
-    width: 39px;
-    height: 22px;
-    background: url(data:image/png;base64,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);
-    background-size: contain;
-    content: "";
-  }
-}
-.hover {
-  &:hover {
-    .name {
-      color: var(--pro-ant-color-primary);
+    &::before {
+      position: absolute;
+      top: 6px;
+      left: 0;
+      width: 4px;
+      height: 12px;
+      border-radius: 999px;
+      background: var(--pro-ant-color-primary);
+      content: '';
     }
+  }
+
+  .homework-panel__metrics {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .homework-panel__metric {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: #f6f8fb;
+    color: #595959;
+    font-size: 13px;
+    line-height: 20px;
+  }
+
+  .homework-name-cell__title {
+    color: #262626;
+    font-size: 14px;
+    line-height: 22px;
+    font-weight: 500;
+  }
+
+  .homework-name-cell__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    color: #8c8c8c;
+    font-size: 12px;
+    line-height: 20px;
+  }
+
+  .homework-source-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: #edf5ff;
+    color: var(--pro-ant-color-primary);
+    font-size: 12px;
+    line-height: 20px;
+
+    &.is-one-to-one {
+      background: #fff4eb;
+      color: #fa8c16;
+    }
+  }
+
+  .homework-name-cell__source {
+    min-width: 0;
+    color: #8c8c8c;
+  }
+
+  .homework-content-cell {
+    max-width: 220px;
+    color: #262626;
+    line-height: 22px;
+  }
+
+  .homework-metric-cell__value {
+    color: #262626;
+    font-size: 14px;
+    line-height: 22px;
+    font-weight: 500;
+  }
+
+  .homework-metric-cell__desc,
+  .homework-datetime-cell__time {
+    color: #8c8c8c;
+    font-size: 12px;
+    line-height: 20px;
   }
 }
 </style>

@@ -37,7 +37,7 @@ const allColumns = ref([
   },
 
   {
-    title: '待批改数量',
+    title: '待点评数量',
     dataIndex: 'pendingCorrectionNum',
     key: 'pendingCorrectionNum',
     width: 150,

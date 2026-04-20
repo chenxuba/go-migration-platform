@@ -201,6 +201,10 @@ const props = defineProps({
     type: String,
     default: '请输入创建人',
   },
+  applyTimeLabel: {
+    type: String,
+    default: '申请时间',
+  },
   salesPersonPlaceholder: {
     type: String,
     default: '请输入销售员',
@@ -247,6 +251,10 @@ const props = defineProps({
   customQuickFilterValues: {
     type: Object,
     default: () => ({}),
+  },
+  customQuickFilters: {
+    type: Array,
+    default: () => [],
   },
   searchFilterList: {
     type: Array,
@@ -1615,12 +1623,32 @@ const remainingMode = ref('lesson') // 默认按课时
 const minRemaining = ref(null)
 const maxRemaining = ref(null)
 const selectedRemainingRange = ref(null)
-// 快捷筛选选项（单选）
-const quickFilters = ref([
+const defaultQuickFilters = [
   { id: 1, name: '今日待跟进', count: 1, selected: false },
   { id: 2, name: '本周新增', count: 0, selected: false },
   { id: 3, name: '逾期未回访', count: 0, selected: false },
-])
+]
+// 快捷筛选选项（单选）
+const quickFilters = ref(cloneQuickFilters(defaultQuickFilters))
+
+function cloneQuickFilters(filters, previous = []) {
+  const selectedMap = new Map((previous || []).map(item => [item.id, !!item.selected]))
+  return (filters || []).map(item => ({
+    id: item.id,
+    name: item.name,
+    count: Number(item.count || 0),
+    selected: selectedMap.get(item.id) || false,
+  }))
+}
+
+function syncQuickFilters() {
+  const customFilters = Array.isArray(props.customQuickFilters) ? props.customQuickFilters : []
+  quickFilters.value = cloneQuickFilters(customFilters.length > 0 ? customFilters : defaultQuickFilters, quickFilters.value)
+}
+
+watch(() => props.customQuickFilters, () => {
+  syncQuickFilters()
+}, { deep: true, immediate: true })
 
 // 过滤要显示的快捷筛选项
 const visibleQuickFilters = computed(() => {
@@ -1629,6 +1657,8 @@ const visibleQuickFilters = computed(() => {
 
 // 监听跟进数量
 watch(() => props.followUpCount, (newVal) => {
+  if (Array.isArray(props.customQuickFilters) && props.customQuickFilters.length > 0)
+    return
   quickFilters.value[0].count = newVal.toBeFollowedUpTodayCount || 0
   quickFilters.value[1].count = newVal.newInquiriesAddedWeekCount || 0
   quickFilters.value[2].count = newVal.overdueForFollowUpInterviewCount || 0
@@ -3103,7 +3133,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'applyTime',
-      label: '申请时间',
+      label: props.applyTimeLabel,
       show: props.displayArray.includes('applyTime'),
       values:
         applyTimeVals.value.length === 2
@@ -6423,7 +6453,7 @@ defineExpose({
                 label="下次跟进" type="dateTimeQuick" @date-picker-change="handleNextFollowTimeChange" />
 
               <!-- 申请时间 -->
-              <checkbox-filter v-if="filterType === 'applyTime'" v-model:checked-values="applyTimeVals" label="申请时间"
+              <checkbox-filter v-if="filterType === 'applyTime'" v-model:checked-values="applyTimeVals" :label="props.applyTimeLabel"
                 type="dateTime" @date-picker-change="handleCreateTimeChange" />
 
               <checkbox-filter v-if="filterType === 'finishTime'" v-model:checked-values="finishTimeVals" label="审批完成时间"
