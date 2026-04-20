@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -445,35 +446,46 @@ func (repo *Repository) GetLeaveDetail(ctx context.Context, instID, leaveID int6
 	)
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT
-			CAST(id AS CHAR),
-			CAST(student_id AS CHAR),
-			IFNULL(student_name, ''),
-			IFNULL(student_avatar_url, ''),
-			IFNULL(student_phone, ''),
-			start_time,
-			end_time,
-			IFNULL(is_agent, 1),
-			IFNULL(leave_type, 0),
-			IFNULL(reason, ''),
-			proof_materials_json,
-			IFNULL(remark, ''),
-			IFNULL(status, 0),
-			IFNULL(initiate_staff_name, ''),
-			IFNULL(current_approver_names, ''),
-			create_time,
+			CAST(r.id AS CHAR),
+			CAST(r.student_id AS CHAR),
+			IFNULL(r.student_name, ''),
+			IFNULL(r.student_avatar_url, ''),
+			IFNULL(r.student_phone, ''),
+			IFNULL(s.stu_sex, 0),
+			r.start_time,
+			r.end_time,
+			IFNULL(r.is_agent, 1),
+			IFNULL(r.leave_type, 0),
+			IFNULL(r.reason, ''),
+			r.proof_materials_json,
+			IFNULL(r.remark, ''),
+			IFNULL(r.status, 0),
+			IFNULL(r.initiate_staff_name, ''),
+			CAST(IFNULL(r.initiate_staff_id, 0) AS CHAR),
+			IFNULL(iu.avatar, ''),
+			IFNULL(r.current_approver_names, ''),
+			r.create_time,
 			current_step,
 			IFNULL((
 				SELECT NULLIF(action_staff_name, '')
 				FROM inst_leave_action action_log
-				WHERE action_log.inst_id = inst_leave_request.inst_id
-				  AND action_log.leave_request_id = inst_leave_request.id
+				WHERE action_log.inst_id = r.inst_id
+				  AND action_log.leave_request_id = r.id
 				  AND action_log.del_flag = 0
 				  AND action_log.action_type IN (?, ?, ?)
 				ORDER BY action_log.create_time DESC, action_log.id DESC
 				LIMIT 1
 			), '')
-		FROM inst_leave_request
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		FROM inst_leave_request r
+		LEFT JOIN inst_student s
+		  ON s.id = r.student_id
+		 AND s.inst_id = r.inst_id
+		 AND s.del_flag = 0
+		LEFT JOIN inst_user iu
+		  ON iu.id = r.initiate_staff_id
+		 AND iu.inst_id = r.inst_id
+		 AND iu.del_flag = 0
+		WHERE r.id = ? AND r.inst_id = ? AND r.del_flag = 0
 		LIMIT 1
 	`, model.LeaveActionApprove, model.LeaveActionReject, model.LeaveActionAutoApprove, leaveID, instID).Scan(
 		&detail.ID,
@@ -481,6 +493,7 @@ func (repo *Repository) GetLeaveDetail(ctx context.Context, instID, leaveID int6
 		&detail.StudentName,
 		&detail.StudentAvatarURL,
 		&detail.StudentPhone,
+		&detail.StudentSex,
 		&startTime,
 		&endTime,
 		&isAgent,
@@ -490,6 +503,8 @@ func (repo *Repository) GetLeaveDetail(ctx context.Context, instID, leaveID int6
 		&detail.Remark,
 		&detail.Status,
 		&detail.InitiateStaffName,
+		&detail.OperatorID,
+		&detail.OperatorAvatar,
 		&detail.CurrentApproverName,
 		&applyTime,
 		&currentStep,
@@ -504,20 +519,26 @@ func (repo *Repository) GetLeaveDetail(ctx context.Context, instID, leaveID int6
 	if startTime.Valid {
 		t := startTime.Time
 		detail.StartTime = &t
+		detail.StartDate = &t
 	}
 	if endTime.Valid {
 		t := endTime.Time
 		detail.EndTime = &t
+		detail.EndDate = &t
 	}
 	if applyTime.Valid {
 		t := applyTime.Time
 		detail.ApplyTime = &t
+		detail.OperationDate = &t
 	}
 	detail.IsAgent = isAgent != 0
 	detail.StudentPhone = maskApprovalPhone(detail.StudentPhone)
 	detail.LeaveTypeText = leaveTypeText(detail.LeaveType)
 	detail.StatusText = leaveStatusText(detail.Status)
-	detail.OperatorName = detail.InitiateStaffName
+	if detail.OperatorID == "0" {
+		detail.OperatorID = ""
+	}
+	detail.OperatorName = firstNonEmptyString(strings.TrimSpace(detail.InitiateStaffName), strings.TrimSpace(detail.OperatorName), "-")
 	if proofMaterialsJSON.Valid && strings.TrimSpace(proofMaterialsJSON.String) != "" {
 		detail.ProofMaterials = decodeJSONStringArray([]byte(proofMaterialsJSON.String))
 	}
@@ -580,27 +601,64 @@ func (repo *Repository) GetLeaveDetail(ctx context.Context, instID, leaveID int6
 	}
 
 	actionRows, err := repo.db.QueryContext(ctx, `
-		SELECT action_type, IFNULL(action_staff_name, ''), IFNULL(status_text, ''), IFNULL(remark, ''), create_time
-		FROM inst_leave_action
-		WHERE inst_id = ? AND leave_request_id = ? AND del_flag = 0
-		ORDER BY create_time ASC, id ASC
+		SELECT
+			action_type,
+			CAST(IFNULL(action_staff_id, 0) AS CHAR),
+			IFNULL(action_staff_name, ''),
+			IFNULL(iu.avatar, ''),
+			IFNULL(status_text, ''),
+			IFNULL(remark, ''),
+			action_log.create_time
+		FROM inst_leave_action action_log
+		LEFT JOIN inst_user iu
+		  ON iu.id = action_log.action_staff_id
+		 AND iu.inst_id = action_log.inst_id
+		 AND iu.del_flag = 0
+		WHERE action_log.inst_id = ? AND action_log.leave_request_id = ? AND action_log.del_flag = 0
+		ORDER BY action_log.create_time ASC, action_log.id ASC
 	`, instID, leaveID)
 	if err != nil {
 		return model.LeaveDetailVO{}, err
 	}
 	defer actionRows.Close()
 	detail.Processes = make([]model.LeaveProcessVO, 0)
+	detail.Approves = make([]model.LeaveDetailApproveVO, 0)
 	for actionRows.Next() {
-		var item model.LeaveProcessVO
-		var actionTime sql.NullTime
-		if err := actionRows.Scan(&item.ActionType, &item.Name, &item.Status, &item.Remark, &actionTime); err != nil {
+		var (
+			item       model.LeaveProcessVO
+			approve    model.LeaveDetailApproveVO
+			actionTime sql.NullTime
+		)
+		if err := actionRows.Scan(
+			&item.ActionType,
+			&approve.OperatorID,
+			&item.Name,
+			&approve.OperatorAvatar,
+			&item.Status,
+			&item.Remark,
+			&actionTime,
+		); err != nil {
 			return model.LeaveDetailVO{}, err
 		}
 		if actionTime.Valid {
 			t := actionTime.Time
 			item.ActionTime = &t
 		}
+		if approve.OperatorID == "0" {
+			approve.OperatorID = ""
+		}
+		approve = buildLeaveApproveVO(
+			item.ActionType,
+			approve.OperatorID,
+			item.Name,
+			approve.OperatorAvatar,
+			item.ActionTime,
+			item.Remark,
+			item.Status,
+			false,
+		)
 		detail.Processes = append(detail.Processes, item)
+		detail.Approves = append(detail.Approves, approve)
 	}
 	if err := actionRows.Err(); err != nil {
 		return model.LeaveDetailVO{}, err
@@ -612,9 +670,79 @@ func (repo *Repository) GetLeaveDetail(ctx context.Context, instID, leaveID int6
 			Status:     "待处理",
 			Pending:    true,
 		})
+		pendingApprove := buildLeaveApproveVO(
+			model.LeaveActionApprove,
+			"",
+			detail.CurrentApproverName,
+			"",
+			nil,
+			"",
+			"待处理",
+			true,
+		)
+		detail.Approve = &pendingApprove
+	} else if len(detail.Approves) > 0 {
+		currentApprove := detail.Approves[len(detail.Approves)-1]
+		detail.Approve = &currentApprove
 	}
 
 	return detail, nil
+}
+
+func (repo *Repository) PageLeaveDetailSchedules(ctx context.Context, instID int64, query model.LeaveDetailScheduleQueryDTO) (model.LeaveDetailSchedulePagedResult, error) {
+	studentID, startTime, endTime, err := parseLeaveDetailScheduleInput(query.QueryModel)
+	if err != nil {
+		return model.LeaveDetailSchedulePagedResult{}, err
+	}
+
+	current := query.PageRequestModel.PageIndex
+	size := query.PageRequestModel.PageSize
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 1000
+	}
+
+	schedules, err := repo.listLeaveApplicableSchedules(ctx, repo.db, instID, studentID, startTime, endTime, false)
+	if err != nil {
+		return model.LeaveDetailSchedulePagedResult{}, err
+	}
+
+	desc := query.SortModel.ByStartDate == 2
+	sort.SliceStable(schedules, func(i, j int) bool {
+		if desc {
+			if schedules[i].StartTime.Equal(schedules[j].StartTime) {
+				return schedules[i].ScheduleID > schedules[j].ScheduleID
+			}
+			return schedules[i].StartTime.After(schedules[j].StartTime)
+		}
+		if schedules[i].StartTime.Equal(schedules[j].StartTime) {
+			return schedules[i].ScheduleID < schedules[j].ScheduleID
+		}
+		return schedules[i].StartTime.Before(schedules[j].StartTime)
+	})
+
+	total := len(schedules)
+	offset := (current - 1) * size
+	if offset > total {
+		offset = total
+	}
+	endIndex := offset + size
+	if endIndex > total {
+		endIndex = total
+	}
+
+	studentName := repo.getLeaveStudentName(ctx, instID, studentID)
+	list := make([]model.LeaveDetailScheduleItem, 0, endIndex-offset)
+	for _, item := range schedules[offset:endIndex] {
+		list = append(list, buildLeaveDetailScheduleItem(instID, studentID, studentName, item))
+	}
+
+	return model.LeaveDetailSchedulePagedResult{
+		List:  list,
+		Total: total,
+	}, nil
 }
 
 func (repo *Repository) getLeaveStudentSnapshotTx(ctx context.Context, tx *sql.Tx, instID, studentID int64) (leaveStudentSnapshot, error) {
@@ -648,6 +776,99 @@ func (repo *Repository) getLeaveOperatorSnapshotTx(ctx context.Context, tx *sql.
 	}
 	item.Name = firstNonEmptyString(strings.TrimSpace(item.Name), strconv.FormatInt(item.ID, 10))
 	return item, nil
+}
+
+func (repo *Repository) getLeaveStudentName(ctx context.Context, instID, studentID int64) string {
+	var name string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(stu_name, '')
+		FROM inst_student
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, studentID, instID).Scan(&name)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(name)
+}
+
+func buildLeaveDetailScheduleItem(instID, studentID int64, studentName string, item leaveApplicableSchedule) model.LeaveDetailScheduleItem {
+	titleStudentName := firstNonEmptyString(strings.TrimSpace(studentName), "学员")
+	lessonName := firstNonEmptyString(strings.TrimSpace(item.LessonName), strings.TrimSpace(item.TeachingClassName), "课程")
+	lessonDay := time.Date(item.StartTime.Year(), item.StartTime.Month(), item.StartTime.Day(), 0, 0, 0, 0, item.StartTime.Location())
+	start := item.StartTime
+	end := item.EndTime
+	scheduleID := strconv.FormatInt(item.ScheduleID, 10)
+	studentIDString := strconv.FormatInt(studentID, 10)
+	teacherID := emptyStringIfZero(item.TeacherID)
+	teacherName := firstNonEmptyString(strings.TrimSpace(item.TeacherName), "-")
+
+	tags := make([]string, 0, 1)
+	if item.ClassType == model.TeachingClassTypeOneToOne {
+		tags = append(tags, "1v1")
+	}
+	tagsJSON, _ := json.Marshal(tags)
+
+	return model.LeaveDetailScheduleItem{
+		OrgID:             strconv.FormatInt(instID, 10),
+		SchoolID:          "",
+		SchoolName:        "",
+		ID:                scheduleID,
+		Title:             fmt.Sprintf("%s-%s", titleStudentName, lessonName),
+		LessonDay:         &lessonDay,
+		LessonType:        item.ClassType,
+		IsFinished:        !item.EndTime.After(time.Now()),
+		StartMinutes:      item.StartTime.Hour()*60 + item.StartTime.Minute(),
+		EndMinutes:        item.EndTime.Hour()*60 + item.EndTime.Minute(),
+		Remark:            "",
+		ExternalRemark:    "",
+		LessonID:          emptyStringIfZero(item.LessonID),
+		LessonName:        lessonName,
+		LessonColor:       "",
+		MainTeacherID:     teacherID,
+		MainTeacherName:   teacherName,
+		MainTeacherColor:  "",
+		MainTeacherStatus: 0,
+		MainTeacherAvatar: "",
+		Tags:              tags,
+		TagsString:        string(tagsJSON),
+		SourceType:        item.ClassType,
+		SourceID:          scheduleID,
+		Address:           nil,
+		AddressType:       0,
+		AddressID:         "0",
+		AddressName:       "",
+		Members: []model.LeaveDetailScheduleMemberVO{
+			{
+				MemberType:  1,
+				MemberID:    studentIDString,
+				MemberName:  firstNonEmptyString(strings.TrimSpace(studentName), "-"),
+				TimetableID: "0",
+			},
+		},
+		Teachers: []model.LeaveDetailScheduleTeacherVO{
+			{
+				TeacherColor:  "",
+				TeacherID:     teacherID,
+				TeacherDuty:   1,
+				TeacherName:   teacherName,
+				TeacherStatus: 0,
+			},
+		},
+		RepeatSpan:         0,
+		WeekDays:           0,
+		ScheduleSourceType: item.ClassType,
+		ScheduleSourceID:   studentIDString,
+		MaxStudentCount:    0,
+		BookedStudentCount: 0,
+		SubjectID:          "0",
+		SubjectName:        "",
+		IsOrgCreated:       false,
+		IsOpenLiveRecord:   false,
+		IsOpenLive:         false,
+		StartTime:          &start,
+		EndTime:            &end,
+	}
 }
 
 func (repo *Repository) getLeaveApprovalStepTx(ctx context.Context, tx *sql.Tx, instID int64) (*int, []int64, string, int, error) {
@@ -880,6 +1101,25 @@ func parseLeaveCreateInput(dto model.LeaveCreateDTO) (int64, time.Time, time.Tim
 	return studentID, startTime, endTime, nil
 }
 
+func parseLeaveDetailScheduleInput(query model.LeaveDetailScheduleQueryModel) (int64, time.Time, time.Time, error) {
+	studentID, err := parseOptionalPositiveID(query.StudentID.String())
+	if err != nil || studentID <= 0 {
+		return 0, time.Time{}, time.Time{}, errors.New("请选择学员")
+	}
+	startTime, err := parseLeaveDateTime(query.StartDateTime)
+	if err != nil {
+		return 0, time.Time{}, time.Time{}, errors.New("开始时间格式不正确")
+	}
+	endTime, err := parseLeaveDateTime(query.EndDateTime)
+	if err != nil {
+		return 0, time.Time{}, time.Time{}, errors.New("结束时间格式不正确")
+	}
+	if endTime.Before(startTime) {
+		return 0, time.Time{}, time.Time{}, errors.New("结束时间不能早于开始时间")
+	}
+	return studentID, startTime, endTime, nil
+}
+
 func parseLeaveDateTime(raw string) (time.Time, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -968,5 +1208,55 @@ func leaveStatusText(value int) string {
 		return "已撤销"
 	default:
 		return "-"
+	}
+}
+
+func leaveApproveStatusValue(actionType int, pending bool) int {
+	if pending {
+		return 1
+	}
+	switch actionType {
+	case model.LeaveActionCreate:
+		return 1
+	case model.LeaveActionReject:
+		return 2
+	case model.LeaveActionApprove, model.LeaveActionAutoApprove:
+		return 3
+	case model.LeaveActionRevoke:
+		return 4
+	default:
+		return 0
+	}
+}
+
+func leaveApproveStatusText(actionType int, pending bool) string {
+	if pending {
+		return "待处理"
+	}
+	switch actionType {
+	case model.LeaveActionCreate:
+		return "发起"
+	case model.LeaveActionReject:
+		return "已拒绝"
+	case model.LeaveActionApprove, model.LeaveActionAutoApprove:
+		return "已通过"
+	case model.LeaveActionRevoke:
+		return "已撤销"
+	default:
+		return "-"
+	}
+}
+
+func buildLeaveApproveVO(actionType int, operatorID, operatorName, operatorAvatar string, operationDate *time.Time, remark, rawStatus string, pending bool) model.LeaveDetailApproveVO {
+	statusText := firstNonEmptyString(strings.TrimSpace(rawStatus), leaveApproveStatusText(actionType, pending))
+	return model.LeaveDetailApproveVO{
+		OperatorID:        strings.TrimSpace(operatorID),
+		OperatorName:      firstNonEmptyString(strings.TrimSpace(operatorName), "-"),
+		OperatorAvatar:    strings.TrimSpace(operatorAvatar),
+		OperationDate:     operationDate,
+		Remark:            strings.TrimSpace(remark),
+		ApproveStatus:     leaveApproveStatusValue(actionType, pending),
+		ApproveStatusText: statusText,
+		ActionType:        actionType,
 	}
 }

@@ -61,3 +61,14 @@ func (svc *Service) GetLeaveDetail(userID, leaveID int64) (model.LeaveDetailVO, 
 	}
 	return svc.repo.GetLeaveDetail(context.Background(), instID, leaveID)
 }
+
+func (svc *Service) PageLeaveDetailSchedules(userID int64, query model.LeaveDetailScheduleQueryDTO) (model.LeaveDetailSchedulePagedResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.LeaveDetailSchedulePagedResult{}, errors.New("no institution context")
+		}
+		return model.LeaveDetailSchedulePagedResult{}, err
+	}
+	return svc.repo.PageLeaveDetailSchedules(context.Background(), instID, query)
+}
