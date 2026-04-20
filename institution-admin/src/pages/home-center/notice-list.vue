@@ -243,19 +243,42 @@ function handleTableChange(pageConfig: any) {
   fetchNoticeList()
 }
 
+function normalizeScopeName(value?: string | null) {
+  const text = String(value || '').trim()
+  if (!text)
+    return ''
+
+  const dashIndex = text.indexOf('-')
+  if (dashIndex > 0) {
+    const prefix = text.slice(0, dashIndex).trim()
+    const suffix = text.slice(dashIndex + 1).trim().toLowerCase()
+    if (prefix && /一对一|1对1|1v1/.test(suffix))
+      return prefix
+  }
+
+  const separatorIndex = text.indexOf('--')
+  if (separatorIndex > 0)
+    return text.slice(0, separatorIndex).trim() || text
+
+  return text
+}
+
 function getScopeText(record: NoticeListItem) {
   if (record.isAllSchool)
-    return '全校群发'
+    return '全校'
+
   const classNames = (Array.isArray(record.classs) ? record.classs : [])
-    .map(item => String(item.className || '').trim())
+    .map(item => normalizeScopeName(item.className))
     .filter(Boolean)
-  if (classNames.length <= 2)
+
+  if (classNames.length)
     return classNames.join('、')
-  if (classNames.length > 2)
-    return `${classNames.slice(0, 2).join('、')} 等 ${classNames.length} 个来源`
-  if (record.studentCount > 0)
-    return `指定学员（${record.studentCount} 人）`
-  return '指定范围'
+
+  return '指定学员'
+}
+
+function getScopeSuffix(record: NoticeListItem) {
+  return `(${Number(record.studentCount || 0)}人)`
 }
 
 function asNoticeRecord(record: Record<string, any>) {
@@ -264,18 +287,18 @@ function asNoticeRecord(record: Record<string, any>) {
 
 function getStatusMeta(record: NoticeListItem) {
   if (record.isWithdraw)
-    return { text: '已撤回', color: 'default' }
+    return { text: '已撤回', tone: 'default' }
   switch (Number(record.status || 0)) {
     case 1:
-      return { text: '待审核', color: 'processing' }
+      return { text: '待审核', tone: 'processing' }
     case 2:
-      return { text: '审核驳回', color: 'error' }
+      return { text: '审核驳回', tone: 'error' }
     case 3:
-      return { text: '待发布', color: 'warning' }
+      return { text: '待发布', tone: 'warning' }
     case 4:
-      return { text: '已发布', color: 'success' }
+      return { text: '已发布', tone: 'success' }
     default:
-      return { text: '未知状态', color: 'default' }
+      return { text: '未知状态', tone: 'default' }
   }
 }
 
@@ -453,12 +476,17 @@ onBeforeUnmount(() => {
 
           <template v-else-if="column.key === 'scope'">
             <div class="noticeTable__scope">
-              {{ getScopeText(asNoticeRecord(record)) }}
+              <span class="noticeTable__scopeText">{{ getScopeText(asNoticeRecord(record)) }}</span>
+              <span class="noticeTable__scopeSuffix">{{ getScopeSuffix(asNoticeRecord(record)) }}</span>
             </div>
           </template>
 
           <template v-else-if="column.key === 'status'">
-            <a-tag :color="getStatusMeta(asNoticeRecord(record)).color">
+            <a-tag
+              class="noticeTable__statusTag"
+              :class="`is-${getStatusMeta(asNoticeRecord(record)).tone}`"
+            >
+              <span class="noticeTable__statusDot" />
               {{ getStatusMeta(asNoticeRecord(record)).text }}
             </a-tag>
           </template>
@@ -644,9 +672,7 @@ onBeforeUnmount(() => {
   }
 }
 
-.noticePage__filters {
-  padding: 16px 20px;
-}
+
 
 .noticePage__filtersRow {
   display: flex;
@@ -655,6 +681,7 @@ onBeforeUnmount(() => {
 
 .noticePage__allFilter {
   width: 100%;
+  border-radius: 20px;
 }
 
 .noticePage__tableCard {
@@ -701,6 +728,7 @@ onBeforeUnmount(() => {
 .noticeTable__summary {
   display: -webkit-box;
   overflow: hidden;
+  padding-right: 20px;
   color: #5f6b7c;
   line-height: 22px;
   word-break: break-word;
@@ -709,8 +737,76 @@ onBeforeUnmount(() => {
 }
 
 .noticeTable__scope {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
   color: #1f2329;
   line-height: 22px;
+}
+
+.noticeTable__scopeText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.noticeTable__scopeSuffix {
+  flex: none;
+}
+
+.noticeTable__statusTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-end: 0;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.noticeTable__statusDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.noticeTable__statusTag.is-success {
+  color: #2d9f63;
+  background: #effaf3;
+  border-color: #cfead8;
+}
+
+.noticeTable__statusTag.is-processing {
+  color: #2f6bdf;
+  background: #eef4ff;
+  border-color: #d4e2ff;
+}
+
+.noticeTable__statusTag.is-warning {
+  color: #c8811a;
+  background: #fff7e8;
+  border-color: #ffe0a8;
+}
+
+.noticeTable__statusTag.is-error {
+  color: #d84a4a;
+  background: #fff1f0;
+  border-color: #ffc9c5;
+}
+
+.noticeTable__statusTag.is-default {
+  color: #6f7d90;
+  background: #f4f6f8;
+  border-color: #dde3ea;
 }
 
 .noticeTable__metrics {

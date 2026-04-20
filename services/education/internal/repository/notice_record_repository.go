@@ -83,6 +83,27 @@ func ensureNoticeRecordTables(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
+func normalizeNoticeClassDisplayName(value string) string {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return ""
+	}
+
+	if separatorIndex := strings.Index(text, "--"); separatorIndex > 0 {
+		text = strings.TrimSpace(text[:separatorIndex])
+	}
+
+	if separatorIndex := strings.Index(text, "-"); separatorIndex > 0 {
+		prefix := strings.TrimSpace(text[:separatorIndex])
+		suffix := strings.ToLower(strings.TrimSpace(text[separatorIndex+1:]))
+		if prefix != "" && (strings.Contains(suffix, "一对一") || strings.Contains(suffix, "1对1") || strings.Contains(suffix, "1v1")) {
+			return prefix
+		}
+	}
+
+	return text
+}
+
 func (repo *Repository) ListNoticeClassSnapshots(ctx context.Context, instID int64, classIDs []string) ([]model.NoticeClassSnapshot, error) {
 	ids := parseNoticeIDInts(classIDs)
 	if len(ids) == 0 {
@@ -111,6 +132,8 @@ func (repo *Repository) ListNoticeClassSnapshots(ctx context.Context, instID int
 		if err := rows.Scan(&item.ClassID, &item.ClassName); err != nil {
 			return nil, err
 		}
+		item.ClassID = strings.TrimSpace(item.ClassID)
+		item.ClassName = normalizeNoticeClassDisplayName(item.ClassName)
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -269,7 +292,14 @@ func (repo *Repository) CreateNoticeRecord(ctx context.Context, instID int64, in
 	if err != nil {
 		return 0, err
 	}
-	classsJSON, err := marshalNoticeJSON(input.ClassSnapshots)
+	classSnapshots := make([]model.NoticeClassSnapshot, 0, len(input.ClassSnapshots))
+	for _, snapshot := range input.ClassSnapshots {
+		classSnapshots = append(classSnapshots, model.NoticeClassSnapshot{
+			ClassID:   strings.TrimSpace(snapshot.ClassID),
+			ClassName: normalizeNoticeClassDisplayName(snapshot.ClassName),
+		})
+	}
+	classsJSON, err := marshalNoticeJSON(classSnapshots)
 	if err != nil {
 		return 0, err
 	}
@@ -476,7 +506,7 @@ func (repo *Repository) PageNoticeRecords(ctx context.Context, instID int64, que
 			item.Classs = append(item.Classs, model.NoticeClassVO{
 				ClassID:   strings.TrimSpace(snapshot.ClassID),
 				NoticeID:  item.NoticeID,
-				ClassName: strings.TrimSpace(snapshot.ClassName),
+				ClassName: normalizeNoticeClassDisplayName(snapshot.ClassName),
 			})
 		}
 		items = append(items, item)
