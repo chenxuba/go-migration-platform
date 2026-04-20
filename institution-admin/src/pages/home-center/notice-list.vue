@@ -1,18 +1,38 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { CloseOutlined } from '@ant-design/icons-vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Empty } from 'ant-design-vue'
 import createNoticeModel from './components/createNoticeModel.vue'
 import { listNoticeTemplatesApi, type NoticeTemplateItem } from '@/api/home-center/notice'
 import { useTableColumns } from '@/composables/useTableColumns'
 
+const TEMPLATE_CARD_WIDTH = 156
+const TEMPLATE_CARD_GAP = 14
+
 const createNotice = ref(false)
 const noticeTemplateLoading = ref(false)
 const noticeTemplates = ref<NoticeTemplateItem[]>([])
+const templateLibraryOpen = ref(false)
+const templateViewportRef = ref<HTMLElement | null>(null)
+const visibleTemplateCount = ref(0)
 const defaultTemplateCover = 'https://prod-cdn.schoolpal.cn/training/next-erp/h5/static/images/notice/cjbk2025.png'
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
+let templateResizeObserver: ResizeObserver | null = null
+
+const visibleNoticeTemplates = computed(() => {
+  if (!noticeTemplates.value.length)
+    return []
+  const count = Math.max(1, visibleTemplateCount.value || 0)
+  return noticeTemplates.value.slice(0, count)
+})
+
 function handelCreateNotice() {
   createNotice.value = true
+}
+
+function openTemplateLibrary() {
+  templateLibraryOpen.value = true
 }
 
 async function fetchNoticeTemplates() {
@@ -20,6 +40,8 @@ async function fetchNoticeTemplates() {
   try {
     const res = await listNoticeTemplatesApi()
     noticeTemplates.value = Array.isArray(res.result) ? res.result : []
+    await nextTick()
+    updateVisibleTemplateCount()
   }
   finally {
     noticeTemplateLoading.value = false
@@ -36,6 +58,38 @@ function getNoticeTemplateStyle(item: NoticeTemplateItem) {
 function previewNoticeTemplate(item: NoticeTemplateItem) {
   const target = String(item.coverUrl || '').trim() || defaultTemplateCover
   window.open(target, '_blank', 'noopener,noreferrer')
+}
+
+function updateVisibleTemplateCount() {
+  const containerWidth = Number(templateViewportRef.value?.clientWidth || 0)
+  if (!noticeTemplates.value.length) {
+    visibleTemplateCount.value = 0
+    return
+  }
+  if (!containerWidth) {
+    visibleTemplateCount.value = Math.min(6, noticeTemplates.value.length)
+    return
+  }
+  const count = Math.floor((containerWidth + TEMPLATE_CARD_GAP) / (TEMPLATE_CARD_WIDTH + TEMPLATE_CARD_GAP))
+  visibleTemplateCount.value = Math.max(1, Math.min(count, noticeTemplates.value.length))
+}
+
+function installTemplateResizeObserver() {
+  templateResizeObserver?.disconnect()
+  templateResizeObserver = null
+  if (!(templateViewportRef.value instanceof HTMLElement)) {
+    updateVisibleTemplateCount()
+    return
+  }
+  if (typeof ResizeObserver === 'undefined') {
+    updateVisibleTemplateCount()
+    return
+  }
+  templateResizeObserver = new ResizeObserver(() => {
+    updateVisibleTemplateCount()
+  })
+  templateResizeObserver.observe(templateViewportRef.value)
+  updateVisibleTemplateCount()
 }
 
 const displayArray = ref([
@@ -119,8 +173,15 @@ function handleOrderDetail() {
   openOrderDetailDrawer.value = true
 }
 
-onMounted(() => {
-  fetchNoticeTemplates()
+onMounted(async () => {
+  await fetchNoticeTemplates()
+  await nextTick()
+  installTemplateResizeObserver()
+})
+
+onBeforeUnmount(() => {
+  templateResizeObserver?.disconnect()
+  templateResizeObserver = null
 })
 </script>
 
@@ -132,7 +193,7 @@ onMounted(() => {
           <span class="text-5 text-#000 font800">通知公告模板</span>
           <span class="text-3.5 text-#666 ml3">多种模板，一键群发，已读未读及时跟进</span>
         </div>
-        <div class="bg-#0066ff14 py2 px2.5 rounded-2 after">
+        <div class="bg-#0066ff14 py2 px2.5 rounded-2 after" @click="openTemplateLibrary">
           <img
             width="14"
             src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAgCAYAAAAFQMh/AAAAAXNSR0IArs4c6QAABIJJREFUWEe1ln1sE3UYx7/PvdDCnC8Mx0RM3DSRoBIQM9Z2aFG2dajbnBkxkQjEdyEmKo46iXbRZB3E+DoTjFETEqIh4rbo2g0iZLNtiJk6/yC+ZmIMOpYpDJm99nqPuaZX29rrVan31909z/P93O95nt/vHoLFxbsGq6HyMBgT6G3ZSCDODJnyco1IWEEaTgEor+ilYStN3U5WTrxz4AMQ2pN+zPdQb9v+zJgZLzcyYMDeXeSnrVaalmDuHKyDwJG0EGMS85Vl5NsYM96d8vIqAfg8Jbanwk+d5wVm3xEJ0dmjAFw5Qp3kb91jvJvu4nWkYSsxpjQBc5f20HP/GcxdgzdA41cA1OcR0UDcB2jd1NM+Yw5hcnrijzAJ1xOJ/vAQncj0zaox7zhYCUncDeBey/ozTkPA87B98TL5fFqmaEcHiydn428zka6jN8eJi0i+JhAgxfDLBj89MAJGQzGp+rvuvJ162/qM5+Zmtp3R1PdAaMvRcYaDcrpfssHegb0AHvwXYA2MFupt/ViPcbv5gphdHQBwS6YGA+OROqkWPkpnJhvs8wlQVm4G0wsAllh8wCigPUH+O8d1P0cTLyRSAwBqs+Pox7ggOj4bol9Na2wYeMdwGWRlF5i9eeAzAD9A/rYPDZurgZewqI4AuDbHf4aQcIWC9m9ydQoeIOztfwegLVlBRHdQT8tHxrv626I1iYR0mMDVOeJ/sob1kRE5nC9zhcHP9F+BBH0LwJ4KHiV/682GkLNRuQ6CoK/0shxxjYnuigSkfrNyWR+Z3gF9ez2VFCCuo562Y/pt/YbYGk0jvaaX/FOct4WD894o1CPWYL3eYvQlgCeMbVPXFF9PhH4CynLFGeiJBOUuq51hCc4VcHnUdgbrPwpbnpXuCwflzXpqSgp2emJbAHoLgJinSw9Hp6UN4+MUt4Imq1aMk+7j8sQeZ9CLeWMYX5JNuik0SGeL1SsK7GiKdxPh2fyifEJk2TE2TL8Y9oe/P1vJotDNxGOCBpGJnKwp3jevWnjG8LEAMzmaE68S83aTlfzGmuaKjNi+zrQ/OvlHVQJ0Mp0dgsoJZVFRYLebpZg9rh8gm0ygUQIaQkH503z2hybP/QCgJmWb2FtdtjLTL++K3W62x+zq+wBaTKAagTpCQelgPvu2n2cr1Lg4ldGEytz8BRX7quicaapdLVzOseQfZp1poxA/Fg7Me83Mfv93c0tFiV9P1pghMsgpyYn7+pZemB4cslZceytXSLIaBHCjORS7wwF5Z7Hda+aXBjtu58uhqiMELDd1Jt4fCsibijkgrD4sCXY0Ra8mkg4BfGWBgE9Ol0vNxw9QesK0Ei9kpzUeZYUEYZiBqgJp+Uolae2xAM2eDyyrq52euD4TryrQSD+RKjtCh5L7smSXPoLqA1idieLvImn1YwHb8ZIRU0LkaFSWkSgcBWNxjrgCAY3hIXm01FBdL9lca5uV5QkWjgCoTEE0Bt0dCUoH/g9oGqzfpMYYfaJYDOInCx0QpfiYrANk9WqWF1Ti4rEATZdCvJDGX55jnDAUsnPxAAAAAElFTkSuQmCC"
@@ -141,11 +202,11 @@ onMounted(() => {
           更多模板
         </div>
       </div>
-      <div class="overflow-auto">
+      <div ref="templateViewportRef" class="templatePreview">
         <a-spin :spinning="noticeTemplateLoading">
-          <a-space v-if="noticeTemplates.length" :size="14" class="mt3">
-            <div v-for="item in noticeTemplates" :key="item.id" class="templateItem w-39">
-              <div class="h-39 bgimg" :style="getNoticeTemplateStyle(item)">
+          <div v-if="visibleNoticeTemplates.length" class="templatePreview__list">
+            <div v-for="item in visibleNoticeTemplates" :key="item.id" class="templateItem templateItem--preview">
+              <div class="templateItem__cover" :style="getNoticeTemplateStyle(item)">
                 <div class="mask">
                   <a-button type="primary" @click.stop="handelCreateNotice">
                     使用
@@ -179,7 +240,7 @@ onMounted(() => {
                 {{ item.title }}
               </div>
             </div>
-          </a-space>
+          </div>
           <div v-else class="mt3 py8">
             <a-empty :image="simpleImage" description="暂无模板" />
           </div>
@@ -266,6 +327,73 @@ onMounted(() => {
     <student-info-drawer v-model:open="openDrawer" />
     <order-detail-drawer v-model:open="openOrderDetailDrawer" />
     <createNoticeModel v-model="createNotice" />
+    <a-modal
+      v-model:open="templateLibraryOpen"
+      centered
+      wrap-class-name="template-library-modal"
+      :footer="false"
+      :closable="false"
+      :mask-closable="true"
+      :keyboard="true"
+      :width="760"
+      :body-style="{ maxHeight: '68vh', overflowY: 'auto', padding: '12px 24px 24px' }"
+      destroy-on-close
+    >
+      <template #title>
+        <div class="templateLibraryModal__title">
+          <span>模板库</span>
+          <a-button type="text" class="templateLibraryModal__close" @click="templateLibraryOpen = false">
+            <template #icon>
+              <CloseOutlined />
+            </template>
+          </a-button>
+        </div>
+      </template>
+      <div class="templateLibraryModal__body">
+        <a-spin :spinning="noticeTemplateLoading">
+          <div v-if="noticeTemplates.length" class="templateLibraryModal__grid">
+            <div v-for="item in noticeTemplates" :key="`${item.id}-library`" class="templateItem templateItem--library">
+              <div class="templateItem__cover" :style="getNoticeTemplateStyle(item)">
+                <div class="mask">
+                  <a-button type="primary" @click.stop="handelCreateNotice">
+                    使用
+                  </a-button>
+                  <div class="eye" @click.stop="previewNoticeTemplate(item)">
+                    <svg width="17px" height="12px" viewBox="0 0 17 12">
+                      <title>编组</title>
+                      <g id="\u9875\u9762-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+                        <g id="\u901A\u77E5\u516C\u544A" transform="translate(-1825.000000, -377.000000)">
+                          <g id="\u7F16\u7EC4" transform="translate(1816.000000, 367.000000)">
+                            <g transform="translate(9.000000, 10.000000)">
+                              <path
+                                id="\u5F62\u72B6"
+                                d="M8.00044664,12 C3.58904385,12 0,9.30840603 0,6 C0,2.69159397 3.58922251,0 8.00044664,0 C12.4107775,0 16,2.69159397 16,6 C16,9.30840603 12.4107775,12 8.00044664,12 L8.00044664,12 Z M8.00044664,1.69822139 C4.55254196,1.69822139 1.64025146,3.66832095 1.64025146,6 C1.64025146,8.33167905 4.55254196,10.3017786 8.00044664,10.3017786 C11.447458,10.3017786 14.3595699,8.33167905 14.3595699,6 C14.3595699,3.66832095 11.4472794,1.69822139 8.00044664,1.69822139 Z"
+                                fill="currentColor"
+                              />
+                              <path
+                                id="\u8DEF\u5F84"
+                                d="M5.44993691,5.99981505 C5.44993691,6.94299358 5.93599319,7.81452648 6.7250131,8.28611575 C7.51403302,8.75770502 8.48614564,8.75770502 9.27516555,8.28611575 C10.0641855,7.81452648 10.5502417,6.94299358 10.5502417,5.99981505 C10.5502417,5.05663652 10.0641855,4.18510361 9.27516555,3.71351434 C8.48614564,3.24192507 7.51403302,3.24192507 6.7250131,3.71351434 C5.93599319,4.18510361 5.44993691,5.05663652 5.44993691,5.99981505 L5.44993691,5.99981505 Z"
+                                fill="currentColor"
+                              />
+                            </g>
+                          </g>
+                        </g>
+                      </g>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+              <div class="templateItemTitle text-#000 text-3.5 mt1 font-500">
+                {{ item.title }}
+              </div>
+            </div>
+          </div>
+          <div v-else class="templateLibraryModal__empty">
+            <a-empty :image="simpleImage" description="暂无模板" />
+          </div>
+        </a-spin>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -351,9 +479,33 @@ span.dot {
   }
 }
 
+.templatePreview {
+  margin-top: 12px;
+}
+
+.templatePreview__list {
+  display: flex;
+  gap: 14px;
+  overflow: hidden;
+}
+
 .templateItem {
-  .bgimg {
+  .templateItemTitle {
+    line-height: 22px;
+  }
+
+  &--preview {
+    width: 156px;
+    min-width: 156px;
+  }
+
+  &--library {
     width: 100%;
+  }
+
+  .templateItem__cover {
+    width: 100%;
+    height: 156px;
     background: url("https://prod-cdn.schoolpal.cn/training/next-erp/h5/static/images/notice/cjbk2025.png");
     background-size: 100% 100%;
     border-radius: 8px;
@@ -399,39 +551,78 @@ span.dot {
   }
 }
 
-.overflow-auto {
-  padding-bottom: 4px;
+.templateLibraryModal__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 600;
+  color: #222;
+}
 
-  &::-webkit-scrollbar {
-    width: 10px;
-    height: 6px;
-    background: #eee;
+.templateLibraryModal__close {
+  color: #999;
+
+  &:hover {
+    color: #333;
+    background: transparent;
+  }
+}
+
+.templateLibraryModal__body {
+  padding-top: 8px;
+}
+
+.templateLibraryModal__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: 22px 14px;
+}
+
+.templateLibraryModal__empty {
+  padding: 48px 0 36px;
+}
+</style>
+
+<style lang="less">
+.template-library-modal {
+  .ant-modal-content {
+    overflow: hidden;
+    border-radius: 16px;
   }
 
-  /* 滚动条轨道背景 */
-  &::-webkit-scrollbar-track {
-    background: #eee;
-    border-radius: 2px;
+  .ant-modal-header {
+    border-radius: 16px 16px 0 0;
   }
 
-  /* 滚动条滑块 */
-  &::-webkit-scrollbar-thumb {
-    background: #aaa;
-    border-radius: 5px;
-    border: 6px solid transparent;
-    /* 增加留白效果 */
-    background-clip: content-box;
+  .ant-modal-body {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: #cfd6e4 transparent;
   }
 
-  /* 滑块悬停效果 */
-  &::-webkit-scrollbar-thumb:hover {
-    background: #ccc;
+  .ant-modal-body::-webkit-scrollbar {
+    width: 8px;
   }
 
-  /* 滑块点击效果 */
-  &::-webkit-scrollbar-thumb:active {
-    background: #666;
+  .ant-modal-body::-webkit-scrollbar-track {
+    background: transparent;
   }
 
+  .ant-modal-body::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: #cfd6e4;
+    background-clip: padding-box;
+  }
+
+  .ant-modal-body::-webkit-scrollbar-thumb:hover {
+    background: #b9c3d4;
+    background-clip: padding-box;
+  }
+
+  .ant-modal-body::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 </style>
