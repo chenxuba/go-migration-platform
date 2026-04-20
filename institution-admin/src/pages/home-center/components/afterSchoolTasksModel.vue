@@ -106,7 +106,7 @@ function createDefaultFormState() {
     deadlineAt: undefined as string | undefined,
     dateRange: undefined as [string, string] | undefined,
     time: undefined as string | undefined,
-    deadlineTime: undefined as string | undefined,
+    taskDurationHours: undefined as number | undefined,
     weeks: [] as number[],
     mediaList: [] as RehabRecordMediaItem[],
   }
@@ -114,6 +114,7 @@ function createDefaultFormState() {
 
 const formState = reactive(createDefaultFormState())
 
+const isEditMode = computed(() => props.mode === 'edit')
 const dialogTitle = computed(() => props.mode === 'edit' ? '编辑课后任务' : '新建课后任务')
 const selectedStudentButtonText = computed(() => formState.students.length > 0 ? `已选班级/学员（${formState.students.length}）` : '选择班级/学员')
 const selectedStudentPreviewText = computed(() =>
@@ -143,7 +144,7 @@ function serializeFormState() {
     deadlineAt: formState.deadlineAt || '',
     dateRange: formState.dateRange ? [...formState.dateRange] : [],
     time: formState.time || '',
-    deadlineTime: formState.deadlineTime || '',
+    taskDurationHours: Number(formState.taskDurationHours || 0) || '',
     weeks: [...formState.weeks].sort((a, b) => a - b),
     students: [...formState.students]
       .map(item => ({
@@ -225,7 +226,7 @@ function applyDetailToForm(detail: HomeworkDetail) {
     formState.dateRange = [detail.repeatRule.startDate, detail.repeatRule.endDate]
     formState.weeks = bitmaskToWeeks(detail.repeatRule.weekDays)
     formState.time = hourToTimeOption(detail.publishHour)
-    formState.deadlineTime = hourToTimeOption(detail.endHour)
+    formState.taskDurationHours = normalizeTaskDurationHours(detail.taskDurationHours) ?? resolveTaskDurationHours(detail.publishHour, detail.endHour)
     return
   }
 
@@ -857,6 +858,24 @@ function hourToTimeOption(value?: number) {
   return `${String(value).padStart(2, '0')}:00`
 }
 
+function normalizeTaskDurationHours(value?: string | number | null) {
+  if (value === undefined || value === null || String(value).trim() === '')
+    return undefined
+  const current = Number(value)
+  if (!Number.isFinite(current))
+    return undefined
+  return current
+}
+
+function resolveTaskDurationHours(publishHour?: number, endHour?: number) {
+  const startHour = Number(publishHour)
+  const finishHour = Number(endHour)
+  if (!Number.isFinite(startHour) || !Number.isFinite(finishHour))
+    return undefined
+  const duration = finishHour >= startHour ? finishHour - startHour : finishHour + 24 - startHour
+  return duration > 0 ? duration : undefined
+}
+
 function weeksToBitmask(values: number[]) {
   const map: Record<number, number> = { 1: 2, 2: 4, 3: 8, 4: 16, 5: 32, 6: 64, 7: 1 }
   return values.reduce((total, item) => total + (map[item] || 0), 0)
@@ -925,8 +944,13 @@ async function handleOk() {
       messageService.warning('请选择任务日期范围')
       return
     }
-    if (!formState.time || !formState.deadlineTime) {
-      messageService.warning('请选择任务推送时间和截止时间')
+    if (!formState.time) {
+      messageService.warning('请选择任务推送时间')
+      return
+    }
+    const taskDurationHours = normalizeTaskDurationHours(formState.taskDurationHours)
+    if (taskDurationHours !== undefined && taskDurationHours <= 0) {
+      messageService.warning('请填写正确的单次任务时长')
       return
     }
   }
@@ -957,7 +981,7 @@ async function handleOk() {
     publishTime: formState.rule === 1 && formState.publishAt ? dayjs(formState.publishAt).format('YYYY-MM-DDTHH:mm') : undefined,
     endTime: formState.rule === 1 && formState.deadlineAt ? dayjs(formState.deadlineAt).format('YYYY-MM-DDTHH:mm') : undefined,
     publishHour: formState.rule === 2 ? timeOptionToHour(formState.time) : undefined,
-    endHour: formState.rule === 2 ? timeOptionToHour(formState.deadlineTime) : undefined,
+    taskDurationHours: formState.rule === 2 ? normalizeTaskDurationHours(formState.taskDurationHours) : undefined,
     isVisibleStudent: false,
     homeworkObjects,
   }
@@ -973,7 +997,8 @@ async function handleOk() {
       return
     }
 
-    messageService.success(props.mode === 'edit' ? '编辑成功' : '创建成功')
+    const createdCount = Array.isArray(res.result) ? res.result.length : 0
+    messageService.success(props.mode === 'edit' ? '编辑成功' : createdCount > 1 ? `创建成功，共生成${createdCount}条任务` : '创建成功')
     open.value = false
     emit('success')
   }
@@ -1195,7 +1220,7 @@ watch(() => formState.publishAt, (publishAtValue) => {
               </div>
             </a-form-item>
 
-            <a-form-item label="发布规则" :required="true">
+            <a-form-item v-if="!isEditMode" label="发布规则" :required="true">
               <a-radio-group v-model:value="formState.rule" class="custom-radio">
                 <a-radio :value="1">
                   仅本次发布
@@ -1206,7 +1231,11 @@ watch(() => formState.publishAt, (publishAtValue) => {
               </a-radio-group>
             </a-form-item>
 
-            <a-form-item v-if="formState.rule === 1" class="afterSchoolTasksModel__rule-card-item">
+            <a-form-item
+              v-if="formState.rule === 1"
+              class="afterSchoolTasksModel__rule-card-item"
+              :class="{ 'afterSchoolTasksModel__rule-card-item--edit': isEditMode }"
+            >
               <div class="afterSchoolTasksModel__rule-card">
                 <div class="afterSchoolTasksModel__rule-card-title">
                   设置本次发布时间（非必填）
@@ -1267,7 +1296,11 @@ watch(() => formState.publishAt, (publishAtValue) => {
               </div>
             </a-form-item>
 
-            <a-form-item v-if="formState.rule === 2" class="afterSchoolTasksModel__rule-card-item">
+            <a-form-item
+              v-if="formState.rule === 2"
+              class="afterSchoolTasksModel__rule-card-item"
+              :class="{ 'afterSchoolTasksModel__rule-card-item--edit': isEditMode }"
+            >
               <div class="afterSchoolTasksModel__rule-card">
                 <div class="afterSchoolTasksModel__rule-card-title">
                   设置自动任务周期
@@ -1295,8 +1328,31 @@ watch(() => formState.publishAt, (publishAtValue) => {
                     </a-form-item>
                   </a-col>
                   <a-col :xs="24" :sm="6">
-                    <a-form-item label="任务截止时间" name="deadlineTime" :rules="[{ required: true, message: '请选择任务截止时间' }]">
-                      <a-select v-model:value="formState.deadlineTime" placeholder="请选择" :options="dateOptions" />
+                    <a-form-item name="taskDurationHours">
+                      <template #label>
+                        <span>单次任务时长</span>
+                        <a-popover color="#fff" placement="topLeft" title="单次任务时长">
+                          <template #content>
+                            <div class="afterSchoolTasksModel__rule-popover">
+                              举例：设置任务推送时间为今日6:00发送，单次任务时长8小时，学员在今日14:00点前为正常提交，超过14:00点为超时提交。
+                            </div>
+                          </template>
+                          <QuestionCircleOutlined class="afterSchoolTasksModel__rule-tip" />
+                        </a-popover>
+                        <span>：</span>
+                      </template>
+                      <a-input-number
+                        v-model:value="formState.taskDurationHours"
+                        class="w-full afterSchoolTasksModel__duration-input"
+                        :min="1"
+                        :precision="0"
+                        :controls="false"
+                        placeholder="请输入"
+                      >
+                        <template #addonAfter>
+                          <span>小时</span>
+                        </template>
+                      </a-input-number>
                     </a-form-item>
                   </a-col>
                 </a-row>
@@ -1549,6 +1605,10 @@ watch(() => formState.publishAt, (publishAtValue) => {
   margin-top: -20px;
 }
 
+.afterSchoolTasksModel__rule-card-item--edit {
+  margin-top: 8px;
+}
+
 .afterSchoolTasksModel__upload-panel {
   width: 100%;
 }
@@ -1747,6 +1807,12 @@ watch(() => formState.publishAt, (publishAtValue) => {
   color: #595959;
   font-size: 14px;
   line-height: 22px;
+}
+
+.afterSchoolTasksModel__duration-input :deep(.ant-input-number-group-addon) {
+  min-width: 48px;
+  padding: 0 12px;
+  color: #595959;
 }
 
 .afterSchoolTasksModel__week-list {

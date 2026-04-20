@@ -75,7 +75,7 @@ const scheduleClassSearchKey = ref('')
 const scheduleOneToOneSearchKey = ref('')
 
 const customQuickFilters = computed(() => [
-  { id: 1, name: '待全部批改', count: quickCounts.unevaluatedCount },
+  { id: 1, name: '待全部点评', count: quickCounts.unevaluatedCount },
   { id: 2, name: '待全部提交', count: quickCounts.unsubmittedCount },
 ])
 
@@ -424,6 +424,21 @@ function handleTableChange(pageInfo: { current?: number, pageSize?: number }, _f
   void fetchHomeworkList()
 }
 
+function hasDateTimeValue(value?: string) {
+  if (!value)
+    return false
+  return dayjs(value).isValid()
+}
+
+function isFutureDateTime(value?: string) {
+  if (!value)
+    return false
+  const current = dayjs(value)
+  if (!current.isValid())
+    return false
+  return current.isAfter(dayjs())
+}
+
 function formatDateText(value?: string) {
   if (!value)
     return '--'
@@ -530,10 +545,6 @@ onMounted(() => {
           <div class="homework-panel__title">
             共 {{ pagination.total }} 个课后任务
           </div>
-          <div class="homework-panel__metrics">
-            <span class="homework-panel__metric">待全部批改 {{ quickCounts.unevaluatedCount }}</span>
-            <span class="homework-panel__metric">待全部提交 {{ quickCounts.unsubmittedCount }}</span>
-          </div>
         </div>
 
         <a-button type="primary" @click="openCreateModal">
@@ -602,19 +613,28 @@ onMounted(() => {
 
           <template v-else-if="column.key === 'publishTime'">
             <div class="homework-datetime-cell">
-              <div>{{ formatDateText(record.publishTime) }}</div>
-              <div class="homework-datetime-cell__time">
-                {{ formatTimeText(record.publishTime) }}
-              </div>
+              <template v-if="hasDateTimeValue(record.publishTime)">
+                <div>{{ formatDateText(record.publishTime) }}</div>
+                <div
+                  class="homework-datetime-cell__time"
+                  :class="{ 'homework-datetime-cell__time--future': isFutureDateTime(record.publishTime) }"
+                >
+                  {{ isFutureDateTime(record.publishTime) ? `将于${formatTimeText(record.publishTime)}发布` : formatTimeText(record.publishTime) }}
+                </div>
+              </template>
+              <span v-else>-</span>
             </div>
           </template>
 
           <template v-else-if="column.key === 'deadlineTime'">
             <div class="homework-datetime-cell">
-              <div>{{ formatDateText(record.endTime) }}</div>
-              <div class="homework-datetime-cell__time">
-                {{ formatTimeText(record.endTime) }}
-              </div>
+              <template v-if="hasDateTimeValue(record.endTime)">
+                <div>{{ formatDateText(record.endTime) }}</div>
+                <div class="homework-datetime-cell__time">
+                  {{ formatTimeText(record.endTime) }}
+                </div>
+              </template>
+              <span v-else>-</span>
             </div>
           </template>
 
@@ -649,7 +669,6 @@ onMounted(() => {
   .homework-panel__summary {
     display: flex;
     align-items: center;
-    gap: 22px;
     min-width: 0;
   }
 
@@ -671,22 +690,6 @@ onMounted(() => {
       background: var(--pro-ant-color-primary);
       content: '';
     }
-  }
-
-  .homework-panel__metrics {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .homework-panel__metric {
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: #f6f8fb;
-    color: #595959;
-    font-size: 13px;
-    line-height: 20px;
   }
 
   .homework-name-cell__title {
@@ -748,6 +751,11 @@ onMounted(() => {
     color: #8c8c8c;
     font-size: 12px;
     line-height: 20px;
+  }
+
+  .homework-datetime-cell__time--future {
+    color: #fa8c16;
+    font-weight: 500;
   }
 
   .homework-column-title {

@@ -54,30 +54,32 @@ type HomeworkOperationResult struct {
 }
 
 type HomeworkBatchCreateDTO struct {
-	Title            string               `json:"title"`
-	Content          string               `json:"content"`
-	Attachments      []HomeworkAttachment `json:"attachments"`
-	RepeatRule       *HomeworkRepeatRule  `json:"repeatRule"`
-	PublishTime      string               `json:"publishTime"`
-	EndTime          string               `json:"endTime"`
-	PublishHour      int                  `json:"publishHour"`
-	EndHour          int                  `json:"endHour"`
-	IsVisibleStudent bool                 `json:"isVisibleStudent"`
-	HomeworkObjects  []HomeworkObjectDTO  `json:"homeworkObjects"`
+	Title             string               `json:"title"`
+	Content           string               `json:"content"`
+	Attachments       []HomeworkAttachment `json:"attachments"`
+	RepeatRule        *HomeworkRepeatRule  `json:"repeatRule"`
+	PublishTime       string               `json:"publishTime"`
+	EndTime           string               `json:"endTime"`
+	PublishHour       int                  `json:"publishHour"`
+	EndHour           int                  `json:"endHour"`
+	TaskDurationHours int                  `json:"taskDurationHours"`
+	IsVisibleStudent  bool                 `json:"isVisibleStudent"`
+	HomeworkObjects   []HomeworkObjectDTO  `json:"homeworkObjects"`
 }
 
 type HomeworkUpdateDTO struct {
-	ID               string               `json:"id"`
-	Title            string               `json:"title"`
-	Content          string               `json:"content"`
-	Attachments      []HomeworkAttachment `json:"attachments"`
-	RepeatRule       *HomeworkRepeatRule  `json:"repeatRule"`
-	PublishTime      string               `json:"publishTime"`
-	EndTime          string               `json:"endTime"`
-	PublishHour      int                  `json:"publishHour"`
-	EndHour          int                  `json:"endHour"`
-	IsVisibleStudent bool                 `json:"isVisibleStudent"`
-	HomeworkObjects  []HomeworkObjectDTO  `json:"homeworkObjects"`
+	ID                string               `json:"id"`
+	Title             string               `json:"title"`
+	Content           string               `json:"content"`
+	Attachments       []HomeworkAttachment `json:"attachments"`
+	RepeatRule        *HomeworkRepeatRule  `json:"repeatRule"`
+	PublishTime       string               `json:"publishTime"`
+	EndTime           string               `json:"endTime"`
+	PublishHour       int                  `json:"publishHour"`
+	EndHour           int                  `json:"endHour"`
+	TaskDurationHours int                  `json:"taskDurationHours"`
+	IsVisibleStudent  bool                 `json:"isVisibleStudent"`
+	HomeworkObjects   []HomeworkObjectDTO  `json:"homeworkObjects"`
 }
 
 type HomeworkDeleteDTO struct {
@@ -140,8 +142,9 @@ type HomeworkListItemVO struct {
 
 type HomeworkDetailVO struct {
 	HomeworkListItemVO
-	PublishHour      int                       `json:"publishHour"`
-	SelectedStudents []HomeworkSelectedStudent `json:"selectedStudents"`
+	PublishHour       int                       `json:"publishHour"`
+	TaskDurationHours int                       `json:"taskDurationHours"`
+	SelectedStudents  []HomeworkSelectedStudent `json:"selectedStudents"`
 }
 
 type HomeworkPageResultVO struct {
@@ -162,18 +165,19 @@ type HomeworkTargetStudent struct {
 }
 
 type HomeworkMutationInput struct {
-	Title            string
-	Content          string
-	Attachments      []HomeworkAttachment
-	RepeatRule       *HomeworkRepeatRule
-	PublishRule      int
-	PublishTime      *time.Time
-	EndTime          *time.Time
-	PublishHour      int
-	EndHour          int
-	IsVisibleStudent bool
-	SourceType       int
-	SourceID         int64
-	SourceName       string
-	SelectedStudents []HomeworkSelectedStudent
+	Title             string
+	Content           string
+	Attachments       []HomeworkAttachment
+	RepeatRule        *HomeworkRepeatRule
+	PublishRule       int
+	PublishTime       *time.Time
+	EndTime           *time.Time
+	PublishHour       int
+	EndHour           int
+	TaskDurationHours int
+	IsVisibleStudent  bool
+	SourceType        int
+	SourceID          int64
+	SourceName        string
+	SelectedStudents  []HomeworkSelectedStudent
 }

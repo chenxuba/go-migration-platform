@@ -40,6 +40,7 @@ export interface HomeworkMutationPayload {
   endTime?: string
   publishHour?: number
   endHour?: number
+  taskDurationHours?: number
   isVisibleStudent?: boolean
   homeworkObjects: HomeworkObjectPayload[]
 }
@@ -78,6 +79,7 @@ export interface HomeworkListItem {
 
 export interface HomeworkDetail extends HomeworkListItem {
   publishHour?: number
+  taskDurationHours?: number
   attachments: HomeworkAttachmentItem[]
   selectedStudents: HomeworkStudentSelection[]
 }

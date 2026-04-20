@@ -28,6 +28,7 @@ func (svc *Service) BatchCreateHomeworks(userID int64, dto model.HomeworkBatchCr
 		dto.EndTime,
 		dto.PublishHour,
 		dto.EndHour,
+		dto.TaskDurationHours,
 		dto.IsVisibleStudent,
 		dto.HomeworkObjects,
 		true,
@@ -58,6 +59,7 @@ func (svc *Service) UpdateHomework(userID int64, dto model.HomeworkUpdateDTO) (m
 		dto.EndTime,
 		dto.PublishHour,
 		dto.EndHour,
+		dto.TaskDurationHours,
 		dto.IsVisibleStudent,
 		dto.HomeworkObjects,
 		false,
@@ -142,7 +144,7 @@ func (svc *Service) HomeworkStatistics(userID int64, query model.HomeworkListQue
 	return svc.repo.HomeworkStatistics(context.Background(), instID, query)
 }
 
-func (svc *Service) buildHomeworkMutationInputs(ctx context.Context, instID int64, title, content string, attachments []model.HomeworkAttachment, repeatRule *model.HomeworkRepeatRule, publishTimeText, endTimeText string, publishHour, endHour int, isVisibleStudent bool, objects []model.HomeworkObjectDTO, fillImmediatePublishTime bool) ([]model.HomeworkMutationInput, error) {
+func (svc *Service) buildHomeworkMutationInputs(ctx context.Context, instID int64, title, content string, attachments []model.HomeworkAttachment, repeatRule *model.HomeworkRepeatRule, publishTimeText, endTimeText string, publishHour, endHour, taskDurationHours int, isVisibleStudent bool, objects []model.HomeworkObjectDTO, fillImmediatePublishTime bool) ([]model.HomeworkMutationInput, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
 	if title == "" {
@@ -155,13 +157,13 @@ func (svc *Service) buildHomeworkMutationInputs(ctx context.Context, instID int6
 		return nil, errors.New("请选择班级/学员")
 	}
 
-	publishRule, normalizedRepeatRule, publishTime, endTime, err := buildHomeworkSchedule(repeatRule, publishTimeText, endTimeText, publishHour, endHour, fillImmediatePublishTime)
+	schedulePlans, err := buildHomeworkSchedules(repeatRule, publishTimeText, endTimeText, publishHour, endHour, taskDurationHours, fillImmediatePublishTime)
 	if err != nil {
 		return nil, err
 	}
 	normalizedAttachments := normalizeHomeworkAttachments(attachments)
 
-	inputs := make([]model.HomeworkMutationInput, 0, len(objects))
+	inputs := make([]model.HomeworkMutationInput, 0, len(objects)*len(schedulePlans))
 	for _, object := range objects {
 		sourceID, err := parseRequiredInt64String(object.SourceID, "班级/1对1")
 		if err != nil {
@@ -190,24 +192,37 @@ func (svc *Service) buildHomeworkMutationInputs(ctx context.Context, instID int6
 			rowVisibleStudent = false
 		}
 
-		inputs = append(inputs, model.HomeworkMutationInput{
-			Title:            title,
-			Content:          content,
-			Attachments:      normalizedAttachments,
-			RepeatRule:       normalizedRepeatRule,
-			PublishRule:      publishRule,
-			PublishTime:      publishTime,
-			EndTime:          endTime,
-			PublishHour:      publishHour,
-			EndHour:          endHour,
-			IsVisibleStudent: rowVisibleStudent,
-			SourceType:       sourceType,
-			SourceID:         sourceID,
-			SourceName:       sourceName,
-			SelectedStudents: selectedStudents,
-		})
+		for _, schedulePlan := range schedulePlans {
+			inputs = append(inputs, model.HomeworkMutationInput{
+				Title:             title,
+				Content:           content,
+				Attachments:       normalizedAttachments,
+				RepeatRule:        schedulePlan.RepeatRule,
+				PublishRule:       schedulePlan.PublishRule,
+				PublishTime:       schedulePlan.PublishTime,
+				EndTime:           schedulePlan.EndTime,
+				PublishHour:       schedulePlan.PublishHour,
+				EndHour:           schedulePlan.EndHour,
+				TaskDurationHours: schedulePlan.TaskDurationHours,
+				IsVisibleStudent:  rowVisibleStudent,
+				SourceType:        sourceType,
+				SourceID:          sourceID,
+				SourceName:        sourceName,
+				SelectedStudents:  selectedStudents,
+			})
+		}
 	}
 	return inputs, nil
+}
+
+type homeworkSchedulePlan struct {
+	PublishRule       int
+	RepeatRule        *model.HomeworkRepeatRule
+	PublishTime       *time.Time
+	EndTime           *time.Time
+	PublishHour       int
+	EndHour           int
+	TaskDurationHours int
 }
 
 func normalizeHomeworkAttachments(attachments []model.HomeworkAttachment) []model.HomeworkAttachment {
@@ -282,52 +297,70 @@ func buildHomeworkSelectedStudents(sourceType int, sourceID int64, sourceName st
 	return selectedStudents, nil
 }
 
-func buildHomeworkSchedule(repeatRule *model.HomeworkRepeatRule, publishTimeText, endTimeText string, publishHour, endHour int, fillImmediatePublishTime bool) (int, *model.HomeworkRepeatRule, *time.Time, *time.Time, error) {
+func buildHomeworkSchedules(repeatRule *model.HomeworkRepeatRule, publishTimeText, endTimeText string, publishHour, endHour, taskDurationHours int, fillImmediatePublishTime bool) ([]homeworkSchedulePlan, error) {
 	if repeatRule != nil {
 		startDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(repeatRule.StartDate), time.Local)
 		if err != nil {
-			return 0, nil, nil, nil, errors.New("自动任务开始日期无效")
+			return nil, errors.New("自动任务开始日期无效")
 		}
 		finishDate, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(repeatRule.EndDate), time.Local)
 		if err != nil {
-			return 0, nil, nil, nil, errors.New("自动任务结束日期无效")
+			return nil, errors.New("自动任务结束日期无效")
 		}
 		if finishDate.Before(startDate) {
-			return 0, nil, nil, nil, errors.New("自动任务结束日期不能早于开始日期")
+			return nil, errors.New("自动任务结束日期不能早于开始日期")
 		}
 		if publishHour < 0 || publishHour > 23 {
-			return 0, nil, nil, nil, errors.New("自动任务推送时间无效")
+			return nil, errors.New("自动任务推送时间无效")
 		}
-		if endHour < 0 || endHour > 23 {
-			return 0, nil, nil, nil, errors.New("自动任务截止时间无效")
+		if taskDurationHours < 0 {
+			return nil, errors.New("单次任务时长无效")
+		}
+		if taskDurationHours <= 0 && endHour > 0 {
+			if endHour > publishHour {
+				taskDurationHours = endHour - publishHour
+			}
 		}
 		if repeatRule.RepeatSpan <= 0 {
 			repeatRule.RepeatSpan = 1
 		}
 		if repeatRule.WeekDays <= 0 {
-			return 0, nil, nil, nil, errors.New("请选择自动任务周期")
+			return nil, errors.New("请选择自动任务周期")
 		}
 
-		publishTime := time.Date(startDate.Year(), startDate.Month(), startDate.Day(), publishHour, 0, 0, 0, time.Local)
-		endTime := time.Date(finishDate.Year(), finishDate.Month(), finishDate.Day(), endHour, 0, 0, 0, time.Local)
-		if endTime.Before(publishTime) {
-			endTime = publishTime
+		occurrenceDates := enumerateHomeworkOccurrenceDates(startDate, finishDate, repeatRule.RepeatSpan, repeatRule.WeekDays)
+		if len(occurrenceDates) == 0 {
+			return nil, errors.New("任务日期范围内没有符合周期的任务")
 		}
 
-		normalized := &model.HomeworkRepeatRule{
-			StartDate:  strings.TrimSpace(repeatRule.StartDate),
-			EndDate:    strings.TrimSpace(repeatRule.EndDate),
-			RepeatSpan: repeatRule.RepeatSpan,
-			WeekDays:   repeatRule.WeekDays,
+		plans := make([]homeworkSchedulePlan, 0, len(occurrenceDates))
+		for _, occurrenceDate := range occurrenceDates {
+			publishTime := time.Date(occurrenceDate.Year(), occurrenceDate.Month(), occurrenceDate.Day(), publishHour, 0, 0, 0, time.Local)
+			var currentEndTime *time.Time
+			normalizedEndHour := 0
+			if taskDurationHours > 0 {
+				deadline := publishTime.Add(time.Duration(taskDurationHours) * time.Hour)
+				currentEndTime = &deadline
+				normalizedEndHour = publishHour + taskDurationHours
+			}
+			plans = append(plans, homeworkSchedulePlan{
+				PublishRule:       model.HomeworkPublishRuleOnce,
+				RepeatRule:        nil,
+				PublishTime:       &publishTime,
+				EndTime:           currentEndTime,
+				PublishHour:       publishHour,
+				EndHour:           normalizedEndHour,
+				TaskDurationHours: taskDurationHours,
+			})
 		}
-		return model.HomeworkPublishRuleAuto, normalized, &publishTime, &endTime, nil
+		return plans, nil
 	}
 
 	var publishTime *time.Time
 	if strings.TrimSpace(publishTimeText) != "" {
 		parsed, err := parseHomeworkDateTime(strings.TrimSpace(publishTimeText))
 		if err != nil {
-			return 0, nil, nil, nil, errors.New("发布时间无效")
+			return nil, errors.New("发布时间无效")
 		}
 		publishTime = &parsed
 	} else if fillImmediatePublishTime {
@@ -339,16 +372,90 @@ func buildHomeworkSchedule(repeatRule *model.HomeworkRepeatRule, publishTimeText
 	if strings.TrimSpace(endTimeText) != "" {
 		parsed, err := parseHomeworkDateTime(strings.TrimSpace(endTimeText))
 		if err != nil {
-			return 0, nil, nil, nil, errors.New("截止时间无效")
+			return nil, errors.New("截止时间无效")
 		}
 		endTime = &parsed
 	}
 
 	if publishTime != nil && endTime != nil && !endTime.After(*publishTime) {
-		return 0, nil, nil, nil, errors.New("截止时间需晚于发布时间")
+		return nil, errors.New("截止时间需晚于发布时间")
 	}
 
-	return model.HomeworkPublishRuleOnce, nil, publishTime, endTime, nil
+	return []homeworkSchedulePlan{
+		{
+			PublishRule: model.HomeworkPublishRuleOnce,
+			PublishTime: publishTime,
+			EndTime:     endTime,
+		},
+	}, nil
+}
+
+func enumerateHomeworkOccurrenceDates(startDate, finishDate time.Time, repeatSpan, weekDays int) []time.Time {
+	if repeatSpan <= 0 || weekDays <= 0 {
+		return nil
+	}
+
+	normalizedStart := normalizeHomeworkDate(startDate)
+	normalizedFinish := normalizeHomeworkDate(finishDate)
+	anchorWeekStart := homeworkWeekStart(normalizedStart)
+
+	result := make([]time.Time, 0)
+	for current := normalizedStart; !current.After(normalizedFinish); current = current.AddDate(0, 0, 1) {
+		homeworkWeekday := timeWeekdayToHomeworkWeekday(current.Weekday())
+		if !homeworkWeekdaySelected(weekDays, homeworkWeekday) {
+			continue
+		}
+		currentWeekStart := homeworkWeekStart(current)
+		weekIndex := int(currentWeekStart.Sub(anchorWeekStart) / (7 * 24 * time.Hour))
+		if weekIndex < 0 || weekIndex%repeatSpan != 0 {
+			continue
+		}
+		result = append(result, current)
+	}
+	return result
+}
+
+func normalizeHomeworkDate(value time.Time) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.Local)
+}
+
+func homeworkWeekStart(value time.Time) time.Time {
+	normalized := normalizeHomeworkDate(value)
+	offset := 0
+	if normalized.Weekday() == time.Sunday {
+		offset = 6
+	} else {
+		offset = int(normalized.Weekday()) - 1
+	}
+	return normalized.AddDate(0, 0, -offset)
+}
+
+func timeWeekdayToHomeworkWeekday(weekday time.Weekday) int {
+	if weekday == time.Sunday {
+		return 7
+	}
+	return int(weekday)
+}
+
+func homeworkWeekdaySelected(weekDays, weekday int) bool {
+	switch weekday {
+	case 1:
+		return weekDays&2 == 2
+	case 2:
+		return weekDays&4 == 4
+	case 3:
+		return weekDays&8 == 8
+	case 4:
+		return weekDays&16 == 16
+	case 5:
+		return weekDays&32 == 32
+	case 6:
+		return weekDays&64 == 64
+	case 7:
+		return weekDays&1 == 1
+	default:
+		return false
+	}
 }
 
 func parseHomeworkDateTime(value string) (time.Time, error) {
