@@ -374,6 +374,14 @@ func (repo *Repository) SetUserCurrentInstitution(ctx context.Context, userID in
 }
 
 func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (model.ManageUserInfo, error) {
+	return repo.getConsoleUserInfo(ctx, userID, 1, 0, 0, true)
+}
+
+func (repo *Repository) GetGovernmentUserInfo(ctx context.Context, userID int64) (model.ManageUserInfo, error) {
+	return repo.getConsoleUserInfo(ctx, userID, 1, 3, 3, false)
+}
+
+func (repo *Repository) getConsoleUserInfo(ctx context.Context, userID, orgID int64, roleType, ownType int, appendPlatformSuperAdmin bool) (model.ManageUserInfo, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT u.id, IFNULL(u.username, ''), IFNULL(u.mobile, ''), IFNULL(u.nick_name, ''), u.dept_id, IFNULL(d.depart_name, ''), IFNULL(u.is_admin, 0)
 		FROM sso_user u
@@ -392,19 +400,19 @@ func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (mo
 		info.DeptIDs = []int64{value}
 	}
 
-	roleIDs, roleNames, err := repo.getUserRoleSummary(ctx, userID, 1, 0)
+	roleIDs, roleNames, err := repo.getUserRoleSummary(ctx, userID, orgID, roleType)
 	if err != nil {
 		return model.ManageUserInfo{}, err
 	}
 	info.RoleID = roleIDs
 	info.RoleName = roleNames
 
-	menuCodes, err := repo.GetUserMenuCodes(ctx, userID, 1, 0, 0)
+	menuCodes, err := repo.GetUserMenuCodes(ctx, userID, orgID, ownType, roleType)
 	if err != nil {
 		return model.ManageUserInfo{}, err
 	}
 	info.MenuCodeList = menuCodes
-	if info.IsAdmin {
+	if appendPlatformSuperAdmin && info.IsAdmin {
 		info.MenuCodeList = prependSuperAdmin(info.MenuCodeList)
 	}
 	if info.DeptIDs == nil {

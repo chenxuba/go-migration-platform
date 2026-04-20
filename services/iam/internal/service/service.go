@@ -17,6 +17,13 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	platformInvalidAccountMessage   = "当前账号不是总控端账号，请使用总部或总控账号登录"
+	platformRoleMissingMessage      = "当前账号未分配总控角色，请联系系统管理员开通总控权限"
+	governmentInvalidAccountMessage = "当前账号不是政府端账号，请使用总控端创建并分配监管角色的账号登录"
+	governmentRoleMissingMessage    = "当前账号未分配政府端角色，请联系总控管理员开通G端权限"
+)
+
 type Service struct {
 	store        *customization.Store
 	repo         *repository.Repository
@@ -575,6 +582,9 @@ func (svc *Service) CurrentMenuTree(claims authx.Claims) ([]model.MenuTreeNode, 
 	switch claims.LoginType {
 	case "org":
 		return svc.InstMenuTree(claims, 2)
+	case "government":
+		ownType := 3
+		return svc.MenuTree("", &ownType)
 	case "manage":
 		ownType := 0
 		return svc.MenuTree("", &ownType)
@@ -596,6 +606,9 @@ func (svc *Service) MenuByCode(claims authx.Claims, menuCode string, ownType *in
 	if claims.LoginType == "manage" {
 		resolvedOwnType = 0
 	}
+	if claims.LoginType == "government" {
+		resolvedOwnType = 3
+	}
 	if ownType != nil {
 		resolvedOwnType = *ownType
 	}
@@ -605,6 +618,8 @@ func (svc *Service) MenuByCode(claims authx.Claims, menuCode string, ownType *in
 
 	switch claims.LoginType {
 	case "manage":
+		return svc.repo.GetMenuByCode(context.Background(), resolvedOwnType, menuCode)
+	case "government":
 		return svc.repo.GetMenuByCode(context.Background(), resolvedOwnType, menuCode)
 	case "org":
 		return svc.repo.GetMenuByCode(context.Background(), resolvedOwnType, menuCode)
@@ -622,6 +637,9 @@ func (svc *Service) MenuAccessCheck(claims authx.Claims, menuCode string, ownTyp
 	resolvedOwnType := 2
 	if claims.LoginType == "manage" {
 		resolvedOwnType = 0
+	}
+	if claims.LoginType == "government" {
+		resolvedOwnType = 3
 	}
 	if ownType != nil {
 		resolvedOwnType = *ownType
@@ -1012,6 +1030,8 @@ func roleTypeFromLoginType(loginType string) int {
 	switch loginType {
 	case "manage":
 		return 0
+	case "government":
+		return 3
 	case "org":
 		return 2
 	default:
@@ -1024,6 +1044,9 @@ func (svc *Service) resolveOrgID(claims authx.Claims, orgID *int64) (int64, erro
 		return *orgID, nil
 	}
 	if claims.LoginType == "manage" {
+		return 1, nil
+	}
+	if claims.LoginType == "government" {
 		return 1, nil
 	}
 	if claims.LoginType == "org" {
@@ -1039,7 +1062,7 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 	switch loginType {
 	case "manage":
 		if user.UserType != nil && *user.UserType != 0 {
-			return nil, nil, nil, nil, nil, errors.New("无权限")
+			return nil, nil, nil, nil, nil, errors.New(platformInvalidAccountMessage)
 		}
 		info, err := svc.repo.GetManageUserInfo(context.Background(), user.ID)
 		if err != nil {
@@ -1049,7 +1072,27 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
+		if len(roleList) == 0 && len(info.MenuCodeList) == 0 {
+			return nil, nil, nil, nil, nil, errors.New(platformRoleMissingMessage)
+		}
 		return info, roleList, info.MenuCodeList, nil, nil, nil
+	case "government":
+		if user.UserType != nil && *user.UserType != 0 {
+			return nil, nil, nil, nil, nil, errors.New(governmentInvalidAccountMessage)
+		}
+		info, err := svc.repo.GetGovernmentUserInfo(context.Background(), user.ID)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+		roleList, err := svc.repo.GetUserRoleIDs(context.Background(), user.ID, 1, 3)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+		if len(roleList) == 0 {
+			return nil, nil, nil, nil, nil, errors.New(governmentRoleMissingMessage)
+		}
+		orgID := int64(1)
+		return info, roleList, info.MenuCodeList, &orgID, nil, nil
 	case "org":
 		var (
 			info model.InstUserInfo
@@ -1088,6 +1131,8 @@ func normalizeLoginType(code int) string {
 	switch code {
 	case 2:
 		return "org"
+	case 3:
+		return "government"
 	default:
 		return "manage"
 	}
@@ -1097,6 +1142,8 @@ func loginTypeCode(label string) int {
 	switch label {
 	case "org":
 		return 2
+	case "government":
+		return 3
 	default:
 		return 0
 	}

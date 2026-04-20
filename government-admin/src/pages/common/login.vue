@@ -4,16 +4,16 @@ import type { Rule } from 'ant-design-vue/es/form'
 import { reactive, ref } from 'vue'
 import SelectLang from '@/components/select-lang/index.vue'
 import { useAuthorization } from '@/composables/authorization'
-import { useMessage, useNotification } from '@/composables/global-config'
+import messageService from '@/utils/messageService'
 import { loginApi } from '~/api/common/login'
+import { hasGovernmentPortalAccess } from '~/utils/government-auth'
 import { reset401Status } from '~/utils/request'
 
 const { t } = useI18nLocale()
 const router = useRouter()
 const route = useRoute()
-const message = useMessage()
-const notification = useNotification()
 const token = useAuthorization()
+const userStore = useUserStore()
 
 const formRef = ref()
 const submitLoading = ref(false)
@@ -40,6 +40,15 @@ const rules: Record<string, Rule[]> = {
   ],
 }
 
+function resolveLoginErrorMessage(error: any) {
+  const backendMessage = String(error?.response?.data?.message || error?.message || '').trim()
+  if (!backendMessage)
+    return '登录失败，请稍后重试'
+  if (backendMessage === '无权限')
+    return '当前账号未开通政府端权限，请联系总控管理员配置监管角色'
+  return backendMessage
+}
+
 async function onSubmit() {
   submitLoading.value = true
   try {
@@ -50,18 +59,21 @@ async function onSubmit() {
     })
 
     if (!result?.token) {
-      message.error('登录失败，请检查账号或密码')
+      messageService.error('登录失败，请检查账号或密码')
       return
     }
 
     token.value = result.token
     reset401Status()
 
-    notification.success({
-      message: t('pages.login.notification.success.title', '登录成功'),
-      description: '欢迎进入康复机构监管平台',
-      duration: 1.5,
-    })
+    const userInfo = await userStore.getUserInfo()
+    if (!hasGovernmentPortalAccess(userInfo)) {
+      await userStore.logout()
+      messageService.error('当前账号未分配政府端权限，请使用监管账号登录')
+      return
+    }
+
+    messageService.success(t('pages.login.notification.success.title', '登录成功'), { duration: 1500 })
 
     const redirect = typeof route.query.redirect === 'string'
       ? decodeURIComponent(route.query.redirect)
@@ -70,7 +82,7 @@ async function onSubmit() {
   }
   catch (error: any) {
     console.error('government login failed', error)
-    message.error(error?.response?.data?.message || error?.message || '登录失败，请稍后重试')
+    messageService.error(resolveLoginErrorMessage(error))
   }
   finally {
     submitLoading.value = false
@@ -93,7 +105,7 @@ async function onSubmit() {
           统一监管省市区三级康复机构
         </h1>
         <p class="platform-login__hero-desc">
-          省级、市级、区级监管账号共用一套端口，通过角色和行政区划范围切换数据视角，后续可继续承接巡查、整改、统计和机构备案等模块。
+          省级、市级、区级监管账号共用一套端口，账号统一从总控端账号体系创建，通过角色和行政区划范围切换数据视角，后续可继续承接巡查、整改、统计和机构备案等模块。
         </p>
 
         <div class="platform-login__hero-panels">
@@ -116,7 +128,7 @@ async function onSubmit() {
               监管账号
             </div>
             <div class="hero-panel__desc">
-              使用省市区监管账号登录，不与机构端账号入口混用
+              使用总控端创建的监管账号登录，不与机构端账号入口混用
             </div>
           </div>
         </div>
@@ -150,7 +162,7 @@ async function onSubmit() {
               <a-input
                 v-model:value="formState.username"
                 size="large"
-                placeholder="请输入监管账号"
+                placeholder="请输入总控端创建的监管账号"
               >
                 <template #prefix>
                   <UserOutlined />
@@ -183,7 +195,7 @@ async function onSubmit() {
           </a-form>
 
           <div class="platform-login__form-footer">
-            仅支持省、市、区监管账号登录。如需开通权限，请联系平台管理员。
+            仅支持总控端创建并分配监管角色的省、市、区账号登录。
           </div>
         </div>
       </section>

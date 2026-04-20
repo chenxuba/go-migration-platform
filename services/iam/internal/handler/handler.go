@@ -170,7 +170,7 @@ func (handler *Handler) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, session.User, ctx.RequestID)
+	httpx.WriteJSON(w, http.StatusOK, attachSessionMeta(session), ctx.RequestID)
 }
 
 func (handler *Handler) users(w http.ResponseWriter, r *http.Request) {
@@ -565,9 +565,42 @@ func parseOwnType(raw string) (int, error) {
 		return 2, nil
 	case "PLATFORM":
 		return 0, nil
+	case "GOVERNMENT":
+		return 3, nil
 	default:
 		return 0, fmt.Errorf("invalid ownType")
 	}
+}
+
+func attachSessionMeta(session model.SessionInfo) any {
+	payload := map[string]any{
+		"loginType": session.LoginType,
+	}
+	if len(session.RoleList) > 0 {
+		payload["roleList"] = session.RoleList
+	}
+	if len(session.MenuCodeList) > 0 {
+		payload["menuCodeList"] = session.MenuCodeList
+	}
+	if session.User == nil {
+		return payload
+	}
+
+	raw, err := json.Marshal(session.User)
+	if err != nil {
+		return payload
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return payload
+	}
+	payload["loginType"] = session.LoginType
+	if len(session.RoleList) > 0 {
+		payload["roleList"] = session.RoleList
+	}
+	if len(session.MenuCodeList) > 0 {
+		payload["menuCodeList"] = session.MenuCodeList
+	}
+	return payload
 }
 
 func (handler *Handler) instRolePage(w http.ResponseWriter, r *http.Request) {

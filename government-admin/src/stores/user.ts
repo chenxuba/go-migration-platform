@@ -32,8 +32,14 @@ export const useUserStore = defineStore('user', () => {
 
     return {
       ...result,
+      loginType: result.loginType ?? '',
       avatar: result.avatar ?? result.logo ?? '',
       isAdmin: result.isAdmin ?? (result.admin ? 1 : 0),
+      mobile: result.mobile ?? '',
+      deptId: result.deptId ?? '',
+      deptName: result.deptName ?? '',
+      roleId: result.roleId ?? '',
+      roleName: result.roleName ?? '',
       deptIds: result.deptIds ?? [],
       orgName: result.orgName ?? '',
       instId: result.instId ?? '',

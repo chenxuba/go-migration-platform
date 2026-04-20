@@ -24,6 +24,8 @@ export function loginApi(params: LoginParams | LoginMobileParams) {
     // customDev: true,
     // 是否开启全局请求loading
     loading: true,
+    // 登录页自己统一处理错误提示，避免重复弹出
+    silentError: true,
   })
 }
 

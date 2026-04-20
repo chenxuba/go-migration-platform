@@ -1,6 +1,7 @@
 import { AxiosError } from 'axios'
 import router from '~/router'
 import { useMetaTitle } from '~/composables/meta-title'
+import { hasGovernmentPortalAccess } from '~/utils/government-auth'
 import { setRouteEmitter } from '~@/utils/route-listener'
 import { useModalStore } from '~/stores/modal'
 import { useLayoutMenu } from '~/stores/layout-menu'
@@ -57,7 +58,15 @@ router.beforeEach(async (to, from, next) => {
     if (!userStore.userInfo && !allowList.includes(to.path) && !to.path.startsWith('/redirect')) {
       try {
         // 获取用户信息
-        await userStore.getUserInfo()
+        const userInfo = await userStore.getUserInfo()
+        if (!hasGovernmentPortalAccess(userInfo)) {
+          await userStore.logout()
+          next({
+            path: '/403',
+            replace: true,
+          })
+          return
+        }
         // 获取机构配置
         await userStore.getInstConfig()
         // 获取路由菜单的信息

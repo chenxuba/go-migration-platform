@@ -4,15 +4,13 @@ import type { Rule } from 'ant-design-vue/es/form'
 import { reactive, ref } from 'vue'
 import SelectLang from '@/components/select-lang/index.vue'
 import { useAuthorization } from '@/composables/authorization'
-import { useMessage, useNotification } from '@/composables/global-config'
+import messageService from '@/utils/messageService'
 import { loginApi } from '~/api/common/login'
 import { reset401Status } from '~/utils/request'
 
 const { t } = useI18nLocale()
 const router = useRouter()
 const route = useRoute()
-const message = useMessage()
-const notification = useNotification()
 const token = useAuthorization()
 
 const formRef = ref()
@@ -40,6 +38,15 @@ const rules: Record<string, Rule[]> = {
   ],
 }
 
+function resolveLoginErrorMessage(error: any) {
+  const backendMessage = String(error?.response?.data?.message || error?.message || '').trim()
+  if (!backendMessage)
+    return '登录失败，请稍后重试'
+  if (backendMessage === '无权限')
+    return '当前账号未开通总控端权限，请联系系统管理员配置总部/总控角色'
+  return backendMessage
+}
+
 async function onSubmit() {
   submitLoading.value = true
   try {
@@ -50,18 +57,14 @@ async function onSubmit() {
     })
 
     if (!result?.token) {
-      message.error('登录失败，请检查账号或密码')
+      messageService.error('登录失败，请检查账号或密码')
       return
     }
 
     token.value = result.token
     reset401Status()
 
-    notification.success({
-      message: t('pages.login.notification.success.title', '登录成功'),
-      description: '欢迎进入总控管理后台',
-      duration: 1.5,
-    })
+    messageService.success(t('pages.login.notification.success.title', '登录成功'), { duration: 1500 })
 
     const redirect = typeof route.query.redirect === 'string'
       ? decodeURIComponent(route.query.redirect)
@@ -70,7 +73,7 @@ async function onSubmit() {
   }
   catch (error: any) {
     console.error('platform login failed', error)
-    message.error(error?.response?.data?.message || error?.message || '登录失败，请稍后重试')
+    messageService.error(resolveLoginErrorMessage(error))
   }
   finally {
     submitLoading.value = false
