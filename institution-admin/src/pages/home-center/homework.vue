@@ -749,5 +749,22 @@ onMounted(() => {
     font-size: 12px;
     line-height: 20px;
   }
+
+  .homework-column-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .homework-column-title__icon {
+    color: #999;
+    font-size: 14px;
+    cursor: pointer;
+    transition: color 0.2s ease;
+
+    &:hover {
+      color: var(--pro-ant-color-primary);
+    }
+  }
 }
 </style>

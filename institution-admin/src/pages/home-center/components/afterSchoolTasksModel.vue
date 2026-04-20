@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CaretDownOutlined, CheckOutlined, CloseOutlined, PictureOutlined, PlayCircleOutlined, QuestionCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { CaretDownOutlined, CheckOutlined, CloseOutlined, LoadingOutlined, PictureOutlined, PlayCircleOutlined, QuestionCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import * as qiniu from 'qiniu-js'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
@@ -1117,7 +1117,8 @@ watch(() => formState.publishAt, (publishAtValue) => {
                       }"
                       @click="openImagePicker"
                     >
-                      <PictureOutlined class="afterSchoolTasksModel__upload-trigger-icon" />
+                      <LoadingOutlined v-if="imageUploading" spin class="afterSchoolTasksModel__upload-trigger-icon" />
+                      <PictureOutlined v-else class="afterSchoolTasksModel__upload-trigger-icon" />
                       <span>添加图片({{ imageCount }}/{{ IMAGE_LIMIT }})</span>
                     </div>
                   </a-tooltip>
@@ -1134,7 +1135,8 @@ watch(() => formState.publishAt, (publishAtValue) => {
                       }"
                       @click="openVideoPicker"
                     >
-                      <PlayCircleOutlined class="afterSchoolTasksModel__upload-trigger-icon" />
+                      <LoadingOutlined v-if="videoUploading" spin class="afterSchoolTasksModel__upload-trigger-icon" />
+                      <PlayCircleOutlined v-else class="afterSchoolTasksModel__upload-trigger-icon" />
                       <span>添加视频({{ videoCount }}/{{ VIDEO_LIMIT }})</span>
                     </div>
                   </a-tooltip>
