@@ -1,5 +1,5 @@
 <script setup>
-import { PictureOutlined, PlayCircleOutlined } from '@ant-design/icons-vue'
+import { PictureOutlined, PlayCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 
 const props = defineProps({
@@ -20,6 +20,8 @@ const formState = reactive({
   content: '',
   rule: 1,
   students: [],
+  publishAt: undefined,
+  deadlineAt: undefined,
   dateRange: [],
   time: undefined,
   weeks: [],
@@ -63,33 +65,96 @@ function handleOk() {
     console.log('验证通过')
   })
 }
+
+function buildTimeRange(start, end) {
+  return Array.from({ length: Math.max(end - start, 0) }, (_, index) => start + index)
+}
+
+function getPublishAtDate() {
+  if (!formState.publishAt)
+    return null
+  const publishAt = dayjs(formState.publishAt)
+  return publishAt.isValid() ? publishAt : null
+}
+
 // 禁用今天之前的日期
 function disabledDate(current) {
   return current && current < dayjs().startOf('day')
 }
+
+function disabledDeadlineDate(current) {
+  if (!current)
+    return false
+
+  const publishAt = getPublishAtDate()
+  if (publishAt)
+    return !dayjs(current).isAfter(publishAt, 'day')
+
+  return dayjs(current).isBefore(dayjs().startOf('day'), 'day')
+}
+
+function disabledDeadlineTime(current) {
+  const publishAt = getPublishAtDate()
+  if (!publishAt || !current || !dayjs(current).isSame(publishAt, 'day'))
+    return {}
+
+  return {
+    disabledHours: () => buildTimeRange(0, publishAt.hour()),
+    disabledMinutes: selectedHour => selectedHour === publishAt.hour() ? buildTimeRange(0, publishAt.minute()) : [],
+  }
+}
+
+watch(() => formState.publishAt, (publishAtValue) => {
+  if (!publishAtValue || !formState.deadlineAt)
+    return
+
+  const publishAt = dayjs(publishAtValue)
+  const deadlineAt = dayjs(formState.deadlineAt)
+  if (publishAt.isValid() && deadlineAt.isValid() && !deadlineAt.isAfter(publishAt, 'day'))
+    formState.deadlineAt = undefined
+})
 </script>
 
 <template>
   <div>
     <a-modal
-      v-model:open="open" class="afterSchoolTasksModel" :body-style="{ height: '580px', overflowY: 'auto' }"
-      width="800px" :title="props.title" destroy-on-close @ok="handleOk"
+      v-model:open="open"
+      centered
+      class="afterSchoolTasksModel"
+      :body-style="{ height: '580px', overflowY: 'auto' }"
+      width="800px"
+      :title="props.title"
+      destroy-on-close
+      @ok="handleOk"
     >
       <a-form ref="formRef" layout="vertical" :model="formState" v-bind="formItemLayout">
         <a-form-item label="任务标题" name="title" :rules="[{ required: true, message: '请输入任务标题' }]">
           <a-input v-model:value="formState.title" :maxlength="20" placeholder="请输入任务标题，最多20字" />
         </a-form-item>
-        <a-form-item label="任务内容" name="content" :rules="[{ required: true, message: '请输入任务内容' }]">
+        <a-form-item
+          label="任务内容"
+          name="content"
+          class="afterSchoolTasksModel__content-item"
+          :rules="[{ required: true, message: '请输入任务内容' }]"
+        >
           <a-textarea
-            v-model:value="formState.content" :show-count="true" style="height: 98px;min-height: 98px;"
-            :maxlength="2000" placeholder="请输入任务内容，最多2000字" :auto-size="{ minRows: 6, maxRows: 6 }"
+            class="afterSchoolTasksModel__content-textarea"
+            v-model:value="formState.content"
+            :show-count="true"
+            style="height: 66px; min-height: 66px;"
+            :maxlength="2000"
+            placeholder="请输入任务内容，最多2000字"
+            :auto-size="{ minRows: 4, maxRows: 4 }"
           />
         </a-form-item>
 
-        <a-form-item>
-          <div class="flex flex-col gap-8px">
+        <a-form-item class="afterSchoolTasksModel__upload-form-item">
+          <div class="afterSchoolTasksModel__upload-actions flex flex-wrap items-center gap-8px">
             <a-upload
-              v-model:file-list="formState.imgList" list-type="picture-card" :max-count="12"
+              v-model:file-list="formState.imgList"
+              class="afterSchoolTasksModel__upload"
+              list-type="picture-card"
+              :max-count="12"
               action="https://www.mocky.io/v2/5cc8019d300000980a055e76"
             >
               <a-tooltip placement="right" @open-change="(show) => handleOpenChange(1, show)">
@@ -101,13 +166,16 @@ function disabledDate(current) {
                   class="w-135px cursor-pointer flex items-center gap-5px bg-#f6f7f8 px-10px py-3px rounded-12px"
                 >
                   <PictureOutlined :class="activeFile === 1 ? 'text-#fff' : 'text-#06f'" />
-                  <span>添加图片(0/12)</span>
+                  <span>添加图片({{ formState.imgList.length }}/12)</span>
                 </div>
               </a-tooltip>
             </a-upload>
 
             <a-upload
-              v-model:file-list="formState.videoList" list-type="picture-card" :max-count="12"
+              v-model:file-list="formState.videoList"
+              class="afterSchoolTasksModel__upload"
+              list-type="picture-card"
+              :max-count="9"
               action="https://www.mocky.io/v2/5cc8019d300000980a055e76"
             >
               <a-tooltip placement="right" @open-change="(show) => handleOpenChange(2, show)">
@@ -119,7 +187,7 @@ function disabledDate(current) {
                   class="w-135px cursor-pointer flex items-center gap-5px bg-#f6f7f8 px-10px py-3px rounded-12px"
                 >
                   <PlayCircleOutlined :class="activeFile === 2 ? 'text-#fff' : 'text-#06f'" />
-                  <span>添加视频(0/9)</span>
+                  <span>添加视频({{ formState.videoList.length }}/9)</span>
                 </div>
               </a-tooltip>
             </a-upload>
@@ -149,7 +217,7 @@ function disabledDate(current) {
           </a-button>
         </a-form-item>
         <a-form-item label="发布规则" :required="true">
-          <a-radio-group v-model:value="formState.rule">
+          <a-radio-group v-model:value="formState.rule" class="custom-radio">
             <a-radio :value="1">
               仅本次发布
             </a-radio>
@@ -157,6 +225,74 @@ function disabledDate(current) {
               设置自动任务
             </a-radio>
           </a-radio-group>
+        </a-form-item>
+        <a-form-item v-if="formState.rule === 1">
+          <div class="afterSchoolTasksModel__rule-card">
+            <div class="afterSchoolTasksModel__rule-card-title">
+              设置本次发布时间（非必填）
+            </div>
+            <a-row :gutter="[20, 16]">
+              <a-col :xs="24" :sm="12">
+                <div class="afterSchoolTasksModel__rule-field">
+                  <div class="afterSchoolTasksModel__rule-label">
+                    <span>定时发布日期</span>
+                    <a-popover
+                      color="#fff"
+                      placement="topLeft"
+                      title="定时发布日期"
+                    >
+                      <template #content>
+                        <div class="afterSchoolTasksModel__rule-popover">
+                          设置后，任务创建完成，会按设置的时间点发送，如果不设置，任务创建完成会立即发送
+                        </div>
+                      </template>
+                      <QuestionCircleOutlined class="afterSchoolTasksModel__rule-tip" />
+                    </a-popover>
+                    <span>:</span>
+                  </div>
+                  <a-date-picker
+                    v-model:value="formState.publishAt"
+                    class="w-full"
+                    :show-time="{ format: 'HH:mm' }"
+                    value-format="YYYY-MM-DD HH:mm"
+                    format="YYYY-MM-DD HH:mm"
+                    placeholder="请选择日期时间"
+                    :disabled-date="disabledDate"
+                  />
+                </div>
+              </a-col>
+              <a-col :xs="24" :sm="12">
+                <div class="afterSchoolTasksModel__rule-field">
+                  <div class="afterSchoolTasksModel__rule-label">
+                    <span>设置任务截止日期</span>
+                    <a-popover
+                      color="#fff"
+                      placement="topLeft"
+                      title="任务截止日期"
+                    >
+                      <template #content>
+                        <div class="afterSchoolTasksModel__rule-popover">
+                          设置后，学员仍可以上传任务，超时提交的学员，在系统上为学员打上超时提交标签
+                        </div>
+                      </template>
+                      <QuestionCircleOutlined class="afterSchoolTasksModel__rule-tip" />
+                    </a-popover>
+                    <span>:</span>
+                  </div>
+                  <a-date-picker
+                    v-model:value="formState.deadlineAt"
+                    class="w-full"
+                    :show-time="{ format: 'HH:mm' }"
+                    value-format="YYYY-MM-DD HH:mm"
+                    format="YYYY-MM-DD HH:mm"
+                    placeholder="请选择日期时间"
+                    :disabled-date="disabledDeadlineDate"
+                    :disabled-time="disabledDeadlineTime"
+                  />
+                </div>
+              </a-col>
+            </a-row>
+          </div>
         </a-form-item>
         <a-form-item v-if="formState.rule === 2">
           <div class="border border-gray-200 rounded-8px border-solid">
@@ -194,15 +330,89 @@ function disabledDate(current) {
 
 <style>
 .afterSchoolTasksModel {
-  /* display: inline-block; */
   padding-bottom: 0;
   text-align: left;
-  top: 10px !important;
-  vertical-align: middle;
 }
 </style>
 
 <style scoped lang="less">
+.afterSchoolTasksModel__upload-form-item {
+  margin-top: -14px;
+  margin-bottom: 12px;
+}
+
+.afterSchoolTasksModel__content-item {
+  margin-bottom: 10px;
+}
+
+.afterSchoolTasksModel__upload-actions {
+  align-items: flex-start;
+}
+
+.afterSchoolTasksModel__upload {
+  display: inline-flex;
+  width: auto;
+  flex: none;
+  margin-bottom: 0;
+}
+
+.afterSchoolTasksModel__rule-card {
+  border: 1px solid #e8e8e8;
+  border-radius: 10px;
+  background: #fff;
+  padding: 16px;
+}
+
+.afterSchoolTasksModel__rule-card-title {
+  margin-bottom: 18px;
+  color: #262626;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.afterSchoolTasksModel__rule-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.afterSchoolTasksModel__rule-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #262626;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.afterSchoolTasksModel__rule-tip {
+  color: #999;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.afterSchoolTasksModel__rule-popover {
+  max-width: 360px;
+  color: #595959;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+:deep(.afterSchoolTasksModel__content-item .ant-input-textarea-show-count::after) {
+  margin-top: 2px;
+}
+
+:deep(.afterSchoolTasksModel__content-item .ant-form-item-control-input + div) {
+  min-height: auto;
+  margin-top: -24px;
+  margin-bottom: 5px;
+}
+
+:deep(.afterSchoolTasksModel__content-textarea.ant-input-textarea-show-count::after) {
+  margin-top: 2px;
+}
+
 .week-day {
   width: 48px;
   height: 48px;
@@ -221,11 +431,17 @@ function disabledDate(current) {
 
 ::v-deep(.ant-upload-select) {
   border: none !important;
-  // width: 100% !important;
   flex: 1;
   width: 135px !important;
   height: 100% !important;
   display: block;
+}
+
+::v-deep(.afterSchoolTasksModel__upload .ant-upload-list) {
+  display: inline-flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 ::v-deep(.ant-upload-list-item-container) {
