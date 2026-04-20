@@ -266,6 +266,29 @@ func (handler *Handler) pageGroupClasses(w http.ResponseWriter, r *http.Request)
 	httpx.WriteJSON(w, http.StatusOK, res, ctx.RequestID)
 }
 
+func (handler *Handler) pageGroupClassSelections(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var body model.GroupClassSelectionPageBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	res, err := handler.service.PageGroupClassSelections(claims.UserID, body)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, res, ctx.RequestID)
+}
+
 func (handler *Handler) pageMoveGroupClassCandidates(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

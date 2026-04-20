@@ -141,6 +141,35 @@ type OneToOneListResultVO struct {
 	List         []OneToOneItemVO `json:"list"`
 }
 
+type OneToOneSelectionQueryDTO struct {
+	PageRequestModel PageRequestModel            `json:"pageRequestModel"`
+	QueryModel       OneToOneSelectionQueryModel `json:"queryModel"`
+}
+
+type OneToOneSelectionQueryModel struct {
+	SearchKey string `json:"searchKey"`
+	Status    []int  `json:"status"`
+}
+
+type OneToOneSelectionItemVO struct {
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	StudentID          string `json:"studentId"`
+	StudentName        string `json:"studentName"`
+	LessonID           string `json:"lessonId"`
+	LessonName         string `json:"lessonName"`
+	Status             int    `json:"status"`
+	ClassStudentStatus int    `json:"classStudentStatus"`
+	IsBindChild        bool   `json:"isBindChild"`
+	TuitionAccountID   string `json:"tuitionAccountId"`
+}
+
+type OneToOneSelectionPageResult struct {
+	Total        int                       `json:"total"`
+	StudentCount int                       `json:"studentCount"`
+	List         []OneToOneSelectionItemVO `json:"list"`
+}
+
 type OneToOneDetailVO struct {
 	ID                         string                   `json:"id"`
 	StudentID                  string                   `json:"studentId"`
@@ -467,6 +496,41 @@ type GroupClassListItemVO struct {
 type GroupClassListPageResult struct {
 	List  []GroupClassListItemVO `json:"list"`
 	Total int                    `json:"total"`
+}
+
+type GroupClassSelectionQueryModel struct {
+	ClassName string `json:"className"`
+	Status    []int  `json:"status"`
+}
+
+type GroupClassSelectionPageBody struct {
+	QueryModel       GroupClassSelectionQueryModel `json:"queryModel"`
+	PageRequestModel GroupClassPageRequestModel    `json:"pageRequestModel"`
+}
+
+type GroupClassSelectionStudentVO struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	IsBind           bool   `json:"isBind"`
+	TuitionAccountID string `json:"tuitionAccountId"`
+}
+
+type GroupClassSelectionItemVO struct {
+	ID               string                         `json:"id"`
+	Name             string                         `json:"name"`
+	LessonID         string                         `json:"lessonId"`
+	Status           int                            `json:"status"`
+	StudentCount     int                            `json:"studentCount"`
+	BindStudentCount int                            `json:"bindStudentCount"`
+	LockStudentCount int                            `json:"lockStudentCount"`
+	MaxCount         int                            `json:"maxCount"`
+	IsScheduled      bool                           `json:"isScheduled"`
+	Students         []GroupClassSelectionStudentVO `json:"students"`
+}
+
+type GroupClassSelectionPageResult struct {
+	List  []GroupClassSelectionItemVO `json:"list"`
+	Total int                         `json:"total"`
 }
 
 // GroupClassDetailVO 对标 ToB/PC/Class/Get，供编辑弹窗拉取完整班级信息

@@ -1,8 +1,8 @@
 <script setup>
 import { CaretDownOutlined, CheckOutlined, CloseOutlined, PictureOutlined, PlayCircleOutlined, QuestionCircleOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
-import { pageGroupClassesApi, pageGroupClassStudentsApi } from '@/api/edu-center/group-class'
+import { pageOneToOneSelectionApi } from '@/api/edu-center/one-to-one'
+import { pageGroupClassSelectionApi } from '@/api/edu-center/group-class'
 import messageService from '@/utils/messageService'
 
 const props = defineProps({
@@ -110,7 +110,7 @@ function buildClassStudentSelection(classItem, student) {
     sourceName: String(classItem?.name || ''),
     studentId: String(student?.id || ''),
     studentName: String(student?.name || ''),
-    tuitionAccountId: String(student?.classStudentTuitionAccountInfo?.tuitionAccountId || student?.tuitionAccountId || ''),
+    tuitionAccountId: String(student?.tuitionAccountId || ''),
     isBind: student?.isBind !== false,
   }
 }
@@ -122,8 +122,8 @@ function buildOneToOneSelection(item) {
     sourceName: String(item?.name || item?.lessonName || item?.studentName || '1对1'),
     studentId: String(item?.studentId || item?.id || ''),
     studentName: String(item?.studentName || item?.name || ''),
-    tuitionAccountId: String(item?.tuitionAccountId || item?.tuitionAccount?.id || ''),
-    isBind: item?.isBind !== false,
+    tuitionAccountId: String(item?.tuitionAccountId || ''),
+    isBind: item?.isBindChild !== false,
   }
 }
 
@@ -201,10 +201,10 @@ function handleInviteFollow() {
 }
 
 async function loadClassTargets(currentSeq) {
-  const res = await pageGroupClassesApi({
+  const res = await pageGroupClassSelectionApi({
     queryModel: {
       className: String(studentPickerKeyword.value || '').trim() || undefined,
-      statues: [1],
+      status: [1],
     },
     pageRequestModel: {
       needTotal: true,
@@ -218,34 +218,7 @@ async function loadClassTargets(currentSeq) {
   if (res.code !== 200)
     throw new Error(res.message || '获取班级列表失败')
 
-  const classes = Array.isArray(res.result?.list) ? res.result.list : []
-  const classRows = await Promise.all(classes.map(async (item) => {
-    const classId = String(item?.id || '')
-    try {
-      const stuRes = await pageGroupClassStudentsApi({
-        queryModel: {
-          classId,
-          status: [1],
-        },
-        pageRequestModel: {
-          needTotal: true,
-          pageSize: Math.max(Number(item?.studentCount || 0), 50),
-          pageIndex: 1,
-          skipCount: 0,
-        },
-      })
-      return {
-        ...item,
-        students: stuRes.code === 200 && Array.isArray(stuRes.result?.list) ? stuRes.result.list : [],
-      }
-    }
-    catch {
-      return {
-        ...item,
-        students: [],
-      }
-    }
-  }))
+  const classRows = Array.isArray(res.result?.list) ? res.result.list : []
   if (currentSeq !== studentPickerRequestSeq.value)
     return
   classTargetList.value = classRows
@@ -253,7 +226,7 @@ async function loadClassTargets(currentSeq) {
 }
 
 async function loadOneToOneTargets(currentSeq) {
-  const res = await getOneToOneListApi({
+  const res = await pageOneToOneSelectionApi({
     queryModel: {
       searchKey: String(studentPickerKeyword.value || '').trim() || undefined,
       status: [1],
@@ -755,6 +728,12 @@ watch(() => studentPickerKeyword.value, () => {
                         <span class="afterSchoolTasksModel__student-name">
                           {{ item.studentName || item.name || '-' }}
                         </span>
+                        <template v-if="item.isBindChild === false">
+                          <span class="afterSchoolTasksModel__student-warning">
+                            未关注家校平台，无法发送通知
+                          </span>
+                          <a class="afterSchoolTasksModel__student-link" @click.stop="handleInviteFollow">邀请关注</a>
+                        </template>
                       </div>
                     </div>
                   </div>

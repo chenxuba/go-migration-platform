@@ -24,6 +24,18 @@ func (svc *Service) GetOneToOneListPage(userID int64, query model.OneToOneListQu
 	return svc.repo.PageOneToOneList(context.Background(), instID, query)
 }
 
+func (svc *Service) GetOneToOneSelectionPage(userID int64, query model.OneToOneSelectionQueryDTO) (model.OneToOneSelectionPageResult, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.OneToOneSelectionPageResult{}, errors.New("no institution context")
+		}
+		return model.OneToOneSelectionPageResult{}, err
+	}
+	return svc.repo.PageOneToOneSelectionList(context.Background(), instID, query)
+}
+
 func (svc *Service) GetOneToOneDetail(userID int64, id string) (model.OneToOneDetailVO, error) {
 	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
@@ -541,6 +553,80 @@ func (svc *Service) PageGroupClasses(userID int64, body model.GroupClassListBody
 		return model.GroupClassListPageResult{}, err
 	}
 	return svc.repo.PageGroupClassList(context.Background(), instID, body.QueryModel, body.PageRequestModel)
+}
+
+func (svc *Service) PageGroupClassSelections(userID int64, body model.GroupClassSelectionPageBody) (model.GroupClassSelectionPageResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.GroupClassSelectionPageResult{}, errors.New("no institution context")
+		}
+		return model.GroupClassSelectionPageResult{}, err
+	}
+
+	classPage, err := svc.repo.PageGroupClassList(context.Background(), instID, model.GroupClassListQueryModel{
+		ClassName: body.QueryModel.ClassName,
+		Statues:   body.QueryModel.Status,
+	}, body.PageRequestModel)
+	if err != nil {
+		return model.GroupClassSelectionPageResult{}, err
+	}
+
+	classIDs := make([]string, 0, len(classPage.List))
+	for _, item := range classPage.List {
+		if strings.TrimSpace(item.ID) != "" {
+			classIDs = append(classIDs, item.ID)
+		}
+	}
+
+	studentBuckets, err := svc.repo.ListGroupClassStudentsByClassIDs(context.Background(), instID, classIDs)
+	if err != nil {
+		return model.GroupClassSelectionPageResult{}, err
+	}
+
+	studentMap := make(map[string][]model.GroupClassSelectionStudentVO, len(studentBuckets))
+	bindCountMap := make(map[string]int, len(studentBuckets))
+	for _, bucket := range studentBuckets {
+		students := make([]model.GroupClassSelectionStudentVO, 0, len(bucket.Students))
+		bindCount := 0
+		for _, student := range bucket.Students {
+			if student.IsBind {
+				bindCount++
+			}
+			students = append(students, model.GroupClassSelectionStudentVO{
+				ID:               student.ID,
+				Name:             student.Name,
+				IsBind:           student.IsBind,
+				TuitionAccountID: student.TuitionAccountID,
+			})
+		}
+		studentMap[bucket.ClassID] = students
+		bindCountMap[bucket.ClassID] = bindCount
+	}
+
+	result := model.GroupClassSelectionPageResult{
+		List:  make([]model.GroupClassSelectionItemVO, 0, len(classPage.List)),
+		Total: classPage.Total,
+	}
+	for _, item := range classPage.List {
+		students := studentMap[item.ID]
+		if students == nil {
+			students = []model.GroupClassSelectionStudentVO{}
+		}
+		result.List = append(result.List, model.GroupClassSelectionItemVO{
+			ID:               item.ID,
+			Name:             item.Name,
+			LessonID:         item.LessonID,
+			Status:           item.Status,
+			StudentCount:     item.StudentCount,
+			BindStudentCount: bindCountMap[item.ID],
+			LockStudentCount: item.LockStudentCount,
+			MaxCount:         item.MaxCount,
+			IsScheduled:      item.IsScheduled,
+			Students:         students,
+		})
+	}
+	return result, nil
 }
 
 func (svc *Service) PageMoveGroupClassCandidates(userID int64, body model.GroupClassMoveStudentCandidateListBody) (model.GroupClassListPageResult, error) {

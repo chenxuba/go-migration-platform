@@ -118,6 +118,25 @@ export interface OneToOneListResult {
   list?: OneToOneItem[]
 }
 
+export interface OneToOneSelectionItem {
+  id?: string
+  name?: string
+  studentId?: string
+  studentName?: string
+  lessonId?: string
+  lessonName?: string
+  status?: number
+  classStudentStatus?: number
+  isBindChild?: boolean
+  tuitionAccountId?: string
+}
+
+export interface OneToOneSelectionResult {
+  total?: number
+  studentCount?: number
+  list?: OneToOneSelectionItem[]
+}
+
 export interface OneToOneListParams {
   pageRequestModel: {
     needTotal?: boolean
@@ -263,6 +282,21 @@ export function listOneToOneLessonsByStudentApi(data: {
 
 export function getOneToOneListApi(data: OneToOneListParams) {
   return usePost<OneToOneListResult>('/api/v1/one-to-ones/page', data)
+}
+
+export function pageOneToOneSelectionApi(data: {
+  queryModel?: {
+    searchKey?: string
+    status?: number[]
+  }
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+}) {
+  return usePost<OneToOneSelectionResult>('/api/v1/one-to-ones/selection-page', data)
 }
 
 export function getOneToOneByIdApi(id: string | number) {

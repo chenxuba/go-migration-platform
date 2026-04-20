@@ -768,6 +768,118 @@ func (repo *Repository) PageOneToOneList(ctx context.Context, instID int64, quer
 	}, nil
 }
 
+func (repo *Repository) PageOneToOneSelectionList(ctx context.Context, instID int64, query model.OneToOneSelectionQueryDTO) (model.OneToOneSelectionPageResult, error) {
+	current := query.PageRequestModel.PageIndex
+	size := query.PageRequestModel.PageSize
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	if size > 200 {
+		size = 200
+	}
+	offset := (current - 1) * size
+	if query.PageRequestModel.SkipCount > 0 {
+		offset = query.PageRequestModel.SkipCount
+	}
+
+	whereSQL, args := buildOneToOneWhere(instID, model.OneToOneListQueryModel{
+		SearchKey: strings.TrimSpace(query.QueryModel.SearchKey),
+		Status:    query.QueryModel.Status,
+	}, false)
+
+	countArgs := append([]any{instID}, args...)
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT tc.id)
+		FROM teaching_class tc
+		`+oneToOneListableJoinSQL+`
+		WHERE `+whereSQL, countArgs...).Scan(&total); err != nil {
+		return model.OneToOneSelectionPageResult{}, err
+	}
+
+	var studentCount int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT tcs.student_id)
+		FROM teaching_class tc
+		`+oneToOneListableJoinSQL+`
+		WHERE `+whereSQL, countArgs...).Scan(&studentCount); err != nil {
+		return model.OneToOneSelectionPageResult{}, err
+	}
+
+	queryArgs := make([]any, 0, 1+len(args)+2)
+	queryArgs = append(queryArgs, instID)
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, size, offset)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			tc.id,
+			IFNULL(tc.name, ''),
+			tcs.student_id,
+			IFNULL(s.stu_name, ''),
+			tc.course_id,
+			IFNULL(c.name, ''),
+			tc.status,
+			tcs.class_student_status,
+			IFNULL(s.is_bind_child, 0),
+			CAST(IFNULL(tcs.primary_tuition_account_id, 0) AS CHAR)
+		FROM teaching_class tc
+		`+oneToOneListableJoinSQL+`
+		WHERE `+whereSQL+`
+		ORDER BY tc.create_time DESC, tc.id DESC
+		LIMIT ? OFFSET ?
+	`, queryArgs...)
+	if err != nil {
+		return model.OneToOneSelectionPageResult{}, err
+	}
+	defer rows.Close()
+
+	items := make([]model.OneToOneSelectionItemVO, 0, size)
+	for rows.Next() {
+		var (
+			item               model.OneToOneSelectionItemVO
+			classID            int64
+			studentID          int64
+			lessonID           int64
+			status             int
+			classStudentStatus int
+			isBindChild        int
+		)
+		if err := rows.Scan(
+			&classID,
+			&item.Name,
+			&studentID,
+			&item.StudentName,
+			&lessonID,
+			&item.LessonName,
+			&status,
+			&classStudentStatus,
+			&isBindChild,
+			&item.TuitionAccountID,
+		); err != nil {
+			return model.OneToOneSelectionPageResult{}, err
+		}
+		item.ID = strconv.FormatInt(classID, 10)
+		item.StudentID = strconv.FormatInt(studentID, 10)
+		item.LessonID = strconv.FormatInt(lessonID, 10)
+		item.Status = status
+		item.ClassStudentStatus = classStudentStatus
+		item.IsBindChild = isBindChild != 0
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return model.OneToOneSelectionPageResult{}, err
+	}
+
+	return model.OneToOneSelectionPageResult{
+		Total:        total,
+		StudentCount: studentCount,
+		List:         items,
+	}, nil
+}
+
 func (repo *Repository) GetOneToOneDetail(ctx context.Context, instID, classID int64) (model.OneToOneDetailVO, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT

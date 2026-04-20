@@ -121,6 +121,41 @@ export function pageGroupClassesApi(data: {
   return usePost<{ list: GroupClassRow[], total: number }>('/api/v1/group-classes/page', data)
 }
 
+export interface GroupClassSelectionStudent {
+  id: string
+  name: string
+  isBind: boolean
+  tuitionAccountId?: string
+}
+
+export interface GroupClassSelectionRow {
+  id: string
+  name: string
+  lessonId: string
+  status: number
+  studentCount: number
+  bindStudentCount: number
+  lockStudentCount: number
+  maxCount: number
+  isScheduled: boolean
+  students: GroupClassSelectionStudent[]
+}
+
+export function pageGroupClassSelectionApi(data: {
+  queryModel?: {
+    className?: string
+    status?: number[]
+  }
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+}) {
+  return usePost<{ list: GroupClassSelectionRow[], total: number }>('/api/v1/group-classes/selection-page', data)
+}
+
 export async function exportGroupClassesApi(data: {
   queryModel?: Record<string, unknown>
 }) {
