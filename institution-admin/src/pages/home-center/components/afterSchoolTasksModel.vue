@@ -1524,7 +1524,12 @@ watch(() => formState.publishAt, (publishAtValue) => {
 .afterSchoolTasksModel__body {
   max-height: 580px;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: 8px;
+  margin-right: -4px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #cfd6e4 transparent;
 }
 
 .afterSchoolTasksModel__content-item {
@@ -1541,7 +1546,7 @@ watch(() => formState.publishAt, (publishAtValue) => {
 }
 
 .afterSchoolTasksModel__rule-card-item {
-  margin-top: -10px;
+  margin-top: -20px;
 }
 
 .afterSchoolTasksModel__upload-panel {
@@ -1853,6 +1858,10 @@ watch(() => formState.publishAt, (publishAtValue) => {
   height: 100%;
   overflow: auto;
   padding: 18px 24px 20px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #cfd6e4 transparent;
 }
 
 .afterSchoolTasksModel__student-group + .afterSchoolTasksModel__student-group {
@@ -2019,6 +2028,30 @@ watch(() => formState.publishAt, (publishAtValue) => {
 
 :deep(.afterSchoolTasksModel__student-picker-spin .ant-spin-container) {
   height: 100%;
+}
+
+:deep(.afterSchoolTasksModel__body::-webkit-scrollbar),
+:deep(.afterSchoolTasksModel__student-picker-content::-webkit-scrollbar) {
+  width: 8px;
+}
+
+:deep(.afterSchoolTasksModel__body::-webkit-scrollbar-track),
+:deep(.afterSchoolTasksModel__student-picker-content::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+:deep(.afterSchoolTasksModel__body::-webkit-scrollbar-thumb),
+:deep(.afterSchoolTasksModel__student-picker-content::-webkit-scrollbar-thumb) {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #cfd6e4;
+  background-clip: padding-box;
+}
+
+:deep(.afterSchoolTasksModel__body::-webkit-scrollbar-thumb:hover),
+:deep(.afterSchoolTasksModel__student-picker-content::-webkit-scrollbar-thumb:hover) {
+  background: #b9c3d4;
+  background-clip: padding-box;
 }
 
 :deep(.media-selection-dialog__intro) {
