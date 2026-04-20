@@ -1,11 +1,41 @@
-<script setup>
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { Empty } from 'ant-design-vue'
 import createNoticeModel from './components/createNoticeModel.vue'
+import { listNoticeTemplatesApi, type NoticeTemplateItem } from '@/api/home-center/notice'
 import { useTableColumns } from '@/composables/useTableColumns'
 
 const createNotice = ref(false)
+const noticeTemplateLoading = ref(false)
+const noticeTemplates = ref<NoticeTemplateItem[]>([])
+const defaultTemplateCover = 'https://prod-cdn.schoolpal.cn/training/next-erp/h5/static/images/notice/cjbk2025.png'
+const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
 function handelCreateNotice() {
   createNotice.value = true
+}
+
+async function fetchNoticeTemplates() {
+  noticeTemplateLoading.value = true
+  try {
+    const res = await listNoticeTemplatesApi()
+    noticeTemplates.value = Array.isArray(res.result) ? res.result : []
+  }
+  finally {
+    noticeTemplateLoading.value = false
+  }
+}
+
+function getNoticeTemplateStyle(item: NoticeTemplateItem) {
+  const coverUrl = String(item.coverUrl || '').trim() || defaultTemplateCover
+  return {
+    backgroundImage: `url("${coverUrl}")`,
+  }
+}
+
+function previewNoticeTemplate(item: NoticeTemplateItem) {
+  const target = String(item.coverUrl || '').trim() || defaultTemplateCover
+  window.open(target, '_blank', 'noopener,noreferrer')
 }
 
 const displayArray = ref([
@@ -88,6 +118,10 @@ const openOrderDetailDrawer = ref(false)
 function handleOrderDetail() {
   openOrderDetailDrawer.value = true
 }
+
+onMounted(() => {
+  fetchNoticeTemplates()
+})
 </script>
 
 <template>
@@ -108,43 +142,48 @@ function handleOrderDetail() {
         </div>
       </div>
       <div class="overflow-auto">
-        <a-space :size="14" class="mt3">
-          <div v-for="(item, index) in 18" :key="index" class="templateItem w-39">
-            <div class="h-39 bgimg">
-              <div class="mask">
-                <a-button type="primary">
-                  使用
-                </a-button>
-                <div class="eye">
-                  <svg width="17px" height="12px" viewBox="0 0 17 12">
-                    <title>编组</title>
-                    <g id="\u9875\u9762-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
-                      <g id="\u901A\u77E5\u516C\u544A" transform="translate(-1825.000000, -377.000000)">
-                        <g id="\u7F16\u7EC4" transform="translate(1816.000000, 367.000000)">
-                          <g transform="translate(9.000000, 10.000000)">
-                            <path
-                              id="\u5F62\u72B6"
-                              d="M8.00044664,12 C3.58904385,12 0,9.30840603 0,6 C0,2.69159397 3.58922251,0 8.00044664,0 C12.4107775,0 16,2.69159397 16,6 C16,9.30840603 12.4107775,12 8.00044664,12 L8.00044664,12 Z M8.00044664,1.69822139 C4.55254196,1.69822139 1.64025146,3.66832095 1.64025146,6 C1.64025146,8.33167905 4.55254196,10.3017786 8.00044664,10.3017786 C11.447458,10.3017786 14.3595699,8.33167905 14.3595699,6 C14.3595699,3.66832095 11.4472794,1.69822139 8.00044664,1.69822139 Z"
-                              fill="currentColor"
-                            />
-                            <path
-                              id="\u8DEF\u5F84"
-                              d="M5.44993691,5.99981505 C5.44993691,6.94299358 5.93599319,7.81452648 6.7250131,8.28611575 C7.51403302,8.75770502 8.48614564,8.75770502 9.27516555,8.28611575 C10.0641855,7.81452648 10.5502417,6.94299358 10.5502417,5.99981505 C10.5502417,5.05663652 10.0641855,4.18510361 9.27516555,3.71351434 C8.48614564,3.24192507 7.51403302,3.24192507 6.7250131,3.71351434 C5.93599319,4.18510361 5.44993691,5.05663652 5.44993691,5.99981505 L5.44993691,5.99981505 Z"
-                              fill="currentColor"
-                            />
+        <a-spin :spinning="noticeTemplateLoading">
+          <a-space v-if="noticeTemplates.length" :size="14" class="mt3">
+            <div v-for="item in noticeTemplates" :key="item.id" class="templateItem w-39">
+              <div class="h-39 bgimg" :style="getNoticeTemplateStyle(item)">
+                <div class="mask">
+                  <a-button type="primary" @click.stop="handelCreateNotice">
+                    使用
+                  </a-button>
+                  <div class="eye" @click.stop="previewNoticeTemplate(item)">
+                    <svg width="17px" height="12px" viewBox="0 0 17 12">
+                      <title>编组</title>
+                      <g id="\u9875\u9762-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+                        <g id="\u901A\u77E5\u516C\u544A" transform="translate(-1825.000000, -377.000000)">
+                          <g id="\u7F16\u7EC4" transform="translate(1816.000000, 367.000000)">
+                            <g transform="translate(9.000000, 10.000000)">
+                              <path
+                                id="\u5F62\u72B6"
+                                d="M8.00044664,12 C3.58904385,12 0,9.30840603 0,6 C0,2.69159397 3.58922251,0 8.00044664,0 C12.4107775,0 16,2.69159397 16,6 C16,9.30840603 12.4107775,12 8.00044664,12 L8.00044664,12 Z M8.00044664,1.69822139 C4.55254196,1.69822139 1.64025146,3.66832095 1.64025146,6 C1.64025146,8.33167905 4.55254196,10.3017786 8.00044664,10.3017786 C11.447458,10.3017786 14.3595699,8.33167905 14.3595699,6 C14.3595699,3.66832095 11.4472794,1.69822139 8.00044664,1.69822139 Z"
+                                fill="currentColor"
+                              />
+                              <path
+                                id="\u8DEF\u5F84"
+                                d="M5.44993691,5.99981505 C5.44993691,6.94299358 5.93599319,7.81452648 6.7250131,8.28611575 C7.51403302,8.75770502 8.48614564,8.75770502 9.27516555,8.28611575 C10.0641855,7.81452648 10.5502417,6.94299358 10.5502417,5.99981505 C10.5502417,5.05663652 10.0641855,4.18510361 9.27516555,3.71351434 C8.48614564,3.24192507 7.51403302,3.24192507 6.7250131,3.71351434 C5.93599319,4.18510361 5.44993691,5.05663652 5.44993691,5.99981505 L5.44993691,5.99981505 Z"
+                                fill="currentColor"
+                              />
+                            </g>
                           </g>
                         </g>
                       </g>
-                    </g>
-                  </svg>
+                    </svg>
+                  </div>
                 </div>
               </div>
+              <div class="templateItemTitle text-#000 text-3.5 mt1 font-500">
+                {{ item.title }}
+              </div>
             </div>
-            <div class="templateItemTitle text-#000 text-3.5 mt1 font-500">
-              春季班课程安排
-            </div>
+          </a-space>
+          <div v-else class="mt3 py8">
+            <a-empty :image="simpleImage" description="暂无模板" />
           </div>
-        </a-space>
+        </a-spin>
       </div>
     </div>
     <!-- 学员筛选条件 -->
@@ -170,7 +209,7 @@ function handleOrderDetail() {
         </div>
         <div class="table-content mt-2">
           <a-table
-            :data-source="dataSource" :pagination="dataSource.length > 10" :columns="filteredColumns"
+            :data-source="dataSource" :pagination="dataSource.length > 10 ? {} : false" :columns="filteredColumns"
             :scroll="{ x: totalWidth }" size="small"
           >
             <template #bodyCell="{ column, record }">

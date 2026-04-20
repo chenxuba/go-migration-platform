@@ -45,6 +45,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/approvals/detail", handler.approvalDetail)
 	mux.HandleFunc("/api/v1/approval-templates/list", handler.approvalTemplatesList)
 	mux.HandleFunc("/api/v1/approval-templates/save", handler.saveApprovalTemplates)
+	mux.HandleFunc("/api/v1/notices/templates", handler.listNoticeTemplates)
 	mux.HandleFunc("/api/v1/approvals/approve", handler.approveApprovalRecord)
 	mux.HandleFunc("/api/v1/approvals/refuse", handler.rejectApprovalRecord)
 	mux.HandleFunc("/api/v1/approvals/cancel", handler.cancelApprovalRecord)
