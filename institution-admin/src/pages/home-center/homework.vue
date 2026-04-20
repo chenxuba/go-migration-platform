@@ -124,13 +124,6 @@ function handleOrderDetail() {
           </div>
         </div>
         <div class="table-content mt-2">
-          <a-alert
-            class="mb2 text-#06f"
-            message="家长分享课后任务，机构就可获得转介绍线索"
-            type="info"
-            show-icon
-            closable
-          />
           <a-table
             :data-source="dataSource"
             :pagination="dataSource.length > 10"
