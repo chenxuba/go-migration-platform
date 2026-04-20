@@ -53,6 +53,14 @@ const studentPickerTabs = [
 
 const studentPickerPlaceholder = computed(() => studentPickerType.value === 'class' ? '搜索班级名称' : '搜索1对1名称')
 const selectedStudentButtonText = computed(() => formState.students.length > 0 ? `已选班级/学员(${formState.students.length})` : '选择班级/学员')
+const selectedStudentPreviewText = computed(() => {
+  const names = Array.from(new Set(
+    formState.students
+      .map(item => String(item?.studentName || '').trim())
+      .filter(Boolean),
+  ))
+  return names.join('、')
+})
 
 const weeks = [{ label: '星期一', value: 1 }, { label: '星期二', value: 2 }, { label: '星期三', value: 3 }, { label: '星期四', value: 4 }, { label: '星期五', value: 5 }, { label: '星期六', value: 6 }, { label: '星期日', value: 7 }]
 const dateOptions = [{ label: '00:00', value: '00:00' }, { label: '01:00', value: '01:00' }, { label: '02:00', value: '02:00' }, { label: '03:00', value: '03:00' }, { label: '04:00', value: '04:00' }, { label: '05:00', value: '05:00' }, { label: '06:00', value: '06:00' }, { label: '07:00', value: '07:00' }, { label: '08:00', value: '08:00' }, { label: '09:00', value: '09:00' }, { label: '10:00', value: '10:00' }, { label: '11:00', value: '11:00' }, { label: '12:00', value: '12:00' }, { label: '13:00', value: '13:00' }, { label: '14:00', value: '14:00' }, { label: '15:00', value: '15:00' }, { label: '16:00', value: '16:00' }, { label: '17:00', value: '17:00' }, { label: '18:00', value: '18:00' }, { label: '19:00', value: '19:00' }, { label: '20:00', value: '20:00' }, { label: '21:00', value: '21:00' }, { label: '22:00', value: '22:00' }, { label: '23:00', value: '23:00' }]
@@ -475,9 +483,14 @@ watch(() => studentPickerKeyword.value, () => {
         </a-form-item>
 
         <a-form-item label="选择班级/学员" name="students" :rules="[{ required: true, message: '请选择班级/学员' }]">
-          <a-button type="primary" ghost @click="openStudentPicker">
-            {{ selectedStudentButtonText }}
-          </a-button>
+          <div class="afterSchoolTasksModel__student-selector">
+            <a-button type="primary" ghost @click="openStudentPicker">
+              {{ selectedStudentButtonText }}
+            </a-button>
+            <div v-if="selectedStudentPreviewText" class="afterSchoolTasksModel__student-preview">
+              {{ selectedStudentPreviewText }}
+            </div>
+          </div>
         </a-form-item>
         <a-form-item label="发布规则" :required="true">
           <a-radio-group v-model:value="formState.rule" class="custom-radio">
@@ -985,6 +998,31 @@ watch(() => studentPickerKeyword.value, () => {
   width: auto;
   flex: none;
   margin-bottom: 0;
+}
+
+.afterSchoolTasksModel__student-selector {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.afterSchoolTasksModel__student-selector :deep(.ant-btn) {
+  width: auto;
+  min-width: 0;
+}
+
+.afterSchoolTasksModel__student-preview {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 14px;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #fafafa;
+  color: #595959;
+  font-size: 14px;
+  line-height: 22px;
+  word-break: break-all;
 }
 
 .afterSchoolTasksModel__rule-card {
