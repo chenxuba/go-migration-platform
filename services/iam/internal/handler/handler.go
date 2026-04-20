@@ -33,6 +33,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/auth/login-institutions", handler.loginInstitutions)
 	mux.HandleFunc("/api/v1/auth/me", handler.me)
 	mux.HandleFunc("/api/v1/users", handler.users)
+	mux.HandleFunc("/api/v1/government-users", handler.governmentUsers)
 	mux.HandleFunc("/api/v1/login-logs", handler.loginLogs)
 	mux.HandleFunc("/api/v1/departs/tree", handler.departTree)
 	mux.HandleFunc("/api/v1/departs/list", handler.departs)
@@ -61,6 +62,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sso/info", handler.me)
 	mux.HandleFunc("/sso/isLogin", handler.isLogin)
 	mux.HandleFunc("/sso/logout", handler.logout)
+	mux.HandleFunc("/sso/governmentUsers", handler.governmentUsers)
 	mux.HandleFunc("/sso/menuList", handler.menuList)
 	mux.HandleFunc("/sso/menu/list", handler.menuTree)
 	mux.HandleFunc("/sso/menu/by-code", handler.menuByCode)
@@ -189,6 +191,27 @@ func (handler *Handler) users(w http.ResponseWriter, r *http.Request) {
 	result, err := handler.service.ListManageUsers(current, size, r.URL.Query().Get("username"), r.URL.Query().Get("mobile"))
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load users failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) governmentUsers(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+
+	current := parseInt(r.URL.Query().Get("current"), 1)
+	size := parseInt(r.URL.Query().Get("size"), 10)
+	result, err := handler.service.ListGovernmentUsers(current, size, r.URL.Query().Get("username"), r.URL.Query().Get("mobile"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "load government users failed", ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)

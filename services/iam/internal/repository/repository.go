@@ -769,6 +769,15 @@ func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int6
 }
 
 func (repo *Repository) ListManageUsers(ctx context.Context, current, size int, username, mobile string) (model.UserPage, error) {
+	return repo.listConsoleUsers(ctx, current, size, username, mobile, 0, nil)
+}
+
+func (repo *Repository) ListGovernmentUsers(ctx context.Context, current, size int, username, mobile string) (model.UserPage, error) {
+	loginUserType := 3
+	return repo.listConsoleUsers(ctx, current, size, username, mobile, 3, &loginUserType)
+}
+
+func (repo *Repository) listConsoleUsers(ctx context.Context, current, size int, username, mobile string, roleType int, loginUserType *int) (model.UserPage, error) {
 	if current <= 0 {
 		current = 1
 	}
@@ -777,11 +786,13 @@ func (repo *Repository) ListManageUsers(ctx context.Context, current, size int, 
 	}
 	offset := (current - 1) * size
 
-	filters := []string{"a.del_flag = 0", "d.del_flag = 0", "d.role_type = 0"}
+	filters := []string{"a.del_flag = 0", "d.del_flag = 0", "d.role_type = ?"}
 	args := make([]any, 0, 6)
+	args = append(args, roleType)
 	if strings.TrimSpace(username) != "" {
-		filters = append(filters, "a.username LIKE ?")
-		args = append(args, "%"+strings.TrimSpace(username)+"%")
+		filters = append(filters, "(a.username LIKE ? OR a.nick_name LIKE ?)")
+		keyword := "%" + strings.TrimSpace(username) + "%"
+		args = append(args, keyword, keyword)
 	}
 	if strings.TrimSpace(mobile) != "" {
 		filters = append(filters, "a.mobile LIKE ?")
@@ -803,17 +814,42 @@ func (repo *Repository) ListManageUsers(ctx context.Context, current, size int, 
 		return model.UserPage{}, err
 	}
 
-	args = append(args, size, offset)
+	listArgs := make([]any, 0, len(args)+3)
+	withLastLogin := `
+		LEFT JOIN (
+			SELECT NULL AS user_id, NULL AS last_login_time
+		) ll ON 1 = 0`
+	if loginUserType != nil {
+		withLastLogin = `
+		LEFT JOIN (
+			SELECT user_id, MAX(create_time) AS last_login_time
+			FROM sys_login_log
+			WHERE del_flag = 0 AND result = 1 AND user_type = ?
+			GROUP BY user_id
+		) ll ON a.id = ll.user_id`
+		listArgs = append(listArgs, *loginUserType)
+	}
+	listArgs = append(listArgs, args...)
+	listArgs = append(listArgs, size, offset)
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT a.id, IFNULL(a.username, ''), IFNULL(a.mobile, ''), IFNULL(a.nick_name, ''), IFNULL(b.depart_name, ''), IFNULL(GROUP_CONCAT(DISTINCT d.id), ''), IFNULL(GROUP_CONCAT(DISTINCT d.role_name), '')
+		SELECT a.id,
+		       IFNULL(a.username, ''),
+		       IFNULL(a.mobile, ''),
+		       IFNULL(a.nick_name, ''),
+		       IFNULL(b.depart_name, ''),
+		       IFNULL(GROUP_CONCAT(DISTINCT d.id ORDER BY d.id SEPARATOR ','), ''),
+		       IFNULL(GROUP_CONCAT(DISTINCT d.role_name ORDER BY d.role_name SEPARATOR '、'), ''),
+		       IFNULL(a.is_admin, 0),
+		       IFNULL(DATE_FORMAT(MAX(ll.last_login_time), '%Y-%m-%d %H:%i:%s'), '')
 		FROM sso_user a
 		LEFT JOIN sys_depart b ON a.dept_id = b.id
 		LEFT JOIN sso_user_role c ON a.id = c.user_id
 		LEFT JOIN sso_role d ON c.role_id = d.id
+		`+withLastLogin+`
 		WHERE `+whereClause+`
-		GROUP BY a.id, a.username, a.mobile, a.nick_name, b.depart_name
+		GROUP BY a.id, a.username, a.mobile, a.nick_name, b.depart_name, a.is_admin
 		ORDER BY a.id DESC
-		LIMIT ? OFFSET ?`, args...)
+		LIMIT ? OFFSET ?`, listArgs...)
 	if err != nil {
 		return model.UserPage{}, err
 	}
@@ -822,7 +858,17 @@ func (repo *Repository) ListManageUsers(ctx context.Context, current, size int, 
 	items := make([]model.UserPageItem, 0, size)
 	for rows.Next() {
 		var item model.UserPageItem
-		if err := rows.Scan(&item.ID, &item.Username, &item.Mobile, &item.NickName, &item.DeptName, &item.RoleID, &item.RoleName); err != nil {
+		if err := rows.Scan(
+			&item.ID,
+			&item.Username,
+			&item.Mobile,
+			&item.NickName,
+			&item.DeptName,
+			&item.RoleID,
+			&item.RoleName,
+			&item.IsAdmin,
+			&item.LastLoginTime,
+		); err != nil {
 			return model.UserPage{}, err
 		}
 		items = append(items, item)

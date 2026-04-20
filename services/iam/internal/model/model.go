@@ -54,27 +54,27 @@ type ManageUserInfo struct {
 }
 
 type InstUserInfo struct {
-	InstUserID           int64    `json:"instUserId"`
-	UserID               int64    `json:"userId"`
-	InstID               int64    `json:"instId"`
-	OpenType             int      `json:"openType,omitempty"`
-	VersionName          string   `json:"versionName,omitempty"`
-	NickName             string   `json:"nickName"`
-	Avatar               string   `json:"avatar,omitempty"`
-	OrgName              string   `json:"orgName"`
-	Username             string   `json:"username,omitempty"`
-	Mobile               string   `json:"mobile,omitempty"`
-	Logo                 string   `json:"logo,omitempty"`
-	Manage               bool     `json:"manage"`
-	Admin                bool     `json:"admin"`
-	Disabled             bool     `json:"disabled"`
-	InstitutionEnabled   bool     `json:"-"`
-	InstitutionExpired   bool     `json:"-"`
-	InstitutionWarning   bool     `json:"-"`
-	InstitutionStatus    string   `json:"institutionStatus,omitempty"`
-	InstitutionReadonly  bool     `json:"institutionReadonly"`
-	DeptIDs              []int64  `json:"deptIds"`
-	MenuCodeList         []string `json:"menuCodeList"`
+	InstUserID          int64    `json:"instUserId"`
+	UserID              int64    `json:"userId"`
+	InstID              int64    `json:"instId"`
+	OpenType            int      `json:"openType,omitempty"`
+	VersionName         string   `json:"versionName,omitempty"`
+	NickName            string   `json:"nickName"`
+	Avatar              string   `json:"avatar,omitempty"`
+	OrgName             string   `json:"orgName"`
+	Username            string   `json:"username,omitempty"`
+	Mobile              string   `json:"mobile,omitempty"`
+	Logo                string   `json:"logo,omitempty"`
+	Manage              bool     `json:"manage"`
+	Admin               bool     `json:"admin"`
+	Disabled            bool     `json:"disabled"`
+	InstitutionEnabled  bool     `json:"-"`
+	InstitutionExpired  bool     `json:"-"`
+	InstitutionWarning  bool     `json:"-"`
+	InstitutionStatus   string   `json:"institutionStatus,omitempty"`
+	InstitutionReadonly bool     `json:"institutionReadonly"`
+	DeptIDs             []int64  `json:"deptIds"`
+	MenuCodeList        []string `json:"menuCodeList"`
 }
 
 const (
@@ -132,13 +132,18 @@ type SessionInfo struct {
 }
 
 type UserPageItem struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Mobile   string `json:"mobile"`
-	NickName string `json:"nickName"`
-	DeptName string `json:"deptName,omitempty"`
-	RoleID   string `json:"roleId,omitempty"`
-	RoleName string `json:"roleName,omitempty"`
+	ID            int64  `json:"id"`
+	Username      string `json:"username"`
+	Mobile        string `json:"mobile"`
+	NickName      string `json:"nickName"`
+	DeptName      string `json:"deptName,omitempty"`
+	RoleID        string `json:"roleId,omitempty"`
+	RoleName      string `json:"roleName,omitempty"`
+	IsAdmin       bool   `json:"isAdmin"`
+	Status        string `json:"status,omitempty"`
+	Level         string `json:"level,omitempty"`
+	Scope         string `json:"scope,omitempty"`
+	LastLoginTime string `json:"lastLoginTime,omitempty"`
 }
 
 type UserPage struct {

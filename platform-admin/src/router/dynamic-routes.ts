@@ -21,6 +21,14 @@ const routes: RouteRecordRaw[] = [
           title: '机构列表',
         },
       },
+      {
+        path: '/platform/government-accounts',
+        name: 'PlatformGovernmentAccounts',
+        component: () => import('~/pages/platform/government-accounts/index.vue'),
+        meta: {
+          title: '政府账户',
+        },
+      },
     ],
   },
   {

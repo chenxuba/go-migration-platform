@@ -197,6 +197,58 @@ func (svc *Service) ListManageUsers(current, size int, username, mobile string) 
 	return svc.repo.ListManageUsers(context.Background(), current, size, username, mobile)
 }
 
+func (svc *Service) ListGovernmentUsers(current, size int, username, mobile string) (model.UserPage, error) {
+	page, err := svc.repo.ListGovernmentUsers(context.Background(), current, size, username, mobile)
+	if err != nil {
+		return model.UserPage{}, err
+	}
+	for index := range page.Items {
+		page.Items[index].Level = resolveGovernmentLevel(page.Items[index].RoleName, page.Items[index].IsAdmin)
+		if strings.TrimSpace(page.Items[index].Scope) == "" {
+			page.Items[index].Scope = "--"
+		}
+		if strings.TrimSpace(page.Items[index].Status) == "" {
+			if strings.TrimSpace(page.Items[index].LastLoginTime) == "" {
+				page.Items[index].Status = "未登录"
+			} else {
+				page.Items[index].Status = "正常"
+			}
+		}
+	}
+	return page, nil
+}
+
+func resolveGovernmentLevel(roleNames string, isAdmin bool) string {
+	if isAdmin {
+		return "超级监管"
+	}
+	levels := make(map[string]struct{}, 3)
+	parts := strings.FieldsFunc(roleNames, func(r rune) bool {
+		return r == ',' || r == '、'
+	})
+	for _, part := range parts {
+		name := strings.TrimSpace(part)
+		switch {
+		case strings.Contains(name, "省"):
+			levels["省级"] = struct{}{}
+		case strings.Contains(name, "市"):
+			levels["市级"] = struct{}{}
+		case strings.Contains(name, "区"), strings.Contains(name, "县"):
+			levels["区县级"] = struct{}{}
+		}
+	}
+	if len(levels) == 0 {
+		return "--"
+	}
+	if len(levels) > 1 {
+		return "多层级"
+	}
+	for level := range levels {
+		return level
+	}
+	return "--"
+}
+
 func (svc *Service) PageLoginLogs(current, size int, search model.LoginLogSearchDTO) (model.LoginLogPage, error) {
 	return svc.repo.PageLoginLogs(context.Background(), current, size, search)
 }

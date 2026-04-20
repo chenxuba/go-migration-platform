@@ -21,6 +21,16 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/platform/government-accounts',
+    name: 'PlatformGovernmentAccounts',
+    component: () => import('~/pages/platform/government-accounts/index.vue'),
+    meta: {
+      title: '政府账户',
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+    },
+  },
+  {
     path: '/platform/versions',
     name: 'PlatformVersions',
     component: () => import('~/pages/platform/versions/index.vue'),
