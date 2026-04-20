@@ -183,6 +183,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureNoticeTemplateTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensureNoticeRecordTables(ctx, repo.db); err != nil {
+		return err
+	}
 	if err := ensureComposeLessonTables(ctx, repo.db); err != nil {
 		return err
 	}
