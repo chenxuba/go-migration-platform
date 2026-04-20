@@ -121,6 +121,11 @@ function handleAfterClose() {
 
 <style lang="less">
 .notice-phone-preview-modal {
+  .ant-modal {
+    max-width: calc(100vw - 24px);
+    margin: 0 auto;
+  }
+
   .ant-modal-content {
     background: transparent;
     box-shadow: none;
