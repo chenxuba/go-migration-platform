@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { computed, h, onMounted, reactive, ref } from 'vue'
+import { computed, h, nextTick, onMounted, reactive, ref } from 'vue'
 import { Modal, Tooltip } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import afterSchoolTasksModel from './components/afterSchoolTasksModel.vue'
@@ -41,11 +41,18 @@ const displayArray = ref([
   'classEndingTime',
 ])
 
+function getDefaultPublishRange() {
+  return [
+    dayjs().startOf('month').format('YYYY-MM-DD'),
+    dayjs().format('YYYY-MM-DD'),
+  ]
+}
+
 const queryState = reactive({
   classId: undefined as string | undefined,
   one2OneId: undefined as string | undefined,
   teacherIds: undefined as string[] | undefined,
-  publishRange: [] as string[],
+  publishRange: getDefaultPublishRange(),
   endRange: [] as string[],
   hasUnevaluated: undefined as boolean | undefined,
   hasUnsubmitted: undefined as boolean | undefined,
@@ -184,10 +191,14 @@ function resetQueryState() {
   queryState.classId = undefined
   queryState.one2OneId = undefined
   queryState.teacherIds = undefined
-  queryState.publishRange = []
+  queryState.publishRange = getDefaultPublishRange()
   queryState.endRange = []
   queryState.hasUnevaluated = undefined
   queryState.hasUnsubmitted = undefined
+}
+
+function syncDefaultPublishRangeFilter() {
+  allFilterRef.value?.setApplyTimeFilter?.(getDefaultPublishRange(), false)
 }
 
 function buildQueryModel(includeQuick = true) {
@@ -204,7 +215,7 @@ function buildQueryModel(includeQuick = true) {
   }
 }
 
-async function fetchHomeworkList() {
+async function fetchHomeworkList(id?: string | number, type?: string) {
   loading.value = true
   try {
     const res = await pageHomeworksApi({
@@ -225,6 +236,7 @@ async function fetchHomeworkList() {
     }
     tableData.value = Array.isArray(res.result?.list) ? res.result.list : []
     pagination.total = Number(res.result?.total || 0)
+    allFilterRef.value?.clearQuickFilter?.(id, type)
   }
   catch (error) {
     console.error('fetch homework list failed', error)
@@ -253,8 +265,8 @@ async function fetchHomeworkStatistics() {
   }
 }
 
-async function refreshData() {
-  await Promise.all([fetchHomeworkList(), fetchHomeworkStatistics()])
+async function refreshData(id?: string | number, type?: string) {
+  await Promise.all([fetchHomeworkList(id, type), fetchHomeworkStatistics()])
 }
 
 async function loadScheduleClassOptions(searchKey = '', reset = true) {
@@ -359,18 +371,21 @@ async function loadMoreScheduleOneToOne() {
   await loadScheduleOneToOneOptions(scheduleOneToOneSearchKey.value, false)
 }
 
-function handleFilterUpdate(updates: Partial<typeof queryState> = {}, isClearAll = false) {
+function handleFilterUpdate(updates: Partial<typeof queryState> = {}, isClearAll = false, id?: string | number, type?: string) {
   if (isClearAll) {
     resetQueryState()
+    nextTick(() => {
+      syncDefaultPublishRangeFilter()
+    })
   }
   else {
     Object.assign(queryState, updates)
   }
   pagination.current = 1
-  void refreshData()
+  void refreshData(id, type)
 }
 
-function handleQuickFilterChange(value: unknown, isClearAll?: boolean) {
+function handleQuickFilterChange(value: unknown, isClearAll?: boolean, id?: string | number, type?: string) {
   if (isClearAll) {
     handleFilterUpdate({}, true)
     return
@@ -379,20 +394,20 @@ function handleQuickFilterChange(value: unknown, isClearAll?: boolean) {
     handleFilterUpdate({
       hasUnevaluated: true,
       hasUnsubmitted: undefined,
-    })
+    }, false, id, type)
     return
   }
   if (value === 'unsubmitted') {
     handleFilterUpdate({
       hasUnevaluated: undefined,
       hasUnsubmitted: true,
-    })
+    }, false, id, type)
     return
   }
   handleFilterUpdate({
     hasUnevaluated: undefined,
     hasUnsubmitted: undefined,
-  })
+  }, false, id, type)
 }
 
 function handleScheduleClassFilter(value: unknown, isClearAll?: boolean) {
@@ -403,9 +418,9 @@ function handleScheduleOneToOneFilter(value: unknown, isClearAll?: boolean) {
   handleFilterUpdate({ one2OneId: normalizeSingleValue(value) }, isClearAll)
 }
 
-function handleCreateUserFilter(value: unknown, isClearAll?: boolean) {
+function handleCreateUserFilter(value: unknown, isClearAll?: boolean, id?: string | number, type?: string) {
   const current = normalizeSingleValue(value)
-  handleFilterUpdate({ teacherIds: current ? [current] : undefined }, isClearAll)
+  handleFilterUpdate({ teacherIds: current ? [current] : undefined }, isClearAll, id, type)
 }
 
 function handlePublishTimeFilter(value: unknown, isClearAll?: boolean) {
@@ -501,6 +516,9 @@ function handleDelete(record: Partial<HomeworkListItem> & Record<string, any>) {
 }
 
 onMounted(() => {
+  nextTick(() => {
+    syncDefaultPublishRangeFilter()
+  })
   void refreshData()
 })
 </script>

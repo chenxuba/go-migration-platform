@@ -617,6 +617,10 @@ function getSelectedCountBySource(sourceType: 'class' | 'one_to_one', sourceId: 
   return draftSelectedStudents.value.filter(item => item.sourceType === sourceType && String(item.sourceId || '') === String(sourceId || '')).length
 }
 
+function getSelectedSourceCount(sourceType: 'class' | 'one_to_one') {
+  return draftSelectedStudents.value.filter(item => item.sourceType === sourceType).length
+}
+
 function buildClassStudentSelection(classItem: any, student: any): StudentPickerSelection {
   return {
     sourceType: 'class',
@@ -733,7 +737,7 @@ async function loadClassTargets(currentSeq: number) {
   if (res.code !== 200)
     throw new Error(res.message || '获取班级列表失败')
   classTargetList.value = Array.isArray(res.result?.list) ? res.result.list : []
-  expandedClassIds.value = classTargetList.value.filter(item => Array.isArray(item.students) && item.students.length > 0).slice(0, 1).map(item => String(item.id || ''))
+  expandedClassIds.value = []
 }
 
 async function loadOneToOneTargets(currentSeq: number) {
@@ -1405,7 +1409,13 @@ watch(() => formState.publishAt, (publishAtValue) => {
             class="afterSchoolTasksModel__student-picker-tab"
             @click="studentPickerType = item.key as 'class' | 'one_to_one'"
           >
-            {{ item.label }}
+            <span class="afterSchoolTasksModel__student-picker-tab-label">{{ item.label }}</span>
+            <span
+              v-if="getSelectedSourceCount(item.key as 'class' | 'one_to_one') > 0"
+              class="afterSchoolTasksModel__student-picker-tab-count"
+            >
+              {{ getSelectedSourceCount(item.key as 'class' | 'one_to_one') }}
+            </span>
           </div>
         </div>
 
@@ -1877,6 +1887,10 @@ watch(() => formState.publishAt, (publishAtValue) => {
 
 .afterSchoolTasksModel__student-picker-tab {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 22px 28px;
   color: #595959;
   font-size: 16px;
@@ -1901,6 +1915,29 @@ watch(() => formState.publishAt, (publishAtValue) => {
       content: '';
     }
   }
+}
+
+.afterSchoolTasksModel__student-picker-tab-label {
+  min-width: 0;
+}
+
+.afterSchoolTasksModel__student-picker-tab-count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 77, 79, 0.12);
+  color: #ff4d4f;
+  font-size: 12px;
+  line-height: 22px;
+  text-align: center;
+  font-weight: 600;
+  flex: none;
+}
+
+.afterSchoolTasksModel__student-picker-tab.is-active .afterSchoolTasksModel__student-picker-tab-count {
+  background: #ff4d4f;
+  color: #fff;
 }
 
 .afterSchoolTasksModel__student-picker-main {

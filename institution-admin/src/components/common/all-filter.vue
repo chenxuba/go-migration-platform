@@ -549,6 +549,7 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:salesPersonFilter', 'update:hasSalesPersonFilter', 'searchInputFun', 'update:customSearchInputFilter',
   'update:courseAttributeFilter',
   'update:orderStatusFilter', 'update:orderSourceFilter', 'update:dealDateFilter', 'update:latestPaidTimeFilter', 'update:handleContentFilter', 'update:orderArrearStatusFilter',
+  'update:applyTimeFilter', 'update:payTimeFilter',
   'update:intentionCourseFilter', 'update:currentStatusFilter', 'update:orNotFenClassFilter',
   'update:isSetExpirationDateFilter', 'update:classEndingTimeFilter', 'update:classStopTimeFilter',
   'update:expiryDateFilter', 'update:classNameFilter', 'update:enrolledCourseFilter', 
@@ -1921,6 +1922,18 @@ function handleCreateTimeChange(e) {
   nextTick(() => {
     // console.log("创建时间2:", e);
     emit('update:createTimeFilter', e)
+  })
+}
+
+function handleApplyTimeChange(e) {
+  nextTick(() => {
+    emit('update:applyTimeFilter', e)
+  })
+}
+
+function handlePayTimeChange(e) {
+  nextTick(() => {
+    emit('update:payTimeFilter', e)
   })
 }
 
@@ -3916,6 +3929,8 @@ const clearAll = debounce(() => {
     emit('update:birthdayFilter', undefined, true)
     emit('update:lastFollowTimeFilter', undefined, true)
     emit('update:followTimeFilter', undefined, true)
+    emit('update:applyTimeFilter', [], true)
+    emit('update:payTimeFilter', [], true)
     emit('update:sexFilter', [], true)
     emit('update:ageFilter', undefined, true)
     emit('update:channelFilter', undefined, true)
@@ -3982,6 +3997,8 @@ const clearAll = debounce(() => {
     emit('update:commentStatusFilter', undefined, true)
     emit('update:readStatusFilter', undefined, true)
     emit('update:parentFeedbackStatusFilter', undefined, true)
+    emit('update:classEndingTimeFilter', [], true)
+    emit('update:classStopTimeFilter', [], true)
   })
 
   resetNotFollowDays()
@@ -4512,12 +4529,14 @@ function removeCondition(type, id) {
       break
     case 'applyTime': // 新增申请时间移除逻辑
       applyTimeVals.value = []
+      emit('update:applyTimeFilter', [], false, id, type)
       break
     case 'finishTime':
       emit('update:finishTimeFilter', [], false, id, type)
       break
     case 'payTime': // 新增支付时间移除逻辑
       payTimeVals.value = []
+      emit('update:payTimeFilter', [], false, id, type)
       break
     case 'classEndingTime': // 新增创建时间移除逻辑
       classEndingTimeVals.value = []
@@ -4737,6 +4756,12 @@ function clearQuickFilter(id, type) {
     case 'followTime':
       followTimeVals.value = []
       break
+    case 'applyTime':
+      applyTimeVals.value = []
+      break
+    case 'payTime':
+      payTimeVals.value = []
+      break
     case 'birthday':
       birthdayVals.value = []
       break
@@ -4832,6 +4857,12 @@ function clearQuickFilter(id, type) {
       break
     case 'oneToOneTeacher':
       oneToOneTeacherVals.value = []
+      break
+    case 'classEndingTime':
+      classEndingTimeVals.value = []
+      break
+    case 'classStopTime':
+      classStopTimeVals.value = []
       break
     case 'scheduleTeacher':
       scheduleTeacherVals.value = []
@@ -5579,6 +5610,15 @@ function setScheduleDateFilter(values = [], shouldEmit = false) {
   }
 }
 
+function setApplyTimeFilter(values = [], shouldEmit = false) {
+  applyTimeVals.value = Array.isArray(values) ? values : []
+  if (shouldEmit) {
+    nextTick(() => {
+      emit('update:applyTimeFilter', [...applyTimeVals.value])
+    })
+  }
+}
+
 function setScheduleClassFilter(value = undefined, shouldEmit = false) {
   const normalized = value === undefined || value === null || String(value).trim() === ''
     ? undefined
@@ -6065,6 +6105,7 @@ defineExpose({
   setScheduleOneToOneFilter,
   setScheduleCourseFilter,
   setScheduleDateFilter,
+  setApplyTimeFilter,
   setScheduleTypeFilter,
   setScheduleCallStatusFilter,
   setCommentStatusFilter,
@@ -6454,14 +6495,14 @@ defineExpose({
 
               <!-- 申请时间 -->
               <checkbox-filter v-if="filterType === 'applyTime'" v-model:checked-values="applyTimeVals" :label="props.applyTimeLabel"
-                type="dateTime" @date-picker-change="handleCreateTimeChange" />
+                type="dateTime" @date-picker-change="handleApplyTimeChange" />
 
               <checkbox-filter v-if="filterType === 'finishTime'" v-model:checked-values="finishTimeVals" label="审批完成时间"
                 type="dateTime" @date-picker-change="handleFinishTimeChange" />
 
               <!-- 支付日期 -->
               <checkbox-filter v-if="filterType === 'payTime'" v-model:checked-values="payTimeVals" label="支付日期"
-                type="dateTime" @date-picker-change="handleCreateTimeChange" />
+                type="dateTime" @date-picker-change="handlePayTimeChange" />
 
               <!-- 结课时间 -->
               <checkbox-filter v-if="filterType === 'classEndingTime'" v-model:checked-values="classEndingTimeVals"
