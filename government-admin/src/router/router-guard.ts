@@ -55,10 +55,10 @@ router.beforeEach(async (to, from, next) => {
     }
   }
   else {
-    if (!userStore.userInfo && !allowList.includes(to.path) && !to.path.startsWith('/redirect')) {
+    if ((!userStore.userInfo || !userStore.routerData) && !allowList.includes(to.path) && !to.path.startsWith('/redirect')) {
       try {
         // 获取用户信息
-        const userInfo = await userStore.getUserInfo()
+        const userInfo = userStore.userInfo || await userStore.getUserInfo()
         if (!hasGovernmentPortalAccess(userInfo)) {
           await userStore.logout()
           next({
