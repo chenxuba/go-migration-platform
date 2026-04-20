@@ -1,0 +1,29 @@
+.ant-pro-basicLayout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 100%;
+}
+.ant-pro-basicLayout .ant-layout {
+  background: #f7f7fd;
+}
+.ant-pro-basicLayout-content {
+  margin: 24px;
+  display: flex;
+}
+.ant-pro-basicLayout-content-fluid {
+  width: 100%;
+}
+.ant-pro-basicLayout-content-fixed {
+  width: 1200px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.ant-pro-basicLayout-content-fixed:has(.ant-pro-page-container) {
+  width: 100%;
+  max-width: unset;
+  margin: unset;
+}
+[data-theme='dark'] .ant-layout {
+  background: #2a2c2c;
+}

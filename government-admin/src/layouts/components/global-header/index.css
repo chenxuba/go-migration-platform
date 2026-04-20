@@ -1,0 +1,100 @@
+.ant-pro-global-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 24px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+}
+.ant-pro-global-header > * {
+  height: 100%;
+}
+.ant-pro-global-header-top .ant-menu-horizontal > .ant-menu-submenu {
+  top: unset;
+}
+.ant-pro-global-header-collapsed-button {
+  display: flex;
+  font-size: 20px;
+  align-items: center;
+  margin-left: 24px;
+}
+.ant-pro-global-header-logo {
+  position: relative;
+  overflow: hidden;
+}
+.ant-pro-global-header-logo a {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+.ant-pro-global-header-logo a img {
+  height: 28px;
+}
+.ant-pro-global-header-logo a h1 {
+  height: 32px;
+  margin: 0 0 0 12px;
+  font-weight: 600;
+  font-size: 18px;
+  line-height: 32px;
+}
+.ant-pro-global-header-layout-mix {
+  background: #fff;
+}
+.ant-pro-global-header-layout-mix .anticon {
+  color: #000;
+}
+.ant-pro-global-header-layout-mix .ant-pro-global-header-logo h1 {
+  color: #000;
+}
+.ant-pro-global-header .ant-menu-horizontal {
+  border-bottom: none!important;
+}
+.ant-pro-global-header-inverted {
+  --hover-color: #2a2c37;
+  color: rgba(229, 224, 216, 0.85);
+  background: #001529;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+}
+.ant-pro-global-header-inverted .ant-pro-top-nav-header-logo h1 {
+  color: #e5e0d8;
+}
+.ant-pro-top-nav-header-logo {
+  position: relative;
+  min-width: 165px;
+  height: 100%;
+  overflow: hidden;
+  margin-right: 25px;
+}
+.ant-pro-top-nav-header-logo img {
+  display: inline-block;
+  height: 32px;
+  vertical-align: middle;
+}
+.ant-pro-top-nav-header-logo h1 {
+  display: inline-block;
+  margin: 0 0 0 12px;
+  font-size: 16px;
+  vertical-align: top;
+  color: rgba(0, 0, 0, 0.85);
+}
+[data-theme='dark'] .ant-pro-top-nav-header-logo h1 {
+  color: rgba(229, 224, 216, 0.85);
+}
+[data-theme='dark'] .ant-pro-global-header {
+  background: #001529;
+  box-shadow: rgba(13, 13, 13, 0.65) 0px 2px 8px 0px;
+}
+[data-theme='dark'] .ant-pro-global-header-layout-mix {
+  background: #0f1c29;
+}
+[data-theme='dark'] .ant-pro-global-header-layout-mix .anticon {
+  color: #e5e0d8;
+}
+[data-theme='dark'] .ant-pro-global-header-layout-mix .ant-pro-global-header-logo h1 {
+  color: #e5e0d8;
+}
+[data-theme='dark'] .ant-pro-global-header-layout-top,
+[data-theme='dark'] .ant-pro-global-header-layout-side {
+  background-color: #242525;
+}
