@@ -3937,6 +3937,7 @@ const clearAll = debounce(() => {
     orderTagVals,
     enrollTypeVals,
     productTypeVals,
+    approvalStatusVals,
     orderStatusVals,
     orderArrearStatusVals,
     leaveTypeVals,
