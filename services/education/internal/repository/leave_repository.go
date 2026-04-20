@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -283,6 +284,123 @@ func (repo *Repository) CreateLeaveRequest(ctx context.Context, instID, operator
 		ID:     strconv.FormatInt(leaveID, 10),
 		Status: status,
 	}, nil
+}
+
+func (repo *Repository) CancelLeaveRequest(ctx context.Context, instID, operatorID int64, dto model.LeaveCancelDTO) error {
+	leaveID, remark, err := parseLeaveCancelInput(dto)
+	if err != nil {
+		return err
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var (
+		studentID   int64
+		leaveStatus int
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT student_id, IFNULL(status, 0)
+		FROM inst_leave_request
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+		FOR UPDATE
+	`, leaveID, instID).Scan(&studentID, &leaveStatus); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("未找到请假记录")
+		}
+		return err
+	}
+
+	switch leaveStatus {
+	case model.LeaveStatusApproved:
+	case model.LeaveStatusRevoked:
+		return errors.New("请假记录已撤销，请勿重复操作")
+	default:
+		return errors.New("仅已通过的请假可撤销")
+	}
+
+	operator, err := repo.getLeaveOperatorSnapshotTx(ctx, tx, instID, operatorID)
+	if err != nil {
+		return err
+	}
+
+	scheduleRows, err := tx.QueryContext(ctx, `
+		SELECT
+			teaching_schedule_id,
+			IFNULL(roster_status_before, 1),
+			end_time
+		FROM inst_leave_schedule
+		WHERE inst_id = ? AND leave_request_id = ? AND del_flag = 0
+		ORDER BY start_time ASC, id ASC
+	`, instID, leaveID)
+	if err != nil {
+		return err
+	}
+	defer scheduleRows.Close()
+
+	type leaveCancelScheduleSnapshot struct {
+		ScheduleID         int64
+		RosterStatusBefore int
+		EndTime            time.Time
+	}
+
+	schedules := make([]leaveCancelScheduleSnapshot, 0)
+	for scheduleRows.Next() {
+		var item leaveCancelScheduleSnapshot
+		if err := scheduleRows.Scan(&item.ScheduleID, &item.RosterStatusBefore, &item.EndTime); err != nil {
+			return err
+		}
+		schedules = append(schedules, item)
+	}
+	if err := scheduleRows.Err(); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	for _, item := range schedules {
+		if item.EndTime.Before(now) {
+			continue
+		}
+		restoreStatus := normalizeTeachingScheduleStudentRosterStatus(item.RosterStatusBefore)
+		if restoreStatus == model.TeachingScheduleStudentRosterStatusLeave {
+			restoreStatus = model.TeachingScheduleStudentRosterStatusActive
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE teaching_schedule_student
+			SET roster_status = ?, update_id = ?, update_time = CURRENT_TIMESTAMP
+			WHERE inst_id = ?
+			  AND teaching_schedule_id = ?
+			  AND student_id = ?
+			  AND del_flag = 0
+			  AND roster_status = ?
+		`, restoreStatus, operator.ID, instID, item.ScheduleID, studentID, model.TeachingScheduleStudentRosterStatusLeave); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_leave_request
+		SET
+			status = ?,
+			current_step = NULL,
+			current_approver_ids = '',
+			current_approver_names = '',
+			update_id = ?,
+			update_time = CURRENT_TIMESTAMP
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, model.LeaveStatusRevoked, operator.ID, leaveID, instID); err != nil {
+		return err
+	}
+
+	if err := repo.insertLeaveActionTx(ctx, tx, instID, leaveID, model.LeaveActionRevoke, operator.ID, operator.Name, "已撤销", remark); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (repo *Repository) PageLeaveRequests(ctx context.Context, instID int64, query model.LeavePagedQueryDTO) (model.LeavePagedResult, error) {
@@ -1099,6 +1217,18 @@ func parseLeaveCreateInput(dto model.LeaveCreateDTO) (int64, time.Time, time.Tim
 		return 0, time.Time{}, time.Time{}, err
 	}
 	return studentID, startTime, endTime, nil
+}
+
+func parseLeaveCancelInput(dto model.LeaveCancelDTO) (int64, string, error) {
+	leaveID, err := parseOptionalPositiveID(dto.ID.String())
+	if err != nil || leaveID <= 0 {
+		return 0, "", errors.New("id不能为空")
+	}
+	remark := strings.TrimSpace(dto.Remark)
+	if utf8.RuneCountInString(remark) > 200 {
+		return 0, "", errors.New("备注不能超过200字")
+	}
+	return leaveID, remark, nil
 }
 
 func parseLeaveDetailScheduleInput(query model.LeaveDetailScheduleQueryModel) (int64, time.Time, time.Time, error) {

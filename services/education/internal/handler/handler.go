@@ -50,6 +50,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/leaves/detail-schedules", handler.leaveDetailSchedules)
 	mux.HandleFunc("/api/v1/leaves/preview-schedules", handler.leavePreviewSchedules)
 	mux.HandleFunc("/api/v1/leaves/agent", handler.leaveAgent)
+	mux.HandleFunc("/api/v1/leaves/cancel", handler.leaveCancel)
 	mux.HandleFunc("/api/v1/notices/templates", handler.listNoticeTemplates)
 	mux.HandleFunc("/api/v1/notices/check-filter-word", handler.checkNoticeFilterWords)
 	mux.HandleFunc("/api/v1/notices/check-repeat-student", handler.checkRepeatNoticeStudents)

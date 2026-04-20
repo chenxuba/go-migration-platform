@@ -37,6 +37,24 @@ func (svc *Service) CreateLeaveRequest(userID int64, dto model.LeaveCreateDTO) (
 	return svc.repo.CreateLeaveRequest(context.Background(), instID, instUserID, dto)
 }
 
+func (svc *Service) CancelLeaveRequest(userID int64, dto model.LeaveCancelDTO) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution user context")
+		}
+		return err
+	}
+	return svc.repo.CancelLeaveRequest(context.Background(), instID, instUserID, dto)
+}
+
 func (svc *Service) PageLeaveRequests(userID int64, query model.LeavePagedQueryDTO) (model.LeavePagedResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

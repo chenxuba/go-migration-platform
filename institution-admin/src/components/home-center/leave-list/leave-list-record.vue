@@ -276,6 +276,10 @@ function handleLeaveDetailsClosed() {
   fetchLeaveList()
 }
 
+function handleLeaveChanged() {
+  fetchLeaveList()
+}
+
 onMounted(() => {
   fetchLeaveList()
 })
@@ -377,7 +381,12 @@ onMounted(() => {
       </div>
     </div>
 
-    <leaveDetailsDrawer v-model="openLeaveDetailsDrawer" :leave-id="currentLeaveId" @closed="handleLeaveDetailsClosed" />
+    <leaveDetailsDrawer
+      v-model="openLeaveDetailsDrawer"
+      :leave-id="currentLeaveId"
+      @changed="handleLeaveChanged"
+      @closed="handleLeaveDetailsClosed"
+    />
     <add-leave-modal v-model:open="openAddLeaveModal" @success="handleLeaveCreated" />
   </div>
 </template>

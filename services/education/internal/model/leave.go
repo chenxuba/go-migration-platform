@@ -98,6 +98,11 @@ type LeaveCreateDTO struct {
 	Remark         string         `json:"remark"`
 }
 
+type LeaveCancelDTO struct {
+	ID     FlexibleString `json:"id"`
+	Remark string         `json:"remark"`
+}
+
 type LeavePagedItem struct {
 	ID                  string     `json:"id"`
 	StudentID           string     `json:"studentId"`

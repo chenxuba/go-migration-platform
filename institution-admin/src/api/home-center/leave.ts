@@ -183,6 +183,13 @@ export function createLeaveAgentApi(data: {
   return usePost<LeaveCreateResult>('/api/v1/leaves/agent', data)
 }
 
+export function cancelLeaveApi(data: {
+  id: string | number
+  remark?: string
+}) {
+  return usePost<{ success: boolean }>('/api/v1/leaves/cancel', data)
+}
+
 export function getLeavePagedListApi(data: {
   pageRequestModel: {
     needTotal?: boolean

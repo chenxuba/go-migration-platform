@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { CloseOutlined } from '@ant-design/icons-vue'
-import { getLeaveDetailApi, getLeaveDetailSchedulesApi } from '@/api/home-center/leave'
+import { cancelLeaveApi, getLeaveDetailApi, getLeaveDetailSchedulesApi } from '@/api/home-center/leave'
 import { Sex } from '@/enums'
 import messageService from '@/utils/messageService'
 
@@ -18,13 +18,16 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['closed'])
+const emit = defineEmits(['closed', 'changed'])
 
 const defaultStudentAvatar = 'https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png'
 const approvedStampUrl = 'https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/15233/static/png/leave-approve-B7HZREJ9.png'
 const revokedStampUrl = 'https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/15233/static/png/leave-cancled-ClErrj5T.png'
 
 const loading = ref(false)
+const cancelLoading = ref(false)
+const cancelModalOpen = ref(false)
+const cancelRemark = ref('')
 const detail = ref(createEmptyDetail())
 const scheduleList = ref([])
 
@@ -55,6 +58,8 @@ const leaveInfo = computed(() => {
     statusClass: getStatusClass(detail.value.status),
   }
 })
+
+const canCancelLeave = computed(() => Number(detail.value.status) === 2)
 
 function createEmptyDetail() {
   return {
@@ -93,6 +98,9 @@ function createEmptyDetail() {
 
 function resetState() {
   requestSeed += 1
+  cancelModalOpen.value = false
+  cancelLoading.value = false
+  cancelRemark.value = ''
   detail.value = createEmptyDetail()
   scheduleList.value = []
 }
@@ -146,6 +154,15 @@ function formatInitiatorName(name, isAgent) {
   return `${normalized}（代办）`
 }
 
+function normalizeProcessRemark(actionType, remark) {
+  const normalized = String(remark || '').trim()
+  if (!normalized)
+    return ''
+  if (Number(actionType) === 5 && normalized === '未配置审批人，系统自动通过')
+    return ''
+  return normalized
+}
+
 function getStampUrl(status) {
   switch (Number(status)) {
     case 2:
@@ -187,6 +204,8 @@ function buildLeaveProcessList(detailData) {
       nodeText: getProcessNodeText(actionType, isPending),
       nodeClass: getProcessNodeClass(actionType, isPending),
       tagClass: getProcessTagClass(actionType, isPending),
+      remark: normalizeProcessRemark(actionType, item?.remark),
+      warningText: getProcessWarningText(actionType),
     }
   })
 
@@ -204,6 +223,8 @@ function buildLeaveProcessList(detailData) {
       nodeText: getProcessNodeText(currentApprove?.actionType, true),
       nodeClass: getProcessNodeClass(currentApprove?.actionType, true),
       tagClass: getProcessTagClass(currentApprove?.actionType, true),
+      remark: '',
+      warningText: '',
     })
   }
 
@@ -223,6 +244,8 @@ function buildLeaveProcessList(detailData) {
       nodeText: getProcessNodeText(actionType, isPending),
       nodeClass: getProcessNodeClass(actionType, isPending),
       tagClass: getProcessTagClass(actionType, isPending),
+      remark: normalizeProcessRemark(actionType, item?.remark),
+      warningText: getProcessWarningText(actionType),
     }
   })
 }
@@ -289,6 +312,12 @@ function getProcessStatusText(actionType, isPending) {
     default:
       return '已通过'
   }
+}
+
+function getProcessWarningText(actionType) {
+  if (Number(actionType) === 4)
+    return '此操作不可撤销，请谨慎操作'
+  return ''
 }
 
 async function fetchLeaveDetail() {
@@ -369,6 +398,47 @@ async function fetchLeaveDetail() {
   }
 }
 
+function openCancelLeaveModal() {
+  if (!canCancelLeave.value)
+    return
+  cancelRemark.value = ''
+  cancelModalOpen.value = true
+}
+
+function closeCancelLeaveModal() {
+  if (cancelLoading.value)
+    return
+  cancelModalOpen.value = false
+}
+
+async function handleCancelLeave() {
+  const leaveID = String(detail.value.id || props.leaveId || '').trim()
+  if (!leaveID)
+    return
+
+  cancelLoading.value = true
+  try {
+    const res = await cancelLeaveApi({
+      id: leaveID,
+      remark: cancelRemark.value.trim(),
+    })
+
+    if (res.code !== 200)
+      throw new Error(res.message || '撤销请假失败')
+
+    messageService.success('撤销请假成功')
+    cancelModalOpen.value = false
+    emit('changed')
+    await fetchLeaveDetail()
+  }
+  catch (error) {
+    messageService.error(error?.response?.data?.message || error?.message || '撤销请假失败')
+  }
+  finally {
+    cancelLoading.value = false
+  }
+}
+
 watch(
   () => [open.value, props.leaveId],
   ([visible, leaveId]) => {
@@ -385,6 +455,7 @@ watch(
 )
 
 function handleClose() {
+  cancelModalOpen.value = false
   open.value = false
   emit('closed')
 }
@@ -444,15 +515,19 @@ function handleClose() {
             </div>
           </div>
         </div>
-        <div>
+        <div class="status-action-wrap">
           <img
             v-if="leaveInfo.stampUrl"
-            width="96" height="96" :src="leaveInfo.stampUrl"
+            class="leave-stamp-image"
+            :src="leaveInfo.stampUrl"
             alt=""
           >
           <div v-else class="status-text-chip" :class="leaveInfo.statusClass">
             {{ leaveInfo.statusText }}
           </div>
+          <a-button v-if="canCancelLeave" danger class="revoke-leave-btn" @click="openCancelLeaveModal">
+            撤销请假
+          </a-button>
         </div>
       </div>
 
@@ -516,24 +591,35 @@ function handleClose() {
         <div class="process-timeline">
           <div
             v-for="(item, index) in leaveInfo.leaveProcess" :key="index" class="process-item flex relative pb-20px"
-            :class="{ 'last-item': index === leaveInfo.leaveProcess.length - 1 }"
+            :class="{ 'last-item': index === leaveInfo.leaveProcess.length - 1, 'with-line': item.showLine }"
           >
-            <div class="flex items-center gap-20px flex-1">
+            <div class="flex items-start gap-20px flex-1">
               <div
-                :class="[item.nodeClass, { line: item.showLine }]"
-                class=" p-8px text-12px text-#fff rounded-50% w-28px h-28px flex items-center justify-center"
+                :class="[item.nodeClass]"
+                class="process-node p-8px text-12px text-#fff rounded-50% w-28px h-28px flex items-center justify-center"
               >
                 {{ item.nodeText }}
               </div>
-              <div class="flex items-center justify-between bg-#f6f6f6 rounded-8px p-15px py-20px flex-1">
-                <div class="flex items-center gap-20px">
-                  <span class="text-16px font-500">{{ item.name }}</span>
-                  <div class="text-12px font-400 py-3px px-8px rounded-8px" :class="item.tagClass">
-                    {{ item.status }}
+              <div class="process-card bg-#f6f6f6 rounded-8px p-15px py-20px flex-1">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-20px">
+                    <span class="text-16px font-500">{{ item.name }}</span>
+                    <div class="text-12px font-400 py-3px px-8px rounded-8px" :class="item.tagClass">
+                      {{ item.status }}
+                    </div>
+                  </div>
+                  <div class="text-#999">
+                    {{ item.timeLabel }}：{{ item.time }}
                   </div>
                 </div>
-                <div class="text-#999">
-                  {{ item.timeLabel }}：{{ item.time }}
+
+                <div v-if="item.remark" class="process-remark">
+                  备注：{{ item.remark }}
+                </div>
+
+                <div v-if="item.warningText" class="process-warning">
+                  <span class="process-warning-icon">!</span>
+                  <span>{{ item.warningText }}</span>
                 </div>
               </div>
             </div>
@@ -542,6 +628,52 @@ function handleClose() {
       </div>
     </div>
   </a-drawer>
+
+  <a-modal
+    v-model:open="cancelModalOpen"
+    title="撤销请假"
+    :mask-closable="false"
+    :keyboard="false"
+    :confirm-loading="cancelLoading"
+    width="520px"
+    @cancel="closeCancelLeaveModal"
+  >
+    <div class="revoke-leave-modal-content">
+      <div class="revoke-leave-modal-title">
+        撤销请假后
+      </div>
+      <div class="revoke-leave-modal-rule">
+        1. 不影响已经标记为请假的上课记录
+      </div>
+      <div class="revoke-leave-modal-rule">
+        2. 不影响已有的补课数据
+      </div>
+      <div class="revoke-leave-modal-rule">
+        3. 撤销后本次请假不计入请假限制/次数
+      </div>
+      <div class="revoke-leave-modal-warning">
+        谨慎操作，撤销后不可恢复
+      </div>
+      <a-textarea
+        v-model:value="cancelRemark"
+        :maxlength="200"
+        :auto-size="{ minRows: 4, maxRows: 4 }"
+        show-count
+        placeholder="选填，备注最多200字"
+      />
+    </div>
+
+    <template #footer>
+      <div class="revoke-leave-modal-footer">
+        <a-button @click="closeCancelLeaveModal">
+          再想想
+        </a-button>
+        <a-button danger type="primary" :loading="cancelLoading" @click="handleCancelLeave">
+          撤 销
+        </a-button>
+      </div>
+    </template>
+  </a-modal>
 </template>
 
 <style lang="less" scoped>
@@ -556,6 +688,25 @@ function handleClose() {
   overflow-y: auto;
 }
 
+.status-action-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.revoke-leave-btn {
+  flex-shrink: 0;
+}
+
+.leave-stamp-image {
+  display: block;
+  width: 110px;
+  height: 110px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .class-item + .class-item {
   margin-top: 14px;
 }
@@ -564,6 +715,59 @@ function handleClose() {
   &.last-item {
     padding-bottom: 0;
   }
+
+  &.with-line::before {
+    content: '';
+    position: absolute;
+    left: 14px;
+    top: 54px;
+    bottom: -10px;
+    width: 1px;
+    background-color: #ccc;
+  }
+}
+
+.process-node {
+  margin-top: 18px;
+  position: relative;
+  z-index: 1;
+}
+
+.process-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.process-remark {
+  margin-top: 14px;
+  color: #666;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.process-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #ff8a00;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.process-warning-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ff8a00;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
 .status-text-chip {
@@ -576,6 +780,37 @@ function handleClose() {
   border-radius: 999px;
   font-size: 16px;
   font-weight: 600;
+}
+
+.revoke-leave-modal-content {
+  color: #222;
+}
+
+.revoke-leave-modal-title {
+  margin-bottom: 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.revoke-leave-modal-rule {
+  margin-bottom: 8px;
+  line-height: 22px;
+  color: #666;
+}
+
+.revoke-leave-modal-warning {
+  margin: 16px 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff7e6;
+  color: #d46b08;
+  line-height: 22px;
+}
+
+.revoke-leave-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .process-node-info {
@@ -614,18 +849,4 @@ function handleClose() {
   background-color: #fff7e6;
 }
 
-.line {
-  position: relative;
-
-  &::before {
-    content: '';
-    display: block;
-    position: absolute;
-    max-height: 80px;
-    height: 40px;
-    width: 1px;
-    background-color: #ccc;
-    top: 33px;
-  }
-}
 </style>
