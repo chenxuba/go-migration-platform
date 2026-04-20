@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { CloseOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, h, reactive, ref, watch } from 'vue'
 import { getStudentRehabRecordDetailApi, publishStudentRehabRecordApi, saveStudentRehabRecordDraftApi, type RehabRecordContent, type RehabRecordMediaItem, type RehabRecordTrainingItem, type StudentRehabRecordSnapshot } from '@/api/edu-center/class-record'
 import RehabRecordMediaUpload from './rehab-record-media-upload.vue'
 import messageService from '@/utils/messageService'
@@ -77,6 +77,7 @@ const loading = ref(false)
 const submittingAction = ref<'draft' | 'publish' | ''>('')
 const loadSequence = ref(0)
 const previousPublishedSnapshot = ref<StudentRehabRecordSnapshot | null>(null)
+const initialContentSignature = ref('')
 
 const formModel = reactive({
   studentName: '',
@@ -330,6 +331,20 @@ function buildContentPayload(): RehabRecordContent {
   }
 }
 
+function buildContentSignature(content?: RehabRecordContent) {
+  return JSON.stringify(content || buildContentPayload())
+}
+
+function syncInitialContentSignature(content?: RehabRecordContent) {
+  initialContentSignature.value = buildContentSignature(content)
+}
+
+const hasUnsavedChanges = computed(() => {
+  if (isReadonly.value || !open.value || !initialContentSignature.value)
+    return false
+  return buildContentSignature() !== initialContentSignature.value
+})
+
 function applySnapshotByMode(options: {
   draft?: StudentRehabRecordSnapshot | null
   published?: StudentRehabRecordSnapshot | null
@@ -338,6 +353,7 @@ function applySnapshotByMode(options: {
   const { draft, published, currentLoad } = options
   if (props.mode === 'view') {
     applySnapshot(published || draft)
+    syncInitialContentSignature()
     return
   }
 
@@ -355,19 +371,29 @@ function applySnapshotByMode(options: {
         if (!open.value || currentLoad !== loadSequence.value)
           return
         applySnapshot(draft)
+        syncInitialContentSignature()
       },
       onCancel: () => {
         if (!open.value || currentLoad !== loadSequence.value)
           return
-        if (props.mode === 'edit' && published?.content)
+        if (props.mode === 'edit' && published?.content) {
           applySnapshot(published)
+          syncInitialContentSignature()
+          return
+        }
+        syncInitialContentSignature()
       },
     })
     return
   }
 
-  if (props.mode === 'edit' && published?.content)
+  if (props.mode === 'edit' && published?.content) {
     applySnapshot(published)
+    syncInitialContentSignature()
+    return
+  }
+
+  syncInitialContentSignature()
 }
 
 async function loadRecordIfNeeded() {
@@ -401,25 +427,29 @@ async function loadRecordIfNeeded() {
 
 async function handleSaveDraft() {
   if (isReadonly.value)
-    return
+    return false
   const studentTeachingRecordId = currentStudentTeachingRecordId.value
   if (!studentTeachingRecordId) {
     messageService.warning('缺少有效的学员记录')
-    return
+    return false
   }
 
   submittingAction.value = 'draft'
   try {
+    const payload = buildContentPayload()
     const res = await saveStudentRehabRecordDraftApi({
       studentTeachingRecordId,
-      content: buildContentPayload(),
+      content: payload,
     })
     if (res.code !== 200)
       throw new Error(res.message || '保存草稿失败')
+    syncInitialContentSignature(payload)
     messageService.success('草稿已保存')
+    return true
   }
   catch (error: any) {
     messageService.error(error?.response?.data?.message || error?.message || '保存草稿失败')
+    return false
   }
   finally {
     submittingAction.value = ''
@@ -473,6 +503,38 @@ function handleReusePreviousPublished() {
   })
 }
 
+function closeDrawerDirectly() {
+  open.value = false
+}
+
+function handleRequestClose() {
+  if (submittingAction.value || loading.value)
+    return
+
+  if (isReadonly.value || !hasUnsavedChanges.value) {
+    closeDrawerDirectly()
+    return
+  }
+
+  Modal.confirm({
+    title: '是否需要保存草稿',
+    content: '如不保存，离开后将会清空当前内容',
+    centered: true,
+    icon: h(ExclamationCircleOutlined, { style: 'color: #fa8c16;' }),
+    okText: '保存',
+    cancelText: '离开',
+    async onOk() {
+      const saved = await handleSaveDraft()
+      if (!saved)
+        return Promise.reject(new Error('save draft failed'))
+      closeDrawerDirectly()
+    },
+    onCancel() {
+      closeDrawerDirectly()
+    },
+  })
+}
+
 watch(
   [() => open.value, () => props.mode, currentStudentTeachingRecordId, () => props.student, () => props.session, () => props.parentFeedback],
   async ([isOpen]) => {
@@ -481,10 +543,12 @@ watch(
       loading.value = false
       submittingAction.value = ''
       previousPublishedSnapshot.value = null
+      initialContentSignature.value = ''
       resetTrainingModules()
       return
     }
     hydrateDefaultForm()
+    syncInitialContentSignature()
     await loadRecordIfNeeded()
   },
   { deep: true, immediate: true },
@@ -494,8 +558,10 @@ watch(
 <template>
   <a-drawer
     v-model:open="open"
-    :body-style="{ padding: '0', background: '#f7f7fd', display: 'flex', flexDirection: 'column' }"
+    :body-style="{ padding: '0', background: '#f7f7fd' }"
     :closable="false"
+    :keyboard="false"
+    :mask-closable="false"
     width="980px"
     placement="right"
     :z-index="1100"
@@ -505,7 +571,7 @@ watch(
         <div class="text-5">
           {{ drawerTitle }}
         </div>
-        <a-button type="text" class="close-btn" @click="open = false">
+        <a-button type="text" class="close-btn" @click="handleRequestClose">
           <template #icon>
             <CloseOutlined class="text-5 close-icon" />
           </template>
@@ -513,9 +579,8 @@ watch(
       </div>
     </template>
 
-    <div class="h-full flex flex-col min-h-0">
-      <a-spin class="flex-1 min-h-0" :spinning="loading">
-        <div class="flex-1 min-h-0 overflow-auto p-12px">
+    <a-spin :spinning="loading">
+      <div class="p-12px">
           <div v-if="isReadonly" class="flex flex-col gap-16px">
             <div class="rounded-14px border border-solid border-#e9edf5 bg-white p-18px">
               <div class="text-15px leading-22px font-600 text-#222">
@@ -901,34 +966,33 @@ watch(
             </a-row>
 
           </div>
-        </div>
-      </a-spin>
-
-      <div class="flex justify-end px-20px pt-12px pb-16px bg-white border-t border-solid border-#eef0f5">
-        <a-space>
-          <a-button :disabled="Boolean(submittingAction)" @click="open = false">
-            {{ isReadonly ? '关闭' : '取消' }}
-          </a-button>
-          <template v-if="!isReadonly">
-            <a-button
-              :loading="submittingAction === 'draft'"
-              :disabled="submittingAction === 'publish'"
-              @click="handleSaveDraft"
-            >
-              保存草稿
-            </a-button>
-            <a-button
-              type="primary"
-              :loading="submittingAction === 'publish'"
-              :disabled="submittingAction === 'draft'"
-              @click="handlePublish"
-            >
-              {{ publishButtonText }}
-            </a-button>
-          </template>
-        </a-space>
       </div>
-    </div>
+    </a-spin>
+
+    <template #footer>
+      <div class="flex justify-end gap-12px px-20px py-16px">
+        <a-button :disabled="Boolean(submittingAction)" @click="handleRequestClose">
+          {{ isReadonly ? '关闭' : '取消' }}
+        </a-button>
+        <template v-if="!isReadonly">
+          <a-button
+            :loading="submittingAction === 'draft'"
+            :disabled="submittingAction === 'publish'"
+            @click="handleSaveDraft"
+          >
+            保存草稿
+          </a-button>
+          <a-button
+            type="primary"
+            :loading="submittingAction === 'publish'"
+            :disabled="submittingAction === 'draft'"
+            @click="handlePublish"
+          >
+            {{ publishButtonText }}
+          </a-button>
+        </template>
+      </div>
+    </template>
   </a-drawer>
 </template>
 
