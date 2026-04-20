@@ -62,6 +62,18 @@ const props = defineProps({
       return []
     },
   },
+  defaultApprovalStatusVals: {
+    type: Array,
+    default: () => {
+      return []
+    },
+  },
+  approvalStatusOptionsOverride: {
+    type: Array,
+    default: () => {
+      return []
+    },
+  },
   defaultOrderTagIds: {
     type: Array,
     default: () => {
@@ -545,7 +557,7 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:lastEditedTimeFilter', 'update:channelPositionRoleFilter', 'update:channelUserType',
   'update:channelAccountStatus', 'update:performanceAllocationStatusFilter',
   'update:enableStatusFilter',
-  'update:orderTypeFilter', 'update:orderTagFilter', 'update:enrollTypeFilter', 'update:productTypeFilter', 'update:approveNumberFilter', 'update:approvalStatusFilter', 'update:finishTimeFilter', 'update:departmentFilter', 'staff-search', 'update:createUserFilter',
+  'update:orderTypeFilter', 'update:orderTagFilter', 'update:enrollTypeFilter', 'update:productTypeFilter', 'update:approveNumberFilter', 'update:approvalStatusFilter', 'update:leaveTypeFilter', 'update:finishTimeFilter', 'update:departmentFilter', 'staff-search', 'update:createUserFilter',
   'update:salesPersonFilter', 'update:hasSalesPersonFilter', 'searchInputFun', 'update:customSearchInputFilter',
   'update:courseAttributeFilter',
   'update:orderStatusFilter', 'update:orderSourceFilter', 'update:dealDateFilter', 'update:latestPaidTimeFilter', 'update:handleContentFilter', 'update:orderArrearStatusFilter',
@@ -1521,7 +1533,18 @@ const approvalStatusOptions = ref([
   { id: 3, value: '审批拒绝' },
   { id: 4, value: '已作废' },
 ])
+const resolvedApprovalStatusOptions = computed(() =>
+  Array.isArray(props.approvalStatusOptionsOverride) && props.approvalStatusOptionsOverride.length
+    ? props.approvalStatusOptionsOverride
+    : approvalStatusOptions.value,
+)
 const approvalStatusVals = ref([])
+const leaveTypeOptions = ref([
+  { id: 1, value: '事假' },
+  { id: 2, value: '病假' },
+  { id: 3, value: '休学' },
+])
+const leaveTypeVals = ref([])
 const enableStatusOptions = ref([
   { id: 1, value: '启用' },
   { id: 0, value: '停用' },
@@ -3565,7 +3588,13 @@ const selectedConditions = computed(() => {
       type: 'approvalStatus',
       label: '审批状态',
       show: props.displayArray.includes('approvalStatus'),
-      values: approvalStatusOptions.value.filter(opt => approvalStatusVals.value.includes(opt.id)),
+      values: resolvedApprovalStatusOptions.value.filter(opt => approvalStatusVals.value.includes(opt.id)),
+    },
+    {
+      type: 'leaveType',
+      label: '请假类型',
+      show: props.displayArray.includes('leaveType'),
+      values: leaveTypeOptions.value.filter(opt => leaveTypeVals.value.includes(opt.id)),
     },
     {
       type: 'orderSource',
@@ -3835,6 +3864,7 @@ watch(isMicroSchoolDisplayVals, () => (lastUpdated.isMicroSchoolDisplay = Date.n
 watch(performanceAllocationStatusVals, () => (lastUpdated.performanceAllocationStatus = Date.now()))
 watch(orderTypeVals, () => (lastUpdated.orderType = Date.now()))
 watch(approvalStatusVals, () => (lastUpdated.approvalStatus = Date.now()))
+watch(leaveTypeVals, () => (lastUpdated.leaveType = Date.now()))
 // 观察筛选条件变化，维护顺序队列
 watch(
   selectedConditions,
@@ -3909,6 +3939,7 @@ const clearAll = debounce(() => {
     productTypeVals,
     orderStatusVals,
     orderArrearStatusVals,
+    leaveTypeVals,
     orderSourceVals,
   ].forEach(ref => (ref.value = []))
 
@@ -3971,6 +4002,7 @@ const clearAll = debounce(() => {
     emit('update:enrollTypeFilter', [], true)
     emit('update:productTypeFilter', [], true)
     emit('update:approvalStatusFilter', [], true)
+    emit('update:leaveTypeFilter', [], true)
     emit('update:orderStatusFilter', [], true)
     emit('update:orderArrearStatusFilter', [], true)
     emit('update:orderSourceFilter', [], true)
@@ -4676,6 +4708,10 @@ function removeCondition(type, id) {
       approvalStatusVals.value = []
       emit('update:approvalStatusFilter', undefined, false, id, type)
       break
+    case 'leaveType':
+      leaveTypeVals.value = []
+      emit('update:leaveTypeFilter', undefined, false, id, type)
+      break
     case 'orderStatus':
       orderStatusVals.value = []
       emit('update:orderStatusFilter', undefined, false, id, type)
@@ -5046,6 +5082,9 @@ function clearQuickFilter(id, type) {
     case 'approvalStatus':
       approvalStatusVals.value = []
       break
+    case 'leaveType':
+      leaveTypeVals.value = []
+      break
     case 'orderStatus':
       orderStatusVals.value = []
       break
@@ -5384,6 +5423,10 @@ watchEffect(() => {
 
   if (props.defaultOrderStatusVals?.length) {
     orderStatusVals.value = props.defaultOrderStatusVals
+  }
+
+  if (props.defaultApprovalStatusVals?.length) {
+    approvalStatusVals.value = [...props.defaultApprovalStatusVals]
   }
 
   if (props.defaultOrderTagIds?.length) {
@@ -6044,6 +6087,12 @@ function handleApprovalStatusChange() {
   })
 }
 
+function handleLeaveTypeChange() {
+  nextTick(() => {
+    debouncedEmit('leaveTypeFilter', leaveTypeVals.value)
+  })
+}
+
 function handleOrderSourceChange() {
   nextTick(() => {
     debouncedEmit('orderSourceFilter', orderSourceVals.value)
@@ -6595,7 +6644,10 @@ defineExpose({
                 :options="productTypeOptions" label="商品类型" type="checkbox" @change="handleProductTypeChange" />
 
               <checkbox-filter v-if="filterType === 'approvalStatus'" v-model:checked-values="approvalStatusVals"
-                :options="approvalStatusOptions" label="审批状态" type="checkbox" @change="handleApprovalStatusChange" />
+                :options="resolvedApprovalStatusOptions" label="审批状态" type="checkbox" @change="handleApprovalStatusChange" />
+
+              <checkbox-filter v-if="filterType === 'leaveType'" v-model:checked-values="leaveTypeVals"
+                :options="leaveTypeOptions" label="请假类型" type="checkbox" @change="handleLeaveTypeChange" />
 
               <checkbox-filter v-if="filterType === 'orderStatus'" v-model:checked-values="orderStatusVals"
                 :options="orderStatusOptions" label="订单状态" type="checkbox" @change="handleOrderStatusChange" />

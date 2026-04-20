@@ -1,203 +1,384 @@
 <script setup>
+import { computed, onMounted, ref } from 'vue'
+import { debounce } from 'lodash-es'
+import dayjs from 'dayjs'
 import leaveDetailsDrawer from './components/leaveDetailsDrawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
+import { getLeavePagedListApi } from '@/api/home-center/leave'
+import messageService from '@/utils/messageService'
 
-const displayArray = ref([
-  'intention',
-  'followStatus',
-  'sex',
-  'createUser',
-  'createTime',
-])
-const dataSource = ref([{ key: 1 }, { key: 2 }])
+const displayArray = ref(['approvalStatus', 'leaveType', 'applyTime'])
+const defaultApprovalStatusVals = ref([1])
+const approvalStatusOptions = [
+  { id: 1, value: '待处理' },
+  { id: 2, value: '已通过' },
+  { id: 3, value: '已拒绝' },
+  { id: 4, value: '已撤销' },
+]
+
+const defaultStudentAvatar = 'https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png?x-oss-process=image/resize,w_120'
+
+const loading = ref(false)
+const dataSource = ref([])
+const allFilterRef = ref(null)
+const openAddLeaveModal = ref(false)
+const openLeaveDetailsDrawer = ref(false)
+const currentLeaveId = ref('')
+
+const pagination = ref({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+  showSizeChanger: true,
+  showTotal: total => `共 ${total} 条`,
+  pageSizeOptions: ['10', '20', '50', '100'],
+})
+
+const queryState = ref({
+  studentId: undefined,
+  applyStartTime: undefined,
+  applyEndTime: undefined,
+  leaveTypes: undefined,
+  statuses: [...defaultApprovalStatusVals.value],
+})
+
+const statusStyleMap = {
+  1: {
+    color: '#1677ff',
+    background: '#e6f4ff',
+  },
+  2: {
+    color: '#389e0d',
+    background: '#f6ffed',
+  },
+  3: {
+    color: '#cf1322',
+    background: '#fff1f0',
+  },
+  4: {
+    color: '#8c8c8c',
+    background: '#f5f5f5',
+  },
+}
+
 const allColumns = ref([
   {
     title: '学员/电话',
-    dataIndex: 'name',
-    key: 'name',
-    width: 140,
+    dataIndex: 'studentName',
+    key: 'studentName',
+    width: 156,
+    fixed: 'left',
   },
   {
     title: '开始时间',
     dataIndex: 'startTime',
     key: 'startTime',
-    width: 160,
+    width: 170,
   },
   {
     title: '结束时间',
-    key: 'endTime',
     dataIndex: 'endTime',
-    width: 160,
+    key: 'endTime',
+    width: 170,
+  },
+  {
+    title: '请假类型',
+    dataIndex: 'leaveTypeText',
+    key: 'leaveTypeText',
+    width: 120,
   },
   {
     title: '发起人',
-    key: 'createUser',
-    dataIndex: 'createUser',
-    width: 160,
+    dataIndex: 'initiateStaffName',
+    key: 'initiateStaffName',
+    width: 140,
   },
   {
     title: '处理状态',
-    key: 'followStatus',
-    dataIndex: 'followStatus',
-    width: 130,
+    dataIndex: 'status',
+    key: 'status',
+    width: 120,
   },
   {
     title: '审批人',
-    key: 'approvePeo',
-    dataIndex: 'approvePeo',
-    width: 130,
+    dataIndex: 'currentApproverName',
+    key: 'currentApproverName',
+    width: 160,
   },
   {
     title: '申请时间',
-    dataIndex: 'createTime',
-    key: 'createTime',
-    width: 150,
+    dataIndex: 'applyTime',
+    key: 'applyTime',
+    width: 170,
   },
   {
     title: '操作',
     dataIndex: 'action',
     key: 'action',
     fixed: 'right',
-    width: 120,
+    width: 110,
   },
 ])
-const { selectedValues, columnOptions, filteredColumns, totalWidth }
-  = useTableColumns({
-    storageKey: 'leave-list-record', // 本地存储键名
-    allColumns, // 原始列配置
-    excludeKeys: ['action'], // 需要排除的列键
-  })
 
-const openDrawer = ref(false)
-const openLeaveDetailsDrawer = ref(false)
+const { filteredColumns, totalWidth } = useTableColumns({
+  storageKey: 'leave-list-record',
+  allColumns,
+  excludeKeys: ['action'],
+})
 
-function handleLeaveDetails(item) {
-  openLeaveDetailsDrawer.value = true
+function formatDateTime(value) {
+  if (!value || String(value).startsWith('0001-01-01'))
+    return '-'
+  const formatted = dayjs(value)
+  return formatted.isValid() ? formatted.format('YYYY-MM-DD HH:mm') : String(value).replace('T', ' ').slice(0, 16)
 }
 
-function handleSeeStuData() {
-  openDrawer.value = true
+function getStatusStyle(status) {
+  return statusStyleMap[status] || statusStyleMap[4]
 }
-const openOrderDetailDrawer = ref(false)
-function handleOrderDetail() {
-  openOrderDetailDrawer.value = true
+
+function formatInitiateStaffName(name, isAgent) {
+  const normalized = String(name || '').trim()
+  if (!normalized)
+    return '-'
+  if (!isAgent)
+    return normalized
+  if (normalized.includes('（代办）') || normalized.includes('(代办)'))
+    return normalized
+  return `${normalized}（代办）`
 }
-// 请假代办
-const openAddLeaveModal = ref(false)
+
+function formatApproverName(name, status) {
+  const normalized = String(name || '').trim()
+  if (normalized)
+    return normalized
+  if (Number(status) === 2)
+    return '系统自动执行'
+  return '-'
+}
+
+function getLeaveTypeClass(leaveType) {
+  switch (Number(leaveType)) {
+    case 1:
+      return 'personal'
+    case 2:
+      return 'sick'
+    case 3:
+      return 'suspend'
+    default:
+      return 'default'
+  }
+}
+
+async function fetchLeaveList(id, type) {
+  try {
+    loading.value = true
+    const res = await getLeavePagedListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: pagination.value.pageSize,
+        pageIndex: pagination.value.current,
+        skipCount: (pagination.value.current - 1) * pagination.value.pageSize,
+      },
+      queryModel: {
+        ...queryState.value,
+      },
+      sortModel: {
+        byApplyTime: -1,
+      },
+    })
+
+    if (res.code === 200) {
+      dataSource.value = (res.result?.list || []).map(item => ({
+        ...item,
+        key: item.id,
+      }))
+      pagination.value.total = res.result?.total || 0
+      if (type) {
+        allFilterRef.value?.clearQuickFilter(id, type)
+      }
+    }
+  }
+  catch (error) {
+    console.error('获取请假列表失败:', error)
+    messageService.error('获取请假列表失败')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+const handleFilterUpdate = debounce((updates, isClearAll = false, id, type) => {
+  if (isClearAll) {
+    queryState.value = {
+      studentId: undefined,
+      applyStartTime: undefined,
+      applyEndTime: undefined,
+      leaveTypes: undefined,
+      statuses: undefined,
+    }
+  }
+  else {
+    Object.assign(queryState.value, updates)
+  }
+
+  pagination.value.current = 1
+  fetchLeaveList(id, type)
+}, 300, { leading: true, trailing: false })
+
+const filterUpdateHandlers = computed(() => ({
+  'update:approvalStatusFilter': (val, isClearAll, id, type) => handleFilterUpdate({
+    statuses: Array.isArray(val) && val.length ? val : undefined,
+  }, isClearAll, id, type),
+  'update:leaveTypeFilter': (val, isClearAll, id, type) => handleFilterUpdate({
+    leaveTypes: Array.isArray(val) && val.length ? val : undefined,
+  }, isClearAll, id, type),
+  'update:applyTimeFilter': (val, isClearAll, id, type) => {
+    if (Array.isArray(val) && val.length === 2) {
+      handleFilterUpdate({
+        applyStartTime: val[0],
+        applyEndTime: val[1],
+      }, isClearAll, id, type)
+      return
+    }
+    handleFilterUpdate({
+      applyStartTime: undefined,
+      applyEndTime: undefined,
+    }, isClearAll, id, type)
+  },
+  'update:stuPhoneSearchFilter': (val, isClearAll, id, type) => handleFilterUpdate({
+    studentId: val || undefined,
+  }, isClearAll, id, type),
+}))
+
+function handleTableChange(pag) {
+  pagination.value.current = pag.current
+  pagination.value.pageSize = pag.pageSize
+  fetchLeaveList()
+}
+
 function handleAddLeave() {
   openAddLeaveModal.value = true
 }
+
+function handleLeaveCreated() {
+  openAddLeaveModal.value = false
+  pagination.value.current = 1
+  fetchLeaveList()
+}
+
+function handleLeaveDetails(record) {
+  currentLeaveId.value = String(record.id || '')
+  openLeaveDetailsDrawer.value = true
+}
+
+function handleLeaveDetailsClosed() {
+  fetchLeaveList()
+}
+
+onMounted(() => {
+  fetchLeaveList()
+})
 </script>
 
 <template>
   <div>
-    <!-- 学员筛选条件 -->
     <div class="filter-wrap bg-white pl-3 pr-3 rounded-lb-4 rounded-rb-4">
       <all-filter
-        :display-array="displayArray" :is-quick-show="false"
+        ref="allFilterRef"
+        :display-array="displayArray"
+        :is-quick-show="false"
         :is-show-search-stu-phonefilter="true"
+        :default-approval-status-vals="defaultApprovalStatusVals"
+        :approval-status-options-override="approvalStatusOptions"
+        apply-time-label="申请时间"
+        v-on="filterUpdateHandlers"
       />
     </div>
+
     <div class="student-list mt-3 pt-3 pb-3 pl-6 pr-6 bg-white rounded-4">
       <div class="tab-table">
         <div class="table-title flex justify-between">
           <div class="total">
-            共 {{ dataSource.length }} 条数据
+            当前共计 {{ pagination.total }} 条请假申请
           </div>
           <div class="edit flex">
-            <!-- 自定义字段 -->
-            <!-- <customize-code
-                v-model:checkedValues="selectedValues"
-                :options="columnOptions"
-                :total="allColumns.length - 1"
-                :num="selectedValues.length - 1"
-              /> -->
-            <!-- 请假代办 按钮 -->
             <a-button type="primary" @click="handleAddLeave">
               请假代办
             </a-button>
           </div>
         </div>
+
         <div class="table-content mt-2">
-          <!-- <div class="tip mb2 text-#06f"> <ExclamationCircleFilled />  </div> -->
           <a-table
-            :data-source="dataSource" :pagination="dataSource.length > 10" :columns="filteredColumns"
-            :scroll="{ x: totalWidth }" size="small"
+            row-key="id"
+            :data-source="dataSource"
+            :pagination="pagination"
+            :columns="filteredColumns"
+            :loading="loading"
+            :scroll="{ x: totalWidth }"
+            size="small"
+            @change="handleTableChange"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'name'">
-                <a-tooltip>
-                  <template #title>
-                    查看学员档案
-                  </template>
-                  <div class="flex cursor-pointer hover flex-items-center h-4 w-30 my-3" @click="handleSeeStuData()">
-                    <img
-                      width="36" height="36" class="mr-2" style="border-radius: 100%;"
-                      src="https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png?x-oss-process=image/resize,w_120"
-                      alt=""
-                    >
-                    <div class="name mt-1">
-                      <div class="text-#222 name">
-                        龙龙
-                      </div>
-                      <div class="text-3 text-#888 flex flex-items-center name">
-                        男 <span
-                          class="inline-block w-0.2 h-2.5 bg-#ccc ml-1.5 mr-1.5 name"
-                        /> 1个月
-                      </div>
-                    </div>
-                  </div>
-                </a-tooltip>
+              <template v-if="column.key === 'studentName'">
+                <student-avatar
+                  :id="record.studentId"
+                  :name="record.studentName || '-'"
+                  :avatar-url="record.studentAvatarUrl || defaultStudentAvatar"
+                  :phone="record.studentPhone"
+                  :auto-width="false"
+                  :show-gender="false"
+                  :show-age="false"
+                  default-active-key="0"
+                />
               </template>
-              <template v-if="column.key === 'startTime'">
-                <div class="text-#222">
-                  2024-07-10 20:32
-                </div>
+
+              <template v-else-if="column.key === 'startTime'">
+                {{ formatDateTime(record.startTime) }}
               </template>
-              <template v-if="column.key === 'endTime'">
-                <div class="text-#222">
-                  2024-07-10 20:32
-                </div>
+
+              <template v-else-if="column.key === 'endTime'">
+                {{ formatDateTime(record.endTime) }}
               </template>
-              <template v-if="column.key === 'createUser'">
-                <div class="text-#222">
-                  龙龙（代办）
-                </div>
+
+              <template v-else-if="column.key === 'leaveTypeText'">
+                <span class="leave-type-pill" :class="getLeaveTypeClass(record.leaveType)">
+                  {{ record.leaveTypeText || '-' }}
+                </span>
               </template>
-              <template v-if="column.key === 'followStatus'">
-                <div class="text-#222">
-                  <span class="bg-#e6ffec text-#0c3 text-3 px2 py1 rounded-10 font500">已通过</span>
-                </div>
+
+              <template v-else-if="column.key === 'initiateStaffName'">
+                {{ formatInitiateStaffName(record.operatorName || record.initiateStaffName, record.isAgent) }}
               </template>
-              <template v-if="column.key === 'approvePeo'">
-                <div class="text-#222">
-                  龙龙{{ record.a }}
-                </div>
+
+              <template v-else-if="column.key === 'status'">
+                <span class="status-chip" :style="getStatusStyle(record.status)">
+                  {{ record.statusText || '-' }}
+                </span>
               </template>
-              <template v-if="column.key === 'createTime'">
-                <div class="text-#222">
-                  2024-07-10 20:32
-                </div>
+
+              <template v-else-if="column.key === 'currentApproverName'">
+                {{ formatApproverName(record.approverName || record.currentApproverName, record.status) }}
               </template>
-              <template v-if="column.key === 'classRoom'">
-                <div class="text-#222">
-                  -
-                </div>
+
+              <template v-else-if="column.key === 'applyTime'">
+                {{ formatDateTime(record.applyTime) }}
               </template>
-              <template v-if="column.key === 'action'">
-                <a-space :size="14">
-                  <a class="font500" @click="handleLeaveDetails(record)">请假详情{{ record.a }}</a>
-                </a-space>
+
+              <template v-else-if="column.key === 'action'">
+                <a class="font500" @click="handleLeaveDetails(record)">
+                  请假详情
+                </a>
               </template>
             </template>
           </a-table>
         </div>
       </div>
     </div>
-    <leaveDetailsDrawer v-model="openLeaveDetailsDrawer" />
-    <student-info-drawer v-model:open="openDrawer" />
-    <order-detail-drawer v-model:open="openOrderDetailDrawer" />
-    <add-leave-modal v-model:open="openAddLeaveModal" />
+
+    <leaveDetailsDrawer v-model="openLeaveDetailsDrawer" :leave-id="currentLeaveId" @closed="handleLeaveDetailsClosed" />
+    <add-leave-modal v-model:open="openAddLeaveModal" @success="handleLeaveCreated" />
   </div>
 </template>
 
@@ -221,32 +402,47 @@ function handleAddLeave() {
   }
 }
 
-.tip {
-  padding: 10px 24px 10px 14px;
-  background: #e6f0ff;
+.leave-type-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
-.upNew {
-  position: relative;
-
-  &::before {
-    position: absolute;
-    top: -12px;
-    left: -22px;
-    z-index: 999;
-    width: 39px;
-    height: 22px;
-    background: url(data:image/png;base64,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);
-    background-size: contain;
-    content: "";
-  }
+.leave-type-pill.personal {
+  color: #1677ff;
+  background: #e6f4ff;
 }
 
-.hover {
-  &:hover {
-    .name {
-      color: #06f;
-    }
-  }
+.leave-type-pill.sick {
+  color: #d46b08;
+  background: #fff7e6;
+}
+
+.leave-type-pill.suspend {
+  color: #531dab;
+  background: #f9f0ff;
+}
+
+.leave-type-pill.default {
+  color: #595959;
+  background: #f5f5f5;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
 }
 </style>
