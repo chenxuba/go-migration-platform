@@ -9,17 +9,35 @@
 				</view>
 
 				<view class="parent-card schedule-calendar-card">
-					<view class="schedule-week-row">
-						<view
-							v-for="day in weekDays"
-							:key="day.date"
-							class="schedule-week-item"
-							:class="{ 'schedule-week-item--active': selectedDate === day.date }"
-							@click="selectedDate = day.date"
-						>
-							<text class="schedule-week-item__label">{{ day.weekLabel }}</text>
-							<text class="schedule-week-item__day">{{ day.day }}</text>
-							<view v-if="selectedDate === day.date" class="schedule-week-item__dot"></view>
+					<view
+						id="schedule-week-viewport"
+						class="schedule-week-viewport"
+						@touchstart="handleWeekTouchStart"
+						@touchmove.stop="handleWeekTouchMove"
+						@touchend="handleWeekTouchEnd"
+						@touchcancel="handleWeekTouchCancel"
+					>
+						<view class="schedule-week-track" :style="weekTrackStyle">
+							<view
+								v-for="slide in weekSlides"
+								:key="slide.key"
+								class="schedule-week-panel"
+								:style="weekPanelStyle"
+							>
+								<view class="schedule-week-row">
+									<view
+										v-for="day in slide.days"
+										:key="day.date"
+										class="schedule-week-item"
+										:class="{ 'schedule-week-item--active': day.isActive }"
+										@tap="handleDaySelect(day.date)"
+									>
+										<text class="schedule-week-item__label">{{ day.weekLabel }}</text>
+										<text class="schedule-week-item__day">{{ day.day }}</text>
+										<view v-if="day.isActive" class="schedule-week-item__dot"></view>
+									</view>
+								</view>
+							</view>
 						</view>
 					</view>
 					<view class="schedule-date-text">{{ selectedDateText }}</view>
@@ -27,7 +45,7 @@
 			</view>
 
 			<view class="parent-card schedule-list-card">
-				<text class="schedule-list-card__title">今日课程</text>
+				<text class="schedule-list-card__title">课程安排</text>
 
 				<template v-if="!isAuthenticated">
 					<view class="parent-empty-card schedule-empty-card">
@@ -78,20 +96,48 @@
 				</template>
 			</view>
 		</view>
+
+		<bind-success-dialog
+			:show="bindSuccessVisible"
+			:student-name="latestBindStudentName"
+			@close="closeBindSuccess"
+			@invite="inviteFamily"
+		/>
 	</view>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { onReady, onUnload } from '@dcloudio/uni-app'
+import BindSuccessDialog from '@/components/bind-success-dialog/bind-success-dialog.vue'
 import { getNavLayout } from '@/common/nav-layout'
 import { BASE_DATE, DEFAULT_PHONE } from '@/common/mock-parent'
-import { authorizeByPhone, getCurrentCampus, parentState, setPostAuthPage } from '@/common/parent-state'
+import {
+	authorizeByPhone,
+	dismissBindSuccess,
+	getCurrentCampus,
+	parentState,
+	setPostAuthPage
+} from '@/common/parent-state'
 
 const nav = getNavLayout()
+const systemInfo = uni.getSystemInfoSync()
 const selectedDate = ref(BASE_DATE)
+const currentWeekStart = ref(getWeekStartText(BASE_DATE))
+const weekViewportWidth = ref(Math.max((systemInfo.windowWidth || 375) - 32, 280))
+const dragOffsetX = ref(0)
+const isDraggingWeek = ref(false)
+const isWeekAnimating = ref(false)
 const isAuthenticated = computed(() => parentState.isAuthenticated)
 const campusName = computed(() => getCurrentCampus().name)
+const bindSuccessVisible = computed(() => parentState.bindSuccessVisible)
+const latestBindStudentName = computed(() => parentState.latestBindStudentName)
 const weekNames = ['一', '二', '三', '四', '五', '六', '日']
+const WEEK_ANIMATION_DURATION = 240
+const WEEK_TAP_SLOP = 8
+let weekTouchStartX = 0
+let weekAnimationTimer = null
+let weekMeasureTimer = null
 
 function parseDate(dateText) {
 	const [year, month, day] = dateText.split('-').map(Number)
@@ -111,19 +157,50 @@ function addDays(date, offset) {
 	return nextDate
 }
 
-const weekDays = computed(() => {
-	const currentDate = parseDate(selectedDate.value)
+function getWeekMonday(dateText) {
+	const currentDate = parseDate(dateText)
 	const dayIndex = currentDate.getDay() || 7
-	const monday = addDays(currentDate, 1 - dayIndex)
+	return addDays(currentDate, 1 - dayIndex)
+}
+
+function getWeekStartText(dateText) {
+	return formatDate(getWeekMonday(dateText))
+}
+
+function createWeekDays(weekMondayDate) {
 	return Array.from({ length: 7 }).map((_, index) => {
-		const date = addDays(monday, index)
+		const date = addDays(weekMondayDate, index)
+		const dateText = formatDate(date)
 		return {
-			date: formatDate(date),
+			date: dateText,
 			weekLabel: weekNames[index],
-			day: `${date.getDate()}`.padStart(2, '0')
+			day: `${date.getDate()}`.padStart(2, '0'),
+			isActive: dateText === selectedDate.value
+		}
+	})
+}
+
+const weekSlides = computed(() => {
+	return [-1, 0, 1].map(offset => {
+		const weekMonday = addDays(parseDate(currentWeekStart.value), offset * 7)
+		return {
+			key: formatDate(weekMonday),
+			days: createWeekDays(weekMonday)
 		}
 	})
 })
+
+const weekPanelStyle = computed(() => ({
+	width: `${weekViewportWidth.value}px`
+}))
+
+const weekTrackStyle = computed(() => ({
+	width: `${weekViewportWidth.value * weekSlides.value.length}px`,
+	transform: `translate3d(${dragOffsetX.value - weekViewportWidth.value}px, 0, 0)`,
+	transition: isDraggingWeek.value || !isWeekAnimating.value
+		? 'none'
+		: `transform ${WEEK_ANIMATION_DURATION}ms cubic-bezier(0.22, 1, 0.36, 1)`
+}))
 
 const selectedDateText = computed(() => {
 	const currentDate = parseDate(selectedDate.value)
@@ -161,6 +238,141 @@ function handleWechatPhoneAuth(event) {
 	// 真实接入时，这里应把 detail.code 传给后端换取手机号并建立登录态。
 	completeMockAuth()
 }
+
+function measureWeekViewport() {
+	nextTick(() => {
+		uni.createSelectorQuery()
+			.select('#schedule-week-viewport')
+			.boundingClientRect(rect => {
+				if (rect?.width) {
+					weekViewportWidth.value = rect.width
+				}
+			})
+			.exec()
+	})
+}
+
+function clearWeekAnimationTimer() {
+	if (weekAnimationTimer) {
+		clearTimeout(weekAnimationTimer)
+		weekAnimationTimer = null
+	}
+}
+
+function runWeekAnimation(targetOffsetX, weekOffset = 0, nextSelectedDate = '') {
+	clearWeekAnimationTimer()
+	isWeekAnimating.value = true
+	if (nextSelectedDate) {
+		selectedDate.value = nextSelectedDate
+	}
+	dragOffsetX.value = targetOffsetX
+	weekAnimationTimer = setTimeout(() => {
+		if (weekOffset) {
+			const nextWeekStartDate = addDays(parseDate(currentWeekStart.value), weekOffset * 7)
+			const nextWeekStart = formatDate(nextWeekStartDate)
+			currentWeekStart.value = nextWeekStart
+			selectedDate.value = nextSelectedDate || nextWeekStart
+		}
+		isWeekAnimating.value = false
+		dragOffsetX.value = 0
+		weekAnimationTimer = null
+	}, WEEK_ANIMATION_DURATION)
+}
+
+function handleDaySelect(dateText) {
+	if (isWeekAnimating.value || Math.abs(dragOffsetX.value) > WEEK_TAP_SLOP) {
+		return
+	}
+	selectedDate.value = dateText
+	const nextWeekStart = getWeekStartText(dateText)
+	if (nextWeekStart !== currentWeekStart.value) {
+		currentWeekStart.value = nextWeekStart
+		dragOffsetX.value = 0
+	}
+}
+
+function handleWeekTouchStart(event) {
+	if (isWeekAnimating.value) {
+		return
+	}
+	const touch = event.touches?.[0]
+	if (!touch) {
+		return
+	}
+	clearWeekAnimationTimer()
+	isDraggingWeek.value = true
+	dragOffsetX.value = 0
+	weekTouchStartX = touch.pageX
+}
+
+function handleWeekTouchMove(event) {
+	if (!isDraggingWeek.value || isWeekAnimating.value) {
+		return
+	}
+	const touch = event.touches?.[0]
+	if (!touch) {
+		return
+	}
+	const nextOffset = touch.pageX - weekTouchStartX
+	dragOffsetX.value = Math.max(-weekViewportWidth.value, Math.min(weekViewportWidth.value, nextOffset))
+}
+
+function handleWeekTouchEnd() {
+	if (!isDraggingWeek.value) {
+		return
+	}
+	isDraggingWeek.value = false
+	const absoluteOffset = Math.abs(dragOffsetX.value)
+	if (absoluteOffset <= WEEK_TAP_SLOP) {
+		dragOffsetX.value = 0
+		return
+	}
+	const threshold = Math.min(Math.max(weekViewportWidth.value * 0.18, 44), 96)
+	if (dragOffsetX.value <= -threshold) {
+		const nextSelectedDate = formatDate(addDays(parseDate(currentWeekStart.value), 7))
+		runWeekAnimation(-weekViewportWidth.value, 1, nextSelectedDate)
+		return
+	}
+	if (dragOffsetX.value >= threshold) {
+		const nextSelectedDate = formatDate(addDays(parseDate(currentWeekStart.value), -7))
+		runWeekAnimation(weekViewportWidth.value, -1, nextSelectedDate)
+		return
+	}
+	runWeekAnimation(0)
+}
+
+function handleWeekTouchCancel() {
+	if (!isDraggingWeek.value) {
+		return
+	}
+	isDraggingWeek.value = false
+	runWeekAnimation(0)
+}
+
+function closeBindSuccess() {
+	dismissBindSuccess()
+}
+
+function inviteFamily() {
+	dismissBindSuccess()
+	uni.showToast({
+		title: '邀请链接稍后接入',
+		icon: 'none'
+	})
+}
+
+onReady(() => {
+	measureWeekViewport()
+	weekMeasureTimer = setTimeout(measureWeekViewport, 80)
+})
+
+onUnload(() => {
+	clearWeekAnimationTimer()
+	if (weekMeasureTimer) {
+		clearTimeout(weekMeasureTimer)
+		weekMeasureTimer = null
+	}
+})
 </script>
 
 <style scoped>
@@ -175,6 +387,22 @@ function handleWechatPhoneAuth(event) {
 .schedule-calendar-card {
 	margin-top: 18rpx;
 	padding: 18rpx 14rpx 16rpx;
+}
+
+.schedule-week-viewport {
+	height: 132rpx;
+	overflow: hidden;
+}
+
+.schedule-week-track {
+	display: flex;
+	height: 100%;
+	will-change: transform;
+}
+
+.schedule-week-panel {
+	flex-shrink: 0;
+	padding: 0 2rpx;
 }
 
 .schedule-week-row {
@@ -218,7 +446,7 @@ function handleWechatPhoneAuth(event) {
 }
 
 .schedule-date-text {
-	margin-top: 14rpx;
+	margin-top: -6px;
 	text-align: center;
 	font-size: 22rpx;
 	font-weight: 600;

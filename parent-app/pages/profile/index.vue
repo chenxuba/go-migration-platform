@@ -1,80 +1,98 @@
 <template>
 	<view class="parent-page">
-		<view class="parent-shell">
-			<view class="parent-header" :style="{ paddingTop: `${nav.top}px` }">
-				<view class="profile-top-row" :style="{ minHeight: `${nav.height}px` }">
-					<view class="profile-hero">
-						<view class="profile-hero__avatar">{{ avatarText }}</view>
-						<view class="profile-hero__content">
-							<text class="profile-hero__title">{{ profileName }}</text>
-							<text v-if="isAuthenticated" class="profile-hero__phone">{{ maskedPhone }}</text>
+		<view class="parent-shell parent-shell--profile">
+			<view class="parent-header profile-header" :style="{ paddingTop: `${nav.top}px` }">
+				<view class="parent-nav-row profile-nav" :style="{ minHeight: `${nav.height}px` }">
+					<view class="parent-nav-spacer" :style="{ width: `${nav.width}px`, height: `${nav.height}px` }"></view>
+					<text class="profile-nav__title">我的</text>
+					<view class="parent-nav-spacer" :style="{ width: `${nav.width}px`, height: `${nav.height}px` }"></view>
+				</view>
+
+				<view class="parent-card profile-hero-card">
+					<view class="profile-hero-card__identity">
+						<view class="profile-hero-card__avatar">{{ avatarText }}</view>
+						<view class="profile-hero-card__copy">
+							<text class="profile-hero-card__title">{{ heroTitle }}</text>
+							<text v-if="heroSubtitle" class="profile-hero-card__subtitle">{{ heroSubtitle }}</text>
 						</view>
 					</view>
-					<view class="profile-hero__spacer" :style="{ width: `${nav.width}px`, height: `${nav.height}px` }"></view>
 				</view>
 			</view>
 
-			<view class="profile-section">
-				<text class="profile-section__title">我的学员</text>
+			<view v-if="isAuthenticated" class="profile-block">
+				<text class="profile-block__title">{{ studentBlockTitle }}</text>
+
 				<template v-if="students.length">
 					<view
 						v-for="student in students"
 						:key="student.id"
 						class="parent-card profile-student-card"
-						:class="{ 'profile-student-card--active': currentStudentId === student.id }"
-						@click="handleStudentSwitch(student.id)"
 					>
-						<view class="profile-student-card__avatar" :style="{ background: student.avatarColor }">
-							{{ student.name.slice(0, 1) }}
-						</view>
-						<view class="profile-student-card__content">
-							<view class="profile-student-card__header">
-								<text class="profile-student-card__name">{{ student.name }}</text>
-								<text class="profile-student-card__balance">余额：￥{{ student.balance }}</text>
+						<view class="profile-student-card__main">
+							<view class="profile-student-card__avatar" :style="{ background: student.avatarColor }">
+								{{ student.name.slice(0, 1) }}
 							</view>
-							<text class="profile-student-card__campus">{{ student.campusName }}</text>
-							<view class="profile-student-card__relation">
-								<text class="profile-student-card__relation-badge">{{ student.relation }}</text>
-								<text class="profile-student-card__tag">{{ student.classLabel }}</text>
+							<view class="profile-student-card__copy">
+								<view class="profile-student-card__headline">
+									<text class="profile-student-card__name">{{ student.name }}</text>
+								</view>
+								<text class="profile-student-card__campus">{{ simplifyCampusName(student.campusName) }}</text>
+								<view class="profile-student-card__meta">
+									<text class="profile-student-card__tag profile-student-card__tag--warm">{{ student.relation }}</text>
+									<text class="profile-student-card__tag profile-student-card__tag--blue">{{ student.classLabel }}</text>
+								</view>
 							</view>
 						</view>
 					</view>
 				</template>
+
+				<template v-else-if="pendingCount">
+					<view class="parent-card profile-state-card">
+						<text class="profile-state-card__title">发现 {{ pendingCount }} 位待关注学员</text>
+						<view class="profile-state-card__button" @click="openPendingStudents">去选择学员</view>
+					</view>
+				</template>
+
 				<template v-else>
-					<view class="parent-card parent-empty-card profile-empty-card">
-						<view class="parent-empty-badge">家</view>
-						<text class="parent-empty-title">暂无相关家庭，快去添加学员吧</text>
-						<text class="parent-empty-desc">手机号授权后会自动反查孩子并进入关注流程。</text>
-						<!-- #ifdef MP-WEIXIN -->
-						<button class="parent-primary-button profile-auth-button" open-type="getPhoneNumber" @getphonenumber="handleWechatPhoneAuth">
-							授权登录
-						</button>
-						<!-- #endif -->
-						<!-- #ifndef MP-WEIXIN -->
-						<view class="parent-primary-button profile-auth-button" @click="handleMockPhoneAuth">授权登录</view>
-						<!-- #endif -->
+					<view class="parent-card profile-state-card profile-state-card--empty">
+						<text class="profile-state-card__title">暂无已关注学员</text>
 					</view>
 				</template>
 			</view>
 
-			<view class="parent-card profile-menu-card">
-				<view
-					v-for="item in displayMenus"
-					:key="item.key"
-					class="profile-menu-item"
-					@click="handleMenuClick(item)"
-				>
-					<view class="profile-menu-item__left">
-						<view class="profile-menu-item__badge" :style="{ background: item.accent }">
-							{{ item.shortLabel }}
+			<view class="profile-block profile-block--menu">
+				<text class="profile-block__title">常用功能</text>
+
+				<view class="parent-card profile-menu-card">
+					<view
+						v-for="item in displayMenus"
+						:key="item.key"
+						class="profile-menu-item"
+						@click="handleMenuClick(item)"
+					>
+						<view class="profile-menu-item__left">
+							<view class="profile-menu-item__badge" :style="{ background: item.accent }">
+								{{ item.shortLabel }}
+							</view>
+							<text class="profile-menu-item__title">{{ item.title }}</text>
 						</view>
-						<text class="profile-menu-item__title">
-							{{ item.title }}
-							<text v-if="item.key === 'pending' && pendingCount" class="profile-menu-item__count">（{{ pendingCount }}）</text>
-						</text>
+						<view class="profile-menu-item__right">
+							<text v-if="item.countText" class="profile-menu-item__count">{{ item.countText }}</text>
+							<text class="profile-menu-item__arrow">›</text>
+						</view>
 					</view>
-					<text class="profile-menu-item__arrow">›</text>
 				</view>
+			</view>
+
+			<view v-if="!isAuthenticated" class="profile-auth-block">
+				<!-- #ifdef MP-WEIXIN -->
+				<button class="parent-primary-button profile-auth-block__button" open-type="getPhoneNumber" @getphonenumber="handleWechatPhoneAuth">
+					授权登录
+				</button>
+				<!-- #endif -->
+				<!-- #ifndef MP-WEIXIN -->
+				<view class="parent-primary-button profile-auth-block__button" @click="handleMockPhoneAuth">授权登录</view>
+				<!-- #endif -->
 			</view>
 		</view>
 
@@ -96,27 +114,45 @@ import {
 	authorizeByPhone,
 	dismissBindSuccess,
 	parentState,
-	setPostAuthPage,
-	switchCurrentStudent
+	setPostAuthPage
 } from '@/common/parent-state'
 
 const nav = getNavLayout()
+
 const isAuthenticated = computed(() => parentState.isAuthenticated)
 const students = computed(() => parentState.students)
-const currentStudentId = computed(() => parentState.currentStudentId)
 const pendingCount = computed(() => parentState.pendingCandidates.length)
 const bindSuccessVisible = computed(() => parentState.bindSuccessVisible)
 const latestBindStudentName = computed(() => parentState.latestBindStudentName)
-const displayMenus = computed(() => {
-	if (isAuthenticated.value) {
-		return parentState.profileMenus
-	}
-	return parentState.profileMenus.filter(item => item.key === 'notice')
-})
-
-const profileName = computed(() => (isAuthenticated.value ? `Hi，${parentState.profile.nickname}` : '请登录'))
 const maskedPhone = computed(() => parentState.profile.maskedPhone)
 const avatarText = computed(() => (isAuthenticated.value ? parentState.profile.avatarText : '家'))
+const heroTitle = computed(() => (isAuthenticated.value ? parentState.profile.nickname : '未登录'))
+const heroSubtitle = computed(() => (isAuthenticated.value ? maskedPhone.value : ''))
+const studentBlockTitle = computed(() => {
+	if (students.value.length) {
+		return '我的学员'
+	}
+	return '待关注学员'
+})
+const displayMenus = computed(() => {
+	const sourceList = isAuthenticated.value
+		? parentState.profileMenus
+		: parentState.profileMenus.filter(item => item.key === 'notice')
+
+	return sourceList.map(item => ({
+		...item,
+		countText: item.key === 'pending' && pendingCount.value ? `${pendingCount.value}` : ''
+	}))
+})
+
+function simplifyCampusName(name = '') {
+	const text = `${name || ''}`.trim()
+	if (!text) {
+		return '-'
+	}
+	const segments = text.split(/\s+/)
+	return segments[segments.length - 1] || text
+}
 
 function completeMockAuth() {
 	setPostAuthPage('/pages/profile/index')
@@ -143,36 +179,39 @@ function handleWechatPhoneAuth(event) {
 	completeMockAuth()
 }
 
-function handleStudentSwitch(studentId) {
-	switchCurrentStudent(studentId)
+function openPendingStudents() {
+	if (!isAuthenticated.value) {
+		// #ifdef MP-WEIXIN
+		uni.showToast({
+			title: '请先点击授权登录',
+			icon: 'none'
+		})
+		// #endif
+		// #ifndef MP-WEIXIN
+		handleMockPhoneAuth()
+		// #endif
+		return
+	}
+
+	if (!pendingCount.value) {
+		uni.showToast({
+			title: '暂无待关注学员',
+			icon: 'none'
+		})
+		return
+	}
+
+	uni.navigateTo({
+		url: '/pages/select-student/index'
+	})
 }
 
 function handleMenuClick(item) {
 	if (item.key === 'pending') {
-		if (!isAuthenticated.value) {
-			// #ifdef MP-WEIXIN
-			uni.showToast({
-				title: '请先点击授权登录',
-				icon: 'none'
-			})
-			// #endif
-			// #ifndef MP-WEIXIN
-			handleMockPhoneAuth()
-			// #endif
-			return
-		}
-		if (!pendingCount.value) {
-			uni.showToast({
-				title: '暂无待关注学员',
-				icon: 'none'
-			})
-			return
-		}
-		uni.navigateTo({
-			url: '/pages/select-student/index'
-		})
+		openPendingStudents()
 		return
 	}
+
 	uni.showToast({
 		title: `${item.title}建设中`,
 		icon: 'none'
@@ -193,161 +232,227 @@ function inviteFamily() {
 </script>
 
 <style scoped>
-.profile-top-row {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
+.parent-shell--profile {
+	padding-bottom: 80rpx;
 }
 
-.profile-hero {
+.profile-header {
+	padding-bottom: 8rpx;
+}
+
+.profile-nav__title {
+	flex: 1;
+	text-align: center;
+	font-size: 36rpx;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.profile-hero-card {
+	margin-top: 20rpx;
+	padding: 26rpx 22rpx 22rpx;
+	border-radius: 32rpx;
+	background:
+		radial-gradient(circle at top right, rgba(255, 226, 122, 0.14), transparent 26%),
+		linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 252, 245, 0.98) 100%);
+}
+
+.profile-hero-card__identity {
 	display: flex;
 	align-items: center;
 	gap: 16rpx;
 }
 
-.profile-hero__avatar {
-	width: 84rpx;
-	height: 84rpx;
-	border-radius: 50%;
-	background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 237, 228, 0.94));
-	border: 2rpx solid rgba(255, 255, 255, 0.88);
+.profile-hero-card__avatar {
+	width: 88rpx;
+	height: 88rpx;
+	border-radius: 28rpx;
+	background: linear-gradient(180deg, #fffef8 0%, #f3edde 100%);
+	box-shadow:
+		inset 0 0 0 1rpx rgba(255, 255, 255, 0.96),
+		0 10rpx 24rpx rgba(157, 126, 70, 0.08);
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	color: #c0b9ad;
-	font-size: 30rpx;
-	font-weight: 700;
-}
-
-.profile-hero__content {
-	display: flex;
-	flex-direction: column;
-}
-
-.profile-hero__title {
-	font-size: 44rpx;
-	font-weight: 700;
-	line-height: 1.15;
-}
-
-.profile-hero__phone {
-	margin-top: 10rpx;
-	font-size: 24rpx;
-	color: #555555;
-}
-
-.profile-section {
-	margin-top: 18rpx;
-}
-
-.profile-section__title {
-	display: block;
-	font-size: 38rpx;
-	font-weight: 700;
-}
-
-.profile-student-card {
-	display: flex;
-	gap: 16rpx;
-	margin-top: 16rpx;
-	padding: 18rpx;
-	border: 2rpx solid transparent;
-}
-
-.profile-student-card--active {
-	border-color: rgba(255, 214, 10, 0.74);
-}
-
-.profile-student-card__avatar {
-	width: 86rpx;
-	height: 86rpx;
-	border-radius: 50%;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	color: #ffffff;
-	font-size: 30rpx;
+	color: #b8af9d;
+	font-size: 32rpx;
 	font-weight: 700;
 	flex-shrink: 0;
 }
 
-.profile-student-card__content {
+.profile-hero-card__copy {
 	flex: 1;
+	min-width: 0;
 }
 
-.profile-student-card__header {
+.profile-hero-card__title {
+	display: block;
+	font-size: 34rpx;
+	font-weight: 700;
+	line-height: 1.25;
+	color: #1f1f1f;
+}
+
+.profile-hero-card__subtitle {
+	display: block;
+	margin-top: 10rpx;
+	font-size: 23rpx;
+	line-height: 1.5;
+	color: #726958;
+}
+
+.profile-block {
+	margin-top: 30rpx;
+}
+
+.profile-auth-block {
+	margin-top: 100rpx;
+}
+
+.profile-auth-block__button {
+	width: 100%;
+}
+
+.profile-block--menu {
+	margin-top: 34rpx;
+}
+
+.profile-block__title {
+	display: block;
+	padding: 0 4rpx;
+	font-size: 30rpx;
+	font-weight: 700;
+	line-height: 1.3;
+	color: #1f1f1f;
+}
+
+.profile-student-card {
+	margin-top: 16rpx;
+	padding: 20rpx 18rpx;
+}
+
+.profile-student-card__main {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 12rpx;
+	gap: 16rpx;
+}
+
+.profile-student-card__avatar {
+	width: 72rpx;
+	height: 72rpx;
+	border-radius: 22rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #ffffff;
+	font-size: 26rpx;
+	font-weight: 700;
+	box-shadow: 0 10rpx 22rpx rgba(71, 109, 178, 0.14);
+	flex-shrink: 0;
+}
+
+.profile-student-card__copy {
+	flex: 1;
+	min-width: 0;
+}
+
+.profile-student-card__headline {
+	display: flex;
+	align-items: center;
+	gap: 10rpx;
 }
 
 .profile-student-card__name {
-	font-size: 30rpx;
+	font-size: 29rpx;
 	font-weight: 700;
-}
-
-.profile-student-card__balance {
-	font-size: 22rpx;
-	font-weight: 600;
-	color: #565656;
+	line-height: 1.35;
+	color: #242424;
 }
 
 .profile-student-card__campus {
 	display: block;
-	margin-top: 8rpx;
+	margin-top: 10rpx;
 	font-size: 22rpx;
-	line-height: 1.45;
+	line-height: 1.5;
 	color: var(--parent-subtext);
 }
 
-.profile-student-card__relation {
+.profile-student-card__meta {
 	display: flex;
 	align-items: center;
 	gap: 10rpx;
-	margin-top: 12rpx;
+	margin-top: 14rpx;
+	flex-wrap: wrap;
 }
 
-.profile-student-card__relation-badge,
 .profile-student-card__tag {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	padding: 6rpx 12rpx;
+	height: 38rpx;
+	padding: 0 14rpx;
 	border-radius: 999rpx;
 	font-size: 18rpx;
+	font-weight: 600;
 }
 
-.profile-student-card__relation-badge {
-	background: rgba(255, 214, 10, 0.22);
+.profile-student-card__tag--warm {
+	background: rgba(255, 222, 75, 0.16);
 	color: #7d6200;
 }
 
-.profile-student-card__tag {
+.profile-student-card__tag--blue {
 	background: rgba(47, 134, 255, 0.12);
-	color: #2f86ff;
+	color: var(--parent-blue);
 }
 
-.profile-empty-card {
+.profile-state-card {
 	margin-top: 16rpx;
+	padding: 24rpx 20rpx;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 18rpx;
 }
 
-.profile-auth-button {
-	width: 100%;
-	margin-top: 20rpx;
+.profile-state-card--empty {
+	justify-content: center;
+}
+
+.profile-state-card__title {
+	font-size: 27rpx;
+	font-weight: 700;
+	line-height: 1.4;
+	color: #242424;
+}
+
+.profile-state-card__button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 68rpx;
+	padding: 0 22rpx;
+	border-radius: 999rpx;
+	background: linear-gradient(135deg, #ffe60d 0%, #ffd10b 100%);
+	color: #2b250c;
+	font-size: 23rpx;
+	font-weight: 700;
+	flex-shrink: 0;
 }
 
 .profile-menu-card {
-	margin-top: 22rpx;
-	padding: 0 20rpx;
+	margin-top: 16rpx;
+	padding: 0 18rpx;
+	overflow: hidden;
 }
 
 .profile-menu-item {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 20rpx 0;
-	border-top: 1rpx solid rgba(234, 225, 207, 0.76);
+	min-height: 104rpx;
+	padding: 0;
+	border-top: 1rpx solid rgba(236, 226, 206, 0.8);
 }
 
 .profile-menu-item:first-child {
@@ -358,6 +463,7 @@ function inviteFamily() {
 	display: flex;
 	align-items: center;
 	gap: 14rpx;
+	min-width: 0;
 }
 
 .profile-menu-item__badge {
@@ -370,19 +476,38 @@ function inviteFamily() {
 	color: #ffffff;
 	font-size: 20rpx;
 	font-weight: 700;
+	flex-shrink: 0;
 }
 
 .profile-menu-item__title {
 	font-size: 26rpx;
-	font-weight: 600;
+	font-weight: 700;
+	color: #232323;
+}
+
+.profile-menu-item__right {
+	display: flex;
+	align-items: center;
+	gap: 12rpx;
+	flex-shrink: 0;
 }
 
 .profile-menu-item__count {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 34rpx;
+	height: 34rpx;
+	padding: 0 10rpx;
+	border-radius: 999rpx;
+	background: rgba(47, 134, 255, 0.12);
 	color: var(--parent-blue);
+	font-size: 18rpx;
+	font-weight: 700;
 }
 
 .profile-menu-item__arrow {
-	font-size: 32rpx;
-	color: #c7c1b5;
+	color: #bbb29f;
+	font-size: 28rpx;
 }
 </style>

@@ -17,10 +17,6 @@
 						</view>
 						<view class="home-campus-brand__mute">静</view>
 					</view>
-					<view v-if="currentStudent" class="home-student-bar">
-						<text class="home-student-bar__label">当前关注学员</text>
-						<text class="home-student-bar__value">{{ currentStudent.name }}</text>
-					</view>
 				</view>
 			</view>
 
@@ -70,7 +66,6 @@ import { parentState, getCurrentCampus } from '@/common/parent-state'
 const statusBarHeight = uni.getSystemInfoSync().statusBarHeight || 0
 
 const currentCampus = computed(() => getCurrentCampus())
-const currentStudent = computed(() => parentState.students.find(item => item.id === parentState.currentStudentId) || null)
 const featureList = computed(() => parentState.featureList)
 const noticeList = computed(() => parentState.noticeList)
 
@@ -185,28 +180,8 @@ function handleNotice(item) {
 	color: #8c8c8c;
 }
 
-.home-student-bar {
-	margin-top: 26rpx;
-	padding: 14rpx 18rpx;
-	border-radius: 24rpx;
-	background: rgba(255, 248, 226, 0.9);
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-}
-
-.home-student-bar__label {
-	font-size: 22rpx;
-	color: var(--parent-subtext);
-}
-
-.home-student-bar__value {
-	font-size: 26rpx;
-	font-weight: 700;
-}
-
 .home-grid-card {
-	padding: 24rpx 16rpx 4rpx;
+	padding: 32rpx 16rpx 32rpx;
 }
 
 .home-grid {
