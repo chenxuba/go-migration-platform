@@ -91,18 +91,14 @@ func (svc *Service) LookupParentStudentsByPhone(ctx context.Context, phone strin
 	if err != nil {
 		return model.ParentStudentLookupByPhoneVO{}, err
 	}
-	displayStatuses, err := svc.resolveParentStudentDisplayStatuses(ctx, rows)
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
 	if err != nil {
 		return model.ParentStudentLookupByPhoneVO{}, err
 	}
 
 	items := make([]model.ParentStudentCandidateVO, 0, len(rows))
 	for _, item := range rows {
-		displayStatus := item.StudentStatus
-		if resolvedStatus, ok := displayStatuses[item.StudentID]; ok {
-			displayStatus = resolvedStatus
-		}
-		items = append(items, buildParentStudentCandidateVO(item, displayStatus))
+		items = append(items, buildParentStudentCandidateVO(item, displayProfiles[item.StudentID]))
 	}
 
 	return model.ParentStudentLookupByPhoneVO{
@@ -112,10 +108,10 @@ func (svc *Service) LookupParentStudentsByPhone(ctx context.Context, phone strin
 	}, nil
 }
 
-func (svc *Service) resolveParentStudentDisplayStatuses(ctx context.Context, rows []repository.ParentStudentLookupRecord) (map[int64]int, error) {
-	statuses := make(map[int64]int, len(rows))
+func (svc *Service) resolveParentStudentDisplayProfiles(ctx context.Context, rows []repository.ParentStudentLookupRecord) (map[int64]parentStudentDisplayProfile, error) {
+	profiles := make(map[int64]parentStudentDisplayProfile, len(rows))
 	for _, item := range rows {
-		statuses[item.StudentID] = item.StudentStatus
+		profiles[item.StudentID] = defaultParentStudentDisplayProfile(item)
 		if !item.IsBound || item.StudentStatus != model.InstStudentStatusIntent {
 			continue
 		}
@@ -127,9 +123,9 @@ func (svc *Service) resolveParentStudentDisplayStatuses(ctx context.Context, row
 		if err != nil {
 			return nil, err
 		}
-		statuses[item.StudentID] = pickParentStudentDisplayStatus(item.StudentStatus, item.IsBound, aliases)
+		profiles[item.StudentID] = pickParentStudentDisplayProfile(item, aliases)
 	}
-	return statuses, nil
+	return profiles, nil
 }
 
 func (svc *Service) ConfirmParentStudentsByPhone(ctx context.Context, phone string, dto model.ParentBindStudentsDTO) (model.ParentStudentLookupByPhoneVO, error) {
@@ -190,7 +186,12 @@ func (svc *Service) ListParentSchedulesByPhone(ctx context.Context, phone string
 		return model.ParentScheduleSummaryVO{}, err
 	}
 
-	targets := buildParentScheduleTargets(rows, nil)
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
+	if err != nil {
+		return model.ParentScheduleSummaryVO{}, err
+	}
+
+	targets := buildParentScheduleTargets(rows, displayProfiles)
 	if len(targets) == 0 {
 		return model.ParentScheduleSummaryVO{
 			Items: []model.ParentScheduleVO{},
@@ -228,7 +229,12 @@ func (svc *Service) ListParentScheduleDatesByPhone(ctx context.Context, phone st
 		return model.ParentScheduleDateSummaryVO{}, err
 	}
 
-	targets := buildParentScheduleTargets(rows, nil)
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
+	if err != nil {
+		return model.ParentScheduleDateSummaryVO{}, err
+	}
+
+	targets := buildParentScheduleTargets(rows, displayProfiles)
 	if len(targets) == 0 {
 		return model.ParentScheduleDateSummaryVO{
 			Items: []model.ParentScheduleDateVO{},
@@ -382,12 +388,13 @@ func buildParentScheduleDateItems(items []model.ParentScheduleVO) []model.Parent
 	return result
 }
 
-func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord, displayStatus int) model.ParentStudentCandidateVO {
+func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord, displayProfile parentStudentDisplayProfile) model.ParentStudentCandidateVO {
 	campusName := strings.TrimSpace(item.InstitutionName)
 	if campusName == "" {
 		campusName = fmt.Sprintf("机构%d", item.InstID)
 	}
-	statusText := parentStudentStatusText(displayStatus)
+	displayProfile = normalizeParentStudentDisplayProfile(item, displayProfile)
+	statusText := parentStudentStatusText(displayProfile.StudentStatus)
 	return model.ParentStudentCandidateVO{
 		ID:                item.StudentID,
 		InstID:            item.InstID,
@@ -395,10 +402,10 @@ func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord, di
 		CampusName:        campusName,
 		CampusLogoURL:     strings.TrimSpace(item.InstitutionLogo),
 		Name:              strings.TrimSpace(item.StudentName),
-		AvatarURL:         strings.TrimSpace(item.AvatarURL),
+		AvatarURL:         displayProfile.AvatarURL,
 		Mobile:            strings.TrimSpace(item.Mobile),
 		MaskedMobile:      maskParentPhone(item.Mobile),
-		StudentStatus:     item.StudentStatus,
+		StudentStatus:     displayProfile.StudentStatus,
 		StudentStatusText: statusText,
 		PhoneRelationship: item.PhoneRelationship,
 		RelationText:      parentPhoneRelationshipText(item.PhoneRelationship),
@@ -408,16 +415,50 @@ func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord, di
 }
 
 func pickParentStudentDisplayStatus(rawStatus int, isBound bool, aliases []repository.ParentStudentScheduleAliasRecord) int {
-	if !isBound || rawStatus != model.InstStudentStatusIntent {
-		return rawStatus
+	return pickParentStudentDisplayProfile(repository.ParentStudentLookupRecord{
+		StudentStatus: rawStatus,
+		IsBound:       isBound,
+	}, aliases).StudentStatus
+}
+
+type parentStudentDisplayProfile struct {
+	StudentStatus int
+	AvatarURL     string
+}
+
+func defaultParentStudentDisplayProfile(item repository.ParentStudentLookupRecord) parentStudentDisplayProfile {
+	return parentStudentDisplayProfile{
+		StudentStatus: item.StudentStatus,
+		AvatarURL:     strings.TrimSpace(item.AvatarURL),
+	}
+}
+
+func normalizeParentStudentDisplayProfile(item repository.ParentStudentLookupRecord, profile parentStudentDisplayProfile) parentStudentDisplayProfile {
+	if profile.StudentStatus == 0 {
+		profile.StudentStatus = item.StudentStatus
+	}
+	if strings.TrimSpace(profile.AvatarURL) == "" {
+		profile.AvatarURL = strings.TrimSpace(item.AvatarURL)
+	}
+	return profile
+}
+
+func pickParentStudentDisplayProfile(item repository.ParentStudentLookupRecord, aliases []repository.ParentStudentScheduleAliasRecord) parentStudentDisplayProfile {
+	profile := defaultParentStudentDisplayProfile(item)
+	if !item.IsBound || item.StudentStatus != model.InstStudentStatusIntent {
+		return profile
 	}
 	for _, alias := range aliases {
 		switch alias.StudentStatus {
 		case model.InstStudentStatusEnrolled, model.InstStudentStatusHistory:
-			return alias.StudentStatus
+			profile.StudentStatus = alias.StudentStatus
+			if avatarURL := strings.TrimSpace(alias.AvatarURL); avatarURL != "" {
+				profile.AvatarURL = avatarURL
+			}
+			return profile
 		}
 	}
-	return rawStatus
+	return profile
 }
 
 func buildParentCampusVOList(rows []repository.ParentStudentLookupRecord) []model.ParentCampusVO {
@@ -465,7 +506,7 @@ type parentScheduleTarget struct {
 	DisplayStatus int
 }
 
-func buildParentScheduleTargets(rows []repository.ParentStudentLookupRecord, displayStatuses map[int64]int) []parentScheduleTarget {
+func buildParentScheduleTargets(rows []repository.ParentStudentLookupRecord, displayProfiles map[int64]parentStudentDisplayProfile) []parentScheduleTarget {
 	items := make([]parentScheduleTarget, 0, len(rows))
 	for _, row := range rows {
 		if !row.IsBound || row.StudentID <= 0 || row.InstID <= 0 {
@@ -479,19 +520,16 @@ func buildParentScheduleTargets(rows []repository.ParentStudentLookupRecord, dis
 		if studentName == "" {
 			studentName = "学员"
 		}
-		displayStatus := row.StudentStatus
-		if resolvedStatus, ok := displayStatuses[row.StudentID]; ok {
-			displayStatus = resolvedStatus
-		}
+		displayProfile := normalizeParentStudentDisplayProfile(row, displayProfiles[row.StudentID])
 		items = append(items, parentScheduleTarget{
 			StudentID:     row.StudentID,
 			InstID:        row.InstID,
 			CampusID:      fmt.Sprintf("inst-%d", row.InstID),
 			CampusName:    campusName,
 			StudentName:   studentName,
-			AvatarURL:     strings.TrimSpace(row.AvatarURL),
+			AvatarURL:     displayProfile.AvatarURL,
 			StudentStatus: row.StudentStatus,
-			DisplayStatus: displayStatus,
+			DisplayStatus: displayProfile.StudentStatus,
 		})
 	}
 	return items

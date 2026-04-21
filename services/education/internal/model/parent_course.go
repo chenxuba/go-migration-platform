@@ -12,6 +12,12 @@ type ParentCourseEnrollmentDetailQueryDTO struct {
 	PageSize     int    `json:"pageSize"`
 }
 
+type ParentCourseArrearQueryDTO struct {
+	StudentID    string `json:"studentId"`
+	LessonID     string `json:"lessonId"`
+	ChargingMode int    `json:"chargingMode"`
+}
+
 type ParentCourseEnrollmentSummaryVO struct {
 	Students []ParentBoundStudentVO     `json:"students"`
 	Items    []ParentCourseEnrollmentVO `json:"items"`
@@ -25,6 +31,33 @@ type ParentCourseEnrollmentDetailVO struct {
 	PageSize  int                            `json:"pageSize"`
 	Total     int                            `json:"total"`
 	HasMore   bool                           `json:"hasMore"`
+}
+
+type ParentCourseArrearSummaryVO struct {
+	Student     ParentBoundStudentVO         `json:"student"`
+	CourseCount int                          `json:"courseCount"`
+	Items       []ParentCourseArrearCourseVO `json:"items"`
+}
+
+type ParentCourseArrearCourseVO struct {
+	ID                  string                       `json:"id"`
+	LessonID            string                       `json:"lessonId"`
+	LessonName          string                       `json:"lessonName"`
+	ChargingMode        int                          `json:"chargingMode"`
+	ChargingModeText    string                       `json:"chargingModeText"`
+	TotalArrearQuantity float64                      `json:"totalArrearQuantity"`
+	TotalArrearLabel    string                       `json:"totalArrearLabel"`
+	TotalArrearText     string                       `json:"totalArrearText"`
+	RecordCount         int                          `json:"recordCount"`
+	Items               []ParentCourseArrearRecordVO `json:"items"`
+}
+
+type ParentCourseArrearRecordVO struct {
+	ID                      string  `json:"id"`
+	StudentTeachingRecordID string  `json:"studentTeachingRecordId"`
+	LessonTime              string  `json:"lessonTime"`
+	ArrearQuantity          float64 `json:"arrearQuantity"`
+	ArrearText              string  `json:"arrearText"`
 }
 
 type ParentCourseEnrollmentVO struct {
@@ -55,6 +88,9 @@ type ParentCourseEnrollmentVO struct {
 	ValidRangeText         string  `json:"validRangeText"`
 	LowBalance             bool    `json:"lowBalance"`
 	LowBalanceText         string  `json:"lowBalanceText"`
+	HasLessonArrear        bool    `json:"hasLessonArrear"`
+	LessonArrearQuantity   float64 `json:"lessonArrearQuantity"`
+	LessonArrearText       string  `json:"lessonArrearText"`
 }
 
 type ParentCourseEnrollmentFlowVO struct {

@@ -84,7 +84,20 @@
 							</view>
 							<view class="course-item__row">
 								<text class="course-item__label">{{ item.remainingQuantityLabel }}：</text>
-								<text class="course-item__value course-item__value--strong">{{ item.remainingQuantityText }}</text>
+								<view class="course-item__value-wrap">
+									<text class="course-item__value course-item__value--strong">{{ item.remainingQuantityText }}</text>
+									<view
+										v-if="item.hasLessonArrear"
+										class="course-item__arrear"
+										@click.stop="openCourseArrear(item)"
+									>
+										<view class="course-item__arrear-icon">
+											<text class="course-item__arrear-icon-text">!</text>
+										</view>
+										<text class="course-item__arrear-tag">欠费记录</text>
+										<text class="course-item__arrear-text">{{ item.lessonArrearText }}</text>
+									</view>
+								</view>
 							</view>
 							<view v-if="item.showValidRange" class="course-item__row">
 								<text class="course-item__label">有效时段：</text>
@@ -191,7 +204,10 @@ function normalizeCourseList(list = []) {
 		status: Number(item?.status || 0),
 		statusText: `${item?.statusText || ''}`.trim(),
 		lowBalance: !!item?.lowBalance,
-		lowBalanceText: `${item?.lowBalanceText || ''}`.trim()
+		lowBalanceText: `${item?.lowBalanceText || ''}`.trim(),
+		hasLessonArrear: !!item?.hasLessonArrear,
+		lessonArrearQuantity: Number(item?.lessonArrearQuantity || 0),
+		lessonArrearText: `${item?.lessonArrearText || ''}`.trim()
 	}))
 }
 
@@ -272,6 +288,15 @@ function openCourseDetail(item) {
 	}
 	uni.navigateTo({
 		url: `/pages/course-enrollment/detail?studentId=${encodeURIComponent(item.studentId)}&lessonId=${encodeURIComponent(item.lessonId)}&chargingMode=${item.chargingMode}`
+	})
+}
+
+function openCourseArrear(item) {
+	if (!item?.studentId) {
+		return
+	}
+	uni.navigateTo({
+		url: `/pages/course-arrear/index?studentId=${encodeURIComponent(item.studentId)}`
 	})
 }
 
@@ -512,8 +537,58 @@ function inviteFamily() {
 	text-align: left;
 }
 
+.course-item__value-wrap {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16rpx;
+}
+
 .course-item__value--strong {
 	font-weight: 700;
 	color: #353535;
+}
+
+.course-item__arrear {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 10rpx;
+	padding: 8rpx 14rpx;
+	border-radius: 999rpx;
+	background: rgba(255, 120, 92, 0.1);
+}
+
+.course-item__arrear-icon {
+	width: 24rpx;
+	height: 24rpx;
+	border-radius: 50%;
+	background: #ff5b43;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.course-item__arrear-icon-text {
+	font-size: 18rpx;
+	font-weight: 700;
+	line-height: 1;
+	color: #ffffff;
+}
+
+.course-item__arrear-tag {
+	font-size: 22rpx;
+	font-weight: 700;
+	line-height: 1;
+	color: #ff684f;
+}
+
+.course-item__arrear-text {
+	font-size: 22rpx;
+	line-height: 1;
+	color: #ff684f;
 }
 </style>

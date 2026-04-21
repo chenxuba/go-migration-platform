@@ -16,6 +16,15 @@ type ParentCourseFlowRecord struct {
 	Tuition    float64
 }
 
+type ParentCourseArrearRecord struct {
+	ID             string
+	LessonID       string
+	LessonName     string
+	ChargingMode   int
+	LessonTime     time.Time
+	ArrearQuantity float64
+}
+
 func (repo *Repository) ListParentCourseFlowRecordsByTuitionAccountIDs(ctx context.Context, instID int64, tuitionAccountIDs []int64, pageIndex, pageSize int) ([]ParentCourseFlowRecord, int, error) {
 	if len(tuitionAccountIDs) == 0 {
 		return []ParentCourseFlowRecord{}, 0, nil
@@ -111,4 +120,90 @@ func (repo *Repository) ListParentCourseFlowRecordsByTuitionAccountIDs(ctx conte
 		items = append(items, item)
 	}
 	return items, total, rows.Err()
+}
+
+func (repo *Repository) ListParentCourseArrearRecords(ctx context.Context, instID int64, studentIDs []int64, lessonID string, chargingMode int) ([]ParentCourseArrearRecord, error) {
+	if instID <= 0 {
+		return []ParentCourseArrearRecord{}, nil
+	}
+
+	normalizedStudentIDs := make([]int64, 0, len(studentIDs))
+	seen := make(map[int64]struct{}, len(studentIDs))
+	for _, studentID := range studentIDs {
+		if studentID <= 0 {
+			continue
+		}
+		if _, exists := seen[studentID]; exists {
+			continue
+		}
+		seen[studentID] = struct{}{}
+		normalizedStudentIDs = append(normalizedStudentIDs, studentID)
+	}
+	if len(normalizedStudentIDs) == 0 {
+		return []ParentCourseArrearRecord{}, nil
+	}
+
+	whereParts := []string{
+		"str.inst_id = ?",
+		"str.del_flag = 0",
+		"IFNULL(str.arrear_quantity, 0) > 0",
+		"IFNULL(str.has_compensated, 0) = 0",
+		"str.student_id IN (" + sqlPlaceholders(len(normalizedStudentIDs)) + ")",
+	}
+	args := make([]any, 0, len(normalizedStudentIDs)+4)
+	args = append(args, instID)
+	for _, studentID := range normalizedStudentIDs {
+		args = append(args, studentID)
+	}
+
+	lessonID = strings.TrimSpace(lessonID)
+	if lessonID != "" {
+		whereParts = append(whereParts, "CAST(str.lesson_id AS CHAR) = ?")
+		args = append(args, lessonID)
+	}
+	if chargingMode > 0 {
+		whereParts = append(whereParts, "(CASE WHEN IFNULL(str.sku_mode, 0) = 4 THEN 3 ELSE IFNULL(str.sku_mode, 0) END) = ?")
+		args = append(args, chargingMode)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			CAST(str.id AS CHAR),
+			CAST(str.lesson_id AS CHAR),
+			IFNULL(str.lesson_name, ''),
+			CASE
+				WHEN IFNULL(str.sku_mode, 0) = 4 THEN 3
+				ELSE IFNULL(str.sku_mode, 0)
+			END AS charging_mode,
+			str.start_time,
+			IFNULL(str.arrear_quantity, 0)
+		FROM student_teaching_record str
+		WHERE `+strings.Join(whereParts, " AND ")+`
+		ORDER BY IFNULL(str.lesson_name, '') ASC, str.start_time DESC, str.id DESC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]ParentCourseArrearRecord, 0, 16)
+	for rows.Next() {
+		var item ParentCourseArrearRecord
+		var lessonTime sql.NullTime
+		if err := rows.Scan(
+			&item.ID,
+			&item.LessonID,
+			&item.LessonName,
+			&item.ChargingMode,
+			&lessonTime,
+			&item.ArrearQuantity,
+		); err != nil {
+			return nil, err
+		}
+		if lessonTime.Valid {
+			item.LessonTime = lessonTime.Time
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }

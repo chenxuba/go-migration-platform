@@ -37,6 +37,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/parent/class-records", handler.parentClassRecords)
 	mux.HandleFunc("/api/v1/parent/course-enrollments", handler.parentCourseEnrollments)
 	mux.HandleFunc("/api/v1/parent/course-enrollments/detail", handler.parentCourseEnrollmentDetail)
+	mux.HandleFunc("/api/v1/parent/course-arrears", handler.parentCourseArrears)
 	mux.HandleFunc("/api/v1/students", handler.students)
 	mux.HandleFunc("/api/v1/students/detail", handler.studentDetailView)
 	mux.HandleFunc("/api/v1/orders", handler.orders)

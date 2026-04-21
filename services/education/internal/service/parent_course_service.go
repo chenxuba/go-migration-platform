@@ -33,12 +33,12 @@ func (svc *Service) ListParentCourseEnrollmentsByPhone(ctx context.Context, phon
 	if err != nil {
 		return model.ParentCourseEnrollmentSummaryVO{}, err
 	}
-	displayStatuses, err := svc.resolveParentStudentDisplayStatuses(ctx, rows)
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
 	if err != nil {
 		return model.ParentCourseEnrollmentSummaryVO{}, err
 	}
 
-	targets := buildParentScheduleTargets(rows, displayStatuses)
+	targets := buildParentScheduleTargets(rows, displayProfiles)
 	students := buildParentBoundStudents(targets)
 	if len(targets) == 0 {
 		return model.ParentCourseEnrollmentSummaryVO{
@@ -84,12 +84,12 @@ func (svc *Service) GetParentCourseEnrollmentDetailByPhone(ctx context.Context, 
 	if err != nil {
 		return model.ParentCourseEnrollmentDetailVO{}, err
 	}
-	displayStatuses, err := svc.resolveParentStudentDisplayStatuses(ctx, rows)
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
 	if err != nil {
 		return model.ParentCourseEnrollmentDetailVO{}, err
 	}
 
-	targets := buildParentScheduleTargets(rows, displayStatuses)
+	targets := buildParentScheduleTargets(rows, displayProfiles)
 	if len(targets) == 0 {
 		return model.ParentCourseEnrollmentDetailVO{}, errors.New("暂未绑定学员")
 	}
@@ -140,7 +140,7 @@ func (svc *Service) GetParentCourseEnrollmentDetailByPhone(ctx context.Context, 
 			CampusName:        target.CampusName,
 			Name:              target.StudentName,
 			AvatarURL:         target.AvatarURL,
-			StudentStatus:     target.StudentStatus,
+			StudentStatus:     target.DisplayStatus,
 			StudentStatusText: parentStudentStatusText(target.DisplayStatus),
 		},
 		Course:    *courseItem,
@@ -149,6 +149,56 @@ func (svc *Service) GetParentCourseEnrollmentDetailByPhone(ctx context.Context, 
 		PageSize:  pageSize,
 		Total:     total,
 		HasMore:   pageIndex*pageSize < total,
+	}, nil
+}
+
+func (svc *Service) ListParentCourseArrearsByPhone(ctx context.Context, phone string, query model.ParentCourseArrearQueryDTO) (model.ParentCourseArrearSummaryVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentCourseArrearSummaryVO{}, errors.New("家长端欠费记录服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentCourseArrearSummaryVO{}, errors.New("手机号不能为空")
+	}
+
+	rows, err := svc.repo.ListParentStudentCandidatesByPhone(ctx, phone)
+	if err != nil {
+		return model.ParentCourseArrearSummaryVO{}, err
+	}
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
+	if err != nil {
+		return model.ParentCourseArrearSummaryVO{}, err
+	}
+
+	targets := buildParentScheduleTargets(rows, displayProfiles)
+	if len(targets) == 0 {
+		return model.ParentCourseArrearSummaryVO{}, errors.New("暂未绑定学员")
+	}
+
+	target, ok := resolveParentCourseTarget(targets, query.StudentID)
+	if !ok {
+		return model.ParentCourseArrearSummaryVO{}, errors.New("未找到对应学员")
+	}
+
+	items, err := svc.listParentCourseArrearItemsForTarget(ctx, target, query)
+	if err != nil {
+		return model.ParentCourseArrearSummaryVO{}, err
+	}
+
+	return model.ParentCourseArrearSummaryVO{
+		Student: model.ParentBoundStudentVO{
+			ID:                strconv.FormatInt(target.StudentID, 10),
+			InstID:            target.InstID,
+			CampusID:          target.CampusID,
+			CampusName:        target.CampusName,
+			Name:              target.StudentName,
+			AvatarURL:         target.AvatarURL,
+			StudentStatus:     target.DisplayStatus,
+			StudentStatusText: parentStudentStatusText(target.DisplayStatus),
+		},
+		CourseCount: len(items),
+		Items:       items,
 	}, nil
 }
 
@@ -182,6 +232,78 @@ func (svc *Service) listParentCourseEnrollmentItemsForTarget(ctx context.Context
 	}
 	sortParentCourseEnrollmentVOs(items)
 	return items, sourceStudentIDs, nil
+}
+
+func (svc *Service) listParentCourseArrearItemsForTarget(ctx context.Context, target parentScheduleTarget, query model.ParentCourseArrearQueryDTO) ([]model.ParentCourseArrearCourseVO, error) {
+	sourceStudentIDs := []int64{target.StudentID}
+	chargingMode := 0
+	if query.ChargingMode > 0 {
+		chargingMode = normalizeParentCourseChargingMode(query.ChargingMode)
+	}
+	rows, err := svc.repo.ListParentCourseArrearRecords(ctx, target.InstID, sourceStudentIDs, query.LessonID, chargingMode)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(rows) == 0 && shouldFallbackToParentScheduleAliases(target) {
+		aliasIDs, err := svc.resolveParentScheduleAliasStudentIDs(ctx, target)
+		if err != nil {
+			return nil, err
+		}
+		if len(aliasIDs) > 0 {
+			sourceStudentIDs = aliasIDs
+			rows, err = svc.repo.ListParentCourseArrearRecords(ctx, target.InstID, sourceStudentIDs, query.LessonID, chargingMode)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	groupMap := make(map[string]*model.ParentCourseArrearCourseVO, len(rows))
+	groupKeys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		chargingMode := normalizeParentCourseChargingMode(row.ChargingMode)
+		lessonID := strings.TrimSpace(row.LessonID)
+		if lessonID == "" {
+			continue
+		}
+		groupKey := lessonID + ":" + strconv.Itoa(chargingMode)
+		group, exists := groupMap[groupKey]
+		if !exists {
+			group = &model.ParentCourseArrearCourseVO{
+				ID:               groupKey,
+				LessonID:         lessonID,
+				LessonName:       firstNonEmptyString(strings.TrimSpace(row.LessonName), "报读课程"),
+				ChargingMode:     chargingMode,
+				ChargingModeText: parentCourseChargingModeText(chargingMode),
+				TotalArrearLabel: parentCourseArrearTotalLabel(chargingMode),
+				Items:            make([]model.ParentCourseArrearRecordVO, 0, 4),
+			}
+			groupMap[groupKey] = group
+			groupKeys = append(groupKeys, groupKey)
+		}
+
+		arrearQuantity := roundParentCourseMetric(row.ArrearQuantity)
+		group.TotalArrearQuantity += arrearQuantity
+		group.Items = append(group.Items, model.ParentCourseArrearRecordVO{
+			ID:                      strings.TrimSpace(row.ID),
+			StudentTeachingRecordID: strings.TrimSpace(row.ID),
+			LessonTime:              firstNonEmptyString(formatParentCourseDateTime(row.LessonTime), "-"),
+			ArrearQuantity:          arrearQuantity,
+			ArrearText:              buildParentCourseArrearNoticeText(chargingMode, arrearQuantity),
+		})
+	}
+
+	items := make([]model.ParentCourseArrearCourseVO, 0, len(groupKeys))
+	for _, groupKey := range groupKeys {
+		group := groupMap[groupKey]
+		group.TotalArrearQuantity = roundParentCourseMetric(group.TotalArrearQuantity)
+		group.TotalArrearText = buildParentCourseArrearDisplayText(group.ChargingMode, group.TotalArrearQuantity)
+		group.RecordCount = len(group.Items)
+		items = append(items, *group)
+	}
+	sortParentCourseArrearVOs(items)
+	return items, nil
 }
 
 func (svc *Service) listParentCourseReadingItems(ctx context.Context, instID int64, studentIDs []int64) ([]model.TuitionAccountReadingItem, error) {
@@ -267,6 +389,7 @@ func buildParentCourseEnrollmentVO(target parentScheduleTarget, item model.Tuiti
 	chargingMode := normalizeParentCourseChargingMode(derefParentCourseInt(item.LessonChargingMode))
 	remainingQuantity := item.RemainQuantity
 	totalQuantity := item.TotalQuantity
+	lessonArrearQuantity := roundParentCourseMetric(item.LessonConsumeArrearQuantity)
 	if chargingMode == 2 {
 		remainingQuantity = roundParentCourseMetric(item.RemainQuantity)
 		totalQuantity = roundParentCourseMetric(item.TotalQuantity)
@@ -306,6 +429,9 @@ func buildParentCourseEnrollmentVO(target parentScheduleTarget, item model.Tuiti
 		ValidRangeText:         buildParentCourseValidRangeText(validDate, endDate),
 		LowBalance:             lowBalanceText != "",
 		LowBalanceText:         lowBalanceText,
+		HasLessonArrear:        lessonArrearQuantity > 0,
+		LessonArrearQuantity:   lessonArrearQuantity,
+		LessonArrearText:       buildParentCourseArrearNoticeText(chargingMode, lessonArrearQuantity),
 	}
 }
 
@@ -341,6 +467,15 @@ func sortParentCourseEnrollmentVOs(items []model.ParentCourseEnrollmentVO) {
 			return items[i].EndDate < items[j].EndDate
 		}
 		return items[i].LessonName < items[j].LessonName
+	})
+}
+
+func sortParentCourseArrearVOs(items []model.ParentCourseArrearCourseVO) {
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].LessonName != items[j].LessonName {
+			return items[i].LessonName < items[j].LessonName
+		}
+		return items[i].ChargingMode < items[j].ChargingMode
 	})
 }
 
@@ -424,6 +559,39 @@ func buildParentCourseRemainingQuantityText(mode int, value float64) string {
 		return buildParentCourseAmountText(value)
 	default:
 		return formatParentCourseMetric(value) + "课时"
+	}
+}
+
+func buildParentCourseArrearNoticeText(mode int, value float64) string {
+	text := buildParentCourseArrearDisplayText(mode, value)
+	if text == "" {
+		return ""
+	}
+	return "欠" + text
+}
+
+func buildParentCourseArrearDisplayText(mode int, value float64) string {
+	if roundParentCourseMetric(value) <= 0 {
+		return ""
+	}
+	switch normalizeParentCourseChargingMode(mode) {
+	case 2:
+		return formatParentCourseMetric(value) + "天"
+	case 3:
+		return formatParentCourseMetric(value) + "元"
+	default:
+		return formatParentCourseMetric(value) + "课时"
+	}
+}
+
+func parentCourseArrearTotalLabel(mode int) string {
+	switch normalizeParentCourseChargingMode(mode) {
+	case 2:
+		return "总计拖欠天数"
+	case 3:
+		return "总计拖欠金额"
+	default:
+		return "总计拖欠课时"
 	}
 }
 

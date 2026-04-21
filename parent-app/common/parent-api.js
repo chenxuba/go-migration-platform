@@ -159,3 +159,15 @@ export function getParentCourseEnrollmentDetail(token, query = {}) {
 		token
 	})
 }
+
+export function getParentCourseArrears(token, query = {}) {
+	return request({
+		url: `/api/v1/parent/course-arrears${buildQueryString({
+			studentId: query.studentId,
+			lessonId: query.lessonId,
+			chargingMode: query.chargingMode
+		})}`,
+		method: 'GET',
+		token
+	})
+}

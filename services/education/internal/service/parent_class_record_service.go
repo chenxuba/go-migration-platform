@@ -31,12 +31,12 @@ func (svc *Service) ListParentClassRecordsByPhone(ctx context.Context, phone str
 	if err != nil {
 		return model.ParentClassRecordSummaryVO{}, err
 	}
-	displayStatuses, err := svc.resolveParentStudentDisplayStatuses(ctx, rows)
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
 	if err != nil {
 		return model.ParentClassRecordSummaryVO{}, err
 	}
 
-	targets := buildParentScheduleTargets(rows, displayStatuses)
+	targets := buildParentScheduleTargets(rows, displayProfiles)
 	students := buildParentBoundStudents(targets)
 	if len(targets) == 0 {
 		return model.ParentClassRecordSummaryVO{
@@ -254,7 +254,7 @@ func buildParentBoundStudents(targets []parentScheduleTarget) []model.ParentBoun
 			CampusName:        target.CampusName,
 			Name:              target.StudentName,
 			AvatarURL:         target.AvatarURL,
-			StudentStatus:     target.StudentStatus,
+			StudentStatus:     target.DisplayStatus,
 			StudentStatusText: parentStudentStatusText(target.DisplayStatus),
 		})
 	}

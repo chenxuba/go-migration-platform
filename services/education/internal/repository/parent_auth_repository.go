@@ -23,6 +23,7 @@ type ParentStudentLookupRecord struct {
 type ParentStudentScheduleAliasRecord struct {
 	StudentID     int64
 	StudentStatus int
+	AvatarURL     string
 }
 
 func (repo *Repository) ListParentStudentCandidatesByPhone(ctx context.Context, phone string) ([]ParentStudentLookupRecord, error) {
@@ -73,7 +74,8 @@ func (repo *Repository) ListParentStudentScheduleAliases(ctx context.Context, in
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
 			s.id,
-			IFNULL(s.student_status, 0)
+			IFNULL(s.student_status, 0),
+			IFNULL(s.avatar_url, '')
 		FROM inst_student s
 		WHERE s.del_flag = 0
 		  AND s.inst_id = ?
@@ -97,7 +99,7 @@ func (repo *Repository) ListParentStudentScheduleAliases(ctx context.Context, in
 	items := make([]ParentStudentScheduleAliasRecord, 0, 4)
 	for rows.Next() {
 		var item ParentStudentScheduleAliasRecord
-		if err := rows.Scan(&item.StudentID, &item.StudentStatus); err != nil {
+		if err := rows.Scan(&item.StudentID, &item.StudentStatus, &item.AvatarURL); err != nil {
 			return nil, err
 		}
 		if item.StudentID <= 0 {

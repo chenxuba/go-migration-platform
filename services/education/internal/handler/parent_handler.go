@@ -219,6 +219,31 @@ func (handler *Handler) parentCourseEnrollmentDetail(w http.ResponseWriter, r *h
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) parentCourseArrears(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	chargingMode, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("chargingMode")))
+	query := model.ParentCourseArrearQueryDTO{
+		StudentID:    strings.TrimSpace(r.URL.Query().Get("studentId")),
+		LessonID:     strings.TrimSpace(r.URL.Query().Get("lessonId")),
+		ChargingMode: chargingMode,
+	}
+	result, err := handler.service.ListParentCourseArrearsByPhone(r.Context(), claims.Username, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) requireParentAuth(w http.ResponseWriter, r *http.Request, ctx tenant.Context) (authx.Claims, bool) {
 	claims, ok := handler.requireAuth(w, r, ctx)
 	if !ok {
