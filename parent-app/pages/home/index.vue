@@ -1,9 +1,9 @@
 <template>
 	<view class="parent-page">
 		<view class="parent-shell">
-			<view class="parent-header" :style="{ paddingTop: `${statusBarHeight + 20}px` }">
-				<view v-if="canSwitchCampus" class="home-top-row">
-					<view class="home-campus-trigger" @click="goCampusPage">
+			<view class="parent-header" :style="{ paddingTop: `${nav.top}px` }">
+				<view class="home-top-row" :style="{ minHeight: `${nav.height}px` }">
+					<view v-if="canSwitchCampus" class="home-campus-trigger" @click="goCampusPage">
 						<text class="home-campus-trigger__icon">切</text>
 						<text class="home-campus-trigger__text">切换校区</text>
 					</view>
@@ -65,10 +65,10 @@
 import { computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { listParentCampuses } from '@/common/parent-api'
+import { getNavLayout } from '@/common/nav-layout'
 import { applyParentCampusSummary, parentState, getCurrentCampus } from '@/common/parent-state'
 
-const statusBarHeight = uni.getSystemInfoSync().statusBarHeight || 0
-
+const nav = getNavLayout()
 const currentCampus = computed(() => getCurrentCampus())
 const featureList = computed(() => parentState.featureList)
 const reportList = computed(() => parentState.noticeList)
@@ -147,6 +147,7 @@ function simplifyCampusName(name = '') {
 .home-top-row {
 	display: flex;
 	justify-content: flex-start;
+	align-items: center;
 }
 
 .home-campus-trigger {
@@ -178,7 +179,7 @@ function simplifyCampusName(name = '') {
 }
 
 .home-campus-card {
-	margin-top: 24rpx;
+	margin-top: 16rpx;
 	padding: 24rpx;
 }
 
