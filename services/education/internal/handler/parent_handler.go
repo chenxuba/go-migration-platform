@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"go-migration-platform/pkg/authx"
@@ -134,6 +135,30 @@ func (handler *Handler) parentScheduleDates(w http.ResponseWriter, r *http.Reque
 		EndDate:   strings.TrimSpace(r.URL.Query().Get("endDate")),
 	}
 	result, err := handler.service.ListParentScheduleDatesByPhone(r.Context(), claims.Username, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) parentClassRecords(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("pageSize")))
+	query := model.ParentClassRecordQueryDTO{
+		StudentID: strings.TrimSpace(r.URL.Query().Get("studentId")),
+		PageSize:  pageSize,
+	}
+	result, err := handler.service.ListParentClassRecordsByPhone(r.Context(), claims.Username, query)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

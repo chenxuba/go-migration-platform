@@ -123,3 +123,14 @@ export function listParentScheduleDates(token, query = {}) {
 		token
 	})
 }
+
+export function listParentClassRecords(token, query = {}) {
+	return request({
+		url: `/api/v1/parent/class-records${buildQueryString({
+			studentId: query.studentId,
+			pageSize: query.pageSize
+		})}`,
+		method: 'GET',
+		token
+	})
+}

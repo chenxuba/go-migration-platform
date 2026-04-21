@@ -82,6 +82,7 @@ type StudentTeachingRecordItem struct {
 	Assistants                string   `json:"assistants"`
 	ClassName                 string   `json:"className"`
 	One2OneName               string   `json:"one2OneName"`
+	LessonID                  string   `json:"lessonId"`
 	LessonName                string   `json:"lessonName"`
 	Status                    int      `json:"status"`
 	SourceType                int      `json:"sourceType"`

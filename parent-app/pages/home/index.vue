@@ -95,6 +95,12 @@ function goCampusPage() {
 }
 
 function handleFeature(item) {
+	if (item?.key === 'attendance') {
+		uni.navigateTo({
+			url: '/pages/attendance-record/index'
+		})
+		return
+	}
 	uni.showToast({
 		title: `${item.title}建设中`,
 		icon: 'none'
