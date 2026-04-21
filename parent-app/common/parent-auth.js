@@ -1,5 +1,11 @@
-import { wechatParentLogin } from '@/common/parent-api'
-import { applyParentAuthSession, setAuthLoading, setPostAuthPage } from '@/common/parent-state'
+import { listParentBoundStudents, listParentPendingStudents, wechatParentLogin } from '@/common/parent-api'
+import {
+	applyParentAuthSession,
+	applyParentBoundStudentSummary,
+	applyParentPendingStudentSummary,
+	setAuthLoading,
+	setPostAuthPage
+} from '@/common/parent-state'
 
 function loginWithWeChat() {
 	return new Promise((resolve, reject) => {
@@ -100,12 +106,19 @@ export async function authorizeByWechatPhone(event, options = {}) {
 		})
 		applyParentAuthSession(session)
 
-		if (hasPendingCandidates(session?.candidates)) {
+		const [boundSummary, pendingSummary] = await Promise.all([
+			listParentBoundStudents(session?.token || ''),
+			listParentPendingStudents(session?.token || '')
+		])
+		applyParentBoundStudentSummary(boundSummary)
+		applyParentPendingStudentSummary(pendingSummary)
+
+		if (hasPendingCandidates(pendingSummary?.candidates)) {
 			await navigateToStudentSelection()
 			return true
 		}
 
-		if (!Array.isArray(session?.candidates) || !session.candidates.length) {
+		if (!Array.isArray(boundSummary?.students) || !boundSummary.students.length) {
 			uni.showToast({
 				title: '当前手机号未匹配到学员',
 				icon: 'none'

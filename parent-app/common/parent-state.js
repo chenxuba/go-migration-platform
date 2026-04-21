@@ -150,6 +150,23 @@ export function applyParentStudentLookup(lookup = {}) {
 	})
 }
 
+export function applyParentBoundStudentSummary(summary = {}) {
+	parentState.students = normalizeCandidates(summary?.students || [])
+	applyParentPhoneSnapshot(summary)
+	reconcileParentStudentCollections()
+}
+
+export function applyParentPendingStudentSummary(summary = {}) {
+	const nextPendingCandidates = normalizeCandidates(summary?.candidates || [])
+	const pendingIDSet = new Set(nextPendingCandidates.map(item => item.id))
+	const preservedSelections = normalizeIDList(parentState.selectedCandidateIds).filter(item => pendingIDSet.has(item))
+
+	parentState.pendingCandidates = nextPendingCandidates
+	parentState.selectedCandidateIds = preservedSelections.length ? preservedSelections : nextPendingCandidates.map(item => item.id)
+	applyParentPhoneSnapshot(summary)
+	reconcileParentStudentCollections()
+}
+
 export function applyParentCampusSummary(summary = {}) {
 	const nextCampusList = normalizeCampusList(summary?.items || summary, parentState.pendingCandidates, parentState.students)
 	if (!nextCampusList.length) {
@@ -216,6 +233,20 @@ function applyAuthSession(session = {}) {
 		maskedPhone: session.maskedPhone,
 		candidates: session.candidates
 	})
+}
+
+function applyParentPhoneSnapshot(summary = {}) {
+	const phone = `${summary?.phone || ''}`.trim()
+	const maskedPhone = `${summary?.maskedPhone || ''}`.trim()
+	if (!phone && !maskedPhone) {
+		return
+	}
+
+	parentState.profile = {
+		...parentState.profile,
+		phone: phone || parentState.profile.phone,
+		maskedPhone: maskedPhone || parentState.profile.maskedPhone
+	}
 }
 
 function applyCandidateSnapshot(session = {}) {
@@ -423,6 +454,24 @@ function normalizeCampusList(list = [], pending = [], students = []) {
 		return normalized
 	}
 	return buildCampusList([...(Array.isArray(pending) ? pending : []), ...(Array.isArray(students) ? students : [])])
+}
+
+function reconcileParentStudentCollections() {
+	parentState.campusList = normalizeCampusList([], parentState.pendingCandidates, parentState.students)
+
+	const currentStudent = parentState.students.find(item => item.id === parentState.currentStudentId) || parentState.students[0] || null
+	parentState.currentStudentId = currentStudent?.id || ''
+
+	if (currentStudent?.campusId) {
+		parentState.currentCampusId = currentStudent.campusId
+	} else {
+		const hasCurrentCampus = parentState.campusList.some(item => item.id === parentState.currentCampusId)
+		if (!hasCurrentCampus) {
+			parentState.currentCampusId = parentState.pendingCandidates[0]?.campusId || parentState.campusList[0]?.id || campusList[0].id
+		}
+	}
+
+	persistParentSession()
 }
 
 function reconcileRestoredState(state) {

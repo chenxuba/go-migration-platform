@@ -61,19 +61,13 @@ func (svc *Service) ParentWeChatLogin(ctx context.Context, tenantID string, dto 
 		return model.ParentWeChatLoginVO{}, err
 	}
 
-	lookup, err := svc.LookupParentStudentsByPhone(ctx, phone)
-	if err != nil {
-		return model.ParentWeChatLoginVO{}, err
-	}
-
 	return model.ParentWeChatLoginVO{
 		Token:       token,
 		Phone:       phone,
-		MaskedPhone: lookup.MaskedPhone,
+		MaskedPhone: maskParentPhone(phone),
 		Nickname:    "微信家长",
 		MiniOpenID:  session.OpenID,
 		UnionID:     session.UnionID,
-		Candidates:  lookup.Candidates,
 	}, nil
 }
 
@@ -104,6 +98,75 @@ func (svc *Service) LookupParentStudentsByPhone(ctx context.Context, phone strin
 	return model.ParentStudentLookupByPhoneVO{
 		Phone:       phone,
 		MaskedPhone: maskParentPhone(phone),
+		Candidates:  items,
+	}, nil
+}
+
+func (svc *Service) ListParentBoundStudentsByPhone(ctx context.Context, phone string) (model.ParentBoundStudentSummaryVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentBoundStudentSummaryVO{}, errors.New("家长端我的学员查询服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentBoundStudentSummaryVO{}, errors.New("手机号不能为空")
+	}
+
+	rows, err := svc.repo.ListParentStudentCandidatesByPhone(ctx, phone)
+	if err != nil {
+		return model.ParentBoundStudentSummaryVO{}, err
+	}
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
+	if err != nil {
+		return model.ParentBoundStudentSummaryVO{}, err
+	}
+
+	items := make([]model.ParentStudentCandidateVO, 0, len(rows))
+	for _, item := range rows {
+		if !item.IsBound {
+			continue
+		}
+		items = append(items, buildParentStudentCandidateVO(item, displayProfiles[item.StudentID]))
+	}
+
+	return model.ParentBoundStudentSummaryVO{
+		Phone:       phone,
+		MaskedPhone: maskParentPhone(phone),
+		Students:    items,
+	}, nil
+}
+
+func (svc *Service) ListParentPendingStudentsByPhone(ctx context.Context, phone string) (model.ParentPendingStudentSummaryVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentPendingStudentSummaryVO{}, errors.New("家长端待关注学员查询服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentPendingStudentSummaryVO{}, errors.New("手机号不能为空")
+	}
+
+	rows, err := svc.repo.ListParentStudentCandidatesByPhone(ctx, phone)
+	if err != nil {
+		return model.ParentPendingStudentSummaryVO{}, err
+	}
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
+	if err != nil {
+		return model.ParentPendingStudentSummaryVO{}, err
+	}
+
+	items := make([]model.ParentStudentCandidateVO, 0, len(rows))
+	for _, item := range rows {
+		if item.IsBound {
+			continue
+		}
+		items = append(items, buildParentStudentCandidateVO(item, displayProfiles[item.StudentID]))
+	}
+
+	return model.ParentPendingStudentSummaryVO{
+		Phone:       phone,
+		MaskedPhone: maskParentPhone(phone),
+		Count:       len(items),
 		Candidates:  items,
 	}, nil
 }

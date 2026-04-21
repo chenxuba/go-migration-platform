@@ -23,7 +23,7 @@ type ParentWeChatLoginVO struct {
 	Nickname    string                     `json:"nickname"`
 	MiniOpenID  string                     `json:"miniOpenId,omitempty"`
 	UnionID     string                     `json:"unionId,omitempty"`
-	Candidates  []ParentStudentCandidateVO `json:"candidates"`
+	Candidates  []ParentStudentCandidateVO `json:"candidates,omitempty"`
 }
 
 type ParentCampusSummaryVO struct {
@@ -51,6 +51,19 @@ type ParentCampusVO struct {
 type ParentStudentLookupByPhoneVO struct {
 	Phone       string                     `json:"phone"`
 	MaskedPhone string                     `json:"maskedPhone"`
+	Candidates  []ParentStudentCandidateVO `json:"candidates"`
+}
+
+type ParentBoundStudentSummaryVO struct {
+	Phone       string                     `json:"phone"`
+	MaskedPhone string                     `json:"maskedPhone"`
+	Students    []ParentStudentCandidateVO `json:"students"`
+}
+
+type ParentPendingStudentSummaryVO struct {
+	Phone       string                     `json:"phone"`
+	MaskedPhone string                     `json:"maskedPhone"`
+	Count       int                        `json:"count"`
 	Candidates  []ParentStudentCandidateVO `json:"candidates"`
 }
 

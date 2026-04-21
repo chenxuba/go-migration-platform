@@ -72,9 +72,11 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { confirmParentStudents } from '@/common/parent-api'
+import { onShow } from '@dcloudio/uni-app'
+import { confirmParentStudents, listParentPendingStudents } from '@/common/parent-api'
 import { getNavLayout } from '@/common/nav-layout'
 import {
+	applyParentPendingStudentSummary,
 	applyParentStudentLookup,
 	confirmStudentBinding,
 	finalizeStudentBinding,
@@ -86,6 +88,8 @@ import {
 const nav = getNavLayout()
 const selectedIds = ref([])
 const submitting = ref(false)
+
+let pendingRefreshSerial = 0
 
 const pendingCandidates = computed(() => parentState.pendingCandidates)
 const maskedPhone = computed(() => parentState.profile.maskedPhone)
@@ -103,6 +107,10 @@ watch(
 	},
 	{ immediate: true }
 )
+
+onShow(() => {
+	refreshPendingStudents()
+})
 
 function toggleSelect(studentId) {
 	if (selectedIds.value.includes(studentId)) {
@@ -187,6 +195,31 @@ async function submitBindingToServer() {
 		})
 	} finally {
 		submitting.value = false
+	}
+}
+
+async function refreshPendingStudents() {
+	if (!parentState.authToken) {
+		return
+	}
+
+	const token = `${parentState.authToken || ''}`.trim()
+	if (!token) {
+		return
+	}
+
+	const requestSerial = ++pendingRefreshSerial
+	try {
+		const summary = await listParentPendingStudents(token)
+		if (requestSerial !== pendingRefreshSerial || token !== `${parentState.authToken || ''}`.trim()) {
+			return
+		}
+		applyParentPendingStudentSummary(summary)
+	} catch (error) {
+		if (requestSerial !== pendingRefreshSerial) {
+			return
+		}
+		console.warn('refresh pending students failed', error)
 	}
 }
 

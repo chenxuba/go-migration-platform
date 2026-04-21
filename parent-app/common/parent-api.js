@@ -85,6 +85,22 @@ export function lookupParentStudentsByPhone(token) {
 	})
 }
 
+export function listParentBoundStudents(token) {
+	return request({
+		url: '/api/v1/parent/students/bound',
+		method: 'GET',
+		token
+	})
+}
+
+export function listParentPendingStudents(token) {
+	return request({
+		url: '/api/v1/parent/students/pending',
+		method: 'GET',
+		token
+	})
+}
+
 export function confirmParentStudents(token, payload) {
 	return request({
 		url: '/api/v1/parent/students/confirm',

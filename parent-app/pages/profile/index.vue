@@ -78,7 +78,7 @@
 							<text class="profile-menu-item__title">{{ item.title }}</text>
 						</view>
 						<view class="profile-menu-item__right">
-							<text v-if="item.countText" class="profile-menu-item__count">{{ item.countText }}</text>
+							<view v-if="item.showDot" class="profile-menu-item__dot"></view>
 							<text class="profile-menu-item__arrow">›</text>
 						</view>
 					</view>
@@ -108,11 +108,15 @@
 
 <script setup>
 import { computed } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
 import BindSuccessDialog from '@/components/bind-success-dialog/bind-success-dialog.vue'
 import { authorizeByWechatPhone } from '@/common/parent-auth'
+import { listParentBoundStudents, listParentPendingStudents } from '@/common/parent-api'
 import { getNavLayout } from '@/common/nav-layout'
 import { DEFAULT_PHONE } from '@/common/mock-parent'
 import {
+	applyParentBoundStudentSummary,
+	applyParentPendingStudentSummary,
 	authorizeByPhone,
 	dismissBindSuccess,
 	parentState
@@ -143,8 +147,14 @@ const displayMenus = computed(() => {
 
 	return sourceList.map(item => ({
 		...item,
-		countText: item.key === 'pending' && pendingCount.value ? `${pendingCount.value}` : ''
+		showDot: item.key === 'pending' && pendingCount.value > 0
 	}))
+})
+
+let profileRefreshSerial = 0
+
+onShow(() => {
+	refreshProfileStudents()
 })
 
 function simplifyCampusName(name = '') {
@@ -209,6 +219,35 @@ function handleMenuClick(item) {
 		title: `${item.title}建设中`,
 		icon: 'none'
 	})
+}
+
+async function refreshProfileStudents() {
+	if (!parentState.isAuthenticated || !parentState.authToken) {
+		return
+	}
+
+	const token = `${parentState.authToken || ''}`.trim()
+	if (!token) {
+		return
+	}
+
+	const requestSerial = ++profileRefreshSerial
+	try {
+		const [boundSummary, pendingSummary] = await Promise.all([
+			listParentBoundStudents(token),
+			listParentPendingStudents(token)
+		])
+		if (requestSerial !== profileRefreshSerial || token !== `${parentState.authToken || ''}`.trim()) {
+			return
+		}
+		applyParentBoundStudentSummary(boundSummary)
+		applyParentPendingStudentSummary(pendingSummary)
+	} catch (error) {
+		if (requestSerial !== profileRefreshSerial) {
+			return
+		}
+		console.warn('refresh profile students failed', error)
+	}
 }
 
 function closeBindSuccess() {
@@ -493,18 +532,12 @@ function inviteFamily() {
 	flex-shrink: 0;
 }
 
-.profile-menu-item__count {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-width: 34rpx;
-	height: 34rpx;
-	padding: 0 10rpx;
-	border-radius: 999rpx;
-	background: rgba(47, 134, 255, 0.12);
-	color: var(--parent-blue);
-	font-size: 18rpx;
-	font-weight: 700;
+.profile-menu-item__dot {
+	width: 16rpx;
+	height: 16rpx;
+	border-radius: 50%;
+	background: #ff5b43;
+	box-shadow: 0 6rpx 14rpx rgba(255, 91, 67, 0.22);
 }
 
 .profile-menu-item__arrow {
