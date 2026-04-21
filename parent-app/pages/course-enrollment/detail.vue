@@ -608,7 +608,7 @@ function goBack() {
 	justify-content: space-between;
 	gap: 20rpx;
 	padding: 24rpx 0;
-	border-bottom: 1rpx solid rgba(234, 228, 218, 0.9);
+	border-bottom: 1rpx solid var(--parent-divider);
 }
 
 .course-detail-flow--last {

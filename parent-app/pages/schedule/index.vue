@@ -671,7 +671,7 @@ onUnload(() => {
 	padding: 20rpx;
 	border-radius: 24rpx;
 	background: rgba(255, 255, 255, 0.88);
-	border: 1rpx solid rgba(230, 221, 204, 0.78);
+	border: 1rpx solid var(--parent-card-border);
 	box-shadow: var(--parent-shadow);
 }
 

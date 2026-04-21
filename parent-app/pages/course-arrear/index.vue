@@ -63,7 +63,7 @@
 							v-for="record in course.items"
 							:key="record.id"
 							class="course-arrear-record"
-							@click="openArrearDetail(course, record)"
+							@click="openArrearDetail(record)"
 						>
 							<view class="course-arrear-record__main">
 								<text class="course-arrear-record__label">上课时间：</text>
@@ -251,16 +251,17 @@ function goBack() {
 	})
 }
 
-function openArrearDetail(course, record) {
-	const lessonName = `${course?.lessonName || '欠费记录'}`.trim()
+function openArrearDetail(record) {
 	const recordID = `${record?.studentTeachingRecordId || record?.id || ''}`.trim()
-	console.log('open arrear detail placeholder', {
-		lessonName,
-		recordID
-	})
-	uni.showToast({
-		title: '欠费详情暂未开放',
-		icon: 'none'
+	if (!recordID) {
+		return
+	}
+	const query = [`studentTeachingRecordId=${encodeURIComponent(recordID)}`]
+	if (routeStudentId.value) {
+		query.push(`studentId=${encodeURIComponent(routeStudentId.value)}`)
+	}
+	uni.navigateTo({
+		url: `/pages/attendance-record/detail?${query.join('&')}`
 	})
 }
 </script>
@@ -279,7 +280,7 @@ function openArrearDetail(course, record) {
 	z-index: 40;
 	background: rgba(255, 255, 255, 0.98);
 	backdrop-filter: blur(12rpx);
-	border-bottom: 1rpx solid #f0f0f0;
+	border-bottom: 1rpx solid var(--parent-nav-divider);
 }
 
 .course-arrear-nav-fixed__inner {
@@ -383,7 +384,7 @@ function openArrearDetail(course, record) {
 	gap: 20rpx;
 	min-height: 94rpx;
 	padding: 0 32rpx;
-	border-top: 1rpx solid #f0f0f0;
+	border-top: 1rpx solid var(--parent-divider);
 	background: #ffffff;
 }
 

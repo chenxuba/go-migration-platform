@@ -25,6 +25,12 @@
 			}
 		},
 		{
+			"path": "pages/attendance-record/detail",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/course-enrollment/index",
 			"style": {
 				"navigationStyle": "custom"

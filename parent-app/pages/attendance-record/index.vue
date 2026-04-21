@@ -79,9 +79,12 @@
 						</view>
 
 						<view class="record-item__meta">
-							<view class="record-item__row">
-								<text class="record-item__label">上课时间：</text>
-								<text class="record-item__value">{{ formatTimeRange(item) }}</text>
+							<view class="record-item__row record-item__row--link" @click="openRecordDetail(item)">
+								<view class="record-item__row-main">
+									<text class="record-item__label">上课时间：</text>
+									<text class="record-item__value">{{ formatTimeRange(item) }}</text>
+								</view>
+								<view class="record-item__arrow"></view>
 							</view>
 							<view v-if="item.teacherName !== '-'" class="record-item__row">
 								<text class="record-item__label">授课老师：</text>
@@ -202,6 +205,7 @@ function normalizeStudents(list = []) {
 function normalizeClassRecordList(list = []) {
 	return (Array.isArray(list) ? list : []).map((item, index) => ({
 		id: `${item?.id || item?.studentTeachingRecordId || `record-${index + 1}`}`.trim(),
+		studentTeachingRecordId: `${item?.studentTeachingRecordId || item?.id || ''}`.trim(),
 		className: `${item?.className || item?.courseName || '课程记录'}`.trim() || '课程记录',
 		courseName: `${item?.courseName || item?.className || ''}`.trim(),
 		date: `${item?.date || ''}`.trim(),
@@ -350,6 +354,21 @@ function goBack() {
 				url: '/pages/home/index'
 			})
 		}
+	})
+}
+
+function openRecordDetail(item) {
+	const recordID = `${item?.studentTeachingRecordId || item?.id || ''}`.trim()
+	const studentID = `${selectedStudentId.value || ''}`.trim()
+	if (!recordID) {
+		return
+	}
+	const query = [`studentTeachingRecordId=${encodeURIComponent(recordID)}`]
+	if (studentID) {
+		query.push(`studentId=${encodeURIComponent(studentID)}`)
+	}
+	uni.navigateTo({
+		url: `/pages/attendance-record/detail?${query.join('&')}`
 	})
 }
 
@@ -575,7 +594,7 @@ function inviteFamily() {
 	padding: 22rpx 20rpx;
 	border-radius: 24rpx;
 	background: rgba(255, 255, 255, 0.92);
-	border: 1rpx solid rgba(230, 221, 204, 0.78);
+	border: 1rpx solid var(--parent-card-border);
 }
 
 .record-item__header {
@@ -643,6 +662,20 @@ function inviteFamily() {
 	gap: 0;
 }
 
+.record-item__row--link {
+	align-items: center;
+	justify-content: space-between;
+	gap: 18rpx;
+}
+
+.record-item__row-main {
+	min-width: 0;
+	flex: 1;
+	display: flex;
+	align-items: flex-start;
+	gap: 0;
+}
+
 .record-item__label {
 	flex-shrink: 0;
 	font-size: 24rpx;
@@ -661,6 +694,15 @@ function inviteFamily() {
 .record-item__value--strong {
 	font-weight: 700;
 	color: #1f1f1f;
+}
+
+.record-item__arrow {
+	width: 16rpx;
+	height: 16rpx;
+	flex-shrink: 0;
+	border-top: 4rpx solid #b7ab97;
+	border-right: 4rpx solid #b7ab97;
+	transform: translateY(2rpx) rotate(45deg);
 }
 
 .record-loading-text {

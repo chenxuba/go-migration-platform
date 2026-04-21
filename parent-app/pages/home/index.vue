@@ -310,7 +310,7 @@ function simplifyCampusName(name = '') {
 	display: flex;
 	gap: 18rpx;
 	padding: 24rpx 0;
-	border-top: 1rpx solid rgba(234, 225, 207, 0.76);
+	border-top: 1rpx solid var(--parent-divider);
 }
 
 .home-notice-item:first-of-type {

@@ -67,6 +67,63 @@ func (svc *Service) ListParentClassRecordsByPhone(ctx context.Context, phone str
 	}, nil
 }
 
+func (svc *Service) GetParentClassRecordDetailByPhone(ctx context.Context, phone string, query model.ParentClassRecordDetailQueryDTO) (model.ParentClassRecordDetailVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentClassRecordDetailVO{}, errors.New("家长端上课记录详情服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentClassRecordDetailVO{}, errors.New("手机号不能为空")
+	}
+	recordID := strings.TrimSpace(query.StudentTeachingRecordID)
+	if recordID == "" {
+		return model.ParentClassRecordDetailVO{}, errors.New("缺少上课记录标识")
+	}
+
+	rows, err := svc.repo.ListParentStudentCandidatesByPhone(ctx, phone)
+	if err != nil {
+		return model.ParentClassRecordDetailVO{}, err
+	}
+	displayProfiles, err := svc.resolveParentStudentDisplayProfiles(ctx, rows)
+	if err != nil {
+		return model.ParentClassRecordDetailVO{}, err
+	}
+
+	targets := buildParentScheduleTargets(rows, displayProfiles)
+	if len(targets) == 0 {
+		return model.ParentClassRecordDetailVO{}, errors.New("暂未绑定学员")
+	}
+
+	studentID := strings.TrimSpace(query.StudentID)
+	if studentID != "" {
+		target, ok := resolveParentClassRecordTarget(targets, studentID)
+		if !ok {
+			return model.ParentClassRecordDetailVO{}, errors.New("未找到对应学员")
+		}
+		detail, found, err := svc.getParentClassRecordDetailForTarget(ctx, target, recordID)
+		if err != nil {
+			return model.ParentClassRecordDetailVO{}, err
+		}
+		if !found {
+			return model.ParentClassRecordDetailVO{}, errors.New("未找到对应上课记录")
+		}
+		return detail, nil
+	}
+
+	for _, target := range targets {
+		detail, found, err := svc.getParentClassRecordDetailForTarget(ctx, target, recordID)
+		if err != nil {
+			return model.ParentClassRecordDetailVO{}, err
+		}
+		if found {
+			return detail, nil
+		}
+	}
+
+	return model.ParentClassRecordDetailVO{}, errors.New("未找到对应上课记录")
+}
+
 func (svc *Service) listParentClassRecordItemsForTarget(ctx context.Context, target parentScheduleTarget, pageIndex, pageSize int) ([]model.ParentClassRecordVO, int, error) {
 	fetchSize := pageIndex * pageSize
 	sourceStudentIDs := []int64{target.StudentID}
@@ -94,26 +151,9 @@ func (svc *Service) listParentClassRecordItemsForTarget(ctx context.Context, tar
 	}
 
 	sortParentStudentTeachingRecordItems(recordItems)
-
-	timeSlotConsumeMap, err := svc.buildParentTimeSlotConsumeMap(ctx, target.InstID, sourceStudentIDs, recordItems)
+	recordDeductDays, err := svc.buildParentClassRecordDeductDays(ctx, target.InstID, sourceStudentIDs, recordItems)
 	if err != nil {
 		return nil, 0, err
-	}
-
-	recordDeductDays := make(map[string]float64, len(recordItems))
-	assignedTimeSlotDays := make(map[string]struct{}, len(timeSlotConsumeMap))
-	for _, item := range recordItems {
-		deductDays := 0.0
-		if isParentTimeSlotClassRecord(item) {
-			key := buildParentTimeSlotConsumeKey(item.StudentID, item.LessonID, parentClassRecordDate(item.StartTime))
-			if _, exists := assignedTimeSlotDays[key]; !exists {
-				deductDays = timeSlotConsumeMap[key]
-				if deductDays > 0 {
-					assignedTimeSlotDays[key] = struct{}{}
-				}
-			}
-		}
-		recordDeductDays[parentClassRecordItemKey(item)] = deductDays
 	}
 
 	offset := (pageIndex - 1) * pageSize
@@ -132,6 +172,41 @@ func (svc *Service) listParentClassRecordItemsForTarget(ctx context.Context, tar
 	}
 	sortParentClassRecordVOs(items)
 	return items, total, nil
+}
+
+func (svc *Service) getParentClassRecordDetailForTarget(ctx context.Context, target parentScheduleTarget, recordID string) (model.ParentClassRecordDetailVO, bool, error) {
+	sourceStudentIDs := []int64{target.StudentID}
+	recordItems, err := svc.listParentClassRecordSourceItemsByRecordIDs(ctx, target.InstID, sourceStudentIDs, []string{recordID})
+	if err != nil {
+		return model.ParentClassRecordDetailVO{}, false, err
+	}
+
+	if len(recordItems) == 0 && shouldFallbackToParentScheduleAliases(target) {
+		aliasIDs, err := svc.resolveParentScheduleAliasStudentIDs(ctx, target)
+		if err != nil {
+			return model.ParentClassRecordDetailVO{}, false, err
+		}
+		if len(aliasIDs) > 0 {
+			sourceStudentIDs = aliasIDs
+			recordItems, err = svc.listParentClassRecordSourceItemsByRecordIDs(ctx, target.InstID, sourceStudentIDs, []string{recordID})
+			if err != nil {
+				return model.ParentClassRecordDetailVO{}, false, err
+			}
+		}
+	}
+
+	if len(recordItems) == 0 {
+		return model.ParentClassRecordDetailVO{}, false, nil
+	}
+
+	sortParentStudentTeachingRecordItems(recordItems)
+	recordDeductDays, err := svc.buildParentClassRecordDeductDays(ctx, target.InstID, sourceStudentIDs, recordItems)
+	if err != nil {
+		return model.ParentClassRecordDetailVO{}, false, err
+	}
+
+	item := recordItems[0]
+	return buildParentClassRecordDetailVO(target, item, recordDeductDays[parentClassRecordItemKey(item)]), true, nil
 }
 
 func (svc *Service) listParentClassRecordSourceItems(ctx context.Context, instID int64, studentIDs []int64, pageSize int) ([]model.StudentTeachingRecordItem, int, error) {
@@ -167,6 +242,80 @@ func (svc *Service) listParentClassRecordSourceItems(ctx context.Context, instID
 	}
 
 	return items, total, nil
+}
+
+func (svc *Service) listParentClassRecordSourceItemsByRecordIDs(ctx context.Context, instID int64, studentIDs []int64, recordIDs []string) ([]model.StudentTeachingRecordItem, error) {
+	recordIDs = normalizeParentClassRecordIDs(recordIDs)
+	if len(recordIDs) == 0 {
+		return []model.StudentTeachingRecordItem{}, nil
+	}
+
+	items := make([]model.StudentTeachingRecordItem, 0, len(recordIDs))
+	seen := make(map[string]struct{}, len(recordIDs))
+	pageSize := len(recordIDs)
+	if pageSize < 1 {
+		pageSize = 1
+	}
+
+	for _, studentID := range studentIDs {
+		if studentID <= 0 {
+			continue
+		}
+		result, err := svc.repo.GetStudentTeachingRecordPagedList(ctx, instID, model.StudentTeachingRecordPagedQueryDTO{
+			PageRequestModel: model.RollCallPageRequestModel{
+				PageIndex: 1,
+				PageSize:  pageSize,
+			},
+			QueryModel: model.StudentTeachingRecordQueryModel{
+				StudentID:                strconv.FormatInt(studentID, 10),
+				StudentTeachingRecordIDs: recordIDs,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range result.List {
+			key := parentClassRecordItemKey(item)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			items = append(items, item)
+		}
+		if len(items) >= len(recordIDs) {
+			break
+		}
+	}
+
+	return items, nil
+}
+
+func (svc *Service) buildParentClassRecordDeductDays(ctx context.Context, instID int64, studentIDs []int64, items []model.StudentTeachingRecordItem) (map[string]float64, error) {
+	if len(items) == 0 {
+		return map[string]float64{}, nil
+	}
+
+	timeSlotConsumeMap, err := svc.buildParentTimeSlotConsumeMap(ctx, instID, studentIDs, items)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]float64, len(items))
+	assignedTimeSlotDays := make(map[string]struct{}, len(timeSlotConsumeMap))
+	for _, item := range items {
+		deductDays := 0.0
+		if isParentTimeSlotClassRecord(item) {
+			key := buildParentTimeSlotConsumeKey(item.StudentID, item.LessonID, parentClassRecordDate(item.StartTime))
+			if _, exists := assignedTimeSlotDays[key]; !exists {
+				deductDays = timeSlotConsumeMap[key]
+				if deductDays > 0 {
+					assignedTimeSlotDays[key] = struct{}{}
+				}
+			}
+		}
+		result[parentClassRecordItemKey(item)] = deductDays
+	}
+	return result, nil
 }
 
 func (svc *Service) buildParentTimeSlotConsumeMap(ctx context.Context, instID int64, studentIDs []int64, items []model.StudentTeachingRecordItem) (map[string]float64, error) {
@@ -298,8 +447,52 @@ func buildParentClassRecordVO(target parentScheduleTarget, item model.StudentTea
 		ChargingModeText:        parentClassRecordChargingModeText(item),
 		DeductQuantity:          deductQuantity,
 		DeductDays:              deductDays,
+		ArrearQuantity:          roundParentCourseMetric(item.ArrearQuantity),
 		ShowDeductQuantity:      showDeductQuantity,
 		ShowDeductDays:          showDeductDays,
+	}
+}
+
+func buildParentClassRecordDetailVO(target parentScheduleTarget, item model.StudentTeachingRecordItem, deductDays float64) model.ParentClassRecordDetailVO {
+	base := buildParentClassRecordVO(target, item, deductDays)
+	summaryText, summaryLabel := buildParentClassRecordSummary(item, base.DeductQuantity, base.DeductDays, base.ArrearQuantity)
+	deductLabel := parentClassRecordDeductLabel(item, base.ShowDeductDays)
+	deductText := buildParentClassRecordDeductText(item, base.DeductQuantity, base.DeductDays, base.ShowDeductDays)
+
+	return model.ParentClassRecordDetailVO{
+		ID:                      base.ID,
+		StudentTeachingRecordID: base.StudentTeachingRecordID,
+		TeachingRecordID:        base.TeachingRecordID,
+		InstID:                  base.InstID,
+		CampusID:                base.CampusID,
+		CampusName:              base.CampusName,
+		StudentID:               base.StudentID,
+		StudentName:             base.StudentName,
+		StudentAvatarURL:        base.StudentAvatarURL,
+		Date:                    base.Date,
+		StartTime:               base.StartTime,
+		EndTime:                 base.EndTime,
+		LessonTime:              buildParentClassRecordLessonTime(base.Date, base.StartTime, base.EndTime),
+		ClassName:               base.ClassName,
+		CourseName:              base.CourseName,
+		TeacherName:             base.TeacherName,
+		Classroom:               base.Classroom,
+		Remark:                  base.Remark,
+		Status:                  base.Status,
+		StatusText:              base.StatusText,
+		ChargingMode:            base.ChargingMode,
+		ChargingModeText:        base.ChargingModeText,
+		DeductQuantity:          base.DeductQuantity,
+		DeductDays:              base.DeductDays,
+		ArrearQuantity:          base.ArrearQuantity,
+		ShowDeductQuantity:      base.ShowDeductQuantity,
+		ShowDeductDays:          base.ShowDeductDays,
+		SummaryText:             summaryText,
+		SummaryLabel:            summaryLabel,
+		DeductLabel:             deductLabel,
+		DeductText:              deductText,
+		ArrearLabel:             "拖欠数量",
+		ArrearText:              buildParentCourseArrearDisplayText(item.SkuMode, base.ArrearQuantity),
 	}
 }
 
@@ -439,4 +632,108 @@ func parseParentClassRecordTime(raw string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+func normalizeParentClassRecordIDs(ids []string) []string {
+	result := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, item := range ids {
+		id := strings.TrimSpace(item)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
+}
+
+func buildParentClassRecordLessonTime(date, startTime, endTime string) string {
+	date = strings.TrimSpace(date)
+	startTime = strings.TrimSpace(startTime)
+	endTime = strings.TrimSpace(endTime)
+	switch {
+	case date != "" && startTime != "" && endTime != "":
+		return date + " " + startTime + "~" + endTime
+	case date != "" && startTime != "":
+		return date + " " + startTime
+	case date != "":
+		return date
+	case startTime != "" && endTime != "":
+		return startTime + "~" + endTime
+	default:
+		return firstNonEmptyString(startTime, "-")
+	}
+}
+
+func buildParentClassRecordSummary(item model.StudentTeachingRecordItem, deductQuantity, deductDays, arrearQuantity float64) (string, string) {
+	if isParentNoCountClassRecord(item) {
+		return "-", "本次不计课时"
+	}
+
+	if roundParentCourseMetric(deductDays) > 0 {
+		return "-" + formatParentCourseMetric(deductDays), "扣除天数"
+	}
+
+	if roundParentCourseMetric(deductQuantity) > 0 {
+		return "-" + formatParentCourseMetric(deductQuantity), parentClassRecordDeductLabel(item, false)
+	}
+
+	if roundParentCourseMetric(arrearQuantity) > 0 {
+		return "-" + formatParentCourseMetric(arrearQuantity), parentClassRecordArrearSummaryLabel(item.SkuMode)
+	}
+
+	return "-", parentClassRecordDefaultSummaryLabel(item.SkuMode)
+}
+
+func buildParentClassRecordDeductText(item model.StudentTeachingRecordItem, deductQuantity, deductDays float64, showDeductDays bool) string {
+	if showDeductDays && roundParentCourseMetric(deductDays) > 0 {
+		return formatParentCourseMetric(deductDays) + "天"
+	}
+	if roundParentCourseMetric(deductQuantity) <= 0 {
+		return ""
+	}
+	switch normalizeParentCourseChargingMode(item.SkuMode) {
+	case 3:
+		return formatParentCourseMetric(deductQuantity) + "元"
+	default:
+		return formatParentCourseMetric(deductQuantity) + "课时"
+	}
+}
+
+func parentClassRecordDeductLabel(item model.StudentTeachingRecordItem, showDeductDays bool) string {
+	if showDeductDays {
+		return "扣除天数"
+	}
+	switch normalizeParentCourseChargingMode(item.SkuMode) {
+	case 3:
+		return "扣除金额"
+	default:
+		return "扣除课时"
+	}
+}
+
+func parentClassRecordArrearSummaryLabel(mode int) string {
+	switch normalizeParentCourseChargingMode(mode) {
+	case 2:
+		return "拖欠天数"
+	case 3:
+		return "拖欠金额"
+	default:
+		return "拖欠课时"
+	}
+}
+
+func parentClassRecordDefaultSummaryLabel(mode int) string {
+	switch normalizeParentCourseChargingMode(mode) {
+	case 2:
+		return "扣除天数"
+	case 3:
+		return "扣除金额"
+	default:
+		return "扣除课时"
+	}
 }

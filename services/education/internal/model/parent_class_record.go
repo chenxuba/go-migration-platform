@@ -6,6 +6,11 @@ type ParentClassRecordQueryDTO struct {
 	PageSize  int    `json:"pageSize"`
 }
 
+type ParentClassRecordDetailQueryDTO struct {
+	StudentID               string `json:"studentId"`
+	StudentTeachingRecordID string `json:"studentTeachingRecordId"`
+}
+
 type ParentClassRecordSummaryVO struct {
 	Students  []ParentBoundStudentVO `json:"students"`
 	Items     []ParentClassRecordVO  `json:"items"`
@@ -50,6 +55,43 @@ type ParentClassRecordVO struct {
 	ChargingModeText        string  `json:"chargingModeText"`
 	DeductQuantity          float64 `json:"deductQuantity"`
 	DeductDays              float64 `json:"deductDays"`
+	ArrearQuantity          float64 `json:"arrearQuantity"`
 	ShowDeductQuantity      bool    `json:"showDeductQuantity"`
 	ShowDeductDays          bool    `json:"showDeductDays"`
+}
+
+type ParentClassRecordDetailVO struct {
+	ID                      string  `json:"id"`
+	StudentTeachingRecordID string  `json:"studentTeachingRecordId"`
+	TeachingRecordID        string  `json:"teachingRecordId"`
+	InstID                  int64   `json:"instId"`
+	CampusID                string  `json:"campusId"`
+	CampusName              string  `json:"campusName"`
+	StudentID               string  `json:"studentId"`
+	StudentName             string  `json:"studentName"`
+	StudentAvatarURL        string  `json:"studentAvatarUrl,omitempty"`
+	Date                    string  `json:"date"`
+	StartTime               string  `json:"startTime"`
+	EndTime                 string  `json:"endTime"`
+	LessonTime              string  `json:"lessonTime"`
+	ClassName               string  `json:"className"`
+	CourseName              string  `json:"courseName"`
+	TeacherName             string  `json:"teacherName"`
+	Classroom               string  `json:"classroom"`
+	Remark                  string  `json:"remark"`
+	Status                  int     `json:"status"`
+	StatusText              string  `json:"statusText"`
+	ChargingMode            int     `json:"chargingMode"`
+	ChargingModeText        string  `json:"chargingModeText"`
+	DeductQuantity          float64 `json:"deductQuantity"`
+	DeductDays              float64 `json:"deductDays"`
+	ArrearQuantity          float64 `json:"arrearQuantity"`
+	ShowDeductQuantity      bool    `json:"showDeductQuantity"`
+	ShowDeductDays          bool    `json:"showDeductDays"`
+	SummaryText             string  `json:"summaryText"`
+	SummaryLabel            string  `json:"summaryLabel"`
+	DeductLabel             string  `json:"deductLabel"`
+	DeductText              string  `json:"deductText"`
+	ArrearLabel             string  `json:"arrearLabel"`
+	ArrearText              string  `json:"arrearText"`
 }

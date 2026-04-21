@@ -492,7 +492,7 @@ function inviteFamily() {
 	justify-content: space-between;
 	min-height: 104rpx;
 	padding: 0;
-	border-top: 1rpx solid rgba(236, 226, 206, 0.8);
+	border-top: 1rpx solid var(--parent-divider);
 }
 
 .profile-menu-item:first-child {

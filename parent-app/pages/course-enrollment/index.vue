@@ -476,7 +476,7 @@ function inviteFamily() {
 	padding: 24rpx 22rpx;
 	border-radius: 24rpx;
 	background: rgba(255, 255, 255, 0.92);
-	border: 1rpx solid rgba(230, 221, 204, 0.78);
+	border: 1rpx solid var(--parent-card-border);
 	box-shadow: var(--parent-shadow);
 }
 
@@ -508,7 +508,7 @@ function inviteFamily() {
 .course-item__divider {
 	height: 1rpx;
 	margin: 20rpx 0 18rpx;
-	background: rgba(234, 228, 218, 0.9);
+	background: var(--parent-divider);
 }
 
 .course-item__meta {

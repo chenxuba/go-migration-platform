@@ -206,6 +206,29 @@ func (handler *Handler) parentClassRecords(w http.ResponseWriter, r *http.Reques
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) parentClassRecordDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	query := model.ParentClassRecordDetailQueryDTO{
+		StudentID:               strings.TrimSpace(r.URL.Query().Get("studentId")),
+		StudentTeachingRecordID: strings.TrimSpace(r.URL.Query().Get("studentTeachingRecordId")),
+	}
+	result, err := handler.service.GetParentClassRecordDetailByPhone(r.Context(), claims.Username, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) parentCourseEnrollments(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireParentAuth(w, r, ctx)

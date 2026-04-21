@@ -21,7 +21,10 @@ page {
 	--parent-bg-soft: #fff4e1;
 	--parent-card: rgba(255, 255, 255, 0.9);
 	--parent-card-solid: #ffffff;
-	--parent-line: rgba(225, 208, 176, 0.75);
+	--parent-line: rgba(236, 230, 220, 0.42);
+	--parent-card-border: rgba(243, 239, 233, 0.9);
+	--parent-divider: rgba(246, 243, 238, 0.98);
+	--parent-nav-divider: rgba(248, 246, 242, 0.98);
 	--parent-text: #1f1f1f;
 	--parent-subtext: #7a7466;
 	--parent-muted: #b8b2a4;
