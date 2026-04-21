@@ -154,8 +154,10 @@ func (handler *Handler) parentClassRecords(w http.ResponseWriter, r *http.Reques
 	}
 
 	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("pageSize")))
+	pageIndex, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("pageIndex")))
 	query := model.ParentClassRecordQueryDTO{
 		StudentID: strings.TrimSpace(r.URL.Query().Get("studentId")),
+		PageIndex: pageIndex,
 		PageSize:  pageSize,
 	}
 	result, err := handler.service.ListParentClassRecordsByPhone(r.Context(), claims.Username, query)

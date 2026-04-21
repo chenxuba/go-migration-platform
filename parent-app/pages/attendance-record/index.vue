@@ -37,11 +37,6 @@
 			</view>
 
 			<view class="parent-card record-list-card">
-				<view class="record-list-card__header">
-					<text class="record-list-card__title">最近记录</text>
-					<text v-if="recordList.length" class="record-list-card__count">{{ recordList.length }}条</text>
-				</view>
-
 				<template v-if="!isAuthenticated">
 					<view class="parent-empty-card record-empty-card">
 						<view class="parent-empty-badge">记</view>
@@ -75,36 +70,36 @@
 						<view class="record-item__header">
 							<view class="record-item__title-wrap">
 								<text class="record-item__title">{{ item.className }}</text>
-								<text v-if="item.courseName && item.courseName !== item.className" class="record-item__course">{{ item.courseName }}</text>
 							</view>
 							<text class="record-item__status" :class="recordStatusClass(item.statusText)">{{ item.statusText }}</text>
 						</view>
 
 						<view class="record-item__meta">
 							<view class="record-item__row">
-								<text class="record-item__label">上课时间</text>
+								<text class="record-item__label">上课时间：</text>
 								<text class="record-item__value">{{ formatTimeRange(item) }}</text>
 							</view>
 							<view v-if="item.teacherName !== '-'" class="record-item__row">
-								<text class="record-item__label">授课老师</text>
+								<text class="record-item__label">授课老师：</text>
 								<text class="record-item__value">{{ item.teacherName }}</text>
 							</view>
 							<view v-if="item.classroom !== '-'" class="record-item__row">
-								<text class="record-item__label">上课教室</text>
+								<text class="record-item__label">上课教室：</text>
 								<text class="record-item__value">{{ item.classroom }}</text>
 							</view>
 							<view v-if="item.showDeductQuantity" class="record-item__row">
-								<text class="record-item__label">扣除课时</text>
+								<text class="record-item__label">扣除课时：</text>
 								<text class="record-item__value record-item__value--strong">{{ formatMetric(item.deductQuantity) }}</text>
 							</view>
 							<view v-if="item.showDeductDays" class="record-item__row">
-								<text class="record-item__label">扣除天数</text>
+								<text class="record-item__label">扣除天数：</text>
 								<text class="record-item__value record-item__value--strong">{{ formatMetric(item.deductDays) }}</text>
 							</view>
 						</view>
 					</view>
 
-					<view v-if="pageLoading" class="record-loading-text">正在刷新最新记录...</view>
+					<view v-if="moreLoading" class="record-loading-text">正在加载更多...</view>
+					<view v-else-if="!hasMore && recordList.length >= pageSize" class="record-loading-text">没有更多记录了</view>
 				</template>
 
 				<template v-else>
@@ -128,7 +123,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onReachBottom, onShow } from '@dcloudio/uni-app'
 import BindSuccessDialog from '@/components/bind-success-dialog/bind-success-dialog.vue'
 import { authorizeByWechatPhone } from '@/common/parent-auth'
 import { listParentClassRecords } from '@/common/parent-api'
@@ -142,22 +137,24 @@ import {
 } from '@/common/parent-state'
 
 const nav = getNavLayout()
-const summary = ref({
-	students: [],
-	items: []
-})
+const summaryStudents = ref([])
+const recordItems = ref([])
 const hasLoadedSummary = ref(false)
 const selectedStudentId = ref('')
 const pageLoading = ref(false)
+const moreLoading = ref(false)
+const hasMore = ref(false)
 const authLoading = computed(() => parentState.authLoading)
 const isAuthenticated = computed(() => parentState.isAuthenticated)
 const bindSuccessVisible = computed(() => parentState.bindSuccessVisible)
 const latestBindStudentName = computed(() => parentState.latestBindStudentName)
+const pageIndex = ref(1)
+const pageSize = 20
 
 let classRecordRequestSerial = 0
 
 const displayStudents = computed(() => {
-	const backendStudents = normalizeStudents(summary.value?.students || [])
+	const backendStudents = normalizeStudents(summaryStudents.value || [])
 	if (hasLoadedSummary.value) {
 		return backendStudents
 	}
@@ -165,18 +162,16 @@ const displayStudents = computed(() => {
 })
 const shouldCenterStudents = computed(() => displayStudents.value.length > 0 && displayStudents.value.length <= 3)
 
-const recordList = computed(() => normalizeClassRecordList(summary.value?.items || []))
+const recordList = computed(() => normalizeClassRecordList(recordItems.value || []))
 
 onShow(() => {
 	if (!parentState.isAuthenticated || !parentState.authToken) {
 		hasLoadedSummary.value = false
-		summary.value = {
-			students: [],
-			items: []
-		}
+		summaryStudents.value = []
+		resetRecordPagination()
 		return
 	}
-	const cachedStudents = normalizeStudents(summary.value?.students || [])
+	const cachedStudents = normalizeStudents(summaryStudents.value || [])
 	const sessionStudents = normalizeStudents(parentState.students || [])
 	const needSyncStudents = sessionStudents.length !== cachedStudents.length
 		|| sessionStudents.some((item, index) => item.id !== cachedStudents[index]?.id)
@@ -184,7 +179,13 @@ onShow(() => {
 		hasLoadedSummary.value = false
 	}
 	ensureSelectedStudent()
-	refreshClassRecords()
+	refreshClassRecords({
+		reset: true
+	})
+})
+
+onReachBottom(() => {
+	loadMoreClassRecords()
 })
 
 function normalizeStudents(list = []) {
@@ -227,63 +228,101 @@ function ensureSelectedStudent() {
 	selectedStudentId.value = matched?.id || students[0].id
 }
 
-async function refreshClassRecords() {
+function resetRecordPagination() {
+	recordItems.value = []
+	pageIndex.value = 1
+	hasMore.value = false
+	pageLoading.value = false
+	moreLoading.value = false
+}
+
+async function refreshClassRecords(options = {}) {
 	if (!parentState.isAuthenticated || !parentState.authToken) {
 		return
 	}
+	const reset = options?.reset !== false
 
 	ensureSelectedStudent()
 	const token = `${parentState.authToken || ''}`.trim()
 	const targetStudentId = `${selectedStudentId.value || ''}`.trim()
 	if (!token || !targetStudentId) {
-		summary.value = {
-			students: displayStudents.value,
-			items: []
-		}
+		summaryStudents.value = displayStudents.value
+		resetRecordPagination()
 		return
 	}
 
+	const requestPageIndex = reset ? 1 : pageIndex.value + 1
+	if (reset) {
+		pageLoading.value = true
+	} else {
+		moreLoading.value = true
+	}
 	const requestSerial = ++classRecordRequestSerial
-	pageLoading.value = true
 	try {
 		const result = await listParentClassRecords(token, {
 			studentId: targetStudentId,
-			pageSize: 50
+			pageIndex: requestPageIndex,
+			pageSize
 		})
 		if (requestSerial !== classRecordRequestSerial || token !== `${parentState.authToken || ''}`.trim()) {
 			return
 		}
 		hasLoadedSummary.value = true
-		summary.value = {
-			students: result?.students || [],
-			items: result?.items || []
-		}
+		summaryStudents.value = result?.students || []
 		const nextStudents = normalizeStudents(result?.students || [])
 		if (nextStudents.length && !nextStudents.some(item => item.id === selectedStudentId.value)) {
 			selectedStudentId.value = nextStudents[0].id
 		}
+		const nextItems = result?.items || []
+		recordItems.value = reset ? nextItems : mergePagedRecordItems(recordItems.value, nextItems)
+		pageIndex.value = Number(result?.pageIndex || requestPageIndex)
+		hasMore.value = !!result?.hasMore
 	} catch (error) {
 		if (requestSerial !== classRecordRequestSerial) {
 			return
 		}
 		console.warn('load parent class records failed', error)
-		uni.showToast({
-			title: `${error?.message || '加载失败'}`.slice(0, 24),
-			icon: 'none'
-		})
+		if (reset) {
+			uni.showToast({
+				title: `${error?.message || '加载失败'}`.slice(0, 24),
+				icon: 'none'
+			})
+		}
 	} finally {
-		if (requestSerial === classRecordRequestSerial) {
+		if (requestSerial === classRecordRequestSerial && reset) {
 			pageLoading.value = false
+		}
+		if (requestSerial === classRecordRequestSerial && !reset) {
+			moreLoading.value = false
 		}
 	}
 }
 
 function handleStudentSelect(studentId) {
-	if (!studentId || studentId === selectedStudentId.value || pageLoading.value) {
+	if (!studentId || studentId === selectedStudentId.value || pageLoading.value || moreLoading.value) {
 		return
 	}
 	selectedStudentId.value = studentId
-	refreshClassRecords()
+	resetRecordPagination()
+	refreshClassRecords({
+		reset: true
+	})
+	uni.pageScrollTo({
+		scrollTop: 0,
+		duration: 180
+	})
+}
+
+function loadMoreClassRecords() {
+	if (!parentState.isAuthenticated || !parentState.authToken) {
+		return
+	}
+	if (!hasMore.value || pageLoading.value || moreLoading.value) {
+		return
+	}
+	refreshClassRecords({
+		reset: false
+	})
 }
 
 function handleMockPhoneAuth() {
@@ -349,6 +388,22 @@ function formatTimeRange(item = {}) {
 		return dateText
 	}
 	return `${dateText} ${startText} ~ ${endText}`.trim()
+}
+
+function mergePagedRecordItems(currentItems = [], nextItems = []) {
+	const list = Array.isArray(currentItems) ? [...currentItems] : []
+	const seen = new Set(list.map(item => `${item?.id || item?.studentTeachingRecordId || ''}`.trim()).filter(Boolean))
+	;(Array.isArray(nextItems) ? nextItems : []).forEach(item => {
+		const key = `${item?.id || item?.studentTeachingRecordId || ''}`.trim()
+		if (key && seen.has(key)) {
+			return
+		}
+		if (key) {
+			seen.add(key)
+		}
+		list.push(item)
+	})
+	return list
 }
 
 function closeBindSuccess() {
@@ -429,7 +484,7 @@ function inviteFamily() {
 	align-items: center;
 	justify-content: center;
 	min-width: 156rpx;
-	padding: 22rpx 14rpx 18rpx;
+	padding: 16rpx 14rpx 14rpx;
 }
 
 .record-student-item--center {
@@ -521,13 +576,6 @@ function inviteFamily() {
 	color: #232323;
 }
 
-.record-item__course {
-	margin-top: 8rpx;
-	font-size: 22rpx;
-	line-height: 1.5;
-	color: var(--parent-subtext);
-}
-
 .record-item__status {
 	flex-shrink: 0;
 	padding: 10rpx 18rpx;
@@ -569,23 +617,22 @@ function inviteFamily() {
 .record-item__row {
 	display: flex;
 	align-items: flex-start;
-	justify-content: space-between;
-	gap: 24rpx;
+	gap: 0;
 }
 
 .record-item__label {
 	flex-shrink: 0;
-	font-size: 22rpx;
+	font-size: 24rpx;
 	line-height: 1.5;
 	color: #968f82;
 }
 
 .record-item__value {
 	flex: 1;
-	text-align: right;
 	font-size: 24rpx;
 	line-height: 1.5;
 	color: #353535;
+	text-align: left;
 }
 
 .record-item__value--strong {

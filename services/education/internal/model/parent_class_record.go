@@ -2,12 +2,17 @@ package model
 
 type ParentClassRecordQueryDTO struct {
 	StudentID string `json:"studentId"`
+	PageIndex int    `json:"pageIndex"`
 	PageSize  int    `json:"pageSize"`
 }
 
 type ParentClassRecordSummaryVO struct {
-	Students []ParentBoundStudentVO `json:"students"`
-	Items    []ParentClassRecordVO  `json:"items"`
+	Students  []ParentBoundStudentVO `json:"students"`
+	Items     []ParentClassRecordVO  `json:"items"`
+	PageIndex int                    `json:"pageIndex"`
+	PageSize  int                    `json:"pageSize"`
+	Total     int                    `json:"total"`
+	HasMore   bool                   `json:"hasMore"`
 }
 
 type ParentBoundStudentVO struct {

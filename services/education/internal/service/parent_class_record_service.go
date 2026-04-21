@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	parentClassRecordDefaultPageSize = 50
-	parentClassRecordMaxPageSize     = 100
+	parentClassRecordDefaultPageIndex = 1
+	parentClassRecordDefaultPageSize  = 50
+	parentClassRecordMaxPageSize      = 100
 )
 
 func (svc *Service) ListParentClassRecordsByPhone(ctx context.Context, phone string, query model.ParentClassRecordQueryDTO) (model.ParentClassRecordSummaryVO, error) {
@@ -45,53 +46,57 @@ func (svc *Service) ListParentClassRecordsByPhone(ctx context.Context, phone str
 		return model.ParentClassRecordSummaryVO{}, errors.New("未找到对应学员")
 	}
 
-	items, err := svc.listParentClassRecordItemsForTarget(ctx, target, normalizeParentClassRecordPageSize(query.PageSize))
+	pageIndex := normalizeParentClassRecordPageIndex(query.PageIndex)
+	pageSize := normalizeParentClassRecordPageSize(query.PageSize)
+	items, total, err := svc.listParentClassRecordItemsForTarget(ctx, target, pageIndex, pageSize)
 	if err != nil {
 		return model.ParentClassRecordSummaryVO{}, err
 	}
 
 	return model.ParentClassRecordSummaryVO{
-		Students: students,
-		Items:    items,
+		Students:  students,
+		Items:     items,
+		PageIndex: pageIndex,
+		PageSize:  pageSize,
+		Total:     total,
+		HasMore:   pageIndex*pageSize < total,
 	}, nil
 }
 
-func (svc *Service) listParentClassRecordItemsForTarget(ctx context.Context, target parentScheduleTarget, pageSize int) ([]model.ParentClassRecordVO, error) {
+func (svc *Service) listParentClassRecordItemsForTarget(ctx context.Context, target parentScheduleTarget, pageIndex, pageSize int) ([]model.ParentClassRecordVO, int, error) {
+	fetchSize := pageIndex * pageSize
 	sourceStudentIDs := []int64{target.StudentID}
-	recordItems, err := svc.listParentClassRecordSourceItems(ctx, target.InstID, sourceStudentIDs, pageSize)
+	recordItems, total, err := svc.listParentClassRecordSourceItems(ctx, target.InstID, sourceStudentIDs, fetchSize)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	if len(recordItems) == 0 && shouldFallbackToParentScheduleAliases(target) {
+	if total <= 0 && shouldFallbackToParentScheduleAliases(target) {
 		aliasIDs, err := svc.resolveParentScheduleAliasStudentIDs(ctx, target)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if len(aliasIDs) > 0 {
 			sourceStudentIDs = aliasIDs
-			recordItems, err = svc.listParentClassRecordSourceItems(ctx, target.InstID, sourceStudentIDs, pageSize)
+			recordItems, total, err = svc.listParentClassRecordSourceItems(ctx, target.InstID, sourceStudentIDs, fetchSize)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 		}
 	}
 
-	if len(recordItems) == 0 {
-		return []model.ParentClassRecordVO{}, nil
+	if total <= 0 || len(recordItems) == 0 {
+		return []model.ParentClassRecordVO{}, total, nil
 	}
 
 	sortParentStudentTeachingRecordItems(recordItems)
-	if len(recordItems) > pageSize {
-		recordItems = recordItems[:pageSize]
-	}
 
 	timeSlotConsumeMap, err := svc.buildParentTimeSlotConsumeMap(ctx, target.InstID, sourceStudentIDs, recordItems)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	items := make([]model.ParentClassRecordVO, 0, len(recordItems))
+	recordDeductDays := make(map[string]float64, len(recordItems))
 	assignedTimeSlotDays := make(map[string]struct{}, len(timeSlotConsumeMap))
 	for _, item := range recordItems {
 		deductDays := 0.0
@@ -104,16 +109,31 @@ func (svc *Service) listParentClassRecordItemsForTarget(ctx context.Context, tar
 				}
 			}
 		}
-		items = append(items, buildParentClassRecordVO(target, item, deductDays))
+		recordDeductDays[parentClassRecordItemKey(item)] = deductDays
 	}
 
+	offset := (pageIndex - 1) * pageSize
+	if offset >= len(recordItems) {
+		return []model.ParentClassRecordVO{}, total, nil
+	}
+	end := offset + pageSize
+	if end > len(recordItems) {
+		end = len(recordItems)
+	}
+
+	pageItems := recordItems[offset:end]
+	items := make([]model.ParentClassRecordVO, 0, len(pageItems))
+	for _, item := range pageItems {
+		items = append(items, buildParentClassRecordVO(target, item, recordDeductDays[parentClassRecordItemKey(item)]))
+	}
 	sortParentClassRecordVOs(items)
-	return items, nil
+	return items, total, nil
 }
 
-func (svc *Service) listParentClassRecordSourceItems(ctx context.Context, instID int64, studentIDs []int64, pageSize int) ([]model.StudentTeachingRecordItem, error) {
+func (svc *Service) listParentClassRecordSourceItems(ctx context.Context, instID int64, studentIDs []int64, pageSize int) ([]model.StudentTeachingRecordItem, int, error) {
 	items := make([]model.StudentTeachingRecordItem, 0, len(studentIDs)*2)
 	seen := make(map[string]struct{}, len(studentIDs)*2)
+	total := 0
 
 	for _, studentID := range studentIDs {
 		if studentID <= 0 {
@@ -129,13 +149,11 @@ func (svc *Service) listParentClassRecordSourceItems(ctx context.Context, instID
 			},
 		})
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
+		total += result.Total
 		for _, item := range result.List {
-			recordID := strings.TrimSpace(item.StudentTeachingRecordID)
-			if recordID == "" {
-				recordID = strings.TrimSpace(item.TeachingRecordID) + "|" + strings.TrimSpace(item.StudentID) + "|" + strings.TrimSpace(item.StartTime)
-			}
+			recordID := parentClassRecordItemKey(item)
 			if _, exists := seen[recordID]; exists {
 				continue
 			}
@@ -144,7 +162,7 @@ func (svc *Service) listParentClassRecordSourceItems(ctx context.Context, instID
 		}
 	}
 
-	return items, nil
+	return items, total, nil
 }
 
 func (svc *Service) buildParentTimeSlotConsumeMap(ctx context.Context, instID int64, studentIDs []int64, items []model.StudentTeachingRecordItem) (map[string]float64, error) {
@@ -213,6 +231,13 @@ func normalizeParentClassRecordPageSize(pageSize int) int {
 		return parentClassRecordMaxPageSize
 	}
 	return pageSize
+}
+
+func normalizeParentClassRecordPageIndex(pageIndex int) int {
+	if pageIndex <= 0 {
+		return parentClassRecordDefaultPageIndex
+	}
+	return pageIndex
 }
 
 func buildParentBoundStudents(targets []parentScheduleTarget) []model.ParentBoundStudentVO {
@@ -296,6 +321,14 @@ func sortParentClassRecordVOs(items []model.ParentClassRecordVO) {
 		}
 		return items[i].StudentTeachingRecordID > items[j].StudentTeachingRecordID
 	})
+}
+
+func parentClassRecordItemKey(item model.StudentTeachingRecordItem) string {
+	recordID := strings.TrimSpace(item.StudentTeachingRecordID)
+	if recordID != "" {
+		return recordID
+	}
+	return strings.TrimSpace(item.TeachingRecordID) + "|" + strings.TrimSpace(item.StudentID) + "|" + strings.TrimSpace(item.StartTime)
 }
 
 func buildParentTimeSlotConsumeKey(studentID, lessonID, date string) string {
