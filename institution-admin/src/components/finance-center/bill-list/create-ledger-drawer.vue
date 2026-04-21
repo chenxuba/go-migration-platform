@@ -23,6 +23,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { payMethodOptionsWithIcons } from '@/components/common/pay-method-options-data'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { useDrawer } from '@/composables/useDrawer'
+import { useUserStore } from '@/stores/user'
 
 const props = defineProps({
   open: {
@@ -34,6 +35,7 @@ const props = defineProps({
 const emit = defineEmits(['update:open'])
 
 const { openDrawer } = useDrawer(props, emit)
+const userStore = useUserStore()
 
 const formState = reactive({
   amount: undefined,
@@ -140,6 +142,17 @@ watch(
     activeExpenseCategory.value = 'management'
     activeLedgerItemKey.value = ''
   },
+)
+
+watch(
+  () => props.open,
+  (open) => {
+    if (!open)
+      return
+
+    formState.dealStaffId = userStore.instUserId || undefined
+  },
+  { immediate: true },
 )
 </script>
 
