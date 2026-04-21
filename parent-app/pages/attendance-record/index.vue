@@ -1,7 +1,7 @@
 <template>
 	<view class="parent-page">
-		<view class="parent-shell">
-			<view class="parent-header record-header" :style="{ paddingTop: `${nav.top}px` }">
+		<view class="record-nav-fixed" :style="{ paddingTop: `${nav.top}px` }">
+			<view class="record-nav-fixed__inner">
 				<view class="parent-nav-row record-nav" :style="{ minHeight: `${nav.height}px` }">
 					<view class="record-nav__side" :style="{ width: `${nav.width}px`, minHeight: `${nav.height}px` }">
 						<view class="record-back" @click="goBack">
@@ -11,7 +11,11 @@
 					<text class="record-nav__title">上课记录</text>
 					<view class="parent-nav-spacer" :style="{ width: `${nav.width}px`, height: `${nav.height}px` }"></view>
 				</view>
+			</view>
+		</view>
 
+		<view class="parent-shell" :style="{ paddingTop: `${nav.top + nav.height + 18}px` }">
+			<view class="parent-header record-header">
 				<view v-if="isAuthenticated && displayStudents.length" class="parent-card record-student-card">
 					<scroll-view class="record-student-scroll" :scroll-x="!shouldCenterStudents" show-scrollbar="false" enable-flex>
 						<view
@@ -422,6 +426,21 @@ function inviteFamily() {
 <style scoped>
 .record-header {
 	padding-bottom: 18rpx;
+}
+
+.record-nav-fixed {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 40;
+	background:
+		linear-gradient(180deg, rgba(255, 246, 230, 0.98) 0%, rgba(255, 251, 242, 0.95) 72%, rgba(255, 251, 242, 0) 100%);
+	backdrop-filter: blur(12rpx);
+}
+
+.record-nav-fixed__inner {
+	padding: 0 24rpx 10rpx;
 }
 
 .record-nav__side {

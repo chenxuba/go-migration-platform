@@ -1,13 +1,12 @@
 <template>
 	<view class="parent-page">
-		<view class="parent-shell">
-			<view class="parent-header" :style="{ paddingTop: `${nav.top}px` }">
+		<view id="schedule-fixed-header" class="schedule-fixed-header" :style="{ paddingTop: `${nav.top}px` }">
+			<view class="schedule-fixed-header__inner">
 				<view class="parent-nav-row schedule-nav" :style="{ minHeight: `${nav.height}px` }">
 					<view class="parent-nav-spacer" :style="{ width: `${nav.width}px` }"></view>
 					<text class="schedule-nav__title">课表</text>
 					<view class="parent-nav-spacer" :style="{ width: `${nav.width}px`, height: `${nav.height}px` }"></view>
 				</view>
-
 				<view class="parent-card schedule-calendar-card">
 					<view
 						id="schedule-week-viewport"
@@ -35,11 +34,11 @@
 										<text class="schedule-week-item__label">{{ day.weekLabel }}</text>
 										<text class="schedule-week-item__day">{{ day.day }}</text>
 										<view class="schedule-week-item__indicator">
-											<view
-												v-if="day.hasCourse"
-												class="schedule-week-item__dot"
-												:class="{ 'schedule-week-item__dot--active': day.isActive }"
-											></view>
+										<view
+											v-if="day.hasCourse"
+											class="schedule-week-item__dot"
+											:class="{ 'schedule-week-item__dot--active': day.isActive }"
+										></view>
 										</view>
 									</view>
 								</view>
@@ -49,7 +48,9 @@
 					<view class="schedule-date-text">{{ selectedDateText }}</view>
 				</view>
 			</view>
+		</view>
 
+		<view class="parent-shell" :style="{ paddingTop: `${scheduleHeaderHeight + 12}px` }">
 			<view class="parent-card schedule-list-card">
 				<text class="schedule-list-card__title">课程安排</text>
 
@@ -140,6 +141,7 @@ import {
 const nav = getNavLayout()
 const systemInfo = uni.getSystemInfoSync()
 const weekViewportWidth = ref(Math.max((systemInfo.windowWidth || 375) - 32, 280))
+const scheduleHeaderHeight = ref(nav.top + nav.height + 220)
 const dragOffsetX = ref(0)
 const isDraggingWeek = ref(false)
 const isWeekAnimating = ref(false)
@@ -154,6 +156,7 @@ const WEEK_TAP_SLOP = 8
 let weekTouchStartX = 0
 let weekAnimationTimer = null
 let weekMeasureTimer = null
+let scheduleHeaderMeasureTimer = null
 let scheduleDetailRequestSerial = 0
 let scheduleDateMarkRequestSerial = 0
 
@@ -369,6 +372,19 @@ function measureWeekViewport() {
 	})
 }
 
+function measureScheduleHeader() {
+	nextTick(() => {
+		uni.createSelectorQuery()
+			.select('#schedule-fixed-header')
+			.boundingClientRect(rect => {
+				if (rect?.height) {
+					scheduleHeaderHeight.value = rect.height
+				}
+			})
+			.exec()
+	})
+}
+
 function clearWeekAnimationTimer() {
 	if (weekAnimationTimer) {
 		clearTimeout(weekAnimationTimer)
@@ -480,7 +496,9 @@ function inviteFamily() {
 
 onReady(() => {
 	measureWeekViewport()
+	measureScheduleHeader()
 	weekMeasureTimer = setTimeout(measureWeekViewport, 80)
+	scheduleHeaderMeasureTimer = setTimeout(measureScheduleHeader, 80)
 })
 
 onShow(() => {
@@ -502,10 +520,29 @@ onUnload(() => {
 		clearTimeout(weekMeasureTimer)
 		weekMeasureTimer = null
 	}
+	if (scheduleHeaderMeasureTimer) {
+		clearTimeout(scheduleHeaderMeasureTimer)
+		scheduleHeaderMeasureTimer = null
+	}
 })
 </script>
 
 <style scoped>
+.schedule-fixed-header {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 40;
+	background:
+		linear-gradient(180deg, rgba(255, 246, 230, 0.98) 0%, rgba(255, 251, 242, 0.95) 72%, rgba(255, 251, 242, 0) 100%);
+	backdrop-filter: blur(12rpx);
+}
+
+.schedule-fixed-header__inner {
+	padding: 0 24rpx 10rpx;
+}
+
 .schedule-nav__title {
 	flex: 1;
 	text-align: center;
