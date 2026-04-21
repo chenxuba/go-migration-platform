@@ -51,7 +51,7 @@ function disabledDate(current) {
     <div class="contenter">
       <div class="form-panel">
         <a-form layout="vertical" :model="formState" class="drawer-form">
-          <div class="middleBox mt2 py6 pb2 px8 bg-white">
+          <div class="middleBox  pb2  bg-white">
             <div>
               <div class="lebal text-#666">
                 <span class="text-#f03 mr1" style="font-family: SimSun, sans-serif;">*</span>账单金额：
@@ -103,6 +103,16 @@ function disabledDate(current) {
           </div>
         </a-form>
       </div>
+      <!-- 收入、支出 -->
+      <!-- a-radio-group -->
+      <a-radio-group button-style="solid" v-model:value="formState.ledgerType">
+        <a-radio-button  value="1" class="w-175px text-center">
+          收入
+        </a-radio-button>
+        <a-radio-button value="2" class="w-175px text-center">
+          支出
+        </a-radio-button>
+      </a-radio-group>
     </div>
     <template #footer>
       <div class="flex justify-end">
@@ -127,6 +137,10 @@ function disabledDate(current) {
 
 .contenter {
   background: #fff;
+  padding: 24px;
+  .form-panel {
+   background: #fff;
+  }
 }
 
 
@@ -163,9 +177,7 @@ function disabledDate(current) {
 }
 
 @media (max-width: 960px) {
-  .form-panel {
-    padding: 24px;
-  }
+ 
 
   .middleBox {
     max-width: 100%;
