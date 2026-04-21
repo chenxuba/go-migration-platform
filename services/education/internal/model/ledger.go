@@ -17,6 +17,10 @@ const (
 )
 
 const (
+	LedgerManualBizTypeDefault = 201
+)
+
+const (
 	LedgerConfirmStatusPending      = 0
 	LedgerConfirmStatusConfirmed    = 1
 	LedgerConfirmStatusRefunding    = 2
@@ -30,6 +34,31 @@ const (
 	LedgerSubCategoryRechargeAccountRefund = "recharge-account-refund"
 	LedgerSubCategoryRefundCourse          = "refund-course"
 	LedgerSubCategoryTransferOrder         = "transfer-course"
+)
+
+const (
+	LedgerCategoryManualOtherBusiness     = "manual-other-business"
+	LedgerCategoryManualManagementExpense = "manual-management-expense"
+	LedgerCategoryManualSalesExpense      = "manual-sales-expense"
+	LedgerCategoryManualFinanceExpense    = "manual-finance-expense"
+)
+
+const (
+	LedgerSubCategoryManualExam        = "manual-exam-fee"
+	LedgerSubCategoryManualShow        = "manual-performance-fee"
+	LedgerSubCategoryManualInstrument  = "manual-instrument-fee"
+	LedgerSubCategoryManualMeal        = "manual-meal-fee"
+	LedgerSubCategoryManualOther       = "manual-other-fee"
+	LedgerSubCategoryManualOffice      = "manual-office-supplies"
+	LedgerSubCategoryManualWater       = "manual-water-fee"
+	LedgerSubCategoryManualElectricity = "manual-electricity-fee"
+	LedgerSubCategoryManualRent        = "manual-rent-fee"
+	LedgerSubCategoryManualProperty    = "manual-property-fee"
+	LedgerSubCategoryManualSalary      = "manual-salary-fee"
+	LedgerSubCategoryManualFund        = "manual-housing-fund-fee"
+	LedgerSubCategoryManualInsurance   = "manual-social-insurance-fee"
+	LedgerSubCategoryManualMarketing   = "manual-marketing-fee"
+	LedgerSubCategoryManualTax         = "manual-tax-fee"
 )
 
 type LedgerListQueryDTO struct {
@@ -120,4 +149,22 @@ type LedgerStatisticsVO struct {
 type LedgerOperateDTO struct {
 	ID            string         `json:"id"`
 	ConfirmRemark LedgerRichText `json:"confirmRemark"`
+}
+
+type ManualLedgerSaveDTO struct {
+	ID                  string   `json:"id"`
+	Amount              float64  `json:"amount"`
+	Remark              string   `json:"remark"`
+	Images              []string `json:"images"`
+	PayTime             string   `json:"payTime"`
+	DealStaffID         string   `json:"dealStaffId"`
+	PayMethod           int      `json:"payMethod"`
+	Type                int      `json:"type"`
+	LedgerCategoryID    string   `json:"ledgerCategoryId"`
+	LedgerSubCategoryID string   `json:"ledgerSubCategoryId"`
+	AccountID           string   `json:"accountId"`
+}
+
+type ManualLedgerSaveResult struct {
+	ID string `json:"id"`
 }

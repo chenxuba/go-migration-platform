@@ -97,6 +97,20 @@ export interface LedgerQueryParams {
   }
 }
 
+export interface ManualLedgerSaveParams {
+  id?: string
+  amount: number
+  remark?: string
+  images?: string[]
+  payTime: string
+  dealStaffId: string
+  payMethod: number
+  type: number
+  ledgerCategoryId: string
+  ledgerSubCategoryId: string
+  accountId?: string
+}
+
 export function getLedgerListApi(data: LedgerQueryParams) {
   return usePost<LedgerListResult>('/api/v1/ledgers/list', data)
 }
@@ -126,4 +140,16 @@ export function confirmLedgerApi(data: { id: string, confirmRemark?: LedgerRichT
 
 export function cancelConfirmLedgerApi(data: { id: string }) {
   return usePost<void>('/api/v1/ledgers/cancel-confirm', data)
+}
+
+export function createLedgerApi(data: ManualLedgerSaveParams) {
+  return usePost<{ id: string }>('/api/v1/ledgers/create', data)
+}
+
+export function updateLedgerApi(data: ManualLedgerSaveParams) {
+  return usePost<{ id: string }>('/api/v1/ledgers/update', data)
+}
+
+export function deleteLedgerApi(data: { id: string }) {
+  return usePost<void>('/api/v1/ledgers/delete', data)
 }

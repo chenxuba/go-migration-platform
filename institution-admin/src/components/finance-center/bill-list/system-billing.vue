@@ -5,7 +5,7 @@ import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import CreateLedgerDrawer from './create-ledger-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
-import { cancelConfirmLedgerApi, confirmLedgerApi, exportLedgerListApi, getLedgerListApi, getLedgerStatisticsApi } from '@/api/finance-center/ledger'
+import { cancelConfirmLedgerApi, confirmLedgerApi, deleteLedgerApi, exportLedgerListApi, getLedgerListApi, getLedgerStatisticsApi } from '@/api/finance-center/ledger'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { getRecommenderPageApi } from '@/api/enroll-center/intention-student'
 import messageService from '@/utils/messageService'
@@ -51,6 +51,10 @@ const ledgerStatusMap = {
 /** 与后端 inst_ledger.ledger_sub_category_id 一致 */
 const LEDGER_SUB_RECHARGE_ACCOUNT_REFUND = 'recharge-account-refund'
 
+function isLedgerExpenditure(record) {
+  return Number(record?.type || 0) === 2
+}
+
 function isLedgerStoredValueRefund(record) {
   if (!record)
     return false
@@ -60,13 +64,13 @@ function isLedgerStoredValueRefund(record) {
   return name.includes('储值账户退费') || name.includes('储值账户退款')
 }
 
-/** 待确认时的主操作文案：退费为「确认支出」，其余为「确认到账」 */
+/** 待确认时的主操作文案：支出为「确认支出」，收入为「确认到账」 */
 function getLedgerConfirmPrimaryActionLabel(record) {
   if (!record)
     return '确认到账'
   if (Number(record.ledgerConfirmStatus) === 1)
     return '取消确认'
-  return isLedgerStoredValueRefund(record) ? '确认支出' : '确认到账'
+  return isLedgerExpenditure(record) ? '确认支出' : '确认到账'
 }
 
 const filterState = ref({
@@ -138,6 +142,7 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
   })
 
 const openCreateLedgerDrawer = ref(false)
+const editingLedger = ref(null)
 const openBillDrawer = ref(false)
 const currentLedger = ref(null)
 const openOrderDetailDrawer = ref(false)
@@ -150,12 +155,12 @@ const exporting = ref(false)
 const batchOperating = ref(false)
 
 const confirmLedgerModalTitle = computed(() =>
-  confirmTargetLedger.value && isLedgerStoredValueRefund(confirmTargetLedger.value)
+  confirmTargetLedger.value && isLedgerExpenditure(confirmTargetLedger.value)
     ? '确认支出'
     : '确认到账',
 )
 const confirmLedgerModalOkText = computed(() =>
-  confirmTargetLedger.value && isLedgerStoredValueRefund(confirmTargetLedger.value)
+  confirmTargetLedger.value && isLedgerExpenditure(confirmTargetLedger.value)
     ? '确认支出'
     : '确认到账',
 )
@@ -274,6 +279,13 @@ function getStoredValueLedgerAccountDisplayName(record) {
   return '-'
 }
 
+function formatStudentDisplay(record) {
+  const name = String(record?.studentName || '').trim()
+  const phone = String(record?.studentPhone || '').trim()
+  const parts = [name, phone].filter(Boolean)
+  return parts.length ? parts.join(' ') : '-'
+}
+
 function formatLedgerProductItemsDisplay(record) {
   // 优先用列表接口的 productItems（含储值账户名）；接口未单独返 rechargeAccountName 时原先会误判为 '-'
   if (Array.isArray(record?.productItems) && record.productItems.length)
@@ -371,7 +383,7 @@ async function handleConfirmLedger(record) {
 async function submitConfirmLedger() {
   if (!confirmTargetLedger.value?.id)
     return
-  const outgoing = isLedgerStoredValueRefund(confirmTargetLedger.value)
+  const outgoing = isLedgerExpenditure(confirmTargetLedger.value)
   try {
     confirmSubmitting.value = true
     const ledgerId = confirmTargetLedger.value.id
@@ -406,13 +418,43 @@ function closeConfirmModal() {
 function handleEditLedger(record) {
   if (!canEditLedger(record))
     return
-  messageService.info(`编辑账单功能待实现：${record?.ledgerNumber || ''}`)
+  editingLedger.value = { ...record }
+  openCreateLedgerDrawer.value = true
 }
 
 function handleDeleteLedger(record) {
   if (!canDeleteLedger(record))
     return
-  messageService.info(`删除账单功能待实现：${record?.ledgerNumber || ''}`)
+  Modal.confirm({
+    title: '确定删除该账单吗？',
+    centered: true,
+    icon: createVNode(ExclamationCircleFilled, { style: 'color:#fa8c16' }),
+    content: '删除后账单将不可恢复，请谨慎操作。',
+    okText: '确认删除',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await deleteLedgerApi({ id: String(record.id) })
+        messageService.success('删除成功')
+        if (String(currentLedger.value?.id || '') === String(record.id)) {
+          currentLedger.value = null
+          openBillDrawer.value = false
+        }
+        await fetchAll()
+        clearSelection()
+      }
+      catch (error) {
+        console.error('删除账单失败:', error)
+        messageService.error(error?.message || '删除账单失败')
+      }
+    },
+  })
+}
+
+async function handleLedgerSaved() {
+  editingLedger.value = null
+  await fetchAll()
+  updateCurrentLedgerById(currentLedger.value?.id)
 }
 
 function buildQueryModel(extraQuery = {}) {
@@ -611,6 +653,7 @@ function clearSelection() {
 }
 
 function handleCreateLedger() {
+  editingLedger.value = null
   openCreateLedgerDrawer.value = true
 }
 
@@ -749,6 +792,14 @@ watch(
     fetchAll()
   },
   { deep: true },
+)
+
+watch(
+  () => openCreateLedgerDrawer.value,
+  (open) => {
+    if (!open)
+      editingLedger.value = null
+  },
 )
 
 onMounted(async () => {
@@ -963,14 +1014,7 @@ onMounted(async () => {
                 {{ record.confirmRemark?.text || '-' }}
               </template>
               <template v-if="column.key === 'studentName'">
-                <student-avatar
-                  :id="record.studentId"
-                  :name="record.studentName || '-'"
-                  :phone="record.studentPhone || ''"
-                  :show-gender="false"
-                  :show-age="false"
-                  default-active-key="0"
-                />
+                {{ formatStudentDisplay(record) }}
               </template>
               <template v-if="column.key === 'amount'">
                 <span :class="record.type === 2 ? 'amount-expense' : 'amount-income'">
@@ -1022,7 +1066,7 @@ onMounted(async () => {
       <div class="contenter pb20">
         <div class="h-11 bg-#e6f0ff text-#06f flex flex-items-center font-400 pl3.5">
           <ExclamationCircleOutlined class="font-800 mr1" />
-          {{ currentLedger?.sourceType === 1 ? '自动同步的订单账单暂不支持编辑或删除' : '手动记账能力后续补齐' }}
+          {{ currentLedger?.sourceType === 1 ? '自动同步的订单账单暂不支持编辑或删除' : (isCurrentLedgerConfirmed ? '已确认的手动账单不支持编辑或删除' : '待确认的手动账单可在列表中编辑和删除') }}
         </div>
         <div class="ledger-amount-panel h-36 pt-8 pb-6 flex-center flex-col border border-b-#eee border-solid border-x-none border-t-none">
           <img
@@ -1178,7 +1222,7 @@ onMounted(async () => {
         </a-form-item>
       </a-form>
     </a-modal>
-    <CreateLedgerDrawer v-model:open="openCreateLedgerDrawer" />
+    <CreateLedgerDrawer v-model:open="openCreateLedgerDrawer" :record="editingLedger" @saved="handleLedgerSaved" />
     <order-detail-drawer v-model:open="openOrderDetailDrawer" :order-id="currentOrderId" />
   </div>
 </template>

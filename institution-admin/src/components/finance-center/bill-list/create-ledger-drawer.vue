@@ -1,4 +1,5 @@
 <script setup>
+import * as qiniu from 'qiniu-js'
 import {
   AuditOutlined,
   BankOutlined,
@@ -19,79 +20,108 @@ import {
   WalletOutlined,
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { createLedgerApi, updateLedgerApi } from '@/api/finance-center/ledger'
+import { getQiniuToken } from '@/api/qiniu'
 import { payMethodOptionsWithIcons } from '@/components/common/pay-method-options-data'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { useDrawer } from '@/composables/useDrawer'
 import { useUserStore } from '@/stores/user'
+import messageService from '@/utils/messageService'
 
 const props = defineProps({
   open: {
     type: Boolean,
     default: false,
   },
+  record: {
+    type: Object,
+    default: null,
+  },
 })
 
-const emit = defineEmits(['update:open'])
+const emit = defineEmits(['update:open', 'saved'])
 
 const { openDrawer } = useDrawer(props, emit)
 const userStore = useUserStore()
 
-const formState = reactive({
-  amount: undefined,
-  ledgerType: 1,
-  payMethod: undefined,
-  payAccount: 1,
-  billRemarks: undefined,
-  payDate: dayjs().format('YYYY-MM-DD'),
-  dealStaffId: undefined,
-})
+const LEDGER_CATEGORY_OTHER_BUSINESS = 'manual-other-business'
+const LEDGER_CATEGORY_MANAGEMENT = 'manual-management-expense'
+const LEDGER_CATEGORY_SALES = 'manual-sales-expense'
+const LEDGER_CATEGORY_FINANCE = 'manual-finance-expense'
 
-const activeExpenseCategory = ref('management')
+function createDefaultFormState() {
+  return {
+    amount: undefined,
+    ledgerType: 1,
+    payMethod: undefined,
+    payAccount: '1',
+    billRemarks: '',
+    payDate: dayjs().format('YYYY-MM-DD'),
+    dealStaffId: userStore.instUserId || undefined,
+  }
+}
+
+const formState = reactive(createDefaultFormState())
+const hydrating = ref(false)
+const submitting = ref(false)
+const isEditMode = computed(() => Boolean(props.record?.id))
+
+const activeExpenseCategory = ref(LEDGER_CATEGORY_MANAGEMENT)
 const activeLedgerItemKey = ref('')
 const checkOptions = [...payMethodOptionsWithIcons]
 const fileList = ref([])
-const accountList = ref([{ value: 1, label: '默认账户' }])
+const accountList = ref([{ value: '1', label: '默认账户' }])
 const previewVisible = ref(false)
 const previewImage = ref('')
 const previewTitle = ref('')
 
 const incomeCategoryItems = [
-  { key: 'exam', label: '考试费用', icon: ReadOutlined },
-  { key: 'show', label: '演出费用', icon: PlaySquareOutlined },
-  { key: 'instrument', label: '乐器费用', icon: CustomerServiceOutlined },
-  { key: 'meal', label: '餐饮费用', icon: ShopOutlined },
-  { key: 'other', label: '其他', icon: TagOutlined },
+  { key: 'manual-exam-fee', categoryId: LEDGER_CATEGORY_OTHER_BUSINESS, label: '考试费用', icon: ReadOutlined },
+  { key: 'manual-performance-fee', categoryId: LEDGER_CATEGORY_OTHER_BUSINESS, label: '演出费用', icon: PlaySquareOutlined },
+  { key: 'manual-instrument-fee', categoryId: LEDGER_CATEGORY_OTHER_BUSINESS, label: '乐器费用', icon: CustomerServiceOutlined },
+  { key: 'manual-meal-fee', categoryId: LEDGER_CATEGORY_OTHER_BUSINESS, label: '餐饮费用', icon: ShopOutlined },
+  { key: 'manual-other-fee', categoryId: LEDGER_CATEGORY_OTHER_BUSINESS, label: '其他', icon: TagOutlined },
 ]
 
 const expenseCategoryGroups = [
   {
-    key: 'management',
+    key: LEDGER_CATEGORY_MANAGEMENT,
     label: '管理费用',
     items: [
-      { key: 'office', label: '办公用品', icon: PaperClipOutlined },
-      { key: 'water', label: '水费', icon: ExperimentOutlined },
-      { key: 'electricity', label: '电费', icon: ThunderboltOutlined },
-      { key: 'rent', label: '房租', icon: BankOutlined },
-      { key: 'property', label: '物业', icon: HomeOutlined },
-      { key: 'salary', label: '工资', icon: WalletOutlined },
-      { key: 'fund', label: '公积金', icon: SafetyCertificateOutlined },
-      { key: 'insurance', label: '社保', icon: AuditOutlined },
+      { key: 'manual-office-supplies', categoryId: LEDGER_CATEGORY_MANAGEMENT, label: '办公用品', icon: PaperClipOutlined },
+      { key: 'manual-water-fee', categoryId: LEDGER_CATEGORY_MANAGEMENT, label: '水费', icon: ExperimentOutlined },
+      { key: 'manual-electricity-fee', categoryId: LEDGER_CATEGORY_MANAGEMENT, label: '电费', icon: ThunderboltOutlined },
+      { key: 'manual-rent-fee', categoryId: LEDGER_CATEGORY_MANAGEMENT, label: '房租', icon: BankOutlined },
+      { key: 'manual-property-fee', categoryId: LEDGER_CATEGORY_MANAGEMENT, label: '物业', icon: HomeOutlined },
+      { key: 'manual-salary-fee', categoryId: LEDGER_CATEGORY_MANAGEMENT, label: '工资', icon: WalletOutlined },
+      { key: 'manual-housing-fund-fee', categoryId: LEDGER_CATEGORY_MANAGEMENT, label: '公积金', icon: SafetyCertificateOutlined },
+      { key: 'manual-social-insurance-fee', categoryId: LEDGER_CATEGORY_MANAGEMENT, label: '社保', icon: AuditOutlined },
     ],
   },
   {
-    key: 'sales',
+    key: LEDGER_CATEGORY_SALES,
     label: '销售费用',
     items: [
-      { key: 'marketing', label: '营销费用', icon: NotificationOutlined },
+      { key: 'manual-marketing-fee', categoryId: LEDGER_CATEGORY_SALES, label: '营销费用', icon: NotificationOutlined },
     ],
   },
   {
-    key: 'finance',
+    key: LEDGER_CATEGORY_FINANCE,
     label: '财务费用',
-    items: [{ key: 'tax', label: '税', icon: BankOutlined }],
+    items: [{ key: 'manual-tax-fee', categoryId: LEDGER_CATEGORY_FINANCE, label: '税', icon: BankOutlined }],
   },
 ]
+
+const allLedgerItems = [
+  ...incomeCategoryItems,
+  ...expenseCategoryGroups.flatMap(group => group.items),
+]
+
+const ledgerItemMap = allLedgerItems.reduce((acc, item) => {
+  acc[item.key] = item
+  return acc
+}, {})
 
 const activeExpenseItems = computed(() => {
   return (
@@ -107,6 +137,8 @@ function disabledDate(current) {
 
 function selectExpenseCategory(key) {
   activeExpenseCategory.value = key
+  if (activeLedgerItemKey.value && ledgerItemMap[activeLedgerItemKey.value]?.categoryId !== key)
+    activeLedgerItemKey.value = ''
 }
 
 function selectLedgerItem(key) {
@@ -136,10 +168,220 @@ function handleCancelImg() {
   previewTitle.value = ''
 }
 
+function beforeUpload(file) {
+  const isImage = file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/bmp'
+  if (!isImage) {
+    messageService.error('只能上传 BMP / JPG / JPEG / PNG 格式的图片')
+    return false
+  }
+  const isLt4M = file.size / 1024 / 1024 < 4
+  if (!isLt4M) {
+    messageService.error('图片大小不能超过 4 MB')
+    return false
+  }
+  if (fileList.value.length >= 3) {
+    messageService.warning('最多上传 3 张图片')
+    return false
+  }
+  return true
+}
+
+function handleLedgerImageUpload(options) {
+  const { file, onSuccess, onError, onProgress } = options
+  const rawFile = file.originFileObj || file
+
+  if (!beforeUpload(rawFile)) {
+    onError?.(new Error('文件校验未通过'))
+    return
+  }
+
+  ;(async () => {
+    try {
+      const tokenRes = await getQiniuToken()
+      const { token, uuid, buckethostname } = tokenRes.result || {}
+      if (!token || !uuid || !buckethostname)
+        throw new Error('上传凭证无效')
+
+      const ext = rawFile.name?.includes('.')
+        ? rawFile.name.substring(rawFile.name.lastIndexOf('.'))
+        : (rawFile.type === 'image/png' ? '.png' : '.jpg')
+      const key = `finance/manual-ledger/${uuid}${ext}`
+
+      const observable = qiniu.upload(rawFile, key, token, {
+        fname: rawFile.name,
+        mimeType: rawFile.type,
+      }, {
+        useCdnDomain: true,
+        region: qiniu.region.z0,
+      })
+
+      observable.subscribe({
+        next(res) {
+          onProgress?.({ percent: Math.floor(res.total.percent) })
+        },
+        error(err) {
+          console.error('上传记账图片失败:', err)
+          messageService.error(err?.message || '图片上传失败')
+          onError?.(err)
+        },
+        complete(res) {
+          onSuccess?.({ url: `${buckethostname}${res.key}` }, file)
+        },
+      })
+    }
+    catch (error) {
+      console.error('获取上传凭证失败:', error)
+      messageService.error(error?.message || '获取上传凭证失败')
+      onError?.(error)
+    }
+  })()
+}
+
+function normalizeFileListToUrls() {
+  return fileList.value
+    .map((file) => {
+      const uploadedUrl = file.url || file.response?.url
+      return typeof uploadedUrl === 'string' ? uploadedUrl : ''
+    })
+    .filter(Boolean)
+}
+
+function resetDrawerState() {
+  Object.assign(formState, createDefaultFormState())
+  activeExpenseCategory.value = LEDGER_CATEGORY_MANAGEMENT
+  activeLedgerItemKey.value = ''
+  fileList.value = []
+  previewVisible.value = false
+  previewImage.value = ''
+  previewTitle.value = ''
+}
+
+function resolveRecordLedgerSelection(record) {
+  const ledgerType = Number(record?.type || 1)
+  const subCategoryId = String(record?.ledgerSubCategoryId || '').trim()
+  const selectedItem = subCategoryId ? ledgerItemMap[subCategoryId] : undefined
+  const fallbackCategoryId = ledgerType === 1
+    ? LEDGER_CATEGORY_OTHER_BUSINESS
+    : LEDGER_CATEGORY_MANAGEMENT
+
+  return {
+    categoryId: selectedItem?.categoryId || String(record?.ledgerCategoryId || '').trim() || fallbackCategoryId,
+    subCategoryId: selectedItem?.key || subCategoryId,
+  }
+}
+
+function fillDrawerByRecord(record) {
+  hydrating.value = true
+  const selection = resolveRecordLedgerSelection(record)
+  Object.assign(formState, {
+    amount: record?.amount ?? undefined,
+    ledgerType: Number(record?.type || 1),
+    payMethod: record?.payMethod ?? undefined,
+    payAccount: String(record?.accountId || '1'),
+    billRemarks: record?.paymentVoucher?.text || '',
+    payDate: record?.payTime ? dayjs(record.payTime).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+    dealStaffId: record?.dealStaffId ? String(record.dealStaffId) : (userStore.instUserId || undefined),
+  })
+  activeExpenseCategory.value = selection.categoryId
+  activeLedgerItemKey.value = selection.subCategoryId
+  fileList.value = Array.isArray(record?.paymentVoucher?.images)
+    ? record.paymentVoucher.images.map((url, index) => ({
+        uid: `existing-${index}`,
+        name: `image-${index + 1}.png`,
+        status: 'done',
+        url,
+      }))
+    : []
+  nextTick(() => {
+    hydrating.value = false
+  })
+}
+
+function initDrawer() {
+  if (isEditMode.value)
+    fillDrawerByRecord(props.record)
+  else
+    resetDrawerState()
+}
+
+function validateBeforeSubmit() {
+  if (!(Number(formState.amount) > 0)) {
+    messageService.warning('请输入账单金额')
+    return false
+  }
+  if (!formState.payDate) {
+    messageService.warning('请选择支付日期')
+    return false
+  }
+  if (!String(formState.dealStaffId || '').trim()) {
+    messageService.warning('请选择经办人')
+    return false
+  }
+  if (!activeLedgerItemKey.value || !ledgerItemMap[activeLedgerItemKey.value]) {
+    messageService.warning('请选择账单分类')
+    return false
+  }
+  if (!formState.payMethod) {
+    messageService.warning('请选择收款方式')
+    return false
+  }
+  if (!String(formState.payAccount || '').trim()) {
+    messageService.warning('请选择支付账户')
+    return false
+  }
+  if (fileList.value.some(file => file.status === 'uploading')) {
+    messageService.warning('图片上传中，请稍候再提交')
+    return false
+  }
+  return true
+}
+
+async function handleSubmit() {
+  if (submitting.value || !validateBeforeSubmit())
+    return
+
+  const selectedLedgerItem = ledgerItemMap[activeLedgerItemKey.value]
+  const payload = {
+    id: isEditMode.value ? String(props.record?.id || '') : undefined,
+    amount: Number(formState.amount),
+    remark: formState.billRemarks || '',
+    images: normalizeFileListToUrls(),
+    payTime: formState.payDate,
+    dealStaffId: String(formState.dealStaffId),
+    payMethod: Number(formState.payMethod),
+    type: Number(formState.ledgerType),
+    ledgerCategoryId: selectedLedgerItem.categoryId,
+    ledgerSubCategoryId: selectedLedgerItem.key,
+    accountId: String(formState.payAccount),
+  }
+
+  try {
+    submitting.value = true
+    const res = isEditMode.value
+      ? await updateLedgerApi(payload)
+      : await createLedgerApi(payload)
+    messageService.success(isEditMode.value ? '账单编辑成功' : '记账成功')
+    emit('saved', {
+      id: res?.result?.id || payload.id || '',
+      isEdit: isEditMode.value,
+    })
+    openDrawer.value = false
+  }
+  catch (error) {
+    console.error(isEditMode.value ? '编辑账单失败:' : '创建账单失败:', error)
+    messageService.error(error?.message || (isEditMode.value ? '编辑账单失败' : '创建账单失败'))
+  }
+  finally {
+    submitting.value = false
+  }
+}
+
 watch(
   () => formState.ledgerType,
   () => {
-    activeExpenseCategory.value = 'management'
+    if (hydrating.value)
+      return
+    activeExpenseCategory.value = LEDGER_CATEGORY_MANAGEMENT
     activeLedgerItemKey.value = ''
   },
 )
@@ -147,12 +389,22 @@ watch(
 watch(
   () => props.open,
   (open) => {
-    if (!open)
+    if (!open) {
+      if (!isEditMode.value)
+        resetDrawerState()
       return
-
-    formState.dealStaffId = userStore.instUserId || undefined
+    }
+    initDrawer()
   },
   { immediate: true },
+)
+
+watch(
+  () => props.record,
+  () => {
+    if (props.open)
+      initDrawer()
+  },
 )
 </script>
 
@@ -166,10 +418,10 @@ watch(
     placement="right"
   >
     <template #title>
-      <div class="custom-header flex justify-between h-4 flex-items-center">
-        <div class="text-5">
-          记一笔
-        </div>
+        <div class="custom-header flex justify-between h-4 flex-items-center">
+          <div class="text-5">
+            {{ isEditMode ? '编辑账单' : '记一笔' }}
+          </div>
         <a-button type="text" class="close-btn" @click="openDrawer = false">
           <template #icon>
             <CloseOutlined class="text-5 close-icon" />
@@ -414,8 +666,10 @@ watch(
       <div class="upload bg-white pt0 mt--4">
         <a-upload
           v-model:file-list="fileList"
-          action="https://www.mocky.io/v2/5cc8019d300000980a055e76"
           list-type="picture-card"
+          :custom-request="handleLedgerImageUpload"
+          :before-upload="beforeUpload"
+          accept=".jpg,.jpeg,.png,.bmp"
           @preview="handlePreview"
         >
           <div v-if="fileList.length < 3">
@@ -430,9 +684,10 @@ watch(
         <a-button
           type="primary"
           class="w-140px h-48px font-size-18px font-weight-600"
-          @click="openDrawer = false"
+          :loading="submitting"
+          @click="handleSubmit"
         >
-          完成
+          {{ isEditMode ? '保存' : '完成' }}
         </a-button>
       </div>
     </template>

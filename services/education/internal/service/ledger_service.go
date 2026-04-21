@@ -124,3 +124,57 @@ func (svc *Service) CancelConfirmLedger(userID int64, dto model.LedgerOperateDTO
 	}
 	return svc.repo.CancelConfirmLedger(context.Background(), instID, ledgerID)
 }
+
+func (svc *Service) CreateManualLedger(userID int64, dto model.ManualLedgerSaveDTO) (model.ManualLedgerSaveResult, error) {
+	instID, operatorID, err := svc.resolveLedgerOperator(userID)
+	if err != nil {
+		return model.ManualLedgerSaveResult{}, err
+	}
+	ledgerID, err := svc.repo.CreateManualLedger(context.Background(), instID, operatorID, dto)
+	if err != nil {
+		return model.ManualLedgerSaveResult{}, err
+	}
+	return model.ManualLedgerSaveResult{ID: strconv.FormatInt(ledgerID, 10)}, nil
+}
+
+func (svc *Service) UpdateManualLedger(userID int64, dto model.ManualLedgerSaveDTO) (model.ManualLedgerSaveResult, error) {
+	instID, operatorID, err := svc.resolveLedgerOperator(userID)
+	if err != nil {
+		return model.ManualLedgerSaveResult{}, err
+	}
+	ledgerID, err := svc.repo.UpdateManualLedger(context.Background(), instID, operatorID, dto)
+	if err != nil {
+		return model.ManualLedgerSaveResult{}, err
+	}
+	return model.ManualLedgerSaveResult{ID: strconv.FormatInt(ledgerID, 10)}, nil
+}
+
+func (svc *Service) DeleteManualLedger(userID int64, ledgerID string) error {
+	instID, operatorID, err := svc.resolveLedgerOperator(userID)
+	if err != nil {
+		return err
+	}
+	parsedID, err := strconv.ParseInt(strings.TrimSpace(ledgerID), 10, 64)
+	if err != nil || parsedID <= 0 {
+		return errors.New("账单ID不能为空")
+	}
+	return svc.repo.DeleteManualLedger(context.Background(), instID, operatorID, parsedID)
+}
+
+func (svc *Service) resolveLedgerOperator(userID int64) (int64, int64, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, 0, errors.New("no institution context")
+		}
+		return 0, 0, err
+	}
+	operatorID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, 0, errors.New("no institution user context")
+		}
+		return 0, 0, err
+	}
+	return instID, operatorID, nil
+}

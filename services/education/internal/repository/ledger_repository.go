@@ -5,11 +5,145 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
 )
+
+type manualLedgerCategoryMeta struct {
+	Type            int
+	CategoryID      string
+	CategoryName    string
+	SubCategoryID   string
+	SubCategoryName string
+	CategoryIcon    string
+}
+
+var manualLedgerCategoryCatalog = map[string]manualLedgerCategoryMeta{
+	model.LedgerSubCategoryManualExam: {
+		Type:            model.LedgerTypeIncome,
+		CategoryID:      model.LedgerCategoryManualOtherBusiness,
+		CategoryName:    "其他业务",
+		SubCategoryID:   model.LedgerSubCategoryManualExam,
+		SubCategoryName: "考试费用",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualShow: {
+		Type:            model.LedgerTypeIncome,
+		CategoryID:      model.LedgerCategoryManualOtherBusiness,
+		CategoryName:    "其他业务",
+		SubCategoryID:   model.LedgerSubCategoryManualShow,
+		SubCategoryName: "演出费用",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualInstrument: {
+		Type:            model.LedgerTypeIncome,
+		CategoryID:      model.LedgerCategoryManualOtherBusiness,
+		CategoryName:    "其他业务",
+		SubCategoryID:   model.LedgerSubCategoryManualInstrument,
+		SubCategoryName: "乐器费用",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualMeal: {
+		Type:            model.LedgerTypeIncome,
+		CategoryID:      model.LedgerCategoryManualOtherBusiness,
+		CategoryName:    "其他业务",
+		SubCategoryID:   model.LedgerSubCategoryManualMeal,
+		SubCategoryName: "餐饮费用",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualOther: {
+		Type:            model.LedgerTypeIncome,
+		CategoryID:      model.LedgerCategoryManualOtherBusiness,
+		CategoryName:    "其他业务",
+		SubCategoryID:   model.LedgerSubCategoryManualOther,
+		SubCategoryName: "其他",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualOffice: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualManagementExpense,
+		CategoryName:    "管理费用",
+		SubCategoryID:   model.LedgerSubCategoryManualOffice,
+		SubCategoryName: "办公用品",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualWater: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualManagementExpense,
+		CategoryName:    "管理费用",
+		SubCategoryID:   model.LedgerSubCategoryManualWater,
+		SubCategoryName: "水费",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualElectricity: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualManagementExpense,
+		CategoryName:    "管理费用",
+		SubCategoryID:   model.LedgerSubCategoryManualElectricity,
+		SubCategoryName: "电费",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualRent: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualManagementExpense,
+		CategoryName:    "管理费用",
+		SubCategoryID:   model.LedgerSubCategoryManualRent,
+		SubCategoryName: "房租",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualProperty: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualManagementExpense,
+		CategoryName:    "管理费用",
+		SubCategoryID:   model.LedgerSubCategoryManualProperty,
+		SubCategoryName: "物业",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualSalary: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualManagementExpense,
+		CategoryName:    "管理费用",
+		SubCategoryID:   model.LedgerSubCategoryManualSalary,
+		SubCategoryName: "工资",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualFund: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualManagementExpense,
+		CategoryName:    "管理费用",
+		SubCategoryID:   model.LedgerSubCategoryManualFund,
+		SubCategoryName: "公积金",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualInsurance: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualManagementExpense,
+		CategoryName:    "管理费用",
+		SubCategoryID:   model.LedgerSubCategoryManualInsurance,
+		SubCategoryName: "社保",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualMarketing: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualSalesExpense,
+		CategoryName:    "销售费用",
+		SubCategoryID:   model.LedgerSubCategoryManualMarketing,
+		SubCategoryName: "营销费用",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+	model.LedgerSubCategoryManualTax: {
+		Type:            model.LedgerTypeExpenditure,
+		CategoryID:      model.LedgerCategoryManualFinanceExpense,
+		CategoryName:    "财务费用",
+		SubCategoryID:   model.LedgerSubCategoryManualTax,
+		SubCategoryName: "税",
+		CategoryIcon:    "manualTallyBookType1",
+	},
+}
 
 func ensureLedgerTables(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
@@ -325,6 +459,306 @@ func (repo *Repository) normalizeSystemLedgerAccountNames(ctx context.Context, i
 		  AND (account_name = '' OR account_name LIKE '账户%')
 	`, instID, model.LedgerSourceSystem, model.LedgerSystemTypeOrderPayment)
 	return err
+}
+
+type manualLedgerMutationInput struct {
+	LedgerID        int64
+	Amount          float64
+	Remark          string
+	ImagesJSON      string
+	PayTime         time.Time
+	PayMethod       int
+	DealStaffID     int64
+	DealStaffName   string
+	AccountID       int64
+	AccountName     string
+	LedgerType      int
+	CategoryID      string
+	CategoryName    string
+	SubCategoryID   string
+	SubCategoryName string
+	CategoryIcon    string
+	SourceBizType   int
+	SourceBizID     int64
+	LedgerNumber    string
+}
+
+func (repo *Repository) CreateManualLedger(ctx context.Context, instID, operatorID int64, dto model.ManualLedgerSaveDTO) (int64, error) {
+	input, err := repo.buildManualLedgerMutation(ctx, instID, dto)
+	if err != nil {
+		return 0, err
+	}
+	result, err := repo.db.ExecContext(ctx, `
+		INSERT INTO inst_ledger (
+			uuid, version, inst_id, source_type, system_type, source_biz_type, source_biz_id,
+			type, ledger_number, ledger_category_id, ledger_category_name, ledger_sub_category_id,
+			ledger_sub_category_name, ledger_category_icon, amount, deal_staff_id, deal_staff_name,
+			pay_time, pay_method, account_id, account_name, reciprocal_account, bank_slip_no,
+			order_id, order_number, student_id, student_name, student_phone, student_phone_raw,
+			payment_voucher_text, payment_voucher_images, ledger_confirm_status, confirm_staff_id,
+			confirm_staff_name, confirm_time, confirm_remark_text, confirm_remark_images,
+			bill_flow_id, bill_id, error_message, create_id, create_time, update_id, update_time, del_flag
+		) VALUES (
+			UUID(), 0, ?, ?, 0, ?, ?,
+			?, ?, ?, ?, ?, ?,
+			?, ?, ?, ?,
+			?, ?, ?, ?, '', '',
+			0, '', 0, '', '', '',
+			?, ?, ?, 0,
+			'', NULL, '', ?,
+			0, 0, '', ?, NOW(), ?, NOW(), 0
+		)
+	`,
+		instID, model.LedgerSourceManual, input.SourceBizType, input.SourceBizID,
+		input.LedgerType, input.LedgerNumber, input.CategoryID, input.CategoryName, input.SubCategoryID, input.SubCategoryName,
+		input.CategoryIcon, input.Amount, input.DealStaffID, input.DealStaffName, input.PayTime, input.PayMethod, input.AccountID, input.AccountName,
+		input.Remark, input.ImagesJSON, model.LedgerConfirmStatusPending, "[]", operatorID, operatorID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	ledgerID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return ledgerID, nil
+}
+
+func (repo *Repository) UpdateManualLedger(ctx context.Context, instID, operatorID int64, dto model.ManualLedgerSaveDTO) (int64, error) {
+	ledgerID, status, err := repo.loadManualLedgerForMutation(ctx, instID, dto.ID)
+	if err != nil {
+		return 0, err
+	}
+	if status != model.LedgerConfirmStatusPending {
+		return 0, errors.New("已确认账单不支持编辑")
+	}
+	input, err := repo.buildManualLedgerMutation(ctx, instID, dto)
+	if err != nil {
+		return 0, err
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		UPDATE inst_ledger
+		SET type = ?,
+			ledger_category_id = ?,
+			ledger_category_name = ?,
+			ledger_sub_category_id = ?,
+			ledger_sub_category_name = ?,
+			ledger_category_icon = ?,
+			amount = ?,
+			deal_staff_id = ?,
+			deal_staff_name = ?,
+			pay_time = ?,
+			pay_method = ?,
+			account_id = ?,
+			account_name = ?,
+			payment_voucher_text = ?,
+			payment_voucher_images = ?,
+			update_id = ?,
+			update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`,
+		input.LedgerType,
+		input.CategoryID,
+		input.CategoryName,
+		input.SubCategoryID,
+		input.SubCategoryName,
+		input.CategoryIcon,
+		input.Amount,
+		input.DealStaffID,
+		input.DealStaffName,
+		input.PayTime,
+		input.PayMethod,
+		input.AccountID,
+		input.AccountName,
+		input.Remark,
+		input.ImagesJSON,
+		operatorID,
+		ledgerID,
+		instID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return ledgerID, nil
+}
+
+func (repo *Repository) DeleteManualLedger(ctx context.Context, instID, operatorID, ledgerID int64) error {
+	_, status, err := repo.loadManualLedgerForMutationByID(ctx, instID, ledgerID)
+	if err != nil {
+		return err
+	}
+	if status != model.LedgerConfirmStatusPending {
+		return errors.New("已确认账单不支持删除")
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		UPDATE inst_ledger
+		SET del_flag = 1,
+			update_id = ?,
+			update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, operatorID, ledgerID, instID)
+	return err
+}
+
+func (repo *Repository) buildManualLedgerMutation(ctx context.Context, instID int64, dto model.ManualLedgerSaveDTO) (manualLedgerMutationInput, error) {
+	amount := dto.Amount
+	if amount <= 0 {
+		return manualLedgerMutationInput{}, errors.New("账单金额必须大于0")
+	}
+	if amount > 999999999 {
+		return manualLedgerMutationInput{}, errors.New("账单金额不能超过999999999")
+	}
+
+	meta, err := resolveManualLedgerCategory(dto.Type, dto.LedgerCategoryID, dto.LedgerSubCategoryID)
+	if err != nil {
+		return manualLedgerMutationInput{}, err
+	}
+	if dto.PayMethod < 1 || dto.PayMethod > 6 {
+		return manualLedgerMutationInput{}, errors.New("请选择收款方式")
+	}
+
+	payTime, err := parseManualLedgerPayTime(dto.PayTime)
+	if err != nil {
+		return manualLedgerMutationInput{}, err
+	}
+
+	dealStaffID, err := strconv.ParseInt(strings.TrimSpace(dto.DealStaffID), 10, 64)
+	if err != nil || dealStaffID <= 0 {
+		return manualLedgerMutationInput{}, errors.New("请选择经办人")
+	}
+	dealStaffName, err := repo.findInstStaffNameByID(ctx, instID, dealStaffID)
+	if err != nil {
+		return manualLedgerMutationInput{}, err
+	}
+
+	accountID := int64(1)
+	if trimmed := strings.TrimSpace(dto.AccountID); trimmed != "" {
+		parsedAccountID, parseErr := strconv.ParseInt(trimmed, 10, 64)
+		if parseErr != nil || parsedAccountID <= 0 {
+			return manualLedgerMutationInput{}, errors.New("支付账户无效")
+		}
+		accountID = parsedAccountID
+	}
+
+	images := normalizeLedgerImages(dto.Images)
+	if len(images) > 3 {
+		return manualLedgerMutationInput{}, errors.New("最多上传3张图片")
+	}
+	imagesJSON, err := json.Marshal(images)
+	if err != nil {
+		return manualLedgerMutationInput{}, err
+	}
+
+	now := time.Now()
+	return manualLedgerMutationInput{
+		Amount:          amount,
+		Remark:          strings.TrimSpace(dto.Remark),
+		ImagesJSON:      string(imagesJSON),
+		PayTime:         payTime,
+		PayMethod:       dto.PayMethod,
+		DealStaffID:     dealStaffID,
+		DealStaffName:   dealStaffName,
+		AccountID:       accountID,
+		AccountName:     "默认账户",
+		LedgerType:      meta.Type,
+		CategoryID:      meta.CategoryID,
+		CategoryName:    meta.CategoryName,
+		SubCategoryID:   meta.SubCategoryID,
+		SubCategoryName: meta.SubCategoryName,
+		CategoryIcon:    meta.CategoryIcon,
+		SourceBizType:   model.LedgerManualBizTypeDefault,
+		SourceBizID:     now.UnixNano(),
+		LedgerNumber:    generateManualLedgerNumber(now),
+	}, nil
+}
+
+func resolveManualLedgerCategory(ledgerType int, categoryID, subCategoryID string) (manualLedgerCategoryMeta, error) {
+	meta, ok := manualLedgerCategoryCatalog[strings.TrimSpace(subCategoryID)]
+	if !ok {
+		return manualLedgerCategoryMeta{}, errors.New("请选择账单分类")
+	}
+	if ledgerType != meta.Type {
+		return manualLedgerCategoryMeta{}, errors.New("收支类型与账单分类不匹配")
+	}
+	if trimmedCategoryID := strings.TrimSpace(categoryID); trimmedCategoryID != "" && trimmedCategoryID != meta.CategoryID {
+		return manualLedgerCategoryMeta{}, errors.New("账单分类无效")
+	}
+	return meta, nil
+}
+
+func parseManualLedgerPayTime(raw string) (time.Time, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return time.Time{}, errors.New("请选择支付日期")
+	}
+	layouts := []string{
+		"2006-01-02",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04",
+		time.RFC3339,
+	}
+	for _, layout := range layouts {
+		if t, err := time.ParseInLocation(layout, value, time.Local); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, errors.New("支付日期格式无效")
+}
+
+func (repo *Repository) findInstStaffNameByID(ctx context.Context, instID, staffID int64) (string, error) {
+	var name string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(nick_name, '')
+		FROM inst_user
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, staffID, instID).Scan(&name)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New("经办人不存在")
+		}
+		return "", err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("经办人不存在")
+	}
+	return name, nil
+}
+
+func (repo *Repository) loadManualLedgerForMutation(ctx context.Context, instID int64, rawLedgerID string) (int64, int, error) {
+	ledgerID, err := strconv.ParseInt(strings.TrimSpace(rawLedgerID), 10, 64)
+	if err != nil || ledgerID <= 0 {
+		return 0, 0, errors.New("账单ID不能为空")
+	}
+	return repo.loadManualLedgerForMutationByID(ctx, instID, ledgerID)
+}
+
+func (repo *Repository) loadManualLedgerForMutationByID(ctx context.Context, instID, ledgerID int64) (int64, int, error) {
+	var (
+		sourceType int
+		status     int
+	)
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT source_type, ledger_confirm_status
+		FROM inst_ledger
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, ledgerID, instID).Scan(&sourceType, &status)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, 0, errors.New("账单不存在")
+		}
+		return 0, 0, err
+	}
+	if sourceType != model.LedgerSourceManual {
+		return 0, 0, errors.New("系统同步账单不支持此操作")
+	}
+	return ledgerID, status, nil
+}
+
+func generateManualLedgerNumber(now time.Time) string {
+	return fmt.Sprintf("%s%06d", now.Format("20060102150405"), now.UnixNano()%1000000)
 }
 
 func (repo *Repository) PageLedgers(ctx context.Context, instID int64, query model.LedgerListQueryDTO) (model.LedgerListResultVO, error) {
