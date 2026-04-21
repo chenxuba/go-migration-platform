@@ -19,6 +19,7 @@ import {
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { computed, reactive, ref, watch } from 'vue'
+import { payMethodOptionsWithIcons } from '@/components/common/pay-method-options-data'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { useDrawer } from '@/composables/useDrawer'
 
@@ -36,12 +37,14 @@ const { openDrawer } = useDrawer(props, emit)
 const formState = reactive({
   amount: undefined,
   ledgerType: 1,
+  payMethod: undefined,
   payDate: dayjs().format('YYYY-MM-DD'),
   dealStaffId: undefined,
 })
 
 const activeExpenseCategory = ref('management')
 const activeLedgerItemKey = ref('')
+const checkOptions = [...payMethodOptionsWithIcons]
 
 const incomeCategoryItems = [
   { key: 'exam', label: '考试费用', icon: ReadOutlined },
@@ -69,7 +72,9 @@ const expenseCategoryGroups = [
   {
     key: 'sales',
     label: '销售费用',
-    items: [{ key: 'marketing', label: '营销费用', icon: NotificationOutlined }],
+    items: [
+      { key: 'marketing', label: '营销费用', icon: NotificationOutlined },
+    ],
   },
   {
     key: 'finance',
@@ -79,7 +84,11 @@ const expenseCategoryGroups = [
 ]
 
 const activeExpenseItems = computed(() => {
-  return expenseCategoryGroups.find(item => item.key === activeExpenseCategory.value)?.items || []
+  return (
+    expenseCategoryGroups.find(
+      item => item.key === activeExpenseCategory.value,
+    )?.items || []
+  )
 })
 
 function disabledDate(current) {
@@ -246,7 +255,8 @@ watch(
                 :key="item.key"
                 class="ledger-category-item ledger-category-item--income"
                 :class="{
-                  'ledger-category-item--active': activeLedgerItemKey === item.key,
+                  'ledger-category-item--active':
+                    activeLedgerItemKey === item.key,
                 }"
                 type="button"
                 @click="selectLedgerItem(item.key)"
@@ -254,7 +264,9 @@ watch(
                 <div class="ledger-category-item__icon">
                   <component :is="item.icon" />
                 </div>
-                <span class="ledger-category-item__label">{{ item.label }}</span>
+                <span class="ledger-category-item__label">{{
+                  item.label
+                }}</span>
               </button>
             </div>
           </div>
@@ -268,7 +280,8 @@ watch(
               type="button"
               class="ledger-expense-trigger"
               :class="{
-                'ledger-expense-trigger--active': activeExpenseCategory === group.key,
+                'ledger-expense-trigger--active':
+                  activeExpenseCategory === group.key,
               }"
               @click="selectExpenseCategory(group.key)"
             >
@@ -282,7 +295,8 @@ watch(
                 :key="item.key"
                 class="ledger-category-item ledger-category-item--expense"
                 :class="{
-                  'ledger-category-item--active': activeLedgerItemKey === item.key,
+                  'ledger-category-item--active':
+                    activeLedgerItemKey === item.key,
                 }"
                 type="button"
                 @click="selectLedgerItem(item.key)"
@@ -290,14 +304,49 @@ watch(
                 <div class="ledger-category-item__icon">
                   <component :is="item.icon" />
                 </div>
-                <span class="ledger-category-item__label">{{ item.label }}</span>
+                <span class="ledger-category-item__label">{{
+                  item.label
+                }}</span>
               </button>
             </div>
           </div>
         </div>
       </div>
     </div>
-
+    <!-- 收款方式区域 -->
+    <div class="bg-white px-24px pb-24px pt-24px">
+      <div class="payList">
+        <div class="payList-title">
+          <span>*</span>收款方式
+          <span class="payList-tip ml-2">请选择</span>
+        </div>
+        <div class="pay mt-3">
+          <a-radio-group
+            v-model:value="formState.payMethod"
+            class="custom-radio w-full"
+          >
+            <a-space :size="16" class="flex-wrap">
+              <label
+                v-for="item in checkOptions"
+                :key="item.id"
+                class="pay-box"
+                :class="{ active: formState.payMethod === item.id }"
+              >
+                <span>
+                  <img :src="item.img" alt="">
+                  {{ item.label }}
+                </span>
+                <a-radio :value="item.id" />
+              </label>
+            </a-space>
+          </a-radio-group>
+        </div>
+      </div>
+      <!-- 收款账户、账单备注区域 -->
+      <div>
+        
+      </div>
+    </div>
     <template #footer>
       <div class="flex justify-end">
         <a-button
@@ -469,13 +518,15 @@ watch(
 }
 
 .ledger-category-item--income:hover .ledger-category-item__icon,
-.ledger-category-item--income.ledger-category-item--active .ledger-category-item__icon {
+.ledger-category-item--income.ledger-category-item--active
+  .ledger-category-item__icon {
   background: #edf5ff;
   color: #1677ff;
 }
 
 .ledger-category-item--expense:hover .ledger-category-item__icon,
-.ledger-category-item--expense.ledger-category-item--active .ledger-category-item__icon {
+.ledger-category-item--expense.ledger-category-item--active
+  .ledger-category-item__icon {
   background: #fff4e6;
   color: #f90;
 }
@@ -485,6 +536,72 @@ watch(
   line-height: 20px;
   text-align: center;
   white-space: nowrap;
+}
+
+.payList {
+  span {
+    color: red;
+  }
+
+  span.payList-tip {
+    color: var(--pro-ant-color-primary);
+  }
+}
+
+.pay {
+  margin-top: 10px;
+
+  .pay-box {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+
+    &:hover {
+      border-color: var(--pro-ant-color-primary);
+    }
+
+    span {
+      display: flex;
+      align-items: center;
+      margin-right: 20px;
+      color: #000;
+
+      img {
+        width: 20px;
+        height: 20px;
+        margin-right: 6px;
+      }
+    }
+  }
+
+  .active {
+    border-color: var(--pro-ant-color-primary);
+  }
+}
+
+.custom-radio ::v-deep(.ant-radio-wrapper:hover .ant-radio),
+.custom-radio ::v-deep(.ant-radio:hover .ant-radio-inner),
+.custom-radio ::v-deep(.ant-radio-input:focus + .ant-radio-inner) {
+  border-color: var(--pro-ant-color-primary);
+}
+
+.custom-radio ::v-deep(.ant-radio-inner) {
+  border-color: #d9d9d9;
+  background-color: transparent;
+}
+
+.custom-radio ::v-deep(.ant-radio-checked .ant-radio-inner) {
+  border-color: var(--pro-ant-color-primary);
+  background-color: transparent;
+}
+
+.custom-radio ::v-deep(.ant-radio-inner::after) {
+  background-color: var(--pro-ant-color-primary);
+  transform: scale(0.5);
 }
 
 .ledger-type-label {
