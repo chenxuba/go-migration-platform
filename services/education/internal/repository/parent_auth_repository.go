@@ -20,6 +20,11 @@ type ParentStudentLookupRecord struct {
 	InstitutionLogo   string
 }
 
+type ParentStudentScheduleAliasRecord struct {
+	StudentID     int64
+	StudentStatus int
+}
+
 func (repo *Repository) ListParentStudentCandidatesByPhone(ctx context.Context, phone string) ([]ParentStudentLookupRecord, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), IFNULL(s.mobile, ''),
@@ -54,6 +59,50 @@ func (repo *Repository) ListParentStudentCandidatesByPhone(ctx context.Context, 
 			return nil, err
 		}
 		item.IsBound = isBound != 0
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) ListParentStudentScheduleAliases(ctx context.Context, instID int64, studentName string, excludeStudentID int64) ([]ParentStudentScheduleAliasRecord, error) {
+	studentName = strings.TrimSpace(studentName)
+	if instID <= 0 || studentName == "" {
+		return []ParentStudentScheduleAliasRecord{}, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			s.id,
+			IFNULL(s.student_status, 0)
+		FROM inst_student s
+		WHERE s.del_flag = 0
+		  AND s.inst_id = ?
+		  AND IFNULL(s.stu_name, '') = ?
+		  AND s.id <> ?
+		  AND IFNULL(s.student_status, 0) IN (1, 2)
+		ORDER BY
+			CASE IFNULL(s.student_status, 0)
+				WHEN 1 THEN 0
+				WHEN 2 THEN 1
+				ELSE 9
+			END ASC,
+			s.update_time DESC,
+			s.id DESC
+	`, instID, studentName, excludeStudentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]ParentStudentScheduleAliasRecord, 0, 4)
+	for rows.Next() {
+		var item ParentStudentScheduleAliasRecord
+		if err := rows.Scan(&item.StudentID, &item.StudentStatus); err != nil {
+			return nil, err
+		}
+		if item.StudentID <= 0 {
+			continue
+		}
 		items = append(items, item)
 	}
 	return items, rows.Err()

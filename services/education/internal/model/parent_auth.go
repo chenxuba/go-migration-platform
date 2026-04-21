@@ -11,6 +11,11 @@ type ParentBindStudentsDTO struct {
 	StudentIDs []int64 `json:"studentIds"`
 }
 
+type ParentScheduleQueryDTO struct {
+	StartDate string `json:"startDate"`
+	EndDate   string `json:"endDate"`
+}
+
 type ParentWeChatLoginVO struct {
 	Token       string                     `json:"token"`
 	Phone       string                     `json:"phone"`
@@ -23,6 +28,14 @@ type ParentWeChatLoginVO struct {
 
 type ParentCampusSummaryVO struct {
 	Items []ParentCampusVO `json:"items"`
+}
+
+type ParentScheduleSummaryVO struct {
+	Items []ParentScheduleVO `json:"items"`
+}
+
+type ParentScheduleDateSummaryVO struct {
+	Items []ParentScheduleDateVO `json:"items"`
 }
 
 type ParentCampusVO struct {
@@ -39,6 +52,36 @@ type ParentStudentLookupByPhoneVO struct {
 	Phone       string                     `json:"phone"`
 	MaskedPhone string                     `json:"maskedPhone"`
 	Candidates  []ParentStudentCandidateVO `json:"candidates"`
+}
+
+type ParentScheduleVO struct {
+	ID               string `json:"id"`
+	ScheduleID       string `json:"scheduleId"`
+	InstID           int64  `json:"instId"`
+	CampusID         string `json:"campusId"`
+	CampusName       string `json:"campusName"`
+	Date             string `json:"date"`
+	StudentID        string `json:"studentId"`
+	StudentName      string `json:"studentName"`
+	StudentAvatarURL string `json:"studentAvatarUrl,omitempty"`
+	StartTime        string `json:"startTime"`
+	EndTime          string `json:"endTime"`
+	CourseName       string `json:"courseName"`
+	ClassName        string `json:"className"`
+	TeacherName      string `json:"teacherName"`
+	Classroom        string `json:"classroom"`
+	Note             string `json:"note"`
+	StatusText       string `json:"statusText"`
+	CallStatus       int    `json:"callStatus"`
+	CallStatusText   string `json:"callStatusText,omitempty"`
+}
+
+type ParentScheduleDateVO struct {
+	InstID        int64  `json:"instId"`
+	CampusID      string `json:"campusId"`
+	CampusName    string `json:"campusName"`
+	Date          string `json:"date"`
+	ScheduleCount int    `json:"scheduleCount"`
 }
 
 type ParentStudentCandidateVO struct {

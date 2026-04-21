@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"go-migration-platform/pkg/authx"
 	"go-migration-platform/pkg/httpx"
@@ -87,6 +88,52 @@ func (handler *Handler) parentCampuses(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := handler.service.ListParentCampusesByPhone(r.Context(), claims.Username)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) parentSchedules(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	query := model.ParentScheduleQueryDTO{
+		StartDate: strings.TrimSpace(r.URL.Query().Get("startDate")),
+		EndDate:   strings.TrimSpace(r.URL.Query().Get("endDate")),
+	}
+	result, err := handler.service.ListParentSchedulesByPhone(r.Context(), claims.Username, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) parentScheduleDates(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	query := model.ParentScheduleQueryDTO{
+		StartDate: strings.TrimSpace(r.URL.Query().Get("startDate")),
+		EndDate:   strings.TrimSpace(r.URL.Query().Get("endDate")),
+	}
+	result, err := handler.service.ListParentScheduleDatesByPhone(r.Context(), claims.Username, query)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

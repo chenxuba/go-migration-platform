@@ -57,6 +57,18 @@ function request({ url, method = 'GET', data, token = '' }) {
 	})
 }
 
+function buildQueryString(params = {}) {
+	const entries = Object.entries(params)
+		.map(([key, value]) => [key, `${value ?? ''}`.trim()])
+		.filter(([, value]) => value)
+
+	if (!entries.length) {
+		return ''
+	}
+
+	return `?${entries.map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&')}`
+}
+
 export function wechatParentLogin(payload) {
 	return request({
 		url: '/api/v1/parent/auth/wechat/login',
@@ -85,6 +97,28 @@ export function confirmParentStudents(token, payload) {
 export function listParentCampuses(token) {
 	return request({
 		url: '/api/v1/parent/campuses',
+		method: 'GET',
+		token
+	})
+}
+
+export function listParentSchedules(token, query = {}) {
+	return request({
+		url: `/api/v1/parent/schedules${buildQueryString({
+			startDate: query.startDate,
+			endDate: query.endDate
+		})}`,
+		method: 'GET',
+		token
+	})
+}
+
+export function listParentScheduleDates(token, query = {}) {
+	return request({
+		url: `/api/v1/parent/schedule-dates${buildQueryString({
+			startDate: query.startDate,
+			endDate: query.endDate
+		})}`,
 		method: 'GET',
 		token
 	})

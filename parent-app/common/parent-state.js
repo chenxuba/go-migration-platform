@@ -7,8 +7,7 @@ import {
 	featureList,
 	getCampusById,
 	noticeList,
-	profileMenus,
-	scheduleEntries
+	profileMenus
 } from '@/common/mock-parent'
 
 const avatarPalette = ['#8fb7ff', '#7cc8ff', '#63d5b2', '#ffb26f', '#f59fb2', '#9a8cff']
@@ -30,7 +29,8 @@ function createInitialState() {
 		featureList: cloneList(featureList),
 		noticeList: cloneList(noticeList),
 		profileMenus: cloneList(profileMenus),
-		scheduleEntries: cloneList(scheduleEntries),
+		scheduleEntries: [],
+		scheduleDateMarks: [],
 		pendingCandidates: [],
 		selectedCandidateIds: [],
 		students: [],
@@ -169,6 +169,14 @@ export function applyParentCampusSummary(summary = {}) {
 	persistParentSession()
 }
 
+export function applyParentScheduleSummary(summary = {}, options = {}) {
+	applyScheduleEntries(summary?.items || summary, options)
+}
+
+export function applyParentScheduleDateSummary(summary = {}, options = {}) {
+	applyScheduleDateMarks(summary?.items || summary, options)
+}
+
 export function restoreParentSession() {
 	if (hasRestoredParentSession) {
 		return parentState.isAuthenticated
@@ -233,6 +241,8 @@ function applyCandidateSnapshot(session = {}) {
 	parentState.pendingCandidates = pendingCandidates
 	parentState.selectedCandidateIds = pendingCandidates.map(item => item.id)
 	parentState.students = boundStudents
+	parentState.scheduleEntries = []
+	parentState.scheduleDateMarks = []
 	parentState.currentStudentId = currentStudent?.id || ''
 	parentState.currentCampusId = currentStudent?.campusId || pendingCandidates[0]?.campusId || nextCampusList[0]?.id || parentState.currentCampusId
 	parentState.bindSuccessVisible = false
@@ -282,6 +292,66 @@ function normalizeCandidates(candidates = []) {
 			instId: Number(item?.instId || 0)
 		}
 	})
+}
+
+function normalizeScheduleEntries(list = []) {
+	return (Array.isArray(list) ? list : []).map((item, index) => ({
+		id: `${item?.id || item?.scheduleId || `schedule-${index + 1}`}`.trim(),
+		scheduleId: `${item?.scheduleId || item?.id || ''}`.trim(),
+		instId: Number(item?.instId || 0),
+		date: `${item?.date || item?.lessonDate || ''}`.trim(),
+		campusId: `${item?.campusId || (item?.instId ? `inst-${item.instId}` : '')}`.trim(),
+		campusName: `${item?.campusName || item?.institutionName || '-'}`.trim() || '-',
+		studentId: `${item?.studentId || ''}`.trim(),
+		studentName: `${item?.studentName || '-'}`.trim() || '-',
+		studentAvatarUrl: `${item?.studentAvatarUrl || item?.avatarUrl || ''}`.trim(),
+		startTime: `${item?.startTime || ''}`.trim() || '-',
+		endTime: `${item?.endTime || ''}`.trim() || '-',
+		courseName: `${item?.courseName || item?.lessonName || '-'}`.trim() || '-',
+		className: `${item?.className || item?.teachingClassName || '-'}`.trim() || '-',
+		teacherName: `${item?.teacherName || '-'}`.trim() || '-',
+		classroom: `${item?.classroom || item?.classroomName || '-'}`.trim() || '-',
+		note: `${item?.note || '-'}`.trim() || '-',
+		statusText: `${item?.statusText || '-'}`.trim() || '-',
+		callStatus: Number(item?.callStatus || 0),
+		callStatusText: `${item?.callStatusText || ''}`.trim()
+	}))
+}
+
+function normalizeScheduleDateMarks(list = []) {
+	return (Array.isArray(list) ? list : []).map((item, index) => ({
+		id: `${item?.campusId || item?.instId || 'campus'}-${item?.date || index + 1}`,
+		instId: Number(item?.instId || 0),
+		campusId: `${item?.campusId || (item?.instId ? `inst-${item.instId}` : '')}`.trim(),
+		campusName: `${item?.campusName || '-'}`.trim() || '-',
+		date: `${item?.date || ''}`.trim(),
+		scheduleCount: Number(item?.scheduleCount || 0)
+	})).filter(item => item.campusId && item.date)
+}
+
+function applyScheduleEntries(list = [], options = {}) {
+	const nextItems = normalizeScheduleEntries(list)
+	const targetDate = `${options?.date || ''}`.trim()
+	if (!targetDate) {
+		parentState.scheduleEntries = nextItems
+		return
+	}
+
+	const preserved = parentState.scheduleEntries.filter(item => item.date !== targetDate)
+	parentState.scheduleEntries = [...preserved, ...nextItems]
+}
+
+function applyScheduleDateMarks(list = [], options = {}) {
+	const nextItems = normalizeScheduleDateMarks(list)
+	const startDate = `${options?.startDate || ''}`.trim()
+	const endDate = `${options?.endDate || ''}`.trim()
+	if (!startDate || !endDate) {
+		parentState.scheduleDateMarks = nextItems
+		return
+	}
+
+	const preserved = parentState.scheduleDateMarks.filter(item => item.date < startDate || item.date > endDate)
+	parentState.scheduleDateMarks = [...preserved, ...nextItems]
 }
 
 function buildCampusList(candidates = []) {

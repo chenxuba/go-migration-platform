@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -140,6 +142,218 @@ func (svc *Service) ListParentCampusesByPhone(ctx context.Context, phone string)
 	}, nil
 }
 
+func (svc *Service) ListParentSchedulesByPhone(ctx context.Context, phone string, query model.ParentScheduleQueryDTO) (model.ParentScheduleSummaryVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentScheduleSummaryVO{}, errors.New("家长端课表查询服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentScheduleSummaryVO{}, errors.New("手机号不能为空")
+	}
+
+	startDate, endDate, err := normalizeParentScheduleDateRange(query)
+	if err != nil {
+		return model.ParentScheduleSummaryVO{}, err
+	}
+
+	rows, err := svc.repo.ListParentStudentCandidatesByPhone(ctx, phone)
+	if err != nil {
+		return model.ParentScheduleSummaryVO{}, err
+	}
+
+	targets := buildParentScheduleTargets(rows)
+	if len(targets) == 0 {
+		return model.ParentScheduleSummaryVO{
+			Items: []model.ParentScheduleVO{},
+		}, nil
+	}
+
+	items, err := svc.listParentScheduleItems(ctx, targets, startDate, endDate)
+	if err != nil {
+		return model.ParentScheduleSummaryVO{}, err
+	}
+
+	sortParentScheduleItems(items)
+	return model.ParentScheduleSummaryVO{
+		Items: items,
+	}, nil
+}
+
+func (svc *Service) ListParentScheduleDatesByPhone(ctx context.Context, phone string, query model.ParentScheduleQueryDTO) (model.ParentScheduleDateSummaryVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentScheduleDateSummaryVO{}, errors.New("家长端课表日期查询服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentScheduleDateSummaryVO{}, errors.New("手机号不能为空")
+	}
+
+	startDate, endDate, err := normalizeParentScheduleDateRange(query)
+	if err != nil {
+		return model.ParentScheduleDateSummaryVO{}, err
+	}
+
+	rows, err := svc.repo.ListParentStudentCandidatesByPhone(ctx, phone)
+	if err != nil {
+		return model.ParentScheduleDateSummaryVO{}, err
+	}
+
+	targets := buildParentScheduleTargets(rows)
+	if len(targets) == 0 {
+		return model.ParentScheduleDateSummaryVO{
+			Items: []model.ParentScheduleDateVO{},
+		}, nil
+	}
+
+	items, err := svc.listParentScheduleItems(ctx, targets, startDate, endDate)
+	if err != nil {
+		return model.ParentScheduleDateSummaryVO{}, err
+	}
+
+	return model.ParentScheduleDateSummaryVO{
+		Items: buildParentScheduleDateItems(items),
+	}, nil
+}
+
+func (svc *Service) listParentScheduleItems(ctx context.Context, targets []parentScheduleTarget, startDate, endDate string) ([]model.ParentScheduleVO, error) {
+	items := make([]model.ParentScheduleVO, 0, len(targets)*4)
+	for _, target := range targets {
+		targetItems, err := svc.listParentScheduleItemsForTarget(ctx, target, startDate, endDate)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, targetItems...)
+	}
+	return items, nil
+}
+
+func (svc *Service) listParentScheduleItemsForTarget(ctx context.Context, target parentScheduleTarget, startDate, endDate string) ([]model.ParentScheduleVO, error) {
+	directSchedules, err := svc.listTeachingSchedulesByStudentIDs(ctx, target.InstID, []int64{target.StudentID}, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+
+	schedules := append([]model.TeachingScheduleVO(nil), directSchedules...)
+	if len(schedules) == 0 && shouldFallbackToParentScheduleAliases(target) {
+		aliasIDs, err := svc.resolveParentScheduleAliasStudentIDs(ctx, target)
+		if err != nil {
+			return nil, err
+		}
+		if len(aliasIDs) > 0 {
+			schedules, err = svc.listTeachingSchedulesByStudentIDs(ctx, target.InstID, aliasIDs, startDate, endDate)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	items := make([]model.ParentScheduleVO, 0, len(schedules))
+	seen := make(map[string]struct{}, len(schedules))
+	for _, schedule := range schedules {
+		scheduleID := strings.TrimSpace(schedule.ID)
+		if scheduleID == "" {
+			continue
+		}
+		if _, exists := seen[scheduleID]; exists {
+			continue
+		}
+		seen[scheduleID] = struct{}{}
+		items = append(items, buildParentScheduleVO(target, schedule))
+	}
+	return items, nil
+}
+
+func (svc *Service) listTeachingSchedulesByStudentIDs(ctx context.Context, instID int64, studentIDs []int64, startDate, endDate string) ([]model.TeachingScheduleVO, error) {
+	items := make([]model.TeachingScheduleVO, 0, len(studentIDs)*2)
+	for _, studentID := range studentIDs {
+		if studentID <= 0 {
+			continue
+		}
+		schedules, err := svc.repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
+			StartDate:     startDate,
+			EndDate:       endDate,
+			SortDirection: "asc",
+			StudentID:     strconv.FormatInt(studentID, 10),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(schedules) == 0 {
+			continue
+		}
+		if err := svc.repo.FillTeachingScheduleCallStatus(ctx, instID, schedules); err != nil {
+			return nil, err
+		}
+		items = append(items, schedules...)
+	}
+	return items, nil
+}
+
+func (svc *Service) resolveParentScheduleAliasStudentIDs(ctx context.Context, target parentScheduleTarget) ([]int64, error) {
+	aliases, err := svc.repo.ListParentStudentScheduleAliases(ctx, target.InstID, target.StudentName, target.StudentID)
+	if err != nil {
+		return nil, err
+	}
+
+	studentIDs := make([]int64, 0, len(aliases))
+	for _, alias := range aliases {
+		if alias.StudentID <= 0 {
+			continue
+		}
+		studentIDs = append(studentIDs, alias.StudentID)
+	}
+	return studentIDs, nil
+}
+
+func sortParentScheduleItems(items []model.ParentScheduleVO) {
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Date != items[j].Date {
+			return items[i].Date < items[j].Date
+		}
+		if items[i].StartTime != items[j].StartTime {
+			return items[i].StartTime < items[j].StartTime
+		}
+		if items[i].CampusID != items[j].CampusID {
+			return items[i].CampusID < items[j].CampusID
+		}
+		if items[i].StudentName != items[j].StudentName {
+			return items[i].StudentName < items[j].StudentName
+		}
+		return items[i].ID < items[j].ID
+	})
+}
+
+func buildParentScheduleDateItems(items []model.ParentScheduleVO) []model.ParentScheduleDateVO {
+	dateMap := make(map[string]int)
+	result := make([]model.ParentScheduleDateVO, 0, len(items))
+
+	for _, item := range items {
+		key := item.CampusID + "|" + item.Date
+		if index, ok := dateMap[key]; ok {
+			result[index].ScheduleCount += 1
+			continue
+		}
+		result = append(result, model.ParentScheduleDateVO{
+			InstID:        item.InstID,
+			CampusID:      item.CampusID,
+			CampusName:    item.CampusName,
+			Date:          item.Date,
+			ScheduleCount: 1,
+		})
+		dateMap[key] = len(result) - 1
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Date != result[j].Date {
+			return result[i].Date < result[j].Date
+		}
+		return result[i].CampusID < result[j].CampusID
+	})
+	return result
+}
+
 func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord) model.ParentStudentCandidateVO {
 	campusName := strings.TrimSpace(item.InstitutionName)
 	if campusName == "" {
@@ -197,6 +411,156 @@ func buildParentCampusVOList(rows []repository.ParentStudentLookupRecord) []mode
 	}
 
 	return items
+}
+
+type parentScheduleTarget struct {
+	StudentID     int64
+	InstID        int64
+	CampusID      string
+	CampusName    string
+	StudentName   string
+	AvatarURL     string
+	StudentStatus int
+}
+
+func buildParentScheduleTargets(rows []repository.ParentStudentLookupRecord) []parentScheduleTarget {
+	items := make([]parentScheduleTarget, 0, len(rows))
+	for _, row := range rows {
+		if !row.IsBound || row.StudentID <= 0 || row.InstID <= 0 {
+			continue
+		}
+		campusName := strings.TrimSpace(row.InstitutionName)
+		if campusName == "" {
+			campusName = fmt.Sprintf("机构%d", row.InstID)
+		}
+		studentName := strings.TrimSpace(row.StudentName)
+		if studentName == "" {
+			studentName = "学员"
+		}
+		items = append(items, parentScheduleTarget{
+			StudentID:     row.StudentID,
+			InstID:        row.InstID,
+			CampusID:      fmt.Sprintf("inst-%d", row.InstID),
+			CampusName:    campusName,
+			StudentName:   studentName,
+			AvatarURL:     strings.TrimSpace(row.AvatarURL),
+			StudentStatus: row.StudentStatus,
+		})
+	}
+	return items
+}
+
+func shouldFallbackToParentScheduleAliases(target parentScheduleTarget) bool {
+	return target.StudentStatus == model.InstStudentStatusIntent
+}
+
+func buildParentScheduleVO(target parentScheduleTarget, schedule model.TeachingScheduleVO) model.ParentScheduleVO {
+	startTime := "-"
+	endTime := "-"
+	if !schedule.StartAt.IsZero() {
+		startTime = schedule.StartAt.Format("15:04")
+	}
+	if !schedule.EndAt.IsZero() {
+		endTime = schedule.EndAt.Format("15:04")
+	}
+
+	return model.ParentScheduleVO{
+		ID:               strings.TrimSpace(schedule.ID) + "-" + strconv.FormatInt(target.StudentID, 10),
+		ScheduleID:       strings.TrimSpace(schedule.ID),
+		InstID:           target.InstID,
+		CampusID:         target.CampusID,
+		CampusName:       target.CampusName,
+		Date:             strings.TrimSpace(schedule.LessonDate),
+		StudentID:        strconv.FormatInt(target.StudentID, 10),
+		StudentName:      target.StudentName,
+		StudentAvatarURL: target.AvatarURL,
+		StartTime:        startTime,
+		EndTime:          endTime,
+		CourseName:       parentScheduleCourseName(schedule),
+		ClassName:        parentScheduleClassName(schedule),
+		TeacherName:      defaultParentScheduleText(schedule.TeacherName),
+		Classroom:        defaultParentScheduleText(schedule.ClassroomName),
+		Note:             "-",
+		StatusText:       parentScheduleStatusText(schedule.StartAt, schedule.EndAt),
+		CallStatus:       schedule.CallStatus,
+		CallStatusText:   strings.TrimSpace(schedule.CallStatusText),
+	}
+}
+
+func normalizeParentScheduleDateRange(query model.ParentScheduleQueryDTO) (string, string, error) {
+	now := time.Now()
+	defaultStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	defaultEnd := defaultStart
+
+	startText := strings.TrimSpace(query.StartDate)
+	endText := strings.TrimSpace(query.EndDate)
+	if startText == "" && endText == "" {
+		startText = defaultStart.Format("2006-01-02")
+		endText = defaultEnd.AddDate(0, 0, 20).Format("2006-01-02")
+	} else {
+		if startText == "" {
+			startText = endText
+		}
+		if endText == "" {
+			endText = startText
+		}
+	}
+
+	startDate, err := time.ParseInLocation("2006-01-02", startText, now.Location())
+	if err != nil {
+		return "", "", errors.New("开始日期格式不正确")
+	}
+	endDate, err := time.ParseInLocation("2006-01-02", endText, now.Location())
+	if err != nil {
+		return "", "", errors.New("结束日期格式不正确")
+	}
+	if endDate.Before(startDate) {
+		return "", "", errors.New("结束日期不能早于开始日期")
+	}
+	if endDate.Sub(startDate) > 62*24*time.Hour {
+		return "", "", errors.New("课表查询范围不能超过62天")
+	}
+
+	return startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), nil
+}
+
+func parentScheduleCourseName(schedule model.TeachingScheduleVO) string {
+	if value := strings.TrimSpace(schedule.LessonName); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(schedule.TeachingClassName); value != "" {
+		return value
+	}
+	return "课程"
+}
+
+func parentScheduleClassName(schedule model.TeachingScheduleVO) string {
+	if value := strings.TrimSpace(schedule.TeachingClassName); value != "" {
+		return value
+	}
+	return parentScheduleCourseName(schedule)
+}
+
+func defaultParentScheduleText(value string) string {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return "-"
+	}
+	return text
+}
+
+func parentScheduleStatusText(startAt, endAt time.Time) string {
+	now := time.Now()
+	if !startAt.IsZero() && now.Before(startAt) {
+		return "待上课"
+	}
+	if !endAt.IsZero() && now.After(endAt) {
+		return "已下课"
+	}
+	if !startAt.IsZero() && !endAt.IsZero() && (now.Equal(startAt) || now.After(startAt)) && now.Before(endAt) {
+		return "上课中"
+	}
+	return "待上课"
 }
 
 func parentCampusBrandName(name string) string {

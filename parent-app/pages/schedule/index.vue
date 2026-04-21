@@ -77,14 +77,22 @@
 					>
 						<view class="schedule-item__top">
 							<text class="schedule-item__time">{{ item.startTime }} ~ {{ item.endTime }}</text>
-							<text class="schedule-item__status">{{ item.statusText }}</text>
+							<text class="schedule-item__status" :class="scheduleStatusClass(item.statusText)">{{ item.statusText }}</text>
 						</view>
 						<view class="schedule-item__body">
-							<view class="schedule-item__avatar">{{ item.studentName.slice(0, 1) }}</view>
+							<view class="schedule-item__avatar">
+								<image
+									v-if="item.studentAvatarUrl"
+									class="schedule-item__avatar-image"
+									:src="item.studentAvatarUrl"
+									mode="aspectFill"
+								></image>
+								<text v-else>{{ item.studentName.slice(0, 1) }}</text>
+							</view>
 							<view class="schedule-item__content">
 								<text class="schedule-item__student">{{ item.studentName }}【{{ item.className }}】</text>
 								<text class="schedule-item__detail">课程：{{ item.courseName }}</text>
-								<text class="schedule-item__detail">校区：{{ campusName }}</text>
+								<text class="schedule-item__detail">校区：{{ simplifyCampusName(item.campusName || campusName) }}</text>
 								<text class="schedule-item__detail">教室：{{ item.classroom }}</text>
 								<text class="schedule-item__detail">教师：{{ item.teacherName }}</text>
 								<text class="schedule-item__detail">备注：{{ item.note }}</text>
@@ -113,13 +121,16 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref } from 'vue'
-import { onReady, onUnload } from '@dcloudio/uni-app'
+import { computed, nextTick, ref, watch } from 'vue'
+import { onReady, onShow, onUnload } from '@dcloudio/uni-app'
 import BindSuccessDialog from '@/components/bind-success-dialog/bind-success-dialog.vue'
 import { authorizeByWechatPhone } from '@/common/parent-auth'
+import { listParentScheduleDates, listParentSchedules } from '@/common/parent-api'
 import { getNavLayout } from '@/common/nav-layout'
-import { BASE_DATE, DEFAULT_PHONE } from '@/common/mock-parent'
+import { DEFAULT_PHONE } from '@/common/mock-parent'
 import {
+	applyParentScheduleDateSummary,
+	applyParentScheduleSummary,
 	authorizeByPhone,
 	dismissBindSuccess,
 	getCurrentCampus,
@@ -128,8 +139,6 @@ import {
 
 const nav = getNavLayout()
 const systemInfo = uni.getSystemInfoSync()
-const selectedDate = ref(BASE_DATE)
-const currentWeekStart = ref(getWeekStartText(BASE_DATE))
 const weekViewportWidth = ref(Math.max((systemInfo.windowWidth || 375) - 32, 280))
 const dragOffsetX = ref(0)
 const isDraggingWeek = ref(false)
@@ -145,6 +154,8 @@ const WEEK_TAP_SLOP = 8
 let weekTouchStartX = 0
 let weekAnimationTimer = null
 let weekMeasureTimer = null
+let scheduleDetailRequestSerial = 0
+let scheduleDateMarkRequestSerial = 0
 
 function parseDate(dateText) {
 	const [year, month, day] = dateText.split('-').map(Number)
@@ -156,6 +167,10 @@ function formatDate(date) {
 	const month = `${date.getMonth() + 1}`.padStart(2, '0')
 	const day = `${date.getDate()}`.padStart(2, '0')
 	return `${year}-${month}-${day}`
+}
+
+function getTodayText() {
+	return formatDate(new Date())
 }
 
 function addDays(date, offset) {
@@ -174,12 +189,30 @@ function getWeekStartText(dateText) {
 	return formatDate(getWeekMonday(dateText))
 }
 
+const initialDate = getTodayText()
+const selectedDate = ref(initialDate)
+const currentWeekStart = ref(getWeekStartText(initialDate))
+
 function simplifyCampusName(name = '') {
 	const text = `${name || ''}`.trim()
 	if (!text) {
 		return '-'
 	}
-	return text.replace(/\s*(总校区|控江校区)\s*$/u, '').trim() || text
+	return text.replace(/\s*(总校区|控江校区|校区|分校|院区)\s*$/u, '').trim() || text
+}
+
+function scheduleStatusClass(statusText = '') {
+	const text = `${statusText || ''}`.trim()
+	if (text === '待上课') {
+		return 'schedule-item__status--pending'
+	}
+	if (text === '上课中') {
+		return 'schedule-item__status--ongoing'
+	}
+	if (text === '已下课') {
+		return 'schedule-item__status--finished'
+	}
+	return ''
 }
 
 const campusScheduleDateSet = computed(() => {
@@ -187,7 +220,7 @@ const campusScheduleDateSet = computed(() => {
 		return new Set()
 	}
 	return new Set(
-		parentState.scheduleEntries
+		parentState.scheduleDateMarks
 			.filter(item => item.campusId === parentState.currentCampusId)
 			.map(item => item.date)
 	)
@@ -240,6 +273,71 @@ const displaySchedules = computed(() => {
 		.filter(item => item.date === selectedDate.value && item.campusId === parentState.currentCampusId)
 		.sort((prev, next) => prev.startTime.localeCompare(next.startTime))
 })
+
+function buildSingleDateQuery(dateText) {
+	return {
+		startDate: dateText,
+		endDate: dateText
+	}
+}
+
+function buildWeekRange(weekStartText) {
+	const weekStartDate = parseDate(weekStartText)
+	return {
+		startDate: formatDate(weekStartDate),
+		endDate: formatDate(addDays(weekStartDate, 6))
+	}
+}
+
+async function refreshScheduleEntries() {
+	if (!parentState.isAuthenticated || !parentState.authToken) {
+		applyParentScheduleSummary([])
+		return
+	}
+
+	const requestSerial = ++scheduleDetailRequestSerial
+	const token = `${parentState.authToken || ''}`.trim()
+	const targetDate = `${selectedDate.value || ''}`.trim()
+
+	try {
+		const summary = await listParentSchedules(token, buildSingleDateQuery(targetDate))
+		if (requestSerial !== scheduleDetailRequestSerial || token !== `${parentState.authToken || ''}`.trim()) {
+			return
+		}
+		applyParentScheduleSummary(summary, {
+			date: targetDate
+		})
+	} catch (error) {
+		if (requestSerial !== scheduleDetailRequestSerial) {
+			return
+		}
+		console.warn('load parent schedules failed', error)
+	}
+}
+
+async function refreshScheduleDateMarks() {
+	if (!parentState.isAuthenticated || !parentState.authToken) {
+		applyParentScheduleDateSummary([])
+		return
+	}
+
+	const requestSerial = ++scheduleDateMarkRequestSerial
+	const token = `${parentState.authToken || ''}`.trim()
+	const weekRange = buildWeekRange(currentWeekStart.value)
+
+	try {
+		const summary = await listParentScheduleDates(token, weekRange)
+		if (requestSerial !== scheduleDateMarkRequestSerial || token !== `${parentState.authToken || ''}`.trim()) {
+			return
+		}
+		applyParentScheduleDateSummary(summary, weekRange)
+	} catch (error) {
+		if (requestSerial !== scheduleDateMarkRequestSerial) {
+			return
+		}
+		console.warn('load parent schedule dates failed', error)
+	}
+}
 
 function completeMockAuth() {
 	authorizeByPhone(DEFAULT_PHONE)
@@ -383,6 +481,19 @@ function inviteFamily() {
 onReady(() => {
 	measureWeekViewport()
 	weekMeasureTimer = setTimeout(measureWeekViewport, 80)
+})
+
+onShow(() => {
+	refreshScheduleEntries()
+	refreshScheduleDateMarks()
+})
+
+watch(selectedDate, () => {
+	refreshScheduleEntries()
+})
+
+watch(currentWeekStart, () => {
+	refreshScheduleDateMarks()
 })
 
 onUnload(() => {
@@ -530,7 +641,23 @@ onUnload(() => {
 	border-radius: 999rpx;
 	background: rgba(243, 243, 243, 0.95);
 	font-size: 20rpx;
+	font-weight: 600;
 	color: #999999;
+}
+
+.schedule-item__status--pending {
+	background: rgba(255, 232, 184, 0.92);
+	color: #9a6200;
+}
+
+.schedule-item__status--ongoing {
+	background: rgba(213, 245, 231, 0.96);
+	color: #0f8a5f;
+}
+
+.schedule-item__status--finished {
+	background: rgba(233, 237, 243, 0.96);
+	color: #7c8796;
 }
 
 .schedule-item__body {
@@ -551,6 +678,12 @@ onUnload(() => {
 	font-size: 28rpx;
 	font-weight: 700;
 	flex-shrink: 0;
+}
+
+.schedule-item__avatar-image {
+	width: 100%;
+	height: 100%;
+	border-radius: 50%;
 }
 
 .schedule-item__content {
