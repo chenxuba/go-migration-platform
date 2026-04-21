@@ -247,6 +247,78 @@ type InstitutionPage struct {
 	Summary *InstitutionSummary `json:"summary,omitempty"`
 }
 
+type GovernmentOverview struct {
+	Level                  string                    `json:"level"`
+	LevelLabel             string                    `json:"levelLabel"`
+	ScopeText              string                    `json:"scopeText"`
+	ScopeCodeText          string                    `json:"scopeCodeText"`
+	ScopeCount             int                       `json:"scopeCount"`
+	InstitutionCount       int                       `json:"institutionCount"`
+	SubordinateRegionCount int                       `json:"subordinateRegionCount"`
+	ReadingStudentCount    int                       `json:"readingStudentCount"`
+	OrderCount             int                       `json:"orderCount"`
+	RegionalSummary        []GovernmentOverviewEntry `json:"regionalSummary"`
+}
+
+type GovernmentOverviewEntry struct {
+	RegionCode          string `json:"regionCode"`
+	RegionName          string `json:"regionName"`
+	LevelLabel          string `json:"levelLabel"`
+	InstitutionCount    int    `json:"institutionCount"`
+	ReadingStudentCount int    `json:"readingStudentCount"`
+	IntentStudentCount  int    `json:"intentStudentCount"`
+	OrderCount          int    `json:"orderCount"`
+}
+
+type GovernmentInstitution struct {
+	ID                  int64  `json:"id"`
+	OrganName           string `json:"organName"`
+	OrganCode           string `json:"organCode,omitempty"`
+	LoginName           string `json:"loginName,omitempty"`
+	Mobile              string `json:"mobile,omitempty"`
+	Principal           string `json:"principal,omitempty"`
+	Province            string `json:"province,omitempty"`
+	City                string `json:"city,omitempty"`
+	Region              string `json:"region,omitempty"`
+	Address             string `json:"address,omitempty"`
+	Enabled             bool   `json:"enabled"`
+	Status              int    `json:"status"`
+	OpenType            int    `json:"openType"`
+	OpenDuration        string `json:"openDuration,omitempty"`
+	RegisterTime        string `json:"registerTime,omitempty"`
+	ExpireEndTime       string `json:"expireEndTime,omitempty"`
+	StaffCount          int    `json:"staffCount"`
+	ActiveStaffCount    int    `json:"activeStaffCount"`
+	AdminCount          int    `json:"adminCount"`
+	ReadingStudentCount int    `json:"readingStudentCount"`
+	IntentStudentCount  int    `json:"intentStudentCount"`
+	OrderCount          int    `json:"orderCount"`
+}
+
+type GovernmentInstitutionSummary struct {
+	TotalCount          int `json:"totalCount"`
+	EnabledCount        int `json:"enabledCount"`
+	WarningCount        int `json:"warningCount"`
+	DisabledCount       int `json:"disabledCount"`
+	ExpiredCount        int `json:"expiredCount"`
+	ReadingStudentCount int `json:"readingStudentCount"`
+	IntentStudentCount  int `json:"intentStudentCount"`
+	OrderCount          int `json:"orderCount"`
+}
+
+type GovernmentInstitutionPage struct {
+	Items         []GovernmentInstitution       `json:"items"`
+	Total         int                           `json:"total"`
+	Current       int                           `json:"current"`
+	Size          int                           `json:"size"`
+	Level         string                        `json:"level"`
+	LevelLabel    string                        `json:"levelLabel"`
+	ScopeText     string                        `json:"scopeText"`
+	ScopeCodeText string                        `json:"scopeCodeText"`
+	ScopeCount    int                           `json:"scopeCount"`
+	Summary       *GovernmentInstitutionSummary `json:"summary,omitempty"`
+}
+
 type InstitutionRenewalRecord struct {
 	ID                  int64  `json:"id"`
 	InstitutionID       int64  `json:"institutionId"`

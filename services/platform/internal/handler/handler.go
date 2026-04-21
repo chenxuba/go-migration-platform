@@ -28,6 +28,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/tenant/customization-summary", handler.customizationSummary)
 	mux.HandleFunc("/api/v1/qiniu/upload-token", handler.qiniuUploadToken)
 	mux.HandleFunc("/api/v1/qiniu/video-upload-token", handler.qiniuVideoUploadToken)
+	mux.HandleFunc("/api/v1/platform/government/overview", handler.governmentOverview)
+	mux.HandleFunc("/api/v1/platform/government/institutions", handler.governmentInstitutions)
 	mux.HandleFunc("/api/v1/platform/institutions", handler.institutions)
 	mux.HandleFunc("/api/v1/platform/institutions/detail", handler.institutionDetail)
 	mux.HandleFunc("/api/v1/platform/institutions/login-name-available", handler.institutionLoginNameAvailable)
@@ -162,6 +164,59 @@ func (handler *Handler) institutions(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load institutions failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) governmentOverview(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "government" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.GetGovernmentOverview(claims)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) governmentInstitutions(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if claims.LoginType != "government" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.PageGovernmentInstitutions(
+		claims,
+		parseInt(r.URL.Query().Get("current"), 1),
+		parseInt(r.URL.Query().Get("size"), 10),
+		r.URL.Query().Get("keyword"),
+		parseIntPtr(r.URL.Query().Get("status")),
+		parseIntPtr(r.URL.Query().Get("openType")),
+	)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)

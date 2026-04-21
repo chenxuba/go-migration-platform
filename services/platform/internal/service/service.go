@@ -141,6 +141,14 @@ func (svc *Service) PageInstitutions(current, size int, keyword, mobile, registe
 	return svc.repo.PageInstitutions(context.Background(), current, size, keyword, mobile, registerTimeBegin, registerTimeEnd, enabled, status, openType, provinceCode, cityCode, regionCode)
 }
 
+func (svc *Service) GetGovernmentOverview(claims authx.Claims) (model.GovernmentOverview, error) {
+	return svc.repo.GetGovernmentOverview(context.Background(), claims.UserID)
+}
+
+func (svc *Service) PageGovernmentInstitutions(claims authx.Claims, current, size int, keyword string, status, openType *int) (model.GovernmentInstitutionPage, error) {
+	return svc.repo.PageGovernmentInstitutions(context.Background(), claims.UserID, current, size, keyword, status, openType)
+}
+
 func (svc *Service) GetInstitutionDetail(id int64) (model.InstitutionDetail, error) {
 	return svc.repo.GetInstitutionDetail(context.Background(), id)
 }

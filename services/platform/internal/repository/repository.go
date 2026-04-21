@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -22,6 +23,23 @@ type Repository struct {
 
 type loginNameQueryer interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+type governmentOverviewContext struct {
+	Level    string
+	Disabled bool
+	IsAdmin  bool
+	Scopes   []governmentOverviewScope
+}
+
+type governmentOverviewScope struct {
+	ScopeLevel   string
+	ProvinceCode string
+	ProvinceName string
+	CityCode     string
+	CityName     string
+	DistrictCode string
+	DistrictName string
 }
 
 type rawMenu struct {
@@ -193,6 +211,204 @@ func buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTim
 	}
 
 	return strings.Join(filters, " AND "), args
+}
+
+func normalizeGovernmentLevel(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "super", "超级监管":
+		return "super"
+	case "province", "省级":
+		return "province"
+	case "city", "市级":
+		return "city"
+	case "district", "区县级", "区级", "县级":
+		return "district"
+	default:
+		return ""
+	}
+}
+
+func governmentLevelLabel(level string) string {
+	switch normalizeGovernmentLevel(level) {
+	case "super":
+		return "超级监管"
+	case "province":
+		return "省级"
+	case "city":
+		return "市级"
+	case "district":
+		return "区县级"
+	default:
+		return "--"
+	}
+}
+
+func governmentOverviewGroupMeta(level string) (codeExpr, nameExpr, levelLabel string, hasChildren bool) {
+	switch normalizeGovernmentLevel(level) {
+	case "super":
+		return "CAST(IFNULL(oi.province_code, 0) AS CHAR)", "COALESCE(NULLIF(TRIM(oi.province), ''), '未设置省份')", "省级", true
+	case "province":
+		return "CAST(IFNULL(oi.city_code, 0) AS CHAR)", "COALESCE(NULLIF(TRIM(oi.city), ''), '未设置城市')", "市级", true
+	case "city":
+		return "CAST(IFNULL(oi.region_code, 0) AS CHAR)", "COALESCE(NULLIF(TRIM(oi.region), ''), '未设置区县')", "区县级", true
+	case "district":
+		return "CAST(IFNULL(oi.region_code, 0) AS CHAR)", "COALESCE(NULLIF(TRIM(oi.region), ''), '未设置区县')", "区县级", false
+	default:
+		return "CAST(IFNULL(oi.province_code, 0) AS CHAR)", "COALESCE(NULLIF(TRIM(oi.province), ''), '未设置省份')", "--", true
+	}
+}
+
+func governmentScopeDisplayName(scope governmentOverviewScope) string {
+	switch normalizeGovernmentLevel(scope.ScopeLevel) {
+	case "province":
+		return strings.TrimSpace(scope.ProvinceName)
+	case "city":
+		return strings.Trim(strings.Join([]string{strings.TrimSpace(scope.ProvinceName), strings.TrimSpace(scope.CityName)}, "-"), "-")
+	case "district":
+		return strings.Trim(strings.Join([]string{strings.TrimSpace(scope.ProvinceName), strings.TrimSpace(scope.CityName), strings.TrimSpace(scope.DistrictName)}, "-"), "-")
+	default:
+		if strings.TrimSpace(scope.DistrictName) != "" {
+			return strings.Trim(strings.Join([]string{strings.TrimSpace(scope.ProvinceName), strings.TrimSpace(scope.CityName), strings.TrimSpace(scope.DistrictName)}, "-"), "-")
+		}
+		if strings.TrimSpace(scope.CityName) != "" {
+			return strings.Trim(strings.Join([]string{strings.TrimSpace(scope.ProvinceName), strings.TrimSpace(scope.CityName)}, "-"), "-")
+		}
+		return strings.TrimSpace(scope.ProvinceName)
+	}
+}
+
+func governmentScopeCodeText(scope governmentOverviewScope, fallbackLevel string) string {
+	switch normalizeGovernmentLevel(firstNonEmptyGovernmentString(scope.ScopeLevel, fallbackLevel)) {
+	case "province":
+		return strings.TrimSpace(scope.ProvinceCode)
+	case "city":
+		return strings.TrimSpace(scope.CityCode)
+	case "district":
+		return strings.TrimSpace(scope.DistrictCode)
+	default:
+		return ""
+	}
+}
+
+func firstNonEmptyGovernmentString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func summarizeGovernmentScopes(level string, scopes []governmentOverviewScope) (string, string, int) {
+	if normalizeGovernmentLevel(level) == "super" {
+		return "全部辖区", "全域", 0
+	}
+
+	names := make([]string, 0, len(scopes))
+	seen := make(map[string]struct{}, len(scopes))
+	codeText := ""
+	for _, scope := range scopes {
+		displayName := strings.TrimSpace(governmentScopeDisplayName(scope))
+		if displayName == "" {
+			continue
+		}
+		if _, ok := seen[displayName]; ok {
+			continue
+		}
+		seen[displayName] = struct{}{}
+		names = append(names, displayName)
+		if codeText == "" {
+			codeText = governmentScopeCodeText(scope, level)
+		}
+	}
+
+	switch len(names) {
+	case 0:
+		return "未配置辖区", "--", 0
+	case 1:
+		if codeText == "" {
+			codeText = "--"
+		}
+		return names[0], codeText, 1
+	default:
+		preview := strings.Join(names[:minInt(len(names), 2)], "、")
+		if len(names) > 2 {
+			preview = fmt.Sprintf("%s 等 %d 个区域", preview, len(names))
+		}
+		return preview, "多区域", len(names)
+	}
+}
+
+func buildGovernmentInstitutionWhereClause(alias string, level string, scopes []governmentOverviewScope) (string, []any) {
+	filters := []string{alias + ".del_flag = 0"}
+	normalizedLevel := normalizeGovernmentLevel(level)
+	if normalizedLevel == "super" {
+		return strings.Join(filters, " AND "), nil
+	}
+
+	conditions := make([]string, 0, len(scopes))
+	args := make([]any, 0, len(scopes)*3)
+	for _, scope := range scopes {
+		effectiveLevel := normalizeGovernmentLevel(firstNonEmptyGovernmentString(scope.ScopeLevel, normalizedLevel))
+		switch effectiveLevel {
+		case "province":
+			if strings.TrimSpace(scope.ProvinceCode) == "" {
+				continue
+			}
+			conditions = append(conditions, "IFNULL("+alias+".province_code, 0) = ?")
+			args = append(args, scope.ProvinceCode)
+		case "city":
+			if strings.TrimSpace(scope.ProvinceCode) == "" || strings.TrimSpace(scope.CityCode) == "" {
+				continue
+			}
+			conditions = append(conditions, "(IFNULL("+alias+".province_code, 0) = ? AND IFNULL("+alias+".city_code, 0) = ?)")
+			args = append(args, scope.ProvinceCode, scope.CityCode)
+		case "district":
+			if strings.TrimSpace(scope.ProvinceCode) == "" || strings.TrimSpace(scope.CityCode) == "" || strings.TrimSpace(scope.DistrictCode) == "" {
+				continue
+			}
+			conditions = append(conditions, "(IFNULL("+alias+".province_code, 0) = ? AND IFNULL("+alias+".city_code, 0) = ? AND IFNULL("+alias+".region_code, 0) = ?)")
+			args = append(args, scope.ProvinceCode, scope.CityCode, scope.DistrictCode)
+		}
+	}
+
+	if len(conditions) == 0 {
+		filters = append(filters, "1 = 0")
+		return strings.Join(filters, " AND "), args
+	}
+	filters = append(filters, "("+strings.Join(conditions, " OR ")+")")
+	return strings.Join(filters, " AND "), args
+}
+
+func buildGovernmentInstitutionListWhereClause(baseWhere string, baseArgs []any, keyword string, status, openType *int) (string, []any) {
+	filters := []string{baseWhere}
+	args := append([]any{}, baseArgs...)
+	statusExpr := institutionStatusExpr("oi")
+
+	if trimmed := strings.TrimSpace(keyword); trimmed != "" {
+		like := "%" + trimmed + "%"
+		filters = append(filters, `(CAST(oi.id AS CHAR) LIKE ? OR oi.organ_name LIKE ? OR oi.organ_code LIKE ? OR oi.principal LIKE ? OR oi.mobile LIKE ? OR oi.province LIKE ? OR oi.city LIKE ? OR oi.region LIKE ?)`)
+		args = append(args, like, like, like, like, like, like, like, like)
+	}
+
+	if status != nil && *status > 0 {
+		filters = append(filters, statusExpr+" = ?")
+		args = append(args, *status)
+	}
+
+	if openType != nil && *openType > 0 {
+		filters = append(filters, "IFNULL(oi.open_type, 2) = ?")
+		args = append(args, *openType)
+	}
+
+	return strings.Join(filters, " AND "), args
+}
+
+func minInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func New(db *sql.DB) (*Repository, error) {
@@ -1037,6 +1253,357 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 		Size:    size,
 		Summary: &summary,
 	}, rows.Err()
+}
+
+func (repo *Repository) GetGovernmentOverview(ctx context.Context, userID int64) (model.GovernmentOverview, error) {
+	contextInfo, err := repo.getGovernmentOverviewContext(ctx, userID)
+	if err != nil {
+		return model.GovernmentOverview{}, err
+	}
+	if contextInfo.Disabled {
+		return model.GovernmentOverview{}, errors.New("政府账号已停用")
+	}
+	if normalizeGovernmentLevel(contextInfo.Level) == "" {
+		return model.GovernmentOverview{}, errors.New("政府账号未配置监管层级")
+	}
+
+	scopeText, scopeCodeText, scopeCount := summarizeGovernmentScopes(contextInfo.Level, contextInfo.Scopes)
+	whereClause, args := buildGovernmentInstitutionWhereClause("oi", contextInfo.Level, contextInfo.Scopes)
+	groupCodeExpr, groupNameExpr, groupLevelLabel, hasChildren := governmentOverviewGroupMeta(contextInfo.Level)
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT grouped.region_code,
+		       grouped.region_name,
+		       COUNT(*) AS institution_count,
+		       COALESCE(SUM(grouped.reading_student_count), 0) AS reading_student_count,
+		       COALESCE(SUM(grouped.intent_student_count), 0) AS intent_student_count,
+		       COALESCE(SUM(grouped.order_count), 0) AS order_count
+		FROM (
+			SELECT `+groupCodeExpr+` AS region_code,
+			       `+groupNameExpr+` AS region_name,
+			       COALESCE(student_stats.reading_student_count, 0) AS reading_student_count,
+			       COALESCE(student_stats.intent_student_count, 0) AS intent_student_count,
+			       COALESCE(order_stats.order_count, 0) AS order_count
+			FROM org_institution oi
+			LEFT JOIN (
+				SELECT inst_id,
+				       SUM(CASE WHEN student_status = 1 THEN 1 ELSE 0 END) AS reading_student_count,
+				       SUM(CASE WHEN student_status = 0 THEN 1 ELSE 0 END) AS intent_student_count
+				FROM inst_student
+				WHERE del_flag = 0
+				GROUP BY inst_id
+			) student_stats ON student_stats.inst_id = oi.id
+			LEFT JOIN (
+				SELECT inst_id,
+				       COUNT(*) AS order_count
+				FROM sale_order
+				WHERE del_flag = 0
+				GROUP BY inst_id
+			) order_stats ON order_stats.inst_id = oi.id
+			WHERE `+whereClause+`
+		) grouped
+		GROUP BY grouped.region_code, grouped.region_name
+		ORDER BY institution_count DESC, region_code ASC
+	`, args...)
+	if err != nil {
+		return model.GovernmentOverview{}, err
+	}
+	defer rows.Close()
+
+	summary := make([]model.GovernmentOverviewEntry, 0, 16)
+	overview := model.GovernmentOverview{
+		Level:           normalizeGovernmentLevel(contextInfo.Level),
+		LevelLabel:      governmentLevelLabel(contextInfo.Level),
+		ScopeText:       scopeText,
+		ScopeCodeText:   scopeCodeText,
+		ScopeCount:      scopeCount,
+		RegionalSummary: summary,
+	}
+
+	for rows.Next() {
+		var item model.GovernmentOverviewEntry
+		if err := rows.Scan(
+			&item.RegionCode,
+			&item.RegionName,
+			&item.InstitutionCount,
+			&item.ReadingStudentCount,
+			&item.IntentStudentCount,
+			&item.OrderCount,
+		); err != nil {
+			return model.GovernmentOverview{}, err
+		}
+		item.LevelLabel = groupLevelLabel
+		summary = append(summary, item)
+		overview.InstitutionCount += item.InstitutionCount
+		overview.ReadingStudentCount += item.ReadingStudentCount
+		overview.OrderCount += item.OrderCount
+	}
+	if err := rows.Err(); err != nil {
+		return model.GovernmentOverview{}, err
+	}
+
+	overview.RegionalSummary = summary
+	if hasChildren {
+		overview.SubordinateRegionCount = len(summary)
+	}
+	return overview, nil
+}
+
+func (repo *Repository) PageGovernmentInstitutions(ctx context.Context, userID int64, current, size int, keyword string, status, openType *int) (model.GovernmentInstitutionPage, error) {
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	offset := (current - 1) * size
+
+	contextInfo, err := repo.getGovernmentOverviewContext(ctx, userID)
+	if err != nil {
+		return model.GovernmentInstitutionPage{}, err
+	}
+	if contextInfo.Disabled {
+		return model.GovernmentInstitutionPage{}, errors.New("政府账号已停用")
+	}
+	if normalizeGovernmentLevel(contextInfo.Level) == "" {
+		return model.GovernmentInstitutionPage{}, errors.New("政府账号未配置监管层级")
+	}
+
+	scopeText, scopeCodeText, scopeCount := summarizeGovernmentScopes(contextInfo.Level, contextInfo.Scopes)
+	scopeWhereClause, scopeArgs := buildGovernmentInstitutionWhereClause("oi", contextInfo.Level, contextInfo.Scopes)
+	whereClause, args := buildGovernmentInstitutionListWhereClause(scopeWhereClause, scopeArgs, keyword, status, openType)
+	statusExpr := institutionStatusExpr("oi")
+
+	var summary model.GovernmentInstitutionSummary
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*),
+		       COALESCE(SUM(CASE WHEN summary_source.status = 1 THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN summary_source.status = 3 THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN summary_source.status = 2 THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN summary_source.status = 4 THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(summary_source.reading_student_count), 0),
+		       COALESCE(SUM(summary_source.intent_student_count), 0),
+		       COALESCE(SUM(summary_source.order_count), 0)
+		FROM (
+			SELECT `+statusExpr+` AS status,
+			       COALESCE(student_stats.reading_student_count, 0) AS reading_student_count,
+			       COALESCE(student_stats.intent_student_count, 0) AS intent_student_count,
+			       COALESCE(order_stats.order_count, 0) AS order_count
+			FROM org_institution oi
+			LEFT JOIN (
+				SELECT inst_id,
+				       SUM(CASE WHEN student_status = 1 THEN 1 ELSE 0 END) AS reading_student_count,
+				       SUM(CASE WHEN student_status = 0 THEN 1 ELSE 0 END) AS intent_student_count
+				FROM inst_student
+				WHERE del_flag = 0
+				GROUP BY inst_id
+			) student_stats ON student_stats.inst_id = oi.id
+			LEFT JOIN (
+				SELECT inst_id,
+				       COUNT(*) AS order_count
+				FROM sale_order
+				WHERE del_flag = 0
+				GROUP BY inst_id
+			) order_stats ON order_stats.inst_id = oi.id
+			WHERE `+whereClause+`
+		) summary_source
+	`, args...).Scan(
+		&summary.TotalCount,
+		&summary.EnabledCount,
+		&summary.WarningCount,
+		&summary.DisabledCount,
+		&summary.ExpiredCount,
+		&summary.ReadingStudentCount,
+		&summary.IntentStudentCount,
+		&summary.OrderCount,
+	); err != nil {
+		return model.GovernmentInstitutionPage{}, err
+	}
+
+	listArgs := append(append([]any{}, args...), size, offset)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT oi.id,
+		       IFNULL(oi.organ_name, ''),
+		       IFNULL(oi.organ_code, ''),
+		       IFNULL(oi.login_name, ''),
+		       IFNULL(oi.mobile, ''),
+		       IFNULL(oi.principal, ''),
+		       IFNULL(oi.province, ''),
+		       IFNULL(oi.city, ''),
+		       IFNULL(oi.region, ''),
+		       IFNULL(oi.address, ''),
+		       IFNULL(oi.enabled, 0),
+		       `+statusExpr+`,
+		       IFNULL(oi.open_type, 2),
+		       IFNULL(oi.open_duration, ''),
+		       IFNULL(DATE_FORMAT(oi.create_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(oi.expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       COALESCE(staff_stats.staff_count, 0),
+		       COALESCE(staff_stats.active_staff_count, 0),
+		       COALESCE(staff_stats.admin_count, 0),
+		       COALESCE(student_stats.reading_student_count, 0),
+		       COALESCE(student_stats.intent_student_count, 0),
+		       COALESCE(order_stats.order_count, 0)
+		FROM org_institution oi
+		LEFT JOIN (
+			SELECT inst_id,
+			       COUNT(*) AS staff_count,
+			       SUM(CASE WHEN IFNULL(disabled, 0) = 0 THEN 1 ELSE 0 END) AS active_staff_count,
+			       SUM(CASE WHEN IFNULL(is_admin, 0) = 1 THEN 1 ELSE 0 END) AS admin_count
+			FROM inst_user
+			WHERE del_flag = 0
+			GROUP BY inst_id
+		) staff_stats ON staff_stats.inst_id = oi.id
+		LEFT JOIN (
+			SELECT inst_id,
+			       SUM(CASE WHEN student_status = 1 THEN 1 ELSE 0 END) AS reading_student_count,
+			       SUM(CASE WHEN student_status = 0 THEN 1 ELSE 0 END) AS intent_student_count
+			FROM inst_student
+			WHERE del_flag = 0
+			GROUP BY inst_id
+		) student_stats ON student_stats.inst_id = oi.id
+		LEFT JOIN (
+			SELECT inst_id,
+			       COUNT(*) AS order_count
+			FROM sale_order
+			WHERE del_flag = 0
+			GROUP BY inst_id
+		) order_stats ON order_stats.inst_id = oi.id
+		WHERE `+whereClause+`
+		ORDER BY oi.id DESC
+		LIMIT ? OFFSET ?
+	`, listArgs...)
+	if err != nil {
+		return model.GovernmentInstitutionPage{}, err
+	}
+	defer rows.Close()
+
+	items := make([]model.GovernmentInstitution, 0, size)
+	for rows.Next() {
+		var item model.GovernmentInstitution
+		if err := rows.Scan(
+			&item.ID,
+			&item.OrganName,
+			&item.OrganCode,
+			&item.LoginName,
+			&item.Mobile,
+			&item.Principal,
+			&item.Province,
+			&item.City,
+			&item.Region,
+			&item.Address,
+			&item.Enabled,
+			&item.Status,
+			&item.OpenType,
+			&item.OpenDuration,
+			&item.RegisterTime,
+			&item.ExpireEndTime,
+			&item.StaffCount,
+			&item.ActiveStaffCount,
+			&item.AdminCount,
+			&item.ReadingStudentCount,
+			&item.IntentStudentCount,
+			&item.OrderCount,
+		); err != nil {
+			return model.GovernmentInstitutionPage{}, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return model.GovernmentInstitutionPage{}, err
+	}
+
+	return model.GovernmentInstitutionPage{
+		Items:         items,
+		Total:         summary.TotalCount,
+		Current:       current,
+		Size:          size,
+		Level:         normalizeGovernmentLevel(contextInfo.Level),
+		LevelLabel:    governmentLevelLabel(contextInfo.Level),
+		ScopeText:     scopeText,
+		ScopeCodeText: scopeCodeText,
+		ScopeCount:    scopeCount,
+		Summary:       &summary,
+	}, nil
+}
+
+func (repo *Repository) getGovernmentOverviewContext(ctx context.Context, userID int64) (governmentOverviewContext, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(gp.level, ''),
+		       IFNULL(gp.disabled, 0),
+		       IFNULL((
+		           SELECT MAX(IFNULL(r.is_admin, 0))
+		           FROM sso_user_role ur
+		           INNER JOIN sso_role r ON r.id = ur.role_id
+		           WHERE ur.user_id = u.id
+		             AND r.del_flag = 0
+		             AND r.role_type = 3
+		             AND r.org_id = 1
+		       ), 0)
+		FROM sso_user u
+		LEFT JOIN government_user_profile gp ON gp.user_id = u.id AND gp.del_flag = 0
+		WHERE u.id = ? AND u.del_flag = 0
+		LIMIT 1
+	`, userID)
+
+	var (
+		result  governmentOverviewContext
+		level   string
+		isAdmin int
+	)
+	if err := row.Scan(&level, &result.Disabled, &isAdmin); err != nil {
+		return governmentOverviewContext{}, err
+	}
+	result.IsAdmin = isAdmin > 0
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(scope_level, ''),
+		       IFNULL(province_code, ''),
+		       IFNULL(province_name, ''),
+		       IFNULL(city_code, ''),
+		       IFNULL(city_name, ''),
+		       IFNULL(district_code, ''),
+		       IFNULL(district_name, '')
+		FROM government_user_scope
+		WHERE user_id = ? AND del_flag = 0
+		ORDER BY province_code ASC, city_code ASC, district_code ASC, id ASC
+	`, userID)
+	if err != nil {
+		return governmentOverviewContext{}, err
+	}
+	defer rows.Close()
+
+	scopes := make([]governmentOverviewScope, 0, 8)
+	for rows.Next() {
+		var item governmentOverviewScope
+		if err := rows.Scan(
+			&item.ScopeLevel,
+			&item.ProvinceCode,
+			&item.ProvinceName,
+			&item.CityCode,
+			&item.CityName,
+			&item.DistrictCode,
+			&item.DistrictName,
+		); err != nil {
+			return governmentOverviewContext{}, err
+		}
+		scopes = append(scopes, item)
+	}
+	if err := rows.Err(); err != nil {
+		return governmentOverviewContext{}, err
+	}
+
+	result.Level = normalizeGovernmentLevel(level)
+	if result.Level == "" {
+		switch {
+		case result.IsAdmin:
+			result.Level = "super"
+		case len(scopes) > 0:
+			result.Level = normalizeGovernmentLevel(scopes[0].ScopeLevel)
+		}
+	}
+	result.Scopes = scopes
+	return result, nil
 }
 
 func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (model.InstitutionDetail, error) {

@@ -1,88 +1,166 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { regionalSummary, scopeMap } from '../shared/mock-data'
+import type { TableColumnsType } from 'ant-design-vue'
+import { computed, onMounted, ref } from 'vue'
+import { getGovernmentOverviewApi, type GovernmentOverviewEntry, type GovernmentOverviewPayload } from '@/api/government/overview'
+import messageService from '@/utils/messageService'
 
-const levelOptions = [
-  { label: '省级视角', value: '省级' },
-  { label: '市级视角', value: '市级' },
-  { label: '区级视角', value: '区级' },
-]
+const loading = ref(false)
+const overview = ref<GovernmentOverviewPayload | null>(null)
 
-const currentLevel = ref<'省级' | '市级' | '区级'>('省级')
-
-const currentScope = computed(() => scopeMap[currentLevel.value])
-
-const statCards = computed(() => [
-  {
-    key: 'institutions',
-    label: '纳管机构',
-    value: `${currentScope.value.institutionCount}`,
-    unit: '家',
-    tone: 'blue',
-  },
-  {
-    key: 'regions',
-    label: '下辖区域',
-    value: `${currentScope.value.subordinateRegions}`,
-    unit: '个',
-    tone: 'cyan',
-  },
-  {
-    key: 'alerts',
-    label: '待处理预警',
-    value: `${currentScope.value.pendingAlerts}`,
-    unit: '条',
-    tone: 'orange',
-  },
-  {
-    key: 'tasks',
-    label: '待办任务',
-    value: `${currentScope.value.pendingTasks}`,
-    unit: '项',
-    tone: 'green',
-  },
-])
-
-const columns = [
+const columns: TableColumnsType<GovernmentOverviewEntry> = [
   { title: '区域名称', dataIndex: 'regionName', key: 'regionName' },
-  { title: '层级', dataIndex: 'level', key: 'level', width: 100 },
-  { title: '机构数', dataIndex: 'institutionCount', key: 'institutionCount', width: 100 },
-  { title: '在办任务', dataIndex: 'ongoingTasks', key: 'ongoingTasks', width: 100 },
-  { title: '风险预警', dataIndex: 'alerts', key: 'alerts', width: 100 },
-  { title: '整改完成率', dataIndex: 'completionRate', key: 'completionRate', width: 120 },
+  { title: '层级', dataIndex: 'levelLabel', key: 'levelLabel', width: 110, align: 'center' as const },
+  { title: '机构数', dataIndex: 'institutionCount', key: 'institutionCount', width: 100, align: 'right' as const },
+  { title: '在读学员', dataIndex: 'readingStudentCount', key: 'readingStudentCount', width: 110, align: 'right' as const },
+  { title: '意向学员', dataIndex: 'intentStudentCount', key: 'intentStudentCount', width: 110, align: 'right' as const },
+  { title: '订单总量', dataIndex: 'orderCount', key: 'orderCount', width: 110, align: 'right' as const },
 ]
+
+const statCards = computed(() => {
+  const payload = overview.value
+  if (!payload) {
+    return []
+  }
+  return [
+    {
+      key: 'institutions',
+      label: '纳管机构',
+      value: `${payload.institutionCount}`,
+      unit: '家',
+      tone: 'blue',
+    },
+    {
+      key: 'regions',
+      label: resolveRegionStatLabel(payload),
+      value: `${resolveRegionStatValue(payload)}`,
+      unit: '个',
+      tone: 'cyan',
+    },
+    {
+      key: 'students',
+      label: '在读学员',
+      value: `${payload.readingStudentCount}`,
+      unit: '人',
+      tone: 'green',
+    },
+    {
+      key: 'orders',
+      label: '订单总量',
+      value: `${payload.orderCount}`,
+      unit: '笔',
+      tone: 'orange',
+    },
+  ]
+})
+
+const noteItems = computed(() => {
+  const payload = overview.value
+  if (!payload) {
+    return [
+      '当前页将按真实监管账号的辖区范围汇总机构台账、在读学员和订单数据。',
+      '首页不再使用示意性的预警、整改、督导任务指标。',
+    ]
+  }
+
+  return [
+    '首页统计口径来自现有机构业务：机构台账、在读学员、意向学员和订单总量。',
+    payload.scopeCount > 1
+      ? `当前账号已配置 ${payload.scopeCount} 个监管范围，首页已按这些辖区合并汇总。`
+      : `当前账号监管范围为 ${payload.scopeText}。`,
+    `区域表按${payload.level === 'super' ? '省级' : payload.level === 'province' ? '市级' : '区县级'}维度聚合，方便先看辖区体量，再下钻机构明细。`,
+  ]
+})
+
+function resolveRegionStatLabel(payload: GovernmentOverviewPayload) {
+  switch (payload.level) {
+    case 'super':
+      return '覆盖省份'
+    case 'province':
+      return '下辖城市'
+    case 'city':
+      return '下辖区县'
+    case 'district':
+      return payload.scopeCount > 1 ? '监管区县' : '当前辖区'
+    default:
+      return '覆盖区域'
+  }
+}
+
+function resolveRegionStatValue(payload: GovernmentOverviewPayload) {
+  if (payload.level === 'district') {
+    return payload.scopeCount || payload.regionalSummary.length || 0
+  }
+  return payload.subordinateRegionCount
+}
+
+function resolveRequestErrorMessage(error: any, fallback: string) {
+  return String(error?.response?.data?.message || error?.message || fallback).trim() || fallback
+}
+
+function getLevelColor(levelLabel?: string) {
+  const value = String(levelLabel || '').trim()
+  if (value === '省级')
+    return 'blue'
+  if (value === '市级')
+    return 'cyan'
+  if (value === '区县级')
+    return 'geekblue'
+  return 'default'
+}
+
+async function fetchOverview() {
+  loading.value = true
+  try {
+    const res = await getGovernmentOverviewApi()
+    if (res.code !== 200 || !res.result) {
+      messageService.error(res.message || '获取监管总览失败')
+      return
+    }
+    overview.value = res.result
+  }
+  catch (error: any) {
+    console.error('fetch government overview failed', error)
+    messageService.error(resolveRequestErrorMessage(error, '获取监管总览失败'))
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchOverview()
+})
 </script>
 
 <template>
   <div class="gov-page">
-    <section class="hero-card">
-      <div>
-        <div class="hero-card__eyebrow">
+    <section class="page-header">
+      <div class="page-header__main">
+        <div class="page-header__eyebrow">
           G 端 / 监管驾驶舱
         </div>
-        <h1 class="hero-card__title">
+        <h1 class="page-header__title">
           康复机构监管平台
         </h1>
-        <p class="hero-card__desc">
-          省、市、区三级共用一套代码，后端通过行政区划编码和数据权限控制监管范围。当前这套前端已经独立拆出，可继续承接统计总览、机构监管、督导整改和账号管理。
-        </p>
       </div>
 
-      <a-radio-group v-model:value="currentLevel" :options="levelOptions" option-type="button" button-style="solid" />
+      <div class="page-header__badge">
+        {{ overview?.levelLabel || '监管视角' }}
+      </div>
     </section>
 
     <section class="scope-strip">
       <div class="scope-strip__item">
         <span class="scope-strip__label">当前层级</span>
-        <span class="scope-strip__value">{{ currentScope.level }}</span>
+        <span class="scope-strip__value">{{ overview?.levelLabel || '--' }}</span>
       </div>
       <div class="scope-strip__item">
         <span class="scope-strip__label">监管区域</span>
-        <span class="scope-strip__value">{{ currentScope.regionName }}</span>
+        <span class="scope-strip__value">{{ overview?.scopeText || '--' }}</span>
       </div>
       <div class="scope-strip__item">
         <span class="scope-strip__label">行政区划码</span>
-        <span class="scope-strip__value">{{ currentScope.regionCode }}</span>
+        <span class="scope-strip__value">{{ overview?.scopeCodeText || '--' }}</span>
       </div>
     </section>
 
@@ -100,19 +178,28 @@ const columns = [
 
     <section class="content-grid">
       <a-card title="区域监管概览" :bordered="false">
-        <a-table :columns="columns" :data-source="regionalSummary" :pagination="false" size="small" />
+        <a-table
+          :columns="columns"
+          :data-source="overview?.regionalSummary || []"
+          :loading="loading"
+          :pagination="false"
+          row-key="regionCode"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'levelLabel'">
+              <a-tag :color="getLevelColor(record.levelLabel)">
+                {{ record.levelLabel }}
+              </a-tag>
+            </template>
+          </template>
+        </a-table>
       </a-card>
 
-      <a-card title="拆分说明" :bordered="false">
+      <a-card title="统计口径" :bordered="false">
         <div class="note-list">
-          <div class="note-list__item">
-            现在已经从现有前端底座拆出一套独立的 `government-admin`，后续可以单独部署。
-          </div>
-          <div class="note-list__item">
-            省、市、区不需要拆三套代码，继续共用这一个监管端即可。
-          </div>
-          <div class="note-list__item">
-            后续只要补齐监管菜单、接口鉴权和区域数据权限，就能逐步落地真实业务。
+          <div v-for="item in noteItems" :key="item" class="note-list__item">
+            {{ item }}
           </div>
         </div>
       </a-card>
@@ -125,38 +212,49 @@ const columns = [
   display: flex;
   flex-direction: column;
   gap: 16px;
+  width: 100%;
+  min-width: 0;
 }
 
-.hero-card {
+.page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 24px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #e9f2ff 0%, #f7fbff 54%, #ffffff 100%);
+  gap: 16px;
+  padding: 18px 22px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #eef4ff 0%, #ffffff 100%);
 }
 
-.hero-card__eyebrow {
+.page-header__main {
+  min-width: 0;
+}
+
+.page-header__eyebrow {
   margin-bottom: 10px;
   color: #1d4ed8;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
 
-.hero-card__title {
-  margin: 0 0 10px;
+.page-header__title {
+  margin: 0;
   color: #102a43;
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 700;
 }
 
-.hero-card__desc {
-  margin: 0;
-  max-width: 760px;
-  color: #52606d;
-  line-height: 24px;
+.page-header__badge {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(29, 78, 216, 0.08);
+  color: #1d4ed8;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
 .scope-strip {
@@ -224,17 +322,17 @@ const columns = [
   box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.12);
 }
 
-.stat-card--orange {
-  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.12);
-}
-
 .stat-card--green {
   box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.12);
 }
 
+.stat-card--orange {
+  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.12);
+}
+
 .content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
   gap: 16px;
 }
 
@@ -253,14 +351,15 @@ const columns = [
 }
 
 @media (max-width: 1200px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .scope-strip,
   .stat-grid,
   .content-grid {
     grid-template-columns: 1fr;
-  }
-
-  .hero-card {
-    flex-direction: column;
   }
 }
 </style>
