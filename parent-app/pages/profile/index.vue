@@ -86,7 +86,7 @@
 
 			<view v-if="!isAuthenticated" class="profile-auth-block">
 				<!-- #ifdef MP-WEIXIN -->
-				<button class="parent-primary-button profile-auth-block__button" open-type="getPhoneNumber" @getphonenumber="handleWechatPhoneAuth">
+				<button class="parent-primary-button profile-auth-block__button" :loading="authLoading" :disabled="authLoading" open-type="getPhoneNumber" @getphonenumber="handleWechatPhoneAuth">
 					授权登录
 				</button>
 				<!-- #endif -->
@@ -108,17 +108,18 @@
 <script setup>
 import { computed } from 'vue'
 import BindSuccessDialog from '@/components/bind-success-dialog/bind-success-dialog.vue'
+import { authorizeByWechatPhone } from '@/common/parent-auth'
 import { getNavLayout } from '@/common/nav-layout'
 import { DEFAULT_PHONE } from '@/common/mock-parent'
 import {
 	authorizeByPhone,
 	dismissBindSuccess,
-	parentState,
-	setPostAuthPage
+	parentState
 } from '@/common/parent-state'
 
 const nav = getNavLayout()
 
+const authLoading = computed(() => parentState.authLoading)
 const isAuthenticated = computed(() => parentState.isAuthenticated)
 const students = computed(() => parentState.students)
 const pendingCount = computed(() => parentState.pendingCandidates.length)
@@ -154,7 +155,6 @@ function simplifyCampusName(name = '') {
 }
 
 function completeMockAuth() {
-	setPostAuthPage('/pages/profile/index')
 	authorizeByPhone(DEFAULT_PHONE)
 	uni.navigateTo({
 		url: '/pages/select-student/index'
@@ -166,16 +166,9 @@ function handleMockPhoneAuth() {
 }
 
 function handleWechatPhoneAuth(event) {
-	const detail = event?.detail || {}
-	if (detail.errMsg && !detail.errMsg.includes('ok')) {
-		uni.showToast({
-			title: '你已取消手机号授权',
-			icon: 'none'
-		})
-		return
-	}
-	// 真实接入时，这里应把 detail.code 传给后端换取手机号并建立登录态。
-	completeMockAuth()
+	authorizeByWechatPhone(event, {
+		postAuthPage: '/pages/profile/index'
+	})
 }
 
 function openPendingStudents() {

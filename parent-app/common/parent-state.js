@@ -11,8 +11,12 @@ import {
 	scheduleEntries
 } from '@/common/mock-parent'
 
+const avatarPalette = ['#8fb7ff', '#7cc8ff', '#63d5b2', '#ffb26f', '#f59fb2', '#9a8cff']
+
 function createInitialState() {
 	return {
+		authToken: '',
+		authLoading: false,
 		isAuthenticated: false,
 		profile: {
 			nickname: '请登录',
@@ -40,20 +44,13 @@ export const parentState = reactive(createInitialState())
 
 export function authorizeByPhone(phone = DEFAULT_PHONE) {
 	const session = createPhoneSession(phone)
-	parentState.isAuthenticated = true
-	parentState.profile = {
+	applyAuthSession({
+		token: '',
 		nickname: session.nickname,
 		phone: session.phone,
 		maskedPhone: session.maskedPhone,
-		avatarText: (session.nickname || '家').slice(0, 1)
-	}
-	parentState.pendingCandidates = session.candidates
-	parentState.selectedCandidateIds = session.candidates.map(item => item.id)
-	parentState.students = []
-	parentState.currentStudentId = ''
-	parentState.currentCampusId = session.candidates[0]?.campusId || parentState.currentCampusId
-	parentState.bindSuccessVisible = false
-	parentState.latestBindStudentName = ''
+		candidates: session.candidates
+	})
 	return session
 }
 
@@ -109,5 +106,98 @@ export function logoutParent() {
 }
 
 export function getCurrentCampus() {
-	return getCampusById(parentState.currentCampusId)
+	return parentState.campusList.find(item => item.id === parentState.currentCampusId) || getCampusById(parentState.currentCampusId)
+}
+
+export function setAuthLoading(loading) {
+	parentState.authLoading = !!loading
+}
+
+export function applyParentAuthSession(session = {}) {
+	applyAuthSession(session)
+}
+
+function applyAuthSession(session = {}) {
+	const normalizedCandidates = normalizeCandidates(session.candidates)
+	const nextCampusList = normalizedCandidates.length ? buildCampusList(normalizedCandidates) : cloneList(campusList)
+	const nickname = `${session.nickname || '微信家长'}`.trim() || '微信家长'
+
+	parentState.authToken = `${session.token || ''}`.trim()
+	parentState.isAuthenticated = true
+	parentState.profile = {
+		nickname,
+		phone: `${session.phone || ''}`.trim(),
+		maskedPhone: `${session.maskedPhone || ''}`.trim(),
+		avatarText: nickname.slice(0, 1)
+	}
+	parentState.campusList = nextCampusList
+	parentState.pendingCandidates = normalizedCandidates
+	parentState.selectedCandidateIds = normalizedCandidates.map(item => item.id)
+	parentState.students = []
+	parentState.currentStudentId = ''
+	parentState.currentCampusId = normalizedCandidates[0]?.campusId || nextCampusList[0]?.id || parentState.currentCampusId
+	parentState.bindSuccessVisible = false
+	parentState.latestBindStudentName = ''
+}
+
+function normalizeCandidates(candidates = []) {
+	return (Array.isArray(candidates) ? candidates : []).map((item, index) => {
+		const rawID = `${item?.id ?? `candidate-${index + 1}`}`
+		const campusId = `${item?.campusId || (item?.instId ? `inst-${item.instId}` : `campus-${index + 1}`)}`
+		return {
+			id: rawID,
+			rawId: item?.id ?? rawID,
+			name: `${item?.name || item?.stuName || '-'}`.trim() || '-',
+			campusId,
+			campusName: `${item?.campusName || item?.institutionName || '-'}`.trim() || '-',
+			balance: Number(item?.balance || 0),
+			relation: `${item?.relation || item?.relationText || '-'}`.trim() || '-',
+			avatarColor: item?.avatarColor || buildAvatarColor(rawID),
+			classLabel: `${item?.classLabel || item?.studentStatusText || '已匹配'}`.trim() || '已匹配',
+			studentStatus: Number(item?.studentStatus || 0),
+			isBound: !!item?.isBound,
+			mobile: `${item?.mobile || ''}`.trim(),
+			maskedMobile: `${item?.maskedMobile || ''}`.trim(),
+			instId: Number(item?.instId || 0)
+		}
+	})
+}
+
+function buildCampusList(candidates = []) {
+	const result = []
+	const seen = new Set()
+
+	candidates.forEach(item => {
+		if (!item?.campusId || seen.has(item.campusId)) {
+			return
+		}
+		seen.add(item.campusId)
+		const campusName = `${item.campusName || ''}`.trim() || '机构'
+		const brandName = deriveBrandName(campusName)
+		result.push({
+			id: item.campusId,
+			name: campusName,
+			shortName: brandName.slice(0, 1) || '校',
+			brandName
+		})
+	})
+
+	return result.length ? result : cloneList(campusList)
+}
+
+function deriveBrandName(name = '') {
+	const text = `${name || ''}`.trim()
+	if (!text) {
+		return '机构'
+	}
+	return text.replace(/\s*(总校区|控江校区|校区|分校|院区)\s*$/u, '').trim() || text
+}
+
+function buildAvatarColor(seed = '') {
+	const text = `${seed || ''}`
+	let total = 0
+	for (let index = 0; index < text.length; index += 1) {
+		total += text.charCodeAt(index)
+	}
+	return avatarPalette[total % avatarPalette.length]
 }

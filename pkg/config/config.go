@@ -34,6 +34,8 @@ type ServiceConfig struct {
 	WeChatOfficialAppID                   string
 	WeChatOfficialSecret                  string
 	WeChatOfficialToken                   string
+	WeChatMiniProgramAppID                string
+	WeChatMiniProgramSecret               string
 	WeChatOfficialMiniProgramAppID        string
 	WeChatOfficialMiniProgramPagePath     string
 	WeChatOfficialMiniProgramThumbMediaID string
@@ -74,6 +76,8 @@ func Load(name, defaultPort string) ServiceConfig {
 		WeChatOfficialAppID:                   envOrDefault("WECHAT_OFFICIAL_APP_ID", "wxf11b8b60b6608df8"),
 		WeChatOfficialSecret:                  envOrDefault("WECHAT_OFFICIAL_SECRET", "23c548a859478a4060314b67871e7bcc"),
 		WeChatOfficialToken:                   envOrDefault("WECHAT_OFFICIAL_TOKEN", "ybc365"),
+		WeChatMiniProgramAppID:                envOrDefault("WECHAT_MINI_PROGRAM_APP_ID", envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_APP_ID", "wxd48d83d618bda279")),
+		WeChatMiniProgramSecret:               envOrDefault("WECHAT_MINI_PROGRAM_SECRET", envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_SECRET", "")),
 		WeChatOfficialMiniProgramAppID:        envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_APP_ID", "wxd48d83d618bda279"),
 		WeChatOfficialMiniProgramPagePath:     envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_PAGE_PATH", "pages/index/tabbar"),
 		WeChatOfficialMiniProgramThumbMediaID: envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_THUMB_MEDIA_ID", "r5H2TtQwf0Oeeipv4BzaT2POOXBaMWc5QSq3sPgz0C3fs71rIw9e4le6YdvqaSdN"),

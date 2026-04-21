@@ -16,13 +16,14 @@ import (
 )
 
 type Service struct {
-	store          *customization.Store
-	repo           *repository.Repository
-	tokenManager   *authx.TokenManager
-	esClient       *search.ElasticClient
-	mqClient       *messaging.RocketMQClient
-	qiniuClient    *qiniux.Client
-	wechatOfficial *weChatOfficialClient
+	store             *customization.Store
+	repo              *repository.Repository
+	tokenManager      *authx.TokenManager
+	esClient          *search.ElasticClient
+	mqClient          *messaging.RocketMQClient
+	qiniuClient       *qiniux.Client
+	wechatOfficial    *weChatOfficialClient
+	wechatMiniProgram *weChatMiniProgramClient
 }
 
 func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, esClient *search.ElasticClient, mqClient *messaging.RocketMQClient, qiniuClient *qiniux.Client) *Service {
@@ -41,6 +42,10 @@ func (svc *Service) ConfigureWeChatOfficial(cfg WeChatOfficialConfig) {
 	client.bindPagePathBuilder = svc.buildWeChatOfficialBindPagePath
 	client.subscriptionSyncer = svc.syncWeChatOfficialSubscription
 	svc.wechatOfficial = client
+}
+
+func (svc *Service) ConfigureWeChatMiniProgram(cfg WeChatMiniProgramConfig) {
+	svc.wechatMiniProgram = newWeChatMiniProgramClient(cfg)
 }
 
 func (svc *Service) EnsureInfrastructure() error {

@@ -28,6 +28,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/wechat/official/bind-ticket/preview", handler.wechatOfficialBindTicketPreview)
 	mux.HandleFunc("/api/v1/wechat/official/bind-ticket/students", handler.wechatOfficialBindTicketStudents)
 	mux.HandleFunc("/api/v1/wechat/official/bind-ticket/confirm", handler.wechatOfficialBindTicketConfirm)
+	mux.HandleFunc("/api/v1/parent/auth/wechat/login", handler.parentWeChatLogin)
+	mux.HandleFunc("/api/v1/parent/students/by-phone", handler.parentStudentsByPhone)
 	mux.HandleFunc("/api/v1/students", handler.students)
 	mux.HandleFunc("/api/v1/students/detail", handler.studentDetailView)
 	mux.HandleFunc("/api/v1/orders", handler.orders)

@@ -59,7 +59,7 @@
 						<text class="parent-empty-title">登录后即可查看课程安排</text>
 						<text class="parent-empty-desc">手机号授权后，系统会自动帮你匹配孩子并同步课表。</text>
 						<!-- #ifdef MP-WEIXIN -->
-						<button class="parent-primary-button schedule-auth-button" open-type="getPhoneNumber" @getphonenumber="handleWechatPhoneAuth">
+						<button class="parent-primary-button schedule-auth-button" :loading="authLoading" :disabled="authLoading" open-type="getPhoneNumber" @getphonenumber="handleWechatPhoneAuth">
 							授权登录
 						</button>
 						<!-- #endif -->
@@ -116,14 +116,14 @@
 import { computed, nextTick, ref } from 'vue'
 import { onReady, onUnload } from '@dcloudio/uni-app'
 import BindSuccessDialog from '@/components/bind-success-dialog/bind-success-dialog.vue'
+import { authorizeByWechatPhone } from '@/common/parent-auth'
 import { getNavLayout } from '@/common/nav-layout'
 import { BASE_DATE, DEFAULT_PHONE } from '@/common/mock-parent'
 import {
 	authorizeByPhone,
 	dismissBindSuccess,
 	getCurrentCampus,
-	parentState,
-	setPostAuthPage
+	parentState
 } from '@/common/parent-state'
 
 const nav = getNavLayout()
@@ -134,6 +134,7 @@ const weekViewportWidth = ref(Math.max((systemInfo.windowWidth || 375) - 32, 280
 const dragOffsetX = ref(0)
 const isDraggingWeek = ref(false)
 const isWeekAnimating = ref(false)
+const authLoading = computed(() => parentState.authLoading)
 const isAuthenticated = computed(() => parentState.isAuthenticated)
 const campusName = computed(() => simplifyCampusName(getCurrentCampus().name))
 const bindSuccessVisible = computed(() => parentState.bindSuccessVisible)
@@ -241,7 +242,6 @@ const displaySchedules = computed(() => {
 })
 
 function completeMockAuth() {
-	setPostAuthPage('/pages/schedule/index')
 	authorizeByPhone(DEFAULT_PHONE)
 	uni.navigateTo({
 		url: '/pages/select-student/index'
@@ -253,16 +253,9 @@ function handleMockPhoneAuth() {
 }
 
 function handleWechatPhoneAuth(event) {
-	const detail = event?.detail || {}
-	if (detail.errMsg && !detail.errMsg.includes('ok')) {
-		uni.showToast({
-			title: '你已取消手机号授权',
-			icon: 'none'
-		})
-		return
-	}
-	// 真实接入时，这里应把 detail.code 传给后端换取手机号并建立登录态。
-	completeMockAuth()
+	authorizeByWechatPhone(event, {
+		postAuthPage: '/pages/schedule/index'
+	})
 }
 
 function measureWeekViewport() {
