@@ -16,9 +16,9 @@ const activeKey = ref('1')
         <a-tab-pane key="1" tab="系统账单">
           <system-billing />
         </a-tab-pane>
-        <a-tab-pane key="2" tab="待绑定账单">
+        <!-- <a-tab-pane key="2" tab="待绑定账单">
           <div>待绑定账单</div>
-        </a-tab-pane>
+        </a-tab-pane> -->
       </a-tabs>
     </div>
   </div>

@@ -145,6 +145,7 @@ const confirmSubmitting = ref(false)
 const confirmTargetLedger = ref(null)
 const selectedLedgerKeys = ref([])
 const exporting = ref(false)
+const batchOperating = ref(false)
 
 const confirmLedgerModalTitle = computed(() =>
   confirmTargetLedger.value && isLedgerStoredValueRefund(confirmTargetLedger.value)
@@ -194,6 +195,7 @@ const currentLedgerIndex = computed(() => {
 const hasPrevLedger = computed(() => currentLedgerIndex.value > 0)
 const hasNextLedger = computed(() => currentLedgerIndex.value >= 0 && currentLedgerIndex.value < dataSource.value.length - 1)
 const isCurrentLedgerConfirmed = computed(() => currentLedger.value?.ledgerConfirmStatus === 1)
+const selectedCount = computed(() => selectedLedgerKeys.value.length)
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedLedgerKeys.value,
   preserveSelectedRowKeys: true,
@@ -547,20 +549,14 @@ function parseAttachmentFilenameFromHeader(contentDisposition) {
   return plainMatch?.[1] || ''
 }
 
-async function handleBatchExport() {
+async function handleExport() {
   if (exporting.value)
     return
-  if (!selectedLedgerKeys.value.length) {
-    messageService.warning('请先勾选需要导出的账单')
-    return
-  }
   try {
     exporting.value = true
     const res = await exportLedgerListApi({
       sortModel: {},
-      queryModel: buildQueryModel({
-        ledgerIds: selectedLedgerKeys.value,
-      }),
+      queryModel: buildQueryModel(),
     })
     const contentType = String(res.headers['content-type'] || '')
     if (contentType.includes('application/json')) {
@@ -578,7 +574,7 @@ async function handleBatchExport() {
       type: contentType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     })
     const filename = parseAttachmentFilenameFromHeader(res.headers['content-disposition'])
-      || `系统账单批量导出-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
+      || `系统账单导出-${dayjs().format('YYYYMMDDHHmmss')}.xlsx`
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -606,6 +602,91 @@ async function handleBatchExport() {
   finally {
     exporting.value = false
   }
+}
+
+function clearSelection() {
+  selectedLedgerKeys.value = []
+}
+
+async function executeBatchLedgerAction(action) {
+  if (!selectedLedgerKeys.value.length) {
+    messageService.warning('请先勾选需要操作的账单')
+    return
+  }
+  if (batchOperating.value)
+    return
+
+  const targetIds = [...selectedLedgerKeys.value]
+  let successCount = 0
+  let failedCount = 0
+  let firstErrorMessage = ''
+
+  try {
+    batchOperating.value = true
+    for (const id of targetIds) {
+      try {
+        if (action === 'cancel') {
+          await cancelConfirmLedgerApi({ id })
+        }
+        else {
+          await confirmLedgerApi({
+            id,
+            confirmRemark: {
+              text: '',
+              images: [],
+            },
+          })
+        }
+        successCount += 1
+      }
+      catch (error) {
+        failedCount += 1
+        if (!firstErrorMessage)
+          firstErrorMessage = error?.message || ''
+      }
+    }
+
+    if (failedCount === 0) {
+      messageService.success(action === 'cancel' ? '批量取消成功' : '批量确认成功')
+    }
+    else if (successCount > 0) {
+      messageService.warning(`${action === 'cancel' ? '批量取消' : '批量确认'}完成，成功 ${successCount} 条，失败 ${failedCount} 条`)
+    }
+    else {
+      messageService.error(firstErrorMessage || (action === 'cancel' ? '批量取消失败' : '批量确认失败'))
+    }
+
+    await fetchAll()
+    clearSelection()
+    updateCurrentLedgerById(currentLedger.value?.id)
+  }
+  finally {
+    batchOperating.value = false
+  }
+}
+
+function handleBatchAction(action) {
+  if (!selectedLedgerKeys.value.length) {
+    messageService.warning('请先勾选需要操作的账单')
+    return
+  }
+
+  const isCancelAction = action === 'cancel'
+  Modal.confirm({
+    title: isCancelAction ? '确定批量取消选中账单吗？' : '确定批量确认选中账单吗？',
+    centered: true,
+    icon: createVNode(ExclamationCircleFilled, { style: 'color:#fa8c16' }),
+    content: isCancelAction
+      ? '取消后账单会恢复为待确认状态，确认人和确认时间会被清空。'
+      : '系统会按当前勾选账单逐条执行确认。',
+    okText: isCancelAction ? '批量取消' : '批量确认',
+    cancelText: '再想想',
+    onOk: () => executeBatchLedgerAction(action),
+  })
+}
+
+function handleBatchMenuClick({ key }) {
+  handleBatchAction(key)
 }
 
 function openLedgerDetail(record) {
@@ -747,16 +828,22 @@ onMounted(async () => {
             共 {{ pagination.total }} 条信息
           </div>
           <div class="edit flex">
+            <a-button class="mr-2" :loading="exporting" @click="handleExport">
+              导出数据
+            </a-button>
             <a-dropdown class="mr-2">
               <template #overlay>
-                <a-menu>
-                  <a-menu-item key="1" @click="handleBatchExport">
-                    批量导出
+                <a-menu @click="handleBatchMenuClick">
+                  <a-menu-item key="confirm">
+                    批量确认账单
+                  </a-menu-item>
+                  <a-menu-item key="cancel">
+                    批量取消确认
                   </a-menu-item>
                 </a-menu>
               </template>
-              <a-button :loading="exporting">
-                导出数据
+              <a-button :disabled="selectedCount === 0" :loading="batchOperating">
+                批量操作
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
             </a-dropdown>
@@ -1285,4 +1372,5 @@ onMounted(async () => {
     }
   }
 }
+
 </style>
