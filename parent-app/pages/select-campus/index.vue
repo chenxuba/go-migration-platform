@@ -31,7 +31,7 @@
 					</view>
 					<view class="campus-item__content">
 						<view class="campus-item__title-row">
-							<text class="campus-item__name">{{ item.name }}</text>
+							<text class="campus-item__name">{{ simplifyCampusName(item.name) }}</text>
 						</view>
 						<text class="campus-item__brand">{{ item.brandName }}</text>
 						<view class="campus-item__meta">
@@ -68,6 +68,12 @@ import { parentState, switchCurrentCampus } from '@/common/parent-state'
 const nav = getNavLayout()
 const campusList = computed(() => parentState.campusList)
 const currentCampusId = computed(() => parentState.currentCampusId)
+
+function simplifyCampusName(name = '') {
+	return `${name || ''}`
+		.replace(/\s*(总校区|控江校区)\s*$/u, '')
+		.trim()
+}
 
 function selectCampus(campusId) {
 	switchCurrentCampus(campusId)
@@ -160,7 +166,7 @@ function goBack() {
 .campus-item__main {
 	flex: 1;
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: 18rpx;
 	min-width: 0;
 }
@@ -177,6 +183,7 @@ function goBack() {
 	font-size: 28rpx;
 	font-weight: 700;
 	flex-shrink: 0;
+	margin-top: 4rpx;
 }
 
 .campus-item__avatar--active {

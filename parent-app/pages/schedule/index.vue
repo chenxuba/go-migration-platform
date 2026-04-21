@@ -34,7 +34,13 @@
 									>
 										<text class="schedule-week-item__label">{{ day.weekLabel }}</text>
 										<text class="schedule-week-item__day">{{ day.day }}</text>
-										<view v-if="day.isActive" class="schedule-week-item__dot"></view>
+										<view class="schedule-week-item__indicator">
+											<view
+												v-if="day.hasCourse"
+												class="schedule-week-item__dot"
+												:class="{ 'schedule-week-item__dot--active': day.isActive }"
+											></view>
+										</view>
 									</view>
 								</view>
 							</view>
@@ -167,6 +173,17 @@ function getWeekStartText(dateText) {
 	return formatDate(getWeekMonday(dateText))
 }
 
+const campusScheduleDateSet = computed(() => {
+	if (!parentState.isAuthenticated) {
+		return new Set()
+	}
+	return new Set(
+		parentState.scheduleEntries
+			.filter(item => item.campusId === parentState.currentCampusId)
+			.map(item => item.date)
+	)
+})
+
 function createWeekDays(weekMondayDate) {
 	return Array.from({ length: 7 }).map((_, index) => {
 		const date = addDays(weekMondayDate, index)
@@ -175,7 +192,8 @@ function createWeekDays(weekMondayDate) {
 			date: dateText,
 			weekLabel: weekNames[index],
 			day: `${date.getDate()}`.padStart(2, '0'),
-			isActive: dateText === selectedDate.value
+			isActive: dateText === selectedDate.value,
+			hasCourse: campusScheduleDateSet.value.has(dateText)
 		}
 	})
 }
@@ -437,12 +455,26 @@ onUnload(() => {
 	color: #272727;
 }
 
+.schedule-week-item__indicator {
+	height: 16rpx;
+	margin-top: 8rpx;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
 .schedule-week-item__dot {
 	width: 8rpx;
 	height: 8rpx;
-	margin-top: 8rpx;
 	border-radius: 50%;
-	background: rgba(255, 255, 255, 0.96);
+	background: #ff6a5b;
+	box-shadow: 0 4rpx 10rpx rgba(255, 106, 91, 0.32);
+}
+
+.schedule-week-item__dot--active {
+	box-shadow:
+		0 0 0 4rpx rgba(255, 255, 255, 0.72),
+		0 4rpx 10rpx rgba(255, 106, 91, 0.28);
 }
 
 .schedule-date-text {

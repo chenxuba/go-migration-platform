@@ -22,24 +22,18 @@ export const featureList = [
 	{ key: 'attendance', title: '上课记录', shortLabel: '记', accent: '#ff8b7b' },
 	{ key: 'course', title: '报读课程', shortLabel: '报', accent: '#92c940' },
 	{ key: 'leave', title: '请假申请', shortLabel: '假', accent: '#ffc14a' },
-	{ key: 'comment', title: '课堂点评', shortLabel: '评', accent: '#8e74ff' },
+	{ key: 'comment', title: '康复记录', shortLabel: '康', accent: '#8e74ff' },
 	{ key: 'homework', title: '课后任务', shortLabel: '任', accent: '#ff8e8e' },
 	{ key: 'mall', title: '积分商城', shortLabel: '兑', accent: '#ffb34e' },
-	{ key: 'album', title: '电子相册', shortLabel: '册', accent: '#79c65a' },
-	{ key: 'works', title: '作品集', shortLabel: '作', accent: '#8dca3e' },
-	{ key: 'growth', title: '成长档案', shortLabel: '档', accent: '#70c442' },
-	{ key: 'invite', title: '邀请有礼', shortLabel: '礼', accent: '#ff94aa' },
-	{ key: 'grade', title: '学员成绩', shortLabel: '绩', accent: '#ff9a9a' },
-	{ key: 'booking', title: '约课', shortLabel: '约', accent: '#ff8f7d' },
-	{ key: 'feedback', title: '意见反馈', shortLabel: '意', accent: '#9679ff' },
-	{ key: 'venue', title: '场地预约', shortLabel: '场', accent: '#93c73f' }
+	{ key: 'growth', title: '康复档案', shortLabel: '档', accent: '#70c442' },
+	{ key: 'feedback', title: '意见反馈', shortLabel: '意', accent: '#9679ff' }
 ]
 
 export const noticeList = [
 	{
 		id: 'notice-1',
-		title: '课堂点评已发布',
-		summary: '张一鸣 2026-04-21 的课堂点评已同步到家长端。'
+		title: '康复记录已发布',
+		summary: '张一鸣 2026-04-21 的康复记录已同步到家长端。'
 	},
 	{
 		id: 'notice-2',
