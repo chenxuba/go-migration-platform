@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { GlobalOutlined } from '@ant-design/icons-vue'
+
 const { locale, setLocale } = useI18nLocale()
 function handleClick({ key }: any) {
   setLocale(key)
@@ -8,7 +10,7 @@ function handleClick({ key }: any) {
 <template>
   <a-dropdown>
     <span flex items-center h-48px px-12px text-16px cursor-pointer class="transition-all-300">
-      <CarbonLanguage class="anticon" />
+      <GlobalOutlined class="anticon" />
     </span>
     <template #overlay>
       <a-menu :selected-keys="[locale]" @click="handleClick">

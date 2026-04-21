@@ -3,6 +3,7 @@ import { computed, createVNode, onMounted, ref, watch } from 'vue'
 import { CloseOutlined, DeleteOutlined, DownOutlined, ExclamationCircleFilled, ExclamationCircleOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import CreateLedgerDrawer from './create-ledger-drawer.vue'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { cancelConfirmLedgerApi, confirmLedgerApi, exportLedgerListApi, getLedgerListApi, getLedgerStatisticsApi } from '@/api/finance-center/ledger'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
@@ -136,6 +137,7 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
     excludeKeys: ['action'],
   })
 
+const openCreateLedgerDrawer = ref(false)
 const openBillDrawer = ref(false)
 const currentLedger = ref(null)
 const openOrderDetailDrawer = ref(false)
@@ -609,7 +611,7 @@ function clearSelection() {
 }
 
 function handleCreateLedger() {
-  messageService.info('手动记账能力后续补齐')
+  openCreateLedgerDrawer.value = true
 }
 
 async function executeBatchLedgerAction(action) {
@@ -1176,6 +1178,7 @@ onMounted(async () => {
         </a-form-item>
       </a-form>
     </a-modal>
+    <create-ledger-drawer v-model:open="openCreateLedgerDrawer" />
     <order-detail-drawer v-model:open="openOrderDetailDrawer" :order-id="currentOrderId" />
   </div>
 </template>

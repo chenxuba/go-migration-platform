@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
 import { useLayoutMenuProvide } from '~/components/page-container/context'
-import GlobalModal from '~/components/global-modal/index.vue'
 
 const appStore = useAppStore()
 const { theme } = storeToRefs(appStore)
@@ -72,7 +71,6 @@ onUnmounted(() => {
     <a-app class="h-full font-chinese antialiased">
       <TokenProvider>
         <RouterView />
-        <GlobalModal />
       </TokenProvider>
     </a-app>
   </a-config-provider>
