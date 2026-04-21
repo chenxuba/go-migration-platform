@@ -104,6 +104,13 @@ function disabledDate(current) {
         </a-form>
       </div>
     </div>
+    <template #footer>
+      <div class="flex justify-end">
+        <a-button type="primary" class="w-140px h-48px font-size-18px font-weight-600" @click="openDrawer = false">
+          完成
+        </a-button>
+      </div>
+    </template>
   </a-drawer>
 </template>
 
