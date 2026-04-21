@@ -38,14 +38,14 @@
 
 			<view class="parent-card home-notice-card">
 				<view class="home-notice-card__header">
-					<text class="home-notice-card__title">系统通知</text>
+					<text class="home-notice-card__title">评估报告</text>
 					<text class="home-notice-card__more">全部</text>
 				</view>
 				<view
-					v-for="item in noticeList"
+					v-for="item in reportList"
 					:key="item.id"
 					class="home-notice-item"
-					@click="handleNotice(item)"
+					@click="handleReport(item)"
 				>
 					<view class="home-notice-item__dot"></view>
 					<view class="home-notice-item__content">
@@ -67,7 +67,7 @@ const statusBarHeight = uni.getSystemInfoSync().statusBarHeight || 0
 
 const currentCampus = computed(() => getCurrentCampus())
 const featureList = computed(() => parentState.featureList)
-const noticeList = computed(() => parentState.noticeList)
+const reportList = computed(() => parentState.noticeList)
 
 function goCampusPage() {
 	uni.navigateTo({
@@ -82,7 +82,7 @@ function handleFeature(item) {
 	})
 }
 
-function handleNotice(item) {
+function handleReport(item) {
 	uni.showToast({
 		title: item.title,
 		icon: 'none'

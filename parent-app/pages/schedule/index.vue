@@ -135,7 +135,7 @@ const dragOffsetX = ref(0)
 const isDraggingWeek = ref(false)
 const isWeekAnimating = ref(false)
 const isAuthenticated = computed(() => parentState.isAuthenticated)
-const campusName = computed(() => getCurrentCampus().name)
+const campusName = computed(() => simplifyCampusName(getCurrentCampus().name))
 const bindSuccessVisible = computed(() => parentState.bindSuccessVisible)
 const latestBindStudentName = computed(() => parentState.latestBindStudentName)
 const weekNames = ['一', '二', '三', '四', '五', '六', '日']
@@ -171,6 +171,14 @@ function getWeekMonday(dateText) {
 
 function getWeekStartText(dateText) {
 	return formatDate(getWeekMonday(dateText))
+}
+
+function simplifyCampusName(name = '') {
+	const text = `${name || ''}`.trim()
+	if (!text) {
+		return '-'
+	}
+	return text.replace(/\s*(总校区|控江校区)\s*$/u, '').trim() || text
 }
 
 const campusScheduleDateSet = computed(() => {

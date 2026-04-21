@@ -150,8 +150,7 @@ function simplifyCampusName(name = '') {
 	if (!text) {
 		return '-'
 	}
-	const segments = text.split(/\s+/)
-	return segments[segments.length - 1] || text
+	return text.replace(/\s*(总校区|控江校区)\s*$/u, '').trim() || text
 }
 
 function completeMockAuth() {
@@ -333,7 +332,7 @@ function inviteFamily() {
 
 .profile-student-card__main {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: 16rpx;
 }
 
@@ -349,6 +348,7 @@ function inviteFamily() {
 	font-weight: 700;
 	box-shadow: 0 10rpx 22rpx rgba(71, 109, 178, 0.14);
 	flex-shrink: 0;
+	margin-top: 4rpx;
 }
 
 .profile-student-card__copy {

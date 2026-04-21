@@ -45,15 +45,21 @@
 		"list": [
 			{
 				"pagePath": "pages/home/index",
-				"text": "首页"
+				"text": "首页",
+				"iconPath": "static/tabbar/home.png",
+				"selectedIconPath": "static/tabbar/home-active.png"
 			},
 			{
 				"pagePath": "pages/schedule/index",
-				"text": "课表"
+				"text": "课表",
+				"iconPath": "static/tabbar/schedule.png",
+				"selectedIconPath": "static/tabbar/schedule-active.png"
 			},
 			{
 				"pagePath": "pages/profile/index",
-				"text": "我的"
+				"text": "我的",
+				"iconPath": "static/tabbar/profile.png",
+				"selectedIconPath": "static/tabbar/profile-active.png"
 			}
 		]
 	},

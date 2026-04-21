@@ -32,13 +32,13 @@ export const featureList = [
 export const noticeList = [
 	{
 		id: 'notice-1',
-		title: '康复记录已发布',
-		summary: '张一鸣 2026-04-21 的康复记录已同步到家长端。'
+		title: '语言评估报告',
+		summary: '第一期 · 2026-04-21 · 已完成语言表达与认知理解评估。'
 	},
 	{
 		id: 'notice-2',
-		title: '本周课表已更新',
-		summary: '请及时查看 04-21 至 04-27 的课程安排。'
+		title: '阶段康复评估',
+		summary: '第二期 · 2026-04-18 · 已更新本周康复建议与训练方向。'
 	}
 ]
 
