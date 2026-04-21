@@ -70,6 +70,7 @@ type LedgerListQueryDTO struct {
 type LedgerQueryFilter struct {
 	LedgerIDs             []string `json:"ledgerIds"`
 	AccountIDs            []string `json:"accountIds"`
+	LedgerTypes           []int    `json:"ledgerTypes"`
 	LedgerConfirmStatuses []int    `json:"ledgerConfirmStatuses"`
 	SourceTypes           []int    `json:"sourceTypes"`
 	DealStaffID           string   `json:"dealStaffId"`

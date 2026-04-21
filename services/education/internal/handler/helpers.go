@@ -246,6 +246,7 @@ func parseLedgerListQueryDTO(raw map[string]any) model.LedgerListQueryDTO {
 		query.QueryModel = model.LedgerQueryFilter{
 			LedgerIDs:             asStringSlice(qm["ledgerIds"]),
 			AccountIDs:            asStringSlice(qm["accountIds"]),
+			LedgerTypes:           asIntSlice(qm["ledgerTypes"]),
 			LedgerConfirmStatuses: asIntSlice(qm["ledgerConfirmStatuses"]),
 			SourceTypes:           asIntSlice(qm["sourceTypes"]),
 			DealStaffID:           asString(qm["dealStaffId"]),

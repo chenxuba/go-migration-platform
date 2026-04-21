@@ -36,6 +36,78 @@ const ledgerTypeMap = {
   2: '支出',
 }
 
+const ledgerTypeCascaderOptions = [
+  {
+    id: 1,
+    name: '收入',
+    channelList: [
+      {
+        id: 'income-order',
+        name: '订单收入',
+        channelList: [
+          { id: 'registration-renewal', name: '报名续费' },
+          { id: 'recharge-account', name: '储值账户充值' },
+          { id: 'transfer-course', name: '转课' },
+        ],
+      },
+      {
+        id: 'income-other-business',
+        name: '其他业务',
+        channelList: [
+          { id: 'manual-exam-fee', name: '考试费用' },
+          { id: 'manual-performance-fee', name: '演出费用' },
+          { id: 'manual-instrument-fee', name: '乐器费用' },
+          { id: 'manual-meal-fee', name: '餐饮费用' },
+          { id: 'manual-other-fee', name: '其他' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 2,
+    name: '支出',
+    channelList: [
+      {
+        id: 'expense-order',
+        name: '订单支出',
+        channelList: [
+          { id: 'refund-course', name: '退课' },
+          { id: 'recharge-account-refund', name: '储值账户退费' },
+          { id: 'transfer-course', name: '转课' },
+        ],
+      },
+      {
+        id: 'expense-management',
+        name: '管理费用',
+        channelList: [
+          { id: 'manual-office-supplies', name: '办公用品' },
+          { id: 'manual-water-fee', name: '水费' },
+          { id: 'manual-electricity-fee', name: '电费' },
+          { id: 'manual-rent-fee', name: '房租' },
+          { id: 'manual-property-fee', name: '物业' },
+          { id: 'manual-salary-fee', name: '工资' },
+          { id: 'manual-housing-fund-fee', name: '公积金' },
+          { id: 'manual-social-insurance-fee', name: '社保' },
+        ],
+      },
+      {
+        id: 'expense-sales',
+        name: '销售费用',
+        channelList: [
+          { id: 'manual-marketing-fee', name: '营销费用' },
+        ],
+      },
+      {
+        id: 'expense-finance',
+        name: '财务费用',
+        channelList: [
+          { id: 'manual-tax-fee', name: '税' },
+        ],
+      },
+    ],
+  },
+]
+
 const sourceTypeMap = {
   1: '系统同步',
   2: '手动记账',
@@ -80,6 +152,7 @@ const filterState = ref({
   bankSlipNo: '',
   orderId: '',
   studentId: '',
+  ledgerTypePaths: [],
   sourceTypes: [],
   dealStaffId: '',
   ledgerConfirmStatuses: [],
@@ -166,6 +239,51 @@ const confirmLedgerModalOkText = computed(() =>
 )
 const confirmRemarkText = ref('')
 
+const selectedLedgerTypePaths = computed(() => {
+  return Array.isArray(filterState.value.ledgerTypePaths) ? filterState.value.ledgerTypePaths : []
+})
+
+const selectedLedgerTypes = computed(() => {
+  return [...new Set(
+    selectedLedgerTypePaths.value
+      .map(path => Number(Array.isArray(path) ? path[0] : 0))
+      .filter(type => type === 1 || type === 2),
+  )]
+})
+
+const selectedLedgerSubCategoryIds = computed(() => {
+  return [...new Set(
+    selectedLedgerTypePaths.value
+      .map((path) => {
+        if (!Array.isArray(path) || path.length < 3)
+          return ''
+        return String(path[path.length - 1] || '').trim()
+      })
+      .filter(Boolean),
+  )]
+})
+
+function getLedgerTypePathLabels(path) {
+  if (!Array.isArray(path) || !path.length)
+    return []
+  let currentOptions = ledgerTypeCascaderOptions
+  const labels = []
+  for (const segment of path) {
+    const target = currentOptions.find(item => String(item.id) === String(segment))
+    if (!target)
+      break
+    labels.push(target.name)
+    currentOptions = Array.isArray(target.channelList) ? target.channelList : []
+  }
+  return labels
+}
+
+const selectedLedgerTypeLabels = computed(() => {
+  return selectedLedgerTypePaths.value
+    .map(path => getLedgerTypePathLabels(path).join(' / '))
+    .filter(Boolean)
+})
+
 const selectedFilterList = computed(() => {
   const list = []
   if (String(filterState.value.orderNumber || '').trim())
@@ -180,6 +298,8 @@ const selectedFilterList = computed(() => {
     list.push({ key: 'orderId', label: '关联订单', value: String(filterState.value.orderId).trim() })
   if (String(filterState.value.studentId || '').trim())
     list.push({ key: 'studentId', label: '学员/电话', value: studentNameById(filterState.value.studentId) || String(filterState.value.studentId).trim() })
+  if (selectedLedgerTypeLabels.value.length)
+    list.push({ key: 'ledgerTypePaths', label: '账单类型', value: selectedLedgerTypeLabels.value.join('、') })
   if (Array.isArray(filterState.value.sourceTypes) && filterState.value.sourceTypes.length)
     list.push({ key: 'sourceTypes', label: '记账类型', value: formatOptionValues(filterState.value.sourceTypes, sourceTypeOptions) })
   if (String(filterState.value.dealStaffId || '').trim())
@@ -465,6 +585,8 @@ function buildQueryModel(extraQuery = {}) {
     ledgerNumber: filterState.value.ledgerNumber || undefined,
     orderId: filterState.value.orderId || undefined,
     studentId: filterState.value.studentId || undefined,
+    ledgerTypes: selectedLedgerTypes.value.length ? selectedLedgerTypes.value : undefined,
+    ledgerSubCategoryIds: selectedLedgerSubCategoryIds.value.length ? selectedLedgerSubCategoryIds.value : undefined,
     sourceTypes: filterState.value.sourceTypes.length ? filterState.value.sourceTypes : undefined,
     dealStaffId: filterState.value.dealStaffId || undefined,
     ledgerConfirmStatuses: filterState.value.ledgerConfirmStatuses.length ? filterState.value.ledgerConfirmStatuses : undefined,
@@ -762,6 +884,7 @@ function resetAllFilters() {
     bankSlipNo: '',
     orderId: '',
     studentId: '',
+    ledgerTypePaths: [],
     sourceTypes: [],
     dealStaffId: '',
     ledgerConfirmStatuses: [],
@@ -776,6 +899,7 @@ function clearFilter(key) {
     case 'confirmTime':
       filterState.value[key] = []
       break
+    case 'ledgerTypePaths':
     case 'sourceTypes':
     case 'ledgerConfirmStatuses':
       filterState.value[key] = []
@@ -829,6 +953,13 @@ onMounted(async () => {
             placeholder="请输入学员/电话"
             @on-dropdown-visible-change="loadStudentOptions"
             @on-search="loadStudentOptions"
+          />
+          <checkbox-filter
+            v-model:checked-values="filterState.ledgerTypePaths"
+            :options="ledgerTypeCascaderOptions"
+            label="账单类型"
+            type="cascader"
+            placeholder="请选择账单类型"
           />
           <checkbox-filter v-model:checked-values="filterState.sourceTypes" :options="sourceTypeOptions" label="记账类型" type="checkbox" />
           <checkbox-filter

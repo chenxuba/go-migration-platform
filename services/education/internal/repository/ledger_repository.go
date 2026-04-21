@@ -1054,6 +1054,14 @@ func buildLedgerWhereClause(instID int64, query model.LedgerQueryFilter) (string
 			filters = append(filters, "CAST(l.account_id AS CHAR) IN ("+strings.Join(holders, ",")+")")
 		}
 	}
+	if len(query.LedgerTypes) > 0 {
+		holders := make([]string, 0, len(query.LedgerTypes))
+		for _, item := range query.LedgerTypes {
+			holders = append(holders, "?")
+			args = append(args, item)
+		}
+		filters = append(filters, "l.type IN ("+strings.Join(holders, ",")+")")
+	}
 	if len(query.LedgerConfirmStatuses) > 0 {
 		holders := make([]string, 0, len(query.LedgerConfirmStatuses))
 		for _, item := range query.LedgerConfirmStatuses {

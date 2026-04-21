@@ -74,6 +74,7 @@ export interface LedgerQueryParams {
   queryModel?: {
     ledgerIds?: string[]
     accountIds?: string[]
+    ledgerTypes?: number[]
     ledgerConfirmStatuses?: number[]
     sourceTypes?: number[]
     dealStaffId?: string
