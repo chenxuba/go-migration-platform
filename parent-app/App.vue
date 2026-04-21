@@ -1,6 +1,9 @@
 <script>
+import { restoreParentSession } from '@/common/parent-state'
+
 export default {
 	onLaunch() {
+		restoreParentSession()
 		console.log('Parent App Launch')
 	},
 	onShow() {

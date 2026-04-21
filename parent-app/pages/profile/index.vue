@@ -30,7 +30,8 @@
 					>
 						<view class="profile-student-card__main">
 							<view class="profile-student-card__avatar" :style="{ background: student.avatarColor }">
-								{{ student.name.slice(0, 1) }}
+								<image v-if="student.avatarUrl" class="profile-student-card__avatar-image" :src="student.avatarUrl" mode="aspectFill"></image>
+								<text v-else>{{ student.name.slice(0, 1) }}</text>
 							</view>
 							<view class="profile-student-card__copy">
 								<view class="profile-student-card__headline">
@@ -333,6 +334,7 @@ function inviteFamily() {
 	width: 72rpx;
 	height: 72rpx;
 	border-radius: 22rpx;
+	overflow: hidden;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -342,6 +344,12 @@ function inviteFamily() {
 	box-shadow: 0 10rpx 22rpx rgba(71, 109, 178, 0.14);
 	flex-shrink: 0;
 	margin-top: 4rpx;
+}
+
+.profile-student-card__avatar-image {
+	width: 100%;
+	height: 100%;
+	display: block;
 }
 
 .profile-student-card__copy {

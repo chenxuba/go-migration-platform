@@ -8,13 +8,15 @@ export const campusList = [
 		id: 'campus-main',
 		name: '上海杨浦区以诺儿童培智服务中心 总校区',
 		shortName: '上',
-		brandName: '以诺儿童培智服务中心'
+		brandName: '以诺儿童培智服务中心',
+		logoUrl: ''
 	},
 	{
 		id: 'campus-kongjiang',
 		name: '上海杨浦区以诺儿童培智服务中心 控江校区',
 		shortName: '控',
-		brandName: '以诺儿童培智服务中心'
+		brandName: '以诺儿童培智服务中心',
+		logoUrl: ''
 	}
 ]
 

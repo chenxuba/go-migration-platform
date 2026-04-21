@@ -2,7 +2,7 @@
 	<view class="parent-page">
 		<view class="parent-shell">
 			<view class="parent-header" :style="{ paddingTop: `${statusBarHeight + 20}px` }">
-				<view class="home-top-row">
+				<view v-if="canSwitchCampus" class="home-top-row">
 					<view class="home-campus-trigger" @click="goCampusPage">
 						<text class="home-campus-trigger__icon">切</text>
 						<text class="home-campus-trigger__text">切换校区</text>
@@ -10,12 +10,14 @@
 				</view>
 				<view class="parent-card home-campus-card">
 					<view class="home-campus-brand">
-						<view class="home-campus-logo">校</view>
-						<view class="home-campus-brand__content">
-							<text class="home-campus-brand__name">{{ currentCampus.brandName }}</text>
-							<text class="home-campus-brand__campus">{{ currentCampus.name }}</text>
+						<view class="home-campus-logo">
+							<image v-if="currentCampus.logoUrl" class="home-campus-logo__image" :src="currentCampus.logoUrl" mode="aspectFill"></image>
+							<text v-else class="home-campus-logo__text">{{ campusLogoText }}</text>
 						</view>
-						<view class="home-campus-brand__mute">静</view>
+						<view class="home-campus-brand__content">
+							<text class="home-campus-brand__name">{{ campusTitle }}</text>
+							<text v-if="campusSubtitle" class="home-campus-brand__campus">{{ campusSubtitle }}</text>
+						</view>
 					</view>
 				</view>
 			</view>
@@ -61,13 +63,30 @@
 
 <script setup>
 import { computed } from 'vue'
-import { parentState, getCurrentCampus } from '@/common/parent-state'
+import { onShow } from '@dcloudio/uni-app'
+import { listParentCampuses } from '@/common/parent-api'
+import { applyParentCampusSummary, parentState, getCurrentCampus } from '@/common/parent-state'
 
 const statusBarHeight = uni.getSystemInfoSync().statusBarHeight || 0
 
 const currentCampus = computed(() => getCurrentCampus())
 const featureList = computed(() => parentState.featureList)
 const reportList = computed(() => parentState.noticeList)
+const canSwitchCampus = computed(() => parentState.isAuthenticated && parentState.campusList.length > 1)
+const campusTitle = computed(() => {
+	return buildCampusTitle(currentCampus.value)
+})
+const campusSubtitle = computed(() => {
+	return buildCampusSubtitle(currentCampus.value)
+})
+const campusLogoText = computed(() => {
+	const title = campusTitle.value || currentCampus.value?.shortName || '校'
+	return `${title}`.slice(0, 1)
+})
+
+onShow(() => {
+	refreshCampusSummary()
+})
 
 function goCampusPage() {
 	uni.navigateTo({
@@ -87,6 +106,40 @@ function handleReport(item) {
 		title: item.title,
 		icon: 'none'
 	})
+}
+
+async function refreshCampusSummary() {
+	if (!parentState.isAuthenticated || !parentState.authToken) {
+		return
+	}
+	try {
+		const summary = await listParentCampuses(parentState.authToken)
+		applyParentCampusSummary(summary)
+	} catch (error) {
+		console.warn('refresh parent campuses failed', error)
+	}
+}
+
+function buildCampusTitle(campus = {}) {
+	const brandName = `${campus?.brandName || ''}`.trim()
+	const simpleName = simplifyCampusName(campus?.name)
+	return brandName || simpleName || '机构'
+}
+
+function buildCampusSubtitle(campus = {}) {
+	const title = buildCampusTitle(campus)
+	const fullName = `${campus?.name || ''}`.trim()
+	const simpleName = simplifyCampusName(fullName)
+	if (!fullName || fullName === title || simpleName === title) {
+		return ''
+	}
+	return fullName
+}
+
+function simplifyCampusName(name = '') {
+	return `${name || ''}`
+		.replace(/\s*(总校区|控江校区|校区|分校|院区)\s*$/u, '')
+		.trim()
 }
 </script>
 
@@ -143,16 +196,30 @@ function handleReport(item) {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	color: #ffffff;
-	font-size: 36rpx;
-	font-weight: 700;
+	overflow: hidden;
 	box-shadow: 0 16rpx 34rpx rgba(29, 210, 119, 0.25);
+	flex-shrink: 0;
+}
+
+.home-campus-logo__image {
+	width: 100%;
+	height: 100%;
+	display: block;
+}
+
+.home-campus-logo__text {
+	color: #ffffff;
+	font-size: 34rpx;
+	font-weight: 700;
+	line-height: 1;
 }
 
 .home-campus-brand__content {
 	flex: 1;
 	display: flex;
 	flex-direction: column;
+	justify-content: center;
+	min-height: 88rpx;
 }
 
 .home-campus-brand__name {
@@ -166,18 +233,6 @@ function handleReport(item) {
 	font-size: 22rpx;
 	line-height: 1.5;
 	color: var(--parent-subtext);
-}
-
-.home-campus-brand__mute {
-	width: 58rpx;
-	height: 58rpx;
-	border-radius: 50%;
-	background: rgba(159, 159, 159, 0.2);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 22rpx;
-	color: #8c8c8c;
 }
 
 .home-grid-card {

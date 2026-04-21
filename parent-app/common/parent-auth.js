@@ -30,10 +30,35 @@ function normalizeErrorMessage(error) {
 	if (!message) {
 		return '授权登录失败，请稍后重试'
 	}
-	if (message.length > 22) {
-		return '授权登录失败，请检查接口配置'
+
+	if (message.includes('127.0.0.1')) {
+		return '真机不能访问本地接口，请改成 HTTPS 域名'
+	}
+	if (message.includes('HTTP')) {
+		return '真机不能请求 HTTP，请改成 HTTPS 域名'
+	}
+	if (message.includes('url not in domain list') || message.includes('合法域名')) {
+		return '接口域名未加入小程序白名单'
+	}
+	if (message.includes('ssl') || message.includes('certificate')) {
+		return '接口证书异常，请检查 HTTPS 配置'
+	}
+	if (message.includes('request:fail')) {
+		return '接口请求失败，请检查域名和网络'
+	}
+	if (message.length > 30) {
+		return message.slice(0, 30)
 	}
 	return message
+}
+
+function isMockLoginCode(code = '') {
+	const value = `${code || ''}`.trim().toLowerCase()
+	return value === 'the code is a mock one' || value.includes('mock')
+}
+
+function hasPendingCandidates(candidates = []) {
+	return (Array.isArray(candidates) ? candidates : []).some(item => !item?.isBound)
 }
 
 export async function authorizeByWechatPhone(event, options = {}) {
@@ -65,6 +90,9 @@ export async function authorizeByWechatPhone(event, options = {}) {
 		if (!loginCode) {
 			throw new Error('未获取到微信登录凭证')
 		}
+		if (isMockLoginCode(loginCode)) {
+			throw new Error('当前拿到的是模拟登录 code，请用真实小程序 AppID 重新编译后再试')
+		}
 
 		const session = await wechatParentLogin({
 			loginCode,
@@ -72,15 +100,17 @@ export async function authorizeByWechatPhone(event, options = {}) {
 		})
 		applyParentAuthSession(session)
 
-		if (Array.isArray(session?.candidates) && session.candidates.length) {
+		if (hasPendingCandidates(session?.candidates)) {
 			await navigateToStudentSelection()
 			return true
 		}
 
-		uni.showToast({
-			title: '当前手机号未匹配到学员',
-			icon: 'none'
-		})
+		if (!Array.isArray(session?.candidates) || !session.candidates.length) {
+			uni.showToast({
+				title: '当前手机号未匹配到学员',
+				icon: 'none'
+			})
+		}
 		return true
 	} catch (error) {
 		uni.showToast({

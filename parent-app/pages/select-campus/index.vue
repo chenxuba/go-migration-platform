@@ -27,13 +27,14 @@
 			>
 				<view class="campus-item__main">
 					<view class="campus-item__avatar" :class="{ 'campus-item__avatar--active': currentCampusId === item.id }">
-						{{ item.shortName }}
+						<image v-if="item.logoUrl" class="campus-item__avatar-image" :src="item.logoUrl" mode="aspectFill"></image>
+						<text v-else>{{ item.shortName }}</text>
 					</view>
 					<view class="campus-item__content">
 						<view class="campus-item__title-row">
-							<text class="campus-item__name">{{ simplifyCampusName(item.name) }}</text>
+							<text class="campus-item__name">{{ buildCampusTitle(item) }}</text>
 						</view>
-						<text class="campus-item__brand">{{ item.brandName }}</text>
+						<text v-if="buildCampusSubtitle(item)" class="campus-item__brand">{{ buildCampusSubtitle(item) }}</text>
 						<view class="campus-item__meta">
 							<text
 								class="campus-item__meta-chip"
@@ -71,8 +72,23 @@ const currentCampusId = computed(() => parentState.currentCampusId)
 
 function simplifyCampusName(name = '') {
 	return `${name || ''}`
-		.replace(/\s*(总校区|控江校区)\s*$/u, '')
+		.replace(/\s*(总校区|控江校区|校区|分校|院区)\s*$/u, '')
 		.trim()
+}
+
+function buildCampusTitle(item = {}) {
+	const brandName = `${item?.brandName || ''}`.trim()
+	return brandName || simplifyCampusName(item?.name) || '机构'
+}
+
+function buildCampusSubtitle(item = {}) {
+	const title = buildCampusTitle(item)
+	const fullName = `${item?.name || ''}`.trim()
+	const simpleName = simplifyCampusName(fullName)
+	if (!fullName || fullName === title || simpleName === title) {
+		return ''
+	}
+	return fullName
 }
 
 function selectCampus(campusId) {
@@ -184,6 +200,13 @@ function goBack() {
 	font-weight: 700;
 	flex-shrink: 0;
 	margin-top: 4rpx;
+	overflow: hidden;
+}
+
+.campus-item__avatar-image {
+	width: 100%;
+	height: 100%;
+	display: block;
 }
 
 .campus-item__avatar--active {

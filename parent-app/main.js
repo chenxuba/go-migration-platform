@@ -1,4 +1,7 @@
 import App from './App'
+import { restoreParentSession } from './common/parent-state'
+
+restoreParentSession()
 
 // #ifndef VUE3
 import Vue from 'vue'

@@ -31,6 +31,13 @@ type weChatMiniProgramClient struct {
 	accessTokenExp time.Time
 }
 
+type weChatStableAccessTokenRequest struct {
+	GrantType    string `json:"grant_type"`
+	AppID        string `json:"appid"`
+	Secret       string `json:"secret"`
+	ForceRefresh bool   `json:"force_refresh,omitempty"`
+}
+
 type weChatMiniProgramSessionResponse struct {
 	OpenID     string `json:"openid"`
 	SessionKey string `json:"session_key"`
@@ -71,23 +78,24 @@ func (client *weChatMiniProgramClient) getAccessToken(ctx context.Context) (stri
 		return "", errors.New("微信小程序未配置")
 	}
 
-	client.mu.Lock()
-	if client.accessToken != "" && time.Now().Before(client.accessTokenExp) {
-		token := client.accessToken
-		client.mu.Unlock()
+	if token := client.currentAccessToken(); token != "" {
 		return token, nil
 	}
-	client.mu.Unlock()
 
-	values := url.Values{}
-	values.Set("appid", client.config.AppID)
-	values.Set("secret", client.config.Secret)
-	values.Set("grant_type", "client_credential")
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.apiBaseURL+"/cgi-bin/token?"+values.Encode(), nil)
+	body, err := json.Marshal(weChatStableAccessTokenRequest{
+		GrantType: "client_credential",
+		AppID:     client.config.AppID,
+		Secret:    client.config.Secret,
+	})
 	if err != nil {
 		return "", err
 	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, client.apiBaseURL+"/cgi-bin/stable_token", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
@@ -106,12 +114,8 @@ func (client *weChatMiniProgramClient) getAccessToken(ctx context.Context) (stri
 		return "", errors.New("get mini program access token failed: empty token")
 	}
 
-	client.mu.Lock()
-	client.accessToken = payload.AccessToken
-	client.accessTokenExp = time.Now().Add(time.Duration(payload.ExpiresIn-60) * time.Second)
-	token := client.accessToken
-	client.mu.Unlock()
-	return token, nil
+	client.cacheAccessToken(payload.AccessToken, payload.ExpiresIn)
+	return payload.AccessToken, nil
 }
 
 func (client *weChatMiniProgramClient) code2Session(ctx context.Context, loginCode string) (weChatMiniProgramSessionResponse, error) {
@@ -150,11 +154,6 @@ func (client *weChatMiniProgramClient) code2Session(ctx context.Context, loginCo
 }
 
 func (client *weChatMiniProgramClient) getUserPhoneNumber(ctx context.Context, phoneCode string) (weChatMiniProgramPhone, error) {
-	token, err := client.getAccessToken(ctx)
-	if err != nil {
-		return weChatMiniProgramPhone{}, err
-	}
-
 	body, err := json.Marshal(map[string]string{
 		"code": strings.TrimSpace(phoneCode),
 	})
@@ -162,34 +161,77 @@ func (client *weChatMiniProgramClient) getUserPhoneNumber(ctx context.Context, p
 		return weChatMiniProgramPhone{}, err
 	}
 
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		client.apiBaseURL+"/wxa/business/getuserphonenumber?access_token="+url.QueryEscape(token),
-		bytes.NewReader(body),
-	)
-	if err != nil {
-		return weChatMiniProgramPhone{}, err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	for attempt := 0; attempt < 2; attempt++ {
+		token, err := client.getAccessToken(ctx)
+		if err != nil {
+			return weChatMiniProgramPhone{}, err
+		}
 
-	resp, err := client.httpClient.Do(req)
-	if err != nil {
-		return weChatMiniProgramPhone{}, err
-	}
-	defer resp.Body.Close()
+		req, err := http.NewRequestWithContext(
+			ctx,
+			http.MethodPost,
+			client.apiBaseURL+"/wxa/business/getuserphonenumber?access_token="+url.QueryEscape(token),
+			bytes.NewReader(body),
+		)
+		if err != nil {
+			return weChatMiniProgramPhone{}, err
+		}
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return weChatMiniProgramPhone{}, err
+		resp, err := client.httpClient.Do(req)
+		if err != nil {
+			return weChatMiniProgramPhone{}, err
+		}
+
+		responseBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return weChatMiniProgramPhone{}, err
+		}
+
+		var payload weChatMiniProgramPhoneResponse
+		if err := json.Unmarshal(responseBody, &payload); err != nil {
+			return weChatMiniProgramPhone{}, err
+		}
+		if payload.ErrCode == 40001 && attempt == 0 {
+			client.invalidateAccessToken()
+			continue
+		}
+		if payload.ErrCode != 0 {
+			return weChatMiniProgramPhone{}, fmt.Errorf("get user phone number failed: %d %s", payload.ErrCode, payload.ErrMsg)
+		}
+		return payload.PhoneInfo, nil
 	}
 
-	var payload weChatMiniProgramPhoneResponse
-	if err := json.Unmarshal(responseBody, &payload); err != nil {
-		return weChatMiniProgramPhone{}, err
+	return weChatMiniProgramPhone{}, errors.New("get user phone number failed: retry exhausted")
+}
+
+func (client *weChatMiniProgramClient) currentAccessToken() string {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	if client.accessToken == "" || time.Now().After(client.accessTokenExp) {
+		return ""
 	}
-	if payload.ErrCode != 0 {
-		return weChatMiniProgramPhone{}, fmt.Errorf("get user phone number failed: %d %s", payload.ErrCode, payload.ErrMsg)
+	return client.accessToken
+}
+
+func (client *weChatMiniProgramClient) cacheAccessToken(token string, expiresIn int64) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	client.accessToken = strings.TrimSpace(token)
+	expireAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
+	if expiresIn > 60 {
+		expireAt = expireAt.Add(-time.Minute)
 	}
-	return payload.PhoneInfo, nil
+	client.accessTokenExp = expireAt
+}
+
+func (client *weChatMiniProgramClient) invalidateAccessToken() {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	client.accessToken = ""
+	client.accessTokenExp = time.Time{}
 }

@@ -12,6 +12,8 @@ import {
 } from '@/common/mock-parent'
 
 const avatarPalette = ['#8fb7ff', '#7cc8ff', '#63d5b2', '#ffb26f', '#f59fb2', '#9a8cff']
+const PARENT_SESSION_STORAGE_KEY = 'parent_app_session'
+let hasRestoredParentSession = false
 
 function createInitialState() {
 	return {
@@ -42,6 +44,8 @@ function createInitialState() {
 
 export const parentState = reactive(createInitialState())
 
+tryAutoRestoreParentSession()
+
 export function authorizeByPhone(phone = DEFAULT_PHONE) {
 	const session = createPhoneSession(phone)
 	applyAuthSession({
@@ -56,10 +60,12 @@ export function authorizeByPhone(phone = DEFAULT_PHONE) {
 
 export function setPendingSelection(ids) {
 	parentState.selectedCandidateIds = Array.isArray(ids) ? [...ids] : []
+	persistParentSession()
 }
 
 export function setPostAuthPage(url) {
 	parentState.postAuthPage = url || '/pages/profile/index'
+	persistParentSession()
 }
 
 export function confirmStudentBinding() {
@@ -68,15 +74,29 @@ export function confirmStudentBinding() {
 	if (!selectedStudents.length) {
 		return ''
 	}
-	parentState.students = selectedStudents.map(item => ({ ...item }))
+	const studentMap = new Map(parentState.students.map(item => [item.id, { ...item }]))
+	selectedStudents.forEach(item => {
+		studentMap.set(item.id, {
+			...item,
+			isBound: true
+		})
+	})
+	parentState.students = Array.from(studentMap.values())
 	parentState.currentStudentId = selectedStudents[0].id
 	parentState.currentCampusId = selectedStudents[0].campusId
 	parentState.pendingCandidates = parentState.pendingCandidates.filter(item => !selectedIdSet.has(item.id))
 	parentState.selectedCandidateIds = []
+	const targetPage = finalizeStudentBinding(selectedStudents[0].name)
+	persistParentSession()
+	return targetPage
+}
+
+export function finalizeStudentBinding(studentName = '') {
 	parentState.bindSuccessVisible = true
-	parentState.latestBindStudentName = selectedStudents[0].name
+	parentState.latestBindStudentName = `${studentName || ''}`.trim()
 	const targetPage = parentState.postAuthPage || '/pages/profile/index'
 	parentState.postAuthPage = '/pages/profile/index'
+	persistParentSession()
 	return targetPage
 }
 
@@ -87,6 +107,7 @@ export function switchCurrentStudent(studentId) {
 	}
 	parentState.currentStudentId = target.id
 	parentState.currentCampusId = target.campusId
+	persistParentSession()
 }
 
 export function switchCurrentCampus(campusId) {
@@ -95,6 +116,7 @@ export function switchCurrentCampus(campusId) {
 	if (campusStudent) {
 		parentState.currentStudentId = campusStudent.id
 	}
+	persistParentSession()
 }
 
 export function dismissBindSuccess() {
@@ -103,6 +125,7 @@ export function dismissBindSuccess() {
 
 export function logoutParent() {
 	Object.assign(parentState, createInitialState())
+	clearParentSession()
 }
 
 export function getCurrentCampus() {
@@ -117,12 +140,88 @@ export function applyParentAuthSession(session = {}) {
 	applyAuthSession(session)
 }
 
+export function applyParentStudentLookup(lookup = {}) {
+	applyCandidateSnapshot({
+		token: parentState.authToken,
+		nickname: parentState.profile.nickname || '微信家长',
+		phone: `${lookup.phone || parentState.profile.phone || ''}`.trim(),
+		maskedPhone: `${lookup.maskedPhone || parentState.profile.maskedPhone || ''}`.trim(),
+		candidates: lookup.candidates
+	})
+}
+
+export function applyParentCampusSummary(summary = {}) {
+	const nextCampusList = normalizeCampusList(summary?.items || summary, parentState.pendingCandidates, parentState.students)
+	if (!nextCampusList.length) {
+		return
+	}
+
+	parentState.campusList = nextCampusList
+	const hasCurrentCampus = nextCampusList.some(item => item.id === parentState.currentCampusId)
+	if (!hasCurrentCampus) {
+		parentState.currentCampusId = nextCampusList[0]?.id || ''
+	}
+
+	const currentStudent = parentState.students.find(item => item.campusId === parentState.currentCampusId)
+	if (currentStudent) {
+		parentState.currentStudentId = currentStudent.id
+	}
+	persistParentSession()
+}
+
+export function restoreParentSession() {
+	if (hasRestoredParentSession) {
+		return parentState.isAuthenticated
+	}
+	hasRestoredParentSession = true
+
+	const saved = readParentSession()
+	if (!saved || !saved.isAuthenticated) {
+		return false
+	}
+
+	const nextState = createInitialState()
+	nextState.authToken = `${saved.authToken || ''}`.trim()
+	nextState.isAuthenticated = !!saved.isAuthenticated
+	nextState.profile = normalizeProfile(saved.profile)
+	nextState.pendingCandidates = normalizeCandidates(saved.pendingCandidates)
+	nextState.selectedCandidateIds = normalizeIDList(saved.selectedCandidateIds)
+	nextState.students = normalizeCandidates(saved.students)
+	nextState.campusList = normalizeCampusList(saved.campusList, nextState.pendingCandidates, nextState.students)
+	nextState.currentStudentId = `${saved.currentStudentId || ''}`.trim()
+	nextState.currentCampusId = `${saved.currentCampusId || nextState.campusList[0]?.id || campusList[0].id}`.trim()
+	nextState.postAuthPage = `${saved.postAuthPage || '/pages/profile/index'}`.trim() || '/pages/profile/index'
+	nextState.bindSuccessVisible = false
+	nextState.latestBindStudentName = ''
+	reconcileRestoredState(nextState)
+
+	Object.assign(parentState, nextState)
+	persistParentSession()
+	return true
+}
+
 function applyAuthSession(session = {}) {
+	applyCandidateSnapshot({
+		token: session.token,
+		nickname: session.nickname,
+		phone: session.phone,
+		maskedPhone: session.maskedPhone,
+		candidates: session.candidates
+	})
+}
+
+function applyCandidateSnapshot(session = {}) {
 	const normalizedCandidates = normalizeCandidates(session.candidates)
+	const { boundStudents, pendingCandidates } = splitParentCandidates(normalizedCandidates)
 	const nextCampusList = normalizedCandidates.length ? buildCampusList(normalizedCandidates) : cloneList(campusList)
 	const nickname = `${session.nickname || '微信家长'}`.trim() || '微信家长'
+	const nextToken = session.token === undefined || session.token === null
+		? parentState.authToken
+		: `${session.token || ''}`.trim()
+	const previousStudentId = `${parentState.currentStudentId || ''}`.trim()
+	const currentStudent = boundStudents.find(item => item.id === previousStudentId) || boundStudents[0] || null
 
-	parentState.authToken = `${session.token || ''}`.trim()
+	parentState.authToken = nextToken
 	parentState.isAuthenticated = true
 	parentState.profile = {
 		nickname,
@@ -131,13 +230,33 @@ function applyAuthSession(session = {}) {
 		avatarText: nickname.slice(0, 1)
 	}
 	parentState.campusList = nextCampusList
-	parentState.pendingCandidates = normalizedCandidates
-	parentState.selectedCandidateIds = normalizedCandidates.map(item => item.id)
-	parentState.students = []
-	parentState.currentStudentId = ''
-	parentState.currentCampusId = normalizedCandidates[0]?.campusId || nextCampusList[0]?.id || parentState.currentCampusId
+	parentState.pendingCandidates = pendingCandidates
+	parentState.selectedCandidateIds = pendingCandidates.map(item => item.id)
+	parentState.students = boundStudents
+	parentState.currentStudentId = currentStudent?.id || ''
+	parentState.currentCampusId = currentStudent?.campusId || pendingCandidates[0]?.campusId || nextCampusList[0]?.id || parentState.currentCampusId
 	parentState.bindSuccessVisible = false
 	parentState.latestBindStudentName = ''
+	persistParentSession()
+}
+
+function splitParentCandidates(candidates = []) {
+	const boundStudents = []
+	const pendingCandidates = []
+
+	;(Array.isArray(candidates) ? candidates : []).forEach(item => {
+		const nextItem = { ...item }
+		if (nextItem.isBound) {
+			boundStudents.push(nextItem)
+			return
+		}
+		pendingCandidates.push(nextItem)
+	})
+
+	return {
+		boundStudents,
+		pendingCandidates
+	}
 }
 
 function normalizeCandidates(candidates = []) {
@@ -148,8 +267,10 @@ function normalizeCandidates(candidates = []) {
 			id: rawID,
 			rawId: item?.id ?? rawID,
 			name: `${item?.name || item?.stuName || '-'}`.trim() || '-',
+			avatarUrl: `${item?.avatarUrl || ''}`.trim(),
 			campusId,
 			campusName: `${item?.campusName || item?.institutionName || '-'}`.trim() || '-',
+			campusLogoUrl: `${item?.campusLogoUrl || item?.institutionLogo || item?.logoUrl || ''}`.trim(),
 			balance: Number(item?.balance || 0),
 			relation: `${item?.relation || item?.relationText || '-'}`.trim() || '-',
 			avatarColor: item?.avatarColor || buildAvatarColor(rawID),
@@ -178,7 +299,8 @@ function buildCampusList(candidates = []) {
 			id: item.campusId,
 			name: campusName,
 			shortName: brandName.slice(0, 1) || '校',
-			brandName
+			brandName,
+			logoUrl: `${item.campusLogoUrl || ''}`.trim()
 		})
 	})
 
@@ -200,4 +322,109 @@ function buildAvatarColor(seed = '') {
 		total += text.charCodeAt(index)
 	}
 	return avatarPalette[total % avatarPalette.length]
+}
+
+function normalizeProfile(profile = {}) {
+	const nickname = `${profile?.nickname || '微信家长'}`.trim() || '微信家长'
+	return {
+		nickname,
+		phone: `${profile?.phone || ''}`.trim(),
+		maskedPhone: `${profile?.maskedPhone || ''}`.trim(),
+		avatarText: `${profile?.avatarText || nickname.slice(0, 1) || '家'}`.trim() || '家'
+	}
+}
+
+function normalizeIDList(values = []) {
+	return (Array.isArray(values) ? values : []).map(item => `${item}`)
+}
+
+function normalizeCampusList(list = [], pending = [], students = []) {
+	const normalized = (Array.isArray(list) ? list : [])
+		.map(item => ({
+			id: `${item?.id || ''}`.trim(),
+			name: `${item?.name || ''}`.trim(),
+			shortName: `${item?.shortName || ''}`.trim(),
+			brandName: `${item?.brandName || ''}`.trim(),
+			logoUrl: `${item?.logoUrl || ''}`.trim()
+		}))
+		.filter(item => item.id && item.name)
+
+	if (normalized.length) {
+		return normalized
+	}
+	return buildCampusList([...(Array.isArray(pending) ? pending : []), ...(Array.isArray(students) ? students : [])])
+}
+
+function reconcileRestoredState(state) {
+	const studentList = Array.isArray(state.students) ? state.students : []
+	const campusIdSet = new Set((Array.isArray(state.campusList) ? state.campusList : []).map(item => item.id))
+	const currentStudent = studentList.find(item => item.id === state.currentStudentId) || studentList[0] || null
+
+	if (!currentStudent) {
+		state.currentStudentId = ''
+	} else {
+		state.currentStudentId = currentStudent.id
+	}
+
+	if (currentStudent?.campusId) {
+		state.currentCampusId = currentStudent.campusId
+		return
+	}
+
+	if (campusIdSet.has(state.currentCampusId)) {
+		return
+	}
+
+	state.currentCampusId = state.pendingCandidates[0]?.campusId || state.campusList[0]?.id || campusList[0].id
+}
+
+function serializeParentSession() {
+	return {
+		authToken: parentState.authToken,
+		isAuthenticated: parentState.isAuthenticated,
+		profile: {
+			...parentState.profile
+		},
+		campusList: parentState.campusList.map(item => ({ ...item })),
+		pendingCandidates: parentState.pendingCandidates.map(item => ({ ...item })),
+		selectedCandidateIds: [...parentState.selectedCandidateIds],
+		students: parentState.students.map(item => ({ ...item })),
+		currentStudentId: parentState.currentStudentId,
+		currentCampusId: parentState.currentCampusId,
+		postAuthPage: parentState.postAuthPage
+	}
+}
+
+function persistParentSession() {
+	try {
+		uni.setStorageSync(PARENT_SESSION_STORAGE_KEY, serializeParentSession())
+	} catch (error) {
+		console.warn('persist parent session failed', error)
+	}
+}
+
+function readParentSession() {
+	try {
+		return uni.getStorageSync(PARENT_SESSION_STORAGE_KEY)
+	} catch (error) {
+		console.warn('read parent session failed', error)
+		return null
+	}
+}
+
+function clearParentSession() {
+	try {
+		uni.removeStorageSync(PARENT_SESSION_STORAGE_KEY)
+	} catch (error) {
+		console.warn('clear parent session failed', error)
+	}
+}
+
+function tryAutoRestoreParentSession() {
+	try {
+		restoreParentSession()
+	} catch (error) {
+		hasRestoredParentSession = false
+		console.warn('auto restore parent session failed', error)
+	}
 }

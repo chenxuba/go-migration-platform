@@ -26,6 +26,9 @@ func (svc *Service) ParentWeChatLogin(ctx context.Context, tenantID string, dto 
 	if loginCode == "" {
 		return model.ParentWeChatLoginVO{}, errors.New("缺少登录凭证")
 	}
+	if isMockWeChatLoginCode(loginCode) {
+		return model.ParentWeChatLoginVO{}, errors.New("当前拿到的是模拟登录 code，请在真实微信小程序环境重新编译后再试")
+	}
 	phoneCode := strings.TrimSpace(dto.PhoneCode)
 	if phoneCode == "" {
 		return model.ParentWeChatLoginVO{}, errors.New("缺少手机号授权凭证")
@@ -99,6 +102,44 @@ func (svc *Service) LookupParentStudentsByPhone(ctx context.Context, phone strin
 	}, nil
 }
 
+func (svc *Service) ConfirmParentStudentsByPhone(ctx context.Context, phone string, dto model.ParentBindStudentsDTO) (model.ParentStudentLookupByPhoneVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentStudentLookupByPhoneVO{}, errors.New("家长端学员确认服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentStudentLookupByPhoneVO{}, errors.New("手机号不能为空")
+	}
+
+	if err := svc.repo.ConfirmParentStudentsByPhone(ctx, phone, dto.StudentIDs); err != nil {
+		return model.ParentStudentLookupByPhoneVO{}, err
+	}
+
+	return svc.LookupParentStudentsByPhone(ctx, phone)
+}
+
+func (svc *Service) ListParentCampusesByPhone(ctx context.Context, phone string) (model.ParentCampusSummaryVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentCampusSummaryVO{}, errors.New("家长端机构查询服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentCampusSummaryVO{}, errors.New("手机号不能为空")
+	}
+
+	rows, err := svc.repo.ListParentStudentCandidatesByPhone(ctx, phone)
+	if err != nil {
+		return model.ParentCampusSummaryVO{}, err
+	}
+
+	items := buildParentCampusVOList(rows)
+	return model.ParentCampusSummaryVO{
+		Items: items,
+	}, nil
+}
+
 func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord) model.ParentStudentCandidateVO {
 	campusName := strings.TrimSpace(item.InstitutionName)
 	if campusName == "" {
@@ -110,6 +151,7 @@ func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord) mo
 		InstID:            item.InstID,
 		CampusID:          fmt.Sprintf("inst-%d", item.InstID),
 		CampusName:        campusName,
+		CampusLogoURL:     strings.TrimSpace(item.InstitutionLogo),
 		Name:              strings.TrimSpace(item.StudentName),
 		AvatarURL:         strings.TrimSpace(item.AvatarURL),
 		Mobile:            strings.TrimSpace(item.Mobile),
@@ -121,6 +163,68 @@ func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord) mo
 		IsBound:           item.IsBound,
 		ClassLabel:        statusText,
 	}
+}
+
+func buildParentCampusVOList(rows []repository.ParentStudentLookupRecord) []model.ParentCampusVO {
+	items := make([]model.ParentCampusVO, 0, len(rows))
+	indexByCampusID := make(map[string]int, len(rows))
+
+	for _, row := range rows {
+		campusName := strings.TrimSpace(row.InstitutionName)
+		if campusName == "" {
+			campusName = fmt.Sprintf("机构%d", row.InstID)
+		}
+		campusID := fmt.Sprintf("inst-%d", row.InstID)
+		if index, ok := indexByCampusID[campusID]; ok {
+			items[index].StudentCount += 1
+			if items[index].LogoURL == "" {
+				items[index].LogoURL = strings.TrimSpace(row.InstitutionLogo)
+			}
+			continue
+		}
+
+		brandName := parentCampusBrandName(campusName)
+		items = append(items, model.ParentCampusVO{
+			ID:           campusID,
+			InstID:       row.InstID,
+			Name:         campusName,
+			BrandName:    brandName,
+			ShortName:    parentCampusShortName(brandName, campusName),
+			LogoURL:      strings.TrimSpace(row.InstitutionLogo),
+			StudentCount: 1,
+		})
+		indexByCampusID[campusID] = len(items) - 1
+	}
+
+	return items
+}
+
+func parentCampusBrandName(name string) string {
+	text := strings.TrimSpace(name)
+	if text == "" {
+		return "机构"
+	}
+	text = strings.TrimSuffix(text, "总校区")
+	text = strings.TrimSuffix(text, "控江校区")
+	text = strings.TrimSuffix(text, "校区")
+	text = strings.TrimSuffix(text, "分校")
+	text = strings.TrimSuffix(text, "院区")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return strings.TrimSpace(name)
+	}
+	return text
+}
+
+func parentCampusShortName(brandName, campusName string) string {
+	text := strings.TrimSpace(brandName)
+	if text == "" {
+		text = strings.TrimSpace(campusName)
+	}
+	for _, ch := range text {
+		return string(ch)
+	}
+	return "校"
 }
 
 func normalizeParentPhone(values ...string) string {
@@ -183,4 +287,9 @@ func parentPhoneRelationshipText(value int) string {
 	default:
 		return "-"
 	}
+}
+
+func isMockWeChatLoginCode(code string) bool {
+	value := strings.ToLower(strings.TrimSpace(code))
+	return value == "the code is a mock one" || strings.Contains(value, "mock")
 }

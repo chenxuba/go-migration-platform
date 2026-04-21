@@ -28,7 +28,8 @@
 			>
 				<view class="select-student-card__main">
 					<view class="select-student-card__avatar" :style="{ background: item.avatarColor }">
-						{{ item.name.slice(0, 1) }}
+						<image v-if="item.avatarUrl" class="select-student-card__avatar-image" :src="item.avatarUrl" mode="aspectFill"></image>
+						<text v-else>{{ item.name.slice(0, 1) }}</text>
 					</view>
 					<view class="select-student-card__content">
 						<view class="select-student-card__title-row">
@@ -71,15 +72,27 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { confirmParentStudents } from '@/common/parent-api'
 import { getNavLayout } from '@/common/nav-layout'
-import { confirmStudentBinding, logoutParent, parentState, setPendingSelection } from '@/common/parent-state'
+import {
+	applyParentStudentLookup,
+	confirmStudentBinding,
+	finalizeStudentBinding,
+	logoutParent,
+	parentState,
+	setPendingSelection
+} from '@/common/parent-state'
 
 const nav = getNavLayout()
 const selectedIds = ref([])
+const submitting = ref(false)
 
 const pendingCandidates = computed(() => parentState.pendingCandidates)
 const maskedPhone = computed(() => parentState.profile.maskedPhone)
 const confirmButtonText = computed(() => {
+	if (submitting.value) {
+		return '提交中...'
+	}
 	return selectedIds.value.length ? `确认关注（${selectedIds.value.length}）` : '确认关注'
 })
 
@@ -100,6 +113,9 @@ function toggleSelect(studentId) {
 }
 
 function confirmBinding() {
+	if (submitting.value) {
+		return
+	}
 	if (!selectedIds.value.length) {
 		uni.showToast({
 			title: '请先选择学员',
@@ -108,6 +124,14 @@ function confirmBinding() {
 		return
 	}
 	setPendingSelection(selectedIds.value)
+
+	// #ifdef MP-WEIXIN
+	if (parentState.authToken) {
+		submitBindingToServer()
+		return
+	}
+	// #endif
+
 	const nextPage = confirmStudentBinding()
 	if (!nextPage) {
 		return
@@ -132,6 +156,53 @@ function changePhone() {
 	uni.switchTab({
 		url: '/pages/profile/index'
 	})
+}
+
+async function submitBindingToServer() {
+	const studentIds = pendingCandidates.value
+		.filter(item => selectedIds.value.includes(item.id))
+		.map(item => Number(item.rawId || item.id))
+		.filter(item => Number.isFinite(item) && item > 0)
+
+	if (!studentIds.length) {
+		uni.showToast({
+			title: '学员数据异常，请重新选择',
+			icon: 'none'
+		})
+		return
+	}
+
+	const firstSelectedStudent = pendingCandidates.value.find(item => selectedIds.value.includes(item.id))
+
+	try {
+		submitting.value = true
+		const lookup = await confirmParentStudents(parentState.authToken, {
+			studentIds
+		})
+		applyParentStudentLookup(lookup)
+		const nextPage = finalizeStudentBinding(firstSelectedStudent?.name || '')
+		uni.switchTab({
+			url: nextPage
+		})
+	} catch (error) {
+		uni.showToast({
+			title: normalizeErrorMessage(error),
+			icon: 'none'
+		})
+	} finally {
+		submitting.value = false
+	}
+}
+
+function normalizeErrorMessage(error) {
+	const message = `${error?.message || error || ''}`.trim()
+	if (!message) {
+		return '确认关注失败，请稍后重试'
+	}
+	if (message.length > 22) {
+		return '确认关注失败，请检查接口'
+	}
+	return message
 }
 </script>
 
@@ -231,6 +302,7 @@ function changePhone() {
 	width: 76rpx;
 	height: 76rpx;
 	border-radius: 24rpx;
+	overflow: hidden;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -239,6 +311,12 @@ function changePhone() {
 	font-weight: 700;
 	box-shadow: 0 12rpx 24rpx rgba(71, 109, 178, 0.14);
 	flex-shrink: 0;
+}
+
+.select-student-card__avatar-image {
+	width: 100%;
+	height: 100%;
+	display: block;
 }
 
 .select-student-card__content {

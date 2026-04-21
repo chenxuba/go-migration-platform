@@ -7,6 +7,10 @@ type ParentWeChatLoginDTO struct {
 	PhoneCode string `json:"phoneCode"`
 }
 
+type ParentBindStudentsDTO struct {
+	StudentIDs []int64 `json:"studentIds"`
+}
+
 type ParentWeChatLoginVO struct {
 	Token       string                     `json:"token"`
 	Phone       string                     `json:"phone"`
@@ -15,6 +19,20 @@ type ParentWeChatLoginVO struct {
 	MiniOpenID  string                     `json:"miniOpenId,omitempty"`
 	UnionID     string                     `json:"unionId,omitempty"`
 	Candidates  []ParentStudentCandidateVO `json:"candidates"`
+}
+
+type ParentCampusSummaryVO struct {
+	Items []ParentCampusVO `json:"items"`
+}
+
+type ParentCampusVO struct {
+	ID           string `json:"id"`
+	InstID       int64  `json:"instId"`
+	Name         string `json:"name"`
+	BrandName    string `json:"brandName"`
+	ShortName    string `json:"shortName"`
+	LogoURL      string `json:"logoUrl,omitempty"`
+	StudentCount int    `json:"studentCount"`
 }
 
 type ParentStudentLookupByPhoneVO struct {
@@ -28,6 +46,7 @@ type ParentStudentCandidateVO struct {
 	InstID            int64  `json:"instId"`
 	CampusID          string `json:"campusId"`
 	CampusName        string `json:"campusName"`
+	CampusLogoURL     string `json:"campusLogoUrl,omitempty"`
 	Name              string `json:"name"`
 	AvatarURL         string `json:"avatarUrl,omitempty"`
 	Mobile            string `json:"mobile"`
