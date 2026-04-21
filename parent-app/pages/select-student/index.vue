@@ -136,9 +136,7 @@ function confirmBinding() {
 	if (!nextPage) {
 		return
 	}
-	uni.switchTab({
-		url: nextPage
-	})
+	navigateToPostAuthPage(nextPage)
 }
 
 function handleBack() {
@@ -181,9 +179,7 @@ async function submitBindingToServer() {
 		})
 		applyParentStudentLookup(lookup)
 		const nextPage = finalizeStudentBinding(firstSelectedStudent?.name || '')
-		uni.switchTab({
-			url: nextPage
-		})
+		navigateToPostAuthPage(nextPage)
 	} catch (error) {
 		uni.showToast({
 			title: normalizeErrorMessage(error),
@@ -203,6 +199,31 @@ function normalizeErrorMessage(error) {
 		return '确认关注失败，请检查接口'
 	}
 	return message
+}
+
+function navigateToPostAuthPage(url = '') {
+	const targetURL = `${url || ''}`.trim() || '/pages/profile/index'
+	const tabPages = new Set([
+		'/pages/home/index',
+		'/pages/schedule/index',
+		'/pages/profile/index'
+	])
+
+	if (tabPages.has(targetURL)) {
+		uni.switchTab({
+			url: targetURL
+		})
+		return
+	}
+
+	uni.redirectTo({
+		url: targetURL,
+		fail() {
+			uni.switchTab({
+				url: '/pages/profile/index'
+			})
+		}
+	})
 }
 </script>
 

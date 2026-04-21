@@ -168,6 +168,57 @@ func (handler *Handler) parentClassRecords(w http.ResponseWriter, r *http.Reques
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) parentCourseEnrollments(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	query := model.ParentCourseEnrollmentQueryDTO{
+		StudentID: strings.TrimSpace(r.URL.Query().Get("studentId")),
+	}
+	result, err := handler.service.ListParentCourseEnrollmentsByPhone(r.Context(), claims.Username, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) parentCourseEnrollmentDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("pageSize")))
+	pageIndex, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("pageIndex")))
+	chargingMode, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("chargingMode")))
+	query := model.ParentCourseEnrollmentDetailQueryDTO{
+		StudentID:    strings.TrimSpace(r.URL.Query().Get("studentId")),
+		LessonID:     strings.TrimSpace(r.URL.Query().Get("lessonId")),
+		ChargingMode: chargingMode,
+		PageIndex:    pageIndex,
+		PageSize:     pageSize,
+	}
+	result, err := handler.service.GetParentCourseEnrollmentDetailByPhone(r.Context(), claims.Username, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) requireParentAuth(w http.ResponseWriter, r *http.Request, ctx tenant.Context) (authx.Claims, bool) {
 	claims, ok := handler.requireAuth(w, r, ctx)
 	if !ok {

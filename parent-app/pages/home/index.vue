@@ -101,6 +101,12 @@ function handleFeature(item) {
 		})
 		return
 	}
+	if (item?.key === 'course') {
+		uni.navigateTo({
+			url: '/pages/course-enrollment/index'
+		})
+		return
+	}
 	uni.showToast({
 		title: `${item.title}建设中`,
 		icon: 'none'

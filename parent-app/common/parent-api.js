@@ -135,3 +135,27 @@ export function listParentClassRecords(token, query = {}) {
 		token
 	})
 }
+
+export function listParentCourseEnrollments(token, query = {}) {
+	return request({
+		url: `/api/v1/parent/course-enrollments${buildQueryString({
+			studentId: query.studentId
+		})}`,
+		method: 'GET',
+		token
+	})
+}
+
+export function getParentCourseEnrollmentDetail(token, query = {}) {
+	return request({
+		url: `/api/v1/parent/course-enrollments/detail${buildQueryString({
+			studentId: query.studentId,
+			lessonId: query.lessonId,
+			chargingMode: query.chargingMode,
+			pageIndex: query.pageIndex,
+			pageSize: query.pageSize
+		})}`,
+		method: 'GET',
+		token
+	})
+}

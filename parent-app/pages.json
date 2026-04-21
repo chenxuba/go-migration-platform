@@ -25,6 +25,18 @@
 			}
 		},
 		{
+			"path": "pages/course-enrollment/index",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/course-enrollment/detail",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/select-student/index",
 			"style": {
 				"navigationStyle": "custom"

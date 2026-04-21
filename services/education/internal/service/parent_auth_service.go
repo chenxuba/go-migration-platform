@@ -91,10 +91,18 @@ func (svc *Service) LookupParentStudentsByPhone(ctx context.Context, phone strin
 	if err != nil {
 		return model.ParentStudentLookupByPhoneVO{}, err
 	}
+	displayStatuses, err := svc.resolveParentStudentDisplayStatuses(ctx, rows)
+	if err != nil {
+		return model.ParentStudentLookupByPhoneVO{}, err
+	}
 
 	items := make([]model.ParentStudentCandidateVO, 0, len(rows))
 	for _, item := range rows {
-		items = append(items, buildParentStudentCandidateVO(item))
+		displayStatus := item.StudentStatus
+		if resolvedStatus, ok := displayStatuses[item.StudentID]; ok {
+			displayStatus = resolvedStatus
+		}
+		items = append(items, buildParentStudentCandidateVO(item, displayStatus))
 	}
 
 	return model.ParentStudentLookupByPhoneVO{
@@ -102,6 +110,26 @@ func (svc *Service) LookupParentStudentsByPhone(ctx context.Context, phone strin
 		MaskedPhone: maskParentPhone(phone),
 		Candidates:  items,
 	}, nil
+}
+
+func (svc *Service) resolveParentStudentDisplayStatuses(ctx context.Context, rows []repository.ParentStudentLookupRecord) (map[int64]int, error) {
+	statuses := make(map[int64]int, len(rows))
+	for _, item := range rows {
+		statuses[item.StudentID] = item.StudentStatus
+		if !item.IsBound || item.StudentStatus != model.InstStudentStatusIntent {
+			continue
+		}
+		if item.StudentID <= 0 || item.InstID <= 0 || strings.TrimSpace(item.StudentName) == "" {
+			continue
+		}
+
+		aliases, err := svc.repo.ListParentStudentScheduleAliases(ctx, item.InstID, item.StudentName, item.StudentID)
+		if err != nil {
+			return nil, err
+		}
+		statuses[item.StudentID] = pickParentStudentDisplayStatus(item.StudentStatus, item.IsBound, aliases)
+	}
+	return statuses, nil
 }
 
 func (svc *Service) ConfirmParentStudentsByPhone(ctx context.Context, phone string, dto model.ParentBindStudentsDTO) (model.ParentStudentLookupByPhoneVO, error) {
@@ -162,7 +190,7 @@ func (svc *Service) ListParentSchedulesByPhone(ctx context.Context, phone string
 		return model.ParentScheduleSummaryVO{}, err
 	}
 
-	targets := buildParentScheduleTargets(rows)
+	targets := buildParentScheduleTargets(rows, nil)
 	if len(targets) == 0 {
 		return model.ParentScheduleSummaryVO{
 			Items: []model.ParentScheduleVO{},
@@ -200,7 +228,7 @@ func (svc *Service) ListParentScheduleDatesByPhone(ctx context.Context, phone st
 		return model.ParentScheduleDateSummaryVO{}, err
 	}
 
-	targets := buildParentScheduleTargets(rows)
+	targets := buildParentScheduleTargets(rows, nil)
 	if len(targets) == 0 {
 		return model.ParentScheduleDateSummaryVO{
 			Items: []model.ParentScheduleDateVO{},
@@ -354,12 +382,12 @@ func buildParentScheduleDateItems(items []model.ParentScheduleVO) []model.Parent
 	return result
 }
 
-func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord) model.ParentStudentCandidateVO {
+func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord, displayStatus int) model.ParentStudentCandidateVO {
 	campusName := strings.TrimSpace(item.InstitutionName)
 	if campusName == "" {
 		campusName = fmt.Sprintf("机构%d", item.InstID)
 	}
-	statusText := parentStudentStatusText(item.StudentStatus)
+	statusText := parentStudentStatusText(displayStatus)
 	return model.ParentStudentCandidateVO{
 		ID:                item.StudentID,
 		InstID:            item.InstID,
@@ -377,6 +405,19 @@ func buildParentStudentCandidateVO(item repository.ParentStudentLookupRecord) mo
 		IsBound:           item.IsBound,
 		ClassLabel:        statusText,
 	}
+}
+
+func pickParentStudentDisplayStatus(rawStatus int, isBound bool, aliases []repository.ParentStudentScheduleAliasRecord) int {
+	if !isBound || rawStatus != model.InstStudentStatusIntent {
+		return rawStatus
+	}
+	for _, alias := range aliases {
+		switch alias.StudentStatus {
+		case model.InstStudentStatusEnrolled, model.InstStudentStatusHistory:
+			return alias.StudentStatus
+		}
+	}
+	return rawStatus
 }
 
 func buildParentCampusVOList(rows []repository.ParentStudentLookupRecord) []model.ParentCampusVO {
@@ -421,9 +462,10 @@ type parentScheduleTarget struct {
 	StudentName   string
 	AvatarURL     string
 	StudentStatus int
+	DisplayStatus int
 }
 
-func buildParentScheduleTargets(rows []repository.ParentStudentLookupRecord) []parentScheduleTarget {
+func buildParentScheduleTargets(rows []repository.ParentStudentLookupRecord, displayStatuses map[int64]int) []parentScheduleTarget {
 	items := make([]parentScheduleTarget, 0, len(rows))
 	for _, row := range rows {
 		if !row.IsBound || row.StudentID <= 0 || row.InstID <= 0 {
@@ -437,6 +479,10 @@ func buildParentScheduleTargets(rows []repository.ParentStudentLookupRecord) []p
 		if studentName == "" {
 			studentName = "学员"
 		}
+		displayStatus := row.StudentStatus
+		if resolvedStatus, ok := displayStatuses[row.StudentID]; ok {
+			displayStatus = resolvedStatus
+		}
 		items = append(items, parentScheduleTarget{
 			StudentID:     row.StudentID,
 			InstID:        row.InstID,
@@ -445,6 +491,7 @@ func buildParentScheduleTargets(rows []repository.ParentStudentLookupRecord) []p
 			StudentName:   studentName,
 			AvatarURL:     strings.TrimSpace(row.AvatarURL),
 			StudentStatus: row.StudentStatus,
+			DisplayStatus: displayStatus,
 		})
 	}
 	return items
