@@ -180,6 +180,32 @@ func (handler *Handler) parentScheduleDates(w http.ResponseWriter, r *http.Reque
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) parentLeaves(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	pageSize, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("pageSize")))
+	pageIndex, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("pageIndex")))
+	query := model.ParentLeaveQueryDTO{
+		StudentID: strings.TrimSpace(r.URL.Query().Get("studentId")),
+		PageIndex: pageIndex,
+		PageSize:  pageSize,
+	}
+	result, err := handler.service.ListParentLeavesByPhone(r.Context(), claims.Username, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) parentClassRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireParentAuth(w, r, ctx)

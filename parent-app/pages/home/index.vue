@@ -107,6 +107,12 @@ function handleFeature(item) {
 		})
 		return
 	}
+	if (item?.key === 'leave') {
+		uni.navigateTo({
+			url: '/pages/leave/index'
+		})
+		return
+	}
 	uni.showToast({
 		title: `${item.title}建设中`,
 		icon: 'none'

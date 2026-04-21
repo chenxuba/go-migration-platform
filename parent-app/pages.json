@@ -49,6 +49,12 @@
 			}
 		},
 		{
+			"path": "pages/leave/index",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/select-student/index",
 			"style": {
 				"navigationStyle": "custom"

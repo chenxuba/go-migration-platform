@@ -140,6 +140,18 @@ export function listParentScheduleDates(token, query = {}) {
 	})
 }
 
+export function listParentLeaves(token, query = {}) {
+	return request({
+		url: `/api/v1/parent/leaves${buildQueryString({
+			studentId: query.studentId,
+			pageIndex: query.pageIndex,
+			pageSize: query.pageSize
+		})}`,
+		method: 'GET',
+		token
+	})
+}
+
 export function listParentClassRecords(token, query = {}) {
 	return request({
 		url: `/api/v1/parent/class-records${buildQueryString({
