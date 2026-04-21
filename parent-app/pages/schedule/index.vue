@@ -1,5 +1,5 @@
 <template>
-	<view class="parent-page">
+	<view class="parent-page schedule-page">
 		<view id="schedule-fixed-header" class="schedule-fixed-header" :style="{ paddingTop: `${nav.top}px` }">
 			<view class="schedule-fixed-header__inner">
 				<view class="parent-nav-row schedule-nav" :style="{ minHeight: `${nav.height}px` }">
@@ -528,6 +528,13 @@ onUnload(() => {
 </script>
 
 <style scoped>
+.schedule-page {
+	min-height: 100vh;
+	background:
+		radial-gradient(circle at 12% 6%, rgba(255, 221, 169, 0.2), transparent 22%),
+		linear-gradient(180deg, #fff7eb 0%, #fff8ef 42%, #fff9f2 100%);
+}
+
 .schedule-fixed-header {
 	position: fixed;
 	top: 0;
@@ -535,7 +542,7 @@ onUnload(() => {
 	right: 0;
 	z-index: 40;
 	background:
-		linear-gradient(180deg, rgba(255, 246, 230, 0.98) 0%, rgba(255, 251, 242, 0.95) 72%, rgba(255, 251, 242, 0) 100%);
+		linear-gradient(180deg, rgba(255, 247, 235, 0.98) 0%, rgba(255, 248, 239, 0.96) 72%, rgba(255, 249, 242, 0.9) 100%);
 	backdrop-filter: blur(12rpx);
 }
 
@@ -635,10 +642,16 @@ onUnload(() => {
 }
 
 .schedule-list-card {
-	padding: 20rpx;
+	padding: 8rpx 0 calc(28rpx + env(safe-area-inset-bottom));
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	backdrop-filter: none;
 }
 
 .schedule-list-card__title {
+	display: block;
+	padding: 0 8rpx 6rpx;
 	font-size: 36rpx;
 	font-weight: 700;
 }
@@ -659,6 +672,7 @@ onUnload(() => {
 	border-radius: 24rpx;
 	background: rgba(255, 255, 255, 0.88);
 	border: 1rpx solid rgba(230, 221, 204, 0.78);
+	box-shadow: var(--parent-shadow);
 }
 
 .schedule-item__top {

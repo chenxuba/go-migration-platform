@@ -1,5 +1,5 @@
 <template>
-	<view class="parent-page">
+	<view class="parent-page record-page">
 		<view class="record-nav-fixed" :style="{ paddingTop: `${nav.top}px` }">
 			<view class="record-nav-fixed__inner">
 				<view class="parent-nav-row record-nav" :style="{ minHeight: `${nav.height}px` }">
@@ -424,6 +424,13 @@ function inviteFamily() {
 </script>
 
 <style scoped>
+.record-page {
+	min-height: 100vh;
+	background:
+		radial-gradient(circle at 12% 6%, rgba(255, 221, 169, 0.2), transparent 22%),
+		linear-gradient(180deg, #fff7eb 0%, #fff8ef 42%, #fff9f2 100%);
+}
+
 .record-header {
 	padding-bottom: 18rpx;
 }
@@ -435,7 +442,7 @@ function inviteFamily() {
 	right: 0;
 	z-index: 40;
 	background:
-		linear-gradient(180deg, rgba(255, 246, 230, 0.98) 0%, rgba(255, 251, 242, 0.95) 72%, rgba(255, 251, 242, 0) 100%);
+		linear-gradient(180deg, rgba(255, 247, 235, 0.98) 0%, rgba(255, 248, 239, 0.96) 72%, rgba(255, 249, 242, 0.9) 100%);
 	backdrop-filter: blur(12rpx);
 }
 
@@ -476,10 +483,7 @@ function inviteFamily() {
 	transform: translateX(4rpx) rotate(45deg);
 }
 
-.record-student-card {
-	margin-top: 18rpx;
-	padding: 8rpx 14rpx 4rpx;
-}
+
 
 .record-student-scroll {
 	white-space: nowrap;
@@ -589,10 +593,10 @@ function inviteFamily() {
 }
 
 .record-item__title {
-	font-size: 30rpx;
+	font-size: 26rpx;
 	font-weight: 700;
-	line-height: 1.4;
-	color: #232323;
+	line-height: 1.45;
+	color: #5f5f5f;
 }
 
 .record-item__status {
