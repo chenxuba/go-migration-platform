@@ -172,6 +172,32 @@ const searchChannelCategory = ref('')
 const searchInput = ref('')
 const selectDates = ref([])
 const pickerKey = ref(0)
+const remoteSearchCategories = new Set(['stu', 'course', 'teacher', 'courseAttribute'])
+const isLocalRadioSearch = computed(() => props.type === 'radioType' && !remoteSearchCategories.has(props.category))
+
+const radioTypeOptions = computed(() => {
+  if (!isLocalRadioSearch.value)
+    return props.options
+
+  const keyword = searchPeo.value.trim().toLowerCase()
+  if (!keyword)
+    return props.options
+
+  return props.options.filter((option) => {
+    const searchFields = [
+      option?.value,
+      option?.name,
+      option?.stuName,
+      option?.nickName,
+      option?.mobile,
+      option?.phone,
+    ]
+      .map(item => String(item || '').trim().toLowerCase())
+      .filter(Boolean)
+
+    return searchFields.some(field => field.includes(keyword))
+  })
+})
 
 function filter(inputValue, path) {
   return path.some(option => option.name.toLowerCase().includes(inputValue.toLowerCase()))
@@ -179,6 +205,10 @@ function filter(inputValue, path) {
 const spinning = ref(false)
 // 监听输入变化
 watch(searchPeo, (newVal) => {
+  if (isLocalRadioSearch.value) {
+    spinning.value = false
+    return
+  }
   spinning.value = true
   debouncedSearch(newVal)
 })
@@ -353,6 +383,7 @@ watch(visible, (newVal) => {
     // 当下拉框关闭时，重置所有状态
     searchPeo.value = ''
     searchChannelCategory.value = ''
+    spinning.value = false
     specifiedDate.value = null
     selectDates.value = []
     pickerKey.value++ // 加上这个不会出现bug 但会没有隐藏动画
@@ -794,7 +825,7 @@ function handleScroll(e) {
         </a-menu-item>
         <div class="max-h-80 overflow-auto scrollbar">
           <a-spin :spinning="spinning">
-            <a-menu-item v-for="item in options" :key="item.id"
+            <a-menu-item v-for="item in radioTypeOptions" :key="item.id"
               :class="checkedValues == item.id ? 'menu-item active' : 'menu-item'" :value="item.id"
               @click="handleRadioChange(item.id)">
               <div class="text-sm text-#666  leading-7">
@@ -805,7 +836,7 @@ function handleScroll(e) {
               </div>
             </a-menu-item>
 
-            <div v-if="options.length == 0" class="flex justify-center">
+            <div v-if="radioTypeOptions.length == 0" class="flex justify-center">
               <a-empty :image-style="{ width: '80px' }" :image="simpleImage" />
             </div>
           </a-spin>
