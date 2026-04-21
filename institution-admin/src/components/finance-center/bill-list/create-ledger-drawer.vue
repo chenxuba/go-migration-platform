@@ -20,7 +20,7 @@ const { openDrawer } = useDrawer(props, emit)
     :push="{ distance: 80 }"
     :body-style="{ padding: '0', background: '#f7f7fd' }"
     :closable="false"
-    width="800px"
+    width="1244px"
     placement="right"
   >
     <template #title>
@@ -36,13 +36,6 @@ const { openDrawer } = useDrawer(props, emit)
       </div>
     </template>
     <div class="contenter" />
-    <template #footer>
-      <div class="flex justify-end">
-        <a-button type="primary" class="w-140px h-48px font-size-18px font-weight-600" @click="openDrawer = false">
-          完成
-        </a-button>
-      </div>
-    </template>
   </a-drawer>
 </template>
 

@@ -202,7 +202,7 @@ const rowSelection = computed(() => ({
   selectedRowKeys: selectedLedgerKeys.value,
   preserveSelectedRowKeys: true,
   fixed: true,
-  onChange: keys => {
+  onChange: (keys) => {
     selectedLedgerKeys.value = keys.map(key => String(key))
   },
 }))
@@ -547,7 +547,7 @@ function parseAttachmentFilenameFromHeader(contentDisposition) {
       return utf8Match[1]
     }
   }
-  const plainMatch = cd.match(/filename=\"?([^\";]+)\"?/i)
+  const plainMatch = cd.match(/filename="?([^";]+)"?/i)
   return plainMatch?.[1] || ''
 }
 
@@ -1178,7 +1178,7 @@ onMounted(async () => {
         </a-form-item>
       </a-form>
     </a-modal>
-    <create-ledger-drawer v-model:open="openCreateLedgerDrawer" />
+    <CreateLedgerDrawer v-model:open="openCreateLedgerDrawer" />
     <order-detail-drawer v-model:open="openOrderDetailDrawer" :order-id="currentOrderId" />
   </div>
 </template>
@@ -1387,5 +1387,4 @@ onMounted(async () => {
     }
   }
 }
-
 </style>
