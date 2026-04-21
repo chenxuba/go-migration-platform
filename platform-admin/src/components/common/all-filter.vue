@@ -6679,7 +6679,8 @@ defineExpose({
                   <div v-if="item.fieldType == 4">
                     <checkbox-filter :ref="(el) => handleRef(el, `customSearchInput_${item.id}`)"
                       v-model:checked-values="searchInputVals[item.id]" :placeholder="`请输入${item.fieldKey}`"
-                      :options="item.optionsList" :label="item.fieldKey" category="localRadio" type="radioType"
+                      :options="item.optionsList" :label="item.fieldKey"
+                      :category="['provinceCode', 'cityCode', 'regionCode'].includes(String(item.id)) ? 'localRadio' : undefined" type="radioType"
                       @radio-change="handleCustomSingleSearchInputChange(item, item.id)" />
                   </div>
                 </span>
