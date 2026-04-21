@@ -10,6 +10,7 @@ import {
   NotificationOutlined,
   PaperClipOutlined,
   PlaySquareOutlined,
+  PlusOutlined,
   ReadOutlined,
   SafetyCertificateOutlined,
   ShopOutlined,
@@ -38,6 +39,8 @@ const formState = reactive({
   amount: undefined,
   ledgerType: 1,
   payMethod: undefined,
+  payAccount: 1,
+  billRemarks: undefined,
   payDate: dayjs().format('YYYY-MM-DD'),
   dealStaffId: undefined,
 })
@@ -45,6 +48,11 @@ const formState = reactive({
 const activeExpenseCategory = ref('management')
 const activeLedgerItemKey = ref('')
 const checkOptions = [...payMethodOptionsWithIcons]
+const fileList = ref([])
+const accountList = ref([{ value: 1, label: '默认账户' }])
+const previewVisible = ref(false)
+const previewImage = ref('')
+const previewTitle = ref('')
 
 const incomeCategoryItems = [
   { key: 'exam', label: '考试费用', icon: ReadOutlined },
@@ -101,6 +109,29 @@ function selectExpenseCategory(key) {
 
 function selectLedgerItem(key) {
   activeLedgerItemKey.value = key
+}
+
+function getBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.readAsDataURL(file)
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = error => reject(error)
+  })
+}
+
+async function handlePreview(file) {
+  if (!file.url && !file.preview)
+    file.preview = await getBase64(file.originFileObj)
+
+  previewImage.value = file.url || file.preview
+  previewVisible.value = true
+  previewTitle.value = file.name || file.url?.substring(file.url.lastIndexOf('/') + 1) || ''
+}
+
+function handleCancelImg() {
+  previewVisible.value = false
+  previewTitle.value = ''
 }
 
 watch(
@@ -342,9 +373,43 @@ watch(
           </a-radio-group>
         </div>
       </div>
-      <!-- 收款账户、账单备注区域 -->
-      <div>
-        
+      <div class="bg-white pt4 pb0">
+        <a-form layout="vertical" :model="formState" class="flex flex-col">
+          <a-form-item class="w-60">
+            <template #label>
+              <span><span
+                class="text-#f03 mr1"
+                style="font-family: SimSun, sans-serif"
+              >*</span>支付账户</span>
+            </template>
+            <a-select
+              v-model:value="formState.payAccount"
+              :allow-clear="false"
+              placeholder="请选择支付账户"
+              :options="accountList"
+            />
+          </a-form-item>
+          <a-form-item label="账单备注（选填）">
+            <a-textarea
+              v-model:value="formState.billRemarks"
+              placeholder="请输入内容，最多100字"
+              :auto-size="{ minRows: 2, maxRows: 5 }"
+            />
+          </a-form-item>
+        </a-form>
+      </div>
+      <div class="upload bg-white pt0 mt--4">
+        <a-upload
+          v-model:file-list="fileList"
+          action="https://www.mocky.io/v2/5cc8019d300000980a055e76"
+          list-type="picture-card"
+          @preview="handlePreview"
+        >
+          <div v-if="fileList.length < 3">
+            <PlusOutlined class="text-6" />
+          </div>
+        </a-upload>
+        <span class="text-#888">最多上传 3 张图片，支持 BMP / JPG / JPEG / PNG，单张图片不超过 4 MB</span>
       </div>
     </div>
     <template #footer>
@@ -358,6 +423,9 @@ watch(
         </a-button>
       </div>
     </template>
+    <a-modal :open="previewVisible" :title="previewTitle" :footer="null" @cancel="handleCancelImg">
+      <img alt="example" style="width: 100%" :src="previewImage">
+    </a-modal>
   </a-drawer>
 </template>
 
@@ -550,6 +618,7 @@ watch(
 
 .pay {
   margin-top: 10px;
+  margin-bottom: 20px;
 
   .pay-box {
     display: flex;
@@ -602,6 +671,16 @@ watch(
 .custom-radio ::v-deep(.ant-radio-inner::after) {
   background-color: var(--pro-ant-color-primary);
   transform: scale(0.5);
+}
+
+:deep(.ant-upload) {
+  width: 78px !important;
+  height: 78px !important;
+}
+
+:deep(.ant-upload-list-item-container) {
+  width: 78px !important;
+  height: 78px !important;
 }
 
 .ledger-type-label {
