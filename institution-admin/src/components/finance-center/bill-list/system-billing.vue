@@ -608,6 +608,10 @@ function clearSelection() {
   selectedLedgerKeys.value = []
 }
 
+function handleCreateLedger() {
+  messageService.info('手动记账能力后续补齐')
+}
+
 async function executeBatchLedgerAction(action) {
   if (!selectedLedgerKeys.value.length) {
     messageService.warning('请先勾选需要操作的账单')
@@ -795,7 +799,12 @@ onMounted(async () => {
             @on-dropdown-visible-change="loadStaffOptions"
             @on-search="loadStaffOptions"
           />
-          <checkbox-filter v-model:checked-values="filterState.confirmTime" label="确认时间" type="dateSelectType" />
+          <checkbox-filter
+            v-model:checked-values="filterState.confirmTime"
+            label="确认时间"
+            type="dateTimeQuick"
+            :disable-future-date="true"
+          />
         </div>
       </div>
       <div v-if="hasSelectedFilters" class="selected-conditions mt-2">
@@ -828,9 +837,6 @@ onMounted(async () => {
             共 {{ pagination.total }} 条信息
           </div>
           <div class="edit flex">
-            <a-button class="mr-2" :loading="exporting" @click="handleExport">
-              导出数据
-            </a-button>
             <a-dropdown class="mr-2">
               <template #overlay>
                 <a-menu @click="handleBatchMenuClick">
@@ -847,6 +853,12 @@ onMounted(async () => {
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
             </a-dropdown>
+            <a-button type="primary" class="mr-2" @click="handleCreateLedger">
+              记一笔
+            </a-button>
+            <a-button class="mr-2" :loading="exporting" @click="handleExport">
+              导出数据
+            </a-button>
             <customize-code
               v-model:checked-values="selectedValues" :options="columnOptions"
               :total="allColumns.length - 1" :num="selectedValues.length"

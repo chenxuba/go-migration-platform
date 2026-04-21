@@ -714,7 +714,12 @@ onMounted(async () => {
             @on-dropdown-visible-change="loadStaffOptions"
             @on-search="loadStaffOptions"
           />
-          <checkbox-filter v-model:checked-values="filterState.confirmTime" label="确认时间" type="dateSelectType" />
+          <checkbox-filter
+            v-model:checked-values="filterState.confirmTime"
+            label="确认时间"
+            type="dateTimeQuick"
+            :disable-future-date="true"
+          />
         </div>
       </div>
       <div v-if="hasSelectedFilters" class="selected-conditions mt-2">
