@@ -81,6 +81,14 @@ type weChatAPIError struct {
 	ErrMsg  string `json:"errmsg"`
 }
 
+type weChatOfficialUserInfoResponse struct {
+	Subscribe int    `json:"subscribe"`
+	OpenID    string `json:"openid"`
+	UnionID   string `json:"unionid"`
+	ErrCode   int    `json:"errcode"`
+	ErrMsg    string `json:"errmsg"`
+}
+
 func newWeChatOfficialClient(cfg WeChatOfficialConfig) *weChatOfficialClient {
 	cfg.AppID = strings.TrimSpace(cfg.AppID)
 	cfg.Secret = strings.TrimSpace(cfg.Secret)
@@ -428,6 +436,55 @@ func (client *weChatOfficialClient) invalidateAccessToken() {
 
 	client.accessToken = ""
 	client.accessTokenExp = time.Time{}
+}
+
+func (client *weChatOfficialClient) getUserInfo(ctx context.Context, openID string) (weChatOfficialUserInfoResponse, error) {
+	openID = strings.TrimSpace(openID)
+	if !client.isEnabled() {
+		return weChatOfficialUserInfoResponse{}, errors.New("公众号回调未配置")
+	}
+	if openID == "" {
+		return weChatOfficialUserInfoResponse{}, errors.New("get official user info failed: empty openid")
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		token, err := client.getAccessToken(ctx)
+		if err != nil {
+			return weChatOfficialUserInfoResponse{}, err
+		}
+
+		values := url.Values{}
+		values.Set("access_token", token)
+		values.Set("openid", openID)
+		values.Set("lang", "zh_CN")
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, client.apiBaseURL+"/cgi-bin/user/info?"+values.Encode(), nil)
+		if err != nil {
+			return weChatOfficialUserInfoResponse{}, err
+		}
+
+		resp, err := client.httpClient.Do(req)
+		if err != nil {
+			return weChatOfficialUserInfoResponse{}, err
+		}
+
+		var payload weChatOfficialUserInfoResponse
+		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
+		resp.Body.Close()
+		if decodeErr != nil {
+			return weChatOfficialUserInfoResponse{}, decodeErr
+		}
+		if payload.ErrCode == 40001 && attempt == 0 {
+			client.invalidateAccessToken()
+			continue
+		}
+		if payload.ErrCode != 0 {
+			return weChatOfficialUserInfoResponse{}, fmt.Errorf("get official user info failed: %d %s", payload.ErrCode, payload.ErrMsg)
+		}
+		return payload, nil
+	}
+
+	return weChatOfficialUserInfoResponse{}, errors.New("get official user info failed: retry exhausted")
 }
 
 func (client *weChatOfficialClient) sendMiniProgramCard(ctx context.Context, openID, pagePath string) error {

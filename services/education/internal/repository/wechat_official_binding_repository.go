@@ -38,6 +38,15 @@ type WeChatOfficialUserFollowStatus struct {
 	LastUnsubscribeTime *time.Time
 }
 
+type weChatOfficialUserLinkRow struct {
+	ID             int64
+	OfficialOpenID string
+	MiniOpenID     string
+	UnionID        string
+	Phone          string
+	Subscribed     bool
+}
+
 func ensureWeChatOfficialBindingTables(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS wechat_official_bind_ticket (
@@ -301,35 +310,7 @@ func (repo *Repository) UpsertWeChatOfficialStudentBinding(ctx context.Context, 
 }
 
 func (repo *Repository) UpsertWeChatOfficialUserLinkByOfficialProfile(ctx context.Context, officialOpenID, unionID string, subscribed bool) error {
-	officialOpenID = strings.TrimSpace(officialOpenID)
-	if officialOpenID == "" {
-		return nil
-	}
-
-	subscribedValue := 0
-	if subscribed {
-		subscribedValue = 1
-	}
-
-	_, err := repo.db.ExecContext(ctx, `
-		INSERT INTO wechat_official_user_link (
-			official_openid, unionid, subscribed, last_subscribe_time, last_unsubscribe_time, create_time, update_time
-		) VALUES (?, ?, ?, CASE WHEN ? = 1 THEN NOW() ELSE NULL END, CASE WHEN ? = 0 THEN NOW() ELSE NULL END, NOW(), NOW())
-		ON DUPLICATE KEY UPDATE
-			official_openid = CASE WHEN VALUES(official_openid) IS NULL THEN official_openid ELSE VALUES(official_openid) END,
-			unionid = CASE WHEN VALUES(unionid) IS NULL THEN unionid ELSE VALUES(unionid) END,
-			subscribed = VALUES(subscribed),
-			last_subscribe_time = CASE WHEN VALUES(subscribed) = 1 THEN NOW() ELSE last_subscribe_time END,
-			last_unsubscribe_time = CASE WHEN VALUES(subscribed) = 0 THEN NOW() ELSE last_unsubscribe_time END,
-			update_time = NOW()
-	`,
-		nullableTrimmedString(officialOpenID),
-		nullableTrimmedString(unionID),
-		subscribedValue,
-		subscribedValue,
-		subscribedValue,
-	)
-	return err
+	return repo.upsertWeChatOfficialUserLinkMerged(ctx, officialOpenID, "", unionID, "", subscribed)
 }
 
 func (repo *Repository) UpsertWeChatOfficialUserLinkByMiniProfile(ctx context.Context, miniOpenID, unionID, phone string) error {
@@ -358,6 +339,30 @@ func (repo *Repository) UpsertWeChatOfficialUserLinkByMiniProfile(ctx context.Co
 }
 
 func (repo *Repository) UpsertWeChatOfficialUserLink(ctx context.Context, officialOpenID, miniOpenID, unionID, phone string, subscribed bool) error {
+	return repo.upsertWeChatOfficialUserLinkMerged(ctx, officialOpenID, miniOpenID, unionID, phone, subscribed)
+}
+
+func (repo *Repository) RepairWeChatOfficialUserLinkByPhone(ctx context.Context, miniOpenID, unionID, phone string) error {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return nil
+	}
+
+	record, err := repo.findSubscribedWeChatOfficialUserLinkByPhone(ctx, phone)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+	if strings.TrimSpace(record.OfficialOpenID) == "" {
+		return nil
+	}
+
+	return repo.upsertWeChatOfficialUserLinkMerged(ctx, record.OfficialOpenID, miniOpenID, unionID, phone, true)
+}
+
+func (repo *Repository) upsertWeChatOfficialUserLinkMerged(ctx context.Context, officialOpenID, miniOpenID, unionID, phone string, subscribed bool) error {
 	officialOpenID = strings.TrimSpace(officialOpenID)
 	miniOpenID = strings.TrimSpace(miniOpenID)
 	unionID = strings.TrimSpace(unionID)
@@ -366,12 +371,27 @@ func (repo *Repository) UpsertWeChatOfficialUserLink(ctx context.Context, offici
 		return nil
 	}
 
-	subscribedValue := 0
-	if subscribed {
-		subscribedValue = 1
+	officialRow, err := repo.findWeChatOfficialUserLinkByOfficialOpenID(ctx, officialOpenID)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	miniRow, err := repo.findWeChatOfficialUserLinkByMiniIdentity(ctx, miniOpenID, unionID)
+	if err != nil && err != sql.ErrNoRows {
+		return err
 	}
 
-	_, err := repo.db.ExecContext(ctx, `
+	finalOfficialOpenID := firstNonEmptyTrimmedString(officialOpenID, officialRow.OfficialOpenID, miniRow.OfficialOpenID)
+	finalMiniOpenID := firstNonEmptyTrimmedString(miniOpenID, officialRow.MiniOpenID, miniRow.MiniOpenID)
+	finalUnionID := firstNonEmptyTrimmedString(unionID, officialRow.UnionID, miniRow.UnionID)
+	finalPhone := firstNonEmptyTrimmedString(phone, officialRow.Phone, miniRow.Phone)
+
+	if officialRow.ID <= 0 && miniRow.ID <= 0 {
+		subscribedValue := 0
+		if subscribed {
+			subscribedValue = 1
+		}
+
+		_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO wechat_official_user_link (
 			official_openid, mini_openid, unionid, phone, subscribed, last_subscribe_time, last_unsubscribe_time, create_time, update_time
 		) VALUES (?, ?, ?, ?, ?, CASE WHEN ? = 1 THEN NOW() ELSE NULL END, CASE WHEN ? = 0 THEN NOW() ELSE NULL END, NOW(), NOW())
@@ -384,16 +404,229 @@ func (repo *Repository) UpsertWeChatOfficialUserLink(ctx context.Context, offici
 			last_subscribe_time = CASE WHEN VALUES(subscribed) = 1 THEN NOW() ELSE last_subscribe_time END,
 			last_unsubscribe_time = CASE WHEN VALUES(subscribed) = 0 THEN NOW() ELSE last_unsubscribe_time END,
 			update_time = NOW()
+		`,
+			nullableTrimmedString(finalOfficialOpenID),
+			nullableTrimmedString(finalMiniOpenID),
+			nullableTrimmedString(finalUnionID),
+			finalPhone,
+			subscribedValue,
+			subscribedValue,
+			subscribedValue,
+		)
+		return err
+	}
+
+	target := officialRow
+	source := miniRow
+	if target.ID <= 0 {
+		target = miniRow
+		source = weChatOfficialUserLinkRow{}
+	}
+	if target.ID > 0 && !canMergeWeChatOfficialUserLinkRow(target, finalOfficialOpenID, finalMiniOpenID, finalUnionID) {
+		return fmt.Errorf("wechat official user link conflict for official_openid=%s", finalOfficialOpenID)
+	}
+	if source.ID > 0 && source.ID != target.ID && strings.TrimSpace(source.OfficialOpenID) != "" && strings.TrimSpace(source.OfficialOpenID) != finalOfficialOpenID {
+		return fmt.Errorf("wechat official user link conflict for mini_openid=%s", finalMiniOpenID)
+	}
+
+	if source.ID > 0 && source.ID != target.ID {
+		if err := repo.detachWeChatOfficialUserLinkMiniIdentity(ctx, source.ID); err != nil {
+			return err
+		}
+	}
+	if err := repo.updateWeChatOfficialUserLinkByID(ctx, target.ID, finalOfficialOpenID, finalMiniOpenID, finalUnionID, finalPhone, subscribed); err != nil {
+		return err
+	}
+	if source.ID > 0 && source.ID != target.ID {
+		if err := repo.deleteWeChatOfficialUserLinkIfDetached(ctx, source.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) findWeChatOfficialUserLinkByOfficialOpenID(ctx context.Context, officialOpenID string) (weChatOfficialUserLinkRow, error) {
+	officialOpenID = strings.TrimSpace(officialOpenID)
+	if officialOpenID == "" {
+		return weChatOfficialUserLinkRow{}, sql.ErrNoRows
+	}
+
+	return repo.findWeChatOfficialUserLinkRow(ctx, `
+		SELECT
+			id,
+			IFNULL(official_openid, ''),
+			IFNULL(mini_openid, ''),
+			IFNULL(unionid, ''),
+			IFNULL(phone, ''),
+			IFNULL(subscribed, 0)
+		FROM wechat_official_user_link
+		WHERE official_openid = ?
+		LIMIT 1
+	`, officialOpenID)
+}
+
+func (repo *Repository) findWeChatOfficialUserLinkByMiniIdentity(ctx context.Context, miniOpenID, unionID string) (weChatOfficialUserLinkRow, error) {
+	miniOpenID = strings.TrimSpace(miniOpenID)
+	unionID = strings.TrimSpace(unionID)
+
+	if miniOpenID != "" {
+		record, err := repo.findWeChatOfficialUserLinkRow(ctx, `
+			SELECT
+				id,
+				IFNULL(official_openid, ''),
+				IFNULL(mini_openid, ''),
+				IFNULL(unionid, ''),
+				IFNULL(phone, ''),
+				IFNULL(subscribed, 0)
+			FROM wechat_official_user_link
+			WHERE mini_openid = ?
+			LIMIT 1
+		`, miniOpenID)
+		if err == nil {
+			return record, nil
+		}
+		if err != sql.ErrNoRows {
+			return weChatOfficialUserLinkRow{}, err
+		}
+	}
+
+	if unionID != "" {
+		return repo.findWeChatOfficialUserLinkRow(ctx, `
+			SELECT
+				id,
+				IFNULL(official_openid, ''),
+				IFNULL(mini_openid, ''),
+				IFNULL(unionid, ''),
+				IFNULL(phone, ''),
+				IFNULL(subscribed, 0)
+			FROM wechat_official_user_link
+			WHERE unionid = ?
+			LIMIT 1
+		`, unionID)
+	}
+
+	return weChatOfficialUserLinkRow{}, sql.ErrNoRows
+}
+
+func (repo *Repository) findSubscribedWeChatOfficialUserLinkByPhone(ctx context.Context, phone string) (weChatOfficialUserLinkRow, error) {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return weChatOfficialUserLinkRow{}, sql.ErrNoRows
+	}
+
+	return repo.findWeChatOfficialUserLinkRow(ctx, `
+		SELECT
+			id,
+			IFNULL(official_openid, ''),
+			IFNULL(mini_openid, ''),
+			IFNULL(unionid, ''),
+			IFNULL(phone, ''),
+			IFNULL(subscribed, 0)
+		FROM wechat_official_user_link
+		WHERE phone = ? AND subscribed = 1 AND IFNULL(official_openid, '') <> ''
+		ORDER BY update_time DESC, id DESC
+		LIMIT 1
+	`, phone)
+}
+
+func (repo *Repository) findWeChatOfficialUserLinkRow(ctx context.Context, query string, args ...any) (weChatOfficialUserLinkRow, error) {
+	var record weChatOfficialUserLinkRow
+	var subscribed int
+	err := repo.db.QueryRowContext(ctx, query, args...).Scan(
+		&record.ID,
+		&record.OfficialOpenID,
+		&record.MiniOpenID,
+		&record.UnionID,
+		&record.Phone,
+		&subscribed,
+	)
+	if err != nil {
+		return weChatOfficialUserLinkRow{}, err
+	}
+	record.Subscribed = subscribed != 0
+	return record, nil
+}
+
+func (repo *Repository) updateWeChatOfficialUserLinkByID(ctx context.Context, rowID int64, officialOpenID, miniOpenID, unionID, phone string, subscribed bool) error {
+	subscribedValue := 0
+	if subscribed {
+		subscribedValue = 1
+	}
+
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE wechat_official_user_link
+		SET official_openid = CASE WHEN ? = '' THEN official_openid ELSE ? END,
+			mini_openid = CASE WHEN ? = '' THEN mini_openid ELSE ? END,
+			unionid = CASE WHEN ? = '' THEN unionid ELSE ? END,
+			phone = CASE WHEN ? = '' THEN phone ELSE ? END,
+			subscribed = ?,
+			last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
+			last_unsubscribe_time = CASE WHEN ? = 0 THEN NOW() ELSE last_unsubscribe_time END,
+			update_time = NOW()
+		WHERE id = ?
 	`,
+		officialOpenID,
 		nullableTrimmedString(officialOpenID),
+		miniOpenID,
 		nullableTrimmedString(miniOpenID),
+		unionID,
 		nullableTrimmedString(unionID),
+		phone,
 		phone,
 		subscribedValue,
 		subscribedValue,
 		subscribedValue,
+		rowID,
 	)
 	return err
+}
+
+func (repo *Repository) detachWeChatOfficialUserLinkMiniIdentity(ctx context.Context, rowID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE wechat_official_user_link
+		SET mini_openid = NULL,
+			unionid = NULL,
+			update_time = NOW()
+		WHERE id = ? AND IFNULL(official_openid, '') = ''
+	`, rowID)
+	return err
+}
+
+func (repo *Repository) deleteWeChatOfficialUserLinkIfDetached(ctx context.Context, rowID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		DELETE FROM wechat_official_user_link
+		WHERE id = ?
+		  AND official_openid IS NULL
+		  AND mini_openid IS NULL
+		  AND unionid IS NULL
+	`, rowID)
+	return err
+}
+
+func canMergeWeChatOfficialUserLinkRow(row weChatOfficialUserLinkRow, officialOpenID, miniOpenID, unionID string) bool {
+	if row.ID <= 0 {
+		return true
+	}
+	if officialOpenID != "" && strings.TrimSpace(row.OfficialOpenID) != "" && strings.TrimSpace(row.OfficialOpenID) != officialOpenID {
+		return false
+	}
+	if miniOpenID != "" && strings.TrimSpace(row.MiniOpenID) != "" && strings.TrimSpace(row.MiniOpenID) != miniOpenID {
+		return false
+	}
+	if unionID != "" && strings.TrimSpace(row.UnionID) != "" && strings.TrimSpace(row.UnionID) != unionID {
+		return false
+	}
+	return true
+}
+
+func firstNonEmptyTrimmedString(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (repo *Repository) UpdateWeChatOfficialBindingSubscriptionByOpenID(ctx context.Context, officialOpenID string, subscribed bool) ([]int64, error) {

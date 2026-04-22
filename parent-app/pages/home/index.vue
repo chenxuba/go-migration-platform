@@ -223,12 +223,21 @@ const officialBarDesc = computed(() => {
 	return '关注公众号后才能稳定接收在校通知'
 })
 const campusTitle = computed(() => {
+	if (!isAuthenticated.value && !showOfficialBindAction.value) {
+		return '家长端服务'
+	}
 	return buildCampusTitle(currentCampus.value)
 })
 const campusSubtitle = computed(() => {
+	if (!isAuthenticated.value && !showOfficialBindAction.value) {
+		return '授权手机号后查看学员课表、记录和通知'
+	}
 	return buildCampusSubtitle(currentCampus.value)
 })
 const campusLogoText = computed(() => {
+	if (!isAuthenticated.value && !showOfficialBindAction.value) {
+		return '家'
+	}
 	const title = campusTitle.value || currentCampus.value?.shortName || '校'
 	return `${title}`.slice(0, 1)
 })

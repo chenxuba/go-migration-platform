@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"go-migration-platform/pkg/logx"
 	"go-migration-platform/services/education/internal/model"
 	"go-migration-platform/services/education/internal/repository"
 )
@@ -53,7 +54,20 @@ func (svc *Service) syncWeChatOfficialSubscription(ctx context.Context, openID s
 		return nil
 	}
 
-	if err := svc.repo.UpsertWeChatOfficialUserLinkByOfficialProfile(ctx, openID, "", subscribed); err != nil {
+	unionID := ""
+	if subscribed && svc.wechatOfficial != nil {
+		profile, err := svc.wechatOfficial.getUserInfo(ctx, openID)
+		if err != nil {
+			logx.Error("wechat official get user info during subscription sync failed", logx.Entry{
+				"openid": strings.TrimSpace(openID),
+				"error":  err.Error(),
+			})
+		} else {
+			unionID = strings.TrimSpace(profile.UnionID)
+		}
+	}
+
+	if err := svc.repo.UpsertWeChatOfficialUserLinkByOfficialProfile(ctx, openID, unionID, subscribed); err != nil {
 		return err
 	}
 

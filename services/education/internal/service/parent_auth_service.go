@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"sort"
@@ -53,12 +54,19 @@ func (svc *Service) ParentWeChatLogin(ctx context.Context, tenantID string, dto 
 	if err := svc.repo.UpsertWeChatOfficialUserLinkByMiniProfile(ctx, session.OpenID, session.UnionID, phone); err != nil {
 		return model.ParentWeChatLoginVO{}, err
 	}
+	linkedByOfficialEntry := false
 	if bindTicket := strings.TrimSpace(dto.BindTicket); bindTicket != "" {
 		record, err := svc.getWeChatOfficialBindTicket(ctx, bindTicket)
 		if err == nil {
 			if err := svc.repo.UpsertWeChatOfficialUserLink(ctx, record.OfficialOpenID, session.OpenID, session.UnionID, phone, true); err != nil {
 				return model.ParentWeChatLoginVO{}, err
 			}
+			linkedByOfficialEntry = true
+		}
+	}
+	if !linkedByOfficialEntry {
+		if err := svc.repo.RepairWeChatOfficialUserLinkByPhone(ctx, session.OpenID, session.UnionID, phone); err != nil {
+			return model.ParentWeChatLoginVO{}, err
 		}
 	}
 
@@ -262,7 +270,62 @@ func (svc *Service) ConfirmParentStudentsByPhone(ctx context.Context, phone stri
 		return model.ParentStudentLookupByPhoneVO{}, errors.New("手机号不能为空")
 	}
 
-	if err := svc.repo.ConfirmParentStudentsByPhone(ctx, phone, dto.StudentIDs); err != nil {
+	userLink, err := svc.repo.GetSubscribedWeChatOfficialUserLinkByPhone(ctx, phone)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ParentStudentLookupByPhoneVO{}, errors.New("请先关注公众号后再绑定学员")
+		}
+		return model.ParentStudentLookupByPhoneVO{}, err
+	}
+	if strings.TrimSpace(userLink.OfficialOpenID) == "" {
+		return model.ParentStudentLookupByPhoneVO{}, errors.New("请从公众号消息卡片进入后再绑定学员")
+	}
+
+	normalizedIDs := make([]int64, 0, len(dto.StudentIDs))
+	seen := make(map[int64]struct{}, len(dto.StudentIDs))
+	for _, studentID := range dto.StudentIDs {
+		if studentID <= 0 {
+			continue
+		}
+		if _, exists := seen[studentID]; exists {
+			continue
+		}
+		seen[studentID] = struct{}{}
+		normalizedIDs = append(normalizedIDs, studentID)
+	}
+	if len(normalizedIDs) == 0 {
+		return model.ParentStudentLookupByPhoneVO{}, errors.New("请选择至少一位学员")
+	}
+
+	for _, studentID := range normalizedIDs {
+		student, instID, err := svc.repo.GetStudentBaseInfo(ctx, studentID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return model.ParentStudentLookupByPhoneVO{}, errors.New("学员不存在")
+			}
+			return model.ParentStudentLookupByPhoneVO{}, err
+		}
+		if normalizeParentPhone(student.Mobile) != phone {
+			return model.ParentStudentLookupByPhoneVO{}, errors.New("存在无效学员，或该学员不属于当前手机号")
+		}
+		if err := svc.repo.UpsertWeChatOfficialStudentBinding(
+			ctx,
+			instID,
+			studentID,
+			userLink.OfficialOpenID,
+			userLink.MiniOpenID,
+			userLink.UnionID,
+			phone,
+			"",
+			true,
+		); err != nil {
+			return model.ParentStudentLookupByPhoneVO{}, err
+		}
+		if err := svc.repo.RefreshStudentBindChildStatus(ctx, studentID); err != nil {
+			return model.ParentStudentLookupByPhoneVO{}, err
+		}
+	}
+	if err := svc.repo.RefreshStudentBindChildStatusByPhone(ctx, phone); err != nil {
 		return model.ParentStudentLookupByPhoneVO{}, err
 	}
 

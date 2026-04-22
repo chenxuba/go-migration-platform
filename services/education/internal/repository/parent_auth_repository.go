@@ -2,8 +2,7 @@ package repository
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	"database/sql"
 	"strings"
 )
 
@@ -26,16 +25,33 @@ type ParentStudentScheduleAliasRecord struct {
 	AvatarURL     string
 }
 
+type ParentWeChatOfficialUserLinkRecord struct {
+	OfficialOpenID string
+	MiniOpenID     string
+	UnionID        string
+	Phone          string
+}
+
 func (repo *Repository) ListParentStudentCandidatesByPhone(ctx context.Context, phone string) ([]ParentStudentLookupRecord, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), IFNULL(s.mobile, ''),
-		       IFNULL(s.student_status, 0), IFNULL(s.phone_relationship, 0), IFNULL(s.is_bind_child, 0),
+		       IFNULL(s.student_status, 0), IFNULL(s.phone_relationship, 0),
+		       CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END AS is_bound,
 		       IFNULL(i.organ_name, ''), IFNULL(i.logo, '')
 		FROM inst_student s
 		LEFT JOIN org_institution i ON i.id = s.inst_id
-		WHERE s.del_flag = 0 AND IFNULL(s.mobile, '') = ?
-		ORDER BY s.create_time DESC, s.id DESC
-	`, strings.TrimSpace(phone))
+		LEFT JOIN (
+			SELECT DISTINCT inst_id, student_id
+			FROM wechat_official_student_binding
+			WHERE phone = ? AND subscribed = 1
+		) bound ON bound.inst_id = s.inst_id AND bound.student_id = s.id
+		WHERE s.del_flag = 0
+		  AND (IFNULL(s.mobile, '') = ? OR bound.student_id IS NOT NULL)
+		ORDER BY
+			CASE WHEN bound.student_id IS NULL THEN 1 ELSE 0 END ASC,
+			s.create_time DESC,
+			s.id DESC
+	`, strings.TrimSpace(phone), strings.TrimSpace(phone))
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +79,38 @@ func (repo *Repository) ListParentStudentCandidatesByPhone(ctx context.Context, 
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (repo *Repository) GetSubscribedWeChatOfficialUserLinkByPhone(ctx context.Context, phone string) (ParentWeChatOfficialUserLinkRecord, error) {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return ParentWeChatOfficialUserLinkRecord{}, sql.ErrNoRows
+	}
+
+	var item ParentWeChatOfficialUserLinkRecord
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT
+			IFNULL(official_openid, ''),
+			IFNULL(mini_openid, ''),
+			IFNULL(unionid, ''),
+			IFNULL(phone, '')
+		FROM wechat_official_user_link
+		WHERE phone = ? AND subscribed = 1
+		ORDER BY
+			CASE WHEN IFNULL(official_openid, '') = '' THEN 1 ELSE 0 END ASC,
+			update_time DESC,
+			id DESC
+		LIMIT 1
+	`, phone).Scan(
+		&item.OfficialOpenID,
+		&item.MiniOpenID,
+		&item.UnionID,
+		&item.Phone,
+	)
+	if err != nil {
+		return ParentWeChatOfficialUserLinkRecord{}, err
+	}
+	return item, nil
 }
 
 func (repo *Repository) ListParentStudentScheduleAliases(ctx context.Context, instID int64, studentName string, excludeStudentID int64) ([]ParentStudentScheduleAliasRecord, error) {
@@ -108,61 +156,4 @@ func (repo *Repository) ListParentStudentScheduleAliases(ctx context.Context, in
 		items = append(items, item)
 	}
 	return items, rows.Err()
-}
-
-func (repo *Repository) ConfirmParentStudentsByPhone(ctx context.Context, phone string, studentIDs []int64) error {
-	phone = strings.TrimSpace(phone)
-	if phone == "" {
-		return errors.New("手机号不能为空")
-	}
-
-	normalizedIDs := make([]int64, 0, len(studentIDs))
-	seen := make(map[int64]struct{}, len(studentIDs))
-	for _, studentID := range studentIDs {
-		if studentID <= 0 {
-			continue
-		}
-		if _, exists := seen[studentID]; exists {
-			continue
-		}
-		seen[studentID] = struct{}{}
-		normalizedIDs = append(normalizedIDs, studentID)
-	}
-	if len(normalizedIDs) == 0 {
-		return errors.New("请选择至少一位学员")
-	}
-
-	placeholders := make([]string, 0, len(normalizedIDs))
-	args := make([]any, 0, len(normalizedIDs)+1)
-	args = append(args, phone)
-	for _, studentID := range normalizedIDs {
-		placeholders = append(placeholders, "?")
-		args = append(args, studentID)
-	}
-
-	querySuffix := fmt.Sprintf(" AND id IN (%s)", strings.Join(placeholders, ","))
-
-	var matchedCount int
-	if err := repo.db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM inst_student
-		WHERE del_flag = 0 AND IFNULL(mobile, '') = ?`+querySuffix,
-		args...,
-	).Scan(&matchedCount); err != nil {
-		return err
-	}
-	if matchedCount != len(normalizedIDs) {
-		return errors.New("存在无效学员，或该学员不属于当前手机号")
-	}
-
-	updateArgs := make([]any, 0, len(args))
-	updateArgs = append(updateArgs, args...)
-	_, err := repo.db.ExecContext(ctx, `
-		UPDATE inst_student
-		SET is_bind_child = 1,
-			update_time = NOW()
-		WHERE del_flag = 0 AND IFNULL(mobile, '') = ?`+querySuffix,
-		updateArgs...,
-	)
-	return err
 }
