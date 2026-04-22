@@ -124,7 +124,7 @@ func TestSyncWeChatOfficialSubscription_SubscribeBackfillsUnionIDFromOfficialPro
 		AppID:       "appid",
 		Secret:      "secret",
 		Token:       "token",
-		AccountName: "公众号",
+		AccountName: "irts家校云",
 	})
 	svc.wechatOfficial.apiBaseURL = server.URL
 	svc.wechatOfficial.httpClient = server.Client()

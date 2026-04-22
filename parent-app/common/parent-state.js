@@ -31,7 +31,7 @@ function createInitialWeChatOfficialBindPreview() {
 function createInitialWeChatOfficialStatus() {
 	return {
 		subscribed: false,
-		officialAccountName: '公众号',
+		officialAccountName: 'irts家校云',
 		needFollowGuide: false,
 		boundStudentCount: 0,
 		subscribedBindCount: 0,
@@ -586,7 +586,7 @@ function normalizeWeChatOfficialBindPreview(preview = {}) {
 function normalizeWeChatOfficialStatus(status = {}) {
 	return {
 		subscribed: !!status?.subscribed,
-		officialAccountName: `${status?.officialAccountName || '公众号'}`.trim() || '公众号',
+		officialAccountName: `${status?.officialAccountName || 'irts家校云'}`.trim() || 'irts家校云',
 		needFollowGuide: !!status?.needFollowGuide,
 		boundStudentCount: Number(status?.boundStudentCount || 0),
 		subscribedBindCount: Number(status?.subscribedBindCount || 0),

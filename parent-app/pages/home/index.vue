@@ -174,7 +174,7 @@ const officialBindTicket = computed(() => `${parentState.officialBindTicket || '
 const officialBindPreview = computed(() => parentState.officialBindPreview || {})
 const hasActiveOfficialBinding = computed(() => hasActiveWeChatOfficialBinding())
 const showOfficialBindAction = computed(() => hasActiveOfficialBinding.value)
-const officialAccountName = computed(() => officialStatus.value?.officialAccountName || '公众号')
+const officialAccountName = computed(() => officialStatus.value?.officialAccountName || 'irts家校云')
 const institutionName = computed(() => officialBindPreview.value?.institutionName || campusTitle.value || '当前机构')
 const showOfficialGuide = computed(() => {
 	if (parentState.officialGuideDismissed) {

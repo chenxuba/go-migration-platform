@@ -84,7 +84,7 @@ func Load(name, defaultPort string) ServiceConfig {
 		WeChatOfficialMiniProgramThumbMediaID: envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_THUMB_MEDIA_ID", "r5H2TtQwf0Oeeipv4BzaTxjpYU70i1bVcQeCjdTQXpg-cKPw7Q-sqfvqms_Mp7b5"),
 		WeChatOfficialMiniProgramTitle:        envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_TITLE", "为保证您能接收到机构各类通知，请点击立即绑定学员"),
 		WeChatOfficialTextContent:             envOrDefault("WECHAT_OFFICIAL_TEXT_CONTENT", "⚠️点击下方推送消息，立即关注学员⬇⬇⬇"),
-		WeChatOfficialAccountName:             envOrDefault("WECHAT_OFFICIAL_ACCOUNT_NAME", "公众号"),
+		WeChatOfficialAccountName:             envOrDefault("WECHAT_OFFICIAL_ACCOUNT_NAME", "irts家校云"),
 	}
 }
 

@@ -106,7 +106,7 @@ func newWeChatOfficialClient(cfg WeChatOfficialConfig) *weChatOfficialClient {
 		cfg.TextContent = "⚠️点击下方推送消息，立即绑定学员⬇⬇⬇"
 	}
 	if cfg.AccountName == "" {
-		cfg.AccountName = "公众号"
+		cfg.AccountName = "irts家校云"
 	}
 
 	return &weChatOfficialClient{
@@ -125,11 +125,11 @@ func newWeChatOfficialFollowMessageCache() *weChatOfficialFollowMessageCache {
 
 func (svc *Service) weChatOfficialAccountName() string {
 	if svc == nil || svc.wechatOfficial == nil {
-		return "公众号"
+		return "irts家校云"
 	}
 	value := strings.TrimSpace(svc.wechatOfficial.config.AccountName)
 	if value == "" {
-		return "公众号"
+		return "irts家校云"
 	}
 	return value
 }
