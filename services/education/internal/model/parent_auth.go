@@ -67,6 +67,15 @@ type ParentPendingStudentSummaryVO struct {
 	Candidates  []ParentStudentCandidateVO `json:"candidates"`
 }
 
+type ParentWeChatOfficialStatusVO struct {
+	Subscribed          bool   `json:"subscribed"`
+	OfficialAccountName string `json:"officialAccountName"`
+	NeedFollowGuide     bool   `json:"needFollowGuide"`
+	BoundStudentCount   int    `json:"boundStudentCount"`
+	SubscribedBindCount int    `json:"subscribedBindCount"`
+	LastUnsubscribeAt   string `json:"lastUnsubscribeAt,omitempty"`
+}
+
 type ParentScheduleVO struct {
 	ID               string `json:"id"`
 	ScheduleID       string `json:"scheduleId"`

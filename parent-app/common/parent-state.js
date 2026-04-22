@@ -14,11 +14,38 @@ const avatarPalette = ['#8fb7ff', '#7cc8ff', '#63d5b2', '#ffb26f', '#f59fb2', '#
 const PARENT_SESSION_STORAGE_KEY = 'parent_app_session'
 let hasRestoredParentSession = false
 
+function createInitialWeChatOfficialBindPreview() {
+	return {
+		bindTicket: '',
+		status: '',
+		institutionId: 0,
+		institutionName: '',
+		sceneValue: '',
+		sceneStudentId: 0,
+		expiresAt: '',
+		usedAt: '',
+		hasBoundStudent: false
+	}
+}
+
+function createInitialWeChatOfficialStatus() {
+	return {
+		subscribed: false,
+		officialAccountName: '公众号',
+		needFollowGuide: false,
+		boundStudentCount: 0,
+		subscribedBindCount: 0,
+		lastUnsubscribeAt: ''
+	}
+}
+
 function createInitialState() {
 	return {
 		authToken: '',
 		authLoading: false,
 		isAuthenticated: false,
+		miniOpenId: '',
+		unionId: '',
 		profile: {
 			nickname: '请登录',
 			phone: '',
@@ -38,7 +65,11 @@ function createInitialState() {
 		currentCampusId: campusList[0].id,
 		postAuthPage: '/pages/profile/index',
 		bindSuccessVisible: false,
-		latestBindStudentName: ''
+		latestBindStudentName: '',
+		officialBindTicket: '',
+		officialBindPreview: createInitialWeChatOfficialBindPreview(),
+		officialStatus: createInitialWeChatOfficialStatus(),
+		officialGuideDismissed: false
 	}
 }
 
@@ -123,8 +154,24 @@ export function dismissBindSuccess() {
 	parentState.bindSuccessVisible = false
 }
 
-export function logoutParent() {
+export function logoutParent(options = {}) {
+	const preserveOfficialBinding = !!options?.preserveOfficialBinding
+	const officialSnapshot = preserveOfficialBinding
+		? {
+			officialBindTicket: parentState.officialBindTicket,
+			officialBindPreview: normalizeWeChatOfficialBindPreview(parentState.officialBindPreview),
+			officialGuideDismissed: parentState.officialGuideDismissed
+		}
+		: null
+
 	Object.assign(parentState, createInitialState())
+	if (officialSnapshot) {
+		parentState.officialBindTicket = officialSnapshot.officialBindTicket
+		parentState.officialBindPreview = officialSnapshot.officialBindPreview
+		parentState.officialGuideDismissed = officialSnapshot.officialGuideDismissed
+		persistParentSession()
+		return
+	}
 	clearParentSession()
 }
 
@@ -138,6 +185,65 @@ export function setAuthLoading(loading) {
 
 export function applyParentAuthSession(session = {}) {
 	applyAuthSession(session)
+}
+
+export function setWeChatOfficialBindTicket(bindTicket = '') {
+	const nextTicket = `${bindTicket || ''}`.trim()
+	if (!nextTicket) {
+		parentState.officialBindTicket = ''
+		parentState.officialBindPreview = createInitialWeChatOfficialBindPreview()
+		parentState.officialGuideDismissed = false
+		persistParentSession()
+		return
+	}
+
+	const previousTicket = `${parentState.officialBindTicket || ''}`.trim()
+	parentState.officialBindTicket = nextTicket
+	if (previousTicket !== nextTicket) {
+		parentState.officialBindPreview = createInitialWeChatOfficialBindPreview()
+		parentState.officialGuideDismissed = false
+	}
+	persistParentSession()
+}
+
+export function applyWeChatOfficialBindPreview(preview = {}) {
+	const normalizedPreview = normalizeWeChatOfficialBindPreview(preview)
+	if (normalizedPreview.bindTicket) {
+		parentState.officialBindTicket = normalizedPreview.bindTicket
+	}
+	parentState.officialBindPreview = normalizedPreview
+	persistParentSession()
+}
+
+export function applyWeChatOfficialStatus(status = {}) {
+	const normalizedStatus = normalizeWeChatOfficialStatus(status)
+	const previousNeedFollowGuide = !!parentState.officialStatus?.needFollowGuide
+	parentState.officialStatus = normalizedStatus
+	if (normalizedStatus.needFollowGuide && !previousNeedFollowGuide) {
+		parentState.officialGuideDismissed = false
+	}
+	persistParentSession()
+}
+
+export function dismissWeChatOfficialGuide() {
+	parentState.officialGuideDismissed = true
+	persistParentSession()
+}
+
+export function clearWeChatOfficialBinding() {
+	parentState.officialBindTicket = ''
+	parentState.officialBindPreview = createInitialWeChatOfficialBindPreview()
+	parentState.officialGuideDismissed = false
+	persistParentSession()
+}
+
+export function hasActiveWeChatOfficialBinding() {
+	const bindTicket = `${parentState.officialBindTicket || ''}`.trim()
+	if (!bindTicket) {
+		return false
+	}
+	const status = `${parentState.officialBindPreview?.status || ''}`.trim()
+	return !status || status === 'pending'
 }
 
 export function applyParentStudentLookup(lookup = {}) {
@@ -201,14 +307,16 @@ export function restoreParentSession() {
 	hasRestoredParentSession = true
 
 	const saved = readParentSession()
-	if (!saved || !saved.isAuthenticated) {
+	if (!saved) {
 		return false
 	}
 
 	const nextState = createInitialState()
 	nextState.authToken = `${saved.authToken || ''}`.trim()
 	nextState.isAuthenticated = !!saved.isAuthenticated
-	nextState.profile = normalizeProfile(saved.profile)
+	nextState.miniOpenId = `${saved.miniOpenId || ''}`.trim()
+	nextState.unionId = `${saved.unionId || ''}`.trim()
+	nextState.profile = nextState.isAuthenticated ? normalizeProfile(saved.profile) : nextState.profile
 	nextState.pendingCandidates = normalizeCandidates(saved.pendingCandidates)
 	nextState.selectedCandidateIds = normalizeIDList(saved.selectedCandidateIds)
 	nextState.students = normalizeCandidates(saved.students)
@@ -218,6 +326,10 @@ export function restoreParentSession() {
 	nextState.postAuthPage = `${saved.postAuthPage || '/pages/profile/index'}`.trim() || '/pages/profile/index'
 	nextState.bindSuccessVisible = false
 	nextState.latestBindStudentName = ''
+	nextState.officialBindTicket = `${saved.officialBindTicket || ''}`.trim()
+	nextState.officialBindPreview = normalizeWeChatOfficialBindPreview(saved.officialBindPreview)
+	nextState.officialStatus = normalizeWeChatOfficialStatus(saved.officialStatus)
+	nextState.officialGuideDismissed = !!saved.officialGuideDismissed
 	reconcileRestoredState(nextState)
 
 	Object.assign(parentState, nextState)
@@ -262,6 +374,8 @@ function applyCandidateSnapshot(session = {}) {
 
 	parentState.authToken = nextToken
 	parentState.isAuthenticated = true
+	parentState.miniOpenId = `${session.miniOpenId || ''}`.trim()
+	parentState.unionId = `${session.unionId || ''}`.trim()
 	parentState.profile = {
 		nickname,
 		phone: `${session.phone || ''}`.trim(),
@@ -439,6 +553,31 @@ function normalizeIDList(values = []) {
 	return (Array.isArray(values) ? values : []).map(item => `${item}`)
 }
 
+function normalizeWeChatOfficialBindPreview(preview = {}) {
+	return {
+		bindTicket: `${preview?.bindTicket || ''}`.trim(),
+		status: `${preview?.status || ''}`.trim(),
+		institutionId: Number(preview?.institutionId || 0),
+		institutionName: `${preview?.institutionName || ''}`.trim(),
+		sceneValue: `${preview?.sceneValue || ''}`.trim(),
+		sceneStudentId: Number(preview?.sceneStudentId || 0),
+		expiresAt: `${preview?.expiresAt || ''}`.trim(),
+		usedAt: `${preview?.usedAt || ''}`.trim(),
+		hasBoundStudent: !!preview?.hasBoundStudent
+	}
+}
+
+function normalizeWeChatOfficialStatus(status = {}) {
+	return {
+		subscribed: !!status?.subscribed,
+		officialAccountName: `${status?.officialAccountName || '公众号'}`.trim() || '公众号',
+		needFollowGuide: !!status?.needFollowGuide,
+		boundStudentCount: Number(status?.boundStudentCount || 0),
+		subscribedBindCount: Number(status?.subscribedBindCount || 0),
+		lastUnsubscribeAt: `${status?.lastUnsubscribeAt || ''}`.trim()
+	}
+}
+
 function normalizeCampusList(list = [], pending = [], students = []) {
 	const normalized = (Array.isArray(list) ? list : [])
 		.map(item => ({
@@ -501,6 +640,8 @@ function serializeParentSession() {
 	return {
 		authToken: parentState.authToken,
 		isAuthenticated: parentState.isAuthenticated,
+		miniOpenId: parentState.miniOpenId,
+		unionId: parentState.unionId,
 		profile: {
 			...parentState.profile
 		},
@@ -510,7 +651,15 @@ function serializeParentSession() {
 		students: parentState.students.map(item => ({ ...item })),
 		currentStudentId: parentState.currentStudentId,
 		currentCampusId: parentState.currentCampusId,
-		postAuthPage: parentState.postAuthPage
+		postAuthPage: parentState.postAuthPage,
+		officialBindTicket: parentState.officialBindTicket,
+		officialBindPreview: {
+			...parentState.officialBindPreview
+		},
+		officialStatus: {
+			...parentState.officialStatus
+		},
+		officialGuideDismissed: parentState.officialGuideDismissed
 	}
 }
 

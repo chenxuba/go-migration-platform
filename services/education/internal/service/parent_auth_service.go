@@ -171,6 +171,34 @@ func (svc *Service) ListParentPendingStudentsByPhone(ctx context.Context, phone 
 	}, nil
 }
 
+func (svc *Service) GetParentWeChatOfficialStatusByPhone(ctx context.Context, phone string) (model.ParentWeChatOfficialStatusVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentWeChatOfficialStatusVO{}, errors.New("家长端公众号状态查询服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentWeChatOfficialStatusVO{}, errors.New("手机号不能为空")
+	}
+
+	status, err := svc.repo.GetWeChatOfficialBindingStatusByPhone(ctx, phone)
+	if err != nil {
+		return model.ParentWeChatOfficialStatusVO{}, err
+	}
+
+	result := model.ParentWeChatOfficialStatusVO{
+		Subscribed:          status.SubscribedBindCount > 0,
+		OfficialAccountName: svc.weChatOfficialAccountName(),
+		BoundStudentCount:   status.BoundStudentCount,
+		SubscribedBindCount: status.SubscribedBindCount,
+	}
+	result.NeedFollowGuide = !result.Subscribed
+	if status.LastUnsubscribeTime != nil {
+		result.LastUnsubscribeAt = status.LastUnsubscribeTime.Format(time.RFC3339)
+	}
+	return result, nil
+}
+
 func (svc *Service) resolveParentStudentDisplayProfiles(ctx context.Context, rows []repository.ParentStudentLookupRecord) (map[int64]parentStudentDisplayProfile, error) {
 	profiles := make(map[int64]parentStudentDisplayProfile, len(rows))
 	for _, item := range rows {

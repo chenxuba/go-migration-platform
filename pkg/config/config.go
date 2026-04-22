@@ -41,6 +41,7 @@ type ServiceConfig struct {
 	WeChatOfficialMiniProgramThumbMediaID string
 	WeChatOfficialMiniProgramTitle        string
 	WeChatOfficialTextContent             string
+	WeChatOfficialAccountName             string
 }
 
 func Load(name, defaultPort string) ServiceConfig {
@@ -79,10 +80,11 @@ func Load(name, defaultPort string) ServiceConfig {
 		WeChatMiniProgramAppID:                envOrDefault("WECHAT_MINI_PROGRAM_APP_ID", envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_APP_ID", "wxd48d83d618bda279")),
 		WeChatMiniProgramSecret:               envOrDefault("WECHAT_MINI_PROGRAM_SECRET", envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_SECRET", "7c1dcb6ff32ca7bb95c7f38febe7ec55")),
 		WeChatOfficialMiniProgramAppID:        envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_APP_ID", "wxd48d83d618bda279"),
-		WeChatOfficialMiniProgramPagePath:     envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_PAGE_PATH", "pages/index/tabbar"),
-		WeChatOfficialMiniProgramThumbMediaID: envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_THUMB_MEDIA_ID", "r5H2TtQwf0Oeeipv4BzaT2POOXBaMWc5QSq3sPgz0C3fs71rIw9e4le6YdvqaSdN"),
+		WeChatOfficialMiniProgramPagePath:     envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_PAGE_PATH", "pages/home/index"),
+		WeChatOfficialMiniProgramThumbMediaID: envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_THUMB_MEDIA_ID", "r5H2TtQwf0Oeeipv4BzaTxjpYU70i1bVcQeCjdTQXpg-cKPw7Q-sqfvqms_Mp7b5"),
 		WeChatOfficialMiniProgramTitle:        envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_TITLE", "为保证您能接收到机构各类通知，请点击立即绑定学员"),
 		WeChatOfficialTextContent:             envOrDefault("WECHAT_OFFICIAL_TEXT_CONTENT", "⚠️点击下方推送消息，立即关注学员⬇⬇⬇"),
+		WeChatOfficialAccountName:             envOrDefault("WECHAT_OFFICIAL_ACCOUNT_NAME", "公众号"),
 	}
 }
 

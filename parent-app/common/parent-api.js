@@ -87,6 +87,38 @@ export function wechatParentLogin(payload) {
 	})
 }
 
+export function getWeChatOfficialBindTicketPreview(payload) {
+	return request({
+		url: '/api/v1/wechat/official/bind-ticket/preview',
+		method: 'POST',
+		data: payload
+	})
+}
+
+export function listWeChatOfficialBindStudents(payload) {
+	return request({
+		url: '/api/v1/wechat/official/bind-ticket/students',
+		method: 'POST',
+		data: payload
+	})
+}
+
+export function confirmWeChatOfficialStudentBinding(payload) {
+	return request({
+		url: '/api/v1/wechat/official/bind-ticket/confirm',
+		method: 'POST',
+		data: payload
+	})
+}
+
+export function getParentWeChatOfficialStatus(token) {
+	return request({
+		url: '/api/v1/parent/wechat/official/status',
+		method: 'GET',
+		token
+	})
+}
+
 export function lookupParentStudentsByPhone(token) {
 	return request({
 		url: '/api/v1/parent/students/by-phone',

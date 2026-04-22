@@ -40,7 +40,7 @@ func TestWeChatOfficialSubscribeQRCodeSendsMiniProgramCard(t *testing.T) {
 		Secret:                  "secret",
 		Token:                   "token",
 		MiniProgramAppID:        "mini-appid",
-		MiniProgramPagePath:     "pages/index/tabbar",
+		MiniProgramPagePath:     "pages/home/index",
 		MiniProgramThumbMediaID: "thumb-media-id",
 		MiniProgramTitle:        "绑定学员",
 		TextContent:             "⚠️点击下方推送消息，立即关注学员⬇⬇⬇",
@@ -86,7 +86,7 @@ func TestWeChatOfficialPlainSubscribeSendsMiniProgramCard(t *testing.T) {
 		Secret:                  "secret",
 		Token:                   "token",
 		MiniProgramAppID:        "mini-appid",
-		MiniProgramPagePath:     "pages/index/tabbar",
+		MiniProgramPagePath:     "pages/home/index",
 		MiniProgramThumbMediaID: "thumb-media-id",
 		MiniProgramTitle:        "绑定学员",
 		TextContent:             "⚠️点击下方推送消息，立即关注学员⬇⬇⬇",
@@ -131,7 +131,7 @@ func TestWeChatOfficialScanSendsMiniProgramCard(t *testing.T) {
 		Secret:                  "secret",
 		Token:                   "token",
 		MiniProgramAppID:        "mini-appid",
-		MiniProgramPagePath:     "pages/index/tabbar",
+		MiniProgramPagePath:     "pages/home/index",
 		MiniProgramThumbMediaID: "thumb-media-id",
 		TextContent:             "⚠️点击下方推送消息，立即关注学员⬇⬇⬇",
 	})
@@ -200,7 +200,7 @@ func TestWeChatOfficialSubscribeIncludesBindTicketInMiniProgramPagePath(t *testi
 		Secret:                  "secret",
 		Token:                   "token",
 		MiniProgramAppID:        "mini-appid",
-		MiniProgramPagePath:     "pages/index/tabbar",
+		MiniProgramPagePath:     "pages/home/index",
 		MiniProgramThumbMediaID: "thumb-media-id",
 		MiniProgramTitle:        "绑定学员",
 		TextContent:             "⚠️点击下方推送消息，立即关注学员⬇⬇⬇",
@@ -208,7 +208,7 @@ func TestWeChatOfficialSubscribeIncludesBindTicketInMiniProgramPagePath(t *testi
 	client.apiBaseURL = server.URL
 	client.httpClient = server.Client()
 	client.bindPagePathBuilder = func(ctx context.Context, message weChatEventMessage) (string, error) {
-		return "pages/index/tabbar?bindTicket=bt_test_1", nil
+		return "pages/home/index?bindTicket=bt_test_1", nil
 	}
 
 	body := []byte(`
@@ -226,7 +226,7 @@ func TestWeChatOfficialSubscribeIncludesBindTicketInMiniProgramPagePath(t *testi
 	if customSendCount != 2 {
 		t.Fatalf("expected 2 custom message sends, got %d", customSendCount)
 	}
-	if lastMiniProgramPagePath != "pages/index/tabbar?bindTicket=bt_test_1" {
+	if lastMiniProgramPagePath != "pages/home/index?bindTicket=bt_test_1" {
 		t.Fatalf("expected bind ticket page path, got %s", lastMiniProgramPagePath)
 	}
 }

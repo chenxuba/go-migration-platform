@@ -1,12 +1,22 @@
 <script>
-import { restoreParentSession } from '@/common/parent-state'
+import { restoreParentSession, setWeChatOfficialBindTicket } from '@/common/parent-state'
+
+function syncWeChatOfficialBindTicket(options = {}) {
+	const bindTicket = `${options?.query?.bindTicket || ''}`.trim()
+	if (!bindTicket) {
+		return
+	}
+	setWeChatOfficialBindTicket(bindTicket)
+}
 
 export default {
-	onLaunch() {
+	onLaunch(options) {
 		restoreParentSession()
+		syncWeChatOfficialBindTicket(options)
 		console.log('Parent App Launch')
 	},
-	onShow() {
+	onShow(options) {
+		syncWeChatOfficialBindTicket(options)
 		console.log('Parent App Show')
 	},
 	onHide() {

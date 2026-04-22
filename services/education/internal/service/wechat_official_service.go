@@ -31,6 +31,7 @@ type WeChatOfficialConfig struct {
 	MiniProgramThumbMediaID string
 	MiniProgramTitle        string
 	TextContent             string
+	AccountName             string
 }
 
 type weChatOfficialClient struct {
@@ -78,11 +79,15 @@ func newWeChatOfficialClient(cfg WeChatOfficialConfig) *weChatOfficialClient {
 	cfg.MiniProgramThumbMediaID = strings.TrimSpace(cfg.MiniProgramThumbMediaID)
 	cfg.MiniProgramTitle = strings.TrimSpace(cfg.MiniProgramTitle)
 	cfg.TextContent = strings.TrimSpace(cfg.TextContent)
+	cfg.AccountName = strings.TrimSpace(cfg.AccountName)
 	if cfg.MiniProgramTitle == "" {
 		cfg.MiniProgramTitle = "为保证您能接收到机构各类通知，请点击立即绑定学员"
 	}
 	if cfg.TextContent == "" {
 		cfg.TextContent = "⚠️点击下方推送消息，立即关注学员⬇⬇⬇"
+	}
+	if cfg.AccountName == "" {
+		cfg.AccountName = "公众号"
 	}
 
 	return &weChatOfficialClient{
@@ -90,6 +95,17 @@ func newWeChatOfficialClient(cfg WeChatOfficialConfig) *weChatOfficialClient {
 		httpClient: &http.Client{Timeout: 8 * time.Second},
 		apiBaseURL: defaultWeChatOfficialAPIBaseURL,
 	}
+}
+
+func (svc *Service) weChatOfficialAccountName() string {
+	if svc == nil || svc.wechatOfficial == nil {
+		return "公众号"
+	}
+	value := strings.TrimSpace(svc.wechatOfficial.config.AccountName)
+	if value == "" {
+		return "公众号"
+	}
+	return value
 }
 
 func (client *weChatOfficialClient) isEnabled() bool {
@@ -207,13 +223,23 @@ func (client *weChatOfficialClient) handleCallback(ctx context.Context, body []b
 }
 
 func (client *weChatOfficialClient) sendFollowMessageBundle(ctx context.Context, openID, pagePath string) error {
+	textSent := false
 	if client.canSendTextMessage() {
 		if err := client.sendTextMessage(ctx, openID); err != nil {
 			return err
 		}
+		textSent = true
 	}
 	if client.canSendMiniProgramCard() {
 		if err := client.sendMiniProgramCard(ctx, openID, pagePath); err != nil {
+			if textSent {
+				logx.Error("wechat official follow message bundle degraded to text only", logx.Entry{
+					"openid":   strings.TrimSpace(openID),
+					"pagePath": strings.TrimSpace(pagePath),
+					"error":    err.Error(),
+				})
+				return nil
+			}
 			return err
 		}
 	}
@@ -315,6 +341,12 @@ func (client *weChatOfficialClient) sendMiniProgramCard(ctx context.Context, ope
 		return err
 	}
 	if result.ErrCode != 0 {
+		logx.Error("wechat official send mini program card failed", logx.Entry{
+			"openid":   strings.TrimSpace(openID),
+			"pagePath": strings.TrimSpace(pagePath),
+			"errCode":  result.ErrCode,
+			"errMsg":   result.ErrMsg,
+		})
 		return fmt.Errorf("send custom message failed: %d %s", result.ErrCode, result.ErrMsg)
 	}
 	return nil
@@ -365,6 +397,11 @@ func (client *weChatOfficialClient) sendTextMessage(ctx context.Context, openID 
 		return err
 	}
 	if result.ErrCode != 0 {
+		logx.Error("wechat official send text message failed", logx.Entry{
+			"openid":  strings.TrimSpace(openID),
+			"errCode": result.ErrCode,
+			"errMsg":  result.ErrMsg,
+		})
 		return fmt.Errorf("send text message failed: %d %s", result.ErrCode, result.ErrMsg)
 	}
 	return nil

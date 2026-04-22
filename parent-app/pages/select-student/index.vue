@@ -13,9 +13,9 @@
 				</view>
 
 				<view class="select-hero">
-					<text class="select-hero__title">选择关联学员</text>
-					<text class="select-hero__subtitle">{{ maskedPhone }} 已匹配到以下孩子</text>
-					<view class="select-hero__tag">选中后即可同步课表、通知和订单信息</view>
+					<text class="select-hero__title">{{ heroTitle }}</text>
+					<text class="select-hero__subtitle">{{ heroSubtitle }}</text>
+					<view class="select-hero__tag">{{ heroTag }}</view>
 				</view>
 			</view>
 
@@ -56,8 +56,8 @@
 
 			<view v-if="!pendingCandidates.length" class="parent-card parent-empty-card select-empty-card">
 				<view class="parent-empty-badge">空</view>
-				<text class="parent-empty-title">当前号码暂无待关注学员</text>
-				<text class="parent-empty-desc">可以返回上一页，或换个手机号继续尝试。</text>
+				<text class="parent-empty-title">{{ emptyTitle }}</text>
+				<text class="parent-empty-desc">{{ emptyDesc }}</text>
 			</view>
 		</view>
 
@@ -73,13 +73,22 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { confirmParentStudents, listParentPendingStudents } from '@/common/parent-api'
+import {
+	confirmParentStudents,
+	confirmWeChatOfficialStudentBinding,
+	listParentBoundStudents,
+	listParentPendingStudents,
+	listWeChatOfficialBindStudents
+} from '@/common/parent-api'
 import { getNavLayout } from '@/common/nav-layout'
 import {
 	applyParentPendingStudentSummary,
+	applyParentBoundStudentSummary,
 	applyParentStudentLookup,
+	clearWeChatOfficialBinding,
 	confirmStudentBinding,
 	finalizeStudentBinding,
+	hasActiveWeChatOfficialBinding,
 	logoutParent,
 	parentState,
 	setPendingSelection
@@ -91,11 +100,36 @@ const submitting = ref(false)
 
 let pendingRefreshSerial = 0
 
+const isOfficialBinding = computed(() => hasActiveWeChatOfficialBinding())
 const pendingCandidates = computed(() => parentState.pendingCandidates)
 const maskedPhone = computed(() => parentState.profile.maskedPhone)
+const officialInstitutionName = computed(() => parentState.officialBindPreview?.institutionName || '当前机构')
+const heroTitle = computed(() => (isOfficialBinding.value ? '选择要绑定的学员' : '选择关联学员'))
+const heroSubtitle = computed(() => {
+	if (isOfficialBinding.value) {
+		return `${maskedPhone.value} 在 ${officialInstitutionName.value} 已匹配到以下孩子`
+	}
+	return `${maskedPhone.value} 已匹配到以下孩子`
+})
+const heroTag = computed(() => {
+	if (isOfficialBinding.value) {
+		return '本次公众号绑定仅支持选择 1 位学员'
+	}
+	return '选中后即可同步课表、通知和订单信息'
+})
+const emptyTitle = computed(() => (isOfficialBinding.value ? '当前号码暂无可绑定学员' : '当前号码暂无待关注学员'))
+const emptyDesc = computed(() => {
+	if (isOfficialBinding.value) {
+		return '可以返回上一页，或换个手机号继续尝试。'
+	}
+	return '可以返回上一页，或换个手机号继续尝试。'
+})
 const confirmButtonText = computed(() => {
 	if (submitting.value) {
 		return '提交中...'
+	}
+	if (isOfficialBinding.value) {
+		return '确认绑定'
 	}
 	return selectedIds.value.length ? `确认关注（${selectedIds.value.length}）` : '确认关注'
 })
@@ -103,16 +137,29 @@ const confirmButtonText = computed(() => {
 watch(
 	() => parentState.selectedCandidateIds,
 	value => {
-		selectedIds.value = [...value]
+		const nextSelectedIds = [...value]
+		selectedIds.value = isOfficialBinding.value ? nextSelectedIds.slice(0, 1) : nextSelectedIds
 	},
 	{ immediate: true }
 )
+
+watch(isOfficialBinding, value => {
+	if (!value || selectedIds.value.length <= 1) {
+		return
+	}
+	selectedIds.value = selectedIds.value.slice(0, 1)
+	setPendingSelection(selectedIds.value)
+})
 
 onShow(() => {
 	refreshPendingStudents()
 })
 
 function toggleSelect(studentId) {
+	if (isOfficialBinding.value) {
+		selectedIds.value = [studentId]
+		return
+	}
 	if (selectedIds.value.includes(studentId)) {
 		selectedIds.value = selectedIds.value.filter(item => item !== studentId)
 	} else {
@@ -132,6 +179,11 @@ function confirmBinding() {
 		return
 	}
 	setPendingSelection(selectedIds.value)
+
+	if (isOfficialBinding.value && parentState.authToken) {
+		submitOfficialBindingToServer()
+		return
+	}
 
 	// #ifdef MP-WEIXIN
 	if (parentState.authToken) {
@@ -158,10 +210,55 @@ function handleBack() {
 }
 
 function changePhone() {
-	logoutParent()
+	logoutParent({
+		preserveOfficialBinding: isOfficialBinding.value
+	})
 	uni.switchTab({
 		url: '/pages/profile/index'
 	})
+}
+
+async function submitOfficialBindingToServer() {
+	const selectedStudent = pendingCandidates.value.find(item => selectedIds.value.includes(item.id))
+	const studentID = Number(selectedStudent?.rawId || selectedStudent?.id || 0)
+	if (!selectedStudent || !Number.isFinite(studentID) || studentID <= 0) {
+		uni.showToast({
+			title: '学员数据异常，请重新选择',
+			icon: 'none'
+		})
+		return
+	}
+
+	try {
+		submitting.value = true
+		await confirmWeChatOfficialStudentBinding({
+			bindTicket: parentState.officialBindTicket,
+			studentId: studentID,
+			phone: parentState.profile.phone,
+			miniOpenId: parentState.miniOpenId,
+			unionId: parentState.unionId
+		})
+
+		if (parentState.authToken) {
+			const [boundSummary, pendingSummary] = await Promise.all([
+				listParentBoundStudents(parentState.authToken),
+				listParentPendingStudents(parentState.authToken)
+			])
+			applyParentBoundStudentSummary(boundSummary)
+			applyParentPendingStudentSummary(pendingSummary)
+		}
+
+		clearWeChatOfficialBinding()
+		const nextPage = finalizeStudentBinding(selectedStudent.name || '')
+		navigateToPostAuthPage(nextPage)
+	} catch (error) {
+		uni.showToast({
+			title: normalizeErrorMessage(error),
+			icon: 'none'
+		})
+	} finally {
+		submitting.value = false
+	}
 }
 
 async function submitBindingToServer() {
@@ -210,6 +307,24 @@ async function refreshPendingStudents() {
 
 	const requestSerial = ++pendingRefreshSerial
 	try {
+		if (isOfficialBinding.value) {
+			const candidates = await listWeChatOfficialBindStudents({
+				bindTicket: parentState.officialBindTicket,
+				phone: parentState.profile.phone
+			})
+			if (requestSerial !== pendingRefreshSerial || token !== `${parentState.authToken || ''}`.trim()) {
+				return
+			}
+			const nextCandidates = (Array.isArray(candidates) ? candidates : []).filter(item => !item?.isBound)
+			applyParentPendingStudentSummary({
+				phone: parentState.profile.phone,
+				maskedPhone: parentState.profile.maskedPhone,
+				candidates: nextCandidates
+			})
+			setPendingSelection(nextCandidates[0] ? [`${nextCandidates[0].id}`] : [])
+			return
+		}
+
 		const summary = await listParentPendingStudents(token)
 		if (requestSerial !== pendingRefreshSerial || token !== `${parentState.authToken || ''}`.trim()) {
 			return

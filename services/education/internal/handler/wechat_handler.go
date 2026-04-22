@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"go-migration-platform/pkg/httpx"
+	"go-migration-platform/pkg/logx"
 	"go-migration-platform/pkg/tenant"
 	"go-migration-platform/services/education/internal/model"
 )
@@ -35,6 +36,10 @@ func (handler *Handler) wechatOfficialCallback(w http.ResponseWriter, r *http.Re
 			return
 		}
 		if err := handler.service.HandleWeChatOfficialCallback(r.Context(), signature, timestamp, nonce, body, ctx.RequestID); err != nil {
+			logx.Error("wechat official callback handling failed", logx.Entry{
+				"requestId": ctx.RequestID,
+				"error":     err.Error(),
+			})
 			httpx.WriteError(w, http.StatusUnauthorized, err.Error(), ctx.RequestID)
 			return
 		}

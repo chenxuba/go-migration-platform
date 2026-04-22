@@ -70,6 +70,7 @@ func main() {
 		MiniProgramThumbMediaID: cfg.WeChatOfficialMiniProgramThumbMediaID,
 		MiniProgramTitle:        cfg.WeChatOfficialMiniProgramTitle,
 		TextContent:             cfg.WeChatOfficialTextContent,
+		AccountName:             cfg.WeChatOfficialAccountName,
 	})
 	svc.ConfigureWeChatMiniProgram(service.WeChatMiniProgramConfig{
 		AppID:  cfg.WeChatMiniProgramAppID,

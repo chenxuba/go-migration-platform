@@ -33,6 +33,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/parent/students/bound", handler.parentBoundStudents)
 	mux.HandleFunc("/api/v1/parent/students/pending", handler.parentPendingStudents)
 	mux.HandleFunc("/api/v1/parent/students/confirm", handler.parentConfirmStudents)
+	mux.HandleFunc("/api/v1/parent/wechat/official/status", handler.parentWeChatOfficialStatus)
 	mux.HandleFunc("/api/v1/parent/campuses", handler.parentCampuses)
 	mux.HandleFunc("/api/v1/parent/schedules", handler.parentSchedules)
 	mux.HandleFunc("/api/v1/parent/schedule-dates", handler.parentScheduleDates)

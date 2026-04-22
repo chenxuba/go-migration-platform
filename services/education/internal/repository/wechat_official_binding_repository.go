@@ -27,6 +27,12 @@ type WeChatOfficialBindTicketRecord struct {
 	UsedAt         *time.Time
 }
 
+type WeChatOfficialPhoneBindingStatus struct {
+	BoundStudentCount   int
+	SubscribedBindCount int
+	LastUnsubscribeTime *time.Time
+}
+
 func ensureWeChatOfficialBindingTables(ctx context.Context, db *sql.DB) error {
 	_, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS wechat_official_bind_ticket (
@@ -340,4 +346,34 @@ func (repo *Repository) HasWeChatOfficialBoundStudent(ctx context.Context, offic
 		WHERE official_openid = ? AND inst_id = ? AND subscribed = 1
 	`, strings.TrimSpace(officialOpenID), instID).Scan(&count)
 	return count > 0, err
+}
+
+func (repo *Repository) GetWeChatOfficialBindingStatusByPhone(ctx context.Context, phone string) (WeChatOfficialPhoneBindingStatus, error) {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return WeChatOfficialPhoneBindingStatus{}, nil
+	}
+
+	var status WeChatOfficialPhoneBindingStatus
+	var lastUnsubscribeAt sql.NullTime
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT
+			COUNT(DISTINCT student_id) AS bound_student_count,
+			COUNT(DISTINCT CASE WHEN subscribed = 1 THEN CONCAT(inst_id, ':', student_id, ':', official_openid) END) AS subscribed_bind_count,
+			MAX(last_unsubscribe_time) AS last_unsubscribe_time
+		FROM wechat_official_student_binding
+		WHERE phone = ?
+	`, phone).Scan(
+		&status.BoundStudentCount,
+		&status.SubscribedBindCount,
+		&lastUnsubscribeAt,
+	)
+	if err != nil {
+		return WeChatOfficialPhoneBindingStatus{}, err
+	}
+	if lastUnsubscribeAt.Valid {
+		value := lastUnsubscribeAt.Time
+		status.LastUnsubscribeTime = &value
+	}
+	return status, nil
 }
