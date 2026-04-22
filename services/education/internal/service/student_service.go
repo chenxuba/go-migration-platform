@@ -181,7 +181,12 @@ func (svc *Service) createIntentStudentRecord(userID int64, instID int64, dto mo
 		return 0, err
 	}
 	dto.OperatorID = &instUserID
-	return svc.repo.CreateIntentStudent(context.Background(), instID, instUserID, dto)
+	studentID, err := svc.repo.CreateIntentStudent(context.Background(), instID, instUserID, dto)
+	if err != nil {
+		return 0, err
+	}
+	svc.refreshStudentBindChildStatusByPhones(context.Background(), dto.Mobile)
+	return studentID, nil
 }
 
 func (svc *Service) UpdateIntentStudent(userID int64, dto model.StudentSaveDTO) error {
@@ -236,6 +241,7 @@ func (svc *Service) UpdateIntentStudent(userID int64, dto model.StudentSaveDTO) 
 	if err := svc.repo.UpdateIntentStudent(context.Background(), instID, dto); err != nil {
 		return err
 	}
+	svc.refreshStudentBindChildStatusByPhones(context.Background(), before.Mobile, dto.Mobile)
 	if err == nil {
 		if after, err := svc.repo.GetStudentSnapshot(context.Background(), instID, *dto.StudentID); err == nil {
 			_ = svc.repo.InsertStudentChangeRecord(context.Background(), instID, *dto.StudentID, instUserID, svc.buildStudentSnapshotChangeText(context.Background(), before, after))

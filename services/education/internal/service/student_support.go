@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go-migration-platform/pkg/logx"
 	"go-migration-platform/services/education/internal/repository"
 )
 
@@ -46,6 +47,30 @@ func studentDuplicateMessage(rule int) string {
 
 func studentWeChatDuplicateMessage() string {
 	return "当前机构已存在微信号相同的学员"
+}
+
+func (svc *Service) refreshStudentBindChildStatusByPhones(ctx context.Context, phones ...string) {
+	if svc == nil || svc.repo == nil {
+		return
+	}
+
+	seen := make(map[string]struct{}, len(phones))
+	for _, phone := range phones {
+		trimmed := strings.TrimSpace(phone)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		if err := svc.repo.RefreshStudentBindChildStatusByPhone(ctx, trimmed); err != nil {
+			logx.Error("refresh student bind child status by phone failed", logx.Entry{
+				"phone": trimmed,
+				"error": err.Error(),
+			})
+		}
+	}
 }
 
 func buildStudentStatusSnapshotAfter(before repository.StudentSnapshot, dtoIntentionLevel, dtoFollowUpStatus *int) repository.StudentSnapshot {
