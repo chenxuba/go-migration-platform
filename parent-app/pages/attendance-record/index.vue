@@ -45,7 +45,7 @@
 					<view class="parent-empty-card record-empty-card">
 						<view class="parent-empty-badge">记</view>
 						<text class="parent-empty-title">登录后即可查看上课记录</text>
-						<text class="parent-empty-desc">手机号授权后，系统会自动匹配已关注学员并同步上课记录。</text>
+						<text class="parent-empty-desc">手机号授权后，系统会自动匹配已绑定学员并同步上课记录。</text>
 						<!-- #ifdef MP-WEIXIN -->
 						<button class="parent-primary-button record-auth-button" :loading="authLoading" :disabled="authLoading" open-type="getPhoneNumber" @getphonenumber="handleWechatPhoneAuth">
 							授权登录
@@ -113,7 +113,7 @@
 					<view class="parent-empty-card record-empty-card">
 						<view class="parent-empty-badge">空</view>
 						<text class="parent-empty-title">{{ displayStudents.length ? '当前学员还没有上课记录' : '暂未绑定学员' }}</text>
-						<text class="parent-empty-desc">{{ displayStudents.length ? '完成上课后，记录会自动同步到这里。' : '请先完成学员关注，再查看上课记录。' }}</text>
+						<text class="parent-empty-desc">{{ displayStudents.length ? '完成上课后，记录会自动同步到这里。' : '请先完成学员绑定，再查看上课记录。' }}</text>
 					</view>
 				</template>
 			</view>

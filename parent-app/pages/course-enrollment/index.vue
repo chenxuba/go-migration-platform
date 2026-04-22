@@ -45,7 +45,7 @@
 					<view class="parent-empty-card course-empty-card">
 						<view class="parent-empty-badge">报</view>
 						<text class="parent-empty-title">登录后即可查看报读课程</text>
-						<text class="parent-empty-desc">手机号授权后，系统会自动同步当前已关注学员的报读课程。</text>
+						<text class="parent-empty-desc">手机号授权后，系统会自动同步当前已绑定学员的报读课程。</text>
 						<!-- #ifdef MP-WEIXIN -->
 						<button class="parent-primary-button course-auth-button" :loading="authLoading" :disabled="authLoading" open-type="getPhoneNumber" @getphonenumber="handleWechatPhoneAuth">
 							授权登录
@@ -111,7 +111,7 @@
 					<view class="parent-empty-card course-empty-card">
 						<view class="parent-empty-badge">空</view>
 						<text class="parent-empty-title">{{ displayStudents.length ? '当前学员暂无报读课程' : '暂未绑定学员' }}</text>
-						<text class="parent-empty-desc">{{ displayStudents.length ? '完成报名或续费后，报读课程会自动同步到这里。' : '请先完成学员关注，再查看报读课程。' }}</text>
+						<text class="parent-empty-desc">{{ displayStudents.length ? '完成报名或续费后，报读课程会自动同步到这里。' : '请先完成学员绑定，再查看报读课程。' }}</text>
 					</view>
 				</template>
 			</view>

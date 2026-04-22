@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -64,11 +65,17 @@ func TestGetParentWeChatOfficialStatusByPhone_ReturnsFollowGuideAfterUnsubscribe
 		{
 			query: `
 				SELECT
-					COUNT(DISTINCT student_id) AS bound_student_count,
-					COUNT(DISTINCT CASE WHEN subscribed = 1 THEN CONCAT(inst_id, ':', student_id, ':', official_openid) END) AS subscribed_bind_count,
-					MAX(last_unsubscribe_time) AS last_unsubscribe_time
-				FROM wechat_official_student_binding
-				WHERE phone = ?
+					COUNT(DISTINCT CASE WHEN sb.subscribed = 1 THEN sb.student_id END) AS bound_student_count,
+					COUNT(DISTINCT CASE
+						WHEN sb.subscribed = 1
+						 AND IFNULL(sb.official_openid, '') <> ''
+						 AND IFNULL(ul.subscribed, 0) = 1
+						THEN CONCAT(sb.inst_id, ':', sb.student_id, ':', sb.official_openid)
+					END) AS subscribed_bind_count,
+					MAX(sb.last_unsubscribe_time) AS last_unsubscribe_time
+				FROM wechat_official_student_binding sb
+				LEFT JOIN wechat_official_user_link ul ON ul.official_openid = sb.official_openid
+				WHERE sb.phone = ?
 			`,
 			args:    []any{phone},
 			columns: []string{"bound_student_count", "subscribed_bind_count", "last_unsubscribe_time"},
@@ -77,7 +84,10 @@ func TestGetParentWeChatOfficialStatusByPhone_ReturnsFollowGuideAfterUnsubscribe
 		{
 			query: `
 				SELECT
-					COUNT(DISTINCT CASE WHEN subscribed = 1 THEN COALESCE(unionid, official_openid, mini_openid) END) AS subscribed_user_count,
+					COUNT(DISTINCT CASE
+						WHEN subscribed = 1 AND IFNULL(official_openid, '') <> ''
+						THEN COALESCE(unionid, official_openid, mini_openid)
+					END) AS subscribed_user_count,
 					MAX(last_unsubscribe_time) AS last_unsubscribe_time
 				FROM wechat_official_user_link
 				WHERE phone = ?
@@ -114,11 +124,17 @@ func TestGetParentWeChatOfficialStatusByPhone_HidesFollowGuideWhenSubscribed(t *
 		{
 			query: `
 				SELECT
-					COUNT(DISTINCT student_id) AS bound_student_count,
-					COUNT(DISTINCT CASE WHEN subscribed = 1 THEN CONCAT(inst_id, ':', student_id, ':', official_openid) END) AS subscribed_bind_count,
-					MAX(last_unsubscribe_time) AS last_unsubscribe_time
-				FROM wechat_official_student_binding
-				WHERE phone = ?
+					COUNT(DISTINCT CASE WHEN sb.subscribed = 1 THEN sb.student_id END) AS bound_student_count,
+					COUNT(DISTINCT CASE
+						WHEN sb.subscribed = 1
+						 AND IFNULL(sb.official_openid, '') <> ''
+						 AND IFNULL(ul.subscribed, 0) = 1
+						THEN CONCAT(sb.inst_id, ':', sb.student_id, ':', sb.official_openid)
+					END) AS subscribed_bind_count,
+					MAX(sb.last_unsubscribe_time) AS last_unsubscribe_time
+				FROM wechat_official_student_binding sb
+				LEFT JOIN wechat_official_user_link ul ON ul.official_openid = sb.official_openid
+				WHERE sb.phone = ?
 			`,
 			args:    []any{phone},
 			columns: []string{"bound_student_count", "subscribed_bind_count", "last_unsubscribe_time"},
@@ -127,7 +143,10 @@ func TestGetParentWeChatOfficialStatusByPhone_HidesFollowGuideWhenSubscribed(t *
 		{
 			query: `
 				SELECT
-					COUNT(DISTINCT CASE WHEN subscribed = 1 THEN COALESCE(unionid, official_openid, mini_openid) END) AS subscribed_user_count,
+					COUNT(DISTINCT CASE
+						WHEN subscribed = 1 AND IFNULL(official_openid, '') <> ''
+						THEN COALESCE(unionid, official_openid, mini_openid)
+					END) AS subscribed_user_count,
 					MAX(last_unsubscribe_time) AS last_unsubscribe_time
 				FROM wechat_official_user_link
 				WHERE phone = ?
@@ -387,6 +406,349 @@ func TestConfirmParentStudentsByPhone_CreatesRealBindingRows(t *testing.T) {
 	}
 }
 
+func TestConfirmParentStudentsByPhone_AllowsBindingWithoutOfficialFollow(t *testing.T) {
+	phone := "17612340004"
+	studentID := int64(2204)
+	instID := int64(3004)
+	miniOpenID := "mini-openid-bind-only"
+	unionID := "unionid-bind-only"
+	userLinkRowID := int64(704)
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		execResultExpectation(`
+			INSERT INTO wechat_official_user_link (
+				mini_openid, unionid, phone, create_time, update_time
+			) VALUES (?, ?, ?, NOW(), NOW())
+			ON DUPLICATE KEY UPDATE
+				mini_openid = CASE WHEN VALUES(mini_openid) IS NULL THEN mini_openid ELSE VALUES(mini_openid) END,
+				unionid = CASE WHEN VALUES(unionid) IS NULL THEN unionid ELSE VALUES(unionid) END,
+				phone = CASE WHEN VALUES(phone) = '' THEN phone ELSE VALUES(phone) END,
+				update_time = NOW()
+		`, []any{miniOpenID, unionID, phone}, 1),
+		{
+			query: `
+				SELECT
+					id,
+					IFNULL(official_openid, ''),
+					IFNULL(mini_openid, ''),
+					IFNULL(unionid, ''),
+					IFNULL(phone, ''),
+					IFNULL(subscribed, 0)
+				FROM wechat_official_user_link
+				WHERE mini_openid = ?
+				LIMIT 1
+			`,
+			args:    []any{miniOpenID},
+			columns: []string{"id", "official_openid", "mini_openid", "unionid", "phone", "subscribed"},
+			rows:    [][]driver.Value{{userLinkRowID, "", miniOpenID, unionID, phone, int64(0)}},
+		},
+		{
+			query: `
+				SELECT s.id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), IFNULL(s.mobile, ''), IFNULL(s.student_status, 0), IFNULL(s.is_bind_child, 0), s.inst_id
+				FROM inst_student s
+				WHERE s.id = ? AND s.del_flag = 0
+				LIMIT 1
+			`,
+			args:    []any{studentID},
+			columns: []string{"id", "stu_name", "avatar_url", "mobile", "student_status", "is_bind_child", "inst_id"},
+			rows:    [][]driver.Value{{studentID, "未关注也绑定", "", phone, int64(1), int64(0), instID}},
+		},
+		execResultExpectation(`
+			INSERT INTO wechat_official_student_binding (
+				inst_id, student_id, official_openid, mini_openid, unionid, phone, subscribed, last_bind_ticket,
+				last_subscribe_time, last_unsubscribe_time, bind_time, create_time, update_time
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 1 THEN NOW() ELSE NULL END, CASE WHEN ? = 1 THEN NULL ELSE NOW() END, NOW(), NOW(), NOW())
+			ON DUPLICATE KEY UPDATE
+				mini_openid = CASE WHEN VALUES(mini_openid) = '' THEN mini_openid ELSE VALUES(mini_openid) END,
+				unionid = CASE WHEN VALUES(unionid) = '' THEN unionid ELSE VALUES(unionid) END,
+				phone = CASE WHEN VALUES(phone) = '' THEN phone ELSE VALUES(phone) END,
+				subscribed = VALUES(subscribed),
+				last_bind_ticket = VALUES(last_bind_ticket),
+				last_subscribe_time = CASE WHEN VALUES(subscribed) = 1 THEN NOW() ELSE last_subscribe_time END,
+				last_unsubscribe_time = CASE WHEN VALUES(subscribed) = 0 THEN NOW() ELSE last_unsubscribe_time END,
+				update_time = NOW()
+		`, []any{instID, studentID, "", miniOpenID, unionID, phone, 1, "", 1, 1}, 1),
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM wechat_official_student_binding
+				WHERE student_id = ? AND subscribed = 1
+			`,
+			args:    []any{studentID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(1)}},
+		},
+		execResultExpectation(`
+			UPDATE inst_student
+			SET is_bind_child = ?, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, []any{1, studentID}, 1),
+		execResultExpectation(`
+			UPDATE inst_student s
+			LEFT JOIN (
+				SELECT DISTINCT student_id
+				FROM wechat_official_student_binding
+				WHERE subscribed = 1
+			) bound ON bound.student_id = s.id
+			SET s.is_bind_child = CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END,
+				s.update_time = NOW()
+			WHERE IFNULL(s.mobile, '') = ? AND s.del_flag = 0
+		`, []any{phone}, 1),
+		{
+			query: `
+				SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), IFNULL(s.mobile, ''),
+				       IFNULL(s.student_status, 0), IFNULL(s.phone_relationship, 0),
+				       CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END AS is_bound,
+				       IFNULL(i.organ_name, ''), IFNULL(i.logo, '')
+				FROM inst_student s
+				LEFT JOIN org_institution i ON i.id = s.inst_id
+				LEFT JOIN (
+					SELECT DISTINCT inst_id, student_id
+					FROM wechat_official_student_binding
+					WHERE phone = ? AND subscribed = 1
+				) bound ON bound.inst_id = s.inst_id AND bound.student_id = s.id
+				WHERE s.del_flag = 0
+				  AND (IFNULL(s.mobile, '') = ? OR bound.student_id IS NOT NULL)
+				ORDER BY
+					CASE WHEN bound.student_id IS NULL THEN 1 ELSE 0 END ASC,
+					s.create_time DESC,
+					s.id DESC
+			`,
+			args: []any{phone, phone},
+			columns: []string{
+				"id", "inst_id", "stu_name", "avatar_url", "mobile",
+				"student_status", "phone_relationship", "is_bound", "organ_name", "logo",
+			},
+			rows: [][]driver.Value{
+				{studentID, instID, "未关注也绑定", "", phone, int64(1), int64(1), int64(1), "测试机构", ""},
+			},
+		},
+	})
+	defer cleanup()
+
+	result, err := svc.ConfirmParentStudentsByPhone(context.Background(), phone, model.ParentBindStudentsDTO{
+		StudentIDs: []int64{studentID},
+		MiniOpenID: miniOpenID,
+		UnionID:    unionID,
+	})
+	if err != nil {
+		t.Fatalf("ConfirmParentStudentsByPhone: %v", err)
+	}
+	if len(result.Candidates) != 1 {
+		t.Fatalf("expected 1 returned candidate, got %d", len(result.Candidates))
+	}
+	if !result.Candidates[0].IsBound {
+		t.Fatalf("expected returned candidate to be bound")
+	}
+	if result.Candidates[0].ID != studentID {
+		t.Fatalf("expected returned candidate id %d, got %d", studentID, result.Candidates[0].ID)
+	}
+}
+
+func TestConfirmParentStudentsByPhone_ReturnsReauthErrorWhenIdentityCannotBeResolved(t *testing.T) {
+	phone := "17612340006"
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		{
+			query: `
+				SELECT
+					IFNULL(official_openid, ''),
+					IFNULL(mini_openid, ''),
+					IFNULL(unionid, ''),
+					IFNULL(phone, '')
+				FROM wechat_official_user_link
+				WHERE phone = ? AND subscribed = 1
+				ORDER BY
+					CASE WHEN IFNULL(official_openid, '') = '' THEN 1 ELSE 0 END ASC,
+					update_time DESC,
+					id DESC
+				LIMIT 1
+			`,
+			args:    []any{phone},
+			columns: []string{"official_openid", "mini_openid", "unionid", "phone"},
+			rows:    [][]driver.Value{},
+		},
+	})
+	defer cleanup()
+
+	_, err := svc.ConfirmParentStudentsByPhone(context.Background(), phone, model.ParentBindStudentsDTO{
+		StudentIDs: []int64{2206},
+	})
+	if !errors.Is(err, ErrParentReauthRequired) {
+		t.Fatalf("expected reauth error, got %v", err)
+	}
+	if err == nil || err.Error() != "当前登录态已失效，请重新登录" {
+		t.Fatalf("expected reauth message, got %v", err)
+	}
+}
+
+func TestRefreshParentWeChatIdentity_StoresCurrentMiniIdentity(t *testing.T) {
+	loginCode := "login-code-refresh"
+	phone := "17612340007"
+	miniOpenID := "mini-openid-refresh"
+	unionID := "unionid-refresh"
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		execResultExpectation(`
+			INSERT INTO wechat_official_user_link (
+				mini_openid, unionid, phone, create_time, update_time
+			) VALUES (?, ?, ?, NOW(), NOW())
+			ON DUPLICATE KEY UPDATE
+				mini_openid = CASE WHEN VALUES(mini_openid) IS NULL THEN mini_openid ELSE VALUES(mini_openid) END,
+				unionid = CASE WHEN VALUES(unionid) IS NULL THEN unionid ELSE VALUES(unionid) END,
+				phone = CASE WHEN VALUES(phone) = '' THEN phone ELSE VALUES(phone) END,
+				update_time = NOW()
+		`, []any{miniOpenID, unionID, phone}, 1),
+		{
+			query: `
+				SELECT
+					id,
+					IFNULL(official_openid, ''),
+					IFNULL(mini_openid, ''),
+					IFNULL(unionid, ''),
+					IFNULL(phone, ''),
+					IFNULL(subscribed, 0)
+				FROM wechat_official_user_link
+				WHERE phone = ? AND subscribed = 1 AND IFNULL(official_openid, '') <> ''
+				ORDER BY update_time DESC, id DESC
+				LIMIT 1
+			`,
+			args:    []any{phone},
+			columns: []string{"id", "official_openid", "mini_openid", "unionid", "phone", "subscribed"},
+			rows:    [][]driver.Value{},
+		},
+	})
+	defer cleanup()
+
+	server := newMiniProgramLoginTestServer(t, loginCode, "", miniOpenID, unionID, phone)
+	defer server.Close()
+
+	svc.ConfigureWeChatMiniProgram(WeChatMiniProgramConfig{
+		AppID:  "appid",
+		Secret: "secret",
+	})
+	svc.wechatMiniProgram.apiBaseURL = server.URL
+	svc.wechatMiniProgram.httpClient = server.Client()
+
+	result, err := svc.RefreshParentWeChatIdentity(context.Background(), phone, model.ParentWeChatIdentityDTO{
+		LoginCode: loginCode,
+	})
+	if err != nil {
+		t.Fatalf("RefreshParentWeChatIdentity: %v", err)
+	}
+	if strings.TrimSpace(result.MiniOpenID) != miniOpenID {
+		t.Fatalf("expected mini openid %q, got %q", miniOpenID, result.MiniOpenID)
+	}
+	if strings.TrimSpace(result.UnionID) != unionID {
+		t.Fatalf("expected unionid %q, got %q", unionID, result.UnionID)
+	}
+}
+
+func TestCancelParentAccountByPhone_ClearsCurrentWeChatBinding(t *testing.T) {
+	phone := "17612340005"
+	miniOpenID := "mini-openid-cancel"
+	unionID := "unionid-cancel"
+	officialOpenID := "official-openid-cancel"
+	userLinkRowID := int64(701)
+	firstStudentID := int64(2301)
+	secondStudentID := int64(2302)
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		{
+			query: `
+				SELECT
+					id,
+					IFNULL(official_openid, ''),
+					IFNULL(mini_openid, ''),
+					IFNULL(unionid, ''),
+					IFNULL(phone, ''),
+					IFNULL(subscribed, 0)
+				FROM wechat_official_user_link
+				WHERE mini_openid = ?
+				LIMIT 1
+			`,
+			args:    []any{miniOpenID},
+			columns: []string{"id", "official_openid", "mini_openid", "unionid", "phone", "subscribed"},
+			rows:    [][]driver.Value{{userLinkRowID, officialOpenID, miniOpenID, unionID, phone, int64(1)}},
+		},
+		{
+			query: `
+				SELECT DISTINCT student_id
+				FROM wechat_official_student_binding
+				WHERE (? <> '' AND official_openid = ?)
+				   OR (? <> '' AND mini_openid = ?)
+				   OR (? <> '' AND unionid = ?)
+			`,
+			args:    []any{officialOpenID, officialOpenID, miniOpenID, miniOpenID, unionID, unionID},
+			columns: []string{"student_id"},
+			rows:    [][]driver.Value{{firstStudentID}, {secondStudentID}},
+		},
+		execResultExpectation(`
+			DELETE FROM wechat_official_student_binding
+			WHERE (? <> '' AND official_openid = ?)
+			   OR (? <> '' AND mini_openid = ?)
+			   OR (? <> '' AND unionid = ?)
+		`, []any{officialOpenID, officialOpenID, miniOpenID, miniOpenID, unionID, unionID}, 2),
+		execResultExpectation(`
+			DELETE FROM wechat_official_user_link
+			WHERE id = ?
+		`, []any{userLinkRowID}, 1),
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM wechat_official_student_binding
+				WHERE student_id = ? AND subscribed = 1
+			`,
+			args:    []any{firstStudentID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		execResultExpectation(`
+			UPDATE inst_student
+			SET is_bind_child = ?, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, []any{0, firstStudentID}, 1),
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM wechat_official_student_binding
+				WHERE student_id = ? AND subscribed = 1
+			`,
+			args:    []any{secondStudentID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		execResultExpectation(`
+			UPDATE inst_student
+			SET is_bind_child = ?, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, []any{0, secondStudentID}, 1),
+		execResultExpectation(`
+			UPDATE inst_student s
+			LEFT JOIN (
+				SELECT DISTINCT student_id
+				FROM wechat_official_student_binding
+				WHERE subscribed = 1
+			) bound ON bound.student_id = s.id
+			SET s.is_bind_child = CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END,
+				s.update_time = NOW()
+			WHERE IFNULL(s.mobile, '') = ? AND s.del_flag = 0
+		`, []any{phone}, 1),
+	})
+	defer cleanup()
+
+	result, err := svc.CancelParentAccountByPhone(context.Background(), phone, model.ParentCancelAccountDTO{
+		MiniOpenID: miniOpenID,
+		UnionID:    unionID,
+	})
+	if err != nil {
+		t.Fatalf("CancelParentAccountByPhone: %v", err)
+	}
+	if result.ClearedStudentCount != 2 {
+		t.Fatalf("expected cleared student count 2, got %d", result.ClearedStudentCount)
+	}
+}
+
 func TestParentWeChatLogin_WithBindTicketRepairsHistoricalOfficialLink(t *testing.T) {
 	loginCode := "login-code-1"
 	phoneCode := "phone-code-1"
@@ -618,11 +980,17 @@ func TestParentWeChatLogin_RecognizesSubscribedOfficialUserWithoutStudentBinding
 		{
 			query: `
 				SELECT
-					COUNT(DISTINCT student_id) AS bound_student_count,
-					COUNT(DISTINCT CASE WHEN subscribed = 1 THEN CONCAT(inst_id, ':', student_id, ':', official_openid) END) AS subscribed_bind_count,
-					MAX(last_unsubscribe_time) AS last_unsubscribe_time
-				FROM wechat_official_student_binding
-				WHERE phone = ?
+					COUNT(DISTINCT CASE WHEN sb.subscribed = 1 THEN sb.student_id END) AS bound_student_count,
+					COUNT(DISTINCT CASE
+						WHEN sb.subscribed = 1
+						 AND IFNULL(sb.official_openid, '') <> ''
+						 AND IFNULL(ul.subscribed, 0) = 1
+						THEN CONCAT(sb.inst_id, ':', sb.student_id, ':', sb.official_openid)
+					END) AS subscribed_bind_count,
+					MAX(sb.last_unsubscribe_time) AS last_unsubscribe_time
+				FROM wechat_official_student_binding sb
+				LEFT JOIN wechat_official_user_link ul ON ul.official_openid = sb.official_openid
+				WHERE sb.phone = ?
 			`,
 			args:    []any{phone},
 			columns: []string{"bound_student_count", "subscribed_bind_count", "last_unsubscribe_time"},
@@ -631,7 +999,10 @@ func TestParentWeChatLogin_RecognizesSubscribedOfficialUserWithoutStudentBinding
 		{
 			query: `
 				SELECT
-					COUNT(DISTINCT CASE WHEN subscribed = 1 THEN COALESCE(unionid, official_openid, mini_openid) END) AS subscribed_user_count,
+					COUNT(DISTINCT CASE
+						WHEN subscribed = 1 AND IFNULL(official_openid, '') <> ''
+						THEN COALESCE(unionid, official_openid, mini_openid)
+					END) AS subscribed_user_count,
 					MAX(last_unsubscribe_time) AS last_unsubscribe_time
 				FROM wechat_official_user_link
 				WHERE phone = ?

@@ -8,7 +8,11 @@
 					<view class="parent-nav-spacer" :style="{ width: `${nav.width}px`, height: `${nav.height}px` }"></view>
 				</view>
 
-				<view class="parent-card profile-hero-card">
+				<view
+					class="parent-card profile-hero-card"
+					:class="{ 'profile-hero-card--link': isAuthenticated }"
+					@click="openSettings"
+				>
 					<view class="profile-hero-card__identity">
 						<view class="profile-hero-card__avatar">{{ avatarText }}</view>
 						<view class="profile-hero-card__copy">
@@ -16,6 +20,7 @@
 							<text v-if="heroSubtitle" class="profile-hero-card__subtitle">{{ heroSubtitle }}</text>
 						</view>
 					</view>
+					<text v-if="isAuthenticated" class="profile-hero-card__arrow">›</text>
 				</view>
 			</view>
 
@@ -49,14 +54,14 @@
 
 				<template v-else-if="pendingCount">
 					<view class="parent-card profile-state-card">
-						<text class="profile-state-card__title">发现 {{ pendingCount }} 位待关注学员</text>
+						<text class="profile-state-card__title">发现 {{ pendingCount }} 位待绑定学员</text>
 						<view class="profile-state-card__button" @click="openPendingStudents">去选择学员</view>
 					</view>
 				</template>
 
 				<template v-else>
 					<view class="parent-card profile-state-card profile-state-card--empty">
-						<text class="profile-state-card__title">暂无已关注学员</text>
+						<text class="profile-state-card__title">暂无已绑定学员</text>
 					</view>
 				</template>
 			</view>
@@ -138,7 +143,7 @@ const studentBlockTitle = computed(() => {
 	if (students.value.length) {
 		return '我的学员'
 	}
-	return '待关注学员'
+	return '待绑定学员'
 })
 const displayMenus = computed(() => {
 	const sourceList = isAuthenticated.value
@@ -198,7 +203,7 @@ function openPendingStudents() {
 
 	if (!pendingCount.value) {
 		uni.showToast({
-			title: '暂无待关注学员',
+			title: '暂无待绑定学员',
 			icon: 'none'
 		})
 		return
@@ -206,6 +211,15 @@ function openPendingStudents() {
 
 	uni.navigateTo({
 		url: '/pages/select-student/index'
+	})
+}
+
+function openSettings() {
+	if (!isAuthenticated.value) {
+		return
+	}
+	uni.navigateTo({
+		url: '/pages/settings/index'
 	})
 }
 
@@ -287,12 +301,22 @@ function inviteFamily() {
 	background:
 		radial-gradient(circle at top right, rgba(255, 226, 122, 0.14), transparent 26%),
 		linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 252, 245, 0.98) 100%);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 18rpx;
+}
+
+.profile-hero-card--link {
+	cursor: pointer;
 }
 
 .profile-hero-card__identity {
 	display: flex;
 	align-items: center;
 	gap: 16rpx;
+	flex: 1;
+	min-width: 0;
 }
 
 .profile-hero-card__avatar {
@@ -331,6 +355,12 @@ function inviteFamily() {
 	font-size: 23rpx;
 	line-height: 1.5;
 	color: #726958;
+}
+
+.profile-hero-card__arrow {
+	color: #bbb29f;
+	font-size: 30rpx;
+	flex-shrink: 0;
 }
 
 .profile-block {

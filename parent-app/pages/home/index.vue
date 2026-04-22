@@ -592,7 +592,7 @@ function simplifyCampusName(name = '') {
 .home-follow-dialog {
 	position: absolute;
 	left: 50%;
-	bottom: calc(env(safe-area-inset-bottom) + 70rpx);
+	bottom: calc(env(safe-area-inset-bottom) + 120rpx);
 	transform: translateX(-50%);
 	width: calc(100vw - 96rpx);
 	padding: 28rpx 32rpx 30rpx;
@@ -641,7 +641,7 @@ function simplifyCampusName(name = '') {
 	position: fixed;
 	left: 24rpx;
 	right: 24rpx;
-	bottom: calc(env(safe-area-inset-bottom) - 50rpx);
+	bottom: calc(env(safe-area-inset-bottom));
 	z-index: 89;
 }
 

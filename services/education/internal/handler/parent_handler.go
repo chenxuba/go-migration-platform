@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"go-migration-platform/pkg/httpx"
 	"go-migration-platform/pkg/tenant"
 	"go-migration-platform/services/education/internal/model"
+	"go-migration-platform/services/education/internal/service"
 )
 
 func (handler *Handler) parentWeChatLogin(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +29,31 @@ func (handler *Handler) parentWeChatLogin(w http.ResponseWriter, r *http.Request
 	}
 
 	result, err := handler.service.ParentWeChatLogin(r.Context(), ctx.TenantID, dto)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) parentWeChatIdentity(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var dto model.ParentWeChatIdentityDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.RefreshParentWeChatIdentity(r.Context(), claims.Username, dto)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -110,7 +137,32 @@ func (handler *Handler) parentConfirmStudents(w http.ResponseWriter, r *http.Req
 
 	result, err := handler.service.ConfirmParentStudentsByPhone(r.Context(), claims.Username, dto)
 	if err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		writeParentServiceError(w, ctx, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) parentCancelAccount(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireParentAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var dto model.ParentCancelAccountDTO
+	if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.CancelParentAccountByPhone(r.Context(), claims.Username, dto)
+	if err != nil {
+		writeParentServiceError(w, ctx, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
@@ -481,4 +533,12 @@ func (handler *Handler) requireParentAuth(w http.ResponseWriter, r *http.Request
 		return authx.Claims{}, false
 	}
 	return claims, true
+}
+
+func writeParentServiceError(w http.ResponseWriter, ctx tenant.Context, err error) {
+	status := http.StatusBadRequest
+	if errors.Is(err, service.ErrParentReauthRequired) {
+		status = http.StatusUnauthorized
+	}
+	httpx.WriteError(w, status, err.Error(), ctx.RequestID)
 }

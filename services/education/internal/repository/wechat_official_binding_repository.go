@@ -659,18 +659,13 @@ func (repo *Repository) UpdateWeChatOfficialBindingSubscriptionByOpenID(ctx cont
 		return nil, err
 	}
 
-	subscribedValue := 0
-	if subscribed {
-		subscribedValue = 1
-	}
 	_, err = repo.db.ExecContext(ctx, `
 		UPDATE wechat_official_student_binding
-		SET subscribed = ?,
-			last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
+		SET last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
 			last_unsubscribe_time = CASE WHEN ? = 0 THEN NOW() ELSE last_unsubscribe_time END,
 			update_time = NOW()
 		WHERE official_openid = ?
-	`, subscribedValue, subscribedValue, subscribedValue, officialOpenID)
+	`, boolToTinyInt(subscribed), boolToTinyInt(subscribed), officialOpenID)
 	if err != nil {
 		return nil, err
 	}
@@ -712,6 +707,63 @@ func (repo *Repository) FindWeChatOfficialLinkedPhoneByOpenID(ctx context.Contex
 		return "", err
 	}
 	return strings.TrimSpace(phone), nil
+}
+
+func (repo *Repository) DeleteWeChatOfficialStudentBindingsByIdentity(ctx context.Context, officialOpenID, miniOpenID, unionID string) ([]int64, error) {
+	officialOpenID = strings.TrimSpace(officialOpenID)
+	miniOpenID = strings.TrimSpace(miniOpenID)
+	unionID = strings.TrimSpace(unionID)
+	if officialOpenID == "" && miniOpenID == "" && unionID == "" {
+		return nil, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT DISTINCT student_id
+		FROM wechat_official_student_binding
+		WHERE (? <> '' AND official_openid = ?)
+		   OR (? <> '' AND mini_openid = ?)
+		   OR (? <> '' AND unionid = ?)
+	`, officialOpenID, officialOpenID, miniOpenID, miniOpenID, unionID, unionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	studentIDs := make([]int64, 0, 8)
+	for rows.Next() {
+		var studentID int64
+		if err := rows.Scan(&studentID); err != nil {
+			return nil, err
+		}
+		if studentID > 0 {
+			studentIDs = append(studentIDs, studentID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if _, err := repo.db.ExecContext(ctx, `
+		DELETE FROM wechat_official_student_binding
+		WHERE (? <> '' AND official_openid = ?)
+		   OR (? <> '' AND mini_openid = ?)
+		   OR (? <> '' AND unionid = ?)
+	`, officialOpenID, officialOpenID, miniOpenID, miniOpenID, unionID, unionID); err != nil {
+		return nil, err
+	}
+	return studentIDs, nil
+}
+
+func (repo *Repository) DeleteWeChatOfficialUserLinkByID(ctx context.Context, rowID int64) error {
+	if rowID <= 0 {
+		return nil
+	}
+
+	_, err := repo.db.ExecContext(ctx, `
+		DELETE FROM wechat_official_user_link
+		WHERE id = ?
+	`, rowID)
+	return err
 }
 
 func (repo *Repository) RefreshStudentBindChildStatus(ctx context.Context, studentID int64) error {
@@ -780,11 +832,17 @@ func (repo *Repository) GetWeChatOfficialBindingStatusByPhone(ctx context.Contex
 	var lastUnsubscribeAt sql.NullTime
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT
-			COUNT(DISTINCT student_id) AS bound_student_count,
-			COUNT(DISTINCT CASE WHEN subscribed = 1 THEN CONCAT(inst_id, ':', student_id, ':', official_openid) END) AS subscribed_bind_count,
-			MAX(last_unsubscribe_time) AS last_unsubscribe_time
-		FROM wechat_official_student_binding
-		WHERE phone = ?
+			COUNT(DISTINCT CASE WHEN sb.subscribed = 1 THEN sb.student_id END) AS bound_student_count,
+			COUNT(DISTINCT CASE
+				WHEN sb.subscribed = 1
+				 AND IFNULL(sb.official_openid, '') <> ''
+				 AND IFNULL(ul.subscribed, 0) = 1
+				THEN CONCAT(sb.inst_id, ':', sb.student_id, ':', sb.official_openid)
+			END) AS subscribed_bind_count,
+			MAX(sb.last_unsubscribe_time) AS last_unsubscribe_time
+		FROM wechat_official_student_binding sb
+		LEFT JOIN wechat_official_user_link ul ON ul.official_openid = sb.official_openid
+		WHERE sb.phone = ?
 	`, phone).Scan(
 		&status.BoundStudentCount,
 		&status.SubscribedBindCount,
@@ -810,7 +868,10 @@ func (repo *Repository) GetWeChatOfficialUserFollowStatusByPhone(ctx context.Con
 	var lastUnsubscribeAt sql.NullTime
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT
-			COUNT(DISTINCT CASE WHEN subscribed = 1 THEN COALESCE(unionid, official_openid, mini_openid) END) AS subscribed_user_count,
+			COUNT(DISTINCT CASE
+				WHEN subscribed = 1 AND IFNULL(official_openid, '') <> ''
+				THEN COALESCE(unionid, official_openid, mini_openid)
+			END) AS subscribed_user_count,
 			MAX(last_unsubscribe_time) AS last_unsubscribe_time
 		FROM wechat_official_user_link
 		WHERE phone = ?

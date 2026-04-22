@@ -21,7 +21,7 @@
 			<view class="success-copy">
 				<text class="success-title">已成功加入家庭</text>
 				<view class="success-student-pill">
-					<text class="success-student-pill__label">关注学员</text>
+					<text class="success-student-pill__label">绑定学员</text>
 					<text class="success-student-pill__name">{{ studentName || '新学员' }}</text>
 				</view>
 				<text class="success-desc">课表、系统通知和订单等内容会自动同步到当前家长端。</text>
@@ -45,7 +45,7 @@
 			</view>
 
 			<view class="success-actions">
-				<view class="parent-primary-button success-actions__primary" @click="$emit('invite')">邀请家人一起关注</view>
+				<view class="parent-primary-button success-actions__primary" @click="$emit('invite')">邀请家人一起查看</view>
 				<view class="success-actions__secondary" @click="$emit('close')">先看看</view>
 			</view>
 		</view>

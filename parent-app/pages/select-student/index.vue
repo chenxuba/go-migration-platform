@@ -8,7 +8,7 @@
 							<view class="select-back__icon"></view>
 						</view>
 					</view>
-					<text class="select-nav__title">关注学员</text>
+					<text class="select-nav__title">绑定学员</text>
 					<view class="parent-nav-spacer" :style="{ width: `${nav.width}px`, height: `${nav.height}px` }"></view>
 				</view>
 
@@ -73,6 +73,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import { repairCurrentParentWeChatIdentity } from '@/common/parent-auth'
 import {
 	confirmParentStudents,
 	confirmWeChatOfficialStudentBinding,
@@ -99,12 +100,13 @@ const selectedIds = ref([])
 const submitting = ref(false)
 
 let pendingRefreshSerial = 0
+let identityRepairPromise = null
 
 const isOfficialBinding = computed(() => hasActiveWeChatOfficialBinding())
 const pendingCandidates = computed(() => parentState.pendingCandidates)
 const maskedPhone = computed(() => parentState.profile.maskedPhone)
 const officialInstitutionName = computed(() => parentState.officialBindPreview?.institutionName || '当前机构')
-const heroTitle = computed(() => (isOfficialBinding.value ? '选择要绑定的学员' : '选择关联学员'))
+const heroTitle = computed(() => '选择要绑定的学员')
 const heroSubtitle = computed(() => {
 	if (isOfficialBinding.value) {
 		return `${maskedPhone.value} 在 ${officialInstitutionName.value} 已匹配到以下孩子`
@@ -115,9 +117,9 @@ const heroTag = computed(() => {
 	if (isOfficialBinding.value) {
 		return '本次公众号绑定仅支持选择 1 位学员'
 	}
-	return '选中后即可同步课表、通知和订单信息'
+	return '绑定后即可同步课表、通知和订单信息'
 })
-const emptyTitle = computed(() => (isOfficialBinding.value ? '当前号码暂无可绑定学员' : '当前号码暂无待关注学员'))
+const emptyTitle = computed(() => '当前号码暂无可绑定学员')
 const emptyDesc = computed(() => {
 	if (isOfficialBinding.value) {
 		return '可以返回上一页，或换个手机号继续尝试。'
@@ -131,7 +133,7 @@ const confirmButtonText = computed(() => {
 	if (isOfficialBinding.value) {
 		return '确认绑定'
 	}
-	return selectedIds.value.length ? `确认关注（${selectedIds.value.length}）` : '确认关注'
+	return selectedIds.value.length ? `确认绑定（${selectedIds.value.length}）` : '确认绑定'
 })
 
 watch(
@@ -153,6 +155,7 @@ watch(isOfficialBinding, value => {
 
 onShow(() => {
 	refreshPendingStudents()
+	prepareCurrentWeChatIdentity()
 })
 
 function toggleSelect(studentId) {
@@ -230,6 +233,9 @@ async function submitOfficialBindingToServer() {
 	}
 
 	try {
+		if (!(await ensureCurrentWeChatIdentity())) {
+			return
+		}
 		submitting.value = true
 		await confirmWeChatOfficialStudentBinding({
 			bindTicket: parentState.officialBindTicket,
@@ -252,6 +258,9 @@ async function submitOfficialBindingToServer() {
 		const nextPage = finalizeStudentBinding(selectedStudent.name || '')
 		navigateToPostAuthPage(nextPage)
 	} catch (error) {
+		if (handleUnauthorizedError(error)) {
+			return
+		}
 		uni.showToast({
 			title: normalizeErrorMessage(error),
 			icon: 'none'
@@ -278,14 +287,24 @@ async function submitBindingToServer() {
 	const firstSelectedStudent = pendingCandidates.value.find(item => selectedIds.value.includes(item.id))
 
 	try {
+		if (!(await ensureCurrentWeChatIdentity())) {
+			return
+		}
+		const miniOpenId = `${parentState.miniOpenId || ''}`.trim()
+		const unionId = `${parentState.unionId || ''}`.trim()
 		submitting.value = true
 		const lookup = await confirmParentStudents(parentState.authToken, {
-			studentIds
+			studentIds,
+			miniOpenId,
+			unionId
 		})
 		applyParentStudentLookup(lookup)
 		const nextPage = finalizeStudentBinding(firstSelectedStudent?.name || '')
 		navigateToPostAuthPage(nextPage)
 	} catch (error) {
+		if (handleUnauthorizedError(error)) {
+			return
+		}
 		uni.showToast({
 			title: normalizeErrorMessage(error),
 			icon: 'none'
@@ -334,17 +353,108 @@ async function refreshPendingStudents() {
 		if (requestSerial !== pendingRefreshSerial) {
 			return
 		}
+		if (handleUnauthorizedError(error)) {
+			return
+		}
 		console.warn('refresh pending students failed', error)
 	}
+}
+
+function hasCurrentWeChatIdentity() {
+	return !!`${parentState.miniOpenId || ''}`.trim() || !!`${parentState.unionId || ''}`.trim()
+}
+
+function prepareCurrentWeChatIdentity() {
+	if (!parentState.authToken || hasCurrentWeChatIdentity()) {
+		return
+	}
+	ensureCurrentWeChatIdentity({ silent: true }).catch(error => {
+		console.warn('prepare current wechat identity failed', error)
+	})
+}
+
+async function ensureCurrentWeChatIdentity(options = {}) {
+	if (hasCurrentWeChatIdentity()) {
+		return true
+	}
+
+	if (!parentState.authToken) {
+		handleSessionExpired()
+		return false
+	}
+
+	if (!identityRepairPromise) {
+		identityRepairPromise = (async () => {
+			try {
+				await repairCurrentParentWeChatIdentity(parentState.authToken)
+				return hasCurrentWeChatIdentity()
+			} finally {
+				identityRepairPromise = null
+			}
+		})()
+	}
+
+	try {
+		return await identityRepairPromise
+	} catch (error) {
+		if (handleUnauthorizedError(error)) {
+			return false
+		}
+		if (!options?.silent) {
+			uni.showToast({
+				title: normalizeIdentityErrorMessage(error),
+				icon: 'none'
+			})
+		}
+		return false
+	}
+}
+
+function isUnauthorizedError(error) {
+	return Number(error?.statusCode || 0) === 401 || `${error?.code || ''}`.trim() === 'UNAUTHORIZED'
+}
+
+function handleUnauthorizedError(error) {
+	if (!isUnauthorizedError(error)) {
+		return false
+	}
+	handleSessionExpired(`${error?.message || ''}`.trim() || '当前登录态已失效，请重新登录')
+	return true
+}
+
+function handleSessionExpired(message = '当前登录态已失效，请重新登录') {
+	logoutParent({
+		preserveOfficialBinding: isOfficialBinding.value
+	})
+	uni.showToast({
+		title: message,
+		icon: 'none'
+	})
+	setTimeout(() => {
+		uni.switchTab({
+			url: '/pages/profile/index'
+		})
+	}, 250)
+}
+
+function normalizeIdentityErrorMessage(error) {
+	const message = `${error?.message || error || ''}`.trim()
+	if (!message) {
+		return '当前微信身份恢复失败'
+	}
+	if (message.length > 22) {
+		return '当前微信身份恢复失败'
+	}
+	return message
 }
 
 function normalizeErrorMessage(error) {
 	const message = `${error?.message || error || ''}`.trim()
 	if (!message) {
-		return '确认关注失败，请稍后重试'
+		return '确认绑定失败，请稍后重试'
 	}
 	if (message.length > 22) {
-		return '确认关注失败，请检查接口'
+		return '确认绑定失败，请检查接口'
 	}
 	return message
 }

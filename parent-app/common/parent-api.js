@@ -38,6 +38,17 @@ function buildUploadHeaders(token = '') {
 	return headers
 }
 
+function createRequestError(message = '', options = {}) {
+	const error = new Error(`${message || ''}`.trim() || '请求失败')
+	error.statusCode = Number(options?.statusCode || 0)
+	error.requestId = `${options?.requestId || ''}`.trim()
+	error.code = `${options?.code || ''}`.trim()
+	if (!error.code && error.statusCode === 401) {
+		error.code = 'UNAUTHORIZED'
+	}
+	return error
+}
+
 function request({ url, method = 'GET', data, token = '' }) {
 	return new Promise((resolve, reject) => {
 		try {
@@ -58,10 +69,13 @@ function request({ url, method = 'GET', data, token = '' }) {
 					resolve(payload.data)
 					return
 				}
-				reject(new Error(payload.message || '请求失败'))
+				reject(createRequestError(payload.message || '请求失败', {
+					statusCode: response?.statusCode,
+					requestId: payload?.requestId
+				}))
 			},
 			fail(error) {
-				reject(new Error(error?.errMsg || '网络请求失败'))
+				reject(createRequestError(error?.errMsg || '网络请求失败'))
 			}
 		})
 	})
@@ -84,6 +98,15 @@ export function wechatParentLogin(payload) {
 		url: '/api/v1/parent/auth/wechat/login',
 		method: 'POST',
 		data: payload
+	})
+}
+
+export function refreshParentWeChatIdentity(token, payload) {
+	return request({
+		url: '/api/v1/parent/auth/wechat/identity',
+		method: 'POST',
+		data: payload,
+		token
 	})
 }
 
@@ -146,6 +169,15 @@ export function listParentPendingStudents(token) {
 export function confirmParentStudents(token, payload) {
 	return request({
 		url: '/api/v1/parent/students/confirm',
+		method: 'POST',
+		data: payload,
+		token
+	})
+}
+
+export function cancelParentAccount(token, payload) {
+	return request({
+		url: '/api/v1/parent/account/cancel',
 		method: 'POST',
 		data: payload,
 		token
@@ -310,10 +342,13 @@ export function uploadParentRehabSignature(token, filePath = '') {
 					resolve(payload.data)
 					return
 				}
-				reject(new Error(payload.message || '签名上传失败'))
+				reject(createRequestError(payload.message || '签名上传失败', {
+					statusCode: response?.statusCode,
+					requestId: payload?.requestId
+				}))
 			},
 			fail(error) {
-				reject(new Error(error?.errMsg || '签名上传失败'))
+				reject(createRequestError(error?.errMsg || '签名上传失败'))
 			}
 		})
 	})

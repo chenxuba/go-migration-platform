@@ -187,6 +187,22 @@ export function applyParentAuthSession(session = {}) {
 	applyAuthSession(session)
 }
 
+export function applyParentWeChatIdentity(identity = {}) {
+	const miniOpenId = `${identity?.miniOpenId || ''}`.trim()
+	const unionId = `${identity?.unionId || ''}`.trim()
+	if (!miniOpenId && !unionId) {
+		return
+	}
+
+	if (miniOpenId) {
+		parentState.miniOpenId = miniOpenId
+	}
+	if (unionId) {
+		parentState.unionId = unionId
+	}
+	persistParentSession()
+}
+
 export function setWeChatOfficialBindTicket(bindTicket = '') {
 	const nextTicket = `${bindTicket || ''}`.trim()
 	if (!nextTicket) {

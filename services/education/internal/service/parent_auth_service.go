@@ -91,6 +91,45 @@ func (svc *Service) ParentWeChatLogin(ctx context.Context, tenantID string, dto 
 	}, nil
 }
 
+func (svc *Service) RefreshParentWeChatIdentity(ctx context.Context, phone string, dto model.ParentWeChatIdentityDTO) (model.ParentWeChatIdentityVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentWeChatIdentityVO{}, errors.New("家长端微信身份恢复服务未初始化")
+	}
+	if svc.wechatMiniProgram == nil || !svc.wechatMiniProgram.isEnabled() {
+		return model.ParentWeChatIdentityVO{}, errors.New("微信小程序登录未配置，请先补充 AppID 和 Secret")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentWeChatIdentityVO{}, errors.New("手机号不能为空")
+	}
+
+	loginCode := strings.TrimSpace(dto.LoginCode)
+	if loginCode == "" {
+		return model.ParentWeChatIdentityVO{}, errors.New("缺少登录凭证")
+	}
+	if isMockWeChatLoginCode(loginCode) {
+		return model.ParentWeChatIdentityVO{}, errors.New("当前拿到的是模拟登录 code，请在真实微信小程序环境重新编译后再试")
+	}
+
+	session, err := svc.wechatMiniProgram.code2Session(ctx, loginCode)
+	if err != nil {
+		return model.ParentWeChatIdentityVO{}, err
+	}
+
+	if err := svc.repo.UpsertWeChatOfficialUserLinkByMiniProfile(ctx, session.OpenID, session.UnionID, phone); err != nil {
+		return model.ParentWeChatIdentityVO{}, err
+	}
+	if err := svc.repo.RepairWeChatOfficialUserLinkByPhone(ctx, session.OpenID, session.UnionID, phone); err != nil {
+		return model.ParentWeChatIdentityVO{}, err
+	}
+
+	return model.ParentWeChatIdentityVO{
+		MiniOpenID: session.OpenID,
+		UnionID:    session.UnionID,
+	}, nil
+}
+
 func (svc *Service) LookupParentStudentsByPhone(ctx context.Context, phone string) (model.ParentStudentLookupByPhoneVO, error) {
 	if svc == nil || svc.repo == nil {
 		return model.ParentStudentLookupByPhoneVO{}, errors.New("家长端学员查询服务未初始化")
@@ -210,7 +249,7 @@ func (svc *Service) GetParentWeChatOfficialStatusByPhone(ctx context.Context, ph
 		return model.ParentWeChatOfficialStatusVO{}, err
 	}
 
-	subscribed := status.SubscribedBindCount > 0 || userStatus.SubscribedUserCount > 0
+	subscribed := userStatus.SubscribedUserCount > 0
 
 	result := model.ParentWeChatOfficialStatusVO{
 		Subscribed:          subscribed,
@@ -270,16 +309,35 @@ func (svc *Service) ConfirmParentStudentsByPhone(ctx context.Context, phone stri
 		return model.ParentStudentLookupByPhoneVO{}, errors.New("手机号不能为空")
 	}
 
-	userLink, err := svc.repo.GetSubscribedWeChatOfficialUserLinkByPhone(ctx, phone)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return model.ParentStudentLookupByPhoneVO{}, errors.New("请先关注公众号后再绑定学员")
+	miniOpenID := strings.TrimSpace(dto.MiniOpenID)
+	unionID := strings.TrimSpace(dto.UnionID)
+	if miniOpenID != "" || unionID != "" {
+		if err := svc.repo.UpsertWeChatOfficialUserLinkByMiniProfile(ctx, miniOpenID, unionID, phone); err != nil {
+			return model.ParentStudentLookupByPhoneVO{}, err
 		}
-		return model.ParentStudentLookupByPhoneVO{}, err
 	}
-	if strings.TrimSpace(userLink.OfficialOpenID) == "" {
-		return model.ParentStudentLookupByPhoneVO{}, errors.New("请从公众号消息卡片进入后再绑定学员")
+
+	userLink, err := svc.repo.GetWeChatOfficialUserLinkByMiniIdentity(ctx, miniOpenID, unionID)
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return model.ParentStudentLookupByPhoneVO{}, err
+		}
+		userLink, err = svc.repo.GetSubscribedWeChatOfficialUserLinkByPhone(ctx, phone)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return model.ParentStudentLookupByPhoneVO{}, newParentReauthRequiredError("当前登录态已失效，请重新登录")
+			}
+			return model.ParentStudentLookupByPhoneVO{}, err
+		}
 	}
+
+	if linkedPhone := normalizeParentPhone(userLink.Phone); linkedPhone != "" && linkedPhone != phone {
+		return model.ParentStudentLookupByPhoneVO{}, errors.New("当前微信与登录手机号不匹配")
+	}
+
+	bindOfficialOpenID := strings.TrimSpace(userLink.OfficialOpenID)
+	bindMiniOpenID := firstNonEmpty(miniOpenID, userLink.MiniOpenID)
+	bindUnionID := firstNonEmpty(unionID, userLink.UnionID)
 
 	normalizedIDs := make([]int64, 0, len(dto.StudentIDs))
 	seen := make(map[int64]struct{}, len(dto.StudentIDs))
@@ -312,9 +370,9 @@ func (svc *Service) ConfirmParentStudentsByPhone(ctx context.Context, phone stri
 			ctx,
 			instID,
 			studentID,
-			userLink.OfficialOpenID,
-			userLink.MiniOpenID,
-			userLink.UnionID,
+			bindOfficialOpenID,
+			bindMiniOpenID,
+			bindUnionID,
 			phone,
 			"",
 			true,
@@ -330,6 +388,65 @@ func (svc *Service) ConfirmParentStudentsByPhone(ctx context.Context, phone stri
 	}
 
 	return svc.LookupParentStudentsByPhone(ctx, phone)
+}
+
+func (svc *Service) CancelParentAccountByPhone(ctx context.Context, phone string, dto model.ParentCancelAccountDTO) (model.ParentCancelAccountVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.ParentCancelAccountVO{}, errors.New("家长端账号注销服务未初始化")
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return model.ParentCancelAccountVO{}, errors.New("手机号不能为空")
+	}
+
+	miniOpenID := strings.TrimSpace(dto.MiniOpenID)
+	unionID := strings.TrimSpace(dto.UnionID)
+	if miniOpenID == "" && unionID == "" {
+		return model.ParentCancelAccountVO{}, newParentReauthRequiredError("当前登录态已失效，请重新登录")
+	}
+
+	userLink, err := svc.repo.GetWeChatOfficialUserLinkByMiniIdentity(ctx, miniOpenID, unionID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ParentCancelAccountVO{}, newParentReauthRequiredError("当前登录态已失效，请重新登录")
+		}
+		return model.ParentCancelAccountVO{}, err
+	}
+
+	linkedPhone := normalizeParentPhone(userLink.Phone)
+	if linkedPhone != "" && linkedPhone != phone {
+		return model.ParentCancelAccountVO{}, errors.New("当前微信与登录手机号不匹配")
+	}
+
+	studentIDs, err := svc.repo.DeleteWeChatOfficialStudentBindingsByIdentity(ctx, userLink.OfficialOpenID, userLink.MiniOpenID, userLink.UnionID)
+	if err != nil {
+		return model.ParentCancelAccountVO{}, err
+	}
+	if err := svc.repo.DeleteWeChatOfficialUserLinkByID(ctx, userLink.ID); err != nil {
+		return model.ParentCancelAccountVO{}, err
+	}
+
+	refreshed := make(map[int64]struct{}, len(studentIDs))
+	for _, studentID := range studentIDs {
+		if studentID <= 0 {
+			continue
+		}
+		if _, exists := refreshed[studentID]; exists {
+			continue
+		}
+		refreshed[studentID] = struct{}{}
+		if err := svc.repo.RefreshStudentBindChildStatus(ctx, studentID); err != nil {
+			return model.ParentCancelAccountVO{}, err
+		}
+	}
+	if err := svc.repo.RefreshStudentBindChildStatusByPhone(ctx, phone); err != nil {
+		return model.ParentCancelAccountVO{}, err
+	}
+
+	return model.ParentCancelAccountVO{
+		ClearedStudentCount: len(refreshed),
+	}, nil
 }
 
 func (svc *Service) ListParentCampusesByPhone(ctx context.Context, phone string) (model.ParentCampusSummaryVO, error) {

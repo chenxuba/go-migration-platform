@@ -103,7 +103,7 @@ func newWeChatOfficialClient(cfg WeChatOfficialConfig) *weChatOfficialClient {
 		cfg.MiniProgramTitle = "为保证您能接收到机构各类通知，请点击立即绑定学员"
 	}
 	if cfg.TextContent == "" {
-		cfg.TextContent = "⚠️点击下方推送消息，立即关注学员⬇⬇⬇"
+		cfg.TextContent = "⚠️点击下方推送消息，立即绑定学员⬇⬇⬇"
 	}
 	if cfg.AccountName == "" {
 		cfg.AccountName = "公众号"

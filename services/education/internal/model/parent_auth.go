@@ -8,8 +8,19 @@ type ParentWeChatLoginDTO struct {
 	BindTicket string `json:"bindTicket"`
 }
 
+type ParentWeChatIdentityDTO struct {
+	LoginCode string `json:"loginCode"`
+}
+
 type ParentBindStudentsDTO struct {
 	StudentIDs []int64 `json:"studentIds"`
+	MiniOpenID string  `json:"miniOpenId"`
+	UnionID    string  `json:"unionId"`
+}
+
+type ParentCancelAccountDTO struct {
+	MiniOpenID string `json:"miniOpenId"`
+	UnionID    string `json:"unionId"`
 }
 
 type ParentScheduleQueryDTO struct {
@@ -25,6 +36,11 @@ type ParentWeChatLoginVO struct {
 	MiniOpenID  string                     `json:"miniOpenId,omitempty"`
 	UnionID     string                     `json:"unionId,omitempty"`
 	Candidates  []ParentStudentCandidateVO `json:"candidates,omitempty"`
+}
+
+type ParentWeChatIdentityVO struct {
+	MiniOpenID string `json:"miniOpenId,omitempty"`
+	UnionID    string `json:"unionId,omitempty"`
 }
 
 type ParentCampusSummaryVO struct {
@@ -75,6 +91,10 @@ type ParentWeChatOfficialStatusVO struct {
 	BoundStudentCount   int    `json:"boundStudentCount"`
 	SubscribedBindCount int    `json:"subscribedBindCount"`
 	LastUnsubscribeAt   string `json:"lastUnsubscribeAt,omitempty"`
+}
+
+type ParentCancelAccountVO struct {
+	ClearedStudentCount int `json:"clearedStudentCount"`
 }
 
 type ParentScheduleVO struct {

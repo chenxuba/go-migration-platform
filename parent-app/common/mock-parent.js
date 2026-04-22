@@ -45,7 +45,7 @@ export const noticeList = [
 ]
 
 export const profileMenus = [
-	{ key: 'pending', title: '待关注学员', shortLabel: '待', accent: '#2d84ff' },
+	{ key: 'pending', title: '待绑定学员', shortLabel: '待', accent: '#2d84ff' },
 	{ key: 'coupon', title: '优惠券', shortLabel: '券', accent: '#ff6d6d' },
 	{ key: 'notice', title: '系统通知', shortLabel: '通', accent: '#f4b400' },
 	{ key: 'orders', title: '我的订单', shortLabel: '单', accent: '#f4b400' }

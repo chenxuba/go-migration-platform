@@ -26,10 +26,12 @@ type ParentStudentScheduleAliasRecord struct {
 }
 
 type ParentWeChatOfficialUserLinkRecord struct {
+	ID             int64
 	OfficialOpenID string
 	MiniOpenID     string
 	UnionID        string
 	Phone          string
+	Subscribed     bool
 }
 
 func (repo *Repository) ListParentStudentCandidatesByPhone(ctx context.Context, phone string) ([]ParentStudentLookupRecord, error) {
@@ -110,6 +112,67 @@ func (repo *Repository) GetSubscribedWeChatOfficialUserLinkByPhone(ctx context.C
 	if err != nil {
 		return ParentWeChatOfficialUserLinkRecord{}, err
 	}
+	return item, nil
+}
+
+func (repo *Repository) GetWeChatOfficialUserLinkByMiniIdentity(ctx context.Context, miniOpenID, unionID string) (ParentWeChatOfficialUserLinkRecord, error) {
+	miniOpenID = strings.TrimSpace(miniOpenID)
+	unionID = strings.TrimSpace(unionID)
+
+	if miniOpenID != "" {
+		item, err := repo.getWeChatOfficialUserLinkRecord(ctx, `
+			SELECT
+				id,
+				IFNULL(official_openid, ''),
+				IFNULL(mini_openid, ''),
+				IFNULL(unionid, ''),
+				IFNULL(phone, ''),
+				IFNULL(subscribed, 0)
+			FROM wechat_official_user_link
+			WHERE mini_openid = ?
+			LIMIT 1
+		`, miniOpenID)
+		if err == nil {
+			return item, nil
+		}
+		if err != sql.ErrNoRows {
+			return ParentWeChatOfficialUserLinkRecord{}, err
+		}
+	}
+
+	if unionID != "" {
+		return repo.getWeChatOfficialUserLinkRecord(ctx, `
+			SELECT
+				id,
+				IFNULL(official_openid, ''),
+				IFNULL(mini_openid, ''),
+				IFNULL(unionid, ''),
+				IFNULL(phone, ''),
+				IFNULL(subscribed, 0)
+			FROM wechat_official_user_link
+			WHERE unionid = ?
+			LIMIT 1
+		`, unionID)
+	}
+
+	return ParentWeChatOfficialUserLinkRecord{}, sql.ErrNoRows
+}
+
+func (repo *Repository) getWeChatOfficialUserLinkRecord(ctx context.Context, query string, args ...any) (ParentWeChatOfficialUserLinkRecord, error) {
+	var item ParentWeChatOfficialUserLinkRecord
+	var subscribed int
+	err := repo.db.QueryRowContext(ctx, query, args...).Scan(
+		&item.ID,
+		&item.OfficialOpenID,
+		&item.MiniOpenID,
+		&item.UnionID,
+		&item.Phone,
+		&subscribed,
+	)
+	if err != nil {
+		return ParentWeChatOfficialUserLinkRecord{}, err
+	}
+	item.Subscribed = subscribed != 0
 	return item, nil
 }
 

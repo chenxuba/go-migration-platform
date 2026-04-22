@@ -19,6 +19,12 @@
 			}
 		},
 		{
+			"path": "pages/settings/index",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/attendance-record/index",
 			"style": {
 				"navigationStyle": "custom"

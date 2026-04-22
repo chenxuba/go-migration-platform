@@ -132,7 +132,7 @@
 						<view class="parent-empty-card rehab-empty-card">
 							<view class="parent-empty-badge">空</view>
 							<text class="parent-empty-title">{{ displayStudents.length ? '当前学员还没有康复记录' : '暂未绑定学员' }}</text>
-							<text class="parent-empty-desc">{{ displayStudents.length ? '老师完成记录后，康复内容会自动同步到这里。' : '请先完成学员关注，再查看康复记录。' }}</text>
+							<text class="parent-empty-desc">{{ displayStudents.length ? '老师完成记录后，康复内容会自动同步到这里。' : '请先完成学员绑定，再查看康复记录。' }}</text>
 						</view>
 					</view>
 				</template>

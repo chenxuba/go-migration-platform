@@ -1,8 +1,9 @@
-import { listParentBoundStudents, listParentPendingStudents, wechatParentLogin } from '@/common/parent-api'
+import { listParentBoundStudents, listParentPendingStudents, refreshParentWeChatIdentity, wechatParentLogin } from '@/common/parent-api'
 import {
 	applyParentAuthSession,
 	applyParentBoundStudentSummary,
 	applyParentPendingStudentSummary,
+	applyParentWeChatIdentity,
 	parentState,
 	setAuthLoading,
 	setPostAuthPage
@@ -136,4 +137,35 @@ export async function authorizeByWechatPhone(event, options = {}) {
 	} finally {
 		setAuthLoading(false)
 	}
+}
+
+export async function repairCurrentParentWeChatIdentity(token = '') {
+	const accessToken = `${token || parentState.authToken || ''}`.trim()
+	if (!accessToken) {
+		throw new Error('当前登录态已失效，请重新登录')
+	}
+
+	const currentMiniOpenId = `${parentState.miniOpenId || ''}`.trim()
+	const currentUnionId = `${parentState.unionId || ''}`.trim()
+	if (currentMiniOpenId || currentUnionId) {
+		return {
+			miniOpenId: currentMiniOpenId,
+			unionId: currentUnionId
+		}
+	}
+
+	const loginResult = await loginWithWeChat()
+	const loginCode = `${loginResult?.code || ''}`.trim()
+	if (!loginCode) {
+		throw new Error('未获取到微信登录凭证')
+	}
+	if (isMockLoginCode(loginCode)) {
+		throw new Error('当前拿到的是模拟登录 code，请在真实微信小程序环境重新编译后再试')
+	}
+
+	const identity = await refreshParentWeChatIdentity(accessToken, {
+		loginCode
+	})
+	applyParentWeChatIdentity(identity)
+	return identity
 }
