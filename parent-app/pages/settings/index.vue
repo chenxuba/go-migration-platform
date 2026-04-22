@@ -66,6 +66,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { cancelParentAccount as cancelParentAccountRequest } from '@/common/parent-api'
+import { repairCurrentParentWeChatIdentity } from '@/common/parent-auth'
 import { getNavLayout } from '@/common/nav-layout'
 import { logoutParent, parentState } from '@/common/parent-state'
 
@@ -95,6 +96,24 @@ function resolveErrorMessage(error) {
 	return message.length > 30 ? message.slice(0, 30) : message
 }
 
+function hasCurrentWeChatIdentity() {
+	return !!`${parentState.miniOpenId || ''}`.trim() || !!`${parentState.unionId || ''}`.trim()
+}
+
+async function ensureCurrentWeChatIdentity() {
+	if (hasCurrentWeChatIdentity()) {
+		return true
+	}
+
+	const token = `${parentState.authToken || ''}`.trim()
+	if (!token) {
+		return false
+	}
+
+	await repairCurrentParentWeChatIdentity(token)
+	return hasCurrentWeChatIdentity()
+}
+
 function openCancelConfirm() {
 	if (canceling.value) {
 		return
@@ -121,19 +140,20 @@ async function confirmCancelAccount() {
 		return
 	}
 
-	const token = `${parentState.authToken || ''}`.trim()
-	const miniOpenId = `${parentState.miniOpenId || ''}`.trim()
-	const unionId = `${parentState.unionId || ''}`.trim()
-	if (!token || (!miniOpenId && !unionId)) {
-		uni.showToast({
-			title: '当前登录态已失效，请重新登录',
-			icon: 'none'
-		})
-		return
-	}
-
 	canceling.value = true
 	try {
+		const token = `${parentState.authToken || ''}`.trim()
+		if (!token) {
+			throw new Error('当前登录态已失效，请重新登录')
+		}
+
+		const prepared = await ensureCurrentWeChatIdentity()
+		if (!prepared) {
+			throw new Error('当前登录态已失效，请重新登录')
+		}
+
+		const miniOpenId = `${parentState.miniOpenId || ''}`.trim()
+		const unionId = `${parentState.unionId || ''}`.trim()
 		await cancelParentAccountRequest(token, {
 			miniOpenId,
 			unionId
