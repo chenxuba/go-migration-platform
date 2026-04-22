@@ -644,7 +644,7 @@ func TestRefreshParentWeChatIdentity_StoresCurrentMiniIdentity(t *testing.T) {
 	}
 }
 
-func TestCancelParentAccountByPhone_ClearsCurrentWeChatBinding(t *testing.T) {
+func TestCancelParentAccountByPhone_PreservesOfficialFollowIdentity(t *testing.T) {
 	phone := "17612340005"
 	miniOpenID := "mini-openid-cancel"
 	unionID := "unionid-cancel"
@@ -690,7 +690,10 @@ func TestCancelParentAccountByPhone_ClearsCurrentWeChatBinding(t *testing.T) {
 			   OR (? <> '' AND unionid = ?)
 		`, []any{officialOpenID, officialOpenID, miniOpenID, miniOpenID, unionID, unionID}, 2),
 		execResultExpectation(`
-			DELETE FROM wechat_official_user_link
+			UPDATE wechat_official_user_link
+			SET mini_openid = NULL,
+				unionid = NULL,
+				update_time = NOW()
 			WHERE id = ?
 		`, []any{userLinkRowID}, 1),
 		{
@@ -746,6 +749,94 @@ func TestCancelParentAccountByPhone_ClearsCurrentWeChatBinding(t *testing.T) {
 	}
 	if result.ClearedStudentCount != 2 {
 		t.Fatalf("expected cleared student count 2, got %d", result.ClearedStudentCount)
+	}
+}
+
+func TestCancelParentAccountByPhone_DeletesMiniOnlyIdentity(t *testing.T) {
+	phone := "17612340015"
+	miniOpenID := "mini-openid-cancel-mini-only"
+	unionID := "unionid-cancel-mini-only"
+	userLinkRowID := int64(801)
+	studentID := int64(3301)
+
+	svc, cleanup := newScriptedService(t, []queryExpectation{
+		{
+			query: `
+				SELECT
+					id,
+					IFNULL(official_openid, ''),
+					IFNULL(mini_openid, ''),
+					IFNULL(unionid, ''),
+					IFNULL(phone, ''),
+					IFNULL(subscribed, 0)
+				FROM wechat_official_user_link
+				WHERE mini_openid = ?
+				LIMIT 1
+			`,
+			args:    []any{miniOpenID},
+			columns: []string{"id", "official_openid", "mini_openid", "unionid", "phone", "subscribed"},
+			rows:    [][]driver.Value{{userLinkRowID, "", miniOpenID, unionID, phone, int64(0)}},
+		},
+		{
+			query: `
+				SELECT DISTINCT student_id
+				FROM wechat_official_student_binding
+				WHERE (? <> '' AND official_openid = ?)
+				   OR (? <> '' AND mini_openid = ?)
+				   OR (? <> '' AND unionid = ?)
+			`,
+			args:    []any{"", "", miniOpenID, miniOpenID, unionID, unionID},
+			columns: []string{"student_id"},
+			rows:    [][]driver.Value{{studentID}},
+		},
+		execResultExpectation(`
+			DELETE FROM wechat_official_student_binding
+			WHERE (? <> '' AND official_openid = ?)
+			   OR (? <> '' AND mini_openid = ?)
+			   OR (? <> '' AND unionid = ?)
+		`, []any{"", "", miniOpenID, miniOpenID, unionID, unionID}, 1),
+		execResultExpectation(`
+			DELETE FROM wechat_official_user_link
+			WHERE id = ?
+		`, []any{userLinkRowID}, 1),
+		{
+			query: `
+				SELECT COUNT(*)
+				FROM wechat_official_student_binding
+				WHERE student_id = ? AND subscribed = 1
+			`,
+			args:    []any{studentID},
+			columns: []string{"count"},
+			rows:    [][]driver.Value{{int64(0)}},
+		},
+		execResultExpectation(`
+			UPDATE inst_student
+			SET is_bind_child = ?, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, []any{0, studentID}, 1),
+		execResultExpectation(`
+			UPDATE inst_student s
+			LEFT JOIN (
+				SELECT DISTINCT student_id
+				FROM wechat_official_student_binding
+				WHERE subscribed = 1
+			) bound ON bound.student_id = s.id
+			SET s.is_bind_child = CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END,
+				s.update_time = NOW()
+			WHERE IFNULL(s.mobile, '') = ? AND s.del_flag = 0
+		`, []any{phone}, 1),
+	})
+	defer cleanup()
+
+	result, err := svc.CancelParentAccountByPhone(context.Background(), phone, model.ParentCancelAccountDTO{
+		MiniOpenID: miniOpenID,
+		UnionID:    unionID,
+	})
+	if err != nil {
+		t.Fatalf("CancelParentAccountByPhone: %v", err)
+	}
+	if result.ClearedStudentCount != 1 {
+		t.Fatalf("expected cleared student count 1, got %d", result.ClearedStudentCount)
 	}
 }
 

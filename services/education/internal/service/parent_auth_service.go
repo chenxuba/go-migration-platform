@@ -423,8 +423,14 @@ func (svc *Service) CancelParentAccountByPhone(ctx context.Context, phone string
 	if err != nil {
 		return model.ParentCancelAccountVO{}, err
 	}
-	if err := svc.repo.DeleteWeChatOfficialUserLinkByID(ctx, userLink.ID); err != nil {
-		return model.ParentCancelAccountVO{}, err
+	if strings.TrimSpace(userLink.OfficialOpenID) != "" {
+		if err := svc.repo.ClearWeChatOfficialUserLinkMiniIdentityByID(ctx, userLink.ID); err != nil {
+			return model.ParentCancelAccountVO{}, err
+		}
+	} else {
+		if err := svc.repo.DeleteWeChatOfficialUserLinkByID(ctx, userLink.ID); err != nil {
+			return model.ParentCancelAccountVO{}, err
+		}
 	}
 
 	refreshed := make(map[int64]struct{}, len(studentIDs))

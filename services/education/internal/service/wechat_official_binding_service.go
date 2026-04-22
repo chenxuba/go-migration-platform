@@ -71,10 +71,37 @@ func (svc *Service) syncWeChatOfficialSubscription(ctx context.Context, openID s
 		return err
 	}
 
+	repairedStudentIDs := make([]int64, 0, 8)
+	if subscribed {
+		userLink, err := svc.repo.GetWeChatOfficialUserLinkByOfficialOpenID(ctx, openID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil {
+			repairedStudentIDs, err = svc.repo.RepairWeChatOfficialStudentBindingsByUserLink(
+				ctx,
+				openID,
+				userLink.MiniOpenID,
+				firstNonEmpty(userLink.UnionID, unionID),
+				userLink.Phone,
+			)
+			if err != nil {
+				return err
+			}
+			if len(repairedStudentIDs) > 0 {
+				logx.Info("wechat official subscription repaired existing student bindings", logx.Entry{
+					"openid":       strings.TrimSpace(openID),
+					"studentCount": len(repairedStudentIDs),
+				})
+			}
+		}
+	}
+
 	studentIDs, err := svc.repo.UpdateWeChatOfficialBindingSubscriptionByOpenID(ctx, openID, subscribed)
 	if err != nil {
 		return err
 	}
+	studentIDs = append(studentIDs, repairedStudentIDs...)
 
 	refreshed := make(map[int64]struct{}, len(studentIDs))
 	for _, studentID := range studentIDs {

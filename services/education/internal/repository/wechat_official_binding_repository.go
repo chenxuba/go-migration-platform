@@ -313,6 +313,21 @@ func (repo *Repository) UpsertWeChatOfficialUserLinkByOfficialProfile(ctx contex
 	return repo.upsertWeChatOfficialUserLinkMerged(ctx, officialOpenID, "", unionID, "", subscribed)
 }
 
+func (repo *Repository) GetWeChatOfficialUserLinkByOfficialOpenID(ctx context.Context, officialOpenID string) (ParentWeChatOfficialUserLinkRecord, error) {
+	record, err := repo.findWeChatOfficialUserLinkByOfficialOpenID(ctx, officialOpenID)
+	if err != nil {
+		return ParentWeChatOfficialUserLinkRecord{}, err
+	}
+	return ParentWeChatOfficialUserLinkRecord{
+		ID:             record.ID,
+		OfficialOpenID: record.OfficialOpenID,
+		MiniOpenID:     record.MiniOpenID,
+		UnionID:        record.UnionID,
+		Phone:          record.Phone,
+		Subscribed:     record.Subscribed,
+	}, nil
+}
+
 func (repo *Repository) UpsertWeChatOfficialUserLinkByMiniProfile(ctx context.Context, miniOpenID, unionID, phone string) error {
 	miniOpenID = strings.TrimSpace(miniOpenID)
 	unionID = strings.TrimSpace(unionID)
@@ -340,6 +355,75 @@ func (repo *Repository) UpsertWeChatOfficialUserLinkByMiniProfile(ctx context.Co
 
 func (repo *Repository) UpsertWeChatOfficialUserLink(ctx context.Context, officialOpenID, miniOpenID, unionID, phone string, subscribed bool) error {
 	return repo.upsertWeChatOfficialUserLinkMerged(ctx, officialOpenID, miniOpenID, unionID, phone, subscribed)
+}
+
+func (repo *Repository) RepairWeChatOfficialStudentBindingsByUserLink(ctx context.Context, officialOpenID, miniOpenID, unionID, phone string) ([]int64, error) {
+	officialOpenID = strings.TrimSpace(officialOpenID)
+	miniOpenID = strings.TrimSpace(miniOpenID)
+	unionID = strings.TrimSpace(unionID)
+	phone = strings.TrimSpace(phone)
+	if officialOpenID == "" {
+		return nil, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT DISTINCT student_id
+		FROM wechat_official_student_binding
+		WHERE official_openid = ?
+		   OR (
+				IFNULL(official_openid, '') = ''
+				AND (
+					(? <> '' AND mini_openid = ?)
+				 OR (? <> '' AND unionid = ?)
+				 OR (? <> '' AND phone = ?)
+				)
+		   )
+	`, officialOpenID, miniOpenID, miniOpenID, unionID, unionID, phone, phone)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	studentIDs := make([]int64, 0, 8)
+	for rows.Next() {
+		var studentID int64
+		if err := rows.Scan(&studentID); err != nil {
+			return nil, err
+		}
+		if studentID > 0 {
+			studentIDs = append(studentIDs, studentID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if miniOpenID == "" && unionID == "" && phone == "" {
+		return studentIDs, nil
+	}
+
+	_, err = repo.db.ExecContext(ctx, `
+		UPDATE wechat_official_student_binding wsb
+		LEFT JOIN (
+			SELECT DISTINCT inst_id, student_id
+			FROM wechat_official_student_binding
+			WHERE official_openid = ?
+		) existing ON existing.inst_id = wsb.inst_id AND existing.student_id = wsb.student_id
+		SET wsb.official_openid = ?,
+			wsb.update_time = NOW()
+		WHERE IFNULL(wsb.official_openid, '') = ''
+		  AND existing.student_id IS NULL
+		  AND (
+				(? <> '' AND wsb.mini_openid = ?)
+			 OR (? <> '' AND wsb.unionid = ?)
+			 OR (? <> '' AND wsb.phone = ?)
+		  )
+	`, officialOpenID, officialOpenID, miniOpenID, miniOpenID, unionID, unionID, phone, phone)
+	if err != nil {
+		return nil, err
+	}
+
+	return studentIDs, nil
 }
 
 func (repo *Repository) RepairWeChatOfficialUserLinkByPhone(ctx context.Context, miniOpenID, unionID, phone string) error {
@@ -761,6 +845,21 @@ func (repo *Repository) DeleteWeChatOfficialUserLinkByID(ctx context.Context, ro
 
 	_, err := repo.db.ExecContext(ctx, `
 		DELETE FROM wechat_official_user_link
+		WHERE id = ?
+	`, rowID)
+	return err
+}
+
+func (repo *Repository) ClearWeChatOfficialUserLinkMiniIdentityByID(ctx context.Context, rowID int64) error {
+	if rowID <= 0 {
+		return nil
+	}
+
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE wechat_official_user_link
+		SET mini_openid = NULL,
+			unionid = NULL,
+			update_time = NOW()
 		WHERE id = ?
 	`, rowID)
 	return err
