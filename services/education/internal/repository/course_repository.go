@@ -12,6 +12,15 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
+func studentBindChildExistsSQL(studentAlias string) string {
+	return fmt.Sprintf(`CASE WHEN EXISTS (
+		SELECT 1
+		FROM wechat_official_student_binding wsb
+		WHERE wsb.student_id = %s.id
+		  AND wsb.subscribed = 1
+	) THEN 1 ELSE 0 END`, studentAlias)
+}
+
 func (repo *Repository) CountCourseByName(ctx context.Context, instID int64, name string, excludeID *int64) (int, error) {
 	query := "SELECT COUNT(*) FROM inst_course WHERE inst_id = ? AND name = ? AND del_flag = 0"
 	args := []any{instID, strings.TrimSpace(name)}
@@ -1186,8 +1195,9 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 }
 
 func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, studentID int64) (model.IntentStudent, error) {
+	bindChildExpr := studentBindChildExistsSQL("s")
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship, IFNULL(s.is_collect, 0), IFNULL(s.is_bind_child, 0), s.sale_person, IFNULL(iu.nick_name, ''), s.intent_level,
+		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship, IFNULL(s.is_collect, 0), `+bindChildExpr+`, s.sale_person, IFNULL(iu.nick_name, ''), s.intent_level,
 		       IFNULL(s.intended_course, ''), s.channel_id, IFNULL(c.channel_name, ''), IFNULL(cc.category_name, ''), s.create_time, s.birthday,
 		       IFNULL(s.wechat_number, ''), IFNULL(s.study_school, ''), IFNULL(s.grade, ''), IFNULL(s.interest, ''), IFNULL(s.address, ''),
 		       s.follow_up_status, s.student_status, s.last_follow_up_time, s.next_follow_up_time, IFNULL(s.remark, ''),
@@ -1391,6 +1401,7 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 		size = 10
 	}
 	offset := (current - 1) * size
+	bindChildExpr := studentBindChildExistsSQL("s")
 
 	filters := []string{"s.del_flag = 0", "s.inst_id = ?"}
 	args := []any{instID}
@@ -1526,7 +1537,7 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 		if *q.IsBindChild {
 			bindValue = 1
 		}
-		filters = append(filters, "IFNULL(s.is_bind_child, 0) = ?")
+		filters = append(filters, bindChildExpr+" = ?")
 		args = append(args, bindValue)
 	}
 	whereClause := strings.Join(filters, " AND ")
@@ -1538,7 +1549,7 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT s.id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''),
-		       s.phone_relationship, IFNULL(s.is_collect, 0), IFNULL(s.is_bind_child, 0), s.student_status, s.create_time, s.channel_id, IFNULL(c.channel_name, ''),
+		       s.phone_relationship, IFNULL(s.is_collect, 0), `+bindChildExpr+`, s.student_status, s.create_time, s.channel_id, IFNULL(c.channel_name, ''),
 		       s.advisor_id, IFNULL(u1.nick_name, ''), s.student_manager_id, IFNULL(u2.nick_name, ''),
 		       s.last_follow_up_time, s.birthday, IFNULL(s.wechat_number, ''), IFNULL(s.study_school, ''),
 		       IFNULL(s.grade, ''), IFNULL(s.interest, ''), IFNULL(s.address, ''), s.recommend_student_id,

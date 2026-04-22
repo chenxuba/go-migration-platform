@@ -746,34 +746,17 @@ func (repo *Repository) RefreshStudentBindChildStatusByPhone(ctx context.Context
 		return nil
 	}
 
-	var linkedSubscribedCount int
-	if err := repo.db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM wechat_official_user_link
-		WHERE phone = ? AND subscribed = 1
-	`, phone).Scan(&linkedSubscribedCount); err != nil {
-		return err
-	}
-
-	var bindingSubscribedCount int
-	if err := repo.db.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM wechat_official_student_binding
-		WHERE phone = ? AND subscribed = 1
-	`, phone).Scan(&bindingSubscribedCount); err != nil {
-		return err
-	}
-
-	isBindChild := 0
-	if linkedSubscribedCount > 0 || bindingSubscribedCount > 0 {
-		isBindChild = 1
-	}
-
 	_, err := repo.db.ExecContext(ctx, `
-		UPDATE inst_student
-		SET is_bind_child = ?, update_time = NOW()
-		WHERE mobile = ? AND del_flag = 0
-	`, isBindChild, phone)
+		UPDATE inst_student s
+		LEFT JOIN (
+			SELECT DISTINCT student_id
+			FROM wechat_official_student_binding
+			WHERE subscribed = 1
+		) bound ON bound.student_id = s.id
+		SET s.is_bind_child = CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END,
+			s.update_time = NOW()
+		WHERE IFNULL(s.mobile, '') = ? AND s.del_flag = 0
+	`, phone)
 	return err
 }
 

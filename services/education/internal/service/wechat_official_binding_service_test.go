@@ -215,31 +215,17 @@ func TestSyncWeChatOfficialSubscription_UnsubscribeRefreshesStudentBindChildStat
 			columns: []string{"phone"},
 			rows:    [][]driver.Value{{phone}},
 		},
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM wechat_official_user_link
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phone},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM wechat_official_student_binding
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phone},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
 		execResultExpectation(`
-			UPDATE inst_student
-			SET is_bind_child = ?, update_time = NOW()
-			WHERE mobile = ? AND del_flag = 0
-		`, []any{0, phone}, 3),
+			UPDATE inst_student s
+			LEFT JOIN (
+				SELECT DISTINCT student_id
+				FROM wechat_official_student_binding
+				WHERE subscribed = 1
+			) bound ON bound.student_id = s.id
+			SET s.is_bind_child = CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END,
+				s.update_time = NOW()
+			WHERE IFNULL(s.mobile, '') = ? AND s.del_flag = 0
+		`, []any{phone}, 3),
 	})
 	defer cleanup()
 
@@ -313,31 +299,17 @@ func TestSyncWeChatOfficialSubscription_UnsubscribeRefreshesPhoneMatchedStudents
 			columns: []string{"phone"},
 			rows:    [][]driver.Value{{phone}},
 		},
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM wechat_official_user_link
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phone},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM wechat_official_student_binding
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phone},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
 		execResultExpectation(`
-			UPDATE inst_student
-			SET is_bind_child = ?, update_time = NOW()
-			WHERE mobile = ? AND del_flag = 0
-		`, []any{0, phone}, 2),
+			UPDATE inst_student s
+			LEFT JOIN (
+				SELECT DISTINCT student_id
+				FROM wechat_official_student_binding
+				WHERE subscribed = 1
+			) bound ON bound.student_id = s.id
+			SET s.is_bind_child = CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END,
+				s.update_time = NOW()
+			WHERE IFNULL(s.mobile, '') = ? AND s.del_flag = 0
+		`, []any{phone}, 2),
 	})
 	defer cleanup()
 

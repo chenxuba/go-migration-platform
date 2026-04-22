@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"database/sql/driver"
 	"testing"
 )
 
@@ -11,56 +10,28 @@ func TestRefreshStudentBindChildStatusByPhones_DeduplicatesAndRefreshesEachPhone
 	phoneB := "17601241632"
 
 	svc, cleanup := newScriptedService(t, []queryExpectation{
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM wechat_official_user_link
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phoneA},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM wechat_official_student_binding
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phoneA},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
 		execResultExpectation(`
-			UPDATE inst_student
-			SET is_bind_child = ?, update_time = NOW()
-			WHERE mobile = ? AND del_flag = 0
-		`, []any{0, phoneA}, 1),
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM wechat_official_user_link
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phoneB},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(1)}},
-		},
-		{
-			query: `
-				SELECT COUNT(*)
+			UPDATE inst_student s
+			LEFT JOIN (
+				SELECT DISTINCT student_id
 				FROM wechat_official_student_binding
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phoneB},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(0)}},
-		},
+				WHERE subscribed = 1
+			) bound ON bound.student_id = s.id
+			SET s.is_bind_child = CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END,
+				s.update_time = NOW()
+			WHERE IFNULL(s.mobile, '') = ? AND s.del_flag = 0
+		`, []any{phoneA}, 1),
 		execResultExpectation(`
-			UPDATE inst_student
-			SET is_bind_child = ?, update_time = NOW()
-			WHERE mobile = ? AND del_flag = 0
-		`, []any{1, phoneB}, 1),
+			UPDATE inst_student s
+			LEFT JOIN (
+				SELECT DISTINCT student_id
+				FROM wechat_official_student_binding
+				WHERE subscribed = 1
+			) bound ON bound.student_id = s.id
+			SET s.is_bind_child = CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END,
+				s.update_time = NOW()
+			WHERE IFNULL(s.mobile, '') = ? AND s.del_flag = 0
+		`, []any{phoneB}, 1),
 	})
 	defer cleanup()
 

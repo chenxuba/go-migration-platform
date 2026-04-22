@@ -327,31 +327,17 @@ func TestConfirmParentStudentsByPhone_CreatesRealBindingRows(t *testing.T) {
 			SET is_bind_child = ?, update_time = NOW()
 			WHERE id = ? AND del_flag = 0
 		`, []any{1, studentID}, 1),
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM wechat_official_user_link
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phone},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(1)}},
-		},
-		{
-			query: `
-				SELECT COUNT(*)
-				FROM wechat_official_student_binding
-				WHERE phone = ? AND subscribed = 1
-			`,
-			args:    []any{phone},
-			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(1)}},
-		},
 		execResultExpectation(`
-			UPDATE inst_student
-			SET is_bind_child = ?, update_time = NOW()
-			WHERE mobile = ? AND del_flag = 0
-		`, []any{1, phone}, 1),
+			UPDATE inst_student s
+			LEFT JOIN (
+				SELECT DISTINCT student_id
+				FROM wechat_official_student_binding
+				WHERE subscribed = 1
+			) bound ON bound.student_id = s.id
+			SET s.is_bind_child = CASE WHEN bound.student_id IS NULL THEN 0 ELSE 1 END,
+				s.update_time = NOW()
+			WHERE IFNULL(s.mobile, '') = ? AND s.del_flag = 0
+		`, []any{phone}, 1),
 		{
 			query: `
 				SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), IFNULL(s.mobile, ''),
