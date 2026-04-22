@@ -398,7 +398,6 @@ function inviteFamily() {
 }
 
 .course-student-card {
-	margin-top: 18rpx;
 	padding: 8rpx 14rpx 4rpx;
 }
 

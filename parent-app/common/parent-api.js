@@ -28,6 +28,16 @@ function buildHeaders(token = '') {
 	return headers
 }
 
+function buildUploadHeaders(token = '') {
+	const headers = {
+		'X-Tenant-ID': PARENT_TENANT_ID
+	}
+	if (token) {
+		headers.Authorization = `Bearer ${token}`
+	}
+	return headers
+}
+
 function request({ url, method = 'GET', data, token = '' }) {
 	return new Promise((resolve, reject) => {
 		try {
@@ -207,6 +217,81 @@ export function getParentCourseArrears(token, query = {}) {
 			chargingMode: query.chargingMode
 		})}`,
 		method: 'GET',
+		token
+	})
+}
+
+export function listParentRehabRecords(token, query = {}) {
+	return request({
+		url: `/api/v1/parent/rehab-records${buildQueryString({
+			studentId: query.studentId,
+			pageIndex: query.pageIndex,
+			pageSize: query.pageSize
+		})}`,
+		method: 'GET',
+		token
+	})
+}
+
+export function getParentRehabRecordDetail(token, query = {}) {
+	return request({
+		url: `/api/v1/parent/rehab-records/detail${buildQueryString({
+			studentId: query.studentId,
+			studentTeachingRecordId: query.studentTeachingRecordId
+		})}`,
+		method: 'GET',
+		token
+	})
+}
+
+export function uploadParentRehabSignature(token, filePath = '') {
+	return new Promise((resolve, reject) => {
+		try {
+			validateParentAPIBaseURL()
+		} catch (error) {
+			reject(error)
+			return
+		}
+
+		const normalizedPath = `${filePath || ''}`.trim()
+		if (!normalizedPath) {
+			reject(new Error('签名文件不能为空'))
+			return
+		}
+
+		uni.uploadFile({
+			url: `${PARENT_API_BASE_URL}/api/v1/parent/rehab-records/signature-upload`,
+			filePath: normalizedPath,
+			name: 'file',
+			header: buildUploadHeaders(token),
+			success(response) {
+				let payload = {}
+				try {
+					payload = typeof response?.data === 'string'
+						? JSON.parse(response.data || '{}')
+						: (response?.data || {})
+				} catch (error) {
+					reject(new Error('签名上传响应解析失败'))
+					return
+				}
+				if (response.statusCode >= 200 && response.statusCode < 300 && payload.success !== false) {
+					resolve(payload.data)
+					return
+				}
+				reject(new Error(payload.message || '签名上传失败'))
+			},
+			fail(error) {
+				reject(new Error(error?.errMsg || '签名上传失败'))
+			}
+		})
+	})
+}
+
+export function saveParentRehabFeedback(token, payload = {}) {
+	return request({
+		url: '/api/v1/parent/rehab-records/feedback',
+		method: 'POST',
+		data: payload,
 		token
 	})
 }

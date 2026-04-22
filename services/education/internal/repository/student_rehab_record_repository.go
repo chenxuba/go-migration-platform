@@ -431,6 +431,150 @@ func (repo *Repository) PublishStudentRehabRecord(ctx context.Context, instID, o
 	return repo.upsertStudentRehabRecord(ctx, instID, operatorID, strings.TrimSpace(dto.StudentTeachingRecordID), dto.Template, dto.Content, true)
 }
 
+func (repo *Repository) SaveParentRehabFeedback(ctx context.Context, instID int64, dto model.ParentRehabFeedbackSaveDTO) (bool, error) {
+	studentTeachingRecordID, err := strconv.ParseInt(strings.TrimSpace(dto.StudentTeachingRecordID), 10, 64)
+	if err != nil || studentTeachingRecordID <= 0 {
+		return false, errors.New("缺少有效的康复记录学员")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	if _, err := repo.loadStudentTeachingRecordForUpdateTx(ctx, tx, instID, studentTeachingRecordID); err != nil {
+		return false, err
+	}
+
+	var publishedContentJSON string
+	if err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(published_content_json, '')
+		FROM student_rehab_record
+		WHERE inst_id = ?
+		  AND student_teaching_record_id = ?
+		  AND del_flag = 0
+		FOR UPDATE
+	`, instID, studentTeachingRecordID).Scan(&publishedContentJSON); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, errors.New("当前康复记录暂未发布，无法提交家长反馈")
+		}
+		return false, err
+	}
+
+	publishedContentJSON = strings.TrimSpace(publishedContentJSON)
+	if publishedContentJSON == "" {
+		return false, errors.New("当前康复记录暂未发布，无法提交家长反馈")
+	}
+
+	var content model.RehabRecordContent
+	if err := json.Unmarshal([]byte(publishedContentJSON), &content); err != nil {
+		return false, fmt.Errorf("解析康复记录失败: %w", err)
+	}
+
+	content.ParentFeedback = strings.TrimSpace(dto.ParentFeedback)
+	content.ParentSignature = strings.TrimSpace(dto.ParentSignature)
+	if content.ParentFeedback != "" || content.ParentSignature != "" {
+		content.FeedbackDate = time.Now().Format("2006-01-02")
+	} else {
+		content.FeedbackDate = ""
+	}
+	content = sanitizeStudentRehabRecordContent(content)
+
+	contentJSON, err := json.Marshal(content)
+	if err != nil {
+		return false, err
+	}
+	summary := buildStudentRehabRecordSummary(content)
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE student_rehab_record
+		SET published_content_json = ?,
+		    published_summary = ?,
+		    update_id = 0,
+		    update_time = NOW()
+		WHERE inst_id = ?
+		  AND student_teaching_record_id = ?
+		  AND del_flag = 0
+	`, string(contentJSON), summary, instID, studentTeachingRecordID); err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (repo *Repository) ListParentPublishedRehabRecordIDs(ctx context.Context, instID int64, studentIDs []int64, pageIndex, pageSize int) ([]string, int, error) {
+	if len(studentIDs) == 0 {
+		return []string{}, 0, nil
+	}
+
+	current := pageIndex
+	if current <= 0 {
+		current = 1
+	}
+	size := pageSize
+	if size <= 0 {
+		size = 20
+	}
+	offset := (current - 1) * size
+	placeholders := sqlPlaceholders(len(studentIDs))
+
+	args := make([]any, 0, len(studentIDs)+3)
+	args = append(args, instID)
+	for _, studentID := range studentIDs {
+		args = append(args, studentID)
+	}
+
+	whereSQL := `
+		str.inst_id = ?
+		AND str.del_flag = 0
+		AND str.student_id IN (` + placeholders + `)
+		AND ` + publishedStudentRehabRecordExistsSQL("str")
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM student_teaching_record str
+		WHERE `+whereSQL, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	if total == 0 {
+		return []string{}, 0, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT CAST(str.id AS CHAR)
+		FROM student_teaching_record str
+		WHERE `+whereSQL+`
+		ORDER BY str.start_time DESC, str.id DESC
+		LIMIT ? OFFSET ?
+	`, append(append([]any{}, args...), size, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	items := make([]string, 0, size)
+	for rows.Next() {
+		var recordID string
+		if err := rows.Scan(&recordID); err != nil {
+			return nil, 0, err
+		}
+		recordID = strings.TrimSpace(recordID)
+		if recordID == "" {
+			continue
+		}
+		items = append(items, recordID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
 func (repo *Repository) upsertStudentRehabRecord(ctx context.Context, instID, operatorID int64, studentTeachingRecordIDRaw string, rawTemplate model.RehabRecordTemplateMeta, rawContent model.RehabRecordContent, publish bool) (bool, error) {
 	studentTeachingRecordID, err := strconv.ParseInt(studentTeachingRecordIDRaw, 10, 64)
 	if err != nil || studentTeachingRecordID <= 0 {

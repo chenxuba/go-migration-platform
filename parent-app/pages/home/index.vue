@@ -113,6 +113,12 @@ function handleFeature(item) {
 		})
 		return
 	}
+	if (item?.key === 'comment') {
+		uni.navigateTo({
+			url: '/pages/rehab-record/index'
+		})
+		return
+	}
 	uni.showToast({
 		title: `${item.title}建设中`,
 		icon: 'none'

@@ -55,6 +55,25 @@
 			}
 		},
 		{
+			"path": "pages/rehab-record/index",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/rehab-record/detail",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/rehab-record/signature",
+			"style": {
+				"navigationStyle": "custom",
+				"disableScroll": true
+			}
+		},
+		{
 			"path": "pages/select-student/index",
 			"style": {
 				"navigationStyle": "custom"
