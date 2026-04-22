@@ -9,18 +9,19 @@ import (
 
 func (repo *Repository) GetStudentOverviewStatistics(ctx context.Context, instID int64) (model.StudentOverviewStatistics, error) {
 	result := model.StudentOverviewStatistics{}
+	officialSubscribedExpr := studentOfficialSubscribedExistsSQL("s")
 
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT
 			COUNT(*) AS total_students,
-			IFNULL(SUM(CASE WHEN student_status = 1 THEN 1 ELSE 0 END), 0) AS reading_students,
-			IFNULL(SUM(CASE WHEN student_status = 2 THEN 1 ELSE 0 END), 0) AS history_students,
-			IFNULL(SUM(CASE WHEN student_status = 0 THEN 1 ELSE 0 END), 0) AS intent_students,
-			IFNULL(SUM(CASE WHEN create_time >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END), 0) AS recent_month_new_students,
-			IFNULL(SUM(CASE WHEN create_time >= DATE_SUB(NOW(), INTERVAL 60 DAY) AND create_time < DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END), 0) AS previous_month_new_students,
-			IFNULL(SUM(CASE WHEN student_status IN (1, 2) AND IFNULL(is_bind_child, 0) = 0 THEN 1 ELSE 0 END), 0) AS pending_attention_students
-		FROM inst_student
-		WHERE inst_id = ? AND del_flag = 0
+			IFNULL(SUM(CASE WHEN s.student_status = 1 THEN 1 ELSE 0 END), 0) AS reading_students,
+			IFNULL(SUM(CASE WHEN s.student_status = 2 THEN 1 ELSE 0 END), 0) AS history_students,
+			IFNULL(SUM(CASE WHEN s.student_status = 0 THEN 1 ELSE 0 END), 0) AS intent_students,
+			IFNULL(SUM(CASE WHEN s.create_time >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END), 0) AS recent_month_new_students,
+			IFNULL(SUM(CASE WHEN s.create_time >= DATE_SUB(NOW(), INTERVAL 60 DAY) AND s.create_time < DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END), 0) AS previous_month_new_students,
+			IFNULL(SUM(CASE WHEN s.student_status IN (1, 2) AND `+officialSubscribedExpr+` = 0 THEN 1 ELSE 0 END), 0) AS pending_attention_students
+		FROM inst_student s
+		WHERE s.inst_id = ? AND s.del_flag = 0
 	`, instID).Scan(
 		&result.TotalStudents,
 		&result.ReadingStudents,

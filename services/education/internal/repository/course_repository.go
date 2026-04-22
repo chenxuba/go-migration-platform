@@ -12,12 +12,16 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
-func studentBindChildExistsSQL(studentAlias string) string {
+func studentOfficialSubscribedExistsSQL(studentAlias string) string {
 	return fmt.Sprintf(`CASE WHEN EXISTS (
 		SELECT 1
 		FROM wechat_official_student_binding wsb
+		INNER JOIN wechat_official_user_link ul
+			ON ul.official_openid = wsb.official_openid
 		WHERE wsb.student_id = %s.id
 		  AND wsb.subscribed = 1
+		  AND IFNULL(wsb.official_openid, '') <> ''
+		  AND IFNULL(ul.subscribed, 0) = 1
 	) THEN 1 ELSE 0 END`, studentAlias)
 }
 
@@ -1195,7 +1199,7 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 }
 
 func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, studentID int64) (model.IntentStudent, error) {
-	bindChildExpr := studentBindChildExistsSQL("s")
+	bindChildExpr := studentOfficialSubscribedExistsSQL("s")
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship, IFNULL(s.is_collect, 0), `+bindChildExpr+`, s.sale_person, IFNULL(iu.nick_name, ''), s.intent_level,
 		       IFNULL(s.intended_course, ''), s.channel_id, IFNULL(c.channel_name, ''), IFNULL(cc.category_name, ''), s.create_time, s.birthday,
@@ -1401,7 +1405,7 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 		size = 10
 	}
 	offset := (current - 1) * size
-	bindChildExpr := studentBindChildExistsSQL("s")
+	bindChildExpr := studentOfficialSubscribedExistsSQL("s")
 
 	filters := []string{"s.del_flag = 0", "s.inst_id = ?"}
 	args := []any{instID}

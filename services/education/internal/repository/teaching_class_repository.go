@@ -813,6 +813,7 @@ func (repo *Repository) PageOneToOneSelectionList(ctx context.Context, instID in
 	queryArgs = append(queryArgs, instID)
 	queryArgs = append(queryArgs, args...)
 	queryArgs = append(queryArgs, size, offset)
+	officialSubscribedExpr := studentOfficialSubscribedExistsSQL("s")
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
 			tc.id,
@@ -823,7 +824,7 @@ func (repo *Repository) PageOneToOneSelectionList(ctx context.Context, instID in
 			IFNULL(c.name, ''),
 			tc.status,
 			tcs.class_student_status,
-			IFNULL(s.is_bind_child, 0),
+			`+officialSubscribedExpr+`,
 			CAST(IFNULL(tcs.primary_tuition_account_id, 0) AS CHAR)
 		FROM teaching_class tc
 		`+oneToOneListableJoinSQL+`

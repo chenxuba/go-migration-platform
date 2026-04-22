@@ -88,13 +88,14 @@ func ensureHomeworkTables(ctx context.Context, db *sql.DB) error {
 }
 
 func (repo *Repository) ListHomeworkTargetStudents(ctx context.Context, instID int64, sourceType int, sourceID int64) (string, []model.HomeworkTargetStudent, error) {
+	officialSubscribedExpr := studentOfficialSubscribedExistsSQL("s")
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT
 			IFNULL(tc.name, ''),
 			tcs.student_id,
 			IFNULL(s.stu_name, ''),
 			CAST(IFNULL(tcs.primary_tuition_account_id, 0) AS CHAR),
-			IFNULL(s.is_bind_child, 0)
+			`+officialSubscribedExpr+`
 		FROM teaching_class tc
 		INNER JOIN teaching_class_student tcs
 			ON tcs.teaching_class_id = tc.id

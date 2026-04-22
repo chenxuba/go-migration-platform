@@ -1294,12 +1294,13 @@ func (repo *Repository) loadRollCallDrawerStudentProfileMap(ctx context.Context,
 		return map[int64]rollCallDrawerStudentProfile{}, nil
 	}
 
+	officialSubscribedExpr := studentOfficialSubscribedExistsSQL("s")
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT IFNULL(id, 0), IFNULL(is_bind_child, 0)
-		FROM inst_student
-		WHERE inst_id = ?
-		  AND del_flag = 0
-		  AND id IN (`+sqlPlaceholders(len(studentIDs))+`)
+		SELECT IFNULL(s.id, 0), `+officialSubscribedExpr+`
+		FROM inst_student s
+		WHERE s.inst_id = ?
+		  AND s.del_flag = 0
+		  AND s.id IN (`+sqlPlaceholders(len(studentIDs))+`)
 	`, append([]any{instID}, int64SliceToAny(studentIDs)...)...)
 	if err != nil {
 		return nil, err

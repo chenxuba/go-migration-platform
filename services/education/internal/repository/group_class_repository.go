@@ -292,10 +292,11 @@ func (repo *Repository) ListGroupClassStudentsByClassIDs(ctx context.Context, in
 	if len(ids) == 0 {
 		return []model.GroupClassStudentListBucketVO{}, nil
 	}
+	officialSubscribedExpr := studentOfficialSubscribedExistsSQL("s")
 	ph := sqlPlaceholders(len(ids))
 	q := `
 		SELECT CAST(tcs.teaching_class_id AS CHAR), CAST(s.id AS CHAR), IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''),
-			IFNULL(s.mobile, ''), IFNULL(s.stu_sex, 0), s.birthday,
+			IFNULL(s.mobile, ''), IFNULL(s.stu_sex, 0), s.birthday, ` + officialSubscribedExpr + `,
 			CAST(IFNULL(tcs.primary_tuition_account_id, 0) AS CHAR), tcs.create_time,
 			IFNULL(ta.remaining_quantity, 0), IFNULL(ta.remaining_tuition, 0), IFNULL(ta.total_quantity, 0), IFNULL(ta.total_tuition, 0),
 			IFNULL(ta.free_quantity, 0), IFNULL(ta.enable_expire_time, 0), ta.expire_time, IFNULL(ta.status, 0),
@@ -353,6 +354,7 @@ func (repo *Repository) ListGroupClassStudentsByClassIDs(ctx context.Context, in
 		var classIDStr, sid, taID, qid string
 		var name, avatar, mobile string
 		var sex int
+		var isBind int
 		var birthday sql.NullTime
 		var joinTime sql.NullTime
 		var remQty, remTui, totQty, totTui, freeQty float64
@@ -361,7 +363,7 @@ func (repo *Repository) ListGroupClassStudentsByClassIDs(ctx context.Context, in
 		var taStatus int
 		var lessonModel int
 		var icName, icqName string
-		if err := rows.Scan(&classIDStr, &sid, &name, &avatar, &mobile, &sex, &birthday, &taID, &joinTime,
+		if err := rows.Scan(&classIDStr, &sid, &name, &avatar, &mobile, &sex, &birthday, &isBind, &taID, &joinTime,
 			&remQty, &remTui, &totQty, &totTui, &freeQty, &enableExp, &exp, &taStatus,
 			&lessonModel, &icName, &icqName, &qid); err != nil {
 			return nil, err
@@ -402,7 +404,7 @@ func (repo *Repository) ListGroupClassStudentsByClassIDs(ctx context.Context, in
 			ID:                             sid,
 			Name:                           name,
 			Avatar:                         strings.TrimSpace(avatar),
-			IsBind:                         false,
+			IsBind:                         isBind != 0,
 			ClassID:                        classIDStr,
 			Phone:                          maskPhoneDisplay(mobile),
 			Sex:                            sex,
@@ -438,10 +440,11 @@ func (repo *Repository) GetGroupClassStudentStatistics(ctx context.Context, inst
 	}
 	statuses := normalizeGroupClassStudentStatuses(q.Status)
 	memberWhere, memberArgs := buildGroupClassStudentMembershipWhere(instID, classID, statuses, q.IgnoreSuspendedTuitionAccount)
+	officialSubscribedExpr := studentOfficialSubscribedExistsSQL("s")
 	query := `
 		SELECT
 			COUNT(*),
-			IFNULL(SUM(CASE WHEN IFNULL(s.is_bind_child, 0) = 0 THEN 1 ELSE 0 END), 0),
+			IFNULL(SUM(CASE WHEN ` + officialSubscribedExpr + ` = 0 THEN 1 ELSE 0 END), 0),
 			IFNULL(SUM(CASE WHEN fp.id IS NULL THEN 1 ELSE 0 END), 0)
 		FROM (
 			SELECT DISTINCT tcs.student_id
@@ -521,6 +524,7 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 		return out, nil
 	}
 
+	officialSubscribedExpr := studentOfficialSubscribedExistsSQL("s")
 	listQuery := fmt.Sprintf(`
 		SELECT
 			CAST(ms.student_id AS CHAR),
@@ -528,7 +532,7 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			IFNULL(s.stu_sex, 0),
 			IFNULL(s.avatar_url, ''),
 			IFNULL(s.mobile, ''),
-			IFNULL(s.is_bind_child, 0),
+			%s,
 			CAST(IFNULL(fp.id, 0) AS CHAR),
 			IFNULL(s.phone_relationship, 0),
 			CAST(IFNULL(ptcs.primary_tuition_account_id, 0) AS CHAR),
@@ -774,7 +778,7 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			GROUP BY str.student_id
 		) tr ON tr.student_id = ms.student_id
 		ORDER BY ms.join_time DESC, ms.student_id DESC
-	`, model.OrderStatusPendingPayment, model.OrderStatusPendingPayment)
+	`, officialSubscribedExpr, model.OrderStatusPendingPayment, model.OrderStatusPendingPayment)
 	listArgs := make([]any, 0, 1+len(memberArgs)+2+4)
 	listArgs = append(listArgs, model.TeachingClassTypeNormal)
 	listArgs = append(listArgs, memberArgs...)
