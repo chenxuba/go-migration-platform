@@ -151,7 +151,7 @@ useStudentListRefresh(getOverviewStatistics)
               </span>
             </div>
             <div class="items-b text-3.25 text-#888 mt-2">
-              当前机构（在读+意向+历史）学员数量，近30天新增 {{ recentMonthNewStudents }} 人
+              当前机构（在读+意向+历史）学员数量
             </div>
           </div>
           <div
