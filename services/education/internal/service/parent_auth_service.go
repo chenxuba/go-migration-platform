@@ -50,6 +50,18 @@ func (svc *Service) ParentWeChatLogin(ctx context.Context, tenantID string, dto 
 		return model.ParentWeChatLoginVO{}, errors.New("未获取到有效手机号")
 	}
 
+	if err := svc.repo.UpsertWeChatOfficialUserLinkByMiniProfile(ctx, session.OpenID, session.UnionID, phone); err != nil {
+		return model.ParentWeChatLoginVO{}, err
+	}
+	if bindTicket := strings.TrimSpace(dto.BindTicket); bindTicket != "" {
+		record, err := svc.getWeChatOfficialBindTicket(ctx, bindTicket)
+		if err == nil {
+			if err := svc.repo.UpsertWeChatOfficialUserLink(ctx, record.OfficialOpenID, session.OpenID, session.UnionID, phone, true); err != nil {
+				return model.ParentWeChatLoginVO{}, err
+			}
+		}
+	}
+
 	token, err := svc.tokenManager.Generate(authx.Claims{
 		UserID:    0,
 		Username:  phone,
@@ -185,18 +197,39 @@ func (svc *Service) GetParentWeChatOfficialStatusByPhone(ctx context.Context, ph
 	if err != nil {
 		return model.ParentWeChatOfficialStatusVO{}, err
 	}
+	userStatus, err := svc.repo.GetWeChatOfficialUserFollowStatusByPhone(ctx, phone)
+	if err != nil {
+		return model.ParentWeChatOfficialStatusVO{}, err
+	}
+
+	subscribed := status.SubscribedBindCount > 0 || userStatus.SubscribedUserCount > 0
 
 	result := model.ParentWeChatOfficialStatusVO{
-		Subscribed:          status.SubscribedBindCount > 0,
+		Subscribed:          subscribed,
 		OfficialAccountName: svc.weChatOfficialAccountName(),
 		BoundStudentCount:   status.BoundStudentCount,
 		SubscribedBindCount: status.SubscribedBindCount,
 	}
 	result.NeedFollowGuide = !result.Subscribed
-	if status.LastUnsubscribeTime != nil {
-		result.LastUnsubscribeAt = status.LastUnsubscribeTime.Format(time.RFC3339)
+	lastUnsubscribeTime := pickLatestTime(status.LastUnsubscribeTime, userStatus.LastUnsubscribeTime)
+	if lastUnsubscribeTime != nil {
+		result.LastUnsubscribeAt = lastUnsubscribeTime.Format(time.RFC3339)
 	}
 	return result, nil
+}
+
+func pickLatestTime(values ...*time.Time) *time.Time {
+	var latest *time.Time
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+		if latest == nil || value.After(*latest) {
+			candidate := *value
+			latest = &candidate
+		}
+	}
+	return latest
 }
 
 func (svc *Service) resolveParentStudentDisplayProfiles(ctx context.Context, rows []repository.ParentStudentLookupRecord) (map[int64]parentStudentDisplayProfile, error) {

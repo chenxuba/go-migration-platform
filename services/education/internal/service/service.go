@@ -41,6 +41,7 @@ func (svc *Service) ConfigureWeChatOfficial(cfg WeChatOfficialConfig) {
 	client := newWeChatOfficialClient(cfg)
 	client.bindPagePathBuilder = svc.buildWeChatOfficialBindPagePath
 	client.subscriptionSyncer = svc.syncWeChatOfficialSubscription
+	client.followMessageCache = sharedWeChatOfficialFollowMessageCache
 	svc.wechatOfficial = client
 }
 

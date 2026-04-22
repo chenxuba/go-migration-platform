@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -35,7 +36,7 @@ func (handler *Handler) wechatOfficialCallback(w http.ResponseWriter, r *http.Re
 			httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 			return
 		}
-		if err := handler.service.HandleWeChatOfficialCallback(r.Context(), signature, timestamp, nonce, body, ctx.RequestID); err != nil {
+		if _, err := handler.service.VerifyWeChatOfficialCallback(signature, timestamp, nonce, ""); err != nil {
 			logx.Error("wechat official callback handling failed", logx.Entry{
 				"requestId": ctx.RequestID,
 				"error":     err.Error(),
@@ -43,9 +44,21 @@ func (handler *Handler) wechatOfficialCallback(w http.ResponseWriter, r *http.Re
 			httpx.WriteError(w, http.StatusUnauthorized, err.Error(), ctx.RequestID)
 			return
 		}
+
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("success"))
+
+		bodyCopy := append([]byte(nil), body...)
+		requestID := ctx.RequestID
+		go func() {
+			if err := handler.service.HandleWeChatOfficialCallback(context.Background(), signature, timestamp, nonce, bodyCopy, requestID); err != nil {
+				logx.Error("wechat official callback handling failed", logx.Entry{
+					"requestId": requestID,
+					"error":     err.Error(),
+				})
+			}
+		}()
 	default:
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 	}

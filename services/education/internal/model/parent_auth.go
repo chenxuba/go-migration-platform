@@ -3,8 +3,9 @@ package model
 const ParentLoginTypeMiniProgram = "parent-miniapp"
 
 type ParentWeChatLoginDTO struct {
-	LoginCode string `json:"loginCode"`
-	PhoneCode string `json:"phoneCode"`
+	LoginCode  string `json:"loginCode"`
+	PhoneCode  string `json:"phoneCode"`
+	BindTicket string `json:"bindTicket"`
 }
 
 type ParentBindStudentsDTO struct {

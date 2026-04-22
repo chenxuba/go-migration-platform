@@ -53,6 +53,10 @@ func (svc *Service) syncWeChatOfficialSubscription(ctx context.Context, openID s
 		return nil
 	}
 
+	if err := svc.repo.UpsertWeChatOfficialUserLinkByOfficialProfile(ctx, openID, "", subscribed); err != nil {
+		return err
+	}
+
 	studentIDs, err := svc.repo.UpdateWeChatOfficialBindingSubscriptionByOpenID(ctx, openID, subscribed)
 	if err != nil {
 		return err
@@ -183,6 +187,9 @@ func (svc *Service) ConfirmWeChatOfficialStudentBinding(ctx context.Context, dto
 		record.Ticket,
 		true,
 	); err != nil {
+		return model.WeChatOfficialConfirmStudentBindingVO{}, err
+	}
+	if err := svc.repo.UpsertWeChatOfficialUserLink(ctx, record.OfficialOpenID, dto.MiniOpenID, dto.UnionID, firstNonEmpty(phone, student.Mobile), true); err != nil {
 		return model.WeChatOfficialConfirmStudentBindingVO{}, err
 	}
 	if err := svc.repo.MarkWeChatOfficialBindTicketUsed(ctx, record.Ticket); err != nil {

@@ -21,6 +21,9 @@ import (
 )
 
 const defaultWeChatOfficialAPIBaseURL = "https://api.weixin.qq.com"
+const weChatOfficialFollowMessageDedupWindow = 2 * time.Minute
+const weChatOfficialCustomMessageRetryDelay = 800 * time.Millisecond
+const weChatOfficialCustomMessageMaxAttempts = 4
 
 type WeChatOfficialConfig struct {
 	AppID                   string
@@ -42,10 +45,18 @@ type weChatOfficialClient struct {
 	bindPagePathBuilder func(ctx context.Context, message weChatEventMessage) (string, error)
 	subscriptionSyncer  func(ctx context.Context, openID string, subscribed bool) error
 
-	mu             sync.Mutex
-	accessToken    string
-	accessTokenExp time.Time
+	mu                 sync.Mutex
+	accessToken        string
+	accessTokenExp     time.Time
+	followMessageCache *weChatOfficialFollowMessageCache
 }
+
+type weChatOfficialFollowMessageCache struct {
+	mu    sync.Mutex
+	items map[string]time.Time
+}
+
+var sharedWeChatOfficialFollowMessageCache = newWeChatOfficialFollowMessageCache()
 
 type weChatEventMessage struct {
 	XMLName      xml.Name `xml:"xml"`
@@ -91,9 +102,16 @@ func newWeChatOfficialClient(cfg WeChatOfficialConfig) *weChatOfficialClient {
 	}
 
 	return &weChatOfficialClient{
-		config:     cfg,
-		httpClient: &http.Client{Timeout: 8 * time.Second},
-		apiBaseURL: defaultWeChatOfficialAPIBaseURL,
+		config:             cfg,
+		httpClient:         &http.Client{Timeout: 8 * time.Second},
+		apiBaseURL:         defaultWeChatOfficialAPIBaseURL,
+		followMessageCache: newWeChatOfficialFollowMessageCache(),
+	}
+}
+
+func newWeChatOfficialFollowMessageCache() *weChatOfficialFollowMessageCache {
+	return &weChatOfficialFollowMessageCache{
+		items: make(map[string]time.Time),
 	}
 }
 
@@ -171,10 +189,15 @@ func (client *weChatOfficialClient) handleCallback(ctx context.Context, body []b
 
 	switch event {
 	case "scan":
-		if client.subscriptionSyncer != nil {
-			if err := client.subscriptionSyncer(ctx, message.FromUserName, true); err != nil {
-				return err
-			}
+		if client.shouldSuppressFollowMessage(message) {
+			logx.Info("wechat official suppressed duplicate follow message for scan event", logx.Entry{
+				"requestId":  requestID,
+				"openid":     message.FromUserName,
+				"eventKey":   message.EventKey,
+				"event":      message.Event,
+				"createTime": message.CreateTime,
+			})
+			return nil
 		}
 		pagePath := client.config.MiniProgramPagePath
 		if client.bindPagePathBuilder != nil {
@@ -185,17 +208,25 @@ func (client *weChatOfficialClient) handleCallback(ctx context.Context, body []b
 			pagePath = value
 		}
 		logx.Info("wechat official callback sending mini program card for scan event", logx.Entry{
-			"requestId": requestID,
-			"openid":    message.FromUserName,
-			"eventKey":  message.EventKey,
-			"event":     message.Event,
+			"requestId":  requestID,
+			"openid":     message.FromUserName,
+			"eventKey":   message.EventKey,
+			"event":      message.Event,
+			"createTime": message.CreateTime,
 		})
-		return client.sendFollowMessageBundle(ctx, message.FromUserName, pagePath)
+		err := client.sendFollowMessageBundle(ctx, message.FromUserName, pagePath)
+		client.syncSubscriptionAfterFollow(ctx, message.FromUserName)
+		return err
 	case "subscribe":
-		if client.subscriptionSyncer != nil {
-			if err := client.subscriptionSyncer(ctx, message.FromUserName, true); err != nil {
-				return err
-			}
+		if client.shouldSuppressFollowMessage(message) {
+			logx.Info("wechat official suppressed duplicate follow message for subscribe event", logx.Entry{
+				"requestId":  requestID,
+				"openid":     message.FromUserName,
+				"eventKey":   message.EventKey,
+				"event":      message.Event,
+				"createTime": message.CreateTime,
+			})
+			return nil
 		}
 		pagePath := client.config.MiniProgramPagePath
 		if client.bindPagePathBuilder != nil {
@@ -206,13 +237,17 @@ func (client *weChatOfficialClient) handleCallback(ctx context.Context, body []b
 			pagePath = value
 		}
 		logx.Info("wechat official callback sending mini program card for subscribe event", logx.Entry{
-			"requestId": requestID,
-			"openid":    message.FromUserName,
-			"eventKey":  message.EventKey,
-			"event":     message.Event,
+			"requestId":  requestID,
+			"openid":     message.FromUserName,
+			"eventKey":   message.EventKey,
+			"event":      message.Event,
+			"createTime": message.CreateTime,
 		})
-		return client.sendFollowMessageBundle(ctx, message.FromUserName, pagePath)
+		err := client.sendFollowMessageBundle(ctx, message.FromUserName, pagePath)
+		client.syncSubscriptionAfterFollow(ctx, message.FromUserName)
+		return err
 	case "unsubscribe":
+		client.clearFollowMessageCache(message.FromUserName)
 		if client.subscriptionSyncer != nil {
 			return client.subscriptionSyncer(ctx, message.FromUserName, false)
 		}
@@ -222,13 +257,27 @@ func (client *weChatOfficialClient) handleCallback(ctx context.Context, body []b
 	}
 }
 
+func (client *weChatOfficialClient) syncSubscriptionAfterFollow(ctx context.Context, openID string) {
+	if client == nil || client.subscriptionSyncer == nil {
+		return
+	}
+	if err := client.subscriptionSyncer(ctx, openID, true); err != nil {
+		logx.Error("wechat official sync subscription after follow failed", logx.Entry{
+			"openid": strings.TrimSpace(openID),
+			"error":  err.Error(),
+		})
+	}
+}
+
 func (client *weChatOfficialClient) sendFollowMessageBundle(ctx context.Context, openID, pagePath string) error {
 	textSent := false
+	var textErr error
 	if client.canSendTextMessage() {
 		if err := client.sendTextMessage(ctx, openID); err != nil {
-			return err
+			textErr = err
+		} else {
+			textSent = true
 		}
-		textSent = true
 	}
 	if client.canSendMiniProgramCard() {
 		if err := client.sendMiniProgramCard(ctx, openID, pagePath); err != nil {
@@ -240,10 +289,93 @@ func (client *weChatOfficialClient) sendFollowMessageBundle(ctx context.Context,
 				})
 				return nil
 			}
+			if textErr != nil {
+				return fmt.Errorf("%v; %w", textErr, err)
+			}
 			return err
 		}
+		if textErr != nil {
+			logx.Error("wechat official follow message bundle degraded to mini program card only", logx.Entry{
+				"openid":   strings.TrimSpace(openID),
+				"pagePath": strings.TrimSpace(pagePath),
+				"error":    textErr.Error(),
+			})
+			return nil
+		}
 	}
-	return nil
+	return textErr
+}
+
+func (client *weChatOfficialClient) shouldSuppressFollowMessage(message weChatEventMessage) bool {
+	if client == nil {
+		return false
+	}
+	cache := client.followMessageCache
+	if cache == nil {
+		cache = sharedWeChatOfficialFollowMessageCache
+	}
+
+	openID := strings.TrimSpace(message.FromUserName)
+	if openID == "" {
+		return false
+	}
+
+	event := strings.ToLower(strings.TrimSpace(message.Event))
+	callbackKey := buildWeChatOfficialFollowMessageCallbackKey(openID, event, message.CreateTime)
+	now := time.Now()
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	for currentKey, sentAt := range cache.items {
+		if now.Sub(sentAt) > weChatOfficialFollowMessageDedupWindow {
+			delete(cache.items, currentKey)
+		}
+	}
+
+	if callbackKey != "" {
+		if sentAt, exists := cache.items[callbackKey]; exists && now.Sub(sentAt) <= weChatOfficialFollowMessageDedupWindow {
+			return true
+		}
+	}
+
+	if callbackKey != "" {
+		cache.items[callbackKey] = now
+	}
+	return false
+}
+
+func buildWeChatOfficialFollowMessageCallbackKey(openID, event string, createTime int64) string {
+	openID = strings.TrimSpace(openID)
+	event = strings.TrimSpace(strings.ToLower(event))
+	if openID == "" || event == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s|%s|%d", openID, event, createTime)
+}
+
+func (client *weChatOfficialClient) clearFollowMessageCache(openID string) {
+	if client == nil {
+		return
+	}
+	cache := client.followMessageCache
+	if cache == nil {
+		cache = sharedWeChatOfficialFollowMessageCache
+	}
+
+	openID = strings.TrimSpace(openID)
+	if openID == "" {
+		return
+	}
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	for key := range cache.items {
+		if strings.HasPrefix(key, openID+"|") {
+			delete(cache.items, key)
+		}
+	}
 }
 
 func (client *weChatOfficialClient) getAccessToken(ctx context.Context) (string, error) {
@@ -290,17 +422,20 @@ func (client *weChatOfficialClient) getAccessToken(ctx context.Context) (string,
 	return token, nil
 }
 
+func (client *weChatOfficialClient) invalidateAccessToken() {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+
+	client.accessToken = ""
+	client.accessTokenExp = time.Time{}
+}
+
 func (client *weChatOfficialClient) sendMiniProgramCard(ctx context.Context, openID, pagePath string) error {
 	if !client.canSendMiniProgramCard() {
 		return errors.New("公众号小程序卡片配置不完整")
 	}
 	if strings.TrimSpace(pagePath) == "" {
 		pagePath = client.config.MiniProgramPagePath
-	}
-
-	token, err := client.getAccessToken(ctx)
-	if err != nil {
-		return err
 	}
 
 	payload := map[string]any{
@@ -319,25 +454,8 @@ func (client *weChatOfficialClient) sendMiniProgramCard(ctx context.Context, ope
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, client.apiBaseURL+"/cgi-bin/message/custom/send?access_token="+url.QueryEscape(token), bytes.NewReader(body))
+	result, err := client.sendCustomMessage(ctx, body, true)
 	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	resp, err := client.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	var result weChatAPIError
-	if err := json.Unmarshal(responseBody, &result); err != nil {
 		return err
 	}
 	if result.ErrCode != 0 {
@@ -357,11 +475,6 @@ func (client *weChatOfficialClient) sendTextMessage(ctx context.Context, openID 
 		return errors.New("公众号文本消息配置不完整")
 	}
 
-	token, err := client.getAccessToken(ctx)
-	if err != nil {
-		return err
-	}
-
 	payload := map[string]any{
 		"touser":  strings.TrimSpace(openID),
 		"msgtype": "text",
@@ -375,25 +488,8 @@ func (client *weChatOfficialClient) sendTextMessage(ctx context.Context, openID 
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, client.apiBaseURL+"/cgi-bin/message/custom/send?access_token="+url.QueryEscape(token), bytes.NewReader(body))
+	result, err := client.sendCustomMessage(ctx, body, false)
 	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	resp, err := client.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-
-	var result weChatAPIError
-	if err := json.Unmarshal(responseBody, &result); err != nil {
 		return err
 	}
 	if result.ErrCode != 0 {
@@ -405,4 +501,64 @@ func (client *weChatOfficialClient) sendTextMessage(ctx context.Context, openID 
 		return fmt.Errorf("send text message failed: %d %s", result.ErrCode, result.ErrMsg)
 	}
 	return nil
+}
+
+func (client *weChatOfficialClient) sendCustomMessage(ctx context.Context, body []byte, retryOnSystemError bool) (weChatAPIError, error) {
+	var result weChatAPIError
+
+	for attempt := 0; attempt < weChatOfficialCustomMessageMaxAttempts; attempt++ {
+		token, err := client.getAccessToken(ctx)
+		if err != nil {
+			return weChatAPIError{}, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, client.apiBaseURL+"/cgi-bin/message/custom/send?access_token="+url.QueryEscape(token), bytes.NewReader(body))
+		if err != nil {
+			return weChatAPIError{}, err
+		}
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+		resp, err := client.httpClient.Do(req)
+		if err != nil {
+			return weChatAPIError{}, err
+		}
+
+		responseBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return weChatAPIError{}, readErr
+		}
+		if err := json.Unmarshal(responseBody, &result); err != nil {
+			return weChatAPIError{}, err
+		}
+
+		if result.ErrCode == 0 {
+			return result, nil
+		}
+		if result.ErrCode == 40001 && attempt < weChatOfficialCustomMessageMaxAttempts-1 {
+			client.invalidateAccessToken()
+			continue
+		}
+		if result.ErrCode == -1 && retryOnSystemError && attempt < weChatOfficialCustomMessageMaxAttempts-1 {
+			if err := waitWeChatOfficialRetry(ctx, weChatOfficialCustomMessageRetryDelay); err != nil {
+				return result, err
+			}
+			continue
+		}
+		return result, nil
+	}
+
+	return result, nil
+}
+
+func waitWeChatOfficialRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

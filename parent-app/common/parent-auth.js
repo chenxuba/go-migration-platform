@@ -3,6 +3,7 @@ import {
 	applyParentAuthSession,
 	applyParentBoundStudentSummary,
 	applyParentPendingStudentSummary,
+	parentState,
 	setAuthLoading,
 	setPostAuthPage
 } from '@/common/parent-state'
@@ -102,7 +103,8 @@ export async function authorizeByWechatPhone(event, options = {}) {
 
 		const session = await wechatParentLogin({
 			loginCode,
-			phoneCode
+			phoneCode,
+			bindTicket: `${parentState.officialBindTicket || ''}`.trim()
 		})
 		applyParentAuthSession(session)
 
