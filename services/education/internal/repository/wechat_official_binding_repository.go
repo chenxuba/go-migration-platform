@@ -444,6 +444,43 @@ func (repo *Repository) UpdateWeChatOfficialBindingSubscriptionByOpenID(ctx cont
 	return studentIDs, nil
 }
 
+func (repo *Repository) FindWeChatOfficialLinkedPhoneByOpenID(ctx context.Context, officialOpenID string) (string, error) {
+	officialOpenID = strings.TrimSpace(officialOpenID)
+	if officialOpenID == "" {
+		return "", nil
+	}
+
+	var phone string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(phone, '')
+		FROM wechat_official_user_link
+		WHERE official_openid = ?
+		LIMIT 1
+	`, officialOpenID).Scan(&phone)
+	if err != nil && err != sql.ErrNoRows {
+		return "", err
+	}
+	phone = strings.TrimSpace(phone)
+	if phone != "" {
+		return phone, nil
+	}
+
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(phone, '')
+		FROM wechat_official_student_binding
+		WHERE official_openid = ? AND IFNULL(phone, '') <> ''
+		ORDER BY update_time DESC, id DESC
+		LIMIT 1
+	`, officialOpenID).Scan(&phone)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(phone), nil
+}
+
 func (repo *Repository) RefreshStudentBindChildStatus(ctx context.Context, studentID int64) error {
 	if studentID <= 0 {
 		return nil
@@ -467,6 +504,43 @@ func (repo *Repository) RefreshStudentBindChildStatus(ctx context.Context, stude
 		SET is_bind_child = ?, update_time = NOW()
 		WHERE id = ? AND del_flag = 0
 	`, isBindChild, studentID)
+	return err
+}
+
+func (repo *Repository) RefreshStudentBindChildStatusByPhone(ctx context.Context, phone string) error {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return nil
+	}
+
+	var linkedSubscribedCount int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM wechat_official_user_link
+		WHERE phone = ? AND subscribed = 1
+	`, phone).Scan(&linkedSubscribedCount); err != nil {
+		return err
+	}
+
+	var bindingSubscribedCount int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM wechat_official_student_binding
+		WHERE phone = ? AND subscribed = 1
+	`, phone).Scan(&bindingSubscribedCount); err != nil {
+		return err
+	}
+
+	isBindChild := 0
+	if linkedSubscribedCount > 0 || bindingSubscribedCount > 0 {
+		isBindChild = 1
+	}
+
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_student
+		SET is_bind_child = ?, update_time = NOW()
+		WHERE mobile = ? AND del_flag = 0
+	`, isBindChild, phone)
 	return err
 }
 

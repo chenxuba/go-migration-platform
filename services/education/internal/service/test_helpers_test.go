@@ -20,6 +20,8 @@ type queryExpectation struct {
 	args    []any
 	columns []string
 	rows    [][]driver.Value
+	exec    bool
+	result  driver.Result
 }
 
 type scriptedState struct {
@@ -68,7 +70,9 @@ func (c *scriptedConn) QueryContext(_ context.Context, query string, args []driv
 		return nil, fmt.Errorf("unexpected query: %s", normalizeSQL(query))
 	}
 	expectation := c.state.expectations[c.state.index]
-	c.state.index++
+	if expectation.exec {
+		return nil, fmt.Errorf("expected exec but got query: %s", normalizeSQL(query))
+	}
 
 	actualQuery := normalizeSQL(query)
 	expectedQuery := normalizeSQL(expectation.query)
@@ -83,6 +87,7 @@ func (c *scriptedConn) QueryContext(_ context.Context, query string, args []driv
 			return nil, fmt.Errorf("unexpected arg %d for query %s: expected %#v, got %#v", idx, expectedQuery, expectation.args[idx], arg.Value)
 		}
 	}
+	c.state.index++
 
 	return &scriptedRows{
 		columns: expectation.columns,
@@ -91,8 +96,30 @@ func (c *scriptedConn) QueryContext(_ context.Context, query string, args []driv
 	}, nil
 }
 
-func (c *scriptedConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
-	return nil, fmt.Errorf("unexpected exec: %s", normalizeSQL(query))
+func (c *scriptedConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if c.state.index >= len(c.state.expectations) {
+		return nil, fmt.Errorf("unexpected exec: %s", normalizeSQL(query))
+	}
+	expectation := c.state.expectations[c.state.index]
+	if !expectation.exec {
+		return nil, fmt.Errorf("expected query but got exec: %s", normalizeSQL(query))
+	}
+
+	actualQuery := normalizeSQL(query)
+	expectedQuery := normalizeSQL(expectation.query)
+	if actualQuery != expectedQuery {
+		return nil, fmt.Errorf("unexpected exec\nexpected: %s\nactual:   %s", expectedQuery, actualQuery)
+	}
+	if len(args) != len(expectation.args) {
+		return nil, fmt.Errorf("unexpected args length for exec %s: expected %d, got %d", expectedQuery, len(expectation.args), len(args))
+	}
+	for idx, arg := range args {
+		if !reflect.DeepEqual(arg.Value, expectation.args[idx]) {
+			return nil, fmt.Errorf("unexpected arg %d for exec %s: expected %#v, got %#v", idx, expectedQuery, expectation.args[idx], arg.Value)
+		}
+	}
+	c.state.index++
+	return expectation.result, nil
 }
 
 func (c *scriptedConn) CheckNamedValue(_ *driver.NamedValue) error {
@@ -161,5 +188,14 @@ func findInstIDExpectation(userID int64, instID int64) queryExpectation {
 		args:    []any{userID},
 		columns: []string{"inst_id"},
 		rows:    [][]driver.Value{{instID}},
+	}
+}
+
+func execResultExpectation(query string, args []any, rowsAffected int64) queryExpectation {
+	return queryExpectation{
+		query:  query,
+		args:   args,
+		exec:   true,
+		result: driver.RowsAffected(rowsAffected),
 	}
 }

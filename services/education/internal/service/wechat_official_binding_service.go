@@ -75,6 +75,14 @@ func (svc *Service) syncWeChatOfficialSubscription(ctx context.Context, openID s
 			return err
 		}
 	}
+
+	phone, err := svc.repo.FindWeChatOfficialLinkedPhoneByOpenID(ctx, openID)
+	if err != nil {
+		return err
+	}
+	if err := svc.repo.RefreshStudentBindChildStatusByPhone(ctx, phone); err != nil {
+		return err
+	}
 	return nil
 }
 
