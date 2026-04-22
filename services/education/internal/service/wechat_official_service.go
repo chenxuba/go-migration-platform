@@ -24,6 +24,7 @@ const defaultWeChatOfficialAPIBaseURL = "https://api.weixin.qq.com"
 const weChatOfficialFollowMessageDedupWindow = 2 * time.Minute
 const weChatOfficialCustomMessageRetryDelay = 800 * time.Millisecond
 const weChatOfficialCustomMessageMaxAttempts = 4
+const weChatOfficialInvalidMiniProgramPagePathErrCode = 40165
 
 type WeChatOfficialConfig struct {
 	AppID                   string
@@ -87,6 +88,25 @@ type weChatOfficialUserInfoResponse struct {
 	UnionID   string `json:"unionid"`
 	ErrCode   int    `json:"errcode"`
 	ErrMsg    string `json:"errmsg"`
+}
+
+type weChatOfficialTemplateDataItem struct {
+	Value string `json:"value"`
+	Color string `json:"color,omitempty"`
+}
+
+type weChatOfficialTemplateMiniProgram struct {
+	AppID    string `json:"appid"`
+	PagePath string `json:"pagepath"`
+}
+
+type weChatOfficialTemplateSendRequest struct {
+	ToUser          string                                    `json:"touser"`
+	TemplateID      string                                    `json:"template_id"`
+	URL             string                                    `json:"url,omitempty"`
+	MiniProgram     *weChatOfficialTemplateMiniProgram        `json:"miniprogram,omitempty"`
+	ClientMessageID string                                    `json:"client_msg_id,omitempty"`
+	Data            map[string]weChatOfficialTemplateDataItem `json:"data"`
 }
 
 func newWeChatOfficialClient(cfg WeChatOfficialConfig) *weChatOfficialClient {
@@ -560,7 +580,89 @@ func (client *weChatOfficialClient) sendTextMessage(ctx context.Context, openID 
 	return nil
 }
 
+func (client *weChatOfficialClient) sendTemplateMessage(ctx context.Context, request weChatOfficialTemplateSendRequest) error {
+	if !client.isEnabled() {
+		return errors.New("公众号回调未配置")
+	}
+
+	request.ToUser = strings.TrimSpace(request.ToUser)
+	request.TemplateID = strings.TrimSpace(request.TemplateID)
+	request.URL = strings.TrimSpace(request.URL)
+	request.ClientMessageID = strings.TrimSpace(request.ClientMessageID)
+
+	if request.ToUser == "" {
+		return errors.New("send template message failed: empty openid")
+	}
+	if request.TemplateID == "" {
+		return errors.New("send template message failed: empty template id")
+	}
+	if len(request.Data) == 0 {
+		return errors.New("send template message failed: empty data")
+	}
+	if request.MiniProgram != nil {
+		request.MiniProgram.AppID = strings.TrimSpace(request.MiniProgram.AppID)
+		request.MiniProgram.PagePath = strings.TrimSpace(request.MiniProgram.PagePath)
+		if request.MiniProgram.AppID == "" || request.MiniProgram.PagePath == "" {
+			request.MiniProgram = nil
+		}
+	}
+
+	result, err := client.sendTemplateMessageOnce(ctx, request)
+	if err != nil {
+		return err
+	}
+	retriedWithoutMiniProgram := false
+	if result.ErrCode == weChatOfficialInvalidMiniProgramPagePathErrCode && request.MiniProgram != nil {
+		logx.Info("wechat official template message retry without miniprogram after invalid pagepath", logx.Entry{
+			"apiPath":     "/cgi-bin/message/template/send",
+			"openid":      request.ToUser,
+			"templateId":  request.TemplateID,
+			"clientMsgId": request.ClientMessageID,
+			"pagePath":    request.MiniProgram.PagePath,
+		})
+		request.MiniProgram = nil
+		retriedWithoutMiniProgram = true
+		result, err = client.sendTemplateMessageOnce(ctx, request)
+		if err != nil {
+			return err
+		}
+	}
+	if result.ErrCode != 0 {
+		logx.Error("wechat official send template message failed", logx.Entry{
+			"apiPath":                   "/cgi-bin/message/template/send",
+			"openid":                    request.ToUser,
+			"templateId":                request.TemplateID,
+			"clientMsgId":               request.ClientMessageID,
+			"retriedWithoutMiniProgram": retriedWithoutMiniProgram,
+			"errCode":                   result.ErrCode,
+			"errMsg":                    result.ErrMsg,
+		})
+		return fmt.Errorf("send template message failed: %d %s", result.ErrCode, result.ErrMsg)
+	}
+	logx.Info("wechat official template message sent", logx.Entry{
+		"apiPath":                   "/cgi-bin/message/template/send",
+		"openid":                    request.ToUser,
+		"templateId":                request.TemplateID,
+		"clientMsgId":               request.ClientMessageID,
+		"retriedWithoutMiniProgram": retriedWithoutMiniProgram,
+	})
+	return nil
+}
+
+func (client *weChatOfficialClient) sendTemplateMessageOnce(ctx context.Context, request weChatOfficialTemplateSendRequest) (weChatAPIError, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return weChatAPIError{}, err
+	}
+
+	return client.sendOfficialJSON(ctx, "/cgi-bin/message/template/send", body, true)
+}
+
 func (client *weChatOfficialClient) sendCustomMessage(ctx context.Context, body []byte, retryOnSystemError bool) (weChatAPIError, error) {
+	return client.sendOfficialJSON(ctx, "/cgi-bin/message/custom/send", body, retryOnSystemError)
+}
+
+func (client *weChatOfficialClient) sendOfficialJSON(ctx context.Context, path string, body []byte, retryOnSystemError bool) (weChatAPIError, error) {
 	var result weChatAPIError
 
 	for attempt := 0; attempt < weChatOfficialCustomMessageMaxAttempts; attempt++ {
@@ -569,7 +671,7 @@ func (client *weChatOfficialClient) sendCustomMessage(ctx context.Context, body 
 			return weChatAPIError{}, err
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, client.apiBaseURL+"/cgi-bin/message/custom/send?access_token="+url.QueryEscape(token), bytes.NewReader(body))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, client.apiBaseURL+path+"?access_token="+url.QueryEscape(token), bytes.NewReader(body))
 		if err != nil {
 			return weChatAPIError{}, err
 		}

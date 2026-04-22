@@ -232,6 +232,139 @@ func TestWeChatOfficialSubscribeIncludesBindTicketInMiniProgramPagePath(t *testi
 	}
 }
 
+func TestWeChatOfficialSendTemplateMessage(t *testing.T) {
+	var (
+		requestPath string
+		payload     map[string]any
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/cgi-bin/token"):
+			_, _ = w.Write([]byte(`{"access_token":"token-subscribe","expires_in":7200}`))
+		case strings.HasPrefix(r.URL.Path, "/cgi-bin/message/template/send"):
+			requestPath = r.URL.Path
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newWeChatOfficialClient(WeChatOfficialConfig{
+		AppID:  "appid",
+		Secret: "secret",
+		Token:  "token",
+	})
+	client.apiBaseURL = server.URL
+	client.httpClient = server.Client()
+
+	err := client.sendTemplateMessage(context.Background(), weChatOfficialTemplateSendRequest{
+		ToUser:          "openid-subscribe",
+		TemplateID:      "tmpl-1",
+		ClientMessageID: "msg-1",
+		MiniProgram: &weChatOfficialTemplateMiniProgram{
+			AppID:    "mini-appid",
+			PagePath: "pages/attendance-record/detail?studentId=1&studentTeachingRecordId=2",
+		},
+		Data: map[string]weChatOfficialTemplateDataItem{
+			"thing10": {Value: "消耗1课时，剩余2课时"},
+			"time8":   {Value: "2026-04-22 10:55~11:35"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("send template message: %v", err)
+	}
+
+	if requestPath != "/cgi-bin/message/template/send" {
+		t.Fatalf("expected template send path, got %s", requestPath)
+	}
+	if got := payload["template_id"]; got != "tmpl-1" {
+		t.Fatalf("expected template_id tmpl-1, got %#v", got)
+	}
+	if got := payload["touser"]; got != "openid-subscribe" {
+		t.Fatalf("expected touser openid-subscribe, got %#v", got)
+	}
+	if got := payload["client_msg_id"]; got != "msg-1" {
+		t.Fatalf("expected client_msg_id msg-1, got %#v", got)
+	}
+	miniProgramMap, ok := payload["miniprogram"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected miniprogram payload, got %#v", payload["miniprogram"])
+	}
+	if got := miniProgramMap["pagepath"]; got != "pages/attendance-record/detail?studentId=1&studentTeachingRecordId=2" {
+		t.Fatalf("expected miniprogram pagepath to be preserved, got %#v", got)
+	}
+	dataMap, ok := payload["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected data object, got %#v", payload["data"])
+	}
+	if thing, ok := dataMap["thing10"].(map[string]any); !ok || thing["value"] != "消耗1课时，剩余2课时" {
+		t.Fatalf("expected thing10 payload, got %#v", dataMap["thing10"])
+	}
+}
+
+func TestWeChatOfficialSendTemplateMessageRetriesWithoutMiniProgramOnInvalidPagePath(t *testing.T) {
+	var payloads []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/cgi-bin/token"):
+			_, _ = w.Write([]byte(`{"access_token":"token-subscribe","expires_in":7200}`))
+		case strings.HasPrefix(r.URL.Path, "/cgi-bin/message/template/send"):
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			payloads = append(payloads, payload)
+			if len(payloads) == 1 {
+				_, _ = w.Write([]byte(`{"errcode":40165,"errmsg":"invalid weapp pagepath"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newWeChatOfficialClient(WeChatOfficialConfig{
+		AppID:  "appid",
+		Secret: "secret",
+		Token:  "token",
+	})
+	client.apiBaseURL = server.URL
+	client.httpClient = server.Client()
+
+	err := client.sendTemplateMessage(context.Background(), weChatOfficialTemplateSendRequest{
+		ToUser:          "openid-subscribe",
+		TemplateID:      "tmpl-1",
+		ClientMessageID: "msg-1",
+		MiniProgram: &weChatOfficialTemplateMiniProgram{
+			AppID:    "mini-appid",
+			PagePath: "pages/attendance-record/detail?studentId=1&studentTeachingRecordId=2",
+		},
+		Data: map[string]weChatOfficialTemplateDataItem{
+			"thing10": {Value: "消耗1课时，剩余2课时"},
+			"time8":   {Value: "2026-04-22 10:55~11:35"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("send template message: %v", err)
+	}
+
+	if len(payloads) != 2 {
+		t.Fatalf("expected 2 template send requests, got %d", len(payloads))
+	}
+	if _, ok := payloads[0]["miniprogram"]; !ok {
+		t.Fatalf("expected first request to include miniprogram payload, got %#v", payloads[0])
+	}
+	if got := payloads[1]["miniprogram"]; got != nil {
+		t.Fatalf("expected retry request without miniprogram payload, got %#v", got)
+	}
+}
+
 func TestWeChatOfficialSuppressesRepeatedFollowCallbackWithSameCreateTime(t *testing.T) {
 	var customSendCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

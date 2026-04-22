@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"go-migration-platform/pkg/logx"
 	"go-migration-platform/services/education/internal/model"
 )
 
@@ -183,7 +184,20 @@ func (svc *Service) ConfirmRollCall(userID int64, dto model.RollCallConfirmDTO) 
 	if err != nil {
 		return model.RollCallConfirmResult{}, err
 	}
-	return svc.repo.ConfirmRollCall(context.Background(), instID, operatorID, dto)
+	result, err := svc.repo.ConfirmRollCall(context.Background(), instID, operatorID, dto)
+	if err != nil {
+		return model.RollCallConfirmResult{}, err
+	}
+
+	if notifyErr := svc.dispatchRollCallCourseConsumeCompleteNotifications(context.Background(), instID, result); notifyErr != nil {
+		logx.Error("dispatch roll call course consume complete notifications failed", logx.Entry{
+			"instId":           instID,
+			"teachingRecordId": strings.TrimSpace(result.ID),
+			"error":            notifyErr.Error(),
+		})
+	}
+
+	return result, nil
 }
 
 func (svc *Service) rollCallInstID(userID int64) (int64, error) {

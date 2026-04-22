@@ -287,6 +287,7 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 	}
 
 	insertedCount := 0
+	insertedStudentTeachingRecordIDs := make([]string, 0, len(pendingStudents))
 	for _, item := range pendingStudents {
 		studentID, _ := strconv.ParseInt(strings.TrimSpace(item.StudentID), 10, 64)
 		profile := profileMap[studentID]
@@ -385,6 +386,7 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 		if err != nil || insertedStudentTeachingRecordID <= 0 {
 			return model.RollCallConfirmResult{}, errors.New("点名记录创建失败")
 		}
+		insertedStudentTeachingRecordIDs = append(insertedStudentTeachingRecordIDs, strconv.FormatInt(insertedStudentTeachingRecordID, 10))
 		if actualDeduct > 0 {
 			if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, actualTuition, account); err != nil {
 				return model.RollCallConfirmResult{}, err
@@ -404,8 +406,9 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 	}
 
 	return model.RollCallConfirmResult{
-		ID:   strconv.FormatInt(teachingRecordID, 10),
-		Name: "",
+		ID:                               strconv.FormatInt(teachingRecordID, 10),
+		Name:                             "",
+		InsertedStudentTeachingRecordIDs: insertedStudentTeachingRecordIDs,
 	}, nil
 }
 
@@ -596,6 +599,7 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 	}
 
 	insertedCount := 0
+	insertedStudentTeachingRecordIDs := make([]string, 0, len(pendingStudents))
 	for _, item := range pendingStudents {
 		studentID, _ := strconv.ParseInt(strings.TrimSpace(item.StudentID), 10, 64)
 		profile := profileMap[studentID]
@@ -686,6 +690,7 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 		if err != nil || insertedStudentTeachingRecordID <= 0 {
 			return model.RollCallConfirmResult{}, errors.New("点名记录创建失败")
 		}
+		insertedStudentTeachingRecordIDs = append(insertedStudentTeachingRecordIDs, strconv.FormatInt(insertedStudentTeachingRecordID, 10))
 		if actualDeduct > 0 {
 			if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, actualTuition, account); err != nil {
 				return model.RollCallConfirmResult{}, err
@@ -705,8 +710,9 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 	}
 
 	return model.RollCallConfirmResult{
-		ID:   strconv.FormatInt(teachingRecordID, 10),
-		Name: "",
+		ID:                               strconv.FormatInt(teachingRecordID, 10),
+		Name:                             "",
+		InsertedStudentTeachingRecordIDs: insertedStudentTeachingRecordIDs,
 	}, nil
 }
 

@@ -38,6 +38,11 @@ type WeChatOfficialUserFollowStatus struct {
 	LastUnsubscribeTime *time.Time
 }
 
+type WeChatOfficialStudentRecipient struct {
+	StudentID      int64
+	OfficialOpenID string
+}
+
 type weChatOfficialUserLinkRow struct {
 	ID             int64
 	OfficialOpenID string
@@ -273,6 +278,49 @@ func (repo *Repository) GetStudentBaseInfo(ctx context.Context, studentID int64)
 	}
 	item.IsBound = isBindChild != 0
 	return item, instID, nil
+}
+
+func (repo *Repository) ListSubscribedWeChatOfficialRecipientsByStudentIDs(ctx context.Context, instID int64, studentIDs []int64) ([]WeChatOfficialStudentRecipient, error) {
+	if instID <= 0 {
+		return []WeChatOfficialStudentRecipient{}, nil
+	}
+
+	ids := uniquePositiveInt64s(studentIDs)
+	if len(ids) == 0 {
+		return []WeChatOfficialStudentRecipient{}, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT DISTINCT
+			wsb.student_id,
+			wsb.official_openid
+		FROM wechat_official_student_binding wsb
+		INNER JOIN wechat_official_user_link ul
+			ON ul.official_openid = wsb.official_openid
+		WHERE wsb.inst_id = ?
+		  AND wsb.student_id IN (`+sqlPlaceholders(len(ids))+`)
+		  AND wsb.subscribed = 1
+		  AND IFNULL(wsb.official_openid, '') <> ''
+		  AND IFNULL(ul.subscribed, 0) = 1
+	`, append([]any{instID}, int64SliceToAny(ids)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]WeChatOfficialStudentRecipient, 0, len(ids))
+	for rows.Next() {
+		var item WeChatOfficialStudentRecipient
+		if err := rows.Scan(&item.StudentID, &item.OfficialOpenID); err != nil {
+			return nil, err
+		}
+		item.OfficialOpenID = strings.TrimSpace(item.OfficialOpenID)
+		if item.StudentID <= 0 || item.OfficialOpenID == "" {
+			continue
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
 }
 
 func (repo *Repository) UpsertWeChatOfficialStudentBinding(ctx context.Context, instID, studentID int64, officialOpenID, miniOpenID, unionID, phone, bindTicket string, subscribed bool) error {
