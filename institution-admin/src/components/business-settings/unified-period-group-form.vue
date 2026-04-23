@@ -243,20 +243,31 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
 <template>
   <section class="up-group-form">
     <div class="up-group-form__hero">
-      <div class="up-group-form__head">
-        <span
-          class="up-group-form__icon"
-          :class="iconVariant === 'a' ? 'up-group-form__icon--a' : 'up-group-form__icon--b'"
-        >
-          {{ groupLetter(group) }}
-        </span>
-        <div class="up-group-form__head-text">
-          <span class="up-group-form__name">{{ group.name || '未命名时段' }}</span>
-          <span class="up-group-form__meta">时段范围 {{ groupTimeRange(group) }}</span>
+      <div class="up-group-form__hero-top">
+        <div class="up-group-form__head">
+          <span
+            class="up-group-form__icon"
+            :class="iconVariant === 'a' ? 'up-group-form__icon--a' : 'up-group-form__icon--b'"
+          >
+            {{ groupLetter(group) }}
+          </span>
+          <div class="up-group-form__head-text">
+            <span class="up-group-form__name">{{ group.name || '未命名时段' }}</span>
+            <span class="up-group-form__meta">时段范围 {{ groupTimeRange(group) }}</span>
+          </div>
         </div>
-        <div class="up-group-form__hero-tags">
-          <span class="up-group-form__hero-tag">{{ slotCountActive(group) }} 节启用</span>
-          <span class="up-group-form__hero-tag up-group-form__hero-tag--muted">{{ group.slots.length }} 节总计</span>
+        <div class="up-group-form__head-side">
+          <div class="up-group-form__hero-tags">
+            <span class="up-group-form__hero-tag">{{ slotCountActive(group) }} 节启用</span>
+            <span class="up-group-form__hero-tag up-group-form__hero-tag--muted">{{ group.slots.length }} 节总计</span>
+          </div>
+          <div class="up-group-form__hero-actions">
+            <a-tooltip title="按上课时间规则一键生成整组节次，适合快速初始化。">
+              <a-button type="primary" size="small" @click="openSmartFillModal">
+                智能生成节次
+              </a-button>
+            </a-tooltip>
+          </div>
         </div>
         <a-tooltip v-if="allowDeleteGroup" :title="deleteGroupDisabled ? props.deleteDisabledReason : null">
           <button
@@ -268,13 +279,6 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
             <DeleteOutlined />
           </button>
         </a-tooltip>
-      </div>
-
-      <div class="up-group-form__hero-actions">
-        <a-button type="primary" size="small" @click="openSmartFillModal">
-          智能生成节次
-        </a-button>
-        <span class="up-group-form__hero-hint">按上课时间规则一键生成整组节次，适合快速初始化。</span>
       </div>
     </div>
 
@@ -475,10 +479,19 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
   margin-bottom: 16px;
 }
 
+.up-group-form__hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
 .up-group-form__head {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 220px;
+  flex-shrink: 0;
 }
 
 .up-group-form__icon {
@@ -528,6 +541,15 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
   flex-wrap: wrap;
 }
 
+.up-group-form__head-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
 .up-group-form__hero-tag {
   padding: 5px 10px;
   border-radius: 999px;
@@ -567,18 +589,8 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
 .up-group-form__hero-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid #f1f5f9;
-}
-
-.up-group-form__hero-hint {
-  margin: 0;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 20px;
+  justify-content: flex-end;
+  width: 100%;
 }
 
 .up-group-smart-modal__hint {
@@ -824,10 +836,24 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .up-group-form__section-head,
-  .up-group-form__hero-actions {
+  .up-group-form__hero-top,
+  .up-group-form__section-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .up-group-form__head-side {
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  .up-group-form__hero-actions,
+  .up-group-form__head {
+    width: 100%;
+  }
+
+  .up-group-form__hero-actions {
+    justify-content: flex-start;
   }
 }
 
