@@ -43,6 +43,7 @@ const formState = reactive({
   deptIds: [], // 所属部门 - 初始为空，将在modal打开时设置
   disabled: 0, // 是否禁用,
   userType: '1', // 1: 正式员工 2: 兼职员工
+  isTeacher: false, // 是否是教师
   avatar: '', // 头像
   roleIds: [], // 角色
 })
@@ -281,6 +282,22 @@ onMounted(async () => {
                   兼职员工
                 </a-radio>
               </a-radio-group>
+            </a-form-item>
+            <!-- 是否是教师 -->
+            <a-form-item style="margin: 0;" class="position" name="isTeacher" :required="true">
+              <template #label>
+                <div class="flex items-center">
+                  <div>是否是教师：</div>
+                  <a-radio-group v-model:value="formState.isTeacher" class="custom-radio">
+                    <a-radio :value="true">
+                      是
+                    </a-radio>
+                    <a-radio :value="false">
+                      否
+                    </a-radio>
+                  </a-radio-group>
+                </div>
+              </template>
             </a-form-item>
           </div>
         </div>

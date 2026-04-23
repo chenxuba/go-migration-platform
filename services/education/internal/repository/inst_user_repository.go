@@ -406,9 +406,9 @@ func (repo *Repository) SaveInstUser(ctx context.Context, instID int64, dto mode
 	}
 
 	instResult, err := tx.ExecContext(ctx, `
-		INSERT INTO inst_user (uuid, version, user_id, inst_id, nick_name, username, avatar, mobile, is_admin, disabled, user_type, activated_status, del_flag, create_time)
-		VALUES (UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
-	`, ssoUserID, instID, strings.TrimSpace(dto.NickName), username, strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.Mobile), boolValue(dto.Admin), boolValue(dto.Disabled), dto.UserType)
+		INSERT INTO inst_user (uuid, version, user_id, inst_id, nick_name, username, avatar, mobile, is_admin, disabled, user_type, is_teacher, activated_status, del_flag, create_time)
+		VALUES (UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
+	`, ssoUserID, instID, strings.TrimSpace(dto.NickName), username, strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.Mobile), boolValue(dto.Admin), boolValue(dto.Disabled), dto.UserType, boolValue(dto.IsTeacher))
 	if err != nil {
 		return 0, err
 	}

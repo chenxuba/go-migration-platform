@@ -55,6 +55,7 @@ type StudentStatusSnapshot struct {
 func New(db *sql.DB) *Repository {
 	repo := &Repository{db: db}
 	_ = repo.ensureCurrentInstitutionColumn(context.Background())
+	_ = repo.ensureInstUserTeacherColumn(context.Background())
 	return repo
 }
 
@@ -76,6 +77,28 @@ func (repo *Repository) ensureCurrentInstitutionColumn(ctx context.Context) erro
 		ALTER TABLE sso_user
 		ADD COLUMN current_inst_id BIGINT NULL DEFAULT NULL COMMENT '当前登录机构ID'
 		AFTER dept_id
+	`)
+	return err
+}
+
+func (repo *Repository) ensureInstUserTeacherColumn(ctx context.Context) error {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'inst_user'
+		  AND COLUMN_NAME = 'is_teacher'
+	`).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		ALTER TABLE inst_user
+		ADD COLUMN is_teacher TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否教师'
+		AFTER user_type
 	`)
 	return err
 }

@@ -513,19 +513,20 @@ func parseUpdateOrderTagDTO(raw map[string]any) model.UpdateOrderTagDTO {
 
 func parseInstUserSaveDTO(raw map[string]any) model.InstUserSaveDTO {
 	return model.InstUserSaveDTO{
-		UserID:   asInt64Ptr(raw["userId"]),
-		InstID:   asInt64Ptr(raw["instId"]),
-		NickName: asString(raw["nickName"]),
-		Avatar:   asString(raw["avatar"]),
-		Mobile:   asString(raw["mobile"]),
-		DeptIDs:  asInt64Slice(raw["deptIds"]),
-		Admin:    asBoolPtr(raw["admin"]),
-		Sort:     asIntPtr(raw["sort"]),
-		Disabled: asBoolPtr(raw["disabled"]),
-		Username: asString(raw["username"]),
-		RoleIDs:  asInt64Slice(raw["roleIds"]),
-		Password: asString(raw["password"]),
-		UserType: asIntPtr(raw["userType"]),
+		UserID:    asInt64Ptr(raw["userId"]),
+		InstID:    asInt64Ptr(raw["instId"]),
+		NickName:  asString(raw["nickName"]),
+		Avatar:    asString(raw["avatar"]),
+		Mobile:    asString(raw["mobile"]),
+		DeptIDs:   asInt64Slice(raw["deptIds"]),
+		Admin:     asBoolPtr(raw["admin"]),
+		Sort:      asIntPtr(raw["sort"]),
+		Disabled:  asBoolPtr(raw["disabled"]),
+		Username:  asString(raw["username"]),
+		RoleIDs:   asInt64Slice(raw["roleIds"]),
+		Password:  asString(raw["password"]),
+		UserType:  asIntPtr(raw["userType"]),
+		IsTeacher: asBoolPtr(raw["isTeacher"]),
 	}
 }
 

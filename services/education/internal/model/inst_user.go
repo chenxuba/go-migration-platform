@@ -39,19 +39,20 @@ type InstUserQueryVO struct {
 }
 
 type InstUserSaveDTO struct {
-	UserID   *int64  `json:"userId"`
-	InstID   *int64  `json:"instId"`
-	NickName string  `json:"nickName"`
-	Avatar   string  `json:"avatar"`
-	Mobile   string  `json:"mobile"`
-	DeptIDs  []int64 `json:"deptIds"`
-	Admin    *bool   `json:"admin"`
-	Sort     *int    `json:"sort"`
-	Disabled *bool   `json:"disabled"`
-	Username string  `json:"username"`
-	RoleIDs  []int64 `json:"roleIds"`
-	Password string  `json:"password"`
-	UserType *int    `json:"userType"`
+	UserID    *int64  `json:"userId"`
+	InstID    *int64  `json:"instId"`
+	NickName  string  `json:"nickName"`
+	Avatar    string  `json:"avatar"`
+	Mobile    string  `json:"mobile"`
+	DeptIDs   []int64 `json:"deptIds"`
+	Admin     *bool   `json:"admin"`
+	Sort      *int    `json:"sort"`
+	Disabled  *bool   `json:"disabled"`
+	Username  string  `json:"username"`
+	RoleIDs   []int64 `json:"roleIds"`
+	Password  string  `json:"password"`
+	UserType  *int    `json:"userType"`
+	IsTeacher *bool   `json:"isTeacher"`
 }
 
 type InstUserModifyDTO struct {
