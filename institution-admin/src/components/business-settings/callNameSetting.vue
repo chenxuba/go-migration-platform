@@ -142,18 +142,6 @@ const orderExampleRows = [
               </div>
             </div>
 
-            <div class="settings-row">
-              <div class="settings-row__label">
-                直播自动点名
-              </div>
-              <div class="settings-row__content">
-                <a-switch v-model:checked="switches.liveAutoRollCall" />
-                <div class="settings-desc">
-                  开启后，直播课程结束后 20 分钟内，系统将根据直播观看记录自动点名。
-                </div>
-              </div>
-            </div>
-
             <div class="settings-row settings-row--top">
               <div class="settings-row__label">
                 限制订单欠费课消
