@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go-migration-platform/pkg/logx"
@@ -58,6 +60,7 @@ type weChatOfficialFollowMessageCache struct {
 }
 
 var sharedWeChatOfficialFollowMessageCache = newWeChatOfficialFollowMessageCache()
+var weChatOfficialTemplateMessageIDSeq uint64
 
 type weChatEventMessage struct {
 	XMLName      xml.Name `xml:"xml"`
@@ -602,7 +605,7 @@ func (client *weChatOfficialClient) sendTemplateMessage(ctx context.Context, req
 	request.ToUser = strings.TrimSpace(request.ToUser)
 	request.TemplateID = strings.TrimSpace(request.TemplateID)
 	request.URL = strings.TrimSpace(request.URL)
-	request.ClientMessageID = strings.TrimSpace(request.ClientMessageID)
+	request.ClientMessageID = buildUniqueWeChatOfficialClientMessageID(request.ClientMessageID)
 
 	if request.ToUser == "" {
 		return errors.New("send template message failed: empty openid")
@@ -694,6 +697,23 @@ func (client *weChatOfficialClient) sendTemplateMessageOnce(ctx context.Context,
 	}
 
 	return client.sendOfficialJSON(ctx, "/cgi-bin/message/template/send", body, true)
+}
+
+func buildUniqueWeChatOfficialClientMessageID(base string) string {
+	base = strings.TrimSpace(base)
+
+	seq := atomic.AddUint64(&weChatOfficialTemplateMessageIDSeq, 1)
+	suffix := strconv.FormatInt(time.Now().UnixNano(), 36) + strconv.FormatUint(seq, 36)
+
+	if base == "" {
+		return "wx_tmpl_" + suffix
+	}
+
+	const maxBaseLength = 40
+	if len(base) > maxBaseLength {
+		base = base[:maxBaseLength]
+	}
+	return base + "_" + suffix
 }
 
 func (client *weChatOfficialClient) sendCustomMessage(ctx context.Context, body []byte, retryOnSystemError bool) (weChatAPIError, error) {

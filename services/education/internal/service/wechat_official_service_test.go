@@ -287,8 +287,12 @@ func TestWeChatOfficialSendTemplateMessage(t *testing.T) {
 	if got := payload["touser"]; got != "openid-subscribe" {
 		t.Fatalf("expected touser openid-subscribe, got %#v", got)
 	}
-	if got := payload["client_msg_id"]; got != "msg-1" {
-		t.Fatalf("expected client_msg_id msg-1, got %#v", got)
+	clientMsgID, ok := payload["client_msg_id"].(string)
+	if !ok || clientMsgID == "" {
+		t.Fatalf("expected client_msg_id to be populated, got %#v", payload["client_msg_id"])
+	}
+	if !strings.HasPrefix(clientMsgID, "msg-1_") {
+		t.Fatalf("expected client_msg_id prefix msg-1_, got %q", clientMsgID)
 	}
 	miniProgramMap, ok := payload["miniprogram"].(map[string]any)
 	if !ok {
@@ -381,11 +385,75 @@ func TestWeChatOfficialSendTemplateMessageRetriesWithoutMiniProgramOnInvalidPage
 	if len(payloads) != 2 {
 		t.Fatalf("expected 2 template send requests, got %d", len(payloads))
 	}
+	firstClientMsgID, ok := payloads[0]["client_msg_id"].(string)
+	if !ok || !strings.HasPrefix(firstClientMsgID, "msg-1_") {
+		t.Fatalf("expected first request client_msg_id prefix msg-1_, got %#v", payloads[0]["client_msg_id"])
+	}
+	secondClientMsgID, ok := payloads[1]["client_msg_id"].(string)
+	if !ok || secondClientMsgID != firstClientMsgID {
+		t.Fatalf("expected retry to reuse the same client_msg_id, got first=%#v second=%#v", payloads[0]["client_msg_id"], payloads[1]["client_msg_id"])
+	}
 	if _, ok := payloads[0]["miniprogram"]; !ok {
 		t.Fatalf("expected first request to include miniprogram payload, got %#v", payloads[0])
 	}
 	if got := payloads[1]["miniprogram"]; got != nil {
 		t.Fatalf("expected retry request without miniprogram payload, got %#v", got)
+	}
+}
+
+func TestWeChatOfficialSendTemplateMessageGeneratesUniqueClientMessageIDPerSend(t *testing.T) {
+	var payloads []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/cgi-bin/token"):
+			_, _ = w.Write([]byte(`{"access_token":"token-subscribe","expires_in":7200}`))
+		case strings.HasPrefix(r.URL.Path, "/cgi-bin/message/template/send"):
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			payloads = append(payloads, payload)
+			_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newWeChatOfficialClient(WeChatOfficialConfig{
+		AppID:  "appid",
+		Secret: "secret",
+		Token:  "token",
+	})
+	client.apiBaseURL = server.URL
+	client.httpClient = server.Client()
+
+	request := weChatOfficialTemplateSendRequest{
+		ToUser:          "openid-subscribe",
+		TemplateID:      "tmpl-1",
+		ClientMessageID: "msg-1",
+		Data: map[string]weChatOfficialTemplateDataItem{
+			"thing6": {Value: "提醒内容"},
+		},
+	}
+
+	if err := client.sendTemplateMessage(context.Background(), request); err != nil {
+		t.Fatalf("first send template message: %v", err)
+	}
+	if err := client.sendTemplateMessage(context.Background(), request); err != nil {
+		t.Fatalf("second send template message: %v", err)
+	}
+
+	if len(payloads) != 2 {
+		t.Fatalf("expected 2 sends, got %d", len(payloads))
+	}
+	firstClientMsgID, _ := payloads[0]["client_msg_id"].(string)
+	secondClientMsgID, _ := payloads[1]["client_msg_id"].(string)
+	if !strings.HasPrefix(firstClientMsgID, "msg-1_") || !strings.HasPrefix(secondClientMsgID, "msg-1_") {
+		t.Fatalf("expected client_msg_id prefix msg-1_, got first=%q second=%q", firstClientMsgID, secondClientMsgID)
+	}
+	if firstClientMsgID == secondClientMsgID {
+		t.Fatalf("expected each send to use a unique client_msg_id, got %q", firstClientMsgID)
 	}
 }
 
