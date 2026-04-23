@@ -297,6 +297,12 @@ func (svc *Service) ListTeachingSchedulesByTeacherMatrix(userID int64, query mod
 			return nil, err
 		}
 	}
+	if allowTeachers == nil {
+		roster, err = svc.appendMatrixRosterUsersByIDs(ctx, instID, roster, collectMatrixScheduleTeacherIDs(schedules))
+		if err != nil {
+			return nil, err
+		}
+	}
 	teacherOrder, teacherNames := buildTeacherOrderForMatrix(roster, schedules)
 	teacherOrder = prioritizeTeacherOrder(teacherOrder, allowTeacherOrder)
 	keyed := make(map[string][]model.TeachingScheduleVO)
@@ -447,6 +453,32 @@ func (svc *Service) appendMatrixRosterUsersByIDs(ctx context.Context, instID int
 	return append(roster, extras...), nil
 }
 
+func collectMatrixScheduleTeacherIDs(schedules []model.TeachingScheduleVO) []int64 {
+	if len(schedules) == 0 {
+		return nil
+	}
+	out := make([]int64, 0, len(schedules))
+	seen := make(map[int64]struct{})
+	appendID := func(raw string) {
+		id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || id <= 0 {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	for _, item := range schedules {
+		appendID(item.TeacherID)
+		for _, assistantID := range item.AssistantIDs {
+			appendID(assistantID)
+		}
+	}
+	return out
+}
+
 func uniquePositiveTeacherIDs(ids []int64) []int64 {
 	if len(ids) == 0 {
 		return nil
@@ -568,14 +600,9 @@ func expandInclusiveDates(startStr, endStr string) ([]string, error) {
 	return days, nil
 }
 
-type matrixExtraTeacher struct {
-	id   int64
-	name string
-}
-
-func buildTeacherOrderForMatrix(roster []model.InstUserScheduleRosterItem, schedules []model.TeachingScheduleVO) (order []int64, names map[int64]string) {
+func buildTeacherOrderForMatrix(roster []model.InstUserScheduleRosterItem, _ []model.TeachingScheduleVO) (order []int64, names map[int64]string) {
 	names = make(map[int64]string)
-	order = make([]int64, 0, len(roster)+8)
+	order = make([]int64, 0, len(roster))
 	seen := make(map[int64]struct{})
 
 	for _, r := range roster {
@@ -591,50 +618,6 @@ func buildTeacherOrderForMatrix(roster []model.InstUserScheduleRosterItem, sched
 		order = append(order, r.ID)
 	}
 
-	var extras []matrixExtraTeacher
-	for _, s := range schedules {
-		tid, err := strconv.ParseInt(strings.TrimSpace(s.TeacherID), 10, 64)
-		if err == nil && tid > 0 {
-			if _, ok := seen[tid]; !ok {
-				seen[tid] = struct{}{}
-				nm := strings.TrimSpace(s.TeacherName)
-				if nm == "" {
-					nm = "-"
-				}
-				names[tid] = nm
-				extras = append(extras, matrixExtraTeacher{id: tid, name: nm})
-			}
-		}
-		for i, aid := range s.AssistantIDs {
-			aid = strings.TrimSpace(aid)
-			assistantID, err := strconv.ParseInt(aid, 10, 64)
-			if err != nil || assistantID <= 0 {
-				continue
-			}
-			if _, ok := seen[assistantID]; ok {
-				continue
-			}
-			seen[assistantID] = struct{}{}
-			nm := ""
-			if i < len(s.AssistantNames) {
-				nm = strings.TrimSpace(s.AssistantNames[i])
-			}
-			if nm == "" {
-				nm = "-"
-			}
-			names[assistantID] = nm
-			extras = append(extras, matrixExtraTeacher{id: assistantID, name: nm})
-		}
-	}
-	sort.Slice(extras, func(i, j int) bool {
-		if extras[i].name != extras[j].name {
-			return extras[i].name < extras[j].name
-		}
-		return extras[i].id < extras[j].id
-	})
-	for _, e := range extras {
-		order = append(order, e.id)
-	}
 	return order, names
 }
 

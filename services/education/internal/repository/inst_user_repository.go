@@ -828,13 +828,13 @@ func (repo *Repository) BatchModifyInstUserRole(ctx context.Context, instID int6
 	return tx.Commit()
 }
 
-// ListInstUsersForScheduleMatrix 机构在职、未删除且未禁用的用户，作为教师矩阵固定列（顺序与 id 升序一致）
+// ListInstUsersForScheduleMatrix 机构在职、未删除、未禁用且标记为教师的用户，作为教师矩阵固定列（顺序与 id 升序一致）
 func (repo *Repository) ListInstUsersForScheduleMatrix(ctx context.Context, instID int64) ([]model.InstUserScheduleRosterItem, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT id,
 			COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name
 		FROM inst_user
-		WHERE inst_id = ? AND del_flag = 0 AND disabled = 0
+		WHERE inst_id = ? AND del_flag = 0 AND disabled = 0 AND IFNULL(is_teacher, 0) = 1
 		ORDER BY id ASC
 	`, instID)
 	if err != nil {
@@ -852,7 +852,7 @@ func (repo *Repository) ListInstUsersForScheduleMatrix(ctx context.Context, inst
 	return out, rows.Err()
 }
 
-// ListInstUsersForScheduleMatrixByIDs 按指定机构用户 ID 补充课表矩阵列；允许包含离职员工。
+// ListInstUsersForScheduleMatrixByIDs 按指定机构教师用户 ID 补充课表矩阵列；允许包含离职员工。
 func (repo *Repository) ListInstUsersForScheduleMatrixByIDs(ctx context.Context, instID int64, userIDs []int64) ([]model.InstUserScheduleRosterItem, error) {
 	if len(userIDs) == 0 {
 		return nil, nil
@@ -867,7 +867,7 @@ func (repo *Repository) ListInstUsersForScheduleMatrixByIDs(ctx context.Context,
 			COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name,
 			IFNULL(disabled, 0) AS disabled
 		FROM inst_user
-		WHERE inst_id = ? AND del_flag = 0 AND id IN (`+sqlPlaceholders(len(userIDs))+`)
+		WHERE inst_id = ? AND del_flag = 0 AND IFNULL(is_teacher, 0) = 1 AND id IN (`+sqlPlaceholders(len(userIDs))+`)
 		ORDER BY id ASC
 	`, args...)
 	if err != nil {

@@ -23,7 +23,7 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesAssistantMatchesInTeacherF
 				SELECT id,
 					COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name
 				FROM inst_user
-				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0
+				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0 AND IFNULL(is_teacher, 0) = 1
 				ORDER BY id ASC
 			`,
 			args:    []any{instID},
@@ -232,6 +232,35 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesAssistantMatchesInTeacherF
 	}
 }
 
+func TestBuildTeacherOrderForMatrix_DoesNotCreateColumnsFromScheduleOnlyTeachers(t *testing.T) {
+	teacherOrder, teacherNames := buildTeacherOrderForMatrix(
+		[]model.InstUserScheduleRosterItem{
+			{ID: 100, Name: "已标记教师"},
+		},
+		[]model.TeachingScheduleVO{
+			{
+				TeacherID:      "200",
+				TeacherName:    "未标记主教",
+				AssistantIDs:   []string{"300"},
+				AssistantNames: []string{"未标记助教"},
+			},
+		},
+	)
+
+	if len(teacherOrder) != 1 || teacherOrder[0] != 100 {
+		t.Fatalf("expected only roster teacher column, got %#v", teacherOrder)
+	}
+	if teacherNames[100] != "已标记教师" {
+		t.Fatalf("expected roster teacher name, got %q", teacherNames[100])
+	}
+	if _, ok := teacherNames[200]; ok {
+		t.Fatalf("expected schedule-only main teacher to be filtered out")
+	}
+	if _, ok := teacherNames[300]; ok {
+		t.Fatalf("expected schedule-only assistant teacher to be filtered out")
+	}
+}
+
 func TestListTeachingSchedulesByTeacherMatrix_IncludesDisabledTeacherFromPeriodGroupAllowList(t *testing.T) {
 	userID := int64(511)
 	instID := int64(611)
@@ -245,7 +274,7 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesDisabledTeacherFromPeriodG
 				SELECT id,
 					COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name
 				FROM inst_user
-				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0
+				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0 AND IFNULL(is_teacher, 0) = 1
 				ORDER BY id ASC
 			`,
 			args:    []any{instID},
@@ -342,7 +371,7 @@ func TestListTeachingSchedulesByTeacherMatrix_IncludesDisabledTeacherFromPeriodG
 					COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name,
 					IFNULL(disabled, 0) AS disabled
 				FROM inst_user
-				WHERE inst_id = ? AND del_flag = 0 AND id IN (?)
+				WHERE inst_id = ? AND del_flag = 0 AND IFNULL(is_teacher, 0) = 1 AND id IN (?)
 				ORDER BY id ASC
 			`,
 			args:    []any{instID, disabledTeacherID},
@@ -394,7 +423,7 @@ func TestListTeachingSchedulesByTeacherMatrix_ExistingEmptyPeriodGroupShowsNoTea
 				SELECT id,
 					COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name
 				FROM inst_user
-				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0
+				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0 AND IFNULL(is_teacher, 0) = 1
 				ORDER BY id ASC
 			`,
 			args:    []any{instID},
@@ -531,7 +560,7 @@ func TestListTeachingSchedulesByTeacherMatrix_UsesHistoricalPeriodGroupVersionTe
 				SELECT id,
 					COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name
 				FROM inst_user
-				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0
+				WHERE inst_id = ? AND del_flag = 0 AND disabled = 0 AND IFNULL(is_teacher, 0) = 1
 				ORDER BY id ASC
 			`,
 			args:    []any{instID},
@@ -627,7 +656,7 @@ func TestListTeachingSchedulesByTeacherMatrix_UsesHistoricalPeriodGroupVersionTe
 					COALESCE(NULLIF(TRIM(nick_name), ''), NULLIF(TRIM(username), ''), '') AS display_name,
 					IFNULL(disabled, 0) AS disabled
 				FROM inst_user
-				WHERE inst_id = ? AND del_flag = 0 AND id IN (?)
+				WHERE inst_id = ? AND del_flag = 0 AND IFNULL(is_teacher, 0) = 1 AND id IN (?)
 				ORDER BY id ASC
 			`,
 			args:    []any{instID, historicalTeacherID},
