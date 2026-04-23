@@ -122,14 +122,12 @@ function addGroupTab() {
   const n = draft.value.groups.length
   const ch = String.fromCharCode(65 + (n % 26))
   const id = `group-${Date.now()}`
+  const presetSlots = buildQuickHourlySlots().slice(0, 2).map(s => ({ ...s }))
   draft.value.groups.push({
     id,
     name: `${ch}时段`,
     sort: n,
-    slots: [
-      { index: 1, start: '08:00', end: '09:00', enabled: true },
-      { index: 2, start: '09:00', end: '10:00', enabled: true },
-    ],
+    slots: presetSlots,
     boundTeachers: [],
   })
   activeTabKey.value = id
@@ -152,9 +150,10 @@ function removeGroupFromDraft(id: string) {
 }
 
 function quickGenerateAll() {
+  const presetSlots = buildQuickHourlySlots()
   for (const g of draft.value.groups)
-    g.slots = buildQuickHourlySlots().map(s => ({ ...s }))
-  messageService.success('已为所有时段组生成整点节次（8:00–19:00，共 12 节）')
+    g.slots = presetSlots.map(s => ({ ...s }))
+  messageService.success(`已为所有时段组生成标准节次模板（共 ${presetSlots.length} 节，含课间与午休）`)
 }
 
 function validateAll(): string | null {

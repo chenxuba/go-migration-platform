@@ -70,10 +70,10 @@ function onEnabledChange(s: UnifiedPeriodSlot, v: boolean) {
 
 const smartModalOpen = ref(false)
 const smartFirstStart = ref<string>('08:00')
-const smartLessonMins = ref<number>(40)
+const smartLessonMins = ref<number>(60)
 const smartBreakMins = ref<number>(10)
-const smartLunchMins = ref<number>(60)
-const smartMaxSlots = ref<number>(14)
+const smartLunchMins = ref<number>(90)
+const smartMaxSlots = ref<number>(8)
 
 function openSmartFillModal() {
   smartModalOpen.value = true
@@ -82,10 +82,10 @@ function openSmartFillModal() {
 function applyPresetHourly() {
   smartFirstStart.value = '08:00'
   smartLessonMins.value = 60
-  smartBreakMins.value = 0
-  smartLunchMins.value = 0
-  smartMaxSlots.value = 12
-  messageService.info('已填入整点一小时模板，点「生成」替换节次')
+  smartBreakMins.value = 10
+  smartLunchMins.value = 90
+  smartMaxSlots.value = 8
+  messageService.info('已填入标准校区模板：1小时课时、10分钟课间、90分钟午休，点「生成」替换节次')
 }
 
 function applySmartFill() {
@@ -94,6 +94,7 @@ function applySmartFill() {
     lessonMinutes: smartLessonMins.value,
     breakBetweenMinutes: smartBreakMins.value,
     lunchBreakMinutes: smartLunchMins.value,
+    lunchStart: '12:30',
     maxSlots: smartMaxSlots.value,
   })
   if (!slots.length) {
@@ -284,7 +285,7 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
       :footer="null"
     >
       <p class="up-group-smart-modal__hint">
-        一节结束后，先经过「课间休息」分钟，再开始下一节；午休从当天 <strong>12:00</strong> 起连续休息对应时长（填 0 表示不插午休）。
+        一节结束后，先经过「课间休息」分钟，再开始下一节；午休从当天 <strong>12:30</strong> 起连续休息对应时长（填 0 表示不插午休）。
       </p>
       <a-form layout="vertical" class="up-group-smart-modal__form">
         <a-form-item label="最早上课时间">
@@ -307,7 +308,7 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
         </a-form-item>
         <a-form-item
           label="午休时长（分钟）"
-          extra="自 12:00 起，填 0 表示不设午休空档"
+          extra="自 12:30 起，填 0 表示不设午休空档"
         >
           <a-input-number v-model:value="smartLunchMins" :min="0" :max="240" style="width: 100%" />
         </a-form-item>
@@ -317,7 +318,7 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
       </a-form>
       <div class="up-group-smart-modal__preset">
         <a-button type="link" size="small" @click="applyPresetHourly">
-          填入整点 1 小时模板（同原 8:00–19:00 共 12 节）
+          填入标准校区模板（8:00 开始，10 分钟课间 + 90 分钟午休，共 8 节）
         </a-button>
       </div>
       <div class="up-group-smart-modal__footer-btns">

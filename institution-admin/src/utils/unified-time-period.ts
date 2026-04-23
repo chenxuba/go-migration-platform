@@ -26,16 +26,17 @@ export interface UnifiedTimePeriodConfig {
   groups: UnifiedPeriodGroup[]
 }
 
-/** 午休从当天 12:00 开始，时长为 lunchBreakMinutes；为 0 则不插入午休空档 */
 export interface SmartFillSlotParams {
   firstStart: string
   lessonMinutes: number
   breakBetweenMinutes: number
   lunchBreakMinutes: number
+  lunchStart?: string
+  dayEnd?: string
   maxSlots?: number
 }
 
-const LUNCH_START_MINUTES = 12 * 60
+const DEFAULT_LUNCH_START = '12:30'
 
 function hhmmToMinutes(hhmm: string): number | null {
   const t = String(hhmm || '').trim()
@@ -57,25 +58,27 @@ function minutesToHHmm(total: number): string {
 }
 
 /**
- * 按「首节开始 + 课长 + 课间 +（12:00 起的）午休」自动生成节次列表。
- * 若某一节会跨过 12:00，则该节结束时间卡在 12:00，午休后再从午休结束起排课。
+ * 按「首节开始 + 课长 + 课间 + 午休」自动生成节次列表。
+ * 若某一节会跨过午休开始时间，则跳过午休后再生成，保证单节课时长不被截断。
  */
 export function generateSlotsSmartFill(p: SmartFillSlotParams): UnifiedPeriodSlot[] {
   const lesson = Math.max(5, Math.min(180, Math.round(Number(p.lessonMinutes) || 40)))
   const brk = Math.max(0, Math.min(120, Math.round(Number(p.breakBetweenMinutes) || 0)))
   const lunchLen = Math.max(0, Math.min(240, Math.round(Number(p.lunchBreakMinutes) || 0)))
   const maxSlots = Math.max(1, Math.min(32, p.maxSlots ?? 16))
+  const lunchStart = hhmmToMinutes(p.lunchStart || DEFAULT_LUNCH_START) ?? hhmmToMinutes(DEFAULT_LUNCH_START) ?? 12 * 60
+  const dayEnd = p.dayEnd ? hhmmToMinutes(p.dayEnd) : null
   let cur = hhmmToMinutes(p.firstStart)
   if (cur == null)
     return []
 
-  const lunchEnd = lunchLen > 0 ? LUNCH_START_MINUTES + lunchLen : -1
+  const lunchEnd = lunchLen > 0 ? lunchStart + lunchLen : -1
   const out: UnifiedPeriodSlot[] = []
 
   const skipIntoLunch = () => {
     if (lunchLen <= 0)
       return
-    if (cur >= LUNCH_START_MINUTES && cur < lunchEnd)
+    if (cur >= lunchStart && cur < lunchEnd)
       cur = lunchEnd
   }
 
@@ -86,12 +89,20 @@ export function generateSlotsSmartFill(p: SmartFillSlotParams): UnifiedPeriodSlo
     if (periodEnd > 24 * 60)
       break
 
-    if (lunchLen > 0 && cur < LUNCH_START_MINUTES && periodEnd > LUNCH_START_MINUTES) {
-      periodEnd = LUNCH_START_MINUTES
-      if (periodEnd <= cur) {
-        cur = lunchEnd
-        continue
-      }
+    if (lunchLen > 0 && cur < lunchStart && periodEnd > lunchStart) {
+      cur = lunchEnd
+      skipIntoLunch()
+      periodEnd = cur + lesson
+      if (periodEnd > 24 * 60)
+        break
+    }
+
+    if (dayEnd != null && periodEnd > dayEnd)
+      break
+
+    if (periodEnd <= cur) {
+      cur += 5
+      continue
     }
 
     out.push({
@@ -102,20 +113,22 @@ export function generateSlotsSmartFill(p: SmartFillSlotParams): UnifiedPeriodSlo
     })
 
     cur = periodEnd + brk
-    if (lunchLen > 0 && cur > LUNCH_START_MINUTES && cur < lunchEnd)
+    if (lunchLen > 0 && cur > lunchStart && cur < lunchEnd)
       cur = lunchEnd
   }
 
   return out.map((s, i) => ({ ...s, index: i + 1 }))
 }
 
-/** 从 8:00 起连续 12 节整点（8–9 … 19–20），供默认配置与兼容旧「快捷生成」 */
+/** 默认校区模板：1 小时课时 + 10 分钟课间 + 12:30 起 90 分钟午休，排到 18:30 */
 export function buildQuickHourlySlots(): UnifiedPeriodSlot[] {
   return generateSlotsSmartFill({
     firstStart: '08:00',
     lessonMinutes: 60,
-    breakBetweenMinutes: 0,
-    lunchBreakMinutes: 0,
+    breakBetweenMinutes: 10,
+    lunchBreakMinutes: 90,
+    lunchStart: '12:30',
+    dayEnd: '18:30',
     maxSlots: 12,
   })
 }
