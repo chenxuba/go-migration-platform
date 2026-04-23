@@ -124,28 +124,28 @@ function drawTextLines(ctx, text, x, y, maxWidth, lineHeight, maxLines = Infinit
 function drawStepTitle(ctx, step, x, y, beforeText, highlightText, afterText = '') {
   ctx.fillStyle = '#1677ff'
   ctx.beginPath()
-  ctx.arc(x + 24, y + 24, 24, 0, Math.PI * 2)
+  ctx.arc(x + 22, y + 22, 22, 0, Math.PI * 2)
   ctx.fill()
 
   ctx.fillStyle = '#ffffff'
-  ctx.font = 'italic 700 26px "Times New Roman", serif'
+  ctx.font = 'italic 700 24px "Times New Roman", serif'
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'center'
-  ctx.fillText(String(step), x + 24, y + 24)
+  ctx.fillText(String(step), x + 22, y + 22)
 
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
-  let textX = x + 78
+  let textX = x + 64
   ctx.fillStyle = '#1f1f1f'
-  ctx.font = '700 28px "PingFang SC", "Microsoft YaHei", sans-serif'
-  ctx.fillText(beforeText, textX, y + 36)
+  ctx.font = '700 24px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.fillText(beforeText, textX, y + 30)
   textX += ctx.measureText(beforeText).width
   ctx.fillStyle = '#1677ff'
-  ctx.fillText(highlightText, textX, y + 36)
+  ctx.fillText(highlightText, textX, y + 30)
   textX += ctx.measureText(highlightText).width
   if (afterText) {
     ctx.fillStyle = '#1f1f1f'
-    ctx.fillText(afterText, textX, y + 36)
+    ctx.fillText(afterText, textX, y + 30)
   }
 }
 
@@ -169,102 +169,101 @@ async function buildInvitationPosterBlob() {
 
   const canvas = document.createElement('canvas')
   canvas.width = 1125
-  canvas.height = 2259
+  canvas.height = 1910
   const ctx = canvas.getContext('2d')
   if (!ctx)
     throw new Error('海报画布初始化失败')
 
-  ctx.fillStyle = '#f5f7fb'
+  ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  drawRoundRect(ctx, 42, 70, 1041, 1830, 32, '#ffffff')
+  drawRoundRect(ctx, 56, 56, 1013, 1740, 36, '#ffffff', '#e7edf5')
 
   ctx.strokeStyle = '#edf1f5'
   ctx.lineWidth = 2
   ctx.beginPath()
-  ctx.moveTo(42, 360)
-  ctx.lineTo(1083, 360)
+  ctx.moveTo(98, 350)
+  ctx.lineTo(1026, 350)
   ctx.stroke()
 
   ctx.fillStyle = '#1677ff'
   ctx.beginPath()
-  ctx.arc(145, 200, 62, 0, Math.PI * 2)
+  ctx.arc(156, 176, 58, 0, Math.PI * 2)
   ctx.fill()
 
   ctx.fillStyle = '#ffffff'
-  ctx.font = '500 60px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.font = '500 54px "PingFang SC", "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(institutionInitial.value, 145, 200)
+  ctx.fillText(institutionInitial.value, 156, 176)
 
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
   ctx.fillStyle = '#1f1f1f'
-  ctx.font = '600 50px "PingFang SC", "Microsoft YaHei", sans-serif'
-  drawTextLines(ctx, institutionName.value, 255, 130, 560, 68, 2)
+  ctx.font = '600 40px "PingFang SC", "Microsoft YaHei", sans-serif'
+  drawTextLines(ctx, institutionName.value, 246, 120, 470, 56, 2)
 
   ctx.fillStyle = '#70757d'
-  ctx.font = '500 38px "PingFang SC", "Microsoft YaHei", sans-serif'
-  ctx.fillText('邀您关注', 820, 150)
+  ctx.font = '500 34px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.fillText('邀您关注', 862, 138)
 
-  drawStepTitle(ctx, 1, 95, 420, '第一步： 扫描最下方二维码 ', '点击关注公众号')
+  drawStepTitle(ctx, 1, 102, 408, '第一步： 扫描最下方二维码 ', '点击关注公众号')
 
-  drawRoundRect(ctx, 96, 480, 830, 250, 22, '#f8fafc')
+  drawRoundRect(ctx, 98, 472, 902, 206, 26, '#f8fafc')
   ctx.fillStyle = '#ebedf0'
   ctx.beginPath()
-  ctx.arc(175, 570, 40, 0, Math.PI * 2)
+  ctx.arc(176, 575, 36, 0, Math.PI * 2)
   ctx.fill()
 
   ctx.fillStyle = '#4b4b4b'
-  ctx.font = '600 28px "PingFang SC", "Microsoft YaHei", sans-serif'
-  ctx.fillText(officialAccountDisplayName.value, 240, 542)
+  ctx.font = '600 26px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.fillText(officialAccountDisplayName.value, 236, 535)
 
   ctx.fillStyle = '#99a1b0'
-  ctx.font = '400 22px "PingFang SC", "Microsoft YaHei", sans-serif'
-  ctx.fillText('关注后可接收学校通知', 240, 590)
+  ctx.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif'
+  drawTextLines(ctx, '关注后可接收学校通知', 236, 580, 220, 30, 2)
 
-  drawRoundRect(ctx, 720, 520, 190, 92, 16, '#12c287')
+  drawRoundRect(ctx, 782, 510, 170, 84, 16, '#12c287')
   ctx.fillStyle = '#ffffff'
-  ctx.font = '700 44px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.font = '700 40px "PingFang SC", "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText('关注', 815, 566)
+  ctx.fillText('关注', 867, 552)
 
   ctx.setLineDash([14, 12])
   ctx.strokeStyle = '#e2e7ef'
   ctx.lineWidth = 2
   ctx.beginPath()
-  ctx.moveTo(95, 780)
-  ctx.lineTo(925, 780)
+  ctx.moveTo(98, 742)
+  ctx.lineTo(1000, 742)
   ctx.stroke()
   ctx.setLineDash([])
 
-  drawStepTitle(ctx, 2, 95, 840, '第二步： ', '点击公众号推送消息', ' 立即关注学员')
+  drawStepTitle(ctx, 2, 102, 792, '第二步： ', '点击公众号推送消息', ' 立即关注学员')
 
-  drawRoundRect(ctx, 96, 925, 830, 705, 22, '#f8fafc')
-  drawRoundRect(ctx, 96, 925, 830, 96, 22, '#ffe9e9')
+  drawRoundRect(ctx, 98, 856, 902, 664, 26, '#f8fafc')
+  drawRoundRect(ctx, 98, 856, 902, 82, 26, '#ffe9e9')
   ctx.fillStyle = '#ff4d4f'
-  ctx.font = '600 24px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.font = '600 22px "PingFang SC", "Microsoft YaHei", sans-serif'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
-  ctx.fillText('仅点击此推送消息才可成功关注学员，否则失效', 128, 973)
+  ctx.fillText('仅点击此推送消息才可成功关注学员，否则失效', 132, 898)
 
-  ctx.drawImage(step2Image, 96, 1021, 830, 571)
+  const step2Width = 740
+  const step2Height = step2Width * (step2Image.height / step2Image.width)
+  const step2X = Math.round((canvas.width - step2Width) / 2)
+  const step2Y = 954
+  ctx.drawImage(step2Image, step2X, step2Y, step2Width, step2Height)
 
-  ctx.drawImage(qrImage, 96, 1668, 180, 180)
+  ctx.drawImage(qrImage, 102, 1554, 186, 186)
   ctx.fillStyle = '#1f1f1f'
-  ctx.font = '600 34px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.font = '600 32px "PingFang SC", "Microsoft YaHei", sans-serif'
   ctx.textBaseline = 'top'
-  ctx.fillText(studentName.value, 330, 1704)
+  ctx.fillText(studentName.value, 336, 1578)
 
   ctx.fillStyle = '#5f6673'
-  ctx.font = '400 30px "PingFang SC", "Microsoft YaHei", sans-serif'
-  drawTextLines(ctx, '长按识别二维码，接收学员在校消息', 330, 1786, 480, 46, 2)
-
-  ctx.fillStyle = '#d0d5df'
-  ctx.font = '600 62px "PingFang SC", "Microsoft YaHei", sans-serif'
-  ctx.textAlign = 'center'
-  ctx.fillText('校宝 APP', canvas.width / 2, 2090)
+  ctx.font = '400 28px "PingFang SC", "Microsoft YaHei", sans-serif'
+  drawTextLines(ctx, '长按识别二维码，接收学员在校消息', 336, 1650, 430, 44, 2)
 
   return canvasToBlob(canvas)
 }
@@ -499,8 +498,8 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   background: #1677ff;
   color: #fff;
@@ -549,13 +548,13 @@ async function handleSubmit() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   margin-right: 8px;
   border-radius: 999px;
   background: #1677ff;
   color: #fff;
-  font-size: 15px;
+  font-size: 14px;
   font-style: italic;
   font-weight: 700;
 }
@@ -568,7 +567,7 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   margin-top: 12px;
-  padding: 16px;
+  padding: 12px 16px;
   border-radius: 18px;
   background: #f8fafc;
 }
@@ -605,14 +604,13 @@ async function handleSubmit() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 70px;
-  height: 32px;
+  width: 60px;
+  height: 26px;
   margin-left: 10px;
   border-radius: 6px;
   background: #12c287;
   color: #fff;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 13px;
   flex-shrink: 0;
 }
 
