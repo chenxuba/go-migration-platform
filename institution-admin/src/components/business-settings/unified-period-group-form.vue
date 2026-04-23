@@ -200,6 +200,9 @@ async function ensureStaffOptionsLoaded() {
         pageIndex: 1,
         skipCount: 1,
       },
+      queryModel: {
+        isTeacher: true,
+      },
     })
     if (res.code === 200) {
       const rows = Array.isArray(res.result) ? res.result : []

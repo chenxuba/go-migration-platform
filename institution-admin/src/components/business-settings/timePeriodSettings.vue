@@ -266,6 +266,7 @@ async function loadStaffForBind() {
       },
       queryModel: {
         searchKey: bindStaffKeyword.value.trim() || undefined,
+        isTeacher: true,
       },
     })
     if (res.code === 200) {
