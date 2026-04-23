@@ -10,6 +10,7 @@ import CustomTitle from '@/components/common/custom-title.vue'
 import { getCourseCategoryPageApi, getCourseDetailApi, getCoursePropertyOptionsApi, getCoursePageApi } from '~@/api/edu-center/course-list'
 import { getQiniuToken } from '@/api/qiniu'
 import { useCourseAttribute } from '@/composables/useCourseAttribute'
+import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
 
 const props = defineProps({
@@ -27,6 +28,7 @@ const props = defineProps({
   },
 })
 const emit = defineEmits(['update:open', 'handleSubmit'])
+const userStore = useUserStore()
 
 // 响应式断点检测
 const isMobile = ref(false)
@@ -227,6 +229,8 @@ function handleCourseSelectionChange(value) {
 watch(openDrawer, (newVal) => {
   if (newVal) {
     btnLoading.value = false
+    if (!userStore.instConfig)
+      userStore.getInstConfig()
     // 获取课程类别
     getCourseCategory()
     getEnabledCourseProperties()
@@ -296,6 +300,25 @@ const formState = ref({
   // 按金额报价单
   amountPrice: [],
 })
+
+function isConfigEnabled(value, defaultValue = false) {
+  if (value === undefined || value === null)
+    return defaultValue
+  if (typeof value === 'boolean')
+    return value
+  if (typeof value === 'number')
+    return value !== 0
+  if (typeof value === 'string')
+    return value === '1' || value.toLowerCase() === 'true'
+  return defaultValue
+}
+
+const showTimeBasedPriceButton = computed(() =>
+  isConfigEnabled(userStore.instConfig?.enableByDateLesson),
+)
+const showPackagePriceButton = computed(() =>
+  isConfigEnabled(userStore.instConfig?.enableChargeByPrice),
+)
 
 // 监听microSchoolSettingModalOpen
 watch(microSchoolSettingModalOpen, (newVal) => {
@@ -1125,7 +1148,6 @@ function buildCourseSubmitPayload() {
                       停售
                     </a-radio>
                   </a-radio-group>
-                  <span class="course-form-bind-debug">status: {{ formState.saleStatus }}</span>
                 </div>
               </a-form-item>
 
@@ -1144,7 +1166,6 @@ function buildCourseSubmitPayload() {
                         1v1授课
                       </a-radio>
                     </a-radio-group>
-                    <span class="course-form-bind-debug">lessonType: {{ formState.teachMethod }}</span>
                   </div>
                 </a-form-item>
 
@@ -1170,10 +1191,10 @@ function buildCourseSubmitPayload() {
                   <a-button type="primary" ghost class="w-full sm:w-auto text-sm" @click="addRegularPrice">
                     添加按课时报价单
                   </a-button>
-                  <a-button type="primary" ghost class="w-full sm:w-auto text-sm" @click="addTimeBasedPrice">
+                  <a-button v-if="showTimeBasedPriceButton" type="primary" ghost class="w-full sm:w-auto text-sm" @click="addTimeBasedPrice">
                     添加按时间段报价单
                   </a-button>
-                  <a-button type="primary" ghost class="w-full sm:w-auto text-sm" @click="addPackagePrice">
+                  <a-button v-if="showPackagePriceButton" type="primary" ghost class="w-full sm:w-auto text-sm" @click="addPackagePrice">
                     添加按套餐报价单
                   </a-button>
                 </div>
@@ -1277,7 +1298,7 @@ function buildCourseSubmitPayload() {
                 <div
                   class="topBar bg-#f0f5fe rounded-8px rounded-lb-none rounded-rb-none flex justify-between items-center h-38px px-4 ">
                   <span class="font500 text-3.5">按时段</span>
-                  <a-button type="primary" ghost size="small" @click="addTimeBasedPrice">
+                  <a-button v-if="showTimeBasedPriceButton" type="primary" ghost size="small" @click="addTimeBasedPrice">
                     <span class="text-3">添加报价单</span>
                   </a-button>
                 </div>
@@ -1387,7 +1408,7 @@ function buildCourseSubmitPayload() {
                 <div
                   class="topBar bg-#f0f5fe rounded-8px rounded-lb-none rounded-rb-none flex justify-between items-center h-38px px-5 ">
                   <span class="font500 text-3.5">按金额</span>
-                  <a-button type="primary" ghost size="small" @click="addPackagePrice">
+                  <a-button v-if="showPackagePriceButton" type="primary" ghost size="small" @click="addPackagePrice">
                     <span class="text-3">添加报价单</span>
                   </a-button>
                 </div>
@@ -1574,19 +1595,11 @@ function buildCourseSubmitPayload() {
   display: inline-block;
 }
 
-/* 临时：表单绑定值调试（上线前可删） */
 .course-form-row-with-debug {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-}
-
-.course-form-bind-debug {
-  color: #f5222d;
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: nowrap;
 }
 
 // 水平对齐radio选项
