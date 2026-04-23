@@ -92,7 +92,7 @@ onMounted(() => {
 <template>
   <div class="tab-content">
     <div class="setting" :class="loading ? '' : 'pb3'">
-      <custom-title class="course-setting-title" title="课程属性" font-size="18px" font-weight="800" />
+      <custom-title title="课程属性" font-size="18px" font-weight="800" before-height="14px" />
       <div class="table-wrap mt-3 mb-3">
         <div class="property-grid">
           <div
@@ -154,10 +154,6 @@ onMounted(() => {
   background: #fff;
   border-radius: 12px;
   padding: 18px 20px 12px;
-}
-
-:deep(.course-setting-title.title::before) {
-  height: 14px;
 }
 
 .property-grid {

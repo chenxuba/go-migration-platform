@@ -37,9 +37,7 @@ const teachingMethodRows = reactive([
 <template>
   <div class="tab-content">
     <div class="setting">
-      <div class="title">
-        授课方式设置
-      </div>
+      <custom-title title="授课方式设置" font-size="18px" font-weight="800" before-height="14px" />
 
       <div class="table-wrap mt-2">
         <table border>
@@ -84,24 +82,6 @@ const teachingMethodRows = reactive([
 }
 
 .setting {
-  .title {
-    display: flex;
-    align-items: center;
-    color: #222;
-    font-size: 18px;
-    font-weight: 600;
-
-    &::before {
-      display: inline-block;
-      width: 4px;
-      height: 14px;
-      margin-right: 6px;
-      content: '';
-      background: var(--pro-ant-color-primary);
-      border-radius: 100px;
-    }
-  }
-
   .table-wrap {
     table {
       width: 100%;

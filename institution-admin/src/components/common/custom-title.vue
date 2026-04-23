@@ -4,6 +4,10 @@ defineProps({
     type: String,
     default: '自定义',
   },
+  beforeHeight: {
+    type: String,
+    default: '12px',
+  },
   fontSize: {
     type: String,
     default: '12px',
@@ -16,7 +20,7 @@ defineProps({
 </script>
 
 <template>
-  <div class="title">
+  <div class="title" :style="{ '--custom-title-before-height': beforeHeight }">
     <slot name="left">
       <span> {{ title }}</span>
     </slot>
@@ -40,7 +44,7 @@ defineProps({
     background: var(--pro-ant-color-primary);
     border-radius: 2px;
     content: "";
-    height: 12px;
+    height: var(--custom-title-before-height);
     left: 0;
     position: absolute;
     width: 4px;
