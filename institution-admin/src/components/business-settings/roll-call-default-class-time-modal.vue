@@ -228,18 +228,18 @@ async function handleSubmit() {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding-left: 10px;
+  padding-left: 8px;
 }
 
 .default-class-time-modal__row {
   display: flex;
   align-items: center;
   min-height: 32px;
-  column-gap: 4px;
+  column-gap: 1px;
 }
 
 .default-class-time-modal__label {
-  width: 136px;
+  width: 116px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
