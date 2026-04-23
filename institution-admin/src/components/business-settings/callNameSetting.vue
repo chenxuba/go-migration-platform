@@ -69,7 +69,7 @@ const orderExampleRows = [
                 <div class="settings-inline">
                   <span>智能排序：</span>
                   <span class="text-primary">先进先出</span>
-                  <a-button type="link" size="small" class="settings-link">
+                  <a-button type="link"  class="settings-link">
                     编辑
                   </a-button>
                 </div>
@@ -189,17 +189,17 @@ const orderExampleRows = [
                 </div>
                 <div class="settings-inline settings-inline--muted">
                   <span>按固定课时记录：默认记录学员 <span class="text-primary">1</span> 课时，教师 <span class="text-primary">0</span> 课时</span>
-                  <a-button type="link" size="small" class="settings-link">
+                  <a-button type="link"  class="settings-link">
                     编辑
                   </a-button>
                 </div>
                 <div class="settings-switch-line">
                   <span>学员请假正常记录：</span>
-                  <a-switch v-model:checked="switches.leaveNormalByHour" size="small" />
+                  <a-switch v-model:checked="switches.leaveNormalByHour"  />
                 </div>
                 <div class="settings-switch-line">
                   <span>学员旷课正常记录：</span>
-                  <a-switch v-model:checked="switches.absentNormalByHour" size="small" />
+                  <a-switch v-model:checked="switches.absentNormalByHour"  />
                 </div>
               </div>
             </div>
@@ -214,11 +214,11 @@ const orderExampleRows = [
                 </div>
                 <div class="settings-switch-line">
                   <span>学员补课：</span>
-                  <a-switch v-model:checked="switches.periodMakeup" size="small" />
+                  <a-switch v-model:checked="switches.periodMakeup"  />
                 </div>
                 <div class="settings-switch-line">
                   <span>课消为 0 天后自动结课：</span>
-                  <a-switch v-model:checked="switches.periodAutoEnd" size="small" />
+                  <a-switch v-model:checked="switches.periodAutoEnd"  />
                 </div>
               </div>
             </div>
@@ -230,7 +230,7 @@ const orderExampleRows = [
               <div class="settings-row__content">
                 <div class="settings-inline">
                   <span>扣费规则：</span>
-                  <a-button type="link" size="small" class="settings-link">
+                  <a-button type="link"  class="settings-link">
                     编辑
                   </a-button>
                 </div>
@@ -239,15 +239,15 @@ const orderExampleRows = [
                 </div>
                 <div class="settings-switch-line">
                   <span>学员请假正常记录：</span>
-                  <a-switch v-model:checked="switches.amountLeaveNormal" size="small" />
+                  <a-switch v-model:checked="switches.amountLeaveNormal"  />
                 </div>
                 <div class="settings-switch-line">
                   <span>学员旷课正常记录：</span>
-                  <a-switch v-model:checked="switches.amountAbsentNormal" size="small" />
+                  <a-switch v-model:checked="switches.amountAbsentNormal"  />
                 </div>
                 <div class="settings-switch-line">
                   <span>学员补课：</span>
-                  <a-switch v-model:checked="switches.amountMakeup" size="small" />
+                  <a-switch v-model:checked="switches.amountMakeup"  />
                 </div>
               </div>
             </div>
@@ -271,17 +271,17 @@ const orderExampleRows = [
                 <div class="settings-inline settings-inline--block">
                   <span>每日考勤时段：</span>
                   <span>00:00 ~ 12:00 ~ 24:00</span>
-                  <a-button type="link" size="small" class="settings-link">
+                  <a-button type="link"  class="settings-link">
                     编辑
                   </a-button>
-                  <a-button type="link" size="small" class="settings-link">
+                  <a-button type="link"  class="settings-link">
                     恢复默认
                   </a-button>
                 </div>
                 <div class="settings-inline settings-inline--block">
                   <span>人脸考勤课消规则：</span>
                   <span>多日程按序课消</span>
-                  <a-button type="link" size="small" class="settings-link">
+                  <a-button type="link"  class="settings-link">
                     编辑
                   </a-button>
                 </div>
@@ -331,7 +331,7 @@ const orderExampleRows = [
               <div class="settings-row__content">
                 <div class="settings-inline">
                   <span>刷脸间隔 <span class="text-primary">1</span> 分钟</span>
-                  <a-button type="link" size="small" class="settings-link">
+                  <a-button type="link"  class="settings-link">
                     编辑
                   </a-button>
                 </div>
