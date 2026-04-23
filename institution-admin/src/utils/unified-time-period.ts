@@ -216,3 +216,49 @@ export function periodGroupIndexForKey(key: string): number {
 export function slotCountActive(g: UnifiedPeriodGroup): number {
   return g.slots.filter(s => s.enabled !== false).length
 }
+
+export function validateUnifiedPeriodGroup(group: UnifiedPeriodGroup): string | null {
+  if (!group.name.trim())
+    return '请填写时段名称'
+
+  const slots = [...group.slots].sort((a, b) => a.index - b.index)
+  if (!slots.length)
+    return '请至少添加一个节次'
+
+  const seenRangeMap = new Map<string, number>()
+  const normalizedSlots: Array<{ index: number, start: number, end: number }> = []
+
+  for (const slot of slots) {
+    const startText = String(slot.start || '').trim()
+    const endText = String(slot.end || '').trim()
+    if (!startText || !endText)
+      return `第${slot.index}节时间不能为空`
+
+    const startMinutes = hhmmToMinutes(startText)
+    const endMinutes = hhmmToMinutes(endText)
+    if (startMinutes == null || endMinutes == null)
+      return `第${slot.index}节时间格式不正确`
+
+    if (startMinutes >= endMinutes)
+      return `第${slot.index}节结束时间须晚于开始`
+
+    const rangeKey = `${startText}-${endText}`
+    const duplicateIndex = seenRangeMap.get(rangeKey)
+    if (duplicateIndex)
+      return `第${slot.index}节与第${duplicateIndex}节时间重复`
+
+    seenRangeMap.set(rangeKey, slot.index)
+    normalizedSlots.push({ index: slot.index, start: startMinutes, end: endMinutes })
+  }
+
+  for (let i = 0; i < normalizedSlots.length; i++) {
+    for (let j = i + 1; j < normalizedSlots.length; j++) {
+      const current = normalizedSlots[i]
+      const next = normalizedSlots[j]
+      if (current.start < next.end && next.start < current.end)
+        return `第${current.index}节与第${next.index}节时间重叠`
+    }
+  }
+
+  return null
+}

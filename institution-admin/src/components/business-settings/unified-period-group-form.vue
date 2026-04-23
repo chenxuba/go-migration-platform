@@ -9,6 +9,7 @@ import {
   slotCountActive,
   type UnifiedPeriodGroup,
   type UnifiedPeriodSlot,
+  validateUnifiedPeriodGroup,
 } from '@/utils/unified-time-period'
 import messageService from '@/utils/messageService'
 
@@ -158,16 +159,7 @@ function clampSlotEndAfterStart(s: UnifiedPeriodSlot) {
 }
 
 function validateGroup(): string | null {
-  const g = props.group
-  if (!g.name.trim())
-    return '请填写时段名称'
-  for (const s of g.slots) {
-    if (!s.start || !s.end)
-      return '存在未填写的时间'
-    if (s.start >= s.end)
-      return `第${s.index}节结束时间须晚于开始`
-  }
-  return null
+  return validateUnifiedPeriodGroup(props.group)
 }
 
 defineExpose({ validateGroup })
@@ -263,7 +255,7 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
           </div>
           <div class="up-group-form__hero-actions">
             <a-tooltip title="按上课时间规则一键生成整组节次，适合快速初始化。">
-              <a-button type="primary" size="small" @click="openSmartFillModal">
+              <a-button type="primary" ghost size="small" class="up-group-form__smart-btn" @click="openSmartFillModal">
                 智能生成节次
               </a-button>
             </a-tooltip>
@@ -591,6 +583,22 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
   align-items: center;
   justify-content: flex-end;
   width: 100%;
+}
+
+.up-group-form__smart-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: #fff;
+  border-color: #91caff;
+  color: #1677ff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgb(22 119 255 / 10%);
+
+  :deep(span) {
+    letter-spacing: 0.01em;
+  }
 }
 
 .up-group-smart-modal__hint {

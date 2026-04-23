@@ -10,6 +10,7 @@ import {
   parseUnifiedTimePeriodConfig,
   type UnifiedPeriodGroup,
   type UnifiedTimePeriodConfig,
+  validateUnifiedPeriodGroup,
 } from '@/utils/unified-time-period'
 import messageService from '@/utils/messageService'
 
@@ -87,12 +88,9 @@ function validateFullConfig(cfg: UnifiedTimePeriodConfig): string | null {
   for (const g of cfg.groups) {
     if (!g.name.trim())
       return '存在未命名时段组'
-    for (const s of g.slots) {
-      if (!s.start || !s.end)
-        return `「${g.name}」存在未填写的时间`
-      if (s.start >= s.end)
-        return `「${g.name}」第${s.index}节结束时间须晚于开始`
-    }
+    const groupErr = validateUnifiedPeriodGroup(g)
+    if (groupErr)
+      return `「${g.name}」${groupErr}`
   }
   return null
 }
