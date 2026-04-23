@@ -77,6 +77,46 @@ function drawRoundRect(ctx, x, y, width, height, radius, fillStyle, strokeStyle 
   }
 }
 
+function clipRoundRectPath(ctx, x, y, width, height, radius, corners = ['tl', 'tr', 'br', 'bl']) {
+  const safeRadius = Math.min(radius, width / 2, height / 2)
+  const topLeft = corners.includes('tl') ? safeRadius : 0
+  const topRight = corners.includes('tr') ? safeRadius : 0
+  const bottomRight = corners.includes('br') ? safeRadius : 0
+  const bottomLeft = corners.includes('bl') ? safeRadius : 0
+
+  ctx.beginPath()
+  ctx.moveTo(x + topLeft, y)
+  ctx.lineTo(x + width - topRight, y)
+  if (topRight)
+    ctx.arcTo(x + width, y, x + width, y + topRight, topRight)
+  else
+    ctx.lineTo(x + width, y)
+  ctx.lineTo(x + width, y + height - bottomRight)
+  if (bottomRight)
+    ctx.arcTo(x + width, y + height, x + width - bottomRight, y + height, bottomRight)
+  else
+    ctx.lineTo(x + width, y + height)
+  ctx.lineTo(x + bottomLeft, y + height)
+  if (bottomLeft)
+    ctx.arcTo(x, y + height, x, y + height - bottomLeft, bottomLeft)
+  else
+    ctx.lineTo(x, y + height)
+  ctx.lineTo(x, y + topLeft)
+  if (topLeft)
+    ctx.arcTo(x, y, x + topLeft, y, topLeft)
+  else
+    ctx.lineTo(x, y)
+  ctx.closePath()
+}
+
+function drawRoundedImage(ctx, image, x, y, width, height, radius, corners) {
+  ctx.save()
+  clipRoundRectPath(ctx, x, y, width, height, radius, corners)
+  ctx.clip()
+  ctx.drawImage(image, x, y, width, height)
+  ctx.restore()
+}
+
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const image = new Image()
@@ -121,31 +161,59 @@ function drawTextLines(ctx, text, x, y, maxWidth, lineHeight, maxLines = Infinit
   return lines.length
 }
 
-function drawStepTitle(ctx, step, x, y, beforeText, highlightText, afterText = '') {
+function drawEllipsisText(ctx, text, x, y, maxWidth) {
+  const raw = String(text || '')
+  if (ctx.measureText(raw).width <= maxWidth) {
+    ctx.fillText(raw, x, y)
+    return
+  }
+
+  let result = raw
+  while (result.length > 0 && ctx.measureText(`${result}...`).width > maxWidth) {
+    result = result.slice(0, -1)
+  }
+  ctx.fillText(`${result}...`, x, y)
+}
+
+function drawStepTitle(ctx, options) {
+  const {
+    scale,
+    x,
+    y,
+    step,
+    beforeText,
+    highlightText,
+    afterText = '',
+  } = options
+
+  const circleSize = 22 * scale
+  const circleRadius = circleSize / 2
+  const titleY = y + 14 * scale
+
   ctx.fillStyle = '#1677ff'
   ctx.beginPath()
-  ctx.arc(x + 22, y + 22, 22, 0, Math.PI * 2)
+  ctx.arc(x + circleRadius, y + circleRadius, circleRadius, 0, Math.PI * 2)
   ctx.fill()
 
   ctx.fillStyle = '#ffffff'
-  ctx.font = 'italic 700 24px "Times New Roman", serif'
+  ctx.font = `italic 700 ${14 * scale}px "Times New Roman", serif`
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'center'
-  ctx.fillText(String(step), x + 22, y + 22)
+  ctx.fillText(String(step), x + circleRadius, y + circleRadius)
 
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
-  let textX = x + 64
+  let textX = x + circleSize + 8 * scale
   ctx.fillStyle = '#1f1f1f'
-  ctx.font = '700 24px "PingFang SC", "Microsoft YaHei", sans-serif'
-  ctx.fillText(beforeText, textX, y + 30)
+  ctx.font = `700 ${14 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
+  ctx.fillText(beforeText, textX, titleY)
   textX += ctx.measureText(beforeText).width
   ctx.fillStyle = '#1677ff'
-  ctx.fillText(highlightText, textX, y + 30)
+  ctx.fillText(highlightText, textX, titleY)
   textX += ctx.measureText(highlightText).width
   if (afterText) {
     ctx.fillStyle = '#1f1f1f'
-    ctx.fillText(afterText, textX, y + 30)
+    ctx.fillText(afterText, textX, titleY)
   }
 }
 
@@ -167,9 +235,43 @@ async function buildInvitationPosterBlob() {
     loadImage(qrCodeSrc.value),
   ])
 
+  const scale = 3
+  const panelWidth = 343
+  const cardPadding = 16
+  const cardBorderWidth = 1
+  const cardRadius = 18
+  const contentWidth = panelWidth - (cardPadding * 2) - (cardBorderWidth * 2)
+  const titleBlockHeight = 0
+
+  const headerHeight = 36
+  const headerPaddingBottom = 14
+  const headerBorder = 1
+
+  const stepTitleHeight = Math.ceil(14 * 1.5)
+  const followCardMarginTop = 12
+  const followCardHeight = 64
+  const dividerBlockHeight = 18 + 1 + 2
+
+  const messageBannerHeight = Math.ceil((12 * 1.45) + 16)
+  const messageImageWidth = contentWidth * 0.82
+  const messageImageHeight = messageImageWidth * (step2Image.height / step2Image.width)
+  const messageImageTop = 8
+  const messageCardHeight = messageBannerHeight + messageImageTop + messageImageHeight + 10
+
+  const qrSectionHeight = 88
+  const cardHeight = Math.ceil(
+    cardPadding
+    + headerHeight + headerPaddingBottom + headerBorder
+    + 16 + stepTitleHeight + followCardMarginTop + followCardHeight
+    + dividerBlockHeight
+    + 16 + stepTitleHeight + 10 + messageCardHeight
+    + 12 + qrSectionHeight
+    + cardPadding,
+  )
+
   const canvas = document.createElement('canvas')
-  canvas.width = 1125
-  canvas.height = 1910
+  canvas.width = panelWidth * scale
+  canvas.height = (titleBlockHeight + cardHeight) * scale
   const ctx = canvas.getContext('2d')
   if (!ctx)
     throw new Error('海报画布初始化失败')
@@ -177,93 +279,200 @@ async function buildInvitationPosterBlob() {
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  drawRoundRect(ctx, 56, 56, 1013, 1740, 36, '#ffffff', '#e7edf5')
+  const cardTop = titleBlockHeight * scale
+  const outerBorderColor = '#eef2f6'
+  const cardStrokeWidth = cardBorderWidth * scale
+  const cardStrokeInset = cardStrokeWidth / 2
+  ctx.lineWidth = cardStrokeWidth
+  drawRoundRect(
+    ctx,
+    cardStrokeInset,
+    cardTop + cardStrokeInset,
+    canvas.width - cardStrokeWidth,
+    cardHeight * scale - cardStrokeWidth,
+    cardRadius * scale,
+    '#ffffff',
+    outerBorderColor,
+  )
 
-  ctx.strokeStyle = '#edf1f5'
-  ctx.lineWidth = 2
-  ctx.beginPath()
-  ctx.moveTo(98, 350)
-  ctx.lineTo(1026, 350)
-  ctx.stroke()
+  const cardLeft = (cardPadding + cardBorderWidth) * scale
+  const cardRight = canvas.width - cardLeft
+  let currentY = cardTop + (cardPadding + cardBorderWidth) * scale
+
+  const headerAvatarSize = 36 * scale
+  const headerInfoGap = 10 * scale
+  const headerHighlightGap = 10 * scale
+  const headerHighlightWidth = 56 * scale
+  const institutionTextX = cardLeft + headerAvatarSize + headerInfoGap
+  const institutionTextMaxWidth = cardRight - institutionTextX - headerHighlightGap - headerHighlightWidth
 
   ctx.fillStyle = '#1677ff'
   ctx.beginPath()
-  ctx.arc(156, 176, 58, 0, Math.PI * 2)
+  ctx.arc(cardLeft + headerAvatarSize / 2, currentY + headerAvatarSize / 2, headerAvatarSize / 2, 0, Math.PI * 2)
   ctx.fill()
 
   ctx.fillStyle = '#ffffff'
-  ctx.font = '500 54px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.font = `600 ${16 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(institutionInitial.value, 156, 176)
+  ctx.fillText(institutionInitial.value, cardLeft + headerAvatarSize / 2, currentY + headerAvatarSize / 2)
 
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
   ctx.fillStyle = '#1f1f1f'
-  ctx.font = '600 40px "PingFang SC", "Microsoft YaHei", sans-serif'
-  drawTextLines(ctx, institutionName.value, 246, 120, 470, 56, 2)
+  ctx.font = `600 ${14 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
+  const institutionLineHeight = Math.ceil(14 * 1.35 * scale)
+  const institutionLines = getWrappedLines(ctx, institutionName.value, institutionTextMaxWidth, 2)
+  const institutionTextTop = currentY + Math.max((headerAvatarSize - (institutionLines.length * institutionLineHeight)) / 2, 0) + 3 * scale
+  institutionLines.forEach((line, index) => {
+    ctx.fillText(line, institutionTextX, institutionTextTop + index * institutionLineHeight)
+  })
 
   ctx.fillStyle = '#70757d'
-  ctx.font = '500 34px "PingFang SC", "Microsoft YaHei", sans-serif'
-  ctx.fillText('邀您关注', 862, 138)
+  ctx.font = `500 ${14 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'right'
+  ctx.fillText('邀您关注', cardRight, currentY + (headerAvatarSize / 2))
 
-  drawStepTitle(ctx, 1, 102, 408, '第一步： 扫描最下方二维码 ', '点击关注公众号')
+  currentY += headerHeight * scale
+  currentY += headerPaddingBottom * scale
 
-  drawRoundRect(ctx, 98, 472, 902, 206, 26, '#f8fafc')
+  ctx.strokeStyle = outerBorderColor
+  ctx.lineWidth = cardBorderWidth * scale
+  ctx.beginPath()
+  ctx.moveTo(cardLeft, currentY)
+  ctx.lineTo(cardRight, currentY)
+  ctx.stroke()
+
+  currentY += headerBorder * scale
+  currentY += 16 * scale
+
+  drawStepTitle(ctx, {
+    scale,
+    x: cardLeft,
+    y: currentY,
+    step: 1,
+    beforeText: '第一步： 扫描最下方二维码 ',
+    highlightText: '点击关注公众号',
+  })
+
+  currentY += stepTitleHeight * scale
+  currentY += followCardMarginTop * scale
+
+  const followCardX = cardLeft
+  const followCardY = currentY
+  drawRoundRect(ctx, followCardX, followCardY, contentWidth * scale, followCardHeight * scale, 18 * scale, '#f8fafc')
+
+  const followAvatarSize = 40 * scale
+  const followButtonWidth = 60 * scale
+  const followButtonHeight = 26 * scale
+  const followButtonRadius = 6 * scale
+  const followInnerPaddingX = 16 * scale
+  const followButtonX = followCardX + (contentWidth * scale) - followInnerPaddingX - followButtonWidth
+  const followButtonY = followCardY + ((followCardHeight * scale - followButtonHeight) / 2)
+  const followAvatarX = followCardX + followInnerPaddingX
+  const followAvatarY = followCardY + ((followCardHeight * scale - followAvatarSize) / 2)
+  const followTextX = followAvatarX + followAvatarSize + (10 * scale)
+  const followTextMaxWidth = followButtonX - (10 * scale) - followTextX
+
   ctx.fillStyle = '#ebedf0'
   ctx.beginPath()
-  ctx.arc(176, 575, 36, 0, Math.PI * 2)
+  ctx.arc(followAvatarX + followAvatarSize / 2, followAvatarY + followAvatarSize / 2, followAvatarSize / 2, 0, Math.PI * 2)
   ctx.fill()
 
   ctx.fillStyle = '#4b4b4b'
-  ctx.font = '600 26px "PingFang SC", "Microsoft YaHei", sans-serif'
-  ctx.fillText(officialAccountDisplayName.value, 236, 535)
+  ctx.font = `600 ${14 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
+  ctx.textBaseline = 'top'
+  drawEllipsisText(ctx, officialAccountDisplayName.value, followTextX, followCardY + 14 * scale, followTextMaxWidth)
 
   ctx.fillStyle = '#99a1b0'
-  ctx.font = '400 20px "PingFang SC", "Microsoft YaHei", sans-serif'
-  drawTextLines(ctx, '关注后可接收学校通知', 236, 580, 220, 30, 2)
+  ctx.font = `400 ${11 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
+  drawTextLines(ctx, '关注后可接收学校通知', followTextX, followCardY + 33 * scale, followTextMaxWidth, Math.ceil(11 * 1.3 * scale), 2)
 
-  drawRoundRect(ctx, 782, 510, 170, 84, 16, '#12c287')
+  drawRoundRect(ctx, followButtonX, followButtonY, followButtonWidth, followButtonHeight, followButtonRadius, '#12c287')
   ctx.fillStyle = '#ffffff'
-  ctx.font = '700 40px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.font = `500 ${13 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText('关注', 867, 552)
+  ctx.fillText('关注', followButtonX + followButtonWidth / 2, followButtonY + followButtonHeight / 2)
 
-  ctx.setLineDash([14, 12])
-  ctx.strokeStyle = '#e2e7ef'
-  ctx.lineWidth = 2
+  currentY += followCardHeight * scale
+  currentY += 18 * scale
+
+  ctx.setLineDash([16 * scale, 12 * scale])
+  ctx.strokeStyle = '#dfe5ec'
+  ctx.lineWidth = 1 * scale
   ctx.beginPath()
-  ctx.moveTo(98, 742)
-  ctx.lineTo(1000, 742)
+  ctx.moveTo(cardLeft, currentY)
+  ctx.lineTo(cardRight, currentY)
   ctx.stroke()
   ctx.setLineDash([])
 
-  drawStepTitle(ctx, 2, 102, 792, '第二步： ', '点击公众号推送消息', ' 立即关注学员')
+  currentY += (1 + 2) * scale
+  currentY += 16 * scale
 
-  drawRoundRect(ctx, 98, 856, 902, 664, 26, '#f8fafc')
-  drawRoundRect(ctx, 98, 856, 902, 82, 26, '#ffe9e9')
+  drawStepTitle(ctx, {
+    scale,
+    x: cardLeft,
+    y: currentY,
+    step: 2,
+    beforeText: '第二步： ',
+    highlightText: '点击公众号推送消息',
+    afterText: ' 立即关注学员',
+  })
+
+  currentY += stepTitleHeight * scale
+  currentY += 10 * scale
+
+  const messageCardX = cardLeft
+  const messageCardY = currentY
+  drawRoundRect(ctx, messageCardX, messageCardY, contentWidth * scale, messageCardHeight * scale, 16 * scale, '#f8fafc')
+  ctx.save()
+  clipRoundRectPath(ctx, messageCardX, messageCardY, contentWidth * scale, messageBannerHeight * scale, 16 * scale, ['tl', 'tr'])
+  ctx.fillStyle = '#ffe9e9'
+  ctx.fill()
+  ctx.restore()
+
   ctx.fillStyle = '#ff4d4f'
-  ctx.font = '600 22px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.font = `500 ${12 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
-  ctx.fillText('仅点击此推送消息才可成功关注学员，否则失效', 132, 898)
+  ctx.fillText('仅点击此推送消息才可成功关注学员，否则失效', messageCardX + 12 * scale, messageCardY + (messageBannerHeight * scale / 2))
 
-  const step2Width = 740
-  const step2Height = step2Width * (step2Image.height / step2Image.width)
-  const step2X = Math.round((canvas.width - step2Width) / 2)
-  const step2Y = 954
-  ctx.drawImage(step2Image, step2X, step2Y, step2Width, step2Height)
+  const messageImageDrawWidth = messageImageWidth * scale
+  const messageImageDrawHeight = messageImageHeight * scale
+  const messageImageX = messageCardX + ((contentWidth * scale) - messageImageDrawWidth) / 2
+  const messageImageY = messageCardY + messageBannerHeight * scale + messageImageTop * scale
+  drawRoundedImage(ctx, step2Image, messageImageX, messageImageY, messageImageDrawWidth, messageImageDrawHeight, 12 * scale)
 
-  ctx.drawImage(qrImage, 102, 1554, 186, 186)
+  currentY += messageCardHeight * scale
+  currentY += 12 * scale
+
+  const qrImageSize = 88 * scale
+  const qrImageY = currentY
+  drawRoundedImage(ctx, qrImage, cardLeft, qrImageY, qrImageSize, qrImageSize, 12 * scale)
+
+  const qrTextX = cardLeft + qrImageSize + 12 * scale
+  const qrDescMaxWidth = contentWidth * scale - qrImageSize - 12 * scale
+  const qrDescLineHeight = Math.ceil(13 * 1.6 * scale)
+  const studentLineHeight = Math.ceil(16 * 1.3 * scale)
+  const qrDescText = '长按识别二维码，接收学员在校消息'
+  const qrDescLines = getWrappedLines(ctx, qrDescText, qrDescMaxWidth, 2)
+  const qrTextBlockHeight = studentLineHeight + (6 * scale) + (qrDescLines.length * qrDescLineHeight)
+  const qrTextBlockTop = qrImageY + Math.max((qrImageSize - qrTextBlockHeight) / 2, 0) + 4 * scale
+  const studentTextTop = qrTextBlockTop
   ctx.fillStyle = '#1f1f1f'
-  ctx.font = '600 32px "PingFang SC", "Microsoft YaHei", sans-serif'
+  ctx.font = `600 ${16 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
+  ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
-  ctx.fillText(studentName.value, 336, 1578)
+  drawEllipsisText(ctx, studentName.value, qrTextX, studentTextTop, qrDescMaxWidth)
 
   ctx.fillStyle = '#5f6673'
-  ctx.font = '400 28px "PingFang SC", "Microsoft YaHei", sans-serif'
-  drawTextLines(ctx, '长按识别二维码，接收学员在校消息', 336, 1650, 430, 44, 2)
+  ctx.font = `400 ${13 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
+  const qrDescY = studentTextTop + studentLineHeight + (6 * scale)
+  qrDescLines.forEach((line, index) => {
+    ctx.fillText(line, qrTextX, qrDescY + index * qrDescLineHeight)
+  })
 
   return canvasToBlob(canvas)
 }
