@@ -10,6 +10,7 @@ type InstUserQueryDTO struct {
 type InstUserQueryModel struct {
 	ID              *int64     `json:"id"`
 	UserType        *int       `json:"userType"`
+	IsTeacher       *bool      `json:"isTeacher"`
 	RoleIDs         []int64    `json:"roleIds"`
 	Status          *bool      `json:"status"`
 	DeptID          *int64     `json:"deptId"`
@@ -33,6 +34,7 @@ type InstUserQueryVO struct {
 	RoleName        string     `json:"roleName,omitempty"`
 	Disabled        bool       `json:"disabled"`
 	UserType        *int       `json:"userType,omitempty"`
+	IsTeacher       bool       `json:"isTeacher"`
 	CreateTime      *time.Time `json:"createTime,omitempty"`
 	IsAdmin         bool       `json:"isAdmin"`
 	ActivatedStatus bool       `json:"activatedStatus"`

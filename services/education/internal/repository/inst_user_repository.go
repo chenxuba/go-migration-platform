@@ -175,6 +175,10 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 		filters = append(filters, "iu.user_type = ?")
 		args = append(args, *query.UserType)
 	}
+	if query.IsTeacher != nil {
+		filters = append(filters, "IFNULL(iu.is_teacher, 0) = ?")
+		args = append(args, boolValue(query.IsTeacher))
+	}
 	if query.CreateTimeBegin != nil {
 		filters = append(filters, "iu.create_time >= ?")
 		args = append(args, *query.CreateTimeBegin)
@@ -219,7 +223,7 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 			       IFNULL(GROUP_CONCAT(DISTINCT sd.depart_name ORDER BY sd.id SEPARATOR ','), ''),
 			       IFNULL(GROUP_CONCAT(DISTINCT sr.id ORDER BY IFNULL(sr.is_admin, 0) DESC, sr.id SEPARATOR ','), ''),
 			       IFNULL(GROUP_CONCAT(DISTINCT sr.role_name ORDER BY IFNULL(sr.is_admin, 0) DESC, sr.id SEPARATOR ','), ''),
-			       IFNULL(iu.disabled, 0), iu.user_type, iu.create_time, IFNULL(iu.is_admin, 0), IFNULL(iu.activated_status, 0)
+			       IFNULL(iu.disabled, 0), iu.user_type, IFNULL(iu.is_teacher, 0), iu.create_time, IFNULL(iu.is_admin, 0), IFNULL(iu.activated_status, 0)
 			FROM inst_user iu
 			LEFT JOIN org_institution oi ON oi.id = iu.inst_id
 			LEFT JOIN inst_user_dept iud ON iud.inst_user_id = iu.id AND iud.del_flag = 0
@@ -227,7 +231,7 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 			LEFT JOIN sso_user_role sur ON sur.user_id = iu.user_id
 			LEFT JOIN sso_role sr ON sr.id = sur.role_id AND sr.del_flag = 0 AND (sr.org_id = iu.inst_id OR sr.org_id = 0)
 			WHERE `+whereClause+`
-			GROUP BY iu.id, iu.uuid, iu.version, iu.inst_id, oi.organ_name, iu.avatar, iu.nick_name, iu.mobile, iu.disabled, iu.user_type, iu.create_time, iu.is_admin, iu.activated_status
+			GROUP BY iu.id, iu.uuid, iu.version, iu.inst_id, oi.organ_name, iu.avatar, iu.nick_name, iu.mobile, iu.disabled, iu.user_type, iu.is_teacher, iu.create_time, iu.is_admin, iu.activated_status
 			ORDER BY iu.create_time DESC
 		LIMIT ? OFFSET ?`, listArgs...)
 	if err != nil {
@@ -244,7 +248,7 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 		if err := rows.Scan(
 			&item.ID, &item.UUID, &item.Version, &item.InstID, &item.InstName, &item.Avatar,
 			&item.NickName, &item.Mobile, &item.DepartNames, &roleIDsRaw, &roleNamesRaw,
-			&item.Disabled, &item.UserType, &createTime, &item.IsAdmin, &item.ActivatedStatus,
+			&item.Disabled, &item.UserType, &item.IsTeacher, &createTime, &item.IsAdmin, &item.ActivatedStatus,
 		); err != nil {
 			return model.PageResult[model.InstUserQueryVO]{}, err
 		}

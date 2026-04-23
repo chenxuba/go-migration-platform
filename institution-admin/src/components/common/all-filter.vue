@@ -555,6 +555,7 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:trialPurchaseStatusFilter',
   'update:isMicroSchoolSaleFilter', 'update:isMicroSchoolDisplayFilter',
   'update:lastEditedTimeFilter', 'update:channelPositionRoleFilter', 'update:channelUserType',
+  'update:channelIsTeacherFilter',
   'update:channelAccountStatus', 'update:performanceAllocationStatusFilter',
   'update:enableStatusFilter',
   'update:orderTypeFilter', 'update:orderTagFilter', 'update:enrollTypeFilter', 'update:productTypeFilter', 'update:approveNumberFilter', 'update:approvalStatusFilter', 'update:leaveTypeFilter', 'update:finishTimeFilter', 'update:departmentFilter', 'staff-search', 'update:createUserFilter',
@@ -1478,6 +1479,12 @@ const userTypeOptions = ref([
   { id: 2, value: '兼职员工' },
 ])
 const selectUserTypeVals = ref(null)
+// 是否教师
+const isTeacherOptions = ref([
+  { id: true, value: '是' },
+  { id: false, value: '否' },
+])
+const selectIsTeacherVals = ref(null)
 
 // 业绩分配状态选项
 const performanceAllocationStatusOptions = ref([
@@ -2416,6 +2423,13 @@ function handleUserTypeChange(e) {
   nextTick(() => {
     emit('update:channelUserType', e)
     console.log('用户类型:', e)
+  })
+}
+
+function handleIsTeacherChange(e) {
+  nextTick(() => {
+    emit('update:channelIsTeacherFilter', e)
+    console.log('是否教师:', e)
   })
 }
 
@@ -3399,6 +3413,14 @@ const selectedConditions = computed(() => {
       ),
     },
     {
+      type: 'isTeacher',
+      label: '是否是教师',
+      show: props.displayArray.includes('isTeacher'),
+      values: isTeacherOptions.value.filter(
+        opt => opt.id === selectIsTeacherVals.value,
+      ),
+    },
+    {
       type: 'currentStatus',
       label: props.oneToOneMode ? '开课状态' : '当前状态',
       show: props.displayArray.includes('currentStatus'),
@@ -3830,6 +3852,7 @@ watch(
 watch(selectStudentStatusVals, () => (lastUpdated.studentStatus = Date.now()))
 watch(selectAccountStatusVals, () => (lastUpdated.accountStatus = Date.now()))
 watch(selectUserTypeVals, () => (lastUpdated.userType = Date.now()))
+watch(selectIsTeacherVals, () => (lastUpdated.isTeacher = Date.now()))
 watch(selectCurrentStatusVals, () => (lastUpdated.currentStatus = Date.now()))
 watch(selectOrNotFenClassVals, () => (lastUpdated.orNotFenClass = Date.now()))
 watch(selectBillingModeVals, () => (lastUpdated.billingMode = Date.now()))
@@ -3996,6 +4019,7 @@ const clearAll = debounce(() => {
     emit('update:lastFollowTimeFilter', undefined, true)
     emit('update:channelAccountStatus', undefined, true)
     emit('update:channelUserType', undefined, true)
+    emit('update:channelIsTeacherFilter', undefined, true)
     emit('update:performanceAllocationStatusFilter', undefined, true)
     emit('update:enableStatusFilter', undefined, true)
     emit('update:orderTypeFilter', [], true)
@@ -4613,6 +4637,10 @@ function removeCondition(type, id) {
       // selectUserTypeVals.value = null
       emit('update:channelUserType', undefined, false, id, type)
       break
+    case 'isTeacher':
+      selectIsTeacherVals.value = null
+      emit('update:channelIsTeacherFilter', undefined, false, id, type)
+      break
     case 'currentStatus':
       // 清空当前状态多选
       selectCurrentStatusVals.value = []
@@ -5112,6 +5140,9 @@ function clearQuickFilter(id, type) {
       break
     case 'userType':
       selectUserTypeVals.value = null
+      break
+    case 'isTeacher':
+      selectIsTeacherVals.value = null
       break
     case 'positionRole':
       positionRoleVals.value = []
@@ -6623,6 +6654,10 @@ defineExpose({
               <checkbox-filter v-if="filterType === 'userType'" :ref="(el) => handleRef(el, 'userType')"
                 v-model:checked-values="selectUserTypeVals" category="noSearchRadio" placeholder="选择员工类型"
                 :options="userTypeOptions" label="员工类型" type="radio" @radio-change="handleUserTypeChange" />
+              <!-- 是否是教师 -->
+              <checkbox-filter v-if="filterType === 'isTeacher'" :ref="(el) => handleRef(el, 'isTeacher')"
+                v-model:checked-values="selectIsTeacherVals" category="noSearchRadio" placeholder="选择是否是教师"
+                :options="isTeacherOptions" label="是否是教师" type="radio" @radio-change="handleIsTeacherChange" />
 
               <!-- 业绩分配状态 -->
               <checkbox-filter v-if="filterType === 'performanceAllocationStatus'"

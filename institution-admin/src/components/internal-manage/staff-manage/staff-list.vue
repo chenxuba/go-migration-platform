@@ -61,6 +61,7 @@ const displayArray = ref([
   'createTime',
   'accountStatus',
   'userType',
+  'isTeacher',
   'positionRole',
 ]);
 
@@ -141,6 +142,13 @@ const allColumns = ref([
     width: 100,
   },
   {
+    title: '是否教师',
+    dataIndex: 'isTeacher',
+    key: 'isTeacher',
+    width: 100,
+    required: true,
+  },
+  {
     title: '创建时间',
     dataIndex: 'createTime',
     key: 'createTime',
@@ -194,7 +202,7 @@ async function getStaffList(query = {}, id, type) {
   } finally {
     loading.value = false;
     // 清除快捷筛选标记
-    if (allFilterRef.value && id && type) {
+    if (allFilterRef.value && id !== undefined && id !== null && type) {
       allFilterRef.value.clearQuickFilter(id, type);
     }
   }
@@ -247,6 +255,7 @@ const filterFieldMapping = {
   createTimeFilter: "createTime",
   channelAccountStatus: "status",
   channelUserType: "userType",
+  channelIsTeacherFilter: "isTeacher",
   channelPositionRoleFilter: "roleIds",
   stuPhoneSearchFilter: "id",
 };
@@ -768,6 +777,14 @@ onMounted(async () => {
               <template v-if="column.key === 'userType'">
                 {{ record.userType === 1 ? '正式员工' : '兼职员工' }}
               </template>
+              <template v-if="column.key === 'isTeacher'">
+                <span
+                  class="teacher-tag"
+                  :class="record.isTeacher ? 'teacher-tag--yes' : 'teacher-tag--no'"
+                >
+                  {{ record.isTeacher ? '是' : '否' }}
+                </span>
+              </template>
               <template v-if="column.key === 'createTime'">
                 {{ dayjs(record.createTime).format('YYYY-MM-DD HH:mm') }}
               </template>
@@ -891,5 +908,28 @@ span.dot {
   background-color: rgba(0, 0, 0, .35);
   border-radius: 4px;
   height: 8px;
+}
+
+.teacher-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.teacher-tag--yes {
+  color: #1677ff;
+  background: #e6f0ff;
+}
+
+.teacher-tag--no {
+  color: #8c8c8c;
+  background: #f5f5f5;
 }
 </style>
