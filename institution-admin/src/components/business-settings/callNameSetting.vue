@@ -1,10 +1,16 @@
-<script setup>
+<script setup lang="ts">
+import { InputNumber, Modal } from 'ant-design-vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
+import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
+import { useUserStore } from '~@/stores/user'
+import messageService from '~@/utils/messageService'
+
+const userStore = useUserStore()
 const activeKey = ref('deduct-order')
+const rowLoadingMap = ref<Record<string, boolean>>({})
 
 const courseDeductOrder = ref('oldest')
 const switches = reactive({
-  consumeOver: true,
-  autoRollCall: true,
   liveAutoRollCall: false,
   limitSingleOrder: false,
   leaveNormalByHour: false,
@@ -21,12 +27,136 @@ const switches = reactive({
   faceAdminNotice: false,
 })
 
+const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
+
+function isConfigEnabled(value: unknown, defaultValue = false) {
+  if (typeof value === 'boolean')
+    return value
+  if (typeof value === 'number')
+    return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === '1' || normalized === 'true')
+      return true
+    if (normalized === '0' || normalized === 'false')
+      return false
+  }
+  return defaultValue
+}
+
+function normalizePositiveInteger(value: unknown, fallback = 1) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0)
+    return fallback
+  return Math.floor(parsed)
+}
+
+const consumeOverEnabled = computed(() => isConfigEnabled(instConfig.value.enabledArrearsRollcall, false))
+const autoRollCallEnabled = computed(() => isConfigEnabled(instConfig.value.enableByAutoTeaching, false))
+const faceDeductEnabled = computed(() => isConfigEnabled(instConfig.value.enableFaceAttendanceRelateTeaching, false))
+const faceSignInNoticeEnabled = computed(() => isConfigEnabled(instConfig.value.enableFaceAttendanceCheckInNotice, false))
+const faceSignOutNoticeEnabled = computed(() => isConfigEnabled(instConfig.value.enableFaceAttendanceCheckOutNotice, false))
+const voicePromptEnabled = computed(() => isConfigEnabled(instConfig.value.enableByVoiceTips, false))
+const faceAdminNoticeEnabled = computed(() => isConfigEnabled(instConfig.value.enableSendFaceAttendNoticeToAdmin, false))
+const faceAttendanceIntervalMinutes = computed(() => normalizePositiveInteger(instConfig.value.faceAttendanceInterval, 1))
+
 const orderExampleRows = [
   { no: 1, order: '订单 A', validUntil: '2025-06-08', accountType: '正价', createdAt: '2025-05-05 10:10' },
   { no: 2, order: '订单 B', validUntil: '2025-08-08', accountType: '正价', createdAt: '2025-06-05 10:10' },
   { no: 3, order: '订单 B', validUntil: '2025-08-08', accountType: '赠送', createdAt: '2025-06-05 10:10' },
   { no: 4, order: '订单 C', validUntil: '不限制', accountType: '正价', createdAt: '2025-07-05 10:10' },
 ]
+
+function isRowLoading(key: string) {
+  return Boolean(rowLoadingMap.value[key])
+}
+
+async function ensureInstConfigLoaded() {
+  if (!userStore.instConfig)
+    await userStore.getInstConfig()
+}
+
+async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyof InstConfig], key: string, successText: string) {
+  rowLoadingMap.value = {
+    ...rowLoadingMap.value,
+    [key]: true,
+  }
+  try {
+    await setInstConfigApi({
+      ...(instConfig.value as InstConfig),
+      [field]: value,
+    })
+    await userStore.getInstConfig()
+    messageService.success(successText)
+  }
+  catch (error) {
+    console.error(`update ${String(field)} failed`, error)
+    messageService.error('保存失败，请稍后重试')
+  }
+  finally {
+    rowLoadingMap.value = {
+      ...rowLoadingMap.value,
+      [key]: false,
+    }
+  }
+}
+
+async function handleConsumeOverToggle(checked: boolean) {
+  await updateConfigField('enabledArrearsRollcall', checked, 'consumeOver', checked ? '已开启消超点名' : '已关闭消超点名')
+}
+
+async function handleAutoRollCallToggle(checked: boolean) {
+  await updateConfigField('enableByAutoTeaching', checked, 'autoRollCall', checked ? '已开启自动点名' : '已关闭自动点名')
+}
+
+async function handleFaceDeductToggle(checked: boolean) {
+  await updateConfigField('enableFaceAttendanceRelateTeaching', checked, 'faceDeduct', checked ? '已开启人脸考勤关联点名课消' : '已关闭人脸考勤关联点名课消')
+}
+
+async function handleFaceSignInNoticeToggle(checked: boolean) {
+  await updateConfigField('enableFaceAttendanceCheckInNotice', checked, 'faceSignInNotice', checked ? '已开启学员考勤签到通知' : '已关闭学员考勤签到通知')
+}
+
+async function handleFaceSignOutNoticeToggle(checked: boolean) {
+  await updateConfigField('enableFaceAttendanceCheckOutNotice', checked, 'faceSignOutNotice', checked ? '已开启学员考勤签退通知' : '已关闭学员考勤签退通知')
+}
+
+async function handleVoicePromptToggle(checked: boolean) {
+  await updateConfigField('enableByVoiceTips', checked, 'voicePrompt', checked ? '已开启语音提示' : '已关闭语音提示')
+}
+
+async function handleFaceAdminNoticeToggle(checked: boolean) {
+  await updateConfigField('enableSendFaceAttendNoticeToAdmin', checked, 'faceAdminNotice', checked ? '已开启学员刷脸成功提醒至管理员' : '已关闭学员刷脸成功提醒至管理员')
+}
+
+function handleEditFaceAttendanceInterval() {
+  let nextValue = faceAttendanceIntervalMinutes.value
+  Modal.confirm({
+    title: '编辑刷脸间隔',
+    centered: true,
+    content: h('div', { style: 'display:flex;align-items:center;gap:8px;margin-top:8px;' }, [
+      h('span', null, '刷脸间隔'),
+      h(InputNumber, {
+        min: 1,
+        max: 1440,
+        value: nextValue,
+        precision: 0,
+        style: 'width: 120px;',
+        'onUpdate:value': (value: number | null) => {
+          nextValue = normalizePositiveInteger(value, faceAttendanceIntervalMinutes.value)
+        },
+      }),
+      h('span', null, '分钟'),
+    ]),
+    async onOk() {
+      await updateConfigField('faceAttendanceInterval', String(normalizePositiveInteger(nextValue, 1)), 'faceAttendanceInterval', '已保存刷脸间隔设置')
+    },
+  })
+}
+
+onMounted(async () => {
+  await ensureInstConfigLoaded()
+})
 </script>
 
 <template>
@@ -123,7 +253,7 @@ const orderExampleRows = [
                 消超点名
               </div>
               <div class="settings-row__content">
-                <a-switch v-model:checked="switches.consumeOver" />
+                <a-switch :checked="consumeOverEnabled" :loading="isRowLoading('consumeOver')" @change="handleConsumeOverToggle" />
                 <div class="settings-desc">
                   开启后，学员的上课点名支持消超记录（支持欠费点名）。
                 </div>
@@ -135,7 +265,7 @@ const orderExampleRows = [
                 自动点名
               </div>
               <div class="settings-row__content">
-                <a-switch v-model:checked="switches.autoRollCall" />
+                <a-switch :checked="autoRollCallEnabled" :loading="isRowLoading('autoRollCall')" @change="handleAutoRollCallToggle" />
                 <div class="settings-desc">
                   开启后，未点名且未触发人脸考勤关联课消的课程，在结束后 35 分钟内，系统将自动点名并记录课消，作为兜底处理。
                 </div>
@@ -291,7 +421,7 @@ const orderExampleRows = [
                 人脸考勤关联点名课消
               </div>
               <div class="settings-row__content">
-                <a-switch v-model:checked="switches.faceDeduct" />
+                <a-switch :checked="faceDeductEnabled" :loading="isRowLoading('faceDeduct')" @change="handleFaceDeductToggle" />
                 <div class="settings-inline settings-inline--block">
                   <span class="settings-switch-line__label">人脸考勤课消规则：</span>
                   <span>按学员人脸签到后的当日日程自动课消</span>
@@ -307,7 +437,7 @@ const orderExampleRows = [
                 学员考勤签到通知
               </div>
               <div class="settings-row__content">
-                <a-switch v-model:checked="switches.faceSignInNotice" />
+                <a-switch :checked="faceSignInNoticeEnabled" :loading="isRowLoading('faceSignInNotice')" @change="handleFaceSignInNoticeToggle" />
                 <div class="settings-desc">
                   开启后，学员完成考勤签到或手动标记签到将自动发送微信通知给家长。
                 </div>
@@ -319,7 +449,7 @@ const orderExampleRows = [
                 学员考勤签退通知
               </div>
               <div class="settings-row__content">
-                <a-switch v-model:checked="switches.faceSignOutNotice" />
+                <a-switch :checked="faceSignOutNoticeEnabled" :loading="isRowLoading('faceSignOutNotice')" @change="handleFaceSignOutNoticeToggle" />
                 <div class="settings-desc">
                   开启后，学员完成考勤签退或手动标记签退将自动发送微信通知给家长。
                 </div>
@@ -331,7 +461,7 @@ const orderExampleRows = [
                 语音提示
               </div>
               <div class="settings-row__content">
-                <a-switch v-model:checked="switches.voicePrompt" />
+                <a-switch :checked="voicePromptEnabled" :loading="isRowLoading('voicePrompt')" @change="handleVoicePromptToggle" />
                 <div class="settings-desc">
                   开启后，系统实时播报学员是否人脸考勤成功、签到签退成功。
                 </div>
@@ -344,8 +474,8 @@ const orderExampleRows = [
               </div>
               <div class="settings-row__content">
                 <div class="settings-inline">
-                  <span>刷脸间隔 <span class="text-primary">1</span> 分钟</span>
-                  <a-button type="link"  class="settings-link">
+                  <span>刷脸间隔 <span class="text-primary">{{ faceAttendanceIntervalMinutes }}</span> 分钟</span>
+                  <a-button type="link" class="settings-link" :loading="isRowLoading('faceAttendanceInterval')" @click="handleEditFaceAttendanceInterval">
                     编辑
                   </a-button>
                 </div>
@@ -360,7 +490,7 @@ const orderExampleRows = [
                 学员刷脸成功提醒至管理员
               </div>
               <div class="settings-row__content">
-                <a-switch v-model:checked="switches.faceAdminNotice" />
+                <a-switch :checked="faceAdminNoticeEnabled" :loading="isRowLoading('faceAdminNotice')" @change="handleFaceAdminNoticeToggle" />
                 <div class="settings-desc">
                   开启后，校区管理员将在 App 消息中心收到学员刷脸成功的推送提醒。
                 </div>

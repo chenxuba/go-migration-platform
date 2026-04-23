@@ -52,6 +52,8 @@ export interface InstConfig {
   enableForeground: boolean
   enableGoodsManagement: string
   enableGradeUpgrade: string
+  enableOneToOneScheduleLimit?: boolean | string
+  enableScheduleConflictContinue?: boolean | string
   enableLeaveApplyNumberLimit: string
   enableLeaveApplyTimeLimit: string
   enableLeaveDeductMoney: string
@@ -113,6 +115,7 @@ export interface InstConfig {
   renewPrice: string
   renewValidityDay: string
   schoolHomeBanner: string
+  scheduleTeacherSelectionRange?: string
   sendClassReminderMsgHour: string
   sendClassReminderSmsHour: string
   shouldStudentSourceTypeConfig: string

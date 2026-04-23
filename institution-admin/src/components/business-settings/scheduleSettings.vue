@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { Empty } from 'ant-design-vue'
 import type { TableColumnType } from 'ant-design-vue'
-import { h, reactive, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
+import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
+import { useUserStore } from '~@/stores/user'
+import messageService from '~@/utils/messageService'
 import TimePeriodSettings from '@/components/business-settings/timePeriodSettings.vue'
 
 type HolidayRow = {
@@ -12,18 +15,38 @@ type HolidayRow = {
   endDate: string
 }
 
+const userStore = useUserStore()
 const activeKey = ref('holiday')
-const teacherRange = ref('teacher-only')
 const periodGroupCount = ref(0)
 const periodSettingsRef = ref<any>(null)
-
-const switches = reactive({
-  holidayEnabled: true,
-  oneToOneLimit: false,
-  allowCampusConflict: true,
-})
+const rowLoadingMap = ref<Record<string, boolean>>({})
 
 const emptyImage = Empty.PRESENTED_IMAGE_SIMPLE
+const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
+
+function isConfigEnabled(value: unknown, defaultValue = false) {
+  if (typeof value === 'boolean')
+    return value
+  if (typeof value === 'number')
+    return value !== 0
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === '1' || normalized === 'true')
+      return true
+    if (normalized === '0' || normalized === 'false')
+      return false
+  }
+  return defaultValue
+}
+
+function normalizeTeacherSelectionRange(value: unknown) {
+  return value === 'all' ? 'all' : 'teacher-only'
+}
+
+const holidayEnabled = computed(() => isConfigEnabled(instConfig.value.enableFilterHoliday, true))
+const oneToOneLimitEnabled = computed(() => isConfigEnabled(instConfig.value.enableOneToOneScheduleLimit, false))
+const allowCampusConflict = computed(() => isConfigEnabled(instConfig.value.enableScheduleConflictContinue, true))
+const teacherRange = computed(() => normalizeTeacherSelectionRange(instConfig.value.scheduleTeacherSelectionRange))
 
 const holidayColumns: TableColumnType<HolidayRow>[] = [
   { title: '时段', dataIndex: 'period', key: 'period', width: 140 },
@@ -37,6 +60,60 @@ const holidayRows: HolidayRow[] = []
 const emptyLocale = {
   emptyText: h(Empty, { image: emptyImage, description: '暂无数据' }),
 }
+
+function isRowLoading(key: string) {
+  return Boolean(rowLoadingMap.value[key])
+}
+
+async function ensureInstConfigLoaded() {
+  if (!userStore.instConfig)
+    await userStore.getInstConfig()
+}
+
+async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyof InstConfig], key: string, successText: string) {
+  rowLoadingMap.value = {
+    ...rowLoadingMap.value,
+    [key]: true,
+  }
+  try {
+    await setInstConfigApi({
+      ...(instConfig.value as InstConfig),
+      [field]: value,
+    })
+    await userStore.getInstConfig()
+    messageService.success(successText)
+  }
+  catch (error) {
+    console.error(`update ${String(field)} failed`, error)
+    messageService.error('保存失败，请稍后重试')
+  }
+  finally {
+    rowLoadingMap.value = {
+      ...rowLoadingMap.value,
+      [key]: false,
+    }
+  }
+}
+
+async function handleHolidayToggle(checked: boolean) {
+  await updateConfigField('enableFilterHoliday', checked, 'holidayEnabled', checked ? '已开启节假日设置' : '已关闭节假日设置')
+}
+
+async function handleOneToOneLimitToggle(checked: boolean) {
+  await updateConfigField('enableOneToOneScheduleLimit', checked, 'oneToOneLimit', checked ? '已开启1对1排课数量限制' : '已关闭1对1排课数量限制')
+}
+
+async function handleConflictToggle(checked: boolean) {
+  await updateConfigField('enableScheduleConflictContinue', checked, 'allowCampusConflict', checked ? '已允许校内冲突继续排课' : '已关闭校内冲突继续排课')
+}
+
+async function handleTeacherRangeChange(value: string) {
+  await updateConfigField('scheduleTeacherSelectionRange', normalizeTeacherSelectionRange(value), 'teacherRange', '已保存上课教师选择范围')
+}
+
+onMounted(async () => {
+  await ensureInstConfigLoaded()
+})
 </script>
 
 <template>
@@ -50,7 +127,7 @@ const emptyLocale = {
                 <div class="settings-title-inline">
                   <span>节假日设置</span>
                   <div class="settings-title-control">
-                    <a-switch v-model:checked="switches.holidayEnabled" />
+                    <a-switch :checked="holidayEnabled" :loading="isRowLoading('holidayEnabled')" @change="handleHolidayToggle" />
                     <span class="settings-title-control__desc">开启后，系统自动跳过节假日安排日程，修改模板不影响已排课日程。</span>
                   </div>
                 </div>
@@ -110,7 +187,7 @@ const emptyLocale = {
                 <div class="settings-title-inline">
                   <span>1对1排课数量限制</span>
                   <div class="settings-title-control">
-                    <a-switch v-model:checked="switches.oneToOneLimit" />
+                    <a-switch :checked="oneToOneLimitEnabled" :loading="isRowLoading('oneToOneLimit')" @change="handleOneToOneLimitToggle" />
                     <span class="settings-title-control__desc">开启后，如果 1 对 1 排课预计花费课时或金额大于学员剩余数量，将无法排课；按时段收费的课程不受限制。</span>
                   </div>
                 </div>
@@ -130,7 +207,7 @@ const emptyLocale = {
                   校内冲突是否允许仍然排课
                 </div>
                 <div class="settings-row__content">
-                  <a-switch v-model:checked="switches.allowCampusConflict" />
+                  <a-switch :checked="allowCampusConflict" :loading="isRowLoading('allowCampusConflict')" @change="handleConflictToggle" />
                   <div class="settings-desc">
                     开启后，本校区的冲突日程可以选择仍然继续排课。
                   </div>
@@ -151,7 +228,12 @@ const emptyLocale = {
                   上课教师选择范围
                 </div>
                 <div class="settings-row__content">
-                  <a-radio-group v-model:value="teacherRange" class="settings-radio-group custom-radio">
+                  <a-radio-group
+                    :value="teacherRange"
+                    :disabled="isRowLoading('teacherRange')"
+                    class="settings-radio-group custom-radio"
+                    @change="handleTeacherRangeChange($event.target.value)"
+                  >
                     <a-radio value="all">
                       全部员工
                     </a-radio>
