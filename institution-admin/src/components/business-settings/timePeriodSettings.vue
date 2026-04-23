@@ -31,13 +31,17 @@ const periodGroups = computed<UnifiedPeriodGroup[]>(() => {
   return configGroupsSorted(cfg)
 })
 
+const currentPeriodConfig = computed<UnifiedTimePeriodConfig>(() =>
+  parseUnifiedTimePeriodConfig(periodConfigRaw.value) ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
+)
+
 const columns: TableColumnType<UnifiedPeriodGroup>[] = [
-  { title: '时段名称', dataIndex: 'name', key: 'name', ellipsis: true },
+  { title: '时段名称', dataIndex: 'name', key: 'name', width: 180, fixed: 'left', ellipsis: true },
   { title: '节次', key: 'slots', width: 150 },
-  { title: '时间范围', key: 'span', width: 200 },
-  { title: '关联老师', key: 'teachers', width: 200, ellipsis: true },
-  { title: '状态', key: 'status', width: 120 },
-  { title: '操作', key: 'action', width: 236 },
+  { title: '时间范围', key: 'span', width: 170 },
+  { title: '关联老师', key: 'teachers', width: 360, ellipsis: true },
+  { title: '状态', key: 'status', width: 130 },
+  { title: '操作', key: 'action', width: 220, fixed: 'right' },
 ]
 
 type UnifiedPeriodGroupLike = UnifiedPeriodGroup | Record<string, any>
@@ -545,6 +549,7 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
           :columns="columns"
           :data-source="periodGroups"
           :pagination="false"
+          :scroll="{ x: 1210 }"
           row-key="id"
         >
           <template #bodyCell="{ column, record }">
@@ -568,12 +573,16 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
               </a-tooltip>
             </template>
             <template v-else-if="column.key === 'status'">
-              <span
-                class="period-status"
-                :class="activeSlotCount(record) > 0 ? 'period-status--on' : 'period-status--off'"
+              <a-tooltip
+                :title="activeSlotCount(record) > 0 ? '至少有一个节次处于启用状态，可以用于排课。' : '所有节次都已停用，不能用于排课。'"
               >
-                {{ activeSlotCount(record) > 0 ? '有可用节次' : '无启用节次' }}
-              </span>
+                <span
+                  class="period-status"
+                  :class="activeSlotCount(record) > 0 ? 'period-status--on' : 'period-status--off'"
+                >
+                  {{ activeSlotCount(record) > 0 ? '可排课' : '不可排课' }}
+                </span>
+              </a-tooltip>
             </template>
             <template v-else-if="column.key === 'action'">
               <a-button type="link" size="small" class="period-action" @click="openEditGroup(record.id)">
@@ -604,6 +613,7 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
       v-model:open="groupModalOpen"
       :mode="groupModalMode"
       :group-id="editingGroupId"
+      :base-config="currentPeriodConfig"
       @saved="onGroupModalSaved"
     />
 
@@ -761,6 +771,16 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
 
   :deep(.ant-table-tbody > tr:last-child > td) {
     border-bottom: none;
+  }
+
+  :deep(.ant-table-cell-fix-left),
+  :deep(.ant-table-cell-fix-right) {
+    background: #fff;
+  }
+
+  :deep(.ant-table-thead .ant-table-cell-fix-left),
+  :deep(.ant-table-thead .ant-table-cell-fix-right) {
+    background: #fafafa !important;
   }
 }
 

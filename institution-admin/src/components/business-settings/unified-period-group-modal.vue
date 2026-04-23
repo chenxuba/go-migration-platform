@@ -19,6 +19,8 @@ const props = defineProps<{
   mode: 'create' | 'edit'
   /** 编辑必填 */
   groupId?: string | null
+  /** 父页面当前展示的完整配置，避免弹窗重新拉取时与列表基准不一致 */
+  baseConfig?: UnifiedTimePeriodConfig | null
 }>()
 
 const emit = defineEmits<{
@@ -144,6 +146,10 @@ async function refreshEffectivePreview() {
 }
 
 async function loadBaseConfigFromServer() {
+  if (props.baseConfig?.groups?.length) {
+    baseConfig.value = cloneConfig(props.baseConfig)
+    return
+  }
   const res = await getInstPeriodConfigApi()
   const parsed = parseUnifiedTimePeriodConfig(res.result?.unifiedTimePeriodJson)
   baseConfig.value = cloneConfig(parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG)
