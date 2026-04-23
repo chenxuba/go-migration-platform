@@ -16,6 +16,12 @@ import {
 } from '@/utils/unified-time-period'
 import messageService from '@/utils/messageService'
 
+const props = withDefaults(defineProps<{
+  embedded?: boolean
+}>(), {
+  embedded: false,
+})
+
 const loading = ref(false)
 const repairing = ref(false)
 const periodConfigRaw = ref<unknown>(null)
@@ -520,7 +526,7 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
 </script>
 
 <template>
-  <div class="period-settings scrollbar">
+  <div class="period-settings scrollbar" :class="{ 'period-settings--embedded': props.embedded }">
     <div class="period-settings__panel">
       <div class="period-panel__head">
         <div class="period-panel__summary">
@@ -684,12 +690,23 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
   background: #f2f4f7;
 }
 
+.period-settings--embedded {
+  background: transparent;
+}
+
 .period-settings__panel {
   margin: 12px 16px 20px;
   padding: 18px 20px 12px;
   border-radius: 12px;
   background: #fff;
   box-shadow: 0 1px 4px rgb(15 23 42 / 6%);
+}
+
+.period-settings--embedded .period-settings__panel {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .period-panel__head {

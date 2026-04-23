@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { Empty } from 'ant-design-vue'
 import { ref } from 'vue'
 import CourseCategory from '~/components/edu-center/course-list/course-category.vue'
 import CallNameSetting from '~/components/business-settings/callNameSetting.vue'
 import ClassroomSettings from '~/components/business-settings/classroomSettings.vue'
 import CourseSettingsTabs from '~/components/business-settings/course-settings-tabs.vue'
-import TimePeriodSettings from '~/components/business-settings/timePeriodSettings.vue'
+import ScheduleSettings from '~/components/business-settings/scheduleSettings.vue'
 
-const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const activeKey = ref('course')
 
 function onTabChange(key: string) {
@@ -29,8 +27,8 @@ function onTabChange(key: string) {
         </div>
       </a-tab-pane>
       <a-tab-pane key="schedule" tab="排课设置">
-        <div class="academic-settings-page__pane academic-settings-page__pane--placeholder">
-          <a-empty :image="simpleImage" description="页面建设中" />
+        <div class="academic-settings-page__pane">
+          <ScheduleSettings />
         </div>
       </a-tab-pane>
       <a-tab-pane key="roll-call" tab="点名设置">
@@ -41,11 +39,6 @@ function onTabChange(key: string) {
       <a-tab-pane key="classroom" tab="教室设置">
         <div class="academic-settings-page__pane academic-settings-page__pane--classroom">
           <ClassroomSettings />
-        </div>
-      </a-tab-pane>
-      <a-tab-pane key="time-period" tab="时段设置">
-        <div class="academic-settings-page__pane academic-settings-page__pane--period">
-          <TimePeriodSettings />
         </div>
       </a-tab-pane>
     </a-tabs>
@@ -102,24 +95,10 @@ function onTabChange(key: string) {
   min-height: 480px;
 }
 
-.academic-settings-page__pane--placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 360px;
-  background: #fff;
-  border-radius: 0 0 16px 16px;
-}
-
 .academic-settings-page__pane--classroom {
   min-height: calc(100vh - 200px);
   border-radius: 0 0 16px 16px;
   overflow: hidden;
 }
 
-.academic-settings-page__pane--period {
-  min-height: calc(100vh - 200px);
-  border-radius: 0 0 16px 16px;
-  overflow: hidden;
-}
 </style>
