@@ -137,7 +137,7 @@ const orderExampleRows = [
               <div class="settings-row__content">
                 <a-switch v-model:checked="switches.autoRollCall" />
                 <div class="settings-desc">
-                  开启后，未点名课程在结束后 30 分钟内，系统将自动点名并记录课消。
+                  开启后，未点名且未触发人脸考勤关联课消的课程，在结束后 35 分钟内，系统将自动点名并记录课消，作为兜底处理。
                 </div>
               </div>
             </div>
@@ -293,21 +293,11 @@ const orderExampleRows = [
               <div class="settings-row__content">
                 <a-switch v-model:checked="switches.faceDeduct" />
                 <div class="settings-inline settings-inline--block">
-                  <span>每日考勤时段：</span>
-                  <span>00:00 ~ 12:00 ~ 24:00</span>
-                  <a-button type="link"  class="settings-link">
-                    编辑
-                  </a-button>
-                  <a-button type="link"  class="settings-link">
-                    恢复默认
-                  </a-button>
+                  <span class="settings-switch-line__label">人脸考勤课消规则：</span>
+                  <span>按学员人脸签到后的当日日程自动课消</span>
                 </div>
-                <div class="settings-inline settings-inline--block">
-                  <span>人脸考勤课消规则：</span>
-                  <span>多日程按序课消</span>
-                  <a-button type="link"  class="settings-link">
-                    编辑
-                  </a-button>
+                <div class="settings-desc">
+                  开启后，系统将匹配学员当日已关联的班课 / 1 对 1 日程；对结束时间晚于签到时间的课程，在下课 30 分钟后自动点名课消，已有点名记录的不重复课消。
                 </div>
               </div>
             </div>
