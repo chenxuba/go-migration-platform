@@ -214,6 +214,15 @@ func (client *weChatOfficialClient) handleCallback(ctx context.Context, body []b
 	if msgType != "event" {
 		return nil
 	}
+	if event == "subscribe" || event == "unsubscribe" || event == "scan" {
+		logx.Info("wechat official callback received", logx.Entry{
+			"requestId":  requestID,
+			"openid":     message.FromUserName,
+			"event":      message.Event,
+			"eventKey":   message.EventKey,
+			"createTime": message.CreateTime,
+		})
+	}
 
 	switch event {
 	case "scan":
@@ -277,6 +286,11 @@ func (client *weChatOfficialClient) handleCallback(ctx context.Context, body []b
 	case "unsubscribe":
 		client.clearFollowMessageCache(message.FromUserName)
 		if client.subscriptionSyncer != nil {
+			logx.Info("wechat official callback syncing unsubscribe state", logx.Entry{
+				"requestId":  requestID,
+				"openid":     message.FromUserName,
+				"createTime": message.CreateTime,
+			})
 			return client.subscriptionSyncer(ctx, message.FromUserName, false)
 		}
 		return nil

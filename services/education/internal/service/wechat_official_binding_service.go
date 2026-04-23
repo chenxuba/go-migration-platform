@@ -67,6 +67,20 @@ func (svc *Service) syncWeChatOfficialSubscription(ctx context.Context, openID s
 		}
 	}
 
+	return svc.syncWeChatOfficialSubscriptionState(ctx, openID, unionID, subscribed)
+}
+
+func (svc *Service) syncWeChatOfficialSubscriptionState(ctx context.Context, openID, unionID string, subscribed bool) error {
+	if svc == nil || svc.repo == nil {
+		return nil
+	}
+
+	openID = strings.TrimSpace(openID)
+	unionID = strings.TrimSpace(unionID)
+	if openID == "" {
+		return nil
+	}
+
 	if err := svc.repo.UpsertWeChatOfficialUserLinkByOfficialProfile(ctx, openID, unionID, subscribed); err != nil {
 		return err
 	}
@@ -124,6 +138,81 @@ func (svc *Service) syncWeChatOfficialSubscription(ctx context.Context, openID s
 	if err := svc.repo.RefreshStudentBindChildStatusByPhone(ctx, phone); err != nil {
 		return err
 	}
+
+	logx.Info("wechat official subscription state synced", logx.Entry{
+		"openid":             openID,
+		"subscribed":         subscribed,
+		"repairedStudentIDs": len(repairedStudentIDs),
+		"refreshedStudents":  len(refreshed),
+	})
+	return nil
+}
+
+func (svc *Service) reconcileWeChatOfficialSubscriptionByPhone(ctx context.Context, phone string) error {
+	if svc == nil || svc.repo == nil || svc.wechatOfficial == nil || !svc.wechatOfficial.isEnabled() {
+		return nil
+	}
+
+	phone = normalizeParentPhone(phone)
+	if phone == "" {
+		return nil
+	}
+
+	openIDs, err := svc.repo.ListWeChatOfficialOpenIDsByPhone(ctx, phone)
+	if err != nil {
+		return err
+	}
+
+	for _, openID := range openIDs {
+		profile, err := svc.wechatOfficial.getUserInfo(ctx, openID)
+		if err != nil {
+			logx.Error("wechat official reconcile get user info failed", logx.Entry{
+				"phone":  phone,
+				"openid": openID,
+				"error":  err.Error(),
+			})
+			continue
+		}
+
+		targetSubscribed := profile.Subscribe != 0
+		userLink, userLinkErr := svc.repo.GetWeChatOfficialUserLinkByOfficialOpenID(ctx, openID)
+		if userLinkErr != nil && !errors.Is(userLinkErr, sql.ErrNoRows) {
+			return userLinkErr
+		}
+		hasSubscribedBinding, err := svc.repo.HasWeChatOfficialSubscribedBindingByOpenID(ctx, openID)
+		if err != nil {
+			return err
+		}
+
+		needsSync := errors.Is(userLinkErr, sql.ErrNoRows)
+		if !needsSync && userLink.Subscribed != targetSubscribed {
+			needsSync = true
+		}
+		if hasSubscribedBinding != targetSubscribed {
+			needsSync = true
+		}
+		if targetSubscribed && !needsSync && strings.TrimSpace(userLink.UnionID) == "" && strings.TrimSpace(profile.UnionID) != "" {
+			needsSync = true
+		}
+		if !needsSync {
+			continue
+		}
+
+		logx.Info("wechat official reconcile correcting subscription state", logx.Entry{
+			"phone":      phone,
+			"openid":     openID,
+			"subscribed": targetSubscribed,
+		})
+		if err := svc.syncWeChatOfficialSubscriptionState(ctx, openID, profile.UnionID, targetSubscribed); err != nil {
+			logx.Error("wechat official reconcile sync failed", logx.Entry{
+				"phone":      phone,
+				"openid":     openID,
+				"subscribed": targetSubscribed,
+				"error":      err.Error(),
+			})
+		}
+	}
+
 	return nil
 }
 

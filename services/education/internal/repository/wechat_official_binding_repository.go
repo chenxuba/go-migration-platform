@@ -793,15 +793,71 @@ func (repo *Repository) UpdateWeChatOfficialBindingSubscriptionByOpenID(ctx cont
 
 	_, err = repo.db.ExecContext(ctx, `
 		UPDATE wechat_official_student_binding
-		SET last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
+		SET subscribed = ?,
+			last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
 			last_unsubscribe_time = CASE WHEN ? = 0 THEN NOW() ELSE last_unsubscribe_time END,
 			update_time = NOW()
 		WHERE official_openid = ?
-	`, boolToTinyInt(subscribed), boolToTinyInt(subscribed), officialOpenID)
+	`, boolToTinyInt(subscribed), boolToTinyInt(subscribed), boolToTinyInt(subscribed), officialOpenID)
 	if err != nil {
 		return nil, err
 	}
 	return studentIDs, nil
+}
+
+func (repo *Repository) HasWeChatOfficialSubscribedBindingByOpenID(ctx context.Context, officialOpenID string) (bool, error) {
+	officialOpenID = strings.TrimSpace(officialOpenID)
+	if officialOpenID == "" {
+		return false, nil
+	}
+
+	var count int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM wechat_official_student_binding
+		WHERE official_openid = ? AND subscribed = 1
+	`, officialOpenID).Scan(&count)
+	return count > 0, err
+}
+
+func (repo *Repository) ListWeChatOfficialOpenIDsByPhone(ctx context.Context, phone string) ([]string, error) {
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return nil, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT DISTINCT openid
+		FROM (
+			SELECT official_openid AS openid
+			FROM wechat_official_user_link
+			WHERE phone = ? AND IFNULL(official_openid, '') <> ''
+			UNION ALL
+			SELECT official_openid AS openid
+			FROM wechat_official_student_binding
+			WHERE phone = ? AND IFNULL(official_openid, '') <> ''
+		) records
+		WHERE IFNULL(openid, '') <> ''
+		ORDER BY openid
+	`, phone, phone)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	openIDs := make([]string, 0, 4)
+	for rows.Next() {
+		var openID string
+		if err := rows.Scan(&openID); err != nil {
+			return nil, err
+		}
+		openID = strings.TrimSpace(openID)
+		if openID == "" {
+			continue
+		}
+		openIDs = append(openIDs, openID)
+	}
+	return openIDs, rows.Err()
 }
 
 func (repo *Repository) FindWeChatOfficialLinkedPhoneByOpenID(ctx context.Context, officialOpenID string) (string, error) {
@@ -964,7 +1020,7 @@ func (repo *Repository) HasWeChatOfficialBoundStudent(ctx context.Context, offic
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM wechat_official_student_binding
-		WHERE official_openid = ? AND inst_id = ? AND subscribed = 1
+		WHERE official_openid = ? AND inst_id = ? 
 	`, strings.TrimSpace(officialOpenID), instID).Scan(&count)
 	return count > 0, err
 }
@@ -979,7 +1035,10 @@ func (repo *Repository) GetWeChatOfficialBindingStatusByPhone(ctx context.Contex
 	var lastUnsubscribeAt sql.NullTime
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT
-			COUNT(DISTINCT CASE WHEN sb.subscribed = 1 THEN sb.student_id END) AS bound_student_count,
+			COUNT(DISTINCT CASE
+				WHEN IFNULL(sb.official_openid, '') <> ''
+				THEN sb.student_id
+			END) AS bound_student_count,
 			COUNT(DISTINCT CASE
 				WHEN sb.subscribed = 1
 				 AND IFNULL(sb.official_openid, '') <> ''

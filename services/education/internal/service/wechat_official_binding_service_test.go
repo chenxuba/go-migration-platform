@@ -141,11 +141,12 @@ func TestSyncWeChatOfficialSubscription_SubscribeBackfillsUnionIDFromOfficialPro
 		},
 		execResultExpectation(`
 			UPDATE wechat_official_student_binding
-			SET last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
+			SET subscribed = ?,
+				last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
 				last_unsubscribe_time = CASE WHEN ? = 0 THEN NOW() ELSE last_unsubscribe_time END,
 				update_time = NOW()
 			WHERE official_openid = ?
-		`, []any{1, 1, openID}, 0),
+		`, []any{1, 1, 1, openID}, 0),
 		{
 			query: `
 				SELECT IFNULL(phone, '')
@@ -315,11 +316,12 @@ func TestSyncWeChatOfficialSubscription_SubscribeRepairsStudentBindingsByMergedI
 		},
 		execResultExpectation(`
 			UPDATE wechat_official_student_binding
-			SET last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
+			SET subscribed = ?,
+				last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
 				last_unsubscribe_time = CASE WHEN ? = 0 THEN NOW() ELSE last_unsubscribe_time END,
 				update_time = NOW()
 			WHERE official_openid = ?
-		`, []any{1, 1, openID}, 2),
+		`, []any{1, 1, 1, openID}, 2),
 		{
 			query: `
 				SELECT COUNT(*)
@@ -389,7 +391,7 @@ func TestSyncWeChatOfficialSubscription_SubscribeRepairsStudentBindingsByMergedI
 	}
 }
 
-func TestSyncWeChatOfficialSubscription_UnsubscribeKeepsStudentBindChildStatus(t *testing.T) {
+func TestSyncWeChatOfficialSubscription_UnsubscribeClearsStudentFollowStatus(t *testing.T) {
 	openID := "official-openid-1"
 	phone := "17601241636"
 
@@ -437,11 +439,12 @@ func TestSyncWeChatOfficialSubscription_UnsubscribeKeepsStudentBindChildStatus(t
 		},
 		execResultExpectation(`
 			UPDATE wechat_official_student_binding
-			SET last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
+			SET subscribed = ?,
+				last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
 				last_unsubscribe_time = CASE WHEN ? = 0 THEN NOW() ELSE last_unsubscribe_time END,
 				update_time = NOW()
 			WHERE official_openid = ?
-		`, []any{0, 0, openID}, 1),
+		`, []any{0, 0, 0, openID}, 1),
 		{
 			query: `
 				SELECT COUNT(*)
@@ -450,13 +453,13 @@ func TestSyncWeChatOfficialSubscription_UnsubscribeKeepsStudentBindChildStatus(t
 			`,
 			args:    []any{int64(1001)},
 			columns: []string{"count"},
-			rows:    [][]driver.Value{{int64(1)}},
+			rows:    [][]driver.Value{{int64(0)}},
 		},
 		execResultExpectation(`
 			UPDATE inst_student
 			SET is_bind_child = ?, update_time = NOW()
 			WHERE id = ? AND del_flag = 0
-		`, []any{1, int64(1001)}, 1),
+		`, []any{0, int64(1001)}, 1),
 		{
 			query: `
 				SELECT IFNULL(phone, '')
@@ -535,11 +538,12 @@ func TestSyncWeChatOfficialSubscription_UnsubscribeRefreshesPhoneMatchedStudents
 		},
 		execResultExpectation(`
 			UPDATE wechat_official_student_binding
-			SET last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
+			SET subscribed = ?,
+				last_subscribe_time = CASE WHEN ? = 1 THEN NOW() ELSE last_subscribe_time END,
 				last_unsubscribe_time = CASE WHEN ? = 0 THEN NOW() ELSE last_unsubscribe_time END,
 				update_time = NOW()
 			WHERE official_openid = ?
-		`, []any{0, 0, openID}, 0),
+		`, []any{0, 0, 0, openID}, 0),
 		{
 			query: `
 				SELECT IFNULL(phone, '')

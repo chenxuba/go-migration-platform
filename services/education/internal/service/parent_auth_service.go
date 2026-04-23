@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go-migration-platform/pkg/authx"
+	"go-migration-platform/pkg/logx"
 	"go-migration-platform/services/education/internal/model"
 	"go-migration-platform/services/education/internal/repository"
 )
@@ -238,6 +239,13 @@ func (svc *Service) GetParentWeChatOfficialStatusByPhone(ctx context.Context, ph
 	phone = normalizeParentPhone(phone)
 	if phone == "" {
 		return model.ParentWeChatOfficialStatusVO{}, errors.New("手机号不能为空")
+	}
+
+	if err := svc.reconcileWeChatOfficialSubscriptionByPhone(ctx, phone); err != nil {
+		logx.Error("wechat official status reconcile by phone failed", logx.Entry{
+			"phone": phone,
+			"error": err.Error(),
+		})
 	}
 
 	status, err := svc.repo.GetWeChatOfficialBindingStatusByPhone(ctx, phone)

@@ -45,7 +45,7 @@ func (repo *Repository) ListParentStudentCandidatesByPhone(ctx context.Context, 
 		LEFT JOIN (
 			SELECT DISTINCT inst_id, student_id
 			FROM wechat_official_student_binding
-			WHERE phone = ? AND subscribed = 1
+			WHERE phone = ? AND IFNULL(official_openid, '') <> ''
 		) bound ON bound.inst_id = s.inst_id AND bound.student_id = s.id
 		WHERE s.del_flag = 0
 		  AND (IFNULL(s.mobile, '') = ? OR bound.student_id IS NOT NULL)
