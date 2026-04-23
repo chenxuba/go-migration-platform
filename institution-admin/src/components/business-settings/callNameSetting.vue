@@ -563,7 +563,7 @@ const orderExampleRows = [
 .example-card__desc,
 .example-card__footer {
   margin-top: 8px;
-  color: #6b7280;
+  color: #333;
   font-size: 14px;
   line-height: 20px;
 }
