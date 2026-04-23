@@ -148,7 +148,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="tab-content mt-2">
+  <div class="tab-content">
     <!-- 意向学员录入设置 -->
     <div class="setting">
       <div class="title">

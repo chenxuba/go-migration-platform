@@ -38,6 +38,10 @@ const modalTitle = computed(() =>
   props.mode === 'create' ? '添加时段组' : '编辑时段组',
 )
 
+const modalBodyStyle = {
+  padding: '16px 24px 20px',
+}
+
 const effectiveRuleText = '保存后：当前周之前保持不变；如果本周还没有老师排课，则新时段从本周生效，否则从下周生效。'
 
 const effectivePreviewText = computed(() => {
@@ -257,13 +261,25 @@ async function handleSave() {
   <a-modal
     :open="open"
     class="unified-period-group-modal"
+    wrap-class-name="unified-period-group-modal-wrap"
     :title="modalTitle"
-    :width="600"
+    :width="880"
     :mask-closable="false"
     destroy-on-close
+    :body-style="modalBodyStyle"
     :footer="null"
     @update:open="onModalOpenUpdate"
   >
+    <div class="upgm-overview">
+      <div class="upgm-tip">
+        <span class="upgm-tip__label">生效规则</span>
+        <span>{{ effectiveRuleText }}</span>
+      </div>
+      <div class="upgm-tip upgm-tip--accent">
+        <span class="upgm-tip__label">预计生效</span>
+        <span>{{ previewLoading ? '正在计算预计生效日期...' : effectivePreviewText }}</span>
+      </div>
+    </div>
     <div class="upgm-body">
       <UnifiedPeriodGroupForm
         ref="formRef"
@@ -271,12 +287,6 @@ async function handleSave() {
         icon-variant="a"
         :show-bound-teachers="mode === 'create'"
       />
-    </div>
-    <div class="upgm-tip">
-      {{ effectiveRuleText }}
-    </div>
-    <div class="upgm-tip upgm-tip--accent">
-      {{ previewLoading ? '正在计算预计生效日期...' : effectivePreviewText }}
     </div>
     <div class="upgm-footer">
       <a-button @click="close">
@@ -290,12 +300,11 @@ async function handleSave() {
 </template>
 
 <style scoped lang="less">
-/* 随内容增高，只有快超出视窗时才滚动，避免两三条节次也出现丑滚动条 */
 .upgm-body {
-  max-height: calc(100vh - 260px);
+  max-height: calc(100vh - 320px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 4px 0 8px;
+  padding: 2px 2px 6px;
   scrollbar-width: thin;
   scrollbar-color: rgb(15 23 42 / 22%) transparent;
 
@@ -313,6 +322,13 @@ async function handleSave() {
   }
 }
 
+.upgm-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 .upgm-footer {
   display: flex;
   justify-content: flex-end;
@@ -323,14 +339,23 @@ async function handleSave() {
 }
 
 .upgm-tip {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
   background: #f6fbff;
   border: 1px solid #d9efff;
   color: #2f5f8f;
   font-size: 13px;
   line-height: 20px;
+}
+
+.upgm-tip__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #1d4f7a;
 }
 
 .upgm-tip--accent {
@@ -339,7 +364,29 @@ async function handleSave() {
   color: #8a5a15;
 }
 
-:deep(.unified-period-group-modal .ant-modal-body) {
-  padding-top: 8px;
+:deep(.unified-period-group-modal .ant-modal-content) {
+  overflow: hidden;
+  border-radius: 18px;
+}
+
+:deep(.unified-period-group-modal .ant-modal-header) {
+  padding: 18px 24px 0;
+  margin-bottom: 0;
+}
+
+:deep(.unified-period-group-modal .ant-modal-title) {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+@media (max-width: 768px) {
+  .upgm-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .upgm-body {
+    max-height: calc(100vh - 360px);
+  }
 }
 </style>

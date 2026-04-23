@@ -100,7 +100,7 @@ const studentSettingKey = ref('attribute')
     margin: 0;
     padding: 0 12px;
     background: #fff;
-    border-radius: 16px 16px 0 0;
+    border-radius: 14px 14px 0 0;
   }
 
   :deep(.ant-tabs-nav-wrap) {
