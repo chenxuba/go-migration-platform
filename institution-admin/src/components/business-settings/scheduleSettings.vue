@@ -1,28 +1,49 @@
 <script setup lang="ts">
-import { Empty } from 'ant-design-vue'
+import { Empty, Modal } from 'ant-design-vue'
 import type { TableColumnType } from 'ant-design-vue'
-import { computed, h, onMounted, ref } from 'vue'
+import dayjs from 'dayjs'
+import type { Dayjs } from 'dayjs'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
+import {
+  deleteSchoolHolidayApi,
+  listSchoolHolidaysApi,
+  resetSchoolHolidaysApi,
+  saveSchoolHolidayApi,
+  type SchoolHolidayItem,
+} from '@/api/business-settings/school-holiday'
 import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
 import TimePeriodSettings from '@/components/business-settings/timePeriodSettings.vue'
 
-type HolidayRow = {
-  id: string
-  period: string
+interface HolidayFormState {
+  id?: number
+  source: 'statutory' | 'custom'
   name: string
-  startDate: string
-  endDate: string
+  startDate: Dayjs | null
+  endDate: Dayjs | null
 }
+
+type SchoolHolidayRowLike = SchoolHolidayItem | Record<string, any>
 
 const userStore = useUserStore()
 const activeKey = ref('holiday')
 const periodGroupCount = ref(0)
 const periodSettingsRef = ref<any>(null)
 const rowLoadingMap = ref<Record<string, boolean>>({})
+const holidayLoading = ref(false)
+const holidaySubmitting = ref(false)
+const holidayFormOpen = ref(false)
+const holidayRows = ref<SchoolHolidayItem[]>([])
 
 const emptyImage = Empty.PRESENTED_IMAGE_SIMPLE
 const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
+const holidayForm = reactive<HolidayFormState>({
+  source: 'custom',
+  name: '',
+  startDate: null,
+  endDate: null,
+})
 
 function isConfigEnabled(value: unknown, defaultValue = false) {
   if (typeof value === 'boolean')
@@ -43,19 +64,18 @@ function normalizeTeacherSelectionRange(value: unknown) {
   return value === 'all' ? 'all' : 'teacher-only'
 }
 
-const holidayEnabled = computed(() => isConfigEnabled(instConfig.value.enableFilterHoliday, true))
+const holidayEnabled = computed(() => isConfigEnabled(instConfig.value.enableFilterHoliday, false))
 const oneToOneLimitEnabled = computed(() => isConfigEnabled(instConfig.value.enableOneToOneScheduleLimit, false))
-const allowCampusConflict = computed(() => isConfigEnabled(instConfig.value.enableScheduleConflictContinue, true))
+const allowCampusConflict = computed(() => isConfigEnabled(instConfig.value.enableScheduleConflictContinue, false))
 const teacherRange = computed(() => normalizeTeacherSelectionRange(instConfig.value.scheduleTeacherSelectionRange))
 
-const holidayColumns: TableColumnType<HolidayRow>[] = [
-  { title: '时段', dataIndex: 'period', key: 'period', width: 140 },
-  { title: '节假日时段名称', dataIndex: 'name', key: 'name' },
-  { title: '开始日期', dataIndex: 'startDate', key: 'startDate', width: 180 },
-  { title: '结束日期', dataIndex: 'endDate', key: 'endDate', width: 180 },
+const holidayColumns: TableColumnType<SchoolHolidayItem>[] = [
+  { title: '类型', dataIndex: 'source', key: 'source', width: 110, align: 'center' },
+  { title: '节假日名称', dataIndex: 'name', key: 'name', width: 220, ellipsis: true },
+  { title: '开始日期', dataIndex: 'startDate', key: 'startDate', width: 170, align: 'center' },
+  { title: '结束日期', dataIndex: 'endDate', key: 'endDate', width: 170, align: 'center' },
+  { title: '操作', key: 'action', width: 120, align: 'center', fixed: 'right' },
 ]
-
-const holidayRows: HolidayRow[] = []
 
 const emptyLocale = {
   emptyText: h(Empty, { image: emptyImage, description: '暂无数据' }),
@@ -111,8 +131,136 @@ async function handleTeacherRangeChange(value: string) {
   await updateConfigField('scheduleTeacherSelectionRange', normalizeTeacherSelectionRange(value), 'teacherRange', '已保存上课教师选择范围')
 }
 
+function resetHolidayForm() {
+  holidayForm.id = undefined
+  holidayForm.source = 'custom'
+  holidayForm.name = ''
+  holidayForm.startDate = null
+  holidayForm.endDate = null
+}
+
+function openCreateHolidayModal() {
+  resetHolidayForm()
+  holidayFormOpen.value = true
+}
+
+function openEditHolidayModal(record: SchoolHolidayRowLike) {
+  holidayForm.id = Number(record.id)
+  holidayForm.source = record.source === 'statutory' ? 'statutory' : 'custom'
+  holidayForm.name = String(record.name || '')
+  holidayForm.startDate = dayjs(String(record.startDate || ''))
+  holidayForm.endDate = dayjs(String(record.endDate || ''))
+  holidayFormOpen.value = true
+}
+
+async function loadSchoolHolidays() {
+  holidayLoading.value = true
+  try {
+    const res = await listSchoolHolidaysApi()
+    holidayRows.value = Array.isArray(res.result) ? res.result : []
+  }
+  catch (error) {
+    console.error('load school holidays failed', error)
+    messageService.error('获取节假日配置失败')
+  }
+  finally {
+    holidayLoading.value = false
+  }
+}
+
+async function submitHolidayForm() {
+  const name = holidayForm.name.trim()
+  if (!name) {
+    messageService.error('请输入节假日名称')
+    return
+  }
+  if (!holidayForm.startDate || !holidayForm.endDate) {
+    messageService.error('请选择开始和结束日期')
+    return
+  }
+  if (holidayForm.endDate.isBefore(holidayForm.startDate, 'day')) {
+    messageService.error('结束日期不能早于开始日期')
+    return
+  }
+
+  holidaySubmitting.value = true
+  try {
+    const res = await saveSchoolHolidayApi({
+      id: holidayForm.id,
+      name,
+      source: holidayForm.source,
+      startDate: holidayForm.startDate.format('YYYY-MM-DD'),
+      endDate: holidayForm.endDate.format('YYYY-MM-DD'),
+    })
+    if (res.code !== 200) {
+      messageService.error(res.message || '保存节假日失败')
+      return
+    }
+    messageService.success(holidayForm.id ? '节假日更新成功' : '节假日新增成功')
+    holidayFormOpen.value = false
+    resetHolidayForm()
+    await loadSchoolHolidays()
+  }
+  catch (error) {
+    console.error('save school holiday failed', error)
+    messageService.error('保存节假日失败')
+  }
+  finally {
+    holidaySubmitting.value = false
+  }
+}
+
+function handleDeleteHoliday(record: SchoolHolidayRowLike) {
+  const holidayName = String(record.name || '')
+  const holidayID = Number(record.id)
+  Modal.confirm({
+    title: '删除节假日',
+    centered: true,
+    content: `删除后将不再按“${holidayName}”过滤排课日期，是否继续？`,
+    async onOk() {
+      try {
+        const res = await deleteSchoolHolidayApi({ id: holidayID })
+        if (res.code !== 200) {
+          messageService.error(res.message || '删除节假日失败')
+          return
+        }
+        messageService.success('节假日已删除')
+        await loadSchoolHolidays()
+      }
+      catch (error) {
+        console.error('delete school holiday failed', error)
+        messageService.error('删除节假日失败')
+      }
+    },
+  })
+}
+
+function handleResetStatutoryHolidays() {
+  Modal.confirm({
+    title: '恢复法定假日',
+    centered: true,
+    content: '将用国家法定假日重新覆盖当前节假日配置，自定义新增内容会被清空，是否继续？',
+    async onOk() {
+      try {
+        const res = await resetSchoolHolidaysApi()
+        if (res.code !== 200) {
+          messageService.error(res.message || '恢复法定假日失败')
+          return
+        }
+        messageService.success('已恢复法定假日')
+        await loadSchoolHolidays()
+      }
+      catch (error) {
+        console.error('reset school holidays failed', error)
+        messageService.error('恢复法定假日失败')
+      }
+    },
+  })
+}
+
 onMounted(async () => {
   await ensureInstConfigLoaded()
+  await loadSchoolHolidays()
 })
 </script>
 
@@ -132,21 +280,52 @@ onMounted(async () => {
                   </div>
                 </div>
               </template>
+              <template #right>
+                <div class="schedule-title-actions">
+                  <a-button @click="handleResetStatutoryHolidays">
+                    恢复法定假日
+                  </a-button>
+                  <a-button type="primary" @click="openCreateHolidayModal">
+                    添加节假日
+                  </a-button>
+                </div>
+              </template>
             </custom-title>
 
             <div class="settings-subtitle">
               <span class="settings-subtitle__accent" />
-              共设置 0 条节假日
+              共设置 {{ holidayRows.length }} 条节假日
             </div>
 
             <a-table
               class="settings-data-table"
               :columns="holidayColumns"
               :data-source="holidayRows"
+              :loading="holidayLoading"
               :pagination="false"
               row-key="id"
+              :scroll="{ x: 790 }"
               :locale="emptyLocale"
-            />
+            >
+              <template #bodyCell="{ column, record, text }">
+                <template v-if="column.key === 'source'">
+                  <span class="holiday-type" :class="record.source === 'statutory' ? 'holiday-type--statutory' : 'holiday-type--custom'">
+                    {{ record.source === 'statutory' ? '国家法定假日' : '自定义' }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'action'">
+                  <a-button type="link" size="small" class="settings-link" @click="openEditHolidayModal(record)">
+                    编辑
+                  </a-button>
+                  <a-button type="link" size="small" danger class="settings-link" @click="handleDeleteHoliday(record)">
+                    删除
+                  </a-button>
+                </template>
+                <template v-else>
+                  {{ text }}
+                </template>
+              </template>
+            </a-table>
           </div>
         </section>
       </a-tab-pane>
@@ -252,6 +431,28 @@ onMounted(async () => {
         </section>
       </a-tab-pane>
     </a-tabs>
+
+    <a-modal
+      v-model:open="holidayFormOpen"
+      :title="holidayForm.id ? '编辑节假日' : '添加节假日'"
+      :mask-closable="false"
+      :confirm-loading="holidaySubmitting"
+      destroy-on-close
+      @ok="submitHolidayForm"
+      @cancel="resetHolidayForm"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="节假日名称" required>
+          <a-input v-model:value="holidayForm.name" placeholder="请输入节假日名称" :maxlength="30" />
+        </a-form-item>
+        <a-form-item label="开始日期" required>
+          <a-date-picker v-model:value="holidayForm.startDate" style="width: 100%;" />
+        </a-form-item>
+        <a-form-item label="结束日期" required>
+          <a-date-picker v-model:value="holidayForm.endDate" style="width: 100%;" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -493,6 +694,26 @@ onMounted(async () => {
 .settings-link {
   padding: 0 4px;
   font-size: 14px;
+}
+
+.holiday-type {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.holiday-type--statutory {
+  color: #1668dc;
+  background: #e6f4ff;
+}
+
+.holiday-type--custom {
+  color: #6b7280;
+  background: #f3f4f6;
 }
 
 @media (max-width: 768px) {

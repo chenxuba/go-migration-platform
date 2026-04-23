@@ -21,6 +21,7 @@ export interface InstConfig {
   deductWhenLeave: string
   deductWhenTruancy: string
   defaultClassTime: string
+  defaultClassTimeRecordMode?: string | number
   defaultStudentClassTime: string
   defaultTeacherClassTime: string
   discountsMode: string
@@ -52,7 +53,15 @@ export interface InstConfig {
   enableForeground: boolean
   enableGoodsManagement: string
   enableGradeUpgrade: string
+  enableHourLeaveNormalRecord?: boolean | string
+  enableHourTruancyNormalRecord?: boolean | string
   enableOneToOneScheduleLimit?: boolean | string
+  enableLimitSingleOrderArrearsDeduct?: boolean | string
+  enablePeriodAutoFinishWhenZero?: boolean | string
+  enablePeriodMakeup?: boolean | string
+  enablePriceLeaveNormalRecord?: boolean | string
+  enablePriceMakeup?: boolean | string
+  enablePriceTruancyNormalRecord?: boolean | string
   enableScheduleConflictContinue?: boolean | string
   enableLeaveApplyNumberLimit: string
   enableLeaveApplyTimeLimit: string

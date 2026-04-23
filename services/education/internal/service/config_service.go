@@ -250,6 +250,9 @@ func (svc *Service) InitInstAllConfig(instID int64) error {
 	if err := svc.repo.CreateDefaultInstConfig(context.Background(), instID); err != nil {
 		return err
 	}
+	if err := svc.repo.SeedDefaultSchoolHolidays(context.Background(), instID, time.Now().Year()); err != nil {
+		return err
+	}
 	return nil
 }
 

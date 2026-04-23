@@ -32,6 +32,14 @@ var instConfigBooleanFields = map[string]struct{}{
 	"enableFaceAttendanceCheckOutNotice": {},
 	"enableByVoiceTips":                  {},
 	"enableSendFaceAttendNoticeToAdmin":  {},
+	"enableLimitSingleOrderArrearsDeduct": {},
+	"enableHourLeaveNormalRecord":        {},
+	"enableHourTruancyNormalRecord":      {},
+	"enablePeriodMakeup":                 {},
+	"enablePeriodAutoFinishWhenZero":     {},
+	"enablePriceLeaveNormalRecord":       {},
+	"enablePriceTruancyNormalRecord":     {},
+	"enablePriceMakeup":                  {},
 }
 
 func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) error {
@@ -56,6 +64,15 @@ func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) e
 		"enable_by_voice_tips":                   "enable_by_voice_tips TINYINT(1) NOT NULL DEFAULT 0",
 		"enable_send_face_attend_notice_to_admin": "enable_send_face_attend_notice_to_admin TINYINT(1) NOT NULL DEFAULT 0",
 		"face_attendance_interval":               "face_attendance_interval VARCHAR(32) NOT NULL DEFAULT '1'",
+		"default_class_time_record_mode":         "default_class_time_record_mode INT NOT NULL DEFAULT 1",
+		"enable_limit_single_order_arrears_deduct": "enable_limit_single_order_arrears_deduct TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_hour_leave_normal_record":          "enable_hour_leave_normal_record TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_hour_truancy_normal_record":        "enable_hour_truancy_normal_record TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_period_makeup":                     "enable_period_makeup TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_period_auto_finish_when_zero":      "enable_period_auto_finish_when_zero TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_price_leave_normal_record":         "enable_price_leave_normal_record TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_price_truancy_normal_record":       "enable_price_truancy_normal_record TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_price_makeup":                      "enable_price_makeup TINYINT(1) NOT NULL DEFAULT 0",
 	})
 }
 
@@ -148,6 +165,15 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 			enable_by_voice_tips,
 			enable_send_face_attend_notice_to_admin,
 			face_attendance_interval,
+			default_class_time_record_mode,
+			enable_limit_single_order_arrears_deduct,
+			enable_hour_leave_normal_record,
+			enable_hour_truancy_normal_record,
+			enable_period_makeup,
+			enable_period_auto_finish_when_zero,
+			enable_price_leave_normal_record,
+			enable_price_truancy_normal_record,
+			enable_price_makeup,
 			enable_collector_staff,
 			enable_phone_sell_staff,
 			enable_foreground,
@@ -161,7 +187,7 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 			create_time,
 			version
 		)
-		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0
+		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0
 		FROM DUAL
 		WHERE NOT EXISTS (
 			SELECT 1
@@ -195,6 +221,15 @@ func (repo *Repository) UpdateInstConfig(ctx context.Context, instID int64, payl
 		"enableByVoiceTips":                  "enable_by_voice_tips",
 		"enableSendFaceAttendNoticeToAdmin":  "enable_send_face_attend_notice_to_admin",
 		"faceAttendanceInterval":             "face_attendance_interval",
+		"defaultClassTimeRecordMode":         "default_class_time_record_mode",
+		"enableLimitSingleOrderArrearsDeduct": "enable_limit_single_order_arrears_deduct",
+		"enableHourLeaveNormalRecord":         "enable_hour_leave_normal_record",
+		"enableHourTruancyNormalRecord":       "enable_hour_truancy_normal_record",
+		"enablePeriodMakeup":                  "enable_period_makeup",
+		"enablePeriodAutoFinishWhenZero":      "enable_period_auto_finish_when_zero",
+		"enablePriceLeaveNormalRecord":        "enable_price_leave_normal_record",
+		"enablePriceTruancyNormalRecord":      "enable_price_truancy_normal_record",
+		"enablePriceMakeup":                   "enable_price_makeup",
 		"groupClassRollCallSheetTemplate": "group_class_roll_call_sheet_template",
 		"unfollowedTime":                  "unfollowed_time",
 		"enableCollectorStaff":            "enable_collector_staff",

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { InputNumber, Modal } from 'ant-design-vue'
-import { computed, h, onMounted, reactive, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
 import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
@@ -10,22 +10,6 @@ const activeKey = ref('deduct-order')
 const rowLoadingMap = ref<Record<string, boolean>>({})
 
 const courseDeductOrder = ref('oldest')
-const switches = reactive({
-  liveAutoRollCall: false,
-  limitSingleOrder: false,
-  leaveNormalByHour: false,
-  absentNormalByHour: false,
-  periodMakeup: true,
-  periodAutoEnd: false,
-  amountLeaveNormal: false,
-  amountAbsentNormal: true,
-  amountMakeup: false,
-  faceDeduct: true,
-  faceSignInNotice: true,
-  faceSignOutNotice: true,
-  voicePrompt: true,
-  faceAdminNotice: false,
-})
 
 const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
 
@@ -51,14 +35,33 @@ function normalizePositiveInteger(value: unknown, fallback = 1) {
   return Math.floor(parsed)
 }
 
+function normalizeNumberText(value: unknown, fallback: string) {
+  if (value == null)
+    return fallback
+  const text = String(value).trim()
+  return text || fallback
+}
+
 const consumeOverEnabled = computed(() => isConfigEnabled(instConfig.value.enabledArrearsRollcall, false))
 const autoRollCallEnabled = computed(() => isConfigEnabled(instConfig.value.enableByAutoTeaching, false))
+const limitSingleOrderEnabled = computed(() => isConfigEnabled(instConfig.value.enableLimitSingleOrderArrearsDeduct, false))
+const leaveNormalByHourEnabled = computed(() => isConfigEnabled(instConfig.value.enableHourLeaveNormalRecord, false))
+const absentNormalByHourEnabled = computed(() => isConfigEnabled(instConfig.value.enableHourTruancyNormalRecord, false))
+const periodMakeupEnabled = computed(() => isConfigEnabled(instConfig.value.enablePeriodMakeup, false))
+const periodAutoEndEnabled = computed(() => isConfigEnabled(instConfig.value.enablePeriodAutoFinishWhenZero, false))
+const amountLeaveNormalEnabled = computed(() => isConfigEnabled(instConfig.value.enablePriceLeaveNormalRecord, false))
+const amountAbsentNormalEnabled = computed(() => isConfigEnabled(instConfig.value.enablePriceTruancyNormalRecord, false))
+const amountMakeupEnabled = computed(() => isConfigEnabled(instConfig.value.enablePriceMakeup, false))
 const faceDeductEnabled = computed(() => isConfigEnabled(instConfig.value.enableFaceAttendanceRelateTeaching, false))
 const faceSignInNoticeEnabled = computed(() => isConfigEnabled(instConfig.value.enableFaceAttendanceCheckInNotice, false))
 const faceSignOutNoticeEnabled = computed(() => isConfigEnabled(instConfig.value.enableFaceAttendanceCheckOutNotice, false))
 const voicePromptEnabled = computed(() => isConfigEnabled(instConfig.value.enableByVoiceTips, false))
 const faceAdminNoticeEnabled = computed(() => isConfigEnabled(instConfig.value.enableSendFaceAttendNoticeToAdmin, false))
 const faceAttendanceIntervalMinutes = computed(() => normalizePositiveInteger(instConfig.value.faceAttendanceInterval, 1))
+const defaultClassTimeRecordMode = computed(() => normalizePositiveInteger(instConfig.value.defaultClassTimeRecordMode, 1))
+const defaultStudentClassTimeText = computed(() => normalizeNumberText(instConfig.value.defaultStudentClassTime, '1'))
+const defaultTeacherClassTimeText = computed(() => normalizeNumberText(instConfig.value.defaultTeacherClassTime, '0'))
+const chargeByPriceDefaultPriceText = computed(() => normalizeNumberText(instConfig.value.chargeByPriceDefaultPrice, '100'))
 
 const orderExampleRows = [
   { no: 1, order: '订单 A', validUntil: '2025-06-08', accountType: '正价', createdAt: '2025-05-05 10:10' },
@@ -107,6 +110,38 @@ async function handleConsumeOverToggle(checked: boolean) {
 
 async function handleAutoRollCallToggle(checked: boolean) {
   await updateConfigField('enableByAutoTeaching', checked, 'autoRollCall', checked ? '已开启自动点名' : '已关闭自动点名')
+}
+
+async function handleLimitSingleOrderToggle(checked: boolean) {
+  await updateConfigField('enableLimitSingleOrderArrearsDeduct', checked, 'limitSingleOrder', checked ? '已开启限制订单欠费课消' : '已关闭限制订单欠费课消')
+}
+
+async function handleLeaveNormalByHourToggle(checked: boolean) {
+  await updateConfigField('enableHourLeaveNormalRecord', checked, 'leaveNormalByHour', checked ? '已开启学员请假正常记录课时' : '已关闭学员请假正常记录课时')
+}
+
+async function handleAbsentNormalByHourToggle(checked: boolean) {
+  await updateConfigField('enableHourTruancyNormalRecord', checked, 'absentNormalByHour', checked ? '已开启学员旷课正常记录课时' : '已关闭学员旷课正常记录课时')
+}
+
+async function handlePeriodMakeupToggle(checked: boolean) {
+  await updateConfigField('enablePeriodMakeup', checked, 'periodMakeup', checked ? '已开启按时段收费学员补课' : '已关闭按时段收费学员补课')
+}
+
+async function handlePeriodAutoEndToggle(checked: boolean) {
+  await updateConfigField('enablePeriodAutoFinishWhenZero', checked, 'periodAutoEnd', checked ? '已开启课消为0天后自动结课' : '已关闭课消为0天后自动结课')
+}
+
+async function handleAmountLeaveNormalToggle(checked: boolean) {
+  await updateConfigField('enablePriceLeaveNormalRecord', checked, 'amountLeaveNormal', checked ? '已开启学员请假正常记录金额' : '已关闭学员请假正常记录金额')
+}
+
+async function handleAmountAbsentNormalToggle(checked: boolean) {
+  await updateConfigField('enablePriceTruancyNormalRecord', checked, 'amountAbsentNormal', checked ? '已开启学员旷课正常记录金额' : '已关闭学员旷课正常记录金额')
+}
+
+async function handleAmountMakeupToggle(checked: boolean) {
+  await updateConfigField('enablePriceMakeup', checked, 'amountMakeup', checked ? '已开启按金额收费学员补课' : '已关闭按金额收费学员补课')
 }
 
 async function handleFaceDeductToggle(checked: boolean) {
@@ -277,7 +312,7 @@ onMounted(async () => {
                 限制订单欠费课消
               </div>
               <div class="settings-row__content">
-                <a-switch v-model:checked="switches.limitSingleOrder" />
+                <a-switch :checked="limitSingleOrderEnabled" :loading="isRowLoading('limitSingleOrder')" @change="handleLimitSingleOrderToggle" />
                 <div class="settings-desc">
                   开启后，学员订单对应的费用耗完后，限制继续课消。
                 </div>
@@ -310,21 +345,24 @@ onMounted(async () => {
                     <span><span class="settings-switch-line__label">默认记录课时：</span>创建班级 / 1 对 1 时仍可编辑调整</span>
                   </div>
                   <div class="settings-inline settings-inline--muted">
-                    <span>按固定课时记录：默认记录学员 <span class="text-primary">1</span> 课时，教师 <span class="text-primary">0</span> 课时</span>
+                    <span>
+                      {{ Number(defaultClassTimeRecordMode) === 2 ? '按上课时长记录' : '按固定课时记录' }}：
+                      默认记录学员 <span class="text-primary">{{ defaultStudentClassTimeText }}</span> 课时，教师 <span class="text-primary">{{ defaultTeacherClassTimeText }}</span> 课时
+                    </span>
                     <a-button type="link"  class="settings-link">
                       编辑
                     </a-button>
                   </div>
                   <div class="settings-switch-line">
                     <span class="settings-switch-line__label">学员请假正常记录：</span>
-                    <a-switch v-model:checked="switches.leaveNormalByHour"  />
+                    <a-switch :checked="leaveNormalByHourEnabled" :loading="isRowLoading('leaveNormalByHour')" @change="handleLeaveNormalByHourToggle" />
                   </div>
                   <div class="settings-desc">
                     开启后，学员请假正常记录课时
                   </div>
                   <div class="settings-switch-line">
                     <span class="settings-switch-line__label">学员旷课正常记录：</span>
-                    <a-switch v-model:checked="switches.absentNormalByHour"  />
+                    <a-switch :checked="absentNormalByHourEnabled" :loading="isRowLoading('absentNormalByHour')" @change="handleAbsentNormalByHourToggle" />
                   </div>
                   <div class="settings-desc">
                     开启后，学员旷课正常记录课时
@@ -344,14 +382,14 @@ onMounted(async () => {
                 <div class="rule-box">
                   <div class="settings-switch-line">
                     <span class="settings-switch-line__label">学员补课：</span>
-                    <a-switch v-model:checked="switches.periodMakeup"  />
+                    <a-switch :checked="periodMakeupEnabled" :loading="isRowLoading('periodMakeup')" @change="handlePeriodMakeupToggle" />
                   </div>
                   <div class="settings-desc">
                     开启后，按时段收费的课程，支持缺课学员补课
                   </div>
                   <div class="settings-switch-line">
                     <span class="settings-switch-line__label">课消为 0 天后自动结课：</span>
-                    <a-switch v-model:checked="switches.periodAutoEnd"  />
+                    <a-switch :checked="periodAutoEndEnabled" :loading="isRowLoading('periodAutoEnd')" @change="handlePeriodAutoEndToggle" />
                   </div>
                   <div class="settings-desc">
                     开启后，当课程账户每日自动课消剩余为 0 天后，次日自动结课
@@ -376,28 +414,28 @@ onMounted(async () => {
                     </a-button>
                   </div>
                   <div class="settings-desc">
-                    默认扣费：<span class="text-primary">100</span> 元（仅对未设置单课扣费的课程有效）
+                    默认扣费：<span class="text-primary">{{ chargeByPriceDefaultPriceText }}</span> 元（仅对未设置单课扣费的课程有效）
                   </div>
                   <div class="settings-desc">
                     单课扣费：已设置 <span class="text-primary">0</span> 门课程，点此上方编辑操作对单个课程进行扣费金额设置
                   </div>
                   <div class="settings-switch-line">
                     <span class="settings-switch-line__label">学员请假正常记录：</span>
-                    <a-switch v-model:checked="switches.amountLeaveNormal"  />
+                    <a-switch :checked="amountLeaveNormalEnabled" :loading="isRowLoading('amountLeaveNormal')" @change="handleAmountLeaveNormalToggle" />
                   </div>
                   <div class="settings-desc">
                     开启后，学员请假正常记录金额
                   </div>
                   <div class="settings-switch-line">
                     <span class="settings-switch-line__label">学员旷课正常记录：</span>
-                    <a-switch v-model:checked="switches.amountAbsentNormal"  />
+                    <a-switch :checked="amountAbsentNormalEnabled" :loading="isRowLoading('amountAbsentNormal')" @change="handleAmountAbsentNormalToggle" />
                   </div>
                   <div class="settings-desc">
                     开启后，学员旷课正常记录金额
                   </div>
                   <div class="settings-switch-line">
                     <span class="settings-switch-line__label">学员补课：</span>
-                    <a-switch v-model:checked="switches.amountMakeup"  />
+                    <a-switch :checked="amountMakeupEnabled" :loading="isRowLoading('amountMakeup')" @change="handleAmountMakeupToggle" />
                   </div>
                   <div class="settings-desc">
                     开启后，按金额收费的课程，支持缺课学员补课
