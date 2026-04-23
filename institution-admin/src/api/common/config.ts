@@ -144,8 +144,17 @@ export interface InstPeriodRepairResult {
   repairedVersions: number
 }
 
+export interface InitInstAllConfigParams {
+  id?: number | string
+  instId?: number | string
+}
+
 export function getInstConfigApi(params?: GetInstConfigParams) {
   return useGet<InstConfig>('/api/v1/inst-config', params)
+}
+
+export function initInstAllConfigApi(data: InitInstAllConfigParams) {
+  return usePost<{ success: boolean }>('/api/v1/inst-config/init-all', data)
 }
 
 export function getInstPeriodConfigApi(params?: GetInstConfigParams) {
