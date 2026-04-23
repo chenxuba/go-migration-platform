@@ -264,6 +264,7 @@ async function handleSave() {
     wrap-class-name="unified-period-group-modal-wrap"
     :title="modalTitle"
     :width="880"
+    centered
     :mask-closable="false"
     destroy-on-close
     :body-style="modalBodyStyle"
