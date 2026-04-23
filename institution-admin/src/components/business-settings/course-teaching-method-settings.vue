@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { Modal, message } from 'ant-design-vue'
+import { computed, createVNode, onMounted, ref } from 'vue'
 import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
 import { useUserStore } from '~@/stores/user'
 
 const userStore = useUserStore()
-const composeLessonLoading = ref(false)
+const rowLoadingMap = ref<Record<string, boolean>>({})
 
 const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
 
@@ -21,6 +23,7 @@ function isConfigEnabled(value: unknown) {
 const teachingMethodRows = computed(() => [
   {
     key: 'classroom',
+    configField: 'enableClassroomTeaching' as const,
     label: '班级授课',
     mode: 'status',
     enabled: isConfigEnabled(instConfig.value.enableClassroomTeaching),
@@ -28,6 +31,7 @@ const teachingMethodRows = computed(() => [
   },
   {
     key: 'oneToOne',
+    configField: 'enabledOne2one' as const,
     label: '1对1授课',
     mode: 'status',
     enabled: isConfigEnabled(instConfig.value.enabledOne2one),
@@ -35,6 +39,7 @@ const teachingMethodRows = computed(() => [
   },
   {
     key: 'multiCourse',
+    configField: 'enableComposeLesson' as const,
     label: '一班多课',
     mode: 'switch',
     enabled: isConfigEnabled(instConfig.value.enableComposeLesson),
@@ -48,21 +53,49 @@ async function ensureInstConfigLoaded() {
     await userStore.getInstConfig()
 }
 
-async function handleComposeLessonChange(checked: boolean) {
+function isRowLoading(key: string) {
+  return Boolean(rowLoadingMap.value[key])
+}
+
+async function updateConfigField(field: keyof InstConfig, value: boolean, key: string) {
   try {
-    composeLessonLoading.value = true
+    rowLoadingMap.value = {
+      ...rowLoadingMap.value,
+      [key]: true,
+    }
+
     await setInstConfigApi({
       ...(instConfig.value as InstConfig),
-      enableComposeLesson: checked,
+      [field]: value,
     })
     await userStore.getInstConfig()
+    message.success(value ? '开启成功' : '关闭成功')
   }
   catch (error) {
-    console.error('update enableComposeLesson failed', error)
+    console.error(`update ${String(field)} failed`, error)
   }
   finally {
-    composeLessonLoading.value = false
+    rowLoadingMap.value = {
+      ...rowLoadingMap.value,
+      [key]: false,
+    }
   }
+}
+
+function handleEnableRow(row: { key: string, label: string, configField: keyof InstConfig }) {
+  Modal.confirm({
+    title: `开启${row.label}`,
+    centered: true,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: '开启后无法关闭，请谨慎操作',
+    async onOk() {
+      await updateConfigField(row.configField, true, row.key)
+    },
+  })
+}
+
+async function handleComposeLessonChange(checked: boolean) {
+  await updateConfigField('enableComposeLesson', checked, 'multiCourse')
 }
 
 onMounted(async () => {
@@ -86,10 +119,20 @@ onMounted(async () => {
                 <div v-if="row.mode === 'status'" class="status-line">
                   <span class="status-dot" :class="{ 'status-dot--disabled': !row.enabled }" />
                   <span class="status-text" :class="{ 'status-text--disabled': !row.enabled }">{{ row.enabled ? '已开启' : '已关闭' }}</span>
+                  <a-button
+                    v-if="!row.enabled"
+                    type="link"
+                    size="small"
+                    class="status-enable-btn"
+                    :loading="isRowLoading(row.key)"
+                    @click="handleEnableRow(row)"
+                  >
+                    开启
+                  </a-button>
                 </div>
 
                 <div v-else class="switch-line">
-                  <a-switch :checked="row.enabled" :loading="composeLessonLoading" @change="handleComposeLessonChange" />
+                  <a-switch :checked="row.enabled" :loading="isRowLoading(row.key)" @change="handleComposeLessonChange" />
                 </div>
 
                 <div class="desc">
@@ -172,6 +215,13 @@ onMounted(async () => {
 
 .status-text--disabled {
   color: #999;
+}
+
+.status-enable-btn {
+  height: auto;
+  padding: 0;
+  margin-left: 8px;
+  font-size: 14px;
 }
 
 .switch-line {

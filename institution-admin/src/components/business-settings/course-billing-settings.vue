@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
-import type { InstConfig } from '~@/api/common/config'
+import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { Modal, message } from 'ant-design-vue'
+import { computed, createVNode, onMounted, ref } from 'vue'
+import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
 import { useUserStore } from '~@/stores/user'
 
 const userStore = useUserStore()
+const rowLoadingMap = ref<Record<string, boolean>>({})
 
 const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
 
@@ -20,23 +23,67 @@ function isConfigEnabled(value: unknown) {
 const billingRows = computed(() => [
   {
     key: 'byHours',
+    configField: 'enableChargeByHours' as const,
     label: '按课时收费',
     enabled: isConfigEnabled(instConfig.value.enableChargeByHours),
     description: '按“课时购买数”定价，以“课时”为单位计费',
   },
   {
     key: 'byPeriod',
+    configField: 'enableByDateLesson' as const,
     label: '按时段收费',
     enabled: isConfigEnabled(instConfig.value.enableByDateLesson),
     description: '按“天/自然月/自然年”定价，以“天”为单位计费',
   },
   {
     key: 'byAmount',
+    configField: 'enableChargeByPrice' as const,
     label: '按金额收费',
     enabled: isConfigEnabled(instConfig.value.enableChargeByPrice),
     description: '开启后机构支持按“充值金额”定价，每次点名扣除对应金额数',
   },
 ])
+
+function isRowLoading(key: string) {
+  return Boolean(rowLoadingMap.value[key])
+}
+
+async function updateConfigField(field: keyof InstConfig, value: boolean, key: string) {
+  try {
+    rowLoadingMap.value = {
+      ...rowLoadingMap.value,
+      [key]: true,
+    }
+
+    await setInstConfigApi({
+      ...(instConfig.value as InstConfig),
+      [field]: value,
+    })
+    await userStore.getInstConfig()
+    message.success(value ? '开启成功' : '关闭成功')
+  }
+  catch (error) {
+    console.error(`update ${String(field)} failed`, error)
+  }
+  finally {
+    rowLoadingMap.value = {
+      ...rowLoadingMap.value,
+      [key]: false,
+    }
+  }
+}
+
+function handleEnableRow(row: { key: string, label: string, configField: keyof InstConfig }) {
+  Modal.confirm({
+    title: `开启${row.label}`,
+    centered: true,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: '开启后无法关闭，请谨慎操作',
+    async onOk() {
+      await updateConfigField(row.configField, true, row.key)
+    },
+  })
+}
 
 onMounted(async () => {
   if (!userStore.instConfig)
@@ -60,6 +107,16 @@ onMounted(async () => {
                 <div class="status-line">
                   <span class="status-dot" :class="{ 'status-dot--disabled': !row.enabled }" />
                   <span class="status-text" :class="{ 'status-text--disabled': !row.enabled }">{{ row.enabled ? '已开启' : '已关闭' }}</span>
+                  <a-button
+                    v-if="!row.enabled"
+                    type="link"
+                    size="small"
+                    class="status-enable-btn"
+                    :loading="isRowLoading(row.key)"
+                    @click="handleEnableRow(row)"
+                  >
+                    开启
+                  </a-button>
                 </div>
 
                 <div class="desc">
@@ -136,6 +193,13 @@ onMounted(async () => {
 
 .status-text--disabled {
   color: #999;
+}
+
+.status-enable-btn {
+  height: auto;
+  padding: 0;
+  margin-left: 8px;
+  font-size: 14px;
 }
 
 .desc {
