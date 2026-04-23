@@ -35,7 +35,7 @@ const holidayColumns: TableColumnType<HolidayRow>[] = [
 const holidayRows: HolidayRow[] = []
 
 const emptyLocale = {
-  emptyText: () => h(Empty, { image: emptyImage, description: '暂无数据' }),
+  emptyText: h(Empty, { image: emptyImage, description: '暂无数据' }),
 }
 </script>
 
@@ -45,13 +45,17 @@ const emptyLocale = {
       <a-tab-pane key="holiday" tab="节假日设置">
         <section class="tab-content">
           <div class="setting">
-            <custom-title title="节假日设置" font-size="18px" font-weight="800" before-height="14px" />
-            <div class="settings-switch-block">
-              <a-switch v-model:checked="switches.holidayEnabled" />
-              <div class="settings-desc">
-                开启后，系统自动跳过节假日安排日程，修改模板不影响已排课日程。
-              </div>
-            </div>
+            <custom-title font-size="18px" font-weight="800" before-height="14px">
+              <template #left>
+                <div class="settings-title-inline">
+                  <span>节假日设置</span>
+                  <div class="settings-title-control">
+                    <a-switch v-model:checked="switches.holidayEnabled" />
+                    <span class="settings-title-control__desc">开启后，系统自动跳过节假日安排日程，修改模板不影响已排课日程。</span>
+                  </div>
+                </div>
+              </template>
+            </custom-title>
 
             <div class="settings-subtitle">
               <span class="settings-subtitle__accent" />
@@ -101,13 +105,17 @@ const emptyLocale = {
       <a-tab-pane key="one-to-one-limit" tab="1对1排课数量限制">
         <section class="tab-content">
           <div class="setting">
-            <custom-title title="1对1排课数量限制" font-size="18px" font-weight="800" before-height="14px" />
-            <div class="settings-switch-block">
-              <a-switch v-model:checked="switches.oneToOneLimit" />
-              <div class="settings-desc">
-                开启后，如果 1 对 1 排课预计花费课时或金额大于学员剩余数量，将无法排课；按时段收费的课程不受限制。
-              </div>
-            </div>
+            <custom-title font-size="18px" font-weight="800" before-height="14px">
+              <template #left>
+                <div class="settings-title-inline">
+                  <span>1对1排课数量限制</span>
+                  <div class="settings-title-control">
+                    <a-switch v-model:checked="switches.oneToOneLimit" />
+                    <span class="settings-title-control__desc">开启后，如果 1 对 1 排课预计花费课时或金额大于学员剩余数量，将无法排课；按时段收费的课程不受限制。</span>
+                  </div>
+                </div>
+              </template>
+            </custom-title>
           </div>
         </section>
       </a-tab-pane>
@@ -219,10 +227,6 @@ const emptyLocale = {
   min-height: 180px;
 }
 
-.settings-switch-block {
-  padding-top: 8px;
-}
-
 .schedule-settings__period-pane {
   margin-top: 8px;
   min-height: calc(100vh - 300px);
@@ -251,11 +255,38 @@ const emptyLocale = {
   gap: 10px;
 }
 
+.settings-title-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-title-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-start;
+  max-width: 820px;
+}
+
+.settings-title-control__desc {
+  color: #666;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 22px;
+  text-align: left;
+}
+
 .settings-desc {
   margin-top: 8px;
   color: #333;
   font-size: 14px;
   line-height: 22px;
+}
+
+.setting :deep(.title) {
+  margin-bottom: 12px;
 }
 
 .settings-subtitle {
@@ -369,6 +400,17 @@ const emptyLocale = {
 }
 
 @media (max-width: 768px) {
+  .settings-title-inline {
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .settings-title-control {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
   .settings-row {
     grid-template-columns: 1fr;
   }
