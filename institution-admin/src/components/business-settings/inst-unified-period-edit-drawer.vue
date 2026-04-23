@@ -157,14 +157,19 @@ function quickGenerateAll() {
 }
 
 function validateAll(): string | null {
+  const nameSet = new Set<string>()
   for (const g of draft.value.groups) {
-    if (!g.name.trim())
+    const name = g.name.trim()
+    if (!name)
       return '请填写每个时段组的名称'
+    if (nameSet.has(name))
+      return `时段名称「${name}」重复，请修改后再保存`
+    nameSet.add(name)
     for (const s of g.slots) {
       if (!s.start || !s.end)
-        return `「${g.name}」存在未填写的时间`
+        return `「${name}」存在未填写的时间`
       if (s.start >= s.end)
-        return `「${g.name}」第${s.index}节结束时间须晚于开始`
+        return `「${name}」第${s.index}节结束时间须晚于开始`
     }
   }
   return null

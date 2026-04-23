@@ -85,12 +85,17 @@ function loadBaseConfig(): UnifiedTimePeriodConfig {
 }
 
 function validateFullConfig(cfg: UnifiedTimePeriodConfig): string | null {
+  const nameSet = new Set<string>()
   for (const g of cfg.groups) {
-    if (!g.name.trim())
+    const name = g.name.trim()
+    if (!name)
       return '存在未命名时段组'
+    if (nameSet.has(name))
+      return `时段名称「${name}」重复，请修改后再保存`
+    nameSet.add(name)
     const groupErr = validateUnifiedPeriodGroup(g)
     if (groupErr)
-      return `「${g.name}」${groupErr}`
+      return `「${name}」${groupErr}`
   }
   return null
 }
