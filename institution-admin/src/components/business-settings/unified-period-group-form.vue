@@ -299,6 +299,7 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
               mode="multiple"
               allow-clear
               show-search
+              :max-tag-count="2"
               :options="teacherSelectOptions"
               :filter-option="filterTeacherOption"
               :loading="staffLoading"
@@ -716,7 +717,7 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
 
 .up-group-form__basic-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(150px, 0.72fr) minmax(280px, 1.28fr);
   gap: 14px;
 }
 
