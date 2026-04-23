@@ -523,7 +523,7 @@ const orderExampleRows = [
 
 .settings-inline--muted {
   margin-top: 8px;
-  color: #4b5563;
+  color: #333;
 }
 
 .settings-inline--block {
@@ -535,7 +535,7 @@ const orderExampleRows = [
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-  color: #4b5563;
+  color: #333;
   font-size: 14px;
 }
 
@@ -604,7 +604,7 @@ const orderExampleRows = [
 .example-list {
   margin: 8px 0 0;
   padding-left: 18px;
-  color: #4b5563;
+  color: #333;
   font-size: 14px;
   line-height: 24px;
 }
