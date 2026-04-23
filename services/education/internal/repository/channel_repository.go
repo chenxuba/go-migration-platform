@@ -292,7 +292,9 @@ func (repo *Repository) PageChannelPC(ctx context.Context, instID int64, query m
 		}
 	}
 
-	queryArgs := append(append([]any{}, args...), model.OrderStatusCompleted, size, offset)
+	queryArgs := []any{model.OrderStatusCompleted}
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, size, offset)
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT c.id, IFNULL(c.uuid, ''), IFNULL(c.version, 0), IFNULL(c.channel_name, ''), c.category_id,
 		       IFNULL(cc.category_name, ''), IFNULL(c.is_disabled, 0), IFNULL(c.is_default, 0), IFNULL(c.remark, ''), c.create_time,
