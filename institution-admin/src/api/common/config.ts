@@ -31,17 +31,19 @@ export interface InstConfig {
   enableAutoDeductStock: string
   enableBookLessonTimes: string
   enableByAutoTeaching: string
-  enableByDateLesson: string
+  enableByDateLesson: boolean | string
   enableByDateStudentAbsentRecord: string
   enableByDateStudentTeachingRecord: string
+  enableClassroomTeaching: boolean
   enableByFaceAttendance: string
   enableByVoiceTips: string
-  enableChargeByPrice: string
+  enableChargeByPrice: boolean | string
+  enableChargeByHours: boolean
   enableChargeByPriceStudentAbsentRecord: string
   enableClassCommentParentFeedback: string
   enableCollectorStaff: boolean
   enableCompensationSendMessage: string
-  enableComposeLesson: string
+  enableComposeLesson: boolean | string
   enableCustomSku: string
   enableFaceAttendanceCheckInNotice: string
   enableFaceAttendanceCheckOutNotice: string
@@ -90,7 +92,7 @@ export interface InstConfig {
   enabledBookLessonExcess: string
   enabledClassConsumptionReminder: string
   enabledClassReminder: string
-  enabledOne2one: string
+  enabledOne2one: boolean | string
   enabledRenewReminder: string
   enabledShowBookLessonStudentCount: string
   faceAttendanceInterval: string

@@ -1,30 +1,73 @@
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
+import { useUserStore } from '~@/stores/user'
 
-const teachingMethodRows = reactive([
+const userStore = useUserStore()
+const composeLessonLoading = ref(false)
+
+const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
+
+function isConfigEnabled(value: unknown) {
+  if (typeof value === 'boolean')
+    return value
+  if (typeof value === 'number')
+    return value !== 0
+  if (typeof value === 'string')
+    return value === '1' || value.toLowerCase() === 'true'
+  return false
+}
+
+const teachingMethodRows = computed(() => [
   {
     key: 'classroom',
     label: '班级授课',
     mode: 'status',
-    enabled: true,
+    enabled: isConfigEnabled(instConfig.value.enableClassroomTeaching),
     description: '开启后机构可开设班级授课，支持自定义学员数量，允许上课老师给多名学员上课',
   },
   {
     key: 'oneToOne',
     label: '1对1授课',
     mode: 'status',
-    enabled: true,
+    enabled: isConfigEnabled(instConfig.value.enabledOne2one),
     description: '开启后机构可开设1对1课程，学员数量有限制，只允许上课老师给1名学员上课',
   },
   {
     key: 'multiCourse',
     label: '一班多课',
     mode: 'switch',
-    enabled: true,
+    enabled: isConfigEnabled(instConfig.value.enableComposeLesson),
     description: '开启后，机构可设置组合课程，创建班级时支持关联组合课程，实现报名不同课程的学员在同一个班级中上课',
     actionText: '查看组合课程列表',
   },
 ])
+
+async function ensureInstConfigLoaded() {
+  if (!userStore.instConfig)
+    await userStore.getInstConfig()
+}
+
+async function handleComposeLessonChange(checked: boolean) {
+  try {
+    composeLessonLoading.value = true
+    await setInstConfigApi({
+      ...(instConfig.value as InstConfig),
+      enableComposeLesson: checked,
+    })
+    await userStore.getInstConfig()
+  }
+  catch (error) {
+    console.error('update enableComposeLesson failed', error)
+  }
+  finally {
+    composeLessonLoading.value = false
+  }
+}
+
+onMounted(async () => {
+  await ensureInstConfigLoaded()
+})
 </script>
 
 <template>
@@ -41,19 +84,19 @@ const teachingMethodRows = reactive([
               </td>
               <td>
                 <div v-if="row.mode === 'status'" class="status-line">
-                  <span class="status-dot" />
-                  <span class="status-text">已开启</span>
+                  <span class="status-dot" :class="{ 'status-dot--disabled': !row.enabled }" />
+                  <span class="status-text" :class="{ 'status-text--disabled': !row.enabled }">{{ row.enabled ? '已开启' : '已关闭' }}</span>
                 </div>
 
                 <div v-else class="switch-line">
-                  <a-switch v-model:checked="row.enabled" />
+                  <a-switch :checked="row.enabled" :loading="composeLessonLoading" @change="handleComposeLessonChange" />
                 </div>
 
                 <div class="desc">
                   {{ row.description }}
                 </div>
 
-                <div v-if="row.actionText" class="action-wrap">
+                <div v-if="row.actionText && row.enabled" class="action-wrap">
                   <a-button type="primary" ghost>
                     {{ row.actionText }}
                   </a-button>
@@ -117,10 +160,18 @@ const teachingMethodRows = reactive([
   flex-shrink: 0;
 }
 
+.status-dot--disabled {
+  background: #c7cbd3;
+}
+
 .status-text {
   color: #333;
   font-size: 14px;
   font-weight: 500;
+}
+
+.status-text--disabled {
+  color: #999;
 }
 
 .switch-line {

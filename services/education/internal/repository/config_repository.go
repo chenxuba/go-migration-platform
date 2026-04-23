@@ -7,21 +7,33 @@ import (
 )
 
 var instConfigBooleanFields = map[string]struct{}{
-	"enablePublicPool":      {},
-	"enableCollectorStaff":  {},
-	"enablePhoneSellStaff":  {},
-	"enableForeground":      {},
-	"enableViceSellStaff":   {},
-	"enableAdvisor":         {},
-	"enableStudentManager":  {},
-	"limitSameWeChat":       {},
-	"limitImportSameWeChat": {},
+	"enablePublicPool":        {},
+	"enableCollectorStaff":    {},
+	"enablePhoneSellStaff":    {},
+	"enableForeground":        {},
+	"enableViceSellStaff":     {},
+	"enableAdvisor":           {},
+	"enableStudentManager":    {},
+	"limitSameWeChat":         {},
+	"limitImportSameWeChat":   {},
+	"enableClassroomTeaching": {},
+	"enabledOne2one":          {},
+	"enableComposeLesson":     {},
+	"enableChargeByHours":     {},
+	"enableByDateLesson":      {},
+	"enableChargeByPrice":     {},
 }
 
 func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) error {
 	return ensureColumnsOnTable(ctx, db, "inst_config", map[string]string{
 		"unified_time_period_json":             "unified_time_period_json LONGTEXT NULL",
 		"group_class_roll_call_sheet_template": "group_class_roll_call_sheet_template VARCHAR(64) NULL",
+		"enable_classroom_teaching":            "enable_classroom_teaching TINYINT(1) NOT NULL DEFAULT 1",
+		"enabled_one2one":                      "enabled_one2one TINYINT(1) NOT NULL DEFAULT 1",
+		"enable_compose_lesson":                "enable_compose_lesson TINYINT(1) NOT NULL DEFAULT 1",
+		"enable_charge_by_hours":               "enable_charge_by_hours TINYINT(1) NOT NULL DEFAULT 1",
+		"enable_by_date_lesson":                "enable_by_date_lesson TINYINT(1) NOT NULL DEFAULT 1",
+		"enable_charge_by_price":               "enable_charge_by_price TINYINT(1) NOT NULL DEFAULT 1",
 	})
 }
 
@@ -96,6 +108,12 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 			inst_id,
 			add_import_student_rule,
 			add_intention_student_rule,
+			enable_classroom_teaching,
+			enabled_one2one,
+			enable_compose_lesson,
+			enable_charge_by_hours,
+			enable_by_date_lesson,
+			enable_charge_by_price,
 			enable_collector_staff,
 			enable_phone_sell_staff,
 			enable_foreground,
@@ -109,7 +127,7 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 			create_time,
 			version
 		)
-		VALUES (?, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0)
+		VALUES (?, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0)
 	`, instID)
 	return err
 }
@@ -119,6 +137,12 @@ func (repo *Repository) UpdateInstConfig(ctx context.Context, instID int64, payl
 		"addIntentionStudentRule":         "add_intention_student_rule",
 		"addImportStudentRule":            "add_import_student_rule",
 		"enablePublicPool":                "enable_public_pool",
+		"enableClassroomTeaching":         "enable_classroom_teaching",
+		"enabledOne2one":                  "enabled_one2one",
+		"enableComposeLesson":             "enable_compose_lesson",
+		"enableChargeByHours":             "enable_charge_by_hours",
+		"enableByDateLesson":              "enable_by_date_lesson",
+		"enableChargeByPrice":             "enable_charge_by_price",
 		"groupClassRollCallSheetTemplate": "group_class_roll_call_sheet_template",
 		"unfollowedTime":                  "unfollowed_time",
 		"enableCollectorStaff":            "enable_collector_staff",

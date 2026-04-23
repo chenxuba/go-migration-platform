@@ -1,21 +1,47 @@
 <script setup lang="ts">
-const billingRows = [
+import { computed, onMounted } from 'vue'
+import type { InstConfig } from '~@/api/common/config'
+import { useUserStore } from '~@/stores/user'
+
+const userStore = useUserStore()
+
+const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
+
+function isConfigEnabled(value: unknown) {
+  if (typeof value === 'boolean')
+    return value
+  if (typeof value === 'number')
+    return value !== 0
+  if (typeof value === 'string')
+    return value === '1' || value.toLowerCase() === 'true'
+  return false
+}
+
+const billingRows = computed(() => [
   {
     key: 'byHours',
     label: '按课时收费',
+    enabled: isConfigEnabled(instConfig.value.enableChargeByHours),
     description: '按“课时购买数”定价，以“课时”为单位计费',
   },
   {
     key: 'byPeriod',
     label: '按时段收费',
+    enabled: isConfigEnabled(instConfig.value.enableByDateLesson),
     description: '按“天/自然月/自然年”定价，以“天”为单位计费',
   },
   {
     key: 'byAmount',
     label: '按金额收费',
+    enabled: isConfigEnabled(instConfig.value.enableChargeByPrice),
     description: '开启后机构支持按“充值金额”定价，每次点名扣除对应金额数',
   },
-]
+])
+
+onMounted(async () => {
+  if (!userStore.instConfig)
+    await userStore.getInstConfig()
+})
 </script>
 
 <template>
@@ -32,8 +58,8 @@ const billingRows = [
               </td>
               <td>
                 <div class="status-line">
-                  <span class="status-dot" />
-                  <span class="status-text">已开启</span>
+                  <span class="status-dot" :class="{ 'status-dot--disabled': !row.enabled }" />
+                  <span class="status-text" :class="{ 'status-text--disabled': !row.enabled }">{{ row.enabled ? '已开启' : '已关闭' }}</span>
                 </div>
 
                 <div class="desc">
@@ -98,14 +124,23 @@ const billingRows = [
   flex-shrink: 0;
 }
 
+.status-dot--disabled {
+  background: #c7cbd3;
+}
+
 .status-text {
   color: #333;
   font-size: 14px;
   font-weight: 500;
 }
 
+.status-text--disabled {
+  color: #999;
+}
+
 .desc {
   color: #222;
   font-size: 14px;
+  line-height: 1.75;
 }
 </style>
