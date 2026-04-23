@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { calculateAge } from '@/utils/date'
 import { ParentRelationshipLabel, StudentStatus, StudentStatusLabel } from '@/enums'
-import { getPendingAttentionStudentPagedListApi } from '~@/api/edu-center/student-list'
+import QrcodeInvitationModal from './qrcode-invitation-modal.vue'
+import { getPendingAttentionInvitationQRCodeApi, getPendingAttentionStudentPagedListApi } from '~@/api/edu-center/student-list'
 import messageService from '~@/utils/messageService'
 import { handleDateRangeParams } from '~@/utils/dateRangeParams'
 import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
@@ -13,6 +14,9 @@ const loading = ref(false)
 const dataSource = ref([])
 const selectedRows = ref([])
 const selectedRowKeys = ref([])
+const qrcodeInvitationOpen = ref(false)
+const qrcodeInvitationLoading = ref(false)
+const qrcodeInvitationInfo = ref({})
 
 const allColumns = [
   {
@@ -204,17 +208,76 @@ function handleTableChange(paginationInfo) {
   getList()
 }
 
-function handleInvite(type) {
+function resolveQRCodeTargetStudent() {
+  if (selectedRows.value.length > 1) {
+    messageService.warning('二维码邀请暂不支持批量，请仅选择1名学员')
+    return null
+  }
+
+  if (selectedRows.value.length === 1)
+    return selectedRows.value[0]
+
+  if (dataSource.value.length === 1)
+    return dataSource.value[0]
+
+  if (dataSource.value.length === 0) {
+    messageService.warning('暂无可邀请学员')
+    return null
+  }
+
+  messageService.warning('二维码邀请暂不支持批量，请仅选择1名学员')
+  return null
+}
+
+async function handleQRCodeInvite() {
+  const selectedStudent = resolveQRCodeTargetStudent()
+  if (!selectedStudent)
+    return
+
+  qrcodeInvitationOpen.value = true
+  qrcodeInvitationLoading.value = true
+  qrcodeInvitationInfo.value = {}
+
+  try {
+    const res = await getPendingAttentionInvitationQRCodeApi({
+      studentId: selectedStudent.id,
+    })
+
+    if (res.code === 200 && res.result) {
+      qrcodeInvitationInfo.value = res.result
+      return
+    }
+
+    throw new Error(res.message || '获取二维码邀请信息失败')
+  }
+  catch (error) {
+    console.error('get pending attention invitation qrcode failed', error)
+    qrcodeInvitationOpen.value = false
+    messageService.error(error?.response?.data?.message || error?.message || '获取二维码邀请信息失败')
+  }
+  finally {
+    qrcodeInvitationLoading.value = false
+  }
+}
+
+function handleSmsInvite() {
   if (selectedRowKeys.value.length === 0) {
     messageService.warning('请先选择学员')
     return
   }
-  messageService.info(`${type}邀请功能开发中`)
+  messageService.info('短信邀请功能开发中')
 }
 
 function getStudentStatusClass(status) {
   return status === StudentStatus.History ? 'is-history' : 'is-reading'
 }
+
+watch(qrcodeInvitationOpen, (open) => {
+  if (open)
+    return
+  qrcodeInvitationLoading.value = false
+  qrcodeInvitationInfo.value = {}
+})
 
 useStudentListRefresh(getList)
 
@@ -253,10 +316,10 @@ defineExpose({
           </span>
         </div>
         <div class="actions flex items-center">
-          <a-button class="mr-2" @click="handleInvite('二维码')">
+          <a-button class="mr-2" @click="handleQRCodeInvite">
             二维码邀请
           </a-button>
-          <a-button type="primary" @click="handleInvite('短信')">
+          <a-button type="primary" @click="handleSmsInvite">
             短信邀请
           </a-button>
         </div>
@@ -314,6 +377,12 @@ defineExpose({
         </a-table>
       </div>
     </div>
+
+    <qrcode-invitation-modal
+      v-model:open="qrcodeInvitationOpen"
+      :loading="qrcodeInvitationLoading"
+      :invitation-info="qrcodeInvitationInfo"
+    />
   </div>
 </template>
 

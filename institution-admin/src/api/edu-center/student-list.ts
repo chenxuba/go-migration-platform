@@ -277,6 +277,25 @@ export function getPendingAttentionStudentPagedListApi(data: PendingAttentionStu
   return usePost<EnrolledStudentInfo>('/api/v1/students/pending-attention/page', data)
 }
 
+export interface PendingAttentionInvitationQRCodeParams {
+  studentId: number | string
+}
+
+export interface PendingAttentionInvitationQRCodeInfo {
+  studentId?: string
+  studentName?: string
+  institutionId?: string
+  institutionName?: string
+  officialAccountName?: string
+  sceneValue?: string
+  qrCodeUrl?: string
+  qrCodeDataUrl?: string
+}
+
+export function getPendingAttentionInvitationQRCodeApi(data: PendingAttentionInvitationQRCodeParams) {
+  return usePost<PendingAttentionInvitationQRCodeInfo>('/api/v1/students/pending-attention/invitation/qrcode', data)
+}
+
 export interface PendingRenewalStudentItem {
   tuitionAccountId?: string
   studentId?: string

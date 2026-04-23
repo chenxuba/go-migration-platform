@@ -263,6 +263,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/current-students/page", handler.currentStudentsPage)
 	mux.HandleFunc("/api/v1/enrolled-students/page", handler.enrolledStudentsPage)
 	mux.HandleFunc("/api/v1/students/pending-attention/page", handler.pendingAttentionStudentsPage)
+	mux.HandleFunc("/api/v1/students/pending-attention/invitation/qrcode", handler.pendingAttentionInvitationQRCode)
 	mux.HandleFunc("/api/v1/students/pending-renewals/page", handler.pendingRenewalStudentsPage)
 	mux.HandleFunc("/api/v1/students/pending-renewals/export", handler.exportPendingRenewalStudents)
 	mux.HandleFunc("/api/v1/students/pending-renewals/export-records", handler.listPendingRenewalStudentExportRecords)
