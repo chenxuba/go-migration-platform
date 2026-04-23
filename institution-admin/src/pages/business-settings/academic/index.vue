@@ -2,9 +2,9 @@
 import { Empty } from 'ant-design-vue'
 import { ref } from 'vue'
 import CourseCategory from '~/components/edu-center/course-list/course-category.vue'
-import CourseSetting from '~/components/edu-center/course-list/course-setting.vue'
 import CallNameSetting from '~/components/business-settings/callNameSetting.vue'
 import ClassroomSettings from '~/components/business-settings/classroomSettings.vue'
+import CourseSettingsTabs from '~/components/business-settings/course-settings-tabs.vue'
 import TimePeriodSettings from '~/components/business-settings/timePeriodSettings.vue'
 
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
@@ -20,7 +20,7 @@ function onTabChange(key: string) {
     <a-tabs :active-key="activeKey" class="academic-settings-page__tabs" @change="onTabChange">
       <a-tab-pane key="course" tab="课程设置">
         <div class="academic-settings-page__pane">
-          <CourseSetting />
+          <CourseSettingsTabs />
         </div>
       </a-tab-pane>
       <a-tab-pane key="category" tab="课程类别">
@@ -41,11 +41,6 @@ function onTabChange(key: string) {
       <a-tab-pane key="roll-call" tab="点名设置">
         <div class="academic-settings-page__pane">
           <CallNameSetting />
-        </div>
-      </a-tab-pane>
-      <a-tab-pane key="appointment" tab="约课设置">
-        <div class="academic-settings-page__pane academic-settings-page__pane--placeholder">
-          <a-empty :image="simpleImage" description="页面建设中" />
         </div>
       </a-tab-pane>
       <a-tab-pane key="classroom" tab="教室设置">
@@ -110,7 +105,6 @@ function onTabChange(key: string) {
 
 .academic-settings-page__pane {
   min-height: 480px;
-  padding-top: 8px;
 }
 
 .academic-settings-page__pane--placeholder {

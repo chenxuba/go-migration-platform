@@ -91,10 +91,6 @@ const settingsList = ref([
     path: '/trial-settings',
   },
   {
-    title: '约课设置',
-    path: '/appointment-settings',
-  },
-  {
     title: '家校设置',
     path: '/home-school-settings',
   },

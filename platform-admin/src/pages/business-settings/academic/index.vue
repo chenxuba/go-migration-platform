@@ -43,11 +43,6 @@ function onTabChange(key: string) {
           <CallNameSetting />
         </div>
       </a-tab-pane>
-      <a-tab-pane key="appointment" tab="约课设置">
-        <div class="academic-settings-page__pane academic-settings-page__pane--placeholder">
-          <a-empty :image="simpleImage" description="页面建设中" />
-        </div>
-      </a-tab-pane>
       <a-tab-pane key="classroom" tab="教室设置">
         <div class="academic-settings-page__pane academic-settings-page__pane--classroom">
           <ClassroomSettings />
