@@ -297,7 +297,7 @@ function handleEditChannel() {
     class="registration-settings"
     :class="{ 'overflow-hidden': batchAdjustOpen || open || createChannelOpen || adjustOpen }"
   >
-    <!-- 渠道设置 -->
+    <!-- 渠道管理 -->
     <div class="py-10px px-15px text-12px text-#333">
       系统默认渠道，不支持删除编辑等操作
     </div>

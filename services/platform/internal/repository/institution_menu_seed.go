@@ -376,7 +376,7 @@ var institutionMenuSeeds = []institutionMenuSeed{
 				Title:       "基础规则设置",
 				Description: "基础规则配置权限。",
 				Authorities: []institutionMenuSeedAuthority{
-					{Name: "基础规则管理", Code: "perm:bizSetBscRul", Sort: 10, Weight: 0, Remark: "管理课程设置、点名设置、排课设置、渠道设置、教室设置、短信设置、约课设置、家校设置、出入库管理等基础规则。"},
+					{Name: "基础规则管理", Code: "perm:bizSetBscRul", Sort: 10, Weight: 0, Remark: "管理课程设置、点名设置、排课设置、渠道管理、教室设置、短信设置、约课设置、家校设置、出入库管理等基础规则。"},
 				},
 			},
 			{

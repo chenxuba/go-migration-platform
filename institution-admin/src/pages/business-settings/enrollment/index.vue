@@ -35,7 +35,7 @@ const studentSettingKey = ref('attribute')
         </div>
       </a-tab-pane>
 
-      <a-tab-pane key="channel" tab="渠道设置">
+      <a-tab-pane key="channel" tab="渠道管理">
         <div class="enrollment-settings-page__pane">
           <ChannelManagement />
         </div>

@@ -21,7 +21,7 @@ function handleClick() {
 
 <template>
   <div class="registration-settings">
-    <!-- 渠道设置 -->
+    <!-- 渠道管理 -->
     <div
       class="mt-8px bg-white px-15px py-10px  border-t-0 border-b-1px border-l-0 border-r-0 border-#eee border-solid
       flex justify-between items-center cursor-pointer"
@@ -29,7 +29,7 @@ function handleClick() {
     >
       <div>
         <div class="text-16px">
-          渠道设置
+          渠道管理
         </div>
         <div class="text-#999 text-12px mt-2px">
           意向学员的来源渠道分类相关设置

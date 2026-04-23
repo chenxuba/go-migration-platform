@@ -135,9 +135,6 @@ onActivated(() => {
               为学员必填属性</span>
           </div>
           <div>
-            <a-button class="mr-4">
-              自动升年级
-            </a-button>
             <a-button type="primary" class="font-800" @click="addStudentCodeModal">
               新增学员属性
             </a-button>
