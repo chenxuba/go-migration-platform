@@ -374,6 +374,13 @@ async function buildInvitationPosterBlob() {
   const followAvatarY = followCardY + ((followCardHeight * scale - followAvatarSize) / 2)
   const followTextX = followAvatarX + followAvatarSize + (10 * scale)
   const followTextMaxWidth = followButtonX - (10 * scale) - followTextX
+  const followNameLineHeight = Math.ceil(14 * 1.35 * scale)
+  const followDescLineHeight = Math.ceil(11 * 1.3 * scale)
+  const followTextGap = 2 * scale
+  const followTextBlockHeight = followNameLineHeight + followTextGap + followDescLineHeight
+  const followTextTop = followCardY + Math.max(((followCardHeight * scale) - followTextBlockHeight) / 2, 0) + 2 * scale
+  const followNameY = followTextTop
+  const followDescY = followNameY + followNameLineHeight + followTextGap
 
   ctx.fillStyle = '#ebedf0'
   ctx.beginPath()
@@ -383,11 +390,11 @@ async function buildInvitationPosterBlob() {
   ctx.fillStyle = '#4b4b4b'
   ctx.font = `600 ${14 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
   ctx.textBaseline = 'top'
-  drawEllipsisText(ctx, officialAccountDisplayName.value, followTextX, followCardY + 14 * scale, followTextMaxWidth)
+  drawEllipsisText(ctx, officialAccountDisplayName.value, followTextX, followNameY, followTextMaxWidth)
 
   ctx.fillStyle = '#99a1b0'
   ctx.font = `400 ${11 * scale}px "PingFang SC", "Microsoft YaHei", sans-serif`
-  drawTextLines(ctx, '关注后可接收学校通知', followTextX, followCardY + 33 * scale, followTextMaxWidth, Math.ceil(11 * 1.3 * scale), 2)
+  drawTextLines(ctx, '关注后可接收学校通知', followTextX, followDescY, followTextMaxWidth, followDescLineHeight, 2)
 
   drawRoundRect(ctx, followButtonX, followButtonY, followButtonWidth, followButtonHeight, followButtonRadius, '#12c287')
   ctx.fillStyle = '#ffffff'
