@@ -14,6 +14,8 @@ type HolidayRow = {
 
 const activeKey = ref('holiday')
 const teacherRange = ref('teacher-only')
+const periodGroupCount = ref(0)
+const periodSettingsRef = ref<any>(null)
 
 const switches = reactive({
   holidayEnabled: true,
@@ -71,9 +73,26 @@ const emptyLocale = {
       <a-tab-pane key="period" tab="上课时段设置">
         <section class="tab-content">
           <div class="setting">
-            <custom-title title="上课时段设置" font-size="18px" font-weight="800" before-height="14px" />
+            <custom-title font-size="18px" font-weight="800" before-height="14px">
+              <template #left>
+                <div class="schedule-title-inline">
+                  <span>上课时段设置</span>
+                  <span class="schedule-title-inline__meta">当前共计 {{ periodGroupCount }} 个时段组（逐行编辑，可随时添加）</span>
+                </div>
+              </template>
+              <template #right>
+                <div class="schedule-title-actions">
+                  <a-button :loading="Boolean(periodSettingsRef?.repairing)" @click="periodSettingsRef?.repairPeriodVersions?.()">
+                    一键修复
+                  </a-button>
+                  <a-button type="primary" @click="periodSettingsRef?.openCreateGroup?.()">
+                    添加时段组
+                  </a-button>
+                </div>
+              </template>
+            </custom-title>
             <div class="schedule-settings__period-pane">
-              <TimePeriodSettings embedded />
+              <TimePeriodSettings ref="periodSettingsRef" embedded @summary-change="periodGroupCount = $event" />
             </div>
           </div>
         </section>
@@ -208,6 +227,28 @@ const emptyLocale = {
   margin-top: 8px;
   min-height: calc(100vh - 300px);
   overflow: hidden;
+}
+
+.schedule-title-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.schedule-title-inline__meta {
+  color: #8c8c8c;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.schedule-title-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .settings-desc {

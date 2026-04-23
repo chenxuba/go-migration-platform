@@ -21,6 +21,9 @@ const props = withDefaults(defineProps<{
 }>(), {
   embedded: false,
 })
+const emit = defineEmits<{
+  summaryChange: [count: number]
+}>()
 
 const loading = ref(false)
 const repairing = ref(false)
@@ -40,6 +43,8 @@ const periodGroups = computed<UnifiedPeriodGroup[]>(() => {
 const currentPeriodConfig = computed<UnifiedTimePeriodConfig>(() =>
   parseUnifiedTimePeriodConfig(periodConfigRaw.value) ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
 )
+
+watch(periodGroups, groups => emit('summaryChange', groups.length), { immediate: true })
 
 const columns: TableColumnType<UnifiedPeriodGroup>[] = [
   { title: '时段名称', dataIndex: 'name', key: 'name', width: 180, fixed: 'left', ellipsis: true },
@@ -187,6 +192,12 @@ function repairPeriodVersions() {
     },
   })
 }
+
+defineExpose({
+  openCreateGroup,
+  repairPeriodVersions,
+  repairing,
+})
 
 /** —— 操作列：关联老师（仅存 unifiedTimePeriodJson，无需后端新接口） */
 const bindModalOpen = ref(false)
@@ -528,7 +539,7 @@ function confirmDeleteGroup(item: UnifiedPeriodGroupLike) {
 <template>
   <div class="period-settings scrollbar" :class="{ 'period-settings--embedded': props.embedded }">
     <div class="period-settings__panel">
-      <div class="period-panel__head">
+      <div v-if="!props.embedded" class="period-panel__head">
         <div class="period-panel__summary">
           <span class="period-panel__accent" aria-hidden="true" />
           <span class="period-panel__summary-text">当前共计 {{ periodGroups.length }} 个时段组（逐行编辑，可随时添加）</span>
