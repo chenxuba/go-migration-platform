@@ -579,6 +579,7 @@ const orderExampleRows = [
   padding: 14px;
   border: 1px solid #edf0f5;
   background: #fafafa;
+  border-radius: 8px;
 }
 
 .rule-box {
