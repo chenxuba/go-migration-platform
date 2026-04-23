@@ -365,11 +365,13 @@ function drawTimeAxis(ctx: CanvasRenderingContext2D, viewportWidth: number) {
   })
 
   if (props.currentLine) {
+    const labelX = props.timeAxisWidth - 12
+    const labelY = props.currentLine.top
     ctx.fillStyle = '#ff4d4f'
     ctx.font = '600 12px sans-serif'
-    ctx.textAlign = 'center'
+    ctx.textAlign = 'right'
     ctx.textBaseline = 'middle'
-    ctx.fillText(props.currentLine.label, props.timeAxisWidth / 2, props.currentLine.top - 8)
+    ctx.fillText(props.currentLine.label, labelX, labelY)
 
     ctx.beginPath()
     ctx.arc(props.timeAxisWidth - 3, props.currentLine.top, 3, 0, Math.PI * 2)

@@ -1430,7 +1430,7 @@ const matrixCanvasColumns = computed(() => {
       background: col.count === 0 ? '#f9fafb' : isActiveDate(col.dateKey) ? '#f3f9ff' : '#ffffff',
       dividerWidth: index < flatColumns.value.length - 1 && flatColumns.value[index + 1].dateKey !== col.dateKey ? 2 : 1,
       dividerColor: index < flatColumns.value.length - 1 && flatColumns.value[index + 1].dateKey !== col.dateKey ? '#a8b8cc' : '#dde5f0',
-      showCurrentLine: showCurrentTimeLine.value && col.dateKey === todayKey.value,
+      showCurrentLine: showCurrentTimeLine.value,
     }
     left += width
     return column
