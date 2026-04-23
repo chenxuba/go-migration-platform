@@ -67,7 +67,7 @@ func TestGetDefaultStudentFields_RepairsDuplicateDefaults(t *testing.T) {
 			UPDATE inst_student_field_key
 			SET del_flag = 1, version = IFNULL(version, 0) + 1, update_time = NOW()
 			WHERE id IN (?,?,?,?) AND del_flag = 0
-		`, []any{49, 58, 102, 111}, 4),
+		`, []any{int64(49), int64(102), int64(58), int64(111)}, 4),
 		{
 			query: `
 				SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), inst_id, field_key, field_type,
