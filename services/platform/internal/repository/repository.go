@@ -2090,6 +2090,10 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		}
 	}
 
+	if err = repo.createDefaultInstitutionConfigTx(ctx, tx, id); err != nil {
+		return 0, err
+	}
+
 	if err = repo.ensureInstitutionBootstrapAdminTx(
 		ctx,
 		tx,
@@ -2126,6 +2130,42 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 	}
 
 	return id, nil
+}
+
+func (repo *Repository) createDefaultInstitutionConfigTx(ctx context.Context, tx *sql.Tx, instID int64) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO inst_config (
+			inst_id,
+			add_import_student_rule,
+			add_intention_student_rule,
+			enable_classroom_teaching,
+			enabled_one2one,
+			enable_compose_lesson,
+			enable_charge_by_hours,
+			enable_by_date_lesson,
+			enable_charge_by_price,
+			enable_collector_staff,
+			enable_phone_sell_staff,
+			enable_foreground,
+			enable_vice_sell_staff,
+			enable_advisor,
+			enable_student_manager,
+			limit_same_weChat,
+			limit_import_same_weChat,
+			enable_public_pool,
+			del_flag,
+			create_time,
+			version
+		)
+		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0
+		FROM DUAL
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM inst_config
+			WHERE inst_id = ? AND del_flag = 0
+		)
+	`, instID, instID)
+	return err
 }
 
 func (repo *Repository) UpdateInstitution(ctx context.Context, input model.InstitutionMutation, updaterID *int64) error {

@@ -32,8 +32,8 @@ func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) e
 		"enabled_one2one":                      "enabled_one2one TINYINT(1) NOT NULL DEFAULT 1",
 		"enable_compose_lesson":                "enable_compose_lesson TINYINT(1) NOT NULL DEFAULT 1",
 		"enable_charge_by_hours":               "enable_charge_by_hours TINYINT(1) NOT NULL DEFAULT 1",
-		"enable_by_date_lesson":                "enable_by_date_lesson TINYINT(1) NOT NULL DEFAULT 1",
-		"enable_charge_by_price":               "enable_charge_by_price TINYINT(1) NOT NULL DEFAULT 1",
+		"enable_by_date_lesson":                "enable_by_date_lesson TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_charge_by_price":               "enable_charge_by_price TINYINT(1) NOT NULL DEFAULT 0",
 	})
 }
 
@@ -127,8 +127,14 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 			create_time,
 			version
 		)
-		VALUES (?, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0)
-	`, instID)
+		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0
+		FROM DUAL
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM inst_config
+			WHERE inst_id = ? AND del_flag = 0
+		)
+	`, instID, instID)
 	return err
 }
 

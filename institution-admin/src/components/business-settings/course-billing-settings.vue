@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { Modal, message } from 'ant-design-vue'
+import { Modal } from 'ant-design-vue'
 import { computed, createVNode, onMounted, ref } from 'vue'
 import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
 import { useUserStore } from '~@/stores/user'
+import messageService from '~@/utils/messageService'
 
 const userStore = useUserStore()
 const rowLoadingMap = ref<Record<string, boolean>>({})
@@ -60,7 +61,7 @@ async function updateConfigField(field: keyof InstConfig, value: boolean, key: s
       [field]: value,
     })
     await userStore.getInstConfig()
-    message.success(value ? '开启成功' : '关闭成功')
+    messageService.success(value ? '开启成功' : '关闭成功')
   }
   catch (error) {
     console.error(`update ${String(field)} failed`, error)
