@@ -153,7 +153,7 @@ function quickGenerateAll() {
   const presetSlots = buildQuickHourlySlots()
   for (const g of draft.value.groups)
     g.slots = presetSlots.map(s => ({ ...s }))
-  messageService.success(`已为所有时段组生成标准节次模板（共 ${presetSlots.length} 节，含课间与午休）`)
+  messageService.success(`已为所有时段组生成康复机构节次模板（共 ${presetSlots.length} 节，含课间与午休）`)
 }
 
 function validateAll(): string | null {

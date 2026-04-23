@@ -70,10 +70,10 @@ function onEnabledChange(s: UnifiedPeriodSlot, v: boolean) {
 
 const smartModalOpen = ref(false)
 const smartFirstStart = ref<string>('08:00')
-const smartLessonMins = ref<number>(60)
+const smartLessonMins = ref<number>(40)
 const smartBreakMins = ref<number>(10)
-const smartLunchMins = ref<number>(90)
-const smartMaxSlots = ref<number>(8)
+const smartLunchMins = ref<number>(60)
+const smartMaxSlots = ref<number>(11)
 
 function openSmartFillModal() {
   smartModalOpen.value = true
@@ -81,11 +81,11 @@ function openSmartFillModal() {
 
 function applyPresetHourly() {
   smartFirstStart.value = '08:00'
-  smartLessonMins.value = 60
+  smartLessonMins.value = 40
   smartBreakMins.value = 10
-  smartLunchMins.value = 90
-  smartMaxSlots.value = 8
-  messageService.info('已填入标准校区模板：1小时课时、10分钟课间、90分钟午休，点「生成」替换节次')
+  smartLunchMins.value = 60
+  smartMaxSlots.value = 11
+  messageService.info('已填入康复机构模板：40分钟课时、10分钟课间、60分钟午休，点「生成」替换节次')
 }
 
 function applySmartFill() {
@@ -278,7 +278,7 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
     <a-modal
       v-model:open="smartModalOpen"
       title="按规则生成节次"
-      :width="440"
+      :width="620"
       :mask-closable="false"
       destroy-on-close
       class="up-group-smart-modal"
@@ -317,8 +317,8 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
         </a-form-item>
       </a-form>
       <div class="up-group-smart-modal__preset">
-        <a-button type="link" size="small" @click="applyPresetHourly">
-          填入标准校区模板（8:00 开始，10 分钟课间 + 90 分钟午休，共 8 节）
+        <a-button type="link" size="small" class="up-group-smart-modal__preset-btn" @click="applyPresetHourly">
+          填入康复机构模板（8:00 开始，40 分钟课时 + 10 分钟课间 + 60 分钟午休，共 11 节）
         </a-button>
       </div>
       <div class="up-group-smart-modal__footer-btns">
@@ -611,12 +611,29 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
 
 .up-group-smart-modal__form {
   margin-bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+}
+
+.up-group-smart-modal__form :deep(.ant-form-item) {
+  margin-bottom: 14px;
 }
 
 .up-group-smart-modal__preset {
-  margin-top: 4px;
-  padding-top: 4px;
+  margin-top: 2px;
+  padding: 10px 12px;
   border-top: 1px dashed #f0f0f0;
+  background: #f8fbff;
+  border-radius: 10px;
+}
+
+.up-group-smart-modal__preset-btn {
+  height: auto;
+  padding: 0;
+  white-space: normal;
+  text-align: left;
+  line-height: 20px;
 }
 
 .up-group-smart-modal__footer-btns {
@@ -626,6 +643,12 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid #f0f0f0;
+}
+
+@media (max-width: 640px) {
+  .up-group-smart-modal__form {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .up-group-form__section {

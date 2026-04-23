@@ -120,16 +120,16 @@ export function generateSlotsSmartFill(p: SmartFillSlotParams): UnifiedPeriodSlo
   return out.map((s, i) => ({ ...s, index: i + 1 }))
 }
 
-/** 默认校区模板：1 小时课时 + 10 分钟课间 + 12:30 起 90 分钟午休，排到 18:30 */
+/** 默认康复机构模板：40 分钟课时 + 10 分钟课间 + 12:30 起 60 分钟午休，排到 18:30 左右 */
 export function buildQuickHourlySlots(): UnifiedPeriodSlot[] {
   return generateSlotsSmartFill({
     firstStart: '08:00',
-    lessonMinutes: 60,
+    lessonMinutes: 40,
     breakBetweenMinutes: 10,
-    lunchBreakMinutes: 90,
+    lunchBreakMinutes: 60,
     lunchStart: '12:30',
     dayEnd: '18:30',
-    maxSlots: 12,
+    maxSlots: 11,
   })
 }
 
