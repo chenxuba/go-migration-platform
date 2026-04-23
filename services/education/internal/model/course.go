@@ -38,6 +38,7 @@ type Course struct {
 	QuoteCount              int                  `json:"quoteCount"`
 	SaleVolume              int                  `json:"saleVolume"`
 	IsShowMicoSchool        bool                 `json:"isShowMicoSchool"`
+	RollCallDeductPrice     *float64             `json:"rollCallDeductPrice,omitempty"`
 	UpdateTime              time.Time            `json:"updateTime"`
 	CourseProductProperties []CourseListProperty `json:"courseProductProperties,omitempty"`
 }
@@ -142,6 +143,7 @@ type CourseProductSaveDTO struct {
 	ProductSku              []CourseQuotation       `json:"productSku"`
 	TeachMethod             *int                    `json:"teachMethod"`
 	SubjectIDs              []int64                 `json:"subjectIds"`
+	RollCallDeductPrice     *float64                `json:"rollCallDeductPrice,omitempty"`
 	CourseProductProperties []CoursePropertyBinding `json:"courseProductProperties"`
 }
 
@@ -160,9 +162,15 @@ type CourseDetail struct {
 	Description             string                  `json:"description,omitempty"`
 	IsShowMicoSchool        bool                    `json:"isShowMicoSchool"`
 	SubjectIDs              []int64                 `json:"subjectIds,omitempty"`
+	RollCallDeductPrice     *float64                `json:"rollCallDeductPrice,omitempty"`
 	ProductSku              []CourseQuotation       `json:"productSku,omitempty"`
 	BuyRule                 CourseBuyRule           `json:"buyRule,omitempty"`
 	CourseProductProperties []CoursePropertyBinding `json:"courseProductProperties,omitempty"`
+}
+
+type CourseRollCallDeductPriceDTO struct {
+	CourseID            int64    `json:"courseId"`
+	RollCallDeductPrice *float64 `json:"rollCallDeductPrice,omitempty"`
 }
 
 type ProcessContentQueryVO struct {

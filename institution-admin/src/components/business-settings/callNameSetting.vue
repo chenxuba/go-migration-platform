@@ -2,6 +2,9 @@
 import { InputNumber, Modal } from 'ant-design-vue'
 import { computed, h, onMounted, ref } from 'vue'
 import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
+import { getCourseRollCallDeductRulePageApi } from '~@/api/edu-center/course-list'
+import RollCallDeductRuleModal from '~@/components/business-settings/roll-call-deduct-rule-modal.vue'
+import RollCallDefaultClassTimeModal from '~@/components/business-settings/roll-call-default-class-time-modal.vue'
 import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
 
@@ -62,6 +65,9 @@ const defaultClassTimeRecordMode = computed(() => normalizePositiveInteger(instC
 const defaultStudentClassTimeText = computed(() => normalizeNumberText(instConfig.value.defaultStudentClassTime, '1'))
 const defaultTeacherClassTimeText = computed(() => normalizeNumberText(instConfig.value.defaultTeacherClassTime, '0'))
 const chargeByPriceDefaultPriceText = computed(() => normalizeNumberText(instConfig.value.chargeByPriceDefaultPrice, '100'))
+const defaultClassTimeModalOpen = ref(false)
+const deductRuleModalOpen = ref(false)
+const amountDeductSingleCourseCount = ref(0)
 
 const orderExampleRows = [
   { no: 1, order: '订单 A', validUntil: '2025-06-08', accountType: '正价', createdAt: '2025-05-05 10:10' },
@@ -77,6 +83,37 @@ function isRowLoading(key: string) {
 async function ensureInstConfigLoaded() {
   if (!userStore.instConfig)
     await userStore.getInstConfig()
+}
+
+function extractPagedItems(res: any) {
+  const list = res?.result?.items ?? res?.result ?? res?.data?.items ?? res?.data ?? []
+  return Array.isArray(list) ? list : []
+}
+
+async function refreshAmountDeductRuleSummary() {
+  try {
+    const res = await getCourseRollCallDeductRulePageApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageIndex: 1,
+        pageSize: 200,
+      },
+      sortModel: {
+        byUpdateTime: -1,
+        byTotalSales: 0,
+      },
+      queryModel: {
+        chargeTypes: [3],
+        delFlag: false,
+      },
+    })
+    const rows = extractPagedItems(res)
+    amountDeductSingleCourseCount.value = rows.filter((item: any) => item?.rollCallDeductPrice != null && item?.rollCallDeductPrice !== '').length
+  }
+  catch (error) {
+    console.error('refresh amount deduct rule summary failed', error)
+    amountDeductSingleCourseCount.value = 0
+  }
 }
 
 async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyof InstConfig], key: string, successText: string) {
@@ -189,8 +226,13 @@ function handleEditFaceAttendanceInterval() {
   })
 }
 
+async function handleDeductRuleSaved() {
+  await refreshAmountDeductRuleSummary()
+}
+
 onMounted(async () => {
   await ensureInstConfigLoaded()
+  await refreshAmountDeductRuleSummary()
 })
 </script>
 
@@ -349,7 +391,7 @@ onMounted(async () => {
                       {{ Number(defaultClassTimeRecordMode) === 2 ? '按上课时长记录' : '按固定课时记录' }}：
                       默认记录学员 <span class="text-primary">{{ defaultStudentClassTimeText }}</span> 课时，教师 <span class="text-primary">{{ defaultTeacherClassTimeText }}</span> 课时
                     </span>
-                    <a-button type="link"  class="settings-link">
+                    <a-button type="link" class="settings-link" @click="defaultClassTimeModalOpen = true">
                       编辑
                     </a-button>
                   </div>
@@ -409,7 +451,7 @@ onMounted(async () => {
                 <div class="rule-box">
                   <div class="settings-inline">
                     <span class="settings-switch-line__label">扣费规则：</span>
-                    <a-button type="link"  class="settings-link">
+                    <a-button type="link" class="settings-link" @click="deductRuleModalOpen = true">
                       编辑
                     </a-button>
                   </div>
@@ -417,7 +459,7 @@ onMounted(async () => {
                     默认扣费：<span class="text-primary">{{ chargeByPriceDefaultPriceText }}</span> 元（仅对未设置单课扣费的课程有效）
                   </div>
                   <div class="settings-desc">
-                    单课扣费：已设置 <span class="text-primary">0</span> 门课程，点此上方编辑操作对单个课程进行扣费金额设置
+                    单课扣费：已设置 <span class="text-primary">{{ amountDeductSingleCourseCount }}</span> 门课程，点此上方编辑操作对单个课程进行扣费金额设置
                   </div>
                   <div class="settings-switch-line">
                     <span class="settings-switch-line__label">学员请假正常记录：</span>
@@ -538,6 +580,16 @@ onMounted(async () => {
         </section>
       </a-tab-pane>
     </a-tabs>
+
+    <RollCallDefaultClassTimeModal
+      v-model:open="defaultClassTimeModalOpen"
+      :inst-config="instConfig"
+    />
+    <RollCallDeductRuleModal
+      v-model:open="deductRuleModalOpen"
+      :inst-config="instConfig"
+      @saved="handleDeductRuleSaved"
+    />
   </div>
 </template>
 

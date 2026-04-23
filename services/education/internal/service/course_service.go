@@ -54,6 +54,23 @@ func (svc *Service) UpdateCourse(userID int64, input model.CourseProductSaveDTO)
 	return svc.repo.UpdateCourse(context.Background(), instID, userID, input)
 }
 
+func (svc *Service) UpdateCourseRollCallDeductPrice(userID int64, dto model.CourseRollCallDeductPriceDTO) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	if dto.CourseID <= 0 {
+		return errors.New("courseId is required")
+	}
+	if dto.RollCallDeductPrice != nil && *dto.RollCallDeductPrice < 0 {
+		return errors.New("扣费金额不能小于0")
+	}
+	return svc.repo.UpdateCourseRollCallDeductPrice(context.Background(), instID, dto.CourseID, dto.RollCallDeductPrice)
+}
+
 func (svc *Service) PageCourseCategories(userID int64, query model.CourseCategoryQueryDTO) (model.PageResult[model.CourseCategory], error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

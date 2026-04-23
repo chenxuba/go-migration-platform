@@ -12,6 +12,12 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
+func EnsureCourseColumns(ctx context.Context, db *sql.DB) error {
+	return ensureColumnsOnTable(ctx, db, "inst_course", map[string]string{
+		"roll_call_deduct_price": "roll_call_deduct_price DECIMAL(18,2) NULL DEFAULT NULL",
+	})
+}
+
 func studentOfficialSubscribedExistsSQL(studentAlias string) string {
 	return fmt.Sprintf(`CASE WHEN EXISTS (
 		SELECT 1
@@ -48,9 +54,9 @@ func (repo *Repository) CreateCourse(ctx context.Context, instID, operatorID int
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO inst_course (
 			uuid, version, inst_id, type, name, course_category, course_attribute, sale_status,
-			teach_method, sale_volume, subject_ids, create_id, create_time, update_id, update_time, del_flag
+			teach_method, sale_volume, subject_ids, roll_call_deduct_price, create_id, create_time, update_id, update_time, del_flag
 		) VALUES (
-			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NOW(), ?, NOW(), 0
+			UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, NOW(), ?, NOW(), 0
 		)
 	`,
 		instID,
@@ -61,6 +67,7 @@ func (repo *Repository) CreateCourse(ctx context.Context, instID, operatorID int
 		saleStatus,
 		input.TeachMethod,
 		joinInt64CSV(input.SubjectIDs),
+		input.RollCallDeductPrice,
 		operatorID,
 		operatorID,
 	)
@@ -98,7 +105,7 @@ func (repo *Repository) UpdateCourse(ctx context.Context, instID, operatorID int
 	_, err = tx.ExecContext(ctx, `
 		UPDATE inst_course
 		SET type = ?, name = ?, course_category = ?, course_attribute = ?, sale_status = ?,
-		    teach_method = ?, subject_ids = ?, update_id = ?, update_time = NOW()
+		    teach_method = ?, subject_ids = ?, roll_call_deduct_price = IFNULL(?, roll_call_deduct_price), update_id = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`,
 		input.Type,
@@ -108,6 +115,7 @@ func (repo *Repository) UpdateCourse(ctx context.Context, instID, operatorID int
 		saleStatus,
 		input.TeachMethod,
 		joinInt64CSV(input.SubjectIDs),
+		input.RollCallDeductPrice,
 		operatorID,
 		*input.ID,
 		instID,
@@ -366,7 +374,7 @@ func (repo *Repository) PageCourses(ctx context.Context, instID int64, query mod
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT c.id, IFNULL(c.uuid, ''), IFNULL(c.version, 0), IFNULL(c.name, ''), c.course_category, c.course_attribute, c.type, IFNULL(ca.name, ''),
-		       c.teach_method, c.sale_status, IFNULL(c.sale_volume, 0), IFNULL(cd.is_show_mico_school, 0), c.update_time
+		       c.teach_method, c.sale_status, IFNULL(c.sale_volume, 0), IFNULL(cd.is_show_mico_school, 0), c.roll_call_deduct_price, c.update_time
 		FROM inst_course c
 		LEFT JOIN inst_course_category ca ON ca.id = c.course_category
 		LEFT JOIN inst_course_detail cd ON cd.course_id = c.id
@@ -381,8 +389,13 @@ func (repo *Repository) PageCourses(ctx context.Context, instID int64, query mod
 	courseIDs := make([]int64, 0, size)
 	for rows.Next() {
 		var item model.Course
-		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.Name, &item.CourseCategory, &item.CourseAttribute, &item.Type, &item.CategoryName, &item.TeachMethod, &item.SaleStatus, &item.SaleVolume, &item.IsShowMicoSchool, &item.UpdateTime); err != nil {
+		var rollCallDeductPrice sql.NullFloat64
+		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.Name, &item.CourseCategory, &item.CourseAttribute, &item.Type, &item.CategoryName, &item.TeachMethod, &item.SaleStatus, &item.SaleVolume, &item.IsShowMicoSchool, &rollCallDeductPrice, &item.UpdateTime); err != nil {
 			return model.PageResult[model.Course]{}, err
+		}
+		if rollCallDeductPrice.Valid {
+			value := rollCallDeductPrice.Float64
+			item.RollCallDeductPrice = &value
 		}
 		items = append(items, item)
 		courseIDs = append(courseIDs, item.ID)
@@ -1910,6 +1923,7 @@ func parseCSVInt64(raw string) []int64 {
 func (repo *Repository) GetCourseDetail(ctx context.Context, instID, courseID int64) (model.CourseDetail, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(name, ''), course_category, course_attribute, type, teach_method, sale_status,
+		       roll_call_deduct_price,
 		       IFNULL(subject_ids, '')
 		FROM inst_course
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
@@ -1918,10 +1932,15 @@ func (repo *Repository) GetCourseDetail(ctx context.Context, instID, courseID in
 
 	var detail model.CourseDetail
 	var subjectIDsRaw string
-	if err := row.Scan(&detail.ID, &detail.UUID, &detail.Version, &detail.Name, &detail.CourseCategory, &detail.CourseAttribute, &detail.Type, &detail.TeachMethod, &detail.SaleStatus, &subjectIDsRaw); err != nil {
+	var rollCallDeductPrice sql.NullFloat64
+	if err := row.Scan(&detail.ID, &detail.UUID, &detail.Version, &detail.Name, &detail.CourseCategory, &detail.CourseAttribute, &detail.Type, &detail.TeachMethod, &detail.SaleStatus, &rollCallDeductPrice, &subjectIDsRaw); err != nil {
 		return model.CourseDetail{}, err
 	}
 	detail.SubjectIDs = parseCSVInt64(subjectIDsRaw)
+	if rollCallDeductPrice.Valid {
+		value := rollCallDeductPrice.Float64
+		detail.RollCallDeductPrice = &value
+	}
 
 	detailRow := repo.db.QueryRowContext(ctx, `
 		SELECT IFNULL(title, ''), IFNULL(images, ''), IFNULL(description, ''), IFNULL(is_show_mico_school, 0),
@@ -2438,6 +2457,15 @@ func (repo *Repository) replaceCoursePropertyResultsTx(ctx context.Context, tx *
 		}
 	}
 	return nil
+}
+
+func (repo *Repository) UpdateCourseRollCallDeductPrice(ctx context.Context, instID, courseID int64, value *float64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_course
+		SET roll_call_deduct_price = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, value, courseID, instID)
+	return err
 }
 
 func (repo *Repository) getCourseEntryInfos(ctx context.Context, instID int64, ids []int64) ([]model.CourseEntryInfo, error) {

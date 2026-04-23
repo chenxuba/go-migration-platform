@@ -155,6 +155,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/courses/detail", handler.courseDetail)
 	mux.HandleFunc("/api/v1/courses/create", handler.addCourse)
 	mux.HandleFunc("/api/v1/courses/update", handler.updateCourse)
+	mux.HandleFunc("/api/v1/courses/roll-call-deduct-price/update", handler.updateCourseRollCallDeductPrice)
 	mux.HandleFunc("/api/v1/product-packages/page", handler.productPackagePagedList)
 	mux.HandleFunc("/api/v1/product-packages/statistics", handler.productPackageStatistics)
 	mux.HandleFunc("/api/v1/product-packages/create", handler.createProductPackage)

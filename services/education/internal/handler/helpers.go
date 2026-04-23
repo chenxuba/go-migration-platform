@@ -631,18 +631,19 @@ func parseCourseQueryDTO(raw map[string]any) model.CourseQueryDTO {
 
 func parseCourseProductSaveDTO(raw map[string]any) model.CourseProductSaveDTO {
 	dto := model.CourseProductSaveDTO{
-		ID:              asInt64Ptr(raw["id"]),
-		UUID:            asString(raw["uuid"]),
-		Version:         asInt64Ptr(raw["version"]),
-		Name:            asString(raw["name"]),
-		CourseCategory:  asInt64Ptr(firstNonNil(raw["courseCategory"], raw["courseCategoryId"])),
-		CourseAttribute: asIntPtr(raw["courseAttribute"]),
-		Type:            asIntPtr(raw["type"]),
-		Title:           asString(raw["title"]),
-		Images:          asString(raw["images"]),
-		Description:     asString(raw["description"]),
-		TeachMethod:     asIntPtr(firstNonNil(raw["teachMethod"], raw["lessonType"])),
-		SubjectIDs:      asInt64Slice(raw["subjectIds"]),
+		ID:                  asInt64Ptr(raw["id"]),
+		UUID:                asString(raw["uuid"]),
+		Version:             asInt64Ptr(raw["version"]),
+		Name:                asString(raw["name"]),
+		CourseCategory:      asInt64Ptr(firstNonNil(raw["courseCategory"], raw["courseCategoryId"])),
+		CourseAttribute:     asIntPtr(raw["courseAttribute"]),
+		Type:                asIntPtr(raw["type"]),
+		Title:               asString(raw["title"]),
+		Images:              asString(raw["images"]),
+		Description:         asString(raw["description"]),
+		TeachMethod:         asIntPtr(firstNonNil(raw["teachMethod"], raw["lessonType"])),
+		SubjectIDs:          asInt64Slice(raw["subjectIds"]),
+		RollCallDeductPrice: asFloat64Ptr(raw["rollCallDeductPrice"]),
 	}
 	if show := asBoolPtr(raw["isShowMicoSchool"]); show != nil {
 		dto.IsShowMicoSchool = *show
@@ -1809,6 +1810,20 @@ func asFloat64(value any) float64 {
 		}
 	}
 	return 0
+}
+
+func asFloat64Ptr(value any) *float64 {
+	if value == nil {
+		return nil
+	}
+	parsed := asFloat64(value)
+	switch typed := value.(type) {
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return nil
+		}
+	}
+	return &parsed
 }
 
 func asString(value any) string {

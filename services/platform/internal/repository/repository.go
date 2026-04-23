@@ -2144,6 +2144,30 @@ func (repo *Repository) createDefaultInstitutionConfigTx(ctx context.Context, tx
 			enable_charge_by_hours,
 			enable_by_date_lesson,
 			enable_charge_by_price,
+			enable_filter_holiday,
+			enabled_arrears_rollcall,
+			enable_by_auto_teaching,
+			enable_one_to_one_schedule_limit,
+			enable_schedule_conflict_continue,
+			schedule_teacher_selection_range,
+			enable_face_attendance_relate_teaching,
+			enable_face_attendance_check_in_notice,
+			enable_face_attendance_check_out_notice,
+			enable_by_voice_tips,
+			enable_send_face_attend_notice_to_admin,
+			face_attendance_interval,
+			default_class_time_record_mode,
+			default_student_class_time,
+			default_teacher_class_time,
+			charge_by_price_default_price,
+			enable_limit_single_order_arrears_deduct,
+			enable_hour_leave_normal_record,
+			enable_hour_truancy_normal_record,
+			enable_period_makeup,
+			enable_period_auto_finish_when_zero,
+			enable_price_leave_normal_record,
+			enable_price_truancy_normal_record,
+			enable_price_makeup,
 			enable_collector_staff,
 			enable_phone_sell_staff,
 			enable_foreground,
@@ -2157,7 +2181,7 @@ func (repo *Repository) createDefaultInstitutionConfigTx(ctx context.Context, tx
 			create_time,
 			version
 		)
-		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0
+		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 1.00, 0.00, 100.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0
 		FROM DUAL
 		WHERE NOT EXISTS (
 			SELECT 1

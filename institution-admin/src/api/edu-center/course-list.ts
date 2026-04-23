@@ -38,6 +38,7 @@ export interface CourseListInfo {
     propertyValueName: string
   }[]
   subjectIds?: Array<number | string>
+  rollCallDeductPrice?: number | string | null
   productSku?: {
     id?: number | string
     uuid?: string
@@ -52,6 +53,21 @@ export interface CourseListInfo {
     lessonModel?: number
     remark?: string
   }[]
+}
+
+export interface CoursePageQueryParams {
+  pageRequestModel?: {
+    needTotal?: boolean
+    pageSize?: number
+    pageIndex?: number
+  }
+  sortModel?: Record<string, number>
+  queryModel?: Record<string, any>
+}
+
+export interface CourseRollCallDeductPriceParams {
+  courseId: number | string
+  rollCallDeductPrice: number | null
 }
 
 // 课程属性 获取课程属性列表
@@ -102,6 +118,10 @@ export function updateCourseCategoryApi(data: CourseListInfo) {
 export function getCoursePageApi(data: CourseListInfo) {
   return usePost<CourseListInfo>('/api/v1/courses/page', data)
 }
+
+export function getCourseRollCallDeductRulePageApi(data: CoursePageQueryParams) {
+  return usePost<any>('/api/v1/courses/page', data)
+}
 // 新增课程 /instCourse/addCourse
 export function addCourseApi(data: CourseListInfo) {
   return usePost<CourseListInfo>('/api/v1/courses/create', data)
@@ -125,4 +145,8 @@ export function getCourseDetailApi(id: number) {
 // 更新编辑课程信息 /instCourse/updateCourse
 export function updateCourseApi(data: CourseListInfo) {
   return usePost<CourseListInfo>('/api/v1/courses/update', data)
+}
+
+export function updateCourseRollCallDeductPriceApi(data: CourseRollCallDeductPriceParams) {
+  return usePost<{ success: boolean }>('/api/v1/courses/roll-call-deduct-price/update', data)
 }
