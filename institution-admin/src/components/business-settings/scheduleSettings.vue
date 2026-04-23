@@ -145,17 +145,26 @@ const emptyLocale = {
         <section class="tab-content">
           <div class="setting">
             <custom-title title="上课教师选择范围" font-size="18px" font-weight="800" before-height="14px" />
-            <a-radio-group v-model:value="teacherRange" class="settings-radio-group custom-radio">
-              <a-radio value="all">
-                全部员工
-              </a-radio>
-              <a-radio value="teacher-only">
-                仅教师
-              </a-radio>
-            </a-radio-group>
+            <div class="settings-table">
+              <div class="settings-row">
+                <div class="settings-row__label settings-row__label--fixed">
+                  上课教师选择范围
+                </div>
+                <div class="settings-row__content">
+                  <a-radio-group v-model:value="teacherRange" class="settings-radio-group custom-radio">
+                    <a-radio value="all">
+                      全部员工
+                    </a-radio>
+                    <a-radio value="teacher-only">
+                      仅教师
+                    </a-radio>
+                  </a-radio-group>
 
-            <div class="settings-desc">
-              排课时上课教师仅可以选择有教师身份的员工，可前往员工信息中编辑教师身份。
+                  <div class="settings-desc">
+                    排课时上课教师仅可以选择有教师身份的员工，可前往员工信息中编辑教师身份。
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -328,6 +337,11 @@ const emptyLocale = {
   font-size: 14px;
   font-weight: 500;
   text-align: center;
+}
+
+.settings-row__label--fixed {
+  width: 280px;
+  min-width: 280px;
 }
 
 .settings-row__content {
