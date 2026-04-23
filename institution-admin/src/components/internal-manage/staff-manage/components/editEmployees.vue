@@ -52,6 +52,7 @@ const formState = reactive({
   roleIds: [],
   disabled: false, // false: 在职中, true: 已离职
   userType: 1, // 1: 正式员工, 2: 兼职员工
+  isTeacher: false, // 是否是教师
   avatar: '',
 })
 
@@ -97,6 +98,14 @@ const displaySelectedRoleIds = computed(() => {
   })
   return Array.from(ids)
 })
+
+function validateRoleIds(_rule, value) {
+  if (detailInfo.value?.isAdmin)
+    return Promise.resolve()
+  if (Array.isArray(value) && value.length > 0)
+    return Promise.resolve()
+  return Promise.reject(new Error('请设置任职角色'))
+}
 
 // 修改手机号相关状态
 const changeMobileOpen = ref(false)
@@ -221,6 +230,8 @@ const handleOk = useThrottleFn(async () => {
 function handleSelectRoleSuccess(roleIds) {
   selectRoleList.value = roleIds
   formState.roleIds = roleIds
+  if (roleIds && roleIds.length > 0)
+    form.value?.clearValidate('roleIds')
 }
 
 // 关闭弹窗
@@ -412,13 +423,7 @@ watch(
 
             <!-- 任职角色 -->
             <a-form-item style="margin: 0;" class="position" name="roleIds"
-              :rules="[{ validator: (_rule, value) => {
-                if (detailInfo.isAdmin)
-                  return Promise.resolve()
-                if (Array.isArray(value) && value.length > 0)
-                  return Promise.resolve()
-                return Promise.reject(new Error('请设置任职角色'))
-              } }]">
+              :rules="[{ validator: validateRoleIds }]">
               <template #label>
                 <div class="flex items-center">
                   <div>任职角色：</div>
@@ -476,6 +481,19 @@ watch(
                 <a-radio :value="1">正式员工</a-radio>
                 <a-radio :value="2">兼职员工</a-radio>
               </a-radio-group>
+            </a-form-item>
+
+            <!-- 是否是教师 -->
+            <a-form-item style="margin: 0;" class="position" name="isTeacher" :required="true">
+              <template #label>
+                <div class="flex items-center">
+                  <div>是否是教师：</div>
+                  <a-radio-group v-model:value="formState.isTeacher" :disabled="detail.isAdmin" class="custom-radio">
+                    <a-radio :value="true">是</a-radio>
+                    <a-radio :value="false">否</a-radio>
+                  </a-radio-group>
+                </div>
+              </template>
             </a-form-item>
           </div>
         </div>

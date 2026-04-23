@@ -532,14 +532,15 @@ func parseInstUserSaveDTO(raw map[string]any) model.InstUserSaveDTO {
 
 func parseInstUserModifyDTO(raw map[string]any) model.InstUserModifyDTO {
 	return model.InstUserModifyDTO{
-		ID:       derefInt64Value(asInt64Ptr(raw["id"])),
-		NickName: asString(raw["nickName"]),
-		Avatar:   asString(raw["avatar"]),
-		Mobile:   asString(raw["mobile"]),
-		DeptIDs:  asInt64Slice(raw["deptIds"]),
-		Disabled: asBoolPtr(raw["disabled"]),
-		RoleIDs:  asInt64Slice(raw["roleIds"]),
-		UserType: asIntPtr(raw["userType"]),
+		ID:        derefInt64Value(asInt64Ptr(raw["id"])),
+		NickName:  asString(raw["nickName"]),
+		Avatar:    asString(raw["avatar"]),
+		Mobile:    asString(raw["mobile"]),
+		DeptIDs:   asInt64Slice(raw["deptIds"]),
+		Disabled:  asBoolPtr(raw["disabled"]),
+		RoleIDs:   asInt64Slice(raw["roleIds"]),
+		UserType:  asIntPtr(raw["userType"]),
+		IsTeacher: asBoolPtr(raw["isTeacher"]),
 	}
 }
 

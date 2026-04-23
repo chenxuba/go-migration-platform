@@ -56,14 +56,15 @@ type InstUserSaveDTO struct {
 }
 
 type InstUserModifyDTO struct {
-	ID       int64   `json:"id"`
-	NickName string  `json:"nickName"`
-	Avatar   string  `json:"avatar"`
-	Mobile   string  `json:"mobile"`
-	DeptIDs  []int64 `json:"deptIds"`
-	Disabled *bool   `json:"disabled"`
-	RoleIDs  []int64 `json:"roleIds"`
-	UserType *int    `json:"userType"`
+	ID        int64   `json:"id"`
+	NickName  string  `json:"nickName"`
+	Avatar    string  `json:"avatar"`
+	Mobile    string  `json:"mobile"`
+	DeptIDs   []int64 `json:"deptIds"`
+	Disabled  *bool   `json:"disabled"`
+	RoleIDs   []int64 `json:"roleIds"`
+	UserType  *int    `json:"userType"`
+	IsTeacher *bool   `json:"isTeacher"`
 }
 
 type ChangePhoneVO struct {
@@ -99,4 +100,5 @@ type InstUserDetailVO struct {
 	Roles      []InstUserRoleDetail `json:"roles,omitempty"`
 	RoleIDs    []int64              `json:"roleIds,omitempty"`
 	IsAdmin    bool                 `json:"isAdmin"`
+	IsTeacher  bool                 `json:"isTeacher"`
 }

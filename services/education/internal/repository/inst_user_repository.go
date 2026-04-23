@@ -272,7 +272,8 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 func (repo *Repository) GetInstUserDetail(ctx context.Context, instUserID, instID int64) (model.InstUserDetailVO, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT iu.id, IFNULL(iu.uuid, ''), IFNULL(iu.version, 0), IFNULL(iu.nick_name, ''), IFNULL(iu.avatar, ''), IFNULL(iu.mobile, ''),
-		       IFNULL(iu.disabled, 0), iu.create_time, IFNULL(oi.organ_name, ''), iu.inst_id, iu.user_type, IFNULL(iu.is_admin, 0)
+		       IFNULL(iu.disabled, 0), iu.create_time, IFNULL(oi.organ_name, ''), iu.inst_id, iu.user_type, IFNULL(iu.is_admin, 0),
+		       IFNULL(iu.is_teacher, 0)
 		FROM inst_user iu
 		LEFT JOIN org_institution oi ON oi.id = iu.inst_id
 		WHERE iu.id = ? AND iu.inst_id = ? AND iu.del_flag = 0
@@ -284,6 +285,7 @@ func (repo *Repository) GetInstUserDetail(ctx context.Context, instUserID, instI
 	if err := row.Scan(
 		&detail.ID, &detail.UUID, &detail.Version, &detail.NickName, &detail.Avatar, &detail.Mobile,
 		&detail.Disabled, &createTime, &detail.InstName, &detail.InstID, &detail.UserType, &detail.IsAdmin,
+		&detail.IsTeacher,
 	); err != nil {
 		return model.InstUserDetailVO{}, err
 	}
@@ -450,9 +452,9 @@ func (repo *Repository) UpdateInstUser(ctx context.Context, instID int64, dto mo
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE inst_user
-		SET nick_name = ?, avatar = ?, disabled = ?, user_type = ?, update_time = NOW()
+		SET nick_name = ?, avatar = ?, disabled = ?, user_type = ?, is_teacher = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, strings.TrimSpace(dto.NickName), strings.TrimSpace(dto.Avatar), boolValue(dto.Disabled), dto.UserType, dto.ID, instID); err != nil {
+	`, strings.TrimSpace(dto.NickName), strings.TrimSpace(dto.Avatar), boolValue(dto.Disabled), dto.UserType, boolValue(dto.IsTeacher), dto.ID, instID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
