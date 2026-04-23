@@ -1036,6 +1036,28 @@ function buildLessonsForRow(slots, legacyList, currentTeacherId) {
   return lessons
 }
 
+function resolveTeacherNameFromSchedules(schedules, teacherId) {
+  const targetTeacherId = String(teacherId || '').trim()
+  const list = Array.isArray(schedules) ? schedules : []
+  for (const item of list) {
+    const teacherPeople = Array.isArray(item?.teacherList) ? item.teacherList : []
+    const matched = teacherPeople.find((teacher) => {
+      const id = String(teacher?.id || '').trim()
+      const name = String(teacher?.name || '').trim()
+      return id && id === targetTeacherId && name
+    })
+    if (matched)
+      return String(matched.name || '').trim()
+  }
+  for (const item of list) {
+    const teacherPeople = Array.isArray(item?.teacherList) ? item.teacherList : []
+    const namedTeacher = teacherPeople.find(teacher => String(teacher?.name || '').trim())
+    if (namedTeacher)
+      return String(namedTeacher.name || '').trim()
+  }
+  return ''
+}
+
 const rawGridRows = computed(() => {
   const slots = activePeriodSlots.value
   const dates = displayDates.value.map(d => d.format('YYYY-MM-DD'))
@@ -1068,7 +1090,10 @@ const rawGridRows = computed(() => {
   const rows = []
   for (const col of teacherCols) {
     const tid = String(col.teacherId)
-    const tname = col.teacherName
+    const allSchedules = dates.flatMap(dateStr => dayMap.get(dateStr)?.get(tid) || [])
+    const tname = String(col.teacherName || '').trim()
+      || resolveTeacherNameFromSchedules(allSchedules, tid)
+      || tid
     for (const dateStr of dates) {
       const schedules = dayMap.get(dateStr)?.get(tid) || []
       rows.push({
