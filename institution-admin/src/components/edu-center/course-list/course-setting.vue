@@ -153,8 +153,6 @@ onMounted(() => {
 .tab-content {
   background: #fff;
   border-radius: 12px;
-  border-top-right-radius: 0;
-  border-top-left-radius: 0;
   padding: 12px 20px;
 }
 

@@ -147,6 +147,7 @@ const teachingMethodRows = reactive([
 .status-text {
   color: #666;
   font-size: 14px;
+  font-weight: 500;
 }
 
 .switch-line {

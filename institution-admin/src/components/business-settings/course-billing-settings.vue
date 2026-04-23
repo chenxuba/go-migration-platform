@@ -119,14 +119,13 @@ const billingRows = [
 }
 
 .status-text {
-  color: #666;
+  color: #333;
   font-size: 14px;
+  font-weight: 500;
 }
 
 .desc {
-  margin-top: 8px;
   color: #222;
   font-size: 14px;
-  line-height: 1.75;
 }
 </style>
