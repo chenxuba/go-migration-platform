@@ -17,13 +17,6 @@ const teachingMethodRows = reactive([
     description: '开启后机构可开设1对1课程，学员数量有限制，只允许上课老师给1名学员上课',
   },
   {
-    key: 'generalCourse',
-    label: '通用课',
-    mode: 'switch',
-    enabled: true,
-    description: '开启后机构可开设通用课程，允许报读学员在设置的课程范围内上多门课',
-  },
-  {
     key: 'multiCourse',
     label: '一班多课',
     mode: 'switch',
