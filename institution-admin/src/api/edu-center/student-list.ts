@@ -266,6 +266,49 @@ export function getPendingRenewalStudentsPagedListApi(data: PendingRenewalStuden
   return usePost<PendingRenewalStudentPagedResult>('/api/v1/students/pending-renewals/page', data)
 }
 
+export interface PendingRenewalExportConditionItem {
+  label: string
+  value: string
+}
+
+export interface PendingRenewalStudentExportRecord {
+  id: number
+  fileName: string
+  exporterName: string
+  totalRows: number
+  queryConditions: PendingRenewalExportConditionItem[]
+  createdTime?: string
+  expiresAt?: string
+  downloadUrl?: string
+}
+
+export interface PendingRenewalStudentExportRequest {
+  queryModel?: PendingRenewalStudentQueryParams['queryModel']
+  queryConditions: PendingRenewalExportConditionItem[]
+}
+
+export function exportPendingRenewalStudentsApi(data: PendingRenewalStudentExportRequest) {
+  return usePost<PendingRenewalStudentExportRecord>('/api/v1/students/pending-renewals/export', data)
+}
+
+export function getPendingRenewalStudentExportRecordsApi() {
+  return useGet<PendingRenewalStudentExportRecord[]>('/api/v1/students/pending-renewals/export-records')
+}
+
+export async function downloadPendingRenewalStudentExportRecordApi(recordId: number | string) {
+  const token = useAuthorization()
+  const response = await axios.get('/api/v1/students/pending-renewals/export-records/download', {
+    params: { recordId },
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+  return response
+}
+
 export interface PendingRenewalReminderSendParams {
   tuitionAccountIds: string[]
 }
