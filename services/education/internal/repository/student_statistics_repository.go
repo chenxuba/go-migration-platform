@@ -120,5 +120,11 @@ func (repo *Repository) GetStudentOverviewStatistics(ctx context.Context, instID
 		return model.StudentOverviewStatistics{}, err
 	}
 
+	pendingRenewalStudents, err := repo.CountPendingRenewalStudents(ctx, instID)
+	if err != nil {
+		return model.StudentOverviewStatistics{}, err
+	}
+	result.PendingRenewalStudents = pendingRenewalStudents
+
 	return result, nil
 }

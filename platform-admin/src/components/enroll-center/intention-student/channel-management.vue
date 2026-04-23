@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import dayjs from 'dayjs'
 import { debounce } from 'lodash-es'
 import messageService from '~@/utils/messageService'
 import { adjustChannelApi, createChannelApi, getChannelCategoryListApi, getChannelPCPageApi, updateChannelApi, updateChannelStatusApi } from '~@/api/enroll-center/intention-student'
@@ -129,6 +130,15 @@ const pagination = ref({
   hideOnSinglePage: true,
   showQuickJumper: true,
 })
+
+function formatDateTime(value) {
+  if (!value)
+    return '-'
+
+  const parsed = dayjs(value)
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm:ss') : value
+}
+
 // 获取渠道列表
 async function getData(id, type) {
   loading.value = true
@@ -411,6 +421,9 @@ function handleAdjustChannel(record) {
             <template v-if="column.key === 'remark'">
               <span v-if="record.remark"> {{ record.remark }}</span>
               <span v-if="!record.remark">-</span>
+            </template>
+            <template v-if="column.key === 'createTime'">
+              <span class="whitespace-nowrap">{{ formatDateTime(record.createTime) }}</span>
             </template>
             <template v-if="column.key === 'action' && !record.isDefault">
               <a-space :size="15">

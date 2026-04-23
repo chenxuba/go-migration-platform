@@ -1112,7 +1112,7 @@ func (repo *Repository) GetWeChatOfficialCoursePurchaseNotificationDetail(ctx co
 			IFNULL(so.order_real_amount, 0),
 			COALESCE(
 				(
-					SELECT MAX(COALESCE(pd.pay_time, pd.create_time))
+					SELECT MAX(pd.create_time)
 					FROM sale_order_pay_detail pd
 					WHERE pd.order_id = so.id AND pd.del_flag = 0
 				),

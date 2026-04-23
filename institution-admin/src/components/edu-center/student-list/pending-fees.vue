@@ -1,160 +1,397 @@
-<script setup>
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
 import { DownOutlined } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
+import messageService from '@/utils/messageService'
+import { pageGroupClassesApi } from '@/api/edu-center/group-class'
+import {
+  getPendingRenewalStudentsPagedListApi,
+  type PendingRenewalStudentItem,
+} from '@/api/edu-center/student-list'
+import { useTableColumns } from '@/composables/useTableColumns'
+import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
+import { Sex, SexLabel } from '@/enums'
 
-const tips = ref('（当前为“剩余课时<15”/“剩余天数<15”/“剩余金额<500元”的学员）')
-const displayArray = ref(['intention', 'followStatus', 'sex', 'createUser', 'createTime', 'intentionCourse', 'reference'])
-const dataSource = ref([
-  {
-    key: '1',
-    name: '胡彦斌',
-    phone: 17601241636,
-    intentionCourse: '初级言语课、高级感统课、中级认知课',
-    channelType: '外部渠道',
-    channel: '抖音',
-    teacher: '张晨',
-    status: '已邀约',
-    followed: '2025-03-31 17:09',
-    nextTime: '2025-03-31 17:09',
-    createTime: '2025-03-31 17:09',
-    createUser: '张晨',
-    putType: '否',
-    putPeo: '-',
-    birthday: '2022-09-23',
-    wxchat: '1115009958',
-    grade: '一年级',
-    school: '上海市第一人民小学',
-    address: '上海市杨浦区纪念路8号财大科技园区5号楼102A',
-    IDcard1: 'CL202209229932',
-    IDcard2: '37292520220922883X',
-  },
-])
+const tipsText = '（规则：剩余课时<15 / 剩余天数<15 / 剩余金额<500元）'
+const displayArray = ['intentionCourse', 'className', 'classTeacher', 'currentStatus']
+
+const allFilterRef = ref<{
+  clearQuickFilter?: (id?: string | number, type?: string) => void
+} | null>(null)
+const loading = ref(false)
+const dataSource = ref<PendingRenewalStudentItem[]>([])
+const classNameOptionsData = ref<Array<{ id: string, value: string }>>([])
+const selectedRowKeys = ref<string[]>([])
+const selectedRows = ref<PendingRenewalStudentItem[]>([])
+const summary = ref({
+  total: 0,
+  studentCount: 0,
+})
+
+const pagination = ref({
+  current: 1,
+  pageSize: 50,
+  total: 0,
+  showSizeChanger: true,
+  showQuickJumper: true,
+  pageSizeOptions: ['20', '50', '100'],
+  showTotal: (total: number) => `共 ${total} 条`,
+})
+
+const queryState = ref({
+  studentId: undefined as string | undefined,
+  productId: undefined as string | undefined,
+  classTeacherId: undefined as string | undefined,
+  classIds: undefined as string[] | undefined,
+  statusList: undefined as number[] | undefined,
+})
+
 const allColumns = ref([
   {
     title: '学员/性别',
-    dataIndex: 'name',
-    key: 'name',
+    dataIndex: 'student',
+    key: 'student',
     fixed: 'left',
-    width: 120,
-    required: true, // 新增必选标识
+    width: 180,
+    required: true,
   },
   {
     title: '联系电话',
     dataIndex: 'phone',
-    width: 120,
     key: 'phone',
+    width: 140,
   },
   {
     title: '当前状态',
-    dataIndex: 'studentStatus',
-    key: 'studentStatus',
-    width: 100,
-  },
-  {
-    title: '在读课程',
-    dataIndex: 'readingCourses',
-    key: 'readingCourses',
+    dataIndex: 'status',
+    key: 'status',
     width: 120,
   },
   {
+    title: '在读课程',
+    dataIndex: 'lessonName',
+    key: 'lessonName',
+    width: 180,
+  },
+  {
     title: '班主任',
-    dataIndex: 'headTeacher',
-    key: 'headTeacher',
-    width: 100,
+    dataIndex: 'classTeacherList',
+    key: 'classTeacherList',
+    width: 180,
   },
   {
     title: '剩余数量',
-    dataIndex: 'remainingNum',
-    key: 'remainingNum',
-    width: 100,
-
+    dataIndex: 'remaining',
+    key: 'remaining',
+    width: 180,
   },
   {
     title: '到期时间',
     dataIndex: 'expireTime',
     key: 'expireTime',
-    width: 100,
+    width: 140,
   },
 ])
-const rowSelection = {
-  onChange: (selectedRowKeys, selectedRows) => {
-    console.log(`selectedRowKeys: ${selectedRowKeys}`, 'selectedRows: ', selectedRows)
-  },
-}
-// 从本地存储读取已保存的列配置
-const savedSelected = localStorage.getItem('pendingFees')
-const keysArray = allColumns.value
-  .map(column => column?.key) // 可选链操作符
-  .filter(key => typeof key !== 'undefined') // 过滤未定义的值
-const initialSelectedValues = savedSelected
-  ? JSON.parse(savedSelected)
-  : keysArray
 
-// 选中的列（初始化包含重要字段）
-const selectedValues = ref(initialSelectedValues)
-// 生成字段选择选项（排除操作列）
-const columnOptions = computed(() =>
-  allColumns.value
-    .filter(col => col.key !== 'action')
-    .map(col => ({
-      id: col.key,
-      value: col.title,
-      disabled: col.required, // 禁用必选字段
-    })),
-)
-// 过滤后的列（自动包含必选列）
-const filteredColumns = computed(() => {
-  const requiredColumns = allColumns.value.filter(col => col.required)
-  const optionalColumns = allColumns.value
-    .filter(col =>
-      selectedValues.value.includes(col.key)
-      && !col.required,
+const { selectedValues, columnOptions, filteredColumns, totalWidth } = useTableColumns({
+  storageKey: 'pending-renewal-student-list',
+  allColumns,
+  excludeKeys: ['action'],
+})
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: Array<string | number>, rows: PendingRenewalStudentItem[]) => {
+    selectedRowKeys.value = keys.map(item => String(item))
+    selectedRows.value = rows
+  },
+}))
+
+function resetQueryState() {
+  queryState.value.studentId = undefined
+  queryState.value.productId = undefined
+  queryState.value.classTeacherId = undefined
+  queryState.value.classIds = undefined
+  queryState.value.statusList = undefined
+}
+
+function normalizeStringValue(value: unknown) {
+  if (value === undefined || value === null)
+    return undefined
+  const text = String(value).trim()
+  return text || undefined
+}
+
+function normalizeStringArray(value: unknown) {
+  if (!Array.isArray(value))
+    return undefined
+  const list = value
+    .map(item => String(item ?? '').trim())
+    .filter(Boolean)
+  return list.length ? list : undefined
+}
+
+function normalizeStatusList(value: unknown) {
+  if (!Array.isArray(value))
+    return undefined
+  const list = value
+    .map(item => Number(item))
+    .filter(item => Number.isFinite(item))
+  return list.length ? list : undefined
+}
+
+async function loadClassNameOptions() {
+  try {
+    const lessonIds = queryState.value.productId ? [queryState.value.productId] : undefined
+    const res = await pageGroupClassesApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: 200,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+      queryModel: {
+        lessonIds,
+      },
+    })
+
+    if (res.code !== 200) {
+      throw new Error(res.message || '获取班级筛选项失败')
+    }
+
+    const list = Array.isArray(res.result?.list) ? res.result.list : []
+    const optionMap = new Map<string, { id: string, value: string }>()
+    list.forEach((item) => {
+      const id = String(item?.id ?? '').trim()
+      const value = String(item?.name ?? '').trim()
+      if (!id || !value || optionMap.has(id))
+        return
+      optionMap.set(id, { id, value })
+    })
+    classNameOptionsData.value = [...optionMap.values()]
+  }
+  catch (error) {
+    console.error('加载待续费班级筛选项失败:', error)
+    classNameOptionsData.value = []
+  }
+}
+
+function formatNumber(value?: number) {
+  const num = Number(value || 0)
+  if (!Number.isFinite(num))
+    return '0'
+  return Number.isInteger(num) ? String(num) : num.toFixed(2).replace(/\.?0+$/, '')
+}
+
+function formatMoney(value?: number) {
+  const num = Number(value || 0)
+  return num.toFixed(2)
+}
+
+function isAmountMode(mode?: number) {
+  const value = Number(mode || 0)
+  return value === 3 || value === 4
+}
+
+function getRemainingUnit(mode?: number) {
+  const value = Number(mode || 0)
+  if (value === 2)
+    return '天'
+  if (isAmountMode(value))
+    return '元'
+  return '课时'
+}
+
+function getGenderText(sex?: number) {
+  const value = Number.isFinite(Number(sex)) ? Number(sex) : Sex.Unknown
+  return SexLabel[value as Sex] || SexLabel[Sex.Unknown]
+}
+
+function getStatusInfo(status?: number) {
+  const statusValue = Number(status || 0)
+  const map: Record<number, { text: string, className: string }> = {
+    1: { text: '正常', className: 'text-#0c3 bg-#e6ffec' },
+    2: { text: '已停课', className: 'text-#f90 bg-#fff5e6' },
+    3: { text: '已结课', className: 'text-#888 bg-#f5f5f5' },
+  }
+  return map[statusValue] || { text: '未知', className: 'text-#888 bg-#f5f5f5' }
+}
+
+function formatExpireDate(record: PendingRenewalStudentItem) {
+  if (!record.enableExpireTime || !record.expireTime)
+    return '-'
+  const date = dayjs(record.expireTime)
+  if (!date.isValid() || date.year() <= 1)
+    return '-'
+  return date.format('YYYY-MM-DD')
+}
+
+function getClassTeacherText(record: PendingRenewalStudentItem) {
+  const teacherNames = Array.isArray(record.classTeacherList)
+    ? record.classTeacherList
+      .map(item => String(item?.name ?? '').trim())
+      .filter(Boolean)
+    : []
+  return teacherNames.length ? teacherNames.join('、') : '-'
+}
+
+function getRemainingText(record: PendingRenewalStudentItem) {
+  if (isAmountMode(record.lessonChargingMode))
+      return `¥ ${formatMoney(record.tuition || record.leftQuantity)}`
+  const total = Number(record.leftQuantity || 0) + Number(record.leftFreeQuantity || 0)
+  return `${formatNumber(total)}${getRemainingUnit(record.lessonChargingMode)}`
+}
+
+function getRemainingSubText(record: PendingRenewalStudentItem) {
+  if (isAmountMode(record.lessonChargingMode))
+    return ''
+  const freeQuantity = Number(record.leftFreeQuantity || 0)
+  if (freeQuantity > 0) {
+    return `正课${formatNumber(record.leftQuantity)}${getRemainingUnit(record.lessonChargingMode)} + 赠送${formatNumber(freeQuantity)}${getRemainingUnit(record.lessonChargingMode)}`
+  }
+  return ''
+}
+
+async function getList(id?: string | number, type?: string) {
+  loading.value = true
+  try {
+    const queryModel = Object.fromEntries(
+      Object.entries(queryState.value).filter(([, value]) => value !== undefined),
     )
 
-  // 保持固定列顺序：left -> normal -> right
-  return [
-    ...requiredColumns.filter(col => col.fixed === 'left'),
-    ...optionalColumns,
-    ...requiredColumns.filter(col => col.fixed === 'right'),
-  ]
-})
-// 强制包含必选字段的监听
-watch(selectedValues, (newVal) => {
-  const requiredKeys = allColumns.value
-    .filter(col => col.required)
-    .map(col => col.key)
+    const res = await getPendingRenewalStudentsPagedListApi({
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: pagination.value.pageSize,
+        pageIndex: pagination.value.current,
+        skipCount: 0,
+      },
+      queryModel,
+      sortModel: {
+        expriedTime: 0,
+      },
+    })
 
-  // 自动补全必选字段
-  if (!requiredKeys.every(k => newVal.includes(k))) {
-    selectedValues.value = Array.from(new Set([
-      ...newVal.filter(v => !requiredKeys.includes(v)),
-      ...requiredKeys,
-    ]))
+    if (res.code !== 200) {
+      throw new Error(res.message || '获取待续费学员列表失败')
+    }
+
+    const result = res.result || {}
+    dataSource.value = Array.isArray(result.list) ? result.list : []
+    pagination.value.total = Number(result.total || 0)
+    summary.value.total = Number(result.total || 0)
+    summary.value.studentCount = Number(result.studentCount || 0)
+    allFilterRef.value?.clearQuickFilter?.(id, type)
   }
-}, { deep: true })
-// 自动保存列配置到本地存储
-watch(selectedValues, (newVal) => {
-  localStorage.setItem('pendingFees', JSON.stringify(newVal))
-}, { deep: true })
-// 表格总宽度计算
-const totalWidth = computed(() =>
-  filteredColumns.value.reduce((acc, column) => acc + (column.width || 0), 0),
-)
+  catch (error: any) {
+    console.error('获取待续费学员列表失败:', error)
+    messageService.error(error?.message || '获取待续费学员列表失败')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+function applyFilterChange(
+  updates: Partial<typeof queryState.value>,
+  id?: string | number,
+  type?: string,
+  options?: { reloadClassOptions?: boolean },
+) {
+  Object.assign(queryState.value, updates)
+  pagination.value.current = 1
+  selectedRowKeys.value = []
+  selectedRows.value = []
+  if (options?.reloadClassOptions)
+    void loadClassNameOptions()
+  void getList(id, type)
+}
+
+const filterUpdateHandlers = computed(() => ({
+  'update:stuPhoneSearchFilter': (val: unknown, isClearAll?: boolean, id?: string | number, type?: string) => {
+    if (isClearAll) {
+      resetQueryState()
+      void loadClassNameOptions()
+      void getList(id, type)
+      return
+    }
+    applyFilterChange({ studentId: normalizeStringValue(val) }, id, type)
+  },
+  'update:intentionCourseFilter': (val: unknown, isClearAll?: boolean, id?: string | number, type?: string) => {
+    if (isClearAll) {
+      resetQueryState()
+      void loadClassNameOptions()
+      void getList(id, type)
+      return
+    }
+    applyFilterChange({ productId: normalizeStringValue(val) }, id, type, { reloadClassOptions: true })
+  },
+  'update:classTeacherFilter': (val: unknown, isClearAll?: boolean, id?: string | number, type?: string) => {
+    if (isClearAll) {
+      resetQueryState()
+      void loadClassNameOptions()
+      void getList(id, type)
+      return
+    }
+    applyFilterChange({ classTeacherId: normalizeStringValue(val) }, id, type)
+  },
+  'update:classNameFilter': (val: unknown, isClearAll?: boolean, id?: string | number, type?: string) => {
+    if (isClearAll) {
+      resetQueryState()
+      void loadClassNameOptions()
+      void getList(id, type)
+      return
+    }
+    applyFilterChange({ classIds: normalizeStringArray(val) }, id, type)
+  },
+  'update:currentStatusFilter': (val: unknown, isClearAll?: boolean, id?: string | number, type?: string) => {
+    if (isClearAll) {
+      resetQueryState()
+      void loadClassNameOptions()
+      void getList(id, type)
+      return
+    }
+    applyFilterChange({ statusList: normalizeStatusList(val) }, id, type)
+  },
+}))
+
+function handleTableChange(paginationInfo: any) {
+  pagination.value.current = Number(paginationInfo?.current || 1)
+  pagination.value.pageSize = Number(paginationInfo?.pageSize || pagination.value.pageSize)
+  void getList()
+}
+
+onMounted(async () => {
+  await loadClassNameOptions()
+  await getList()
+})
+
+useStudentListRefresh(getList)
+
+defineExpose({
+  getList,
+})
 </script>
 
 <template>
   <div>
-    <!-- 学员筛选条件 -->
-    <div class="filter-wrap mt-2 bg-white  pl-3 pr-3 rounded-4">
+    <div class="filter-wrap mt-2 bg-white pl-3 pr-3 rounded-4">
       <all-filter
-        :display-array="displayArray" :is-quick-show="false"
+        ref="allFilterRef"
+        :display-array="displayArray"
+        :is-quick-show="false"
         :is-show-search-stu-phonefilter="true"
+        :class-name-options-data="classNameOptionsData"
+        v-on="filterUpdateHandlers"
       />
     </div>
+
     <div class="student-list mt-2 pt-3 pb-3 pl-6 pr-6 bg-white rounded-4">
       <div class="tab-table">
         <div class="table-title flex justify-between">
           <div class="total">
-            当前共{{ dataSource.length }}名学员 <span class="text-#0066ff" v-text="tips" />
+            当前共{{ summary.studentCount }}名学员，{{ summary.total }}条待续费记录
+            <span class="text-#0066ff">{{ tipsText }}</span>
           </div>
           <div class="edit flex">
             <a-button class="mr-2">
@@ -192,51 +429,75 @@ const totalWidth = computed(() =>
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
             </a-dropdown>
-            <!-- 自定义字段 -->
             <customize-code
-              v-model:checked-values="selectedValues" :options="columnOptions" :total="allColumns.length"
+              :checked-values="selectedValues"
+              :options="columnOptions"
+              :total="allColumns.length"
               :num="selectedValues.length"
+              @update:checked-values="(val) => { selectedValues = val }"
             />
           </div>
         </div>
+
         <div class="table-content mt-2">
           <a-table
-            :data-source="dataSource" :pagination="dataSource.length > 10" :columns="filteredColumns"
-            :row-selection="rowSelection" :scroll="{ x: totalWidth }" size="small"
+            :data-source="dataSource"
+            :loading="loading"
+            :pagination="pagination"
+            :columns="filteredColumns"
+            :row-selection="rowSelection"
+            :scroll="{ x: totalWidth }"
+            row-key="tuitionAccountId"
+            size="small"
+            @change="handleTableChange"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'name'">
-                <student-avatar name="龙龙" gender="男" :show-age="false" default-active-key="0" />
+              <template v-if="column.key === 'student'">
+                <student-avatar
+                  :id="record.studentId"
+                  :name="record.studentName || '-'"
+                  :gender="getGenderText(record.sex)"
+                  :avatar-url="record.avatar || ''"
+                  :show-age="false"
+                  default-active-key="0"
+                />
               </template>
+
               <template v-if="column.key === 'phone'">
-                <div class="name">
-                  <div class="text-#222">
-                    爸爸
-                  </div>
-                  <div class="text-3 text-#666">
-                    176****1636
-                  </div>
+                <div class="text-#222">
+                  {{ record.phone || '-' }}
                 </div>
               </template>
-              <template v-if="column.key === 'studentStatus'">
-                <span class="text-#0c3 bg-#e6ffec text-3 pt-0.5 pb-0.5 pl-2 pr-2 rounded-2">
-                  正常
+
+              <template v-if="column.key === 'status'">
+                <span :class="`${getStatusInfo(record.status).className} rounded-2.5 inline-block text-3 pt-0.5 pb-0.5 pl-2 pr-2`">
+                  {{ getStatusInfo(record.status).text }}
                 </span>
               </template>
-              <template v-if="column.key === 'createUser'">
-                陈瑞生{{ record.createUser }}
+
+              <template v-if="column.key === 'lessonName'">
+                <div class="text-#222">
+                  {{ record.lessonName || '-' }}
+                </div>
               </template>
-              <template v-if="column.key === 'readingCourses'">
-                初级感统课
+
+              <template v-if="column.key === 'classTeacherList'">
+                <div class="text-#222">
+                  {{ getClassTeacherText(record) }}
+                </div>
               </template>
-              <template v-if="column.key === 'headTeacher'">
-                刘思君
+
+              <template v-if="column.key === 'remaining'">
+                <div class="text-#222">
+                  {{ getRemainingText(record) }}
+                </div>
+                <div v-if="getRemainingSubText(record)" class="text-3 text-#888">
+                  {{ getRemainingSubText(record) }}
+                </div>
               </template>
-              <template v-if="column.key === 'remainingNum'">
-                10课时
-              </template>
+
               <template v-if="column.key === 'expireTime'">
-                2025-04-24
+                {{ formatExpireDate(record) }}
               </template>
             </template>
           </a-table>

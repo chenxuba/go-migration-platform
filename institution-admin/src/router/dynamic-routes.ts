@@ -596,7 +596,7 @@ export default [
       {
         path: '/business-settings/enrollment',
         name: 'BusinessSettingsEnrollment',
-        component: () => import('~/pages/business-settings/placeholder.vue'),
+        component: () => import('~/pages/business-settings/enrollment/index.vue'),
         meta: {
           title: '招生设置',
           access: [AccessEnum.setting_enroll],

@@ -207,3 +207,61 @@ export interface PendingAttentionStudentQueryParams {
 export function getPendingAttentionStudentPagedListApi(data: PendingAttentionStudentQueryParams) {
   return usePost<EnrolledStudentInfo>('/api/v1/students/pending-attention/page', data)
 }
+
+export interface PendingRenewalStudentItem {
+  tuitionAccountId?: string
+  studentId?: string
+  sex?: number
+  avatar?: string
+  lessonId?: string
+  lessonName?: string
+  studentName?: string
+  leftQuantity?: number
+  leftFreeQuantity?: number
+  enableExpireTime?: boolean
+  expireTime?: string
+  lessonChargingMode?: number
+  totalQuantity?: number
+  latestStartTime?: string
+  phone?: string
+  tuition?: number
+  classTeacherList?: Array<{
+    id?: string
+    name?: string
+  }>
+  status?: number
+  advisorStaffId?: string
+  advisorStaffName?: string
+  studentManagerId?: string
+  studentManagerName?: string
+}
+
+export interface PendingRenewalStudentQueryParams {
+  pageRequestModel: {
+    needTotal?: boolean
+    pageSize: number
+    pageIndex: number
+    skipCount?: number
+  }
+  queryModel?: {
+    studentId?: string
+    productId?: string
+    productIds?: string[]
+    classTeacherId?: string
+    classIds?: string[]
+    statusList?: number[]
+  }
+  sortModel?: {
+    expriedTime?: number
+  }
+}
+
+export interface PendingRenewalStudentPagedResult {
+  list?: PendingRenewalStudentItem[]
+  total?: number
+  studentCount?: number
+}
+
+export function getPendingRenewalStudentsPagedListApi(data: PendingRenewalStudentQueryParams) {
+  return usePost<PendingRenewalStudentPagedResult>('/api/v1/students/pending-renewals/page', data)
+}
