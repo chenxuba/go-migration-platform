@@ -122,6 +122,49 @@ export async function exportStudentRegistrationArrearApi(data: {
   })
 }
 
+export interface StudentArrearExportConditionItem {
+  label: string
+  value: string
+}
+
+export interface StudentArrearExportRecord {
+  id: number
+  exportType: string
+  fileName: string
+  exporterName: string
+  totalRows: number
+  queryConditions: StudentArrearExportConditionItem[]
+  createdTime?: string
+  expiresAt?: string
+  downloadUrl?: string
+}
+
+export interface StudentRegistrationArrearExportRecordRequest {
+  queryModel?: StudentRegistrationArrearQueryParams['queryModel']
+  queryConditions: StudentArrearExportConditionItem[]
+}
+
+export function createStudentRegistrationArrearExportRecordApi(data: StudentRegistrationArrearExportRecordRequest) {
+  return usePost<StudentArrearExportRecord>('/api/v1/students/registration-arrears/export-records', data)
+}
+
+export function getStudentRegistrationArrearExportRecordsApi() {
+  return useGet<StudentArrearExportRecord[]>('/api/v1/students/registration-arrears/export-records')
+}
+
+export async function downloadStudentRegistrationArrearExportRecordApi(recordId: number | string) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/students/registration-arrears/export-records/download', {
+    params: { recordId },
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 export interface StudentLessonArrearItem {
   studentId: string
   studentName: string
@@ -178,6 +221,32 @@ export async function exportStudentLessonArrearApi(data: {
 }) {
   const token = useAuthorization()
   return axios.post('/api/v1/students/lesson-arrears/export', data, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
+export interface StudentLessonArrearExportRecordRequest {
+  queryModel?: StudentLessonArrearQueryParams['queryModel']
+  queryConditions: StudentArrearExportConditionItem[]
+}
+
+export function createStudentLessonArrearExportRecordApi(data: StudentLessonArrearExportRecordRequest) {
+  return usePost<StudentArrearExportRecord>('/api/v1/students/lesson-arrears/export-records', data)
+}
+
+export function getStudentLessonArrearExportRecordsApi() {
+  return useGet<StudentArrearExportRecord[]>('/api/v1/students/lesson-arrears/export-records')
+}
+
+export async function downloadStudentLessonArrearExportRecordApi(recordId: number | string) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/students/lesson-arrears/export-records/download', {
+    params: { recordId },
     responseType: 'blob',
     headers: {
       [STORAGE_AUTHORIZE_KEY]: token.value || '',

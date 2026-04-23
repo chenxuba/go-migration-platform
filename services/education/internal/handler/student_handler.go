@@ -368,6 +368,61 @@ func (handler *Handler) studentRegistrationArrearExport(w http.ResponseWriter, r
 	_, _ = w.Write(content)
 }
 
+func (handler *Handler) studentRegistrationArrearExportRecords(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodPost:
+		var req model.StudentRegistrationArrearExportCreateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+			return
+		}
+		result, err := handler.service.CreateStudentRegistrationArrearExportRecord(claims.UserID, req)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+	case http.MethodGet:
+		result, err := handler.service.ListStudentArrearExportRecords(claims.UserID, "registration")
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+	default:
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+	}
+}
+
+func (handler *Handler) downloadStudentRegistrationArrearExportRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	fileName, contentType, data, err := handler.service.LoadStudentArrearExportRecord(claims.UserID, strings.TrimSpace(r.URL.Query().Get("recordId")), "registration")
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.QueryEscape(fileName)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
 func (handler *Handler) studentLessonArrearPaged(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -440,6 +495,61 @@ func (handler *Handler) studentLessonArrearExport(w http.ResponseWriter, r *http
 	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(fileName))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
+}
+
+func (handler *Handler) studentLessonArrearExportRecords(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodPost:
+		var req model.StudentLessonArrearExportCreateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+			return
+		}
+		result, err := handler.service.CreateStudentLessonArrearExportRecord(claims.UserID, req)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+	case http.MethodGet:
+		result, err := handler.service.ListStudentArrearExportRecords(claims.UserID, "lesson")
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+	default:
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+	}
+}
+
+func (handler *Handler) downloadStudentLessonArrearExportRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	fileName, contentType, data, err := handler.service.LoadStudentArrearExportRecord(claims.UserID, strings.TrimSpace(r.URL.Query().Get("recordId")), "lesson")
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.QueryEscape(fileName)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func (handler *Handler) exportEnrolledStudents(w http.ResponseWriter, r *http.Request) {
