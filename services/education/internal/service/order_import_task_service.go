@@ -538,7 +538,7 @@ func (svc *Service) importOrderRow(
 		for idx := range payDTO.PayAccounts {
 			payDTO.PayAccounts[idx].OrderID = orderID
 		}
-		if err := svc.PayOrder(userID, payDTO); err != nil {
+		if err := svc.payOrder(userID, payDTO, false); err != nil {
 			return err
 		}
 	}

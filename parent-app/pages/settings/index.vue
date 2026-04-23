@@ -12,50 +12,78 @@
 					<view class="parent-nav-spacer" :style="{ width: `${nav.width}px`, height: `${nav.height}px` }"></view>
 				</view>
 
-				<view class="parent-card settings-summary-card">
-					<text class="settings-summary-card__label">当前账号</text>
-					<text class="settings-summary-card__title">{{ summaryTitle }}</text>
-					<text class="settings-summary-card__desc">{{ summaryDesc }}</text>
+				<view class="parent-card settings-account-card">
+					<text class="settings-account-card__label">当前账号</text>
+					<view class="settings-account-card__main">
+						<view class="settings-account-card__avatar">
+							<text class="settings-account-card__avatar-text">{{ accountInitial }}</text>
+						</view>
+						<view class="settings-account-card__copy">
+							<text class="settings-account-card__title">{{ summaryTitle }}</text>
+							<text class="settings-account-card__desc">{{ summaryDesc }}</text>
+						</view>
+						<view
+							class="settings-account-card__status"
+							:class="isAuthenticated ? 'settings-account-card__status--online' : 'settings-account-card__status--offline'"
+						>
+							<text class="settings-account-card__status-dot"></text>
+							<text>{{ isAuthenticated ? '已登录' : '未登录' }}</text>
+						</view>
+					</view>
 				</view>
 			</view>
 
-			<view class="parent-card settings-list-card">
+			<view class="parent-card settings-action-card">
 				<view
 					class="settings-item"
 					:class="{ 'settings-item--disabled': !isAuthenticated || canceling }"
 					@click="openCancelConfirm"
 				>
+					<view class="settings-item__icon-wrap">
+						<view class="settings-item__icon">
+							<text class="settings-item__icon-mark">!</text>
+						</view>
+					</view>
 					<view class="settings-item__copy">
 						<text class="settings-item__title">注销账号</text>
-						<text class="settings-item__desc">清除当前微信绑定，后续可由新的微信重新绑定</text>
+						<text class="settings-item__desc">停止当前微信接收推送，后续可由新微信重新绑定</text>
 					</view>
 					<text class="settings-item__arrow">›</text>
 				</view>
 			</view>
 
-			<view class="settings-tip-card">
-				<text class="settings-tip-card__text">注销后会退出当前账号，并移除当前微信对应的公众号/学员绑定关系，请谨慎操作。</text>
+			<view class="parent-card settings-note-card">
+				<text class="settings-note-card__title">注销后将会</text>
+				<view class="settings-note-card__item">
+					<text class="settings-note-card__dot">1</text>
+					<text class="settings-note-card__text">当前微信不再接收学员通知</text>
+				</view>
+				<view class="settings-note-card__item">
+					<text class="settings-note-card__dot">2</text>
+					<text class="settings-note-card__text">新微信登录后可重新绑定</text>
+				</view>
+				<text class="settings-note-card__tip">如果只是暂时不用当前手机，不需要注销账号。</text>
 			</view>
 		</view>
 
 		<view v-if="showCancelConfirm" class="settings-modal-mask" @touchmove.stop.prevent>
 			<view class="settings-modal" @click.stop>
-				<text class="settings-modal__title">注销账号？</text>
-				<text class="settings-modal__desc">注销后，将退出当前账号并清除当前微信绑定数据，请谨慎操作</text>
+				<text class="settings-modal__title">确认注销当前账号？</text>
+				<text class="settings-modal__desc">注销后，当前微信将不再接收通知；如需更换微信，可在新微信登录后重新绑定。</text>
 				<view class="settings-modal__actions">
+					<view
+						class="settings-modal__action settings-modal__action--secondary"
+						:class="{ 'settings-modal__action--disabled': canceling }"
+						@click="closeCancelConfirm"
+					>
+						取消
+					</view>
 					<view
 						class="settings-modal__action settings-modal__action--danger"
 						:class="{ 'settings-modal__action--disabled': canceling }"
 						@click="confirmCancelAccount"
 					>
-						{{ canceling ? '注销中...' : '注销账号' }}
-					</view>
-					<view
-						class="settings-modal__action"
-						:class="{ 'settings-modal__action--disabled': canceling }"
-						@click="closeCancelConfirm"
-					>
-						取消
+						{{ canceling ? '注销中...' : '确认注销' }}
 					</view>
 				</view>
 			</view>
@@ -86,6 +114,13 @@ const summaryDesc = computed(() => {
 		return '请先登录后再管理账号'
 	}
 	return `${parentState.profile.maskedPhone || '未绑定手机号'}`
+})
+const accountInitial = computed(() => {
+	const nickname = `${parentState.profile.nickname || ''}`.trim()
+	if (nickname) {
+		return nickname.slice(0, 1)
+	}
+	return isAuthenticated.value ? '家' : '未'
 })
 
 function resolveErrorMessage(error) {
@@ -199,7 +234,7 @@ function goBack() {
 }
 
 .settings-header {
-	padding-bottom: 10rpx;
+	padding-bottom: 14rpx;
 }
 
 .settings-nav__side {
@@ -235,43 +270,98 @@ function goBack() {
 	transform: translateX(4rpx) rotate(45deg);
 }
 
-.settings-summary-card {
+.settings-account-card {
 	margin-top: 24rpx;
-	padding: 26rpx 22rpx;
+	padding: 26rpx 24rpx;
 	background:
-		radial-gradient(circle at top right, rgba(255, 226, 122, 0.14), transparent 28%),
-		linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 252, 245, 0.98) 100%);
+		radial-gradient(circle at 100% 0%, rgba(255, 225, 127, 0.18), transparent 34%),
+		linear-gradient(145deg, rgba(255, 255, 255, 0.99) 0%, rgba(255, 251, 244, 0.98) 100%);
 }
 
-.settings-summary-card__label {
+.settings-account-card__label {
 	display: block;
 	font-size: 22rpx;
 	font-weight: 700;
 	letter-spacing: 2rpx;
-	color: #8f8570;
+	color: #958569;
 }
 
-.settings-summary-card__title {
-	display: block;
+.settings-account-card__main {
+	display: flex;
+	align-items: center;
+	gap: 22rpx;
 	margin-top: 14rpx;
-	font-size: 34rpx;
+}
+
+.settings-account-card__avatar {
+	width: 92rpx;
+	height: 92rpx;
+	border-radius: 28rpx;
+	background: linear-gradient(160deg, rgba(255, 227, 133, 0.95) 0%, rgba(255, 205, 87, 0.92) 100%);
+	box-shadow: 0 14rpx 28rpx rgba(236, 184, 61, 0.18);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.settings-account-card__avatar-text {
+	font-size: 38rpx;
+	font-weight: 800;
+	color: #5f4300;
+}
+
+.settings-account-card__copy {
+	flex: 1;
+	min-width: 0;
+}
+
+.settings-account-card__status {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 8rpx;
+	padding: 10rpx 14rpx;
+	border-radius: 999rpx;
+	font-size: 20rpx;
+	font-weight: 700;
+}
+
+.settings-account-card__status--online {
+	background: rgba(34, 191, 115, 0.12);
+	color: #169456;
+}
+
+.settings-account-card__status--offline {
+	background: rgba(143, 133, 112, 0.12);
+	color: #8d8069;
+}
+
+.settings-account-card__status-dot {
+	width: 10rpx;
+	height: 10rpx;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.settings-account-card__title {
+	display: block;
+	font-size: 36rpx;
 	font-weight: 700;
 	line-height: 1.25;
 	color: #1f1f1f;
 }
 
-.settings-summary-card__desc {
+.settings-account-card__desc {
 	display: block;
-	margin-top: 10rpx;
+	margin-top: 8rpx;
 	font-size: 24rpx;
 	line-height: 1.6;
 	color: var(--parent-subtext);
 }
 
-.settings-list-card {
-	margin-top: 28rpx;
-	padding: 0 18rpx;
-	overflow: hidden;
+.settings-action-card {
+	margin-top: 22rpx;
+	padding: 0 20rpx;
 }
 
 .settings-item {
@@ -279,11 +369,33 @@ function goBack() {
 	align-items: center;
 	justify-content: space-between;
 	gap: 18rpx;
-	min-height: 108rpx;
+	min-height: 124rpx;
 }
 
 .settings-item--disabled {
 	opacity: 0.46;
+}
+
+.settings-item__icon-wrap {
+	flex-shrink: 0;
+}
+
+.settings-item__icon {
+	width: 72rpx;
+	height: 72rpx;
+	border-radius: 22rpx;
+	background: linear-gradient(160deg, #ffb7ab 0%, #ff7b66 100%);
+	box-shadow: 0 14rpx 26rpx rgba(255, 122, 102, 0.16);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.settings-item__icon-mark {
+	font-size: 34rpx;
+	font-weight: 800;
+	color: #ffffff;
+	line-height: 1;
 }
 
 .settings-item__copy {
@@ -301,28 +413,65 @@ function goBack() {
 
 .settings-item__desc {
 	display: block;
-	margin-top: 10rpx;
-	font-size: 22rpx;
+	margin-top: 8rpx;
+	font-size: 23rpx;
 	line-height: 1.6;
 	color: var(--parent-subtext);
 }
 
 .settings-item__arrow {
-	color: #bbb29f;
-	font-size: 30rpx;
+	color: #c5af9f;
+	font-size: 38rpx;
 	flex-shrink: 0;
 }
 
-.settings-tip-card {
-	margin-top: 20rpx;
-	padding: 0 6rpx;
+.settings-note-card {
+	margin-top: 22rpx;
+	padding: 24rpx;
 }
 
-.settings-tip-card__text {
+.settings-note-card__title {
 	display: block;
+	font-size: 30rpx;
+	font-weight: 700;
+	line-height: 1.35;
+	color: #22211f;
+}
+
+.settings-note-card__item {
+	display: flex;
+	align-items: center;
+	gap: 16rpx;
+	margin-top: 18rpx;
+}
+
+.settings-note-card__dot {
+	width: 34rpx;
+	height: 34rpx;
+	border-radius: 50%;
+	background: rgba(255, 214, 10, 0.16);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 20rpx;
+	font-weight: 800;
+	color: #9b7600;
+	flex-shrink: 0;
+}
+
+.settings-note-card__text {
+	flex: 1;
+	font-size: 23rpx;
+	line-height: 1.6;
+	color: #786e60;
+}
+
+.settings-note-card__tip {
+	display: block;
+	margin-top: 18rpx;
 	font-size: 22rpx;
-	line-height: 1.7;
-	color: #8d8069;
+	line-height: 1.6;
+	color: #938774;
 }
 
 .settings-modal-mask {
@@ -332,23 +481,22 @@ function goBack() {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	padding: 0 52rpx;
+	padding: 0 44rpx;
 	z-index: 90;
 }
 
 .settings-modal {
 	width: 100%;
-	border-radius: 34rpx;
+	border-radius: 32rpx;
 	background: rgba(255, 255, 255, 0.98);
-	overflow: hidden;
+	padding: 40rpx 30rpx 30rpx;
 	box-shadow: 0 34rpx 80rpx rgba(41, 31, 10, 0.2);
 }
 
 .settings-modal__title {
 	display: block;
-	padding: 42rpx 36rpx 0;
 	text-align: center;
-	font-size: 40rpx;
+	font-size: 38rpx;
 	font-weight: 700;
 	line-height: 1.3;
 	color: #2b2b2b;
@@ -356,17 +504,17 @@ function goBack() {
 
 .settings-modal__desc {
 	display: block;
-	padding: 24rpx 46rpx 40rpx;
+	margin-top: 18rpx;
 	text-align: center;
-	font-size: 27rpx;
+	font-size: 25rpx;
 	line-height: 1.65;
 	color: #8a8477;
 }
 
 .settings-modal__actions {
 	display: flex;
-	align-items: stretch;
-	border-top: 1rpx solid rgba(232, 227, 218, 0.9);
+	gap: 18rpx;
+	margin-top: 26rpx;
 }
 
 .settings-modal__action {
@@ -374,18 +522,23 @@ function goBack() {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	min-height: 104rpx;
-	font-size: 30rpx;
+	min-height: 88rpx;
+	border-radius: 26rpx;
+	font-size: 29rpx;
 	font-weight: 700;
 	color: #232323;
 }
 
-.settings-modal__action + .settings-modal__action {
-	border-left: 1rpx solid rgba(232, 227, 218, 0.9);
+.settings-modal__action--danger {
+	background: linear-gradient(160deg, #ff8f79 0%, #ff6d57 100%);
+	box-shadow: 0 18rpx 34rpx rgba(255, 122, 102, 0.2);
+	color: #ffffff;
 }
 
-.settings-modal__action--danger {
-	color: #ff5f52;
+.settings-modal__action--secondary {
+	border: 1rpx solid rgba(232, 227, 218, 0.95);
+	background: rgba(255, 255, 255, 0.98);
+	color: #6d6559;
 }
 
 .settings-modal__action--disabled {

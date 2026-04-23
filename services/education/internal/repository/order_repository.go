@@ -37,6 +37,23 @@ type approvalRegistrationRule struct {
 	DiscountPrice         float64 `json:"discountPrice"`
 }
 
+type PayOrderResult struct {
+	OrderID                                  int64
+	PreviousStatus                           int
+	CurrentStatus                            int
+	ShouldSendCoursePurchaseSuccessNotifyMsg bool
+}
+
+type WeChatOfficialCoursePurchaseNotificationDetail struct {
+	OrderID      int64
+	OrderNumber  string
+	StudentID    int64
+	StudentName  string
+	OrderAmount  float64
+	PurchaseTime *time.Time
+	CourseNames  []string
+}
+
 func (repo *Repository) PageOrders(ctx context.Context, instID int64, query model.OrderManageQueryDTO) (model.OrderManageResultVO, error) {
 	current := query.PageRequestModel.PageIndex
 	size := query.PageRequestModel.PageSize
@@ -1083,6 +1100,58 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 	item.PaymentRecords, _ = repo.getOrderPaymentRecords(ctx, oid)
 	item.ApprovalInfo, _ = repo.getOrderApprovalInfo(ctx, oid)
 	return item, nil
+}
+
+func (repo *Repository) GetWeChatOfficialCoursePurchaseNotificationDetail(ctx context.Context, instID, orderID int64) (WeChatOfficialCoursePurchaseNotificationDetail, error) {
+	row := repo.db.QueryRowContext(ctx, `
+		SELECT
+			so.id,
+			IFNULL(so.order_number, ''),
+			so.student_id,
+			IFNULL(s.stu_name, ''),
+			IFNULL(so.order_real_amount, 0),
+			COALESCE(
+				(
+					SELECT MAX(COALESCE(pd.pay_time, pd.create_time))
+					FROM sale_order_pay_detail pd
+					WHERE pd.order_id = so.id AND pd.del_flag = 0
+				),
+				so.update_time,
+				so.deal_date,
+				so.create_time
+			)
+		FROM sale_order so
+		LEFT JOIN inst_student s ON s.id = so.student_id AND s.del_flag = 0
+		WHERE so.del_flag = 0 AND so.inst_id = ? AND so.id = ?
+		LIMIT 1
+	`, instID, orderID)
+
+	var (
+		detail       WeChatOfficialCoursePurchaseNotificationDetail
+		purchaseTime sql.NullTime
+	)
+	if err := row.Scan(
+		&detail.OrderID,
+		&detail.OrderNumber,
+		&detail.StudentID,
+		&detail.StudentName,
+		&detail.OrderAmount,
+		&purchaseTime,
+	); err != nil {
+		return WeChatOfficialCoursePurchaseNotificationDetail{}, err
+	}
+	detail.OrderNumber = strings.TrimSpace(detail.OrderNumber)
+	detail.StudentName = strings.TrimSpace(detail.StudentName)
+	if purchaseTime.Valid {
+		value := purchaseTime.Time
+		detail.PurchaseTime = &value
+	}
+	courseNames, err := repo.getOrderCourseNames(ctx, orderID)
+	if err != nil {
+		return WeChatOfficialCoursePurchaseNotificationDetail{}, err
+	}
+	detail.CourseNames = courseNames
+	return detail, nil
 }
 
 func (repo *Repository) getOrderPaidAmount(ctx context.Context, orderID int64) (float64, error) {
@@ -2208,28 +2277,33 @@ func (repo *Repository) CreateOrder(ctx context.Context, instID, operatorID int6
 	return orderID, nil
 }
 
-func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, dto model.PayOrderDTO) error {
+func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, dto model.PayOrderDTO) (PayOrderResult, error) {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return PayOrderResult{}, err
 	}
 	defer tx.Rollback()
 
 	var orderRealAmount float64
 	var orderStatus int
 	var orderSource int
+	var orderType int
 	var studentID int64
 	var applicantID int64
 	if err := tx.QueryRowContext(ctx, `
-		SELECT IFNULL(order_real_amount, 0), order_status, IFNULL(order_source, 0), student_id, IFNULL(create_id, 0)
+		SELECT IFNULL(order_real_amount, 0), order_status, IFNULL(order_source, 0), IFNULL(order_type, 0), student_id, IFNULL(create_id, 0)
 		FROM sale_order
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 		LIMIT 1
-	`, dto.OrderID, instID).Scan(&orderRealAmount, &orderStatus, &orderSource, &studentID, &applicantID); err != nil {
-		return err
+	`, dto.OrderID, instID).Scan(&orderRealAmount, &orderStatus, &orderSource, &orderType, &studentID, &applicantID); err != nil {
+		return PayOrderResult{}, err
 	}
 	if orderStatus != model.OrderStatusPendingPayment && orderStatus != model.OrderStatusCompleted {
-		return fmt.Errorf("订单状态异常")
+		return PayOrderResult{}, fmt.Errorf("订单状态异常")
+	}
+	payResult := PayOrderResult{
+		OrderID:        dto.OrderID,
+		PreviousStatus: orderStatus,
 	}
 	positivePayAccounts := make([]model.PayAccountDTO, 0, len(dto.PayAccounts))
 	actualPayAmount := 0.0
@@ -2242,21 +2316,21 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 	}
 	paidBefore, err := repo.getOrderPaidAmount(ctx, dto.OrderID)
 	if err != nil {
-		return err
+		return PayOrderResult{}, err
 	}
 	hasRechargeExpend, err := repo.hasPendingRechargeAccountOrderExpendTx(ctx, tx, instID, dto.OrderID)
 	if err != nil {
-		return err
+		return PayOrderResult{}, err
 	}
 	if actualPayAmount <= 0 && !(orderRealAmount <= paidBefore+1e-9 && hasRechargeExpend) {
-		return fmt.Errorf("支付金额不能小于0")
+		return PayOrderResult{}, fmt.Errorf("支付金额不能小于0")
 	}
 	if paidBefore+actualPayAmount > orderRealAmount {
-		return fmt.Errorf("支付金额不能大于订单金额")
+		return PayOrderResult{}, fmt.Errorf("支付金额不能大于订单金额")
 	}
 
 	for _, item := range positivePayAccounts {
-		result, err := tx.ExecContext(ctx, `
+		execResult, err := tx.ExecContext(ctx, `
 			INSERT INTO sale_order_pay_detail (
 				uuid, version, inst_id, order_id, amount_id, pay_method, pay_amount, pay_time, payment_voucher,
 				create_id, create_time, update_id, update_time, del_flag
@@ -2275,14 +2349,14 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 			operatorID,
 		)
 		if err != nil {
-			return err
+			return PayOrderResult{}, err
 		}
-		paymentDetailID, err := result.LastInsertId()
+		paymentDetailID, err := execResult.LastInsertId()
 		if err != nil {
-			return err
+			return PayOrderResult{}, err
 		}
 		if err := repo.upsertOrderPaymentLedgerTx(ctx, tx, instID, paymentDetailID); err != nil {
-			return err
+			return PayOrderResult{}, err
 		}
 	}
 
@@ -2292,17 +2366,17 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 		if !approved {
 			approved, err = repo.insertApprovalRecordTx(ctx, tx, instID, dto.OrderID, studentID, applicantID)
 			if err != nil {
-				return err
+				return PayOrderResult{}, err
 			}
 			newStatus = model.OrderStatusApproving
 		}
 		if approved {
 			if err := repo.completeLinkedRechargeAccountOrderExpendTx(ctx, tx, instID, operatorID, dto.OrderID); err != nil {
-				return err
+				return PayOrderResult{}, err
 			}
 			newStatus = model.OrderStatusCompleted
 			if err := repo.completeOrderRegistrationTx(ctx, tx, instID, operatorID, dto.OrderID, studentID, orderSource); err != nil {
-				return err
+				return PayOrderResult{}, err
 			}
 		}
 	}
@@ -2312,9 +2386,17 @@ func (repo *Repository) PayOrder(ctx context.Context, instID, operatorID int64, 
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`, newStatus, operatorID, dto.OrderID, instID)
 	if err != nil {
-		return err
+		return PayOrderResult{}, err
 	}
-	return tx.Commit()
+	payResult.CurrentStatus = newStatus
+	payResult.ShouldSendCoursePurchaseSuccessNotifyMsg =
+		orderStatus == model.OrderStatusPendingPayment &&
+			newStatus != model.OrderStatusPendingPayment &&
+			orderType == model.OrderTypeRegistrationRenewal
+	if err := tx.Commit(); err != nil {
+		return PayOrderResult{}, err
+	}
+	return payResult, nil
 }
 
 func shouldSkipRegistrationApproval(orderSource int) bool {

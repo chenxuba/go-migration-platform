@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"go-migration-platform/pkg/logx"
 	"go-migration-platform/services/education/internal/model"
 )
 
@@ -324,6 +325,10 @@ func (svc *Service) CreateOrder(userID int64, dto model.CreateOrderDTO) (int64, 
 }
 
 func (svc *Service) PayOrder(userID int64, dto model.PayOrderDTO) error {
+	return svc.payOrder(userID, dto, true)
+}
+
+func (svc *Service) payOrder(userID int64, dto model.PayOrderDTO, sendCoursePurchaseSuccessNotifyMsg bool) error {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -341,7 +346,22 @@ func (svc *Service) PayOrder(userID int64, dto model.PayOrderDTO) error {
 		}
 		return err
 	}
-	return svc.repo.PayOrder(context.Background(), instID, instUserID, dto)
+	result, err := svc.repo.PayOrder(context.Background(), instID, instUserID, dto)
+	if err != nil {
+		return err
+	}
+	if sendCoursePurchaseSuccessNotifyMsg && result.ShouldSendCoursePurchaseSuccessNotifyMsg {
+		if notifyErr := svc.dispatchCoursePurchaseSuccessNotifications(context.Background(), instID, result.OrderID); notifyErr != nil {
+			logx.Error("pay order course purchase template message dispatch failed", logx.Entry{
+				"instId":     instID,
+				"userId":     userID,
+				"orderId":    result.OrderID,
+				"templateId": weChatOfficialTemplateIDCoursePurchaseSuccess,
+				"error":      notifyErr.Error(),
+			})
+		}
+	}
+	return nil
 }
 
 func (svc *Service) GetRegistrationListPage(userID int64, query model.RegistrationListQueryDTO) (model.RegistrationListResultVO, error) {

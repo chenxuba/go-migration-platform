@@ -2,8 +2,10 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
+	"go-migration-platform/services/education/internal/repository"
 )
 
 func TestBuildWeChatOfficialCourseConsumeCompleteTemplateRequest(t *testing.T) {
@@ -70,6 +72,12 @@ func TestBuildWeChatOfficialCourseConsumeCompleteTemplateRequest(t *testing.T) {
 func TestTruncateRunes(t *testing.T) {
 	if got := truncateRunes("消耗1课时，剩余22课时", 5); got != "消耗1课时" {
 		t.Fatalf("unexpected truncate result: %s", got)
+	}
+}
+
+func TestTruncateRunesWithEllipsis(t *testing.T) {
+	if got := truncateRunesWithEllipsis("一对一个训课程语言感统训练", 8); got != "一对一个训..." {
+		t.Fatalf("unexpected truncate with ellipsis result: %s", got)
 	}
 }
 
@@ -168,6 +176,66 @@ func TestBuildWeChatOfficialCourseConsumeCourseName(t *testing.T) {
 		SourceName: "张一鸣一对一个训课",
 	}); got != "课程" {
 		t.Fatalf("expected default course name fallback, got %s", got)
+	}
+}
+
+func TestBuildWeChatOfficialCoursePurchaseSuccessTemplateRequest(t *testing.T) {
+	purchaseTime := time.Date(2026, 4, 23, 15, 4, 0, 0, noticeTimeLocation())
+
+	request, err := (&Service{}).buildWeChatOfficialCoursePurchaseSuccessTemplateRequest(
+		"openid-1",
+		repository.WeChatOfficialCoursePurchaseNotificationDetail{
+			OrderID:      88,
+			StudentID:    202,
+			StudentName:  "张一鸣",
+			OrderAmount:  1280,
+			PurchaseTime: &purchaseTime,
+			CourseNames:  []string{"一对一个训课", "感统训练"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	if request.TemplateID != weChatOfficialTemplateIDCoursePurchaseSuccess {
+		t.Fatalf("expected template id %s, got %s", weChatOfficialTemplateIDCoursePurchaseSuccess, request.TemplateID)
+	}
+	if request.ClientMessageID != "course_purchase_success_88" {
+		t.Fatalf("unexpected client message id: %s", request.ClientMessageID)
+	}
+	if got := request.Data[weChatOfficialCoursePurchaseKeywordCourseName].Value; got != "一对一个训课、感统训练" {
+		t.Fatalf("unexpected course name: %s", got)
+	}
+	if got := request.Data[weChatOfficialCoursePurchaseKeywordStudentName].Value; got != "张一鸣" {
+		t.Fatalf("unexpected student name: %s", got)
+	}
+	if got := request.Data[weChatOfficialCoursePurchaseKeywordOrderAmount].Value; got != "¥1280.00" {
+		t.Fatalf("unexpected order amount: %s", got)
+	}
+	if got := request.Data[weChatOfficialCoursePurchaseKeywordPurchaseTime].Value; got != "2026-04-23 15:04" {
+		t.Fatalf("unexpected purchase time: %s", got)
+	}
+	if request.MiniProgram != nil {
+		t.Fatalf("expected no miniprogram jump for purchase success template")
+	}
+}
+
+func TestBuildWeChatOfficialCoursePurchaseSuccessTemplateRequestTruncatesCourseName(t *testing.T) {
+	request, err := (&Service{}).buildWeChatOfficialCoursePurchaseSuccessTemplateRequest(
+		"openid-1",
+		repository.WeChatOfficialCoursePurchaseNotificationDetail{
+			OrderID:     99,
+			StudentName: "张一鸣",
+			OrderAmount: 99,
+			CourseNames: []string{"一对一个训课程语言感统训练专注力提升表达理解课程", "一对一个训课程语言感统训练专注力提升表达理解课程", "专注力训练"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+
+	if got := request.Data[weChatOfficialCoursePurchaseKeywordCourseName].Value; got != "一对一个训课程语言感统训练专注力提..." {
+		t.Fatalf("unexpected truncated course name: %s", got)
 	}
 }
 
