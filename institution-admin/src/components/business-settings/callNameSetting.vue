@@ -184,22 +184,33 @@ const orderExampleRows = [
                 按课时收费
               </div>
               <div class="settings-row__content">
-                <div class="settings-inline">
-                  <span>默认记录课时：创建班级 / 1 对 1 时仍可编辑调整</span>
+                <div class="settings-inline settings-inline--heading">
+                  按“课时购买数”定价，以“课时”为单位计费
                 </div>
-                <div class="settings-inline settings-inline--muted">
-                  <span>按固定课时记录：默认记录学员 <span class="text-primary">1</span> 课时，教师 <span class="text-primary">0</span> 课时</span>
-                  <a-button type="link"  class="settings-link">
-                    编辑
-                  </a-button>
-                </div>
-                <div class="settings-switch-line">
-                  <span>学员请假正常记录：</span>
-                  <a-switch v-model:checked="switches.leaveNormalByHour"  />
-                </div>
-                <div class="settings-switch-line">
-                  <span>学员旷课正常记录：</span>
-                  <a-switch v-model:checked="switches.absentNormalByHour"  />
+                <div class="rule-box">
+                  <div class="settings-inline">
+                    <span><span class="settings-switch-line__label">默认记录课时：</span>创建班级 / 1 对 1 时仍可编辑调整</span>
+                  </div>
+                  <div class="settings-inline settings-inline--muted">
+                    <span>按固定课时记录：默认记录学员 <span class="text-primary">1</span> 课时，教师 <span class="text-primary">0</span> 课时</span>
+                    <a-button type="link"  class="settings-link">
+                      编辑
+                    </a-button>
+                  </div>
+                  <div class="settings-switch-line">
+                    <span class="settings-switch-line__label">学员请假正常记录：</span>
+                    <a-switch v-model:checked="switches.leaveNormalByHour"  />
+                  </div>
+                  <div class="settings-desc">
+                    开启后，学员请假正常记录课时
+                  </div>
+                  <div class="settings-switch-line">
+                    <span class="settings-switch-line__label">学员旷课正常记录：</span>
+                    <a-switch v-model:checked="switches.absentNormalByHour"  />
+                  </div>
+                  <div class="settings-desc">
+                    开启后，学员旷课正常记录课时
+                  </div>
                 </div>
               </div>
             </div>
@@ -212,13 +223,21 @@ const orderExampleRows = [
                 <div class="settings-inline">
                   按“天 / 自然月 / 自然年”定价，以“天”为单位计费，每日自动课消。
                 </div>
-                <div class="settings-switch-line">
-                  <span>学员补课：</span>
-                  <a-switch v-model:checked="switches.periodMakeup"  />
-                </div>
-                <div class="settings-switch-line">
-                  <span>课消为 0 天后自动结课：</span>
-                  <a-switch v-model:checked="switches.periodAutoEnd"  />
+                <div class="rule-box">
+                  <div class="settings-switch-line">
+                    <span class="settings-switch-line__label">学员补课：</span>
+                    <a-switch v-model:checked="switches.periodMakeup"  />
+                  </div>
+                  <div class="settings-desc">
+                    开启后，按时段收费的课程，支持缺课学员补课
+                  </div>
+                  <div class="settings-switch-line">
+                    <span class="settings-switch-line__label">课消为 0 天后自动结课：</span>
+                    <a-switch v-model:checked="switches.periodAutoEnd"  />
+                  </div>
+                  <div class="settings-desc">
+                    开启后，当课程账户每日自动课消剩余为 0 天后，次日自动结课
+                  </div>
                 </div>
               </div>
             </div>
@@ -228,26 +247,43 @@ const orderExampleRows = [
                 按金额收费
               </div>
               <div class="settings-row__content">
-                <div class="settings-inline">
-                  <span>扣费规则：</span>
-                  <a-button type="link"  class="settings-link">
-                    编辑
-                  </a-button>
+                <div class="settings-inline settings-inline--heading">
+                  按“充值金额”定价，每次点名扣除对应金额数
                 </div>
-                <div class="settings-desc">
-                  默认扣费：<span class="text-primary">100</span> 元（仅对未设置单课扣费的课程有效）
-                </div>
-                <div class="settings-switch-line">
-                  <span>学员请假正常记录：</span>
-                  <a-switch v-model:checked="switches.amountLeaveNormal"  />
-                </div>
-                <div class="settings-switch-line">
-                  <span>学员旷课正常记录：</span>
-                  <a-switch v-model:checked="switches.amountAbsentNormal"  />
-                </div>
-                <div class="settings-switch-line">
-                  <span>学员补课：</span>
-                  <a-switch v-model:checked="switches.amountMakeup"  />
+                <div class="rule-box">
+                  <div class="settings-inline">
+                    <span class="settings-switch-line__label">扣费规则：</span>
+                    <a-button type="link"  class="settings-link">
+                      编辑
+                    </a-button>
+                  </div>
+                  <div class="settings-desc">
+                    默认扣费：<span class="text-primary">100</span> 元（仅对未设置单课扣费的课程有效）
+                  </div>
+                  <div class="settings-desc">
+                    单课扣费：已设置 <span class="text-primary">0</span> 门课程，点此上方编辑操作对单个课程进行扣费金额设置
+                  </div>
+                  <div class="settings-switch-line">
+                    <span class="settings-switch-line__label">学员请假正常记录：</span>
+                    <a-switch v-model:checked="switches.amountLeaveNormal"  />
+                  </div>
+                  <div class="settings-desc">
+                    开启后，学员请假正常记录金额
+                  </div>
+                  <div class="settings-switch-line">
+                    <span class="settings-switch-line__label">学员旷课正常记录：</span>
+                    <a-switch v-model:checked="switches.amountAbsentNormal"  />
+                  </div>
+                  <div class="settings-desc">
+                    开启后，学员旷课正常记录金额
+                  </div>
+                  <div class="settings-switch-line">
+                    <span class="settings-switch-line__label">学员补课：</span>
+                    <a-switch v-model:checked="switches.amountMakeup"  />
+                  </div>
+                  <div class="settings-desc">
+                    开启后，按金额收费的课程，支持缺课学员补课
+                  </div>
                 </div>
               </div>
             </div>
@@ -526,6 +562,13 @@ const orderExampleRows = [
   color: #333;
 }
 
+.settings-inline--heading {
+  margin-bottom: 12px;
+  color: #1f2937;
+  font-size: 14px;
+  line-height: 22px;
+}
+
 .settings-inline--block {
   margin-top: 12px;
 }
@@ -539,19 +582,33 @@ const orderExampleRows = [
   font-size: 14px;
 }
 
+.settings-switch-line__label {
+  color: #1f2937;
+  font-weight: 600;
+}
+
 .settings-link {
   padding: 0 4px;
   font-size: 14px;
 }
 
 .text-primary {
-  color:#333;
+  color: var(--pro-ant-color-primary, #1677ff);
 }
 
 .example-card {
   margin-top: 14px;
   padding: 14px;
   border: 1px solid #edf0f5;
+  background: #fafafa;
+}
+
+.rule-box {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #edf0f5;
+  background: #fafafa;
+  border-radius: 8px;
 }
 
 .example-card__title {
