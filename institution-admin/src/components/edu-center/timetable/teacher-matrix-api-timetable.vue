@@ -1498,10 +1498,11 @@ const matrixCanvasEvents = computed(() =>
 )
 
 const matrixCanvasMarks = computed(() =>
-  hourMarks.value.map(mark => ({
+  hourMarks.value.map((mark, index) => ({
     key: String(mark),
     top: minuteOffset(mark),
     label: formatClock(mark),
+    muted: index !== 0 && isMutedTimeLabel(mark),
   })),
 )
 
@@ -1539,6 +1540,12 @@ const showCurrentTimeLine = computed(() => {
   }
   return displayDates.value.some(d => d.format('YYYY-MM-DD') === todayKey.value)
 })
+
+function isMutedTimeLabel(mark: number) {
+  if (!showCurrentTimeLine.value)
+    return false
+  return Math.abs(mark - currentTimeMinutes.value) <= 20
+}
 
 function openScheduleEdit(event: CellSchedule) {
   const schedule = event.raw
