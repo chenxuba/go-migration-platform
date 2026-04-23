@@ -25,27 +25,39 @@
 			</view>
 
 			<view v-if="isAuthenticated" class="profile-block">
-				<text class="profile-block__title">{{ studentBlockTitle }}</text>
+				<view class="profile-block__head">
+					<text class="profile-block__title">{{ studentBlockTitle }}</text>
+					<text v-if="students.length" class="profile-block__count">{{ students.length }} 位</text>
+				</view>
 
 				<template v-if="students.length">
-					<view
-						v-for="student in students"
-						:key="student.id"
-						class="parent-card profile-student-card"
-					>
-						<view class="profile-student-card__main">
-							<view class="profile-student-card__avatar" :style="{ background: student.avatarColor }">
-								<image v-if="student.avatarUrl" class="profile-student-card__avatar-image" :src="student.avatarUrl" mode="aspectFill"></image>
-								<text v-else>{{ student.name.slice(0, 1) }}</text>
-							</view>
-							<view class="profile-student-card__copy">
-								<view class="profile-student-card__headline">
-									<text class="profile-student-card__name">{{ student.name }}</text>
+					<view class="profile-student-list">
+						<view
+							v-for="student in students"
+							:key="student.id"
+							class="parent-card profile-student-card"
+						>
+							<view class="profile-student-card__main">
+								<view class="profile-student-card__avatar-shell">
+									<view class="profile-student-card__avatar" :style="{ background: student.avatarColor }">
+										<image v-if="student.avatarUrl" class="profile-student-card__avatar-image" :src="student.avatarUrl" mode="aspectFill"></image>
+										<text v-else>{{ student.name.slice(0, 1) }}</text>
+									</view>
 								</view>
-								<text class="profile-student-card__campus">{{ simplifyCampusName(student.campusName) }}</text>
-								<view class="profile-student-card__meta">
-									<text class="profile-student-card__tag profile-student-card__tag--warm">{{ student.relation }}</text>
-									<text class="profile-student-card__tag profile-student-card__tag--blue">{{ student.classLabel }}</text>
+								<view class="profile-student-card__copy">
+									<view class="profile-student-card__headline">
+										<text class="profile-student-card__name">{{ student.name }}</text>
+										<view class="profile-student-card__badge-group">
+											<text class="profile-student-card__tag profile-student-card__tag--warm">{{ student.relation }}</text>
+											<text
+												class="profile-student-card__tag"
+												:class="studentStatusClass(student.classLabel)"
+											>
+												{{ student.classLabel }}
+											</text>
+										</view>
+									</view>
+									<text class="profile-student-card__campus">{{ simplifyCampusName(student.campusName) }}</text>
 								</view>
 							</view>
 						</view>
@@ -168,6 +180,20 @@ function simplifyCampusName(name = '') {
 		return '-'
 	}
 	return text.replace(/\s*(总校区|控江校区)\s*$/u, '').trim() || text
+}
+
+function studentStatusClass(label = '') {
+	const text = `${label || ''}`.trim()
+	if (text.includes('在读')) {
+		return 'profile-student-card__tag--green'
+	}
+	if (text.includes('意向')) {
+		return 'profile-student-card__tag--blue'
+	}
+	if (text.includes('历史')) {
+		return 'profile-student-card__tag--slate'
+	}
+	return 'profile-student-card__tag--blue'
 }
 
 function completeMockAuth() {
@@ -388,31 +414,70 @@ function inviteFamily() {
 	color: #1f1f1f;
 }
 
-.profile-student-card {
+.profile-block__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16rpx;
+	padding: 0 4rpx;
+}
+
+.profile-block__count {
+	flex-shrink: 0;
+	padding: 8rpx 14rpx;
+	border-radius: 999rpx;
+	background: rgba(255, 214, 10, 0.12);
+	font-size: 20rpx;
+	font-weight: 700;
+	color: #8a6f0b;
+}
+
+.profile-student-list {
+	display: flex;
+	flex-direction: column;
+	gap: 16rpx;
 	margin-top: 16rpx;
-	padding: 20rpx 18rpx;
+}
+
+.profile-student-card {
+	padding: 20rpx 20rpx;
+	background:
+		radial-gradient(circle at 100% 0%, rgba(255, 232, 183, 0.12), transparent 26%),
+		linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(255, 251, 245, 0.98) 100%);
 }
 
 .profile-student-card__main {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	gap: 16rpx;
 }
 
+.profile-student-card__avatar-shell {
+	width: 76rpx;
+	height: 76rpx;
+	border-radius: 24rpx;
+	background: linear-gradient(180deg, #f7fbff 0%, #eef5ff 100%);
+	box-shadow:
+		inset 0 0 0 1rpx rgba(255, 255, 255, 0.92),
+		0 10rpx 22rpx rgba(124, 150, 198, 0.1);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
 .profile-student-card__avatar {
-	width: 72rpx;
-	height: 72rpx;
-	border-radius: 22rpx;
+	width: 66rpx;
+	height: 66rpx;
+	border-radius: 20rpx;
 	overflow: hidden;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	color: #ffffff;
-	font-size: 26rpx;
+	font-size: 24rpx;
 	font-weight: 700;
 	box-shadow: 0 10rpx 22rpx rgba(71, 109, 178, 0.14);
-	flex-shrink: 0;
-	margin-top: 4rpx;
 }
 
 .profile-student-card__avatar-image {
@@ -429,51 +494,71 @@ function inviteFamily() {
 .profile-student-card__headline {
 	display: flex;
 	align-items: center;
-	gap: 10rpx;
+	gap: 12rpx;
+	min-width: 0;
 }
 
 .profile-student-card__name {
-	font-size: 29rpx;
+	flex: 1;
+	min-width: 0;
+	font-size: 30rpx;
 	font-weight: 700;
-	line-height: 1.35;
+	line-height: 1.2;
 	color: #242424;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.profile-student-card__badge-group {
+	display: flex;
+	align-items: center;
+	gap: 8rpx;
+	flex-shrink: 0;
 }
 
 .profile-student-card__campus {
 	display: block;
-	margin-top: 10rpx;
+	margin-top: 6rpx;
 	font-size: 22rpx;
-	line-height: 1.5;
+	line-height: 1.35;
 	color: var(--parent-subtext);
-}
-
-.profile-student-card__meta {
-	display: flex;
-	align-items: center;
-	gap: 10rpx;
-	margin-top: 14rpx;
-	flex-wrap: wrap;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .profile-student-card__tag {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	height: 38rpx;
-	padding: 0 14rpx;
+	height: 34rpx;
+	padding: 0 12rpx;
 	border-radius: 999rpx;
 	font-size: 18rpx;
-	font-weight: 600;
+	font-weight: 700;
+	flex-shrink: 0;
+	line-height: 1;
 }
 
 .profile-student-card__tag--warm {
-	background: rgba(255, 222, 75, 0.16);
-	color: #7d6200;
+	background: rgba(255, 222, 75, 0.15);
+	color: #866300;
 }
 
 .profile-student-card__tag--blue {
 	background: rgba(47, 134, 255, 0.12);
 	color: var(--parent-blue);
+}
+
+.profile-student-card__tag--green {
+	background: rgba(34, 191, 115, 0.14);
+	color: #169456;
+}
+
+.profile-student-card__tag--slate {
+	background: rgba(122, 116, 102, 0.12);
+	color: #6f6657;
 }
 
 .profile-state-card {
