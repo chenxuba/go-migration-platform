@@ -94,7 +94,7 @@ async function handleSubmit() {
     :keyboard="false"
     :closable="false"
     :mask-closable="false"
-    :width="640"
+    :width="560"
     destroy-on-close
     :confirm-loading="submitting"
     :body-style="{ maxHeight: '68vh', overflowY: 'auto', padding: '0' }"
@@ -113,47 +113,61 @@ async function handleSubmit() {
     <div class="default-class-time-modal__body">
       <div class="default-class-time-modal__notice">
         <InfoCircleFilled class="default-class-time-modal__notice-icon" />
-        <span>编辑后，不会影响已创建的班级和 1 对 1，后续新建时将按最新配置带出。</span>
+        <span>编辑后，不会影响已创建的班级和1对1</span>
       </div>
 
-      <a-form layout="vertical" class="default-class-time-modal__form">
-        <a-form-item label="课时记录方式" required>
-          <a-radio-group v-model:value="formState.defaultClassTimeRecordMode" class="custom-radio">
-            <a-radio :value="1">
-              按固定课时记录
-            </a-radio>
-            <a-radio :value="2">
-              按上课时长记录
-            </a-radio>
-          </a-radio-group>
-        </a-form-item>
+      <div class="default-class-time-modal__form">
+        <div class="default-class-time-modal__row">
+          <div class="default-class-time-modal__label">
+            <span class="default-class-time-modal__required">*</span>
+            <span>课时记录方式:</span>
+          </div>
+          <div class="default-class-time-modal__content default-class-time-modal__content--radio">
+            <a-radio-group v-model:value="formState.defaultClassTimeRecordMode" class="custom-radio">
+              <a-radio :value="1">
+                按固定课时记录
+              </a-radio>
+              <a-radio :value="2">
+                按上课时长记录
+              </a-radio>
+            </a-radio-group>
+          </div>
+        </div>
 
-        <a-form-item label="学员记录课时" required>
-          <div class="default-class-time-modal__input-row">
+        <div class="default-class-time-modal__row">
+          <div class="default-class-time-modal__label">
+            <span class="default-class-time-modal__required">*</span>
+            <span>学员记录课时:</span>
+          </div>
+          <div class="default-class-time-modal__content">
             <a-input-number
               v-model:value="formState.defaultStudentClassTime"
               :min="0"
               :precision="2"
               :controls="false"
-              style="width: 180px"
+              class="default-class-time-modal__input"
             />
             <span class="default-class-time-modal__unit">{{ classTimeUnitLabel }}</span>
           </div>
-        </a-form-item>
+        </div>
 
-        <a-form-item label="教师授课课时" required>
-          <div class="default-class-time-modal__input-row">
+        <div class="default-class-time-modal__row">
+          <div class="default-class-time-modal__label">
+            <span class="default-class-time-modal__required">*</span>
+            <span>教师授课课时:</span>
+          </div>
+          <div class="default-class-time-modal__content">
             <a-input-number
               v-model:value="formState.defaultTeacherClassTime"
               :min="0"
               :precision="2"
               :controls="false"
-              style="width: 180px"
+              class="default-class-time-modal__input"
             />
             <span class="default-class-time-modal__unit">{{ classTimeUnitLabel }}</span>
           </div>
-        </a-form-item>
-      </a-form>
+        </div>
+      </div>
     </div>
 
     <template #footer>
@@ -189,7 +203,7 @@ async function handleSubmit() {
 }
 
 .default-class-time-modal__body {
-  padding: 20px 24px 8px;
+  padding: 18px 20px 8px;
   background: #fff;
 }
 
@@ -197,11 +211,12 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 14px;
-  margin-bottom: 20px;
+  padding: 10px 12px;
+  margin-bottom: 18px;
   color: #1d4ed8;
   background: #edf4ff;
-  border-radius: 10px;
+  border-radius: 8px;
+  line-height: 22px;
 }
 
 .default-class-time-modal__notice-icon {
@@ -210,24 +225,64 @@ async function handleSubmit() {
 }
 
 .default-class-time-modal__form {
-  :deep(.ant-form-item) {
-    margin-bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-left: 10px;
+}
+
+.default-class-time-modal__row {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  column-gap: 4px;
+}
+
+.default-class-time-modal__label {
+  width: 136px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  color: #1f2329;
+  line-height: 22px;
+}
+
+.default-class-time-modal__required {
+  margin-right: 4px;
+  color: #f53f3f;
+}
+
+.default-class-time-modal__content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.default-class-time-modal__content--radio {
+  :deep(.ant-radio-group) {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: nowrap;
   }
 
-  :deep(.ant-form-item-label > label) {
-    font-weight: 600;
-    color: #1f2329;
+  :deep(.ant-radio-wrapper) {
+    margin-inline-start: 0;
+    white-space: nowrap;
   }
 }
 
-.default-class-time-modal__input-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+.default-class-time-modal__input {
+  width: 240px;
+  flex: 0 0 240px;
 }
 
 .default-class-time-modal__unit {
   color: #4e5969;
+  white-space: nowrap;
 }
 
 .custom-radio ::v-deep(.ant-radio-wrapper:hover .ant-radio),
