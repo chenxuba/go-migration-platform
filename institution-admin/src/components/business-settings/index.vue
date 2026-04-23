@@ -69,10 +69,6 @@ const settingsList = ref([
     path: '/student-attribute-settings',
   },
   {
-    title: '班级设置',
-    path: '/class-settings',
-  },
-  {
     title: '升期设置',
     status: { type: 'enabled', text: '已开启' },
     path: '/term-settings',

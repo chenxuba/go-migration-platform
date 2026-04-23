@@ -28,11 +28,6 @@ function onTabChange(key: string) {
           <CourseCategory />
         </div>
       </a-tab-pane>
-      <a-tab-pane key="class" tab="班级设置">
-        <div class="academic-settings-page__pane academic-settings-page__pane--placeholder">
-          <a-empty :image="simpleImage" description="页面建设中" />
-        </div>
-      </a-tab-pane>
       <a-tab-pane key="schedule" tab="排课设置">
         <div class="academic-settings-page__pane academic-settings-page__pane--placeholder">
           <a-empty :image="simpleImage" description="页面建设中" />
