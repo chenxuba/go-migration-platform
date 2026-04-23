@@ -306,6 +306,30 @@ func TestWeChatOfficialSendTemplateMessage(t *testing.T) {
 	}
 }
 
+func TestWeChatOfficialSendTemplateMessageRejectsEmptyKeywordValue(t *testing.T) {
+	client := newWeChatOfficialClient(WeChatOfficialConfig{
+		AppID:  "appid",
+		Secret: "secret",
+		Token:  "token",
+	})
+
+	err := client.sendTemplateMessage(context.Background(), weChatOfficialTemplateSendRequest{
+		ToUser:          "openid-subscribe",
+		TemplateID:      "tmpl-1",
+		ClientMessageID: "msg-1",
+		Data: map[string]weChatOfficialTemplateDataItem{
+			"thing6": {Value: "  "},
+			"thing2": {Value: "张三"},
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected empty keyword value to be rejected")
+	}
+	if !strings.Contains(err.Error(), "thing6") {
+		t.Fatalf("expected error to mention empty keyword field, got %v", err)
+	}
+}
+
 func TestWeChatOfficialSendTemplateMessageRetriesWithoutMiniProgramOnInvalidPagePath(t *testing.T) {
 	var payloads []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

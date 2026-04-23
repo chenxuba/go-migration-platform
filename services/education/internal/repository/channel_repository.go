@@ -292,7 +292,7 @@ func (repo *Repository) PageChannelPC(ctx context.Context, instID int64, query m
 		}
 	}
 
-	queryArgs := append(append([]any{}, args...), size, offset)
+	queryArgs := append(append([]any{}, args...), model.OrderStatusCompleted, size, offset)
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT c.id, IFNULL(c.uuid, ''), IFNULL(c.version, 0), IFNULL(c.channel_name, ''), c.category_id,
 		       IFNULL(cc.category_name, ''), IFNULL(c.is_disabled, 0), IFNULL(c.is_default, 0), IFNULL(c.remark, ''), c.create_time,
@@ -302,10 +302,12 @@ func (repo *Repository) PageChannelPC(ctx context.Context, instID int64, query m
 				   WHERE s.channel_id = c.id AND s.del_flag = 0
 		       ) AS invalid_count,
 		       (
-				   SELECT COUNT(*)
+				   SELECT COUNT(DISTINCT so.student_id)
 				   FROM sale_order so
 				   INNER JOIN inst_student s ON so.student_id = s.id AND s.channel_id = c.id
-				   WHERE so.del_flag = 0 AND so.inst_id = c.inst_id
+				   WHERE so.del_flag = 0
+				     AND so.inst_id = c.inst_id
+				     AND so.order_status = ?
 		       ) AS deal_transform_count
 		FROM inst_channel c
 		LEFT JOIN inst_channel_category cc ON cc.id = c.category_id

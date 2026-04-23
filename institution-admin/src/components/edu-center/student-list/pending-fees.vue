@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { DownOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import messageService from '@/utils/messageService'
@@ -7,10 +7,12 @@ import { pageGroupClassesApi } from '@/api/edu-center/group-class'
 import {
   getPendingRenewalStudentsPagedListApi,
   type PendingRenewalStudentItem,
+  sendPendingRenewalWechatReminderApi,
 } from '@/api/edu-center/student-list'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
 import { Sex, SexLabel } from '@/enums'
+import PendingRenewalMessageRecordDrawer from './pending-renewal-message-record-drawer.vue'
 
 const tipsText = '（规则：剩余课时<15 / 剩余天数<15 / 剩余金额<500元）'
 const displayArray = ['intentionCourse', 'className', 'classTeacher', 'currentStatus']
@@ -23,6 +25,9 @@ const dataSource = ref<PendingRenewalStudentItem[]>([])
 const classNameOptionsData = ref<Array<{ id: string, value: string }>>([])
 const selectedRowKeys = ref<string[]>([])
 const selectedRows = ref<PendingRenewalStudentItem[]>([])
+const messageRecordOpen = ref(false)
+const sendingWechatReminder = ref(false)
+const messageRecordDrawerRef = ref<InstanceType<typeof PendingRenewalMessageRecordDrawer> | null>(null)
 const summary = ref({
   total: 0,
   studentCount: 0,
@@ -106,6 +111,8 @@ const rowSelection = computed(() => ({
     selectedRows.value = rows
   },
 }))
+
+const selectedCount = computed(() => selectedRowKeys.value.length)
 
 function resetQueryState() {
   queryState.value.studentId = undefined
@@ -252,6 +259,63 @@ function getRemainingSubText(record: PendingRenewalStudentItem) {
   return ''
 }
 
+function handleMessageRecord() {
+  messageRecordOpen.value = true
+}
+
+async function handleWechatRemind() {
+  if (!selectedCount.value) {
+    messageService.warning('请先选择待发送的学员')
+    return
+  }
+  if (sendingWechatReminder.value)
+    return
+  sendingWechatReminder.value = true
+  try {
+    const res = await sendPendingRenewalWechatReminderApi({
+      tuitionAccountIds: selectedRowKeys.value,
+    })
+    if (res.code !== 200) {
+      throw new Error(res.message || '发送续费提醒失败')
+    }
+    const result = res.result
+    const successCount = Number(result?.successCount || 0)
+    const skippedCount = Number(result?.skippedCount || 0)
+    const failedCount = Number(result?.failedCount || 0)
+
+    if (successCount > 0) {
+      messageService.success(`已发送 ${successCount} 条微信提醒${skippedCount > 0 ? `，未关注跳过 ${skippedCount} 条` : ''}${failedCount > 0 ? `，失败 ${failedCount} 条` : ''}`)
+    }
+    else if (skippedCount > 0 || failedCount > 0) {
+      messageService.warning(`本次未成功发送${skippedCount > 0 ? `，未关注跳过 ${skippedCount} 条` : ''}${failedCount > 0 ? `，失败 ${failedCount} 条` : ''}`)
+    }
+    else {
+      messageService.info('本次没有可发送的续费提醒')
+    }
+
+    selectedRowKeys.value = []
+    selectedRows.value = []
+    messageRecordOpen.value = true
+    await nextTick()
+    await messageRecordDrawerRef.value?.getList?.()
+  }
+  catch (error: any) {
+    console.error('send pending renewal wechat reminder failed', error)
+    messageService.error(error?.message || '发送续费提醒失败')
+  }
+  finally {
+    sendingWechatReminder.value = false
+  }
+}
+
+function handleSmsRemind() {
+  if (!selectedCount.value) {
+    messageService.warning('请先选择待发送的学员')
+    return
+  }
+  messageService.info('短信提醒功能待接入')
+}
+
 async function getList(id?: string | number, type?: string) {
   loading.value = true
   try {
@@ -394,7 +458,7 @@ defineExpose({
             <span class="text-#0066ff">{{ tipsText }}</span>
           </div>
           <div class="edit flex">
-            <a-button class="mr-2">
+            <a-button class="mr-2" @click="handleMessageRecord">
               消息记录
             </a-button>
             <a-dropdown class="mr-2">
@@ -416,16 +480,16 @@ defineExpose({
             <a-dropdown class="mr-2">
               <template #overlay>
                 <a-menu>
-                  <a-menu-item key="1">
+                  <a-menu-item key="1" @click="handleWechatRemind">
                     微信提醒
                   </a-menu-item>
-                  <a-menu-item key="2">
+                  <a-menu-item key="2" @click="handleSmsRemind">
                     短信提醒
                   </a-menu-item>
                 </a-menu>
               </template>
-              <a-button>
-                批量发送续费提醒
+              <a-button :loading="sendingWechatReminder">
+                批量发送续费提醒{{ selectedCount > 0 ? `(${selectedCount})` : '' }}
                 <DownOutlined :style="{ fontSize: '10px' }" />
               </a-button>
             </a-dropdown>
@@ -504,6 +568,11 @@ defineExpose({
         </div>
       </div>
     </div>
+
+    <pending-renewal-message-record-drawer
+      ref="messageRecordDrawerRef"
+      v-model:open="messageRecordOpen"
+    />
   </div>
 </template>
 

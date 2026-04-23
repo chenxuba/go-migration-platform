@@ -139,6 +139,14 @@ function formatDateTime(value) {
   return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm:ss') : value
 }
 
+function formatDealTransformRate(value) {
+  const numericValue = Number(value || 0)
+  if (!numericValue)
+    return '0%'
+
+  return `${(numericValue * 100).toFixed(2).replace(/\.?0+$/, '')}%`
+}
+
 // 获取渠道列表
 async function getData(id, type) {
   loading.value = true
@@ -405,8 +413,7 @@ function handleAdjustChannel(record) {
             </template>
             <!-- 成交转化率 -->
             <template v-if="column.key === 'dealTransformRate'">
-              <span v-if="record.dealTransformRate"> {{ record.dealTransformRate }}</span>
-              <span v-if="!record.dealTransformRate" class="font800">0%</span>
+              <span>{{ formatDealTransformRate(record.dealTransformRate) }}</span>
             </template>
             <!-- 渠道分类 -->
             <template v-if="column.key === 'categoryName'">

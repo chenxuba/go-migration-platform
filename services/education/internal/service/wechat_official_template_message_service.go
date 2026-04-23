@@ -16,6 +16,7 @@ import (
 const (
 	weChatOfficialTemplateIDCourseConsumeComplete = "LZS6dGiiSBTAukYGupsFz1ef4M9L5JXFBZwgB6KQCzc"
 	weChatOfficialTemplateIDCoursePurchaseSuccess = "hVsMAzSnXR3K9YJlx2IRkHKB4dWEswFjqtGjscQhB3Y"
+	weChatOfficialTemplateIDPendingRenewalUnified = "QmehuPBOlI3ypdH2bO0g9FaXN-i0LgMrBLDX6xdeA-4"
 
 	weChatOfficialCourseConsumeKeywordLessonDetail = "thing10"
 	weChatOfficialCourseConsumeKeywordStudentName  = "thing17"
@@ -26,6 +27,12 @@ const (
 	weChatOfficialCoursePurchaseKeywordStudentName  = "thing7"
 	weChatOfficialCoursePurchaseKeywordOrderAmount  = "amount5"
 	weChatOfficialCoursePurchaseKeywordPurchaseTime = "time3"
+
+	weChatOfficialPendingRenewalKeywordStudentName = "thing2"
+	weChatOfficialPendingRenewalKeywordProjectName = "thing6"
+	weChatOfficialPendingRenewalKeywordCourseName  = "thing5"
+	weChatOfficialPendingRenewalKeywordInstitution = "thing17"
+	weChatOfficialPendingRenewalKeywordPublishTime = "time16"
 )
 
 func (svc *Service) dispatchRollCallCourseConsumeCompleteNotifications(ctx context.Context, instID int64, confirmResult model.RollCallConfirmResult) error {
@@ -241,13 +248,16 @@ func (svc *Service) buildWeChatOfficialCourseConsumeCompleteTemplateRequest(open
 				Value: truncateRunes(buildWeChatOfficialCourseConsumeLessonDetail(student.ActualDeduct, totalArrearQuantity, student.LeftQuantity), 20),
 			},
 			weChatOfficialCourseConsumeKeywordStudentName: {
-				Value: truncateRunes(strings.TrimSpace(student.StudentName), 20),
+				Value: truncateRunes(firstNonEmptyString(strings.TrimSpace(student.StudentName), "学员"), 20),
 			},
 			weChatOfficialCourseConsumeKeywordCourseName: {
 				Value: truncateRunes(buildWeChatOfficialCourseConsumeCourseName(detail), 20),
 			},
 			weChatOfficialCourseConsumeKeywordLessonTime: {
-				Value: formatWeChatOfficialCourseConsumeLessonTime(detail.StartTime, detail.EndTime),
+				Value: firstNonEmptyString(
+					formatWeChatOfficialCourseConsumeLessonTime(detail.StartTime, detail.EndTime),
+					formatWeChatOfficialCoursePurchaseTime(nil),
+				),
 			},
 		},
 	}

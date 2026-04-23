@@ -599,6 +599,30 @@ func (client *weChatOfficialClient) sendTemplateMessage(ctx context.Context, req
 	if len(request.Data) == 0 {
 		return errors.New("send template message failed: empty data")
 	}
+	normalizedData := make(map[string]weChatOfficialTemplateDataItem, len(request.Data))
+	emptyValueKeys := make([]string, 0, len(request.Data))
+	for rawKey, item := range request.Data {
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			return errors.New("send template message failed: empty data key")
+		}
+		item.Value = strings.TrimSpace(item.Value)
+		item.Color = strings.TrimSpace(item.Color)
+		normalizedData[key] = item
+		if item.Value == "" {
+			emptyValueKeys = append(emptyValueKeys, key)
+		}
+	}
+	request.Data = normalizedData
+	if len(emptyValueKeys) > 0 {
+		sort.Strings(emptyValueKeys)
+		return fmt.Errorf(
+			"send template message failed: empty data value for template %s fields %s (clientMsgId=%s)",
+			request.TemplateID,
+			strings.Join(emptyValueKeys, ","),
+			request.ClientMessageID,
+		)
+	}
 	if request.MiniProgram != nil {
 		request.MiniProgram.AppID = strings.TrimSpace(request.MiniProgram.AppID)
 		request.MiniProgram.PagePath = strings.TrimSpace(request.MiniProgram.PagePath)

@@ -265,3 +265,91 @@ export interface PendingRenewalStudentPagedResult {
 export function getPendingRenewalStudentsPagedListApi(data: PendingRenewalStudentQueryParams) {
   return usePost<PendingRenewalStudentPagedResult>('/api/v1/students/pending-renewals/page', data)
 }
+
+export interface PendingRenewalReminderSendParams {
+  tuitionAccountIds: string[]
+}
+
+export interface PendingRenewalReminderSendResult {
+  recordId: string
+  notifyCount: number
+  successCount: number
+  skippedCount: number
+  failedCount: number
+}
+
+export interface PendingRenewalReminderRecordPageParams {
+  pageRequestModel: {
+    pageSize: number
+    pageIndex: number
+    needTotal?: boolean
+    skipCount?: number
+  }
+}
+
+export interface PendingRenewalReminderRecordPageItem {
+  recordId: string
+  templateId: string
+  templateName: string
+  channel: number
+  channelName: string
+  readCount: number
+  notifyCount: number
+  successCount: number
+  skippedCount: number
+  failedCount: number
+  operatorId: string
+  operatorName: string
+  sendTime?: string | null
+  unsentCount: number
+}
+
+export interface PendingRenewalReminderRecordPageResult {
+  list: PendingRenewalReminderRecordPageItem[]
+  total: number
+}
+
+export interface PendingRenewalReminderRecordDetailItem {
+  itemId: string
+  tuitionAccountId: string
+  studentId: string
+  studentName: string
+  sex?: number
+  avatar?: string
+  phone?: string
+  lessonName: string
+  remainingText: string
+  homeSchoolStatus: number
+  homeSchoolStatusText: string
+}
+
+export interface PendingRenewalReminderRecordDetailResult {
+  recordId: string
+  templateId: string
+  templateName: string
+  channel: number
+  channelName: string
+  readCount: number
+  notifyCount: number
+  successCount: number
+  skippedCount: number
+  failedCount: number
+  unsentCount: number
+  operatorId: string
+  operatorName: string
+  sendTime?: string | null
+  sentList: PendingRenewalReminderRecordDetailItem[]
+  unsentList: PendingRenewalReminderRecordDetailItem[]
+}
+
+export function sendPendingRenewalWechatReminderApi(data: PendingRenewalReminderSendParams) {
+  return usePost<PendingRenewalReminderSendResult>('/api/v1/students/pending-renewals/reminders/wechat/send', data)
+}
+
+export function pagePendingRenewalReminderRecordsApi(data: PendingRenewalReminderRecordPageParams) {
+  return usePost<PendingRenewalReminderRecordPageResult>('/api/v1/students/pending-renewals/reminder-records/page', data)
+}
+
+export function getPendingRenewalReminderRecordDetailApi(data: { recordId: string }) {
+  return useGet<PendingRenewalReminderRecordDetailResult>('/api/v1/students/pending-renewals/reminder-records/detail', data)
+}
