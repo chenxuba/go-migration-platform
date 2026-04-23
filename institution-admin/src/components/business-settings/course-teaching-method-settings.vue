@@ -102,9 +102,9 @@ const teachingMethodRows = reactive([
 
     .td1 {
       width: 180px;
-      color: #222;
+      color: #333;
       font-size: 14px;
-      font-weight: 400;
+      font-weight: 500;
       text-align: center;
     }
   }
@@ -125,7 +125,7 @@ const teachingMethodRows = reactive([
 }
 
 .status-text {
-  color: #666;
+  color: #333;
   font-size: 14px;
   font-weight: 500;
 }
