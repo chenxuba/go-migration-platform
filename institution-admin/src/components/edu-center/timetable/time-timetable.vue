@@ -739,44 +739,10 @@ const mockSchedules = computed(() =>
   })),
 )
 
-function floorToHour(minutes) {
-  return Math.floor(minutes / 60) * 60
-}
-
-function ceilToHour(minutes) {
-  return Math.ceil(minutes / 60) * 60
-}
-
-const timelineBounds = computed(() => {
-  if (!mockSchedules.value.length) {
-    return {
-      start: DEFAULT_TIMELINE_START,
-      end: DEFAULT_TIMELINE_END,
-    }
-  }
-
-  let minStart = Number.POSITIVE_INFINITY
-  let maxEnd = Number.NEGATIVE_INFINITY
-
-  mockSchedules.value.forEach((item) => {
-    const startMinutes = item.startAt.hour() * 60 + item.startAt.minute()
-    const endMinutes = item.endAt.hour() * 60 + item.endAt.minute()
-    minStart = Math.min(minStart, startMinutes)
-    maxEnd = Math.max(maxEnd, endMinutes)
-  })
-
-  if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) {
-    return {
-      start: DEFAULT_TIMELINE_START,
-      end: DEFAULT_TIMELINE_END,
-    }
-  }
-
-  const start = floorToHour(minStart)
-  const end = Math.max(start + 60, ceilToHour(maxEnd))
-
-  return { start, end }
-})
+const timelineBounds = computed(() => ({
+  start: DEFAULT_TIMELINE_START,
+  end: DEFAULT_TIMELINE_END,
+}))
 
 const headerSummaries = computed(() =>
   displayDates.value.map((date) => {
@@ -1169,7 +1135,7 @@ const timeCanvasColumns = computed(() => {
       background: isActiveColumn(item.key) ? '#f3f9ff' : '#ffffff',
       dividerWidth: index < headerSummaries.value.length - 1 ? 2 : 1,
       dividerColor: index < headerSummaries.value.length - 1 ? '#a8b8cc' : '#dde5f0',
-      showCurrentLine: showCurrentTimeLine.value && item.key === todayKey.value,
+      showCurrentLine: showCurrentTimeLine.value,
     }
     left += width
     return column
