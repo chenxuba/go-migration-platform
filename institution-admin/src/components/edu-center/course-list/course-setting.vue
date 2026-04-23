@@ -153,7 +153,7 @@ onMounted(() => {
 .tab-content {
   background: #fff;
   border-radius: 12px;
-  padding: 12px 20px;
+  padding: 18px 20px 12px;
 }
 
 .property-grid {
