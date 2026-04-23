@@ -205,7 +205,7 @@ async function buildInvitationPosterBlob() {
 
   ctx.fillStyle = '#70757d'
   ctx.font = '500 38px "PingFang SC", "Microsoft YaHei", sans-serif'
-  ctx.fillText('邀请您关注', 820, 150)
+  ctx.fillText('邀您关注', 820, 150)
 
   drawStepTitle(ctx, 1, 95, 420, '第一步： 扫描最下方二维码 ', '点击关注公众号')
 
@@ -305,13 +305,13 @@ async function handleSubmit() {
 <template>
   <a-modal
     v-model:open="openModal"
-    style="top: 12px"
     class="modal-content-box"
     wrap-class-name="qrcode-invitation-modal-wrap"
     :keyboard="false"
     :closable="false"
     :mask-closable="false"
-    :width="860"
+    :width="800"
+    centered
   >
     <template #title>
       <div class="text-5 flex justify-between flex-center">
@@ -499,12 +499,12 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
   border-radius: 999px;
   background: #1677ff;
   color: #fff;
-  font-size: 24px;
+  font-size: 16px;
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -517,7 +517,7 @@ async function handleSubmit() {
 
 .institution-name {
   color: #1f1f1f;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
   word-break: break-all;
@@ -526,7 +526,7 @@ async function handleSubmit() {
 .header-highlight {
   margin-left: 10px;
   color: #70757d;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   flex-shrink: 0;
 }
@@ -597,7 +597,6 @@ async function handleSubmit() {
 }
 
 .follow-card__desc {
-  margin-top: 4px;
   color: #99a1b0;
   font-size: 11px;
 }
@@ -606,13 +605,13 @@ async function handleSubmit() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 82px;
-  height: 38px;
+  width: 70px;
+  height: 32px;
   margin-left: 10px;
-  border-radius: 10px;
+  border-radius: 6px;
   background: #12c287;
   color: #fff;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -628,28 +627,32 @@ async function handleSubmit() {
 
 .message-card {
   overflow: hidden;
-  margin-top: 12px;
-  border-radius: 18px;
+  margin-top: 10px;
+  padding-bottom: 10px;
+  border-radius: 16px;
   background: #f8fafc;
 }
 
 .message-card__banner {
-  padding: 10px 14px;
+  padding: 8px 12px;
   background: #ffe9e9;
   color: #ff4d4f;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
+  line-height: 1.45;
 }
 
 .message-card__image {
   display: block;
-  width: 100%;
+  width: 82%;
+  margin: 8px auto 0;
+  border-radius: 12px;
 }
 
 .qrcode-section {
   display: flex;
   align-items: center;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .qrcode-image,
@@ -693,7 +696,6 @@ async function handleSubmit() {
 
 .copy-card {
   display: flex;
-  min-height: 480px;
   flex-direction: column;
   justify-content: space-between;
   padding: 20px;
