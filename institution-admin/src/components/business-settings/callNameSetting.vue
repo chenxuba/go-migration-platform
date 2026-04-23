@@ -44,7 +44,7 @@ const orderExampleRows = [
                 课程课消顺序
               </div>
               <div class="settings-row__content">
-                <a-radio-group v-model:value="courseDeductOrder" class="settings-radio-group">
+                <a-radio-group v-model:value="courseDeductOrder" class="settings-radio-group custom-radio">
                   <a-radio value="oldest">
                     先进先出
                   </a-radio>
@@ -485,6 +485,27 @@ const orderExampleRows = [
   gap: 10px 18px;
 }
 
+.custom-radio :deep(.ant-radio-wrapper:hover .ant-radio),
+.custom-radio :deep(.ant-radio:hover .ant-radio-inner),
+.custom-radio :deep(.ant-radio-input:focus + .ant-radio-inner) {
+  border-color: var(--pro-ant-color-primary, #1677ff);
+}
+
+.custom-radio :deep(.ant-radio-inner) {
+  background-color: transparent;
+  border-color: #d9d9d9;
+}
+
+.custom-radio :deep(.ant-radio-checked .ant-radio-inner) {
+  background-color: transparent;
+  border-color: var(--pro-ant-color-primary, #1677ff);
+}
+
+.custom-radio :deep(.ant-radio-inner::after) {
+  background-color: var(--pro-ant-color-primary, #1677ff);
+  transform: scale(0.5);
+}
+
 .settings-desc {
   margin-top: 8px;
   color: #333;
@@ -498,7 +519,6 @@ const orderExampleRows = [
   align-items: center;
   gap: 4px;
   color: #1f2937;
-  line-height: 22px;
 }
 
 .settings-inline--muted {
@@ -520,7 +540,6 @@ const orderExampleRows = [
 }
 
 .settings-link {
-  height: 22px;
   padding: 0 4px;
   font-size: 14px;
 }
