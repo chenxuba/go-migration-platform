@@ -1658,6 +1658,10 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 }
 
 func (repo *Repository) ListCourseProperties(ctx context.Context, instID int64) ([]model.CourseProperty, error) {
+	if err := repo.cleanupDuplicateDefaultCourseProperties(ctx, instID); err != nil {
+		return nil, err
+	}
+
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), inst_id, IFNULL(name, ''), IFNULL(enable, 0), IFNULL(enable_online_filter, 0), IFNULL(remark, '')
 		FROM inst_course_property
@@ -1714,44 +1718,71 @@ func (repo *Repository) ListCoursePropertyOptionsByPropertyIDs(ctx context.Conte
 }
 
 func (repo *Repository) InitInstCourseProperty(ctx context.Context, instID int64) error {
-	rows, err := repo.db.QueryContext(ctx, `
-		SELECT IFNULL(name, ''), IFNULL(enable, 0), IFNULL(enable_online_filter, 0)
-		FROM inst_course_property
-		WHERE inst_id IS NULL AND del_flag = 0
-		ORDER BY id ASC
-	`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	tx, err := repo.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for rows.Next() {
-		var (
-			name               string
-			enable             bool
-			enableOnlineFilter bool
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO inst_course_property (
+			uuid, version, inst_id, name, enable, enable_online_filter, del_flag, create_time
 		)
-		if err := rows.Scan(&name, &enable, &enableOnlineFilter); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO inst_course_property (
-				uuid, version, inst_id, name, enable, enable_online_filter, del_flag, create_time
-			) VALUES (
-				UUID(), 0, ?, ?, ?, ?, 0, NOW()
-			)
-		`, instID, name, enable, enableOnlineFilter); err != nil {
-			return err
-		}
-	}
-	if err := rows.Err(); err != nil {
+		SELECT UUID(), 0, ?, t.name, t.enable, t.enable_online_filter, 0, NOW()
+		FROM (
+			SELECT IFNULL(name, '') AS name, IFNULL(enable, 0) AS enable, IFNULL(enable_online_filter, 0) AS enable_online_filter
+			FROM inst_course_property
+			WHERE inst_id IS NULL AND del_flag = 0
+		) AS t
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM inst_course_property p
+			WHERE p.inst_id = ?
+			  AND p.del_flag = 0
+			  AND p.name = t.name
+		)
+	`, instID, instID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return repo.cleanupDuplicateDefaultCourseProperties(ctx, instID)
+}
+
+func (repo *Repository) cleanupDuplicateDefaultCourseProperties(ctx context.Context, instID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_course_property p
+		INNER JOIN (
+			SELECT duplicate_prop.id
+			FROM inst_course_property duplicate_prop
+			INNER JOIN (
+				SELECT inst_id, name, MIN(id) AS keep_id
+				FROM inst_course_property
+				WHERE inst_id = ? AND del_flag = 0
+				GROUP BY inst_id, name
+				HAVING COUNT(*) > 1
+			) duplicate_group
+			  ON duplicate_group.inst_id = duplicate_prop.inst_id
+			 AND duplicate_group.name = duplicate_prop.name
+			WHERE duplicate_prop.inst_id = ?
+			  AND duplicate_prop.del_flag = 0
+			  AND duplicate_prop.id <> duplicate_group.keep_id
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM inst_course_property_option option_item
+				WHERE option_item.property_id = duplicate_prop.id
+				  AND option_item.del_flag = 0
+			  )
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM inst_course_property_result property_result
+				WHERE property_result.course_property_id = duplicate_prop.id
+				  AND property_result.del_flag = 0
+			  )
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM product_package_property_result package_result
+				WHERE package_result.property_id = duplicate_prop.id
+				  AND package_result.del_flag = 0
+			  )
+		) duplicate_ids
+		  ON duplicate_ids.id = p.id
+		SET p.del_flag = 1,
+		    p.update_time = NOW()
+	`, instID, instID)
+	return err
 }
 
 func (repo *Repository) GetCoursePropertyByID(ctx context.Context, id int64) (model.CourseProperty, error) {

@@ -8,7 +8,6 @@ import DescriptionBlockEditor from './description-block-editor.vue'
 import MicroSchoolSettingsFields from './micro-school-settings-fields.vue'
 import CustomTitle from '@/components/common/custom-title.vue'
 import { getCourseCategoryPageApi, getCourseDetailApi, getCoursePropertyOptionsApi, getCoursePageApi } from '~@/api/edu-center/course-list'
-import { initInstAllConfigApi } from '~@/api/common/config'
 import { getQiniuToken } from '@/api/qiniu'
 import { useCourseAttribute } from '@/composables/useCourseAttribute'
 import { useUserStore } from '~@/stores/user'
@@ -230,7 +229,7 @@ function handleCourseSelectionChange(value) {
 watch(openDrawer, async (newVal) => {
   if (newVal) {
     btnLoading.value = false
-    await refreshInstConfigForDrawer()
+    await userStore.getInstConfig()
     // 获取课程类别
     getCourseCategory()
     getEnabledCourseProperties()
@@ -239,19 +238,6 @@ watch(openDrawer, async (newVal) => {
     resetForm()
   }
 })
-
-async function refreshInstConfigForDrawer() {
-  const instId = Number(userStore.userInfo?.instId)
-  try {
-    if (Number.isFinite(instId) && instId > 0)
-      await initInstAllConfigApi({ instId })
-  }
-  catch (error) {
-    console.warn('init inst config failed, fallback to get latest config', error)
-  }
-
-  await userStore.getInstConfig()
-}
 
 const formRef = ref(null)
 const settingFormRef = ref(null)

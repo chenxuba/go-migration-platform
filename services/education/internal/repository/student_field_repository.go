@@ -188,42 +188,30 @@ func (repo *Repository) GetStudentFieldDetail(ctx context.Context, id int64) (mo
 }
 
 func (repo *Repository) InitInstStudentField(ctx context.Context, instID int64) error {
-	rows, err := repo.db.QueryContext(ctx, `
-		SELECT field_key, field_type, IFNULL(required, 0), IFNULL(searched, 0), IFNULL(options_json, ''),
-		       IFNULL(is_default, 0), IFNULL(is_display, 0), IFNULL(can_delete, 0), IFNULL(can_edit, 0), IFNULL(sort, 0), IFNULL(remark, '')
-		FROM inst_student_field_key
-		WHERE inst_id IS NULL AND is_default = 1 AND del_flag = 0
-		ORDER BY sort ASC, id ASC
-	`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	tx, err := repo.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for rows.Next() {
-		var field model.StudentFieldKey
-		if err := rows.Scan(&field.FieldKey, &field.FieldType, &field.Required, &field.Searched, &field.OptionsJSON, &field.IsDefault, &field.IsDisplay, &field.CanDelete, &field.CanEdit, &field.Sort, &field.Remark); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO inst_student_field_key (
-				uuid, version, inst_id, field_key, field_type, required, searched, options_json,
-				is_default, is_display, can_delete, can_edit, sort, remark, del_flag, create_time
-			) VALUES (
-				UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW()
-			)
-		`, instID, field.FieldKey, field.FieldType, field.Required, field.Searched, field.OptionsJSON, field.IsDefault, field.IsDisplay, field.CanDelete, field.CanEdit, field.Sort, field.Remark); err != nil {
-			return err
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	return tx.Commit()
+	_, err := repo.db.ExecContext(ctx, `
+		INSERT INTO inst_student_field_key (
+			uuid, version, inst_id, field_key, field_type, required, searched, options_json,
+			is_default, is_display, can_delete, can_edit, sort, remark, del_flag, create_time
+		)
+		SELECT UUID(), 0, ?, t.field_key, t.field_type, t.required, t.searched, t.options_json,
+		       t.is_default, t.is_display, t.can_delete, t.can_edit, t.sort, t.remark, 0, NOW()
+		FROM (
+			SELECT field_key, field_type, IFNULL(required, 0) AS required, IFNULL(searched, 0) AS searched, IFNULL(options_json, '') AS options_json,
+			       IFNULL(is_default, 0) AS is_default, IFNULL(is_display, 0) AS is_display, IFNULL(can_delete, 0) AS can_delete,
+			       IFNULL(can_edit, 0) AS can_edit, IFNULL(sort, 0) AS sort, IFNULL(remark, '') AS remark
+			FROM inst_student_field_key
+			WHERE inst_id IS NULL AND is_default = 1 AND del_flag = 0
+		) AS t
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM inst_student_field_key f
+			WHERE f.inst_id = ?
+			  AND f.is_default = 1
+			  AND f.del_flag = 0
+			  AND f.field_key = t.field_key
+		)
+	`, instID, instID)
+	return err
 }
 
 func ensureFieldExists(field model.StudentFieldKey) error {
