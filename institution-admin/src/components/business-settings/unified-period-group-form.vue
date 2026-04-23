@@ -235,8 +235,8 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
 
 <template>
   <section class="up-group-form">
-    <div class="up-group-form__hero">
-      <div class="up-group-form__hero-top">
+    <div class="up-group-form__setup">
+      <div class="up-group-form__setup-summary">
         <div class="up-group-form__head">
           <span
             class="up-group-form__icon"
@@ -249,19 +249,22 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
             <span class="up-group-form__meta">时段范围 {{ groupTimeRange(group) }}</span>
           </div>
         </div>
-        <div class="up-group-form__head-side">
-          <div class="up-group-form__hero-tags">
-            <span class="up-group-form__hero-tag">{{ slotCountActive(group) }} 节启用</span>
-            <span class="up-group-form__hero-tag up-group-form__hero-tag--muted">{{ group.slots.length }} 节总计</span>
-          </div>
-          <div class="up-group-form__hero-actions">
-            <a-tooltip title="按上课时间规则一键生成整组节次，适合快速初始化。">
-              <a-button type="primary" ghost size="small" class="up-group-form__smart-btn" @click="openSmartFillModal">
-                智能生成节次
-              </a-button>
-            </a-tooltip>
-          </div>
+
+        <div class="up-group-form__summary-bottom">
+          <span class="up-group-form__hero-tag">{{ slotCountActive(group) }} 节启用</span>
+          <span class="up-group-form__hero-tag up-group-form__hero-tag--muted">{{ group.slots.length }} 节总计</span>
+          <a-button
+            type="primary"
+            ghost
+            size="small"
+            class="up-group-form__smart-btn"
+            title="按上课时间规则一键生成整组节次，适合快速初始化。"
+            @click="openSmartFillModal"
+          >
+            智能生成节次
+          </a-button>
         </div>
+
         <a-tooltip v-if="allowDeleteGroup" :title="deleteGroupDisabled ? props.deleteDisabledReason : null">
           <button
             type="button"
@@ -272,6 +275,39 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
             <DeleteOutlined />
           </button>
         </a-tooltip>
+      </div>
+
+      <div class="up-group-form__setup-fields">
+        <div class="up-group-form__setup-title">
+          <div class="up-group-form__section-title">
+            基础信息
+          </div>
+          <p v-if="showBoundTeachers" class="up-group-form__setup-desc">
+            可选多名；同一老师可绑定多个时段组。
+          </p>
+        </div>
+        <div class="up-group-form__basic-grid" :class="{ 'up-group-form__basic-grid--single': !showBoundTeachers }">
+          <div class="up-group-form__field-card">
+            <span class="up-group-form__label">时段名称</span>
+            <a-input v-model:value="group.name" allow-clear placeholder="如 A时段" />
+          </div>
+
+          <div v-if="showBoundTeachers" class="up-group-form__field-card">
+            <span class="up-group-form__label">关联老师</span>
+            <a-select
+              v-model:value="teacherIdsModel"
+              mode="multiple"
+              allow-clear
+              show-search
+              :options="teacherSelectOptions"
+              :filter-option="filterTeacherOption"
+              :loading="staffLoading"
+              placeholder="打开下拉可加载机构老师，支持搜索"
+              class="up-group-form__teacher-select"
+              @dropdown-visible-change="onTeacherDropdownOpen"
+            />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -330,45 +366,6 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
         </a-button>
       </div>
     </a-modal>
-
-    <div class="up-group-form__section">
-      <div class="up-group-form__section-head">
-        <div>
-          <div class="up-group-form__section-title">
-            基础信息
-          </div>
-          <p class="up-group-form__section-desc">
-            先命名时段组，再决定哪些老师可以使用这组节次。
-          </p>
-        </div>
-      </div>
-
-      <div class="up-group-form__basic-grid" :class="{ 'up-group-form__basic-grid--single': !showBoundTeachers }">
-        <div class="up-group-form__field-card">
-          <span class="up-group-form__label">时段名称</span>
-          <a-input v-model:value="group.name" allow-clear placeholder="如 A时段" />
-        </div>
-
-        <div v-if="showBoundTeachers" class="up-group-form__field-card">
-          <span class="up-group-form__label">关联老师</span>
-          <p class="up-group-form__field-hint">
-            可选多名；<strong>同一老师可绑定多个时段组</strong>。
-          </p>
-          <a-select
-            v-model:value="teacherIdsModel"
-            mode="multiple"
-            allow-clear
-            show-search
-            :options="teacherSelectOptions"
-            :filter-option="filterTeacherOption"
-            :loading="staffLoading"
-            placeholder="打开下拉可加载机构老师，支持搜索"
-            class="up-group-form__teacher-select"
-            @dropdown-visible-change="onTeacherDropdownOpen"
-          />
-        </div>
-      </div>
-    </div>
 
     <div class="up-group-form__section">
       <div class="up-group-form__section-head up-group-form__section-head--slots">
@@ -459,7 +456,7 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
   padding: 6px 2px 2px;
 }
 
-.up-group-form__hero,
+.up-group-form__setup,
 .up-group-form__section {
   border-radius: 16px;
   border: 1px solid #eef2f7;
@@ -467,24 +464,53 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
   box-shadow: 0 8px 20px rgb(15 23 42 / 4%);
 }
 
-.up-group-form__hero {
-  padding: 18px 18px 16px;
+.up-group-form__setup {
+  display: grid;
+  grid-template-columns: 292px minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
   margin-bottom: 16px;
+  padding: 14px;
 }
 
-.up-group-form__hero-top {
+.up-group-form__setup-summary {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 100%;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid #dcebff;
+  background: linear-gradient(180deg, #f7fbff 0%, #f2f8ff 100%);
+}
+
+.up-group-form__setup-fields {
+  min-width: 0;
+  padding: 4px 4px 2px;
+}
+
+.up-group-form__setup-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
+  margin-bottom: 14px;
+  white-space: nowrap;
+}
+
+.up-group-form__setup-desc {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .up-group-form__head {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 220px;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 .up-group-form__icon {
@@ -527,20 +553,12 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
   color: #8c8c8c;
 }
 
-.up-group-form__hero-tags {
+.up-group-form__summary-bottom {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-}
-
-.up-group-form__head-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-shrink: 0;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .up-group-form__hero-tag {
@@ -559,10 +577,13 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
 }
 
 .up-group-form__trash {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   border: none;
   background: none;
   color: #8c8c8c;
-  padding: 8px;
+  padding: 6px;
   cursor: pointer;
 
   &:hover {
@@ -579,16 +600,10 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
   }
 }
 
-.up-group-form__hero-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  width: 100%;
-}
-
 .up-group-form__smart-btn {
-  height: 34px;
-  padding: 0 14px;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
   border-radius: 10px;
   background: #fff;
   border-color: #91caff;
@@ -710,8 +725,8 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
 }
 
 .up-group-form__field-card {
-  padding: 16px;
-  border-radius: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
   background: #fafcff;
   border: 1px solid #edf2f7;
 }
@@ -863,42 +878,28 @@ const deleteGroupDisabled = computed(() => Boolean(props.deleteDisabledReason))
 }
 
 @media (max-width: 860px) {
+  .up-group-form__setup,
   .up-group-form__basic-grid,
   .up-group-form__slots-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .up-group-form__hero-top,
   .up-group-form__section-head {
     flex-direction: column;
     align-items: flex-start;
   }
-
-  .up-group-form__head-side {
-    width: 100%;
-    align-items: flex-start;
-  }
-
-  .up-group-form__hero-actions,
-  .up-group-form__head {
-    width: 100%;
-  }
-
-  .up-group-form__hero-actions {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 520px) {
-  .up-group-form__hero {
-    padding: 16px;
+  .up-group-form__setup {
+    padding: 12px;
   }
 
   .up-group-form__head {
     flex-wrap: wrap;
   }
 
-  .up-group-form__hero-tags {
+  .up-group-form__summary-bottom {
     width: 100%;
   }
 
