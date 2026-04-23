@@ -51,6 +51,58 @@ func (repo *Repository) ListStudentFields(ctx context.Context, instID int64, isD
 	return items, rows.Err()
 }
 
+func (repo *Repository) RepairDuplicateDefaultStudentFields(ctx context.Context, instID int64) error {
+	items, err := repo.ListStudentFields(ctx, instID, true)
+	if err != nil {
+		return err
+	}
+
+	grouped := make(map[string][]model.StudentFieldKey)
+	fieldOrder := make([]string, 0, len(items))
+	for _, item := range items {
+		key := strings.TrimSpace(item.FieldKey)
+		if _, exists := grouped[key]; !exists {
+			fieldOrder = append(fieldOrder, key)
+		}
+		grouped[key] = append(grouped[key], item)
+	}
+
+	duplicateIDs := make([]int64, 0)
+	for _, key := range fieldOrder {
+		fields := grouped[key]
+		if len(fields) <= 1 {
+			continue
+		}
+
+		keep := fields[0]
+		for _, field := range fields[1:] {
+			if preferStudentFieldKey(field, keep) {
+				duplicateIDs = append(duplicateIDs, keep.ID)
+				keep = field
+				continue
+			}
+			duplicateIDs = append(duplicateIDs, field.ID)
+		}
+	}
+
+	if len(duplicateIDs) == 0 {
+		return nil
+	}
+
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(duplicateIDs)), ",")
+	args := make([]any, 0, len(duplicateIDs))
+	for _, id := range duplicateIDs {
+		args = append(args, id)
+	}
+
+	_, err = repo.db.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE inst_student_field_key
+		SET del_flag = 1, version = IFNULL(version, 0) + 1, update_time = NOW()
+		WHERE id IN (%s) AND del_flag = 0
+	`, placeholders), args...)
+	return err
+}
+
 func (repo *Repository) GetStudentFieldByID(ctx context.Context, id int64) (model.StudentFieldKey, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), inst_id, field_key, field_type,
@@ -188,6 +240,22 @@ func (repo *Repository) GetStudentFieldDetail(ctx context.Context, id int64) (mo
 }
 
 func (repo *Repository) InitInstStudentField(ctx context.Context, instID int64) error {
+	lockKey := fmt.Sprintf("inst_student_field_init_%d", instID)
+	var locked sql.NullInt64
+	if err := repo.db.QueryRowContext(ctx, `SELECT GET_LOCK(?, 10)`, lockKey).Scan(&locked); err != nil {
+		return err
+	}
+	if !locked.Valid || locked.Int64 != 1 {
+		return fmt.Errorf("failed to acquire student field init lock")
+	}
+	defer func() {
+		_, _ = repo.db.ExecContext(context.Background(), `SELECT RELEASE_LOCK(?)`, lockKey)
+	}()
+
+	if err := repo.RepairDuplicateDefaultStudentFields(ctx, instID); err != nil {
+		return err
+	}
+
 	_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO inst_student_field_key (
 			uuid, version, inst_id, field_key, field_type, required, searched, options_json,
@@ -212,6 +280,22 @@ func (repo *Repository) InitInstStudentField(ctx context.Context, instID int64) 
 		)
 	`, instID, instID)
 	return err
+}
+
+func preferStudentFieldKey(candidate model.StudentFieldKey, current model.StudentFieldKey) bool {
+	if (candidate.Sort > 0) != (current.Sort > 0) {
+		return candidate.Sort > 0
+	}
+	if candidate.Sort != current.Sort {
+		return candidate.Sort > current.Sort
+	}
+	if candidate.IsDisplay != current.IsDisplay {
+		return candidate.IsDisplay
+	}
+	if candidate.Version != current.Version {
+		return candidate.Version > current.Version
+	}
+	return candidate.ID > current.ID
 }
 
 func ensureFieldExists(field model.StudentFieldKey) error {

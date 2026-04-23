@@ -264,6 +264,9 @@ func (svc *Service) GetDefaultStudentFields(userID int64) ([]model.StudentFieldK
 		}
 		return nil, err
 	}
+	if err := svc.repo.RepairDuplicateDefaultStudentFields(context.Background(), instID); err != nil {
+		return nil, err
+	}
 	return svc.repo.ListStudentFields(context.Background(), instID, true)
 }
 
