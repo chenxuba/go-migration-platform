@@ -528,11 +528,12 @@ func (handler *Handler) deleteDepart(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) menuTree(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	ownType := parseIntPtr(r.URL.Query().Get("ownType"))
-	result, err := handler.service.MenuTree(r.URL.Query().Get("menuName"), ownType)
+	result, err := handler.service.MenuTreeForClaims(claims, r.URL.Query().Get("menuName"), ownType)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -806,7 +807,8 @@ func (handler *Handler) instRolePage(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) roleMenuIDs(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	roleID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("roleId")), 10, 64)
@@ -818,7 +820,7 @@ func (handler *Handler) roleMenuIDs(w http.ResponseWriter, r *http.Request) {
 	if value := parseIntPtr(r.URL.Query().Get("ownType")); value != nil {
 		ownType = value
 	}
-	result, err := handler.service.RoleMenuIDs(roleID, ownType)
+	result, err := handler.service.RoleMenuIDs(claims, roleID, ownType)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -828,11 +830,12 @@ func (handler *Handler) roleMenuIDs(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) roleTemplates(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	roleType := parseIntPtr(r.URL.Query().Get("roleType"))
-	result, err := handler.service.GetRoleTemplates(roleType)
+	result, err := handler.service.GetRoleTemplates(claims, roleType)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
@@ -842,7 +845,8 @@ func (handler *Handler) roleTemplates(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) defaultRoleDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	roleID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("roleId")), 10, 64)
@@ -850,7 +854,7 @@ func (handler *Handler) defaultRoleDetail(w http.ResponseWriter, r *http.Request
 		httpx.WriteError(w, http.StatusBadRequest, "invalid roleId", ctx.RequestID)
 		return
 	}
-	result, err := handler.service.GetDefaultRoleDetail(roleID)
+	result, err := handler.service.GetDefaultRoleDetail(claims, roleID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

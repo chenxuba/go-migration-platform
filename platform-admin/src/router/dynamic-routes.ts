@@ -82,7 +82,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/platform/default-roles/index.vue'),
         meta: {
           title: '默认角色',
-          tenantRoles: ['platform_admin'],
+          tenantRoles: ['platform_admin', 'tenant_admin'],
         },
       },
       {

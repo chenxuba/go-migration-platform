@@ -2560,6 +2560,34 @@ func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType 
 	return items, nil
 }
 
+func (repo *Repository) ListMenusByTenant(ctx context.Context, tenantID, menuName string, ownType int) ([]model.Menu, error) {
+	menuIDs, err := repo.GetTenantInstitutionMenuIDSet(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if len(menuIDs) == 0 {
+		return []model.Menu{}, nil
+	}
+	menus, err := repo.listMenusByIDSet(ctx, menuIDs)
+	if err != nil {
+		return nil, err
+	}
+	keyword := strings.TrimSpace(menuName)
+	if keyword == "" {
+		return menus, nil
+	}
+	filtered := make([]model.Menu, 0, len(menus))
+	for _, menu := range menus {
+		if menu.OwnType != nil && *menu.OwnType != ownType {
+			continue
+		}
+		if strings.Contains(menu.MenuName, keyword) {
+			filtered = append(filtered, menu)
+		}
+	}
+	return filtered, nil
+}
+
 func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownType int) ([]model.Menu, error) {
 	if scopedMenuIDs, err := repo.getInstitutionScopedMenuIDSet(ctx, instID, ownType); err != nil {
 		return nil, err
@@ -2634,6 +2662,64 @@ func (repo *Repository) listMenusByIDSet(ctx context.Context, menuIDs map[int64]
 		return nil, err
 	}
 	return items, nil
+}
+
+func (repo *Repository) GetTenantInstitutionMenuIDSet(ctx context.Context, tenantID string) (map[int64]struct{}, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, nil
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT DISTINCT smm.menu_id
+		FROM tenant_module tm
+		JOIN sys_module sm ON sm.id = tm.module_id AND sm.del_flag = 0
+		JOIN sys_module_menu smm ON smm.module_id = tm.module_id AND smm.del_flag = 0
+		JOIN sso_menu m ON m.id = smm.menu_id AND m.del_flag = 0 AND m.own_type = 2
+		WHERE tm.tenant_id = ? AND tm.del_flag = 0
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64]struct{})
+	for rows.Next() {
+		var menuID int64
+		if err := rows.Scan(&menuID); err != nil {
+			return nil, err
+		}
+		if menuID > 0 {
+			result[menuID] = struct{}{}
+		}
+	}
+	return result, rows.Err()
+}
+
+func filterMenuIDsByAllowedSet(menuIDs []int64, allowed map[int64]struct{}) []int64 {
+	if len(menuIDs) == 0 || allowed == nil {
+		return menuIDs
+	}
+	if len(allowed) == 0 {
+		return []int64{}
+	}
+	result := make([]int64, 0, len(menuIDs))
+	for _, menuID := range menuIDs {
+		if _, ok := allowed[menuID]; ok {
+			result = append(result, menuID)
+		}
+	}
+	return result
+}
+
+func filterRoleMenuIDsByAllowedSet(roleMenuIDs map[int64][]int64, allowed map[int64]struct{}) map[int64][]int64 {
+	if allowed == nil {
+		return roleMenuIDs
+	}
+	result := make(map[int64][]int64, len(roleMenuIDs))
+	for roleID, menuIDs := range roleMenuIDs {
+		result[roleID] = filterMenuIDsByAllowedSet(menuIDs, allowed)
+	}
+	return result
 }
 
 func (repo *Repository) getInstitutionScopedMenuIDSet(ctx context.Context, instID int64, ownType int) (map[int64]struct{}, error) {
@@ -3162,7 +3248,7 @@ func (repo *Repository) GetAdminRoleIDByInst(ctx context.Context, instID int64, 
 	return id.Int64, nil
 }
 
-func (repo *Repository) GetSystemDefaultRoles(ctx context.Context, roleType *int) ([]model.RoleTemplateVO, error) {
+func (repo *Repository) GetSystemDefaultRoles(ctx context.Context, roleType *int, tenantID string) ([]model.RoleTemplateVO, error) {
 	query := `
 		SELECT r.id,
 		       IFNULL(r.uuid, ''),
@@ -3211,6 +3297,17 @@ func (repo *Repository) GetSystemDefaultRoles(ctx context.Context, roleType *int
 	for index := range items {
 		items[index].RoleIDs = menuIDMap[items[index].RoleID]
 		roleMenuIDs[items[index].RoleID] = items[index].RoleIDs
+	}
+
+	if strings.TrimSpace(tenantID) != "" {
+		allowed, err := repo.GetTenantInstitutionMenuIDSet(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		roleMenuIDs = filterRoleMenuIDsByAllowedSet(roleMenuIDs, allowed)
+		for index := range items {
+			items[index].RoleIDs = roleMenuIDs[items[index].RoleID]
+		}
 	}
 
 	countMap, err := repo.countInstitutionRoleVisibleAuthorities(ctx, roleMenuIDs)
@@ -3289,7 +3386,7 @@ func (repo *Repository) DeleteDefaultRole(ctx context.Context, roleID int64) (in
 	return detachedUsers, nil
 }
 
-func (repo *Repository) GetDefaultRoleDetail(ctx context.Context, roleID int64) (model.DefaultRoleDetailVO, error) {
+func (repo *Repository) GetDefaultRoleDetail(ctx context.Context, roleID int64, tenantID string) (model.DefaultRoleDetailVO, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(role_name, ''), IFNULL(description, ''), IFNULL(is_admin, 0), IFNULL(is_default, 0)
 		FROM sso_role
@@ -3303,6 +3400,13 @@ func (repo *Repository) GetDefaultRoleDetail(ctx context.Context, roleID int64) 
 	menuIDs, err := repo.GetMenuIDsByRole(ctx, roleID, nil)
 	if err != nil {
 		return model.DefaultRoleDetailVO{}, err
+	}
+	if strings.TrimSpace(tenantID) != "" {
+		allowed, err := repo.GetTenantInstitutionMenuIDSet(ctx, tenantID)
+		if err != nil {
+			return model.DefaultRoleDetailVO{}, err
+		}
+		menuIDs = filterMenuIDsByAllowedSet(menuIDs, allowed)
 	}
 	selected := make(map[int64]struct{}, len(menuIDs))
 	for _, id := range menuIDs {

@@ -21,7 +21,7 @@
           <a-button @click="handleReset">
             重置
           </a-button>
-          <a-button type="primary" @click="openCreateModal">
+          <a-button v-if="canManageDefaultRoles" type="primary" @click="openCreateModal">
             <template #icon>
               <PlusOutlined />
             </template>
@@ -67,9 +67,10 @@
           <template v-else-if="column.key === 'actions'">
             <div class="action-cell">
               <a-button type="link" size="small" @click="openEditModal(toRoleRecord(record))">
-                编辑权限
+                {{ canManageDefaultRoles ? '编辑权限' : '查看权限' }}
               </a-button>
               <a-popconfirm
+                v-if="canManageDefaultRoles"
                 overlay-class-name="default-role-delete-popconfirm"
                 :overlay-style="deletePopconfirmOverlayStyle"
                 ok-text="确认删除"
@@ -98,7 +99,7 @@
     <PlatformModalShell
       v-model:open="modalOpen"
       :width="1160"
-      :title="modalMode === 'edit' ? '编辑默认角色' : '新增默认角色'"
+      :title="modalTitle"
       modal-class="default-role-modal"
       @close="closeModal"
     >
@@ -109,6 +110,7 @@
               <a-form-item label="角色名称" required>
                 <a-input
                   v-model:value="formData.roleName"
+                  :disabled="!canManageDefaultRoles"
                   placeholder="请输入角色名称"
                   :maxlength="20"
                 />
@@ -117,6 +119,7 @@
               <a-form-item label="角色描述" style="margin-bottom: 0;">
                 <a-textarea
                   v-model:value="formData.description"
+                  :disabled="!canManageDefaultRoles"
                   :rows="2"
                   :maxlength="200"
                   placeholder="请输入角色描述"
@@ -145,7 +148,7 @@
               </div>
             </div>
             <div class="role-stat-card__hint">
-              删除默认角色时，会自动解除机构员工对该角色的绑定，但不会影响机构已创建的自定义角色。
+{{ canManageDefaultRoles ? '删除默认角色时，会自动解除机构员工对该角色的绑定，但不会影响机构已创建的自定义角色。' : '当前展示的是按租户授权版本裁剪后的可用权限，租户不可修改平台默认角色模板。' }}
             </div>
           </div>
         </aside>
@@ -189,6 +192,7 @@
                     <div class="permission-row__main">
                       <a-checkbox
                         v-model:checked="item.checked"
+                        :disabled="!canManageDefaultRoles"
                         :indeterminate="item.indeterminate"
                         @change="() => handleParentChange(item)"
                       />
@@ -205,6 +209,7 @@
                         <div class="permission-row__main">
                           <a-checkbox
                             v-model:checked="child.checked"
+                            :disabled="!canManageDefaultRoles"
                             :indeterminate="child.indeterminate"
                             @change="() => handleChildChange(child, item)"
                           />
@@ -224,6 +229,7 @@
                           <div class="permission-row__main permission-row__main--authority">
                             <a-checkbox
                               v-model:checked="authority.checked"
+                              :disabled="!canManageDefaultRoles"
                               @change="() => handleAuthorityChange(authority, child, item)"
                             />
                             <div class="permission-authority">
@@ -251,7 +257,7 @@
       <template #footer>
         <div class="role-modal-footer">
           <a-popconfirm
-            v-if="modalMode === 'edit'"
+            v-if="modalMode === 'edit' && canManageDefaultRoles"
             overlay-class-name="default-role-delete-popconfirm"
             :overlay-style="deletePopconfirmOverlayStyle"
             ok-text="确认删除"
@@ -270,7 +276,7 @@
           <a-button @click="closeModal">
             取消
           </a-button>
-          <a-button type="primary" :loading="submitting" @click="handleSubmit">
+          <a-button v-if="canManageDefaultRoles" type="primary" :loading="submitting" @click="handleSubmit">
             保存
           </a-button>
         </div>
@@ -310,6 +316,7 @@ import {
 } from '@/composables/useRolePermissions'
 import PlatformModalShell from '../shared/platform-modal-shell.vue'
 import messageService from '@/utils/messageService'
+import { useUserStore } from '@/stores/user'
 
 enum PortalEnum {
   INSTITUTION = 2,
@@ -328,6 +335,7 @@ interface DefaultRoleRecord {
 type ModalMode = 'create' | 'edit'
 
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
+const userStore = useUserStore()
 
 const currentPortal = ref<PortalEnum>(PortalEnum.INSTITUTION)
 const portalOptions = [
@@ -411,6 +419,17 @@ const columns: TableColumnsType<DefaultRoleRecord> = [
     fixed: 'right',
   },
 ]
+
+const canManageDefaultRoles = computed(() => {
+  const userInfo = userStore.userInfo
+  return userInfo?.tenantType === 'platform' || userInfo?.tenantRole === 'platform_admin'
+})
+
+const modalTitle = computed(() => {
+  if (!canManageDefaultRoles.value)
+    return '查看默认角色'
+  return modalMode.value === 'edit' ? '编辑默认角色' : '新增默认角色'
+})
 
 const filteredRoleList = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
@@ -748,6 +767,11 @@ async function handleDeleteByModal() {
 }
 
 async function handleSubmit() {
+  if (!canManageDefaultRoles.value) {
+    closeModal()
+    return
+  }
+
   const roleName = String(formData.roleName || '').trim()
   if (!roleName) {
     messageService.error('请填写角色名称')

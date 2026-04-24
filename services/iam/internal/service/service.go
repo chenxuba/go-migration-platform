@@ -847,6 +847,20 @@ func (svc *Service) MenuTree(menuName string, ownType *int) ([]model.MenuTreeNod
 	return buildMenuTree(menus), nil
 }
 
+func (svc *Service) MenuTreeForClaims(claims authx.Claims, menuName string, ownType *int) ([]model.MenuTreeNode, error) {
+	if claims.LoginType == "manage" && !isPlatformAdminClaims(claims) && ownType != nil && *ownType == 2 {
+		menus, err := svc.repo.ListMenusByTenant(context.Background(), claims.TenantID, menuName, *ownType)
+		if err != nil {
+			return nil, err
+		}
+		return buildVisibleInstitutionMenuTree(menus), nil
+	}
+	if claims.LoginType == "org" && ownType != nil {
+		return svc.InstMenuTree(claims, *ownType)
+	}
+	return svc.MenuTree(menuName, ownType)
+}
+
 func (svc *Service) InstMenuTree(claims authx.Claims, ownType int) ([]model.MenuTreeNode, error) {
 	orgID, err := svc.resolveOrgID(claims, nil)
 	if err != nil {
@@ -999,16 +1013,58 @@ func (svc *Service) PageInstRoles(claims authx.Claims, query model.RoleQueryDTO)
 	return svc.repo.PageRolesByOrg(context.Background(), orgID, query)
 }
 
-func (svc *Service) RoleMenuIDs(roleID int64, ownType *int) ([]int64, error) {
-	return svc.repo.GetMenuIDsByRole(context.Background(), roleID, ownType)
+func (svc *Service) RoleMenuIDs(claims authx.Claims, roleID int64, ownType *int) ([]int64, error) {
+	menuIDs, err := svc.repo.GetMenuIDsByRole(context.Background(), roleID, ownType)
+	if err != nil {
+		return nil, err
+	}
+	return svc.scopeInstitutionMenuIDs(context.Background(), claims, menuIDs, ownType)
 }
 
-func (svc *Service) GetRoleTemplates(roleType *int) ([]model.RoleTemplateVO, error) {
-	return svc.repo.GetSystemDefaultRoles(context.Background(), roleType)
+func (svc *Service) GetRoleTemplates(claims authx.Claims, roleType *int) ([]model.RoleTemplateVO, error) {
+	return svc.repo.GetSystemDefaultRoles(context.Background(), roleType, tenantScopeForClaims(claims))
 }
 
-func (svc *Service) GetDefaultRoleDetail(roleID int64) (model.DefaultRoleDetailVO, error) {
-	return svc.repo.GetDefaultRoleDetail(context.Background(), roleID)
+func (svc *Service) GetDefaultRoleDetail(claims authx.Claims, roleID int64) (model.DefaultRoleDetailVO, error) {
+	return svc.repo.GetDefaultRoleDetail(context.Background(), roleID, tenantScopeForClaims(claims))
+}
+
+func isPlatformAdminClaims(claims authx.Claims) bool {
+	return claims.LoginType == "manage" && strings.TrimSpace(claims.TenantID) == "platform"
+}
+
+func tenantScopeForClaims(claims authx.Claims) string {
+	if isPlatformAdminClaims(claims) {
+		return ""
+	}
+	if claims.LoginType == "manage" || claims.LoginType == "org" {
+		return strings.TrimSpace(claims.TenantID)
+	}
+	return ""
+}
+
+func (svc *Service) scopeInstitutionMenuIDs(ctx context.Context, claims authx.Claims, menuIDs []int64, ownType *int) ([]int64, error) {
+	if len(menuIDs) == 0 || isPlatformAdminClaims(claims) || ownType == nil || *ownType != 2 {
+		return menuIDs, nil
+	}
+	tenantID := strings.TrimSpace(claims.TenantID)
+	if tenantID == "" {
+		return menuIDs, nil
+	}
+	allowed, err := svc.repo.GetTenantInstitutionMenuIDSet(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if len(allowed) == 0 {
+		return []int64{}, nil
+	}
+	result := make([]int64, 0, len(menuIDs))
+	for _, menuID := range menuIDs {
+		if _, ok := allowed[menuID]; ok {
+			result = append(result, menuID)
+		}
+	}
+	return result, nil
 }
 
 func (svc *Service) GetStaffByRoleID(claims authx.Claims, roleID int64) ([]model.InstUserSimple, error) {
@@ -1055,7 +1111,7 @@ func (svc *Service) SaveRole(claims authx.Claims, req model.SaveRoleRequest) err
 }
 
 func (svc *Service) SaveDefaultRole(claims authx.Claims, req model.SaveDefaultRoleRequest) error {
-	if claims.LoginType != "manage" {
+	if !isPlatformAdminClaims(claims) {
 		return errors.New("无权限")
 	}
 	if strings.TrimSpace(req.RoleName) == "" {
@@ -1092,7 +1148,7 @@ func (svc *Service) SaveDefaultRole(claims authx.Claims, req model.SaveDefaultRo
 }
 
 func (svc *Service) DeleteDefaultRole(claims authx.Claims, req model.DeleteDefaultRoleRequest) (model.DeleteDefaultRoleResult, error) {
-	if claims.LoginType != "manage" {
+	if !isPlatformAdminClaims(claims) {
 		return model.DeleteDefaultRoleResult{}, errors.New("无权限")
 	}
 	if req.RoleID <= 0 {
@@ -1140,6 +1196,9 @@ func (svc *Service) UpdateRole(claims authx.Claims, req model.SaveRoleRequest) e
 	}
 	switch claims.LoginType {
 	case "manage":
+		if role.OrgID == 0 && !isPlatformAdminClaims(claims) {
+			return errors.New("无权限")
+		}
 	case "org":
 		orgID, err := svc.resolveOrgID(claims, nil)
 		if err != nil {
