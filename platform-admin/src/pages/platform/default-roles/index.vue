@@ -170,7 +170,7 @@
           </div>
 
           <div class="permission-panel__toolbar">
-            <a-button type="link" :disabled="!hasSelectedPermissions" @click="clearAllSelected">
+            <a-button v-if="canManageDefaultRoles" type="link" :disabled="!hasSelectedPermissions" @click="clearAllSelected">
               清空已选
             </a-button>
             <a-input
@@ -995,12 +995,13 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 18px 12px 1px;
+  padding: 10px 18px 12px;
   border-bottom: 1px solid #f2f4f7;
 }
 
 .permission-panel__toolbar :deep(.ant-input-affix-wrapper) {
   width: 320px;
+  margin-left: auto;
 }
 
 .permission-panel__body {
