@@ -2,6 +2,7 @@
 import { CloseOutlined, QuestionCircleOutlined } from "@ant-design/icons-vue";
 import { debounce } from "lodash-es";
 import { listClassroomsApi } from "@/api/business-settings/classroom";
+import { getInstConfigModuleApi } from "@/api/common/config";
 import { getCoursePageApi } from "~/api/edu-center/course-list";
 import { pageComposeLessonsForPcApi } from "~/api/edu-center/compose-lesson";
 import {
@@ -40,6 +41,34 @@ const composePagination = ref({
 const composeFinished = ref(false);
 const classroomOptions = ref([]);
 const classroomLoading = ref(false);
+const courseConfig = ref({});
+
+function isConfigEnabled(value, defaultValue = false) {
+  if (value === undefined || value === null)
+    return defaultValue;
+  if (typeof value === "boolean")
+    return value;
+  if (typeof value === "number")
+    return value !== 0;
+  if (typeof value === "string")
+    return value === "1" || value.toLowerCase() === "true";
+  return defaultValue;
+}
+
+const showComposeLessonMode = computed(() =>
+  isConfigEnabled(courseConfig.value?.enableComposeLesson, false) || Boolean(props.editRecord?.isMultiProduct),
+);
+
+async function loadCourseConfig() {
+  try {
+    const res = await getInstConfigModuleApi("course");
+    courseConfig.value = res.result || {};
+  }
+  catch (error) {
+    console.warn("load course config failed", error);
+    courseConfig.value = {};
+  }
+}
 
 /** 组合课展示、回显不带「（N门课）」后缀 */
 function stripComposeLessonCountSuffix(text) {
@@ -137,7 +166,7 @@ const debouncedFetchComposeList = debounce(() => {
 }, 400);
 
 function onComposeDropdownVisible(open) {
-  if (open) {
+  if (open && showComposeLessonMode.value) {
     composePagination.value.current = 1;
     composeFinished.value = false;
     getComposeLessonListPage();
@@ -145,6 +174,8 @@ function onComposeDropdownVisible(open) {
 }
 
 function onComposeSearch(value) {
+  if (!showComposeLessonMode.value)
+    return;
   composeSearchKeyword.value = value;
   debouncedFetchComposeList();
 }
@@ -161,6 +192,8 @@ function onComposePopupScroll(event) {
 }
 
 function onComposeLessonCreated() {
+  if (!showComposeLessonMode.value)
+    return;
   composePagination.value.current = 1;
   composeFinished.value = false;
   getComposeLessonListPage();
@@ -522,6 +555,7 @@ watch(
       resetFormToCreateDefaults();
       return;
     }
+    loadCourseConfig();
     loadClassroomOptions();
     if (!props.editRecord?.id) {
       editDetailReqSeq += 1;
@@ -558,6 +592,17 @@ watch(
       });
   },
   { flush: "sync", immediate: true },
+);
+
+
+watch(
+  showComposeLessonMode,
+  (enabled) => {
+    if (!enabled && formState.mode === "2") {
+      formState.mode = "1";
+      formState.totalCourse = undefined;
+    }
+  },
 );
 
 watch(
@@ -728,6 +773,12 @@ function resolveModalContainer() {
 function resolveSelectPopupContainer(triggerNode) {
   return triggerNode?.parentNode || document.body;
 }
+
+function resolveFloatingPopupContainer() {
+  if (typeof document === "undefined")
+    return undefined;
+  return document.body;
+}
 </script>
 
 <template>
@@ -770,7 +821,11 @@ function resolveSelectPopupContainer(triggerNode) {
           <a-radio-group v-model:value="formState.mode" class="custom-radio">
             <a-space :size="100">
               <a-radio value="1">
-                <a-popover title="课程">
+                <a-popover
+                  title="课程"
+                  :z-index="1600"
+                  :get-popup-container="resolveFloatingPopupContainer"
+                >
                   <template #content>
                     <div class="w-220px">
                       设置后，该课程下的学员可在同一班级上课
@@ -780,8 +835,12 @@ function resolveSelectPopupContainer(triggerNode) {
                   <QuestionCircleOutlined />
                 </a-popover>
               </a-radio>
-              <a-radio value="2">
-                <a-popover title="组合课程">
+              <a-radio v-if="showComposeLessonMode" value="2">
+                <a-popover
+                  title="组合课程"
+                  :z-index="1600"
+                  :get-popup-container="resolveFloatingPopupContainer"
+                >
                   <template #content>
                     <div class="w-220px">
                       设置后，该组合课程范围内，多个课程的对应学员可在同一班级上课
@@ -855,7 +914,7 @@ function resolveSelectPopupContainer(triggerNode) {
         </a-form-item>
         <!-- 选择组合课程 -->
         <a-form-item
-          v-if="formState.mode === '2'"
+          v-if="showComposeLessonMode && formState.mode === '2'"
           label="选择组合课程"
           name="totalCourse"
           :rules="[{ required: true, message: '请选择组合课程' }]"
@@ -1066,6 +1125,7 @@ function resolveSelectPopupContainer(triggerNode) {
   </a-modal>
 
   <CreateCombinedCourseModal
+    v-if="showComposeLessonMode"
     v-model:open="combinedCourseModalOpen"
     @created="onComposeLessonCreated"
   />
