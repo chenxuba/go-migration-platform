@@ -61,6 +61,8 @@ type rollCallConfirmOptions struct {
 	IsAutoRollCall bool
 }
 
+const rollCallInsufficientTuitionBlockedMessage = "部分学员剩余数量不足"
+
 func (repo *Repository) CheckRollCallTeachingRecordByTeacherAndTime(ctx context.Context, instID int64, dto model.RollCallCheckTeachingRecordByTeacherAndTimeDTO) error {
 	teacherID, err := strconv.ParseInt(strings.TrimSpace(dto.TeacherID), 10, 64)
 	if err != nil || teacherID <= 0 {
@@ -274,6 +276,9 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 			}, nil
 		}
 		return model.RollCallConfirmResult{}, errors.New("暂无可提交的点名学员")
+	}
+	if err := repo.validateRollCallTuitionSufficientWhenArrearsDisabledTx(ctx, tx, instID, pendingStudents, accountMap); err != nil {
+		return model.RollCallConfirmResult{}, err
 	}
 
 	teachingRecordID := existingSummary.TeachingRecordID
@@ -574,6 +579,9 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 			}, nil
 		}
 		return model.RollCallConfirmResult{}, errors.New("暂无可提交的点名学员")
+	}
+	if err := repo.validateRollCallTuitionSufficientWhenArrearsDisabledTx(ctx, tx, instID, pendingStudents, accountMap); err != nil {
+		return model.RollCallConfirmResult{}, err
 	}
 
 	teachingRecordID := existingSummary.TeachingRecordID
@@ -1019,6 +1027,54 @@ func sumRollCallDeductBucketRemaining(accounts []rollCallConfirmAccount) float64
 		total += math.Max(account.RemainingQuantity, 0)
 	}
 	return roundMoney(total)
+}
+
+func (repo *Repository) isRollCallArrearsEnabledTx(ctx context.Context, tx *sql.Tx, instID int64) (bool, error) {
+	var enabled bool
+	err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(enabled_arrears_rollcall, 0) <> 0
+		FROM inst_config
+		WHERE inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, instID).Scan(&enabled)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return enabled, nil
+}
+
+func (repo *Repository) validateRollCallTuitionSufficientWhenArrearsDisabledTx(ctx context.Context, tx *sql.Tx, instID int64, students []model.RollCallConfirmStudent, accountMap map[string]rollCallConfirmAccount) error {
+	arrearsEnabled, err := repo.isRollCallArrearsEnabledTx(ctx, tx, instID)
+	if err != nil {
+		return err
+	}
+	if arrearsEnabled {
+		return nil
+	}
+	for _, item := range students {
+		if normalizeRollCallConfirmStudentStatus(item.Status) != 1 {
+			continue
+		}
+		quantity := normalizeRollCallConfirmQuantity(item)
+		if quantity <= 0 || normalizeRollCallDrawerChargingMode(item.SkuMode) != 1 {
+			continue
+		}
+		account, ok := accountMap[strings.TrimSpace(item.TuitionAccountID)]
+		if !ok || account.Status != model.TuitionAccountStatusActive {
+			return errors.New(rollCallInsufficientTuitionBlockedMessage)
+		}
+		remainingQuantity, err := repo.sumRollCallLessonHourDeductBucketRemainingTx(ctx, tx, instID, account)
+		if err != nil {
+			return err
+		}
+		if remainingQuantity+0.000001 < quantity {
+			return errors.New(rollCallInsufficientTuitionBlockedMessage)
+		}
+	}
+	return nil
 }
 
 func (repo *Repository) estimateRollCallLessonHourDeductBucketTuitionTx(ctx context.Context, tx *sql.Tx, instID int64, account rollCallConfirmAccount, quantity float64) (float64, error) {

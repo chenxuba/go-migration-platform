@@ -13,6 +13,7 @@ import {
   getRollCallStudentTuitionExtraInfoApi,
   getRollCallTeachingRecordStudentListApi,
 } from '@/api/edu-center/roll-call'
+import { getInstConfigModuleApi } from '@/api/common/config'
 import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
 import { useStudentStore } from '@/stores/student'
 import emitter, { EVENTS } from '@/utils/eventBus'
@@ -1011,6 +1012,52 @@ function showRollCallArrearWarning(names) {
     })
   })
 }
+function isConfigEnabled(value, defaultValue = false) {
+  if (value === undefined || value === null)
+    return defaultValue
+  if (typeof value === 'boolean')
+    return value
+  if (typeof value === 'number')
+    return value !== 0
+  if (typeof value === 'string')
+    return value === '1' || value.toLowerCase() === 'true'
+  return defaultValue
+}
+function showRollCallInsufficientBlockedModal() {
+  return new Promise((resolve) => {
+    Modal.confirm({
+      title: '部分学员剩余数量不足',
+      icon: h(ExclamationCircleFilled, { style: { color: '#ff4d4f' } }),
+      content: '当前不支持课消超记，部分学员剩余数量不足，请修改点名状态或扣减数量',
+      centered: true,
+      okText: '返回修改',
+      cancelButtonProps: { style: { display: 'none' } },
+      onOk: () => resolve(),
+    })
+  })
+}
+async function isRollCallArrearsEnabled() {
+  const res = await getInstConfigModuleApi('course')
+  return isConfigEnabled(res.result?.enabledArrearsRollcall, false)
+}
+async function estimateInsufficientStudentNames(estimatePayload) {
+  if (!estimatePayload.length)
+    return []
+  const estimateRes = await batchEstimateRollCallSufficientTuitionAccountApi({
+    tuitionInfoList: estimatePayload,
+  })
+  if (estimateRes.code !== 200)
+    throw new Error(estimateRes.message || '扣费账户剩余校验失败')
+  const insufficientIdSet = new Set(
+    (Array.isArray(estimateRes.result?.tuitionInfoList) ? estimateRes.result.tuitionInfoList : [])
+      .filter(item => item?.isSufficient === false)
+      .map(item => String(item?.tuitionAccountId || '')),
+  )
+  return estimatePayload
+    .filter(item => insufficientIdSet.has(String(item?.tuitionAccountId || '')))
+    .map(item => String(item?.studentName || ''))
+    .filter(Boolean)
+}
 async function handleConfirmRollCall() {
   if (submittingRollCall.value)
     return
@@ -1049,22 +1096,10 @@ async function handleConfirmRollCall() {
         throw new Error(checkRes.message || '上课教师时间冲突校验失败')
     }
 
-    let insufficientNames = []
-    if (estimatePayload.length > 0) {
-      const estimateRes = await batchEstimateRollCallSufficientTuitionAccountApi({
-        tuitionInfoList: estimatePayload,
-      })
-      if (estimateRes.code !== 200)
-        throw new Error(estimateRes.message || '扣费账户剩余校验失败')
-      const insufficientIdSet = new Set(
-        (Array.isArray(estimateRes.result?.tuitionInfoList) ? estimateRes.result.tuitionInfoList : [])
-          .filter(item => item?.isSufficient === false)
-          .map(item => String(item?.tuitionAccountId || '')),
-      )
-      insufficientNames = estimatePayload
-        .filter(item => insufficientIdSet.has(String(item?.tuitionAccountId || '')))
-        .map(item => String(item?.studentName || ''))
-        .filter(Boolean)
+    const insufficientNames = await estimateInsufficientStudentNames(estimatePayload)
+    if (insufficientNames.length > 0 && !await isRollCallArrearsEnabled()) {
+      await showRollCallInsufficientBlockedModal()
+      return
     }
 
     messageService.clear()
@@ -1085,6 +1120,10 @@ async function handleConfirmRollCall() {
     }
   }
   catch (error) {
+    if (String(error?.response?.data?.message || error?.message || '').includes('部分学员剩余数量不足')) {
+      await showRollCallInsufficientBlockedModal()
+      return
+    }
     if (!shouldSkipManualErrorMessage(error)) {
       messageService.error(error?.response?.data?.message || error?.message || '点名提交失败')
     }
