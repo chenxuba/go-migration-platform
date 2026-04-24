@@ -58,6 +58,14 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/platform/tenants',
+        name: 'PlatformTenants',
+        component: () => import('~/pages/platform/tenants/index.vue'),
+        meta: {
+          title: '租户管理',
+        },
+      },
+      {
         path: '/platform/permissions',
         name: 'PlatformPermissions',
         component: () => import('~/pages/platform/permissions/index.vue'),
