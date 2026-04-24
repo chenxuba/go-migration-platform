@@ -4,10 +4,12 @@ import type { VersionItem } from '@/api/platform/versions'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { pageVersionsApi } from '@/api/platform/versions'
+import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 import { filterSystemDefaultVersions, sortVersionsByDisplayOrder, sortVersionsByDisplayOrderDesc } from '../shared/version-order'
 import VersionFormModal from './components/version-form-modal.vue'
 
+const userStore = useUserStore()
 const loading = ref(false)
 const keyword = ref('')
 const dataSource = ref<VersionItem[]>([])
@@ -15,56 +17,30 @@ const highlightSource = ref<VersionItem[]>([])
 const versionModalOpen = ref(false)
 const editingVersionId = ref<number | null>(null)
 
+const isTenantAdmin = computed(() => userStore.userInfo?.tenantRole === 'tenant_admin')
+const pageTitle = computed(() => isTenantAdmin.value ? '我的售卖版本' : '版本管理')
+const createButtonText = computed(() => isTenantAdmin.value ? '新建租户版本' : '新建版本')
+const editButtonText = computed(() => isTenantAdmin.value ? '编辑售卖版本' : '编辑版本')
+const tableTitle = computed(() => isTenantAdmin.value ? `共 ${pagination.total} 个租户版本` : `共 ${pagination.total} 个版本`)
+
 const pagination = reactive({
   current: 1,
   pageSize: 20,
   total: 0,
   showSizeChanger: true,
-  showTotal: (total: number) => `共 ${total} 个版本`,
+  showTotal: (total: number) => isTenantAdmin.value ? `共 ${total} 个租户版本` : `共 ${total} 个版本`,
 })
 
 const highlightVersions = computed(() => highlightSource.value.slice(0, 4))
 const tableVersions = computed(() => sortVersionsByDisplayOrderDesc(dataSource.value))
 
 const columns: TableColumnsType<VersionItem> = [
-  {
-    title: '版本方案',
-    dataIndex: 'name',
-    key: 'name',
-    width: 280,
-  },
-  {
-    title: '价格',
-    dataIndex: 'price',
-    key: 'price',
-    width: 160,
-  },
-  {
-    title: '菜单规模',
-    dataIndex: 'menuCount',
-    key: 'menuCount',
-    width: 140,
-    align: 'center' as const,
-  },
-  {
-    title: '绑定机构',
-    dataIndex: 'orgCount',
-    key: 'orgCount',
-    width: 140,
-    align: 'center' as const,
-  },
-  {
-    title: '最近更新',
-    dataIndex: 'updateTime',
-    key: 'updateTime',
-    width: 180,
-  },
-  {
-    title: '操作',
-    key: 'action',
-    width: 140,
-    fixed: 'right' as const,
-  },
+  { title: '版本方案', dataIndex: 'name', key: 'name', width: 280 },
+  { title: '价格', dataIndex: 'price', key: 'price', width: 160 },
+  { title: '菜单规模', dataIndex: 'menuCount', key: 'menuCount', width: 140, align: 'center' as const },
+  { title: '绑定机构', dataIndex: 'orgCount', key: 'orgCount', width: 140, align: 'center' as const },
+  { title: '最近更新', dataIndex: 'updateTime', key: 'updateTime', width: 180 },
+  { title: '操作', key: 'action', width: 140, fixed: 'right' as const },
 ]
 
 function formatDateMinute(value?: string) {
@@ -72,11 +48,6 @@ function formatDateMinute(value?: string) {
   if (!raw)
     return '--'
   return raw.length >= 16 ? raw.slice(0, 16) : raw
-}
-
-function formatPrice(value?: number) {
-  const numeric = Number(value || 0)
-  return numeric.toFixed(2)
 }
 
 function formatPriceLabel(value?: number) {
@@ -93,17 +64,11 @@ function getVersionRemark(value?: string) {
 
 async function fetchHighlightVersions() {
   try {
-    const res = await pageVersionsApi({
-      current: 1,
-      size: 200,
-      type: 1,
-    })
-
+    const res = await pageVersionsApi({ current: 1, size: 200, type: 1 })
     if (res.code !== 200) {
       messageService.error(res.message || '获取版本卡片失败')
       return
     }
-
     highlightSource.value = sortVersionsByDisplayOrder(
       filterSystemDefaultVersions(Array.isArray(res.result) ? res.result : []),
     )
@@ -123,12 +88,10 @@ async function fetchVersions() {
       name: keyword.value.trim() || undefined,
       type: 1,
     })
-
     if (res.code !== 200) {
       messageService.error(res.message || '获取版本列表失败')
       return
     }
-
     dataSource.value = sortVersionsByDisplayOrder(Array.isArray(res.result) ? res.result : [])
     pagination.total = Number(res.total || 0)
   }
@@ -184,7 +147,7 @@ watch(versionModalOpen, (open) => {
   <div class="version-page">
     <div class="version-header">
       <div class="version-header__title">
-        版本管理
+        {{ pageTitle }}
       </div>
 
       <div class="version-header__actions">
@@ -200,7 +163,7 @@ watch(versionModalOpen, (open) => {
           <template #icon>
             <PlusOutlined />
           </template>
-          新建版本
+          {{ createButtonText }}
         </a-button>
       </div>
     </div>
@@ -221,9 +184,7 @@ watch(versionModalOpen, (open) => {
           </div>
         </div>
 
-        <a-tooltip
-          :overlay-style="{ maxWidth: '320px', whiteSpace: 'normal' }"
-        >
+        <a-tooltip :overlay-style="{ maxWidth: '320px', whiteSpace: 'normal' }">
           <template #title>
             {{ getVersionRemark(item.remark) }}
           </template>
@@ -249,7 +210,7 @@ watch(versionModalOpen, (open) => {
     <div class="version-table-card">
       <div class="version-table-card__header">
         <div class="version-table-card__title">
-          共 {{ pagination.total }} 个版本
+          {{ tableTitle }}
         </div>
       </div>
 
@@ -270,9 +231,7 @@ watch(versionModalOpen, (open) => {
               <div class="version-name-cell__title">
                 {{ record.name || '--' }}
               </div>
-              <a-tooltip
-                :overlay-style="{ maxWidth: '320px', whiteSpace: 'normal' }"
-              >
+              <a-tooltip :overlay-style="{ maxWidth: '320px', whiteSpace: 'normal' }">
                 <template #title>
                   {{ getVersionRemark(record.remark) }}
                 </template>
@@ -329,7 +288,7 @@ watch(versionModalOpen, (open) => {
 
           <template v-else-if="column.key === 'action'">
             <a-button type="link" class="action-link" @click="openEditModal(record)">
-              编辑版本
+              {{ editButtonText }}
             </a-button>
           </template>
         </template>

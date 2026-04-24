@@ -254,6 +254,10 @@ function formatDateMinute(value?: string) {
 }
 
 function getInstitutionOpenTypeLabel(record: Partial<InstitutionItem>) {
+  const currentModuleName = String(record.currentModuleName || '').trim()
+  if (currentModuleName)
+    return currentModuleName
+
   const currentValue = Number(record.openType || 0)
   return institutionOpenTypeOptions.find(item => item.id === currentValue)?.value || '基础版'
 }

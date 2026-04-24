@@ -53,6 +53,9 @@ func menuCodeCandidates(ownType int, menuCode string) []string {
 
 func New(db *sql.DB) (*Repository, error) {
 	repo := &Repository{db: db}
+	if err := repo.ensureTenantControlPlaneSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.ensureMenuSchema(context.Background()); err != nil {
 		return nil, err
 	}
@@ -78,6 +81,226 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	return repo, nil
+}
+
+func (repo *Repository) ensureTenantControlPlaneSchema(ctx context.Context) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS tenant_profile (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			tenant_id VARCHAR(64) NOT NULL,
+			tenant_name VARCHAR(128) NOT NULL,
+			tenant_type VARCHAR(32) NOT NULL DEFAULT 'partner',
+			parent_tenant_id VARCHAR(64) DEFAULT NULL,
+			edition VARCHAR(64) NOT NULL DEFAULT 'enterprise',
+			status VARCHAR(32) NOT NULL DEFAULT 'active',
+			isolation_mode VARCHAR(32) NOT NULL DEFAULT 'shared_db',
+			brand_config JSON DEFAULT NULL,
+			remark VARCHAR(500) DEFAULT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_tenant_profile_tenant (tenant_id),
+			KEY idx_tenant_profile_parent (parent_tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS tenant_institution (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			tenant_id VARCHAR(64) NOT NULL,
+			institution_id BIGINT NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_tenant_institution_inst (institution_id),
+			KEY idx_tenant_institution_tenant (tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS tenant_user (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			tenant_id VARCHAR(64) NOT NULL,
+			user_id BIGINT NOT NULL,
+			user_role VARCHAR(32) NOT NULL DEFAULT 'tenant_admin',
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_tenant_user (tenant_id, user_id),
+			KEY idx_tenant_user_tenant (tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+	}
+	for _, statement := range statements {
+		if _, err := repo.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_profile (tenant_id, tenant_name, tenant_type, parent_tenant_id, edition, status, isolation_mode, remark)
+		SELECT 'platform', '公司平台总控', 'platform', NULL, 'platform', 'active', 'shared_db', '公司最高权限控制台'
+		FROM DUAL
+		WHERE NOT EXISTS (SELECT 1 FROM tenant_profile WHERE tenant_id = 'platform' AND del_flag = 0)
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_profile (tenant_id, tenant_name, tenant_type, parent_tenant_id, edition, status, isolation_mode, remark)
+		SELECT 'tenant-a', 'A租户', 'partner', 'platform', 'enterprise', 'active', 'shared_db', '默认迁移租户'
+		FROM DUAL
+		WHERE NOT EXISTS (SELECT 1 FROM tenant_profile WHERE tenant_id = 'tenant-a' AND del_flag = 0)
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_institution (tenant_id, institution_id, create_time, update_time, del_flag)
+		SELECT 'tenant-a', oi.id, NOW(), NOW(), 0
+		FROM org_institution oi
+		WHERE oi.del_flag = 0
+		  AND NOT EXISTS (SELECT 1 FROM tenant_institution WHERE del_flag = 0)
+		ON DUPLICATE KEY UPDATE tenant_id = VALUES(tenant_id), update_time = NOW(), del_flag = 0
+	`); err != nil {
+		return err
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_user (tenant_id, user_id, user_role)
+		SELECT 'platform', su.id, 'platform_admin'
+		FROM sso_user su
+		WHERE su.del_flag = 0 AND su.username = 'admin'
+		ON DUPLICATE KEY UPDATE user_role = 'platform_admin', update_time = NOW(), del_flag = 0
+	`)
+	if err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		UPDATE tenant_user tu
+		JOIN sso_user su ON su.id = tu.user_id AND su.del_flag = 0
+		SET tu.del_flag = 1, tu.update_time = NOW()
+		WHERE tu.tenant_id = 'tenant-a'
+		  AND su.username = 'admin'
+		  AND tu.user_role = 'platform_admin'
+	`); err != nil {
+		return err
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		UPDATE sso_user su
+		JOIN tenant_user tu ON tu.user_id = su.id AND tu.del_flag = 0
+		SET su.is_admin = 0, su.update_time = NOW()
+		WHERE tu.user_role = 'tenant_admin'
+		  AND su.del_flag = 0
+	`)
+	return err
+}
+
+func (repo *Repository) ResolveTenantIDByDomain(ctx context.Context, domain string) (string, error) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return "", nil
+	}
+	var tenantID string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT td.tenant_id
+		FROM tenant_domain td
+		JOIN tenant_profile tp ON tp.tenant_id = td.tenant_id AND tp.del_flag = 0
+		WHERE td.domain = ? AND td.del_flag = 0 AND tp.status = 'active'
+		LIMIT 1
+	`, domain).Scan(&tenantID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return strings.TrimSpace(tenantID), err
+}
+
+func (repo *Repository) GetTenantName(ctx context.Context, tenantID string) (string, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return "", nil
+	}
+	var tenantName string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(tenant_name, '')
+		FROM tenant_profile
+		WHERE tenant_id = ? AND del_flag = 0
+		LIMIT 1
+	`, tenantID).Scan(&tenantName)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return strings.TrimSpace(tenantName), err
+}
+
+func (repo *Repository) GetTenantUserScope(ctx context.Context, userID int64, tenantID string) (string, string, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if userID <= 0 || tenantID == "" {
+		return "", "", nil
+	}
+	var role string
+	var tenantType string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(tu.user_role, ''), IFNULL(tp.tenant_type, '')
+		FROM tenant_user tu
+		JOIN tenant_profile tp ON tp.tenant_id = tu.tenant_id AND tp.del_flag = 0
+		WHERE tu.user_id = ? AND tu.tenant_id = ? AND tu.del_flag = 0
+		LIMIT 1
+	`, userID, tenantID).Scan(&role, &tenantType)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	return role, tenantType, nil
+}
+
+func (repo *Repository) ResolveTenantIDByDomainAndEntryType(ctx context.Context, domain, entryType string) (string, error) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	entryType = strings.TrimSpace(entryType)
+	if domain == "" || entryType == "" {
+		return "", nil
+	}
+	var tenantID string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT td.tenant_id
+		FROM tenant_domain td
+		JOIN tenant_profile tp ON tp.tenant_id = td.tenant_id AND tp.del_flag = 0
+		WHERE td.domain = ? AND td.entry_type = ? AND td.del_flag = 0 AND tp.status = 'active'
+		LIMIT 1
+	`, domain, entryType).Scan(&tenantID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return strings.TrimSpace(tenantID), err
+}
+
+func (repo *Repository) ResolveTenantIDByInstitution(ctx context.Context, institutionID int64) (string, error) {
+	if institutionID <= 0 {
+		return "", nil
+	}
+	var tenantID string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT ti.tenant_id
+		FROM tenant_institution ti
+		JOIN tenant_profile tp ON tp.tenant_id = ti.tenant_id AND tp.del_flag = 0 AND tp.status = 'active'
+		WHERE ti.institution_id = ? AND ti.del_flag = 0
+		ORDER BY ti.id DESC
+		LIMIT 1
+	`, institutionID).Scan(&tenantID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return strings.TrimSpace(tenantID), err
+}
+
+func (repo *Repository) InstitutionBelongsToTenant(ctx context.Context, institutionID int64, tenantID string) (bool, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if institutionID <= 0 || tenantID == "" {
+		return false, nil
+	}
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM tenant_institution
+		WHERE institution_id = ? AND tenant_id = ? AND del_flag = 0
+	`, institutionID, tenantID).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (repo *Repository) migrateLegacySystemDefaultRoleTypes(ctx context.Context) error {

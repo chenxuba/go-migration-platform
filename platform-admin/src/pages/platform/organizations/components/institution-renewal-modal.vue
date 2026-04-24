@@ -12,6 +12,7 @@ import {
   getInstitutionRenewalRecordsApi,
   renewInstitutionApi,
 } from '@/api/platform/institutions'
+import { pageVersionsApi, type VersionItem } from '@/api/platform/versions'
 import messageService from '@/utils/messageService'
 
 const props = defineProps<{
@@ -25,7 +26,7 @@ const emit = defineEmits<{
 }>()
 
 interface RenewalFormState {
-  openType?: number
+  moduleId?: number
   openDuration?: string
 }
 
@@ -40,8 +41,10 @@ const submitting = ref(false)
 const renewConfirmOpen = ref(false)
 const detail = ref<InstitutionDetail>()
 const records = ref<InstitutionRenewalRecord[]>([])
+const versionLoading = ref(false)
+const tenantVersions = ref<VersionItem[]>([])
 const formState = reactive<RenewalFormState>({
-  openType: undefined,
+  moduleId: undefined,
   openDuration: undefined,
 })
 const renewActionLocks = reactive({
@@ -85,14 +88,10 @@ const openDurationOptionMap: Record<number, { value: string, label: string }[]> 
   ],
 }
 
-const availableOpenTypeOptions = computed(() => {
-  if (Number(detail.value?.openType || 2) >= 2)
-    return openTypeOptions.filter(item => item.value !== 1)
-  return openTypeOptions
-})
-const openDurationOptions = computed(() => openDurationOptionMap[Number(formState.openType) || 2] || openDurationOptionMap[2])
-const confirmOpenTypeLabel = computed(() => getOpenTypeLabel(formState.openType))
-const confirmOpenDurationLabel = computed(() => getOpenDurationLabel(Number(formState.openType || 2), formState.openDuration))
+const availableOpenTypeOptions = computed(() => tenantVersions.value.map(item => ({ value: item.id, label: item.name })))
+const openDurationOptions = computed(() => openDurationOptionMap[2])
+const confirmOpenTypeLabel = computed(() => getVersionName(formState.moduleId))
+const confirmOpenDurationLabel = computed(() => getOpenDurationLabel(2, formState.openDuration))
 const previewExpireEndTime = computed(() => {
   const duration = String(formState.openDuration || '').trim()
   if (!duration)
@@ -148,7 +147,7 @@ const columns: TableColumnsType<InstitutionRenewalRecord> = [
 ]
 
 const rules: Record<string, Rule[]> = {
-  openType: [{ required: true, message: '请选择开通版本', trigger: 'change' }],
+  moduleId: [{ required: true, message: '请选择开通版本', trigger: 'change' }],
   openDuration: [{ required: true, message: '请选择续期时长', trigger: 'change' }],
 }
 
@@ -249,6 +248,11 @@ function getOpenDurationLabel(openType: number, value?: string) {
   return openDurationOptionMap[openType]?.find(item => item.value === String(value || '').trim())?.label || '--'
 }
 
+function getVersionName(moduleId?: number) {
+  const id = Number(moduleId || 0)
+  return tenantVersions.value.find(item => Number(item.id) === id)?.name || detail.value?.currentModuleName || '--'
+}
+
 function resolveDurationValue(openType: number, preferred?: string) {
   const options = openDurationOptionMap[openType] || []
   const matched = options.find(item => item.value === String(preferred || '').trim())
@@ -259,33 +263,36 @@ function resetState() {
   renewConfirmOpen.value = false
   detail.value = undefined
   records.value = []
-  formState.openType = undefined
+  formState.moduleId = undefined
   formState.openDuration = undefined
+  tenantVersions.value = []
   nextTick(() => {
     formRef.value?.clearValidate?.()
   })
 }
 
 function applyDefaultForm(detailData: InstitutionDetail) {
-  const currentType = Number(detailData.openType || 2) || 2
-  formState.openType = currentType
-  formState.openDuration = resolveDurationValue(currentType, detailData.openDuration)
+  const currentModuleId = Number(detailData.currentModuleId || 0)
+  formState.moduleId = currentModuleId || tenantVersions.value[0]?.id
+  formState.openDuration = resolveDurationValue(2, detailData.openDuration)
   nextTick(() => {
     formRef.value?.clearValidate?.()
   })
 }
 
 function handleOpenTypeChange(value?: number | string) {
-  formState.openType = value ? Number(value) : undefined
-  formState.openDuration = resolveDurationValue(Number(formState.openType) || 2)
+  formState.moduleId = value ? Number(value) : undefined
+  formState.openDuration = resolveDurationValue(2, formState.openDuration)
 }
 
 async function loadData(id: number) {
   loading.value = true
   try {
-    const [detailRes, recordRes] = await Promise.all([
+    versionLoading.value = true
+    const [detailRes, recordRes, versionRes] = await Promise.all([
       getInstitutionDetailApi({ id }),
       getInstitutionRenewalRecordsApi({ institutionId: id }),
+      pageVersionsApi({ current: 1, size: 200, type: 1 }),
     ])
 
     if (detailRes.code !== 200 || !detailRes.result) {
@@ -296,8 +303,13 @@ async function loadData(id: number) {
       messageService.error(recordRes.message || '获取续期记录失败')
       return
     }
+    if (versionRes.code !== 200) {
+      messageService.error(versionRes.message || '获取版本列表失败')
+      return
+    }
 
     detail.value = detailRes.result
+    tenantVersions.value = Array.isArray(versionRes.result) ? versionRes.result : []
     records.value = Array.isArray(recordRes.result) ? recordRes.result : []
     applyDefaultForm(detailRes.result)
   }
@@ -307,19 +319,20 @@ async function loadData(id: number) {
   }
   finally {
     loading.value = false
+    versionLoading.value = false
   }
 }
 
 function buildPayload(): InstitutionRenewalMutationPayload | null {
   const institutionId = Number(props.institutionId || 0)
-  const openType = Number(formState.openType || 0)
+  const moduleId = Number(formState.moduleId || 0)
   const openDuration = String(formState.openDuration || '').trim()
-  if (!institutionId || !openType || !openDuration)
+  if (!institutionId || !moduleId || !openDuration)
     return null
 
   return {
     institutionId,
-    openType,
+    moduleId,
     openDuration,
   }
 }
@@ -440,7 +453,7 @@ watch(
 
               <div class="renewal-fact">
                 <span class="renewal-fact__label">当前开通版本</span>
-                <span class="renewal-fact__value">{{ getOpenTypeLabel(detail?.openType) }}</span>
+                <span class="renewal-fact__value">{{ detail?.currentModuleName || getOpenTypeLabel(detail?.openType) }}</span>
               </div>
 
               <div class="renewal-fact">
@@ -455,12 +468,14 @@ watch(
               续期设置
             </div>
             <a-form ref="formRef" layout="inline" :model="formState" :rules="rules" class="renewal-inline-form">
-              <a-form-item label="开通版本" name="openType">
+              <a-form-item label="开通版本" name="moduleId">
                 <a-select
-                  v-model:value="formState.openType"
+                  v-model:value="formState.moduleId"
                   :options="availableOpenTypeOptions"
+                  :loading="versionLoading"
+                  :disabled="versionLoading || availableOpenTypeOptions.length === 0"
                   class="renewal-inline-form__select"
-                  placeholder="请选择开通版本"
+                  :placeholder="availableOpenTypeOptions.length ? '请选择开通版本' : '暂无可续费版本'"
                   @change="handleOpenTypeChange"
                 />
               </a-form-item>
@@ -469,7 +484,7 @@ watch(
                 <a-select
                   v-model:value="formState.openDuration"
                   :options="openDurationOptions"
-                  :disabled="!formState.openType"
+                  :disabled="!formState.moduleId"
                   class="renewal-inline-form__select"
                   placeholder="请选择续期时长"
                 />

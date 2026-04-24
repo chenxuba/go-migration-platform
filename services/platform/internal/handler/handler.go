@@ -26,6 +26,9 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/health", handler.health)
 	mux.HandleFunc("/api/v1/tenant/features", handler.features)
 	mux.HandleFunc("/api/v1/tenant/customization-summary", handler.customizationSummary)
+	mux.HandleFunc("/api/v1/platform/tenants", handler.tenants)
+	mux.HandleFunc("/api/v1/platform/tenants/save", handler.saveTenant)
+	mux.HandleFunc("/api/v1/platform/tenants/bootstrap-summary", handler.tenantBootstrapSummary)
 	mux.HandleFunc("/api/v1/qiniu/upload-token", handler.qiniuUploadToken)
 	mux.HandleFunc("/api/v1/qiniu/video-upload-token", handler.qiniuVideoUploadToken)
 	mux.HandleFunc("/api/v1/platform/government/overview", handler.governmentOverview)
@@ -101,6 +104,60 @@ func (handler *Handler) customizationSummary(w http.ResponseWriter, r *http.Requ
 	httpx.WriteJSON(w, http.StatusOK, handler.service.CustomizationSummary(ctx), ctx.RequestID)
 }
 
+func (handler *Handler) tenantBootstrapSummary(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireManage(w, r, ctx); !ok {
+		return
+	}
+	result, err := handler.service.GetTenantBootstrapSummary(ctx)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) tenants(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.ListTenants(ctx, claims, r.URL.Query().Get("keyword"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) saveTenant(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.TenantMutation
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	operatorID := claims.UserID
+	if err := handler.service.SaveTenant(ctx, claims, req, &operatorID); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
 func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	if _, ok := handler.requireManage(w, r, ctx); !ok {
@@ -149,6 +206,8 @@ func (handler *Handler) institutions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := handler.service.PageInstitutions(
+		ctx,
+		claims,
 		parseInt(r.URL.Query().Get("current"), 1),
 		parseInt(r.URL.Query().Get("size"), 10),
 		r.URL.Query().Get("keyword"),
@@ -314,7 +373,7 @@ func (handler *Handler) createInstitution(w http.ResponseWriter, r *http.Request
 		creatorID = &claims.UserID
 	}
 
-	id, err := handler.service.CreateInstitution(input, creatorID)
+	id, err := handler.service.CreateInstitution(ctx, claims, input, creatorID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
@@ -491,7 +550,7 @@ func (handler *Handler) replaceInstitutionPermissionVersion(w http.ResponseWrite
 		operatorID = &claims.UserID
 	}
 
-	if err := handler.service.ReplaceInstitutionModule(input, operatorID); err != nil {
+	if err := handler.service.ReplaceInstitutionModule(ctx, claims, input, operatorID); err != nil {
 		if err == sql.ErrNoRows {
 			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
 			return
@@ -533,7 +592,7 @@ func (handler *Handler) replaceInstitutionPermissionVersionBatch(w http.Response
 		operatorID = &claims.UserID
 	}
 
-	if err := handler.service.ReplaceInstitutionModulesBatch(input, operatorID); err != nil {
+	if err := handler.service.ReplaceInstitutionModulesBatch(ctx, claims, input, operatorID); err != nil {
 		if err == sql.ErrNoRows {
 			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
 			return
@@ -621,7 +680,7 @@ func (handler *Handler) renewInstitution(w http.ResponseWriter, r *http.Request)
 		operatorID = &claims.UserID
 	}
 
-	result, err := handler.service.RenewInstitution(input, operatorID)
+	result, err := handler.service.RenewInstitution(ctx, claims, input, operatorID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
@@ -957,11 +1016,12 @@ func (handler *Handler) deleteNotice(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) modules(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 
-	result, err := handler.service.PageModules(parseInt(r.URL.Query().Get("current"), 1), parseInt(r.URL.Query().Get("size"), 10), r.URL.Query().Get("name"), parseInt(r.URL.Query().Get("type"), 0))
+	result, err := handler.service.PageModules(ctx, claims, parseInt(r.URL.Query().Get("current"), 1), parseInt(r.URL.Query().Get("size"), 10), r.URL.Query().Get("name"), parseInt(r.URL.Query().Get("type"), 0))
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load modules failed", ctx.RequestID)
 		return
@@ -971,7 +1031,8 @@ func (handler *Handler) modules(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) moduleMenuTree(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireManage(w, r, ctx); !ok {
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -984,7 +1045,7 @@ func (handler *Handler) moduleMenuTree(w http.ResponseWriter, r *http.Request) {
 		moduleType = 1
 	}
 
-	result, err := handler.service.ListModuleMenuTree(moduleType)
+	result, err := handler.service.ListModuleMenuTree(ctx, claims, moduleType)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load module menu tree failed", ctx.RequestID)
 		return
@@ -994,7 +1055,8 @@ func (handler *Handler) moduleMenuTree(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) moduleDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	moduleID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("moduleId")), 10, 64)
@@ -1002,7 +1064,7 @@ func (handler *Handler) moduleDetail(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid moduleId", ctx.RequestID)
 		return
 	}
-	result, err := handler.service.GetModuleDetail(moduleID)
+	result, err := handler.service.GetModuleDetail(ctx, claims, moduleID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load module detail failed", ctx.RequestID)
 		return
@@ -1062,7 +1124,8 @@ func (handler *Handler) decreaseModuleMenus(w http.ResponseWriter, r *http.Reque
 
 func (handler *Handler) replaceModuleMenus(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodPost && r.Method != http.MethodPut {
@@ -1078,7 +1141,7 @@ func (handler *Handler) replaceModuleMenus(w http.ResponseWriter, r *http.Reques
 		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
 		return
 	}
-	if err := handler.service.ReplaceModuleMenus(input); err != nil {
+	if err := handler.service.ReplaceModuleMenus(ctx, claims, input); err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "replace module menus failed", ctx.RequestID)
 		return
 	}
@@ -1087,7 +1150,8 @@ func (handler *Handler) replaceModuleMenus(w http.ResponseWriter, r *http.Reques
 
 func (handler *Handler) createModule(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -1103,7 +1167,7 @@ func (handler *Handler) createModule(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "name and type are required", ctx.RequestID)
 		return
 	}
-	id, err := handler.service.CreateModule(input)
+	id, err := handler.service.CreateModule(ctx, claims, input)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "create module failed", ctx.RequestID)
 		return
@@ -1113,7 +1177,8 @@ func (handler *Handler) createModule(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) updateModule(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodPost && r.Method != http.MethodPut {
@@ -1129,7 +1194,7 @@ func (handler *Handler) updateModule(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
 		return
 	}
-	if err := handler.service.UpdateModuleBasic(input); err != nil {
+	if err := handler.service.UpdateModuleBasic(ctx, claims, input); err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "update module failed", ctx.RequestID)
 		return
 	}
@@ -1198,6 +1263,10 @@ func validateInstitutionMutation(input model.InstitutionMutation, requirePackage
 	if strings.TrimSpace(input.Address) == "" {
 		return "address is required"
 	}
+	if requirePackage && (input.ModuleID == nil || *input.ModuleID <= 0) {
+		return "请选择开通版本"
+	}
+
 	openType := 0
 	if input.OpenType != nil {
 		if *input.OpenType != 1 && *input.OpenType != 2 && *input.OpenType != 3 && *input.OpenType != 4 {
@@ -1241,22 +1310,13 @@ func validateInstitutionRenewalMutation(input model.InstitutionRenewalMutation) 
 	if input.InstitutionID == nil || *input.InstitutionID <= 0 {
 		return "institutionId is required"
 	}
-	if input.OpenType == nil || (*input.OpenType != 1 && *input.OpenType != 2 && *input.OpenType != 3 && *input.OpenType != 4) {
+	if input.ModuleID == nil || *input.ModuleID <= 0 {
 		return "请选择开通版本"
 	}
 
 	duration := strings.TrimSpace(input.OpenDuration)
 	if duration == "" {
 		return "请选择续期时长"
-	}
-
-	if *input.OpenType == 1 {
-		switch duration {
-		case "3d", "5d", "7d":
-			return ""
-		default:
-			return "续期时长不合法"
-		}
 	}
 
 	switch duration {

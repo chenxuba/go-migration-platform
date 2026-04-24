@@ -16,6 +16,8 @@ export interface InstitutionItem {
   status?: number
   openType?: number
   openDuration?: string
+  currentModuleId?: number
+  currentModuleName?: string
   registerTime?: string
   expireEndTime?: string
   staffCount: number
@@ -45,6 +47,8 @@ export interface InstitutionDetail {
   status: number
   openType: number
   openDuration?: string
+  currentModuleId?: number
+  currentModuleName?: string
   expireStartTime?: string
   expireEndTime?: string
   lng?: number
@@ -107,6 +111,7 @@ export interface InstitutionMutationPayload {
   logo?: string
   enabled?: boolean
   openType?: number
+  moduleId?: number
   openDuration?: string
   lng?: number
   lat?: number
@@ -143,14 +148,19 @@ export interface InstitutionRenewalRecord {
 
 export interface InstitutionRenewalMutationPayload {
   institutionId: number
-  openType: number
+  openType?: number
+  moduleId: number
   openDuration: string
 }
 
 export interface InstitutionRenewalResult {
   institutionId: number
   openType: number
+  moduleId?: number
+  moduleName?: string
   openDuration?: string
+  currentModuleId?: number
+  currentModuleName?: string
   expireStartTime?: string
   expireEndTime?: string
 }

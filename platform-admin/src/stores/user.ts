@@ -43,7 +43,7 @@ export const useUserStore = defineStore('user', () => {
 
   const generateDynamicRoutes = async () => {
     // 这里判断是前端还是后端动态加载菜单 DYNAMIC_LOAD_WAY 是环境变量里面配置的
-    const dynamicLoadWay = DYNAMIC_LOAD_WAY === DynamicLoadEnum.BACKEND ? getMenuRoutes : generateRoutes
+    const dynamicLoadWay = DYNAMIC_LOAD_WAY === DynamicLoadEnum.BACKEND ? getMenuRoutes : () => generateRoutes(userInfo.value)
     const { menuData: treeMenuData, routeData } = await dynamicLoadWay()
     // console.log(treeMenuData, routeData)
 

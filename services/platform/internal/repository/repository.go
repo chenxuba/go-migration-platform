@@ -413,6 +413,9 @@ func minInt(left, right int) int {
 
 func New(db *sql.DB) (*Repository, error) {
 	repo := &Repository{db: db}
+	if err := repo.ensureTenantControlPlaneSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.migrateLegacyInstitutionMenuCodes(context.Background()); err != nil {
 		return nil, err
 	}
@@ -441,6 +444,177 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	return repo, nil
+}
+
+func (repo *Repository) ensureTenantControlPlaneSchema(ctx context.Context) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS tenant_profile (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			tenant_id VARCHAR(64) NOT NULL,
+			tenant_name VARCHAR(128) NOT NULL,
+			tenant_type VARCHAR(32) NOT NULL DEFAULT 'partner',
+			parent_tenant_id VARCHAR(64) DEFAULT NULL,
+			edition VARCHAR(64) NOT NULL DEFAULT 'enterprise',
+			status VARCHAR(32) NOT NULL DEFAULT 'active',
+			isolation_mode VARCHAR(32) NOT NULL DEFAULT 'shared_db',
+			brand_config JSON DEFAULT NULL,
+			remark VARCHAR(500) DEFAULT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_tenant_profile_tenant (tenant_id),
+			KEY idx_tenant_profile_parent (parent_tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS tenant_domain (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			tenant_id VARCHAR(64) NOT NULL,
+			domain VARCHAR(255) NOT NULL,
+			entry_type VARCHAR(32) NOT NULL DEFAULT 'institution-admin',
+			is_primary TINYINT(1) NOT NULL DEFAULT 0,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_tenant_domain_domain (domain),
+			KEY idx_tenant_domain_tenant (tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS tenant_institution (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			tenant_id VARCHAR(64) NOT NULL,
+			institution_id BIGINT NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_tenant_institution_inst (institution_id),
+			KEY idx_tenant_institution_tenant (tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS tenant_menu (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			tenant_id VARCHAR(64) NOT NULL,
+			menu_id BIGINT NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_tenant_menu (tenant_id, menu_id),
+			KEY idx_tenant_menu_tenant (tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS tenant_module (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			tenant_id VARCHAR(64) NOT NULL,
+			module_id BIGINT NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_tenant_module (tenant_id, module_id),
+			KEY idx_tenant_module_tenant (tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS tenant_user (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			tenant_id VARCHAR(64) NOT NULL,
+			user_id BIGINT NOT NULL,
+			user_role VARCHAR(32) NOT NULL DEFAULT 'tenant_admin',
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_tenant_user (tenant_id, user_id),
+			KEY idx_tenant_user_tenant (tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+	}
+	for _, statement := range statements {
+		if _, err := repo.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return repo.seedTenantAControlPlane(ctx)
+}
+
+func (repo *Repository) seedTenantAControlPlane(ctx context.Context) error {
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_profile (tenant_id, tenant_name, tenant_type, parent_tenant_id, edition, status, isolation_mode, remark)
+		SELECT 'platform', '公司平台总控', 'platform', NULL, 'platform', 'active', 'shared_db', '公司最高权限控制台'
+		FROM DUAL
+		WHERE NOT EXISTS (SELECT 1 FROM tenant_profile WHERE tenant_id = 'platform' AND del_flag = 0)
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_profile (tenant_id, tenant_name, tenant_type, parent_tenant_id, edition, status, isolation_mode, remark)
+		SELECT 'tenant-a', 'A租户', 'partner', 'platform', 'enterprise', 'active', 'shared_db', '默认迁移租户'
+		FROM DUAL
+		WHERE NOT EXISTS (SELECT 1 FROM tenant_profile WHERE tenant_id = 'tenant-a' AND del_flag = 0)
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_institution (tenant_id, institution_id, create_time, update_time, del_flag)
+		SELECT 'tenant-a', oi.id, NOW(), NOW(), 0
+		FROM org_institution oi
+		WHERE oi.del_flag = 0
+		  AND NOT EXISTS (SELECT 1 FROM tenant_institution WHERE del_flag = 0)
+		ON DUPLICATE KEY UPDATE tenant_id = VALUES(tenant_id), update_time = NOW(), del_flag = 0
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_menu (tenant_id, menu_id, create_time, update_time, del_flag)
+		SELECT 'tenant-a', sm.id, NOW(), NOW(), 0
+		FROM sso_menu sm
+		WHERE sm.del_flag = 0
+		  AND NOT EXISTS (SELECT 1 FROM tenant_menu WHERE tenant_id = 'tenant-a' AND del_flag = 0)
+		ON DUPLICATE KEY UPDATE update_time = NOW(), del_flag = 0
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_module (tenant_id, module_id, create_time, update_time, del_flag)
+		SELECT 'tenant-a', sm.id, NOW(), NOW(), 0
+		FROM sys_module sm
+		WHERE sm.del_flag = 0
+		  AND NOT EXISTS (SELECT 1 FROM tenant_module WHERE tenant_id = 'tenant-a' AND del_flag = 0)
+		ON DUPLICATE KEY UPDATE update_time = NOW(), del_flag = 0
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_user (tenant_id, user_id, user_role)
+		SELECT 'platform', su.id, 'platform_admin'
+		FROM sso_user su
+		WHERE su.del_flag = 0 AND su.username = 'admin'
+		ON DUPLICATE KEY UPDATE user_role = 'platform_admin', update_time = NOW(), del_flag = 0
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		UPDATE tenant_user tu
+		JOIN sso_user su ON su.id = tu.user_id AND su.del_flag = 0
+		SET tu.del_flag = 1, tu.update_time = NOW()
+		WHERE tu.tenant_id = 'tenant-a'
+		  AND su.username = 'admin'
+		  AND tu.user_role = 'platform_admin'
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		UPDATE sso_user su
+		JOIN tenant_user tu ON tu.user_id = su.id AND tu.del_flag = 0
+		SET su.is_admin = 0, su.update_time = NOW()
+		WHERE tu.user_role = 'tenant_admin'
+		  AND su.del_flag = 0
+	`); err != nil {
+		return err
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		INSERT INTO tenant_domain (tenant_id, domain, entry_type, is_primary)
+		SELECT 'tenant-a', 'tenant-a.localhost', 'institution-admin', 1
+		FROM DUAL
+		WHERE NOT EXISTS (SELECT 1 FROM tenant_domain WHERE domain = 'tenant-a.localhost' AND del_flag = 0)
+	`)
+	return err
 }
 
 func (repo *Repository) migrateInstitutionSuperAdminRole(ctx context.Context) error {
@@ -680,7 +854,54 @@ func (repo *Repository) ensureInstConfigHomeSchoolSchema(ctx context.Context) er
 			return err
 		}
 	}
+	if err := repo.ensureInstConfigStringFieldTypes(ctx); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (repo *Repository) ensureInstConfigStringFieldTypes(ctx context.Context) error {
+	type fieldSpec struct {
+		Column       string
+		Definition   string
+		NumericValue string
+		StringValue  string
+	}
+	fields := []fieldSpec{
+		{Column: "send_class_reminder_msg_hour", Definition: "VARCHAR(16) NOT NULL DEFAULT '19:00'", NumericValue: "19", StringValue: "19:00"},
+		{Column: "face_attendance_interval", Definition: "VARCHAR(32) NOT NULL DEFAULT '1'", NumericValue: "1", StringValue: "1"},
+		{Column: "leave_apply_cycle_limit", Definition: "VARCHAR(32) NOT NULL DEFAULT 'month'", NumericValue: "1", StringValue: "month"},
+		{Column: "leave_apply_number_limit", Definition: "VARCHAR(32) NOT NULL DEFAULT '2'", NumericValue: "2", StringValue: "2"},
+		{Column: "leave_apply_type_limit", Definition: "VARCHAR(32) NOT NULL DEFAULT 'course'", NumericValue: "1", StringValue: "course"},
+		{Column: "leave_apply_time_limit", Definition: "VARCHAR(32) NOT NULL DEFAULT '1.0'", NumericValue: "1", StringValue: "1.0"},
+		{Column: "renew_class_num", Definition: "VARCHAR(32) NOT NULL DEFAULT '5'", NumericValue: "5", StringValue: "5"},
+		{Column: "renew_validity_day", Definition: "VARCHAR(32) NOT NULL DEFAULT '15'", NumericValue: "15", StringValue: "15"},
+		{Column: "renew_price", Definition: "VARCHAR(32) NOT NULL DEFAULT '500'", NumericValue: "500", StringValue: "500"},
+	}
+	for _, field := range fields {
+		if _, err := repo.db.ExecContext(ctx, fmt.Sprintf("UPDATE inst_config SET %s = %s WHERE %s IS NULL", field.Column, field.NumericValue, field.Column)); err != nil {
+			return err
+		}
+		if err := repo.ensureColumnType(ctx, "inst_config", field.Column, "varchar", fmt.Sprintf("ALTER TABLE inst_config MODIFY COLUMN %s %s", field.Column, field.Definition)); err != nil {
+			return err
+		}
+		if _, err := repo.db.ExecContext(ctx, fmt.Sprintf("UPDATE inst_config SET %s = ? WHERE TRIM(%s) = ''", field.Column, field.Column), field.StringValue); err != nil {
+			return err
+		}
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_config
+		SET send_class_reminder_msg_hour = CONCAT(LPAD(send_class_reminder_msg_hour, 2, '0'), ':00')
+		WHERE send_class_reminder_msg_hour REGEXP '^[0-9]{1,2}$'
+	`); err != nil {
+		return err
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_config
+		SET leave_apply_cycle_limit = 'month'
+		WHERE leave_apply_cycle_limit REGEXP '^[0-9]+$'
+	`)
+	return err
 }
 
 func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) error {
@@ -780,6 +1001,35 @@ func (repo *Repository) ensureInstitutionVersionChangeSchema(ctx context.Context
 }
 
 func (repo *Repository) ensureVersionModuleSchema(ctx context.Context) error {
+	if err := repo.ensureColumnExists(ctx, "sys_module", "tenant_id", `
+		ALTER TABLE sys_module
+		ADD COLUMN tenant_id VARCHAR(64) NOT NULL DEFAULT 'platform' COMMENT '版本归属租户'
+		AFTER id
+	`); err != nil {
+		return err
+	}
+	if err := repo.ensureColumnExists(ctx, "sys_module", "owner_type", `
+		ALTER TABLE sys_module
+		ADD COLUMN owner_type VARCHAR(32) NOT NULL DEFAULT 'platform_template' COMMENT '版本类型：平台模板/租户售卖版本'
+		AFTER tenant_id
+	`); err != nil {
+		return err
+	}
+	if err := repo.ensureColumnExists(ctx, "sys_module", "source_module_id", `
+		ALTER TABLE sys_module
+		ADD COLUMN source_module_id BIGINT DEFAULT NULL COMMENT '来源平台模板ID'
+		AFTER owner_type
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		UPDATE sys_module
+		SET tenant_id = 'platform', owner_type = 'platform_template'
+		WHERE del_flag = 0
+		  AND (tenant_id IS NULL OR tenant_id = '' OR owner_type IS NULL OR owner_type = '')
+	`); err != nil {
+		return err
+	}
 	if _, err := repo.db.ExecContext(ctx, `
 		UPDATE sys_module
 		SET name = '体验版'
@@ -801,8 +1051,8 @@ func (repo *Repository) ensureVersionModuleSchema(ctx context.Context) error {
 			continue
 		}
 		if _, err := repo.db.ExecContext(ctx, `
-			INSERT INTO sys_module (uuid, version, name, type, price, create_time, update_time, del_flag, remark)
-			VALUES (?, 0, ?, 1, ?, NOW(), NOW(), 0, '')
+			INSERT INTO sys_module (uuid, version, tenant_id, owner_type, name, type, price, create_time, update_time, del_flag, remark)
+			VALUES (?, 0, 'platform', 'platform_template', ?, 1, ?, NOW(), NOW(), 0, '')
 		`, uuid.NewString(), item.Name, item.Price); err != nil {
 			return err
 		}
@@ -886,7 +1136,7 @@ func (repo *Repository) PageDicts(ctx context.Context, current, size int, keywor
 	offset := (current - 1) * size
 
 	filters := []string{"del_flag = 0"}
-	args := make([]any, 0, 2)
+	args := make([]any, 0, 3)
 	if strings.TrimSpace(keyword) != "" {
 		filters = append(filters, "(dict_name LIKE ? OR dict_code LIKE ?)")
 		args = append(args, "%"+strings.TrimSpace(keyword)+"%", "%"+strings.TrimSpace(keyword)+"%")
@@ -924,6 +1174,587 @@ func (repo *Repository) PageDicts(ctx context.Context, current, size int, keywor
 		Current: current,
 		Size:    size,
 	}, rows.Err()
+}
+
+func (repo *Repository) GetTenantBootstrapSummary(ctx context.Context, tenantID string) (model.TenantBootstrapSummary, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		tenantID = "tenant-a"
+	}
+
+	var summary model.TenantBootstrapSummary
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT tenant_id, tenant_name, tenant_type, edition, status, isolation_mode
+		FROM tenant_profile
+		WHERE tenant_id = ? AND del_flag = 0
+		LIMIT 1
+	`, tenantID).Scan(&summary.TenantID, &summary.TenantName, &summary.TenantType, &summary.Edition, &summary.Status, &summary.IsolationMode); err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM tenant_institution
+		WHERE tenant_id = ? AND del_flag = 0
+	`, tenantID).Scan(&summary.InstitutionCount); err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+	institutionRows, err := repo.db.QueryContext(ctx, `
+		SELECT institution_id
+		FROM tenant_institution
+		WHERE tenant_id = ? AND del_flag = 0
+		ORDER BY institution_id ASC
+	`, tenantID)
+	if err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+	defer institutionRows.Close()
+	for institutionRows.Next() {
+		var institutionID int64
+		if err := institutionRows.Scan(&institutionID); err != nil {
+			return model.TenantBootstrapSummary{}, err
+		}
+		summary.InstitutionIDs = append(summary.InstitutionIDs, institutionID)
+	}
+	if err := institutionRows.Err(); err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM tenant_menu
+		WHERE tenant_id = ? AND del_flag = 0
+	`, tenantID).Scan(&summary.MenuCount); err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+	moduleRows, err := repo.db.QueryContext(ctx, `
+		SELECT tm.module_id, IFNULL(sm.name, '')
+		FROM tenant_module tm
+		JOIN sys_module sm ON sm.id = tm.module_id AND sm.del_flag = 0
+		WHERE tm.tenant_id = ? AND tm.del_flag = 0
+		ORDER BY sm.id ASC
+	`, tenantID)
+	if err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+	defer moduleRows.Close()
+	for moduleRows.Next() {
+		var moduleID int64
+		var moduleName string
+		if err := moduleRows.Scan(&moduleID, &moduleName); err != nil {
+			return model.TenantBootstrapSummary{}, err
+		}
+		summary.ModuleIDs = append(summary.ModuleIDs, moduleID)
+		summary.ModuleNames = append(summary.ModuleNames, moduleName)
+	}
+	if err := moduleRows.Err(); err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+	summary.ModuleCount = len(summary.ModuleIDs)
+
+	userRows, err := repo.db.QueryContext(ctx, `
+		SELECT COALESCE(NULLIF(TRIM(su.username), ''), CAST(su.id AS CHAR))
+		FROM tenant_user tu
+		JOIN sso_user su ON su.id = tu.user_id AND su.del_flag = 0
+		WHERE tu.tenant_id = ? AND tu.del_flag = 0
+		ORDER BY tu.id
+	`, tenantID)
+	if err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+	defer userRows.Close()
+	for userRows.Next() {
+		var username string
+		if err := userRows.Scan(&username); err != nil {
+			return model.TenantBootstrapSummary{}, err
+		}
+		summary.AdminUsernames = append(summary.AdminUsernames, username)
+	}
+	if err := userRows.Err(); err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+
+	domainRows, err := repo.db.QueryContext(ctx, `
+		SELECT domain, IFNULL(entry_type, '')
+		FROM tenant_domain
+		WHERE tenant_id = ? AND del_flag = 0
+		ORDER BY is_primary DESC, id ASC
+	`, tenantID)
+	if err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+	defer domainRows.Close()
+	for domainRows.Next() {
+		var domain string
+		var entryType string
+		if err := domainRows.Scan(&domain, &entryType); err != nil {
+			return model.TenantBootstrapSummary{}, err
+		}
+		summary.Domains = append(summary.Domains, domain)
+		if entryType == "institution-admin" {
+			summary.InstitutionDomains = append(summary.InstitutionDomains, domain)
+		} else {
+			summary.AdminDomains = append(summary.AdminDomains, domain)
+		}
+	}
+	if err := domainRows.Err(); err != nil {
+		return model.TenantBootstrapSummary{}, err
+	}
+
+	return summary, nil
+}
+
+func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]model.TenantListItem, error) {
+	filters := []string{"tp.del_flag = 0"}
+	args := make([]any, 0, 2)
+	if trimmed := strings.TrimSpace(keyword); trimmed != "" {
+		filters = append(filters, "(tp.tenant_id LIKE ? OR tp.tenant_name LIKE ?)")
+		like := "%" + trimmed + "%"
+		args = append(args, like, like)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT tp.tenant_id,
+		       tp.tenant_name,
+		       tp.tenant_type,
+		       tp.edition,
+		       tp.status,
+		       tp.isolation_mode,
+		       COUNT(DISTINCT CASE WHEN ti.del_flag = 0 THEN ti.institution_id END) AS institution_count,
+		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN ti.del_flag = 0 THEN CAST(ti.institution_id AS CHAR) END ORDER BY ti.institution_id ASC SEPARATOR ','), '') AS institution_ids,
+		       COUNT(DISTINCT CASE WHEN tm.del_flag = 0 THEN tm.menu_id END) AS menu_count,
+		       COUNT(DISTINCT CASE WHEN tmod.del_flag = 0 THEN tmod.module_id END) AS module_count,
+		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN tmod.del_flag = 0 THEN CAST(tmod.module_id AS CHAR) END ORDER BY sm.id ASC SEPARATOR ','), '') AS module_ids,
+		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN tmod.del_flag = 0 THEN sm.name END ORDER BY sm.id ASC SEPARATOR ','), '') AS module_names,
+		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN tu.del_flag = 0 THEN COALESCE(NULLIF(TRIM(su.username), ''), CAST(su.id AS CHAR)) END ORDER BY su.id SEPARATOR ','), '') AS admins,
+		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN td.del_flag = 0 THEN td.domain END ORDER BY td.is_primary DESC, td.id ASC SEPARATOR ','), '') AS domains,
+		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN td.del_flag = 0 AND td.entry_type = 'platform-admin' THEN td.domain END ORDER BY td.is_primary DESC, td.id ASC SEPARATOR ','), '') AS admin_domains,
+		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN td.del_flag = 0 AND td.entry_type = 'institution-admin' THEN td.domain END ORDER BY td.is_primary DESC, td.id ASC SEPARATOR ','), '') AS institution_domains
+		FROM tenant_profile tp
+		LEFT JOIN tenant_institution ti ON ti.tenant_id = tp.tenant_id
+		LEFT JOIN tenant_menu tm ON tm.tenant_id = tp.tenant_id
+		LEFT JOIN tenant_module tmod ON tmod.tenant_id = tp.tenant_id
+		LEFT JOIN sys_module sm ON sm.id = tmod.module_id AND sm.del_flag = 0
+		LEFT JOIN tenant_user tu ON tu.tenant_id = tp.tenant_id
+		LEFT JOIN sso_user su ON su.id = tu.user_id AND su.del_flag = 0
+		LEFT JOIN tenant_domain td ON td.tenant_id = tp.tenant_id
+		WHERE `+strings.Join(filters, " AND ")+`
+		GROUP BY tp.tenant_id, tp.tenant_name, tp.tenant_type, tp.edition, tp.status, tp.isolation_mode
+		ORDER BY tp.id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.TenantListItem, 0, 16)
+	for rows.Next() {
+		var item model.TenantListItem
+		var institutionIDs string
+		var moduleIDs string
+		var moduleNames string
+		var admins string
+		var domains string
+		var adminDomains string
+		var institutionDomains string
+		if err := rows.Scan(
+			&item.TenantID,
+			&item.TenantName,
+			&item.TenantType,
+			&item.Edition,
+			&item.Status,
+			&item.IsolationMode,
+			&item.InstitutionCount,
+			&institutionIDs,
+			&item.MenuCount,
+			&item.ModuleCount,
+			&moduleIDs,
+			&moduleNames,
+			&admins,
+			&domains,
+			&adminDomains,
+			&institutionDomains,
+		); err != nil {
+			return nil, err
+		}
+		item.InstitutionIDs = splitCommaInt64List(institutionIDs)
+		item.ModuleIDs = splitCommaInt64List(moduleIDs)
+		item.ModuleNames = splitCommaList(moduleNames)
+		item.AdminUsernames = splitCommaList(admins)
+		item.Domains = splitCommaList(domains)
+		item.AdminDomains = splitCommaList(adminDomains)
+		item.InstitutionDomains = splitCommaList(institutionDomains)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func splitCommaInt64List(raw string) []int64 {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	items := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err == nil && value > 0 {
+			items = append(items, value)
+		}
+	}
+	return items
+}
+
+func splitCommaList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
+}
+
+func (repo *Repository) GetTenantUserRole(ctx context.Context, tenantID string, userID int64) (string, error) {
+	if strings.TrimSpace(tenantID) == "" || userID <= 0 {
+		return "", nil
+	}
+	var role string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(user_role, '')
+		FROM tenant_user
+		WHERE tenant_id = ? AND user_id = ? AND del_flag = 0
+		LIMIT 1
+	`, strings.TrimSpace(tenantID), userID).Scan(&role)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return role, err
+}
+
+func (repo *Repository) SaveTenant(ctx context.Context, input model.TenantMutation, operatorID *int64) error {
+	tenantID := normalizeTenantID(input.TenantID)
+	tenantName := strings.TrimSpace(input.TenantName)
+	if tenantID == "" {
+		return fmt.Errorf("tenantId is required")
+	}
+	if tenantName == "" {
+		return fmt.Errorf("tenantName is required")
+	}
+
+	tenantType := firstNonEmpty(strings.TrimSpace(input.TenantType), "partner")
+	edition := firstNonEmpty(strings.TrimSpace(input.Edition), "enterprise")
+	status := firstNonEmpty(strings.TrimSpace(input.Status), "active")
+	isolationMode := firstNonEmpty(strings.TrimSpace(input.IsolationMode), "shared_db")
+	remark := strings.TrimSpace(input.Remark)
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO tenant_profile (tenant_id, tenant_name, tenant_type, parent_tenant_id, edition, status, isolation_mode, remark, create_time, update_time, del_flag)
+		VALUES (?, ?, ?, 'platform', ?, ?, ?, ?, NOW(), NOW(), 0)
+		ON DUPLICATE KEY UPDATE
+		  tenant_name = VALUES(tenant_name),
+		  tenant_type = VALUES(tenant_type),
+		  edition = VALUES(edition),
+		  status = VALUES(status),
+		  isolation_mode = VALUES(isolation_mode),
+		  remark = VALUES(remark),
+		  update_time = NOW(),
+		  del_flag = 0
+	`, tenantID, tenantName, tenantType, edition, status, isolationMode, remark); err != nil {
+		return err
+	}
+
+	adminDomains := input.AdminDomains
+	if adminDomains == nil {
+		adminDomains = input.Domains
+	}
+	if err := repo.replaceTenantDomainsTx(ctx, tx, tenantID, "platform-admin", adminDomains); err != nil {
+		return err
+	}
+	if err := repo.replaceTenantDomainsTx(ctx, tx, tenantID, "institution-admin", input.InstitutionDomains); err != nil {
+		return err
+	}
+	if err := repo.replaceTenantInstitutionsTx(ctx, tx, tenantID, input.InstitutionIDs); err != nil {
+		return err
+	}
+	menuIDs := input.MenuIDs
+	if input.ModuleIDs != nil {
+		if err := repo.replaceTenantModulesTx(ctx, tx, tenantID, input.ModuleIDs); err != nil {
+			return err
+		}
+		menuIDs, err = repo.listModuleMenuIDsTx(ctx, tx, input.ModuleIDs)
+		if err != nil {
+			return err
+		}
+	}
+	if err := repo.replaceTenantMenusTx(ctx, tx, tenantID, menuIDs); err != nil {
+		return err
+	}
+	if strings.TrimSpace(input.AdminUsername) != "" {
+		if err := repo.upsertTenantAdminTx(ctx, tx, tenantID, input, operatorID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func normalizeTenantID(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, " ", "-")
+	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func (repo *Repository) replaceTenantDomainsTx(ctx context.Context, tx *sql.Tx, tenantID, entryType string, domains []string) error {
+	entryType = firstNonEmpty(strings.TrimSpace(entryType), "platform-admin")
+	if _, err := tx.ExecContext(ctx, `UPDATE tenant_domain SET del_flag = 1, update_time = NOW() WHERE tenant_id = ? AND entry_type = ? AND del_flag = 0`, tenantID, entryType); err != nil {
+		return err
+	}
+	seen := map[string]struct{}{}
+	for index, domain := range domains {
+		domain = strings.ToLower(strings.TrimSpace(domain))
+		if domain == "" {
+			continue
+		}
+		if _, ok := seen[domain]; ok {
+			continue
+		}
+		seen[domain] = struct{}{}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO tenant_domain (tenant_id, domain, entry_type, is_primary, create_time, update_time, del_flag)
+			VALUES (?, ?, ?, ?, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE tenant_id = VALUES(tenant_id), entry_type = VALUES(entry_type), is_primary = VALUES(is_primary), update_time = NOW(), del_flag = 0
+		`, tenantID, domain, entryType, index == 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) replaceTenantInstitutionsTx(ctx context.Context, tx *sql.Tx, tenantID string, institutionIDs []int64) error {
+	if institutionIDs == nil {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE tenant_institution SET del_flag = 1, update_time = NOW() WHERE tenant_id = ? AND del_flag = 0`, tenantID); err != nil {
+		return err
+	}
+	seen := map[int64]struct{}{}
+	for _, institutionID := range institutionIDs {
+		if institutionID <= 0 {
+			continue
+		}
+		if _, ok := seen[institutionID]; ok {
+			continue
+		}
+		seen[institutionID] = struct{}{}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO tenant_institution (tenant_id, institution_id, create_time, update_time, del_flag)
+			VALUES (?, ?, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE tenant_id = VALUES(tenant_id), update_time = NOW(), del_flag = 0
+		`, tenantID, institutionID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) replaceTenantModulesTx(ctx context.Context, tx *sql.Tx, tenantID string, moduleIDs []int64) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE tenant_module SET del_flag = 1, update_time = NOW() WHERE tenant_id = ? AND del_flag = 0`, tenantID); err != nil {
+		return err
+	}
+	seen := map[int64]struct{}{}
+	for _, moduleID := range moduleIDs {
+		if moduleID <= 0 {
+			continue
+		}
+		if _, ok := seen[moduleID]; ok {
+			continue
+		}
+		seen[moduleID] = struct{}{}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO tenant_module (tenant_id, module_id, create_time, update_time, del_flag)
+			VALUES (?, ?, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE update_time = NOW(), del_flag = 0
+		`, tenantID, moduleID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) listModuleMenuIDsTx(ctx context.Context, tx *sql.Tx, moduleIDs []int64) ([]int64, error) {
+	normalized := normalizeInt64IDs(moduleIDs)
+	if len(normalized) == 0 {
+		return []int64{}, nil
+	}
+	placeholders := make([]string, 0, len(normalized))
+	args := make([]any, 0, len(normalized))
+	for _, moduleID := range normalized {
+		placeholders = append(placeholders, "?")
+		args = append(args, moduleID)
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT smm.menu_id
+		FROM sys_module_menu smm
+		JOIN sso_menu sm ON sm.id = smm.menu_id AND sm.del_flag = 0
+		WHERE smm.del_flag = 0 AND smm.module_id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	menuIDs := make([]int64, 0, 64)
+	for rows.Next() {
+		var menuID int64
+		if err := rows.Scan(&menuID); err != nil {
+			return nil, err
+		}
+		menuIDs = append(menuIDs, menuID)
+	}
+	return menuIDs, rows.Err()
+}
+
+func (repo *Repository) CountAllowedTenantMenus(ctx context.Context, tenantID string, menuIDs []int64) (int, error) {
+	normalized := normalizeInt64IDs(menuIDs)
+	if len(normalized) == 0 {
+		return 0, nil
+	}
+	placeholders := make([]string, 0, len(normalized))
+	args := make([]any, 0, len(normalized)+1)
+	args = append(args, strings.TrimSpace(tenantID))
+	for _, menuID := range normalized {
+		placeholders = append(placeholders, "?")
+		args = append(args, menuID)
+	}
+	var total int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT smm.menu_id)
+		FROM tenant_module tm
+		JOIN sys_module m ON m.id = tm.module_id AND m.del_flag = 0
+		JOIN sys_module_menu smm ON smm.module_id = tm.module_id AND smm.del_flag = 0
+		WHERE tm.tenant_id = ? AND tm.del_flag = 0 AND smm.menu_id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...).Scan(&total)
+	return total, err
+}
+
+func normalizeInt64IDs(values []int64) []int64 {
+	seen := map[int64]struct{}{}
+	result := make([]int64, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func (repo *Repository) replaceTenantMenusTx(ctx context.Context, tx *sql.Tx, tenantID string, menuIDs []int64) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE tenant_menu SET del_flag = 1, update_time = NOW() WHERE tenant_id = ? AND del_flag = 0`, tenantID); err != nil {
+		return err
+	}
+	if len(menuIDs) == 0 {
+		return nil
+	}
+	seen := map[int64]struct{}{}
+	for _, menuID := range menuIDs {
+		if menuID <= 0 {
+			continue
+		}
+		if _, ok := seen[menuID]; ok {
+			continue
+		}
+		seen[menuID] = struct{}{}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO tenant_menu (tenant_id, menu_id, create_time, update_time, del_flag)
+			VALUES (?, ?, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE update_time = NOW(), del_flag = 0
+		`, tenantID, menuID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) upsertTenantAdminTx(ctx context.Context, tx *sql.Tx, tenantID string, input model.TenantMutation, operatorID *int64) error {
+	username := strings.TrimSpace(input.AdminUsername)
+	password := strings.TrimSpace(input.AdminPassword)
+	nickName := firstNonEmpty(strings.TrimSpace(input.AdminNickName), strings.TrimSpace(input.TenantName)+"管理员")
+	mobile := strings.TrimSpace(input.AdminMobile)
+
+	var userID int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM sso_user WHERE del_flag = 0 AND username = ? LIMIT 1`, username).Scan(&userID)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == sql.ErrNoRows {
+		if password == "" {
+			password = "123456"
+		}
+		hashBytes, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return hashErr
+		}
+		result, insErr := tx.ExecContext(ctx, `
+			INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, is_admin, del_flag, create_time, update_time)
+			VALUES (?, 0, ?, ?, ?, '', ?, 0, 0, 0, NOW(), NOW())
+		`, uuid.NewString(), username, string(hashBytes), mobile, nickName)
+		if insErr != nil {
+			return insErr
+		}
+		userID, insErr = result.LastInsertId()
+		if insErr != nil {
+			return insErr
+		}
+	} else {
+		if password != "" {
+			hashBytes, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+			if hashErr != nil {
+				return hashErr
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE sso_user
+				SET password = ?, mobile = CASE WHEN ? = '' THEN mobile ELSE ? END, nick_name = ?, user_type = 0, is_admin = 0, update_time = NOW()
+				WHERE id = ? AND del_flag = 0
+			`, string(hashBytes), mobile, mobile, nickName, userID); err != nil {
+				return err
+			}
+		} else if _, err := tx.ExecContext(ctx, `
+			UPDATE sso_user
+			SET mobile = CASE WHEN ? = '' THEN mobile ELSE ? END, nick_name = ?, user_type = 0, is_admin = 0, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, mobile, mobile, nickName, userID); err != nil {
+			return err
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO tenant_user (tenant_id, user_id, user_role, create_time, update_time, del_flag)
+		VALUES (?, ?, 'tenant_admin', NOW(), NOW(), 0)
+		ON DUPLICATE KEY UPDATE user_role = VALUES(user_role), update_time = NOW(), del_flag = 0
+	`, tenantID, userID)
+	return err
 }
 
 func (repo *Repository) ListDictValuesByCode(ctx context.Context, code string) ([]model.DictValue, error) {
@@ -1011,7 +1842,7 @@ func (repo *Repository) PageNotices(ctx context.Context, query model.NoticeQuery
 	}, rows.Err()
 }
 
-func (repo *Repository) PageModules(ctx context.Context, current, size int, name string, moduleType int) (model.PageResult[model.Module], error) {
+func (repo *Repository) PageModules(ctx context.Context, current, size int, name string, moduleType int, tenantID string) (model.PageResult[model.Module], error) {
 	if current <= 0 {
 		current = 1
 	}
@@ -1020,25 +1851,34 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 	}
 	offset := (current - 1) * size
 
-	filters := []string{"del_flag = 0"}
-	args := make([]any, 0, 2)
+	filters := []string{"m.del_flag = 0"}
+	args := make([]any, 0, 4)
 	if strings.TrimSpace(name) != "" {
-		filters = append(filters, "name LIKE ?")
+		filters = append(filters, "m.name LIKE ?")
 		args = append(args, "%"+strings.TrimSpace(name)+"%")
 	}
 	if moduleType > 0 {
-		filters = append(filters, "type = ?")
+		filters = append(filters, "m.type = ?")
 		args = append(args, moduleType)
+	}
+	if tenantID = strings.TrimSpace(tenantID); tenantID != "" {
+		filters = append(filters, "m.tenant_id = ?")
+		args = append(args, tenantID)
+	} else {
+		filters = append(filters, "m.tenant_id = 'platform'")
 	}
 	whereClause := strings.Join(filters, " AND ")
 
 	var total int
-	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sys_module WHERE "+whereClause, args...).Scan(&total); err != nil {
+	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sys_module m WHERE "+whereClause, args...).Scan(&total); err != nil {
 		return model.PageResult[model.Module]{}, err
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT m.id,
+		       IFNULL(m.tenant_id, ''),
+		       IFNULL(m.owner_type, ''),
+		       IFNULL(m.source_module_id, 0),
 		       IFNULL(m.name, ''),
 		       IFNULL(m.type, 0),
 		       IFNULL(m.price, 0),
@@ -1050,8 +1890,8 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 		FROM sys_module m
 		LEFT JOIN sys_module_menu smm ON smm.module_id = m.id
 		LEFT JOIN org_module om ON om.module_id = m.id
-		WHERE `+strings.ReplaceAll(whereClause, "del_flag", "m.del_flag")+`
-		GROUP BY m.id, m.name, m.type, m.price, m.remark, m.create_time, m.update_time
+		WHERE `+whereClause+`
+		GROUP BY m.id, m.tenant_id, m.owner_type, m.source_module_id, m.name, m.type, m.price, m.remark, m.create_time, m.update_time
 		ORDER BY m.id DESC
 		LIMIT ? OFFSET ?`, append(args, size, offset)...)
 	if err != nil {
@@ -1064,6 +1904,9 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 		var item model.Module
 		if err := rows.Scan(
 			&item.ID,
+			&item.TenantID,
+			&item.OwnerType,
+			&item.SourceModuleID,
 			&item.Name,
 			&item.Type,
 			&item.Price,
@@ -1197,7 +2040,7 @@ func institutionStatusValue(enabled bool, expireEnd sql.NullTime) int {
 	return 1
 }
 
-func (repo *Repository) PageInstitutions(ctx context.Context, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (model.InstitutionPage, error) {
+func (repo *Repository) PageInstitutions(ctx context.Context, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int, tenantID string) (model.InstitutionPage, error) {
 	if current <= 0 {
 		current = 1
 	}
@@ -1208,9 +2051,15 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 
 	whereClause, args := buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTimeEnd, enabled, status, openType, provinceCode, cityCode, regionCode)
 	statusExpr := institutionStatusExpr("oi")
+	tenantJoinClause := ""
+	queryArgs := append([]any{}, args...)
+	if tenantID = strings.TrimSpace(tenantID); tenantID != "" {
+		tenantJoinClause = "JOIN tenant_institution ti ON ti.institution_id = oi.id AND ti.del_flag = 0 AND ti.tenant_id = ?"
+		queryArgs = append([]any{tenantID}, queryArgs...)
+	}
 
 	var total int
-	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM org_institution oi WHERE "+whereClause, args...).Scan(&total); err != nil {
+	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM org_institution oi "+tenantJoinClause+" WHERE "+whereClause, queryArgs...).Scan(&total); err != nil {
 		return model.InstitutionPage{}, err
 	}
 
@@ -1220,11 +2069,12 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 		       COALESCE(SUM(CASE WHEN `+statusExpr+` IN (1, 3) THEN 1 ELSE 0 END), 0),
 		       COALESCE(SUM(CASE WHEN `+statusExpr+` IN (2, 4) THEN 1 ELSE 0 END), 0)
 		FROM org_institution oi
-		WHERE `+whereClause, args...).Scan(&summary.TotalCount, &summary.EnabledCount, &summary.DisabledCount); err != nil {
+		`+tenantJoinClause+`
+		WHERE `+whereClause, queryArgs...).Scan(&summary.TotalCount, &summary.EnabledCount, &summary.DisabledCount); err != nil {
 		return model.InstitutionPage{}, err
 	}
 
-	listArgs := append(append([]any{}, args...), size, offset)
+	listArgs := append(append([]any{}, queryArgs...), size, offset)
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT oi.id,
 		       IFNULL(oi.organ_name, ''),
@@ -1241,15 +2091,22 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 		       `+statusExpr+`,
 		       IFNULL(oi.open_type, 2),
 		       IFNULL(oi.open_duration, ''),
+		       IFNULL(om_current.module_id, 0),
+		       IFNULL(sm_current.name, ''),
 		       IFNULL(DATE_FORMAT(oi.create_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(DATE_FORMAT(oi.expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       COUNT(DISTINCT CASE WHEN iu.del_flag = 0 THEN iu.id END) AS staff_count,
 		       COUNT(DISTINCT CASE WHEN iu.del_flag = 0 AND IFNULL(iu.disabled, 0) = 0 THEN iu.id END) AS active_staff_count,
 		       COUNT(DISTINCT CASE WHEN iu.del_flag = 0 AND IFNULL(iu.is_admin, 0) = 1 THEN iu.id END) AS admin_count
 		FROM org_institution oi
+		`+tenantJoinClause+`
+		LEFT JOIN org_module om_current ON om_current.id = (
+			SELECT om2.id FROM org_module om2 WHERE om2.org_id = oi.id AND om2.del_flag = 0 ORDER BY om2.id DESC LIMIT 1
+		)
+		LEFT JOIN sys_module sm_current ON sm_current.id = om_current.module_id AND sm_current.del_flag = 0
 		LEFT JOIN inst_user iu ON iu.inst_id = oi.id
 		WHERE `+whereClause+`
-		GROUP BY oi.id, oi.organ_name, oi.organ_code, oi.login_name, oi.mobile, oi.principal, oi.province, oi.city, oi.region, oi.address, oi.logo, oi.enabled, oi.status, oi.open_type, oi.open_duration, oi.create_time, oi.expire_end_time
+		GROUP BY oi.id, oi.organ_name, oi.organ_code, oi.login_name, oi.mobile, oi.principal, oi.province, oi.city, oi.region, oi.address, oi.logo, oi.enabled, oi.status, oi.open_type, oi.open_duration, om_current.module_id, sm_current.name, oi.create_time, oi.expire_end_time
 		ORDER BY oi.id DESC
 		LIMIT ? OFFSET ?`, listArgs...)
 	if err != nil {
@@ -1276,6 +2133,8 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 			&item.Status,
 			&item.OpenType,
 			&item.OpenDuration,
+			&item.CurrentModuleID,
+			&item.CurrentModuleName,
 			&item.RegisterTime,
 			&item.ExpireEndTime,
 			&item.StaffCount,
@@ -1477,6 +2336,8 @@ func (repo *Repository) PageGovernmentInstitutions(ctx context.Context, userID i
 		       `+statusExpr+`,
 		       IFNULL(oi.open_type, 2),
 		       IFNULL(oi.open_duration, ''),
+		       IFNULL(om_current.module_id, 0),
+		       IFNULL(sm_current.name, ''),
 		       IFNULL(DATE_FORMAT(oi.create_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(DATE_FORMAT(oi.expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       COALESCE(staff_stats.staff_count, 0),
@@ -1670,6 +2531,8 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		       `+institutionStatusExpr("oi")+`,
 		       IFNULL(oi.open_type, 2),
 		       IFNULL(oi.open_duration, ''),
+		       IFNULL(om_current.module_id, 0),
+		       IFNULL(sm_current.name, ''),
 		       IFNULL(DATE_FORMAT(oi.expire_start_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(DATE_FORMAT(oi.expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(oi.lng, 0),
@@ -1684,6 +2547,10 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		       END
 		FROM org_institution oi
 		LEFT JOIN org_institution_profile oip ON oip.institution_id = oi.id AND oip.del_flag = 0
+		LEFT JOIN org_module om_current ON om_current.id = (
+			SELECT om2.id FROM org_module om2 WHERE om2.org_id = oi.id AND om2.del_flag = 0 ORDER BY om2.id DESC LIMIT 1
+		)
+		LEFT JOIN sys_module sm_current ON sm_current.id = om_current.module_id AND sm_current.del_flag = 0
 		WHERE oi.id = ? AND oi.del_flag = 0
 		LIMIT 1
 	`, id)
@@ -1712,6 +2579,8 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		&detail.Status,
 		&detail.OpenType,
 		&detail.OpenDuration,
+		&detail.CurrentModuleID,
+		&detail.CurrentModuleName,
 		&detail.ExpireStartTime,
 		&detail.ExpireEndTime,
 		&detail.Lng,
@@ -2042,7 +2911,71 @@ func (repo *Repository) ensureInstitutionRootDepartTx(ctx context.Context, tx *s
 	return deptID, nil
 }
 
-func (repo *Repository) CreateInstitution(ctx context.Context, input model.InstitutionMutation, creatorID *int64) (int64, error) {
+func (repo *Repository) getScopedInstitutionModuleTx(ctx context.Context, tx *sql.Tx, moduleID int64, tenantID string) (int64, string, int, error) {
+	if moduleID <= 0 {
+		return 0, "", 0, fmt.Errorf("请选择开通版本")
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	query := `
+		SELECT sm.id, IFNULL(sm.name, '')
+		FROM sys_module sm
+		WHERE sm.id = ? AND sm.del_flag = 0 AND sm.type = 1`
+	args := []any{moduleID}
+	if tenantID != "" {
+		query += ` AND sm.tenant_id = ? AND sm.owner_type = 'tenant_package'`
+		args = append(args, tenantID)
+	}
+	query += ` LIMIT 1`
+
+	var scopedModuleID sql.NullInt64
+	var moduleName sql.NullString
+	if err := tx.QueryRowContext(ctx, query, args...).Scan(&scopedModuleID, &moduleName); err != nil {
+		if err == sql.ErrNoRows {
+			return 0, "", 0, fmt.Errorf("所选版本不在当前租户可用范围内")
+		}
+		return 0, "", 0, err
+	}
+	name := strings.TrimSpace(moduleName.String)
+	openType := institutionModuleNameOpenType(name)
+	if openType == 0 {
+		openType = 2
+	}
+	return scopedModuleID.Int64, name, openType, nil
+}
+
+func (repo *Repository) ensureInstitutionTenantScopeTx(ctx context.Context, tx *sql.Tx, institutionID int64, tenantID string) error {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil
+	}
+	var exists int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM tenant_institution
+		WHERE tenant_id = ? AND institution_id = ? AND del_flag = 0
+	`, tenantID, institutionID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists <= 0 {
+		return fmt.Errorf("机构不属于当前租户")
+	}
+	return nil
+}
+
+func (repo *Repository) bindInstitutionTenantTx(ctx context.Context, tx *sql.Tx, tenantID string, institutionID int64) error {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" || institutionID <= 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO tenant_institution (tenant_id, institution_id, create_time, update_time, del_flag)
+		VALUES (?, ?, NOW(), NOW(), 0)
+		ON DUPLICATE KEY UPDATE del_flag = 0, update_time = NOW()
+	`, tenantID, institutionID)
+	return err
+}
+
+func (repo *Repository) CreateInstitution(ctx context.Context, input model.InstitutionMutation, creatorID *int64, tenantID string) (int64, error) {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -2064,7 +2997,17 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
+	tenantID = strings.TrimSpace(tenantID)
+	moduleID := int64(0)
+	moduleName := ""
 	openType := normalizeInstitutionOpenType(input.OpenType)
+	if input.ModuleID != nil && *input.ModuleID > 0 {
+		var lookupErr error
+		moduleID, moduleName, openType, lookupErr = repo.getScopedInstitutionModuleTx(ctx, tx, *input.ModuleID, tenantID)
+		if lookupErr != nil {
+			return 0, lookupErr
+		}
+	}
 	openDuration := normalizeInstitutionOpenDuration(openType, input.OpenDuration)
 	expireStart := time.Now()
 	expireEnd := buildInstitutionExpireEndTime(expireStart, openDuration)
@@ -2131,6 +3074,10 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		}
 	}
 
+	if err = repo.bindInstitutionTenantTx(ctx, tx, tenantID, id); err != nil {
+		return 0, err
+	}
+
 	if err = repo.createDefaultInstitutionConfigTx(ctx, tx, id); err != nil {
 		return 0, err
 	}
@@ -2147,9 +3094,15 @@ func (repo *Repository) CreateInstitution(ctx context.Context, input model.Insti
 		return 0, err
 	}
 
-	if moduleID, lookupErr := repo.findInstitutionVersionModuleIDTx(ctx, tx, openType); lookupErr != nil {
-		return 0, lookupErr
-	} else if moduleID > 0 {
+	if moduleID <= 0 {
+		var lookupErr error
+		moduleID, lookupErr = repo.findInstitutionVersionModuleIDTx(ctx, tx, openType)
+		if lookupErr != nil {
+			return 0, lookupErr
+		}
+	}
+	_ = moduleName
+	if moduleID > 0 {
 		if err = repo.bindInstitutionModuleTx(
 			ctx,
 			tx,
@@ -2589,7 +3542,7 @@ func (repo *Repository) ListInstitutionVersionChangeRecords(ctx context.Context,
 	return items, rows.Err()
 }
 
-func (repo *Repository) RenewInstitution(ctx context.Context, input model.InstitutionRenewalMutation, operatorID *int64) (model.InstitutionRenewalResult, error) {
+func (repo *Repository) RenewInstitution(ctx context.Context, input model.InstitutionRenewalMutation, operatorID *int64, tenantID string) (model.InstitutionRenewalResult, error) {
 	if input.InstitutionID == nil {
 		return model.InstitutionRenewalResult{}, fmt.Errorf("institutionId is required")
 	}
@@ -2621,12 +3574,25 @@ func (repo *Repository) RenewInstitution(ctx context.Context, input model.Instit
 		return model.InstitutionRenewalResult{}, err
 	}
 
+	if err = repo.ensureInstitutionTenantScopeTx(ctx, tx, *input.InstitutionID, tenantID); err != nil {
+		return model.InstitutionRenewalResult{}, err
+	}
+
 	beforeOpenType := institutionStoredOpenType(currentOpenType)
 	if beforeOpenType == 0 {
 		beforeOpenType = 2
 	}
 	beforeOpenDuration := normalizeInstitutionOpenDuration(beforeOpenType, currentOpenDuration.String)
+	moduleID := int64(0)
+	moduleName := ""
 	nextOpenType := normalizeInstitutionOpenType(input.OpenType)
+	if input.ModuleID != nil && *input.ModuleID > 0 {
+		var lookupErr error
+		moduleID, moduleName, nextOpenType, lookupErr = repo.getScopedInstitutionModuleTx(ctx, tx, *input.ModuleID, tenantID)
+		if lookupErr != nil {
+			return model.InstitutionRenewalResult{}, lookupErr
+		}
+	}
 	renewDuration := normalizeInstitutionOpenDuration(nextOpenType, input.OpenDuration)
 
 	renewStart, renewEnd, err := buildInstitutionRenewalWindow(beforeOpenType, nextOpenType, currentExpireEnd, renewDuration)
@@ -2688,9 +3654,17 @@ func (repo *Repository) RenewInstitution(ctx context.Context, input model.Instit
 		return model.InstitutionRenewalResult{}, err
 	}
 
-	if moduleID, lookupErr := repo.findInstitutionVersionModuleIDTx(ctx, tx, nextOpenType); lookupErr != nil {
-		return model.InstitutionRenewalResult{}, lookupErr
-	} else if moduleID > 0 {
+	if moduleID <= 0 {
+		var lookupErr error
+		moduleID, lookupErr = repo.findInstitutionVersionModuleIDTx(ctx, tx, nextOpenType)
+		if lookupErr != nil {
+			return model.InstitutionRenewalResult{}, lookupErr
+		}
+	}
+	if moduleID > 0 {
+		if strings.TrimSpace(moduleName) == "" {
+			moduleName, _ = repo.getModuleNameTx(ctx, tx, moduleID)
+		}
 		if err = repo.bindInstitutionModuleTx(
 			ctx,
 			tx,
@@ -2714,6 +3688,8 @@ func (repo *Repository) RenewInstitution(ctx context.Context, input model.Instit
 	return model.InstitutionRenewalResult{
 		InstitutionID:   *input.InstitutionID,
 		OpenType:        nextOpenType,
+		ModuleID:        moduleID,
+		ModuleName:      moduleName,
 		OpenDuration:    renewDuration,
 		ExpireStartTime: renewStart.Time.Format("2006-01-02 15:04:05"),
 		ExpireEndTime:   renewEnd.Time.Format("2006-01-02 15:04:05"),
@@ -2983,9 +3959,20 @@ func (repo *Repository) DeleteDictValue(ctx context.Context, id int64) error {
 	return err
 }
 
-func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64) (model.ModuleDetailVO, error) {
+func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64, tenantID string) (model.ModuleDetailVO, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	ownerFilter := "m.tenant_id = 'platform'"
+	args := []any{moduleID}
+	if tenantID != "" {
+		ownerFilter = "m.tenant_id = ?"
+		args = []any{tenantID, moduleID}
+	}
+
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT m.id,
+		       IFNULL(m.tenant_id, ''),
+		       IFNULL(m.owner_type, ''),
+		       IFNULL(m.source_module_id, 0),
 		       IFNULL(m.uuid, ''),
 		       IFNULL(m.version, 0),
 		       IFNULL(m.name, ''),
@@ -2999,14 +3986,17 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64) (mo
 		FROM sys_module m
 		LEFT JOIN sys_module_menu smm ON smm.module_id = m.id
 		LEFT JOIN org_module om ON om.module_id = m.id
-		WHERE m.id = ? AND m.del_flag = 0
-		GROUP BY m.id, m.uuid, m.version, m.name, m.type, m.price, m.remark, m.create_time, m.update_time
+		WHERE `+ownerFilter+` AND m.id = ? AND m.del_flag = 0
+		GROUP BY m.id, m.tenant_id, m.owner_type, m.source_module_id, m.uuid, m.version, m.name, m.type, m.price, m.remark, m.create_time, m.update_time
 		LIMIT 1
-	`, moduleID)
+	`, args...)
 
 	var detail model.ModuleDetailVO
 	if err := row.Scan(
 		&detail.ModuleID,
+		&detail.TenantID,
+		&detail.OwnerType,
+		&detail.SourceModuleID,
 		&detail.UUID,
 		&detail.Version,
 		&detail.ModuleName,
@@ -3043,7 +4033,7 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64) (mo
 		return model.ModuleDetailVO{}, err
 	}
 
-	rawMenus, err := repo.listInstitutionMenus(ctx)
+	rawMenus, err := repo.listInstitutionMenus(ctx, tenantID)
 	if err != nil {
 		return model.ModuleDetailVO{}, err
 	}
@@ -3132,9 +4122,9 @@ func buildModuleTree(items []rawMenu, selected map[int64]struct{}, pid int64) []
 	return result
 }
 
-func (repo *Repository) ListModuleMenuTree(ctx context.Context, moduleType int) ([]model.ModuleMenu, error) {
+func (repo *Repository) ListModuleMenuTree(ctx context.Context, moduleType int, tenantID string) ([]model.ModuleMenu, error) {
 	_ = moduleType
-	rawMenus, err := repo.listInstitutionMenus(ctx)
+	rawMenus, err := repo.listInstitutionMenus(ctx, strings.TrimSpace(tenantID))
 	if err != nil {
 		return nil, err
 	}
@@ -3149,13 +4139,27 @@ func (repo *Repository) ListModuleMenuTree(ctx context.Context, moduleType int) 
 	return buildVisibleInstitutionModuleTree(rawMenus, selected), nil
 }
 
-func (repo *Repository) listInstitutionMenus(ctx context.Context) ([]rawMenu, error) {
+func (repo *Repository) listInstitutionMenus(ctx context.Context, tenantID string) ([]rawMenu, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	joinClause := ""
+	args := []any{}
+	if tenantID != "" {
+		joinClause = `JOIN (
+			SELECT DISTINCT smm.menu_id
+			FROM tenant_module tm
+			JOIN sys_module m ON m.id = tm.module_id AND m.del_flag = 0
+			JOIN sys_module_menu smm ON smm.module_id = tm.module_id AND smm.del_flag = 0
+			WHERE tm.tenant_id = ? AND tm.del_flag = 0
+		) allowed_menu ON allowed_menu.menu_id = sm.id`
+		args = append(args, tenantID)
+	}
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id, IFNULL(menu_name, ''), IFNULL(menu_code, ''), IFNULL(pid, 0), IFNULL(sort, 0), IFNULL(weight, 0), IFNULL(menu_type, 0), IFNULL(group_code, ''), IFNULL(introduce, '')
-		FROM sso_menu
-		WHERE del_flag = 0 AND own_type = 2
-		ORDER BY IFNULL(level, 0) ASC, IFNULL(sort, 0) ASC, IFNULL(weight, 0) DESC, id ASC
-	`)
+		SELECT sm.id, IFNULL(sm.menu_name, ''), IFNULL(sm.menu_code, ''), IFNULL(sm.pid, 0), IFNULL(sm.sort, 0), IFNULL(sm.weight, 0), IFNULL(sm.menu_type, 0), IFNULL(sm.group_code, ''), IFNULL(sm.introduce, '')
+		FROM sso_menu sm
+		`+joinClause+`
+		WHERE sm.del_flag = 0 AND sm.own_type = 2
+		ORDER BY IFNULL(sm.level, 0) ASC, IFNULL(sm.sort, 0) ASC, IFNULL(sm.weight, 0) DESC, sm.id ASC
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -3579,10 +4583,12 @@ func (repo *Repository) deleteRoleMenusTx(ctx context.Context, tx *sql.Tx, roleI
 }
 
 func (repo *Repository) CreateModule(ctx context.Context, input model.ModuleMutation) (int64, error) {
+	tenantID := firstNonEmpty(input.TenantID, "platform")
+	ownerType := firstNonEmpty(input.OwnerType, "platform_template")
 	result, err := repo.db.ExecContext(ctx, `
-		INSERT INTO sys_module (uuid, name, type, price, remark, del_flag, create_time, update_time, version)
-		VALUES (?, ?, ?, ?, ?, 0, NOW(), NOW(), 0)
-	`, uuid.NewString(), strings.TrimSpace(input.Name), input.Type, input.Price, strings.TrimSpace(input.Remark))
+		INSERT INTO sys_module (uuid, tenant_id, owner_type, source_module_id, name, type, price, remark, del_flag, create_time, update_time, version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NOW(), NOW(), 0)
+	`, uuid.NewString(), tenantID, ownerType, nullableInt64Value(input.SourceModuleID), strings.TrimSpace(input.Name), input.Type, input.Price, strings.TrimSpace(input.Remark))
 	if err != nil {
 		return 0, err
 	}
@@ -3602,11 +4608,18 @@ func (repo *Repository) UpdateModuleBasic(ctx context.Context, input model.Modul
 	if input.ID == nil {
 		return fmt.Errorf("id is required")
 	}
+	tenantID := strings.TrimSpace(input.TenantID)
+	whereTenant := "tenant_id = 'platform'"
+	args := []any{strings.TrimSpace(input.Name), input.Type, input.Price, strings.TrimSpace(input.Remark), *input.ID}
+	if tenantID != "" {
+		whereTenant = "tenant_id = ?"
+		args = []any{strings.TrimSpace(input.Name), input.Type, input.Price, strings.TrimSpace(input.Remark), tenantID, *input.ID}
+	}
 	_, err := repo.db.ExecContext(ctx, `
 		UPDATE sys_module
 		SET name = ?, type = ?, price = ?, remark = ?, update_time = NOW()
-		WHERE id = ? AND del_flag = 0
-	`, strings.TrimSpace(input.Name), input.Type, input.Price, strings.TrimSpace(input.Remark), *input.ID)
+		WHERE `+whereTenant+` AND id = ? AND del_flag = 0
+	`, args...)
 	return err
 }
 
@@ -3629,7 +4642,7 @@ func normalizeInstitutionIDs(institutionIDs []int64) []int64 {
 	return normalized
 }
 
-func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input model.InstitutionPermissionMutation, operatorID *int64) error {
+func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input model.InstitutionPermissionMutation, operatorID *int64, tenantID string) error {
 	if input.InstitutionID == nil || *input.InstitutionID <= 0 {
 		return fmt.Errorf("institutionId is required")
 	}
@@ -3645,7 +4658,15 @@ func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input mode
 		_ = tx.Rollback()
 	}()
 
-	if err := repo.replaceInstitutionModuleTx(ctx, tx, *input.InstitutionID, *input.ModuleID, input.MenuIDs, operatorID); err != nil {
+	if err := repo.ensureInstitutionTenantScopeTx(ctx, tx, *input.InstitutionID, tenantID); err != nil {
+		return err
+	}
+	moduleID, _, _, err := repo.getScopedInstitutionModuleTx(ctx, tx, *input.ModuleID, tenantID)
+	if err != nil {
+		return err
+	}
+
+	if err := repo.replaceInstitutionModuleTx(ctx, tx, *input.InstitutionID, moduleID, input.MenuIDs, operatorID); err != nil {
 		return err
 	}
 
@@ -3655,7 +4676,7 @@ func (repo *Repository) ReplaceInstitutionModule(ctx context.Context, input mode
 	return nil
 }
 
-func (repo *Repository) ReplaceInstitutionModulesBatch(ctx context.Context, input model.InstitutionPermissionBatchMutation, operatorID *int64) error {
+func (repo *Repository) ReplaceInstitutionModulesBatch(ctx context.Context, input model.InstitutionPermissionBatchMutation, operatorID *int64, tenantID string) error {
 	if input.ModuleID == nil || *input.ModuleID <= 0 {
 		return fmt.Errorf("moduleId is required")
 	}
@@ -3673,8 +4694,16 @@ func (repo *Repository) ReplaceInstitutionModulesBatch(ctx context.Context, inpu
 		_ = tx.Rollback()
 	}()
 
+	moduleID, _, _, err := repo.getScopedInstitutionModuleTx(ctx, tx, *input.ModuleID, tenantID)
+	if err != nil {
+		return err
+	}
+
 	for _, institutionID := range institutionIDs {
-		if err := repo.replaceInstitutionModuleTx(ctx, tx, institutionID, *input.ModuleID, input.MenuIDs, operatorID); err != nil {
+		if err := repo.ensureInstitutionTenantScopeTx(ctx, tx, institutionID, tenantID); err != nil {
+			return fmt.Errorf("机构 %d 处理失败: %w", institutionID, err)
+		}
+		if err := repo.replaceInstitutionModuleTx(ctx, tx, institutionID, moduleID, input.MenuIDs, operatorID); err != nil {
 			return fmt.Errorf("机构 %d 处理失败: %w", institutionID, err)
 		}
 	}

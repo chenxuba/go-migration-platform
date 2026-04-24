@@ -2,6 +2,9 @@ import type { ResponseBody } from '@/utils/request'
 
 export interface VersionItem {
   id: number
+  tenantId?: string
+  ownerType?: string
+  sourceModuleId?: number
   name: string
   type: number
   price: number
@@ -14,6 +17,9 @@ export interface VersionItem {
 
 export interface VersionDetail {
   moduleId: number
+  tenantId?: string
+  ownerType?: string
+  sourceModuleId?: number
   moduleName: string
   moduleType: number
   price: number
