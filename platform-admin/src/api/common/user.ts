@@ -10,6 +10,9 @@ export interface UserInfo {
   instId: number | string
   instUserId: number | string
   deptIds: number[]
+  tenantId?: string
+  tenantRole?: string
+  tenantType?: string
 }
 
 export function getUserInfoApi() {

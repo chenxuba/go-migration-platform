@@ -137,13 +137,16 @@ export function generateTreeRoutes(menus: MenuData) {
  * 通过前端数据中的dynamic-routes动态生成菜单和数据
  */
 
-export async function generateRoutes() {
-  const { hasAccess } = useAccess()
-  function filterRoutesByAccess(routes: RouteRecordRaw[]) {
-    return routes
-      .filter((route) => {
-        return !route.meta?.access || hasAccess(route.meta?.access)
-      })
+export async function generateRoutes(userInfo?: { tenantRole?: string }) {
+	const { hasAccess } = useAccess()
+	function filterRoutesByAccess(routes: RouteRecordRaw[]) {
+		return routes
+			.filter((route) => {
+				const tenantRoles = route.meta?.tenantRoles as string[] | undefined
+				if (tenantRoles?.length && userInfo?.tenantRole && !tenantRoles.includes(userInfo.tenantRole))
+					return false
+				return !route.meta?.access || hasAccess(route.meta?.access)
+			})
       .map((route) => {
         if (route.children?.length) {
           route.children = filterRoutesByAccess(route.children)

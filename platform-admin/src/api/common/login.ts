@@ -14,6 +14,7 @@ export interface LoginMobileParams {
 
 export interface LoginResultModel {
   token: string
+  tenantId?: string
 }
 
 export function loginApi(params: LoginParams | LoginMobileParams) {

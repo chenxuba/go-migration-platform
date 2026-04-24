@@ -18,6 +18,7 @@ import {
 } from '@/api/platform/institutions'
 import { regionData } from '@/constants/region-data'
 import { getQiniuToken } from '@/api/qiniu'
+import { pageVersionsApi, type VersionItem } from '@/api/platform/versions'
 import messageService from '@/utils/messageService'
 
 const props = defineProps<{
@@ -38,6 +39,7 @@ interface InstitutionFormState {
   mobile: string
   principal: string
   openType?: number
+  moduleId?: number
   openDuration?: string
   provinceCode?: string
   province: string
@@ -166,6 +168,7 @@ function createInitialFormState(): InstitutionFormState {
     mobile: '',
     principal: '',
     openType: 2,
+    moduleId: undefined,
     openDuration: '1y',
     provinceCode: undefined,
     province: '',
@@ -200,6 +203,8 @@ const geocoding = ref(false)
 const uploadingLogo = ref(false)
 const logoUploadProgress = ref(0)
 const geocodeSource = ref('')
+const versionLoading = ref(false)
+const tenantVersions = ref<VersionItem[]>([])
 const geocodeResolvedAddress = ref('')
 const suspendAutoResolve = ref(false)
 const lastResolvedAddressKey = ref('')
@@ -217,12 +222,7 @@ const cityOptions = computed(() => (selectedProvinceOption.value?.children || []
 const selectedCityOption = computed(() => selectedProvinceOption.value?.children?.find(item => item.value === formState.cityCode))
 const regionOptions = computed(() => (selectedCityOption.value?.children || []).map(({ value, label }) => ({ value, label })))
 const selectedRegionOption = computed(() => selectedCityOption.value?.children?.find(item => item.value === formState.regionCode))
-const openTypeOptions = [
-  { value: 1, label: '体验版' },
-  { value: 2, label: '基础版' },
-  { value: 3, label: '高级版' },
-  { value: 4, label: '旗舰版' },
-]
+const openTypeOptions = computed(() => tenantVersions.value.map(item => ({ value: item.id, label: item.name })))
 const openDurationOptionMap: Record<number, { value: string, label: string }[]> = {
   1: [
     { value: '3d', label: '3天' },
@@ -251,7 +251,8 @@ const openDurationOptionMap: Record<number, { value: string, label: string }[]> 
     { value: '99y', label: '99年' },
   ],
 }
-const openDurationOptions = computed(() => openDurationOptionMap[Number(formState.openType) || 2] || openDurationOptionMap[2])
+const openDurationOptions = computed(() => openDurationOptionMap[2])
+const hasTenantVersions = computed(() => openTypeOptions.value.length > 0)
 
 async function checkLoginNameAvailability(loginName: string) {
   const trimmed = String(loginName || '').trim()
@@ -318,13 +319,13 @@ const rules: Record<string, Rule[]> = {
     { pattern: /^\d{11}$/, message: '联系电话需为 11 位手机号', trigger: 'blur' },
   ],
   principal: [{ required: true, message: '请输入负责人姓名', trigger: 'blur' }],
-  openType: [{
+  moduleId: [{
     trigger: 'change',
     validator: async () => {
-      if (isEdit.value || formState.openType)
+      if (isEdit.value || formState.moduleId)
         return Promise.resolve()
 
-      return Promise.reject(new Error('请选择开通版本'))
+      return Promise.reject(new Error(hasTenantVersions.value ? '请选择开通版本' : '当前租户暂无可开通版本，请先在版本管理中新建'))
     },
   }],
   openDuration: [{
@@ -334,11 +335,10 @@ const rules: Record<string, Rule[]> = {
         return Promise.resolve()
 
       const duration = String(formState.openDuration || '').trim()
-      const nextType = Number(formState.openType || 0)
       if (!duration)
         return Promise.reject(new Error('请选择开通时长'))
 
-      const availableDurations = openDurationOptionMap[nextType || 2] || []
+      const availableDurations = openDurationOptions.value
       if (!availableDurations.some(item => item.value === duration))
         return Promise.reject(new Error('请选择有效的开通时长'))
 
@@ -410,12 +410,11 @@ function handleRegionChange(value?: string | number) {
 }
 
 function handleOpenTypeChange(value?: number | string) {
-  formState.openType = value ? Number(value) : undefined
-  const availableDurations = openDurationOptionMap[Number(formState.openType) || 2] || []
+  formState.moduleId = value ? Number(value) : undefined
   const currentDuration = String(formState.openDuration || '').trim()
 
-  if (!currentDuration || !availableDurations.some(item => item.value === currentDuration))
-    formState.openDuration = availableDurations[0]?.value || ''
+  if (!currentDuration || !openDurationOptions.value.some(item => item.value === currentDuration))
+    formState.openDuration = openDurationOptions.value[0]?.value || ''
 }
 
 function buildGeocodeLocation() {
@@ -636,7 +635,8 @@ async function loadInstitutionDetail(id: number) {
     formState.logo = String(detail.logo || '')
     formState.enabled = !!detail.enabled
     formState.openType = Number(detail.openType || 2) || 2
-    formState.openDuration = resolveOpenDurationValue(formState.openType, String(detail.openDuration || '').trim())
+    formState.moduleId = Number(detail.currentModuleId || 0) || undefined
+    formState.openDuration = resolveOpenDurationValue(2, String(detail.openDuration || '').trim())
     formState.businessTime = String(detail.profile?.businessTime || '')
     formState.description = String(detail.profile?.description || '')
     formState.video = String(detail.profile?.video || '')
@@ -660,6 +660,27 @@ async function loadInstitutionDetail(id: number) {
   }
 }
 
+async function loadTenantVersions() {
+  versionLoading.value = true
+  try {
+    const res = await pageVersionsApi({ current: 1, size: 200, type: 1 })
+    if (res.code !== 200) {
+      messageService.error(res.message || '获取版本列表失败')
+      return
+    }
+    tenantVersions.value = Array.isArray(res.result) ? res.result : []
+    if (!isEdit.value && !formState.moduleId && tenantVersions.value.length > 0)
+      formState.moduleId = tenantVersions.value[0].id
+  }
+  catch (error: any) {
+    console.error('load tenant versions failed', error)
+    messageService.error(error?.message || '获取版本列表失败')
+  }
+  finally {
+    versionLoading.value = false
+  }
+}
+
 watch(
   () => [props.open, props.institutionId] as const,
   ([open, institutionId]) => {
@@ -667,6 +688,8 @@ watch(
       resetForm()
       return
     }
+
+    void loadTenantVersions()
 
     if (institutionId) {
       void loadInstitutionDetail(Number(institutionId))
@@ -731,7 +754,8 @@ function buildPayload(): InstitutionMutationPayload {
   }
 
   if (!isEdit.value) {
-    payload.openType = formState.openType ? Number(formState.openType) : undefined
+    payload.moduleId = formState.moduleId ? Number(formState.moduleId) : undefined
+    payload.openType = formState.openType ? Number(formState.openType) : 2
     payload.openDuration = String(formState.openDuration || '').trim()
   }
 
@@ -940,12 +964,13 @@ async function submitForm() {
             <div v-if="!isEdit" class="system-grid__item system-grid__item--full">
               <a-row :gutter="24">
                 <a-col :xs="24" :md="12">
-                  <a-form-item label="开通版本：" name="openType">
+                  <a-form-item label="开通版本：" name="moduleId">
                     <a-select
-                      v-model:value="formState.openType"
+                      v-model:value="formState.moduleId"
                       :options="openTypeOptions"
-                      :disabled="isEdit"
-                      placeholder="请选择开通版本"
+                      :disabled="isEdit || versionLoading || !hasTenantVersions"
+                      :loading="versionLoading"
+                      :placeholder="hasTenantVersions ? '请选择开通版本' : '暂无可开通版本'"
                       @change="handleOpenTypeChange"
                     />
                   </a-form-item>
@@ -956,7 +981,7 @@ async function submitForm() {
                     <a-select
                       v-model:value="formState.openDuration"
                       :options="openDurationOptions"
-                      :disabled="isEdit || !formState.openType"
+                      :disabled="isEdit || !formState.moduleId"
                       placeholder="请选择开通时长"
                     />
                   </a-form-item>

@@ -20,6 +20,7 @@ import {
   useRolePermissions,
 } from '@/composables/useRolePermissions'
 import messageService from '@/utils/messageService'
+import { useUserStore } from '@/stores/user'
 import PlatformModalShell from '../../shared/platform-modal-shell.vue'
 
 const props = defineProps<{
@@ -31,6 +32,8 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'saved'): void
 }>()
+
+const userStore = useUserStore()
 
 interface FormState {
   id?: number
@@ -85,7 +88,12 @@ const openModal = computed({
 })
 
 const isEdit = computed(() => Number(props.versionId || 0) > 0)
-const modalTitle = computed(() => (isEdit.value ? '编辑版本' : '新建版本'))
+const isTenantAdmin = computed(() => userStore.userInfo?.tenantRole === 'tenant_admin')
+const modalTitle = computed(() => {
+  if (isTenantAdmin.value)
+    return isEdit.value ? '编辑租户售卖版本' : '新建租户售卖版本'
+  return isEdit.value ? '编辑版本' : '新建版本'
+})
 const totalLeafCount = computed(() => {
   return boxList.value.reduce((sum, parent) => {
     return sum + parent.children.reduce((childSum, child) => childSum + child.children.length, 0)

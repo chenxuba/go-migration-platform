@@ -65,6 +65,9 @@ type NoticeMutation struct {
 
 type ModuleDetailVO struct {
 	ModuleID        int64        `json:"moduleId"`
+	TenantID        string       `json:"tenantId,omitempty"`
+	OwnerType       string       `json:"ownerType,omitempty"`
+	SourceModuleID  int64        `json:"sourceModuleId,omitempty"`
 	UUID            string       `json:"uuid,omitempty"`
 	Version         int64        `json:"version,omitempty"`
 	ModuleName      string       `json:"moduleName"`
@@ -86,12 +89,15 @@ type ModulePermissionMutation struct {
 }
 
 type ModuleMutation struct {
-	ID      *int64   `json:"id"`
-	Name    string   `json:"name"`
-	Type    *int     `json:"type"`
-	Price   *float64 `json:"price"`
-	Remark  string   `json:"remark"`
-	MenuIDs []int64  `json:"menuIds"`
+	ID             *int64   `json:"id"`
+	TenantID       string   `json:"tenantId,omitempty"`
+	OwnerType      string   `json:"ownerType,omitempty"`
+	SourceModuleID *int64   `json:"sourceModuleId,omitempty"`
+	Name           string   `json:"name"`
+	Type           *int     `json:"type"`
+	Price          *float64 `json:"price"`
+	Remark         string   `json:"remark"`
+	MenuIDs        []int64  `json:"menuIds"`
 }
 
 type ModuleMenu struct {
@@ -106,15 +112,18 @@ type ModuleMenu struct {
 }
 
 type Module struct {
-	ID         int64   `json:"id"`
-	Name       string  `json:"name"`
-	Type       int     `json:"type"`
-	Price      float64 `json:"price"`
-	Remark     string  `json:"remark,omitempty"`
-	MenuCount  int     `json:"menuCount"`
-	OrgCount   int     `json:"orgCount"`
-	CreateTime string  `json:"createTime,omitempty"`
-	UpdateTime string  `json:"updateTime,omitempty"`
+	ID             int64   `json:"id"`
+	TenantID       string  `json:"tenantId,omitempty"`
+	OwnerType      string  `json:"ownerType,omitempty"`
+	SourceModuleID int64   `json:"sourceModuleId,omitempty"`
+	Name           string  `json:"name"`
+	Type           int     `json:"type"`
+	Price          float64 `json:"price"`
+	Remark         string  `json:"remark,omitempty"`
+	MenuCount      int     `json:"menuCount"`
+	OrgCount       int     `json:"orgCount"`
+	CreateTime     string  `json:"createTime,omitempty"`
+	UpdateTime     string  `json:"updateTime,omitempty"`
 }
 
 type PageResult[T any] struct {
@@ -124,27 +133,70 @@ type PageResult[T any] struct {
 	Size    int `json:"size"`
 }
 
+type TenantBootstrapSummary struct {
+	TenantID           string   `json:"tenantId"`
+	TenantName         string   `json:"tenantName"`
+	TenantType         string   `json:"tenantType"`
+	Edition            string   `json:"edition,omitempty"`
+	Status             string   `json:"status,omitempty"`
+	IsolationMode      string   `json:"isolationMode,omitempty"`
+	InstitutionCount   int      `json:"institutionCount"`
+	InstitutionIDs     []int64  `json:"institutionIds,omitempty"`
+	MenuCount          int      `json:"menuCount"`
+	ModuleCount        int      `json:"moduleCount"`
+	ModuleIDs          []int64  `json:"moduleIds,omitempty"`
+	ModuleNames        []string `json:"moduleNames,omitempty"`
+	AdminUsernames     []string `json:"adminUsernames"`
+	Domains            []string `json:"domains"`
+	AdminDomains       []string `json:"adminDomains,omitempty"`
+	InstitutionDomains []string `json:"institutionDomains,omitempty"`
+}
+
+type TenantListItem = TenantBootstrapSummary
+
+type TenantMutation struct {
+	TenantID           string   `json:"tenantId"`
+	TenantName         string   `json:"tenantName"`
+	TenantType         string   `json:"tenantType,omitempty"`
+	Edition            string   `json:"edition,omitempty"`
+	Status             string   `json:"status,omitempty"`
+	IsolationMode      string   `json:"isolationMode,omitempty"`
+	Domains            []string `json:"domains,omitempty"`
+	AdminDomains       []string `json:"adminDomains,omitempty"`
+	InstitutionDomains []string `json:"institutionDomains,omitempty"`
+	InstitutionIDs     []int64  `json:"institutionIds,omitempty"`
+	MenuIDs            []int64  `json:"menuIds,omitempty"`
+	ModuleIDs          []int64  `json:"moduleIds,omitempty"`
+	AdminUsername      string   `json:"adminUsername,omitempty"`
+	AdminPassword      string   `json:"adminPassword,omitempty"`
+	AdminNickName      string   `json:"adminNickName,omitempty"`
+	AdminMobile        string   `json:"adminMobile,omitempty"`
+	Remark             string   `json:"remark,omitempty"`
+}
+
 type Institution struct {
-	ID               int64  `json:"id"`
-	OrganName        string `json:"organName"`
-	OrganCode        string `json:"organCode,omitempty"`
-	LoginName        string `json:"loginName,omitempty"`
-	Mobile           string `json:"mobile,omitempty"`
-	Principal        string `json:"principal,omitempty"`
-	Province         string `json:"province,omitempty"`
-	City             string `json:"city,omitempty"`
-	Region           string `json:"region,omitempty"`
-	Address          string `json:"address,omitempty"`
-	Logo             string `json:"logo,omitempty"`
-	Enabled          bool   `json:"enabled"`
-	Status           int    `json:"status"`
-	OpenType         int    `json:"openType"`
-	OpenDuration     string `json:"openDuration,omitempty"`
-	RegisterTime     string `json:"registerTime,omitempty"`
-	ExpireEndTime    string `json:"expireEndTime,omitempty"`
-	StaffCount       int    `json:"staffCount"`
-	ActiveStaffCount int    `json:"activeStaffCount"`
-	AdminCount       int    `json:"adminCount"`
+	ID                int64  `json:"id"`
+	OrganName         string `json:"organName"`
+	OrganCode         string `json:"organCode,omitempty"`
+	LoginName         string `json:"loginName,omitempty"`
+	Mobile            string `json:"mobile,omitempty"`
+	Principal         string `json:"principal,omitempty"`
+	Province          string `json:"province,omitempty"`
+	City              string `json:"city,omitempty"`
+	Region            string `json:"region,omitempty"`
+	Address           string `json:"address,omitempty"`
+	Logo              string `json:"logo,omitempty"`
+	Enabled           bool   `json:"enabled"`
+	Status            int    `json:"status"`
+	OpenType          int    `json:"openType"`
+	OpenDuration      string `json:"openDuration,omitempty"`
+	CurrentModuleID   int64  `json:"currentModuleId,omitempty"`
+	CurrentModuleName string `json:"currentModuleName,omitempty"`
+	RegisterTime      string `json:"registerTime,omitempty"`
+	ExpireEndTime     string `json:"expireEndTime,omitempty"`
+	StaffCount        int    `json:"staffCount"`
+	ActiveStaffCount  int    `json:"activeStaffCount"`
+	AdminCount        int    `json:"adminCount"`
 }
 
 type InstitutionProfile struct {
@@ -155,32 +207,34 @@ type InstitutionProfile struct {
 }
 
 type InstitutionDetail struct {
-	ID              int64              `json:"id"`
-	OrganName       string             `json:"organName"`
-	OrganCode       string             `json:"organCode"`
-	LoginName       string             `json:"loginName"`
-	Mobile          string             `json:"mobile"`
-	Principal       string             `json:"principal,omitempty"`
-	ProvinceCode    int64              `json:"provinceCode,omitempty"`
-	Province        string             `json:"province"`
-	CityCode        int64              `json:"cityCode,omitempty"`
-	City            string             `json:"city"`
-	RegionCode      int64              `json:"regionCode,omitempty"`
-	Region          string             `json:"region,omitempty"`
-	Address         string             `json:"address,omitempty"`
-	ConcatPhone     string             `json:"concatPhone,omitempty"`
-	FixedPhone      string             `json:"fixedPhone,omitempty"`
-	Remark          string             `json:"remark,omitempty"`
-	Logo            string             `json:"logo,omitempty"`
-	Enabled         bool               `json:"enabled"`
-	Status          int                `json:"status"`
-	OpenType        int                `json:"openType"`
-	OpenDuration    string             `json:"openDuration,omitempty"`
-	ExpireStartTime string             `json:"expireStartTime,omitempty"`
-	ExpireEndTime   string             `json:"expireEndTime,omitempty"`
-	Lng             float64            `json:"lng,omitempty"`
-	Lat             float64            `json:"lat,omitempty"`
-	Profile         InstitutionProfile `json:"profile"`
+	ID                int64              `json:"id"`
+	OrganName         string             `json:"organName"`
+	OrganCode         string             `json:"organCode"`
+	LoginName         string             `json:"loginName"`
+	Mobile            string             `json:"mobile"`
+	Principal         string             `json:"principal,omitempty"`
+	ProvinceCode      int64              `json:"provinceCode,omitempty"`
+	Province          string             `json:"province"`
+	CityCode          int64              `json:"cityCode,omitempty"`
+	City              string             `json:"city"`
+	RegionCode        int64              `json:"regionCode,omitempty"`
+	Region            string             `json:"region,omitempty"`
+	Address           string             `json:"address,omitempty"`
+	ConcatPhone       string             `json:"concatPhone,omitempty"`
+	FixedPhone        string             `json:"fixedPhone,omitempty"`
+	Remark            string             `json:"remark,omitempty"`
+	Logo              string             `json:"logo,omitempty"`
+	Enabled           bool               `json:"enabled"`
+	Status            int                `json:"status"`
+	OpenType          int                `json:"openType"`
+	OpenDuration      string             `json:"openDuration,omitempty"`
+	CurrentModuleID   int64              `json:"currentModuleId,omitempty"`
+	CurrentModuleName string             `json:"currentModuleName,omitempty"`
+	ExpireStartTime   string             `json:"expireStartTime,omitempty"`
+	ExpireEndTime     string             `json:"expireEndTime,omitempty"`
+	Lng               float64            `json:"lng,omitempty"`
+	Lat               float64            `json:"lat,omitempty"`
+	Profile           InstitutionProfile `json:"profile"`
 }
 
 type InstitutionMutation struct {
@@ -202,6 +256,7 @@ type InstitutionMutation struct {
 	Logo         string              `json:"logo"`
 	Enabled      *bool               `json:"enabled"`
 	OpenType     *int                `json:"openType,omitempty"`
+	ModuleID     *int64              `json:"moduleId,omitempty"`
 	OpenDuration string              `json:"openDuration"`
 	Lng          *float64            `json:"lng,omitempty"`
 	Lat          *float64            `json:"lat,omitempty"`
@@ -335,13 +390,16 @@ type InstitutionRenewalRecord struct {
 
 type InstitutionRenewalMutation struct {
 	InstitutionID *int64 `json:"institutionId"`
-	OpenType      *int   `json:"openType"`
+	OpenType      *int   `json:"openType,omitempty"`
+	ModuleID      *int64 `json:"moduleId,omitempty"`
 	OpenDuration  string `json:"openDuration"`
 }
 
 type InstitutionRenewalResult struct {
 	InstitutionID   int64  `json:"institutionId"`
 	OpenType        int    `json:"openType"`
+	ModuleID        int64  `json:"moduleId,omitempty"`
+	ModuleName      string `json:"moduleName,omitempty"`
 	OpenDuration    string `json:"openDuration,omitempty"`
 	ExpireStartTime string `json:"expireStartTime,omitempty"`
 	ExpireEndTime   string `json:"expireEndTime,omitempty"`

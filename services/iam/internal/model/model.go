@@ -51,6 +51,9 @@ type ManageUserInfo struct {
 	MenuCodeList []string `json:"menuCodeList"`
 	RoleID       string   `json:"roleId,omitempty"`
 	RoleName     string   `json:"roleName,omitempty"`
+	TenantID     string   `json:"tenantId,omitempty"`
+	TenantRole   string   `json:"tenantRole,omitempty"`
+	TenantType   string   `json:"tenantType,omitempty"`
 }
 
 type InstUserInfo struct {

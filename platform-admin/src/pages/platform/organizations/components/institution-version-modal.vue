@@ -14,7 +14,7 @@ import {
   replaceInstitutionPermissionVersionApi,
 } from '@/api/platform/institutions'
 import { pageVersionsApi } from '@/api/platform/versions'
-import { filterSystemDefaultVersions, sortVersionsByDisplayOrder } from '../../shared/version-order'
+import { sortVersionsByDisplayOrder } from '../../shared/version-order'
 import messageService from '@/utils/messageService'
 
 const props = defineProps<{
@@ -32,13 +32,6 @@ const openTypeLabelMap: Record<number, string> = {
   2: '基础版',
   3: '高级版',
   4: '旗舰版',
-}
-
-const standardVersionOpenTypeMap: Record<string, number> = {
-  体验版: 1,
-  基础版: 2,
-  高级版: 3,
-  旗舰版: 4,
 }
 
 const statusLabelMap: Record<number, string> = {
@@ -93,31 +86,14 @@ const currentVersionName = computed(() => {
   return getOpenTypeLabel(detail.value?.openType)
 })
 
-const versionSelectOptions = computed(() => {
-  const currentOpenType = Number(detail.value?.openType || 0)
-  return filterSystemDefaultVersions<VersionItem>(versionOptions.value)
-    .filter((item) => {
-      const mappedOpenType = getVersionOpenTypeByName(item.name)
-      if (!mappedOpenType || !currentOpenType)
-        return true
-      if (currentOpenType === 1)
-        return mappedOpenType === 1
-      return mappedOpenType >= 2
-    })
-    .map(item => ({ value: item.id, label: item.name }))
-})
+const versionSelectOptions = computed(() => versionOptions.value.map(item => ({ value: item.id, label: item.name })))
 
 const targetVersionName = computed(() => {
   const targetId = Number(selectedModuleId.value || 0)
   return versionOptions.value.find(item => Number(item.id) === targetId)?.name || '--'
 })
 
-const changeHint = computed(() => {
-  const currentOpenType = Number(detail.value?.openType || 0)
-  if (currentOpenType === 1)
-    return '体验版如需升级正式版本，请继续走续期流程。'
-  return '切换后会按目标版本的默认权限模板重新生效；如需做机构级裁剪，请再进入“机构权限”调整。'
-})
+const changeHint = computed(() => '切换后会按目标版本的默认权限模板重新生效；如需做机构级裁剪，请再进入“机构权限”调整。')
 
 function closeModal() {
   emit('update:open', false)
@@ -167,10 +143,6 @@ function getVersionBadgeClass(name?: string) {
   return 'version-badge--basic'
 }
 
-function getVersionOpenTypeByName(name?: string) {
-  return standardVersionOpenTypeMap[String(name || '').trim()] || 0
-}
-
 function getVersionLabelByRecord(record: Partial<InstitutionVersionChangeRecord>, key: 'before' | 'after') {
   const versionName = key === 'before' ? record.beforeVersionName : record.afterVersionName
   const openType = key === 'before' ? record.beforeOpenType : record.afterOpenType
@@ -184,13 +156,11 @@ function resolveRequestErrorMessage(error: unknown, fallback: string) {
 }
 
 function resolveSelectedModuleId(detailData: InstitutionPermissionDetail, versions: VersionItem[]) {
-  const systemVersions = filterSystemDefaultVersions<VersionItem>(versions)
   const currentModuleId = Number(detailData.currentModuleId || 0)
-  if (currentModuleId && systemVersions.some(item => Number(item.id) === currentModuleId))
+  if (currentModuleId && versions.some(item => Number(item.id) === currentModuleId))
     return currentModuleId
 
-  const currentOpenType = Number(detailData.openType || 0)
-  return systemVersions.find(item => getVersionOpenTypeByName(item.name) === currentOpenType)?.id
+  return versions[0]?.id
 }
 
 async function loadData(institutionId: number) {

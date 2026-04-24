@@ -112,6 +112,14 @@ async function requestHandler(config: InternalAxiosRequestConfig & RequestConfig
     config.headers.set('Authorization', `Bearer ${token.value}`)
   }
 
+  const tenantDomain = resolveTenantDomain()
+  if (tenantDomain)
+    config.headers.set('X-Tenant-Domain', tenantDomain)
+
+  const tenantId = resolveTenantId()
+  if (tenantId)
+    config.headers.set('X-Tenant-ID', tenantId)
+
   // 增加多语言的配置
   const { locale } = useI18nLocale()
   config.headers.set('Accept-Language', locale.value ?? 'zh-CN')
@@ -124,6 +132,30 @@ async function requestHandler(config: InternalAxiosRequestConfig & RequestConfig
   if (config.loading)
     axiosLoading.addLoading()
   return config
+}
+
+function resolveTenantDomain() {
+  if (typeof window === 'undefined')
+    return ''
+  return window.location.hostname.toLowerCase()
+}
+
+function resolveTenantId() {
+  if (typeof window === 'undefined')
+    return import.meta.env.VITE_APP_TENANT_ID || 'platform'
+
+  const queryTenantId = new URLSearchParams(window.location.search).get('tenantId')?.trim()
+  if (queryTenantId) {
+    window.localStorage.setItem('PLATFORM_ADMIN_TENANT_ID', queryTenantId)
+    return queryTenantId
+  }
+
+  const hostname = window.location.hostname.toLowerCase()
+  const firstLabel = hostname.split('.')[0]
+  if (firstLabel.startsWith('tenant-'))
+    return firstLabel
+
+  return window.localStorage.getItem('PLATFORM_ADMIN_TENANT_ID') || import.meta.env.VITE_APP_TENANT_ID || 'platform'
 }
 
 function responseHandler(response: any): ResponseBody<any> | AxiosResponse<any> | Promise<any> | any {

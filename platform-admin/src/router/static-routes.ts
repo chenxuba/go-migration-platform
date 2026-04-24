@@ -4,11 +4,21 @@ import { AccessEnum } from '~@/utils/constant'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/platform/organizations',
+    redirect: '/platform/control-overview',
   },
   {
     path: '/platform',
-    redirect: '/platform/organizations',
+    redirect: '/platform/control-overview',
+  },
+  {
+    path: '/platform/control-overview',
+    name: 'PlatformControlOverview',
+    component: () => import('~/pages/platform/control-overview/index.vue'),
+    meta: {
+      title: '平台总控',
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+    },
   },
   {
     path: '/platform/organizations',

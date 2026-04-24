@@ -44,6 +44,13 @@ func (svc *Service) CurrentTenant(ctx tenant.Context) customization.TenantProfil
 }
 
 func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent, userIP string) (model.LoginResult, error) {
+	if tenantID, err := svc.repo.ResolveTenantIDByDomain(context.Background(), ctx.Host); err != nil {
+		return model.LoginResult{}, err
+	} else if tenantID != "" {
+		ctx.TenantID = tenantID
+		ctx.TenantSource = "domain-db"
+	}
+
 	identifier := strings.TrimSpace(req.Username)
 	password := strings.TrimSpace(req.Password)
 	if identifier == "" || password == "" {
@@ -108,6 +115,15 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 		return model.LoginResult{}, err
 	}
 	if orgID != nil && *orgID > 0 {
+		if loginType == "org" {
+			resolvedTenantID, resolveErr := svc.resolveInstitutionLoginTenant(ctx, *orgID)
+			if resolveErr != nil {
+				return model.LoginResult{}, resolveErr
+			}
+			if resolvedTenantID != "" {
+				ctx.TenantID = resolvedTenantID
+			}
+		}
 		if err := svc.repo.SetUserCurrentInstitution(context.Background(), user.ID, orgID); err != nil {
 			return model.LoginResult{}, err
 		}
@@ -1350,6 +1366,39 @@ func (svc *Service) resolveOrgID(claims authx.Claims, orgID *int64) (int64, erro
 	return 0, errors.New("unsupported login type")
 }
 
+func (svc *Service) tenantInstitutionMismatchError(tenantID string) error {
+	tenantName, err := svc.repo.GetTenantName(context.Background(), tenantID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(tenantName) == "" {
+		tenantName = "当前租户"
+	}
+	return errors.New("该机构不属于" + tenantName + "下属机构")
+}
+
+func (svc *Service) resolveInstitutionLoginTenant(ctx tenant.Context, institutionID int64) (string, error) {
+	domain := strings.TrimSpace(ctx.Host)
+	if domain != "" {
+		tenantID, err := svc.repo.ResolveTenantIDByDomainAndEntryType(context.Background(), domain, "institution-admin")
+		if err != nil {
+			return "", err
+		}
+		if tenantID == "" {
+			return "", errors.New("当前域名不是机构端登录域名")
+		}
+		belongs, err := svc.repo.InstitutionBelongsToTenant(context.Background(), institutionID, tenantID)
+		if err != nil {
+			return "", err
+		}
+		if !belongs {
+			return "", svc.tenantInstitutionMismatchError(tenantID)
+		}
+		return tenantID, nil
+	}
+	return svc.repo.ResolveTenantIDByInstitution(context.Background(), institutionID)
+}
+
 func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginType string, selectedOrgID int64) (any, []string, []string, *int64, *string, error) {
 	switch loginType {
 	case "manage":
@@ -1360,9 +1409,22 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
+		tenantRole, tenantType, err := svc.repo.GetTenantUserScope(context.Background(), user.ID, ctx.TenantID)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+		if tenantRole == "" && !info.IsAdmin {
+			return nil, nil, nil, nil, nil, errors.New("当前域名不是该账号的后台管理地址")
+		}
+		info.TenantID = ctx.TenantID
+		info.TenantRole = tenantRole
+		info.TenantType = tenantType
 		roleList, err := svc.repo.GetUserRoleIDs(context.Background(), user.ID, 1, 0)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
+		}
+		if tenantRole != "" && len(info.MenuCodeList) == 0 {
+			info.MenuCodeList = []string{tenantRole}
 		}
 		if len(roleList) == 0 && len(info.MenuCodeList) == 0 {
 			return nil, nil, nil, nil, nil, errors.New(platformRoleMissingMessage)
@@ -1410,6 +1472,27 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 		}
 		if message := model.InstitutionStatusMessage(info.InstitutionStatus); message != "" {
 			return nil, nil, nil, nil, nil, errors.New(message)
+		}
+		allowed, err := svc.repo.InstitutionBelongsToTenant(context.Background(), info.InstID, ctx.TenantID)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+		if !allowed {
+			resolvedTenantID, resolveErr := svc.resolveInstitutionLoginTenant(ctx, info.InstID)
+			if resolveErr != nil {
+				return nil, nil, nil, nil, nil, resolveErr
+			}
+			if resolvedTenantID == "" {
+				return nil, nil, nil, nil, nil, errors.New("该机构尚未分配租户")
+			}
+			ctx.TenantID = resolvedTenantID
+			allowed, err = svc.repo.InstitutionBelongsToTenant(context.Background(), info.InstID, ctx.TenantID)
+			if err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+		}
+		if !allowed {
+			return nil, nil, nil, nil, nil, svc.tenantInstitutionMismatchError(ctx.TenantID)
 		}
 		if err := svc.repo.MarkInstitutionUserActivated(context.Background(), info.InstUserID); err != nil {
 			return nil, nil, nil, nil, nil, err

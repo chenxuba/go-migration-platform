@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 )
 
@@ -126,11 +127,86 @@ func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) e
 		return err
 	}
 
+	if err := ensureInstConfigStringFieldTypes(ctx, db); err != nil {
+		return err
+	}
+
 	_, err := db.ExecContext(ctx, `
 		UPDATE inst_config
 		SET charge_by_price_default_price = 100.00
 		WHERE charge_by_price_default_price IS NULL
 	`)
+	return err
+}
+
+func ensureInstConfigStringFieldTypes(ctx context.Context, db *sql.DB) error {
+	type fieldSpec struct {
+		Column       string
+		Definition   string
+		NumericValue string
+		StringValue  string
+	}
+	fields := []fieldSpec{
+		{Column: "send_class_reminder_msg_hour", Definition: "VARCHAR(16) NOT NULL DEFAULT '19:00'", NumericValue: "19", StringValue: "19:00"},
+		{Column: "face_attendance_interval", Definition: "VARCHAR(32) NOT NULL DEFAULT '1'", NumericValue: "1", StringValue: "1"},
+		{Column: "leave_apply_cycle_limit", Definition: "VARCHAR(32) NOT NULL DEFAULT 'month'", NumericValue: "1", StringValue: "month"},
+		{Column: "leave_apply_number_limit", Definition: "VARCHAR(32) NOT NULL DEFAULT '2'", NumericValue: "2", StringValue: "2"},
+		{Column: "leave_apply_type_limit", Definition: "VARCHAR(32) NOT NULL DEFAULT 'course'", NumericValue: "1", StringValue: "course"},
+		{Column: "leave_apply_time_limit", Definition: "VARCHAR(32) NOT NULL DEFAULT '1.0'", NumericValue: "1", StringValue: "1.0"},
+		{Column: "renew_class_num", Definition: "VARCHAR(32) NOT NULL DEFAULT '5'", NumericValue: "5", StringValue: "5"},
+		{Column: "renew_validity_day", Definition: "VARCHAR(32) NOT NULL DEFAULT '15'", NumericValue: "15", StringValue: "15"},
+		{Column: "renew_price", Definition: "VARCHAR(32) NOT NULL DEFAULT '500'", NumericValue: "500", StringValue: "500"},
+	}
+	for _, field := range fields {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE inst_config SET %s = %s WHERE %s IS NULL", field.Column, field.NumericValue, field.Column)); err != nil {
+			return err
+		}
+		if err := ensureColumnTypeOnTable(ctx, db, "inst_config", field.Column, "varchar", fmt.Sprintf("ALTER TABLE inst_config MODIFY COLUMN %s %s", field.Column, field.Definition)); err != nil {
+			return err
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("UPDATE inst_config SET %s = ? WHERE TRIM(%s) = ''", field.Column, field.Column), field.StringValue); err != nil {
+			return err
+		}
+	}
+	if _, err := db.ExecContext(ctx, `
+		UPDATE inst_config
+		SET send_class_reminder_msg_hour = CONCAT(LPAD(send_class_reminder_msg_hour, 2, '0'), ':00')
+		WHERE send_class_reminder_msg_hour REGEXP '^[0-9]{1,2}$'
+	`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `
+		UPDATE inst_config
+		SET leave_apply_cycle_limit = 'month'
+		WHERE leave_apply_cycle_limit REGEXP '^[0-9]+$'
+	`); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, `
+		UPDATE inst_config
+		SET leave_apply_type_limit = 'course'
+		WHERE leave_apply_type_limit REGEXP '^[0-9]+$'
+	`)
+	return err
+
+}
+
+func ensureColumnTypeOnTable(ctx context.Context, db *sql.DB, tableName, columnName, expectedType, ddl string) error {
+	var dataType string
+	if err := db.QueryRowContext(ctx, `
+		SELECT DATA_TYPE
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = ?
+		  AND COLUMN_NAME = ?
+		LIMIT 1
+	`, tableName, columnName).Scan(&dataType); err != nil {
+		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(dataType), strings.TrimSpace(expectedType)) {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, ddl)
 	return err
 }
 
