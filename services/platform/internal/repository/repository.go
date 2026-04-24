@@ -1920,13 +1920,91 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return model.PageResult[model.Module]{}, err
+	}
+
+	if len(items) > 0 {
+		counts, err := repo.countVisibleModuleLeavesByID(ctx, tenantID, items)
+		if err != nil {
+			return model.PageResult[model.Module]{}, err
+		}
+		for index := range items {
+			if count, ok := counts[items[index].ID]; ok {
+				items[index].MenuCount = count
+			}
+		}
+	}
 
 	return model.PageResult[model.Module]{
 		Items:   items,
 		Total:   total,
 		Current: current,
 		Size:    size,
-	}, rows.Err()
+	}, nil
+}
+
+func (repo *Repository) countVisibleModuleLeavesByID(ctx context.Context, tenantID string, modules []model.Module) (map[int64]int, error) {
+	result := make(map[int64]int, len(modules))
+	if len(modules) == 0 {
+		return result, nil
+	}
+
+	rawMenus, err := repo.listInstitutionMenus(ctx, strings.TrimSpace(tenantID))
+	if err != nil {
+		return nil, err
+	}
+	if len(rawMenus) == 0 {
+		return result, nil
+	}
+
+	moduleIDs := make([]int64, 0, len(modules))
+	for _, item := range modules {
+		if item.ID > 0 {
+			moduleIDs = append(moduleIDs, item.ID)
+		}
+	}
+	if len(moduleIDs) == 0 {
+		return result, nil
+	}
+
+	placeholders := make([]string, 0, len(moduleIDs))
+	args := make([]any, 0, len(moduleIDs))
+	for _, id := range moduleIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT module_id, menu_id
+		FROM sys_module_menu
+		WHERE del_flag = 0 AND module_id IN (`+strings.Join(placeholders, ",")+`)
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	selectedByModule := make(map[int64]map[int64]struct{}, len(moduleIDs))
+	for rows.Next() {
+		var moduleID int64
+		var menuID int64
+		if err := rows.Scan(&moduleID, &menuID); err != nil {
+			return nil, err
+		}
+		if _, ok := selectedByModule[moduleID]; !ok {
+			selectedByModule[moduleID] = make(map[int64]struct{})
+		}
+		selectedByModule[moduleID][menuID] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	for _, moduleID := range moduleIDs {
+		result[moduleID] = countVisibleInstitutionModuleLeaves(rawMenus, selectedByModule[moduleID])
+	}
+	return result, nil
 }
 
 func normalizeInstitutionOpenType(value *int) int {
@@ -4038,6 +4116,7 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64, ten
 		return model.ModuleDetailVO{}, err
 	}
 	detail.MenuIDs = buildVisibleInstitutionModuleTree(rawMenus, selected)
+	detail.MenuCount = countVisibleInstitutionModuleLeaves(rawMenus, selected)
 	return detail, nil
 }
 

@@ -159,6 +159,17 @@ func buildVisibleInstitutionModuleTree(items []rawMenu, selected map[int64]struc
 	return result
 }
 
+func countVisibleInstitutionModuleLeaves(items []rawMenu, selected map[int64]struct{}) int {
+	tree := buildVisibleInstitutionModuleTree(items, selected)
+	count := 0
+	for _, group := range tree {
+		for _, page := range group.Children {
+			count += len(page.Children)
+		}
+	}
+	return count
+}
+
 func matchVisibleRawMenu(parentID int64, code string, names []string, codeIndex map[string][]rawMenu, nameIndex map[string][]rawMenu) (rawMenu, bool) {
 	code = strings.TrimSpace(code)
 	if code != "" {
