@@ -657,7 +657,7 @@ onMounted(() => {
       <template #title>
         <div class="modal-title">
           <strong>授权配置</strong>
-          <span>只配置该客户可售卖、可分配给机构的唯一版本包。</span>
+          <span>给客户配置基础版本，授权范围会下发到该租户下属机构。</span>
         </div>
       </template>
 
@@ -685,7 +685,7 @@ onMounted(() => {
         </a-form>
 
         <div class="authorization-note">
-          保存后，该客户只能基于这个授权版本给下属机构开通或续费。
+          保存后，版本权限只对该租户生效；租户下属机构会按授权版本展示可用菜单。
         </div>
       </div>
     </a-modal>
