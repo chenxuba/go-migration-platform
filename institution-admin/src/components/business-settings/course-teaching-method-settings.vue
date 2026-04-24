@@ -92,8 +92,33 @@ function handleEnableRow(row: { key: string, label: string, configField: keyof I
   })
 }
 
-async function handleComposeLessonChange(checked: boolean) {
-  await updateConfigField('enableComposeLesson', checked, 'multiCourse')
+function handleComposeLessonChange(checked: boolean) {
+  if (checked) {
+    Modal.confirm({
+      title: '开启组合课程',
+      centered: true,
+      icon: createVNode(ExclamationCircleOutlined),
+      content: '为保证更好的使用体验，仅建议有组合课程售卖的机构开启该功能',
+      okText: '确认开启',
+      cancelText: '我再想想',
+      async onOk() {
+        await updateConfigField('enableComposeLesson', true, 'multiCourse')
+      },
+    })
+    return
+  }
+
+  Modal.confirm({
+    title: '关闭组合课程',
+    centered: true,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: '关闭后，不能继续新增组合课程',
+    okText: '确认关闭',
+    cancelText: '我再想想',
+    async onOk() {
+      await updateConfigField('enableComposeLesson', false, 'multiCourse')
+    },
+  })
 }
 
 onMounted(async () => {
