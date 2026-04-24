@@ -1319,26 +1319,59 @@ func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]mode
 		       tp.edition,
 		       tp.status,
 		       tp.isolation_mode,
-		       COUNT(DISTINCT CASE WHEN ti.del_flag = 0 THEN ti.institution_id END) AS institution_count,
-		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN ti.del_flag = 0 THEN CAST(ti.institution_id AS CHAR) END ORDER BY ti.institution_id ASC SEPARATOR ','), '') AS institution_ids,
-		       COUNT(DISTINCT CASE WHEN tm.del_flag = 0 THEN tm.menu_id END) AS menu_count,
-		       COUNT(DISTINCT CASE WHEN tmod.del_flag = 0 THEN tmod.module_id END) AS module_count,
-		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN tmod.del_flag = 0 THEN CAST(tmod.module_id AS CHAR) END ORDER BY sm.id ASC SEPARATOR ','), '') AS module_ids,
-		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN tmod.del_flag = 0 THEN sm.name END ORDER BY sm.id ASC SEPARATOR ','), '') AS module_names,
-		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN tu.del_flag = 0 THEN COALESCE(NULLIF(TRIM(su.username), ''), CAST(su.id AS CHAR)) END ORDER BY su.id SEPARATOR ','), '') AS admins,
-		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN td.del_flag = 0 THEN td.domain END ORDER BY td.is_primary DESC, td.id ASC SEPARATOR ','), '') AS domains,
-		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN td.del_flag = 0 AND td.entry_type = 'platform-admin' THEN td.domain END ORDER BY td.is_primary DESC, td.id ASC SEPARATOR ','), '') AS admin_domains,
-		       IFNULL(GROUP_CONCAT(DISTINCT CASE WHEN td.del_flag = 0 AND td.entry_type = 'institution-admin' THEN td.domain END ORDER BY td.is_primary DESC, td.id ASC SEPARATOR ','), '') AS institution_domains
+		       IFNULL(ti.institution_count, 0) AS institution_count,
+		       IFNULL(ti.institution_ids, '') AS institution_ids,
+		       IFNULL(tm.menu_count, 0) AS menu_count,
+		       IFNULL(tmod.module_count, 0) AS module_count,
+		       IFNULL(tmod.module_ids, '') AS module_ids,
+		       IFNULL(tmod.module_names, '') AS module_names,
+		       IFNULL(tu.admins, '') AS admins,
+		       IFNULL(td.domains, '') AS domains,
+		       IFNULL(td.admin_domains, '') AS admin_domains,
+		       IFNULL(td.institution_domains, '') AS institution_domains
 		FROM tenant_profile tp
-		LEFT JOIN tenant_institution ti ON ti.tenant_id = tp.tenant_id
-		LEFT JOIN tenant_menu tm ON tm.tenant_id = tp.tenant_id
-		LEFT JOIN tenant_module tmod ON tmod.tenant_id = tp.tenant_id
-		LEFT JOIN sys_module sm ON sm.id = tmod.module_id AND sm.del_flag = 0
-		LEFT JOIN tenant_user tu ON tu.tenant_id = tp.tenant_id
-		LEFT JOIN sso_user su ON su.id = tu.user_id AND su.del_flag = 0
-		LEFT JOIN tenant_domain td ON td.tenant_id = tp.tenant_id
+		LEFT JOIN (
+			SELECT tenant_id,
+			       COUNT(DISTINCT institution_id) AS institution_count,
+			       GROUP_CONCAT(DISTINCT CAST(institution_id AS CHAR) ORDER BY institution_id ASC SEPARATOR ',') AS institution_ids
+			FROM tenant_institution
+			WHERE del_flag = 0
+			GROUP BY tenant_id
+		) ti ON ti.tenant_id = tp.tenant_id
+		LEFT JOIN (
+			SELECT tenant_id, COUNT(DISTINCT menu_id) AS menu_count
+			FROM tenant_menu
+			WHERE del_flag = 0
+			GROUP BY tenant_id
+		) tm ON tm.tenant_id = tp.tenant_id
+		LEFT JOIN (
+			SELECT tenant_module.tenant_id,
+			       COUNT(DISTINCT tenant_module.module_id) AS module_count,
+			       GROUP_CONCAT(DISTINCT CAST(tenant_module.module_id AS CHAR) ORDER BY sys_module.id ASC SEPARATOR ',') AS module_ids,
+			       GROUP_CONCAT(DISTINCT sys_module.name ORDER BY sys_module.id ASC SEPARATOR ',') AS module_names
+			FROM tenant_module
+			LEFT JOIN sys_module ON sys_module.id = tenant_module.module_id AND sys_module.del_flag = 0
+			WHERE tenant_module.del_flag = 0
+			GROUP BY tenant_module.tenant_id
+		) tmod ON tmod.tenant_id = tp.tenant_id
+		LEFT JOIN (
+			SELECT tenant_user.tenant_id,
+			       GROUP_CONCAT(DISTINCT COALESCE(NULLIF(TRIM(sso_user.username), ''), CAST(sso_user.id AS CHAR)) ORDER BY sso_user.id SEPARATOR ',') AS admins
+			FROM tenant_user
+			LEFT JOIN sso_user ON sso_user.id = tenant_user.user_id AND sso_user.del_flag = 0
+			WHERE tenant_user.del_flag = 0
+			GROUP BY tenant_user.tenant_id
+		) tu ON tu.tenant_id = tp.tenant_id
+		LEFT JOIN (
+			SELECT tenant_id,
+			       GROUP_CONCAT(DISTINCT domain ORDER BY is_primary DESC, id ASC SEPARATOR ',') AS domains,
+			       GROUP_CONCAT(DISTINCT CASE WHEN entry_type = 'platform-admin' THEN domain END ORDER BY is_primary DESC, id ASC SEPARATOR ',') AS admin_domains,
+			       GROUP_CONCAT(DISTINCT CASE WHEN entry_type = 'institution-admin' THEN domain END ORDER BY is_primary DESC, id ASC SEPARATOR ',') AS institution_domains
+			FROM tenant_domain
+			WHERE del_flag = 0
+			GROUP BY tenant_id
+		) td ON td.tenant_id = tp.tenant_id
 		WHERE `+strings.Join(filters, " AND ")+`
-		GROUP BY tp.tenant_id, tp.tenant_name, tp.tenant_type, tp.edition, tp.status, tp.isolation_mode
 		ORDER BY tp.id ASC
 	`, args...)
 	if err != nil {
