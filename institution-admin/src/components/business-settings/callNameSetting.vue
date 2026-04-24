@@ -12,8 +12,6 @@ const userStore = useUserStore()
 const activeKey = ref('deduct-order')
 const rowLoadingMap = ref<Record<string, boolean>>({})
 
-const courseDeductOrder = ref('oldest')
-
 const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
 
 function isConfigEnabled(value: unknown, defaultValue = false) {
@@ -142,7 +140,25 @@ async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyo
 }
 
 async function handleConsumeOverToggle(checked: boolean) {
-  await updateConfigField('enabledArrearsRollcall', checked, 'consumeOver', checked ? '已开启消超点名' : '已关闭消超点名')
+  if (checked === consumeOverEnabled.value)
+    return
+
+  Modal.confirm({
+    title: `确定${checked ? '开启' : '关闭'}「消超点名」？`,
+    centered: true,
+    okText: checked ? '确认开启' : '确认关闭',
+    cancelText: '我再想想',
+    content: checked
+      ? '开启后，以后上课点名的学员将支持消超记录课时。'
+      : h('div', null, [
+          h('p', { style: 'margin-bottom: 8px;' }, '关闭后，以后上课点名将不支持消超记录课时'),
+          h('p', { style: 'margin-bottom: 4px;' }, '1. 人脸考勤中消超学员自动标记为考勤成功，点名扣费失败，需手动处理'),
+          h('p', { style: 'margin-bottom: 0;' }, '2. 开启自动点名开关时，日程内任意学员剩余数量不足，此日程将不自动点名，需手动点名'),
+        ]),
+    async onOk() {
+      await updateConfigField('enabledArrearsRollcall', checked, 'consumeOver', checked ? '已开启消超点名' : '已关闭消超点名')
+    },
+  })
 }
 
 async function handleAutoRollCallToggle(checked: boolean) {
@@ -150,7 +166,21 @@ async function handleAutoRollCallToggle(checked: boolean) {
 }
 
 async function handleLimitSingleOrderToggle(checked: boolean) {
-  await updateConfigField('enableLimitSingleOrderArrearsDeduct', checked, 'limitSingleOrder', checked ? '已开启限制订单欠费课消' : '已关闭限制订单欠费课消')
+  if (checked === limitSingleOrderEnabled.value)
+    return
+
+  Modal.confirm({
+    title: `确认${checked ? '开启' : '关闭'}?`,
+    centered: true,
+    okText: checked ? '确认开启' : '确认关闭',
+    cancelText: '我再想想',
+    content: checked
+      ? '开启后，学员的订单实付对应的学费消耗完后，不可继续课消'
+      : '关闭后，学员的订单实付对应的学费消耗完后，可继续课消',
+    async onOk() {
+      await updateConfigField('enableLimitSingleOrderArrearsDeduct', checked, 'limitSingleOrder', checked ? '已开启限制订单欠费课消' : '已关闭限制订单欠费课消')
+    },
+  })
 }
 
 async function handleLeaveNormalByHourToggle(checked: boolean) {
@@ -251,17 +281,10 @@ onMounted(async () => {
                 课程课消顺序
               </div>
               <div class="settings-row__content">
-                <a-radio-group v-model:value="courseDeductOrder" class="settings-radio-group custom-radio">
-                  <a-radio value="oldest">
-                    先进先出
-                  </a-radio>
-                  <a-radio value="account-first">
-                    优先消通用账户
-                  </a-radio>
-                  <a-radio value="normal-first">
-                    优先消普通账户
-                  </a-radio>
-                </a-radio-group>
+                <div class="status-line">
+                  <span class="status-dot" />
+                  <span class="status-text">先进先出</span>
+                </div>
                 <div class="settings-desc">
                   按学员的学费账户生成时间优先消耗，适用于多数常规课消场景。
                 </div>
@@ -273,12 +296,9 @@ onMounted(async () => {
                 订单课消顺序
               </div>
               <div class="settings-row__content">
-                <div class="settings-inline">
-                  <span>智能排序：</span>
-                  <span class="text-primary">先进先出</span>
-                  <a-button type="link"  class="settings-link">
-                    编辑
-                  </a-button>
+                <div class="status-line">
+                  <span class="status-dot" />
+                  <span class="status-text">先进先出</span>
                 </div>
 
                 <div class="example-card">
@@ -309,7 +329,7 @@ onMounted(async () => {
                     </tbody>
                   </table>
                   <div class="example-card__footer">
-                    若设置智能排序规则：近有效期 &gt; 赠送 &gt; 先进先出，则订单课消顺序为：1 &gt; 3 &gt; 2 &gt; 4
+                    默认按学费账户生成时间先进先出，则订单课消顺序为：1 &gt; 2 &gt; 3 &gt; 4
                   </div>
                 </div>
               </div>
@@ -788,6 +808,26 @@ onMounted(async () => {
 .settings-link {
   padding: 0 4px;
   font-size: 14px;
+}
+
+.status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background: #1fbe4f;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.status-text {
+  color: #333;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .text-primary {

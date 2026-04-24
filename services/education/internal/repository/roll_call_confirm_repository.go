@@ -44,6 +44,12 @@ type rollCallConfirmAccount struct {
 	ProductName        string
 }
 
+type rollCallConfirmDeductItem struct {
+	Account  rollCallConfirmAccount
+	Quantity float64
+	Tuition  float64
+}
+
 type rollCallExistingScheduleRecordSummary struct {
 	TeachingRecordID int64
 	StudentIDSet     map[int64]struct{}
@@ -129,7 +135,11 @@ func (repo *Repository) BatchEstimateRollCallSufficientTuitionAccount(ctx contex
 			} else {
 				mode := normalizeRollCallDrawerChargingMode(account.LessonChargingMode)
 				if mode == 1 {
-					isSufficient = account.Status == model.TuitionAccountStatusActive && account.RemainingQuantity+0.000001 >= item.Quantity
+					remainingQuantity, err := repo.sumRollCallLessonHourDeductBucketRemaining(ctx, instID, account)
+					if err != nil {
+						return model.RollCallBatchEstimateSufficientTuitionAccountResult{}, err
+					}
+					isSufficient = account.Status == model.TuitionAccountStatusActive && remainingQuantity+0.000001 >= item.Quantity
 				}
 			}
 		}
@@ -310,18 +320,23 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 
 		if normalizeRollCallDrawerChargingMode(item.SkuMode) == 1 && quantity > 0 {
 			if hasAccount && account.Status == model.TuitionAccountStatusActive {
-				canCoverQuantity := math.Max(account.RemainingQuantity, 0)+0.000001 >= quantity
+				remainingQuantity, err := repo.sumRollCallLessonHourDeductBucketRemainingTx(ctx, tx, instID, account)
+				if err != nil {
+					return model.RollCallConfirmResult{}, err
+				}
+				canCoverQuantity := remainingQuantity+0.000001 >= quantity
 				if !canCoverQuantity && options.IsAutoRollCall {
 					actualQuantity = 0
 					actualDeduct = 0
 					actualTuition = 0
 					arrearQuantity = quantity
 				} else {
-					actualDeduct = math.Min(quantity, math.Max(account.RemainingQuantity, 0))
+					actualDeduct = math.Min(quantity, math.Max(remainingQuantity, 0))
 					arrearQuantity = roundMoney(math.Max(quantity-actualDeduct, 0))
 				}
-				if actualDeduct > 0 {
-					actualTuition = repo.rollCallConfirmLessonHourTuition(actualDeduct, account)
+				actualTuition, err = repo.estimateRollCallLessonHourDeductBucketTuitionTx(ctx, tx, instID, account, actualDeduct)
+				if err != nil {
+					return model.RollCallConfirmResult{}, err
 				}
 				if options.IsAutoRollCall && arrearQuantity > 0 {
 					actualQuantity = 0
@@ -388,15 +403,9 @@ func (repo *Repository) confirmRollCallTx(ctx context.Context, tx *sql.Tx, instI
 		}
 		insertedStudentTeachingRecordIDs = append(insertedStudentTeachingRecordIDs, strconv.FormatInt(insertedStudentTeachingRecordID, 10))
 		if actualDeduct > 0 {
-			if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, actualTuition, account); err != nil {
+			if err := repo.applyRollCallLessonHourConsumeFIFOTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, account, accountMap); err != nil {
 				return model.RollCallConfirmResult{}, err
 			}
-			account.UsedQuantity = roundMoney(account.UsedQuantity + actualDeduct)
-			account.RemainingQuantity = roundMoney(math.Max(account.RemainingQuantity-actualDeduct, 0))
-			account.UsedTuition = roundMoney(account.UsedTuition + actualTuition)
-			account.RemainingTuition = roundMoney(math.Max(account.RemainingTuition-actualTuition, 0))
-			account.ConfirmedTuition = roundMoney(account.ConfirmedTuition + actualTuition)
-			accountMap[strings.TrimSpace(item.TuitionAccountID)] = account
 		}
 		insertedCount++
 	}
@@ -622,18 +631,23 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 
 		if normalizeRollCallDrawerChargingMode(item.SkuMode) == 1 && quantity > 0 {
 			if hasAccount && account.Status == model.TuitionAccountStatusActive {
-				canCoverQuantity := math.Max(account.RemainingQuantity, 0)+0.000001 >= quantity
+				remainingQuantity, err := repo.sumRollCallLessonHourDeductBucketRemainingTx(ctx, tx, instID, account)
+				if err != nil {
+					return model.RollCallConfirmResult{}, err
+				}
+				canCoverQuantity := remainingQuantity+0.000001 >= quantity
 				if !canCoverQuantity && options.IsAutoRollCall {
 					actualQuantity = 0
 					actualDeduct = 0
 					actualTuition = 0
 					arrearQuantity = quantity
 				} else {
-					actualDeduct = math.Min(quantity, math.Max(account.RemainingQuantity, 0))
+					actualDeduct = math.Min(quantity, math.Max(remainingQuantity, 0))
 					arrearQuantity = roundMoney(math.Max(quantity-actualDeduct, 0))
 				}
-				if actualDeduct > 0 {
-					actualTuition = repo.rollCallConfirmLessonHourTuition(actualDeduct, account)
+				actualTuition, err = repo.estimateRollCallLessonHourDeductBucketTuitionTx(ctx, tx, instID, account, actualDeduct)
+				if err != nil {
+					return model.RollCallConfirmResult{}, err
 				}
 				if options.IsAutoRollCall && arrearQuantity > 0 {
 					actualQuantity = 0
@@ -692,15 +706,9 @@ func (repo *Repository) confirmGroupClassUnscheduledRollCallTx(ctx context.Conte
 		}
 		insertedStudentTeachingRecordIDs = append(insertedStudentTeachingRecordIDs, strconv.FormatInt(insertedStudentTeachingRecordID, 10))
 		if actualDeduct > 0 {
-			if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, actualTuition, account); err != nil {
+			if err := repo.applyRollCallLessonHourConsumeFIFOTx(ctx, tx, instID, operatorID, teachingRecordID, insertedStudentTeachingRecordID, actualDeduct, account, accountMap); err != nil {
 				return model.RollCallConfirmResult{}, err
 			}
-			account.UsedQuantity = roundMoney(account.UsedQuantity + actualDeduct)
-			account.RemainingQuantity = roundMoney(math.Max(account.RemainingQuantity-actualDeduct, 0))
-			account.UsedTuition = roundMoney(account.UsedTuition + actualTuition)
-			account.RemainingTuition = roundMoney(math.Max(account.RemainingTuition-actualTuition, 0))
-			account.ConfirmedTuition = roundMoney(account.ConfirmedTuition + actualTuition)
-			accountMap[strings.TrimSpace(item.TuitionAccountID)] = account
 		}
 		insertedCount++
 	}
@@ -984,6 +992,207 @@ func (repo *Repository) rollCallConfirmLessonHourTuition(quantity float64, accou
 		return 0
 	}
 	return roundMoney(account.TotalTuition * quantity / account.TotalQuantity)
+}
+
+func (repo *Repository) sumRollCallLessonHourDeductBucketRemaining(ctx context.Context, instID int64, account rollCallConfirmAccount) (float64, error) {
+	accounts, err := repo.loadRollCallLessonHourDeductBucketAccounts(ctx, repo.db, instID, account)
+	if err != nil {
+		return 0, err
+	}
+	return sumRollCallDeductBucketRemaining(accounts), nil
+}
+
+func (repo *Repository) sumRollCallLessonHourDeductBucketRemainingTx(ctx context.Context, tx *sql.Tx, instID int64, account rollCallConfirmAccount) (float64, error) {
+	accounts, err := repo.loadRollCallLessonHourDeductBucketAccounts(ctx, tx, instID, account)
+	if err != nil {
+		return 0, err
+	}
+	return sumRollCallDeductBucketRemaining(accounts), nil
+}
+
+func sumRollCallDeductBucketRemaining(accounts []rollCallConfirmAccount) float64 {
+	total := 0.0
+	for _, account := range accounts {
+		if account.Status != model.TuitionAccountStatusActive {
+			continue
+		}
+		total += math.Max(account.RemainingQuantity, 0)
+	}
+	return roundMoney(total)
+}
+
+func (repo *Repository) estimateRollCallLessonHourDeductBucketTuitionTx(ctx context.Context, tx *sql.Tx, instID int64, account rollCallConfirmAccount, quantity float64) (float64, error) {
+	items, err := repo.buildRollCallLessonHourDeductFIFOItemsTx(ctx, tx, instID, account, quantity)
+	if err != nil {
+		return 0, err
+	}
+	total := 0.0
+	for _, item := range items {
+		total += item.Tuition
+	}
+	return roundMoney(total), nil
+}
+
+func (repo *Repository) applyRollCallLessonHourConsumeFIFOTx(ctx context.Context, tx *sql.Tx, instID, operatorID, teachingRecordID, flowSourceID int64, quantity float64, account rollCallConfirmAccount, accountMap map[string]rollCallConfirmAccount) error {
+	items, err := repo.buildRollCallLessonHourDeductFIFOItemsTx(ctx, tx, instID, account, quantity)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.Quantity <= 0 {
+			continue
+		}
+		if err := repo.applyRollCallLessonHourConsumeTx(ctx, tx, instID, operatorID, teachingRecordID, flowSourceID, item.Quantity, item.Tuition, item.Account); err != nil {
+			return err
+		}
+		updated := item.Account
+		updated.UsedQuantity = roundMoney(updated.UsedQuantity + item.Quantity)
+		updated.RemainingQuantity = roundMoney(math.Max(updated.RemainingQuantity-item.Quantity, 0))
+		updated.UsedTuition = roundMoney(updated.UsedTuition + item.Tuition)
+		updated.RemainingTuition = roundMoney(math.Max(updated.RemainingTuition-item.Tuition, 0))
+		updated.ConfirmedTuition = roundMoney(updated.ConfirmedTuition + item.Tuition)
+		accountMap[strconv.FormatInt(updated.ID, 10)] = updated
+	}
+	return nil
+}
+
+func (repo *Repository) buildRollCallLessonHourDeductFIFOItemsTx(ctx context.Context, tx *sql.Tx, instID int64, account rollCallConfirmAccount, quantity float64) ([]rollCallConfirmDeductItem, error) {
+	if quantity <= 0 {
+		return nil, nil
+	}
+	accounts, err := repo.loadRollCallLessonHourDeductBucketAccounts(ctx, tx, instID, account)
+	if err != nil {
+		return nil, err
+	}
+	remaining := quantity
+	items := make([]rollCallConfirmDeductItem, 0, len(accounts))
+	for _, itemAccount := range accounts {
+		if remaining <= 0 {
+			break
+		}
+		if itemAccount.Status != model.TuitionAccountStatusActive {
+			continue
+		}
+		deductQuantity := math.Min(remaining, math.Max(itemAccount.RemainingQuantity, 0))
+		if deductQuantity <= 0 {
+			continue
+		}
+		items = append(items, rollCallConfirmDeductItem{
+			Account:  itemAccount,
+			Quantity: roundMoney(deductQuantity),
+			Tuition:  repo.rollCallConfirmLessonHourTuition(deductQuantity, itemAccount),
+		})
+		remaining = roundMoney(remaining - deductQuantity)
+	}
+	return items, nil
+}
+
+type rollCallDeductBucketAccountQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func (repo *Repository) loadRollCallLessonHourDeductBucketAccounts(ctx context.Context, querier rollCallDeductBucketAccountQuerier, instID int64, account rollCallConfirmAccount) ([]rollCallConfirmAccount, error) {
+	if account.ID <= 0 || account.StudentID <= 0 || account.CourseID <= 0 {
+		return nil, nil
+	}
+	rows, err := querier.QueryContext(ctx, `
+		SELECT
+			ta.id,
+			ta.student_id,
+			ta.course_id,
+			IFNULL(so.order_number, ''),
+			IFNULL(ic.teach_method, 0),
+			CASE
+				WHEN IFNULL(icq.lesson_model, 0) = 4 THEN 3
+				ELSE IFNULL(icq.lesson_model, 0)
+			END AS lesson_charging_mode,
+			IFNULL(ta.total_quantity, 0),
+			IFNULL(ta.free_quantity, 0),
+			IFNULL(ta.used_quantity, 0),
+			IFNULL(ta.remaining_quantity, 0),
+			IFNULL(ta.total_tuition, 0),
+			IFNULL(ta.used_tuition, 0),
+			IFNULL(ta.remaining_tuition, 0),
+			IFNULL(ta.confirmed_tuition, 0),
+			IFNULL(ta.status, 0),
+			IFNULL(NULLIF(TRIM(ic.name), ''), IFNULL(icq.name, ''))
+		FROM tuition_account selected
+		INNER JOIN inst_course selected_course ON selected_course.id = selected.course_id AND selected_course.del_flag = 0
+		LEFT JOIN sale_order_course_detail selected_sod ON selected_sod.id = selected.order_course_detail_id AND selected_sod.del_flag = 0
+		LEFT JOIN inst_course_quotation selected_icq ON selected_icq.id = COALESCE(
+			NULLIF(selected.quote_id, 0),
+			NULLIF(selected_sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = selected.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(selected.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(selected.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = selected.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND selected_icq.del_flag = 0
+		INNER JOIN tuition_account ta
+			ON ta.inst_id = selected.inst_id
+			AND ta.student_id = selected.student_id
+			AND ta.course_id = selected.course_id
+			AND ta.del_flag = 0
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(ta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
+		WHERE selected.inst_id = ?
+		  AND selected.del_flag = 0
+		  AND selected.id = ?
+		  AND IFNULL(ic.teach_method, 0) = IFNULL(selected_course.teach_method, 0)
+		  AND CASE WHEN IFNULL(icq.lesson_model, 0) = 4 THEN 3 ELSE IFNULL(icq.lesson_model, 0) END = CASE WHEN IFNULL(selected_icq.lesson_model, 0) = 4 THEN 3 ELSE IFNULL(selected_icq.lesson_model, 0) END
+		  AND IFNULL(ta.status, 0) <> 3
+		ORDER BY IFNULL(ta.create_time, NOW()) ASC, ta.id ASC
+	`, instID, account.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	accounts := make([]rollCallConfirmAccount, 0, 4)
+	for rows.Next() {
+		var item rollCallConfirmAccount
+		if err := rows.Scan(
+			&item.ID,
+			&item.StudentID,
+			&item.CourseID,
+			&item.OrderNumber,
+			&item.LessonType,
+			&item.LessonChargingMode,
+			&item.TotalQuantity,
+			&item.FreeQuantity,
+			&item.UsedQuantity,
+			&item.RemainingQuantity,
+			&item.TotalTuition,
+			&item.UsedTuition,
+			&item.RemainingTuition,
+			&item.ConfirmedTuition,
+			&item.Status,
+			&item.ProductName,
+		); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return accounts, nil
 }
 
 func (repo *Repository) applyRollCallLessonHourConsumeTx(ctx context.Context, tx *sql.Tx, instID, operatorID, teachingRecordID, flowSourceID int64, quantity, tuition float64, account rollCallConfirmAccount) error {
