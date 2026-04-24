@@ -95,6 +95,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/platform/storage',
+        name: 'PlatformStorageConfig',
+        component: () => import('~/pages/platform/storage/index.vue'),
+        meta: {
+          title: '云存储配置',
+          tenantRoles: ['platform_admin', 'tenant_admin'],
+        },
+      },
+      {
         path: '/platform/permissions',
         name: 'PlatformPermissions',
         component: () => import('~/pages/platform/permissions/index.vue'),

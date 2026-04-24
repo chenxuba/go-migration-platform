@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"strings"
 
 	"go-migration-platform/pkg/authx"
 	"go-migration-platform/pkg/customization"
 	"go-migration-platform/pkg/qiniux"
 	"go-migration-platform/pkg/tenant"
+	"go-migration-platform/pkg/tenantstorage"
 	"go-migration-platform/services/platform/internal/model"
 	"go-migration-platform/services/platform/internal/repository"
 )
@@ -87,18 +90,103 @@ func (svc *Service) ParseToken(token string) (authx.Claims, error) {
 	return svc.tokenManager.Parse(token)
 }
 
-func (svc *Service) GetQiniuUploadToken() (qiniux.TokenVO, error) {
-	if svc.qiniuClient == nil {
-		return qiniux.TokenVO{}, errors.New("qiniu not configured")
+func (svc *Service) GetTenantStorageConfig(ctx tenant.Context, claims authx.Claims, tenantID string) (tenantstorage.Config, error) {
+	targetTenantID, err := svc.resolveStorageTenantID(ctx, claims, tenantID)
+	if err != nil {
+		return tenantstorage.Config{}, err
 	}
-	return svc.qiniuClient.ImageUploadToken()
+	item, err := svc.repo.GetTenantStorageConfig(context.Background(), targetTenantID, tenantstorage.ProviderQiniu)
+	if err == sql.ErrNoRows {
+		return tenantstorage.Config{TenantID: targetTenantID, Provider: tenantstorage.ProviderQiniu, Enabled: true}, nil
+	}
+	if err != nil {
+		return tenantstorage.Config{}, err
+	}
+	return tenantstorage.MaskSecret(item), nil
 }
 
-func (svc *Service) GetQiniuVideoUploadToken() (qiniux.TokenVO, error) {
-	if svc.qiniuClient == nil {
-		return qiniux.TokenVO{}, errors.New("qiniu not configured")
+func (svc *Service) SaveTenantStorageConfig(ctx tenant.Context, claims authx.Claims, input tenantstorage.Config) error {
+	targetTenantID, err := svc.resolveStorageTenantID(ctx, claims, input.TenantID)
+	if err != nil {
+		return err
 	}
-	return svc.qiniuClient.VideoUploadToken()
+	input.TenantID = targetTenantID
+	return svc.repo.SaveTenantStorageConfig(context.Background(), input)
+}
+
+func (svc *Service) GetQiniuUploadToken(ctx tenant.Context, claims authx.Claims) (qiniux.TokenVO, error) {
+	client, err := svc.qiniuClientForTenant(ctx, claims)
+	if err != nil {
+		return qiniux.TokenVO{}, err
+	}
+	return client.ImageUploadToken()
+}
+
+func (svc *Service) GetQiniuVideoUploadToken(ctx tenant.Context, claims authx.Claims) (qiniux.TokenVO, error) {
+	client, err := svc.qiniuClientForTenant(ctx, claims)
+	if err != nil {
+		return qiniux.TokenVO{}, err
+	}
+	return client.VideoUploadToken()
+}
+
+func (svc *Service) resolveStorageTenantID(ctx tenant.Context, claims authx.Claims, requestedTenantID string) (string, error) {
+	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	if err != nil {
+		return "", err
+	}
+	tenantID := strings.TrimSpace(requestedTenantID)
+	if role == "platform_admin" {
+		if tenantID == "" {
+			tenantID = strings.TrimSpace(ctx.TenantID)
+		}
+		if tenantID == "" {
+			return "", errors.New("tenantId is required")
+		}
+		return tenantID, nil
+	}
+	if tenantID != "" && tenantID != ctx.TenantID {
+		return "", errors.New("无权维护其他租户云存储")
+	}
+	if strings.TrimSpace(ctx.TenantID) == "" {
+		return "", errors.New("tenantId is required")
+	}
+	return ctx.TenantID, nil
+}
+
+func (svc *Service) qiniuClientForTenant(ctx tenant.Context, claims authx.Claims) (*qiniux.Client, error) {
+	tenantID := strings.TrimSpace(claims.TenantID)
+	if tenantID == "" {
+		tenantID = strings.TrimSpace(ctx.TenantID)
+	}
+	if tenantID == "" {
+		return nil, errors.New("当前账号未识别租户，无法上传")
+	}
+	storageConfig, err := svc.repo.GetTenantStorageConfig(context.Background(), tenantID, tenantstorage.ProviderQiniu)
+	if err == sql.ErrNoRows {
+		return nil, errors.New("当前租户未配置云存储，请先在总控配置租户云存储")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !storageConfig.Enabled {
+		return nil, errors.New("当前租户云存储已停用")
+	}
+	baseConfig := qiniux.Config{}
+	if svc.qiniuClient != nil {
+		baseConfig = svc.qiniuClient.Config()
+	}
+	baseConfig.AccessKey = storageConfig.AccessKey
+	baseConfig.SecretKey = storageConfig.SecretKey
+	baseConfig.Bucket = storageConfig.Bucket
+	baseConfig.BucketHost = storageConfig.BucketHost
+	baseConfig.UploadPrefix = storageConfig.UploadPrefix
+	baseConfig.ExpiresSeconds = storageConfig.ExpiresSeconds
+	baseConfig.ImageMaxSize = storageConfig.ImageMaxSize
+	baseConfig.ImageMimeTypes = storageConfig.ImageMimeTypes
+	baseConfig.VideoMaxSize = storageConfig.VideoMaxSize
+	baseConfig.VideoMimeTypes = storageConfig.VideoMimeTypes
+	return qiniux.New(baseConfig), nil
 }
 
 func (svc *Service) PageDicts(current, size int, keyword string) (model.PageResult[model.Dict], error) {

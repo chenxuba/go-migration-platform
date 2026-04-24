@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"go-migration-platform/pkg/institutionmenu"
+	"go-migration-platform/pkg/tenantstorage"
 	"go-migration-platform/services/platform/internal/model"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -414,6 +415,9 @@ func minInt(left, right int) int {
 func New(db *sql.DB) (*Repository, error) {
 	repo := &Repository{db: db}
 	if err := repo.ensureTenantControlPlaneSchema(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := tenantstorage.EnsureSchema(context.Background(), db); err != nil {
 		return nil, err
 	}
 	if err := repo.migrateLegacyInstitutionMenuCodes(context.Background()); err != nil {
@@ -1465,6 +1469,14 @@ func (repo *Repository) GetTenantUserRole(ctx context.Context, tenantID string, 
 		return "", nil
 	}
 	return role, err
+}
+
+func (repo *Repository) GetTenantStorageConfig(ctx context.Context, tenantID, provider string) (tenantstorage.Config, error) {
+	return tenantstorage.Get(ctx, repo.db, tenantID, provider)
+}
+
+func (repo *Repository) SaveTenantStorageConfig(ctx context.Context, input tenantstorage.Config) error {
+	return tenantstorage.Save(ctx, repo.db, input)
 }
 
 func (repo *Repository) SaveTenant(ctx context.Context, input model.TenantMutation, operatorID *int64) error {

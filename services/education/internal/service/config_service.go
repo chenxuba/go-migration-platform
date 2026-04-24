@@ -7,7 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"go-migration-platform/pkg/authx"
 	"go-migration-platform/pkg/qiniux"
+	"go-migration-platform/pkg/tenant"
+	"go-migration-platform/pkg/tenantstorage"
 	"go-migration-platform/services/education/internal/model"
 	"go-migration-platform/services/education/internal/repository"
 )
@@ -91,18 +94,55 @@ func (svc *Service) RepairInstPeriodConfigVersions(userID int64) (InstPeriodRepa
 	return result, nil
 }
 
-func (svc *Service) GetQiniuUploadToken() (qiniux.TokenVO, error) {
-	if svc.qiniuClient == nil {
-		return qiniux.TokenVO{}, errors.New("qiniu not configured")
+func (svc *Service) GetQiniuUploadToken(ctx tenant.Context, claims authx.Claims) (qiniux.TokenVO, error) {
+	client, err := svc.qiniuClientForTenant(ctx, claims)
+	if err != nil {
+		return qiniux.TokenVO{}, err
 	}
-	return svc.qiniuClient.ImageUploadToken()
+	return client.ImageUploadToken()
 }
 
-func (svc *Service) GetQiniuVideoUploadToken() (qiniux.TokenVO, error) {
-	if svc.qiniuClient == nil {
-		return qiniux.TokenVO{}, errors.New("qiniu not configured")
+func (svc *Service) GetQiniuVideoUploadToken(ctx tenant.Context, claims authx.Claims) (qiniux.TokenVO, error) {
+	client, err := svc.qiniuClientForTenant(ctx, claims)
+	if err != nil {
+		return qiniux.TokenVO{}, err
 	}
-	return svc.qiniuClient.VideoUploadToken()
+	return client.VideoUploadToken()
+}
+
+func (svc *Service) qiniuClientForTenant(ctx tenant.Context, claims authx.Claims) (*qiniux.Client, error) {
+	tenantID := strings.TrimSpace(claims.TenantID)
+	if tenantID == "" {
+		tenantID = strings.TrimSpace(ctx.TenantID)
+	}
+	if tenantID == "" {
+		return nil, errors.New("当前账号未识别租户，无法上传")
+	}
+	storageConfig, err := svc.repo.GetTenantStorageConfig(context.Background(), tenantID, tenantstorage.ProviderQiniu)
+	if err == sql.ErrNoRows {
+		return nil, errors.New("当前租户未配置云存储，请先在总控配置租户云存储")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !storageConfig.Enabled {
+		return nil, errors.New("当前租户云存储已停用")
+	}
+	baseConfig := qiniux.Config{}
+	if svc.qiniuClient != nil {
+		baseConfig = svc.qiniuClient.Config()
+	}
+	baseConfig.AccessKey = storageConfig.AccessKey
+	baseConfig.SecretKey = storageConfig.SecretKey
+	baseConfig.Bucket = storageConfig.Bucket
+	baseConfig.BucketHost = storageConfig.BucketHost
+	baseConfig.UploadPrefix = storageConfig.UploadPrefix
+	baseConfig.ExpiresSeconds = storageConfig.ExpiresSeconds
+	baseConfig.ImageMaxSize = storageConfig.ImageMaxSize
+	baseConfig.ImageMimeTypes = storageConfig.ImageMimeTypes
+	baseConfig.VideoMaxSize = storageConfig.VideoMaxSize
+	baseConfig.VideoMimeTypes = storageConfig.VideoMimeTypes
+	return qiniux.New(baseConfig), nil
 }
 
 func (svc *Service) GetInstConfig(userID int64, effectiveDate *time.Time) (map[string]any, error) {

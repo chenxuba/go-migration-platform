@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"go-migration-platform/pkg/tenantstorage"
 	"go-migration-platform/services/education/internal/model"
 )
 
@@ -57,6 +58,10 @@ func New(db *sql.DB) *Repository {
 	_ = repo.ensureCurrentInstitutionColumn(context.Background())
 	_ = repo.ensureInstUserTeacherColumn(context.Background())
 	return repo
+}
+
+func (repo *Repository) GetTenantStorageConfig(ctx context.Context, tenantID, provider string) (tenantstorage.Config, error) {
+	return tenantstorage.Get(ctx, repo.db, tenantID, provider)
 }
 
 func (repo *Repository) ensureCurrentInstitutionColumn(ctx context.Context) error {

@@ -15,6 +15,7 @@ import (
 	"go-migration-platform/pkg/qiniux"
 	"go-migration-platform/pkg/search"
 	"go-migration-platform/pkg/tenant"
+	"go-migration-platform/pkg/tenantstorage"
 	"go-migration-platform/services/education/internal/handler"
 	"go-migration-platform/services/education/internal/repository"
 	"go-migration-platform/services/education/internal/service"
@@ -38,6 +39,9 @@ func main() {
 		panic(err)
 	}
 
+	if err := tenantstorage.EnsureSchema(context.Background(), db); err != nil {
+		panic(err)
+	}
 	repo := repository.New(db)
 	if err := repo.EnsureInfrastructureTables(context.Background()); err != nil {
 		panic(err)

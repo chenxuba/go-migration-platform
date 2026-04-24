@@ -829,14 +829,15 @@ func (handler *Handler) initInstCourseProperty(w http.ResponseWriter, r *http.Re
 
 func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodGet {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	result, err := handler.service.GetQiniuUploadToken()
+	result, err := handler.service.GetQiniuUploadToken(ctx, claims)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -846,14 +847,15 @@ func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request)
 
 func (handler *Handler) qiniuVideoUploadToken(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodGet {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	result, err := handler.service.GetQiniuVideoUploadToken()
+	result, err := handler.service.GetQiniuVideoUploadToken(ctx, claims)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

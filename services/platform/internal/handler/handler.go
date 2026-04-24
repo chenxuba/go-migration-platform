@@ -10,6 +10,7 @@ import (
 	"go-migration-platform/pkg/authx"
 	"go-migration-platform/pkg/httpx"
 	"go-migration-platform/pkg/tenant"
+	"go-migration-platform/pkg/tenantstorage"
 	"go-migration-platform/services/platform/internal/model"
 	"go-migration-platform/services/platform/internal/service"
 )
@@ -29,6 +30,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/tenants", handler.tenants)
 	mux.HandleFunc("/api/v1/platform/tenants/save", handler.saveTenant)
 	mux.HandleFunc("/api/v1/platform/tenants/bootstrap-summary", handler.tenantBootstrapSummary)
+	mux.HandleFunc("/api/v1/platform/tenant-storage", handler.tenantStorageConfig)
 	mux.HandleFunc("/api/v1/qiniu/upload-token", handler.qiniuUploadToken)
 	mux.HandleFunc("/api/v1/qiniu/video-upload-token", handler.qiniuVideoUploadToken)
 	mux.HandleFunc("/api/v1/platform/government/overview", handler.governmentOverview)
@@ -160,7 +162,8 @@ func (handler *Handler) saveTenant(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireManage(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -168,7 +171,7 @@ func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	result, err := handler.service.GetQiniuUploadToken()
+	result, err := handler.service.GetQiniuUploadToken(ctx, claims)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -178,7 +181,8 @@ func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request)
 
 func (handler *Handler) qiniuVideoUploadToken(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireManage(w, r, ctx); !ok {
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -186,12 +190,42 @@ func (handler *Handler) qiniuVideoUploadToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	result, err := handler.service.GetQiniuVideoUploadToken()
+	result, err := handler.service.GetQiniuVideoUploadToken(ctx, claims)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) tenantStorageConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		result, err := handler.service.GetTenantStorageConfig(ctx, claims, r.URL.Query().Get("tenantId"))
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+	case http.MethodPost, http.MethodPut:
+		var input tenantstorage.Config
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+			return
+		}
+		if err := handler.service.SaveTenantStorageConfig(ctx, claims, input); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+	default:
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+	}
 }
 
 func (handler *Handler) institutions(w http.ResponseWriter, r *http.Request) {

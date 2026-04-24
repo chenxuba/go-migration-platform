@@ -15,6 +15,7 @@ type Config struct {
 	SecretKey      string
 	Bucket         string
 	BucketHost     string
+	UploadPrefix   string
 	ExpiresSeconds int64
 	ImageMaxSize   int64
 	ImageMimeTypes string
@@ -40,6 +41,13 @@ func New(config Config) *Client {
 	}
 }
 
+func (client *Client) Config() Config {
+	if client == nil {
+		return Config{}
+	}
+	return client.config
+}
+
 func (client *Client) ImageUploadToken() (TokenVO, error) {
 	if err := client.validate(); err != nil {
 		return TokenVO{}, err
@@ -52,7 +60,7 @@ func (client *Client) ImageUploadToken() (TokenVO, error) {
 	}
 	return TokenVO{
 		Token:          policy.UploadToken(client.mac),
-		UUID:           randomKey(),
+		UUID:           randomKeyWithPrefix(client.config.UploadPrefix),
 		BucketHostname: strings.TrimSpace(client.config.BucketHost),
 	}, nil
 }
@@ -61,7 +69,7 @@ func (client *Client) VideoUploadToken() (TokenVO, error) {
 	if err := client.validate(); err != nil {
 		return TokenVO{}, err
 	}
-	key := randomKey()
+	key := randomKeyWithPrefix(client.config.UploadPrefix)
 	policy := storage.PutPolicy{
 		Scope:      client.config.Bucket + ":" + key,
 		Expires:    uint64(client.config.ExpiresSeconds),
@@ -92,4 +100,13 @@ func ParseInt64(value string, fallback int64) int64 {
 
 func randomKey() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+func randomKeyWithPrefix(prefix string) string {
+	key := randomKey()
+	trimmed := strings.Trim(strings.TrimSpace(prefix), "/")
+	if trimmed == "" {
+		return key
+	}
+	return trimmed + "/" + key
 }
