@@ -774,7 +774,7 @@ onMounted(() => {
   }
 
   span {
-    color: rgba(0, 0, 0, 0.45);
+    color: rgba(0, 0, 0, 0.8);
     font-size: 12px;
     line-height: 16px;
   }
