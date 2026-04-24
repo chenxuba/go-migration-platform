@@ -12,6 +12,20 @@ const saving = ref(false)
 const tenantLoading = ref(false)
 const tenantOptions = ref<TenantListItem[]>([])
 const selectedTenantId = ref('')
+const imageMimeOptions = [
+  { label: '全部图片（image/*）', value: 'image/*' },
+  { label: 'JPG / JPEG', value: 'image/jpeg' },
+  { label: 'PNG', value: 'image/png' },
+  { label: 'WEBP', value: 'image/webp' },
+  { label: 'GIF', value: 'image/gif' },
+]
+const videoMimeOptions = [
+  { label: '全部视频（video/*）', value: 'video/*' },
+  { label: 'MP4', value: 'video/mp4' },
+  { label: 'MOV', value: 'video/quicktime' },
+  { label: 'AVI', value: 'video/x-msvideo' },
+  { label: 'WEBM', value: 'video/webm' },
+]
 
 const isPlatformAdmin = computed(() => userStore.userInfo?.tenantRole === 'platform_admin')
 
@@ -196,14 +210,24 @@ watch(selectedTenantId, () => {
           <a-form-item label="图片限制">
             <a-input-group compact>
               <a-input-number v-model:value="formState.imageMaxSize" :min="1" :controls="false" class="size-input" addon-before="大小" />
-              <a-input v-model:value="formState.imageMimeTypes" class="mime-input" placeholder="image/*" />
+              <a-select
+                v-model:value="formState.imageMimeTypes"
+                class="mime-input"
+                :options="imageMimeOptions"
+                placeholder="选择图片格式"
+              />
             </a-input-group>
           </a-form-item>
 
           <a-form-item label="视频限制">
             <a-input-group compact>
               <a-input-number v-model:value="formState.videoMaxSize" :min="1" :controls="false" class="size-input" addon-before="大小" />
-              <a-input v-model:value="formState.videoMimeTypes" class="mime-input" placeholder="video/*" />
+              <a-select
+                v-model:value="formState.videoMimeTypes"
+                class="mime-input"
+                :options="videoMimeOptions"
+                placeholder="选择视频格式"
+              />
             </a-input-group>
           </a-form-item>
 
