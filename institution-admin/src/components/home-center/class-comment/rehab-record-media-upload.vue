@@ -6,6 +6,7 @@ import { computed, h, ref, watch } from 'vue'
 import type { RehabRecordMediaItem } from '@/api/edu-center/class-record'
 import { getQiniuToken, getVideoUploadToken } from '@/api/qiniu'
 import messageService from '@/utils/messageService'
+import { validateUploadFileByToken } from '@/utils/upload-limit'
 
 const props = withDefaults(defineProps<{
   modelValue?: RehabRecordMediaItem[]
@@ -141,17 +142,12 @@ function validateImageFiles(files: File[]) {
   const acceptedFiles: File[] = []
 
   files.forEach((file) => {
-    const isImage = ['image/jpeg', 'image/png', 'image/bmp', 'image/webp', 'image/gif'].includes(file.type)
+    const isImage = file.type.startsWith('image/')
     if (!isImage) {
       invalidItems.push({ name: file.name, reason: '文件格式不支持' })
       return
     }
 
-    const isLt4M = file.size / 1024 / 1024 <= IMAGE_MAX_SIZE_MB
-    if (!isLt4M) {
-      invalidItems.push({ name: file.name, reason: `图片需小于等于 ${IMAGE_MAX_SIZE_MB}MB` })
-      return
-    }
 
     acceptedFiles.push(file)
   })
@@ -171,17 +167,12 @@ function validateVideoFiles(files: File[]) {
   const acceptedFiles: File[] = []
 
   files.forEach((file) => {
-    const isVideo = ['video/mp4', 'video/quicktime', 'video/webm', 'video/ogg', 'video/x-m4v'].includes(file.type)
+    const isVideo = file.type.startsWith('video/')
     if (!isVideo) {
       invalidItems.push({ name: file.name, reason: '文件格式不支持' })
       return
     }
 
-    const isLt100M = file.size / 1024 / 1024 <= VIDEO_MAX_SIZE_MB
-    if (!isLt100M) {
-      invalidItems.push({ name: file.name, reason: `视频需小于等于 ${VIDEO_MAX_SIZE_MB}MB` })
-      return
-    }
 
     acceptedFiles.push(file)
   })
@@ -250,6 +241,7 @@ function uploadSingleVideo(file: File) {
       const key = normalizeTextValue(uuid)
       if (!token || !key || !buckethostname)
         throw new Error('视频上传凭证缺失')
+      validateUploadFileByToken(file, tokenRes.result, '视频')
 
       const observable = qiniu.upload(file, key, token, {
         fname: file.name,

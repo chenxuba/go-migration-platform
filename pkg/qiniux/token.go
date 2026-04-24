@@ -27,6 +27,8 @@ type TokenVO struct {
 	Token          string `json:"token"`
 	UUID           string `json:"uuid"`
 	BucketHostname string `json:"buckethostname"`
+	MaxSize        int64  `json:"maxSize"`
+	MimeTypes      string `json:"mimeTypes"`
 }
 
 type Client struct {
@@ -62,6 +64,8 @@ func (client *Client) ImageUploadToken() (TokenVO, error) {
 		Token:          policy.UploadToken(client.mac),
 		UUID:           randomKeyWithPrefix(client.config.UploadPrefix),
 		BucketHostname: strings.TrimSpace(client.config.BucketHost),
+		MaxSize:        client.config.ImageMaxSize,
+		MimeTypes:      strings.TrimSpace(client.config.ImageMimeTypes),
 	}, nil
 }
 
@@ -80,6 +84,8 @@ func (client *Client) VideoUploadToken() (TokenVO, error) {
 		Token:          policy.UploadToken(client.mac),
 		UUID:           key,
 		BucketHostname: strings.TrimSpace(client.config.BucketHost),
+		MaxSize:        client.config.VideoMaxSize,
+		MimeTypes:      strings.TrimSpace(client.config.VideoMimeTypes),
 	}, nil
 }
 

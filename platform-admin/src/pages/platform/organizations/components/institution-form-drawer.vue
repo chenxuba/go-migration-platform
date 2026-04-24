@@ -20,10 +20,7 @@ import { regionData } from '@/constants/region-data'
 import { getQiniuToken } from '@/api/qiniu'
 import { pageVersionsApi, type VersionItem } from '@/api/platform/versions'
 import messageService from '@/utils/messageService'
-
-function resolveUploadErrorMessage(error, fallback = '上传失败') {
-  return error?.response?.data?.message || error?.message || fallback
-}
+import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 
 const props = defineProps<{
   open: boolean
@@ -502,11 +499,6 @@ function beforeLogoUpload(file: File) {
     return false
   }
 
-  if (file.size / 1024 / 1024 >= 5) {
-    messageService.error('图片大小不能超过 5MB')
-    return false
-  }
-
   return true
 }
 
@@ -525,6 +517,7 @@ async function handleLogoUpload(options: UploadRequestOption) {
     const { token, uuid, buckethostname } = tokenRes.result || {}
     if (!token || !uuid || !buckethostname)
       throw new Error(tokenRes?.message || '获取上传凭证失败')
+    validateUploadFileByToken(rawFile, tokenRes.result, '机构Logo')
 
     const ext = rawFile.name.includes('.') ? rawFile.name.slice(rawFile.name.lastIndexOf('.')) : '.png'
     const key = `institution/logo/${uuid}${ext}`

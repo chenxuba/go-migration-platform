@@ -17,6 +17,7 @@ import {
 } from '@/api/home-center/homework'
 import { getQiniuToken, getVideoUploadToken } from '@/api/qiniu'
 import messageService from '@/utils/messageService'
+import { validateUploadFileByToken } from '@/utils/upload-limit'
 
 interface StudentPickerSelection {
   sourceType: 'class' | 'one_to_one'
@@ -320,10 +321,6 @@ function validateImageFiles(files: File[]) {
       return
     }
 
-    if (file.size / 1024 / 1024 > IMAGE_MAX_SIZE_MB) {
-      invalidItems.push({ name: file.name, reason: `图片需小于等于 ${IMAGE_MAX_SIZE_MB}MB` })
-      return
-    }
 
     acceptedFiles.push(file)
   })
@@ -349,10 +346,6 @@ function validateVideoFiles(files: File[]) {
       return
     }
 
-    if (file.size / 1024 / 1024 > VIDEO_MAX_SIZE_MB) {
-      invalidItems.push({ name: file.name, reason: `视频需小于等于 ${VIDEO_MAX_SIZE_MB}MB` })
-      return
-    }
 
     acceptedFiles.push(file)
   })
@@ -386,6 +379,7 @@ function uploadSingleImage(file: File) {
       const { token, uuid, buckethostname } = tokenRes.result || {}
       if (!token || !uuid || !buckethostname)
         throw new Error('图片上传凭证缺失')
+      validateUploadFileByToken(file, tokenRes.result, '图片')
 
       const ext = file.name?.includes('.')
         ? file.name.slice(file.name.lastIndexOf('.'))
@@ -428,6 +422,7 @@ function uploadSingleVideo(file: File) {
       const key = normalizeTextValue(uuid)
       if (!token || !key || !buckethostname)
         throw new Error('视频上传凭证缺失')
+      validateUploadFileByToken(file, tokenRes.result, '视频')
 
       const observable = qiniu.upload(file, key, token, {
         fname: file.name,

@@ -12,6 +12,7 @@ import { calculateAge } from '@/utils/date'
 import { ParentRelationshipLabel, Sex, SexLabel } from '@/enums'
 import StaffSelect from './staff-select.vue'
 import messageService from '~@/utils/messageService'
+import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 
 const props = defineProps({
   open: {
@@ -29,11 +30,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:open', 'submit'])
 
-function resolveUploadErrorMessage(error, fallback = '上传失败') {
-  const responseMessage = error?.response?.data?.message
-  const businessMessage = error?.message
-  return responseMessage || businessMessage || fallback
-}
 const formRef = ref()
 // 处理双向绑定
 const openModal = computed({
@@ -148,12 +144,6 @@ const beforeAvatarUpload = (file) => {
     return false
   }
 
-  const isLt5M = file.size / 1024 / 1024 < 5
-  if (!isLt5M) {
-    message.error('图片大小不能超过 5MB!')
-    return false
-  }
-
   return true
 }
 
@@ -173,6 +163,7 @@ const handleAvatarUpload = async ({ file }) => {
     const tokenRes = await getQiniuToken()
     if (tokenRes.code !== 200 || !tokenRes.result?.token)
       throw new Error(tokenRes.message || '获取上传凭证失败')
+    validateUploadFileByToken(file, tokenRes.result, '头像图片')
     const { token, uuid, buckethostname } = tokenRes.result
 
     // 2. 生成文件名（使用uuid + 原文件扩展名）

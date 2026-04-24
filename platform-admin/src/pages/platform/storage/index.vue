@@ -162,9 +162,15 @@ watch(selectedTenantId, () => {
 
     <a-card :bordered="false" class="storage-card">
       <a-spin :spinning="loading">
-        <div class="storage-section-title">
-          <CloudUploadOutlined />
-          <span>七牛云配置</span>
+        <div class="storage-section-title storage-section-title--with-switch">
+          <div class="storage-section-title__main">
+            <CloudUploadOutlined />
+            <span>七牛云配置</span>
+          </div>
+          <div class="storage-section-title__switch">
+            <span>启用状态</span>
+            <a-switch v-model:checked="formState.enabled" checked-children="启用" un-checked-children="停用" />
+          </div>
         </div>
 
         <a-form layout="vertical" class="storage-form">
@@ -177,10 +183,6 @@ watch(selectedTenantId, () => {
               :options="tenantOptions.map(item => ({ value: item.tenantId, label: `${item.tenantName}（${item.tenantId}）` }))"
               placeholder="请选择租户"
             />
-          </a-form-item>
-
-          <a-form-item label="启用状态">
-            <a-switch v-model:checked="formState.enabled" checked-children="启用" un-checked-children="停用" />
           </a-form-item>
 
           <a-form-item label="AccessKey" required>
@@ -231,8 +233,8 @@ watch(selectedTenantId, () => {
             </a-input-group>
           </a-form-item>
 
-          <a-form-item label="备注">
-            <a-textarea v-model:value="formState.remark" :rows="3" placeholder="记录客户云账号、桶用途或交付说明" />
+          <a-form-item label="备注" :class="{ 'storage-form__full-row': !isPlatformAdmin }">
+            <a-input v-model:value="formState.remark" placeholder="记录客户云账号、桶用途或交付说明" />
           </a-form-item>
         </a-form>
       </a-spin>
@@ -256,7 +258,7 @@ watch(selectedTenantId, () => {
 <style scoped lang="less">
 .storage-page {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 14px;
   padding: 14px 16px;
 }
@@ -304,10 +306,35 @@ watch(selectedTenantId, () => {
   font-weight: 600;
 }
 
+.storage-section-title--with-switch {
+  justify-content: space-between;
+}
+
+.storage-section-title__main,
+.storage-section-title__switch {
+  display: flex;
+  align-items: center;
+}
+
+.storage-section-title__main {
+  gap: 8px;
+}
+
+.storage-section-title__switch {
+  gap: 10px;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 14px;
+  font-weight: 400;
+}
+
 .storage-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 16px;
+}
+
+.storage-form__full-row {
+  grid-column: 1 / -1;
 }
 
 .full-input,

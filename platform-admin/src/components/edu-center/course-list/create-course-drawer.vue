@@ -11,10 +11,7 @@ import { getCourseCategoryPageApi, getCourseDetailApi, getCoursePropertyOptionsA
 import { getQiniuToken } from '@/api/qiniu'
 import { useCourseAttribute } from '@/composables/useCourseAttribute'
 import messageService from '~@/utils/messageService'
-
-function resolveUploadErrorMessage(error, fallback = '上传失败') {
-  return error?.response?.data?.message || error?.message || fallback
-}
+import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 
 const props = defineProps({
   open: {
@@ -321,14 +318,8 @@ function getBase64(file) {
 }
 
 function beforeCourseImageUpload(file) {
-  const isImage = ['image/jpeg', 'image/png', 'image/bmp', 'image/webp'].includes(file.type)
-  if (!isImage) {
-    messageService.error('只能上传 BMP、JPG、JPEG、PNG、WEBP 格式的图片')
-    return Upload.LIST_IGNORE
-  }
-  const isLt4M = file.size / 1024 / 1024 < 4
-  if (!isLt4M) {
-    messageService.error('图片大小不能超过 4MB')
+  if (!file.type.startsWith('image/')) {
+    messageService.error('只能上传图片文件')
     return Upload.LIST_IGNORE
   }
   return true
@@ -347,6 +338,7 @@ function handleCourseImageUpload(options) {
     try {
       const tokenRes = await getQiniuToken()
       const { token, uuid, buckethostname } = tokenRes.result
+      validateUploadFileByToken(rawFile, tokenRes.result, '课程主图')
 
       const ext = rawFile.name?.includes('.')
         ? rawFile.name.substring(rawFile.name.lastIndexOf('.'))
