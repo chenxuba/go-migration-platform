@@ -1,13 +1,28 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useLayoutMenuProvide } from '~/components/page-container/context'
 import GlobalModal from '~/components/global-modal/index.vue'
+import { getLoginThemeApi } from '~/api/common/login-theme'
 
 const appStore = useAppStore()
 const { theme } = storeToRefs(appStore)
 const { antd } = useI18nLocale()
 const layoutMenu = useLayoutMenu()
 useLayoutMenuProvide(layoutMenu, appStore)
+
+async function applyTenantTheme() {
+  try {
+    const res = await getLoginThemeApi('platform-admin')
+    const primaryColor = res.result?.loginBrand?.primaryColor || res.data?.loginBrand?.primaryColor
+    if (primaryColor)
+      appStore.toggleColorPrimary(primaryColor)
+  }
+  catch (error) {
+    console.warn('apply tenant theme failed', error)
+  }
+}
+
+onMounted(applyTenantTheme)
 // 初始位置
 const initialPosition = {
   x: window.innerWidth - 22 - 58, // 基于原 right:22px 计算

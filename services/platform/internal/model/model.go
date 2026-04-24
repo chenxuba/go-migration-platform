@@ -133,45 +133,78 @@ type PageResult[T any] struct {
 	Size    int `json:"size"`
 }
 
+type TenantLoginBrandConfig struct {
+	Template        string `json:"template,omitempty"`
+	BrandName       string `json:"brandName,omitempty"`
+	LogoURL         string `json:"logoUrl,omitempty"`
+	LoginTitle      string `json:"loginTitle,omitempty"`
+	LoginSubtitle   string `json:"loginSubtitle,omitempty"`
+	BackgroundURL   string `json:"backgroundUrl,omitempty"`
+	PrimaryColor    string `json:"primaryColor,omitempty"`
+	Copyright       string `json:"copyright,omitempty"`
+	HeroBadge       string `json:"heroBadge,omitempty"`
+	HeroTitle       string `json:"heroTitle,omitempty"`
+	HeroDescription string `json:"heroDescription,omitempty"`
+}
+
+type TenantLoginBrandSet struct {
+	PlatformAdmin    TenantLoginBrandConfig `json:"platformAdmin,omitempty"`
+	InstitutionAdmin TenantLoginBrandConfig `json:"institutionAdmin,omitempty"`
+}
+
+type TenantPublicLoginTheme struct {
+	TenantID   string                 `json:"tenantId"`
+	TenantName string                 `json:"tenantName"`
+	EntryType  string                 `json:"entryType"`
+	LoginBrand TenantLoginBrandConfig `json:"loginBrand"`
+	MatchedBy  string                 `json:"matchedBy,omitempty"`
+}
+
 type TenantBootstrapSummary struct {
-	TenantID           string   `json:"tenantId"`
-	TenantName         string   `json:"tenantName"`
-	TenantType         string   `json:"tenantType"`
-	Edition            string   `json:"edition,omitempty"`
-	Status             string   `json:"status,omitempty"`
-	IsolationMode      string   `json:"isolationMode,omitempty"`
-	InstitutionCount   int      `json:"institutionCount"`
-	InstitutionIDs     []int64  `json:"institutionIds,omitempty"`
-	MenuCount          int      `json:"menuCount"`
-	ModuleCount        int      `json:"moduleCount"`
-	ModuleIDs          []int64  `json:"moduleIds,omitempty"`
-	ModuleNames        []string `json:"moduleNames,omitempty"`
-	AdminUsernames     []string `json:"adminUsernames"`
-	Domains            []string `json:"domains"`
-	AdminDomains       []string `json:"adminDomains,omitempty"`
-	InstitutionDomains []string `json:"institutionDomains,omitempty"`
+	TenantID              string                 `json:"tenantId"`
+	TenantName            string                 `json:"tenantName"`
+	TenantType            string                 `json:"tenantType"`
+	Edition               string                 `json:"edition,omitempty"`
+	Status                string                 `json:"status,omitempty"`
+	IsolationMode         string                 `json:"isolationMode,omitempty"`
+	InstitutionCount      int                    `json:"institutionCount"`
+	InstitutionIDs        []int64                `json:"institutionIds,omitempty"`
+	MenuCount             int                    `json:"menuCount"`
+	ModuleCount           int                    `json:"moduleCount"`
+	ModuleIDs             []int64                `json:"moduleIds,omitempty"`
+	ModuleNames           []string               `json:"moduleNames,omitempty"`
+	AdminUsernames        []string               `json:"adminUsernames"`
+	Domains               []string               `json:"domains"`
+	AdminDomains          []string               `json:"adminDomains,omitempty"`
+	InstitutionDomains    []string               `json:"institutionDomains,omitempty"`
+	LoginBrand            TenantLoginBrandConfig `json:"loginBrand,omitempty"`
+	PlatformLoginBrand    TenantLoginBrandConfig `json:"platformLoginBrand,omitempty"`
+	InstitutionLoginBrand TenantLoginBrandConfig `json:"institutionLoginBrand,omitempty"`
 }
 
 type TenantListItem = TenantBootstrapSummary
 
 type TenantMutation struct {
-	TenantID           string   `json:"tenantId"`
-	TenantName         string   `json:"tenantName"`
-	TenantType         string   `json:"tenantType,omitempty"`
-	Edition            string   `json:"edition,omitempty"`
-	Status             string   `json:"status,omitempty"`
-	IsolationMode      string   `json:"isolationMode,omitempty"`
-	Domains            []string `json:"domains,omitempty"`
-	AdminDomains       []string `json:"adminDomains,omitempty"`
-	InstitutionDomains []string `json:"institutionDomains,omitempty"`
-	InstitutionIDs     []int64  `json:"institutionIds,omitempty"`
-	MenuIDs            []int64  `json:"menuIds,omitempty"`
-	ModuleIDs          []int64  `json:"moduleIds,omitempty"`
-	AdminUsername      string   `json:"adminUsername,omitempty"`
-	AdminPassword      string   `json:"adminPassword,omitempty"`
-	AdminNickName      string   `json:"adminNickName,omitempty"`
-	AdminMobile        string   `json:"adminMobile,omitempty"`
-	Remark             string   `json:"remark,omitempty"`
+	TenantID              string                 `json:"tenantId"`
+	TenantName            string                 `json:"tenantName"`
+	TenantType            string                 `json:"tenantType,omitempty"`
+	Edition               string                 `json:"edition,omitempty"`
+	Status                string                 `json:"status,omitempty"`
+	IsolationMode         string                 `json:"isolationMode,omitempty"`
+	Domains               []string               `json:"domains,omitempty"`
+	AdminDomains          []string               `json:"adminDomains,omitempty"`
+	InstitutionDomains    []string               `json:"institutionDomains,omitempty"`
+	InstitutionIDs        []int64                `json:"institutionIds,omitempty"`
+	MenuIDs               []int64                `json:"menuIds,omitempty"`
+	ModuleIDs             []int64                `json:"moduleIds,omitempty"`
+	AdminUsername         string                 `json:"adminUsername,omitempty"`
+	AdminPassword         string                 `json:"adminPassword,omitempty"`
+	AdminNickName         string                 `json:"adminNickName,omitempty"`
+	AdminMobile           string                 `json:"adminMobile,omitempty"`
+	LoginBrand            TenantLoginBrandConfig `json:"loginBrand,omitempty"`
+	PlatformLoginBrand    TenantLoginBrandConfig `json:"platformLoginBrand,omitempty"`
+	InstitutionLoginBrand TenantLoginBrandConfig `json:"institutionLoginBrand,omitempty"`
+	Remark                string                 `json:"remark,omitempty"`
 }
 
 type Institution struct {

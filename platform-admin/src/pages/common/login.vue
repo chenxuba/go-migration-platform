@@ -1,17 +1,25 @@
 <script setup lang="ts">
 import { LockOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons-vue'
 import type { Rule } from 'ant-design-vue/es/form'
-import { reactive, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, reactive, ref } from 'vue'
 import SelectLang from '@/components/select-lang/index.vue'
 import { useAuthorization } from '@/composables/authorization'
 import messageService from '@/utils/messageService'
 import { loginApi } from '~/api/common/login'
+import { getLoginThemeApi, type TenantLoginBrandConfig } from '~/api/common/login-theme'
+import { useAppStore } from '~/stores/app'
 import { reset401Status } from '~/utils/request'
 
 const { t } = useI18nLocale()
+
+const loginTemplateComponents = {
+  'center-card': defineAsyncComponent(() => import('./login-templates/center-card.vue')),
+  'minimal-portal': defineAsyncComponent(() => import('./login-templates/minimal-portal.vue')),
+}
 const router = useRouter()
 const route = useRoute()
 const token = useAuthorization()
+const appStore = useAppStore()
 
 const formRef = ref()
 const submitLoading = ref(false)
@@ -20,6 +28,47 @@ const formState = reactive({
   username: '',
   password: '',
 })
+
+
+const defaultBrand: Required<TenantLoginBrandConfig> = {
+  template: 'business-split',
+  brandName: '总控平台',
+  logoUrl: '',
+  loginTitle: '总控管理后台',
+  loginSubtitle: '请输入账号密码登录',
+  backgroundUrl: '',
+  primaryColor: '#1677ff',
+  copyright: '仅支持总部/总控账号登录。如需开通权限，请联系系统管理员。',
+  heroBadge: '总控平台',
+  heroTitle: '统一管理全部机构与平台能力',
+  heroDescription: '从一个入口完成机构总览、启停筛查和总部级管理协同，保留现有后台的操作节奏，但切换为更适合总控场景的登录与信息层级。',
+}
+const loginBrand = reactive<Required<TenantLoginBrandConfig>>({ ...defaultBrand })
+const loginThemeStyle = computed(() => ({
+  '--tenant-primary': loginBrand.primaryColor || defaultBrand.primaryColor,
+  '--tenant-bg-image': loginBrand.backgroundUrl ? `url(${loginBrand.backgroundUrl})` : 'none',
+}))
+const currentLoginComponent = computed(() => loginTemplateComponents[loginBrand.template] || null)
+const dynamicLoginProps = computed(() => ({ brand: loginBrand, formState, submitLoading: submitLoading.value, rules }))
+
+function mergeLoginBrand(next?: TenantLoginBrandConfig) {
+  Object.assign(loginBrand, defaultBrand, next || {})
+  if (loginBrand.primaryColor)
+    appStore.toggleColorPrimary(loginBrand.primaryColor)
+}
+
+async function loadLoginTheme() {
+  try {
+    const res = await getLoginThemeApi('platform-admin')
+    mergeLoginBrand(res.result?.loginBrand || res.data?.loginBrand)
+  }
+  catch (error) {
+    console.warn('load login theme failed', error)
+    mergeLoginBrand()
+  }
+}
+
+onMounted(loadLoginTheme)
 
 const rules: Record<string, Rule[]> = {
   username: [
@@ -84,21 +133,28 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="platform-login">
-    <div class="platform-login__lang-switch">
+  <div class="platform-login" :style="loginThemeStyle">
+    <component
+      :is="currentLoginComponent"
+      v-if="currentLoginComponent"
+      v-bind="dynamicLoginProps"
+      @submit="onSubmit"
+    />
+
+    <div v-if="!currentLoginComponent" class="platform-login__lang-switch">
       <SelectLang />
     </div>
 
-    <div class="platform-login__content">
+    <div v-if="!currentLoginComponent" class="platform-login__content">
       <section class="platform-login__hero">
         <div class="platform-login__hero-badge">
-          总控平台
+          {{ loginBrand.heroBadge }}
         </div>
         <h1 class="platform-login__hero-title">
-          统一管理全部机构与平台能力
+          {{ loginBrand.heroTitle }}
         </h1>
         <p class="platform-login__hero-desc">
-          从一个入口完成机构总览、启停筛查和总部级管理协同，保留现有后台的操作节奏，但切换为更适合总控场景的登录与信息层级。
+          {{ loginBrand.heroDescription }}
         </p>
 
         <div class="platform-login__hero-panels">
@@ -131,15 +187,19 @@ async function onSubmit() {
         <div class="platform-login__form-card">
           <div class="platform-login__form-top">
             <div class="platform-login__form-icon">
-              <SafetyCertificateOutlined />
+              <img v-if="loginBrand.logoUrl" :src="loginBrand.logoUrl" alt="logo">
+              <SafetyCertificateOutlined v-else />
             </div>
             <div>
               <div class="platform-login__form-caption">
-                总控管理后台
+                {{ loginBrand.loginTitle }}
               </div>
               <h2 class="platform-login__form-title">
                 账号登录
               </h2>
+              <div class="platform-login__form-subtitle">
+                {{ loginBrand.loginSubtitle }}
+              </div>
             </div>
           </div>
 
@@ -188,7 +248,7 @@ async function onSubmit() {
           </a-form>
 
           <div class="platform-login__form-footer">
-            仅支持总部/总控账号登录。如需开通权限，请联系系统管理员。
+            {{ loginBrand.copyright }}
           </div>
         </div>
       </section>
@@ -202,9 +262,13 @@ async function onSubmit() {
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.18) 0, rgba(59, 130, 246, 0) 32%),
-    radial-gradient(circle at bottom right, rgba(15, 23, 42, 0.1) 0, rgba(15, 23, 42, 0) 28%),
+    linear-gradient(rgba(248, 251, 255, 0.88), rgba(255, 255, 255, 0.92)),
+    var(--tenant-bg-image),
+    radial-gradient(circle at top left, color-mix(in srgb, var(--tenant-primary) 18%, transparent) 0, transparent 32%),
+    radial-gradient(circle at bottom right, rgba(15, 23, 42, 0.1) 0, transparent 28%),
     linear-gradient(135deg, #eef4ff 0%, #f8fbff 45%, #ffffff 100%);
+  background-position: center;
+  background-size: cover;
 }
 
 .platform-login::before,
@@ -265,10 +329,10 @@ async function onSubmit() {
   align-items: center;
   height: 32px;
   padding: 0 14px;
-  border: 1px solid rgba(191, 219, 254, 0.9);
+  border: 1px solid color-mix(in srgb, var(--tenant-primary) 28%, white);
   border-radius: 999px;
-  background: rgba(239, 246, 255, 0.92);
-  color: #1d4ed8;
+  background: color-mix(in srgb, var(--tenant-primary) 10%, white);
+  color: var(--tenant-primary);
   font-size: 13px;
   font-weight: 600;
 }
@@ -354,10 +418,22 @@ async function onSubmit() {
   width: 48px;
   height: 48px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+  background: linear-gradient(135deg, var(--tenant-primary) 0%, color-mix(in srgb, var(--tenant-primary) 72%, white) 100%);
   color: #fff;
   font-size: 20px;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.26);
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--tenant-primary) 26%, transparent);
+}
+
+.platform-login__form-icon img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.platform-login__form-subtitle {
+  margin-top: 5px;
+  color: #667085;
+  font-size: 13px;
 }
 
 .platform-login__form-caption {
@@ -400,6 +476,7 @@ async function onSubmit() {
 :deep(.ant-input) {
   border-radius: 12px;
 }
+
 
 @media (max-width: 1024px) {
   .platform-login__content {

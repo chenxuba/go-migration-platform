@@ -34,6 +34,23 @@ interface TenantRecord {
   domains: string[]
   adminDomains?: string[]
   institutionDomains?: string[]
+  loginBrand?: TenantLoginBrandConfig
+  platformLoginBrand?: TenantLoginBrandConfig
+  institutionLoginBrand?: TenantLoginBrandConfig
+}
+
+interface TenantLoginBrandConfig {
+  brandName?: string
+  template?: string
+  logoUrl?: string
+  loginTitle?: string
+  loginSubtitle?: string
+  backgroundUrl?: string
+  primaryColor?: string
+  copyright?: string
+  heroBadge?: string
+  heroTitle?: string
+  heroDescription?: string
 }
 
 interface InstitutionOption {
@@ -62,6 +79,8 @@ interface TenantFormState {
   adminPassword: string
   adminNickName: string
   adminMobile: string
+  platformLoginBrand: Required<TenantLoginBrandConfig>
+  institutionLoginBrand: Required<TenantLoginBrandConfig>
   remark: string
 }
 
@@ -81,6 +100,48 @@ const institutionLoading = ref(false)
 const versionOptions = ref<VersionOption[]>([])
 const versionLoading = ref(false)
 
+const defaultLoginBrand: Required<TenantLoginBrandConfig> = {
+  template: 'business-split',
+  brandName: '',
+  logoUrl: '',
+  loginTitle: '',
+  loginSubtitle: '',
+  backgroundUrl: '',
+  primaryColor: '#1677ff',
+  copyright: '',
+  heroBadge: '',
+  heroTitle: '',
+  heroDescription: '',
+}
+
+const platformTemplateOptions = [
+  { label: '商务分屏登录', value: 'business-split' },
+  { label: '居中品牌卡片', value: 'center-card' },
+  { label: '极简企业门户', value: 'minimal-portal' },
+]
+const institutionTemplateOptions = [
+  { label: '教务分屏登录', value: 'education-split' },
+  { label: '校区品牌卡片', value: 'campus-card' },
+  { label: '轻量门户登录', value: 'clean-portal' },
+]
+
+function createDefaultLoginBrand(tenantName = '', template = 'business-split'): Required<TenantLoginBrandConfig> {
+  return {
+    ...defaultLoginBrand,
+    template,
+    brandName: tenantName,
+    loginTitle: tenantName ? `${tenantName}管理后台` : '',
+    loginSubtitle: '请输入账号密码登录',
+    heroBadge: tenantName,
+    heroTitle: tenantName ? `欢迎进入${tenantName}` : '',
+    heroDescription: '独立租户后台，按客户域名、菜单权限和业务配置隔离运行。',
+  }
+}
+
+function assignLoginBrand(target: Required<TenantLoginBrandConfig>, value?: TenantLoginBrandConfig, tenantName = '', template = 'business-split') {
+  Object.assign(target, createDefaultLoginBrand(tenantName, template), value || {})
+}
+
 const formState = reactive<TenantFormState>({
   tenantId: '',
   tenantName: '',
@@ -95,6 +156,8 @@ const formState = reactive<TenantFormState>({
   adminPassword: '',
   adminNickName: '',
   adminMobile: '',
+  platformLoginBrand: createDefaultLoginBrand('', 'business-split'),
+  institutionLoginBrand: createDefaultLoginBrand('', 'education-split'),
   remark: '',
 })
 
@@ -176,6 +239,8 @@ function resetForm() {
   formState.adminPassword = ''
   formState.adminNickName = ''
   formState.adminMobile = ''
+  assignLoginBrand(formState.platformLoginBrand, undefined, '', 'business-split')
+  assignLoginBrand(formState.institutionLoginBrand, undefined, '', 'education-split')
   formState.remark = ''
 }
 
@@ -203,6 +268,8 @@ function openEditModal(record: TenantRecord) {
   formState.adminPassword = ''
   formState.adminNickName = ''
   formState.adminMobile = ''
+  assignLoginBrand(formState.platformLoginBrand, record.platformLoginBrand || record.loginBrand, record.tenantName, 'business-split')
+  assignLoginBrand(formState.institutionLoginBrand, record.institutionLoginBrand || record.loginBrand, record.tenantName, 'education-split')
   formState.remark = ''
   modalOpen.value = true
 }
@@ -238,6 +305,9 @@ async function handleSaveAuthorization() {
       adminPassword: '',
       adminNickName: '',
       adminMobile: '',
+      loginBrand: tenant.platformLoginBrand || tenant.loginBrand,
+      platformLoginBrand: tenant.platformLoginBrand || tenant.loginBrand,
+      institutionLoginBrand: tenant.institutionLoginBrand || tenant.loginBrand,
       remark: '',
     })
     messageService.success('授权配置已保存')
@@ -332,6 +402,21 @@ async function handleSave() {
       adminPassword: formState.adminPassword.trim(),
       adminNickName: formState.adminNickName.trim(),
       adminMobile: formState.adminMobile.trim(),
+      loginBrand: {
+        ...formState.platformLoginBrand,
+        brandName: formState.platformLoginBrand.brandName.trim() || formState.tenantName.trim(),
+        primaryColor: formState.platformLoginBrand.primaryColor.trim() || '#1677ff',
+      },
+      platformLoginBrand: {
+        ...formState.platformLoginBrand,
+        brandName: formState.platformLoginBrand.brandName.trim() || formState.tenantName.trim(),
+        primaryColor: formState.platformLoginBrand.primaryColor.trim() || '#1677ff',
+      },
+      institutionLoginBrand: {
+        ...formState.institutionLoginBrand,
+        brandName: formState.institutionLoginBrand.brandName.trim() || formState.tenantName.trim(),
+        primaryColor: formState.institutionLoginBrand.primaryColor.trim() || formState.platformLoginBrand.primaryColor.trim() || '#1677ff',
+      },
       remark: formState.remark.trim(),
     })
     messageService.success('合作客户租户已保存')
@@ -619,6 +704,74 @@ onMounted(() => {
               <a-input v-model:value="formState.institutionDomain" placeholder="例如：school.tenant-a.example.com" />
             </a-form-item>
           </div>
+        </section>
+
+        <section class="form-section">
+          <div class="form-section__head">
+            <div>
+              <h3>登录页模板</h3>
+              <p>子总控后台和机构端是两套独立登录页，可以选择完全不同的页面模板和品牌内容。</p>
+            </div>
+            <GlobalOutlined />
+          </div>
+          <a-tabs class="login-template-tabs">
+            <a-tab-pane key="platform" tab="子总控登录页">
+              <div class="form-grid">
+                <a-form-item label="页面模板">
+                  <a-select v-model:value="formState.platformLoginBrand.template" :options="platformTemplateOptions" />
+                </a-form-item>
+                <a-form-item label="主色调">
+                  <a-input v-model:value="formState.platformLoginBrand.primaryColor" placeholder="例如：#1677ff" />
+                </a-form-item>
+                <a-form-item label="品牌名称">
+                  <a-input v-model:value="formState.platformLoginBrand.brandName" placeholder="默认使用客户名称" />
+                </a-form-item>
+                <a-form-item label="Logo 地址">
+                  <a-input v-model:value="formState.platformLoginBrand.logoUrl" placeholder="https://.../logo.png" />
+                </a-form-item>
+                <a-form-item label="背景图地址">
+                  <a-input v-model:value="formState.platformLoginBrand.backgroundUrl" placeholder="https://.../login-bg.png" />
+                </a-form-item>
+                <a-form-item label="登录标题">
+                  <a-input v-model:value="formState.platformLoginBrand.loginTitle" placeholder="例如：肯纳集团管理后台" />
+                </a-form-item>
+                <a-form-item label="宣传标题">
+                  <a-input v-model:value="formState.platformLoginBrand.heroTitle" placeholder="例如：欢迎进入肯纳集团" />
+                </a-form-item>
+                <a-form-item label="宣传文案">
+                  <a-input v-model:value="formState.platformLoginBrand.heroDescription" placeholder="子总控登录页展示文案" />
+                </a-form-item>
+              </div>
+            </a-tab-pane>
+            <a-tab-pane key="institution" tab="机构端登录页">
+              <div class="form-grid">
+                <a-form-item label="页面模板">
+                  <a-select v-model:value="formState.institutionLoginBrand.template" :options="institutionTemplateOptions" />
+                </a-form-item>
+                <a-form-item label="主色调">
+                  <a-input v-model:value="formState.institutionLoginBrand.primaryColor" placeholder="例如：#13ad74" />
+                </a-form-item>
+                <a-form-item label="品牌名称">
+                  <a-input v-model:value="formState.institutionLoginBrand.brandName" placeholder="默认使用客户名称" />
+                </a-form-item>
+                <a-form-item label="Logo 地址">
+                  <a-input v-model:value="formState.institutionLoginBrand.logoUrl" placeholder="https://.../logo.png" />
+                </a-form-item>
+                <a-form-item label="背景图地址">
+                  <a-input v-model:value="formState.institutionLoginBrand.backgroundUrl" placeholder="https://.../login-bg.png" />
+                </a-form-item>
+                <a-form-item label="登录标题">
+                  <a-input v-model:value="formState.institutionLoginBrand.loginTitle" placeholder="例如：肯纳集团机构端" />
+                </a-form-item>
+                <a-form-item label="宣传标题">
+                  <a-input v-model:value="formState.institutionLoginBrand.heroTitle" placeholder="例如：校区业务管理入口" />
+                </a-form-item>
+                <a-form-item label="宣传文案">
+                  <a-input v-model:value="formState.institutionLoginBrand.heroDescription" placeholder="机构端登录页展示文案" />
+                </a-form-item>
+              </div>
+            </a-tab-pane>
+          </a-tabs>
         </section>
 
         <section class="form-section">
@@ -1042,6 +1195,9 @@ onMounted(() => {
   }
 }
 
+.form-grid__full-row {
+  grid-column: 1 / -1;
+}
 
 
 .authorization-tenant {

@@ -1,6 +1,7 @@
 <script setup>
 import { EyeInvisibleOutlined, LockOutlined, MobileOutlined, SafetyOutlined } from '@ant-design/icons-vue'
 import { AxiosError } from 'axios'
+import { defineAsyncComponent } from 'vue'
 import QRCode from 'qrcode'
 import { useRouter } from 'vue-router'
 import InstitutionLoginPickerModal from './components/institution-login-picker-modal.vue'
@@ -9,8 +10,14 @@ import { useAuthorization } from '@/composables/authorization'
 import { useNotification } from '@/composables/global-config'
 import messageService from '@/utils/messageService'
 import { loginApi, loginInstitutionOptionsApi } from '~/api/common/login'
+import { getLoginThemeApi } from '~/api/common/login-theme'
+import { useAppStore } from '~/stores/app'
 
 const { t } = useI18nLocale()
+const loginTemplateComponents = {
+  'campus-card': defineAsyncComponent(() => import('./login-templates/campus-card.vue')),
+  'clean-portal': defineAsyncComponent(() => import('./login-templates/clean-portal.vue')),
+}
 const activeKey = ref(0) // 0: 密码登录, 1: 短信登录
 const mode = ref(true) // input: 密码登录, qrcode: 扫码登录
 const formRef = ref()
@@ -23,6 +30,7 @@ const agreeToTerms = ref(true)
 const notification = useNotification()
 const router = useRouter()
 const token = useAuthorization()
+const appStore = useAppStore()
 const submitLoading = ref(false)
 const errorAlert = ref(false)
 const loginErrorMessage = ref('')
@@ -31,6 +39,51 @@ const institutionPickerOpen = ref(false)
 const institutionOptions = ref([])
 const pendingLoginParams = ref(null)
 const institutionConfirmLoading = ref(false)
+
+const defaultBrand = {
+  template: 'education-split',
+  brandName: '机构管理后台',
+  logoUrl: '',
+  loginTitle: '机构端登录',
+  loginSubtitle: '请输入机构账号登录',
+  backgroundUrl: '',
+  primaryColor: '#1677ff',
+  copyright: '',
+  heroBadge: '机构端',
+  heroTitle: '校区业务管理入口',
+  heroDescription: '面向机构日常运营、教务、学员和财务管理的独立登录入口。',
+}
+const loginBrand = reactive({ ...defaultBrand })
+const loginThemeStyle = computed(() => ({
+  '--tenant-primary': loginBrand.primaryColor || defaultBrand.primaryColor,
+  '--tenant-bg-image': loginBrand.backgroundUrl ? `url(${loginBrand.backgroundUrl})` : 'none',
+}))
+const currentLoginComponent = computed(() => loginTemplateComponents[loginBrand.template] || null)
+const dynamicLoginProps = computed(() => ({
+  brand: loginBrand,
+  formState,
+  submitLoading: submitLoading.value,
+  errorAlert: errorAlert.value,
+  loginErrorMessage: loginErrorMessage.value,
+  t,
+}))
+
+function mergeLoginBrand(next) {
+  Object.assign(loginBrand, defaultBrand, next || {})
+  if (loginBrand.primaryColor)
+    appStore.toggleColorPrimary(loginBrand.primaryColor)
+}
+
+async function loadLoginTheme() {
+  try {
+    const res = await getLoginThemeApi('institution-admin')
+    mergeLoginBrand(res.result?.loginBrand || res.data?.loginBrand)
+  }
+  catch (error) {
+    console.warn('load institution login theme failed', error)
+    mergeLoginBrand()
+  }
+}
 
 const usernameRules = computed(() => [{
   required: true,
@@ -75,6 +128,7 @@ watch(mode, (newMode) => {
 
 // 组件挂载时，如果当前是二维码模式则生成二维码
 onMounted(() => {
+  loadLoginTheme()
   if (!mode.value)
     generateQRCode()
 })
@@ -233,11 +287,19 @@ watch(
 </script>
 
 <template>
-  <div class="login-page flex">
-    <div class="login-page__lang-switch">
+  <div class="login-page flex" :style="loginThemeStyle">
+    <component
+      :is="currentLoginComponent"
+      v-if="currentLoginComponent"
+      v-bind="dynamicLoginProps"
+      v-model:active-key="activeKey"
+      v-model:agree-to-terms="agreeToTerms"
+      @submit="onSubmit"
+    />
+    <div v-if="!currentLoginComponent" class="login-page__lang-switch">
       <SelectLang />
     </div>
-    <div class="main-content flex">
+    <div v-if="!currentLoginComponent" class="main-content flex">
       <div class="content flex">
         <div class="left">
           <div class="top flex">
@@ -392,7 +454,7 @@ watch(
       @confirm="confirmInstitutionLogin"
       @cancel="resetInstitutionPicker"
     />
-    <div class="footer">
+    <div v-if="!currentLoginComponent" class="footer">
       <span><a
         target="_blank" href="https://beian.miit.gov.cn"
         rel="noreferrer"

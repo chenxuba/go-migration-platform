@@ -56,6 +56,10 @@ func (svc *Service) CustomizationSummary(ctx tenant.Context) map[string]any {
 	}
 }
 
+func (svc *Service) GetTenantLoginTheme(ctx tenant.Context, entryType string) (model.TenantPublicLoginTheme, error) {
+	return svc.repo.GetTenantLoginTheme(context.Background(), ctx.Host, entryType)
+}
+
 func (svc *Service) GetTenantBootstrapSummary(ctx tenant.Context) (model.TenantBootstrapSummary, error) {
 	return svc.repo.GetTenantBootstrapSummary(context.Background(), ctx.TenantID)
 }

@@ -534,6 +534,11 @@ func (repo *Repository) ensureTenantControlPlaneSchema(ctx context.Context) erro
 			return err
 		}
 	}
+	if err := repo.ensureColumnExists(ctx, "tenant_profile", "brand_config", `
+		ALTER TABLE tenant_profile ADD COLUMN brand_config JSON DEFAULT NULL AFTER isolation_mode
+	`); err != nil {
+		return err
+	}
 	return repo.seedTenantAControlPlane(ctx)
 }
 
@@ -1180,6 +1185,54 @@ func (repo *Repository) PageDicts(ctx context.Context, current, size int, keywor
 	}, rows.Err()
 }
 
+func (repo *Repository) GetTenantLoginTheme(ctx context.Context, domain, entryType string) (model.TenantPublicLoginTheme, error) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	entryType = firstNonEmpty(strings.TrimSpace(entryType), "platform-admin")
+
+	query := `
+		SELECT tp.tenant_id, tp.tenant_name, IFNULL(CAST(tp.brand_config AS CHAR), '')
+		FROM tenant_profile tp
+	`
+	args := make([]any, 0, 2)
+	matchedBy := "default"
+	if domain != "" {
+		query += `
+			JOIN tenant_domain td ON td.tenant_id = tp.tenant_id AND td.del_flag = 0
+			WHERE td.domain = ? AND td.entry_type = ? AND tp.del_flag = 0 AND tp.status = 'active'
+			ORDER BY td.is_primary DESC, td.id ASC
+			LIMIT 1
+		`
+		args = append(args, domain, entryType)
+		matchedBy = "domain"
+	} else {
+		query += `
+			WHERE tp.tenant_id = 'platform' AND tp.del_flag = 0
+			LIMIT 1
+		`
+	}
+
+	var result model.TenantPublicLoginTheme
+	var brandConfigRaw string
+	err := repo.db.QueryRowContext(ctx, query, args...).Scan(&result.TenantID, &result.TenantName, &brandConfigRaw)
+	if err == sql.ErrNoRows && domain != "" {
+		err = repo.db.QueryRowContext(ctx, `
+			SELECT tenant_id, tenant_name, IFNULL(CAST(brand_config AS CHAR), '')
+			FROM tenant_profile
+			WHERE tenant_id = 'platform' AND del_flag = 0
+			LIMIT 1
+		`).Scan(&result.TenantID, &result.TenantName, &brandConfigRaw)
+		matchedBy = "fallback"
+	}
+	if err != nil {
+		return model.TenantPublicLoginTheme{}, err
+	}
+	result.EntryType = entryType
+	result.MatchedBy = matchedBy
+	brandSet := parseLoginBrandSet(brandConfigRaw)
+	result.LoginBrand = selectLoginBrandConfig(brandSet, result.EntryType, result.TenantName)
+	return result, nil
+}
+
 func (repo *Repository) GetTenantBootstrapSummary(ctx context.Context, tenantID string) (model.TenantBootstrapSummary, error) {
 	tenantID = strings.TrimSpace(tenantID)
 	if tenantID == "" {
@@ -1187,14 +1240,19 @@ func (repo *Repository) GetTenantBootstrapSummary(ctx context.Context, tenantID 
 	}
 
 	var summary model.TenantBootstrapSummary
+	var brandConfigRaw string
 	if err := repo.db.QueryRowContext(ctx, `
-		SELECT tenant_id, tenant_name, tenant_type, edition, status, isolation_mode
+		SELECT tenant_id, tenant_name, tenant_type, edition, status, isolation_mode, IFNULL(CAST(brand_config AS CHAR), '')
 		FROM tenant_profile
 		WHERE tenant_id = ? AND del_flag = 0
 		LIMIT 1
-	`, tenantID).Scan(&summary.TenantID, &summary.TenantName, &summary.TenantType, &summary.Edition, &summary.Status, &summary.IsolationMode); err != nil {
+	`, tenantID).Scan(&summary.TenantID, &summary.TenantName, &summary.TenantType, &summary.Edition, &summary.Status, &summary.IsolationMode, &brandConfigRaw); err != nil {
 		return model.TenantBootstrapSummary{}, err
 	}
+	brandSet := parseLoginBrandSet(brandConfigRaw)
+	summary.PlatformLoginBrand = selectLoginBrandConfig(brandSet, "platform-admin", summary.TenantName)
+	summary.InstitutionLoginBrand = selectLoginBrandConfig(brandSet, "institution-admin", summary.TenantName)
+	summary.LoginBrand = summary.PlatformLoginBrand
 
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(1)
@@ -1323,6 +1381,7 @@ func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]mode
 		       tp.edition,
 		       tp.status,
 		       tp.isolation_mode,
+		       IFNULL(CAST(tp.brand_config AS CHAR), '') AS brand_config,
 		       IFNULL(ti.institution_count, 0) AS institution_count,
 		       IFNULL(ti.institution_ids, '') AS institution_ids,
 		       IFNULL(tm.menu_count, 0) AS menu_count,
@@ -1386,6 +1445,7 @@ func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]mode
 	items := make([]model.TenantListItem, 0, 16)
 	for rows.Next() {
 		var item model.TenantListItem
+		var brandConfigRaw string
 		var institutionIDs string
 		var moduleIDs string
 		var moduleNames string
@@ -1400,6 +1460,7 @@ func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]mode
 			&item.Edition,
 			&item.Status,
 			&item.IsolationMode,
+			&brandConfigRaw,
 			&item.InstitutionCount,
 			&institutionIDs,
 			&item.MenuCount,
@@ -1413,6 +1474,10 @@ func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]mode
 		); err != nil {
 			return nil, err
 		}
+		brandSet := parseLoginBrandSet(brandConfigRaw)
+		item.PlatformLoginBrand = selectLoginBrandConfig(brandSet, "platform-admin", item.TenantName)
+		item.InstitutionLoginBrand = selectLoginBrandConfig(brandSet, "institution-admin", item.TenantName)
+		item.LoginBrand = item.PlatformLoginBrand
 		item.InstitutionIDs = splitCommaInt64List(institutionIDs)
 		item.ModuleIDs = splitCommaInt64List(moduleIDs)
 		item.ModuleNames = splitCommaList(moduleNames)
@@ -1423,6 +1488,58 @@ func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]mode
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func parseLoginBrandSet(raw string) model.TenantLoginBrandSet {
+	var brandSet model.TenantLoginBrandSet
+	if strings.TrimSpace(raw) == "" {
+		return brandSet
+	}
+	if err := json.Unmarshal([]byte(raw), &brandSet); err == nil && (hasLoginBrandConfig(brandSet.PlatformAdmin) || hasLoginBrandConfig(brandSet.InstitutionAdmin)) {
+		return brandSet
+	}
+	var legacy model.TenantLoginBrandConfig
+	if err := json.Unmarshal([]byte(raw), &legacy); err != nil {
+		return model.TenantLoginBrandSet{}
+	}
+	return model.TenantLoginBrandSet{PlatformAdmin: legacy, InstitutionAdmin: legacy}
+}
+
+func hasLoginBrandConfig(config model.TenantLoginBrandConfig) bool {
+	return strings.TrimSpace(config.Template) != "" || strings.TrimSpace(config.BrandName) != "" || strings.TrimSpace(config.LogoURL) != "" || strings.TrimSpace(config.LoginTitle) != "" || strings.TrimSpace(config.PrimaryColor) != ""
+}
+
+func selectLoginBrandConfig(brandSet model.TenantLoginBrandSet, entryType, tenantName string) model.TenantLoginBrandConfig {
+	if entryType == "institution-admin" {
+		return normalizeLoginBrandConfig(brandSet.InstitutionAdmin, tenantName, entryType)
+	}
+	return normalizeLoginBrandConfig(brandSet.PlatformAdmin, tenantName, "platform-admin")
+}
+
+func normalizeLoginBrandConfig(config model.TenantLoginBrandConfig, tenantName, entryType string) model.TenantLoginBrandConfig {
+	brandName := firstNonEmpty(config.BrandName, tenantName, "总控平台")
+	primaryColor := firstNonEmpty(config.PrimaryColor, "#1677ff")
+	template := firstNonEmpty(config.Template, defaultLoginTemplate(entryType))
+	return model.TenantLoginBrandConfig{
+		Template:        template,
+		BrandName:       brandName,
+		LogoURL:         strings.TrimSpace(config.LogoURL),
+		LoginTitle:      firstNonEmpty(config.LoginTitle, brandName+"管理后台"),
+		LoginSubtitle:   firstNonEmpty(config.LoginSubtitle, "请输入账号密码登录"),
+		BackgroundURL:   strings.TrimSpace(config.BackgroundURL),
+		PrimaryColor:    primaryColor,
+		Copyright:       strings.TrimSpace(config.Copyright),
+		HeroBadge:       firstNonEmpty(config.HeroBadge, brandName),
+		HeroTitle:       firstNonEmpty(config.HeroTitle, "欢迎进入"+brandName),
+		HeroDescription: firstNonEmpty(config.HeroDescription, "独立租户后台，按客户域名、菜单权限和业务配置隔离运行。"),
+	}
+}
+
+func defaultLoginTemplate(entryType string) string {
+	if entryType == "institution-admin" {
+		return "education-split"
+	}
+	return "business-split"
 }
 
 func splitCommaInt64List(raw string) []int64 {
@@ -1494,6 +1611,22 @@ func (repo *Repository) SaveTenant(ctx context.Context, input model.TenantMutati
 	status := firstNonEmpty(strings.TrimSpace(input.Status), "active")
 	isolationMode := firstNonEmpty(strings.TrimSpace(input.IsolationMode), "shared_db")
 	remark := strings.TrimSpace(input.Remark)
+	platformLoginBrand := input.PlatformLoginBrand
+	institutionLoginBrand := input.InstitutionLoginBrand
+	if !hasLoginBrandConfig(platformLoginBrand) && hasLoginBrandConfig(input.LoginBrand) {
+		platformLoginBrand = input.LoginBrand
+	}
+	if !hasLoginBrandConfig(institutionLoginBrand) && hasLoginBrandConfig(input.LoginBrand) {
+		institutionLoginBrand = input.LoginBrand
+	}
+	brandSet := model.TenantLoginBrandSet{
+		PlatformAdmin:    normalizeLoginBrandConfig(platformLoginBrand, tenantName, "platform-admin"),
+		InstitutionAdmin: normalizeLoginBrandConfig(institutionLoginBrand, tenantName, "institution-admin"),
+	}
+	brandConfigBytes, err := json.Marshal(brandSet)
+	if err != nil {
+		return err
+	}
 
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1502,18 +1635,19 @@ func (repo *Repository) SaveTenant(ctx context.Context, input model.TenantMutati
 	defer tx.Rollback()
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO tenant_profile (tenant_id, tenant_name, tenant_type, parent_tenant_id, edition, status, isolation_mode, remark, create_time, update_time, del_flag)
-		VALUES (?, ?, ?, 'platform', ?, ?, ?, ?, NOW(), NOW(), 0)
+		INSERT INTO tenant_profile (tenant_id, tenant_name, tenant_type, parent_tenant_id, edition, status, isolation_mode, brand_config, remark, create_time, update_time, del_flag)
+		VALUES (?, ?, ?, 'platform', ?, ?, ?, ?, ?, NOW(), NOW(), 0)
 		ON DUPLICATE KEY UPDATE
 		  tenant_name = VALUES(tenant_name),
 		  tenant_type = VALUES(tenant_type),
 		  edition = VALUES(edition),
 		  status = VALUES(status),
 		  isolation_mode = VALUES(isolation_mode),
+		  brand_config = VALUES(brand_config),
 		  remark = VALUES(remark),
 		  update_time = NOW(),
 		  del_flag = 0
-	`, tenantID, tenantName, tenantType, edition, status, isolationMode, remark); err != nil {
+	`, tenantID, tenantName, tenantType, edition, status, isolationMode, string(brandConfigBytes), remark); err != nil {
 		return err
 	}
 

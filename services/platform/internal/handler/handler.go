@@ -27,6 +27,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/health", handler.health)
 	mux.HandleFunc("/api/v1/tenant/features", handler.features)
 	mux.HandleFunc("/api/v1/tenant/customization-summary", handler.customizationSummary)
+	mux.HandleFunc("/api/v1/public/login-theme", handler.publicLoginTheme)
 	mux.HandleFunc("/api/v1/platform/tenants", handler.tenants)
 	mux.HandleFunc("/api/v1/platform/tenants/save", handler.saveTenant)
 	mux.HandleFunc("/api/v1/platform/tenants/bootstrap-summary", handler.tenantBootstrapSummary)
@@ -112,6 +113,24 @@ func (handler *Handler) tenantBootstrapSummary(w http.ResponseWriter, r *http.Re
 		return
 	}
 	result, err := handler.service.GetTenantBootstrapSummary(ctx)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) publicLoginTheme(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	entryType := strings.TrimSpace(r.URL.Query().Get("entryType"))
+	if entryType == "" {
+		entryType = "platform-admin"
+	}
+	result, err := handler.service.GetTenantLoginTheme(ctx, entryType)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return

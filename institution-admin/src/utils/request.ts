@@ -112,6 +112,10 @@ async function requestHandler(config: InternalAxiosRequestConfig & RequestConfig
     config.headers.set('Authorization', `Bearer ${token.value}`)
   }
 
+  const tenantDomain = resolveTenantDomain()
+  if (tenantDomain)
+    config.headers.set('X-Tenant-Domain', tenantDomain)
+
   // 增加多语言的配置
   const { locale } = useI18nLocale()
   config.headers.set('Accept-Language', locale.value ?? 'zh-CN')
@@ -124,6 +128,12 @@ async function requestHandler(config: InternalAxiosRequestConfig & RequestConfig
   if (config.loading)
     axiosLoading.addLoading()
   return config
+}
+
+function resolveTenantDomain() {
+  if (typeof window === 'undefined')
+    return ''
+  return window.location.hostname.toLowerCase()
 }
 
 function responseHandler(response: any): ResponseBody<any> | AxiosResponse<any> | Promise<any> | any {

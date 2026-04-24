@@ -1,5 +1,19 @@
 import type { ResponseBody } from '@/utils/request'
 
+export interface TenantLoginBrandConfig {
+  template?: string
+  brandName?: string
+  logoUrl?: string
+  loginTitle?: string
+  loginSubtitle?: string
+  backgroundUrl?: string
+  primaryColor?: string
+  copyright?: string
+  heroBadge?: string
+  heroTitle?: string
+  heroDescription?: string
+}
+
 export interface TenantBootstrapSummary {
   tenantId: string
   tenantName: string
@@ -16,6 +30,9 @@ export interface TenantBootstrapSummary {
   domains: string[]
   adminDomains?: string[]
   institutionDomains?: string[]
+  loginBrand?: TenantLoginBrandConfig
+  platformLoginBrand?: TenantLoginBrandConfig
+  institutionLoginBrand?: TenantLoginBrandConfig
 }
 
 export type TenantListItem = TenantBootstrapSummary
@@ -37,6 +54,9 @@ export interface TenantMutationPayload {
   adminPassword?: string
   adminNickName?: string
   adminMobile?: string
+  loginBrand?: TenantLoginBrandConfig
+  platformLoginBrand?: TenantLoginBrandConfig
+  institutionLoginBrand?: TenantLoginBrandConfig
   remark?: string
 }
 
