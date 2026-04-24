@@ -11,7 +11,6 @@ import {
 } from '@/utils/unified-time-period'
 import UnifiedPeriodGroupForm from '@/components/business-settings/unified-period-group-form.vue'
 import { getInstPeriodConfigApi, previewInstPeriodEffectiveApi, setInstConfigApi } from '@/api/common/config'
-import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 
 const props = defineProps<{
@@ -23,7 +22,6 @@ const emit = defineEmits<{
   (e: 'saved'): void
 }>()
 
-const userStore = useUserStore()
 const saving = ref(false)
 const previewLoading = ref(false)
 const previewWeekStart = ref('')
@@ -184,10 +182,8 @@ async function handleSave() {
   saving.value = true
   try {
     const res = await setInstConfigApi({
-      ...(userStore.instConfig as unknown as Record<string, unknown>),
       unifiedTimePeriodJson: draft.value,
     } as never)
-    await userStore.getInstConfig()
     const appliedWeek = res.result?.periodWeekStart
     if (appliedWeek) {
       messageService.success(res.result?.periodAppliedToday

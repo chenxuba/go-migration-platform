@@ -53,6 +53,9 @@ var instConfigModuleFields = map[string][]string{
 		"addIntentionStudentRule", "addImportStudentRule", "limitSameWeChat", "limitImportSameWeChat",
 		"enablePublicPool", "unfollowedTime",
 	},
+	"more": {
+		"enablePeerInfoAndServiceManagement",
+	},
 }
 
 func (svc *Service) PreviewInstPeriodConfigUpdate(userID int64, raw any) (InstConfigUpdateResult, error) {

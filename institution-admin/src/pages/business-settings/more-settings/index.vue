@@ -2,15 +2,13 @@
 import { Empty } from 'ant-design-vue'
 import { ref } from 'vue'
 import type { InstConfig } from '~@/api/common/config'
-import { setInstConfigApi } from '~@/api/common/config'
+import { getInstConfigModuleApi, setInstConfigModuleApi } from '~@/api/common/config'
 import CampusDataClear from '~/components/business-settings/campusDataClear.vue'
-import { useUserStore } from '~@/stores/user'
 import messageService from '@/utils/messageService'
 
 type MainTabKey = 'risk-warning' | 'inventory' | 'system' | 'print' | 'campus-info'
 type SystemTabKey = 'peer-info' | 'campus-data-clear'
 
-const userStore = useUserStore()
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 
 const activeMainTab = ref<MainTabKey>('system')
@@ -42,10 +40,8 @@ function isSwitchEnabled(value: unknown) {
 }
 
 async function ensureInstConfig() {
-  if (!userStore.instConfig) {
-    await userStore.getInstConfig()
-  }
-  instConfig.value = { ...(userStore.instConfig ?? {}) }
+  const res = await getInstConfigModuleApi('more')
+  instConfig.value = { ...(res.result ?? {}) }
 }
 
 async function handlePeerInfoToggle(checked: boolean) {
@@ -61,9 +57,9 @@ async function handlePeerInfoToggle(checked: boolean) {
 
   peerInfoLoading.value = true
   try {
-    await setInstConfigApi(instConfig.value as InstConfig)
-    await userStore.getInstConfig()
-    instConfig.value = { ...(userStore.instConfig ?? {}) }
+    await setInstConfigModuleApi('more', {
+      enablePeerInfoAndServiceManagement: instConfig.value.enablePeerInfoAndServiceManagement,
+    } as Partial<InstConfig>)
     messageService.success(checked ? '已开启同行资讯与服务管理' : '已关闭同行资讯与服务管理')
   }
   catch (error) {
