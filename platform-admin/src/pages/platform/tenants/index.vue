@@ -542,7 +542,6 @@ onMounted(() => {
               <h3>客户基础信息</h3>
               <p>租户标识用于系统隔离和域名识别，创建后不建议修改。</p>
             </div>
-            <a-tag color="blue">合作客户</a-tag>
           </div>
           <div class="form-grid">
             <a-form-item label="客户名称" required>
@@ -1009,6 +1008,38 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 16px;
+
+  :deep(.ant-form-item) {
+    margin-bottom: 14px;
+  }
+
+  :deep(.ant-form-item-row) {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+
+  :deep(.ant-form-item-label) {
+    max-width: 112px;
+    padding: 0 10px 0 0;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  :deep(.ant-form-item-label > label) {
+    white-space: nowrap;
+  }
+
+  :deep(.ant-form-item-control) {
+    min-width: 0;
+  }
+
+  :deep(.ant-input),
+  :deep(.ant-input-affix-wrapper),
+  :deep(.ant-select) {
+    width: 100%;
+  }
 }
 
 
