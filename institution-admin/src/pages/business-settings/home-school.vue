@@ -205,12 +205,6 @@ const smsRows = computed(() => [
     desc: '开启后，将会发送给学员：优惠券领取成功、优惠券到期（过期当天 10:00）短信提醒',
   },
   {
-    key: 'space',
-    title: '场地预约提醒',
-    field: 'enableSpaceBookingNotice' as keyof InstConfig,
-    desc: '开启后，预约人将收到预约成功或取消预约的短信',
-  },
-  {
     key: 'deleteStudent',
     title: '删除学员短信验证提示',
     field: 'enableSendChildBindNoticeToAdmin' as keyof InstConfig,
@@ -274,28 +268,10 @@ const remindRows = computed(() => [
     desc: '开启后，学员积分发生变动会及时提醒通知家长',
   },
   {
-    key: 'scheduleChange',
-    title: '排课和日程变动',
-    field: 'timeTableChangedSendToCSwitch' as keyof InstConfig,
-    desc: '开启后，新增排课或修改排课，家长会实时接收学员的排课变动通知',
-  },
-  {
-    key: 'leftClass',
-    title: '剩余课时推送',
-    field: 'enableLeftClassTimeRemind' as keyof InstConfig,
-    desc: '开启后，通过微信公众号推送课消时，将同时推送剩余课时',
-  },
-  {
     key: 'bindAdmin',
     title: '家长绑定学员提醒至管理员',
     field: 'enableOrgSendChildBindNoticeToAdmin' as keyof InstConfig,
     desc: '开启后，校区管理员将在App端消息中心收到家长绑定学员的推送提醒',
-  },
-  {
-    key: 'validity',
-    title: '有效期推送',
-    field: 'enableRenewValidityDay' as keyof InstConfig,
-    desc: '开启后，通过微信公众号推送课消时，将同时推送有效期，需同时开启剩余课时推送方可生效',
   },
 ])
 
@@ -509,9 +485,9 @@ onMounted(() => {
     </a-modal>
 
     <a-modal v-model:open="leaveCountModalOpen" title="请假次数限制设置" centered :width="800" wrap-class-name="home-school-settings-modal" @ok="saveLeaveCountLimit">
-      <a-form class="leave-limit-form" layout="inline">
+      <a-form class="leave-limit-form" :label-col="{ style: { width: '96px' } }" :wrapper-col="{ flex: 1 }">
         <a-form-item label="限制周期" required>
-          <a-radio-group v-model:value="leaveLimitDraft.cycle">
+          <a-radio-group v-model:value="leaveLimitDraft.cycle" class="custom-radio">
             <a-radio value="none">不限制</a-radio>
             <a-radio value="day">每天</a-radio>
             <a-radio value="week">每周</a-radio>
@@ -524,7 +500,7 @@ onMounted(() => {
           <a-input-number v-model:value="leaveLimitDraft.count" :min="0" class="compact-input" />
         </a-form-item>
         <a-form-item label="请假类型" required>
-          <a-radio-group v-model:value="leaveLimitDraft.type">
+          <a-radio-group v-model:value="leaveLimitDraft.type" class="custom-radio">
             <a-radio value="course">按课程</a-radio>
             <a-radio value="student">按学员</a-radio>
           </a-radio-group>
@@ -740,7 +716,7 @@ onMounted(() => {
 
 .settings-desc {
   margin-top: 8px;
-  color: #333;
+  color: #222;
   font-size: 14px;
   line-height: 20px;
 }
@@ -751,7 +727,7 @@ onMounted(() => {
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 12px;
-  color: #333;
+  color: #222;
   font-size: 14px;
   line-height: 20px;
 }
@@ -767,7 +743,7 @@ onMounted(() => {
   padding: 14px 36px;
   border: 1px solid #edf0f5;
   border-radius: 8px;
-  color: #1f1f1f;
+  color: #222;
   background: #fafafa;
   line-height: 24px;
 
@@ -776,8 +752,10 @@ onMounted(() => {
   }
 
   ol {
-    margin: 2px 0 0 72px;
+    margin: 2px 0 0;
+    padding-left: 0;
     color: #595959;
+    list-style-position: inside;
   }
 }
 
@@ -808,17 +786,26 @@ onMounted(() => {
 }
 
 .leave-limit-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-
   :deep(.ant-form-item) {
-    margin-right: 0;
+    margin-bottom: 12px;
+  }
+
+  :deep(.ant-form-item-label) {
+    text-align: right;
+  }
+
+  :deep(.ant-form-item-label > label) {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+  :deep(.ant-form-item-control) {
+    min-width: 0;
   }
 }
 
 .modal-tips {
-  margin: 8px 0 0 78px;
+  margin: 4px 0 0;
   color: #595959;
   line-height: 24px;
 }

@@ -419,6 +419,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureInstitutionSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensureInstConfigHomeSchoolSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.ensureInstitutionProfileSchema(context.Background()); err != nil {
 		return nil, err
 	}
@@ -640,6 +643,44 @@ func (repo *Repository) ensureColumnType(ctx context.Context, tableName, columnN
 
 	_, err := repo.db.ExecContext(ctx, ddl)
 	return err
+}
+
+func (repo *Repository) ensureInstConfigHomeSchoolSchema(ctx context.Context) error {
+	columns := map[string]string{
+		"auto_send_birthday_message":                 "ALTER TABLE inst_config ADD COLUMN auto_send_birthday_message TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_recharge_account_change_message":     "ALTER TABLE inst_config ADD COLUMN enable_recharge_account_change_message TINYINT(1) NOT NULL DEFAULT 0",
+		"enabled_class_reminder":                     "ALTER TABLE inst_config ADD COLUMN enabled_class_reminder TINYINT(1) NOT NULL DEFAULT 0",
+		"enabled_class_consumption_reminder":         "ALTER TABLE inst_config ADD COLUMN enabled_class_consumption_reminder TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_audition_sms_remind":                 "ALTER TABLE inst_config ADD COLUMN enable_audition_sms_remind TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_send_coupon_remind_sms":              "ALTER TABLE inst_config ADD COLUMN enable_send_coupon_remind_sms TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_send_child_bind_notice_to_admin":     "ALTER TABLE inst_config ADD COLUMN enable_send_child_bind_notice_to_admin TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_teaching_bill_remind_sms":            "ALTER TABLE inst_config ADD COLUMN enable_teaching_bill_remind_sms TINYINT(1) NOT NULL DEFAULT 0",
+		"student_absent_class_switch":                "ALTER TABLE inst_config ADD COLUMN student_absent_class_switch TINYINT(1) NOT NULL DEFAULT 0",
+		"enabled_renew_reminder":                     "ALTER TABLE inst_config ADD COLUMN enabled_renew_reminder TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_arrearaged_send_message":             "ALTER TABLE inst_config ADD COLUMN enable_arrearaged_send_message TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_liquidation_remind_message":          "ALTER TABLE inst_config ADD COLUMN enable_liquidation_remind_message TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_point_change_remind_message":         "ALTER TABLE inst_config ADD COLUMN enable_point_change_remind_message TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_org_send_child_bind_notice_to_admin": "ALTER TABLE inst_config ADD COLUMN enable_org_send_child_bind_notice_to_admin TINYINT(1) NOT NULL DEFAULT 0",
+		"send_class_reminder_msg_hour":               "ALTER TABLE inst_config ADD COLUMN send_class_reminder_msg_hour VARCHAR(16) NOT NULL DEFAULT '19:00'",
+		"enable_leave_apply_number_limit":            "ALTER TABLE inst_config ADD COLUMN enable_leave_apply_number_limit TINYINT(1) NOT NULL DEFAULT 0",
+		"leave_apply_cycle_limit":                    "ALTER TABLE inst_config ADD COLUMN leave_apply_cycle_limit VARCHAR(32) NOT NULL DEFAULT 'month'",
+		"leave_apply_number_limit":                   "ALTER TABLE inst_config ADD COLUMN leave_apply_number_limit VARCHAR(32) NOT NULL DEFAULT '2'",
+		"leave_apply_type_limit":                     "ALTER TABLE inst_config ADD COLUMN leave_apply_type_limit VARCHAR(32) NOT NULL DEFAULT 'course'",
+		"enable_leave_apply_time_limit":              "ALTER TABLE inst_config ADD COLUMN enable_leave_apply_time_limit TINYINT(1) NOT NULL DEFAULT 0",
+		"leave_apply_time_limit":                     "ALTER TABLE inst_config ADD COLUMN leave_apply_time_limit VARCHAR(32) NOT NULL DEFAULT '1.0'",
+		"enable_renew_class_num":                     "ALTER TABLE inst_config ADD COLUMN enable_renew_class_num TINYINT(1) NOT NULL DEFAULT 0",
+		"renew_class_num":                            "ALTER TABLE inst_config ADD COLUMN renew_class_num VARCHAR(32) NOT NULL DEFAULT '5'",
+		"enable_renew_validity_day":                  "ALTER TABLE inst_config ADD COLUMN enable_renew_validity_day TINYINT(1) NOT NULL DEFAULT 0",
+		"renew_validity_day":                         "ALTER TABLE inst_config ADD COLUMN renew_validity_day VARCHAR(32) NOT NULL DEFAULT '15'",
+		"enable_renew_price":                         "ALTER TABLE inst_config ADD COLUMN enable_renew_price TINYINT(1) NOT NULL DEFAULT 0",
+		"renew_price":                                "ALTER TABLE inst_config ADD COLUMN renew_price VARCHAR(32) NOT NULL DEFAULT '500'",
+	}
+	for columnName, ddl := range columns {
+		if err := repo.ensureColumnExists(ctx, "inst_config", columnName, ddl); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) error {
@@ -2177,11 +2218,38 @@ func (repo *Repository) createDefaultInstitutionConfigTx(ctx context.Context, tx
 			limit_same_weChat,
 			limit_import_same_weChat,
 			enable_public_pool,
+			auto_send_birthday_message,
+			enable_recharge_account_change_message,
+			enabled_class_reminder,
+			enabled_class_consumption_reminder,
+			enable_audition_sms_remind,
+			enable_send_coupon_remind_sms,
+			enable_send_child_bind_notice_to_admin,
+			enable_teaching_bill_remind_sms,
+			student_absent_class_switch,
+			enabled_renew_reminder,
+			enable_arrearaged_send_message,
+			enable_liquidation_remind_message,
+			enable_point_change_remind_message,
+			enable_org_send_child_bind_notice_to_admin,
+			send_class_reminder_msg_hour,
+			enable_leave_apply_number_limit,
+			leave_apply_cycle_limit,
+			leave_apply_number_limit,
+			leave_apply_type_limit,
+			enable_leave_apply_time_limit,
+			leave_apply_time_limit,
+			enable_renew_class_num,
+			renew_class_num,
+			enable_renew_validity_day,
+			renew_validity_day,
+			enable_renew_price,
+			renew_price,
 			del_flag,
 			create_time,
 			version
 		)
-		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 1.00, 0.00, 100.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NOW(), 0
+		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 1.00, 0.00, 100.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '19:00', 0, 'month', '2', 'course', 0, '1.0', 0, '5', 0, '15', 0, '500', 0, NOW(), 0
 		FROM DUAL
 		WHERE NOT EXISTS (
 			SELECT 1
