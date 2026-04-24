@@ -27,7 +27,36 @@ const videoMimeOptions = [
   { label: 'WEBM', value: 'video/webm' },
 ]
 
+const BYTES_PER_KB = 1024
+const KB_PER_MB = 1024
+
+function bytesToKB(bytes?: number) {
+  const value = Number(bytes || 0)
+  return value > 0 ? Math.round(value / BYTES_PER_KB) : undefined
+}
+
+function kbToBytes(kb?: number) {
+  const value = Number(kb || 0)
+  return value > 0 ? Math.round(value * BYTES_PER_KB) : 0
+}
+
+function formatKBToMB(kb?: number) {
+  const value = Number(kb || 0)
+  if (value <= 0)
+    return '约 0 MB'
+  return `约 ${Number((value / KB_PER_MB).toFixed(2))} MB`
+}
+
 const isPlatformAdmin = computed(() => userStore.userInfo?.tenantRole === 'platform_admin')
+
+const imageMaxSizeKB = computed({
+  get: () => bytesToKB(formState.imageMaxSize),
+  set: value => formState.imageMaxSize = kbToBytes(value),
+})
+const videoMaxSizeKB = computed({
+  get: () => bytesToKB(formState.videoMaxSize),
+  set: value => formState.videoMaxSize = kbToBytes(value),
+})
 
 const formState = reactive<TenantStorageConfig>({
   tenantId: '',
@@ -209,9 +238,12 @@ watch(selectedTenantId, () => {
             <a-input-number v-model:value="formState.expiresSeconds" :min="60" :controls="false" class="full-input" />
           </a-form-item>
 
-          <a-form-item label="图片限制">
-            <a-input-group compact>
-              <a-input-number v-model:value="formState.imageMaxSize" :min="1" :controls="false" class="size-input" addon-before="大小" />
+          <a-form-item>
+            <template #label>
+              <span class="limit-label">图片限制 <span class="limit-label__value">{{ formatKBToMB(imageMaxSizeKB) }}</span></span>
+            </template>
+            <a-input-group class="limit-input-group">
+              <a-input-number v-model:value="imageMaxSizeKB" :min="1" :controls="false" class="size-input" addon-before="大小" addon-after="KB" />
               <a-select
                 v-model:value="formState.imageMimeTypes"
                 class="mime-input"
@@ -221,9 +253,12 @@ watch(selectedTenantId, () => {
             </a-input-group>
           </a-form-item>
 
-          <a-form-item label="视频限制">
-            <a-input-group compact>
-              <a-input-number v-model:value="formState.videoMaxSize" :min="1" :controls="false" class="size-input" addon-before="大小" />
+          <a-form-item>
+            <template #label>
+              <span class="limit-label limit-label--video">视频限制 <span class="limit-label__value">{{ formatKBToMB(videoMaxSizeKB) }}</span></span>
+            </template>
+            <a-input-group class="limit-input-group">
+              <a-input-number v-model:value="videoMaxSizeKB" :min="1" :controls="false" class="size-input" addon-before="大小" addon-after="KB" />
               <a-select
                 v-model:value="formState.videoMimeTypes"
                 class="mime-input"
@@ -233,7 +268,7 @@ watch(selectedTenantId, () => {
             </a-input-group>
           </a-form-item>
 
-          <a-form-item label="备注" :class="{ 'storage-form__full-row': !isPlatformAdmin }">
+          <a-form-item v-if="isPlatformAdmin" label="备注">
             <a-input v-model:value="formState.remark" placeholder="记录客户云账号、桶用途或交付说明" />
           </a-form-item>
         </a-form>
@@ -337,17 +372,49 @@ watch(selectedTenantId, () => {
   grid-column: 1 / -1;
 }
 
-.full-input,
-.size-input {
+.full-input {
   width: 100%;
 }
 
-.size-input {
-  width: 55%;
+.limit-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
-.mime-input {
-  width: 45%;
+.limit-label__value {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid #91caff;
+  border-radius: 10px;
+  background: #e6f4ff;
+  color: #1677ff;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.limit-label--video .limit-label__value {
+  border-color: #b7eb8f;
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.limit-input-group {
+  display: flex !important;
+  width: 100%;
+  gap: 8px;
+}
+
+.limit-input-group :deep(.ant-input-number-group-wrapper),
+.limit-input-group :deep(.ant-select) {
+  flex: 1 1 0;
+  width: 0 !important;
+  min-width: 0;
 }
 
 .storage-side-card ul {
