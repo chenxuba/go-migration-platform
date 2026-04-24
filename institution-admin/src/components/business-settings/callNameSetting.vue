@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import { InputNumber, Modal } from 'ant-design-vue'
 import { computed, h, onMounted, ref } from 'vue'
-import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
+import { type InstConfig, getInstConfigModuleApi, setInstConfigModuleApi } from '~@/api/common/config'
 import { getCourseRollCallDeductRulePageApi } from '~@/api/edu-center/course-list'
 import RollCallDeductRuleModal from '~@/components/business-settings/roll-call-deduct-rule-modal.vue'
 import RollCallDefaultClassTimeModal from '~@/components/business-settings/roll-call-default-class-time-modal.vue'
-import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
 
-const userStore = useUserStore()
+const moduleConfig = ref<Partial<InstConfig>>({})
 const activeKey = ref('deduct-order')
 const rowLoadingMap = ref<Record<string, boolean>>({})
 
-const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
+const instConfig = computed<Partial<InstConfig>>(() => moduleConfig.value)
 
 function isConfigEnabled(value: unknown, defaultValue = false) {
   if (typeof value === 'boolean')
@@ -78,9 +77,9 @@ function isRowLoading(key: string) {
   return Boolean(rowLoadingMap.value[key])
 }
 
-async function ensureInstConfigLoaded() {
-  if (!userStore.instConfig)
-    await userStore.getInstConfig()
+async function loadCourseConfig() {
+  const res = await getInstConfigModuleApi('course')
+  moduleConfig.value = res.result || {}
 }
 
 function extractPagedItems(res: any) {
@@ -120,11 +119,9 @@ async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyo
     [key]: true,
   }
   try {
-    await setInstConfigApi({
-      ...(instConfig.value as InstConfig),
-      [field]: value,
-    })
-    await userStore.getInstConfig()
+    const payload = { [field]: value } as Partial<InstConfig>
+    await setInstConfigModuleApi('course', payload)
+    moduleConfig.value = { ...moduleConfig.value, ...payload }
     messageService.success(successText)
   }
   catch (error) {
@@ -256,12 +253,17 @@ function handleEditFaceAttendanceInterval() {
   })
 }
 
+async function handleCourseConfigSaved() {
+  await loadCourseConfig()
+}
+
 async function handleDeductRuleSaved() {
+  await loadCourseConfig()
   await refreshAmountDeductRuleSummary()
 }
 
 onMounted(async () => {
-  await ensureInstConfigLoaded()
+  await loadCourseConfig()
   await refreshAmountDeductRuleSummary()
 })
 </script>
@@ -606,6 +608,7 @@ onMounted(async () => {
     <RollCallDefaultClassTimeModal
       v-model:open="defaultClassTimeModalOpen"
       :inst-config="instConfig"
+      @saved="handleCourseConfigSaved"
     />
     <RollCallDeductRuleModal
       v-model:open="deductRuleModalOpen"

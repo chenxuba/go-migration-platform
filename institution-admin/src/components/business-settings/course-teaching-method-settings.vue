@@ -2,14 +2,13 @@
 import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, createVNode, onMounted, ref } from 'vue'
-import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
-import { useUserStore } from '~@/stores/user'
+import { type InstConfig, getInstConfigModuleApi, setInstConfigModuleApi } from '~@/api/common/config'
 import messageService from '~@/utils/messageService'
 
-const userStore = useUserStore()
+const moduleConfig = ref<Partial<InstConfig>>({})
 const rowLoadingMap = ref<Record<string, boolean>>({})
 
-const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
+const instConfig = computed<Partial<InstConfig>>(() => moduleConfig.value)
 
 function isConfigEnabled(value: unknown) {
   if (typeof value === 'boolean')
@@ -49,9 +48,9 @@ const teachingMethodRows = computed(() => [
   },
 ])
 
-async function ensureInstConfigLoaded() {
-  if (!userStore.instConfig)
-    await userStore.getInstConfig()
+async function loadCourseConfig() {
+  const res = await getInstConfigModuleApi('course')
+  moduleConfig.value = res.result || {}
 }
 
 function isRowLoading(key: string) {
@@ -65,11 +64,9 @@ async function updateConfigField(field: keyof InstConfig, value: boolean, key: s
       [key]: true,
     }
 
-    await setInstConfigApi({
-      ...(instConfig.value as InstConfig),
-      [field]: value,
-    })
-    await userStore.getInstConfig()
+    const payload = { [field]: value } as Partial<InstConfig>
+    await setInstConfigModuleApi('course', payload)
+    moduleConfig.value = { ...moduleConfig.value, ...payload }
     messageService.success(value ? '开启成功' : '关闭成功')
   }
   catch (error) {
@@ -100,7 +97,7 @@ async function handleComposeLessonChange(checked: boolean) {
 }
 
 onMounted(async () => {
-  await ensureInstConfigLoaded()
+  await loadCourseConfig()
 })
 </script>
 

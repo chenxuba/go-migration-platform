@@ -4,7 +4,7 @@ import type { TableColumnType } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
 import { computed, h, onMounted, reactive, ref } from 'vue'
-import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
+import { type InstConfig, getInstConfigModuleApi, setInstConfigModuleApi } from '~@/api/common/config'
 import {
   deleteSchoolHolidayApi,
   listSchoolHolidaysApi,
@@ -12,7 +12,6 @@ import {
   saveSchoolHolidayApi,
   type SchoolHolidayItem,
 } from '@/api/business-settings/school-holiday'
-import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
 import TimePeriodSettings from '@/components/business-settings/timePeriodSettings.vue'
 
@@ -26,7 +25,7 @@ interface HolidayFormState {
 
 type SchoolHolidayRowLike = SchoolHolidayItem | Record<string, any>
 
-const userStore = useUserStore()
+const moduleConfig = ref<Partial<InstConfig>>({})
 const activeKey = ref('holiday')
 const periodGroupCount = ref(0)
 const periodSettingsRef = ref<any>(null)
@@ -37,7 +36,7 @@ const holidayFormOpen = ref(false)
 const holidayRows = ref<SchoolHolidayItem[]>([])
 
 const emptyImage = Empty.PRESENTED_IMAGE_SIMPLE
-const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
+const instConfig = computed<Partial<InstConfig>>(() => moduleConfig.value)
 const holidayForm = reactive<HolidayFormState>({
   source: 'custom',
   name: '',
@@ -85,9 +84,9 @@ function isRowLoading(key: string) {
   return Boolean(rowLoadingMap.value[key])
 }
 
-async function ensureInstConfigLoaded() {
-  if (!userStore.instConfig)
-    await userStore.getInstConfig()
+async function loadCourseConfig() {
+  const res = await getInstConfigModuleApi('course')
+  moduleConfig.value = res.result || {}
 }
 
 async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyof InstConfig], key: string, successText: string) {
@@ -96,11 +95,9 @@ async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyo
     [key]: true,
   }
   try {
-    await setInstConfigApi({
-      ...(instConfig.value as InstConfig),
-      [field]: value,
-    })
-    await userStore.getInstConfig()
+    const payload = { [field]: value } as Partial<InstConfig>
+    await setInstConfigModuleApi('course', payload)
+    moduleConfig.value = { ...moduleConfig.value, ...payload }
     messageService.success(successText)
   }
   catch (error) {
@@ -259,7 +256,7 @@ function handleResetStatutoryHolidays() {
 }
 
 onMounted(async () => {
-  await ensureInstConfigLoaded()
+  await loadCourseConfig()
   await loadSchoolHolidays()
 })
 </script>

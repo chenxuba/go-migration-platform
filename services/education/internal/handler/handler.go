@@ -53,6 +53,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/students/detail", handler.studentDetailView)
 	mux.HandleFunc("/api/v1/orders", handler.orders)
 	mux.HandleFunc("/api/v1/inst-config", handler.getInstConfig)
+	mux.HandleFunc("/api/v1/inst-config/module", handler.instConfigModule)
 	mux.HandleFunc("/api/v1/inst-config/period", handler.getInstPeriodConfig)
 	mux.HandleFunc("/api/v1/inst-config/update", handler.setInstConfig)
 	mux.HandleFunc("/api/v1/inst-config/period-effective-preview", handler.previewInstPeriodEffective)
@@ -519,6 +520,42 @@ func (handler *Handler) setInstConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) instConfigModule(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	module := strings.TrimSpace(r.URL.Query().Get("module"))
+	if module == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "module is required", ctx.RequestID)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		result, err := handler.service.GetInstConfigModule(claims.UserID, module)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+	case http.MethodPost:
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+			return
+		}
+		result, err := handler.service.SetInstConfigModule(claims.UserID, module, payload)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+	default:
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+	}
 }
 
 func (handler *Handler) previewInstPeriodEffective(w http.ResponseWriter, r *http.Request) {

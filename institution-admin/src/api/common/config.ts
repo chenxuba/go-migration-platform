@@ -165,6 +165,14 @@ export function getInstConfigApi(params?: GetInstConfigParams) {
   return useGet<InstConfig>('/api/v1/inst-config', params)
 }
 
+export function getInstConfigModuleApi(module: string) {
+  return useGet<Partial<InstConfig>>('/api/v1/inst-config/module', { module })
+}
+
+export function setInstConfigModuleApi(module: string, data: Partial<InstConfig>) {
+  return usePost<SetInstConfigResult>(`/api/v1/inst-config/module?module=${encodeURIComponent(module)}`, data)
+}
+
 export function initInstAllConfigApi(data: InitInstAllConfigParams) {
   return usePost<{ success: boolean }>('/api/v1/inst-config/init-all', data)
 }

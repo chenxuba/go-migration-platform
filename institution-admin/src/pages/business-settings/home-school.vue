@@ -2,11 +2,9 @@
 import { EditOutlined, InfoCircleFilled } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, reactive, ref } from 'vue'
-import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
-import { useUserStore } from '~@/stores/user'
+import { type InstConfig, getInstConfigModuleApi, setInstConfigModuleApi } from '~@/api/common/config'
 import messageService from '~@/utils/messageService'
 
-const userStore = useUserStore()
 const activeKey = ref('message')
 const activeMessageKey = ref('sms')
 const rowLoadingMap = ref<Record<string, boolean>>({})
@@ -69,7 +67,8 @@ const leaveTypeTextMap: Record<string, string> = {
   2: '按学员',
 }
 
-const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
+const moduleConfig = ref<Partial<InstConfig>>({})
+const instConfig = computed<Partial<InstConfig>>(() => moduleConfig.value)
 
 function isSwitchEnabled(value: unknown, defaultValue = false) {
   if (typeof value === 'boolean')
@@ -105,9 +104,16 @@ function isRowLoading(key: string) {
   return Boolean(rowLoadingMap.value[key])
 }
 
-async function ensureInstConfigLoaded() {
-  if (!userStore.instConfig)
-    await userStore.getInstConfig()
+async function loadHomeSchoolConfig() {
+  const res = await getInstConfigModuleApi('homeSchool')
+  moduleConfig.value = res.result || {}
+}
+
+function mergeHomeSchoolConfig(patch: Partial<InstConfig>) {
+  moduleConfig.value = {
+    ...moduleConfig.value,
+    ...patch,
+  }
 }
 
 async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyof InstConfig], key: string, successText: string) {
@@ -116,14 +122,13 @@ async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyo
     [key]: true,
   }
   try {
-    const payload = {
-      ...(instConfig.value as InstConfig),
-      [field]: value,
-    }
-    payload.leaveApplyCycleLimit = normalizeLeaveCycleValue(payload.leaveApplyCycleLimit)
-    payload.leaveApplyTypeLimit = normalizeLeaveTypeValue(payload.leaveApplyTypeLimit)
-    await setInstConfigApi(payload)
-    await userStore.getInstConfig()
+    const payload = { [field]: value } as Partial<InstConfig>
+    if (field === 'leaveApplyCycleLimit')
+      payload.leaveApplyCycleLimit = normalizeLeaveCycleValue(value)
+    if (field === 'leaveApplyTypeLimit')
+      payload.leaveApplyTypeLimit = normalizeLeaveTypeValue(value)
+    await setInstConfigModuleApi('homeSchool', payload)
+    mergeHomeSchoolConfig(payload)
     messageService.success(successText)
   }
   catch (error) {
@@ -212,16 +217,13 @@ async function saveLeaveCountLimit() {
   }
   try {
     const payload = {
-      ...(instConfig.value as InstConfig),
       leaveApplyCycleLimit: normalizeLeaveCycleValue(leaveLimitDraft.cycle),
       leaveApplyNumberLimit: String(leaveLimitDraft.count),
       leaveApplyTypeLimit: normalizeLeaveTypeValue(leaveLimitDraft.type),
       enableLeaveApplyNumberLimit: leaveCountEnableAfterConfirm.value ? true : instConfig.value.enableLeaveApplyNumberLimit,
     }
-    payload.leaveApplyCycleLimit = normalizeLeaveCycleValue(payload.leaveApplyCycleLimit)
-    payload.leaveApplyTypeLimit = normalizeLeaveTypeValue(payload.leaveApplyTypeLimit)
-    await setInstConfigApi(payload as InstConfig)
-    await userStore.getInstConfig()
+    await setInstConfigModuleApi('homeSchool', payload as Partial<InstConfig>)
+    mergeHomeSchoolConfig(payload as Partial<InstConfig>)
     messageService.success(leaveCountEnableAfterConfirm.value ? '已开启请假次数限制' : '请假次数限制已保存')
     leaveCountEnableAfterConfirm.value = false
     leaveCountModalOpen.value = false
@@ -441,7 +443,7 @@ const leaveCycleText = computed(() => {
 const leaveTypeText = computed(() => leaveTypeTextMap[normalizeLeaveTypeValue(instConfig.value.leaveApplyTypeLimit)] || '按课程')
 
 onMounted(() => {
-  ensureInstConfigLoaded()
+  void loadHomeSchoolConfig()
 })
 </script>
 

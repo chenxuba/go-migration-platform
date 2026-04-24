@@ -27,6 +27,34 @@ type InstPeriodConfigResult struct {
 	UnifiedTimePeriodJSON map[string]any `json:"unifiedTimePeriodJson,omitempty"`
 }
 
+var instConfigModuleFields = map[string][]string{
+	"course": {
+		"enableClassroomTeaching", "enabledOne2one", "enableComposeLesson",
+		"enableChargeByHours", "enableByDateLesson", "enableChargeByPrice",
+		"enableFilterHoliday", "enableOneToOneScheduleLimit", "enableScheduleConflictContinue", "scheduleTeacherSelectionRange",
+		"enabledArrearsRollcall", "enableByAutoTeaching", "enableLimitSingleOrderArrearsDeduct",
+		"enableHourLeaveNormalRecord", "enableHourTruancyNormalRecord", "enablePeriodMakeup", "enablePeriodAutoFinishWhenZero",
+		"enablePriceLeaveNormalRecord", "enablePriceTruancyNormalRecord", "enablePriceMakeup",
+		"enableFaceAttendanceRelateTeaching", "enableFaceAttendanceCheckInNotice", "enableFaceAttendanceCheckOutNotice",
+		"enableByVoiceTips", "enableSendFaceAttendNoticeToAdmin", "faceAttendanceInterval",
+		"defaultClassTimeRecordMode", "defaultStudentClassTime", "defaultTeacherClassTime", "chargeByPriceDefaultPrice",
+		"groupClassRollCallSheetTemplate",
+	},
+	"homeSchool": {
+		"autoSendBirthdayMessage", "enableRechargeAccountChangeMessage", "enabledClassReminder", "enabledClassConsumptionReminder",
+		"enableAuditionSmsRemind", "enableSendCouponRemindSms", "enableSendChildBindNoticeToAdmin", "enableTeachingBillRemindSms",
+		"studentAbsentClassSwitch", "enabledRenewReminder", "enableArrearagedSendMessage", "enableLiquidationRemindMessage",
+		"enablePointChangeRemindMessage", "enableOrgSendChildBindNoticeToAdmin", "sendClassReminderMsgHour", "sendClassReminderSmsHour",
+		"enableLeaveApplyNumberLimit", "leaveApplyCycleLimit", "leaveApplyNumberLimit", "leaveApplyTypeLimit",
+		"enableLeaveApplyTimeLimit", "leaveApplyTimeLimit", "enableRenewClassNum", "renewClassNum",
+		"enableRenewValidityDay", "renewValidityDay", "enableRenewPrice", "renewPrice",
+	},
+	"enrollment": {
+		"addIntentionStudentRule", "addImportStudentRule", "limitSameWeChat", "limitImportSameWeChat",
+		"enablePublicPool", "unfollowedTime",
+	},
+}
+
 func (svc *Service) PreviewInstPeriodConfigUpdate(userID int64, raw any) (InstConfigUpdateResult, error) {
 	result := InstConfigUpdateResult{Success: true}
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
@@ -102,6 +130,55 @@ func (svc *Service) GetInstConfig(userID int64, effectiveDate *time.Time) (map[s
 	}
 	delete(config, "unifiedTimePeriodJson")
 	return config, nil
+}
+
+func (svc *Service) GetInstConfigModule(userID int64, module string) (map[string]any, error) {
+	fields, ok := instConfigModuleFields[strings.TrimSpace(module)]
+	if !ok {
+		return nil, errors.New("unknown inst config module")
+	}
+	config, err := svc.GetInstConfig(userID, nil)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]any, len(fields))
+	for _, field := range fields {
+		if value, ok := config[field]; ok {
+			result[field] = value
+		}
+	}
+	return result, nil
+}
+
+func (svc *Service) SetInstConfigModule(userID int64, module string, payload map[string]any) (InstConfigUpdateResult, error) {
+	result := InstConfigUpdateResult{Success: true}
+	fields, ok := instConfigModuleFields[strings.TrimSpace(module)]
+	if !ok {
+		return result, errors.New("unknown inst config module")
+	}
+	allowed := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		allowed[field] = struct{}{}
+	}
+	filtered := make(map[string]any, len(payload))
+	for key, value := range payload {
+		key = strings.TrimSpace(key)
+		if _, ok := allowed[key]; !ok {
+			continue
+		}
+		filtered[key] = value
+	}
+	if len(filtered) == 0 {
+		return result, nil
+	}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return result, errors.New("no institution context")
+		}
+		return result, err
+	}
+	return result, svc.repo.UpdateInstConfig(context.Background(), instID, filtered)
 }
 
 func (svc *Service) GetInstPeriodConfig(userID int64, effectiveDate *time.Time) (InstPeriodConfigResult, error) {

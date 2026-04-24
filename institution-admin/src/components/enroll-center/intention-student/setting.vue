@@ -1,8 +1,7 @@
 <script setup>
 import { ExclamationCircleFilled, FormOutlined, RightOutlined } from '@ant-design/icons-vue'
 import { computed, onMounted, ref } from 'vue'
-import { setInstConfigApi } from '~@/api/common/config'
-import { useUserStore } from '~@/stores/user'
+import { getInstConfigModuleApi, setInstConfigModuleApi } from '~@/api/common/config'
 import { AccessEnum } from '@/constants/access'
 import { useAccess } from '@/composables/access'
 
@@ -15,8 +14,6 @@ const importWxLoading = ref(false)
 const enablePublicPoolLoading = ref(false)
 const tempUnfollowedTime = ref(1)
 
-// Get the user store
-const userStore = useUserStore()
 const { hasAccess } = useAccess()
 const instConfig = ref({})
 const canEditIntentionInput = computed(() => hasAccess(AccessEnum.setting_enroll_intention_input))
@@ -39,9 +36,8 @@ async function updateConfig(loadingRef, configUpdates = null) {
       Object.assign(instConfig.value, configUpdates)
     }
 
-    await setInstConfigApi(instConfig.value)
-    await userStore.getInstConfig()
-    instConfig.value = userStore.instConfig
+    await setInstConfigModuleApi('enrollment', instConfig.value)
+
 
     return true
   }
@@ -134,11 +130,8 @@ const warningText = computed(() => {
 
 onMounted(async () => {
   try {
-    if (!userStore.instConfig) {
-      await userStore.getInstConfig()
-    }
-
-    instConfig.value = userStore.instConfig || {}
+    const res = await getInstConfigModuleApi('enrollment')
+    instConfig.value = res.result || {}
     tempUnfollowedTime.value = instConfig.value.unfollowedTime || 1
   }
   catch (error) {

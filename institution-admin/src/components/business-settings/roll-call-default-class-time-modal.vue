@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { CloseOutlined, InfoCircleFilled } from '@ant-design/icons-vue'
 import { computed, reactive, ref, watch } from 'vue'
-import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
-import { useUserStore } from '~@/stores/user'
+import { type InstConfig, setInstConfigModuleApi } from '~@/api/common/config'
 import messageService from '~@/utils/messageService'
 
 const props = defineProps<{
@@ -15,7 +14,6 @@ const emit = defineEmits<{
   saved: []
 }>()
 
-const userStore = useUserStore()
 const submitting = ref(false)
 
 const openModal = computed({
@@ -64,13 +62,11 @@ async function handleSubmit() {
 
   submitting.value = true
   try {
-    await setInstConfigApi({
-      ...(props.instConfig as InstConfig),
+    await setInstConfigModuleApi('course', {
       defaultClassTimeRecordMode: Number(formState.defaultClassTimeRecordMode || 1),
       defaultStudentClassTime: String(Number(formState.defaultStudentClassTime || 0)),
       defaultTeacherClassTime: String(Number(formState.defaultTeacherClassTime || 0)),
     })
-    await userStore.getInstConfig()
     messageService.success('默认记录课时已更新')
     emit('saved')
     openModal.value = false

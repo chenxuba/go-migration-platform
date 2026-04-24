@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { CloseOutlined } from '@ant-design/icons-vue'
 import { computed, reactive, ref, watch } from 'vue'
-import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
+import { type InstConfig, setInstConfigModuleApi } from '~@/api/common/config'
 import {
   getCourseRollCallDeductRulePageApi,
   updateCourseRollCallDeductPriceApi,
 } from '~@/api/edu-center/course-list'
-import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
 
 interface CourseDeductRuleRow {
@@ -25,7 +24,6 @@ const emit = defineEmits<{
   saved: []
 }>()
 
-const userStore = useUserStore()
 const loading = ref(false)
 const submitting = ref(false)
 const rowSavingId = ref<number | null>(null)
@@ -157,11 +155,9 @@ async function handleSaveDefaultPrice() {
     return false
   }
 
-  await setInstConfigApi({
-    ...(props.instConfig as InstConfig),
+  await setInstConfigModuleApi('course', {
     chargeByPriceDefaultPrice: String(normalizePrice(defaultPrice.value, 100)),
   })
-  await userStore.getInstConfig()
   return true
 }
 
