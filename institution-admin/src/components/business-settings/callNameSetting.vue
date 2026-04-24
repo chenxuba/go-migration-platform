@@ -329,7 +329,7 @@ onMounted(async () => {
                     </tbody>
                   </table>
                   <div class="example-card__footer">
-                    默认按学费账户生成时间先进先出，则订单课消顺序为：1 &gt; 2 &gt; 3 &gt; 4
+                    默认按学费账户生成时间先进先出；同一订单含正价和赠送课时时，优先消耗正价课时，再消耗赠送课时，则订单课消顺序为：1 &gt; 2 &gt; 3 &gt; 4
                   </div>
                 </div>
               </div>

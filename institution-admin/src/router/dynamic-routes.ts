@@ -614,7 +614,7 @@ export default [
       {
         path: '/business-settings/home-school',
         name: 'BusinessSettingsHomeSchool',
-        component: () => import('~/pages/business-settings/placeholder.vue'),
+        component: () => import('~/pages/business-settings/home-school.vue'),
         meta: {
           title: '家校设置',
           access: [AccessEnum.setting_home],
