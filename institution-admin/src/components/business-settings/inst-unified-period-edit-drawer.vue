@@ -10,7 +10,7 @@ import {
   parseUnifiedTimePeriodConfig,
 } from '@/utils/unified-time-period'
 import UnifiedPeriodGroupForm from '@/components/business-settings/unified-period-group-form.vue'
-import { previewInstPeriodEffectiveApi, setInstConfigApi } from '@/api/common/config'
+import { getInstPeriodConfigApi, previewInstPeriodEffectiveApi, setInstConfigApi } from '@/api/common/config'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 
@@ -50,8 +50,9 @@ function cloneConfig(c: UnifiedTimePeriodConfig): UnifiedTimePeriodConfig {
   }
 }
 
-function loadDraftFromStore() {
-  const raw = userStore.instConfig?.unifiedTimePeriodJson
+async function loadDraftFromStore() {
+  const res = await getInstPeriodConfigApi()
+  const raw = res.result?.unifiedTimePeriodJson
   const parsed = parseUnifiedTimePeriodConfig(raw)
   draft.value = cloneConfig(parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG)
   const sorted = sortGroups(draft.value.groups)
@@ -83,8 +84,7 @@ watch(
   () => props.open,
   (open) => {
     if (open) {
-      loadDraftFromStore()
-      void refreshEffectivePreview()
+      void loadDraftFromStore().then(() => refreshEffectivePreview())
     }
   },
 )

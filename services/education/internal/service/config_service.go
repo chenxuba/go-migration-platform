@@ -97,9 +97,10 @@ func (svc *Service) GetInstConfig(userID int64, effectiveDate *time.Time) (map[s
 			return nil, err
 		}
 	}
-	if err := svc.mergeInstPeriodConfigIntoMap(ctx, instID, config, effectiveDate); err != nil {
+	if err := svc.migrateLegacyInstPeriodConfig(ctx, instID, config); err != nil {
 		return nil, err
 	}
+	delete(config, "unifiedTimePeriodJson")
 	return config, nil
 }
 
@@ -136,24 +137,32 @@ func (svc *Service) GetInstPeriodConfig(userID int64, effectiveDate *time.Time) 
 	return result, nil
 }
 
-// mergeInstPeriodConfigIntoMap 主存储为 inst_period_* 表；首次从 legacy unifiedTimePeriodJson 自动迁移并清空列。
-func (svc *Service) mergeInstPeriodConfigIntoMap(ctx context.Context, instID int64, config map[string]any, effectiveDate *time.Time) error {
+// migrateLegacyInstPeriodConfig 主存储为 inst_period_* 表；首次从 legacy unifiedTimePeriodJson 自动迁移并清空列。
+func (svc *Service) migrateLegacyInstPeriodConfig(ctx context.Context, instID int64, config map[string]any) error {
 	n, err := svc.repo.CountInstPeriodGroups(ctx, instID)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
-		raw, ok := config["unifiedTimePeriodJson"]
-		if ok && raw != nil {
-			if err := svc.repo.ImportInstPeriodFromLegacyJSON(ctx, instID, raw); err != nil {
-				return err
-			}
-			if err := svc.repo.ClearInstConfigLegacyUnifiedPeriodJSON(ctx, instID); err != nil {
-				return err
-			}
-		}
+	if n > 0 {
+		return nil
+	}
+	raw, ok := config["unifiedTimePeriodJson"]
+	if !ok || raw == nil {
+		return nil
+	}
+	if err := svc.repo.ImportInstPeriodFromLegacyJSON(ctx, instID, raw); err != nil {
+		return err
+	}
+	return svc.repo.ClearInstConfigLegacyUnifiedPeriodJSON(ctx, instID)
+}
+
+// mergeInstPeriodConfigIntoMap 主存储为 inst_period_* 表；仅专用接口返回 unifiedTimePeriodJson。
+func (svc *Service) mergeInstPeriodConfigIntoMap(ctx context.Context, instID int64, config map[string]any, effectiveDate *time.Time) error {
+	if err := svc.migrateLegacyInstPeriodConfig(ctx, instID, config); err != nil {
+		return err
 	}
 	var built map[string]any
+	var err error
 	if effectiveDate != nil {
 		built, err = svc.repo.GetInstPeriodConfigJSONForDate(ctx, instID, *effectiveDate)
 	} else {

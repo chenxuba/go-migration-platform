@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { EditOutlined, InfoCircleFilled } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import { computed, reactive, ref } from 'vue'
 import { type InstConfig, setInstConfigApi } from '~@/api/common/config'
 import { useUserStore } from '~@/stores/user'
@@ -11,13 +12,18 @@ const activeMessageKey = ref('sms')
 const rowLoadingMap = ref<Record<string, boolean>>({})
 
 const birthdayModalOpen = ref(false)
+const birthdayEnableAfterConfirm = ref(false)
 const leaveCountModalOpen = ref(false)
+const leaveCountEnableAfterConfirm = ref(false)
 const leaveTimeModalOpen = ref(false)
+const leaveTimeEnableAfterConfirm = ref(false)
+const smsClassReminderModalOpen = ref(false)
 const classReminderModalOpen = ref(false)
 const renewalModalOpen = ref(false)
 
 const birthdayReceivers = ref(['current', 'history'])
 const birthdayDraft = ref<string[]>([])
+const smsClassReminderHourDraft = ref('19:00')
 const classReminderHourDraft = ref('19:00')
 const classReminderHourOptions = Array.from({ length: 24 }, (_, hour) => {
   const value = `${String(hour).padStart(2, '0')}:00`
@@ -31,8 +37,37 @@ const renewalDraft = reactive({
   priceEnabled: false,
   price: 500,
 })
-const leaveLimitDraft = reactive({ cycle: 'month', count: 2, type: 'course' })
-const leaveTimeDraft = ref(1)
+const leaveLimitDraft = reactive({ cycle: '3', count: 2, type: '1' })
+const leaveTimeDraft = ref<number | null>(1)
+const leaveTimeError = ref('')
+
+const leaveCycleValueMap: Record<string, string> = {
+  none: '0',
+  day: '1',
+  week: '2',
+  month: '3',
+  quarter: '4',
+  year: '5',
+}
+
+const leaveCycleTextMap: Record<string, string> = {
+  0: '不限制',
+  1: '每天',
+  2: '每周',
+  3: '每月',
+  4: '每季度',
+  5: '每年',
+}
+
+const leaveTypeValueMap: Record<string, string> = {
+  course: '1',
+  student: '2',
+}
+
+const leaveTypeTextMap: Record<string, string> = {
+  1: '按课程',
+  2: '按学员',
+}
 
 const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
 
@@ -56,6 +91,16 @@ function getNumberText(value: unknown, fallback: string) {
   return text || fallback
 }
 
+function normalizeLeaveCycleValue(value: unknown) {
+  const text = getNumberText(value, '3')
+  return leaveCycleValueMap[text] || (leaveCycleTextMap[text] ? text : '3')
+}
+
+function normalizeLeaveTypeValue(value: unknown) {
+  const text = getNumberText(value, '1')
+  return leaveTypeValueMap[text] || (leaveTypeTextMap[text] ? text : '1')
+}
+
 function isRowLoading(key: string) {
   return Boolean(rowLoadingMap.value[key])
 }
@@ -71,10 +116,13 @@ async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyo
     [key]: true,
   }
   try {
-    await setInstConfigApi({
+    const payload = {
       ...(instConfig.value as InstConfig),
       [field]: value,
-    })
+    }
+    payload.leaveApplyCycleLimit = normalizeLeaveCycleValue(payload.leaveApplyCycleLimit)
+    payload.leaveApplyTypeLimit = normalizeLeaveTypeValue(payload.leaveApplyTypeLimit)
+    await setInstConfigApi(payload)
     await userStore.getInstConfig()
     messageService.success(successText)
   }
@@ -90,15 +138,30 @@ async function updateConfigField(field: keyof InstConfig, value: InstConfig[keyo
   }
 }
 
-function openBirthdayModal() {
+function openBirthdayModal(enableAfterConfirm = false) {
+  birthdayEnableAfterConfirm.value = enableAfterConfirm
   birthdayDraft.value = [...birthdayReceivers.value]
   birthdayModalOpen.value = true
 }
 
-function saveBirthdayReceivers() {
+async function saveBirthdayReceivers() {
   birthdayReceivers.value = [...birthdayDraft.value]
+  if (birthdayEnableAfterConfirm.value)
+    await updateConfigField('autoSendBirthdayMessage', true as InstConfig[keyof InstConfig], 'birthday', '已开启生日祝福')
+  birthdayEnableAfterConfirm.value = false
   birthdayModalOpen.value = false
   messageService.success('发送学员已保存')
+}
+
+function openSmsClassReminderModal() {
+  smsClassReminderHourDraft.value = getNumberText(instConfig.value.sendClassReminderSmsHour, '19:00')
+  smsClassReminderModalOpen.value = true
+}
+
+async function saveSmsClassReminderHour() {
+  await updateConfigField('sendClassReminderSmsHour', smsClassReminderHourDraft.value as InstConfig[keyof InstConfig], 'smsClassReminderHour', '上课提醒短信发送时间已保存')
+  await updateConfigField('enabledClassReminder', true as InstConfig[keyof InstConfig], 'classSms', '已开启上课提醒')
+  smsClassReminderModalOpen.value = false
 }
 
 function openClassReminderModal() {
@@ -131,28 +194,104 @@ async function saveRenewalCondition() {
   renewalModalOpen.value = false
 }
 
-function openLeaveCountModal() {
-  leaveLimitDraft.cycle = getNumberText(instConfig.value.leaveApplyCycleLimit, 'month')
+function openLeaveCountModal(enableAfterConfirm = false) {
+  leaveCountEnableAfterConfirm.value = enableAfterConfirm
+  leaveLimitDraft.cycle = normalizeLeaveCycleValue(instConfig.value.leaveApplyCycleLimit)
   leaveLimitDraft.count = Number(getNumberText(instConfig.value.leaveApplyNumberLimit, '2')) || 2
-  leaveLimitDraft.type = getNumberText(instConfig.value.leaveApplyTypeLimit, 'course')
+  leaveLimitDraft.type = normalizeLeaveTypeValue(instConfig.value.leaveApplyTypeLimit)
   leaveCountModalOpen.value = true
 }
 
 async function saveLeaveCountLimit() {
-  await updateConfigField('leaveApplyCycleLimit', leaveLimitDraft.cycle as InstConfig[keyof InstConfig], 'leaveCycle', '请假次数限制已保存')
-  await updateConfigField('leaveApplyNumberLimit', String(leaveLimitDraft.count) as InstConfig[keyof InstConfig], 'leaveCount', '请假次数限制已保存')
-  await updateConfigField('leaveApplyTypeLimit', leaveLimitDraft.type as InstConfig[keyof InstConfig], 'leaveType', '请假次数限制已保存')
-  leaveCountModalOpen.value = false
+  rowLoadingMap.value = {
+    ...rowLoadingMap.value,
+    leaveCycle: true,
+    leaveCount: true,
+    leaveType: true,
+    leaveNumberLimit: true,
+  }
+  try {
+    const payload = {
+      ...(instConfig.value as InstConfig),
+      leaveApplyCycleLimit: normalizeLeaveCycleValue(leaveLimitDraft.cycle),
+      leaveApplyNumberLimit: String(leaveLimitDraft.count),
+      leaveApplyTypeLimit: normalizeLeaveTypeValue(leaveLimitDraft.type),
+      enableLeaveApplyNumberLimit: leaveCountEnableAfterConfirm.value ? true : instConfig.value.enableLeaveApplyNumberLimit,
+    }
+    payload.leaveApplyCycleLimit = normalizeLeaveCycleValue(payload.leaveApplyCycleLimit)
+    payload.leaveApplyTypeLimit = normalizeLeaveTypeValue(payload.leaveApplyTypeLimit)
+    await setInstConfigApi(payload as InstConfig)
+    await userStore.getInstConfig()
+    messageService.success(leaveCountEnableAfterConfirm.value ? '已开启请假次数限制' : '请假次数限制已保存')
+    leaveCountEnableAfterConfirm.value = false
+    leaveCountModalOpen.value = false
+  }
+  catch (error) {
+    console.error('save leave count limit failed', error)
+    messageService.error('保存失败，请稍后重试')
+  }
+  finally {
+    rowLoadingMap.value = {
+      ...rowLoadingMap.value,
+      leaveCycle: false,
+      leaveCount: false,
+      leaveType: false,
+      leaveNumberLimit: false,
+    }
+  }
 }
 
-function openLeaveTimeModal() {
-  leaveTimeDraft.value = Number(getNumberText(instConfig.value.leaveApplyTimeLimit, '1.0')) || 1
+function openLeaveTimeModal(enableAfterConfirm = false) {
+  leaveTimeEnableAfterConfirm.value = enableAfterConfirm
+  leaveTimeError.value = ''
+  leaveTimeDraft.value = enableAfterConfirm ? null : Number(getNumberText(instConfig.value.leaveApplyTimeLimit, '1.0')) || 1
   leaveTimeModalOpen.value = true
 }
 
 async function saveLeaveTimeLimit() {
+  if (leaveTimeDraft.value == null || Number.isNaN(Number(leaveTimeDraft.value))) {
+    leaveTimeError.value = '内容不可为空'
+    return
+  }
   await updateConfigField('leaveApplyTimeLimit', leaveTimeDraft.value as InstConfig[keyof InstConfig], 'leaveTime', '请假时间限制已保存')
+  if (leaveTimeEnableAfterConfirm.value)
+    await updateConfigField('enableLeaveApplyTimeLimit', true as InstConfig[keyof InstConfig], 'leaveTimeLimit', '已开启请假时间限制')
+  leaveTimeEnableAfterConfirm.value = false
   leaveTimeModalOpen.value = false
+}
+
+function handleLeaveCountToggle(checked: boolean) {
+  if (checked) {
+    openLeaveCountModal(true)
+    return
+  }
+  Modal.confirm({
+    title: '关闭请假次数限制',
+    content: '关闭后，学员在公众号内请假将不受次数限制；每个学员单独设置的请假次数将清空，无法恢复',
+    okText: '关闭',
+    cancelText: '我再想想',
+    centered: true,
+    async onOk() {
+      await updateConfigField('enableLeaveApplyNumberLimit', false as InstConfig[keyof InstConfig], 'leaveNumberLimit', '已关闭请假次数限制')
+    },
+  })
+}
+
+function handleLeaveTimeToggle(checked: boolean) {
+  if (checked) {
+    openLeaveTimeModal(true)
+    return
+  }
+  Modal.confirm({
+    title: '关闭请假时间限制',
+    content: '关闭后，学员在公众号内课前请假将不受时间限制',
+    okText: '关闭',
+    cancelText: '我再想想',
+    centered: true,
+    async onOk() {
+      await updateConfigField('enableLeaveApplyTimeLimit', false as InstConfig[keyof InstConfig], 'leaveTimeLimit', '已关闭请假时间限制')
+    },
+  })
 }
 
 function receiverText() {
@@ -172,7 +311,7 @@ const smsRows = computed(() => [
     desc: '开启后，学员生日当天系统自动发送祝福短信',
     extra: `发送给：${receiverText()}`,
     editable: true,
-    onEdit: openBirthdayModal,
+    onEdit: () => openBirthdayModal(false),
   },
   {
     key: 'recharge',
@@ -185,6 +324,10 @@ const smsRows = computed(() => [
     title: '上课提醒',
     field: 'enabledClassReminder' as keyof InstConfig,
     desc: '开启后，学员上课前会发送短信提醒：上课时间及相关的课程内容',
+    extra: `上课前一日 ${getNumberText(instConfig.value.sendClassReminderSmsHour, '19:00')} 发送短信至家长`,
+    editable: true,
+    onEdit: openSmsClassReminderModal,
+    sample: '短信内容举例：\n【校宝】上课提醒：西西明天（05-17 11:00）在校宝艺木（黄龙校区）有1节课：美术课，请提前安排好日程，准时来上课哦～',
   },
   {
     key: 'consume',
@@ -275,23 +418,27 @@ const remindRows = computed(() => [
   },
 ])
 
+function shouldShowRowExtra(row: { field: keyof InstConfig, extra?: string }) {
+  return Boolean(row.extra) && isSwitchEnabled(instConfig.value[row.field])
+}
+
 async function toggleRow(row: { field: keyof InstConfig, key: string, title: string }, checked: boolean) {
+  if (row.key === 'birthday' && checked) {
+    openBirthdayModal(true)
+    return
+  }
+  if (row.key === 'classSms' && checked) {
+    openSmsClassReminderModal()
+    return
+  }
   await updateConfigField(row.field, checked as InstConfig[keyof InstConfig], row.key, checked ? `已开启${row.title}` : `已关闭${row.title}`)
 }
 
 const leaveCycleText = computed(() => {
-  const cycleMap: Record<string, string> = {
-    none: '不限制',
-    day: '每天',
-    week: '每周',
-    month: '每月',
-    quarter: '每季度',
-    year: '每年',
-  }
-  return cycleMap[getNumberText(instConfig.value.leaveApplyCycleLimit, 'month')] || '每月'
+  return leaveCycleTextMap[normalizeLeaveCycleValue(instConfig.value.leaveApplyCycleLimit)] || '每月'
 })
 
-const leaveTypeText = computed(() => getNumberText(instConfig.value.leaveApplyTypeLimit, 'course') === 'student' ? '按学员' : '按课程')
+const leaveTypeText = computed(() => leaveTypeTextMap[normalizeLeaveTypeValue(instConfig.value.leaveApplyTypeLimit)] || '按课程')
 
 onMounted(() => {
   ensureInstConfigLoaded()
@@ -317,12 +464,15 @@ onMounted(() => {
                         @change="checked => toggleRow(row, Boolean(checked))"
                       />
                       <div class="settings-desc">{{ row.desc }}</div>
-                      <div v-if="row.extra" class="settings-extra">
+                      <div v-if="shouldShowRowExtra(row)" class="settings-extra">
                         {{ row.extra }}
                         <a-button v-if="row.editable" type="link" size="small" class="settings-link" @click="row.onEdit?.()">
                           <template #icon><EditOutlined /></template>
                           编辑
                         </a-button>
+                      </div>
+                      <div v-if="row.sample && isSwitchEnabled(instConfig[row.field])" class="sms-sample-card">
+                        <div v-for="line in row.sample.split('\n')" :key="line">{{ line }}</div>
                       </div>
                     </div>
                   </div>
@@ -344,7 +494,7 @@ onMounted(() => {
                         @change="checked => toggleRow(row, Boolean(checked))"
                       />
                       <div class="settings-desc">{{ row.desc }}</div>
-                      <div v-if="row.extra" class="settings-extra">
+                      <div v-if="shouldShowRowExtra(row)" class="settings-extra">
                         {{ row.extra }}
                         <a-button v-if="row.editable" type="link" size="small" class="settings-link" @click="row.onEdit?.()">
                           <template #icon><EditOutlined /></template>
@@ -365,23 +515,23 @@ onMounted(() => {
           <section class="settings-section">
             <div class="settings-section__title">请假设置</div>
             <div class="settings-table settings-table--leave">
-              <div class="settings-row settings-row--large settings-row--top">
+              <div class="settings-row settings-row--top" :class="{ 'settings-row--large': isSwitchEnabled(instConfig.enableLeaveApplyNumberLimit) }">
                 <div class="settings-row__label">请假次数限制</div>
                 <div class="settings-row__content">
                   <a-switch
                     :checked="isSwitchEnabled(instConfig.enableLeaveApplyNumberLimit)"
                     :loading="isRowLoading('leaveNumberLimit')"
-                    @change="checked => updateConfigField('enableLeaveApplyNumberLimit', Boolean(checked) as InstConfig[keyof InstConfig], 'leaveNumberLimit', Boolean(checked) ? '已开启请假次数限制' : '已关闭请假次数限制')"
+                    @change="checked => handleLeaveCountToggle(Boolean(checked))"
                   />
                   <div class="settings-desc">开启后，学员发起请假会受到相应次数限制</div>
-                  <div class="settings-extra">
+                  <div v-if="isSwitchEnabled(instConfig.enableLeaveApplyNumberLimit)" class="settings-extra">
                     请假次数限制设置：
-                    <a-button type="link" size="small" class="settings-link" @click="openLeaveCountModal">
+                    <a-button type="link" size="small" class="settings-link" @click="openLeaveCountModal(false)">
                       <template #icon><EditOutlined /></template>
                       编辑
                     </a-button>
                   </div>
-                  <div class="leave-rule-card">
+                  <div v-if="isSwitchEnabled(instConfig.enableLeaveApplyNumberLimit)" class="leave-rule-card">
                     <p>限制周期：{{ leaveCycleText }}</p>
                     <p>可请假次数：{{ getNumberText(instConfig.leaveApplyNumberLimit, '2') }}</p>
                     <p>请假类型：{{ leaveTypeText }}</p>
@@ -401,12 +551,12 @@ onMounted(() => {
                   <a-switch
                     :checked="isSwitchEnabled(instConfig.enableLeaveApplyTimeLimit)"
                     :loading="isRowLoading('leaveTimeLimit')"
-                    @change="checked => updateConfigField('enableLeaveApplyTimeLimit', Boolean(checked) as InstConfig[keyof InstConfig], 'leaveTimeLimit', Boolean(checked) ? '已开启请假时间限制' : '已关闭请假时间限制')"
+                    @change="checked => handleLeaveTimeToggle(Boolean(checked))"
                   />
                   <div class="settings-desc">开启后，学员需在规定时间范围内发起请假</div>
-                  <div class="settings-extra">
+                  <div v-if="isSwitchEnabled(instConfig.enableLeaveApplyTimeLimit)" class="settings-extra">
                     学员需至少在开课前 <span class="primary-text">{{ getNumberText(instConfig.leaveApplyTimeLimit, '1') }}</span> 小时发起请假
-                    <a-button type="link" size="small" class="settings-link" @click="openLeaveTimeModal">
+                    <a-button type="link" size="small" class="settings-link" @click="openLeaveTimeModal(false)">
                       <template #icon><EditOutlined /></template>
                       编辑
                     </a-button>
@@ -426,6 +576,19 @@ onMounted(() => {
         <a-checkbox value="prospect">意向学员</a-checkbox>
         <a-checkbox value="history">历史学员</a-checkbox>
       </a-checkbox-group>
+    </a-modal>
+
+    <a-modal v-model:open="smsClassReminderModalOpen" title="编辑上课提醒短信发送时间" centered :width="450" wrap-class-name="home-school-settings-modal class-reminder-time-modal" @ok="saveSmsClassReminderHour">
+      <div class="compact-form-row">
+        <span>开启后，上课前一日</span>
+        <a-select
+          v-model:value="smsClassReminderHourDraft"
+          :options="classReminderHourOptions"
+          class="class-reminder-time-select"
+          popup-class-name="class-reminder-time-dropdown"
+        />
+        <span>发送短信至家长</span>
+      </div>
     </a-modal>
 
     <a-modal v-model:open="classReminderModalOpen" title="编辑上课提醒时间" centered :width="450" wrap-class-name="home-school-settings-modal class-reminder-time-modal" @ok="saveClassReminderHour">
@@ -488,12 +651,12 @@ onMounted(() => {
       <a-form class="leave-limit-form" :label-col="{ style: { width: '96px' } }" :wrapper-col="{ flex: 1 }">
         <a-form-item label="限制周期" required>
           <a-radio-group v-model:value="leaveLimitDraft.cycle" class="custom-radio">
-            <a-radio value="none">不限制</a-radio>
-            <a-radio value="day">每天</a-radio>
-            <a-radio value="week">每周</a-radio>
-            <a-radio value="month">每月</a-radio>
-            <a-radio value="quarter">每季度</a-radio>
-            <a-radio value="year">每年</a-radio>
+            <a-radio value="0">不限制</a-radio>
+            <a-radio value="1">每天</a-radio>
+            <a-radio value="2">每周</a-radio>
+            <a-radio value="3">每月</a-radio>
+            <a-radio value="4">每季度</a-radio>
+            <a-radio value="5">每年</a-radio>
           </a-radio-group>
         </a-form-item>
         <a-form-item label="可请假次数" required>
@@ -501,8 +664,8 @@ onMounted(() => {
         </a-form-item>
         <a-form-item label="请假类型" required>
           <a-radio-group v-model:value="leaveLimitDraft.type" class="custom-radio">
-            <a-radio value="course">按课程</a-radio>
-            <a-radio value="student">按学员</a-radio>
+            <a-radio value="1">按课程</a-radio>
+            <a-radio value="2">按学员</a-radio>
           </a-radio-group>
         </a-form-item>
       </a-form>
@@ -517,7 +680,10 @@ onMounted(() => {
     <a-modal v-model:open="leaveTimeModalOpen" title="请假时间设置" centered :width="450" wrap-class-name="home-school-settings-modal" @ok="saveLeaveTimeLimit">
       <div class="compact-form-row">
         <span>学员至少在开课前</span>
-        <a-input-number v-model:value="leaveTimeDraft" :min="0" :step="0.5" class="compact-input" />
+        <div class="field-error-wrap">
+          <a-input-number v-model:value="leaveTimeDraft" :min="0" :step="0.5" placeholder="请输入" class="compact-input" @change="leaveTimeError = ''" />
+          <div v-if="leaveTimeError" class="field-error-text">{{ leaveTimeError }}</div>
+        </div>
         <span>小时发起请假申请</span>
       </div>
     </a-modal>
@@ -737,6 +903,18 @@ onMounted(() => {
   font-size: 14px;
 }
 
+.sms-sample-card {
+  max-width: 860px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  color: #595959;
+  background: #fff;
+  font-size: 14px;
+  line-height: 24px;
+}
+
 .leave-rule-card {
   max-width: 1000px;
   margin-top: 14px;
@@ -783,6 +961,22 @@ onMounted(() => {
 
 .compact-input {
   width: 88px;
+}
+
+.field-error-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.field-error-text {
+  position: absolute;
+  top: 34px;
+  left: 0;
+  color: #ff4d4f;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
 }
 
 .leave-limit-form {
