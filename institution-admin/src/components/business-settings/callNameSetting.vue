@@ -68,10 +68,10 @@ const deductRuleModalOpen = ref(false)
 const amountDeductSingleCourseCount = ref(0)
 
 const orderExampleRows = [
-  { no: 1, order: '订单 A', validUntil: '2025-06-08', accountType: '正价', createdAt: '2025-05-05 10:10' },
-  { no: 2, order: '订单 B', validUntil: '2025-08-08', accountType: '正价', createdAt: '2025-06-05 10:10' },
-  { no: 3, order: '订单 B', validUntil: '2025-08-08', accountType: '赠送', createdAt: '2025-06-05 10:10' },
-  { no: 4, order: '订单 C', validUntil: '不限制', accountType: '正价', createdAt: '2025-07-05 10:10' },
+  { no: 1, order: '订单 A', validUntil: '2026-06-08', accountType: '正价', createdAt: '2026-05-05 12:12' },
+  { no: 2, order: '订单 B', validUntil: '2026-08-08', accountType: '正价', createdAt: '2026-06-05 12:12', orderRowspan: 2 },
+  { no: 3, order: '订单 B', validUntil: '2026-08-08', accountType: '赠送', createdAt: '2026-06-05 12:12', hideOrder: true },
+  { no: 4, order: '订单 C', validUntil: '不限制', accountType: '正价', createdAt: '2026-07-05 12:12' },
 ]
 
 function isRowLoading(key: string) {
@@ -298,7 +298,7 @@ onMounted(async () => {
               <div class="settings-row__content">
                 <div class="status-line">
                   <span class="status-dot" />
-                  <span class="status-text">先进先出</span>
+                  <span class="status-text">智能排序：近有效期 &gt; 正价 &gt; 赠送 &gt; 先进先出</span>
                 </div>
 
                 <div class="example-card">
@@ -321,7 +321,9 @@ onMounted(async () => {
                     <tbody>
                       <tr v-for="row in orderExampleRows" :key="row.no">
                         <td>{{ row.no }}</td>
-                        <td>{{ row.order }}</td>
+                        <td v-if="!row.hideOrder" :rowspan="row.orderRowspan || 1">
+                          {{ row.order }}
+                        </td>
                         <td>{{ row.validUntil }}</td>
                         <td>{{ row.accountType }}</td>
                         <td>{{ row.createdAt }}</td>
@@ -329,7 +331,7 @@ onMounted(async () => {
                     </tbody>
                   </table>
                   <div class="example-card__footer">
-                    默认按学费账户生成时间先进先出；同一订单含正价和赠送课时时，优先消耗正价课时，再消耗赠送课时，则订单课消顺序为：1 &gt; 2 &gt; 3 &gt; 4
+                    默认按近有效期、正价、赠送、先进先出依次排序，则订单课消顺序为：1 &gt; 2 &gt; 3 &gt; 4
                   </div>
                 </div>
               </div>

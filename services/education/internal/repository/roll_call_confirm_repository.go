@@ -1157,7 +1157,13 @@ func (repo *Repository) loadRollCallLessonHourDeductBucketAccounts(ctx context.C
 		  AND IFNULL(ic.teach_method, 0) = IFNULL(selected_course.teach_method, 0)
 		  AND CASE WHEN IFNULL(icq.lesson_model, 0) = 4 THEN 3 ELSE IFNULL(icq.lesson_model, 0) END = CASE WHEN IFNULL(selected_icq.lesson_model, 0) = 4 THEN 3 ELSE IFNULL(selected_icq.lesson_model, 0) END
 		  AND IFNULL(ta.status, 0) <> 3
-		ORDER BY IFNULL(ta.create_time, NOW()) ASC, ta.id ASC
+		ORDER BY
+			CASE WHEN ta.expire_time IS NULL THEN 1 ELSE 0 END ASC,
+			ta.expire_time ASC,
+			CASE WHEN IFNULL(ta.total_quantity, 0) > 0 THEN 0 ELSE 1 END ASC,
+			CASE WHEN IFNULL(ta.free_quantity, 0) > 0 AND IFNULL(ta.total_quantity, 0) = 0 THEN 0 ELSE 1 END ASC,
+			IFNULL(ta.create_time, NOW()) ASC,
+			ta.id ASC
 	`, instID, account.ID)
 	if err != nil {
 		return nil, err

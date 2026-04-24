@@ -19,16 +19,20 @@ const renewalModalOpen = ref(false)
 const birthdayReceivers = ref(['current', 'history'])
 const birthdayDraft = ref<string[]>([])
 const classReminderHourDraft = ref('19:00')
+const classReminderHourOptions = Array.from({ length: 24 }, (_, hour) => {
+  const value = `${String(hour).padStart(2, '0')}:00`
+  return { label: value, value }
+})
 const renewalDraft = reactive({
   classNumEnabled: true,
   classNum: 5,
   validityDayEnabled: true,
   validityDay: 15,
   priceEnabled: false,
-  price: 0,
+  price: 500,
 })
 const leaveLimitDraft = reactive({ cycle: 'month', count: 2, type: 'course' })
-const leaveTimeDraft = ref('1.0')
+const leaveTimeDraft = ref(1)
 
 const instConfig = computed<Partial<InstConfig>>(() => userStore.instConfig ?? {})
 
@@ -113,7 +117,7 @@ function openRenewalModal() {
   renewalDraft.validityDayEnabled = isSwitchEnabled(instConfig.value.enableRenewValidityDay, true)
   renewalDraft.validityDay = Number(getNumberText(instConfig.value.renewValidityDay, '15')) || 15
   renewalDraft.priceEnabled = isSwitchEnabled(instConfig.value.enableRenewPrice, false)
-  renewalDraft.price = Number(getNumberText(instConfig.value.renewPrice, '0')) || 0
+  renewalDraft.price = Number(getNumberText(instConfig.value.renewPrice, '500')) || 500
   renewalModalOpen.value = true
 }
 
@@ -142,7 +146,7 @@ async function saveLeaveCountLimit() {
 }
 
 function openLeaveTimeModal() {
-  leaveTimeDraft.value = getNumberText(instConfig.value.leaveApplyTimeLimit, '1.0')
+  leaveTimeDraft.value = Number(getNumberText(instConfig.value.leaveApplyTimeLimit, '1.0')) || 1
   leaveTimeModalOpen.value = true
 }
 
@@ -448,10 +452,15 @@ onMounted(() => {
       </a-checkbox-group>
     </a-modal>
 
-    <a-modal v-model:open="classReminderModalOpen" title="上课提醒时间设置" centered :width="420" wrap-class-name="home-school-settings-modal" @ok="saveClassReminderHour">
+    <a-modal v-model:open="classReminderModalOpen" title="编辑上课提醒时间" centered :width="450" wrap-class-name="home-school-settings-modal class-reminder-time-modal" @ok="saveClassReminderHour">
       <div class="compact-form-row">
-        <span>上课前一日</span>
-        <a-time-picker v-model:value="classReminderHourDraft" value-format="HH:mm" format="HH:mm" class="compact-input" />
+        <span>开启后，上课前一日</span>
+        <a-select
+          v-model:value="classReminderHourDraft"
+          :options="classReminderHourOptions"
+          class="class-reminder-time-select"
+          popup-class-name="class-reminder-time-dropdown"
+        />
         <span>发送公众号消息至家长</span>
       </div>
     </a-modal>
@@ -465,9 +474,9 @@ onMounted(() => {
               <span>续费提醒天数：</span>
               <a-switch v-model:checked="renewalDraft.classNumEnabled" />
             </div>
-            <div class="renewal-reminder__condition">
+            <div v-if="renewalDraft.classNumEnabled" class="renewal-reminder__condition">
               <span>剩余课时数 ＜</span>
-              <a-input-number v-model:value="renewalDraft.classNum" :min="0" :controls="false" class="renewal-reminder__input" />
+              <a-input-number v-model:value="renewalDraft.classNum" :min="0" class="renewal-reminder__input" />
               <span>课时</span>
             </div>
           </div>
@@ -477,9 +486,9 @@ onMounted(() => {
               <span>有效期不足：</span>
               <a-switch v-model:checked="renewalDraft.validityDayEnabled" />
             </div>
-            <div class="renewal-reminder__condition">
+            <div v-if="renewalDraft.validityDayEnabled" class="renewal-reminder__condition">
               <span>有效期天数 ＜</span>
-              <a-input-number v-model:value="renewalDraft.validityDay" :min="0" :controls="false" class="renewal-reminder__input" />
+              <a-input-number v-model:value="renewalDraft.validityDay" :min="0" class="renewal-reminder__input" />
               <span>天</span>
             </div>
           </div>
@@ -488,6 +497,11 @@ onMounted(() => {
             <div class="renewal-reminder__title renewal-reminder__title--only">
               <span>金额不足：</span>
               <a-switch v-model:checked="renewalDraft.priceEnabled" />
+            </div>
+            <div v-if="renewalDraft.priceEnabled" class="renewal-reminder__condition">
+              <span>金额 ＜</span>
+              <a-input-number v-model:value="renewalDraft.price" :min="0" class="renewal-reminder__input" />
+              <span>元</span>
             </div>
           </div>
         </div>
@@ -681,7 +695,7 @@ onMounted(() => {
 
 .settings-row {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr);
   min-height: 84px;
   border-bottom: 1px solid #edf0f5;
 
@@ -785,6 +799,10 @@ onMounted(() => {
   color: #595959;
 }
 
+.class-reminder-time-select {
+  width: 100px;
+}
+
 .compact-input {
   width: 88px;
 }
@@ -858,10 +876,6 @@ onMounted(() => {
 
 .renewal-reminder__input {
   width: 90px;
-
-  :deep(.ant-input-number-input) {
-    height: 32px;
-  }
 }
 
 @media (max-width: 768px) {
@@ -915,6 +929,22 @@ onMounted(() => {
 .renewal-reminder-modal {
   .ant-modal-body {
     padding: 24px 24px 22px;
+  }
+}
+
+.class-reminder-time-modal {
+  .ant-modal-body {
+    padding: 24px;
+  }
+}
+
+.class-reminder-time-dropdown {
+  width: 100px !important;
+  min-width: 100px !important;
+
+  .ant-select-item {
+    min-height: 32px;
+    padding: 5px 12px;
   }
 }
 </style>
