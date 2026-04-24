@@ -9,8 +9,8 @@ import MicroSchoolSettingsFields from './micro-school-settings-fields.vue'
 import CustomTitle from '@/components/common/custom-title.vue'
 import { getCourseCategoryPageApi, getCourseDetailApi, getCoursePropertyOptionsApi, getCoursePageApi } from '~@/api/edu-center/course-list'
 import { getQiniuToken } from '@/api/qiniu'
+import { getInstConfigModuleApi } from '@/api/common/config'
 import { useCourseAttribute } from '@/composables/useCourseAttribute'
-import { useUserStore } from '~@/stores/user'
 import messageService from '~@/utils/messageService'
 
 const props = defineProps({
@@ -28,8 +28,6 @@ const props = defineProps({
   },
 })
 const emit = defineEmits(['update:open', 'handleSubmit'])
-const userStore = useUserStore()
-
 // 响应式断点检测
 const isMobile = ref(false)
 const isTablet = ref(false)
@@ -140,6 +138,7 @@ async function getCourseCategory(value) {
 // 课程列表相关
 const courseListOptions = ref([])
 const courseListLoading = ref(false)
+const courseListLoaded = ref(false)
 const courseListPagination = ref({
   current: 1,
   pageSize: 20,
@@ -176,6 +175,8 @@ async function getCourseList(searchKey = '', isLoadMore = false) {
 
     if (res.code === 200) {
       const newData = res.result || []
+      if (!isLoadMore && !searchKey)
+        courseListLoaded.value = true
 
       if (isLoadMore) {
         // 加载更多时追加数据
@@ -210,6 +211,11 @@ function loadMoreCourses() {
   }
 }
 
+function ensureCourseList() {
+  if (!courseListLoaded.value)
+    getCourseList('', false)
+}
+
 // 处理下拉框滚动到底部
 function handleCourseSelectPopupScroll(e) {
   const { target } = e
@@ -225,17 +231,23 @@ function handleCourseSelectionChange(value) {
   settingFormState.courseListIds = filteredValue
 }
 
+const courseConfig = ref({})
+
+async function loadCourseConfig() {
+  const res = await getInstConfigModuleApi('course')
+  courseConfig.value = res.result || {}
+}
+
 // 监听弹窗打开
 watch(openDrawer, async (newVal) => {
   if (newVal) {
     btnLoading.value = false
-    await userStore.getInstConfig()
-    // 获取课程类别
-    getCourseCategory()
-    getEnabledCourseProperties()
-    // 初始化课程列表
-    getCourseList()
     resetForm()
+    await Promise.all([
+      loadCourseConfig(),
+      getCourseCategory(),
+      getEnabledCourseProperties(),
+    ])
   }
 })
 
@@ -313,10 +325,10 @@ function isConfigEnabled(value, defaultValue = false) {
 }
 
 const showTimeBasedPriceButton = computed(() =>
-  isConfigEnabled(userStore.instConfig?.enableByDateLesson),
+  isConfigEnabled(courseConfig.value?.enableByDateLesson),
 )
 const showPackagePriceButton = computed(() =>
-  isConfigEnabled(userStore.instConfig?.enableChargeByPrice),
+  isConfigEnabled(courseConfig.value?.enableChargeByPrice),
 )
 
 // 监听microSchoolSettingModalOpen
@@ -584,6 +596,7 @@ function resetForm() {
 
   // 重置课程列表相关状态
   courseListOptions.value = []
+  courseListLoaded.value = false
   courseSearchKey.value = ''
   courseListPagination.value = {
     current: 1,
@@ -1550,7 +1563,7 @@ function buildCourseSubmitPayload() {
               :course-list-loading="courseListLoading"
               :course-list-pagination="courseListPagination"
               @search-course="searchCourse"
-              @course-dropdown-visible-change="(open) => open && getCourseList()"
+              @course-dropdown-visible-change="(open) => open && ensureCourseList()"
               @course-popup-scroll="handleCourseSelectPopupScroll"
               @course-selection-change="handleCourseSelectionChange"
               @load-more-courses="loadMoreCourses"

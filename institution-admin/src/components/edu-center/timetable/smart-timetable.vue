@@ -21,7 +21,6 @@ import { getUserListApi } from '@/api/internal-manage/staff-manage'
 import { useSmartTimetableAvailability } from '@/composables/useSmartTimetableAvailability'
 import { useSmartTimetableClassMode } from '@/composables/useSmartTimetableClassMode'
 import { useSmartTimetablePicker } from '@/composables/useSmartTimetablePicker'
-import { useUserStore } from '@/stores/user'
 import { loadTeachingScheduleDeleteTargetCount } from './schedule-delete-scope'
 import messageService from '@/utils/messageService'
 import { compactTeachingScheduleAssignments } from '@/utils/teaching-schedule-payload'
@@ -711,7 +710,6 @@ function formatWeek(date) {
   }
   return `周${weekMap[day]}`
 }
-const userStore = useUserStore()
 const matrixDays = ref([])
 const timetableLoading = ref(false)
 const creatingOneToOneSchedule = ref(false)
@@ -852,7 +850,7 @@ const queryDateRange = computed(() => {
 const effectivePeriodConfigRaw = ref(null)
 
 const periodConfig = computed(() => {
-  const parsed = parseUnifiedTimePeriodConfig(effectivePeriodConfigRaw.value ?? userStore.instConfig?.unifiedTimePeriodJson)
+  const parsed = parseUnifiedTimePeriodConfig(effectivePeriodConfigRaw.value)
   return parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG
 })
 
@@ -1385,15 +1383,13 @@ async function loadTimetableMatrix() {
       const cfgRes = await getInstPeriodConfigApi({ effectiveDate: startDate })
       if (seq !== matrixLoadSeq)
         return
-      effectivePeriodConfigRaw.value = cfgRes.result?.unifiedTimePeriodJson ?? userStore.instConfig?.unifiedTimePeriodJson ?? null
+      effectivePeriodConfigRaw.value = cfgRes.result?.unifiedTimePeriodJson ?? null
     }
     catch (error) {
       console.warn('load effective inst period config failed, fallback to latest', error)
-      if (!userStore.instConfig)
-        await userStore.getInstConfig()
       if (seq !== matrixLoadSeq)
         return
-      effectivePeriodConfigRaw.value = userStore.instConfig?.unifiedTimePeriodJson ?? null
+      effectivePeriodConfigRaw.value = null
     }
     const scheduleTeacherIds = filterTeacherId.value.join(',')
     const classroomIds = filterClassroomId.value.join(',')

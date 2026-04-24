@@ -23,7 +23,6 @@ import type { TeachingScheduleValidationResult } from '@/api/edu-center/teaching
 import { checkAssistantScheduleAvailabilityApi, checkOneToOneScheduleAvailabilityApi, createOneToOneSchedulesApi, replaceTeachingScheduleBatchApi, validateOneToOneSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import messageService from '@/utils/messageService'
 import emitter, { EVENTS } from '@/utils/eventBus'
-import { useUserStore } from '@/stores/user'
 import {
   DEFAULT_UNIFIED_TIME_PERIOD_CONFIG,
   buildQuickHourlySlots,
@@ -221,11 +220,10 @@ const repeatRuleLabelMap: Record<RepeatRule, string> = {
 
 const schoolHolidaySet = new Set(['2026-05-01', '2026-05-02', '2026-05-03'])
 
-const userStore = useUserStore()
 const effectivePeriodConfigRaw = ref<unknown>(null)
 
 const periodConfig = computed(() => {
-  const parsed = parseUnifiedTimePeriodConfig(effectivePeriodConfigRaw.value ?? userStore.instConfig?.unifiedTimePeriodJson)
+  const parsed = parseUnifiedTimePeriodConfig(effectivePeriodConfigRaw.value)
   return parsed ?? DEFAULT_UNIFIED_TIME_PERIOD_CONFIG
 })
 
@@ -263,13 +261,11 @@ async function loadEffectivePeriodConfig(dateText?: string) {
     const res = await getInstPeriodConfigApi({
       effectiveDate: dateText || scheduleStartDate.value.format('YYYY-MM-DD'),
     })
-    effectivePeriodConfigRaw.value = res.result?.unifiedTimePeriodJson ?? userStore.instConfig?.unifiedTimePeriodJson ?? null
+    effectivePeriodConfigRaw.value = res.result?.unifiedTimePeriodJson ?? null
   }
   catch (error) {
     console.warn('load effective period config failed, fallback to latest', error)
-    if (!userStore.instConfig)
-      await userStore.getInstConfig()
-    effectivePeriodConfigRaw.value = userStore.instConfig?.unifiedTimePeriodJson ?? null
+    effectivePeriodConfigRaw.value = null
   }
 }
 

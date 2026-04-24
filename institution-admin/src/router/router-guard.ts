@@ -73,8 +73,6 @@ router.beforeEach(async (to, from, next) => {
       try {
         // 获取用户信息
         await userStore.getUserInfo()
-        // 获取机构配置
-        await userStore.getInstConfig()
         // 获取路由菜单的信息
         const currentRoute = await userStore.generateDynamicRoutes()
         router.addRoute(currentRoute)

@@ -119,7 +119,6 @@ function displayRender({ labels }) {
 }
 // 机构配置
 const userStore = useUserStore()
-const instConfig = ref(userStore.instConfig)
 const isSalesperson = ref(true)
 const isReference = ref(true)
 const formState = reactive(createInitialFormState())
@@ -656,7 +655,6 @@ watch(openModal, async (newVal) => {
     resetFormState()
     await getAllStuFields({ filter: 3 })
     spinning.value = true
-    instConfig.value = userStore.instConfig
     await getChannelTree()
 
     if (props.type === 1) {

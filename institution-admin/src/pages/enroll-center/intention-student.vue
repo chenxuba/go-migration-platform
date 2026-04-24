@@ -3,11 +3,12 @@ import { ref, watch } from 'vue'
 import { Empty } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { AccessEnum } from '@/constants/access'
+import { getInstConfigModuleApi } from '@/api/common/config'
 
 const activeKey = ref('1')
 const activeKey2 = ref('1')
 const userStore = useUserStore()
-const instConfig = ref(userStore.instConfig)
+const instConfig = ref({})
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const publicDataIsShow = ref(false)
 const publicPoolRef = ref(null)
@@ -97,14 +98,12 @@ function refreshIntentionStudentData() {
 }
 
 onMounted(async () => {
-  await Promise.all([
+  const [, configRes] = await Promise.all([
     userStore.getUserInfo(),
-    userStore.getInstConfig(),
+    getInstConfigModuleApi('enrollment'),
   ])
-  instConfig.value = userStore.instConfig
-  if (instConfig.value) {
-    publicDataIsShow.value = instConfig.value.enablePublicPool
-  }
+  instConfig.value = configRes.result || {}
+  publicDataIsShow.value = Boolean(instConfig.value.enablePublicPool)
 })
 </script>
 
