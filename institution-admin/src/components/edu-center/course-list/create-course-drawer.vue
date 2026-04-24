@@ -13,6 +13,10 @@ import { getInstConfigModuleApi } from '@/api/common/config'
 import { useCourseAttribute } from '@/composables/useCourseAttribute'
 import messageService from '~@/utils/messageService'
 
+function resolveUploadErrorMessage(error, fallback = '上传失败') {
+  return error?.response?.data?.message || error?.message || fallback
+}
+
 const props = defineProps({
   open: {
     type: Boolean,
@@ -400,7 +404,7 @@ function handleCourseImageUpload(options) {
         },
         error(err) {
           console.error('课程主图上传失败:', err)
-          messageService.error(`上传失败: ${err?.message || '未知错误'}`)
+          messageService.error(resolveUploadErrorMessage(err, '上传失败'))
           onError?.(err)
         },
         complete(res) {
@@ -411,7 +415,7 @@ function handleCourseImageUpload(options) {
     }
     catch (error) {
       console.error('获取七牛 token 失败:', error)
-      messageService.error('获取上传凭证失败')
+      messageService.error(resolveUploadErrorMessage(error, '获取上传凭证失败'))
       onError?.(error)
     }
   })()

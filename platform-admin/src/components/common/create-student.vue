@@ -28,6 +28,12 @@ const props = defineProps({
   },
 })
 const emit = defineEmits(['update:open', 'submit'])
+
+function resolveUploadErrorMessage(error, fallback = '上传失败') {
+  const responseMessage = error?.response?.data?.message
+  const businessMessage = error?.message
+  return responseMessage || businessMessage || fallback
+}
 const formRef = ref()
 // 处理双向绑定
 const openModal = computed({
@@ -166,6 +172,8 @@ const handleAvatarUpload = async ({ file }) => {
   try {
     // 1. 获取七牛云上传token
     const tokenRes = await getQiniuToken()
+    if (tokenRes.code !== 200 || !tokenRes.result?.token)
+      throw new Error(tokenRes.message || '获取上传凭证失败')
     const { token, uuid, buckethostname } = tokenRes.result
 
     // 2. 生成文件名（使用uuid + 原文件扩展名）
@@ -195,7 +203,7 @@ const handleAvatarUpload = async ({ file }) => {
       },
       error(err) {
         console.error('上传失败:', err)
-        message.error('上传失败: ' + err.message)
+        message.error(resolveUploadErrorMessage(err, '头像上传失败'))
         uploadingAvatar.value = false
         uploadProgress.value = 0
       },
@@ -217,7 +225,7 @@ const handleAvatarUpload = async ({ file }) => {
     })
   } catch (error) {
     console.error('获取token失败:', error)
-    message.error('获取上传凭证失败')
+    message.error(resolveUploadErrorMessage(error, '获取上传凭证失败'))
     uploadingAvatar.value = false
     uploadProgress.value = 0
   }

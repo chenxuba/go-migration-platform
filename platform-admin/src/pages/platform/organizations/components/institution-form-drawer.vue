@@ -21,6 +21,10 @@ import { getQiniuToken } from '@/api/qiniu'
 import { pageVersionsApi, type VersionItem } from '@/api/platform/versions'
 import messageService from '@/utils/messageService'
 
+function resolveUploadErrorMessage(error, fallback = '上传失败') {
+  return error?.response?.data?.message || error?.message || fallback
+}
+
 const props = defineProps<{
   open: boolean
   institutionId?: number | null
@@ -520,7 +524,7 @@ async function handleLogoUpload(options: UploadRequestOption) {
     const tokenRes: any = await getQiniuToken()
     const { token, uuid, buckethostname } = tokenRes.result || {}
     if (!token || !uuid || !buckethostname)
-      throw new Error('获取上传凭证失败')
+      throw new Error(tokenRes?.message || '获取上传凭证失败')
 
     const ext = rawFile.name.includes('.') ? rawFile.name.slice(rawFile.name.lastIndexOf('.')) : '.png'
     const key = `institution/logo/${uuid}${ext}`

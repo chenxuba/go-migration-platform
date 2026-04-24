@@ -260,6 +260,10 @@ import messageService from '@/utils/messageService'
 import { AccessEnum } from '~@/utils/constant'
 import PlatformModalShell from '../shared/platform-modal-shell.vue'
 
+function resolveUploadErrorMessage(error, fallback = '上传失败') {
+  return error?.response?.data?.message || error?.message || fallback
+}
+
 enum PortalEnum {
   PLATFORM = 0,
   INSTITUTION = 2,
@@ -819,7 +823,7 @@ async function handleAccessDeniedImageUpload(options: UploadRequestOption) {
     const tokenRes: any = await getQiniuToken()
     const { token, uuid, buckethostname } = tokenRes.result || {}
     if (!token || !uuid || !buckethostname)
-      throw new Error('获取上传凭证失败')
+      throw new Error(tokenRes?.message || '获取上传凭证失败')
 
     const ext = rawFile.name.includes('.') ? rawFile.name.slice(rawFile.name.lastIndexOf('.')) : '.png'
     const key = `permission/access-denied/${uuid}${ext}`

@@ -6,8 +6,9 @@ import request from '@/utils/request'
 export function getQiniuToken() {
   return request({
     url: '/api/v1/qiniu/upload-token',
-    method: 'get'
-  })
+    method: 'get',
+    silentError: true,
+  } as any)
 }
 
 /**
@@ -16,6 +17,7 @@ export function getQiniuToken() {
 export function getVideoUploadToken() {
   return request({
     url: '/api/v1/qiniu/video-upload-token',
-    method: 'get'
-  })
+    method: 'get',
+    silentError: true,
+  } as any)
 }

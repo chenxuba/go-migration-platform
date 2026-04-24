@@ -18,6 +18,10 @@ import {
 } from '@/api/edu-center/face'
 import { getQiniuToken } from '@/api/qiniu'
 
+function resolveUploadErrorMessage(error, fallback = '上传失败') {
+  return error?.response?.data?.message || error?.message || fallback
+}
+
 const route = useRoute()
 const CAMERA_WIDTH = 600
 const CAMERA_HEIGHT = 450
@@ -305,7 +309,7 @@ async function uploadImageToQiniu(file, folder) {
   const tokenRes = await getQiniuToken()
   const { token, uuid, buckethostname } = tokenRes.result || {}
   if (!token || !uuid || !buckethostname) {
-    throw new Error('获取上传凭证失败')
+    throw new Error(tokenRes?.message || '获取上传凭证失败')
   }
 
   const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.jpg'
