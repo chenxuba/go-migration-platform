@@ -198,6 +198,7 @@ type ManageUserMutationRequest struct {
 	Password string  `json:"password,omitempty"`
 	Mobile   string  `json:"mobile"`
 	NickName string  `json:"nickName"`
+	Avatar   string  `json:"avatar,omitempty"`
 	DeptIDs  []int64 `json:"deptIds"`
 	RoleIDs  []int64 `json:"roleIds"`
 	Disabled bool    `json:"disabled"`

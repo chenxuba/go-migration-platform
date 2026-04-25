@@ -1633,8 +1633,8 @@ func (repo *Repository) CreateManageUser(ctx context.Context, input model.Manage
 	defer tx.Rollback()
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, dept_id, is_admin, disabled, del_flag, create_time, update_time)
-		VALUES (?, 0, ?, ?, ?, '', ?, 0, NULLIF(?, 0), 0, ?, 0, NOW(), NOW())
-	`, buildUUID(time.Now().UnixNano()), username, input.Password, input.Mobile, input.NickName, deptID, input.Disabled)
+		VALUES (?, 0, ?, ?, ?, ?, ?, 0, NULLIF(?, 0), 0, ?, 0, NOW(), NOW())
+	`, buildUUID(time.Now().UnixNano()), username, input.Password, input.Mobile, input.Avatar, input.NickName, deptID, input.Disabled)
 	if err != nil {
 		return 0, err
 	}
@@ -1678,9 +1678,9 @@ func (repo *Repository) UpdateManageUser(ctx context.Context, input model.Manage
 	}
 	defer tx.Rollback()
 	if strings.TrimSpace(input.Password) != "" {
-		_, err = tx.ExecContext(ctx, `UPDATE sso_user SET username=?, password=?, mobile=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW() WHERE id=? AND del_flag=0`, username, input.Password, input.Mobile, input.NickName, deptID, input.Disabled, userID)
+		_, err = tx.ExecContext(ctx, `UPDATE sso_user SET username=?, password=?, mobile=?, avatar=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW() WHERE id=? AND del_flag=0`, username, input.Password, input.Mobile, input.Avatar, input.NickName, deptID, input.Disabled, userID)
 	} else {
-		_, err = tx.ExecContext(ctx, `UPDATE sso_user SET username=?, mobile=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW() WHERE id=? AND del_flag=0`, username, input.Mobile, input.NickName, deptID, input.Disabled, userID)
+		_, err = tx.ExecContext(ctx, `UPDATE sso_user SET username=?, mobile=?, avatar=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW() WHERE id=? AND del_flag=0`, username, input.Mobile, input.Avatar, input.NickName, deptID, input.Disabled, userID)
 	}
 	if err != nil {
 		return err

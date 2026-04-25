@@ -33,11 +33,6 @@ export function getFullMenuListApi(data) {
   return useGet('/sso/menus/tree', data)
 }
 
-// 机构后台获取默认角色 /role/getDefaultRole
-export function getDefaultRole(data) {
-  return useGet('/sso/roles/templates', data)
-}
-
 // 角色权限对比 /role/roleMenuCompare
 export function roleMenuCompare(data) {
   return usePost('/sso/roles/compare', data)

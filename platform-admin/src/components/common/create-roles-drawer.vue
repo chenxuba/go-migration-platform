@@ -2,7 +2,6 @@
 import {
   CloseOutlined,
   DownOutlined,
-  QuestionCircleOutlined,
   SearchOutlined,
   UpOutlined,
 } from '@ant-design/icons-vue'
@@ -18,7 +17,6 @@ import {
 import {
   getDefaultRoleDetailApi,
   getFullMenuListApi,
-  getDefaultRole,
 } from '~@/api/internal-manage/role-manage'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import { useUserStore } from '~@/stores/user'
@@ -41,28 +39,30 @@ const emit = defineEmits(['update:open', 'onSuccess'])
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const consoleOwnType = useConsoleOwnType()
 
-// 递归获取最后一级checked为true的权限ID
+function getPermissionNodeId(node: any) {
+  return Number(node?.menuId || node?.id || node?.menu?.id || 0)
+}
+
+// 详情接口返回的是已选权限树，叶子节点即需要回显选中的权限点
 function getLastLevelCheckedIds(permissions: any[]): number[] {
-  const result: number[] = []
+  const result = new Set<number>()
 
   const traverse = (nodes: any[]) => {
     nodes.forEach((node) => {
-      // 如果没有children或children为空数组，说明是最后一级
-      if (!node.children || node.children.length === 0) {
-        // 如果当前节点checked为true，添加到结果中
-        if (node.checked === true) {
-          result.push(node.menuId)
-        }
+      const children = Array.isArray(node?.children) ? node.children : []
+      if (children.length > 0) {
+        traverse(children)
+        return
       }
-      else {
-        // 如果有子节点，继续递归遍历
-        traverse(node.children)
-      }
+
+      const nodeId = getPermissionNodeId(node)
+      if (nodeId > 0)
+        result.add(nodeId)
     })
   }
 
-  traverse(permissions)
-  return result
+  traverse(Array.isArray(permissions) ? permissions : [])
+  return Array.from(result)
 }
 const btnLoading = ref(false)
 // 使用抽屉状态管理
@@ -214,19 +214,12 @@ watch(openDrawer, (newVal) => {
   else {
     // 获取所有权限列表
     getMenuList()
-    // 获取角色模板列表
-    getRoleTemplateList()
   }
 })
 const formRef = ref(null)
 
 // 权限验证函数
 function validatePermissions() {
-  // 防止在角色模板选择过程中触发验证
-  if (templateDropdownVisible.value) {
-    return Promise.resolve()
-  }
-
   const hasSelectedPermissions = boxList.value.some(
     parent =>
       parent.checked
@@ -321,142 +314,6 @@ const userStore = useUserStore()
 // 计算属性获取机构名称
 const orgName = computed(() => userStore.userInfo?.orgName || '总机构')
 
-// 角色模板数据
-const roleTemplates = ref([])
-
-// 角色模板加载状态
-const templatesLoading = ref(false)
-
-// 角色模板搜索关键词
-const templateSearchValue = ref('')
-
-// 下拉框显示状态
-const templateDropdownVisible = ref(false)
-
-// 过滤后的角色模板
-const filteredRoleTemplates = computed(() => {
-  if (!templateSearchValue.value) {
-    return roleTemplates.value
-  }
-  return roleTemplates.value.filter(template =>
-    template.label.toLowerCase().includes(templateSearchValue.value.toLowerCase())
-  )
-})
-
-// 获取角色模板列表
-async function getRoleTemplateList() {
-  try {
-    templatesLoading.value = true
-    const res = await getDefaultRole({
-      pageSize: 500,
-      pageIndex: 1
-    })
-
-    if (res.code === 200) {
-      // 转换API数据格式为组件所需格式
-      roleTemplates.value = (res.result || []).map((item, index) => ({
-        key: item.id || `role_${index}`,
-        label: `${item.roleName || item.name || '未命名角色'}${item.isDefault ? '（系统默认）' : ''}`,
-        isSystem: item.isDefault || false,
-        checked: false,
-        roleId: item.id,
-        description: item.description,
-        menuIds: item.roleIds || []
-      }))
-    }
-  } catch (error) {
-    console.error('获取角色模板失败:', error)
-  } finally {
-    templatesLoading.value = false
-  }
-}
-
-// 获取当前权限树中已选中的权限ID
-function getCurrentSelectedMenuIds(): number[] {
-  const currentMenuIds: number[] = []
-
-  boxList.value.forEach((parent) => {
-    if (parent.children) {
-      parent.children.forEach((child) => {
-        if (child.children) {
-          child.children.forEach((authority) => {
-            if (authority.checked) {
-              currentMenuIds.push(authority.id)
-            }
-          })
-        }
-      })
-    }
-  })
-
-  return currentMenuIds
-}
-
-// 处理角色模板复选框变化
-function handleTemplateCheckChange(templateKey: string, checked: boolean) {
-  const template = roleTemplates.value.find(t => t.key === templateKey)
-  if (template) {
-    template.checked = checked
-  }
-}
-
-// 确定选择角色模板
-async function handleConfirmTemplateSelect() {
-  const selectedTemplates = roleTemplates.value.filter(t => t.checked)
-  // console.log('选择的角色模板:', selectedTemplates)
-
-  // 获取当前已选中的权限ID（从权限树中获取）
-  const existingMenuIds = new Set<number>(getCurrentSelectedMenuIds())
-  // console.log('现有权限ID:', Array.from(existingMenuIds))
-
-  // 收集新选中模板的权限ID
-  const newSelectedMenuIds = new Set<number>()
-
-  selectedTemplates.forEach(template => {
-    if (template.menuIds && Array.isArray(template.menuIds)) {
-      template.menuIds.forEach(menuId => {
-        if (typeof menuId === 'number') {
-          newSelectedMenuIds.add(menuId)
-        }
-      })
-    }
-  })
-
-  // console.log('新增权限ID:', Array.from(newSelectedMenuIds))
-
-  // 合并现有权限和新权限（使用Set自动去重）
-  const allMenuIds = new Set<number>([...existingMenuIds, ...newSelectedMenuIds])
-  const finalMenuIdsArray = Array.from(allMenuIds)
-
-  // console.log('合并后的权限ID:', finalMenuIdsArray)
-
-  if (finalMenuIdsArray.length > 0) {
-    // 更新表单状态
-    formState.menuIds = finalMenuIdsArray
-
-    // 设置权限树的选中状态（在现有基础上新增）
-    setDefaultCheckedByIds(finalMenuIdsArray)
-
-    console.log('应用模板权限 - 总计:', finalMenuIdsArray.length, '个权限')
-  }
-
-  // 先关闭下拉框，再清除验证错误
-  templateDropdownVisible.value = false
-
-  // 等待下一个tick后清除权限验证错误
-  nextTick(() => {
-    clearPermissionValidation()
-  })
-
-  // 重置搜索关键词
-  templateSearchValue.value = ''
-
-  // 重置所有角色模板的选中状态
-  roleTemplates.value.forEach(template => {
-    template.checked = false
-  })
-}
-
 // 响应式布局
 const { isMobile, isPad, isDesktop } = useQueryBreakpoints()
 
@@ -513,87 +370,7 @@ const drawerWidth = computed(() => {
               message: '请选择功能与权限',
             },
           ]">
-            <div class="flex justify-between justify-between items-center">
-              <div>
-                <a-dropdown v-model:open="templateDropdownVisible" >
-                  <template #overlay>
-                    <div class="role-template-dropdown "
-                      style="width: 220px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
-                      @click.stop>
-                      <!-- 搜索框 -->
-                      <div class="p-12px border-b border-#f0f0f0">
-                        <a-form-item-rest>
-                          <a-input v-model:value="templateSearchValue" placeholder="请输入角色名称" @click.stop>
-                            <template #prefix>
-                              <SearchOutlined class="text-#bfbfbf" />
-                            </template>
-                          </a-input>
-                        </a-form-item-rest>
-                      </div>
-
-                      <!-- 角色列表 -->
-                      <div class="max-h-200px overflow-y-auto scrollbar">
-                        <template v-if="templatesLoading">
-                          <div class="p-16px text-center text-#666">
-                            <a-spin size="small" />
-                            <span class="ml-8px">加载角色模板中...</span>
-                          </div>
-                        </template>
-                        <template v-else-if="filteredRoleTemplates.length > 0">
-                          <div v-for="template in filteredRoleTemplates" :key="template.key"
-                            class="p-8px px-12px hover:bg-#f5f5f5 cursor-pointer flex items-center" @click.stop>
-                            <a-form-item-rest>
-                              <a-checkbox :checked="template.checked"
-                                @change="(e) => handleTemplateCheckChange(template.key, e.target.checked)" @click.stop
-                                class="mr-8px" />
-                            </a-form-item-rest>
-                            <div class="flex flex-col flex-1">
-                              <span class="text-14px text-#333">{{ template.label }}</span>
-                              <span v-if="template.description" class="text-12px text-#999 mt-2px">{{
-                                template.description }}</span>
-                            </div>
-                          </div>
-                        </template>
-                        <template v-else>
-                          <div class="p-16px text-center text-#999">
-                            暂无角色模板
-                          </div>
-                        </template>
-                      </div>
-
-                      <!-- 确定按钮 -->
-                      <div class="p-12px border-t border-#f0f0f0">
-                        <a-button type="primary" block @click="handleConfirmTemplateSelect">
-                          确定
-                        </a-button>
-                      </div>
-                    </div>
-                  </template>
-                  <a-button type="primary" ghost :style="{ width: isMobile ? '140px' : '120px', borderRadius: '8px' }">
-                    使用角色模版
-                  </a-button>
-                </a-dropdown>
-                <a-popover title="说明">
-                  <template #content>
-                    <div class="text-12px text-#222">
-                      选择角色模板，再进行调整的规则如下：
-                    </div>
-                    <div class="text-12px text-#222">
-                      1、支持同时选择多个角色模板
-                    </div>
-                    <div class="text-12px text-#222">
-                      2、每次勾选都是在现有基础上新增权限
-                    </div>
-                    <div class="text-12px text-#222">
-                      3、不会覆盖已手动选择的权限
-                    </div>
-                    <div class="text-12px text-#222">
-                      4、如需重新设置，可点击"清空已选"
-                    </div>
-                  </template>
-                  <QuestionCircleOutlined class="text-#06f ml-12px" />
-                </a-popover>
-              </div>
+            <div class="flex justify-end items-center">
               <a-button type="link" @click="toggleAllExpand">
                 {{ isAllExpanded ? "一键收起" : "一键展开" }}
                 <component :is="isAllExpanded ? UpOutlined : DownOutlined" />

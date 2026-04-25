@@ -43,6 +43,26 @@ func (svc *Service) CurrentTenant(ctx tenant.Context) customization.TenantProfil
 	return svc.store.Get(ctx.TenantID)
 }
 
+func (svc *Service) resolveDefaultManageTenantForUser(ctx context.Context, userID int64) (string, error) {
+	platformRoles, err := svc.repo.GetUserRoleIDs(ctx, userID, 1, 0)
+	if err != nil {
+		return "", err
+	}
+	if len(platformRoles) > 0 {
+		return "platform", nil
+	}
+
+	platformMenus, err := svc.repo.GetUserMenuCodes(ctx, userID, 1, 0, 0)
+	if err != nil {
+		return "", err
+	}
+	if len(platformMenus) > 0 {
+		return "platform", nil
+	}
+
+	return "", nil
+}
+
 func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent, userIP string) (model.LoginResult, error) {
 	if tenantID, err := svc.repo.ResolveTenantIDByDomain(context.Background(), ctx.Host); err != nil {
 		return model.LoginResult{}, err
@@ -108,6 +128,17 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return model.LoginResult{}, errors.New("登录失败,用户名或密码错误")
+	}
+
+	if loginType == "manage" && ctx.TenantSource == "default" {
+		resolvedTenantID, resolveErr := svc.resolveDefaultManageTenantForUser(context.Background(), user.ID)
+		if resolveErr != nil {
+			return model.LoginResult{}, resolveErr
+		}
+		if resolvedTenantID != "" {
+			ctx.TenantID = resolvedTenantID
+			ctx.TenantSource = "user-scope"
+		}
 	}
 
 	userInfo, roles, menus, orgID, orgName, err := svc.loadLoginContext(ctx, user, loginType, selectedOrgID)
@@ -324,6 +355,7 @@ func sanitizeManageUserMutation(req model.ManageUserMutationRequest, requirePass
 	req.Mobile = strings.TrimSpace(req.Mobile)
 	req.NickName = strings.TrimSpace(req.NickName)
 	req.Password = strings.TrimSpace(req.Password)
+	req.Avatar = strings.TrimSpace(req.Avatar)
 	if req.NickName == "" {
 		return req, errors.New("请输入员工姓名")
 	}
@@ -1709,16 +1741,6 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
-		tenantRole, tenantType, err := svc.repo.GetTenantUserScope(context.Background(), user.ID, ctx.TenantID)
-		if err != nil {
-			return nil, nil, nil, nil, nil, err
-		}
-		if tenantRole == "" && !info.IsAdmin {
-			return nil, nil, nil, nil, nil, errors.New("当前域名不是该账号的后台管理地址")
-		}
-		info.TenantID = ctx.TenantID
-		info.TenantRole = tenantRole
-		info.TenantType = tenantType
 		manageOrgID, err := svc.repo.ResolveManageOrgID(context.Background(), ctx.TenantID)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
@@ -1727,6 +1749,22 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
+		tenantRole, tenantType, err := svc.repo.GetTenantUserScope(context.Background(), user.ID, ctx.TenantID)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+		if tenantRole == "" && (len(roleList) > 0 || len(info.MenuCodeList) > 0) {
+			tenantRole = "tenant_admin"
+			if strings.TrimSpace(ctx.TenantID) == "platform" {
+				tenantRole = "platform_admin"
+			}
+		}
+		if tenantRole == "" && !info.IsAdmin {
+			return nil, nil, nil, nil, nil, errors.New("当前域名不是该账号的后台管理地址")
+		}
+		info.TenantID = ctx.TenantID
+		info.TenantRole = tenantRole
+		info.TenantType = tenantType
 		if tenantRole != "" && len(info.MenuCodeList) == 0 {
 			info.MenuCodeList = []string{tenantRole}
 		}

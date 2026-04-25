@@ -1,7 +1,9 @@
 <!-- 新增员工 -->
-<script setup>
+<script setup lang="ts">
 import { CloseOutlined } from '@ant-design/icons-vue'
 import { TreeSelect, message } from 'ant-design-vue'
+import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
+import * as qiniu from 'qiniu-js'
 import selectRole from './selectRole.vue'
 import { checkInstUserLoginAccountAvailableApi, saveInstUser } from '@/api/internal-manage/staff-manage'
 import { getInstRolePageApi, updateRoleApi } from '@/api/internal-manage/role-manage'
@@ -9,6 +11,8 @@ import RolesDetailsDrawer from '@/components/common/roles-details-drawer.vue'
 import messageService from '~@/utils/messageService'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import { useThrottleFn } from '@vueuse/core'
+import { getQiniuToken } from '@/api/qiniu'
+import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 
 const props = defineProps({
   departmentList: {
@@ -27,6 +31,7 @@ const roleDetailsOpen = ref(false)
 const currentRoleId = ref(null)
 const currentRoleDetails = ref({})
 const confirmLoading = ref(false)
+const avatarUploading = ref(false)
 
 const roleInfos = ref()
 
@@ -41,8 +46,7 @@ const formState = reactive({
   nickName: '', // 员工姓名
   mobile: '', // 员工手机号
   deptIds: [], // 所属部门 - 初始为空，将在modal打开时设置
-  disabled: 0, // 是否禁用,
-  userType: '1', // 总控后台固定为内部员工
+  disabled: false, // false: 在职中, true: 已离职
   avatar: '', // 头像
   roleIds: [], // 角色
 })
@@ -121,6 +125,7 @@ const handleOk = useThrottleFn(async () => {
     }
   } catch (error) {
     console.log('新增员工失败:', error)
+    messageService.error(error?.response?.data?.message || error?.message || '新增员工失败')
   } finally {
     confirmLoading.value = false
   }
@@ -171,17 +176,67 @@ function cancel() {
   formState.roleIds = []
 }
 
-// 头像上传处理
-function handleAvatarChange(info) {
-  // 处理头像上传逻辑
-  console.log('头像上传:', info)
+function beforeAvatarUpload(file: File) {
+  if (!file.type?.startsWith('image/')) {
+    messageService.warning('请上传图片格式的头像')
+    return false
+  }
+  return true
+}
+
+async function handleAvatarUpload(options: UploadRequestOption) {
+  const rawFile = options.file as File
+  if (!rawFile || !beforeAvatarUpload(rawFile)) {
+    options.onError?.(new Error('invalid file'))
+    return
+  }
+
+  avatarUploading.value = true
+  try {
+    const tokenRes: any = await getQiniuToken()
+    const { token, uuid, buckethostname } = tokenRes.result || {}
+    if (!token || !uuid || !buckethostname)
+      throw new Error(tokenRes?.message || '获取上传凭证失败')
+    validateUploadFileByToken(rawFile, tokenRes.result, '员工头像')
+
+    const ext = rawFile.name.includes('.') ? rawFile.name.slice(rawFile.name.lastIndexOf('.')) : '.png'
+    const key = `staff/avatar/${uuid}${ext}`
+    const observable = qiniu.upload(rawFile, key, token, {
+      fname: rawFile.name,
+      mimeType: rawFile.type,
+    }, {
+      useCdnDomain: true,
+      region: qiniu.region.z0,
+    })
+
+    observable.subscribe({
+      error(error) {
+        console.error('upload staff avatar failed', error)
+        messageService.error(resolveUploadErrorMessage(error, '员工头像上传失败'))
+        avatarUploading.value = false
+        options.onError?.(error)
+      },
+      complete(result) {
+        formState.avatar = `${buckethostname}${result.key}`
+        avatarUploading.value = false
+        messageService.success('员工头像上传成功')
+        options.onSuccess?.(result as any)
+      },
+    })
+  }
+  catch (error) {
+    console.error('prepare staff avatar upload failed', error)
+    messageService.error(resolveUploadErrorMessage(error, '员工头像上传失败'))
+    avatarUploading.value = false
+    options.onError?.(error as any)
+  }
 }
 
 // 监听modal打开状态
 watch(() => open.value, (newVal) => {
   if (newVal && props.departmentList.length > 0) {
     // 当modal打开且部门列表有数据时，设置默认选中的部门为第一个部门（顶级部门）
-    formState.deptIds = [props.departmentList[0]?.id]
+    formState.deptIds = [(props.departmentList[0] as any)?.id]
   }
   // 当modal关闭时，重置角色选择状态
   if (!newVal) {
@@ -194,7 +249,7 @@ watch(() => open.value, (newVal) => {
 watch(() => props.departmentList, (newList) => {
   if (open.value && newList.length > 0) {
     // 如果modal已打开且部门列表有变化，设置默认部门
-    formState.deptIds = [newList[0]?.id]
+    formState.deptIds = [(newList[0] as any)?.id]
   }
 }, { immediate: true })
 
@@ -227,15 +282,17 @@ onMounted(async () => {
             <a-form-item>
               <div class="flex items-center gap-20px">
                 <div class="upload-area">
-                  <div class="text-#fff text-20px font-medium">
+                  <img v-if="formState.avatar" :src="formState.avatar" class="avatar-image" alt="头像">
+                  <div v-else class="text-#fff text-20px font-medium">
                     {{ formState.nickName ? formState.nickName[0] : '-' }}
                   </div>
                 </div>
                 <a-upload
-                  name="avatar" list-type="picture-circle" :show-upload-list="false"
-                  @change="handleAvatarChange"
+                  name="avatar" :show-upload-list="false"
+                  :custom-request="handleAvatarUpload"
+                  :before-upload="beforeAvatarUpload"
                 >
-                  <a-button>
+                  <a-button :loading="avatarUploading">
                     上传照片
                   </a-button>
                 </a-upload>
@@ -274,7 +331,7 @@ onMounted(async () => {
             <!-- 账号状态 -->
             <a-form-item label="账号状态：" :required="true">
               <a-radio-group v-model:value="formState.disabled" class="custom-radio">
-                <a-radio :value="0">
+                <a-radio :value="false">
                   在职中
                 </a-radio>
                 <!-- <a-radio value="1">
@@ -408,6 +465,13 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  overflow: hidden;
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 :deep(.modal-wrap .ant-modal) {

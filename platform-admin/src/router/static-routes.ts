@@ -66,6 +66,28 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/internal-manage/staff-manage',
+    name: 'StaffManage',
+    component: () => import('~/pages/internal-manage/staff-manage.vue'),
+    meta: {
+      title: '员工管理',
+      hideInMenu: true,
+      access: [PlatformAccessEnum.internalStaff],
+      hideInBreadcrumb: true,
+    },
+  },
+  {
+    path: '/internal-manage/role-manage',
+    name: 'RoleManage',
+    component: () => import('~/pages/internal-manage/role-manage.vue'),
+    meta: {
+      title: '角色管理',
+      hideInMenu: true,
+      access: [PlatformAccessEnum.internalRole],
+      hideInBreadcrumb: true,
+    },
+  },
+  {
     path: '/platform/login-templates',
     name: 'PlatformLoginTemplates',
     component: () => import('~/pages/platform/login-templates/index.vue'),
