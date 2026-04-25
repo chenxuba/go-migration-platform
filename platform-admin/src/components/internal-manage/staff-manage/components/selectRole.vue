@@ -2,11 +2,11 @@
 <script setup>
 import createRolesDrawer from '@/components/common/create-roles-drawer.vue'
 import { useConsoleOwnType } from '@/utils/console-permission'
-import { saveRoleApi, getInstRolePageApi, getMenuListApi } from '@/api/internal-manage/role-manage'
+import { saveRoleApi, getInstRolePageApi, getFullMenuListApi } from '@/api/internal-manage/role-manage'
 import messageService from '@/utils/messageService'
 import emitter, { EVENTS } from '@/utils/eventBus'
 
-const { selectRoleList, roleInfos } = defineProps({
+const props = defineProps({
   selectRoleList: {
     type: Array,
     default: () => [],
@@ -25,12 +25,13 @@ const open = defineModel({
 })
 
 const createRoleOpen = ref(false)
+const consoleOwnType = useConsoleOwnType()
 
 // 展开的角色
 const activeRoles = ref([])
 
 // 选中的角色
-const selectRole = ref(selectRoleList)
+const selectRole = ref(props.selectRoleList)
 
 // 存储所有菜单数据
 const allMenus = ref([])
@@ -102,7 +103,7 @@ async function refreshRoleList(newRoleId) {
     const rolesRes = await getInstRolePageApi(pages)
     if (rolesRes.code === 200) {
       // Update the parent component with the new role list
-      emit('update:roleInfos', rolesRes.result || [])
+      emit('update:roleInfos', rolesRes.result?.items || rolesRes.result || [])
       
       // Add the new role to the selected roles if available
       if (newRoleId) {
@@ -148,8 +149,9 @@ function buildMenuTree(menuIds, allMenus) {
     if (menuIdSet.has(menu.id) || menuIdSet.has(menu.menuId)) {
       return true
     }
-    if (menu.children && menu.children.length > 0) {
-      return menu.children.some(child => hasMenuPermission(child, menuIdSet))
+    const children = menu.children || menu.childList || []
+    if (children.length > 0) {
+      return children.some(child => hasMenuPermission(child, menuIdSet))
     }
     return false
   }
@@ -162,7 +164,8 @@ function buildMenuTree(menuIds, allMenus) {
       .filter(menu => {
         // 检查当前菜单是否有权限或其子菜单有权限
         const hasPermission = menuIdSet.has(menu.id) || menuIdSet.has(menu.menuId)
-        const hasChildPermission = menu.children && menu.children.some(child => 
+        const children = menu.children || menu.childList || []
+        const hasChildPermission = children.some(child => 
           hasMenuPermission(child, menuIdSet)
         )
         return hasPermission || hasChildPermission
@@ -178,8 +181,9 @@ function buildMenuTree(menuIds, allMenus) {
         }
         
         // 递归处理子菜单
-        if (menu.children && menu.children.length > 0) {
-          newMenu.children = processMenus(menu.children, level + 1)
+        const children = menu.children || menu.childList || []
+        if (children.length > 0) {
+          newMenu.children = processMenus(children, level + 1)
         } else {
           newMenu.children = []
         }
@@ -193,12 +197,15 @@ function buildMenuTree(menuIds, allMenus) {
 
 // 预加载所有角色的权限数据
 async function preloadAllRoleMenus() {
-  if (!roleInfos || roleInfos.length === 0) {
+  const roles = Array.isArray(props.roleInfos) ? props.roleInfos : []
+  if (roles.length === 0) {
     return
   }
 
+  roleMenusMap.value = new Map()
+
   // 直接处理角色数据，不需要额外API调用
-  roleInfos.forEach((roleInfo) => {
+  roles.forEach((roleInfo) => {
     try {
       // 获取角色的权限ID列表
       const menuIds = roleInfo.menuIds || []
@@ -224,7 +231,7 @@ function loadSingleRoleMenu(roleId) {
 
   try {
     // 从roleInfos中找到对应的角色
-    const roleInfo = roleInfos.find(role => role.id === roleId)
+    const roleInfo = props.roleInfos.find(role => role.id === roleId)
     if (roleInfo) {
       // 获取角色的权限ID列表
       const menuIds = roleInfo.menuIds || []
@@ -264,7 +271,7 @@ watch(
   async (val) => {
     if (val) {
       activeRoles.value = []
-      selectRole.value = selectRoleList
+      selectRole.value = props.selectRoleList
       // 查询权限树
       await getMenuList()
     }
@@ -292,7 +299,7 @@ watch(
           class="w-100% flex-col h-500px flex-nowrap overflow-y-auto scrollbar"
         >
           <div
-            v-for="roleInfo in roleInfos" :key="roleInfo.id"
+            v-for="roleInfo in props.roleInfos" :key="roleInfo.id"
             class="border-t-1px border-#eee border-solid border-0px"
           >
             <div class="flex justify-between px-25px py-15px">
