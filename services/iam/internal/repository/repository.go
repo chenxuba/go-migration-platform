@@ -1663,19 +1663,19 @@ func (repo *Repository) CreateManageUser(ctx context.Context, input model.Manage
 	if username == "" || strings.TrimSpace(input.NickName) == "" || strings.TrimSpace(input.Mobile) == "" {
 		return 0, errors.New("员工姓名、手机号不能为空")
 	}
-	availability, err := repo.CheckManageUsernameAvailable(ctx, username, nil)
+	availability, err := repo.CheckManageUsernameAvailable(ctx, username, nil, orgID)
 	if err != nil {
 		return 0, err
 	}
 	if !availability.Available {
 		return 0, errors.New(firstNonEmptyString(availability.Message, "登录账号已存在"))
 	}
-	existsMobile, err := repo.consoleMobileExists(ctx, input.Mobile, nil)
+	existsMobile, err := repo.manageMobileExistsInOrg(ctx, input.Mobile, nil, orgID)
 	if err != nil {
 		return 0, err
 	}
 	if existsMobile {
-		return 0, errors.New("手机号已存在")
+		return 0, errors.New("当前后台已存在该手机号，请更换")
 	}
 	deptID := firstInt64(input.DeptIDs)
 	tx, err := repo.db.BeginTx(ctx, nil)
@@ -1683,16 +1683,37 @@ func (repo *Repository) CreateManageUser(ctx context.Context, input model.Manage
 		return 0, err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `
-		INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, dept_id, is_admin, disabled, del_flag, create_time, update_time)
-		VALUES (?, 0, ?, ?, ?, ?, ?, 0, NULLIF(?, 0), 0, ?, 0, NOW(), NOW())
-	`, buildUUID(time.Now().UnixNano()), username, input.Password, input.Mobile, input.Avatar, input.NickName, deptID, input.Disabled)
+	userID, err := repo.findReusableManageUserIDTx(ctx, tx, username, input.Mobile)
 	if err != nil {
 		return 0, err
 	}
-	userID, err := result.LastInsertId()
-	if err != nil {
-		return 0, err
+	if userID > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE sso_user
+			SET mobile = CASE WHEN ? = '' THEN mobile ELSE ? END,
+			    avatar = CASE WHEN ? = '' THEN avatar ELSE ? END,
+			    nick_name = ?,
+			    user_type = 0,
+			    dept_id = NULLIF(?, 0),
+			    is_admin = 0,
+			    disabled = ?,
+			    update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, input.Mobile, input.Mobile, input.Avatar, input.Avatar, input.NickName, deptID, input.Disabled, userID); err != nil {
+			return 0, err
+		}
+	} else {
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, dept_id, is_admin, disabled, del_flag, create_time, update_time)
+			VALUES (?, 0, ?, ?, ?, ?, ?, 0, NULLIF(?, 0), 0, ?, 0, NOW(), NOW())
+		`, buildUUID(time.Now().UnixNano()), username, input.Password, input.Mobile, input.Avatar, input.NickName, deptID, input.Disabled)
+		if err != nil {
+			return 0, err
+		}
+		userID, err = result.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
 	}
 	if err := repo.replaceManageUserRolesTx(ctx, tx, userID, input.RoleIDs, orgID); err != nil {
 		return 0, err
@@ -1709,19 +1730,19 @@ func (repo *Repository) UpdateManageUser(ctx context.Context, input model.Manage
 	}
 	userID := *input.ID
 	username := firstNonEmptyString(input.Username, input.Mobile)
-	availability, err := repo.CheckManageUsernameAvailable(ctx, username, &userID)
+	availability, err := repo.CheckManageUsernameAvailable(ctx, username, &userID, orgID)
 	if err != nil {
 		return err
 	}
 	if !availability.Available {
 		return errors.New(firstNonEmptyString(availability.Message, "登录账号已存在"))
 	}
-	existsMobile, err := repo.consoleMobileExists(ctx, input.Mobile, &userID)
+	existsMobile, err := repo.manageMobileExistsInOrg(ctx, input.Mobile, &userID, orgID)
 	if err != nil {
 		return err
 	}
 	if existsMobile {
-		return errors.New("手机号已存在")
+		return errors.New("当前后台已存在该手机号，请更换")
 	}
 	deptID := firstInt64(input.DeptIDs)
 	tx, err := repo.db.BeginTx(ctx, nil)
@@ -1848,17 +1869,68 @@ func int64Placeholders(values []int64) (string, []any) {
 	return strings.Join(parts, ","), args
 }
 
+func (repo *Repository) findReusableManageUserIDTx(ctx context.Context, tx *sql.Tx, username, mobile string) (int64, error) {
+	username = strings.TrimSpace(username)
+	mobile = strings.TrimSpace(mobile)
+	if username == "" && mobile == "" {
+		return 0, nil
+	}
+	var userID int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM sso_user
+		WHERE del_flag = 0 AND ((? <> '' AND username = ?) OR (? <> '' AND mobile = ?))
+		ORDER BY CASE WHEN username = ? THEN 0 WHEN mobile = ? THEN 1 ELSE 2 END, id
+		LIMIT 1
+	`, username, username, mobile, mobile, username, mobile).Scan(&userID)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
+func (repo *Repository) manageMobileExistsInOrg(ctx context.Context, mobile string, excludeUserID *int64, orgID int64) (bool, error) {
+	mobile = strings.TrimSpace(mobile)
+	if mobile == "" || orgID <= 0 {
+		return false, nil
+	}
+	query := `
+		SELECT COUNT(1)
+		FROM sso_user su
+		WHERE su.del_flag = 0
+		  AND su.mobile = ?
+		  AND EXISTS (
+		    SELECT 1
+		    FROM sso_user_role ur
+		    JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+		    WHERE ur.user_id = su.id AND r.role_type = 0 AND r.org_id = ?
+		  )`
+	args := []any{mobile, orgID}
+	if excludeUserID != nil && *excludeUserID > 0 {
+		query += ` AND su.id <> ?`
+		args = append(args, *excludeUserID)
+	}
+	var count int
+	if err := repo.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (repo *Repository) ChangeManageUserPhone(ctx context.Context, userID int64, mobile string, orgID int64) error {
 	mobile = strings.TrimSpace(mobile)
 	if userID <= 0 || mobile == "" {
 		return errors.New("参数错误")
 	}
-	existsMobile, err := repo.consoleMobileExists(ctx, mobile, &userID)
+	existsMobile, err := repo.manageMobileExistsInOrg(ctx, mobile, &userID, orgID)
 	if err != nil {
 		return err
 	}
 	if existsMobile {
-		return errors.New("手机号已被占用")
+		return errors.New("当前后台已存在该手机号，请更换")
 	}
 	result, err := repo.db.ExecContext(ctx, `
 		UPDATE sso_user u
@@ -1991,8 +2063,8 @@ func (repo *Repository) CheckGovernmentUsernameAvailable(ctx context.Context, us
 	}, nil
 }
 
-func (repo *Repository) CheckManageUsernameAvailable(ctx context.Context, username string, excludeUserID *int64) (model.GovernmentUsernameAvailability, error) {
-	available, message, err := repo.checkManageUsernameAvailable(ctx, repo.db, username, excludeUserID)
+func (repo *Repository) CheckManageUsernameAvailable(ctx context.Context, username string, excludeUserID *int64, orgID int64) (model.GovernmentUsernameAvailability, error) {
+	available, message, err := repo.checkManageUsernameAvailable(ctx, repo.db, username, excludeUserID, orgID)
 	if err != nil {
 		return model.GovernmentUsernameAvailability{}, err
 	}
@@ -2003,37 +2075,54 @@ func (repo *Repository) CheckManageUsernameAvailable(ctx context.Context, userna
 	}, nil
 }
 
-func (repo *Repository) checkManageUsernameAvailable(ctx context.Context, queryer usernameAvailabilityQueryer, username string, excludeUserID *int64) (bool, string, error) {
+func (repo *Repository) checkManageUsernameAvailable(ctx context.Context, queryer usernameAvailabilityQueryer, username string, excludeUserID *int64, orgID int64) (bool, string, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return false, "登录账号不能为空", nil
 	}
+	if orgID <= 0 {
+		return false, "后台组织不存在", nil
+	}
+
 	query := `
 		SELECT su.id
 		FROM sso_user su
 		WHERE su.del_flag = 0
 		  AND su.username = ?
-		  AND (
-		    EXISTS (SELECT 1 FROM tenant_user tu WHERE tu.user_id = su.id AND tu.del_flag = 0)
-		    OR EXISTS (
-		      SELECT 1
-		      FROM sso_user_role ur
-		      JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
-		      WHERE ur.user_id = su.id AND r.role_type IN (0, 3)
-		    )
-		    OR EXISTS (SELECT 1 FROM government_user_profile gup WHERE gup.user_id = su.id AND gup.del_flag = 0)
+		  AND EXISTS (
+		    SELECT 1
+		    FROM sso_user_role ur
+		    JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+		    WHERE ur.user_id = su.id AND r.role_type = 0 AND r.org_id = ?
 		  )
 		ORDER BY su.id
 		LIMIT 1
 	`
 	var userID int64
-	err := queryer.QueryRowContext(ctx, query, username).Scan(&userID)
+	err := queryer.QueryRowContext(ctx, query, username, orgID).Scan(&userID)
 	if err != nil && err != sql.ErrNoRows {
 		return false, "", err
 	}
 	if err == nil {
 		if excludeUserID == nil || *excludeUserID <= 0 || userID != *excludeUserID {
-			return false, "登录账号已存在，请更换", nil
+			return false, "当前后台已存在该登录账号，请更换", nil
+		}
+		return true, "", nil
+	}
+
+	err = queryer.QueryRowContext(ctx, `
+		SELECT id
+		FROM sso_user
+		WHERE del_flag = 0 AND (username = ? OR mobile = ?)
+		ORDER BY CASE WHEN username = ? THEN 0 WHEN mobile = ? THEN 1 ELSE 2 END, id
+		LIMIT 1
+	`, username, username, username, username).Scan(&userID)
+	if err != nil && err != sql.ErrNoRows {
+		return false, "", err
+	}
+	if err == nil {
+		if excludeUserID == nil || *excludeUserID <= 0 || userID != *excludeUserID {
+			return true, "该账号已存在，保存后将开通当前后台员工身份，密码沿用原密码", nil
 		}
 	}
 	return true, "", nil

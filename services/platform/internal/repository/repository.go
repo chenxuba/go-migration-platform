@@ -2281,12 +2281,14 @@ func (repo *Repository) upsertTenantAdminTx(ctx context.Context, tx *sql.Tx, ten
 	if username == "" {
 		return errors.New("登录账号不能为空")
 	}
-	if err := ensureAccountNotInstitutionLoginName(ctx, tx, username); err != nil {
-		return err
-	}
-
 	var userID int64
-	err := tx.QueryRowContext(ctx, `SELECT id FROM sso_user WHERE del_flag = 0 AND username = ? LIMIT 1`, username).Scan(&userID)
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM sso_user
+		WHERE del_flag = 0 AND ((? <> '' AND username = ?) OR (? <> '' AND mobile = ?))
+		ORDER BY CASE WHEN username = ? THEN 0 WHEN mobile = ? THEN 1 ELSE 2 END, id
+		LIMIT 1
+	`, username, username, mobile, mobile, username, mobile).Scan(&userID)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
@@ -2310,28 +2312,13 @@ func (repo *Repository) upsertTenantAdminTx(ctx context.Context, tx *sql.Tx, ten
 			return insErr
 		}
 	} else {
-		ownedByTenant, ownErr := tenantAdminUserBelongsToTenantTx(ctx, tx, tenantID, userID)
-		if ownErr != nil {
-			return ownErr
-		}
-		if !ownedByTenant {
-			return errors.New("登录账号已存在，请更换")
-		}
-		if password != "" {
-			hashBytes, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-			if hashErr != nil {
-				return hashErr
-			}
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE sso_user
-				SET password = ?, mobile = CASE WHEN ? = '' THEN mobile ELSE ? END, nick_name = ?, user_type = 0, is_admin = 0, update_time = NOW()
-				WHERE id = ? AND del_flag = 0
-			`, string(hashBytes), mobile, mobile, nickName, userID); err != nil {
-				return err
-			}
-		} else if _, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, `
 			UPDATE sso_user
-			SET mobile = CASE WHEN ? = '' THEN mobile ELSE ? END, nick_name = ?, user_type = 0, is_admin = 0, update_time = NOW()
+			SET mobile = CASE WHEN ? = '' THEN mobile ELSE ? END,
+			    nick_name = ?,
+			    user_type = 0,
+			    is_admin = 0,
+			    update_time = NOW()
 			WHERE id = ? AND del_flag = 0
 		`, mobile, mobile, nickName, userID); err != nil {
 			return err
@@ -2406,14 +2393,6 @@ func (repo *Repository) CheckTenantAdminUsernameAvailable(ctx context.Context, u
 		result.Message = "请输入登录账号"
 		return result, nil
 	}
-	if err := ensureAccountNotInstitutionLoginName(ctx, repo.db, username); err != nil {
-		if err.Error() == "登录账号已存在，请更换" {
-			result.Message = err.Error()
-			return result, nil
-		}
-		return result, err
-	}
-
 	var userID int64
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT id
@@ -2446,7 +2425,8 @@ func (repo *Repository) CheckTenantAdminUsernameAvailable(ctx context.Context, u
 		}
 	}
 
-	result.Message = "登录账号已存在，请更换"
+	result.Available = true
+	result.Message = "该账号已存在，保存后将开通当前租户子总控身份，密码沿用原密码"
 	return result, nil
 }
 

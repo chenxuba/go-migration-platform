@@ -593,7 +593,7 @@ async function validateAdminUsernameOnBlur() {
       return false
     }
     adminUsernameValidateStatus.value = 'success'
-    adminUsernameHelp.value = '登录账号可用'
+    adminUsernameHelp.value = payload.message || '登录账号可用'
     return true
   }
   catch (error: any) {

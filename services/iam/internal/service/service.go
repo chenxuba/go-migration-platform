@@ -439,8 +439,15 @@ func (svc *Service) CheckGovernmentUsernameAvailable(username string, userID *in
 	return svc.repo.CheckGovernmentUsernameAvailable(context.Background(), username, userID)
 }
 
-func (svc *Service) CheckManageUsernameAvailable(username string, userID *int64) (model.GovernmentUsernameAvailability, error) {
-	return svc.repo.CheckManageUsernameAvailable(context.Background(), username, userID)
+func (svc *Service) CheckManageUsernameAvailable(claims authx.Claims, username string, userID *int64) (model.GovernmentUsernameAvailability, error) {
+	if claims.LoginType != "manage" {
+		return model.GovernmentUsernameAvailability{}, errors.New("无权限")
+	}
+	orgID, err := svc.resolveOrgID(claims, nil)
+	if err != nil {
+		return model.GovernmentUsernameAvailability{}, err
+	}
+	return svc.repo.CheckManageUsernameAvailable(context.Background(), username, userID, orgID)
 }
 
 func (svc *Service) GetGovernmentUserDetail(id int64) (model.GovernmentUserDetail, error) {

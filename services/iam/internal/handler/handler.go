@@ -459,7 +459,7 @@ func (handler *Handler) governmentUsernameAvailable(w http.ResponseWriter, r *ht
 	var result model.GovernmentUsernameAvailability
 	var err error
 	if strings.Contains(r.URL.Path, "/manage-users/") {
-		result, err = handler.service.CheckManageUsernameAvailable(username, userID)
+		result, err = handler.service.CheckManageUsernameAvailable(claims, username, userID)
 	} else {
 		result, err = handler.service.CheckGovernmentUsernameAvailable(username, userID)
 	}
