@@ -1575,6 +1575,28 @@ func (repo *Repository) listConsoleUsers(ctx context.Context, current, size int,
 	}, rows.Err()
 }
 
+func normalizeDateTimeLowerBound(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if len(value) == len("2006-01-02") {
+		return value + " 00:00:00"
+	}
+	return value
+}
+
+func normalizeDateTimeUpperBound(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if len(value) == len("2006-01-02") {
+		return value + " 23:59:59"
+	}
+	return value
+}
+
 func (repo *Repository) PageManageUsers(ctx context.Context, current, size int, query model.ManageUserQueryRequest, orgID int64) (model.ManageUserPage, error) {
 	if current <= 0 {
 		current = 1
@@ -1585,6 +1607,10 @@ func (repo *Repository) PageManageUsers(ctx context.Context, current, size int, 
 	offset := (current - 1) * size
 	filters := []string{"u.del_flag = 0"}
 	args := make([]any, 0, 8)
+	if query.ID != nil && *query.ID > 0 {
+		filters = append(filters, "u.id = ?")
+		args = append(args, *query.ID)
+	}
 	keyword := strings.TrimSpace(query.SearchKey)
 	if keyword != "" {
 		filters = append(filters, "(u.username LIKE ? OR u.nick_name LIKE ? OR u.mobile LIKE ?)")
@@ -1594,6 +1620,23 @@ func (repo *Repository) PageManageUsers(ctx context.Context, current, size int, 
 	if query.DeptID != nil && *query.DeptID > 0 {
 		filters = append(filters, "u.dept_id = ?")
 		args = append(args, *query.DeptID)
+	}
+	if begin := normalizeDateTimeLowerBound(query.CreateTimeBegin); begin != "" {
+		filters = append(filters, "u.create_time >= ?")
+		args = append(args, begin)
+	}
+	if end := normalizeDateTimeUpperBound(query.CreateTimeEnd); end != "" {
+		filters = append(filters, "u.create_time <= ?")
+		args = append(args, end)
+	}
+	if placeholders, roleArgs := int64Placeholders(query.RoleIDs); len(roleArgs) > 0 {
+		filters = append(filters, `EXISTS (
+			SELECT 1 FROM sso_user_role rur
+			JOIN sso_role rr ON rr.id = rur.role_id
+			WHERE rur.user_id = u.id AND rr.del_flag = 0 AND rr.role_type = 0 AND rr.org_id = ? AND rr.id IN (`+placeholders+`)
+		)`)
+		args = append(args, orgID)
+		args = append(args, roleArgs...)
 	}
 	if strings.TrimSpace(query.Status) != "" {
 		switch strings.TrimSpace(query.Status) {

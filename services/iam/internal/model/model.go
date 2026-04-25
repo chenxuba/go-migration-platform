@@ -164,9 +164,13 @@ type ManageUserPageRequest struct {
 }
 
 type ManageUserQueryRequest struct {
-	SearchKey string `json:"searchKey"`
-	Status    string `json:"status"`
-	DeptID    *int64 `json:"deptId,omitempty"`
+	ID              *int64  `json:"id,omitempty"`
+	SearchKey       string  `json:"searchKey"`
+	Status          string  `json:"status"`
+	DeptID          *int64  `json:"deptId,omitempty"`
+	RoleIDs         []int64 `json:"roleIds,omitempty"`
+	CreateTimeBegin string  `json:"createTimeBegin,omitempty"`
+	CreateTimeEnd   string  `json:"createTimeEnd,omitempty"`
 }
 
 type ManageUserRoleDetail struct {
