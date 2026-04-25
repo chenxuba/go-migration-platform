@@ -729,6 +729,39 @@ async function downloadLoginAddressImage() {
   ctx.font = '400 18px Arial, sans-serif'
   ctx.fillText(`租户标识：${tenant.tenantId}`, 88, 140)
 
+  const congratX = 612
+  const congratY = 62
+  const congratWidth = 420
+  const congratHeight = 88
+  const congratGradient = ctx.createLinearGradient(congratX, congratY, congratX + congratWidth, congratY + congratHeight)
+  congratGradient.addColorStop(0, '#eff6ff')
+  congratGradient.addColorStop(1, '#ecfdf5')
+  drawRoundRect(ctx, congratX, congratY, congratWidth, congratHeight, 22)
+  ctx.fillStyle = congratGradient
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(22, 119, 255, 0.14)'
+  ctx.lineWidth = 1
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.arc(congratX + 34, congratY + 44, 17, 0, Math.PI * 2)
+  ctx.fillStyle = '#1677ff'
+  ctx.fill()
+  ctx.fillStyle = '#ffffff'
+  ctx.font = '700 20px Arial, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('✓', congratX + 34, congratY + 44)
+
+  ctx.textAlign = 'start'
+  ctx.fillStyle = '#111827'
+  ctx.font = '700 24px Arial, sans-serif'
+  ctx.fillText('恭喜您开通成功', congratX + 66, congratY + 38)
+  ctx.fillStyle = '#6b7280'
+  ctx.font = '400 16px Arial, sans-serif'
+  ctx.fillText('以下是各端口登录地址', congratX + 66, congratY + 64)
+  ctx.textBaseline = 'alphabetic'
+
   const items = loginAddressItems.value
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index]
