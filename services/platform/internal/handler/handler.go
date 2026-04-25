@@ -1388,6 +1388,13 @@ func validateInstitutionRenewalMutation(input model.InstitutionRenewalMutation) 
 		return "请选择续期时长"
 	}
 
+	if duration == "adjust" || duration == "调整" {
+		if strings.TrimSpace(input.CustomExpireEndTime) == "" {
+			return "请选择自定义到期时间"
+		}
+		return ""
+	}
+
 	switch duration {
 	case "1y", "2y", "3y", "5y", "99y":
 		return ""

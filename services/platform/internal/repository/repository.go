@@ -2530,6 +2530,21 @@ func buildInstitutionRenewalWindow(currentOpenType, nextOpenType int, currentExp
 	return sql.NullTime{Time: effectiveEnd, Valid: true}, sql.NullTime{Time: buildInstitutionExpireEndTime(effectiveEnd, duration), Valid: true}, nil
 }
 
+func parseInstitutionCustomExpireEndTime(raw string) (sql.NullTime, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return sql.NullTime{}, fmt.Errorf("请选择自定义到期时间")
+	}
+	layouts := []string{"2006-01-02 15:04:05", "2006-01-02 15:04", time.RFC3339}
+	for _, layout := range layouts {
+		parsed, err := time.ParseInLocation(layout, value, time.Local)
+		if err == nil {
+			return sql.NullTime{Time: parsed, Valid: true}, nil
+		}
+	}
+	return sql.NullTime{}, fmt.Errorf("自定义到期时间格式不正确")
+}
+
 func institutionStatusValue(enabled bool, expireEnd sql.NullTime) int {
 	if !enabled {
 		return 2
@@ -4152,10 +4167,22 @@ func (repo *Repository) RenewInstitution(ctx context.Context, input model.Instit
 		}
 	}
 	renewDuration := normalizeInstitutionOpenDuration(nextOpenType, input.OpenDuration)
+	durationValue := strings.TrimSpace(input.OpenDuration)
+	isAdjustExpireEnd := durationValue == "adjust" || durationValue == "调整"
+	if isAdjustExpireEnd {
+		renewDuration = "adjust"
+	}
 
 	renewStart, renewEnd, err := buildInstitutionRenewalWindow(beforeOpenType, nextOpenType, currentExpireEnd, renewDuration)
 	if err != nil {
 		return model.InstitutionRenewalResult{}, err
+	}
+	if isAdjustExpireEnd {
+		renewStart = sql.NullTime{Time: time.Now(), Valid: true}
+		renewEnd, err = parseInstitutionCustomExpireEndTime(input.CustomExpireEndTime)
+		if err != nil {
+			return model.InstitutionRenewalResult{}, err
+		}
 	}
 
 	operatorValue := nullableInt64Value(operatorID)

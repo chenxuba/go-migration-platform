@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
+import type { Dayjs } from 'dayjs'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
+import dayjs from 'dayjs'
 import type {
   InstitutionDetail,
   InstitutionRenewalMutationPayload,
@@ -28,7 +30,9 @@ const emit = defineEmits<{
 
 interface RenewalFormState {
   moduleId?: number
+  renewMode: 'duration' | 'adjust'
   openDuration?: string
+  customExpireEndTime?: Dayjs
 }
 
 const openModal = computed({
@@ -46,7 +50,9 @@ const versionLoading = ref(false)
 const tenantVersions = ref<VersionItem[]>([])
 const formState = reactive<RenewalFormState>({
   moduleId: undefined,
+  renewMode: 'duration',
   openDuration: undefined,
+  customExpireEndTime: undefined,
 })
 const renewActionLocks = reactive({
   openConfirm: false,
@@ -92,8 +98,11 @@ const openDurationOptionMap: Record<number, { value: string, label: string }[]> 
 const availableOpenTypeOptions = computed(() => tenantVersions.value.map(item => ({ value: Number(item.id), label: item.name })))
 const openDurationOptions = computed(() => openDurationOptionMap[2])
 const confirmOpenTypeLabel = computed(() => getVersionName(formState.moduleId))
-const confirmOpenDurationLabel = computed(() => getOpenDurationLabel(2, formState.openDuration))
+const confirmOpenDurationLabel = computed(() => formState.renewMode === 'adjust' ? getAdjustedDurationLabel(detail.value?.expireEndTime, previewExpireEndTime.value) : getOpenDurationLabel(2, formState.openDuration))
 const previewExpireEndTime = computed(() => {
+  if (formState.renewMode === 'adjust')
+    return formState.customExpireEndTime ? formState.customExpireEndTime.format('YYYY-MM-DD HH:mm') : '--'
+
   const duration = String(formState.openDuration || '').trim()
   if (!duration)
     return '--'
@@ -156,7 +165,26 @@ const columns: TableColumnsType<InstitutionRenewalRecord> = [
 
 const rules: Record<string, Rule[]> = {
   moduleId: [{ required: true, message: '请选择开通版本', trigger: 'change' }],
-  openDuration: [{ required: true, message: '请选择续期时长', trigger: 'change' }],
+  openDuration: [
+    {
+      validator: async () => {
+        if (formState.renewMode === 'duration' && !formState.openDuration)
+          return Promise.reject(new Error('请选择续期时长'))
+        return Promise.resolve()
+      },
+      trigger: 'change',
+    },
+  ],
+  customExpireEndTime: [
+    {
+      validator: async () => {
+        if (formState.renewMode === 'adjust' && !formState.customExpireEndTime)
+          return Promise.reject(new Error('请选择自定义到期时间'))
+        return Promise.resolve()
+      },
+      trigger: 'change',
+    },
+  ],
 }
 
 function closeModal() {
@@ -253,7 +281,30 @@ function getOpenTypeLabel(value?: number) {
 }
 
 function getOpenDurationLabel(openType: number, value?: string) {
-  return openDurationOptionMap[openType]?.find(item => item.value === String(value || '').trim())?.label || '--'
+  const duration = String(value || '').trim()
+  return openDurationOptionMap[openType]?.find(item => item.value === duration)?.label || '--'
+}
+
+function getAdjustedDurationLabel(beforeTime?: string, afterTime?: string) {
+  const before = parseDateTime(beforeTime)
+  const after = parseDateTime(afterTime)
+  if (!before || !after)
+    return '--'
+
+  const diff = after.getTime() - before.getTime()
+  if (diff === 0)
+    return '0天'
+
+  const dayMs = 24 * 60 * 60 * 1000
+  const days = Math.ceil(Math.abs(diff) / dayMs)
+  return `${diff > 0 ? '' : '-'}${days}天`
+}
+
+function getRenewDurationLabel(record: Partial<InstitutionRenewalRecord>) {
+  const duration = String(record.renewDuration || '').trim()
+  if (duration === 'adjust' || duration === '调整')
+    return getAdjustedDurationLabel(record.beforeExpireEndTime, record.afterExpireEndTime)
+  return getOpenDurationLabel(record.afterOpenType, record.renewDuration)
 }
 
 function getVersionName(moduleId?: number) {
@@ -272,7 +323,9 @@ function resetState() {
   detail.value = undefined
   records.value = []
   formState.moduleId = undefined
+  formState.renewMode = 'duration'
   formState.openDuration = undefined
+  formState.customExpireEndTime = undefined
   tenantVersions.value = []
   nextTick(() => {
     formRef.value?.clearValidate?.()
@@ -282,7 +335,9 @@ function resetState() {
 function applyDefaultForm(detailData: InstitutionDetail) {
   const currentModuleId = Number(detailData.currentModuleId || 0)
   formState.moduleId = currentModuleId || tenantVersions.value[0]?.id
+  formState.renewMode = 'duration'
   formState.openDuration = resolveDurationValue(2, detailData.openDuration)
+  formState.customExpireEndTime = undefined
   nextTick(() => {
     formRef.value?.clearValidate?.()
   })
@@ -291,6 +346,19 @@ function applyDefaultForm(detailData: InstitutionDetail) {
 function handleOpenTypeChange(value?: number | string) {
   formState.moduleId = value ? Number(value) : undefined
   formState.openDuration = resolveDurationValue(2, formState.openDuration)
+}
+
+function handleRenewModeChange() {
+  if (formState.renewMode === 'duration') {
+    formState.openDuration = resolveDurationValue(2, formState.openDuration)
+    formState.customExpireEndTime = undefined
+  }
+  else {
+    formState.openDuration = undefined
+    const currentExpireEnd = detail.value?.expireEndTime ? dayjs(detail.value.expireEndTime) : undefined
+    formState.customExpireEndTime = currentExpireEnd?.isValid() ? currentExpireEnd : dayjs().add(1, 'day')
+  }
+  nextTick(() => formRef.value?.clearValidate?.())
 }
 
 async function loadData(id: number) {
@@ -334,14 +402,19 @@ async function loadData(id: number) {
 function buildPayload(): InstitutionRenewalMutationPayload | null {
   const institutionId = Number(props.institutionId || 0)
   const moduleId = Number(formState.moduleId || 0)
-  const openDuration = String(formState.openDuration || '').trim()
+  const openDuration = formState.renewMode === 'adjust' ? 'adjust' : String(formState.openDuration || '').trim()
   if (!institutionId || !moduleId || !openDuration)
+    return null
+  if (formState.renewMode === 'adjust' && !formState.customExpireEndTime)
     return null
 
   return {
     institutionId,
     moduleId,
     openDuration,
+    customExpireEndTime: formState.renewMode === 'adjust'
+      ? formState.customExpireEndTime?.format('YYYY-MM-DD HH:mm:ss')
+      : undefined,
   }
 }
 
@@ -488,13 +561,34 @@ watch(
                 />
               </a-form-item>
 
-              <a-form-item label="续期时长" name="openDuration">
+              <a-form-item label="续期方式" name="renewMode">
+                <a-segmented
+                  v-model:value="formState.renewMode"
+                  :options="[
+                    { label: '按时长', value: 'duration' },
+                    { label: '调整到期', value: 'adjust' },
+                  ]"
+                  @change="handleRenewModeChange"
+                />
+              </a-form-item>
+
+              <a-form-item v-if="formState.renewMode === 'duration'" label="续期时长" name="openDuration">
                 <a-select
                   v-model:value="formState.openDuration"
                   :options="openDurationOptions"
                   :disabled="!formState.moduleId"
                   class="renewal-inline-form__select"
                   placeholder="请选择续期时长"
+                />
+              </a-form-item>
+
+              <a-form-item v-else label="到期时间" name="customExpireEndTime">
+                <a-date-picker
+                  v-model:value="formState.customExpireEndTime"
+                  show-time
+                  format="YYYY-MM-DD HH:mm"
+                  class="renewal-inline-form__date"
+                  placeholder="请选择到期时间"
                 />
               </a-form-item>
 
@@ -534,7 +628,7 @@ watch(
               </template>
 
               <template v-else-if="column.key === 'renewDuration'">
-                {{ getOpenDurationLabel(record.afterOpenType, record.renewDuration) }}
+                {{ getRenewDurationLabel(record) }}
               </template>
 
               <template v-else-if="column.key === 'beforeExpireEndTime'">
@@ -730,7 +824,7 @@ watch(
 .renewal-inline-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 12px;
+  gap: 10px 12px;
   width: 100%;
 }
 
@@ -743,13 +837,22 @@ watch(
   width: 152px;
 }
 
+.renewal-inline-form__date {
+  width: 190px;
+}
+
 .renewal-inline-form__preview-item {
-  flex: 1 1 0;
-  min-width: 260px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.renewal-inline-form__preview-item :deep(.ant-form-item-label) {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .renewal-inline-form__preview-item :deep(.ant-form-item-control) {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -765,7 +868,7 @@ watch(
 .renewal-inline-preview {
   display: flex;
   align-items: center;
-  width: 100%;
+  width: 190px;
   min-width: 0;
   height: 32px;
   padding: 0 11px;

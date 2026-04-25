@@ -172,6 +172,7 @@ export interface InstitutionRenewalMutationPayload {
   openType?: number
   moduleId: number
   openDuration: string
+  customExpireEndTime?: string
 }
 
 export interface InstitutionRenewalResult {

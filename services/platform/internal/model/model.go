@@ -430,10 +430,11 @@ type InstitutionRenewalRecord struct {
 }
 
 type InstitutionRenewalMutation struct {
-	InstitutionID *int64 `json:"institutionId"`
-	OpenType      *int   `json:"openType,omitempty"`
-	ModuleID      *int64 `json:"moduleId,omitempty"`
-	OpenDuration  string `json:"openDuration"`
+	InstitutionID       *int64 `json:"institutionId"`
+	OpenType            *int   `json:"openType,omitempty"`
+	ModuleID            *int64 `json:"moduleId,omitempty"`
+	OpenDuration        string `json:"openDuration"`
+	CustomExpireEndTime string `json:"customExpireEndTime,omitempty"`
 }
 
 type InstitutionRenewalResult struct {
