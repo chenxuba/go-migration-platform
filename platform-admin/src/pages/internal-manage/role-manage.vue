@@ -10,7 +10,9 @@ import {
 import { useTableColumns } from '@/composables/useTableColumns'
 import messageService from '~@/utils/messageService'
 import emitter, { EVENTS } from '~@/utils/eventBus'
+import { PlatformAccessEnum } from '~@/constants/access'
 
+const { hasAccess } = useAccess()
 const loading = ref(false)
 const allFilterRef = ref(null)
 const displayArray = ref(['lastEditedTime'])
@@ -255,7 +257,7 @@ function handleSeeDetail(record) {
             当前共计 {{ pagination.total }} 个角色
           </div>
           <div class="edit flex">
-            <a-button type="primary" @click="handleOpenCreateRole()">
+            <a-button v-if="hasAccess(PlatformAccessEnum.internalRoleAdd)" type="primary" @click="handleOpenCreateRole()">
               新建角色
             </a-button>
           </div>
@@ -324,7 +326,7 @@ function handleSeeDetail(record) {
               <template v-if="column.key === 'action'">
                 <a-space :size="16">
                   <a @click="handleSeeDetail(record)">详情</a>
-                  <a v-if="!record.isDefault" @click="handleEditRole(record)">编辑</a>
+                  <a v-if="!record.isDefault && hasAccess(PlatformAccessEnum.internalRoleEdit)" @click="handleEditRole(record)">编辑</a>
                 </a-space>
               </template>
             </template>

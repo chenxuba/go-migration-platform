@@ -30,6 +30,9 @@ import { getQiniuToken } from '@/api/qiniu'
 import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 import { getLoginTemplateOptions, getLoginTemplates, type LoginTemplateMeta } from '../shared/login-template-registry'
 import { openRealLoginTemplatePreview } from '../shared/login-template-real-preview'
+import { PlatformAccessEnum } from '~@/constants/access'
+
+const { hasAccess } = useAccess()
 
 interface TenantRecord {
   tenantId: string
@@ -1039,7 +1042,7 @@ onMounted(() => {
           <a-select-option value="incomplete">待完善</a-select-option>
         </a-select>
         <a-button @click="loadTenants">刷新</a-button>
-        <a-button type="primary" @click="openCreateModal">
+        <a-button v-if="hasAccess(PlatformAccessEnum.platformTenantAdd)" type="primary" @click="openCreateModal">
           <template #icon><PlusOutlined /></template>
           开通客户
         </a-button>
@@ -1166,19 +1169,19 @@ onMounted(() => {
 
         <template v-if="column.key === 'action'">
           <div class="tenant-actions">
-            <a-button type="link" size="small" class="tenant-action" @click="openEditModal(record as TenantRecord)">编辑</a-button>
-            <a-button type="link" size="small" class="tenant-action" @click="openAuthorizationModal(record as TenantRecord)">授权配置</a-button>
-            <a-dropdown placement="bottomRight">
+            <a-button v-if="hasAccess(PlatformAccessEnum.platformTenantEdit)" type="link" size="small" class="tenant-action" @click="openEditModal(record as TenantRecord)">编辑</a-button>
+            <a-button v-if="hasAccess(PlatformAccessEnum.platformTenantEdit)" type="link" size="small" class="tenant-action" @click="openAuthorizationModal(record as TenantRecord)">授权配置</a-button>
+            <a-dropdown v-if="hasAccess([PlatformAccessEnum.platformTenantLoginConfig, PlatformAccessEnum.platformTenantLoginAddress])" placement="bottomRight">
               <a-button type="link" size="small" class="tenant-action tenant-action--dropdown">
                 登录配置
                 <DownOutlined />
               </a-button>
               <template #overlay>
                 <a-menu>
-                  <a-menu-item key="login-page" @click="openLoginTemplateConfigModal(record as TenantRecord)">登录页配置</a-menu-item>
-                  <a-menu-item key="domain" @click="openDomainConfigModal(record as TenantRecord)">域名配置</a-menu-item>
+                  <a-menu-item v-if="hasAccess(PlatformAccessEnum.platformTenantLoginConfig)" key="login-page" @click="openLoginTemplateConfigModal(record as TenantRecord)">登录页配置</a-menu-item>
+                  <a-menu-item v-if="hasAccess(PlatformAccessEnum.platformTenantLoginConfig)" key="domain" @click="openDomainConfigModal(record as TenantRecord)">域名配置</a-menu-item>
                   <a-menu-divider />
-                  <a-menu-item key="address" @click="openLoginAddressModal(record as TenantRecord)">查看登录地址</a-menu-item>
+                  <a-menu-item v-if="hasAccess(PlatformAccessEnum.platformTenantLoginAddress)" key="address" @click="openLoginAddressModal(record as TenantRecord)">查看登录地址</a-menu-item>
                 </a-menu>
               </template>
             </a-dropdown>

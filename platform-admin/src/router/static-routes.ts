@@ -1,5 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
-import { AccessEnum } from '~@/utils/constant'
+import { PlatformAccessEnum } from '~@/constants/access'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -16,6 +16,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('~/pages/platform/control-overview/index.vue'),
     meta: {
       title: '平台总控',
+      access: [PlatformAccessEnum.platformHome],
       hideInMenu: true,
       hideInBreadcrumb: true,
     },
@@ -26,6 +27,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('~/pages/platform/organizations/index.vue'),
     meta: {
       title: '机构列表',
+      access: [PlatformAccessEnum.customerOrg],
       hideInMenu: true,
       hideInBreadcrumb: true,
     },
@@ -36,6 +38,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('~/pages/platform/government-accounts/index.vue'),
     meta: {
       title: '政府账户',
+      access: [PlatformAccessEnum.customerGov],
       hideInMenu: true,
       hideInBreadcrumb: true,
     },
@@ -46,6 +49,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('~/pages/platform/versions/index.vue'),
     meta: {
       title: '版本管理',
+      access: [PlatformAccessEnum.version],
       hideInMenu: true,
       hideInBreadcrumb: true,
     },
@@ -56,6 +60,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('~/pages/platform/tenants/index.vue'),
     meta: {
       title: '租户管理',
+      access: [PlatformAccessEnum.platformTenant],
       hideInMenu: true,
       hideInBreadcrumb: true,
     },
@@ -67,6 +72,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '登录页模板',
       hideInMenu: true,
+      access: [PlatformAccessEnum.loginTemplate],
       hideInBreadcrumb: true,
     },
   },
@@ -77,6 +83,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '默认角色',
       hideInMenu: true,
+      access: [PlatformAccessEnum.defaultRole],
       hideInBreadcrumb: true,
     },
   },
@@ -88,7 +95,7 @@ const routes: RouteRecordRaw[] = [
       title: '权限管理',
       hideInMenu: true,
       hideInBreadcrumb: true,
-      access: [AccessEnum.systemModel_menuPermissions],
+      access: [PlatformAccessEnum.permission],
     },
   },
   {

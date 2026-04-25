@@ -66,7 +66,7 @@
 
           <template v-else-if="column.key === 'actions'">
             <div class="action-cell">
-              <a-button type="link" size="small" @click="openEditModal(toRoleRecord(record))">
+              <a-button v-if="hasAccess(PlatformAccessEnum.defaultRolePreview) || canManageDefaultRoles" type="link" size="small" @click="openEditModal(toRoleRecord(record))">
                 {{ canManageDefaultRoles ? '编辑权限' : '查看权限' }}
               </a-button>
               <a-popconfirm
@@ -317,6 +317,7 @@ import {
 import PlatformModalShell from '../shared/platform-modal-shell.vue'
 import messageService from '@/utils/messageService'
 import { useUserStore } from '@/stores/user'
+import { PlatformAccessEnum } from '~@/constants/access'
 
 enum PortalEnum {
   INSTITUTION = 2,
@@ -334,6 +335,7 @@ interface DefaultRoleRecord {
 
 type ModalMode = 'create' | 'edit'
 
+const { hasAccess } = useAccess()
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
 const userStore = useUserStore()
 
@@ -422,7 +424,7 @@ const columns: TableColumnsType<DefaultRoleRecord> = [
 
 const canManageDefaultRoles = computed(() => {
   const userInfo = userStore.userInfo
-  return userInfo?.tenantType === 'platform' || userInfo?.tenantRole === 'platform_admin'
+  return (userInfo?.tenantType === 'platform' || userInfo?.tenantRole === 'platform_admin') && hasAccess(PlatformAccessEnum.defaultRoleEdit)
 })
 
 const modalTitle = computed(() => {

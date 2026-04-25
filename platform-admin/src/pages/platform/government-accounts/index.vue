@@ -10,6 +10,9 @@ import {
 } from '@/api/platform/government-accounts'
 import messageService from '@/utils/messageService'
 import GovernmentAccountModal from './components/government-account-modal.vue'
+import { PlatformAccessEnum } from '~@/constants/access'
+
+const { hasAccess } = useAccess()
 
 const displayArray = ['customSearch']
 
@@ -304,7 +307,7 @@ onMounted(() => {
         </div>
 
         <div class="table-title__actions">
-          <a-button type="primary" @click="openCreateModal">
+          <a-button v-if="hasAccess(PlatformAccessEnum.customerGovAdd)" type="primary" @click="openCreateModal">
             <template #icon>
               <PlusOutlined />
             </template>
@@ -367,10 +370,11 @@ onMounted(() => {
 
             <template v-else-if="column.key === 'action'">
               <div class="action-cell action-cell--text">
-                <a class="action-link" @click="openEditModal(toGovernmentAccount(record))">
+                <a v-if="hasAccess(PlatformAccessEnum.customerGovEdit)" class="action-link" @click="openEditModal(toGovernmentAccount(record))">
                   编辑
                 </a>
                 <a-popconfirm
+                  v-if="hasAccess(PlatformAccessEnum.customerGovStatus)"
                   :title="getToggleConfirmTitle(toGovernmentAccount(record))"
                   ok-text="确定"
                   cancel-text="取消"

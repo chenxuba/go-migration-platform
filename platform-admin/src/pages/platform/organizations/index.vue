@@ -21,8 +21,10 @@ import { listTenantsApi } from '@/api/platform/tenants'
 import { pageVersionsApi } from '@/api/platform/versions'
 import { sortVersionsByDisplayOrder } from '../shared/version-order'
 import messageService from '@/utils/messageService'
+import { PlatformAccessEnum } from '~@/constants/access'
 
 const userStore = useUserStore()
+const { hasAccess } = useAccess()
 const isPlatformAdmin = computed(() => userStore.userInfo?.tenantRole === 'platform_admin')
 
 const displayArray = ['customSearch', 'createTime', 'enableStatus']
@@ -734,13 +736,13 @@ watch(institutionRenewalOpen, (open) => {
         </div>
 
         <div class="table-title__actions">
-          <a-button :disabled="!selectedInstitutionIds.length" @click="openBatchPermissionModal">
+          <a-button v-if="hasAccess(PlatformAccessEnum.customerOrgVersionAuth)" :disabled="!selectedInstitutionIds.length" @click="openBatchPermissionModal">
             批量权限配置
           </a-button>
           <a-button type="link" :disabled="!selectedInstitutionIds.length" @click="clearSelectedInstitutions">
             清空已选
           </a-button>
-          <a-button type="primary" @click="openCreateDrawer">
+          <a-button v-if="hasAccess(PlatformAccessEnum.customerOrgAdd)" type="primary" @click="openCreateDrawer">
             <template #icon>
               <PlusOutlined />
             </template>
@@ -860,14 +862,14 @@ watch(institutionRenewalOpen, (open) => {
 
             <template v-else-if="column.key === 'action'">
               <div class="action-cell action-cell--text">
-                <a class="action-link" @click="openEditDrawer(record)">
+                <a v-if="hasAccess(PlatformAccessEnum.customerOrgEdit)" class="action-link" @click="openEditDrawer(record)">
                   编辑
                 </a>
-                <a class="action-link" @click="openRenewalModal(record)">
+                <a v-if="hasAccess(PlatformAccessEnum.customerOrgRenew)" class="action-link" @click="openRenewalModal(record)">
                   续期
                 </a>
                 <a-popconfirm
-                  v-if="canToggleInstitutionStatus(record)"
+                  v-if="hasAccess(PlatformAccessEnum.customerOrgEdit) && canToggleInstitutionStatus(record)"
                   :title="getToggleTargetEnabled(record) ? '确定启用该机构？' : '确定停用该机构？'"
                   ok-text="确定"
                   cancel-text="取消"
@@ -877,20 +879,20 @@ watch(institutionRenewalOpen, (open) => {
                     {{ getToggleTargetEnabled(record) ? '启用' : '停用' }}
                   </a>
                 </a-popconfirm>
-                <a-dropdown placement="bottomRight" :trigger="['click']">
+                <a-dropdown v-if="hasAccess([PlatformAccessEnum.customerOrgVersionAuth, PlatformAccessEnum.customerOrgLoginConfig])" placement="bottomRight" :trigger="['click']">
                   <a class="action-link action-more-link">
                     更多
                     <DownOutlined class="action-more-link__arrow" />
                   </a>
                   <template #overlay>
                     <a-menu class="action-more-menu">
-                      <a-menu-item key="permission" @click="openPermissionModal(record)">
+                      <a-menu-item v-if="hasAccess(PlatformAccessEnum.customerOrgVersionAuth)" key="permission" @click="openPermissionModal(record)">
                         机构权限
                       </a-menu-item>
-                      <a-menu-item key="version" @click="openVersionModal(record)">
+                      <a-menu-item v-if="hasAccess(PlatformAccessEnum.customerOrgVersionAuth)" key="version" @click="openVersionModal(record)">
                         切换版本
                       </a-menu-item>
-                      <a-menu-item key="login-brand" @click="openLoginBrandModal(record)">
+                      <a-menu-item v-if="hasAccess(PlatformAccessEnum.customerOrgLoginConfig)" key="login-brand" @click="openLoginBrandModal(record)">
                         独立登录页
                       </a-menu-item>
                     </a-menu>

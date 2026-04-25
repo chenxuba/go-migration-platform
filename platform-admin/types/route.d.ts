@@ -1,4 +1,5 @@
 import 'vue-router'
+import type { AccessItem } from '../src/constants/access'
 
 declare module 'vue-router'{
   import type { RouteRecordRaw } from 'vue-router'
@@ -17,7 +18,7 @@ declare module 'vue-router'{
     affix?: boolean
     id?: string | number
     parentId?: string | number | null
-    access?: (string | number)[]
+    access?: Array<string | number | AccessItem>
     locale?: string
     parentName?: string
     parentComps?: RouteRecordRaw['component'][]

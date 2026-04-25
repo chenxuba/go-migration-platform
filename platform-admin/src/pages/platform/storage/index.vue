@@ -5,8 +5,10 @@ import { getTenantStorageConfigApi, saveTenantStorageConfigApi, type TenantStora
 import { listTenantsApi, type TenantListItem } from '@/api/platform/tenants'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
+import { PlatformAccessEnum } from '~@/constants/access'
 
 const userStore = useUserStore()
+const { hasAccess } = useAccess()
 const loading = ref(false)
 const saving = ref(false)
 const tenantLoading = ref(false)
@@ -179,7 +181,7 @@ watch(selectedTenantId, () => {
         <h1>云存储配置</h1>
         <p>每个租户使用自己的七牛云存储桶，上传凭证按当前租户独立签发。</p>
       </div>
-      <a-button type="primary" :loading="saving" @click="saveConfig">保存配置</a-button>
+      <a-button v-if="hasAccess(PlatformAccessEnum.storageEdit)" type="primary" :loading="saving" @click="saveConfig">保存配置</a-button>
     </div>
 
     <a-alert

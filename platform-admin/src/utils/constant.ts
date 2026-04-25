@@ -1,16 +1,3 @@
-export enum AccessEnum {
-  superAdmin = 'super:admin',
-  structureModel = 'structureModel',
-  structureModel_department = 'structureModel:department',
-  systemModel = 'grp:sys',
-  systemModel_menuPermissions = 'page:sysPerm',
-  menuPermissions_add = 'perm:sysPermAdd',
-  menuPermissions_update = 'perm:sysPermEdit',
-  menuPermissions_delete = 'perm:sysPermDel',
-  USER = 'USER',
-  // structureModel = 'structureModel',
-}
-
 export enum DynamicLoadEnum {
   FRONTEND = 'FRONTEND', // 前端动态加载菜单，使用这种方式将从dynamic-routes.ts中加载菜单和路由信息
   BACKEND = 'BACKEND', // 后端动态加载菜单， 使用这种方式将从后端接口加载菜单和路由信息

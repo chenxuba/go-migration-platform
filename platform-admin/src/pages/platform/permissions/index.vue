@@ -21,7 +21,7 @@
           <a-button @click="handleReset">
             重置
           </a-button>
-          <a-button v-if="hasPermission(AccessEnum.menuPermissions_add)" type="primary" @click="handleAddRoot">
+          <a-button v-if="hasPermission(PlatformAccessEnum.permissionAdd)" type="primary" @click="handleAddRoot">
             <template #icon>
               <PlusOutlined />
             </template>
@@ -70,7 +70,7 @@
           <template v-else-if="column.key === 'actions'">
             <div class="action-cell">
               <a-button
-                v-if="hasPermission(AccessEnum.menuPermissions_update)"
+                v-if="hasPermission(PlatformAccessEnum.permissionEdit)"
                 type="link"
                 size="small"
                 @click="openDrawer('edit', toPermissionRecord(record))"
@@ -78,7 +78,7 @@
                 修改
               </a-button>
               <a-button
-                v-if="hasPermission(AccessEnum.menuPermissions_add) && Number(toPermissionRecord(record).depth || 1) < 3"
+                v-if="hasPermission(PlatformAccessEnum.permissionAdd) && Number(toPermissionRecord(record).depth || 1) < 3"
                 type="link"
                 size="small"
                 @click="handleAddChild(toPermissionRecord(record))"
@@ -86,7 +86,7 @@
                 新增
               </a-button>
               <a-popconfirm
-                v-if="hasPermission(AccessEnum.menuPermissions_delete)"
+                v-if="hasPermission(PlatformAccessEnum.permissionDelete)"
                 title="确定要删除该权限吗？"
                 @confirm="handleDeleteByRecord(toPermissionRecord(record))"
               >
@@ -217,7 +217,7 @@
       <template #footer>
         <div class="permission-form-modal__footer">
           <a-popconfirm
-            v-if="formMode === 'edit' && hasPermission(AccessEnum.menuPermissions_delete)"
+            v-if="formMode === 'edit' && hasPermission(PlatformAccessEnum.permissionDelete)"
             title="确定要删除该权限吗？"
             @confirm="handleDelete"
           >
@@ -229,7 +229,7 @@
             取消
           </a-button>
           <a-button
-            v-if="hasPermission(formMode === 'edit' ? AccessEnum.menuPermissions_update : AccessEnum.menuPermissions_add)"
+            v-if="hasPermission(formMode === 'edit' ? PlatformAccessEnum.permissionEdit : PlatformAccessEnum.permissionAdd)"
             type="primary"
             @click="handleSubmit"
           >
@@ -257,7 +257,7 @@ import {
 } from '@/api/platform/permissions'
 import { getQiniuToken } from '@/api/qiniu'
 import messageService from '@/utils/messageService'
-import { AccessEnum } from '~@/utils/constant'
+import { PlatformAccessEnum, type AccessItem } from '~@/constants/access'
 import PlatformModalShell from '../shared/platform-modal-shell.vue'
 
 function resolveUploadErrorMessage(error, fallback = '上传失败') {
@@ -285,8 +285,8 @@ type FormMode = 'add' | 'edit' | null
 
 const { hasAccess } = useAccess()
 
-const hasPermission = (permissionCode: string) => {
-  return hasAccess([permissionCode, AccessEnum.superAdmin])
+const hasPermission = (permissionCode: AccessItem | string) => {
+  return hasAccess(permissionCode)
 }
 
 const treeData = shallowRef<PermissionRecord[]>([])

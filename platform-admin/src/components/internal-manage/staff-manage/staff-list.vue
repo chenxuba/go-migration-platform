@@ -19,6 +19,7 @@ import addEmployees from "./components/addEmployees.vue";
 import ClampedText from "@/components/common/clamped-text.vue";
 import AllFilter from "@/components/common/all-filter.vue";
 import { getListTreeDepartApi } from "@/api/internal-manage/staff-manage";
+import { PlatformAccessEnum } from "~@/constants/access";
 
 // 接收选中的部门信息
 const props = defineProps({
@@ -55,6 +56,7 @@ watch(() => props.selectedDepartment, (newDepartment) => {
   });
 }, { immediate: false }); // 改为 false，避免在组件初始化时立即执行
 
+const { hasAccess } = useAccess();
 const loading = ref(false);
 const allFilterRef = ref(null);
 const displayArray = ref([
@@ -662,7 +664,7 @@ onMounted(async () => {
             当前共计 {{ pagination.total }} 个员工
           </div>
           <div class="edit flex overflow-x-auto">
-            <a-dropdown class="mr-2">
+            <a-dropdown v-if="hasAccess([PlatformAccessEnum.internalStaffEdit, PlatformAccessEnum.internalStaffAssignRole, PlatformAccessEnum.internalStaffStatus])" class="mr-2">
               <template #overlay>
                 <a-menu @click="handleBatchAction">
                   <a-menu-item key="1"> 批量离职 </a-menu-item>
@@ -680,7 +682,7 @@ onMounted(async () => {
             <a-button v-if="selectedRowKeys.length > 0" class="mr-2" @click="clearSelection">
               清空选择
             </a-button>
-            <a-button type="primary" @click="handleAddEmployee">新建员工</a-button>
+            <a-button v-if="hasAccess(PlatformAccessEnum.internalStaffAdd)" type="primary" @click="handleAddEmployee">新建员工</a-button>
             <!-- 自定义字段 -->
             <!-- <customize-code v-model:checkedValues="selectedValues" :options="columnOptions"
                 :total="allColumns.length - 1" :num="selectedValues.length - 1" /> -->
@@ -765,10 +767,10 @@ onMounted(async () => {
                   <a-button type="link" class="font500 flex-1 p-0" @click="detailEmployeesFunc(record)">
                     详情
                   </a-button>
-                  <a-button type="link" class="font500 flex-1 p-0" @click="handleEditEmployee(record)">
+                  <a-button v-if="hasAccess(PlatformAccessEnum.internalStaffEdit)" type="link" class="font500 flex-1 p-0" @click="handleEditEmployee(record)">
                     编辑
                   </a-button>
-                  <a-button type="link" :disabled="record.isAdmin" class="font500 flex-1 p-0"
+                  <a-button v-if="hasAccess(PlatformAccessEnum.internalStaffStatus)" type="link" :disabled="record.isAdmin" class="font500 flex-1 p-0"
                     @click="handleSingleResign(record)">
                     {{ record.disabled ? '复职' : '离职' }}
                   </a-button>

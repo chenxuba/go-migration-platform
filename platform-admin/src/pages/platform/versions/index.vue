@@ -8,8 +8,10 @@ import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 import { sortVersionsByDisplayOrder, sortVersionsByDisplayOrderDesc } from '../shared/version-order'
 import VersionFormModal from './components/version-form-modal.vue'
+import { PlatformAccessEnum } from '~@/constants/access'
 
 const userStore = useUserStore()
+const { hasAccess } = useAccess()
 const loading = ref(false)
 const keyword = ref('')
 const dataSource = ref<VersionItem[]>([])
@@ -157,7 +159,7 @@ watch(versionModalOpen, (open) => {
           @search="handleSearch"
         />
 
-        <a-button type="primary" @click="openCreateModal">
+        <a-button v-if="hasAccess(PlatformAccessEnum.versionAdd)" type="primary" @click="openCreateModal">
           <template #icon>
             <PlusOutlined />
           </template>
@@ -198,7 +200,7 @@ watch(versionModalOpen, (open) => {
 
         <div class="version-highlight__footer">
           <span>{{ formatDateMinute(item.updateTime) }}</span>
-          <a-button type="link" class="version-highlight__link" @click="openEditModal(item)">
+          <a-button v-if="hasAccess(PlatformAccessEnum.versionPermissionConfig)" type="link" class="version-highlight__link" @click="openEditModal(item)">
             编辑权限
           </a-button>
         </div>
@@ -285,7 +287,7 @@ watch(versionModalOpen, (open) => {
           </template>
 
           <template v-else-if="column.key === 'action'">
-            <a-button type="link" class="action-link" @click="openEditModal(record)">
+            <a-button v-if="hasAccess(PlatformAccessEnum.versionEdit)" type="link" class="action-link" @click="openEditModal(record)">
               {{ editButtonText }}
             </a-button>
           </template>

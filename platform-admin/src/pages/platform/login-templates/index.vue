@@ -8,6 +8,7 @@ import { pageInstitutionsApi } from '@/api/platform/institutions'
 import { listTenantsApi, type TenantListItem } from '@/api/platform/tenants'
 import messageService from '@/utils/messageService'
 import { buildRealLoginTemplatePreviewUrl } from '../shared/login-template-real-preview'
+import { PlatformAccessEnum } from '~@/constants/access'
 
 interface InstitutionOption {
   id: number
@@ -16,6 +17,7 @@ interface InstitutionOption {
 }
 
 const userStore = useUserStore()
+const { hasAccess } = useAccess()
 const isPlatformAdmin = computed(() => userStore.userInfo?.tenantRole === 'platform_admin')
 const currentTenantId = computed(() => String(userStore.userInfo?.tenantId || ''))
 const loading = ref(false)
@@ -246,7 +248,7 @@ onMounted(async () => {
           <a-select-option value="institution-admin">机构端</a-select-option>
         </a-select>
         <a-button @click="loadRows"><template #icon><ReloadOutlined /></template>刷新</a-button>
-        <a-button v-if="isPlatformAdmin" type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新增模板</a-button>
+        <a-button v-if="isPlatformAdmin && hasAccess(PlatformAccessEnum.loginTemplateAdd)" type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新增模板</a-button>
       </a-space>
     </div>
 
@@ -291,11 +293,11 @@ onMounted(async () => {
         </template>
         <template v-else-if="column.key === 'action'">
           <div class="template-actions">
-            <a-button type="link" size="small" class="template-action" @click="openPreview(asTemplate(record))">真实预览</a-button>
+            <a-button v-if="hasAccess(PlatformAccessEnum.loginTemplatePreview)" type="link" size="small" class="template-action" @click="openPreview(asTemplate(record))">真实预览</a-button>
             <template v-if="isPlatformAdmin">
-              <a-button type="link" size="small" class="template-action" @click="openEdit(asTemplate(record))">编辑</a-button>
+              <a-button v-if="hasAccess(PlatformAccessEnum.loginTemplateEdit)" type="link" size="small" class="template-action" @click="openEdit(asTemplate(record))">编辑</a-button>
               <a-popconfirm title="删除前会实时校验引用数量，确认继续？" @confirm="handleDelete(asTemplate(record))">
-                <a-button type="link" danger size="small" class="template-action template-action--danger" :disabled="Number(record.referenceCount || 0) > 0">删除</a-button>
+                <a-button v-if="hasAccess(PlatformAccessEnum.loginTemplateDelete)" type="link" danger size="small" class="template-action template-action--danger" :disabled="Number(record.referenceCount || 0) > 0">删除</a-button>
               </a-popconfirm>
             </template>
           </div>

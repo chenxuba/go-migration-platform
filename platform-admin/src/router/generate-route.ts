@@ -140,19 +140,23 @@ export function generateTreeRoutes(menus: MenuData) {
 export async function generateRoutes(userInfo?: { tenantRole?: string }) {
 	const { hasAccess } = useAccess()
 	function filterRoutesByAccess(routes: RouteRecordRaw[]) {
-		return routes
-			.filter((route) => {
-				const tenantRoles = route.meta?.tenantRoles as string[] | undefined
-				if (tenantRoles?.length && userInfo?.tenantRole && !tenantRoles.includes(userInfo.tenantRole))
-					return false
-				return !route.meta?.access || hasAccess(route.meta?.access)
-			})
+    return routes
       .map((route) => {
+        const tenantRoles = route.meta?.tenantRoles as string[] | undefined
+        if (tenantRoles?.length && userInfo?.tenantRole && !tenantRoles.includes(userInfo.tenantRole))
+          return null
+        if (route.meta?.access && !hasAccess(route.meta.access))
+          return null
+
+        const nextRoute = { ...route }
         if (route.children?.length) {
-          route.children = filterRoutesByAccess(route.children)
+          nextRoute.children = filterRoutesByAccess(route.children)
+          if (!nextRoute.children.length && route.redirect)
+            return null
         }
-        return route
+        return nextRoute
       })
+      .filter(Boolean) as RouteRecordRaw[]
   }
   const accessRoutes = filterRoutesByAccess(dynamicRoutes)
   const menuData = genRoutes(accessRoutes)
