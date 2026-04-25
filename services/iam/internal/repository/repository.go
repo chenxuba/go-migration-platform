@@ -919,6 +919,7 @@ func (repo *Repository) getConsoleUserInfo(ctx context.Context, userID, orgID in
 		info.DeptID = &value
 		info.DeptIDs = []int64{value}
 	}
+	info.OrgName = repo.getManageOrgDisplayName(ctx, orgID)
 
 	roleIDs, roleNames, err := repo.getUserRoleSummary(ctx, userID, orgID, roleType)
 	if err != nil {
@@ -940,6 +941,23 @@ func (repo *Repository) getConsoleUserInfo(ctx context.Context, userID, orgID in
 	}
 
 	return info, nil
+}
+
+func (repo *Repository) getManageOrgDisplayName(ctx context.Context, orgID int64) string {
+	var name string
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(depart_name, '')
+		FROM sys_depart
+		WHERE org_id = ? AND IFNULL(pid, 0) = 0 AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, orgID).Scan(&name); err == nil && strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
+	}
+	if orgID == 1 {
+		return "总控平台"
+	}
+	return ""
 }
 
 func (repo *Repository) GetInstitutionUserInfo(ctx context.Context, userID int64) (model.InstUserInfo, error) {

@@ -47,6 +47,7 @@ type ManageUserInfo struct {
 	DeptID       *int64   `json:"deptId,omitempty"`
 	DeptIDs      []int64  `json:"deptIds"`
 	DeptName     string   `json:"deptName,omitempty"`
+	OrgName      string   `json:"orgName,omitempty"`
 	IsAdmin      bool     `json:"isAdmin"`
 	MenuCodeList []string `json:"menuCodeList"`
 	RoleID       string   `json:"roleId,omitempty"`
