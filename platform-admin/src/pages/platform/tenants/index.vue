@@ -1157,6 +1157,60 @@ onMounted(() => {
   }
 }
 
+
+.login-template-tabs {
+  :deep(.ant-tabs-nav) {
+    margin: 0 0 16px;
+    border-bottom: 1px solid rgba(5, 5, 5, 0.08);
+  }
+
+  :deep(.ant-tabs-nav::before) {
+    border-bottom: 0;
+  }
+
+  :deep(.ant-tabs-nav-list) {
+    gap: 34px;
+  }
+
+  :deep(.ant-tabs-tab) {
+    margin: 0;
+    padding: 12px 0;
+    color: rgba(0, 0, 0, 0.88);
+    font-size: 15px;
+    font-weight: 400;
+  }
+
+  :deep(.ant-tabs-tab + .ant-tabs-tab) {
+    margin: 0;
+  }
+
+  :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+    color: var(--pro-ant-color-primary, #1677ff);
+    font-weight: 500;
+  }
+
+  :deep(.ant-tabs-ink-bar) {
+    bottom: 1px !important;
+    height: 9px !important;
+    background: transparent !important;
+
+    &::after {
+      position: absolute;
+      top: 0;
+      left: calc(50% - 12px);
+      width: 24px !important;
+      height: 4px !important;
+      border-radius: 2px;
+      background-color: var(--pro-ant-color-primary, #1677ff);
+      content: '';
+    }
+  }
+
+  :deep(.ant-tabs-content-holder) {
+    padding-top: 0;
+  }
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
