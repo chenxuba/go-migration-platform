@@ -424,6 +424,8 @@ type InstitutionRenewalRecord struct {
 	RenewStartTime      string `json:"renewStartTime,omitempty"`
 	AfterExpireEndTime  string `json:"afterExpireEndTime,omitempty"`
 	OperatorID          int64  `json:"operatorId,omitempty"`
+	OperatorName        string `json:"operatorName,omitempty"`
+	IsTenantOperator    bool   `json:"isTenantOperator"`
 	CreateTime          string `json:"createTime,omitempty"`
 }
 

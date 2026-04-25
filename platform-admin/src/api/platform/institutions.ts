@@ -162,6 +162,8 @@ export interface InstitutionRenewalRecord {
   renewStartTime?: string
   afterExpireEndTime?: string
   operatorId?: number
+  operatorName?: string
+  isTenantOperator: boolean
   createTime?: string
 }
 

@@ -3994,19 +3994,24 @@ func (repo *Repository) UpdateInstitutionStatus(ctx context.Context, id int64, e
 
 func (repo *Repository) ListInstitutionRenewalRecords(ctx context.Context, institutionID int64) ([]model.InstitutionRenewalRecord, error) {
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id,
-		       institution_id,
-		       IFNULL(before_open_type, 2),
-		       IFNULL(before_open_duration, ''),
-		       IFNULL(DATE_FORMAT(before_expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
-		       IFNULL(after_open_type, 2),
-		       IFNULL(renew_duration, ''),
-		       IFNULL(DATE_FORMAT(renew_start_time, '%Y-%m-%d %H:%i:%s'), ''),
-		       IFNULL(DATE_FORMAT(after_expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
-		       IFNULL(operator_id, 0),
-		       IFNULL(DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s'), '')
-		FROM org_institution_renewal_record
-		WHERE institution_id = ? AND del_flag = 0
+		SELECT r.id,
+		       r.institution_id,
+		       IFNULL(r.before_open_type, 2),
+		       IFNULL(r.before_open_duration, ''),
+		       IFNULL(DATE_FORMAT(r.before_expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(r.after_open_type, 2),
+		       IFNULL(r.renew_duration, ''),
+		       IFNULL(DATE_FORMAT(r.renew_start_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(r.after_expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(r.operator_id, 0),
+		       COALESCE(NULLIF(TRIM(u.nick_name), ''), NULLIF(TRIM(u.username), ''), ''),
+		       IF(tu.user_role = 'tenant_admin', 1, 0),
+		       IFNULL(DATE_FORMAT(r.create_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM org_institution_renewal_record r
+		LEFT JOIN sso_user u ON u.id = r.operator_id AND u.del_flag = 0
+		LEFT JOIN tenant_institution ti ON ti.institution_id = r.institution_id AND ti.del_flag = 0
+		LEFT JOIN tenant_user tu ON tu.tenant_id = ti.tenant_id AND tu.user_id = r.operator_id AND tu.del_flag = 0
+		WHERE r.institution_id = ? AND r.del_flag = 0
 		ORDER BY id DESC
 	`, institutionID)
 	if err != nil {
@@ -4017,6 +4022,7 @@ func (repo *Repository) ListInstitutionRenewalRecords(ctx context.Context, insti
 	items := make([]model.InstitutionRenewalRecord, 0, 16)
 	for rows.Next() {
 		var item model.InstitutionRenewalRecord
+		var isTenantOperator int
 		if err := rows.Scan(
 			&item.ID,
 			&item.InstitutionID,
@@ -4028,10 +4034,13 @@ func (repo *Repository) ListInstitutionRenewalRecords(ctx context.Context, insti
 			&item.RenewStartTime,
 			&item.AfterExpireEndTime,
 			&item.OperatorID,
+			&item.OperatorName,
+			&isTenantOperator,
 			&item.CreateTime,
 		); err != nil {
 			return nil, err
 		}
+		item.IsTenantOperator = isTenantOperator == 1
 		items = append(items, item)
 	}
 

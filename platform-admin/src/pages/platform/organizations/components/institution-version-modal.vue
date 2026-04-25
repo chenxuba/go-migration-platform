@@ -77,6 +77,7 @@ const columns: TableColumnsType<InstitutionVersionChangeRecord> = [
     dataIndex: 'operatorName',
     key: 'operatorName',
     width: 140,
+    fixed: 'right' as const,
   },
 ]
 
@@ -321,7 +322,7 @@ watch(
             />
 
             <div class="version-flow">
-              <div class="version-flow__item">
+              <div class="version-flow__item version-flow__item--current">
                 <span class="version-flow__label">当前</span>
                 <span class="version-flow__value">{{ currentVersionName }}</span>
               </div>
@@ -619,10 +620,10 @@ watch(
 
 .version-flow {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  align-items: stretch;
+  gap: 10px;
   margin-top: 18px;
-  padding: 14px 16px;
+  padding: 10px;
   border-radius: 14px;
   background: #f8fbff;
   border: 1px solid #e6efff;
@@ -631,6 +632,19 @@ watch(
 .version-flow__item {
   min-width: 0;
   flex: 1;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+}
+
+.version-flow__item--current {
+  background: #fff;
+  border-color: #edf0f5;
+}
+
+.version-flow__item--target {
+  background: #eef6ff;
+  border-color: #bfdbfe;
 }
 
 .version-flow__label {
@@ -638,6 +652,10 @@ watch(
   color: #8c8c8c;
   font-size: 12px;
   line-height: 18px;
+}
+
+.version-flow__item--target .version-flow__label {
+  color: #2563eb;
 }
 
 .version-flow__value {
@@ -649,10 +667,23 @@ watch(
   line-height: 22px;
 }
 
+.version-flow__item--target .version-flow__value {
+  color: #1d4ed8;
+}
+
 .version-flow__arrow {
+  display: inline-flex;
   flex-shrink: 0;
-  color: #8c8c8c;
-  font-size: 18px;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #dbeafe;
+  color: #3b82f6;
+  font-size: 16px;
   line-height: 1;
 }
 
