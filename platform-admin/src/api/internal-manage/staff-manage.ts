@@ -25,7 +25,7 @@ export function getUserListApi(data) {
 
 // 新增机构用户 /instUser/saveInstUser
 export function saveInstUser(data) {
-  return usePost('/sso/manage-users/create', data)
+  return usePost('/sso/manage-users/create', data, { silentError: true })
 }
 
 // 批量离职/复职 /instUser/batchDisabledApi

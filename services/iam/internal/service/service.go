@@ -82,6 +82,10 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 	}
 
 	loginType := normalizeLoginType(req.LoginType)
+	if loginType == "manage" && ctx.TenantSource == "default" {
+		ctx.TenantID = "platform"
+		ctx.TenantSource = "default-platform"
+	}
 	selectedOrgID := int64(0)
 	if req.InstitutionID != nil && *req.InstitutionID > 0 {
 		selectedOrgID = *req.InstitutionID
@@ -116,6 +120,8 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 		} else {
 			user, err = svc.repo.FindUserByUsernameOrMobile(context.Background(), identifier)
 		}
+	case "manage":
+		user, err = svc.repo.FindManageLoginUser(context.Background(), identifier, ctx.TenantID)
 	default:
 		user, err = svc.repo.FindUserByUsernameOrMobile(context.Background(), identifier)
 	}
@@ -431,6 +437,10 @@ func (svc *Service) ListGovernmentRoleOptions() ([]model.GovernmentRoleOption, e
 
 func (svc *Service) CheckGovernmentUsernameAvailable(username string, userID *int64) (model.GovernmentUsernameAvailability, error) {
 	return svc.repo.CheckGovernmentUsernameAvailable(context.Background(), username, userID)
+}
+
+func (svc *Service) CheckManageUsernameAvailable(username string, userID *int64) (model.GovernmentUsernameAvailability, error) {
+	return svc.repo.CheckManageUsernameAvailable(context.Background(), username, userID)
 }
 
 func (svc *Service) GetGovernmentUserDetail(id int64) (model.GovernmentUserDetail, error) {

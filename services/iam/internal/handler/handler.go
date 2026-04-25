@@ -456,7 +456,13 @@ func (handler *Handler) governmentUsernameAvailable(w http.ResponseWriter, r *ht
 	}
 
 	userID := parseInt64Ptr(r.URL.Query().Get("userId"))
-	result, err := handler.service.CheckGovernmentUsernameAvailable(username, userID)
+	var result model.GovernmentUsernameAvailability
+	var err error
+	if strings.Contains(r.URL.Path, "/manage-users/") {
+		result, err = handler.service.CheckManageUsernameAvailable(username, userID)
+	} else {
+		result, err = handler.service.CheckGovernmentUsernameAvailable(username, userID)
+	}
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return

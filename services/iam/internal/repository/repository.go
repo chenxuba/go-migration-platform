@@ -659,6 +659,58 @@ func (repo *Repository) FindUserByUsernameOrMobile(ctx context.Context, username
 	return user, nil
 }
 
+func (repo *Repository) FindManageLoginUser(ctx context.Context, identifier, tenantID string) (model.User, error) {
+	identifier = strings.TrimSpace(identifier)
+	tenantID = strings.TrimSpace(tenantID)
+	if identifier == "" {
+		return model.User{}, sql.ErrNoRows
+	}
+	orgID, err := repo.ResolveManageOrgID(ctx, tenantID)
+	if err != nil {
+		return model.User{}, err
+	}
+	query := `
+		SELECT su.id, IFNULL(su.username, ''), IFNULL(su.password, ''), IFNULL(su.mobile, ''), IFNULL(su.nick_name, ''), su.user_type, su.dept_id, IFNULL(su.is_admin, 0)
+		FROM sso_user su
+		WHERE su.del_flag = 0
+		  AND (su.username = ? OR su.mobile = ?)
+		  AND (
+		    EXISTS (SELECT 1 FROM tenant_user tu WHERE tu.user_id = su.id AND tu.del_flag = 0)
+		    OR EXISTS (
+		      SELECT 1
+		      FROM sso_user_role ur
+		      JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+		      WHERE ur.user_id = su.id AND r.role_type = 0 AND r.org_id = ?
+		    )
+		  )
+		ORDER BY
+		  CASE WHEN EXISTS (SELECT 1 FROM tenant_user tu WHERE tu.user_id = su.id AND tu.tenant_id = ? AND tu.del_flag = 0) THEN 0 ELSE 1 END,
+		  CASE WHEN EXISTS (
+		    SELECT 1 FROM sso_user_role ur
+		    JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+		    WHERE ur.user_id = su.id AND r.role_type = 0 AND r.org_id = ?
+		  ) THEN 0 ELSE 1 END,
+		  su.id DESC
+		LIMIT 1
+	`
+	row := repo.db.QueryRowContext(ctx, query, identifier, identifier, orgID, tenantID, orgID)
+	var user model.User
+	var userType sql.NullInt64
+	var deptID sql.NullInt64
+	if err := row.Scan(&user.ID, &user.Username, &user.Password, &user.Mobile, &user.NickName, &userType, &deptID, &user.IsAdmin); err != nil {
+		return model.User{}, err
+	}
+	if userType.Valid {
+		value := int(userType.Int64)
+		user.UserType = &value
+	}
+	if deptID.Valid {
+		value := deptID.Int64
+		user.DeptID = &value
+	}
+	return user, nil
+}
+
 func (repo *Repository) FindUserByID(ctx context.Context, userID int64) (model.User, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT id, IFNULL(username, ''), IFNULL(password, ''), IFNULL(mobile, ''), IFNULL(nick_name, ''), user_type, dept_id, IFNULL(is_admin, 0)
@@ -1611,7 +1663,7 @@ func (repo *Repository) CreateManageUser(ctx context.Context, input model.Manage
 	if username == "" || strings.TrimSpace(input.NickName) == "" || strings.TrimSpace(input.Mobile) == "" {
 		return 0, errors.New("员工姓名、手机号不能为空")
 	}
-	availability, err := repo.CheckGovernmentUsernameAvailable(ctx, username, nil)
+	availability, err := repo.CheckManageUsernameAvailable(ctx, username, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -1657,7 +1709,7 @@ func (repo *Repository) UpdateManageUser(ctx context.Context, input model.Manage
 	}
 	userID := *input.ID
 	username := firstNonEmptyString(input.Username, input.Mobile)
-	availability, err := repo.CheckGovernmentUsernameAvailable(ctx, username, &userID)
+	availability, err := repo.CheckManageUsernameAvailable(ctx, username, &userID)
 	if err != nil {
 		return err
 	}
@@ -1937,6 +1989,54 @@ func (repo *Repository) CheckGovernmentUsernameAvailable(ctx context.Context, us
 		Available: available,
 		Message:   message,
 	}, nil
+}
+
+func (repo *Repository) CheckManageUsernameAvailable(ctx context.Context, username string, excludeUserID *int64) (model.GovernmentUsernameAvailability, error) {
+	available, message, err := repo.checkManageUsernameAvailable(ctx, repo.db, username, excludeUserID)
+	if err != nil {
+		return model.GovernmentUsernameAvailability{}, err
+	}
+	return model.GovernmentUsernameAvailability{
+		Username:  strings.TrimSpace(username),
+		Available: available,
+		Message:   message,
+	}, nil
+}
+
+func (repo *Repository) checkManageUsernameAvailable(ctx context.Context, queryer usernameAvailabilityQueryer, username string, excludeUserID *int64) (bool, string, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return false, "登录账号不能为空", nil
+	}
+	query := `
+		SELECT su.id
+		FROM sso_user su
+		WHERE su.del_flag = 0
+		  AND su.username = ?
+		  AND (
+		    EXISTS (SELECT 1 FROM tenant_user tu WHERE tu.user_id = su.id AND tu.del_flag = 0)
+		    OR EXISTS (
+		      SELECT 1
+		      FROM sso_user_role ur
+		      JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+		      WHERE ur.user_id = su.id AND r.role_type IN (0, 3)
+		    )
+		    OR EXISTS (SELECT 1 FROM government_user_profile gup WHERE gup.user_id = su.id AND gup.del_flag = 0)
+		  )
+		ORDER BY su.id
+		LIMIT 1
+	`
+	var userID int64
+	err := queryer.QueryRowContext(ctx, query, username).Scan(&userID)
+	if err != nil && err != sql.ErrNoRows {
+		return false, "", err
+	}
+	if err == nil {
+		if excludeUserID == nil || *excludeUserID <= 0 || userID != *excludeUserID {
+			return false, "登录账号已存在，请更换", nil
+		}
+	}
+	return true, "", nil
 }
 
 func (repo *Repository) checkGovernmentUsernameAvailable(ctx context.Context, queryer usernameAvailabilityQueryer, username string, excludeUserID *int64) (bool, string, error) {
@@ -2257,11 +2357,22 @@ func (repo *Repository) consoleMobileExists(ctx context.Context, mobile string, 
 	}
 	query := `
 		SELECT COUNT(*)
-		FROM sso_user
-		WHERE del_flag = 0 AND mobile = ?`
+		FROM sso_user su
+		WHERE su.del_flag = 0
+		  AND su.mobile = ?
+		  AND (
+		    EXISTS (SELECT 1 FROM tenant_user tu WHERE tu.user_id = su.id AND tu.del_flag = 0)
+		    OR EXISTS (
+		      SELECT 1
+		      FROM sso_user_role ur
+		      JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+		      WHERE ur.user_id = su.id AND r.role_type IN (0, 3)
+		    )
+		    OR EXISTS (SELECT 1 FROM government_user_profile gup WHERE gup.user_id = su.id AND gup.del_flag = 0)
+		  )`
 	args := []any{mobile}
 	if excludeUserID != nil && *excludeUserID > 0 {
-		query += ` AND id <> ?`
+		query += ` AND su.id <> ?`
 		args = append(args, *excludeUserID)
 	}
 	var count int

@@ -1885,7 +1885,8 @@ func splitCommaList(raw string) []string {
 }
 
 func (repo *Repository) GetTenantUserRole(ctx context.Context, tenantID string, userID int64) (string, error) {
-	if strings.TrimSpace(tenantID) == "" || userID <= 0 {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" || userID <= 0 {
 		return "", nil
 	}
 	var role string
@@ -1894,11 +1895,64 @@ func (repo *Repository) GetTenantUserRole(ctx context.Context, tenantID string, 
 		FROM tenant_user
 		WHERE tenant_id = ? AND user_id = ? AND del_flag = 0
 		LIMIT 1
-	`, strings.TrimSpace(tenantID), userID).Scan(&role)
-	if err == sql.ErrNoRows {
-		return "", nil
+	`, tenantID, userID).Scan(&role)
+	if err != nil && err != sql.ErrNoRows {
+		return "", err
 	}
-	return role, err
+	if strings.TrimSpace(role) != "" {
+		return role, nil
+	}
+
+	manageOrgID, err := repo.resolveManageOrgID(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	hasConsoleRole, err := repo.userHasConsoleRole(ctx, userID, manageOrgID)
+	if err != nil || !hasConsoleRole {
+		return "", err
+	}
+	if tenantID == "platform" {
+		return "platform_admin", nil
+	}
+	return "tenant_admin", nil
+}
+
+func (repo *Repository) resolveManageOrgID(ctx context.Context, tenantID string) (int64, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" || tenantID == "platform" {
+		return 1, nil
+	}
+	var id int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM tenant_profile
+		WHERE tenant_id = ? AND del_flag = 0
+		LIMIT 1
+	`, tenantID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 1, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return 900000000 + id, nil
+}
+
+func (repo *Repository) userHasConsoleRole(ctx context.Context, userID, orgID int64) (bool, error) {
+	if userID <= 0 || orgID <= 0 {
+		return false, nil
+	}
+	var count int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM sso_user_role ur
+		JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+		WHERE ur.user_id = ? AND r.role_type = 0 AND r.org_id = ?
+	`, userID, orgID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (repo *Repository) GetTenantStorageConfig(ctx context.Context, tenantID, provider string) (tenantstorage.Config, error) {
