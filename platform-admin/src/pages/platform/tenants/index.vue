@@ -346,6 +346,7 @@ const activeTenantCount = computed(() => partnerRows.value.filter(item => item.s
 const institutionTotal = computed(() => partnerRows.value.reduce((total, item) => total + Number(item.institutionCount || 0), 0))
 const domainTotal = computed(() => partnerRows.value.reduce((total, item) => total + (item.domains?.length || 0), 0))
 const incompleteCount = computed(() => partnerRows.value.filter(item => !item.domains?.length || !item.adminUsernames?.length || !item.institutionCount).length)
+const isEditingTenant = computed(() => Boolean(editingTenantId.value))
 const institutionSelectOptions = computed(() => {
   const currentTenantId = formState.tenantId.trim()
   return institutionOptions.value.map((item) => {
@@ -540,6 +541,8 @@ function openAuthorizationModal(record: TenantRecord) {
 }
 
 async function validateAdminUsernameOnBlur() {
+  if (isEditingTenant.value)
+    return true
   const username = formState.adminUsername.trim()
   resetAdminUsernameValidation()
   if (!username)
@@ -723,7 +726,7 @@ async function handleSave() {
     messageService.warning('请填写客户名称')
     return
   }
-  if (formState.adminUsername.trim()) {
+  if (!isEditingTenant.value && formState.adminUsername.trim()) {
     const accountAvailable = await validateAdminUsernameOnBlur()
     if (!accountAvailable)
       return
@@ -746,7 +749,7 @@ async function handleSave() {
       institutionDomains,
       institutionIds: formState.institutionIds,
       moduleIds: formState.moduleIds,
-      adminUsername: formState.adminUsername.trim(),
+      adminUsername: isEditingTenant.value ? '' : formState.adminUsername.trim(),
       adminPassword: formState.adminPassword.trim(),
       adminNickName: formState.adminNickName.trim(),
       adminMobile: formState.adminMobile.trim(),
@@ -1270,7 +1273,7 @@ onMounted(() => {
           <div class="form-section__head">
             <div>
               <h3>子总控账号</h3>
-              <p>客户使用该账号进入自己的子总控后台，只能管理授权范围内的资源。</p>
+              <p>{{ isEditingTenant ? '登录账号创建后不可修改，如需更换账号请新建管理员账号。' : '客户使用该账号进入自己的子总控后台，只能管理授权范围内的资源。' }}</p>
             </div>
             <KeyOutlined />
           </div>
@@ -1279,8 +1282,8 @@ onMounted(() => {
               <a-input
                 v-model:value="formState.adminUsername"
                 :maxlength="30"
-                :disabled="adminUsernameChecking"
-                placeholder="例如：tenant_a_admin"
+                :disabled="isEditingTenant || adminUsernameChecking"
+                :placeholder="isEditingTenant ? '登录账号创建后不可修改' : '例如：tenant_a_admin'"
                 @blur="validateAdminUsernameOnBlur"
                 @input="resetAdminUsernameValidation"
               />
