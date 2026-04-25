@@ -21,6 +21,7 @@ import messageService from '@/utils/messageService'
 const props = defineProps<{
   open: boolean
   institutionId?: number | null
+  registerTime?: string
 }>()
 
 const emit = defineEmits<{
@@ -232,6 +233,41 @@ function parseDateTime(value?: string) {
   return parsed
 }
 
+function getMinCustomExpireDate() {
+  const registerTime = parseDateTime(detail.value?.registerTime || props.registerTime)
+  if (!registerTime)
+    return null
+  const minDate = new Date(registerTime.getTime())
+  minDate.setDate(minDate.getDate() + 1)
+  return minDate
+}
+
+function disabledCustomExpireDate(current: Dayjs) {
+  const minDate = getMinCustomExpireDate()
+  if (!minDate || !current)
+    return false
+  const currentDay = dayjs(current)
+  return currentDay.isBefore(dayjs(minDate), 'day')
+}
+
+function disabledCustomExpireTime(current: Dayjs | null) {
+  const minDate = getMinCustomExpireDate()
+  if (!minDate || !current || !current.isSame(dayjs(minDate), 'day'))
+    return {}
+
+  const minHour = minDate.getHours()
+  const minMinute = minDate.getMinutes()
+  const minSecond = minDate.getSeconds()
+  const selectedHour = current.hour()
+  const selectedMinute = current.minute()
+
+  return {
+    disabledHours: () => Array.from({ length: minHour }, (_, index) => index),
+    disabledMinutes: () => selectedHour === minHour ? Array.from({ length: minMinute }, (_, index) => index) : [],
+    disabledSeconds: () => selectedHour === minHour && selectedMinute === minMinute ? Array.from({ length: minSecond }, (_, index) => index) : [],
+  }
+}
+
 function formatDateTime(value: Date) {
   const year = value.getFullYear()
   const month = String(value.getMonth() + 1).padStart(2, '0')
@@ -356,7 +392,10 @@ function handleRenewModeChange() {
   else {
     formState.openDuration = undefined
     const currentExpireEnd = detail.value?.expireEndTime ? dayjs(detail.value.expireEndTime) : undefined
-    formState.customExpireEndTime = currentExpireEnd?.isValid() ? currentExpireEnd : dayjs().add(1, 'day')
+    const minDate = getMinCustomExpireDate()
+    const minDay = minDate ? dayjs(minDate) : undefined
+    const defaultDate = currentExpireEnd?.isValid() ? currentExpireEnd : dayjs().add(1, 'day')
+    formState.customExpireEndTime = minDay && defaultDate.isBefore(minDay) ? minDay : defaultDate
   }
   nextTick(() => formRef.value?.clearValidate?.())
 }
@@ -587,6 +626,8 @@ watch(
                   v-model:value="formState.customExpireEndTime"
                   show-time
                   format="YYYY-MM-DD HH:mm"
+                  :disabled-date="disabledCustomExpireDate"
+                  :disabled-time="disabledCustomExpireTime"
                   class="renewal-inline-form__date"
                   placeholder="请选择到期时间"
                 />

@@ -269,6 +269,7 @@ type InstitutionDetail struct {
 	OpenDuration      string             `json:"openDuration,omitempty"`
 	CurrentModuleID   int64              `json:"currentModuleId,omitempty"`
 	CurrentModuleName string             `json:"currentModuleName,omitempty"`
+	RegisterTime      string             `json:"registerTime,omitempty"`
 	ExpireStartTime   string             `json:"expireStartTime,omitempty"`
 	ExpireEndTime     string             `json:"expireEndTime,omitempty"`
 	Lng               float64            `json:"lng,omitempty"`

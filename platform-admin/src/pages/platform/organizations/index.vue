@@ -54,6 +54,7 @@ const institutionVersionOpen = ref(false)
 const versionInstitutionId = ref<number | null>(null)
 const institutionRenewalOpen = ref(false)
 const renewingInstitutionId = ref<number | null>(null)
+const renewingInstitutionRegisterTime = ref<string>()
 const institutionLoginBrandOpen = ref(false)
 const loginBrandInstitutionId = ref<number | null>(null)
 const summary = ref<InstitutionSummary>({
@@ -389,6 +390,7 @@ function openEditDrawer(record: Partial<InstitutionItem>) {
 
 function openRenewalModal(record: Partial<InstitutionItem>) {
   renewingInstitutionId.value = Number(record.id || 0) || null
+  renewingInstitutionRegisterTime.value = String(record.registerTime || '').trim() || undefined
   institutionRenewalOpen.value = true
 }
 
@@ -860,6 +862,7 @@ watch(institutionRenewalOpen, (open) => {
     <InstitutionRenewalModal
       v-model:open="institutionRenewalOpen"
       :institution-id="renewingInstitutionId"
+      :register-time="renewingInstitutionRegisterTime"
       @renewed="handleRenewalSaved"
     />
     <InstitutionPermissionModal

@@ -3085,6 +3085,7 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		       IFNULL(oi.open_duration, ''),
 		       IFNULL(om_current.module_id, 0),
 		       IFNULL(sm_current.name, ''),
+		       IFNULL(DATE_FORMAT(oi.create_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(DATE_FORMAT(oi.expire_start_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(DATE_FORMAT(oi.expire_end_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(oi.lng, 0),
@@ -3136,6 +3137,7 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		&detail.OpenDuration,
 		&detail.CurrentModuleID,
 		&detail.CurrentModuleName,
+		&detail.RegisterTime,
 		&detail.ExpireStartTime,
 		&detail.ExpireEndTime,
 		&detail.Lng,
@@ -4133,17 +4135,19 @@ func (repo *Repository) RenewInstitution(ctx context.Context, input model.Instit
 	var currentOpenType sql.NullInt64
 	var currentOpenDuration sql.NullString
 	var currentExpireEnd sql.NullTime
+	var currentRegisterTime sql.NullTime
 	var currentEnabled bool
 	if err = tx.QueryRowContext(ctx, `
 		SELECT IFNULL(open_type, 2),
 		       IFNULL(open_duration, ''),
 		       expire_end_time,
+		       create_time,
 		       IFNULL(enabled, 0)
 		FROM org_institution
 		WHERE id = ? AND del_flag = 0
 		LIMIT 1
 		FOR UPDATE
-	`, *input.InstitutionID).Scan(&currentOpenType, &currentOpenDuration, &currentExpireEnd, &currentEnabled); err != nil {
+	`, *input.InstitutionID).Scan(&currentOpenType, &currentOpenDuration, &currentExpireEnd, &currentRegisterTime, &currentEnabled); err != nil {
 		return model.InstitutionRenewalResult{}, err
 	}
 
@@ -4182,6 +4186,12 @@ func (repo *Repository) RenewInstitution(ctx context.Context, input model.Instit
 		renewEnd, err = parseInstitutionCustomExpireEndTime(input.CustomExpireEndTime)
 		if err != nil {
 			return model.InstitutionRenewalResult{}, err
+		}
+		if currentRegisterTime.Valid {
+			minExpireEnd := currentRegisterTime.Time.AddDate(0, 0, 1)
+			if renewEnd.Time.Before(minExpireEnd) {
+				return model.InstitutionRenewalResult{}, fmt.Errorf("到期时间不能早于注册时间后一天")
+			}
 		}
 	}
 

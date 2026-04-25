@@ -65,6 +65,7 @@ export interface InstitutionDetail {
   openDuration?: string
   currentModuleId?: number
   currentModuleName?: string
+  registerTime?: string
   expireStartTime?: string
   expireEndTime?: string
   lng?: number
@@ -183,6 +184,7 @@ export interface InstitutionRenewalResult {
   openDuration?: string
   currentModuleId?: number
   currentModuleName?: string
+  registerTime?: string
   expireStartTime?: string
   expireEndTime?: string
 }
