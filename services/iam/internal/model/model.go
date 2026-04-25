@@ -168,21 +168,31 @@ type ManageUserQueryRequest struct {
 	DeptID    *int64 `json:"deptId,omitempty"`
 }
 
+type ManageUserRoleDetail struct {
+	RoleID                   int64  `json:"roleId"`
+	RoleName                 string `json:"roleName"`
+	Description              string `json:"description,omitempty"`
+	IsAdmin                  bool   `json:"isAdmin"`
+	FunctionalAuthorityCount int    `json:"functionalAuthorityCount"`
+	DataAuthorityCount       int    `json:"dataAuthorityCount"`
+}
+
 type ManageUserListItem struct {
-	ID              int64   `json:"id"`
-	Username        string  `json:"username"`
-	Mobile          string  `json:"mobile"`
-	NickName        string  `json:"nickName"`
-	DeptID          *int64  `json:"deptId,omitempty"`
-	DeptIDs         []int64 `json:"deptIds"`
-	DepartNames     string  `json:"departNames"`
-	RoleIDs         []int64 `json:"roleIds"`
-	RoleName        string  `json:"roleName"`
-	RoleNum         int     `json:"roleNum"`
-	IsAdmin         bool    `json:"isAdmin"`
-	Disabled        bool    `json:"disabled"`
-	ActivatedStatus bool    `json:"activatedStatus"`
-	CreateTime      string  `json:"createTime"`
+	ID              int64                  `json:"id"`
+	Username        string                 `json:"username"`
+	Mobile          string                 `json:"mobile"`
+	NickName        string                 `json:"nickName"`
+	DeptID          *int64                 `json:"deptId,omitempty"`
+	DeptIDs         []int64                `json:"deptIds"`
+	DepartNames     string                 `json:"departNames"`
+	RoleIDs         []int64                `json:"roleIds"`
+	Roles           []ManageUserRoleDetail `json:"roles,omitempty"`
+	RoleName        string                 `json:"roleName"`
+	RoleNum         int                    `json:"roleNum"`
+	IsAdmin         bool                   `json:"isAdmin"`
+	Disabled        bool                   `json:"disabled"`
+	ActivatedStatus bool                   `json:"activatedStatus"`
+	CreateTime      string                 `json:"createTime"`
 }
 
 type ManageUserPage struct {

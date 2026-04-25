@@ -17,7 +17,7 @@ interface MapPoint {
 const containerRef = ref<HTMLDivElement | null>(null)
 let renderer: THREE.WebGLRenderer | undefined
 let scene: THREE.Scene | undefined
-let camera: THREE.OrthographicCamera | undefined
+let camera: THREE.PerspectiveCamera | undefined
 let animationId = 0
 let resizeObserver: ResizeObserver | undefined
 const animatedGroups: THREE.Object3D[] = []
@@ -87,22 +87,43 @@ function createTextSprite(text: string) {
 function createPoint(point: MapPoint, index: number) {
   const group = new THREE.Group()
   const color = colors[point.type]
-  const base = new THREE.Mesh(
-    new THREE.CylinderGeometry(10, 13, 18, 32),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92 }),
-  )
-  base.position.z = 26
-  const core = new THREE.Mesh(
-    new THREE.SphereGeometry(7, 24, 16),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.88 }),
-  )
-  core.position.z = 42
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(13, 17, 42),
+  const halo = new THREE.Mesh(
+    new THREE.RingGeometry(12, 22, 46),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.42, side: THREE.DoubleSide }),
   )
-  ring.position.z = 23
-  group.add(base, core, ring)
+  halo.position.z = 31
+
+  const pillar = new THREE.Mesh(
+    new THREE.CylinderGeometry(8, 11, 20, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.86 }),
+  )
+  pillar.position.z = 42
+
+  const iconCanvas = document.createElement('canvas')
+  iconCanvas.width = 96
+  iconCanvas.height = 96
+  const ctx = iconCanvas.getContext('2d')!
+  ctx.shadowColor = `#${color.toString(16).padStart(6, '0')}`
+  ctx.shadowBlur = 18
+  ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`
+  ctx.beginPath()
+  ctx.arc(48, 48, 28, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.shadowBlur = 0
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'
+  ctx.lineWidth = 3
+  ctx.stroke()
+  ctx.fillStyle = 'rgba(255,255,255,.94)'
+  ctx.font = 'bold 28px Microsoft YaHei, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('楼', 48, 50)
+  const iconTexture = new THREE.CanvasTexture(iconCanvas)
+  const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: iconTexture, transparent: true, depthWrite: false }))
+  icon.scale.set(38, 38, 1)
+  icon.position.z = 62
+
+  group.add(halo, pillar, icon)
   group.position.set(point.x, point.y, 0)
   group.userData.offset = index * 0.36
   animatedGroups.push(group)
@@ -119,14 +140,12 @@ function createFlowLine(points: THREE.Vector3[], color: number) {
 function init() {
   if (!containerRef.value) return
   scene = new THREE.Scene()
-  scene.fog = new THREE.Fog(0x031a38, 720, 1180)
+  scene.fog = new THREE.Fog(0x031a38, 980, 1700)
 
   const rect = containerRef.value.getBoundingClientRect()
-  const aspect = rect.width / rect.height
-  const frustum = 610
-  camera = new THREE.OrthographicCamera(-frustum * aspect, frustum * aspect, frustum, -frustum, 1, 1800)
-  camera.position.set(0, -450, 620)
-  camera.lookAt(0, 0, 0)
+  camera = new THREE.PerspectiveCamera(30, rect.width / rect.height, 1, 2400)
+  camera.position.set(0, -170, 900)
+  camera.lookAt(0, -28, 0)
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -134,13 +153,15 @@ function init() {
   containerRef.value.appendChild(renderer.domElement)
 
   const root = new THREE.Group()
-  root.rotation.x = -0.72
-  root.rotation.z = -0.03
+  root.scale.set(1.42, 1.42, 1.42)
+  root.position.set(-24, -14, 0)
+  root.rotation.x = -0.08
+  root.rotation.z = -0.045
   scene.add(root)
 
-  const grid = new THREE.GridHelper(980, 28, 0x1f8cff, 0x0d376c)
+  const grid = new THREE.GridHelper(1120, 32, 0x1f8cff, 0x0d376c)
   grid.rotation.x = Math.PI / 2
-  grid.position.z = -8
+  grid.position.z = -14
   ;(grid.material as THREE.Material).transparent = true
   ;(grid.material as THREE.Material).opacity = 0.26
   root.add(grid)
@@ -185,11 +206,7 @@ function init() {
   const resize = () => {
     if (!containerRef.value || !renderer || !camera) return
     const nextRect = containerRef.value.getBoundingClientRect()
-    const nextAspect = nextRect.width / nextRect.height
-    camera.left = -frustum * nextAspect
-    camera.right = frustum * nextAspect
-    camera.top = frustum
-    camera.bottom = -frustum
+    camera.aspect = nextRect.width / nextRect.height
     camera.updateProjectionMatrix()
     renderer.setSize(nextRect.width, nextRect.height)
   }
@@ -204,7 +221,7 @@ function init() {
         group.position.z = Math.sin(time * 2.4 + group.userData.offset) * 4
       }
     })
-    root.rotation.z = -0.03 + Math.sin(time * 0.28) * 0.01
+    root.rotation.z = -0.045 + Math.sin(time * 0.28) * 0.006
     renderer?.render(scene!, camera!)
     animationId = requestAnimationFrame(tick)
   }

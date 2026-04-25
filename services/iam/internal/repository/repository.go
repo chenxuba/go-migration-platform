@@ -1690,7 +1690,60 @@ func (repo *Repository) GetManageUserDetail(ctx context.Context, userID, orgID i
 	item.RoleIDs = splitInt64CSV(roleIDsRaw)
 	item.RoleNum = len(item.RoleIDs)
 	item.ActivatedStatus = true
-	return item, rows.Err()
+	if err := rows.Err(); err != nil {
+		return model.ManageUserListItem{}, err
+	}
+	roles, err := repo.listManageUserRoleDetails(ctx, item.RoleIDs, orgID)
+	if err != nil {
+		return model.ManageUserListItem{}, err
+	}
+	item.Roles = roles
+	return item, nil
+}
+
+func (repo *Repository) listManageUserRoleDetails(ctx context.Context, roleIDs []int64, orgID int64) ([]model.ManageUserRoleDetail, error) {
+	if len(roleIDs) == 0 {
+		return []model.ManageUserRoleDetail{}, nil
+	}
+	placeholders, args := int64Placeholders(roleIDs)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(role_name, ''), IFNULL(description, ''), IFNULL(is_admin, 0)
+		FROM sso_role
+		WHERE del_flag = 0 AND role_type = 0 AND org_id = ? AND id IN (`+placeholders+`)
+		ORDER BY IFNULL(is_admin, 0) DESC, id ASC
+	`, append([]any{orgID}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.ManageUserRoleDetail, 0, len(roleIDs))
+	for rows.Next() {
+		var item model.ManageUserRoleDetail
+		if err := rows.Scan(&item.RoleID, &item.RoleName, &item.Description, &item.IsAdmin); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	authorityOwnType := 0
+	if orgID != 1 {
+		authorityOwnType = 1
+	}
+	extraMap, err := repo.GetRoleExtraInfo(ctx, roleIDs, orgID, authorityOwnType)
+	if err != nil {
+		return nil, err
+	}
+	for index := range items {
+		if extra, ok := extraMap[items[index].RoleID]; ok {
+			items[index].FunctionalAuthorityCount = extra.FunctionalAuthorityCount
+			items[index].DataAuthorityCount = extra.DataAuthorityCount
+		}
+	}
+	return items, nil
 }
 
 func (repo *Repository) CreateManageUser(ctx context.Context, input model.ManageUserMutationRequest, orgID, operatorID int64) (int64, error) {
