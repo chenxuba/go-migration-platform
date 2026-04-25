@@ -273,6 +273,7 @@ func (handler *Handler) institutions(w http.ResponseWriter, r *http.Request) {
 		parseIntPtr(r.URL.Query().Get("provinceCode")),
 		parseIntPtr(r.URL.Query().Get("cityCode")),
 		parseIntPtr(r.URL.Query().Get("regionCode")),
+		r.URL.Query().Get("tenantId"),
 	)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load institutions failed", ctx.RequestID)

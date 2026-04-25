@@ -108,6 +108,7 @@ export interface InstitutionPageParams {
   provinceCode?: number
   cityCode?: number
   regionCode?: number
+  tenantId?: string
 }
 
 export interface InstitutionMutationPayload {

@@ -370,12 +370,12 @@ func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current
 	return svc.repo.PageModules(context.Background(), current, size, name, moduleType, tenantID)
 }
 
-func (svc *Service) PageInstitutions(ctx tenant.Context, claims authx.Claims, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (model.InstitutionPage, error) {
+func (svc *Service) PageInstitutions(ctx tenant.Context, claims authx.Claims, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int, filterTenantID string) (model.InstitutionPage, error) {
 	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
 	if err != nil {
 		return model.InstitutionPage{}, err
 	}
-	tenantID := ""
+	tenantID := strings.TrimSpace(filterTenantID)
 	if role != "platform_admin" {
 		tenantID = ctx.TenantID
 	}

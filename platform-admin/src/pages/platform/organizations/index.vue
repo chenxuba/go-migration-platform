@@ -16,6 +16,7 @@ import InstitutionPermissionBatchModal from './components/institution-permission
 import InstitutionPermissionModal from './components/institution-permission-modal.vue'
 import InstitutionRenewalModal from './components/institution-renewal-modal.vue'
 import InstitutionVersionModal from './components/institution-version-modal.vue'
+import { listTenantsApi } from '@/api/platform/tenants'
 import messageService from '@/utils/messageService'
 
 const displayArray = ['customSearch', 'createTime', 'enableStatus']
@@ -39,6 +40,8 @@ const directCountyCityLabels = new Set([
 ])
 
 const listLoading = ref(false)
+const tenantLoading = ref(false)
+const tenantOptions = ref<Array<{ id: string, value: string }>>([])
 const statusSubmittingId = ref<number | null>(null)
 const dataSource = ref<InstitutionItem[]>([])
 const institutionDrawerOpen = ref(false)
@@ -68,6 +71,7 @@ const filters = reactive<{
   provinceCode?: string
   cityCode?: string
   regionCode?: string
+  tenantId?: string
 }>({
   keyword: undefined,
   mobile: undefined,
@@ -77,6 +81,7 @@ const filters = reactive<{
   provinceCode: undefined,
   cityCode: undefined,
   regionCode: undefined,
+  tenantId: undefined,
 })
 
 const provinceFilterOptions = computed(() => regionData.map(item => ({
@@ -112,6 +117,12 @@ const customSearchFilters = computed(() => [
     optionsList: institutionOpenTypeOptions,
   },
   {
+    id: 'tenantId',
+    fieldKey: '所属租户',
+    fieldType: 4,
+    optionsList: tenantOptions.value,
+  },
+  {
     id: 'provinceCode',
     fieldKey: '省份',
     fieldType: 4,
@@ -135,6 +146,7 @@ const customSearchValues = computed(() => ({
   keyword: filters.keyword ?? '',
   mobile: filters.mobile ?? '',
   openType: filters.openType ?? '',
+  tenantId: filters.tenantId ?? '',
   provinceCode: filters.provinceCode ?? '',
   cityCode: filters.cityCode ?? '',
   regionCode: filters.regionCode ?? '',
@@ -212,6 +224,7 @@ function resetFilters() {
   filters.provinceCode = undefined
   filters.cityCode = undefined
   filters.regionCode = undefined
+  filters.tenantId = undefined
 }
 
 function normalizeLogo(logo?: string) {
@@ -480,6 +493,7 @@ async function fetchInstitutions() {
       provinceCode: filters.provinceCode ? Number(filters.provinceCode) : undefined,
       cityCode: filters.cityCode ? Number(filters.cityCode) : undefined,
       regionCode: filters.regionCode ? Number(filters.regionCode) : undefined,
+      tenantId: filters.tenantId,
     })
 
     if (currentRequest !== requestSerial)
@@ -547,6 +561,9 @@ const filterUpdateHandlers = {
       if (fieldId === 'openType')
         filters.openType = value ? Number(value) : undefined
 
+      if (fieldId === 'tenantId')
+        filters.tenantId = value
+
       if (fieldId === 'provinceCode') {
         filters.provinceCode = value
         filters.cityCode = undefined
@@ -592,8 +609,28 @@ const filterUpdateHandlers = {
   },
 }
 
+async function loadTenantOptions() {
+  tenantLoading.value = true
+  try {
+    const res = await listTenantsApi()
+    const rows = (res.data || res.result || []).filter(item => item.tenantType !== 'platform')
+    tenantOptions.value = rows.map(item => ({
+      id: item.tenantId,
+      value: `${item.tenantName}（${item.tenantId}）`,
+    }))
+  }
+  catch (error) {
+    console.warn('load tenant options failed', error)
+    tenantOptions.value = []
+  }
+  finally {
+    tenantLoading.value = false
+  }
+}
+
 onMounted(() => {
   fetchInstitutions()
+  loadTenantOptions()
 })
 
 watch(institutionDrawerOpen, (open) => {
