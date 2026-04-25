@@ -18,17 +18,17 @@ const versionModalOpen = ref(false)
 const editingVersionId = ref<number | null>(null)
 
 const isTenantAdmin = computed(() => userStore.userInfo?.tenantRole === 'tenant_admin')
-const pageTitle = computed(() => isTenantAdmin.value ? '我的售卖版本' : '版本管理')
-const createButtonText = computed(() => isTenantAdmin.value ? '新建租户版本' : '新建版本')
-const editButtonText = computed(() => isTenantAdmin.value ? '编辑售卖版本' : '编辑版本')
-const tableTitle = computed(() => isTenantAdmin.value ? `共 ${pagination.total} 个租户版本` : `共 ${pagination.total} 个版本`)
+const pageTitle = computed(() => isTenantAdmin.value ? '版本管理' : '版本管理')
+const createButtonText = computed(() => isTenantAdmin.value ? '新建版本' : '新建版本')
+const editButtonText = computed(() => isTenantAdmin.value ? '编辑版本' : '编辑版本')
+const tableTitle = computed(() => isTenantAdmin.value ? `共 ${pagination.total} 个版本` : `共 ${pagination.total} 个版本`)
 
 const pagination = reactive({
   current: 1,
   pageSize: 20,
   total: 0,
   showSizeChanger: true,
-  showTotal: (total: number) => isTenantAdmin.value ? `共 ${total} 个租户版本` : `共 ${total} 个版本`,
+  showTotal: (total: number) => isTenantAdmin.value ? `共 ${total} 个版本` : `共 ${total} 个版本`,
 })
 
 const highlightVersions = computed(() => highlightSource.value.slice(0, 4))
