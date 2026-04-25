@@ -251,10 +251,10 @@ func (repo *Repository) GetTenantUserScope(ctx context.Context, userID int64, te
 	return role, tenantType, nil
 }
 
-func (repo *Repository) ResolveInstitutionLoginDomain(ctx context.Context, domain string) (string, int64, error) {
+func (repo *Repository) ResolveInstitutionLoginDomain(ctx context.Context, domain string) (string, int64, bool, error) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
-		return "", 0, nil
+		return "", 0, false, nil
 	}
 
 	var tenantID string
@@ -270,15 +270,15 @@ func (repo *Repository) ResolveInstitutionLoginDomain(ctx context.Context, domai
 		LIMIT 1
 	`, domain).Scan(&tenantID, &baseDomain)
 	if err == sql.ErrNoRows {
-		return "", 0, nil
+		return "", 0, false, nil
 	}
 	if err != nil {
-		return "", 0, err
+		return "", 0, false, err
 	}
 
 	prefix := strings.TrimSuffix(domain, "."+baseDomain)
 	if prefix == "" || strings.Contains(prefix, ".") {
-		return tenantID, 0, nil
+		return tenantID, 0, true, nil
 	}
 
 	var institutionID int64
@@ -291,9 +291,9 @@ func (repo *Repository) ResolveInstitutionLoginDomain(ctx context.Context, domai
 		LIMIT 1
 	`, tenantID, prefix).Scan(&institutionID)
 	if err == sql.ErrNoRows {
-		return tenantID, 0, nil
+		return tenantID, 0, true, nil
 	}
-	return strings.TrimSpace(tenantID), institutionID, err
+	return strings.TrimSpace(tenantID), institutionID, true, err
 }
 
 func (repo *Repository) ResolveTenantIDByDomainAndEntryType(ctx context.Context, domain, entryType string) (string, error) {

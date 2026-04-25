@@ -56,9 +56,12 @@ router.beforeEach(async (to, from, next) => {
       }
       catch (e) {
         if (e instanceof AxiosError && e?.response?.status === 401) {
-          // 跳转到error页面
+          token.value = null
           next({
-            path: '/401',
+            path: loginPath,
+            query: {
+              redirect: encodeURIComponent(to.fullPath),
+            },
           })
           return
         }

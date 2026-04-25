@@ -178,11 +178,22 @@ func (svc *Service) CurrentSession(ctx tenant.Context, claims authx.Claims) (mod
 		sessionOrgID = *orgID
 	}
 
+	sessionTenantID := strings.TrimSpace(claims.TenantID)
+	if claims.LoginType == "org" && sessionOrgID > 0 {
+		resolvedTenantID, resolveErr := svc.resolveInstitutionLoginTenant(ctx, sessionOrgID)
+		if resolveErr != nil {
+			return model.SessionInfo{}, resolveErr
+		}
+		if resolvedTenantID != "" {
+			sessionTenantID = resolvedTenantID
+		}
+	}
+
 	return model.SessionInfo{
 		UserID:       claims.UserID,
 		Username:     claims.Username,
 		LoginType:    claims.LoginType,
-		TenantID:     claims.TenantID,
+		TenantID:     sessionTenantID,
 		OrgID:        sessionOrgID,
 		RoleList:     roles,
 		MenuCodeList: menus,
@@ -1439,11 +1450,14 @@ func (svc *Service) tenantInstitutionMismatchError(tenantID string) error {
 func (svc *Service) resolveInstitutionLoginTenant(ctx tenant.Context, institutionID int64) (string, error) {
 	domain := strings.TrimSpace(ctx.Host)
 	if domain != "" {
-		wildcardTenantID, wildcardInstitutionID, err := svc.repo.ResolveInstitutionLoginDomain(context.Background(), domain)
+		wildcardTenantID, wildcardInstitutionID, isWildcardDomain, err := svc.repo.ResolveInstitutionLoginDomain(context.Background(), domain)
 		if err != nil {
 			return "", err
 		}
 		if wildcardTenantID != "" {
+			if isWildcardDomain && wildcardInstitutionID == 0 {
+				return "", errors.New("当前域名不是该机构的登录地址")
+			}
 			if wildcardInstitutionID > 0 && wildcardInstitutionID != institutionID {
 				return "", errors.New("当前域名不是该机构的登录地址")
 			}

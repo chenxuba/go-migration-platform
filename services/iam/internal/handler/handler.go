@@ -1154,6 +1154,8 @@ func writeSessionError(w http.ResponseWriter, err error, requestID string) {
 	case model.InstitutionStatusMessage(model.InstitutionStatusDisabled),
 		model.InstitutionStatusMessage(model.InstitutionStatusTrialExpired):
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), requestID)
+	case "当前域名不是该机构的登录地址", "当前域名不是机构端登录域名":
+		httpx.WriteError(w, http.StatusUnauthorized, err.Error(), requestID)
 	default:
 		httpx.WriteError(w, http.StatusUnauthorized, "session invalid", requestID)
 	}
