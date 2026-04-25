@@ -10,8 +10,8 @@ import { listLoginTemplatesApi } from '@/api/platform/login-templates'
 import { getQiniuToken } from '@/api/qiniu'
 import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 import messageService from '@/utils/messageService'
-import LoginTemplatePreview from '../../shared/login-template-preview.vue'
-import { getLoginTemplateOptions, getLoginTemplates } from '../../shared/login-template-registry'
+import { getLoginTemplateOptions, getLoginTemplates, type LoginTemplateMeta } from '../../shared/login-template-registry'
+import { openRealLoginTemplatePreview } from '../../shared/login-template-real-preview'
 
 const props = defineProps<{
   open: boolean
@@ -46,7 +46,6 @@ const formState = reactive({
 
 const templateOptions = ref(getLoginTemplateOptions('institution', true))
 const institutionTemplates = ref(getLoginTemplates('institution'))
-const templatePreviewOpen = ref(false)
 
 const colorOptions = [
   { label: '科技蓝', value: '#1677ff' },
@@ -80,6 +79,22 @@ const previewBrand = computed<TenantLoginBrandConfig>(() => ({
 
 function selectTemplate(templateValue: string) {
   formState.template = templateValue
+}
+
+function findTemplateMeta(templateValue: string): LoginTemplateMeta | undefined {
+  return institutionTemplates.value.find(item => item.value === templateValue)
+}
+
+function openTemplatePreview() {
+  const templateValue = formState.template || institutionTemplates.value[0]?.value || 'education-split'
+  const meta = findTemplateMeta(templateValue)
+  openRealLoginTemplatePreview({
+    scope: 'institution',
+    template: templateValue,
+    name: formState.loginTitle || institutionName.value || meta?.label || '机构端登录',
+    desc: formState.heroDescription || meta?.description || '',
+    layout: meta?.layout || 'split',
+  })
 }
 
 function normalizeSlug(value: string) {
@@ -459,7 +474,7 @@ watch(
             <a-form-item label="页面模板">
               <div class="template-select-row">
                 <a-select v-model:value="formState.template" :options="templateOptions" />
-                <a-button @click="templatePreviewOpen = true">
+                <a-button @click="openTemplatePreview">
                   <template #icon><EyeOutlined /></template>
                   预览
                 </a-button>
@@ -503,40 +518,7 @@ watch(
     </a-spin>
   </a-modal>
 
-  <a-modal
-    v-model:open="templatePreviewOpen"
-    :width="820"
-    centered
-    :footer="null"
-    wrap-class-name="login-template-preview-modal"
-  >
-    <template #title>
-      <div class="login-brand-title">
-        <strong>机构端登录页模板</strong>
-        <span>预览后可直接选择当前机构独立模板</span>
-      </div>
-    </template>
 
-    <div class="template-preview-grid">
-      <button
-        v-for="item in institutionTemplates"
-        :key="item.value"
-        type="button"
-        class="template-preview-option"
-        :class="{ 'template-preview-option--active': formState.template === item.value }"
-        @click="selectTemplate(item.value)"
-      >
-        <LoginTemplatePreview
-          :template-key="item.value"
-          scope="institution"
-          :brand="previewBrand"
-          :tenant-name="institutionName"
-          compact
-        />
-        <span class="template-preview-option__check">{{ formState.template === item.value ? '已选择' : '点击使用' }}</span>
-      </button>
-    </div>
-  </a-modal>
 </template>
 
 <style scoped lang="less">

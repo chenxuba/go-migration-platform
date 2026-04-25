@@ -337,6 +337,7 @@ type LoginTemplate struct {
 	Sort           int      `json:"sort"`
 	TenantIDs      []string `json:"tenantIds,omitempty"`
 	InstitutionIDs []int64  `json:"institutionIds,omitempty"`
+	ReferenceCount int      `json:"referenceCount"`
 	CreateTime     string   `json:"createTime,omitempty"`
 	UpdateTime     string   `json:"updateTime,omitempty"`
 }

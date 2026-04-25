@@ -15,6 +15,7 @@ export interface LoginTemplateItem {
   sort: number
   tenantIds?: string[]
   institutionIds?: number[]
+  referenceCount: number
   createTime?: string
   updateTime?: string
 }

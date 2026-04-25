@@ -7,6 +7,7 @@ import { useUserStore } from '@/stores/user'
 import { pageInstitutionsApi } from '@/api/platform/institutions'
 import { listTenantsApi, type TenantListItem } from '@/api/platform/tenants'
 import messageService from '@/utils/messageService'
+import { buildRealLoginTemplatePreviewUrl } from '../shared/login-template-real-preview'
 
 interface InstitutionOption {
   id: number
@@ -41,7 +42,8 @@ const formState = reactive({
 const columns: TableColumnsType = [
   { title: '模板信息', key: 'template', width: 200 },
   { title: '适用端口', key: 'entryType', width: 130 },
-  { title: '可用范围', key: 'scope', width: 260 },
+  { title: '可用范围', key: 'scope', width: 220 },
+  { title: '引用数量', key: 'referenceCount', width: 110 },
   { title: '状态', key: 'enabled', width: 100 },
   { title: '排序', dataIndex: 'sort', width: 80 },
   { title: '更新时间', dataIndex: 'updateTime', width: 160 },
@@ -116,33 +118,15 @@ function openEdit(record: LoginTemplateItem) {
   modalOpen.value = true
 }
 
-function resolveInstitutionAdminPreviewBase() {
-  const { protocol, hostname, port, pathname } = window.location
-  if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
-    const previewPort = port === '6688' ? '6678' : port
-    return `${protocol}//${hostname}${previewPort ? `:${previewPort}` : ''}${pathname}`
-  }
-  return `${window.location.origin}${pathname}`
-}
-
-function buildPreviewUrl(record: LoginTemplateItem) {
-  const params = new URLSearchParams({
-    template: record.templateKey,
-    entryType: record.entryType,
-    name: record.templateName,
-    layout: record.layoutType || 'split',
-    desc: record.description || '',
-    templatePreview: '1',
-  })
-  const basePath = record.entryType === 'institution-admin'
-    ? resolveInstitutionAdminPreviewBase()
-    : `${window.location.origin}${window.location.pathname}`
-  const routePath = record.entryType === 'institution-admin' ? '/login-template-preview' : '/login-template-preview'
-  return `${basePath}#${routePath}?${params.toString()}`
-}
-
 function openPreview(record: LoginTemplateItem) {
-  window.open(buildPreviewUrl(record), '_blank', 'noopener,noreferrer')
+  const scope = record.entryType === 'institution-admin' ? 'institution' : 'platform'
+  window.open(buildRealLoginTemplatePreviewUrl({
+    scope,
+    template: record.templateKey,
+    name: record.templateName,
+    desc: record.description || '',
+    layout: record.layoutType || 'split',
+  }), '_blank', 'noopener,noreferrer')
 }
 
 async function loadRows() {
@@ -214,6 +198,13 @@ async function handleSave() {
 }
 
 async function handleDelete(record: LoginTemplateItem) {
+  await loadRows()
+  const latest = rows.value.find(item => item.id === record.id)
+  const referenceCount = latest?.referenceCount ?? record.referenceCount ?? 0
+  if (referenceCount > 0) {
+    messageService.warning(`当前模板已有 ${referenceCount} 个引用，请先调整引用后再删除`)
+    return
+  }
   try {
     await deleteLoginTemplateApi({ id: record.id })
     messageService.success('模板已删除')
@@ -279,6 +270,9 @@ onMounted(async () => {
             <strong>{{ scopeText(asTemplate(record)) }}</strong>
           </div>
         </template>
+        <template v-else-if="column.key === 'referenceCount'">
+          <span class="reference-count" :class="{ 'reference-count--active': Number(record.referenceCount || 0) > 0 }">{{ record.referenceCount || 0 }}</span>
+        </template>
         <template v-else-if="column.key === 'enabled'">
           <span class="template-tag" :class="record.enabled ? 'template-tag--enabled' : 'template-tag--disabled'">{{ record.enabled ? '启用' : '停用' }}</span>
         </template>
@@ -287,8 +281,8 @@ onMounted(async () => {
             <a-button type="link" size="small" class="template-action" @click="openPreview(asTemplate(record))">真实预览</a-button>
             <template v-if="isPlatformAdmin">
               <a-button type="link" size="small" class="template-action" @click="openEdit(asTemplate(record))">编辑</a-button>
-              <a-popconfirm title="确定删除该模板？" @confirm="handleDelete(asTemplate(record))">
-                <a-button type="link" danger size="small" class="template-action template-action--danger">删除</a-button>
+              <a-popconfirm title="删除前会实时校验引用数量，确认继续？" @confirm="handleDelete(asTemplate(record))">
+                <a-button type="link" danger size="small" class="template-action template-action--danger" :disabled="Number(record.referenceCount || 0) > 0">删除</a-button>
               </a-popconfirm>
             </template>
           </div>
@@ -502,6 +496,16 @@ onMounted(async () => {
   border-color: #e5e7eb;
   background: #f9fafb;
   color: #667085;
+}
+
+.reference-count {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.reference-count--active {
+  color: #175cd3;
 }
 
 .scope-cell {

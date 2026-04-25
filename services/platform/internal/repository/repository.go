@@ -2474,7 +2474,17 @@ func (repo *Repository) ListLoginTemplates(ctx context.Context, entryType, tenan
 		item.InstitutionIDs = splitCommaInt64List(institutionIDs)
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range items {
+		count, err := repo.CountLoginTemplateReferences(ctx, items[i].TemplateKey, items[i].EntryType)
+		if err != nil {
+			return nil, err
+		}
+		items[i].ReferenceCount = count
+	}
+	return items, nil
 }
 
 func (repo *Repository) SaveLoginTemplate(ctx context.Context, input model.LoginTemplateMutation) (int64, error) {
@@ -2583,8 +2593,128 @@ func replaceLoginTemplateInstitutionsTx(ctx context.Context, tx *sql.Tx, templat
 	return nil
 }
 
+func (repo *Repository) CountLoginTemplateReferences(ctx context.Context, templateKey, entryType string) (int, error) {
+	templateKey = strings.TrimSpace(templateKey)
+	if templateKey == "" {
+		return 0, nil
+	}
+	if entryType == "platform-admin" {
+		return repo.countPlatformLoginTemplateReferences(ctx, templateKey)
+	}
+	if entryType == "institution-admin" {
+		return repo.countInstitutionLoginTemplateReferences(ctx, templateKey)
+	}
+	platformCount, err := repo.countPlatformLoginTemplateReferences(ctx, templateKey)
+	if err != nil {
+		return 0, err
+	}
+	institutionCount, err := repo.countInstitutionLoginTemplateReferences(ctx, templateKey)
+	if err != nil {
+		return 0, err
+	}
+	return platformCount + institutionCount, nil
+}
+
+func (repo *Repository) countPlatformLoginTemplateReferences(ctx context.Context, templateKey string) (int, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT tenant_name, IFNULL(CAST(brand_config AS CHAR), '')
+		FROM tenant_profile
+		WHERE del_flag = 0 AND status = 'active'
+	`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var tenantName string
+		var brandConfigRaw string
+		if err := rows.Scan(&tenantName, &brandConfigRaw); err != nil {
+			return 0, err
+		}
+		brandSet := parseLoginBrandSet(brandConfigRaw)
+		brand := selectLoginBrandConfig(brandSet, "platform-admin", tenantName)
+		if strings.TrimSpace(brand.Template) == templateKey {
+			count++
+		}
+	}
+	return count, rows.Err()
+}
+
+func (repo *Repository) countInstitutionLoginTemplateReferences(ctx context.Context, templateKey string) (int, error) {
+	tenantDefaults := make(map[string]string)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT tenant_id, tenant_name, IFNULL(CAST(brand_config AS CHAR), '')
+		FROM tenant_profile
+		WHERE del_flag = 0 AND status = 'active'
+	`)
+	if err != nil {
+		return 0, err
+	}
+	for rows.Next() {
+		var tenantID string
+		var tenantName string
+		var brandConfigRaw string
+		if err := rows.Scan(&tenantID, &tenantName, &brandConfigRaw); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		brandSet := parseLoginBrandSet(brandConfigRaw)
+		brand := selectLoginBrandConfig(brandSet, "institution-admin", tenantName)
+		tenantDefaults[tenantID] = strings.TrimSpace(brand.Template)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	rows, err = repo.db.QueryContext(ctx, `
+		SELECT ti.tenant_id, IFNULL(CAST(oip.login_brand_config AS CHAR), '')
+		FROM tenant_institution ti
+		JOIN org_institution oi ON oi.id = ti.institution_id AND oi.del_flag = 0
+		LEFT JOIN org_institution_profile oip ON oip.institution_id = ti.institution_id AND oip.del_flag = 0
+		WHERE ti.del_flag = 0
+	`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var tenantID string
+		var loginBrandRaw string
+		if err := rows.Scan(&tenantID, &loginBrandRaw); err != nil {
+			return 0, err
+		}
+		brand := parseLoginBrandConfig(loginBrandRaw)
+		effectiveTemplate := strings.TrimSpace(brand.Template)
+		if effectiveTemplate == "" {
+			effectiveTemplate = tenantDefaults[tenantID]
+		}
+		if effectiveTemplate == templateKey {
+			count++
+		}
+	}
+	return count, rows.Err()
+}
+
 func (repo *Repository) DeleteLoginTemplate(ctx context.Context, id int64) error {
-	_, err := repo.db.ExecContext(ctx, `UPDATE login_template SET del_flag = 1, update_time = NOW() WHERE id = ? AND del_flag = 0`, id)
+	var templateKey string
+	var entryType string
+	if err := repo.db.QueryRowContext(ctx, `SELECT template_key, entry_type FROM login_template WHERE id = ? AND del_flag = 0`, id).Scan(&templateKey, &entryType); err != nil {
+		return err
+	}
+	referenceCount, err := repo.CountLoginTemplateReferences(ctx, templateKey, entryType)
+	if err != nil {
+		return err
+	}
+	if referenceCount > 0 {
+		return fmt.Errorf("当前模板已有 %d 个引用，请先调整引用后再删除", referenceCount)
+	}
+	_, err = repo.db.ExecContext(ctx, `UPDATE login_template SET del_flag = 1, update_time = NOW() WHERE id = ? AND del_flag = 0`, id)
 	return err
 }
 

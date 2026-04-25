@@ -27,8 +27,8 @@ import { pageVersionsApi } from '@/api/platform/versions'
 import { listLoginTemplatesApi } from '@/api/platform/login-templates'
 import { getQiniuToken } from '@/api/qiniu'
 import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
-import LoginTemplatePreview from '../shared/login-template-preview.vue'
-import { getLoginTemplateOptions, getLoginTemplates } from '../shared/login-template-registry'
+import { getLoginTemplateOptions, getLoginTemplates, type LoginTemplateMeta } from '../shared/login-template-registry'
+import { openRealLoginTemplatePreview } from '../shared/login-template-real-preview'
 
 interface TenantRecord {
   tenantId: string
@@ -159,8 +159,6 @@ const brandUploadProgress = reactive<Record<string, number>>({})
 type LoginBrandScope = 'platform' | 'institution'
 type LoginBrandAssetField = 'logoUrl' | 'backgroundUrl'
 
-const templatePreviewOpen = ref(false)
-const templatePreviewScope = ref<LoginBrandScope>('platform')
 
 function createDefaultLoginBrand(tenantName = '', template = 'business-split'): Required<TenantLoginBrandConfig> {
   return {
@@ -183,17 +181,23 @@ function getLoginBrand(scope: LoginBrandScope) {
   return scope === 'platform' ? formState.platformLoginBrand : formState.institutionLoginBrand
 }
 
-const previewTemplates = computed(() => templatePreviewScope.value === 'platform' ? platformTemplates.value : institutionTemplates.value)
-const previewBrand = computed(() => getLoginBrand(templatePreviewScope.value))
-const templatePreviewTitle = computed(() => templatePreviewScope.value === 'platform' ? '子总控登录页模板' : '机构端登录页模板')
-
-function openTemplatePreview(scope: LoginBrandScope) {
-  templatePreviewScope.value = scope
-  templatePreviewOpen.value = true
+function findTemplateMeta(scope: LoginBrandScope, templateValue: string): LoginTemplateMeta | undefined {
+  const templates = scope === 'platform' ? platformTemplates.value : institutionTemplates.value
+  return templates.find(item => item.value === templateValue)
 }
 
-function selectLoginTemplate(scope: LoginBrandScope, templateValue: string) {
-  getLoginBrand(scope).template = templateValue
+function openTemplatePreview(scope: LoginBrandScope) {
+  const brand = getLoginBrand(scope)
+  const templates = scope === 'platform' ? platformTemplates.value : institutionTemplates.value
+  const templateValue = brand.template || templates[0]?.value || (scope === 'platform' ? 'business-split' : 'education-split')
+  const meta = findTemplateMeta(scope, templateValue)
+  openRealLoginTemplatePreview({
+    scope,
+    template: templateValue,
+    name: brand.loginTitle || brand.brandName || meta?.label || formState.tenantName,
+    desc: brand.heroDescription || meta?.description || '',
+    layout: meta?.layout || 'split',
+  })
 }
 
 function getBrandUploadKey(scope: LoginBrandScope, field: LoginBrandAssetField) {
@@ -501,6 +505,7 @@ async function validateTenantIdOnBlur() {
 
 function openCreateModal() {
   resetForm()
+  loadLoginTemplateOptions()
   modalOpen.value = true
 }
 
@@ -524,6 +529,7 @@ function openEditModal(record: TenantRecord) {
   assignLoginBrand(formState.platformLoginBrand, record.platformLoginBrand || record.loginBrand, record.tenantName, 'business-split')
   assignLoginBrand(formState.institutionLoginBrand, record.institutionLoginBrand || record.loginBrand, record.tenantName, 'education-split')
   formState.remark = ''
+  loadLoginTemplateOptions(record.tenantId)
   modalOpen.value = true
 }
 
@@ -651,11 +657,12 @@ async function loadInstitutionOptions() {
   }
 }
 
-async function loadLoginTemplateOptions() {
+async function loadLoginTemplateOptions(tenantId = '') {
   try {
+    const tenantScope = tenantId ? { tenantId } : {}
     const [platformRes, institutionRes] = await Promise.all([
-      listLoginTemplatesApi({ entryType: 'platform-admin', enabledOnly: true }),
-      listLoginTemplatesApi({ entryType: 'institution-admin', enabledOnly: true }),
+      listLoginTemplatesApi({ entryType: 'platform-admin', enabledOnly: true, ...tenantScope }),
+      listLoginTemplatesApi({ entryType: 'institution-admin', enabledOnly: true, ...tenantScope }),
     ])
     const platformItems = platformRes.result || []
     const institutionItems = institutionRes.result || []
@@ -1552,40 +1559,7 @@ onMounted(() => {
       </div>
     </a-modal>
 
-    <a-modal
-      v-model:open="templatePreviewOpen"
-      :width="860"
-      centered
-      :footer="null"
-      wrap-class-name="login-template-preview-modal"
-    >
-      <template #title>
-        <div class="modal-title">
-          <strong>{{ templatePreviewTitle }}</strong>
-          <span>统一维护模板名称、适用端口和预览效果，选择后立即应用到当前配置。</span>
-        </div>
-      </template>
 
-      <div class="template-preview-grid">
-        <button
-          v-for="item in previewTemplates"
-          :key="item.value"
-          type="button"
-          class="template-preview-option"
-          :class="{ 'template-preview-option--active': previewBrand.template === item.value }"
-          @click="selectLoginTemplate(templatePreviewScope, item.value)"
-        >
-          <LoginTemplatePreview
-            :template-key="item.value"
-            :scope="templatePreviewScope"
-            :brand="previewBrand"
-            :tenant-name="formState.tenantName"
-            compact
-          />
-          <span class="template-preview-option__check">{{ previewBrand.template === item.value ? '已选择' : '点击使用' }}</span>
-        </button>
-      </div>
-    </a-modal>
 
     <a-modal
       v-model:open="authorizationModalOpen"
