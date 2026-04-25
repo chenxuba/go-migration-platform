@@ -94,34 +94,11 @@
               <span><i class="normal" />正常</span><span><i class="focus" />关注</span><span><i class="warn" />预警</span><span><i class="danger" />高风险</span>
             </div>
             <div class="map-canvas">
-              <svg viewBox="0 0 820 430" preserveAspectRatio="none" class="city-map">
-                <defs>
-                  <linearGradient id="mapGlow" x1="0" x2="1">
-                    <stop offset="0" stop-color="#1269ff" />
-                    <stop offset="1" stop-color="#36e9ff" />
-                  </linearGradient>
-                  <filter id="blueBlur"><feGaussianBlur stdDeviation="4" /></filter>
-                </defs>
-                <path class="area area-main" d="M82 162 L186 70 L332 82 L451 42 L622 82 L740 172 L718 314 L562 384 L411 352 L278 398 L142 326 Z" />
-                <path class="area" d="M186 70 L250 180 L158 262 L82 162 Z" />
-                <path class="area" d="M250 180 L332 82 L451 42 L438 174 L340 244 Z" />
-                <path class="area" d="M438 174 L622 82 L740 172 L604 246 Z" />
-                <path class="area" d="M158 262 L340 244 L411 352 L278 398 L142 326 Z" />
-                <path class="area" d="M340 244 L604 246 L562 384 L411 352 Z" />
-                <path class="route" d="M126 240 C250 150 326 310 432 210 S650 146 710 274" />
-                <path class="route secondary" d="M210 92 C244 260 454 280 590 96" />
-                <path class="route secondary" d="M168 336 C312 250 506 390 684 198" />
-                <circle cx="440" cy="220" r="8" class="center-dot" />
-                <circle cx="440" cy="220" r="30" class="pulse" />
-                <g v-for="point in mapPoints" :key="point.name" :class="['map-point', point.type]" :style="{ '--delay': `${point.delay}s` }">
-                  <circle :cx="point.x" :cy="point.y" r="8" />
-                  <text :x="point.x" :y="point.y + 4">楼</text>
-                </g>
-                <text x="216" y="150" class="district">滨江区</text>
-                <text x="472" y="132" class="district">城北区</text>
-                <text x="332" y="270" class="district">城中区</text>
-                <text x="546" y="292" class="district">江南区</text>
-              </svg>
+              <Map3D />
+              <div class="map-hud-lines">
+                <span class="scan-line" />
+                <span class="scan-line reverse" />
+              </div>
               <div class="tooltip-card">
                 <strong>星启康复中心 <em>关注</em></strong>
                 <p>今日课程 <b>46</b> 节</p>
@@ -244,6 +221,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Panel from './components/Panel.vue'
+import Map3D from './components/Map3D.vue'
 import MiniMetric from './components/MiniMetric.vue'
 import RingMetric from './components/RingMetric.vue'
 
@@ -274,15 +252,6 @@ const orgRanks = [
   { rank: 5, name: '希望之家', score: 82.4 },
 ]
 
-const mapPoints = [
-  { name: 'p1', x: 160, y: 142, type: 'danger', delay: 0.1 }, { name: 'p2', x: 230, y: 218, type: 'normal', delay: 0.4 },
-  { name: 'p3', x: 302, y: 128, type: 'normal', delay: 0.7 }, { name: 'p4', x: 390, y: 96, type: 'focus', delay: 1.1 },
-  { name: 'p5', x: 502, y: 154, type: 'focus', delay: 0.2 }, { name: 'p6', x: 628, y: 132, type: 'normal', delay: 0.8 },
-  { name: 'p7', x: 686, y: 230, type: 'danger', delay: 1.3 }, { name: 'p8', x: 538, y: 304, type: 'warn', delay: 1.5 },
-  { name: 'p9', x: 408, y: 318, type: 'normal', delay: 1.8 }, { name: 'p10', x: 282, y: 336, type: 'danger', delay: 2.1 },
-  { name: 'p11', x: 190, y: 314, type: 'normal', delay: 2.3 }, { name: 'p12', x: 590, y: 356, type: 'danger', delay: 2.5 },
-  { name: 'p13', x: 720, y: 320, type: 'normal', delay: 2.8 }, { name: 'p14', x: 330, y: 226, type: 'focus', delay: 3.1 },
-]
 
 const events = [
   { org: '星启康复中心', text: '新增排课 12节', time: '09:29:45', icon: '课', type: 'course' },

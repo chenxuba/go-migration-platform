@@ -201,10 +201,12 @@ function flatRoutes(routes: RouteRecordRaw[], parentName?: string, parentComps: 
 
 export function generateFlatRoutes(routes: RouteRecordRaw[]) {
   const flatRoutesList = flatRoutes(routes)
+  const firstRoute = flatRoutesList[0]
+  const rootRedirect = (firstRoute?.redirect as string | undefined) || firstRoute?.path || ROOT_ROUTE_REDIRECT_PATH
   // 拿到拉平后的路由，然后统一添加一个父级的路由,通过这层路由实现保活的功能
   const parentRoute: RouteRecordRaw = {
     path: '/',
-    redirect: ROOT_ROUTE_REDIRECT_PATH,
+    redirect: rootRedirect,
     name: 'ROOT_EMPTY_PATH',
     // fix: https://github.com/antdv-pro/antdv-pro/issues/179
     // component: getRouterModule('RouteView'),

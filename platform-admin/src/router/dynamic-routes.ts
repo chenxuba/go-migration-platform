@@ -10,7 +10,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '平台总控',
       icon: 'ControlOutlined',
-      tenantRoles: ['platform_admin', 'tenant_admin'],
+      tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
       access: [PlatformAccessEnum.platformControl, PlatformAccessEnum.platformHome, PlatformAccessEnum.platformTenant],
     },
     component: basicRouteMap.RouteView,
@@ -21,7 +21,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/platform/control-overview/index.vue'),
         meta: {
           title: '总控首页',
-          tenantRoles: ['platform_admin', 'tenant_admin'],
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.platformHome],
         },
       },
@@ -44,7 +44,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '客户管理',
       icon: 'TeamOutlined',
-      tenantRoles: ['platform_admin', 'tenant_admin'],
+      tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
       access: [PlatformAccessEnum.customerManage, PlatformAccessEnum.customerOrg, PlatformAccessEnum.customerGov],
     },
     component: basicRouteMap.RouteView,
@@ -55,7 +55,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/platform/organizations/index.vue'),
         meta: {
           title: '机构列表',
-          tenantRoles: ['platform_admin', 'tenant_admin'],
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.customerOrg],
         },
       },
@@ -78,7 +78,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '内部管理',
       icon: 'WarningOutlined',
-      tenantRoles: ['platform_admin', 'tenant_admin'],
+      tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
       access: [PlatformAccessEnum.internalManage, PlatformAccessEnum.internalStaff, PlatformAccessEnum.internalRole],
     },
     component: basicRouteMap.RouteView,
@@ -89,7 +89,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/internal-manage/staff-manage.vue'),
         meta: {
           title: '员工管理',
-          tenantRoles: ['platform_admin', 'tenant_admin'],
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.internalStaff],
         },
       },
@@ -99,7 +99,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/internal-manage/role-manage.vue'),
         meta: {
           title: '角色管理',
-          tenantRoles: ['platform_admin', 'tenant_admin'],
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.internalRole],
         },
       },
@@ -112,7 +112,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '系统配置',
       icon: 'SettingOutlined',
-      tenantRoles: ['platform_admin', 'tenant_admin'],
+      tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
       access: [PlatformAccessEnum.systemConfig, PlatformAccessEnum.defaultRole, PlatformAccessEnum.version, PlatformAccessEnum.storage, PlatformAccessEnum.loginTemplate, PlatformAccessEnum.permission],
     },
     component: basicRouteMap.RouteView,
@@ -123,7 +123,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/platform/default-roles/index.vue'),
         meta: {
           title: '默认角色',
-          tenantRoles: ['platform_admin', 'tenant_admin'],
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.defaultRole],
         },
       },
@@ -133,7 +133,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/platform/versions/index.vue'),
         meta: {
           title: '版本管理',
-          tenantRoles: ['platform_admin', 'tenant_admin'],
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.version],
         },
       },
@@ -143,7 +143,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/platform/storage/index.vue'),
         meta: {
           title: '云存储配置',
-          tenantRoles: ['platform_admin', 'tenant_admin'],
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.storage],
         },
       },
@@ -153,7 +153,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/platform/login-templates/index.vue'),
         meta: {
           title: '登录页模板',
-          tenantRoles: ['platform_admin', 'tenant_admin'],
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.loginTemplate],
         },
       },

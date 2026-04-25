@@ -1771,9 +1771,9 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 			return nil, nil, nil, nil, nil, err
 		}
 		if tenantRole == "" && (len(roleList) > 0 || len(info.MenuCodeList) > 0) {
-			tenantRole = "tenant_admin"
+			tenantRole = "tenant_staff"
 			if strings.TrimSpace(ctx.TenantID) == "platform" {
-				tenantRole = "platform_admin"
+				tenantRole = "platform_staff"
 			}
 		}
 		if tenantRole == "" && !info.IsAdmin {
