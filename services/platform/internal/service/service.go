@@ -355,7 +355,7 @@ func (svc *Service) PageNotices(query model.NoticeQuery) (model.PageResult[model
 	return svc.repo.PageNotices(context.Background(), query)
 }
 
-func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current, size int, name string, moduleType int, institutionID int64) (model.PageResult[model.Module], error) {
+func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current, size int, name string, moduleType int, institutionID int64, allTenants bool) (model.PageResult[model.Module], error) {
 	if institutionID > 0 {
 		role, err := svc.requireTenantManageRole(ctx, claims)
 		if err != nil {
@@ -374,6 +374,13 @@ func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current
 		return svc.repo.PageModules(context.Background(), current, size, name, moduleType, tenantID)
 	}
 
+	role, err := svc.requireTenantManageRole(ctx, claims)
+	if err != nil {
+		return model.PageResult[model.Module]{}, err
+	}
+	if allTenants && role == "platform_admin" {
+		return svc.repo.PageModules(context.Background(), current, size, name, moduleType, "*")
+	}
 	tenantID, _, err := svc.moduleTenantScope(ctx, claims)
 	if err != nil {
 		return model.PageResult[model.Module]{}, err

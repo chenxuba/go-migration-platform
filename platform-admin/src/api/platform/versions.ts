@@ -3,6 +3,7 @@ import type { ResponseBody } from '@/utils/request'
 export interface VersionItem {
   id: number
   tenantId?: string
+  tenantName?: string
   ownerType?: string
   sourceModuleId?: number
   name: string
@@ -18,6 +19,7 @@ export interface VersionItem {
 export interface VersionDetail {
   moduleId: number
   tenantId?: string
+  tenantName?: string
   ownerType?: string
   sourceModuleId?: number
   moduleName: string
@@ -58,6 +60,7 @@ export interface VersionPageParams {
   name?: string
   type?: number
   institutionId?: number
+  allTenants?: boolean
 }
 
 export interface VersionMutationPayload {

@@ -1089,6 +1089,7 @@ func (handler *Handler) modules(w http.ResponseWriter, r *http.Request) {
 		r.URL.Query().Get("name"),
 		parseInt(r.URL.Query().Get("type"), 0),
 		int64(parseInt(r.URL.Query().Get("institutionId"), 0)),
+		strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("allTenants")), "true") || strings.TrimSpace(r.URL.Query().Get("allTenants")) == "1",
 	)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)

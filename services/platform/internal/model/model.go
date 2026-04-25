@@ -114,6 +114,7 @@ type ModuleMenu struct {
 type Module struct {
 	ID             int64   `json:"id"`
 	TenantID       string  `json:"tenantId,omitempty"`
+	TenantName     string  `json:"tenantName,omitempty"`
 	OwnerType      string  `json:"ownerType,omitempty"`
 	SourceModuleID int64   `json:"sourceModuleId,omitempty"`
 	Name           string  `json:"name"`

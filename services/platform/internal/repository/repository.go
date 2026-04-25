@@ -2303,7 +2303,9 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 		filters = append(filters, "m.type = ?")
 		args = append(args, moduleType)
 	}
-	if tenantID = strings.TrimSpace(tenantID); tenantID != "" {
+	if tenantID = strings.TrimSpace(tenantID); tenantID == "*" {
+		filters = append(filters, "m.tenant_id <> 'platform'")
+	} else if tenantID != "" {
 		filters = append(filters, "m.tenant_id = ?")
 		args = append(args, tenantID)
 	} else {
@@ -2319,6 +2321,7 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT m.id,
 		       IFNULL(m.tenant_id, ''),
+		       IFNULL(tp.tenant_name, ''),
 		       IFNULL(m.owner_type, ''),
 		       IFNULL(m.source_module_id, 0),
 		       IFNULL(m.name, ''),
@@ -2330,10 +2333,11 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 		       IFNULL(DATE_FORMAT(m.create_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(DATE_FORMAT(m.update_time, '%Y-%m-%d %H:%i:%s'), '')
 		FROM sys_module m
+		LEFT JOIN tenant_profile tp ON tp.tenant_id = m.tenant_id AND tp.del_flag = 0
 		LEFT JOIN sys_module_menu smm ON smm.module_id = m.id
 		LEFT JOIN org_module om ON om.module_id = m.id
 		WHERE `+whereClause+`
-		GROUP BY m.id, m.tenant_id, m.owner_type, m.source_module_id, m.name, m.type, m.price, m.remark, m.create_time, m.update_time
+		GROUP BY m.id, m.tenant_id, tp.tenant_name, m.owner_type, m.source_module_id, m.name, m.type, m.price, m.remark, m.create_time, m.update_time
 		ORDER BY m.id DESC
 		LIMIT ? OFFSET ?`, append(args, size, offset)...)
 	if err != nil {
@@ -2347,6 +2351,7 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 		if err := rows.Scan(
 			&item.ID,
 			&item.TenantID,
+			&item.TenantName,
 			&item.OwnerType,
 			&item.SourceModuleID,
 			&item.Name,
@@ -2366,7 +2371,7 @@ func (repo *Repository) PageModules(ctx context.Context, current, size int, name
 		return model.PageResult[model.Module]{}, err
 	}
 
-	if len(items) > 0 {
+	if len(items) > 0 && tenantID != "*" {
 		counts, err := repo.countVisibleModuleLeavesByID(ctx, tenantID, items)
 		if err != nil {
 			return model.PageResult[model.Module]{}, err
@@ -4592,6 +4597,7 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64, ten
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT m.id,
 		       IFNULL(m.tenant_id, ''),
+		       IFNULL(tp.tenant_name, ''),
 		       IFNULL(m.owner_type, ''),
 		       IFNULL(m.source_module_id, 0),
 		       IFNULL(m.uuid, ''),
@@ -4605,6 +4611,7 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64, ten
 		       IFNULL(DATE_FORMAT(m.create_time, '%Y-%m-%d %H:%i:%s'), ''),
 		       IFNULL(DATE_FORMAT(m.update_time, '%Y-%m-%d %H:%i:%s'), '')
 		FROM sys_module m
+		LEFT JOIN tenant_profile tp ON tp.tenant_id = m.tenant_id AND tp.del_flag = 0
 		LEFT JOIN sys_module_menu smm ON smm.module_id = m.id
 		LEFT JOIN org_module om ON om.module_id = m.id
 		WHERE `+ownerFilter+` AND m.id = ? AND m.del_flag = 0

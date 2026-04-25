@@ -643,12 +643,15 @@ const filterUpdateHandlers = {
 
 async function loadVersionOptions() {
   try {
-    const res = await pageVersionsApi({ current: 1, size: 200, type: 1 })
+    const res = await pageVersionsApi({ current: 1, size: 200, type: 1, allTenants: isPlatformAdmin.value })
     const rows = sortVersionsByDisplayOrder(Array.isArray(res.result) ? res.result : [])
-    versionOptions.value = rows.map(item => ({
-      id: Number(item.id),
-      value: item.name,
-    })).filter(item => item.id > 0 && item.value)
+    versionOptions.value = rows.map(item => {
+      const tenantName = String(item.tenantName || item.tenantId || '').trim()
+      return {
+        id: Number(item.id),
+        value: isPlatformAdmin.value && tenantName ? `${item.name}（${tenantName}）` : item.name,
+      }
+    }).filter(item => item.id > 0 && item.value)
   }
   catch (error) {
     console.warn('load version options failed', error)
