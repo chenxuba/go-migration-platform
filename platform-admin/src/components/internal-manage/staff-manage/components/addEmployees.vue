@@ -32,7 +32,7 @@ const currentRoleId = ref(null)
 const currentRoleDetails = ref({})
 const confirmLoading = ref(false)
 const avatarUploading = ref(false)
-const mobileAccountValidateStatus = ref<'' | 'warning' | 'validating'>('')
+const mobileAccountValidateStatus = ref<'' | 'warning' | 'validating' | 'error'>('')
 const mobileAccountHelp = ref('')
 
 const roleInfos = ref()
@@ -103,8 +103,10 @@ async function validateLoginAccountAvailable(_rule, value) {
       return Promise.reject(new Error(res?.message || '登录账号校验失败，请稍后重试'))
     }
     if (!payload.available) {
-      resetMobileAccountTip()
-      return Promise.reject(new Error(payload.message || '登录账号已存在，请更换'))
+      const message = payload.message || '登录账号已存在，请更换'
+      mobileAccountValidateStatus.value = 'error'
+      mobileAccountHelp.value = message
+      return Promise.reject(new Error(message))
     }
     if (payload.message) {
       mobileAccountValidateStatus.value = 'warning'
@@ -115,8 +117,10 @@ async function validateLoginAccountAvailable(_rule, value) {
     }
     return Promise.resolve()
   } catch (error) {
-    resetMobileAccountTip()
-    return Promise.reject(new Error(error?.response?.data?.message || error?.message || '登录账号校验失败，请稍后重试'))
+    const message = error?.response?.data?.message || error?.message || '登录账号校验失败，请稍后重试'
+    mobileAccountValidateStatus.value = 'error'
+    mobileAccountHelp.value = message
+    return Promise.reject(new Error(message))
   }
 }
 

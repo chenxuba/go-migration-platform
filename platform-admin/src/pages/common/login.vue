@@ -87,8 +87,11 @@ async function onSubmit() {
     }
 
     token.value = result.token
-    if (result.tenantId)
+    if (result.tenantId) {
+      const hostname = window.location.hostname.toLowerCase()
+      window.localStorage.setItem(`PLATFORM_ADMIN_TENANT_ID:${hostname}`, result.tenantId)
       window.localStorage.setItem('PLATFORM_ADMIN_TENANT_ID', result.tenantId)
+    }
     reset401Status()
 
     messageService.success(t('pages.login.notification.success.title', '登录成功'), { duration: 1500 })

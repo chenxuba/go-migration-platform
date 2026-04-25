@@ -140,22 +140,49 @@ function resolveTenantDomain() {
   return window.location.hostname.toLowerCase()
 }
 
+function decodeTenantIdFromToken(rawToken?: string | null) {
+  if (!rawToken)
+    return ''
+  try {
+    const normalized = rawToken.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+    const payload = decodeURIComponent(escape(window.atob(padded)))
+    const parts = payload.split('|')
+    return parts[3]?.trim() || ''
+  }
+  catch {
+    return ''
+  }
+}
+
+function tenantStorageKey(hostname: string) {
+  return `PLATFORM_ADMIN_TENANT_ID:${hostname}`
+}
+
 function resolveTenantId() {
   if (typeof window === 'undefined')
     return import.meta.env.VITE_APP_TENANT_ID || 'platform'
 
+  const token = useAuthorization()
+  const tokenTenantId = decodeTenantIdFromToken(token.value)
+  if (tokenTenantId)
+    return tokenTenantId
+
+  const hostname = window.location.hostname.toLowerCase()
   const queryTenantId = new URLSearchParams(window.location.search).get('tenantId')?.trim()
   if (queryTenantId) {
-    window.localStorage.setItem('PLATFORM_ADMIN_TENANT_ID', queryTenantId)
+    window.localStorage.setItem(tenantStorageKey(hostname), queryTenantId)
     return queryTenantId
   }
 
-  const hostname = window.location.hostname.toLowerCase()
   const firstLabel = hostname.split('.')[0]
   if (firstLabel.startsWith('tenant-'))
     return firstLabel
 
-  return window.localStorage.getItem('PLATFORM_ADMIN_TENANT_ID') || import.meta.env.VITE_APP_TENANT_ID || 'platform'
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]')
+    return 'platform'
+
+  return window.localStorage.getItem(tenantStorageKey(hostname)) || import.meta.env.VITE_APP_TENANT_ID || 'platform'
 }
 
 function responseHandler(response: any): ResponseBody<any> | AxiosResponse<any> | Promise<any> | any {

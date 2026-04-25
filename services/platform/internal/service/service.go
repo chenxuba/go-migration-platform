@@ -65,8 +65,15 @@ func (svc *Service) GetTenantBootstrapSummary(ctx tenant.Context) (model.TenantB
 	return svc.repo.GetTenantBootstrapSummary(context.Background(), ctx.TenantID)
 }
 
+func effectiveManageTenantID(ctx tenant.Context, claims authx.Claims) string {
+	if tenantID := strings.TrimSpace(claims.TenantID); tenantID != "" {
+		return tenantID
+	}
+	return strings.TrimSpace(ctx.TenantID)
+}
+
 func (svc *Service) requireTenantManageRole(ctx tenant.Context, claims authx.Claims) (string, error) {
-	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	role, err := svc.repo.GetTenantUserRole(context.Background(), effectiveManageTenantID(ctx, claims), claims.UserID)
 	if err != nil {
 		return "", err
 	}
@@ -82,7 +89,7 @@ func (svc *Service) ListTenants(ctx tenant.Context, claims authx.Claims, keyword
 		return nil, err
 	}
 	if role != "platform_admin" {
-		summary, err := svc.repo.GetTenantBootstrapSummary(context.Background(), ctx.TenantID)
+		summary, err := svc.repo.GetTenantBootstrapSummary(context.Background(), effectiveManageTenantID(ctx, claims))
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +137,7 @@ func (svc *Service) ListLoginTemplates(ctx tenant.Context, claims authx.Claims, 
 		return nil, err
 	}
 	if role != "platform_admin" {
-		tenantID = strings.TrimSpace(ctx.TenantID)
+		tenantID = effectiveManageTenantID(ctx, claims)
 		onlyEnabled = true
 	}
 	return svc.repo.ListLoginTemplates(context.Background(), entryType, tenantID, institutionID, onlyEnabled)
@@ -226,20 +233,20 @@ func (svc *Service) resolveStorageTenantID(ctx tenant.Context, claims authx.Clai
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if role == "platform_admin" {
 		if tenantID == "" {
-			tenantID = strings.TrimSpace(ctx.TenantID)
+			tenantID = effectiveManageTenantID(ctx, claims)
 		}
 		if tenantID == "" {
 			return "", errors.New("tenantId is required")
 		}
 		return tenantID, nil
 	}
-	if tenantID != "" && tenantID != ctx.TenantID {
+	if tenantID != "" && tenantID != effectiveManageTenantID(ctx, claims) {
 		return "", errors.New("无权维护其他租户云存储")
 	}
-	if strings.TrimSpace(ctx.TenantID) == "" {
+	if effectiveManageTenantID(ctx, claims) == "" {
 		return "", errors.New("tenantId is required")
 	}
-	return ctx.TenantID, nil
+	return effectiveManageTenantID(ctx, claims), nil
 }
 
 func (svc *Service) qiniuClientForTenant(ctx tenant.Context, claims authx.Claims, requestedTenantID string) (*qiniux.Client, error) {
@@ -323,7 +330,7 @@ func (svc *Service) moduleTenantScope(ctx tenant.Context, claims authx.Claims) (
 	if role == "platform_admin" {
 		return "", "platform_template", nil
 	}
-	return ctx.TenantID, "tenant_package", nil
+	return effectiveManageTenantID(ctx, claims), "tenant_package", nil
 }
 
 func (svc *Service) GetModuleDetail(ctx tenant.Context, claims authx.Claims, moduleID int64) (model.ModuleDetailVO, error) {
@@ -334,7 +341,7 @@ func (svc *Service) GetModuleDetail(ctx tenant.Context, claims authx.Claims, mod
 	if role == "platform_admin" {
 		return svc.repo.GetModuleDetail(context.Background(), moduleID, "*")
 	}
-	return svc.repo.GetModuleDetail(context.Background(), moduleID, ctx.TenantID)
+	return svc.repo.GetModuleDetail(context.Background(), moduleID, effectiveManageTenantID(ctx, claims))
 }
 
 func (svc *Service) ListModuleMenuTree(ctx tenant.Context, claims authx.Claims, moduleType int) ([]model.ModuleMenu, error) {
@@ -424,7 +431,7 @@ func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current
 		if tenantID == "" {
 			return model.PageResult[model.Module]{}, fmt.Errorf("该机构尚未绑定租户")
 		}
-		if role != "platform_admin" && tenantID != ctx.TenantID {
+		if role != "platform_admin" && tenantID != effectiveManageTenantID(ctx, claims) {
 			return model.PageResult[model.Module]{}, fmt.Errorf("该机构不属于当前租户")
 		}
 		return svc.repo.PageModules(context.Background(), current, size, name, moduleType, tenantID)
@@ -451,7 +458,7 @@ func (svc *Service) PageInstitutions(ctx tenant.Context, claims authx.Claims, cu
 	}
 	tenantID := strings.TrimSpace(filterTenantID)
 	if role != "platform_admin" {
-		tenantID = ctx.TenantID
+		tenantID = effectiveManageTenantID(ctx, claims)
 	}
 	return svc.repo.PageInstitutions(context.Background(), current, size, keyword, mobile, registerTimeBegin, registerTimeEnd, expireEndTimeBegin, expireEndTimeEnd, enabled, status, openType, moduleID, provinceCode, cityCode, regionCode, tenantID)
 }
@@ -472,7 +479,7 @@ func (svc *Service) institutionTenantScope(ctx tenant.Context, claims authx.Clai
 	if role == "platform_admin" {
 		return "", nil
 	}
-	return ctx.TenantID, nil
+	return effectiveManageTenantID(ctx, claims), nil
 }
 
 func (svc *Service) GetInstitutionDetail(id int64) (model.InstitutionDetail, error) {
@@ -514,7 +521,7 @@ func (svc *Service) ensureInstitutionReadable(ctx tenant.Context, claims authx.C
 	if tenantID == "" {
 		return fmt.Errorf("该机构尚未绑定租户")
 	}
-	if tenantID != ctx.TenantID {
+	if tenantID != effectiveManageTenantID(ctx, claims) {
 		return fmt.Errorf("该机构不属于当前租户")
 	}
 	return nil

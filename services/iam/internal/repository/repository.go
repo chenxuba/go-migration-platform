@@ -1718,7 +1718,7 @@ func (repo *Repository) CreateManageUser(ctx context.Context, input model.Manage
 		return 0, err
 	}
 	defer tx.Rollback()
-	userID, err := repo.findReusableManageUserIDTx(ctx, tx, username, input.Mobile)
+	userID, err := repo.findReusableManageUserIDTx(ctx, tx, username, input.Mobile, orgID)
 	if err != nil {
 		return 0, err
 	}
@@ -1786,9 +1786,27 @@ func (repo *Repository) UpdateManageUser(ctx context.Context, input model.Manage
 	}
 	defer tx.Rollback()
 	if strings.TrimSpace(input.Password) != "" {
-		_, err = tx.ExecContext(ctx, `UPDATE sso_user SET username=?, password=?, mobile=?, avatar=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW() WHERE id=? AND del_flag=0`, username, input.Password, input.Mobile, input.Avatar, input.NickName, deptID, input.Disabled, userID)
+		_, err = tx.ExecContext(ctx, `
+			UPDATE sso_user u
+			SET username=?, password=?, mobile=?, avatar=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW()
+			WHERE id=? AND del_flag=0
+			  AND EXISTS (
+			    SELECT 1 FROM sso_user_role ur
+			    JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+			    WHERE ur.user_id = u.id AND r.role_type = 0 AND r.org_id = ?
+			  )
+		`, username, input.Password, input.Mobile, input.Avatar, input.NickName, deptID, input.Disabled, userID, orgID)
 	} else {
-		_, err = tx.ExecContext(ctx, `UPDATE sso_user SET username=?, mobile=?, avatar=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW() WHERE id=? AND del_flag=0`, username, input.Mobile, input.Avatar, input.NickName, deptID, input.Disabled, userID)
+		_, err = tx.ExecContext(ctx, `
+			UPDATE sso_user u
+			SET username=?, mobile=?, avatar=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW()
+			WHERE id=? AND del_flag=0
+			  AND EXISTS (
+			    SELECT 1 FROM sso_user_role ur
+			    JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+			    WHERE ur.user_id = u.id AND r.role_type = 0 AND r.org_id = ?
+			  )
+		`, username, input.Mobile, input.Avatar, input.NickName, deptID, input.Disabled, userID, orgID)
 	}
 	if err != nil {
 		return err
@@ -1904,20 +1922,27 @@ func int64Placeholders(values []int64) (string, []any) {
 	return strings.Join(parts, ","), args
 }
 
-func (repo *Repository) findReusableManageUserIDTx(ctx context.Context, tx *sql.Tx, username, mobile string) (int64, error) {
+func (repo *Repository) findReusableManageUserIDTx(ctx context.Context, tx *sql.Tx, username, mobile string, orgID int64) (int64, error) {
 	username = strings.TrimSpace(username)
 	mobile = strings.TrimSpace(mobile)
-	if username == "" && mobile == "" {
+	if username == "" && mobile == "" || orgID <= 0 {
 		return 0, nil
 	}
 	var userID int64
 	err := tx.QueryRowContext(ctx, `
-		SELECT id
-		FROM sso_user
-		WHERE del_flag = 0 AND ((? <> '' AND username = ?) OR (? <> '' AND mobile = ?))
-		ORDER BY CASE WHEN username = ? THEN 0 WHEN mobile = ? THEN 1 ELSE 2 END, id
+		SELECT su.id
+		FROM sso_user su
+		WHERE su.del_flag = 0
+		  AND ((? <> '' AND su.username = ?) OR (? <> '' AND su.mobile = ?))
+		  AND EXISTS (
+		    SELECT 1
+		    FROM sso_user_role ur
+		    JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+		    WHERE ur.user_id = su.id AND r.role_type = 0 AND r.org_id = ?
+		  )
+		ORDER BY CASE WHEN su.username = ? THEN 0 WHEN su.mobile = ? THEN 1 ELSE 2 END, su.id
 		LIMIT 1
-	`, username, username, mobile, mobile, username, mobile).Scan(&userID)
+	`, username, username, mobile, mobile, orgID, username, mobile).Scan(&userID)
 	if err == sql.ErrNoRows {
 		return 0, nil
 	}
@@ -2123,18 +2148,18 @@ func (repo *Repository) checkManageUsernameAvailable(ctx context.Context, querye
 		SELECT su.id
 		FROM sso_user su
 		WHERE su.del_flag = 0
-		  AND su.username = ?
+		  AND (su.username = ? OR su.mobile = ?)
 		  AND EXISTS (
 		    SELECT 1
 		    FROM sso_user_role ur
 		    JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
 		    WHERE ur.user_id = su.id AND r.role_type = 0 AND r.org_id = ?
 		  )
-		ORDER BY su.id
+		ORDER BY CASE WHEN su.username = ? THEN 0 WHEN su.mobile = ? THEN 1 ELSE 2 END, su.id
 		LIMIT 1
 	`
 	var userID int64
-	err := queryer.QueryRowContext(ctx, query, username, orgID).Scan(&userID)
+	err := queryer.QueryRowContext(ctx, query, username, username, orgID, username, username).Scan(&userID)
 	if err != nil && err != sql.ErrNoRows {
 		return false, "", err
 	}
@@ -2146,18 +2171,25 @@ func (repo *Repository) checkManageUsernameAvailable(ctx context.Context, querye
 	}
 
 	err = queryer.QueryRowContext(ctx, `
-		SELECT id
-		FROM sso_user
-		WHERE del_flag = 0 AND (username = ? OR mobile = ?)
-		ORDER BY CASE WHEN username = ? THEN 0 WHEN mobile = ? THEN 1 ELSE 2 END, id
+		SELECT su.id
+		FROM sso_user su
+		WHERE su.del_flag = 0
+		  AND (su.username = ? OR su.mobile = ?)
+		  AND EXISTS (
+		    SELECT 1
+		    FROM sso_user_role ur
+		    JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0
+		    WHERE ur.user_id = su.id AND r.role_type = 0 AND r.org_id <> ?
+		  )
+		ORDER BY CASE WHEN su.username = ? THEN 0 WHEN su.mobile = ? THEN 1 ELSE 2 END, su.id
 		LIMIT 1
-	`, username, username, username, username).Scan(&userID)
+	`, username, username, orgID, username, username).Scan(&userID)
 	if err != nil && err != sql.ErrNoRows {
 		return false, "", err
 	}
 	if err == nil {
 		if excludeUserID == nil || *excludeUserID <= 0 || userID != *excludeUserID {
-			return true, "该账号已存在，保存后将开通当前后台员工身份，密码沿用原密码", nil
+			return false, "该账号已在其他总控后台使用，禁止共用账号", nil
 		}
 	}
 	return true, "", nil
