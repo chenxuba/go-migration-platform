@@ -349,16 +349,6 @@ watch(
                 :show-checked-strategy="TreeSelect.SHOW_ALL" />
             </a-form-item>
 
-            <!-- 任职角色 -->
-            <a-form-item style="margin: 0;" class="position" name="roleIds"
-              :rules="[{ required: true, message: '请设置任职角色' }]">
-              <template #label>
-                <div class="flex items-center">
-                  <div>任职角色：</div>
-                  <a-button type="primary" @click="addEmployeesOpen = true">编辑</a-button>
-                </div>
-              </template>
-            </a-form-item>
           </div>
 
           <!-- 右侧表单 -->
@@ -401,6 +391,14 @@ watch(
                 <a-input v-model:value="formState.mobile" :disabled="true" placeholder="请输入" />
                 <a-button type="link" @click="openChangeMobile">修改手机号</a-button>
               </div>
+            </a-form-item>
+
+            <!-- 任职角色 -->
+            <a-form-item
+              class="role-form-item" name="roleIds" label="任职角色："
+              :rules="[{ required: true, message: '请设置任职角色' }]"
+            >
+              <a-button type="primary" @click="addEmployeesOpen = true">编辑</a-button>
             </a-form-item>
 
           </div>
@@ -525,14 +523,16 @@ watch(
 }
 
 /* 角色选择表单项样式 */
-.position {
+.role-form-item {
   margin-bottom: 0;
+}
 
-  :deep(.ant-form-item-control),
-  :deep(.ant-form-item-control-input) {
-    min-height: 1px;
-    height: 1px;
-  }
+:deep(.role-form-item .ant-form-item-label) {
+  padding-bottom: 8px;
+}
+
+:deep(.role-form-item .ant-form-item-control-input) {
+  min-height: 32px;
 }
 
 /* z-index 控制 */
