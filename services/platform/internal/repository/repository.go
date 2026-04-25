@@ -922,6 +922,8 @@ func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) erro
 			business_time VARCHAR(255) DEFAULT NULL,
 			video VARCHAR(2000) DEFAULT NULL,
 			gallery_images JSON DEFAULT NULL,
+			login_slug VARCHAR(64) NOT NULL DEFAULT '',
+			login_brand_config JSON DEFAULT NULL,
 			create_id BIGINT DEFAULT NULL,
 			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
 			update_id BIGINT DEFAULT NULL,
@@ -929,9 +931,25 @@ func (repo *Repository) ensureInstitutionProfileSchema(ctx context.Context) erro
 			del_flag TINYINT(1) DEFAULT 0,
 			PRIMARY KEY (id),
 			UNIQUE KEY uk_org_institution_profile_inst (institution_id),
-			KEY idx_org_institution_profile_inst_del (institution_id, del_flag)
+			KEY idx_org_institution_profile_inst_del (institution_id, del_flag),
+			KEY idx_org_institution_profile_login_slug (login_slug, del_flag)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`); err != nil {
+		return err
+	}
+	if err := repo.ensureColumnExists(ctx, "org_institution_profile", "login_slug", `
+		ALTER TABLE org_institution_profile ADD COLUMN login_slug VARCHAR(64) NOT NULL DEFAULT '' AFTER gallery_images
+	`); err != nil {
+		return err
+	}
+	if err := repo.ensureColumnExists(ctx, "org_institution_profile", "login_brand_config", `
+		ALTER TABLE org_institution_profile ADD COLUMN login_brand_config JSON DEFAULT NULL AFTER login_slug
+	`); err != nil {
+		return err
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		CREATE INDEX idx_org_institution_profile_login_slug ON org_institution_profile (login_slug, del_flag)
+	`); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 		return err
 	}
 
@@ -1132,7 +1150,57 @@ func normalizedInstitutionProfile(profile *model.InstitutionProfile) model.Insti
 		BusinessTime:  strings.TrimSpace(profile.BusinessTime),
 		Video:         strings.TrimSpace(profile.Video),
 		GalleryImages: trimStringSlice(profile.GalleryImages),
+		LoginSlug:     normalizeLoginSlug(profile.LoginSlug),
+		LoginBrand:    trimLoginBrandConfig(profile.LoginBrand),
 	}
+}
+
+func normalizeLoginSlug(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, " ", "-")
+	var builder strings.Builder
+	lastDash := false
+	for _, char := range value {
+		valid := (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')
+		if valid {
+			builder.WriteRune(char)
+			lastDash = false
+			continue
+		}
+		if (char == '-' || char == '_') && !lastDash {
+			builder.WriteRune('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(builder.String(), "-")
+}
+
+func trimLoginBrandConfig(input model.TenantLoginBrandConfig) model.TenantLoginBrandConfig {
+	return model.TenantLoginBrandConfig{
+		Template:        strings.TrimSpace(input.Template),
+		BrandName:       strings.TrimSpace(input.BrandName),
+		LogoURL:         strings.TrimSpace(input.LogoURL),
+		LoginTitle:      strings.TrimSpace(input.LoginTitle),
+		LoginSubtitle:   strings.TrimSpace(input.LoginSubtitle),
+		BackgroundURL:   strings.TrimSpace(input.BackgroundURL),
+		PrimaryColor:    strings.TrimSpace(input.PrimaryColor),
+		Copyright:       strings.TrimSpace(input.Copyright),
+		HeroBadge:       strings.TrimSpace(input.HeroBadge),
+		HeroTitle:       strings.TrimSpace(input.HeroTitle),
+		HeroDescription: strings.TrimSpace(input.HeroDescription),
+	}
+}
+
+func marshalLoginBrandConfig(input model.TenantLoginBrandConfig) string {
+	normalized := trimLoginBrandConfig(input)
+	if normalized == (model.TenantLoginBrandConfig{}) {
+		return "{}"
+	}
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return "{}"
+	}
+	return string(payload)
 }
 
 func (repo *Repository) PageDicts(ctx context.Context, current, size int, keyword string) (model.PageResult[model.Dict], error) {
@@ -1189,6 +1257,14 @@ func (repo *Repository) GetTenantLoginTheme(ctx context.Context, domain, entryTy
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	entryType = firstNonEmpty(strings.TrimSpace(entryType), "platform-admin")
 
+	if domain != "" && entryType == "institution-admin" {
+		if result, ok, err := repo.getInstitutionWildcardLoginTheme(ctx, domain, entryType); err != nil {
+			return model.TenantPublicLoginTheme{}, err
+		} else if ok {
+			return result, nil
+		}
+	}
+
 	query := `
 		SELECT tp.tenant_id, tp.tenant_name, IFNULL(CAST(tp.brand_config AS CHAR), '')
 		FROM tenant_profile tp
@@ -1231,6 +1307,103 @@ func (repo *Repository) GetTenantLoginTheme(ctx context.Context, domain, entryTy
 	brandSet := parseLoginBrandSet(brandConfigRaw)
 	result.LoginBrand = selectLoginBrandConfig(brandSet, result.EntryType, result.TenantName)
 	return result, nil
+}
+
+func (repo *Repository) getInstitutionWildcardLoginTheme(ctx context.Context, domain, entryType string) (model.TenantPublicLoginTheme, bool, error) {
+	var tenantID string
+	var tenantName string
+	var baseDomain string
+	var brandConfigRaw string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT tp.tenant_id, tp.tenant_name, td.domain, IFNULL(CAST(tp.brand_config AS CHAR), '')
+		FROM tenant_domain td
+		JOIN tenant_profile tp ON tp.tenant_id = td.tenant_id AND tp.del_flag = 0 AND tp.status = 'active'
+		WHERE td.entry_type = ?
+		  AND td.del_flag = 0
+		  AND ? LIKE CONCAT('%.', td.domain)
+		ORDER BY CHAR_LENGTH(td.domain) DESC, td.is_primary DESC, td.id ASC
+		LIMIT 1
+	`, entryType, domain).Scan(&tenantID, &tenantName, &baseDomain, &brandConfigRaw)
+	if err == sql.ErrNoRows {
+		return model.TenantPublicLoginTheme{}, false, nil
+	}
+	if err != nil {
+		return model.TenantPublicLoginTheme{}, false, err
+	}
+
+	prefix := strings.TrimSuffix(domain, "."+baseDomain)
+	if prefix == "" || strings.Contains(prefix, ".") {
+		return model.TenantPublicLoginTheme{}, false, nil
+	}
+
+	brandSet := parseLoginBrandSet(brandConfigRaw)
+	tenantBrand := selectLoginBrandConfig(brandSet, entryType, tenantName)
+	result := model.TenantPublicLoginTheme{
+		TenantID:   tenantID,
+		TenantName: tenantName,
+		EntryType:  entryType,
+		LoginBrand: tenantBrand,
+		MatchedBy:  "tenant-wildcard",
+	}
+
+	var institutionBrandRaw string
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT oi.id, IFNULL(oi.organ_name, ''), IFNULL(CAST(oip.login_brand_config AS CHAR), '')
+		FROM org_institution_profile oip
+		JOIN org_institution oi ON oi.id = oip.institution_id AND oi.del_flag = 0 AND IFNULL(oi.enabled, 0) = 1
+		JOIN tenant_institution ti ON ti.institution_id = oi.id AND ti.tenant_id = ? AND ti.del_flag = 0
+		WHERE oip.del_flag = 0 AND oip.login_slug = ?
+		LIMIT 1
+	`, tenantID, prefix).Scan(&result.InstitutionID, &result.InstitutionName, &institutionBrandRaw)
+	if err == sql.ErrNoRows {
+		return result, true, nil
+	}
+	if err != nil {
+		return model.TenantPublicLoginTheme{}, false, err
+	}
+	result.LoginBrand = mergeLoginBrandConfig(tenantBrand, parseLoginBrandConfig(institutionBrandRaw), result.InstitutionName)
+	result.MatchedBy = "institution-wildcard"
+	return result, true, nil
+}
+
+func mergeLoginBrandConfig(base, override model.TenantLoginBrandConfig, fallbackName string) model.TenantLoginBrandConfig {
+	merged := base
+	if strings.TrimSpace(override.Template) != "" {
+		merged.Template = strings.TrimSpace(override.Template)
+	}
+	if strings.TrimSpace(override.BrandName) != "" {
+		merged.BrandName = strings.TrimSpace(override.BrandName)
+	} else if strings.TrimSpace(fallbackName) != "" {
+		merged.BrandName = strings.TrimSpace(fallbackName)
+	}
+	if strings.TrimSpace(override.LogoURL) != "" {
+		merged.LogoURL = strings.TrimSpace(override.LogoURL)
+	}
+	if strings.TrimSpace(override.LoginTitle) != "" {
+		merged.LoginTitle = strings.TrimSpace(override.LoginTitle)
+	}
+	if strings.TrimSpace(override.LoginSubtitle) != "" {
+		merged.LoginSubtitle = strings.TrimSpace(override.LoginSubtitle)
+	}
+	if strings.TrimSpace(override.BackgroundURL) != "" {
+		merged.BackgroundURL = strings.TrimSpace(override.BackgroundURL)
+	}
+	if strings.TrimSpace(override.PrimaryColor) != "" {
+		merged.PrimaryColor = strings.TrimSpace(override.PrimaryColor)
+	}
+	if strings.TrimSpace(override.Copyright) != "" {
+		merged.Copyright = strings.TrimSpace(override.Copyright)
+	}
+	if strings.TrimSpace(override.HeroBadge) != "" {
+		merged.HeroBadge = strings.TrimSpace(override.HeroBadge)
+	}
+	if strings.TrimSpace(override.HeroTitle) != "" {
+		merged.HeroTitle = strings.TrimSpace(override.HeroTitle)
+	}
+	if strings.TrimSpace(override.HeroDescription) != "" {
+		merged.HeroDescription = strings.TrimSpace(override.HeroDescription)
+	}
+	return merged
 }
 
 func (repo *Repository) GetTenantBootstrapSummary(ctx context.Context, tenantID string) (model.TenantBootstrapSummary, error) {
@@ -1488,6 +1661,17 @@ func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]mode
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func parseLoginBrandConfig(raw string) model.TenantLoginBrandConfig {
+	var config model.TenantLoginBrandConfig
+	if strings.TrimSpace(raw) == "" {
+		return config
+	}
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		return model.TenantLoginBrandConfig{}
+	}
+	return config
 }
 
 func parseLoginBrandSet(raw string) model.TenantLoginBrandSet {
@@ -2801,7 +2985,9 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		           WHEN oip.gallery_images IS NOT NULL THEN CAST(oip.gallery_images AS CHAR)
 		           WHEN oi.inst_images IS NOT NULL THEN CAST(oi.inst_images AS CHAR)
 		           ELSE '[]'
-		       END
+		       END,
+		       IFNULL(oip.login_slug, ''),
+		       IFNULL(CAST(oip.login_brand_config AS CHAR), '')
 		FROM org_institution oi
 		LEFT JOIN org_institution_profile oip ON oip.institution_id = oi.id AND oip.del_flag = 0
 		LEFT JOIN org_module om_current ON om_current.id = (
@@ -2814,6 +3000,7 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 
 	var detail model.InstitutionDetail
 	var galleryImagesRaw string
+	var loginBrandRaw string
 	if err := row.Scan(
 		&detail.ID,
 		&detail.OrganName,
@@ -2846,10 +3033,13 @@ func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (mod
 		&detail.Profile.BusinessTime,
 		&detail.Profile.Video,
 		&galleryImagesRaw,
+		&detail.Profile.LoginSlug,
+		&loginBrandRaw,
 	); err != nil {
 		return model.InstitutionDetail{}, err
 	}
 	detail.Profile.GalleryImages = unmarshalStringSlice(galleryImagesRaw)
+	detail.Profile.LoginBrand = parseLoginBrandConfig(loginBrandRaw)
 
 	return detail, nil
 }
@@ -4088,14 +4278,16 @@ func (repo *Repository) nextInstitutionCode(ctx context.Context, tx *sql.Tx) (st
 func (repo *Repository) upsertInstitutionProfileTx(ctx context.Context, tx *sql.Tx, institutionID int64, profile model.InstitutionProfile, creatorID, updaterID any) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO org_institution_profile (
-			institution_id, description, business_time, video, gallery_images,
+			institution_id, description, business_time, video, gallery_images, login_slug, login_brand_config,
 			create_id, create_time, update_id, update_time, del_flag
-		) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, NOW(), 0)
 		ON DUPLICATE KEY UPDATE
 			description = VALUES(description),
 			business_time = VALUES(business_time),
 			video = VALUES(video),
 			gallery_images = VALUES(gallery_images),
+			login_slug = VALUES(login_slug),
+			login_brand_config = VALUES(login_brand_config),
 			update_id = VALUES(update_id),
 			update_time = NOW(),
 			del_flag = 0
@@ -4105,6 +4297,8 @@ func (repo *Repository) upsertInstitutionProfileTx(ctx context.Context, tx *sql.
 		profile.BusinessTime,
 		profile.Video,
 		marshalStringSlice(profile.GalleryImages),
+		profile.LoginSlug,
+		marshalLoginBrandConfig(profile.LoginBrand),
 		creatorID,
 		updaterID,
 	)

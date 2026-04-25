@@ -1439,6 +1439,24 @@ func (svc *Service) tenantInstitutionMismatchError(tenantID string) error {
 func (svc *Service) resolveInstitutionLoginTenant(ctx tenant.Context, institutionID int64) (string, error) {
 	domain := strings.TrimSpace(ctx.Host)
 	if domain != "" {
+		wildcardTenantID, wildcardInstitutionID, err := svc.repo.ResolveInstitutionLoginDomain(context.Background(), domain)
+		if err != nil {
+			return "", err
+		}
+		if wildcardTenantID != "" {
+			if wildcardInstitutionID > 0 && wildcardInstitutionID != institutionID {
+				return "", errors.New("当前域名不是该机构的登录地址")
+			}
+			belongs, err := svc.repo.InstitutionBelongsToTenant(context.Background(), institutionID, wildcardTenantID)
+			if err != nil {
+				return "", err
+			}
+			if !belongs {
+				return "", svc.tenantInstitutionMismatchError(wildcardTenantID)
+			}
+			return wildcardTenantID, nil
+		}
+
 		tenantID, err := svc.repo.ResolveTenantIDByDomainAndEntryType(context.Background(), domain, "institution-admin")
 		if err != nil {
 			return "", err

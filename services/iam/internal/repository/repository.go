@@ -56,6 +56,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureTenantControlPlaneSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensureInstitutionLoginProfileSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.ensureMenuSchema(context.Background()); err != nil {
 		return nil, err
 	}
@@ -248,6 +251,51 @@ func (repo *Repository) GetTenantUserScope(ctx context.Context, userID int64, te
 	return role, tenantType, nil
 }
 
+func (repo *Repository) ResolveInstitutionLoginDomain(ctx context.Context, domain string) (string, int64, error) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return "", 0, nil
+	}
+
+	var tenantID string
+	var baseDomain string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT td.tenant_id, td.domain
+		FROM tenant_domain td
+		JOIN tenant_profile tp ON tp.tenant_id = td.tenant_id AND tp.del_flag = 0 AND tp.status = 'active'
+		WHERE td.entry_type = 'institution-admin'
+		  AND td.del_flag = 0
+		  AND ? LIKE CONCAT('%.', td.domain)
+		ORDER BY CHAR_LENGTH(td.domain) DESC, td.is_primary DESC, td.id ASC
+		LIMIT 1
+	`, domain).Scan(&tenantID, &baseDomain)
+	if err == sql.ErrNoRows {
+		return "", 0, nil
+	}
+	if err != nil {
+		return "", 0, err
+	}
+
+	prefix := strings.TrimSuffix(domain, "."+baseDomain)
+	if prefix == "" || strings.Contains(prefix, ".") {
+		return tenantID, 0, nil
+	}
+
+	var institutionID int64
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT oi.id
+		FROM org_institution_profile oip
+		JOIN org_institution oi ON oi.id = oip.institution_id AND oi.del_flag = 0
+		JOIN tenant_institution ti ON ti.institution_id = oi.id AND ti.tenant_id = ? AND ti.del_flag = 0
+		WHERE oip.del_flag = 0 AND oip.login_slug = ?
+		LIMIT 1
+	`, tenantID, prefix).Scan(&institutionID)
+	if err == sql.ErrNoRows {
+		return tenantID, 0, nil
+	}
+	return strings.TrimSpace(tenantID), institutionID, err
+}
+
 func (repo *Repository) ResolveTenantIDByDomainAndEntryType(ctx context.Context, domain, entryType string) (string, error) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	entryType = strings.TrimSpace(entryType)
@@ -346,6 +394,45 @@ func (repo *Repository) ensureIndexExists(ctx context.Context, tableName, indexN
 	}
 	_, err := repo.db.ExecContext(ctx, ddl)
 	return err
+}
+
+func (repo *Repository) ensureInstitutionLoginProfileSchema(ctx context.Context) error {
+	if _, err := repo.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS org_institution_profile (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			institution_id BIGINT NOT NULL,
+			description TEXT DEFAULT NULL,
+			business_time VARCHAR(255) DEFAULT NULL,
+			video VARCHAR(2000) DEFAULT NULL,
+			gallery_images JSON DEFAULT NULL,
+			login_slug VARCHAR(64) NOT NULL DEFAULT '',
+			login_brand_config JSON DEFAULT NULL,
+			create_id BIGINT DEFAULT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_id BIGINT DEFAULT NULL,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_org_institution_profile_inst (institution_id),
+			KEY idx_org_institution_profile_inst_del (institution_id, del_flag),
+			KEY idx_org_institution_profile_login_slug (login_slug, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+	`); err != nil {
+		return err
+	}
+	if err := repo.ensureColumnExists(ctx, "org_institution_profile", "login_slug", `
+		ALTER TABLE org_institution_profile ADD COLUMN login_slug VARCHAR(64) NOT NULL DEFAULT '' AFTER gallery_images
+	`); err != nil {
+		return err
+	}
+	if err := repo.ensureColumnExists(ctx, "org_institution_profile", "login_brand_config", `
+		ALTER TABLE org_institution_profile ADD COLUMN login_brand_config JSON DEFAULT NULL AFTER login_slug
+	`); err != nil {
+		return err
+	}
+	return repo.ensureIndexExists(ctx, "org_institution_profile", "idx_org_institution_profile_login_slug", `
+		CREATE INDEX idx_org_institution_profile_login_slug ON org_institution_profile (login_slug, del_flag)
+	`)
 }
 
 func (repo *Repository) ensureMenuSchema(ctx context.Context) error {

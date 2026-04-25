@@ -153,11 +153,13 @@ type TenantLoginBrandSet struct {
 }
 
 type TenantPublicLoginTheme struct {
-	TenantID   string                 `json:"tenantId"`
-	TenantName string                 `json:"tenantName"`
-	EntryType  string                 `json:"entryType"`
-	LoginBrand TenantLoginBrandConfig `json:"loginBrand"`
-	MatchedBy  string                 `json:"matchedBy,omitempty"`
+	TenantID        string                 `json:"tenantId"`
+	TenantName      string                 `json:"tenantName"`
+	EntryType       string                 `json:"entryType"`
+	InstitutionID   int64                  `json:"institutionId,omitempty"`
+	InstitutionName string                 `json:"institutionName,omitempty"`
+	LoginBrand      TenantLoginBrandConfig `json:"loginBrand"`
+	MatchedBy       string                 `json:"matchedBy,omitempty"`
 }
 
 type TenantBootstrapSummary struct {
@@ -233,10 +235,12 @@ type Institution struct {
 }
 
 type InstitutionProfile struct {
-	Description   string   `json:"description,omitempty"`
-	BusinessTime  string   `json:"businessTime,omitempty"`
-	Video         string   `json:"video,omitempty"`
-	GalleryImages []string `json:"galleryImages,omitempty"`
+	Description   string                 `json:"description,omitempty"`
+	BusinessTime  string                 `json:"businessTime,omitempty"`
+	Video         string                 `json:"video,omitempty"`
+	GalleryImages []string               `json:"galleryImages,omitempty"`
+	LoginSlug     string                 `json:"loginSlug,omitempty"`
+	LoginBrand    TenantLoginBrandConfig `json:"loginBrand,omitempty"`
 }
 
 type InstitutionDetail struct {

@@ -1,5 +1,19 @@
 import type { ResponseBody } from '@/utils/request'
 
+export interface TenantLoginBrandConfig {
+  template?: string
+  brandName?: string
+  logoUrl?: string
+  loginTitle?: string
+  loginSubtitle?: string
+  backgroundUrl?: string
+  primaryColor?: string
+  copyright?: string
+  heroBadge?: string
+  heroTitle?: string
+  heroDescription?: string
+}
+
 export interface InstitutionItem {
   id: number
   organName: string
@@ -61,6 +75,8 @@ export interface InstitutionProfile {
   businessTime?: string
   video?: string
   galleryImages?: string[]
+  loginSlug?: string
+  loginBrand?: TenantLoginBrandConfig
 }
 
 export interface InstitutionSummary {

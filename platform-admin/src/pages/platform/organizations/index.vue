@@ -11,6 +11,7 @@ import {
 } from '@/api/platform/institutions'
 import { regionData } from '@/constants/region-data'
 import InstitutionFormDrawer from './components/institution-form-drawer.vue'
+import InstitutionLoginBrandModal from './components/institution-login-brand-modal.vue'
 import InstitutionPermissionBatchModal from './components/institution-permission-batch-modal.vue'
 import InstitutionPermissionModal from './components/institution-permission-modal.vue'
 import InstitutionRenewalModal from './components/institution-renewal-modal.vue'
@@ -50,6 +51,8 @@ const institutionVersionOpen = ref(false)
 const versionInstitutionId = ref<number | null>(null)
 const institutionRenewalOpen = ref(false)
 const renewingInstitutionId = ref<number | null>(null)
+const institutionLoginBrandOpen = ref(false)
+const loginBrandInstitutionId = ref<number | null>(null)
 const summary = ref<InstitutionSummary>({
   totalCount: 0,
   enabledCount: 0,
@@ -389,6 +392,11 @@ function openVersionModal(record: Partial<InstitutionItem>) {
   institutionVersionOpen.value = true
 }
 
+function openLoginBrandModal(record: Partial<InstitutionItem>) {
+  loginBrandInstitutionId.value = Number(record.id || 0) || null
+  institutionLoginBrandOpen.value = true
+}
+
 function clearSelectedInstitutions() {
   selectedInstitutionIds.value = []
 }
@@ -413,6 +421,10 @@ function handleBatchPermissionSaved() {
 }
 
 function handleVersionSaved() {
+  fetchInstitutions()
+}
+
+function handleLoginBrandSaved() {
   fetchInstitutions()
 }
 
@@ -774,6 +786,9 @@ watch(institutionRenewalOpen, (open) => {
                       <a-menu-item key="version" @click="openVersionModal(record)">
                         切换版本
                       </a-menu-item>
+                      <a-menu-item key="login-brand" @click="openLoginBrandModal(record)">
+                        独立登录页
+                      </a-menu-item>
                     </a-menu>
                   </template>
                 </a-dropdown>
@@ -808,6 +823,11 @@ watch(institutionRenewalOpen, (open) => {
       v-model:open="institutionVersionOpen"
       :institution-id="versionInstitutionId"
       @saved="handleVersionSaved"
+    />
+    <InstitutionLoginBrandModal
+      v-model:open="institutionLoginBrandOpen"
+      :institution-id="loginBrandInstitutionId"
+      @saved="handleLoginBrandSaved"
     />
   </div>
 </template>

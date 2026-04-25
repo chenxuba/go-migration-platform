@@ -22,6 +22,7 @@ export interface TenantBootstrapSummary {
   status?: string
   isolationMode?: string
   institutionCount: number
+  institutionIds?: number[]
   menuCount: number
   moduleCount?: number
   moduleIds?: number[]
