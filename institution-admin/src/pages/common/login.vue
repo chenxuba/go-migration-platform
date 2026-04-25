@@ -3,7 +3,7 @@ import { EyeInvisibleOutlined, LockOutlined, MobileOutlined, SafetyOutlined } fr
 import { AxiosError } from 'axios'
 import { defineAsyncComponent } from 'vue'
 import QRCode from 'qrcode'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import InstitutionLoginPickerModal from './components/institution-login-picker-modal.vue'
 import SelectLang from '@/components/select-lang/index.vue'
 import { useAuthorization } from '@/composables/authorization'
@@ -29,6 +29,7 @@ const formState = reactive({
 const agreeToTerms = ref(true)
 const notification = useNotification()
 const router = useRouter()
+const route = useRoute()
 const token = useAuthorization()
 const appStore = useAppStore()
 const submitLoading = ref(false)
@@ -59,6 +60,7 @@ const loginThemeStyle = computed(() => ({
   '--tenant-primary': loginBrand.primaryColor || defaultBrand.primaryColor,
   '--tenant-bg-image': loginBrand.backgroundUrl ? `url(${loginBrand.backgroundUrl})` : 'none',
 }))
+const isTemplatePreview = computed(() => route.path === '/login-template-preview' || String(route.query.templatePreview || '') === '1')
 const currentLoginComponent = computed(() => loginTemplateComponents[loginBrand.template] || null)
 const dynamicLoginProps = computed(() => ({
   brand: loginBrand,
@@ -88,6 +90,25 @@ function mergeLoginBrand(next, theme) {
 }
 
 async function loadLoginTheme() {
+  if (isTemplatePreview.value) {
+    const template = String(route.query.template || 'education-split')
+    const name = String(route.query.name || '机构端登录')
+    const desc = String(route.query.desc || '面向机构日常运营、教务、学员和财务管理的独立登录入口。')
+    mergeLoginBrand({
+      template,
+      brandName: name,
+      loginTitle: name,
+      loginSubtitle: '请输入机构账号登录',
+      primaryColor: '#13ad74',
+      heroBadge: '机构端后台',
+      heroTitle: `欢迎进入${name}`,
+      heroDescription: desc,
+    })
+    formState.username = '13800000000'
+    formState.password = '123456'
+    loginThemeReady.value = true
+    return
+  }
   try {
     const res = await getLoginThemeApi('institution-admin')
     const theme = res.result || res.data || {}
@@ -258,6 +279,8 @@ async function confirmInstitutionLogin(selectedInstitutionOption) {
 }
 
 async function onSubmit() {
+  if (isTemplatePreview.value)
+    return
   if (!agreeToTerms.value) {
     messageService.warning(t('pages.login.agreement.warning', '请先阅读并同意《用户协议》和《隐私条款》'))
     return

@@ -124,6 +124,40 @@ func (svc *Service) CheckTenantIDAvailable(ctx tenant.Context, claims authx.Clai
 	return svc.repo.CheckTenantIDAvailable(context.Background(), tenantID)
 }
 
+func (svc *Service) ListLoginTemplates(ctx tenant.Context, claims authx.Claims, entryType, tenantID string, institutionID int64, onlyEnabled bool) ([]model.LoginTemplate, error) {
+	role, err := svc.requireTenantManageRole(ctx, claims)
+	if err != nil {
+		return nil, err
+	}
+	if role != "platform_admin" {
+		tenantID = strings.TrimSpace(ctx.TenantID)
+		onlyEnabled = true
+	}
+	return svc.repo.ListLoginTemplates(context.Background(), entryType, tenantID, institutionID, onlyEnabled)
+}
+
+func (svc *Service) SaveLoginTemplate(ctx tenant.Context, claims authx.Claims, input model.LoginTemplateMutation) (int64, error) {
+	role, err := svc.requireTenantManageRole(ctx, claims)
+	if err != nil {
+		return 0, err
+	}
+	if role != "platform_admin" {
+		return 0, errors.New("仅平台总控管理员可维护登录页模板")
+	}
+	return svc.repo.SaveLoginTemplate(context.Background(), input)
+}
+
+func (svc *Service) DeleteLoginTemplate(ctx tenant.Context, claims authx.Claims, id int64) error {
+	role, err := svc.requireTenantManageRole(ctx, claims)
+	if err != nil {
+		return err
+	}
+	if role != "platform_admin" {
+		return errors.New("仅平台总控管理员可维护登录页模板")
+	}
+	return svc.repo.DeleteLoginTemplate(context.Background(), id)
+}
+
 func (svc *Service) ParseToken(token string) (authx.Claims, error) {
 	return svc.tokenManager.Parse(token)
 }

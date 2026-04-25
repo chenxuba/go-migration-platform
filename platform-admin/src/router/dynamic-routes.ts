@@ -104,6 +104,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: '/platform/login-templates',
+        name: 'PlatformLoginTemplates',
+        component: () => import('~/pages/platform/login-templates/index.vue'),
+        meta: {
+          title: '登录页模板',
+          tenantRoles: ['platform_admin', 'tenant_admin'],
+        },
+      },
+      {
         path: '/platform/permissions',
         name: 'PlatformPermissions',
         component: () => import('~/pages/platform/permissions/index.vue'),

@@ -9,6 +9,7 @@ import {
   CheckCircleOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  EyeOutlined,
   GlobalOutlined,
   KeyOutlined,
   LinkOutlined,
@@ -23,8 +24,11 @@ import messageService from '@/utils/messageService'
 import { checkTenantAdminUsernameAvailableApi, checkTenantIdAvailableApi, listTenantsApi, saveTenantApi } from '@/api/platform/tenants'
 import { pageInstitutionsApi } from '@/api/platform/institutions'
 import { pageVersionsApi } from '@/api/platform/versions'
+import { listLoginTemplatesApi } from '@/api/platform/login-templates'
 import { getQiniuToken } from '@/api/qiniu'
 import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
+import LoginTemplatePreview from '../shared/login-template-preview.vue'
+import { getLoginTemplateOptions, getLoginTemplates } from '../shared/login-template-registry'
 
 interface TenantRecord {
   tenantId: string
@@ -137,16 +141,10 @@ const defaultLoginBrand: Required<TenantLoginBrandConfig> = {
   heroDescription: '',
 }
 
-const platformTemplateOptions = [
-  { label: '商务分屏登录', value: 'business-split' },
-  { label: '居中品牌卡片', value: 'center-card' },
-  { label: '极简企业门户', value: 'minimal-portal' },
-]
-const institutionTemplateOptions = [
-  { label: '教务分屏登录', value: 'education-split' },
-  { label: '校区品牌卡片', value: 'campus-card' },
-  { label: '轻量门户登录', value: 'clean-portal' },
-]
+const platformTemplateOptions = ref(getLoginTemplateOptions('platform'))
+const institutionTemplateOptions = ref(getLoginTemplateOptions('institution'))
+const platformTemplates = ref(getLoginTemplates('platform'))
+const institutionTemplates = ref(getLoginTemplates('institution'))
 const brandColorOptions = [
   { label: '科技蓝', value: '#1677ff' },
   { label: '活力橙', value: '#fe8130' },
@@ -160,6 +158,9 @@ const brandUploadProgress = reactive<Record<string, number>>({})
 
 type LoginBrandScope = 'platform' | 'institution'
 type LoginBrandAssetField = 'logoUrl' | 'backgroundUrl'
+
+const templatePreviewOpen = ref(false)
+const templatePreviewScope = ref<LoginBrandScope>('platform')
 
 function createDefaultLoginBrand(tenantName = '', template = 'business-split'): Required<TenantLoginBrandConfig> {
   return {
@@ -180,6 +181,19 @@ function assignLoginBrand(target: Required<TenantLoginBrandConfig>, value?: Tena
 
 function getLoginBrand(scope: LoginBrandScope) {
   return scope === 'platform' ? formState.platformLoginBrand : formState.institutionLoginBrand
+}
+
+const previewTemplates = computed(() => templatePreviewScope.value === 'platform' ? platformTemplates.value : institutionTemplates.value)
+const previewBrand = computed(() => getLoginBrand(templatePreviewScope.value))
+const templatePreviewTitle = computed(() => templatePreviewScope.value === 'platform' ? '子总控登录页模板' : '机构端登录页模板')
+
+function openTemplatePreview(scope: LoginBrandScope) {
+  templatePreviewScope.value = scope
+  templatePreviewOpen.value = true
+}
+
+function selectLoginTemplate(scope: LoginBrandScope, templateValue: string) {
+  getLoginBrand(scope).template = templateValue
 }
 
 function getBrandUploadKey(scope: LoginBrandScope, field: LoginBrandAssetField) {
@@ -637,6 +651,40 @@ async function loadInstitutionOptions() {
   }
 }
 
+async function loadLoginTemplateOptions() {
+  try {
+    const [platformRes, institutionRes] = await Promise.all([
+      listLoginTemplatesApi({ entryType: 'platform-admin', enabledOnly: true }),
+      listLoginTemplatesApi({ entryType: 'institution-admin', enabledOnly: true }),
+    ])
+    const platformItems = platformRes.result || []
+    const institutionItems = institutionRes.result || []
+    if (platformItems.length) {
+      platformTemplates.value = platformItems.map(item => ({
+        label: item.templateName,
+        value: item.templateKey,
+        scope: ['platform'],
+        description: item.description || '',
+        layout: (item.layoutType || 'split') as any,
+      }))
+      platformTemplateOptions.value = platformItems.map(item => ({ label: item.templateName, value: item.templateKey, description: item.description || '' }))
+    }
+    if (institutionItems.length) {
+      institutionTemplates.value = institutionItems.map(item => ({
+        label: item.templateName,
+        value: item.templateKey,
+        scope: ['institution'],
+        description: item.description || '',
+        layout: (item.layoutType || 'split') as any,
+      }))
+      institutionTemplateOptions.value = institutionItems.map(item => ({ label: item.templateName, value: item.templateKey, description: item.description || '' }))
+    }
+  }
+  catch (error) {
+    console.warn('load login templates failed', error)
+  }
+}
+
 async function loadVersionOptions() {
   versionLoading.value = true
   try {
@@ -934,6 +982,7 @@ onMounted(() => {
   loadTenants()
   loadInstitutionOptions()
   loadVersionOptions()
+  loadLoginTemplateOptions()
 })
 </script>
 
@@ -1273,7 +1322,13 @@ onMounted(() => {
               <div class="login-brand-editor">
                 <div class="form-grid">
                   <a-form-item label="页面模板">
-                    <a-select v-model:value="formState.platformLoginBrand.template" :options="platformTemplateOptions" />
+                    <div class="template-select-row">
+                      <a-select v-model:value="formState.platformLoginBrand.template" :options="platformTemplateOptions" />
+                      <a-button @click="openTemplatePreview('platform')">
+                        <template #icon><EyeOutlined /></template>
+                        预览
+                      </a-button>
+                    </div>
                   </a-form-item>
                   <a-form-item label="品牌名称">
                     <a-input v-model:value="formState.platformLoginBrand.brandName" placeholder="默认使用客户名称" />
@@ -1365,7 +1420,13 @@ onMounted(() => {
               <div class="login-brand-editor">
                 <div class="form-grid">
                   <a-form-item label="页面模板">
-                    <a-select v-model:value="formState.institutionLoginBrand.template" :options="institutionTemplateOptions" />
+                    <div class="template-select-row">
+                      <a-select v-model:value="formState.institutionLoginBrand.template" :options="institutionTemplateOptions" />
+                      <a-button @click="openTemplatePreview('institution')">
+                        <template #icon><EyeOutlined /></template>
+                        预览
+                      </a-button>
+                    </div>
                   </a-form-item>
                   <a-form-item label="品牌名称">
                     <a-input v-model:value="formState.institutionLoginBrand.brandName" placeholder="默认使用客户名称" />
@@ -1488,6 +1549,41 @@ onMounted(() => {
             </a-select>
           </a-form-item>
         </section>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="templatePreviewOpen"
+      :width="860"
+      centered
+      :footer="null"
+      wrap-class-name="login-template-preview-modal"
+    >
+      <template #title>
+        <div class="modal-title">
+          <strong>{{ templatePreviewTitle }}</strong>
+          <span>统一维护模板名称、适用端口和预览效果，选择后立即应用到当前配置。</span>
+        </div>
+      </template>
+
+      <div class="template-preview-grid">
+        <button
+          v-for="item in previewTemplates"
+          :key="item.value"
+          type="button"
+          class="template-preview-option"
+          :class="{ 'template-preview-option--active': previewBrand.template === item.value }"
+          @click="selectLoginTemplate(templatePreviewScope, item.value)"
+        >
+          <LoginTemplatePreview
+            :template-key="item.value"
+            :scope="templatePreviewScope"
+            :brand="previewBrand"
+            :tenant-name="formState.tenantName"
+            compact
+          />
+          <span class="template-preview-option__check">{{ previewBrand.template === item.value ? '已选择' : '点击使用' }}</span>
+        </button>
       </div>
     </a-modal>
 
@@ -1968,6 +2064,57 @@ onMounted(() => {
 }
 
 
+.template-select-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px;
+  gap: 8px;
+  align-items: center;
+}
+
+.template-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.template-preview-option {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.template-preview-option:hover {
+  border-color: #91caff;
+  box-shadow: 0 10px 26px rgba(22, 119, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.template-preview-option--active {
+  border-color: var(--pro-ant-color-primary, #1677ff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pro-ant-color-primary, #1677ff) 12%, transparent);
+}
+
+.template-preview-option__check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--pro-ant-color-primary, #1677ff);
+  font-size: 12px;
+  line-height: 22px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
 .login-template-tabs {
   :deep(.ant-tabs-nav) {
     margin: 0 0 16px;
@@ -2334,6 +2481,14 @@ onMounted(() => {
 
   .tenant-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style>
+
+<style scoped lang="less">
+@media (max-width: 980px) {
+  .template-preview-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

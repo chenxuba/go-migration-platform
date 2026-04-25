@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -34,6 +35,9 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/tenants/admin-username-available", handler.tenantAdminUsernameAvailable)
 	mux.HandleFunc("/api/v1/platform/tenants/bootstrap-summary", handler.tenantBootstrapSummary)
 	mux.HandleFunc("/api/v1/platform/tenant-storage", handler.tenantStorageConfig)
+	mux.HandleFunc("/api/v1/platform/login-templates", handler.loginTemplates)
+	mux.HandleFunc("/api/v1/platform/login-templates/save", handler.saveLoginTemplate)
+	mux.HandleFunc("/api/v1/platform/login-templates/delete", handler.deleteLoginTemplate)
 	mux.HandleFunc("/api/v1/qiniu/upload-token", handler.qiniuUploadToken)
 	mux.HandleFunc("/api/v1/qiniu/video-upload-token", handler.qiniuVideoUploadToken)
 	mux.HandleFunc("/api/v1/platform/government/overview", handler.governmentOverview)
@@ -215,6 +219,76 @@ func (handler *Handler) tenantAdminUsernameAvailable(w http.ResponseWriter, r *h
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) loginTemplates(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	institutionID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("institutionId")), 10, 64)
+	onlyEnabled := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("enabledOnly")), "true") || strings.TrimSpace(r.URL.Query().Get("enabledOnly")) == "1"
+	result, err := handler.service.ListLoginTemplates(ctx, claims, r.URL.Query().Get("entryType"), r.URL.Query().Get("tenantId"), institutionID, onlyEnabled)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) saveLoginTemplate(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var input model.LoginTemplateMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	id, err := handler.service.SaveLoginTemplate(ctx, claims, input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": id}, ctx.RequestID)
+}
+
+func (handler *Handler) deleteLoginTemplate(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var raw map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	id, _ := strconv.ParseInt(strings.TrimSpace(fmt.Sprint(raw["id"])), 10, 64)
+	if id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	if err := handler.service.DeleteLoginTemplate(ctx, claims, id); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
 }
 
 func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request) {

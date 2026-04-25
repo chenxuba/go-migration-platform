@@ -12,6 +12,14 @@ export default [
     },
   },
   {
+    path: '/login-template-preview',
+    name: 'InstitutionLoginTemplatePreview',
+    component: () => import('~/pages/common/login.vue'),
+    meta: {
+      title: '登录页模板预览',
+    },
+  },
+  {
     path: '/401',
     name: 'Error401',
     component: () => import('~/pages/exception/401.vue'),

@@ -5,7 +5,7 @@ import { setRouteEmitter } from '~@/utils/route-listener'
 import { useAccess } from '@/composables/access'
 import { resolveRouteMenuAccess } from './access-meta'
 
-const allowList = ['/login', '/error', '/401', '/404', '/403','/502']
+const allowList = ['/login', '/login-template-preview', '/error', '/401', '/404', '/403', '/502']
 const loginPath = '/login'
 
 router.beforeEach(async (to, from, next) => {

@@ -1,7 +1,7 @@
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import router from '~@/router'
 
-const allowList = ['/login', '/404', '/403']
+const allowList = ['/login', '/login-template-preview', '/404', '/403']
 
 export interface MultiTabItem {
   path: string

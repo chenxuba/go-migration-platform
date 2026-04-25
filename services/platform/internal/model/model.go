@@ -325,6 +325,36 @@ type TenantIDAvailability struct {
 	Message   string `json:"message,omitempty"`
 }
 
+type LoginTemplate struct {
+	ID             int64    `json:"id"`
+	TemplateKey    string   `json:"templateKey"`
+	TemplateName   string   `json:"templateName"`
+	EntryType      string   `json:"entryType"`
+	LayoutType     string   `json:"layoutType,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	PreviewImage   string   `json:"previewImage,omitempty"`
+	Enabled        bool     `json:"enabled"`
+	Sort           int      `json:"sort"`
+	TenantIDs      []string `json:"tenantIds,omitempty"`
+	InstitutionIDs []int64  `json:"institutionIds,omitempty"`
+	CreateTime     string   `json:"createTime,omitempty"`
+	UpdateTime     string   `json:"updateTime,omitempty"`
+}
+
+type LoginTemplateMutation struct {
+	ID             *int64   `json:"id,omitempty"`
+	TemplateKey    string   `json:"templateKey"`
+	TemplateName   string   `json:"templateName"`
+	EntryType      string   `json:"entryType"`
+	LayoutType     string   `json:"layoutType,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	PreviewImage   string   `json:"previewImage,omitempty"`
+	Enabled        *bool    `json:"enabled,omitempty"`
+	Sort           int      `json:"sort"`
+	TenantIDs      []string `json:"tenantIds,omitempty"`
+	InstitutionIDs []int64  `json:"institutionIds,omitempty"`
+}
+
 type InstitutionStatusMutation struct {
 	ID      *int64 `json:"id"`
 	Enabled *bool  `json:"enabled"`

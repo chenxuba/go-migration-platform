@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
 import type { InstitutionDetail, InstitutionMutationPayload, TenantLoginBrandConfig } from '@/api/platform/institutions'
-import { CopyOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons-vue'
+import { CopyOutlined, DeleteOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { computed, reactive, ref, watch } from 'vue'
 import * as qiniu from 'qiniu-js'
 import { getInstitutionDetailApi, updateInstitutionApi } from '@/api/platform/institutions'
 import { listTenantsApi } from '@/api/platform/tenants'
+import { listLoginTemplatesApi } from '@/api/platform/login-templates'
 import { getQiniuToken } from '@/api/qiniu'
 import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 import messageService from '@/utils/messageService'
+import LoginTemplatePreview from '../../shared/login-template-preview.vue'
+import { getLoginTemplateOptions, getLoginTemplates } from '../../shared/login-template-registry'
 
 const props = defineProps<{
   open: boolean
@@ -41,12 +44,9 @@ const formState = reactive({
   backgroundUrl: '',
 })
 
-const templateOptions = [
-  { label: '跟随租户默认', value: '' },
-  { label: '轻量门户登录', value: 'clean-portal' },
-  { label: '校区品牌卡片', value: 'campus-card' },
-  { label: '教务分屏登录', value: 'education-split' },
-]
+const templateOptions = ref(getLoginTemplateOptions('institution', true))
+const institutionTemplates = ref(getLoginTemplates('institution'))
+const templatePreviewOpen = ref(false)
 
 const colorOptions = [
   { label: '科技蓝', value: '#1677ff' },
@@ -64,6 +64,23 @@ const fullLoginDomain = computed(() => {
   const slug = normalizeSlug(formState.loginSlug)
   return slug && institutionDomain.value ? `${slug}.${institutionDomain.value}` : ''
 })
+
+const previewBrand = computed<TenantLoginBrandConfig>(() => ({
+  template: formState.template || 'education-split',
+  brandName: institutionName.value,
+  logoUrl: logoUrl.value,
+  loginTitle: formState.loginTitle || `${institutionName.value}机构端`,
+  loginSubtitle: '请输入账号密码登录',
+  backgroundUrl: formState.backgroundUrl,
+  primaryColor: formState.primaryColor,
+  heroBadge: institutionName.value,
+  heroTitle: formState.heroTitle || `欢迎进入${institutionName.value}`,
+  heroDescription: formState.heroDescription || '机构独立登录入口，按机构品牌展示。',
+}))
+
+function selectTemplate(templateValue: string) {
+  formState.template = templateValue
+}
 
 function normalizeSlug(value: string) {
   return String(value || '')
@@ -100,6 +117,26 @@ function applyDetail(detail: InstitutionDetail) {
   formState.backgroundUrl = String(brand.backgroundUrl || '')
 }
 
+async function loadLoginTemplateOptions() {
+  try {
+    const res = await listLoginTemplatesApi({ entryType: 'institution-admin', institutionId: props.institutionId || undefined, enabledOnly: true })
+    const items = res.result || []
+    if (!items.length)
+      return
+    institutionTemplates.value = items.map(item => ({
+      label: item.templateName,
+      value: item.templateKey,
+      scope: ['institution'],
+      description: item.description || '',
+      layout: (item.layoutType || 'split') as any,
+    }))
+    templateOptions.value = [{ label: '跟随租户默认', value: '', description: '使用租户机构端默认登录页模板' }, ...items.map(item => ({ label: item.templateName, value: item.templateKey, description: item.description || '' }))]
+  }
+  catch (error) {
+    console.warn('load institution login templates failed', error)
+  }
+}
+
 async function loadTenantInstitutionDomain(institutionId: number) {
   try {
     const res = await listTenantsApi()
@@ -127,7 +164,7 @@ async function loadDetail() {
       return
     }
     applyDetail(res.result)
-    await loadTenantInstitutionDomain(id)
+    await Promise.all([loadTenantInstitutionDomain(id), loadLoginTemplateOptions()])
   }
   catch (error: any) {
     console.error('load institution login brand detail failed', error)
@@ -420,7 +457,13 @@ watch(
           </a-col>
           <a-col :xs="24" :md="12">
             <a-form-item label="页面模板">
-              <a-select v-model:value="formState.template" :options="templateOptions" />
+              <div class="template-select-row">
+                <a-select v-model:value="formState.template" :options="templateOptions" />
+                <a-button @click="templatePreviewOpen = true">
+                  <template #icon><EyeOutlined /></template>
+                  预览
+                </a-button>
+              </div>
             </a-form-item>
           </a-col>
           <a-col :xs="24" :md="12">
@@ -458,6 +501,41 @@ watch(
         </a-row>
       </div>
     </a-spin>
+  </a-modal>
+
+  <a-modal
+    v-model:open="templatePreviewOpen"
+    :width="820"
+    centered
+    :footer="null"
+    wrap-class-name="login-template-preview-modal"
+  >
+    <template #title>
+      <div class="login-brand-title">
+        <strong>机构端登录页模板</strong>
+        <span>预览后可直接选择当前机构独立模板</span>
+      </div>
+    </template>
+
+    <div class="template-preview-grid">
+      <button
+        v-for="item in institutionTemplates"
+        :key="item.value"
+        type="button"
+        class="template-preview-option"
+        :class="{ 'template-preview-option--active': formState.template === item.value }"
+        @click="selectTemplate(item.value)"
+      >
+        <LoginTemplatePreview
+          :template-key="item.value"
+          scope="institution"
+          :brand="previewBrand"
+          :tenant-name="institutionName"
+          compact
+        />
+        <span class="template-preview-option__check">{{ formState.template === item.value ? '已选择' : '点击使用' }}</span>
+      </button>
+    </div>
   </a-modal>
 </template>
 
@@ -726,4 +804,61 @@ watch(
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-color) 12%, transparent);
   }
 }
+.template-select-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 82px;
+  gap: 8px;
+  align-items: center;
+}
+
+.template-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.template-preview-option {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.template-preview-option:hover {
+  border-color: #91caff;
+  box-shadow: 0 10px 26px rgba(22, 119, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.template-preview-option--active {
+  border-color: var(--pro-ant-color-primary, #1677ff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--pro-ant-color-primary, #1677ff) 12%, transparent);
+}
+
+.template-preview-option__check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--pro-ant-color-primary, #1677ff);
+  font-size: 12px;
+  line-height: 22px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+@media (max-width: 980px) {
+  .template-preview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 </style>

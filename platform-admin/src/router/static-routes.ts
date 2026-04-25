@@ -61,6 +61,16 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/platform/login-templates',
+    name: 'PlatformLoginTemplates',
+    component: () => import('~/pages/platform/login-templates/index.vue'),
+    meta: {
+      title: '登录页模板',
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+    },
+  },
+  {
     path: '/platform/default-roles',
     name: 'PlatformDefaultRoles',
     component: () => import('~/pages/platform/default-roles/index.vue'),
@@ -86,6 +96,16 @@ const routes: RouteRecordRaw[] = [
     component: () => import('~/pages/common/login.vue'),
     meta: {
       title: '登录',
+    },
+  },
+  {
+    path: '/login-template-preview',
+    name: 'LoginTemplatePreview',
+    component: () => import('~/pages/platform/login-template-preview/index.vue'),
+    meta: {
+      title: '登录页模板预览',
+      hideInMenu: true,
+      hideInBreadcrumb: true,
     },
   },
   {

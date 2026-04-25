@@ -449,6 +449,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureTenantControlPlaneSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensureLoginTemplateSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := tenantstorage.EnsureSchema(context.Background(), db); err != nil {
 		return nil, err
 	}
@@ -480,6 +483,82 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	return repo, nil
+}
+
+func (repo *Repository) ensureLoginTemplateSchema(ctx context.Context) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS login_template (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			template_key VARCHAR(64) NOT NULL,
+			template_name VARCHAR(128) NOT NULL,
+			entry_type VARCHAR(32) NOT NULL DEFAULT 'all',
+			layout_type VARCHAR(32) NOT NULL DEFAULT 'split',
+			description VARCHAR(500) DEFAULT NULL,
+			preview_image VARCHAR(500) DEFAULT NULL,
+			enabled TINYINT(1) NOT NULL DEFAULT 1,
+			sort INT NOT NULL DEFAULT 0,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_login_template_key (template_key),
+			KEY idx_login_template_entry (entry_type, enabled, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS login_template_tenant (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			template_id BIGINT NOT NULL,
+			tenant_id VARCHAR(64) NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_login_template_tenant (template_id, tenant_id),
+			KEY idx_login_template_tenant_id (tenant_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS login_template_institution (
+			id BIGINT NOT NULL AUTO_INCREMENT,
+			template_id BIGINT NOT NULL,
+			institution_id BIGINT NOT NULL,
+			create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			PRIMARY KEY (id),
+			UNIQUE KEY uk_login_template_institution (template_id, institution_id),
+			KEY idx_login_template_institution_id (institution_id, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+	}
+	for _, statement := range statements {
+		if _, err := repo.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return repo.seedDefaultLoginTemplates(ctx)
+}
+
+func (repo *Repository) seedDefaultLoginTemplates(ctx context.Context) error {
+	defaults := []model.LoginTemplateMutation{
+		{TemplateKey: "business-split", TemplateName: "商务分屏登录", EntryType: "platform-admin", LayoutType: "split", Description: "左侧品牌宣传，右侧账号登录，适合客户子总控后台。", Sort: 10},
+		{TemplateKey: "center-card", TemplateName: "居中品牌卡片", EntryType: "platform-admin", LayoutType: "card", Description: "居中卡片式登录，品牌露出集中，适合轻量管理后台。", Sort: 20},
+		{TemplateKey: "minimal-portal", TemplateName: "极简企业门户", EntryType: "platform-admin", LayoutType: "portal", Description: "大标题门户风格，强调企业形象和入口识别。", Sort: 30},
+		{TemplateKey: "education-split", TemplateName: "教务分屏登录", EntryType: "institution-admin", LayoutType: "split", Description: "教务业务分屏布局，适合机构端日常运营入口。", Sort: 40},
+		{TemplateKey: "campus-card", TemplateName: "校区品牌卡片", EntryType: "institution-admin", LayoutType: "card", Description: "突出校区 Logo 与登录卡片，适合机构独立品牌页。", Sort: 50},
+		{TemplateKey: "clean-portal", TemplateName: "轻量门户登录", EntryType: "institution-admin", LayoutType: "portal", Description: "更轻的门户风格，适合多机构统一但保持品牌差异。", Sort: 60},
+	}
+	for _, item := range defaults {
+		if _, err := repo.db.ExecContext(ctx, `
+			INSERT INTO login_template (template_key, template_name, entry_type, layout_type, description, enabled, sort, create_time, update_time, del_flag)
+			VALUES (?, ?, ?, ?, ?, 1, ?, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE
+			  template_name = VALUES(template_name),
+			  entry_type = VALUES(entry_type),
+			  layout_type = VALUES(layout_type),
+			  description = VALUES(description),
+			  sort = VALUES(sort),
+			  update_time = NOW(),
+			  del_flag = 0
+		`, item.TemplateKey, item.TemplateName, item.EntryType, item.LayoutType, item.Description, item.Sort); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (repo *Repository) ensureTenantControlPlaneSchema(ctx context.Context) error {
@@ -2315,6 +2394,198 @@ func (repo *Repository) CheckTenantAdminUsernameAvailable(ctx context.Context, u
 
 	result.Message = "登录账号已存在，请更换"
 	return result, nil
+}
+
+func (repo *Repository) ListLoginTemplates(ctx context.Context, entryType, tenantID string, institutionID int64, onlyEnabled bool) ([]model.LoginTemplate, error) {
+	filters := []string{"lt.del_flag = 0"}
+	args := make([]any, 0, 8)
+	entryType = strings.TrimSpace(entryType)
+	if entryType != "" && entryType != "all" {
+		filters = append(filters, "(lt.entry_type = ? OR lt.entry_type = 'all')")
+		args = append(args, entryType)
+	}
+	if onlyEnabled {
+		filters = append(filters, "lt.enabled = 1")
+	}
+	if strings.TrimSpace(tenantID) != "" {
+		filters = append(filters, `(
+			NOT EXISTS (SELECT 1 FROM login_template_tenant ltt_scope WHERE ltt_scope.template_id = lt.id AND ltt_scope.del_flag = 0)
+			OR EXISTS (SELECT 1 FROM login_template_tenant ltt_match WHERE ltt_match.template_id = lt.id AND ltt_match.del_flag = 0 AND ltt_match.tenant_id = ?)
+		)`)
+		args = append(args, strings.TrimSpace(tenantID))
+	}
+	if institutionID > 0 {
+		filters = append(filters, `(
+			NOT EXISTS (SELECT 1 FROM login_template_institution lti_scope WHERE lti_scope.template_id = lt.id AND lti_scope.del_flag = 0)
+			OR EXISTS (SELECT 1 FROM login_template_institution lti_match WHERE lti_match.template_id = lt.id AND lti_match.del_flag = 0 AND lti_match.institution_id = ?)
+		)`)
+		args = append(args, institutionID)
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT lt.id,
+		       lt.template_key,
+		       lt.template_name,
+		       lt.entry_type,
+		       IFNULL(lt.layout_type, ''),
+		       IFNULL(lt.description, ''),
+		       IFNULL(lt.preview_image, ''),
+		       IFNULL(lt.enabled, 0),
+		       IFNULL(lt.sort, 0),
+		       IFNULL(DATE_FORMAT(lt.create_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(lt.update_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(GROUP_CONCAT(DISTINCT ltt.tenant_id ORDER BY ltt.tenant_id SEPARATOR ','), ''),
+		       IFNULL(GROUP_CONCAT(DISTINCT CAST(lti.institution_id AS CHAR) ORDER BY lti.institution_id SEPARATOR ','), '')
+		FROM login_template lt
+		LEFT JOIN login_template_tenant ltt ON ltt.template_id = lt.id AND ltt.del_flag = 0
+		LEFT JOIN login_template_institution lti ON lti.template_id = lt.id AND lti.del_flag = 0
+		WHERE `+strings.Join(filters, " AND ")+`
+		GROUP BY lt.id, lt.template_key, lt.template_name, lt.entry_type, lt.layout_type, lt.description, lt.preview_image, lt.enabled, lt.sort, lt.create_time, lt.update_time
+		ORDER BY lt.sort ASC, lt.id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.LoginTemplate, 0, 16)
+	for rows.Next() {
+		var item model.LoginTemplate
+		var tenantIDs string
+		var institutionIDs string
+		if err := rows.Scan(
+			&item.ID,
+			&item.TemplateKey,
+			&item.TemplateName,
+			&item.EntryType,
+			&item.LayoutType,
+			&item.Description,
+			&item.PreviewImage,
+			&item.Enabled,
+			&item.Sort,
+			&item.CreateTime,
+			&item.UpdateTime,
+			&tenantIDs,
+			&institutionIDs,
+		); err != nil {
+			return nil, err
+		}
+		item.TenantIDs = splitCommaList(tenantIDs)
+		item.InstitutionIDs = splitCommaInt64List(institutionIDs)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (repo *Repository) SaveLoginTemplate(ctx context.Context, input model.LoginTemplateMutation) (int64, error) {
+	templateKey := strings.TrimSpace(input.TemplateKey)
+	templateName := strings.TrimSpace(input.TemplateName)
+	entryType := strings.TrimSpace(input.EntryType)
+	if templateKey == "" {
+		return 0, fmt.Errorf("模板编码不能为空")
+	}
+	if templateName == "" {
+		return 0, fmt.Errorf("模板名称不能为空")
+	}
+	if entryType == "" {
+		entryType = "all"
+	}
+	layoutType := firstNonEmpty(strings.TrimSpace(input.LayoutType), "split")
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var templateID int64
+	if input.ID != nil && *input.ID > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE login_template
+			SET template_key = ?, template_name = ?, entry_type = ?, layout_type = ?, description = ?, preview_image = ?, enabled = ?, sort = ?, update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, templateKey, templateName, entryType, layoutType, strings.TrimSpace(input.Description), strings.TrimSpace(input.PreviewImage), enabled, input.Sort, *input.ID); err != nil {
+			return 0, err
+		}
+		templateID = *input.ID
+	} else {
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO login_template (template_key, template_name, entry_type, layout_type, description, preview_image, enabled, sort, create_time, update_time, del_flag)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+		`, templateKey, templateName, entryType, layoutType, strings.TrimSpace(input.Description), strings.TrimSpace(input.PreviewImage), enabled, input.Sort)
+		if err != nil {
+			return 0, err
+		}
+		templateID, err = result.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
+	}
+	if err := replaceLoginTemplateTenantsTx(ctx, tx, templateID, input.TenantIDs); err != nil {
+		return 0, err
+	}
+	if err := replaceLoginTemplateInstitutionsTx(ctx, tx, templateID, input.InstitutionIDs); err != nil {
+		return 0, err
+	}
+	return templateID, tx.Commit()
+}
+
+func replaceLoginTemplateTenantsTx(ctx context.Context, tx *sql.Tx, templateID int64, tenantIDs []string) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE login_template_tenant SET del_flag = 1 WHERE template_id = ? AND del_flag = 0`, templateID); err != nil {
+		return err
+	}
+	seen := map[string]struct{}{}
+	for _, tenantID := range tenantIDs {
+		tenantID = strings.TrimSpace(tenantID)
+		if tenantID == "" {
+			continue
+		}
+		if _, ok := seen[tenantID]; ok {
+			continue
+		}
+		seen[tenantID] = struct{}{}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO login_template_tenant (template_id, tenant_id, create_time, del_flag)
+			VALUES (?, ?, NOW(), 0)
+			ON DUPLICATE KEY UPDATE del_flag = 0
+		`, templateID, tenantID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func replaceLoginTemplateInstitutionsTx(ctx context.Context, tx *sql.Tx, templateID int64, institutionIDs []int64) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE login_template_institution SET del_flag = 1 WHERE template_id = ? AND del_flag = 0`, templateID); err != nil {
+		return err
+	}
+	seen := map[int64]struct{}{}
+	for _, institutionID := range institutionIDs {
+		if institutionID <= 0 {
+			continue
+		}
+		if _, ok := seen[institutionID]; ok {
+			continue
+		}
+		seen[institutionID] = struct{}{}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO login_template_institution (template_id, institution_id, create_time, del_flag)
+			VALUES (?, ?, NOW(), 0)
+			ON DUPLICATE KEY UPDATE del_flag = 0
+		`, templateID, institutionID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) DeleteLoginTemplate(ctx context.Context, id int64) error {
+	_, err := repo.db.ExecContext(ctx, `UPDATE login_template SET del_flag = 1, update_time = NOW() WHERE id = ? AND del_flag = 0`, id)
+	return err
 }
 
 func (repo *Repository) ListDictValuesByCode(ctx context.Context, code string) ([]model.DictValue, error) {
