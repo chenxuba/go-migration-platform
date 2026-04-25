@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
 import type { InstitutionDetail, InstitutionMutationPayload, TenantLoginBrandConfig } from '@/api/platform/institutions'
-import { CopyOutlined } from '@ant-design/icons-vue'
+import { CopyOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { computed, reactive, ref, watch } from 'vue'
+import * as qiniu from 'qiniu-js'
 import { getInstitutionDetailApi, updateInstitutionApi } from '@/api/platform/institutions'
 import { listTenantsApi } from '@/api/platform/tenants'
+import { getQiniuToken } from '@/api/qiniu'
+import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 import messageService from '@/utils/messageService'
 
 const props = defineProps<{
@@ -23,6 +27,8 @@ const openModal = computed({
 
 const loading = ref(false)
 const saving = ref(false)
+const backgroundUploading = ref(false)
+const backgroundUploadProgress = ref(0)
 const institutionDetail = ref<InstitutionDetail | null>(null)
 const institutionDomain = ref('')
 const formState = reactive({
@@ -32,6 +38,7 @@ const formState = reactive({
   loginTitle: '',
   heroTitle: '',
   heroDescription: '',
+  backgroundUrl: '',
 })
 
 const templateOptions = [
@@ -78,6 +85,7 @@ function resetForm() {
   formState.loginTitle = ''
   formState.heroTitle = ''
   formState.heroDescription = ''
+  formState.backgroundUrl = ''
 }
 
 function applyDetail(detail: InstitutionDetail) {
@@ -89,6 +97,7 @@ function applyDetail(detail: InstitutionDetail) {
   formState.loginTitle = String(brand.loginTitle || '')
   formState.heroTitle = String(brand.heroTitle || '')
   formState.heroDescription = String(brand.heroDescription || '')
+  formState.backgroundUrl = String(brand.backgroundUrl || '')
 }
 
 async function loadTenantInstitutionDomain(institutionId: number) {
@@ -135,6 +144,7 @@ function buildPayload(detail: InstitutionDetail): InstitutionMutationPayload & {
     brandName: detail.organName,
     logoUrl: detail.logo || undefined,
     loginTitle: formState.loginTitle.trim() || undefined,
+    backgroundUrl: formState.backgroundUrl.trim() || undefined,
     primaryColor: formState.primaryColor.trim() || undefined,
     heroTitle: formState.heroTitle.trim() || undefined,
     heroDescription: formState.heroDescription.trim() || undefined,
@@ -169,6 +179,77 @@ function buildPayload(detail: InstitutionDetail): InstitutionMutationPayload & {
       loginBrand: Object.values(brand).some(Boolean) ? brand : undefined,
     },
   }
+}
+
+function beforeBackgroundUpload(file: File) {
+  if (!file.type.startsWith('image/')) {
+    messageService.warning('登录背景只能上传图片文件')
+    return false
+  }
+  if (file.size / 1024 / 1024 > 8) {
+    messageService.warning('登录背景大小不能超过 8MB')
+    return false
+  }
+  return true
+}
+
+async function handleBackgroundUpload(options: UploadRequestOption) {
+  const rawFile = options.file as File
+  if (!rawFile || !beforeBackgroundUpload(rawFile)) {
+    options.onError?.(new Error('invalid file'))
+    return
+  }
+
+  backgroundUploading.value = true
+  backgroundUploadProgress.value = 0
+  try {
+    const tokenRes: any = await getQiniuToken()
+    const { token, uuid, buckethostname } = tokenRes.result || {}
+    if (!token || !uuid || !buckethostname)
+      throw new Error(tokenRes?.message || '获取上传凭证失败')
+    validateUploadFileByToken(rawFile, tokenRes.result, '登录背景')
+
+    const ext = rawFile.name.includes('.') ? rawFile.name.slice(rawFile.name.lastIndexOf('.')) : '.png'
+    const key = `institution-login/background/${uuid}${ext}`
+    const observable = qiniu.upload(rawFile, key, token, {
+      fname: rawFile.name,
+      mimeType: rawFile.type,
+    }, {
+      useCdnDomain: true,
+      region: qiniu.region.z0,
+    })
+
+    observable.subscribe({
+      next(result) {
+        backgroundUploadProgress.value = Math.floor(result.total.percent)
+      },
+      error(error) {
+        console.error('upload institution login background failed', error)
+        messageService.error(resolveUploadErrorMessage(error, '登录背景上传失败'))
+        backgroundUploading.value = false
+        backgroundUploadProgress.value = 0
+        options.onError?.(error)
+      },
+      complete(result) {
+        formState.backgroundUrl = `${buckethostname}${result.key}`
+        backgroundUploading.value = false
+        backgroundUploadProgress.value = 100
+        messageService.success('登录背景上传成功')
+        options.onSuccess?.(result as any)
+      },
+    })
+  }
+  catch (error: any) {
+    console.error('prepare institution login background upload failed', error)
+    messageService.error(resolveUploadErrorMessage(error, '登录背景上传失败'))
+    backgroundUploading.value = false
+    backgroundUploadProgress.value = 0
+    options.onError?.(error)
+  }
+}
+
+function clearBackgroundUrl() {
+  formState.backgroundUrl = ''
 }
 
 async function copyFullLoginDomain() {
@@ -291,6 +372,33 @@ watch(
           </div>
         </div>
 
+        <a-form-item label="登录背景" class="login-background-form-item">
+          <div class="login-background-row__body">
+            <a-upload
+              :custom-request="handleBackgroundUpload"
+              :show-upload-list="false"
+              accept="image/*"
+              :disabled="backgroundUploading"
+            >
+              <div class="login-background-card">
+                <img v-if="formState.backgroundUrl" :src="formState.backgroundUrl" alt="登录背景">
+                <div v-else class="login-background-empty">
+                  <UploadOutlined />
+                  <span>上传背景图</span>
+                </div>
+                <div v-if="backgroundUploading" class="login-background-mask">
+                  上传中 {{ backgroundUploadProgress }}%
+                </div>
+              </div>
+            </a-upload>
+            <a-button v-if="formState.backgroundUrl" size="small" @click="clearBackgroundUrl">
+              <template #icon><DeleteOutlined /></template>
+              清除
+            </a-button>
+            <span class="login-background-tip">不上传则跟随租户机构端默认背景</span>
+          </div>
+        </a-form-item>
+
         <a-row :gutter="16">
           <a-col :xs="24" :md="12">
             <a-form-item label="独立域名" class="login-domain-form-item">
@@ -398,6 +506,92 @@ watch(
     color: rgba(0, 0, 0, 0.45);
     font-size: 13px;
   }
+}
+
+.login-background-form-item {
+  margin-bottom: 4px;
+
+  :deep(.ant-form-item-row) {
+    flex-flow: row nowrap;
+    align-items: center;
+  }
+
+  :deep(.ant-form-item-label) {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  :deep(.ant-form-item-control) {
+    min-width: 0;
+  }
+}
+
+.login-background-row__body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+
+  :deep(.ant-upload) {
+    display: block;
+    line-height: 0;
+  }
+}
+
+.login-background-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 168px;
+  height: 76px;
+  overflow: hidden;
+  background: #fafafa;
+  border: 1px dashed #d9d9d9;
+  border-radius: 10px;
+  cursor: pointer;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.login-background-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  line-height: 18px;
+
+  .anticon {
+    color: var(--pro-ant-color-primary, #1677ff);
+    font-size: 18px;
+  }
+}
+
+.login-background-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  line-height: 18px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.login-background-tip {
+  overflow: hidden;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .login-domain-form-item {
