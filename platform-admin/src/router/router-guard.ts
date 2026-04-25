@@ -6,7 +6,23 @@ import { useModalStore } from '~/stores/modal'
 import { useLayoutMenu } from '~/stores/layout-menu'
 
 const allowList = ['/login', '/login-template-preview', '/error', '/401', '/404', '/403', '/502']
+const errorPageList = ['/401', '/404', '/403', '/502']
 const loginPath = '/login'
+
+function findFirstMenuPath(items: any[] = []): string {
+  for (const item of items) {
+    if (item?.path && !item.hideInMenu)
+      return item.path
+    const childPath = findFirstMenuPath(item?.children || [])
+    if (childPath)
+      return childPath
+  }
+  return ''
+}
+
+function resolveAccessibleHome(userStore: ReturnType<typeof useUserStore>) {
+  return findFirstMenuPath(userStore.menuData as any[]) || '/'
+}
 
 router.beforeEach(async (to, from, next) => {
   // 处理模态框路由
@@ -54,7 +70,7 @@ router.beforeEach(async (to, from, next) => {
     }
   }
   else {
-    if (!userStore.userInfo && !allowList.includes(to.path) && !to.path.startsWith('/redirect')) {
+    if (!userStore.userInfo && !to.path.startsWith('/redirect')) {
       try {
         // 获取用户信息
         await userStore.getUserInfo()
@@ -63,9 +79,14 @@ router.beforeEach(async (to, from, next) => {
         // 获取路由菜单的信息
         const currentRoute = await userStore.generateDynamicRoutes()
         router.addRoute(currentRoute)
+        const accessibleHome = resolveAccessibleHome(userStore)
+        if (to.path === loginPath || errorPageList.includes(to.path)) {
+          next({ path: accessibleHome, replace: true })
+          return
+        }
         if (to.meta?.access && !hasAccess(to.meta.access)) {
           next({
-            path: '/403',
+            path: to.path === '/platform/control-overview' ? accessibleHome : '/403',
             replace: true,
           })
           return
@@ -86,10 +107,12 @@ router.beforeEach(async (to, from, next) => {
       }
     }
     else {
-      // 如果当前是登录页面就跳转到首页
-      if (to.path === loginPath) {
+      const accessibleHome = resolveAccessibleHome(userStore)
+      // 如果当前是登录页面或错误页就跳转到有权限首页
+      if (to.path === loginPath || errorPageList.includes(to.path)) {
         next({
-          path: '/',
+          path: accessibleHome,
+          replace: true,
         })
         return
       }
@@ -97,8 +120,9 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (token.value && to.meta?.access && !hasAccess(to.meta.access)) {
+    const accessibleHome = resolveAccessibleHome(userStore)
     next({
-      path: '/403',
+      path: to.path === '/platform/control-overview' ? accessibleHome : '/403',
       replace: true,
     })
     return

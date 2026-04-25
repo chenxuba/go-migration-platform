@@ -49,9 +49,12 @@ export const useUserStore = defineStore('user', () => {
 
     menuData.value = treeMenuData
 
+    const dynamicChildren = generateFlatRoutes(routeData)
+    const firstDynamicRoute = dynamicChildren[0]
     routerData.value = {
       ...rootRoute,
-      children: generateFlatRoutes(routeData),
+      redirect: (firstDynamicRoute?.redirect as string | undefined) || rootRoute.redirect,
+      children: dynamicChildren,
     }
     return routerData.value
   }

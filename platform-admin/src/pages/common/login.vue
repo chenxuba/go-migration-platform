@@ -99,7 +99,8 @@ async function onSubmit() {
     const redirect = typeof route.query.redirect === 'string'
       ? decodeURIComponent(route.query.redirect)
       : '/'
-    router.replace(redirect || '/')
+    const safeRedirect = ['/401', '/403', '/404', '/500', '/502'].includes(redirect) ? '/' : redirect
+    router.replace(safeRedirect || '/')
   }
   catch (error: any) {
     console.error('platform login failed', error)
