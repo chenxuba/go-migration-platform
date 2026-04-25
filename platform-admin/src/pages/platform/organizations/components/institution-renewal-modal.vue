@@ -561,6 +561,7 @@ watch(
         <div class="renewal-toolbar">
           <div class="renewal-toolbar__row">
             <div class="renewal-toolbar__caption">
+              <span class="renewal-toolbar__caption-dot" />
               当前信息
             </div>
             <div class="renewal-facts">
@@ -580,11 +581,25 @@ watch(
                 <span class="renewal-fact__label">当前到期时间</span>
                 <span class="renewal-fact__value">{{ formatDateMinute(detail?.expireEndTime) }}</span>
               </div>
+
+              <div class="renewal-fact renewal-fact--mode">
+                <span class="renewal-fact__label">续期方式</span>
+                <a-segmented
+                  v-model:value="formState.renewMode"
+                  size="small"
+                  :options="[
+                    { label: '按时长', value: 'duration' },
+                    { label: '调整到期', value: 'adjust' },
+                  ]"
+                  @change="handleRenewModeChange"
+                />
+              </div>
             </div>
           </div>
 
           <div class="renewal-toolbar__row renewal-toolbar__row--form">
             <div class="renewal-toolbar__caption">
+              <span class="renewal-toolbar__caption-dot" />
               续期设置
             </div>
             <a-form ref="formRef" layout="inline" :model="formState" :rules="rules" class="renewal-inline-form">
@@ -597,17 +612,6 @@ watch(
                   class="renewal-inline-form__select"
                   :placeholder="availableOpenTypeOptions.length ? '请选择开通版本' : '暂无可续费版本'"
                   @change="handleOpenTypeChange"
-                />
-              </a-form-item>
-
-              <a-form-item label="续期方式" name="renewMode">
-                <a-segmented
-                  v-model:value="formState.renewMode"
-                  :options="[
-                    { label: '按时长', value: 'duration' },
-                    { label: '调整到期', value: 'adjust' },
-                  ]"
-                  @change="handleRenewModeChange"
                 />
               </a-form-item>
 
@@ -762,62 +766,97 @@ watch(
 
 .institution-renewal__content {
   max-height: calc(100vh - 155px);
-  padding: 20px 32px 0 !important;
   overflow: auto;
 }
 
 .renewal-toolbar {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 14px;
-  padding: 14px 18px;
-  background: #fff;
-  border: 1px solid #edf1f7;
-  border-radius: 14px;
+  padding: 14px;
+  background: linear-gradient(180deg, #fbfdff 0%, #fff 100%);
+  border: 1px solid #e8eef8;
+  border-radius: 16px;
 }
 
 .renewal-toolbar__row {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
+  gap: 6px;
   min-width: 0;
 }
 
+.renewal-toolbar__row--form {
+  padding-top: 12px;
+  border-top: 1px dashed #e5ebf5;
+}
+
 .renewal-toolbar__caption {
-  color: #262626;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #1f2329;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 32px;
+  white-space: nowrap;
+}
+
+.renewal-toolbar__caption-dot {
+  width: 3px;
+  height: 14px;
+  border-radius: 999px;
+  background: #1677ff;
 }
 
 .renewal-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 10px;
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto auto auto;
+  gap: 10px;
+  min-width: 0;
 }
 
 .renewal-fact {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
-  padding: 8px 12px;
-  background: #fafbfc;
-  border: 1px solid #f0f2f5;
+  min-width: max-content;
+  height: 38px;
+  padding: 0 12px;
+  background: #fff;
+  border: 1px solid #edf1f7;
   border-radius: 10px;
 }
 
 .renewal-fact--wide {
-  flex: 1 1 320px;
+  min-width: 0;
 }
 
 .renewal-fact--field {
-  gap: 12px;
-  padding: 0;
-  background: transparent;
-  border: none;
+  gap: 10px;
+  min-width: 0;
+}
+
+.renewal-fact:nth-child(3) .renewal-fact__value {
+  flex-shrink: 0;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.renewal-fact:last-child {
+  justify-content: flex-end;
+}
+
+.renewal-fact--mode {
+  padding-right: 8px;
+  min-width: 190px;
+}
+
+.renewal-fact--mode :deep(.ant-segmented) {
+  background: #f2f5f9;
+  border-radius: 8px;
 }
 
 .renewal-fact__label {
@@ -825,17 +864,22 @@ watch(
   color: #8c8c8c;
   font-size: 12px;
   line-height: 20px;
+  white-space: nowrap;
 }
 
 .renewal-fact__label--field {
-  line-height: 32px;
+  line-height: 20px;
 }
 
 .renewal-fact__value {
+  min-width: 0;
   color: #262626;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .renewal-fact__field {
@@ -843,14 +887,14 @@ watch(
   align-items: center;
   flex: 1 1 auto;
   min-width: 0;
-  height: 32px;
-  padding: 0 11px;
+  height: auto;
+  padding: 0;
   color: #262626;
   font-size: 13px;
-  font-weight: 600;
-  background: #fafbfc;
-  border: 1px solid #d9d9d9;
-  border-radius: 6px;
+  font-weight: 700;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -865,7 +909,8 @@ watch(
 .renewal-inline-form {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 12px;
+  align-items: flex-start;
+  gap: 12px 14px;
   width: 100%;
 }
 
@@ -874,16 +919,32 @@ watch(
   margin-bottom: 0;
 }
 
+.renewal-inline-form :deep(.ant-form-item-label > label) {
+  color: #5b6475;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.renewal-inline-form :deep(.ant-segmented) {
+  background: #f2f5f9;
+  border-radius: 8px;
+}
+
+.renewal-inline-form :deep(.ant-select-selector),
+.renewal-inline-form :deep(.ant-picker) {
+  border-radius: 8px;
+}
+
 .renewal-inline-form__select {
-  width: 152px;
+  width: 150px;
 }
 
 .renewal-inline-form__date {
-  width: 190px;
+  width: 176px;
 }
 
 .renewal-inline-form__preview-item {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -893,7 +954,7 @@ watch(
 }
 
 .renewal-inline-form__preview-item :deep(.ant-form-item-control) {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -909,16 +970,16 @@ watch(
 .renewal-inline-preview {
   display: flex;
   align-items: center;
-  width: 190px;
+  width: 100%;
   min-width: 0;
   height: 32px;
   padding: 0 11px;
-  color: #262626;
+  color: #0958d9;
   font-size: 13px;
-  font-weight: 600;
-  background: #fafbfc;
-  border: 1px solid #d9d9d9;
-  border-radius: 6px;
+  font-weight: 700;
+  background: #f0f7ff;
+  border: 1px solid #cfe3ff;
+  border-radius: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
