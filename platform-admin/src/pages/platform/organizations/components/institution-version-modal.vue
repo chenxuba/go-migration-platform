@@ -367,7 +367,10 @@ watch(
               </template>
 
               <template v-else-if="column.key === 'operatorName'">
-                {{ record.operatorName || '--' }}
+                <span class="operator-cell">
+                  <span>{{ record.operatorName || '--' }}</span>
+                  <span v-if="!record.isTenantOperator" class="assist-tag">代办</span>
+                </span>
               </template>
             </template>
           </a-table>
@@ -686,5 +689,26 @@ watch(
   .version-main {
     grid-template-columns: 1fr;
   }
+}
+
+.operator-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.assist-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid #fed7aa;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #ea580c;
+  font-size: 12px;
+  line-height: 18px;
 }
 </style>

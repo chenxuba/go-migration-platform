@@ -547,7 +547,8 @@ func (handler *Handler) updateInstitutionStatus(w http.ResponseWriter, r *http.R
 
 func (handler *Handler) institutionPermissionDetail(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireManage(w, r, ctx); !ok {
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -561,13 +562,13 @@ func (handler *Handler) institutionPermissionDetail(w http.ResponseWriter, r *ht
 		return
 	}
 
-	result, err := handler.service.GetInstitutionPermissionDetail(institutionID)
+	result, err := handler.service.GetInstitutionPermissionDetail(ctx, claims, institutionID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			httpx.WriteError(w, http.StatusNotFound, "institution not found", ctx.RequestID)
 			return
 		}
-		httpx.WriteError(w, http.StatusInternalServerError, "load institution permission detail failed", ctx.RequestID)
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
 
@@ -660,7 +661,8 @@ func (handler *Handler) replaceInstitutionPermissionVersionBatch(w http.Response
 
 func (handler *Handler) institutionRenewalRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireManage(w, r, ctx); !ok {
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -674,9 +676,9 @@ func (handler *Handler) institutionRenewalRecords(w http.ResponseWriter, r *http
 		return
 	}
 
-	result, err := handler.service.ListInstitutionRenewalRecords(institutionID)
+	result, err := handler.service.ListInstitutionRenewalRecords(ctx, claims, institutionID)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "load institution renewal records failed", ctx.RequestID)
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
 
@@ -685,7 +687,8 @@ func (handler *Handler) institutionRenewalRecords(w http.ResponseWriter, r *http
 
 func (handler *Handler) institutionVersionChangeRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireManage(w, r, ctx); !ok {
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
 		return
 	}
 	if r.Method != http.MethodGet {
@@ -699,9 +702,9 @@ func (handler *Handler) institutionVersionChangeRecords(w http.ResponseWriter, r
 		return
 	}
 
-	result, err := handler.service.ListInstitutionVersionChangeRecords(institutionID)
+	result, err := handler.service.ListInstitutionVersionChangeRecords(ctx, claims, institutionID)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "load institution version change records failed", ctx.RequestID)
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
 

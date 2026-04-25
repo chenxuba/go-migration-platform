@@ -195,6 +195,7 @@ export interface InstitutionVersionChangeRecord {
   afterVersionName?: string
   operatorId?: number
   operatorName?: string
+  isTenantOperator: boolean
   createTime?: string
 }
 

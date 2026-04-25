@@ -455,6 +455,7 @@ type InstitutionVersionChangeRecord struct {
 	AfterVersionName  string `json:"afterVersionName,omitempty"`
 	OperatorID        int64  `json:"operatorId,omitempty"`
 	OperatorName      string `json:"operatorName,omitempty"`
+	IsTenantOperator  bool   `json:"isTenantOperator"`
 	CreateTime        string `json:"createTime,omitempty"`
 }
 

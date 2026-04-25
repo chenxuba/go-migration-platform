@@ -65,8 +65,19 @@ func (svc *Service) GetTenantBootstrapSummary(ctx tenant.Context) (model.TenantB
 	return svc.repo.GetTenantBootstrapSummary(context.Background(), ctx.TenantID)
 }
 
-func (svc *Service) ListTenants(ctx tenant.Context, claims authx.Claims, keyword string) ([]model.TenantListItem, error) {
+func (svc *Service) requireTenantManageRole(ctx tenant.Context, claims authx.Claims) (string, error) {
 	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(role) == "" {
+		return "", errors.New("无当前租户管理权限")
+	}
+	return role, nil
+}
+
+func (svc *Service) ListTenants(ctx tenant.Context, claims authx.Claims, keyword string) ([]model.TenantListItem, error) {
+	role, err := svc.requireTenantManageRole(ctx, claims)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +92,7 @@ func (svc *Service) ListTenants(ctx tenant.Context, claims authx.Claims, keyword
 }
 
 func (svc *Service) SaveTenant(ctx tenant.Context, claims authx.Claims, input model.TenantMutation, operatorID *int64) error {
-	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	role, err := svc.requireTenantManageRole(ctx, claims)
 	if err != nil {
 		return err
 	}
@@ -138,7 +149,7 @@ func (svc *Service) GetQiniuVideoUploadToken(ctx tenant.Context, claims authx.Cl
 const platformDefaultUploadStorageTenantID = "tenant-a"
 
 func (svc *Service) resolveUploadStorageTenantID(ctx tenant.Context, claims authx.Claims, requestedTenantID string) (string, error) {
-	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	role, err := svc.requireTenantManageRole(ctx, claims)
 	if err != nil {
 		return "", err
 	}
@@ -152,7 +163,7 @@ func (svc *Service) resolveUploadStorageTenantID(ctx tenant.Context, claims auth
 }
 
 func (svc *Service) resolveStorageTenantID(ctx tenant.Context, claims authx.Claims, requestedTenantID string) (string, error) {
-	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	role, err := svc.requireTenantManageRole(ctx, claims)
 	if err != nil {
 		return "", err
 	}
@@ -249,7 +260,7 @@ func (svc *Service) DeleteDictValue(id int64) error {
 }
 
 func (svc *Service) moduleTenantScope(ctx tenant.Context, claims authx.Claims) (string, string, error) {
-	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	role, err := svc.requireTenantManageRole(ctx, claims)
 	if err != nil {
 		return "", "", err
 	}
@@ -260,7 +271,7 @@ func (svc *Service) moduleTenantScope(ctx tenant.Context, claims authx.Claims) (
 }
 
 func (svc *Service) GetModuleDetail(ctx tenant.Context, claims authx.Claims, moduleID int64) (model.ModuleDetailVO, error) {
-	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	role, err := svc.requireTenantManageRole(ctx, claims)
 	if err != nil {
 		return model.ModuleDetailVO{}, err
 	}
@@ -346,7 +357,7 @@ func (svc *Service) PageNotices(query model.NoticeQuery) (model.PageResult[model
 
 func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current, size int, name string, moduleType int, institutionID int64) (model.PageResult[model.Module], error) {
 	if institutionID > 0 {
-		role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+		role, err := svc.requireTenantManageRole(ctx, claims)
 		if err != nil {
 			return model.PageResult[model.Module]{}, err
 		}
@@ -371,7 +382,7 @@ func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current
 }
 
 func (svc *Service) PageInstitutions(ctx tenant.Context, claims authx.Claims, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int, filterTenantID string) (model.InstitutionPage, error) {
-	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	role, err := svc.requireTenantManageRole(ctx, claims)
 	if err != nil {
 		return model.InstitutionPage{}, err
 	}
@@ -391,7 +402,7 @@ func (svc *Service) PageGovernmentInstitutions(claims authx.Claims, current, siz
 }
 
 func (svc *Service) institutionTenantScope(ctx tenant.Context, claims authx.Claims) (string, error) {
-	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	role, err := svc.requireTenantManageRole(ctx, claims)
 	if err != nil {
 		return "", err
 	}
@@ -425,7 +436,31 @@ func (svc *Service) UpdateInstitutionStatus(id int64, enabled bool, updaterID *i
 	return svc.repo.UpdateInstitutionStatus(context.Background(), id, enabled, updaterID)
 }
 
-func (svc *Service) GetInstitutionPermissionDetail(institutionID int64) (model.InstitutionPermissionDetail, error) {
+func (svc *Service) ensureInstitutionReadable(ctx tenant.Context, claims authx.Claims, institutionID int64) error {
+	role, err := svc.requireTenantManageRole(ctx, claims)
+	if err != nil {
+		return err
+	}
+	if role == "platform_admin" {
+		return nil
+	}
+	tenantID, err := svc.repo.ResolveTenantIDByInstitution(context.Background(), institutionID)
+	if err != nil {
+		return err
+	}
+	if tenantID == "" {
+		return fmt.Errorf("该机构尚未绑定租户")
+	}
+	if tenantID != ctx.TenantID {
+		return fmt.Errorf("该机构不属于当前租户")
+	}
+	return nil
+}
+
+func (svc *Service) GetInstitutionPermissionDetail(ctx tenant.Context, claims authx.Claims, institutionID int64) (model.InstitutionPermissionDetail, error) {
+	if err := svc.ensureInstitutionReadable(ctx, claims, institutionID); err != nil {
+		return model.InstitutionPermissionDetail{}, err
+	}
 	return svc.repo.GetInstitutionPermissionDetail(context.Background(), institutionID)
 }
 
@@ -445,11 +480,17 @@ func (svc *Service) ReplaceInstitutionModulesBatch(ctx tenant.Context, claims au
 	return svc.repo.ReplaceInstitutionModulesBatch(context.Background(), input, operatorID, tenantID)
 }
 
-func (svc *Service) ListInstitutionRenewalRecords(institutionID int64) ([]model.InstitutionRenewalRecord, error) {
+func (svc *Service) ListInstitutionRenewalRecords(ctx tenant.Context, claims authx.Claims, institutionID int64) ([]model.InstitutionRenewalRecord, error) {
+	if err := svc.ensureInstitutionReadable(ctx, claims, institutionID); err != nil {
+		return nil, err
+	}
 	return svc.repo.ListInstitutionRenewalRecords(context.Background(), institutionID)
 }
 
-func (svc *Service) ListInstitutionVersionChangeRecords(institutionID int64) ([]model.InstitutionVersionChangeRecord, error) {
+func (svc *Service) ListInstitutionVersionChangeRecords(ctx tenant.Context, claims authx.Claims, institutionID int64) ([]model.InstitutionVersionChangeRecord, error) {
+	if err := svc.ensureInstitutionReadable(ctx, claims, institutionID); err != nil {
+		return nil, err
+	}
 	return svc.repo.ListInstitutionVersionChangeRecords(context.Background(), institutionID)
 }
 

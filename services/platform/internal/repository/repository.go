@@ -90,7 +90,8 @@ func institutionOpenTypeModuleName(openType int) string {
 }
 
 func institutionModuleNameOpenType(moduleName string) int {
-	switch strings.TrimSpace(moduleName) {
+	normalized := strings.TrimSpace(moduleName)
+	switch normalized {
 	case "体验版":
 		return 1
 	case "基础版":
@@ -98,6 +99,17 @@ func institutionModuleNameOpenType(moduleName string) int {
 	case "高级版":
 		return 3
 	case "旗舰版":
+		return 4
+	}
+
+	switch {
+	case strings.Contains(normalized, "体验"):
+		return 1
+	case strings.Contains(normalized, "基础"):
+		return 2
+	case strings.Contains(normalized, "高级"):
+		return 3
+	case strings.Contains(normalized, "旗舰"):
 		return 4
 	default:
 		return 0
@@ -4038,9 +4050,12 @@ func (repo *Repository) ListInstitutionVersionChangeRecords(ctx context.Context,
 		       IFNULL(r.after_version_name, ''),
 		       IFNULL(r.operator_id, 0),
 		       COALESCE(NULLIF(TRIM(u.nick_name), ''), NULLIF(TRIM(u.username), ''), ''),
+		       IF(tu.user_role = 'tenant_admin', 1, 0),
 		       IFNULL(DATE_FORMAT(r.create_time, '%Y-%m-%d %H:%i:%s'), '')
 		FROM org_institution_version_change_record r
 		LEFT JOIN sso_user u ON u.id = r.operator_id AND u.del_flag = 0
+		LEFT JOIN tenant_institution ti ON ti.institution_id = r.institution_id AND ti.del_flag = 0
+		LEFT JOIN tenant_user tu ON tu.tenant_id = ti.tenant_id AND tu.user_id = r.operator_id AND tu.del_flag = 0
 		WHERE r.institution_id = ? AND r.del_flag = 0
 		ORDER BY r.id DESC
 	`, institutionID)
@@ -4052,6 +4067,7 @@ func (repo *Repository) ListInstitutionVersionChangeRecords(ctx context.Context,
 	items := make([]model.InstitutionVersionChangeRecord, 0, 16)
 	for rows.Next() {
 		var item model.InstitutionVersionChangeRecord
+		var isTenantOperator int
 		if err := rows.Scan(
 			&item.ID,
 			&item.InstitutionID,
@@ -4063,10 +4079,12 @@ func (repo *Repository) ListInstitutionVersionChangeRecords(ctx context.Context,
 			&item.AfterVersionName,
 			&item.OperatorID,
 			&item.OperatorName,
+			&isTenantOperator,
 			&item.CreateTime,
 		); err != nil {
 			return nil, err
 		}
+		item.IsTenantOperator = isTenantOperator == 1
 		items = append(items, item)
 	}
 
@@ -5333,18 +5351,22 @@ func (repo *Repository) replaceInstitutionModuleTx(ctx context.Context, tx *sql.
 		return err
 	}
 
-	shouldWriteVersionChangeLog := nextOpenType > 0 && (currentModuleID != moduleID || storedOpenType != nextOpenType)
+	shouldWriteVersionChangeLog := currentModuleID != moduleID || (nextOpenType > 0 && storedOpenType != nextOpenType)
 	if shouldWriteVersionChangeLog {
 		beforeVersionName := strings.TrimSpace(currentModuleName)
 		if beforeVersionName == "" {
 			beforeVersionName = institutionOpenTypeModuleName(storedOpenType)
+		}
+		afterOpenType := nextOpenType
+		if afterOpenType == 0 {
+			afterOpenType = storedOpenType
 		}
 		if err := repo.insertInstitutionVersionChangeRecordTx(ctx, tx, model.InstitutionVersionChangeRecord{
 			InstitutionID:     institutionID,
 			BeforeOpenType:    storedOpenType,
 			BeforeModuleID:    currentModuleID,
 			BeforeVersionName: beforeVersionName,
-			AfterOpenType:     nextOpenType,
+			AfterOpenType:     afterOpenType,
 			AfterModuleID:     moduleID,
 			AfterVersionName:  moduleName,
 			OperatorID:        nullableInt64Deref(operatorID),

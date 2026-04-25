@@ -6,7 +6,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { pageVersionsApi } from '@/api/platform/versions'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
-import { filterSystemDefaultVersions, sortVersionsByDisplayOrder, sortVersionsByDisplayOrderDesc } from '../shared/version-order'
+import { sortVersionsByDisplayOrder, sortVersionsByDisplayOrderDesc } from '../shared/version-order'
 import VersionFormModal from './components/version-form-modal.vue'
 
 const userStore = useUserStore()
@@ -69,9 +69,7 @@ async function fetchHighlightVersions() {
       messageService.error(res.message || '获取版本卡片失败')
       return
     }
-    highlightSource.value = sortVersionsByDisplayOrder(
-      filterSystemDefaultVersions(Array.isArray(res.result) ? res.result : []),
-    )
+    highlightSource.value = sortVersionsByDisplayOrder(Array.isArray(res.result) ? res.result : [])
   }
   catch (error: any) {
     console.error('fetch highlight versions failed', error)
