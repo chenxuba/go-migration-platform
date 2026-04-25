@@ -3,7 +3,7 @@
 import { CloseOutlined } from '@ant-design/icons-vue'
 import { TreeSelect, message } from 'ant-design-vue'
 import selectRole from './selectRole.vue'
-import { saveInstUser } from '@/api/internal-manage/staff-manage'
+import { checkInstUserLoginAccountAvailableApi, saveInstUser } from '@/api/internal-manage/staff-manage'
 import { getInstRolePageApi, updateRoleApi } from '@/api/internal-manage/role-manage'
 import RolesDetailsDrawer from '@/components/common/roles-details-drawer.vue'
 import messageService from '~@/utils/messageService'
@@ -27,6 +27,8 @@ const roleDetailsOpen = ref(false)
 const currentRoleId = ref(null)
 const currentRoleDetails = ref({})
 const confirmLoading = ref(false)
+const mobileAccountValidateStatus = ref('')
+const mobileAccountHelp = ref('')
 
 const roleInfos = ref()
 
@@ -52,6 +54,47 @@ function roleDetailsFunc(roleInfo) {
   currentRoleId.value = roleInfo.id
   currentRoleDetails.value = roleInfo
   roleDetailsOpen.value = true
+}
+
+
+function resetMobileAccountTip() {
+  mobileAccountValidateStatus.value = ''
+  mobileAccountHelp.value = ''
+}
+
+async function validateLoginAccountAvailable(_rule, value) {
+  const username = String(value || '').trim()
+  resetMobileAccountTip()
+  if (!username)
+    return Promise.resolve()
+  if (!/^1[3-9]\d{9}$/.test(username))
+    return Promise.resolve()
+
+  mobileAccountValidateStatus.value = 'validating'
+  try {
+    const res = await checkInstUserLoginAccountAvailableApi({ username })
+    const payload = res?.result
+    if (res?.code !== 200 || !payload) {
+      resetMobileAccountTip()
+      return Promise.reject(new Error(res?.message || '登录账号校验失败，请稍后重试'))
+    }
+    if (!payload.available) {
+      resetMobileAccountTip()
+      return Promise.reject(new Error(payload.message || '登录账号已存在，请更换'))
+    }
+    if (payload.message) {
+      mobileAccountValidateStatus.value = 'warning'
+      mobileAccountHelp.value = payload.message
+    }
+    else {
+      resetMobileAccountTip()
+    }
+    return Promise.resolve()
+  }
+  catch (error) {
+    resetMobileAccountTip()
+    return Promise.reject(new Error(error?.response?.data?.message || error?.message || '登录账号校验失败，请稍后重试'))
+  }
 }
 
 async function getRoleList(query = { queryModel: {} }) {
@@ -168,6 +211,7 @@ watch(() => open.value, (newVal) => {
   if (!newVal) {
     selectRoleList.value = []
     formState.roleIds = []
+    resetMobileAccountTip()
   }
 })
 
@@ -265,12 +309,17 @@ onMounted(async () => {
             </a-form-item>
             <!-- 员工手机号 -->
             <a-form-item
-              label="员工手机号：" name="mobile" :rules="[
-                { required: true, message: '请输入员工手机号' },
-                { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号' },
+              class="mobile-account-form-item"
+              label="员工手机号：" name="mobile"
+              :validate-status="mobileAccountValidateStatus || undefined"
+              :help="mobileAccountHelp || undefined"
+              :rules="[
+                { required: true, message: '请输入员工手机号', trigger: 'blur' },
+                { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' },
+                { validator: validateLoginAccountAvailable, trigger: 'blur' },
               ]"
             >
-              <a-input v-model:value="formState.mobile" :maxlength="11" placeholder="请输入" />
+              <a-input v-model:value="formState.mobile" :maxlength="11" placeholder="请输入" @change="resetMobileAccountTip" />
             </a-form-item>
             <!-- 员工类型 -->
             <a-form-item label="员工类型：" :required="true">
@@ -386,6 +435,18 @@ onMounted(async () => {
 
 :deep(.ant-form-item-explain-error) {
   font-size: 12px;
+}
+
+:deep(.mobile-account-form-item .ant-form-item-explain) {
+  min-height: 18px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+:deep(.mobile-account-form-item .ant-form-item-explain > div) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 :deep(.ant-modal-body) {

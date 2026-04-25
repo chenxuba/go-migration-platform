@@ -65,3 +65,8 @@ export function checkPhoneUsedApi(data) {
 export function changePhoneWithOtherApi(data) {
   return usePost('/api/v1/inst-users/change-phone', data)
 }
+
+// 校验登录账号是否可用（新增员工默认用手机号作为登录账号）
+export function checkInstUserLoginAccountAvailableApi(data) {
+  return useGet('/api/v1/inst-users/login-account-available', data, { silentError: true })
+}

@@ -388,52 +388,99 @@ func (repo *Repository) CheckPhoneUsed(ctx context.Context, instID int64, mobile
 	return count > 0, nil
 }
 
-func (repo *Repository) CheckLoginAccountAvailable(ctx context.Context, username string) (model.LoginAccountAvailability, error) {
+func (repo *Repository) CheckLoginAccountAvailable(ctx context.Context, instID int64, username string) (model.LoginAccountAvailability, error) {
 	username = strings.TrimSpace(username)
 	result := model.LoginAccountAvailability{Username: username}
 	if username == "" {
 		result.Message = "请输入登录账号"
 		return result, nil
 	}
-	checks := []string{
-		`SELECT COUNT(1) FROM org_institution WHERE del_flag = 0 AND login_name = ?`,
-		`SELECT COUNT(1) FROM sso_user WHERE del_flag = 0 AND username = ?`,
-		`SELECT COUNT(1) FROM inst_user WHERE del_flag = 0 AND username = ?`,
+	var currentInstCount int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM inst_user iu
+		LEFT JOIN sso_user su ON su.id = iu.user_id AND su.del_flag = 0
+		WHERE iu.del_flag = 0
+		  AND iu.inst_id = ?
+		  AND (iu.username = ? OR iu.mobile = ? OR su.username = ? OR su.mobile = ?)
+	`, instID, username, username, username, username).Scan(&currentInstCount); err != nil {
+		return result, err
 	}
-	for _, query := range checks {
-		var count int
-		if err := repo.db.QueryRowContext(ctx, query, username).Scan(&count); err != nil {
-			return result, err
-		}
-		if count > 0 {
-			result.Message = "登录账号已存在，请更换"
-			return result, nil
-		}
+	if currentInstCount > 0 {
+		result.Message = "当前机构已存在该登录账号，请更换"
+		return result, nil
+	}
+
+	var institutionLoginCount int
+	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM org_institution WHERE del_flag = 0 AND login_name = ?`, username).Scan(&institutionLoginCount); err != nil {
+		return result, err
+	}
+	if institutionLoginCount > 0 {
+		result.Message = "登录账号已存在，请更换"
+		return result, nil
+	}
+
+	var existingUserCount int
+	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM sso_user WHERE del_flag = 0 AND (username = ? OR mobile = ?)`, username, username).Scan(&existingUserCount); err != nil {
+		return result, err
 	}
 	result.Available = true
+	if existingUserCount > 0 {
+		result.Message = "该账号已存在，保存后将开通当前机构员工身份，密码沿用原密码"
+	}
 	return result, nil
 }
 
-func (repo *Repository) ensureLoginAccountAvailableTx(ctx context.Context, tx *sql.Tx, username string) error {
+func (repo *Repository) ensureInstLoginAccountUsableTx(ctx context.Context, tx *sql.Tx, instID int64, username string) error {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return fmt.Errorf("登录账号不能为空")
 	}
-	checks := []string{
-		`SELECT COUNT(1) FROM org_institution WHERE del_flag = 0 AND login_name = ?`,
-		`SELECT COUNT(1) FROM sso_user WHERE del_flag = 0 AND username = ?`,
-		`SELECT COUNT(1) FROM inst_user WHERE del_flag = 0 AND username = ?`,
+	var currentInstCount int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM inst_user iu
+		LEFT JOIN sso_user su ON su.id = iu.user_id AND su.del_flag = 0
+		WHERE iu.del_flag = 0
+		  AND iu.inst_id = ?
+		  AND (iu.username = ? OR iu.mobile = ? OR su.username = ? OR su.mobile = ?)
+	`, instID, username, username, username, username).Scan(&currentInstCount); err != nil {
+		return err
 	}
-	for _, query := range checks {
-		var count int
-		if err := tx.QueryRowContext(ctx, query, username).Scan(&count); err != nil {
-			return err
-		}
-		if count > 0 {
-			return fmt.Errorf("登录账号已存在，请更换")
-		}
+	if currentInstCount > 0 {
+		return fmt.Errorf("当前机构已存在该登录账号，请更换")
+	}
+	var institutionLoginCount int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM org_institution WHERE del_flag = 0 AND login_name = ?`, username).Scan(&institutionLoginCount); err != nil {
+		return err
+	}
+	if institutionLoginCount > 0 {
+		return fmt.Errorf("登录账号已存在，请更换")
 	}
 	return nil
+}
+
+func (repo *Repository) findReusableSSOUserIDTx(ctx context.Context, tx *sql.Tx, username, mobile string) (int64, error) {
+	username = strings.TrimSpace(username)
+	mobile = strings.TrimSpace(mobile)
+	if username == "" && mobile == "" {
+		return 0, nil
+	}
+	var userID int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM sso_user
+		WHERE del_flag = 0 AND ((? <> '' AND username = ?) OR (? <> '' AND mobile = ?))
+		ORDER BY CASE WHEN username = ? THEN 0 WHEN mobile = ? THEN 1 ELSE 2 END, id
+		LIMIT 1
+	`, username, username, mobile, mobile, username, mobile).Scan(&userID)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return userID, nil
 }
 
 func (repo *Repository) SaveInstUser(ctx context.Context, instID int64, dto model.InstUserSaveDTO, passwordHash string) (int64, error) {
@@ -447,19 +494,38 @@ func (repo *Repository) SaveInstUser(ctx context.Context, instID int64, dto mode
 	if username == "" {
 		username = strings.TrimSpace(dto.Mobile)
 	}
-	if err := repo.ensureLoginAccountAvailableTx(ctx, tx, username); err != nil {
+	if err := repo.ensureInstLoginAccountUsableTx(ctx, tx, instID, username); err != nil {
 		return 0, err
 	}
-	userResult, err := tx.ExecContext(ctx, `
-		INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, is_admin, del_flag, create_time)
-		VALUES (UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, NOW())
-	`, username, passwordHash, strings.TrimSpace(dto.Mobile), strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.NickName), dto.UserType, boolValue(dto.Admin))
+	ssoUserID, err := repo.findReusableSSOUserIDTx(ctx, tx, username, dto.Mobile)
 	if err != nil {
 		return 0, err
 	}
-	ssoUserID, err := userResult.LastInsertId()
-	if err != nil {
-		return 0, err
+	if ssoUserID > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE sso_user
+			SET mobile = CASE WHEN ? = '' THEN mobile ELSE ? END,
+			    avatar = CASE WHEN ? = '' THEN avatar ELSE ? END,
+			    nick_name = ?,
+			    user_type = ?,
+			    is_admin = ?,
+			    update_time = NOW()
+			WHERE id = ? AND del_flag = 0
+		`, strings.TrimSpace(dto.Mobile), strings.TrimSpace(dto.Mobile), strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.NickName), dto.UserType, boolValue(dto.Admin), ssoUserID); err != nil {
+			return 0, err
+		}
+	} else {
+		userResult, err := tx.ExecContext(ctx, `
+			INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, is_admin, del_flag, create_time)
+			VALUES (UUID(), 0, ?, ?, ?, ?, ?, ?, ?, 0, NOW())
+		`, username, passwordHash, strings.TrimSpace(dto.Mobile), strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.NickName), dto.UserType, boolValue(dto.Admin))
+		if err != nil {
+			return 0, err
+		}
+		ssoUserID, err = userResult.LastInsertId()
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	instResult, err := tx.ExecContext(ctx, `
