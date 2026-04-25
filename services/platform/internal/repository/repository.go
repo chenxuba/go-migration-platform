@@ -3014,6 +3014,25 @@ func (repo *Repository) getGovernmentOverviewContext(ctx context.Context, userID
 	return result, nil
 }
 
+func (repo *Repository) ResolveTenantIDByInstitution(ctx context.Context, institutionID int64) (string, error) {
+	if institutionID <= 0 {
+		return "", nil
+	}
+	var tenantID string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT ti.tenant_id
+		FROM tenant_institution ti
+		JOIN tenant_profile tp ON tp.tenant_id = ti.tenant_id AND tp.del_flag = 0 AND tp.status = 'active'
+		WHERE ti.institution_id = ? AND ti.del_flag = 0
+		ORDER BY ti.id DESC
+		LIMIT 1
+	`, institutionID).Scan(&tenantID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return strings.TrimSpace(tenantID), err
+}
+
 func (repo *Repository) GetInstitutionDetail(ctx context.Context, id int64) (model.InstitutionDetail, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT oi.id,
@@ -4479,7 +4498,9 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64, ten
 	tenantID = strings.TrimSpace(tenantID)
 	ownerFilter := "m.tenant_id = 'platform'"
 	args := []any{moduleID}
-	if tenantID != "" {
+	if tenantID == "*" {
+		ownerFilter = "1 = 1"
+	} else if tenantID != "" {
 		ownerFilter = "m.tenant_id = ?"
 		args = []any{tenantID, moduleID}
 	}
@@ -4549,7 +4570,14 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64, ten
 		return model.ModuleDetailVO{}, err
 	}
 
-	rawMenus, err := repo.listInstitutionMenus(ctx, tenantID)
+	menuScopeTenantID := tenantID
+	if tenantID == "*" {
+		menuScopeTenantID = strings.TrimSpace(detail.TenantID)
+		if menuScopeTenantID == "platform" {
+			menuScopeTenantID = ""
+		}
+	}
+	rawMenus, err := repo.listInstitutionMenus(ctx, menuScopeTenantID)
 	if err != nil {
 		return model.ModuleDetailVO{}, err
 	}

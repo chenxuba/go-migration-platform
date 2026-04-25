@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	"go-migration-platform/pkg/authx"
@@ -259,11 +260,14 @@ func (svc *Service) moduleTenantScope(ctx tenant.Context, claims authx.Claims) (
 }
 
 func (svc *Service) GetModuleDetail(ctx tenant.Context, claims authx.Claims, moduleID int64) (model.ModuleDetailVO, error) {
-	tenantID, _, err := svc.moduleTenantScope(ctx, claims)
+	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
 	if err != nil {
 		return model.ModuleDetailVO{}, err
 	}
-	return svc.repo.GetModuleDetail(context.Background(), moduleID, tenantID)
+	if role == "platform_admin" {
+		return svc.repo.GetModuleDetail(context.Background(), moduleID, "*")
+	}
+	return svc.repo.GetModuleDetail(context.Background(), moduleID, ctx.TenantID)
 }
 
 func (svc *Service) ListModuleMenuTree(ctx tenant.Context, claims authx.Claims, moduleType int) ([]model.ModuleMenu, error) {
@@ -340,7 +344,25 @@ func (svc *Service) PageNotices(query model.NoticeQuery) (model.PageResult[model
 	return svc.repo.PageNotices(context.Background(), query)
 }
 
-func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current, size int, name string, moduleType int) (model.PageResult[model.Module], error) {
+func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current, size int, name string, moduleType int, institutionID int64) (model.PageResult[model.Module], error) {
+	if institutionID > 0 {
+		role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+		if err != nil {
+			return model.PageResult[model.Module]{}, err
+		}
+		tenantID, err := svc.repo.ResolveTenantIDByInstitution(context.Background(), institutionID)
+		if err != nil {
+			return model.PageResult[model.Module]{}, err
+		}
+		if tenantID == "" {
+			return model.PageResult[model.Module]{}, fmt.Errorf("该机构尚未绑定租户")
+		}
+		if role != "platform_admin" && tenantID != ctx.TenantID {
+			return model.PageResult[model.Module]{}, fmt.Errorf("该机构不属于当前租户")
+		}
+		return svc.repo.PageModules(context.Background(), current, size, name, moduleType, tenantID)
+	}
+
 	tenantID, _, err := svc.moduleTenantScope(ctx, claims)
 	if err != nil {
 		return model.PageResult[model.Module]{}, err

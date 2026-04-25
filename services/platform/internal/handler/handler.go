@@ -1074,9 +1074,17 @@ func (handler *Handler) modules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := handler.service.PageModules(ctx, claims, parseInt(r.URL.Query().Get("current"), 1), parseInt(r.URL.Query().Get("size"), 10), r.URL.Query().Get("name"), parseInt(r.URL.Query().Get("type"), 0))
+	result, err := handler.service.PageModules(
+		ctx,
+		claims,
+		parseInt(r.URL.Query().Get("current"), 1),
+		parseInt(r.URL.Query().Get("size"), 10),
+		r.URL.Query().Get("name"),
+		parseInt(r.URL.Query().Get("type"), 0),
+		int64(parseInt(r.URL.Query().Get("institutionId"), 0)),
+	)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "load modules failed", ctx.RequestID)
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
@@ -1119,7 +1127,11 @@ func (handler *Handler) moduleDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := handler.service.GetModuleDetail(ctx, claims, moduleID)
 	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, "load module detail failed", ctx.RequestID)
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "版本不存在或不在当前权限范围内", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)

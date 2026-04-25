@@ -175,6 +175,7 @@ async function loadData(institutionId: number) {
         current: 1,
         size: 200,
         type: 1,
+        institutionId,
       }),
       getInstitutionVersionChangeRecordsApi({ institutionId }),
     ])

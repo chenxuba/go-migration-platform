@@ -57,6 +57,7 @@ export interface VersionPageParams {
   size?: number
   name?: string
   type?: number
+  institutionId?: number
 }
 
 export interface VersionMutationPayload {
