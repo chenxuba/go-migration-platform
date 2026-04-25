@@ -9,6 +9,7 @@ import {
   CheckCircleOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  DownOutlined,
   EyeOutlined,
   GlobalOutlined,
   KeyOutlined,
@@ -107,6 +108,8 @@ const authorizationSaving = ref(false)
 const authorizationTenant = ref<TenantRecord | null>(null)
 const authorizationModuleId = ref<number | undefined>(undefined)
 const loginAddressModalOpen = ref(false)
+const domainConfigModalOpen = ref(false)
+const loginTemplateConfigModalOpen = ref(false)
 const loginAddressTenant = ref<TenantRecord | null>(null)
 const loginAddressQr = reactive<Record<'platform' | 'institution', string>>({
   platform: '',
@@ -510,7 +513,7 @@ function openCreateModal() {
   modalOpen.value = true
 }
 
-function openEditModal(record: TenantRecord) {
+function populateTenantForm(record: TenantRecord) {
   editingTenantId.value = record.tenantId
   formState.tenantId = record.tenantId
   resetTenantIdValidation()
@@ -531,7 +534,21 @@ function openEditModal(record: TenantRecord) {
   assignLoginBrand(formState.institutionLoginBrand, record.institutionLoginBrand || record.loginBrand, record.tenantName, 'education-split')
   formState.remark = ''
   loadLoginTemplateOptions(record.tenantId)
+}
+
+function openEditModal(record: TenantRecord) {
+  populateTenantForm(record)
   modalOpen.value = true
+}
+
+function openDomainConfigModal(record: TenantRecord) {
+  populateTenantForm(record)
+  domainConfigModalOpen.value = true
+}
+
+function openLoginTemplateConfigModal(record: TenantRecord) {
+  populateTenantForm(record)
+  loginTemplateConfigModalOpen.value = true
 }
 
 function openAuthorizationModal(record: TenantRecord) {
@@ -772,6 +789,8 @@ async function handleSave() {
     })
     messageService.success('合作客户租户已保存')
     modalOpen.value = false
+    domainConfigModalOpen.value = false
+    loginTemplateConfigModalOpen.value = false
     await loadTenants()
   }
   catch (error) {
@@ -1146,11 +1165,24 @@ onMounted(() => {
         </template>
 
         <template v-if="column.key === 'action'">
-          <a-space>
-            <a-button type="link" size="small" @click="openEditModal(record as TenantRecord)">编辑</a-button>
-            <a-button type="link" size="small" @click="openAuthorizationModal(record as TenantRecord)">授权配置</a-button>
-            <a-button type="link" size="small" @click="openLoginAddressModal(record as TenantRecord)">登录地址</a-button>
-          </a-space>
+          <div class="tenant-actions">
+            <a-button type="link" size="small" class="tenant-action" @click="openEditModal(record as TenantRecord)">编辑</a-button>
+            <a-button type="link" size="small" class="tenant-action" @click="openAuthorizationModal(record as TenantRecord)">授权配置</a-button>
+            <a-dropdown placement="bottomRight">
+              <a-button type="link" size="small" class="tenant-action tenant-action--dropdown">
+                登录配置
+                <DownOutlined />
+              </a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item key="login-page" @click="openLoginTemplateConfigModal(record as TenantRecord)">登录页配置</a-menu-item>
+                  <a-menu-item key="domain" @click="openDomainConfigModal(record as TenantRecord)">域名配置</a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item key="address" @click="openLoginAddressModal(record as TenantRecord)">查看登录地址</a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+          </div>
         </template>
       </template>
     </a-table>
@@ -1221,7 +1253,7 @@ onMounted(() => {
       <template #title>
         <div class="modal-title">
           <strong>{{ editingTenantId ? '编辑合作客户' : '开通合作客户' }}</strong>
-          <span>配置客户租户、访问域名、子总控账号和机构归属。</span>
+          <span>配置客户租户、子总控账号和机构归属。</span>
         </div>
       </template>
 
@@ -1304,6 +1336,58 @@ onMounted(() => {
         <section class="form-section">
           <div class="form-section__head">
             <div>
+              <h3>机构归属</h3>
+              <p>选择哪些机构归属该客户租户，机构端登录会按租户做归属校验。</p>
+            </div>
+            <TeamOutlined />
+          </div>
+          <a-form-item>
+            <a-select
+              v-model:value="formState.institutionIds"
+              mode="multiple"
+              show-search
+              option-filter-prop="label"
+              :loading="institutionLoading"
+              :max-tag-count="3"
+              :max-tag-placeholder="omittedValues => `+${omittedValues.length}`"
+              placeholder="选择机构"
+              :options="institutionSelectOptions"
+              class="institution-owner-select"
+            >
+              <template #option="option">
+                <div class="institution-option">
+                  <span class="institution-option__name">{{ option.label }}</span>
+                  <span v-if="option.tenantName" class="institution-option__tenant">
+                    已归属：{{ option.tenantName }}
+                  </span>
+                </div>
+              </template>
+            </a-select>
+          </a-form-item>
+        </section>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="domainConfigModalOpen"
+      :width="820"
+      centered
+      :confirm-loading="saving"
+      ok-text="保存域名配置"
+      cancel-text="取消"
+      wrap-class-name="tenant-business-modal"
+      @ok="handleSave"
+    >
+      <template #title>
+        <div class="modal-title">
+          <strong>域名配置</strong>
+          <span>{{ formState.tenantName || '合作客户' }}</span>
+        </div>
+      </template>
+      <div class="tenant-form-shell tenant-form-shell--single">
+        <section class="form-section">
+          <div class="form-section__head">
+            <div>
               <h3>访问域名</h3>
               <p>分别配置客户子总控后台和机构端登录入口，各填写一个域名。</p>
             </div>
@@ -1319,6 +1403,28 @@ onMounted(() => {
           </div>
         </section>
 
+
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="loginTemplateConfigModalOpen"
+      :width="980"
+      centered
+      :confirm-loading="saving"
+      ok-text="保存登录页配置"
+      cancel-text="取消"
+      :body-style="{ maxHeight: '72vh', overflowY: 'auto', padding: 0 }"
+      wrap-class-name="tenant-business-modal"
+      @ok="handleSave"
+    >
+      <template #title>
+        <div class="modal-title">
+          <strong>登录页配置</strong>
+          <span>{{ formState.tenantName || '合作客户' }}</span>
+        </div>
+      </template>
+      <div class="tenant-form-shell">
         <section class="form-section">
           <div class="form-section__head">
             <div>
@@ -1527,38 +1633,7 @@ onMounted(() => {
           </a-tabs>
         </section>
 
-        <section class="form-section">
-          <div class="form-section__head">
-            <div>
-              <h3>机构归属</h3>
-              <p>选择哪些机构归属该客户租户，机构端登录会按租户做归属校验。</p>
-            </div>
-            <TeamOutlined />
-          </div>
-          <a-form-item>
-            <a-select
-              v-model:value="formState.institutionIds"
-              mode="multiple"
-              show-search
-              option-filter-prop="label"
-              :loading="institutionLoading"
-              :max-tag-count="3"
-              :max-tag-placeholder="omittedValues => `+${omittedValues.length}`"
-              placeholder="选择机构"
-              :options="institutionSelectOptions"
-              class="institution-owner-select"
-            >
-              <template #option="option">
-                <div class="institution-option">
-                  <span class="institution-option__name">{{ option.label }}</span>
-                  <span v-if="option.tenantName" class="institution-option__tenant">
-                    已归属：{{ option.tenantName }}
-                  </span>
-                </div>
-              </template>
-            </a-select>
-          </a-form-item>
-        </section>
+
       </div>
     </a-modal>
 
@@ -1636,7 +1711,7 @@ onMounted(() => {
   p {
     margin: 2px 0 0;
     color: rgba(0, 0, 0, 0.45);
-    font-size: 13px;
+    font-size: 14px;
     line-height: 20px;
   }
 
@@ -1884,7 +1959,7 @@ onMounted(() => {
 
   span {
     color: rgba(0, 0, 0, 0.45);
-    font-size: 13px;
+    font-size: 14px;
   }
 }
 
@@ -1914,7 +1989,7 @@ onMounted(() => {
     display: block;
     margin-top: 4px;
     color: rgba(0, 0, 0, 0.45);
-    font-size: 13px;
+    font-size: 14px;
   }
 
   > .anticon {
@@ -1949,7 +2024,7 @@ onMounted(() => {
 .login-address-card__desc {
   margin-top: 4px;
   color: rgba(0, 0, 0, 0.45);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 
@@ -1961,7 +2036,7 @@ onMounted(() => {
   background: #f9fafb;
   color: #1677ff;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 13px;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1981,7 +2056,7 @@ onMounted(() => {
   border-radius: 12px;
   background: #fafafa;
   color: rgba(0, 0, 0, 0.35);
-  font-size: 13px;
+  font-size: 14px;
 
   img {
     width: 98px;
@@ -1997,7 +2072,7 @@ onMounted(() => {
   border-radius: 10px;
   background: rgba(22, 119, 255, 0.06);
   color: rgba(0, 0, 0, 0.56);
-  font-size: 13px;
+  font-size: 14px;
 
   .anticon {
     color: #1677ff;
@@ -2006,6 +2081,30 @@ onMounted(() => {
 
 .tenant-form-shell {
   padding: 20px 22px 4px;
+}
+
+.tenant-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.tenant-action {
+  height: 24px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.tenant-action--dropdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+
+  :deep(.anticon) {
+    font-size: 10px;
+  }
 }
 
 .form-section {
@@ -2185,7 +2284,7 @@ onMounted(() => {
   height: 32px;
   padding: 0 12px;
   color: rgba(0, 0, 0, 0.65);
-  font-size: 13px;
+  font-size: 14px;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -2295,7 +2394,7 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   color: rgba(0, 0, 0, 0.45);
-  font-size: 13px;
+  font-size: 14px;
 
   .anticon {
     color: var(--pro-ant-color-primary, #1677ff);
@@ -2310,7 +2409,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 13px;
+  font-size: 14px;
   background: rgba(0, 0, 0, 0.45);
 }
 
@@ -2446,7 +2545,7 @@ onMounted(() => {
   padding: 10px 12px;
   border-radius: 8px;
   color: rgba(0, 0, 0, 0.56);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
   background: rgba(0, 0, 0, 0.025);
 }
