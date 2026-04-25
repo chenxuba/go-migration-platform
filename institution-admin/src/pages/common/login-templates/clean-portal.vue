@@ -18,8 +18,11 @@ const emit = defineEmits(['update:activeKey', 'update:agreeToTerms', 'submit'])
   <div class="clean-portal-login">
     <header class="clean-portal-login__header">
       <div class="clean-portal-login__brand">
-        <img v-if="brand.logoUrl" :src="brand.logoUrl" alt="logo">
-        <strong v-else>{{ brand.brandName }}</strong>
+        <div class="clean-portal-login__logo-card">
+          <img v-if="brand.logoUrl" :src="brand.logoUrl" alt="logo">
+          <strong v-else>{{ brand.brandName }}</strong>
+        </div>
+        <div class="clean-portal-login__brand-name">{{ brand.brandName }}</div>
       </div>
       <span>{{ brand.heroBadge || '机构端登录' }}</span>
     </header>
@@ -96,15 +99,45 @@ const emit = defineEmits(['update:activeKey', 'update:agreeToTerms', 'submit'])
 }
 
 .clean-portal-login__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.clean-portal-login__logo-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  max-width: 176px;
+  height: 54px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+
   img {
-    max-width: 170px;
-    max-height: 44px;
+    max-width: 152px;
+    max-height: 38px;
     object-fit: contain;
   }
 
   strong {
-    font-size: 24px;
+    color: #0f172a;
+    font-size: 18px;
   }
+}
+
+.clean-portal-login__brand-name {
+  max-width: 220px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 18px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .clean-portal-login__main {

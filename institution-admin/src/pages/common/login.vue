@@ -53,6 +53,7 @@ const defaultBrand = {
   heroTitle: '校区业务管理入口',
   heroDescription: '面向机构日常运营、教务、学员和财务管理的独立登录入口。',
 }
+const loginThemeReady = ref(false)
 const loginBrand = reactive({ ...defaultBrand })
 const loginThemeStyle = computed(() => ({
   '--tenant-primary': loginBrand.primaryColor || defaultBrand.primaryColor,
@@ -82,6 +83,9 @@ async function loadLoginTheme() {
   catch (error) {
     console.warn('load institution login theme failed', error)
     mergeLoginBrand()
+  }
+  finally {
+    loginThemeReady.value = true
   }
 }
 
@@ -290,16 +294,17 @@ watch(
   <div class="login-page flex" :style="loginThemeStyle">
     <component
       :is="currentLoginComponent"
-      v-if="currentLoginComponent"
+      v-if="loginThemeReady && currentLoginComponent"
       v-bind="dynamicLoginProps"
       v-model:active-key="activeKey"
       v-model:agree-to-terms="agreeToTerms"
       @submit="onSubmit"
     />
-    <div v-if="!currentLoginComponent" class="login-page__lang-switch">
+    <div v-if="!loginThemeReady" class="login-theme-loading" />
+    <div v-if="loginThemeReady && !currentLoginComponent" class="login-page__lang-switch">
       <SelectLang />
     </div>
-    <div v-if="!currentLoginComponent" class="main-content flex">
+    <div v-if="loginThemeReady && !currentLoginComponent" class="main-content flex">
       <div class="content flex">
         <div class="left">
           <div class="top flex">
@@ -454,7 +459,7 @@ watch(
       @confirm="confirmInstitutionLogin"
       @cancel="resetInstitutionPicker"
     />
-    <div v-if="!currentLoginComponent" class="footer">
+    <div v-if="loginThemeReady && !currentLoginComponent" class="footer">
       <span><a
         target="_blank" href="https://beian.miit.gov.cn"
         rel="noreferrer"
@@ -474,6 +479,12 @@ watch(
   height: 100%;
   min-height: 100vh;
   background-color: #eff5ff;
+
+
+  .login-theme-loading {
+    min-height: 100vh;
+    background: #eff5ff;
+  }
 
   .login-page__lang-switch {
     position: absolute;

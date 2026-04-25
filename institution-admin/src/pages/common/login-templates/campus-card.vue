@@ -19,8 +19,10 @@ const emit = defineEmits(['update:activeKey', 'update:agreeToTerms', 'submit'])
     <div class="campus-card-login__shell">
       <section class="campus-card-login__visual">
         <div class="campus-card-login__topline">
-          <img v-if="brand.logoUrl" :src="brand.logoUrl" alt="logo">
-          <strong v-else>{{ brand.brandName }}</strong>
+          <div class="campus-card-login__logo-card">
+            <img v-if="brand.logoUrl" :src="brand.logoUrl" alt="logo">
+            <strong v-else>{{ brand.brandName }}</strong>
+          </div>
           <span>{{ brand.heroBadge || '机构端' }}</span>
         </div>
         <div class="campus-card-login__copy">
@@ -137,17 +139,6 @@ const emit = defineEmits(['update:activeKey', 'update:agreeToTerms', 'submit'])
   justify-content: space-between;
   gap: 18px;
 
-  img {
-    max-width: 180px;
-    max-height: 44px;
-    object-fit: contain;
-  }
-
-  strong {
-    color: #0f172a;
-    font-size: 23px;
-  }
-
   span {
     padding: 6px 12px;
     border-radius: 999px;
@@ -155,6 +146,32 @@ const emit = defineEmits(['update:activeKey', 'update:agreeToTerms', 'submit'])
     color: var(--tenant-primary);
     font-weight: 600;
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }
+}
+
+.campus-card-login__logo-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  max-width: 190px;
+  height: 54px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(8px);
+
+  img {
+    max-width: 166px;
+    max-height: 38px;
+    object-fit: contain;
+  }
+
+  strong {
+    color: #0f172a;
+    font-size: 19px;
   }
 }
 

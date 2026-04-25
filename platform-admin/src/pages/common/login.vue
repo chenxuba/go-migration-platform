@@ -43,6 +43,7 @@ const defaultBrand: Required<TenantLoginBrandConfig> = {
   heroTitle: '统一管理全部机构与平台能力',
   heroDescription: '从一个入口完成机构总览、启停筛查和总部级管理协同，保留现有后台的操作节奏，但切换为更适合总控场景的登录与信息层级。',
 }
+const loginThemeReady = ref(false)
 const loginBrand = reactive<Required<TenantLoginBrandConfig>>({ ...defaultBrand })
 const loginThemeStyle = computed(() => ({
   '--tenant-primary': loginBrand.primaryColor || defaultBrand.primaryColor,
@@ -65,6 +66,9 @@ async function loadLoginTheme() {
   catch (error) {
     console.warn('load login theme failed', error)
     mergeLoginBrand()
+  }
+  finally {
+    loginThemeReady.value = true
   }
 }
 
@@ -136,16 +140,17 @@ async function onSubmit() {
   <div class="platform-login" :style="loginThemeStyle">
     <component
       :is="currentLoginComponent"
-      v-if="currentLoginComponent"
+      v-if="loginThemeReady && currentLoginComponent"
       v-bind="dynamicLoginProps"
       @submit="onSubmit"
     />
+    <div v-if="!loginThemeReady" class="login-theme-loading" />
 
-    <div v-if="!currentLoginComponent" class="platform-login__lang-switch">
+    <div v-if="loginThemeReady && !currentLoginComponent" class="platform-login__lang-switch">
       <SelectLang />
     </div>
 
-    <div v-if="!currentLoginComponent" class="platform-login__content">
+    <div v-if="loginThemeReady && !currentLoginComponent" class="platform-login__content">
       <section class="platform-login__hero">
         <div class="platform-login__hero-badge">
           {{ loginBrand.heroBadge }}
@@ -269,6 +274,11 @@ async function onSubmit() {
     linear-gradient(135deg, #eef4ff 0%, #f8fbff 45%, #ffffff 100%);
   background-position: center;
   background-size: cover;
+}
+
+.login-theme-loading {
+  min-height: 100vh;
+  background: #f8fbff;
 }
 
 .platform-login::before,
