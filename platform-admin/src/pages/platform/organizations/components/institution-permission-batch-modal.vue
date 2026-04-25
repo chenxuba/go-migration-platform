@@ -2,6 +2,7 @@
 import type { AxiosError } from 'axios'
 import {
   DownOutlined,
+  InfoCircleOutlined,
   SearchOutlined,
   UpOutlined,
 } from '@ant-design/icons-vue'
@@ -190,9 +191,17 @@ const noMatchGuidance = computed(() => {
     return ''
 
   if (applyMode.value === 'add-only')
-    return '当前机构已拥有这些权限，所以“仅新增勾选”筛不出来。若要批量取消，请切换到“仅移除勾选”后重新查询。'
+    return '当前机构已拥有这些权限，“仅新增勾选”暂无可操作机构。'
 
-  return '当前机构不拥有这些权限，所以“仅移除勾选”筛不出来。若要批量新增，请切换到“仅新增勾选”后重新查询。'
+  return '当前机构不拥有这些权限，“仅移除勾选”暂无可操作机构。'
+})
+
+const noMatchSwitchText = computed(() => {
+  return applyMode.value === 'add-only' ? '切到仅移除勾选' : '切到仅新增勾选'
+})
+
+const noMatchSwitchMode = computed<BatchApplyMode>(() => {
+  return applyMode.value === 'add-only' ? 'remove-only' : 'add-only'
 })
 
 function closeModal() {
@@ -979,36 +988,18 @@ watch(
             </div>
 
             <div class="target-panel__body">
-              <a-alert
-                v-if="noMatchGuidance"
-                type="info"
-                show-icon
-                class="target-panel__alert"
-              >
-                <template #message>
-                  {{ noMatchGuidance }}
-                </template>
-                <template #description>
-                  <a-button
-                    v-if="applyMode === 'add-only'"
-                    type="link"
-                    size="small"
-                    class="target-panel__switch-btn"
-                    @click="switchApplyMode('remove-only')"
-                  >
-                    切到仅移除勾选
-                  </a-button>
-                  <a-button
-                    v-else
-                    type="link"
-                    size="small"
-                    class="target-panel__switch-btn"
-                    @click="switchApplyMode('add-only')"
-                  >
-                    切到仅新增勾选
-                  </a-button>
-                </template>
-              </a-alert>
+              <div v-if="noMatchGuidance" class="target-panel__hint">
+                <InfoCircleOutlined class="target-panel__hint-icon" />
+                <span class="target-panel__hint-text">{{ noMatchGuidance }}</span>
+                <a-button
+                  type="link"
+                  size="small"
+                  class="target-panel__switch-btn"
+                  @click="switchApplyMode(noMatchSwitchMode)"
+                >
+                  {{ noMatchSwitchText }}
+                </a-button>
+              </div>
 
               <a-empty
                 v-if="!matchedInstitutionCount"
@@ -1582,13 +1573,40 @@ watch(
   flex-shrink: 0;
 }
 
-.target-panel__alert {
-  margin-bottom: 10px;
+.target-panel__hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  border: 1px solid #d9e9ff;
+  border-radius: 8px;
+  background: #f4f9ff;
+  color: #4b628b;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.target-panel__hint-icon {
+  flex-shrink: 0;
+  color: #1677ff;
+  font-size: 14px;
+}
+
+.target-panel__hint-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .target-panel__switch-btn {
-  padding-inline: 0;
+  flex-shrink: 0;
+  padding-inline: 2px;
   height: 22px;
+  font-size: 12px;
 }
 
 .target-list {

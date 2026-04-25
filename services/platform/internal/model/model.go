@@ -66,6 +66,7 @@ type NoticeMutation struct {
 type ModuleDetailVO struct {
 	ModuleID        int64        `json:"moduleId"`
 	TenantID        string       `json:"tenantId,omitempty"`
+	TenantName      string       `json:"tenantName,omitempty"`
 	OwnerType       string       `json:"ownerType,omitempty"`
 	SourceModuleID  int64        `json:"sourceModuleId,omitempty"`
 	UUID            string       `json:"uuid,omitempty"`

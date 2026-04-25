@@ -4768,6 +4768,7 @@ func (repo *Repository) GetModuleDetail(ctx context.Context, moduleID int64, ten
 	if err := row.Scan(
 		&detail.ModuleID,
 		&detail.TenantID,
+		&detail.TenantName,
 		&detail.OwnerType,
 		&detail.SourceModuleID,
 		&detail.UUID,
