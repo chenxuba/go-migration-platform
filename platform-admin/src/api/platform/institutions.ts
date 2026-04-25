@@ -25,6 +25,8 @@ export interface InstitutionItem {
   city?: string
   region?: string
   address?: string
+  tenantId?: string
+  tenantName?: string
   logo?: string
   enabled: boolean
   status?: number

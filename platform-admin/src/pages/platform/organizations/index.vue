@@ -157,6 +157,11 @@ const columns: TableColumnsType<InstitutionItem> = [
     fixed: 'left' as const,
   },
   {
+    title: '所属租户',
+    key: 'tenant',
+    width: 160,
+  },
+  {
     title: '账号信息',
     key: 'account',
     width: 180,
@@ -664,7 +669,7 @@ watch(institutionRenewalOpen, (open) => {
           :loading="listLoading"
           :pagination="pagination"
           :row-selection="rowSelection"
-          :scroll="{ x: 1360 }"
+          :scroll="{ x: 1520 }"
           :row-class-name="getRowClassName"
           row-key="id"
           size="small"
@@ -683,6 +688,17 @@ watch(institutionRenewalOpen, (open) => {
                   <div class="cell-sub cell-sub--light">
                     负责人：{{ record.principal || '--' }}
                   </div>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="column.key === 'tenant'">
+              <div class="info-cell">
+                <div class="cell-title cell-title--sm">
+                  {{ record.tenantName || '--' }}
+                </div>
+                <div class="cell-sub">
+                  {{ record.tenantId || '未绑定租户' }}
                 </div>
               </div>
             </template>

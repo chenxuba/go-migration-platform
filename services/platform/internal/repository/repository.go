@@ -1933,18 +1933,14 @@ func (repo *Repository) replaceTenantInstitutionsTx(ctx context.Context, tx *sql
 	if institutionIDs == nil {
 		return nil
 	}
+	normalized := normalizeInstitutionIDs(institutionIDs)
+	if err := repo.ensureInstitutionTenantAssignableTx(ctx, tx, tenantID, normalized); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE tenant_institution SET del_flag = 1, update_time = NOW() WHERE tenant_id = ? AND del_flag = 0`, tenantID); err != nil {
 		return err
 	}
-	seen := map[int64]struct{}{}
-	for _, institutionID := range institutionIDs {
-		if institutionID <= 0 {
-			continue
-		}
-		if _, ok := seen[institutionID]; ok {
-			continue
-		}
-		seen[institutionID] = struct{}{}
+	for _, institutionID := range normalized {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO tenant_institution (tenant_id, institution_id, create_time, update_time, del_flag)
 			VALUES (?, ?, NOW(), NOW(), 0)
@@ -1954,6 +1950,39 @@ func (repo *Repository) replaceTenantInstitutionsTx(ctx context.Context, tx *sql
 		}
 	}
 	return nil
+}
+
+func (repo *Repository) ensureInstitutionTenantAssignableTx(ctx context.Context, tx *sql.Tx, tenantID string, institutionIDs []int64) error {
+	if len(institutionIDs) == 0 {
+		return nil
+	}
+	placeholders := make([]string, 0, len(institutionIDs))
+	args := make([]any, 0, len(institutionIDs)+1)
+	for _, institutionID := range institutionIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, institutionID)
+	}
+	args = append(args, strings.TrimSpace(tenantID))
+
+	var organName string
+	var tenantName string
+	err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(oi.organ_name, ''), IFNULL(tp.tenant_name, ti.tenant_id)
+		FROM tenant_institution ti
+		JOIN org_institution oi ON oi.id = ti.institution_id AND oi.del_flag = 0
+		LEFT JOIN tenant_profile tp ON tp.tenant_id = ti.tenant_id AND tp.del_flag = 0
+		WHERE ti.del_flag = 0
+		  AND ti.institution_id IN (`+strings.Join(placeholders, ",")+`)
+		  AND ti.tenant_id <> ?
+		LIMIT 1
+	`, args...).Scan(&organName, &tenantName)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("机构%s已归属%s，不能重复绑定", strings.TrimSpace(organName), strings.TrimSpace(tenantName))
 }
 
 func (repo *Repository) replaceTenantModulesTx(ctx context.Context, tx *sql.Tx, tenantID string, moduleIDs []int64) error {
@@ -2545,6 +2574,8 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 		       IFNULL(oi.city, ''),
 		       IFNULL(oi.region, ''),
 		       IFNULL(oi.address, ''),
+		       IFNULL(tenant_scope.tenant_id, ''),
+		       IFNULL(tenant_scope.tenant_name, ''),
 		       IFNULL(oi.logo, ''),
 		       IFNULL(oi.enabled, 0),
 		       `+statusExpr+`,
@@ -2563,9 +2594,23 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 			SELECT om2.id FROM org_module om2 WHERE om2.org_id = oi.id AND om2.del_flag = 0 ORDER BY om2.id DESC LIMIT 1
 		)
 		LEFT JOIN sys_module sm_current ON sm_current.id = om_current.module_id AND sm_current.del_flag = 0
+		LEFT JOIN (
+			SELECT ti_latest.institution_id,
+			       ti_latest.tenant_id,
+			       IFNULL(tp.tenant_name, '') AS tenant_name
+			FROM tenant_institution ti_latest
+			JOIN (
+				SELECT institution_id, MAX(id) AS id
+				FROM tenant_institution
+				WHERE del_flag = 0
+				GROUP BY institution_id
+			) latest_tenant ON latest_tenant.id = ti_latest.id
+			LEFT JOIN tenant_profile tp ON tp.tenant_id = ti_latest.tenant_id AND tp.del_flag = 0
+			WHERE ti_latest.del_flag = 0
+		) tenant_scope ON tenant_scope.institution_id = oi.id
 		LEFT JOIN inst_user iu ON iu.inst_id = oi.id
 		WHERE `+whereClause+`
-		GROUP BY oi.id, oi.organ_name, oi.organ_code, oi.login_name, oi.mobile, oi.principal, oi.province, oi.city, oi.region, oi.address, oi.logo, oi.enabled, oi.status, oi.open_type, oi.open_duration, om_current.module_id, sm_current.name, oi.create_time, oi.expire_end_time
+		GROUP BY oi.id, oi.organ_name, oi.organ_code, oi.login_name, oi.mobile, oi.principal, oi.province, oi.city, oi.region, oi.address, tenant_scope.tenant_id, tenant_scope.tenant_name, oi.logo, oi.enabled, oi.status, oi.open_type, oi.open_duration, om_current.module_id, sm_current.name, oi.create_time, oi.expire_end_time
 		ORDER BY oi.id DESC
 		LIMIT ? OFFSET ?`, listArgs...)
 	if err != nil {
@@ -2587,6 +2632,8 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 			&item.City,
 			&item.Region,
 			&item.Address,
+			&item.TenantID,
+			&item.TenantName,
 			&item.Logo,
 			&item.Enabled,
 			&item.Status,

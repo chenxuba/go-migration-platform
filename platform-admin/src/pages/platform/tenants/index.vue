@@ -62,6 +62,8 @@ interface TenantLoginBrandConfig {
 interface InstitutionOption {
   id: number
   organName: string
+  tenantId?: string
+  tenantName?: string
 }
 
 interface VersionOption {
@@ -311,6 +313,22 @@ const activeTenantCount = computed(() => partnerRows.value.filter(item => item.s
 const institutionTotal = computed(() => partnerRows.value.reduce((total, item) => total + Number(item.institutionCount || 0), 0))
 const domainTotal = computed(() => partnerRows.value.reduce((total, item) => total + (item.domains?.length || 0), 0))
 const incompleteCount = computed(() => partnerRows.value.filter(item => !item.domains?.length || !item.adminUsernames?.length || !item.institutionCount).length)
+const institutionSelectOptions = computed(() => {
+  const currentTenantId = formState.tenantId.trim()
+  return institutionOptions.value.map((item) => {
+    const boundTenantId = String(item.tenantId || '').trim()
+    const isBoundToOtherTenant = !!boundTenantId && boundTenantId !== currentTenantId
+    return {
+      value: item.id,
+      label: `${item.organName}（ID:${item.id}）`,
+      organName: item.organName,
+      institutionId: item.id,
+      tenantId: boundTenantId,
+      tenantName: item.tenantName || '',
+      disabled: isBoundToOtherTenant,
+    }
+  })
+})
 
 const pagination = reactive({
   current: 1,
@@ -1044,9 +1062,21 @@ onMounted(() => {
               show-search
               option-filter-prop="label"
               :loading="institutionLoading"
+              :max-tag-count="3"
+              :max-tag-placeholder="omittedValues => `+${omittedValues.length}`"
               placeholder="选择机构"
-              :options="institutionOptions.map(item => ({ value: item.id, label: `${item.organName}（ID:${item.id}）` }))"
-            />
+              :options="institutionSelectOptions"
+              class="institution-owner-select"
+            >
+              <template #option="option">
+                <div class="institution-option">
+                  <span class="institution-option__name">{{ option.label }}</span>
+                  <span v-if="option.tenantName" class="institution-option__tenant">
+                    已归属：{{ option.tenantName }}
+                  </span>
+                </div>
+              </template>
+            </a-select>
           </a-form-item>
         </section>
       </div>
@@ -1633,6 +1663,60 @@ onMounted(() => {
   color: #fff;
   font-size: 13px;
   background: rgba(0, 0, 0, 0.45);
+}
+
+.institution-owner-select {
+  width: 100%;
+
+  :deep(.ant-select-selector) {
+    flex-wrap: nowrap;
+    min-height: 34px;
+    overflow: hidden;
+  }
+
+  :deep(.ant-select-selection-overflow) {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  :deep(.ant-select-selection-overflow-item) {
+    flex: none;
+  }
+
+  :deep(.ant-select-selection-item) {
+    max-width: 230px;
+  }
+}
+
+.institution-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.institution-option__name {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(0, 0, 0, 0.88);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.institution-option__tenant {
+  flex: none;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+
+:deep(.ant-select-item-option-disabled) {
+  .institution-option__name,
+  .institution-option__tenant {
+    color: rgba(0, 0, 0, 0.25);
+  }
 }
 
 .form-grid {

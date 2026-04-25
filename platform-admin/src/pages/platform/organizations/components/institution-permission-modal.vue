@@ -44,7 +44,8 @@ const openTypeLabelMap: Record<number, string> = {
 const statusLabelMap: Record<number, string> = {
   1: '启用',
   2: '停用',
-  4: '过期',
+  3: '即将到期',
+  4: '已过期',
 }
 
 const openModal = computed({
@@ -186,6 +187,8 @@ function getStatusClass(value?: number) {
   const normalized = Number(value || 0)
   if (normalized === 1)
     return 'status-chip--enabled'
+  if (normalized === 3)
+    return 'status-chip--warning'
   if (normalized === 4)
     return 'status-chip--expired'
   return 'status-chip--disabled'
@@ -710,6 +713,11 @@ onBeforeUnmount(() => {
 .status-chip--disabled {
   background: rgba(71, 85, 105, 0.12);
   color: #475569;
+}
+
+.status-chip--warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
 }
 
 .status-chip--expired {

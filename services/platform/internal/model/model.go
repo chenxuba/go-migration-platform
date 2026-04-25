@@ -220,6 +220,8 @@ type Institution struct {
 	City              string `json:"city,omitempty"`
 	Region            string `json:"region,omitempty"`
 	Address           string `json:"address,omitempty"`
+	TenantID          string `json:"tenantId,omitempty"`
+	TenantName        string `json:"tenantName,omitempty"`
 	Logo              string `json:"logo,omitempty"`
 	Enabled           bool   `json:"enabled"`
 	Status            int    `json:"status"`
