@@ -2,13 +2,16 @@
 import type { TableColumnsType } from 'ant-design-vue'
 import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
 import { computed, onMounted, reactive, ref } from 'vue'
+import QRCode from 'qrcode'
 import * as qiniu from 'qiniu-js'
 import {
   ApartmentOutlined,
   CheckCircleOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   GlobalOutlined,
   KeyOutlined,
+  LinkOutlined,
   PlusOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
@@ -99,6 +102,12 @@ const authorizationModalOpen = ref(false)
 const authorizationSaving = ref(false)
 const authorizationTenant = ref<TenantRecord | null>(null)
 const authorizationModuleId = ref<number | undefined>(undefined)
+const loginAddressModalOpen = ref(false)
+const loginAddressTenant = ref<TenantRecord | null>(null)
+const loginAddressQr = reactive<Record<'platform' | 'institution', string>>({
+  platform: '',
+  institution: '',
+})
 const editingTenantId = ref('')
 const keyword = ref('')
 const statusFilter = ref<'all' | 'active' | 'disabled' | 'incomplete'>('all')
@@ -330,6 +339,32 @@ const institutionSelectOptions = computed(() => {
   })
 })
 
+
+const loginAddressItems = computed(() => {
+  const tenant = loginAddressTenant.value
+  if (!tenant)
+    return []
+
+  return [
+    {
+      key: 'platform' as const,
+      title: '子总控后台',
+      description: '客户管理员登录，管理租户内版本、机构和授权配置。',
+      domain: getPrimaryAdminDomain(tenant),
+      url: buildLoginUrl(getPrimaryAdminDomain(tenant), 'platform'),
+      qr: loginAddressQr.platform,
+    },
+    {
+      key: 'institution' as const,
+      title: '机构端后台',
+      description: '租户下属机构登录，按机构归属和权限范围进入业务后台。',
+      domain: getPrimaryInstitutionDomain(tenant),
+      url: buildLoginUrl(getPrimaryInstitutionDomain(tenant), 'institution'),
+      qr: loginAddressQr.institution,
+    },
+  ]
+})
+
 const pagination = reactive({
   current: 1,
   pageSize: 20,
@@ -345,7 +380,7 @@ const columns: TableColumnsType<TenantRecord> = [
   { title: '独立域名', key: 'domains', width: 260 },
   { title: '授权版本', key: 'modules', width: 220 },
   { title: '授权资源', key: 'authorization', width: 150 },
-  { title: '操作', key: 'action', width: 180, fixed: 'right' as const },
+  { title: '操作', key: 'action', width: 240, fixed: 'right' as const },
 ]
 
 function statusClass(status?: string) {
@@ -577,6 +612,173 @@ async function handleSave() {
   }
 }
 
+
+function getPrimaryAdminDomain(record: TenantRecord) {
+  return String(record.adminDomains?.[0] || record.domains?.[0] || '').trim()
+}
+
+function getPrimaryInstitutionDomain(record: TenantRecord) {
+  return String(record.institutionDomains?.[0] || '').trim()
+}
+
+function buildLoginUrl(domain: string, entryType: 'platform' | 'institution') {
+  const normalized = String(domain || '').trim()
+  if (!normalized)
+    return ''
+  if (/^https?:\/\//i.test(normalized))
+    return normalized
+
+  const protocol = typeof window !== 'undefined' ? window.location.protocol : 'https:'
+  const hasPort = /:\d+$/.test(normalized)
+  const devPort = import.meta.env.DEV && !hasPort
+    ? (entryType === 'institution' ? ':6678' : (window.location.port ? `:${window.location.port}` : ''))
+    : ''
+  return `${protocol}//${normalized}${devPort}/`
+}
+
+async function generateLoginAddressQrs() {
+  loginAddressQr.platform = ''
+  loginAddressQr.institution = ''
+  const items = loginAddressItems.value
+  await Promise.all(items.map(async (item) => {
+    if (!item.url)
+      return
+    loginAddressQr[item.key] = await QRCode.toDataURL(item.url, {
+      width: 180,
+      margin: 1,
+      color: {
+        dark: '#111827',
+        light: '#ffffff',
+      },
+    })
+  }))
+}
+
+async function openLoginAddressModal(record: TenantRecord) {
+  loginAddressTenant.value = record
+  loginAddressModalOpen.value = true
+  await generateLoginAddressQrs()
+}
+
+async function copyLoginAddress(url: string) {
+  if (!url)
+    return
+  try {
+    await navigator.clipboard.writeText(url)
+    messageService.success('登录地址已复制')
+  }
+  catch (error) {
+    console.warn('copy login address failed', error)
+    messageService.warning('复制失败，请手动复制')
+  }
+}
+
+function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.arcTo(x + width, y, x + width, y + height, radius)
+  ctx.arcTo(x + width, y + height, x, y + height, radius)
+  ctx.arcTo(x, y + height, x, y, radius)
+  ctx.arcTo(x, y, x + width, y, radius)
+  ctx.closePath()
+}
+
+function loadCanvasImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = reject
+    image.src = src
+  })
+}
+
+function drawCanvasText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number) {
+  const normalized = String(text || '')
+  if (ctx.measureText(normalized).width <= maxWidth) {
+    ctx.fillText(normalized, x, y)
+    return
+  }
+  let value = normalized
+  while (value.length > 0 && ctx.measureText(`${value}...`).width > maxWidth)
+    value = value.slice(0, -1)
+  ctx.fillText(`${value}...`, x, y)
+}
+
+async function downloadLoginAddressImage() {
+  const tenant = loginAddressTenant.value
+  if (!tenant)
+    return
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 1120
+  canvas.height = 720
+  const ctx = canvas.getContext('2d')
+  if (!ctx)
+    return
+
+  ctx.fillStyle = '#f3f6fb'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  drawRoundRect(ctx, 48, 42, 1024, 636, 28)
+  ctx.fillStyle = '#ffffff'
+  ctx.fill()
+
+  ctx.fillStyle = '#111827'
+  ctx.font = '700 34px Arial, sans-serif'
+  drawCanvasText(ctx, tenant.tenantName, 88, 104, 720)
+  ctx.fillStyle = '#6b7280'
+  ctx.font = '400 18px Arial, sans-serif'
+  ctx.fillText(`租户标识：${tenant.tenantId}`, 88, 140)
+
+  const items = loginAddressItems.value
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]
+    const y = 190 + index * 230
+    drawRoundRect(ctx, 88, y, 944, 190, 20)
+    ctx.fillStyle = '#f9fafb'
+    ctx.fill()
+    ctx.strokeStyle = '#e5e7eb'
+    ctx.lineWidth = 1
+    ctx.stroke()
+
+    const tagX = 118
+    const tagY = y + 32
+    const tagWidth = 106
+    const tagHeight = 34
+    ctx.fillStyle = item.key === 'platform' ? '#1677ff' : '#13ad74'
+    drawRoundRect(ctx, tagX, tagY, tagWidth, tagHeight, tagHeight / 2)
+    ctx.fill()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = '700 17px Arial, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(item.title, tagX + tagWidth / 2, tagY + tagHeight / 2)
+    ctx.textAlign = 'start'
+    ctx.textBaseline = 'alphabetic'
+
+    ctx.fillStyle = '#111827'
+    ctx.font = '700 22px Arial, sans-serif'
+    ctx.fillText(item.url ? item.url : '暂未配置登录域名', 118, y + 102)
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '400 16px Arial, sans-serif'
+    drawCanvasText(ctx, item.description, 118, y + 135, 620)
+
+    if (item.qr) {
+      const image = await loadCanvasImage(item.qr)
+      ctx.drawImage(image, 848, y + 30, 128, 128)
+    }
+  }
+
+  ctx.fillStyle = '#9ca3af'
+  ctx.font = '400 15px Arial, sans-serif'
+  ctx.fillText('请使用对应账号从对应入口登录，跨域名禁止登录', 88, 636)
+
+  const link = document.createElement('a')
+  const safeName = tenant.tenantName.replace(/[\\/:*?"<>|\s]+/g, '-')
+  link.download = `${safeName || tenant.tenantId}-登录地址.png`
+  link.href = canvas.toDataURL('image/png')
+  link.click()
+}
+
 function handleSearch() {
   pagination.current = 1
   loadTenants()
@@ -661,7 +863,7 @@ onMounted(() => {
       :data-source="filteredRows"
       :loading="loading"
       :pagination="pagination"
-      :scroll="{ x: 1450 }"
+      :scroll="{ x: 1510 }"
       class="tenant-table"
     >
       <template #bodyCell="{ column, record }">
@@ -742,10 +944,63 @@ onMounted(() => {
           <a-space>
             <a-button type="link" size="small" @click="openEditModal(record as TenantRecord)">编辑</a-button>
             <a-button type="link" size="small" @click="openAuthorizationModal(record as TenantRecord)">授权配置</a-button>
+            <a-button type="link" size="small" @click="openLoginAddressModal(record as TenantRecord)">登录地址</a-button>
           </a-space>
         </template>
       </template>
     </a-table>
+
+
+    <a-modal
+      v-model:open="loginAddressModalOpen"
+      :width="760"
+      centered
+      title="登录地址"
+      ok-text="下载图片"
+      cancel-text="关闭"
+      wrap-class-name="tenant-login-address-modal"
+      @ok="downloadLoginAddressImage"
+    >
+      <div class="login-address-panel">
+        <div class="login-address-header">
+          <div>
+            <strong>{{ loginAddressTenant?.tenantName || '--' }}</strong>
+            <span>租户标识：{{ loginAddressTenant?.tenantId || '--' }}</span>
+          </div>
+          <LinkOutlined />
+        </div>
+
+        <div class="login-address-grid">
+          <div v-for="item in loginAddressItems" :key="item.key" class="login-address-card">
+            <div class="login-address-card__main">
+              <div class="login-address-card__title">
+                {{ item.title }}
+              </div>
+              <div class="login-address-card__desc">
+                {{ item.description }}
+              </div>
+              <div class="login-address-card__url" :class="{ 'login-address-card__url--empty': !item.url }">
+                {{ item.url || '暂未配置登录域名' }}
+              </div>
+              <a-space>
+                <a-button size="small" :disabled="!item.url" @click="copyLoginAddress(item.url)">
+                  复制地址
+                </a-button>
+              </a-space>
+            </div>
+            <div class="login-address-card__qr">
+              <img v-if="item.qr" :src="item.qr" :alt="item.title">
+              <span v-else>未配置</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="login-address-tip">
+          <DownloadOutlined />
+          下载图片会生成包含两个入口和二维码的交付图，可直接发给客户。
+        </div>
+      </div>
+    </a-modal>
 
     <a-modal
       v-model:open="modalOpen"
@@ -1403,6 +1658,122 @@ onMounted(() => {
   span {
     color: rgba(0, 0, 0, 0.45);
     font-size: 13px;
+  }
+}
+
+.login-address-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-address-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border: 1px solid rgba(22, 119, 255, 0.12);
+  border-radius: 14px;
+  background: #f7fbff;
+
+  strong {
+    display: block;
+    color: rgba(0, 0, 0, 0.88);
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  span {
+    display: block;
+    margin-top: 4px;
+    color: rgba(0, 0, 0, 0.45);
+    font-size: 13px;
+  }
+
+  > .anticon {
+    color: #1677ff;
+    font-size: 24px;
+  }
+}
+
+.login-address-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.login-address-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 116px;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.login-address-card__title {
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.login-address-card__desc {
+  margin-top: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.login-address-card__url {
+  margin: 12px 0;
+  padding: 9px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #1677ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-address-card__url--empty {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+.login-address-card__qr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 116px;
+  height: 116px;
+  border: 1px solid #eef0f4;
+  border-radius: 12px;
+  background: #fafafa;
+  color: rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+
+  img {
+    width: 98px;
+    height: 98px;
+  }
+}
+
+.login-address-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(22, 119, 255, 0.06);
+  color: rgba(0, 0, 0, 0.56);
+  font-size: 13px;
+
+  .anticon {
+    color: #1677ff;
   }
 }
 
