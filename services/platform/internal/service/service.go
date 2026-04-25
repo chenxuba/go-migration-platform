@@ -102,6 +102,28 @@ func (svc *Service) SaveTenant(ctx tenant.Context, claims authx.Claims, input mo
 	return svc.repo.SaveTenant(context.Background(), input, operatorID)
 }
 
+func (svc *Service) CheckTenantAdminUsernameAvailable(ctx tenant.Context, claims authx.Claims, username, tenantID string) (model.TenantAdminUsernameAvailability, error) {
+	role, err := svc.requireTenantManageRole(ctx, claims)
+	if err != nil {
+		return model.TenantAdminUsernameAvailability{}, err
+	}
+	if role != "platform_admin" {
+		return model.TenantAdminUsernameAvailability{}, errors.New("仅平台总控管理员可校验租户账号")
+	}
+	return svc.repo.CheckTenantAdminUsernameAvailable(context.Background(), username, tenantID)
+}
+
+func (svc *Service) CheckTenantIDAvailable(ctx tenant.Context, claims authx.Claims, tenantID string) (model.TenantIDAvailability, error) {
+	role, err := svc.requireTenantManageRole(ctx, claims)
+	if err != nil {
+		return model.TenantIDAvailability{}, err
+	}
+	if role != "platform_admin" {
+		return model.TenantIDAvailability{}, errors.New("仅平台总控管理员可校验租户标识")
+	}
+	return svc.repo.CheckTenantIDAvailable(context.Background(), tenantID)
+}
+
 func (svc *Service) ParseToken(token string) (authx.Claims, error) {
 	return svc.tokenManager.Parse(token)
 }

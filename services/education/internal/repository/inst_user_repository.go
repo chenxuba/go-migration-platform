@@ -388,6 +388,54 @@ func (repo *Repository) CheckPhoneUsed(ctx context.Context, instID int64, mobile
 	return count > 0, nil
 }
 
+func (repo *Repository) CheckLoginAccountAvailable(ctx context.Context, username string) (model.LoginAccountAvailability, error) {
+	username = strings.TrimSpace(username)
+	result := model.LoginAccountAvailability{Username: username}
+	if username == "" {
+		result.Message = "请输入登录账号"
+		return result, nil
+	}
+	checks := []string{
+		`SELECT COUNT(1) FROM org_institution WHERE del_flag = 0 AND login_name = ?`,
+		`SELECT COUNT(1) FROM sso_user WHERE del_flag = 0 AND username = ?`,
+		`SELECT COUNT(1) FROM inst_user WHERE del_flag = 0 AND username = ?`,
+	}
+	for _, query := range checks {
+		var count int
+		if err := repo.db.QueryRowContext(ctx, query, username).Scan(&count); err != nil {
+			return result, err
+		}
+		if count > 0 {
+			result.Message = "登录账号已存在，请更换"
+			return result, nil
+		}
+	}
+	result.Available = true
+	return result, nil
+}
+
+func (repo *Repository) ensureLoginAccountAvailableTx(ctx context.Context, tx *sql.Tx, username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return fmt.Errorf("登录账号不能为空")
+	}
+	checks := []string{
+		`SELECT COUNT(1) FROM org_institution WHERE del_flag = 0 AND login_name = ?`,
+		`SELECT COUNT(1) FROM sso_user WHERE del_flag = 0 AND username = ?`,
+		`SELECT COUNT(1) FROM inst_user WHERE del_flag = 0 AND username = ?`,
+	}
+	for _, query := range checks {
+		var count int
+		if err := tx.QueryRowContext(ctx, query, username).Scan(&count); err != nil {
+			return err
+		}
+		if count > 0 {
+			return fmt.Errorf("登录账号已存在，请更换")
+		}
+	}
+	return nil
+}
+
 func (repo *Repository) SaveInstUser(ctx context.Context, instID int64, dto model.InstUserSaveDTO, passwordHash string) (int64, error) {
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -398,6 +446,9 @@ func (repo *Repository) SaveInstUser(ctx context.Context, instID int64, dto mode
 	username := strings.TrimSpace(dto.Username)
 	if username == "" {
 		username = strings.TrimSpace(dto.Mobile)
+	}
+	if err := repo.ensureLoginAccountAvailableTx(ctx, tx, username); err != nil {
+		return 0, err
 	}
 	userResult, err := tx.ExecContext(ctx, `
 		INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, is_admin, del_flag, create_time)

@@ -1564,14 +1564,31 @@ func (repo *Repository) checkGovernmentUsernameAvailable(ctx context.Context, qu
 	if err != nil && err != sql.ErrNoRows {
 		return false, "", err
 	}
-	if err == sql.ErrNoRows {
-		return true, "", nil
-	}
-	if excludeUserID != nil && *excludeUserID > 0 && userID == *excludeUserID {
-		return true, "", nil
+	if err == nil {
+		if excludeUserID == nil || *excludeUserID <= 0 || userID != *excludeUserID {
+			return false, "登录账号已存在，请更换", nil
+		}
 	}
 
-	return false, "登录账号已存在，请更换", nil
+	instUserSQL := `
+		SELECT COUNT(1)
+		FROM inst_user
+		WHERE del_flag = 0 AND username = ?
+	`
+	instUserArgs := []any{username}
+	if excludeUserID != nil && *excludeUserID > 0 {
+		instUserSQL += " AND user_id <> ?"
+		instUserArgs = append(instUserArgs, *excludeUserID)
+	}
+	var instUserCount int
+	if err := queryer.QueryRowContext(ctx, instUserSQL, instUserArgs...).Scan(&instUserCount); err != nil {
+		return false, "", err
+	}
+	if instUserCount > 0 {
+		return false, "登录账号已存在，请更换", nil
+	}
+
+	return true, "", nil
 }
 
 func (repo *Repository) CreateGovernmentUser(ctx context.Context, input model.GovernmentUserMutationRequest, operatorID int64) (int64, error) {

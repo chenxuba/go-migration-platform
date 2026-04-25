@@ -20,7 +20,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons-vue'
 import messageService from '@/utils/messageService'
-import { listTenantsApi, saveTenantApi } from '@/api/platform/tenants'
+import { checkTenantAdminUsernameAvailableApi, checkTenantIdAvailableApi, listTenantsApi, saveTenantApi } from '@/api/platform/tenants'
 import { pageInstitutionsApi } from '@/api/platform/institutions'
 import { pageVersionsApi } from '@/api/platform/versions'
 import { getQiniuToken } from '@/api/qiniu'
@@ -116,6 +116,12 @@ const institutionOptions = ref<InstitutionOption[]>([])
 const institutionLoading = ref(false)
 const versionOptions = ref<VersionOption[]>([])
 const versionLoading = ref(false)
+const adminUsernameChecking = ref(false)
+const adminUsernameValidateStatus = ref<'' | 'success' | 'error' | 'validating'>('')
+const adminUsernameHelp = ref('')
+const tenantIdChecking = ref(false)
+const tenantIdValidateStatus = ref<'' | 'success' | 'error' | 'validating'>('')
+const tenantIdHelp = ref('')
 
 const defaultLoginBrand: Required<TenantLoginBrandConfig> = {
   template: 'business-split',
@@ -404,9 +410,20 @@ function isolationText() {
   return '共享库'
 }
 
+function resetAdminUsernameValidation() {
+  adminUsernameValidateStatus.value = ''
+  adminUsernameHelp.value = ''
+}
+
+function resetTenantIdValidation() {
+  tenantIdValidateStatus.value = ''
+  tenantIdHelp.value = ''
+}
+
 function resetForm() {
   editingTenantId.value = ''
   formState.tenantId = ''
+  resetTenantIdValidation()
   formState.tenantName = ''
   formState.edition = 'enterprise'
   formState.status = 'active'
@@ -416,6 +433,7 @@ function resetForm() {
   formState.institutionIds = []
   formState.moduleIds = []
   formState.adminUsername = ''
+  resetAdminUsernameValidation()
   formState.adminPassword = ''
   formState.adminNickName = ''
   formState.adminMobile = ''
@@ -428,6 +446,45 @@ function normalizeTenantId() {
   formState.tenantId = formState.tenantId.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '')
 }
 
+async function validateTenantIdOnBlur() {
+  if (editingTenantId.value)
+    return true
+
+  normalizeTenantId()
+  resetTenantIdValidation()
+  const tenantId = formState.tenantId.trim()
+  if (!tenantId)
+    return true
+
+  tenantIdChecking.value = true
+  tenantIdValidateStatus.value = 'validating'
+  try {
+    const res = await checkTenantIdAvailableApi({ tenantId })
+    const payload = res.result
+    if (res.code !== 200 || !payload) {
+      tenantIdValidateStatus.value = 'error'
+      tenantIdHelp.value = String(res.message || '租户标识校验失败，请稍后重试')
+      return false
+    }
+    if (!payload.available) {
+      tenantIdValidateStatus.value = 'error'
+      tenantIdHelp.value = payload.message || '租户标识已存在，请更换'
+      return false
+    }
+    tenantIdValidateStatus.value = 'success'
+    tenantIdHelp.value = '租户标识可用'
+    return true
+  }
+  catch (error: any) {
+    tenantIdValidateStatus.value = 'error'
+    tenantIdHelp.value = String(error?.response?.data?.message || error?.message || '租户标识校验失败，请稍后重试')
+    return false
+  }
+  finally {
+    tenantIdChecking.value = false
+  }
+}
+
 function openCreateModal() {
   resetForm()
   modalOpen.value = true
@@ -436,6 +493,7 @@ function openCreateModal() {
 function openEditModal(record: TenantRecord) {
   editingTenantId.value = record.tenantId
   formState.tenantId = record.tenantId
+  resetTenantIdValidation()
   formState.tenantName = record.tenantName
   formState.edition = record.edition || 'enterprise'
   formState.status = record.status || 'active'
@@ -445,6 +503,7 @@ function openEditModal(record: TenantRecord) {
   formState.institutionIds = [...(record.institutionIds || [])]
   formState.moduleIds = [...(record.moduleIds || [])]
   formState.adminUsername = record.adminUsernames?.[0] || ''
+  resetAdminUsernameValidation()
   formState.adminPassword = ''
   formState.adminNickName = ''
   formState.adminMobile = ''
@@ -458,6 +517,50 @@ function openAuthorizationModal(record: TenantRecord) {
   authorizationTenant.value = record
   authorizationModuleId.value = record.moduleIds?.[0]
   authorizationModalOpen.value = true
+}
+
+async function validateAdminUsernameOnBlur() {
+  const username = formState.adminUsername.trim()
+  resetAdminUsernameValidation()
+  if (!username)
+    return true
+
+  if (/\s/.test(username)) {
+    adminUsernameValidateStatus.value = 'error'
+    adminUsernameHelp.value = '登录账号不能包含空格'
+    return false
+  }
+
+  adminUsernameChecking.value = true
+  adminUsernameValidateStatus.value = 'validating'
+  try {
+    const res = await checkTenantAdminUsernameAvailableApi({
+      username,
+      tenantId: formState.tenantId.trim() || editingTenantId.value || undefined,
+    })
+    const payload = res.result
+    if (res.code !== 200 || !payload) {
+      adminUsernameValidateStatus.value = 'error'
+      adminUsernameHelp.value = String(res.message || '登录账号校验失败，请稍后重试')
+      return false
+    }
+    if (!payload.available) {
+      adminUsernameValidateStatus.value = 'error'
+      adminUsernameHelp.value = payload.message || '登录账号已存在，请更换'
+      return false
+    }
+    adminUsernameValidateStatus.value = 'success'
+    adminUsernameHelp.value = '登录账号可用'
+    return true
+  }
+  catch (error: any) {
+    adminUsernameValidateStatus.value = 'error'
+    adminUsernameHelp.value = String(error?.response?.data?.message || error?.message || '登录账号校验失败，请稍后重试')
+    return false
+  }
+  finally {
+    adminUsernameChecking.value = false
+  }
 }
 
 async function handleSaveAuthorization() {
@@ -556,9 +659,19 @@ async function handleSave() {
     messageService.warning('请填写租户标识')
     return
   }
+  if (!editingTenantId.value) {
+    const tenantIdAvailable = await validateTenantIdOnBlur()
+    if (!tenantIdAvailable)
+      return
+  }
   if (!formState.tenantName.trim()) {
     messageService.warning('请填写客户名称')
     return
+  }
+  if (formState.adminUsername.trim()) {
+    const accountAvailable = await validateAdminUsernameOnBlur()
+    if (!accountAvailable)
+      return
   }
 
   const adminDomains = formState.adminDomain.trim() ? [formState.adminDomain.trim().toLowerCase()] : []
@@ -1065,12 +1178,13 @@ onMounted(() => {
             <a-form-item label="客户名称" required>
               <a-input v-model:value="formState.tenantName" placeholder="例如：A客户集团" />
             </a-form-item>
-            <a-form-item label="租户标识" required>
+            <a-form-item label="租户标识" required :validate-status="tenantIdValidateStatus" :help="tenantIdHelp">
               <a-input
                 v-model:value="formState.tenantId"
-                :disabled="Boolean(editingTenantId)"
+                :disabled="Boolean(editingTenantId) || tenantIdChecking"
                 placeholder="例如：tenant-a"
-                @blur="normalizeTenantId"
+                @blur="validateTenantIdOnBlur"
+                @input="resetTenantIdValidation"
               />
             </a-form-item>
             <a-form-item label="客户版本">
@@ -1105,8 +1219,15 @@ onMounted(() => {
             <KeyOutlined />
           </div>
           <div class="form-grid">
-            <a-form-item label="登录账号">
-              <a-input v-model:value="formState.adminUsername" placeholder="例如：tenant_a_admin" />
+            <a-form-item label="登录账号" :validate-status="adminUsernameValidateStatus" :help="adminUsernameHelp">
+              <a-input
+                v-model:value="formState.adminUsername"
+                :maxlength="30"
+                :disabled="adminUsernameChecking"
+                placeholder="例如：tenant_a_admin"
+                @blur="validateAdminUsernameOnBlur"
+                @input="resetAdminUsernameValidation"
+              />
             </a-form-item>
             <a-form-item label="初始密码">
               <a-input-password v-model:value="formState.adminPassword" placeholder="新账号留空默认 123456，老账号留空不改密码" />

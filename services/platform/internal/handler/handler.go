@@ -30,6 +30,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/public/login-theme", handler.publicLoginTheme)
 	mux.HandleFunc("/api/v1/platform/tenants", handler.tenants)
 	mux.HandleFunc("/api/v1/platform/tenants/save", handler.saveTenant)
+	mux.HandleFunc("/api/v1/platform/tenants/id-available", handler.tenantIDAvailable)
+	mux.HandleFunc("/api/v1/platform/tenants/admin-username-available", handler.tenantAdminUsernameAvailable)
 	mux.HandleFunc("/api/v1/platform/tenants/bootstrap-summary", handler.tenantBootstrapSummary)
 	mux.HandleFunc("/api/v1/platform/tenant-storage", handler.tenantStorageConfig)
 	mux.HandleFunc("/api/v1/qiniu/upload-token", handler.qiniuUploadToken)
@@ -177,6 +179,42 @@ func (handler *Handler) saveTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) tenantIDAvailable(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.CheckTenantIDAvailable(ctx, claims, r.URL.Query().Get("tenantId"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) tenantAdminUsernameAvailable(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.CheckTenantAdminUsernameAvailable(ctx, claims, r.URL.Query().Get("username"), r.URL.Query().Get("tenantId"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
 func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request) {

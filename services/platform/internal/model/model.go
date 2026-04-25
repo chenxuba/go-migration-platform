@@ -310,6 +310,20 @@ type InstitutionLoginNameAvailability struct {
 	Message   string `json:"message,omitempty"`
 }
 
+// TenantAdminUsernameAvailability is the frontend pre-check result for tenant admin login account.
+type TenantAdminUsernameAvailability struct {
+	Username  string `json:"username"`
+	Available bool   `json:"available"`
+	Message   string `json:"message,omitempty"`
+}
+
+// TenantIDAvailability is the frontend pre-check result for tenant identifier.
+type TenantIDAvailability struct {
+	TenantID  string `json:"tenantId"`
+	Available bool   `json:"available"`
+	Message   string `json:"message,omitempty"`
+}
+
 type InstitutionStatusMutation struct {
 	ID      *int64 `json:"id"`
 	Enabled *bool  `json:"enabled"`

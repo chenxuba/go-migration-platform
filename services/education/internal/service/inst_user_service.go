@@ -32,6 +32,16 @@ func (svc *Service) GetInstUserDetail(userID, instUserID int64) (model.InstUserD
 	return svc.repo.GetInstUserDetail(context.Background(), instUserID, instID)
 }
 
+func (svc *Service) CheckInstUserLoginAccountAvailable(userID int64, username string) (model.LoginAccountAvailability, error) {
+	if _, err := svc.repo.FindInstIDByUserID(context.Background(), userID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.LoginAccountAvailability{}, errors.New("no institution context")
+		}
+		return model.LoginAccountAvailability{}, err
+	}
+	return svc.repo.CheckLoginAccountAvailable(context.Background(), username)
+}
+
 func (svc *Service) SaveInstUser(userID int64, dto model.InstUserSaveDTO) (int64, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

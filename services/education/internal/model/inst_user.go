@@ -104,3 +104,9 @@ type InstUserDetailVO struct {
 	IsAdmin    bool                 `json:"isAdmin"`
 	IsTeacher  bool                 `json:"isTeacher"`
 }
+
+type LoginAccountAvailability struct {
+	Username  string `json:"username"`
+	Available bool   `json:"available"`
+	Message   string `json:"message,omitempty"`
+}

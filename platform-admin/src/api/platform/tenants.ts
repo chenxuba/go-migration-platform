@@ -38,6 +38,19 @@ export interface TenantBootstrapSummary {
 
 export type TenantListItem = TenantBootstrapSummary
 
+
+export interface TenantIDAvailability {
+  tenantId: string
+  available: boolean
+  message?: string
+}
+
+export interface TenantAdminUsernameAvailability {
+  username: string
+  available: boolean
+  message?: string
+}
+
 export interface TenantMutationPayload {
   tenantId: string
   tenantName: string
@@ -75,4 +88,20 @@ export function getTenantBootstrapSummaryApi() {
 
 export function saveTenantApi(data: TenantMutationPayload) {
   return usePost<boolean, TenantMutationPayload>('/api/v1/platform/tenants/save', data)
+}
+
+export function checkTenantAdminUsernameAvailableApi(params: { username: string, tenantId?: string }) {
+  return useGet<TenantAdminUsernameAvailability, { username: string, tenantId?: string }>(
+    '/api/v1/platform/tenants/admin-username-available',
+    params,
+    { silentError: true },
+  )
+}
+
+export function checkTenantIdAvailableApi(params: { tenantId: string }) {
+  return useGet<TenantIDAvailability, { tenantId: string }>(
+    '/api/v1/platform/tenants/id-available',
+    params,
+    { silentError: true },
+  )
 }

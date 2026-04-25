@@ -100,6 +100,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/inst-users/batch-dept", handler.batchModifyInstUserDept)
 	mux.HandleFunc("/api/v1/inst-users/batch-role", handler.batchModifyInstUserRole)
 	mux.HandleFunc("/api/v1/inst-users/check-phone", handler.checkInstUserPhoneUsed)
+	mux.HandleFunc("/api/v1/inst-users/login-account-available", handler.checkInstUserLoginAccountAvailable)
 	mux.HandleFunc("/api/v1/inst-users/change-phone", handler.changeInstUserPhone)
 	mux.HandleFunc("/api/v1/qiniu/upload-token", handler.qiniuUploadToken)
 	mux.HandleFunc("/api/v1/qiniu/video-upload-token", handler.qiniuVideoUploadToken)

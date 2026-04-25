@@ -2145,6 +2145,13 @@ func (repo *Repository) upsertTenantAdminTx(ctx context.Context, tx *sql.Tx, ten
 	nickName := firstNonEmpty(strings.TrimSpace(input.AdminNickName), strings.TrimSpace(input.TenantName)+"管理员")
 	mobile := strings.TrimSpace(input.AdminMobile)
 
+	if username == "" {
+		return errors.New("登录账号不能为空")
+	}
+	if err := ensureAccountNotInstitutionLoginName(ctx, tx, username); err != nil {
+		return err
+	}
+
 	var userID int64
 	err := tx.QueryRowContext(ctx, `SELECT id FROM sso_user WHERE del_flag = 0 AND username = ? LIMIT 1`, username).Scan(&userID)
 	if err != nil && err != sql.ErrNoRows {
@@ -2170,6 +2177,13 @@ func (repo *Repository) upsertTenantAdminTx(ctx context.Context, tx *sql.Tx, ten
 			return insErr
 		}
 	} else {
+		ownedByTenant, ownErr := tenantAdminUserBelongsToTenantTx(ctx, tx, tenantID, userID)
+		if ownErr != nil {
+			return ownErr
+		}
+		if !ownedByTenant {
+			return errors.New("登录账号已存在，请更换")
+		}
 		if password != "" {
 			hashBytes, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 			if hashErr != nil {
@@ -2197,6 +2211,110 @@ func (repo *Repository) upsertTenantAdminTx(ctx context.Context, tx *sql.Tx, ten
 		ON DUPLICATE KEY UPDATE user_role = VALUES(user_role), update_time = NOW(), del_flag = 0
 	`, tenantID, userID)
 	return err
+}
+
+func ensureAccountNotInstitutionLoginName(ctx context.Context, queryer loginNameQueryer, username string) error {
+	username = strings.TrimSpace(username)
+	checks := []string{
+		`SELECT COUNT(1) FROM org_institution WHERE del_flag = 0 AND login_name = ?`,
+		`SELECT COUNT(1) FROM inst_user WHERE del_flag = 0 AND username = ?`,
+	}
+	for _, query := range checks {
+		var count int
+		if err := queryer.QueryRowContext(ctx, query, username).Scan(&count); err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("登录账号已存在，请更换")
+		}
+	}
+	return nil
+}
+
+func tenantAdminUserBelongsToTenantTx(ctx context.Context, tx *sql.Tx, tenantID string, userID int64) (bool, error) {
+	var count int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM tenant_user
+		WHERE del_flag = 0 AND tenant_id = ? AND user_id = ? AND user_role = 'tenant_admin'
+	`, tenantID, userID).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (repo *Repository) CheckTenantIDAvailable(ctx context.Context, tenantID string) (model.TenantIDAvailability, error) {
+	tenantID = normalizeTenantID(tenantID)
+	result := model.TenantIDAvailability{TenantID: tenantID}
+	if tenantID == "" {
+		result.Message = "请输入租户标识"
+		return result, nil
+	}
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM tenant_profile
+		WHERE del_flag = 0 AND tenant_id = ?
+	`, tenantID).Scan(&count); err != nil {
+		return result, err
+	}
+	if count > 0 {
+		result.Message = "租户标识已存在，请更换"
+		return result, nil
+	}
+	result.Available = true
+	return result, nil
+}
+
+func (repo *Repository) CheckTenantAdminUsernameAvailable(ctx context.Context, username, tenantID string) (model.TenantAdminUsernameAvailability, error) {
+	username = strings.TrimSpace(username)
+	result := model.TenantAdminUsernameAvailability{Username: username}
+	if username == "" {
+		result.Message = "请输入登录账号"
+		return result, nil
+	}
+	if err := ensureAccountNotInstitutionLoginName(ctx, repo.db, username); err != nil {
+		if err.Error() == "登录账号已存在，请更换" {
+			result.Message = err.Error()
+			return result, nil
+		}
+		return result, err
+	}
+
+	var userID int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sso_user
+		WHERE del_flag = 0 AND username = ?
+		ORDER BY id
+		LIMIT 1
+	`, username).Scan(&userID)
+	if err != nil && err != sql.ErrNoRows {
+		return result, err
+	}
+	if err == sql.ErrNoRows {
+		result.Available = true
+		return result, nil
+	}
+
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID != "" {
+		var count int
+		if err := repo.db.QueryRowContext(ctx, `
+			SELECT COUNT(1)
+			FROM tenant_user
+			WHERE del_flag = 0 AND tenant_id = ? AND user_id = ? AND user_role = 'tenant_admin'
+		`, tenantID, userID).Scan(&count); err != nil {
+			return result, err
+		}
+		if count > 0 {
+			result.Available = true
+			return result, nil
+		}
+	}
+
+	result.Message = "登录账号已存在，请更换"
+	return result, nil
 }
 
 func (repo *Repository) ListDictValuesByCode(ctx context.Context, code string) ([]model.DictValue, error) {
@@ -3246,37 +3364,64 @@ func (repo *Repository) checkInstitutionLoginNameAvailable(ctx context.Context, 
 	if err != nil && err != sql.ErrNoRows {
 		return false, "", err
 	}
-	if err == sql.ErrNoRows {
-		return true, "", nil
+	if err == nil {
+		if excludeInstitutionID != nil && *excludeInstitutionID > 0 {
+			currentInstitutionID := *excludeInstitutionID
+
+			var sameInstitutionCount int
+			if err := queryer.QueryRowContext(ctx, `
+				SELECT COUNT(1)
+				FROM inst_user
+				WHERE del_flag = 0 AND user_id = ? AND inst_id = ?
+			`, userID, currentInstitutionID).Scan(&sameInstitutionCount); err != nil {
+				return false, "", err
+			}
+
+			var otherInstitutionCount int
+			if err := queryer.QueryRowContext(ctx, `
+				SELECT COUNT(1)
+				FROM inst_user
+				WHERE del_flag = 0 AND user_id = ? AND inst_id <> ?
+			`, userID, currentInstitutionID).Scan(&otherInstitutionCount); err != nil {
+				return false, "", err
+			}
+
+			if sameInstitutionCount > 0 && otherInstitutionCount == 0 {
+				var otherUsernameCount int
+				if err := queryer.QueryRowContext(ctx, `
+					SELECT COUNT(1)
+					FROM inst_user
+					WHERE del_flag = 0 AND username = ? AND inst_id <> ?
+				`, loginName, currentInstitutionID).Scan(&otherUsernameCount); err != nil {
+					return false, "", err
+				}
+				if otherUsernameCount == 0 {
+					return true, "", nil
+				}
+			}
+		}
+		return false, "登录账号已存在，请更换", nil
 	}
 
+	instUserSQL := `
+		SELECT COUNT(1)
+		FROM inst_user
+		WHERE del_flag = 0 AND username = ?
+	`
+	instUserArgs := []any{loginName}
 	if excludeInstitutionID != nil && *excludeInstitutionID > 0 {
-		currentInstitutionID := *excludeInstitutionID
-
-		var sameInstitutionCount int
-		if err := queryer.QueryRowContext(ctx, `
-			SELECT COUNT(1)
-			FROM inst_user
-			WHERE del_flag = 0 AND user_id = ? AND inst_id = ?
-		`, userID, currentInstitutionID).Scan(&sameInstitutionCount); err != nil {
-			return false, "", err
-		}
-
-		var otherInstitutionCount int
-		if err := queryer.QueryRowContext(ctx, `
-			SELECT COUNT(1)
-			FROM inst_user
-			WHERE del_flag = 0 AND user_id = ? AND inst_id <> ?
-		`, userID, currentInstitutionID).Scan(&otherInstitutionCount); err != nil {
-			return false, "", err
-		}
-
-		if sameInstitutionCount > 0 && otherInstitutionCount == 0 {
-			return true, "", nil
-		}
+		instUserSQL += " AND inst_id <> ?"
+		instUserArgs = append(instUserArgs, *excludeInstitutionID)
+	}
+	var instUserCount int
+	if err := queryer.QueryRowContext(ctx, instUserSQL, instUserArgs...).Scan(&instUserCount); err != nil {
+		return false, "", err
+	}
+	if instUserCount > 0 {
+		return false, "登录账号已存在，请更换", nil
 	}
 
-	return false, "登录账号已存在，请更换", nil
+	return true, "", nil
 }
 
 // ensureInstitutionBootstrapAdminTx creates the org-scoped admin role, SSO user (login_name), inst_user link,
