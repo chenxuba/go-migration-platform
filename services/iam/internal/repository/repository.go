@@ -1188,6 +1188,41 @@ func (repo *Repository) GetUserRoleIDs(ctx context.Context, userID, orgID int64,
 	return items, rows.Err()
 }
 
+func (repo *Repository) ListConsoleMenuCodesByOwnType(ctx context.Context, ownType int) ([]string, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(menu_code, '')
+		FROM sso_menu
+		WHERE del_flag = 0
+		  AND own_type = ?
+		  AND IFNULL(menu_code, '') <> ''
+		GROUP BY IFNULL(menu_code, '')
+		ORDER BY MIN(level) ASC, MIN(sort) ASC, MIN(id) ASC
+	`, ownType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]string, 0, 32)
+	seen := map[string]struct{}{}
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, err
+		}
+		code = strings.TrimSpace(code)
+		if code == "" {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		items = append(items, code)
+	}
+	return items, rows.Err()
+}
+
 func (repo *Repository) GetUserMenuCodes(ctx context.Context, userID, orgID int64, ownType, roleType int) ([]string, error) {
 	scopedMenuIDs := map[int64]struct{}{}
 	if ownType == 2 && orgID > 0 {
@@ -4280,20 +4315,21 @@ func (repo *Repository) DeleteDefaultRole(ctx context.Context, roleID int64) (in
 
 func (repo *Repository) GetDefaultRoleDetail(ctx context.Context, roleID int64, tenantID string) (model.DefaultRoleDetailVO, error) {
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(role_name, ''), IFNULL(description, ''), IFNULL(is_admin, 0), IFNULL(is_default, 0)
+		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(role_name, ''), IFNULL(description, ''), IFNULL(is_admin, 0), IFNULL(is_default, 0), IFNULL(role_type, 0)
 		FROM sso_role
 		WHERE id = ? AND del_flag = 0
 		LIMIT 1
 	`, roleID)
 	var detail model.DefaultRoleDetailVO
-	if err := row.Scan(&detail.RoleID, &detail.UUID, &detail.Version, &detail.RoleName, &detail.Description, &detail.IsAdmin, &detail.IsDefault); err != nil {
+	var roleType int
+	if err := row.Scan(&detail.RoleID, &detail.UUID, &detail.Version, &detail.RoleName, &detail.Description, &detail.IsAdmin, &detail.IsDefault, &roleType); err != nil {
 		return model.DefaultRoleDetailVO{}, err
 	}
 	menuIDs, err := repo.GetMenuIDsByRole(ctx, roleID, nil)
 	if err != nil {
 		return model.DefaultRoleDetailVO{}, err
 	}
-	if strings.TrimSpace(tenantID) != "" {
+	if strings.TrimSpace(tenantID) != "" && roleType == 2 {
 		allowed, err := repo.GetTenantInstitutionMenuIDSet(ctx, tenantID)
 		if err != nil {
 			return model.DefaultRoleDetailVO{}, err

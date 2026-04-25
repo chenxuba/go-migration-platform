@@ -1938,6 +1938,68 @@ func (repo *Repository) resolveManageOrgID(ctx context.Context, tenantID string)
 	return 900000000 + id, nil
 }
 
+func (repo *Repository) resolveManageOrgIDTx(ctx context.Context, tx *sql.Tx, tenantID string) (int64, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" || tenantID == "platform" {
+		return 1, nil
+	}
+	var id int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM tenant_profile
+		WHERE tenant_id = ? AND del_flag = 0
+		LIMIT 1
+	`, tenantID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 1, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return 900000000 + id, nil
+}
+
+func (repo *Repository) ensureTenantRootDepartTx(ctx context.Context, tx *sql.Tx, tenantID, tenantName string) error {
+	tenantID = strings.TrimSpace(tenantID)
+	tenantName = strings.TrimSpace(tenantName)
+	if tenantID == "" || tenantID == "platform" || tenantName == "" {
+		return nil
+	}
+	orgID, err := repo.resolveManageOrgIDTx(ctx, tx, tenantID)
+	if err != nil {
+		return err
+	}
+	if orgID <= 1 {
+		return nil
+	}
+
+	var id int64
+	err = tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_depart
+		WHERE org_id = ? AND IFNULL(pid, 0) = 0 AND del_flag = 0
+		ORDER BY sort ASC, id ASC
+		LIMIT 1
+	`, orgID).Scan(&id)
+	if err == nil {
+		_, err = tx.ExecContext(ctx, `
+			UPDATE sys_depart
+			SET depart_name = ?, depart_code = ?, is_enable = 1, update_time = NOW()
+			WHERE id = ?
+		`, tenantName, tenantID, id)
+		return err
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO sys_depart (depart_name, depart_code, depart_man, depart_concat, org_id, pid, is_enable, sort, remark, del_flag, create_time, update_time)
+		VALUES (?, ?, '', '', ?, 0, 1, 1, '租户创建时自动生成的顶级部门', 0, NOW(), NOW())
+	`, tenantName, tenantID, orgID)
+	return err
+}
+
 func (repo *Repository) userHasConsoleRole(ctx context.Context, userID, orgID int64) (bool, error) {
 	if userID <= 0 || orgID <= 0 {
 		return false, nil
@@ -2042,6 +2104,9 @@ func (repo *Repository) SaveTenant(ctx context.Context, input model.TenantMutati
 		}
 	}
 	if err := repo.replaceTenantMenusTx(ctx, tx, tenantID, menuIDs); err != nil {
+		return err
+	}
+	if err := repo.ensureTenantRootDepartTx(ctx, tx, tenantID, tenantName); err != nil {
 		return err
 	}
 	if strings.TrimSpace(input.AdminUsername) != "" {

@@ -17,6 +17,7 @@ import {
 import {
   getDefaultRoleDetailApi,
   getFullMenuListApi,
+  roleList,
 } from '~@/api/internal-manage/role-manage'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import { useUserStore } from '~@/stores/user'
@@ -184,22 +185,22 @@ async function getMenuList() {
 }
 async function getRoleDetail() {
   try {
-    const res = await getDefaultRoleDetailApi({ roleId: props.roleId })
-    if (res.code === 200) {
-      // console.log(res.result);
+    const [detailRes, roleMenuRes] = await Promise.all([
+      getDefaultRoleDetailApi({ roleId: props.roleId }),
+      roleList({ roleId: props.roleId, ownType: consoleOwnType.value }),
+    ])
+    if (detailRes.code === 200) {
       //  赋值 表单
-      formState.roleId = res.result.roleId
-      formState.roleName = res.result.roleName
-      formState.description = res.result.description
-      // 获取最后一级权限id
-      const lastLevelPermissionIds = getLastLevelCheckedIds(
-        res.result.menuIds || [],
-      )
-      // console.log("最后一级checked权限IDs:", lastLevelPermissionIds);
-      // 赋值 权限
-      formState.menuIds = lastLevelPermissionIds
-      // 设置权限树的选中状态
-      setDefaultCheckedByIds(lastLevelPermissionIds)
+      formState.roleId = detailRes.result.roleId
+      formState.roleName = detailRes.result.roleName
+      formState.description = detailRes.result.description
+
+      const checkedMenuIds = Array.isArray(roleMenuRes?.result)
+        ? roleMenuRes.result
+        : getLastLevelCheckedIds(detailRes.result.menuIds || [])
+
+      formState.menuIds = checkedMenuIds
+      setDefaultCheckedByIds(checkedMenuIds)
     }
   }
   catch (error) {

@@ -1782,6 +1782,13 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 		info.TenantID = ctx.TenantID
 		info.TenantRole = tenantRole
 		info.TenantType = tenantType
+		if tenantRole == "tenant_admin" && strings.TrimSpace(ctx.TenantID) != "platform" {
+			menuCodes, menuErr := svc.repo.ListConsoleMenuCodesByOwnType(context.Background(), 1)
+			if menuErr != nil {
+				return nil, nil, nil, nil, nil, menuErr
+			}
+			info.MenuCodeList = menuCodes
+		}
 		if tenantRole != "" && len(info.MenuCodeList) == 0 {
 			info.MenuCodeList = []string{tenantRole}
 		}
