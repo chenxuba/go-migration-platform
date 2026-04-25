@@ -335,20 +335,6 @@ onMounted(async () => {
                 :show-checked-strategy="TreeSelect.SHOW_ALL"
               />
             </a-form-item>
-            <!-- 任职角色 -->
-            <a-form-item
-              style="margin: 0;" class="position" name="roleIds"
-              :rules="[{ required: true, message: '请设置任职角色' }]"
-            >
-              <template #label>
-                <div class="flex items-center">
-                  <div>任职角色：</div>
-                  <a-button type="primary" @click="addEmployeesOpen = true">
-                    编辑
-                  </a-button>
-                </div>
-              </template>
-            </a-form-item>
           </div>
           <div class="form-right w-50% mt-18px mr-20px">
             <!-- 账号状态 -->
@@ -375,6 +361,15 @@ onMounted(async () => {
               ]"
             >
               <a-input v-model:value="formState.mobile" :maxlength="11" placeholder="请输入" @change="resetMobileAccountTip" />
+            </a-form-item>
+            <!-- 任职角色 -->
+            <a-form-item
+              class="role-form-item" name="roleIds" label="任职角色："
+              :rules="[{ required: true, message: '请设置任职角色' }]"
+            >
+              <a-button type="primary" @click="addEmployeesOpen = true">
+                编辑
+              </a-button>
             </a-form-item>
           </div>
         </div>
@@ -481,18 +476,16 @@ onMounted(async () => {
   padding: 12px 24px;
 }
 
-.position {
+.role-form-item {
   margin-bottom: 0;
 }
 
-:deep(.position .ant-form-item-control) {
-  min-height: 1px;
-  height: 1px;
+:deep(.role-form-item .ant-form-item-label) {
+  padding-bottom: 8px;
 }
 
-:deep(.position .ant-form-item-control-input) {
-  min-height: 1px;
-  height: 1px;
+:deep(.role-form-item .ant-form-item-control-input) {
+  min-height: 32px;
 }
 
 .upload-area {
