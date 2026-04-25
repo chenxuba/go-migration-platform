@@ -118,20 +118,36 @@ func (svc *Service) SaveTenantStorageConfig(ctx tenant.Context, claims authx.Cla
 	return svc.repo.SaveTenantStorageConfig(context.Background(), input)
 }
 
-func (svc *Service) GetQiniuUploadToken(ctx tenant.Context, claims authx.Claims) (qiniux.TokenVO, error) {
-	client, err := svc.qiniuClientForTenant(ctx, claims)
+func (svc *Service) GetQiniuUploadToken(ctx tenant.Context, claims authx.Claims, tenantID string) (qiniux.TokenVO, error) {
+	client, err := svc.qiniuClientForTenant(ctx, claims, tenantID)
 	if err != nil {
 		return qiniux.TokenVO{}, err
 	}
 	return client.ImageUploadToken()
 }
 
-func (svc *Service) GetQiniuVideoUploadToken(ctx tenant.Context, claims authx.Claims) (qiniux.TokenVO, error) {
-	client, err := svc.qiniuClientForTenant(ctx, claims)
+func (svc *Service) GetQiniuVideoUploadToken(ctx tenant.Context, claims authx.Claims, tenantID string) (qiniux.TokenVO, error) {
+	client, err := svc.qiniuClientForTenant(ctx, claims, tenantID)
 	if err != nil {
 		return qiniux.TokenVO{}, err
 	}
 	return client.VideoUploadToken()
+}
+
+const platformDefaultUploadStorageTenantID = "tenant-a"
+
+func (svc *Service) resolveUploadStorageTenantID(ctx tenant.Context, claims authx.Claims, requestedTenantID string) (string, error) {
+	role, err := svc.repo.GetTenantUserRole(context.Background(), ctx.TenantID, claims.UserID)
+	if err != nil {
+		return "", err
+	}
+	if role == "platform_admin" {
+		if strings.TrimSpace(requestedTenantID) != "" {
+			return strings.TrimSpace(requestedTenantID), nil
+		}
+		return platformDefaultUploadStorageTenantID, nil
+	}
+	return svc.resolveStorageTenantID(ctx, claims, requestedTenantID)
 }
 
 func (svc *Service) resolveStorageTenantID(ctx tenant.Context, claims authx.Claims, requestedTenantID string) (string, error) {
@@ -158,22 +174,28 @@ func (svc *Service) resolveStorageTenantID(ctx tenant.Context, claims authx.Clai
 	return ctx.TenantID, nil
 }
 
-func (svc *Service) qiniuClientForTenant(ctx tenant.Context, claims authx.Claims) (*qiniux.Client, error) {
-	tenantID := strings.TrimSpace(claims.TenantID)
-	if tenantID == "" {
-		tenantID = strings.TrimSpace(ctx.TenantID)
+func (svc *Service) qiniuClientForTenant(ctx tenant.Context, claims authx.Claims, requestedTenantID string) (*qiniux.Client, error) {
+	tenantID, err := svc.resolveUploadStorageTenantID(ctx, claims, requestedTenantID)
+	if err != nil {
+		return nil, err
 	}
 	if tenantID == "" {
 		return nil, errors.New("当前账号未识别租户，无法上传")
 	}
 	storageConfig, err := svc.repo.GetTenantStorageConfig(context.Background(), tenantID, tenantstorage.ProviderQiniu)
 	if err == sql.ErrNoRows {
+		if strings.TrimSpace(requestedTenantID) != "" {
+			return nil, errors.New("该客户未配置云存储，暂不能上传登录页图片")
+		}
 		return nil, errors.New("当前租户未配置云存储，请先在总控配置租户云存储")
 	}
 	if err != nil {
 		return nil, err
 	}
 	if !storageConfig.Enabled {
+		if strings.TrimSpace(requestedTenantID) != "" {
+			return nil, errors.New("该客户云存储已停用，暂不能上传登录页图片")
+		}
 		return nil, errors.New("当前租户云存储已停用")
 	}
 	baseConfig := qiniux.Config{}

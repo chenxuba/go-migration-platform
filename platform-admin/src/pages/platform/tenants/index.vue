@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
+import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
 import { computed, onMounted, reactive, ref } from 'vue'
+import * as qiniu from 'qiniu-js'
 import {
   ApartmentOutlined,
   CheckCircleOutlined,
+  DeleteOutlined,
   GlobalOutlined,
   KeyOutlined,
   PlusOutlined,
@@ -11,11 +14,14 @@ import {
   SearchOutlined,
   ShopOutlined,
   TeamOutlined,
+  UploadOutlined,
 } from '@ant-design/icons-vue'
 import messageService from '@/utils/messageService'
 import { listTenantsApi, saveTenantApi } from '@/api/platform/tenants'
 import { pageInstitutionsApi } from '@/api/platform/institutions'
 import { pageVersionsApi } from '@/api/platform/versions'
+import { getQiniuToken } from '@/api/qiniu'
+import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 
 interface TenantRecord {
   tenantId: string
@@ -124,6 +130,19 @@ const institutionTemplateOptions = [
   { label: '校区品牌卡片', value: 'campus-card' },
   { label: '轻量门户登录', value: 'clean-portal' },
 ]
+const brandColorOptions = [
+  { label: '科技蓝', value: '#1677ff' },
+  { label: '活力橙', value: '#fe8130' },
+  { label: '教育绿', value: '#13ad74' },
+  { label: '品牌紫', value: '#7c3aed' },
+  { label: '商务青', value: '#08979c' },
+  { label: '高级黑', value: '#1f2937' },
+]
+const brandUploading = reactive<Record<string, boolean>>({})
+const brandUploadProgress = reactive<Record<string, number>>({})
+
+type LoginBrandScope = 'platform' | 'institution'
+type LoginBrandAssetField = 'logoUrl' | 'backgroundUrl'
 
 function createDefaultLoginBrand(tenantName = '', template = 'business-split'): Required<TenantLoginBrandConfig> {
   return {
@@ -140,6 +159,114 @@ function createDefaultLoginBrand(tenantName = '', template = 'business-split'): 
 
 function assignLoginBrand(target: Required<TenantLoginBrandConfig>, value?: TenantLoginBrandConfig, tenantName = '', template = 'business-split') {
   Object.assign(target, createDefaultLoginBrand(tenantName, template), value || {})
+}
+
+function getLoginBrand(scope: LoginBrandScope) {
+  return scope === 'platform' ? formState.platformLoginBrand : formState.institutionLoginBrand
+}
+
+function getBrandUploadKey(scope: LoginBrandScope, field: LoginBrandAssetField) {
+  return `${scope}-${field}`
+}
+
+function getBrandUploadLabel(field: LoginBrandAssetField) {
+  return field === 'logoUrl' ? 'Logo' : '登录背景图'
+}
+
+function getBrandAssetFolder(scope: LoginBrandScope, field: LoginBrandAssetField) {
+  const entryFolder = scope === 'platform' ? 'platform-admin' : 'institution-admin'
+  const assetFolder = field === 'logoUrl' ? 'logo' : 'background'
+  return `tenant-login/${entryFolder}/${assetFolder}`
+}
+
+function isBrandUploading(scope: LoginBrandScope, field: LoginBrandAssetField) {
+  return !!brandUploading[getBrandUploadKey(scope, field)]
+}
+
+function getBrandUploadProgress(scope: LoginBrandScope, field: LoginBrandAssetField) {
+  return brandUploadProgress[getBrandUploadKey(scope, field)] || 0
+}
+
+function selectBrandColor(scope: LoginBrandScope, color: string) {
+  getLoginBrand(scope).primaryColor = color
+}
+
+function clearBrandAsset(scope: LoginBrandScope, field: LoginBrandAssetField) {
+  getLoginBrand(scope)[field] = ''
+}
+
+function beforeBrandImageUpload(file: File, label: string) {
+  const isImage = file.type.startsWith('image/')
+  if (!isImage) {
+    messageService.warning(`${label}只能上传图片文件`)
+    return false
+  }
+
+  const isLt8M = file.size / 1024 / 1024 <= 8
+  if (!isLt8M) {
+    messageService.warning(`${label}大小不能超过 8MB`)
+    return false
+  }
+
+  return true
+}
+
+async function handleBrandAssetUpload(options: UploadRequestOption, scope: LoginBrandScope, field: LoginBrandAssetField) {
+  const rawFile = options.file as File
+  const label = getBrandUploadLabel(field)
+  if (!rawFile || !beforeBrandImageUpload(rawFile, label)) {
+    options.onError?.(new Error('invalid file'))
+    return
+  }
+
+  const uploadKey = getBrandUploadKey(scope, field)
+  brandUploading[uploadKey] = true
+  brandUploadProgress[uploadKey] = 0
+
+  try {
+    const tokenRes: any = await getQiniuToken()
+    const { token, uuid, buckethostname } = tokenRes.result || {}
+    if (!token || !uuid || !buckethostname)
+      throw new Error(tokenRes?.message || '获取上传凭证失败')
+    validateUploadFileByToken(rawFile, tokenRes.result, label)
+
+    const ext = rawFile.name.includes('.') ? rawFile.name.slice(rawFile.name.lastIndexOf('.')) : '.png'
+    const key = `${getBrandAssetFolder(scope, field)}/${uuid}${ext}`
+    const observable = qiniu.upload(rawFile, key, token, {
+      fname: rawFile.name,
+      mimeType: rawFile.type,
+    }, {
+      useCdnDomain: true,
+      region: qiniu.region.z0,
+    })
+
+    observable.subscribe({
+      next(result) {
+        brandUploadProgress[uploadKey] = Math.floor(result.total.percent)
+      },
+      error(error) {
+        console.error('upload tenant login asset failed', error)
+        messageService.error(resolveUploadErrorMessage(error, `${label}上传失败`))
+        brandUploading[uploadKey] = false
+        brandUploadProgress[uploadKey] = 0
+        options.onError?.(error)
+      },
+      complete(result) {
+        getLoginBrand(scope)[field] = `${buckethostname}${result.key}`
+        brandUploading[uploadKey] = false
+        brandUploadProgress[uploadKey] = 100
+        messageService.success(`${label}上传成功`)
+        options.onSuccess?.(result as any)
+      },
+    })
+  }
+  catch (error: any) {
+    console.error('prepare tenant login asset upload failed', error)
+    messageService.error(resolveUploadErrorMessage(error, `${label}上传失败`))
+    brandUploading[uploadKey] = false
+    brandUploadProgress[uploadKey] = 0
+    options.onError?.(error)
+  }
 }
 
 const formState = reactive<TenantFormState>({
@@ -716,57 +843,185 @@ onMounted(() => {
           </div>
           <a-tabs class="login-template-tabs">
             <a-tab-pane key="platform" tab="子总控登录页">
-              <div class="form-grid">
-                <a-form-item label="页面模板">
-                  <a-select v-model:value="formState.platformLoginBrand.template" :options="platformTemplateOptions" />
+              <div class="login-brand-editor">
+                <div class="form-grid">
+                  <a-form-item label="页面模板">
+                    <a-select v-model:value="formState.platformLoginBrand.template" :options="platformTemplateOptions" />
+                  </a-form-item>
+                  <a-form-item label="品牌名称">
+                    <a-input v-model:value="formState.platformLoginBrand.brandName" placeholder="默认使用客户名称" />
+                  </a-form-item>
+                  <a-form-item label="登录标题">
+                    <a-input v-model:value="formState.platformLoginBrand.loginTitle" placeholder="例如：肯纳集团管理后台" />
+                  </a-form-item>
+                  <a-form-item label="宣传标题">
+                    <a-input v-model:value="formState.platformLoginBrand.heroTitle" placeholder="例如：欢迎进入肯纳集团" />
+                  </a-form-item>
+                </div>
+
+                <a-form-item label="主色调" class="brand-color-form-item">
+                  <div class="brand-color-picker">
+                    <button
+                      v-for="color in brandColorOptions"
+                      :key="`platform-${color.value}`"
+                      type="button"
+                      class="brand-color-swatch"
+                      :class="{ 'brand-color-swatch--active': formState.platformLoginBrand.primaryColor === color.value }"
+                      :style="{ '--brand-color': color.value }"
+                      @click="selectBrandColor('platform', color.value)"
+                    >
+                      <span class="brand-color-swatch__dot" />
+                      <span>{{ color.label }}</span>
+                    </button>
+                  </div>
                 </a-form-item>
-                <a-form-item label="主色调">
-                  <a-input v-model:value="formState.platformLoginBrand.primaryColor" placeholder="例如：#1677ff" />
-                </a-form-item>
-                <a-form-item label="品牌名称">
-                  <a-input v-model:value="formState.platformLoginBrand.brandName" placeholder="默认使用客户名称" />
-                </a-form-item>
-                <a-form-item label="Logo 地址">
-                  <a-input v-model:value="formState.platformLoginBrand.logoUrl" placeholder="https://.../logo.png" />
-                </a-form-item>
-                <a-form-item label="背景图地址">
-                  <a-input v-model:value="formState.platformLoginBrand.backgroundUrl" placeholder="https://.../login-bg.png" />
-                </a-form-item>
-                <a-form-item label="登录标题">
-                  <a-input v-model:value="formState.platformLoginBrand.loginTitle" placeholder="例如：肯纳集团管理后台" />
-                </a-form-item>
-                <a-form-item label="宣传标题">
-                  <a-input v-model:value="formState.platformLoginBrand.heroTitle" placeholder="例如：欢迎进入肯纳集团" />
-                </a-form-item>
-                <a-form-item label="宣传文案">
+
+                <div class="brand-asset-grid">
+                  <a-form-item label="Logo">
+                    <div class="brand-upload-field">
+                      <a-upload
+                        :custom-request="options => handleBrandAssetUpload(options, 'platform', 'logoUrl')"
+                        :show-upload-list="false"
+                        accept="image/*"
+                        :disabled="isBrandUploading('platform', 'logoUrl')"
+                      >
+                        <div class="brand-upload-card brand-upload-card--logo">
+                          <img v-if="formState.platformLoginBrand.logoUrl" :src="formState.platformLoginBrand.logoUrl" alt="Logo">
+                          <div v-else class="brand-upload-empty">
+                            <UploadOutlined />
+                            <span>上传 Logo</span>
+                          </div>
+                          <div v-if="isBrandUploading('platform', 'logoUrl')" class="brand-upload-mask">
+                            上传中 {{ getBrandUploadProgress('platform', 'logoUrl') }}%
+                          </div>
+                        </div>
+                      </a-upload>
+                      <a-button v-if="formState.platformLoginBrand.logoUrl" size="small" @click="clearBrandAsset('platform', 'logoUrl')">
+                        <template #icon><DeleteOutlined /></template>
+                        清除
+                      </a-button>
+                    </div>
+                  </a-form-item>
+                  <a-form-item label="登录背景">
+                    <div class="brand-upload-field">
+                      <a-upload
+                        :custom-request="options => handleBrandAssetUpload(options, 'platform', 'backgroundUrl')"
+                        :show-upload-list="false"
+                        accept="image/*"
+                        :disabled="isBrandUploading('platform', 'backgroundUrl')"
+                      >
+                        <div class="brand-upload-card brand-upload-card--banner">
+                          <img v-if="formState.platformLoginBrand.backgroundUrl" :src="formState.platformLoginBrand.backgroundUrl" alt="登录背景">
+                          <div v-else class="brand-upload-empty">
+                            <UploadOutlined />
+                            <span>上传背景图</span>
+                          </div>
+                          <div v-if="isBrandUploading('platform', 'backgroundUrl')" class="brand-upload-mask">
+                            上传中 {{ getBrandUploadProgress('platform', 'backgroundUrl') }}%
+                          </div>
+                        </div>
+                      </a-upload>
+                      <a-button v-if="formState.platformLoginBrand.backgroundUrl" size="small" @click="clearBrandAsset('platform', 'backgroundUrl')">
+                        <template #icon><DeleteOutlined /></template>
+                        清除
+                      </a-button>
+                    </div>
+                  </a-form-item>
+                </div>
+
+                <a-form-item label="宣传文案" class="brand-wide-form-item">
                   <a-input v-model:value="formState.platformLoginBrand.heroDescription" placeholder="子总控登录页展示文案" />
                 </a-form-item>
               </div>
             </a-tab-pane>
             <a-tab-pane key="institution" tab="机构端登录页">
-              <div class="form-grid">
-                <a-form-item label="页面模板">
-                  <a-select v-model:value="formState.institutionLoginBrand.template" :options="institutionTemplateOptions" />
+              <div class="login-brand-editor">
+                <div class="form-grid">
+                  <a-form-item label="页面模板">
+                    <a-select v-model:value="formState.institutionLoginBrand.template" :options="institutionTemplateOptions" />
+                  </a-form-item>
+                  <a-form-item label="品牌名称">
+                    <a-input v-model:value="formState.institutionLoginBrand.brandName" placeholder="默认使用客户名称" />
+                  </a-form-item>
+                  <a-form-item label="登录标题">
+                    <a-input v-model:value="formState.institutionLoginBrand.loginTitle" placeholder="例如：肯纳集团机构端" />
+                  </a-form-item>
+                  <a-form-item label="宣传标题">
+                    <a-input v-model:value="formState.institutionLoginBrand.heroTitle" placeholder="例如：校区业务管理入口" />
+                  </a-form-item>
+                </div>
+
+                <a-form-item label="主色调" class="brand-color-form-item">
+                  <div class="brand-color-picker">
+                    <button
+                      v-for="color in brandColorOptions"
+                      :key="`institution-${color.value}`"
+                      type="button"
+                      class="brand-color-swatch"
+                      :class="{ 'brand-color-swatch--active': formState.institutionLoginBrand.primaryColor === color.value }"
+                      :style="{ '--brand-color': color.value }"
+                      @click="selectBrandColor('institution', color.value)"
+                    >
+                      <span class="brand-color-swatch__dot" />
+                      <span>{{ color.label }}</span>
+                    </button>
+                  </div>
                 </a-form-item>
-                <a-form-item label="主色调">
-                  <a-input v-model:value="formState.institutionLoginBrand.primaryColor" placeholder="例如：#13ad74" />
-                </a-form-item>
-                <a-form-item label="品牌名称">
-                  <a-input v-model:value="formState.institutionLoginBrand.brandName" placeholder="默认使用客户名称" />
-                </a-form-item>
-                <a-form-item label="Logo 地址">
-                  <a-input v-model:value="formState.institutionLoginBrand.logoUrl" placeholder="https://.../logo.png" />
-                </a-form-item>
-                <a-form-item label="背景图地址">
-                  <a-input v-model:value="formState.institutionLoginBrand.backgroundUrl" placeholder="https://.../login-bg.png" />
-                </a-form-item>
-                <a-form-item label="登录标题">
-                  <a-input v-model:value="formState.institutionLoginBrand.loginTitle" placeholder="例如：肯纳集团机构端" />
-                </a-form-item>
-                <a-form-item label="宣传标题">
-                  <a-input v-model:value="formState.institutionLoginBrand.heroTitle" placeholder="例如：校区业务管理入口" />
-                </a-form-item>
-                <a-form-item label="宣传文案">
+
+                <div class="brand-asset-grid">
+                  <a-form-item label="Logo">
+                    <div class="brand-upload-field">
+                      <a-upload
+                        :custom-request="options => handleBrandAssetUpload(options, 'institution', 'logoUrl')"
+                        :show-upload-list="false"
+                        accept="image/*"
+                        :disabled="isBrandUploading('institution', 'logoUrl')"
+                      >
+                        <div class="brand-upload-card brand-upload-card--logo">
+                          <img v-if="formState.institutionLoginBrand.logoUrl" :src="formState.institutionLoginBrand.logoUrl" alt="Logo">
+                          <div v-else class="brand-upload-empty">
+                            <UploadOutlined />
+                            <span>上传 Logo</span>
+                          </div>
+                          <div v-if="isBrandUploading('institution', 'logoUrl')" class="brand-upload-mask">
+                            上传中 {{ getBrandUploadProgress('institution', 'logoUrl') }}%
+                          </div>
+                        </div>
+                      </a-upload>
+                      <a-button v-if="formState.institutionLoginBrand.logoUrl" size="small" @click="clearBrandAsset('institution', 'logoUrl')">
+                        <template #icon><DeleteOutlined /></template>
+                        清除
+                      </a-button>
+                    </div>
+                  </a-form-item>
+                  <a-form-item label="登录背景">
+                    <div class="brand-upload-field">
+                      <a-upload
+                        :custom-request="options => handleBrandAssetUpload(options, 'institution', 'backgroundUrl')"
+                        :show-upload-list="false"
+                        accept="image/*"
+                        :disabled="isBrandUploading('institution', 'backgroundUrl')"
+                      >
+                        <div class="brand-upload-card brand-upload-card--banner">
+                          <img v-if="formState.institutionLoginBrand.backgroundUrl" :src="formState.institutionLoginBrand.backgroundUrl" alt="登录背景">
+                          <div v-else class="brand-upload-empty">
+                            <UploadOutlined />
+                            <span>上传背景图</span>
+                          </div>
+                          <div v-if="isBrandUploading('institution', 'backgroundUrl')" class="brand-upload-mask">
+                            上传中 {{ getBrandUploadProgress('institution', 'backgroundUrl') }}%
+                          </div>
+                        </div>
+                      </a-upload>
+                      <a-button v-if="formState.institutionLoginBrand.backgroundUrl" size="small" @click="clearBrandAsset('institution', 'backgroundUrl')">
+                        <template #icon><DeleteOutlined /></template>
+                        清除
+                      </a-button>
+                    </div>
+                  </a-form-item>
+                </div>
+
+                <a-form-item label="宣传文案" class="brand-wide-form-item">
                   <a-input v-model:value="formState.institutionLoginBrand.heroDescription" placeholder="机构端登录页展示文案" />
                 </a-form-item>
               </div>
@@ -1211,10 +1466,180 @@ onMounted(() => {
   }
 }
 
+.login-brand-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.brand-color-form-item,
+.brand-wide-form-item {
+  :deep(.ant-form-item-row) {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: center;
+    flex-wrap: nowrap;
+  }
+
+  :deep(.ant-form-item-label) {
+    max-width: 112px;
+    text-align: right;
+
+    > label {
+      color: rgba(0, 0, 0, 0.65);
+      font-size: 14px;
+      font-weight: 500;
+    }
+  }
+}
+
+.brand-color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.brand-color-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 13px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    color: var(--brand-color);
+    border-color: var(--brand-color);
+  }
+}
+
+.brand-color-swatch--active {
+  color: var(--brand-color);
+  background: color-mix(in srgb, var(--brand-color) 8%, #fff);
+  border-color: var(--brand-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-color) 12%, transparent);
+}
+
+.brand-color-swatch__dot {
+  width: 14px;
+  height: 14px;
+  background: var(--brand-color);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.brand-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+
+  :deep(.ant-form-item) {
+    margin-bottom: 14px;
+  }
+
+  :deep(.ant-form-item-row) {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    align-items: flex-start;
+    flex-wrap: nowrap;
+  }
+
+  :deep(.ant-form-item-label) {
+    max-width: 112px;
+    padding-top: 10px;
+    text-align: right;
+
+    > label {
+      color: rgba(0, 0, 0, 0.65);
+      font-size: 14px;
+      font-weight: 500;
+    }
+  }
+}
+
+.brand-upload-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.brand-upload-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fafafa;
+  border: 1px dashed #d9d9d9;
+  border-radius: 10px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: var(--pro-ant-color-primary, #1677ff);
+    background: #f7fbff;
+  }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.brand-upload-card--logo {
+  width: 96px;
+  height: 64px;
+
+  img {
+    object-fit: contain;
+    padding: 8px;
+    background: #fff;
+  }
+}
+
+.brand-upload-card--banner {
+  width: 168px;
+  height: 76px;
+}
+
+.brand-upload-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+
+  .anticon {
+    color: var(--pro-ant-color-primary, #1677ff);
+    font-size: 18px;
+  }
+}
+
+.brand-upload-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 16px;
+  align-items: center;
 
   :deep(.ant-form-item) {
     margin-bottom: 14px;

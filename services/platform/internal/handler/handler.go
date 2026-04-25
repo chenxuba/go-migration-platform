@@ -190,7 +190,7 @@ func (handler *Handler) qiniuUploadToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	result, err := handler.service.GetQiniuUploadToken(ctx, claims)
+	result, err := handler.service.GetQiniuUploadToken(ctx, claims, r.URL.Query().Get("tenantId"))
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -209,7 +209,7 @@ func (handler *Handler) qiniuVideoUploadToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	result, err := handler.service.GetQiniuVideoUploadToken(ctx, claims)
+	result, err := handler.service.GetQiniuVideoUploadToken(ctx, claims, r.URL.Query().Get("tenantId"))
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
