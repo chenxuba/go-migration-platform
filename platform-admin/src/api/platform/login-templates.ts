@@ -1,6 +1,6 @@
 import type { ResponseBody } from '@/utils/request'
 
-export type LoginTemplateEntryType = 'platform-admin' | 'institution-admin' | 'all'
+export type LoginTemplateEntryType = 'platform-admin' | 'institution-admin'
 export type LoginTemplateLayoutType = 'split' | 'card' | 'portal'
 
 export interface LoginTemplateItem {

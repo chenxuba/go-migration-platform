@@ -2498,7 +2498,10 @@ func (repo *Repository) SaveLoginTemplate(ctx context.Context, input model.Login
 		return 0, fmt.Errorf("模板名称不能为空")
 	}
 	if entryType == "" {
-		entryType = "all"
+		entryType = "institution-admin"
+	}
+	if entryType != "platform-admin" && entryType != "institution-admin" {
+		return 0, fmt.Errorf("适用端口只能选择子总控后台或机构端")
 	}
 	layoutType := firstNonEmpty(strings.TrimSpace(input.LayoutType), "split")
 	enabled := true

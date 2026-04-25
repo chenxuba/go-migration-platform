@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { deleteLoginTemplateApi, listLoginTemplatesApi, saveLoginTemplateApi, type LoginTemplateItem } from '@/api/platform/login-templates'
 import { useUserStore } from '@/stores/user'
@@ -53,17 +53,26 @@ const columns: TableColumnsType = [
 const filteredRows = computed(() => entryFilter.value ? rows.value.filter(item => item.entryType === entryFilter.value || item.entryType === 'all') : rows.value)
 const tenantOptions = computed(() => tenants.value.filter(item => item.tenantId !== 'platform').map(item => ({ label: item.tenantName, value: item.tenantId })))
 const institutionOptions = computed(() => institutions.value.map(item => ({ label: item.tenantName ? `${item.organName}（${item.tenantName}）` : item.organName, value: item.id })))
+const isPlatformTemplate = computed(() => formState.entryType === 'platform-admin')
+const isInstitutionTemplate = computed(() => formState.entryType === 'institution-admin')
 
 function asTemplate(record: Record<string, any>) {
   return record as LoginTemplateItem
 }
+
+watch(() => formState.entryType, (entryType) => {
+  if (entryType === 'platform-admin')
+    formState.institutionIds = []
+  if (entryType === 'institution-admin')
+    formState.tenantIds = []
+})
 
 function entryTypeText(value?: string) {
   if (value === 'platform-admin')
     return '子总控后台'
   if (value === 'institution-admin')
     return '机构端'
-  return '全部端口'
+  return value || '机构端'
 }
 
 function layoutText(value?: string) {
@@ -107,7 +116,7 @@ function openEdit(record: LoginTemplateItem) {
   formState.id = record.id
   formState.templateName = record.templateName
   formState.templateKey = record.templateKey
-  formState.entryType = String(record.entryType || 'institution-admin')
+  formState.entryType = record.entryType === 'platform-admin' ? 'platform-admin' : 'institution-admin'
   formState.layoutType = String(record.layoutType || 'split')
   formState.description = record.description || ''
   formState.previewImage = record.previewImage || ''
@@ -168,6 +177,10 @@ async function handleSave() {
   }
   if (!formState.templateKey.trim()) {
     messageService.warning('请填写模板编码')
+    return
+  }
+  if (!['platform-admin', 'institution-admin'].includes(formState.entryType)) {
+    messageService.warning('请选择适用端口')
     return
   }
   saving.value = true
@@ -296,7 +309,7 @@ onMounted(async () => {
       </template>
       <a-form layout="vertical" class="template-form">
         <div class="template-form__notice">
-          模板编码需与前端组件注册 key 保持一致；不选择租户/机构时表示全局通用。
+          模板编码需与前端组件注册 key 保持一致；子总控模板按租户限制，机构端模板按机构限制，不选择表示全局通用。
         </div>
         <div class="template-form__grid">
           <a-form-item label="模板名称" required><a-input v-model:value="formState.templateName" placeholder="例如：康复中心品牌登录" /></a-form-item>
@@ -304,8 +317,7 @@ onMounted(async () => {
           <a-form-item label="适用端口">
             <a-select v-model:value="formState.entryType">
               <a-select-option value="platform-admin">子总控后台</a-select-option>
-              <a-select-option value="institution-admin">机构端</a-select-option>
-              <a-select-option value="all">全部端口</a-select-option>
+                  <a-select-option value="institution-admin">机构端</a-select-option>
             </a-select>
           </a-form-item>
           <a-form-item label="布局类型">
@@ -319,10 +331,10 @@ onMounted(async () => {
           <a-form-item label="状态"><a-switch v-model:checked="formState.enabled" checked-children="启用" un-checked-children="停用" /></a-form-item>
         </div>
         <a-form-item label="模板说明"><a-textarea v-model:value="formState.description" :rows="3" placeholder="说明模板适用场景，便于租户配置时选择" /></a-form-item>
-        <a-form-item label="适用租户">
+        <a-form-item v-if="isPlatformTemplate" label="适用租户">
           <a-select v-model:value="formState.tenantIds" mode="multiple" allow-clear show-search option-filter-prop="label" :options="tenantOptions" placeholder="不选择表示全租户通用" />
         </a-form-item>
-        <a-form-item label="适用机构">
+        <a-form-item v-if="isInstitutionTemplate" label="适用机构">
           <a-select v-model:value="formState.institutionIds" mode="multiple" allow-clear show-search option-filter-prop="label" :options="institutionOptions" placeholder="不选择表示全机构通用" />
         </a-form-item>
       </a-form>
@@ -500,7 +512,7 @@ onMounted(async () => {
 
 .reference-count {
   color: #667085;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 
