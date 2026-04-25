@@ -317,7 +317,7 @@ onMounted(async () => {
           <a-form-item label="适用端口">
             <a-select v-model:value="formState.entryType">
               <a-select-option value="platform-admin">子总控后台</a-select-option>
-                  <a-select-option value="institution-admin">机构端</a-select-option>
+              <a-select-option value="institution-admin">机构端</a-select-option>
             </a-select>
           </a-form-item>
           <a-form-item label="布局类型">
