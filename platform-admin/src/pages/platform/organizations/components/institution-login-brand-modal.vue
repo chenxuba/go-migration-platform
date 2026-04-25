@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { InstitutionDetail, InstitutionMutationPayload, TenantLoginBrandConfig } from '@/api/platform/institutions'
+import { CopyOutlined } from '@ant-design/icons-vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { getInstitutionDetailApi, updateInstitutionApi } from '@/api/platform/institutions'
 import { listTenantsApi } from '@/api/platform/tenants'
@@ -170,12 +171,58 @@ function buildPayload(detail: InstitutionDetail): InstitutionMutationPayload & {
   }
 }
 
+async function copyFullLoginDomain() {
+  if (!fullLoginDomain.value) {
+    messageService.warning('请先填写一级子域名')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(fullLoginDomain.value)
+    messageService.success('访问域名已复制')
+  }
+  catch (error) {
+    console.warn('copy login domain failed', error)
+    messageService.error('复制失败，请手动复制')
+  }
+}
+
+function validateLoginBrandForm() {
+  const hasIndependentDomain = !!normalizeSlug(formState.loginSlug)
+  if (!hasIndependentDomain)
+    return true
+
+  if (!institutionDomain.value) {
+    messageService.warning('请先在租户管理中配置机构端登录域名')
+    return false
+  }
+  if (!formState.loginTitle.trim()) {
+    messageService.warning('请填写登录标题')
+    return false
+  }
+  if (!formState.heroTitle.trim()) {
+    messageService.warning('请填写宣传标题')
+    return false
+  }
+  if (!formState.primaryColor.trim()) {
+    messageService.warning('请选择主色调')
+    return false
+  }
+  if (!formState.heroDescription.trim()) {
+    messageService.warning('请填写宣传文案')
+    return false
+  }
+  return true
+}
+
 async function handleSave() {
   const detail = institutionDetail.value
   if (!detail)
     return
 
   formState.loginSlug = normalizeSlug(formState.loginSlug)
+  if (!validateLoginBrandForm())
+    return
+
   saving.value = true
   try {
     const res = await updateInstitutionApi(buildPayload(detail))
@@ -232,7 +279,7 @@ watch(
         <a-alert
           type="info"
           show-icon
-          message="前面只填写一级子域名，后面自动拼接租户机构端登录域名；不填写时继续使用租户机构端登录地址，不会拦截登录。"
+          message="独立域名选填；不填写时继续使用租户机构端登录地址。填写独立域名后，标题、主色和文案需要完整配置；页面模板可选择跟随租户默认。"
         />
 
         <div class="login-brand-logo-row">
@@ -254,7 +301,12 @@ watch(
             </a-form-item>
             <div class="login-domain-preview">
               <span>访问地址：</span>
-              <strong v-if="fullLoginDomain">{{ fullLoginDomain }}</strong>
+              <template v-if="fullLoginDomain">
+                <strong>{{ fullLoginDomain }}</strong>
+                <button type="button" class="login-domain-copy" title="复制访问域名" @click="copyFullLoginDomain">
+                  <CopyOutlined />
+                </button>
+              </template>
               <em v-else>未配置独立机构域名，使用租户机构端登录地址</em>
             </div>
           </a-col>
@@ -264,17 +316,17 @@ watch(
             </a-form-item>
           </a-col>
           <a-col :xs="24" :md="12">
-            <a-form-item label="登录标题">
+            <a-form-item label="登录标题" :required="!!formState.loginSlug">
               <a-input v-model:value="formState.loginTitle" placeholder="默认使用机构名称" />
             </a-form-item>
           </a-col>
           <a-col :xs="24" :md="12">
-            <a-form-item label="宣传标题">
+            <a-form-item label="宣传标题" :required="!!formState.loginSlug">
               <a-input v-model:value="formState.heroTitle" placeholder="例如：欢迎进入本校区" />
             </a-form-item>
           </a-col>
           <a-col :xs="24">
-            <a-form-item label="主色调">
+            <a-form-item label="主色调" :required="!!formState.loginSlug">
               <div class="login-brand-colors">
                 <button
                   v-for="color in colorOptions"
@@ -291,7 +343,7 @@ watch(
             </a-form-item>
           </a-col>
           <a-col :xs="24">
-            <a-form-item label="宣传文案">
+            <a-form-item label="宣传文案" :required="!!formState.loginSlug">
               <a-input v-model:value="formState.heroDescription" placeholder="机构登录页展示文案" />
             </a-form-item>
           </a-col>
@@ -396,7 +448,7 @@ watch(
 
 .login-domain-preview {
   position: absolute;
-  top: 32px;
+  top: 34px;
   left: 80px;
   z-index: 1;
   max-width: 360px;
@@ -413,9 +465,33 @@ watch(
     font-weight: 500;
   }
 
+  :deep(.anticon) {
+    font-size: 13px;
+  }
+
   em {
     color: rgba(0, 0, 0, 0.4);
     font-style: normal;
+  }
+}
+
+.login-domain-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  padding: 0;
+  color: var(--pro-ant-color-primary, #1677ff);
+  vertical-align: -3px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(22, 119, 255, 0.08);
   }
 }
 

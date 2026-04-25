@@ -69,8 +69,20 @@ const dynamicLoginProps = computed(() => ({
   t,
 }))
 
-function mergeLoginBrand(next) {
+function buildAllianceBadge(tenantName, institutionName) {
+  const tenant = String(tenantName || '').trim()
+  const institution = String(institutionName || '').trim()
+  if (!tenant)
+    return institution
+  if (!institution)
+    return tenant
+  return `${tenant.endsWith('联盟') ? tenant : `${tenant}联盟`} X ${institution}`
+}
+
+function mergeLoginBrand(next, theme) {
   Object.assign(loginBrand, defaultBrand, next || {})
+  if (theme?.institutionName)
+    loginBrand.heroBadge = buildAllianceBadge(theme.tenantName, theme.institutionName)
   if (loginBrand.primaryColor)
     appStore.toggleColorPrimary(loginBrand.primaryColor)
 }
@@ -78,7 +90,8 @@ function mergeLoginBrand(next) {
 async function loadLoginTheme() {
   try {
     const res = await getLoginThemeApi('institution-admin')
-    mergeLoginBrand(res.result?.loginBrand || res.data?.loginBrand)
+    const theme = res.result || res.data || {}
+    mergeLoginBrand(theme.loginBrand, theme)
   }
   catch (error) {
     console.warn('load institution login theme failed', error)

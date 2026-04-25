@@ -23,7 +23,7 @@ const emit = defineEmits(['update:activeKey', 'update:agreeToTerms', 'submit'])
             <img v-if="brand.logoUrl" :src="brand.logoUrl" alt="logo">
             <strong v-else>{{ brand.brandName }}</strong>
           </div>
-          <span>{{ brand.heroBadge || '机构端' }}</span>
+          <span>{{ brand.heroBadge || brand.brandName || '机构端' }}</span>
         </div>
         <div class="campus-card-login__copy">
           <h1>{{ brand.heroTitle || brand.loginTitle }}</h1>

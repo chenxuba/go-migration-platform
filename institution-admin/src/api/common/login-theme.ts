@@ -18,6 +18,8 @@ export interface TenantPublicLoginTheme {
   tenantId: string
   tenantName: string
   entryType: string
+  institutionId?: number
+  institutionName?: string
   loginBrand: TenantLoginBrandConfig
   matchedBy?: string
 }

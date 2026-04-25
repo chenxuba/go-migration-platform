@@ -1362,8 +1362,26 @@ func (repo *Repository) getInstitutionWildcardLoginTheme(ctx context.Context, do
 		return model.TenantPublicLoginTheme{}, false, err
 	}
 	result.LoginBrand = mergeLoginBrandConfig(tenantBrand, parseLoginBrandConfig(institutionBrandRaw), result.InstitutionName)
+	if strings.TrimSpace(result.LoginBrand.HeroBadge) == "" || strings.TrimSpace(result.LoginBrand.HeroBadge) == strings.TrimSpace(tenantBrand.HeroBadge) {
+		result.LoginBrand.HeroBadge = buildInstitutionAllianceBadge(tenantName, result.InstitutionName)
+	}
 	result.MatchedBy = "institution-wildcard"
 	return result, true, nil
+}
+
+func buildInstitutionAllianceBadge(tenantName, institutionName string) string {
+	tenantName = strings.TrimSpace(tenantName)
+	institutionName = strings.TrimSpace(institutionName)
+	if tenantName == "" {
+		return institutionName
+	}
+	if institutionName == "" {
+		return tenantName
+	}
+	if strings.HasSuffix(tenantName, "联盟") {
+		return tenantName + " X " + institutionName
+	}
+	return tenantName + "联盟 X " + institutionName
 }
 
 func mergeLoginBrandConfig(base, override model.TenantLoginBrandConfig, fallbackName string) model.TenantLoginBrandConfig {
