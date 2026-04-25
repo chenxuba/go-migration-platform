@@ -48,7 +48,7 @@ const formState = reactive({
   deptIds: undefined,
   roleIds: [],
   disabled: false, // false: 在职中, true: 已离职
-  userType: 1, // 1: 正式员工, 2: 兼职员工
+  userType: 1, // 总控后台固定为内部员工
   avatar: '',
 })
 
@@ -258,11 +258,10 @@ async function submitChangeMobile() {
       return
     }
     
-    if (checkResult.code!== 200) {
-      // 手机号已被占用
+    if (checkResult.code !== 200 || checkResult.result?.available === false) {
       mobileValidationState.value = {
         validateStatus: 'error',
-        help: '手机号已被占用',
+        help: checkResult.result?.message || '手机号已被占用',
       }
       return
     }
@@ -404,13 +403,6 @@ watch(
               </div>
             </a-form-item>
 
-            <!-- 员工类型 -->
-            <a-form-item label="员工类型：" :required="true">
-              <a-radio-group v-model:value="formState.userType" class="custom-radio">
-                <a-radio :value="1">正式员工</a-radio>
-                <a-radio :value="2">兼职员工</a-radio>
-              </a-radio-group>
-            </a-form-item>
           </div>
         </div>
       </a-form>

@@ -42,7 +42,7 @@ const formState = reactive({
   mobile: '', // 员工手机号
   deptIds: [], // 所属部门 - 初始为空，将在modal打开时设置
   disabled: 0, // 是否禁用,
-  userType: '1', // 1: 正式员工 2: 兼职员工
+  userType: '1', // 总控后台固定为内部员工
   avatar: '', // 头像
   roleIds: [], // 角色
 })
@@ -291,17 +291,6 @@ onMounted(async () => {
               ]"
             >
               <a-input v-model:value="formState.mobile" :maxlength="11" placeholder="请输入" />
-            </a-form-item>
-            <!-- 员工类型 -->
-            <a-form-item label="员工类型：" :required="true">
-              <a-radio-group v-model:value="formState.userType" class="custom-radio">
-                <a-radio value="1">
-                  正式员工
-                </a-radio>
-                <a-radio value="2">
-                  兼职员工
-                </a-radio>
-              </a-radio-group>
             </a-form-item>
           </div>
         </div>

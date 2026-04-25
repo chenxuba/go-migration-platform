@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go-migration-platform/pkg/institutionmenu"
@@ -14,7 +15,9 @@ import (
 )
 
 type Repository struct {
-	db *sql.DB
+	db                  *sql.DB
+	consoleMenuSeedOnce sync.Once
+	consoleMenuSeedErr  error
 }
 
 type usernameAvailabilityQueryer interface {
@@ -68,6 +71,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureCurrentInstitutionSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensureConsoleUserSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.ensureGovernmentUserProfileSchema(context.Background()); err != nil {
 		return nil, err
 	}
@@ -81,6 +87,9 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	if err := repo.ensureGovernmentRoleSeeds(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := repo.ensurePlatformMenuSeeds(context.Background()); err != nil {
 		return nil, err
 	}
 	return repo, nil
@@ -189,6 +198,27 @@ func (repo *Repository) ensureTenantControlPlaneSchema(ctx context.Context) erro
 		  AND su.del_flag = 0
 	`)
 	return err
+}
+
+func (repo *Repository) ResolveManageOrgID(ctx context.Context, tenantID string) (int64, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" || tenantID == "platform" {
+		return 1, nil
+	}
+	var id int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM tenant_profile
+		WHERE tenant_id = ? AND del_flag = 0
+		LIMIT 1
+	`, tenantID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 1, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return 900000000 + id, nil
 }
 
 func (repo *Repository) ResolveTenantIDByDomain(ctx context.Context, domain string) (string, error) {
@@ -497,6 +527,14 @@ func (repo *Repository) ensureCurrentInstitutionSchema(ctx context.Context) erro
 	`)
 }
 
+func (repo *Repository) ensureConsoleUserSchema(ctx context.Context) error {
+	return repo.ensureColumnExists(ctx, "sso_user", "disabled", `
+		ALTER TABLE sso_user
+		ADD COLUMN disabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT '总控账号是否停用'
+		AFTER is_admin
+	`)
+}
+
 func (repo *Repository) ensureGovernmentUserProfileSchema(ctx context.Context) error {
 	_, err := repo.db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS government_user_profile (
@@ -795,8 +833,16 @@ func (repo *Repository) SetUserCurrentInstitution(ctx context.Context, userID in
 	return err
 }
 
-func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64) (model.ManageUserInfo, error) {
-	return repo.getConsoleUserInfo(ctx, userID, 1, 0, 0, true)
+func (repo *Repository) GetManageUserInfo(ctx context.Context, userID int64, tenantID string) (model.ManageUserInfo, error) {
+	orgID, err := repo.ResolveManageOrgID(ctx, tenantID)
+	if err != nil {
+		return model.ManageUserInfo{}, err
+	}
+	ownType := 0
+	if strings.TrimSpace(tenantID) != "" && strings.TrimSpace(tenantID) != "platform" {
+		ownType = 1
+	}
+	return repo.getConsoleUserInfo(ctx, userID, orgID, 0, ownType, ownType == 0)
 }
 
 func (repo *Repository) GetGovernmentUserInfo(ctx context.Context, userID int64) (model.ManageUserInfo, error) {
@@ -1422,6 +1468,367 @@ func (repo *Repository) listConsoleUsers(ctx context.Context, current, size int,
 		Current: current,
 		Size:    size,
 	}, rows.Err()
+}
+
+func (repo *Repository) PageManageUsers(ctx context.Context, current, size int, query model.ManageUserQueryRequest, orgID int64) (model.ManageUserPage, error) {
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 10
+	}
+	offset := (current - 1) * size
+	filters := []string{"u.del_flag = 0"}
+	args := make([]any, 0, 8)
+	keyword := strings.TrimSpace(query.SearchKey)
+	if keyword != "" {
+		filters = append(filters, "(u.username LIKE ? OR u.nick_name LIKE ? OR u.mobile LIKE ?)")
+		like := "%" + keyword + "%"
+		args = append(args, like, like, like)
+	}
+	if query.DeptID != nil && *query.DeptID > 0 {
+		filters = append(filters, "u.dept_id = ?")
+		args = append(args, *query.DeptID)
+	}
+	if strings.TrimSpace(query.Status) != "" {
+		switch strings.TrimSpace(query.Status) {
+		case "0":
+			filters = append(filters, "IFNULL(u.disabled, 0) = 0")
+		case "1":
+			filters = append(filters, "IFNULL(u.disabled, 0) = 1")
+		}
+	}
+	filters = append(filters, `EXISTS (
+		SELECT 1 FROM sso_user_role eur
+		JOIN sso_role er ON er.id = eur.role_id
+		WHERE eur.user_id = u.id AND er.del_flag = 0 AND er.role_type = 0 AND er.org_id = ?
+	)`)
+	args = append(args, orgID)
+	whereClause := strings.Join(filters, " AND ")
+
+	var total int
+	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT u.id) FROM sso_user u WHERE `+whereClause, args...).Scan(&total); err != nil {
+		return model.ManageUserPage{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT u.id,
+		       IFNULL(u.username, ''),
+		       IFNULL(u.mobile, ''),
+		       IFNULL(u.nick_name, ''),
+		       u.dept_id,
+		       IFNULL(d.depart_name, ''),
+		       IFNULL(GROUP_CONCAT(DISTINCT r.id ORDER BY r.id SEPARATOR ','), ''),
+		       IFNULL(GROUP_CONCAT(DISTINCT r.role_name ORDER BY r.role_name SEPARATOR '、'), ''),
+		       IFNULL(MAX(r.is_admin), 0),
+		       IFNULL(u.disabled, 0),
+		       IFNULL(DATE_FORMAT(u.create_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM sso_user u
+		LEFT JOIN sys_depart d ON d.id = u.dept_id AND d.del_flag = 0
+		LEFT JOIN sso_user_role ur ON ur.user_id = u.id
+		LEFT JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0 AND r.role_type = 0 AND r.org_id = ?
+		WHERE `+whereClause+`
+		GROUP BY u.id, u.username, u.mobile, u.nick_name, u.dept_id, d.depart_name, u.disabled, u.create_time
+		ORDER BY u.id DESC
+		LIMIT ? OFFSET ?
+	`, append(append([]any{orgID}, args...), size, offset)...)
+	if err != nil {
+		return model.ManageUserPage{}, err
+	}
+	defer rows.Close()
+
+	items := make([]model.ManageUserListItem, 0, size)
+	for rows.Next() {
+		var item model.ManageUserListItem
+		var deptID sql.NullInt64
+		var roleIDsRaw string
+		if err := rows.Scan(&item.ID, &item.Username, &item.Mobile, &item.NickName, &deptID, &item.DepartNames, &roleIDsRaw, &item.RoleName, &item.IsAdmin, &item.Disabled, &item.CreateTime); err != nil {
+			return model.ManageUserPage{}, err
+		}
+		if deptID.Valid && deptID.Int64 > 0 {
+			item.DeptID = &deptID.Int64
+			item.DeptIDs = []int64{deptID.Int64}
+		} else {
+			item.DeptIDs = []int64{}
+		}
+		item.RoleIDs = splitInt64CSV(roleIDsRaw)
+		item.RoleNum = len(item.RoleIDs)
+		item.ActivatedStatus = true
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return model.ManageUserPage{}, err
+	}
+	return model.ManageUserPage{Items: items, Total: total, Current: current, Size: size}, nil
+}
+
+func (repo *Repository) GetManageUserDetail(ctx context.Context, userID, orgID int64) (model.ManageUserListItem, error) {
+	page, err := repo.PageManageUsers(ctx, 1, 1, model.ManageUserQueryRequest{}, orgID)
+	if err != nil {
+		return model.ManageUserListItem{}, err
+	}
+	_ = page
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT u.id, IFNULL(u.username, ''), IFNULL(u.mobile, ''), IFNULL(u.nick_name, ''), u.dept_id,
+		       IFNULL(d.depart_name, ''), IFNULL(GROUP_CONCAT(DISTINCT r.id ORDER BY r.id SEPARATOR ','), ''),
+		       IFNULL(GROUP_CONCAT(DISTINCT r.role_name ORDER BY r.role_name SEPARATOR '、'), ''),
+		       IFNULL(MAX(r.is_admin), 0), IFNULL(u.disabled, 0), IFNULL(DATE_FORMAT(u.create_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM sso_user u
+		LEFT JOIN sys_depart d ON d.id = u.dept_id AND d.del_flag = 0
+		LEFT JOIN sso_user_role ur ON ur.user_id = u.id
+		LEFT JOIN sso_role r ON r.id = ur.role_id AND r.del_flag = 0 AND r.role_type = 0 AND r.org_id = ?
+		WHERE u.id = ? AND u.del_flag = 0
+		GROUP BY u.id, u.username, u.mobile, u.nick_name, u.dept_id, d.depart_name, u.disabled, u.create_time
+		LIMIT 1
+	`, orgID, userID)
+	if err != nil {
+		return model.ManageUserListItem{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return model.ManageUserListItem{}, sql.ErrNoRows
+	}
+	var item model.ManageUserListItem
+	var deptID sql.NullInt64
+	var roleIDsRaw string
+	if err := rows.Scan(&item.ID, &item.Username, &item.Mobile, &item.NickName, &deptID, &item.DepartNames, &roleIDsRaw, &item.RoleName, &item.IsAdmin, &item.Disabled, &item.CreateTime); err != nil {
+		return model.ManageUserListItem{}, err
+	}
+	if deptID.Valid && deptID.Int64 > 0 {
+		item.DeptID = &deptID.Int64
+		item.DeptIDs = []int64{deptID.Int64}
+	} else {
+		item.DeptIDs = []int64{}
+	}
+	item.RoleIDs = splitInt64CSV(roleIDsRaw)
+	item.RoleNum = len(item.RoleIDs)
+	item.ActivatedStatus = true
+	return item, rows.Err()
+}
+
+func (repo *Repository) CreateManageUser(ctx context.Context, input model.ManageUserMutationRequest, orgID, operatorID int64) (int64, error) {
+	username := firstNonEmptyString(input.Username, input.Mobile)
+	if username == "" || strings.TrimSpace(input.NickName) == "" || strings.TrimSpace(input.Mobile) == "" {
+		return 0, errors.New("员工姓名、手机号不能为空")
+	}
+	availability, err := repo.CheckGovernmentUsernameAvailable(ctx, username, nil)
+	if err != nil {
+		return 0, err
+	}
+	if !availability.Available {
+		return 0, errors.New(firstNonEmptyString(availability.Message, "登录账号已存在"))
+	}
+	existsMobile, err := repo.consoleMobileExists(ctx, input.Mobile, nil)
+	if err != nil {
+		return 0, err
+	}
+	if existsMobile {
+		return 0, errors.New("手机号已存在")
+	}
+	deptID := firstInt64(input.DeptIDs)
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO sso_user (uuid, version, username, password, mobile, avatar, nick_name, user_type, dept_id, is_admin, disabled, del_flag, create_time, update_time)
+		VALUES (?, 0, ?, ?, ?, '', ?, 0, NULLIF(?, 0), 0, ?, 0, NOW(), NOW())
+	`, buildUUID(time.Now().UnixNano()), username, input.Password, input.Mobile, input.NickName, deptID, input.Disabled)
+	if err != nil {
+		return 0, err
+	}
+	userID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err := repo.replaceManageUserRolesTx(ctx, tx, userID, input.RoleIDs, orgID); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
+func (repo *Repository) UpdateManageUser(ctx context.Context, input model.ManageUserMutationRequest, orgID, operatorID int64) error {
+	if input.ID == nil || *input.ID <= 0 {
+		return errors.New("员工不存在")
+	}
+	userID := *input.ID
+	username := firstNonEmptyString(input.Username, input.Mobile)
+	availability, err := repo.CheckGovernmentUsernameAvailable(ctx, username, &userID)
+	if err != nil {
+		return err
+	}
+	if !availability.Available {
+		return errors.New(firstNonEmptyString(availability.Message, "登录账号已存在"))
+	}
+	existsMobile, err := repo.consoleMobileExists(ctx, input.Mobile, &userID)
+	if err != nil {
+		return err
+	}
+	if existsMobile {
+		return errors.New("手机号已存在")
+	}
+	deptID := firstInt64(input.DeptIDs)
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if strings.TrimSpace(input.Password) != "" {
+		_, err = tx.ExecContext(ctx, `UPDATE sso_user SET username=?, password=?, mobile=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW() WHERE id=? AND del_flag=0`, username, input.Password, input.Mobile, input.NickName, deptID, input.Disabled, userID)
+	} else {
+		_, err = tx.ExecContext(ctx, `UPDATE sso_user SET username=?, mobile=?, nick_name=?, dept_id=NULLIF(?, 0), disabled=?, update_time=NOW() WHERE id=? AND del_flag=0`, username, input.Mobile, input.NickName, deptID, input.Disabled, userID)
+	}
+	if err != nil {
+		return err
+	}
+	if err := repo.replaceManageUserRolesTx(ctx, tx, userID, input.RoleIDs, orgID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (repo *Repository) UpdateManageUserStatus(ctx context.Context, userIDs []int64, disabled bool) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	placeholders, args := int64Placeholders(userIDs)
+	_, err := repo.db.ExecContext(ctx, `UPDATE sso_user SET disabled=?, update_time=NOW() WHERE del_flag=0 AND id IN (`+placeholders+`)`, append([]any{disabled}, args...)...)
+	return err
+}
+
+func (repo *Repository) BatchUpdateManageUserDept(ctx context.Context, userIDs, deptIDs []int64) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	deptID := firstInt64(deptIDs)
+	placeholders, args := int64Placeholders(userIDs)
+	_, err := repo.db.ExecContext(ctx, `UPDATE sso_user SET dept_id=NULLIF(?, 0), update_time=NOW() WHERE del_flag=0 AND id IN (`+placeholders+`)`, append([]any{deptID}, args...)...)
+	return err
+}
+
+func (repo *Repository) BatchUpdateManageUserRole(ctx context.Context, userIDs, roleIDs []int64, orgID int64) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, userID := range userIDs {
+		if userID <= 0 {
+			continue
+		}
+		if err := repo.replaceManageUserRolesTx(ctx, tx, userID, roleIDs, orgID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (repo *Repository) replaceManageUserRolesTx(ctx context.Context, tx *sql.Tx, userID int64, roleIDs []int64, orgID int64) error {
+	_, err := tx.ExecContext(ctx, `
+		DELETE ur FROM sso_user_role ur
+		JOIN sso_role r ON r.id = ur.role_id
+		WHERE ur.user_id = ? AND r.role_type = 0 AND r.org_id = ?
+	`, userID, orgID)
+	if err != nil {
+		return err
+	}
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO sso_user_role (user_id, role_id)
+		SELECT ?, r.id FROM sso_role r
+		WHERE r.id = ? AND r.del_flag = 0 AND r.role_type = 0 AND r.org_id = ?
+	`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, roleID := range roleIDs {
+		if roleID <= 0 {
+			continue
+		}
+		if _, err := stmt.ExecContext(ctx, userID, roleID, orgID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func splitInt64CSV(raw string) []int64 {
+	parts := strings.Split(raw, ",")
+	items := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err == nil && value > 0 {
+			items = append(items, value)
+		}
+	}
+	return items
+}
+
+func firstInt64(values []int64) int64 {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func int64Placeholders(values []int64) (string, []any) {
+	parts := make([]string, 0, len(values))
+	args := make([]any, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		parts = append(parts, "?")
+		args = append(args, value)
+	}
+	if len(parts) == 0 {
+		return "NULL", args
+	}
+	return strings.Join(parts, ","), args
+}
+
+func (repo *Repository) ChangeManageUserPhone(ctx context.Context, userID int64, mobile string, orgID int64) error {
+	mobile = strings.TrimSpace(mobile)
+	if userID <= 0 || mobile == "" {
+		return errors.New("参数错误")
+	}
+	existsMobile, err := repo.consoleMobileExists(ctx, mobile, &userID)
+	if err != nil {
+		return err
+	}
+	if existsMobile {
+		return errors.New("手机号已被占用")
+	}
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE sso_user u
+		SET u.mobile = ?, u.username = ?, u.update_time = NOW()
+		WHERE u.id = ? AND u.del_flag = 0
+		  AND EXISTS (
+			SELECT 1 FROM sso_user_role ur
+			JOIN sso_role r ON r.id = ur.role_id
+			WHERE ur.user_id = u.id AND r.del_flag = 0 AND r.role_type = 0 AND r.org_id = ?
+		  )
+	`, mobile, mobile, userID, orgID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return errors.New("员工不存在")
+	}
+	return nil
 }
 
 func (repo *Repository) ListGovernmentRoleOptions(ctx context.Context) ([]model.GovernmentRoleOption, error) {
@@ -2629,6 +3036,15 @@ func (repo *Repository) unbindInstitutionSuperAdminRoleMenuTx(ctx context.Contex
 }
 
 func (repo *Repository) ListMenus(ctx context.Context, menuName string, ownType *int) ([]model.Menu, error) {
+	if ownType != nil && (*ownType == 0 || *ownType == 1) {
+		repo.consoleMenuSeedOnce.Do(func() {
+			repo.consoleMenuSeedErr = repo.ensurePlatformMenuSeeds(ctx)
+		})
+		if repo.consoleMenuSeedErr != nil {
+			return nil, repo.consoleMenuSeedErr
+		}
+	}
+
 	filters := []string{"del_flag = 0"}
 	args := make([]any, 0, 2)
 	if strings.TrimSpace(menuName) != "" {
@@ -2934,7 +3350,7 @@ func institutionOpenTypeModuleName(openType int) string {
 	}
 }
 
-func (repo *Repository) PageRolesByOrg(ctx context.Context, orgID int64, query model.RoleQueryDTO) (model.RolePage, error) {
+func (repo *Repository) PageRolesByOrg(ctx context.Context, orgID int64, query model.RoleQueryDTO, roleTypes []int, includeGlobalDefaults bool, authorityOwnType int) (model.RolePage, error) {
 	current := query.PageRequestModel.PageIndex
 	size := query.PageRequestModel.PageSize
 	if current <= 0 {
@@ -2947,12 +3363,20 @@ func (repo *Repository) PageRolesByOrg(ctx context.Context, orgID int64, query m
 
 	filters := []string{"del_flag = 0", "is_admin = 0"}
 	args := make([]any, 0, 8)
-	if orgID == 0 {
-		filters = append(filters, "org_id = ?")
-		args = append(args, orgID)
-	} else {
+	if includeGlobalDefaults && orgID != 0 {
 		filters = append(filters, "org_id IN (?, ?)")
 		args = append(args, orgID, int64(0))
+	} else {
+		filters = append(filters, "org_id = ?")
+		args = append(args, orgID)
+	}
+	if len(roleTypes) > 0 {
+		placeholders := make([]string, 0, len(roleTypes))
+		for _, roleType := range roleTypes {
+			placeholders = append(placeholders, "?")
+			args = append(args, roleType)
+		}
+		filters = append(filters, "role_type IN ("+strings.Join(placeholders, ",")+")")
 	}
 	if query.QueryModel.RoleID != nil {
 		filters = append(filters, "id = ?")
@@ -2978,7 +3402,7 @@ func (repo *Repository) PageRolesByOrg(ctx context.Context, orgID int64, query m
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(role_name, ''), sort, role_type, org_id, IFNULL(is_admin, 0), IFNULL(is_default, 0), IFNULL(description, '')
+		SELECT id, IFNULL(uuid, ''), IFNULL(version, 0), IFNULL(role_name, ''), sort, role_type, org_id, IFNULL(is_admin, 0), IFNULL(is_default, 0), IFNULL(description, ''), IFNULL(DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s'), '')
 		FROM sso_role
 		WHERE `+whereClause+`
 		ORDER BY is_default DESC, id DESC
@@ -2992,7 +3416,7 @@ func (repo *Repository) PageRolesByOrg(ctx context.Context, orgID int64, query m
 	roleIDs := make([]int64, 0, size)
 	for rows.Next() {
 		var item model.RoleQueryVO
-		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.RoleName, &item.Sort, &item.RoleType, &item.OrgID, &item.Admin, &item.IsDefault, &item.Description); err != nil {
+		if err := rows.Scan(&item.ID, &item.UUID, &item.Version, &item.RoleName, &item.Sort, &item.RoleType, &item.OrgID, &item.Admin, &item.IsDefault, &item.Description, &item.UpdateTime); err != nil {
 			return model.RolePage{}, err
 		}
 		items = append(items, item)
@@ -3002,7 +3426,7 @@ func (repo *Repository) PageRolesByOrg(ctx context.Context, orgID int64, query m
 		return model.RolePage{}, err
 	}
 
-	extraMap, err := repo.GetRoleExtraInfo(ctx, roleIDs, orgID)
+	extraMap, err := repo.GetRoleExtraInfo(ctx, roleIDs, orgID, authorityOwnType)
 	if err != nil {
 		return model.RolePage{}, err
 	}
@@ -3129,7 +3553,7 @@ func (repo *Repository) getInstitutionRoleMenuIDMap(ctx context.Context, roleIDs
 	return result, rows.Err()
 }
 
-func (repo *Repository) GetRoleExtraInfo(ctx context.Context, roleIDs []int64, instID int64) (map[int64]roleExtraInfo, error) {
+func (repo *Repository) GetRoleExtraInfo(ctx context.Context, roleIDs []int64, instID int64, authorityOwnType int) (map[int64]roleExtraInfo, error) {
 	if len(roleIDs) == 0 {
 		return map[int64]roleExtraInfo{}, nil
 	}
@@ -3202,6 +3626,170 @@ func (repo *Repository) GetRoleExtraInfo(ctx context.Context, roleIDs []int64, i
 		result[roleID] = extra
 	}
 
+	consoleExtraMap, err := repo.getConsoleRoleExtraInfo(ctx, roleIDs, authorityOwnType)
+	if err != nil {
+		return nil, err
+	}
+	for roleID, extra := range consoleExtraMap {
+		result[roleID] = extra
+	}
+
+	return result, nil
+}
+
+func (repo *Repository) getConsoleRoleExtraInfo(ctx context.Context, roleIDs []int64, authorityOwnType int) (map[int64]roleExtraInfo, error) {
+	if len(roleIDs) == 0 {
+		return map[int64]roleExtraInfo{}, nil
+	}
+	placeholders, args := int64Placeholders(roleIDs)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT r.id,
+		       COUNT(DISTINCT IF(u.id IS NOT NULL, u.id, NULL)) AS staff_count,
+		       IFNULL(GROUP_CONCAT(DISTINCT IF(u.id IS NOT NULL, u.nick_name, NULL)), '') AS staff_names,
+		       IFNULL(updater.nick_name, '') AS update_name,
+		       IFNULL(creator.nick_name, '') AS create_name
+		FROM sso_role r
+		LEFT JOIN sso_user_role ur ON ur.role_id = r.id
+		LEFT JOIN sso_user u ON u.id = ur.user_id AND u.del_flag = 0
+		LEFT JOIN sso_user updater ON updater.id = r.update_id AND updater.del_flag = 0
+		LEFT JOIN sso_user creator ON creator.id = r.create_id AND creator.del_flag = 0
+		WHERE r.role_type = 0 AND r.id IN (`+placeholders+`)
+		GROUP BY r.id, updater.nick_name, creator.nick_name
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[int64]roleExtraInfo, len(roleIDs))
+	for rows.Next() {
+		var roleID int64
+		var staffNamesRaw string
+		extra := roleExtraInfo{}
+		if err := rows.Scan(&roleID, &extra.StaffCount, &staffNamesRaw, &extra.UpdateName, &extra.CreateName); err != nil {
+			return nil, err
+		}
+		extra.StaffNames = splitCSV(staffNamesRaw)
+		result[roleID] = extra
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	roleMenuIDs, err := repo.getRoleMenuIDMapByOwnType(ctx, roleIDs, authorityOwnType)
+	if err != nil {
+		return nil, err
+	}
+	functionalCounts, err := repo.countConsoleRoleFunctionalAuthorities(ctx, roleMenuIDs, authorityOwnType)
+	if err != nil {
+		return nil, err
+	}
+	for roleID, menuIDs := range roleMenuIDs {
+		extra := result[roleID]
+		extra.MenuIDs = menuIDs
+		extra.FunctionalAuthorityCount = functionalCounts[roleID]
+		extra.DataAuthorityCount = 0
+		result[roleID] = extra
+	}
+	return result, nil
+}
+
+func (repo *Repository) getRoleMenuIDMapByOwnType(ctx context.Context, roleIDs []int64, ownType int) (map[int64][]int64, error) {
+	placeholders, args := int64Placeholders(roleIDs)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT rm.role_id, rm.menu_id
+		FROM sso_role_menu rm
+		JOIN sso_menu sm ON sm.id = rm.menu_id
+		WHERE rm.role_id IN (`+placeholders+`)
+		  AND sm.del_flag = 0
+		  AND sm.own_type = ?
+		ORDER BY rm.role_id, rm.menu_id
+	`, append(args, ownType)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[int64][]int64, len(roleIDs))
+	for rows.Next() {
+		var roleID, menuID int64
+		if err := rows.Scan(&roleID, &menuID); err != nil {
+			return nil, err
+		}
+		result[roleID] = append(result[roleID], menuID)
+	}
+	return result, rows.Err()
+}
+
+func (repo *Repository) countRoleLeafMenus(ctx context.Context, roleMenuIDs map[int64][]int64, ownType int) (map[int64]int, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, IFNULL(pid, 0)
+		FROM sso_menu
+		WHERE del_flag = 0 AND own_type = ?
+	`, ownType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	children := map[int64]bool{}
+	for rows.Next() {
+		var id, pid int64
+		if err := rows.Scan(&id, &pid); err != nil {
+			return nil, err
+		}
+		if pid > 0 {
+			children[pid] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make(map[int64]int, len(roleMenuIDs))
+	for roleID, menuIDs := range roleMenuIDs {
+		count := 0
+		for _, menuID := range menuIDs {
+			if menuID > 0 && !children[menuID] {
+				count++
+			}
+		}
+		result[roleID] = count
+	}
+	return result, nil
+}
+
+func (repo *Repository) countConsoleRoleFunctionalAuthorities(ctx context.Context, roleMenuIDs map[int64][]int64, ownType int) (map[int64]int, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id
+		FROM sso_menu
+		WHERE del_flag = 0
+		  AND own_type = ?
+		  AND (menu_code LIKE 'page:%' OR menu_code LIKE 'perm:%')
+	`, ownType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	functionalMenus := map[int64]struct{}{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		functionalMenus[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make(map[int64]int, len(roleMenuIDs))
+	for roleID, menuIDs := range roleMenuIDs {
+		count := 0
+		for _, menuID := range menuIDs {
+			if _, ok := functionalMenus[menuID]; ok {
+				count++
+			}
+		}
+		result[roleID] = count
+	}
 	return result, nil
 }
 

@@ -126,7 +126,7 @@
                 <a-input
                   v-model:value="formData.menuCode"
                   :disabled="formMode === 'edit'"
-                  placeholder="例如 systemModel:menuPermissions"
+                  placeholder="例如 page:sysPerm"
                 />
               </a-form-item>
             </div>
@@ -151,7 +151,7 @@
 
             <div class="permission-form-grid__item">
               <a-form-item label="所属端口">
-                <a-input :value="currentPortal === PortalEnum.PLATFORM ? '平台端' : '机构端'" disabled />
+                <a-input :value="currentPortal === PortalEnum.PLATFORM ? '超级总控' : currentPortal === PortalEnum.TENANT ? '租户总控' : '机构端'" disabled />
               </a-form-item>
             </div>
 
@@ -266,6 +266,7 @@ function resolveUploadErrorMessage(error, fallback = '上传失败') {
 
 enum PortalEnum {
   PLATFORM = 0,
+  TENANT = 1,
   INSTITUTION = 2,
 }
 
@@ -294,10 +295,12 @@ const keywordInput = ref('')
 const searchKeyword = ref('')
 const expandedRowKeys = ref<number[]>([])
 const loading = ref(false)
+let loadTreeRequestSeq = 0
 
-const currentPortal = ref<PortalEnum>(PortalEnum.INSTITUTION)
+const currentPortal = ref<PortalEnum>(PortalEnum.PLATFORM)
 const portalOptions = [
-  { label: '平台端', value: PortalEnum.PLATFORM, disabled: true },
+  { label: '超级总控', value: PortalEnum.PLATFORM },
+  { label: '租户总控', value: PortalEnum.TENANT },
   { label: '机构端', value: PortalEnum.INSTITUTION },
 ]
 
@@ -316,7 +319,7 @@ const formData = reactive<PermissionMutationPayload>({
   remark: '',
   introduce: '',
   accessDeniedImage: '',
-  ownType: PortalEnum.INSTITUTION,
+  ownType: PortalEnum.PLATFORM,
 })
 
 const columns: TableColumnsType<PermissionRecord> = [
@@ -362,6 +365,7 @@ const columns: TableColumnsType<PermissionRecord> = [
     fixed: 'right',
   },
 ]
+
 
 const compactPhrases = [
   { from: ['ONE', 'TO', 'ONE'], to: 'o2o' },
@@ -586,9 +590,9 @@ const isCurrentInstitutionPermissionCode = (code: string | number | null | undef
   return /^(grp|page|perm):/.test(raw)
 }
 
-const normalizeTree = (list: PermissionMenuItem[] = [], depth = 1): PermissionRecord[] => {
+const normalizeTree = (list: PermissionMenuItem[] = [], depth = 1, portal = currentPortal.value): PermissionRecord[] => {
   return list.map((item) => {
-    const children = Array.isArray(item.children) ? normalizeTree(item.children, depth + 1) : []
+    const children = Array.isArray(item.children) ? normalizeTree(item.children, depth + 1, portal) : []
     const displayMenuCode = normalizePermissionCode(item.menuCode) || '--'
     const introduceText = String(item.introduce || item.remark || '').trim() || '--'
     const levelLabel = depth <= 1 ? '1级菜单' : depth === 2 ? '2级界面' : '3级权限'
@@ -601,7 +605,7 @@ const normalizeTree = (list: PermissionMenuItem[] = [], depth = 1): PermissionRe
       sort: Number(item.sort || 0),
       weight: Number(item.weight || 0),
       pid: Number(item.pid || 0),
-      ownType: Number(item.ownType || currentPortal.value),
+      ownType: Number(item.ownType ?? portal),
       depth,
       displayMenuCode,
       levelLabel,
@@ -691,22 +695,28 @@ const buildNodeMap = (list: PermissionRecord[]) => {
 }
 
 const loadTree = async () => {
+  const requestSeq = ++loadTreeRequestSeq
+  const portal = currentPortal.value
   loading.value = true
   try {
-    const res = await getPermissionTreeApi({ ownType: currentPortal.value })
+    const res = await getPermissionTreeApi({ ownType: portal })
+    if (requestSeq !== loadTreeRequestSeq || portal !== currentPortal.value)
+      return
     if (res.code !== 200) {
       messageService.error(res.message || '加载权限树失败')
       return
     }
-    const normalizedTree = normalizeTree(Array.isArray(res.result) ? res.result : [])
+    const normalizedTree = normalizeTree(Array.isArray(res.result) ? res.result : [], 1, portal)
     treeData.value = normalizedTree
     nodeMap.value = buildNodeMap(normalizedTree)
   }
   catch (error: any) {
-    messageService.error(error?.message || '加载权限树失败')
+    if (requestSeq === loadTreeRequestSeq)
+      messageService.error(error?.message || '加载权限树失败')
   }
   finally {
-    loading.value = false
+    if (requestSeq === loadTreeRequestSeq)
+      loading.value = false
   }
 }
 

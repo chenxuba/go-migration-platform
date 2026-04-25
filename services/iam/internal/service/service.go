@@ -225,6 +225,135 @@ func (svc *Service) ListManageUsers(current, size int, username, mobile string) 
 	return svc.repo.ListManageUsers(context.Background(), current, size, username, mobile)
 }
 
+func (svc *Service) PageManageUsers(claims authx.Claims, req model.ManageUserPageRequest) (model.ManageUserPage, error) {
+	if claims.LoginType != "manage" {
+		return model.ManageUserPage{}, errors.New("无权限")
+	}
+	orgID, err := svc.resolveOrgID(claims, nil)
+	if err != nil {
+		return model.ManageUserPage{}, err
+	}
+	return svc.repo.PageManageUsers(context.Background(), req.PageRequestModel.PageIndex, req.PageRequestModel.PageSize, req.QueryModel, orgID)
+}
+
+func (svc *Service) GetManageUserDetail(claims authx.Claims, id int64) (model.ManageUserListItem, error) {
+	if claims.LoginType != "manage" {
+		return model.ManageUserListItem{}, errors.New("无权限")
+	}
+	orgID, err := svc.resolveOrgID(claims, nil)
+	if err != nil {
+		return model.ManageUserListItem{}, err
+	}
+	return svc.repo.GetManageUserDetail(context.Background(), id, orgID)
+}
+
+func (svc *Service) CreateManageUser(claims authx.Claims, req model.ManageUserMutationRequest) (int64, error) {
+	if claims.LoginType != "manage" {
+		return 0, errors.New("无权限")
+	}
+	sanitized, err := sanitizeManageUserMutation(req, true)
+	if err != nil {
+		return 0, err
+	}
+	if sanitized.Password != "" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(sanitized.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return 0, errors.New("密码加密失败")
+		}
+		sanitized.Password = string(hashedPassword)
+	}
+	orgID, err := svc.resolveOrgID(claims, nil)
+	if err != nil {
+		return 0, err
+	}
+	return svc.repo.CreateManageUser(context.Background(), sanitized, orgID, claims.UserID)
+}
+
+func (svc *Service) UpdateManageUser(claims authx.Claims, req model.ManageUserMutationRequest) error {
+	if claims.LoginType != "manage" {
+		return errors.New("无权限")
+	}
+	if req.ID == nil || *req.ID <= 0 {
+		return errors.New("员工不存在")
+	}
+	sanitized, err := sanitizeManageUserMutation(req, false)
+	if err != nil {
+		return err
+	}
+	if sanitized.Password != "" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(sanitized.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return errors.New("密码加密失败")
+		}
+		sanitized.Password = string(hashedPassword)
+	}
+	orgID, err := svc.resolveOrgID(claims, nil)
+	if err != nil {
+		return err
+	}
+	return svc.repo.UpdateManageUser(context.Background(), sanitized, orgID, claims.UserID)
+}
+
+func (svc *Service) BatchUpdateManageUserStatus(claims authx.Claims, req model.ManageUserBatchStatusRequest) error {
+	if claims.LoginType != "manage" {
+		return errors.New("无权限")
+	}
+	return svc.repo.UpdateManageUserStatus(context.Background(), req.UserIDs, req.IsWork)
+}
+
+func (svc *Service) BatchUpdateManageUserDept(claims authx.Claims, req model.ManageUserBatchDeptRequest) error {
+	if claims.LoginType != "manage" {
+		return errors.New("无权限")
+	}
+	return svc.repo.BatchUpdateManageUserDept(context.Background(), req.UserIDs, req.DeptIDs)
+}
+
+func (svc *Service) BatchUpdateManageUserRole(claims authx.Claims, req model.ManageUserBatchRoleRequest) error {
+	if claims.LoginType != "manage" {
+		return errors.New("无权限")
+	}
+	orgID, err := svc.resolveOrgID(claims, nil)
+	if err != nil {
+		return err
+	}
+	return svc.repo.BatchUpdateManageUserRole(context.Background(), req.UserIDs, req.RoleIDs, orgID)
+}
+
+func sanitizeManageUserMutation(req model.ManageUserMutationRequest, requirePassword bool) (model.ManageUserMutationRequest, error) {
+	req.Username = strings.TrimSpace(firstNonEmpty(req.Username, req.Mobile))
+	req.Mobile = strings.TrimSpace(req.Mobile)
+	req.NickName = strings.TrimSpace(req.NickName)
+	req.Password = strings.TrimSpace(req.Password)
+	if req.NickName == "" {
+		return req, errors.New("请输入员工姓名")
+	}
+	if req.Mobile == "" {
+		return req, errors.New("请输入手机号")
+	}
+	if req.Username == "" {
+		return req, errors.New("请输入登录账号")
+	}
+	if requirePassword && req.Password == "" {
+		req.Password = "123456"
+	}
+	return req, nil
+}
+
+func (svc *Service) ChangeManageUserPhone(claims authx.Claims, userID int64, mobile string) error {
+	if claims.LoginType != "manage" {
+		return errors.New("无权限")
+	}
+	mobile = strings.TrimSpace(mobile)
+	if userID <= 0 || mobile == "" {
+		return errors.New("参数错误")
+	}
+	orgID, err := svc.resolveOrgID(claims, nil)
+	if err != nil {
+		return err
+	}
+	return svc.repo.ChangeManageUserPhone(context.Background(), userID, mobile, orgID)
+}
+
 func (svc *Service) ListGovernmentUsers(current, size int, username, mobile string) (model.UserPage, error) {
 	page, err := svc.repo.ListGovernmentUsers(context.Background(), current, size, username, mobile)
 	if err != nil {
@@ -920,6 +1049,9 @@ func (svc *Service) CurrentMenuTree(claims authx.Claims) ([]model.MenuTreeNode, 
 		return svc.MenuTree("", &ownType)
 	case "manage":
 		ownType := 0
+		if strings.TrimSpace(claims.TenantID) != "" && strings.TrimSpace(claims.TenantID) != "platform" {
+			ownType = 1
+		}
 		return svc.MenuTree("", &ownType)
 	default:
 		if claims.LoginType == "" {
@@ -1021,7 +1153,14 @@ func (svc *Service) PageInstRoles(claims authx.Claims, query model.RoleQueryDTO)
 	if err != nil {
 		return model.RolePage{}, err
 	}
-	return svc.repo.PageRolesByOrg(context.Background(), orgID, query)
+	if claims.LoginType == "manage" {
+		consoleOwnType := 0
+		if !isPlatformAdminClaims(claims) {
+			consoleOwnType = 1
+		}
+		return svc.repo.PageRolesByOrg(context.Background(), orgID, query, []int{0}, false, consoleOwnType)
+	}
+	return svc.repo.PageRolesByOrg(context.Background(), orgID, query, []int{2}, true, 2)
 }
 
 func (svc *Service) RoleMenuIDs(claims authx.Claims, roleID int64, ownType *int) ([]int64, error) {
@@ -1130,7 +1269,7 @@ func (svc *Service) SaveDefaultRole(claims authx.Claims, req model.SaveDefaultRo
 	}
 
 	roleType := 2
-	if req.RoleType != nil && *req.RoleType > 0 {
+	if req.RoleType != nil && *req.RoleType >= 0 {
 		roleType = *req.RoleType
 	}
 
@@ -1230,7 +1369,7 @@ func (svc *Service) UpdateRole(claims authx.Claims, req model.SaveRoleRequest) e
 }
 
 func (svc *Service) InstMenuList(claims authx.Claims, req model.InstMenuListRequest) ([]int64, error) {
-	if req.RoleType == nil || *req.RoleType <= 0 {
+	if req.RoleType == nil || *req.RoleType < 0 {
 		return nil, errors.New("roleType is required")
 	}
 	ctx := context.Background()
@@ -1312,23 +1451,93 @@ func (svc *Service) RoleMenuCompare(claims authx.Claims, req model.RoleMenuCompa
 }
 
 func buildMenuTree(menus []model.Menu) []model.MenuTreeNode {
-	nodes := make(map[int64]*model.MenuTreeNode, len(menus))
+	menus = dedupeMenusByCode(menus)
+	menuByID := make(map[int64]model.Menu, len(menus))
 	for _, menu := range menus {
-		copy := menu
-		nodes[menu.ID] = &model.MenuTreeNode{Menu: copy, Children: []model.MenuTreeNode{}}
+		menuByID[menu.ID] = menu
 	}
-	roots := make([]model.MenuTreeNode, 0)
-	for _, node := range nodes {
-		if node.PID != 0 {
-			if parent, ok := nodes[node.PID]; ok {
-				parent.Children = append(parent.Children, *node)
+
+	childrenByPID := make(map[int64][]model.Menu, len(menus))
+	rootMenus := make([]model.Menu, 0)
+	for _, menu := range menus {
+		if menu.PID != 0 {
+			if _, ok := menuByID[menu.PID]; ok {
+				childrenByPID[menu.PID] = append(childrenByPID[menu.PID], menu)
 				continue
 			}
 		}
-		roots = append(roots, *node)
+		rootMenus = append(rootMenus, menu)
+	}
+
+	roots := make([]model.MenuTreeNode, 0, len(rootMenus))
+	for _, menu := range rootMenus {
+		roots = append(roots, buildMenuTreeNode(menu, childrenByPID))
 	}
 	sortMenuTreeNodes(roots)
 	return roots
+}
+
+func buildMenuTreeNode(menu model.Menu, childrenByPID map[int64][]model.Menu) model.MenuTreeNode {
+	node := model.MenuTreeNode{Menu: menu, Children: []model.MenuTreeNode{}}
+	for _, child := range childrenByPID[menu.ID] {
+		node.Children = append(node.Children, buildMenuTreeNode(child, childrenByPID))
+	}
+	return node
+}
+
+func dedupeMenusByCode(menus []model.Menu) []model.Menu {
+	if len(menus) == 0 {
+		return menus
+	}
+
+	canonicalByCode := make(map[string]int64, len(menus))
+	canonicalIndexByID := make(map[int64]int, len(menus))
+	duplicateToCanonical := make(map[int64]int64)
+	result := make([]model.Menu, 0, len(menus))
+
+	for _, menu := range menus {
+		code := strings.TrimSpace(menu.MenuCode)
+		if code == "" {
+			result = append(result, menu)
+			canonicalIndexByID[menu.ID] = len(result) - 1
+			continue
+		}
+
+		if canonicalID, ok := canonicalByCode[code]; ok {
+			duplicateToCanonical[menu.ID] = canonicalID
+			continue
+		}
+
+		canonicalByCode[code] = menu.ID
+		result = append(result, menu)
+		canonicalIndexByID[menu.ID] = len(result) - 1
+	}
+
+	for index := range result {
+		if canonicalPID, ok := duplicateToCanonical[result[index].PID]; ok {
+			result[index].PID = canonicalPID
+		}
+	}
+
+	for _, menu := range menus {
+		canonicalID, ok := duplicateToCanonical[menu.ID]
+		if !ok {
+			continue
+		}
+		canonicalIndex, exists := canonicalIndexByID[canonicalID]
+		if !exists {
+			continue
+		}
+		if result[canonicalIndex].PID == 0 && menu.PID > 0 {
+			if canonicalPID, ok := duplicateToCanonical[menu.PID]; ok {
+				result[canonicalIndex].PID = canonicalPID
+			} else {
+				result[canonicalIndex].PID = menu.PID
+			}
+		}
+	}
+
+	return result
 }
 
 func sortMenuTreeNodes(nodes []model.MenuTreeNode) {
@@ -1422,7 +1631,7 @@ func (svc *Service) resolveOrgID(claims authx.Claims, orgID *int64) (int64, erro
 		return *orgID, nil
 	}
 	if claims.LoginType == "manage" {
-		return 1, nil
+		return svc.repo.ResolveManageOrgID(context.Background(), claims.TenantID)
 	}
 	if claims.LoginType == "government" {
 		return 1, nil
@@ -1496,7 +1705,7 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 		if user.UserType != nil && *user.UserType != 0 {
 			return nil, nil, nil, nil, nil, errors.New(platformInvalidAccountMessage)
 		}
-		info, err := svc.repo.GetManageUserInfo(context.Background(), user.ID)
+		info, err := svc.repo.GetManageUserInfo(context.Background(), user.ID, ctx.TenantID)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
@@ -1510,7 +1719,11 @@ func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginT
 		info.TenantID = ctx.TenantID
 		info.TenantRole = tenantRole
 		info.TenantType = tenantType
-		roleList, err := svc.repo.GetUserRoleIDs(context.Background(), user.ID, 1, 0)
+		manageOrgID, err := svc.repo.ResolveManageOrgID(context.Background(), ctx.TenantID)
+		if err != nil {
+			return nil, nil, nil, nil, nil, err
+		}
+		roleList, err := svc.repo.GetUserRoleIDs(context.Background(), user.ID, manageOrgID, 0)
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}

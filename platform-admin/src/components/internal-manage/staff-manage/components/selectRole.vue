@@ -1,6 +1,7 @@
 <!-- 选择角色 -->
 <script setup>
 import createRolesDrawer from '@/components/common/create-roles-drawer.vue'
+import { useConsoleOwnType } from '@/utils/console-permission'
 import { saveRoleApi, getInstRolePageApi, getMenuListApi } from '@/api/internal-manage/role-manage'
 import messageService from '@/utils/messageService'
 import emitter, { EVENTS } from '@/utils/eventBus'
@@ -117,7 +118,7 @@ async function refreshRoleList(newRoleId) {
 async function getMenuList() {
   try {
     permissionsLoading.value = true
-    const res = await getMenuListApi({ ownType: 'INSTITUTION' })
+    const res = await getFullMenuListApi({ ownType: consoleOwnType.value })
     if (res.code === 200) {
       allMenus.value = res.result || []
       // 菜单数据加载完成后，预处理所有角色的权限

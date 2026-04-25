@@ -15,6 +15,7 @@ import {
   getFullMenuListApi,
   roleList,
 } from '~@/api/internal-manage/role-manage'
+import { useConsoleOwnType } from '@/utils/console-permission'
 
 // 定义props接收角色ID
 const props = defineProps({
@@ -32,6 +33,7 @@ const props = defineProps({
 const emit = defineEmits(['update:details'])
 
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
+const consoleOwnType = useConsoleOwnType()
 
 const loading = ref(false)
 // 权限数据
@@ -80,7 +82,7 @@ const selectedPermissionCount = computed(() => {
 async function getMenuList() {
   loading.value = true
   try {
-    const res = await getFullMenuListApi({ ownType: 2 })
+    const res = await getFullMenuListApi({ ownType: consoleOwnType.value })
     // console.log('API原始数据:', res)
     if (res.code === 200) {
       // 递归给数据添加checked和indeterminate属性
@@ -146,7 +148,7 @@ async function getRoleDetail() {
   try {
     const [detailRes, roleMenuRes] = await Promise.all([
       getDefaultRoleDetailApi({ roleId: props.roleId }),
-      roleList({ roleId: props.roleId, ownType: 2 }),
+      roleList({ roleId: props.roleId, ownType: consoleOwnType.value }),
     ])
     if (detailRes.code === 200) {
       // 设置权限树的选中状态

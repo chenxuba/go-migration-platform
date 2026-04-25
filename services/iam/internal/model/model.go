@@ -157,6 +157,67 @@ type UserPage struct {
 	Size    int            `json:"size"`
 }
 
+type ManageUserPageRequest struct {
+	PageRequestModel PageRequestModel       `json:"pageRequestModel"`
+	QueryModel       ManageUserQueryRequest `json:"queryModel"`
+}
+
+type ManageUserQueryRequest struct {
+	SearchKey string `json:"searchKey"`
+	Status    string `json:"status"`
+	DeptID    *int64 `json:"deptId,omitempty"`
+}
+
+type ManageUserListItem struct {
+	ID              int64   `json:"id"`
+	Username        string  `json:"username"`
+	Mobile          string  `json:"mobile"`
+	NickName        string  `json:"nickName"`
+	DeptID          *int64  `json:"deptId,omitempty"`
+	DeptIDs         []int64 `json:"deptIds"`
+	DepartNames     string  `json:"departNames"`
+	RoleIDs         []int64 `json:"roleIds"`
+	RoleName        string  `json:"roleName"`
+	RoleNum         int     `json:"roleNum"`
+	IsAdmin         bool    `json:"isAdmin"`
+	Disabled        bool    `json:"disabled"`
+	ActivatedStatus bool    `json:"activatedStatus"`
+	CreateTime      string  `json:"createTime"`
+}
+
+type ManageUserPage struct {
+	Items   []ManageUserListItem `json:"items"`
+	Total   int                  `json:"total"`
+	Current int                  `json:"current"`
+	Size    int                  `json:"size"`
+}
+
+type ManageUserMutationRequest struct {
+	ID       *int64  `json:"id,omitempty"`
+	Username string  `json:"username"`
+	Password string  `json:"password,omitempty"`
+	Mobile   string  `json:"mobile"`
+	NickName string  `json:"nickName"`
+	DeptIDs  []int64 `json:"deptIds"`
+	RoleIDs  []int64 `json:"roleIds"`
+	Disabled bool    `json:"disabled"`
+}
+
+type ManageUserBatchStatusRequest struct {
+	UserIDs []int64 `json:"userIds"`
+	IsWork  bool    `json:"isWork"`
+}
+
+type ManageUserBatchDeptRequest struct {
+	UserIDs []int64 `json:"userIds"`
+	DeptIDs []int64 `json:"deptIds"`
+}
+
+type ManageUserBatchRoleRequest struct {
+	UserIDs []int64 `json:"userIds"`
+	RoleIDs []int64 `json:"roleIds"`
+}
+
 type GovernmentRoleOption struct {
 	RoleID     int64  `json:"roleId"`
 	RoleName   string `json:"roleName"`
@@ -332,6 +393,7 @@ type RoleQueryVO struct {
 	MenuIDs                  []int64  `json:"menuIds,omitempty"`
 	UpdateName               string   `json:"updateName,omitempty"`
 	CreateName               string   `json:"createName,omitempty"`
+	UpdateTime               string   `json:"updateTime,omitempty"`
 }
 
 type RolePage struct {

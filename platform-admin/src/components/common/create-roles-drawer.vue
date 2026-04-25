@@ -17,12 +17,13 @@ import {
 } from '@/composables/useRolePermissions'
 import {
   getDefaultRoleDetailApi,
-  getMenuListApi,
+  getFullMenuListApi,
   getDefaultRole,
 } from '~@/api/internal-manage/role-manage'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import { useUserStore } from '~@/stores/user'
 import { useQueryBreakpoints } from '@/composables/query-breakpoints'
+import { useConsoleOwnType } from '@/utils/console-permission'
 
 const props = defineProps({
   open: {
@@ -38,6 +39,7 @@ const props = defineProps({
 const emit = defineEmits(['update:open', 'onSuccess'])
 
 const simpleImage = Empty.PRESENTED_IMAGE_SIMPLE
+const consoleOwnType = useConsoleOwnType()
 
 // 递归获取最后一级checked为true的权限ID
 function getLastLevelCheckedIds(permissions: any[]): number[] {
@@ -118,7 +120,7 @@ function handleClearAllSelected() {
 async function getMenuList() {
   loading.value = true
   try {
-    const res = await getMenuListApi({ ownType: 'INSTITUTION' })
+    const res = await getFullMenuListApi({ ownType: consoleOwnType.value })
     // console.log("API原始数据:", res);
     if (res.code === 200) {
       // 递归给数据添加checked和indeterminate属性

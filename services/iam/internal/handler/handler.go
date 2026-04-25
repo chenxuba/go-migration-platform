@@ -33,6 +33,15 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/auth/login-institutions", handler.loginInstitutions)
 	mux.HandleFunc("/api/v1/auth/me", handler.me)
 	mux.HandleFunc("/api/v1/users", handler.users)
+	mux.HandleFunc("/api/v1/manage-users/page", handler.manageUsersPage)
+	mux.HandleFunc("/api/v1/manage-users/detail", handler.manageUserDetail)
+	mux.HandleFunc("/api/v1/manage-users/create", handler.createManageUser)
+	mux.HandleFunc("/api/v1/manage-users/update", handler.updateManageUser)
+	mux.HandleFunc("/api/v1/manage-users/batch-disabled", handler.manageUserBatchDisabled)
+	mux.HandleFunc("/api/v1/manage-users/batch-dept", handler.manageUserBatchDept)
+	mux.HandleFunc("/api/v1/manage-users/batch-role", handler.manageUserBatchRole)
+	mux.HandleFunc("/api/v1/manage-users/change-phone", handler.manageUserChangePhone)
+	mux.HandleFunc("/api/v1/manage-users/login-account-available", handler.governmentUsernameAvailable)
 	mux.HandleFunc("/api/v1/government-users", handler.governmentUsers)
 	mux.HandleFunc("/api/v1/government-users/username-available", handler.governmentUsernameAvailable)
 	mux.HandleFunc("/api/v1/government-users/detail", handler.governmentUserDetail)
@@ -57,6 +66,10 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/menus/inst-codes", handler.instMenuCodes)
 	mux.HandleFunc("/api/v1/menus/current", handler.currentMenuTree)
 	mux.HandleFunc("/api/v1/roles/page", handler.instRolePage)
+	mux.HandleFunc("/api/v1/roles/create", handler.saveRole)
+	mux.HandleFunc("/api/v1/roles/update", handler.updateRole)
+	mux.HandleFunc("/api/v1/roles/inst-menu", handler.instMenuList)
+	mux.HandleFunc("/api/v1/roles/compare", handler.roleMenuCompare)
 	mux.HandleFunc("/api/v1/roles/menu-ids", handler.roleMenuIDs)
 	mux.HandleFunc("/api/v1/roles/templates", handler.roleTemplates)
 	mux.HandleFunc("/api/v1/roles/default-detail", handler.defaultRoleDetail)
@@ -75,6 +88,32 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sso/governmentUserUpdate", handler.updateGovernmentUser)
 	mux.HandleFunc("/sso/governmentUserStatus", handler.governmentUserStatus)
 	mux.HandleFunc("/sso/governmentRoles", handler.governmentRoles)
+	mux.HandleFunc("/sso/manage-users/page", handler.manageUsersPage)
+	mux.HandleFunc("/sso/manage-users/detail", handler.manageUserDetail)
+	mux.HandleFunc("/sso/manage-users/create", handler.createManageUser)
+	mux.HandleFunc("/sso/manage-users/update", handler.updateManageUser)
+	mux.HandleFunc("/sso/manage-users/batch-disabled", handler.manageUserBatchDisabled)
+	mux.HandleFunc("/sso/manage-users/batch-dept", handler.manageUserBatchDept)
+	mux.HandleFunc("/sso/manage-users/batch-role", handler.manageUserBatchRole)
+	mux.HandleFunc("/sso/manage-users/change-phone", handler.manageUserChangePhone)
+	mux.HandleFunc("/sso/manage-users/login-account-available", handler.governmentUsernameAvailable)
+	mux.HandleFunc("/sso/departs/tree", handler.departTree)
+	mux.HandleFunc("/sso/departs/list", handler.departs)
+	mux.HandleFunc("/sso/departs/children", handler.departChildren)
+	mux.HandleFunc("/sso/departs/create", handler.createDepart)
+	mux.HandleFunc("/sso/departs/update", handler.updateDepart)
+	mux.HandleFunc("/sso/departs/delete", handler.deleteDepart)
+	mux.HandleFunc("/sso/menus/tree", handler.menuTree)
+	mux.HandleFunc("/sso/menus/inst-tree", handler.instMenuTree)
+	mux.HandleFunc("/sso/roles/page", handler.instRolePage)
+	mux.HandleFunc("/sso/roles/create", handler.saveRole)
+	mux.HandleFunc("/sso/roles/update", handler.updateRole)
+	mux.HandleFunc("/sso/roles/inst-menu", handler.instMenuList)
+	mux.HandleFunc("/sso/roles/compare", handler.roleMenuCompare)
+	mux.HandleFunc("/sso/roles/menu-ids", handler.roleMenuIDs)
+	mux.HandleFunc("/sso/roles/templates", handler.roleTemplates)
+	mux.HandleFunc("/sso/roles/default-detail", handler.defaultRoleDetail)
+	mux.HandleFunc("/sso/roles/staff", handler.roleStaff)
 	mux.HandleFunc("/sso/menuList", handler.menuList)
 	mux.HandleFunc("/sso/menu/list", handler.menuTree)
 	mux.HandleFunc("/sso/menu/by-code", handler.menuByCode)
@@ -206,6 +245,172 @@ func (handler *Handler) users(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) manageUsersPage(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.ManageUserPageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.PageManageUsers(claims, req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) manageUserDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	id := parseInt64(r.URL.Query().Get("id"), 0)
+	if id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetManageUserDetail(claims, id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) createManageUser(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.ManageUserMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	id, err := handler.service.CreateManageUser(claims, req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]int64{"id": id}, ctx.RequestID)
+}
+
+func (handler *Handler) updateManageUser(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.ManageUserMutationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.UpdateManageUser(claims, req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) manageUserBatchDisabled(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	var req model.ManageUserBatchStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.BatchUpdateManageUserStatus(claims, req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) manageUserBatchDept(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	var req model.ManageUserBatchDeptRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.BatchUpdateManageUserDept(claims, req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) manageUserBatchRole(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	var req model.ManageUserBatchRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.BatchUpdateManageUserRole(claims, req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) manageUserChangePhone(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req struct {
+		UserID int64  `json:"userId"`
+		Mobile string `json:"mobile"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if err := handler.service.ChangeManageUserPhone(claims, req.UserID, req.Mobile); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
 }
 
 func (handler *Handler) governmentUsers(w http.ResponseWriter, r *http.Request) {

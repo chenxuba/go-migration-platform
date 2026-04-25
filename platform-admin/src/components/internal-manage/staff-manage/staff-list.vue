@@ -60,7 +60,6 @@ const allFilterRef = ref(null);
 const displayArray = ref([
   'createTime',
   'accountStatus',
-  'userType',
   'positionRole',
 ]);
 
@@ -132,12 +131,6 @@ const allColumns = ref([
     title: '账号状态',
     dataIndex: 'disabled',
     key: 'disabled',
-    width: 100,
-  },
-  {
-    title: '员工类型',
-    dataIndex: 'userType',
-    key: 'userType',
     width: 100,
   },
   {
@@ -246,7 +239,6 @@ async function handleTableChange(paginationInfo) {
 const filterFieldMapping = {
   createTimeFilter: "createTime",
   channelAccountStatus: "status",
-  channelUserType: "userType",
   channelPositionRoleFilter: "roleIds",
   stuPhoneSearchFilter: "id",
 };
@@ -764,9 +756,6 @@ onMounted(async () => {
                 <span :class="record.disabled ? 'text-#ff3333 bg-#ffe6e6' : 'text-#06f bg-#e6f0ff'"
                   class=" text-3 px2 py1 rounded-10 ml2 font500">{{ record.disabled ? '已离职' : '在职中'
                   }}</span>
-              </template>
-              <template v-if="column.key === 'userType'">
-                {{ record.userType === 1 ? '正式员工' : '兼职员工' }}
               </template>
               <template v-if="column.key === 'createTime'">
                 {{ dayjs(record.createTime).format('YYYY-MM-DD HH:mm') }}
